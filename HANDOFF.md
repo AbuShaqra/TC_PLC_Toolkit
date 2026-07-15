@@ -3,7 +3,7 @@
 Where the work *stands*. Read before starting; keep current (see the handoff rule in [CLAUDE.md](CLAUDE.md)).
 Target: under 100 lines — prune finished items rather than appending, but never drop a real finding to hit it.
 
-**Last verified:** 2026-07-15 — `npm test` green (exit 0, 31 harnesses), **0 diagnostics on the sample**. Version 0.1.2 (0.1.0 renumbered from 0.4.2 for the fresh public repo; 0.1.1 = M3 refactor + Find References fixes; 0.1.2 = two webview fixes); references + navigation confirmed working by the user.
+**Last verified:** 2026-07-15 — `npm test` green (exit 0, 31 harnesses), **0 diagnostics on the sample**. Version 0.1.3 (0.1.0 renumbered from 0.4.2 for the fresh public repo; 0.1.1 = M3 refactor + Find References fixes; 0.1.2 = two webview fixes; 0.1.3 = named-arg-value Go-to-Definition fix + library-tree grouping of interfaces/enums/GVLs); references + navigation confirmed working by the user.
 
 ## Publication remediation — DONE (2026-07-15)
 
@@ -22,9 +22,28 @@ extension itself (the customer/vendor *content* is gone, but that's a separate q
 - **Branch `main`, pushed, working tree clean.** Origin `github.com/AbuShaqra/TC_PLC_Toolkit.git` (repo
   recreated 2026-07-15; `main` is the primary branch — the old `MonacoEditor` name is retired). Stale local
   branches `moe` / `native-editor` still exist, un-pushed.
-- **Version `0.1.2`** — 0.1.0 was renumbered from 0.4.2 on 2026-07-15 for the fresh public repo; **0.1.1** added the M3
-  refactor + the three fixes below; **0.1.2** adds two webview fixes (see next bullet). Ships per-kind Objects-tree
-  icons, the References panel/peek fixes, the `GET`/`SET` parser fix, and the Find References caching.
+- **Version `0.1.3`** — 0.1.0 was renumbered from 0.4.2 on 2026-07-15 for the fresh public repo; **0.1.1** added the M3
+  refactor + the three fixes below; **0.1.2** adds two webview fixes (see next bullet); **0.1.3** adds the named-arg-value
+  Go-to-Definition fix and the library-tree grouping of interfaces/enums/GVLs (both further down). Ships per-kind
+  Objects-tree icons, the References panel/peek fixes, the `GET`/`SET` parser fix, and the Find References caching.
+- **Go-to-Definition, named-arg VALUE (0.1.3):** `bEnabled := bEnabled` at a call/init site — Go to Definition (and
+  Find References, which resolves via `definitionAt`) on the right-hand VALUE used to jump to the callee's parameter
+  when the value shared its spelling. `definition.js` section 1 now treats a token as the parameter NAME only when it
+  is immediately followed by `:=`/`=>`. Guarded by `test/test_fb_init_def.js`.
+- **Library-tree grouping (0.1.3), `librarySignatures.js` + `libraryTreeProvider.js`:** the signatures parser lumped
+  every `type="Type"`/`Interface` into "Data Types". Now data-driven (no name prefixes — `E_DriveDynamicParameter` is
+  NOT an enum): `type="Interface"`→interface; a `VarGlobal` whose constants are all **self-typed** (DataType≈Name,
+  case-insensitive) is an **enum** carrying its values; a mixed-type `VarGlobal` is a **GVL** carrying its globals;
+  `type="Type"` stays opaque (the `.tmc` upgrades used ones to struct). New Interfaces + GVLs tree groups; enums/GVLs
+  expandable, members insert namespace-qualified. All library nodes stay `external:true` → no diagnostic can fire.
+  **Verified on a real project:** IbtCoreLib moved 48 interfaces + 15 enums + 3 GVLs out of "Data Types".
+  **Hard limit (investigated + verified, do not re-chase):** structs the `.tmc` doesn't cover STAY in "Data Types" —
+  struct/enum/alias share ONE "DUT" TypeGUID in the browsercache (`ST_Fanuc_DI` == `E_FanucState` == `{2db5746d…}`),
+  DUT nodes carry no fields, signatures give bare names, and the generator's `GetLibraryIecDeclaration` is E_NOINTERFACE
+  on this build — so struct-vs-alias is not recoverable offline. **Open follow-up:** the browsercache
+  (`%ProgramData%\…\Managed Libraries\<Co>\<Title>\<Ver>\browsercache`, plain XML) carries **methods/properties/ACTIONs**
+  (459 method nodes in IbtCoreLib) for every library FB/interface — the one thing signatures lack (and ACTIONs the
+  `.tmc` lacks) — a purely offline source for "expand a library FB to its members".
 - **Webview fixes (0.1.2), in `customEditorProvider.js` HTML:** (1) CSP had no `font-src`, so `default-src 'none'`
   blocked Monaco's `codicon.ttf` → editor/suggest/peek icons rendered blank; added `font-src ${webview.cspSource}`.
   (2) the worker's AMD `baseUrl` was `${vsUri}/` (`.../monaco-editor/vs/`), but module ids already start with `vs/`,
