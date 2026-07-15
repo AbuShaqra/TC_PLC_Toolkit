@@ -580,6 +580,10 @@ class TwinCatCustomEditorProvider {
         const stylesUri = webview.asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, 'media', 'editor.css'));
         
         const vsUri = webview.asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, 'media', 'monaco-editor', 'vs'));
+        // The worker's AMD baseUrl must be the directory that CONTAINS `vs/`, because Monaco's module
+        // ids already start with `vs/`. Pointing it at `.../vs/` doubled the segment (`vs/vs/…`), so the
+        // worker's NLS strings file 404'd ("Failed trying to load default language strings").
+        const monacoBaseUri = webview.asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, 'media', 'monaco-editor'));
         const loaderUri = webview.asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, 'media', 'monaco-editor', 'vs', 'loader.js'));
 
         // Read workerMain.js content from the file system and base64-encode it
@@ -597,14 +601,14 @@ class TwinCatCustomEditorProvider {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource} data:; style-src ${webview.cspSource} 'unsafe-inline'; script-src ${webview.cspSource} 'unsafe-inline' blob:; worker-src 'self' blob: data:;">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource} data:; style-src ${webview.cspSource} 'unsafe-inline'; script-src ${webview.cspSource} 'unsafe-inline' blob:; font-src ${webview.cspSource}; worker-src 'self' blob: data:;">
     <link href="${stylesUri}" rel="stylesheet">
     <script src="${loaderUri}"></script>
     <script>
         // Synchronously decode the base64-encoded worker code and create Blob URL
         const workerCode = atob('${workerCodeBase64}');
         const blob = new Blob([
-            \`self.MonacoEnvironment = { baseUrl: '${vsUri}/' };\\n\` + workerCode
+            \`self.MonacoEnvironment = { baseUrl: '${monacoBaseUri}/' };\\n\` + workerCode
         ], { type: 'application/javascript' });
         const workerBlobUrl = URL.createObjectURL(blob);
 

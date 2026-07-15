@@ -3,7 +3,7 @@
 Where the work *stands*. Read before starting; keep current (see the handoff rule in [CLAUDE.md](CLAUDE.md)).
 Target: under 100 lines — prune finished items rather than appending, but never drop a real finding to hit it.
 
-**Last verified:** 2026-07-15 — `npm test` green (exit 0, 31 harnesses), **0 diagnostics on the sample**. Version 0.1.1 (0.1.0 renumbered from 0.4.2 for the fresh public repo; bumped to 0.1.1 for the M3 refactor + Find References fixes); references + navigation confirmed working by the user.
+**Last verified:** 2026-07-15 — `npm test` green (exit 0, 31 harnesses), **0 diagnostics on the sample**. Version 0.1.2 (0.1.0 renumbered from 0.4.2 for the fresh public repo; 0.1.1 = M3 refactor + Find References fixes; 0.1.2 = two webview fixes); references + navigation confirmed working by the user.
 
 ## Publication remediation — DONE (2026-07-15)
 
@@ -22,10 +22,15 @@ extension itself (the customer/vendor *content* is gone, but that's a separate q
 - **Branch `main`, pushed, working tree clean.** Origin `github.com/AbuShaqra/TC_PLC_Toolkit.git` (repo
   recreated 2026-07-15; `main` is the primary branch — the old `MonacoEditor` name is retired). Stale local
   branches `moe` / `native-editor` still exist, un-pushed.
-- **Version `0.1.1`** — 0.1.0 was renumbered from 0.4.2 on 2026-07-15 for the fresh public repo; **bumped to 0.1.1**
-  for the M3 refactor, the folder-create EISDIR fix, the always-populate References panel, and the FB_init decl-site
-  references fix. Ships per-kind Objects-tree icons, the References panel/peek fixes, the `GET`/`SET` parser fix, and the
-  Find References caching.
+- **Version `0.1.2`** — 0.1.0 was renumbered from 0.4.2 on 2026-07-15 for the fresh public repo; **0.1.1** added the M3
+  refactor + the three fixes below; **0.1.2** adds two webview fixes (see next bullet). Ships per-kind Objects-tree
+  icons, the References panel/peek fixes, the `GET`/`SET` parser fix, and the Find References caching.
+- **Webview fixes (0.1.2), in `customEditorProvider.js` HTML:** (1) CSP had no `font-src`, so `default-src 'none'`
+  blocked Monaco's `codicon.ttf` → editor/suggest/peek icons rendered blank; added `font-src ${webview.cspSource}`.
+  (2) the worker's AMD `baseUrl` was `${vsUri}/` (`.../monaco-editor/vs/`), but module ids already start with `vs/`,
+  so the worker's NLS file resolved to a doubled `.../vs/vs/base/…` path and 404'd → baseUrl is now the monaco-editor
+  ROOT. A third console error (`min-maps/*.js.map` blocked by CSP) is **DevTools-only and left as-is**: source maps are
+  not shipped, and the strict no-`connect-src` CSP is intentional (the webview never makes network requests).
   **User confirmed live: the panel tab switches, the reference list is correct, and clicking a reference lands
   in the right place.**
 - **`sample/` is GROUND TRUTH**: correct TwinCAT code, so **every diagnostic on it is a bug**. It is at **zero**;
@@ -66,8 +71,7 @@ extension itself (the customer/vendor *content* is gone, but that's a separate q
   change was trace-reviewed; tsc + the 31 suites cover the parser/references halves.**
 - **L2 DONE:** `test/test_libsymbols.js` now carries a named PERF GUARD asserting library-symbol registration scales
   with the DOCUMENT, not the registry (pins the lazy-registration invariant behind the 78s cliff).
-- **M3 DONE (committed on branch `refactor/thin-extension-and-ref-fixes`, not pushed; `main` unchanged):**
-  `extension.js` **1205 → 359 lines**, now a thin hub. Pure
+- **M3 DONE (merged to `main` via PR #1):** `extension.js` **1205 → 359 lines**, now a thin hub. Pure
   structural split; command bodies moved byte-identical. New modules: `src/xaeShell.js` (shell discovery +
   signature-generator — distinct from `src/lsp/librarySignatures.js`, the XML-dump parser), and under
   `src/commands/`: `objectCommands.js` (13 create/delete + `handleComponentCreation`/`handleFileCreation`/`applyXmlEdit`),
@@ -76,7 +80,7 @@ extension itself (the customer/vendor *content* is gone, but that's a separate q
   preserve the `if (!client)` guards. Hub keeps: references view, LSP bootstrap, types broadcast, watchers, view creation.
   **Verified:** tsc 0, 31 suites green, every declared command registered exactly once. **F5-confirmed by the user:**
   activation clean (dev-host exthost log, no errors), New FB works, Insert-from-Library works, Find References works.
-- **Three fixes made alongside M3 (committed on the same branch — EISDIR in commit 1, the two ref fixes in commit 2):**
+- **Three fixes merged with M3 (PR #1):**
   - **Folder-create EISDIR** — `onDidCreate` called `updateCacheForFile`/`indexFileOnLsp` for *every* created path,
     incl. directories, so `readFile(dir)` threw EISDIR (caught+logged; folder still created). Pre-existing, not a
     refactor regression. Now gates on the TwinCAT extension exactly as `onDidChange` does (`extension.js` onDidCreate).
