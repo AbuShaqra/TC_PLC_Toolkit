@@ -1,0 +1,18 @@
+.vscode/**
+.git/**
+.gitignore
+.claude/**
+scratch/**
+sample/**
+**/*.map
+node_modules/@types/**
+**/.DS_Store
+*.vsix
+# scripts/ ships (generate-library-signatures.ps1 is invoked by the Update Library Definitions
+# command), so the dev-only scripts in it must be excluded one by one.
+scripts/build-vsix.sh
+scripts/run-build.bat
+scripts/install-vsix.bat
+CLAUDE.md
+HANDOFF.md
+DEVELOPMENT.md

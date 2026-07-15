@@ -1,0 +1,221 @@
+# TwinCAT PLC Toolkit
+
+A lightweight, offline VS Code extension for editing, navigating and analysing Beckhoff **TwinCAT**
+PLC projects (`.TcPOU`, `.TcGVL`, `.TcDUT`, `.TcIO`). It hides the XML wrappers behind a two-pane
+editor, adds **Structured Text (IEC 61131-3)** language support from a built-in language server, and
+gives you explorers for the project's objects and its libraries.
+
+TwinCAT stores PLC code as XML, with the actual Structured Text buried inside `<![CDATA[ ... ]]>`
+blocks. This extension parses that XML, presents the declaration and implementation in two editor
+panes, and writes your edits back into the original CDATA — preserving TwinCAT's file structure and
+metadata (`LineIds`, folders, UUIDs), so TwinCAT and version control never see spurious diffs.
+
+Everything runs locally. No internet connection, no TwinCAT installation and no external toolchain
+are required.
+
+---
+
+## Features
+
+### Two-pane editor
+
+Opens `.TcPOU` / `.TcGVL` / `.TcDUT` / `.TcIO` with the Declaration (variables) on top and the
+Implementation below, separated by a resizable splitter. No raw XML.
+
+### TwinCAT Objects explorer
+
+Browse POUs, interfaces, GVLs, DUTs and their methods, properties, actions and virtual folders.
+Create and delete files, folders, methods, properties and actions — the nearest `.plcproj` is kept in
+sync automatically. The tree follows you: switching editors reveals and highlights the matching item.
+
+**Every kind carries its own icon**, so the tree is readable at a glance: function blocks, programs
+and functions are told apart rather than sharing one file icon, a DUT shows whether it is a
+structure, an enumeration, a union or an alias, and methods, properties, property accessors, actions
+and transitions each have their own glyph. Hover a row to see its kind spelled out.
+
+### TwinCAT Libraries explorer
+
+Lists every library referenced by the project's `.plcproj` **by the namespace you actually type in
+code**. That matters, because the three names a library carries often differ — TwinCAT's recipe
+library is `RecipeManagement` in the project file, `Recipe Management` by title, but
+`Recipe_Management` in ST — so the namespace is the row label and the title, version and company are
+the description.
+
+Expand a library and its types are grouped by kind — **Function Blocks**, **Functions**, **Structures**,
+**Enumerations**, **Data Types** — each with a count, since a library can carry hundreds of types.
+Expand a type to see its fields and its **methods**, each with its signature; expand a method to see
+its parameters.
+
+Right-click a row for:
+
+- **Insert at Cursor** — drops the namespace (or the qualified type name, or a method name) into the
+  pane you were last editing and opens the suggest list.
+- **Insert Definition at Cursor** — for a function block, function or method, inserts a ready-to-fill
+  call with its whole parameter list laid out and typed (inputs bind with `:=`, outputs with `=>`):
+  ```
+  Tc2_Standard.TON(
+      IN := ,  // BOOL
+      PT := ,  // TIME
+      Q  => ,  // BOOL
+      ET =>   // TIME
+  );
+  ```
+- **Copy Namespace** / **Copy Qualified Name**.
+
+The view re-indexes itself when the `.plcproj` changes, so a library added in TwinCAT appears without
+a reload.
+
+### Update Library Definitions
+
+> ### ⚠️ Requires a TwinCAT XAE installation
+>
+> This is the **one** feature that is not offline. It drives your installed TwinCAT once to export
+> data that exists nowhere else on disk. On a machine without TwinCAT the command says so and changes
+> nothing — everything else in the extension keeps working.
+
+The toolbar button at the top of the Libraries view enriches what the toolkit knows about your
+libraries: **function parameter and return signatures, the inputs/outputs of function blocks your
+project has not used yet, and global constants** — none of which can be read from the library files
+themselves. Only TwinCAT can export them, so this one command drives your installed TwinCAT once to
+dump them into a `library-signatures.xml` in the workspace, which the extension then indexes offline.
+
+It asks **which XAE Shell to use, 32-bit or 64-bit**, every time. That is not a formality: a library's
+signatures can differ between the two — visualisation libraries especially — so pick the one your
+project is built with. If you always use the same one, set `twincat.libraryDefinitions.shell` and the
+prompt goes away.
+
+If your project pins a library version that the chosen shell does not have installed, the closest
+installed version of the same major release is used instead, rather than dropping the library.
+
+It drives its **own** shell instance and leaves any you already have open alone, including their
+unsaved work. It briefly opens a TwinCAT window while it runs (about a minute).
+
+### Structured Text language support
+
+- **Code completion** is context-aware: it offers only what is legal at the caret, so `x : ▮` gets
+  types and library namespaces (not `END_IF`), `x := ▮` gets values, and a call's parentheses get its
+  parameters first. It covers local and method variables, POU members, GVL globals, DUT struct fields,
+  enum members, dotted member access (`fb.member`, including through `REFERENCE TO` / `POINTER TO`),
+  named parameters (including `FB_init` arguments at a declaration), struct fields inside a structured
+  initializer, standard types and keywords, the standard function/FB library (`TON`, `ADR`,
+  `INT_TO_BYTE`, …), snippets for common constructs (`IF`, `CASE`, `FOR`, …) — and the symbols of the
+  project's referenced libraries, both globally and behind their namespace (`Tc2_Standard.▮`).
+- **Diagnostics** catch unbalanced blocks (`IF`/`END_IF`, `CASE`, `FOR`, `WHILE`, `REPEAT`),
+  undeclared identifiers, and type errors: member access against a resolved type (`fb.NoSuchField`),
+  named call arguments (`fb(badParam := …)`) and clear assignment mismatches (`anInt := aStruct`).
+  They understand pragmas (`{attribute …}`, `{region}`), direct I/O addresses (`AT %I*`), typed and
+  time literals, `AND_THEN` / `REF=`, inheritance (`EXTENDS` / `IMPLEMENTS`), the standard library and
+  your referenced libraries. **Conservative by design**: anything that cannot be fully resolved is
+  never flagged, so you do not get a wall of false errors. Each check can be turned off — see
+  [Settings](#settings).
+- **Go to Definition** works across components and files, jumping into the right file and pane and
+  highlighting the symbol — including named parameters at call sites and FB-instance initializers.
+- **Find References** shows in-view occurrences in the peek widget, plus a dedicated **TwinCAT
+  References** panel grouped by file and component for cross-file usages. Matching is
+  case-insensitive, as ST itself is.
+
+### Generate ST
+
+Export the whole workspace to clean, compiler-friendly `.st` files under `ST_Files/` (toolbar button
+in the editor).
+
+### For AI coding assistants
+
+[`templates/twincat-project-CLAUDE.md`](templates/twincat-project-CLAUDE.md) is a portable field guide
+to the TwinCAT file formats — the XML anatomy, the rule that edits must preserve everything outside the
+CDATA blocks, how to tell the object kinds apart, and the Structured Text facts that most often catch
+tools out (ST is case-insensitive; a method's `VAR` block is private to it; `inst : FB_T(p := v)` and
+`inst : FB_T := (p := v)` bind to *different* things).
+
+**Copy it into your own TwinCAT project as that project's `CLAUDE.md`.** Claude Code then knows what it
+is looking at from the first file it opens, instead of re-deriving the format — or guessing it wrong.
+
+---
+
+## Requirements
+
+**VS Code** `^1.60.0`. Nothing else.
+
+## Install
+
+Install the `.vsix` from the command line:
+
+```
+code --install-extension twincat-plc-toolkit-<version>.vsix --force
+```
+
+or from inside VS Code: **Extensions** view → **⋯** menu → **Install from VSIX…**. On Windows,
+`scripts\install-vsix.bat` picks the newest `.vsix` in the folder and installs it for you.
+
+Then reload the window (**Developer: Reload Window**), open a folder containing a TwinCAT PLC project,
+and open any `.TcPOU` file — it opens in the TwinCAT PLC Toolkit editor.
+
+> If a `.TcPOU` opens as raw XML instead, right-click the tab → **Reopen Editor With… → TwinCAT PLC
+> Toolkit**.
+
+---
+
+## Settings
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `twincat.diagnostics.memberAccess` | `true` | Flag access to members that don't exist on a resolved type. |
+| `twincat.diagnostics.callArguments` | `true` | Flag named call arguments that aren't parameters of the callee. |
+| `twincat.diagnostics.declarationTypes` | `false` | Flag declarations with an unknown type. Off by default — types from unreadable `.compiled-library-v3` archives are invisible to the indexer, so this can report false positives in projects that use them. |
+| `twincat.diagnostics.typeCompatibility` | `true` | Flag assignments whose value type is clearly incompatible with the target. |
+| `twincat.libraryDefinitions.shell` | `ask` | Which XAE Shell **Update Library Definitions** drives: `ask`, `x64` or `x86`. Signatures can differ between the two, so it asks by default. |
+
+---
+
+## How library symbols are resolved
+
+Referenced libraries are **indexed, not guessed** — no symbol is invented, and anything unresolved is
+never flagged. Three sources on disk feed the index: the library archives (`.compiled-library`,
+`.compiled-library-ge33`, `.library`), which give the complete set of symbol *names*; the project's
+`.tmc` type-system export, which gives the *structure* of the types the project actually uses — fields,
+enum values, function-block inputs and outputs, and each FB's or interface's **methods** with their
+parameters and return type, inherited ones included; and the `.plcproj`, which gives the library list
+and the namespaces.
+
+A fourth, optional source is the `library-signatures.xml` produced by **Update Library Definitions**
+(above): function signatures, FB inputs/outputs and global constants for *every* referenced library,
+including ones the project has not used yet. Where it overlaps the `.tmc`, the `.tmc` wins — only it
+carries struct fields, enum values and methods.
+
+One consequence is worth knowing: `.compiled-library-v3` archives use an opaque format that cannot be
+read, so libraries shipping only in that form (the `VisuElems` family, for instance) contribute no
+symbols. That causes no false error — unknown simply stays unflagged.
+
+## Known limitations
+
+- The type checker is **conservative, not a compiler**. It only flags what it can prove wrong: member
+  access, call arguments and clear assignment mismatches. Anything it cannot fully resolve — including
+  anything reached through a library type — is left alone rather than guessed at.
+- **Library ACTIONs are not completable** (methods, properties, fields and I/O are). The `.tmc` does
+  not export them, so e.g. `AXIS_REF.ReadStatus` is unknown to completion. It is never flagged either.
+- A library type is only known once the project **uses** it: the `.tmc` exports what the project
+  resolves, so an unused library's types appear only if you run **Update Library Definitions**.
+- **Member completion stops after one hop**: `axis.Status.▮` offers nothing, because a member's type
+  is only indexed when the document itself names it.
+- The inline **references peek** only shows occurrences in the active component's visible panes — a
+  constraint of the split-pane editor. Cross-file and cross-component usages appear in the **TwinCAT
+  References** panel instead.
+
+---
+
+## License
+
+[MIT](LICENSE) © A. AbuShaqra — this covers the original code of this extension.
+
+Bundled third-party components (the Monaco Editor, the codicon font, the
+TypeScript language services, and the runtime npm dependencies) remain under
+their own licenses. Monaco's MIT license is at
+[`media/monaco-editor/LICENSE.txt`](media/monaco-editor/LICENSE.txt); the full
+inventory is in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
+
+## Disclaimer
+
+This is an independent, community-built project. It is **not affiliated with,
+endorsed by, or sponsored by Beckhoff Automation GmbH & Co. KG.** "TwinCAT" and
+"Beckhoff" are trademarks of Beckhoff Automation, used here only to describe
+compatibility. All other trademarks are the property of their respective owners.

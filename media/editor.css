@@ -1,0 +1,370 @@
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+:root {
+    --bg-primary: var(--vscode-editor-background, #1e1e1e);
+    --fg-primary: var(--vscode-editor-foreground, #d4d4d4);
+    --border-color: rgba(255, 255, 255, 0.08);
+    --accent-gradient: linear-gradient(135deg, #ff4757, #ff6b81);
+    --font-sans: 'Outfit', sans-serif;
+    --font-mono: 'JetBrains Mono', monospace;
+    --header-bg: rgba(30, 30, 30, 0.7);
+}
+
+body {
+    margin: 0;
+    padding: 0;
+    background-color: var(--bg-primary);
+    color: var(--fg-primary);
+    font-family: var(--font-sans);
+    overflow: hidden;
+    height: 100vh;
+}
+
+#app {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+}
+
+/* Header Styles - Glassmorphism */
+.app-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 20px;
+    background: var(--header-bg);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--border-color);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+    z-index: 10;
+    gap: 12px;
+}
+
+.header-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-width: 0; /* allows text truncation if needed */
+}
+
+.logo-text {
+    font-weight: 700;
+    font-size: 1.1rem;
+    letter-spacing: 1px;
+    background: var(--accent-gradient);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    flex-shrink: 0;
+}
+
+.pill {
+    font-family: var(--font-sans);
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    padding: 2px 8px;
+    border-radius: 20px;
+    background: rgba(255, 71, 87, 0.15);
+    color: #ff6b81;
+    border: 1px solid rgba(255, 71, 87, 0.3);
+    box-shadow: 0 0 10px rgba(255, 71, 87, 0.1);
+    flex-shrink: 0;
+}
+
+#obj-name {
+    margin: 0;
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.9);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.header-right {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-shrink: 1;
+    min-width: 0;
+}
+
+/* Dropdown styling */
+.nav-select {
+    background-color: var(--vscode-dropdown-background, #2d2d2d);
+    color: var(--vscode-dropdown-foreground, #f0f0f0);
+    border: 1px solid var(--border-color);
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-family: var(--font-sans);
+    font-size: 0.9rem;
+    outline: none;
+    cursor: pointer;
+    width: 220px;
+    max-width: 100%;
+    min-width: 120px;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+    flex-shrink: 1;
+}
+
+.nav-select:hover {
+    border-color: rgba(255, 71, 87, 0.5);
+    box-shadow: 0 0 10px rgba(255, 71, 87, 0.15);
+}
+
+.nav-select:focus {
+    border-color: #ff6b81;
+    box-shadow: 0 0 12px rgba(255, 71, 87, 0.3);
+}
+
+.status-indicator {
+    font-size: 0.8rem;
+    font-weight: 500;
+    color: #2ed573;
+    background: rgba(46, 213, 115, 0.12);
+    border: 1px solid rgba(46, 213, 115, 0.2);
+    padding: 2px 10px;
+    border-radius: 12px;
+    transition: all 0.3s ease;
+    flex-shrink: 0;
+}
+
+.status-indicator.modified {
+    color: #ffa502;
+    background: rgba(255, 165, 2, 0.12);
+    border: 1px solid rgba(255, 165, 2, 0.2);
+}
+
+/* Workspace Panels */
+.editor-container {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    overflow: hidden;
+    position: relative;
+}
+
+.editor-pane {
+    display: flex;
+    flex-direction: column;
+    min-height: 80px;
+    transition: flex-grow 0.05s ease;
+}
+
+.pane-header {
+    background: rgba(0, 0, 0, 0.15);
+    padding: 6px 20px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: rgba(255, 255, 255, 0.4);
+    border-bottom: 1px solid var(--border-color);
+}
+
+.editor-wrapper {
+    flex: 1;
+    position: relative;
+    overflow: hidden;
+}
+
+/* Resizer Splitter */
+.pane-splitter {
+    height: 4px;
+    background-color: var(--border-color);
+    cursor: row-resize;
+    position: relative;
+    z-index: 5;
+    transition: background-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.pane-splitter::after {
+    content: '';
+    position: absolute;
+    top: -4px;
+    bottom: -4px;
+    left: 0;
+    right: 0;
+}
+
+.pane-splitter:hover, .pane-splitter.dragging {
+    background-color: #ff6b81;
+    box-shadow: 0 0 8px #ff4757;
+}
+
+/* Monaco Editor Container Styling */
+/* NOTE: do not add `transform` / `will-change: transform` here. A transformed ancestor becomes the
+   containing block for position:fixed descendants, which breaks Monaco's fixedOverflowWidgets
+   (context menu / suggest widget), pinning them inside the short pane and cropping them. */
+#editor-decl-container, #editor-impl-container {
+    width: 100%;
+    height: 100%;
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+}
+
+/* Custom scrollbars */
+::-webkit-scrollbar {
+    width: 14px;
+    height: 14px;
+}
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 7px;
+}
+::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.25);
+}
+
+/* Toggle Switch Wrapper */
+.sync-toggle-container {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid var(--border-color);
+    padding: 4px 12px;
+    border-radius: 20px;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    flex-shrink: 0;
+    user-select: none;
+}
+
+.sync-toggle-container:hover {
+    border-color: rgba(255, 71, 87, 0.3);
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.sync-toggle-label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.4);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    transition: color 0.3s ease;
+}
+
+.sync-toggle-container.active .sync-toggle-label {
+    color: #ff6b81;
+}
+
+/* The switch - the box around the slider */
+.switch {
+    position: relative;
+    display: inline-block;
+    width: 28px;
+    height: 16px;
+    flex-shrink: 0;
+}
+
+/* Hide default HTML checkbox */
+.switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+/* The slider */
+.slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(255, 255, 255, 0.15);
+    transition: .3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.slider:before {
+    position: absolute;
+    content: "";
+    height: 12px;
+    width: 12px;
+    left: 2px;
+    bottom: 2px;
+    background-color: white;
+    transition: .3s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.4);
+}
+
+input:checked + .slider {
+    background: var(--accent-gradient);
+}
+
+input:focus + .slider {
+    box-shadow: 0 0 2px rgba(255, 71, 87, 0.5);
+}
+
+input:checked + .slider:before {
+    transform: translateX(12px);
+}
+
+/* Rounded sliders */
+.slider.round {
+    border-radius: 16px;
+}
+
+.slider.round:before {
+    border-radius: 50%;
+}
+
+/* Responsive Header wrapping for narrow layouts */
+@media (max-width: 680px) {
+    .app-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 10px;
+        padding: 10px 16px;
+    }
+    .header-right {
+        width: 100%;
+        flex-wrap: wrap;
+        justify-content: flex-start;
+        gap: 10px;
+    }
+    .nav-select {
+        width: 100%;
+        max-width: none;
+        flex-grow: 1;
+    }
+}
+
+/* Premium action button styling */
+.action-btn {
+    background: var(--accent-gradient);
+    color: white;
+    border: none;
+    padding: 6px 16px;
+    border-radius: 20px;
+    font-family: var(--font-sans);
+    font-size: 0.8rem;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 4px 12px rgba(255, 71, 87, 0.2);
+    flex-shrink: 0;
+    user-select: none;
+    outline: none;
+}
+
+.action-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 6px 20px rgba(255, 71, 87, 0.4);
+    filter: brightness(1.1);
+}
+
+.action-btn:active {
+    transform: translateY(1px);
+    box-shadow: 0 2px 8px rgba(255, 71, 87, 0.2);
+}

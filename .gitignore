@@ -1,0 +1,14 @@
+node_modules/
+*.vsix
+*.log
+.DS_Store
+
+# Local test fixtures for the sample-based harnesses. Never committed: holds
+# third-party library binaries and project sources that must not be
+# redistributed. Keep it locally; the harnesses skip if it is absent.
+sample/
+
+# Stale LSP index cache — may embed local source paths. Never commit.
+.trust-lsp/
+
+library-signatures.xml

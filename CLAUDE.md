@@ -1,0 +1,85 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Handoff file — read this first, keep it current
+
+**At the start of every session, read [HANDOFF.md](HANDOFF.md) before doing anything else.** It carries what this file cannot: the *current* state of the work — what changed recently and whether it is committed, which tests pass or fail and why, known bugs with their root causes, and the pending task pipeline with the decisions already made. CLAUDE.md describes the project as it is designed; HANDOFF.md describes where the work actually stands right now.
+
+**Keep it updated as you work.** Update HANDOFF.md whenever you:
+- finish a task, or leave one deliberately unfinished (say what remains and why);
+- discover a bug, root-cause it, or decide not to fix it (record the finding — a diagnosis you throw away gets re-derived at cost);
+- change test status (a new harness, a newly failing or newly passing gate);
+- make or receive a decision that constrains future work (record the decision *and its rationale*);
+- commit, so "uncommitted work" stays accurate.
+
+Rules for the file: it reflects the present, not a changelog — replace stale entries instead of appending to them, and delete items once they are done and committed. Never let it contradict the repo; if they disagree, the repo wins and HANDOFF.md is what needs fixing. Prefer specifics (`file:line`, real counts, real error text) over summaries.
+
+**Keep HANDOFF.md under 100 lines.** It is read at the start of every session, so length is a real cost. Treat going over as a signal to prune, not to append: delete what is finished, and fold detail into the git history or a linked file. But the limit serves the reader, not the other way round — if information is genuinely necessary to act and cannot be shortened without losing it, keep it and run over. Never drop or garble a real finding just to hit the number.
+
+## What this is
+
+A VS Code extension ("TwinCAT PLC Toolkit", id `twincat-plc-toolkit`) that opens Beckhoff TwinCAT PLC source files (`.TcPOU`, `.TcGVL`, `.TcDUT`, `.TcIO`) in a custom two-pane Monaco editor, hiding the XML wrapper around the Structured Text (IEC 61131-3) code, backed by a fully offline built-in language server, plus explorers for the project's objects and its libraries.
+
+It was renamed from "TwinCAT XML Viewer" once it grew past viewing. Internal identifiers still use the `twincat.*` prefix and the custom editor is still `twincat.xmlViewer` — those are deliberate, not leftovers: renaming them would break saved keybindings and editor associations for no user-visible gain.
+
+Plain CommonJS JavaScript throughout — **no build/transpile step, no linter**. `extension.js` is the entry point and is loaded directly.
+
+## Commands
+
+```bash
+npm install          # install dependencies
+npm test             # run all test harnesses (standalone Node, no VS Code needed)
+
+# Run a single test harness directly:
+node scratch/test_lsp_features.js       # core LSP: completions, definition, references, diagnostics
+node scratch/test_sample_diagnostics.js # zero-false-positive gate on the real sample/ project
+node scratch/test_live_path.js          # live editor pipeline: ST assembly, cursor mapping, per-pane diagnostics
+node scratch/test_typecheck.js          # semantic type checks (member access, call args, assignments)
+node scratch/test_references_tree.js    # references-view grouping
+
+# Package a VSIX:
+npx @vscode/vsce package --allow-missing-repository --skip-license
+```
+
+Manual testing: open this repo in VS Code, press **F5** ("Run Extension") to launch an Extension Development Host, open a TwinCAT project folder there. After code changes, **Ctrl+R** in the dev-host window to reload.
+
+Sample-based harnesses need a TwinCAT project under `sample/` (git-ignored); they skip cleanly if it is absent. `scratch/` also holds extra harnesses not wired into `npm test` (`test_lsp_parser.js`, `test_lsp_types_sync.js`, `test_method_diagnostics.js`).
+
+## Architecture
+
+Three processes cooperate; the extension host is the hub — **the webview never talks to the LSP directly**:
+
+1. **Webview** (`media/editor.js` + `media/editor.css`) — two Monaco panes (Declaration / Implementation) per component, with Monaco vendored under `media/monaco-editor/` (offline). Registers Monaco providers that forward requests to the extension via `postMessage`.
+2. **Extension host** (`extension.js`, `src/customEditorProvider.js`) — activation, commands, file watchers, tree views, and the LSP bridge.
+3. **LSP server** (`src/lsp/server.js`) — spawned over Node IPC via `vscode-languageclient`. Besides standard LSP, it answers custom JSON-RPC requests used by the bridge: `custom/completions`, `custom/definition`, `custom/references`, `custom/diagnostics`, `custom/updateDocument`, `custom/updateTypesMap`, `custom/reindex`, `custom/setDiagnosticsConfig`, `custom/indexXmlDocument`.
+
+### The live language-feature path (the core trick)
+
+Language features on a pane can't be answered from that pane alone — methods/properties/actions need the whole POU in scope. So for each request, `customEditorProvider.js`:
+
+1. Parses the backing XML (`src/xmlParser.js`) and applies the webview's **unsaved edits as an overlay** on the active component (`assembleSt`).
+2. Converts the whole file into **one Structured Text compilation unit** via `src/stConverter.js` in `raw` mode, which also returns a `lineMap` (component → decl/impl line ranges in the unit).
+3. Translates pane-local Monaco positions to absolute unit positions (`localToAbsolute`), queries the LSP, and maps results back to the right component/pane (`absoluteToLocal`).
+
+Changing `stConverter.js` output or `xmlParser.js` component extraction can silently break this mapping — `scratch/test_live_path.js` guards it.
+
+### Other key pieces
+
+- **`src/xmlParser.js`** — regex-based (not a DOM parser) TwinCAT XML parse and structural edits, deliberately preserving TwinCAT's exact formatting/metadata (`LineIds`, UUIDs, folders). Edits are written back into the original `<![CDATA[...]]>` via `replaceComponentCdata`.
+- **`src/typesCache.js`** — workspace-wide type index, broadcast to every open webview (`updateTypesMap` message) and pushed to the LSP (`custom/updateTypesMap`) whenever files change.
+- **`src/lsp/`** — `parser.js` (ST lexer/symbol parser), `features.js` (completions/definition/references/diagnostics), `types.js` (type model, resolver, assignability), `exprParser.js` (expression type inference), `builtins.js` (standard IEC/TwinCAT types and functions), `xmlIndexer.js` (indexes TwinCAT XML into symbol nodes with real ranges), `libraries.js` (library *namespaces* from the `.plcproj`), `libsymbols.js` (library *symbols*: a dependency-free ZIP reader over the `.compiled-library` archives, plus the project's `.tmc` type system).
+- **`src/treeDataProvider.js`** — "TwinCAT Objects" explorer; create/delete of files, folders, methods, properties, actions. `src/plcProjHelper.js` keeps the nearest `.plcproj` in sync on create/delete.
+- **`src/referencesProvider.js` / `referencesTree.js`** — "TwinCAT References" panel for cross-file/cross-component usages (the inline peek widget is limited to the active component's panes by the split-pane design).
+
+## Design constraints
+
+- **Diagnostics are conservative by design**: anything that cannot be fully resolved must never be flagged. `sample/` is a real, *correct* TwinCAT project — **it is the ground truth, so every diagnostic on it is a bug.** It currently sits at **zero**, and `scratch/test_sample_diagnostics.js` / `test_typecheck.js` ratchet that: they fail if the count rises. New checks must hold the line at zero.
+- **External symbols are indexed, not guessed** (`src/lsp/libsymbols.js`). Three sources, and all three are needed — dropping any one resurrects false positives:
+  - `.compiled-library` / `.compiled-library-ge33` / `.library` — ZIP containers; symbol names live in a `__shared_data_storage_string_table__` entry. **`.compiled-library-v3` is an opaque non-ZIP format** (magic `10 a6 d5 a7`) and is deliberately skipped.
+  - the project's **`.tmc`** (TwinCAT type system export, plain XML). Not optional: some types the project resolves appear in *no* readable archive.
+  - the `.plcproj` namespaces (`src/lsp/libraries.js`).
+  Symbols are registered into the workspace index **on demand, per document** — never all at once. Registering all ~32k up front took the diagnostics pass from 1.5 s to 78 s, because `Object.keys()` on the index is called per identifier.
+  Note `_Libraries/` and the `.tmc` are **git-ignored**, so a fresh clone has neither and will measure ~171 diagnostics rather than 0. The harnesses detect this and assert against the right baseline — don't "fix" a failing gate by lowering the number.
+- The webview must stay **fully offline** — no CDN loads; Monaco is vendored in `media/monaco-editor/`.
+- File writes must preserve TwinCAT's XML structure byte-for-byte outside the edited CDATA blocks, or TwinCAT/version control will see spurious diffs.

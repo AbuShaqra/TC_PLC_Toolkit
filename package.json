@@ -1,0 +1,373 @@
+{
+  "name": "twincat-plc-toolkit",
+  "displayName": "TwinCAT PLC Toolkit",
+  "description": "Edit, navigate and analyse Beckhoff TwinCAT PLC projects: two-pane Structured Text editor, offline IntelliSense and diagnostics, object and library explorers. Unofficial; not affiliated with Beckhoff.",
+  "version": "0.1.0",
+  "publisher": "a-abushaqra",
+  "license": "MIT",
+  "icon": "media/icon.png",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/AbuShaqra/TC_PLC_Toolkit.git"
+  },
+  "engines": {
+    "vscode": "^1.60.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "main": "./extension.js",
+  "scripts": {
+    "test": "node scratch/test_lsp_features.js && node scratch/test_inheritance.js && node scratch/test_enum_ranges.js && node scratch/test_uri_refs.js && node scratch/test_string_conversions.js && node scratch/test_libraries.js && node scratch/test_fb_init.js && node scratch/test_fb_init_def.js && node scratch/test_fb_init_completion.js && node scratch/test_parser_constructs.js && node scratch/test_lexer_literals.js && node scratch/test_region_pragmas.js && node scratch/test_object_kinds.js && node scratch/test_completion_context.js && node scratch/test_libsymbols.js && node scratch/test_library_completion.js && node scratch/test_library_types.js && node scratch/test_library_catalog.js && node scratch/test_library_tree.js && node scratch/test_library_methods.js && node scratch/test_library_signatures.js && node scratch/test_library_signatures_merge.js && node scratch/test_sample_diagnostics.js && node scratch/test_live_path.js && node scratch/test_typecheck.js && node scratch/test_references_tree.js && node scratch/test_references_symbols.js && node scratch/test_references_scope.js && node scratch/test_references_cache.js"
+  },
+  "activationEvents": [
+    "onLanguage:twincat-st",
+    "onView:twincatExplorer",
+    "onView:twincatLibraries",
+    "onCustomEditor:twincat.xmlViewer"
+  ],
+  "contributes": {
+    "customEditors": [
+      {
+        "viewType": "twincat.xmlViewer",
+        "displayName": "TwinCAT PLC Toolkit",
+        "selector": [
+          {
+            "filenamePattern": "*.TcPOU"
+          },
+          {
+            "filenamePattern": "*.TcGVL"
+          },
+          {
+            "filenamePattern": "*.TcDUT"
+          },
+          {
+            "filenamePattern": "*.TcIO"
+          }
+        ],
+        "priority": "default"
+      }
+    ],
+    "viewsContainers": {
+      "panel": [
+        {
+          "id": "twincat-references-panel",
+          "title": "TwinCAT References",
+          "icon": "$(references)"
+        }
+      ]
+    },
+    "views": {
+      "explorer": [
+        {
+          "id": "twincatLibraries",
+          "name": "TwinCAT Libraries"
+        },
+        {
+          "id": "twincatExplorer",
+          "name": "TwinCAT Objects"
+        }
+      ],
+      "twincat-references-panel": [
+        {
+          "id": "twincatReferences",
+          "name": "TwinCAT References"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "twincatReferences",
+        "contents": "No references yet. Right-click a symbol in the editor and choose \"Go to References\"."
+      },
+      {
+        "view": "twincatLibraries",
+        "contents": "No TwinCAT libraries found. Open a folder containing a .plcproj file."
+      }
+    ],
+    "commands": [
+      {
+        "command": "twincat.openComponent",
+        "title": "Open Component"
+      },
+      {
+        "command": "twincat.createMethod",
+        "title": "Create Method",
+        "category": "TwinCAT"
+      },
+      {
+        "command": "twincat.createProperty",
+        "title": "Create Property",
+        "category": "TwinCAT"
+      },
+      {
+        "command": "twincat.createVirtualFolder",
+        "title": "Create Virtual Folder",
+        "category": "TwinCAT"
+      },
+      {
+        "command": "twincat.deleteComponent",
+        "title": "Delete Component",
+        "category": "TwinCAT"
+      },
+      {
+        "command": "twincat.deleteVirtualFolder",
+        "title": "Delete Virtual Folder",
+        "category": "TwinCAT"
+      },
+      {
+        "command": "twincat.createAction",
+        "title": "Create Action",
+        "category": "TwinCAT"
+      },
+      {
+        "command": "twincat.createFileFB",
+        "title": "Create Function Block (FB)",
+        "category": "TwinCAT"
+      },
+      {
+        "command": "twincat.createFileProgram",
+        "title": "Create Program (PRG)",
+        "category": "TwinCAT"
+      },
+      {
+        "command": "twincat.createFileFunction",
+        "title": "Create Function (FUN)",
+        "category": "TwinCAT"
+      },
+      {
+        "command": "twincat.createFileInterface",
+        "title": "Create Interface (ITF)",
+        "category": "TwinCAT"
+      },
+      {
+        "command": "twincat.createFileGVL",
+        "title": "Create Global Variable List (GVL)",
+        "category": "TwinCAT"
+      },
+      {
+        "command": "twincat.createPhysicalFolder",
+        "title": "Create Folder",
+        "category": "TwinCAT"
+      },
+      {
+        "command": "twincat.deletePhysicalItem",
+        "title": "Delete",
+        "category": "TwinCAT"
+      },
+      {
+        "command": "twincat.clearReferences",
+        "title": "Clear References",
+        "category": "TwinCAT",
+        "icon": "$(clear-all)"
+      },
+      {
+        "command": "twincat.insertAtCursor",
+        "title": "Insert at Cursor",
+        "category": "TwinCAT"
+      },
+      {
+        "command": "twincat.insertDefinitionAtCursor",
+        "title": "Insert Definition at Cursor",
+        "category": "TwinCAT"
+      },
+      {
+        "command": "twincat.copyLibraryNamespace",
+        "title": "Copy Namespace",
+        "category": "TwinCAT"
+      },
+      {
+        "command": "twincat.copyQualifiedName",
+        "title": "Copy Qualified Name",
+        "category": "TwinCAT"
+      },
+      {
+        "command": "twincat.refreshLibraries",
+        "title": "Refresh",
+        "category": "TwinCAT",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "twincat.updateLibraryDefinitions",
+        "title": "Update Library Definitions (requires TwinCAT)",
+        "category": "TwinCAT",
+        "icon": "$(cloud-download)"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "twincat.clearReferences",
+          "when": "view == twincatReferences",
+          "group": "navigation"
+        },
+        {
+          "command": "twincat.updateLibraryDefinitions",
+          "when": "view == twincatLibraries",
+          "group": "navigation@1"
+        },
+        {
+          "command": "twincat.refreshLibraries",
+          "when": "view == twincatLibraries",
+          "group": "navigation@2"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "twincat.insertAtCursor",
+          "when": "view == twincatLibraries && (viewItem == 'twincatLibrary' || viewItem == 'twincatLibraryType' || viewItem == 'twincatLibraryMethod' || viewItem == 'twincatLibraryMember')",
+          "group": "twincat_1_insert@1"
+        },
+        {
+          "command": "twincat.insertDefinitionAtCursor",
+          "when": "view == twincatLibraries && (viewItem == 'twincatLibraryType' || viewItem == 'twincatLibraryMethod')",
+          "group": "twincat_1_insert@2"
+        },
+        {
+          "command": "twincat.copyLibraryNamespace",
+          "when": "view == twincatLibraries && viewItem == 'twincatLibrary'",
+          "group": "twincat_2_copy@1"
+        },
+        {
+          "command": "twincat.copyQualifiedName",
+          "when": "view == twincatLibraries && viewItem == 'twincatLibraryType'",
+          "group": "twincat_2_copy@2"
+        },
+        {
+          "command": "twincat.createMethod",
+          "when": "view == twincatExplorer && (viewItem == 'pouFile' || viewItem == 'pouFileProgram' || viewItem == 'itfFile' || viewItem == 'pouVirtualFolder' || viewItem == 'pouVirtualFolderProgram' || viewItem == 'pouVirtualFolderInterface')",
+          "group": "twincat@1"
+        },
+        {
+          "command": "twincat.createProperty",
+          "when": "view == twincatExplorer && (viewItem == 'pouFile' || viewItem == 'pouFileProgram' || viewItem == 'itfFile' || viewItem == 'pouVirtualFolder' || viewItem == 'pouVirtualFolderProgram' || viewItem == 'pouVirtualFolderInterface')",
+          "group": "twincat@2"
+        },
+        {
+          "command": "twincat.createAction",
+          "when": "view == twincatExplorer && (viewItem == 'pouFile' || viewItem == 'pouFileProgram' || viewItem == 'pouVirtualFolder' || viewItem == 'pouVirtualFolderProgram')",
+          "group": "twincat@2.5"
+        },
+        {
+          "command": "twincat.createVirtualFolder",
+          "when": "view == twincatExplorer && (viewItem == 'pouFile' || viewItem == 'pouFileProgram' || viewItem == 'itfFile' || viewItem == 'pouVirtualFolder' || viewItem == 'pouVirtualFolderProgram' || viewItem == 'pouVirtualFolderInterface')",
+          "group": "twincat@3"
+        },
+        {
+          "command": "twincat.deleteComponent",
+          "when": "view == twincatExplorer && (viewItem == 'component' || viewItem == 'propertyNode')",
+          "group": "twincat@4"
+        },
+        {
+          "command": "twincat.deleteVirtualFolder",
+          "when": "view == twincatExplorer && (viewItem == 'pouVirtualFolder' || viewItem == 'pouVirtualFolderProgram' || viewItem == 'pouVirtualFolderInterface')",
+          "group": "twincat@5"
+        },
+        {
+          "command": "twincat.createPhysicalFolder",
+          "when": "view == twincatExplorer && viewItem == 'directory'",
+          "group": "twincat_new@0"
+        },
+        {
+          "command": "twincat.createFileFB",
+          "when": "view == twincatExplorer && viewItem == 'directory'",
+          "group": "twincat_new@1"
+        },
+        {
+          "command": "twincat.createFileProgram",
+          "when": "view == twincatExplorer && viewItem == 'directory'",
+          "group": "twincat_new@2"
+        },
+        {
+          "command": "twincat.createFileFunction",
+          "when": "view == twincatExplorer && viewItem == 'directory'",
+          "group": "twincat_new@3"
+        },
+        {
+          "command": "twincat.createFileInterface",
+          "when": "view == twincatExplorer && viewItem == 'directory'",
+          "group": "twincat_new@4"
+        },
+        {
+          "command": "twincat.createFileGVL",
+          "when": "view == twincatExplorer && viewItem == 'directory'",
+          "group": "twincat_new@5"
+        },
+        {
+          "command": "twincat.deletePhysicalItem",
+          "when": "view == twincatExplorer && (viewItem == 'directory' || viewItem == 'pouFile' || viewItem == 'pouFileProgram' || viewItem == 'pouFileFunction' || viewItem == 'itfFile' || viewItem == 'gvlFile' || viewItem == 'dutFile' || viewItem == 'stFile')",
+          "group": "twincat@6"
+        }
+      ]
+    },
+    "languages": [
+      {
+        "id": "twincat-st",
+        "aliases": [
+          "TwinCAT ST",
+          "Structured Text",
+          "st"
+        ],
+        "extensions": [
+          ".st"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "twincat-st",
+        "scopeName": "source.twincat-st",
+        "path": "./syntaxes/twincat-st.tmLanguage.json"
+      }
+    ],
+    "configuration": {
+      "title": "TwinCAT PLC Toolkit",
+      "properties": {
+        "twincat.diagnostics.memberAccess": {
+          "type": "boolean",
+          "default": true,
+          "description": "Flag access to members that do not exist on a resolved type (e.g. fb.NoSuchField)."
+        },
+        "twincat.diagnostics.callArguments": {
+          "type": "boolean",
+          "default": true,
+          "description": "Flag named call arguments that are not parameters of the resolved function/FB/method."
+        },
+        "twincat.diagnostics.declarationTypes": {
+          "type": "boolean",
+          "default": false,
+          "description": "Flag declarations whose type is unknown. Off by default: types from library archives that cannot be read (the opaque .compiled-library-v3 format) are invisible to the indexer, so this may report false positives in projects that use them."
+        },
+        "twincat.diagnostics.typeCompatibility": {
+          "type": "boolean",
+          "default": true,
+          "description": "Flag assignments whose value type is clearly incompatible with the target (e.g. assigning a struct to an INT)."
+        },
+        "twincat.libraryDefinitions.shell": {
+          "type": "string",
+          "enum": [
+            "ask",
+            "x64",
+            "x86"
+          ],
+          "enumDescriptions": [
+            "Ask every time which XAE Shell to use.",
+            "Always use the 64-bit TcXaeShell (TcXaeShell.DTE.17.0).",
+            "Always use the 32-bit TcXaeShell (TcXaeShell.DTE.15.0)."
+          ],
+          "default": "ask",
+          "markdownDescription": "Which TwinCAT XAE Shell **Update Library Definitions** should drive. A library's signatures can differ between the 32-bit and 64-bit shell — visualisation libraries especially — so this defaults to asking. Set it if you always build with the same one. If the chosen shell is not installed, you are asked anyway rather than given the wrong signatures."
+        }
+      }
+    }
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.60.0"
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.1",
+    "vscode-languageserver": "^9.0.1",
+    "vscode-languageserver-textdocument": "^1.0.12"
+  }
+}
