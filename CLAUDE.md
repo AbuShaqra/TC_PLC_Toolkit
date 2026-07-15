@@ -17,6 +17,15 @@ Rules for the file: it reflects the present, not a changelog — replace stale e
 
 **Keep HANDOFF.md under 100 lines.** It is read at the start of every session, so length is a real cost. Treat going over as a signal to prune, not to append: delete what is finished, and fold detail into the git history or a linked file. But the limit serves the reader, not the other way round — if information is genuinely necessary to act and cannot be shortened without losing it, keep it and run over. Never drop or garble a real finding just to hit the number.
 
+## Keep DEVELOPMENT.md current — always
+
+[DEVELOPMENT.md](DEVELOPMENT.md) is the durable developer guide (build, run-from-source, tests, architecture). Unlike HANDOFF.md (which tracks the *present state* of the work), DEVELOPMENT.md describes how the project is *built and laid out* — so **whenever a change makes it stale, update it in the same change.** In particular, update DEVELOPMENT.md when you:
+- add/remove/rename a source module or move responsibility between them, or otherwise change the **architecture** (the file map, the process split, or the live-language-feature path);
+- change the **test layout or commands** (a new/renamed/removed harness, a change to how `npm test` / `test/run.js` runs, the type-check gate, or CI);
+- change **build or packaging** (the no-build-step invariant, the VSIX command, the offline/Monaco-vendoring constraint).
+
+It ships to no user (it is `.vscodeignore`d), so it has no length budget like HANDOFF — but it must never contradict the repo. If they disagree, the repo wins and DEVELOPMENT.md is what needs fixing.
+
 ## What this is
 
 A VS Code extension ("TwinCAT PLC Toolkit", id `twincat-plc-toolkit`) that opens Beckhoff TwinCAT PLC source files (`.TcPOU`, `.TcGVL`, `.TcDUT`, `.TcIO`) in a custom two-pane Monaco editor, hiding the XML wrapper around the Structured Text (IEC 61131-3) code, backed by a fully offline built-in language server, plus explorers for the project's objects and its libraries.

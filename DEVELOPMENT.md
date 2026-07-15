@@ -31,27 +31,36 @@ On Windows, `scripts\install-vsix.bat` picks the newest `.vsix` in the folder an
 The language server has a standalone test suite; no VS Code instance is required.
 
 ```bash
-npm test
+npm test                     # run the whole suite via test/run.js
+node test/run.js references   # run only suites whose name matches a substring
+node test/test_live_path.js   # run a single harness directly
+npm run typecheck             # type-check gate: tsc --noEmit (no emit — runtime stays plain JS)
 ```
 
-This chains every harness listed in the `test` script of `package.json`. The main ones:
+`npm test` runs `node test/run.js`, which runs each harness in `test/` in its own process and reports
+per-suite without aborting on the first failure. The main ones:
 
 | Harness | What it checks |
 |---------|----------------|
-| `scratch/test_lsp_features.js` | Core LSP: completions, go-to-definition (incl. call parameters), references, diagnostics, on synthetic `.st` units. |
-| `scratch/test_sample_diagnostics.js` | **Diagnostics ratchet** on the real `sample/` TwinCAT project. The sample is valid code, so every diagnostic on it is a false positive; the harness measures them the way the LSP server does, prints a per-category breakdown, and **fails if the total rises above the `BASELINE_DIAGNOSTICS` constant** at the top of the file. An improvement passes and prints the value the baseline can be lowered to. The target — currently met — is zero. |
-| `scratch/test_live_path.js` | The live editor pipeline: full-file ST assembly, cursor mapping, per-pane diagnostics, member completion through references, method return types, token-aware and cross-file references. |
-| `scratch/test_typecheck.js` | Semantic type checking: member access, call arguments, declaration types, assignment compatibility (strict assertions against a self-contained fixture) — plus the same `sample/` diagnostics ratchet. |
-| `scratch/test_references_tree.js` | References-view grouping (file → component → occurrence). |
-| `scratch/test_library_catalog.js` | The data path behind the TwinCAT Libraries view: catalog built from the `.plcproj`, namespaces, `.tmc` types and their members. |
+| `test/test_lsp_features.js` | Core LSP: completions, go-to-definition (incl. call parameters), references, diagnostics, on synthetic `.st` units. |
+| `test/test_sample_diagnostics.js` | **Diagnostics ratchet** on the real `sample/` TwinCAT project. The sample is valid code, so every diagnostic on it is a false positive; the harness measures them the way the LSP server does, prints a per-category breakdown, and **fails if the total rises above the baseline** in `test/_baseline.js`. The target — currently met — is zero. |
+| `test/test_live_path.js` | The live editor pipeline: full-file ST assembly, cursor mapping, per-pane diagnostics, member completion through references, method return types, token-aware and cross-file references. |
+| `test/test_typecheck.js` | Semantic type checking: member access, call arguments, declaration types, assignment compatibility — plus the same `sample/` diagnostics ratchet. |
+| `test/test_references_scope.js` | Find References scope + coordinate spaces: private method `VAR` vs. parameters, named arguments belonging to the callee, and FB_init declaration-site arguments (`inst : FB_T(p := v)`). |
+| `test/test_references_tree.js` | References-view grouping (file → component → occurrence). |
+| `test/test_library_catalog.js` | The data path behind the TwinCAT Libraries view: catalog built from the `.plcproj`, namespaces, `.tmc` types and their members. |
+
+`test/run.js <substring>` filters to matching suites. `test/_baseline.js` holds the machine-dependent
+diagnostic baselines the sample gates assert against.
 
 The sample-based harnesses need a TwinCAT project under `sample/` (git-ignored); if it is absent they
-skip cleanly, so `npm test` still passes. `test_live_path.js` additionally skips the individual tests
-that address specific sample objects when the sample at hand does not contain them.
+skip cleanly, so `npm test` still passes on a fresh clone / CI. `test_live_path.js` additionally skips
+the individual tests that address specific sample objects when the sample at hand does not contain them.
 
-Each harness also runs on its own, e.g. `node scratch/test_live_path.js`. A few more live in
-`scratch/` outside `npm test`: `test_lsp_parser.js`, `test_lsp_types_sync.js`,
-`test_method_diagnostics.js`.
+A few experimental probes live in `scratch/` outside `npm test`: `test_lsp_parser.js`,
+`test_lsp_types_sync.js`, `test_method_diagnostics.js` (plus `make_icon.js`, `probe_lib_format.js`).
+
+CI (`.github/workflows/ci.yml`) runs `npm run typecheck` then `npm test` on every push/PR to `main`.
 
 **`sample/` is ground truth.** It is a real, *correct* TwinCAT project, so every diagnostic reported
 on it is a bug. Never fix a red gate by raising the baseline.
@@ -59,26 +68,34 @@ on it is a bug. Never fix a red gate by raising the baseline.
 ## Architecture
 
 ```
-extension.js            Activation, commands, file watchers, LSP client bootstrap
+extension.js            Thin activation hub: wires providers/views/watchers/LSP client, delegates commands
 src/
+  commands/             Command registration, split out of extension.js — each exports register*(context, deps)
+    objectCommands      "TwinCAT Objects" create/delete (methods, properties, actions, files, folders)
+    libraryCommands     "TwinCAT Libraries" commands (refresh, insert, copy, Update Library Definitions)
+    lspBridgeCommands   openComponent navigation + the twincat.lsp.query* Monaco↔LSP bridges
+  xaeShell              XAE shell discovery + the library-signature generator (the one non-offline path)
   customEditorProvider  Webview host: assembles full-file ST, bridges Monaco ↔ LSP, writes CDATA back
   treeDataProvider      "TwinCAT Objects" explorer tree
   libraryTreeProvider   "TwinCAT Libraries" explorer tree (library → types → members)
   referencesProvider    "TwinCAT References" results view (+ referencesTree grouping)
+  objectKinds           Kind → codicon → tooltip for the Objects tree (vscode-free, so it is testable)
   xmlParser             Regex-based TwinCAT XML parse / structural edits (preserves formatting)
   stConverter           XML → clean Structured Text + line map (also a raw mode for the live path)
   typesCache            Workspace type index for the webview
   plcProjHelper         Keeps the .plcproj file in sync on create/delete
   lsp/
-    server.js           LSP server (Node IPC) + custom JSON-RPC bridge requests
+    server.js           LSP server (Node IPC) + custom JSON-RPC bridge requests; owns the workspace index
     parser.js           Structured Text lexer + symbol parser
-    features.js         Completions, definition, references, diagnostics
+    symbolNode.js       Single factory for a symbol node's core shape (parser + xmlIndexer build through it)
+    features.js         Facade re-exporting features/{core,completions,definition,references,highlights,diagnostics}
     builtins.js         Standard IEC/TwinCAT types, keywords, functions/FBs
     types.js            Type model, resolver, member lookup, assignability
     exprParser.js       Expression type inference (for assignment checks)
     xmlIndexer.js       Indexes TwinCAT XML objects into real-range symbol nodes
     libraries.js        Library namespaces, read from the .plcproj
     libsymbols.js       Library symbols: ZIP reader over the library archives + the project's .tmc
+    librarySignatures.js  Parses library-signatures.xml (function sigs, FB I/O, global constants)
 media/
   editor.js / editor.css  Monaco webview front-end (two panes, providers, sync)
 ```
@@ -96,7 +113,7 @@ unit (applying the webview's unsaved edits as an overlay first), maps the pane-l
 unit, queries the LSP, and maps the results back to the right component and pane via a line map.
 
 Changing `stConverter.js` output or `xmlParser.js` component extraction can silently break that
-mapping; `scratch/test_live_path.js` guards it.
+mapping; `test/test_live_path.js` guards it.
 
 ### Writes
 

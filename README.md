@@ -110,8 +110,10 @@ unsaved work. It briefly opens a TwinCAT window while it runs (about a minute).
   [Settings](#settings).
 - **Go to Definition** works across components and files, jumping into the right file and pane and
   highlighting the symbol — including named parameters at call sites and FB-instance initializers.
-- **Find References** shows in-view occurrences in the peek widget, plus a dedicated **TwinCAT
-  References** panel grouped by file and component for cross-file usages. Matching is
+- **Find References** always populates the dedicated **TwinCAT References** panel with the complete
+  result set — every occurrence across files and components, grouped by file and component — and also
+  shows the in-view occurrences in Monaco's inline peek. Named arguments resolve to the right owner,
+  including `FB_init` inputs written at an FB's declaration site (`inst : FB_T(p := v)`). Matching is
   case-insensitive, as ST itself is.
 
 ### Generate ST
