@@ -173,9 +173,16 @@ function specificPouType(decl) {
  * @returns {Object} { extends: string|null, implements: string[] }
  */
 function parseInheritance(decl) {
-    const result = { extends: null, implements: [] };
-    const ext = decl.match(/\bEXTENDS\s+([a-zA-Z_][a-zA-Z0-9_.]*)/i);
-    if (ext) result.extends = ext[1];
+    const result = { extends: null, extendsAll: [], implements: [] };
+    // EXTENDS may name several parents — an interface can extend multiple interfaces
+    // (`EXTENDS I_A, I_B`). Match the comma-separated identifier list, which naturally stops before
+    // IMPLEMENTS or a VAR block (no comma precedes them). Capturing only the first parent made a
+    // second-parent member read as undeclared. `extends` stays the first for single-parent callers.
+    const ext = decl.match(/\bEXTENDS\s+([a-zA-Z_][a-zA-Z0-9_.]*(?:\s*,\s*[a-zA-Z_][a-zA-Z0-9_.]*)*)/i);
+    if (ext) {
+        result.extendsAll = ext[1].split(',').map(s => s.trim()).filter(Boolean);
+        if (result.extendsAll.length) result.extends = result.extendsAll[0];
+    }
     const impl = decl.match(/\bIMPLEMENTS\s+([a-zA-Z_][a-zA-Z0-9_.,\s]*)/i);
     if (impl) {
         result.implements = impl[1].split(',').map(s => s.trim()).filter(Boolean);
@@ -210,6 +217,7 @@ function buildNodeFromXml(xmlText, fileUri) {
         range: { startLine: 1, startCol: 1, endLine: 1, endCol: 1 },
         nameRange: locate(rootDecl, parsed.rootName),
         extends: null,
+        extendsAll: [],
         implements: [],
         variables: [],
         methods: [],
@@ -219,6 +227,7 @@ function buildNodeFromXml(xmlText, fileUri) {
 
     const inh = parseInheritance(rootDecl);
     node.extends = inh.extends;
+    node.extendsAll = inh.extendsAll;
     node.implements = inh.implements;
 
     // Root variables: VAR blocks (POU/GVL), struct/union fields (DUT struct or union), or enum

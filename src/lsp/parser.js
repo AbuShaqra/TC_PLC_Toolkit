@@ -747,6 +747,7 @@ function parseAndIndexDocument(code, fileUri) {
                         endCol: nameTok.col + pouName.length
                     },
                     extends: null,
+                    extendsAll: [],
                     implements: [],
                     returnType: null,
                     variables: [],
@@ -794,12 +795,31 @@ function parseAndIndexDocument(code, fileUri) {
                     const nextTok = tokens[idx];
                     if (nextTok.type === TokenType.Keyword && nextTok.value.toUpperCase() === 'EXTENDS') {
                         idx++;
-                        while (idx < tokens.length && (tokens[idx].type === TokenType.Whitespace || tokens[idx].type === TokenType.Comment)) {
-                            idx++;
+                        // An INTERFACE may extend SEVERAL interfaces (`EXTENDS I_A, I_B`); an FB/struct
+                        // extends one. Collect the whole comma-separated list into extendsAll and keep
+                        // `extends` as the first for single-parent call sites. Dropping the extras used
+                        // to make second-parent members read as undeclared.
+                        while (idx < tokens.length) {
+                            while (idx < tokens.length && (tokens[idx].type === TokenType.Whitespace || tokens[idx].type === TokenType.Comment)) {
+                                idx++;
+                            }
+                            if (idx < tokens.length && tokens[idx].type === TokenType.Identifier) {
+                                pouNode.extendsAll.push(tokens[idx].value);
+                                idx++;
+                            } else {
+                                break;
+                            }
+                            while (idx < tokens.length && (tokens[idx].type === TokenType.Whitespace || tokens[idx].type === TokenType.Comment)) {
+                                idx++;
+                            }
+                            if (idx < tokens.length && tokens[idx].type === TokenType.Punctuation && tokens[idx].value === ',') {
+                                idx++;
+                            } else {
+                                break;
+                            }
                         }
-                        if (idx < tokens.length && tokens[idx].type === TokenType.Identifier) {
-                            pouNode.extends = tokens[idx].value;
-                            idx++;
+                        if (pouNode.extendsAll.length) {
+                            pouNode.extends = pouNode.extendsAll[0];
                         }
                     } else if (nextTok.type === TokenType.Keyword && nextTok.value.toUpperCase() === 'IMPLEMENTS') {
                         idx++;

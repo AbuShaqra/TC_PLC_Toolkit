@@ -124,6 +124,19 @@ digit separators** `1_000_000`, `16#FFFF_FFFF`. Also `&` (AND alias) is now an o
 Still **not** handled by design: **nested block comments** `(* (* *) *)` (a CODESYS project option, default
 off) and top-level enum/alias DUT members in the raw pass (xmlIndexer covers those from XML).
 
+## Multiple interface inheritance (INTERFACE I_C EXTENDS I_A, I_B)
+
+An interface may extend **several** interfaces. Both indexers captured only the FIRST parent
+(`parser.js` EXTENDS loop and `xmlIndexer.parseInheritance` regex), so a member inherited from a
+second parent resolved to nothing — completion/definition missed it and member-access diagnostics
+flagged it as "not a member" (a false positive, since a project interface is not "uncertain"). Fixed:
+nodes now carry **`extendsAll`** (array; `extends` stays the first parent for compatibility), and the
+EXTENDS walkers traverse the whole DAG breadth-first with a visited-set: `parentNames()` +
+`lookupMember` / `findMethodOwnerInChain` / `isRelatedAssignable` in `types.js`, and
+`walkExtendsChain` in `features.js`. Behaviour is identical for the single-parent case (the sample
+holds at 0). Guarded by `scratch/test_interface_multi_extends.js`. FBs/structs remain single-inheritance
+(`collectParams` and the FB nav walkers still single-chain — that's correct).
+
 ## Find References: it was a PARSER bug, and the parser is still the first place to look
 
 The user reported "references of `bDone` in FB_Axis.Initialize lists every `bDone` in the project".

@@ -17,6 +17,7 @@ const {
     resolvePath,
     isAssignable,
     isRelatedAssignable,
+    parentNames,
     findNode,
     findMethodOwnerInChain,
     getCallParams,
@@ -198,29 +199,32 @@ const LIB_KIND_ITEM = {
 };
 
 /**
- * Walks a POU's EXTENDS chain and returns the ordered list of resolved ancestor nodes.
- * The starting POU itself is NOT included. Cycle-safe via a seen-set of node names,
- * exactly like collectParams/isRelatedAssignable in types.js.
+ * Walks a POU's EXTENDS graph and returns the resolved ancestor nodes. The starting POU itself is NOT
+ * included. Handles multiple inheritance — an INTERFACE may extend several interfaces (`EXTENDS I_A,
+ * I_B`) — by traversing every parent breadth-first, and is cycle-safe via a seen-set of node names.
+ * For the common single-parent case this yields exactly the old linear chain.
  * @param {Object} pou Starting POU node.
  * @param {Object} index Workspace symbol index.
- * @returns {{ ancestors: Object[], fullyResolved: boolean }} fullyResolved is false when
- *          an `extends` reference cannot be found in the index (chain is uncertain).
+ * @returns {{ ancestors: Object[], fullyResolved: boolean }} fullyResolved is false when any `extends`
+ *          reference cannot be found in the index (the graph is uncertain).
  */
 function walkExtendsChain(pou, index) {
     const ancestors = [];
     const seen = new Set();
     if (pou && pou.name) seen.add(pou.name.toLowerCase());
-    let extendsName = pou && pou.extends;
-    while (extendsName) {
-        const node = findNode(index, extendsName);
-        if (!node) return { ancestors, fullyResolved: false }; // unknown ancestor — chain uncertain
+    let fullyResolved = true;
+    const queue = [...parentNames(pou)];
+    while (queue.length) {
+        const name = queue.shift();
+        const node = findNode(index, name);
+        if (!node) { fullyResolved = false; continue; } // unknown ancestor — graph uncertain
         const key = node.name.toLowerCase();
-        if (seen.has(key)) break; // cycle — stop walking
+        if (seen.has(key)) continue; // already visited (diamond) or cycle — stop
         seen.add(key);
         ancestors.push(node);
-        extendsName = node.extends;
+        for (const pn of parentNames(node)) queue.push(pn);
     }
-    return { ancestors, fullyResolved: true };
+    return { ancestors, fullyResolved };
 }
 
 /**

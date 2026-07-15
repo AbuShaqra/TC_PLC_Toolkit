@@ -294,16 +294,20 @@ function lookupMember(type, member, index) {
     const a = (node.actions || []).find(x => x.name.toLowerCase() === lower);
     if (a) return { kind: 'unknown', name: '' }; // actions have no value type
 
-    // Walk EXTENDS chain for FB/struct/interface inheritance.
-    if (node.extends) {
-        const parentType = parseTypeString(node.extends, index);
-        if (parentType.kind !== 'unknown') {
-            const inherited = lookupMember(parentType, member, index);
-            if (inherited !== null) return inherited;
-        } else {
-            return undefined; // unknown parent — can't be sure member is absent
-        }
+    // Walk EXTENDS parents for inherited members. An INTERFACE may extend SEVERAL interfaces
+    // (`I_C EXTENDS I_A, I_B`), so every parent must be searched — checking only the first would
+    // resolve the interface yet miss a second-parent member and return `null` (definitely absent),
+    // a false "not a member" diagnostic on correct code.
+    let sawUncertainParent = false;
+    for (const parentName of parentNames(node)) {
+        const parentType = parseTypeString(parentName, index);
+        if (parentType.kind === 'unknown') { sawUncertainParent = true; continue; }
+        const inherited = lookupMember(parentType, member, index);
+        if (inherited === undefined) sawUncertainParent = true;   // deeper chain uncertain
+        else if (inherited !== null) return inherited;            // found it
+        // inherited === null → definitely absent in THIS parent; keep checking the others
     }
+    if (sawUncertainParent) return undefined; // a parent we can't fully see could hold the member
 
     // Absent from a library type means "not in the partial view we have of it" — never "absent".
     //
@@ -436,7 +440,22 @@ function isAssignable(target, source) {
 }
 
 /**
+ * The direct EXTENDS parents of a node. An INTERFACE may extend several (`EXTENDS I_A, I_B`); FBs and
+ * structs extend one. `extendsAll` carries the full list; `extends` is kept as the first parent for
+ * single-parent call sites that predate multiple inheritance.
+ * @param {Object} node
+ * @returns {string[]} Parent type names (possibly empty).
+ */
+function parentNames(node) {
+    if (!node) return [];
+    if (node.extendsAll && node.extendsAll.length) return node.extendsAll;
+    return node.extends ? [node.extends] : [];
+}
+
+/**
  * Resolves whether `source` (fb/struct/interface) is assignable to `target` using EXTENDS/IMPLEMENTS.
+ * Traverses the full inheritance DAG (an interface may extend several; an FB's implemented interfaces
+ * may themselves extend others), so `fb IMPLEMENTS I_C` with `I_C EXTENDS I_A` is assignable to I_A.
  * @param {Type} target
  * @param {Type} source
  * @param {Object} index
@@ -444,13 +463,16 @@ function isAssignable(target, source) {
  */
 function isRelatedAssignable(target, source, index) {
     const targetName = target.name.toLowerCase();
-    let node = findNode(index, source.name);
     const seen = new Set();
-    while (node && !seen.has(node.name)) {
-        seen.add(node.name);
+    const queue = [findNode(index, source.name)];
+    while (queue.length) {
+        const node = queue.shift();
+        if (!node || seen.has(node.name.toLowerCase())) continue;
+        seen.add(node.name.toLowerCase());
         if (node.name.toLowerCase() === targetName) return true;
         if ((node.implements || []).some(i => i.toLowerCase() === targetName)) return true;
-        node = node.extends ? findNode(index, node.extends) : null;
+        for (const pn of parentNames(node)) { const p = findNode(index, pn); if (p) queue.push(p); }
+        for (const impl of (node.implements || [])) { const p = findNode(index, impl); if (p) queue.push(p); }
     }
     return false;
 }
@@ -497,20 +519,21 @@ function collectParams(node, index) {
 function findMethodOwnerInChain(node, name, index) {
     const lower = name.toLowerCase();
     const seen = new Set();
-    let cur = node;
-    while (cur && !seen.has(cur.name)) {
-        seen.add(cur.name);
+    const queue = [node];
+    let sawUnknownAncestor = false;
+    while (queue.length) {
+        const cur = queue.shift();
+        if (!cur || seen.has(cur.name.toLowerCase())) continue;
+        seen.add(cur.name.toLowerCase());
         const m = (cur.methods || []).find(x => x.name.toLowerCase() === lower);
         if (m) return { method: m, owner: cur };
-        if (cur.extends) {
-            const p = findNode(index, cur.extends);
-            if (!p) return undefined; // unknown ancestor
-            cur = p;
-        } else {
-            cur = null;
+        for (const pn of parentNames(cur)) {
+            const p = findNode(index, pn);
+            if (!p) { sawUnknownAncestor = true; continue; } // unknown ancestor — chain uncertain
+            queue.push(p);
         }
     }
-    return null;
+    return sawUnknownAncestor ? undefined : null;
 }
 
 /**
@@ -615,6 +638,7 @@ module.exports = {
     resolvePath,
     isAssignable,
     isRelatedAssignable,
+    parentNames,
     findNode,
     findMethodOwnerInChain,
     getCallParams,
