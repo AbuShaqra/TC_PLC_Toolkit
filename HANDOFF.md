@@ -56,9 +56,17 @@ extension itself (the customer/vendor *content* is gone, but that's a separate q
   `parser.js` and `xmlIndexer.js` build through it (they'd drifted — parser carried `returnType`/`bodyRange`, the XML
   indexer didn't). Source-specific extras (DUT `dutKind`, library `external`/`membersComplete`/`libKind`) layer ON TOP,
   never replace the core. `test/test_symbol_node.js` pins the two indexers to the same shape so they can't drift again.
-- Still **open** (the "as-needed" tier): M2 (inject the workspace index instead of the `parser.js` global — moderate,
-  changes the parser API), M3 (thin `extension.js` — extract command/watcher wiring), L1 (reverse index for cross-file
-  queries at large project scale), L2 (perf-regression test pinning lazy symbol registration).
+- **M2 DONE:** the workspace index is now **injectable**. `parseAndIndexDocument` / `indexStDirectory` /
+  `clearWorkspaceIndex` take an optional `index` (default = the `parser.js` global, kept for the test harnesses).
+  `server.js` owns a private `workspaceIndex` and threads it into every populator and feature call — the parser global
+  is no longer the runtime owner. Also fixed a latent bug: the references transient re-index wrote to the global instead
+  of the active `symbolIndex` (harmless only because they were the same object). **`server.js` is not unit-tested — the
+  change was trace-reviewed; tsc + the 31 suites cover the parser/references halves.**
+- **L2 DONE:** `test/test_libsymbols.js` now carries a named PERF GUARD asserting library-symbol registration scales
+  with the DOCUMENT, not the registry (pins the lazy-registration invariant behind the 78s cliff).
+- Still **open**: M3 (thin `extension.js`). **L1 (reverse index) — recommend DEFER:** it optimises a path that is already
+  fast at this scale (29 ms cold on 152 files) and adds a cache-coherence surface to a feature that was historically
+  fragile there; build it only when a project crosses ~1000 files or reference search exceeds ~200 ms.
 
 ## Diagnostics: how to measure (get this wrong and the number is meaningless)
 

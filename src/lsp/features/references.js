@@ -510,7 +510,9 @@ function provideReferences(code, position, symbolIndex, fileUri) {
         // Definition navigates with — overwriting them for good would fix references and break jumps.
         const restore = snapshotNodesFor(symbolIndex, node.uri);
         try {
-            parseAndIndexDocument(stText, node.uri);
+            // Re-index into the ACTIVE index (symbolIndex), not the parser's default global — otherwise
+            // this transient re-index would land in a different index than the one being searched.
+            parseAndIndexDocument(stText, node.uri, symbolIndex);
             collect(stText, stTokens, node.uri);
         } finally {
             restore();

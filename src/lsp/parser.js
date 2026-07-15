@@ -501,9 +501,9 @@ const workspaceSymbolIndex = {};
 /**
  * Clears the workspace symbol index
  */
-function clearWorkspaceIndex() {
-    for (const key of Object.keys(workspaceSymbolIndex)) {
-        delete workspaceSymbolIndex[key];
+function clearWorkspaceIndex(index = workspaceSymbolIndex) {
+    for (const key of Object.keys(index)) {
+        delete index[key];
     }
 }
 
@@ -692,13 +692,13 @@ function parseVariablesBlock(tokens, startIndex, scopeName) {
  * @param {string} code Pure Structured Text content.
  * @param {string} fileUri File path URI.
  */
-function parseAndIndexDocument(code, fileUri) {
+function parseAndIndexDocument(code, fileUri, index = workspaceSymbolIndex) {
     const tokens = tokenize(code);
     let idx = 0;
 
     let pouNode = null;
     if (fileUri) {
-        pouNode = Object.values(workspaceSymbolIndex).find(node => node.uri === fileUri);
+        pouNode = Object.values(index).find(node => node.uri === fileUri);
     }
     let currentMethod = null;
     let currentProperty = null;
@@ -730,7 +730,7 @@ function parseAndIndexDocument(code, fileUri) {
                 idx++;
 
                 // Create POU node
-                const existingPou = workspaceSymbolIndex[pouName];
+                const existingPou = index[pouName];
                 pouNode = createSymbolNode({
                     name: pouName,
                     type: pouType,
@@ -845,7 +845,7 @@ function parseAndIndexDocument(code, fileUri) {
                     }
                 }
 
-                workspaceSymbolIndex[pouName] = pouNode;
+                index[pouName] = pouNode;
             }
             continue;
         }
@@ -1192,7 +1192,7 @@ function parseAndIndexDocument(code, fileUri) {
  * (ST_Files) is skipped: those are derived from the XML objects and would shadow them in the index.
  * @param {string} dirPath Absolute folder path.
  */
-function indexStDirectory(dirPath) {
+function indexStDirectory(dirPath, index = workspaceSymbolIndex) {
     if (!fs.existsSync(dirPath)) return;
     let entries;
     try {
@@ -1207,12 +1207,12 @@ function indexStDirectory(dirPath) {
             if (entry.name === '.git' || entry.name === 'node_modules' || entry.name === '.vscode' || entry.name === 'ST_Files') {
                 continue;
             }
-            indexStDirectory(fullPath);
+            indexStDirectory(fullPath, index);
         } else if (entry.isFile() && entry.name.toLowerCase().endsWith('.st')) {
             try {
                 const code = fs.readFileSync(fullPath, 'utf8');
                 const fileUri = 'file:///' + fullPath.replace(/\\/g, '/');
-                parseAndIndexDocument(code, fileUri);
+                parseAndIndexDocument(code, fileUri, index);
             } catch (err) {
                 console.error(`Failed to parse and index ${entry.name}:`, err);
             }

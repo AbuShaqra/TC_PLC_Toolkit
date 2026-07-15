@@ -274,6 +274,20 @@ try {
         assert.ok(!index.MEMCPY);
     });
 
+    check('PERF GUARD: the index scales with the DOCUMENT, never the registry (the 78s cliff)', () => {
+        // Registering the whole registry up front once took the diagnostics pass from 1.5s to 78s,
+        // because Object.keys(index) is walked per identifier token. Registration MUST stay lazy:
+        // only the symbols a document actually names may enter the index. If a future change makes it
+        // eager (e.g. registering all symbols at index time), this assertion fails loudly.
+        const index = {};
+        const before = Object.keys(index).length;
+        registerLibrarySymbolNodes(index, 'x := DEFAULT_ADS_TIMEOUT;'); // names 1 of the 5 harvestable
+        const added = Object.keys(index).length - before;
+        assert.strictEqual(added, 1, 'exactly the one referenced symbol should be registered');
+        assert.ok(Object.keys(index).length < HARVESTABLE.length,
+            `index (${Object.keys(index).length}) must stay below registry scale (${HARVESTABLE.length})`);
+    });
+
     check('matches the document case-insensitively but registers the library spelling', () => {
         const index = {};
         registerLibrarySymbolNodes(index, 'x := t_MAXstring;');

@@ -14,9 +14,14 @@ const { TextDocument } = require('vscode-languageserver-textdocument');
 const {
     parseAndIndexDocument,
     indexStDirectory,
-    getWorkspaceSymbolIndex,
     clearWorkspaceIndex
 } = require('./parser');
+
+// The server OWNS the workspace symbol index and threads it explicitly into the parser/indexer and
+// every language-feature call, rather than reaching for the parser.js module global. That global
+// remains only the default for the standalone test harnesses; here the data flow is explicit, and a
+// future multi-root setup could hold one index per workspace folder without touching global state.
+const workspaceIndex = {};
 
 const {
     indexTwinCatDirectory,
@@ -86,8 +91,8 @@ function indexLibraries(fsPath) {
  * @param {string} fileUri Document URI.
  */
 function syncDocument(code, fileUri) {
-    parseAndIndexDocument(code, fileUri);
-    registerLibrarySymbolNodes(getWorkspaceSymbolIndex(), code);
+    parseAndIndexDocument(code, fileUri, workspaceIndex);
+    registerLibrarySymbolNodes(workspaceIndex, code);
 }
 
 const {
@@ -111,12 +116,12 @@ connection.onInitialize((params) => {
     // and also pick up any generated .st files.
     const folders = params.workspaceFolders;
     if (folders && folders.length > 0) {
-        const index = getWorkspaceSymbolIndex();
+        const index = workspaceIndex;
         folders.forEach(f => {
             const fsPath = uriToFsPath(f.uri);
             try {
                 indexTwinCatDirectory(index, fsPath);
-                indexStDirectory(fsPath);
+                indexStDirectory(fsPath, workspaceIndex);
                 indexLibraries(fsPath);
             } catch (e) {
                 connection.console.error(`Failed to index folder ${fsPath}: ${e.message}`);
@@ -154,7 +159,7 @@ documents.onDidChangeContent((change) => {
     if (isGeneratedSt(doc.uri)) return; // ignore generated exports
     try {
         syncDocument(doc.getText(), doc.uri);
-        const diagnostics = provideDiagnostics(doc.getText(), getWorkspaceSymbolIndex(), doc.uri);
+        const diagnostics = provideDiagnostics(doc.getText(), workspaceIndex, doc.uri);
         connection.sendDiagnostics({ uri: doc.uri, diagnostics });
     } catch (err) {
         connection.console.error(`Error parsing document: ${err.message}`);
@@ -165,7 +170,7 @@ connection.onCompletion((params) => {
     const doc = documents.get(params.textDocument.uri);
     if (!doc) return [];
     try {
-        return provideCompletions(doc.getText(), params.position, getWorkspaceSymbolIndex(), doc.uri);
+        return provideCompletions(doc.getText(), params.position, workspaceIndex, doc.uri);
     } catch (e) {
         return [];
     }
@@ -175,7 +180,7 @@ connection.onDefinition((params) => {
     const doc = documents.get(params.textDocument.uri);
     if (!doc) return null;
     try {
-        return provideDefinition(doc.getText(), params.position, getWorkspaceSymbolIndex(), doc.uri);
+        return provideDefinition(doc.getText(), params.position, workspaceIndex, doc.uri);
     } catch (e) {
         return null;
     }
@@ -185,7 +190,7 @@ connection.onReferences((params) => {
     const doc = documents.get(params.textDocument.uri);
     if (!doc) return [];
     try {
-        return provideReferences(doc.getText(), params.position, getWorkspaceSymbolIndex(), doc.uri);
+        return provideReferences(doc.getText(), params.position, workspaceIndex, doc.uri);
     } catch (e) {
         return [];
     }
@@ -205,7 +210,7 @@ connection.onDocumentHighlight((params) => {
 connection.onRequest('custom/completions', (params) => {
     try {
         syncDocument(params.code, params.fileUri);
-        return provideCompletions(params.code, params.position, getWorkspaceSymbolIndex(), params.fileUri);
+        return provideCompletions(params.code, params.position, workspaceIndex, params.fileUri);
     } catch (e) {
         return [];
     }
@@ -214,7 +219,7 @@ connection.onRequest('custom/completions', (params) => {
 connection.onRequest('custom/definition', (params) => {
     try {
         syncDocument(params.code, params.fileUri);
-        return provideDefinition(params.code, params.position, getWorkspaceSymbolIndex(), params.fileUri);
+        return provideDefinition(params.code, params.position, workspaceIndex, params.fileUri);
     } catch (e) {
         return null;
     }
@@ -223,7 +228,7 @@ connection.onRequest('custom/definition', (params) => {
 connection.onRequest('custom/references', (params) => {
     try {
         syncDocument(params.code, params.fileUri);
-        return provideReferences(params.code, params.position, getWorkspaceSymbolIndex(), params.fileUri);
+        return provideReferences(params.code, params.position, workspaceIndex, params.fileUri);
     } catch (e) {
         return [];
     }
@@ -232,7 +237,7 @@ connection.onRequest('custom/references', (params) => {
 connection.onRequest('custom/diagnostics', (params) => {
     try {
         syncDocument(params.code, params.fileUri);
-        return provideDiagnostics(params.code, getWorkspaceSymbolIndex(), params.fileUri);
+        return provideDiagnostics(params.code, workspaceIndex, params.fileUri);
     } catch (e) {
         return [];
     }
@@ -250,7 +255,7 @@ connection.onRequest('custom/updateDocument', (params) => {
 connection.onRequest('custom/updateTypesMap', (params) => {
     try {
         const typesMap = params.typesMap || {};
-        const index = getWorkspaceSymbolIndex();
+        const index = workspaceIndex;
 
         for (const [name, typeInfo] of Object.entries(typesMap)) {
             // Non-destructive: never clobber a node already indexed from XML/ST with real ranges.
@@ -301,18 +306,18 @@ connection.onRequest('custom/updateTypesMap', (params) => {
 
 connection.onRequest('custom/reindex', (params) => {
     try {
-        clearWorkspaceIndex();
+        clearWorkspaceIndex(workspaceIndex);
         clearLibraryNamespaces();
         clearLibrarySymbols();
         // The converted-file cache keys on mtime, so it self-heals on edits; this drops entries for
         // files that no longer exist (deleted or renamed) rather than letting them accumulate.
         clearStFileCache();
-        const index = getWorkspaceSymbolIndex();
+        const index = workspaceIndex;
         if (params.folders) {
             params.folders.forEach(f => {
                 const fsPath = uriToFsPath(f);
                 indexTwinCatDirectory(index, fsPath);
-                indexStDirectory(fsPath);
+                indexStDirectory(fsPath, workspaceIndex);
                 indexLibraries(fsPath);
             });
         }
@@ -348,7 +353,7 @@ connection.onRequest('custom/libraries', () => {
 // extension when a TwinCAT file is created, changed, or saved.
 connection.onRequest('custom/indexXmlDocument', (params) => {
     try {
-        const index = getWorkspaceSymbolIndex();
+        const index = workspaceIndex;
         indexXmlObject(index, params.xml, params.fileUri);
         return { success: true };
     } catch (e) {
