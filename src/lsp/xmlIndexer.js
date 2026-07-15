@@ -11,6 +11,7 @@ const fs = require('fs');
 const path = require('path');
 const { parseTwinCatXml } = require('../xmlParser');
 const { tokenize, parseVariablesBlock, TokenType } = require('./parser');
+const { createSymbolNode } = require('./symbolNode');
 
 // `.tctleo` (EnumerationTextList) declares a real ST enum — xmlParser normalises its root element to
 // DUT, so it indexes as one. `.tctto` (task) and `.tctlo` (HMI text list) are NOT ST types.
@@ -210,20 +211,14 @@ function buildNodeFromXml(xmlText, fileUri) {
     else if (parsed.rootType === 'Itf') type = 'INTERFACE';
     else type = parsed.rootType;
 
-    const node = {
+    const node = createSymbolNode({
         name: parsed.rootName,
         type,
         uri: fileUri,
-        range: { startLine: 1, startCol: 1, endLine: 1, endCol: 1 },
-        nameRange: locate(rootDecl, parsed.rootName),
-        extends: null,
-        extendsAll: [],
-        implements: [],
-        variables: [],
-        methods: [],
-        properties: [],
-        actions: []
-    };
+        nameRange: locate(rootDecl, parsed.rootName)
+        // extends / extendsAll / implements are filled in from parseInheritance just below;
+        // range defaults to (1,1,1,1) as before. DUT-specific fields (dutKind) are added later.
+    });
 
     const inh = parseInheritance(rootDecl);
     node.extends = inh.extends;

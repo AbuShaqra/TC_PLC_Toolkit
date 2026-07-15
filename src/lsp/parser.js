@@ -6,6 +6,7 @@
 const fs = require('fs');
 const path = require('path');
 const { STANDARD_KEYWORDS } = require('./builtins');
+const { createSymbolNode } = require('./symbolNode');
 
 /**
  * Token types for Lexer
@@ -730,7 +731,7 @@ function parseAndIndexDocument(code, fileUri) {
 
                 // Create POU node
                 const existingPou = workspaceSymbolIndex[pouName];
-                pouNode = {
+                pouNode = createSymbolNode({
                     name: pouName,
                     type: pouType,
                     uri: fileUri,
@@ -746,16 +747,13 @@ function parseAndIndexDocument(code, fileUri) {
                         endLine: nameTok.line,
                         endCol: nameTok.col + pouName.length
                     },
-                    extends: null,
-                    extendsAll: [],
-                    implements: [],
-                    returnType: null,
-                    variables: [],
+                    // extends / extendsAll / implements / returnType are filled in below; the rest
+                    // (variables, bodyRange) take the factory defaults. Nested members are carried
+                    // over from a prior parse of this file so a re-index does not drop them.
                     methods: existingPou ? existingPou.methods : [],
                     properties: existingPou ? existingPou.properties : [],
-                    actions: existingPou ? existingPou.actions : [],
-                    bodyRange: null
-                };
+                    actions: existingPou ? existingPou.actions : []
+                });
 
                 // FUNCTION return type: `FUNCTION Name : ReturnType`. Recorded on the POU node so the
                 // IEC return-value idiom (`Name := <value>;` in the body, which sets the return value)

@@ -52,8 +52,13 @@ extension itself (the customer/vendor *content* is gone, but that's a separate q
   `core.js` imports no feature module; shared state stayed put: `stFileCache` in references, `diagnosticsConfig` in
   diagnostics). `require('./features')` and its 7 exports are unchanged. `completions.js` (1044) is the one still-large
   module — cohesive, split further only if it earns it.
-- Still **open** on the roadmap: H2 (single symbol-node factory across the two indexers), M2 (inject the workspace index
-  instead of the parser.js global), M3 (thin `extension.js`).
+- **H2 DONE:** `src/lsp/symbolNode.js` `createSymbolNode()` is the single definition of a node's core shape; both
+  `parser.js` and `xmlIndexer.js` build through it (they'd drifted — parser carried `returnType`/`bodyRange`, the XML
+  indexer didn't). Source-specific extras (DUT `dutKind`, library `external`/`membersComplete`/`libKind`) layer ON TOP,
+  never replace the core. `test/test_symbol_node.js` pins the two indexers to the same shape so they can't drift again.
+- Still **open** (the "as-needed" tier): M2 (inject the workspace index instead of the `parser.js` global — moderate,
+  changes the parser API), M3 (thin `extension.js` — extract command/watcher wiring), L1 (reverse index for cross-file
+  queries at large project scale), L2 (perf-regression test pinning lazy symbol registration).
 
 ## Diagnostics: how to measure (get this wrong and the number is meaningless)
 
