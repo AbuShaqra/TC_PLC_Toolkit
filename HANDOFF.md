@@ -3,7 +3,7 @@
 Where the work *stands*. Read before starting; keep current (see the handoff rule in [CLAUDE.md](CLAUDE.md)).
 Target: under 100 lines — prune finished items rather than appending, but never drop a real finding to hit it.
 
-**Last verified:** 2026-07-15 — `npm test` green (exit 0, 31 harnesses), **0 diagnostics on the sample**. Version 0.1.3 (0.1.0 renumbered from 0.4.2 for the fresh public repo; 0.1.1 = M3 refactor + Find References fixes; 0.1.2 = two webview fixes; 0.1.3 = named-arg-value Go-to-Definition fix + library-tree grouping of interfaces/enums/GVLs); references + navigation confirmed working by the user.
+**Last verified:** 2026-07-15 — `npm test` green (exit 0, 32 harnesses), **0 diagnostics on the sample**. Version 0.1.4 (0.1.0 renumbered from 0.4.2 for the fresh public repo; 0.1.1 = M3 refactor + Find References fixes; 0.1.2 = two webview fixes; 0.1.3 = named-arg-value Go-to-Definition fix + library-tree grouping of interfaces/enums/GVLs; 0.1.4 = browsercache library FB/interface method+property members); references + navigation confirmed working by the user.
 
 ## Publication remediation — DONE (2026-07-15)
 
