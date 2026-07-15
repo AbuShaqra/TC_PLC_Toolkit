@@ -64,7 +64,8 @@ extension itself (the customer/vendor *content* is gone, but that's a separate q
   change was trace-reviewed; tsc + the 31 suites cover the parser/references halves.**
 - **L2 DONE:** `test/test_libsymbols.js` now carries a named PERF GUARD asserting library-symbol registration scales
   with the DOCUMENT, not the registry (pins the lazy-registration invariant behind the 78s cliff).
-- **M3 DONE (UNCOMMITTED — pending F5 smoke test):** `extension.js` **1205 → 359 lines**, now a thin hub. Pure
+- **M3 DONE (committed on branch `refactor/thin-extension-and-ref-fixes`, not pushed; `main` unchanged):**
+  `extension.js` **1205 → 359 lines**, now a thin hub. Pure
   structural split; command bodies moved byte-identical. New modules: `src/xaeShell.js` (shell discovery +
   signature-generator — distinct from `src/lsp/librarySignatures.js`, the XML-dump parser), and under
   `src/commands/`: `objectCommands.js` (13 create/delete + `handleComponentCreation`/`handleFileCreation`/`applyXmlEdit`),
@@ -73,7 +74,7 @@ extension itself (the customer/vendor *content* is gone, but that's a separate q
   preserve the `if (!client)` guards. Hub keeps: references view, LSP bootstrap, types broadcast, watchers, view creation.
   **Verified:** tsc 0, 31 suites green, every declared command registered exactly once. **F5-confirmed by the user:**
   activation clean (dev-host exthost log, no errors), New FB works, Insert-from-Library works, Find References works.
-- **Three fixes made alongside M3 (all UNCOMMITTED, in the same working tree):**
+- **Three fixes made alongside M3 (committed on the same branch — EISDIR in commit 1, the two ref fixes in commit 2):**
   - **Folder-create EISDIR** — `onDidCreate` called `updateCacheForFile`/`indexFileOnLsp` for *every* created path,
     incl. directories, so `readFile(dir)` threw EISDIR (caught+logged; folder still created). Pre-existing, not a
     refactor regression. Now gates on the TwinCAT extension exactly as `onDidChange` does (`extension.js` onDidCreate).
