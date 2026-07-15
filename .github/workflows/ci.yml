@@ -8,7 +8,9 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    # TwinCAT (and the DTE-driven library-definitions feature) is Windows-only, and the LSP's
+    # URI<->path handling is Windows-native, so CI runs on the platform users actually run on.
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v5
 
