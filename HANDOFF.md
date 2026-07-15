@@ -47,8 +47,13 @@ extension itself (the customer/vendor *content* is gone, but that's a separate q
   It caught real annotation gaps (isAssignable's `@returns` missing `'related'`, a dead `fileUri` param) but no logic bugs.
 - **CI:** `.github/workflows/ci.yml` runs `typecheck` then `test` on push/PR to `main`. `sample/` is absent on CI, so the
   sample suites skip and the rest run (verified green). `test/`, `tsconfig.json`, `.github/` are `.vscodeignore`d out.
-- Still **open** on the roadmap: H1 (split the 2,876-line `features.js`), H2 (single symbol-node factory across the two
-  indexers), M2 (inject the workspace index instead of the parser.js global), M3 (thin `extension.js`).
+- **H1 DONE:** `features.js` is now a 23-line **facade** over `src/lsp/features/{core,completions,definition,references,
+  highlights,diagnostics}.js`. Pure structural split (function bodies byte-identical; 64 functions preserved; no cycles —
+  `core.js` imports no feature module; shared state stayed put: `stFileCache` in references, `diagnosticsConfig` in
+  diagnostics). `require('./features')` and its 7 exports are unchanged. `completions.js` (1044) is the one still-large
+  module — cohesive, split further only if it earns it.
+- Still **open** on the roadmap: H2 (single symbol-node factory across the two indexers), M2 (inject the workspace index
+  instead of the parser.js global), M3 (thin `extension.js`).
 
 ## Diagnostics: how to measure (get this wrong and the number is meaningless)
 
