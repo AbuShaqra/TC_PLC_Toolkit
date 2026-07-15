@@ -9,6 +9,7 @@ const { findNode, findMethodOwnerInChain } = require('../types');
 const {
     findActiveScope,
     classifyCallSite,
+    nextMeaningful,
     resolvePathType,
     isCallParamScope,
     convertToLspRange,
@@ -80,7 +81,16 @@ function definitionAt(code, tokens, position, symbolIndex, fileUri) {
         const pathParts = site ? site.pathParts : [];
         const isDeclInitList = !!site && site.kind === 'declInitList';
 
-        if (site) {
+        // Only the named argument's NAME resolves to the callee's parameter, and the name is the
+        // identifier immediately followed by ':=' or '=>'. The VALUE on the right of ':=' frequently
+        // repeats the parameter's spelling (`bEnabled := bEnabled`, common when a local variable feeds
+        // an FB_init input of the same name) and must resolve in local scope, not jump to the parameter.
+        // (references.js gates the same way via namedArgumentCallee.)
+        const afterIdx = nextMeaningful(tokens, targetTokenIdx + 1);
+        const isNamedArgName = afterIdx < tokens.length &&
+            (tokens[afterIdx].value === ':=' || tokens[afterIdx].value === '=>');
+
+        if (site && isNamedArgName) {
             let resolvedTargetNode = null;
             let resolvedMethod = null;
 

@@ -138,7 +138,7 @@ const BASE_NID_LINE = lineOf(FB_BASE_INIT_DECL, /^\tnId\b/);
  * @param {string} word Word to resolve (first occurrence on that line).
  * @returns {Object|null} LSP Location with { uri, range, componentId }, or null.
  */
-function defineAt(fileName, xml, lineRe, word) {
+function defineAt(fileName, xml, lineRe, word, occurrence = 0) {
     clearWorkspaceIndex();
     const index = getWorkspaceSymbolIndex();
     for (const f of Object.keys(FILES)) indexXmlObject(index, FILES[f], uriOf(f));
@@ -151,8 +151,12 @@ function defineAt(fileName, xml, lineRe, word) {
     const lines = stText.split('\n');
     const lineIdx = lines.findIndex(l => lineRe.test(l));
     if (lineIdx === -1) throw new Error(`test bug: no ST line matches ${lineRe}`);
-    const character = lines[lineIdx].indexOf(word) + 1; // inside the word
-    if (character === 0) throw new Error(`test bug: '${word}' not on line ${lineRe}`);
+    // The occurrence-th appearance of `word` on the line — a named argument and its value can share a
+    // spelling (`ipAxis := ipAxis`), and they must resolve to different declarations.
+    let wi = -1;
+    for (let k = 0; k <= occurrence; k++) wi = lines[lineIdx].indexOf(word, wi + 1);
+    const character = wi + 1; // inside the (occurrence-th) word
+    if (character === 0) throw new Error(`test bug: '${word}' #${occurrence} not on line ${lineRe}`);
 
     return provideDefinition(stText, { line: lineIdx, character }, getWorkspaceSymbolIndex(), uriOf(fileName));
 }
@@ -241,6 +245,25 @@ try {
         /FB_Axis\(refNoSuchThing/, 'refNoSuchThing');
     dump('bogus arg', d8);
     assert(d8 === null, `a bogus argument name yields no definition (got ${JSON.stringify(d8)})`);
+
+    // ---- 6. The VALUE on the right of ':=' is NOT the parameter, even when it repeats the name -----
+    // `fbA : FB_Axis(ipAxis := ipAxis)` where MAIN7 also declares a local `ipAxis`. The NAME (left)
+    // jumps to FB_init's parameter; the VALUE (right) must resolve to MAIN7's own local. The bug: the
+    // right-hand `ipAxis` used to jump to FB_init's parameter too, because the call-site branch matched
+    // by name without checking the token was actually in the parameter-NAME position (before ':=').
+    // Reported by the user against a real MAIN.TcPOU. Both occurrences are on the same line.
+    const MAIN7 = tcpou('MAIN7',
+        'PROGRAM MAIN7\nVAR\n\tipAxis : I_Drive;\n\tfbA : FB_Axis(ipAxis := ipAxis);\nEND_VAR', '');
+    const nameHit = defineAt('MAIN7.TcPOU', MAIN7, /FB_Axis\(ipAxis := ipAxis/, 'ipAxis', 0);
+    const valueHit = defineAt('MAIN7.TcPOU', MAIN7, /FB_Axis\(ipAxis := ipAxis/, 'ipAxis', 1);
+    dump('collision name', nameHit);
+    dump('collision value', valueHit);
+    assert(!!nameHit && nameHit.componentId === 'method_FB_init' && path.basename(nameHit.uri) === 'FB_Axis.TcPOU',
+        `the NAME 'ipAxis :=' still jumps to FB_init's parameter (got ${nameHit && nameHit.componentId} in ` +
+        `${nameHit && path.basename(nameHit.uri)})`);
+    assert(!!valueHit && valueHit.componentId === 'root' && path.basename(valueHit.uri) === 'MAIN7.TcPOU',
+        `the VALUE ':= ipAxis' resolves to MAIN7's own local, NOT FB_init's parameter ` +
+        `(got ${valueHit && valueHit.componentId} in ${valueHit && path.basename(valueHit.uri)})`);
 } finally {
     clearWorkspaceIndex();
     fs.rmSync(dir, { recursive: true, force: true });
