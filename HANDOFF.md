@@ -3,7 +3,7 @@
 Where the work *stands*. Read before starting; keep current (see the handoff rule in [CLAUDE.md](CLAUDE.md)).
 Target: under 100 lines — prune finished items rather than appending, but never drop a real finding to hit it.
 
-**Last verified:** 2026-07-15 — `npm test` green (exit 0, 28 harnesses), **0 diagnostics on the sample**. Version 0.1.0 (renumbered from 0.4.2 for the fresh public repo); references + navigation confirmed working by the user.
+**Last verified:** 2026-07-15 — `npm test` green (exit 0, 31 harnesses), **0 diagnostics on the sample**. Version 0.1.1 (0.1.0 renumbered from 0.4.2 for the fresh public repo; bumped to 0.1.1 for the M3 refactor + Find References fixes); references + navigation confirmed working by the user.
 
 ## Publication remediation — DONE (2026-07-15)
 
@@ -22,8 +22,10 @@ extension itself (the customer/vendor *content* is gone, but that's a separate q
 - **Branch `main`, pushed, working tree clean.** Origin `github.com/AbuShaqra/TC_PLC_Toolkit.git` (repo
   recreated 2026-07-15; `main` is the primary branch — the old `MonacoEditor` name is retired). Stale local
   branches `moe` / `native-editor` still exist, un-pushed.
-- **Version `0.1.0`** — renumbered from 0.4.2 on 2026-07-15 for the fresh public repo. Ships per-kind Objects-tree
-  icons, the References panel/peek fixes, the `GET`/`SET` parser fix, and the Find References caching.
+- **Version `0.1.1`** — 0.1.0 was renumbered from 0.4.2 on 2026-07-15 for the fresh public repo; **bumped to 0.1.1**
+  for the M3 refactor, the folder-create EISDIR fix, the always-populate References panel, and the FB_init decl-site
+  references fix. Ships per-kind Objects-tree icons, the References panel/peek fixes, the `GET`/`SET` parser fix, and the
+  Find References caching.
   **User confirmed live: the panel tab switches, the reference list is correct, and clicking a reference lands
   in the right place.**
 - **`sample/` is GROUND TRUTH**: correct TwinCAT code, so **every diagnostic on it is a bug**. It is at **zero**;
