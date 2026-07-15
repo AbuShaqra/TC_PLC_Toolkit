@@ -77,7 +77,12 @@ const CATALOG = [{
         { name: 'E_State', kind: 'enum', returnType: '', extendsType: '', methods: [],
           members: [{ name: 'IDLE', type: 'Enum', scope: 'ENUM' }, { name: 'RUNNING', type: 'Enum', scope: 'ENUM' }] },
         { name: 'GVL_Cfg', kind: 'gvl', returnType: '', extendsType: '', methods: [],
-          members: [{ name: 'gMaxAxes', type: 'INT', scope: '' }] }
+          members: [{ name: 'gMaxAxes', type: 'INT', scope: '' }] },
+        // An FB enriched from the browsercache: method NAMES (no `params` key) and property names. The
+        // signatures/.tmc gave it no members, so all of these are names-only.
+        { name: 'FB_Browsed', kind: 'fb', returnType: '', extendsType: '', members: [],
+          methods: [{ name: 'Cyclic' }, { name: 'Init' }],
+          properties: [{ name: 'Enabled' }, { name: 'Status' }] }
     ]
 }];
 
@@ -173,6 +178,31 @@ const provider = new TwinCatLibraryTreeDataProvider(async () => CATALOG);
     const stKids = await provider.getChildren(stEntry);
     assert(insertTextForNode(stKids[0]) === 'nKey',
         `a struct field still inserts its bare name (got ${JSON.stringify(insertTextForNode(stKids[0]))})`);
+
+    console.log('\n--- browsercache members: names-only methods + properties ---');
+    const fbGroup2 = groups.find(g => g.group.kind === 'fb');
+    const browsed = (await provider.getChildren(fbGroup2)).find(t => t.type.name === 'FB_Browsed');
+    assert(provider.getTreeItem(browsed).collapsibleState === EXPANDABLE,
+        'an FB with only browsercache methods/properties is expandable');
+    const bKids = await provider.getChildren(browsed);
+    const bMethods = bKids.filter(k => k.kind === 'method');
+    const bProps = bKids.filter(k => k.kind === 'property');
+    assert(bMethods.length === 2 && bProps.length === 2,
+        `it lists its methods and its properties (got ${bKids.map(k => k.kind).join(', ')})`);
+
+    // A names-only method (no params) is a LEAF and shows NO misleading "()" signature.
+    const mItem = provider.getTreeItem(bMethods.find(m => m.method.name === 'Cyclic'));
+    assert(mItem.collapsibleState === LEAF, 'a names-only method is a leaf (no params to expand)');
+    assert(mItem.description === '', `a names-only method shows no fake signature (got ${JSON.stringify(mItem.description)})`);
+    assert(insertTextForNode(bMethods[0]) === bMethods[0].method.name,
+        'a names-only method inserts its bare name');
+
+    // A property renders as a leaf and inserts its bare name (written after an instance).
+    const pItem = provider.getTreeItem(bProps.find(p => p.property.name === 'Enabled'));
+    assert(pItem.collapsibleState === LEAF, 'a property is a leaf');
+    assert(pItem.contextValue === 'twincatLibraryMember', 'a property gets the Insert-at-Cursor menu');
+    assert(insertTextForNode(bProps.find(p => p.property.name === 'Enabled')) === 'Enabled',
+        `a property inserts its bare name (got ${JSON.stringify(insertTextForNode(bProps[0]))})`);
 
     console.log(`\n--- LIBRARY TREE TESTS COMPLETE with ${errors} error(s) ---`);
     process.exit(errors > 0 ? 1 : 0);

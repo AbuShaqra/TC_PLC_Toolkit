@@ -37,6 +37,7 @@ const {
     indexLibrarySymbols,
     indexTypeSystem,
     indexLibrarySignatures,
+    indexBrowserCache,
     registerLibrarySymbolNodes,
     clearLibrarySymbols,
     getLibraryCatalog
@@ -70,13 +71,18 @@ function indexLibraries(fsPath) {
     // bare-name entry (see libsymbols.js indexLibrarySignaturesFromXml). A project with no generated
     // library-signatures.xml gets zeroed stats and no registry change.
     const sig = indexLibrarySignatures(fsPath);
+    // Browsercache enrichment runs LAST: it adds method/property NAMES to the FB/interface types the
+    // signatures and `.tmc` have already filed under a namespace (see libsymbols.js indexBrowserCache).
+    const bc = indexBrowserCache(fsPath);
     if (stats.archives > 0 || stats.failed > 0 || tmc.files > 0 || sig.files > 0) {
         connection.console.log(
             `Library symbols: ${stats.symbols} from ${stats.archives} archive(s) ` +
             `(${stats.failed} undecodable) in ${stats.ms} ms; ` +
             `type system: ${tmc.files} .tmc file(s), ${tmc.symbols} total symbols in ${tmc.ms} ms; ` +
             `signatures: ${sig.files} file(s), ${sig.functions} function(s), ` +
-            `${sig.functionBlocks} FB(s), ${sig.added} type(s) merged in ${sig.ms} ms.`
+            `${sig.functionBlocks} FB(s), ${sig.added} type(s) merged in ${sig.ms} ms; ` +
+            `browsercache: ${bc.methods} method(s) + ${bc.properties} propert${bc.properties === 1 ? 'y' : 'ies'} ` +
+            `on ${bc.types} type(s) from ${bc.libraries} librar${bc.libraries === 1 ? 'y' : 'ies'} in ${bc.ms} ms.`
         );
     }
 }

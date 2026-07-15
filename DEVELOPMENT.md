@@ -96,6 +96,7 @@ src/
     libraries.js        Library namespaces, read from the .plcproj
     libsymbols.js       Library symbols: ZIP reader over the library archives + the project's .tmc
     librarySignatures.js  Parses library-signatures.xml (function sigs, FB I/O, global constants)
+    browserCache.js       Reads TwinCAT's per-library browsercache → FB/interface method + property NAMES
 media/
   editor.js / editor.css  Monaco webview front-end (two panes, providers, sync)
 ```
@@ -124,9 +125,12 @@ byte-for-byte, so TwinCAT and version control never see spurious diffs.
 
 `src/lsp/libsymbols.js` indexes ~32k symbols in about 200 ms and registers them into the workspace
 index **on demand, per document** — registering them all up front took the diagnostics pass from 1.5 s
-to 78 s, because `Object.keys()` on the index runs per identifier. Three sources feed it (archives,
-the project `.tmc`, the `.plcproj` namespaces) and all three are load-bearing; dropping any one
-resurrects false positives. See [HANDOFF.md](HANDOFF.md) for the details and the traps.
+to 78 s, because `Object.keys()` on the index runs per identifier. Several sources feed it, all
+load-bearing (dropping any one resurrects false positives, or empties part of the Libraries view):
+the ZIP **archives** and the project **`.tmc`** (`libsymbols.js`), the **`.plcproj`** namespaces
+(`libraries.js`), the optional **`library-signatures.xml`** (`librarySignatures.js`), and TwinCAT's
+per-library **browsercache** (`browserCache.js`, for library FB/interface method + property *names*).
+See [HANDOFF.md](HANDOFF.md) for what each source uniquely provides and the traps.
 
 Note that `_Libraries/` and the `.tmc` are git-ignored, so a fresh clone has neither and will measure
 ~171 diagnostics on the sample rather than 0. The harnesses detect this and assert against the right

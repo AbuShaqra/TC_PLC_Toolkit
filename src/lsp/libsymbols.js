@@ -39,6 +39,7 @@ const fs = require('fs');
 const path = require('path');
 const zlib = require('zlib');
 const { parseLibrarySignaturesXml, toRegistryTypes } = require('./librarySignatures');
+const { parseBrowserCache, findBrowserCacheFile } = require('./browserCache');
 
 /** ZIP signatures. */
 const SIG_EOCD = 0x06054b50;        // End of central directory
@@ -159,9 +160,11 @@ const namespaceListCache = new Map();
 /**
  * @typedef {Object} LibraryMethod
  * @property {string} name Method name, in the library's own spelling.
- * @property {string} returnType Declaration type of the return value ('' when it returns nothing).
- * @property {LibraryMember[]} params Parameters, in declaration order. An unmarked parameter is an
- *           input, so `scope` is never '' here.
+ * @property {string} [returnType] Declaration type of the return value ('' when it returns nothing;
+ *           absent for a browsercache-sourced method, whose return type is unknown).
+ * @property {LibraryMember[]} [params] Parameters, in declaration order. An unmarked parameter is an
+ *           input, so `scope` is never '' here. **Absent** (not empty) for a browsercache-sourced
+ *           method — its parameters are unknown, which the tree renders as a bare name, not `()`.
  */
 
 /**
@@ -171,7 +174,10 @@ const namespaceListCache = new Map();
  *           (or the signatures dump) describes. `'interface'` and `'gvl'` come only from signatures.
  * @property {string} [namespace] Owning library namespace, in the .plcproj's spelling ('' if none).
  * @property {LibraryMember[]} members Fields / call parameters / enum members. Empty for 'opaque'.
- * @property {LibraryMethod[]} [methods] Methods of an FB or interface, from the `.tmc`.
+ * @property {LibraryMethod[]} [methods] Methods of an FB or interface (from the `.tmc`, with parameters;
+ *           the browsercache adds any it lacks, as bare names).
+ * @property {{name: string}[]} [properties] Property NAMES of an FB or interface, from the browsercache
+ *           (indexBrowserCache). Names only — no accessor types.
  * @property {string} [extendsType] Base type this one inherits from ('' when it extends nothing).
  * @property {string} [returnType] Return type of a signature-derived FUNCTION ('' / absent otherwise).
  */
@@ -515,8 +521,12 @@ function getLibraryCatalog() {
             methods: (t.methods || []).map(m => ({
                 name: m.name,
                 returnType: m.returnType,
-                params: (m.params || []).map(p => ({ name: p.name, type: p.type, scope: p.scope }))
-            }))
+                // Absent params (a browsercache method) stay absent — the tree renders those as a bare
+                // name, not `()`. A `.tmc` method keeps its real (possibly empty) parameter list.
+                params: m.params ? m.params.map(p => ({ name: p.name, type: p.type, scope: p.scope })) : undefined
+            })),
+            // Property NAMES, from the browsercache (indexBrowserCache). Names only — no accessor types.
+            properties: (t.properties || []).map(p => ({ name: p.name }))
         }))
     }));
     entries.sort((a, b) => a.namespace.toLowerCase().localeCompare(b.namespace.toLowerCase()));
@@ -1299,6 +1309,74 @@ function indexLibrarySignatures(rootDir) {
 }
 
 /**
+ * Enriches library FUNCTION_BLOCK and INTERFACE types with their METHOD and PROPERTY names, read from
+ * TwinCAT's per-library browsercache (browserCache.js). This is the only offline source for the members
+ * of a library type the project has not adopted: the signatures carry FB I/O but no methods, and the
+ * `.tmc` describes only used types. **Names only** — the browsercache has no parameters or return types,
+ * so a method the `.tmc` already described (with its parameters) is left untouched and only browsercache-
+ * only methods are added, as bare names. Purely additive; every enriched node stays `external: true`, so
+ * nothing here can license a diagnostic.
+ *
+ * Must run AFTER indexLibrarySignatures: it enriches types already filed under a namespace (the tree only
+ * shows those) and never introduces new ones. Mutates the registry's own type objects in place, which
+ * getLibraryCatalog then copies across the JSON-RPC boundary.
+ * @param {string} rootDir Absolute workspace folder — its `.plcproj` library references (already in
+ *        libraryCatalog) decide which browsercaches are read.
+ * @returns {{libraries: number, types: number, methods: number, properties: number, ms: number}}
+ */
+function indexBrowserCache(rootDir) {
+    const started = Date.now();
+    const stats = { libraries: 0, types: 0, methods: 0, properties: 0, ms: 0 };
+    if (!rootDir || !fs.existsSync(rootDir)) { stats.ms = Date.now() - started; return stats; }
+
+    for (const entry of libraryCatalog.values()) {
+        if (!entry.namespace) continue;
+        // The .plcproj gives a library three spellings; any may be its Managed Libraries folder name.
+        const bcFile = findBrowserCacheFile(entry.company, [entry.title, entry.include, entry.namespace]);
+        if (!bcFile) continue;
+        let xml;
+        try { xml = fs.readFileSync(bcFile, 'utf8'); } catch (e) { continue; }
+        const parsed = parseBrowserCache(xml);
+        if (parsed.size === 0) continue;
+
+        const nsTypes = getTypeSystemNamespaceTypes(entry.namespace);
+        if (nsTypes.length === 0) continue;
+        const byName = new Map(nsTypes.map(t => [t.name.toLowerCase(), t]));
+
+        let touched = false;
+        for (const [key, bcType] of parsed) {
+            const target = byName.get(key);
+            if (!target) continue;   // only enrich a type the signatures / `.tmc` already surfaced
+
+            // Methods: keep the `.tmc`'s (they carry parameters); add the browsercache-only names.
+            if (!target.methods) target.methods = [];
+            const haveM = new Set(target.methods.map(m => m.name.toLowerCase()));
+            for (const name of bcType.methods) {
+                if (haveM.has(name.toLowerCase())) continue;
+                // No `params` key: parameters are unknown (not empty), which the tree shows as a bare
+                // name rather than a misleading `()`.
+                target.methods.push({ name });
+                stats.methods++;
+            }
+            // Properties: the browsercache is the source; names only, so no accessor types.
+            if (!target.properties) target.properties = [];
+            const haveP = new Set(target.properties.map(p => p.name.toLowerCase()));
+            for (const name of bcType.properties) {
+                if (haveP.has(name.toLowerCase())) continue;
+                target.properties.push({ name });
+                stats.properties++;
+            }
+            stats.types++;
+            touched = true;
+        }
+        if (touched) stats.libraries++;
+    }
+
+    stats.ms = Date.now() - started;
+    return stats;
+}
+
+/**
  * True if the name is a symbol declared by an indexed external library (case-insensitive).
  * @param {string} name Identifier to test.
  * @returns {boolean}
@@ -1469,6 +1547,7 @@ module.exports = {
     indexTypeSystem,
     indexLibrarySignatures,
     indexLibrarySignaturesFromXml,
+    indexBrowserCache,
     isLibrarySymbol,
     getLibrarySymbols,
     getLibrarySymbolName,

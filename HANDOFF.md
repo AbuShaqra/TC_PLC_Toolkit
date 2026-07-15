@@ -40,10 +40,19 @@ extension itself (the customer/vendor *content* is gone, but that's a separate q
   **Hard limit (investigated + verified, do not re-chase):** structs the `.tmc` doesn't cover STAY in "Data Types" —
   struct/enum/alias share ONE "DUT" TypeGUID in the browsercache (`ST_Fanuc_DI` == `E_FanucState` == `{2db5746d…}`),
   DUT nodes carry no fields, signatures give bare names, and the generator's `GetLibraryIecDeclaration` is E_NOINTERFACE
-  on this build — so struct-vs-alias is not recoverable offline. **Open follow-up:** the browsercache
-  (`%ProgramData%\…\Managed Libraries\<Co>\<Title>\<Ver>\browsercache`, plain XML) carries **methods/properties/ACTIONs**
-  (459 method nodes in IbtCoreLib) for every library FB/interface — the one thing signatures lack (and ACTIONs the
-  `.tmc` lacks) — a purely offline source for "expand a library FB to its members".
+  on this build — so struct-vs-alias is not recoverable offline.
+- **Browsercache library members — DONE (`browserCache.js` + `libsymbols.js indexBrowserCache`):** library FB/interface
+  types now expand to their **method and property NAMES**, read from TwinCAT's per-library browsercache
+  (`%ProgramData%\…\Managed Libraries\<Co>\<Title>\<Ver>\browsercache`, plain XML), for EVERY referenced library —
+  the members the signatures lack and the `.tmc` has only for used types. **Names only** (no params/return; those live
+  in the opaque binary `.object` entries), so the `.tmc` still wins on overlap (keeps its parameters) and browsercache
+  methods carry **no `params` key** → the tree shows a bare name, not a fake `()`. Stack-parse the `<Node>` tree; a
+  direct child of an FB (`{6f9dac99}`) / interface (`{6654496c}`) is a **property** (`{5a3b8626}`) else a **method**
+  (folds in interface methods `{f89f7675}` and the `{8ac092e5}` variant); Get/Set accessors are a property's children,
+  never harvested as FB methods. `server.js` calls it LAST in `indexLibraries`. Verified on the real project:
+  **+649 methods, +386 properties across 347 types / 4 libraries** in ~21 ms; guarded by `test/test_browser_cache.js`
+  + a tree case; sample holds at 0. **Note: there is NO distinct "action" TypeGUID** — `{f89f7675}` is an *interface
+  method* (parents=[itf]), not an action; TwinCAT libraries rarely use actions and any would fold into methods.
 - **Webview fixes (0.1.2), in `customEditorProvider.js` HTML:** (1) CSP had no `font-src`, so `default-src 'none'`
   blocked Monaco's `codicon.ttf` → editor/suggest/peek icons rendered blank; added `font-src ${webview.cspSource}`.
   (2) the worker's AMD `baseUrl` was `${vsUri}/` (`.../monaco-editor/vs/`), but module ids already start with `vs/`,
