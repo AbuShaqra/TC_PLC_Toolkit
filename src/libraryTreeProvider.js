@@ -26,8 +26,10 @@ const vscode = require('vscode');
 const TYPE_ICONS = {
     fb: 'symbol-class',
     function: 'symbol-method',
+    interface: 'symbol-interface',
     struct: 'symbol-structure',
-    enum: 'symbol-enum'
+    enum: 'symbol-enum',
+    gvl: 'symbol-namespace'
 };
 
 /**
@@ -43,8 +45,10 @@ const TYPE_ICONS = {
 const TYPE_GROUPS = [
     { kind: 'fb', label: 'Function Blocks', icon: 'symbol-class' },
     { kind: 'function', label: 'Functions', icon: 'symbol-method' },
+    { kind: 'interface', label: 'Interfaces', icon: 'symbol-interface' },
     { kind: 'struct', label: 'Structures', icon: 'symbol-structure' },
     { kind: 'enum', label: 'Enumerations', icon: 'symbol-enum' },
+    { kind: 'gvl', label: 'GVLs', icon: 'symbol-namespace' },
     { kind: 'opaque', label: 'Data Types', icon: 'symbol-misc' }
 ];
 
@@ -62,7 +66,16 @@ function insertTextForNode(node) {
     if (!node) return '';
     if (node.kind === 'library') return `${node.entry.namespace}.`;
     if (node.kind === 'type') return `${node.namespace}.${node.type.name}`;
-    if (node.kind === 'member') return node.member.name;
+    if (node.kind === 'member') {
+        // An enum value or a GVL global is written namespace-qualified (`Namespace.E_Foo.Value`,
+        // `Namespace.GVL_X.gVar`) — that is a complete, insertable reference. A struct field or a call
+        // parameter is written after an instance the user has already typed, so it stays a bare name.
+        const owner = node.ownerType;
+        if (owner && node.namespace && (owner.kind === 'enum' || owner.kind === 'gvl')) {
+            return `${node.namespace}.${owner.name}.${node.member.name}`;
+        }
+        return node.member.name;
+    }
     // A method is only ever written after an instance (`mover.Halt(…)`), which the user has already
     // typed — so, like a member, it inserts its bare name and not a qualified one.
     if (node.kind === 'method') return node.method.name;
@@ -213,8 +226,10 @@ class TwinCatLibraryTreeDataProvider {
         if (element.kind === 'type') {
             // Fields and call parameters first, then methods — a reader looks for an FB's inputs
             // before its methods, and an FB like FB_XmlDomParser has 103 of the latter.
+            // ownerType/namespace ride along so an enum value or GVL global can be inserted qualified.
             return [
-                ...(element.type.members || []).map(member => ({ kind: 'member', member })),
+                ...(element.type.members || []).map(member =>
+                    ({ kind: 'member', member, ownerType: element.type, namespace: element.namespace })),
                 ...(element.type.methods || [])
                     .slice()
                     .sort((a, b) => a.name.localeCompare(b.name))

@@ -167,8 +167,8 @@ const namespaceListCache = new Map();
 /**
  * @typedef {Object} LibraryType
  * @property {string} name Type name, in the `.tmc`'s spelling.
- * @property {'struct'|'fb'|'enum'|'opaque'|'function'} kind What the `.tmc` block (or the signatures
- *           dump) describes.
+ * @property {'struct'|'fb'|'enum'|'opaque'|'function'|'interface'|'gvl'} kind What the `.tmc` block
+ *           (or the signatures dump) describes. `'interface'` and `'gvl'` come only from signatures.
  * @property {string} [namespace] Owning library namespace, in the .plcproj's spelling ('' if none).
  * @property {LibraryMember[]} members Fields / call parameters / enum members. Empty for 'opaque'.
  * @property {LibraryMethod[]} [methods] Methods of an FB or interface, from the `.tmc`.
@@ -1367,7 +1367,7 @@ function makeLibraryNode(name, info) {
         type: 'LIBRARY',
         external: true,
         membersComplete: false,       // see above — an unknown member is "uncertain", never "absent"
-        libKind: structured ? info.kind : null,        // 'struct' | 'fb' | 'enum' | 'function' | null
+        libKind: structured ? info.kind : null,        // 'struct'|'fb'|'enum'|'function'|'interface'|'gvl'|null
         libNamespace: structured ? (info.namespace || '') : '',
         // A signature-derived function carries its return type for completion detail and future
         // return-type inference. It is deliberately NOT wired into typeFromNode: a library FUNCTION
