@@ -490,6 +490,19 @@ function addCatalogEntry(kind, include, resolution, namespace) {
 }
 
 /**
+ * True for a compiler-internal library name. TwinCAT/CODESYS reserves the **double-underscore** prefix
+ * for auto-generated objects — the backing GVLs behind text lists, enums and the like
+ * (`__E_IolPort__GVL`, `__Symbol_Translation__GVL`, `__TL_RecipeManager__GVL`). Nobody references them
+ * by hand, so they are hidden from the Libraries **tree**. Display-only: the name stays a declared
+ * symbol, so nothing it might appear in is ever flagged.
+ * @param {string} name Type name.
+ * @returns {boolean}
+ */
+function isInternalLibraryName(name) {
+    return /^__/.test(name);
+}
+
+/**
  * The libraries the project references, each with the three spellings that differ in practice — the
  * placeholder/Include name, the resolved library title, and the **namespace** the code must use —
  * plus what we managed to index for it.
@@ -511,7 +524,7 @@ function getLibraryCatalog() {
         symbolCount: getNamespaceSymbols(entry.namespace).length,
         // Copied, not shared: the catalog crosses a JSON-RPC boundary, and the registry's own type
         // objects must never be mutable from outside it.
-        types: getTypeSystemNamespaceTypes(entry.namespace).map(t => ({
+        types: getTypeSystemNamespaceTypes(entry.namespace).filter(t => !isInternalLibraryName(t.name)).map(t => ({
             name: t.name,
             kind: t.kind,
             // Only a signature-derived FUNCTION has one; it is what the tree shows as its return type.

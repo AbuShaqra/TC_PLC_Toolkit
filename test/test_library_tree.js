@@ -78,6 +78,9 @@ const CATALOG = [{
           members: [{ name: 'IDLE', type: 'Enum', scope: 'ENUM' }, { name: 'RUNNING', type: 'Enum', scope: 'ENUM' }] },
         { name: 'GVL_Cfg', kind: 'gvl', returnType: '', extendsType: '', methods: [],
           members: [{ name: 'gMaxAxes', type: 'INT', scope: '' }] },
+        // A GVL of non-constant globals: the signature export lists only VAR_GLOBAL CONSTANT, so it has
+        // no members we can show. It must render as a leaf with a "no exported globals" hint, not look broken.
+        { name: 'GVL_VisuState', kind: 'gvl', returnType: '', extendsType: '', methods: [], members: [] },
         // An FB enriched from the browsercache: method NAMES (no `params` key) and property names. The
         // signatures/.tmc gave it no members, so all of these are names-only.
         { name: 'FB_Browsed', kind: 'fb', returnType: '', extendsType: '', members: [],
@@ -168,11 +171,21 @@ const provider = new TwinCatLibraryTreeDataProvider(async () => CATALOG);
         `an enum value inserts namespace-qualified (got ${JSON.stringify(insertTextForNode(enumKids[0]))})`);
 
     // A GVL expands to its globals, and a global inserts namespace-qualified.
-    const gvlType = (await provider.getChildren(groups.find(g => g.group.kind === 'gvl')))[0];
+    const gvlTypes = await provider.getChildren(groups.find(g => g.group.kind === 'gvl'));
+    const gvlType = gvlTypes.find(t => t.type.name === 'GVL_Cfg');
     assert(provider.getTreeItem(gvlType).collapsibleState === EXPANDABLE, 'a GVL with globals is expandable');
     const gvlKids = await provider.getChildren(gvlType);
     assert(insertTextForNode(gvlKids[0]) === 'TcDynCollections.GVL_Cfg.gMaxAxes',
         `a GVL global inserts namespace-qualified (got ${JSON.stringify(insertTextForNode(gvlKids[0]))})`);
+
+    // An empty GVL (non-constant globals, not exported) is a leaf with an explanatory hint — not broken-looking.
+    const emptyGvl = gvlTypes.find(t => t.type.name === 'GVL_VisuState');
+    const egItem = provider.getTreeItem(emptyGvl);
+    assert(egItem.collapsibleState === LEAF, 'an empty GVL is a leaf (nothing to expand)');
+    assert(egItem.description === 'no exported globals',
+        `an empty GVL is labelled so it reads as intentional (got ${JSON.stringify(egItem.description)})`);
+    assert(/VAR_GLOBAL CONSTANT/.test(String(egItem.tooltip)),
+        'its tooltip explains why (only VAR_GLOBAL CONSTANT is exported)');
 
     // A struct FIELD, by contrast, still inserts bare — it is written after an instance.
     const stKids = await provider.getChildren(stEntry);
