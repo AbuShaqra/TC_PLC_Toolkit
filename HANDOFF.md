@@ -86,9 +86,11 @@ extension itself (the customer/vendor *content* is gone, but that's a separate q
     it: `namedArgumentCallee` discarded `classifyCallSite`'s `kind`, so `collect` compared the FB *type* name against the
     target's method name (`FB_init`) and never matched. Now carries `kind`; a `declInitList` site matches by FB type
     (owner or subtype — FB_init may be inherited). Guarded by a new block in `test/test_references_scope.js`.
-- **L1 (reverse index) — recommend DEFER:** it optimises a path that is already
-  fast at this scale (29 ms cold on 152 files) and adds a cache-coherence surface to a feature that was historically
-  fragile there; build it only when a project crosses ~1000 files or reference search exceeds ~200 ms.
+- **Roadmap COMPLETE.** H1/H2/M2/M3/L2 done; **L1 (reverse index) DEFERRED by decision** (user chose the safe option,
+  2026-07-15). It optimises a path already fast at this scale (29 ms cold / ~4 ms warm on 152 files; a regex pre-filter
+  already skips tokenizing files without the word) and would add a cache-coherence surface to Find References, which this
+  project's history shows is fragile exactly there — risk without a measurable payoff. **Reopen only** when a project
+  crosses ~1000 files or reference search exceeds ~200 ms.
 
 ## Diagnostics: how to measure (get this wrong and the number is meaningless)
 
