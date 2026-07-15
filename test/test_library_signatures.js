@@ -34,6 +34,14 @@ const FIXTURE = `<?xml version="1.0"?>
       <TypeSignature type="VarGlobal"><Name>Globals</Name>
         <Constants><Constant><Name>cMax</Name><DataType>INT</DataType></Constant></Constants>
       </TypeSignature>
+      <!-- An enum, emitted as a var-list whose constants are typed as the enum itself. The DataType
+           casing is deliberately varied (E_COLOR / E_Color) to prove the match is case-insensitive. -->
+      <TypeSignature type="VarGlobal"><Name>E_Color</Name>
+        <Constants>
+          <Constant><Name>RED</Name><DataType>E_COLOR</DataType></Constant>
+          <Constant><Name>GREEN</Name><DataType>E_Color</DataType></Constant>
+        </Constants>
+      </TypeSignature>
     </TypeSignatures>
   </Library>
 </LibrarySignatures>`;
@@ -68,7 +76,7 @@ eq(lib.types.length, 1, 'one bare type');
 eq(lib.types[0], 'ST_Bar', 'type name (no members expected)');
 eq(lib.interfaces.length, 1, 'one interface');
 eq(lib.interfaces[0], 'IFoo', 'interface name');
-eq(lib.globals.length, 1, 'one global var list');
+eq(lib.globals.length, 2, 'two global var lists (a real GVL and an enum)');
 eq(lib.globals[0].constants[0].name, 'cMax', 'global constant name');
 
 console.log('--- registry mapping ---');
@@ -80,10 +88,21 @@ eq(byName.FB_Foo.namespace, 'Tc_Test', 'FB_Foo namespace is the library');
 eq(byName.CONCAT.kind, 'function', 'CONCAT maps to kind function');
 eq(byName.CONCAT.returnType, 'STRING(255)', 'CONCAT carries its return type');
 eq(byName.CONCAT.members.length, 2, 'CONCAT carries its inputs as members');
-eq(byName.ST_Bar.kind, 'opaque', 'bare Type maps to opaque');
+eq(byName.ST_Bar.kind, 'opaque', 'bare Type maps to opaque (struct/enum/alias indistinguishable here)');
 eq(byName.ST_Bar.members.length, 0, 'bare Type has no members');
+eq(byName.IFoo.kind, 'interface', 'a type="Interface" maps to kind interface, not opaque');
+// A var-list whose constants are all self-typed is an enum, carrying its values (case-insensitive).
+eq(byName.E_Color.kind, 'enum', 'a self-typed var-list is recognised as an enum');
+eq(byName.E_Color.members.length, 2, 'the enum carries its values as members');
+eq(byName.E_Color.members[0].name, 'RED', 'first enum value');
+eq(byName.E_Color.members[0].scope, 'ENUM', 'enum values carry the ENUM scope, like the .tmc');
+// A var-list with varied constant types is a real GVL, carrying its globals.
+eq(byName.Globals.kind, 'gvl', 'a mixed-type var-list is recognised as a GVL');
+eq(byName.Globals.members.length, 1, 'the GVL carries its globals as members');
+eq(byName.Globals.members[0].name, 'cMax', 'GVL global name');
 ok(reg.symbols.includes('cMax'), 'global constant surfaces as a symbol name');
 ok(reg.symbols.includes('Globals'), 'global var-list name surfaces as a symbol');
+ok(reg.symbols.includes('RED') && reg.symbols.includes('GREEN'), 'enum values still surface as bare symbols too');
 
 // Malformed input must not throw.
 ok(parseLibrarySignaturesXml('').libraries.length === 0, 'empty string yields no libraries');

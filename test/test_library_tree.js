@@ -69,7 +69,15 @@ const CATALOG = [{
         },
         // A struct: no methods, must be unaffected.
         { name: 'ST_Entry', kind: 'struct', returnType: '', extendsType: '', methods: [],
-          members: [{ name: 'nKey', type: 'UDINT', scope: '' }] }
+          members: [{ name: 'nKey', type: 'UDINT', scope: '' }] },
+        // An interface classified from the signatures (distinct from I_List above, which the .tmc
+        // modelled as an 'fb' because it is all methods) — this one groups under "Interfaces".
+        { name: 'I_Drive', kind: 'interface', returnType: '', extendsType: '', members: [], methods: [] },
+        // An enum with its values (recovered from the self-typed var-list), and a real GVL with globals.
+        { name: 'E_State', kind: 'enum', returnType: '', extendsType: '', methods: [],
+          members: [{ name: 'IDLE', type: 'Enum', scope: 'ENUM' }, { name: 'RUNNING', type: 'Enum', scope: 'ENUM' }] },
+        { name: 'GVL_Cfg', kind: 'gvl', returnType: '', extendsType: '', methods: [],
+          members: [{ name: 'gMaxAxes', type: 'INT', scope: '' }] }
     ]
 }];
 
@@ -137,6 +145,34 @@ const provider = new TwinCatLibraryTreeDataProvider(async () => CATALOG);
     // A struct has no call parameters, so there is no template to give.
     assert(formattedDefinitionForNode(stEntry) === 'TcDynCollections.ST_Entry',
         `a struct falls back to its qualified name (got ${formattedDefinitionForNode(stEntry)})`);
+
+    console.log('\n--- interfaces / enums / GVLs are grouped and expandable, and import qualified ---');
+    // The three new groups exist and carry their type.
+    for (const [k, label] of [['interface', 'Interfaces'], ['enum', 'Enumerations'], ['gvl', 'GVLs']]) {
+        const g = groups.find(gr => gr.group.kind === k);
+        assert(!!g && g.group.label === label, `a "${label}" group exists (kind ${k})`);
+    }
+
+    // An enum expands to its values, and a value inserts namespace-qualified.
+    const enumType = (await provider.getChildren(groups.find(g => g.group.kind === 'enum')))[0];
+    assert(provider.getTreeItem(enumType).collapsibleState === EXPANDABLE, 'an enum with values is expandable');
+    const enumKids = await provider.getChildren(enumType);
+    assert(enumKids.length === 2 && enumKids.every(k => k.kind === 'member'),
+        `an enum's children are its values (got ${enumKids.map(k => k.kind).join(', ')})`);
+    assert(insertTextForNode(enumKids[0]) === 'TcDynCollections.E_State.IDLE',
+        `an enum value inserts namespace-qualified (got ${JSON.stringify(insertTextForNode(enumKids[0]))})`);
+
+    // A GVL expands to its globals, and a global inserts namespace-qualified.
+    const gvlType = (await provider.getChildren(groups.find(g => g.group.kind === 'gvl')))[0];
+    assert(provider.getTreeItem(gvlType).collapsibleState === EXPANDABLE, 'a GVL with globals is expandable');
+    const gvlKids = await provider.getChildren(gvlType);
+    assert(insertTextForNode(gvlKids[0]) === 'TcDynCollections.GVL_Cfg.gMaxAxes',
+        `a GVL global inserts namespace-qualified (got ${JSON.stringify(insertTextForNode(gvlKids[0]))})`);
+
+    // A struct FIELD, by contrast, still inserts bare — it is written after an instance.
+    const stKids = await provider.getChildren(stEntry);
+    assert(insertTextForNode(stKids[0]) === 'nKey',
+        `a struct field still inserts its bare name (got ${JSON.stringify(insertTextForNode(stKids[0]))})`);
 
     console.log(`\n--- LIBRARY TREE TESTS COMPLETE with ${errors} error(s) ---`);
     process.exit(errors > 0 ? 1 : 0);

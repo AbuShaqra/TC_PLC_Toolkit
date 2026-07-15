@@ -105,12 +105,22 @@ function parseLibrarySignaturesXml(xml) {
  * Flattens parsed libraries into registry-ready type records, shaped like libsymbols.js
  * `parseTmcDataType` output so they merge into the same `typeSystemTypes` store.
  *
- * `kind` extends the `.tmc` set with `'function'` (a callable with a `returnType`); FBs are `'fb'`
- * with scoped input/output members, and Type/Interface are `'opaque'` (name only). Global constants
- * are returned separately as bare names — they are symbols, not types.
+ * `kind` extends the `.tmc` set with `'function'` (a callable with a `returnType`), `'interface'`
+ * and `'gvl'`. FBs are `'fb'` with scoped input/output members. A `type="Type"` is `'opaque'` —
+ * struct/enum/alias are indistinguishable there and no fields are exported, so the `.tmc` is left to
+ * upgrade the ones the project uses to a real `'struct'`/`'enum'`.
+ *
+ * **Enums and GVLs both arrive as `type="VarGlobal"`, and are told apart by structure, not by name.**
+ * TwinCAT emits an enum's values as a var-list whose every constant is typed as the enum itself
+ * (case-insensitively) — that self-typing is the real enum marker, and the constants ARE the values.
+ * A genuine GVL's constants carry varied types; those are the library's globals. (A name prefix like
+ * `E_` is unreliable — `E_DriveDynamicParameter` in the real data is not an enum.)
+ *
+ * Every var-list name and constant is *also* returned as a bare symbol, so a bare use of an enum value
+ * or a global is never reported undeclared — unchanged from before this split.
  *
  * @param {ReturnType<typeof parseLibrarySignaturesXml>} parsed
- * @returns {{types: Array<{name,kind,namespace,members,returnType?}>, symbols: string[]}}
+ * @returns {{types: Array<{name:string,kind:('fb'|'function'|'opaque'|'interface'|'enum'|'gvl'),namespace:string,members:Array,returnType?:string}>, symbols: string[]}}
  */
 function toRegistryTypes(parsed) {
     const types = [];
@@ -126,8 +136,20 @@ function toRegistryTypes(parsed) {
                 returnType: fn.returnType || '', members: [...fn.inputs, ...fn.inouts] });
         }
         for (const t of lib.types) types.push({ name: t, kind: 'opaque', namespace: ns, source: 'sig', members: [] });
-        for (const itf of lib.interfaces) types.push({ name: itf, kind: 'opaque', namespace: ns, source: 'sig', members: [] });
+        for (const itf of lib.interfaces) types.push({ name: itf, kind: 'interface', namespace: ns, source: 'sig', members: [] });
         for (const g of lib.globals) {
+            const selfTyped = g.constants.length > 0 &&
+                g.constants.every(c => c.type.toLowerCase() === g.name.toLowerCase());
+            if (selfTyped) {
+                // An enum: its constants are the values. Shaped like the `.tmc`'s enum members
+                // (type 'Enum', scope 'ENUM') so both sources merge identically.
+                types.push({ name: g.name, kind: 'enum', namespace: ns, source: 'sig',
+                    members: g.constants.map(c => ({ name: c.name, type: 'Enum', scope: 'ENUM' })) });
+            } else {
+                // A real GVL: its constants are the globals, each with its own declared type.
+                types.push({ name: g.name, kind: 'gvl', namespace: ns, source: 'sig',
+                    members: g.constants.map(c => ({ name: c.name, type: c.type, scope: '' })) });
+            }
             symbols.push(g.name);
             for (const c of g.constants) symbols.push(c.name);
         }
