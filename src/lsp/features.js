@@ -984,7 +984,7 @@ function scopeLabel(scope) {
  * an invented one is not.
  * @param {Object} node Starting symbol-index node.
  * @param {Object} index Workspace symbol index.
- * @param {function(string): boolean} scopeOk Predicate on a variable's declared VAR scope.
+ * @param {(name: string) => boolean} scopeOk Predicate on a variable's declared VAR scope.
  * @returns {Array<Object>} Variable nodes, de-duplicated by name (the most-derived one wins).
  */
 function collectParamVarsInChain(node, index, scopeOk) {
@@ -2132,7 +2132,7 @@ function defKey(def) {
  * method-local variables that merely share a name are not, even in related POUs.
  * @param {Object} def A definition from definitionAt().
  * @param {Object} symbolIndex Workspace symbol index.
- * @returns {{key: string, owner: Object|null, memberName: string|null}}
+ * @returns {{key: string, owner: Object|null, memberName: string|null, methodName?: string}}
  */
 function describeDef(def, symbolIndex) {
     const scope = findActiveScope(symbolIndex, def.uri, def.range.start.line + 1);

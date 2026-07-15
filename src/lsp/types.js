@@ -391,7 +391,7 @@ function resolvePath(parts, scope, index) {
  * Conservative assignability check.
  * @param {Type} target Declared/target type.
  * @param {Type} source Source/value type.
- * @returns {'ok'|'incompatible'|'unknown'}
+ * @returns {'ok'|'incompatible'|'unknown'|'related'}
  */
 function isAssignable(target, source) {
     if (!target || !source) return 'unknown';

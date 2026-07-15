@@ -902,7 +902,7 @@ function activate(context) {
 
     /**
      * Coordinates the QuickPick selection dialogue and inputs when creating a sub-component.
-     * @param {vscode.TreeItem} node The context tree item.
+     * @param {vscode.TreeItem & {folderPath?: string}} node The context tree item.
      * @param {string} componentType 'Method', 'Property', or 'Action'.
      */
     async function handleComponentCreation(node, componentType) {
@@ -941,6 +941,7 @@ function activate(context) {
         
         const existingFolders = getFoldersDetailedFromXml(xmlText).map(f => f.path);
         
+        /** @type {Array<{label:string,description?:string,folderPath?:string,isCreateNew?:boolean}>} */
         const quickPickItems = [
             {
                 label: '$(root) [Root / No Folder]',
@@ -1003,6 +1004,7 @@ function activate(context) {
             });
             if (!newFolderName) return;
             
+            /** @type {Array<{label:string,description?:string,folderPath?:string}>} */
             const parentQuickPickItems = [
                 {
                     label: '$(root) [Root / No Folder]',

@@ -202,7 +202,7 @@ class ExprTyper {
  * @param {Array<Object>} tokens Meaningful tokens of the expression (skippables already removed).
  * @param {Object} scope { pou, method }.
  * @param {Object} index Workspace symbol index.
- * @returns {Type}
+ * @returns {import('./types').Type}
  */
 function inferType(tokens, scope, index) {
     if (!tokens || tokens.length === 0) return UNKNOWN;

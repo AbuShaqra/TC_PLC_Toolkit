@@ -382,7 +382,7 @@ function insertFolderIntoXml(xmlText, parentFolderPath, newFolderName, newFolder
 /**
  * Inserts a Method, Property, or Action tag at the end of the root block.
  * @param {string} xmlText The source POU XML text.
- * @param {string} fileUri The POU file URI.
+ * @param {*} fileUri Unused; retained for call-signature stability.
  * @param {boolean} isItf Whether the parent is an Interface (.TcIO).
  * @param {string} name Name of the component.
  * @param {string} componentType 'Method', 'Property', or 'Action'.

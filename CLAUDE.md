@@ -23,20 +23,22 @@ A VS Code extension ("TwinCAT PLC Toolkit", id `twincat-plc-toolkit`) that opens
 
 It was renamed from "TwinCAT XML Viewer" once it grew past viewing. Internal identifiers still use the `twincat.*` prefix and the custom editor is still `twincat.xmlViewer` — those are deliberate, not leftovers: renaming them would break saved keybindings and editor associations for no user-visible gain.
 
-Plain CommonJS JavaScript throughout — **no build/transpile step, no linter**. `extension.js` is the entry point and is loaded directly.
+Plain CommonJS JavaScript throughout — **no build/transpile step**. `extension.js` is the entry point and is loaded directly. There is a **type-check-only** gate (`npm run typecheck` → `tsc --noEmit`, config in `tsconfig.json`) that leans on the existing JSDoc as a safety net; it never emits, so the runtime stays plain JS. No linter.
 
 ## Commands
 
 ```bash
 npm install          # install dependencies
-npm test             # run all test harnesses (standalone Node, no VS Code needed)
+npm test             # run the whole suite via test/run.js (standalone Node, no VS Code needed)
+npm run typecheck    # type-CHECK only (tsc --noEmit); no emit — the extension still ships plain JS
 
 # Run a single test harness directly:
-node scratch/test_lsp_features.js       # core LSP: completions, definition, references, diagnostics
-node scratch/test_sample_diagnostics.js # zero-false-positive gate on the real sample/ project
-node scratch/test_live_path.js          # live editor pipeline: ST assembly, cursor mapping, per-pane diagnostics
-node scratch/test_typecheck.js          # semantic type checks (member access, call args, assignments)
-node scratch/test_references_tree.js    # references-view grouping
+node test/test_lsp_features.js       # core LSP: completions, definition, references, diagnostics
+node test/test_sample_diagnostics.js # zero-false-positive gate on the real sample/ project
+node test/test_live_path.js          # live editor pipeline: ST assembly, cursor mapping, per-pane diagnostics
+node test/test_typecheck.js          # semantic type checks (member access, call args, assignments)
+node test/test_references_tree.js    # references-view grouping
+node test/run.js references          # run only suites whose name matches a substring
 
 # Package a VSIX:
 npx @vscode/vsce package --allow-missing-repository --skip-license
@@ -44,7 +46,7 @@ npx @vscode/vsce package --allow-missing-repository --skip-license
 
 Manual testing: open this repo in VS Code, press **F5** ("Run Extension") to launch an Extension Development Host, open a TwinCAT project folder there. After code changes, **Ctrl+R** in the dev-host window to reload.
 
-Sample-based harnesses need a TwinCAT project under `sample/` (git-ignored); they skip cleanly if it is absent. `scratch/` also holds extra harnesses not wired into `npm test` (`test_lsp_parser.js`, `test_lsp_types_sync.js`, `test_method_diagnostics.js`).
+The suite lives in `test/` (run by `test/run.js`, which runs each harness in its own process and reports per-suite without aborting on the first failure). Sample-based harnesses need a TwinCAT project under `sample/` (git-ignored); they skip cleanly if it is absent — so `npm test` is green on a fresh clone / CI. `scratch/` holds experimental probes and extra harnesses NOT in the suite (`test_lsp_parser.js`, `test_lsp_types_sync.js`, `test_method_diagnostics.js`), plus utilities (`make_icon.js`). CI (`.github/workflows/ci.yml`) runs `npm run typecheck` then `npm test` on every push/PR to `main`.
 
 ## Architecture
 

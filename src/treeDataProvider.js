@@ -41,8 +41,15 @@ class TwinCatTreeItem extends vscode.TreeItem {
         this.command = command;
         this.iconPath = iconPath;
         this.children = children;
+        /** @type {string|undefined} Component id, assigned externally after construction. */
+        this.componentId = undefined;
+        /** @type {string|undefined} Virtual-folder path, assigned externally after construction. */
+        this.folderPath = undefined;
     }
 
+    // @ts-expect-error — `id` is deliberately a lazy getter (not a constructor-set property):
+    // it derives from componentId/folderPath, which are assigned after construction, so it cannot
+    // be a plain field like the base TreeItem.id it overrides.
     get id() {
         if (!this.resourceUri) return undefined;
         const cv = this.contextValue;
@@ -68,7 +75,7 @@ class TwinCatTreeDataProvider {
      * Triggers a UI refresh of the tree view.
      */
     refresh() {
-        this._onDidChangeTreeData.fire();
+        this._onDidChangeTreeData.fire(undefined);
     }
 
     /**

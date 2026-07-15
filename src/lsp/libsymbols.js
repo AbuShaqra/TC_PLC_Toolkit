@@ -169,10 +169,11 @@ const namespaceListCache = new Map();
  * @property {string} name Type name, in the `.tmc`'s spelling.
  * @property {'struct'|'fb'|'enum'|'opaque'|'function'} kind What the `.tmc` block (or the signatures
  *           dump) describes.
- * @property {string} namespace Owning library namespace, in the .plcproj's spelling ('' if none).
+ * @property {string} [namespace] Owning library namespace, in the .plcproj's spelling ('' if none).
  * @property {LibraryMember[]} members Fields / call parameters / enum members. Empty for 'opaque'.
  * @property {LibraryMethod[]} [methods] Methods of an FB or interface, from the `.tmc`.
  * @property {string} [extendsType] Base type this one inherits from ('' when it extends nothing).
+ * @property {string} [returnType] Return type of a signature-derived FUNCTION ('' / absent otherwise).
  */
 
 /**
@@ -923,6 +924,7 @@ function parseTmcDataType(block) {
 
     const methods = parseTmcMethods(block);
 
+    /** @type {'struct'|'fb'|'enum'|'opaque'|'function'} */
     let kind = 'opaque';
     if (enumMembers.length) kind = 'enum';
     else if (methods.length) kind = 'fb';

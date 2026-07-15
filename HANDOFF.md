@@ -37,6 +37,19 @@ extension itself (the customer/vendor *content* is gone, but that's a separate q
   commands, `twincat.xmlViewer` viewType, view ids): churning them breaks saved keybindings and editor associations
   for no visible gain. Don't "finish the job".
 
+## Build & test tooling (architecture roadmap — "Now" tier, 2026-07-15)
+
+- **Tests live in `test/`** (30 harnesses + `_baseline.js`), run by **`test/run.js`** — each suite in its own
+  process, all run even if one fails, per-suite summary. `npm test` → `node test/run.js`; `node test/run.js <substr>`
+  filters. The 3 experimental probes + `make_icon.js` stay in `scratch/`.
+- **Type-check gate:** `npm run typecheck` → `tsc --noEmit` (`tsconfig.json`, `checkJs`, scoped to `extension.js`+`src/`,
+  excludes `media`/`scratch`/`test`). **No emit — runtime stays plain CommonJS JS.** Currently **0 errors**; keep it there.
+  It caught real annotation gaps (isAssignable's `@returns` missing `'related'`, a dead `fileUri` param) but no logic bugs.
+- **CI:** `.github/workflows/ci.yml` runs `typecheck` then `test` on push/PR to `main`. `sample/` is absent on CI, so the
+  sample suites skip and the rest run (verified green). `test/`, `tsconfig.json`, `.github/` are `.vscodeignore`d out.
+- Still **open** on the roadmap: H1 (split the 2,876-line `features.js`), H2 (single symbol-node factory across the two
+  indexers), M2 (inject the workspace index instead of the parser.js global), M3 (thin `extension.js`).
+
 ## Diagnostics: how to measure (get this wrong and the number is meaningless)
 
 Mirror `server.js`: `indexLibraryNamespaces` + `indexLibrarySymbols` + `indexTypeSystem` (+ `indexLibrarySignatures`)
@@ -47,7 +60,7 @@ up front, then **per file** `convertXmlToSt(parsed, {raw:true})` → `parseAndIn
   — this fabricated ~2,300 phantom diagnostics and made the old "2550 baseline" almost entirely fiction;
 - omitting `registerLibrarySymbolNodes` leaves every library symbol unknown (171 false positives).
 
-`scratch/_baseline.js` is the single source of truth. Baselines are **machine-dependent**, all measured, not assumed:
+`test/_baseline.js` is the single source of truth. Baselines are **machine-dependent**, all measured, not assumed:
 `full` (archives + `.tmc`) = **0** · `archives-only` = 12 · `typesystem-only` = 69 · `none` (fresh clone) = 171.
 All of `sample/` is now git-ignored, so a fresh clone has no sample at all and the sample-based harnesses skip;
 with a local `sample/` present but `_Libraries/`+`.tmc` absent you measure 171 — the harnesses detect the row they're on.
@@ -116,7 +129,7 @@ entry is **encrypted**, entropy 7.999 b/byte).
 ## ST lexer: literal forms (cross-checked against the CODESYS programming reference)
 
 `tokenize()` was audited against the CODESYS reference and three real gaps fixed (guarded by
-`scratch/test_lexer_literals.js`): **(1) the string escape is `$`, not `\`** — `$' $" $$ $N $T $R $L $P`
+`test/test_lexer_literals.js`): **(1) the string escape is `$`, not `\`** — `$' $" $$ $N $T $R $L $P`
 and `$<hex><hex>`; using `\` let a `$'` or a trailing-backslash string (`'C:\path\'`) mis-terminate and
 swallow the code after it (same class as the pragma/GET bugs). **(2) REAL exponent notation** `1.64e+009`,
 `1.0E-44` (the sample has `3.4E+38`) — was split into `3.4`+`E`+…, a latent false-positive `E`. **(3) `_`
@@ -134,7 +147,7 @@ nodes now carry **`extendsAll`** (array; `extends` stays the first parent for co
 EXTENDS walkers traverse the whole DAG breadth-first with a visited-set: `parentNames()` +
 `lookupMember` / `findMethodOwnerInChain` / `isRelatedAssignable` in `types.js`, and
 `walkExtendsChain` in `features.js`. Behaviour is identical for the single-parent case (the sample
-holds at 0). Guarded by `scratch/test_interface_multi_extends.js`. FBs/structs remain single-inheritance
+holds at 0). Guarded by `test/test_interface_multi_extends.js`. FBs/structs remain single-inheritance
 (`collectParams` and the FB nav walkers still single-chain — that's correct).
 
 ## Find References: it was a PARSER bug, and the parser is still the first place to look
@@ -146,10 +159,10 @@ scanned forward for an `END_GET` that never comes and swallowed the rest of the 
 `END_METHOD` included — and every method after it. In the test rig's `FB_DUT` that ate **24 of its 44 methods**:
 their variables were invisible, so completion, diagnostics and Go to Definition were silently broken in
 them too. `provideReferences` keeps whatever it cannot resolve ⇒ every same-named variable got listed.
-Guarded by `scratch/test_parser_constructs.js`. **A "references" or "completion" bug that only shows up in
+Guarded by `test/test_parser_constructs.js`. **A "references" or "completion" bug that only shows up in
 one FB is a parser bug until proven otherwise** — check `node.methods.length` against the `METHOD` lines.
 
-The four real fixes that came out of it (all in `features.js`, guarded by `scratch/test_references_scope.js`):
+The four real fixes that came out of it (all in `features.js`, guarded by `test/test_references_scope.js`):
 - **Coordinate spaces.** The active document is parsed from its ST unit (ST-unit line numbers); every other
   document comes from **`xmlIndexer`, whose ranges are per-component**. `findActiveScope` therefore found no
   enclosing method in any other file. Each scanned document is now re-indexed from its ST **transiently and
@@ -187,7 +200,7 @@ and **one Go to References runs two searches** (peek via `custom/references`, pa
 - `clearStFileCache()` (exported, called from `custom/reindex`) drops deleted files; mtime handles edits.
 - **Other files are read from DISK**, so references into a file with unsaved edits in another tab see the *saved*
   version. Pre-existing, not caused by the cache — but now easier to forget.
-- `scratch/test_references_cache.js` guards the two silent failure modes: a stale cache after an on-disk edit, and a
+- `test/test_references_cache.js` guards the two silent failure modes: a stale cache after an on-disk edit, and a
   case-*sensitive* pre-filter dropping real hits.
 - **The duplicate search remains** (~8 ms warm, was ~130 ms). Collapsing it means changing the webview protocol — do
   it when that protocol is open for another reason, not on its own.
@@ -197,7 +210,7 @@ and **one Go to References runs two searches** (peek via `custom/references`, pa
 `src/objectKinds.js` owns kind → codicon → tooltip (`vscode`-free, so it is testable). **Codicon names are aliased:
 `symbol-function`, `symbol-method` and `symbol-constructor` are all codepoint 60044** — an early build first shipped with
 FUNCTION files and Method rows drawing the identical icon while passing a distinct-*names* check. `function` is now
-`symbol-operator`. `scratch/test_object_kinds.js` extracts the **516-name codicon registry from the vendored Monaco
+`symbol-operator`. `test/test_object_kinds.js` extracts the **516-name codicon registry from the vendored Monaco
 bundle** (offline) and asserts all 17 kinds resolve to 17 distinct **codepoints** — an unknown id renders *blank*, so a
 typo fails silently. Other alias traps it catches: `zap`==`symbol-event`, `symbol-namespace`/`-package`/`-object`==
 `symbol-module`, `symbol-value`==`symbol-enum`.

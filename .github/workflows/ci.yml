@@ -1,0 +1,31 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Type-check only (no emit) — a safety net over the JSDoc; the extension ships plain JS.
+      - name: Type-check
+        run: npm run typecheck
+
+      # sample/ is git-ignored (customer/vendor content), so it is absent on CI. The sample-based
+      # harnesses detect that and skip cleanly; every other suite runs.
+      - name: Test
+        run: npm test

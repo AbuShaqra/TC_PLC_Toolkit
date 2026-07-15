@@ -3,7 +3,10 @@
 .gitignore
 .claude/**
 scratch/**
+test/**
 sample/**
+tsconfig.json
+.github/**
 **/*.map
 node_modules/@types/**
 **/.DS_Store

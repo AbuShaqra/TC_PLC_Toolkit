@@ -1,0 +1,18 @@
+{
+  "//": "Type-CHECK only (noEmit). This project ships plain CommonJS with no build step; tsc is used purely as a safety net over the existing JSDoc. Runtime is unaffected. See HANDOFF.md.",
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": true,
+    "noEmit": true,
+    "module": "nodenext",
+    "target": "es2020",
+    "resolveJsonModule": true,
+    "skipLibCheck": true,
+    "strict": false,
+    "noImplicitAny": false,
+    "noImplicitThis": false,
+    "types": ["node"]
+  },
+  "include": ["extension.js", "src/**/*.js"],
+  "exclude": ["node_modules", "media", "scratch", "sample", "**/*.d.ts"]
+}

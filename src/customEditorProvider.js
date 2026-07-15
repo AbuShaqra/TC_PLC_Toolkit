@@ -417,6 +417,7 @@ class TwinCatCustomEditorProvider {
                         if (ctx) {
                             const abs = localToAbsolute(ctx.lineMap, message.componentId, message.pane, message.position.lineNumber, message.position.column);
                             if (abs) {
+                                /** @type {any} */
                                 const refs = await vscode.commands.executeCommand('twincat.lsp.queryReferences', {
                                     code: ctx.stText,
                                     position: abs,
@@ -457,6 +458,7 @@ class TwinCatCustomEditorProvider {
                         const ctx = assembleSt(document, message);
                         let mapped = [];
                         if (ctx) {
+                            /** @type {any} */
                             const diagnostics = await vscode.commands.executeCommand('twincat.lsp.queryDiagnostics', {
                                 code: ctx.stText,
                                 fileUri: message.fileUri
@@ -479,6 +481,7 @@ class TwinCatCustomEditorProvider {
                         if (!ctx) break;
                         const abs = localToAbsolute(ctx.lineMap, message.componentId, message.pane, message.position.lineNumber, message.position.column);
                         if (!abs) break;
+                        /** @type {any} */
                         const refs = await vscode.commands.executeCommand('twincat.lsp.queryReferences', {
                             code: ctx.stText,
                             position: abs,

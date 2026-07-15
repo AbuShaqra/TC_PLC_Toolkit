@@ -148,7 +148,7 @@ class TwinCatLibraryTreeDataProvider {
     /** Drops the cached catalog and re-renders (the next getChildren() re-fetches it). */
     refresh() {
         this.catalog = null;
-        this._onDidChangeTreeData.fire();
+        this._onDidChangeTreeData.fire(undefined);
     }
 
     /**

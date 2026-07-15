@@ -25,14 +25,14 @@ class TwinCatReferencesProvider {
     setReferences(targetWord, items) {
         this.targetWord = targetWord || '';
         this.roots = buildTree(items || []);
-        this._onDidChangeTreeData.fire();
+        this._onDidChangeTreeData.fire(undefined);
     }
 
     /** Clears the view. */
     clear() {
         this.targetWord = '';
         this.roots = [];
-        this._onDidChangeTreeData.fire();
+        this._onDidChangeTreeData.fire(undefined);
     }
 
     /** Total occurrence count across all files. */
