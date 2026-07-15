@@ -295,7 +295,10 @@ function isMethodScoped(def, symbolIndex) {
  * @param {Object} pou Enclosing POU.
  * @param {Object} method Enclosing method.
  * @param {Object} symbolIndex Workspace symbol index.
- * @returns {Array<string>|null} The callee's dotted path, or null when this is not a named argument.
+ * @returns {{pathParts: Array<string>, kind: string}|null} The call site (callee path + kind), or null
+ *          when this is not a named argument. `kind` distinguishes an ordinary call from a declaration-
+ *          site FB_init list (`inst : FB_Type(p := v)`), whose callee is the FB *type*, not a method —
+ *          the caller needs that distinction to resolve the argument to FB_init's VAR_INPUT.
  */
 function namedArgumentCallee(tokens, tokIdx, pou, method, symbolIndex) {
     let j = tokIdx + 1;
@@ -305,7 +308,7 @@ function namedArgumentCallee(tokens, tokIdx, pou, method, symbolIndex) {
 
     const site = classifyCallSite(tokens, tokIdx, pou, method, symbolIndex);
     if (!site || !site.pathParts || !site.pathParts.length) return null;   // not inside a call at all
-    return site.pathParts;
+    return { pathParts: site.pathParts, kind: site.kind };
 }
 
 /**
@@ -426,10 +429,20 @@ function provideReferences(code, position, symbolIndex, fileUri) {
                     t.line === range.start.line + 1 && t.col - 1 === range.start.character);
                 if (tokIdx !== -1) {
                     const scope = findActiveScope(symbolIndex, uri, range.start.line + 1);
-                    const callee = namedArgumentCallee(docTokens, tokIdx, scope.pou, scope.method, symbolIndex);
-                    if (callee && callee.length) {
+                    const site = namedArgumentCallee(docTokens, tokIdx, scope.pou, scope.method, symbolIndex);
+                    if (site && site.pathParts.length) {
+                        const callee = site.pathParts;
                         const calleeName = callee[callee.length - 1];
-                        if (target.methodName) {
+                        if (site.kind === 'declInitList') {
+                            // `inst : FB_Type(p := v)` — the argument names FB_Type's FB_init VAR_INPUT,
+                            // and the callee written in the source is the FB *type*, not `FB_init`. So it
+                            // is our symbol only when the target IS an FB_init parameter and FB_Type is
+                            // that owner (or derives from it — FB_init may be inherited). An unresolvable
+                            // type is kept, as ever.
+                            if (!target.methodName || target.methodName.toLowerCase() !== 'fb_init') continue;
+                            const calleeNode = findNode(symbolIndex, calleeName);
+                            if (calleeNode && target.owner && !pousRelated(calleeNode, target.owner, symbolIndex)) continue;
+                        } else if (target.methodName) {
                             // The target is a method's parameter: only a call to THAT method names it.
                             // `fbAxis.Halt(bDone => x)` yes; `SoEReset(bDone => x)` no.
                             if (calleeName.toLowerCase() !== target.methodName.toLowerCase()) continue;

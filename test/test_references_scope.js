@@ -188,5 +188,77 @@ assert(haltRefs.length === 3,
     `Halt's bDone has exactly 3 references: its declaration, its use, and the call site (got ${haltRefs.length})`);
 
 fs.rmSync(DIR2, { recursive: true, force: true });
+
+// ---------------------------------------------------------------------------------------------
+// A DECLARATION-SITE FB_init argument is a reference to that FB_init's VAR_INPUT.
+//
+// `inst : FB_Type(p := v)` passes v to FB_Type's FB_init parameter p — so an occurrence of `p` there
+// is a reference to FB_init's VAR_INPUT `p`. It used to be dropped: the named-argument filter compared
+// the callee written in the source (`FB_Type`, the type) against the target's method name (`FB_init`)
+// and, never matching, skipped it. classifyCallSite tags this site 'declInitList'; references now uses
+// that tag to match by the FB TYPE (owner, or a subtype since FB_init may be inherited) instead.
+// Reported by the user: "references of FB_init input vars written as part of the FB declaration are
+// never listed."
+// ---------------------------------------------------------------------------------------------
+const DIR3 = path.join(os.tmpdir(), 'tc_ref_scope3');
+fs.rmSync(DIR3, { recursive: true, force: true });
+fs.mkdirSync(DIR3, { recursive: true });
+const uriOf3 = (n) => 'file:///' + path.join(DIR3, n).replace(/\\/g, '/');
+
+const files3 = {
+    'FB_Motor.st': `FUNCTION_BLOCK FB_Motor
+VAR
+    nSpeed : INT;
+END_VAR
+nSpeed := nSpeed;
+
+METHOD FB_init : BOOL
+VAR_INPUT
+    nMaxSpeed : INT;
+END_VAR
+nSpeed := nMaxSpeed;
+END_METHOD
+`,
+    // Constructs FB_Motor at its declaration site (declInitList) AND a different FB whose FB_init has a
+    // same-named param, to prove the type — not just the name — is what gates the match.
+    'FB_Other.st': `FUNCTION_BLOCK FB_Other
+VAR
+END_VAR
+
+METHOD FB_init : BOOL
+VAR_INPUT
+    nMaxSpeed : INT;
+END_VAR
+END_METHOD
+`,
+    'MAIN.st': `PROGRAM MAIN
+VAR
+    fbMotor : FB_Motor(nMaxSpeed := 3000);
+    fbOther : FB_Other(nMaxSpeed := 10);
+END_VAR
+fbMotor();
+`
+};
+for (const [n, t] of Object.entries(files3)) fs.writeFileSync(path.join(DIR3, n), t, 'utf8');
+
+clearWorkspaceIndex();
+clearStFileCache();
+for (const n of Object.keys(files3)) parseAndIndexDocument(files3[n], uriOf3(n));
+const index3 = getWorkspaceSymbolIndex();
+
+const motorLines = files3['FB_Motor.st'].split('\n');
+const nMaxDecl = motorLines.findIndex(l => l.includes('nMaxSpeed : INT;'));
+const motorRefs = provideReferences(files3['FB_Motor.st'],
+    { line: nMaxDecl, character: motorLines[nMaxDecl].indexOf('nMaxSpeed') + 1 }, index3, uriOf3('FB_Motor.st'));
+
+const at3 = (refs, file, line) => refs.some(r => String(r.uri).includes(file) && r.range.start.line === line);
+assert(at3(motorRefs, 'MAIN', 2),
+    `FB_Motor.FB_init's nMaxSpeed DOES include the declaration-site arg fbMotor : FB_Motor(nMaxSpeed := …)`);
+assert(!at3(motorRefs, 'MAIN', 3),
+    `...but NOT fbOther : FB_Other(nMaxSpeed := …) — a same-named FB_init param on a different FB is a different symbol`);
+assert(motorRefs.length === 3,
+    `FB_Motor.FB_init's nMaxSpeed has exactly 3 references: its declaration, its use, and the FB_Motor decl-site arg (got ${motorRefs.length})`);
+
+fs.rmSync(DIR3, { recursive: true, force: true });
 console.log(`\n--- REFERENCE SCOPE TESTS COMPLETE with ${errors} error(s) ---`);
 process.exit(errors > 0 ? 1 : 0);
