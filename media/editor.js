@@ -550,16 +550,15 @@
                 // panes). Returning a URI without a loaded model crashes Monaco's peek widget
                 // ("Model not found"). Cross-file / other-component references are surfaced separately.
                 const locations = [];
-                let externalCount = 0;
                 for (const ref of refs) {
-                    if (!ref.sameFile) { externalCount++; continue; }
-                    if (ref.componentId !== activeComponentId) { externalCount++; continue; }
+                    if (!ref.sameFile) continue;
+                    if (ref.componentId !== activeComponentId) continue;
                     let ed = null;
                     if (ref.pane === 'decl' && paneDeclEl.style.display !== 'none') ed = declEditor;
                     else if (ref.pane === 'impl' && paneImplEl.style.display !== 'none') ed = implEditor;
-                    if (!ed) { externalCount++; continue; }
+                    if (!ed) continue;
                     const m = ed.getModel();
-                    if (!m) { externalCount++; continue; }
+                    if (!m) continue;
                     locations.push({
                         uri: m.uri,
                         range: {
@@ -570,16 +569,18 @@
                         }
                     });
                 }
-                if (externalCount > 0) {
-                    // Let the extension list references that live outside the current view.
-                    vscode.postMessage({
-                        type: 'showExternalReferences',
-                        fileUri: activeFileUri,
-                        componentId: activeComponentId,
-                        pane: (model === declEditor.getModel()) ? 'decl' : 'impl',
-                        position: { lineNumber: position.lineNumber, column: position.column }
-                    });
-                }
+                // Always populate the "TwinCAT References" panel with the FULL result set, independent of
+                // the peek. The peek (`locations` above) can only render hits in the active component's
+                // visible panes, so without this the panel stayed empty whenever every hit was local —
+                // which is the inconsistency being fixed. (This is the extra queryReferences pass noted in
+                // HANDOFF; ~8 ms warm, and it is what the extension turns into the panel's item list.)
+                vscode.postMessage({
+                    type: 'showExternalReferences',
+                    fileUri: activeFileUri,
+                    componentId: activeComponentId,
+                    pane: (model === declEditor.getModel()) ? 'decl' : 'impl',
+                    position: { lineNumber: position.lineNumber, column: position.column }
+                });
                 return locations;
             }
         });

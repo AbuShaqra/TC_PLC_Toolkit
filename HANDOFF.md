@@ -64,9 +64,33 @@ extension itself (the customer/vendor *content* is gone, but that's a separate q
   change was trace-reviewed; tsc + the 31 suites cover the parser/references halves.**
 - **L2 DONE:** `test/test_libsymbols.js` now carries a named PERF GUARD asserting library-symbol registration scales
   with the DOCUMENT, not the registry (pins the lazy-registration invariant behind the 78s cliff).
-- Still **open**: M3 (thin `extension.js`). **L1 (reverse index) — recommend DEFER:** it optimises a path that is already
-  fast at this scale (29 ms cold on 152 files) and adds a cache-coherence surface to a feature that was historically
-  fragile there; build it only when a project crosses ~1000 files or reference search exceeds ~200 ms.
+- **M3 DONE (committed on branch `refactor/thin-extension-and-ref-fixes`, not pushed; `main` unchanged):**
+  `extension.js` **1205 → 359 lines**, now a thin hub. Pure
+  structural split; command bodies moved byte-identical. New modules: `src/xaeShell.js` (shell discovery +
+  signature-generator — distinct from `src/lsp/librarySignatures.js`, the XML-dump parser), and under
+  `src/commands/`: `objectCommands.js` (13 create/delete + `handleComponentCreation`/`handleFileCreation`/`applyXmlEdit`),
+  `libraryCommands.js` (6 library-view cmds), `lspBridgeCommands.js` (`openComponent` + 5 `lsp.query*`). Each exports a
+  `register*(context, deps)`; `client` stays module-owned in `extension.js`, passed as `getClient: () => client` to
+  preserve the `if (!client)` guards. Hub keeps: references view, LSP bootstrap, types broadcast, watchers, view creation.
+  **Verified:** tsc 0, 31 suites green, every declared command registered exactly once. **F5-confirmed by the user:**
+  activation clean (dev-host exthost log, no errors), New FB works, Insert-from-Library works, Find References works.
+- **Three fixes made alongside M3 (committed on the same branch — EISDIR in commit 1, the two ref fixes in commit 2):**
+  - **Folder-create EISDIR** — `onDidCreate` called `updateCacheForFile`/`indexFileOnLsp` for *every* created path,
+    incl. directories, so `readFile(dir)` threw EISDIR (caught+logged; folder still created). Pre-existing, not a
+    refactor regression. Now gates on the TwinCAT extension exactly as `onDidChange` does (`extension.js` onDidCreate).
+  - **References panel now always populates** — `media/editor.js provideReferences` only posted `showExternalReferences`
+    (which fills the "TwinCAT References" panel) when `externalCount > 0`, so an all-local result left the panel empty
+    while the peek showed hits. Now posts **unconditionally**; the extension already builds the panel list from the full
+    result set. Cost: the extra queryReferences pass (the "duplicate search" below) now runs every time (~8 ms warm).
+  - **FB_init decl-site references** — `inst : FB_Type(p := v)` names FB_Type's FB_init VAR_INPUT, but references dropped
+    it: `namedArgumentCallee` discarded `classifyCallSite`'s `kind`, so `collect` compared the FB *type* name against the
+    target's method name (`FB_init`) and never matched. Now carries `kind`; a `declInitList` site matches by FB type
+    (owner or subtype — FB_init may be inherited). Guarded by a new block in `test/test_references_scope.js`.
+- **Roadmap COMPLETE.** H1/H2/M2/M3/L2 done; **L1 (reverse index) DEFERRED by decision** (user chose the safe option,
+  2026-07-15). It optimises a path already fast at this scale (29 ms cold / ~4 ms warm on 152 files; a regex pre-filter
+  already skips tokenizing files without the word) and would add a cache-coherence surface to Find References, which this
+  project's history shows is fragile exactly there — risk without a measurable payoff. **Reopen only** when a project
+  crosses ~1000 files or reference search exceeds ~200 ms.
 
 ## Diagnostics: how to measure (get this wrong and the number is meaningless)
 
@@ -220,8 +244,9 @@ and **one Go to References runs two searches** (peek via `custom/references`, pa
   version. Pre-existing, not caused by the cache — but now easier to forget.
 - `test/test_references_cache.js` guards the two silent failure modes: a stale cache after an on-disk edit, and a
   case-*sensitive* pre-filter dropping real hits.
-- **The duplicate search remains** (~8 ms warm, was ~130 ms). Collapsing it means changing the webview protocol — do
-  it when that protocol is open for another reason, not on its own.
+- **The duplicate search remains** (~8 ms warm, was ~130 ms) and **now runs on every Find References**, not only when
+  there are external hits: the panel is populated unconditionally so it is always complete (see the M3-era fixes above).
+  Collapsing the two searches means changing the webview protocol — do it when that protocol is open for another reason.
 
 ## Objects tree icons: distinct GLYPHS, not distinct names
 
