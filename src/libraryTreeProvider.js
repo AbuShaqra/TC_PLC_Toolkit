@@ -76,6 +76,8 @@ function insertTextForNode(node) {
         }
         return node.member.name;
     }
+    // A property (from the browsercache) inserts its bare name — written after an instance, like a field.
+    if (node.kind === 'property') return node.property.name;
     // A method is only ever written after an instance (`mover.Halt(…)`), which the user has already
     // typed — so, like a member, it inserts its bare name and not a qualified one.
     if (node.kind === 'method') return node.method.name;
@@ -224,8 +226,9 @@ class TwinCatLibraryTreeDataProvider {
         }
 
         if (element.kind === 'type') {
-            // Fields and call parameters first, then methods — a reader looks for an FB's inputs
-            // before its methods, and an FB like FB_XmlDomParser has 103 of the latter.
+            // Fields/parameters, then methods, then properties — a reader looks for an FB's inputs
+            // before its methods, and an FB like FB_XmlDomParser has 103 of the latter. Methods and
+            // properties come from the `.tmc` (with parameters) and the browsercache (names only).
             // ownerType/namespace ride along so an enum value or GVL global can be inserted qualified.
             return [
                 ...(element.type.members || []).map(member =>
@@ -233,7 +236,11 @@ class TwinCatLibraryTreeDataProvider {
                 ...(element.type.methods || [])
                     .slice()
                     .sort((a, b) => a.name.localeCompare(b.name))
-                    .map(method => ({ kind: 'method', method, owner: element.type, namespace: element.namespace }))
+                    .map(method => ({ kind: 'method', method, owner: element.type, namespace: element.namespace })),
+                ...(element.type.properties || [])
+                    .slice()
+                    .sort((a, b) => a.name.localeCompare(b.name))
+                    .map(property => ({ kind: 'property', property, owner: element.type, namespace: element.namespace }))
             ];
         }
 
@@ -264,7 +271,8 @@ class TwinCatLibraryTreeDataProvider {
             // Methods count as children too. Counting only members made every *interface* a leaf —
             // I_List has 21 methods and no fields, so its whole surface was unreachable, along with
             // 127 other methods across the catalog.
-            const hasChildren = (type.members || []).length > 0 || (type.methods || []).length > 0;
+            const hasChildren = (type.members || []).length > 0
+                || (type.methods || []).length > 0 || (type.properties || []).length > 0;
             const item = new vscode.TreeItem(
                 type.name,
                 hasChildren ? vscode.TreeItemCollapsibleState.Collapsed : vscode.TreeItemCollapsibleState.None
@@ -280,17 +288,30 @@ class TwinCatLibraryTreeDataProvider {
 
         if (element.kind === 'method') {
             const method = element.method;
+            // A `.tmc` method has a params array (its signature is known); a browsercache method has
+            // none (params unknown). Only the former expands and shows a signature — the latter is a
+            // bare name, which is honest about what the browsercache carries.
+            const knownParams = Array.isArray(method.params);
             const params = method.params || [];
             const item = new vscode.TreeItem(
                 method.name,
                 params.length ? vscode.TreeItemCollapsibleState.Collapsed : vscode.TreeItemCollapsibleState.None
             );
-            // The signature as it would be written, so the list can be scanned without expanding it.
             const sig = params.map(p => p.name).join(', ');
-            item.description = `(${sig})${method.returnType ? ` : ${method.returnType}` : ''}`;
+            item.description = knownParams ? `(${sig})${method.returnType ? ` : ${method.returnType}` : ''}` : '';
             item.iconPath = new vscode.ThemeIcon('symbol-method');
             item.tooltip = `${element.owner.name}.${method.name}`;
             item.contextValue = 'twincatLibraryMethod';
+            return item;
+        }
+
+        if (element.kind === 'property') {
+            // Names only (from the browsercache) — a leaf, inserted as a bare name like a member (it is
+            // written after an instance the user has already typed: `fbAxis.Enabled`).
+            const item = new vscode.TreeItem(element.property.name, vscode.TreeItemCollapsibleState.None);
+            item.iconPath = new vscode.ThemeIcon('symbol-property');
+            item.tooltip = `${element.owner.name}.${element.property.name}`;
+            item.contextValue = 'twincatLibraryMember';
             return item;
         }
 
