@@ -4,8 +4,8 @@ Where the work *stands*. Read before starting; keep current (handoff rule in [CL
 100 lines — prune finished items rather than appending, but never drop a real finding to hit it. **Shipped features
 live in git history (PRs/commits); this file keeps the findings that would cost to re-derive.**
 
-**Last verified:** 2026-07-15 — `npm test` green (32 harnesses), **0 diagnostics on the sample**. **Version 0.1.4**
-(0.1.0 renumbered from 0.4.2 for the fresh public repo; each patch since = one shipped feature, see PRs #1–#6).
+**Last verified:** 2026-07-15 — `npm test` green (32 harnesses), **0 diagnostics on the sample**. **Version 0.1.5**
+(0.1.0 renumbered from 0.4.2 for the fresh public repo; each patch since = one shipped increment, see PRs #1–#7).
 **Not yet visually confirmed by the user:** the 0.1.3 library grouping and 0.1.4 member expansion in the tree UI —
 logic is verified on real data + guard tests, but nobody has eyeballed the rendered tree. Worth doing.
 
@@ -65,6 +65,12 @@ decline on external). Disabling guard #1 → 79 false positives (`AXIS_REF.ReadS
   a bare name, not a fake `()`). A direct child of FB `{6f9dac99}`/interface `{6654496c}` is a **property**
   `{5a3b8626}` else a **method**; Get/Set accessors are a property's own children. **No distinct ACTION TypeGUID** —
   `{f89f7675}` is an interface method. `indexBrowserCache` runs LAST in `indexLibraries`.
+- **GVLs:** members come only from the signatures' `<Constant>` entries — the generator exports only
+  `VAR_GLOBAL **CONSTANT**`, never plain globals (browsercache GVL nodes are leaves; `.tmc` has no GVLs). So a GVL of
+  non-constant globals genuinely shows no members and renders as a **leaf** with a `no exported globals` hint + a
+  tooltip (not a bug — verified: those `VarGlobal` blocks are just `<Name>`). **Compiler-internal `__*` names** (auto-
+  generated backing GVLs like `__TL_Foo__GVL`) are **hidden from the tree** (`getLibraryCatalog` filters `/^__/`;
+  display-only, the names stay declared symbols).
 - **Struct hard-limit — investigated + verified, do NOT re-chase:** structs the `.tmc` doesn't cover stay in "Data
   Types". struct/enum/alias share ONE "DUT" TypeGUID (`ST_Fanuc_DI`==`E_FanucState`==`{2db5746d}`), DUT nodes carry
   no fields, signatures are bare names, and `GetLibraryIecDeclaration` is E_NOINTERFACE on this build → struct-vs-alias

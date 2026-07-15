@@ -27,6 +27,7 @@ const path = require('path');
 
 const {
     indexLibraryTitles,
+    indexLibrarySignaturesFromXml,
     getLibraryCatalog,
     getTypeSystemNamespaceTypes,
     clearLibrarySymbols
@@ -97,6 +98,20 @@ try {
     indexLibraryTitles(dir);
     synth = getLibraryCatalog();
     assert(synth.length === 2, `re-indexing is idempotent — still 2 entries (got ${synth.length})`);
+
+    // ---- 1b. Compiler-internal (__*) names are hidden from the tree -------------------------------
+    // TwinCAT auto-generates backing GVLs like `__TL_Foo__GVL`; nobody references them by hand, so the
+    // catalog (which feeds the view) must drop them while keeping the real ones.
+    indexLibrarySignaturesFromXml(`<LibrarySignatures><Library>
+      <LibraryName>Recipe Management</LibraryName><Version>1</Version><Distributor>System</Distributor>
+      <TypeSignature type="VarGlobal"><Name>GVL_Real</Name>
+        <Constants><Constant><Name>gX</Name><DataType>INT</DataType></Constant></Constants></TypeSignature>
+      <TypeSignature type="VarGlobal"><Name>__TL_Foo__GVL</Name>
+        <Constants><Constant><Name>gY</Name><DataType>INT</DataType></Constant></Constants></TypeSignature>
+    </Library></LibrarySignatures>`);
+    const recipeTypes = byNamespace(getLibraryCatalog(), 'Recipe_Management').types.map(t => t.name);
+    assert(recipeTypes.includes('GVL_Real'), 'a normal GVL is catalogued');
+    assert(!recipeTypes.some(n => /^__/.test(n)), `a compiler-internal __*__GVL is hidden (got ${JSON.stringify(recipeTypes)})`);
 
     // ---- 2. The real sample project --------------------------------------------------------------
     if (!fs.existsSync(SAMPLE_DIR)) {

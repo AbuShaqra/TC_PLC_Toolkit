@@ -278,10 +278,17 @@ class TwinCatLibraryTreeDataProvider {
                 hasChildren ? vscode.TreeItemCollapsibleState.Collapsed : vscode.TreeItemCollapsibleState.None
             );
             // The group heading already says what kind this is, so spend the description on something
-            // it does not: a function's return type. Other kinds get nothing rather than noise.
-            item.description = type.kind === 'function' && type.returnType ? `: ${type.returnType}` : '';
+            // it does not: a function's return type, or — for a GVL we can list no globals for — a note
+            // that it is empty by data-availability, not by failure (see the tooltip). Others get nothing.
+            const emptyGvl = type.kind === 'gvl' && !hasChildren;
+            item.description = type.kind === 'function' && type.returnType ? `: ${type.returnType}`
+                : (emptyGvl ? 'no exported globals' : '');
             item.iconPath = new vscode.ThemeIcon(TYPE_ICONS[type.kind] || 'symbol-misc');
-            item.tooltip = `${element.namespace}.${type.name}`;
+            item.tooltip = emptyGvl
+                ? `${element.namespace}.${type.name}\n\nTwinCAT's signature export lists only VAR_GLOBAL `
+                  + `CONSTANT, so a GVL of non-constant globals has no members to show. The name is still `
+                  + `usable — insert it and type \`${type.name}.\` to reference a global.`
+                : `${element.namespace}.${type.name}`;
             item.contextValue = 'twincatLibraryType';
             return item;
         }
