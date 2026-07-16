@@ -798,6 +798,99 @@ function renameRootObjectInXml(xmlText, newName) {
 }
 
 /**
+ * Renames a Method/Property/Action/Transition in place — the member's opening-tag Name attribute,
+ * its declaration-header identifier (Method/Property only; Actions/Transitions carry no ST header),
+ * and every LineIds name rooted on it. Unlike a paste (insertComponentBlockIntoXml) or a file
+ * duplicate (regenerateObjectIdsInXml), a rename-in-place must NOT re-identify: the object's Ids and
+ * GUIDs are deliberately KEPT — see regenerateObjectIdsInXml's doc comment for the contrast.
+ * Deliberately does NOT touch occurrences in code bodies (self-references keep the old name, exactly
+ * as TwinCAT's own rename leaves them). Everything outside the renamed spots is byte-for-byte
+ * identical.
+ * @param {string} xmlText POU/Interface XML text.
+ * @param {string} rootName Root POU/Interface name — the prefix carried by member LineIds names.
+ * @param {string} componentType 'Method', 'Property', 'Action', 'Transition'.
+ * @param {string} componentName Current name of the component to rename.
+ * @param {string} newName The new component name.
+ * @returns {string} The modified XML text; the input unchanged when the component is not found or
+ * the names are equal.
+ */
+function renameComponentInXml(xmlText, rootName, componentType, componentName, newName) {
+    if (componentName === newName) return xmlText;
+
+    // Same open-tag anchoring as setComponentFolderPathInXml/deleteComponentFromXml, name escaped:
+    // a malformed name must never corrupt the match or the replacement.
+    const nameEsc = componentName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const openTagRegex = new RegExp(`<${componentType}\\b[^>]*Name="${nameEsc}"[^>]*>`);
+    const openTagMatch = xmlText.match(openTagRegex);
+    if (!openTagMatch) return xmlText;
+
+    const openTag = openTagMatch[0];
+    const openStart = openTagMatch.index;
+
+    // The component block: opening tag through matching close tag (a Property's Get/Set included),
+    // or just the tag when defensively self-closing. Scoping the header rename to THIS block is
+    // essential — on the whole file renameFirstHeaderOccurrence would hit the ROOT's <Declaration>.
+    let blockEnd;
+    if (openTag.endsWith('/>')) {
+        blockEnd = openStart + openTag.length;
+    } else {
+        const closeTag = `</${componentType}>`;
+        const closeTagIndex = xmlText.indexOf(closeTag, openStart);
+        if (closeTagIndex === -1) return xmlText;
+        blockEnd = closeTagIndex + closeTag.length;
+    }
+    const block = xmlText.substring(openStart, blockEnd);
+
+    // 1. Rewrite the opening tag's Name attribute (matched tag only) via indexOf+slice — never a
+    //    computed String.replace (the technique in insertComponentBlockIntoXml).
+    let newTag = openTag;
+    const nameAttr = ` Name="${componentName}"`;
+    const nameIdx = newTag.indexOf(nameAttr);
+    if (nameIdx !== -1) {
+        newTag = newTag.slice(0, nameIdx) + ` Name="${newName}"` + newTag.slice(nameIdx + nameAttr.length);
+    }
+    let newBlock = newTag + block.slice(openTag.length);
+
+    // 2. Rename the declaration-header identifier (Method/Property only). Actions/Transitions have
+    //    no ST declaration header to rename.
+    if (componentType === 'Method' || componentType === 'Property') {
+        newBlock = renameFirstHeaderOccurrence(newBlock, /\b(?:METHOD|PROPERTY)\b/i, componentName, newName);
+    }
+
+    let result = xmlText.substring(0, openStart) + newBlock + xmlText.substring(blockEnd);
+
+    // 3. Rewrite member LineIds names: exact `rootName.componentName` and the dotted-prefix form
+    //    `rootName.componentName.<suffix>` (a Property's `.Get`/`.Set`). Compared case-insensitively
+    //    (IEC names are); only the name VALUE is spliced (group 1 keeps the tag's own bytes). This
+    //    is the rename analogue of deleteComponentFromXml's LineIds removal.
+    const oldFull = `${rootName}.${componentName}`;
+    const oldFullLower = oldFull.toLowerCase();
+    const newFull = `${rootName}.${newName}`;
+    const lineIdsRegex = /(<LineIds\s+Name=")([^"]*)"/g;
+    let out = '';
+    let last = 0;
+    let match;
+    while ((match = lineIdsRegex.exec(result)) !== null) {
+        const name = match[2];
+        const nameLower = name.toLowerCase();
+        let renamed = null;
+        if (nameLower === oldFullLower) {
+            renamed = newFull;
+        } else if (nameLower.startsWith(oldFullLower + '.')) {
+            renamed = newFull + name.slice(oldFull.length);
+        }
+        if (renamed !== null) {
+            const valueStart = match.index + match[1].length;
+            out += result.slice(last, valueStart) + renamed;
+            last = valueStart + name.length;
+        }
+    }
+    result = out + result.slice(last);
+
+    return result;
+}
+
+/**
  * Deletes a Folder tag from the XML.
  * @param {string} xmlText TwinCAT XML text.
  * @param {string} folderPath Virtual folder path (e.g. 'Methods\\Internal\\').
@@ -885,6 +978,60 @@ function deleteFolderTagFromXml(xmlText, folderPath) {
     return xmlText;
 }
 
+/**
+ * Renames a virtual folder in place: the target <Folder> tag's Name attribute, plus the FolderPath
+ * attribute on every member whose path lies inside the folder. Virtual-folder membership in TwinCAT
+ * XML is nothing but the folder nesting and the members' FolderPath attributes — so only the ONE
+ * folder tag's Name and the affected FolderPath values change; nested sub-folder tags derive their
+ * path from nesting and are left alone, and every other byte is preserved.
+ * @param {string} xmlText POU/Interface XML text.
+ * @param {string} folderPath Full virtual path of the folder to rename, with trailing backslash
+ * (e.g. 'Methods\\Internal\\').
+ * @param {string} newName The new (leaf) folder name.
+ * @returns {string} The modified XML text; the input unchanged when the folder is not found or the
+ * rename is a no-op.
+ */
+function renameVirtualFolderInXml(xmlText, folderPath, newName) {
+    // Locate the target folder by its computed path — getFoldersDetailedFromXml walks the same
+    // nesting stack deleteFolderTagFromXml relies on, and hands back the opening tag's span.
+    const folder = getFoldersDetailedFromXml(xmlText).find(f => f.path === folderPath);
+    if (!folder || folder.name === newName) return xmlText;
+
+    // New leaf path: the parent prefix (folderPath minus its last segment) + newName + '\'.
+    const parts = folderPath.split('\\').filter(p => p.length > 0);
+    const parentSegments = parts.slice(0, -1);
+    const newPath = (parentSegments.length ? parentSegments.join('\\') + '\\' : '') + newName + '\\';
+
+    // 1. Rewrite the folder tag's Name attribute (matched tag only) via slice.
+    const tag = xmlText.substring(folder.startIndex, folder.startIndex + folder.length);
+    const nameAttr = ` Name="${folder.name}"`;
+    const nameIdx = tag.indexOf(nameAttr);
+    if (nameIdx === -1) return xmlText;
+    const newTag = tag.slice(0, nameIdx) + ` Name="${newName}"` + tag.slice(nameIdx + nameAttr.length);
+    let result = xmlText.substring(0, folder.startIndex) + newTag + xmlText.substring(folder.startIndex + folder.length);
+
+    // 2. Repoint every member FolderPath that starts with the old path prefix (case-sensitive, as
+    //    TwinCAT wrote it). FolderPath appears only on member opening tags, so a whole-file pass is
+    //    safe; the value is spliced, never String.replace'd (paths carry backslashes and could
+    //    carry '$', both special in replacement strings).
+    const faRegex = /\sFolderPath="([^"]*)"/g;
+    let out = '';
+    let last = 0;
+    let match;
+    while ((match = faRegex.exec(result)) !== null) {
+        const value = match[1];
+        if (value.startsWith(folderPath)) {
+            const newValue = newPath + value.slice(folderPath.length);
+            const valueStart = match.index + match[0].indexOf('"') + 1;
+            out += result.slice(last, valueStart) + newValue;
+            last = valueStart + value.length;
+        }
+    }
+    result = out + result.slice(last);
+
+    return result;
+}
+
 module.exports = {
     parseAttrs,
     getCdata,
@@ -898,6 +1045,9 @@ module.exports = {
     extractComponentBlockFromXml,
     insertComponentBlockIntoXml,
     renameRootObjectInXml,
+    renameComponentInXml,
+    renameFirstHeaderOccurrence,
     regenerateObjectIdsInXml,
-    deleteFolderTagFromXml
+    deleteFolderTagFromXml,
+    renameVirtualFolderInXml
 };

@@ -105,6 +105,7 @@ const {
     provideCompletions,
     provideDefinition,
     provideReferences,
+    provideReferencesForSymbol,
     provideDocumentHighlights,
     provideDiagnostics,
     setDiagnosticsConfig,
@@ -237,6 +238,18 @@ connection.onRequest('custom/references', (params) => {
         return provideReferences(params.code, params.position, workspaceIndex, params.fileUri);
     } catch (e) {
         return [];
+    }
+});
+
+// References for a symbol identified by NAME (root object, optionally a member), rather than by a
+// cursor position — what a rename needs, and the only way to seed on a GVL (whose own name never
+// appears in its converted ST). Deliberately NO syncDocument: there is no `code` param, and reading
+// the target's file from disk is the whole point (provideReferencesForSymbol does that itself).
+connection.onRequest('custom/referencesForSymbol', (params) => {
+    try {
+        return provideReferencesForSymbol(params, workspaceIndex);
+    } catch (e) {
+        return { resolved: false, references: [], declaration: null };
     }
 });
 

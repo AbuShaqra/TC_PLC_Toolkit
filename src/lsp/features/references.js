@@ -6,6 +6,7 @@
 const fs = require('fs');
 const { tokenize, TokenType, isSkippable, parseAndIndexDocument } = require('../parser');
 const { findNode } = require('../types');
+const { registerLibrarySymbolNodes } = require('../libsymbols');
 const { parseTwinCatXml } = require('../../xmlParser');
 const { convertXmlToSt } = require('../../stConverter');
 const {
@@ -391,14 +392,12 @@ function provideReferences(code, position, symbolIndex, fileUri) {
     const targetDef = tokens ? definitionAt(code, tokens, position, symbolIndex, fileUri) : null;
     const target = targetDef ? describeDef(targetDef, symbolIndex) : null;
 
-    const references = [];
-    const visitedUris = new Set();
-
     // A method-local variable cannot be named outside its method, so the search stops there: the whole
     // workspace pass below is not just wasted, it is what produced the wrong answers (see
     // methodLocalScope). declRange is 1-based; ranges here are 0-based.
     const localTo = methodLocalScope(targetDef, symbolIndex);
     if (localTo) {
+        const references = [];
         const first = localTo.declRange.startLine - 1;
         const last = (localTo.declRange.endLine || Number.MAX_SAFE_INTEGER) - 1;
         for (const range of findIdentifierOccurrences(code, targetWord, tokens)) {
@@ -408,6 +407,30 @@ function provideReferences(code, position, symbolIndex, fileUri) {
         }
         return references;
     }
+
+    return collectWorkspaceReferences(targetWord, target, targetDef, code, tokens, symbolIndex, fileUri);
+}
+
+/**
+ * Runs the two-phase occurrence scan both reference queries share: the active/self document first,
+ * then every OTHER indexed document (served from the mtime-keyed ST cache, transiently re-indexed so
+ * its method scopes resolve, and restored afterwards). provideReferences seeds `target` from a cursor
+ * and provideReferencesForSymbol seeds it from the index, but both build the same describeDef()-shaped
+ * descriptor and hand it here, so the two can never diverge on what counts as a reference.
+ * @param {string} targetWord The identifier to search for (a node or member name).
+ * @param {Object|null} target describeDef()-shaped descriptor of the target; null keeps every
+ *        occurrence (the purely textual fallback for an unresolvable target).
+ * @param {Object|null} targetDef The target's own definition ({ uri, range }); used only to decide
+ *        whether the target is method-scoped (a `.member` never reaches a method's own variable).
+ * @param {string} code Structured Text of the active/self document.
+ * @param {Array<Object>|null} tokens Token stream of `code` (may be null on a tokenize failure).
+ * @param {Object} symbolIndex Workspace symbol index.
+ * @param {string} fileUri URI of the active/self document.
+ * @returns {Array<Object>} LSP Locations.
+ */
+function collectWorkspaceReferences(targetWord, target, targetDef, code, tokens, symbolIndex, fileUri) {
+    const references = [];
+    const visitedUris = new Set();
 
     // A variable declared inside a METHOD — parameters included — is never reached through a dot.
     // `fbSetSlaveState.tTimeout` is some other type's member; `stParams.eBufferMode` is a struct field.
@@ -536,6 +559,121 @@ function provideReferences(code, position, symbolIndex, fileUri) {
 }
 
 /**
+ * Provides Find References for a symbol identified by NAME instead of by a cursor position — the query
+ * a rename needs. The position-based provideReferences cannot seed on a GVL: a GVL's own name never
+ * appears in its converted ST, so there is no cursor to start from. This resolves the target straight
+ * from the index and reads the target's file off disk (`readStForFile` converts the XML, the same path
+ * production uses), then runs the identical workspace scan.
+ *
+ * @param {{ rootName: string, fileUri: string,
+ *           member?: { kind: 'Method'|'Property'|'Action', name: string } }} spec The symbol to search
+ *        for: a root object by name, optionally narrowed to one of its members.
+ * @param {Object} symbolIndex Workspace symbol index.
+ * @returns {{ resolved: boolean,
+ *             references: Array<{uri: string, range: Object}>,
+ *             declaration: {uri: string, range: Object}|null }} `resolved` is false when the symbol
+ *          cannot be pinned down (unknown/external root, identity mismatch, unreadable file, missing
+ *          member); `declaration` is the target's own declaration so the caller can exclude it from a
+ *          user-facing reference count.
+ */
+function provideReferencesForSymbol(spec, symbolIndex) {
+    const unresolved = { resolved: false, references: [], declaration: null };
+    if (!spec || !spec.rootName) return unresolved;
+
+    let node = findNode(symbolIndex, spec.rootName);
+    // A library symbol has no file to rename in (external:true, no real uri/range), and an unknown
+    // name cannot be resolved at all.
+    if (!node || node.external) return unresolved;
+
+    // Identity guard. The index is name-keyed and last-write-wins, so the node under this name may
+    // belong to a DIFFERENT file than the caller meant (two objects can share a root name across a
+    // malformed project, or the caller may simply be stale). Scanning it would edit the wrong object,
+    // so a uri mismatch is a hard no. Compare the same normalized way the scan compares uris.
+    if (!node.uri || !spec.fileUri || normalizeUri(node.uri) !== normalizeUri(spec.fileUri)) {
+        return unresolved;
+    }
+
+    const stText = readStForFile(uriToFsPath(node.uri));
+    if (stText == null) return unresolved;
+
+    // parseAndIndexDocument replaces this file's index entry (for a POU/ITF) with a node whose method/
+    // property/action ranges are in ST-UNIT coordinates — the very coordinates every occurrence of the
+    // symbol resolves to. defKey equality in the scan hinges on the target holding those same
+    // coordinates, so this re-index is mandatory, not an optimization. It mutates the index, so the
+    // node is snapshotted and restored: the on-disk (per-component) ranges are what cross-file Go to
+    // Definition navigates with, and must survive this call untouched.
+    const restore = snapshotNodesFor(symbolIndex, node.uri);
+    try {
+        parseAndIndexDocument(stText, node.uri, symbolIndex);
+        // Register the library symbols the file references, so a genuine occurrence is not "kept
+        // because unresolved" (for a rename, a spurious keep would become a wrong edit).
+        registerLibrarySymbolNodes(symbolIndex, stText);
+
+        // After the re-index the POU/ITF entry is a NEW object — re-fetch it.
+        node = findNode(symbolIndex, spec.rootName);
+        if (!node) return unresolved;
+
+        let targetWord;
+        let declRange;
+        let target;
+
+        if (spec.member) {
+            const collection = spec.member.kind === 'Method' ? node.methods
+                : spec.member.kind === 'Property' ? node.properties
+                : spec.member.kind === 'Action' ? node.actions
+                : null;
+            const lower = String(spec.member.name).toLowerCase();
+            const m = collection && collection.find(x => x.name.toLowerCase() === lower);
+            if (!m) return unresolved;
+            targetWord = m.name;
+            declRange = m.nameRange;
+            // Shape this exactly as describeDef() would for a member-NAME definition: it lands in the
+            // owner.methods/properties/actions branch, so memberName is set and there is NO methodName
+            // (that field marks a method-LOCAL variable, which this is not). sameSymbol() compares
+            // against this, so the shape must match what describeDef() produces for occurrences.
+            const targetDef = { uri: node.uri, range: convertToLspRange(m.nameRange) };
+            target = { key: defKey(targetDef), owner: node, memberName: m.name };
+            return finishForSymbol(targetWord, target, targetDef, stText, node, declRange, symbolIndex);
+        }
+
+        // Root object (FB/PRG/FUN/ITF/GVL/DUT). describeDef() of a root name yields memberName:null.
+        // GVL's nameRange is the (1,1) stub (its name is not in its own ST), but qualified usages
+        // resolve the same base node to the same stub, so the keys still match.
+        targetWord = node.name;
+        declRange = node.nameRange;
+        const targetDef = { uri: node.uri, range: convertToLspRange(node.nameRange) };
+        target = { key: defKey(targetDef), owner: node, memberName: null };
+        return finishForSymbol(targetWord, target, targetDef, stText, node, declRange, symbolIndex);
+    } finally {
+        restore();
+    }
+}
+
+/**
+ * Tokenizes the self document, runs the shared workspace scan, and packages the by-symbol result.
+ * Split out only so the two target shapes above share one exit path.
+ * @param {string} targetWord Node/member name being searched for.
+ * @param {Object} target describeDef()-shaped descriptor of the target.
+ * @param {Object} targetDef The target's own definition ({ uri, range }).
+ * @param {string} stText Structured Text of the target's own file.
+ * @param {Object} node The (re-indexed) target node — supplies the self uri.
+ * @param {Object} declRange The declaration's 1-based range (node or member nameRange).
+ * @param {Object} symbolIndex Workspace symbol index.
+ * @returns {{resolved: boolean, references: Array<Object>, declaration: Object}}
+ */
+function finishForSymbol(targetWord, target, targetDef, stText, node, declRange, symbolIndex) {
+    let tokens = null;
+    try { tokens = tokenize(stText); } catch (e) { /* fall back to the plain text scan */ }
+    const references = collectWorkspaceReferences(
+        targetWord, target, targetDef, stText, tokens, symbolIndex, node.uri);
+    return {
+        resolved: true,
+        references,
+        declaration: { uri: node.uri, range: convertToLspRange(declRange) }
+    };
+}
+
+/**
  * Captures every index entry belonging to a uri, and returns a function that puts them back exactly as
  * they were — including removing any node that did not exist before.
  * @param {Object} symbolIndex The workspace symbol index.
@@ -567,5 +705,6 @@ function snapshotNodesFor(symbolIndex, uri) {
 
 module.exports = {
     provideReferences,
+    provideReferencesForSymbol,
     clearStFileCache
 };

@@ -11,6 +11,7 @@ const { registerLspBridgeCommands } = require('./src/commands/lspBridgeCommands'
 const { registerLibraryCommands } = require('./src/commands/libraryCommands');
 const { registerObjectCommands, applyXmlEdit } = require('./src/commands/objectCommands');
 const { registerClipboardCommands } = require('./src/commands/clipboardCommands');
+const { registerRenameCommands } = require('./src/commands/renameCommands');
 const { TwinCatDragAndDropController } = require('./src/treeDragAndDrop');
 const { TwinCatCustomEditorProvider } = require('./src/customEditorProvider');
 const { TwinCatTreeDataProvider } = require('./src/treeDataProvider');
@@ -375,6 +376,12 @@ function activate(context) {
     // keybinding invocations carry no item, so the selection stands in — hence registered after
     // createTreeView above.
     registerClipboardCommands(context, { treeView, treeProvider, applyXmlEdit });
+
+    // Objects explorer rename (F2). Renames files, members, directories and virtual folders, and —
+    // after a confirmation modal — updates cross-file references via the LSP + renameEngine. Needs
+    // treeView (F2 carries no item, so the selection stands in) and getClient (the reference query),
+    // mirroring the clipboard and library command wiring.
+    registerRenameCommands(context, { treeView, treeProvider, applyXmlEdit, getClient: () => client });
 }
 
 function deactivate() {
