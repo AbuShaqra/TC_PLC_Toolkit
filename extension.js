@@ -50,11 +50,27 @@ function activate(context) {
             // decides whether to focus it. That is what makes the results visible when the panel was
             // sitting on Terminal or Problems.
             //
+            // Expansion is reveal-driven — every root is revealed with expand: 2 (file -> component;
+            // occurrences are leaves) — instead of the nodes claiming collapsibleState Expanded: a
+            // refresh racing a reveal could leave a group's children unfetched, an arrow that expands
+            // to nothing (real user report). reveal serializes against the pending refresh. The roots
+            // are walked in reverse so the final reveal — roots[0], the only selected one — leaves the
+            // viewport scrolled to the first group.
+            //
             // A rejection here means the results are on screen nowhere, so it must not be silent —
             // reveal() rejects outright if the provider has no getParent(), which is exactly how this
             // went unnoticed before.
-            referencesView.reveal(referencesProvider.roots[0], { focus: false, expand: true })
-                .then(() => {}, (err) => console.error('TwinCAT: could not reveal the References view', err));
+            (async () => {
+                try {
+                    const roots = referencesProvider.roots;
+                    for (let i = roots.length - 1; i >= 1; i--) {
+                        await referencesView.reveal(roots[i], { select: false, focus: false, expand: 2 });
+                    }
+                    await referencesView.reveal(roots[0], { focus: false, expand: 2 });
+                } catch (err) {
+                    console.error('TwinCAT: could not reveal the References view', err);
+                }
+            })();
         }
     };
 

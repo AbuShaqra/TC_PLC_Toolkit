@@ -4,8 +4,8 @@ Where the work *stands*. Read before starting; keep current (handoff rule in [CL
 100 lines — prune finished items rather than appending, but never drop a real finding to hit it. **Shipped features
 live in git history (PRs/commits); this file keeps the findings that would cost to re-derive.**
 
-**Last verified:** 2026-07-15 — `npm test` green (32 harnesses), **0 diagnostics on the sample**. **Version 0.1.5**
-(0.1.0 renumbered from 0.4.2 for the fresh public repo; each patch since = one shipped increment, see PRs #1–#7).
+**Last verified:** 2026-07-16 — `npm test` green (32 harnesses), **0 diagnostics on the sample**. **Version 0.1.6**
+(0.1.0 renumbered from 0.4.2 for the fresh public repo; each patch since = one shipped increment, see PRs #1–#8).
 **Not yet visually confirmed by the user:** the 0.1.3 library grouping and 0.1.4 member expansion in the tree UI —
 logic is verified on real data + guard tests, but nobody has eyeballed the rendered tree. Worth doing.
 
@@ -100,8 +100,10 @@ type via `classifyCallSite` kind `declInitList`.
   *declaring* node's uri); `inst:FB_T:=(p:=v)` → the FB's **own** VAR_INPUT. `classifyCallSite()` is the single shared
   place (definition + completion). Diagnostics take the **union** (`getInitParams`) — don't "fix" it.
 - **Reference navigation:** `setPendingSelection` is cleared only by the webview's `selectionApplied` ack (a hidden
-  webview's context is torn down, so the post is lost); `highlightTarget` retries a few frames then searches the
-  intended *line* (a single 50 ms timer raced to the FIRST same-word occurrence — a different reference).
+  webview's context is torn down, losing the post); `highlightTarget` retries a few frames then searches the intended
+  *line* (a 50 ms timer raced to the FIRST same-word occurrence). Panel groups showed a dead expand-arrow (children
+  never fetched) when `collapsibleState: Expanded` raced `reveal()` during refresh — fixed with stable TreeItem ids +
+  Collapsed nodes + reveal-driven expansion of every root (`expand: 2`).
 - **Find References cache:** `readStForFile` caches ST **text** keyed on mtime; word-test a file before tokenizing.
   **Don't cache tokens** (held 19.3 of 22.7 MB on 152 files). The **duplicate search** (peek + panel) now runs on
   **every** Find References (the panel populates unconditionally). Other files are read from **disk** → references into
