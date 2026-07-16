@@ -4,10 +4,29 @@
  * grouped by file and component, navigable via the twincat.openComponent command. Used instead of
  * Monaco's peek widget for cross-file / cross-component usages, which the split-pane webview
  * cannot render as live models.
+ *
+ * TreeItems carry the stable ids buildTree assigns, and group nodes render Collapsed — expansion
+ * is driven by reveal() in extension.js, not by collapsibleState (see groupCollapsibleState).
  */
 
 const vscode = require('vscode');
 const { buildTree } = require('./referencesTree');
+
+/**
+ * Collapsible state for a file/component group node: Collapsed, never Expanded. An Expanded node
+ * rendered while a reveal() raced the onDidChangeTreeData refresh could leave its children
+ * unfetched — a twistie that expands to nothing (real user report: a file group with count 1 and
+ * a dead arrow, while buildTree's output was verifiably correct). A Collapsed node's twistie click
+ * triggers a lazy getChildren, which always works; showReferences in extension.js does the
+ * expansion via reveal(..., { expand: 2 }) instead. And a group that somehow has no children must
+ * not render an arrow at all — a dead twistie is exactly the bug this replaces.
+ * @param {Object} element A file or component node.
+ * @returns {number} A vscode.TreeItemCollapsibleState value.
+ */
+function groupCollapsibleState(element) {
+    if (!element.children || element.children.length === 0) return vscode.TreeItemCollapsibleState.None;
+    return vscode.TreeItemCollapsibleState.Collapsed;
+}
 
 class TwinCatReferencesProvider {
     constructor() {
@@ -73,6 +92,7 @@ class TwinCatReferencesProvider {
     getTreeItem(element) {
         if (element.kind === 'occurrence') {
             const item = new vscode.TreeItem(element.lineText || element.targetWord, vscode.TreeItemCollapsibleState.None);
+            item.id = element.id;
             item.iconPath = new vscode.ThemeIcon('symbol-field');
             item.tooltip = element.lineText;
             // Carry the exact occurrence location so navigation lands on the right hit instead of a
@@ -97,13 +117,15 @@ class TwinCatReferencesProvider {
             return item;
         }
         if (element.kind === 'component') {
-            const item = new vscode.TreeItem(element.label, vscode.TreeItemCollapsibleState.Expanded);
+            const item = new vscode.TreeItem(element.label, groupCollapsibleState(element));
+            item.id = element.id;
             item.iconPath = new vscode.ThemeIcon('symbol-method');
             item.description = `${element.count}`;
             return item;
         }
         // file
-        const item = new vscode.TreeItem(element.label, vscode.TreeItemCollapsibleState.Expanded);
+        const item = new vscode.TreeItem(element.label, groupCollapsibleState(element));
+        item.id = element.id;
         item.iconPath = new vscode.ThemeIcon('file-code');
         item.description = `${element.count}`;
         return item;
