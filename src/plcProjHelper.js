@@ -124,6 +124,35 @@ async function registerInPlcProj(targetUri, isFolder) {
 }
 
 /**
+ * Registers a directory AND everything inside it in the closest .plcproj file — the counterpart of
+ * unregisterFromPlcProj(dir, true), which already removes nested Folder+Compile entries in one go.
+ * Used after a directory move: the rename leaves the tree's contents intact on disk, but every
+ * entry's project-relative path changed, so each one must be re-registered under its new prefix.
+ * Only TwinCAT source files are registered — the .plcproj tracks nothing else.
+ * @param {vscode.Uri} dirUri The URI of the moved directory (at its new location).
+ * @returns {Promise<void>}
+ */
+async function registerTreeInPlcProj(dirUri) {
+    await registerInPlcProj(dirUri, true);
+    try {
+        const entries = await vscode.workspace.fs.readDirectory(dirUri);
+        for (const [name, type] of entries) {
+            const childUri = vscode.Uri.joinPath(dirUri, name);
+            if (type === vscode.FileType.Directory) {
+                await registerTreeInPlcProj(childUri);
+            } else if (type === vscode.FileType.File) {
+                const ext = path.extname(name).toLowerCase();
+                if (['.tcpou', '.tcio', '.tcgvl', '.tcdut'].includes(ext)) {
+                    await registerInPlcProj(childUri, false);
+                }
+            }
+        }
+    } catch (err) {
+        console.error(`Failed to register tree in plcproj: ${err.message}`);
+    }
+}
+
+/**
  * Removes a file or directory registration from the closest .plcproj file.
  * @param {vscode.Uri} targetUri The URI of the deleted file/folder.
  * @param {boolean} isFolder True if unregistering a folder, false for a file.
@@ -170,6 +199,7 @@ async function unregisterFromPlcProj(targetUri, isFolder) {
 module.exports = {
     findPlcProjFile,
     registerInPlcProj,
+    registerTreeInPlcProj,
     unregisterFromPlcProj,
     updateDocument
 };

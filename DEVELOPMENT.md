@@ -50,6 +50,7 @@ per-suite without aborting on the first failure. The main ones:
 | `test/test_references_tree.js` | References-view grouping (file → component → occurrence). |
 | `test/test_st_shadow.js` | XML is the source of truth: a stray plain `.st` mirror (outside `ST_Files/`) must never steal an XML-backed symbol's index node — the references scan would follow the hijacked uri to the stale mirror and miss the real call sites. |
 | `test/test_library_catalog.js` | The data path behind the TwinCAT Libraries view: catalog built from the `.plcproj`, namespaces, `.tmc` types and their members. |
+| `test/test_dnd_rules.js` | The Objects-tree drag & drop and copy/paste compatibility matrices: what is draggable/copyable (not virtual folders, not Get/Set accessors; directories move but do not copy), components move only within their own file yet paste cross-file (POU↔interface gated), directory-cycle and no-op rejections, duplicate-in-place file paste. |
 
 `test/run.js <substring>` filters to matching suites. `test/_baseline.js` holds the machine-dependent
 diagnostic baselines the sample gates assert against.
@@ -73,11 +74,14 @@ extension.js            Thin activation hub: wires providers/views/watchers/LSP 
 src/
   commands/             Command registration, split out of extension.js — each exports register*(context, deps)
     objectCommands      "TwinCAT Objects" create/delete (methods, properties, actions, files, folders)
+    clipboardCommands   "TwinCAT Objects" copy/paste (duplicate a component cross-file or a file under a new name)
     libraryCommands     "TwinCAT Libraries" commands (refresh, insert, copy, Update Library Definitions)
     lspBridgeCommands   openComponent navigation + the twincat.lsp.query* Monaco↔LSP bridges
   xaeShell              XAE shell discovery + the library-signature generator (the one non-offline path)
   customEditorProvider  Webview host: assembles full-file ST, bridges Monaco ↔ LSP, writes CDATA back
   treeDataProvider      "TwinCAT Objects" explorer tree
+  dndRules              Objects-tree drag & drop + copy/paste compatibility matrices (vscode-free, so testable)
+  treeDragAndDrop       Objects-tree drag & drop controller — executes the matrix's plans (needs VS Code 1.66+)
   libraryTreeProvider   "TwinCAT Libraries" explorer tree (library → types → members)
   referencesProvider    "TwinCAT References" results view (+ referencesTree grouping)
   objectKinds           Kind → codicon → tooltip for the Objects tree (vscode-free, so it is testable)
