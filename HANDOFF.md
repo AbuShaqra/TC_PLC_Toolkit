@@ -4,8 +4,8 @@ Where the work *stands*. Read before starting; keep current (handoff rule in [CL
 100 lines — prune finished items rather than appending, but never drop a real finding to hit it. **Shipped features
 live in git history (PRs/commits); this file keeps the findings that would cost to re-derive.**
 
-**Last verified:** 2026-07-16 — `npm test` green (32 harnesses), **0 diagnostics on the sample**. **Version 0.1.6**
-(0.1.0 renumbered from 0.4.2 for the fresh public repo; each patch since = one shipped increment, see PRs #1–#8).
+**Last verified:** 2026-07-16 — `npm test` green (33 harnesses), **0 diagnostics on the sample**. **Version 0.1.7**
+(0.1.0 renumbered from 0.4.2 for the fresh public repo; each patch since = one shipped increment, see PRs #1–#9).
 **Not yet visually confirmed by the user:** the 0.1.3 library grouping and 0.1.4 member expansion in the tree UI —
 logic is verified on real data + guard tests, but nobody has eyeballed the rendered tree. Worth doing.
 
@@ -94,6 +94,9 @@ a method var's identity is (POU family, method **name**, var name). A named-arg 
 scope, not to the parameter — `definition.js` gates the param-name branch on the *next* token being `:=`/`=>` (fixes
 definition AND references, which resolve via `definitionAt`). **FB_init decl-site** `inst:FB_T(p:=v)` matches by FB
 type via `classifyCallSite` kind `declInitList`.
+**Stray `.st` mirrors** (outside the skipped ST_Files/) shadowed same-named XML nodes — the node's uri was hijacked,
+the scan read the stale mirror and the real .TcPOU was invisible until opened. Fixed: `parseAndIndexDocument` never
+lets a plain .st steal an XML-backed symbol (`test_st_shadow`).
 
 ## Other findings worth not re-deriving
 - **Init syntaxes bind differently:** `inst:FB_T(p:=v)` → FB_init's VAR_INPUT (may be inherited → a jump carries the

@@ -731,6 +731,20 @@ function parseAndIndexDocument(code, fileUri, index = workspaceSymbolIndex) {
 
                 // Create POU node
                 const existingPou = index[pouName];
+
+                // A plain .st source must never steal a symbol already backed by a TwinCAT XML
+                // object (.TcPOU/.TcGVL/.TcDUT/.TcIO) — XML is the source of truth in a TwinCAT
+                // project. A stale exported mirror sitting NEXT to the real object (outside the
+                // ST_Files/ folder that indexStDirectory skips) once hijacked P_Automatic's node
+                // uri: the cross-file references scan then read the stale .st (which lacked the
+                // call site) and the real .TcPOU was invisible until the user opened it. The .st
+                // is still parsed — the token walk below must run, and later branches mutate
+                // pouNode — but into a DETACHED node that never replaces the XML entry. The
+                // reverse direction (the XML indexer overwriting a .st-backed node) stays allowed.
+                const xmlObjectUri = /\.(tcpou|tcgvl|tcdut|tcio)$/i;
+                const shadowedByXml = !!(existingPou && existingPou.uri && existingPou.uri !== fileUri &&
+                    xmlObjectUri.test(existingPou.uri) && !xmlObjectUri.test(fileUri));
+
                 pouNode = createSymbolNode({
                     name: pouName,
                     type: pouType,
@@ -749,10 +763,12 @@ function parseAndIndexDocument(code, fileUri, index = workspaceSymbolIndex) {
                     },
                     // extends / extendsAll / implements / returnType are filled in below; the rest
                     // (variables, bodyRange) take the factory defaults. Nested members are carried
-                    // over from a prior parse of this file so a re-index does not drop them.
-                    methods: existingPou ? existingPou.methods : [],
-                    properties: existingPou ? existingPou.properties : [],
-                    actions: existingPou ? existingPou.actions : []
+                    // over from a prior parse of this file so a re-index does not drop them — but
+                    // NOT when shadowed: those arrays are shared by reference with the XML node,
+                    // and pushing this file's .st-coordinate members into them would poison it.
+                    methods: (existingPou && !shadowedByXml) ? existingPou.methods : [],
+                    properties: (existingPou && !shadowedByXml) ? existingPou.properties : [],
+                    actions: (existingPou && !shadowedByXml) ? existingPou.actions : []
                 });
 
                 // FUNCTION return type: `FUNCTION Name : ReturnType`. Recorded on the POU node so the
@@ -845,7 +861,9 @@ function parseAndIndexDocument(code, fileUri, index = workspaceSymbolIndex) {
                     }
                 }
 
-                index[pouName] = pouNode;
+                if (!shadowedByXml) {
+                    index[pouName] = pouNode;
+                }
             }
             continue;
         }
