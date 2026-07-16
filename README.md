@@ -33,6 +33,22 @@ and functions are told apart rather than sharing one file icon, a DUT shows whet
 structure, an enumeration, a union or an alias, and methods, properties, property accessors, actions
 and transitions each have their own glyph. Hover a row to see its kind spelled out.
 
+**Reorganise by drag & drop.** Drag a method, property or action into one of its POU's virtual
+folders — or onto the file node to move it back to the root. The edit is a single `FolderPath`
+attribute on the member's tag, and folder tags are placed exactly where TwinCAT expects them, so
+XAE loads the result cleanly. Drag files or whole folders into other folders and the `.plcproj`
+is re-synced automatically. Incompatible drops simply do nothing: a component never leaves its
+file, a folder cannot be dropped into its own subtree, and a name collision at the destination is
+refused rather than overwritten.
+
+**Duplicate by copy/paste.** Right-click → **Copy** / **Paste**, or **Ctrl+C** / **Ctrl+V** while
+the view is focused. Where a drag *moves*, a paste *duplicates* — so a copied method may be pasted
+into **another** function block (interface members only into interfaces), pasting onto a component
+drops the copy beside it in the same virtual folder, and a name clash prompts with a ready
+`Name_Copy` suggestion. Pasting a copied *file* always asks for the new object's name, then rewrites
+everything that carries its identity — the root name, the declaration header, the `LineIds`, and
+every internal Id GUID — so the duplicate never collides with its source in TwinCAT.
+
 ### TwinCAT Libraries explorer
 
 Lists every library referenced by the project's `.plcproj` **by the namespace you actually type in
@@ -136,7 +152,7 @@ is looking at from the first file it opens, instead of re-deriving the format �
 
 ## Requirements
 
-**VS Code** `^1.60.0`. Nothing else.
+**VS Code** `^1.66.0`. Nothing else.
 
 ## Install
 
