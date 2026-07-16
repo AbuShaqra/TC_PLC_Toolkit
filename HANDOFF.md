@@ -5,7 +5,8 @@ Where the work *stands*. Read before starting; keep current (handoff rule in [CL
 live in git history (PRs/commits); this file keeps the findings that would cost to re-derive.**
 
 **Last verified:** 2026-07-16 — `npm test` green (36 harnesses), **0 diagnostics on the sample**. **Version 0.2.0**
-(0.1.0 renumbered from 0.4.2 for the fresh public repo; each patch since = one shipped increment, see PRs #1–#10).
+(0.1.0 renumbered from 0.4.2 for the fresh public repo; each patch since = one shipped increment, see PRs #1–#11;
+#11 re-shipped 0.2.0 with the virtual-folder placement fix, same version by decision).
 **Not yet visually confirmed by the user:** the 0.1.3 library grouping and 0.1.4 member expansion in the tree UI —
 logic is verified on real data + guard tests, but nobody has eyeballed the rendered tree. Worth doing.
 
@@ -26,7 +27,12 @@ logic is verified on real data + guard tests, but nobody has eyeballed the rende
   (`renameRootObjectInXml`) and regenerates every Id GUID (`regenerateObjectIdsInXml` — kept a SEPARATE step:
   a future rename-in-place must keep Ids); directories deliberately
   not copyable v1 (recursive duplicate = mass duplicate symbols). Matrices pure in `dndRules.js`
-  (`test_dnd_rules`); XML edits guarded by `test_xml_folderpath` + `test_xml_clipboard`. Controllers
+  (`test_dnd_rules`); XML edits guarded by `test_xml_folderpath` + `test_xml_clipboard`. **TwinCAT's XML
+  loader is ORDER-SENSITIVE**: root `<Folder>` tags must sit between the root Implementation (Declaration
+  for Itf) and the first member — the old `insertFolderIntoXml` appended them before `</POU>`, and XAE
+  then dropped the FB's members from compile (C0004 per method/property). Fixed (root folders now join the
+  contiguous folder group / land after the root `</Implementation>`; guarded in `test_xml_folderpath`);
+  one incident file existed in the wild (user's FB_Clamping, repaired separately). Controllers
   (`treeDragAndDrop.js`, `clipboardCommands.js`) are vscode-bound → need a manual dev-host pass. Virtual folders
   NOT draggable/copyable in v1 (moving one = rewriting every member's FolderPath prefix). `engines.vscode`
   bumped **1.60 → 1.66** (TreeDragAndDropController).
@@ -143,6 +149,9 @@ lets a plain .st steal an XML-backed symbol (`test_st_shadow`).
   values; call parens→params first. **Unknown context ⇒ full list, never nothing.**
 
 ## Pipeline (open)
+0. **`insertComponentIntoXml` places new members AFTER the `<LineIds>` blocks** (just before `</POU>`) — deviates
+   from TwinCAT's canonical order (members, then LineIds). Tolerated by XAE so far, but the folder incident proved
+   the loader is order-sensitive; deserves the same canonical-anchor treatment as the folder fix.
 1. **Chained member completion stops after one hop** (`stAxis.MotionState.▮`) — a member's type is registered only if
    the document text names it; transitive registration hits the 78 s `Object.keys()` cliff.
 2. **Nested library namespaces** (`VisuElems.VisuElemBase.▮`) not modelled.
