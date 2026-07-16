@@ -2,7 +2,7 @@
   "name": "twincat-plc-toolkit",
   "displayName": "TwinCAT PLC Toolkit",
   "description": "Edit, navigate and analyse Beckhoff TwinCAT PLC projects: two-pane Structured Text editor, offline IntelliSense and diagnostics, object and library explorers. Unofficial; not affiliated with Beckhoff.",
-  "version": "0.1.7",
+  "version": "0.2.0",
   "publisher": "a-abushaqra",
   "license": "MIT",
   "icon": "media/icon.png",
@@ -11,7 +11,7 @@
     "url": "https://github.com/AbuShaqra/TC_PLC_Toolkit.git"
   },
   "engines": {
-    "vscode": "^1.60.0"
+    "vscode": "^1.66.0"
   },
   "categories": [
     "Other"
@@ -193,6 +193,30 @@
         "title": "Update Library Definitions (requires TwinCAT)",
         "category": "TwinCAT",
         "icon": "$(cloud-download)"
+      },
+      {
+        "command": "twincat.copyObject",
+        "title": "Copy",
+        "category": "TwinCAT"
+      },
+      {
+        "command": "twincat.pasteObject",
+        "title": "Paste",
+        "category": "TwinCAT"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "twincat.copyObject",
+        "key": "ctrl+c",
+        "mac": "cmd+c",
+        "when": "focusedView == twincatExplorer"
+      },
+      {
+        "command": "twincat.pasteObject",
+        "key": "ctrl+v",
+        "mac": "cmd+v",
+        "when": "focusedView == twincatExplorer && twincat.canPaste"
       }
     ],
     "menus": {
@@ -298,6 +322,16 @@
           "command": "twincat.deletePhysicalItem",
           "when": "view == twincatExplorer && (viewItem == 'directory' || viewItem == 'pouFile' || viewItem == 'pouFileProgram' || viewItem == 'pouFileFunction' || viewItem == 'itfFile' || viewItem == 'gvlFile' || viewItem == 'dutFile' || viewItem == 'stFile')",
           "group": "twincat@6"
+        },
+        {
+          "command": "twincat.copyObject",
+          "when": "view == twincatExplorer && (viewItem == 'component' || viewItem == 'propertyNode' || viewItem == 'pouFile' || viewItem == 'pouFileProgram' || viewItem == 'pouFileFunction' || viewItem == 'itfFile' || viewItem == 'gvlFile' || viewItem == 'dutFile' || viewItem == 'stFile')",
+          "group": "twincat_0_clipboard@1"
+        },
+        {
+          "command": "twincat.pasteObject",
+          "when": "view == twincatExplorer && twincat.canPaste && (viewItem == 'directory' || viewItem == 'pouFile' || viewItem == 'pouFileProgram' || viewItem == 'itfFile' || viewItem == 'pouVirtualFolder' || viewItem == 'pouVirtualFolderProgram' || viewItem == 'pouVirtualFolderInterface' || viewItem == 'component' || viewItem == 'propertyNode')",
+          "group": "twincat_0_clipboard@2"
         }
       ]
     },
@@ -365,7 +399,7 @@
   },
   "devDependencies": {
     "@types/node": "^26.1.1",
-    "@types/vscode": "^1.60.0",
+    "@types/vscode": "^1.66.0",
     "typescript": "^7.0.2"
   },
   "dependencies": {

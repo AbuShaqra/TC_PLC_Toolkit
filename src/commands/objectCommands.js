@@ -538,4 +538,6 @@ async function applyXmlEdit(fileUri, xmlModifier) {
     }
 }
 
-module.exports = { registerObjectCommands };
+// applyXmlEdit is exported for the drag & drop controller (extension.js injects it), so every
+// structural XML edit — menu command or drop — goes through the one byte-preserving write path.
+module.exports = { registerObjectCommands, applyXmlEdit };

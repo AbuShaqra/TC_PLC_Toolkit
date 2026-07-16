@@ -407,6 +407,10 @@ class TwinCatTreeDataProvider {
             icon
         );
         item.componentId = c.id;
+        // Sibling paste ("paste onto a component" = same file, same virtual folder) needs the
+        // component's folder. Safe to add: the id getter's component branch keys on componentId,
+        // so carrying folderPath causes no tree-item id churn.
+        item.folderPath = c.folderPath || '';
         item.tooltip = `${tooltip} — ${c.name}`;
         if (children) {
             item.children = children;

@@ -4,8 +4,8 @@ Where the work *stands*. Read before starting; keep current (handoff rule in [CL
 100 lines — prune finished items rather than appending, but never drop a real finding to hit it. **Shipped features
 live in git history (PRs/commits); this file keeps the findings that would cost to re-derive.**
 
-**Last verified:** 2026-07-16 — `npm test` green (33 harnesses), **0 diagnostics on the sample**. **Version 0.1.7**
-(0.1.0 renumbered from 0.4.2 for the fresh public repo; each patch since = one shipped increment, see PRs #1–#9).
+**Last verified:** 2026-07-16 — `npm test` green (36 harnesses), **0 diagnostics on the sample**. **Version 0.2.0**
+(0.1.0 renumbered from 0.4.2 for the fresh public repo; each patch since = one shipped increment, see PRs #1–#10).
 **Not yet visually confirmed by the user:** the 0.1.3 library grouping and 0.1.4 member expansion in the tree UI —
 logic is verified on real data + guard tests, but nobody has eyeballed the rendered tree. Worth doing.
 
@@ -18,6 +18,18 @@ logic is verified on real data + guard tests, but nobody has eyeballed the rende
   none and the sample suites SKIP.
 - **Internal ids deliberately NOT renamed** (`twincat.*` commands, `twincat.xmlViewer` viewType) after the
   "XML Viewer"→"PLC Toolkit" rename — churning them breaks saved keybindings/associations.
+- **Objects-tree drag & drop + copy/paste** (0.2.0). DnD = move: component → own file's virtual folder /
+  file node (a FolderPath attribute edit), file/dir → directory / empty area (fs move + `.plcproj` re-sync).
+  Copy/paste = duplicate (`clipboardCommands.js`, Ctrl+C/V + context menu): components paste **cross-file
+  deliberately** (POU↔ITF kind-gated, actions/transitions never into an ITF, fresh GUID Ids, LineIds not copied);
+  file paste **always renames** (a same-name copy = duplicate symbols), rewrites root Name/header/LineIds
+  (`renameRootObjectInXml`) and regenerates every Id GUID (`regenerateObjectIdsInXml` — kept a SEPARATE step:
+  a future rename-in-place must keep Ids); directories deliberately
+  not copyable v1 (recursive duplicate = mass duplicate symbols). Matrices pure in `dndRules.js`
+  (`test_dnd_rules`); XML edits guarded by `test_xml_folderpath` + `test_xml_clipboard`. Controllers
+  (`treeDragAndDrop.js`, `clipboardCommands.js`) are vscode-bound → need a manual dev-host pass. Virtual folders
+  NOT draggable/copyable in v1 (moving one = rewriting every member's FolderPath prefix). `engines.vscode`
+  bumped **1.60 → 1.66** (TreeDragAndDropController).
 - **README.md** = public page (ships); **DEVELOPMENT.md** = build/test/architecture; CLAUDE/HANDOFF/DEVELOPMENT are
   `.vscodeignore`d. Package `npx @vscode/vsce package`. `scripts/` ships (the generator). Stale local branches
   `moe`/`native-editor` un-pushed.

@@ -9,7 +9,9 @@ const path = require('path');
 // Import modular components
 const { registerLspBridgeCommands } = require('./src/commands/lspBridgeCommands');
 const { registerLibraryCommands } = require('./src/commands/libraryCommands');
-const { registerObjectCommands } = require('./src/commands/objectCommands');
+const { registerObjectCommands, applyXmlEdit } = require('./src/commands/objectCommands');
+const { registerClipboardCommands } = require('./src/commands/clipboardCommands');
+const { TwinCatDragAndDropController } = require('./src/treeDragAndDrop');
 const { TwinCatCustomEditorProvider } = require('./src/customEditorProvider');
 const { TwinCatTreeDataProvider } = require('./src/treeDataProvider');
 const { TwinCatReferencesProvider } = require('./src/referencesProvider');
@@ -245,10 +247,12 @@ function activate(context) {
         })
     );
 
-    // Register tree view provider
+    // Register tree view provider. Drag & drop logic lives entirely in the controller (and the
+    // pure matrix under it) — extension.js only supplies its dependencies.
     const treeProvider = new TwinCatTreeDataProvider();
     treeView = vscode.window.createTreeView('twincatExplorer', {
-        treeDataProvider: treeProvider
+        treeDataProvider: treeProvider,
+        dragAndDropController: new TwinCatDragAndDropController({ treeProvider, applyXmlEdit })
     });
     context.subscriptions.push(treeView);
 
@@ -366,6 +370,11 @@ function activate(context) {
     // TwinCAT Objects explorer create/delete commands (methods, properties, actions; new files;
     // physical and virtual folders; components).
     registerObjectCommands(context, { treeProvider });
+
+    // Objects explorer copy/paste (copy = duplicate; drag & drop is the move). Needs treeView —
+    // keybinding invocations carry no item, so the selection stands in — hence registered after
+    // createTreeView above.
+    registerClipboardCommands(context, { treeView, treeProvider, applyXmlEdit });
 }
 
 function deactivate() {

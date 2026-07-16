@@ -498,6 +498,256 @@ function deleteComponentFromXml(xmlText, rootName, componentType, componentName,
 }
 
 /**
+ * Sets, replaces, or removes the FolderPath attribute on a single opening tag string. The tag-level
+ * core shared by setComponentFolderPathInXml (drag & drop moves) and insertComponentBlockIntoXml
+ * (clipboard paste), so the two features cannot drift on how the attribute is spliced.
+ * All splicing is done with string slices (never String.replace with a computed replacement):
+ * folder paths contain backslashes and could contain '$', both special in replacement strings.
+ * @param {string} tag The component's opening tag (e.g. `<Method Name="Home" Id="{…}">`).
+ * @param {string} newFolderPath New virtual folder path (trailing backslash), or '' to remove.
+ * @returns {string} The modified tag; the input unchanged when there is nothing to change.
+ */
+function setFolderPathOnTag(tag, newFolderPath) {
+    const attrMatch = tag.match(/\sFolderPath="[^"]*"/);
+    if (attrMatch) {
+        return newFolderPath
+            ? tag.slice(0, attrMatch.index) + ` FolderPath="${newFolderPath}"` + tag.slice(attrMatch.index + attrMatch[0].length)
+            : tag.slice(0, attrMatch.index) + tag.slice(attrMatch.index + attrMatch[0].length);
+    }
+    if (!newFolderPath) return tag; // absent + root: nothing to do
+    // Insert before the closing '>'. Component tags are never self-closing in real TwinCAT
+    // files (they always wrap Declaration/Implementation), but handle '/>' defensively.
+    return tag.endsWith('/>')
+        ? tag.slice(0, -2).replace(/\s*$/, '') + ` FolderPath="${newFolderPath}" />`
+        : tag.slice(0, -1) + ` FolderPath="${newFolderPath}">`;
+}
+
+/**
+ * Sets, replaces, or removes the FolderPath attribute on a component's opening tag — virtual-folder
+ * membership in TwinCAT XML is nothing but this attribute (e.g. `FolderPath="Methods\Internal\"`,
+ * trailing backslash). Only the matched opening tag changes; every other byte of the document is
+ * preserved, including a Property's Get/Set accessors (they live inside the tag pair and carry no
+ * FolderPath of their own).
+ * @param {string} xmlText POU XML text.
+ * @param {string} componentType 'Method', 'Property', 'Action', 'Transition'.
+ * @param {string} componentName Name of the component to move.
+ * @param {string} newFolderPath New virtual folder path (trailing backslash), or '' to move the
+ * component back to the file root (the attribute is removed).
+ * @returns {string} The modified XML text; the input unchanged when the component is not found or
+ * there is nothing to change.
+ */
+function setComponentFolderPathInXml(xmlText, componentType, componentName, newFolderPath) {
+    // Same anchoring as deleteComponentFromXml, but the name is regex-escaped: IEC identifiers
+    // cannot contain metacharacters today, but a malformed name must not corrupt the match.
+    const nameEsc = componentName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const openTagRegex = new RegExp(`<${componentType}\\b[^>]*Name="${nameEsc}"[^>]*>`);
+    const openTagMatch = xmlText.match(openTagRegex);
+    if (!openTagMatch) return xmlText;
+
+    const tag = openTagMatch[0];
+    const newTag = setFolderPathOnTag(tag, newFolderPath);
+    if (newTag === tag) return xmlText;
+    return xmlText.substring(0, openTagMatch.index) + newTag + xmlText.substring(openTagMatch.index + tag.length);
+}
+
+/**
+ * Extracts a component's full XML block — opening tag through matching close tag, a Property's
+ * Get/Set accessors included — for clipboard copy. The block is returned verbatim (original Ids,
+ * FolderPath, line endings); insertComponentBlockIntoXml re-identifies it on paste. LineIds are
+ * deliberately NOT part of the block: they live at the file bottom and TwinCAT regenerates them,
+ * the same precedent insertComponentIntoXml sets for newly created components.
+ * @param {string} xmlText POU/Interface XML text.
+ * @param {string} componentType 'Method', 'Property', 'Action', 'Transition'.
+ * @param {string} componentName Name of the component to extract.
+ * @returns {string|null} The block string, or null when the component is not found.
+ */
+function extractComponentBlockFromXml(xmlText, componentType, componentName) {
+    // Same open-tag anchoring as deleteComponentFromXml/setComponentFolderPathInXml.
+    const nameEsc = componentName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const openTagRegex = new RegExp(`<${componentType}\\b[^>]*Name="${nameEsc}"[^>]*>`);
+    const openTagMatch = xmlText.match(openTagRegex);
+    if (!openTagMatch) return null;
+
+    // Never self-closing in real files, but a defensive '/>' is its own complete block.
+    if (openTagMatch[0].endsWith('/>')) return openTagMatch[0];
+
+    const closeTag = `</${componentType}>`;
+    const closeTagIndex = xmlText.indexOf(closeTag, openTagMatch.index);
+    if (closeTagIndex === -1) return null;
+    return xmlText.substring(openTagMatch.index, closeTagIndex + closeTag.length);
+}
+
+/**
+ * Inserts a copied component block into a target file, re-identifying it on the way in: the pasted
+ * copy must be a NEW object (fresh Ids), under a possibly new name, in the target's folder — while
+ * its Declaration/Implementation content travels verbatim.
+ * @param {string} targetXml The target POU/Interface XML text.
+ * @param {string} block A block from extractComponentBlockFromXml.
+ * @param {Object} opts
+ * @param {string} opts.oldName The component's name inside the block.
+ * @param {string} opts.newName The name to paste under (may equal oldName).
+ * @param {string} opts.newFolderPath Target virtual folder (trailing backslash), or '' for the root.
+ * @param {boolean} opts.isItf Whether the target is an Interface (.TcIO) — decides the close tag.
+ * @returns {string} The modified target XML; the input unchanged when the close tag is missing.
+ */
+function insertComponentBlockIntoXml(targetXml, block, { oldName, newName, newFolderPath, isItf }) {
+    // 1. Rewrite the block's OPENING tag only: the pasted name and the target folder. Deeper
+    //    Name attributes (Get/Set accessors are Name="Get"/"Set") must not be touched.
+    const openTagMatch = block.match(/^<(Method|Property|Action|Transition)\b[^>]*>/);
+    if (!openTagMatch) return targetXml;
+    let tag = openTagMatch[0];
+    if (newName !== oldName) {
+        const nameAttr = ` Name="${oldName}"`;
+        const nameIdx = tag.indexOf(nameAttr);
+        if (nameIdx !== -1) {
+            tag = tag.slice(0, nameIdx) + ` Name="${newName}"` + tag.slice(nameIdx + nameAttr.length);
+        }
+    }
+    tag = setFolderPathOnTag(tag, newFolderPath);
+    let newBlock = tag + block.slice(openTagMatch[0].length);
+
+    // 2. Fresh identity: EVERY Id in the block (the component's own and any nested Get/Set) gets a
+    //    new GUID — TwinCAT object ids must be unique, and the source keeps the originals.
+    newBlock = regenerateObjectIdsInXml(newBlock);
+
+    // 3. Rename the declaration-header identifier: the first word-boundary occurrence of oldName
+    //    after the METHOD/PROPERTY keyword in the block's FIRST Declaration CDATA (the Property's
+    //    own declaration precedes its accessors'). Actions/Transitions have no declaration header,
+    //    and other occurrences stay: bodies may reference the old name, and TwinCAT's own paste
+    //    does not refactor either.
+    if (newName !== oldName) {
+        newBlock = renameFirstHeaderOccurrence(newBlock, /\b(?:METHOD|PROPERTY)\b/i, oldName, newName);
+    }
+
+    // 4. Splice before the root close tag, matching insertComponentIntoXml's convention
+    //    (4-space indent on the opening line, trailing newline).
+    const closeTag = isItf ? '</Itf>' : '</POU>';
+    const index = targetXml.lastIndexOf(closeTag);
+    if (index === -1) return targetXml;
+    return targetXml.substring(0, index) + `    ${newBlock}\n` + targetXml.substring(index);
+}
+
+/**
+ * Replaces every GUID-shaped `Id="{…}"` attribute in the text with a freshly generated one —
+ * a duplicate must not collide with its source's object identity: TwinCAT keys objects on these
+ * Ids, so a pasted component block and a duplicated FILE alike (the root object AND every member,
+ * Get/Set accessors included) need fresh ones. Deliberately a separate step from
+ * renameRootObjectInXml: renaming and re-identification are different concerns — a future
+ * rename-in-place must keep Ids. Restricted to the brace-wrapped GUID shape so `<LineId Id="3">`
+ * counters and any stray `Id=` text inside CDATA code can never be rewritten; splicing is
+ * slice-based, as everywhere.
+ * @param {string} xmlText XML text — a component block or a whole document.
+ * @returns {string} The text with every GUID id regenerated; unchanged when none are present.
+ */
+function regenerateObjectIdsInXml(xmlText) {
+    const regex = /Id="\{[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}\}"/g;
+    let out = '';
+    let last = 0;
+    let match;
+    while ((match = regex.exec(xmlText)) !== null) {
+        out += xmlText.slice(last, match.index) + `Id="{${crypto.randomUUID()}}"`;
+        last = match.index + match[0].length;
+    }
+    return out + xmlText.slice(last);
+}
+
+/**
+ * In the FIRST Declaration CDATA of `text`, replaces the first word-boundary occurrence of
+ * `oldName` found after `keywordRegex` with `newName`. Used by both paste renames (component
+ * headers and root object headers). No-op when the CDATA, the keyword, or the name is missing.
+ * @param {string} text XML text containing a `<Declaration><![CDATA[…]]>` section.
+ * @param {RegExp} keywordRegex Matches the header keyword the name follows (e.g. /\bMETHOD\b/i).
+ * @param {string} oldName Identifier to replace (matched case-insensitively — IEC names are).
+ * @param {string} newName Replacement identifier.
+ * @returns {string} The modified text, byte-identical outside the one renamed identifier.
+ */
+function renameFirstHeaderOccurrence(text, keywordRegex, oldName, newName) {
+    const declIdx = text.indexOf('<Declaration>');
+    if (declIdx === -1) return text;
+    const cdataStart = text.indexOf('<![CDATA[', declIdx);
+    if (cdataStart === -1) return text;
+    const contentStart = cdataStart + 9;
+    const cdataEnd = text.indexOf(']]>', contentStart);
+    if (cdataEnd === -1) return text;
+
+    const cdata = text.substring(contentStart, cdataEnd);
+    const kwMatch = cdata.match(keywordRegex);
+    if (!kwMatch) return text;
+
+    const nameEsc = oldName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const nameRegex = new RegExp(`\\b${nameEsc}\\b`, 'i');
+    const searchFrom = kwMatch.index + kwMatch[0].length;
+    const nameMatch = cdata.slice(searchFrom).match(nameRegex);
+    if (!nameMatch) return text;
+
+    const absIdx = contentStart + searchFrom + nameMatch.index;
+    return text.slice(0, absIdx) + newName + text.slice(absIdx + nameMatch[0].length);
+}
+
+/**
+ * Renames a TwinCAT object file's root: the root tag's Name attribute, the declaration-header
+ * identifier, and the LineIds names — everything TwinCAT keys on the object name. Used when
+ * pasting a copied FILE under a new name. Deliberately does NOT touch occurrences in code bodies
+ * (self-references keep the old name, exactly like TwinCAT's own copy) and does not regenerate
+ * Ids or LineId counters. Everything outside the three renamed spots is byte-for-byte identical.
+ * @param {string} xmlText TwinCAT XML file text.
+ * @param {string} newName The new object name.
+ * @returns {string} The modified XML text; the input unchanged when no known root is found.
+ */
+function renameRootObjectInXml(xmlText, newName) {
+    const rootMatch = xmlText.match(/<(POU|GVL|DUT|Itf|EnumerationTextList)\b([^>]*)>/);
+    if (!rootMatch) return xmlText;
+    const rootElement = rootMatch[1];
+    const oldName = parseAttrs(rootMatch[2]).Name;
+    if (!oldName || oldName === newName) return xmlText;
+
+    // Root Name attribute — spliced inside the matched root tag only.
+    let result = xmlText;
+    const tag = rootMatch[0];
+    const nameAttr = ` Name="${oldName}"`;
+    const nameIdx = tag.indexOf(nameAttr);
+    if (nameIdx !== -1) {
+        const absIdx = rootMatch.index + nameIdx;
+        result = result.slice(0, absIdx) + ` Name="${newName}"` + result.slice(absIdx + nameAttr.length);
+    }
+
+    // Declaration header. GVLs have no header naming the object (their declaration is VAR_GLOBAL
+    // blocks) — the attribute rename above is all they need. EnumerationTextList declarations are
+    // ordinary `TYPE X : (…)` enums (see parseTwinCatXml), so TYPE covers DUT and TLEO alike.
+    if (rootElement !== 'GVL') {
+        result = renameFirstHeaderOccurrence(
+            result, /\b(?:FUNCTION_BLOCK|PROGRAM|FUNCTION|INTERFACE|TYPE)\b/i, oldName, newName);
+    }
+
+    // LineIds carry the object name (`Name="Old"` for the root, `Name="Old.Member[.Get|.Set]"` for
+    // members) — a stale prefix would make TwinCAT mis-associate every line id with a dead object.
+    // Only the name VALUE is spliced (group 1 keeps the tag's own bytes, whatever its spacing).
+    const lineIdsRegex = /(<LineIds\s+Name=")([^"]*)"/g;
+    const oldLower = oldName.toLowerCase();
+    let out = '';
+    let last = 0;
+    let match;
+    while ((match = lineIdsRegex.exec(result)) !== null) {
+        const name = match[2];
+        const nameLower = name.toLowerCase();
+        let renamed = null;
+        if (nameLower === oldLower) {
+            renamed = newName;
+        } else if (nameLower.startsWith(oldLower + '.')) {
+            renamed = newName + name.slice(oldName.length);
+        }
+        if (renamed !== null) {
+            const valueStart = match.index + match[1].length;
+            out += result.slice(last, valueStart) + renamed;
+            last = valueStart + name.length;
+        }
+    }
+    result = out + result.slice(last);
+
+    return result;
+}
+
+/**
  * Deletes a Folder tag from the XML.
  * @param {string} xmlText TwinCAT XML text.
  * @param {string} folderPath Virtual folder path (e.g. 'Methods\\Internal\\').
@@ -594,5 +844,10 @@ module.exports = {
     insertFolderIntoXml,
     insertComponentIntoXml,
     deleteComponentFromXml,
+    setComponentFolderPathInXml,
+    extractComponentBlockFromXml,
+    insertComponentBlockIntoXml,
+    renameRootObjectInXml,
+    regenerateObjectIdsInXml,
     deleteFolderTagFromXml
 };
