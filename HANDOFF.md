@@ -4,8 +4,8 @@ Where the work *stands*. Read before starting; keep current (handoff rule in [CL
 100 lines — prune finished items rather than appending, but never drop a real finding to hit it. **Shipped features
 live in git history (PRs/commits); this file keeps the findings that would cost to re-derive.**
 
-**Last verified:** 2026-07-16 — `npm test` green (36 harnesses), **0 diagnostics on the sample**. **Version 0.2.0**
-(0.1.0 renumbered from 0.4.2 for the fresh public repo; each patch since = one shipped increment, see PRs #1–#12;
+**Last verified:** 2026-07-16 — `npm test` green (36 harnesses), **0 diagnostics on the sample**. **Version 0.2.1**
+(0.1.0 renumbered from 0.4.2 for the fresh public repo; each patch since = one shipped increment, see PRs #1–#13;
 #11 re-shipped 0.2.0 with the virtual-folder placement fix, same version by decision).
 **Not yet visually confirmed by the user:** the 0.1.3 library grouping and 0.1.4 member expansion in the tree UI —
 logic is verified on real data + guard tests, but nobody has eyeballed the rendered tree. Worth doing.

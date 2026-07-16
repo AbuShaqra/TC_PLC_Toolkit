@@ -93,7 +93,14 @@ function registerObjectCommands(context, { treeProvider }) {
     context.subscriptions.push(
         vscode.commands.registerCommand('twincat.createPhysicalFolder', async (node) => {
             if (!node || !node.resourceUri) return;
+            // Every name prompt here sets title + ignoreFocusOut: the quick-input drops down at the
+            // top of the window and is easy to miss, and its default focus-out dismissal meant a
+            // user who clicked elsewhere (wondering why "nothing happened") silently killed the
+            // prompt (user report). The title bar makes the widget taller and self-explaining; the
+            // prompt now stays until answered or Esc.
             const folderName = await vscode.window.showInputBox({
+                title: 'TwinCAT — Create Folder',
+                ignoreFocusOut: true,
                 prompt: 'Enter Folder Name',
                 placeHolder: 'e.g. MyFolder',
                 validateInput: val => {
@@ -149,6 +156,8 @@ function registerObjectCommands(context, { treeProvider }) {
             if (!node || !node.resourceUri) return;
 
             const folderName = await vscode.window.showInputBox({
+                title: 'TwinCAT — Create Virtual Folder',
+                ignoreFocusOut: true,
                 prompt: 'Enter Folder Name',
                 placeHolder: 'e.g. Internal',
                 validateInput: val => {
@@ -276,6 +285,8 @@ function registerObjectCommands(context, { treeProvider }) {
         }
 
         const name = await vscode.window.showInputBox({
+            title: `TwinCAT — Create ${componentType}`,
+            ignoreFocusOut: true,
             prompt: `Enter ${componentType} Name`,
             placeHolder: componentType === 'Property' ? 'e.g. MyProperty' : (componentType === 'Method' ? 'e.g. M_DoSomething' : 'e.g. A_DoSomething'),
             validateInput: val => {
@@ -310,7 +321,10 @@ function registerObjectCommands(context, { treeProvider }) {
 
         const quickPick = vscode.window.createQuickPick();
         quickPick.items = quickPickItems;
-        quickPick.title = `Select folder for ${componentType} "${name}"`;
+        quickPick.title = `TwinCAT — Select folder for ${componentType} "${name}"`;
+        // Same rationale as the name prompts above: a focus-out here silently aborted the whole
+        // create flow one step before the name prompt.
+        quickPick.ignoreFocusOut = true;
 
         const isFolderNode = node && node.contextValue && node.contextValue.startsWith('pouVirtualFolder');
         if (isFolderNode && node.folderPath) {
@@ -341,6 +355,8 @@ function registerObjectCommands(context, { treeProvider }) {
 
         if (selectedItem.isCreateNew) {
             newFolderName = await vscode.window.showInputBox({
+                title: 'TwinCAT — Create Virtual Folder',
+                ignoreFocusOut: true,
                 prompt: 'Enter New Folder Name',
                 placeHolder: 'e.g. Internal',
                 validateInput: val => {
@@ -416,6 +432,8 @@ function registerObjectCommands(context, { treeProvider }) {
     async function handleFileCreation(node, fileType) {
         const dirUri = node.resourceUri;
         const name = await vscode.window.showInputBox({
+            title: `TwinCAT — Create ${fileType}`,
+            ignoreFocusOut: true,
             prompt: `Enter ${fileType} Name`,
             placeHolder: `e.g. My${fileType}`,
             validateInput: val => {

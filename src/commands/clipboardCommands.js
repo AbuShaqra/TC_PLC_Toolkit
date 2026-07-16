@@ -181,7 +181,12 @@ function registerClipboardCommands(context, { treeView, treeProvider, applyXmlEd
 
         let newName = plan.componentName;
         if (taken.has(newName.toLowerCase())) {
+            // title + ignoreFocusOut on both paste prompts, as on the create prompts: the widget
+            // is easy to miss at the top of the window, and the default focus-out dismissal made a
+            // missed prompt look like the paste silently did nothing (user report).
             newName = await vscode.window.showInputBox({
+                title: `TwinCAT — Paste ${plan.componentType}`,
+                ignoreFocusOut: true,
                 prompt: `"${plan.componentName}" already exists in ${path.basename(targetUri.fsPath)} — name for the pasted copy`,
                 value: firstFreeName(plan.componentName, (cand) => taken.has(cand.toLowerCase())),
                 validateInput: (val) => {
@@ -218,6 +223,8 @@ function registerClipboardCommands(context, { treeView, treeProvider, applyXmlEd
         const isTaken = (cand) => existing.has((cand + ext).toLowerCase());
 
         const newName = await vscode.window.showInputBox({
+            title: 'TwinCAT — Paste File',
+            ignoreFocusOut: true,
             prompt: `Name for the copy of ${path.basename(plan.sourceFsPath)}`,
             value: firstFreeName(stem, isTaken),
             validateInput: (val) => {
