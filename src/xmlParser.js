@@ -331,6 +331,68 @@ function getFoldersDetailedFromXml(xmlText) {
 }
 
 /**
+ * Inserts a root-level Folder tag at TwinCAT's canonical position. The XML loader is
+ * order-sensitive inside <POU>/<Itf>: root folders must sit between the root Implementation
+ * (Declaration for interfaces) and the first member element — a folder placed after the
+ * members makes XAE drop them from compile (C0004 per member). New folders therefore go
+ * right after the last existing root-level folder (keeping the group contiguous), or, when
+ * none exists, directly after the root </Implementation> / </Declaration>.
+ * @param {string} xmlText The source POU/Itf XML text.
+ * @param {string} newFolderTag The complete self-closing <Folder ... /> tag to insert.
+ * @returns {string} The modified XML text.
+ */
+function insertRootFolderIntoXml(xmlText, newFolderTag) {
+    // End of the last root-level folder's full extent (past its matching </Folder> when not
+    // self-closing) — same stack discipline as getFoldersDetailedFromXml.
+    const folderRegex = /<Folder\b([^>]*)(>?)|<\/Folder>/g;
+    let depth = 0;
+    let groupEnd = -1;
+    let folderMatch;
+    while ((folderMatch = folderRegex.exec(xmlText)) !== null) {
+        if (folderMatch[0] === '</Folder>') {
+            if (depth > 0) {
+                depth--;
+                if (depth === 0) groupEnd = folderMatch.index + folderMatch[0].length;
+            }
+        } else if (folderMatch[1].trim().endsWith('/')) {
+            if (depth === 0) groupEnd = folderMatch.index + folderMatch[0].length;
+        } else {
+            depth++;
+        }
+    }
+    if (groupEnd !== -1) {
+        return xmlText.substring(0, groupEnd) + `\n    ${newFolderTag}` + xmlText.substring(groupEnd);
+    }
+
+    // No root-level folder yet: the canonical slot is directly after the root block that
+    // precedes the members — </Implementation> for POUs; interfaces (.TcIO) have no root
+    // implementation, so </Declaration>. In a well-formed TwinCAT file the root
+    // Declaration/Implementation precede every member, so the first occurrence after the
+    // root open tag is the root's own.
+    const rootOpen = xmlText.match(/<(POU|Itf)\b[^>]*>/);
+    if (rootOpen) {
+        const searchFrom = rootOpen.index + rootOpen[0].length;
+        for (const closeTag of ['</Implementation>', '</Declaration>']) {
+            const closeIdx = xmlText.indexOf(closeTag, searchFrom);
+            if (closeIdx !== -1) {
+                const insertAt = closeIdx + closeTag.length;
+                return xmlText.substring(0, insertAt) + `\n    ${newFolderTag}` + xmlText.substring(insertAt);
+            }
+        }
+    }
+
+    // Defensive (no root Declaration/Implementation found): insert at the start of the
+    // closing root tag's line so its own indentation stays untouched.
+    const rootClose = xmlText.match(/<\/(POU|Itf)>/);
+    if (!rootClose) return xmlText;
+    let lineStart = rootClose.index;
+    while (lineStart > 0 && (xmlText[lineStart - 1] === ' ' || xmlText[lineStart - 1] === '\t')) {
+        lineStart--;
+    }
+    return xmlText.substring(0, lineStart) + `    ${newFolderTag}\n` + xmlText.substring(lineStart);
+}
+
+/**
  * Inserts a Folder tag inside another folder or at the POU root.
  * @param {string} xmlText The source POU XML text.
  * @param {string} parentFolderPath Parent folder path (e.g. 'Methods\\Internal\\') or empty string for root.
@@ -340,27 +402,15 @@ function getFoldersDetailedFromXml(xmlText) {
  */
 function insertFolderIntoXml(xmlText, parentFolderPath, newFolderName, newFolderUuid) {
     const newFolderTag = `<Folder Name="${newFolderName}" Id="${newFolderUuid}" />`;
-    
+
     if (!parentFolderPath) {
-        const match = xmlText.match(/<\/(POU|Itf)>/);
-        if (!match) return xmlText;
-        
-        let indent = '';
-        let scanIdx = match.index - 1;
-        while (scanIdx >= 0 && (xmlText[scanIdx] === ' ' || xmlText[scanIdx] === '\t')) {
-            indent = xmlText[scanIdx] + indent;
-            scanIdx--;
-        }
-        const rootIndent = indent ? `${indent}    ` : '    ';
-        return xmlText.substring(0, match.index) + `${rootIndent}${newFolderTag}\n` + xmlText.substring(match.index);
+        return insertRootFolderIntoXml(xmlText, newFolderTag);
     }
-    
+
     const folders = getFoldersDetailedFromXml(xmlText);
     const parentFolder = folders.find(f => f.path === parentFolderPath);
     if (!parentFolder) {
-        const match = xmlText.match(/<\/(POU|Itf)>/);
-        if (!match) return xmlText;
-        return xmlText.substring(0, match.index) + `    ${newFolderTag}\n` + xmlText.substring(match.index);
+        return insertRootFolderIntoXml(xmlText, newFolderTag);
     }
     
     let indent = '';
