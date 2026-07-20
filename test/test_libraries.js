@@ -173,9 +173,26 @@ try {
     if (found.length === 0) {
         console.log('[skip] the sample declares no library references — skipping the real-.plcproj assertions.');
     } else {
-        assert(found.length === 28, `the real sample .plcproj yields 28 namespaces (got ${found.length})`);
-        assert(isLibraryNamespace('VisuElems') && isLibraryNamespace('Tc2_System') && isLibraryNamespace('Recipe_Management'),
-            'sample namespaces VisuElems / Tc2_System / Recipe_Management are registered');
+        // Measured against sample/TcToolkitSample/TcToolkitSample_PLC/TcToolkitSample_PLC.plcproj:
+        // four <PlaceholderReference> blocks, no pinned <LibraryReference>.
+        //
+        // Namespaces come from the .plcproj, which is COMMITTED — so this count is 4 everywhere, on a
+        // developer machine and on CI alike. The archives behind three of those four (the Beckhoff
+        // ones) are git-ignored vendor binaries, but nothing here reads an archive: a declared
+        // namespace is declared whether or not its binary was ever copied in. Anything that does need
+        // an archive lives in test_libsymbols.js / test_library_catalog.js, behind a presence gate.
+        assert(found.length === 4, `the real sample .plcproj yields 4 namespaces (got ${found.length})`);
+        assert(isLibraryNamespace('Tc2_Standard') && isLibraryNamespace('Tc2_System') &&
+            isLibraryNamespace('Tc3_Module') && isLibraryNamespace('TcDynCollections'),
+            'sample namespaces Tc2_Standard / Tc2_System / Tc3_Module / TcDynCollections are registered');
+        // TcDynCollections is declared under a placeholder Include of "TwinCat Dynamic Collections":
+        // the registry must hold the <Namespace>, which is the only one of the three name forms that
+        // compiles — never the Include string.
+        assert(!isLibraryNamespace('TwinCat Dynamic Collections') &&
+            !isLibraryNamespace('TwinCat_Dynamic_Collections'),
+            'the placeholder Include string is not registered as a namespace — only the <Namespace> is');
+        assert(!isLibraryNamespace('VisuElems'),
+            'a namespace the sample does not declare is not registered');
     }
 } finally {
     clearLibraryNamespaces();

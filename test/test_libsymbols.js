@@ -7,10 +7,11 @@
  *      synthetic CODESYS string table, then read back. This exercises the whole path — central
  *      directory, stored + deflate entries, LEB128 string table, identifier filter, registry — with
  *      no dependency on any vendor file.
- *   2. Sample level (skips cleanly): if sample/**\/_Libraries exists on this machine, assert that the
- *      real .compiled-library archives decode and yield the specific symbols the sample project uses.
- *      `_Libraries/` is git-ignored (licensed vendor binaries), so this layer is absent for most
- *      checkouts and must never fail there.
+ *   2. Sample level: assert that the real archives under sample/**\/_Libraries decode and yield the
+ *      specific symbols they declare. One archive there is COMMITTED — TwinCAT Dynamic Collections is
+ *      MIT-licensed — so this layer runs on CI and on a fresh clone. The three Beckhoff archives
+ *      beside it are licensed vendor binaries and git-ignored, so anything keyed to them is gated on
+ *      their presence and skipped with a message.
  *
  * Also guards the types.js contract this feature depends on: an `external` node resolves to the
  * `unknown` type, which is what keeps member access on a library type from being flagged.
@@ -38,6 +39,12 @@ const {
 } = require('../src/lsp/libsymbols');
 
 const { typeFromNode, resolveSymbolType, lookupMember } = require('../src/lsp/types');
+const {
+    SAMPLE_DIR,
+    MIT_SYMBOL_COUNT,
+    sampleArchiveFixtures,
+    skipBeckhoff
+} = require('./_baseline');
 
 let passed = 0;
 function check(label, fn) {
@@ -381,30 +388,20 @@ check('a normal node is unaffected', () => {
 });
 
 // ---------------------------------------------------------------------------------------------
-// 6. Real vendor archives (skipped when _Libraries/ is absent — it is git-ignored)
+// 6. Real archives on disk
+//
+// The committed MIT archive makes this section run everywhere; the git-ignored Beckhoff archives
+// add three more libraries on a developer machine. Assertions are split along that line.
 // ---------------------------------------------------------------------------------------------
 console.log('\n=== real library archives ===');
 
-/** Finds a `_Libraries` folder under sample/, or null. */
-function findLibrariesDir(dir, depth = 0) {
-    if (depth > 3 || !fs.existsSync(dir)) return null;
-    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
-        if (!e.isDirectory()) continue;
-        if (e.name.toLowerCase() === '_libraries') return path.join(dir, e.name);
-        const hit = findLibrariesDir(path.join(dir, e.name), depth + 1);
-        if (hit) return hit;
-    }
-    return null;
-}
+const fixtures = sampleArchiveFixtures(SAMPLE_DIR);
 
-const sampleDir = path.join(__dirname, '..', 'sample');
-const librariesDir = findLibrariesDir(sampleDir);
-
-if (!librariesDir) {
-    console.log('  skip  sample/**/_Libraries not present (git-ignored vendor binaries) — nothing to check.');
+if (!fixtures.librariesDir) {
+    console.log('  skip  sample/**/_Libraries not present — nothing to check.');
 } else {
     clearLibrarySymbols();
-    const stats = indexLibrarySymbols(sampleDir);
+    const stats = indexLibrarySymbols(SAMPLE_DIR);
     console.log(`  indexed ${stats.archives} archive(s), ${stats.failed} undecodable, ` +
                 `${stats.symbols} symbols in ${stats.ms} ms`);
 
@@ -413,16 +410,74 @@ if (!librariesDir) {
         assert.strictEqual(stats.failed, 0, `${stats.failed} archive(s) failed to decode`);
     });
 
-    check('the symbols the sample project actually uses are harvested', () => {
-        // The identifiers the undeclared-identifier check flagged before this feature existed.
-        const wanted = [
-            'DEFAULT_ADS_TIMEOUT', 'T_MaxString', 'E_DriveOperationMode', 'F_STRING',
-            'MC_BufferMode', 'F_WORD', 'FB_FormatString', 'F_UDINT', 'MC_Direction',
-            'T_AmsNetID', 'TIMESTRUCT', 'SjsonValue', 'GETSYSTEMTIME', 'MEMCPY'
-        ];
-        const missing = wanted.filter(w => !isLibrarySymbol(w));
-        assert.deepStrictEqual(missing, [], `not harvested: ${missing.join(', ')}`);
-    });
+    if (!fixtures.hasMit) {
+        console.log('  skip  the committed MIT archive is missing from this working copy — ' +
+                    'restore sample/**/_Libraries/fisothemes/.');
+    } else {
+        check('the committed MIT archive harvests to exactly its known symbol set', () => {
+            // A byte-fixed input: tcdyncollections.library v1.0.7 is committed, so an exact count is a
+            // real ratchet on the ZIP reader and the LEB128 string-table decoder — a silently dropped
+            // string-table region moves this number. Measured 2026-07-20 via harvestArchive().
+            const names = harvestArchive(fs.readFileSync(fixtures.mitArchive));
+            assert.strictEqual(names.length, MIT_SYMBOL_COUNT,
+                `expected ${MIT_SYMBOL_COUNT} names from ${path.basename(fixtures.mitArchive)}`);
+            // And nothing non-identifier-shaped slipped through on real vendor data, which mixes in
+            // GUIDs, doc comments and version strings exactly as the synthetic table above does.
+            const junk = names.filter(n => !/^[A-Za-z_][A-Za-z0-9_]*$/.test(n));
+            assert.deepStrictEqual(junk, [], `non-identifier names harvested: ${junk.join(', ')}`);
+        });
+
+        check('the symbols TwinCAT Dynamic Collections declares are harvested', () => {
+            // Discovered by running harvestArchive() over the committed archive and reading the names
+            // back (2026-07-20) — not guessed. Deliberately spread across symbol shapes, so a decoder
+            // that drops one string-table region shows up here rather than as a vague count change:
+            //   FB          : FB_Array_List, FB_Hash_Map, FB_Queue, FB_Tree_Set
+            //   interface   : I_Collection, I_Enumerator, I_List
+            //   struct      : ST_MAP_ENTRY, ST_AVL_NODE
+            //   enum        : E_COMPARISON, E_ERROR_CODE
+            //   function    : F_Murmur3_Hash, F_Compare_Any
+            //   alias       : T_Generic, T_Capacity
+            //   GVL/global  : GVL_Constants, Global_Version
+            const wanted = [
+                'FB_Array_List', 'FB_Hash_Map', 'FB_Queue', 'FB_Tree_Set',
+                'I_Collection', 'I_Enumerator', 'I_List',
+                'ST_MAP_ENTRY', 'ST_AVL_NODE',
+                'E_COMPARISON', 'E_ERROR_CODE',
+                'F_Murmur3_Hash', 'F_Compare_Any',
+                'T_Generic', 'T_Capacity',
+                'GVL_Constants', 'Global_Version'
+            ];
+            const missing = wanted.filter(w => !isLibrarySymbol(w));
+            assert.deepStrictEqual(missing, [], `not harvested: ${missing.join(', ')}`);
+            // The over-harvest guard: a decoder that returned every string it saw would pass the list
+            // above and still be broken.
+            assert.ok(!isLibrarySymbol('FB_NotInAnyLibrary'), 'a name in no archive must not be harvested');
+        });
+    }
+
+    // BONUS COVERAGE (developer machine only). The Beckhoff archives are `.compiled-library-ge33`
+    // containers, a different extension and a different vendor's writer from the MIT `.library` above
+    // — dropping `-ge33` support once stranded four libraries (see HANDOFF.md), so this list is worth
+    // keeping even though CI cannot run it. Names discovered the same way, by reading the registry
+    // back (2026-07-20), spread across all three libraries and across symbol shapes:
+    //   Tc2_Standard : TON, TOF, CTUD, RS, CONCAT
+    //   Tc2_System   : DEFAULT_ADS_TIMEOUT, T_MaxString, ST_AmsAddr, E_AdsErr, GETSYSTEMTIME,
+    //                  FB_FileOpen, F_CreateAmsNetId
+    //   Tc3_Module   : MEMCPY, FW_SafeRelease, TcBaseModule
+    if (!fixtures.hasBeckhoff) {
+        skipBeckhoff('the Beckhoff .compiled-library-ge33 symbol set');
+    } else {
+        check('the symbols the Beckhoff archives declare are harvested', () => {
+            const wanted = [
+                'TON', 'TOF', 'CTUD', 'RS', 'CONCAT',
+                'DEFAULT_ADS_TIMEOUT', 'T_MaxString', 'ST_AmsAddr', 'E_AdsErr', 'GETSYSTEMTIME',
+                'FB_FileOpen', 'F_CreateAmsNetId',
+                'MEMCPY', 'FW_SafeRelease', 'TcBaseModule'
+            ];
+            const missing = wanted.filter(w => !isLibrarySymbol(w));
+            assert.deepStrictEqual(missing, [], `not harvested: ${missing.join(', ')}`);
+        });
+    }
 
     check('indexing stays fast enough to run at startup', () => {
         assert.ok(stats.ms < 5000, `library indexing took ${stats.ms} ms`);

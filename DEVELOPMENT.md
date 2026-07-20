@@ -41,16 +41,21 @@ REQUIRE_FULL_SUITE=1 npm test # fail unless the full-run fixtures are present (s
 
 ### Full vs reduced runs — read this before trusting a green suite
 
-`sample/`, `sample/**/_Libraries` and the project `.tmc` are git-ignored, so a fresh clone and CI do
-not have them. The harnesses that need them **skip themselves and still report "passed"** — which
-means a green run can silently omit the diagnostics ratchet and the live-path guard, the two gates
-this project leans on hardest. Measured: CI executes ~951 assertions in ~4 s; a full local run
-executes ~1121 in ~25 s.
+The sample project, its `.tmc` and one MIT-licensed library archive are **committed**, so a fresh clone
+and CI both run at **FULL** coverage. Only the **Beckhoff** archives under `_Libraries/` are git-ignored
+(vendor binaries); no assertion depends on them without first gating on their presence, so the suite
+passes identically with and without — verify a change against both by moving that vendor directory
+aside and back.
+
+This matters because of how it used to be: `sample/` was git-ignored entirely, the harnesses needing it
+**skipped themselves and still reported "passed"**, and a green CI silently omitted the diagnostics
+ratchet and the live-path guard — the two gates this project leans on hardest. `test_live_path` was
+found running 2 of its 10 tests. Hence the classification below: a run states what it actually covered.
 
 `test/run.js` therefore classifies every run and prints it in the summary:
 
-- **FULL** — sample project, library archives and `.tmc` all present. This is the only run that
-  proves the ratchet held.
+- **FULL** — sample project, library archives and `.tmc` all present. This is the normal state
+  everywhere, and the only run that proves the ratchet held.
 - **REDUCED** — lists exactly which fixtures are missing and what that means, and labels the final
   line `(reduced coverage)`.
 
@@ -80,9 +85,9 @@ per-suite without aborting on the first failure. The main ones:
 `test/run.js <substring>` filters to matching suites. `test/_baseline.js` holds the machine-dependent
 diagnostic baselines the sample gates assert against.
 
-The sample-based harnesses need a TwinCAT project under `sample/` (git-ignored); if it is absent they
-skip cleanly, so `npm test` still passes on a fresh clone / CI. `test_live_path.js` additionally skips
-the individual tests that address specific sample objects when the sample at hand does not contain them.
+The sample-based harnesses run against the committed synthetic project under `sample/`. They still skip
+cleanly if a fixture they need is absent, so `npm test` passes even on a pruned tree — but the runner
+labels such a run REDUCED rather than letting it pass for FULL.
 
 A few experimental probes live in `scratch/` outside `npm test`: `test_lsp_parser.js`,
 `test_lsp_types_sync.js`, `test_method_diagnostics.js` (plus `make_icon.js`, `probe_lib_format.js`).
@@ -186,6 +191,7 @@ the ZIP **archives** and the project **`.tmc`** (`libsymbols.js`), the **`.plcpr
 per-library **browsercache** (`browserCache.js`, for library FB/interface method + property *names*).
 See [HANDOFF.md](HANDOFF.md) for what each source uniquely provides and the traps.
 
-Note that `_Libraries/` and the `.tmc` are git-ignored, so a fresh clone has neither and will measure
-~171 diagnostics on the sample rather than 0. The harnesses detect this and assert against the right
-baseline.
+Note the **Beckhoff** archives under `_Libraries/` are git-ignored, so a fresh clone has only the
+committed MIT archive. That changes how many external symbols resolve, not the diagnostic count: the
+synthetic sample names no Beckhoff symbol, so every baseline row measures 0. `test/_baseline.js` records
+how each row was measured.

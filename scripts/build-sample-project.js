@@ -1,11 +1,24 @@
 /**
  * @file build-sample-project.js
- * @description Generates the wholly synthetic TwinCAT sample project used as GROUND TRUTH by the
- * sample-based harnesses (test/test_sample_diagnostics.js, test/test_typecheck.js, …).
+ * @description Fills the XAE-authored TwinCAT sample project with the synthetic objects used as
+ * GROUND TRUTH by the sample-based harnesses (test/test_sample_diagnostics.js, test/test_typecheck.js, …).
  *
- * The project it writes is *correct* TwinCAT code, so every diagnostic the extension reports on it is
- * a bug — that is the whole premise of the ratchet. It is generated rather than hand-maintained for
- * three reasons:
+ * **This script no longer creates a project — it populates one.** It used to emit the 19 objects plus a
+ * hand-written `.plcproj`, and XAE Shell refused to open the result: a TwinCAT PLC project is not a
+ * standalone `.plcproj`. It needs a solution (`.sln`), a system project (`.tsproj`), the `_Config`
+ * XTI/XTV instance files and the identity GUIDs (`Application`, `TypeSystem`, `Implicit_*`,
+ * `LibraryReferences`) that tie them together — none of which can be synthesized convincingly.
+ *
+ * So the skeleton is generated ONCE, by XAE itself, via `scripts/build-sample-solution.ps1`, and is
+ * committed. This script writes only what is genuinely ours — the objects and their project
+ * registration — into `sample/TcToolkitSample/TcToolkitSample_PLC/`. Everything XAE owns
+ * (`.sln`, `.tsproj`, `_Config/`, `PlcTask.TcTTO`, `_Libraries/`, and the whole of the `.plcproj`
+ * except the two ItemGroups below) is left strictly alone: regenerating any of it is what broke this
+ * before.
+ *
+ * The objects it writes are *correct* TwinCAT code, so every diagnostic the extension reports on them
+ * is a bug — that is the whole premise of the ratchet. They are generated rather than hand-maintained
+ * for three reasons:
  *
  *   1. **Determinism.** Running this twice produces byte-identical output, so a regenerated sample
  *      never shows up as a spurious diff. Every `Id="{…}"` GUID is *derived* (SHA-1 of a stable key)
@@ -19,7 +32,9 @@
  *      from one: it is a neutral sorting-station demo.
  *
  * Fidelity details that harnesses depend on, and that are therefore not negotiable:
- *   - files are UTF-8 **with a BOM** and use **CRLF** line endings, exactly as TwinCAT writes them;
+ *   - OBJECT files are UTF-8 **with a BOM** and use **CRLF** line endings, exactly as TwinCAT writes
+ *     them. The `.plcproj` is NOT written that way — XAE wrote it without a BOM and without a
+ *     trailing newline, and it is round-tripped verbatim rather than re-emitted (see injectItems);
  *   - every generated object appears in the `.plcproj` as `<Compile Include="relative\path">`
  *     (`src/lsp/xmlIndexer.js collectPlcProjObjectPaths` gates indexing on it, and
  *     `test/test_plcproj_scope.js` asserts every on-disk object is `<Compile>`d);
@@ -29,9 +44,10 @@
  *     none.
  *
  * Usage:
- *   node scripts/build-sample-project.js [outputDir]
- * The default output directory is `sample/TcToolkitSample` at the repo root. Passing an explicit
- * directory is what makes the determinism check possible (generate twice, diff the two trees).
+ *   node scripts/build-sample-project.js [plcProjectRoot]
+ * The default root is `sample/TcToolkitSample/TcToolkitSample_PLC` — the directory holding the
+ * XAE-authored `.plcproj`. Running it twice must leave the tree byte-identical: object GUIDs are
+ * derived, and the `.plcproj` injection is idempotent.
  */
 
 const fs = require('fs');
@@ -681,17 +697,33 @@ function renderObject(spec) {
     return out.join('\n');
 }
 
+// ═════════════════════════════════════════════════════════════════════════════════════════════════
+// .plcproj registration
+//
+// The `.plcproj` is XAE's, not ours. It carries the identity GUIDs that bind the PLC project to the
+// system project and its `_Config` instance files (`Application`, `TypeSystem`, `Implicit_Task_Info`,
+// `Implicit_KindOfTask`, `Implicit_Jitter_Distribution`, `LibraryReferences`), the
+// `<PlaceholderReference>`s that pull in Tc2_Standard / Tc2_System / Tc3_Module, and a
+// `<ProjectExtensions>` options archive. Rewriting any of that is exactly what made XAE Shell refuse
+// to open the old sample, so this code only ever ADDS the two kinds of item that describe OUR
+// objects, and leaves every other byte untouched.
+// ═════════════════════════════════════════════════════════════════════════════════════════════════
+
 /**
- * Renders the `.plcproj`. Every generated object must appear as a `<Compile>` item: the workspace
- * index is scoped to the project rather than to the filesystem (`collectPlcProjObjectPaths` in
- * src/lsp/xmlIndexer.js), so an object missing from here would be invisible to the language server —
- * and `test/test_plcproj_scope.js` asserts the sample has no such object.
- *
- * No `<PlaceholderReference>` / `<LibraryReference>` yet: the sample references no libraries.
- * @param {string} projectName
- * @returns {string} XML text with LF line endings.
+ * Project-relative `<Compile Include="…">` paths for every object in the spec, in spec order and
+ * with TwinCAT's backslash separators.
+ * @returns {string[]}
  */
-function renderPlcProj(projectName) {
+function compileIncludes() {
+    return OBJECTS.map(spec => `${spec.dir.replace(/\//g, '\\')}\\${spec.file}`);
+}
+
+/**
+ * Project-relative `<Folder Include="…" />` paths implied by the spec — every directory the objects
+ * live in, plus each of its ancestors, first-seen order.
+ * @returns {string[]}
+ */
+function folderIncludes() {
     const folders = [];
     for (const spec of OBJECTS) {
         const parts = spec.dir.split('/');
@@ -700,42 +732,97 @@ function renderPlcProj(projectName) {
             if (!folders.includes(p)) folders.push(p);
         }
     }
+    return folders;
+}
 
-    const out = [
-        '<?xml version="1.0" encoding="utf-8"?>',
-        '<Project ToolsVersion="14.0" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">',
-        '  <PropertyGroup>',
-        '    <FileVersion>1</FileVersion>',
-        '    <SchemaVersion>2.0</SchemaVersion>',
-        `    <ProjectGuid>${guid(`${projectName}/Project`)}</ProjectGuid>`,
-        '    <SubObjectsSortedByName>True</SubObjectsSortedByName>',
-        `    <Name>${projectName}</Name>`,
-        '    <ProjectVersion>3.1.4024.12</ProjectVersion>',
-        '    <Application />',
-        '    <TargetVersion>3.1.4024.0</TargetVersion>',
-        '    <LibraryReferences>',
-        '    </LibraryReferences>',
-        '  </PropertyGroup>',
-        '  <ItemGroup>'
-    ];
+/**
+ * Collects the `Include` attribute of every element with a given tag name, lower-cased. Used to make
+ * the injection idempotent: MSBuild include paths are Windows paths, so they are compared
+ * case-insensitively — a second run must add nothing and produce a byte-identical file.
+ * @param {string} text The `.plcproj` text.
+ * @param {string} tag Element name, e.g. 'Compile'.
+ * @returns {Set<string>} Lower-cased include paths already present.
+ */
+function existingIncludes(text, tag) {
+    const found = new Set();
+    const re = new RegExp(`<${tag}\\s+Include="([^"]*)"`, 'g');
+    let m;
+    while ((m = re.exec(text)) !== null) found.add(m[1].toLowerCase());
+    return found;
+}
 
-    for (const spec of OBJECTS) {
-        const include = `${spec.dir.replace(/\//g, '\\')}\\${spec.file}`;
-        out.push(`    <Compile Include="${include}">`);
-        out.push('      <SubType>Code</SubType>');
-        out.push('    </Compile>');
+/**
+ * Inserts item elements into the `<ItemGroup>` that already holds items of that kind, immediately
+ * before its closing tag.
+ *
+ * Slice-based, like `registerInPlcProj` in src/plcProjHelper.js — the file is reassembled from two
+ * substrings and the new text, never rewritten through a computed `String.replace`, so everything
+ * outside the splice point is preserved byte-for-byte. It differs from that function in one detail
+ * that matters here: the splice lands at the START of the `</ItemGroup>` line rather than at the tag
+ * itself, so the closing tag keeps its own indentation and the inserted lines get theirs from the
+ * anchor. (Splicing at the tag leaves that line's leading whitespace in the prefix, which shifts the
+ * first inserted line and strips the indent from `</ItemGroup>`.)
+ *
+ * @param {string} text The `.plcproj` text.
+ * @param {string} tag Element name to anchor on and to insert, e.g. 'Compile'.
+ * @param {string[]} includes Project-relative paths to add (already filtered for what is missing).
+ * @param {(indent: string, include: string, eol: string) => string} render Emits one element.
+ * @returns {string} The updated text (unchanged when `includes` is empty).
+ */
+function injectItems(text, tag, includes, render) {
+    if (includes.length === 0) return text;
+
+    // Anchor on an existing item of the same kind: that is what identifies the right ItemGroup (the
+    // file has several) and what supplies XAE's own indentation.
+    const anchor = new RegExp(`^([ \\t]*)<${tag}\\s+Include="`, 'm').exec(text);
+    if (!anchor) {
+        throw new Error(
+            `the .plcproj has no <${tag} Include="…"> to anchor on — it does not look like the ` +
+            `XAE-authored skeleton this script expects`);
+    }
+    const indent = anchor[1];
+    const closeIdx = text.indexOf('</ItemGroup>', anchor.index);
+    if (closeIdx === -1) {
+        throw new Error(`the .plcproj has no </ItemGroup> closing the <${tag}> group`);
     }
 
-    out.push('  </ItemGroup>');
-    out.push('  <ItemGroup>');
-    for (const folder of folders) {
-        out.push(`    <Folder Include="${folder}" />`);
-    }
-    out.push('  </ItemGroup>');
-    out.push('  <Import Project="$(MSBuildExtensionsPath)\\Beckhoff\\TwinCAT PLC\\Plc.Compile.targets" />');
-    out.push('</Project>');
-    out.push('');
-    return out.join('\n');
+    const eol = text.includes('\r\n') ? '\r\n' : '\n';
+    const lineStart = text.lastIndexOf('\n', closeIdx) + 1;
+    const addition = includes.map(inc => render(indent, inc, eol)).join('');
+    return text.slice(0, lineStart) + addition + text.slice(lineStart);
+}
+
+/**
+ * Registers the generated objects in the XAE-authored `.plcproj`: a `<Compile>` for every object it
+ * does not already list, and a `<Folder>` for every directory it does not already declare.
+ *
+ * Every generated object MUST end up as a `<Compile>` item: the workspace index is scoped to the
+ * project rather than to the filesystem (`collectPlcProjObjectPaths` in src/lsp/xmlIndexer.js), so an
+ * object missing from here would be invisible to the language server — and `test/test_plcproj_scope.js`
+ * asserts the sample has no such object.
+ *
+ * Idempotent by construction: entries already present are filtered out, so a second run adds nothing
+ * and the file comes back byte-identical.
+ * @param {string} text The current `.plcproj` text.
+ * @returns {{text: string, compiles: number, folders: number}} Updated text and what was added.
+ */
+function registerObjectsInPlcProj(text) {
+    const haveCompiles = existingIncludes(text, 'Compile');
+    const haveFolders = existingIncludes(text, 'Folder');
+
+    // MAIN.TcPOU is XAE's own default object; the skeleton already lists it. Filtering here is what
+    // keeps it from being duplicated even though the spec regenerates its contents.
+    const newCompiles = compileIncludes().filter(inc => !haveCompiles.has(inc.toLowerCase()));
+    const newFolders = folderIncludes().filter(inc => !haveFolders.has(inc.toLowerCase()));
+
+    let out = injectItems(text, 'Compile', newCompiles, (indent, inc, eol) =>
+        `${indent}<Compile Include="${inc}">${eol}` +
+        `${indent}  <SubType>Code</SubType>${eol}` +
+        `${indent}</Compile>${eol}`);
+    out = injectItems(out, 'Folder', newFolders, (indent, inc, eol) =>
+        `${indent}<Folder Include="${inc}" />${eol}`);
+
+    return { text: out, compiles: newCompiles.length, folders: newFolders.length };
 }
 
 /**
@@ -751,26 +838,72 @@ function writeTwinCatFile(filePath, text) {
 }
 
 /**
- * Generates the whole project into `outDir`.
- * @param {string} outDir Absolute output directory (created if absent).
- * @returns {{objects: number, root: string}} What was written.
+ * Locates the XAE-authored `.plcproj` inside the PLC project root.
+ *
+ * The skeleton is deliberately NOT synthesized when it is absent. A convincing one cannot be written
+ * by hand — that is the whole reason this script stopped emitting its own `.plcproj` — so a missing
+ * skeleton is a setup step the user has to run, not a gap to paper over.
+ * @param {string} root PLC project root (the directory holding the `.plcproj`).
+ * @returns {string} Absolute path to the `.plcproj`.
  */
-function build(outDir) {
-    const projectName = path.basename(outDir);
+function findPlcProj(root) {
+    const entries = fs.existsSync(root)
+        ? fs.readdirSync(root).filter(f => f.toLowerCase().endsWith('.plcproj')).sort()
+        : [];
+    if (entries.length === 0) {
+        throw new Error(
+            `no .plcproj found in ${root}\n\n` +
+            `This script FILLS an XAE-created PLC project; it does not create one. Generate the\n` +
+            `skeleton first (once — it is committed):\n\n` +
+            `    powershell -File scripts/build-sample-solution.ps1\n`);
+    }
+    if (entries.length > 1) {
+        throw new Error(`expected exactly one .plcproj in ${root}, found ${entries.length}: ${entries.join(', ')}`);
+    }
+    return path.join(root, entries[0]);
+}
+
+/**
+ * Writes the objects into the XAE-created PLC project and registers them in its `.plcproj`.
+ *
+ * `MAIN.TcPOU` deliberately OVERWRITES the empty PROGRAM that XAE creates by default: it sits at the
+ * same path, so the skeleton already lists it and the spec's version simply replaces its contents.
+ * @param {string} root PLC project root — the directory holding the XAE-authored `.plcproj`.
+ * @returns {{objects: number, root: string, plcProj: string, compiles: number, folders: number}}
+ * What was written, and what the `.plcproj` injection had to add.
+ */
+function build(root) {
+    const plcProjPath = findPlcProj(root);
+
     for (const spec of OBJECTS) {
-        const dest = path.join(outDir, ...spec.dir.split('/'), spec.file);
+        const dest = path.join(root, ...spec.dir.split('/'), spec.file);
         writeTwinCatFile(dest, renderObject(spec));
     }
-    writeTwinCatFile(path.join(outDir, `${projectName}.plcproj`), renderPlcProj(projectName));
-    return { objects: OBJECTS.length, root: outDir };
+
+    // Round-tripped as raw text, NOT through writeTwinCatFile(): XAE wrote this file without a BOM
+    // and without a trailing newline, and both must survive.
+    const before = fs.readFileSync(plcProjPath, 'utf8');
+    const { text, compiles, folders } = registerObjectsInPlcProj(before);
+    if (text !== before) fs.writeFileSync(plcProjPath, text, 'utf8');
+
+    return { objects: OBJECTS.length, root, plcProj: plcProjPath, compiles, folders };
 }
 
 if (require.main === module) {
     const target = process.argv[2]
         ? path.resolve(process.argv[2])
-        : path.resolve(__dirname, '..', 'sample', 'TcToolkitSample');
-    const result = build(target);
-    console.log(`Wrote ${result.objects} TwinCAT objects + 1 .plcproj to ${result.root}`);
+        : path.resolve(__dirname, '..', 'sample', 'TcToolkitSample', 'TcToolkitSample_PLC');
+    let result;
+    try {
+        result = build(target);
+    } catch (err) {
+        console.error(`\n[build-sample-project] ${err.message}`);
+        process.exit(1);
+    }
+    console.log(`Wrote ${result.objects} TwinCAT objects to ${result.root}`);
+    console.log(`Registered in ${path.basename(result.plcProj)}: ` +
+        `+${result.compiles} <Compile>, +${result.folders} <Folder> ` +
+        `(0/0 on a re-run — the injection is idempotent)`);
 }
 
-module.exports = { build, renderObject, renderPlcProj, guid, OBJECTS };
+module.exports = { build, renderObject, registerObjectsInPlcProj, guid, OBJECTS };

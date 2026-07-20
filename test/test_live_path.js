@@ -5,14 +5,14 @@
  * map results/diagnostics back to component panes. Replicates the logic in customEditorProvider.js
  * (which cannot be imported directly because it depends on `vscode`).
  *
- * The sample-driven tests address named objects of the sample/ project (SampleProject):
+ * The sample-driven tests address named objects of the sample/ project (TcToolkitSample):
  *
- *   FB_Clamping           — a clean FB whose `Cyclic` method drives a `REFERENCE TO
- *                           FB_PneumaticCylinder` (member completion, diagnostics, go-to-def)
- *   FB_PneumaticCylinder  — the referenced FB; declared in a GVL via the FB_init init-list syntax,
- *                           and used by three other modules (cross-file references)
- *   GVL_System            — `fbBauteilKlemmung : FB_PneumaticCylinder(refExtendOut := ...)`, i.e.
- *                           the declInitList form that binds to FB_init's VAR_INPUT
+ *   FB_Station    — a clean FB whose `Cyclic` method drives a `REFERENCE TO FB_Cylinder`
+ *                   (member completion, diagnostics, go-to-def)
+ *   FB_Cylinder   — the referenced FB; declared in a GVL via the FB_init init-list syntax, and
+ *                   used from FB_Station (cross-file references)
+ *   GVL_System    — `fbCylinder : FB_Cylinder(refExtendOut := GVL_Io.bExtendOut, ...)`, i.e. the
+ *                   declInitList form that binds to FB_init's VAR_INPUT
  *
  * Positions are deliberately driven through localToAbsolute()/absoluteToLocal() from *pane-local*
  * coordinates (as the webview supplies them) rather than searched for in the assembled unit — that
@@ -182,31 +182,31 @@ function findLine(lines, re) {
 
 // Pane-local anchors the tests navigate to. Checked here so a drifted sample skips instead of
 // failing an assertion for the wrong reason.
-const CLAMP_MEMBER_ACCESS = /refKlemmung\.bIsExtended/;      // FB_Clamping.Cyclic impl
-const CLAMP_STATE_ASSIGN = /_eState\s*:=\s*E_ModuleState\.ERROR/; // FB_Clamping.Cyclic impl
-const GVL_INIT_PARAM = /refExtendOut\s*:=\s*GVL_I_O_mapping\./;   // GVL_System root decl
+const STATION_MEMBER_ACCESS = /refCylinder\.bIsExtended/;          // FB_Station.Cyclic impl
+const STATION_STATE_ASSIGN = /_eState\s*:=\s*E_StationState\.Error/; // FB_Station.Cyclic impl
+const GVL_INIT_PARAM = /refExtendOut\s*:=\s*GVL_Io\./;             // GVL_System root decl
 
 const missing = [];
-for (const name of ['FB_Clamping', 'FB_PneumaticCylinder', 'GVL_System']) {
+for (const name of ['FB_Station', 'FB_Cylinder', 'GVL_System']) {
     if (!byName[name]) missing.push(`object ${name}`);
 }
-const clampCyclicImpl = paneText('FB_Clamping', 'method_Cyclic', 'impl');
-if (byName['FB_Clamping'] && clampCyclicImpl === null) {
-    missing.push('FB_Clamping component method_Cyclic');
-} else if (clampCyclicImpl) {
-    if (!CLAMP_MEMBER_ACCESS.test(clampCyclicImpl)) missing.push('FB_Clamping.Cyclic use of refKlemmung.bIsExtended');
-    if (!CLAMP_STATE_ASSIGN.test(clampCyclicImpl)) missing.push('FB_Clamping.Cyclic line "_eState := E_ModuleState.ERROR"');
+const stationCyclicImpl = paneText('FB_Station', 'method_Cyclic', 'impl');
+if (byName['FB_Station'] && stationCyclicImpl === null) {
+    missing.push('FB_Station component method_Cyclic');
+} else if (stationCyclicImpl) {
+    if (!STATION_MEMBER_ACCESS.test(stationCyclicImpl)) missing.push('FB_Station.Cyclic use of refCylinder.bIsExtended');
+    if (!STATION_STATE_ASSIGN.test(stationCyclicImpl)) missing.push('FB_Station.Cyclic line "_eState := E_StationState.Error"');
 }
-const clampDecl = paneText('FB_Clamping', 'root', 'decl');
-if (clampDecl && !/refKlemmung\s*:\s*REFERENCE\s+TO\s+FB_PneumaticCylinder/i.test(clampDecl)) {
-    missing.push('FB_Clamping var "refKlemmung : REFERENCE TO FB_PneumaticCylinder"');
+const stationDecl = paneText('FB_Station', 'root', 'decl');
+if (stationDecl && !/refCylinder\s*:\s*REFERENCE\s+TO\s+FB_Cylinder/i.test(stationDecl)) {
+    missing.push('FB_Station var "refCylinder : REFERENCE TO FB_Cylinder"');
 }
 const gvlDecl = paneText('GVL_System', 'root', 'decl');
 if (gvlDecl && !GVL_INIT_PARAM.test(gvlDecl)) {
-    missing.push('GVL_System FB_init init-list arg "refExtendOut := GVL_I_O_mapping..."');
+    missing.push('GVL_System FB_init init-list arg "refExtendOut := GVL_Io..."');
 }
-if (paneText('FB_PneumaticCylinder', 'method_FB_init', 'decl') === null) {
-    missing.push('FB_PneumaticCylinder component method_FB_init');
+if (paneText('FB_Cylinder', 'method_FB_init', 'decl') === null) {
+    missing.push('FB_Cylinder component method_FB_init');
 }
 
 const canRunSampleTests = missing.length === 0;
@@ -244,10 +244,10 @@ function plainTest(title, fn) {
 }
 
 // ============================================================
-// TEST 1: FB_Clamping's 'Cyclic' method — valid code, 0 diagnostics in its panes
+// TEST 1: FB_Station's 'Cyclic' method — valid code, 0 diagnostics in its panes
 // ============================================================
-sampleTest("TEST 1: FB_Clamping.Cyclic diagnostics (valid)", () => {
-    const { xml, uri } = byName['FB_Clamping'];
+sampleTest("TEST 1: FB_Station.Cyclic diagnostics (valid)", () => {
+    const { xml, uri } = byName['FB_Station'];
     const { stText, lineMap } = assembleSt(xml, null);
     parseAndIndexDocument(stText, uri); // server re-parses the active unit
     const diags = provideDiagnostics(stText, index, uri);
@@ -260,59 +260,61 @@ sampleTest("TEST 1: FB_Clamping.Cyclic diagnostics (valid)", () => {
         `lineMap must carry a non-empty impl block for method_Cyclic (got ${JSON.stringify(blocks)})`);
 
     const cyclicMarkers = mapped.filter(m => m.componentId === 'method_Cyclic');
-    assert(cyclicMarkers.length === 0, `FB_Clamping.Cyclic should have no diagnostics (got ${JSON.stringify(cyclicMarkers)})`);
+    assert(cyclicMarkers.length === 0, `FB_Station.Cyclic should have no diagnostics (got ${JSON.stringify(cyclicMarkers)})`);
 });
 
 // ============================================================
-// TEST 2: member completion inside Cyclic — refKlemmung. (REFERENCE TO FB_PneumaticCylinder)
+// TEST 2: member completion inside Cyclic — refCylinder. (REFERENCE TO FB_Cylinder)
 // ============================================================
-sampleTest('TEST 2: member completion refKlemmung.', () => {
-    const { xml, uri } = byName['FB_Clamping'];
+sampleTest('TEST 2: member completion refCylinder.', () => {
+    const { xml, uri } = byName['FB_Station'];
     const { stText, lineMap } = assembleSt(xml, null);
     parseAndIndexDocument(stText, uri);
 
-    // Pane-local cursor, just after the dot of "refKlemmung." — mapped through the lineMap exactly
+    // Pane-local cursor, just after the dot of "refCylinder." — mapped through the lineMap exactly
     // as the extension maps a webview cursor.
-    const lines = paneLines(clampCyclicImpl);
-    const localLine0 = findLine(lines, CLAMP_MEMBER_ACCESS);
-    const localCol0 = lines[localLine0].indexOf('refKlemmung.') + 'refKlemmung.'.length;
+    const lines = paneLines(stationCyclicImpl);
+    const localLine0 = findLine(lines, STATION_MEMBER_ACCESS);
+    const localCol0 = lines[localLine0].indexOf('refCylinder.') + 'refCylinder.'.length;
     const abs = localToAbsolute(lineMap, 'method_Cyclic', 'impl', localLine0 + 1, localCol0 + 1);
 
     const comps = provideCompletions(stText, abs, index, uri);
     const labels = comps.map(c => c.label);
     assert(labels.includes('bIsExtended') && labels.includes('bIsRetracted'),
-        `refKlemmung. should complete FB_PneumaticCylinder properties bIsExtended/bIsRetracted (got ${labels.join(', ')})`);
+        `refCylinder. should complete FB_Cylinder properties bIsExtended/bIsRetracted (got ${labels.join(', ')})`);
     assert(labels.includes('Extend') && labels.includes('Retract'),
-        `refKlemmung. should complete FB_PneumaticCylinder methods Extend/Retract (got ${labels.join(', ')})`);
+        `refCylinder. should complete FB_Cylinder methods Extend/Retract (got ${labels.join(', ')})`);
 });
 
 // ============================================================
 // TEST 3: go-to-definition of POU variable '_eState' from inside Cyclic
 // ============================================================
 sampleTest('TEST 3: go-to-definition of _eState from Cyclic', () => {
-    const { xml, uri } = byName['FB_Clamping'];
+    const { xml, uri } = byName['FB_Station'];
     const { stText, lineMap } = assembleSt(xml, null);
     parseAndIndexDocument(stText, uri);
 
-    const lines = paneLines(clampCyclicImpl);
-    const localLine0 = findLine(lines, CLAMP_STATE_ASSIGN);
+    const lines = paneLines(stationCyclicImpl);
+    const localLine0 = findLine(lines, STATION_STATE_ASSIGN);
     const localCol0 = lines[localLine0].indexOf('_eState') + 2; // cursor inside the word
     const abs = localToAbsolute(lineMap, 'method_Cyclic', 'impl', localLine0 + 1, localCol0 + 1);
 
     const def = provideDefinition(stText, abs, index, uri);
     assert(def && def.targetWord === '_eState' && def.componentId === 'root',
         `_eState should resolve to the root POU var block (got ${JSON.stringify(def)})`);
-    assert(def && /FB_Clamping\.TcPOU$/i.test(def.uri), `_eState resolves inside FB_Clamping (got ${def && def.uri})`);
+    assert(def && /FB_Station\.TcPOU$/i.test(def.uri), `_eState resolves inside FB_Station (got ${def && def.uri})`);
 });
 
 // ============================================================
 // TEST 4: inject a typo into Cyclic's implementation -> exactly one diagnostic, in the impl pane
 // ============================================================
 sampleTest('TEST 4: typo in Cyclic maps to impl pane', () => {
-    const { xml, uri } = byName['FB_Clamping'];
-    // Overlay a broken implementation for method_Cyclic referencing an undeclared identifier.
+    const { xml, uri } = byName['FB_Station'];
+    // Overlay a broken implementation for method_Cyclic: line 1 is valid code (a real struct member
+    // of FB_Station assigned from a real property of FB_Cylinder), line 2 names nothing at all. The
+    // first line exists to prove the check is discriminating rather than flagging the whole overlay.
     // (Overlay only — the sample file on disk is never touched.)
-    const brokenImpl = '_bIsClamped := refKlemmung.bIsExtended;\nbDoesNotExist := TRUE;';
+    const brokenImpl = '_stStatus.bBusy := refCylinder.bIsExtended;\nbDoesNotExist := TRUE;';
     const { stText, lineMap } = assembleSt(xml, { componentId: 'method_Cyclic', impl: brokenImpl });
     parseAndIndexDocument(stText, uri);
     const diags = provideDiagnostics(stText, index, uri);
@@ -380,45 +382,53 @@ plainTest('TEST 6: token-aware references', () => {
 
 // ============================================================
 // TEST 7: cross-file references for a POU type name (the "find usages of an FB" case)
-//   FB_PneumaticCylinder is instantiated in GVL_System and referenced by three station modules.
+//   FB_Cylinder is declared in its own file, instantiated in GVL_System, and held as a REFERENCE TO
+//   by FB_Station. Three files, three occurrences — measured, not assumed:
+//     FB_Cylinder.TcPOU  L6  (the FUNCTION_BLOCK header itself)
+//     GVL_System.TcGVL   L8  (fbCylinder : FB_Cylinder(refExtendOut := ...))
+//     FB_Station.TcPOU   L8  (refCylinder : REFERENCE TO FB_Cylinder)
+//   The customer sample this test was written against had the FB used by three further station
+//   modules and asserted >= 4 files; the synthetic project genuinely has only these three, so the
+//   real number is asserted exactly. Raising it needs new fixtures, not a looser bound.
 // ============================================================
-sampleTest('TEST 7: cross-file references to FB_PneumaticCylinder', () => {
-    const { xml, uri } = byName['FB_PneumaticCylinder'];
-    // Cursor on "FB_PneumaticCylinder" in its own declaration (FUNCTION_BLOCK FB_PneumaticCylinder).
+sampleTest('TEST 7: cross-file references to FB_Cylinder', () => {
+    const { xml, uri } = byName['FB_Cylinder'];
+    // Cursor on "FB_Cylinder" in its own declaration (FUNCTION_BLOCK FB_Cylinder).
     const { stText } = assembleSt(xml, null);
     const lines = stText.split('\n');
-    const declLineIdx = lines.findIndex(l => /FUNCTION_BLOCK\s+FB_PneumaticCylinder/.test(l));
-    const col = lines[declLineIdx].indexOf('FB_PneumaticCylinder');
+    const declLineIdx = lines.findIndex(l => /FUNCTION_BLOCK\s+FB_Cylinder/.test(l));
+    const col = lines[declLineIdx].indexOf('FB_Cylinder');
     const refs = provideReferences(stText, { line: declLineIdx, character: col + 1 }, index, uri);
     const fileSet = new Set(refs.map(r => path.basename(r.uri.replace(/^file:\/\/\//, '')).toLowerCase()));
-    assert(fileSet.has('gvl_system.tcgvl') && fileSet.has('fb_clamping.tcpou')
-        && fileSet.has('fb_contacting.tcpou') && fileSet.has('fb_slide.tcpou'),
-        `FB_PneumaticCylinder references should span GVL_System, FB_Clamping, FB_Contacting and FB_Slide (got files: ${[...fileSet].join(', ')})`);
-    assert(refs.length >= 4, `expected several FB_PneumaticCylinder references across the project (got ${refs.length})`);
+    assert(fileSet.has('gvl_system.tcgvl') && fileSet.has('fb_station.tcpou')
+        && fileSet.has('fb_cylinder.tcpou'),
+        `FB_Cylinder references should span FB_Cylinder, GVL_System and FB_Station (got files: ${[...fileSet].join(', ')})`);
+    assert(fileSet.size === 3, `references span exactly 3 files (got ${fileSet.size}: ${[...fileSet].join(', ')})`);
+    assert(refs.length === 3, `expected 3 FB_Cylinder references across the project (got ${refs.length})`);
 });
 
 // ============================================================
 // TEST 8: a semantic (member-access) error in a method maps through the live pipeline
 // ============================================================
 sampleTest('TEST 8: member-access diagnostic maps to the right pane', () => {
-    const { xml, uri } = byName['FB_Clamping'];
-    const brokenImpl = 'refKlemmung.NoSuchMember := 1;';
+    const { xml, uri } = byName['FB_Station'];
+    const brokenImpl = 'refCylinder.NoSuchMember := 1;';
     const { stText, lineMap } = assembleSt(xml, { componentId: 'method_Cyclic', impl: brokenImpl });
     parseAndIndexDocument(stText, uri);
     const diags = provideDiagnostics(stText, index, uri);
     const mapped = mapDiagnosticsToMonaco(diags, lineMap);
     const m = mapped.find(x => x.componentId === 'method_Cyclic' && x.pane === 'implementation' && x.message.includes('NoSuchMember'));
     assert(!!m, `member typo flagged in Cyclic implementation (got ${JSON.stringify(mapped.map(x => x.message))})`);
-    // 'refKlemmung.' is 12 chars, so the member starts at pane line 1, column 13.
+    // 'refCylinder.' is 12 chars, so the member starts at pane line 1, column 13.
     assert(m && m.range.startLineNumber === 1 && m.range.startColumn === 13,
         `maps to impl pane line 1, column 13 (got ${m && m.range.startLineNumber}:${m && m.range.startColumn})`);
 });
 
 // ============================================================
 // TEST 9: go-to-definition on an FB-init parameter resolves to the FB that declares it
-//   GVL_System: fbBauteilKlemmung : FB_PneumaticCylinder(refExtendOut := GVL_I_O_mapping...);
-//   The parens straight after the type mean these are FB_init's VAR_INPUT — and FB_PneumaticCylinder
-//   also has an own member named refExtendOut, so a jump to the member would be the wrong answer.
+//   GVL_System: fbCylinder : FB_Cylinder(refExtendOut := GVL_Io.bExtendOut, ...);
+//   The parens straight after the type mean these are FB_init's VAR_INPUT — and FB_Cylinder also
+//   has an own member named refExtendOut, so a jump to the member would be the wrong answer.
 // ============================================================
 sampleTest('TEST 9: go-to-definition on FB-init parameter', () => {
     const { xml, uri } = byName['GVL_System'];
@@ -431,8 +441,8 @@ sampleTest('TEST 9: go-to-definition on FB-init parameter', () => {
     const abs = localToAbsolute(lineMap, 'root', 'decl', localLine0 + 1, localCol0 + 1);
 
     const def = provideDefinition(stText, abs, index, uri);
-    assert(def && /FB_PneumaticCylinder\.TcPOU$/i.test(def.uri),
-        `refExtendOut resolves into FB_PneumaticCylinder (got ${def && def.uri})`);
+    assert(def && /FB_Cylinder\.TcPOU$/i.test(def.uri),
+        `refExtendOut resolves into FB_Cylinder (got ${def && def.uri})`);
     assert(def && def.targetWord === 'refExtendOut', `targetWord is refExtendOut (got ${def && def.targetWord})`);
     assert(def && def.componentId === 'method_FB_init',
         `must land on FB_init's VAR_INPUT, not the FB's own member of the same name (got componentId ${def && def.componentId})`);
@@ -444,13 +454,13 @@ sampleTest('TEST 9: go-to-definition on FB-init parameter', () => {
 //   from a pane-local one must name the same text, and must map back to the pane it came from.
 // ============================================================
 sampleTest('TEST 10: pane <-> unit position mapping round-trips', () => {
-    const { xml } = byName['FB_Clamping'];
+    const { xml } = byName['FB_Station'];
     const { stText, lineMap } = assembleSt(xml, null);
     const unitLines = stText.split('\n');
 
     // (a) impl pane of a method.
-    const implLines = paneLines(clampCyclicImpl);
-    const implLocal0 = findLine(implLines, CLAMP_MEMBER_ACCESS);
+    const implLines = paneLines(stationCyclicImpl);
+    const implLocal0 = findLine(implLines, STATION_MEMBER_ACCESS);
     const absImpl = localToAbsolute(lineMap, 'method_Cyclic', 'impl', implLocal0 + 1, 1);
     assert(unitLines[absImpl.line] === implLines[implLocal0],
         `impl line ${implLocal0 + 1} of method_Cyclic must map to the same text in the unit ` +
@@ -460,8 +470,8 @@ sampleTest('TEST 10: pane <-> unit position mapping round-trips', () => {
         `absolute line ${absImpl.line} must map back to method_Cyclic/impl/${implLocal0} (got ${JSON.stringify(backImpl)})`);
 
     // (b) decl pane of the root POU.
-    const declLines = paneLines(clampDecl);
-    const declLocal0 = findLine(declLines, /refKlemmung\s*:\s*REFERENCE\s+TO/i);
+    const declLines = paneLines(stationDecl);
+    const declLocal0 = findLine(declLines, /refCylinder\s*:\s*REFERENCE\s+TO/i);
     const absDecl = localToAbsolute(lineMap, 'root', 'decl', declLocal0 + 1, 1);
     assert(unitLines[absDecl.line] === declLines[declLocal0],
         `decl line ${declLocal0 + 1} of root must map to the same text in the unit ` +
@@ -471,7 +481,7 @@ sampleTest('TEST 10: pane <-> unit position mapping round-trips', () => {
         `absolute line ${absDecl.line} must map back to root/decl/${declLocal0} (got ${JSON.stringify(backDecl)})`);
 
     // (c) columns are a straight 1-based -> 0-based shift, so a mapped column must index the token.
-    const dotCol0 = implLines[implLocal0].indexOf('refKlemmung.') + 'refKlemmung.'.length;
+    const dotCol0 = implLines[implLocal0].indexOf('refCylinder.') + 'refCylinder.'.length;
     const absDot = localToAbsolute(lineMap, 'method_Cyclic', 'impl', implLocal0 + 1, dotCol0 + 1);
     assert(unitLines[absDot.line].startsWith('bIsExtended', absDot.character),
         `mapped column must land immediately before "bIsExtended" (got ${JSON.stringify(unitLines[absDot.line].slice(absDot.character, absDot.character + 11))})`);

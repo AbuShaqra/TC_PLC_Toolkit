@@ -1,7 +1,7 @@
 /**
  * @file _baseline.js
  * @description Single source of truth for the sample-project diagnostics ratchet, shared by
- * scratch/test_sample_diagnostics.js and scratch/test_typecheck.js. Both measure the same thing the
+ * test/test_sample_diagnostics.js and test/test_typecheck.js. Both measure the same thing the
  * same way, so the recipe and the baselines live here rather than being copied (and drifting).
  *
  * Two things this module owns:
@@ -10,16 +10,17 @@
  *    exactly. Measure any other way and the number is meaningless (see HANDOFF.md):
  *      - `convertXmlToSt(parsed, { raw: true })` — the NON-raw conversion silently strips
  *        declaration-site init lists (`fb : FB_X(a := b)` becomes `fb : FB_X;`), hiding real findings.
+ *        The sample's `GVL_System.fbCylinder : FB_Cylinder(refExtendOut := GVL_Io.bExtendOut, …)` is
+ *        exactly that shape, so this is load-bearing here and not a hypothetical.
  *      - `parseAndIndexDocument(stText, uri)` — gives methods real line ranges; without it
  *        `findActiveScope` matches no method, `methodVars` is empty, and every method-local variable
- *        in every method body is flagged undeclared (~2,300 phantom diagnostics).
+ *        in every method body is flagged undeclared.
  *      - `registerLibrarySymbolNodes(index, stText)` — puts the external symbols the document
- *        references into the index, on demand (never all 32k at once: that is a deliberate
- *        performance design, see libsymbols.js). Without it every bare library name
- *        (`DEFAULT_ADS_TIMEOUT`, `T_MaxString`, …) reads as undeclared: 171 false positives.
+ *        references into the index, on demand (never the whole registry at once: that is a
+ *        deliberate performance design, see libsymbols.js).
  *      - the workspace scan up front — `indexLibraryNamespaces` (.plcproj), `indexLibrarySymbols`
  *        (the ZIP archives) and `indexTypeSystem` (the `.tmc`), exactly as server.js indexLibraries()
- *        does. Skip the `.tmc` and the count is 12, not 0.
+ *        does.
  *
  * 2. **The baseline, which is machine-dependent** — and that is not a bug, it is the point. See the
  *    table below.
@@ -37,46 +38,67 @@ const {
     registerLibrarySymbolNodes
 } = require('../src/lsp/libsymbols');
 
-/** The sample TwinCAT project (git-ignored; harnesses skip cleanly when it is absent). */
+/** The sample TwinCAT project (committed; harnesses skip cleanly when it is absent). */
 const SAMPLE_DIR = path.join(__dirname, '..', 'sample');
 
 /**
  * The sample project is correct TwinCAT code, so **every** diagnostic on it is a false positive and
- * the only defensible target is 0 — which, with both external symbol sources present, is what it
- * now scores. But the two sources are *git-ignored build artifacts*: `sample/.gitignore` tracks only
- * the source objects and the `.plcproj`, so a fresh clone or a CI runner has **neither** the
- * `_Libraries/` archives nor the `.tmc`. On such a machine a bare library name genuinely cannot be
- * resolved, and 171 diagnostics is the honest, correct result — failing there would be punishing a
- * machine that is behaving exactly as designed.
+ * the only defensible target is 0 — which is what it scores, in every mode.
  *
- * Hence a table rather than a constant. Pinning a single number would be wrong on one machine or the
- * other: assert 0 on a fresh clone and a correct run fails; assert 171 everywhere and a real
- * regression hides behind 171 points of slack on the machine that HAS the artifacts.
+ * The table survives the move from the customer project to the committed synthetic one because the
+ * *reason* for it survives: one of the external symbol sources is a git-ignored vendor binary, so
+ * how much a machine can resolve still depends on what it has. `sample/TcToolkitSample/
+ * TcToolkitSample_PLC/_Libraries/Beckhoff Automation GmbH/` is git-ignored; a fresh clone or a CI
+ * runner has only the MIT archive beside it.
  *
- * Every row below is **measured**, not assumed (2026-07-13, 152 sample objects):
+ * What changed is the *numbers*. The old rows (0 / 12 / 69 / 171) were measured on the customer's
+ * 152-object project, which named library symbols throughout its code; the synthetic sample's 19
+ * objects reference **no library symbol at all**, so there is nothing for a missing archive or a
+ * missing `.tmc` to fail to resolve, and every row collapses to 0.
  *
- *   archives  .tmc  total  mode              what is unresolvable
+ * **Every row is now MEASURED.** The sample has been built in TwinCAT XAE, which produced
+ * `TcToolkitSample_PLC/TcToolkitSample_PLC.tmc` — and that file is COMMITTED, so `full` is the mode
+ * every checkout runs in, developer machine and CI alike. The two rows that used to be labelled
+ * inference are therefore reachable at last, and the other two only by taking a source away.
+ *
+ * Re-measured 2026-07-20 against sample/TcToolkitSample (19 objects, 4 declared namespaces). Rows
+ * other than `full` were produced by copying `sample/` to a temp directory and deleting the `.tmc`
+ * and/or `_Libraries` from the copy, then running the recipe below over all 19 objects under each of
+ * the three diagnostics configs (default, declarationTypes:true, typeCompatibility:true). Nothing in
+ * the real `sample/` was touched.
+ *
+ *   archives  .tmc  total  mode              how it was established
  *   --------  ----  -----  ----------------  ---------------------------------------------------
- *      yes    yes      0   full              nothing — the target, reached
- *      yes    no      12   archives-only     E_EthercatDeviceState (x8), CANQUEUE (x4): neither is
- *                                            in any archive string table; only the .tmc has them
- *      no     yes     69   typesystem-only   the library names the .tmc does not export
- *                                            (DEFAULT_ADS_TIMEOUT x25, F_STRING x12, …)
- *      no     no     171   none              every bare library identifier (fresh clone / CI)
+ *      yes    yes      0   full              MEASURED, in place: the mode every checkout is in.
+ *                                            5 archives / 4,028 symbols on a machine with the
+ *                                            Beckhoff binaries; 1 archive / 502 without them —
+ *                                            both score 0.
+ *      yes    no       0   archives-only     MEASURED on a copy with the .tmc deleted
+ *                                            (5 archives, 4,007 symbols)
+ *      no     yes      0   typesystem-only   MEASURED on a copy with _Libraries deleted
+ *                                            (28 symbols, all from the .tmc)
+ *      no     no       0   none              MEASURED on a copy with both deleted (0 symbols);
+ *                                            identical to every other row, confirming the
+ *                                            sample's code names no external symbol
  *
- * The mode is printed loudly on every run: a PASS against the wrong row means nothing.
+ * Keeping every row at 0 is the point: the old `archives-only: 12` carried 12 points of slack on the
+ * mode that machine actually ran in, so a regression of up to 12 new diagnostics would have passed
+ * the gate silently.
+ *
+ * The mode is printed loudly on every run: a PASS against the wrong row means nothing. A run that
+ * reports anything other than `full` means the committed `.tmc` is missing from the working copy.
  * @type {Object<string, {baseline: number, label: string}>}
  */
 const BASELINES = {
-    full: { baseline: 0, label: 'library archives + .tmc type system' },
-    'archives-only': { baseline: 12, label: 'library archives, no .tmc type system' },
-    'typesystem-only': { baseline: 69, label: '.tmc type system, no library archives' },
-    none: { baseline: 171, label: 'no external symbol sources (fresh clone / CI)' }
+    full: { baseline: 0, label: 'library archives + .tmc type system (both committed — the normal mode)' },
+    'archives-only': { baseline: 0, label: 'library archives, no .tmc type system' },
+    'typesystem-only': { baseline: 0, label: '.tmc type system, no library archives' },
+    none: { baseline: 0, label: 'no external symbol sources' }
 };
 
-/** The two realistic machines: a full TwinCAT working copy, and a fresh clone. */
+/** The two realistic machines: a full TwinCAT working copy, and a fresh clone. Both score 0. */
 const BASELINE_WITH_LIBRARIES = BASELINES.full.baseline;        // 0
-const BASELINE_WITHOUT_LIBRARIES = BASELINES.none.baseline;     // 171
+const BASELINE_WITHOUT_LIBRARIES = BASELINES.none.baseline;     // 0
 
 /**
  * @typedef {Object} BaselineMode
@@ -127,8 +149,9 @@ function indexSampleLibraries(sampleDir = SAMPLE_DIR) {
 }
 
 /**
- * Prints the mode loudly. A passing run must never be mistakable for a run on a different machine —
- * the baselines span 0 to 171, and "PASS" against the wrong one means nothing.
+ * Prints the mode loudly. Every row of the table is currently 0, but the mode still has to be shown:
+ * it says which external symbol sources this machine actually had, and a future sample that does
+ * reference library symbols will pull the rows apart again.
  * @param {BaselineMode} info Result of indexSampleLibraries().
  */
 function printBaselineMode(info) {
@@ -138,8 +161,12 @@ function printBaselineMode(info) {
         `${info.tmcFiles} .tmc file(s), ${info.symbols} external symbol(s) in ${info.ms} ms; ` +
         `${info.namespaces} namespace(s) from .plcproj.`);
     if (info.mode !== 'full') {
-        console.log(`    NOTE: sample/**/_Libraries and the .tmc are git-ignored build artifacts. With both`);
-        console.log(`    present the sample scores 0 — see the measured table in scratch/_baseline.js.`);
+        // `full` is the normal mode everywhere: the MIT archive and the `.tmc` are both committed.
+        // Anything else means a fixture was pruned by hand, which is worth saying out loud even
+        // though every row of the table scores 0.
+        console.log(`    NOTE: the sample's .tmc and its MIT library archive are COMMITTED, so a checkout`);
+        console.log(`    normally runs in mode "full". Something has been removed from this working copy.`);
+        console.log(`    The sample scores 0 in every mode — see the measured table in test/_baseline.js.`);
     }
     console.log('');
 }
@@ -155,6 +182,124 @@ function printBaselineMode(info) {
 function syncDocument(index, stText, fileUri) {
     parseAndIndexDocument(stText, fileUri);
     registerLibrarySymbolNodes(index, stText);
+}
+
+// ---------------------------------------------------------------------------------------------
+// Which library archives this checkout actually has
+// ---------------------------------------------------------------------------------------------
+//
+// `_Libraries/` holds archives from two sources, and only one of them is committed:
+//
+//   fisothemes/twincat dynamic collections/  TwinCAT Dynamic Collections, MIT-licensed, so it CAN
+//                                            be redistributed. sample/.gitignore negates exactly
+//                                            this directory => present on CI and on a fresh clone.
+//   Beckhoff Automation GmbH/                Tc2_Standard, Tc2_System, Tc3_Module — and
+//                                            **Tc2_Utilities**, which the `.plcproj` does NOT
+//                                            reference: building in XAE copied it in anyway. Vendor
+//                                            binaries, git-ignored => present ONLY where TwinCAT
+//                                            copied them.
+//
+// The `.plcproj` references four libraries, and namespaces come from the `.plcproj`, so
+// namespace-level facts (4 namespaces, their include/title/company splits, the catalog shape) hold
+// in BOTH configurations. Only archive-derived facts — symbol names, symbol counts, per-namespace
+// attribution — differ. Harnesses therefore assert on what is committed and gate the rest on
+// `hasBeckhoff`, so a developer machine keeps the extra coverage without CI failing for lacking it.
+//
+// Note the archive count on disk (5 here) is NOT the number of declared references (4). "Every
+// archive maps to a namespace" is therefore not an invariant, and no harness asserts it; the
+// undeclared Tc2_Utilities is instead used as a real fixture for the never-guess attribution rule
+// (test_library_completion.js §1).
+
+/** The git-ignored vendor directory, named exactly as TwinCAT creates it. */
+const BECKHOFF_VENDOR_DIR = 'Beckhoff Automation GmbH';
+
+/** The committed MIT archive's namespace, as the sample `.plcproj` declares it. */
+const MIT_NAMESPACE = 'TcDynCollections';
+
+/**
+ * Distinct identifier-shaped names the committed MIT archive harvests to. Measured 2026-07-20 by
+ * running `harvestArchive()` over `tcdyncollections.library` (v1.0.7) — the archive is committed at
+ * a fixed version, so this is a reproducible ratchet on the decoder, not a machine-dependent number.
+ */
+const MIT_SYMBOL_COUNT = 479;
+
+/** Archive extensions the harvester reads. `.compiled-library-v3` is opaque and deliberately absent. */
+const ARCHIVE_RE = /\.(compiled-library|compiled-library-ge33|library)$/i;
+
+/**
+ * Finds the `_Libraries` folder under a sample project, or null.
+ * @param {string} dir Directory to search.
+ * @param {number} [depth] Recursion depth guard.
+ * @returns {string|null} Absolute path, or null when there is none.
+ */
+function findLibrariesDir(dir, depth = 0) {
+    if (depth > 3 || !fs.existsSync(dir)) return null;
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        if (!entry.isDirectory()) continue;
+        if (entry.name.toLowerCase() === '_libraries') return path.join(dir, entry.name);
+        const hit = findLibrariesDir(path.join(dir, entry.name), depth + 1);
+        if (hit) return hit;
+    }
+    return null;
+}
+
+/**
+ * Collects every readable library archive beneath a directory.
+ * @param {string} dir Directory to walk.
+ * @param {string[]} [out] Accumulator.
+ * @returns {string[]} Absolute archive paths.
+ */
+function collectArchives(dir, out = []) {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) collectArchives(full, out);
+        else if (ARCHIVE_RE.test(entry.name)) out.push(full);
+    }
+    return out;
+}
+
+/**
+ * @typedef {Object} ArchiveFixtures
+ * @property {string|null} librariesDir The sample's `_Libraries` folder, or null.
+ * @property {string[]} archives Every readable archive found beneath it.
+ * @property {boolean} hasMit The committed MIT archive is present (it always should be).
+ * @property {string|null} mitArchive Absolute path to the MIT archive, or null.
+ * @property {boolean} hasBeckhoff The git-ignored Beckhoff archives are present.
+ */
+
+/**
+ * Reports which library archives this checkout has, so harnesses can assert on the committed one and
+ * gate Beckhoff-only coverage instead of failing on CI. Detected from the filesystem rather than
+ * from the harvester's own output — a gate must not be decided by the code under test.
+ * @param {string} [sampleDir] Sample project root. Defaults to SAMPLE_DIR.
+ * @returns {ArchiveFixtures} What is present.
+ */
+function sampleArchiveFixtures(sampleDir = SAMPLE_DIR) {
+    const librariesDir = findLibrariesDir(sampleDir);
+    if (!librariesDir) {
+        return { librariesDir: null, archives: [], hasMit: false, mitArchive: null, hasBeckhoff: false };
+    }
+    const archives = collectArchives(librariesDir);
+    const mitArchive = archives.find(p => /tcdyncollections/i.test(path.basename(p))) || null;
+    const beckhoffSegment = path.sep + BECKHOFF_VENDOR_DIR.toLowerCase() + path.sep;
+    return {
+        librariesDir,
+        archives,
+        hasMit: !!mitArchive,
+        mitArchive,
+        hasBeckhoff: archives.some(p => p.toLowerCase().includes(beckhoffSegment))
+    };
+}
+
+/**
+ * Prints the one-line explanation that goes with a skipped Beckhoff-only section, so a reduced run
+ * never looks like a passing one.
+ * @param {string} what The coverage being skipped.
+ */
+function skipBeckhoff(what) {
+    console.log(`    [skip] ${what} — the Beckhoff archives (Tc2_Standard / Tc2_System / Tc3_Module)`);
+    console.log('           are git-ignored vendor binaries, absent on CI and on a fresh clone. This is');
+    console.log('           bonus coverage on a machine where TwinCAT has copied them in.');
 }
 
 /**
@@ -182,8 +327,14 @@ module.exports = {
     BASELINES,
     BASELINE_WITH_LIBRARIES,
     BASELINE_WITHOUT_LIBRARIES,
+    BECKHOFF_VENDOR_DIR,
+    MIT_NAMESPACE,
+    MIT_SYMBOL_COUNT,
     indexSampleLibraries,
     printBaselineMode,
+    findLibrariesDir,
+    sampleArchiveFixtures,
+    skipBeckhoff,
     syncDocument,
     walkTwinCatFiles
 };
