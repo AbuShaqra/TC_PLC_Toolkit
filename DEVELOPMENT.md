@@ -54,7 +54,7 @@ per-suite without aborting on the first failure. The main ones:
 | `test/test_xml_rename.js` | Structural rename primitives in `xmlParser`: `renameComponentInXml` (tag Name attr + declaration header + LineIds, Ids kept), `renameVirtualFolderInXml` (folder tag + member FolderPath prefix rewrite), and the no-op-safety composition the rename command relies on (header already renamed by the reference pass → attr/LineIds still fixed, no corruption). |
 | `test/test_rename_engine.js` | `src/renameEngine.js`: mapping workspace reference positions (raw-ST-unit coords) back into CDATA splices — synthesized-line skips (action headers, `GET`/`SET`), the PROGRAM→FUNCTION_BLOCK raw-mode column skew, the never-write-a-mismatch guard, CRLF byte preservation. |
 | `test/test_references_for_symbol.js` | The LSP's by-symbol references entry point (`custom/referencesForSymbol`) that powers rename: FB/GVL/DUT roots (a GVL name never appears in its own ST text, so the position-based API cannot seed it), methods/properties/actions, the name-keyed-index identity guard, and index restoration after the scan. |
-| `test/test_visu_references.js` | The visu half of rename (`custom/visuReferencesForSymbol`): dotted symbol paths inside `.TcVIS`/`.TcVMO` (`GVL_X.fb.member`, embedded `STSnippet` code) are found only when the chain provably resolves to the renamed symbol — text-list ids, visu-library names and unresolvable prefixes are never touched. BOM/offset fidelity, plus a sample-project pass when `sample/` is present. |
+| `test/test_config_references.js` | The non-code half of rename (`custom/configReferencesForSymbol`): dotted symbol paths inside visualizations `.TcVIS`/`.TcVMO` (`GVL_X.fb.member`, embedded `STSnippet` code) and text lists `.TcTLO`/`.TcGTLO` (a text entry whose text IS a symbol path) are found only when the chain provably resolves to the renamed symbol — text-list ids, visu-library names, dotted prose (`Encoderpos.Turn1`) and unresolvable prefixes are never touched. Task configs `.TcTTO` use a separate rule: the `<PouCall>` `<Name>` matches only a dot-free name, so a library call (`VisuElems.Visu_Prg`) is never rewritten. BOM/offset fidelity, plus a sample-project pass when `sample/` is present. |
 | `test/test_plcproj_scope.js` | The index is scoped to the `.plcproj`, not the filesystem: `collectPlcProjObjectPaths` lists the `<Compile>`d objects, and `indexTwinCatDirectory` skips on-disk objects outside that set so a backup/orphan copy (a duplicate object name) cannot win the name-keyed index and steal a real object's references. Includes the no-`.plcproj` index-all fallback and a sample-coverage check proving the gate is a no-op on the ratchet. |
 
 `test/run.js <substring>` filters to matching suites. `test/_baseline.js` holds the machine-dependent
@@ -100,7 +100,8 @@ src/
     server.js           LSP server (Node IPC) + custom JSON-RPC bridge requests; owns the workspace index
     parser.js           Structured Text lexer + symbol parser
     symbolNode.js       Single factory for a symbol node's core shape (parser + xmlIndexer build through it)
-    features.js         Facade re-exporting features/{core,completions,definition,references,highlights,diagnostics}
+    features.js         Facade re-exporting features/{core,completions,definition,references,configReferences,highlights,diagnostics}
+    features/configReferences.js  Rename's non-code half: PLC symbol references inside visualizations, text lists and task configs
     builtins.js         Standard IEC/TwinCAT types, keywords, functions/FBs
     types.js            Type model, resolver, member lookup, assignability
     exprParser.js       Expression type inference (for assignment checks)
@@ -122,7 +123,7 @@ to indexing every object file found (fresh clone, or a loose folder of TwinCAT f
 Three processes cooperate, with the extension host as the hub — **the webview never talks to the
 language server directly**. The extension bridges them over custom JSON-RPC requests
 (`custom/completions`, `custom/definition`, `custom/references`, `custom/referencesForSymbol`,
-`custom/visuReferencesForSymbol`, `custom/diagnostics`, …) layered on the standard LSP transport
+`custom/configReferencesForSymbol`, `custom/diagnostics`, …) layered on the standard LSP transport
 (Node IPC).
 
 ### The live language-feature path

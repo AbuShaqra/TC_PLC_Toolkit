@@ -7,7 +7,9 @@ live in git history (PRs/commits); this file keeps the findings that would cost 
 **Last verified:** 2026-07-20 — `npm test` green (41 harnesses), **0 diagnostics on the sample**. Shipped: **0.3.0**
 (PRs #1–#14; 0.1.0 renumbered from 0.4.2 for the fresh public repo; #11 re-shipped 0.2.0 by decision). 0.3.0 =
 reference-aware rename (objects, members, folders, virtual folders) incl. visualizations; **user smoke-tested it on the
-real project and XAE built cleanly** — packaged + installed.
+real project and XAE built cleanly**. In flight: **0.3.1 on `feat/config-object-references` (PR #15, CI green,
+NOT merged)** — extends rename to task configs (`.TcTTO` PouCall) and text lists (`.TcTLO`/`.TcGTLO`); packaged +
+installed for the user to smoke-test (rename a task-called PROGRAM, then build in XAE) before merge.
 **Not yet visually confirmed by the user:** the 0.1.3 library grouping and 0.1.4 member expansion in the tree UI —
 logic is verified on real data + guard tests, but nobody has eyeballed the rendered tree. Worth doing.
 
@@ -49,13 +51,19 @@ logic is verified on real data + guard tests, but nobody has eyeballed the rende
   corruption); **sibling implementors of a shared interface are NOT in the reference set** (pairwise relation) —
   v1 limit, XAE flags them. `.st` rename = disk-only (never a `.plcproj` member anywhere in the codebase).
   References modal excludes the self-declaration via the response's separate `declaration` field.
-  **Visualizations** (user's smoke test caught the gap — XAE build broke): `.TcVIS`/`.TcVMO` reference PLC symbols
-  as quoted dotted paths (`<v n="BasicTypeNodeValue">"GVL_X.fb.member"</v>`, plus real ST in `STSnippet`); rename
-  scans them via `custom/visuReferencesForSymbol`. **Polarity flip is deliberate**: code-side keeps unresolvable
-  occurrences, visu-side renames ONLY chains that provably resolve through the type model (decoys share the same
-  shape: text-list ids `TL_*.X`, visu-lib names `VisuDialogs.*`) — an unproven visu edit corrupts the HMI. Both
-  visu formats carry a **UTF-8 BOM** the LSP must strip (VS Code documents exclude it → offsets shift by one).
-  Not scanned v1: alarm/recipe/OPC configs referencing symbols outside visu files.
+  **Non-code objects** (user's smoke test caught the gap — XAE build broke): rename scans them via
+  `custom/configReferencesForSymbol` (`features/configReferences.js`). Two matcher families, dispatched by ext:
+  **chains** — `.TcVIS`/`.TcVMO` (`<v n="BasicTypeNodeValue">"GVL_X.fb.member"</v>`, plus real ST in `STSnippet`)
+  and `.TcTLO`/`.TcGTLO` (dynamic-text entries are literal symbol paths, e.g. `"GVL_X.arr[INDEX]"` — the chain
+  regex stops at `[`, verified); **task POU calls** — `.TcTTO` `<PouCall><Name>MAIN</Name></PouCall>`, matched only
+  for ROOT renames, only when the value has **no dot** (that rule is what protects the library POU
+  `VisuElems.Visu_Prg`), value whitespace-trimmed with the offset carried. **Polarity flip is deliberate**:
+  code-side keeps unresolvable occurrences, config-side renames ONLY what provably resolves through the type model
+  — decoys share the exact shape (text keys `Encoderpos.Turn1` sit beside real paths in the same GTLO; visu-lib
+  names `VisuDialogs.*`) and an unproven edit corrupts the HMI. All these formats carry a **UTF-8 BOM** the LSP must
+  strip (VS Code documents exclude it → offsets shift by one). Surveyed and deliberately NOT scanned: `.TcIPO`
+  (only `.svg` names), `.plcproj` (already synced by the file-rename step), `.tmc` (generated build artifact).
+  Sample counts: `GVL_HMI_Manuell` 666 (665 visu + 1 GTLO), `MAIN` 3 (1 PouCall + 2 visu).
 - **README.md** = public page (ships); **DEVELOPMENT.md** = build/test/architecture; CLAUDE/HANDOFF/DEVELOPMENT are
   `.vscodeignore`d. Package `npx @vscode/vsce package`. `scripts/` ships (the generator). Stale local branches
   `moe`/`native-editor` un-pushed.

@@ -9,7 +9,7 @@
 const { provideCompletions } = require('./features/completions');
 const { provideDefinition } = require('./features/definition');
 const { provideReferences, provideReferencesForSymbol, clearStFileCache } = require('./features/references');
-const { findVisuReferencesForSymbol } = require('./features/visuReferences');
+const { findConfigReferencesForSymbol } = require('./features/configReferences');
 const { provideDocumentHighlights } = require('./features/highlights');
 const { provideDiagnostics, setDiagnosticsConfig } = require('./features/diagnostics');
 
@@ -18,7 +18,7 @@ module.exports = {
     provideDefinition,
     provideReferences,
     provideReferencesForSymbol,
-    findVisuReferencesForSymbol,
+    findConfigReferencesForSymbol,
     provideDocumentHighlights,
     provideDiagnostics,
     setDiagnosticsConfig,

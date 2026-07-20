@@ -707,8 +707,8 @@ module.exports = {
     provideReferences,
     provideReferencesForSymbol,
     clearStFileCache,
-    // Exported for the visualization-file reference scan (features/visuReferences.js), which reuses
-    // the exact relatedness relaxation the qualified-occurrence matching here uses, so the visu
+    // Exported for the configuration-object reference scan (features/configReferences.js), which
+    // reuses the exact relatedness relaxation the qualified-occurrence matching here uses, so that
     // reference set and the code reference set can never diverge on what counts as "the same member".
     pousRelated
 };
