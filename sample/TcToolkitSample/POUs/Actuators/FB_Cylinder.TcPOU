@@ -1,0 +1,118 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <POU Name="FB_Cylinder" Id="{41f79a40-cd4e-4358-970b-e801671e1e8d}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_Cylinder
+VAR
+	_bExtended, _bRetracted	: BOOL;
+	refExtendOut			: REFERENCE TO BOOL;
+	refRetractOut			: REFERENCE TO BOOL;
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[// The cylinder is edge-free: the sensor image is refreshed every cycle and the outputs
+// are held by whichever of Extend()/Retract() was called last.
+Cyclic();]]></ST>
+    </Implementation>
+    <Method Name="FB_init" Id="{6097e33e-405f-41ad-9501-d14f45c207c2}">
+      <Declaration><![CDATA[METHOD FB_init : BOOL
+VAR_INPUT
+	bInitRetains	: BOOL;
+	bInCopyCode		: BOOL;
+	refExtendOut	: REFERENCE TO BOOL;
+	refRetractOut	: REFERENCE TO BOOL;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[THIS^.refExtendOut REF= refExtendOut;
+THIS^.refRetractOut REF= refRetractOut;
+FB_init := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="Extend" Id="{12cc0988-1857-48cf-a28a-4fddaf18dda0}">
+      <Declaration><![CDATA[METHOD Extend : BOOL
+VAR
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[refExtendOut := TRUE;
+refRetractOut := FALSE;
+Extend := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="Retract" Id="{82ae731f-7528-49aa-bdc1-4bc5ade12f80}">
+      <Declaration><![CDATA[METHOD Retract : BOOL
+VAR
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[refExtendOut := FALSE;
+refRetractOut := TRUE;
+Retract := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="Cyclic" Id="{452233ea-0599-45d3-9a25-18bcf402609e}">
+      <Declaration><![CDATA[METHOD Cyclic
+VAR
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[_bExtended := GVL_Io.bSensorExtended;
+_bRetracted := GVL_Io.bSensorRetracted;]]></ST>
+      </Implementation>
+    </Method>
+    <Property Name="bIsExtended" Id="{a74466b3-f26f-450e-846b-2e80bc9d329a}">
+      <Declaration><![CDATA[PROPERTY bIsExtended : BOOL
+]]></Declaration>
+      <Get Name="Get" Id="{51917955-a8bd-429d-811b-67d394dbb16b}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[bIsExtended := _bExtended;]]></ST>
+        </Implementation>
+      </Get>
+    </Property>
+    <Property Name="bIsRetracted" Id="{1b734660-6b74-4853-a2cb-d0deb6e7a890}">
+      <Declaration><![CDATA[PROPERTY bIsRetracted : BOOL
+]]></Declaration>
+      <Get Name="Get" Id="{6bf331d1-d8f9-4d84-86a9-5cb027044fe0}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[bIsRetracted := _bRetracted;]]></ST>
+        </Implementation>
+      </Get>
+    </Property>
+    <LineIds Name="FB_Cylinder">
+      <LineId Id="1" Count="0" />
+      <LineId Id="2" Count="0" />
+      <LineId Id="3" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_Cylinder.FB_init">
+      <LineId Id="4" Count="0" />
+      <LineId Id="5" Count="0" />
+      <LineId Id="6" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_Cylinder.Extend">
+      <LineId Id="7" Count="0" />
+      <LineId Id="8" Count="0" />
+      <LineId Id="9" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_Cylinder.Retract">
+      <LineId Id="10" Count="0" />
+      <LineId Id="11" Count="0" />
+      <LineId Id="12" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_Cylinder.Cyclic">
+      <LineId Id="13" Count="0" />
+      <LineId Id="14" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_Cylinder.bIsExtended.Get">
+      <LineId Id="15" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_Cylinder.bIsRetracted.Get">
+      <LineId Id="16" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

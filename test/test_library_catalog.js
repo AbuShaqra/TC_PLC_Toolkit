@@ -114,8 +114,12 @@ try {
     assert(!recipeTypes.some(n => /^__/.test(n)), `a compiler-internal __*__GVL is hidden (got ${JSON.stringify(recipeTypes)})`);
 
     // ---- 2. The real sample project --------------------------------------------------------------
-    if (!fs.existsSync(SAMPLE_DIR)) {
-        console.log('\n[skip] sample/ project not present — skipping the real-.plcproj assertions.');
+    // Gated on the sample actually declaring library references, not on sample/ merely existing: the
+    // synthetic sample declares none until the library fixtures land, and a catalogue of zero has
+    // nothing to assert about.
+    const sampleHasLibraries = fs.existsSync(SAMPLE_DIR) && indexLibraryNamespaces(SAMPLE_DIR).length > 0;
+    if (!sampleHasLibraries) {
+        console.log('\n[skip] the sample declares no library references — skipping the real-.plcproj assertions.');
     } else {
         const modeInfo = indexSampleLibraries(SAMPLE_DIR);
         printBaselineMode(modeInfo);

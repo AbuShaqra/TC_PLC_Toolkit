@@ -1,0 +1,44 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <POU Name="MAIN" Id="{29aab4ab-3dcf-4a7e-a966-3622bf8d4b97}" SpecialFunc="None">
+    <Declaration><![CDATA[PROGRAM MAIN
+VAR
+	nCycleCount	: UDINT;
+	nIdx		: INT;
+	fScaled		: LREAL;
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[nCycleCount := nCycleCount + 1;
+
+GVL_System.fbCylinder.Cyclic();
+GVL_System.fbStation.Cyclic();
+GVL_System.fbDerived.Cyclic();
+
+GVL_Hmi.bEnable := (GVL_System.fbStation.State = E_StationState.Running);
+
+fScaled := F_Scale(fValue := 5.0, fMin := 0.0, fMax := 10.0);
+GVL_Hmi.nSpeed := LREAL_TO_INT(fScaled * 100.0);
+
+FOR nIdx := 0 TO 9 DO
+	GVL_Hmi.arValues[nIdx] := GVL_Hmi.nSpeed;
+END_FOR]]></ST>
+    </Implementation>
+    <LineIds Name="MAIN">
+      <LineId Id="1" Count="0" />
+      <LineId Id="2" Count="0" />
+      <LineId Id="3" Count="0" />
+      <LineId Id="4" Count="0" />
+      <LineId Id="5" Count="0" />
+      <LineId Id="6" Count="0" />
+      <LineId Id="7" Count="0" />
+      <LineId Id="8" Count="0" />
+      <LineId Id="9" Count="0" />
+      <LineId Id="10" Count="0" />
+      <LineId Id="11" Count="0" />
+      <LineId Id="12" Count="0" />
+      <LineId Id="13" Count="0" />
+      <LineId Id="14" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

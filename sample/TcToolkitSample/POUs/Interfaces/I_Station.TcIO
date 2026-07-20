@@ -1,0 +1,18 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <Itf Name="I_Station" Id="{0880c320-3eb1-499d-832e-da84b00f8be4}">
+    <Declaration><![CDATA[INTERFACE I_Station EXTENDS I_Resettable, I_Diagnosable
+]]></Declaration>
+    <Method Name="Execute" Id="{f10a79c0-0eb2-4fea-894a-9fc5cb80e5c5}">
+      <Declaration><![CDATA[METHOD Execute : BOOL
+]]></Declaration>
+    </Method>
+    <Property Name="State" Id="{4356f0aa-6568-41b2-85c9-bb82c62f5611}">
+      <Declaration><![CDATA[PROPERTY State : E_StationState
+]]></Declaration>
+      <Get Name="Get" Id="{4edf90df-efca-4ca3-8dc9-f8c0ab2b4f70}">
+        <Declaration><![CDATA[]]></Declaration>
+      </Get>
+    </Property>
+  </Itf>
+</TcPlcObject>
