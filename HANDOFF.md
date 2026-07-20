@@ -4,9 +4,9 @@ Where the work *stands*. Read before starting; keep current (handoff rule in [CL
 100 lines — prune finished items rather than appending, but never drop a real finding to hit it. **Shipped features
 live in git history (PRs/commits); this file keeps the findings that would cost to re-derive.**
 
-**Last verified:** 2026-07-16 — `npm test` green (36 harnesses), **0 diagnostics on the sample**. **Version 0.2.1**
-(0.1.0 renumbered from 0.4.2 for the fresh public repo; each patch since = one shipped increment, see PRs #1–#13;
-#11 re-shipped 0.2.0 with the virtual-folder placement fix, same version by decision).
+**Last verified:** 2026-07-16 — `npm test` green (39 harnesses), **0 diagnostics on the sample**. Shipped: **0.2.1**
+(PRs #1–#13; 0.1.0 renumbered from 0.4.2 for the fresh public repo; #11 re-shipped 0.2.0 by decision). In flight:
+**0.3.0 rename feature on `feat/rename-objects`** — implemented + gated, awaiting the user's dev-host smoke before merge.
 **Not yet visually confirmed by the user:** the 0.1.3 library grouping and 0.1.4 member expansion in the tree UI —
 logic is verified on real data + guard tests, but nobody has eyeballed the rendered tree. Worth doing.
 
@@ -34,8 +34,27 @@ logic is verified on real data + guard tests, but nobody has eyeballed the rende
   contiguous folder group / land after the root `</Implementation>`; guarded in `test_xml_folderpath`);
   one incident file existed in the wild (user's FB_Clamping, repaired separately). Controllers
   (`treeDragAndDrop.js`, `clipboardCommands.js`) are vscode-bound; **user tested both live 2026-07-16: good**. Virtual folders
-  NOT draggable/copyable in v1 (moving one = rewriting every member's FolderPath prefix). `engines.vscode`
-  bumped **1.60 → 1.66** (TreeDragAndDropController).
+  NOT draggable/copyable in v1 (moving one = rewriting every member's FolderPath prefix — but they ARE renameable, 0.3.0).
+  `engines.vscode` bumped **1.60 → 1.66** (TreeDragAndDropController).
+- **Objects-tree rename** (0.3.0, `renameCommands.js` + `renameEngine.js` + `custom/referencesForSymbol`): files,
+  members, disk dirs, virtual folders; F2 + context menu; reference-aware modal (rename-only vs update-all).
+  Load-bearing findings: the by-symbol LSP entry point exists because a **GVL's name never appears in its own ST**
+  (no seed position) and the name-keyed index needs an **identity guard** (uri mismatch → resolved:false, never scan
+  the wrong object). `renameEngine` maps raw-ST-unit coords → CDATA splices with a never-write-on-mismatch guard;
+  synthesized lines (ACTION headers, GET/SET keywords) are skipped; **raw mode rewrites PROGRAM→FUNCTION_BLOCK when
+  methods exist** (stConverter:54-57), shifting the root header column → guard-skip, completed by
+  `renameRootObjectInXml`, which the engine deliberately never applies (caller contract). `propagateDeclRenames`
+  structurally renames related interface/override decl headers (splice alone would desync tag Name + LineIds =
+  corruption); **sibling implementors of a shared interface are NOT in the reference set** (pairwise relation) —
+  v1 limit, XAE flags them. `.st` rename = disk-only (never a `.plcproj` member anywhere in the codebase).
+  References modal excludes the self-declaration via the response's separate `declaration` field.
+  **Visualizations** (user's smoke test caught the gap — XAE build broke): `.TcVIS`/`.TcVMO` reference PLC symbols
+  as quoted dotted paths (`<v n="BasicTypeNodeValue">"GVL_X.fb.member"</v>`, plus real ST in `STSnippet`); rename
+  scans them via `custom/visuReferencesForSymbol`. **Polarity flip is deliberate**: code-side keeps unresolvable
+  occurrences, visu-side renames ONLY chains that provably resolve through the type model (decoys share the same
+  shape: text-list ids `TL_*.X`, visu-lib names `VisuDialogs.*`) — an unproven visu edit corrupts the HMI. Both
+  visu formats carry a **UTF-8 BOM** the LSP must strip (VS Code documents exclude it → offsets shift by one).
+  Not scanned v1: alarm/recipe/OPC configs referencing symbols outside visu files.
 - **README.md** = public page (ships); **DEVELOPMENT.md** = build/test/architecture; CLAUDE/HANDOFF/DEVELOPMENT are
   `.vscodeignore`d. Package `npx @vscode/vsce package`. `scripts/` ships (the generator). Stale local branches
   `moe`/`native-editor` un-pushed.
@@ -115,6 +134,14 @@ type via `classifyCallSite` kind `declInitList`.
 **Stray `.st` mirrors** (outside the skipped ST_Files/) shadowed same-named XML nodes — the node's uri was hijacked,
 the scan read the stale mirror and the real .TcPOU was invisible until opened. Fixed: `parseAndIndexDocument` never
 lets a plain .st steal an XML-backed symbol (`test_st_shadow`).
+**Duplicate object names from orphan files** (0.3.0 rename smoke, real project): a leftover `POUs\Modulezzz\` backup —
+a full copy of `Modules\`, NOT in the `.plcproj` — won the name-keyed index (last-write-wins, sorts last), so a
+GVL rename's reference scan visited the orphan `FB_Loading` (no refs) and never the real one; visu updated because it
+walks files directly. Fixed: the index is **scoped to the `.plcproj`** — `collectPlcProjObjectPaths` +
+`indexTwinCatDirectory(index, dir, includedPaths)` skip on-disk objects the project doesn't `<Compile>` (null set = no
+`.plcproj` → index all). Sample has 0 objects outside its `.plcproj` → gate is a no-op there, ratchet safe
+(`test_plcproj_scope`). `.st`/visu walks unchanged. NOT scoped: `.st` (indexStDirectory) and the visu file walk —
+neither hit the duplicate-name bug.
 
 ## Other findings worth not re-deriving
 - **Init syntaxes bind differently:** `inst:FB_T(p:=v)` → FB_init's VAR_INPUT (may be inherited → a jump carries the

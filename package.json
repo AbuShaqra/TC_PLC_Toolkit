@@ -2,7 +2,7 @@
   "name": "twincat-plc-toolkit",
   "displayName": "TwinCAT PLC Toolkit",
   "description": "Edit, navigate and analyse Beckhoff TwinCAT PLC projects: two-pane Structured Text editor, offline IntelliSense and diagnostics, object and library explorers. Unofficial; not affiliated with Beckhoff.",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "publisher": "a-abushaqra",
   "license": "MIT",
   "icon": "media/icon.png",
@@ -203,6 +203,11 @@
         "command": "twincat.pasteObject",
         "title": "Paste",
         "category": "TwinCAT"
+      },
+      {
+        "command": "twincat.renameObject",
+        "title": "Rename",
+        "category": "TwinCAT"
       }
     ],
     "keybindings": [
@@ -217,6 +222,11 @@
         "key": "ctrl+v",
         "mac": "cmd+v",
         "when": "focusedView == twincatExplorer && twincat.canPaste"
+      },
+      {
+        "command": "twincat.renameObject",
+        "key": "f2",
+        "when": "focusedView == twincatExplorer"
       }
     ],
     "menus": {
@@ -332,6 +342,11 @@
           "command": "twincat.pasteObject",
           "when": "view == twincatExplorer && twincat.canPaste && (viewItem == 'directory' || viewItem == 'pouFile' || viewItem == 'pouFileProgram' || viewItem == 'itfFile' || viewItem == 'pouVirtualFolder' || viewItem == 'pouVirtualFolderProgram' || viewItem == 'pouVirtualFolderInterface' || viewItem == 'component' || viewItem == 'propertyNode')",
           "group": "twincat_0_clipboard@2"
+        },
+        {
+          "command": "twincat.renameObject",
+          "when": "view == twincatExplorer && (viewItem == 'directory' || viewItem == 'pouFile' || viewItem == 'pouFileProgram' || viewItem == 'pouFileFunction' || viewItem == 'itfFile' || viewItem == 'gvlFile' || viewItem == 'dutFile' || viewItem == 'stFile' || viewItem == 'component' || viewItem == 'propertyNode' || viewItem == 'pouVirtualFolder' || viewItem == 'pouVirtualFolderProgram' || viewItem == 'pouVirtualFolderInterface')",
+          "group": "twincat_0_clipboard@3"
         }
       ]
     },

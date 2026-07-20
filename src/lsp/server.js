@@ -11,6 +11,9 @@ const {
 } = require('vscode-languageserver/node');
 const { TextDocument } = require('vscode-languageserver-textdocument');
 
+const fs = require('fs');
+const path = require('path');
+
 const {
     parseAndIndexDocument,
     indexStDirectory,
@@ -23,9 +26,15 @@ const {
 // future multi-root setup could hold one index per workspace folder without touching global state.
 const workspaceIndex = {};
 
+// The workspace-root filesystem paths, captured on the initial scan. The visualization-file
+// reference scan (custom/visuReferencesForSymbol) needs to discover .TcVIS/.TcVMO files on demand,
+// and those roots are the only place to start the walk. Kept in sync on reindex.
+const workspaceRootPaths = [];
+
 const {
     indexTwinCatDirectory,
-    indexXmlObject
+    indexXmlObject,
+    collectPlcProjObjectPaths
 } = require('./xmlIndexer');
 
 const {
@@ -105,11 +114,47 @@ const {
     provideCompletions,
     provideDefinition,
     provideReferences,
+    provideReferencesForSymbol,
+    findVisuReferencesForSymbol,
     provideDocumentHighlights,
     provideDiagnostics,
     setDiagnosticsConfig,
     clearStFileCache
 } = require('./features');
+
+/** Directories skipped when walking for visu files — the same set the XML indexer skips. */
+const VISU_SKIP_DIRS = new Set(['.git', 'node_modules', '.vscode', '_libraries']);
+
+/**
+ * Recursively collects every TwinCAT visualization file (`.TcVIS`/`.TcVMO`, case-insensitive) under
+ * the given workspace roots. Rename is a rare, deliberate action, so an on-demand walk is fine — no
+ * standing index of visu files is kept.
+ * @param {Array<string>} roots Absolute workspace-root paths.
+ * @returns {Array<string>} Absolute visu file paths.
+ */
+function collectVisuFiles(roots) {
+    const out = [];
+    const walk = (dir) => {
+        let entries;
+        try {
+            entries = fs.readdirSync(dir, { withFileTypes: true });
+        } catch (e) {
+            return;
+        }
+        for (const entry of entries) {
+            const full = path.join(dir, entry.name);
+            if (entry.isDirectory()) {
+                if (VISU_SKIP_DIRS.has(entry.name.toLowerCase())) continue;
+                walk(full);
+            } else if (entry.isFile()) {
+                const ext = path.extname(entry.name).toLowerCase();
+                if (ext === '.tcvis' || ext === '.tcvmo') out.push(full);
+            }
+        }
+    };
+    for (const root of (roots || [])) walk(root);
+    return out;
+}
 
 // Create connection for the server, using Node IPC
 const connection = createConnection(ProposedFeatures.all);
@@ -123,10 +168,17 @@ connection.onInitialize((params) => {
     const folders = params.workspaceFolders;
     if (folders && folders.length > 0) {
         const index = workspaceIndex;
+        workspaceRootPaths.length = 0;
+        // The .plcproj — not the filesystem — defines the project: only its <Compile>d objects are
+        // indexed, so a backup/orphan copy on disk cannot shadow a real object in the name-keyed
+        // index (which silently stole its references from cross-file rename). null = no project found,
+        // so index everything (fresh clone, or a loose folder of TwinCAT files).
+        const includedPaths = collectPlcProjObjectPaths(folders.map(f => uriToFsPath(f.uri)));
         folders.forEach(f => {
             const fsPath = uriToFsPath(f.uri);
+            workspaceRootPaths.push(fsPath);
             try {
-                indexTwinCatDirectory(index, fsPath);
+                indexTwinCatDirectory(index, fsPath, includedPaths);
                 indexStDirectory(fsPath, workspaceIndex);
                 indexLibraries(fsPath);
             } catch (e) {
@@ -240,6 +292,31 @@ connection.onRequest('custom/references', (params) => {
     }
 });
 
+// References for a symbol identified by NAME (root object, optionally a member), rather than by a
+// cursor position — what a rename needs, and the only way to seed on a GVL (whose own name never
+// appears in its converted ST). Deliberately NO syncDocument: there is no `code` param, and reading
+// the target's file from disk is the whole point (provideReferencesForSymbol does that itself).
+connection.onRequest('custom/referencesForSymbol', (params) => {
+    try {
+        return provideReferencesForSymbol(params, workspaceIndex);
+    } catch (e) {
+        return { resolved: false, references: [], declaration: null };
+    }
+});
+
+// References to a symbol inside the TwinCAT visualization files (.TcVIS/.TcVMO) — the other half of
+// a rename, since visu paths reference PLC symbols and a stale one breaks the XAE build. Takes the
+// same by-NAME spec as custom/referencesForSymbol; the visu files are discovered on demand by walking
+// the workspace roots (rename is rare, so no standing index is kept).
+connection.onRequest('custom/visuReferencesForSymbol', (params) => {
+    try {
+        const visuFiles = collectVisuFiles(workspaceRootPaths);
+        return findVisuReferencesForSymbol(params, workspaceIndex, visuFiles);
+    } catch (e) {
+        return { resolved: false, occurrences: [] };
+    }
+});
+
 connection.onRequest('custom/diagnostics', (params) => {
     try {
         syncDocument(params.code, params.fileUri);
@@ -320,9 +397,14 @@ connection.onRequest('custom/reindex', (params) => {
         clearStFileCache();
         const index = workspaceIndex;
         if (params.folders) {
+            workspaceRootPaths.length = 0;
+            // Re-resolve the project object set: a .plcproj edit (a file added, removed or renamed) is
+            // exactly what triggers custom/reindex, so the include set must be rebuilt here too.
+            const includedPaths = collectPlcProjObjectPaths(params.folders.map(f => uriToFsPath(f)));
             params.folders.forEach(f => {
                 const fsPath = uriToFsPath(f);
-                indexTwinCatDirectory(index, fsPath);
+                workspaceRootPaths.push(fsPath);
+                indexTwinCatDirectory(index, fsPath, includedPaths);
                 indexStDirectory(fsPath, workspaceIndex);
                 indexLibraries(fsPath);
             });

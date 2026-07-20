@@ -49,6 +49,17 @@ drops the copy beside it in the same virtual folder, and a name clash prompts wi
 everything that carries its identity — the root name, the declaration header, the `LineIds`, and
 every internal Id GUID — so the duplicate never collides with its source in TwinCAT.
 
+**Rename anything, reference-aware.** Right-click → **Rename**, or **F2** while the view is focused.
+Files, methods, properties, actions, transitions, disk folders and virtual folders can all be
+renamed in place — the XML identity (tag name, declaration header, `LineIds`) and the `.plcproj`
+follow automatically, and internal Ids are kept so TwinCAT sees a rename, not a new object. If the
+symbol is referenced in code, a dialog offers the choice: **rename only**, or **rename and update
+every reference** across the project — call sites, instance declarations and qualified uses alike,
+**including the symbol paths inside visualizations** (`.TcVIS`/`.TcVMO`), so the HMI keeps building.
+Updates are applied conservatively: a visualization path is only rewritten when it provably resolves
+to the renamed symbol through the project's types, and any occurrence that cannot be matched exactly
+is skipped and reported rather than guessed at.
+
 ### TwinCAT Libraries explorer
 
 Lists every library referenced by the project's `.plcproj` **by the namespace you actually type in

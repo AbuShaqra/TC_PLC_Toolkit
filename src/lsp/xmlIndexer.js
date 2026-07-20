@@ -313,11 +313,83 @@ function indexXmlFile(index, filePath) {
 }
 
 /**
+ * Normalizes an absolute path for comparison: forward slashes, lower-cased. The extension targets
+ * Windows/TwinCAT and the rest of the code already compares paths case-insensitively, so this is the
+ * comparison key both the .plcproj include set and the directory walk agree on.
+ * @param {string} p Absolute path.
+ * @returns {string} Normalized key.
+ */
+function normalizeObjectPath(p) {
+    return path.resolve(p).replace(/\\/g, '/').toLowerCase();
+}
+
+/**
+ * Collects the TwinCAT object files (.TcPOU/.TcGVL/.TcDUT/.TcIO) that are actually part of a project —
+ * i.e. listed as `<Compile Include="...">` in a `.plcproj` — across the given workspace roots. The
+ * project, not the filesystem, defines what exists: a backup or experimental copy that sits on disk
+ * but is absent from the `.plcproj` (a common source of duplicate object names) must not shadow the
+ * real object in the name-keyed index and steal its references.
+ * @param {Array<string>} roots Absolute workspace-root paths.
+ * @returns {Set<string>|null} Normalized absolute object paths, or **null** when no `.plcproj` exists
+ *   under any root — callers then fall back to indexing every object file found on disk.
+ */
+function collectPlcProjObjectPaths(roots) {
+    const plcprojFiles = [];
+    const findProjects = (dir) => {
+        let entries;
+        try {
+            entries = fs.readdirSync(dir, { withFileTypes: true });
+        } catch (e) {
+            return;
+        }
+        for (const entry of entries) {
+            const full = path.join(dir, entry.name);
+            if (entry.isDirectory()) {
+                if (entry.name === '.git' || entry.name === 'node_modules' || entry.name === '.vscode' || entry.name === '_Libraries') {
+                    continue;
+                }
+                findProjects(full);
+            } else if (entry.isFile() && entry.name.toLowerCase().endsWith('.plcproj')) {
+                plcprojFiles.push(full);
+            }
+        }
+    };
+    for (const root of (roots || [])) findProjects(root);
+    if (plcprojFiles.length === 0) return null;
+
+    const included = new Set();
+    for (const proj of plcprojFiles) {
+        let xml;
+        try {
+            xml = fs.readFileSync(proj, 'utf8');
+        } catch (e) {
+            continue;
+        }
+        const projDir = path.dirname(proj);
+        // <Compile Include="POUs\Modules\FB_Loading.TcPOU"> — the include is relative to the .plcproj,
+        // and TwinCAT writes backslashes regardless of platform.
+        const includeRe = /<Compile\b[^>]*?\bInclude="([^"]+)"/gi;
+        let m;
+        while ((m = includeRe.exec(xml)) !== null) {
+            const abs = path.resolve(projDir, m[1].replace(/\\/g, path.sep));
+            if (TWINCAT_EXTS.has(path.extname(abs).toLowerCase())) {
+                included.add(normalizeObjectPath(abs));
+            }
+        }
+    }
+    return included;
+}
+
+/**
  * Recursively scans a directory for TwinCAT XML objects and indexes them.
  * @param {Object} index Workspace symbol index to mutate.
  * @param {string} dirPath Absolute directory path.
+ * @param {Set<string>|null} [includedPaths] When supplied (from {@link collectPlcProjObjectPaths}),
+ *   only objects whose path is in the set are indexed — orphan/backup copies on disk are skipped so
+ *   they cannot shadow a real object. Omit/null to index every object file (no-project fallback, and
+ *   the behavior every existing test caller relies on).
  */
-function indexTwinCatDirectory(index, dirPath) {
+function indexTwinCatDirectory(index, dirPath, includedPaths) {
     if (!fs.existsSync(dirPath)) return;
     let entries;
     try {
@@ -331,8 +403,9 @@ function indexTwinCatDirectory(index, dirPath) {
             if (entry.name === '.git' || entry.name === 'node_modules' || entry.name === '.vscode' || entry.name === '_Libraries') {
                 continue;
             }
-            indexTwinCatDirectory(index, full);
+            indexTwinCatDirectory(index, full, includedPaths);
         } else if (entry.isFile() && TWINCAT_EXTS.has(path.extname(entry.name).toLowerCase())) {
+            if (includedPaths && !includedPaths.has(normalizeObjectPath(full))) continue;
             indexXmlFile(index, full);
         }
     }
@@ -343,6 +416,7 @@ module.exports = {
     indexXmlObject,
     indexXmlFile,
     indexTwinCatDirectory,
+    collectPlcProjObjectPaths,
     extractVars,
     extractEnumMembers,
     dutKindFromDecl
