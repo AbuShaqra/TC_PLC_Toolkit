@@ -125,11 +125,6 @@ _eState := E_StationState.Idle;
 _sIdent := 'STATION-01';]]></ST>
       </Implementation>
     </Action>
-    <Transition Name="Tr_Ready" Id="{634df247-0523-41ec-8220-3e9f3d73a16e}">
-      <Implementation>
-        <ST><![CDATA[Tr_Ready := (_eState = E_StationState.Done);]]></ST>
-      </Implementation>
-    </Transition>
     <LineIds Name="FB_Station">
       <LineId Id="1" Count="0" />
     </LineIds>
@@ -196,9 +191,6 @@ _sIdent := 'STATION-01';]]></ST>
       <LineId Id="49" Count="0" />
       <LineId Id="50" Count="0" />
       <LineId Id="51" Count="0" />
-    </LineIds>
-    <LineIds Name="FB_Station.Tr_Ready">
-      <LineId Id="52" Count="0" />
     </LineIds>
   </POU>
 </TcPlcObject>
