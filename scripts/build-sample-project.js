@@ -435,11 +435,11 @@ const OBJECTS = [
                     '_eState := E_StationState.Idle;',
                     '_sIdent := \'STATION-01\';'
                 ].join('\n')
-            },
-            {
-                kind: 'Transition', name: 'Tr_Ready',
-                implementation: 'Tr_Ready := (_eState = E_StationState.Done);'
             }
+            // No Transition object here on purpose. XAE only permits transitions on SFC POUs, and this
+            // FB is ST-implemented — a transition would be valid XML that the XAE UI would not
+            // round-trip, undermining the point of validating the sample by building it. The toolkit's
+            // transition handling is covered by synthetic fixtures instead (test_xml_rename.js).
         ]
     },
     {
