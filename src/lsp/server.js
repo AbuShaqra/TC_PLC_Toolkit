@@ -33,7 +33,8 @@ const workspaceRootPaths = [];
 
 const {
     indexTwinCatDirectory,
-    indexXmlObject
+    indexXmlObject,
+    collectPlcProjObjectPaths
 } = require('./xmlIndexer');
 
 const {
@@ -168,11 +169,16 @@ connection.onInitialize((params) => {
     if (folders && folders.length > 0) {
         const index = workspaceIndex;
         workspaceRootPaths.length = 0;
+        // The .plcproj — not the filesystem — defines the project: only its <Compile>d objects are
+        // indexed, so a backup/orphan copy on disk cannot shadow a real object in the name-keyed
+        // index (which silently stole its references from cross-file rename). null = no project found,
+        // so index everything (fresh clone, or a loose folder of TwinCAT files).
+        const includedPaths = collectPlcProjObjectPaths(folders.map(f => uriToFsPath(f.uri)));
         folders.forEach(f => {
             const fsPath = uriToFsPath(f.uri);
             workspaceRootPaths.push(fsPath);
             try {
-                indexTwinCatDirectory(index, fsPath);
+                indexTwinCatDirectory(index, fsPath, includedPaths);
                 indexStDirectory(fsPath, workspaceIndex);
                 indexLibraries(fsPath);
             } catch (e) {
@@ -392,10 +398,13 @@ connection.onRequest('custom/reindex', (params) => {
         const index = workspaceIndex;
         if (params.folders) {
             workspaceRootPaths.length = 0;
+            // Re-resolve the project object set: a .plcproj edit (a file added, removed or renamed) is
+            // exactly what triggers custom/reindex, so the include set must be rebuilt here too.
+            const includedPaths = collectPlcProjObjectPaths(params.folders.map(f => uriToFsPath(f)));
             params.folders.forEach(f => {
                 const fsPath = uriToFsPath(f);
                 workspaceRootPaths.push(fsPath);
-                indexTwinCatDirectory(index, fsPath);
+                indexTwinCatDirectory(index, fsPath, includedPaths);
                 indexStDirectory(fsPath, workspaceIndex);
                 indexLibraries(fsPath);
             });

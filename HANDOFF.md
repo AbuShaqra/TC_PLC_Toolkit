@@ -134,6 +134,14 @@ type via `classifyCallSite` kind `declInitList`.
 **Stray `.st` mirrors** (outside the skipped ST_Files/) shadowed same-named XML nodes — the node's uri was hijacked,
 the scan read the stale mirror and the real .TcPOU was invisible until opened. Fixed: `parseAndIndexDocument` never
 lets a plain .st steal an XML-backed symbol (`test_st_shadow`).
+**Duplicate object names from orphan files** (0.3.0 rename smoke, real project): a leftover `POUs\Modulezzz\` backup —
+a full copy of `Modules\`, NOT in the `.plcproj` — won the name-keyed index (last-write-wins, sorts last), so a
+GVL rename's reference scan visited the orphan `FB_Loading` (no refs) and never the real one; visu updated because it
+walks files directly. Fixed: the index is **scoped to the `.plcproj`** — `collectPlcProjObjectPaths` +
+`indexTwinCatDirectory(index, dir, includedPaths)` skip on-disk objects the project doesn't `<Compile>` (null set = no
+`.plcproj` → index all). Sample has 0 objects outside its `.plcproj` → gate is a no-op there, ratchet safe
+(`test_plcproj_scope`). `.st`/visu walks unchanged. NOT scoped: `.st` (indexStDirectory) and the visu file walk —
+neither hit the duplicate-name bug.
 
 ## Other findings worth not re-deriving
 - **Init syntaxes bind differently:** `inst:FB_T(p:=v)` → FB_init's VAR_INPUT (may be inherited → a jump carries the

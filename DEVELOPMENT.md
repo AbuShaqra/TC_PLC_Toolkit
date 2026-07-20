@@ -55,6 +55,7 @@ per-suite without aborting on the first failure. The main ones:
 | `test/test_rename_engine.js` | `src/renameEngine.js`: mapping workspace reference positions (raw-ST-unit coords) back into CDATA splices — synthesized-line skips (action headers, `GET`/`SET`), the PROGRAM→FUNCTION_BLOCK raw-mode column skew, the never-write-a-mismatch guard, CRLF byte preservation. |
 | `test/test_references_for_symbol.js` | The LSP's by-symbol references entry point (`custom/referencesForSymbol`) that powers rename: FB/GVL/DUT roots (a GVL name never appears in its own ST text, so the position-based API cannot seed it), methods/properties/actions, the name-keyed-index identity guard, and index restoration after the scan. |
 | `test/test_visu_references.js` | The visu half of rename (`custom/visuReferencesForSymbol`): dotted symbol paths inside `.TcVIS`/`.TcVMO` (`GVL_X.fb.member`, embedded `STSnippet` code) are found only when the chain provably resolves to the renamed symbol — text-list ids, visu-library names and unresolvable prefixes are never touched. BOM/offset fidelity, plus a sample-project pass when `sample/` is present. |
+| `test/test_plcproj_scope.js` | The index is scoped to the `.plcproj`, not the filesystem: `collectPlcProjObjectPaths` lists the `<Compile>`d objects, and `indexTwinCatDirectory` skips on-disk objects outside that set so a backup/orphan copy (a duplicate object name) cannot win the name-keyed index and steal a real object's references. Includes the no-`.plcproj` index-all fallback and a sample-coverage check proving the gate is a no-op on the ratchet. |
 
 `test/run.js <substring>` filters to matching suites. `test/_baseline.js` holds the machine-dependent
 diagnostic baselines the sample gates assert against.
@@ -111,6 +112,12 @@ src/
 media/
   editor.js / editor.css  Monaco webview front-end (two panes, providers, sync)
 ```
+
+The workspace index is **scoped to the `.plcproj`**: at startup (and on `custom/reindex`) the server
+collects the objects the project actually `<Compile>`s (`collectPlcProjObjectPaths`) and indexes only
+those, so a backup or orphan copy on disk — a duplicate object name absent from the project — cannot
+win the name-keyed index and shadow the real object. With no `.plcproj` under any root it falls back
+to indexing every object file found (fresh clone, or a loose folder of TwinCAT files).
 
 Three processes cooperate, with the extension host as the hub — **the webview never talks to the
 language server directly**. The extension bridges them over custom JSON-RPC requests
