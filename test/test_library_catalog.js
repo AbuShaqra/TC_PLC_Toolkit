@@ -174,18 +174,25 @@ try {
             `(missing: ${missing.join(', ') || 'none'})`);
 
         // ---- 5. Symbol counts, from the archives ------------------------------------------------
-        // symbolCount comes from the .compiled-library string tables and is independent of the .tmc,
-        // so it is measurable on every checkout that has the (git-ignored) _Libraries fixtures.
+        // symbolCount comes from the .compiled-library string tables, so this section needs the
+        // archives. TwinCAT copies them into the project, but they are Beckhoff binaries and therefore
+        // git-ignored — absent on CI and on any fresh clone, where the catalogue is correctly built
+        // from the .plcproj alone and every symbolCount is legitimately 0. Gate on what is actually
+        // required rather than asserting a fixture that is deliberately not committed.
         console.log('\n=== 5. symbols beneath a library ===');
 
-        catalog.forEach(e => console.log(`    ${e.namespace.padEnd(14)} ${e.symbolCount} archive symbol(s)`));
-        // Measured 2026-07-20: Tc2_Standard 313, Tc2_System 1293, Tc3_Module 461. Exact per-library
-        // counts are a property of the vendor archives (they change with the library version), so what
-        // is asserted is that every declared library resolved to an archive and none came back empty —
-        // which is what a broken title->archive mapping would show up as.
-        const uncounted = catalog.filter(e => e.symbolCount === 0).map(e => e.namespace);
-        assert(uncounted.length === 0,
-            `every catalogued library resolved to an archive with symbols (empty: ${uncounted.join(', ') || 'none'})`);
+        if (modeInfo.archives === 0) {
+            console.log('    [skip] no library archives present (git-ignored vendor binaries) — nothing to count.');
+        } else {
+            catalog.forEach(e => console.log(`    ${e.namespace.padEnd(14)} ${e.symbolCount} archive symbol(s)`));
+            // Measured 2026-07-20: Tc2_Standard 313, Tc2_System 1293, Tc3_Module 461. Exact per-library
+            // counts are a property of the vendor archives (they change with the library version), so what
+            // is asserted is that every declared library resolved to an archive and none came back empty —
+            // which is what a broken title->archive mapping would show up as.
+            const uncounted = catalog.filter(e => e.symbolCount === 0).map(e => e.namespace);
+            assert(uncounted.length === 0,
+                `every catalogued library resolved to an archive with symbols (empty: ${uncounted.join(', ') || 'none'})`);
+        }
 
         // ---- 6. Types beneath a library (needs the .tmc) ----------------------------------------
         console.log('\n=== 6. types beneath a library ===');
