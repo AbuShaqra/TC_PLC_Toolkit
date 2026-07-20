@@ -51,3 +51,33 @@ jobs:
       # that failure on the PR instead. The flags match the documented release command.
       - name: Package (VSIX build check)
         run: npx @vscode/vsce package --allow-missing-repository --skip-license
+
+  # The extension does not run on the CI default Node — it runs on whatever Node VS Code bundles.
+  # `engines.vscode` is ^1.66.0, and VS Code 1.66 ships Electron 17 (Node 16), so the suite has to
+  # keep working there or that support claim is fiction. 20 covers a mid LTS; the current runtime is
+  # already covered by `build` above.
+  #
+  # Tests only, deliberately: the type-check (TypeScript 7) and vsce both require a modern Node, so
+  # running them here would fail on tooling constraints rather than on anything about the product.
+  runtime-compat:
+    runs-on: windows-latest
+    strategy:
+      # Report every version's result — knowing 16 fails while 20 passes is the whole point.
+      fail-fast: false
+      matrix:
+        node-version: ['16', '20']
+    name: Test on Node ${{ matrix.node-version }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v5
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Test
+        run: npm test

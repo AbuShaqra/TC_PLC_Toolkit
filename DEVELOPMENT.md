@@ -87,11 +87,21 @@ the individual tests that address specific sample objects when the sample at han
 A few experimental probes live in `scratch/` outside `npm test`: `test_lsp_parser.js`,
 `test_lsp_types_sync.js`, `test_method_diagnostics.js` (plus `make_icon.js`, `probe_lib_format.js`).
 
-CI (`.github/workflows/ci.yml`) runs `npm run typecheck`, then `npm test`, then a **VSIX build check**
-(`vsce package`) on every push/PR to `main` — packaging is otherwise only exercised by hand at release
-time, where a broken manifest or `.vscodeignore` would surface far too late. Runs are Windows-only (the
-platform users are on), superseded runs are cancelled, and the token is read-only. **CI is always a
-REDUCED run** — see the section above.
+CI (`.github/workflows/ci.yml`) runs on every push/PR to `main`, Windows-only (the platform users are
+on), with superseded runs cancelled and a read-only token. Two jobs:
+
+- **`build`** (current Node) — `npm run typecheck`, `npm test`, then a **VSIX build check**
+  (`vsce package`). Packaging is otherwise only exercised by hand at release time, where a broken
+  manifest or `.vscodeignore` would surface far too late.
+- **`runtime-compat`** (Node 16 and 20) — `npm test` only. The extension runs on the Node that VS Code
+  bundles, not the CI default: `engines.vscode` is `^1.66.0`, and VS Code 1.66 ships Electron 17
+  (Node 16), so the suite must keep working there or that support claim is fiction. Tests only is
+  deliberate — the type-check (TypeScript 7) and `vsce` both require a modern Node, so running them
+  on 16 would fail on tooling constraints rather than on anything about the product. **If this job
+  ever goes red, the honest fixes are to stop using the newer API or to raise `engines.vscode`** —
+  not to drop the version from the matrix.
+
+**CI is always a REDUCED run** — see the section above.
 
 **`sample/` is ground truth.** It is a real, *correct* TwinCAT project, so every diagnostic reported
 on it is a bug. Never fix a red gate by raising the baseline.
