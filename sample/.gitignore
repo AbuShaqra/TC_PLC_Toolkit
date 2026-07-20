@@ -37,6 +37,7 @@ TcToolkitSample/**/_Libraries/*
 # recreates them on build; the extension recreates ST_Files on "Generate ST".
 TcToolkitSample/**/_CompileInfo/
 TcToolkitSample/**/_CompileInfo_Upload/
+TcToolkitSample/**/_Boot/
 TcToolkitSample/**/ST_Files/
 TcToolkitSample/**/.trust-lsp/
 TcToolkitSample/.vs/

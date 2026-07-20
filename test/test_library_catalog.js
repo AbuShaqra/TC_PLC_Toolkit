@@ -229,21 +229,25 @@ try {
             const uncounted = catalog.filter(e => e.symbolCount === 0).map(e => e.namespace);
             assert(uncounted.length === 0,
                 `every catalogued library resolved to an archive with symbols (empty: ${uncounted.join(', ') || 'none'})`);
-            assert(modeInfo.archives === 4,
-                `all 4 archives decoded — 3 Beckhoff + 1 MIT (got ${modeInfo.archives})`);
+            // NOT `archives === 4`. The number of archives on disk is a property of what TwinCAT
+            // copied in, not of what the project references: since the sample was built in XAE its
+            // `_Libraries` also holds Tc2_Utilities, which no <PlaceholderReference> declares.
+            // Measured 2026-07-20: 5 archives on disk, 4 of them declared. What the catalog owes is
+            // one entry per *declared* reference — asserted above — so the invariant here is that
+            // every declared library found its archive, and an undeclared one adds no entry.
+            assert(modeInfo.archives >= 4 && catalog.length === 4,
+                `${modeInfo.archives} archive(s) on disk resolve the 4 declared references, and an ` +
+                `undeclared archive adds no catalog entry (${catalog.length} entries)`);
         }
 
         // ---- 6. Types beneath a library (needs the .tmc) ----------------------------------------
         console.log('\n=== 6. types beneath a library ===');
 
         if (modeInfo.tmcFiles === 0) {
-            // Expected on this tree: the sample's .tmc is a TwinCAT *build* artifact and the committed
-            // fixtures are source-only, so no checkout has one until the project is built in XAE.
-            console.log('  skip  no .tmc present — no structured types to attach (see the mode above).');
-            console.log('        COVERAGE NOTE: the member-level assertions (an FB type whose members');
-            console.log('        include a named VAR_INPUT) were written against the customer project\'s');
-            console.log('        Tc2_MC2/MC_Power and cannot be re-based without a .tmc. They return when');
-            console.log('        the sample ships one.');
+            // Not a normal state: the sample's `.tmc` is committed. Its absence means the working
+            // copy was pruned by hand, so say which fixture is missing rather than pass quietly.
+            console.log('  skip  no .tmc present — the committed sample .tmc is missing from this working');
+            console.log('        copy, so there are no structured types to attach (see the mode above).');
         } else {
             // The invariant that survives any project: the catalog reports exactly what the type
             // system holds for that namespace — no more, no less.
@@ -257,6 +261,29 @@ try {
             console.log(`    ${withTypes.length} of ${catalog.length} libraries have .tmc types`);
             assert(withTypes.length > 0,
                 'at least one library carries .tmc types — otherwise this section is vacuous');
+
+            // What a type entry actually carries, on the one library this `.tmc` attributes. The
+            // committed MIT archive is the fixture, so this runs in both configurations. Measured
+            // 2026-07-20: TcDynCollections -> ST_ERROR (struct, 3 fields) + three opaque blocks
+            // (T_Error, GVL_Constants, GVL_Errors) — a `.tmc` describes only what the project uses.
+            const mitTypes = byNamespace(catalog, MIT_NAMESPACE).types;
+            const errType = mitTypes.find(t => t.name === 'ST_ERROR');
+            assert(!!errType && errType.kind === 'struct' &&
+                errType.members.map(m => m.name).join(',') === 'nCODE,bSTATUS,sSOURCE',
+                `${MIT_NAMESPACE}'s ST_ERROR is a struct carrying its real fields ` +
+                `(${errType ? errType.kind + ': ' + errType.members.map(m => m.name).join(',') : 'MISSING'})`);
+            assert(mitTypes.every(t => t.kind !== 'opaque' || t.members.length === 0),
+                'an opaque block contributes a name and no members — nothing is invented for it');
+
+            // The negative that keeps the view honest: the sample's `.tmc` describes the project's
+            // OWN types too (FB_Cylinder, ST_StationStatus, …), and those carry no `Namespace="…"`
+            // attribute. A library row must never claim them — "TwinCAT Libraries" would then list
+            // the user's own code as somebody's library.
+            const ownTypes = ['FB_Cylinder', 'ST_StationStatus', 'E_StationState', 'GVL_Io'];
+            const misfiled = catalog.filter(e => e.types.some(t => ownTypes.includes(t.name)))
+                .map(e => e.namespace);
+            assert(misfiled.length === 0,
+                `the project's own .tmc types are filed under no library (claimed by: ${misfiled.join(', ') || 'none'})`);
         }
     }
 } catch (e) {

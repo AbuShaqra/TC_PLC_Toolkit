@@ -43,50 +43,57 @@ const SAMPLE_DIR = path.join(__dirname, '..', 'sample');
 
 /**
  * The sample project is correct TwinCAT code, so **every** diagnostic on it is a false positive and
- * the only defensible target is 0 — which is what it scores, in every mode this tree can produce.
+ * the only defensible target is 0 — which is what it scores, in every mode.
  *
  * The table survives the move from the customer project to the committed synthetic one because the
- * *reason* for it survives: the external symbol sources are git-ignored build artifacts, so how much
- * a machine can resolve still depends on which of them it has. `sample/TcToolkitSample/
- * TcToolkitSample_PLC/_Libraries/` (three Beckhoff archives) is git-ignored, and the project `.tmc`
- * only exists after a TwinCAT build. A fresh clone or a CI runner has neither.
+ * *reason* for it survives: one of the external symbol sources is a git-ignored vendor binary, so
+ * how much a machine can resolve still depends on what it has. `sample/TcToolkitSample/
+ * TcToolkitSample_PLC/_Libraries/Beckhoff Automation GmbH/` is git-ignored; a fresh clone or a CI
+ * runner has only the MIT archive beside it.
  *
  * What changed is the *numbers*. The old rows (0 / 12 / 69 / 171) were measured on the customer's
  * 152-object project, which named library symbols throughout its code; the synthetic sample's 19
  * objects reference **no library symbol at all**, so there is nothing for a missing archive or a
  * missing `.tmc` to fail to resolve, and every row collapses to 0.
  *
- * Re-measured 2026-07-20 against sample/TcToolkitSample (19 objects, 3 declared namespaces):
+ * **Every row is now MEASURED.** The sample has been built in TwinCAT XAE, which produced
+ * `TcToolkitSample_PLC/TcToolkitSample_PLC.tmc` — and that file is COMMITTED, so `full` is the mode
+ * every checkout runs in, developer machine and CI alike. The two rows that used to be labelled
+ * inference are therefore reachable at last, and the other two only by taking a source away.
+ *
+ * Re-measured 2026-07-20 against sample/TcToolkitSample (19 objects, 4 declared namespaces). Rows
+ * other than `full` were produced by copying `sample/` to a temp directory and deleting the `.tmc`
+ * and/or `_Libraries` from the copy, then running the recipe below over all 19 objects under each of
+ * the three diagnostics configs (default, declarationTypes:true, typeCompatibility:true). Nothing in
+ * the real `sample/` was touched.
  *
  *   archives  .tmc  total  mode              how it was established
  *   --------  ----  -----  ----------------  ---------------------------------------------------
- *      yes    yes      0   full              NOT PRODUCIBLE on this tree — see below
- *      yes    no       0   archives-only     MEASURED: the mode this working copy is in
- *      no     yes      0   typesystem-only   NOT PRODUCIBLE on this tree — see below
- *      no     no       0   none              MEASURED: archives suppressed; identical to the
- *                                            archives-only run, confirming the sample's code
- *                                            names no external symbol
- *
- * **The two `.tmc` rows could not be measured**: the sample has no `.tmc` and cannot be given one
- * without building the project in TwinCAT XAE, so `indexTypeSystem()` returns `files: 0` and the
- * mode detector never selects them. Their 0 is therefore an *inference*, not a measurement — but a
- * safe one: adding the `.tmc` only ever adds resolvable symbols to the index, and the corresponding
- * measured row (archives-only / none respectively) is already at the 0 floor. If a `.tmc` ever lands
- * here and a row scores above 0, that is a real finding — measure it and record the number, do not
- * assume this table was right.
+ *      yes    yes      0   full              MEASURED, in place: the mode every checkout is in.
+ *                                            5 archives / 4,028 symbols on a machine with the
+ *                                            Beckhoff binaries; 1 archive / 502 without them —
+ *                                            both score 0.
+ *      yes    no       0   archives-only     MEASURED on a copy with the .tmc deleted
+ *                                            (5 archives, 4,007 symbols)
+ *      no     yes      0   typesystem-only   MEASURED on a copy with _Libraries deleted
+ *                                            (28 symbols, all from the .tmc)
+ *      no     no       0   none              MEASURED on a copy with both deleted (0 symbols);
+ *                                            identical to every other row, confirming the
+ *                                            sample's code names no external symbol
  *
  * Keeping every row at 0 is the point: the old `archives-only: 12` carried 12 points of slack on the
- * mode this machine actually runs in, so a regression of up to 12 new diagnostics would have passed
+ * mode that machine actually ran in, so a regression of up to 12 new diagnostics would have passed
  * the gate silently.
  *
- * The mode is printed loudly on every run: a PASS against the wrong row means nothing.
+ * The mode is printed loudly on every run: a PASS against the wrong row means nothing. A run that
+ * reports anything other than `full` means the committed `.tmc` is missing from the working copy.
  * @type {Object<string, {baseline: number, label: string}>}
  */
 const BASELINES = {
-    full: { baseline: 0, label: 'library archives + .tmc type system (not producible without an XAE build)' },
+    full: { baseline: 0, label: 'library archives + .tmc type system (both committed — the normal mode)' },
     'archives-only': { baseline: 0, label: 'library archives, no .tmc type system' },
-    'typesystem-only': { baseline: 0, label: '.tmc type system, no library archives (not producible without an XAE build)' },
-    none: { baseline: 0, label: 'no external symbol sources (fresh clone / CI)' }
+    'typesystem-only': { baseline: 0, label: '.tmc type system, no library archives' },
+    none: { baseline: 0, label: 'no external symbol sources' }
 };
 
 /** The two realistic machines: a full TwinCAT working copy, and a fresh clone. Both score 0. */
@@ -154,9 +161,12 @@ function printBaselineMode(info) {
         `${info.tmcFiles} .tmc file(s), ${info.symbols} external symbol(s) in ${info.ms} ms; ` +
         `${info.namespaces} namespace(s) from .plcproj.`);
     if (info.mode !== 'full') {
-        console.log(`    NOTE: sample/**/_Libraries is git-ignored and the .tmc is a TwinCAT build artifact,`);
-        console.log(`    so most checkouts have one or neither. The sample scores 0 in every mode this tree`);
-        console.log(`    can produce — see the measured table in test/_baseline.js.`);
+        // `full` is the normal mode everywhere: the MIT archive and the `.tmc` are both committed.
+        // Anything else means a fixture was pruned by hand, which is worth saying out loud even
+        // though every row of the table scores 0.
+        console.log(`    NOTE: the sample's .tmc and its MIT library archive are COMMITTED, so a checkout`);
+        console.log(`    normally runs in mode "full". Something has been removed from this working copy.`);
+        console.log(`    The sample scores 0 in every mode — see the measured table in test/_baseline.js.`);
     }
     console.log('');
 }
@@ -183,14 +193,22 @@ function syncDocument(index, stText, fileUri) {
 //   fisothemes/twincat dynamic collections/  TwinCAT Dynamic Collections, MIT-licensed, so it CAN
 //                                            be redistributed. sample/.gitignore negates exactly
 //                                            this directory => present on CI and on a fresh clone.
-//   Beckhoff Automation GmbH/                Tc2_Standard, Tc2_System, Tc3_Module. Vendor binaries,
-//                                            git-ignored => present ONLY where TwinCAT copied them.
+//   Beckhoff Automation GmbH/                Tc2_Standard, Tc2_System, Tc3_Module — and
+//                                            **Tc2_Utilities**, which the `.plcproj` does NOT
+//                                            reference: building in XAE copied it in anyway. Vendor
+//                                            binaries, git-ignored => present ONLY where TwinCAT
+//                                            copied them.
 //
-// The `.plcproj` references all four, and namespaces come from the `.plcproj`, so namespace-level
-// facts (4 namespaces, their include/title/company splits, the catalog shape) hold in BOTH
-// configurations. Only archive-derived facts — symbol names, symbol counts, per-namespace
+// The `.plcproj` references four libraries, and namespaces come from the `.plcproj`, so
+// namespace-level facts (4 namespaces, their include/title/company splits, the catalog shape) hold
+// in BOTH configurations. Only archive-derived facts — symbol names, symbol counts, per-namespace
 // attribution — differ. Harnesses therefore assert on what is committed and gate the rest on
 // `hasBeckhoff`, so a developer machine keeps the extra coverage without CI failing for lacking it.
+//
+// Note the archive count on disk (5 here) is NOT the number of declared references (4). "Every
+// archive maps to a namespace" is therefore not an invariant, and no harness asserts it; the
+// undeclared Tc2_Utilities is instead used as a real fixture for the never-guess attribution rule
+// (test_library_completion.js §1).
 
 /** The git-ignored vendor directory, named exactly as TwinCAT creates it. */
 const BECKHOFF_VENDOR_DIR = 'Beckhoff Automation GmbH';

@@ -3,12 +3,12 @@
  * @description Library symbols in autocompletion, and the namespace attribution that makes them
  * offerable at all.
  *
- * The problem this guards. Library symbols ARE indexed (479 names from the sample's one committed
- * archive, 1,950 when the git-ignored Beckhoff archives are there too, and tens of thousands on a
- * real project, plus the project's `.tmc`), but a `LIBRARY` node is not in TYPE_NODE_KINDS, so a
- * type caret never offered one: `fbList : F▮` suggested no `FB_List`. The naive fix — admit LIBRARY
- * to TYPE_NODE_KINDS — is the one thing that must NOT happen: it empties every bare library name
- * into every type caret.
+ * The problem this guards. Library symbols ARE indexed (measured 2026-07-20: 502 names from the
+ * sample's committed archive and `.tmc` alone, 4,028 with the git-ignored Beckhoff archives there
+ * too, and tens of thousands on a real project), but a `LIBRARY` node is not in TYPE_NODE_KINDS, so
+ * a type caret never offered one: `fbList : F▮` suggested no `FB_List`. The naive fix — admit
+ * LIBRARY to TYPE_NODE_KINDS — is the one thing that must NOT happen: it empties every bare library
+ * name into every type caret.
  *
  * The design instead makes library types reachable by *qualifying* the caret, which is how TwinCAT
  * code writes them (`TcDynCollections.FB_List`, `Tc2_System.ST_AmsAddr`):
@@ -26,14 +26,22 @@
  * are the point — a namespace must never answer with a symbol that is not its own, and an unknown
  * prefix must answer with nothing at all.
  *
- * WHICH FIXTURES THIS NEEDS. The `.plcproj` and the MIT-licensed TwinCAT Dynamic Collections archive
- * are COMMITTED, so everything keyed to the 4 declared namespaces and to TcDynCollections' 479
- * symbols runs on CI and on a fresh clone. The three Beckhoff archives are git-ignored vendor
- * binaries: assertions that need a SECOND attributed library — cross-library negatives, "the caret
- * narrows to less than the whole registry", a library FB that shadows a builtin name (`TON`) — are
- * only observable where they exist, and are gated on their presence. Note the mirror image is
- * covered too, and only on CI: without the Beckhoff archives, three declared namespaces carry no
- * symbols at all, which exercises §4's "declared but unattributable" branch for real.
+ * The unattributed case is not hypothetical here. Building the sample in TwinCAT XAE left a FIFTH
+ * archive in `_Libraries` — `Beckhoff Automation GmbH/Tc2_Utilities/` — that no `<PlaceholderReference>`
+ * in the `.plcproj` declares. So "every archive on disk maps to a namespace" is NOT an invariant, and
+ * §1 does not assert it: what must hold is that every archive matching a *declared* title is
+ * attributed, and that an archive matching none is attributed to nothing rather than to a plausible
+ * neighbour. Tc2_Utilities is now the real-data fixture for that second half.
+ *
+ * WHICH FIXTURES THIS NEEDS. The `.plcproj`, the project's `.tmc` and the MIT-licensed TwinCAT
+ * Dynamic Collections archive are COMMITTED, so everything keyed to the 4 declared namespaces and to
+ * TcDynCollections' 479 symbols runs on CI and on a fresh clone. The Beckhoff archives are
+ * git-ignored vendor binaries: assertions that need a SECOND attributed library — cross-library
+ * negatives, "the caret narrows to less than the whole registry", a library FB that shadows a
+ * builtin name (`TON`), and the undeclared-archive case above — are only observable where they
+ * exist, and are gated on their presence. Note the mirror image is covered too, and only on CI:
+ * without the Beckhoff archives, three declared namespaces carry no symbols at all, which exercises
+ * §4's "declared but unattributable" branch for real.
  */
 
 const fs = require('fs');
@@ -226,18 +234,21 @@ try {
         getNamespaceSymbols(MIT_NAMESPACE.toUpperCase()).length === dyn.length,
         'namespace lookup is case-insensitive');
 
-    // Every archive that IS present must map to a declared library title — an unattributed archive
-    // would leave its symbols reachable only unqualified. The COUNT of archives is configuration-
-    // dependent (1 committed, 4 with the Beckhoff binaries) and is asserted under the gate below.
-    assert(lib.archives >= 1 && lib.mapped === lib.archives,
-        `every archive present maps to a declared library title (${lib.mapped}/${lib.archives})`);
+    // An archive is attributed only when its path matches a DECLARED library title, and never more
+    // than one archive per namespace. `mapped === archives` is deliberately NOT asserted: TwinCAT
+    // leaves archives in `_Libraries` that the `.plcproj` does not reference (Tc2_Utilities, see the
+    // header), and an unattributed archive is the correct outcome for one of those — its symbols stay
+    // in the flat registry and appear under no prefix. Measured 2026-07-20: 1/1 on CI, 4/5 here.
+    assert(lib.archives >= 1 && lib.mapped >= 1 && lib.mapped <= coverage.namespaces,
+        `every archive that maps, maps to one of the declared namespaces (${lib.mapped}/${lib.archives} ` +
+        `archives, ${coverage.namespaces} namespaces)`);
     assert(coverage.mapped >= 1 && coverage.mapped <= coverage.namespaces,
         `at least one declared namespace carries symbols (${coverage.mapped}/${coverage.namespaces})`);
 
     // Configuration-independent because it is summed rather than hard-coded: coverage counts
     // per-namespace membership, so a name shared between two libraries is counted once per owner and
-    // the total can exceed the flat registry. Measured 2,546 over 1,950 distinct with all four
-    // archives; 479 over 479 with the committed one alone.
+    // the total can exceed the flat registry. Measured 2,546 over 4,028 distinct with all five
+    // archives plus the `.tmc`; 479 over 502 with the committed archive and `.tmc` alone.
     const perNamespaceTotal = getLibraryNamespaceNames()
         .reduce((n, ns) => n + getNamespaceSymbols(ns).length, 0);
     assert(coverage.symbols === perNamespaceTotal,
@@ -271,9 +282,36 @@ try {
             'Tc2_Standard\'s CTUD is NOT filed under Tc2_System or Tc3_Module');
         assert(!dyn.includes('TON') && !dyn.includes('DEFAULT_ADS_TIMEOUT') && !std.includes('FB_Hash_Map'),
             'the MIT library and the Beckhoff libraries do not borrow each other\'s symbols');
-        assert(lib.archives === 4 && coverage.mapped === coverage.namespaces,
-            `all 4 archives map and every declared namespace carries symbols ` +
-            `(${lib.mapped}/${lib.archives}, ${coverage.mapped}/${coverage.namespaces})`);
+        assert(lib.mapped === 4 && coverage.mapped === coverage.namespaces,
+            `all 4 declared libraries resolved to an archive and carry symbols ` +
+            `(${lib.mapped}/${lib.archives} archives, ${coverage.mapped}/${coverage.namespaces} namespaces)`);
+
+        // The never-guess rule, on real data rather than on a made-up path. TwinCAT's build copied
+        // Tc2_Utilities into `_Libraries` although the `.plcproj` declares no reference to it, and it
+        // sits right beside three archives that ARE declared and share its vendor directory — the
+        // exact shape a fuzzy match would get wrong. It must be attributed to nothing, and none of
+        // its symbols may surface under a neighbouring namespace.
+        const stray = fixtures.archives.filter(p => /tc2_utilities/i.test(path.basename(p)));
+        if (stray.length === 0) {
+            console.log('    [skip] no undeclared archive in this working copy — the never-guess rule is');
+            console.log('           still covered by the synthetic path above.');
+        } else {
+            assert(stray.every(p => archiveNamespace(p) === null),
+                `an archive the .plcproj never references is attributed to nothing ` +
+                `(${stray.map(p => path.basename(p)).join(', ')})`);
+            assert(lib.archives > lib.mapped,
+                `…so it is counted as present but unmapped (${lib.mapped} of ${lib.archives} archives mapped)`);
+            // Measured 2026-07-20: Tc2_Utilities harvests 2,697 names, 2,153 of which appear in none
+            // of the three declared Beckhoff archives. FB_GetLocalAmsNetId is one of them — it must
+            // reach the flat registry (so a document naming it is not flagged undeclared) and appear
+            // under no namespace list at all.
+            const strayNames = new Set(getLibrarySymbols());
+            const STRAY = 'FB_GetLocalAmsNetId';
+            assert(strayNames.has(STRAY) &&
+                !std.includes(STRAY) && !sys.includes(STRAY) &&
+                !mod.includes(STRAY) && !dyn.includes(STRAY),
+                `its symbols reach the flat registry but no namespace list (${STRAY})`);
+        }
     }
 
     // ---- 2. Type caret: namespaces are offered, and nothing else changes ------------------------
