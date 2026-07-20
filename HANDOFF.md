@@ -19,15 +19,26 @@ logic is verified on real data + guard tests, but nobody has eyeballed the rende
 - **Publication:** history was rewritten + the GitHub repo recreated to purge customer/vendor content (`sample/`,
   `.trust-lsp/`, machine codenames — 0 blobs match any customer id). Repo is **Private**. **Open:** confirm the
   contractual right to open-source the extension itself.
-- **`sample/` is GROUND TRUTH** — correct TwinCAT code, so every diagnostic on it is a bug. At **zero** against a
-  baseline of **zero** (no slack); `test_sample_diagnostics`/`test_typecheck` ratchet it (never raise the baseline).
-  It is now **wholly synthetic and COMMITTED**, so the sample gates run on a clone and on CI. Built in two steps:
+- **`sample/` is GROUND TRUTH** — correct TwinCAT code (it **builds cleanly in XAE**, user-verified 2026-07-20), so
+  every diagnostic on it is a bug. At **zero** against a baseline of **zero** (no slack);
+  `test_sample_diagnostics`/`test_typecheck` ratchet it (never raise the baseline).
+  It is **wholly synthetic and COMMITTED**, and **CI now runs at `Coverage: FULL`** — `REQUIRE_FULL_SUITE=1` passes
+  there. Before this, CI executed ~951 assertions in 4 s and silently skipped the ratchet AND the live-path guard;
+  `test_live_path` was running **2 of its 10** tests. Built in two steps:
   `scripts/build-sample-solution.ps1` drives XAE once to produce the `.sln`/`.tsproj`/`.plcproj` skeleton (only
   TwinCAT can write those — the on-disk template is a 67-byte stub it expands at insertion time, and hand-writing
   them is what produced a project XAE refused to open), then `scripts/build-sample-project.js` writes the 19 objects
   and **injects** their `<Compile>`/`<Folder>` entries into XAE's `.plcproj`, leaving its identity GUIDs,
-  PlaceholderReferences and ProjectExtensions untouched. Both are deterministic/idempotent. `_Libraries/` (Beckhoff
-  binaries), `.vs/`, `*.bak` and `_CompileInfo*/` stay git-ignored.
+  PlaceholderReferences and ProjectExtensions untouched. Both are deterministic/idempotent.
+  **Committed:** the solution, the 19 objects, XAE's `PlcTask.TcTTO`, the **`.tmc`** (44 KB, from the XAE build —
+  our own types only, no Beckhoff content), and **one MIT-licensed archive** (TwinCAT Dynamic Collections, 479
+  symbols) so the ZIP reader / string-table parser are exercised on CI. Provenance in `sample/README.md`.
+  **Git-ignored:** the Beckhoff archives (vendor binaries), `.vs/`, `*.bak`, `_CompileInfo*/`, `_Boot/`. Nothing
+  asserts on Beckhoff without gating on its presence — **verify any change in BOTH configurations** by moving
+  `_Libraries/Beckhoff Automation GmbH` aside and back (it is git-ignored, so move it, never delete).
+  **Gitignore trap, hit twice:** a `dir/` exclusion makes every negation inside it unreachable — git never descends
+  into an excluded directory. Use `dir/*`. The old blanket `!*.TcPOU` negations also leaked *any* project dropped
+  under `sample/`; negations must stay scoped to `TcToolkitSample/`.
 - **Internal ids deliberately NOT renamed** (`twincat.*` commands, `twincat.xmlViewer` viewType) after the
   "XML Viewer"→"PLC Toolkit" rename — churning them breaks saved keybindings/associations.
 - **Objects-tree drag & drop + copy/paste** (0.2.0). DnD = move: component → own file's virtual folder /
