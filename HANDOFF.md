@@ -7,7 +7,9 @@ live in git history (PRs/commits); this file keeps the findings that would cost 
 **Last verified:** 2026-07-20 — `npm test` green (41 harnesses), **0 diagnostics on the sample**. Shipped: **0.3.0**
 (PRs #1–#14; 0.1.0 renumbered from 0.4.2 for the fresh public repo; #11 re-shipped 0.2.0 by decision). 0.3.0 =
 reference-aware rename (objects, members, folders, virtual folders) incl. visualizations; **user smoke-tested it on the
-real project and XAE built cleanly** — packaged + installed.
+real project and XAE built cleanly**. In flight: **0.3.1 on `feat/config-object-references` (PR #15, CI green,
+NOT merged)** — extends rename to task configs (`.TcTTO` PouCall) and text lists (`.TcTLO`/`.TcGTLO`); packaged +
+installed for the user to smoke-test (rename a task-called PROGRAM, then build in XAE) before merge.
 **Not yet visually confirmed by the user:** the 0.1.3 library grouping and 0.1.4 member expansion in the tree UI —
 logic is verified on real data + guard tests, but nobody has eyeballed the rendered tree. Worth doing.
 
