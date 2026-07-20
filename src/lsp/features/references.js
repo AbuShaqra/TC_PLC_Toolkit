@@ -706,5 +706,9 @@ function snapshotNodesFor(symbolIndex, uri) {
 module.exports = {
     provideReferences,
     provideReferencesForSymbol,
-    clearStFileCache
+    clearStFileCache,
+    // Exported for the visualization-file reference scan (features/visuReferences.js), which reuses
+    // the exact relatedness relaxation the qualified-occurrence matching here uses, so the visu
+    // reference set and the code reference set can never diverge on what counts as "the same member".
+    pousRelated
 };

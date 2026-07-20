@@ -120,16 +120,26 @@ function registerRenameCommands(context, { treeView, treeProvider, applyXmlEdit,
 
         // Confirm what happens to references before touching anything on disk.
         await saveDirtyTwinCatDocs();
-        const result = await queryReferences({ rootName, fileUri: fileUri.toString() });
-        const decision = await confirmReferences(rootName, result);
+        const spec = { rootName, fileUri: fileUri.toString() };
+        const result = await queryReferences(spec);
+        // Visualization files (.TcVIS/.TcVMO) reference objects by name too, but only ask for them
+        // when the CODE query resolved: an unresolved code query already routes to the rename-only
+        // fallback, and a half-update (code stale, visu changed) must never happen. A missing/failing
+        // visu query is treated as zero occurrences and never blocks the rename.
+        const visuOccs = result.resolved ? await queryVisuReferences(spec) : [];
+        const decision = await confirmReferences(rootName, result, visuOccs);
         if (decision.mode === 'abort') return;
 
         const tally = newTally();
         if (decision.mode === 'updateRefs') {
             await applyReferenceUpdates(fileUri, rootName, newName, decision.refs, false, tally, (xml) =>
                 renameRootObjectInXml(xml, newName));
+            // Visu edits must land BEFORE the on-disk rename below — every visu file references the
+            // OLD uri, exactly as the code references do.
+            await applyVisuUpdates(visuOccs, rootName, newName, tally);
         } else {
-            // Rename-only: the object's own XML and file name must still stay in sync.
+            // Rename-only: the object's own XML and file name must still stay in sync. Visu files are
+            // left untouched by the user's explicit choice.
             await applyXmlEdit(fileUri, (xml) => renameRootObjectInXml(xml, newName));
         }
 
@@ -240,12 +250,16 @@ function registerRenameCommands(context, { treeView, treeProvider, applyXmlEdit,
         }
 
         await saveDirtyTwinCatDocs();
-        const result = await queryReferences({
+        const spec = {
             rootName: parsed.rootName,
             fileUri: fileUri.toString(),
             member: { kind: componentType, name: oldName }
-        });
-        const decision = await confirmReferences(oldName, result);
+        };
+        const result = await queryReferences(spec);
+        // Members are referenced from visualizations too (see renameObjectFile for why the visu query
+        // is gated on a resolved code query).
+        const visuOccs = result.resolved ? await queryVisuReferences(spec) : [];
+        const decision = await confirmReferences(oldName, result, visuOccs);
         if (decision.mode === 'abort') return;
 
         const tally = newTally();
@@ -259,6 +273,9 @@ function registerRenameCommands(context, { treeView, treeProvider, applyXmlEdit,
                     d.componentType === componentType && d.componentName.toLowerCase() === oldName.toLowerCase());
                 return already ? xml : renameComponentInXml(xml, parsed.rootName, componentType, oldName, newName);
             });
+            // Members carry no on-disk file rename, so ordering vs a disk move is moot here; visu edits
+            // simply follow the code edits.
+            await applyVisuUpdates(visuOccs, oldName, newName, tally);
         } else {
             await applyXmlEdit(fileUri, (xml) =>
                 renameComponentInXml(xml, parsed.rootName, componentType, oldName, newName));
@@ -397,6 +414,24 @@ function registerRenameCommands(context, { treeView, treeProvider, applyXmlEdit,
     }
 
     /**
+     * Splices oldName -> newName across every visualization file that references the symbol. Each visu
+     * file gets one byte-preserving write (grouped by uri); occurrences are guarded per-position by
+     * spliceVisuOccurrences, so a stale offset is skipped (folded into tally.uncovered), never written.
+     * Visu files are not LSP-indexed or watched, so there is nothing to reindex afterwards.
+     * @param {Array<{uri: string, offset: number, length: number, chain: string}>} visuOccs
+     * @param {string} oldName The symbol's current name (the segment each occurrence's length spans).
+     * @param {string} newName The new name.
+     * @param {Tally} tally Accumulator, mutated in place (visuApplied / visuFiles / uncovered).
+     */
+    async function applyVisuUpdates(visuOccs, oldName, newName, tally) {
+        const byUri = groupVisuOccurrencesByUri(visuOccs);
+        for (const [uriStr, occs] of byUri) {
+            const targetUri = vscode.Uri.parse(uriStr);
+            await applyXmlEdit(targetUri, (xml) => spliceVisuOccurrences(xml, occs, oldName, newName, tally));
+        }
+    }
+
+    /**
      * Runs the reference query against the LSP. A missing client or any transport failure is treated
      * as "unresolved" so the caller falls back to a rename-only path rather than throwing.
      * @param {{ rootName: string, fileUri: string, member?: { kind: string, name: string } }} spec
@@ -414,17 +449,42 @@ function registerRenameCommands(context, { treeView, treeProvider, applyXmlEdit,
             return unresolved;
         }
     }
+
+    /**
+     * Runs the visualization-reference query against the LSP. Any missing client, transport failure or
+     * unresolved response yields zero occurrences — visu updates are strictly additive and must never
+     * block or fail a rename the code path already accepted.
+     * @param {{ rootName: string, fileUri: string, member?: { kind: string, name: string } }} spec
+     * The SAME spec shape as queryReferences.
+     * @returns {Promise<Array<{uri: string, offset: number, length: number, chain: string}>>}
+     */
+    async function queryVisuReferences(spec) {
+        const client = getClient();
+        if (!client) return [];
+        try {
+            const r = await client.sendRequest('custom/visuReferencesForSymbol', spec);
+            if (r && r.resolved && Array.isArray(r.occurrences)) return r.occurrences;
+            return [];
+        } catch (e) {
+            console.error('TwinCAT: visuReferencesForSymbol failed:', e);
+            return [];
+        }
+    }
 }
 
 // ===== Pure helpers (no injected deps) =========================================================
 
 /**
- * @typedef {{ applied: number, updatedFiles: Set<string>, structuralFiles: Set<string>, uncovered: number }} Tally
+ * @typedef {{ applied: number, updatedFiles: Set<string>, structuralFiles: Set<string>, uncovered: number,
+ *             visuApplied: number, visuFiles: Set<string> }} Tally
  */
 
-/** A fresh reference-update accumulator. */
+/** A fresh reference-update accumulator. `visuApplied`/`visuFiles` track visualization-file splices. */
 function newTally() {
-    return { applied: 0, updatedFiles: new Set(), structuralFiles: new Set(), uncovered: 0 };
+    return {
+        applied: 0, updatedFiles: new Set(), structuralFiles: new Set(), uncovered: 0,
+        visuApplied: 0, visuFiles: new Set()
+    };
 }
 
 /**
@@ -462,13 +522,94 @@ function groupOccurrencesByUri(refs) {
     return byUri;
 }
 
+/** True when ch is an IEC identifier character; undefined (a string bound) counts as a non-word char. */
+function isWordChar(ch) {
+    return ch !== undefined && /[A-Za-z0-9_]/.test(ch);
+}
+
 /**
- * Runs the references confirmation modal for a symbol whose references have been queried.
+ * Splices oldName -> newName at each guarded visualization occurrence in one file's text. The LSP hands
+ * back JS-string offsets into the file's BOM-stripped text — the exact coordinate space applyXmlEdit's
+ * modifier receives (document.getText() drops the BOM) — so no line mapping is needed; each occurrence
+ * already spans exactly the one dotted-chain segment to replace.
+ *
+ * Occurrences are applied in DESCENDING offset order so an earlier splice never shifts a not-yet-applied
+ * offset even when newName differs in length from oldName. Every occurrence is guarded before it is
+ * written, mirroring renameEngine.spliceGroup: the segment at [offset, offset+length) must equal oldName
+ * case-insensitively AND both neighbouring characters must be non-identifier chars (a preceding `.` for a
+ * member segment or `"` for a path start, and any non-word char after, are all allowed — only identifier
+ * chars are rejected, so a longer name is never partly overwritten). A mismatch is counted as an uncovered
+ * skip and never written, so a stale or fabricated offset can only ever be skipped, never corrupt a file.
+ * @param {string} xml The visu file's current text (BOM-stripped, as applyXmlEdit supplies).
+ * @param {Array<{uri: string, offset: number, length: number, chain: string}>} occs One file's occurrences.
+ * @param {string} oldName The symbol's current name (the segment each occurrence's length was measured on).
+ * @param {string} newName The new name.
+ * @param {Tally} tally Accumulator, mutated in place: visuApplied / visuFiles on success, uncovered on skip.
+ * @returns {string} The spliced text (identical to the input outside the replaced segments).
+ */
+function spliceVisuOccurrences(xml, occs, oldName, newName, tally) {
+    const oldLower = oldName.toLowerCase();
+    const sorted = occs.slice().sort((a, b) => b.offset - a.offset);
+    let out = xml;
+    let localApplied = 0;
+    for (const o of sorted) {
+        const offset = o.offset;
+        const end = offset + o.length;
+        const segment = out.slice(offset, end);
+        const before = offset > 0 ? out[offset - 1] : undefined;
+        const after = out[end];
+        if (segment.toLowerCase() !== oldLower || isWordChar(before) || isWordChar(after)) {
+            tally.uncovered++;
+            continue;
+        }
+        out = out.slice(0, offset) + newName + out.slice(end);
+        localApplied++;
+        tally.visuApplied++;
+    }
+    if (localApplied > 0 && occs.length > 0) tally.visuFiles.add(visuUriKey(occs[0].uri));
+    return out;
+}
+
+/**
+ * Groups visualization occurrences by file uri, preserving the whole occurrence record (offset/length
+ * are needed by the splice), so each file can be edited in a single byte-preserving write.
+ * @param {Array<{uri: string, offset: number, length: number, chain: string}>} occs
+ * @returns {Map<string, Array<{uri: string, offset: number, length: number, chain: string}>>}
+ */
+function groupVisuOccurrencesByUri(occs) {
+    const byUri = new Map();
+    for (const o of occs) {
+        let arr = byUri.get(o.uri);
+        if (!arr) { arr = []; byUri.set(o.uri, arr); }
+        arr.push(o);
+    }
+    return byUri;
+}
+
+/** Distinct-file count over visu occurrence uris, compared by fsPath lowercased (win32 is case-insensitive). */
+function distinctVisuFileCount(occs) {
+    const files = new Set();
+    for (const o of occs) files.add(visuUriKey(o.uri));
+    return files.size;
+}
+
+/** Normalizes a uri string to the same file key the reference tally uses: fsPath, lowercased. */
+function visuUriKey(uriStr) {
+    return vscode.Uri.parse(uriStr).fsPath.toLowerCase();
+}
+
+/**
+ * Runs the references confirmation modal for a symbol whose references have been queried. When the
+ * symbol is also used in visualization files, the counts are folded into the message and the modal is
+ * shown even if there are no CODE references (a visu-only symbol still needs the choice). "Rename only"
+ * stays available in every branch: it renames the object itself and leaves both code and visu alone.
  * @param {string} displayName The symbol's current name, as shown to the user.
  * @param {{resolved: boolean, references: Array<Object>, declaration: Object|null}} result
+ * @param {Array<{uri: string, offset: number, length: number, chain: string}>} [visuOccs]
+ * Visualization occurrences (empty when the code query was unresolved — visu was not queried then).
  * @returns {Promise<{mode: 'abort'|'renameOnly'|'updateRefs', refs: Array<Object>}>}
  */
-async function confirmReferences(displayName, result) {
+async function confirmReferences(displayName, result, visuOccs) {
     if (result.resolved === false) {
         const choice = await vscode.window.showWarningMessage(
             `References for "${displayName}" could not be determined.`,
@@ -479,18 +620,32 @@ async function confirmReferences(displayName, result) {
     }
 
     const refs = excludeDeclaration(result);
-    if (refs.length === 0) {
+    const occs = visuOccs || [];
+    const n = refs.length;
+    const k = occs.length;
+    // Neither code nor visu references: nothing to confirm, rename the object itself silently.
+    if (n === 0 && k === 0) {
         return { mode: 'renameOnly', refs };
     }
-    const n = refs.length;
+
     const m = distinctFileCount(refs);
+    const l = distinctVisuFileCount(occs);
+    let message;
+    if (n > 0 && k > 0) {
+        message = `"${displayName}" is referenced ${n} time(s) in ${m} file(s), plus ${k} visualization reference(s) in ${l} file(s).`;
+    } else if (n === 0) {
+        message = `"${displayName}" is referenced only in visualizations: ${k} reference(s) in ${l} file(s).`;
+    } else {
+        message = `"${displayName}" is referenced ${n} time(s) in ${m} file(s).`;
+    }
+
     const choice = await vscode.window.showWarningMessage(
-        `"${displayName}" is referenced ${n} time(s) in ${m} file(s).`,
+        message,
         {
             modal: true,
             detail: '"Rename only" still renames the object itself — its XML and file name must stay in sync — but other files keep the old name.'
         },
-        `Rename and update ${n} reference(s)`,
+        `Rename and update ${n + k} reference(s)`,
         'Rename only'
     );
     if (choice === undefined) return { mode: 'abort', refs };
@@ -665,6 +820,9 @@ function reportRename(oldName, newName, tally, structuralCount) {
         msg += ` (${tally.applied} reference(s) updated in ${tally.updatedFiles.size} file(s))`;
         if (structuralCount > 0) {
             msg += `; also renamed the declaration in ${structuralCount} related object(s)`;
+        }
+        if (tally.visuApplied > 0) {
+            msg += `; ${tally.visuApplied} visualization reference(s) updated in ${tally.visuFiles.size} file(s)`;
         }
     }
     vscode.window.setStatusBarMessage(msg, 4000);

@@ -11,6 +11,9 @@ const {
 } = require('vscode-languageserver/node');
 const { TextDocument } = require('vscode-languageserver-textdocument');
 
+const fs = require('fs');
+const path = require('path');
+
 const {
     parseAndIndexDocument,
     indexStDirectory,
@@ -22,6 +25,11 @@ const {
 // remains only the default for the standalone test harnesses; here the data flow is explicit, and a
 // future multi-root setup could hold one index per workspace folder without touching global state.
 const workspaceIndex = {};
+
+// The workspace-root filesystem paths, captured on the initial scan. The visualization-file
+// reference scan (custom/visuReferencesForSymbol) needs to discover .TcVIS/.TcVMO files on demand,
+// and those roots are the only place to start the walk. Kept in sync on reindex.
+const workspaceRootPaths = [];
 
 const {
     indexTwinCatDirectory,
@@ -106,11 +114,46 @@ const {
     provideDefinition,
     provideReferences,
     provideReferencesForSymbol,
+    findVisuReferencesForSymbol,
     provideDocumentHighlights,
     provideDiagnostics,
     setDiagnosticsConfig,
     clearStFileCache
 } = require('./features');
+
+/** Directories skipped when walking for visu files — the same set the XML indexer skips. */
+const VISU_SKIP_DIRS = new Set(['.git', 'node_modules', '.vscode', '_libraries']);
+
+/**
+ * Recursively collects every TwinCAT visualization file (`.TcVIS`/`.TcVMO`, case-insensitive) under
+ * the given workspace roots. Rename is a rare, deliberate action, so an on-demand walk is fine — no
+ * standing index of visu files is kept.
+ * @param {Array<string>} roots Absolute workspace-root paths.
+ * @returns {Array<string>} Absolute visu file paths.
+ */
+function collectVisuFiles(roots) {
+    const out = [];
+    const walk = (dir) => {
+        let entries;
+        try {
+            entries = fs.readdirSync(dir, { withFileTypes: true });
+        } catch (e) {
+            return;
+        }
+        for (const entry of entries) {
+            const full = path.join(dir, entry.name);
+            if (entry.isDirectory()) {
+                if (VISU_SKIP_DIRS.has(entry.name.toLowerCase())) continue;
+                walk(full);
+            } else if (entry.isFile()) {
+                const ext = path.extname(entry.name).toLowerCase();
+                if (ext === '.tcvis' || ext === '.tcvmo') out.push(full);
+            }
+        }
+    };
+    for (const root of (roots || [])) walk(root);
+    return out;
+}
 
 // Create connection for the server, using Node IPC
 const connection = createConnection(ProposedFeatures.all);
@@ -124,8 +167,10 @@ connection.onInitialize((params) => {
     const folders = params.workspaceFolders;
     if (folders && folders.length > 0) {
         const index = workspaceIndex;
+        workspaceRootPaths.length = 0;
         folders.forEach(f => {
             const fsPath = uriToFsPath(f.uri);
+            workspaceRootPaths.push(fsPath);
             try {
                 indexTwinCatDirectory(index, fsPath);
                 indexStDirectory(fsPath, workspaceIndex);
@@ -253,6 +298,19 @@ connection.onRequest('custom/referencesForSymbol', (params) => {
     }
 });
 
+// References to a symbol inside the TwinCAT visualization files (.TcVIS/.TcVMO) — the other half of
+// a rename, since visu paths reference PLC symbols and a stale one breaks the XAE build. Takes the
+// same by-NAME spec as custom/referencesForSymbol; the visu files are discovered on demand by walking
+// the workspace roots (rename is rare, so no standing index is kept).
+connection.onRequest('custom/visuReferencesForSymbol', (params) => {
+    try {
+        const visuFiles = collectVisuFiles(workspaceRootPaths);
+        return findVisuReferencesForSymbol(params, workspaceIndex, visuFiles);
+    } catch (e) {
+        return { resolved: false, occurrences: [] };
+    }
+});
+
 connection.onRequest('custom/diagnostics', (params) => {
     try {
         syncDocument(params.code, params.fileUri);
@@ -333,8 +391,10 @@ connection.onRequest('custom/reindex', (params) => {
         clearStFileCache();
         const index = workspaceIndex;
         if (params.folders) {
+            workspaceRootPaths.length = 0;
             params.folders.forEach(f => {
                 const fsPath = uriToFsPath(f);
+                workspaceRootPaths.push(fsPath);
                 indexTwinCatDirectory(index, fsPath);
                 indexStDirectory(fsPath, workspaceIndex);
                 indexLibraries(fsPath);

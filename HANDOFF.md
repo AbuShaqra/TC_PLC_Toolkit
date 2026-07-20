@@ -48,6 +48,13 @@ logic is verified on real data + guard tests, but nobody has eyeballed the rende
   corruption); **sibling implementors of a shared interface are NOT in the reference set** (pairwise relation) —
   v1 limit, XAE flags them. `.st` rename = disk-only (never a `.plcproj` member anywhere in the codebase).
   References modal excludes the self-declaration via the response's separate `declaration` field.
+  **Visualizations** (user's smoke test caught the gap — XAE build broke): `.TcVIS`/`.TcVMO` reference PLC symbols
+  as quoted dotted paths (`<v n="BasicTypeNodeValue">"GVL_X.fb.member"</v>`, plus real ST in `STSnippet`); rename
+  scans them via `custom/visuReferencesForSymbol`. **Polarity flip is deliberate**: code-side keeps unresolvable
+  occurrences, visu-side renames ONLY chains that provably resolve through the type model (decoys share the same
+  shape: text-list ids `TL_*.X`, visu-lib names `VisuDialogs.*`) — an unproven visu edit corrupts the HMI. Both
+  visu formats carry a **UTF-8 BOM** the LSP must strip (VS Code documents exclude it → offsets shift by one).
+  Not scanned v1: alarm/recipe/OPC configs referencing symbols outside visu files.
 - **README.md** = public page (ships); **DEVELOPMENT.md** = build/test/architecture; CLAUDE/HANDOFF/DEVELOPMENT are
   `.vscodeignore`d. Package `npx @vscode/vsce package`. `scripts/` ships (the generator). Stale local branches
   `moe`/`native-editor` un-pushed.

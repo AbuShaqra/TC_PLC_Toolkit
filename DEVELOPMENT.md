@@ -54,6 +54,7 @@ per-suite without aborting on the first failure. The main ones:
 | `test/test_xml_rename.js` | Structural rename primitives in `xmlParser`: `renameComponentInXml` (tag Name attr + declaration header + LineIds, Ids kept), `renameVirtualFolderInXml` (folder tag + member FolderPath prefix rewrite), and the no-op-safety composition the rename command relies on (header already renamed by the reference pass → attr/LineIds still fixed, no corruption). |
 | `test/test_rename_engine.js` | `src/renameEngine.js`: mapping workspace reference positions (raw-ST-unit coords) back into CDATA splices — synthesized-line skips (action headers, `GET`/`SET`), the PROGRAM→FUNCTION_BLOCK raw-mode column skew, the never-write-a-mismatch guard, CRLF byte preservation. |
 | `test/test_references_for_symbol.js` | The LSP's by-symbol references entry point (`custom/referencesForSymbol`) that powers rename: FB/GVL/DUT roots (a GVL name never appears in its own ST text, so the position-based API cannot seed it), methods/properties/actions, the name-keyed-index identity guard, and index restoration after the scan. |
+| `test/test_visu_references.js` | The visu half of rename (`custom/visuReferencesForSymbol`): dotted symbol paths inside `.TcVIS`/`.TcVMO` (`GVL_X.fb.member`, embedded `STSnippet` code) are found only when the chain provably resolves to the renamed symbol — text-list ids, visu-library names and unresolvable prefixes are never touched. BOM/offset fidelity, plus a sample-project pass when `sample/` is present. |
 
 `test/run.js <substring>` filters to matching suites. `test/_baseline.js` holds the machine-dependent
 diagnostic baselines the sample gates assert against.
@@ -114,7 +115,8 @@ media/
 Three processes cooperate, with the extension host as the hub — **the webview never talks to the
 language server directly**. The extension bridges them over custom JSON-RPC requests
 (`custom/completions`, `custom/definition`, `custom/references`, `custom/referencesForSymbol`,
-`custom/diagnostics`, …) layered on the standard LSP transport (Node IPC).
+`custom/visuReferencesForSymbol`, `custom/diagnostics`, …) layered on the standard LSP transport
+(Node IPC).
 
 ### The live language-feature path
 

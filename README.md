@@ -54,9 +54,11 @@ Files, methods, properties, actions, transitions, disk folders and virtual folde
 renamed in place — the XML identity (tag name, declaration header, `LineIds`) and the `.plcproj`
 follow automatically, and internal Ids are kept so TwinCAT sees a rename, not a new object. If the
 symbol is referenced in code, a dialog offers the choice: **rename only**, or **rename and update
-every reference** across the project — call sites, instance declarations and qualified uses alike.
-Updates are applied conservatively: any occurrence that cannot be matched exactly is skipped and
-reported rather than guessed at.
+every reference** across the project — call sites, instance declarations and qualified uses alike,
+**including the symbol paths inside visualizations** (`.TcVIS`/`.TcVMO`), so the HMI keeps building.
+Updates are applied conservatively: a visualization path is only rewritten when it provably resolves
+to the renamed symbol through the project's types, and any occurrence that cannot be matched exactly
+is skipped and reported rather than guessed at.
 
 ### TwinCAT Libraries explorer
 
