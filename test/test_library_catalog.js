@@ -37,7 +37,15 @@ const {
     getLibraryNamespaces,
     clearLibraryNamespaces
 } = require('../src/lsp/libraries');
-const { SAMPLE_DIR, indexSampleLibraries, printBaselineMode } = require('./_baseline');
+const {
+    SAMPLE_DIR,
+    MIT_NAMESPACE,
+    MIT_SYMBOL_COUNT,
+    indexSampleLibraries,
+    printBaselineMode,
+    sampleArchiveFixtures,
+    skipBeckhoff
+} = require('./_baseline');
 
 let errors = 0;
 function assert(cond, msg) {
@@ -123,11 +131,16 @@ try {
     } else {
         const modeInfo = indexSampleLibraries(SAMPLE_DIR);
         printBaselineMode(modeInfo);
+        const fixtures = sampleArchiveFixtures(SAMPLE_DIR);
 
         const catalog = getLibraryCatalog();
-        console.log('=== 2. the sample .plcproj\'s 3 references ===');
-        assert(catalog.length === 3,
-            `one entry per reference block: 3 placeholders, 0 pinned = 3 (got ${catalog.length})`);
+        console.log('=== 2. the sample .plcproj\'s 4 references ===');
+        // The catalog is built from the .plcproj, which is COMMITTED — so its SHAPE (how many entries,
+        // and each entry's include/title/version/company/namespace) is identical on a developer machine
+        // and on CI. Only the archive-derived fields (symbolCount, §5) depend on which binaries are
+        // present. Assertions are split along exactly that line.
+        assert(catalog.length === 4,
+            `one entry per reference block: 4 placeholders, 0 pinned = 4 (got ${catalog.length})`);
 
         // Sorted by namespace, case-insensitively — the view shows them in this order.
         const namespaces = catalog.map(e => e.namespace);
@@ -136,14 +149,20 @@ try {
             'the catalog is sorted by namespace, case-insensitively');
 
         // ---- 3. Each reference splits into its three name forms ---------------------------------
-        // COVERAGE NOTE. The three-names-differ case this view exists for — "Balluff BVS Sensor" /
-        // "Balluff Sesnor Library TC3" / Balluff_BVS_Sensor, and "RecipeManagement" / "Recipe
-        // Management" / Recipe_Management — came from the customer project and has no counterpart in
-        // the synthetic sample, whose three Beckhoff libraries spell all three names identically.
-        // §1 above still asserts the splitting on a synthetic .plcproj that DOES carry the mismatch,
-        // so the parsing is guarded; what is lost here is only the on-real-data confirmation. Restore
-        // these assertions when a library reference with differing names lands in the sample.
+        // The three-names-differ case this view exists for is back on real data, and committed: the
+        // sample's TwinCAT Dynamic Collections reference spells the Include ("TwinCat Dynamic
+        // Collections") and the Namespace (TcDynCollections) differently, which is precisely the
+        // lookup a programmer cannot perform by eye. Its archive is MIT-licensed and therefore
+        // committed, but nothing in this section reads it — the names come from the .plcproj, so
+        // these assertions hold on CI too. (The three Beckhoff references spell all three forms
+        // identically, so they cover the degenerate case only.)
         console.log('\n=== 3. reference -> include / title / version / company ===');
+
+        const dyn = byNamespace(catalog, MIT_NAMESPACE);
+        assert(!!dyn && dyn.kind === 'placeholder' && dyn.include === 'TwinCat Dynamic Collections' &&
+            dyn.title === 'TwinCat Dynamic Collections' && dyn.company === 'FisoThemes',
+            `${MIT_NAMESPACE}: the namespace differs from the Include/title, and all three are kept apart ` +
+            `(${dyn ? dyn.include + ' / ' + dyn.title + ' / ' + dyn.company : 'MISSING'})`);
 
         for (const ns of ['Tc2_Standard', 'Tc2_System', 'Tc3_Module']) {
             const e = byNamespace(catalog, ns);
@@ -174,24 +193,44 @@ try {
             `(missing: ${missing.join(', ') || 'none'})`);
 
         // ---- 5. Symbol counts, from the archives ------------------------------------------------
-        // symbolCount comes from the .compiled-library string tables, so this section needs the
-        // archives. TwinCAT copies them into the project, but they are Beckhoff binaries and therefore
-        // git-ignored — absent on CI and on any fresh clone, where the catalogue is correctly built
-        // from the .plcproj alone and every symbolCount is legitimately 0. Gate on what is actually
-        // required rather than asserting a fixture that is deliberately not committed.
+        // symbolCount comes from a `.compiled-library` string table, so this is the section that
+        // genuinely needs an archive on disk. One of the four IS committed — TwinCAT Dynamic
+        // Collections is MIT-licensed — so the title->archive->symbols mapping is testable everywhere;
+        // the three Beckhoff archives are vendor binaries and git-ignored, and on CI their entries
+        // legitimately report 0. Assert the committed one, gate the rest.
         console.log('\n=== 5. symbols beneath a library ===');
 
-        if (modeInfo.archives === 0) {
-            console.log('    [skip] no library archives present (git-ignored vendor binaries) — nothing to count.');
+        catalog.forEach(e => console.log(`    ${e.namespace.padEnd(18)} ${e.symbolCount} archive symbol(s)`));
+
+        if (!fixtures.hasMit) {
+            // Not a normal state: the archive is committed, so its absence means the working copy was
+            // pruned by hand. Say so rather than passing quietly.
+            console.log('    [skip] the committed MIT archive is missing from this working copy — ' +
+                'restore sample/**/_Libraries/fisothemes/.');
         } else {
-            catalog.forEach(e => console.log(`    ${e.namespace.padEnd(14)} ${e.symbolCount} archive symbol(s)`));
-            // Measured 2026-07-20: Tc2_Standard 313, Tc2_System 1293, Tc3_Module 461. Exact per-library
-            // counts are a property of the vendor archives (they change with the library version), so what
-            // is asserted is that every declared library resolved to an archive and none came back empty —
-            // which is what a broken title->archive mapping would show up as.
+            // Measured 2026-07-20 with harvestArchive() over the committed tcdyncollections.library
+            // (v1.0.7). The archive is committed at a fixed version, so this is an exact ratchet on the
+            // ZIP reader + string-table decoder rather than a machine-dependent number: if a future
+            // change silently drops a string-table region, this moves.
+            const mit = byNamespace(catalog, MIT_NAMESPACE);
+            assert(!!mit && mit.symbolCount === MIT_SYMBOL_COUNT,
+                `${MIT_NAMESPACE} resolves through its differing title to the committed archive: ` +
+                `${MIT_SYMBOL_COUNT} symbols (got ${mit ? mit.symbolCount : 'MISSING'})`);
+        }
+
+        // BONUS COVERAGE (developer machine only). "No catalogued library came back empty" is what a
+        // broken title->archive mapping shows up as, but it can only be asserted when every declared
+        // library HAS an archive — on CI three of the four deliberately do not. Exact per-library
+        // counts stay unasserted even here: they are a property of the vendor archive version.
+        // Measured 2026-07-20: Tc2_Standard 313, Tc2_System 1293, Tc3_Module 461, TcDynCollections 479.
+        if (!fixtures.hasBeckhoff) {
+            skipBeckhoff('every-library-resolved check');
+        } else {
             const uncounted = catalog.filter(e => e.symbolCount === 0).map(e => e.namespace);
             assert(uncounted.length === 0,
                 `every catalogued library resolved to an archive with symbols (empty: ${uncounted.join(', ') || 'none'})`);
+            assert(modeInfo.archives === 4,
+                `all 4 archives decoded — 3 Beckhoff + 1 MIT (got ${modeInfo.archives})`);
         }
 
         // ---- 6. Types beneath a library (needs the .tmc) ----------------------------------------

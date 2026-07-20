@@ -174,6 +174,116 @@ function syncDocument(index, stText, fileUri) {
     registerLibrarySymbolNodes(index, stText);
 }
 
+// ---------------------------------------------------------------------------------------------
+// Which library archives this checkout actually has
+// ---------------------------------------------------------------------------------------------
+//
+// `_Libraries/` holds archives from two sources, and only one of them is committed:
+//
+//   fisothemes/twincat dynamic collections/  TwinCAT Dynamic Collections, MIT-licensed, so it CAN
+//                                            be redistributed. sample/.gitignore negates exactly
+//                                            this directory => present on CI and on a fresh clone.
+//   Beckhoff Automation GmbH/                Tc2_Standard, Tc2_System, Tc3_Module. Vendor binaries,
+//                                            git-ignored => present ONLY where TwinCAT copied them.
+//
+// The `.plcproj` references all four, and namespaces come from the `.plcproj`, so namespace-level
+// facts (4 namespaces, their include/title/company splits, the catalog shape) hold in BOTH
+// configurations. Only archive-derived facts — symbol names, symbol counts, per-namespace
+// attribution — differ. Harnesses therefore assert on what is committed and gate the rest on
+// `hasBeckhoff`, so a developer machine keeps the extra coverage without CI failing for lacking it.
+
+/** The git-ignored vendor directory, named exactly as TwinCAT creates it. */
+const BECKHOFF_VENDOR_DIR = 'Beckhoff Automation GmbH';
+
+/** The committed MIT archive's namespace, as the sample `.plcproj` declares it. */
+const MIT_NAMESPACE = 'TcDynCollections';
+
+/**
+ * Distinct identifier-shaped names the committed MIT archive harvests to. Measured 2026-07-20 by
+ * running `harvestArchive()` over `tcdyncollections.library` (v1.0.7) — the archive is committed at
+ * a fixed version, so this is a reproducible ratchet on the decoder, not a machine-dependent number.
+ */
+const MIT_SYMBOL_COUNT = 479;
+
+/** Archive extensions the harvester reads. `.compiled-library-v3` is opaque and deliberately absent. */
+const ARCHIVE_RE = /\.(compiled-library|compiled-library-ge33|library)$/i;
+
+/**
+ * Finds the `_Libraries` folder under a sample project, or null.
+ * @param {string} dir Directory to search.
+ * @param {number} [depth] Recursion depth guard.
+ * @returns {string|null} Absolute path, or null when there is none.
+ */
+function findLibrariesDir(dir, depth = 0) {
+    if (depth > 3 || !fs.existsSync(dir)) return null;
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        if (!entry.isDirectory()) continue;
+        if (entry.name.toLowerCase() === '_libraries') return path.join(dir, entry.name);
+        const hit = findLibrariesDir(path.join(dir, entry.name), depth + 1);
+        if (hit) return hit;
+    }
+    return null;
+}
+
+/**
+ * Collects every readable library archive beneath a directory.
+ * @param {string} dir Directory to walk.
+ * @param {string[]} [out] Accumulator.
+ * @returns {string[]} Absolute archive paths.
+ */
+function collectArchives(dir, out = []) {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) collectArchives(full, out);
+        else if (ARCHIVE_RE.test(entry.name)) out.push(full);
+    }
+    return out;
+}
+
+/**
+ * @typedef {Object} ArchiveFixtures
+ * @property {string|null} librariesDir The sample's `_Libraries` folder, or null.
+ * @property {string[]} archives Every readable archive found beneath it.
+ * @property {boolean} hasMit The committed MIT archive is present (it always should be).
+ * @property {string|null} mitArchive Absolute path to the MIT archive, or null.
+ * @property {boolean} hasBeckhoff The git-ignored Beckhoff archives are present.
+ */
+
+/**
+ * Reports which library archives this checkout has, so harnesses can assert on the committed one and
+ * gate Beckhoff-only coverage instead of failing on CI. Detected from the filesystem rather than
+ * from the harvester's own output — a gate must not be decided by the code under test.
+ * @param {string} [sampleDir] Sample project root. Defaults to SAMPLE_DIR.
+ * @returns {ArchiveFixtures} What is present.
+ */
+function sampleArchiveFixtures(sampleDir = SAMPLE_DIR) {
+    const librariesDir = findLibrariesDir(sampleDir);
+    if (!librariesDir) {
+        return { librariesDir: null, archives: [], hasMit: false, mitArchive: null, hasBeckhoff: false };
+    }
+    const archives = collectArchives(librariesDir);
+    const mitArchive = archives.find(p => /tcdyncollections/i.test(path.basename(p))) || null;
+    const beckhoffSegment = path.sep + BECKHOFF_VENDOR_DIR.toLowerCase() + path.sep;
+    return {
+        librariesDir,
+        archives,
+        hasMit: !!mitArchive,
+        mitArchive,
+        hasBeckhoff: archives.some(p => p.toLowerCase().includes(beckhoffSegment))
+    };
+}
+
+/**
+ * Prints the one-line explanation that goes with a skipped Beckhoff-only section, so a reduced run
+ * never looks like a passing one.
+ * @param {string} what The coverage being skipped.
+ */
+function skipBeckhoff(what) {
+    console.log(`    [skip] ${what} — the Beckhoff archives (Tc2_Standard / Tc2_System / Tc3_Module)`);
+    console.log('           are git-ignored vendor binaries, absent on CI and on a fresh clone. This is');
+    console.log('           bonus coverage on a machine where TwinCAT has copied them in.');
+}
+
 /**
  * Collects every TwinCAT source object under a directory. `_Libraries` holds vendor binaries, not
  * source, and is skipped.
@@ -199,8 +309,14 @@ module.exports = {
     BASELINES,
     BASELINE_WITH_LIBRARIES,
     BASELINE_WITHOUT_LIBRARIES,
+    BECKHOFF_VENDOR_DIR,
+    MIT_NAMESPACE,
+    MIT_SYMBOL_COUNT,
     indexSampleLibraries,
     printBaselineMode,
+    findLibrariesDir,
+    sampleArchiveFixtures,
+    skipBeckhoff,
     syncDocument,
     walkTwinCatFiles
 };

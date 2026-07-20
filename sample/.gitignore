@@ -13,15 +13,25 @@
 # customer or vendor content, safe to publish. It is the ground truth for the diagnostics ratchet —
 # correct code, so any diagnostic reported on it is a bug.
 !.gitignore
+!README.md
 !TcToolkitSample/
 !TcToolkitSample/**
 
 # VENDOR BINARIES — never committed. TwinCAT copies the referenced Beckhoff libraries into the
 # project when it creates one (Tc2_Standard, Tc2_System, Tc3_Module). The .plcproj still REFERENCES
 # them, which is what the namespace indexer reads; the archives themselves are Beckhoff's to
-# distribute, not ours. Phase 3 adds our own SYNTHETIC archives, which are committed and are not
-# matched by this rule (they live under a different project root).
-TcToolkitSample/**/_Libraries/
+# distribute, not ours.
+#
+# Note this excludes the _Libraries CONTENTS, not the directory itself: git never descends into an
+# excluded directory, so a `_Libraries/` rule would make the fisothemes negation below unreachable.
+TcToolkitSample/**/_Libraries/*
+
+# ...with ONE exception: TwinCAT Dynamic Collections is MIT-licensed, so it CAN be redistributed.
+# Committing it is what lets the library-symbol harnesses actually run on CI and on a fresh clone
+# instead of skipping — without it there is no readable archive anywhere in the tree. Provenance and
+# attribution are recorded in sample/README.md; keep this negation narrow, one archive only.
+!TcToolkitSample/**/_Libraries/fisothemes/
+!TcToolkitSample/**/_Libraries/fisothemes/**
 
 # Build artefacts, IDE state and TwinCAT's own backups: large, derived, read by no harness. TwinCAT
 # recreates them on build; the extension recreates ST_Files on "Generate ST".
