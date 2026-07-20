@@ -4,9 +4,10 @@ Where the work *stands*. Read before starting; keep current (handoff rule in [CL
 100 lines — prune finished items rather than appending, but never drop a real finding to hit it. **Shipped features
 live in git history (PRs/commits); this file keeps the findings that would cost to re-derive.**
 
-**Last verified:** 2026-07-16 — `npm test` green (39 harnesses), **0 diagnostics on the sample**. Shipped: **0.2.1**
-(PRs #1–#13; 0.1.0 renumbered from 0.4.2 for the fresh public repo; #11 re-shipped 0.2.0 by decision). In flight:
-**0.3.0 rename feature on `feat/rename-objects`** — implemented + gated, awaiting the user's dev-host smoke before merge.
+**Last verified:** 2026-07-20 — `npm test` green (41 harnesses), **0 diagnostics on the sample**. Shipped: **0.3.0**
+(PRs #1–#14; 0.1.0 renumbered from 0.4.2 for the fresh public repo; #11 re-shipped 0.2.0 by decision). 0.3.0 =
+reference-aware rename (objects, members, folders, virtual folders) incl. visualizations; **user smoke-tested it on the
+real project and XAE built cleanly** — packaged + installed.
 **Not yet visually confirmed by the user:** the 0.1.3 library grouping and 0.1.4 member expansion in the tree UI —
 logic is verified on real data + guard tests, but nobody has eyeballed the rendered tree. Worth doing.
 
