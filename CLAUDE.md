@@ -55,7 +55,7 @@ npx @vscode/vsce package --allow-missing-repository --skip-license
 
 Manual testing: open this repo in VS Code, press **F5** ("Run Extension") to launch an Extension Development Host, open a TwinCAT project folder there. After code changes, **Ctrl+R** in the dev-host window to reload.
 
-The suite lives in `test/` (run by `test/run.js`, which runs each harness in its own process and reports per-suite without aborting on the first failure). Sample-based harnesses need a TwinCAT project under `sample/` (git-ignored); they skip cleanly if it is absent — so `npm test` is green on a fresh clone / CI. `scratch/` holds experimental probes and extra harnesses NOT in the suite (`test_lsp_parser.js`, `test_lsp_types_sync.js`, `test_method_diagnostics.js`), plus utilities (`make_icon.js`). CI (`.github/workflows/ci.yml`) runs `npm run typecheck` then `npm test` on every push/PR to `main`.
+The suite lives in `test/` (run by `test/run.js`, which runs each harness in its own process and reports per-suite without aborting on the first failure). Sample-based harnesses need a TwinCAT project under `sample/` (git-ignored); they skip cleanly if it is absent — so `npm test` is green on a fresh clone / CI, but **REDUCED**: the runner says so explicitly and lists the gates that did not run. Use `REQUIRE_FULL_SUITE=1 npm test` to make a degraded run fail instead. `scratch/` holds experimental probes and extra harnesses NOT in the suite (`test_lsp_parser.js`, `test_lsp_types_sync.js`, `test_method_diagnostics.js`), plus utilities (`make_icon.js`). CI (`.github/workflows/ci.yml`) runs `npm run typecheck` then `npm test` on every push/PR to `main`.
 
 ## Architecture
 
@@ -73,7 +73,7 @@ Language features on a pane can't be answered from that pane alone — methods/p
 2. Converts the whole file into **one Structured Text compilation unit** via `src/stConverter.js` in `raw` mode, which also returns a `lineMap` (component → decl/impl line ranges in the unit).
 3. Translates pane-local Monaco positions to absolute unit positions (`localToAbsolute`), queries the LSP, and maps results back to the right component/pane (`absoluteToLocal`).
 
-Changing `stConverter.js` output or `xmlParser.js` component extraction can silently break this mapping — `scratch/test_live_path.js` guards it.
+Changing `stConverter.js` output or `xmlParser.js` component extraction can silently break this mapping — `test/test_live_path.js` guards it.
 
 ### Other key pieces
 
@@ -85,7 +85,7 @@ Changing `stConverter.js` output or `xmlParser.js` component extraction can sile
 
 ## Design constraints
 
-- **Diagnostics are conservative by design**: anything that cannot be fully resolved must never be flagged. `sample/` is a real, *correct* TwinCAT project — **it is the ground truth, so every diagnostic on it is a bug.** It currently sits at **zero**, and `scratch/test_sample_diagnostics.js` / `test_typecheck.js` ratchet that: they fail if the count rises. New checks must hold the line at zero.
+- **Diagnostics are conservative by design**: anything that cannot be fully resolved must never be flagged. `sample/` is a real, *correct* TwinCAT project — **it is the ground truth, so every diagnostic on it is a bug.** It currently sits at **zero**, and `test/test_sample_diagnostics.js` / `test/test_typecheck.js` ratchet that: they fail if the count rises. New checks must hold the line at zero. **These gates cannot run on CI** (`sample/` is git-ignored), so a green CI never proves the ratchet held — `test/run.js` labels such runs REDUCED, and `REQUIRE_FULL_SUITE=1` makes a degraded run a hard failure. Verify locally before packaging a release.
 - **External symbols are indexed, not guessed** (`src/lsp/libsymbols.js`). Three sources, and all three are needed — dropping any one resurrects false positives:
   - `.compiled-library` / `.compiled-library-ge33` / `.library` — ZIP containers; symbol names live in a `__shared_data_storage_string_table__` entry. **`.compiled-library-v3` is an opaque non-ZIP format** (magic `10 a6 d5 a7`) and is deliberately skipped.
   - the project's **`.tmc`** (TwinCAT type system export, plain XML). Not optional: some types the project resolves appear in *no* readable archive.

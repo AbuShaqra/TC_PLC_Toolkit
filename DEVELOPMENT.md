@@ -35,7 +35,27 @@ npm test                     # run the whole suite via test/run.js
 node test/run.js references   # run only suites whose name matches a substring
 node test/test_live_path.js   # run a single harness directly
 npm run typecheck             # type-check gate: tsc --noEmit (no emit — runtime stays plain JS)
+
+REQUIRE_FULL_SUITE=1 npm test # fail unless the full-run fixtures are present (see below)
 ```
+
+### Full vs reduced runs — read this before trusting a green suite
+
+`sample/`, `sample/**/_Libraries` and the project `.tmc` are git-ignored, so a fresh clone and CI do
+not have them. The harnesses that need them **skip themselves and still report "passed"** — which
+means a green run can silently omit the diagnostics ratchet and the live-path guard, the two gates
+this project leans on hardest. Measured: CI executes ~951 assertions in ~4 s; a full local run
+executes ~1121 in ~25 s.
+
+`test/run.js` therefore classifies every run and prints it in the summary:
+
+- **FULL** — sample project, library archives and `.tmc` all present. This is the only run that
+  proves the ratchet held.
+- **REDUCED** — lists exactly which fixtures are missing and what that means, and labels the final
+  line `(reduced coverage)`.
+
+`REQUIRE_FULL_SUITE=1` turns a reduced run into a hard failure before any suite executes. Use it
+before packaging a release, so a degraded run can never be mistaken for a clean gate.
 
 `npm test` runs `node test/run.js`, which runs each harness in `test/` in its own process and reports
 per-suite without aborting on the first failure. The main ones:
@@ -67,7 +87,11 @@ the individual tests that address specific sample objects when the sample at han
 A few experimental probes live in `scratch/` outside `npm test`: `test_lsp_parser.js`,
 `test_lsp_types_sync.js`, `test_method_diagnostics.js` (plus `make_icon.js`, `probe_lib_format.js`).
 
-CI (`.github/workflows/ci.yml`) runs `npm run typecheck` then `npm test` on every push/PR to `main`.
+CI (`.github/workflows/ci.yml`) runs `npm run typecheck`, then `npm test`, then a **VSIX build check**
+(`vsce package`) on every push/PR to `main` — packaging is otherwise only exercised by hand at release
+time, where a broken manifest or `.vscodeignore` would surface far too late. Runs are Windows-only (the
+platform users are on), superseded runs are cancelled, and the token is read-only. **CI is always a
+REDUCED run** — see the section above.
 
 **`sample/` is ground truth.** It is a real, *correct* TwinCAT project, so every diagnostic reported
 on it is a bug. Never fix a red gate by raising the baseline.

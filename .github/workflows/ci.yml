@@ -6,6 +6,15 @@ on:
   pull_request:
     branches: [main]
 
+# This workflow only reads the repo — no publishing, no issue/PR writes.
+permissions:
+  contents: read
+
+# A new push to the same branch/PR supersedes the previous run; nothing here is worth finishing twice.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     # TwinCAT (and the DTE-driven library-definitions feature) is Windows-only, and the LSP's
@@ -29,5 +38,16 @@ jobs:
 
       # sample/ is git-ignored (customer/vendor content), so it is absent on CI. The sample-based
       # harnesses detect that and skip cleanly; every other suite runs.
+      #
+      # This run is therefore REDUCED, and deliberately so: the diagnostics ratchet and the live-path
+      # guard cannot execute here. test/run.js prints which gates were skipped and labels the summary,
+      # so a green badge is never mistaken for "the ratchet held" — that is proved only by a local run
+      # with the fixtures present (REQUIRE_FULL_SUITE=1 enforces it).
       - name: Test
         run: npm test
+
+      # Packaging is otherwise only exercised by hand at release time, where a broken manifest,
+      # .vscodeignore or engines constraint would surface far too late. Building the VSIX here keeps
+      # that failure on the PR instead. The flags match the documented release command.
+      - name: Package (VSIX build check)
+        run: npx @vscode/vsce package --allow-missing-repository --skip-license
