@@ -1,0 +1,204 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <POU Name="FB_Station" Id="{ba9b86f0-e4ae-49bd-8d10-d23550802ca5}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_Station IMPLEMENTS I_Station
+VAR
+	refCylinder	: REFERENCE TO FB_Cylinder;
+	_eState		: E_StationState;
+	_eCommand	: E_Command;
+	_stStatus	: ST_StationStatus;
+	_stRecipe	: ST_Recipe;
+	_uWord		: U_Word;
+	_sIdent		: T_Ident;
+	_nErrorId	: UDINT;
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[Cyclic();]]></ST>
+    </Implementation>
+    <Folder Name="Actions" Id="{e81da3d1-8551-49cc-bce9-534df56315e3}" />
+    <Method Name="Cyclic" Id="{d83d5f63-b782-429a-b4e4-1fd8aac79cdb}">
+      <Declaration><![CDATA[METHOD Cyclic
+VAR
+	bExtended	: BOOL;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[bExtended := refCylinder.bIsExtended;
+
+CASE _eState OF
+	E_StationState.Idle:
+		IF _eCommand = E_Command.Start THEN
+			_eState := E_StationState.Running;
+		END_IF
+
+	E_StationState.Running:
+		IF bExtended THEN
+			refCylinder.Retract();
+		ELSE
+			refCylinder.Extend();
+		END_IF
+		IF _nErrorId <> 0 THEN
+			_eState := E_StationState.Error;
+		END_IF
+
+	E_StationState.Error:
+		_stStatus.bError := TRUE;
+
+	E_StationState.Done:
+		_stStatus.bDone := TRUE;
+END_CASE
+
+_stStatus.eState := _eState;
+_stStatus.nErrorId := _nErrorId;
+_uWord.nWord := _stRecipe.aSteps[1];]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="Execute" Id="{e043de6a-b3b7-4a09-ac5a-903c66262592}">
+      <Declaration><![CDATA[METHOD Execute : BOOL
+VAR
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IF _eState = E_StationState.Idle THEN
+	_eCommand := E_Command.Start;
+	_stStatus.bBusy := TRUE;
+	Execute := TRUE;
+ELSE
+	Execute := FALSE;
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="Reset" Id="{ed197d53-3022-4f16-b73a-835f98c1ee8e}">
+      <Declaration><![CDATA[METHOD Reset : BOOL
+VAR
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[_eState := E_StationState.Idle;
+_eCommand := E_Command.None;
+_nErrorId := 0;
+_stStatus.bBusy := FALSE;
+_stStatus.bDone := FALSE;
+_stStatus.bError := FALSE;
+_stStatus.nErrorId := 0;
+Reset := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+    <Property Name="State" Id="{0eea66ef-e1f3-405c-94a3-a03642077656}">
+      <Declaration><![CDATA[PROPERTY State : E_StationState
+]]></Declaration>
+      <Get Name="Get" Id="{63d057f4-2d32-45db-b11c-a1f12b0dc2aa}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[State := _eState;]]></ST>
+        </Implementation>
+      </Get>
+      <Set Name="Set" Id="{7a80d7e3-ea77-4397-819a-703c291690f4}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[_eState := State;]]></ST>
+        </Implementation>
+      </Set>
+    </Property>
+    <Property Name="ErrorId" Id="{0ad169ae-eccd-45ee-a91a-5754a2bb9e70}">
+      <Declaration><![CDATA[PROPERTY ErrorId : UDINT
+]]></Declaration>
+      <Get Name="Get" Id="{64495b07-7473-4b43-adda-99b867e3bb91}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[ErrorId := _nErrorId;]]></ST>
+        </Implementation>
+      </Get>
+    </Property>
+    <Action Name="Act_Home" Id="{9d93a169-23da-4f6b-95a9-7d944e47a546}" FolderPath="Actions\">
+      <Implementation>
+        <ST><![CDATA[refCylinder REF= GVL_System.fbCylinder;
+refCylinder.Retract();
+_eState := E_StationState.Idle;
+_sIdent := 'STATION-01';]]></ST>
+      </Implementation>
+    </Action>
+    <Transition Name="Tr_Ready" Id="{634df247-0523-41ec-8220-3e9f3d73a16e}">
+      <Implementation>
+        <ST><![CDATA[Tr_Ready := (_eState = E_StationState.Done);]]></ST>
+      </Implementation>
+    </Transition>
+    <LineIds Name="FB_Station">
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_Station.Cyclic">
+      <LineId Id="2" Count="0" />
+      <LineId Id="3" Count="0" />
+      <LineId Id="4" Count="0" />
+      <LineId Id="5" Count="0" />
+      <LineId Id="6" Count="0" />
+      <LineId Id="7" Count="0" />
+      <LineId Id="8" Count="0" />
+      <LineId Id="9" Count="0" />
+      <LineId Id="10" Count="0" />
+      <LineId Id="11" Count="0" />
+      <LineId Id="12" Count="0" />
+      <LineId Id="13" Count="0" />
+      <LineId Id="14" Count="0" />
+      <LineId Id="15" Count="0" />
+      <LineId Id="16" Count="0" />
+      <LineId Id="17" Count="0" />
+      <LineId Id="18" Count="0" />
+      <LineId Id="19" Count="0" />
+      <LineId Id="20" Count="0" />
+      <LineId Id="21" Count="0" />
+      <LineId Id="22" Count="0" />
+      <LineId Id="23" Count="0" />
+      <LineId Id="24" Count="0" />
+      <LineId Id="25" Count="0" />
+      <LineId Id="26" Count="0" />
+      <LineId Id="27" Count="0" />
+      <LineId Id="28" Count="0" />
+      <LineId Id="29" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_Station.Execute">
+      <LineId Id="30" Count="0" />
+      <LineId Id="31" Count="0" />
+      <LineId Id="32" Count="0" />
+      <LineId Id="33" Count="0" />
+      <LineId Id="34" Count="0" />
+      <LineId Id="35" Count="0" />
+      <LineId Id="36" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_Station.Reset">
+      <LineId Id="37" Count="0" />
+      <LineId Id="38" Count="0" />
+      <LineId Id="39" Count="0" />
+      <LineId Id="40" Count="0" />
+      <LineId Id="41" Count="0" />
+      <LineId Id="42" Count="0" />
+      <LineId Id="43" Count="0" />
+      <LineId Id="44" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_Station.State.Get">
+      <LineId Id="45" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_Station.State.Set">
+      <LineId Id="46" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_Station.ErrorId.Get">
+      <LineId Id="47" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_Station.Act_Home">
+      <LineId Id="48" Count="0" />
+      <LineId Id="49" Count="0" />
+      <LineId Id="50" Count="0" />
+      <LineId Id="51" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_Station.Tr_Ready">
+      <LineId Id="52" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

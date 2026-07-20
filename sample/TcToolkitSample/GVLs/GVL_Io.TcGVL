@@ -1,0 +1,10 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <GVL Name="GVL_Io" Id="{faa519e5-c2ff-4a02-a971-afe20ee2bc8e}">
+    <Declaration><![CDATA[{attribute 'qualified_only'}
+VAR_GLOBAL
+	bExtendOut, bRetractOut, bSensorExtended, bSensorRetracted : BOOL;
+END_VAR
+]]></Declaration>
+  </GVL>
+</TcPlcObject>

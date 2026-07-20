@@ -548,8 +548,23 @@ try { fs.rmdirSync(TEST_DIR); } catch (e) { /* best effort */ }
 console.log('\n========== PART 2: real sample project ==========');
 
 const SAMPLE_DIR = path.join(__dirname, '..', 'sample');
-if (!fs.existsSync(SAMPLE_DIR)) {
-    console.log('sample/ project not present — skipping Part 2.');
+// Gated on the sample actually containing configuration objects, not on sample/ merely existing —
+// the synthetic sample has none until the config-object fixtures land, and Part 2 is entirely about
+// what those files contain.
+const sampleHasConfigObjects = fs.existsSync(SAMPLE_DIR)
+    && (function has(dir) {
+        for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+            if (entry.isDirectory()) {
+                if (entry.name === '_Libraries') continue;
+                if (has(path.join(dir, entry.name))) return true;
+            } else if (/\.(tcvis|tcvmo|tctlo|tcgtlo|tctto)$/i.test(entry.name)) {
+                return true;
+            }
+        }
+        return false;
+    })(SAMPLE_DIR);
+if (!sampleHasConfigObjects) {
+    console.log('sample/ has no configuration objects — skipping Part 2.');
 } else {
     // Index the whole sample the way server.js does its workspace scan.
     const { indexSampleLibraries } = require('./_baseline');

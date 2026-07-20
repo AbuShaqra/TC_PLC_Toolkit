@@ -1,0 +1,30 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <POU Name="FB_StationDerived" Id="{422bf86d-f1ab-4f87-bbf0-86131e211494}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_StationDerived EXTENDS FB_Station
+VAR
+	_nCycles	: UDINT;
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[Cyclic();]]></ST>
+    </Implementation>
+    <Method Name="Cyclic" Id="{e30c34e9-e1d4-4431-939a-4aa6099d30a5}">
+      <Declaration><![CDATA[METHOD Cyclic
+VAR
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[SUPER^.Cyclic();
+_nCycles := _nCycles + 1;]]></ST>
+      </Implementation>
+    </Method>
+    <LineIds Name="FB_StationDerived">
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_StationDerived.Cyclic">
+      <LineId Id="2" Count="0" />
+      <LineId Id="3" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

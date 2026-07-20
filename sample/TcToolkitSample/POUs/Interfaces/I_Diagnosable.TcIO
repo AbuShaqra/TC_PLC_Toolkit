@@ -1,0 +1,14 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <Itf Name="I_Diagnosable" Id="{44f24c7f-e41c-459d-bbef-03726f4cb7f7}">
+    <Declaration><![CDATA[INTERFACE I_Diagnosable
+]]></Declaration>
+    <Property Name="ErrorId" Id="{1d33b91d-7479-4e10-b98e-7913ca5214a4}">
+      <Declaration><![CDATA[PROPERTY ErrorId : UDINT
+]]></Declaration>
+      <Get Name="Get" Id="{09629565-e2b2-4ba6-914c-8ce06412ee33}">
+        <Declaration><![CDATA[]]></Declaration>
+      </Get>
+    </Property>
+  </Itf>
+</TcPlcObject>

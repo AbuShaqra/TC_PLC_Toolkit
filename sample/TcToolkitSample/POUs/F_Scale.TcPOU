@@ -1,0 +1,31 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <POU Name="F_Scale" Id="{9a2bb560-2765-4b4b-b0ec-dc3c3c81d343}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION F_Scale : LREAL
+VAR_INPUT
+	fValue, fMin, fMax	: LREAL;
+END_VAR
+VAR
+	fSpan	: LREAL;
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[fSpan := fMax - fMin;
+
+IF fSpan = 0 THEN
+	F_Scale := 0;
+ELSE
+	F_Scale := (fValue - fMin) / fSpan;
+END_IF]]></ST>
+    </Implementation>
+    <LineIds Name="F_Scale">
+      <LineId Id="1" Count="0" />
+      <LineId Id="2" Count="0" />
+      <LineId Id="3" Count="0" />
+      <LineId Id="4" Count="0" />
+      <LineId Id="5" Count="0" />
+      <LineId Id="6" Count="0" />
+      <LineId Id="7" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

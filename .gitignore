@@ -3,10 +3,16 @@ node_modules/
 *.log
 .DS_Store
 
-# Local test fixtures for the sample-based harnesses. Never committed: holds
-# third-party library binaries and project sources that must not be
-# redistributed. Keep it locally; the harnesses skip if it is absent.
-sample/
+# The sample project the harnesses gate on. `sample/TcToolkitSample/` is WHOLLY SYNTHETIC — written
+# by scripts/build-sample-project.js, no customer or vendor content — and IS committed, so CI can run
+# the diagnostics ratchet and the live-path guard instead of skipping them.
+#
+# Anything else under sample/ is a local, private project and must never be committed: exclude the
+# directory's other contents, then re-admit the synthetic one. Note a plain `sample/` exclusion cannot
+# work here — git does not descend into an excluded directory, so no negation inside it can ever fire.
+sample/*
+!sample/.gitignore
+!sample/TcToolkitSample/
 
 # Stale LSP index cache — may embed local source paths. Never commit.
 .trust-lsp/

@@ -16,6 +16,7 @@ node_modules/@types/**
 scripts/build-vsix.sh
 scripts/run-build.bat
 scripts/install-vsix.bat
+scripts/build-sample-project.js
 CLAUDE.md
 HANDOFF.md
 DEVELOPMENT.md
