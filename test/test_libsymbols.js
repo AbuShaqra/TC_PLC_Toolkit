@@ -413,15 +413,27 @@ if (!librariesDir) {
         assert.strictEqual(stats.failed, 0, `${stats.failed} archive(s) failed to decode`);
     });
 
-    check('the symbols the sample project actually uses are harvested', () => {
-        // The identifiers the undeclared-identifier check flagged before this feature existed.
+    check('the symbols the sample project\'s libraries declare are harvested', () => {
+        // Discovered by running the harvester over the sample's three archives and reading the
+        // registry back (2026-07-20) — not guessed. Deliberately spread across all three libraries
+        // and across symbol shapes (FB, struct, enum, alias, function, constant), so a decoder that
+        // silently drops one archive or one string-table region shows up here rather than as a
+        // vague count change:
+        //   Tc2_Standard : TON, TOF, CTUD, RS, CONCAT
+        //   Tc2_System   : DEFAULT_ADS_TIMEOUT, T_MaxString, ST_AmsAddr, E_AdsErr, GETSYSTEMTIME,
+        //                  FB_FileOpen, F_CreateAmsNetId
+        //   Tc3_Module   : MEMCPY, FW_SafeRelease, TcBaseModule
         const wanted = [
-            'DEFAULT_ADS_TIMEOUT', 'T_MaxString', 'E_DriveOperationMode', 'F_STRING',
-            'MC_BufferMode', 'F_WORD', 'FB_FormatString', 'F_UDINT', 'MC_Direction',
-            'T_AmsNetID', 'TIMESTRUCT', 'SjsonValue', 'GETSYSTEMTIME', 'MEMCPY'
+            'TON', 'TOF', 'CTUD', 'RS', 'CONCAT',
+            'DEFAULT_ADS_TIMEOUT', 'T_MaxString', 'ST_AmsAddr', 'E_AdsErr', 'GETSYSTEMTIME',
+            'FB_FileOpen', 'F_CreateAmsNetId',
+            'MEMCPY', 'FW_SafeRelease', 'TcBaseModule'
         ];
         const missing = wanted.filter(w => !isLibrarySymbol(w));
         assert.deepStrictEqual(missing, [], `not harvested: ${missing.join(', ')}`);
+        // The over-harvest guard: a decoder that returned every string it saw would pass the list
+        // above and still be broken.
+        assert.ok(!isLibrarySymbol('FB_NotInAnyLibrary'), 'a name in no archive must not be harvested');
     });
 
     check('indexing stays fast enough to run at startup', () => {

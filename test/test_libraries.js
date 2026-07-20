@@ -173,9 +173,13 @@ try {
     if (found.length === 0) {
         console.log('[skip] the sample declares no library references — skipping the real-.plcproj assertions.');
     } else {
-        assert(found.length === 28, `the real sample .plcproj yields 28 namespaces (got ${found.length})`);
-        assert(isLibraryNamespace('VisuElems') && isLibraryNamespace('Tc2_System') && isLibraryNamespace('Recipe_Management'),
-            'sample namespaces VisuElems / Tc2_System / Recipe_Management are registered');
+        // Measured against sample/TcToolkitSample/TcToolkitSample_PLC/TcToolkitSample_PLC.plcproj:
+        // three <PlaceholderReference> blocks, no pinned <LibraryReference>.
+        assert(found.length === 3, `the real sample .plcproj yields 3 namespaces (got ${found.length})`);
+        assert(isLibraryNamespace('Tc2_Standard') && isLibraryNamespace('Tc2_System') && isLibraryNamespace('Tc3_Module'),
+            'sample namespaces Tc2_Standard / Tc2_System / Tc3_Module are registered');
+        assert(!isLibraryNamespace('VisuElems'),
+            'a namespace the sample does not declare is not registered');
     }
 } finally {
     clearLibraryNamespaces();

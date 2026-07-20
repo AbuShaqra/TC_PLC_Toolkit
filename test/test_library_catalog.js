@@ -125,9 +125,9 @@ try {
         printBaselineMode(modeInfo);
 
         const catalog = getLibraryCatalog();
-        console.log('=== 2. the sample .plcproj\'s 28 references ===');
-        assert(catalog.length === 28,
-            `one entry per reference block: 26 placeholders + 2 pinned = 28 (got ${catalog.length})`);
+        console.log('=== 2. the sample .plcproj\'s 3 references ===');
+        assert(catalog.length === 3,
+            `one entry per reference block: 3 placeholders, 0 pinned = 3 (got ${catalog.length})`);
 
         // Sorted by namespace, case-insensitively — the view shows them in this order.
         const namespaces = catalog.map(e => e.namespace);
@@ -135,39 +135,31 @@ try {
         assert(JSON.stringify(namespaces) === JSON.stringify(sorted),
             'the catalog is sorted by namespace, case-insensitively');
 
-        // ---- 3. The whole point: library name != namespace --------------------------------------
-        console.log('\n=== 3. library name -> namespace (the mismatches) ===');
+        // ---- 3. Each reference splits into its three name forms ---------------------------------
+        // COVERAGE NOTE. The three-names-differ case this view exists for — "Balluff BVS Sensor" /
+        // "Balluff Sesnor Library TC3" / Balluff_BVS_Sensor, and "RecipeManagement" / "Recipe
+        // Management" / Recipe_Management — came from the customer project and has no counterpart in
+        // the synthetic sample, whose three Beckhoff libraries spell all three names identically.
+        // §1 above still asserts the splitting on a synthetic .plcproj that DOES carry the mismatch,
+        // so the parsing is guarded; what is lost here is only the on-real-data confirmation. Restore
+        // these assertions when a library reference with differing names lands in the sample.
+        console.log('\n=== 3. reference -> include / title / version / company ===');
 
-        const balluff = byNamespace(catalog, 'Balluff_BVS_Sensor');
-        assert(!!balluff && balluff.include === 'Balluff BVS Sensor' &&
-            balluff.title === 'Balluff Sesnor Library TC3' && balluff.company === 'Balluff GmbH',
-            `"Balluff BVS Sensor" / "Balluff Sesnor Library TC3" -> Balluff_BVS_Sensor ` +
-            `(${balluff ? balluff.include + ' / ' + balluff.title : 'MISSING'})`);
-
-        const recipeSample = byNamespace(catalog, 'Recipe_Management');
-        assert(!!recipeSample && recipeSample.include === 'RecipeManagement' &&
-            recipeSample.title === 'Recipe Management',
-            `"RecipeManagement" / "Recipe Management" -> Recipe_Management ` +
-            `(${recipeSample ? recipeSample.include + ' / ' + recipeSample.title : 'MISSING'})`);
-
-        const visu = byNamespace(catalog, 'VisuElems');
-        assert(!!visu && visu.include === 'System_VisuElems' && visu.title === 'VisuElems',
-            `"System_VisuElems" -> VisuElems (${visu ? visu.include : 'MISSING'})`);
+        for (const ns of ['Tc2_Standard', 'Tc2_System', 'Tc3_Module']) {
+            const e = byNamespace(catalog, ns);
+            assert(!!e && e.kind === 'placeholder' && e.include === ns && e.title === ns &&
+                e.company === 'Beckhoff Automation GmbH',
+                `${ns}: placeholder, include/title both "${ns}", company Beckhoff Automation GmbH ` +
+                `(${e ? e.kind + ' / ' + e.include + ' / ' + e.title + ' / ' + e.company : 'MISSING'})`);
+        }
 
         // ---- 3b. Versions are kept verbatim -----------------------------------------------------
-        const pinned = byNamespace(catalog, 'Tc2_EtherCAT');
-        assert(!!pinned && pinned.title === 'Tc2_EtherCAT' && pinned.version === '3.5.1.0' &&
-            pinned.company === 'Beckhoff Automation GmbH',
-            `a pinned reference keeps its exact version ` +
-            `(${pinned ? pinned.title + ' ' + pinned.version + ' / ' + pinned.company : 'MISSING'})`);
-
-        const newest = byNamespace(catalog, 'Tc2_ControllerToolbox');
-        assert(!!newest && newest.version === 'newest',
-            `"newest" is preserved verbatim, not normalized (${newest ? newest.version : 'MISSING'})`);
-
-        const star = byNamespace(catalog, 'Tc2_MC2');
+        // All three sample references resolve with "*" (<DefaultResolution>Tc2_System, * (…)</…>), so
+        // that is the only form measurable here; the "newest" and pinned-triple forms are exercised
+        // in §1 on the synthetic .plcproj.
+        const star = byNamespace(catalog, 'Tc2_System');
         assert(!!star && star.version === '*',
-            `"*" is preserved verbatim too (${star ? star.version : 'MISSING'})`);
+            `"*" is preserved verbatim, not normalized (${star ? star.version : 'MISSING'})`);
 
         // ---- 4. No library is silently dropped --------------------------------------------------
         console.log('\n=== 4. every declared namespace is catalogued ===');
@@ -181,38 +173,44 @@ try {
             `all ${declared.length} namespaces libraries.js knows are in the catalog ` +
             `(missing: ${missing.join(', ') || 'none'})`);
 
-        // ---- 5. Types and members ---------------------------------------------------------------
-        console.log('\n=== 5. types beneath a library ===');
+        // ---- 5. Symbol counts, from the archives ------------------------------------------------
+        // symbolCount comes from the .compiled-library string tables and is independent of the .tmc,
+        // so it is measurable on every checkout that has the (git-ignored) _Libraries fixtures.
+        console.log('\n=== 5. symbols beneath a library ===');
+
+        catalog.forEach(e => console.log(`    ${e.namespace.padEnd(14)} ${e.symbolCount} archive symbol(s)`));
+        // Measured 2026-07-20: Tc2_Standard 313, Tc2_System 1293, Tc3_Module 461. Exact per-library
+        // counts are a property of the vendor archives (they change with the library version), so what
+        // is asserted is that every declared library resolved to an archive and none came back empty —
+        // which is what a broken title->archive mapping would show up as.
+        const uncounted = catalog.filter(e => e.symbolCount === 0).map(e => e.namespace);
+        assert(uncounted.length === 0,
+            `every catalogued library resolved to an archive with symbols (empty: ${uncounted.join(', ') || 'none'})`);
+
+        // ---- 6. Types beneath a library (needs the .tmc) ----------------------------------------
+        console.log('\n=== 6. types beneath a library ===');
 
         if (modeInfo.tmcFiles === 0) {
+            // Expected on this tree: the sample's .tmc is a TwinCAT *build* artifact and the committed
+            // fixtures are source-only, so no checkout has one until the project is built in XAE.
             console.log('  skip  no .tmc present — no structured types to attach (see the mode above).');
+            console.log('        COVERAGE NOTE: the member-level assertions (an FB type whose members');
+            console.log('        include a named VAR_INPUT) were written against the customer project\'s');
+            console.log('        Tc2_MC2/MC_Power and cannot be re-based without a .tmc. They return when');
+            console.log('        the sample ships one.');
         } else {
-            const mc2 = byNamespace(catalog, 'Tc2_MC2');
-            assert(mc2.types.length === 57,
-                `Tc2_MC2 carries its 57 .tmc types (got ${mc2.types.length})`);
-            assert(mc2.types.length === getTypeSystemNamespaceTypes('Tc2_MC2').length,
-                'the catalog reports exactly the type system\'s types — no more, no less');
-
-            const power = mc2.types.find(t => t.name === 'MC_Power');
-            assert(!!power && power.kind === 'fb' &&
-                power.members.some(m => m.name === 'Enable' && m.scope === 'VAR_INPUT'),
-                `MC_Power is an FB whose members include Enable ` +
-                `(${power ? power.kind + ', ' + power.members.length + ' members' : 'MISSING'})`);
-
-            // The honest empty case the view has to explain rather than hide: the .tmc only exports
-            // the types the project already uses, so most libraries carry none.
-            const empty = catalog.filter(e => e.types.length === 0);
-            const withTypes = catalog.length - empty.length;
-            console.log(`    ${withTypes} of ${catalog.length} libraries have .tmc types; ` +
-                `${empty.length} have none (VisuElems ships only as unreadable -v3, etc.)`);
-            assert(empty.length > 0 && withTypes > 0,
-                'both cases really occur — the "No indexed types" row is not dead code');
-
-            // symbolCount comes from the archives and is independent of the .tmc.
-            const counted = catalog.filter(e => e.symbolCount > 0);
-            console.log(`    ${counted.length} libraries have archive symbols ` +
-                `(largest: ${catalog.slice().sort((a, b) => b.symbolCount - a.symbolCount)[0].namespace} ` +
-                `= ${Math.max(...catalog.map(e => e.symbolCount))})`);
+            // The invariant that survives any project: the catalog reports exactly what the type
+            // system holds for that namespace — no more, no less.
+            catalog.forEach(e => {
+                const fromTypeSystem = getTypeSystemNamespaceTypes(e.namespace);
+                assert(e.types.length === fromTypeSystem.length,
+                    `${e.namespace}: catalog reports exactly the type system's types ` +
+                    `(${e.types.length} vs ${fromTypeSystem.length})`);
+            });
+            const withTypes = catalog.filter(e => e.types.length > 0);
+            console.log(`    ${withTypes.length} of ${catalog.length} libraries have .tmc types`);
+            assert(withTypes.length > 0,
+                'at least one library carries .tmc types — otherwise this section is vacuous');
         }
     }
 } catch (e) {

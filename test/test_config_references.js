@@ -590,13 +590,29 @@ if (!sampleHasConfigObjects) {
     const sampleConfig = collectConfig(SAMPLE_DIR);
     const countExt = (re) => sampleConfig.filter(p => re.test(p)).length;
     console.log(`Discovered ${sampleConfig.length} configuration object(s).`);
-    assert(sampleConfig.length === 47,
-        `sample has 47 configuration objects (41 .TcVIS + 1 .TcVMO + 2 .TcTLO + 1 .TcGTLO + 2 .TcTTO) (got ${sampleConfig.length})`);
-    assert(countExt(/\.tcvis$/i) === 41 && countExt(/\.tcvmo$/i) === 1,
-        `the visualization files are still all found (got ${countExt(/\.tcvis$/i)} .TcVIS + ${countExt(/\.tcvmo$/i)} .TcVMO)`);
-    assert(countExt(/\.tctlo$/i) === 2 && countExt(/\.tcgtlo$/i) === 1,
-        `the text lists are found (got ${countExt(/\.tctlo$/i)} .TcTLO + ${countExt(/\.tcgtlo$/i)} .TcGTLO)`);
-    assert(countExt(/\.tctto$/i) === 2, `the task configs are found (got ${countExt(/\.tctto$/i)} .TcTTO)`);
+    // The synthetic sample carries exactly one configuration object: PlcTask.TcTTO, written by XAE
+    // when the PLC project was created, whose <PouCall><Name>MAIN</Name></PouCall> names the real MAIN.
+    assert(sampleConfig.length === 1,
+        `sample has 1 configuration object (1 .TcTTO) (got ${sampleConfig.length})`);
+    assert(countExt(/\.tctto$/i) === 1, `the task config is found (got ${countExt(/\.tctto$/i)} .TcTTO)`);
+
+    // COVERAGE NOTE — deliberately reduced, not forgotten. The customer project this part was written
+    // against had 47 configuration objects (41 .TcVIS + 1 .TcVMO + 2 .TcTLO + 1 .TcGTLO + 2 .TcTTO),
+    // and the assertions below used to cover BOTH matcher families on real data:
+    //   · the chain matcher — a high-volume GVL found >100 times across .TcVIS/.TcVMO
+    //     (BasicTypeNodeValue paths and STSnippet code), a named deep path
+    //     (GVL_X.fb.stStatus.stError.bError) located in one specific visualization, and the .TcGTLO
+    //     text entry whose chain must stop at a "[INDEX]" subscript;
+    //   · the decoy negatives — a second .TcTTO whose PouCall names the LIBRARY POU
+    //     VisuElems.Visu_Prg, which must NOT match (the "no dot in the value" rule), and text-list
+    //     prose that merely looks dotted.
+    // The synthetic sample has no .TcVIS/.TcVMO/.TcTLO/.TcGTLO at all, so none of that is measurable
+    // here; only the .TcTTO PouCall family is. Part 1 still exercises every matcher on synthetic
+    // fixtures (including both decoys), so the logic is guarded — what is lost is the on-real-data
+    // confirmation. These assertions return when Phase 2 adds .TcVIS/.TcTLO/.TcGTLO fixtures.
+    assert(countExt(/\.tcvis$/i) === 0 && countExt(/\.tcvmo$/i) === 0 &&
+        countExt(/\.tctlo$/i) === 0 && countExt(/\.tcgtlo$/i) === 0,
+        'no visualization or text-list fixtures yet — see the coverage note above');
 
     const strippedCache = new Map();
     const strippedFor = (uri) => {
@@ -608,54 +624,8 @@ if (!sampleHasConfigObjects) {
     };
     const sliceOf = (o) => strippedFor(o.uri).substr(o.offset, o.length);
 
-    // --- High-volume GVL: GVL_HMI_Manuell (the sample's most-referenced PLC GVL; it is also the
-    //     STSnippet example in the brief AND the one symbol path in the real GlobalTextList). ---
-    console.log('\n--- GVL_HMI_Manuell root over the real configuration objects ---');
-    const hmiNode = sIndex['GVL_HMI_Manuell'];
-    assert(!!hmiNode && !!hmiNode.uri, 'GVL_HMI_Manuell is indexed from the sample');
-    if (hmiNode) {
-        const hmi = findConfigReferencesForSymbol({ rootName: 'GVL_HMI_Manuell', fileUri: hmiNode.uri }, sIndex, sampleConfig);
-        assert(hmi.resolved === true, 'GVL_HMI_Manuell resolves');
-        console.log(`  GVL_HMI_Manuell occurrences: ${hmi.occurrences.length}`);
-        assert(hmi.occurrences.length > 100,
-            `GVL_HMI_Manuell has > 100 occurrences (got ${hmi.occurrences.length})`);
-        assert(hmi.occurrences.every(o => sliceOf(o).toLowerCase() === 'gvl_hmi_manuell'),
-            'every GVL_HMI_Manuell occurrence slice equals the root name (case-insensitively)');
-        assert(hmi.occurrences.every(o => o.length === o.chain.split('.')[0].length),
-            'every GVL_HMI_Manuell occurrence spans exactly its chain first segment');
-        // The real global text list carries exactly one symbol path for this GVL.
-        const inGtlo = hmi.occurrences.filter(o => /GlobalTextList\.TcGTLO$/i.test(o.uri));
-        assert(inGtlo.length === 1,
-            `GVL_HMI_Manuell is found once in the real GlobalTextList.TcGTLO (got ${inGtlo.length})`);
-        if (inGtlo.length === 1) {
-            assert(inGtlo[0].chain === 'GVL_HMI_Manuell.adHMI_manuell_servo_SoeReadParameterValue',
-                `the text-list chain stops at the "[INDEX]" subscript (got ${JSON.stringify(inGtlo[0].chain)})`);
-        }
-    }
-
-    // --- Named-path case: GVL_System.fbAxisX.stStatus.stError.bError lives in Kreuztisch.TcVIS. ---
-    console.log('\n--- GVL_System root: a named known path is among the results ---');
-    const sysNode = sIndex['GVL_System'];
-    assert(!!sysNode && !!sysNode.uri, 'GVL_System is indexed from the sample');
-    if (sysNode) {
-        const sys = findConfigReferencesForSymbol({ rootName: 'GVL_System', fileUri: sysNode.uri }, sIndex, sampleConfig);
-        assert(sys.resolved === true, 'GVL_System resolves');
-        console.log(`  GVL_System occurrences: ${sys.occurrences.length}`);
-        assert(sys.occurrences.length > 10,
-            `GVL_System has a plausible number of occurrences (got ${sys.occurrences.length})`);
-        assert(sys.occurrences.every(o => sliceOf(o).toLowerCase() === 'gvl_system'),
-            'every GVL_System occurrence slice equals the root name (case-insensitively)');
-        const named = sys.occurrences.find(o =>
-            o.chain === 'GVL_System.fbAxisX.stStatus.stError.bError' && /Kreuztisch\.TcVIS$/i.test(o.uri));
-        assert(!!named, 'the named path GVL_System.fbAxisX.stStatus.stError.bError is found in Kreuztisch.TcVIS');
-        if (named) {
-            assert(strippedFor(named.uri).substr(named.offset, named.length) === 'GVL_System',
-                'the named path occurrence slice is exactly "GVL_System"');
-        }
-    }
-
-    // --- The real task configs: PlcTask calls MAIN; VISU_TASK calls the library POU. ---
-    console.log('\n--- Real task configs: PlcTask.TcTTO vs VISU_TASK.TcTTO ---');
+    // --- The real task config: PlcTask calls MAIN. ---
+    console.log('\n--- Real task config: PlcTask.TcTTO ---');
     const mainNode = sIndex['MAIN'];
     assert(!!mainNode && !!mainNode.uri, 'MAIN is indexed from the sample');
     if (mainNode) {
@@ -669,10 +639,33 @@ if (!sampleHasConfigObjects) {
             assert(inTask[0].chain === 'MAIN' && sliceOf(inTask[0]) === 'MAIN',
                 'the PlcTask occurrence spans exactly the PouCall name "MAIN"');
         }
-        assert(!main.occurrences.some(o => /VISU_TASK\.TcTTO$/i.test(o.uri)),
-            'VISU_TASK.TcTTO is NOT matched (its PouCall names the library POU VisuElems.Visu_Prg)');
+        assert(main.occurrences.length === 1,
+            `MAIN has exactly one configuration-object occurrence (got ${main.occurrences.length})`);
         assert(main.occurrences.every(o => sliceOf(o).toLowerCase() === 'main'),
             'every MAIN occurrence slice equals "MAIN" (case-insensitively)');
+    }
+
+    // --- The negative that keeps the above from being vacuous: a real, indexed PROGRAM that the
+    //     task config does NOT call must resolve and find nothing. A matcher that answered by
+    //     mere presence of the name, or that fell back to a substring scan, would fail here. ---
+    console.log('\n--- A POU the task config does not call ---');
+    const startupNode = sIndex['P_Startup'];
+    assert(!!startupNode && !!startupNode.uri, 'P_Startup is indexed from the sample');
+    if (startupNode) {
+        const startup = findConfigReferencesForSymbol({ rootName: 'P_Startup', fileUri: startupNode.uri }, sIndex, sampleConfig);
+        assert(startup.resolved === true, 'P_Startup resolves');
+        assert(startup.occurrences.length === 0,
+            `P_Startup is not called by any task config (got ${startup.occurrences.length})`);
+    }
+
+    // A GVL that no configuration object mentions must likewise come back empty rather than guess.
+    const sysNode = sIndex['GVL_System'];
+    assert(!!sysNode && !!sysNode.uri, 'GVL_System is indexed from the sample');
+    if (sysNode) {
+        const sys = findConfigReferencesForSymbol({ rootName: 'GVL_System', fileUri: sysNode.uri }, sIndex, sampleConfig);
+        assert(sys.resolved === true, 'GVL_System resolves');
+        assert(sys.occurrences.length === 0,
+            `GVL_System appears in no configuration object (got ${sys.occurrences.length})`);
     }
 }
 

@@ -19,9 +19,15 @@ logic is verified on real data + guard tests, but nobody has eyeballed the rende
 - **Publication:** history was rewritten + the GitHub repo recreated to purge customer/vendor content (`sample/`,
   `.trust-lsp/`, machine codenames — 0 blobs match any customer id). Repo is **Private**. **Open:** confirm the
   contractual right to open-source the extension itself.
-- **`sample/` is GROUND TRUTH** — correct TwinCAT code, so every diagnostic on it is a bug. At **zero**;
-  `test_sample_diagnostics`/`test_typecheck` ratchet it (never raise the baseline). Gitignored → a fresh clone has
-  none and the sample suites SKIP.
+- **`sample/` is GROUND TRUTH** — correct TwinCAT code, so every diagnostic on it is a bug. At **zero** against a
+  baseline of **zero** (no slack); `test_sample_diagnostics`/`test_typecheck` ratchet it (never raise the baseline).
+  It is now **wholly synthetic and COMMITTED**, so the sample gates run on a clone and on CI. Built in two steps:
+  `scripts/build-sample-solution.ps1` drives XAE once to produce the `.sln`/`.tsproj`/`.plcproj` skeleton (only
+  TwinCAT can write those — the on-disk template is a 67-byte stub it expands at insertion time, and hand-writing
+  them is what produced a project XAE refused to open), then `scripts/build-sample-project.js` writes the 19 objects
+  and **injects** their `<Compile>`/`<Folder>` entries into XAE's `.plcproj`, leaving its identity GUIDs,
+  PlaceholderReferences and ProjectExtensions untouched. Both are deterministic/idempotent. `_Libraries/` (Beckhoff
+  binaries), `.vs/`, `*.bak` and `_CompileInfo*/` stay git-ignored.
 - **Internal ids deliberately NOT renamed** (`twincat.*` commands, `twincat.xmlViewer` viewType) after the
   "XML Viewer"→"PLC Toolkit" rename — churning them breaks saved keybindings/associations.
 - **Objects-tree drag & drop + copy/paste** (0.2.0). DnD = move: component → own file's virtual folder /
@@ -65,7 +71,7 @@ logic is verified on real data + guard tests, but nobody has eyeballed the rende
   names `VisuDialogs.*`) and an unproven edit corrupts the HMI. All these formats carry a **UTF-8 BOM** the LSP must
   strip (VS Code documents exclude it → offsets shift by one). Surveyed and deliberately NOT scanned: `.TcIPO`
   (only `.svg` names), `.plcproj` (already synced by the file-rename step), `.tmc` (generated build artifact).
-  Sample counts: `GVL_HMI_Manuell` 666 (665 visu + 1 GTLO), `MAIN` 3 (1 PouCall + 2 visu).
+  Counts above were measured on the old customer sample; on the synthetic one `MAIN` = 1 (the PlcTask PouCall).
 - **README.md** = public page (ships); **DEVELOPMENT.md** = build/test/architecture; CLAUDE/HANDOFF/DEVELOPMENT are
   `.vscodeignore`d. Package `npx @vscode/vsce package`. `scripts/` ships (the generator). Stale local branches
   `moe`/`native-editor` un-pushed.
@@ -79,11 +85,13 @@ Mirror `server.js`: index libraries up front, then **per file** `convertXmlToSt(
 traps that have bitten: **non-raw** conversion strips decl-site init lists (`fb:FB_X(a:=b)`→`fb:FB_X;`) and hides
 diagnostics; omitting `parseAndIndexDocument` gives methods **stub ranges** → every method-local var reads undeclared
 (fabricated ~2,300 phantom diagnostics — the old "2550 baseline" was fiction); omitting `registerLibrarySymbolNodes`
-→ 171 false positives. `test/_baseline.js` is truth; baselines are machine-**measured**: `full`=**0** ·
-archives-only=12 · typesystem-only=69 · none (fresh clone)=171 — the harnesses detect which row they're on.
+→ 171 false positives **on the old customer sample**. `test/_baseline.js` is truth. Against the synthetic sample every
+producible row measures **0** (`archives-only` and `none` measured, and they agree — proof its code names no library
+symbol at all); the `.tmc` rows are labelled inference, not measurement, because a `.tmc` only appears after a TwinCAT
+build. Re-measure rather than trust the table if one ever lands.
 
 ## External symbols: five sources, all load-bearing (`libsymbols.js`)
-~32k symbols, ~200 ms, registered into the index **on demand, per document** — registering all up front took the
+~32k symbols on a large real project (1551 on the synthetic sample), ~200 ms, registered into the index **on demand, per document** — registering all up front took the
 diagnostics pass 1.5 s → **78 s** (`Object.keys()` runs per identifier). Don't "simplify".
 - **ZIP archives** (`.compiled-library`, `-ge33`, `.library`) — names in a `__shared_data_storage_string_table__`
   entry. **`.compiled-library-v3` is opaque** (magic `10 a6 d5 a7`), skipped. Dropping `-ge33` once stranded

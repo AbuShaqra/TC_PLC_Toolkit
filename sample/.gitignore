@@ -16,9 +16,19 @@
 !TcToolkitSample/
 !TcToolkitSample/**
 
-# Build artefacts and generated exports inside the synthetic project: large, derived, read by no
-# harness. TwinCAT recreates them on build; the extension recreates ST_Files on "Generate ST".
-TcToolkitSample/_CompileInfo/
-TcToolkitSample/_CompileInfo_Upload/
-TcToolkitSample/ST_Files/
-TcToolkitSample/.trust-lsp/
+# VENDOR BINARIES — never committed. TwinCAT copies the referenced Beckhoff libraries into the
+# project when it creates one (Tc2_Standard, Tc2_System, Tc3_Module). The .plcproj still REFERENCES
+# them, which is what the namespace indexer reads; the archives themselves are Beckhoff's to
+# distribute, not ours. Phase 3 adds our own SYNTHETIC archives, which are committed and are not
+# matched by this rule (they live under a different project root).
+TcToolkitSample/**/_Libraries/
+
+# Build artefacts, IDE state and TwinCAT's own backups: large, derived, read by no harness. TwinCAT
+# recreates them on build; the extension recreates ST_Files on "Generate ST".
+TcToolkitSample/**/_CompileInfo/
+TcToolkitSample/**/_CompileInfo_Upload/
+TcToolkitSample/**/ST_Files/
+TcToolkitSample/**/.trust-lsp/
+TcToolkitSample/.vs/
+TcToolkitSample/**/*.bak
+TcToolkitSample/**/*.~u

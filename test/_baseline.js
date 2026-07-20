@@ -1,7 +1,7 @@
 /**
  * @file _baseline.js
  * @description Single source of truth for the sample-project diagnostics ratchet, shared by
- * scratch/test_sample_diagnostics.js and scratch/test_typecheck.js. Both measure the same thing the
+ * test/test_sample_diagnostics.js and test/test_typecheck.js. Both measure the same thing the
  * same way, so the recipe and the baselines live here rather than being copied (and drifting).
  *
  * Two things this module owns:
@@ -10,16 +10,17 @@
  *    exactly. Measure any other way and the number is meaningless (see HANDOFF.md):
  *      - `convertXmlToSt(parsed, { raw: true })` — the NON-raw conversion silently strips
  *        declaration-site init lists (`fb : FB_X(a := b)` becomes `fb : FB_X;`), hiding real findings.
+ *        The sample's `GVL_System.fbCylinder : FB_Cylinder(refExtendOut := GVL_Io.bExtendOut, …)` is
+ *        exactly that shape, so this is load-bearing here and not a hypothetical.
  *      - `parseAndIndexDocument(stText, uri)` — gives methods real line ranges; without it
  *        `findActiveScope` matches no method, `methodVars` is empty, and every method-local variable
- *        in every method body is flagged undeclared (~2,300 phantom diagnostics).
+ *        in every method body is flagged undeclared.
  *      - `registerLibrarySymbolNodes(index, stText)` — puts the external symbols the document
- *        references into the index, on demand (never all 32k at once: that is a deliberate
- *        performance design, see libsymbols.js). Without it every bare library name
- *        (`DEFAULT_ADS_TIMEOUT`, `T_MaxString`, …) reads as undeclared: 171 false positives.
+ *        references into the index, on demand (never the whole registry at once: that is a
+ *        deliberate performance design, see libsymbols.js).
  *      - the workspace scan up front — `indexLibraryNamespaces` (.plcproj), `indexLibrarySymbols`
  *        (the ZIP archives) and `indexTypeSystem` (the `.tmc`), exactly as server.js indexLibraries()
- *        does. Skip the `.tmc` and the count is 12, not 0.
+ *        does.
  *
  * 2. **The baseline, which is machine-dependent** — and that is not a bug, it is the point. See the
  *    table below.
@@ -37,46 +38,60 @@ const {
     registerLibrarySymbolNodes
 } = require('../src/lsp/libsymbols');
 
-/** The sample TwinCAT project (git-ignored; harnesses skip cleanly when it is absent). */
+/** The sample TwinCAT project (committed; harnesses skip cleanly when it is absent). */
 const SAMPLE_DIR = path.join(__dirname, '..', 'sample');
 
 /**
  * The sample project is correct TwinCAT code, so **every** diagnostic on it is a false positive and
- * the only defensible target is 0 — which, with both external symbol sources present, is what it
- * now scores. But the two sources are *git-ignored build artifacts*: `sample/.gitignore` tracks only
- * the source objects and the `.plcproj`, so a fresh clone or a CI runner has **neither** the
- * `_Libraries/` archives nor the `.tmc`. On such a machine a bare library name genuinely cannot be
- * resolved, and 171 diagnostics is the honest, correct result — failing there would be punishing a
- * machine that is behaving exactly as designed.
+ * the only defensible target is 0 — which is what it scores, in every mode this tree can produce.
  *
- * Hence a table rather than a constant. Pinning a single number would be wrong on one machine or the
- * other: assert 0 on a fresh clone and a correct run fails; assert 171 everywhere and a real
- * regression hides behind 171 points of slack on the machine that HAS the artifacts.
+ * The table survives the move from the customer project to the committed synthetic one because the
+ * *reason* for it survives: the external symbol sources are git-ignored build artifacts, so how much
+ * a machine can resolve still depends on which of them it has. `sample/TcToolkitSample/
+ * TcToolkitSample_PLC/_Libraries/` (three Beckhoff archives) is git-ignored, and the project `.tmc`
+ * only exists after a TwinCAT build. A fresh clone or a CI runner has neither.
  *
- * Every row below is **measured**, not assumed (2026-07-13, 152 sample objects):
+ * What changed is the *numbers*. The old rows (0 / 12 / 69 / 171) were measured on the customer's
+ * 152-object project, which named library symbols throughout its code; the synthetic sample's 19
+ * objects reference **no library symbol at all**, so there is nothing for a missing archive or a
+ * missing `.tmc` to fail to resolve, and every row collapses to 0.
  *
- *   archives  .tmc  total  mode              what is unresolvable
+ * Re-measured 2026-07-20 against sample/TcToolkitSample (19 objects, 3 declared namespaces):
+ *
+ *   archives  .tmc  total  mode              how it was established
  *   --------  ----  -----  ----------------  ---------------------------------------------------
- *      yes    yes      0   full              nothing — the target, reached
- *      yes    no      12   archives-only     E_EthercatDeviceState (x8), CANQUEUE (x4): neither is
- *                                            in any archive string table; only the .tmc has them
- *      no     yes     69   typesystem-only   the library names the .tmc does not export
- *                                            (DEFAULT_ADS_TIMEOUT x25, F_STRING x12, …)
- *      no     no     171   none              every bare library identifier (fresh clone / CI)
+ *      yes    yes      0   full              NOT PRODUCIBLE on this tree — see below
+ *      yes    no       0   archives-only     MEASURED: the mode this working copy is in
+ *      no     yes      0   typesystem-only   NOT PRODUCIBLE on this tree — see below
+ *      no     no       0   none              MEASURED: archives suppressed; identical to the
+ *                                            archives-only run, confirming the sample's code
+ *                                            names no external symbol
+ *
+ * **The two `.tmc` rows could not be measured**: the sample has no `.tmc` and cannot be given one
+ * without building the project in TwinCAT XAE, so `indexTypeSystem()` returns `files: 0` and the
+ * mode detector never selects them. Their 0 is therefore an *inference*, not a measurement — but a
+ * safe one: adding the `.tmc` only ever adds resolvable symbols to the index, and the corresponding
+ * measured row (archives-only / none respectively) is already at the 0 floor. If a `.tmc` ever lands
+ * here and a row scores above 0, that is a real finding — measure it and record the number, do not
+ * assume this table was right.
+ *
+ * Keeping every row at 0 is the point: the old `archives-only: 12` carried 12 points of slack on the
+ * mode this machine actually runs in, so a regression of up to 12 new diagnostics would have passed
+ * the gate silently.
  *
  * The mode is printed loudly on every run: a PASS against the wrong row means nothing.
  * @type {Object<string, {baseline: number, label: string}>}
  */
 const BASELINES = {
-    full: { baseline: 0, label: 'library archives + .tmc type system' },
-    'archives-only': { baseline: 12, label: 'library archives, no .tmc type system' },
-    'typesystem-only': { baseline: 69, label: '.tmc type system, no library archives' },
-    none: { baseline: 171, label: 'no external symbol sources (fresh clone / CI)' }
+    full: { baseline: 0, label: 'library archives + .tmc type system (not producible without an XAE build)' },
+    'archives-only': { baseline: 0, label: 'library archives, no .tmc type system' },
+    'typesystem-only': { baseline: 0, label: '.tmc type system, no library archives (not producible without an XAE build)' },
+    none: { baseline: 0, label: 'no external symbol sources (fresh clone / CI)' }
 };
 
-/** The two realistic machines: a full TwinCAT working copy, and a fresh clone. */
+/** The two realistic machines: a full TwinCAT working copy, and a fresh clone. Both score 0. */
 const BASELINE_WITH_LIBRARIES = BASELINES.full.baseline;        // 0
-const BASELINE_WITHOUT_LIBRARIES = BASELINES.none.baseline;     // 171
+const BASELINE_WITHOUT_LIBRARIES = BASELINES.none.baseline;     // 0
 
 /**
  * @typedef {Object} BaselineMode
@@ -127,8 +142,9 @@ function indexSampleLibraries(sampleDir = SAMPLE_DIR) {
 }
 
 /**
- * Prints the mode loudly. A passing run must never be mistakable for a run on a different machine —
- * the baselines span 0 to 171, and "PASS" against the wrong one means nothing.
+ * Prints the mode loudly. Every row of the table is currently 0, but the mode still has to be shown:
+ * it says which external symbol sources this machine actually had, and a future sample that does
+ * reference library symbols will pull the rows apart again.
  * @param {BaselineMode} info Result of indexSampleLibraries().
  */
 function printBaselineMode(info) {
@@ -138,8 +154,9 @@ function printBaselineMode(info) {
         `${info.tmcFiles} .tmc file(s), ${info.symbols} external symbol(s) in ${info.ms} ms; ` +
         `${info.namespaces} namespace(s) from .plcproj.`);
     if (info.mode !== 'full') {
-        console.log(`    NOTE: sample/**/_Libraries and the .tmc are git-ignored build artifacts. With both`);
-        console.log(`    present the sample scores 0 — see the measured table in scratch/_baseline.js.`);
+        console.log(`    NOTE: sample/**/_Libraries is git-ignored and the .tmc is a TwinCAT build artifact,`);
+        console.log(`    so most checkouts have one or neither. The sample scores 0 in every mode this tree`);
+        console.log(`    can produce — see the measured table in test/_baseline.js.`);
     }
     console.log('');
 }

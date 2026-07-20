@@ -3,17 +3,18 @@
  * @description Library symbols in autocompletion, and the namespace attribution that makes them
  * offerable at all.
  *
- * The problem this guards. Library symbols ARE indexed (~32k names from 88 archives plus the
- * project's `.tmc`), but a `LIBRARY` node is not in TYPE_NODE_KINDS, so a type caret never offered
- * one: `fbTimer : T▮` suggested no `TON`. The naive fix — admit LIBRARY to TYPE_NODE_KINDS — is the
- * one thing that must NOT happen: it empties 32k bare names into every type caret.
+ * The problem this guards. Library symbols ARE indexed (1,551 names from the sample's 3 archives,
+ * and tens of thousands on a real project, plus the project's `.tmc`), but a `LIBRARY` node is not
+ * in TYPE_NODE_KINDS, so a type caret never offered one: `fbTimer : T▮` suggested no `TON`. The
+ * naive fix — admit LIBRARY to TYPE_NODE_KINDS — is the one thing that must NOT happen: it empties
+ * every bare library name into every type caret.
  *
- * The design instead makes library types reachable by *qualifying* the caret, which is how the
- * sample already writes them (`Tc2_MC2.ST_AxisStatus`, `VisuElems.VisuStructClientData`):
+ * The design instead makes library types reachable by *qualifying* the caret, which is how TwinCAT
+ * code writes them (`Tc2_Standard.TON`, `Tc2_System.ST_AmsAddr`):
  *
- *   1. a type caret additionally offers the library NAMESPACES (28 in the sample) — few, and
+ *   1. a type caret additionally offers the library NAMESPACES (3 in the sample) — few, and
  *      legitimate type prefixes — while staying types-only otherwise;
- *   2. `Tc2_MC2.▮` offers that one library's symbols, a list narrowed by construction;
+ *   2. `Tc2_Standard.▮` offers that one library's symbols, a list narrowed by construction;
  *   3. unqualified library symbols keep completing exactly where they did (TwinCAT auto-imports the
  *      namespaces, so a bare `TON` is legal and common) — this feature only ever ADDS.
  *
@@ -138,7 +139,7 @@ const MAIN_DECL =
     'VAR\n' +
     '\tnCount : INT;\n' +
     '\tfbTimer : Tc2_Standard.TON;\n' +
-    '\tstStatus : Tc2_MC2.ST_AxisStatus;\n' +
+    '\tstStatus : Tc2_System.ST_AmsAddr;\n' +
     '\tstBogus : NoSuchLib.ST_Nothing;\n' +
     '\tnTimeout : UDINT;\n' +
     'END_VAR';
@@ -189,39 +190,50 @@ try {
     // ---- 1. Attribution: a symbol is filed under the library that declares it -------------------
     console.log('=== 1. symbol -> namespace attribution ===');
 
-    assert(nsFound.length === 28 && coverage.namespaces === 28,
-        `the .plcproj declares 28 library namespaces (got ${coverage.namespaces})`);
-    assert(getLibraryNamespaceNames().includes('Tc2_MC2'),
-        'namespaces keep the project\'s own spelling (Tc2_MC2, not tc2_mc2)');
+    assert(nsFound.length === 3 && coverage.namespaces === 3,
+        `the .plcproj declares 3 library namespaces (got ${coverage.namespaces})`);
+    assert(getLibraryNamespaceNames().includes('Tc2_System'),
+        'namespaces keep the project\'s own spelling (Tc2_System, not tc2_system)');
 
-    const mc2 = getNamespaceSymbols('Tc2_MC2');
-    assert(mc2.some(s => s === 'ST_AxisStatus') && mc2.some(s => s === 'MC_Power'),
-        `Tc2_MC2 owns ST_AxisStatus and MC_Power (${mc2.length} symbols)`);
-    assert(!mc2.some(s => s.toLowerCase() === 'fb_jsonsaxwriter') &&
-        getNamespaceSymbols('Tc3_JsonXml').some(s => s === 'FB_JsonSaxWriter'),
-        'FB_JsonSaxWriter is Tc3_JsonXml\'s and is NOT filed under Tc2_MC2');
-    assert(getNamespaceSymbols('Tc2_Standard').some(s => s === 'TON'),
-        'Tc2_Standard owns TON');
-    assert(getNamespaceSymbols('Tc2_System').some(s => s === 'DEFAULT_ADS_TIMEOUT'),
-        'Tc2_System owns DEFAULT_ADS_TIMEOUT');
+    // Measured 2026-07-20: Tc2_Standard 313, Tc2_System 1293, Tc3_Module 461 attributed symbols,
+    // over a flat registry of 1,551 distinct names.
+    const std = getNamespaceSymbols('Tc2_Standard');
+    const sys = getNamespaceSymbols('Tc2_System');
+    const mod = getNamespaceSymbols('Tc3_Module');
+    assert(std.some(s => s === 'TON') && std.some(s => s === 'CTUD'),
+        `Tc2_Standard owns TON and CTUD (${std.length} symbols)`);
+    assert(sys.some(s => s === 'DEFAULT_ADS_TIMEOUT') && sys.some(s => s === 'ST_AmsAddr'),
+        `Tc2_System owns DEFAULT_ADS_TIMEOUT and ST_AmsAddr (${sys.length} symbols)`);
+    assert(mod.some(s => s === 'FW_SafeRelease') && mod.some(s => s === 'TcBaseModule'),
+        `Tc3_Module owns FW_SafeRelease and TcBaseModule (${mod.length} symbols)`);
 
-    // The archive path is matched against the library *title*, not just its file name: this one is
-    // shipped as TwinCAT_V3x_BVS_Sensor_V11.library and echoes its namespace nowhere.
-    assert(getNamespaceSymbols('Balluff_BVS_Sensor').length > 0,
-        `Balluff_BVS_Sensor is mapped via <DefaultResolution>, not the file name ` +
-        `(${getNamespaceSymbols('Balluff_BVS_Sensor').length} symbols)`);
-    assert(getNamespaceSymbols('Recipe_Management').length > 0,
-        'Recipe_Management is mapped from the title directory (the archive is "recipemanager")');
+    // The negative that matters: a name belongs to the library that ships it, and to no other.
+    assert(!std.includes('DEFAULT_ADS_TIMEOUT') && !std.includes('FW_SafeRelease'),
+        'Tc2_System\'s and Tc3_Module\'s symbols are NOT filed under Tc2_Standard');
+    assert(!sys.includes('CTUD') && !mod.includes('CTUD'),
+        'Tc2_Standard\'s CTUD is NOT filed under Tc2_System or Tc3_Module');
 
     // Lookups are case-insensitive, as Structured Text is.
-    assert(getNamespaceSymbols('tc2_mc2').length === mc2.length &&
-        getNamespaceSymbols('TC2_MC2').length === mc2.length,
+    assert(getNamespaceSymbols('tc2_system').length === sys.length &&
+        getNamespaceSymbols('TC2_SYSTEM').length === sys.length,
         'namespace lookup is case-insensitive');
 
-    // The fallback rule: never guess. An unmapped archive contributes to the flat registry only.
-    assert(coverage.symbols < TOTAL_SYMBOLS,
-        `attribution is partial by design: ${coverage.symbols} of ${TOTAL_SYMBOLS} symbols carry a ` +
-        `namespace — the rest are transitive dependencies with no importable prefix`);
+    // COVERAGE NOTE. The customer project shipped 88 archives against 28 declared namespaces, so
+    // attribution was necessarily *partial* — transitive dependencies had no importable prefix and
+    // the old assertion here was `coverage.symbols < TOTAL_SYMBOLS`. The synthetic sample has one
+    // archive per declared library, so all 3 map and nothing is left unattributed; the sum of the
+    // per-namespace lists (2,067) now EXCEEDS the flat registry (1,551) because names shared between
+    // libraries (Global_Version, MEMCPY, …) are counted once per owner. Re-point this to the partial
+    // form if an unattributable archive ever lands in the sample.
+    assert(lib.mapped === lib.archives && lib.archives === 3,
+        `every archive maps to a declared library title (${lib.mapped}/${lib.archives})`);
+    assert(coverage.mapped === coverage.namespaces,
+        `every declared namespace carries symbols (${coverage.mapped}/${coverage.namespaces})`);
+    assert(coverage.symbols === std.length + sys.length + mod.length,
+        `coverage counts per-namespace membership, shared names once per owner ` +
+        `(${coverage.symbols} = ${std.length} + ${sys.length} + ${mod.length}, over ${TOTAL_SYMBOLS} distinct)`);
+
+    // The fallback rule that must never soften: never guess.
     assert(archiveNamespace(path.join(SAMPLE_DIR, 'nowhere', 'unknown-lib.compiled-library')) === null,
         'an archive whose path matches no declared library title is NOT attributed');
 
@@ -230,10 +242,10 @@ try {
 
     const cType = record('type caret', completionsAt('nCount : '));
     const mods = modulesOf(cType);
-    assert(mods.length === 28,
-        `all 28 library namespaces are offered as module items (got ${mods.length})`);
-    assert(has(cType, 'Tc2_MC2') && has(cType, 'VisuElems') && has(cType, 'Balluff_BVS_Sensor'),
-        'including Tc2_MC2, VisuElems and Balluff_BVS_Sensor');
+    assert(mods.length === 3,
+        `all 3 library namespaces are offered as module items (got ${mods.length})`);
+    assert(has(cType, 'Tc2_Standard') && has(cType, 'Tc2_System') && has(cType, 'Tc3_Module'),
+        'namely Tc2_Standard, Tc2_System and Tc3_Module');
     assert(has(cType, 'INT') && has(cType, 'BOOL') && has(cType, 'ST_Data'),
         'elementary and project types are still offered');
     assert(leaked(cType, JUNK) === '' && snippetsOf(cType).length === 0,
@@ -241,36 +253,43 @@ try {
     assert(!has(cType, 'nCount') && !has(cType, 'nTimeout'),
         '…and no variables');
 
-    // The 32k library names must NOT be here. That is the whole reason the namespaces are.
+    // The bare library names must NOT be here. That is the whole reason the namespaces are.
     assert(cType.length < 200,
         `the type caret is not flooded with library symbols (${cType.length} items, of ${TOTAL_SYMBOLS} known)`);
-    assert(!has(cType, 'MC_Power') && !has(cType, 'DEFAULT_ADS_TIMEOUT'),
+    assert(!has(cType, 'FW_SafeRelease') && !has(cType, 'DEFAULT_ADS_TIMEOUT'),
         'a bare library symbol is not offered unqualified at a type caret');
 
-    // ---- 3. Qualified caret: `Tc2_MC2.▮` narrows to that library --------------------------------
-    console.log('\n=== 3. namespace-qualified caret (`Tc2_MC2.▮`) ===');
+    // ---- 3. Qualified caret: `Tc2_Standard.▮` narrows to that library ---------------------------
+    console.log('\n=== 3. namespace-qualified caret (`Tc2_Standard.▮`) ===');
 
-    const cNs = record('Tc2_MC2.', completionsAt('stStatus : Tc2_MC2.'));
+    const cNs = record('Tc2_Standard.', completionsAt('fbTimer : Tc2_Standard.'));
     // The list is that namespace's symbols, minus the elementary types every library's string table
-    // carries because it *uses* them (`Tc2_MC2.INT` is not a thing) — see libraryNamespaceMembers.
-    const expected = mc2.filter(s => !STANDARD_TYPES.has(s.toUpperCase()));
+    // carries because it *uses* them (`Tc2_Standard.INT` is not a thing) — see libraryNamespaceMembers.
+    const expected = std.filter(s => !STANDARD_TYPES.has(s.toUpperCase()));
     assert(cNs.length === expected.length && cNs.length > 0,
-        `offers exactly Tc2_MC2's symbols (${cNs.length})`);
-    assert(has(cNs, 'ST_AxisStatus') && has(cNs, 'MC_Power'),
-        'including the types the sample actually declares with that prefix');
-    assert(cNs.length < TOTAL_SYMBOLS / 5,
+        `offers exactly Tc2_Standard's symbols (${cNs.length})`);
+    // …and a library FB that happens to share a builtin's name IS still its member: TON is real.
+    assert(has(cNs, 'TON') && has(cNs, 'CTUD'),
+        'including TON and CTUD — a library FB is not filtered out for looking like a builtin');
+    assert(cNs.length < TOTAL_SYMBOLS / 4,
         `and NOT the whole registry (${cNs.length} of ${TOTAL_SYMBOLS})`);
-    assert(!has(cNs, 'FB_JsonSaxWriter') && !has(cNs, 'nCount'),
+    assert(!has(cNs, 'DEFAULT_ADS_TIMEOUT') && !has(cNs, 'FW_SafeRelease') && !has(cNs, 'nCount'),
         'no other library\'s symbols, and no project variables');
     assert(!has(cNs, 'INT') && !has(cNs, 'DWORD') && !has(cNs, 'BOOL'),
         'no elementary types — a namespace does not re-export INT');
-    assert(cNs.every(i => i.detail && i.detail.includes('Tc2_MC2')),
+    assert(cNs.every(i => i.detail && i.detail.includes('Tc2_Standard')),
         'every item names the library it came from');
 
-    // …but a library FB that happens to also be a builtin IS its member: `Tc2_Standard.TON` is real.
-    const cStd = completionsAt('fbTimer : Tc2_Standard.');
-    assert(has(cStd, 'TON') && !has(cStd, 'INT'),
-        `Tc2_Standard.▮ still offers TON (${cStd.length} items) — builtins are not blanket-filtered`);
+    // The same narrowing on the largest library, so the exact-count invariant is not only checked on
+    // the small one: Tc2_System is 1,293 of the 1,551 known names and must still exclude the others'.
+    const cSys = record('Tc2_System.', completionsAt('stStatus : Tc2_System.'));
+    const expectedSys = sys.filter(s => !STANDARD_TYPES.has(s.toUpperCase()));
+    assert(cSys.length === expectedSys.length && cSys.length > 0,
+        `Tc2_System.▮ offers exactly its own symbols (${cSys.length})`);
+    assert(has(cSys, 'ST_AmsAddr') && has(cSys, 'DEFAULT_ADS_TIMEOUT'),
+        'including the types and constants the sample declares with that prefix');
+    assert(!has(cSys, 'CTUD') && !has(cSys, 'FW_SafeRelease'),
+        'and none of Tc2_Standard\'s or Tc3_Module\'s');
 
     // ---- 4. Unknown / unmapped prefixes fail safe -----------------------------------------------
     console.log('\n=== 4. unknown and unmapped prefixes ===');
@@ -279,8 +298,10 @@ try {
     assert(cBogus.length === 0,
         `an unknown namespace prefix offers nothing — no crash, no invented names (got ${cBogus.length})`);
 
-    // VisuElems ships only as the opaque `.compiled-library-v3` and the .tmc does not tag it, so it
-    // has no symbols. It must still be offered as a prefix, and answer with nothing rather than junk.
+    // A namespace whose archive could not be read (the customer project's VisuElems shipped only as
+    // the opaque `.compiled-library-v3`) has no symbols. It must still be offered as a prefix, and
+    // answer with nothing rather than junk. The synthetic sample has no such library — all 3 map —
+    // so this branch does not run here; it returns with an unreadable-archive fixture.
     if (empties.length > 0) {
         const empty = empties[0];
         assert(getNamespaceSymbols(empty).length === 0 && has(cType, empty),
@@ -290,9 +311,9 @@ try {
     // A half-typed line must never throw.
     let survived = true;
     try {
-        completionsAt('stStatus : Tc2_MC2.ST_A');   // partially typed member
-        completionsAt('fbTimer : ');                 // type caret, no namespace typed
-        completionsAt('stBogus : NoSuchLib');        // namespace head, dot not typed yet
+        completionsAt('stStatus : Tc2_System.ST_A');  // partially typed member
+        completionsAt('fbTimer : ');                  // type caret, no namespace typed
+        completionsAt('stBogus : NoSuchLib');         // namespace head, dot not typed yet
     } catch (e) {
         survived = false;
         console.error('   threw: ' + e.message);
@@ -315,7 +336,7 @@ try {
 
     // Everything the request needs is prepared once; only provideCompletions is timed, which is what
     // runs per keystroke. The namespace -> symbols map is built at index time, so this must be a map
-    // lookup and a list build — never a scan of the 32k registry.
+    // lookup and a list build — never a scan of the whole registry.
     clearWorkspaceIndex();
     const index = getWorkspaceSymbolIndex();
     indexXmlObject(index, MAIN_XML, uriOf('MAIN.TcPOU'));
@@ -323,8 +344,9 @@ try {
     parseAndIndexDocument(stText, uriOf('MAIN.TcPOU'));
     registerLibrarySymbolNodes(getWorkspaceSymbolIndex(), stText);
     const lines = stText.split('\n');
-    const line = lines.findIndex(l => l.includes('Tc2_MC2.'));
-    const character = lines[line].indexOf('Tc2_MC2.') + 'Tc2_MC2.'.length;
+    // Timed on the LARGEST namespace (Tc2_System, 1,278 offerable symbols) — the worst case.
+    const line = lines.findIndex(l => l.includes('Tc2_System.'));
+    const character = lines[line].indexOf('Tc2_System.') + 'Tc2_System.'.length;
 
     const N = 50;
     const started = process.hrtime.bigint();
@@ -332,7 +354,7 @@ try {
         provideCompletions(stText, { line, character }, getWorkspaceSymbolIndex(), uriOf('MAIN.TcPOU'));
     }
     const perCall = Number(process.hrtime.bigint() - started) / 1e6 / N;
-    console.log(`    ${perCall.toFixed(2)} ms/call at a namespace-dot caret (${cNs.length} items)`);
+    console.log(`    ${perCall.toFixed(2)} ms/call at a namespace-dot caret (${cSys.length} items)`);
     assert(perCall < 25, `stays well under a keystroke's budget (${perCall.toFixed(2)} ms)`);
 
     // ---- Summary --------------------------------------------------------------------------------
