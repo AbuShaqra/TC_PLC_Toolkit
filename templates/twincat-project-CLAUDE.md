@@ -216,6 +216,62 @@ Derived, so usually git-ignored: `_CompileInfo*/`, `ST_Files/`. `_Libraries/` an
 ignored too (they are bulky and machine-generated), which means a fresh clone can be missing every
 library symbol — check that before concluding a type "does not exist".
 
+## Building and testing the project
+
+There is no unit-test framework for ST here — **a full compile is the test.** Two scripts drive a
+headless TwinCAT build so you can confirm an edit still compiles without opening the IDE. Treat a green
+build as the ground truth after any change to a `.Tc*` file or the `.plcproj`: a clean grep proves
+nothing, a successful build proves the project still compiles and resolves.
+
+- **`build_plc_project.bat`** — the interactive / double-click wrapper. Runs the PowerShell script with
+  `-NoProfile -ExecutionPolicy Bypass`, prints `BUILD OK` or `BUILD FAILED`, and pauses so the window
+  stays open. It forwards its arguments to the `.ps1` (`%*`).
+- **`build_plc_project.ps1`** — the actual builder, and what to call from a shell, automation or CI:
+
+  ```powershell
+  powershell -NoProfile -ExecutionPolicy Bypass -File .\build_plc_project.ps1
+  ```
+
+What to know before you rely on it:
+
+- It builds through the **COM Automation Interface** (the DTE COM object), not the `devenv` CLI — the XAE
+  Shell command-line crashes on startup, so this is Beckhoff's documented path for automated builds.
+- **It matches the project's TwinCAT version automatically** — and it must, because building with the
+  wrong version *fails, or silently upgrades the project*. The `.ps1` reads the saved version from the
+  project's `.tsproj` (`TcVersion="3.1.<build>.<rev>"`) and matches it in the **two** independent places
+  that both have to agree:
+  1. the **XAE Shell** it launches (the DTE ProgId), and
+  2. the **TwinCAT system version pinned** for that shell session (via `TcRemoteManager`) — because the
+     multi-version shell will otherwise bind the newest libraries installed, not the project's.
+
+  Build number → shell:
+
+  | TwinCAT build | XAE Shell | ProgId | Version pinning |
+  |---|---|---|---|
+  | `3.1.4024.x` | XAE Shell (VS2017 isolated, 32-bit) | `TcXaeShell.DTE.15.0` | none — single-version install, the shell *is* the version |
+  | `3.1.4026.x` | XAE Shell 64 (VS2022 isolated, 64-bit) | `TcXaeShell.DTE.17.0` | pinned via `TcRemoteManager`; if the exact `.tsproj` version isn't installed it uses the newest same-build `4026.x` |
+
+  The **matching shell must be installed** — the script checks the ProgId in the registry and exits `2`
+  if it is not. An unknown build number (neither 4024 nor 4026) also exits `2`. Override the detection
+  with `-ProgId` / `-TcVersion`, and add a row to the `$ProgIdByBuild` map in the `.ps1` to teach it a
+  new build.
+- The scripts expect to sit **one directory below the `.sln`**: they treat their parent folder as the
+  project root, auto-discover the single `.sln` in it, and read the version from the first `.tsproj`
+  found beneath it. If there is more than one `.sln`, pass it explicitly:
+  `... -File .\build_plc_project.ps1 -SlnPath ..\MySolution.sln`.
+- The build configuration is hardcoded to **`Release | TwinCAT RT (x64)`**. If your solution names its
+  configuration or platform differently, change `$ConfigName` / `$PlatformName` near the top of the
+  `.ps1`, or the build reports the configuration as "not found" and exits 2.
+- **The exit code is the pass/fail signal** — gate scripts and CI on it, not on the console text:
+  `0` = build succeeded, `1` = build failed (real compile errors), `2` = harness/COM error (shell would
+  not start, solution would not open, configuration not found). Inside the script, `LastBuildInfo` (the
+  count of failed projects) is authoritative; the error-list dump it prints is best-effort and is often
+  empty over late-bound COM even on a genuine failure — so a failed build may show exit `1` with no
+  itemised errors. Open the solution in the IDE to read them if you need the detail.
+- A successful build **regenerates the derived output** (`_CompileInfo*/`, and the `.tmc` when the used
+  types changed). That is expected, and it is exactly why the `.tmc` must never be hand-edited — see
+  *Project skeleton* above.
+
 ## Working here
 
 1. **The real code is inside the CDATA blocks.** Grep the `.Tc*` files themselves, case-insensitively,
