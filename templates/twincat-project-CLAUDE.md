@@ -228,3 +228,16 @@ library symbol — check that before concluding a type "does not exist".
    byte of the file alone.
 4. **An unresolved name is usually a library symbol, not a bug.** Before "fixing" an identifier you
    cannot find, check the `.plcproj` namespaces and the `.tmc`.
+
+## Handoff file — read this first, keep it current
+
+**At the start of every session, read [HANDOFF.md](HANDOFF.md) before doing anything else.** It carries what this file cannot: the *current* state of the work — what changed recently and whether it is committed, which tests pass or fail and why, known bugs with their root causes, and the pending task pipeline with the decisions already made. CLAUDE.md describes the project as it is designed; HANDOFF.md describes where the work actually stands right now.
+
+**Keep it updated as you work.** Update HANDOFF.md whenever you:
+- finish a task, or leave one deliberately unfinished (say what remains and why);
+- discover a bug, root-cause it, or decide not to fix it (record the finding — a diagnosis you throw away gets re-derived at cost);
+- change test status (a new harness, a newly failing or newly passing gate);
+- make or receive a decision that constrains future work (record the decision *and its rationale*);
+- commit, so "uncommitted work" stays accurate.
+
+Rules for the file: it reflects the present, not a changelog — replace stale entries instead of appending to them, and delete items once they are done and committed. Never let it contradict the repo; if they disagree, the repo wins and HANDOFF.md is what needs fixing. Prefer specifics (`file:line`, real counts, real error text) over summaries.
