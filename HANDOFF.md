@@ -16,6 +16,12 @@ always enough) — the user tested 0.3.1's feature against the still-running 0.3
 logic is verified on real data + guard tests, but nobody has eyeballed the rendered tree. Worth doing.
 
 ## Constraints / still open
+- **Uncommitted (templates):** `build_plc_project.{ps1,bat}` — TwinCAT *system*-version pinning is now
+  **opt-in via `-PinVersion`** (was auto-on for the 4026 shell; the old "nearest same-build" fallback is
+  gone). Default = the shell's configured default version. `-PinVersion` needs STA (`.bat` now launches
+  `-STA`), registers an `IOleMessageFilter` to survive the `rm.Version` env reload, confirms by polling
+  `rm.Version` (throws exit 2 on mismatch), and retries `Solution.Open`. Doc synced in
+  `templates/twincat-project-CLAUDE.md`. **Not yet committed.**
 - **Publication:** history was rewritten + the GitHub repo recreated to purge customer/vendor content (`sample/`,
   `.trust-lsp/`, machine codenames — 0 blobs match any customer id). Repo is **Private**. **Open:** confirm the
   contractual right to open-source the extension itself.

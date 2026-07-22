@@ -224,37 +224,51 @@ build as the ground truth after any change to a `.Tc*` file or the `.plcproj`: a
 nothing, a successful build proves the project still compiles and resolves.
 
 - **`build_plc_project.bat`** — the interactive / double-click wrapper. Runs the PowerShell script with
-  `-NoProfile -ExecutionPolicy Bypass`, prints `BUILD OK` or `BUILD FAILED`, and pauses so the window
-  stays open. It forwards its arguments to the `.ps1` (`%*`).
+  `-STA -NoProfile -ExecutionPolicy Bypass`, prints `BUILD OK` or `BUILD FAILED`, and pauses so the
+  window stays open. It forwards its arguments to the `.ps1` (`%*`) — so `build_plc_project.bat
+  -PinVersion` works. The `-STA` is deliberate: it is what makes `-PinVersion` (below) usable.
 - **`build_plc_project.ps1`** — the actual builder, and what to call from a shell, automation or CI:
 
   ```powershell
   powershell -NoProfile -ExecutionPolicy Bypass -File .\build_plc_project.ps1
+  # pin the project's TwinCAT system version for this run (needs -STA):
+  powershell -STA -NoProfile -ExecutionPolicy Bypass -File .\build_plc_project.ps1 -PinVersion
   ```
 
 What to know before you rely on it:
 
 - It builds through the **COM Automation Interface** (the DTE COM object), not the `devenv` CLI — the XAE
   Shell command-line crashes on startup, so this is Beckhoff's documented path for automated builds.
-- **It matches the project's TwinCAT version automatically** — and it must, because building with the
-  wrong version *fails, or silently upgrades the project*. The `.ps1` reads the saved version from the
-  project's `.tsproj` (`TcVersion="3.1.<build>.<rev>"`) and matches it in the **two** independent places
-  that both have to agree:
-  1. the **XAE Shell** it launches (the DTE ProgId), and
-  2. the **TwinCAT system version pinned** for that shell session (via `TcRemoteManager`) — because the
-     multi-version shell will otherwise bind the newest libraries installed, not the project's.
+- **It selects the XAE Shell automatically** — and it must, because building with the wrong version
+  *fails, or silently upgrades the project*. The `.ps1` reads the saved version from the project's
+  `.tsproj` (`TcVersion="3.1.<build>.<rev>"`) and derives the **XAE Shell** it launches (the DTE ProgId)
+  from the build number:
 
-  Build number → shell:
-
-  | TwinCAT build | XAE Shell | ProgId | Version pinning |
-  |---|---|---|---|
-  | `3.1.4024.x` | XAE Shell (VS2017 isolated, 32-bit) | `TcXaeShell.DTE.15.0` | none — single-version install, the shell *is* the version |
-  | `3.1.4026.x` | XAE Shell 64 (VS2022 isolated, 64-bit) | `TcXaeShell.DTE.17.0` | pinned via `TcRemoteManager`; if the exact `.tsproj` version isn't installed it uses the newest same-build `4026.x` |
+  | TwinCAT build | XAE Shell | ProgId |
+  |---|---|---|
+  | `3.1.4024.x` | XAE Shell (VS2017 isolated, 32-bit) | `TcXaeShell.DTE.15.0` |
+  | `3.1.4026.x` | XAE Shell 64 (VS2022 isolated, 64-bit) | `TcXaeShell.DTE.17.0` |
 
   The **matching shell must be installed** — the script checks the ProgId in the registry and exits `2`
   if it is not. An unknown build number (neither 4024 nor 4026) also exits `2`. Override the detection
   with `-ProgId` / `-TcVersion`, and add a row to the `$ProgIdByBuild` map in the `.ps1` to teach it a
   new build.
+- **The TwinCAT *system* version is a second knob, and it is NOT pinned by default.** The 4026 shell is
+  multi-version, so the TwinCAT it actually binds is a second thing that must agree with the project —
+  but by default the script leaves that to the **shell's configured default** (the version a human
+  selected once in the TwinCAT version manager) and merely reports it. That is correct when the machine's
+  default already matches the project.
+  - Pass **`-PinVersion`** to pin the project's `.tsproj` version for that one run, via `TcRemoteManager`.
+    It requires an **STA thread** (the `.bat` supplies `-STA`; calling the `.ps1` directly needs
+    `powershell -STA … -PinVersion`, or it exits `2`). Setting `rm.Version` reloads the shell environment
+    and floods `RPC_E_CALL_REJECTED`, so the script registers an `IOleMessageFilter` to ride that out,
+    then **confirms the pin by polling `rm.Version`**: it throws (exit `2`) if the shell settles on a
+    different version — e.g. the requested one isn't installed — and warns-but-proceeds if the getter
+    stays empty (which means the requested version already equals the shell default). It also retries
+    `Solution.Open`, because the freshly reloaded environment can reject the open until it settles.
+  - `-PinVersion` targets the multi-version **4026** shell. The 4024 shell is a single-version install —
+    the shell *is* the version — so leave it off there (touching `TcRemoteManager` on 4024 only perturbs
+    the solution load).
 - The scripts expect to sit **one directory below the `.sln`**: they treat their parent folder as the
   project root, auto-discover the single `.sln` in it, and read the version from the first `.tsproj`
   found beneath it. If there is more than one `.sln`, pass it explicitly:

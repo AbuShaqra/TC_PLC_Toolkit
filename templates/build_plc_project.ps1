@@ -6,13 +6,14 @@
 # the COM Automation Interface instead, which is Beckhoff's documented approach
 # for automated builds.
 #
-# Building with the wrong TwinCAT version fails (or silently upgrades the
-# project), and this has TWO independent knobs that must both match the version
-# the project was saved with (its .tsproj TcVersion):
-#   1. the XAE Shell (DTE ProgId) that is launched, and
-#   2. the TwinCAT system version pinned for that shell session via TcRemoteManager.
-# The 32-bit 4024 shell can still bind 4026 libraries if the session version is
-# not pinned, so both are set automatically from the .tsproj below.
+# Building with the wrong TwinCAT version fails (or silently upgrades the project).
+# Two knobs must match the project's .tsproj TcVersion:
+#   1. the XAE Shell (DTE ProgId) launched - always auto-selected from TcVersion.
+#   2. the active TwinCAT system version. By default this is left to the shell's
+#      configured default (set once by a human in the TwinCAT version manager).
+#      Pass -PinVersion to pin it programmatically via TcRemoteManager for this run
+#      (needs an STA thread - the .bat uses -STA - plus an IOleMessageFilter to ride
+#      out the version switch; the pin is confirmed by polling rm.Version).
 #
 # Exit codes: 0 = build succeeded, 1 = build failed, 2 = harness/COM error
 # ============================================================================
@@ -26,7 +27,11 @@ param(
     [string]$ProgId,
     # Optional TwinCAT version to pin (e.g. 3.1.4024.62). If omitted, it is read
     # from the project's .tsproj TcVersion.
-    [string]$TcVersion
+    [string]$TcVersion,
+    # Pin the TwinCAT version for this run via TcRemoteManager instead of relying on
+    # the XAE Shell's configured default. Requires an STA thread (build_plc_project.bat
+    # launches with -STA).
+    [switch]$PinVersion
 )
 
 $RepoRoot     = Split-Path -Parent $PSScriptRoot
@@ -107,6 +112,37 @@ function Invoke-ComRetry {
     throw "COM call still rejected after $MaxTries tries."
 }
 
+# For -PinVersion: setting TcRemoteManager.Version reloads the XAE Shell environment
+# and floods RPC_E_CALL_REJECTED. A proper IOleMessageFilter (STA) retries those so
+# the DTE survives the switch. Only registered when pinning.
+$filterRegistered = $false
+if ($PinVersion) {
+    if ([System.Threading.Thread]::CurrentThread.GetApartmentState() -ne 'STA') {
+        Write-Host "FATAL: -PinVersion needs an STA thread. Run via build_plc_project.bat, or: powershell -STA -File <this script> -PinVersion" -ForegroundColor Red
+        exit 2
+    }
+    Add-Type @'
+using System;
+using System.Runtime.InteropServices;
+public class TcBuildMessageFilter : IOleMessageFilter {
+    [DllImport("Ole32.dll")] private static extern int CoRegisterMessageFilter(IOleMessageFilter n, out IOleMessageFilter o);
+    public static void Register() { IOleMessageFilter o = null; CoRegisterMessageFilter(new TcBuildMessageFilter(), out o); }
+    public static void Revoke()   { IOleMessageFilter o = null; CoRegisterMessageFilter(null, out o); }
+    int IOleMessageFilter.HandleInComingCall(int a, IntPtr b, int c, IntPtr d) { return 0; }
+    int IOleMessageFilter.RetryRejectedCall(IntPtr a, int t, int r) { if (r == 2 && t < 180000) return 250; return -1; }
+    int IOleMessageFilter.MessagePending(IntPtr a, int b, int c) { return 2; }
+}
+[ComImport, Guid("00000016-0000-0000-C000-000000000046"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+interface IOleMessageFilter {
+    [PreserveSig] int HandleInComingCall(int a, IntPtr b, int c, IntPtr d);
+    [PreserveSig] int RetryRejectedCall(IntPtr a, int t, int r);
+    [PreserveSig] int MessagePending(IntPtr a, int b, int c);
+}
+'@
+    [TcBuildMessageFilter]::Register()
+    $filterRegistered = $true
+}
+
 $dte = $null
 try {
     if (-not (Test-Path $SlnPath)) { throw "Solution file not found: $SlnPath" }
@@ -114,37 +150,41 @@ try {
     Write-Host "Creating $ProgId instance..." -ForegroundColor Cyan
     $dte = New-Object -ComObject $ProgId
     Invoke-ComRetry { $dte.SuppressUI = $true }
-    try { Invoke-ComRetry { $dte.MainWindow.Visible = $false } } catch { }
+    if (-not $PinVersion) { try { Invoke-ComRetry { $dte.MainWindow.Visible = $false } } catch { } }
 
-    # Pin the TwinCAT system version BEFORE opening the solution, so the project
-    # builds against the libraries it was saved with rather than the newest version
-    # installed. This only applies to the 4026 multi-version XAE Shell; the 4024
-    # shell is a single-version install (the shell *is* the version) and exposes no
-    # TcRemoteManager version list - touching it there perturbs the solution load,
-    # so it is skipped.
-    if ($ProgId -eq 'TcXaeShell.DTE.17.0') {
-        try {
-            $rm = Invoke-ComRetry { $dte.GetObject("TcRemoteManager") }
-            $available = @(); try { $available = @(Invoke-ComRetry { $rm.Versions }) } catch { }
-            $pin = $TcVersion
-            if ($available.Count -gt 0 -and ($available -notcontains $TcVersion)) {
-                $build = ($TcVersion -split '\.')[2]
-                $sameBuild = $available | Where-Object { ($_ -split '\.')[2] -eq $build } | Sort-Object { [version]$_ } -Descending
-                if (-not $sameBuild) { throw "No installed TwinCAT $build.x version. Installed: $($available -join ', ')" }
-                $pin = @($sameBuild)[0]
-                Write-Host "Exact $TcVersion not installed; using nearest same-build $pin" -ForegroundColor Yellow
-            }
-            Invoke-ComRetry { $rm.Version = $pin }
-            Write-Host "Pinned TwinCAT version: $pin" -ForegroundColor Cyan
-        } catch {
-            Write-Host "WARNING: TcRemoteManager version pin skipped: $_" -ForegroundColor Yellow
+    if ($PinVersion) {
+        # Pin the project's TwinCAT version, then confirm it took by polling the
+        # getter. rm.Version reads back the pinned version (or empty when the pin
+        # equals the shell default). This IS the reliable "switch complete" signal;
+        # the message filter keeps the DTE alive through the environment reload.
+        $rm = Invoke-ComRetry { $dte.GetObject("TcRemoteManager") }
+        $default = try { "$($rm.Version)" } catch { "" }
+        Write-Host "Pinning TwinCAT version -> $TcVersion (was [$default])" -ForegroundColor Cyan
+        $rm.Version = $TcVersion
+        $state = 'pending'; $cur = ''
+        for ($N = 0; $N -lt 30 -and $state -eq 'pending'; $N++) {
+            Start-Sleep -Seconds 2
+            $cur = try { "$($rm.Version)" } catch { "" }
+            if ($cur -eq $TcVersion) { $state = 'confirmed' }
+            elseif ($cur -ne "") { $state = 'mismatch' }
         }
+        if ($state -eq 'confirmed') { Write-Host "Pin confirmed active: rm.Version=$TcVersion" -ForegroundColor Cyan }
+        elseif ($state -eq 'mismatch') { throw "TcRemoteManager did not honor the pin - rm.Version=[$cur], wanted $TcVersion" }
+        else { Write-Host "WARNING: rm.Version stayed empty - $TcVersion appears to equal the shell default; proceeding." -ForegroundColor Yellow }
     } else {
-        Write-Host "Single-version shell ($ProgId); TwinCAT version fixed by the shell." -ForegroundColor DarkGray
+        Write-Host "Using the shell's configured default TwinCAT version (pass -PinVersion to override)." -ForegroundColor DarkGray
     }
 
     Write-Host "Opening solution (loads the TwinCAT project, may take a while)..." -ForegroundColor Cyan
-    Invoke-ComRetry { $dte.Solution.Open($SlnPath) }
+    # Retry with a fresh Solution reference: right after a version pin the reloaded
+    # environment can reject Open with STG_E_FILENOTFOUND until it settles. Without
+    # -PinVersion this simply succeeds on the first attempt.
+    $opened = $false
+    for ($N = 0; $N -lt 25 -and -not $opened; $N++) {
+        try { Invoke-ComRetry { $dte.Solution.Open($SlnPath) }; $opened = $true }
+        catch { Start-Sleep -Seconds 3 }
+    }
+    if (-not $opened) { throw "Solution.Open did not succeed for $SlnPath" }
 
     # Wait until the solution reports open and projects are loaded
     for ($N = 0; $N -lt 120; $N++) {
@@ -242,5 +282,6 @@ finally {
         try { $dte.Quit() } catch { }
         [System.Runtime.Interopservices.Marshal]::ReleaseComObject($dte) | Out-Null
     }
+    if ($filterRegistered) { try { [TcBuildMessageFilter]::Revoke() } catch { } }
 }
 exit $exitCode
