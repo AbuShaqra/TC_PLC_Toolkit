@@ -86,6 +86,17 @@ logic is verified on real data + guard tests, but nobody has eyeballed the rende
 - **README.md** = public page (ships); **DEVELOPMENT.md** = build/test/architecture; CLAUDE/HANDOFF/DEVELOPMENT are
   `.vscodeignore`d. Package `npx @vscode/vsce package`. `scripts/` ships (the generator). Stale local branches
   `moe`/`native-editor` un-pushed.
+- **`templates/` build harness is a DOWNSTREAM COPY — do not edit it in place.** Master is
+  `C:\Software\TC_Start\Scripts\Build project\` (its HANDOFF owns the rule); the same files are also
+  promoted to `C:\Software\PLC projects\HPR40 EOL\hpr40_eol\Scripts\`. Change the builder **there**, then
+  re-promote all three, or the next promotion silently reverts you. Promoted set = `build_plc_project.ps1`
+  + `build_plc_project.md` + `test-resolve-twincat-target.ps1`; each repo's `.bat` is its own (this one
+  passes `-STA`, TC_Start's does not — so the `.md` must never claim what the wrapper does).
+  Keep the promoted files **generic**: no TC_Start paths or `TcSample`/`build-sample-project.js` names, as
+  they ship in the VSIX (`templates/` is not `.vscodeignore`d) and are copied into user projects.
+  `-ProgId`/`-PinVersion` were removed 2026-07-29 — `-TcVersion` is the single knob and passing it is what
+  pins; the traps are in the script's own header, read that. `test-resolve-twincat-target.ps1` is COM-free
+  (**13/13**, no TwinCAT needed); `twincat-project-CLAUDE.md` + README are synced to this revision.
 - **Architecture roadmap COMPLETE** (H1 `features.js` facade · H2 `symbolNode` · M2 injectable index · M3 thin
   `extension.js` → `src/commands/` + `src/xaeShell.js` · L2 perf guard — all merged). **L1 (reverse index) DEFERRED
   by decision** — reference search is already 29 ms cold / ~4 ms warm; reopen only past ~1000 files or >200 ms.

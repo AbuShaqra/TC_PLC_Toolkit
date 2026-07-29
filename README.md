@@ -162,6 +162,12 @@ tools out (ST is case-insensitive; a method's `VAR` block is private to it; `ins
 **Copy it into your own TwinCAT project as that project's `CLAUDE.md`.** Claude Code then knows what it
 is looking at from the first file it opens, instead of re-deriving the format — or guessing it wrong.
 
+`templates/` also carries a **headless build harness** to copy alongside it: `build_plc_project.ps1`
+builds a solution through the Automation Interface (no IDE window, no `devenv` CLI), picks the XAE Shell
+that matches the project's saved TwinCAT version, and reports pass/fail as an exit code — plus a
+double-click `.bat` wrapper, a full argument reference in `build_plc_project.md`, and COM-free unit tests
+for the version logic. There is no unit-test framework for Structured Text, so a compile *is* the test.
+
 ---
 
 ## Requirements

@@ -258,28 +258,35 @@ never a project one.
 
 ## Building and testing the project
 
-There is no unit-test framework for ST here — **a full compile is the test.** Two scripts drive a
+There is no unit-test framework for ST here — **a full compile is the test.** These scripts drive a
 headless TwinCAT build so you can confirm an edit still compiles without opening the IDE. Treat a green
 build as the ground truth after any change to a `.Tc*` file or the `.plcproj`: a clean grep proves
 nothing, a successful build proves the project still compiles and resolves.
 
-- **`build_plc_project.bat`** — the interactive / double-click wrapper. Runs the PowerShell script with
-  `-STA -NoProfile -ExecutionPolicy Bypass`, prints `BUILD OK` or `BUILD FAILED - exit code <n>`, and
-  pauses so the window stays open. It forwards its arguments to the `.ps1` (`%*`) — so
-  `build_plc_project.bat -PinVersion` works. The `-STA` is deliberate: it is what makes `-PinVersion`
-  (below) usable.
-- **`build_plc_project.ps1`** — the actual builder, and what to call from a shell, automation or CI:
+- **`build_plc_project.ps1`** — the builder, and what to call from a shell, automation or CI.
+- **`build_plc_project.bat`** — the interactive / double-click wrapper. Runs the `.ps1` with
+  `-STA -NoProfile -ExecutionPolicy Bypass`, forwards its arguments verbatim (`%*`), prints `BUILD OK`
+  or `BUILD FAILED - exit code <n>`, and pauses so the window stays open.
+- **`build_plc_project.md`** — the full argument reference. `Get-Help .\build_plc_project.ps1 -Full`
+  carries the same text.
+- **`test-resolve-twincat-target.ps1`** — unit tests for the version logic. COM-free: no TwinCAT
+  installation, no shell, no solution, and it never launches an IDE.
 
-  ```powershell
-  powershell -NoProfile -ExecutionPolicy Bypass -File .\build_plc_project.ps1
-  # pin the project's TwinCAT system version for this run (needs -STA):
-  powershell -STA -NoProfile -ExecutionPolicy Bypass -File .\build_plc_project.ps1 -PinVersion
-  ```
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\build_plc_project.ps1                # the only .sln in the repo
+powershell -NoProfile -ExecutionPolicy Bypass -File .\build_plc_project.ps1 MyProject       # by name
+.\build_plc_project.ps1 MyProject -TcVersion 3.1.4026.22                                   # …pinned to a version
+```
 
 What to know before you rely on it:
 
 - It builds through the **COM Automation Interface** (the DTE COM object), not the `devenv` CLI — the XAE
   Shell command-line crashes on startup, so this is Beckhoff's documented path for automated builds.
+- **Which solution:** `-SlnPath` (alias `-Solution`, positional) accepts a bare name, a directory holding
+  exactly one `.sln`, or a path — resolved most-specific first, and any ambiguity is an error listing the
+  candidates, never a silent pick. Omit it and the **repo root** — the nearest enclosing `.git` directory,
+  walked up from the script, not a fixed level above it — is searched **recursively**; exactly one `.sln`
+  is used, two or more exit `2` with the candidates listed (the normal state once a sandbox clone exists).
 - **It selects the XAE Shell automatically** — and it must, because building with the wrong version
   *fails, or silently upgrades the project*. The `.ps1` reads the saved version from the project's
   `.tsproj` (`TcVersion="3.1.<build>.<rev>"`) and derives the **XAE Shell** it launches (the DTE ProgId)
@@ -291,43 +298,54 @@ What to know before you rely on it:
   | `3.1.4026.x` | XAE Shell 64 (VS2022 isolated, 64-bit) | `TcXaeShell.DTE.17.0` |
 
   The **matching shell must be installed** — the script checks the ProgId in the registry and exits `2`
-  if it is not. An unknown build number (neither 4024 nor 4026) also exits `2`. Override the detection
-  with `-ProgId` / `-TcVersion`, and add a row to the `$ProgIdByBuild` map in the `.ps1` to teach it a
-  new build.
-  It finds that `.tsproj` by searching the project root **recursively** and taking the alphabetically
-  first hit. With more than one TwinCAT project under the root that need not be the one you are
-  building — pass `-TcVersion` (and `-ProgId`) explicitly there rather than trusting the detection.
-- **The TwinCAT *system* version is a second knob, and it is NOT pinned by default.** The 4026 shell is
-  multi-version, so the TwinCAT it actually binds is a second thing that must agree with the project —
-  but by default the script leaves that to the **shell's configured default** (the version a human
-  selected once in the TwinCAT version manager) and merely reports it. That is correct when the machine's
-  default already matches the project.
-  - Pass **`-PinVersion`** to pin the project's `.tsproj` version for that one run, via `TcRemoteManager`.
-    It requires an **STA thread** (the `.bat` supplies `-STA`; calling the `.ps1` directly needs
-    `powershell -STA … -PinVersion`, or it exits `2`). Setting `rm.Version` reloads the shell environment
-    and floods `RPC_E_CALL_REJECTED`, so the script registers an `IOleMessageFilter` to ride that out,
-    then **confirms the pin by polling `rm.Version`**: it throws (exit `2`) if the shell settles on a
-    different version — e.g. the requested one isn't installed — and warns-but-proceeds if the getter
-    stays empty (which means the requested version already equals the shell default). It also retries
-    `Solution.Open`, because the freshly reloaded environment can reject the open until it settles.
-    Note that a `-PinVersion` run leaves the **shell window visible** (a plain run hides it), so expect
-    an XAE Shell to appear on screen — that is not a fault. `SuppressUI` is set either way, so it will
-    not stop for a dialog.
-  - `-PinVersion` targets the multi-version **4026** shell. The 4024 shell is a single-version install —
-    the shell *is* the version — so leave it off there (touching `TcRemoteManager` on 4024 only perturbs
-    the solution load).
-- The scripts expect to sit **one directory below the `.sln`**: they treat their parent folder as the
-  project root, auto-discover the single `.sln` directly in it, and read the version from the `.tsproj`
-  as described above. Finding zero or more than one `.sln` there is exit `2`; pass one explicitly then:
-  `... -File .\build_plc_project.ps1 -SlnPath ..\MySolution.sln`.
+  if it is not. An unknown build number (neither 4024 nor 4026) also exits `2`; add a row to the
+  `$ProgIdByBuild` map in the `.ps1` to teach it a new build. The `.tsproj` is searched under **the
+  resolved solution's own directory**, never repo-wide, so a sandbox clone can never supply the version
+  another project is built with. It is read on *every* run, because it is what `-TcVersion` is checked
+  against.
+- **`-TcVersion` is the only version knob — and passing it is what turns pinning on.** It takes either a
+  version (`3.1.4026.22`) or a DTE ProgId (`TcXaeShell.DTE.17.0`) and derives the other, so the shell and
+  the pinned TwinCAT cannot disagree. Omit it and the correct *shell* is still chosen from the project,
+  but the shell's configured TwinCAT version is left exactly as it is — nothing is pinned, because you
+  did not ask for a particular version.
+  - The result is checked against the `.tsproj` **before any COM object is created**, so the common
+    mistake costs about a second with no IDE launched: a different **build** (4024 vs 4026) is fatal,
+    exit `2`, unless you pass `-AllowVersionMismatch`; a different **revision** (`.17` vs `.22`) is only
+    a warning. An unparseable `-TcVersion`, or a build with no shell mapping, is fatal either way.
+  - Pinning goes through `TcRemoteManager` and is **confirmed by reading `rm.Version` back**, never
+    assumed: a shell that declines the pin fails loudly (exit `2`) instead of printing `Pinned` and
+    building on the old version. If the exact revision is not installed, the newest installed version of
+    the same build is used and reported; if *no* version of that build is installed the pin is
+    unsatisfiable and that is fatal too (`-AllowVersionMismatch` downgrades it to a warning).
+  - **Pinning runs on both shells.** It used to be skipped on 4024, on the belief that 4024 is a
+    single-version install with no version list — measured false on 2026-07-29: the 4024 shell lists six
+    versions (4026.22/.20/.19/.17 *and* 4024.62/.50) where the 4026 shell lists only its own four. The
+    4024 versions are visible **only** from the 4024 shell, which is why the list is read from the shell
+    chosen for the requested version rather than a fixed one.
+  - Setting `rm.Version` reloads the shell environment and floods `RPC_E_CALL_REJECTED`, so the script
+    registers an `IOleMessageFilter` (STA only — `powershell.exe -File` is STA, and the `.bat` passes
+    `-STA` explicitly; under MTA it warns and builds on) and retries `Solution.Open`, which the reloaded
+    environment can reject until it settles. A run that **actually switches** version leaves the shell
+    window **visible** — a hidden window during the reload is what makes the switch fragile — so expect
+    an XAE Shell on screen; that is not a fault. `SuppressUI` is set either way, so it never stops for a
+    dialog.
+  - **`-ProgId` and `-PinVersion` no longer exist** (removed 2026-07-29); passing either is a PowerShell
+    parameter error. `-ProgId` was a second version knob that could contradict `-TcVersion`, and that
+    contradiction is exactly how a build against the wrong TwinCAT used to report success. Copies of the
+    script deployed before that date still take both.
+- **It will not close a shell it did not open.** Running XAE Shells are censused before COM is asked for
+  one, and `Quit()` is called only on a process the script can prove it started; if it cannot prove it,
+  the shell is left open and it says so. A stray IDE window is a nuisance — closing a developer's is data
+  loss.
 - The build configuration is hardcoded to **`Release | TwinCAT RT (x64)`**. If your solution names its
   configuration or platform differently, change `$ConfigName` / `$PlatformName` near the top of the
   `.ps1`, or the build reports the configuration as "not found" and exits 2.
 - **The exit code is the pass/fail signal** — gate scripts and CI on it, not on the console text:
-  `0` = build succeeded, `1` = build failed (real compile errors), `2` = harness/COM error (shell would
-  not start, solution would not open, configuration not found). Inside the script, `LastBuildInfo` (the
-  count of failed projects) is authoritative; the error-list dump it prints is best-effort and is often
-  empty over late-bound COM even on a genuine failure.
+  `0` = build succeeded, `1` = build failed (real compile errors), `2` = harness/COM error (shell not
+  installed, solution not found or ambiguous, solution would not open, configuration not found, TwinCAT
+  version mismatch or unsatisfiable pin). Inside the script, `LastBuildInfo` (the count of failed
+  projects) is authoritative; the error-list dump it prints is best-effort and is often empty over
+  late-bound COM even on a genuine failure.
 - **On a failure, read the output-window dump, not the error list.** Because that error list is usually
   empty over COM, the script also dumps every **Output window pane** when the build fails — and the
   Build / TwinCAT pane there carries the real compiler messages. That dump is where you read what went
