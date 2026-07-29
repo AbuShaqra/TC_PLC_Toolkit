@@ -20,8 +20,9 @@ One object = one file:
 | `.TcIO` | `<Itf>` | an `INTERFACE` |
 | `.TcTLEO` | `<EnumerationTextList>` | an enum whose members also carry display text — its `<Declaration>` is an ordinary `TYPE X : (…); END_TYPE`, i.e. a DUT in every way that matters |
 
-Other `.Tc*` files exist (`.TcTTO` tasks, `.TcVMO`/`.TcVIS` visualisations, `.TcGTLO` text lists). They
-are not ST; leave them alone unless asked.
+Other `.Tc*` files exist (`.TcTTO` tasks, `.TcVMO`/`.TcVIS` visualisations, `.TcTLO`/`.TcGTLO` text
+lists). They are not ST, and no code change touches them — but they **name project symbols as plain
+strings**, so a *rename* does reach them. See *Renaming reaches outside the ST* below.
 
 ## XML anatomy
 
@@ -95,9 +96,21 @@ Never do these, however tempting:
   component it names.
 - **Do not normalise encodings or line endings.** These files are CRLF, and whether a file starts with
   a UTF-8 BOM varies file by file (in one real 152-object project: 93 with, 59 without). Rewriting a
-  file with different endings or a stripped BOM makes every line show as changed.
+  file with different endings or a stripped BOM makes every line show as changed. The **configuration
+  objects are the exception**: `.TcVIS`/`.TcVMO`, `.TcTLO`/`.TcGTLO` and `.TcTTO` are consistently
+  UTF-8 *with* a BOM. Strip it before you compute string offsets into one and write it back, or every
+  edit in the file lands one character off.
 - **Do not re-sort child elements.** TwinCAT writes sub-objects alphabetically
   (`SubObjectsSortedByName` in the `.plcproj`); a new method belongs in that order, not at the end.
+- **Do not move a `<Folder>` below the members.** TwinCAT's XML loader is **order-sensitive** inside
+  `<POU>` / `<Itf>`: the root-level `<Folder>` elements must sit between the root `</Implementation>`
+  (`</Declaration>` for an interface, which has no root implementation) and the first `<Method>` /
+  `<Property>` / `<Action>`. A folder written after the members makes XAE **drop those members from the
+  compile** — one `C0004` per method and property, on a file that opens fine and looks well-formed.
+  Keep the folder group contiguous, and put a new root folder at the end of it.
+- **Keep new members above the `<LineIds>` blocks.** TwinCAT's canonical order inside the root element
+  is: root declaration and implementation, then folders, then members, then every `<LineIds>` block
+  last. Given the loader's order-sensitivity above, match that order rather than appending.
 
 A safe edit is: locate the exact `<![CDATA[` … `]]>` span of the component you want, splice new text
 between those delimiters, write the file back unchanged elsewhere. Prefer a targeted string
@@ -216,6 +229,33 @@ Derived, so usually git-ignored: `_CompileInfo*/`, `ST_Files/`. `_Libraries/` an
 ignored too (they are bulky and machine-generated), which means a fresh clone can be missing every
 library symbol — check that before concluding a type "does not exist".
 
+## Renaming reaches outside the ST
+
+Renaming an object, or one of its members, is a **project-wide** edit. Four things name the symbol, and
+only the first is code:
+
+1. **the ST itself** — every `.Tc*` CDATA block, searched case-insensitively;
+2. **the `.plcproj`** — the `<Compile Include="…">` path, whenever the file name changes;
+3. **the object's own XML metadata** — the root `Name=` attribute, and the `<LineIds Name="Root.Member">`
+   keys, which are named after the component they belong to;
+4. **the configuration objects, which name symbols as plain strings**:
+   - `.TcVIS` / `.TcVMO` visualisations — quoted dotted paths, e.g.
+     `<v n="BasicTypeNodeValue">"GVL_Line.fbClamp.bDone"</v>`, plus real ST inside `STSnippet` elements;
+   - `.TcTLO` / `.TcGTLO` text lists — a dynamic-text entry's *text* is itself a symbol path
+     (`GVL_Line.arrStates[INDEX]`);
+   - `.TcTTO` task configurations — the entry POU, as `<PouCall><Name>MAIN</Name></PouCall>`.
+
+Miss (4) and the project still looks correct in the editor: it either fails at build, or builds while the
+HMI reads a symbol that no longer exists.
+
+**But edit (4) only where the path provably resolves to the symbol you are renaming.** The decoys have
+exactly the same shape — a text list holds display keys (`Encoderpos.Turn1`) beside real symbol paths in
+the same file, and visualisations are full of library names (`VisuElems.*`, `VisuDialogs.*`). So the
+polarity is the reverse of the code side: in ST, leave an occurrence you cannot resolve alone and let the
+compiler catch it; in a configuration object, an unproven edit silently corrupts the HMI, so change
+nothing you cannot prove. A `<PouCall>` value containing a dot is a library POU (`VisuElems.Visu_Prg`),
+never a project one.
+
 ## Building and testing the project
 
 There is no unit-test framework for ST here — **a full compile is the test.** Two scripts drive a
@@ -224,9 +264,10 @@ build as the ground truth after any change to a `.Tc*` file or the `.plcproj`: a
 nothing, a successful build proves the project still compiles and resolves.
 
 - **`build_plc_project.bat`** — the interactive / double-click wrapper. Runs the PowerShell script with
-  `-STA -NoProfile -ExecutionPolicy Bypass`, prints `BUILD OK` or `BUILD FAILED`, and pauses so the
-  window stays open. It forwards its arguments to the `.ps1` (`%*`) — so `build_plc_project.bat
-  -PinVersion` works. The `-STA` is deliberate: it is what makes `-PinVersion` (below) usable.
+  `-STA -NoProfile -ExecutionPolicy Bypass`, prints `BUILD OK` or `BUILD FAILED - exit code <n>`, and
+  pauses so the window stays open. It forwards its arguments to the `.ps1` (`%*`) — so
+  `build_plc_project.bat -PinVersion` works. The `-STA` is deliberate: it is what makes `-PinVersion`
+  (below) usable.
 - **`build_plc_project.ps1`** — the actual builder, and what to call from a shell, automation or CI:
 
   ```powershell
@@ -253,6 +294,9 @@ What to know before you rely on it:
   if it is not. An unknown build number (neither 4024 nor 4026) also exits `2`. Override the detection
   with `-ProgId` / `-TcVersion`, and add a row to the `$ProgIdByBuild` map in the `.ps1` to teach it a
   new build.
+  It finds that `.tsproj` by searching the project root **recursively** and taking the alphabetically
+  first hit. With more than one TwinCAT project under the root that need not be the one you are
+  building — pass `-TcVersion` (and `-ProgId`) explicitly there rather than trusting the detection.
 - **The TwinCAT *system* version is a second knob, and it is NOT pinned by default.** The 4026 shell is
   multi-version, so the TwinCAT it actually binds is a second thing that must agree with the project —
   but by default the script leaves that to the **shell's configured default** (the version a human
@@ -266,12 +310,15 @@ What to know before you rely on it:
     different version — e.g. the requested one isn't installed — and warns-but-proceeds if the getter
     stays empty (which means the requested version already equals the shell default). It also retries
     `Solution.Open`, because the freshly reloaded environment can reject the open until it settles.
+    Note that a `-PinVersion` run leaves the **shell window visible** (a plain run hides it), so expect
+    an XAE Shell to appear on screen — that is not a fault. `SuppressUI` is set either way, so it will
+    not stop for a dialog.
   - `-PinVersion` targets the multi-version **4026** shell. The 4024 shell is a single-version install —
     the shell *is* the version — so leave it off there (touching `TcRemoteManager` on 4024 only perturbs
     the solution load).
 - The scripts expect to sit **one directory below the `.sln`**: they treat their parent folder as the
-  project root, auto-discover the single `.sln` in it, and read the version from the first `.tsproj`
-  found beneath it. If there is more than one `.sln`, pass it explicitly:
+  project root, auto-discover the single `.sln` directly in it, and read the version from the `.tsproj`
+  as described above. Finding zero or more than one `.sln` there is exit `2`; pass one explicitly then:
   `... -File .\build_plc_project.ps1 -SlnPath ..\MySolution.sln`.
 - The build configuration is hardcoded to **`Release | TwinCAT RT (x64)`**. If your solution names its
   configuration or platform differently, change `$ConfigName` / `$PlatformName` near the top of the
@@ -280,8 +327,11 @@ What to know before you rely on it:
   `0` = build succeeded, `1` = build failed (real compile errors), `2` = harness/COM error (shell would
   not start, solution would not open, configuration not found). Inside the script, `LastBuildInfo` (the
   count of failed projects) is authoritative; the error-list dump it prints is best-effort and is often
-  empty over late-bound COM even on a genuine failure — so a failed build may show exit `1` with no
-  itemised errors. Open the solution in the IDE to read them if you need the detail.
+  empty over late-bound COM even on a genuine failure.
+- **On a failure, read the output-window dump, not the error list.** Because that error list is usually
+  empty over COM, the script also dumps every **Output window pane** when the build fails — and the
+  Build / TwinCAT pane there carries the real compiler messages. That dump is where you read what went
+  wrong. Only if it too comes back empty is opening the solution in the IDE worth the time.
 - A successful build **regenerates the derived output** (`_CompileInfo*/`, and the `.tmc` when the used
   types changed). That is expected, and it is exactly why the `.tmc` must never be hand-edited — see
   *Project skeleton* above.
@@ -298,6 +348,9 @@ What to know before you rely on it:
    byte of the file alone.
 4. **An unresolved name is usually a library symbol, not a bug.** Before "fixing" an identifier you
    cannot find, check the `.plcproj` namespaces and the `.tmc`.
+5. **A rename is never a find-and-replace.** ST is case-insensitive, a method's parameters are named at
+   call sites in other files, and the visualisations, text lists and task configs name symbols as
+   strings — see *Renaming reaches outside the ST*.
 
 ## Handoff file — read this first, keep it current
 
