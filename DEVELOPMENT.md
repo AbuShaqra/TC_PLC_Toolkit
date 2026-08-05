@@ -93,6 +93,7 @@ per-suite without aborting on the first failure. The main ones:
 | `test/test_rename_engine.js` | `src/renameEngine.js`: mapping workspace reference positions (raw-ST-unit coords) back into CDATA splices — synthesized-line skips (action headers, `GET`/`SET`), the PROGRAM→FUNCTION_BLOCK raw-mode column skew, the never-write-a-mismatch guard, CRLF byte preservation. |
 | `test/test_references_for_symbol.js` | The LSP's by-symbol references entry point (`custom/referencesForSymbol`) that powers rename: FB/GVL/DUT roots (a GVL name never appears in its own ST text, so the position-based API cannot seed it), methods/properties/actions, the name-keyed-index identity guard, and index restoration after the scan. |
 | `test/test_config_references.js` | The non-code half of rename (`custom/configReferencesForSymbol`): dotted symbol paths inside visualizations `.TcVIS`/`.TcVMO` (`GVL_X.fb.member`, embedded `STSnippet` code) and text lists `.TcTLO`/`.TcGTLO` (a text entry whose text IS a symbol path) are found only when the chain provably resolves to the renamed symbol — text-list ids, visu-library names, dotted prose (`Encoderpos.Turn1`) and unresolvable prefixes are never touched. Task configs `.TcTTO` use a separate rule: the `<PouCall>` `<Name>` matches only a dot-free name, so a library call (`VisuElems.Visu_Prg`) is never rewritten. BOM/offset fidelity, plus a sample-project pass when `sample/` is present. |
+| `test/test_folding.js` | Folding ranges (`media/stFolding.js`). Pins the two reported bugs by name — an unmatched `{endregion}` truncating the enclosing `VAR` fold, and an unindented `{attribute …}` growing a fold arrow of its own — plus the case designed for rather than discovered: `{IF defined(X)}` is a conditional *pragma*, not an `IF` block, and reading it as one leaves an unclosed block that eats every fold below. Also covers keywords inside comments/strings (`$`-escapes included), members named like keywords (`axis.Case`), the separate region/block stacks, every `VAR_*` variant, and a sweep over every pane of every `sample/` object asserting no range is ever out of bounds. |
 | `test/test_pragmas.js` | Pragma classification and the two catalogs, plus the highlighting rules in **both** grammars and the `{region}` folding markers. Pins the split the design rests on: shape decides the category (and therefore the colour), the catalog only enriches — so a user-defined attribute must be scoped exactly like a documented one. Also asserts catalog integrity (no duplicates, every documented entry has an Infosys node id, the curated file holds nothing Infosys documents, every curated entry carries measured counts), that pragma spans are consumed whole in the lexer and both grammars, and that the three folding-marker declarations — `pragmas.js`, `language-configuration.json`, `media/editor.js` — still agree, which nothing else can check because none of them can import the others. |
 | `test/test_plcproj_scope.js` | The index is scoped to the `.plcproj`, not the filesystem: `collectPlcProjObjectPaths` lists the `<Compile>`d objects, and `indexTwinCatDirectory` skips on-disk objects outside that set so a backup/orphan copy (a duplicate object name) cannot win the name-keyed index and steal a real object's references. Includes the no-`.plcproj` index-all fallback and a sample-coverage check proving the gate is a no-op on the ratchet. |
 
@@ -121,7 +122,7 @@ node scratch/peek_harness/run_pragmas.js    # {region} folding + the Monarch pra
 | `build.js` | Generates the page by calling the **real** `getHtmlForWebview()` with a stubbed `vscode` module — a hand-copied page would quietly stop matching what ships. Substitutes only `acquireVsCodeApi()` (records outgoing messages, answers bridge requests from a fixture built off the real sample) and drops the webview CSP, which names `vscode-webview:` sources that do not exist over http. |
 | `serve.js` | Serves it. Monaco's AMD loader and its worker Blob both need a real origin. `require()` it for `start(port)`, or run it standalone to poke at the page by hand. |
 | `run.js` | The references peek: builds for the port it will serve on, drives Find References, asserts. `HARNESS_PORT` moves it off 8123; `HARNESS_SHOT=x.png` saves a screenshot. |
-| `run_pragmas.js` | Pragmas: folds a `{region}` block and reads back the rendered lines, then tokenizes through Monaco's **own** tokenizer. Both are things that fail silently — folding is purely declarative (markers on the language configuration), so if Monaco ever stopped honouring them every unit test would still pass and no region would fold. Its fixture has **no indentation inside the VAR block**, so an indentation-derived range cannot account for the fold: if lines collapse, the marker did it. Verified — removing the markers turns 3 assertions red and nothing folds at all. Defaults to port 8124. |
+| `run_pragmas.js` | Folding and pragma highlighting. Folds real blocks and reads back the rendered lines, then tokenizes through Monaco's **own** tokenizer. Both fail silently if they regress, which is the point of driving a browser: a unit test on `stFolding.js` cannot prove Monaco actually *used* it rather than its own indentation provider. Carries the two reported bugs as regressions, and asserts implementation-pane blocks still fold — registering a provider replaces indentation folding, so that is the thing most likely to disappear unnoticed. Verified: removing the provider turns 6 assertions red, and the failure text reproduces both original bug reports verbatim. Defaults to port 8124. |
 
 `run.js` asserts what only a browser can show: that the peek lists cross-file hits at all, that exactly
 the **non-live** panes get hidden models (a hit in the active component must use the live pane), that a
@@ -200,6 +201,9 @@ src/
     browserCache.js       Reads TwinCAT's per-library browsercache → FB/interface method + property NAMES
 media/
   editor.js / editor.css  Monaco webview front-end (two panes, providers, sync)
+  stFolding.js          ST folding ranges from block structure. Dual-mode: a <script> tag in the
+                        webview, require()d by extension.js for plain .st files — one algorithm,
+                        both editors, no build step. See "Folding" below.
 ```
 
 The workspace index is **scoped to the `.plcproj`**: at startup (and on `custom/reindex`) the server
@@ -264,14 +268,37 @@ The script scrapes the one open-ended list (attribute pragmas publish one child 
 *verifies* the four closed grammars against their own pages, so a documentation rewrite fails loudly
 instead of producing a catalog that quietly disagrees.
 
-**`{region}` / `{endregion}` folding** is declarative: folding markers on the language configuration,
-in `media/editor.js` (the panes, both of them — folding away a 200-line VAR block is the point) and in
-`language-configuration.json` (VS Code's own editor, for loose `.st` files). Markers suffice *because*
-no `FoldingRangeProvider` is registered for `iecst`, so Monaco falls back to its indentation provider,
-which honours and nests them. **Registering a range provider for this language would silently kill
-region folding** — a syntax provider replaces the indentation one, markers included. Neither
-declaration can `require()` the regex sources in `pragmas.js`, so `test_pragmas.js` asserts all three
-agree, and `scratch/peek_harness/run_pragmas.js` proves in a real browser that lines actually collapse.
+### Folding
+
+`media/stFolding.js` computes folding ranges from ST's **block structure**. It is registered twice
+from one copy — `media/editor.js` for the panes, `extension.js` for plain `.st` files — which is why it
+is a dual-mode module (`<script>` tag in the webview, `require()` everywhere else; there is no build
+step to unify them). `test/test_folding.js` exercises it directly.
+
+It replaced Monaco's indentation folding, which is the wrong model for ST — its blocks are
+keyword-delimited — and produced two user-reported bugs:
+
+1. **An unmatched `{endregion}` truncated the enclosing `VAR` fold.** Monaco's `computeRanges` scans
+   bottom-up and pushes an `{indent: -2}` sentinel for an end marker it has not matched yet. Only a
+   *matching start marker* pops it — the indentation unwind is `while (top.indent > lineIndent)` and
+   `-2` is below every real indent — so a lone `{endregion}` was a permanent barrier.
+2. **`{attribute 'TcLinkTo' := ''}` at column 0 under an indented `VAR` body grew its own fold arrow.**
+   Never about pragmas: an unindented line followed by indented ones simply *is* an indent region.
+
+**Registering a provider replaces the indentation provider outright**, so `stFolding.js` must cover the
+keyword blocks (`VAR`…`END_VAR` and family, `IF`, `CASE`, `FOR`, `WHILE`, `REPEAT`, `STRUCT`, `UNION`,
+`TYPE`) as well as regions — drop them and `IF … END_IF` silently stops folding. That is asserted in a
+browser, not just in Node, because "silently" is the operative word.
+
+Keywords count only where they are **code**: comments, strings and pragma bodies are blanked first.
+That is not tidiness — `{IF defined(Variant1)}` is a *conditional pragma*, not an `IF` block, and
+counting it leaves an unclosed `IF` on the stack that eats every fold below it. Regions and keyword
+blocks use **separate stacks**, so one malformed construct cannot destroy the other's ranges.
+
+The `folding.markers` in `media/editor.js` and `language-configuration.json` are **inert** while the
+providers are registered. They are kept as the declarative statement of what a region is, and as a
+fallback if a provider is ever removed; neither file can `require()` the regex sources in `pragmas.js`,
+so `test_pragmas.js` asserts all three agree.
 
 The one invariant nothing may relax: **a pragma span is consumed whole, stopping at `}` or end of
 line.** ST strings are single-quoted, so the apostrophe in `{region "Motion FB's"}` would otherwise

@@ -17,6 +17,9 @@ const { TwinCatCustomEditorProvider } = require('./src/customEditorProvider');
 const { TwinCatTreeDataProvider } = require('./src/treeDataProvider');
 const { TwinCatReferencesProvider } = require('./src/referencesProvider');
 const { TwinCatLibraryTreeDataProvider } = require('./src/libraryTreeProvider');
+// Lives under media/ because the webview loads it with a <script> tag; it is written to require()
+// cleanly as well so both editors fold ST identically from one copy of the algorithm.
+const stFolding = require('./media/stFolding');
 const {
     getWorkspaceTypesCache,
     setWorkspaceTypesCache,
@@ -194,6 +197,28 @@ function activate(context) {
         clientOptions
     );
     client.start();
+
+    // Folding for plain `.st` files opened in VS Code's own editor, from the same module the webview
+    // panes use. Without it these files keep VS Code's indentation folding and both defects that came
+    // with it: an unmatched `{endregion}` truncating the enclosing VAR fold, and an unindented line
+    // under an indented VAR body growing a fold arrow of its own. The language configuration's region
+    // markers are inert while this is registered — a range provider replaces the indentation one — and
+    // are kept as the declarative fallback. See media/stFolding.js.
+    context.subscriptions.push(
+        vscode.languages.registerFoldingRangeProvider({ language: 'twincat-st' }, {
+            provideFoldingRanges(document) {
+                const lines = [];
+                for (let i = 0; i < document.lineCount; i++) lines.push(document.lineAt(i).text);
+                return stFolding.computeFoldingRanges(lines).map(r => new vscode.FoldingRange(
+                    // VS Code's FoldingRange is 0-based; stFolding speaks the 1-based line numbers
+                    // Monaco's provider API wants.
+                    r.start - 1,
+                    r.end - 1,
+                    r.kind === 'region' ? vscode.FoldingRangeKind.Region : undefined
+                ));
+            }
+        })
+    );
 
     // Push diagnostics configuration to the LSP, and keep it in sync with settings changes.
     const sendDiagnosticsConfig = () => {

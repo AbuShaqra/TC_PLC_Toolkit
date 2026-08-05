@@ -188,6 +188,69 @@ const NESTED = [
             `folding the outer region takes the nested one with it (${JSON.stringify(nested.outer)})`);
         assert(/bD/.test(nested.outer), 'and stops at its own {endregion}');
 
+        // ---------------------------------------------------------------- 2b. the two reported bugs
+        // Both were reported from the panes and both are artefacts of indentation folding, so both
+        // have to be checked HERE — a unit test on stFolding.js cannot prove Monaco stopped using its
+        // own indentation provider, only that ours would have answered correctly.
+        const reported = await page.evaluate(async () => {
+            const ed = monaco.editor.getEditors()[0];
+            const run = async (lines, foldLine) => {
+                ed.getModel().setValue(lines.join('\n'));
+                await new Promise(r => setTimeout(r, 500));
+                // Which lines offer a fold arrow at all? That is the whole of bug 2.
+                const arrows = [];
+                ed.getDomNode().querySelectorAll('.margin-view-overlays > div').forEach(div => {
+                    if (div.querySelector('[class*="folding"]')) arrows.push(Math.round(parseInt(div.style.top, 10) / 19) + 1);
+                });
+                ed.setPosition({ lineNumber: foldLine, column: 1 });
+                await ed.getAction('editor.fold').run();
+                await new Promise(r => setTimeout(r, 300));
+                const after = ed.getDomNode().querySelector('.view-lines').innerText;
+                await ed.getAction('editor.unfoldAll').run();
+                await new Promise(r => setTimeout(r, 200));
+                return { arrows: arrows.sort((a, b) => a - b), after };
+            };
+            return {
+                strayEnd: await run(['FUNCTION_BLOCK FB_X', 'VAR', '    a : BOOL;', '    {endregion}',
+                    '    b : BOOL;', '    c : BOOL;', 'END_VAR'], 2),
+                unindentedAttr: await run(['FUNCTION_BLOCK FB_X', 'VAR', "{attribute 'TcLinkTo' := ''}",
+                    '    a : BOOL;', '    b : BOOL;', 'END_VAR'], 2),
+                condPragma: await run(['VAR', '{IF defined(Variant1)}', '    a : BOOL;', '{END_IF}',
+                    '    b : BOOL;', 'END_VAR'], 1),
+                // Registering a provider REPLACES Monaco's indentation folding, so the implementation
+                // pane's blocks only still fold because stFolding.js covers them. If that ever
+                // regresses it does so silently, which is exactly why it is asserted in a browser.
+                implBlock: await run(['IF bStart THEN', '    nStep := 1;', '    CASE nStep OF',
+                    '        1: DoThing();', '    END_CASE', 'END_IF', 'nAfter := 1;'], 1)
+            };
+        });
+
+        // Bug 1: an unmatched {endregion} used to leave b and c hanging outside the fold.
+        assert(!/bStart|a : BOOL|b : BOOL|c : BOOL/.test(reported.strayEnd.after)
+            && !/endregion/.test(reported.strayEnd.after),
+            `an unmatched {endregion} no longer truncates the VAR fold (${JSON.stringify(reported.strayEnd.after)})`);
+        assert(/END_VAR/.test(reported.strayEnd.after), 'and END_VAR is still visible under the collapsed VAR');
+
+        // Bug 2: the attribute line used to carry a fold arrow of its own, and broke the VAR fold.
+        assert(!reported.unindentedAttr.arrows.includes(3),
+            `an unindented attribute line offers no fold arrow (arrows: ${JSON.stringify(reported.unindentedAttr.arrows)})`);
+        assert(reported.unindentedAttr.arrows.includes(2), 'the VAR line still does');
+        assert(!/TcLinkTo|a : BOOL|b : BOOL/.test(reported.unindentedAttr.after),
+            `and VAR folds its whole body (${JSON.stringify(reported.unindentedAttr.after)})`);
+
+        // Designed for rather than reported: a conditional pragma must not be read as an IF block,
+        // which would leave the stack unbalanced and eat every fold below it.
+        assert(!/defined|a : BOOL|b : BOOL/.test(reported.condPragma.after),
+            `{IF defined(…)} is a pragma, not a block — VAR still folds whole (${JSON.stringify(reported.condPragma.after)})`);
+        assert(!reported.condPragma.arrows.includes(2), 'and it offers no fold arrow of its own');
+
+        assert(reported.implBlock.arrows.includes(1) && reported.implBlock.arrows.includes(3),
+            `implementation blocks still fold: IF and the nested CASE both offer arrows (arrows: ${JSON.stringify(reported.implBlock.arrows)})`);
+        assert(!/nStep|DoThing|END_CASE/.test(reported.implBlock.after),
+            `folding IF hides the whole block including the nested CASE (${JSON.stringify(reported.implBlock.after)})`);
+        assert(/END_IF/.test(reported.implBlock.after) && /nAfter/.test(reported.implBlock.after),
+            'and stops at its own END_IF');
+
         // ---------------------------------------------------------------- 3. the real tokenizer
         const tokens = await page.evaluate(() => {
             const scopes = (text) => monaco.editor.tokenize(text, 'iecst')

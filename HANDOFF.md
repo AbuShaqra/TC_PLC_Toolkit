@@ -4,8 +4,8 @@ Where the work *stands*. Read before starting; keep current (handoff rule in [CL
 100 lines — prune finished items rather than appending, but never drop a real finding to hit it. **Shipped features
 live in git history (PRs/commits); this file keeps the findings that would cost to re-derive.**
 
-**Last verified:** 2026-08-05 — `npm test` green (**44 harnesses, Coverage: FULL**), typecheck clean,
-**0 diagnostics on the sample**. Shipped through **0.5.0** (pragmas); releases are in git history.
+**Last verified:** 2026-08-05 — `npm test` green (**45 harnesses, Coverage: FULL**), typecheck clean,
+**0 diagnostics on the sample**. Shipped through **0.5.1** (pragmas + ST folding); releases are in git history.
 **Install trap that cost a debug cycle:** VS Code keeps the old version dir until a FULL restart (reload-window is not
 always enough) — the user tested 0.3.1's feature against the still-running 0.3.0 code and reported it broken. Check
 `~/.vscode/extensions/` for side-by-side version dirs + `.obsolete` before debugging a "feature does nothing" report.
@@ -235,7 +235,7 @@ and survived — a peek with no arrow, hovering over content already replaced un
 places, and both are needed: `loadComponent` (same file) and `openPeekTarget` (cross-file never returns
 through `loadComponent` at all). Dev-host still worth a pass on the real bridge round-trip.
 
-## Pragmas (0.5.0)
+## Pragmas + folding (0.5.0, 0.5.1)
 Shipped: `src/lsp/pragmas.js` + two catalogs, category-scoped highlighting in **both** grammars,
 `{region}`/`{endregion}` folding, and attribute-name completion. Findings worth not re-deriving:
 - **Infosys is authoritative but NOT exhaustive**, which is why there are two catalogs and why shape
@@ -249,11 +249,20 @@ Shipped: `src/lsp/pragmas.js` + two catalogs, category-scoped highlighting in **
 - **Shape decides colour; the catalog only enriches.** A user-defined attribute must be scoped exactly
   like a documented one — TwinCAT documents user-defined attributes as a feature, so tinting an
   uncatalogued name would be a diagnostic in disguise. Pinned in `test_pragmas.js` and the browser harness.
-- **Folding is declarative and can die silently.** Markers on the language configuration work *only*
-  because no `FoldingRangeProvider` is registered for `iecst` (Monaco then uses its indentation provider,
-  which honours and nests markers). Registering one would replace markers wholesale and kill region
-  folding with every unit test still green. Proven in Chromium on a fixture with **no indentation**, so
-  only the marker can explain the fold; removing the markers turns 3 assertions red.
+- **Folding is ours now (`media/stFolding.js`, 0.5.1), not Monaco's.** Markers alone shipped in 0.5.0 and
+  the user found two bugs in a day, both artefacts of Monaco's **indentation** folding — the wrong model
+  for a keyword-delimited language: (a) an unmatched `{endregion}` truncated the enclosing VAR fold —
+  `computeRanges` scans bottom-up and pushes an `{indent:-2}` sentinel that ONLY a matching start marker
+  pops, so a lone end marker is a permanent barrier; (b) `{attribute 'TcLinkTo' := ''}` at column 0 under
+  an indented VAR body grew its own fold arrow — nothing to do with pragmas, any unindented line did it.
+  A `FoldingRangeProvider` **replaces** the indentation provider outright, so stFolding.js must cover the
+  keyword blocks (VAR family, IF, CASE, FOR, WHILE, REPEAT, STRUCT, UNION, TYPE) as well as regions or
+  `IF … END_IF` silently stops folding — asserted in a browser for that reason. Keywords count only where
+  they are CODE: `{IF defined(X)}` is a conditional **pragma**, and reading it as an IF leaves an unclosed
+  block that eats every fold below. Regions and blocks use **separate stacks** so one malformed construct
+  cannot destroy the other. Registered twice from one dual-mode file (webview `<script>` + `require`) —
+  `.st` files in VS Code's own editor had both bugs too. The `folding.markers` in editor.js and
+  language-configuration.json are now **inert**, kept as declarative fallback and pinned by test_pragmas.
 - **The tmLanguage grammar had NO pragma rule at all** and therefore the same apostrophe bug the Monarch
   tokenizer was fixed for. `#pragmas` now precedes `#strings`.
 - The generator (`scripts/fetch-pragma-catalog.js`) is **run by hand only** — offline constraint. Behind

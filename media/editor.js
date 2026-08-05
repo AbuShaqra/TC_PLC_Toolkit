@@ -320,20 +320,42 @@
                 { open: '"', close: '"' }
             ],
 
-            // `{region "Inputs"}` … `{endregion}` collapse to one line, in BOTH panes — TwinCAT's own
-            // editor folds regions in the declaration part as well as the implementation, and folding
-            // away a 200-line VAR block is most of the point of writing one.
-            //
-            // Markers are enough on their own: with no FoldingRangeProvider registered for 'iecst',
-            // Monaco falls back to its indentation provider, which honours these and nests them. Do NOT
-            // register a range provider for this language without reimplementing regions inside it —
-            // a syntax provider REPLACES the indentation one, markers included, and the folds would
-            // silently disappear. Regex sources are pinned to src/lsp/pragmas.js by test_pragmas.js.
+            // Region markers. **Inert while the folding provider below is registered** — a syntax
+            // range provider replaces Monaco's indentation provider outright, markers included — and
+            // kept anyway for two reasons: they are the declarative statement of what a region is,
+            // and they restore region folding on their own if the provider is ever removed. Their
+            // regex sources are pinned to src/lsp/pragmas.js by test_pragmas.js.
             folding: {
                 markers: {
                     start: /^\s*\{\s*region\b/,
                     end: /^\s*\{\s*endregion\b/
                 }
+            }
+        });
+
+        // Folding comes from ST's block structure, not from indentation.
+        //
+        // Monaco's default is indentation folding, and ST is not indentation-structured — its blocks
+        // are keyword-delimited. Two reported bugs came straight out of that mismatch: an unmatched
+        // `{endregion}` truncated the enclosing VAR fold (Monaco's marker sentinel is only popped by a
+        // matching start marker, so a lone end marker is a permanent barrier), and an unindented line
+        // under an indented VAR body — `{attribute 'TcLinkTo' := ''}` at column 0 — grew its own fold
+        // arrow, because that genuinely IS an indentation region.
+        //
+        // Registering this replaces the indentation provider entirely, which is why stFolding.js has
+        // to cover the keyword blocks as well as regions: without them `IF … END_IF` would quietly
+        // stop folding. Guarded by test/test_folding.js and scratch/peek_harness/run_pragmas.js.
+        monaco.languages.registerFoldingRangeProvider('iecst', {
+            provideFoldingRanges: function (model) {
+                return stFolding.computeFoldingRanges(model.getLinesContent()).map(function (r) {
+                    return {
+                        start: r.start,
+                        end: r.end,
+                        // The kind is what makes "Fold All Regions" mean regions rather than
+                        // everything; a plain block deliberately carries none.
+                        kind: r.kind === 'region' ? monaco.languages.FoldingRangeKind.Region : undefined
+                    };
+                });
             }
         });
 

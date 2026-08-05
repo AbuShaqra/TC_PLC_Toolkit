@@ -147,12 +147,17 @@ unsaved work. It briefly opens a TwinCAT window while it runs (about a minute).
   case-insensitive, as ST itself is.
 - **Pragmas** are understood as the metadata they are, in all five categories TwinCAT documents —
   attributes, messages, conditional compilation, regions and warning suppression — and each is
-  highlighted for what it is. `{region "…"}` … `{endregion}` **fold**, in the declaration pane as well
-  as the implementation, so a long `VAR` block collapses to its heading; nested regions fold with it.
-  Typing `{` offers the pragma heads, and `{attribute '▮'}` offers **78 attribute names** — the ones
+  highlighted for what it is. Typing `{` offers the pragma heads, and `{attribute '▮'}` offers **78
+  attribute names** — the ones
   Beckhoff documents plus the ones that only occur in the wild (`object_name`, `TcGenerated`, …).
   Unknown names are never flagged: TwinCAT supports user-defined attributes, and one you invented is
   highlighted exactly like a built-in.
+- **Folding follows ST's structure**, not indentation. `{region "…"}` … `{endregion}` collapses (nested
+  regions included), as do `VAR`…`END_VAR` and every other declaration section, `IF`, `CASE`, `FOR`,
+  `WHILE`, `REPEAT`, `STRUCT`, `UNION` and `TYPE` — in the declaration pane as well as the
+  implementation, so a 200-line `VAR` block folds to its heading. Nothing folds where ST has no block,
+  so an attribute pragma or an oddly indented line never grows a fold arrow of its own, and a stray
+  `{endregion}` is ignored rather than cutting a fold short.
 
 ### Generate ST
 
