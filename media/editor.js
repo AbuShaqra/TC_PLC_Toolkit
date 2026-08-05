@@ -432,6 +432,10 @@
         monaco.languages.registerCompletionItemProvider('iecst', {
             triggerCharacters: ['.'],
             provideCompletionItems: async function(model, position) {
+                // Never answer for a hidden peek model: buildBridgeContext maps a position through
+                // the ACTIVE component's panes, so a position from some other component's model
+                // would be translated against the wrong block entirely.
+                if (model.uri && model.uri.scheme === PEEK_SCHEME) return { suggestions: [] };
                 const word = model.getWordUntilPosition(position);
                 const range = {
                     startLineNumber: position.lineNumber,
@@ -465,6 +469,7 @@
         // the editor opener registered below performs the jumps Monaco cannot do on its own.
         monaco.languages.registerDefinitionProvider('iecst', {
             provideDefinition: async function(model, position) {
+                if (model.uri && model.uri.scheme === PEEK_SCHEME) return null; // see the completion guard
                 const word = model.getWordAtPosition(position);
                 if (!word) return null;
 
@@ -521,6 +526,10 @@
                         openGotoTarget(decodeGotoUri(resource));
                         return true;
                     }
+                    if (resource.scheme === PEEK_SCHEME) {
+                        openPeekTarget(resource, selectionOrPosition, lastPeekWord);
+                        return true;
+                    }
                     const ed = editorForModelUri(resource);
                     if (ed && ed !== source) {
                         const range = wordRangeAt(ed.getModel(), toRange(selectionOrPosition));
@@ -544,20 +553,64 @@
         // Register Reference Provider (Find References)
         monaco.languages.registerReferenceProvider('iecst', {
             provideReferences: async function(model, position) {
-                const refs = await sendBridgeRequest('custom/references', buildBridgeContext(model, position));
-                if (!refs) return [];
-                // Only return locations backed by a live Monaco model (the active component's visible
-                // panes). Returning a URI without a loaded model crashes Monaco's peek widget
-                // ("Model not found"). Cross-file / other-component references are surfaced separately.
+                if (model.uri && model.uri.scheme === PEEK_SCHEME) return []; // see the completion guard
+                const response = await sendBridgeRequest('custom/references', buildBridgeContext(model, position));
+                const refs = (response && response.references) || [];
+                const panes = (response && response.panes) || [];
+
+                // The searched word, kept for the click-through: a peek entry navigates by exact
+                // position, but twincat.openComponent still wants the word for its own highlight.
+                const wordAt = model.getWordAtPosition(position);
+                lastPeekWord = wordAt ? wordAt.word : '';
+
+                // Every reference gets a model to point at. The two live panes of the active
+                // component are used directly — they carry the user's unsaved edits — and every
+                // other pane is materialised as a hidden model, on demand, so that no Location is
+                // ever returned for a URI Monaco cannot load ("Model not found" is a peek crash,
+                // which is why this used to return same-component hits only).
+                const paneByKey = new Map();
+                panes.forEach(p => paneByKey.set(p.key, p));
+                const modelByKey = new Map();
+                const inUse = new Set();
+
+                const modelForRef = (ref) => {
+                    if (ref.sameFile && ref.componentId === activeComponentId) {
+                        // A collapsed pane (a DUT has no implementation, a GVL no declaration)
+                        // carries display:none and has no usable editor — it falls through to a
+                        // hidden model like any other, which is why this checks visibility.
+                        let ed = null;
+                        if (ref.pane === 'decl' && paneDeclEl.style.display !== 'none') ed = declEditor;
+                        else if (ref.pane === 'impl' && paneImplEl.style.display !== 'none') ed = implEditor;
+                        const live = ed && ed.getModel();
+                        if (live) return live;
+                    }
+                    if (modelByKey.has(ref.paneKey)) return modelByKey.get(ref.paneKey);
+                    const pane = paneByKey.get(ref.paneKey);
+                    if (!pane) return null;
+                    let m = null;
+                    try {
+                        const uri = encodePeekUri(pane);
+                        const key = uri.toString();
+                        // Reuse rather than recreate: createModel throws on a URI that already has
+                        // one, and a repeated search on the same symbol asks for the same panes.
+                        m = monaco.editor.getModel(uri);
+                        if (m) {
+                            if (m.getValue() !== pane.text) m.setValue(pane.text);
+                        } else {
+                            m = monaco.editor.createModel(pane.text, 'iecst', uri);
+                        }
+                        peekModels.set(key, m);
+                        inUse.add(key);
+                    } catch (e) {
+                        m = null; // never return a location we could not back with a model
+                    }
+                    modelByKey.set(ref.paneKey, m);
+                    return m;
+                };
+
                 const locations = [];
                 for (const ref of refs) {
-                    if (!ref.sameFile) continue;
-                    if (ref.componentId !== activeComponentId) continue;
-                    let ed = null;
-                    if (ref.pane === 'decl' && paneDeclEl.style.display !== 'none') ed = declEditor;
-                    else if (ref.pane === 'impl' && paneImplEl.style.display !== 'none') ed = implEditor;
-                    if (!ed) continue;
-                    const m = ed.getModel();
+                    const m = modelForRef(ref);
                     if (!m) continue;
                     locations.push({
                         uri: m.uri,
@@ -569,10 +622,13 @@
                         }
                     });
                 }
+
+                // Only now, with the new set built, let go of the panes no longer referenced.
+                retirePeekModels(inUse);
                 // Always populate the "TwinCAT References" panel with the FULL result set, independent of
-                // the peek. The peek (`locations` above) can only render hits in the active component's
-                // visible panes, so without this the panel stayed empty whenever every hit was local —
-                // which is the inconsistency being fixed. (This is the extra queryReferences pass noted in
+                // the peek. The peek now renders hits outside the active component too, but it is still a
+                // preview — PEEK_MAX_PANES bounds how many panes it will materialise, and the panel is
+                // what lists every hit without a cap. (This is the extra queryReferences pass noted in
                 // HANDOFF; ~8 ms warm, and it is what the extension turns into the panel's item list.)
                 vscode.postMessage({
                     type: 'showExternalReferences',
@@ -641,7 +697,10 @@
             if (document.body.classList.contains('vscode-light')) {
                 theme = 'vs';
             } else if (document.body.classList.contains('vscode-high-contrast')) {
-                theme = 'hc-black';
+                // VS Code marks a high-contrast LIGHT theme with both classes, so this branch has to
+                // check the more specific one first — otherwise an HC-light user got hc-black, a
+                // dark editor inside a light window.
+                theme = document.body.classList.contains('vscode-high-contrast-light') ? 'hc-light' : 'hc-black';
             }
             monaco.editor.setTheme(theme);
         }
@@ -727,6 +786,92 @@
     // generated `.st` navigation branch of `twincat.openComponent`.
     // ---------------------------------------------------------------------------------------
     const GOTO_SCHEME = 'twincat';
+
+    /**
+     * Scheme for the read-only models that back references-peek entries outside the two live panes.
+     * Monaco throws "Model not found" for a Location whose URI has no loaded model, which is why the
+     * peek used to be limited to the active component — so every other pane gets a hidden model
+     * holding just that pane's text, built from what the extension sends with the reference list.
+     */
+    const PEEK_SCHEME = 'twincat-peek';
+
+    /** Hidden models this webview owns, by URI string. Retired once a search stops needing them. */
+    const peekModels = new Map();
+
+    /** The word the current peek is about, carried to the click-through for its highlight. */
+    let lastPeekWord = '';
+
+    /**
+     * Disposes the hidden models the just-built result set does NOT use.
+     *
+     * Deliberately a set difference rather than "dispose everything, then rebuild": Monaco renders
+     * the peek straight from these models, and it may call provideReferences again while a widget
+     * is still open — a blanket dispose at the start of a search would pull the models out from
+     * under the widget that is already showing them. Keeping the ones still referenced also means a
+     * repeated search on the same symbol reuses its models instead of churning them.
+     * @param {Set<string>} keep URI strings the current result set points at.
+     */
+    function retirePeekModels(keep) {
+        for (const [key, model] of Array.from(peekModels.entries())) {
+            if (keep.has(key)) continue;
+            try { model.dispose(); } catch (e) { /* already gone */ }
+            peekModels.delete(key);
+        }
+    }
+
+    /**
+     * The synthetic URI for one peek pane. Carries the file/component/pane so a click can be routed
+     * back to the real editor; the exact line and column come from the click position itself, so
+     * one model serves every occurrence inside that pane.
+     * @param {Object} pane { uri, componentId, pane, path } as sent by the extension.
+     * @returns {Object} A monaco.Uri with the PEEK_SCHEME scheme.
+     */
+    function encodePeekUri(pane) {
+        const query = [
+            'file=' + encodeURIComponent(pane.uri || ''),
+            'component=' + encodeURIComponent(pane.componentId || 'root'),
+            'pane=' + encodeURIComponent(pane.pane || 'impl')
+        ].join('&');
+        return monaco.Uri.from({ scheme: PEEK_SCHEME, path: pane.path || '/reference', query: query });
+    }
+
+    /**
+     * Opens the real editor for a click on a peek entry backed by a hidden model.
+     *
+     * Routes through twincat.openComponent with the exact pane + local line + columns, the same
+     * shape the References panel sends — a word search would land on the first occurrence of the
+     * name in the target component rather than the one that was clicked.
+     * @param {Object} resource The clicked model's monaco.Uri.
+     * @param {Object} selectionOrPosition Monaco's range/position for the clicked location.
+     * @param {string} targetWord The searched word, for the fallback highlight.
+     */
+    function openPeekTarget(resource, selectionOrPosition, targetWord) {
+        const q = {};
+        (resource.query || '').split('&').forEach(pair => {
+            if (!pair) return;
+            const eq = pair.indexOf('=');
+            q[eq < 0 ? pair : pair.substring(0, eq)] = eq < 0 ? '' : decodeURIComponent(pair.substring(eq + 1));
+        });
+        const range = toRange(selectionOrPosition);
+        const line0 = (range ? range.startLineNumber : 1) - 1;
+        const startCol0 = (range ? range.startColumn : 1) - 1;
+        // Monaco may hand back a bare position, which toRange widens into a zero-length range —
+        // that would place the caret but select nothing, so fall back to the word's own length.
+        let endCol0 = range ? range.endColumn - 1 : startCol0;
+        if (endCol0 <= startCol0) endCol0 = startCol0 + (targetWord || '').length;
+        vscode.postMessage({
+            type: 'openFile',
+            fileUri: q.file || activeFileUri,
+            componentId: q.component || 'root',
+            range: {
+                pane: q.pane || null,
+                localLine: line0,
+                start: { line: line0, character: startCol0 },
+                end: { line: line0, character: endCol0 }
+            },
+            targetWord: targetWord || ''
+        });
+    }
 
     /**
      * Encodes an LSP definition into a synthetic navigation URI.
@@ -1109,7 +1254,9 @@
             case 'custom/referencesResponse': {
                 const resolve = pendingRequests.get(message.requestId);
                 if (resolve) {
-                    resolve(message.references);
+                    // Both halves: the references themselves and the pane texts the peek needs to
+                    // build hidden models for the panes no live editor is showing.
+                    resolve({ references: message.references || [], panes: message.panes || [] });
                     pendingRequests.delete(message.requestId);
                 }
                 break;

@@ -39,7 +39,7 @@ const fs = require('fs');
 const path = require('path');
 const zlib = require('zlib');
 const { parseLibrarySignaturesXml, toRegistryTypes } = require('./librarySignatures');
-const { parseBrowserCache, findBrowserCacheFile } = require('./browserCache');
+const { parseBrowserCache, findBrowserCacheFile, MANAGED_LIBRARIES } = require('./browserCache');
 
 /** ZIP signatures. */
 const SIG_EOCD = 0x06054b50;        // End of central directory
@@ -195,6 +195,30 @@ const typeSystemTypes = new Map();
  * @type {Map<string, LibraryType[]>}
  */
 const typeSystemNamespaces = new Map();
+
+/**
+ * What the browsercache knows about a namespace's SHAPE, as opposed to its members.
+ *
+ * The `.tmc` is the better description of a type — it carries fields and parameters — but it only
+ * exports the types the project already *uses*. The browsercache lists every FB and interface the
+ * library declares, used or not, which is precisely the set a user reaches for at a fresh caret.
+ * Both are needed: the `.tmc` for depth, this for breadth.
+ *
+ *   topLevel — namespace (lower-case) → name (lower-case) → { name, kind: 'fb'|'interface' }
+ *   members  — namespace (lower-case) → set of names (lower-case) that appear ONLY as a method or
+ *              property of some type in that library, and so cannot be written as `Namespace.X`
+ * @type {Map<string, Map<string, {name: string, kind: string}>>}
+ */
+const browserCacheNamespaceTypes = new Map();
+/** @type {Map<string, Set<string>>} */
+const browserCacheNamespaceMembers = new Map();
+
+/**
+ * Symbols of a nested namespace, keyed lower-case, harvested lazily by getNestedNamespaceSymbols.
+ * An empty array is a cached MISS — the library is not installed — and must not be retried.
+ * @type {Map<string, string[]>}
+ */
+const nestedNamespaceSymbols = new Map();
 
 // ---------------------------------------------------------------------------------------------
 // Minimal ZIP reader (central directory + inflateRaw). No dependencies.
@@ -1098,6 +1122,27 @@ function getLibraryType(name) {
 }
 
 /**
+ * A node for a library type, built on the spot and NOT registered in the workspace index.
+ *
+ * That is the whole point: registering library nodes is what has to stay proportional to what the
+ * document names — putting all ~32k in took the diagnostics pass from 1.5 s to 78 s, because
+ * `Object.keys()` on the index runs per identifier. A transient node lets a completion follow a
+ * member chain (`fbAxisRef.NcToPlc.▮`) into types the document never spells, at the cost of one
+ * map lookup and no growth in the index at all.
+ *
+ * Completion-only by construction: nothing that could reach a diagnostic ever sees this node, and
+ * it carries `membersComplete: false` like every library node, so a miss stays "uncertain".
+ * @param {string} name Type name, unqualified, any casing.
+ * @returns {Object|null} A library node, or null when the `.tmc` does not describe that type.
+ */
+function getLibraryTypeNode(name) {
+    if (!name) return null;
+    const info = typeSystemTypes.get(String(name).toLowerCase());
+    if (!info) return null;
+    return makeLibraryNode(info.name || name, info);
+}
+
+/**
  * The `.tmc`'s top-level types for one library namespace — the subset of getNamespaceSymbols() that
  * is known to be a *type* rather than a name the string table happened to serialize.
  * @param {string} namespace Namespace, any casing.
@@ -1106,6 +1151,34 @@ function getLibraryType(name) {
 function getTypeSystemNamespaceTypes(namespace) {
     if (!namespace) return [];
     return typeSystemNamespaces.get(String(namespace).toLowerCase()) || [];
+}
+
+/**
+ * The browsercache's view of a namespace's top-level types — every FB and interface the library
+ * declares, including those the project does not use (which the `.tmc` therefore never mentions).
+ * Names only: parameters and fields live in the opaque binary `.object` entries, so the `.tmc`
+ * still wins wherever both describe a type.
+ * @param {string} namespace Library namespace.
+ * @returns {Map<string, {name: string, kind: string}>} Keyed by lower-case name; empty when unknown.
+ */
+function getBrowserCacheNamespaceTypes(namespace) {
+    if (!namespace) return new Map();
+    return browserCacheNamespaceTypes.get(String(namespace).toLowerCase()) || new Map();
+}
+
+/**
+ * True when a name appears in this namespace ONLY as a method or property of some type — an
+ * ACTION or accessor the string table lists flatly beside real types. `Tc2_MC2.ActStop` is not
+ * something a user can write, so it ranks last rather than being dropped: the browsercache covers
+ * only libraries installed on this machine, and a wrong drop hides a real type.
+ * @param {string} namespace Library namespace.
+ * @param {string} name Candidate symbol name.
+ * @returns {boolean}
+ */
+function isBrowserCacheMemberName(namespace, name) {
+    if (!namespace || !name) return false;
+    const set = browserCacheNamespaceMembers.get(String(namespace).toLowerCase());
+    return !!set && set.has(String(name).toLowerCase());
 }
 
 /** Collects `.tmc` type-system exports under a workspace folder. */
@@ -1352,6 +1425,25 @@ function indexBrowserCache(rootDir) {
         const parsed = parseBrowserCache(xml);
         if (parsed.size === 0) continue;
 
+        // Record the library's SHAPE before the `.tmc` gate below. This has to happen first: that
+        // gate skips a library the `.tmc` says nothing about, and it is exactly those libraries —
+        // the ones the project has not adopted yet — whose types a user is most likely hunting for
+        // at `Namespace.▮`. On Tc2_MC2 the string table offers 2,269 undifferentiated names; the
+        // browsercache names 128 of them as real FBs/interfaces where the `.tmc` names ~57.
+        const nsKey = String(entry.namespace).toLowerCase();
+        let topLevel = browserCacheNamespaceTypes.get(nsKey);
+        if (!topLevel) { topLevel = new Map(); browserCacheNamespaceTypes.set(nsKey, topLevel); }
+        let memberNames = browserCacheNamespaceMembers.get(nsKey);
+        if (!memberNames) { memberNames = new Set(); browserCacheNamespaceMembers.set(nsKey, memberNames); }
+        for (const bcType of parsed.values()) {
+            topLevel.set(bcType.name.toLowerCase(), { name: bcType.name, kind: bcType.kind });
+            for (const m of bcType.methods || []) memberNames.add(String(m).toLowerCase());
+            for (const p of bcType.properties || []) memberNames.add(String(p).toLowerCase());
+        }
+        // A name that is also a type in its own right is NOT member-only — ActStop is a member,
+        // MC_Power is both listed and declared. Resolve the overlap in favour of the type.
+        for (const key of topLevel.keys()) memberNames.delete(key);
+
         const nsTypes = getTypeSystemNamespaceTypes(entry.namespace);
         if (nsTypes.length === 0) continue;
         const byName = new Map(nsTypes.map(t => [t.name.toLowerCase(), t]));
@@ -1387,6 +1479,81 @@ function indexBrowserCache(rootDir) {
 
     stats.ms = Date.now() - started;
     return stats;
+}
+
+/**
+ * Symbols of a NESTED library namespace, harvested on demand — the answer to
+ * `VisuElems.VisuElemBase.▮`.
+ *
+ * A library's namespace re-exports the namespaces of the libraries it depends on, so a path can be
+ * two namespaces deep before it names anything. Established from real compiling code:
+ * `VisuElems.VisuElemBase.IDialogManager`, `VisuElems.VisuElemBase.Visu_Globals.g_ClientManager`.
+ * `VisuElems` is what the `.plcproj` references; `VisuElemBase` appears in no `.plcproj` at all —
+ * it is reached through the VisuElems library's own `dependencies` file, which lists
+ * `#System_VisuElemBase#…`.
+ *
+ * Resolved by NAME against the Managed Libraries store rather than by walking that dependency graph:
+ * `dependencies` is an undocumented binary-ish format, and the segment already IS the namespace we
+ * need. The looseness is deliberate and bounded — this only ever adds completion items, never a
+ * diagnostic, and the caller gates it on the head being a real referenced namespace.
+ *
+ * Lazy and cached because the cost is real but only paid when a user actually types the path:
+ * VisuElemBase is 6.3 MB / 11,572 symbols, measured at ~40 ms to harvest, once per session. Doing
+ * this at index time for every library's every dependency is the 78 s cliff all over again.
+ * @param {string} name The nested namespace segment (a library name).
+ * @returns {string[]} Symbol names, or an empty array when no such library is installed.
+ */
+function getNestedNamespaceSymbols(name) {
+    if (!name) return [];
+    const key = String(name).toLowerCase();
+    const cached = nestedNamespaceSymbols.get(key);
+    if (cached) return cached;
+
+    let symbols = [];
+    const archive = findInstalledLibraryArchive(name);
+    if (archive) {
+        try {
+            symbols = Array.from(new Set(harvestArchive(fs.readFileSync(archive))));
+        } catch (e) {
+            symbols = [];
+        }
+    }
+    nestedNamespaceSymbols.set(key, symbols);
+    return symbols;
+}
+
+/**
+ * Finds an installed library's archive by library name, across every distributor — a nested
+ * namespace names a library the `.plcproj` never mentions, so there is no company to key on.
+ * @param {string} name Library folder name.
+ * @returns {string|null} Absolute path to a readable archive, or null.
+ */
+function findInstalledLibraryArchive(name) {
+    let companies;
+    try {
+        companies = fs.readdirSync(MANAGED_LIBRARIES, { withFileTypes: true });
+    } catch (e) {
+        return null;
+    }
+    const wanted = String(name).toLowerCase();
+    for (const company of companies) {
+        if (!company.isDirectory()) continue;
+        const libDir = path.join(MANAGED_LIBRARIES, company.name, name);
+        let versions;
+        try { versions = fs.readdirSync(libDir, { withFileTypes: true }); } catch (e) { continue; }
+        if (path.basename(libDir).toLowerCase() !== wanted) continue;
+        for (const version of versions) {
+            if (!version.isDirectory()) continue;
+            const versionDir = path.join(libDir, version.name);
+            let files;
+            try { files = fs.readdirSync(versionDir); } catch (e) { continue; }
+            // `.compiled-library-v3` is an opaque non-ZIP format and is deliberately skipped, here
+            // as everywhere; a library shipped only in that form simply has no readable symbols.
+            const hit = files.find(f => /\.(compiled-library(-ge33)?|library)$/i.test(f));
+            if (hit) return path.join(versionDir, hit);
+        }
+    }
+    return null;
 }
 
 /**
@@ -1546,6 +1713,9 @@ function clearLibrarySymbols() {
     namespaceListCache.clear();
     typeSystemTypes.clear();
     typeSystemNamespaces.clear();
+    browserCacheNamespaceTypes.clear();
+    browserCacheNamespaceMembers.clear();
+    nestedNamespaceSymbols.clear();
     libraryCatalog.clear();
 }
 
@@ -1577,6 +1747,11 @@ module.exports = {
     parseTmcDataType,
     getLibraryType,
     getTypeSystemNamespaceTypes,
+    getBrowserCacheNamespaceTypes,
+    isBrowserCacheMemberName,
+    getNestedNamespaceSymbols,
+    findInstalledLibraryArchive,
+    getLibraryTypeNode,
     // symbol index integration
     registerLibrarySymbolNodes
 };

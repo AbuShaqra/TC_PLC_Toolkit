@@ -487,5 +487,119 @@ sampleTest('TEST 10: pane <-> unit position mapping round-trips', () => {
         `mapped column must land immediately before "bIsExtended" (got ${JSON.stringify(unitLines[absDot.line].slice(absDot.character, absDot.character + 11))})`);
 });
 
+// ------------------------------------------------------------------------------------------------
+// References peek: the pane slice a hidden Monaco model is built from
+// ------------------------------------------------------------------------------------------------
+// The peek can only render a Location whose URI has a loaded model — Monaco throws "Model not
+// found" otherwise, which is why it used to return hits in the active component only. Every other
+// pane is now shipped to the webview as TEXT and turned into a hidden model, so the coordinates the
+// extension sends (componentId + pane + localLine0 + columns) must address the SLICED pane exactly,
+// not the assembled unit. That is a different frame from everything else this harness guards, and
+// getting it wrong points the peek at the wrong line rather than failing loudly.
+
+/** Mirrors paneTextFromUnit in customEditorProvider.js. */
+function paneTextFromUnit(stLines, lineMap, componentId, pane) {
+    const blocks = lineMap && lineMap[componentId];
+    if (!blocks) return null;
+    const block = pane === 'decl' ? blocks.decl : blocks.impl;
+    if (!block || !block.start) return null;
+    return stLines.slice(block.start - 1, block.end).join('\n');
+}
+
+/** Mirrors peekPath in customEditorProvider.js. */
+function peekPath(fileUri, componentId, pane) {
+    let base = 'object';
+    try { base = decodeURIComponent(String(fileUri).split(/[\\/]/).pop() || base); } catch (e) { /* default */ }
+    const member = componentId === 'root'
+        ? 'root'
+        : String(componentId).replace(/^(method|prop|action|trans|get|set)_/i, '');
+    return `/${member}.${pane}/${base}`;
+}
+
+sampleTest('peek: every pane slice is addressed by its own local coordinates', () => {
+    const unit = assembleSt(byName['FB_Cylinder'].xml, null);
+    const unitLines = unit.stText.split('\n');
+
+    // Slicing must agree with the mapping in BOTH directions, for every block in the file — this is
+    // the arithmetic the peek rests on (slice(start-1, end) vs localLine0 = line1 - start).
+    let checked = 0;
+    for (const componentId of Object.keys(unit.lineMap)) {
+        for (const pane of ['decl', 'impl']) {
+            const text = paneTextFromUnit(unitLines, unit.lineMap, componentId, pane);
+            if (text === null) continue;
+            const paneLines = text.split('\n');
+            const block = pane === 'decl' ? unit.lineMap[componentId].decl : unit.lineMap[componentId].impl;
+            for (let abs0 = block.start - 1; abs0 < block.end; abs0++) {
+                const loc = absoluteToLocal(unit.lineMap, abs0);
+                if (!loc || loc.componentId !== componentId || loc.pane !== pane) {
+                    assert(false, `absoluteToLocal(${abs0}) should land in ${componentId}/${pane}, got ${JSON.stringify(loc)}`);
+                    return;
+                }
+                if (paneLines[loc.localLine0] !== unitLines[abs0]) {
+                    assert(false, `${componentId}/${pane} line ${loc.localLine0} of the slice must equal unit line ${abs0} `
+                        + `(slice: ${JSON.stringify(paneLines[loc.localLine0])}, unit: ${JSON.stringify(unitLines[abs0])})`);
+                    return;
+                }
+                checked++;
+            }
+        }
+    }
+    assert(checked > 0, `every line of every pane slice is reachable by its local coordinates (${checked} lines checked)`);
+});
+
+sampleTest('peek: a real reference lands on its own word inside the sliced pane', () => {
+    // Drive an actual Find References the way the webview does, then place each hit in its pane
+    // slice and check the word is genuinely at those columns. A hit in ANOTHER component of the
+    // file is the case the peek could not show before, so the fixture is chosen to produce one.
+    const unit = assembleSt(byName['FB_Cylinder'].xml, null);
+    const unitLines = unit.stText.split('\n');
+    const uri = byName['FB_Cylinder'].uri;
+
+    // `_bExtended` is declared in the root VAR block and written in the Cyclic method — two
+    // different components, which is exactly the cross-component case.
+    const declLine0 = unitLines.findIndex(l => /_bExtended/.test(l));
+    assert(declLine0 !== -1, 'fixture: _bExtended appears in FB_Cylinder');
+    const col = unitLines[declLine0].indexOf('_bExtended');
+
+    index = reindexSample(); // earlier tests clear the index to run synthetic units
+    const refs = provideReferences(unit.stText, { line: declLine0, character: col + 1 }, index, uri) || [];
+    assert(refs.length >= 2, `_bExtended has references in more than one place (got ${refs.length})`);
+
+    const componentsHit = new Set();
+    let verified = 0;
+    for (const r of refs) {
+        if (!r.range || !r.uri || r.uri.toLowerCase() !== uri.toLowerCase()) continue;
+        const loc = absoluteToLocal(unit.lineMap, r.range.start.line);
+        if (!loc) continue;
+        const text = paneTextFromUnit(unitLines, unit.lineMap, loc.componentId, loc.pane);
+        if (text === null) continue;
+        const paneLine = text.split('\n')[loc.localLine0];
+        const word = paneLine.substring(r.range.start.character, r.range.end.character);
+        if (word !== '_bExtended') {
+            assert(false, `a reference must sit at its own columns in the pane slice `
+                + `(${loc.componentId}/${loc.pane} line ${loc.localLine0}: got ${JSON.stringify(word)})`);
+            return;
+        }
+        componentsHit.add(loc.componentId);
+        verified++;
+    }
+    assert(verified >= 2, `every same-file reference resolves inside its pane slice (${verified} verified)`);
+    assert(componentsHit.size >= 2,
+        `the fixture really does span components — the case the peek could not render before (hit ${[...componentsHit].join(', ')})`);
+});
+
+plainTest('peek: the synthetic URI path puts the FILE in Monaco\'s prominent slot', () => {
+    // Monaco renders a peek group as basename + dimmed dirname, so the file must come LAST.
+    // Verified in a browser: the obvious ordering bolds "root.decl" and dims the file name.
+    assert(peekPath('file:///c:/p/POUs/FB_Axis.TcPOU', 'method_Cyclic', 'impl') === '/Cyclic.impl/FB_Axis.TcPOU',
+        'a method pane names its member then its file');
+    assert(peekPath('file:///c:/p/FB_Axis.TcPOU', 'root', 'decl') === '/root.decl/FB_Axis.TcPOU',
+        'the root component keeps a stable label');
+    assert(peekPath('file:///c:/p/My%20Folder/FB_A.TcPOU', 'prop_Value', 'decl') === '/Value.decl/FB_A.TcPOU',
+        'a percent-encoded path segment is decoded for display');
+    // Monaco requires a rooted path; a malformed URI must not produce one that throws.
+    assert(peekPath('', 'root', 'impl').startsWith('/'), 'an empty file uri still yields a rooted path');
+});
+
 console.log(`\n--- LIVE PATH TESTS COMPLETE with ${errors} errors, ${ran} run, ${skipped} skipped ---`);
 process.exit(errors > 0 ? 1 : 0);

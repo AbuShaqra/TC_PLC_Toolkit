@@ -19,12 +19,23 @@ from `extension.js`, and Monaco is vendored under `media/monaco-editor/` so ever
 ## Package a VSIX
 
 ```bash
+npm prune                 # see below — do this first
 npx @vscode/vsce package
 code --install-extension twincat-plc-toolkit-<version>.vsix --force
 ```
 
 On Windows, `scripts\install-vsix.bat` picks the newest `.vsix` in the folder and installs it with whichever
 `code` CLI it can find.
+
+**`npm prune` first.** vsce packages whatever sits in `node_modules` that npm does not report as a dev
+dependency — and a package installed with `npm i --no-save` (which is how `scratch/peek_harness/` asks for
+Playwright) is *extraneous*, not dev, so it ships. Measured: Playwright added **173 files** to the package
+list. Prune removes anything not in `package.json`, which is exactly the right set.
+
+**Bump the version before installing.** VS Code will not replace an installed extension with a VSIX of the
+same version: both directories end up under `~/.vscode/extensions/` and the old one is not marked in
+`.obsolete` until a **full restart** — a window reload is not always enough. This has already cost one debug
+cycle chasing a "feature does nothing" report that was really old code still running.
 
 ## Tests
 
@@ -77,6 +88,8 @@ per-suite without aborting on the first failure. The main ones:
 | `test/test_library_catalog.js` | The data path behind the TwinCAT Libraries view: catalog built from the `.plcproj`, namespaces, `.tmc` types and their members. |
 | `test/test_dnd_rules.js` | The Objects-tree drag & drop and copy/paste compatibility matrices: what is draggable/copyable (not virtual folders, not Get/Set accessors; directories move but do not copy), components move only within their own file yet paste cross-file (POU↔interface gated), directory-cycle and no-op rejections, duplicate-in-place file paste. |
 | `test/test_xml_rename.js` | Structural rename primitives in `xmlParser`: `renameComponentInXml` (tag Name attr + declaration header + LineIds, Ids kept), `renameVirtualFolderInXml` (folder tag + member FolderPath prefix rewrite), and the no-op-safety composition the rename command relies on (header already renamed by the reference pass → attr/LineIds still fixed, no corruption). |
+| `test/test_xml_member_order.js` | WHERE a new member lands, for both `insertComponentIntoXml` (create) and `insertComponentBlockIntoXml` (paste), via the shared `insertMemberIntoXml`. TwinCAT's loader is order-sensitive inside `<POU>`/`<Itf>`: the canonical child order is Declaration, Implementation, `Folder*`, member*, `LineIds*`, so a member must land *before* the LineIds group — appending past it is the same class of defect as the root-`<Folder>` incident that made XAE drop an FB's members from compile. Also pins the seam's 4-space indent, the root close tag keeping its own indent, CRLF preservation (including an LF block pasted into a CRLF document), a `<LineIds` literal inside CDATA not being mistaken for the anchor, and the `.TcIO` fallback (interfaces carry no LineIds at all). |
+| `test/test_nested_namespace.js` | Nested library namespaces (`VisuElems.VisuElemBase.▮`): a library's namespace re-exports its dependencies' namespaces, so the inner segment names a library no `.plcproj` references and is resolved by name against the installed-library store, lazily and cached. Asserts the two properties that hold without any library installed — the gate (only a referenced namespace head opens the store, so `stAxis.MotionState.▮` never does) and the miss (uninstalled ⇒ cached empty list, never an exception). Real resolution runs only when the machine has a readable library, and says so when it does not. |
 | `test/test_rename_engine.js` | `src/renameEngine.js`: mapping workspace reference positions (raw-ST-unit coords) back into CDATA splices — synthesized-line skips (action headers, `GET`/`SET`), the PROGRAM→FUNCTION_BLOCK raw-mode column skew, the never-write-a-mismatch guard, CRLF byte preservation. |
 | `test/test_references_for_symbol.js` | The LSP's by-symbol references entry point (`custom/referencesForSymbol`) that powers rename: FB/GVL/DUT roots (a GVL name never appears in its own ST text, so the position-based API cannot seed it), methods/properties/actions, the name-keyed-index identity guard, and index restoration after the scan. |
 | `test/test_config_references.js` | The non-code half of rename (`custom/configReferencesForSymbol`): dotted symbol paths inside visualizations `.TcVIS`/`.TcVMO` (`GVL_X.fb.member`, embedded `STSnippet` code) and text lists `.TcTLO`/`.TcGTLO` (a text entry whose text IS a symbol path) are found only when the chain provably resolves to the renamed symbol — text-list ids, visu-library names, dotted prose (`Encoderpos.Turn1`) and unresolvable prefixes are never touched. Task configs `.TcTTO` use a separate rule: the `<PouCall>` `<Name>` matches only a dot-free name, so a library call (`VisuElems.Visu_Prg`) is never rewritten. BOM/offset fidelity, plus a sample-project pass when `sample/` is present. |
@@ -91,6 +104,35 @@ labels such a run REDUCED rather than letting it pass for FULL.
 
 A few experimental probes live in `scratch/` outside `npm test`: `test_lsp_parser.js`,
 `test_lsp_types_sync.js`, `test_method_diagnostics.js` (plus `make_icon.js`, `probe_lib_format.js`).
+
+**`scratch/peek_harness/`** runs `media/editor.js` in a real browser — the one part of the codebase
+no Node test can reach, and where the references peek actually lives.
+
+```bash
+npm i --no-save playwright          # optional dep, deliberately NOT in package.json (see below)
+node scratch/peek_harness/run.js    # builds, serves, drives Chromium, asserts. 0 pass / 1 fail / 2 cannot run
+```
+
+| file | role |
+|---|---|
+| `build.js` | Generates the page by calling the **real** `getHtmlForWebview()` with a stubbed `vscode` module — a hand-copied page would quietly stop matching what ships. Substitutes only `acquireVsCodeApi()` (records outgoing messages, answers bridge requests from a fixture built off the real sample) and drops the webview CSP, which names `vscode-webview:` sources that do not exist over http. |
+| `serve.js` | Serves it. Monaco's AMD loader and its worker Blob both need a real origin. `require()` it for `start(port)`, or run it standalone to poke at the page by hand. |
+| `run.js` | The automated pass: builds for the port it will serve on, drives Find References, asserts. `HARNESS_PORT` moves it off 8123; `HARNESS_SHOT=x.png` saves a screenshot. |
+
+It asserts what only a browser can show: that the peek lists cross-file hits at all, that exactly the
+**non-live** panes get hidden models (a hit in the active component must use the live pane), that a
+cross-file entry previews the other file's real text, that double-clicking posts coordinates which
+land on the word itself, and that a second search retires the pane it no longer needs instead of
+accumulating models. Verified to fail on a regression, not just to pass: disabling the pane texts
+drops the peek to `References (1)` — the old behaviour — and four assertions go red.
+
+Not in `npm test`, and **Playwright is not in `package.json`**: it is a heavy dependency that CI would
+install on every run for a harness CI cannot execute anyway. `run.js` exits 2 with the install command
+when it is absent. Use it whenever the webview half changes.
+
+**`asWebviewUri` must return ABSOLUTE urls.** Root-relative ones look equivalent, but the Monaco worker
+runs from a `blob:` URL with no base to resolve them against, and it fails with "Failed trying to load
+default language strings" — the same symptom this project already records for a wrong AMD baseUrl.
 
 CI (`.github/workflows/ci.yml`) runs on every push/PR to `main`, Windows-only (the platform users are
 on), with superseded runs cancelled and a read-only token. Two jobs:
@@ -174,6 +216,17 @@ unit, queries the LSP, and maps the results back to the right component and pane
 
 Changing `stConverter.js` output or `xmlParser.js` component extraction can silently break that
 mapping; `test/test_live_path.js` guards it.
+
+**References peek across components and files.** Monaco throws "Model not found" for a Location whose
+URI has no loaded model, so the peek could only ever show hits in the two live panes. `custom/references`
+therefore resolves *every* hit to a (file, component, pane, local line) and ships that pane's TEXT
+alongside; the webview builds a **hidden model** per pane (scheme `twincat-peek:`, the file/component/pane
+in its query) and points the Location at it. The live panes are still preferred where they apply — they
+hold unsaved edits. Bounded by `PEEK_MAX_PANES` / `PEEK_MAX_TEXT_BYTES` in `customEditorProvider.js`,
+since the peek is a preview and the References panel lists every hit uncapped. Clicking an entry routes
+through `twincat.openComponent` with the exact pane + line + columns. The pane-slice coordinates are the
+subtle part — a slice is a different frame from the assembled unit — and `test_live_path.js` guards that
+arithmetic against every block of a real sample object.
 
 ### Writes
 

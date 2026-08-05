@@ -430,7 +430,62 @@ function insertFolderIntoXml(xmlText, parentFolderPath, newFolderName, newFolder
 }
 
 /**
- * Inserts a Method, Property, or Action tag at the end of the root block.
+ * Splices a member block (Method/Property/Action/Transition) into a POU/Itf at TwinCAT's
+ * canonical position: after the last member, BEFORE the <LineIds> group.
+ *
+ * TwinCAT's XML loader is ORDER-SENSITIVE inside <POU>/<Itf> — the same trap that made root
+ * <Folder> tags land after the members and dropped the whole FB from compile, C0004 per member
+ * (see insertRootFolderIntoXml). The canonical child order is
+ *     Declaration, Implementation, Folder*, member*, LineIds*
+ * so the first <LineIds> is the anchor. Files that have none — every .TcIO, since interfaces
+ * carry no executable lines, and any POU not yet compiled — fall back to the root close tag.
+ *
+ * Three things this has to get right, all of which the old `lastIndexOf('</POU>') + splice` got
+ * wrong (it appended past the LineIds group, at 6-space indent, leaving `</POU>` at column 0):
+ *  - the anchor is the START of the anchor tag's LINE, not the tag index: splicing at the tag
+ *    inherits the anchor's own indentation and then strands the anchor without any;
+ *  - `memberXml` brings its own 4-space indent and trailing newline, so the seam needs neither;
+ *  - line endings follow the document. TwinCAT writes CRLF, and a bare-LF splice leaves the file
+ *    mixed — a diff both TwinCAT and version control see, against the byte-fidelity invariant.
+ *
+ * @param {string} xmlText The source POU/Itf XML text.
+ * @param {string} memberXml The complete member block: 4-space indented, newline-terminated.
+ * @param {boolean} isItf Whether the parent is an Interface (.TcIO).
+ * @returns {string} The modified XML text, or the input unchanged if there is no root close tag.
+ */
+function insertMemberIntoXml(xmlText, memberXml, isItf) {
+    // Search from past the root open tag so nothing in the XML prolog can be mistaken for it.
+    const rootOpen = xmlText.match(isItf ? /<Itf\b[^>]*>/ : /<POU\b[^>]*>/);
+    const searchFrom = rootOpen ? rootOpen.index + rootOpen[0].length : 0;
+
+    const lineIdsRegex = /<LineIds\b/g;
+    lineIdsRegex.lastIndex = searchFrom;
+    let anchor = -1;
+    let lineIdsMatch;
+    while ((lineIdsMatch = lineIdsRegex.exec(xmlText)) !== null) {
+        // A `<LineIds` sitting inside a Declaration/Implementation CDATA is ST source text, not the
+        // tag — anchoring there would splice the member into the middle of someone's code. CDATA
+        // cannot nest, so unbalanced open/close counts before the match mean exactly "inside one".
+        const before = xmlText.slice(0, lineIdsMatch.index);
+        const opens = (before.match(/<!\[CDATA\[/g) || []).length;
+        const closes = (before.match(/\]\]>/g) || []).length;
+        if (opens === closes) { anchor = lineIdsMatch.index; break; }
+    }
+    if (anchor === -1) anchor = xmlText.lastIndexOf(isItf ? '</Itf>' : '</POU>');
+    if (anchor === -1) return xmlText;
+
+    while (anchor > 0 && (xmlText[anchor - 1] === ' ' || xmlText[anchor - 1] === '\t')) {
+        anchor--;
+    }
+
+    const eol = xmlText.includes('\r\n') ? '\r\n' : '\n';
+    const block = memberXml.replace(/\r\n/g, '\n').replace(/\n/g, eol);
+
+    return xmlText.substring(0, anchor) + block + xmlText.substring(anchor);
+}
+
+/**
+ * Inserts a Method, Property, or Action tag as the last member of the root block.
  * @param {string} xmlText The source POU XML text.
  * @param {*} fileUri Unused; retained for call-signature stability.
  * @param {boolean} isItf Whether the parent is an Interface (.TcIO).
@@ -466,11 +521,7 @@ function insertComponentIntoXml(xmlText, fileUri, isItf, name, componentType, fo
         }
     }
 
-    const closeTag = isItf ? '</Itf>' : '</POU>';
-    const index = xmlText.lastIndexOf(closeTag);
-    if (index === -1) return xmlText;
-    
-    return xmlText.substring(0, index) + componentXml + xmlText.substring(index);
+    return insertMemberIntoXml(xmlText, componentXml, isItf);
 }
 
 /**
@@ -669,12 +720,11 @@ function insertComponentBlockIntoXml(targetXml, block, { oldName, newName, newFo
         newBlock = renameFirstHeaderOccurrence(newBlock, /\b(?:METHOD|PROPERTY)\b/i, oldName, newName);
     }
 
-    // 4. Splice before the root close tag, matching insertComponentIntoXml's convention
-    //    (4-space indent on the opening line, trailing newline).
-    const closeTag = isItf ? '</Itf>' : '</POU>';
-    const index = targetXml.lastIndexOf(closeTag);
-    if (index === -1) return targetXml;
-    return targetXml.substring(0, index) + `    ${newBlock}\n` + targetXml.substring(index);
+    // 4. Splice in as the last member, sharing insertComponentIntoXml's placement (canonical
+    //    position before the LineIds group) and its convention: 4-space indent on the opening
+    //    line, trailing newline. The block's own line endings are normalised to the TARGET
+    //    document's by the helper — a copy can cross files with unlike endings.
+    return insertMemberIntoXml(targetXml, `    ${newBlock}\n`, isItf);
 }
 
 /**

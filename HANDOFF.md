@@ -14,6 +14,16 @@ always enough) — the user tested 0.3.1's feature against the still-running 0.3
 `~/.vscode/extensions/` for side-by-side version dirs + `.obsolete` before debugging a "feature does nothing" report.
 **Not yet visually confirmed by the user:** the 0.1.3 library grouping and 0.1.4 member expansion in the tree UI —
 logic is verified on real data + guard tests, but nobody has eyeballed the rendered tree. Worth doing.
+Likewise the **light-theme pass over `media/editor.css`** (user-reported: pane banners were ~1.1:1, unreadable).
+The whole sheet was dark-only; now theme-driven — **conventions are in that file's own header comment, read it
+before adding colour**. Contrast figures were computed against VS Code's default themes, **not eyeballed**; the
+app header + pane banners deliberately moved to VS Code chrome tones, so **dark mode changed too** (both are
+lighter/more legible than the old near-ghosted look). No test covers CSS. `.action-btn` got its OWN deepened
+ramp (`--accent-gradient-btn`) because it is the only white-on-accent fill; `--accent-gradient` stays bright so
+the gradient-clipped wordmark does not go dark-on-dark. **Deliberately left:** that wordmark, 3.3-4.9:1 depending
+on theme and gradient stop — a logotype, exempt; don't "fix" it without a design call. The Monaco panes were
+never part of the problem: `syncTheme()` (`editor.js:639`) already follows the body class and overrides the
+`vs-dark` init option — only its HC-light branch was wrong (gave `hc-black`), now fixed.
 
 ## Constraints / still open
 - **Publication:** history was rewritten + the GitHub repo recreated to purge customer/vendor content (`sample/`,
@@ -54,7 +64,12 @@ logic is verified on real data + guard tests, but nobody has eyeballed the rende
   for Itf) and the first member — the old `insertFolderIntoXml` appended them before `</POU>`, and XAE
   then dropped the FB's members from compile (C0004 per method/property). Fixed (root folders now join the
   contiguous folder group / land after the root `</Implementation>`; guarded in `test_xml_folderpath`);
-  one incident file existed in the wild (user's FB_Clamping, repaired separately). Controllers
+  one incident file existed in the wild (user's FB_Clamping, repaired separately). **Member insertion carried the
+  same latent defect and is now fixed** (`insertMemberIntoXml`, shared by create + paste): members anchor before
+  the first root `<LineIds>`, `.TcIO` (no LineIds at all) falls back to the close tag, and the splice takes the
+  anchor's LINE start — the old `lastIndexOf('</POU>')` also gave 6-space indent, `</POU>` at column 0 and bare
+  LF in CRLF files, compounding per insertion. Guarded by `test_xml_member_order` (verified to fail 27 ways
+  against the old code); `test_xml_clipboard` had pinned the buggy placement and was corrected. Controllers
   (`treeDragAndDrop.js`, `clipboardCommands.js`) are vscode-bound; **user tested both live 2026-07-16: good**. Virtual folders
   NOT draggable/copyable in v1 (moving one = rewriting every member's FolderPath prefix — but they ARE renameable, 0.3.0).
   `engines.vscode` bumped **1.60 → 1.66** (TreeDragAndDropController).
@@ -217,18 +232,13 @@ neither hit the duplicate-name bug.
   values; call parens→params first. **Unknown context ⇒ full list, never nothing.**
 
 ## Pipeline (open)
-0. **`insertComponentIntoXml` places new members AFTER the `<LineIds>` blocks** (just before `</POU>`) — deviates
-   from TwinCAT's canonical order (members, then LineIds). Tolerated by XAE so far, but the folder incident proved
-   the loader is order-sensitive; deserves the same canonical-anchor treatment as the folder fix.
-1. **Chained member completion stops after one hop** (`stAxis.MotionState.▮`) — a member's type is registered only if
-   the document text names it; transitive registration hits the 78 s `Object.keys()` cliff.
-2. **Nested library namespaces** (`VisuElems.VisuElemBase.▮`) not modelled.
-3. **Peek shows only the active component's panes** — cross-file hits go to the panel; an all-external result yields
-   `[]` (no peek). Would need hidden Monaco models for other files' ST.
-4. **Anonymous-enum CASE selectors** (`e:(a,b)`) don't resolve to an enum node (labels fall back to values).
-5. **`Tc2_MC2.▮` returns 2,145 names** — the string table can't separate top-level types from member names.
-6. **`parseVariablesBlock` folds pragma tokens into the type string** — harmless while `declarationTypes` is off;
-   would fire "Unknown type" the day it is switched on.
+**All six items shipped** (see git log). The last, cross-file/cross-component **references peek**, is covered by
+`node scratch/peek_harness/run.js` — 14 assertions driving the real `media/editor.js` in Chromium (needs
+`npm i --no-save playwright`; DEVELOPMENT.md documents it). It is verified to FAIL on a regression, not just to
+pass: disabling the pane texts drops the peek to "References (1)", the pre-fix behaviour.
+**`media/editor.js` has no other test — run that harness whenever it changes.** Still worth a dev-host pass for
+what the harness necessarily stands in for: the real extension host answering the bridge, and
+`twincat.openComponent` actually landing on the occurrence rather than just being sent the right coordinates.
 
 ## Working agreement
 Implementation is delegated to the **`implementer`** agent; the main conversation owns architecture/planning/review/

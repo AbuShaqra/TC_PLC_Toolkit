@@ -1,13 +1,39 @@
-@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
-
+/* Theming rules for this file — it was authored dark-only and turned unreadable on light themes:
+   1. Neutral surfaces and text come from the host theme (`--vscode-*`), never from literal white/black.
+   2. Where a translucent tint is wanted, tint with GREY, not white — grey-with-alpha darkens a light
+      surface and lightens a dark one, so one value serves both. White-with-alpha only works on dark.
+   3. The coral/green/amber brand accents are readable as text on dark themes but not on light ones,
+      so they are variables with a darkened light-theme override (see below), not literals.
+   Fonts are declared but cannot be fetched: the webview is offline-only (`default-src 'none'` CSP), so
+   these resolve to the generic families. Vendor the .woff2 under media/ if the real faces are wanted. */
 :root {
     --bg-primary: var(--vscode-editor-background, #1e1e1e);
     --fg-primary: var(--vscode-editor-foreground, #d4d4d4);
-    --border-color: rgba(255, 255, 255, 0.08);
+    --border-color: var(--vscode-panel-border, rgba(128, 128, 128, 0.35));
+    --surface-tint: rgba(128, 128, 128, 0.12);
+    --surface-tint-hover: rgba(128, 128, 128, 0.2);
+    --surface-tint-strong: rgba(128, 128, 128, 0.35);
     --accent-gradient: linear-gradient(135deg, #ff4757, #ff6b81);
+    /* Same brand ramp, deepened until WHITE text on it clears 4.5:1 (the bright one is 2.7-3.3:1).
+       Separate from --accent-gradient on purpose: that one is also the gradient-clipped wordmark and
+       the toggle track, and deepening it globally would put dark coral on a dark header. */
+    --accent-gradient-btn: linear-gradient(135deg, #c9182f, #d8324a);
+    --accent-fg: #ff6b81;
+    --ok-fg: #2ed573;
+    --warn-fg: #ffa502;
     --font-sans: 'Outfit', sans-serif;
     --font-mono: 'JetBrains Mono', monospace;
-    --header-bg: rgba(30, 30, 30, 0.7);
+    --header-bg: var(--vscode-titleBar-activeBackground, rgba(30, 30, 30, 0.7));
+}
+
+/* Light themes: the accents sit on their own near-white tinted pills there, so the bright
+   dark-theme values land around 1.8-2.3:1. Darkened here to clear 4.5:1 while keeping the hue. */
+body.vscode-light, body.vscode-high-contrast-light {
+    --accent-fg: #c2283c;
+    --ok-fg: #1a7f37;
+    --warn-fg: #b35309;
+    /* the wordmark and toggle track sit on a light header here, where the bright ramp is ~2.0-2.5:1 */
+    --accent-gradient: linear-gradient(135deg, #b81026, #d0304a);
 }
 
 body {
@@ -66,7 +92,7 @@ body {
     padding: 2px 8px;
     border-radius: 20px;
     background: rgba(255, 71, 87, 0.15);
-    color: #ff6b81;
+    color: var(--accent-fg);
     border: 1px solid rgba(255, 71, 87, 0.3);
     box-shadow: 0 0 10px rgba(255, 71, 87, 0.1);
     flex-shrink: 0;
@@ -76,7 +102,7 @@ body {
     margin: 0;
     font-size: 1.1rem;
     font-weight: 600;
-    color: rgba(255, 255, 255, 0.9);
+    color: var(--vscode-foreground, rgba(255, 255, 255, 0.9));
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -115,14 +141,14 @@ body {
 }
 
 .nav-select:focus {
-    border-color: #ff6b81;
+    border-color: var(--accent-fg);
     box-shadow: 0 0 12px rgba(255, 71, 87, 0.3);
 }
 
 .status-indicator {
     font-size: 0.8rem;
     font-weight: 500;
-    color: #2ed573;
+    color: var(--ok-fg);
     background: rgba(46, 213, 115, 0.12);
     border: 1px solid rgba(46, 213, 115, 0.2);
     padding: 2px 10px;
@@ -132,7 +158,7 @@ body {
 }
 
 .status-indicator.modified {
-    color: #ffa502;
+    color: var(--warn-fg);
     background: rgba(255, 165, 2, 0.12);
     border: 1px solid rgba(255, 165, 2, 0.2);
 }
@@ -153,15 +179,17 @@ body {
     transition: flex-grow 0.05s ease;
 }
 
+/* Theme-driven, not hardcoded dark: the literal white-on-black-tint this used to carry
+   composited to ~1.1:1 contrast on a light theme, leaving the banners unreadable. */
 .pane-header {
-    background: rgba(0, 0, 0, 0.15);
+    background: var(--vscode-editorGroupHeader-tabsBackground, rgba(0, 0, 0, 0.15));
     padding: 6px 20px;
     font-size: 0.8rem;
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.5px;
-    color: rgba(255, 255, 255, 0.4);
-    border-bottom: 1px solid var(--border-color);
+    color: var(--vscode-foreground, rgba(255, 255, 255, 0.6));
+    border-bottom: 1px solid var(--vscode-panel-border, var(--border-color));
 }
 
 .editor-wrapper {
@@ -217,11 +245,11 @@ body {
     background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.1);
+    background: var(--vscode-scrollbarSlider-background, rgba(128, 128, 128, 0.4));
     border-radius: 7px;
 }
 ::-webkit-scrollbar-thumb:hover {
-    background: rgba(255, 255, 255, 0.25);
+    background: var(--vscode-scrollbarSlider-hoverBackground, rgba(128, 128, 128, 0.7));
 }
 
 /* Toggle Switch Wrapper */
@@ -229,7 +257,7 @@ body {
     display: flex;
     align-items: center;
     gap: 8px;
-    background: rgba(255, 255, 255, 0.03);
+    background: var(--surface-tint);
     border: 1px solid var(--border-color);
     padding: 4px 12px;
     border-radius: 20px;
@@ -240,20 +268,20 @@ body {
 
 .sync-toggle-container:hover {
     border-color: rgba(255, 71, 87, 0.3);
-    background: rgba(255, 255, 255, 0.05);
+    background: var(--surface-tint-hover);
 }
 
 .sync-toggle-label {
     font-size: 0.75rem;
     font-weight: 600;
-    color: rgba(255, 255, 255, 0.4);
+    color: var(--vscode-foreground, rgba(255, 255, 255, 0.6));
     text-transform: uppercase;
     letter-spacing: 0.5px;
     transition: color 0.3s ease;
 }
 
 .sync-toggle-container.active .sync-toggle-label {
-    color: #ff6b81;
+    color: var(--accent-fg);
 }
 
 /* The switch - the box around the slider */
@@ -280,7 +308,7 @@ body {
     left: 0;
     right: 0;
     bottom: 0;
-    background-color: rgba(255, 255, 255, 0.15);
+    background-color: var(--surface-tint-strong);
     transition: .3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
@@ -293,7 +321,9 @@ body {
     bottom: 2px;
     background-color: white;
     transition: .3s cubic-bezier(0.4, 0, 0.2, 1);
-    box-shadow: 0 1px 3px rgba(0,0,0,0.4);
+    /* the knob stays white so it reads on the coral track when checked; the hairline ring is what
+       keeps it visible against the pale unchecked track on a light theme (shadow, so it adds no size) */
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(0, 0, 0, 0.2);
 }
 
 input:checked + .slider {
@@ -340,7 +370,7 @@ input:checked + .slider:before {
 
 /* Premium action button styling */
 .action-btn {
-    background: var(--accent-gradient);
+    background: var(--accent-gradient-btn);
     color: white;
     border: none;
     padding: 6px 16px;
@@ -361,7 +391,9 @@ input:checked + .slider:before {
 .action-btn:hover {
     transform: translateY(-1px);
     box-shadow: 0 6px 20px rgba(255, 71, 87, 0.4);
-    filter: brightness(1.1);
+    /* darkens rather than brightens: brightness(1.1) dropped the white label back under 4.5:1.
+       The lift and the stronger shadow are what signal the hover. */
+    filter: brightness(0.94);
 }
 
 .action-btn:active {

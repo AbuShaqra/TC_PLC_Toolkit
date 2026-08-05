@@ -18,6 +18,11 @@ const { STANDARD_TYPES, isBuiltin } = require('./builtins');
  * @property {boolean} [external] The type comes from an external library (libsymbols.js), or from a
  *                          member of one. Everything we know about it is partial, so **no check may
  *                          ever flag it** — see markExternal.
+ * @property {boolean} [anonymous] An inline enum declared at its use site (`e : (idle, running)`).
+ *                          It has no DUT node and no nominal identity, so it can never be proved
+ *                          incompatible with anything — isAssignable declines on it.
+ * @property {string[]} [values] The value names of an `anonymous` enum, in declaration order. They
+ *                          ride on the Type because there is no node to hang them off.
  */
 
 const UNKNOWN = { kind: 'unknown', name: '' };
@@ -182,6 +187,26 @@ function typeFromNode(node) {
 function parseTypeString(typeStr, index) {
     if (!typeStr) return UNKNOWN;
     let t = String(typeStr).trim();
+
+    // Inline (anonymous) enum: `eState : (idle, running, faulted)`, values optionally numbered
+    // (`(idle := 0, running := 10)`). There is no DUT node to point at — the type IS the
+    // declaration — so the values travel on the Type itself, and `anonymous` marks that its
+    // identity is structural, not nominal. Without this the whole declaration fell through to a
+    // NAMED unknown ('(idle, running)'), which is exactly the shape declarationTypes would flag as
+    // an unknown type the day it is switched on, and which no CASE selector could resolve.
+    //
+    // Deliberately BEFORE the initializer strip below: that cuts at the first ':=', which for a
+    // numbered enum lands INSIDE the parentheses and leaves the unparseable '(idle'. The match is
+    // therefore not end-anchored either — a declaration may carry its own initializer after the
+    // closing paren (`(idle, running) := idle`), and `[^)]*` already stops at the first ')'.
+    const inlineEnum = t.match(/^\(([^)]*)\)/);
+    if (inlineEnum) {
+        const values = inlineEnum[1]
+            .split(',')
+            .map(v => v.split(':=')[0].trim())
+            .filter(v => /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(v));
+        if (values.length) return { kind: 'enum', name: `(${inlineEnum[1].trim()})`, anonymous: true, values };
+    }
 
     // Strip initializer.
     const assign = t.indexOf(':=');
@@ -420,6 +445,10 @@ function isAssignable(target, source) {
 
     // enum behaves like INT (non-strict); allow with numerics and itself.
     if (a.kind === 'enum' || b.kind === 'enum') {
+        // An inline enum has no nominal identity, so nothing here can PROVE a mismatch: its value
+        // names live in the enclosing scope and are routinely shared with a named enum or a
+        // constant. Diagnostics are conservative by design — decline rather than invent a clash.
+        if (a.anonymous || b.anonymous) return 'ok';
         if (a.name === b.name) return 'ok';
         if ((a.kind === 'enum' && isNumeric(b)) || (b.kind === 'enum' && isNumeric(a))) return 'ok';
         if (a.kind === 'enum' && b.kind === 'enum') return 'incompatible';
