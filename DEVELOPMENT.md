@@ -94,6 +94,24 @@ labels such a run REDUCED rather than letting it pass for FULL.
 A few experimental probes live in `scratch/` outside `npm test`: `test_lsp_parser.js`,
 `test_lsp_types_sync.js`, `test_method_diagnostics.js` (plus `make_icon.js`, `probe_lib_format.js`).
 
+**`scratch/peek_harness/`** runs `media/editor.js` in a real browser — the one part of the codebase
+no Node test can reach, and where the references peek actually lives. `build.js` generates the page
+by calling the REAL `getHtmlForWebview()` with a stubbed `vscode` module (a hand-copied page would
+quietly stop matching what ships), substituting only `acquireVsCodeApi()` — which records outgoing
+messages and answers bridge requests from a fixture built off the real sample — and dropping the
+webview CSP, which names `vscode-webview:` sources that do not exist over http. `serve.js` serves it,
+because Monaco's AMD loader and its worker Blob both need a real origin.
+
+```bash
+node scratch/peek_harness/build.js && node scratch/peek_harness/serve.js   # then drive :8123/harness/
+```
+
+Not in `npm test`: it needs a browser. Use it whenever the webview half changes — it is what proved
+the peek renders cross-file hits, that clicking one posts the right coordinates, and that the hidden
+models are retired rather than leaked. **`asWebviewUri` must return ABSOLUTE urls**; root-relative
+ones look equivalent but the worker runs from a `blob:` URL with no base to resolve them against, and
+Monaco fails with "Failed trying to load default language strings".
+
 CI (`.github/workflows/ci.yml`) runs on every push/PR to `main`, Windows-only (the platform users are
 on), with superseded runs cancelled and a read-only token. Two jobs:
 

@@ -513,7 +513,7 @@ function peekPath(fileUri, componentId, pane) {
     const member = componentId === 'root'
         ? 'root'
         : String(componentId).replace(/^(method|prop|action|trans|get|set)_/i, '');
-    return `/${base}/${member}.${pane}`;
+    return `/${member}.${pane}/${base}`;
 }
 
 sampleTest('peek: every pane slice is addressed by its own local coordinates', () => {
@@ -588,12 +588,14 @@ sampleTest('peek: a real reference lands on its own word inside the sliced pane'
         `the fixture really does span components — the case the peek could not render before (hit ${[...componentsHit].join(', ')})`);
 });
 
-plainTest('peek: the synthetic URI path reads as file + member + pane', () => {
-    assert(peekPath('file:///c:/p/POUs/FB_Axis.TcPOU', 'method_Cyclic', 'impl') === '/FB_Axis.TcPOU/Cyclic.impl',
-        'a method pane names its file and member');
-    assert(peekPath('file:///c:/p/FB_Axis.TcPOU', 'root', 'decl') === '/FB_Axis.TcPOU/root.decl',
+plainTest('peek: the synthetic URI path puts the FILE in Monaco\'s prominent slot', () => {
+    // Monaco renders a peek group as basename + dimmed dirname, so the file must come LAST.
+    // Verified in a browser: the obvious ordering bolds "root.decl" and dims the file name.
+    assert(peekPath('file:///c:/p/POUs/FB_Axis.TcPOU', 'method_Cyclic', 'impl') === '/Cyclic.impl/FB_Axis.TcPOU',
+        'a method pane names its member then its file');
+    assert(peekPath('file:///c:/p/FB_Axis.TcPOU', 'root', 'decl') === '/root.decl/FB_Axis.TcPOU',
         'the root component keeps a stable label');
-    assert(peekPath('file:///c:/p/My%20Folder/FB_A.TcPOU', 'prop_Value', 'decl') === '/FB_A.TcPOU/Value.decl',
+    assert(peekPath('file:///c:/p/My%20Folder/FB_A.TcPOU', 'prop_Value', 'decl') === '/Value.decl/FB_A.TcPOU',
         'a percent-encoded path segment is decoded for display');
     // Monaco requires a rooted path; a malformed URI must not produce one that throws.
     assert(peekPath('', 'root', 'impl').startsWith('/'), 'an empty file uri still yields a rooted path');

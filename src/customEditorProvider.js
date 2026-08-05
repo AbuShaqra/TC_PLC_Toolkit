@@ -105,9 +105,12 @@ function paneTextFromUnit(stLines, lineMap, componentId, pane) {
 }
 
 /**
- * The path of a peek model's synthetic URI. Monaco lists a peek result by its resource basename
- * with the dirname as description, so shaping it `/<file>/<member>.<pane>` is what makes the widget
- * read as "Cyclic.impl — FB_Axis.TcPOU" instead of an opaque blob.
+ * The path of a peek model's synthetic URI.
+ *
+ * Monaco renders a peek group as `basename` prominent + `dirname` dimmed, so the FILE goes last:
+ * `/<member>.<pane>/<file>` reads as "**FB_Station.TcPOU** /root.decl", which is what a user scans
+ * for. The obvious ordering (`/<file>/<member>.<pane>`) inverts it and puts "root.decl" in the
+ * prominent slot with the file dimmed behind it — verified in a browser, not guessed.
  * @param {string} fileUri Owning file.
  * @param {string} componentId Component id ('root', 'method_Cyclic', …).
  * @param {string} pane 'decl' or 'impl'.
@@ -119,7 +122,7 @@ function peekPath(fileUri, componentId, pane) {
     const member = componentId === 'root'
         ? 'root'
         : String(componentId).replace(/^(method|prop|action|trans|get|set)_/i, '');
-    return `/${base}/${member}.${pane}`;
+    return `/${member}.${pane}/${base}`;
 }
 
 /**

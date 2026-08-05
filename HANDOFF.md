@@ -232,15 +232,14 @@ neither hit the duplicate-name bug.
   values; call parens→params first. **Unknown context ⇒ full list, never nothing.**
 
 ## Pipeline (open)
-**All six items shipped** (see git log). The last, cross-file/cross-component **references peek**, is the one
-piece in this repo whose payoff is only visible in a running dev host — **not yet smoke-tested by the user.**
-What to check: Shift+F12 on a symbol used in another file (e.g. `FB_Cylinder`) shows those hits *in the peek*,
-each entry previews the right lines, and clicking one lands on that exact occurrence (not the first same-named
-one). Design + traps are in DEVELOPMENT.md ("References peek across components and files"); the coordinate
-arithmetic (a pane slice is a different frame from the assembled unit) is guarded in `test_live_path`, and the
-payload was simulated on the sample — `FB_Cylinder` = 3 refs / 3 panes / 3 files, 618 bytes, every ref landing
-on its own word. **If it misbehaves, suspect the webview half** (`media/editor.js`): it has no test coverage,
-and `provideReferences` there is the only untested code in the path.
+**All six items shipped** (see git log). The last, cross-file/cross-component **references peek**, was driven
+end-to-end in a real browser via `scratch/peek_harness/` (DEVELOPMENT.md documents it) — Find References on
+`FB_Cylinder` renders "References (3)" with `FB_Station.TcPOU` / `GVL_System.TcGVL` groups, their previews show
+the right lines, double-clicking one posts `openFile` with coordinates that resolve to the word (verified
+`substring(28,39) === 'FB_Cylinder'`), and a second search retires the pane it no longer needs (2 models → 1,
+no leak). **`media/editor.js` is otherwise untested — use that harness whenever it changes.** Still worth a
+dev-host pass for the things the harness stands in for: the real extension host answering the bridge, and
+`twincat.openComponent` actually landing on the occurrence.
 
 ## Working agreement
 Implementation is delegated to the **`implementer`** agent; the main conversation owns architecture/planning/review/
