@@ -15,7 +15,7 @@ Rules of engagement:
   - Plain CommonJS JavaScript, no build step, no TypeScript, no new tooling unless the brief says so.
 - Match the existing code style: JSDoc file/function headers, naming, and comment density as found in neighboring code.
 - Stick to the brief. If you hit a genuine blocker or the brief conflicts with what the code actually does, stop and report the conflict rather than improvising a different design.
-- Verify your work: run `npm test` (the harnesses in `scratch/` run standalone under Node, no VS Code needed) and any harness specific to the area you touched. If the change spans the live editor path (stConverter/xmlParser/lineMap), `scratch/test_live_path.js` is mandatory.
+- Verify your work: run `npm test` (the harnesses in `test/` run standalone under Node, no VS Code needed) and any harness specific to the area you touched. If the change spans the live editor path (stConverter/xmlParser/lineMap), `test/test_live_path.js` is mandatory.
 - Do not commit unless the brief explicitly asks for it.
 
 ## Heartbeat — report progress, don't go dark

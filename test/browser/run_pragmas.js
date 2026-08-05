@@ -1,5 +1,5 @@
 /**
- * @file scratch/peek_harness/run_pragmas.js
+ * @file test/browser/run_pragmas.js
  * @description The browser pass over pragma handling in media/editor.js: `{region}` folding and the
  * Monarch pragma rules, driven through a real Monaco in Chromium.
  *
@@ -24,7 +24,7 @@
  *
  *     npm i --no-save playwright        # the package (browsers usually already present)
  *     npx playwright install chromium   # only if the browser itself is missing
- *     node scratch/peek_harness/run_pragmas.js
+ *     node test/browser/run_pragmas.js
  *
  * Exit codes: 0 pass, 1 an assertion failed, 2 cannot run (no Playwright / no browser).
  */

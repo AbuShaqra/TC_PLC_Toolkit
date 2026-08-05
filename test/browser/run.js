@@ -1,5 +1,5 @@
 /**
- * @file scratch/peek_harness/run.js
+ * @file test/browser/run.js
  * @description The automated pass over media/editor.js — builds the harness, serves it, drives a
  * real Chromium through Find References, and asserts what the references peek does.
  *
@@ -12,7 +12,7 @@
  *
  *     npm i --no-save playwright        # the package (browsers usually already present)
  *     npx playwright install chromium   # only if the browser itself is missing
- *     node scratch/peek_harness/run.js
+ *     node test/browser/run.js
  *
  * Exit codes: 0 pass, 1 an assertion failed, 2 cannot run (no Playwright / no browser).
  */

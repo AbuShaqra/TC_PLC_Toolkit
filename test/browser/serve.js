@@ -1,12 +1,12 @@
 /**
- * @file scratch/peek_harness/serve.js
+ * @file test/browser/serve.js
  * @description Static server for the peek harness. Monaco needs a real http origin — its AMD loader
  * and the worker Blob both resolve against it — so file:// will not do.
  *
  * Serves the repo at / (so /media/... resolves exactly as the generated page expects) and the
  * generated harness at /harness/.
  *
- * Run standalone to poke at it by hand:  node scratch/peek_harness/serve.js [port]
+ * Run standalone to poke at it by hand:  node test/browser/serve.js [port]
  * Or `require()` it and call start(port) — run.js does, so the automated pass needs no side process.
  */
 

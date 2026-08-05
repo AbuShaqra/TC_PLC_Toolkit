@@ -17,6 +17,7 @@ scripts/build-vsix.sh
 scripts/run-build.bat
 scripts/install-vsix.bat
 scripts/build-sample-project.js
+scripts/make-icon.js
 # The only thing in the repo that talks to the internet. It regenerates a committed data file and is
 # run by a developer by hand; shipping it inside an extension whose whole premise is being offline
 # would be wrong even though nothing invokes it.

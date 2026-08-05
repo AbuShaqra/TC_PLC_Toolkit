@@ -4,7 +4,7 @@ Where the work *stands*. Read before starting; keep current (handoff rule in [CL
 100 lines — prune finished items rather than appending, but never drop a real finding to hit it. **Shipped features
 live in git history (PRs/commits); this file keeps the findings that would cost to re-derive.**
 
-**Last verified:** 2026-08-05 — `npm test` green (**45 harnesses, Coverage: FULL**), typecheck clean,
+**Last verified:** 2026-08-05 — `npm test` green (**49 harnesses, Coverage: FULL**), typecheck clean,
 **0 diagnostics on the sample**. Shipped through **0.5.1** (pragmas + ST folding); releases are in git history.
 **Install trap that cost a debug cycle:** VS Code keeps the old version dir until a FULL restart (reload-window is not
 always enough) — the user tested 0.3.1's feature against the still-running 0.3.0 code and reported it broken. Check
@@ -222,10 +222,12 @@ neither hit the duplicate-name bug.
 - **Autocomplete is caret-context aware** (`classifyCaretContext`): `x:▮`→types+namespaces (no `END_IF`); `x:=▮`→
   values; call parens→params first. **Unknown context ⇒ full list, never nothing.**
 
-## Webview browser harness (`scratch/peek_harness/`, needs `npm i --no-save playwright`)
+## Webview browser harness (`test/browser/`, needs `npm i --no-save playwright`)
 The only test of `media/editor.js` — **run both runners whenever it changes**. `run.js` (references peek,
-17 assertions), `run_pragmas.js` (region folding + Monarch pragma scopes, 21). Every guard verified to FAIL,
-not just to pass. DEVELOPMENT.md documents both.
+17 assertions), `run_pragmas.js` (folding + Monarch pragma scopes, 29). Every guard verified to FAIL,
+not just to pass. DEVELOPMENT.md documents both. Outside `npm test` on purpose (needs a browser) and safe
+there: `test/run.js` only discovers top-level `test/test_*.js`. Moved out of `scratch/` 2026-08-05, which
+is now **git-ignored** — a local playground, so anything worth keeping must live in `test/` or `scripts/`.
 **Navigating away must DISMISS the peek** (0.4.1; user found it, dev-host, reported as "the arrow on top of the
 peek window disappears"). Monaco dismisses a peek itself when a reference opens in the same editor; it cannot
 here, because a hit outside the active component round-trips through the extension host
