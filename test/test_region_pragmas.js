@@ -7,13 +7,17 @@
  *
  *   - The **webview's** Monarch tokenizer had no pragma rule, so the apostrophe in a real TwinCAT
  *     label like `{region "Motion FB's"}` opened a string state that ran to the next quote in the
- *     document — and Monaco switches quick suggestions off inside strings. Fixed in media/editor.js;
- *     not testable from Node (it is a Monaco grammar), verified by inspection of the rule order.
+ *     document — and Monaco switches quick suggestions off inside strings. Fixed in media/editor.js.
+ *     That half is no longer untested: `test_pragmas.js` replays the tokenizer's rules (and asserts
+ *     their ORDER, which is what makes the categories reachable), and
+ *     `scratch/peek_harness/run_pragmas.js` runs Monaco's own tokenizer in a browser.
  *
  *   - The **lexer** scanned `{` to the next `}` *anywhere in the file*, newlines included. While the
  *     user typed `{region "Inputs"` — `{` is not auto-closed — the rest of the VAR block was
  *     swallowed into one Pragma token, every declaration below it disappeared from the symbol table,
  *     and each 300 ms re-diagnose flashed them red as "is not declared". That is what this guards.
+ *
+ * Classification, the pragma catalogs, folding and the two grammars live in `test_pragmas.js`.
  */
 
 const { tokenize, TokenType, parseAndIndexDocument, clearWorkspaceIndex, getWorkspaceSymbolIndex } = require('../src/lsp/parser');

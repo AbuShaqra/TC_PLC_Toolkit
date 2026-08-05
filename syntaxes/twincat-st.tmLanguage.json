@@ -4,6 +4,7 @@
   "scopeName": "source.twincat-st",
   "patterns": [
     { "include": "#comments" },
+    { "include": "#pragmas" },
     { "include": "#strings" },
     { "include": "#numbers" },
     { "include": "#keywords" },
@@ -27,6 +28,27 @@
           "name": "comment.block.slash-star.twincat-st",
           "begin": "/\\*",
           "end": "\\*/"
+        }
+      ]
+    },
+    "pragmas": {
+      "comment": "TwinCAT pragmas: the five categories Beckhoff documents at Infosys node 2529556363, plus a catch-all. Ordered BEFORE #strings in the top-level patterns on purpose - ST strings are single-quoted, so the apostrophe in {region \"Motion FB's\"} would otherwise open a string that runs to the next quote anywhere in the file. The webview's Monaco tokenizer has guarded against exactly that since it broke IntelliSense below a region; this grammar (VS Code's own editor, for loose .st files) had no pragma rule at all and carried the same latent bug. Every match stops at } or end of line, so a half-typed pragma cannot swallow the rest of the file either. Categories are decided by SHAPE alone - never by whether the name is in src/lsp/pragmas.js's catalog, because user-defined attributes are a supported TwinCAT feature and must not look wrong.",
+      "patterns": [
+        {
+          "name": "keyword.control.directive.region.twincat-st",
+          "match": "(?i)\\{\\s*(region|endregion)\\b[^}\\n]*\\}?"
+        },
+        {
+          "name": "keyword.control.directive.conditional.twincat-st",
+          "match": "(?i)\\{\\s*(IF|ELSIF|ELSE|END_IF|define|undefine)\\b[^}\\n]*\\}?"
+        },
+        {
+          "name": "keyword.control.directive.message.twincat-st",
+          "match": "(?i)\\{\\s*(text|info|warning|error)\\b[^}\\n]*\\}?"
+        },
+        {
+          "name": "storage.modifier.attribute.twincat-st",
+          "match": "\\{[^}\\n]*\\}?"
         }
       ]
     },

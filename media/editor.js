@@ -318,7 +318,23 @@
                 { open: '(', close: ')' },
                 { open: "'", close: "'" },
                 { open: '"', close: '"' }
-            ]
+            ],
+
+            // `{region "Inputs"}` … `{endregion}` collapse to one line, in BOTH panes — TwinCAT's own
+            // editor folds regions in the declaration part as well as the implementation, and folding
+            // away a 200-line VAR block is most of the point of writing one.
+            //
+            // Markers are enough on their own: with no FoldingRangeProvider registered for 'iecst',
+            // Monaco falls back to its indentation provider, which honours these and nests them. Do NOT
+            // register a range provider for this language without reimplementing regions inside it —
+            // a syntax provider REPLACES the indentation one, markers included, and the folds would
+            // silently disappear. Regex sources are pinned to src/lsp/pragmas.js by test_pragmas.js.
+            folding: {
+                markers: {
+                    start: /^\s*\{\s*region\b/,
+                    end: /^\s*\{\s*endregion\b/
+                }
+            }
         });
 
         // Monaco Monarch highlighter configuration
@@ -377,8 +393,24 @@
                     // this the apostrophe in `{region "Motion FB's"}` opened the @string state and
                     // every following line stayed string-scoped until the next quote in the document.
                     // Monaco's default quickSuggestions ({other: on, strings: off}) then switched
-                    // IntelliSense off for the whole VAR block below the region. The second rule keeps
-                    // a half-typed pragma on its own line, so completion does not die as you type it.
+                    // IntelliSense off for the whole VAR block below the region. The paired `$` rules
+                    // keep a half-typed pragma on its own line, so completion does not die as you
+                    // type it.
+                    //
+                    // The categories below are the five Beckhoff documents (Infosys node 2529556363),
+                    // split out so a theme can tell a fold marker from a compile switch. Every rule
+                    // still stops at `}` or end-of-line, so the invariant above holds for all of them,
+                    // and the catch-all pair at the end means an unknown, third-party or future pragma
+                    // is highlighted exactly as before. Categories come from SHAPE only — never from
+                    // whether the name is in src/lsp/pragmas.js's catalog. Tinting an uncatalogued
+                    // attribute differently would be a diagnostic in disguise, and TwinCAT documents
+                    // user-defined attributes as a supported feature.
+                    [/\{\s*(region|endregion)\b[^}]*\}/, 'annotation.region'],
+                    [/\{\s*(region|endregion)\b[^}]*$/, 'annotation.region'],
+                    [/\{\s*(IF|ELSIF|ELSE|END_IF|define|undefine)\b[^}]*\}/, 'annotation.conditional'],
+                    [/\{\s*(IF|ELSIF|ELSE|END_IF|define|undefine)\b[^}]*$/, 'annotation.conditional'],
+                    [/\{\s*(text|info|warning|error)\b[^}]*\}/, 'annotation.message'],
+                    [/\{\s*(text|info|warning|error)\b[^}]*$/, 'annotation.message'],
                     [/\{[^}]*\}/, 'annotation'],
                     [/\{[^}]*$/, 'annotation'],
 
@@ -443,6 +475,23 @@
                     startColumn: word.startColumn,
                     endColumn: word.endColumn
                 };
+
+                // Inside `{attribute '…'}` an accepted item replaces the whole quoted name, not
+                // Monaco's idea of the word under the caret. Five catalogued attribute names contain
+                // characters Monaco's word pattern breaks on — `no-exit`, `no-analysis`,
+                // `instance-path`, `estimated-stack-usage`, `c++_compatible` — so accepting `no-exit`
+                // after typing `no-e` would replace only the `e` and leave `'no-no-exit'`.
+                const lineText = model.getLineContent(position.lineNumber);
+                const toCaret = lineText.slice(0, position.column - 1);
+                const openBrace = toCaret.lastIndexOf('{');
+                if (openBrace !== -1 && toCaret.indexOf('}', openBrace) === -1) {
+                    const quote = toCaret.lastIndexOf("'");
+                    if (quote > openBrace) {
+                        const closing = lineText.indexOf("'", quote + 1);
+                        range.startColumn = quote + 2;
+                        range.endColumn = closing === -1 ? position.column : closing + 1;
+                    }
+                }
 
                 const suggestions = await sendBridgeRequest('custom/completions', buildBridgeContext(model, position));
 

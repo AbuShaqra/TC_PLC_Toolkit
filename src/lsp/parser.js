@@ -96,6 +96,11 @@ function tokenize(code) {
         // 0a. Pragmas / attributes: { ... } are metadata, not code. Treat the whole
         // brace span as a single skippable token so its contents are never parsed.
         //
+        // The token stays deliberately unclassified. `src/lsp/pragmas.js` turns this token's `value`
+        // into a category, an attribute name and a documentation link, but it is called by the few
+        // features that want that (completion) rather than here: tokenize() runs over every file on
+        // every diagnostics pass, and nothing in the parser itself looks past the braces.
+        //
         // The scan stops at the end of the line as well as at '}'. TwinCAT writes every pragma on one
         // line, and an *unterminated* '{' used to swallow the rest of the file: while the user typed
         // `{region "Inputs"` — '{' is not auto-closed — every declaration below it vanished from the

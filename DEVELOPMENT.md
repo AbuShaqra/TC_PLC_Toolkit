@@ -93,6 +93,7 @@ per-suite without aborting on the first failure. The main ones:
 | `test/test_rename_engine.js` | `src/renameEngine.js`: mapping workspace reference positions (raw-ST-unit coords) back into CDATA splices — synthesized-line skips (action headers, `GET`/`SET`), the PROGRAM→FUNCTION_BLOCK raw-mode column skew, the never-write-a-mismatch guard, CRLF byte preservation. |
 | `test/test_references_for_symbol.js` | The LSP's by-symbol references entry point (`custom/referencesForSymbol`) that powers rename: FB/GVL/DUT roots (a GVL name never appears in its own ST text, so the position-based API cannot seed it), methods/properties/actions, the name-keyed-index identity guard, and index restoration after the scan. |
 | `test/test_config_references.js` | The non-code half of rename (`custom/configReferencesForSymbol`): dotted symbol paths inside visualizations `.TcVIS`/`.TcVMO` (`GVL_X.fb.member`, embedded `STSnippet` code) and text lists `.TcTLO`/`.TcGTLO` (a text entry whose text IS a symbol path) are found only when the chain provably resolves to the renamed symbol — text-list ids, visu-library names, dotted prose (`Encoderpos.Turn1`) and unresolvable prefixes are never touched. Task configs `.TcTTO` use a separate rule: the `<PouCall>` `<Name>` matches only a dot-free name, so a library call (`VisuElems.Visu_Prg`) is never rewritten. BOM/offset fidelity, plus a sample-project pass when `sample/` is present. |
+| `test/test_pragmas.js` | Pragma classification and the two catalogs, plus the highlighting rules in **both** grammars and the `{region}` folding markers. Pins the split the design rests on: shape decides the category (and therefore the colour), the catalog only enriches — so a user-defined attribute must be scoped exactly like a documented one. Also asserts catalog integrity (no duplicates, every documented entry has an Infosys node id, the curated file holds nothing Infosys documents, every curated entry carries measured counts), that pragma spans are consumed whole in the lexer and both grammars, and that the three folding-marker declarations — `pragmas.js`, `language-configuration.json`, `media/editor.js` — still agree, which nothing else can check because none of them can import the others. |
 | `test/test_plcproj_scope.js` | The index is scoped to the `.plcproj`, not the filesystem: `collectPlcProjObjectPaths` lists the `<Compile>`d objects, and `indexTwinCatDirectory` skips on-disk objects outside that set so a backup/orphan copy (a duplicate object name) cannot win the name-keyed index and steal a real object's references. Includes the no-`.plcproj` index-all fallback and a sample-coverage check proving the gate is a no-op on the ratchet. |
 
 `test/run.js <substring>` filters to matching suites. `test/_baseline.js` holds the machine-dependent
@@ -106,29 +107,32 @@ A few experimental probes live in `scratch/` outside `npm test`: `test_lsp_parse
 `test_lsp_types_sync.js`, `test_method_diagnostics.js` (plus `make_icon.js`, `probe_lib_format.js`).
 
 **`scratch/peek_harness/`** runs `media/editor.js` in a real browser — the one part of the codebase
-no Node test can reach, and where the references peek actually lives.
+no Node test can reach. The name is historical: it is the webview's browser harness generally, and it
+now carries two runners.
 
 ```bash
-npm i --no-save playwright          # optional dep, deliberately NOT in package.json (see below)
-node scratch/peek_harness/run.js    # builds, serves, drives Chromium, asserts. 0 pass / 1 fail / 2 cannot run
+npm i --no-save playwright                  # optional dep, deliberately NOT in package.json (see below)
+node scratch/peek_harness/run.js            # the references peek
+node scratch/peek_harness/run_pragmas.js    # {region} folding + the Monarch pragma rules
 ```
 
 | file | role |
 |---|---|
 | `build.js` | Generates the page by calling the **real** `getHtmlForWebview()` with a stubbed `vscode` module — a hand-copied page would quietly stop matching what ships. Substitutes only `acquireVsCodeApi()` (records outgoing messages, answers bridge requests from a fixture built off the real sample) and drops the webview CSP, which names `vscode-webview:` sources that do not exist over http. |
 | `serve.js` | Serves it. Monaco's AMD loader and its worker Blob both need a real origin. `require()` it for `start(port)`, or run it standalone to poke at the page by hand. |
-| `run.js` | The automated pass: builds for the port it will serve on, drives Find References, asserts. `HARNESS_PORT` moves it off 8123; `HARNESS_SHOT=x.png` saves a screenshot. |
+| `run.js` | The references peek: builds for the port it will serve on, drives Find References, asserts. `HARNESS_PORT` moves it off 8123; `HARNESS_SHOT=x.png` saves a screenshot. |
+| `run_pragmas.js` | Pragmas: folds a `{region}` block and reads back the rendered lines, then tokenizes through Monaco's **own** tokenizer. Both are things that fail silently — folding is purely declarative (markers on the language configuration), so if Monaco ever stopped honouring them every unit test would still pass and no region would fold. Its fixture has **no indentation inside the VAR block**, so an indentation-derived range cannot account for the fold: if lines collapse, the marker did it. Verified — removing the markers turns 3 assertions red and nothing folds at all. Defaults to port 8124. |
 
-It asserts what only a browser can show: that the peek lists cross-file hits at all, that exactly the
-**non-live** panes get hidden models (a hit in the active component must use the live pane), that a
+`run.js` asserts what only a browser can show: that the peek lists cross-file hits at all, that exactly
+the **non-live** panes get hidden models (a hit in the active component must use the live pane), that a
 cross-file entry previews the other file's real text, that double-clicking posts coordinates which
 land on the word itself, and that a second search retires the pane it no longer needs instead of
 accumulating models. Verified to fail on a regression, not just to pass: disabling the pane texts
 drops the peek to `References (1)` — the old behaviour — and four assertions go red.
 
 Not in `npm test`, and **Playwright is not in `package.json`**: it is a heavy dependency that CI would
-install on every run for a harness CI cannot execute anyway. `run.js` exits 2 with the install command
-when it is absent. Use it whenever the webview half changes.
+install on every run for a harness CI cannot execute anyway. Both runners exit 2 with the install
+command when it is absent. **`media/editor.js` has no other test — run both whenever it changes.**
 
 **`asWebviewUri` must return ABSOLUTE urls.** Root-relative ones look equivalent, but the Monaco worker
 runs from a `blob:` URL with no base to resolve them against, and it fails with "Failed trying to load
@@ -189,6 +193,9 @@ src/
     xmlIndexer.js       Indexes TwinCAT XML objects into real-range symbol nodes
     libraries.js        Library namespaces, read from the .plcproj
     libsymbols.js       Library symbols: ZIP reader over the library archives + the project's .tmc
+    pragmas.js          Classifies `{ ... }` pragma spans (shape first, catalog second) — see below
+    pragmaCatalog.json      GENERATED from Beckhoff Infosys by scripts/fetch-pragma-catalog.js
+    pragmaCatalogExtra.json Hand-curated: real attribute names Infosys does not document
     librarySignatures.js  Parses library-signatures.xml (function sigs, FB I/O, global constants)
     browserCache.js       Reads TwinCAT's per-library browsercache → FB/interface method + property NAMES
 media/
@@ -227,6 +234,50 @@ since the peek is a preview and the References panel lists every hit uncapped. C
 through `twincat.openComponent` with the exact pane + line + columns. The pane-slice coordinates are the
 subtle part — a slice is a different frame from the assembled unit — and `test_live_path.js` guards that
 arithmetic against every block of a real sample object.
+
+### Pragmas
+
+`{attribute 'qualified_only'}`, `{region "Inputs"}`, `{IF defined(X)}` — metadata, not code. Handled in
+**two tiers, and the order matters**:
+
+1. **Shape decides everything user-visible.** The leading keyword picks one of the five categories
+   Beckhoff documents, and that is what drives highlighting. `classifyPragma()` never fails: an unknown
+   head is `Unknown`, which is a legitimate answer.
+2. **The catalog only enriches** — completion, canonical spelling, a documentation link. It must never
+   decide a colour or raise a diagnostic. TwinCAT documents *user-defined attributes* as a feature, so
+   tinting an uncatalogued name differently would be wrong on correct code.
+
+The catalog is two files because **Infosys is authoritative but not exhaustive**. Measured on this
+machine: `TcGenerated` appears in 150 of 337 installed library archives and `object_name` in 40 places
+in real project code, and neither has an Infosys page. So `pragmaCatalog.json` (68 attributes, 14
+directives) is generated from the docs, and `pragmaCatalogExtra.json` (10) is hand-curated from
+measurement — each entry carrying the counts it was measured at. Anything in neither still works.
+
+```bash
+node --use-system-ca scripts/fetch-pragma-catalog.js           # re-scrape, diff, write
+node --use-system-ca scripts/fetch-pragma-catalog.js --check   # exit 1 if the committed file is stale
+```
+
+Run **by hand only** — the extension must work with no network, so the catalog ships as committed data
+and a failed fetch can only fail the script. `--use-system-ca` is needed behind a TLS-inspecting proxy.
+The script scrapes the one open-ended list (attribute pragmas publish one child page per name) and
+*verifies* the four closed grammars against their own pages, so a documentation rewrite fails loudly
+instead of producing a catalog that quietly disagrees.
+
+**`{region}` / `{endregion}` folding** is declarative: folding markers on the language configuration,
+in `media/editor.js` (the panes, both of them — folding away a 200-line VAR block is the point) and in
+`language-configuration.json` (VS Code's own editor, for loose `.st` files). Markers suffice *because*
+no `FoldingRangeProvider` is registered for `iecst`, so Monaco falls back to its indentation provider,
+which honours and nests them. **Registering a range provider for this language would silently kill
+region folding** — a syntax provider replaces the indentation one, markers included. Neither
+declaration can `require()` the regex sources in `pragmas.js`, so `test_pragmas.js` asserts all three
+agree, and `scratch/peek_harness/run_pragmas.js` proves in a real browser that lines actually collapse.
+
+The one invariant nothing may relax: **a pragma span is consumed whole, stopping at `}` or end of
+line.** ST strings are single-quoted, so the apostrophe in `{region "Motion FB's"}` would otherwise
+open a string running to the next quote anywhere in the file — which is how IntelliSense once switched
+off for a whole VAR block — and an unterminated `{` would swallow the rest of the document. That holds
+in three places: the lexer (`parser.js`), the Monarch tokenizer, and the TextMate grammar.
 
 ### Writes
 
