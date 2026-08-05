@@ -641,7 +641,10 @@
             if (document.body.classList.contains('vscode-light')) {
                 theme = 'vs';
             } else if (document.body.classList.contains('vscode-high-contrast')) {
-                theme = 'hc-black';
+                // VS Code marks a high-contrast LIGHT theme with both classes, so this branch has to
+                // check the more specific one first — otherwise an HC-light user got hc-black, a
+                // dark editor inside a light window.
+                theme = document.body.classList.contains('vscode-high-contrast-light') ? 'hc-light' : 'hc-black';
             }
             monaco.editor.setTheme(theme);
         }

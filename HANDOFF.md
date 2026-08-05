@@ -21,7 +21,9 @@ app header + pane banners deliberately moved to VS Code chrome tones, so **dark 
 lighter/more legible than the old near-ghosted look). No test covers CSS. `.action-btn` got its OWN deepened
 ramp (`--accent-gradient-btn`) because it is the only white-on-accent fill; `--accent-gradient` stays bright so
 the gradient-clipped wordmark does not go dark-on-dark. **Deliberately left:** that wordmark, 3.3-4.9:1 depending
-on theme and gradient stop — a logotype, exempt; don't "fix" it without a design call.
+on theme and gradient stop — a logotype, exempt; don't "fix" it without a design call. The Monaco panes were
+never part of the problem: `syncTheme()` (`editor.js:639`) already follows the body class and overrides the
+`vs-dark` init option — only its HC-light branch was wrong (gave `hc-black`), now fixed.
 
 ## Constraints / still open
 - **Publication:** history was rewritten + the GitHub repo recreated to purge customer/vendor content (`sample/`,
@@ -230,15 +232,17 @@ neither hit the duplicate-name bug.
   values; call parens→params first. **Unknown context ⇒ full list, never nothing.**
 
 ## Pipeline (open)
-1. **Chained member completion stops after one hop** (`stAxis.MotionState.▮`) — a member's type is registered only if
-   the document text names it; transitive registration hits the 78 s `Object.keys()` cliff.
-2. **Nested library namespaces** (`VisuElems.VisuElemBase.▮`) not modelled.
-3. **Peek shows only the active component's panes** — cross-file hits go to the panel; an all-external result yields
-   `[]` (no peek). Would need hidden Monaco models for other files' ST.
-4. **Anonymous-enum CASE selectors** (`e:(a,b)`) don't resolve to an enum node (labels fall back to values).
-5. **`Tc2_MC2.▮` returns 2,145 names** — the string table can't separate top-level types from member names.
-6. **`parseVariablesBlock` folds pragma tokens into the type string** — harmless while `declarationTypes` is off;
-   would fire "Unknown type" the day it is switched on.
+1. **Peek shows only the active component's panes** — the ONLY completion/LSP pipeline item left; the other five
+   shipped (see git log). Monaco crashes ("Model not found") on a location whose URI has no loaded model, so
+   `provideReferences` (`media/editor.js:545`) returns same-component hits only; everything else goes to the
+   References panel, which populates unconditionally. Fixing it means **hidden Monaco models** for other panes:
+   the extension already computes every ref's uri/componentId/pane/local line for the panel
+   (`customEditorProvider.js:490-534`), so the missing half is only the pane TEXT, sliced from `ctx.stText` via
+   `st.lineMap`, returned through a bridge request so `provideReferences` can build models before it returns.
+   Then dispose them per search (models are heavy — cf. the 19.3 MB token-cache incident) and teach
+   `registerEditorOpener` to route a click on one to the real file. **Deliberately NOT done blind:**
+   `media/editor.js` has no test coverage and cannot run headlessly, and the failure mode degrades the core
+   editing surface. Wants a dev-host smoke test alongside the change.
 
 ## Working agreement
 Implementation is delegated to the **`implementer`** agent; the main conversation owns architecture/planning/review/
