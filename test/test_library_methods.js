@@ -153,5 +153,115 @@ mover.NoSuchThingAtAll();
 assert(diags.length === 0,
     `no diagnostic on a library FB's methods, known or not (got ${diags.length}: ${diags.map(d => d.message).join(' | ')})`);
 
+// ----------------------------------------------------------------------------------------------
+// 4. Chained member access on a library type — `fbAxisRef.NcToPlc.▮`
+// ----------------------------------------------------------------------------------------------
+// Completion used to stop after ONE hop. A library type is registered into the workspace index only
+// when the document text NAMES it, and code that writes `fbAxisRef.NcToPlc.ActPos` never spells the
+// type of NcToPlc — so the second dot resolved to nothing. Registering transitively is not the fix:
+// putting all ~32k library symbols in took the diagnostics pass from 1.5 s to 78 s, because
+// Object.keys() on the index runs per identifier. So the chain is RESOLVED lazily instead, reading
+// each member's declared type straight from the `.tmc`, and the index never grows — which is the
+// assertion at the end of this section.
+//
+// Measured against a real 32k-symbol project before and after: `fbAxisRef.NcToPlc.▮` 0 -> 42 items,
+// `fbAxisRef.Status.▮` 0 -> 52, index size unchanged at 7.
+console.log('\n--- chained member access on library types ---');
+{
+    const os = require('os');
+    const { indexTypeSystem, clearLibrarySymbols, getLibraryTypeNode } = require('../src/lsp/libsymbols');
+
+    // A synthetic `.tmc`: the committed sample has only four namespaced types and no two-hop chain
+    // at all, so the fixture has to supply one. Shape copied from the real file.
+    const tmc = `<?xml version="1.0" encoding="utf-8"?>
+<TcModuleClass><DataTypes>
+<DataType><Name Namespace="Lib_Chain">ST_Outer</Name>
+  <SubItem><Name>Inner</Name><Type Namespace="Lib_Chain">ST_Inner</Type><BitSize>64</BitSize></SubItem>
+  <SubItem><Name>nFlat</Name><Type>INT</Type><BitSize>16</BitSize></SubItem>
+</DataType>
+<DataType><Name Namespace="Lib_Chain">ST_Inner</Name>
+  <SubItem><Name>Deep</Name><Type Namespace="Lib_Chain">ST_Deep</Type><BitSize>32</BitSize></SubItem>
+  <SubItem><Name>fValue</Name><Type>LREAL</Type><BitSize>64</BitSize></SubItem>
+</DataType>
+<DataType><Name Namespace="Lib_Chain">ST_Deep</Name>
+  <SubItem><Name>nLeaf</Name><Type>INT</Type><BitSize>16</BitSize></SubItem>
+</DataType>
+<DataType><Name Namespace="Lib_Chain">ST_Arrayed</Name>
+  <SubItem><Name>Items</Name><Type Namespace="Lib_Chain">ARRAY [0..3] OF ST_Deep</Type><BitSize>64</BitSize></SubItem>
+</DataType>
+</DataTypes></TcModuleClass>`;
+
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tc-chain-'));
+    fs.writeFileSync(path.join(dir, 'Chain.tmc'), tmc, 'utf8');
+    clearLibrarySymbols();
+    const stats = indexTypeSystem(dir);
+    assert(stats.types >= 4, `the fixture .tmc indexes its types (got ${stats.types})`);
+
+    const lines = [
+        'FUNCTION_BLOCK FB_Chain',
+        'VAR',
+        '\tstOuter : ST_Outer;',
+        '\tstArr : ST_Arrayed;',
+        'END_VAR',
+        'stOuter.',
+        'stOuter.Inner.',
+        'stOuter.Inner.Deep.',
+        'stOuter.Inner.fValue.',
+        'stOuter.NoSuchMember.',
+        'stArr.Items.',
+        'END_FUNCTION_BLOCK',
+        ''
+    ];
+    const code = lines.join('\n');
+    clearWorkspaceIndex();
+    parseAndIndexDocument(code, '/chain.st');
+    const index = getWorkspaceSymbolIndex();
+
+    // The head type is in the index because the document names it — exactly what
+    // registerLibrarySymbolNodes would have done for a symbol the archives know.
+    index['ST_Outer'] = getLibraryTypeNode('ST_Outer');
+    index['ST_Arrayed'] = getLibraryTypeNode('ST_Arrayed');
+    assert(!!index['ST_Outer'] && index['ST_Outer'].external === true,
+        'getLibraryTypeNode builds an external node straight from the .tmc');
+
+    const sizeBefore = Object.keys(index).length;
+    const labelsAt = n => (provideCompletions(code, { line: n, character: lines[n].length }, index, '/chain.st') || [])
+        .map(i => i.label);
+
+    const hop1 = labelsAt(lines.indexOf('stOuter.'));
+    assert(hop1.includes('Inner') && hop1.includes('nFlat'), `hop 1 still lists the type's own members (got ${JSON.stringify(hop1)})`);
+
+    const hop2 = labelsAt(lines.indexOf('stOuter.Inner.'));
+    assert(hop2.includes('Deep') && hop2.includes('fValue'),
+        `hop 2 follows the member's declared type into the .tmc (got ${JSON.stringify(hop2)})`);
+
+    const hop3 = labelsAt(lines.indexOf('stOuter.Inner.Deep.'));
+    assert(hop3.includes('nLeaf'), `hop 3 keeps going — the walk is not capped at two (got ${JSON.stringify(hop3)})`);
+
+    // Honesty at the edges: a scalar has no members, and an invented one resolves to nothing rather
+    // than to the enclosing type's list.
+    assert(labelsAt(lines.indexOf('stOuter.Inner.fValue.')).length === 0,
+        'a scalar member ends the chain — no members are invented for LREAL');
+    assert(labelsAt(lines.indexOf('stOuter.NoSuchMember.')).length === 0,
+        'an unknown member ends the chain rather than falling back to its parent');
+
+    // An ARRAY OF <struct> is still that struct: `stArr.Items.▮` is how TwinCAT code reads one.
+    const arrayed = labelsAt(lines.indexOf('stArr.Items.'));
+    assert(arrayed.includes('nLeaf'), `ARRAY [..] OF a struct resolves to the element type (got ${JSON.stringify(arrayed)})`);
+
+    // THE point: none of that put anything in the index. This is what separates resolving the chain
+    // from registering it, and registering it is the 78 s cliff.
+    assert(Object.keys(index).length === sizeBefore,
+        `walking the chain registers nothing (index ${sizeBefore} -> ${Object.keys(index).length})`);
+
+    // And it stays out of diagnostics: a library member is "uncertain", never "absent".
+    const diags = provideDiagnostics(code, index, '/chain.st');
+    assert(diags.length === 0,
+        `chained library access yields no diagnostics (got ${diags.length}: ${diags.map(d => d.message).join(' | ')})`);
+
+    fs.rmSync(dir, { recursive: true, force: true });
+    clearLibrarySymbols();
+}
+
 console.log(`\n--- LIBRARY METHOD TESTS COMPLETE with ${errors} error(s) ---`);
 process.exit(errors > 0 ? 1 : 0);

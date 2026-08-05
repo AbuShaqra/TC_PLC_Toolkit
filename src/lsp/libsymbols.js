@@ -1122,6 +1122,27 @@ function getLibraryType(name) {
 }
 
 /**
+ * A node for a library type, built on the spot and NOT registered in the workspace index.
+ *
+ * That is the whole point: registering library nodes is what has to stay proportional to what the
+ * document names — putting all ~32k in took the diagnostics pass from 1.5 s to 78 s, because
+ * `Object.keys()` on the index runs per identifier. A transient node lets a completion follow a
+ * member chain (`fbAxisRef.NcToPlc.▮`) into types the document never spells, at the cost of one
+ * map lookup and no growth in the index at all.
+ *
+ * Completion-only by construction: nothing that could reach a diagnostic ever sees this node, and
+ * it carries `membersComplete: false` like every library node, so a miss stays "uncertain".
+ * @param {string} name Type name, unqualified, any casing.
+ * @returns {Object|null} A library node, or null when the `.tmc` does not describe that type.
+ */
+function getLibraryTypeNode(name) {
+    if (!name) return null;
+    const info = typeSystemTypes.get(String(name).toLowerCase());
+    if (!info) return null;
+    return makeLibraryNode(info.name || name, info);
+}
+
+/**
  * The `.tmc`'s top-level types for one library namespace — the subset of getNamespaceSymbols() that
  * is known to be a *type* rather than a name the string table happened to serialize.
  * @param {string} namespace Namespace, any casing.
@@ -1730,6 +1751,7 @@ module.exports = {
     isBrowserCacheMemberName,
     getNestedNamespaceSymbols,
     findInstalledLibraryArchive,
+    getLibraryTypeNode,
     // symbol index integration
     registerLibrarySymbolNodes
 };

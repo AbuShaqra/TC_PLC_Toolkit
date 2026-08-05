@@ -15,7 +15,8 @@ const {
     getTypeSystemNamespaceTypes,
     getBrowserCacheNamespaceTypes,
     isBrowserCacheMemberName,
-    getNestedNamespaceSymbols
+    getNestedNamespaceSymbols,
+    getLibraryTypeNode
 } = require('../libsymbols');
 const {
     prevMeaningful,
@@ -751,6 +752,59 @@ function libraryNamespaceMembers(namespace) {
     return items;
 }
 
+/**
+ * Reduces a declared type string to the bare name a `.tmc` lookup needs: `ARRAY [0..3] OF
+ * Tc2_MC2.ST_X := ...` → `ST_X`. Deliberately textual — the member types come from the `.tmc`, not
+ * from the parser, so there is no Type object to deref, and the qualified form is not an index key.
+ * @param {string} typeStr Declared type as the `.tmc` spells it.
+ * @returns {string} Unqualified type name (possibly empty).
+ */
+function bareTypeName(typeStr) {
+    if (!typeStr) return '';
+    let t = String(typeStr).trim();
+    const assign = t.indexOf(':=');
+    if (assign !== -1) t = t.slice(0, assign).trim();
+    t = t.replace(/^ARRAY\s*\[[^\]]*\]\s*OF\s+/i, '');
+    t = t.replace(/^(POINTER|REFERENCE)\s+TO\s+/i, '');
+    return t.trim().split('.').pop();
+}
+
+/**
+ * How far a member chain is followed. A struct may legitimately reach itself through a POINTER TO,
+ * so the walk needs a stop; past a handful of hops a caret is not something anyone is typing.
+ */
+const MAX_LIBRARY_MEMBER_HOPS = 8;
+
+/**
+ * Follows a dotted path through library member types — the answer to `fbAxisRef.NcToPlc.▮`.
+ *
+ * Each hop reads the member's declared type from the `.tmc` and looks that type up directly, so no
+ * node is ever added to the workspace index: the reason this used to stop after one hop is that a
+ * library type is only registered when the document text NAMES it, and `NCTOPLC_AXLESTRUCT` appears
+ * nowhere in code that merely writes `fbAxisRef.NcToPlc.ActPos`. Registering transitively instead
+ * is the 78 s `Object.keys()` cliff; resolving transitively costs one map lookup per hop.
+ * @param {Object} node The head type's node (external).
+ * @param {string[]} segments Remaining path segments after the head.
+ * @param {Object} symbolIndex Workspace symbol index (for the EXTENDS walk).
+ * @returns {Object|null} The node whose members answer the caret, or null if any hop is unknown.
+ */
+function walkLibraryMemberPath(node, segments, symbolIndex) {
+    let current = node;
+    for (let i = 0; i < segments.length; i++) {
+        if (!current || i >= MAX_LIBRARY_MEMBER_HOPS) return null;
+        const wanted = segments[i].toLowerCase();
+        let member = null;
+        // A member may be declared on a base type, exactly as a method may — same walk.
+        for (const owner of [current, ...walkExtendsChain(current, symbolIndex).ancestors]) {
+            member = (owner.variables || []).find(v => v.name.toLowerCase() === wanted);
+            if (member) break;
+        }
+        if (!member) return null;
+        current = getLibraryTypeNode(bareTypeName(member.type));
+    }
+    return current;
+}
+
 /** True when the name is a library namespace the project references (either spelling source). */
 function isLibraryNamespace(name) {
     if (!name) return false;
@@ -1080,6 +1134,20 @@ function provideCompletions(code, position, symbolIndex, fileUri) {
             if (bare && bare.external) externalNode = bare;
         }
         if (externalNode) return libraryTypeMembers(externalNode, symbolIndex);
+
+        // `fbAxisRef.NcToPlc.▮` — a CHAINED member access on a library type. The whole path did not
+        // resolve above because only the head's type is in the index: a library type is registered
+        // when the document text names it, and the type of `NcToPlc` is named nowhere in code that
+        // simply reads `fbAxisRef.NcToPlc.ActPos`. So resolve the head, then follow the rest through
+        // the `.tmc` without registering anything — see walkLibraryMemberPath.
+        if (parts.length >= 2) {
+            const headType = resolvePathType([parts[0]], pou, method, symbolIndex);
+            const headNode = headType ? findNode(symbolIndex, headType) : null;
+            if (headNode && headNode.external) {
+                const target = walkLibraryMemberPath(headNode, parts.slice(1), symbolIndex);
+                if (target) return libraryTypeMembers(target, symbolIndex);
+            }
+        }
         return [];
     }
 
