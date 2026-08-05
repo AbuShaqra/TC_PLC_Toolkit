@@ -277,3 +277,7 @@ Implementation is delegated to the **`implementer`** agent; the main conversatio
 commits. **Verify every agent claim** (several haven't survived checking); agents run in parallel only with strictly
 disjoint file ownership; `package.json`/`HANDOFF.md` stay centrally owned. **Verify your own claims too** — three
 times an unmeasured but plausible assumption was wrong. Measure, then report.
+**Hard-won lessons live in `.claude/memory/`** (committed, so they cross machines), injected each session by the
+`SessionStart` hook in `.claude/settings.json`. Write new ones THERE, not in the per-machine bank — rules in
+CLAUDE.md. Note `autoMemoryDirectory` cannot do this job: it is **ignored from a checked-in settings.json** by
+design, which is why this is a hook. The five original notes were migrated out of `~/.claude/…/memory/` 2026-08-05.
