@@ -19,12 +19,23 @@ from `extension.js`, and Monaco is vendored under `media/monaco-editor/` so ever
 ## Package a VSIX
 
 ```bash
+npm prune                 # see below — do this first
 npx @vscode/vsce package
 code --install-extension twincat-plc-toolkit-<version>.vsix --force
 ```
 
 On Windows, `scripts\install-vsix.bat` picks the newest `.vsix` in the folder and installs it with whichever
 `code` CLI it can find.
+
+**`npm prune` first.** vsce packages whatever sits in `node_modules` that npm does not report as a dev
+dependency — and a package installed with `npm i --no-save` (which is how `scratch/peek_harness/` asks for
+Playwright) is *extraneous*, not dev, so it ships. Measured: Playwright added **173 files** to the package
+list. Prune removes anything not in `package.json`, which is exactly the right set.
+
+**Bump the version before installing.** VS Code will not replace an installed extension with a VSIX of the
+same version: both directories end up under `~/.vscode/extensions/` and the old one is not marked in
+`.obsolete` until a **full restart** — a window reload is not always enough. This has already cost one debug
+cycle chasing a "feature does nothing" report that was really old code still running.
 
 ## Tests
 
