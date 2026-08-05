@@ -95,22 +95,33 @@ A few experimental probes live in `scratch/` outside `npm test`: `test_lsp_parse
 `test_lsp_types_sync.js`, `test_method_diagnostics.js` (plus `make_icon.js`, `probe_lib_format.js`).
 
 **`scratch/peek_harness/`** runs `media/editor.js` in a real browser — the one part of the codebase
-no Node test can reach, and where the references peek actually lives. `build.js` generates the page
-by calling the REAL `getHtmlForWebview()` with a stubbed `vscode` module (a hand-copied page would
-quietly stop matching what ships), substituting only `acquireVsCodeApi()` — which records outgoing
-messages and answers bridge requests from a fixture built off the real sample — and dropping the
-webview CSP, which names `vscode-webview:` sources that do not exist over http. `serve.js` serves it,
-because Monaco's AMD loader and its worker Blob both need a real origin.
+no Node test can reach, and where the references peek actually lives.
 
 ```bash
-node scratch/peek_harness/build.js && node scratch/peek_harness/serve.js   # then drive :8123/harness/
+npm i --no-save playwright          # optional dep, deliberately NOT in package.json (see below)
+node scratch/peek_harness/run.js    # builds, serves, drives Chromium, asserts. 0 pass / 1 fail / 2 cannot run
 ```
 
-Not in `npm test`: it needs a browser. Use it whenever the webview half changes — it is what proved
-the peek renders cross-file hits, that clicking one posts the right coordinates, and that the hidden
-models are retired rather than leaked. **`asWebviewUri` must return ABSOLUTE urls**; root-relative
-ones look equivalent but the worker runs from a `blob:` URL with no base to resolve them against, and
-Monaco fails with "Failed trying to load default language strings".
+| file | role |
+|---|---|
+| `build.js` | Generates the page by calling the **real** `getHtmlForWebview()` with a stubbed `vscode` module — a hand-copied page would quietly stop matching what ships. Substitutes only `acquireVsCodeApi()` (records outgoing messages, answers bridge requests from a fixture built off the real sample) and drops the webview CSP, which names `vscode-webview:` sources that do not exist over http. |
+| `serve.js` | Serves it. Monaco's AMD loader and its worker Blob both need a real origin. `require()` it for `start(port)`, or run it standalone to poke at the page by hand. |
+| `run.js` | The automated pass: builds for the port it will serve on, drives Find References, asserts. `HARNESS_PORT` moves it off 8123; `HARNESS_SHOT=x.png` saves a screenshot. |
+
+It asserts what only a browser can show: that the peek lists cross-file hits at all, that exactly the
+**non-live** panes get hidden models (a hit in the active component must use the live pane), that a
+cross-file entry previews the other file's real text, that double-clicking posts coordinates which
+land on the word itself, and that a second search retires the pane it no longer needs instead of
+accumulating models. Verified to fail on a regression, not just to pass: disabling the pane texts
+drops the peek to `References (1)` — the old behaviour — and four assertions go red.
+
+Not in `npm test`, and **Playwright is not in `package.json`**: it is a heavy dependency that CI would
+install on every run for a harness CI cannot execute anyway. `run.js` exits 2 with the install command
+when it is absent. Use it whenever the webview half changes.
+
+**`asWebviewUri` must return ABSOLUTE urls.** Root-relative ones look equivalent, but the Monaco worker
+runs from a `blob:` URL with no base to resolve them against, and it fails with "Failed trying to load
+default language strings" — the same symptom this project already records for a wrong AMD baseUrl.
 
 CI (`.github/workflows/ci.yml`) runs on every push/PR to `main`, Windows-only (the platform users are
 on), with superseded runs cancelled and a read-only token. Two jobs:

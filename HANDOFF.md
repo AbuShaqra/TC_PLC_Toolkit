@@ -232,14 +232,13 @@ neither hit the duplicate-name bug.
   values; call parens→params first. **Unknown context ⇒ full list, never nothing.**
 
 ## Pipeline (open)
-**All six items shipped** (see git log). The last, cross-file/cross-component **references peek**, was driven
-end-to-end in a real browser via `scratch/peek_harness/` (DEVELOPMENT.md documents it) — Find References on
-`FB_Cylinder` renders "References (3)" with `FB_Station.TcPOU` / `GVL_System.TcGVL` groups, their previews show
-the right lines, double-clicking one posts `openFile` with coordinates that resolve to the word (verified
-`substring(28,39) === 'FB_Cylinder'`), and a second search retires the pane it no longer needs (2 models → 1,
-no leak). **`media/editor.js` is otherwise untested — use that harness whenever it changes.** Still worth a
-dev-host pass for the things the harness stands in for: the real extension host answering the bridge, and
-`twincat.openComponent` actually landing on the occurrence.
+**All six items shipped** (see git log). The last, cross-file/cross-component **references peek**, is covered by
+`node scratch/peek_harness/run.js` — 14 assertions driving the real `media/editor.js` in Chromium (needs
+`npm i --no-save playwright`; DEVELOPMENT.md documents it). It is verified to FAIL on a regression, not just to
+pass: disabling the pane texts drops the peek to "References (1)", the pre-fix behaviour.
+**`media/editor.js` has no other test — run that harness whenever it changes.** Still worth a dev-host pass for
+what the harness necessarily stands in for: the real extension host answering the bridge, and
+`twincat.openComponent` actually landing on the occurrence rather than just being sent the right coordinates.
 
 ## Working agreement
 Implementation is delegated to the **`implementer`** agent; the main conversation owns architecture/planning/review/
