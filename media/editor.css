@@ -14,6 +14,10 @@
     --surface-tint-hover: rgba(128, 128, 128, 0.2);
     --surface-tint-strong: rgba(128, 128, 128, 0.35);
     --accent-gradient: linear-gradient(135deg, #ff4757, #ff6b81);
+    /* Same brand ramp, deepened until WHITE text on it clears 4.5:1 (the bright one is 2.7-3.3:1).
+       Separate from --accent-gradient on purpose: that one is also the gradient-clipped wordmark and
+       the toggle track, and deepening it globally would put dark coral on a dark header. */
+    --accent-gradient-btn: linear-gradient(135deg, #c9182f, #d8324a);
     --accent-fg: #ff6b81;
     --ok-fg: #2ed573;
     --warn-fg: #ffa502;
@@ -28,6 +32,8 @@ body.vscode-light, body.vscode-high-contrast-light {
     --accent-fg: #c2283c;
     --ok-fg: #1a7f37;
     --warn-fg: #b35309;
+    /* the wordmark and toggle track sit on a light header here, where the bright ramp is ~2.0-2.5:1 */
+    --accent-gradient: linear-gradient(135deg, #b81026, #d0304a);
 }
 
 body {
@@ -364,7 +370,7 @@ input:checked + .slider:before {
 
 /* Premium action button styling */
 .action-btn {
-    background: var(--accent-gradient);
+    background: var(--accent-gradient-btn);
     color: white;
     border: none;
     padding: 6px 16px;
@@ -385,7 +391,9 @@ input:checked + .slider:before {
 .action-btn:hover {
     transform: translateY(-1px);
     box-shadow: 0 6px 20px rgba(255, 71, 87, 0.4);
-    filter: brightness(1.1);
+    /* darkens rather than brightens: brightness(1.1) dropped the white label back under 4.5:1.
+       The lift and the stronger shadow are what signal the hover. */
+    filter: brightness(0.94);
 }
 
 .action-btn:active {
