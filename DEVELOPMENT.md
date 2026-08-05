@@ -177,6 +177,17 @@ unit, queries the LSP, and maps the results back to the right component and pane
 Changing `stConverter.js` output or `xmlParser.js` component extraction can silently break that
 mapping; `test/test_live_path.js` guards it.
 
+**References peek across components and files.** Monaco throws "Model not found" for a Location whose
+URI has no loaded model, so the peek could only ever show hits in the two live panes. `custom/references`
+therefore resolves *every* hit to a (file, component, pane, local line) and ships that pane's TEXT
+alongside; the webview builds a **hidden model** per pane (scheme `twincat-peek:`, the file/component/pane
+in its query) and points the Location at it. The live panes are still preferred where they apply — they
+hold unsaved edits. Bounded by `PEEK_MAX_PANES` / `PEEK_MAX_TEXT_BYTES` in `customEditorProvider.js`,
+since the peek is a preview and the References panel lists every hit uncapped. Clicking an entry routes
+through `twincat.openComponent` with the exact pane + line + columns. The pane-slice coordinates are the
+subtle part — a slice is a different frame from the assembled unit — and `test_live_path.js` guards that
+arithmetic against every block of a real sample object.
+
 ### Writes
 
 On save, only the edited `<![CDATA[ ... ]]>` blocks are rewritten. The surrounding XML is preserved

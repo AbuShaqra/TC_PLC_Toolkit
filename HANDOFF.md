@@ -232,17 +232,15 @@ neither hit the duplicate-name bug.
   values; call parens→params first. **Unknown context ⇒ full list, never nothing.**
 
 ## Pipeline (open)
-1. **Peek shows only the active component's panes** — the ONLY completion/LSP pipeline item left; the other five
-   shipped (see git log). Monaco crashes ("Model not found") on a location whose URI has no loaded model, so
-   `provideReferences` (`media/editor.js:545`) returns same-component hits only; everything else goes to the
-   References panel, which populates unconditionally. Fixing it means **hidden Monaco models** for other panes:
-   the extension already computes every ref's uri/componentId/pane/local line for the panel
-   (`customEditorProvider.js:490-534`), so the missing half is only the pane TEXT, sliced from `ctx.stText` via
-   `st.lineMap`, returned through a bridge request so `provideReferences` can build models before it returns.
-   Then dispose them per search (models are heavy — cf. the 19.3 MB token-cache incident) and teach
-   `registerEditorOpener` to route a click on one to the real file. **Deliberately NOT done blind:**
-   `media/editor.js` has no test coverage and cannot run headlessly, and the failure mode degrades the core
-   editing surface. Wants a dev-host smoke test alongside the change.
+**All six items shipped** (see git log). The last, cross-file/cross-component **references peek**, is the one
+piece in this repo whose payoff is only visible in a running dev host — **not yet smoke-tested by the user.**
+What to check: Shift+F12 on a symbol used in another file (e.g. `FB_Cylinder`) shows those hits *in the peek*,
+each entry previews the right lines, and clicking one lands on that exact occurrence (not the first same-named
+one). Design + traps are in DEVELOPMENT.md ("References peek across components and files"); the coordinate
+arithmetic (a pane slice is a different frame from the assembled unit) is guarded in `test_live_path`, and the
+payload was simulated on the sample — `FB_Cylinder` = 3 refs / 3 panes / 3 files, 618 bytes, every ref landing
+on its own word. **If it misbehaves, suspect the webview half** (`media/editor.js`): it has no test coverage,
+and `provideReferences` there is the only untested code in the path.
 
 ## Working agreement
 Implementation is delegated to the **`implementer`** agent; the main conversation owns architecture/planning/review/

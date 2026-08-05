@@ -88,6 +88,50 @@ function absoluteToLocal(lineMap, absLine0) {
 }
 
 /**
+ * Slices one component pane's text out of an assembled ST unit — the content behind a hidden
+ * Monaco model in the references peek.
+ * @param {string[]} stLines The unit's lines (already split).
+ * @param {Object} lineMap The lineMap from convertXmlToSt.
+ * @param {string} componentId Component to slice.
+ * @param {string} pane 'decl' or 'impl'.
+ * @returns {string|null} The pane's text, or null when that component has no such block.
+ */
+function paneTextFromUnit(stLines, lineMap, componentId, pane) {
+    const blocks = lineMap && lineMap[componentId];
+    if (!blocks) return null;
+    const block = pane === 'decl' ? blocks.decl : blocks.impl;
+    if (!block || !block.start) return null;
+    return stLines.slice(block.start - 1, block.end).join('\n');
+}
+
+/**
+ * The path of a peek model's synthetic URI. Monaco lists a peek result by its resource basename
+ * with the dirname as description, so shaping it `/<file>/<member>.<pane>` is what makes the widget
+ * read as "Cyclic.impl — FB_Axis.TcPOU" instead of an opaque blob.
+ * @param {string} fileUri Owning file.
+ * @param {string} componentId Component id ('root', 'method_Cyclic', …).
+ * @param {string} pane 'decl' or 'impl'.
+ * @returns {string} A URI path beginning with '/'.
+ */
+function peekPath(fileUri, componentId, pane) {
+    let base = 'object';
+    try { base = decodeURIComponent(String(fileUri).split(/[\\/]/).pop() || base); } catch (e) { /* keep default */ }
+    const member = componentId === 'root'
+        ? 'root'
+        : String(componentId).replace(/^(method|prop|action|trans|get|set)_/i, '');
+    return `/${base}/${member}.${pane}`;
+}
+
+/**
+ * Ceilings on what one Find References may materialise as peek models. A symbol used in a hundred
+ * files would otherwise read, convert and hold a hundred panes — the peek is a preview, and the
+ * References panel already lists every hit without any of this cost. Refs past the cap simply get
+ * no peek entry, which is exactly the behaviour the whole feature started from.
+ */
+const PEEK_MAX_PANES = 50;
+const PEEK_MAX_TEXT_BYTES = 2 * 1024 * 1024;
+
+/**
  * Custom text editor provider that acts as a wrapper around TwinCAT XML files
  * and serves the Monaco webview editor.
  */
@@ -414,6 +458,7 @@ class TwinCatCustomEditorProvider {
                     try {
                         const ctx = assembleSt(document, message);
                         let mapped = [];
+                        const panes = [];
                         if (ctx) {
                             const abs = localToAbsolute(ctx.lineMap, message.componentId, message.pane, message.position.lineNumber, message.position.column);
                             if (abs) {
@@ -423,31 +468,89 @@ class TwinCatCustomEditorProvider {
                                     position: abs,
                                     fileUri: message.fileUri
                                 });
-                                // Map same-file references back to component panes/local lines. Cross-file
-                                // references can't be rendered as Monaco models in this webview, so they
-                                // are returned as external locations the webview can navigate to instead.
-                                mapped = (refs || []).map(r => {
-                                    const sameFile = r.uri && normUri(r.uri) === normUri(message.fileUri);
-                                    if (sameFile) {
-                                        const loc = absoluteToLocal(ctx.lineMap, r.range.start.line);
-                                        if (!loc) return null;
-                                        return {
-                                            sameFile: true,
-                                            componentId: loc.componentId,
-                                            pane: loc.pane,
-                                            line: loc.localLine0,
-                                            startCharacter: r.range.start.character,
-                                            endCharacter: r.range.end.character
-                                        };
+
+                                // Every reference — in this component, another component of this file, or
+                                // another file entirely — is resolved to a (file, component, pane, local
+                                // line) so the webview can render it in the peek. A location whose URI has
+                                // no loaded model makes Monaco throw "Model not found", so each pane that
+                                // is not one of the live editors ships its TEXT too and the webview builds
+                                // a hidden model from it.
+                                //
+                                // This reads and converts the referenced files, which the
+                                // showExternalReferences pass then does again for the panel. Kept as two
+                                // passes deliberately: merging them would restructure the panel path for a
+                                // few ms on a handful of files, and PEEK_MAX_PANES already bounds the work
+                                // here to the files the preview can actually show.
+                                const stCache = new Map();
+                                const getSt = async (uri) => {
+                                    const key = normUri(uri);
+                                    if (stCache.has(key)) return stCache.get(key);
+                                    let result = null;
+                                    if (key === normUri(message.fileUri)) {
+                                        // The active file is already assembled, unsaved edits included.
+                                        result = { st: ctx, lines: ctx.stText.split('\n') };
+                                    } else {
+                                        try {
+                                            const bytes = await vscode.workspace.fs.readFile(vscode.Uri.parse(uri));
+                                            const parsed = parseTwinCatXml(Buffer.from(bytes).toString('utf8'));
+                                            if (parsed) {
+                                                const converted = convertXmlToSt(parsed, { raw: true });
+                                                result = { st: converted, lines: converted.stText.split('\n') };
+                                            }
+                                        } catch (e) { /* unreadable: no peek entry, the panel still lists it */ }
                                     }
-                                    return { sameFile: false, uri: r.uri };
-                                }).filter(Boolean);
+                                    stCache.set(key, result);
+                                    return result;
+                                };
+
+                                const paneByKey = new Map();
+                                let textBudget = PEEK_MAX_TEXT_BYTES;
+                                for (const r of (refs || [])) {
+                                    if (!r || !r.uri) continue;
+                                    const key = normUri(r.uri);
+                                    // Stop opening NEW files once the preview is full; already-read ones
+                                    // still resolve, so the cap bounds file reads, not just models.
+                                    if (!stCache.has(key) && paneByKey.size >= PEEK_MAX_PANES) continue;
+                                    const entry = await getSt(r.uri);
+                                    if (!entry) continue;
+                                    const loc = absoluteToLocal(entry.st.lineMap, r.range.start.line);
+                                    if (!loc) continue;
+
+                                    const paneKey = `${key}::${loc.componentId}::${loc.pane}`;
+                                    if (!paneByKey.has(paneKey) && paneByKey.size < PEEK_MAX_PANES) {
+                                        const text = paneTextFromUnit(entry.lines, entry.st.lineMap, loc.componentId, loc.pane);
+                                        if (text !== null && text.length <= textBudget) {
+                                            textBudget -= text.length;
+                                            paneByKey.set(paneKey, {
+                                                key: paneKey,
+                                                uri: r.uri,
+                                                componentId: loc.componentId,
+                                                pane: loc.pane,
+                                                path: peekPath(r.uri, loc.componentId, loc.pane),
+                                                text: text
+                                            });
+                                        }
+                                    }
+
+                                    mapped.push({
+                                        sameFile: key === normUri(message.fileUri),
+                                        uri: r.uri,
+                                        paneKey: paneKey,
+                                        componentId: loc.componentId,
+                                        pane: loc.pane,
+                                        line: loc.localLine0,
+                                        startCharacter: r.range.start.character,
+                                        endCharacter: r.range.end.character
+                                    });
+                                }
+                                panes.push(...paneByKey.values());
                             }
                         }
                         webviewPanel.webview.postMessage({
                             type: 'custom/referencesResponse',
                             requestId: message.requestId,
-                            references: mapped
+                            references: mapped,
+                            panes: panes
                         });
                     } catch (err) {
                         console.error(err);
