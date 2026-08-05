@@ -16,6 +16,15 @@
  *   5. The remaining constructs used by the sample (ARRAY/REFERENCE TO/POINTER TO, THIS^/SUPER^,
  *      AT %I*, VAR_INST/VAR_TEMP/VAR CONSTANT/PERSISTENT, pragmas, AND_THEN/OR_ELSE, alias and
  *      subrange DUTs, ...) still tokenize and parse as expected.
+ *   6. A declaration-site pragma is metadata, not part of the type: `{attribute 'x'} INT` used to
+ *      BE the declared type, a string resolving to nothing. The initializer, by contrast, must
+ *      stay in the type string — decl-site init lists are load-bearing.
+ *   7. An inline (anonymous) enum `e : (idle, running)` resolves as an enum carrying its own
+ *      values, not as a named unknown: it has no DUT node, so a CASE on it could not find its
+ *      labels and fell back to the entire value list.
+ *
+ * (6) and (7) are both checked with the opt-in `declarationTypes` diagnostic ON, which is where
+ * both defects would have surfaced as false "Unknown type" reports.
  */
 
 const {
@@ -610,6 +619,119 @@ assert(doWork && (doWork.variables || []).some(v => v.name === 'bDone'),
 
 // The real accessors must still work.
 assert((gs.properties || []).some(p => p.name === 'Value'), 'a genuine PROPERTY is still parsed');
+
+// ---------------------------------------------------------------------------
+// 8. Declaration-site pragmas are metadata, not part of the type
+// ---------------------------------------------------------------------------
+// A pragma between the ':' and the ';' used to be concatenated into the type string, so
+// `{attribute 'x'} INT` was the declared type — a string that resolves to nothing. Invisible only
+// because declarationTypes is off by default; a false "Unknown type" the day it is switched on.
+console.log('\n--- pragmas in declarations ---');
+{
+    const uri = 'file:///c:/fake/FB_Pragma.TcPOU';
+    const code = [
+        'FUNCTION_BLOCK FB_Pragma',
+        'VAR',
+        "\t{attribute 'TcEncoding' := 'UTF-8'}",
+        '\tsOwnLine : STRING;',                 // pragma on its own line, before the name
+        "\tnLeading : {attribute 'x'} INT;",    // pragma between ':' and the type
+        "\tnTrailing : INT {attribute 'y'};",   // pragma between the type and ';'
+        '\tnInit : INT := 7;',                  // initializer must SURVIVE
+        '\tnPlain : INT;',
+        'END_VAR',
+        'nPlain := nLeading + nTrailing + nInit;',
+        'END_FUNCTION_BLOCK',
+        ''
+    ].join('\n');
+    parseAndIndexDocument(code, uri);
+    const node = Object.values(getWorkspaceSymbolIndex()).find(n => n.name === 'FB_Pragma');
+    const typeOf = name => (node.variables.find(v => v.name === name) || {}).type;
+
+    assert(typeOf('sOwnLine') === 'STRING', `a pragma on its own line leaves the next type alone (got ${JSON.stringify(typeOf('sOwnLine'))})`);
+    assert(typeOf('nLeading') === 'INT', `a pragma before the type is not folded into it (got ${JSON.stringify(typeOf('nLeading'))})`);
+    assert(typeOf('nTrailing') === 'INT', `a pragma after the type is not folded into it (got ${JSON.stringify(typeOf('nTrailing'))})`);
+    assert(typeOf('nInit') === 'INT := 7',
+        `the initializer is NOT stripped — decl-site init lists are load-bearing (got ${JSON.stringify(typeOf('nInit'))})`);
+
+    // The point of the fix: with the opt-in check on, none of these may read as an unknown type.
+    setDiagnosticsConfig({ declarationTypes: true });
+    const strict = provideDiagnostics(code, index, uri);
+    setDiagnosticsConfig({ declarationTypes: false });
+    assert(strict.length === 0,
+        `pragma-bearing declarations stay silent with declarationTypes on, got ${strict.length}: ${strict.map(d => d.message).join(' | ')}`);
+}
+
+// ---------------------------------------------------------------------------
+// 9. Inline (anonymous) enums: `eState : (idle, running)`
+// ---------------------------------------------------------------------------
+// There is no DUT node to point at, so the type used to fall through to a NAMED unknown
+// ('(idle, running)') — the shape declarationTypes flags, and one no CASE selector could resolve,
+// which left a CASE body falling back to the whole value list instead of the enum's own labels.
+console.log('\n--- inline (anonymous) enums ---');
+{
+    const t = parseTypeString('(idle, running, faulted)', index);
+    assert(t.kind === 'enum' && t.anonymous === true,
+        `an inline enum parses as an anonymous enum, not an unknown (got ${JSON.stringify(t.kind)})`);
+    assert(JSON.stringify(t.values) === JSON.stringify(['idle', 'running', 'faulted']),
+        `...carrying its value names in declaration order (got ${JSON.stringify(t.values)})`);
+
+    const withInit = parseTypeString('(idle := 0, running := 10)', index);
+    assert(JSON.stringify(withInit.values) === JSON.stringify(['idle', 'running']),
+        `explicitly numbered values keep their names only (got ${JSON.stringify(withInit.values)})`);
+
+    // A parenthesised type that names nothing must NOT be claimed as an enum.
+    assert(parseTypeString('()', index).kind !== 'enum', 'an empty parenthesis is not an enum');
+
+    const uri = 'file:///c:/fake/FB_Inline.TcPOU';
+    const lines = [
+        'FUNCTION_BLOCK FB_Inline',
+        'VAR',
+        '\teState : (idle, running, faulted);',
+        '\tnCount : INT;',
+        'END_VAR',
+        'CASE eState OF',
+        '\t',                                  // the CASE-label caret sits here
+        'END_CASE',
+        'eState := ;',
+        'nCount := 1;',
+        'END_FUNCTION_BLOCK',
+        ''
+    ];
+    const code = lines.join('\n');
+    parseAndIndexDocument(code, uri);
+
+    // Derived, never hardcoded: editing the fixture silently shifted these once already, and a
+    // caret that lands on the wrong line can PASS for the wrong reason.
+    const caseBodyLine = lines.indexOf('\t');
+    const assignLine = lines.findIndex(l => l.startsWith('eState :='));
+
+    const VALUES = ['idle', 'running', 'faulted'];
+    const labelCaret = provideCompletions(code, { line: caseBodyLine, character: 1 }, index, uri) || [];
+    const offered = labelCaret.filter(i => VALUES.includes(i.label)).map(i => i.label);
+    assert(JSON.stringify(offered) === JSON.stringify(VALUES),
+        `a CASE on an inline enum offers exactly its own values (got ${JSON.stringify(offered)})`);
+    assert(!labelCaret.some(i => String(i.label).startsWith('(')),
+        'the enum\'s "name" — its own value list — is never offered as a writable label');
+
+    // Ranked into place at an assignment, and NOT duplicated: the parser already registers inline
+    // values as scope variables, so pushing them again would list every one of them twice.
+    const valueCaret = provideCompletions(code, { line: assignLine, character: 'eState := '.length }, index, uri) || [];
+    const hits = valueCaret.filter(i => VALUES.includes(i.label));
+    assert(hits.length === VALUES.length,
+        `an assignment caret offers each inline value exactly once (got ${hits.length} for ${VALUES.length} values)`);
+    assert(hits.every(i => !!i.sortText), 'the selector\'s own values are ranked to the top');
+
+    // Conservatism: an inline enum has no nominal identity, so nothing may be flagged against it.
+    const diags = provideDiagnostics(code, index, uri);
+    assert(diags.length === 0,
+        `using an inline enum yields no diagnostics, got ${diags.length}: ${diags.map(d => d.message).join(' | ')}`);
+
+    setDiagnosticsConfig({ declarationTypes: true });
+    const strict = provideDiagnostics(code, index, uri);
+    setDiagnosticsConfig({ declarationTypes: false });
+    assert(strict.length === 0,
+        `an inline enum is not an "Unknown type" with declarationTypes on, got ${strict.length}: ${strict.map(d => d.message).join(' | ')}`);
+}
 
 if (errors) { console.error(`\n${errors} assertion(s) failed`); process.exit(1); }
 console.log('\nAll parser-construct assertions passed.');

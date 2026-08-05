@@ -606,6 +606,15 @@ function parseVariablesBlock(tokens, startIndex, scopeName) {
                     if (isBlockEnd(t)) {
                         break; // fail safe
                     }
+                    // A pragma is metadata, not part of the type. `nVal : {attribute 'x'} INT;` must
+                    // yield `INT`, not `{attribute 'x'} INT` — the latter resolves to nothing, which
+                    // is invisible only while declarationTypes is off and becomes a false "Unknown
+                    // type" the day it is switched on. The initializer (`INT := 7`) deliberately
+                    // STAYS: decl-site init lists are load-bearing (getInitParams reads them).
+                    if (t.type === TokenType.Pragma) {
+                        idx++;
+                        continue;
+                    }
                     typeStr += t.value;
                     typeEnd = t.end;
                     typeTokens.push(t);

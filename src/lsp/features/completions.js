@@ -418,6 +418,16 @@ function enumNodeOfSelector(selector, pou, method, symbolIndex) {
     if (!selector || selector.length === 0) return null;
     const type = deref(inferType(selector, { pou, method }, symbolIndex));
     if (!type || type.kind !== 'enum') return null;
+    // An inline enum (`eState : (idle, running)`) has no DUT node to find — the values are carried
+    // on the Type itself. Hand back a node-shaped stand-in so the caret is served the same way.
+    if (type.anonymous) {
+        return {
+            name: type.name,
+            type: 'DUT',
+            anonymousEnum: true,
+            variables: type.values.map(v => ({ name: v, type: 'Enum' }))
+        };
+    }
     const node = findNode(symbolIndex, type.name);
     return node && typeFromNode(node).kind === 'enum' ? node : null;
 }
@@ -790,6 +800,26 @@ function pushEnumMembers(out, symbolIndex, preferred, othersToo = true) {
     }
 }
 
+/**
+ * Ranks an inline (anonymous) enum's values to the top of a suggestion list they are ALREADY in.
+ *
+ * Deliberately re-ranking rather than pushing: the parser registers inline-enum values as ordinary
+ * scope variables (that is what makes them resolve as identifiers at all), so pushScopeMembers has
+ * already offered every one of them. Pushing again duplicated the whole set. Only the ordering was
+ * missing — at `eState := ▮` its own values are what the user reaches for.
+ * @param {Array<Object>} out Completion items, re-ranked in place.
+ * @param {Object} type A Type with `anonymous: true` and a `values` array.
+ */
+function rankInlineEnumValues(out, type) {
+    if (!type || !type.anonymous || !Array.isArray(type.values)) return;
+    const wanted = new Set(type.values.map(v => v.toLowerCase()));
+    out.forEach(item => {
+        if (wanted.has(String(item.label).toLowerCase())) {
+            item.sortText = PARAM_SORT_PREFIX + item.label;
+        }
+    });
+}
+
 /** Keyword items, optionally with a sortText prefix. */
 function pushKeywords(out, keywords, sortPrefix) {
     keywords.forEach(kw => {
@@ -965,7 +995,15 @@ function provideCompletions(code, position, symbolIndex, fileUri) {
         // The enum's own name too — TwinCAT labels may be qualified (`E_State.eIdle`).
         case 'caseLabel': {
             const selected = enumNodeOfSelector(ctx.selector, pou, method, symbolIndex);
-            if (selected) {
+            if (selected && selected.anonymousEnum) {
+                // No qualified form to offer: the "name" of an inline enum is its own value list,
+                // which is not something a user can write as a label.
+                selected.variables.forEach(m => suggestions.push({
+                    label: m.name, kind: 20, detail: 'Enum Member (inline enum)',
+                    sortText: PARAM_SORT_PREFIX + m.name
+                }));
+                pushKeywords(suggestions, ['ELSE']);
+            } else if (selected) {
                 pushEnumMembers(suggestions, symbolIndex, selected, false);
                 suggestions.push({ label: selected.name, kind: 7, detail: `DUT : ${selected.name}` });
                 pushKeywords(suggestions, ['ELSE']);
@@ -988,9 +1026,12 @@ function provideCompletions(code, position, symbolIndex, fileUri) {
             pushGlobals(suggestions, symbolIndex);
             pushProjectSymbols(suggestions, symbolIndex);
             const targetType = ctx.target ? deref(inferType(ctx.target, { pou, method }, symbolIndex)) : null;
-            const targetEnum = (targetType && targetType.kind === 'enum')
+            const targetEnum = (targetType && targetType.kind === 'enum' && !targetType.anonymous)
                 ? findNode(symbolIndex, targetType.name) : null;
             pushEnumMembers(suggestions, symbolIndex, targetEnum);
+            // `eState := ▮` on an inline enum: its values are already in the list as scope
+            // variables, so lift them to the top rather than adding a second copy of each.
+            rankInlineEnumValues(suggestions, targetType);
             pushKeywords(suggestions, VALUE_KEYWORDS);
             break;
         }
