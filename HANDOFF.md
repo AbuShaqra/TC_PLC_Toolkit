@@ -14,6 +14,11 @@ always enough) — the user tested 0.3.1's feature against the still-running 0.3
 `~/.vscode/extensions/` for side-by-side version dirs + `.obsolete` before debugging a "feature does nothing" report.
 **Not yet visually confirmed by the user:** the 0.1.3 library grouping and 0.1.4 member expansion in the tree UI —
 logic is verified on real data + guard tests, but nobody has eyeballed the rendered tree. Worth doing.
+Likewise the **light-theme pass over `media/editor.css`** (user-reported: pane banners were ~1.1:1, unreadable).
+The whole sheet was dark-only; now theme-driven — **conventions are in that file's own header comment, read it
+before adding colour**. Contrast figures were computed against VS Code's default themes, **not eyeballed**; the
+app header + pane banners deliberately moved to VS Code chrome tones, so **dark mode changed too** (both are
+lighter/more legible than the old near-ghosted look). No test covers CSS.
 
 ## Constraints / still open
 - **Publication:** history was rewritten + the GitHub repo recreated to purge customer/vendor content (`sample/`,
@@ -229,6 +234,9 @@ neither hit the duplicate-name bug.
 5. **`Tc2_MC2.▮` returns 2,145 names** — the string table can't separate top-level types from member names.
 6. **`parseVariablesBlock` folds pragma tokens into the type string** — harmless while `declarationTypes` is off;
    would fire "Unknown type" the day it is switched on.
+7. **`.action-btn` is white-on-coral ≈3.3:1 in BOTH themes** (`--accent-gradient` fill) — pre-existing, not a
+   light-mode bug, so the light pass left it. Darkening the gradient would restyle the dark theme too; needs a
+   call before touching. Same for `.logo-text` (gradient-clipped wordmark, ~3.3:1 on light — brand, exempt).
 
 ## Working agreement
 Implementation is delegated to the **`implementer`** agent; the main conversation owns architecture/planning/review/
