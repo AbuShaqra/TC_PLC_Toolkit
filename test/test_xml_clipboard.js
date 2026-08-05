@@ -138,18 +138,21 @@ assert(extractComponentBlockFromXml(sourceXml, 'Action', 'Home') === null,
 
 // ── insertComponentBlockIntoXml: splice point + byte fidelity ────────────────────────────────────
 // Expected result built independently: the transformed block, 4-space indented with a trailing
-// newline, at lastIndexOf('</POU>') — insertComponentIntoXml's convention. GUID-normalized
-// equality proves every byte outside the fresh Ids, the target's existing content included.
+// newline, at the START of the first <LineIds> line — insertComponentIntoXml's convention, and
+// TwinCAT's canonical child order (members precede the LineIds group; test_xml_member_order.js
+// owns that rule). GUID-normalized equality proves every byte outside the fresh Ids, the
+// target's existing content included.
+
+const LINEIDS_ANCHOR = '    <LineIds Name="FB_Other">';
 
 {
     const result = insertComponentBlockIntoXml(targetXml, homeBlock, {
         oldName: 'Home', newName: 'Home', newFolderPath: 'Dest\\', isItf: false
     });
     const expectedBlock = splice(homeBlock, 'FolderPath="Methods\\"', 'FolderPath="Dest\\"');
-    const closeIdx = targetXml.lastIndexOf('</POU>');
-    const expected = targetXml.substring(0, closeIdx) + `    ${expectedBlock}\n` + targetXml.substring(closeIdx);
+    const expected = splice(targetXml, LINEIDS_ANCHOR, `    ${expectedBlock}\n${LINEIDS_ANCHOR}`);
     assert(normGuids(result) === normGuids(expected),
-        'INSERT: the block lands before </POU> (4-space indent, trailing newline); byte-identical elsewhere');
+        'INSERT: the block lands as the last member, before the LineIds group (4-space indent, trailing newline); byte-identical elsewhere');
 
     // Fresh identity: no Id survives from the source, and the new ones are distinct.
     const sourceIds = new Set(guidsIn(homeBlock));
@@ -170,8 +173,7 @@ assert(extractComponentBlockFromXml(sourceXml, 'Action', 'Home') === null,
     let expectedBlock = splice(homeBlock, '<Method Name="Home"', '<Method Name="Home2"');
     expectedBlock = splice(expectedBlock, ' FolderPath="Methods\\"', ''); // '' folder strips the attribute
     expectedBlock = splice(expectedBlock, 'METHOD Home : BOOL', 'METHOD Home2 : BOOL');
-    const closeIdx = targetXml.lastIndexOf('</POU>');
-    const expected = targetXml.substring(0, closeIdx) + `    ${expectedBlock}\n` + targetXml.substring(closeIdx);
+    const expected = splice(targetXml, LINEIDS_ANCHOR, `    ${expectedBlock}\n${LINEIDS_ANCHOR}`);
     assert(normGuids(result) === normGuids(expected),
         'INSERT+RENAME: opening-tag Name, header identifier, and FolderPath removal — nothing else');
     assert(result.includes('Home := TRUE;'),
@@ -212,10 +214,11 @@ assert(extractComponentBlockFromXml(sourceXml, 'Action', 'Home') === null,
     const result = insertComponentBlockIntoXml(itfXml, itfMethod, {
         oldName: 'Move', newName: 'Move', newFolderPath: '', isItf: true
     });
-    const closeIdx = itfXml.lastIndexOf('</Itf>');
-    const expected = itfXml.substring(0, closeIdx) + `    ${itfMethod}\n` + itfXml.substring(closeIdx);
+    // An interface carries no executable lines, so it has no LineIds group at all — this is the
+    // fallback branch, where the anchor is the root close tag's own line (its indent stays put).
+    const expected = splice(itfXml, '  </Itf>', `    ${itfMethod}\n  </Itf>`);
     assert(normGuids(result) === normGuids(expected),
-        'INSERT INTO ITF: the block lands before </Itf>, byte-identical elsewhere');
+        'INSERT INTO ITF: with no LineIds group, the block lands before </Itf>, byte-identical elsewhere');
 }
 
 // ── renameRootObjectInXml: POU ───────────────────────────────────────────────────────────────────

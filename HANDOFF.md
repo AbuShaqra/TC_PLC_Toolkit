@@ -18,7 +18,10 @@ Likewise the **light-theme pass over `media/editor.css`** (user-reported: pane b
 The whole sheet was dark-only; now theme-driven — **conventions are in that file's own header comment, read it
 before adding colour**. Contrast figures were computed against VS Code's default themes, **not eyeballed**; the
 app header + pane banners deliberately moved to VS Code chrome tones, so **dark mode changed too** (both are
-lighter/more legible than the old near-ghosted look). No test covers CSS.
+lighter/more legible than the old near-ghosted look). No test covers CSS. `.action-btn` got its OWN deepened
+ramp (`--accent-gradient-btn`) because it is the only white-on-accent fill; `--accent-gradient` stays bright so
+the gradient-clipped wordmark does not go dark-on-dark. **Deliberately left:** that wordmark, 3.3-4.9:1 depending
+on theme and gradient stop — a logotype, exempt; don't "fix" it without a design call.
 
 ## Constraints / still open
 - **Publication:** history was rewritten + the GitHub repo recreated to purge customer/vendor content (`sample/`,
@@ -59,7 +62,12 @@ lighter/more legible than the old near-ghosted look). No test covers CSS.
   for Itf) and the first member — the old `insertFolderIntoXml` appended them before `</POU>`, and XAE
   then dropped the FB's members from compile (C0004 per method/property). Fixed (root folders now join the
   contiguous folder group / land after the root `</Implementation>`; guarded in `test_xml_folderpath`);
-  one incident file existed in the wild (user's FB_Clamping, repaired separately). Controllers
+  one incident file existed in the wild (user's FB_Clamping, repaired separately). **Member insertion carried the
+  same latent defect and is now fixed** (`insertMemberIntoXml`, shared by create + paste): members anchor before
+  the first root `<LineIds>`, `.TcIO` (no LineIds at all) falls back to the close tag, and the splice takes the
+  anchor's LINE start — the old `lastIndexOf('</POU>')` also gave 6-space indent, `</POU>` at column 0 and bare
+  LF in CRLF files, compounding per insertion. Guarded by `test_xml_member_order` (verified to fail 27 ways
+  against the old code); `test_xml_clipboard` had pinned the buggy placement and was corrected. Controllers
   (`treeDragAndDrop.js`, `clipboardCommands.js`) are vscode-bound; **user tested both live 2026-07-16: good**. Virtual folders
   NOT draggable/copyable in v1 (moving one = rewriting every member's FolderPath prefix — but they ARE renameable, 0.3.0).
   `engines.vscode` bumped **1.60 → 1.66** (TreeDragAndDropController).
@@ -222,9 +230,6 @@ neither hit the duplicate-name bug.
   values; call parens→params first. **Unknown context ⇒ full list, never nothing.**
 
 ## Pipeline (open)
-0. **`insertComponentIntoXml` places new members AFTER the `<LineIds>` blocks** (just before `</POU>`) — deviates
-   from TwinCAT's canonical order (members, then LineIds). Tolerated by XAE so far, but the folder incident proved
-   the loader is order-sensitive; deserves the same canonical-anchor treatment as the folder fix.
 1. **Chained member completion stops after one hop** (`stAxis.MotionState.▮`) — a member's type is registered only if
    the document text names it; transitive registration hits the 78 s `Object.keys()` cliff.
 2. **Nested library namespaces** (`VisuElems.VisuElemBase.▮`) not modelled.
@@ -234,9 +239,6 @@ neither hit the duplicate-name bug.
 5. **`Tc2_MC2.▮` returns 2,145 names** — the string table can't separate top-level types from member names.
 6. **`parseVariablesBlock` folds pragma tokens into the type string** — harmless while `declarationTypes` is off;
    would fire "Unknown type" the day it is switched on.
-7. **`.action-btn` is white-on-coral ≈3.3:1 in BOTH themes** (`--accent-gradient` fill) — pre-existing, not a
-   light-mode bug, so the light pass left it. Darkening the gradient would restyle the dark theme too; needs a
-   call before touching. Same for `.logo-text` (gradient-clipped wordmark, ~3.3:1 on light — brand, exempt).
 
 ## Working agreement
 Implementation is delegated to the **`implementer`** agent; the main conversation owns architecture/planning/review/
