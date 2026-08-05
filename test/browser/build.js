@@ -1,5 +1,5 @@
 /**
- * @file scratch/peek_harness/build.js
+ * @file test/browser/build.js
  * @description Builds a browser-runnable harness for media/editor.js, so the ONE half of the
  * references-peek path that no Node test can reach — the webview — can actually be driven.
  *
@@ -18,7 +18,7 @@
  * built by the same steps customEditorProvider.js takes, so the numbers the harness asserts are the
  * numbers the extension would send.
  *
- * Run: node scratch/peek_harness/build.js   (writes ./out/index.html + ./out/fixture.json)
+ * Run: node test/browser/build.js   (writes ./out/index.html + ./out/fixture.json)
  */
 
 'use strict';

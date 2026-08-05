@@ -1,5 +1,5 @@
 /**
- * @file make_icon.js
+ * @file make-icon.js
  * @description Generates media/icon.png, the extension's marketplace logo.
  *
  * The mark is a "TC" monogram over the word "TOOLKIT", white and red on a near-black plate.
@@ -11,7 +11,7 @@
  *
  * The repo has no image tooling and no build step, so the PNG is encoded by hand (zlib is stdlib).
  *
- * Run: node scratch/make_icon.js
+ * Run: node scripts/make-icon.js
  */
 
 const fs = require('fs');

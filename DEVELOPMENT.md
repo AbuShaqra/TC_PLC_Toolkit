@@ -28,7 +28,7 @@ On Windows, `scripts\install-vsix.bat` picks the newest `.vsix` in the folder an
 `code` CLI it can find.
 
 **`npm prune` first.** vsce packages whatever sits in `node_modules` that npm does not report as a dev
-dependency — and a package installed with `npm i --no-save` (which is how `scratch/peek_harness/` asks for
+dependency — and a package installed with `npm i --no-save` (which is how `test/browser/` asks for
 Playwright) is *extraneous*, not dev, so it ships. Measured: Playwright added **173 files** to the package
 list. Prune removes anything not in `package.json`, which is exactly the right set.
 
@@ -93,6 +93,9 @@ per-suite without aborting on the first failure. The main ones:
 | `test/test_rename_engine.js` | `src/renameEngine.js`: mapping workspace reference positions (raw-ST-unit coords) back into CDATA splices — synthesized-line skips (action headers, `GET`/`SET`), the PROGRAM→FUNCTION_BLOCK raw-mode column skew, the never-write-a-mismatch guard, CRLF byte preservation. |
 | `test/test_references_for_symbol.js` | The LSP's by-symbol references entry point (`custom/referencesForSymbol`) that powers rename: FB/GVL/DUT roots (a GVL name never appears in its own ST text, so the position-based API cannot seed it), methods/properties/actions, the name-keyed-index identity guard, and index restoration after the scan. |
 | `test/test_config_references.js` | The non-code half of rename (`custom/configReferencesForSymbol`): dotted symbol paths inside visualizations `.TcVIS`/`.TcVMO` (`GVL_X.fb.member`, embedded `STSnippet` code) and text lists `.TcTLO`/`.TcGTLO` (a text entry whose text IS a symbol path) are found only when the chain provably resolves to the renamed symbol — text-list ids, visu-library names, dotted prose (`Encoderpos.Turn1`) and unresolvable prefixes are never touched. Task configs `.TcTTO` use a separate rule: the `<PouCall>` `<Name>` matches only a dot-free name, so a library call (`VisuElems.Visu_Prg`) is never rewritten. BOM/offset fidelity, plus a sample-project pass when `sample/` is present. |
+| `test/test_lsp_parser.js` | Lexer, AST parser and symbol indexer on a synthetic FB: keyword tokenisation, `EXTENDS`/`IMPLEMENTS`, variable types and ranges, nested method params, property GET accessors. Lived outside the suite until 2026-08-05 and **printed `[FAIL]` while exiting 0** — it could report a broken parser and still be green. It counts failures and exits non-zero now. |
+| `test/test_lsp_types_sync.js` | The XML `typesCache` map staying in step with the LSP symbol index: completions and go-to-definition resolve through types discovered by scanning XML rather than by parsing `.st`. |
+| `test/test_method_diagnostics.js` | Diagnostics for a method body analysed on its own, as the webview does — a valid method must produce none once its POU is indexed. |
 | `test/test_memory_bank.js` | The shared memory bank in `.claude/memory/` and the `SessionStart` hook that delivers it. The bank fails silently by nature — a malformed note is skipped, a renamed file breaks the `[[links]]` at it, a dropped hook stops the digest — and sessions just stop being told what the project already learned, which looks exactly like having nothing to tell. Pins the hook contract too (JSON carrying `hookSpecificOutput.additionalContext`, exit 0 whatever happens), since that is what the mechanism depends on and nothing else in the repo enforces it. |
 | `test/test_folding.js` | Folding ranges (`media/stFolding.js`). Pins the two reported bugs by name — an unmatched `{endregion}` truncating the enclosing `VAR` fold, and an unindented `{attribute …}` growing a fold arrow of its own — plus the case designed for rather than discovered: `{IF defined(X)}` is a conditional *pragma*, not an `IF` block, and reading it as one leaves an unclosed block that eats every fold below. Also covers keywords inside comments/strings (`$`-escapes included), members named like keywords (`axis.Case`), the separate region/block stacks, every `VAR_*` variant, and a sweep over every pane of every `sample/` object asserting no range is ever out of bounds. |
 | `test/test_pragmas.js` | Pragma classification and the two catalogs, plus the highlighting rules in **both** grammars and the `{region}` folding markers. Pins the split the design rests on: shape decides the category (and therefore the colour), the catalog only enriches — so a user-defined attribute must be scoped exactly like a documented one. Also asserts catalog integrity (no duplicates, every documented entry has an Infosys node id, the curated file holds nothing Infosys documents, every curated entry carries measured counts), that pragma spans are consumed whole in the lexer and both grammars, and that the three folding-marker declarations — `pragmas.js`, `language-configuration.json`, `media/editor.js` — still agree, which nothing else can check because none of them can import the others. |
@@ -105,17 +108,17 @@ The sample-based harnesses run against the committed synthetic project under `sa
 cleanly if a fixture they need is absent, so `npm test` passes even on a pruned tree — but the runner
 labels such a run REDUCED rather than letting it pass for FULL.
 
-A few experimental probes live in `scratch/` outside `npm test`: `test_lsp_parser.js`,
-`test_lsp_types_sync.js`, `test_method_diagnostics.js` (plus `make_icon.js`, `probe_lib_format.js`).
+`scratch/` is a **git-ignored local playground** — nothing in it is tracked, so anything worth keeping
+must be moved into `test/` or `scripts/` before it is lost.
 
-**`scratch/peek_harness/`** runs `media/editor.js` in a real browser — the one part of the codebase
-no Node test can reach. The name is historical: it is the webview's browser harness generally, and it
-now carries two runners.
+**`test/browser/`** runs `media/editor.js` in a real browser — the one part of the codebase no Node
+test can reach. Two runners, both outside `npm test` (its runner only discovers top-level
+`test/test_*.js`, so a browser harness can never sneak into a run that has no browser).
 
 ```bash
-npm i --no-save playwright                  # optional dep, deliberately NOT in package.json (see below)
-node scratch/peek_harness/run.js            # the references peek
-node scratch/peek_harness/run_pragmas.js    # {region} folding + the Monarch pragma rules
+npm i --no-save playwright               # optional dep, deliberately NOT in package.json (see below)
+node test/browser/run.js                 # the references peek
+node test/browser/run_pragmas.js         # ST folding + the Monarch pragma rules
 ```
 
 | file | role |

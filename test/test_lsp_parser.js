@@ -5,6 +5,15 @@
 
 const { tokenize, TokenType, parseAndIndexDocument, getWorkspaceSymbolIndex, clearWorkspaceIndex } = require('../src/lsp/parser');
 
+let errors = 0;
+/**
+ * Records a failure. This harness used to print [FAIL] and exit 0, so it could report a broken
+ * parser and still be green — the same silently-passing-gate pathology the runner banner exists to
+ * expose. It runs in `npm test` now, so it has to be able to fail.
+ * @param {string} msg
+ */
+function fail(msg) { console.error('[FAIL] ' + msg); errors++; }
+
 const testCode = `
 FUNCTION_BLOCK FB_Automatic EXTENDS FB_Base IMPLEMENTS I_Auto
 VAR
@@ -45,7 +54,7 @@ if (keywords.some(t => t.value.toUpperCase() === 'FUNCTION_BLOCK') &&
     keywords.some(t => t.value.toUpperCase() === 'END_METHOD')) {
     console.log("[PASS] Keywords correctly identified.");
 } else {
-    console.error("[FAIL] Missing identified keywords!");
+    fail("Missing identified keywords!");
 }
 
 // Test 2: AST Symbol Parsing
@@ -71,7 +80,7 @@ if (pou) {
     if (pou.extends === 'FB_Base' && pou.implements.includes('I_Auto')) {
         console.log("[PASS] Extends/Implements parsed correctly.");
     } else {
-        console.error("[FAIL] Extends/Implements mismatch!");
+        fail("Extends/Implements mismatch!");
     }
 
     // Assert Variables
@@ -80,7 +89,7 @@ if (pou) {
         console.log("[PASS] Variable bStart parsed correctly with type and range.");
         console.log(`  Range: startLine=${bStartVar.range.startLine}, startCol=${bStartVar.range.startCol}`);
     } else {
-        console.error("[FAIL] Variable bStart parsing failed!");
+        fail("Variable bStart parsing failed!");
     }
 
     // Assert Nested Method
@@ -91,10 +100,10 @@ if (pou) {
         if (forceVar.name === 'bForce' && forceVar.type === 'BOOL' && forceVar.scope === 'VAR_INPUT') {
             console.log("[PASS] Method input variable bForce parsed correctly.");
         } else {
-            console.error("[FAIL] Method variable parsing failed!");
+            fail("Method variable parsing failed!");
         }
     } else {
-        console.error("[FAIL] Method M_Reset parsing failed!");
+        fail("Method M_Reset parsing failed!");
     }
 
     // Assert Property
@@ -103,11 +112,12 @@ if (pou) {
         console.log("[PASS] Property P_Enabled and its GET accessor parsed correctly.");
         console.log(`  GET Accessor range: startLine=${pEnabled.getAccessor.implRange.startLine}, endLine=${pEnabled.getAccessor.implRange.endLine}`);
     } else {
-        console.error("[FAIL] Property P_Enabled parsing failed!");
+        fail("Property P_Enabled parsing failed!");
     }
 
 } else {
-    console.error("[FAIL] FB_Automatic not found in symbol table index!");
+    fail("FB_Automatic not found in symbol table index!");
 }
 
-console.log("\n--- LSP PARSER TESTS COMPLETE ---");
+console.log(errors === 0 ? '\n--- LSP PARSER TESTS COMPLETE ---' : `\n${errors} check(s) failed.`);
+process.exit(errors === 0 ? 0 : 1);
