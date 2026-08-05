@@ -2,7 +2,7 @@
   "name": "twincat-plc-toolkit",
   "displayName": "TwinCAT PLC Toolkit",
   "description": "Edit, navigate and analyse Beckhoff TwinCAT PLC projects: two-pane Structured Text editor, offline IntelliSense and diagnostics, object and library explorers. Unofficial; not affiliated with Beckhoff.",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "publisher": "a-abushaqra",
   "license": "MIT",
   "icon": "media/icon.png",

@@ -684,6 +684,10 @@ class TwinCatCustomEditorProvider {
     getHtmlForWebview(webview) {
         const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, 'media', 'editor.js'));
         const stylesUri = webview.asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, 'media', 'editor.css'));
+        // Loaded ahead of editor.js, which registers the folding provider that calls into it. It is a
+        // separate file because the extension host needs the same algorithm for plain `.st` files, and
+        // with no build step a dual-mode module is the only way to keep one copy.
+        const foldingUri = webview.asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, 'media', 'stFolding.js'));
         
         const vsUri = webview.asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, 'media', 'monaco-editor', 'vs'));
         // The worker's AMD baseUrl must be the directory that CONTAINS `vs/`, because Monaco's module
@@ -782,6 +786,7 @@ class TwinCatCustomEditorProvider {
             </div>
         </div>
     </div>
+    <script src="${foldingUri}"></script>
     <script src="${scriptUri}"></script>
 </body>
 </html>`;
