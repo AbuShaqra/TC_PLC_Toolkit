@@ -3,6 +3,10 @@ node_modules/
 *.log
 .DS_Store
 
+# Per-machine Claude Code settings. `.claude/settings.json` IS committed (it declares the
+# SessionStart hook that loads the shared memory bank); this one is personal and must not be.
+.claude/settings.local.json
+
 # The sample project the harnesses gate on. `sample/TcToolkitSample/` is WHOLLY SYNTHETIC — written
 # by scripts/build-sample-project.js, no customer or vendor content — and IS committed, so CI can run
 # the diagnostics ratchet and the live-path guard instead of skipping them.

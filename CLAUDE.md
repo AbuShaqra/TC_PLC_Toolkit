@@ -17,6 +17,36 @@ Rules for the file: it reflects the present, not a changelog — replace stale e
 
 **Keep HANDOFF.md under 100 lines.** It is read at the start of every session, so length is a real cost. Treat going over as a signal to prune, not to append: delete what is finished, and fold detail into the git history or a linked file. But the limit serves the reader, not the other way round — if information is genuinely necessary to act and cannot be shortened without losing it, keep it and run over. Never drop or garble a real finding just to hit the number.
 
+## Shared memory — read it, and write to it
+
+`.claude/memory/` holds the lessons this project has already paid for, **version-controlled in the
+repo** so they follow the work to any machine. A `SessionStart` hook (declared in the committed
+`.claude/settings.json`) injects a one-line-per-note digest at the start of every session; cloning the
+repo is the whole setup. **If that digest is not in context — a machine with hooks disabled, a
+different harness — read `.claude/memory/README.md` and the notes yourself before starting work.**
+
+The digest is an *index*. When a note covers what you are about to do, open the file: the one-liner
+cannot carry the incident that produced the rule, and the incident is the part that changes behaviour.
+
+Your per-machine auto-memory (`~/.claude/projects/<sanitized-cwd>/memory/`) still applies and still
+loads. The two are complementary:
+
+- **`.claude/memory/` (shared, committed)** — anything about working on *this* project that would
+  still be true on a fresh clone on someone else's laptop.
+- **per-machine bank** — local paths, installed TwinCAT versions, personal tooling, preferences that
+  are yours rather than the project's.
+
+**When you learn something the hard way here, write it to `.claude/memory/`, not the local bank.**
+One file per note, `<slug>.md` where the slug equals the frontmatter `name`; format and the bar for
+adding one are in `.claude/memory/README.md`. There is no index to update — `bank.js` builds the
+digest from the files. It is version-controlled, so it lands in the next commit like any other change;
+do not commit it on its own unless asked.
+
+Do not duplicate what the repo already records: architecture belongs in DEVELOPMENT.md, present state
+in HANDOFF.md, the rules of the codebase here. The bank is for how to *work* — the judgement no other
+file carries. `node .claude/memory/bank.js --check` validates it, and `test/test_memory_bank.js` runs
+that in the suite.
+
 ## Keep DEVELOPMENT.md current — always
 
 [DEVELOPMENT.md](DEVELOPMENT.md) is the durable developer guide (build, run-from-source, tests, architecture). Unlike HANDOFF.md (which tracks the *present state* of the work), DEVELOPMENT.md describes how the project is *built and laid out* — so **whenever a change makes it stale, update it in the same change.** In particular, update DEVELOPMENT.md when you:
