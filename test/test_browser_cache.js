@@ -69,5 +69,74 @@ eqArr(itf && itf.properties, ['Status'], 'interface property is harvested');
 ok(parseBrowserCache('').size === 0, 'empty string yields no types');
 ok(parseBrowserCache(null).size === 0, 'null yields no types');
 
+// ---------------------------------------------------------------------------------------------
+// Ranking a namespace-qualified caret (`Tc2_MC2.▮`) — rankNamespaceSymbol.
+// ---------------------------------------------------------------------------------------------
+// A library's string table cannot tell a top-level type from an internal member name: measured on
+// the real Tc2_MC2, 2,269 names of which the `.tmc` describes ~57 and the browsercache names 128 as
+// real FBs plus 27 as member-only. The two sources cover different ground — the `.tmc` only exports
+// what the project already USES, the browsercache lists everything the library declares — so both
+// feed the ranking, and neither may filter: each is evidence of presence, never of absence.
+console.log('\n--- namespace symbol ranking ---');
+{
+    const { rankNamespaceSymbol } = require('../src/lsp/features/completions');
+
+    const tmc = new Map([['mc_power', { name: 'MC_Power', kind: 'fb' }]]);
+    const bc = new Map([
+        ['mc_power', { name: 'MC_Power', kind: 'fb' }],           // in BOTH — the .tmc must win
+        ['mc_movevelocity', { name: 'MC_MoveVelocity', kind: 'fb' }],
+        ['i_axis', { name: 'I_Axis', kind: 'interface' }]
+    ]);
+    const members = new Set(['actstop']);
+    const isMember = n => members.has(String(n).toLowerCase());
+    const rank = n => rankNamespaceSymbol(n, 'Tc2_MC2', tmc, bc, isMember);
+
+    const tmcItem = rank('MC_Power');
+    ok(tmcItem.sortText === '0_MC_Power', `a .tmc type takes tier 0 (got ${tmcItem.sortText})`);
+    ok(tmcItem.detail === 'Function Block (Tc2_MC2)', `...with its real kind, not "Library Symbol" (got ${tmcItem.detail})`);
+
+    const bcItem = rank('MC_MoveVelocity');
+    ok(bcItem.sortText === '1_MC_MoveVelocity',
+        `a type only the browsercache declares takes tier 1 (got ${bcItem.sortText})`);
+    ok(bcItem.detail === 'Function Block (Tc2_MC2)', `...also with a real kind (got ${bcItem.detail})`);
+
+    const itf = rank('I_Axis');
+    ok(itf.kind === 8 && itf.detail === 'Interface (Tc2_MC2)',
+        `an interface is reported as one, not as a Class (got kind=${itf.kind}, ${itf.detail})`);
+
+    const plain = rank('SomethingUnknown');
+    ok(plain.sortText === undefined,
+        `an undifferentiated string-table name stays untiered (got ${plain.sortText})`);
+    ok(plain.detail === 'Library Symbol (Tc2_MC2)', `...and keeps the generic detail (got ${plain.detail})`);
+
+    const member = rank('ActStop');
+    ok(member.sortText === 'zz_ActStop', `a member-only name sinks to tier 3 (got ${member.sortText})`);
+    ok(member.detail === 'Member of a Tc2_MC2 type', `...and says why (got ${member.detail})`);
+
+    // Nothing is ever dropped, whatever the tier — that is the standing rule for this list.
+    for (const n of ['MC_Power', 'MC_MoveVelocity', 'I_Axis', 'SomethingUnknown', 'ActStop']) {
+        ok(rank(n).label === n, `${n} survives ranking (nothing is filtered out)`);
+    }
+
+    // Ordering: the tier prefixes must actually sort the way the tiers are numbered — asserted
+    // under BOTH comparisons, because they disagree about punctuation and digits. The member tier
+    // is the trap: it has to land below entries that carry no sortText at all and so sort on their
+    // letter-initial labels, which a '9_' or '~' prefix does not do.
+    const keyed = ['MC_Power', 'MC_MoveVelocity', 'SomethingUnknown', 'ActStop']
+        .map(n => { const i = rank(n); return { n, key: (i.sortText || i.label) }; });
+    const EXPECTED = ['MC_Power', 'MC_MoveVelocity', 'SomethingUnknown', 'ActStop'];
+    const byCodePoint = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
+    eqArr([...keyed].sort((a, b) => byCodePoint(a.key, b.key)).map(x => x.n), EXPECTED,
+        'tiers sort .tmc type, then browsercache type, then unknown, then member (code-point order)');
+    eqArr([...keyed].sort((a, b) => a.key.localeCompare(b.key)).map(x => x.n), EXPECTED,
+        '...and identically under locale collation');
+
+    // Both sources absent (a fresh clone: no .tmc, no libraries installed) must still yield a
+    // usable list rather than throwing or hiding everything.
+    const bare = rankNamespaceSymbol('MC_Power', 'Tc2_MC2', new Map(), new Map(), () => false);
+    ok(bare.label === 'MC_Power' && bare.sortText === undefined,
+        'with neither .tmc nor browsercache, symbols still list (untiered)');
+}
+
 console.log(`\n--- BROWSER CACHE TESTS COMPLETE with ${errors} error(s) ---`);
 process.exit(errors ? 1 : 0);

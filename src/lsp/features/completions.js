@@ -12,7 +12,10 @@ const { getLibraryNamespaces } = require('../libraries');
 const {
     getNamespaceSymbols,
     getLibraryNamespaceNames,
-    getTypeSystemNamespaceTypes
+    getTypeSystemNamespaceTypes,
+    getBrowserCacheNamespaceTypes,
+    isBrowserCacheMemberName,
+    getNestedNamespaceSymbols
 } = require('../libsymbols');
 const {
     prevMeaningful,
@@ -139,11 +142,31 @@ const VAR_SECTION_SORT_PREFIX = '9_';
 // the `.tmc`'s types are the ones a user can actually write, so they rank first.
 const LIB_TYPE_SORT_PREFIX = '0_';
 
-/** LSP CompletionItemKind per `.tmc` type kind (Class / Struct / Enum). */
+/**
+ * sortText prefix for a library symbol the browsercache names as a real FB/interface but the
+ * `.tmc` does not — a type the library declares and the project has not adopted yet. Ranks below
+ * the `.tmc`'s (which carry members and parameters) and above the undifferentiated string table.
+ */
+const LIB_BC_TYPE_SORT_PREFIX = '1_';
+
+/**
+ * sortText prefix for a name known to be a MEMBER of some type in the namespace rather than a type
+ * — `Tc2_MC2.ActStop`. Demoted, never dropped: see libraryNamespaceMembers on why this ranks.
+ *
+ * Letters, not a digit or punctuation, because this one has to sort BELOW the untiered entries,
+ * which carry no sortText and therefore sort on their own (letter-initial) labels. A numeric prefix
+ * like '9_' sorts before every letter and silently promoted these to the top instead; '~' sorts
+ * last by code point but NOT under locale collation, which gives punctuation a low primary weight.
+ * 'zz_' is the only shape that lands last under both.
+ */
+const LIB_MEMBER_SORT_PREFIX = 'zz_';
+
+/** LSP CompletionItemKind per `.tmc` type kind (Class / Struct / Enum / Interface). */
 const LIB_KIND_ITEM = {
     fb: { kind: 7, label: 'Function Block' },
     struct: { kind: 22, label: 'Struct' },
-    enum: { kind: 13, label: 'Enum' }
+    enum: { kind: 13, label: 'Enum' },
+    interface: { kind: 8, label: 'Interface' }
 };
 
 /** True for the VAR scope a structured-initialization argument can target. */
@@ -692,11 +715,21 @@ function pushTypeNames(out, symbolIndex) {
  * happen to be builtins (`TON`, `LEN`) are deliberately NOT dropped — `Tc2_Standard.TON` is real.
  *
  * **Ranking, not filtering.** A string table cannot tell a top-level type from an internal member
- * name, so `Tc2_MC2.▮` is a long mix of both (2,145 names in the sample). The `.tmc` *can* — it names
- * 57 of them as real Tc2_MC2 types — so those are marked with their true kind (Struct / Enum /
- * Function Block) and sorted to the top. The rest stay: the `.tmc` only exports what the project
- * already uses, so dropping everything it does not mention would hide every library type the project
- * has not adopted *yet*, which is precisely what a user reaches for at a fresh caret.
+ * name, so `Tc2_MC2.▮` is a long mix of both — 2,269 names, measured. Two sources can tell them
+ * apart, and they cover different ground, so the list is ranked in four tiers:
+ *
+ *   0. the `.tmc`'s types — the richest description (fields, parameters), but it exports only what
+ *      the project already *uses*: ~57 of the 2,269.
+ *   1. the browsercache's FBs and interfaces — names only, but it lists every one the library
+ *      declares, adopted or not: 128 of the 2,269. This is the tier that answers a *fresh* caret,
+ *      where the user is reaching for a type precisely because the project has no instance yet.
+ *   2. everything else the string table holds, undifferentiated.
+ *   3. names the browsercache knows only as a METHOD or PROPERTY of some type in the library
+ *      (`Tc2_MC2.ActStop`) — not writable in this position, so they sink.
+ *
+ * Nothing is dropped, at any tier. The browsercache covers only libraries installed on this
+ * machine and the `.tmc` only appears after a build, so both are evidence of presence, never of
+ * absence — filtering on either would hide real types on the machines that lack them.
  * @param {string} namespace The head of the dotted path under the caret.
  * @returns {Array<Object>} Completion items (possibly empty).
  */
@@ -707,28 +740,108 @@ function libraryNamespaceMembers(namespace) {
     // The .tmc's real types for this namespace, keyed for an O(1) test per candidate name.
     const known = new Map();
     getTypeSystemNamespaceTypes(namespace).forEach(t => known.set(t.name.toLowerCase(), t));
+    const declared = getBrowserCacheNamespaceTypes(namespace);
+    const isMember = name => isBrowserCacheMemberName(namespace, name);
 
     const items = [];
     for (const name of getNamespaceSymbols(namespace)) {
         if (STANDARD_TYPES.has(name.toUpperCase())) continue;
-        const type = known.get(name.toLowerCase());
-        const shape = type ? LIB_KIND_ITEM[type.kind] : null;
-        if (shape) {
-            items.push({
-                label: name,
-                kind: shape.kind,
-                detail: `${shape.label} (${label})`,
-                sortText: LIB_TYPE_SORT_PREFIX + name
-            });
-        } else {
-            items.push({
-                label: name,
-                kind: 7, // Class — a library symbol is a bare name; what is behind it is not indexed.
-                detail: `Library Symbol (${label})`
-            });
-        }
+        items.push(rankNamespaceSymbol(name, label, known, declared, isMember));
     }
     return items;
+}
+
+/** True when the name is a library namespace the project references (either spelling source). */
+function isLibraryNamespace(name) {
+    if (!name) return false;
+    const key = String(name).toLowerCase();
+    return getLibraryNamespaceNames().some(n => n.toLowerCase() === key)
+        || getLibraryNamespaces().some(n => String(n).toLowerCase() === key);
+}
+
+/**
+ * The symbols of a nested library namespace — the answer to `VisuElems.VisuElemBase.▮`.
+ *
+ * The inner segment names a library the `.plcproj` never references (it is a dependency of the
+ * outer one), so its symbols are harvested on demand rather than indexed. They arrive as bare
+ * names from a string table with no `.tmc` and no browsercache behind them, so every one is
+ * reported as a plain library symbol — the same honesty as the outer namespace's untiered tier.
+ * @param {string} outer The referenced namespace under the caret's head.
+ * @param {string} inner The nested namespace segment.
+ * @returns {Array<Object>} Completion items (empty when that library is not installed).
+ */
+function nestedNamespaceMembers(outer, inner) {
+    const symbols = getNestedNamespaceSymbols(inner);
+    if (symbols.length === 0) return [];
+    const items = [];
+    for (const name of symbols) {
+        if (STANDARD_TYPES.has(name.toUpperCase())) continue;
+        items.push({
+            label: name,
+            kind: 7,
+            detail: `Library Symbol (${outer}.${inner})`
+        });
+    }
+    return items;
+}
+
+/**
+ * Assigns one library symbol to its tier — the whole of the ranking decision described on
+ * libraryNamespaceMembers, kept pure so it can be exercised without a machine that happens to have
+ * the right libraries installed. Both evidence sources are optional and independently absent: a
+ * clone has no `.tmc` until something is built, and the browsercache only covers libraries
+ * installed locally.
+ * @param {string} name Symbol name, original spelling.
+ * @param {string} label Namespace name as spelled in the .plcproj.
+ * @param {Map<string, Object>} tmcTypes `.tmc` types, keyed lower-case.
+ * @param {Map<string, Object>} bcTypes Browsercache top-level types, keyed lower-case.
+ * @param {(name: string) => boolean} isMember True when the name is member-only in this namespace.
+ * @returns {Object} A completion item.
+ */
+function rankNamespaceSymbol(name, label, tmcTypes, bcTypes, isMember) {
+    const key = String(name).toLowerCase();
+
+    // Tier 0 — the `.tmc` describes it: the richest source, so it wins wherever both apply.
+    const tmcType = tmcTypes.get(key);
+    const tmcShape = tmcType ? LIB_KIND_ITEM[tmcType.kind] : null;
+    if (tmcShape) {
+        return {
+            label: name,
+            kind: tmcShape.kind,
+            detail: `${tmcShape.label} (${label})`,
+            sortText: LIB_TYPE_SORT_PREFIX + name
+        };
+    }
+
+    // Tier 1 — the library declares it, the project just has not used it yet.
+    const bcType = bcTypes.get(key);
+    const bcShape = bcType ? LIB_KIND_ITEM[bcType.kind] : null;
+    if (bcShape) {
+        return {
+            label: name,
+            kind: bcShape.kind,
+            detail: `${bcShape.label} (${label})`,
+            sortText: LIB_BC_TYPE_SORT_PREFIX + name
+        };
+    }
+
+    // Tier 3 — known to be a member of some type here, so not writable as `Namespace.name`.
+    if (isMember(name)) {
+        return {
+            label: name,
+            kind: 7,
+            detail: `Member of a ${label} type`,
+            sortText: LIB_MEMBER_SORT_PREFIX + name
+        };
+    }
+
+    // Tier 2 — the string table holds it and nothing can say more. No sortText: it sorts on the
+    // label, between the identified types above and the known members below.
+    return {
+        label: name,
+        kind: 7, // Class — a library symbol is a bare name; what is behind it is not indexed.
+        detail: `Library Symbol (${label})`
+    };
 }
 
 /**
@@ -935,12 +1048,21 @@ function provideCompletions(code, position, symbolIndex, fileUri) {
         // `Tc2_MC2.▮` — the path resolves to nothing in the project, but its head is a library
         // namespace, so what follows the dot is that library's symbols. Checked *after* the project
         // index, which therefore still wins on a name collision, and *before* the library-type branch
-        // below, so a namespace can never be mistaken for a same-named type. Only a single-part head
-        // is answered: a deeper path (`VisuElems.VisuElemBase.▮`) walks into a nested namespace we do
-        // not index, and inventing members for it is exactly the noise this must not produce.
+        // below, so a namespace can never be mistaken for a same-named type.
         if (parts.length === 1) {
             const libItems = libraryNamespaceMembers(parts[0]);
             if (libItems.length > 0) return libItems;
+        }
+
+        // `VisuElems.VisuElemBase.▮` — a NESTED namespace: a library's namespace re-exports the
+        // namespaces of the libraries it depends on, so a path can be two namespaces deep before it
+        // names anything. Gated hard on the head being a namespace the project actually references,
+        // which is what keeps an ordinary member path (`stAxis.MotionState.▮`) from ever reaching
+        // the archive store, and confined to a two-part head: past that a segment is a symbol, and
+        // guessing members for it is exactly the noise this must not produce.
+        if (parts.length === 2 && isLibraryNamespace(parts[0])) {
+            const nested = nestedNamespaceMembers(parts[0], parts[1]);
+            if (nested.length > 0) return nested;
         }
 
         // `stAxis.▮` (an instance of a library type), `MC_Power.▮`, `E_EthercatDeviceState.▮` — the
@@ -1081,5 +1203,8 @@ function provideCompletions(code, position, symbolIndex, fileUri) {
 }
 
 module.exports = {
-    provideCompletions
+    provideCompletions,
+    // Pure; exported for the harness — the module state it would otherwise need is only present on
+    // a machine with the right libraries installed and the project built.
+    rankNamespaceSymbol
 };
