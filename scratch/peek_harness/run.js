@@ -185,7 +185,47 @@ function assert(cond, msg) {
         assert(retired.total === 3,
             `no models accumulate: two live panes + one peek (total ${retired.total})`);
 
-        // 7. Nothing may have thrown along the way — "Model not found" is the failure this whole
+        // 7. Switching component with a peek open must DISMISS it (user-reported: "the view lands on
+        //    the correct occurrence but the arrow on top of the peek window disappears"). The arrow
+        //    is a decoration and loadComponent's setValue resets the model, dropping it; the zone
+        //    widget is not a decoration and survived — leaving a peek with no arrow, hovering over
+        //    content that had been replaced underneath it. Monaco dismisses a peek itself when a
+        //    reference is opened in the same editor, but cannot here: the navigation round-trips
+        //    through the extension host, so Monaco never learns it happened.
+        const stale = await page.evaluate(async () => {
+            const fixture = await (await fetch('/harness/fixture.json')).json();
+            window.__harness.fixture = fixture;   // the retirement step above narrowed it
+            const decl = monaco.editor.getEditors()
+                .find(e => e.getModel() && e.getModel().uri.scheme === 'inmemory'
+                    && /FUNCTION_BLOCK\s+FB_Cylinder/.test(e.getModel().getLineContent(1)));
+            decl.focus();
+            decl.setPosition({ lineNumber: 1, column: decl.getModel().getLineContent(1).indexOf('FB_Cylinder') + 3 });
+            decl.trigger('harness', 'editor.action.referenceSearch.trigger', {});
+            await new Promise(r => setTimeout(r, 1500));
+            const arrowSel = '.monaco-editor .cdr[class*="arrow-decoration"]';
+            const before = {
+                widget: !!document.querySelector('.zone-widget'),
+                arrow: !!document.querySelector(arrowSel)
+            };
+            // Exactly what the extension sends back after twincat.openComponent for this file.
+            window.postMessage({ type: 'selectComponent', id: 'method_Cyclic' }, '*');
+            await new Promise(r => setTimeout(r, 900));
+            return {
+                before,
+                after: {
+                    widget: !!document.querySelector('.zone-widget'),
+                    arrow: !!document.querySelector(arrowSel)
+                }
+            };
+        });
+        assert(stale.before.widget && stale.before.arrow,
+            `the peek opens with its arrow (${JSON.stringify(stale.before)})`);
+        assert(!stale.after.widget,
+            `switching component dismisses the peek instead of orphaning it (${JSON.stringify(stale.after)})`);
+        assert(!stale.after.arrow,
+            'and no arrow decoration is left behind pointing at replaced content');
+
+        // 8. Nothing may have thrown along the way — "Model not found" is the failure this whole
         //    design exists to make unreachable, and it surfaces as a console error.
         assert(consoleErrors.length === 0,
             `the browser reported no errors (${consoleErrors.length ? JSON.stringify(consoleErrors.slice(0, 3)) : 'none'})`);

@@ -232,13 +232,18 @@ neither hit the duplicate-name bug.
   values; call parens→params first. **Unknown context ⇒ full list, never nothing.**
 
 ## Pipeline (open)
-**All six items shipped** (see git log). The last, cross-file/cross-component **references peek**, is covered by
-`node scratch/peek_harness/run.js` — 14 assertions driving the real `media/editor.js` in Chromium (needs
-`npm i --no-save playwright`; DEVELOPMENT.md documents it). It is verified to FAIL on a regression, not just to
-pass: disabling the pane texts drops the peek to "References (1)", the pre-fix behaviour.
-**`media/editor.js` has no other test — run that harness whenever it changes.** Still worth a dev-host pass for
-what the harness necessarily stands in for: the real extension host answering the bridge, and
-`twincat.openComponent` actually landing on the occurrence rather than just being sent the right coordinates.
+**All six items shipped** (see git log). The cross-file/cross-component **references peek** is covered by
+`node scratch/peek_harness/run.js` — 17 assertions driving the real `media/editor.js` in Chromium (needs
+`npm i --no-save playwright`; DEVELOPMENT.md documents it). Each guard is verified to FAIL, not just to pass.
+**`media/editor.js` has no other test — run that harness whenever it changes.**
+**Navigating away must DISMISS the peek** (0.4.1; user found it, dev-host, reported as "the arrow on top of the
+peek window disappears"). Monaco dismisses a peek itself when a reference opens in the same editor; it cannot
+here, because a hit outside the active component round-trips through the extension host
+(`openFile` → `twincat.openComponent` → `selectComponent`) and Monaco never learns it happened. The visible
+half is the ARROW: it is a decoration, so `loadComponent`'s `setValue` drops it, while the zone widget is not
+and survived — a peek with no arrow, hovering over content already replaced underneath it. Closed in BOTH
+places, and both are needed: `loadComponent` (same file) and `openPeekTarget` (cross-file never returns
+through `loadComponent` at all). Dev-host still worth a pass on the real bridge round-trip.
 
 ## Working agreement
 Implementation is delegated to the **`implementer`** agent; the main conversation owns architecture/planning/review/

@@ -795,6 +795,19 @@
      */
     const PEEK_SCHEME = 'twincat-peek';
 
+    /**
+     * Dismisses an open references peek in either pane. Safe to call when none is open.
+     *
+     * `closeReferenceSearch` is a Monaco editor command, not an action, so it is invoked through
+     * trigger() — getAction() does not list it.
+     */
+    function closeReferencePeek() {
+        for (const ed of [declEditor, implEditor]) {
+            if (!ed) continue;
+            try { ed.trigger('twincat', 'closeReferenceSearch', {}); } catch (e) { /* none open */ }
+        }
+    }
+
     /** Hidden models this webview owns, by URI string. Retired once a search stops needing them. */
     const peekModels = new Map();
 
@@ -871,6 +884,11 @@
             },
             targetWord: targetWord || ''
         });
+        // Dismiss the peek we just navigated out of. loadComponent() also does this, but only for a
+        // target in THIS file — a cross-file hit opens a different document and never comes back
+        // through it, which would leave this webview holding an orphaned widget. Deferred a tick so
+        // the widget is not torn down inside Monaco's own open handler.
+        setTimeout(closeReferencePeek, 0);
     }
 
     /**
@@ -1112,6 +1130,17 @@
     function loadComponent(id) {
         const comp = components.find(c => c.id === id);
         if (!comp) return;
+
+        // Swapping the component leaves any open references peek stale, so dismiss it first. The
+        // widget would otherwise survive the setValue below while its ARROW would not: the arrow is
+        // a decoration, and setValue resets the model and drops every decoration with it. What is
+        // left is a peek pointing at content that is no longer under it.
+        //
+        // Monaco closes a peek by itself when a reference is opened inside the same editor. It
+        // cannot here — a cross-file or cross-component hit navigates through the extension host
+        // (openFile -> twincat.openComponent -> selectComponent), so Monaco never learns that the
+        // thing it was previewing has been navigated to.
+        closeReferencePeek();
 
         activeComponentId = id;
         selectEl.value = id;
