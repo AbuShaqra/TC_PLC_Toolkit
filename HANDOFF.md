@@ -4,26 +4,17 @@ Where the work *stands*. Read before starting; keep current (handoff rule in [CL
 100 lines — prune finished items rather than appending, but never drop a real finding to hit it. **Shipped features
 live in git history (PRs/commits); this file keeps the findings that would cost to re-derive.**
 
-**Last verified:** 2026-07-20 — `npm test` green (41 harnesses), **0 diagnostics on the sample**. Shipped: **0.3.0**
-(PRs #1–#14; 0.1.0 renumbered from 0.4.2 for the fresh public repo; #11 re-shipped 0.2.0 by decision). 0.3.0 =
-reference-aware rename (objects, members, folders, virtual folders) incl. visualizations; **user smoke-tested it on the
-real project and XAE built cleanly**. **0.3.1** (PR #15) extends rename to task configs (`.TcTTO` PouCall) and text
-lists (`.TcTLO`/`.TcGTLO`) — also user-verified on the real project, packaged + installed.
+**Last verified:** 2026-08-05 — `npm test` green (**44 harnesses, Coverage: FULL**), typecheck clean,
+**0 diagnostics on the sample**. Shipped through **0.5.0** (pragmas); releases are in git history.
 **Install trap that cost a debug cycle:** VS Code keeps the old version dir until a FULL restart (reload-window is not
 always enough) — the user tested 0.3.1's feature against the still-running 0.3.0 code and reported it broken. Check
 `~/.vscode/extensions/` for side-by-side version dirs + `.obsolete` before debugging a "feature does nothing" report.
 **Not yet visually confirmed by the user:** the 0.1.3 library grouping and 0.1.4 member expansion in the tree UI —
-logic is verified on real data + guard tests, but nobody has eyeballed the rendered tree. Worth doing.
-Likewise the **light-theme pass over `media/editor.css`** (user-reported: pane banners were ~1.1:1, unreadable).
-The whole sheet was dark-only; now theme-driven — **conventions are in that file's own header comment, read it
-before adding colour**. Contrast figures were computed against VS Code's default themes, **not eyeballed**; the
-app header + pane banners deliberately moved to VS Code chrome tones, so **dark mode changed too** (both are
-lighter/more legible than the old near-ghosted look). No test covers CSS. `.action-btn` got its OWN deepened
-ramp (`--accent-gradient-btn`) because it is the only white-on-accent fill; `--accent-gradient` stays bright so
-the gradient-clipped wordmark does not go dark-on-dark. **Deliberately left:** that wordmark, 3.3-4.9:1 depending
-on theme and gradient stop — a logotype, exempt; don't "fix" it without a design call. The Monaco panes were
-never part of the problem: `syncTheme()` (`editor.js:639`) already follows the body class and overrides the
-`vs-dark` init option — only its HC-light branch was wrong (gave `hc-black`), now fixed.
+logic is verified on real data + guard tests, but nobody has eyeballed the rendered tree. Worth doing. Likewise
+the light-theme pass over `media/editor.css` — **no test covers CSS**, contrast was computed against VS Code's
+default themes, not eyeballed, and dark mode deliberately changed too. **Its conventions live in that file's own
+header comment — read it before adding colour.** The gradient-clipped wordmark is deliberately left at 3.3–4.9:1
+(a logotype, exempt); don't "fix" it without a design call.
 
 ## Constraints / still open
 - **Publication:** history was rewritten + the GitHub repo recreated to purge customer/vendor content (`sample/`,
@@ -231,11 +222,10 @@ neither hit the duplicate-name bug.
 - **Autocomplete is caret-context aware** (`classifyCaretContext`): `x:▮`→types+namespaces (no `END_IF`); `x:=▮`→
   values; call parens→params first. **Unknown context ⇒ full list, never nothing.**
 
-## Pipeline (open)
-**All six items shipped** (see git log). The cross-file/cross-component **references peek** is covered by
-`node scratch/peek_harness/run.js` — 17 assertions driving the real `media/editor.js` in Chromium (needs
-`npm i --no-save playwright`; DEVELOPMENT.md documents it). Each guard is verified to FAIL, not just to pass.
-**`media/editor.js` has no other test — run that harness whenever it changes.**
+## Webview browser harness (`scratch/peek_harness/`, needs `npm i --no-save playwright`)
+The only test of `media/editor.js` — **run both runners whenever it changes**. `run.js` (references peek,
+17 assertions), `run_pragmas.js` (region folding + Monarch pragma scopes, 21). Every guard verified to FAIL,
+not just to pass. DEVELOPMENT.md documents both.
 **Navigating away must DISMISS the peek** (0.4.1; user found it, dev-host, reported as "the arrow on top of the
 peek window disappears"). Monaco dismisses a peek itself when a reference opens in the same editor; it cannot
 here, because a hit outside the active component round-trips through the extension host
@@ -244,6 +234,34 @@ half is the ARROW: it is a decoration, so `loadComponent`'s `setValue` drops it,
 and survived — a peek with no arrow, hovering over content already replaced underneath it. Closed in BOTH
 places, and both are needed: `loadComponent` (same file) and `openPeekTarget` (cross-file never returns
 through `loadComponent` at all). Dev-host still worth a pass on the real bridge round-trip.
+
+## Pragmas (0.5.0)
+Shipped: `src/lsp/pragmas.js` + two catalogs, category-scoped highlighting in **both** grammars,
+`{region}`/`{endregion}` folding, and attribute-name completion. Findings worth not re-deriving:
+- **Infosys is authoritative but NOT exhaustive**, which is why there are two catalogs and why shape
+  matching is the base tier. Measured here: `TcGenerated` in **150 of 337** installed library archives,
+  `object_name` in 59 archives / **40** uses in real project code, plus `no-analysis` (155), `message_guid`
+  (102), `vtable_order`, `old_input_assignments`, `contains_no_copy`, `variable_length_array`,
+  `implicit_input` — **none on any Infosys attribute page**. `checks_in_libs` did NOT reproduce (0 hits);
+  don't re-add it without measuring. Method: read each archive's `__shared_data_storage_string_table__`
+  via `libsymbols.js` — note `readZipEntries` takes a **Buffer, not a path**, and a try/catch around it
+  silently yields "no hits" (cost one wrong conclusion).
+- **Shape decides colour; the catalog only enriches.** A user-defined attribute must be scoped exactly
+  like a documented one — TwinCAT documents user-defined attributes as a feature, so tinting an
+  uncatalogued name would be a diagnostic in disguise. Pinned in `test_pragmas.js` and the browser harness.
+- **Folding is declarative and can die silently.** Markers on the language configuration work *only*
+  because no `FoldingRangeProvider` is registered for `iecst` (Monaco then uses its indentation provider,
+  which honours and nests markers). Registering one would replace markers wholesale and kill region
+  folding with every unit test still green. Proven in Chromium on a fixture with **no indentation**, so
+  only the marker can explain the fold; removing the markers turns 3 assertions red.
+- **The tmLanguage grammar had NO pragma rule at all** and therefore the same apostrophe bug the Monarch
+  tokenizer was fixed for. `#pragmas` now precedes `#strings`.
+- The generator (`scripts/fetch-pragma-catalog.js`) is **run by hand only** — offline constraint. Behind
+  this machine's TLS-inspecting proxy plain `node` fails with "self-signed certificate in certificate
+  chain"; use `node --use-system-ca`.
+- Deliberately NOT done: the lexer's Pragma token is still unclassified (nothing consumes it; `tokenize`
+  runs over every file on every diagnostics pass), and there is **no hover** — it would need a new
+  provider round-trip the catalog does not justify yet.
 
 ## Working agreement
 Implementation is delegated to the **`implementer`** agent; the main conversation owns architecture/planning/review/

@@ -145,6 +145,14 @@ unsaved work. It briefly opens a TwinCAT window while it runs (about a minute).
   shows the in-view occurrences in Monaco's inline peek. Named arguments resolve to the right owner,
   including `FB_init` inputs written at an FB's declaration site (`inst : FB_T(p := v)`). Matching is
   case-insensitive, as ST itself is.
+- **Pragmas** are understood as the metadata they are, in all five categories TwinCAT documents —
+  attributes, messages, conditional compilation, regions and warning suppression — and each is
+  highlighted for what it is. `{region "…"}` … `{endregion}` **fold**, in the declaration pane as well
+  as the implementation, so a long `VAR` block collapses to its heading; nested regions fold with it.
+  Typing `{` offers the pragma heads, and `{attribute '▮'}` offers **78 attribute names** — the ones
+  Beckhoff documents plus the ones that only occur in the wild (`object_name`, `TcGenerated`, …).
+  Unknown names are never flagged: TwinCAT supports user-defined attributes, and one you invented is
+  highlighted exactly like a built-in.
 
 ### Generate ST
 

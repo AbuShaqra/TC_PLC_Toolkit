@@ -1,0 +1,65 @@
+{
+  "$comment": "Hand-curated. Attribute names TwinCAT accepts and real code uses, that appear on NO Beckhoff Infosys attribute page — so scripts/fetch-pragma-catalog.js can never produce them. Every entry is measured, not remembered: `archives` counts how many of 337 installed library archives (Beckhoff + CODESYS + project _Libraries, string tables read by libsymbols.js) contain the name; `sources` counts occurrences of {attribute '<name>'} across 299 real TwinCAT source files on the development machine. Measured 2026-08-05. Add to this file when a user reports a name the documented catalog does not know; drop nothing without re-measuring. Unknown names are NEVER an error - user-defined attributes are a supported TwinCAT feature and src/lsp/pragmas.js falls back to shape matching.",
+  "attributes": [
+    {
+      "name": "analysis",
+      "archives": 43,
+      "sources": 0,
+      "note": "TE1200 Static Analysis: re-enables rules disabled further up. Documented under the Static Analysis product, not under PLC pragmas."
+    },
+    {
+      "name": "contains_no_copy",
+      "archives": 7,
+      "sources": 0,
+      "note": "CODESYS compiler internal; marks a type whose instances must not be bitwise copied."
+    },
+    {
+      "name": "implicit_input",
+      "archives": 6,
+      "sources": 0,
+      "note": "CODESYS compiler internal."
+    },
+    {
+      "name": "message_guid",
+      "archives": 102,
+      "sources": 0,
+      "note": "Ties a compiler message to a GUID so the IDE can resolve it to a localized text."
+    },
+    {
+      "name": "no-analysis",
+      "archives": 155,
+      "sources": 1,
+      "note": "TE1200 Static Analysis: suppresses rules for the following declaration or POU. Documented under the Static Analysis product, not under PLC pragmas."
+    },
+    {
+      "name": "object_name",
+      "archives": 59,
+      "sources": 40,
+      "note": "Overrides the name an object is shown and generated under. Takes a value: {attribute 'object_name' := 'M_StateMachine'}. The single most-used undocumented attribute in real project code here."
+    },
+    {
+      "name": "old_input_assignments",
+      "archives": 14,
+      "sources": 0,
+      "note": "CODESYS compatibility switch for pre-3.x input assignment semantics."
+    },
+    {
+      "name": "TcGenerated",
+      "archives": 150,
+      "sources": 1,
+      "note": "Marks code emitted by a TwinCAT tool rather than written by hand. Present in 150 of 337 installed library archives - the clearest evidence that Infosys does not enumerate everything TwinCAT accepts."
+    },
+    {
+      "name": "variable_length_array",
+      "archives": 6,
+      "sources": 0,
+      "note": "CODESYS: permits ARRAY [*] parameters."
+    },
+    {
+      "name": "vtable_order",
+      "archives": 15,
+      "sources": 0,
+      "note": "CODESYS compiler internal; pins method dispatch-table order across online changes."
+    }
+  ]
+}
