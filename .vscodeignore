@@ -25,3 +25,5 @@ scripts/fetch-pragma-catalog.js
 CLAUDE.md
 HANDOFF.md
 DEVELOPMENT.md
+# Implementation plans — developer working documents, same category as the three files above.
+docs/**

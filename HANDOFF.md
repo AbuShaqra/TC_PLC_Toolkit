@@ -17,6 +17,29 @@ header comment — read it before adding colour.** The gradient-clipped wordmark
 (a logotype, exempt); don't "fix" it without a design call.
 
 ## Constraints / still open
+- **OPEN BUG — multiple PLC projects under one workspace folder collide** (user report 2026-08-06; reproduced
+  on the real code path with two copies of `sample/` as `LineA`/`LineB`, one diverged). The symbol index is a
+  **single flat name-keyed map** (`xmlIndexer.js:294` `index[node.name] = node`), and `collectPlcProjObjectPaths`
+  (`xmlIndexer.js:336`) **unions every `.plcproj` under the roots** instead of partitioning by project. Measured:
+  **38 object files → 19 index entries**; every shared name resolved to `LineB` (walk order, last-write-wins), a
+  **false diagnostic on correct LineA code** (`"fbDerived" is not a member of type "GVL_System"`), and Find
+  References returned **7 hits, 3 of them in the wrong project**. Same flat-namespace defect in four more places:
+  `libraries.js:104` unions library namespaces across projects; `typesCache.js:171` crawls the whole workspace
+  with **no `.plcproj` gate at all**; `extension.js:370` `delete cache[rootName]` drops both projects' entry;
+  and **worst — `server.js:320` `collectConfigObjectFiles(workspaceRootPaths)` walks EVERY root**. Measured on the
+  fixture, rename breaks in **two** ways: renaming the MAIN that **won** the name key resolved and returned **2
+  occurrences — one in the neighbour's `PlcTask.TcTTO`** (rewrites another project's HMI/task config,
+  **corruption-grade**); renaming the MAIN that **lost** returned `resolved=false, 0 occurrences` — the
+  `configReferences.js` identity guard rejects it, so the config update is **silently skipped**.
+  Not a regression — the index has always been workspace-flat; the 0.3.0 `.plcproj` gate scoped *which files*, not
+  *which project*. Note `media/editor.js` **assigns `typesMap` and never reads it** — the webview broadcast is dead.
+  **Fix planned in full:** `docs/superpowers/plans/2026-08-06-project-scoped-index.md` (8 tasks — project map,
+  one index per `.plcproj`, per-project library registries, scoped rename scan, status bar + tree grouping).
+  Decisions taken: a file `<Compile>`d by two projects is indexed into **both** but routes to its home project;
+  references/rename are **strictly** project-scoped (no cross-project escape hatch). **Not started — to resume on
+  any machine: read that plan and execute it task-by-task (Task 1 first; each task ends green and committable).**
+  Task 3 (library registries) is the one to **defer** if effort is short — a shared registry only makes a project
+  too *quiet*, never wrong. The two repro scripts are not kept; the plan's `test/_multiproject.js` replaces them.
 - **Publication:** history was rewritten + the GitHub repo recreated to purge customer/vendor content (`sample/`,
   `.trust-lsp/`, machine codenames — 0 blobs match any customer id). Repo is **Private**. **Open:** confirm the
   contractual right to open-source the extension itself.
