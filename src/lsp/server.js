@@ -11,35 +11,16 @@ const {
 } = require('vscode-languageserver/node');
 const { TextDocument } = require('vscode-languageserver-textdocument');
 
-const fs = require('fs');
-const path = require('path');
-
 const {
-    parseAndIndexDocument,
-    indexStDirectory,
-    clearWorkspaceIndex
+    parseAndIndexDocument
 } = require('./parser');
 
-// The server OWNS the workspace symbol index and threads it explicitly into the parser/indexer and
-// every language-feature call, rather than reaching for the parser.js module global. That global
-// remains only the default for the standalone test harnesses; here the data flow is explicit, and a
-// future multi-root setup could hold one index per workspace folder without touching global state.
-const workspaceIndex = {};
-
-// The workspace-root filesystem paths, captured on the initial scan. The configuration-object
-// reference scan (custom/configReferencesForSymbol) needs to discover visu/text-list/task files on
-// demand, and those roots are the only place to start the walk. Kept in sync on reindex.
-const workspaceRootPaths = [];
-
 const {
-    indexTwinCatDirectory,
-    indexXmlObject,
-    collectPlcProjObjectPaths
+    indexXmlObject
 } = require('./xmlIndexer');
 
 const {
-    indexLibraryNamespaces,
-    clearLibraryNamespaces
+    indexLibraryNamespaces
 } = require('./libraries');
 
 const {
@@ -48,17 +29,33 @@ const {
     indexLibrarySignatures,
     indexBrowserCache,
     registerLibrarySymbolNodes,
-    clearLibrarySymbols,
     getLibraryCatalog
 } = require('./libsymbols');
 
+const {
+    createEmptyWorkspace,
+    scanWorkspace,
+    uriToFsPath
+} = require('./workspaceScan');
+
+// The server OWNS the workspace and threads its indexes explicitly into the parser/indexer and every
+// language-feature call, rather than reaching for the parser.js module global. There is ONE INDEX
+// PER PLC PROJECT: a `.plcproj` is its own compilation unit (XAE does not resolve symbols across
+// projects), and a single flat name-keyed map made two projects' same-named objects collide —
+// last-write-wins, so half the workspace vanished and references pointed into the wrong project.
+/** @type {import('./workspaceScan').Workspace} */
+let workspace = createEmptyWorkspace();
+
 /**
- * Converts an LSP folder URI (file:///C:/...) to a filesystem path.
- * @param {string} uri Folder URI.
- * @returns {string} Filesystem path.
+ * Rebuilds the partition and every index from the given roots.
+ * @param {Array<string>} rootPaths Absolute workspace-root paths.
  */
-function uriToFsPath(uri) {
-    return decodeURIComponent(uri.replace(/^file:\/\/\//i, '')).replace(/\//g, '\\');
+function rescan(rootPaths) {
+    workspace = scanWorkspace(rootPaths, {
+        log: (m) => connection.console.log(m),
+        error: (m) => connection.console.error(m),
+        indexLibraries
+    });
 }
 
 /**
@@ -71,8 +68,10 @@ function uriToFsPath(uri) {
  * The harvested names are NOT put into the symbol index here — that happens per document, in
  * syncDocument(), so the index stays at project scale.
  * @param {string} fsPath Absolute folder path.
+ * @param {Object} [index] The owning project's symbol index. Unused for now — the registries below
+ *   are still workspace-global; per-project library registries land in a later change.
  */
-function indexLibraries(fsPath) {
+function indexLibraries(fsPath, index) {
     indexLibraryNamespaces(fsPath);
     const stats = indexLibrarySymbols(fsPath);
     const tmc = indexTypeSystem(fsPath);
@@ -104,10 +103,11 @@ function indexLibraries(fsPath) {
  * can be answered against an index that has not seen the document's library usage.
  * @param {string} code Structured Text of the document.
  * @param {string} fileUri Document URI.
+ * @param {Object} index The owning project's symbol index.
  */
-function syncDocument(code, fileUri) {
-    parseAndIndexDocument(code, fileUri, workspaceIndex);
-    registerLibrarySymbolNodes(workspaceIndex, code);
+function syncDocument(code, fileUri, index) {
+    parseAndIndexDocument(code, fileUri, index);
+    registerLibrarySymbolNodes(index, code);
 }
 
 const {
@@ -122,46 +122,6 @@ const {
     clearStFileCache
 } = require('./features');
 
-/** Directories skipped when walking for configuration objects — the same set the XML indexer skips. */
-const CONFIG_OBJECT_SKIP_DIRS = new Set(['.git', 'node_modules', '.vscode', '_libraries']);
-
-/**
- * TwinCAT non-code object extensions that can carry a PLC symbol reference (lower-cased): the two
- * visualization formats, the two text-list formats, and the task configuration.
- * @type {Set<string>}
- */
-const CONFIG_OBJECT_EXTS = new Set(['.tcvis', '.tcvmo', '.tctlo', '.tcgtlo', '.tctto']);
-
-/**
- * Recursively collects every TwinCAT configuration object (see CONFIG_OBJECT_EXTS, case-insensitive)
- * under the given workspace roots. Rename is a rare, deliberate action, so an on-demand walk is fine —
- * no standing index of these files is kept.
- * @param {Array<string>} roots Absolute workspace-root paths.
- * @returns {Array<string>} Absolute configuration-object file paths.
- */
-function collectConfigObjectFiles(roots) {
-    const out = [];
-    const walk = (dir) => {
-        let entries;
-        try {
-            entries = fs.readdirSync(dir, { withFileTypes: true });
-        } catch (e) {
-            return;
-        }
-        for (const entry of entries) {
-            const full = path.join(dir, entry.name);
-            if (entry.isDirectory()) {
-                if (CONFIG_OBJECT_SKIP_DIRS.has(entry.name.toLowerCase())) continue;
-                walk(full);
-            } else if (entry.isFile()) {
-                if (CONFIG_OBJECT_EXTS.has(path.extname(entry.name).toLowerCase())) out.push(full);
-            }
-        }
-    };
-    for (const root of (roots || [])) walk(root);
-    return out;
-}
-
 // Create connection for the server, using Node IPC
 const connection = createConnection(ProposedFeatures.all);
 
@@ -169,28 +129,9 @@ const connection = createConnection(ProposedFeatures.all);
 const documents = new TextDocuments(TextDocument);
 
 connection.onInitialize((params) => {
-    // Perform initial workspace scan: index TwinCAT XML objects directly (real cross-file index),
-    // and also pick up any generated .st files.
     const folders = params.workspaceFolders;
     if (folders && folders.length > 0) {
-        const index = workspaceIndex;
-        workspaceRootPaths.length = 0;
-        // The .plcproj — not the filesystem — defines the project: only its <Compile>d objects are
-        // indexed, so a backup/orphan copy on disk cannot shadow a real object in the name-keyed
-        // index (which silently stole its references from cross-file rename). null = no project found,
-        // so index everything (fresh clone, or a loose folder of TwinCAT files).
-        const includedPaths = collectPlcProjObjectPaths(folders.map(f => uriToFsPath(f.uri)));
-        folders.forEach(f => {
-            const fsPath = uriToFsPath(f.uri);
-            workspaceRootPaths.push(fsPath);
-            try {
-                indexTwinCatDirectory(index, fsPath, includedPaths);
-                indexStDirectory(fsPath, workspaceIndex);
-                indexLibraries(fsPath);
-            } catch (e) {
-                connection.console.error(`Failed to index folder ${fsPath}: ${e.message}`);
-            }
-        });
+        rescan(folders.map(f => uriToFsPath(f.uri)));
     }
 
     return {
@@ -222,8 +163,9 @@ documents.onDidChangeContent((change) => {
     const doc = change.document;
     if (isGeneratedSt(doc.uri)) return; // ignore generated exports
     try {
-        syncDocument(doc.getText(), doc.uri);
-        const diagnostics = provideDiagnostics(doc.getText(), workspaceIndex, doc.uri);
+        const index = workspace.indexForUri(doc.uri);
+        syncDocument(doc.getText(), doc.uri, index);
+        const diagnostics = provideDiagnostics(doc.getText(), index, doc.uri);
         connection.sendDiagnostics({ uri: doc.uri, diagnostics });
     } catch (err) {
         connection.console.error(`Error parsing document: ${err.message}`);
@@ -234,7 +176,7 @@ connection.onCompletion((params) => {
     const doc = documents.get(params.textDocument.uri);
     if (!doc) return [];
     try {
-        return provideCompletions(doc.getText(), params.position, workspaceIndex, doc.uri);
+        return provideCompletions(doc.getText(), params.position, workspace.indexForUri(params.textDocument.uri), doc.uri);
     } catch (e) {
         return [];
     }
@@ -244,7 +186,7 @@ connection.onDefinition((params) => {
     const doc = documents.get(params.textDocument.uri);
     if (!doc) return null;
     try {
-        return provideDefinition(doc.getText(), params.position, workspaceIndex, doc.uri);
+        return provideDefinition(doc.getText(), params.position, workspace.indexForUri(params.textDocument.uri), doc.uri);
     } catch (e) {
         return null;
     }
@@ -254,7 +196,7 @@ connection.onReferences((params) => {
     const doc = documents.get(params.textDocument.uri);
     if (!doc) return [];
     try {
-        return provideReferences(doc.getText(), params.position, workspaceIndex, doc.uri);
+        return provideReferences(doc.getText(), params.position, workspace.indexForUri(params.textDocument.uri), doc.uri);
     } catch (e) {
         return [];
     }
@@ -273,8 +215,9 @@ connection.onDocumentHighlight((params) => {
 // Custom JSON-RPC requests for Monaco Webview bridge
 connection.onRequest('custom/completions', (params) => {
     try {
-        syncDocument(params.code, params.fileUri);
-        return provideCompletions(params.code, params.position, workspaceIndex, params.fileUri);
+        const index = workspace.indexForUri(params.fileUri);
+        syncDocument(params.code, params.fileUri, index);
+        return provideCompletions(params.code, params.position, index, params.fileUri);
     } catch (e) {
         return [];
     }
@@ -282,8 +225,9 @@ connection.onRequest('custom/completions', (params) => {
 
 connection.onRequest('custom/definition', (params) => {
     try {
-        syncDocument(params.code, params.fileUri);
-        return provideDefinition(params.code, params.position, workspaceIndex, params.fileUri);
+        const index = workspace.indexForUri(params.fileUri);
+        syncDocument(params.code, params.fileUri, index);
+        return provideDefinition(params.code, params.position, index, params.fileUri);
     } catch (e) {
         return null;
     }
@@ -291,8 +235,9 @@ connection.onRequest('custom/definition', (params) => {
 
 connection.onRequest('custom/references', (params) => {
     try {
-        syncDocument(params.code, params.fileUri);
-        return provideReferences(params.code, params.position, workspaceIndex, params.fileUri);
+        const index = workspace.indexForUri(params.fileUri);
+        syncDocument(params.code, params.fileUri, index);
+        return provideReferences(params.code, params.position, index, params.fileUri);
     } catch (e) {
         return [];
     }
@@ -304,7 +249,7 @@ connection.onRequest('custom/references', (params) => {
 // the target's file from disk is the whole point (provideReferencesForSymbol does that itself).
 connection.onRequest('custom/referencesForSymbol', (params) => {
     try {
-        return provideReferencesForSymbol(params, workspaceIndex);
+        return provideReferencesForSymbol(params, workspace.indexForUri(params.fileUri));
     } catch (e) {
         return { resolved: false, references: [], declaration: null };
     }
@@ -313,12 +258,12 @@ connection.onRequest('custom/referencesForSymbol', (params) => {
 // References to a symbol inside the TwinCAT non-code objects — visualizations (.TcVIS/.TcVMO), text
 // lists (.TcTLO/.TcGTLO) and task configurations (.TcTTO). This is the other half of a rename: all
 // three name PLC symbols, and a stale one breaks the XAE build. Takes the same by-NAME spec as
-// custom/referencesForSymbol; the files are discovered on demand by walking the workspace roots
-// (rename is rare, so no standing index is kept).
+// custom/referencesForSymbol; the files are discovered on demand, scoped to the symbol's own project
+// so a rename never rewrites a same-named symbol's config objects in a project the user never opened.
 connection.onRequest('custom/configReferencesForSymbol', (params) => {
     try {
-        const configFiles = collectConfigObjectFiles(workspaceRootPaths);
-        return findConfigReferencesForSymbol(params, workspaceIndex, configFiles);
+        const configFiles = workspace.configFilesFor(params.fileUri);
+        return findConfigReferencesForSymbol(params, workspace.indexForUri(params.fileUri), configFiles);
     } catch (e) {
         return { resolved: false, occurrences: [] };
     }
@@ -326,8 +271,9 @@ connection.onRequest('custom/configReferencesForSymbol', (params) => {
 
 connection.onRequest('custom/diagnostics', (params) => {
     try {
-        syncDocument(params.code, params.fileUri);
-        return provideDiagnostics(params.code, workspaceIndex, params.fileUri);
+        const index = workspace.indexForUri(params.fileUri);
+        syncDocument(params.code, params.fileUri, index);
+        return provideDiagnostics(params.code, index, params.fileUri);
     } catch (e) {
         return [];
     }
@@ -335,7 +281,7 @@ connection.onRequest('custom/diagnostics', (params) => {
 
 connection.onRequest('custom/updateDocument', (params) => {
     try {
-        syncDocument(params.code, params.fileUri);
+        syncDocument(params.code, params.fileUri, workspace.indexForUri(params.fileUri));
         return { success: true };
     } catch (e) {
         return { success: false, error: e.message };
@@ -345,9 +291,11 @@ connection.onRequest('custom/updateDocument', (params) => {
 connection.onRequest('custom/updateTypesMap', (params) => {
     try {
         const typesMap = params.typesMap || {};
-        const index = workspaceIndex;
 
         for (const [name, typeInfo] of Object.entries(typesMap)) {
+            // Routed per entry, not once for the whole map: typesMap is workspace-wide, and each
+            // entry's own uri says which project's index it belongs to.
+            const index = workspace.indexForUri(typeInfo.uri);
             // Non-destructive: never clobber a node already indexed from XML/ST with real ranges.
             // The typesMap (stubbed ranges) is only a fallback for symbols we haven't parsed directly.
             if (index[name]) continue;
@@ -396,25 +344,13 @@ connection.onRequest('custom/updateTypesMap', (params) => {
 
 connection.onRequest('custom/reindex', (params) => {
     try {
-        clearWorkspaceIndex(workspaceIndex);
-        clearLibraryNamespaces();
-        clearLibrarySymbols();
         // The converted-file cache keys on mtime, so it self-heals on edits; this drops entries for
         // files that no longer exist (deleted or renamed) rather than letting them accumulate.
         clearStFileCache();
-        const index = workspaceIndex;
         if (params.folders) {
-            workspaceRootPaths.length = 0;
-            // Re-resolve the project object set: a .plcproj edit (a file added, removed or renamed) is
-            // exactly what triggers custom/reindex, so the include set must be rebuilt here too.
-            const includedPaths = collectPlcProjObjectPaths(params.folders.map(f => uriToFsPath(f)));
-            params.folders.forEach(f => {
-                const fsPath = uriToFsPath(f);
-                workspaceRootPaths.push(fsPath);
-                indexTwinCatDirectory(index, fsPath, includedPaths);
-                indexStDirectory(fsPath, workspaceIndex);
-                indexLibraries(fsPath);
-            });
+            // A .plcproj edit (a file added, removed or renamed) is exactly what triggers a reindex,
+            // so the partition itself is rebuilt here — a new project must produce a new index.
+            rescan(params.folders.map(f => uriToFsPath(f)));
         }
         return { success: true };
     } catch (e) {
@@ -448,8 +384,7 @@ connection.onRequest('custom/libraries', () => {
 // extension when a TwinCAT file is created, changed, or saved.
 connection.onRequest('custom/indexXmlDocument', (params) => {
     try {
-        const index = workspaceIndex;
-        indexXmlObject(index, params.xml, params.fileUri);
+        indexXmlObject(workspace.indexForUri(params.fileUri), params.xml, params.fileUri);
         return { success: true };
     } catch (e) {
         return { success: false, error: e.message };

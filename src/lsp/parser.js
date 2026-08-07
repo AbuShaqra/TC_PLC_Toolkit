@@ -1223,8 +1223,12 @@ function parseAndIndexDocument(code, fileUri, index = workspaceSymbolIndex) {
  * Scans directories recursively for standalone .st files to index. The generated-export folder
  * (ST_Files) is skipped: those are derived from the XML objects and would shadow them in the index.
  * @param {string} dirPath Absolute folder path.
+ * @param {Object} [index] Fallback index, used when no router is supplied.
+ * @param {(fsPath: string) => Object} [indexForFile] Routes a file to its owning project's index. A
+ *   workspace with several .plcproj files has one index per project, and a loose .st belongs to the
+ *   project whose directory contains it.
  */
-function indexStDirectory(dirPath, index = workspaceSymbolIndex) {
+function indexStDirectory(dirPath, index = workspaceSymbolIndex, indexForFile = null) {
     if (!fs.existsSync(dirPath)) return;
     let entries;
     try {
@@ -1239,12 +1243,12 @@ function indexStDirectory(dirPath, index = workspaceSymbolIndex) {
             if (entry.name === '.git' || entry.name === 'node_modules' || entry.name === '.vscode' || entry.name === 'ST_Files') {
                 continue;
             }
-            indexStDirectory(fullPath, index);
+            indexStDirectory(fullPath, index, indexForFile);
         } else if (entry.isFile() && entry.name.toLowerCase().endsWith('.st')) {
             try {
                 const code = fs.readFileSync(fullPath, 'utf8');
                 const fileUri = 'file:///' + fullPath.replace(/\\/g, '/');
-                parseAndIndexDocument(code, fileUri, index);
+                parseAndIndexDocument(code, fileUri, indexForFile ? indexForFile(fullPath) : index);
             } catch (err) {
                 console.error(`Failed to parse and index ${entry.name}:`, err);
             }
