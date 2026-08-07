@@ -131,6 +131,14 @@ assert(map.projects.size === 2, 'the map holds two projects');
 assert(!map.isEmpty(), 'a root with projects is not empty');
 assert(map.get(keyA).name === 'LineA', 'a project carries its display name');
 
+// The include set decides what gets indexed at all, so a extension missing here is a symbol the
+// whole language layer cannot see. Pin it against xmlIndexer's set rather than against a literal
+// list — a literal just re-encodes whatever is there, and catches no drift in either direction.
+const { TWINCAT_EXTS: MAP_EXTS } = require('../src/lsp/projectMap');
+const { TWINCAT_EXTS: INDEXER_EXTS } = require('../src/lsp/xmlIndexer');
+assert(INDEXER_EXTS && [...MAP_EXTS].sort().join(',') === [...INDEXER_EXTS].sort().join(','),
+    `projectMap indexes exactly the extensions xmlIndexer knows (map: ${[...MAP_EXTS].sort().join(' ')} | indexer: ${INDEXER_EXTS ? [...INDEXER_EXTS].sort().join(' ') : 'NOT EXPORTED'})`);
+
 // --- ownership -----------------------------------------------------------------------------
 assert(map.projectFor(path.join(A, 'POUs', 'MAIN.TcPOU')) === keyA, "LineA's MAIN routes to LineA");
 assert(map.projectFor(path.join(B, 'POUs', 'MAIN.TcPOU')) === keyB, "LineB's MAIN routes to LineB");
@@ -179,6 +187,8 @@ process.exit(errors > 0 ? 1 : 0);
 Run: `node test/test_project_map.js`
 Expected: FAIL — `Cannot find module '../src/lsp/projectMap'`.
 
+Note: `src/lsp/xmlIndexer.js` does not currently export `TWINCAT_EXTS`. Add it to that file's `module.exports` so the cross-check assertion above can read it — that export is the only change this task makes outside its two files.
+
 - [ ] **Step 3: Write the implementation**
 
 Create `src/lsp/projectMap.js`:
@@ -207,8 +217,13 @@ Create `src/lsp/projectMap.js`:
 const fs = require('fs');
 const path = require('path');
 
-/** TwinCAT object extensions a `.plcproj` can `<Compile>` (lower-cased). */
-const TWINCAT_EXTS = new Set(['.tcpou', '.tcgvl', '.tcdut', '.tcio']);
+/**
+ * TwinCAT object extensions a `.plcproj` can `<Compile>` (lower-cased). MUST stay identical to
+ * `xmlIndexer.js`'s set — this one decides what gets indexed, and a name missing here is a symbol the
+ * whole language layer cannot see. `.tctleo` (EnumerationTextList) declares a real ST enum, so it is
+ * a compilable object like any other; `test_project_map.js` pins the two sets against each other.
+ */
+const TWINCAT_EXTS = new Set(['.tcpou', '.tcgvl', '.tcdut', '.tcio', '.tctleo']);
 
 /** Directories that never hold a `.plcproj`: VCS, tooling, vendor archives, generated/build output. */
 const SKIP_DIRS = new Set([
@@ -305,9 +320,9 @@ function readCompileIncludes(plcprojPath) {
 /**
  * Builds the workspace's project partition.
  * @param {Array<string>} roots Absolute workspace-root paths.
- * @returns {{projects: Map<string, Project>, isEmpty: function(): boolean, keys: function(): string[],
- *   get: function(string): Project|null, projectFor: function(string): string,
- *   ownersOf: function(string): string[], displayName: function(string): string}}
+ * @returns {{projects: Map<string, Project>, isEmpty: () => boolean, keys: () => string[],
+ *   get: (p: string) => Project|null, projectFor: (p: string) => string,
+ *   ownersOf: (p: string) => string[], displayName: (p: string) => string}}
  */
 function createProjectMap(roots) {
     const projects = new Map();
@@ -480,7 +495,7 @@ function objectPath(projectDir, relative) {
 /**
  * Builds the two-project fixture in a temp directory.
  * @returns {{root: string, lineA: string, lineB: string, plcprojA: string, plcprojB: string,
- *   cleanup: function(): void}}
+ *   cleanup: () => void}}
  */
 function buildTwoProjectFixture() {
     const root = path.join(os.tmpdir(), 'tc_multiproj_' + process.pid + '_' + Date.now());
@@ -643,7 +658,7 @@ In `src/lsp/parser.js:1227`, replace the signature and the two recursion/index s
  * (ST_Files) is skipped: those are derived from the XML objects and would shadow them in the index.
  * @param {string} dirPath Absolute folder path.
  * @param {Object} [index] Fallback index, used when no router is supplied.
- * @param {function(string): Object} [indexForFile] Routes a file to its owning project's index. A
+ * @param {(p: string) => Object} [indexForFile] Routes a file to its owning project's index. A
  *   workspace with several .plcproj files has one index per project, and a loose .st belongs to the
  *   project whose directory contains it.
  */
@@ -758,10 +773,10 @@ function collectConfigObjectFiles(roots) {
  * @property {Object|null} projectMap The partition (see projectMap.js), or null before a scan.
  * @property {Map<string, Object>} indexes Project key → symbol index.
  * @property {Array<string>} rootPaths The workspace roots this was scanned from.
- * @property {function(string): Object} indexForKey
- * @property {function(string): Object} indexForUri
- * @property {function(string): Object|null} projectForUri
- * @property {function(string): Array<string>} configFilesFor
+ * @property {(p: string) => Object} indexForKey
+ * @property {(p: string) => Object} indexForUri
+ * @property {(p: string) => Object|null} projectForUri
+ * @property {(p: string) => Array<string>} configFilesFor
  */
 
 /**
@@ -821,8 +836,8 @@ function createEmptyWorkspace() {
 /**
  * Discovers the projects under the given roots and indexes each one's objects into its own index.
  * @param {Array<string>} rootPaths Absolute workspace-root paths.
- * @param {{log?: function(string): void, error?: function(string): void,
- *   indexLibraries?: function(string, Object): void}} [deps] Injected side effects. `indexLibraries`
+ * @param {{log?: (p: string) => void, error?: (p: string) => void,
+ *   indexLibraries?: (dir: string, index: Object) => void}} [deps] Injected side effects. `indexLibraries`
  *   is stubbed by the harnesses that only care about the partition.
  * @returns {Workspace}
  */
@@ -864,7 +879,11 @@ function scanWorkspace(rootPaths, deps) {
     const routeFile = (fsPath) => workspace.indexForKey(projectMap.projectFor(fsPath));
     for (const root of roots) {
         try {
-            indexStDirectory(root, workspace.indexForKey(LOOSE_PROJECT_KEY), routeFile);
+            // The fallback index is dead on this path (routeFile is always supplied), but JS still
+            // evaluates the argument — passing indexForKey(LOOSE_PROJECT_KEY) here would eagerly
+            // create an empty (loose) entry in every single-project workspace. routeFile creates it
+            // lazily, and only when a file genuinely belongs to no project.
+            indexStDirectory(root, {}, routeFile);
         } catch (e) {
             error(`Failed to index .st files under ${root}: ${e.message}`);
         }
@@ -1510,8 +1529,8 @@ const TWINCAT_FILE_EXTS = /\.(tcpou|tcgvl|tcdut|tcio|st)$/i;
 /**
  * The label for a file, or '' when there is nothing worth showing.
  * Pure — no `vscode` use — so it is unit-testable.
- * @param {{projects: Map<string, Object>, projectFor: function(string): string,
- *   displayName: function(string): string}} projectMap The workspace partition.
+ * @param {{projects: Map<string, Object>, projectFor: (p: string) => string,
+ *   displayName: (p: string) => string}} projectMap The workspace partition.
  * @param {string} fsPath Absolute file path.
  * @returns {string} Display name, or '' for a workspace with fewer than two projects.
  */
@@ -1524,9 +1543,9 @@ function projectLabel(projectMap, fsPath) {
 /**
  * Creates the status-bar item and returns a handle the extension refreshes on file change.
  * @param {vscode.ExtensionContext} context Extension context (the item is registered for disposal).
- * @param {function(): Object|null} getProjectMap Supplies the current partition; re-read on every
+ * @param {() => Object|null} getProjectMap Supplies the current partition; re-read on every
  *   refresh because a `.plcproj` edit rebuilds it.
- * @returns {{refresh: function(vscode.Uri|null): void, dispose: function(): void}}
+ * @returns {{refresh: (uri: vscode.Uri|null) => void, dispose: () => void}}
  */
 function createProjectStatusBar(context, getProjectMap) {
     const item = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
