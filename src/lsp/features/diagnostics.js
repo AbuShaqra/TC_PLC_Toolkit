@@ -456,7 +456,7 @@ function provideDiagnostics(code, symbolIndex, fileUri) {
             // namespace can never resolve — flagging it would violate the conservative rule.
             // Scoped to the undeclared check: member chains rooted at a namespace are already safe
             // because checkMemberAccess only flags members of a type it could resolve.
-            if (isLibraryNamespace(tok.value)) return;
+            if (isLibraryNamespace(tok.value, symbolIndex)) return;
 
             // If the identifier is a declaration itself, skip
             const isDecl = fileDeclRanges.some(r => 

@@ -684,10 +684,11 @@ function pushProjectSymbols(out, symbolIndex) {
  * The names come from libsymbols.js, which keeps the .plcproj's own spelling; libraries.js lower-
  * cases its registry, so it is only the fallback for a workspace where solely it was indexed.
  * @param {Array<Object>} out Output items.
+ * @param {Object} [index] The project's symbol index — its library registry. Omit for the default.
  */
-function pushLibraryNamespaces(out) {
-    const spelled = getLibraryNamespaceNames();
-    const names = spelled.length ? spelled : getLibraryNamespaces();
+function pushLibraryNamespaces(out, index) {
+    const spelled = getLibraryNamespaceNames(index);
+    const names = spelled.length ? spelled : getLibraryNamespaces(index);
     names.forEach(ns => out.push({ label: ns, kind: 9 /* Module */, detail: `Library : ${ns}` }));
 }
 
@@ -699,7 +700,7 @@ function pushTypeNames(out, symbolIndex) {
         if (!node || !TYPE_NODE_KINDS.has(node.type)) continue;
         out.push({ label: key, kind: 7, detail: `${node.type} : ${key}` });
     }
-    pushLibraryNamespaces(out);
+    pushLibraryNamespaces(out, symbolIndex);
 }
 
 /**
@@ -733,20 +734,21 @@ function pushTypeNames(out, symbolIndex) {
  * machine and the `.tmc` only appears after a build, so both are evidence of presence, never of
  * absence — filtering on either would hide real types on the machines that lack them.
  * @param {string} namespace The head of the dotted path under the caret.
+ * @param {Object} [index] The project's symbol index — its library registry. Omit for the default.
  * @returns {Array<Object>} Completion items (possibly empty).
  */
-function libraryNamespaceMembers(namespace) {
-    const spelled = getLibraryNamespaceNames().find(n => n.toLowerCase() === namespace.toLowerCase());
+function libraryNamespaceMembers(namespace, index) {
+    const spelled = getLibraryNamespaceNames(index).find(n => n.toLowerCase() === namespace.toLowerCase());
     const label = spelled || namespace;
 
     // The .tmc's real types for this namespace, keyed for an O(1) test per candidate name.
     const known = new Map();
-    getTypeSystemNamespaceTypes(namespace).forEach(t => known.set(t.name.toLowerCase(), t));
-    const declared = getBrowserCacheNamespaceTypes(namespace);
-    const isMember = name => isBrowserCacheMemberName(namespace, name);
+    getTypeSystemNamespaceTypes(namespace, index).forEach(t => known.set(t.name.toLowerCase(), t));
+    const declared = getBrowserCacheNamespaceTypes(namespace, index);
+    const isMember = name => isBrowserCacheMemberName(namespace, name, index);
 
     const items = [];
-    for (const name of getNamespaceSymbols(namespace)) {
+    for (const name of getNamespaceSymbols(namespace, index)) {
         if (STANDARD_TYPES.has(name.toUpperCase())) continue;
         items.push(rankNamespaceSymbol(name, label, known, declared, isMember));
     }
@@ -801,17 +803,22 @@ function walkLibraryMemberPath(node, segments, symbolIndex) {
             if (member) break;
         }
         if (!member) return null;
-        current = getLibraryTypeNode(bareTypeName(member.type));
+        current = getLibraryTypeNode(bareTypeName(member.type), symbolIndex);
     }
     return current;
 }
 
-/** True when the name is a library namespace the project references (either spelling source). */
-function isLibraryNamespace(name) {
+/**
+ * True when the name is a library namespace the project references (either spelling source).
+ * @param {string} name Identifier to test.
+ * @param {Object} [index] The project's symbol index — its library registry. Omit for the default.
+ * @returns {boolean}
+ */
+function isLibraryNamespace(name, index) {
     if (!name) return false;
     const key = String(name).toLowerCase();
-    return getLibraryNamespaceNames().some(n => n.toLowerCase() === key)
-        || getLibraryNamespaces().some(n => String(n).toLowerCase() === key);
+    return getLibraryNamespaceNames(index).some(n => n.toLowerCase() === key)
+        || getLibraryNamespaces(index).some(n => String(n).toLowerCase() === key);
 }
 
 /**
@@ -823,10 +830,11 @@ function isLibraryNamespace(name) {
  * reported as a plain library symbol — the same honesty as the outer namespace's untiered tier.
  * @param {string} outer The referenced namespace under the caret's head.
  * @param {string} inner The nested namespace segment.
+ * @param {Object} [index] The project's symbol index — its library registry. Omit for the default.
  * @returns {Array<Object>} Completion items (empty when that library is not installed).
  */
-function nestedNamespaceMembers(outer, inner) {
-    const symbols = getNestedNamespaceSymbols(inner);
+function nestedNamespaceMembers(outer, inner, index) {
+    const symbols = getNestedNamespaceSymbols(inner, index);
     if (symbols.length === 0) return [];
     const items = [];
     for (const name of symbols) {
@@ -1176,7 +1184,7 @@ function provideCompletions(code, position, symbolIndex, fileUri) {
         // index, which therefore still wins on a name collision, and *before* the library-type branch
         // below, so a namespace can never be mistaken for a same-named type.
         if (parts.length === 1) {
-            const libItems = libraryNamespaceMembers(parts[0]);
+            const libItems = libraryNamespaceMembers(parts[0], symbolIndex);
             if (libItems.length > 0) return libItems;
         }
 
@@ -1186,8 +1194,8 @@ function provideCompletions(code, position, symbolIndex, fileUri) {
         // which is what keeps an ordinary member path (`stAxis.MotionState.▮`) from ever reaching
         // the archive store, and confined to a two-part head: past that a segment is a symbol, and
         // guessing members for it is exactly the noise this must not produce.
-        if (parts.length === 2 && isLibraryNamespace(parts[0])) {
-            const nested = nestedNamespaceMembers(parts[0], parts[1]);
+        if (parts.length === 2 && isLibraryNamespace(parts[0], symbolIndex)) {
+            const nested = nestedNamespaceMembers(parts[0], parts[1], symbolIndex);
             if (nested.length > 0) return nested;
         }
 

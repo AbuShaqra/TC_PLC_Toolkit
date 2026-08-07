@@ -29,10 +29,57 @@ const fs = require('fs');
 const path = require('path');
 
 /**
- * Known library namespaces, stored lower-cased: Structured Text is case-insensitive.
+ * The registry key on a symbol index. A `Symbol` deliberately: `Object.keys()`, `for…in` and
+ * `JSON.stringify` all skip symbol-keyed properties, and the index is iterated by key in several hot
+ * paths (the reference scan, the GVL-global lookup in types.js). Attaching the registry to the index
+ * therefore costs those loops nothing and needs no signature change where the index is already in
+ * hand — notably registerLibrarySymbolNodes(index, code).
+ */
+const NAMESPACE_REGISTRY = Symbol.for('twincat.libraryNamespaces');
+
+/**
+ * Known library namespaces for the DEFAULT (unscoped) registry, stored lower-cased: Structured Text
+ * is case-insensitive. This module global remains the fallback for callers with no index — the
+ * standalone test harnesses, and any single-project path that has not been threaded yet.
  * @type {Set<string>}
  */
 const libraryNamespaces = new Set();
+
+/**
+ * The namespace registry for a symbol index — READ side. Never mutates `index`: when this exact
+ * index has never had its own registry created (nothing was ever indexed *into* it — see
+ * ensureRegistryFor, the write-side twin), this falls back to the shared default registry rather than
+ * silently reading an empty one.
+ *
+ * That fallback is what keeps ~15 pre-existing standalone harnesses working unchanged: they populate
+ * the namespace registry with NO index (the default), then exercise a feature (provideDiagnostics,
+ * provideCompletions) against a real, separately-constructed symbol index that was never itself
+ * indexed. In production this branch is never taken — server.js always indexes a project's own index
+ * (see ensureRegistryFor) before any request can read from it, so a real project's registry always
+ * exists by the time isLibraryNamespace/getLibraryNamespaces run.
+ * @param {Object} [index] A project's symbol index. Omit for the default registry.
+ * @returns {Set<string>} The lower-cased namespace set for that project (or the default's).
+ */
+function registryFor(index) {
+    if (!index) return libraryNamespaces;
+    return index[NAMESPACE_REGISTRY] || libraryNamespaces;
+}
+
+/**
+ * The namespace registry for a symbol index — WRITE side: creates and attaches this index's OWN
+ * registry on first use, even if the write that follows adds nothing to it (a project that
+ * references no libraries still gets an empty registry of its own, so a later read is correctly
+ * isolated rather than falling back to the default). Every function that populates or clears the
+ * registry must go through this, never registryFor — reading-and-creating would let one project's
+ * write silently land on the shared default instead of its own index.
+ * @param {Object} [index] A project's symbol index. Omit for the default registry.
+ * @returns {Set<string>} The lower-cased namespace set for that project.
+ */
+function ensureRegistryFor(index) {
+    if (!index) return libraryNamespaces;
+    if (!index[NAMESPACE_REGISTRY]) index[NAMESPACE_REGISTRY] = new Set();
+    return index[NAMESPACE_REGISTRY];
+}
 
 /**
  * Directories that never hold the project's own .plcproj: vendored library archives, generated ST
@@ -96,13 +143,16 @@ function collectPlcProjFiles(dirPath, out) {
 }
 
 /**
- * Scans a workspace folder for .plcproj files and unions their library namespaces into the
- * registry. Additive: call clearLibraryNamespaces() first to rebuild from scratch.
- * @param {string} rootDir Absolute folder path.
+ * Scans a workspace folder for .plcproj files and unions their library namespaces into the given
+ * project's registry. Additive: call clearLibraryNamespaces(index) first to rebuild from scratch.
+ * @param {string} rootDir Absolute folder path — for a scoped call, the PROJECT directory, so only
+ *   that project's .plcproj is read.
+ * @param {Object} [index] The project's symbol index. Omit for the default registry.
  * @returns {string[]} The namespaces found in this scan (as written in the XML).
  */
-function indexLibraryNamespaces(rootDir) {
+function indexLibraryNamespaces(rootDir, index) {
     if (!rootDir || !fs.existsSync(rootDir)) return [];
+    const registry = ensureRegistryFor(index);
 
     const found = [];
     const files = [];
@@ -117,7 +167,7 @@ function indexLibraryNamespaces(rootDir) {
         }
         for (const name of extractNamespaces(xml)) {
             found.push(name);
-            libraryNamespaces.add(name.toLowerCase());
+            registry.add(name.toLowerCase());
         }
     }
     return found;
@@ -126,26 +176,31 @@ function indexLibraryNamespaces(rootDir) {
 /**
  * True if the name is a library namespace head declared by a .plcproj (case-insensitive).
  * @param {string} name Identifier to test.
+ * @param {Object} [index] The project's symbol index. Omit for the default registry.
  * @returns {boolean}
  */
-function isLibraryNamespace(name) {
+function isLibraryNamespace(name, index) {
     if (!name) return false;
-    return libraryNamespaces.has(String(name).toLowerCase());
+    return registryFor(index).has(String(name).toLowerCase());
 }
 
 /**
  * Returns the registered library namespaces (lower-cased).
+ * @param {Object} [index] The project's symbol index. Omit for the default registry.
  * @returns {string[]}
  */
-function getLibraryNamespaces() {
-    return Array.from(libraryNamespaces);
+function getLibraryNamespaces(index) {
+    return Array.from(registryFor(index));
 }
 
 /**
- * Empties the registry. Used by custom/reindex and by the test harnesses.
+ * Empties the registry. Used by custom/reindex and by the test harnesses. Write-side (ensures the
+ * index has its OWN registry first): clearing must never accidentally clear the shared default
+ * because this specific index had not been indexed yet.
+ * @param {Object} [index] The project's symbol index. Omit for the default registry.
  */
-function clearLibraryNamespaces() {
-    libraryNamespaces.clear();
+function clearLibraryNamespaces(index) {
+    ensureRegistryFor(index).clear();
 }
 
 module.exports = {
@@ -153,5 +208,6 @@ module.exports = {
     indexLibraryNamespaces,
     isLibraryNamespace,
     getLibraryNamespaces,
-    clearLibraryNamespaces
+    clearLibraryNamespaces,
+    NAMESPACE_REGISTRY
 };

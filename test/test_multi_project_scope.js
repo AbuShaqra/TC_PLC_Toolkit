@@ -104,6 +104,33 @@ assert(ws.indexForUri('file:///' + mainA.replace(/\\/g, '/')) === indexes.get(ke
 assert(ws.indexForUri('file:///' + mainB.replace(/\\/g, '/')) === indexes.get(keyB),
     "the scan routes a request for LineB's MAIN to LineB's index");
 
+// --- library namespaces are per project ------------------------------------------------------
+// LineB additionally references a library LineA does not. A namespace known only to B must not
+// silence B's namespace head inside A (that is a diagnostic suppressed on the wrong project).
+const { indexLibraryNamespaces, isLibraryNamespace, clearLibraryNamespaces } = require('../src/lsp/libraries');
+
+const plcprojB = fs.readFileSync(fx.plcprojB, 'utf8').replace(
+    '</Project>',
+    `  <ItemGroup>
+    <PlaceholderReference Include="Tc2_LineBOnly">
+      <DefaultResolution>Tc2_LineBOnly, 1.0.0.0 (Beckhoff Automation GmbH)</DefaultResolution>
+      <Namespace>Tc2_LineBOnly</Namespace>
+    </PlaceholderReference>
+  </ItemGroup>
+</Project>`);
+fs.writeFileSync(fx.plcprojB, plcprojB);
+
+const idxA = indexes.get(keyA);
+const idxB = indexes.get(keyB);
+clearLibraryNamespaces(idxA);
+clearLibraryNamespaces(idxB);
+indexLibraryNamespaces(path.dirname(fx.plcprojA), idxA);
+indexLibraryNamespaces(path.dirname(fx.plcprojB), idxB);
+
+assert(isLibraryNamespace('Tc2_LineBOnly', idxB), "LineB knows its own library namespace");
+assert(!isLibraryNamespace('Tc2_LineBOnly', idxA),
+    "LineA does NOT know LineB's library namespace (registries are per project)");
+
 fx.cleanup();
 console.log(`\n--- MULTI-PROJECT SCOPE TESTS COMPLETE with ${errors} error(s) ---`);
 process.exit(errors > 0 ? 1 : 0);

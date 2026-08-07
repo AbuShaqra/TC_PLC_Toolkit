@@ -67,21 +67,23 @@ function rescan(rootPaths) {
  *
  * The harvested names are NOT put into the symbol index here — that happens per document, in
  * syncDocument(), so the index stays at project scale.
- * @param {string} fsPath Absolute folder path.
- * @param {Object} [index] The owning project's symbol index. Unused for now — the registries below
- *   are still workspace-global; per-project library registries land in a later change.
+ * @param {string} fsPath Absolute folder path — the PROJECT directory, so only that project's own
+ *   .plcproj, archives and .tmc are read.
+ * @param {Object} [index] The owning project's symbol index. Every registry below is attached to it
+ *   (see libraries.js / libsymbols.js registryFor / libRegistryFor), so two projects' libraries never
+ *   union — each project stays quiet only about the libraries it actually references.
  */
 function indexLibraries(fsPath, index) {
-    indexLibraryNamespaces(fsPath);
-    const stats = indexLibrarySymbols(fsPath);
-    const tmc = indexTypeSystem(fsPath);
+    indexLibraryNamespaces(fsPath, index);
+    const stats = indexLibrarySymbols(fsPath, index);
+    const tmc = indexTypeSystem(fsPath, index);
     // Signatures merge AFTER the `.tmc`, so a `.tmc` type with real members wins over a signature's
     // bare-name entry (see libsymbols.js indexLibrarySignaturesFromXml). A project with no generated
     // library-signatures.xml gets zeroed stats and no registry change.
-    const sig = indexLibrarySignatures(fsPath);
+    const sig = indexLibrarySignatures(fsPath, index);
     // Browsercache enrichment runs LAST: it adds method/property NAMES to the FB/interface types the
     // signatures and `.tmc` have already filed under a namespace (see libsymbols.js indexBrowserCache).
-    const bc = indexBrowserCache(fsPath);
+    const bc = indexBrowserCache(fsPath, index);
     if (stats.archives > 0 || stats.failed > 0 || tmc.files > 0 || sig.files > 0) {
         connection.console.log(
             `Library symbols: ${stats.symbols} from ${stats.archives} archive(s) ` +
@@ -372,9 +374,11 @@ connection.onRequest('custom/setDiagnosticsConfig', (params) => {
 // Answered from here rather than read directly by the extension host: the catalog is a by-product of
 // an index that costs ~32k symbols and ~50 MB of archive reads, and duplicating that in a second
 // process would pay for it twice.
-connection.onRequest('custom/libraries', () => {
+connection.onRequest('custom/libraries', (params) => {
     try {
-        return getLibraryCatalog();
+        // The catalog is per project — two projects reference different libraries. The extension
+        // passes the active file so the view shows that project's libraries.
+        return getLibraryCatalog(workspace.indexForUri((params && params.fileUri) || ''));
     } catch (e) {
         return [];
     }
