@@ -1,6 +1,12 @@
 /**
  * @file test_lsp_types_sync.js
- * @description Test script to verify synchronization of XML typesCache map with the LSP symbol index.
+ * @description Defensive regression test: completions and go-to-definition must still resolve
+ * correctly through a symbol-index node that carries only a stubbed range (no real declaration
+ * position), not just through nodes `xmlIndexer.js` parses with real ranges from source. No
+ * current indexer builds stub-ranged nodes any more — the mechanism that used to (a workspace
+ * crawl feeding `server.js`'s `custom/updateTypesMap` handler) was removed as unscoped and
+ * redundant (see `docs/superpowers/plans/2026-08-06-project-scoped-index.md`, Task 5) — so this
+ * harness constructs stub nodes directly and asserts the resolution path still tolerates them.
  */
 
 const { clearWorkspaceIndex, parseAndIndexDocument, getWorkspaceSymbolIndex } = require('../src/lsp/parser');
@@ -8,8 +14,10 @@ const { provideCompletions, provideDefinition } = require('../src/lsp/features')
 
 console.log("--- STARTING LSP XML TYPES SYNCHRONIZATION TESTS ---");
 
-// Mock typesMap populated from typesCache scanning XML files
-const mockTypesMap = {
+// Hand-built symbol data, standing in for what an XML-derived index entry looks like — deliberately
+// NOT run through xmlIndexer.js, so every range below stays a stub rather than a real declaration
+// position.
+const mockStubTypeData = {
     'FB_Power': {
         uri: 'file:///c:/mock_project/FB_Power.TcPOU',
         type: 'FUNCTION_BLOCK',
@@ -34,10 +42,11 @@ const mockTypesMap = {
     }
 };
 
-// 1. Simulate server.js receiving custom/updateTypesMap and registering XML types in symbol index
-function simulateUpdateTypesMap(typesMap) {
+// 1. Register the mock data directly into the symbol index, each entry stub-ranged exactly as the
+// now-removed custom/updateTypesMap handler used to build them — the shape this test still guards.
+function registerStubRangedSymbols(typeData) {
     const index = getWorkspaceSymbolIndex();
-    for (const [name, typeInfo] of Object.entries(typesMap)) {
+    for (const [name, typeInfo] of Object.entries(typeData)) {
         index[name] = {
             name: name,
             type: typeInfo.type,
@@ -78,10 +87,10 @@ function simulateUpdateTypesMap(typesMap) {
 }
 
 clearWorkspaceIndex();
-simulateUpdateTypesMap(mockTypesMap);
+registerStubRangedSymbols(mockStubTypeData);
 
 const index = getWorkspaceSymbolIndex();
-console.log("Symbols indexed from GVL/POU XML cache:", Object.keys(index));
+console.log("Stub-ranged symbols registered:", Object.keys(index));
 
 // 2. Parse a mock ST document containing an instance of the XML FB
 const testCode = `FUNCTION_BLOCK FB_Automatic
