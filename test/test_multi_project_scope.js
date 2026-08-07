@@ -198,6 +198,47 @@ assert(union.length >= catalogB.length,
 assert(!catalogA.some(e => e.namespace.toLowerCase() === 'tc2_linebonly'),
     "LineA's own (non-union) catalog does NOT include LineB's namespace — narrowing still works");
 
+// --- a rename's config scan never leaves its own project --------------------------------------
+// The sample ships XAE's PlcTask.TcTTO, which names MAIN in a <PouCall>; both copies have one.
+// Before per-project indexes, renaming the MAIN that won the flat index rewrote BOTH task files
+// (measured: 2 occurrences, one of them in the other project), while renaming the MAIN that lost
+// resolved to nothing at all and silently skipped the config update.
+const { findConfigReferencesForSymbol } = require('../src/lsp/features');
+
+const uriA = 'file:///' + mainA.replace(/\\/g, '/');
+const uriB = 'file:///' + mainB.replace(/\\/g, '/');
+
+// Both directions must now resolve — neither project is a "loser" any more.
+const fromA = findConfigReferencesForSymbol(
+    { rootName: 'MAIN', fileUri: uriA }, ws.indexForUri(uriA), ws.configFilesFor(uriA));
+const fromB = findConfigReferencesForSymbol(
+    { rootName: 'MAIN', fileUri: uriB }, ws.indexForUri(uriB), ws.configFilesFor(uriB));
+
+assert(fromA.resolved, "renaming LineA's MAIN resolves (the identity guard no longer rejects it)");
+assert(fromB.resolved, "renaming LineB's MAIN resolves");
+assert(fromA.occurrences.length > 0, `LineA's task config is found (got ${fromA.occurrences.length})`);
+assert(fromA.occurrences.every(o => /LineA/i.test(o.uri)),
+    `renaming LineA's MAIN touches only LineA (leaked: ${fromA.occurrences.filter(o => !/LineA/i.test(o.uri)).map(o => o.uri).join(', ')})`);
+assert(fromB.occurrences.every(o => /LineB/i.test(o.uri)),
+    `renaming LineB's MAIN touches only LineB (leaked: ${fromB.occurrences.filter(o => !/LineB/i.test(o.uri)).map(o => o.uri).join(', ')})`);
+
+// The scoping is in configFilesFor, so assert it directly too — a future refactor that widens the
+// walk would still pass the assertions above by luck if the matcher happened not to hit.
+const filesA = ws.configFilesFor(uriA);
+assert(filesA.length > 0, `LineA has config objects to scan (got ${filesA.length})`);
+assert(filesA.every(f => /LineA/i.test(f)),
+    `configFilesFor never offers another project's files (leaked: ${filesA.filter(f => !/LineA/i.test(f)).join(', ')})`);
+
+// And pin the hazard: handed BOTH projects' files, the matcher does cross over. This is why the
+// scoping must live in the file-collection step and not be left to the matcher.
+const unscoped = findConfigReferencesForSymbol(
+    { rootName: 'MAIN', fileUri: uriB },
+    ws.indexForUri(uriB),
+    filesA.concat(ws.configFilesFor(uriB))
+);
+assert(unscoped.occurrences.some(o => /LineA/i.test(o.uri)),
+    'sanity: an UNSCOPED file list does reach the other project — the guard above is load-bearing');
+
 fx.cleanup();
 console.log(`\n--- MULTI-PROJECT SCOPE TESTS COMPLETE with ${errors} error(s) ---`);
 process.exit(errors > 0 ? 1 : 0);
