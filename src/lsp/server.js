@@ -291,60 +291,6 @@ connection.onRequest('custom/updateDocument', (params) => {
     }
 });
 
-connection.onRequest('custom/updateTypesMap', (params) => {
-    try {
-        const typesMap = params.typesMap || {};
-
-        for (const [name, typeInfo] of Object.entries(typesMap)) {
-            // Routed per entry, not once for the whole map: typesMap is workspace-wide, and each
-            // entry's own uri says which project's index it belongs to.
-            const index = workspace.indexForUri(typeInfo.uri);
-            // Non-destructive: never clobber a node already indexed from XML/ST with real ranges.
-            // The typesMap (stubbed ranges) is only a fallback for symbols we haven't parsed directly.
-            if (index[name]) continue;
-            index[name] = {
-                name: name,
-                type: typeInfo.type,
-                uri: typeInfo.uri || '',
-                range: { startLine: 1, startCol: 1, endLine: 1, endCol: 1 },
-                nameRange: { startLine: 1, startCol: 1, endLine: 1, endCol: 1 },
-                extends: null,
-                implements: [],
-                variables: (typeInfo.variables || []).map(v => ({
-                    name: v.name,
-                    type: v.type,
-                    scope: 'VAR',
-                    range: { startLine: 1, startCol: 1, endLine: 1, endCol: 1 }
-                })),
-                methods: (typeInfo.methods || []).map(mName => ({
-                    name: mName,
-                    variables: [],
-                    returnType: 'BOOL',
-                    declRange: { startLine: 1, startCol: 1, endLine: 1, endCol: 1 },
-                    nameRange: { startLine: 1, startCol: 1, endLine: 1, endCol: 1 },
-                    implRange: null
-                })),
-                properties: (typeInfo.properties || []).map(pName => ({
-                    name: pName,
-                    type: 'BOOL',
-                    declRange: { startLine: 1, startCol: 1, endLine: 1, endCol: 1 },
-                    nameRange: { startLine: 1, startCol: 1, endLine: 1, endCol: 1 },
-                    getAccessor: null,
-                    setAccessor: null
-                })),
-                actions: (typeInfo.actions || []).map(aName => ({
-                    name: aName,
-                    nameRange: { startLine: 1, startCol: 1, endLine: 1, endCol: 1 },
-                    implRange: null
-                }))
-            };
-        }
-        return { success: true };
-    } catch (e) {
-        return { success: false, error: e.message };
-    }
-});
-
 connection.onRequest('custom/reindex', (params) => {
     try {
         // The converted-file cache keys on mtime, so it self-heals on edits; this drops entries for

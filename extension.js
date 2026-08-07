@@ -20,12 +20,6 @@ const { TwinCatLibraryTreeDataProvider } = require('./src/libraryTreeProvider');
 // Lives under media/ because the webview loads it with a <script> tag; it is written to require()
 // cleanly as well so both editors fold ST identically from one copy of the algorithm.
 const stFolding = require('./media/stFolding');
-const {
-    getWorkspaceTypesCache,
-    setWorkspaceTypesCache,
-    indexWorkspaceTypes,
-    updateCacheForFile
-} = require('./src/typesCache');
 const { LanguageClient, TransportKind } = require('vscode-languageclient/node');
 
 let client;
@@ -144,21 +138,6 @@ function activate(context) {
         onActiveFileChange: revealUri
     });
 
-    const broadcastTypesMap = () => {
-        const typesMap = getWorkspaceTypesCache();
-        for (const panel of provider.activePanels.values()) {
-            panel.webview.postMessage({
-                type: 'updateTypesMap',
-                typesMap: typesMap
-            });
-        }
-        if (client) {
-            client.sendRequest('custom/updateTypesMap', {
-                typesMap: typesMap
-            }).catch(e => console.error('Failed to update types map on LSP server:', e));
-        }
-    };
-
     // Push a single TwinCAT file's raw XML to the LSP so it can build a real-range symbol node.
     const indexFileOnLsp = async (uri) => {
         if (!client) return;
@@ -243,26 +222,18 @@ function activate(context) {
         })
     );
 
-    // Index the workspace types asynchronously at startup
-    indexWorkspaceTypes().then(map => {
-        setWorkspaceTypesCache(map);
-        if (client) {
-            const folders = vscode.workspace.workspaceFolders || [];
-            client.sendRequest('custom/reindex', {
-                folders: folders.map(f => f.uri.toString())
-            }).then(() => {
-                sendDiagnosticsConfig();
-                broadcastTypesMap();
-                // The library catalog is a product of that index — refresh the view with it, so the
-                // two can never disagree about which libraries the project references.
-                libraryProvider.refresh();
-            }).catch(e => console.error('Failed to trigger LSP re-index:', e));
-        } else {
-            broadcastTypesMap();
-        }
-    }).catch(err => {
-        console.error('Failed to initially index workspace types:', err);
-    });
+    // Trigger the LSP's initial workspace index at startup.
+    if (client) {
+        const folders = vscode.workspace.workspaceFolders || [];
+        client.sendRequest('custom/reindex', {
+            folders: folders.map(f => f.uri.toString())
+        }).then(() => {
+            sendDiagnosticsConfig();
+            // The library catalog is a product of that index — refresh the view with it, so the
+            // two can never disagree about which libraries the project references.
+            libraryProvider.refresh();
+        }).catch(e => console.error('Failed to trigger LSP re-index:', e));
+    }
 
     // Register custom editor provider
     context.subscriptions.push(
@@ -298,15 +269,13 @@ function activate(context) {
     // namespace / qualified name, and insert a symbol at the caret.
     registerLibraryCommands(context, { libraryProvider, provider, getClient: () => client });
 
-    // Watch for document saves/changes to refresh the explorer tree and type cache
+    // Watch for document saves/changes to refresh the explorer tree and the LSP index
     context.subscriptions.push(
         vscode.workspace.onDidSaveTextDocument(async e => {
             const extName = path.extname(e.fileName).toLowerCase();
             if (['.tcpou', '.tcio', '.tcgvl', '.tcdut'].includes(extName)) {
                 treeProvider.refresh();
-                await updateCacheForFile(e.uri);
                 await indexFileOnLsp(e.uri);
-                broadcastTypesMap();
             }
         })
     );
@@ -352,9 +321,7 @@ function activate(context) {
                 // as onDidChange does. (treeProvider/refreshLibrariesFor still run for any create.)
                 const extName = path.extname(uri.fsPath).toLowerCase();
                 if (['.tcpou', '.tcio', '.tcgvl', '.tcdut'].includes(extName)) {
-                    await updateCacheForFile(uri);
                     await indexFileOnLsp(uri);
-                    broadcastTypesMap();
                 }
             }
         })
@@ -365,10 +332,6 @@ function activate(context) {
             if (shouldRefresh(uri)) {
                 treeProvider.refresh();
                 refreshLibrariesFor(uri);
-                const rootName = path.basename(uri.fsPath, path.extname(uri.fsPath));
-                const cache = getWorkspaceTypesCache();
-                delete cache[rootName];
-                broadcastTypesMap();
             }
         })
     );
@@ -380,9 +343,7 @@ function activate(context) {
                 const extName = path.extname(uri.fsPath).toLowerCase();
                 if (['.tcpou', '.tcio', '.tcgvl', '.tcdut'].includes(extName)) {
                     treeProvider.refresh();
-                    await updateCacheForFile(uri);
                     await indexFileOnLsp(uri);
-                    broadcastTypesMap();
                 }
             }
         })

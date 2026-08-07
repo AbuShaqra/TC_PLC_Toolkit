@@ -21,7 +21,6 @@
 
     let components = [];
     let activeComponentId = null;
-    let typesMap = {};
     let declEditor = null;
     let implEditor = null;
     // The pane the user was last typing in. Needed because an insert can arrive from the Explorer
@@ -1372,7 +1371,6 @@
                 objTypeEl.textContent = message.data.rootType;
                 objNameEl.textContent = message.filename;
                 components = message.data.components;
-                typesMap = message.typesMap || {};
                 currentDeclPct = message.splitterRatio !== undefined ? message.splitterRatio : 50;
                 
                 isAutoSync = message.isAutoSync !== false;
@@ -1413,10 +1411,6 @@
                 }
 
                 updateStatusText();
-                break;
-            }
-            case 'updateTypesMap': {
-                typesMap = message.typesMap || {};
                 break;
             }
             case 'refreshDiagnostics': {

@@ -218,7 +218,6 @@ const fixture = {
         fileUri: active.uri,
         filename: path.basename(active.file),
         data: { rootType: parsed.rootType || 'POU', components: parsed.components },
-        typesMap: {},
         splitterRatio: 50,
         isAutoSync: true,
         selectId: 'root'

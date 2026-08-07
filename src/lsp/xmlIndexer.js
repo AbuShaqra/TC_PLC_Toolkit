@@ -2,9 +2,9 @@
  * @file xmlIndexer.js
  * @description Builds LSP workspace symbol nodes directly from TwinCAT XML objects
  * (.TcPOU/.TcGVL/.TcDUT/.TcIO) with real declaration ranges. This is the single source of
- * truth for cross-file symbols (function blocks, programs, GVLs, DUT structs/enums, interfaces),
- * replacing the stubbed typesMap merge. Has no dependency on the `vscode` module so it can run
- * inside the LSP server process and in test harnesses.
+ * truth for cross-file symbols (function blocks, programs, GVLs, DUT structs/enums, interfaces).
+ * Has no dependency on the `vscode` module so it can run inside the LSP server process and in
+ * test harnesses.
  */
 
 const fs = require('fs');
