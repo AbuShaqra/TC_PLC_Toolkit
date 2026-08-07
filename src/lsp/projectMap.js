@@ -21,8 +21,13 @@
 const fs = require('fs');
 const path = require('path');
 
+// `.tctleo` (EnumerationTextList) declares a real ST enum — xmlParser normalises its root element to
+// DUT, so it indexes as one. `.tctto` (task) and `.tctlo` (HMI text list) are NOT ST types. Kept in
+// sync with xmlIndexer.js's own TWINCAT_EXTS by hand (test_project_map.js pins the two against each
+// other): duplicated rather than imported because this module is deliberately dependency-free, and
+// importing xmlIndexer.js would pull in xmlParser + symbolNode for one constant.
 /** TwinCAT object extensions a `.plcproj` can `<Compile>` (lower-cased). */
-const TWINCAT_EXTS = new Set(['.tcpou', '.tcgvl', '.tcdut', '.tcio']);
+const TWINCAT_EXTS = new Set(['.tcpou', '.tcgvl', '.tcdut', '.tcio', '.tctleo']);
 
 /** Directories that never hold a `.plcproj`: VCS, tooling, vendor archives, generated/build output. */
 const SKIP_DIRS = new Set([

@@ -412,6 +412,7 @@ function indexTwinCatDirectory(index, dirPath, includedPaths) {
 }
 
 module.exports = {
+    TWINCAT_EXTS,
     buildNodeFromXml,
     indexXmlObject,
     indexXmlFile,

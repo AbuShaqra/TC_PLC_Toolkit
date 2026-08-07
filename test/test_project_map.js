@@ -12,16 +12,30 @@ const path = require('path');
 const os = require('os');
 const {
     LOOSE_PROJECT_KEY,
+    TWINCAT_EXTS,
     normalizeProjectPath,
     findPlcProjFiles,
     createProjectMap
 } = require('../src/lsp/projectMap');
+const { TWINCAT_EXTS: XML_INDEXER_TWINCAT_EXTS } = require('../src/lsp/xmlIndexer');
 
 let errors = 0;
 function assert(cond, msg) {
     if (cond) console.log(`[PASS] ${msg}`);
     else { console.error(`[FAIL] ${msg}`); errors++; }
 }
+
+// --- TWINCAT_EXTS must stay in sync with xmlIndexer.js's own copy --------------------------
+// projectMap.js is deliberately dependency-free, so it duplicates xmlIndexer.js's TWINCAT_EXTS
+// rather than importing it. A real bug (found in review): projectMap.js's set was missing
+// `.tctleo` (EnumerationTextList — a real ST enum), so scanWorkspace's Task-2 project-scoped scan
+// silently dropped every .TcTLEO object's symbols from the index, on any project using the
+// feature — a false "not declared" on real code. Asserting the two SETS are equal (not a fixed
+// literal list) catches drift in either direction, not just a re-encoding of this one miss.
+assert(TWINCAT_EXTS.size === XML_INDEXER_TWINCAT_EXTS.size &&
+    [...TWINCAT_EXTS].every(ext => XML_INDEXER_TWINCAT_EXTS.has(ext)),
+    `projectMap's TWINCAT_EXTS matches xmlIndexer's exactly ` +
+    `(projectMap: ${[...TWINCAT_EXTS].sort().join(',')}; xmlIndexer: ${[...XML_INDEXER_TWINCAT_EXTS].sort().join(',')})`);
 
 // A root with two sibling projects; LineB additionally links LineA's shared FB.
 const ROOT = path.join(os.tmpdir(), 'projmap_' + Date.now());
