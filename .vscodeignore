@@ -29,3 +29,7 @@ HANDOFF.md
 DEVELOPMENT.md
 # Implementation plans — developer working documents, same category as the three files above.
 docs/**
+# Agent working directory: briefs, diffs, review reports. It is git-IGNORED, which is exactly why it
+# needs listing here — .gitignore has no effect on what vsce packages, so this shipped 1.12 MB of
+# internal review material (including identifiers redacted out of the source) until it was caught.
+.superpowers/**
