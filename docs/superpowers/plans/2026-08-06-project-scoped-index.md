@@ -1230,9 +1230,16 @@ and `custom/libraries` answers per project:
 ```js
 connection.onRequest('custom/libraries', (params) => {
     try {
-        // The catalog is per project — two projects reference different libraries. The extension
-        // passes the active file so the view shows that project's libraries.
-        return getLibraryCatalog(indexForUri((params && params.fileUri) || ''));
+        // The catalog is per project — two projects reference different libraries — so a caller that
+        // names a file gets that file's project. But `libraryTreeProvider.js` sends NO params, and
+        // routing '' lands on the empty loose index: scoping this naively makes the Libraries view
+        // render empty even in a single-project workspace. The Libraries view is a read-only browse
+        // surface, so the union across projects is harmless there, whereas showing nothing is a
+        // regression. In a single-project workspace the union IS that project.
+        const catalog = getLibraryCatalog(workspace.indexForUri((params && params.fileUri) || ''));
+        if (catalog.length > 0) return catalog;
+        // Dedup by NAMESPACE, not namespace+version: the tree view groups strictly by namespace.
+        return getUnionLibraryCatalog(workspace.indexes.values());
     } catch (e) {
         return [];
     }
