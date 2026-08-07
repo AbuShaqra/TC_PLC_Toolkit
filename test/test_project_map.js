@@ -133,6 +133,16 @@ const solo = createProjectMap([soloRoot]);
 assert(projectLabel(solo, path.join(soloRoot, 'POUs', 'MAIN.TcPOU')) === '',
     'a single-project workspace shows nothing');
 
+// --- tree grouping ----------------------------------------------------------------------------
+const { groupRootsByProject } = require('../src/lsp/projectMap');
+
+const groups = groupRootsByProject(map, [ROOT]);
+assert(groups.length === 2, `two projects produce two tree groups (got ${groups.length})`);
+assert(groups.map(g => g.name).sort().join(',') === 'LineA,LineB', 'groups are named after the projects');
+assert(groups.every(g => fs.existsSync(g.dir)), 'each group points at a real directory');
+assert(groupRootsByProject(solo, [soloRoot]).length === 0,
+    'a single-project workspace produces no groups — the tree stays flat');
+
 fs.rmSync(ROOT, { recursive: true, force: true });
 fs.rmSync(bare, { recursive: true, force: true });
 fs.rmSync(soloRoot, { recursive: true, force: true });

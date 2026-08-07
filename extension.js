@@ -273,7 +273,7 @@ function activate(context) {
 
     // Register tree view provider. Drag & drop logic lives entirely in the controller (and the
     // pure matrix under it) — extension.js only supplies its dependencies.
-    const treeProvider = new TwinCatTreeDataProvider();
+    const treeProvider = new TwinCatTreeDataProvider(() => hostProjectMap);
     treeView = vscode.window.createTreeView('twincatExplorer', {
         treeDataProvider: treeProvider,
         dragAndDropController: new TwinCatDragAndDropController({ treeProvider, applyXmlEdit })

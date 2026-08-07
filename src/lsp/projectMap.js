@@ -203,11 +203,28 @@ function createProjectMap(roots) {
     };
 }
 
+/**
+ * The tree groups for a workspace: one per PLC project, sorted by name. Returns an EMPTY array when
+ * there are fewer than two projects — the Objects tree then keeps its flat, directory-driven shape,
+ * which is the right thing for the overwhelmingly common single-project workspace.
+ * @param {{projects: Map<string, Object>}} projectMap The workspace partition.
+ * @param {Array<string>} folderPaths Absolute workspace-root paths (unused today; kept so a future
+ *   multi-root workspace can label a group with its containing folder without a signature change).
+ * @returns {Array<{key: string, name: string, dir: string}>} Groups, or [] to stay flat.
+ */
+function groupRootsByProject(projectMap, folderPaths) {
+    if (!projectMap || projectMap.projects.size < 2) return [];
+    return Array.from(projectMap.projects.values())
+        .map(p => ({ key: p.key, name: p.name, dir: p.dir }))
+        .sort((a, b) => a.name.localeCompare(b.name));
+}
+
 module.exports = {
     LOOSE_PROJECT_KEY,
     TWINCAT_EXTS,
     normalizeProjectPath,
     findPlcProjFiles,
     readCompileIncludes,
-    createProjectMap
+    createProjectMap,
+    groupRootsByProject
 };
