@@ -37,7 +37,7 @@ function objectPath(projectDir, relative) {
 /**
  * Builds the two-project fixture in a temp directory.
  * @returns {{root: string, lineA: string, lineB: string, plcprojA: string, plcprojB: string,
- *   cleanup: function(): void}}
+ *   cleanup: () => void}}
  */
 function buildTwoProjectFixture() {
     const root = path.join(os.tmpdir(), 'tc_multiproj_' + process.pid + '_' + Date.now());

@@ -36,7 +36,8 @@ const {
 const {
     createEmptyWorkspace,
     scanWorkspace,
-    uriToFsPath
+    uriToFsPath,
+    normalizeProjectPath
 } = require('./workspaceScan');
 
 // The server OWNS the workspace and threads its indexes explicitly into the parser/indexer and every
@@ -73,8 +74,15 @@ function rescan(rootPaths) {
  * @param {Object} [index] The owning project's symbol index. Every registry below is attached to it
  *   (see libraries.js / libsymbols.js registryFor / libRegistryFor), so two projects' libraries never
  *   union — each project stays quiet only about the libraries it actually references.
+ * @param {Array<string>} [roots] The full set of workspace roots (see workspaceScan.js scanWorkspace).
+ *   `library-signatures.xml` is a WORKSPACE-level artifact — `twincat.updateLibraryDefinitions` writes
+ *   it to `folders[0].fsPath` (libraryCommands.js), and `scripts/generate-library-signatures.ps1`
+ *   documents that target as `<workspace>\library-signatures.xml` — not a per-project one, and in the
+ *   normal TwinCAT layout it sits ABOVE `fsPath` (the `.plcproj` directory is at least one level
+ *   below the workspace root). `indexLibrarySignatures` only scans DOWNWARD from the directory it is
+ *   given, so a scan rooted at `fsPath` alone can never reach it. Scan every root too.
  */
-function indexLibraries(fsPath, index) {
+function indexLibraries(fsPath, index, roots) {
     indexLibraryNamespaces(fsPath, index);
     const stats = indexLibrarySymbols(fsPath, index);
     const tmc = indexTypeSystem(fsPath, index);
@@ -82,6 +90,23 @@ function indexLibraries(fsPath, index) {
     // bare-name entry (see libsymbols.js indexLibrarySignaturesFromXml). A project with no generated
     // library-signatures.xml gets zeroed stats and no registry change.
     const sig = indexLibrarySignatures(fsPath, index);
+    // Also scan every workspace root for a signatures dump (see the `roots` param doc above). Skip a
+    // root that IS fsPath — already scanned on the line above, so scanning it again would only double
+    // the reported stats. Merging into every project's registry is safe even when a root sits ABOVE a
+    // sibling project's directory too (a multi-project workspace): namespaceForLibraryTitle() returns
+    // '' for a library this project's .plcproj does not reference, so an unattributed type lands only
+    // as a bare name in librarySymbols — which can only SILENCE an undeclared-identifier diagnostic,
+    // never raise one. The merge itself is documented additive/idempotent, so overlap with fsPath's own
+    // scan (or between two projects sharing a root) contributes nothing beyond wasted work.
+    for (const root of roots || []) {
+        if (normalizeProjectPath(root) === normalizeProjectPath(fsPath)) continue;
+        const rootSig = indexLibrarySignatures(root, index);
+        sig.files += rootSig.files;
+        sig.functions += rootSig.functions;
+        sig.functionBlocks += rootSig.functionBlocks;
+        sig.types += rootSig.types;
+        sig.added += rootSig.added;
+    }
     // Browsercache enrichment runs LAST: it adds method/property NAMES to the FB/interface types the
     // signatures and `.tmc` have already filed under a namespace (see libsymbols.js indexBrowserCache).
     const bc = indexBrowserCache(fsPath, index);

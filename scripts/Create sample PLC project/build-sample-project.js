@@ -36,8 +36,9 @@
  *     them. The `.plcproj` is NOT written that way — XAE wrote it without a BOM and without a
  *     trailing newline, and it is round-tripped verbatim rather than re-emitted (see injectItems);
  *   - every generated object appears in the `.plcproj` as `<Compile Include="relative\path">`
- *     (`src/lsp/xmlIndexer.js collectPlcProjObjectPaths` gates indexing on it, and
- *     `test/test_plcproj_scope.js` asserts every on-disk object is `<Compile>`d);
+ *     (`createProjectMap` in `src/lsp/projectMap.js` builds each project's `objectPaths` from exactly
+ *     this, and gates indexing on it; `test/test_plcproj_scope.js` asserts every on-disk object is
+ *     `<Compile>`d);
  *   - `<LineIds>` blocks are emitted for every block that carries an `<Implementation>` — the POU
  *     root, methods, actions, transitions, and a property's Get/Set accessors. That is where real
  *     TwinCAT writes them: a DUT, a GVL and an interface method have no implementation and so carry
@@ -802,10 +803,10 @@ function injectItems(text, tag, includes, render) {
  * Registers the generated objects in the XAE-authored `.plcproj`: a `<Compile>` for every object it
  * does not already list, and a `<Folder>` for every directory it does not already declare.
  *
- * Every generated object MUST end up as a `<Compile>` item: the workspace index is scoped to the
- * project rather than to the filesystem (`collectPlcProjObjectPaths` in src/lsp/xmlIndexer.js), so an
- * object missing from here would be invisible to the language server — and `test/test_plcproj_scope.js`
- * asserts the sample has no such object.
+ * Every generated object MUST end up as a `<Compile>` item: the workspace index is scoped per PLC
+ * project rather than to the filesystem (`createProjectMap` in src/lsp/projectMap.js builds each
+ * project's `objectPaths` set from exactly this), so an object missing from here would be invisible to
+ * the language server — and `test/test_plcproj_scope.js` asserts the sample has no such object.
  *
  * Idempotent by construction: entries already present are filtered out, so a second run adds nothing
  * and the file comes back byte-identical.

@@ -141,8 +141,13 @@ function createEmptyWorkspace() {
  * Discovers the projects under the given roots and indexes each one's objects into its own index.
  * @param {Array<string>} rootPaths Absolute workspace-root paths.
  * @param {{log?: (m: string) => void, error?: (m: string) => void,
- *   indexLibraries?: (dir: string, index: Object) => void}} [deps] Injected side effects.
- *   `indexLibraries` is stubbed by the harnesses that only care about the partition.
+ *   indexLibraries?: (dir: string, index: Object, roots: Array<string>) => void}} [deps] Injected side
+ *   effects. `indexLibraries` is stubbed by the harnesses that only care about the partition.
+ *   The third argument is the full set of workspace roots — `library-signatures.xml` is a
+ *   WORKSPACE-level artifact (`twincat.updateLibraryDefinitions` writes it to `folders[0].fsPath`, see
+ *   libraryCommands.js), not a per-project one, and it normally sits ABOVE `project.dir` in the tree,
+ *   so a callee that only scans `dir` downward can never reach it. server.js's `indexLibraries` uses
+ *   this to also scan the roots for that dump.
  * @returns {Workspace}
  */
 function scanWorkspace(rootPaths, deps) {
@@ -159,7 +164,7 @@ function scanWorkspace(rootPaths, deps) {
             try {
                 indexTwinCatDirectory(loose, root, null);
                 indexStDirectory(root, loose);
-                indexLibraries(root, loose);
+                indexLibraries(root, loose, roots);
             } catch (e) {
                 error(`Failed to index folder ${root}: ${e.message}`);
             }
@@ -173,18 +178,26 @@ function scanWorkspace(rootPaths, deps) {
             indexXmlFile(index, objectPath);
         }
         try {
-            indexLibraries(project.dir, index);
+            indexLibraries(project.dir, index, roots);
         } catch (e) {
             error(`Failed to index libraries for ${project.name}: ${e.message}`);
         }
     }
 
-    // Loose .st files route to the project whose directory contains them (loose index otherwise, via
-    // routeFile below). The `index` fallback argument here is never read — indexForFile is supplied
-    // on every call, including the recursive ones, so every .st is routed through routeFile. Passing
-    // a throwaway object (rather than workspace.indexForKey(LOOSE_PROJECT_KEY)) avoids eagerly
-    // creating a spurious empty loose index when this workspace has no files that actually route there.
-    const routeFile = (fsPath) => workspace.indexForKey(projectMap.projectFor(fsPath));
+    // Loose .st files route to the project whose directory contains them (every project, when NO
+    // project directory contains it — see routeFile below). The `index` fallback argument here is
+    // never read — indexForFile is supplied on every call, including the recursive ones, so every .st
+    // is routed through routeFile.
+    const routeFile = (fsPath) => {
+        const key = projectMap.projectFor(fsPath);
+        if (key !== LOOSE_PROJECT_KEY) return workspace.indexForKey(key);
+        // A .st file is not a `.plcproj` compilation unit, so there is no correctness argument for
+        // hiding it from a project the way an unlisted .TcPOU orphan is hidden — the pre-existing
+        // (single-index) behaviour put every .st where every document could see it. Restore that by
+        // indexing it into EVERY project, rather than into the `(loose)` index nothing ever consults
+        // (indexForUri only ever resolves to (loose) for a file under no project directory at all).
+        return Array.from(projectMap.projects.values()).map(p => workspace.indexForKey(p.key));
+    };
     for (const root of roots) {
         try {
             indexStDirectory(root, {}, routeFile);

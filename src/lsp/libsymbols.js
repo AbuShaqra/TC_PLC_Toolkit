@@ -1612,7 +1612,11 @@ function indexBrowserCache(rootDir, index) {
  */
 function getNestedNamespaceSymbols(name, index) {
     if (!name) return [];
-    const reg = ensureLibraryRegistry(index);
+    // Read-side (libRegistryFor, not ensureLibraryRegistry): this only ever CONSULTS the registry's
+    // cache. The write-side twin would CREATE an empty registry on an index nothing has indexed yet
+    // (e.g. a not-yet-scanned LOOSE_PROJECT_KEY index — see workspaceScan.js indexForKey), and every
+    // later read on that index would then stop falling back to the default and see nothing.
+    const reg = libRegistryFor(index);
     const key = String(name).toLowerCase();
     const cached = reg.nestedNamespaceSymbols.get(key);
     if (cached) return cached;
@@ -1793,8 +1797,9 @@ function registerLibrarySymbolNodes(index, code) {
     // registry, it does not populate it, and falling back to the default when this index was never
     // itself indexed is what keeps the standalone harnesses (which index with no argument, then
     // register against a real-but-unindexed symbol index) working unchanged.
+    if (!index || !code) return 0;
     const reg = libRegistryFor(index);
-    if (!index || !code || reg.librarySymbols.size === 0) return 0;
+    if (reg.librarySymbols.size === 0) return 0;
 
     // Names already in the index, compared case-insensitively: a real project symbol must never be
     // shadowed by a same-named library symbol, whatever its casing.

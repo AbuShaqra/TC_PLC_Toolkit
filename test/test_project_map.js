@@ -138,8 +138,13 @@ const { groupRootsByProject } = require('../src/lsp/projectMap');
 
 const groups = groupRootsByProject(map, [ROOT]);
 assert(groups.length === 2, `two projects produce two tree groups (got ${groups.length})`);
-assert(groups.map(g => g.name).sort().join(',') === 'LineA,LineB', 'groups are named after the projects');
-assert(groups.every(g => fs.existsSync(g.dir)), 'each group points at a real directory');
+// Compared against a literal, NOT `groups.map(...).sort()` — sorting the actual result before
+// comparing would make this pass even if groupRootsByProject's own sort regressed (e.g. started
+// returning discovery order instead of name order); the literal is the one thing that can catch that.
+assert(groups.map(g => g.name).join(',') === ['LineA', 'LineB'].join(','),
+    `groups are named after the projects, in sorted order (got ${groups.map(g => g.name).join(',')})`);
+assert(groups.every(g => fs.statSync(g.dir).isDirectory()),
+    'each group points at a real DIRECTORY, not the .plcproj file itself');
 assert(groupRootsByProject(solo, [soloRoot]).length === 0,
     'a single-project workspace produces no groups — the tree stays flat');
 

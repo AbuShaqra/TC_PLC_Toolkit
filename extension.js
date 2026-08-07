@@ -113,7 +113,7 @@ function activate(context) {
         projectStatusBar.refresh(uri);
         if (!treeView) return;
         const ext = path.extname(uri.fsPath).toLowerCase();
-        if (!['.tcpou', '.tcio', '.tcgvl', '.tcdut', '.st'].includes(ext)) {
+        if (!['.tcpou', '.tcio', '.tcgvl', '.tcdut', '.tctleo', '.st'].includes(ext)) {
             return;
         }
 
@@ -122,7 +122,10 @@ function activate(context) {
             contextValue = 'itfFile';
         } else if (ext === '.tcgvl') {
             contextValue = 'gvlFile';
-        } else if (ext === '.tcdut') {
+        } else if (ext === '.tcdut' || ext === '.tctleo') {
+            // `.tctleo` (EnumerationTextList) normalizes to a DUT root everywhere else in the codebase
+            // (xmlParser.js) — it IS one in every way that matters (an ordinary TYPE...END_TYPE enum
+            // declaration with display text attached). Same contextValue.
             contextValue = 'dutFile';
         } else if (ext === '.st') {
             contextValue = 'stFile';

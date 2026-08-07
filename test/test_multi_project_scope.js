@@ -7,28 +7,227 @@
  * collapsed onto one key. Measured before the fix: 38 object files produced 19 index entries, every
  * shared name resolved to LineB, LineA's correct MAIN reported `"fbDerived" is not a member of type
  * "GVL_System"`, and Find References returned 7 hits of which 3 were in the wrong project.
+ *
+ * Two more regressions from the same partition (final whole-branch review, 2026-08-07) are covered
+ * near the TOP of this file, ahead of the `sampleAvailable()` gate — both are self-contained synthetic
+ * fixtures that need no sample/, unlike everything below the gate:
+ *   - CRITICAL: `library-signatures.xml` is a WORKSPACE-level artifact (written to `folders[0].fsPath`
+ *     by `twincat.updateLibraryDefinitions` — see libraryCommands.js), normally sitting ABOVE the
+ *     `.plcproj` directory. `indexLibraries` used to scan only `project.dir` downward, so the dump was
+ *     unreachable by construction on every normal TwinCAT layout, including single-project ones.
+ *   - IMPORTANT: a loose `.st` outside every project directory used to route to the `(loose)` index,
+ *     which no project's own document ever consults — invisible where the old flat index made it
+ *     visible everywhere.
  */
 
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 const { sampleAvailable, buildTwoProjectFixture, objectPath } = require('./_multiproject');
-
-if (!sampleAvailable()) {
-    console.log('sample/ project not present — skipping multi-project scope test.');
-    process.exit(0);
-}
 
 const { parseTwinCatXml } = require('../src/xmlParser');
 const { convertXmlToSt } = require('../src/stConverter');
 const { createProjectMap, normalizeProjectPath } = require('../src/lsp/projectMap');
 const { scanWorkspace } = require('../src/lsp/workspaceScan');
 const { parseAndIndexDocument } = require('../src/lsp/parser');
-const { provideDiagnostics, provideReferences } = require('../src/lsp/features');
+const {
+    provideDiagnostics,
+    provideReferences,
+    findConfigReferencesForSymbol
+} = require('../src/lsp/features');
+const { indexLibraryNamespaces, isLibraryNamespace, clearLibraryNamespaces } = require('../src/lsp/libraries');
+const {
+    indexLibraryTitles,
+    getLibraryCatalog,
+    getUnionLibraryCatalog,
+    clearLibrarySymbols,
+    indexLibrarySymbols,
+    indexTypeSystem,
+    indexLibrarySignatures,
+    indexBrowserCache,
+    registerLibrarySymbolNodes,
+    isLibrarySymbol
+} = require('../src/lsp/libsymbols');
 
 let errors = 0;
 function assert(cond, msg) {
     if (cond) console.log(`[PASS] ${msg}`);
     else { console.error(`[FAIL] ${msg}`); errors++; }
+}
+
+// =====================================================================================================
+// CRITICAL — library-signatures.xml is a WORKSPACE-level artifact, not a per-project one (review
+// finding, 2026-08-07). Reproduced by the reviewer on a SINGLE-project workspace as the real
+// `"Identifier \"cProbeMax\" is not declared in the current scope."` — this fixture uses that exact
+// identifier. Drives scanWorkspace with a REAL (non-stub) indexLibraries: the stub every other section
+// of this file uses for `deps.indexLibraries` is exactly why nine prior task reviews missed this bug —
+// it never exercises the callback the bug lives in. server.js cannot be required standalone (it opens
+// an IPC connection at require time — see HANDOFF.md "Diagnostics: how to measure"), so this mirrors
+// its indexLibraries composition, including the fix under test: scan every workspace root for a
+// signatures dump, in addition to `dir`.
+// =====================================================================================================
+/**
+ * A real (non-stub) indexLibraries, mirroring src/lsp/server.js's own.
+ * @param {string} dir Project directory.
+ * @param {Object} index The project's symbol index.
+ * @param {Array<string>} roots Workspace roots.
+ */
+function realIndexLibraries(dir, index, roots) {
+    indexLibraryNamespaces(dir, index);
+    indexLibrarySymbols(dir, index);
+    indexTypeSystem(dir, index);
+    indexLibrarySignatures(dir, index);
+    // THE FIX UNDER TEST: library-signatures.xml normally sits ABOVE `dir` (the .plcproj directory),
+    // and indexLibrarySignatures only scans DOWNWARD — so a scan rooted at `dir` alone can never reach
+    // it. Scan every workspace root too (skipping one that IS `dir`, already scanned above).
+    for (const root of roots || []) {
+        if (normalizeProjectPath(root) === normalizeProjectPath(dir)) continue;
+        indexLibrarySignatures(root, index);
+    }
+    indexBrowserCache(dir, index);
+}
+
+const sigRoot = path.join(os.tmpdir(), 'tc_sigroot_' + process.pid + '_' + Date.now());
+const sigProjDir = path.join(sigRoot, 'Machine');
+fs.mkdirSync(path.join(sigProjDir, 'POUs'), { recursive: true });
+
+// The dump sits at the WORKSPACE ROOT — exactly where twincat.updateLibraryDefinitions writes it — one
+// level ABOVE the .plcproj directory, which is the normal TwinCAT layout (a .plcproj is always at
+// least one directory below the workspace root XAE opens).
+fs.writeFileSync(path.join(sigRoot, 'library-signatures.xml'), `<?xml version="1.0"?>
+<LibrarySignatures>
+  <Library>
+    <LibraryName>Tc_ProbeLib</LibraryName><Version>1.0.0.0</Version><Distributor>Acme</Distributor>
+    <TypeSignatures>
+      <TypeSignature type="VarGlobal"><Name>ProbeGlobals</Name>
+        <Constants><Constant><Name>cProbeMax</Name><DataType>INT</DataType></Constant></Constants>
+      </TypeSignature>
+    </TypeSignatures>
+  </Library>
+</LibrarySignatures>`);
+
+fs.writeFileSync(path.join(sigProjDir, 'Machine.plcproj'), `<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="14.0">
+  <ItemGroup>
+    <Compile Include="POUs\\MAIN.TcPOU"><SubType>Code</SubType></Compile>
+  </ItemGroup>
+</Project>`);
+
+const sigMain = path.join(sigProjDir, 'POUs', 'MAIN.TcPOU');
+fs.writeFileSync(sigMain, `<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1">
+  <POU Name="MAIN" Id="{c0000000-0000-4a00-8a00-0000000000aa}" SpecialFunc="None">
+    <Declaration><![CDATA[PROGRAM MAIN
+VAR
+	n : INT;
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[n := cProbeMax;]]></ST>
+    </Implementation>
+  </POU>
+</TcPlcObject>`);
+
+const sigWs = scanWorkspace([sigRoot], { indexLibraries: realIndexLibraries });
+const sigKey = normalizeProjectPath(path.join(sigProjDir, 'Machine.plcproj'));
+const sigIndex = sigWs.indexForKey(sigKey);
+
+assert(isLibrarySymbol('cProbeMax', sigIndex),
+    'the signature-only global constant cProbeMax IS reachable from a .plcproj BELOW the workspace ' +
+    'root where the dump lives (the CRITICAL fix under test)');
+
+/**
+ * Diagnoses one object the way server.js does — including the library-symbol registration step the
+ * shared `diagnose()` helper further down in this file (pre-existing, LineA/LineB section) omits,
+ * because that section never references a library symbol and so never needed it.
+ * @param {string} file Absolute object path.
+ * @param {Object} index The owning project's index.
+ * @returns {Array<Object>} Diagnostics.
+ */
+function diagnoseWithLibs(file, index) {
+    const parsed = parseTwinCatXml(fs.readFileSync(file, 'utf8'));
+    const { stText } = convertXmlToSt(parsed, { raw: true });
+    const uri = 'file:///' + file.replace(/\\/g, '/');
+    parseAndIndexDocument(stText, uri, index);
+    registerLibrarySymbolNodes(index, stText);
+    return provideDiagnostics(stText, index, uri);
+}
+
+const sigDiags = diagnoseWithLibs(sigMain, sigIndex);
+assert(sigDiags.length === 0,
+    `MAIN referencing the workspace-root signature symbol scores 0 diagnostics ` +
+    `(got ${sigDiags.length}: ${sigDiags.map(d => d.message).join(' | ')})`);
+
+fs.rmSync(sigRoot, { recursive: true, force: true });
+
+// =====================================================================================================
+// IMPORTANT — a loose .st outside every project directory must still be visible to the project(s) in
+// this workspace (review finding, 2026-08-07). routeFile used to send it to the `(loose)` index, which
+// no project's own document ever queries — the old (single flat index) behaviour made every .st visible
+// everywhere, and there is no correctness argument for hiding one now: a .st is not a `.plcproj`
+// compilation unit. Reproduced on a SINGLE-project workspace with Shared.st at the workspace root
+// declaring FB_SharedHelper, and a POU declaring a variable of that type.
+// =====================================================================================================
+const looseRoot = path.join(os.tmpdir(), 'tc_loosest_' + process.pid + '_' + Date.now());
+const looseProjDir = path.join(looseRoot, 'Machine');
+fs.mkdirSync(path.join(looseProjDir, 'POUs'), { recursive: true });
+
+// A loose .st at the WORKSPACE ROOT — not inside any .plcproj directory.
+fs.writeFileSync(path.join(looseRoot, 'Shared.st'), `FUNCTION_BLOCK FB_SharedHelper
+VAR
+	n : INT;
+END_VAR`);
+
+fs.writeFileSync(path.join(looseProjDir, 'Machine.plcproj'), `<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="14.0">
+  <ItemGroup>
+    <Compile Include="POUs\\MAIN.TcPOU"><SubType>Code</SubType></Compile>
+  </ItemGroup>
+</Project>`);
+
+const looseMain = path.join(looseProjDir, 'POUs', 'MAIN.TcPOU');
+fs.writeFileSync(looseMain, `<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1">
+  <POU Name="MAIN" Id="{c0000000-0000-4a00-8a00-0000000000bb}" SpecialFunc="None">
+    <Declaration><![CDATA[PROGRAM MAIN
+VAR
+	fbHelper : FB_SharedHelper;
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[fbHelper();]]></ST>
+    </Implementation>
+  </POU>
+</TcPlcObject>`);
+
+const looseWs = scanWorkspace([looseRoot], { indexLibraries: () => {} });
+const looseKey = normalizeProjectPath(path.join(looseProjDir, 'Machine.plcproj'));
+const looseIndex = looseWs.indexForKey(looseKey);
+
+assert(!!looseIndex['FB_SharedHelper'],
+    "a loose .st outside every project directory IS indexed into the (single) project's own index " +
+    '(the IMPORTANT fix under test — it used to land only in the unreachable (loose) index)');
+
+function diagnoseLoose(file, index) {
+    const parsed = parseTwinCatXml(fs.readFileSync(file, 'utf8'));
+    const { stText } = convertXmlToSt(parsed, { raw: true });
+    const uri = 'file:///' + file.replace(/\\/g, '/');
+    parseAndIndexDocument(stText, uri, index);
+    return provideDiagnostics(stText, index, uri);
+}
+
+const looseDiags = diagnoseLoose(looseMain, looseIndex);
+assert(looseDiags.length === 0,
+    `MAIN declaring a variable of the loose-.st type FB_SharedHelper scores 0 diagnostics ` +
+    `(got ${looseDiags.length}: ${looseDiags.map(d => d.message).join(' | ')})`);
+
+fs.rmSync(looseRoot, { recursive: true, force: true });
+
+// =====================================================================================================
+// Everything below needs the committed sample/ fixture.
+// =====================================================================================================
+if (!sampleAvailable()) {
+    console.log('sample/ project not present — skipping the remaining (sample-based) multi-project scope tests.');
+    console.log(`\n--- MULTI-PROJECT SCOPE TESTS COMPLETE with ${errors} error(s) ---`);
+    process.exit(errors > 0 ? 1 : 0);
 }
 
 const fx = buildTwoProjectFixture();
@@ -107,7 +306,7 @@ assert(ws.indexForUri('file:///' + mainB.replace(/\\/g, '/')) === indexes.get(ke
 // --- library namespaces are per project ------------------------------------------------------
 // LineB additionally references a library LineA does not. A namespace known only to B must not
 // silence B's namespace head inside A (that is a diagnostic suppressed on the wrong project).
-const { indexLibraryNamespaces, isLibraryNamespace, clearLibraryNamespaces } = require('../src/lsp/libraries');
+// (indexLibraryNamespaces/isLibraryNamespace/clearLibraryNamespaces are required at the top of this file.)
 
 const plcprojB = fs.readFileSync(fx.plcprojB, 'utf8').replace(
     '</Project>',
@@ -171,7 +370,8 @@ assert(!isLibraryNamespace('Tc2_DefaultRegistryOnly', idxB),
 // specific project, and getUnionLibraryCatalog(indexes) as the fallback when no fileUri is given, or
 // the routed project's own catalog is empty. Tested at this level because server.js opens an IPC
 // connection at require time and cannot be loaded standalone.
-const { indexLibraryTitles, getLibraryCatalog, getUnionLibraryCatalog, clearLibrarySymbols } = require('../src/lsp/libsymbols');
+// (indexLibraryTitles/getLibraryCatalog/getUnionLibraryCatalog/clearLibrarySymbols are required at the
+// top of this file.)
 
 clearLibrarySymbols(idxA);
 clearLibrarySymbols(idxB);
@@ -203,7 +403,7 @@ assert(!catalogA.some(e => e.namespace.toLowerCase() === 'tc2_linebonly'),
 // Before per-project indexes, renaming the MAIN that won the flat index rewrote BOTH task files
 // (measured: 2 occurrences, one of them in the other project), while renaming the MAIN that lost
 // resolved to nothing at all and silently skipped the config update.
-const { findConfigReferencesForSymbol } = require('../src/lsp/features');
+// (findConfigReferencesForSymbol is required at the top of this file.)
 
 const uriA = 'file:///' + mainA.replace(/\\/g, '/');
 const uriB = 'file:///' + mainB.replace(/\\/g, '/');

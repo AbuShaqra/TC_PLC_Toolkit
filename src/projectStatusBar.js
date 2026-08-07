@@ -16,8 +16,10 @@
 // "pure, unit-testable" point this module exists to make.
 const { LOOSE_PROJECT_KEY } = require('./lsp/projectMap');
 
-/** Extensions whose editor should show the indicator (lower-cased). */
-const TWINCAT_FILE_EXTS = /\.(tcpou|tcgvl|tcdut|tcio|st)$/i;
+/** Extensions whose editor should show the indicator (lower-cased). `.tctleo` (EnumerationTextList)
+ *  is a real project-scoped compilation unit too (see projectMap.js's TWINCAT_EXTS) — omitting it
+ *  hid the indicator on that one object kind. */
+const TWINCAT_FILE_EXTS = /\.(tcpou|tcgvl|tcdut|tcio|tctleo|st)$/i;
 
 /**
  * The label for a file, or '' when there is nothing worth showing.
