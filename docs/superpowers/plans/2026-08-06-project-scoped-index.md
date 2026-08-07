@@ -1529,8 +1529,12 @@ Create `src/projectStatusBar.js`:
  * something to disambiguate (two or more projects); a single-project workspace sees nothing.
  */
 
-const vscode = require('vscode');
 const { LOOSE_PROJECT_KEY } = require('./lsp/projectMap');
+
+// NOTE: `vscode` is required lazily inside createProjectStatusBar, NOT at module top level.
+// projectLabel must stay loadable from a standalone Node harness (no VS Code, no build step), and
+// test_project_map.js requires this file just to reach it — an eager require crashes that harness
+// with "Cannot find module 'vscode'" the moment the file exists. Same pattern as dndRules.js.
 
 /** Extensions whose editor should show the indicator (lower-cased). */
 const TWINCAT_FILE_EXTS = /\.(tcpou|tcgvl|tcdut|tcio|st)$/i;
@@ -1557,6 +1561,7 @@ function projectLabel(projectMap, fsPath) {
  * @returns {{refresh: (uri: vscode.Uri|null) => void, dispose: () => void}}
  */
 function createProjectStatusBar(context, getProjectMap) {
+    const vscode = require('vscode');
     const item = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
     item.tooltip = 'The PLC project this file belongs to. References, rename and diagnostics are scoped to it.';
     context.subscriptions.push(item);
@@ -1684,8 +1689,12 @@ In `src/treeDataProvider.js`, replace the root case of `getChildren`:
             // Several PLC projects under one folder: give each its own top-level node. Symbols,
             // references and rename are scoped per project, so a flat tree would show two identical
             // MAIN entries with no way to tell them apart.
+            // Reuse the host's shared map (extension.js's hostProjectMap, threaded in as a
+            // getProjectMap callback). createProjectMap walks the filesystem and parses every
+            // .plcproj — running that per tree expansion, and per getParent call during reveal(),
+            // is a real regression on a large project.
             const groups = groupRootsByProject(
-                createProjectMap(folders.map(f => f.uri.fsPath)),
+                this.getProjectMap(),
                 folders.map(f => f.uri.fsPath)
             );
             if (groups.length > 0) {
@@ -1712,11 +1721,15 @@ In `src/treeDataProvider.js`, replace the root case of `getChildren`:
 `getParent` (`:95-118`) already returns `null` for anything whose parent is a workspace root; add the project directories to that check so `reveal()` stops at a group node:
 
 ```js
+        // Compare the ELEMENT's own uri, not its parent's. Testing the parent would make
+        // everything one level below a project root (LineA/POUs) report a null parent, while
+        // getChildren(undefined) returns only the group nodes — so reveal() could never find it.
+        // Folded into the existing isRoot test for that reason.
         const isProjectRoot = groupRootsByProject(
-            createProjectMap(folders.map(f => f.uri.fsPath)),
+            this.getProjectMap(),
             folders.map(f => f.uri.fsPath)
-        ).some(g => vscode.Uri.file(g.dir).toString() === parentUri.toString());
-        if (isParentRoot || isProjectRoot) return null;
+        ).some(g => vscode.Uri.file(g.dir).toString() === elementUri.toString());
+        if (isRoot || isProjectRoot) return null;
 ```
 
 Add the two requires at the top of the file.
