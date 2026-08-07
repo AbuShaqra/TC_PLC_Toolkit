@@ -5,7 +5,7 @@ Where the work *stands*. Read before starting; keep current (handoff rule in [CL
 live in git history (PRs/commits); this file keeps the findings that would cost to re-derive.**
 
 **Last verified:** 2026-08-07 — `npm test` green (**51 harnesses, Coverage: FULL**), typecheck clean,
-**0 diagnostics on the sample**. Shipped through **0.5.1** (pragmas + ST folding); releases are in git history.
+**0 diagnostics on the sample**. Shipped through **0.6.0** (project-scoped indexing); releases are in git history.
 **Install trap that cost a debug cycle:** VS Code keeps the old version dir until a FULL restart (reload-window is not
 always enough) — the user tested 0.3.1's feature against the still-running 0.3.0 code and reported it broken. Check
 `~/.vscode/extensions/` for side-by-side version dirs + `.obsolete` before debugging a "feature does nothing" report.
