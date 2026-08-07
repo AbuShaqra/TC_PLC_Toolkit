@@ -81,9 +81,36 @@ function activate(context) {
         })
     );
 
+    // Extension-host copy of the project partition (the LSP's copy lives in the other process and
+    // is not reachable from here). A `.plcproj` walk plus one regex per file — cheap enough to
+    // rebuild on activation and on every `.plcproj` change (see refreshLibrariesFor below), never
+    // needs a dedicated watcher of its own.
+    const { createProjectMap } = require('./src/lsp/projectMap');
+    const { createProjectStatusBar } = require('./src/projectStatusBar');
+    let hostProjectMap = null;
+    /**
+     * Rebuilds the extension host's copy of the project partition. Cheap (a `.plcproj` walk plus one
+     * regex per file) and only run on activation and on a `.plcproj` change.
+     */
+    const refreshProjectMap = () => {
+        const folders = vscode.workspace.workspaceFolders || [];
+        hostProjectMap = createProjectMap(folders.map(f => f.uri.fsPath));
+    };
+    refreshProjectMap();
+    // Declared before revealUri (next) is defined: revealUri calls projectStatusBar.refresh() on
+    // every invocation, including the synchronous "reveal the already-open active editor" call
+    // below (~line 133) that runs before the tree/editor-provider setup further down — constructing
+    // this any later would reference projectStatusBar before its declaration executes.
+    const projectStatusBar = createProjectStatusBar(context, () => hostProjectMap);
+
     let treeView;
     const { TwinCatTreeItem } = require('./src/treeDataProvider');
     const revealUri = async (uri) => {
+        // Runs for every active-file change (custom-editor webview activation AND plain text
+        // editors), independent of the tree-reveal eligibility check below, so switching to a
+        // non-TwinCAT file correctly hides the indicator rather than leaving it showing the
+        // previously active project.
+        projectStatusBar.refresh(uri);
         if (!treeView) return;
         const ext = path.extname(uri.fsPath).toLowerCase();
         if (!['.tcpou', '.tcio', '.tcgvl', '.tcdut', '.st'].includes(ext)) {
@@ -298,6 +325,10 @@ function activate(context) {
     // a library added in TwinCAT would never appear.
     const refreshLibrariesFor = (uri) => {
         if (path.extname(uri.fsPath).toLowerCase() !== '.plcproj') return;
+        // The host's own partition (used by the status bar) is independent of the LSP's copy and
+        // must be rebuilt on the same trigger: a project added/removed/renamed changes which
+        // `.plcproj` owns which file, and how many projects there are to disambiguate.
+        refreshProjectMap();
         if (!client) {
             libraryProvider.refresh();
             return;

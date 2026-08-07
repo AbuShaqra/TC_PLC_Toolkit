@@ -114,8 +114,28 @@ assert(empty.projectFor(path.join(bare, 'X.TcPOU')) === LOOSE_PROJECT_KEY,
 assert(map.projectFor(path.join(A, 'pous', 'main.tcpou')) === keyA,
     'ownership is case-insensitive');
 
+// --- status-bar label ---------------------------------------------------------------------
+const { projectLabel } = require('../src/projectStatusBar');
+
+assert(projectLabel(map, path.join(A, 'POUs', 'MAIN.TcPOU')) === 'LineA',
+    'the label names the owning project');
+assert(projectLabel(map, path.join(ROOT, 'Loose', 'Stray.TcPOU')) === 'Loose files',
+    'a file under no project is labelled as loose');
+assert(projectLabel(empty, path.join(bare, 'X.TcPOU')) === '',
+    'a workspace with no project shows nothing — there is nothing to disambiguate');
+
+// One project is the common case: the indicator must stay out of the way.
+const soloRoot = path.join(os.tmpdir(), 'projmap_solo_' + Date.now());
+fs.mkdirSync(path.join(soloRoot, 'POUs'), { recursive: true });
+fs.writeFileSync(path.join(soloRoot, 'Solo.plcproj'),
+    '<Project><ItemGroup><Compile Include="POUs\\MAIN.TcPOU"/></ItemGroup></Project>');
+const solo = createProjectMap([soloRoot]);
+assert(projectLabel(solo, path.join(soloRoot, 'POUs', 'MAIN.TcPOU')) === '',
+    'a single-project workspace shows nothing');
+
 fs.rmSync(ROOT, { recursive: true, force: true });
 fs.rmSync(bare, { recursive: true, force: true });
+fs.rmSync(soloRoot, { recursive: true, force: true });
 
 console.log(`\n--- PROJECT MAP TESTS COMPLETE with ${errors} error(s) ---`);
 process.exit(errors > 0 ? 1 : 0);
