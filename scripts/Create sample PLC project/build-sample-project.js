@@ -11,7 +11,7 @@
  *
  * So the skeleton is generated ONCE, by XAE itself, via `scripts/build-sample-solution.ps1`, and is
  * committed. This script writes only what is genuinely ours — the objects and their project
- * registration — into `sample/TcToolkitSample/TcToolkitSample_PLC/`. Everything XAE owns
+ * registration — into `TcSample/TcSample_PLC/`. Everything XAE owns
  * (`.sln`, `.tsproj`, `_Config/`, `PlcTask.TcTTO`, `_Libraries/`, and the whole of the `.plcproj`
  * except the two ItemGroups below) is left strictly alone: regenerating any of it is what broke this
  * before.
@@ -44,10 +44,16 @@
  *     none.
  *
  * Usage:
- *   node scripts/build-sample-project.js [plcProjectRoot]
- * The default root is `sample/TcToolkitSample/TcToolkitSample_PLC` — the directory holding the
- * XAE-authored `.plcproj`. Running it twice must leave the tree byte-identical: object GUIDs are
- * derived, and the `.plcproj` injection is idempotent.
+ *   node Scripts/build-sample-project.js                   # clone TcSample -> TcSample_N, fill the clone
+ *   node Scripts/build-sample-project.js <plcProjectRoot>  # fill that project IN PLACE (destructive)
+ *
+ * With no argument nothing that already exists is touched: the committed skeleton is cloned into the
+ * next free sibling directory under the repo root (`TcSample`, then `TcSample_1`, `TcSample_2`, …) and
+ * the COPY is filled. Pass a `<plcProjectRoot>` — the directory holding a `.plcproj` — to regenerate
+ * that project's objects in place instead. That is the destructive path, and it stays opt-in.
+ *
+ * Filling is idempotent either way: object GUIDs are derived, so re-running over the same project
+ * leaves the tree byte-identical, and the `.plcproj` injection adds nothing on a second pass.
  */
 
 const fs = require('fs');
@@ -855,12 +861,291 @@ function findPlcProj(root) {
             `no .plcproj found in ${root}\n\n` +
             `This script FILLS an XAE-created PLC project; it does not create one. Generate the\n` +
             `skeleton first (once — it is committed):\n\n` +
-            `    powershell -File scripts/build-sample-solution.ps1\n`);
+            `    powershell -NoProfile -STA -File Scripts\\build-sample-solution.ps1\n`);
     }
     if (entries.length > 1) {
         throw new Error(`expected exactly one .plcproj in ${root}, found ${entries.length}: ${entries.join(', ')}`);
     }
     return path.join(root, entries[0]);
+}
+
+// ═════════════════════════════════════════════════════════════════════════════════════════════════
+// Sandbox cloning
+//
+// Filling a project OVERWRITES the objects already in it, so running this script with no arguments
+// used to mean "destroy whatever is in the default project". The no-argument path therefore does not
+// touch anything that exists: it clones the committed skeleton into the next free sibling directory
+// (`TcSample` -> `TcSample_1` -> `TcSample_2` …) and fills the copy.
+//
+// The clone is a byte-for-byte copy with a project rename applied — it SYNTHESIZES NOTHING. The
+// `.sln`/`.tsproj` pair, the `_Config` instance files and the identity GUIDs still come from XAE
+// exactly as build-sample-solution.ps1 left them, which is the whole reason this script stopped
+// emitting its own `.plcproj` (see the file header).
+//
+// GUIDs are deliberately NOT re-issued. They are cross-referenced across four files — the `.sln`
+// carries both the `.tsproj`'s and the `.plcproj`'s, and `_Config\PLC\<plc>.xti` repeats the latter —
+// so re-issuing means re-issuing them consistently everywhere or producing a project XAE refuses to
+// open. Two sibling solutions sharing GUIDs is harmless: they are never loaded into one solution.
+// ═════════════════════════════════════════════════════════════════════════════════════════════════
+
+/** Directory name of the skeleton to clone, and the stem every sandbox is named after. */
+const SOLUTION_DIR_NAME = 'TcSample';
+
+/**
+ * The enclosing git repository's root, found by walking UP from a starting directory.
+ *
+ * Not `path.resolve(__dirname, '..')`: this script has already been moved once
+ * (`Scripts/` -> `Scripts/Create sample project/`), and a fixed depth silently resolves to the wrong
+ * directory when that happens — it would look for `TcSample` inside `Scripts/` and clone into it.
+ * Anchoring on `.git` keeps the same file correct wherever it is nested.
+ * @param {string} from Directory to start from.
+ * @returns {string} The repo root, or `from`'s parent when there is no git repo above it.
+ */
+function findRepoRoot(from) {
+    let dir = from;
+    for (;;) {
+        if (fs.existsSync(path.join(dir, '.git'))) return dir;
+        const parent = path.dirname(dir);
+        if (parent === dir) return path.resolve(from, '..');
+        dir = parent;
+    }
+}
+
+/**
+ * Extensions whose CONTENT names the project and therefore has to be rewritten. Everything else is
+ * copied byte-for-byte: the `_Libraries/` archives, the `.tmc`, and the objects themselves (which the
+ * fill step overwrites anyway).
+ */
+const TEXT_PROJECT_FILES = new Set(['.sln', '.tsproj', '.xti', '.xtv', '.plcproj']);
+
+/**
+ * Directory names never copied into a sandbox. `_Boot` and `_CompileInfo*` are build output — a build
+ * regenerates them, and they are the bulk of the tree — and `.vs` is the developer's own window
+ * layout, which still points at the machine the skeleton was authored on.
+ */
+const SKIP_DIRS = new Set(['_boot', '_compileinfo', '_compileinfo_upload', '.vs']);
+
+const BOM = '﻿';
+
+/** @param {string} s @returns {string} `s` with every regex metacharacter escaped. */
+function escapeRegExp(s) {
+    return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Reads a text file, reporting whether it carried a UTF-8 BOM.
+ *
+ * Whether a BOM is present varies FILE BY FILE here — the `.sln` has one; the `.tsproj`, `.plcproj`
+ * and the `_Config` XTIs do not — and writing a file back with the wrong answer makes every one of its
+ * lines show as changed. So it is measured per file rather than assumed.
+ * @param {string} filePath
+ * @returns {{text: string, bom: boolean}} Text with any BOM stripped, and whether there was one.
+ */
+function readTextWithBom(filePath) {
+    const text = fs.readFileSync(filePath, 'utf8');
+    return text.startsWith(BOM) ? { text: text.slice(1), bom: true } : { text, bom: false };
+}
+
+/**
+ * Writes text back with the BOM it came with.
+ *
+ * Line endings are not normalised in either direction: the rewrite below is a pure token substitution,
+ * so whatever CRLF the source had survives, and the `.plcproj`'s missing trailing newline survives too.
+ * @param {string} filePath
+ * @param {string} text Text WITHOUT a BOM.
+ * @param {boolean} bom Whether to write one.
+ */
+function writeTextWithBom(filePath, text, bom) {
+    fs.mkdirSync(path.dirname(filePath), { recursive: true });
+    fs.writeFileSync(filePath, (bom ? BOM : '') + text, 'utf8');
+}
+
+/**
+ * Applies a name map in a SINGLE pass, preferring the longest key at each position.
+ *
+ * Single-pass is load-bearing. Applying the entries one after another re-scans text that an earlier
+ * entry already rewrote: with `{TcSample_PLC: 'TcSample_1_PLC', TcSample: 'TcSample_1'}`, the second
+ * pass turns the first pass's output into `TcSample_1_1_PLC`. One alternation, longest branch first,
+ * cannot do that — a replaced span is never reconsidered.
+ * @param {string} text
+ * @param {Record<string, string>} nameMap
+ * @returns {string}
+ */
+function applyNameMap(text, nameMap) {
+    const keys = Object.keys(nameMap).sort((a, b) => b.length - a.length);
+    if (keys.length === 0) return text;
+    return text.replace(new RegExp(keys.map(escapeRegExp).join('|'), 'g'), m => nameMap[m]);
+}
+
+/**
+ * The first free `<baseName>`, `<baseName>_1`, `<baseName>_2`, … directory under a root.
+ * @param {string} root
+ * @param {string} baseName
+ * @returns {string} Absolute path to a directory that does NOT exist.
+ */
+function nextFreeSolutionDir(root, baseName) {
+    for (let n = 0; n < 1000; n++) {
+        const candidate = path.join(root, n === 0 ? baseName : `${baseName}_${n}`);
+        if (!fs.existsSync(candidate)) return candidate;
+    }
+    throw new Error(`no free sandbox name under ${root} (tried ${baseName} and ${baseName}_1 … _999)`);
+}
+
+/**
+ * Clones a TwinCAT solution directory to a new name.
+ *
+ * The source is identified by what is ON DISK rather than by convention: the single `.sln` names the
+ * solution, and the single `.plcproj` names the PLC project and the directory holding it. Only the
+ * SOLUTION name is a rename token — the PLC project's new name falls out of applying it, so a PLC
+ * project named after something else keeps its name (it needs no rename; it is in a new directory).
+ *
+ * The token is substring-matched, exactly as a project rename is. Give a sandbox a distinctive stem:
+ * a solution named `Tc2` would rewrite the `Tc2_Standard` library references in the `.plcproj`.
+ * @param {string} srcDir Solution directory to clone (the one holding the `.sln`).
+ * @param {string} dstDir Destination directory. Must not exist.
+ * @returns {{solutionDir: string, slnPath: string, plcProjectRoot: string, from: string,
+ *            filesCopied: number, filesSkipped: number}}
+ */
+function cloneSolution(srcDir, dstDir) {
+    if (!fs.existsSync(srcDir)) {
+        throw new Error(
+            `no skeleton to clone at ${srcDir}\n\n` +
+            `This script FILLS an XAE-created PLC project; it does not create one. Generate the\n` +
+            `skeleton first (once — it is committed):\n\n` +
+            `    powershell -NoProfile -STA -File Scripts\\build-sample-solution.ps1\n`);
+    }
+    if (path.resolve(srcDir) === path.resolve(dstDir)) {
+        throw new Error(`refusing to clone ${srcDir} onto itself`);
+    }
+    if (fs.existsSync(dstDir)) {
+        throw new Error(`${dstDir} already exists — refusing to clone into it`);
+    }
+
+    const slnFiles = fs.readdirSync(srcDir).filter(f => f.toLowerCase().endsWith('.sln'));
+    if (slnFiles.length !== 1) {
+        throw new Error(`expected exactly one .sln in ${srcDir}, found ${slnFiles.length}`);
+    }
+    const srcSlnName = path.basename(slnFiles[0], path.extname(slnFiles[0]));
+
+    // The PLC project lives one level down. `_Config` holds the system project's instance files, not
+    // a `.plcproj`, so it is not a candidate.
+    let srcPlcDir = null;
+    let srcPlcName = null;
+    for (const entry of fs.readdirSync(srcDir, { withFileTypes: true })) {
+        if (!entry.isDirectory()) continue;
+        if (entry.name === '_Config' || SKIP_DIRS.has(entry.name.toLowerCase())) continue;
+        const hit = fs.readdirSync(path.join(srcDir, entry.name))
+            .find(f => f.toLowerCase().endsWith('.plcproj'));
+        if (hit) {
+            srcPlcDir = entry.name;
+            srcPlcName = path.basename(hit, path.extname(hit));
+            break;
+        }
+    }
+    if (!srcPlcDir) throw new Error(`no <dir>/<dir>.plcproj found under ${srcDir}`);
+
+    const nameMap = { [srcSlnName]: path.basename(dstDir) };
+    const dstPlcDir = applyNameMap(srcPlcDir, nameMap);
+    const dstPlcName = applyNameMap(srcPlcName, nameMap);
+
+    const stats = { copied: 0, skipped: 0 };
+
+    /** Recursive copy, renaming path segments and rewriting the project files as it goes. */
+    const copyTree = (relDir) => {
+        for (const entry of fs.readdirSync(path.join(srcDir, relDir), { withFileTypes: true })) {
+            const rel = path.join(relDir, entry.name);
+            const srcPath = path.join(srcDir, rel);
+            const dstPath = path.join(dstDir, applyNameMap(rel, nameMap));
+
+            if (entry.isDirectory()) {
+                if (SKIP_DIRS.has(entry.name.toLowerCase())) { stats.skipped++; continue; }
+                fs.mkdirSync(dstPath, { recursive: true });
+                copyTree(rel);
+                continue;
+            }
+
+            const lower = entry.name.toLowerCase();
+            // `.bak` files are the IDE's own backups of a rename that already happened; a `.tmc`
+            // belonging to some OTHER project name is residue from the same rename. Neither describes
+            // this project, and carrying them forward propagates the mess into every sandbox.
+            if (lower.endsWith('.bak')) { stats.skipped++; continue; }
+            // Documentation belongs to the repo, not to a disposable sandbox — one copy per clone is
+            // just N copies drifting out of date.
+            if (lower.endsWith('.md')) { stats.skipped++; continue; }
+            if (lower.endsWith('.tmc') && path.basename(entry.name, path.extname(entry.name)) !== srcPlcName) {
+                stats.skipped++;
+                continue;
+            }
+
+            if (TEXT_PROJECT_FILES.has(path.extname(lower))) {
+                const { text, bom } = readTextWithBom(srcPath);
+                writeTextWithBom(dstPath, applyNameMap(text, nameMap), bom);
+            } else {
+                fs.mkdirSync(path.dirname(dstPath), { recursive: true });
+                fs.copyFileSync(srcPath, dstPath);
+            }
+            stats.copied++;
+        }
+    };
+    copyTree('');
+
+    // The instance XTI's TmcPath/XtvPath are canonical by construction — `<plcDir>\<plcName>.<ext>` —
+    // so they are COMPUTED rather than renamed. A token rename can only rewrite names it was given, so
+    // a skeleton whose XTI still points at some earlier project name would seed that stale path into
+    // every clone. (The committed skeleton did exactly that until TwinCAT rewrote the XTI during a
+    // build.) Computing the paths makes the clone correct regardless of what the source carries.
+    const configDir = path.join(dstDir, '_Config');
+    if (fs.existsSync(configDir)) {
+        for (const entry of fs.readdirSync(configDir, { withFileTypes: true })) {
+            if (!entry.isDirectory()) continue;
+            for (const file of fs.readdirSync(path.join(configDir, entry.name))) {
+                if (!file.toLowerCase().endsWith(' instance.xti')) continue;
+                const xtiPath = path.join(configDir, entry.name, file);
+                const { text, bom } = readTextWithBom(xtiPath);
+                const repaired = text
+                    .replace(/TmcPath="[^"]*"/, `TmcPath="${dstPlcDir}\\${dstPlcName}.tmc"`)
+                    .replace(/XtvPath="[^"]*"/, `XtvPath="${entry.name}\\${dstPlcName} Instance.xtv"`);
+                if (repaired !== text) writeTextWithBom(xtiPath, repaired, bom);
+            }
+        }
+    }
+
+    // The copy above declines to bring stale `.tmc` FILES across; this drops the `<None>` items that
+    // referenced them, so the clone does not ship a project entry pointing at a file that is not
+    // there. Only `.tmc` items are touched — every other byte of the `.plcproj` is XAE's.
+    const clonedPlcProj = path.join(dstDir, dstPlcDir, `${dstPlcName}.plcproj`);
+    if (fs.existsSync(clonedPlcProj)) {
+        const { text, bom } = readTextWithBom(clonedPlcProj);
+        const pruned = text
+            .replace(/[ \t]*<None Include="([^"]*\.tmc)">[\s\S]*?<\/None>\r?\n?/g,
+                (whole, include) =>
+                    path.basename(include, path.extname(include)) === dstPlcName ? whole : '')
+            // An ItemGroup that held nothing but the pruned item would otherwise be left empty.
+            .replace(/[ \t]*<ItemGroup>\s*<\/ItemGroup>\r?\n?/g, '');
+        if (pruned !== text) writeTextWithBom(clonedPlcProj, pruned, bom);
+    }
+
+    // Verify on disk rather than trusting the copy — the same discipline build-sample-solution.ps1
+    // applies to the skeleton it creates.
+    const slnPath = path.join(dstDir, `${path.basename(dstDir)}.sln`);
+    const plcProjectRoot = path.join(dstDir, dstPlcDir);
+    const checks = [
+        ['solution', slnPath],
+        ['system project', path.join(dstDir, `${path.basename(dstDir)}.tsproj`)],
+        ['PLC project', path.join(plcProjectRoot, `${dstPlcName}.plcproj`)]
+    ];
+    for (const [what, p] of checks) {
+        if (!fs.existsSync(p)) throw new Error(`clone incomplete: no ${what} at ${p}`);
+    }
+
+    return {
+        solutionDir: dstDir,
+        slnPath,
+        plcProjectRoot,
+        from: srcDir,
+        filesCopied: stats.copied,
+        filesSkipped: stats.skipped
+    };
 }
 
 /**
@@ -890,15 +1175,36 @@ function build(root) {
 }
 
 if (require.main === module) {
-    const target = process.argv[2]
-        ? path.resolve(process.argv[2])
-        : path.resolve(__dirname, '..', 'sample', 'TcToolkitSample', 'TcToolkitSample_PLC');
+    let cloned = null;
     let result;
     try {
+        let target;
+        if (process.argv[2]) {
+            // Explicit root: fill that project IN PLACE. This is the destructive path — it is how the
+            // committed project's objects get regenerated — so it stays opt-in.
+            target = path.resolve(process.argv[2]);
+        } else {
+            // No argument: clone, then fill the clone. Nothing that already exists is written to.
+            const repoRoot = findRepoRoot(__dirname);
+            cloned = cloneSolution(
+                path.join(repoRoot, SOLUTION_DIR_NAME),
+                nextFreeSolutionDir(repoRoot, SOLUTION_DIR_NAME));
+            target = cloned.plcProjectRoot;
+        }
         result = build(target);
     } catch (err) {
         console.error(`\n[build-sample-project] ${err.message}`);
+        // A clone that was created before the failure is left on disk deliberately — deleting a
+        // directory tree on an error path is how you delete the wrong one. Name it so it can be
+        // inspected or removed by hand.
+        if (cloned) console.error(`[build-sample-project] partial sandbox left at ${cloned.solutionDir}`);
         process.exit(1);
+    }
+    if (cloned) {
+        console.log(`Cloned ${cloned.from}`);
+        console.log(`    -> ${cloned.solutionDir} ` +
+            `(${cloned.filesCopied} files copied, ${cloned.filesSkipped} skipped: build output, IDE state, .bak, stale .tmc)`);
+        console.log(`Solution: ${cloned.slnPath}`);
     }
     console.log(`Wrote ${result.objects} TwinCAT objects to ${result.root}`);
     console.log(`Registered in ${path.basename(result.plcProj)}: ` +
@@ -906,4 +1212,7 @@ if (require.main === module) {
         `(0/0 on a re-run — the injection is idempotent)`);
 }
 
-module.exports = { build, renderObject, registerObjectsInPlcProj, guid, OBJECTS };
+module.exports = {
+    build, renderObject, registerObjectsInPlcProj, guid, OBJECTS,
+    cloneSolution, nextFreeSolutionDir, applyNameMap
+};

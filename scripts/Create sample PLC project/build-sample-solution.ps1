@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Creates an authentic, EMPTY TwinCAT solution + PLC project skeleton for sample/, by driving
+    Creates an authentic, EMPTY TwinCAT solution + PLC project skeleton at the repo root, by driving
     TcXaeShell's automation interface (DTE) exactly once.
 
 .DESCRIPTION
@@ -64,17 +64,24 @@
     exactly that and no more.
 
     It also refuses to overwrite: `<OutputRoot>\<SolutionName>` must be absent or empty unless -Force
-    is passed, because that path is where the committed sample fixtures live.
+    is passed, because with the default -OutputRoot that path is a solution directory at the repo
+    root -- name an existing one (`TcSample`, or a `TcSample_N` sandbox) and a silent clobber would
+    destroy committed work.
 
 .PARAMETER OutputRoot
-    Directory the solution folder is created in. Defaults to the repo's `sample` directory (resolved
-    relative to this script, so it is correct whatever the working directory is).
+    Directory the solution folder is created in. Defaults to the REPO ROOT -- the parent of this
+    script's own directory, resolved relative to this script so it is correct whatever the working
+    directory is. Solutions in this repo live as directories directly at the root (`TcSample\`), so
+    the default drops a new skeleton in beside them, at `<repo>\<SolutionName>\`.
 
 .PARAMETER SolutionName
     Name of the solution AND of its folder: everything lands in `<OutputRoot>\<SolutionName>`.
 
 .PARAMETER PlcProjectName
-    Name of the PLC project created under the system project.
+    Name of the PLC project created under the system project. This repo names it `<Solution>_PLC`
+    (TcSample / TcSample_PLC), and the default follows that -- build-sample-project.js's sandbox
+    cloner renames the PLC project by substring from the solution name, so the two staying in step
+    is what keeps a clone coming out consistent.
 
 .PARAMETER TsProjTemplate
     The TwinCAT XAE system-project template. A full path is correct here (unlike -PlcTemplate).
@@ -98,22 +105,23 @@
 .PARAMETER Force
     Proceed even though `<OutputRoot>\<SolutionName>` already exists and is non-empty. -Force NEVER
     DELETES ANYTHING: it creates into the existing directory. (Deleting would take the committed
-    sample fixtures with it.)
+    project in that directory with it.)
 
 .EXAMPLE
+    # Defaults: creates <repo>\TcSkeleton\, a sibling of the committed TcSample\.
     powershell.exe -NoProfile -STA -File scripts\build-sample-solution.ps1
 
 .EXAMPLE
     powershell.exe -NoProfile -STA -File scripts\build-sample-solution.ps1 `
-        -OutputRoot C:\scratch -SolutionName TcToolkitSample -PlcProjectName TcToolkitSample
+        -OutputRoot C:\scratch -SolutionName TcScratch -PlcProjectName TcScratch_PLC
 #>
 
 param(
     [string] $OutputRoot = '',
 
-    [string] $SolutionName = 'TcToolkitSample',
+    [string] $SolutionName = 'TcSkeleton',
 
-    [string] $PlcProjectName = 'TcToolkitSample',
+    [string] $PlcProjectName = 'TcSkeleton_PLC',
 
     [string] $TsProjTemplate = 'C:\Program Files (x86)\Beckhoff\TwinCAT\3.1\Components\Base\PrjTemplate\TwinCAT Project.tsproj',
 
@@ -386,10 +394,24 @@ function Get-ProjectArtifacts {
 # Main
 # ------------------------------------------------------------------------------------------------
 
-# The repo's sample/ directory, resolved from this script's own location so the default is correct
+# The repo ROOT: this script lives in <repo>\Scripts\, and solutions in this repo are directories
+# directly at the root (TcSample\), so a generated skeleton belongs beside them rather than in a
+# subdirectory of its own. Resolved from this script's own location so the default is correct
 # regardless of the working directory. Kept out of the param() default because $PSScriptRoot is not
 # reliably populated there when the script is dot-sourced rather than run with -File.
-if (-not $OutputRoot) { $OutputRoot = Join-Path (Split-Path -Parent $PSScriptRoot) 'sample' }
+# Walk UP to the git root rather than assuming the script sits one level below it. This file has
+# already been moved once (Scripts\ -> Scripts\Create sample project\), and a fixed depth silently
+# resolves to the wrong directory when that happens - here it would create skeletons inside Scripts\.
+if (-not $OutputRoot) {
+    $dir = $PSScriptRoot
+    while ($dir) {
+        if (Test-Path -LiteralPath (Join-Path $dir '.git')) { break }
+        $parent = Split-Path -Parent $dir
+        if (-not $parent -or $parent -eq $dir) { $dir = $null; break }
+        $dir = $parent
+    }
+    $OutputRoot = if ($dir) { $dir } else { Split-Path -Parent $PSScriptRoot }
+}
 
 if (-not (Test-Path -LiteralPath $OutputRoot)) {
     New-Item -ItemType Directory -Path $OutputRoot -Force | Out-Null
@@ -400,16 +422,17 @@ $OutputRoot = (Resolve-Path -LiteralPath $OutputRoot).Path
 $solutionDir = Join-Path $OutputRoot $SolutionName
 $slnPath = Join-Path $solutionDir "$SolutionName.sln"
 
-# Refuse to overwrite. This path is where the committed sample fixtures live, and a silent clobber
-# would destroy them. -Force proceeds INTO the directory; it never deletes.
+# Refuse to overwrite. With the default -OutputRoot this is a directory at the repo root -- a sibling
+# of the committed TcSample\ -- so naming an existing solution would put a silent clobber on top of
+# real work. -Force proceeds INTO the directory; it never deletes.
 if (Test-Path -LiteralPath $solutionDir) {
     $existing = @(Get-ChildItem -LiteralPath $solutionDir -Force -ErrorAction SilentlyContinue)
     if ($existing.Count -gt 0 -and -not $Force) {
         Write-Host "FAILURE: '$solutionDir' already exists and is not empty ($($existing.Count) entries)."
-        Write-Host "         That directory holds the committed sample fixtures -- this script will not"
-        Write-Host "         write into it silently. Either point -OutputRoot at a scratch directory and"
-        Write-Host "         move the result in by hand, or re-run with -Force (which creates into the"
-        Write-Host "         existing directory and deletes nothing)."
+        Write-Host "         That directory already holds a project -- this script will not write into it"
+        Write-Host "         silently. Either pick a -SolutionName that is free, point -OutputRoot at a"
+        Write-Host "         scratch directory and move the result in by hand, or re-run with -Force"
+        Write-Host "         (which creates into the existing directory and deletes nothing)."
         exit 1
     }
     if ($existing.Count -gt 0) {
@@ -613,11 +636,14 @@ try {
     # SaveAs put it exactly where we asked.
     $slnFound = Test-Path -LiteralPath $slnPath
     if (-not $slnFound) {
-        # SaveAs may have honoured the IDE's own layout instead; accept any .sln under the output root.
-        $strays = @(Get-ChildItem -LiteralPath $OutputRoot -Recurse -File -Filter '*.sln' -ErrorAction SilentlyContinue)
+        # SaveAs may have honoured the IDE's own layout instead; accept OUR solution wherever under the
+        # output root it landed. Matched by NAME, not '*.sln': the default -OutputRoot is the repo root,
+        # which already holds TcSample\TcSample.sln (plus any TcSample_N sandbox), and a bare '*.sln'
+        # sweep would "find" one of those and report a solution this run never wrote as its output.
+        $strays = @(Get-ChildItem -LiteralPath $OutputRoot -Recurse -File -Filter "$SolutionName.sln" -ErrorAction SilentlyContinue)
         if ($strays.Count -gt 0) { $slnPath = $strays[0].FullName; $slnFound = $true }
     }
-    if (-not $slnFound) { throw "no .sln was written under $OutputRoot" }
+    if (-not $slnFound) { throw "no $SolutionName.sln was written under $OutputRoot" }
 
     $tsProjFiles = @(Get-ChildItem -LiteralPath $solutionDir -Recurse -File -Filter '*.tsproj' -ErrorAction SilentlyContinue)
     if ($tsProjFiles.Count -eq 0) { throw "no .tsproj was written under $solutionDir" }

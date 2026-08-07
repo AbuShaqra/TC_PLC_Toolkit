@@ -8,7 +8,8 @@ node_modules/
 .claude/settings.local.json
 
 # The sample project the harnesses gate on. `sample/TcToolkitSample/` is WHOLLY SYNTHETIC — written
-# by scripts/build-sample-project.js, no customer or vendor content — and IS committed, so CI can run
+# by scripts/Create sample PLC project/build-sample-project.js, no customer or vendor content — and
+# IS committed, so CI can run
 # the diagnostics ratchet and the live-path guard instead of skipping them.
 #
 # Anything else under sample/ is a local, private project and must never be committed: exclude the

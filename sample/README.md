@@ -11,13 +11,14 @@ extension. It measures **0** against a baseline of **0**.
 
 Two steps, both reproducible:
 
-1. **`scripts/build-sample-solution.ps1`** drives TwinCAT XAE's automation interface once to create the
-   `.sln`, `.tsproj` and an empty `.plcproj`. Only TwinCAT can write those correctly — the template on
-   disk is a 67-byte stub that TwinCAT expands at insertion time, and hand-writing them produced a
-   project XAE refused to open. Requires TwinCAT; run rarely.
-2. **`scripts/build-sample-project.js`** writes the 19 PLC objects and *injects* their `<Compile>` and
-   `<Folder>` entries into XAE's `.plcproj`, leaving its identity GUIDs, library references and
-   options archive untouched. Deterministic and idempotent — no TwinCAT needed.
+1. **`scripts/Create sample PLC project/build-sample-solution.ps1`** drives TwinCAT XAE's automation
+   interface once to create the `.sln`, `.tsproj` and an empty `.plcproj`. Only TwinCAT can write those
+   correctly — the template on disk is a 67-byte stub that TwinCAT expands at insertion time, and
+   hand-writing them produced a project XAE refused to open. Requires TwinCAT; run rarely.
+2. **`scripts/Create sample PLC project/build-sample-project.js`** writes the 19 PLC objects and
+   *injects* their `<Compile>` and `<Folder>` entries into XAE's `.plcproj`, leaving its identity
+   GUIDs, library references and options archive untouched. Deterministic and idempotent — no TwinCAT
+   needed.
 
 ## What is and is not committed
 
