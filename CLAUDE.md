@@ -93,7 +93,7 @@ Three processes cooperate; the extension host is the hub — **the webview never
 
 1. **Webview** (`media/editor.js` + `media/editor.css`) — two Monaco panes (Declaration / Implementation) per component, with Monaco vendored under `media/monaco-editor/` (offline). Registers Monaco providers that forward requests to the extension via `postMessage`.
 2. **Extension host** (`extension.js`, `src/customEditorProvider.js`) — activation, commands, file watchers, tree views, and the LSP bridge.
-3. **LSP server** (`src/lsp/server.js`) — spawned over Node IPC via `vscode-languageclient`. Besides standard LSP, it answers custom JSON-RPC requests used by the bridge: `custom/completions`, `custom/definition`, `custom/references`, `custom/diagnostics`, `custom/updateDocument`, `custom/updateTypesMap`, `custom/reindex`, `custom/setDiagnosticsConfig`, `custom/indexXmlDocument`.
+3. **LSP server** (`src/lsp/server.js`) — spawned over Node IPC via `vscode-languageclient`. Besides standard LSP, it answers custom JSON-RPC requests used by the bridge: `custom/completions`, `custom/definition`, `custom/references`, `custom/referencesForSymbol`, `custom/configReferencesForSymbol`, `custom/diagnostics`, `custom/updateDocument`, `custom/reindex`, `custom/setDiagnosticsConfig`, `custom/libraries`, `custom/indexXmlDocument`.
 
 ### The live language-feature path (the core trick)
 

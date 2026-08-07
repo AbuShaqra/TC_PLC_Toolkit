@@ -7,6 +7,11 @@
  * crawl feeding `server.js`'s `custom/updateTypesMap` handler) was removed as unscoped and
  * redundant (see `docs/superpowers/plans/2026-08-06-project-scoped-index.md`, Task 5) — so this
  * harness constructs stub nodes directly and asserts the resolution path still tolerates them.
+ *
+ * Known vestigial, kept deliberately: it no longer mirrors any production code path, since no
+ * indexer builds a stub-ranged node any more (see above). What survives is a defensive check that
+ * `provideCompletions`/`provideDefinition` in `features.js` tolerate one — no current code in that
+ * file has been found to depend on it, so this guards against a regression, not a live consumer.
  */
 
 const { clearWorkspaceIndex, parseAndIndexDocument, getWorkspaceSymbolIndex } = require('../src/lsp/parser');
