@@ -54,9 +54,12 @@ const libraryNamespaces = new Set();
  * That fallback is what keeps ~15 pre-existing standalone harnesses working unchanged: they populate
  * the namespace registry with NO index (the default), then exercise a feature (provideDiagnostics,
  * provideCompletions) against a real, separately-constructed symbol index that was never itself
- * indexed. In production this branch is never taken — server.js always indexes a project's own index
- * (see ensureRegistryFor) before any request can read from it, so a real project's registry always
- * exists by the time isLibraryNamespace/getLibraryNamespaces run.
+ * indexed. For any project `indexLibraries` HAS processed (see ensureRegistryFor), this branch is
+ * never taken — that project's own registry already exists by the time isLibraryNamespace/
+ * getLibraryNamespaces run. It IS taken for an index nothing has indexed yet: workspaceScan.js's
+ * `indexForKey` lazily creates an empty `{}` for any project key not yet scanned (reachable for
+ * LOOSE_PROJECT_KEY), and that is exactly what made the custom/libraries handler return nothing before
+ * its union fallback was added (see server.js, getUnionLibraryCatalog).
  * @param {Object} [index] A project's symbol index. Omit for the default registry.
  * @returns {Set<string>} The lower-cased namespace set for that project (or the default's).
  */

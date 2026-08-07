@@ -29,7 +29,8 @@ const {
     indexLibrarySignatures,
     indexBrowserCache,
     registerLibrarySymbolNodes,
-    getLibraryCatalog
+    getLibraryCatalog,
+    getUnionLibraryCatalog
 } = require('./libsymbols');
 
 const {
@@ -378,7 +379,14 @@ connection.onRequest('custom/libraries', (params) => {
     try {
         // The catalog is per project — two projects reference different libraries. The extension
         // passes the active file so the view shows that project's libraries.
-        return getLibraryCatalog(workspace.indexForUri((params && params.fileUri) || ''));
+        const catalog = getLibraryCatalog(workspace.indexForUri((params && params.fileUri) || ''));
+        if (catalog.length > 0) return catalog;
+        // No fileUri (the extension host has not been updated to send the active file), or the routed
+        // project genuinely references no libraries: fall back to every project's catalog, unioned.
+        // The view is read-only browsing, so a superset is harmless — showing nothing at all is the
+        // regression. In a single-project workspace the union IS that project's own catalog, so this
+        // restores exactly what custom/libraries returned before per-project scoping.
+        return getUnionLibraryCatalog(workspace.indexes.values());
     } catch (e) {
         return [];
     }

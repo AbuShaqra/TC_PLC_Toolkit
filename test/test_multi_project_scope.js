@@ -131,6 +131,73 @@ assert(isLibraryNamespace('Tc2_LineBOnly', idxB), "LineB knows its own library n
 assert(!isLibraryNamespace('Tc2_LineBOnly', idxA),
     "LineA does NOT know LineB's library namespace (registries are per project)");
 
+// --- once a project index has been written, it never reads the default (no-index) registry --------
+// This is the invariant the read/write split's whole safety argument rests on, and it is a DIFFERENT
+// claim from the two assertions just above. Those prove idxA and idxB are isolated from EACH OTHER;
+// they would pass identically under the design's literal single-function sketch (registryFor that
+// creates-and-returns unconditionally), because by the time they run, idxA and idxB already have
+// their OWN non-empty registries either way. The read/write split's actual, distinguishing behaviour
+// only shows up for an index that is read before it is ever written — which is exactly the ~15
+// pre-existing-harness scenario the split exists to bridge. So the regression this guards against is
+// specific: a future change that makes the read side fall back to (or merge in) the default registry
+// even for an index that already owns one — e.g. "let's also check the default for completeness".
+//
+// A marker namespace is indexed with NO index (landing only in the shared default registry). idxA and
+// idxB — both already written to, above — must not see it: nothing indexed elsewhere, including the
+// no-index default, may leak into an index that has its own registry.
+const probeDir = path.join(fx.root, '_DefaultOnlyProbe');
+fs.mkdirSync(probeDir);
+fs.writeFileSync(path.join(probeDir, 'Marker.plcproj'), `<Project>
+  <ItemGroup>
+    <PlaceholderReference Include="Tc2_DefaultRegistryOnly">
+      <DefaultResolution>Tc2_DefaultRegistryOnly, 1.0.0.0 (Beckhoff Automation GmbH)</DefaultResolution>
+      <Namespace>Tc2_DefaultRegistryOnly</Namespace>
+    </PlaceholderReference>
+  </ItemGroup>
+</Project>`);
+
+clearLibraryNamespaces(); // clears the DEFAULT (no-index) registry only — idxA/idxB are untouched
+indexLibraryNamespaces(probeDir); // NO index — lands in the shared default registry, nowhere else
+assert(isLibraryNamespace('Tc2_DefaultRegistryOnly'),
+    'sanity: the marker namespace really did land in the default (no-index) registry');
+
+assert(!isLibraryNamespace('Tc2_DefaultRegistryOnly', idxA),
+    "LineA's already-written registry does NOT see a namespace known only to the default registry");
+assert(!isLibraryNamespace('Tc2_DefaultRegistryOnly', idxB),
+    "LineB's already-written registry does NOT see a namespace known only to the default registry");
+
+// --- the Libraries view falls back to the union when no project-specific catalog is resolved -------
+// custom/libraries (server.js) composes exactly these two primitives — getLibraryCatalog(index) for a
+// specific project, and getUnionLibraryCatalog(indexes) as the fallback when no fileUri is given, or
+// the routed project's own catalog is empty. Tested at this level because server.js opens an IPC
+// connection at require time and cannot be loaded standalone.
+const { indexLibraryTitles, getLibraryCatalog, getUnionLibraryCatalog, clearLibrarySymbols } = require('../src/lsp/libsymbols');
+
+clearLibrarySymbols(idxA);
+clearLibrarySymbols(idxB);
+indexLibraryTitles(path.dirname(fx.plcprojA), idxA);
+indexLibraryTitles(path.dirname(fx.plcprojB), idxB);
+
+const catalogA = getLibraryCatalog(idxA);
+const catalogB = getLibraryCatalog(idxB);
+assert(catalogA.length > 0, "LineA's own catalog is non-empty (sanity)");
+assert(catalogB.length === catalogA.length + 1,
+    `LineB's own catalog includes exactly the one extra Tc2_LineBOnly reference LineA does not have ` +
+    `(A: ${catalogA.length}, B: ${catalogB.length})`);
+
+// No fileUri (the extension host has not sent one), or a fileUri routing to an empty catalog: the
+// union, not nothing — that is the actual fix for the Libraries-view regression this review found.
+const union = getUnionLibraryCatalog(indexes.values());
+assert(union.length > 0, 'the union catalog is non-empty even with no project specified');
+assert(union.some(e => e.namespace.toLowerCase() === 'tc2_linebonly'),
+    "the union includes LineB's extra namespace");
+assert(union.length >= catalogB.length,
+    'the union is at least as large as the biggest single project catalog — a true superset, never fewer');
+
+// A fileUri that DOES resolve still narrows to that one project, exactly as before this fix.
+assert(!catalogA.some(e => e.namespace.toLowerCase() === 'tc2_linebonly'),
+    "LineA's own (non-union) catalog does NOT include LineB's namespace — narrowing still works");
+
 fx.cleanup();
 console.log(`\n--- MULTI-PROJECT SCOPE TESTS COMPLETE with ${errors} error(s) ---`);
 process.exit(errors > 0 ? 1 : 0);

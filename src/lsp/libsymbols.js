@@ -119,10 +119,13 @@ const defaultRegistry = createLibraryRegistry();
  * That fallback is what keeps the pre-existing standalone harnesses working unchanged: they populate
  * the registry via the module-level `indexLibrarySymbols(dir)` etc. with NO index (the default), then
  * exercise a feature (provideCompletions, registerLibrarySymbolNodes) against a real, separately-
- * constructed symbol index that was never itself indexed. In production this branch is never taken —
- * server.js always calls indexLibraries(fsPath, index) for a project's own index before any request
- * can read from it (see ensureLibraryRegistry), so a real project's registry always exists by the
- * time a getter or registerLibrarySymbolNodes runs.
+ * constructed symbol index that was never itself indexed. For any project `indexLibraries` HAS
+ * processed (see ensureLibraryRegistry), this branch is never taken — that project's own registry
+ * already exists by the time a getter or registerLibrarySymbolNodes runs. It IS taken for an index
+ * nothing has indexed yet: workspaceScan.js's `indexForKey` lazily creates an empty `{}` for any
+ * project key not yet scanned (reachable for LOOSE_PROJECT_KEY), and that is exactly what made the
+ * custom/libraries handler return nothing before its union fallback was added (see server.js,
+ * getUnionLibraryCatalog).
  * @param {Object} [index] A project's symbol index. Omit for the default registry.
  * @returns {Object} That project's library registry (or the default's).
  */
@@ -611,6 +614,31 @@ function getLibraryCatalog(index) {
     }));
     entries.sort((a, b) => a.namespace.toLowerCase().localeCompare(b.namespace.toLowerCase()));
     return entries;
+}
+
+/**
+ * Every project's library catalog, unioned and deduplicated by namespace (case-insensitive: ST is).
+ *
+ * This is the fallback `custom/libraries` (server.js) reaches for when no specific project's catalog
+ * can be resolved — no `fileUri` was sent (the extension host has not been updated to send the active
+ * file), or the routed project genuinely references no libraries. The Libraries view is read-only
+ * browsing, so a superset is harmless; returning nothing (what happened before this existed) is the
+ * actual regression it exists to fix. In a single-project workspace the union IS that project's own
+ * catalog, so this restores exactly what `custom/libraries` returned before per-project scoping.
+ * @param {Iterable<Object>} indexes Every project's symbol index (e.g. `workspace.indexes.values()`).
+ * @returns {Array<LibraryCatalogEntry & {symbolCount: number, types: LibraryType[]}>} First-writer-
+ *          wins per namespace, in the order `indexes` iterates; not re-sorted (each project's own
+ *          getLibraryCatalog() call already sorted its slice, and a stable merge preserves that).
+ */
+function getUnionLibraryCatalog(indexes) {
+    const seen = new Map(); // namespace (lower-case) -> entry
+    for (const index of indexes) {
+        for (const entry of getLibraryCatalog(index)) {
+            const key = String(entry.namespace || entry.include).toLowerCase();
+            if (!seen.has(key)) seen.set(key, entry);
+        }
+    }
+    return Array.from(seen.values());
 }
 
 /**
@@ -1840,6 +1868,7 @@ module.exports = {
     getNamespaceCoverage,
     // library catalog (the "TwinCAT Libraries" view)
     getLibraryCatalog,
+    getUnionLibraryCatalog,
     // .tmc type-system structure
     parseTmcDataType,
     getLibraryType,
