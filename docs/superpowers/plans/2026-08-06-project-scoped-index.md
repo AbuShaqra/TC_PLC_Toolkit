@@ -1394,6 +1394,8 @@ host: renaming LineA's MAIN leaves every LineB file untouched."
 - Modify: `src/typesCache.js` (the unscoped crawl)
 - Modify: `src/lsp/server.js` (`custom/updateTypesMap`)
 - Modify: `media/editor.js:24,1375,1418-1421` (dead `typesMap`)
+- Modify: `CLAUDE.md` — the architecture list has a `src/typesCache.js` bullet describing the broadcast and the LSP push. Deleting the module makes it false, and CLAUDE.md is loaded at the start of every session, so a stale entry there costs more than one anywhere else. **Correct that one bullet only** — it is the project's instruction file, not a scratch doc.
+- Modify: `test/test_lsp_types_sync.js` — its header and inline comments describe the deleted mechanism as live. Reword them, and record an explicit judgement on whether a harness that no longer mirrors any production path still earns its place.
 
 **Interfaces:**
 - Consumes: nothing new.
