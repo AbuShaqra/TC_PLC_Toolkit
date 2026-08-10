@@ -4,8 +4,11 @@ Where the work *stands*. Read before starting; keep current (handoff rule in [CL
 100 lines — prune finished items rather than appending, but never drop a real finding to hit it. **Shipped features
 live in git history (PRs/commits); this file keeps the findings that would cost to re-derive.**
 
-**Last verified:** 2026-08-05 — `npm test` green (**49 harnesses, Coverage: FULL**), typecheck clean,
-**0 diagnostics on the sample**. Shipped through **0.5.1** (pragmas + ST folding); releases are in git history.
+**Last verified:** 2026-08-10 — `npm test` green (**51 harnesses, Coverage: FULL**), typecheck clean,
+**0 diagnostics on the sample**, both browser harnesses green, **dev-host harness green** (new, below).
+Shipped through **0.6.1** (fixes the 0.6.0 navigation regression); releases are in git history.
+**0.6.1 VSIX installed to the user's VS Code 2026-08-10 — awaiting their confirmation after a FULL
+VS Code restart** (see the install trap below).
 **Install trap that cost a debug cycle:** VS Code keeps the old version dir until a FULL restart (reload-window is not
 always enough) — the user tested 0.3.1's feature against the still-running 0.3.0 code and reported it broken. Check
 `~/.vscode/extensions/` for side-by-side version dirs + `.obsolete` before debugging a "feature does nothing" report.
@@ -17,6 +20,43 @@ header comment — read it before adding colour.** The gradient-clipped wordmark
 (a logotype, exempt); don't "fix" it without a design call.
 
 ## Constraints / still open
+- **Project-scoped indexing SHIPPED** (user report 2026-08-06; branch `fix/project-scoped-index`, plan in
+  `docs/superpowers/plans/2026-08-06-project-scoped-index.md`). A folder holding several PLC projects used to
+  collide: the symbol index was one flat name-keyed map for the whole workspace, so **38 object files produced 19
+  index entries**, correct code drew a false diagnostic, and Find References returned hits from the wrong project.
+  Now **one index per `.plcproj`** — `src/lsp/projectMap.js` owns ownership, `src/lsp/workspaceScan.js` builds and
+  routes. Load-bearing decisions: a file `<Compile>`d by two projects indexes into **both** but routes to the one
+  whose directory holds it; references and rename are **strictly** project-scoped; `workspaceScan.js` is separate
+  from `server.js` because the latter opens IPC at require time and so cannot be loaded by a harness; the
+  per-project library registries hang off each index under a **`Symbol` key**, invisible to the `Object.keys()`
+  walks in the reference scan and `types.js`, which is why `registerLibrarySymbolNodes(index, code)` needed no
+  call-site change. `src/typesCache.js` is **deleted** — the webview never read its map, and the LSP half re-added
+  exactly the names the partition excludes.
+  **The rename hazard was the one that mattered:** the config-object scan walked every root, so renaming the object
+  that *won* the flat name key rewrote the **neighbour's `PlcTask.TcTTO`**, while renaming the one that *lost*
+  silently skipped the config update (the `configReferences.js` identity guard rejected it). Both directions are
+  gated by `test_multi_project_scope.js`, and that guard was **verified to fail** under a widened `configFilesFor`
+  before being accepted.
+  **0.6.0 shipped a navigation regression, fixed in 0.6.1** (user report 2026-08-10 "references and definitions
+  still broken in multi-project dirs"): the scan indexed each object from the partition's **normalized (lowercased)**
+  path, so every scan-time symbol node carried a lowercased uri. The LSP still answered correctly (verified against
+  the user's real `C:\Software\TC_Start` and 8-project `C:\Software\PLC projects`), but `vscode.openWith()` treats a
+  differently-cased uri as a **different resource**, so every cross-file Go to Definition / reference click opened a
+  DUPLICATE tab titled `gvl_system.tcgvl` with nothing highlighted — "definitions are broken" to a user, invisible
+  to every headless gate (proven in a real dev host). Fix: `projectMap.js` keeps normalized keys for ownership but
+  adds `objectFiles` (key → on-disk spelling, **XML-entity-decoded**); `workspaceScan.js` indexes from the values.
+  The entity decode is its own real bug: `time&amp;date` stayed `&amp;`, silently dropping **57 of OSCAT's 819**
+  compiled objects. Casing pinned in `test_project_map.js` + `test_multi_project_scope.js` (the old `/LineA/i`
+  assertions were case-blind by construction); tab identity + live client pinned by **`test/devhost/run.js`** — a
+  new run-by-hand harness that drives the installed VS Code headlessly (see DEVELOPMENT.md). That closes the owed
+  go-to-definition/types-map-deletion check. **Still owed (eyeball only):** status bar flips per file, tree groups
+  per project.
+  **Perf note, deferred:** startup scan of the 8-project `PLC projects` dir ≈ 35 s (two ~13 s `_Libraries` ZIP
+  passes), and the host's startup `custom/reindex` runs the whole scan a SECOND time — no user-visible bug filed,
+  but it is the next complaint waiting on big multi-project dirs.
+  **Deferred by decision:** the Libraries view falls back to the **union** of all projects when no `fileUri` is
+  sent, because scoping it naively made the view render **empty** even with one project — revisit only if the host
+  is taught to send the active file.
 - **Publication:** history was rewritten + the GitHub repo recreated to purge customer/vendor content (`sample/`,
   `.trust-lsp/`, machine codenames — 0 blobs match any customer id). Repo is **Private**. **Open:** confirm the
   contractual right to open-source the extension itself.
@@ -26,9 +66,10 @@ header comment — read it before adding colour.** The gradient-clipped wordmark
   It is **wholly synthetic and COMMITTED**, and **CI now runs at `Coverage: FULL`** — `REQUIRE_FULL_SUITE=1` passes
   there. Before this, CI executed ~951 assertions in 4 s and silently skipped the ratchet AND the live-path guard;
   `test_live_path` was running **2 of its 10** tests. Built in two steps:
-  `scripts/build-sample-solution.ps1` drives XAE once to produce the `.sln`/`.tsproj`/`.plcproj` skeleton (only
+  `scripts/Create sample PLC project/build-sample-solution.ps1` drives XAE once to produce the
+  `.sln`/`.tsproj`/`.plcproj` skeleton (only
   TwinCAT can write those — the on-disk template is a 67-byte stub it expands at insertion time, and hand-writing
-  them is what produced a project XAE refused to open), then `scripts/build-sample-project.js` writes the 19 objects
+  them is what produced a project XAE refused to open), then `scripts/Create sample PLC project/build-sample-project.js` writes the 19 objects
   and **injects** their `<Compile>`/`<Folder>` entries into XAE's `.plcproj`, leaving its identity GUIDs,
   PlaceholderReferences and ProjectExtensions untouched. Both are deterministic/idempotent.
   **Committed:** the solution, the 19 objects, XAE's `PlcTask.TcTTO`, the **`.tmc`** (44 KB, from the XAE build —
@@ -92,17 +133,22 @@ header comment — read it before adding colour.** The gradient-clipped wordmark
 - **README.md** = public page (ships); **DEVELOPMENT.md** = build/test/architecture; CLAUDE/HANDOFF/DEVELOPMENT are
   `.vscodeignore`d. Package `npx @vscode/vsce package`. `scripts/` ships (the generator). Stale local branches
   `moe`/`native-editor` un-pushed.
-- **`templates/` build harness is a DOWNSTREAM COPY — do not edit it in place.** Master is
-  `C:\Software\TC_Start\Scripts\Build project\` (its HANDOFF owns the rule); the same files are also
-  promoted to `C:\Software\PLC projects\HPR40 EOL\hpr40_eol\Scripts\`. Change the builder **there**, then
-  re-promote all three, or the next promotion silently reverts you. Promoted set = `build_plc_project.ps1`
-  + `build_plc_project.md` + `test-resolve-twincat-target.ps1`; each repo's `.bat` is its own (this one
-  passes `-STA`, TC_Start's does not — so the `.md` must never claim what the wrapper does).
-  Keep the promoted files **generic**: no TC_Start paths or `TcSample`/`build-sample-project.js` names, as
-  they ship in the VSIX (`templates/` is not `.vscodeignore`d) and are copied into user projects.
+- **Build harness lives in TWO places, synced BY HAND (2026-08-07 — the old TC_Start master rule is dropped;
+  the user syncs manually now, so do not re-promote anything automatically).**
+  - `scripts/Build PLC project/` — the newer, fuller generation (100 KB `.ps1` vs 45 KB), plus
+    `probe-sysmanager.ps1` and `test-activation-target.ps1` which `templates/` has never had.
+    **`.vscodeignore`d**, so it does not ship.
+  - `templates/` — the older revision that **ships in the VSIX** and is copied into user projects, so it must
+    stay **generic**: no local paths, no `TcSample`/sample-generator names.
+  **Real identifiers were redacted on the way in** (2026-08-07): `test-activation-target.ps1` hardcoded AmsNetIds
+  its own docstring called real (the author's machine and a physical station), `build_plc_project.ps1` had one in a
+  comment and `probe-sysmanager.ps1` had one as a **live fallback probe target**. All replaced with RFC 5737
+  placeholders (`192.0.2.x` / `198.51.100.x`), preserving the near-miss and same-network relationships the tests
+  rely on; harnesses verified **64/64 and 13/13, identical before and after**. Keep it that way — this repo's
+  history was purged once already.
   `-ProgId`/`-PinVersion` were removed 2026-07-29 — `-TcVersion` is the single knob and passing it is what
   pins; the traps are in the script's own header, read that. `test-resolve-twincat-target.ps1` is COM-free
-  (**13/13**, no TwinCAT needed); `twincat-project-CLAUDE.md` + README are synced to this revision.
+  (**13/13**, no TwinCAT needed); `twincat-project-CLAUDE.md` + README are synced to the `templates/` revision.
 - **Architecture roadmap COMPLETE** (H1 `features.js` facade · H2 `symbolNode` · M2 injectable index · M3 thin
   `extension.js` → `src/commands/` + `src/xaeShell.js` · L2 perf guard — all merged). **L1 (reverse index) DEFERRED
   by decision** — reference search is already 29 ms cold / ~4 ms warm; reopen only past ~1000 files or >200 ms.
@@ -184,11 +230,13 @@ lets a plain .st steal an XML-backed symbol (`test_st_shadow`).
 **Duplicate object names from orphan files** (0.3.0 rename smoke, real project): a leftover `POUs\Modulezzz\` backup —
 a full copy of `Modules\`, NOT in the `.plcproj` — won the name-keyed index (last-write-wins, sorts last), so a
 GVL rename's reference scan visited the orphan `FB_Loading` (no refs) and never the real one; visu updated because it
-walks files directly. Fixed: the index is **scoped to the `.plcproj`** — `collectPlcProjObjectPaths` +
-`indexTwinCatDirectory(index, dir, includedPaths)` skip on-disk objects the project doesn't `<Compile>` (null set = no
-`.plcproj` → index all). Sample has 0 objects outside its `.plcproj` → gate is a no-op there, ratchet safe
-(`test_plcproj_scope`). `.st`/visu walks unchanged. NOT scoped: `.st` (indexStDirectory) and the visu file walk —
-neither hit the duplicate-name bug.
+walks files directly. Fixed: the index is **scoped to the `.plcproj`** — each project's `objectPaths`
+(`createProjectMap`, `projectMap.js`) lists only what it `<Compile>`s, so an on-disk orphan is never indexed. The
+original fix used `collectPlcProjObjectPaths`, which unioned every `.plcproj` into one set; that union is exactly
+what made multi-project workspaces collide, and it was **deleted** when the partition landed. `indexTwinCatDirectory
+(index, dir, includedPaths)` survives for the no-`.plcproj` fallback (null set = index all). Sample has 0 objects
+outside its `.plcproj` → the gate is a no-op there, ratchet safe (`test_plcproj_scope`). NOT scoped: `.st`
+(`indexStDirectory`, which now routes per file) and the visu walk — neither hit the duplicate-name bug.
 
 ## Other findings worth not re-deriving
 - **Init syntaxes bind differently:** `inst:FB_T(p:=v)` → FB_init's VAR_INPUT (may be inherited → a jump carries the

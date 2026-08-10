@@ -1223,8 +1223,13 @@ function parseAndIndexDocument(code, fileUri, index = workspaceSymbolIndex) {
  * Scans directories recursively for standalone .st files to index. The generated-export folder
  * (ST_Files) is skipped: those are derived from the XML objects and would shadow them in the index.
  * @param {string} dirPath Absolute folder path.
+ * @param {Object} [index] Fallback index, used when no router is supplied.
+ * @param {(fsPath: string) => (Object|Array<Object>)} [indexForFile] Routes a file to its owning
+ *   project's index. A workspace with several .plcproj files has one index per project, and a loose
+ *   .st belongs to the project whose directory contains it — or, when no project directory contains
+ *   it, to every project (returning an array indexes the file into each one).
  */
-function indexStDirectory(dirPath, index = workspaceSymbolIndex) {
+function indexStDirectory(dirPath, index = workspaceSymbolIndex, indexForFile = null) {
     if (!fs.existsSync(dirPath)) return;
     let entries;
     try {
@@ -1239,12 +1244,18 @@ function indexStDirectory(dirPath, index = workspaceSymbolIndex) {
             if (entry.name === '.git' || entry.name === 'node_modules' || entry.name === '.vscode' || entry.name === 'ST_Files') {
                 continue;
             }
-            indexStDirectory(fullPath, index);
+            indexStDirectory(fullPath, index, indexForFile);
         } else if (entry.isFile() && entry.name.toLowerCase().endsWith('.st')) {
             try {
                 const code = fs.readFileSync(fullPath, 'utf8');
                 const fileUri = 'file:///' + fullPath.replace(/\\/g, '/');
-                parseAndIndexDocument(code, fileUri, index);
+                const targets = indexForFile ? indexForFile(fullPath) : index;
+                // A router may answer with several indexes (a loose .st that belongs to no single
+                // project routes to all of them — see workspaceScan.js's routeFile) — index the file
+                // into each.
+                for (const target of Array.isArray(targets) ? targets : [targets]) {
+                    parseAndIndexDocument(code, fileUri, target);
+                }
             } catch (err) {
                 console.error(`Failed to parse and index ${entry.name}:`, err);
             }

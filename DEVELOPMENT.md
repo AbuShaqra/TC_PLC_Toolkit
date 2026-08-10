@@ -94,15 +94,20 @@ per-suite without aborting on the first failure. The main ones:
 | `test/test_references_for_symbol.js` | The LSP's by-symbol references entry point (`custom/referencesForSymbol`) that powers rename: FB/GVL/DUT roots (a GVL name never appears in its own ST text, so the position-based API cannot seed it), methods/properties/actions, the name-keyed-index identity guard, and index restoration after the scan. |
 | `test/test_config_references.js` | The non-code half of rename (`custom/configReferencesForSymbol`): dotted symbol paths inside visualizations `.TcVIS`/`.TcVMO` (`GVL_X.fb.member`, embedded `STSnippet` code) and text lists `.TcTLO`/`.TcGTLO` (a text entry whose text IS a symbol path) are found only when the chain provably resolves to the renamed symbol — text-list ids, visu-library names, dotted prose (`Encoderpos.Turn1`) and unresolvable prefixes are never touched. Task configs `.TcTTO` use a separate rule: the `<PouCall>` `<Name>` matches only a dot-free name, so a library call (`VisuElems.Visu_Prg`) is never rewritten. BOM/offset fidelity, plus a sample-project pass when `sample/` is present. |
 | `test/test_lsp_parser.js` | Lexer, AST parser and symbol indexer on a synthetic FB: keyword tokenisation, `EXTENDS`/`IMPLEMENTS`, variable types and ranges, nested method params, property GET accessors. Lived outside the suite until 2026-08-05 and **printed `[FAIL]` while exiting 0** — it could report a broken parser and still be green. It counts failures and exits non-zero now. |
-| `test/test_lsp_types_sync.js` | The XML `typesCache` map staying in step with the LSP symbol index: completions and go-to-definition resolve through types discovered by scanning XML rather than by parsing `.st`. |
+| `test/test_lsp_types_sync.js` | Completions and go-to-definition still resolve correctly through symbol-index nodes that carry only stubbed ranges (`startLine:1,startCol:1,...`, no real declaration position) rather than ranges parsed from source — a defensive regression test, since no current indexer (`xmlIndexer.js` builds real ranges) produces stub nodes any more. |
 | `test/test_method_diagnostics.js` | Diagnostics for a method body analysed on its own, as the webview does — a valid method must produce none once its POU is indexed. |
 | `test/test_memory_bank.js` | The shared memory bank in `.claude/memory/` and the `SessionStart` hook that delivers it. The bank fails silently by nature — a malformed note is skipped, a renamed file breaks the `[[links]]` at it, a dropped hook stops the digest — and sessions just stop being told what the project already learned, which looks exactly like having nothing to tell. Pins the hook contract too (JSON carrying `hookSpecificOutput.additionalContext`, exit 0 whatever happens), since that is what the mechanism depends on and nothing else in the repo enforces it. |
 | `test/test_folding.js` | Folding ranges (`media/stFolding.js`). Pins the two reported bugs by name — an unmatched `{endregion}` truncating the enclosing `VAR` fold, and an unindented `{attribute …}` growing a fold arrow of its own — plus the case designed for rather than discovered: `{IF defined(X)}` is a conditional *pragma*, not an `IF` block, and reading it as one leaves an unclosed block that eats every fold below. Also covers keywords inside comments/strings (`$`-escapes included), members named like keywords (`axis.Case`), the separate region/block stacks, every `VAR_*` variant, and a sweep over every pane of every `sample/` object asserting no range is ever out of bounds. |
 | `test/test_pragmas.js` | Pragma classification and the two catalogs, plus the highlighting rules in **both** grammars and the `{region}` folding markers. Pins the split the design rests on: shape decides the category (and therefore the colour), the catalog only enriches — so a user-defined attribute must be scoped exactly like a documented one. Also asserts catalog integrity (no duplicates, every documented entry has an Infosys node id, the curated file holds nothing Infosys documents, every curated entry carries measured counts), that pragma spans are consumed whole in the lexer and both grammars, and that the three folding-marker declarations — `pragmas.js`, `language-configuration.json`, `media/editor.js` — still agree, which nothing else can check because none of them can import the others. |
-| `test/test_plcproj_scope.js` | The index is scoped to the `.plcproj`, not the filesystem: `collectPlcProjObjectPaths` lists the `<Compile>`d objects, and `indexTwinCatDirectory` skips on-disk objects outside that set so a backup/orphan copy (a duplicate object name) cannot win the name-keyed index and steal a real object's references. Includes the no-`.plcproj` index-all fallback and a sample-coverage check proving the gate is a no-op on the ratchet. |
+| `test/test_plcproj_scope.js` | The index is scoped to the `.plcproj`, not the filesystem: a project's `objectPaths` (from `createProjectMap`) names only the `<Compile>`d objects, so a backup/orphan copy on disk (a duplicate object name, absent from the project) can never win the name-keyed index and steal a real object's references. Includes the no-`.plcproj` empty-map case and a sample-coverage check proving the scoping is a no-op on the ratchet. Predates the project-scoped index (below) — the guarantee it pins now runs through `createProjectMap` per project instead of one workspace-wide union. |
+| `test/test_project_map.js` | `src/lsp/projectMap.js`: which `.plcproj` owns which file. Discovery, `objectPaths` per project, `ownersOf()` vs `projectFor()` (a linked file has two owners but a request for it routes to one), the orphan/no-project/case-insensitivity edges, `projectLabel()` (the status-bar text, from `src/projectStatusBar.js`) and `groupRootsByProject()` (the Objects-tree grouping) at both the &lt;2-projects (nothing shown, flat tree) and 2-projects ends. Also pins `TWINCAT_EXTS` staying in sync between `projectMap.js` and `xmlIndexer.js`'s own copies — a real review-caught bug: `projectMap.js`'s copy once missed `.tctleo`, silently dropping every enumeration-text-list object's symbols from a project-scoped scan. |
+| `test/test_multi_project_scope.js` | End-to-end: two copies of `sample/` under one workspace root (`test/_multiproject.js` builds the fixture, one copy deliberately diverged), driven through the real `scanWorkspace`. Asserts the partition (one index per project, nothing lost to a name collision), 0 diagnostics on the correct copy while the diverged copy's own real error still reports, references and the rename config scan never crossing the project boundary, and the library namespace/symbol registries staying per-project — including the Libraries-view union fallback when no project is specified. Needs `sample/`; skips cleanly when absent. |
 
 `test/run.js <substring>` filters to matching suites. `test/_baseline.js` holds the machine-dependent
-diagnostic baselines the sample gates assert against.
+diagnostic baselines the sample gates assert against. `test/_multiproject.js` builds the two-project
+fixture (two copies of `sample/` under one root, one deliberately diverged) shared by
+`test_multi_project_scope.js` and any future project-scoping harness, so they cannot drift from
+each other.
 
 The sample-based harnesses run against the committed synthetic project under `sample/`. They still skip
 cleanly if a fixture they need is absent, so `npm test` passes even on a pruned tree — but the runner
@@ -138,6 +143,29 @@ drops the peek to `References (1)` — the old behaviour — and four assertions
 Not in `npm test`, and **Playwright is not in `package.json`**: it is a heavy dependency that CI would
 install on every run for a harness CI cannot execute anyway. Both runners exit 2 with the install
 command when it is absent. **`media/editor.js` has no other test — run both whenever it changes.**
+
+**`test/devhost/`** runs the extension in a **real VS Code window** — the two links that neither the
+Node harnesses nor the browser harness can reach: `vscode.openWith()` URI identity (does a navigation
+reuse the open tab, or open a duplicate?) and the live `vscode-languageclient` transport. One runner,
+outside `npm test` for the same reason as the browser pass (it needs an installed VS Code, and it opens
+a visible window for ~30 s that closes itself):
+
+```bash
+node test/devhost/run.js
+```
+
+`run.js` copies the committed sample to a temp dir, launches the **installed** VS Code as a separate
+instance (fresh `--user-data-dir`/`--extensions-dir`, so a running VS Code is untouched) with this repo
+as the development extension and `testRunner.js` as the `--extensionTestsPath` module. In-host, that
+module patches `TwinCatCustomEditorProvider.prototype.resolveCustomTextEditor` to trace every panel's
+resolve → `ready` → `init` chain (a break anywhere is a permanently blank viewer), opens a GVL, asks the
+live client for a cross-file definition and its references, then navigates with exactly the URI the
+definition returned. It asserts the URI keeps the **on-disk spelling** and that navigation **reuses**
+the open tab — the 0.6.0 regression (fixed in 0.6.1) minted lowercased URIs from the normalized project
+partition, and every cross-file Go to Definition then opened a duplicate tab titled `gvl_system.tcgvl`
+with nothing highlighted. Results flow through a progressive JSON file the runner polls, so a hang
+still leaves evidence of the last step reached. **Run it whenever navigation identity, the
+custom-editor resolve chain, or the LSP bridge wiring changes.**
 
 **`asWebviewUri` must return ABSOLUTE urls.** Root-relative ones look equivalent, but the Monaco worker
 runs from a `blob:` URL with no base to resolve them against, and it fails with "Failed trying to load
@@ -176,6 +204,9 @@ src/
   xaeShell              XAE shell discovery + the library-signature generator (the one non-offline path)
   customEditorProvider  Webview host: assembles full-file ST, bridges Monaco ↔ LSP, writes CDATA back
   treeDataProvider      "TwinCAT Objects" explorer tree
+  projectStatusBar      Status-bar "which PLC project is this file in" indicator (2+ projects only);
+                        projectLabel() is pure/vscode-free so it is unit-testable — vscode is required
+                        lazily, inside createProjectStatusBar()
   dndRules              Objects-tree drag & drop + copy/paste compatibility matrices (vscode-free, so testable)
   renameEngine          Rename: maps LSP reference positions back into CDATA splices (vscode-free, so testable)
   treeDragAndDrop       Objects-tree drag & drop controller — executes the matrix's plans (needs VS Code 1.66+)
@@ -184,10 +215,16 @@ src/
   objectKinds           Kind → codicon → tooltip for the Objects tree (vscode-free, so it is testable)
   xmlParser             Regex-based TwinCAT XML parse / structural edits (preserves formatting)
   stConverter           XML → clean Structured Text + line map (also a raw mode for the live path)
-  typesCache            Workspace type index for the webview
   plcProjHelper         Keeps the .plcproj file in sync on create/delete
   lsp/
     server.js           LSP server (Node IPC) + custom JSON-RPC bridge requests; owns the workspace index
+    projectMap.js       Which .plcproj owns which file: ownersOf() (every project that <Compile>s the
+                        file) vs projectFor() (the one project a request routes to). Dependency-free
+                        (fs/path only, no vscode) so both the server and the extension host can use it.
+    workspaceScan.js    One symbol index per PLC project + the request-routing API. Kept out of
+                        server.js on purpose: server.js opens an IPC connection at require time, so
+                        nothing that requires it is loadable by a standalone harness — the connection is
+                        injected here as log/error callbacks instead.
     parser.js           Structured Text lexer + symbol parser
     symbolNode.js       Single factory for a symbol node's core shape (parser + xmlIndexer build through it)
     features.js         Facade re-exporting features/{core,completions,definition,references,configReferences,highlights,diagnostics}
@@ -217,11 +254,62 @@ media/
                         both editors, no build step. See "Folding" below.
 ```
 
-The workspace index is **scoped to the `.plcproj`**: at startup (and on `custom/reindex`) the server
-collects the objects the project actually `<Compile>`s (`collectPlcProjObjectPaths`) and indexes only
-those, so a backup or orphan copy on disk — a duplicate object name absent from the project — cannot
-win the name-keyed index and shadow the real object. With no `.plcproj` under any root it falls back
-to indexing every object file found (fresh clone, or a loose folder of TwinCAT files).
+### Project-scoped indexing
+
+A TwinCAT workspace can hold **more than one `.plcproj`**, and each is its own compilation unit — XAE
+does not resolve symbols across them. The LSP therefore keeps **one symbol index per project**, built
+and routed at startup (and on `custom/reindex`), not one flat index for the whole workspace:
+
+- **`src/lsp/projectMap.js`** is the single source of truth for the partition. It is dependency-free
+  (`fs`/`path` only — no `vscode`), so both the server and the extension host can require it.
+  `createProjectMap(roots)` walks every root for `.plcproj` files and, for each, reads its `<Compile
+  Include="...">` set into that project's `objectPaths`. Ownership is two different questions, answered
+  by two functions: `ownersOf(file)` returns EVERY project that `<Compile>`s the file — a file linked
+  into two projects ("add existing item as link", a real TwinCAT pattern) is owned by both and must be
+  indexed into both, or it reads as undeclared in the one that did not win. `projectFor(file)` returns
+  the ONE project a request for that file routes to — single-valued by necessity, since a completion or
+  a diagnostics pass has to be answered against one index; a linked file routes to the project whose
+  directory physically contains it, while still being indexed into every owner. A file under no project
+  at all (a loose `.st`, a backup copy no `.plcproj` compiles) routes to the shared `(loose)` key.
+- **`src/lsp/workspaceScan.js`** builds one index per project (`scanWorkspace`) and wraps the
+  request-routing API (`indexForUri`, `projectForUri`, `configFilesFor`). It lives outside `server.js` on
+  purpose: `server.js` opens a Node IPC connection at require time, so nothing that requires it is
+  loadable by a standalone test harness — `workspaceScan.js` takes the connection as injected
+  `log`/`error` callbacks instead, so `test_multi_project_scope.js` can exercise the real scan with no
+  server process at all. With no `.plcproj` under any root, it falls back to the pre-existing behaviour:
+  one `(loose)` index holding every object file found on disk (fresh clone, or a loose folder of
+  TwinCAT files).
+- Every `custom/*` request the extension bridges to the server routes through `projectForUri`/
+  `indexForUri` by the request's `fileUri`, so a completion, a diagnostics pass or a rename answers
+  against that file's own project's index — never a union of every project in the workspace. The rename
+  config-object scan is scoped the same way (`configFilesFor`): an unscoped walk would rewrite the
+  OTHER project's `.TcVIS`/`.TcTLO`/`.TcTTO` files, since two projects can share object names and those
+  formats name a PLC symbol by bare name — quietly breaking a neighbour's XAE build in a file the user
+  never opened.
+- **`src/projectStatusBar.js`** shows the owning project in the status bar (only when a workspace has
+  2+ projects — a single-project workspace has nothing to disambiguate). `projectLabel()`, the part
+  that decides the text, is pure and `vscode`-free so it is unit-testable under plain Node;
+  `createProjectStatusBar()` requires `vscode` lazily, inside the function, specifically so
+  `test_project_map.js` can call `projectLabel()` standalone without `vscode` ever being required.
+
+Two registries hang off each project's index: `Symbol.for('twincat.libraryNamespaces')`
+(`src/lsp/libraries.js`) and `Symbol.for('twincat.librarySymbols')` (`src/lsp/libsymbols.js`) — see
+"Library symbols" below for what each holds. They are attached under a `Symbol` key rather than a
+string property deliberately: `Object.keys()`, `for…in` and `JSON.stringify` all skip symbol-keyed
+properties, and a symbol index is iterated by key in several hot paths (the reference scan, the
+GVL-global lookup in `types.js`) — a string-keyed registry would show up as a phantom "symbol" in every
+one of them. Each registry is created lazily, on that index's first write (`ensureRegistryFor` /
+`ensureLibraryRegistry`); reading an index nothing has written to yet falls back to one shared *default*
+registry rather than an empty one — the fallback that keeps roughly 15 pre-existing standalone harnesses
+(which populate the default registry directly, with no index argument) working unchanged.
+
+`test/test_project_map.js` covers `projectMap.js`'s ownership rules, `projectLabel()` and
+`groupRootsByProject()` (the Objects-tree per-project grouping) in isolation.
+`test/test_multi_project_scope.js` covers the whole thing end-to-end against a real two-project fixture
+built from `sample/` (the fixture helper is `test/_multiproject.js`, two copies of `sample/` under one
+root, one copy deliberately diverged) — the partition, zero diagnostics on correct code in either
+project, references and the rename config scan never crossing the project boundary, and the per-project
+library registries including the Libraries-view union fallback when no project is specified.
 
 Three processes cooperate, with the extension host as the hub — **the webview never talks to the
 language server directly**. The extension bridges them over custom JSON-RPC requests
@@ -332,6 +420,10 @@ the ZIP **archives** and the project **`.tmc`** (`libsymbols.js`), the **`.plcpr
 (`libraries.js`), the optional **`library-signatures.xml`** (`librarySignatures.js`), and TwinCAT's
 per-library **browsercache** (`browserCache.js`, for library FB/interface method + property *names*).
 See [HANDOFF.md](HANDOFF.md) for what each source uniquely provides and the traps.
+
+Each project's index carries its own copy of what `libraries.js`/`libsymbols.js` register — the
+`Symbol`-keyed registries described under "Project-scoped indexing" above — so two projects that
+reference different libraries never see each other's namespaces or symbol names.
 
 Note the **Beckhoff** archives under `_Libraries/` are git-ignored, so a fresh clone has only the
 committed MIT archive. That changes how many external symbols resolve, not the diagnostic count: the

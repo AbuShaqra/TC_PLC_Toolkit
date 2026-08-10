@@ -20,12 +20,6 @@ const { TwinCatLibraryTreeDataProvider } = require('./src/libraryTreeProvider');
 // Lives under media/ because the webview loads it with a <script> tag; it is written to require()
 // cleanly as well so both editors fold ST identically from one copy of the algorithm.
 const stFolding = require('./media/stFolding');
-const {
-    getWorkspaceTypesCache,
-    setWorkspaceTypesCache,
-    indexWorkspaceTypes,
-    updateCacheForFile
-} = require('./src/typesCache');
 const { LanguageClient, TransportKind } = require('vscode-languageclient/node');
 
 let client;
@@ -87,12 +81,39 @@ function activate(context) {
         })
     );
 
+    // Extension-host copy of the project partition (the LSP's copy lives in the other process and
+    // is not reachable from here). A `.plcproj` walk plus one regex per file — cheap enough to
+    // rebuild on activation and on every `.plcproj` change (see refreshLibrariesFor below), never
+    // needs a dedicated watcher of its own.
+    const { createProjectMap } = require('./src/lsp/projectMap');
+    const { createProjectStatusBar } = require('./src/projectStatusBar');
+    let hostProjectMap = null;
+    /**
+     * Rebuilds the extension host's copy of the project partition. Cheap (a `.plcproj` walk plus one
+     * regex per file) and only run on activation and on a `.plcproj` change.
+     */
+    const refreshProjectMap = () => {
+        const folders = vscode.workspace.workspaceFolders || [];
+        hostProjectMap = createProjectMap(folders.map(f => f.uri.fsPath));
+    };
+    refreshProjectMap();
+    // Declared before revealUri (next) is defined: revealUri calls projectStatusBar.refresh() on
+    // every invocation, including the synchronous "reveal the already-open active editor" call
+    // below (~line 133) that runs before the tree/editor-provider setup further down — constructing
+    // this any later would reference projectStatusBar before its declaration executes.
+    const projectStatusBar = createProjectStatusBar(context, () => hostProjectMap);
+
     let treeView;
     const { TwinCatTreeItem } = require('./src/treeDataProvider');
     const revealUri = async (uri) => {
+        // Runs for every active-file change (custom-editor webview activation AND plain text
+        // editors), independent of the tree-reveal eligibility check below, so switching to a
+        // non-TwinCAT file correctly hides the indicator rather than leaving it showing the
+        // previously active project.
+        projectStatusBar.refresh(uri);
         if (!treeView) return;
         const ext = path.extname(uri.fsPath).toLowerCase();
-        if (!['.tcpou', '.tcio', '.tcgvl', '.tcdut', '.st'].includes(ext)) {
+        if (!['.tcpou', '.tcio', '.tcgvl', '.tcdut', '.tctleo', '.st'].includes(ext)) {
             return;
         }
 
@@ -101,7 +122,10 @@ function activate(context) {
             contextValue = 'itfFile';
         } else if (ext === '.tcgvl') {
             contextValue = 'gvlFile';
-        } else if (ext === '.tcdut') {
+        } else if (ext === '.tcdut' || ext === '.tctleo') {
+            // `.tctleo` (EnumerationTextList) normalizes to a DUT root everywhere else in the codebase
+            // (xmlParser.js) — it IS one in every way that matters (an ordinary TYPE...END_TYPE enum
+            // declaration with display text attached). Same contextValue.
             contextValue = 'dutFile';
         } else if (ext === '.st') {
             contextValue = 'stFile';
@@ -143,21 +167,6 @@ function activate(context) {
         showReferences,
         onActiveFileChange: revealUri
     });
-
-    const broadcastTypesMap = () => {
-        const typesMap = getWorkspaceTypesCache();
-        for (const panel of provider.activePanels.values()) {
-            panel.webview.postMessage({
-                type: 'updateTypesMap',
-                typesMap: typesMap
-            });
-        }
-        if (client) {
-            client.sendRequest('custom/updateTypesMap', {
-                typesMap: typesMap
-            }).catch(e => console.error('Failed to update types map on LSP server:', e));
-        }
-    };
 
     // Push a single TwinCAT file's raw XML to the LSP so it can build a real-range symbol node.
     const indexFileOnLsp = async (uri) => {
@@ -243,26 +252,18 @@ function activate(context) {
         })
     );
 
-    // Index the workspace types asynchronously at startup
-    indexWorkspaceTypes().then(map => {
-        setWorkspaceTypesCache(map);
-        if (client) {
-            const folders = vscode.workspace.workspaceFolders || [];
-            client.sendRequest('custom/reindex', {
-                folders: folders.map(f => f.uri.toString())
-            }).then(() => {
-                sendDiagnosticsConfig();
-                broadcastTypesMap();
-                // The library catalog is a product of that index — refresh the view with it, so the
-                // two can never disagree about which libraries the project references.
-                libraryProvider.refresh();
-            }).catch(e => console.error('Failed to trigger LSP re-index:', e));
-        } else {
-            broadcastTypesMap();
-        }
-    }).catch(err => {
-        console.error('Failed to initially index workspace types:', err);
-    });
+    // Trigger the LSP's initial workspace index at startup.
+    if (client) {
+        const folders = vscode.workspace.workspaceFolders || [];
+        client.sendRequest('custom/reindex', {
+            folders: folders.map(f => f.uri.toString())
+        }).then(() => {
+            sendDiagnosticsConfig();
+            // The library catalog is a product of that index — refresh the view with it, so the
+            // two can never disagree about which libraries the project references.
+            libraryProvider.refresh();
+        }).catch(e => console.error('Failed to trigger LSP re-index:', e));
+    }
 
     // Register custom editor provider
     context.subscriptions.push(
@@ -275,7 +276,7 @@ function activate(context) {
 
     // Register tree view provider. Drag & drop logic lives entirely in the controller (and the
     // pure matrix under it) — extension.js only supplies its dependencies.
-    const treeProvider = new TwinCatTreeDataProvider();
+    const treeProvider = new TwinCatTreeDataProvider(() => hostProjectMap);
     treeView = vscode.window.createTreeView('twincatExplorer', {
         treeDataProvider: treeProvider,
         dragAndDropController: new TwinCatDragAndDropController({ treeProvider, applyXmlEdit })
@@ -298,15 +299,13 @@ function activate(context) {
     // namespace / qualified name, and insert a symbol at the caret.
     registerLibraryCommands(context, { libraryProvider, provider, getClient: () => client });
 
-    // Watch for document saves/changes to refresh the explorer tree and type cache
+    // Watch for document saves/changes to refresh the explorer tree and the LSP index
     context.subscriptions.push(
         vscode.workspace.onDidSaveTextDocument(async e => {
             const extName = path.extname(e.fileName).toLowerCase();
             if (['.tcpou', '.tcio', '.tcgvl', '.tcdut'].includes(extName)) {
                 treeProvider.refresh();
-                await updateCacheForFile(e.uri);
                 await indexFileOnLsp(e.uri);
-                broadcastTypesMap();
             }
         })
     );
@@ -329,6 +328,10 @@ function activate(context) {
     // a library added in TwinCAT would never appear.
     const refreshLibrariesFor = (uri) => {
         if (path.extname(uri.fsPath).toLowerCase() !== '.plcproj') return;
+        // The host's own partition (used by the status bar) is independent of the LSP's copy and
+        // must be rebuilt on the same trigger: a project added/removed/renamed changes which
+        // `.plcproj` owns which file, and how many projects there are to disambiguate.
+        refreshProjectMap();
         if (!client) {
             libraryProvider.refresh();
             return;
@@ -352,9 +355,7 @@ function activate(context) {
                 // as onDidChange does. (treeProvider/refreshLibrariesFor still run for any create.)
                 const extName = path.extname(uri.fsPath).toLowerCase();
                 if (['.tcpou', '.tcio', '.tcgvl', '.tcdut'].includes(extName)) {
-                    await updateCacheForFile(uri);
                     await indexFileOnLsp(uri);
-                    broadcastTypesMap();
                 }
             }
         })
@@ -365,10 +366,6 @@ function activate(context) {
             if (shouldRefresh(uri)) {
                 treeProvider.refresh();
                 refreshLibrariesFor(uri);
-                const rootName = path.basename(uri.fsPath, path.extname(uri.fsPath));
-                const cache = getWorkspaceTypesCache();
-                delete cache[rootName];
-                broadcastTypesMap();
             }
         })
     );
@@ -380,9 +377,7 @@ function activate(context) {
                 const extName = path.extname(uri.fsPath).toLowerCase();
                 if (['.tcpou', '.tcio', '.tcgvl', '.tcdut'].includes(extName)) {
                     treeProvider.refresh();
-                    await updateCacheForFile(uri);
                     await indexFileOnLsp(uri);
-                    broadcastTypesMap();
                 }
             }
         })

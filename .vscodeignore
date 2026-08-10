@@ -12,12 +12,14 @@ node_modules/@types/**
 **/.DS_Store
 *.vsix
 # scripts/ ships (generate-library-signatures.ps1 is invoked by the Update Library Definitions
-# command), so the dev-only scripts in it must be excluded one by one.
+# command), so the dev-only scripts in it must be excluded — one by one for loose files, and by
+# directory for the sub-folders the rest have been organised into.
 scripts/build-vsix.sh
 scripts/run-build.bat
 scripts/install-vsix.bat
-scripts/build-sample-project.js
 scripts/make-icon.js
+scripts/Create sample PLC project/**
+scripts/Build PLC project/**
 # The only thing in the repo that talks to the internet. It regenerates a committed data file and is
 # run by a developer by hand; shipping it inside an extension whose whole premise is being offline
 # would be wrong even though nothing invokes it.
@@ -25,3 +27,9 @@ scripts/fetch-pragma-catalog.js
 CLAUDE.md
 HANDOFF.md
 DEVELOPMENT.md
+# Implementation plans — developer working documents, same category as the three files above.
+docs/**
+# Agent working directory: briefs, diffs, review reports. It is git-IGNORED, which is exactly why it
+# needs listing here — .gitignore has no effect on what vsce packages, so this shipped 1.12 MB of
+# internal review material (including identifiers redacted out of the source) until it was caught.
+.superpowers/**

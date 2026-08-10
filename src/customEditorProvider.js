@@ -7,7 +7,6 @@ const vscode = require('vscode');
 const path = require('path');
 const fs = require('fs');
 const { parseTwinCatXml, replaceComponentCdata } = require('./xmlParser');
-const { getWorkspaceTypesCache } = require('./typesCache');
 const { updateDocument } = require('./plcProjHelper');
 const { convertXmlToSt, mapDiagnosticsToMonaco } = require('./stConverter');
 const EXT_VERSION = (() => { try { return require('../package.json').version; } catch (e) { return '?'; } })();
@@ -294,7 +293,6 @@ class TwinCatCustomEditorProvider {
                             pendingTargetWord: pending && typeof pending === 'object' ? pending.targetWord : null,
                             isAutoSync: isAutoSync,
                             cachedEdits: cachedEdits,
-                            typesMap: getWorkspaceTypesCache(),
                             splitterRatio: splitterRatio,
                             fileUri: uriStr
                         });

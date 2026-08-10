@@ -2,9 +2,9 @@
  * @file xmlIndexer.js
  * @description Builds LSP workspace symbol nodes directly from TwinCAT XML objects
  * (.TcPOU/.TcGVL/.TcDUT/.TcIO) with real declaration ranges. This is the single source of
- * truth for cross-file symbols (function blocks, programs, GVLs, DUT structs/enums, interfaces),
- * replacing the stubbed typesMap merge. Has no dependency on the `vscode` module so it can run
- * inside the LSP server process and in test harnesses.
+ * truth for cross-file symbols (function blocks, programs, GVLs, DUT structs/enums, interfaces).
+ * Has no dependency on the `vscode` module so it can run inside the LSP server process and in
+ * test harnesses.
  */
 
 const fs = require('fs');
@@ -324,70 +324,19 @@ function normalizeObjectPath(p) {
 }
 
 /**
- * Collects the TwinCAT object files (.TcPOU/.TcGVL/.TcDUT/.TcIO) that are actually part of a project —
- * i.e. listed as `<Compile Include="...">` in a `.plcproj` — across the given workspace roots. The
- * project, not the filesystem, defines what exists: a backup or experimental copy that sits on disk
- * but is absent from the `.plcproj` (a common source of duplicate object names) must not shadow the
- * real object in the name-keyed index and steal its references.
- * @param {Array<string>} roots Absolute workspace-root paths.
- * @returns {Set<string>|null} Normalized absolute object paths, or **null** when no `.plcproj` exists
- *   under any root — callers then fall back to indexing every object file found on disk.
- */
-function collectPlcProjObjectPaths(roots) {
-    const plcprojFiles = [];
-    const findProjects = (dir) => {
-        let entries;
-        try {
-            entries = fs.readdirSync(dir, { withFileTypes: true });
-        } catch (e) {
-            return;
-        }
-        for (const entry of entries) {
-            const full = path.join(dir, entry.name);
-            if (entry.isDirectory()) {
-                if (entry.name === '.git' || entry.name === 'node_modules' || entry.name === '.vscode' || entry.name === '_Libraries') {
-                    continue;
-                }
-                findProjects(full);
-            } else if (entry.isFile() && entry.name.toLowerCase().endsWith('.plcproj')) {
-                plcprojFiles.push(full);
-            }
-        }
-    };
-    for (const root of (roots || [])) findProjects(root);
-    if (plcprojFiles.length === 0) return null;
-
-    const included = new Set();
-    for (const proj of plcprojFiles) {
-        let xml;
-        try {
-            xml = fs.readFileSync(proj, 'utf8');
-        } catch (e) {
-            continue;
-        }
-        const projDir = path.dirname(proj);
-        // <Compile Include="POUs\Modules\FB_Loading.TcPOU"> — the include is relative to the .plcproj,
-        // and TwinCAT writes backslashes regardless of platform.
-        const includeRe = /<Compile\b[^>]*?\bInclude="([^"]+)"/gi;
-        let m;
-        while ((m = includeRe.exec(xml)) !== null) {
-            const abs = path.resolve(projDir, m[1].replace(/\\/g, path.sep));
-            if (TWINCAT_EXTS.has(path.extname(abs).toLowerCase())) {
-                included.add(normalizeObjectPath(abs));
-            }
-        }
-    }
-    return included;
-}
-
-/**
  * Recursively scans a directory for TwinCAT XML objects and indexes them.
+ *
+ * The project-scoped caller (`src/lsp/workspaceScan.js`) does not use `includedPaths` at all — it
+ * indexes one project at a time by calling {@link indexXmlFile} directly over
+ * `createProjectMap()`'s per-project `objectPaths` (see `src/lsp/projectMap.js`), so a duplicate
+ * object name in another project's directory can never shadow it. `includedPaths` remains for the
+ * loose/no-`.plcproj` fallback path and any other caller that still wants a single filtered walk.
  * @param {Object} index Workspace symbol index to mutate.
  * @param {string} dirPath Absolute directory path.
- * @param {Set<string>|null} [includedPaths] When supplied (from {@link collectPlcProjObjectPaths}),
- *   only objects whose path is in the set are indexed — orphan/backup copies on disk are skipped so
- *   they cannot shadow a real object. Omit/null to index every object file (no-project fallback, and
- *   the behavior every existing test caller relies on).
+ * @param {Set<string>|null} [includedPaths] When supplied, only objects whose path is in the set are
+ *   indexed — orphan/backup copies on disk are skipped so they cannot shadow a real object. Omit/null
+ *   to index every object file (the no-project fallback, and the behavior every existing test caller
+ *   relies on).
  */
 function indexTwinCatDirectory(index, dirPath, includedPaths) {
     if (!fs.existsSync(dirPath)) return;
@@ -412,11 +361,11 @@ function indexTwinCatDirectory(index, dirPath, includedPaths) {
 }
 
 module.exports = {
+    TWINCAT_EXTS,
     buildNodeFromXml,
     indexXmlObject,
     indexXmlFile,
     indexTwinCatDirectory,
-    collectPlcProjObjectPaths,
     extractVars,
     extractEnumMembers,
     dutKindFromDecl

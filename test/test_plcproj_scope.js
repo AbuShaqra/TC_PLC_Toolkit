@@ -9,15 +9,19 @@
  * fix: collectPlcProjObjectPaths() lists the objects the .plcproj actually <Compile>s, and
  * indexTwinCatDirectory() skips anything on disk outside that set (falling back to indexing everything
  * only when there is no .plcproj at all).
+ *
+ * That fix has since been superseded by the project-scoped index (see test_project_map.js and
+ * test_multi_project_scope.js): `createProjectMap()` now answers "what does THIS project compile"
+ * per project instead of as one workspace-wide union, and `collectPlcProjObjectPaths()` — the old
+ * unioned API — was removed. This harness still asserts the exact same guarantee the Modulezzz
+ * incident demanded, just through `createProjectMap()`'s per-project `objectPaths` instead.
  */
 
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const {
-    indexTwinCatDirectory,
-    collectPlcProjObjectPaths
-} = require('../src/lsp/xmlIndexer');
+const { indexXmlFile } = require('../src/lsp/xmlIndexer');
+const { createProjectMap, normalizeProjectPath } = require('../src/lsp/projectMap');
 
 let errors = 0;
 function assert(cond, msg) {
@@ -73,46 +77,47 @@ fs.writeFileSync(path.join(ROOT, 'Proj.plcproj'), `<?xml version="1.0" encoding=
 </Project>`);
 
 // ------------------------------------------------------------------------------------------------
-// collectPlcProjObjectPaths
+// createProjectMap: the project's objectPaths is the include set the old union API used to compute.
 // ------------------------------------------------------------------------------------------------
-const included = collectPlcProjObjectPaths([ROOT]);
-const key = (p) => path.resolve(p).replace(/\\/g, '/').toLowerCase();
+const map = createProjectMap([ROOT]);
+const key = normalizeProjectPath(path.join(ROOT, 'Proj.plcproj'));
+const objects = map.get(key).objectPaths;
 
-assert(included instanceof Set, 'a project returns a Set of included object paths');
-assert(included.has(key(realFb)), 'the real Modules\\FB_Loading is in the include set');
-assert(included.has(key(gvl)), 'the GVL is in the include set');
-assert(!included.has(key(orphanFb)), 'the orphan Modulezzz\\FB_Loading is NOT in the include set');
-assert(included.size === 2, `exactly the two <Compile>d objects are included (got ${included.size})`);
+assert(objects instanceof Set, 'a project carries a Set of <Compile>d object paths');
+assert(objects.has(normalizeProjectPath(realFb)), 'the real Modules\\FB_Loading is in the project');
+assert(!objects.has(normalizeProjectPath(orphanFb)), 'the orphan Modulezzz\\FB_Loading is NOT');
+assert(objects.size === 2, `exactly the two <Compile>d objects (got ${objects.size})`);
 
-// No .plcproj anywhere → null (the caller then indexes everything).
+// A root with no .plcproj anywhere yields an empty map, not a project to look up.
 const emptyDir = path.join(os.tmpdir(), 'plcproj_none_' + Date.now());
 fs.mkdirSync(emptyDir, { recursive: true });
-assert(collectPlcProjObjectPaths([emptyDir]) === null, 'no .plcproj under any root returns null (index-all fallback)');
+assert(createProjectMap([emptyDir]).isEmpty(), 'no .plcproj under any root yields an empty project map');
 
 // ------------------------------------------------------------------------------------------------
-// indexTwinCatDirectory honours the include set: the real object wins the name key, orphan skipped.
+// Indexing the project's own objectPaths: the real object wins the name key, the orphan is never
+// touched because it was never in the set to begin with (this is how workspaceScan.js indexes a
+// project today — one indexXmlFile() call per objectPaths entry, not a filtered directory walk).
 // ------------------------------------------------------------------------------------------------
-const gated = {};
-indexTwinCatDirectory(gated, ROOT, included);
-assert(!!gated['FB_Loading'], 'FB_Loading is indexed');
-assert(/POUs\/Modules\/FB_Loading\.TcPOU$/i.test(gated['FB_Loading'].uri),
-    'the .plcproj copy (Modules) wins the name key — not the orphan (Modulezzz)');
-assert(!!gated['GVL_Data'], 'the GVL is indexed');
-
-// Without a filter, the old behavior stands: both copies collapse onto the key, last-write-wins, so
-// the orphan can win — this is exactly the bug the filter removes.
-const ungated = {};
-indexTwinCatDirectory(ungated, ROOT);
-assert(!!ungated['FB_Loading'], 'unfiltered: FB_Loading is still indexed (fallback behavior intact)');
+const index = {};
+for (const p of objects) indexXmlFile(index, p);
+assert(!!index['FB_Loading'], 'FB_Loading is indexed');
+assert(/POUs\/Modules\/FB_Loading\.TcPOU$/i.test(index['FB_Loading'].uri),
+    'the .plcproj copy wins the name key — the orphan is never indexed');
+assert(!!index['GVL_Data'], 'the GVL is indexed');
 
 // ------------------------------------------------------------------------------------------------
 // Ratchet tie-in: if the real sample is present, every object on disk must be in its .plcproj, so
-// gating is a NO-OP there and the zero-diagnostics baseline cannot move because of this change.
+// scoping to objectPaths is a NO-OP there and the zero-diagnostics baseline cannot move because of
+// this change.
 // ------------------------------------------------------------------------------------------------
 const SAMPLE_DIR = path.join(__dirname, '..', 'sample');
 if (fs.existsSync(SAMPLE_DIR)) {
-    const sampleIncluded = collectPlcProjObjectPaths([SAMPLE_DIR]);
-    assert(sampleIncluded instanceof Set, 'sample: a .plcproj is found');
+    const sampleMap = createProjectMap([SAMPLE_DIR]);
+    assert(!sampleMap.isEmpty(), 'sample: a .plcproj is found');
+    const sampleObjects = new Set();
+    for (const proj of sampleMap.projects.values()) {
+        for (const p of proj.objectPaths) sampleObjects.add(p);
+    }
     const TWINCAT_RE = /\.(tcpou|tcgvl|tcdut|tcio)$/i;
     const onDisk = [];
     (function walk(d) {
@@ -123,9 +128,9 @@ if (fs.existsSync(SAMPLE_DIR)) {
             } else if (TWINCAT_RE.test(e.name)) onDisk.push(full);
         }
     })(SAMPLE_DIR);
-    const missing = onDisk.filter(p => !sampleIncluded.has(key(p)));
+    const missing = onDisk.filter(p => !sampleObjects.has(normalizeProjectPath(p)));
     assert(missing.length === 0,
-        `sample: every object on disk is in the .plcproj, so gating is a no-op (got ${missing.length} outside: ${missing.slice(0, 3).map(p => path.basename(p)).join(', ')})`);
+        `sample: every object on disk is in a .plcproj, so scoping is a no-op (got ${missing.length} outside: ${missing.slice(0, 3).map(p => path.basename(p)).join(', ')})`);
 } else {
     console.log('sample/ not present — skipping the ratchet-safety coverage check.');
 }

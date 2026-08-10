@@ -7,6 +7,7 @@ const vscode = require('vscode');
 const path = require('path');
 const { parseTwinCatXml, getFoldersDetailedFromXml } = require('./xmlParser');
 const { classifyPou, classifyDut, componentKind, ICONS, LABELS, COLORS } = require('./objectKinds');
+const { groupRootsByProject } = require('./lsp/projectMap');
 
 /**
  * Builds the icon + tooltip for a kind from src/objectKinds.js. A kind with an entry in COLORS gets a
@@ -66,9 +67,20 @@ class TwinCatTreeItem extends vscode.TreeItem {
  * Data provider for the TwinCAT explorer tree view sidebar.
  */
 class TwinCatTreeDataProvider {
-    constructor() {
+    /**
+     * @param {(() => Object|null)} [getProjectMap] Supplies the extension host's current project
+     *   partition (see src/lsp/projectMap.js), re-read on every root expansion because a `.plcproj`
+     *   change rebuilds it. Reused rather than rebuilt here: `createProjectMap` walks the filesystem
+     *   and parses every `.plcproj`, and `getParent` is called repeatedly during `TreeView.reveal()`
+     *   — running that walk per call would be a real cost on a large project. Same shape as
+     *   `createProjectStatusBar(context, getProjectMap)` in src/projectStatusBar.js, so both
+     *   consumers share one map and one refresh point. Defaults to `() => null` (no grouping) so the
+     *   provider stays constructible without an extension-host wiring, e.g. from a future test.
+     */
+    constructor(getProjectMap) {
         this._onDidChangeTreeData = new vscode.EventEmitter();
         this.onDidChangeTreeData = this._onDidChangeTreeData.event;
+        this.getProjectMap = getProjectMap || (() => null);
     }
 
     /**
@@ -99,7 +111,22 @@ class TwinCatTreeDataProvider {
         if (!folders) return null;
 
         const elementUri = element.resourceUri;
-        const isRoot = folders.some(f => f.uri.toString() === elementUri.toString());
+        // Several PLC projects: each project directory is ITSELF a top-level tree node (see
+        // getChildren below), exactly like a workspace folder is — so an element that IS a project
+        // directory must report no parent too, whatever depth it sits at under the workspace root
+        // (a real TwinCAT solution nests the .plcproj at least one level under the opened folder;
+        // see sample/TcToolkitSample/TcToolkitSample_PLC/*.plcproj). Getting this on the ELEMENT
+        // itself (not its parent-on-disk) matters: reveal() only ever needs getParent(groupNode) to
+        // stop here — everything one level further down (e.g. a project's "POUs" folder) still
+        // synthesizes a generic 'directory' ancestor below, and that synthesized item's `id`
+        // (resourceUri.toString(), per the TwinCatTreeItem id getter) already matches the real group
+        // node's id, so VS Code's id-based reveal() matching resolves it correctly without any
+        // further special-casing.
+        const isProjectRoot = groupRootsByProject(
+            this.getProjectMap(),
+            folders.map(f => f.uri.fsPath)
+        ).some(g => vscode.Uri.file(g.dir).toString() === elementUri.toString());
+        const isRoot = isProjectRoot || folders.some(f => f.uri.toString() === elementUri.toString());
         if (isRoot) return null;
 
         const parentUri = vscode.Uri.file(path.dirname(elementUri.fsPath));
@@ -127,7 +154,26 @@ class TwinCatTreeDataProvider {
             // Root elements - Open workspace folder
             const folders = vscode.workspace.workspaceFolders;
             if (!folders) return [];
-            
+
+            // Several PLC projects under one folder: give each its own top-level node. Symbols,
+            // references and rename are scoped per project, so a flat tree would show two identical
+            // MAIN entries with no way to tell them apart. Fewer than two projects (the common case)
+            // and groupRootsByProject returns [], so the tree keeps its existing flat shape below.
+            const groups = groupRootsByProject(
+                this.getProjectMap(),
+                folders.map(f => f.uri.fsPath)
+            );
+            if (groups.length > 0) {
+                return groups.map(g => new TwinCatTreeItem(
+                    g.name,
+                    vscode.Uri.file(g.dir),
+                    vscode.TreeItemCollapsibleState.Expanded,
+                    'directory',
+                    null,
+                    new vscode.ThemeIcon('circuit-board')
+                ));
+            }
+
             let allItems = [];
             for (const folder of folders) {
                 const items = await this.readDir(folder.uri);

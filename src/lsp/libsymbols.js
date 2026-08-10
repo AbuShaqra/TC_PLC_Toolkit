@@ -77,43 +77,92 @@ const SKIP_DIRS = new Set(['.git', 'node_modules', '.vscode', '_compileinfo', 's
 const IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/;
 
 /**
- * Harvested library symbol names, keyed lower-case (Structured Text is case-insensitive), mapped to
- * the original spelling for display.
- * @type {Map<string, string>}
+ * The registry key on a symbol index. A `Symbol` deliberately: `Object.keys()`, `for…in` and
+ * `JSON.stringify` all skip symbol-keyed properties, and the index is iterated by key in several hot
+ * paths (the reference scan in features/references.js, the GVL-global lookup in types.js). Attaching
+ * the registry to the index therefore costs those loops nothing and needs no signature change where
+ * the index is already in hand — notably registerLibrarySymbolNodes(index, code).
  */
-const librarySymbols = new Map();
+const LIBRARY_REGISTRY = Symbol.for('twincat.librarySymbols');
+
+/**
+ * All per-project library state in one object. Everything here is scoped to a single `.plcproj`:
+ * two PLC projects reference different libraries, and unioning them makes each project quiet about
+ * names it cannot actually resolve.
+ * @returns {Object} A fresh registry.
+ */
+function createLibraryRegistry() {
+    return {
+        librarySymbols: new Map(),
+        namespaceSymbols: new Map(),
+        namespaceNames: new Map(),
+        libraryTitles: new Map(),
+        libraryCatalog: new Map(),
+        namespaceListCache: new Map(),
+        typeSystemTypes: new Map(),
+        typeSystemNamespaces: new Map(),
+        browserCacheNamespaceTypes: new Map(),
+        browserCacheNamespaceMembers: new Map(),
+        nestedNamespaceSymbols: new Map()
+    };
+}
+
+/** The default registry — the fallback for callers with no index (the test harnesses). */
+const defaultRegistry = createLibraryRegistry();
+
+/**
+ * The library registry for a symbol index — READ side. Never mutates `index`: when this exact index
+ * has never had its own registry created (nothing was ever indexed *into* it — see
+ * ensureLibraryRegistry, the write-side twin), this falls back to the shared default registry rather
+ * than silently reading an empty one.
+ *
+ * That fallback is what keeps the pre-existing standalone harnesses working unchanged: they populate
+ * the registry via the module-level `indexLibrarySymbols(dir)` etc. with NO index (the default), then
+ * exercise a feature (provideCompletions, registerLibrarySymbolNodes) against a real, separately-
+ * constructed symbol index that was never itself indexed. For any project `indexLibraries` HAS
+ * processed (see ensureLibraryRegistry), this branch is never taken — that project's own registry
+ * already exists by the time a getter or registerLibrarySymbolNodes runs. It IS taken for an index
+ * nothing has indexed yet: workspaceScan.js's `indexForKey` lazily creates an empty `{}` for any
+ * project key not yet scanned (reachable for LOOSE_PROJECT_KEY), and that is exactly what made the
+ * custom/libraries handler return nothing before its union fallback was added (see server.js,
+ * getUnionLibraryCatalog).
+ * @param {Object} [index] A project's symbol index. Omit for the default registry.
+ * @returns {Object} That project's library registry (or the default's).
+ */
+function libRegistryFor(index) {
+    if (!index) return defaultRegistry;
+    return index[LIBRARY_REGISTRY] || defaultRegistry;
+}
+
+/**
+ * The library registry for a symbol index — WRITE side: creates and attaches this index's OWN
+ * registry on first use, even if the write that follows adds nothing to it (a project that
+ * references no libraries still gets an empty registry of its own, so a later read is correctly
+ * isolated rather than falling back to the default). Every function that populates or clears the
+ * registry must go through this, never libRegistryFor — reading-and-creating would let one project's
+ * write silently land on the shared default instead of its own index.
+ * @param {Object} [index] A project's symbol index. Omit for the default registry.
+ * @returns {Object} That project's library registry.
+ */
+function ensureLibraryRegistry(index) {
+    if (!index) return defaultRegistry;
+    if (!index[LIBRARY_REGISTRY]) index[LIBRARY_REGISTRY] = createLibraryRegistry();
+    return index[LIBRARY_REGISTRY];
+}
 
 /**
  * Per-archive harvest cache, keyed by absolute path. 91 MB of archives must never be re-inflated on a
  * language-feature request: indexing runs only at startup / reindex, and even then a re-scan reuses
  * this cache when the file is byte-identical (same mtime and size). It is deliberately NOT cleared by
  * clearLibrarySymbols() — it is content-keyed, so it stays valid across a rebuild of the registry.
+ *
+ * This one stays a MODULE GLOBAL and stays SHARED across every project's registry: it is keyed by
+ * archive path and holds the decoded ZIP string table, so two projects referencing the same
+ * `Tc2_System` archive decode it once. Sharing a *cache* is correct; sharing a *namespace* would be
+ * the bug the rest of this file exists to fix.
  * @type {Map<string, {mtimeMs: number, size: number, names: string[]}>}
  */
 const archiveCache = new Map();
-
-/**
- * Library symbols grouped by the namespace that owns them: namespace (lower-case) → the same
- * lower-case-keyed name map the flat registry uses. Only libraries whose namespace could be
- * established *without guessing* appear here — see "Namespace attribution".
- * @type {Map<string, Map<string, string>>}
- */
-const namespaceSymbols = new Map();
-
-/**
- * The namespaces a .plcproj declares, keyed lower-case, mapped to the project's own spelling
- * (`tc2_mc2` -> `Tc2_MC2`). libraries.js keeps the same set but lower-cases it, and completion has
- * to *insert* a namespace at a type caret, where `Tc2_MC2` is what the user expects to see.
- * @type {Map<string, string>}
- */
-const namespaceNames = new Map();
-
-/**
- * Library *title* (normalized: lower-case, non-alphanumerics stripped) → the namespace that library
- * is imported under, or `null` when two references claim the same title (ambiguous — never used).
- * @type {Map<string, string|null>}
- */
-const libraryTitles = new Map();
 
 /**
  * @typedef {Object} LibraryCatalogEntry
@@ -136,17 +185,15 @@ const libraryTitles = new Map();
  * strings, and only the last one is what a programmer types (`Balluff BVS Sensor` /
  * `Balluff Sesnor Library TC3` are both imported as `Balluff_BVS_Sensor`). The "TwinCAT Libraries" view
  * exists to show that mapping, and this is the one place all three spellings are already in hand.
- * @type {Map<string, LibraryCatalogEntry>}
+ * (`Map<string, LibraryCatalogEntry>`, lives at `registry.libraryCatalog` — see createLibraryRegistry.)
  */
-const libraryCatalog = new Map();
 
 /**
  * getNamespaceSymbols() result cache: namespace (lower-case) → name list. Completion calls it on
  * every keystroke at a namespace-qualified caret, so the list is materialized once, not per call.
  * Invalidated whenever the namespace map is written to.
- * @type {Map<string, string[]>}
+ * (`Map<string, string[]>`, lives at `registry.namespaceListCache`.)
  */
-const namespaceListCache = new Map();
 
 /**
  * @typedef {Object} LibraryMember
@@ -184,17 +231,15 @@ const namespaceListCache = new Map();
 
 /**
  * Structured library types harvested from the project's `.tmc`, keyed lower-case.
- * @type {Map<string, LibraryType>}
+ * (`Map<string, LibraryType>`, lives at `registry.typeSystemTypes`.)
  */
-const typeSystemTypes = new Map();
 
 /**
  * The `.tmc`'s *top-level* types per library namespace (lower-case) — a subset of
  * namespaceSymbols, whose string-table names cannot tell a type from an internal member name.
  * Completion ranks these first at a namespace-qualified caret.
- * @type {Map<string, LibraryType[]>}
+ * (`Map<string, LibraryType[]>`, lives at `registry.typeSystemNamespaces`.)
  */
-const typeSystemNamespaces = new Map();
 
 /**
  * What the browsercache knows about a namespace's SHAPE, as opposed to its members.
@@ -205,20 +250,17 @@ const typeSystemNamespaces = new Map();
  * Both are needed: the `.tmc` for depth, this for breadth.
  *
  *   topLevel — namespace (lower-case) → name (lower-case) → { name, kind: 'fb'|'interface' }
+ *              (`Map<string, Map<string, {name: string, kind: string}>>`, `registry.browserCacheNamespaceTypes`)
  *   members  — namespace (lower-case) → set of names (lower-case) that appear ONLY as a method or
  *              property of some type in that library, and so cannot be written as `Namespace.X`
- * @type {Map<string, Map<string, {name: string, kind: string}>>}
+ *              (`Map<string, Set<string>>`, `registry.browserCacheNamespaceMembers`)
  */
-const browserCacheNamespaceTypes = new Map();
-/** @type {Map<string, Set<string>>} */
-const browserCacheNamespaceMembers = new Map();
 
 /**
  * Symbols of a nested namespace, keyed lower-case, harvested lazily by getNestedNamespaceSymbols.
  * An empty array is a cached MISS — the library is not installed — and must not be retried.
- * @type {Map<string, string[]>}
+ * (`Map<string, string[]>`, lives at `registry.nestedNamespaceSymbols`.)
  */
-const nestedNamespaceSymbols = new Map();
 
 // ---------------------------------------------------------------------------------------------
 // Minimal ZIP reader (central directory + inflateRaw). No dependencies.
@@ -448,16 +490,18 @@ function collectPlcProjFiles(dir, out) {
  * (mapped to null) rather than resolved arbitrarily: an archive matching it must stay unattributed.
  * @param {string} title Raw title.
  * @param {string} namespace Namespace, in the .plcproj's spelling.
+ * @param {Object} [index] The project's symbol index. Omit for the default registry.
  */
-function addLibraryTitle(title, namespace) {
+function addLibraryTitle(title, namespace, index) {
     const key = normalizeTitle(title);
     if (!key) return;
-    const existing = libraryTitles.get(key);
+    const reg = ensureLibraryRegistry(index);
+    const existing = reg.libraryTitles.get(key);
     if (existing !== undefined && existing !== namespace) {
-        libraryTitles.set(key, null); // ambiguous — two libraries answer to this title
+        reg.libraryTitles.set(key, null); // ambiguous — two libraries answer to this title
         return;
     }
-    libraryTitles.set(key, namespace);
+    reg.libraryTitles.set(key, namespace);
 }
 
 /**
@@ -497,13 +541,14 @@ function parseIncludeTriple(include) {
  * @param {string} include Raw `Include` attribute.
  * @param {string} resolution Raw `<DefaultResolution>` text ('' when the element has none).
  * @param {string} namespace The declared namespace, in the .plcproj's spelling.
+ * @param {Object} [index] The project's symbol index. Omit for the default registry.
  */
-function addCatalogEntry(kind, include, resolution, namespace) {
+function addCatalogEntry(kind, include, resolution, namespace, index) {
     const fromInclude = parseIncludeTriple(include);
     // DefaultResolution is the vendor's own naming and therefore wins; the Include is the fallback
     // (a pinned LibraryReference has no DefaultResolution at all).
     const resolved = resolution ? parseDefaultResolution(resolution) : { title: '', version: '', company: '' };
-    libraryCatalog.set(`${kind}|${include}|${namespace}`, {
+    ensureLibraryRegistry(index).libraryCatalog.set(`${kind}|${include}|${namespace}`, {
         include: String(include || '').trim(),
         title: resolved.title || fromInclude.title || namespace,
         version: resolved.version || fromInclude.version || '',
@@ -534,21 +579,22 @@ function isInternalLibraryName(name) {
  * `symbolCount` and `types` are resolved here rather than at index time because the .plcproj is read
  * *before* the archives and the `.tmc` are harvested. Both are honest about what is actually known: a
  * library with no readable archive and no `.tmc` types reports 0 and `[]` rather than a guess.
+ * @param {Object} [index] The project's symbol index. Omit for the default registry.
  * @returns {Array<LibraryCatalogEntry & {symbolCount: number, types: LibraryType[]}>} Sorted by
  *          namespace, case-insensitively (Structured Text is case-insensitive).
  */
-function getLibraryCatalog() {
-    const entries = Array.from(libraryCatalog.values()).map(entry => ({
+function getLibraryCatalog(index) {
+    const entries = Array.from(libRegistryFor(index).libraryCatalog.values()).map(entry => ({
         include: entry.include,
         title: entry.title,
         version: entry.version,
         company: entry.company,
         namespace: entry.namespace,
         kind: entry.kind,
-        symbolCount: getNamespaceSymbols(entry.namespace).length,
+        symbolCount: getNamespaceSymbols(entry.namespace, index).length,
         // Copied, not shared: the catalog crosses a JSON-RPC boundary, and the registry's own type
         // objects must never be mutable from outside it.
-        types: getTypeSystemNamespaceTypes(entry.namespace).filter(t => !isInternalLibraryName(t.name)).map(t => ({
+        types: getTypeSystemNamespaceTypes(entry.namespace, index).filter(t => !isInternalLibraryName(t.name)).map(t => ({
             name: t.name,
             kind: t.kind,
             // Only a signature-derived FUNCTION has one; it is what the tree shows as its return type.
@@ -571,13 +617,40 @@ function getLibraryCatalog() {
 }
 
 /**
+ * Every project's library catalog, unioned and deduplicated by namespace (case-insensitive: ST is).
+ *
+ * This is the fallback `custom/libraries` (server.js) reaches for when no specific project's catalog
+ * can be resolved — no `fileUri` was sent (the extension host has not been updated to send the active
+ * file), or the routed project genuinely references no libraries. The Libraries view is read-only
+ * browsing, so a superset is harmless; returning nothing (what happened before this existed) is the
+ * actual regression it exists to fix. In a single-project workspace the union IS that project's own
+ * catalog, so this restores exactly what `custom/libraries` returned before per-project scoping.
+ * @param {Iterable<Object>} indexes Every project's symbol index (e.g. `workspace.indexes.values()`).
+ * @returns {Array<LibraryCatalogEntry & {symbolCount: number, types: LibraryType[]}>} First-writer-
+ *          wins per namespace, in the order `indexes` iterates; not re-sorted (each project's own
+ *          getLibraryCatalog() call already sorted its slice, and a stable merge preserves that).
+ */
+function getUnionLibraryCatalog(indexes) {
+    const seen = new Map(); // namespace (lower-case) -> entry
+    for (const index of indexes) {
+        for (const entry of getLibraryCatalog(index)) {
+            const key = String(entry.namespace || entry.include).toLowerCase();
+            if (!seen.has(key)) seen.set(key, entry);
+        }
+    }
+    return Array.from(seen.values());
+}
+
+/**
  * Reads the library references of every `.plcproj` under a folder and builds the namespace and
  * title registries the attribution below relies on. Additive and idempotent; never throws.
  * @param {string} rootDir Absolute workspace folder.
+ * @param {Object} [index] The project's symbol index. Omit for the default registry.
  * @returns {number} Namespaces known after this scan.
  */
-function indexLibraryTitles(rootDir) {
-    if (!rootDir || !fs.existsSync(rootDir)) return namespaceNames.size;
+function indexLibraryTitles(rootDir, index) {
+    const reg = ensureLibraryRegistry(index);
+    if (!rootDir || !fs.existsSync(rootDir)) return reg.namespaceNames.size;
 
     const files = [];
     collectPlcProjFiles(rootDir, files);
@@ -600,16 +673,16 @@ function indexLibraryTitles(rootDir) {
             if (!nsMatch) continue;
             const namespace = nsMatch[1].trim();
             if (!namespace) continue;
-            namespaceNames.set(namespace.toLowerCase(), namespace);
+            reg.namespaceNames.set(namespace.toLowerCase(), namespace);
 
             // The namespace itself is a title too — most Beckhoff archives are named after it.
-            addLibraryTitle(namespace, namespace);
+            addLibraryTitle(namespace, namespace, index);
             // `Include="Tc2_EtherCAT,3.5.1.0,Beckhoff Automation GmbH"` — the title is the first field.
             const include = attrs.match(/Include\s*=\s*"([^"]*)"/i);
-            if (include) addLibraryTitle(include[1].split(',')[0], namespace);
+            if (include) addLibraryTitle(include[1].split(',')[0], namespace, index);
             // `<DefaultResolution>Recipe Management, * (System)</DefaultResolution>` — likewise.
             const resolution = body.match(/<DefaultResolution>([^<]+)<\/DefaultResolution>/);
-            if (resolution) addLibraryTitle(resolution[1].split(',')[0], namespace);
+            if (resolution) addLibraryTitle(resolution[1].split(',')[0], namespace, index);
 
             // The same three strings, kept whole this time: the "TwinCAT Libraries" view shows the
             // library → namespace mapping, and this block is where all of it is already parsed.
@@ -617,11 +690,12 @@ function indexLibraryTitles(rootDir) {
                 block[1] === 'PlaceholderReference' ? 'placeholder' : 'reference',
                 include ? include[1] : '',
                 resolution ? resolution[1] : '',
-                namespace
+                namespace,
+                index
             );
         }
     }
-    return namespaceNames.size;
+    return reg.namespaceNames.size;
 }
 
 /**
@@ -629,14 +703,16 @@ function indexLibraryTitles(rootDir) {
  * is Tc2_MC2's. Both the file stem and the title directory (the parent of the version directory) are
  * tried, since which one carries the library's title varies by vendor.
  * @param {string} filePath Absolute archive path.
+ * @param {Object} [index] The project's symbol index. Omit for the default registry.
  * @returns {string|null} Namespace in the .plcproj's spelling, or null when the path matches no
  *          declared library title (the archive is then a transitive dependency, not an import).
  */
-function archiveNamespace(filePath) {
+function archiveNamespace(filePath, index) {
+    const reg = libRegistryFor(index);
     const stem = path.basename(filePath).replace(LIBRARY_EXT, '');
     const titleDir = path.basename(path.dirname(path.dirname(filePath)));
     for (const candidate of [stem, titleDir]) {
-        const ns = libraryTitles.get(normalizeTitle(candidate));
+        const ns = reg.libraryTitles.get(normalizeTitle(candidate));
         if (ns) return ns; // null (ambiguous) and undefined (unknown) both fall through
     }
     return null;
@@ -646,55 +722,62 @@ function archiveNamespace(filePath) {
  * Files a harvested name under a namespace.
  * @param {string} namespace Namespace, any casing.
  * @param {string} name Symbol name, in the library's own spelling.
+ * @param {Object} [index] The project's symbol index. Omit for the default registry.
  */
-function addNamespaceSymbol(namespace, name) {
+function addNamespaceSymbol(namespace, name, index) {
+    const reg = ensureLibraryRegistry(index);
     const nsKey = String(namespace).toLowerCase();
-    let bucket = namespaceSymbols.get(nsKey);
+    let bucket = reg.namespaceSymbols.get(nsKey);
     if (!bucket) {
         bucket = new Map();
-        namespaceSymbols.set(nsKey, bucket);
+        reg.namespaceSymbols.set(nsKey, bucket);
     }
     const key = name.toLowerCase();
     if (!bucket.has(key)) {
         bucket.set(key, name);
-        namespaceListCache.delete(nsKey);
+        reg.namespaceListCache.delete(nsKey);
     }
 }
 
 /**
  * Every symbol of one library namespace, in the library's own spelling.
  * @param {string} namespace Namespace, any casing.
+ * @param {Object} [index] The project's symbol index. Omit for the default registry.
  * @returns {string[]} Symbol names — empty for an unknown or unmapped namespace (never a guess).
  */
-function getNamespaceSymbols(namespace) {
+function getNamespaceSymbols(namespace, index) {
     if (!namespace) return [];
+    const reg = libRegistryFor(index);
     const key = String(namespace).toLowerCase();
-    const cached = namespaceListCache.get(key);
+    const cached = reg.namespaceListCache.get(key);
     if (cached) return cached;
-    const bucket = namespaceSymbols.get(key);
+    const bucket = reg.namespaceSymbols.get(key);
     const list = bucket ? Array.from(bucket.values()) : [];
-    namespaceListCache.set(key, list);
+    reg.namespaceListCache.set(key, list);
     return list;
 }
 
 /**
  * The library namespaces the project imports, in the .plcproj's own spelling (`Tc2_MC2`, not
  * `tc2_mc2`). These are the only prefixes getNamespaceSymbols() can answer for.
+ * @param {Object} [index] The project's symbol index. Omit for the default registry.
  * @returns {string[]}
  */
-function getLibraryNamespaceNames() {
-    return Array.from(namespaceNames.values());
+function getLibraryNamespaceNames(index) {
+    return Array.from(libRegistryFor(index).namespaceNames.values());
 }
 
 /**
  * Namespace-attribution coverage, for the harnesses and for the server's startup log.
+ * @param {Object} [index] The project's symbol index. Omit for the default registry.
  * @returns {{namespaces: number, mapped: number, symbols: number}} Declared namespaces, how many of
  *          them carry at least one symbol, and how many attributed symbols there are in total.
  */
-function getNamespaceCoverage() {
+function getNamespaceCoverage(index) {
+    const reg = libRegistryFor(index);
     let symbols = 0;
-    namespaceSymbols.forEach(bucket => { symbols += bucket.size; });
-    return { namespaces: namespaceNames.size, mapped: namespaceSymbols.size, symbols };
+    reg.namespaceSymbols.forEach(bucket => { symbols += bucket.size; });
+    return { namespaces: reg.namespaceNames.size, mapped: reg.namespaceSymbols.size, symbols };
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -734,15 +817,17 @@ function collectArchives(dirPath, out) {
  * "Namespace attribution"). An unattributable archive still contributes to the flat registry — the
  * namespace map is an *addition*, never a filter.
  * @param {string} rootDir Absolute folder path.
+ * @param {Object} [index] The project's symbol index. Omit for the default registry.
  * @returns {{archives: number, failed: number, mapped: number, symbols: number, ms: number}}
  *          Indexing statistics; `mapped` counts the archives attributed to a namespace.
  */
-function indexLibrarySymbols(rootDir) {
+function indexLibrarySymbols(rootDir, index) {
     const started = Date.now();
     const stats = { archives: 0, failed: 0, mapped: 0, symbols: 0, ms: 0 };
     if (!rootDir || !fs.existsSync(rootDir)) return stats;
+    const reg = ensureLibraryRegistry(index);
 
-    indexLibraryTitles(rootDir); // the .plcproj is what says which namespace an archive belongs to
+    indexLibraryTitles(rootDir, index); // the .plcproj is what says which namespace an archive belongs to
 
     const files = [];
     collectArchives(rootDir, files);
@@ -751,6 +836,8 @@ function indexLibrarySymbols(rootDir) {
         let names;
         try {
             const st = fs.statSync(file);
+            // archiveCache stays a MODULE GLOBAL, shared across every project's registry — see its
+            // declaration above. Only the names it yields are filed per-project, below.
             const cached = archiveCache.get(file);
             if (cached && cached.mtimeMs === st.mtimeMs && cached.size === st.size) {
                 names = cached.names;
@@ -763,16 +850,16 @@ function indexLibrarySymbols(rootDir) {
             continue; // undecodable archive: contribute nothing rather than guess
         }
         stats.archives++;
-        const namespace = archiveNamespace(file);
+        const namespace = archiveNamespace(file, index);
         if (namespace) stats.mapped++;
         for (const name of names) {
             const key = name.toLowerCase();
-            if (!librarySymbols.has(key)) librarySymbols.set(key, name);
-            if (namespace) addNamespaceSymbol(namespace, name);
+            if (!reg.librarySymbols.has(key)) reg.librarySymbols.set(key, name);
+            if (namespace) addNamespaceSymbol(namespace, name, index);
         }
     }
 
-    stats.symbols = librarySymbols.size;
+    stats.symbols = reg.librarySymbols.size;
     stats.ms = Date.now() - started;
     return stats;
 }
@@ -936,9 +1023,11 @@ function parseTmcMethods(block) {
  * `external` with `membersComplete: false`, so a member it does not find is "uncertain", not
  * "absent" — see makeLibraryNode.
  * @param {string} block Raw `<DataType>…</DataType>` XML.
+ * @param {Object} [index] The project's symbol index, for namespace attribution. Omit for the
+ *   default registry (the harness's usual case — the block still parses, just with `namespace: ''`).
  * @returns {LibraryType|null} null when the block names no identifier-shaped type.
  */
-function parseTmcDataType(block) {
+function parseTmcDataType(block, index) {
     // Only the *first* Name in a block is the type's own name; SubItem/Property children carry theirs.
     const nameMatch = block.match(/<Name([^>]*)>([^<]+)<\/Name>/);
     if (!nameMatch) return null;
@@ -987,7 +1076,7 @@ function parseTmcDataType(block) {
     return {
         name,
         kind,
-        namespace: declaredNamespace(nameMatch[1]) || '',
+        namespace: declaredNamespace(nameMatch[1], index) || '',
         members: kind === 'enum' ? enumMembers : (kind === 'opaque' ? [] : members),
         methods,
         extendsType
@@ -1015,17 +1104,19 @@ function parseTmcDataType(block) {
  * The `.tmc` is also the *second* namespace source: it tags a type with the namespace that owns it
  * (`<Type Namespace="Tc2_MC2">ST_AxisStatus</Type>`), which reaches types no readable archive holds.
  * @param {string} rootDir Workspace folder to scan.
+ * @param {Object} [index] The project's symbol index. Omit for the default registry.
  * @returns {{files: number, symbols: number, attributed: number, types: number, structured: number,
  *            ms: number}} Indexing statistics; `attributed` counts the type names the `.tmc` assigned
  *          to a library namespace, `types` the `<DataType>` blocks parsed and `structured` those of
  *          them that carry members (struct / fb / enum).
  */
-function indexTypeSystem(rootDir) {
+function indexTypeSystem(rootDir, index) {
     const started = Date.now();
     const stats = { files: 0, symbols: 0, attributed: 0, types: 0, structured: 0, ms: 0 };
     if (!rootDir || !fs.existsSync(rootDir)) return stats;
+    const reg = ensureLibraryRegistry(index);
 
-    indexLibraryTitles(rootDir); // establishes which namespaces the project actually imports
+    indexLibraryTitles(rootDir, index); // establishes which namespaces the project actually imports
 
     const files = [];
     collectTmcFiles(rootDir, files);
@@ -1040,23 +1131,23 @@ function indexTypeSystem(rootDir) {
         stats.files++;
         const blocks = xml.match(/<DataType>[\s\S]*?<\/DataType>/g) || [];
         for (const block of blocks) {
-            const type = parseTmcDataType(block);
+            const type = parseTmcDataType(block, index);
             if (!type) continue;
             stats.types++;
             const key = type.name.toLowerCase();
-            if (!librarySymbols.has(key)) librarySymbols.set(key, type.name);
+            if (!reg.librarySymbols.has(key)) reg.librarySymbols.set(key, type.name);
             // First definition wins: re-indexing must not flip a type's shape under a live index.
-            if (!typeSystemTypes.has(key)) {
-                typeSystemTypes.set(key, type);
+            if (!reg.typeSystemTypes.has(key)) {
+                reg.typeSystemTypes.set(key, type);
                 if (type.kind !== 'opaque') stats.structured++;
                 if (type.namespace) {
                     const nsKey = type.namespace.toLowerCase();
-                    if (!typeSystemNamespaces.has(nsKey)) typeSystemNamespaces.set(nsKey, []);
-                    typeSystemNamespaces.get(nsKey).push(type);
+                    if (!reg.typeSystemNamespaces.has(nsKey)) reg.typeSystemNamespaces.set(nsKey, []);
+                    reg.typeSystemNamespaces.get(nsKey).push(type);
                 }
             }
             if (type.namespace) {
-                addNamespaceSymbol(type.namespace, type.name);
+                addNamespaceSymbol(type.namespace, type.name, index);
                 stats.attributed++;
             }
         }
@@ -1068,11 +1159,11 @@ function indexTypeSystem(rootDir) {
         while ((ref = typeRefRegex.exec(xml)) !== null) {
             const name = ref[2].trim();
             if (!IDENTIFIER.test(name)) continue;
-            if (attributeTmcType(ref[1], name)) stats.attributed++;
+            if (attributeTmcType(ref[1], name, index)) stats.attributed++;
         }
     }
 
-    stats.symbols = librarySymbols.size;
+    stats.symbols = reg.librarySymbols.size;
     stats.ms = Date.now() - started;
     return stats;
 }
@@ -1087,38 +1178,41 @@ function indexTypeSystem(rootDir) {
  * internal `MC`, `IO`) is rejected for the same reason — it is not a prefix the user can type.
  * Rejected either way, the name simply stays in the flat, unqualified registry.
  * @param {string} attrs Raw attribute text of a `<Name>` / `<Type>` tag.
+ * @param {Object} [index] The project's symbol index. Omit for the default registry.
  * @returns {string|null} The namespace in the .plcproj's own spelling, or null.
  */
-function declaredNamespace(attrs) {
+function declaredNamespace(attrs, index) {
     const ns = /\bNamespace\s*=\s*"([^"]+)"/.exec(attrs || '');
     if (!ns) return null;
     const namespace = ns[1].trim();
     if (!namespace || namespace.includes('.')) return null;
-    return namespaceNames.get(namespace.toLowerCase()) || null;
+    return libRegistryFor(index).namespaceNames.get(namespace.toLowerCase()) || null;
 }
 
 /**
  * Files a `.tmc` type under the namespace its `Namespace="…"` attribute names.
  * @param {string} attrs Raw attribute text of the `<Name>` / `<Type>` tag.
  * @param {string} name The type name.
+ * @param {Object} [index] The project's symbol index. Omit for the default registry.
  * @returns {boolean} True when the type was attributed.
  */
-function attributeTmcType(attrs, name) {
-    const declared = declaredNamespace(attrs);
+function attributeTmcType(attrs, name, index) {
+    const declared = declaredNamespace(attrs, index);
     if (!declared) return false;
-    addNamespaceSymbol(declared, name);
+    addNamespaceSymbol(declared, name, index);
     return true;
 }
 
 /**
  * The `.tmc`'s structural description of a library type, when it has one.
  * @param {string} name Type name, any casing.
+ * @param {Object} [index] The project's symbol index. Omit for the default registry.
  * @returns {LibraryType|undefined} undefined when the `.tmc` does not know the type — the caller must
  *          then treat it as a bare name with no members (which is what it was before this existed).
  */
-function getLibraryType(name) {
+function getLibraryType(name, index) {
     if (!name) return undefined;
-    return typeSystemTypes.get(String(name).toLowerCase());
+    return libRegistryFor(index).typeSystemTypes.get(String(name).toLowerCase());
 }
 
 /**
@@ -1133,11 +1227,12 @@ function getLibraryType(name) {
  * Completion-only by construction: nothing that could reach a diagnostic ever sees this node, and
  * it carries `membersComplete: false` like every library node, so a miss stays "uncertain".
  * @param {string} name Type name, unqualified, any casing.
+ * @param {Object} [index] The project's symbol index. Omit for the default registry.
  * @returns {Object|null} A library node, or null when the `.tmc` does not describe that type.
  */
-function getLibraryTypeNode(name) {
+function getLibraryTypeNode(name, index) {
     if (!name) return null;
-    const info = typeSystemTypes.get(String(name).toLowerCase());
+    const info = libRegistryFor(index).typeSystemTypes.get(String(name).toLowerCase());
     if (!info) return null;
     return makeLibraryNode(info.name || name, info);
 }
@@ -1146,11 +1241,12 @@ function getLibraryTypeNode(name) {
  * The `.tmc`'s top-level types for one library namespace — the subset of getNamespaceSymbols() that
  * is known to be a *type* rather than a name the string table happened to serialize.
  * @param {string} namespace Namespace, any casing.
+ * @param {Object} [index] The project's symbol index. Omit for the default registry.
  * @returns {LibraryType[]} Empty for a namespace the `.tmc` says nothing about (never a guess).
  */
-function getTypeSystemNamespaceTypes(namespace) {
+function getTypeSystemNamespaceTypes(namespace, index) {
     if (!namespace) return [];
-    return typeSystemNamespaces.get(String(namespace).toLowerCase()) || [];
+    return libRegistryFor(index).typeSystemNamespaces.get(String(namespace).toLowerCase()) || [];
 }
 
 /**
@@ -1159,11 +1255,12 @@ function getTypeSystemNamespaceTypes(namespace) {
  * Names only: parameters and fields live in the opaque binary `.object` entries, so the `.tmc`
  * still wins wherever both describe a type.
  * @param {string} namespace Library namespace.
+ * @param {Object} [index] The project's symbol index. Omit for the default registry.
  * @returns {Map<string, {name: string, kind: string}>} Keyed by lower-case name; empty when unknown.
  */
-function getBrowserCacheNamespaceTypes(namespace) {
+function getBrowserCacheNamespaceTypes(namespace, index) {
     if (!namespace) return new Map();
-    return browserCacheNamespaceTypes.get(String(namespace).toLowerCase()) || new Map();
+    return libRegistryFor(index).browserCacheNamespaceTypes.get(String(namespace).toLowerCase()) || new Map();
 }
 
 /**
@@ -1173,11 +1270,12 @@ function getBrowserCacheNamespaceTypes(namespace) {
  * only libraries installed on this machine, and a wrong drop hides a real type.
  * @param {string} namespace Library namespace.
  * @param {string} name Candidate symbol name.
+ * @param {Object} [index] The project's symbol index. Omit for the default registry.
  * @returns {boolean}
  */
-function isBrowserCacheMemberName(namespace, name) {
+function isBrowserCacheMemberName(namespace, name, index) {
     if (!namespace || !name) return false;
-    const set = browserCacheNamespaceMembers.get(String(namespace).toLowerCase());
+    const set = libRegistryFor(index).browserCacheNamespaceMembers.get(String(namespace).toLowerCase());
     return !!set && set.has(String(name).toLowerCase());
 }
 
@@ -1221,9 +1319,11 @@ function collectTmcFiles(dir, out) {
  * push in indexTypeSystem but tolerating an in-place upgrade: an opaque `.tmc`/signature entry already
  * pushed under this key is replaced rather than duplicated. No dup can accumulate for a given name.
  * @param {LibraryType} record The type record to file.
+ * @param {Object} [index] The project's symbol index. Omit for the default registry.
  */
-function pushNamespaceType(record) {
+function pushNamespaceType(record, index) {
     if (!record.namespace) return;
+    const typeSystemNamespaces = ensureLibraryRegistry(index).typeSystemNamespaces;
     const nsKey = record.namespace.toLowerCase();
     if (!typeSystemNamespaces.has(nsKey)) typeSystemNamespaces.set(nsKey, []);
     const bucket = typeSystemNamespaces.get(nsKey);
@@ -1250,14 +1350,15 @@ function pushNamespaceType(record) {
  * unattributed `.tmc` type is. Attributing them under their title would pollute the namespace index
  * with keys nobody can reference.
  * @param {string} title The signatures XML's `<LibraryName>`.
+ * @param {Object} [index] The project's symbol index. Omit for the default registry.
  * @returns {string} The ST namespace, or '' when the workspace does not reference this library.
  */
-function namespaceForLibraryTitle(title) {
+function namespaceForLibraryTitle(title, index) {
     if (!title) return '';
     // libraryTitles already maps every spelling the .plcproj offers (the Include, the
     // DefaultResolution, and the namespace itself) onto the namespace, normalized. A `null` value
     // means two libraries answer to this title — ambiguous, so attribute to neither.
-    const ns = libraryTitles.get(normalizeTitle(title));
+    const ns = libRegistryFor(index).libraryTitles.get(normalizeTitle(title));
     return ns || '';
 }
 
@@ -1276,58 +1377,60 @@ function namespaceForLibraryTitle(title) {
  * Exported separately from indexLibrarySignatures so the harness can drive the merge from a string
  * without writing a file.
  * @param {string} xml Raw ProduceAllLibrarySignatures XML.
+ * @param {Object} [index] The project's symbol index. Omit for the default registry.
  * @returns {{functions: number, functionBlocks: number, types: number, added: number}}
  *          Parsed counts and how many registry types this XML inserted or upgraded.
  */
-function indexLibrarySignaturesFromXml(xml) {
+function indexLibrarySignaturesFromXml(xml, index) {
     const stats = { functions: 0, functionBlocks: 0, types: 0, added: 0 };
+    const reg = ensureLibraryRegistry(index);
     const parsed = parseLibrarySignaturesXml(xml);
     for (const lib of parsed.libraries) {
         stats.functions += lib.functions.length;
         stats.functionBlocks += lib.functionBlocks.length;
     }
 
-    const reg = toRegistryTypes(parsed);
-    stats.types = reg.types.length;
+    const regTypes = toRegistryTypes(parsed);
+    stats.types = regTypes.types.length;
 
-    for (const record of reg.types) {
+    for (const record of regTypes.types) {
         // toRegistryTypes can only fill `namespace` with the library's TITLE — that is all the XML
         // carries. Translate it to the real ST namespace before anything is attributed, or the types
         // land under a key ("TwinCat Dynamic Collections") that nothing ever looks up and the Libraries
         // view shows an empty library.
-        record.namespace = namespaceForLibraryTitle(record.namespace);
+        record.namespace = namespaceForLibraryTitle(record.namespace, index);
 
         const key = record.name.toLowerCase();
-        const existing = typeSystemTypes.get(key);
+        const existing = reg.typeSystemTypes.get(key);
         const hasContent = (record.members && record.members.length > 0) || !!record.returnType;
 
         if (!existing) {
             // Unknown to the `.tmc` — the signature is the only structure we have. Insert it.
-            typeSystemTypes.set(key, record);
+            reg.typeSystemTypes.set(key, record);
             if (record.namespace) {
-                pushNamespaceType(record);
-                addNamespaceSymbol(record.namespace, record.name);
+                pushNamespaceType(record, index);
+                addNamespaceSymbol(record.namespace, record.name, index);
             }
             stats.added++;
         } else if (existing.kind === 'opaque' && hasContent) {
             // The `.tmc` (or an earlier signature) knew only the bare name — the signature is richer.
-            typeSystemTypes.set(key, record);
+            reg.typeSystemTypes.set(key, record);
             if (record.namespace) {
-                pushNamespaceType(record);
-                addNamespaceSymbol(record.namespace, record.name);
+                pushNamespaceType(record, index);
+                addNamespaceSymbol(record.namespace, record.name, index);
             }
             stats.added++;
         }
         // else: an entry with real members already owns this key — leave it untouched (`.tmc` wins).
 
         // The bare name is a library symbol regardless of the merge outcome above.
-        if (!librarySymbols.has(key)) librarySymbols.set(key, record.name);
+        if (!reg.librarySymbols.has(key)) reg.librarySymbols.set(key, record.name);
     }
 
     // Global var-list names and their constants are symbols, not types (no members to model).
-    for (const name of reg.symbols) {
+    for (const name of regTypes.symbols) {
         const key = name.toLowerCase();
-        if (!librarySymbols.has(key)) librarySymbols.set(key, name);
+        if (!reg.librarySymbols.has(key)) reg.librarySymbols.set(key, name);
     }
 
     return stats;
@@ -1364,10 +1467,11 @@ function collectSignatureFiles(dir, out) {
  * Additive and idempotent (first-definition-wins, guarded name inserts); clearLibrarySymbols() resets
  * everything it touches, so a reindex re-merges cleanly.
  * @param {string} rootDir Absolute workspace folder.
+ * @param {Object} [index] The project's symbol index. Omit for the default registry.
  * @returns {{files: number, functions: number, functionBlocks: number, types: number, added: number,
  *            ms: number}} Indexing statistics.
  */
-function indexLibrarySignatures(rootDir) {
+function indexLibrarySignatures(rootDir, index) {
     const started = Date.now();
     const stats = { files: 0, functions: 0, functionBlocks: 0, types: 0, added: 0, ms: 0 };
     if (!rootDir || !fs.existsSync(rootDir)) return stats;
@@ -1383,7 +1487,7 @@ function indexLibrarySignatures(rootDir) {
             continue; // unreadable dump: contribute nothing rather than guess
         }
         stats.files++;
-        const one = indexLibrarySignaturesFromXml(xml);
+        const one = indexLibrarySignaturesFromXml(xml, index);
         stats.functions += one.functions;
         stats.functionBlocks += one.functionBlocks;
         stats.types += one.types;
@@ -1408,14 +1512,16 @@ function indexLibrarySignatures(rootDir) {
  * getLibraryCatalog then copies across the JSON-RPC boundary.
  * @param {string} rootDir Absolute workspace folder — its `.plcproj` library references (already in
  *        libraryCatalog) decide which browsercaches are read.
+ * @param {Object} [index] The project's symbol index. Omit for the default registry.
  * @returns {{libraries: number, types: number, methods: number, properties: number, ms: number}}
  */
-function indexBrowserCache(rootDir) {
+function indexBrowserCache(rootDir, index) {
     const started = Date.now();
     const stats = { libraries: 0, types: 0, methods: 0, properties: 0, ms: 0 };
     if (!rootDir || !fs.existsSync(rootDir)) { stats.ms = Date.now() - started; return stats; }
+    const reg = ensureLibraryRegistry(index);
 
-    for (const entry of libraryCatalog.values()) {
+    for (const entry of reg.libraryCatalog.values()) {
         if (!entry.namespace) continue;
         // The .plcproj gives a library three spellings; any may be its Managed Libraries folder name.
         const bcFile = findBrowserCacheFile(entry.company, [entry.title, entry.include, entry.namespace]);
@@ -1431,10 +1537,10 @@ function indexBrowserCache(rootDir) {
         // at `Namespace.▮`. On Tc2_MC2 the string table offers 2,269 undifferentiated names; the
         // browsercache names 128 of them as real FBs/interfaces where the `.tmc` names ~57.
         const nsKey = String(entry.namespace).toLowerCase();
-        let topLevel = browserCacheNamespaceTypes.get(nsKey);
-        if (!topLevel) { topLevel = new Map(); browserCacheNamespaceTypes.set(nsKey, topLevel); }
-        let memberNames = browserCacheNamespaceMembers.get(nsKey);
-        if (!memberNames) { memberNames = new Set(); browserCacheNamespaceMembers.set(nsKey, memberNames); }
+        let topLevel = reg.browserCacheNamespaceTypes.get(nsKey);
+        if (!topLevel) { topLevel = new Map(); reg.browserCacheNamespaceTypes.set(nsKey, topLevel); }
+        let memberNames = reg.browserCacheNamespaceMembers.get(nsKey);
+        if (!memberNames) { memberNames = new Set(); reg.browserCacheNamespaceMembers.set(nsKey, memberNames); }
         for (const bcType of parsed.values()) {
             topLevel.set(bcType.name.toLowerCase(), { name: bcType.name, kind: bcType.kind });
             for (const m of bcType.methods || []) memberNames.add(String(m).toLowerCase());
@@ -1444,7 +1550,7 @@ function indexBrowserCache(rootDir) {
         // MC_Power is both listed and declared. Resolve the overlap in favour of the type.
         for (const key of topLevel.keys()) memberNames.delete(key);
 
-        const nsTypes = getTypeSystemNamespaceTypes(entry.namespace);
+        const nsTypes = getTypeSystemNamespaceTypes(entry.namespace, index);
         if (nsTypes.length === 0) continue;
         const byName = new Map(nsTypes.map(t => [t.name.toLowerCase(), t]));
 
@@ -1501,12 +1607,18 @@ function indexBrowserCache(rootDir) {
  * VisuElemBase is 6.3 MB / 11,572 symbols, measured at ~40 ms to harvest, once per session. Doing
  * this at index time for every library's every dependency is the 78 s cliff all over again.
  * @param {string} name The nested namespace segment (a library name).
+ * @param {Object} [index] The project's symbol index. Omit for the default registry.
  * @returns {string[]} Symbol names, or an empty array when no such library is installed.
  */
-function getNestedNamespaceSymbols(name) {
+function getNestedNamespaceSymbols(name, index) {
     if (!name) return [];
+    // Read-side (libRegistryFor, not ensureLibraryRegistry): this only ever CONSULTS the registry's
+    // cache. The write-side twin would CREATE an empty registry on an index nothing has indexed yet
+    // (e.g. a not-yet-scanned LOOSE_PROJECT_KEY index — see workspaceScan.js indexForKey), and every
+    // later read on that index would then stop falling back to the default and see nothing.
+    const reg = libRegistryFor(index);
     const key = String(name).toLowerCase();
-    const cached = nestedNamespaceSymbols.get(key);
+    const cached = reg.nestedNamespaceSymbols.get(key);
     if (cached) return cached;
 
     let symbols = [];
@@ -1518,7 +1630,7 @@ function getNestedNamespaceSymbols(name) {
             symbols = [];
         }
     }
-    nestedNamespaceSymbols.set(key, symbols);
+    reg.nestedNamespaceSymbols.set(key, symbols);
     return symbols;
 }
 
@@ -1559,29 +1671,32 @@ function findInstalledLibraryArchive(name) {
 /**
  * True if the name is a symbol declared by an indexed external library (case-insensitive).
  * @param {string} name Identifier to test.
+ * @param {Object} [index] The project's symbol index. Omit for the default registry.
  * @returns {boolean}
  */
-function isLibrarySymbol(name) {
+function isLibrarySymbol(name, index) {
     if (!name) return false;
-    return librarySymbols.has(String(name).toLowerCase());
+    return libRegistryFor(index).librarySymbols.has(String(name).toLowerCase());
 }
 
 /**
  * Returns every harvested library symbol name, in its original spelling.
+ * @param {Object} [index] The project's symbol index. Omit for the default registry.
  * @returns {string[]}
  */
-function getLibrarySymbols() {
-    return Array.from(librarySymbols.values());
+function getLibrarySymbols(index) {
+    return Array.from(libRegistryFor(index).librarySymbols.values());
 }
 
 /**
  * Returns the library's own spelling of a symbol (`t_maxstring` -> `T_MaxString`), or undefined.
  * @param {string} name Identifier, any casing.
+ * @param {Object} [index] The project's symbol index. Omit for the default registry.
  * @returns {string|undefined}
  */
-function getLibrarySymbolName(name) {
+function getLibrarySymbolName(name, index) {
     if (!name) return undefined;
-    return librarySymbols.get(String(name).toLowerCase());
+    return libRegistryFor(index).librarySymbols.get(String(name).toLowerCase());
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -1676,7 +1791,15 @@ function makeLibraryNode(name, info) {
  * @returns {number} Number of nodes newly registered.
  */
 function registerLibrarySymbolNodes(index, code) {
-    if (!index || !code || librarySymbols.size === 0) return 0;
+    // No signature change: this already receives the index, so it just reads its registry off it —
+    // the whole reason the registry lives on a Symbol key of the index rather than a threaded param.
+    // Read-side (libRegistryFor, not ensureLibraryRegistry): this only ever CONSULTS the library
+    // registry, it does not populate it, and falling back to the default when this index was never
+    // itself indexed is what keeps the standalone harnesses (which index with no argument, then
+    // register against a real-but-unindexed symbol index) working unchanged.
+    if (!index || !code) return 0;
+    const reg = libRegistryFor(index);
+    if (reg.librarySymbols.size === 0) return 0;
 
     // Names already in the index, compared case-insensitively: a real project symbol must never be
     // shadowed by a same-named library symbol, whatever its casing.
@@ -1690,9 +1813,9 @@ function registerLibrarySymbolNodes(index, code) {
         const lower = m[0].toLowerCase();
         if (seen.has(lower) || known.has(lower)) continue;
         seen.add(lower);
-        const real = librarySymbols.get(lower);
+        const real = reg.librarySymbols.get(lower);
         if (!real) continue;
-        index[real] = makeLibraryNode(real, typeSystemTypes.get(lower));
+        index[real] = makeLibraryNode(real, reg.typeSystemTypes.get(lower));
         known.add(lower);
         added++;
     }
@@ -1703,20 +1826,27 @@ function registerLibrarySymbolNodes(index, code) {
  * Empties the symbol registry, the namespace map, the `.tmc` type structure, the library catalog, and
  * the namespace/title registries derived from the .plcproj. Used by custom/reindex and by the test
  * harnesses. The per-archive harvest cache is kept: it is keyed on file mtime+size, so it stays
- * correct and makes a reindex cheap (no re-inflation of unchanged archives).
+ * correct and makes a reindex cheap (no re-inflation of unchanged archives) — and it is SHARED across
+ * every project's registry, so clearing one project's registry must never touch it.
+ *
+ * Write-side (ensureLibraryRegistry, not libRegistryFor): clearing must create this index's OWN
+ * registry if it does not have one yet, never clear the shared default because this specific index
+ * had not been indexed yet.
+ * @param {Object} [index] The project's symbol index. Omit for the default registry.
  */
-function clearLibrarySymbols() {
-    librarySymbols.clear();
-    namespaceSymbols.clear();
-    namespaceNames.clear();
-    libraryTitles.clear();
-    namespaceListCache.clear();
-    typeSystemTypes.clear();
-    typeSystemNamespaces.clear();
-    browserCacheNamespaceTypes.clear();
-    browserCacheNamespaceMembers.clear();
-    nestedNamespaceSymbols.clear();
-    libraryCatalog.clear();
+function clearLibrarySymbols(index) {
+    const reg = ensureLibraryRegistry(index);
+    reg.librarySymbols.clear();
+    reg.namespaceSymbols.clear();
+    reg.namespaceNames.clear();
+    reg.libraryTitles.clear();
+    reg.namespaceListCache.clear();
+    reg.typeSystemTypes.clear();
+    reg.typeSystemNamespaces.clear();
+    reg.browserCacheNamespaceTypes.clear();
+    reg.browserCacheNamespaceMembers.clear();
+    reg.nestedNamespaceSymbols.clear();
+    reg.libraryCatalog.clear();
 }
 
 module.exports = {
@@ -1743,6 +1873,7 @@ module.exports = {
     getNamespaceCoverage,
     // library catalog (the "TwinCAT Libraries" view)
     getLibraryCatalog,
+    getUnionLibraryCatalog,
     // .tmc type-system structure
     parseTmcDataType,
     getLibraryType,
