@@ -93,6 +93,40 @@ assert(sharedOwners.includes(keyA) && sharedOwners.includes(keyB), 'both project
 assert(map.projectFor(path.join(A, 'POUs', 'FB_Shared.TcPOU')) === keyA,
     'a linked file routes to the project whose directory contains it');
 
+// --- on-disk spelling + XML entity decoding ---------------------------------------------------
+// The scan indexes each project's objects from these entries, and every symbol node's uri inherits
+// their spelling. 0.6.0 indexed from the NORMALIZED (lowercased) objectPaths, so every cross-file
+// navigation carried a lowercased uri and opened a duplicate, lowercase-titled editor tab (proven
+// in a real dev host — user report 2026-08-10). objectPaths stays normalized (it is the identity
+// key for ownership); objectFiles carries the on-disk spelling the indexer must use.
+const filesA = map.get(keyA).objectFiles;
+assert(filesA instanceof Map && filesA.size === map.get(keyA).objectPaths.size,
+    'objectFiles mirrors objectPaths one-to-one (normalized key -> on-disk spelling)');
+const mainRealA = filesA ? filesA.get(normalizeProjectPath(path.join(A, 'POUs', 'MAIN.TcPOU'))) : null;
+assert(!!mainRealA && mainRealA.endsWith(path.join('POUs', 'MAIN.TcPOU')),
+    `objectFiles preserves the on-disk spelling, capitals included (got ${mainRealA})`);
+
+// TwinCAT XML-escapes attribute values: a folder named "time&date" is written as
+// Include="POUs\time&amp;date\CAL.TcPOU". The undecoded form resolves to a path that exists
+// nowhere, so the object is silently never indexed — measured on a real OSCAT project, where 57 of
+// 819 compiled objects vanished this way (every one under time&date/).
+const C = path.join(ROOT, 'LineC');
+fs.mkdirSync(path.join(C, 'POUs', 'time&date'), { recursive: true });
+fs.writeFileSync(path.join(C, 'POUs', 'time&date', 'CAL.TcPOU'), '<TcPlcObject/>');
+fs.writeFileSync(path.join(C, 'LineC.plcproj'), `<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="14.0">
+  <ItemGroup>
+    <Compile Include="POUs\\time&amp;date\\CAL.TcPOU"><SubType>Code</SubType></Compile>
+  </ItemGroup>
+</Project>`);
+const mapC = createProjectMap([ROOT]);
+const keyC = normalizeProjectPath(path.join(C, 'LineC.plcproj'));
+const calNorm = normalizeProjectPath(path.join(C, 'POUs', 'time&date', 'CAL.TcPOU'));
+assert(mapC.get(keyC).objectPaths.has(calNorm),
+    'XML entities in <Compile Include> are decoded (&amp; -> &)');
+assert(!!mapC.get(keyC).objectFiles.get(calNorm) && fs.existsSync(mapC.get(keyC).objectFiles.get(calNorm)),
+    'the decoded object path exists on disk — the object is actually indexable');
+
 // Not <Compile>d anywhere: routes to the nearest ancestor project (so an open orphan still gets
 // answers), and outside every project directory to the loose key.
 assert(map.projectFor(path.join(B, 'POUs', 'Orphan.TcPOU')) === keyB,

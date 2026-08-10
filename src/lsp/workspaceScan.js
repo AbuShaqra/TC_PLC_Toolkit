@@ -174,8 +174,12 @@ function scanWorkspace(rootPaths, deps) {
 
     for (const project of projectMap.projects.values()) {
         const index = workspace.indexForKey(project.key);
-        for (const objectPath of project.objectPaths) {
-            indexXmlFile(index, objectPath);
+        // objectFiles values, NOT objectPaths: the normalized (lowercased) keys exist for ownership
+        // identity only. A symbol node's uri is minted from the path given here, and a lowercased
+        // uri makes every cross-file navigation open a duplicate, lowercase-titled editor tab
+        // (vscode.openWith treats a differently-cased uri as a different resource).
+        for (const objectFile of project.objectFiles.values()) {
+            indexXmlFile(index, objectFile);
         }
         try {
             indexLibraries(project.dir, index, roots);

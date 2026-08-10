@@ -259,6 +259,19 @@ assert(/LineA/i.test(indexes.get(keyA)['GVL_System'].uri), "LineA's GVL_System r
 assert(/LineB/i.test(indexes.get(keyB)['GVL_System'].uri), "LineB's GVL_System resolves inside LineB");
 assert(/LineA/i.test(indexes.get(keyA)['MAIN'].uri), "LineA's MAIN resolves inside LineA");
 
+// --- node uris carry the ON-DISK spelling, never the normalized (lowercased) one ---------------
+// 0.6.0 regression (user report 2026-08-10, root-caused in a real dev host): the scan indexed each
+// object from the partition's NORMALIZED path, so every scan-time node uri was fully lowercased.
+// The webview compares node uris against VS Code's real-cased document uri to pick same-file vs
+// cross-file navigation, and vscode.openWith() treats a differently-cased uri as a DIFFERENT
+// resource — so every cross-file Go to Definition / reference click opened a DUPLICATE tab titled
+// "gvl_system.tcgvl" with nothing highlighted, which reads as "definitions are broken". The
+// i-flagged assertions above cannot catch this; these pin the exact casing.
+assert(indexes.get(keyA)['MAIN'].uri.includes('POUs/MAIN.TcPOU'),
+    `scan-time node uris keep the on-disk spelling (got ${indexes.get(keyA)['MAIN'].uri})`);
+assert(indexes.get(keyA)['GVL_System'].uri.includes('GVLs/GVL_System.TcGVL'),
+    `a GVL node uri keeps its on-disk spelling (got ${indexes.get(keyA)['GVL_System'].uri})`);
+
 // --- diagnostics: correct code in BOTH projects scores zero ---------------------------------
 /**
  * Diagnoses one object the way server.js does.

@@ -144,6 +144,29 @@ Not in `npm test`, and **Playwright is not in `package.json`**: it is a heavy de
 install on every run for a harness CI cannot execute anyway. Both runners exit 2 with the install
 command when it is absent. **`media/editor.js` has no other test — run both whenever it changes.**
 
+**`test/devhost/`** runs the extension in a **real VS Code window** — the two links that neither the
+Node harnesses nor the browser harness can reach: `vscode.openWith()` URI identity (does a navigation
+reuse the open tab, or open a duplicate?) and the live `vscode-languageclient` transport. One runner,
+outside `npm test` for the same reason as the browser pass (it needs an installed VS Code, and it opens
+a visible window for ~30 s that closes itself):
+
+```bash
+node test/devhost/run.js
+```
+
+`run.js` copies the committed sample to a temp dir, launches the **installed** VS Code as a separate
+instance (fresh `--user-data-dir`/`--extensions-dir`, so a running VS Code is untouched) with this repo
+as the development extension and `testRunner.js` as the `--extensionTestsPath` module. In-host, that
+module patches `TwinCatCustomEditorProvider.prototype.resolveCustomTextEditor` to trace every panel's
+resolve → `ready` → `init` chain (a break anywhere is a permanently blank viewer), opens a GVL, asks the
+live client for a cross-file definition and its references, then navigates with exactly the URI the
+definition returned. It asserts the URI keeps the **on-disk spelling** and that navigation **reuses**
+the open tab — the 0.6.0 regression (fixed in 0.6.1) minted lowercased URIs from the normalized project
+partition, and every cross-file Go to Definition then opened a duplicate tab titled `gvl_system.tcgvl`
+with nothing highlighted. Results flow through a progressive JSON file the runner polls, so a hang
+still leaves evidence of the last step reached. **Run it whenever navigation identity, the
+custom-editor resolve chain, or the LSP bridge wiring changes.**
+
 **`asWebviewUri` must return ABSOLUTE urls.** Root-relative ones look equivalent, but the Monaco worker
 runs from a `blob:` URL with no base to resolve them against, and it fails with "Failed trying to load
 default language strings" — the same symptom this project already records for a wrong AMD baseUrl.

@@ -20,4 +20,6 @@ entry, and route it through `src/lsp/projectMap.js`. Two traps found the hard wa
 whose directory contains it), and the **rename config-object scan** must be project-scoped, because
 an unscoped walk rewrites the other project's `.TcVIS`/`.TcTLO`/`.TcTTO` and silently breaks its XAE
 build. Verify multi-project changes on a real two-project fixture — `test/_multiproject.js` builds
-one from the committed sample. See [[reproduce-on-real-artifacts]].
+one from the committed sample. And keep the partition's normalized keys OUT of uris and file reads —
+that leak shipped 0.6.0's duplicate-tab navigation bug: [[normalized-keys-are-not-file-paths]].
+See [[reproduce-on-real-artifacts]].

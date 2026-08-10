@@ -88,26 +88,52 @@ function findPlcProjFiles(roots) {
 }
 
 /**
+ * Decodes the XML character entities legal in an attribute value. TwinCAT escapes them when
+ * writing the `.plcproj`: a folder named `time&date` becomes `Include="POUs\time&amp;date\..."`.
+ * Left undecoded, that path exists nowhere on disk and the object silently drops out of the index
+ * (measured on a real OSCAT project: 57 of 819 compiled objects, every one under `time&date/`).
+ * @param {string} value Raw attribute value.
+ * @returns {string} Decoded text.
+ */
+function decodeXmlAttribute(value) {
+    return value
+        .replace(/&#x([0-9a-f]+);/gi, (_, hex) => String.fromCodePoint(parseInt(hex, 16)))
+        .replace(/&#(\d+);/g, (_, dec) => String.fromCodePoint(parseInt(dec, 10)))
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&quot;/g, '"')
+        .replace(/&apos;/g, "'")
+        .replace(/&amp;/g, '&');
+}
+
+/**
  * The TwinCAT objects a single `.plcproj` compiles.
+ *
+ * The value keeps the `.plcproj`'s own spelling (which TwinCAT writes to match the disk), because
+ * the indexer builds every symbol node's uri from it: indexing from the normalized (lowercased)
+ * form gave every scan-time node a lowercased uri, and a cross-file Go to Definition then opened a
+ * DUPLICATE, lowercase-titled editor tab — vscode.openWith() treats a differently-cased uri as a
+ * different resource (verified in a real dev host, user report 2026-08-10).
  * @param {string} plcprojPath Absolute `.plcproj` path.
- * @returns {Set<string>} Normalized absolute object paths (empty when the file is unreadable).
+ * @returns {Map<string, string>} Normalized absolute object path → the same path in its on-disk
+ *   spelling (empty when the file is unreadable).
  */
 function readCompileIncludes(plcprojPath) {
     let xml;
     try {
         xml = fs.readFileSync(plcprojPath, 'utf8');
     } catch (e) {
-        return new Set();
+        return new Map();
     }
     const projDir = path.dirname(plcprojPath);
-    const out = new Set();
+    const out = new Map();
     // <Compile Include="POUs\Modules\FB_Loading.TcPOU"> — relative to the .plcproj, and TwinCAT
     // writes backslashes regardless of platform. A link uses the same element with a ..\ path.
     const includeRe = /<Compile\b[^>]*?\bInclude="([^"]+)"/gi;
     let m;
     while ((m = includeRe.exec(xml)) !== null) {
-        const abs = path.resolve(projDir, m[1].replace(/\\/g, path.sep));
-        if (TWINCAT_EXTS.has(path.extname(abs).toLowerCase())) out.add(normalizeProjectPath(abs));
+        const abs = path.resolve(projDir, decodeXmlAttribute(m[1]).replace(/\\/g, path.sep));
+        if (TWINCAT_EXTS.has(path.extname(abs).toLowerCase())) out.set(normalizeProjectPath(abs), abs);
     }
     return out;
 }
@@ -118,7 +144,11 @@ function readCompileIncludes(plcprojPath) {
  * @property {string} plcprojPath Absolute `.plcproj` path, in its on-disk spelling.
  * @property {string} dir The project directory (where the `.plcproj` sits).
  * @property {string} name Display name (the `.plcproj` basename without extension).
- * @property {Set<string>} objectPaths Normalized paths of the objects this project `<Compile>`s.
+ * @property {Set<string>} objectPaths Normalized paths of the objects this project `<Compile>`s —
+ *   the identity keys for ownership and membership tests.
+ * @property {Map<string, string>} objectFiles Normalized path → the same path in its on-disk
+ *   spelling. The indexer reads files (and mints symbol-node uris) from these values; the
+ *   normalized form must never leak into a uri (see readCompileIncludes).
  */
 
 /**
@@ -135,15 +165,16 @@ function createProjectMap(roots) {
 
     for (const plcprojPath of findPlcProjFiles(roots)) {
         const key = normalizeProjectPath(plcprojPath);
-        const objectPaths = readCompileIncludes(plcprojPath);
+        const objectFiles = readCompileIncludes(plcprojPath);
         projects.set(key, {
             key,
             plcprojPath,
             dir: path.dirname(plcprojPath),
             name: path.basename(plcprojPath, path.extname(plcprojPath)),
-            objectPaths
+            objectPaths: new Set(objectFiles.keys()),
+            objectFiles
         });
-        for (const obj of objectPaths) {
+        for (const obj of objectFiles.keys()) {
             if (!owners.has(obj)) owners.set(obj, []);
             owners.get(obj).push(key);
         }

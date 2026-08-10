@@ -4,8 +4,11 @@ Where the work *stands*. Read before starting; keep current (handoff rule in [CL
 100 lines — prune finished items rather than appending, but never drop a real finding to hit it. **Shipped features
 live in git history (PRs/commits); this file keeps the findings that would cost to re-derive.**
 
-**Last verified:** 2026-08-07 — `npm test` green (**51 harnesses, Coverage: FULL**), typecheck clean,
-**0 diagnostics on the sample**. Shipped through **0.6.0** (project-scoped indexing); releases are in git history.
+**Last verified:** 2026-08-10 — `npm test` green (**51 harnesses, Coverage: FULL**), typecheck clean,
+**0 diagnostics on the sample**, both browser harnesses green, **dev-host harness green** (new, below).
+Shipped through **0.6.1** (fixes the 0.6.0 navigation regression); releases are in git history.
+**0.6.1 VSIX installed to the user's VS Code 2026-08-10 — awaiting their confirmation after a FULL
+VS Code restart** (see the install trap below).
 **Install trap that cost a debug cycle:** VS Code keeps the old version dir until a FULL restart (reload-window is not
 always enough) — the user tested 0.3.1's feature against the still-running 0.3.0 code and reported it broken. Check
 `~/.vscode/extensions/` for side-by-side version dirs + `.obsolete` before debugging a "feature does nothing" report.
@@ -34,9 +37,23 @@ header comment — read it before adding colour.** The gradient-clipped wordmark
   silently skipped the config update (the `configReferences.js` identity guard rejected it). Both directions are
   gated by `test_multi_project_scope.js`, and that guard was **verified to fail** under a widened `configFilesFor`
   before being accepted.
-  **Still owed — none of it possible headless:** a dev-host pass on a two-project fixture (rename in LineA leaves
-  every LineB file untouched; status bar flips per file; tree groups per project; `sample/` looks unchanged), and a
-  check that completions/go-to-definition still work after the types-map deletion.
+  **0.6.0 shipped a navigation regression, fixed in 0.6.1** (user report 2026-08-10 "references and definitions
+  still broken in multi-project dirs"): the scan indexed each object from the partition's **normalized (lowercased)**
+  path, so every scan-time symbol node carried a lowercased uri. The LSP still answered correctly (verified against
+  the user's real `C:\Software\TC_Start` and 8-project `C:\Software\PLC projects`), but `vscode.openWith()` treats a
+  differently-cased uri as a **different resource**, so every cross-file Go to Definition / reference click opened a
+  DUPLICATE tab titled `gvl_system.tcgvl` with nothing highlighted — "definitions are broken" to a user, invisible
+  to every headless gate (proven in a real dev host). Fix: `projectMap.js` keeps normalized keys for ownership but
+  adds `objectFiles` (key → on-disk spelling, **XML-entity-decoded**); `workspaceScan.js` indexes from the values.
+  The entity decode is its own real bug: `time&amp;date` stayed `&amp;`, silently dropping **57 of OSCAT's 819**
+  compiled objects. Casing pinned in `test_project_map.js` + `test_multi_project_scope.js` (the old `/LineA/i`
+  assertions were case-blind by construction); tab identity + live client pinned by **`test/devhost/run.js`** — a
+  new run-by-hand harness that drives the installed VS Code headlessly (see DEVELOPMENT.md). That closes the owed
+  go-to-definition/types-map-deletion check. **Still owed (eyeball only):** status bar flips per file, tree groups
+  per project.
+  **Perf note, deferred:** startup scan of the 8-project `PLC projects` dir ≈ 35 s (two ~13 s `_Libraries` ZIP
+  passes), and the host's startup `custom/reindex` runs the whole scan a SECOND time — no user-visible bug filed,
+  but it is the next complaint waiting on big multi-project dirs.
   **Deferred by decision:** the Libraries view falls back to the **union** of all projects when no `fileUri` is
   sent, because scoping it naively made the view render **empty** even with one project — revisit only if the host
   is taught to send the active file.
