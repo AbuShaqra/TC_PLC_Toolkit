@@ -40,6 +40,10 @@ const {
     normalizeProjectPath
 } = require('./workspaceScan');
 
+const {
+    createScanController
+} = require('./scanController');
+
 // The server OWNS the workspace and threads its indexes explicitly into the parser/indexer and every
 // language-feature call, rather than reaching for the parser.js module global. There is ONE INDEX
 // PER PLC PROJECT: a `.plcproj` is its own compilation unit (XAE does not resolve symbols across
@@ -59,6 +63,15 @@ function rescan(rootPaths) {
         indexLibraries
     });
 }
+
+// Which of the two requests that can trigger a scan actually has to run one. `custom/reindex` means
+// "the data changed, rebuild"; `custom/indexReady` means "resolve once these roots are indexed", and
+// the extension host's startup request is only ever the latter — it exists to order
+// sendDiagnosticsConfig() and the Libraries refresh after the index. Sending it as a reindex made
+// every startup pay for the whole scan a SECOND time, on top of onInitialize's. The decision lives in
+// scanController.js because nothing in this file is loadable by a harness (IPC opens at require
+// time), so the scan is injected the way workspaceScan.js injects indexLibraries.
+const scanController = createScanController({ scan: rescan });
 
 /**
  * Indexes everything external a workspace folder depends on: library namespaces from the .plcproj,
@@ -157,10 +170,16 @@ const connection = createConnection(ProposedFeatures.all);
 const documents = new TextDocuments(TextDocument);
 
 connection.onInitialize((params) => {
-    const folders = params.workspaceFolders;
-    if (folders && folders.length > 0) {
-        rescan(folders.map(f => uriToFsPath(f.uri)));
-    }
+    const folders = params.workspaceFolders || [];
+    // Through the controller, not rescan() directly, so the completion is RECORDED — that record is
+    // what lets the extension host's custom/indexReady resolve without scanning the same roots again.
+    // scanWorkspace is synchronous, so this still blocks initialize exactly as it always has; the
+    // promise is only the barrier's shape. An empty folder list is scanned too (it costs nothing —
+    // no roots to walk, and the resulting workspace routes identically to createEmptyWorkspace's),
+    // because that is what makes "no workspace folders" a *completed* state rather than one the host
+    // would then re-request.
+    scanController.ensureScanned(folders.map(f => uriToFsPath(f.uri)))
+        .catch(e => connection.console.error(`Initial workspace scan failed: ${e.message}`));
 
     return {
         capabilities: {
@@ -316,7 +335,12 @@ connection.onRequest('custom/updateDocument', (params) => {
     }
 });
 
-connection.onRequest('custom/reindex', (params) => {
+// "The data changed, rebuild." UNCONDITIONAL, and it must stay that way: the .plcproj watcher and
+// twincat.updateLibraryDefinitions send it with the roots UNCHANGED — it is the content under them
+// that moved — so any "already scanned these roots" shortcut here would silently stop picking up
+// added libraries and added objects. A caller that only wants the index to exist sends
+// custom/indexReady instead.
+connection.onRequest('custom/reindex', async (params) => {
     try {
         // The converted-file cache keys on mtime, so it self-heals on edits; this drops entries for
         // files that no longer exist (deleted or renamed) rather than letting them accumulate.
@@ -324,9 +348,23 @@ connection.onRequest('custom/reindex', (params) => {
         if (params.folders) {
             // A .plcproj edit (a file added, removed or renamed) is exactly what triggers a reindex,
             // so the partition itself is rebuilt here — a new project must produce a new index.
-            rescan(params.folders.map(f => uriToFsPath(f)));
+            await scanController.rescan(params.folders.map(f => uriToFsPath(f)));
         }
         return { success: true };
+    } catch (e) {
+        return { success: false, error: e.message };
+    }
+});
+
+// "Resolve once these roots are indexed." The extension host's startup barrier: its .then() runs
+// sendDiagnosticsConfig() and refreshes the Libraries view, and the catalog is a by-product of the
+// index, so the two must not be asked for before it exists. Scans only when no completed scan for
+// this exact root set exists — normally none, because onInitialize has just done it.
+connection.onRequest('custom/indexReady', async (params) => {
+    try {
+        const folders = (params && params.folders) || [];
+        const result = await scanController.ensureScanned(folders.map(f => uriToFsPath(f)));
+        return { success: true, scanned: result.scanned };
     } catch (e) {
         return { success: false, error: e.message };
     }

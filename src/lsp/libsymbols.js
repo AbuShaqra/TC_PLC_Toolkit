@@ -38,8 +38,14 @@
 const fs = require('fs');
 const path = require('path');
 const zlib = require('zlib');
-const { parseLibrarySignaturesXml, toRegistryTypes } = require('./librarySignatures');
-const { parseBrowserCache, findBrowserCacheFile, MANAGED_LIBRARIES } = require('./browserCache');
+const { findBrowserCacheFile, MANAGED_LIBRARIES } = require('./browserCache');
+const {
+    parseSignatureRecords,
+    readSignatureRecords,
+    cloneSignatureRecords,
+    readBrowserCacheDoc
+} = require('./parseCache');
+const { readLibraryReferences, collectPlcProjFiles } = require('./plcprojRefs');
 
 /** ZIP signatures. */
 const SIG_EOCD = 0x06054b50;        // End of central directory
@@ -151,18 +157,107 @@ function ensureLibraryRegistry(index) {
 }
 
 /**
- * Per-archive harvest cache, keyed by absolute path. 91 MB of archives must never be re-inflated on a
- * language-feature request: indexing runs only at startup / reindex, and even then a re-scan reuses
- * this cache when the file is byte-identical (same mtime and size). It is deliberately NOT cleared by
- * clearLibrarySymbols() — it is content-keyed, so it stays valid across a rebuild of the registry.
+ * Per-archive harvest cache, in two levels. Archives must never be re-inflated on a language-feature
+ * request: indexing runs only at startup / reindex, and even then a re-scan must reuse what it already
+ * decoded. Both levels are MODULE GLOBALS and SHARED across every project's registry — they hold
+ * decoded ZIP string tables, which are the same bytes whoever asks. Sharing a *cache* is correct;
+ * sharing a *namespace* would be the bug the rest of this file exists to fix. Neither is cleared by
+ * clearLibrarySymbols(): both are content-guarded, so they stay valid across a registry rebuild.
  *
- * This one stays a MODULE GLOBAL and stays SHARED across every project's registry: it is keyed by
- * archive path and holds the decoded ZIP string table, so two projects referencing the same
- * `Tc2_System` archive decode it once. Sharing a *cache* is correct; sharing a *namespace* would be
- * the bug the rest of this file exists to fix.
- * @type {Map<string, {mtimeMs: number, size: number, names: string[]}>}
+ * Level 1 — `identityCache`, keyed by lower-cased absolute path. This is literally the check that has
+ * always been made: same path, same mtime and size ⇒ same content.
+ *
+ * Level 2 — `harvestCache`, keyed by CONTENT, so one decode serves every copy of the same archive.
+ * Every PLC project vendors its own `_Libraries`, so a multi-project workspace holds the same vendor
+ * archives many times over: measured on a real 8-project workspace, 306 archive files / 156.5 MB on
+ * disk but only 148 distinct / 74.2 MB — **53% of the bytes are byte-identical copies at different
+ * paths**, which a path-keyed cache re-inflates in full.
+ *
+ * The content key is the last three path segments plus size plus mtime. The real layout is
+ * `_Libraries/<company>/<title>/<version>/<file>`, so those three segments are
+ * `<title>/<version>/<file>` — identical across every project's copy, and strictly stronger than a
+ * bare basename for free. This is no weaker than the level-1 check it extends: that one already
+ * assumes mtime+size identifies content, and this adds the library's own identity on top. Of the 90
+ * duplicate groups measured, 81 share an identical millisecond mtime; the 9 that do not simply fail to
+ * share and are inflated separately — today's outcome, not a worse one. If a false content-share ever
+ * does bite, the documented hardening is a ZIP central-directory fingerprint (the ≤66 KB EOCD tail is
+ * already read — see MAX_EOCD_SEARCH — so hashing `(entryName, crc32, compressedSize)` is cheap).
+ * @type {Map<string, {mtimeMs: number, size: number, contentKey: string}>}
  */
-const archiveCache = new Map();
+const identityCache = new Map();
+
+/** @type {Map<string, string[]>} Content key → harvested names. See identityCache above. */
+const harvestCache = new Map();
+
+/**
+ * Observation counters for the harnesses — never read by the extension. `statted` counts calls that
+ * got as far as a stat, `inflated` archives actually decoded, `contentHits` decodes saved by a copy at
+ * another path, `pathHits` decodes saved by the same path being asked twice.
+ * @type {{statted: number, inflated: number, contentHits: number, pathHits: number}}
+ */
+const __archiveStats = { statted: 0, inflated: 0, contentHits: 0, pathHits: 0 };
+
+/**
+ * The content-identity key for an archive: `<title>/<version>/<file>|size|mtimeMs`, lower-cased.
+ * @param {string} filePath Absolute archive path.
+ * @param {number} size Size in bytes.
+ * @param {number} mtimeMs Modification time in milliseconds.
+ * @returns {string} Cache key.
+ */
+function archiveContentKey(filePath, size, mtimeMs) {
+    const tail = path.resolve(filePath).split(/[\\/]/).filter(Boolean).slice(-3).join('/');
+    return `${tail.toLowerCase()}|${size}|${mtimeMs}`;
+}
+
+/**
+ * Harvests one archive's symbol names, decoding it at most once per distinct content — the single
+ * entry point for every archive read in this module.
+ *
+ * Never throws: an archive that cannot be statted, read or decoded yields null, and every caller then
+ * contributes nothing for it rather than guessing. That is the pre-existing conservative behaviour,
+ * and it is deliberately NOT cached as a negative: a failure is cheap and rare, and caching one would
+ * make a transient read error stick for the session.
+ * @param {string} filePath Absolute archive path.
+ * @returns {string[]|null} Harvested names (original spelling, may contain duplicates), or null.
+ */
+function harvestArchiveFile(filePath) {
+    let stat;
+    try {
+        stat = fs.statSync(filePath);
+    } catch (e) {
+        return null;
+    }
+    __archiveStats.statted++;
+
+    const pathKey = path.resolve(filePath).toLowerCase();
+    const known = identityCache.get(pathKey);
+    if (known && known.mtimeMs === stat.mtimeMs && known.size === stat.size) {
+        const names = harvestCache.get(known.contentKey);
+        if (names) {
+            __archiveStats.pathHits++;
+            return names;
+        }
+    }
+
+    const contentKey = archiveContentKey(filePath, stat.size, stat.mtimeMs);
+    const shared = harvestCache.get(contentKey);
+    if (shared) {
+        __archiveStats.contentHits++;
+        identityCache.set(pathKey, { mtimeMs: stat.mtimeMs, size: stat.size, contentKey });
+        return shared;
+    }
+
+    let names;
+    try {
+        names = harvestArchive(fs.readFileSync(filePath));
+    } catch (e) {
+        return null; // undecodable archive: contribute nothing rather than guess
+    }
+    __archiveStats.inflated++;
+    harvestCache.set(contentKey, names);
+    identityCache.set(pathKey, { mtimeMs: stat.mtimeMs, size: stat.size, contentKey });
+    return names;
+}
 
 /**
  * @typedef {Object} LibraryCatalogEntry
@@ -452,8 +547,22 @@ function harvestArchive(buf) {
 // resolve them, which is precisely the noise this design exists to avoid.
 // ---------------------------------------------------------------------------------------------
 
-/** Directories to skip when looking for the project's .plcproj (vendor archives are not projects). */
-const PLCPROJ_SKIP_DIRS = new Set([...SKIP_DIRS, '_libraries']);
+/**
+ * Directories to skip when walking for the project's OWN files — the `.plcproj`, the `.tmc`, the
+ * `library-signatures.xml` dump. `_libraries` is in here and deliberately NOT in `SKIP_DIRS`:
+ * `collectArchives` shares that set and MUST descend into `_Libraries`, which is where every vendor
+ * archive lives. Adding `_libraries` there yields zero library symbols and takes the sample
+ * diagnostics ratchet from 0 to ~171 false positives — `test_collect_scope.js` pins both halves.
+ *
+ * None of the three project artifacts is ever vendored under `_Libraries` (verified: zero `.tmc`
+ * under any `_Libraries` across the 8-project workspace), so descending into 156 MB of archives to
+ * look for them is pure cost: a full walk measured 150 ms into `_Libraries` vs 69 ms skipping it.
+ *
+ * Constructed from SKIP_DIRS rather than restated, so an entry added there cannot silently apply to
+ * the archive walker alone. plcprojRefs.js states the same set for the `.plcproj` walk it owns
+ * (it cannot import this one — libsymbols.js already imports it); test_collect_scope.js pins them equal.
+ */
+const PROJECT_SKIP_DIRS = new Set([...SKIP_DIRS, '_libraries']);
 
 /**
  * Normalizes a library title for comparison: Structured Text is case-insensitive, and the same
@@ -464,25 +573,6 @@ const PLCPROJ_SKIP_DIRS = new Set([...SKIP_DIRS, '_libraries']);
  */
 function normalizeTitle(title) {
     return String(title || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-}
-
-/** Collects `.plcproj` project files under a workspace folder. */
-function collectPlcProjFiles(dir, out) {
-    let entries;
-    try {
-        entries = fs.readdirSync(dir, { withFileTypes: true });
-    } catch (e) {
-        return;
-    }
-    for (const entry of entries) {
-        const full = path.join(dir, entry.name);
-        if (entry.isDirectory()) {
-            if (PLCPROJ_SKIP_DIRS.has(entry.name.toLowerCase())) continue;
-            collectPlcProjFiles(full, out);
-        } else if (/\.plcproj$/i.test(entry.name)) {
-            out.push(full);
-        }
-    }
 }
 
 /**
@@ -656,43 +746,30 @@ function indexLibraryTitles(rootDir, index) {
     collectPlcProjFiles(rootDir, files);
 
     for (const file of files) {
-        let xml;
-        try {
-            xml = fs.readFileSync(file, 'utf8');
-        } catch (e) {
-            continue; // unreadable .plcproj: contribute nothing rather than guess
-        }
+        // Read and parsed once per workspace (plcprojRefs.js): this function alone runs twice per
+        // project — indexLibrarySymbols and indexTypeSystem each call it — and libraries.js wanted the
+        // same blocks a third time. The records are read-only, so they are shared, not cloned.
+        const blocks = readLibraryReferences(file);
+        if (!blocks) continue; // unreadable .plcproj: contribute nothing rather than guess
         // Same two reference kinds libraries.js harvests, but the whole block is needed here: the
         // namespace alone cannot be matched against an archive path (see the header above).
-        const blockRegex = /<(PlaceholderReference|LibraryReference)\b([^>]*)>([\s\S]*?)<\/\1>/g;
-        let block;
-        while ((block = blockRegex.exec(xml)) !== null) {
-            const attrs = block[2];
-            const body = block[3];
-            const nsMatch = body.match(/<Namespace>([^<]+)<\/Namespace>/);
-            if (!nsMatch) continue;
-            const namespace = nsMatch[1].trim();
+        for (const block of blocks) {
+            // Only the FIRST <Namespace> of a block, as before: a title maps to one namespace, and a
+            // second one in the same block would make the title→namespace pair ambiguous, not richer.
+            const namespace = block.namespace;
             if (!namespace) continue;
             reg.namespaceNames.set(namespace.toLowerCase(), namespace);
 
             // The namespace itself is a title too — most Beckhoff archives are named after it.
             addLibraryTitle(namespace, namespace, index);
             // `Include="Tc2_EtherCAT,3.5.1.0,Beckhoff Automation GmbH"` — the title is the first field.
-            const include = attrs.match(/Include\s*=\s*"([^"]*)"/i);
-            if (include) addLibraryTitle(include[1].split(',')[0], namespace, index);
+            if (block.include) addLibraryTitle(block.include.split(',')[0], namespace, index);
             // `<DefaultResolution>Recipe Management, * (System)</DefaultResolution>` — likewise.
-            const resolution = body.match(/<DefaultResolution>([^<]+)<\/DefaultResolution>/);
-            if (resolution) addLibraryTitle(resolution[1].split(',')[0], namespace, index);
+            if (block.resolution) addLibraryTitle(block.resolution.split(',')[0], namespace, index);
 
             // The same three strings, kept whole this time: the "TwinCAT Libraries" view shows the
             // library → namespace mapping, and this block is where all of it is already parsed.
-            addCatalogEntry(
-                block[1] === 'PlaceholderReference' ? 'placeholder' : 'reference',
-                include ? include[1] : '',
-                resolution ? resolution[1] : '',
-                namespace,
-                index
-            );
+            addCatalogEntry(block.kind, block.include, block.resolution, namespace, index);
         }
     }
     return reg.namespaceNames.size;
@@ -833,19 +910,10 @@ function indexLibrarySymbols(rootDir, index) {
     collectArchives(rootDir, files);
 
     for (const file of files) {
-        let names;
-        try {
-            const st = fs.statSync(file);
-            // archiveCache stays a MODULE GLOBAL, shared across every project's registry — see its
-            // declaration above. Only the names it yields are filed per-project, below.
-            const cached = archiveCache.get(file);
-            if (cached && cached.mtimeMs === st.mtimeMs && cached.size === st.size) {
-                names = cached.names;
-            } else {
-                names = harvestArchive(fs.readFileSync(file));
-                archiveCache.set(file, { mtimeMs: st.mtimeMs, size: st.size, names });
-            }
-        } catch (e) {
+        // The harvest caches stay MODULE GLOBALS, shared across every project's registry — see their
+        // declaration above. Only the names they yield are filed per-project, below.
+        const names = harvestArchiveFile(file);
+        if (!names) {
             stats.failed++;
             continue; // undecodable archive: contribute nothing rather than guess
         }
@@ -1279,7 +1347,12 @@ function isBrowserCacheMemberName(namespace, name, index) {
     return !!set && set.has(String(name).toLowerCase());
 }
 
-/** Collects `.tmc` type-system exports under a workspace folder. */
+/**
+ * Collects `.tmc` type-system exports under a workspace folder. Skips `_Libraries` (PROJECT_SKIP_DIRS):
+ * the `.tmc` is a build output of the *project*, never something a vendor ships in an archive tree.
+ * @param {string} dir Directory to scan.
+ * @param {string[]} out Accumulator, mutated.
+ */
 function collectTmcFiles(dir, out) {
     let entries;
     try {
@@ -1290,7 +1363,7 @@ function collectTmcFiles(dir, out) {
     for (const entry of entries) {
         const full = path.join(dir, entry.name);
         if (entry.isDirectory()) {
-            if (SKIP_DIRS.has(entry.name.toLowerCase())) continue;
+            if (PROJECT_SKIP_DIRS.has(entry.name.toLowerCase())) continue;
             collectTmcFiles(full, out);
         } else if (/\.tmc$/i.test(entry.name)) {
             out.push(full);
@@ -1363,7 +1436,17 @@ function namespaceForLibraryTitle(title, index) {
 }
 
 /**
- * Merges one ProduceAllLibrarySignatures XML string into the workspace type registry.
+ * Merges one dump's already-parsed signature records into THIS project's type registry.
+ *
+ * Split out from the XML entry point below because the parse is workspace-wide (the same dump is read
+ * for every project) while the merge is per-project by nature: it rewrites each record's namespace to
+ * the one *this* `.plcproj` imports the library under. Measured on the real 4 dumps (8.15 MB): parse
+ * 68 ms, merge 13 ms — so the parse is what parseCache.js caches, and this still runs per project.
+ *
+ * **`records` must be this project's own to mutate** — a cached template has to come through
+ * `cloneSignatureRecords` first. The loop below reassigns `record.namespace` and then stores that same
+ * object in the registry, where indexBrowserCache later pushes methods and properties onto it; a
+ * shared record would carry project A's namespace and members into project B.
  *
  * The merge rule is "the `.tmc` (or any richer entry) wins": a `typeSystemTypes` key that already
  * carries members (kind !== 'opaque') is left untouched, because signatures have nothing to add to it
@@ -1373,27 +1456,21 @@ function namespaceForLibraryTitle(title, index) {
  *
  * NB: `libraryCatalog` must already be populated (indexLibraryTitles) or nothing can be attributed to a
  * namespace — see namespaceForLibraryTitle. server.js indexLibraries() guarantees that ordering.
- *
- * Exported separately from indexLibrarySignatures so the harness can drive the merge from a string
- * without writing a file.
- * @param {string} xml Raw ProduceAllLibrarySignatures XML.
+ * @param {import('./parseCache').SignatureRecords} records Records owned by this call.
  * @param {Object} [index] The project's symbol index. Omit for the default registry.
  * @returns {{functions: number, functionBlocks: number, types: number, added: number}}
- *          Parsed counts and how many registry types this XML inserted or upgraded.
+ *          Parsed counts and how many registry types these records inserted or upgraded.
  */
-function indexLibrarySignaturesFromXml(xml, index) {
-    const stats = { functions: 0, functionBlocks: 0, types: 0, added: 0 };
+function mergeSignatureRecords(records, index) {
+    const stats = {
+        functions: records.functions,
+        functionBlocks: records.functionBlocks,
+        types: records.types.length,
+        added: 0
+    };
     const reg = ensureLibraryRegistry(index);
-    const parsed = parseLibrarySignaturesXml(xml);
-    for (const lib of parsed.libraries) {
-        stats.functions += lib.functions.length;
-        stats.functionBlocks += lib.functionBlocks.length;
-    }
 
-    const regTypes = toRegistryTypes(parsed);
-    stats.types = regTypes.types.length;
-
-    for (const record of regTypes.types) {
+    for (const record of records.types) {
         // toRegistryTypes can only fill `namespace` with the library's TITLE — that is all the XML
         // carries. Translate it to the real ST namespace before anything is attributed, or the types
         // land under a key ("TwinCat Dynamic Collections") that nothing ever looks up and the Libraries
@@ -1428,7 +1505,7 @@ function indexLibrarySignaturesFromXml(xml, index) {
     }
 
     // Global var-list names and their constants are symbols, not types (no members to model).
-    for (const name of regTypes.symbols) {
+    for (const name of records.symbols) {
         const key = name.toLowerCase();
         if (!reg.librarySymbols.has(key)) reg.librarySymbols.set(key, name);
     }
@@ -1437,8 +1514,26 @@ function indexLibrarySignaturesFromXml(xml, index) {
 }
 
 /**
+ * Merges one ProduceAllLibrarySignatures XML **string** into the workspace type registry.
+ *
+ * Kept as the module's string entry point because two harnesses (test_library_signatures_merge.js,
+ * test_multi_project_scope.js) drive the merge from a literal without writing a file. It is
+ * parse-then-merge over the shared mergeSignatureRecords, so the string path and the cached file path
+ * can never drift apart. No clone: the records were parsed for this call alone.
+ * @param {string} xml Raw ProduceAllLibrarySignatures XML.
+ * @param {Object} [index] The project's symbol index. Omit for the default registry.
+ * @returns {{functions: number, functionBlocks: number, types: number, added: number}}
+ *          Parsed counts and how many registry types this XML inserted or upgraded.
+ */
+function indexLibrarySignaturesFromXml(xml, index) {
+    return mergeSignatureRecords(parseSignatureRecords(xml), index);
+}
+
+/**
  * Collects `library-signatures.xml` dumps under a workspace folder. Matched by exact (case-insensitive)
- * basename so an unrelated file is never mistaken for a signatures dump.
+ * basename so an unrelated file is never mistaken for a signatures dump. Skips `_Libraries`
+ * (PROJECT_SKIP_DIRS): the dump is written to the workspace root by `twincat.updateLibraryDefinitions`,
+ * never vendored inside an archive tree.
  * @param {string} dir Directory to scan.
  * @param {string[]} out Accumulator, mutated.
  */
@@ -1452,7 +1547,7 @@ function collectSignatureFiles(dir, out) {
     for (const entry of entries) {
         const full = path.join(dir, entry.name);
         if (entry.isDirectory()) {
-            if (SKIP_DIRS.has(entry.name.toLowerCase())) continue;
+            if (PROJECT_SKIP_DIRS.has(entry.name.toLowerCase())) continue;
             collectSignatureFiles(full, out);
         } else if (entry.name.toLowerCase() === 'library-signatures.xml') {
             out.push(full);
@@ -1480,14 +1575,13 @@ function indexLibrarySignatures(rootDir, index) {
     collectSignatureFiles(rootDir, files);
 
     for (const file of files) {
-        let xml;
-        try {
-            xml = fs.readFileSync(file, 'utf8');
-        } catch (e) {
-            continue; // unreadable dump: contribute nothing rather than guess
-        }
+        // Parsed once per workspace, merged once per project: the same dump is reached by every
+        // project's scan (and by every workspace root), and re-parsing 8 MB of XML for each of them
+        // was 1.7 s of a startup. The clone is mandatory — see parseCache.js.
+        const template = readSignatureRecords(file);
+        if (!template) continue; // unreadable dump: contribute nothing rather than guess
         stats.files++;
-        const one = indexLibrarySignaturesFromXml(xml, index);
+        const one = mergeSignatureRecords(cloneSignatureRecords(template), index);
         stats.functions += one.functions;
         stats.functionBlocks += one.functionBlocks;
         stats.types += one.types;
@@ -1526,10 +1620,10 @@ function indexBrowserCache(rootDir, index) {
         // The .plcproj gives a library three spellings; any may be its Managed Libraries folder name.
         const bcFile = findBrowserCacheFile(entry.company, [entry.title, entry.include, entry.namespace]);
         if (!bcFile) continue;
-        let xml;
-        try { xml = fs.readFileSync(bcFile, 'utf8'); } catch (e) { continue; }
-        const parsed = parseBrowserCache(xml);
-        if (parsed.size === 0) continue;
+        // Cached across projects, and NOT cloned: everything this function keeps out of `parsed` is
+        // freshly constructed, so nothing it stores can alias the shared document (parseCache.js).
+        const parsed = readBrowserCacheDoc(bcFile);
+        if (!parsed || parsed.size === 0) continue;
 
         // Record the library's SHAPE before the `.tmc` gate below. This has to happen first: that
         // gate skips a library the `.tmc` says nothing about, and it is exactly those libraries —
@@ -1606,11 +1700,17 @@ function indexBrowserCache(rootDir, index) {
  * Lazy and cached because the cost is real but only paid when a user actually types the path:
  * VisuElemBase is 6.3 MB / 11,572 symbols, measured at ~40 ms to harvest, once per session. Doing
  * this at index time for every library's every dependency is the 78 s cliff all over again.
+ *
+ * The harvest goes through harvestArchiveFile like every other archive read. It used to inflate the
+ * file directly, so the per-registry cache below was the only thing standing between a multi-project
+ * workspace and one full 6.3 MB decode of VisuElemBase *per project*.
  * @param {string} name The nested namespace segment (a library name).
  * @param {Object} [index] The project's symbol index. Omit for the default registry.
+ * @param {{findArchive?: (name: string) => (string|null)}} [deps] Seam for the harness — the real
+ *   resolver walks the machine's Managed Libraries store, which is absent on CI.
  * @returns {string[]} Symbol names, or an empty array when no such library is installed.
  */
-function getNestedNamespaceSymbols(name, index) {
+function getNestedNamespaceSymbols(name, index, deps) {
     if (!name) return [];
     // Read-side (libRegistryFor, not ensureLibraryRegistry): this only ever CONSULTS the registry's
     // cache. The write-side twin would CREATE an empty registry on an index nothing has indexed yet
@@ -1622,25 +1722,51 @@ function getNestedNamespaceSymbols(name, index) {
     if (cached) return cached;
 
     let symbols = [];
-    const archive = findInstalledLibraryArchive(name);
+    const findArchive = (deps && deps.findArchive) || findInstalledLibraryArchive;
+    const archive = findArchive(name);
     if (archive) {
-        try {
-            symbols = Array.from(new Set(harvestArchive(fs.readFileSync(archive))));
-        } catch (e) {
-            symbols = [];
-        }
+        const names = harvestArchiveFile(archive);
+        // De-duplicated here rather than in the shared cache: the flat registry wants every
+        // occurrence, this wants a completion list.
+        if (names) symbols = Array.from(new Set(names));
     }
     reg.nestedNamespaceSymbols.set(key, symbols);
     return symbols;
 }
 
 /**
+ * findInstalledLibraryArchive results, keyed lower-case. A miss (null) is cached too: the resolver
+ * `readdirSync`-walks EVERY company directory under Managed Libraries before it can conclude
+ * "not installed", and that walk was repeated for every project in the workspace.
+ *
+ * This adds no staleness that was not already there: getNestedNamespaceSymbols has always cached its
+ * own misses permanently per registry ("an empty array is a cached MISS … and must not be retried"),
+ * so installing a library mid-session was never picked up without a reload.
+ * @type {Map<string, string|null>}
+ */
+const installedArchiveCache = new Map();
+
+/**
  * Finds an installed library's archive by library name, across every distributor — a nested
  * namespace names a library the `.plcproj` never mentions, so there is no company to key on.
+ * Memoized; see installedArchiveCache.
  * @param {string} name Library folder name.
  * @returns {string|null} Absolute path to a readable archive, or null.
  */
 function findInstalledLibraryArchive(name) {
+    const memoKey = String(name).toLowerCase();
+    if (installedArchiveCache.has(memoKey)) return installedArchiveCache.get(memoKey);
+    const found = resolveInstalledLibraryArchive(name);
+    installedArchiveCache.set(memoKey, found);
+    return found;
+}
+
+/**
+ * The uncached walk behind findInstalledLibraryArchive.
+ * @param {string} name Library folder name.
+ * @returns {string|null} Absolute path to a readable archive, or null.
+ */
+function resolveInstalledLibraryArchive(name) {
     let companies;
     try {
         companies = fs.readdirSync(MANAGED_LIBRARIES, { withFileTypes: true });
@@ -1850,11 +1976,25 @@ function clearLibrarySymbols(index) {
 }
 
 module.exports = {
+    // Directory walkers and their two skip sets. Exported for test_collect_scope.js, which pins the
+    // asymmetry between them: `collectArchives` MUST descend into `_Libraries` while the two
+    // project-artifact walkers must not. The harness proves the guard is load-bearing by adding
+    // `_libraries` to SKIP_DIRS and watching collectArchives go blind — which is why the Sets
+    // themselves are reachable. Nothing in the extension may mutate them.
+    collectArchives,
+    collectTmcFiles,
+    collectSignatureFiles,
+    SKIP_DIRS,
+    PROJECT_SKIP_DIRS,
     // ZIP / string-table primitives (exported for the harness)
     readZipEntries,
     readZipEntryData,
     parseStringTable,
     harvestArchive,
+    // The one entry point for reading an archive off disk: content-identity cached (see its
+    // declaration), so the same library vendored into eight projects is decoded once.
+    harvestArchiveFile,
+    __archiveStats,
     // registry
     indexLibrarySymbols,
     indexTypeSystem,

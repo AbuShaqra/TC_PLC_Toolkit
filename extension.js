@@ -20,9 +20,20 @@ const { TwinCatLibraryTreeDataProvider } = require('./src/libraryTreeProvider');
 // Lives under media/ because the webview loads it with a <script> tag; it is written to require()
 // cleanly as well so both editors fold ST identically from one copy of the algorithm.
 const stFolding = require('./media/stFolding');
-const { LanguageClient, TransportKind } = require('vscode-languageclient/node');
+const { createDebouncer } = require('./src/util/debounce');
+const { LanguageClient, TransportKind, State } = require('vscode-languageclient/node');
 
 let client;
+
+/**
+ * Quiet period for the `.plcproj` watcher, in milliseconds. src/plcProjHelper.js rewrites the
+ * `.plcproj` on every Objects-tree create/delete, and each rewrite used to trigger a FULL workspace
+ * re-index — every project, every library archive — so adding three methods in a row paid for three
+ * whole scans. Long enough to swallow a burst of those writes, short enough that a library added in
+ * TwinCAT still shows up as soon as the user looks.
+ * @type {number}
+ */
+const PLCPROJ_REINDEX_DEBOUNCE_MS = 400;
 
 /**
  * Activates the extension. Sets up providers, watches workspace changes, and registers commands.
@@ -207,6 +218,56 @@ function activate(context) {
     );
     client.start();
 
+    /**
+     * Runs an indexing round-trip under the status-bar progress indicator.
+     *
+     * The extension host is a SEPARATE process from the LSP, so its event loop is free even while
+     * the server is blocked inside a synchronous scan — which is exactly why a host-side indicator
+     * works at all, and why it is the only honest signal available today. `ProgressLocation.Window`
+     * is the status-bar spot language servers conventionally use; `Notification` would put a popup on
+     * screen every time a window opens.
+     *
+     * The progress is deliberately INDETERMINATE — no "3 of 8". Per-project counts would need the
+     * scan to yield to the event loop between projects, which it does not do; a fabricated percentage
+     * would be a worse lie than a spinner.
+     *
+     * `Promise.resolve` wraps the Thenable withProgress returns, so callers get a real Promise with
+     * `.catch` rather than a bare `.then`.
+     * @param {string} title Status-bar text.
+     * @param {() => Thenable<any>} task The work to run while the indicator is up.
+     * @returns {Promise<any>} The task's result.
+     */
+    const withIndexingProgress = (title, task) => Promise.resolve(
+        vscode.window.withProgress({ location: vscode.ProgressLocation.Window, title }, () => task())
+    );
+
+    // Starting, indexing and stopped/crashed used to be ONE silence: language features simply did
+    // nothing, and there was no way to tell "wait a moment" from "this is broken" — a distinction
+    // that cost a day of hunting a bug that was not there. The progress indicator above covers
+    // indexing; this covers the other two. client.onDidChangeState has existed all along and was
+    // never wired up.
+    const lspStatus = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 99);
+    context.subscriptions.push(lspStatus);
+    context.subscriptions.push(
+        client.onDidChangeState(e => {
+            if (e.newState === State.Running) {
+                lspStatus.hide();
+            } else if (e.newState === State.Starting) {
+                lspStatus.text = '$(sync~spin) TwinCAT: starting…';
+                lspStatus.tooltip = 'The TwinCAT language server is starting.';
+                lspStatus.show();
+            } else {
+                // Stopped. Reached by a crash and by the clean shutdown in deactivate() alike; the
+                // item is disposed with the extension, so the shutdown case is never seen for long.
+                lspStatus.text = '$(warning) TwinCAT: language server stopped';
+                lspStatus.tooltip = 'The TwinCAT language server is not running: completion, go to '
+                    + 'definition, references and diagnostics are unavailable. Reload the window to restart it.';
+                lspStatus.show();
+                console.error('TwinCAT: the language server stopped.');
+            }
+        })
+    );
+
     // Folding for plain `.st` files opened in VS Code's own editor, from the same module the webview
     // panes use. Without it these files keep VS Code's indentation folding and both defects that came
     // with it: an unmatched `{endregion}` truncating the enclosing VAR fold, and an unindented line
@@ -252,12 +313,19 @@ function activate(context) {
         })
     );
 
-    // Trigger the LSP's initial workspace index at startup.
+    // Wait for the LSP's initial workspace index. This is a BARRIER, not a rebuild request: the
+    // server already indexes the workspace folders in onInitialize, and everything below only needs
+    // to happen *after* that index exists. Sending `custom/reindex` here — which means "the data
+    // changed, rebuild unconditionally" — made every startup pay for the whole scan a second time
+    // (~35 s cold on an eight-project folder). `custom/indexReady` says what this actually wants; the
+    // fallback keeps a server that predates it working, since it is only the barrier either way.
     if (client) {
         const folders = vscode.workspace.workspaceFolders || [];
-        client.sendRequest('custom/reindex', {
-            folders: folders.map(f => f.uri.toString())
-        }).then(() => {
+        const folderUris = folders.map(f => f.uri.toString());
+        withIndexingProgress('TwinCAT: indexing…', () =>
+            client.sendRequest('custom/indexReady', { folders: folderUris })
+                .catch(() => client.sendRequest('custom/reindex', { folders: folderUris }))
+        ).then(() => {
             sendDiagnosticsConfig();
             // The library catalog is a product of that index — refresh the view with it, so the
             // two can never disagree about which libraries the project references.
@@ -326,23 +394,38 @@ function activate(context) {
     // change the Libraries view. The catalog is built by the LSP's library index, so refreshing the
     // view alone would only re-render the stale list: the LSP has to re-read the .plcproj first, or
     // a library added in TwinCAT would never appear.
+    //
+    // Debounced, because the bursts are self-inflicted: src/plcProjHelper.js rewrites the `.plcproj`
+    // on every Objects-tree create/delete, so creating three methods used to fire three full
+    // workspace re-indexes back to back. Only the final state of the file is worth indexing, so the
+    // burst collapses into one `custom/reindex` and one view refresh (trailing edge — a leading call
+    // would index the `.plcproj` as it stood before the change that triggered it).
+    const reindexForLibraries = createDebouncer(() => {
+        const folders = vscode.workspace.workspaceFolders || [];
+        return withIndexingProgress('TwinCAT: indexing…', () =>
+            client.sendRequest('custom/reindex', { folders: folders.map(f => f.uri.toString()) })
+        ).then(() => libraryProvider.refresh())
+            .catch(e => {
+                console.error('Failed to re-index after a .plcproj change:', e);
+                libraryProvider.refresh(); // still re-render: a stale list beats a frozen one
+            });
+    }, PLCPROJ_REINDEX_DEBOUNCE_MS);
+    // A queued re-index firing into a torn-down extension host would reject against a dead client.
+    context.subscriptions.push({ dispose: () => reindexForLibraries.cancel() });
+
     const refreshLibrariesFor = (uri) => {
         if (path.extname(uri.fsPath).toLowerCase() !== '.plcproj') return;
         // The host's own partition (used by the status bar) is independent of the LSP's copy and
         // must be rebuilt on the same trigger: a project added/removed/renamed changes which
-        // `.plcproj` owns which file, and how many projects there are to disambiguate.
+        // `.plcproj` owns which file, and how many projects there are to disambiguate. Deliberately
+        // NOT debounced — it is a `.plcproj` walk plus one regex per file, and the status bar reads
+        // it on the next file switch.
         refreshProjectMap();
         if (!client) {
             libraryProvider.refresh();
             return;
         }
-        const folders = vscode.workspace.workspaceFolders || [];
-        client.sendRequest('custom/reindex', { folders: folders.map(f => f.uri.toString()) })
-            .then(() => libraryProvider.refresh())
-            .catch(e => {
-                console.error('Failed to re-index after a .plcproj change:', e);
-                libraryProvider.refresh(); // still re-render: a stale list beats a frozen one
-            });
+        reindexForLibraries.schedule();
     };
 
     context.subscriptions.push(

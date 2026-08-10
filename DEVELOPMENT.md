@@ -103,6 +103,13 @@ per-suite without aborting on the first failure. The main ones:
 | `test/test_project_map.js` | `src/lsp/projectMap.js`: which `.plcproj` owns which file. Discovery, `objectPaths` per project, `ownersOf()` vs `projectFor()` (a linked file has two owners but a request for it routes to one), the orphan/no-project/case-insensitivity edges, `projectLabel()` (the status-bar text, from `src/projectStatusBar.js`) and `groupRootsByProject()` (the Objects-tree grouping) at both the &lt;2-projects (nothing shown, flat tree) and 2-projects ends. Also pins `TWINCAT_EXTS` staying in sync between `projectMap.js` and `xmlIndexer.js`'s own copies — a real review-caught bug: `projectMap.js`'s copy once missed `.tctleo`, silently dropping every enumeration-text-list object's symbols from a project-scoped scan. |
 | `test/test_multi_project_scope.js` | End-to-end: two copies of `sample/` under one workspace root (`test/_multiproject.js` builds the fixture, one copy deliberately diverged), driven through the real `scanWorkspace`. Asserts the partition (one index per project, nothing lost to a name collision), 0 diagnostics on the correct copy while the diverged copy's own real error still reports, references and the rename config scan never crossing the project boundary, and the library namespace/symbol registries staying per-project — including the Libraries-view union fallback when no project is specified. Needs `sample/`; skips cleanly when absent. |
 
+| `test/test_scan_controller.js` | `src/lsp/scanController.js`: which of the two scan-triggering requests actually has to run a scan. Pins that `ensureScanned` twice over one root set scans **once** (the duplicate startup scan this replaced), that `rescan` after it scans **again** — the assertion that stops a future "optimisation" from teaching the `.plcproj` watcher to skip, since on a content change the roots are unchanged — and that a throwing scan leaves no completed state. Root sets compare order-, case- and separator-insensitively; the empty set is a legitimate *completed* state, or a window with no folders would re-request forever. |
+| `test/test_debounce.js` | `src/util/debounce.js`: trailing edge only, one invocation per burst carrying the **last** arguments, every caller's promise resolved. Timers are injected, so it asserts on a fake clock rather than racing a real one. |
+| `test/test_collect_scope.js` | Which directories each library walker descends. The `.tmc` and signature walkers must **skip** `_Libraries` while `collectArchives` must **enter** it, and the harness proves the second half is load-bearing by adding `_libraries` to `SKIP_DIRS` and watching archive collection go blind — the tempting one-line "fix" that would silently cost ~171 false positives. |
+| `test/test_signature_cache.js` | `src/lsp/parseCache.js`: one dump, three projects → parsed once, two cache hits, all three resolving its symbols. The load-bearing half is **isolation**: each project must hold a *different record object* (asserted by identity, not value — a value check still passes while sharing), so that the merge's `record.namespace` rewrite and `indexBrowserCache`'s member pushes cannot leak between projects. An mtime bump re-parses. |
+| `test/test_plcproj_cache.js` | `src/lsp/plcprojRefs.js`: the same `.plcproj` read **once** across all three indexers that need it, not three times, with an equivalence gate comparing every result against a control run that clears the cache between every call — the two consumers genuinely read the file differently (all `<Namespace>` tags vs the first tag whatever it holds) and the shared record has to preserve both. |
+| `test/test_archive_identity.js` | The content-identity archive cache: the same archive at two paths with equal mtime is decoded **once** and both paths get identical names; a different `<title>/<version>` tail is *not* shared; an mtime bump re-decodes; a truncated/non-ZIP file returns null without throwing. Also drives `scanWorkspace` end-to-end with the **real** `indexLibraries` composition (the stub is what let nine earlier reviews miss a bug) over two projects vendoring the same archive, asserting one decode serves both. |
+
 `test/run.js <substring>` filters to matching suites. `test/_baseline.js` holds the machine-dependent
 diagnostic baselines the sample gates assert against. `test/_multiproject.js` builds the two-project
 fixture (two copies of `sample/` under one root, one deliberately diverged) shared by
@@ -213,6 +220,8 @@ src/
   libraryTreeProvider   "TwinCAT Libraries" explorer tree (library → types → members)
   referencesProvider    "TwinCAT References" results view (+ referencesTree grouping)
   objectKinds           Kind → codicon → tooltip for the Objects tree (vscode-free, so it is testable)
+  util/
+    debounce.js         Trailing-edge debouncer with injectable timers (vscode-free, so testable)
   xmlParser             Regex-based TwinCAT XML parse / structural edits (preserves formatting)
   stConverter           XML → clean Structured Text + line map (also a raw mode for the live path)
   plcProjHelper         Keeps the .plcproj file in sync on create/delete
@@ -225,6 +234,13 @@ src/
                         server.js on purpose: server.js opens an IPC connection at require time, so
                         nothing that requires it is loadable by a standalone harness — the connection is
                         injected here as log/error callbacks instead.
+    scanController.js   Decides WHEN to scan, separately from how. custom/reindex = "rebuild
+                        unconditionally"; custom/indexReady = "resolve once these roots are indexed".
+                        Outside server.js for the same harness reason; the scan is injected.
+    parseCache.js       library-signatures.xml + browsercache parses, cached on (path, size, mtime).
+                        Signature records are CLONED per project — see the warning in its header.
+    plcprojRefs.js      One shared, cached .plcproj read (library references + namespaces). The same
+                        file used to be read three times per project per scan.
     parser.js           Structured Text lexer + symbol parser
     symbolNode.js       Single factory for a symbol node's core shape (parser + xmlIndexer build through it)
     features.js         Facade re-exporting features/{core,completions,definition,references,configReferences,highlights,diagnostics}
@@ -310,6 +326,43 @@ built from `sample/` (the fixture helper is `test/_multiproject.js`, two copies 
 root, one copy deliberately diverged) — the partition, zero diagnostics on correct code in either
 project, references and the rename config scan never crossing the project boundary, and the per-project
 library registries including the Libraries-view union fallback when no project is specified.
+
+### Indexing cost, and the four rules that keep it down
+
+Measured on a real 8-project folder (156 MB of library archives): a startup used to cost ~11.7 s warm
+and ~42 s cold, with every language feature dead and nothing on screen saying why. It is now ~3.5 s
+warm / ~20 s cold projected, and the wait is visible. Four invariants hold that, and each has a gate:
+
+1. **A startup scans once.** `custom/reindex` means *rebuild unconditionally*; `custom/indexReady`
+   means *resolve once these roots are indexed*. The host's startup request is only ever the barrier
+   (it orders `sendDiagnosticsConfig()` and the Libraries refresh after the index) — sending it as a
+   reindex made every startup pay for the whole scan a second time on top of `onInitialize`'s.
+   `src/lsp/scanController.js` decides, on exactly two facts: a scan **completed**, and its normalized
+   root set matches. **Never teach `reindex` to skip** — on a `.plcproj` change the roots are
+   unchanged and it is the content that moved (`test_scan_controller.js` pins both directions).
+2. **Read each file once per (path, size, mtime).** `parseCache.js` (signature dumps, browsercache),
+   `plcprojRefs.js` (`.plcproj`), `harvestArchiveFile` (archives). A parse that is *stored* per
+   project must be **cloned** before use — the signature merge rewrites `record.namespace` and
+   `indexBrowserCache` pushes members onto the stored object, so a shared record leaks one project's
+   attribution into another. `test_signature_cache.js` asserts that by object identity, because a
+   value comparison still passes while sharing.
+3. **Decode each archive once per content, not per path.** Every project vendors its own `_Libraries`,
+   so the same vendor archives appear many times: 306 files / 156.5 MB on the measured workspace, but
+   148 distinct / 74.2 MB. `harvestArchiveFile` keys decoded names on
+   `<title>/<version>/<file>` + size + mtime, which took 306 decodes to 157. If that identity ever
+   proves too weak, the documented hardening is a ZIP central-directory fingerprint over the ≤66 KB
+   EOCD tail (`MAX_EOCD_SEARCH`) — a genuine content hash for one small read.
+4. **`SKIP_DIRS` must never gain `_libraries`.** `collectArchives` walks it; excluding it there finds
+   zero archives and costs ~171 false positives. `PROJECT_SKIP_DIRS` is the excluding set, for the
+   `.tmc`/signature/`.plcproj` walkers only. `test_collect_scope.js` proves both halves.
+
+The scan is still **synchronous**, so the server's event loop stops for its duration and requests
+queue unread. That is why the progress indicator lives in the **extension host** — a separate process
+whose loop stays free — and why it is deliberately indeterminate ("TwinCAT: indexing…", no `3 of 8`):
+per-project counts would need the scan to yield between projects, which it does not do. Making it
+yield (with per-project readiness, so the active file's project answers first) is the known next step
+and is deliberately not done: it rewrites the multi-project spine, and a wrong readiness gate answers
+against a partial index, which means false diagnostics.
 
 Three processes cooperate, with the extension host as the hub — **the webview never talks to the
 language server directly**. The extension bridges them over custom JSON-RPC requests

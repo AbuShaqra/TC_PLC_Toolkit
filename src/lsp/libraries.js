@@ -26,7 +26,11 @@
  */
 
 const fs = require('fs');
-const path = require('path');
+const {
+    parseLibraryReferences,
+    readLibraryReferences,
+    collectPlcProjFiles
+} = require('./plcprojRefs');
 
 /**
  * The registry key on a symbol index. A `Symbol` deliberately: `Object.keys()`, `for…in` and
@@ -85,64 +89,23 @@ function ensureRegistryFor(index) {
 }
 
 /**
- * Directories that never hold the project's own .plcproj: vendored library archives, generated ST
- * exports, and build output. Compared lower-cased.
- * @type {Set<string>}
- */
-const SKIP_DIRS = new Set([
-    '.git',
-    'node_modules',
-    '.vscode',
-    '_libraries',
-    'st_files',
-    '_compileinfo'
-]);
-
-/**
  * Extracts the library namespaces declared by a .plcproj's <PlaceholderReference> and
  * <LibraryReference> blocks. Only <Namespace> tags *inside* such a block are taken — the element
  * name is generic enough (it also appears under <Compile>) that matching it document-wide would
  * pick up unrelated settings.
+ *
+ * Kept as an exported string entry point (test_libraries.js drives it), now over the shared block
+ * parse in plcprojRefs.js so this and libsymbols.js's title harvest read the same blocks the same way.
+ * ALL of a block's namespaces are taken, as before — `namespaces`, not the first-only `namespace`.
  * @param {string} plcProjXml Raw .plcproj XML text.
  * @returns {string[]} Namespace names, in document order (may contain duplicates).
  */
 function extractNamespaces(plcProjXml) {
     const names = [];
-    const blockRegex = /<(PlaceholderReference|LibraryReference)\b[^>]*>([\s\S]*?)<\/\1>/g;
-    let block;
-    while ((block = blockRegex.exec(plcProjXml)) !== null) {
-        const nsRegex = /<Namespace>([^<]+)<\/Namespace>/g;
-        let ns;
-        while ((ns = nsRegex.exec(block[2])) !== null) {
-            const name = ns[1].trim();
-            if (name) names.push(name);
-        }
+    for (const block of parseLibraryReferences(plcProjXml)) {
+        for (const name of block.namespaces) names.push(name);
     }
     return names;
-}
-
-/**
- * Recursively collects .plcproj files under a directory.
- * @param {string} dirPath Absolute directory path.
- * @param {string[]} out Accumulator, mutated.
- */
-function collectPlcProjFiles(dirPath, out) {
-    let entries;
-    try {
-        entries = fs.readdirSync(dirPath, { withFileTypes: true });
-    } catch (e) {
-        return;
-    }
-
-    for (const entry of entries) {
-        const fullPath = path.join(dirPath, entry.name);
-        if (entry.isDirectory()) {
-            if (SKIP_DIRS.has(entry.name.toLowerCase())) continue;
-            collectPlcProjFiles(fullPath, out);
-        } else if (entry.isFile() && entry.name.toLowerCase().endsWith('.plcproj')) {
-            out.push(fullPath);
-        }
-    }
 }
 
 /**
@@ -162,15 +125,17 @@ function indexLibraryNamespaces(rootDir, index) {
     collectPlcProjFiles(rootDir, files);
 
     for (const file of files) {
-        let xml;
-        try {
-            xml = fs.readFileSync(file, 'utf8');
-        } catch (e) {
-            continue; // unreadable .plcproj: skip, never throw out of indexing
-        }
-        for (const name of extractNamespaces(xml)) {
-            found.push(name);
-            registry.add(name.toLowerCase());
+        // Read once per workspace, not once per consumer: libsymbols.js indexLibraryTitles wants the
+        // same blocks (twice — indexLibrarySymbols and indexTypeSystem each call it), and this used to
+        // be the third read of identical bytes. The records are read-only, so they are shared, not
+        // cloned (plcprojRefs.js).
+        const blocks = readLibraryReferences(file);
+        if (!blocks) continue; // unreadable .plcproj: skip, never throw out of indexing
+        for (const block of blocks) {
+            for (const name of block.namespaces) {
+                found.push(name);
+                registry.add(name.toLowerCase());
+            }
         }
     }
     return found;
