@@ -2,7 +2,7 @@
   "name": "twincat-plc-toolkit",
   "displayName": "TwinCAT PLC Toolkit",
   "description": "Edit, navigate and analyse Beckhoff TwinCAT PLC projects: two-pane Structured Text editor, offline IntelliSense and diagnostics, object and library explorers. Unofficial; not affiliated with Beckhoff.",
-  "version": "0.6.3",
+  "version": "0.7.0",
   "publisher": "a-abushaqra",
   "license": "MIT",
   "icon": "media/icon.png",
@@ -173,6 +173,16 @@
         "category": "TwinCAT"
       },
       {
+        "command": "twincat.insertObjectAtCursor",
+        "title": "Insert at Cursor",
+        "category": "TwinCAT"
+      },
+      {
+        "command": "twincat.insertObjectDefinitionAtCursor",
+        "title": "Insert Definition at Cursor",
+        "category": "TwinCAT"
+      },
+      {
         "command": "twincat.copyLibraryNamespace",
         "title": "Copy Namespace",
         "category": "TwinCAT"
@@ -267,6 +277,16 @@
           "command": "twincat.copyQualifiedName",
           "when": "view == twincatLibraries && viewItem == 'twincatLibraryType'",
           "group": "twincat_2_copy@2"
+        },
+        {
+          "command": "twincat.insertObjectAtCursor",
+          "when": "view == twincatExplorer && (viewItem == 'pouFile' || viewItem == 'pouFileProgram' || viewItem == 'pouFileFunction' || viewItem == 'itfFile' || viewItem == 'gvlFile' || viewItem == 'dutFile' || viewItem == 'component' || viewItem == 'propertyNode')",
+          "group": "1_insert@1"
+        },
+        {
+          "command": "twincat.insertObjectDefinitionAtCursor",
+          "when": "view == twincatExplorer && (viewItem == 'pouFile' || viewItem == 'pouFileProgram' || viewItem == 'pouFileFunction' || viewItem == 'component')",
+          "group": "1_insert@2"
         },
         {
           "command": "twincat.createMethod",

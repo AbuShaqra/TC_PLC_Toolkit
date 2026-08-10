@@ -146,6 +146,22 @@ header comment — read it before adding colour.** The gradient-clipped wordmark
   strip (VS Code documents exclude it → offsets shift by one). Surveyed and deliberately NOT scanned: `.TcIPO`
   (only `.svg` names), `.plcproj` (already synced by the file-rename step), `.tmc` (generated build artifact).
   Counts above were measured on the old customer sample; on the synthetic one `MAIN` = 1 (the PlcTask PouCall).
+- **Insert at Cursor / Insert Definition at Cursor in the OBJECTS tree** (0.7.0, `objectInsertCommands.js`).
+  Reported as "the functionality disappeared" — it had not: checked **52 revisions of package.json** across both
+  the pre-rewrite lineage (recovered from dangling objects, back to 2026-06-02) and the current one, plus the
+  0.5.1/0.6.0/0.6.1/0.6.2 VSIXs — 38 carry the commands, **0 ever gated one on `twincatExplorer`**. They were
+  always Libraries-only. **Don't re-litigate that; build on it.** Now added for the project's own objects:
+  Insert at Cursor = bare name; Insert Definition = a call template with the object's real parameters, the user's
+  chosen shape. `callTemplate`/`PARAM_SCOPES` moved out of `libraryTreeProvider.js` into vscode-free
+  `src/insertTemplates.js` so both views format identically (guarded byte-for-byte in `test_object_insert.js`).
+  An FB inserts a derived INSTANCE name (`FB_Clamping` → `fbClamping`) because ST calls an instance, not a type;
+  functions/programs use their own name; methods/actions insert bare (the instance is whatever the user has).
+  Menu group is `1_insert@*`, not `twincat_*` — VS Code sorts context groups lexicographically, so a `twincat`
+  prefix would drop them below the create/delete block. All four insert commands now explain themselves when run
+  from the Command Palette instead of silently no-oping (that silence is what the report looked like).
+  **`// TYPE` comments carry the declaration's initializer** (`// TIME := DEFAULT_ADS_TIMEOUT`) — that is
+  `xmlIndexer`'s `variable.type` verbatim; library members never have one, so the Libraries view never showed it.
+  Left as-is deliberately: it documents the default. Two lines in `insertTemplates.js` if it ever reads as noise.
 - **README.md** = public page (ships); **DEVELOPMENT.md** = build/test/architecture; CLAUDE/HANDOFF/DEVELOPMENT are
   `.vscodeignore`d. Package `npx @vscode/vsce package`. `scripts/` ships (the generator). Stale local branches
   `moe`/`native-editor` un-pushed.

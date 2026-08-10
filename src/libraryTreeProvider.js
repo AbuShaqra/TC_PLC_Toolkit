@@ -21,6 +21,10 @@
  */
 
 const vscode = require('vscode');
+// The call formatter is shared with the "TwinCAT Objects" explorer's Insert commands, so it lives in
+// a vscode-free module: this file cannot be loaded outside a VS Code host, and the two views must
+// lay a parameter list out identically.
+const { orderedParams, callTemplate } = require('./insertTemplates');
 
 /** Type kind (from the `.tmc` or the signatures dump) → the codicon that reads as that kind in VS Code. */
 const TYPE_ICONS = {
@@ -84,28 +88,6 @@ function insertTextForNode(node) {
     return '';
 }
 
-/** The member scopes that are nameable call parameters (everything else is an internal field). */
-const PARAM_SCOPES = { VAR_INPUT: 0, VAR_IN_OUT: 1, VAR_OUTPUT: 2 };
-
-/**
- * Lays out a call's parameter list, one per line, name-aligned and typed. Inputs and in-outs bind
- * with `:=`, outputs with `=>` — the distinction TwinCAT enforces at a call site.
- * @param {string} callee Text before the '(' — a qualified type name, or a bare method name.
- * @param {Array<Object>} params Parameters, already in the order they should be written.
- * @returns {string} The call template.
- */
-function callTemplate(callee, params) {
-    const width = params.reduce((n, p) => Math.max(n, p.name.length), 0);
-    const lines = params.map((p, i) => {
-        const assign = p.scope === 'VAR_OUTPUT' ? '=>' : ':=';
-        const comma = i < params.length - 1 ? ',' : '';
-        const pad = ' '.repeat(width - p.name.length);
-        const comment = p.type ? `  // ${p.type}` : '';
-        return `    ${p.name}${pad} ${assign} ${comma}${comment}`;
-    });
-    return `${callee}(\n${lines.join('\n')}\n);`;
-}
-
 /**
  * A ready-to-fill call template — the node's name with every parameter laid out, one per line, typed.
  *
@@ -122,14 +104,10 @@ function callTemplate(callee, params) {
 function formattedDefinitionForNode(node) {
     if (!node) return '';
 
-    // Inputs first, then in-outs, then outputs — the order they are written at a call site.
-    const ordered = (list) => (list || [])
-        .filter(p => p.scope in PARAM_SCOPES)
-        .sort((a, b) => PARAM_SCOPES[a.scope] - PARAM_SCOPES[b.scope]);
-
     if (node.kind === 'type') {
         const qualified = node.namespace ? `${node.namespace}.${node.type.name}` : node.type.name;
-        const params = ordered(node.type.members);
+        // orderedParams keeps only nameable parameters, inputs first, then in-outs, then outputs.
+        const params = orderedParams(node.type.members);
         return params.length ? callTemplate(qualified, params) : qualified;
     }
 
@@ -139,7 +117,7 @@ function formattedDefinitionForNode(node) {
         // user replaces. Naming the owner is still the point: a bare `Add(` at a cursor says nothing
         // about what it belongs to or where it came from.
         const owner = node.namespace ? `${node.namespace}.${node.owner.name}` : node.owner.name;
-        const params = ordered(node.method.params);
+        const params = orderedParams(node.method.params);
         return params.length ? callTemplate(`${owner}.${node.method.name}`, params) : `${owner}.${node.method.name}();`;
     }
 
