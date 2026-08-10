@@ -87,6 +87,44 @@ function absoluteToLocal(lineMap, absLine0) {
 }
 
 /**
+ * Builds a per-request resolver from a file URI to its assembled ST unit.
+ *
+ * Every navigation feature has the same problem: the LSP answers in absolute lines of a unit, and
+ * that unit belongs to whichever file the symbol lives in — which is often not the open one. The
+ * active document is already assembled (unsaved edits included) and must be reused rather than
+ * re-read; anything else is read from disk and converted. Results are cached per request because a
+ * search with many hits in one file would otherwise re-read and re-split it once per hit.
+ *
+ * Note the consequence, unchanged from before: another file is read from DISK, so a target inside a
+ * file with unsaved edits in some other tab is located against the SAVED text.
+ * @param {string} activeFileUri URI of the document this request came from.
+ * @param {Object} activeCtx Its assembled unit ({ stText, lineMap }) from assembleSt.
+ * @returns {Function} async (uri) => { st, lines } for that file, or null when it is unreadable.
+ */
+function createStResolver(activeFileUri, activeCtx) {
+    const cache = new Map();
+    return async function getSt(uri) {
+        const key = normUri(uri);
+        if (cache.has(key)) return cache.get(key);
+        let result = null;
+        if (key === normUri(activeFileUri)) {
+            result = { st: activeCtx, lines: activeCtx.stText.split('\n') };
+        } else {
+            try {
+                const bytes = await vscode.workspace.fs.readFile(vscode.Uri.parse(uri));
+                const parsed = parseTwinCatXml(Buffer.from(bytes).toString('utf8'));
+                if (parsed) {
+                    const converted = convertXmlToSt(parsed, { raw: true });
+                    result = { st: converted, lines: converted.stText.split('\n') };
+                }
+            } catch (e) { /* unreadable: the caller degrades, it never guesses */ }
+        }
+        cache.set(key, result);
+        return result;
+    };
+}
+
+/**
  * Slices one component pane's text out of an assembled ST unit — the content behind a hidden
  * Monaco model in the references peek.
  * @param {string[]} stLines The unit's lines (already split).
@@ -445,6 +483,28 @@ class TwinCatCustomEditorProvider {
                                     fileUri: message.fileUri
                                 });
                             }
+                            if (definition && definition.uri && definition.range) {
+                                // Resolve the answer to an exact (component, pane, local line), the same
+                                // way custom/references does. Without it the webview only knew a file, a
+                                // component and a NAME, and fell back to a first-match word search — which
+                                // lands on the name's first appearance in the declaration pane. In an FB
+                                // whose header comment mentions its own outputs ("…until bDone or bError"),
+                                // that is a line of prose in a comment, not the declaration.
+                                //
+                                // The target may live in another file, so its own unit is what the range
+                                // must be mapped against; createStResolver reads and converts it.
+                                const entry = await createStResolver(message.fileUri, ctx)(definition.uri);
+                                const loc = entry ? absoluteToLocal(entry.st.lineMap, definition.range.start.line) : null;
+                                if (loc) {
+                                    // componentId comes from the same mapping as pane/localLine so the
+                                    // three can never disagree; it matches what the LSP reports.
+                                    definition = Object.assign({}, definition, {
+                                        componentId: loc.componentId,
+                                        pane: loc.pane,
+                                        localLine: loc.localLine0
+                                    });
+                                }
+                            }
                         }
                         webviewPanel.webview.postMessage({
                             type: 'custom/definitionResponse',
@@ -483,23 +543,12 @@ class TwinCatCustomEditorProvider {
                                 // few ms on a handful of files, and PEEK_MAX_PANES already bounds the work
                                 // here to the files the preview can actually show.
                                 const stCache = new Map();
+                                const resolveSt = createStResolver(message.fileUri, ctx);
+                                // The cap below counts FILES already opened, so the resolver's own cache is
+                                // not enough — this pass needs to know whether a file has been seen yet.
                                 const getSt = async (uri) => {
                                     const key = normUri(uri);
-                                    if (stCache.has(key)) return stCache.get(key);
-                                    let result = null;
-                                    if (key === normUri(message.fileUri)) {
-                                        // The active file is already assembled, unsaved edits included.
-                                        result = { st: ctx, lines: ctx.stText.split('\n') };
-                                    } else {
-                                        try {
-                                            const bytes = await vscode.workspace.fs.readFile(vscode.Uri.parse(uri));
-                                            const parsed = parseTwinCatXml(Buffer.from(bytes).toString('utf8'));
-                                            if (parsed) {
-                                                const converted = convertXmlToSt(parsed, { raw: true });
-                                                result = { st: converted, lines: converted.stText.split('\n') };
-                                            }
-                                        } catch (e) { /* unreadable: no peek entry, the panel still lists it */ }
-                                    }
+                                    const result = await resolveSt(uri);
                                     stCache.set(key, result);
                                     return result;
                                 };
@@ -597,27 +646,7 @@ class TwinCatCustomEditorProvider {
                         // Cache the split lines alongside the converted ST: the line lookup below runs
                         // once per reference, and splitting the whole unit each time made a search with
                         // many hits in one file re-split that file's entire text for every one of them.
-                        const stCache = new Map();
-                        const getSt = async (uri) => {
-                            const key = normUri(uri);
-                            if (stCache.has(key)) return stCache.get(key);
-                            let result = null;
-                            if (key === normUri(message.fileUri)) {
-                                // The active file is already assembled, unsaved edits included.
-                                result = { st: ctx, lines: ctx.stText.split('\n') };
-                            } else {
-                                try {
-                                    const bytes = await vscode.workspace.fs.readFile(vscode.Uri.parse(uri));
-                                    const parsed = parseTwinCatXml(Buffer.from(bytes).toString('utf8'));
-                                    if (parsed) {
-                                        const converted = convertXmlToSt(parsed, { raw: true });
-                                        result = { st: converted, lines: converted.stText.split('\n') };
-                                    }
-                                } catch (e) { /* ignore */ }
-                            }
-                            stCache.set(key, result);
-                            return result;
-                        };
+                        const getSt = createStResolver(message.fileUri, ctx);
 
                         const items = [];
                         let searchedWord = '';

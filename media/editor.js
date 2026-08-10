@@ -393,7 +393,15 @@
             ],
 
             symbols: /[=><!~?:&|+\-*\/\^%]+/,
-            escapes: /\\(?:[abfnrtv\\"']|x[0-9A-Fa-f]{1,4}|u[0-9A-Fa-f]{4}|U[0-9A-Fa-f]{8})/,
+
+            // IEC 61131-3 escapes with a DOLLAR SIGN, never a backslash: $$ $' $" $L $N $P $R $T
+            // (case-insensitive) and $ plus two hex digits. This started life as Monaco's C-like
+            // sample grammar, which made `\` an escape — so `'C:\Temp\tc_json_append_test\'` had its
+            // closing quote eaten as `\'`, the literal ran on, and the whole declaration below it was
+            // painted as string until the apostrophe in a `// … the FB's rising edge …` comment
+            // sixteen lines later. A backslash is an ORDINARY character in ST; src/lsp/parser.js has
+            // always lexed it that way, and syntaxes/twincat-st.tmLanguage.json now agrees too.
+            escapes: /\$(?:[$'"LlNnPpRrTt]|[0-9A-Fa-f]{2})/,
 
             tokenizer: {
                 root: [
@@ -451,13 +459,28 @@
                     [/[;,.]/, 'delimiter'],
 
                     [/'/, { token: 'string.quote', bracket: '@open', next: '@string' }],
+                    [/"/, { token: 'string.quote', bracket: '@open', next: '@wstring' }],
                 ],
 
+                // Both string states must consume EVERY input, or the tokenizer stalls on the line:
+                // the bulk rule stops at a `$`, `@escapes` takes the well-formed two-character forms,
+                // and the bare `$` rule mops up the rest — a `$` before the closing quote, a `$` at
+                // end of line, a `$` in front of a letter that is not an escape. `$'`/`$"` are real
+                // escapes and must keep NOT closing the literal; a backslash is just a character.
                 string: [
-                    [/[^\\']+/, 'string'],
+                    [/[^$']+/, 'string'],
                     [/@escapes/, 'string.escape'],
-                    [/\\./, 'string.escape.invalid'],
+                    [/\$/, 'string.escape.invalid'],
                     [/'/, { token: 'string.quote', bracket: '@close', next: '@pop' }]
+                ],
+
+                // WSTRING literals. The root state had no `"` rule at all before, so a double-quoted
+                // literal was tokenized as loose operators and identifiers.
+                wstring: [
+                    [/[^$"]+/, 'string'],
+                    [/@escapes/, 'string.escape'],
+                    [/\$/, 'string.escape.invalid'],
+                    [/"/, { token: 'string.quote', bracket: '@close', next: '@pop' }]
                 ],
 
                 whitespace: [
@@ -553,10 +576,16 @@
 
                 // Target inside the component that is already loaded: resolve it against the live
                 // pane models so Monaco gets a real Location (which also feeds the ctrl-hover
-                // preview). Declaration pane first — a variable's declaration always outranks its
-                // usages in the implementation.
+                // preview).
+                //
+                // The host resolves every definition to an exact pane + local line, so use that.
+                // The word search is only the fallback for content that has moved under us: it
+                // returns the FIRST occurrence in the declaration pane, and in an FB whose header
+                // comment names its own outputs ("…until bDone or bError") the first occurrence of
+                // bDone is a word in a comment, forty lines above its declaration. That was the
+                // reported bug.
                 if (isSameFile && targetCompId === activeComponentId) {
-                    const hit = findWordInPanes(targetWord);
+                    const hit = exactWordInPanes(def, targetWord) || findWordInPanes(targetWord);
                     if (hit && hit.model === model) {
                         return { uri: model.uri, range: hit.range };
                     }
@@ -848,12 +877,14 @@
     // has a Monaco model in this webview. Monaco cannot open such a location itself, so the
     // definition provider encodes the destination into a synthetic URI:
     //
-    //     twincat:/goto?file=<fileUri>&component=<id>&word=<name>[&sl=&sc=&el=&ec=]
+    //     twincat:/goto?file=<fileUri>&component=<id>&word=<name>[&sl=&sc=&el=&ec=][&pane=&ll=]
     //
     // and the editor opener (registered next to the provider) decodes it and does the jump:
     // same file -> loadComponent + highlightTarget; other file -> 'openFile' to the extension.
     // sl/sc/el/ec carry the raw LSP range (0-indexed), which the extension host needs for the
-    // generated `.st` navigation branch of `twincat.openComponent`.
+    // generated `.st` navigation branch of `twincat.openComponent`; pane/ll carry the same target
+    // expressed as a pane and a line WITHIN it, which is what selecting inside a component needs.
+    // Both are the host's answer, mapped through absoluteToLocal — never a search for the name.
     // ---------------------------------------------------------------------------------------
     const GOTO_SCHEME = 'twincat';
 
@@ -979,14 +1010,22 @@
             parts.push('el=' + def.range.end.line);
             parts.push('ec=' + def.range.end.character);
         }
+        // The exact destination inside the component. Without it the jump ends in a first-match word
+        // search over the target's declaration pane, which finds the name in a header comment before
+        // it finds the declaration.
+        if (def.pane && def.localLine != null) {
+            parts.push('pane=' + encodeURIComponent(def.pane));
+            parts.push('ll=' + def.localLine);
+        }
         return monaco.Uri.from({ scheme: GOTO_SCHEME, path: '/goto', query: parts.join('&') });
     }
 
     /**
      * Decodes a synthetic navigation URI produced by encodeGotoUri.
      * @param {Object} uri A monaco.Uri.
-     * @returns {Object} { fileUri, componentId, targetWord, range } — range is the raw LSP range
-     *                   ({ start:{line,character}, end:{...} }) or null when absent.
+     * @returns {Object} { fileUri, componentId, targetWord, pane, localLine, range } — range is the
+     *                   raw LSP range ({ start:{line,character}, end:{...} }) or null when absent;
+     *                   pane/localLine are null when the host could not place the target.
      */
     function decodeGotoUri(uri) {
         const q = {};
@@ -1001,6 +1040,8 @@
             fileUri: q.file || '',
             componentId: q.component || 'root',
             targetWord: q.word || '',
+            pane: q.pane || null,
+            localLine: q.ll !== undefined ? Number(q.ll) : null,
             range: null
         };
         if (q.sl !== undefined) {
@@ -1021,13 +1062,33 @@
         const isSameFile = target.fileUri && activeFileUri &&
             target.fileUri.toLowerCase() === activeFileUri.toLowerCase();
 
+        // The exact destination, in the shape highlightTarget and twincat.openComponent both take —
+        // the same one the References panel and the peek click-through send. `start.line`/`end.line`
+        // stay ABSOLUTE (unit lines): highlightTarget reads only `localLine` and the characters, but
+        // the generated-`.st` branch of twincat.openComponent navigates by the absolute line.
+        //
+        // Passing null here was the reported bug: highlightTarget's exact-location branch needs
+        // pane + localLine, so a null range fell straight through to the word search and selected
+        // the first occurrence of the name in the declaration pane — inside the header comment.
+        let range = null;
+        if (target.pane && target.localLine != null && target.range) {
+            range = {
+                pane: target.pane,
+                localLine: target.localLine,
+                start: { line: target.range.start.line, character: target.range.start.character },
+                end: { line: target.range.end.line, character: target.range.end.character }
+            };
+        } else if (target.range) {
+            range = target.range;
+        }
+
         if (isSameFile) {
             // Another component (or the sibling pane) of the file already open here.
             if (target.componentId && target.componentId !== activeComponentId) {
                 loadComponent(target.componentId);
             }
             // Let loadComponent's setValue settle before selecting inside the new models.
-            setTimeout(() => highlightTarget(target.targetWord, null), 50);
+            setTimeout(() => highlightTarget(target.targetWord, range), 50);
             return;
         }
 
@@ -1036,7 +1097,7 @@
             type: 'openFile',
             fileUri: target.fileUri,
             componentId: target.componentId || 'root',
-            range: target.range,
+            range: range,
             targetWord: target.targetWord
         });
     }
@@ -1089,6 +1150,35 @@
         const word = model.getWordAtPosition({ lineNumber: range.startLineNumber, column: range.startColumn });
         if (!word) return range;
         return new monaco.Range(range.startLineNumber, word.startColumn, range.startLineNumber, word.endColumn);
+    }
+
+    /**
+     * Resolves the exact location the extension host sends with a definition — pane, local line and
+     * the symbol's own columns — against the live pane models. Pure lookup, same shape as
+     * findWordInPanes so the two are interchangeable at the call site.
+     *
+     * Returns null (rather than a wrong range) whenever the location cannot be trusted: no pane
+     * named, the pane hidden, the line past the end, or the text at those coordinates no longer the
+     * symbol. The caller then falls back to the word search, which is what protects against content
+     * that has changed underneath a stale answer.
+     * @param {Object} def The definition as returned by the host: { pane, localLine, range }.
+     * @param {string} targetWord The symbol the location is supposed to point at.
+     * @returns {Object|null} { editor, model, range } or null.
+     */
+    function exactWordInPanes(def, targetWord) {
+        if (!def || !def.pane || def.localLine == null || !def.range) return null;
+        const ed = def.pane === 'decl' ? declEditor : implEditor;
+        const paneEl = def.pane === 'decl' ? paneDeclEl : paneImplEl;
+        if (!ed || !paneEl || paneEl.style.display === 'none') return null;
+        const model = ed.getModel();
+        if (!model || def.localLine + 1 > model.getLineCount()) return null;
+
+        const lineNumber = def.localLine + 1;
+        const range = new monaco.Range(lineNumber, def.range.start.character + 1,
+            lineNumber, def.range.end.character + 1);
+        const text = model.getValueInRange(range);
+        if (targetWord && text.toLowerCase() !== String(targetWord).toLowerCase()) return null;
+        return { editor: ed, model: model, range: range };
     }
 
     /**

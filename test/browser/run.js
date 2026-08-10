@@ -161,6 +161,51 @@ function assert(cond, msg) {
         assert(opened.word === 'FB_Cylinder',
             `the coordinates it sends land on the word itself, not the first same-named one (got ${JSON.stringify(opened.word)})`);
 
+        // 5b. Go to Definition must land on the DECLARATION, not on the first occurrence of the name.
+        //
+        // User-reported: F12 on an FB's `bDone` jumped into the forty-line header comment above the
+        // declarations, which says "…until bDone or bError". The LSP was right the whole time; the
+        // webview threw the location away and searched the declaration pane for the word, taking
+        // match [0]. The fixture reproduces that shape — build.js splices a comment naming
+        // `_bExtended` above the VAR block, so the decoy sits on an earlier line of the same pane —
+        // and the payload the stub answers with is what the real host would send for it.
+        const gotoDef = await page.evaluate(async () => {
+            window.__harness.definitionEnabled = true;
+            const live = () => monaco.editor.getEditors().filter(e => e.getModel() && e.getModel().uri.scheme === 'inmemory');
+            const decl = live().find(e => /FUNCTION_BLOCK\s+FB_Cylinder/.test(e.getModel().getLineContent(1)));
+            const impl = live().find(e => e !== decl);
+            // Jump from a usage in the OTHER pane, which is how the bug was hit.
+            const implModel = impl.getModel();
+            let callLine = 1;
+            for (let i = 1; i <= implModel.getLineCount(); i++) {
+                if (/Cyclic\(\)/.test(implModel.getLineContent(i))) { callLine = i; break; }
+            }
+            impl.focus();
+            impl.setPosition({ lineNumber: callLine, column: 3 });
+            // trigger(), not getAction(): the goto action is a command contribution and getAction
+            // does not list it — the same reason closeReferencePeek uses trigger in editor.js.
+            impl.trigger('harness', 'editor.action.revealDefinition', {});
+            await new Promise(r => setTimeout(r, 1200));
+            const sel = decl.getSelection();
+            window.__harness.definitionEnabled = false;
+            return {
+                expect: window.__harness.fixture.expect.definition,
+                line: sel ? sel.startLineNumber : null,
+                selected: sel ? decl.getModel().getValueInRange(sel) : null,
+                lineText: sel ? decl.getModel().getLineContent(sel.startLineNumber) : null
+            };
+        });
+        assert(gotoDef.expect.decoyLine < gotoDef.expect.declarationLine,
+            `the fixture really has the bug's shape: ${gotoDef.expect.word} appears in a comment on decl line ` +
+            `${gotoDef.expect.decoyLine} and is declared on line ${gotoDef.expect.declarationLine}`);
+        assert(gotoDef.line === gotoDef.expect.declarationLine + 1,
+            `the jump selects the DECLARATION line ${gotoDef.expect.declarationLine + 1}, not the comment ` +
+            `line ${gotoDef.expect.decoyLine + 1} (landed on ${gotoDef.line}: ${JSON.stringify(gotoDef.lineText)})`);
+        assert(/^\s*_bExtended\s*,/.test(gotoDef.lineText || ''),
+            `and that line is the declaration itself (${JSON.stringify(gotoDef.lineText)})`);
+        assert(gotoDef.selected === gotoDef.expect.word,
+            `with the symbol selected, not a fragment (${JSON.stringify(gotoDef.selected)})`);
+
         // 6. A second search that needs only one of the panes must retire the other. Models are
         //    heavy; the whole point of retiring by set difference is that nothing accumulates.
         const retired = await page.evaluate(async () => {

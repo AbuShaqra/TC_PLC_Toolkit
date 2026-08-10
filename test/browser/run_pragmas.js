@@ -262,7 +262,16 @@ const NESTED = [
                 message: scopes("{info 'TODO: rename'}"),
                 documented: scopes("{attribute 'qualified_only'}"),
                 userDefined: scopes("{attribute 'MyCompany_Unknown'}"),
-                halfTyped: scopes('{region "Inputs"\nbDone : BOOL;')
+                halfTyped: scopes('{region "Inputs"\nbDone : BOOL;'),
+                // The reported two-line case, verbatim from the user's P_TestJsonArrayAppend: a
+                // Windows path in a T_MaxString, and sixteen lines below it (two here) a comment
+                // whose apostrophe is where the runaway literal used to terminate.
+                winPath: scopes(
+                    "\tsDir\t\t: T_MaxString := 'C:\\Temp\\tc_json_append_test\\';\n" +
+                    "\tbTriggerOld\t: BOOL;\t\t// so the FB's rising edge always fires"),
+                dollarEscape: scopes("sMsg := 'It$'s done'; nAfter := 1;"),
+                halfTypedDollar: scopes("sMsg := 'abc$\nnAfter := 1;"),
+                wstring: scopes('wsName := "wide"; nAfter := 1;')
             };
         });
 
@@ -288,6 +297,37 @@ const NESTED = [
             `nor is the line below a HALF-TYPED region (got ${JSON.stringify(tokens.halfTyped[1])})`);
         assert(only(tokens.halfTyped[0]) === 'annotation.region.iecst',
             `a half-typed region still scopes as a pragma (got ${only(tokens.halfTyped[0])})`);
+
+        // ------------------------------------------------------------- 3b. strings escape with $, not \
+        // The user-reported bug: a backslash was treated as a C-style escape, so the trailing `\` of
+        // 'C:\Temp\tc_json_append_test\' ate the closing quote and the literal ran on until the
+        // apostrophe in `FB's`, sixteen lines below, inside a comment. Only Monaco's own tokenizer can
+        // show that the rules we wrote are the rules it runs, which is why this lives here as well as
+        // in test_st_strings.js.
+        const lastType = lineTokens => lineTokens[lineTokens.length - 1].type;
+        assert(!/string/.test(lastType(tokens.winPath[0])),
+            `a Windows path in a string closes at its own quote — the line does not end string-scoped (got ${lastType(tokens.winPath[0])})`);
+        assert(tokens.winPath[1].some(t => /comment/.test(t.type)),
+            `the declaration line below it holds a COMMENT (got ${JSON.stringify(tokens.winPath[1])})`);
+        assert(!tokens.winPath[1].some(t => /string/.test(t.type)),
+            `…and nothing on it is string-scoped: the apostrophe in FB's closes nothing (got ${JSON.stringify(tokens.winPath[1])})`);
+
+        // $' is the REAL escape and must keep working: the literal runs past it and closes at the
+        // next quote, leaving the code after the semicolon as code.
+        assert(tokens.dollarEscape[0].some(t => /string/.test(t.type)),
+            "$'-bearing text is still a string literal");
+        assert(!/string/.test(lastType(tokens.dollarEscape[0])),
+            `and it closes at the SECOND quote, so nAfter is code again (got ${lastType(tokens.dollarEscape[0])})`);
+
+        // A Monarch state that matches zero characters hangs the tokenizer, and a trailing `$` is the
+        // input that would do it. Getting any tokens back at all is the assertion.
+        assert(tokens.halfTypedDollar.length === 2 && tokens.halfTypedDollar[0].length > 0,
+            'a string ending in a bare $ tokenizes rather than stalling the state machine');
+
+        assert(tokens.wstring[0].some(t => /string/.test(t.type)),
+            `a double-quoted WSTRING literal is scoped as a string (got ${JSON.stringify(tokens.wstring[0])})`);
+        assert(!/string/.test(lastType(tokens.wstring[0])),
+            `and it closes at its own quote (got ${lastType(tokens.wstring[0])})`);
 
         // ---------------------------------------------------------------- 4. nothing threw
         assert(consoleErrors.length === 0,

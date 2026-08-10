@@ -276,6 +276,18 @@ outside its `.plcproj` → the gate is a no-op there, ratchet safe (`test_plcpro
   -constructor` are one glyph (60044) and an unknown id renders blank. `test_object_kinds`.
 - **ST lexer** (`test_lexer_literals`): string escape is `$` not `\`; REAL exponents (`3.4E+38`); `_` digit
   separators. Nested block comments `(* (* *) *)` not handled (a CODESYS option, default off).
+  **Three grammars must agree on this and two did not** (user report 2026-08-10, fixed 0.6.3): the Monarch
+  tokenizer and `syntaxes/twincat-st.tmLanguage.json` both carried C-style `\\.` escape rules copied from Monaco's
+  sample grammar, so a Windows path `'C:\Temp\x\'` ate its own closing quote and highlighted as a string until the
+  next apostrophe anywhere below (the reported case: an `FB's` in a comment 16 lines down). The lexer was always
+  right. `test_st_strings.js` now pins all three together; `run_pragmas.js` proves it through Monaco's own
+  tokenizer. A `@wstring` state was added at the same time — the webview never tokenized `"`-quoted WSTRINGs.
+- **Go to Definition must carry pane + localLine, like references already does** (same report, fixed 0.6.3).
+  The LSP returned the correct range all along, but the webview threw it away: `openGotoTarget` passed `null` and
+  the same-component branch of `provideDefinition` used `findWordInPanes` → `matches[0]`, so F12 on `bDone` landed
+  on the first `bDone` in the FB's header comment instead of its declaration. `custom/definition` now maps the
+  absolute unit range through `absoluteToLocal` (the shared `createStResolver` handles a cross-file target) and the
+  webview selects that exact location, keeping the line- and word-search fallbacks for stale content.
 - **Multi-interface inheritance:** `INTERFACE EXTENDS I_A, I_B` — nodes carry **`extendsAll`** (array; `extends` stays
   the first parent); EXTENDS walkers traverse the DAG breadth-first. `test_interface_multi_extends`. FBs/structs stay
   single-inheritance.
