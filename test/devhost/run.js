@@ -102,6 +102,18 @@ function findCodeCli() {
     assert(!step('CRASH'), 'the in-host run completed without crashing' + (step('CRASH') ? ': ' + step('CRASH').error : ''));
     assert(!!step('done'), 'the in-host run reached the end');
 
+    // The Objects-tree insert commands reach the webview's caret. Their module is vscode-bound, so
+    // the pure template logic (test_object_insert.js) is all a Node harness can cover — this proves
+    // the other half: tree node → XML parse → template → posted into the active pane.
+    const ins = step('object-insert');
+    const inserted = (ins && ins.inserted) || [];
+    assert(inserted.length === 2,
+        `both insert commands posted text to the webview (got ${inserted.length}: ${JSON.stringify(inserted)})`);
+    assert(inserted[0] === 'FB_Cylinder',
+        `Insert at Cursor posted the object's bare name (got ${JSON.stringify(inserted[0])})`);
+    assert(typeof inserted[1] === 'string' && /^FB_init\(/.test(inserted[1]) && inserted[1].includes(':='),
+        `Insert Definition at Cursor posted a filled call template (got ${JSON.stringify(inserted[1])})`);
+
     // The custom editor chain: resolve ran, the webview said ready, the host sent init (a break
     // anywhere here is a permanently blank viewer).
     const panel = (data.panels || [])[0];

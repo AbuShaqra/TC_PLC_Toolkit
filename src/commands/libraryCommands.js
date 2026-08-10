@@ -21,6 +21,17 @@ const { insertTextForNode, formattedDefinitionForNode } = require('../libraryTre
  * @param {() => any} deps.getClient Returns the live LSP client, or undefined before start.
  */
 function registerLibraryCommands(context, { libraryProvider, provider, getClient }) {
+    /**
+     * Tells the user where the insert commands actually live. Both need the tree node the context
+     * menu was opened on, so from the Command Palette they have nothing to act on.
+     * @returns {void}
+     */
+    function insertNeedsANode() {
+        vscode.window.showInformationMessage(
+            'Right-click a library, type or member in the TwinCAT Libraries view (or an object in TwinCAT Objects) to insert it at the cursor.'
+        );
+    }
+
     context.subscriptions.push(
         vscode.commands.registerCommand('twincat.refreshLibraries', () => libraryProvider.refresh()),
         // Regenerate library-signatures.xml by driving TwinCAT (see scripts/generate-library-signatures.ps1).
@@ -141,7 +152,12 @@ function registerLibraryCommands(context, { libraryProvider, provider, getClient
         }),
         // Insert at the caret. A TwinCAT file is a webview, not a text editor, so the insert has to be
         // posted to the panel; only a loose .st file goes through the normal editor API.
+        // (`insertNeedsANode` is hoisted below — a function declaration, so it exists by the time a
+        // command actually runs.)
         vscode.commands.registerCommand('twincat.insertAtCursor', async (node) => {
+            // No node = invoked from the Command Palette. Returning silently reads as "broken" to
+            // someone who went looking for the feature, which is exactly how it gets reported.
+            if (!node) { insertNeedsANode(); return; }
             const text = insertTextForNode(node);
             if (!text) return;
             // A library inserts `Namespace.` — the caret then sits exactly where namespace-qualified
@@ -160,6 +176,7 @@ function registerLibraryCommands(context, { libraryProvider, provider, getClient
         // Same insertion path, but with the type's full parameter list laid out — the bare name is no
         // use for an FB with a dozen inputs you would then have to look up one by one.
         vscode.commands.registerCommand('twincat.insertDefinitionAtCursor', async (node) => {
+            if (!node) { insertNeedsANode(); return; }
             const text = formattedDefinitionForNode(node);
             if (!text) return;
 

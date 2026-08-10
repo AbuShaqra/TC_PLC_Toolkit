@@ -51,7 +51,14 @@ async function run() {
                 });
             } catch (e) { rec.hookErr = String(e); }
             const origPost = panel.webview.postMessage.bind(panel.webview);
-            panel.webview.postMessage = (msg) => { rec.toWebview.push(msg && msg.type); return origPost(msg); };
+            panel.webview.postMessage = (msg) => {
+                rec.toWebview.push(msg && msg.type);
+                // Keep the payload of an insert: the Objects-tree insert commands are vscode-bound,
+                // so this round trip is the only place their whole path (tree node → XML parse →
+                // template → panel) can be proven end to end.
+                if (msg && msg.type === 'insertText') rec.inserted = (rec.inserted || []).concat(msg.text);
+                return origPost(msg);
+            };
             try {
                 return origResolve.call(this, document, panel, token);
             } catch (e) {
@@ -106,6 +113,35 @@ async function run() {
             await vscode.commands.executeCommand('vscode.openWith', vscode.Uri.parse(def.uri), 'twincat.xmlViewer');
             await sleep(3000);
             log('after-def-nav', { tabs: vscode.window.tabGroups.all.flatMap(g => g.tabs.map(t => t.label)) });
+        }
+
+        // 4. The Objects-tree insert commands. Their module is vscode-bound (like the drag-and-drop
+        //    and clipboard controllers), so only a real host can show that a context-menu invocation
+        //    reaches the webview's caret. The node stands in for the tree item VS Code would pass.
+        // Located by search, not by a hardcoded path: the sample's folder layout is the generator's
+        // business, and a stale path here fails as a silent skip rather than a red assertion.
+        const findFile = (dir, name) => {
+            for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+                const p = path.join(dir, e.name);
+                if (e.isDirectory()) { const hit = findFile(p, name); if (hit) return hit; }
+                else if (e.name.toLowerCase() === name.toLowerCase()) return p;
+            }
+            return null;
+        };
+        const FB = findFile(WS, 'FB_Cylinder.TcPOU');
+        if (FB) {
+            await vscode.commands.executeCommand('vscode.openWith', vscode.Uri.file(FB), 'twincat.xmlViewer');
+            await sleep(3000);
+            const fileNode = { resourceUri: vscode.Uri.file(FB), contextValue: 'pouFile', label: 'FB_Cylinder.TcPOU' };
+            await vscode.commands.executeCommand('twincat.insertObjectAtCursor', fileNode);
+            await sleep(700);
+            await vscode.commands.executeCommand('twincat.insertObjectDefinitionAtCursor',
+                { resourceUri: vscode.Uri.file(FB), contextValue: 'component', label: 'FB_init' });
+            await sleep(700);
+            const panel = out.panels.filter(p => /FB_Cylinder\.TcPOU$/i.test(p.uri)).pop();
+            log('object-insert', { inserted: (panel && panel.inserted) || [] });
+        } else {
+            log('object-insert', { skipped: 'FB_Cylinder.TcPOU not found', inserted: [] });
         }
 
         log('done', {});

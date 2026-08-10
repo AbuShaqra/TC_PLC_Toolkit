@@ -10,6 +10,7 @@ const path = require('path');
 const { registerLspBridgeCommands } = require('./src/commands/lspBridgeCommands');
 const { registerLibraryCommands } = require('./src/commands/libraryCommands');
 const { registerObjectCommands, applyXmlEdit } = require('./src/commands/objectCommands');
+const { registerObjectInsertCommands } = require('./src/commands/objectInsertCommands');
 const { registerClipboardCommands } = require('./src/commands/clipboardCommands');
 const { registerRenameCommands } = require('./src/commands/renameCommands');
 const { TwinCatDragAndDropController } = require('./src/treeDragAndDrop');
@@ -474,6 +475,11 @@ function activate(context) {
     // TwinCAT Objects explorer create/delete commands (methods, properties, actions; new files;
     // physical and virtual folders; components).
     registerObjectCommands(context, { treeProvider });
+
+    // Objects explorer insert-at-caret commands (the object's own name, or a call template built
+    // from its real parameters). Needs `provider`, because a TwinCAT file is a webview and the
+    // insert has to be posted to the panel — same wiring as registerLibraryCommands above.
+    registerObjectInsertCommands(context, { provider });
 
     // Objects explorer copy/paste (copy = duplicate; drag & drop is the move). Needs treeView —
     // keybinding invocations carry no item, so the selection stands in — hence registered after
