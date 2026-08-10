@@ -53,16 +53,14 @@
       ]
     },
     "strings": {
+      "comment": "The IEC 61131-3 escape character is the DOLLAR SIGN, never a backslash: $$ $' $\" $L $N $P $R $T (case-insensitive) and $ followed by two hex digits. Both blocks below used to carry \"\\\\.\" as their escape - inherited from a C-like grammar - which made a Windows path in a string swallow its own closing quote: 'C:\\Temp\\tc_json_append_test\\' ended in \\' , the literal never closed, and everything below it was painted as string until the next apostrophe anywhere in the file (in the reported case, one inside a // comment sixteen lines down). A backslash is an ORDINARY character in ST. src/lsp/parser.js and the Monarch tokenizer in media/editor.js implement the same rule; test_st_strings.js keeps all three in step.",
       "patterns": [
         {
           "name": "string.quoted.single.twincat-st",
           "begin": "'",
           "end": "'",
           "patterns": [
-            {
-              "name": "constant.character.escape.twincat-st",
-              "match": "\\\\."
-            }
+            { "include": "#string-escape" }
           ]
         },
         {
@@ -70,13 +68,14 @@
           "begin": "\"",
           "end": "\"",
           "patterns": [
-            {
-              "name": "constant.character.escape.twincat-st",
-              "match": "\\\\."
-            }
+            { "include": "#string-escape" }
           ]
         }
       ]
+    },
+    "string-escape": {
+      "name": "constant.character.escape.twincat-st",
+      "match": "\\$(?:[$'\"LlNnPpRrTt]|[0-9A-Fa-f]{2})"
     },
     "numbers": {
       "patterns": [

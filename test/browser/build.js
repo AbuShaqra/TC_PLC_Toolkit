@@ -79,7 +79,7 @@ html = html.replace(/<meta http-equiv="Content-Security-Policy"[^>]*>/, '<!-- CS
 const stub = `
     <script>
     (function () {
-        window.__harness = { sent: [], fixture: null, ready: false };
+        window.__harness = { sent: [], fixture: null, ready: false, definitionEnabled: false };
         window.acquireVsCodeApi = function () {
             return {
                 postMessage: function (msg) {
@@ -99,7 +99,14 @@ const stub = `
                     } else if (msg.type === 'custom/completions') {
                         window.postMessage({ type: 'custom/completionsResponse', requestId: msg.requestId, suggestions: [] }, '*');
                     } else if (msg.type === 'custom/definition') {
-                        window.postMessage({ type: 'custom/definitionResponse', requestId: msg.requestId, definition: null }, '*');
+                        // Off unless a test arms it: Monaco calls definition providers speculatively
+                        // (word selection, ctrl-hover), and every other assertion here is about the
+                        // references peek, which must not start answering definitions as a side effect.
+                        window.postMessage({
+                            type: 'custom/definitionResponse',
+                            requestId: msg.requestId,
+                            definition: window.__harness.definitionEnabled ? (f.definition || null) : null
+                        }, '*');
                     }
                 },
                 getState: function () { return {}; },
@@ -169,6 +176,26 @@ function peekPath(fileUri, componentId, pane) {
 
 const SYMBOL = 'FB_Cylinder';
 const active = byName[SYMBOL];
+
+// Go to Definition used to land on the first occurrence of the NAME in the declaration pane rather
+// than on the declaration, so the fixture needs a symbol whose name also appears higher up in that
+// same pane inside a comment — the shape of the FB the user reported, whose header comment says
+// "…until bDone or bError". No sample object has it, and sample/ is the diagnostics ground truth
+// (generated, committed, asserted at zero), so the comment is spliced in HERE, in memory. Everything
+// downstream — the parse, the ST conversion, the symbol index, provideDefinition, absoluteToLocal —
+// is the real code path, so the coordinates the harness asserts on are coordinates the extension
+// would really send.
+// It goes BELOW the POU header rather than above it, so line 1 of the declaration pane is still
+// `FUNCTION_BLOCK FB_Cylinder` and the peek assertions further down keep addressing what they did.
+const DEF_SYMBOL = '_bExtended';
+const DEF_COMMENT = '(*\r\n\tThe sensor image. _bExtended and _bRetracted are refreshed by Cyclic();\r\n' +
+    '\tNothing else may write them.\r\n*)\r\n';
+const DEF_ANCHOR = '<Declaration><![CDATA[FUNCTION_BLOCK FB_Cylinder\r\n';
+if (!active.xml.includes(DEF_ANCHOR)) throw new Error('FB_Cylinder no longer starts the way the fixture expects');
+active.xml = active.xml.replace(DEF_ANCHOR, DEF_ANCHOR + DEF_COMMENT);
+// Re-index the edited object so the LSP answers against the same text the panes will show.
+indexXmlObject(index, active.xml, active.uri);
+
 const parsed = parseTwinCatXml(active.xml);
 const unit = convertXmlToSt(parsed, { raw: true });
 const unitLines = unit.stText.split('\n');
@@ -211,6 +238,35 @@ for (const r of refs) {
     });
 }
 
+// The definition payload, built by the same steps customEditorProvider.js takes for
+// custom/definition: ask the LSP from a real usage position, then map the absolute answer back to a
+// component/pane/local line with absoluteToLocal. The webview must jump to THAT, not to the first
+// occurrence of the name in the pane.
+// Sync the document into the index first, exactly as server.js does before answering any custom
+// request. Skipping it leaves the symbol carrying the XML indexer's coordinates, and the definition
+// comes back pointing at a line that is not the declaration — the trap HANDOFF records under
+// "Diagnostics: how to measure".
+lspParser.parseAndIndexDocument(unit.stText, active.uri);
+const defUseLine = unitLines.findIndex(l => new RegExp('^\\s*' + DEF_SYMBOL + '\\s*:=').test(l));
+const rawDef = features.provideDefinition(
+    unit.stText, { line: defUseLine, character: unitLines[defUseLine].indexOf(DEF_SYMBOL) + 1 }, index, active.uri);
+const defLoc = rawDef && rawDef.range ? absoluteToLocal(unit.lineMap, rawDef.range.start.line) : null;
+if (!rawDef || !defLoc) throw new Error(`could not resolve a definition for ${DEF_SYMBOL} (line ${defUseLine})`);
+const definition = {
+    ...rawDef,
+    componentId: defLoc.componentId,
+    pane: defLoc.pane,
+    localLine: defLoc.localLine0
+};
+
+// Where the name appears in the comment. This is the line the old word search jumped to, so the
+// assertions need it to be a real, earlier line in the same pane — not an assumption.
+const declPaneLines = (paneTextFromUnit(unitLines, unit.lineMap, 'root', 'decl') || '').split('\n');
+const decoyLine = declPaneLines.findIndex(l => l.includes(DEF_SYMBOL));
+if (decoyLine < 0 || decoyLine >= definition.localLine) {
+    throw new Error(`fixture is not the bug's shape: decoy at ${decoyLine}, declaration at ${definition.localLine}`);
+}
+
 const fixture = {
     symbol: SYMBOL,
     init: {
@@ -224,12 +280,19 @@ const fixture = {
     },
     references,
     panes: Array.from(paneByKey.values()),
+    definition,
     // What the assertions expect, derived here rather than hardcoded in the test.
     expect: {
         totalRefs: references.length,
         crossFileRefs: references.filter(r => !r.sameFile).length,
         panes: paneByKey.size,
-        distinctFiles: new Set(Array.from(paneByKey.keys()).map(k => k.split('::')[0])).size
+        distinctFiles: new Set(Array.from(paneByKey.keys()).map(k => k.split('::')[0])).size,
+        definition: {
+            word: DEF_SYMBOL,
+            pane: definition.pane,
+            declarationLine: definition.localLine,
+            decoyLine: decoyLine
+        }
     }
 };
 
