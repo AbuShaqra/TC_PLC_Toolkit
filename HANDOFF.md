@@ -4,9 +4,10 @@ Where the work *stands*. Read before starting; keep current (handoff rule in [CL
 100 lines — prune finished items rather than appending, but never drop a real finding to hit it. **Shipped features
 live in git history (PRs/commits); this file keeps the findings that would cost to re-derive.**
 
-**Last verified:** 2026-08-10 — `npm test` green (**51 harnesses, Coverage: FULL**), typecheck clean,
-**0 diagnostics on the sample**, both browser harnesses green, **dev-host harness green** (new, below).
-Shipped through **0.6.1** (fixes the 0.6.0 navigation regression); releases are in git history.
+**Last verified:** 2026-08-10 — `npm test` green (**57 harnesses, Coverage: FULL**), typecheck clean,
+**0 diagnostics on the sample in BOTH library configurations** (Beckhoff archives present and moved aside),
+both browser harnesses green, **dev-host harness green 8/8**. Shipped through **0.6.1**; **0.6.2 (indexing
+performance) is on branch `perf/indexing`**. Releases are in git history.
 **0.6.1 VSIX installed to the user's VS Code 2026-08-10 — awaiting their confirmation after a FULL
 VS Code restart** (see the install trap below).
 **Install trap that cost a debug cycle:** VS Code keeps the old version dir until a FULL restart (reload-window is not
@@ -51,9 +52,24 @@ header comment — read it before adding colour.** The gradient-clipped wordmark
   new run-by-hand harness that drives the installed VS Code headlessly (see DEVELOPMENT.md). That closes the owed
   go-to-definition/types-map-deletion check. **Still owed (eyeball only):** status bar flips per file, tree groups
   per project.
-  **Perf note, deferred:** startup scan of the 8-project `PLC projects` dir ≈ 35 s (two ~13 s `_Libraries` ZIP
-  passes), and the host's startup `custom/reindex` runs the whole scan a SECOND time — no user-visible bug filed,
-  but it is the next complaint waiting on big multi-project dirs.
+- **Indexing cost FIXED (0.6.2, branch `perf/indexing`)** — retires the old deferred perf note. On the real 8-project
+  `C:\Software\PLC projects`: startup **11.7 s warm → ~3.5 s** (one scan, not two), archive decodes **306 → 157**,
+  `.plcproj` reads 3/project → 1. `TC_Start` 608/427 → 377/388 ms, no regression. **Cold (~20 s) is PROJECTED, not
+  measured** — dropping the page cache needs admin; only the byte counts are hard evidence.
+  The four invariants and their gates are in DEVELOPMENT.md **"Indexing cost"** — read that before touching this.
+  Two that will bite hardest if forgotten: **never teach `custom/reindex` to skip** (on a `.plcproj` change the roots
+  are unchanged, the CONTENT moved), and **never add `_libraries` to `SKIP_DIRS`** (`collectArchives` walks it —
+  ~171 false positives). Subtlest: a cached signature parse **must be cloned** per project — the merge rewrites
+  `record.namespace` and `indexBrowserCache` pushes onto the stored object; `test_signature_cache.js` asserts by
+  object IDENTITY because a value check still passes while sharing.
+  **Latent:** `scanController` records completion in a microtask after `await scan(...)` — safe only while the scan
+  is synchronous. Making it async needs in-flight de-duplication or two `ensureScanned` calls both scan.
+  **Deliberately NOT done:** non-blocking/chunked scan with per-project readiness (biggest remaining win, and the
+  only route to granular `3/8` progress — but it rewrites the multi-project spine, and a wrong readiness gate
+  answers against a partial index = false diagnostics); persisted cross-session archive cache (cold → ~5-7 s; a bad
+  entry goes sticky across restarts, needs FORMAT_VERSION discipline, ship the ZIP-central-directory fingerprint
+  with it). Next cheap cut: memoize `collectSignatureFiles` per root — signatures are still ~850 ms/scan, now mostly
+  16 directory walks rather than parsing.
   **Deferred by decision:** the Libraries view falls back to the **union** of all projects when no `fileUri` is
   sent, because scoping it naively made the view render **empty** even with one project — revisit only if the host
   is taught to send the active file.
