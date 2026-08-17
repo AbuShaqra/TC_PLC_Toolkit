@@ -8,9 +8,9 @@ live in git history (PRs/commits); this file keeps the findings that would cost 
 **0 diagnostics on the sample in BOTH library configurations** (Beckhoff archives present and moved aside),
 both browser harnesses green, **dev-host harness green 8/8**. Shipped through **0.6.1**; **0.6.2 (indexing
 performance) is on branch `perf/indexing`**. Releases are in git history.
-**2026-08-17 (Linux container):** typecheck clean; suite runs **59 harnesses, 48 pass / 11 fail** — all 11 are the
-pre-existing Linux-only path-casing failures below, identical before and after that day's change. Not a regression,
-and not a Windows result.
+**2026-08-17 (Linux container):** typecheck clean, **60/60 harnesses green at Coverage: FULL** — the first fully
+green run off Windows, after the platform-correctness fix below. Both browser harnesses build and pass every
+functional assertion. Not a substitute for a Windows pass: nothing here exercised VS Code or TwinCAT itself.
 **0.6.1 VSIX installed to the user's VS Code 2026-08-10 — awaiting their confirmation after a FULL
 VS Code restart** (see the install trap below).
 **Install trap that cost a debug cycle:** VS Code keeps the old version dir until a FULL restart (reload-window is not
@@ -90,24 +90,42 @@ header comment — read it before adding colour.** The gradient-clipped wordmark
      library point, the unresolvable-decoy text key, the backup dir still sorting after `Modules\`, and the space
      inside the path (which is why `scanController` joins root keys on NUL). Don't "tidy" these back into
      realistic-looking names.
-  2. **OPEN, gating** — **commit metadata**, which no content grep sees: 44 commits carry an employer email and
-     50 carry the dev machine's hostname (a git-default identity). Needs `git filter-repo --mailmap` + force-push,
-     and GitHub keeps force-pushed objects reachable by SHA, so **recreating the repo is the only hard guarantee**
-     (same route as the earlier purge). Plan + mailmap + script were handed to the user 2026-08-17, deliberately
-     NOT committed (they contain the address being removed) and **not executed** — the target identity is theirs
-     to pick. Merge outstanding branches BEFORE the rewrite; it invalidates every SHA and clone.
+  2. **FIXED 2026-08-17 by a history rewrite** — commit metadata, which no content grep sees. 44 commits carried an
+     employer email and 50 the dev machine's hostname (a git-default identity). `git filter-repo --mailmap`
+     collapsed all authors/committers onto one personal identity and stripped 91 `Co-Authored-By:` and 4
+     `Claude-Session:` trailers; `GitHub <noreply@github.com>` stays as committer on the 31 PR merges. **Trees are
+     byte-identical before and after** (verified by comparing tree SHAs), 128 commits preserved, suite still 60/60.
+     Force-pushed to `main` and `claude/new-session-7yuj17` — **every SHA changed, so PRs #29-#31 now point at
+     commits on no branch and any old clone is invalid.**
+     **STILL OWED (only the user can do it):** GitHub keeps force-pushed objects reachable by SHA until it GCs, so
+     the old emails remain retrievable from a commit URL. **Delete and recreate the repo** from the current clone —
+     the same route as the earlier content purge, and the only hard guarantee. Do that before making it public.
   **Open:** confirm the contractual right to open-source the extension. Not answerable from the repo — it turns on
   the employment IP-assignment clause and whether the customer engagement was employer work. The 44 employer-identity
   commits are evidence *against* assuming it; get written sign-off. Note `LICENSE` already asserts personal
   copyright and `package.json` declares MIT, so that claim has to actually be true.
-- **11 suites fail on Linux, pass on CI — pre-existing, NOT a regression.** `test_plcproj_scope`, `test_live_path`,
-  `test_lsp_features`, `test_config_references`, `test_st_shadow`, `test_uri_refs`, `test_references_*` (4),
-  `test_multi_project_scope`. Root cause: they feed **normalized (lowercased)** paths from `projectMap` straight
-  back into filesystem reads (`test_plcproj_scope.js:102`), which only resolves on a case-insensitive filesystem.
-  CI is `windows-latest`, so it is green there and this is invisible. Same lesson as
-  `.claude/memory/normalized-keys-are-not-file-paths.md`, this time in test code. Fix = index from the on-disk
-  spelling (`objectFiles`), not the key. Until then, a Linux checkout cannot verify the suite — diff the pass/fail
-  set before and after a change instead of reading the totals.
+- **The suite is platform-correct now (fixed 2026-08-17) — don't reintroduce a Windows-shaped path assumption.**
+  11 of 59 suites used to fail on any non-Windows checkout while CI (`windows-latest`) stayed green. Both copies of
+  `uriToFsPath` ended in an unconditional `.replace(/\//g,'\\')`: right on Windows, but on POSIX it ate the root and
+  produced `\home\u\a`, so every URI→file resolution silently found nothing. The flip is now guarded on `path.sep`,
+  **Windows output byte-for-byte unchanged** (verified against the old implementation over drive-letter, encoded,
+  uppercase-scheme, bare-path and empty inputs).
+  The mirror image was wrong too: `'file:///' + p.replace(/\\/g,'/')` builds a **four-slash** URI on POSIX, so URIs
+  built in one place compared unequal to URIs built in another — fatal for the identity guards. Fixed at all three
+  construction sites (`xmlIndexer`, `parser`, `configReferences`) and every test-side helper that mirrored them.
+  Two harnesses were also bypassing production: `test_plcproj_scope` indexed from `objectPaths` (the **lowercased
+  identity keys**) instead of `objectFiles.values()` — reading a key only appears to work on a case-insensitive
+  filesystem — and `test_config_references` hand-rolled its own converter. Both now use the real path.
+  `test/test_uri_fs_path.js` guards all of it, written to hold on **both** platforms; its load-bearing assertion is
+  a round trip through the real filesystem, which a merely plausible converter cannot satisfy.
+  **`.gitattributes` is part of this fix, not housekeeping.** TwinCAT object files are UTF-8+BOM **CRLF** and the
+  generator says harnesses and LSP offsets depend on both — but they are stored LF, and only Windows' default
+  `core.autocrlf=true` was restoring the CRLF. A Linux/macOS clone got LF and `test/browser/build.js` died on
+  "FB_Cylinder no longer starts the way the fixture expects". `eol=crlf` now pins the working tree on every
+  platform (blob stays LF, so files still diff line-by-line); archives are marked `binary`. **Never delete it.**
+  Browser harnesses take `HARNESS_CHROMIUM=/path/to/chrome` to use a preinstalled browser instead of downloading.
+  Both build and pass every functional assertion; each still trips its catch-all "browser reported no errors" on a
+  **worker-level 404 that reproduces with the old code too** — environmental, not ours, and not yet chased down.
 - **`sample/` is GROUND TRUTH** — correct TwinCAT code (it **builds cleanly in XAE**, user-verified 2026-07-20), so
   every diagnostic on it is a bug. At **zero** against a baseline of **zero** (no slack);
   `test_sample_diagnostics`/`test_typecheck` ratchet it (never raise the baseline).
