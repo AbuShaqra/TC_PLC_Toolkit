@@ -49,6 +49,24 @@ drops the copy beside it in the same virtual folder, and a name clash prompts wi
 everything that carries its identity — the root name, the declaration header, the `LineIds`, and
 every internal Id GUID — so the duplicate never collides with its source in TwinCAT.
 
+**Insert your own objects into the code.** Right-click a POU, interface, GVL, DUT or one of its
+members → **Insert at Cursor** to drop its bare name into the pane you were last editing, or
+**Insert Definition at Cursor** (POUs and members) to get a ready-to-fill call with the object's
+real parameter list, laid out and typed exactly like the Libraries view does it:
+
+```
+fbGripper(
+    bExecute := ,  // BOOL
+    nId      := ,  // UDINT
+    bDone    => ,  // BOOL
+);
+```
+
+A function block inserts a derived **instance** name (`FB_Gripper` → `fbGripper`), because ST calls
+an instance and never the type — replace it with your own. Functions and programs insert under their
+own name, and a method or action inserts bare, since the instance to call it on is whatever you
+already have.
+
 **Rename anything, reference-aware.** Right-click → **Rename**, or **F2** while the view is focused.
 Files, methods, properties, actions, transitions, disk folders and virtual folders can all be
 renamed in place — the XML identity (tag name, declaration header, `LineIds`) and the `.plcproj`
@@ -71,10 +89,12 @@ library is `RecipeManagement` in the project file, `Recipe Management` by title,
 `Recipe_Management` in ST — so the namespace is the row label and the title, version and company are
 the description.
 
-Expand a library and its types are grouped by kind — **Function Blocks**, **Functions**, **Structures**,
-**Enumerations**, **Data Types** — each with a count, since a library can carry hundreds of types.
-Expand a type to see its fields and its **methods**, each with its signature; expand a method to see
-its parameters.
+Expand a library and its types are grouped by kind — **Function Blocks**, **Functions**,
+**Interfaces**, **Structures**, **Enumerations**, **GVLs**, **Data Types** — each with a count, since
+a library can carry hundreds of types. Expand a type to see its fields and its **methods**, each with
+its signature; expand a method to see its parameters. Grouping is read from the library's own data
+rather than guessed from name prefixes, so a type is filed by what it *is* — `E_DriveDynamicParameter`
+is not an enumeration, whatever its name suggests.
 
 Right-click a row for:
 
@@ -221,14 +241,20 @@ and open any `.TcPOU` file — it opens in the TwinCAT PLC Toolkit editor.
 ## How library symbols are resolved
 
 Referenced libraries are **indexed, not guessed** — no symbol is invented, and anything unresolved is
-never flagged. Three sources on disk feed the index: the library archives (`.compiled-library`,
-`.compiled-library-ge33`, `.library`), which give the complete set of symbol *names*; the project's
-`.tmc` type-system export, which gives the *structure* of the types the project actually uses — fields,
-enum values, function-block inputs and outputs, and each FB's or interface's **methods** with their
-parameters and return type, inherited ones included; and the `.plcproj`, which gives the library list
-and the namespaces.
+never flagged. Four sources on disk feed the index, and each contributes something the others cannot:
 
-A fourth, optional source is the `library-signatures.xml` produced by **Update Library Definitions**
+- the **library archives** (`.compiled-library`, `.compiled-library-ge33`, `.library`), which give the
+  complete set of symbol *names*;
+- the project's **`.tmc`** type-system export, which gives the *structure* of the types the project
+  actually uses — fields, enum values, function-block inputs and outputs, and each FB's or interface's
+  **methods** with their parameters and return type, inherited ones included;
+- the **`.plcproj`**, which gives the library list and the namespaces;
+- TwinCAT's **browse cache**, which lists the method and property *names* of every referenced
+  library's function blocks and interfaces — including ones the project has not used, which the `.tmc`
+  never mentions. Names only, with no signatures, so where the two overlap the `.tmc` wins and a
+  browse-cache-only method is shown as a bare name rather than a fabricated `()`.
+
+A fifth, optional source is the `library-signatures.xml` produced by **Update Library Definitions**
 (above): function signatures, FB inputs/outputs and global constants for *every* referenced library,
 including ones the project has not used yet. Where it overlaps the `.tmc`, the `.tmc` wins — only it
 carries struct fields, enum values and methods.
