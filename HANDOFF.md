@@ -7,7 +7,9 @@ live in git history (PRs/commits); this file keeps the findings that would cost 
 **Last verified:** 2026-08-10 **on Windows** — `npm test` green (**57 harnesses, Coverage: FULL**), typecheck clean,
 **0 diagnostics on the sample in BOTH library configurations** (Beckhoff archives present and moved aside),
 both browser harnesses green, **dev-host harness green 8/8**. Shipped through **0.6.1**; **0.6.2 (indexing
-performance) is on branch `perf/indexing`**. Releases are in git history.
+performance)** and **0.7.0 (Objects-tree inserts)** are merged; `package.json` is at **0.7.0**. Releases are in git
+history. **All feature branches were deleted 2026-08-17** after the metadata rewrite — `main` is the only branch,
+and every older reference to a `perf/*` or `fix/*` branch below means "in main's history", not "unmerged".
 **2026-08-17 (Linux container):** typecheck clean, **60/60 harnesses green at Coverage: FULL** — the first fully
 green run off Windows, after the platform-correctness fix below. Both browser harnesses build and pass every
 functional assertion. Not a substitute for a Windows pass: nothing here exercised VS Code or TwinCAT itself.
@@ -24,7 +26,7 @@ header comment — read it before adding colour.** The gradient-clipped wordmark
 (a logotype, exempt); don't "fix" it without a design call.
 
 ## Constraints / still open
-- **Project-scoped indexing SHIPPED** (user report 2026-08-06; branch `fix/project-scoped-index`, plan in
+- **Project-scoped indexing SHIPPED** (user report 2026-08-06; plan in
   `docs/superpowers/plans/2026-08-06-project-scoped-index.md`). A folder holding several PLC projects used to
   collide: the symbol index was one flat name-keyed map for the whole workspace, so **38 object files produced 19
   index entries**, correct code drew a false diagnostic, and Find References returned hits from the wrong project.
@@ -55,7 +57,7 @@ header comment — read it before adding colour.** The gradient-clipped wordmark
   new run-by-hand harness that drives the installed VS Code headlessly (see DEVELOPMENT.md). That closes the owed
   go-to-definition/types-map-deletion check. **Still owed (eyeball only):** status bar flips per file, tree groups
   per project.
-- **Indexing cost FIXED (0.6.2, branch `perf/indexing`)** — retires the old deferred perf note. On the real 8-project
+- **Indexing cost FIXED (0.6.2, merged)** — retires the old deferred perf note. On the real 8-project
   `C:\Projects\PLC projects`: startup **11.7 s warm → ~3.5 s** (one scan, not two), archive decodes **306 → 157**,
   `.plcproj` reads 3/project → 1. `TC_Start` 608/427 → 377/388 ms, no regression. **Cold (~20 s) is PROJECTED, not
   measured** — dropping the page cache needs admin; only the byte counts are hard evidence.
@@ -76,45 +78,33 @@ header comment — read it before adding colour.** The gradient-clipped wordmark
   **Deferred by decision:** the Libraries view falls back to the **union** of all projects when no `fileUri` is
   sent, because scoping it naively made the view render **empty** even with one project — revisit only if the host
   is taught to send the active file.
-- **Publication:** history was rewritten + the GitHub repo recreated to purge customer/vendor content (`sample/`,
-  `.trust-lsp/`, machine codenames). Repo is **Private**.
-  **Full re-sweep 2026-08-17** — working tree + all 125 commits + all 823 unique non-Monaco blobs. **Content is
-  clean**: no emails, `C:\Users\` paths, UNC paths, keys/tokens, or NDA markers anywhere in history; every IPv4 is
-  an RFC 5737 placeholder or a library version; no customer-named path ever existed; 0 dangling objects; the
-  committed `.tsproj`/`.xti`/`.tmc`/`.library` carry no AmsNetId, machine name or path.
-  Two classes of leak were found and one is fixed:
-  1. **FIXED** (pre-rewrite commit `f93a058`; SHA no longer exists — search the log for "synthetic equivalents")
-     — seven customer artifacts transcribed into comments/fixtures/docs, two of them shipping in the VSIX. The
-     names now in the tree are `Acme*` (vendor library), `Palletizer.Turn*` (HMI text key), `FB_Gripper`,
-     `FB_Feeder`, `Modules_bak\`, `ST_Robot_DI`/`E_RobotState`, and `C:\Projects\…` for the dev machine layout.
-     **The originals are deliberately not restated anywhere in the tree** — writing them here would undo the
-     sweep; `git log -p` has them. Every illustrative property was preserved on purpose: the three-spellings
-     library point, the text key that must NOT resolve, the backup dir still sorting after `Modules\`, and the
-     space inside the path (which is why `scanController` joins root keys on NUL). Don't "tidy" these back into
-     realistic-looking names, and don't reintroduce the originals when describing the change.
-  2. **FIXED 2026-08-17 by a history rewrite** — commit metadata, which no content grep sees. 44 commits carried an
-     employer email and 50 the dev machine's hostname (a git-default identity). `git filter-repo --mailmap`
-     collapsed all authors/committers onto one personal identity and stripped 91 `Co-Authored-By:` and 4
-     `Claude-Session:` trailers; `GitHub <noreply@github.com>` stays as committer on the 31 PR merges. **Trees are
-     byte-identical before and after** (verified by comparing tree SHAs), 128 commits preserved, suite still 60/60.
-     Force-pushed to `main` and `claude/new-session-7yuj17` — **every SHA changed, so PRs #29-#31 now point at
-     commits on no branch and any old clone is invalid.**
-     **The rewrite had to cover EVERY ref, and the first verification pass missed that** — it checked only
-     `origin/main` and declared the job done. Five merged feature branches (`perf/indexing`,
-     `fix/project-scoped-index`, `fix/st-strings-and-definition`, `feat/insert-from-objects-tree`,
-     `docs/project-scoped-index-plan`) still carried 70-95 leaked identities each. Verified by tree hash that all
-     five tips are already in `main`'s history, so **the user is deleting them rather than rewriting them** — no
-     content is lost. Local copies deleted too, so a stray `push --all` cannot resurrect them.
-     **STILL OWED (only the user can do it):** neither a force-push nor a branch deletion actually retracts
-     anything — GitHub keeps the objects reachable by SHA until it GCs, so the old emails stay retrievable from a
-     commit URL. **Delete and recreate the repo** from the current clone: the same route as the earlier content
-     purge, and the only hard guarantee. Do that before making it public.
-     **Every new commit re-adds the leak** while the tooling authors as itself, so a mailmap pass has to run after
-     any further work — check `git log --all --pretty='%an <%ae> | %cn <%ce>' | sort | uniq -c` before pushing.
+- **Publication:** repo is **Private**. History was rewritten twice — once (earlier) to purge customer/vendor
+  content, once **2026-08-17** to purge commit metadata. **The 2026-08-17 sweep is complete and does not need
+  redoing:** working tree + every commit + all 823 unique non-Monaco blobs, plus commit metadata, tags,
+  unreachable objects and the committed binaries. Method and findings are in the git log and in
+  `.claude/memory/leaks-hide-in-metadata-not-content.md` — **read that note before any future sweep**, it carries
+  the traps (metadata beats content grep; verify across every ref, local *and* remote; don't restate what you
+  removed).
+  Three things it leaves behind that constrain future work:
+  - **Customer artifacts were renamed to synthetic ones** — `Acme*` (vendor library), `Palletizer.Turn*` (HMI text
+    key), `FB_Gripper`, `FB_Feeder`, `Modules_bak\`, `ST_Robot_DI`/`E_RobotState`, `C:\Projects\…`. Each keeps a
+    property its site exists to teach: the three-spellings library point, a text key that must NOT resolve, a
+    backup dir that still sorts after `Modules\`, and the space inside the path (why `scanController` joins root
+    keys on NUL). **Don't "tidy" them into realistic-looking names, and don't restate the originals when
+    describing the change** — that mistake was made once already and had to be reverted. `git log -p` has them.
+  - **Every SHA changed.** PRs #29-#31 point at commits on no branch, all merged branches were deleted, and any
+    clone older than 2026-08-17 is invalid — re-clone, never pull.
+  - **Every new commit re-adds the leak** while the tooling authors as itself. Run a `git filter-repo --mailmap`
+    pass as the LAST step before pushing, and check
+    `git log --all --pretty='%an <%ae> | %cn <%ce>' | sort | uniq -c` first.
+  **STILL OWED, and the only thing left: delete and recreate the GitHub repo.** Neither a force-push nor a branch
+  deletion retracts anything — GitHub keeps the objects reachable by SHA until it GCs, so the old employer email is
+  still fetchable from a commit URL. Recreating from the current clone is the only hard guarantee. **Do it before
+  the repo goes public.**
   **Open:** confirm the contractual right to open-source the extension. Not answerable from the repo — it turns on
-  the employment IP-assignment clause and whether the customer engagement was employer work. The 44 employer-identity
-  commits are evidence *against* assuming it; get written sign-off. Note `LICENSE` already asserts personal
-  copyright and `package.json` declares MIT, so that claim has to actually be true.
+  the employment IP-assignment clause and whether the customer engagement was employer work; the rewritten history
+  used to carry 44 commits under an employer identity, which is evidence *against* assuming it. Get written
+  sign-off. `LICENSE` asserts personal copyright and `package.json` declares MIT, so that claim has to be true.
 - **The suite is platform-correct now (fixed 2026-08-17) — don't reintroduce a Windows-shaped path assumption.**
   11 of 59 suites used to fail on any non-Windows checkout while CI (`windows-latest`) stayed green. Both copies of
   `uriToFsPath` ended in an unconditional `.replace(/\//g,'\\')`: right on Windows, but on POSIX it ate the root and
