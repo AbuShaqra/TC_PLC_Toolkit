@@ -99,9 +99,18 @@ header comment — read it before adding colour.** The gradient-clipped wordmark
      byte-identical before and after** (verified by comparing tree SHAs), 128 commits preserved, suite still 60/60.
      Force-pushed to `main` and `claude/new-session-7yuj17` — **every SHA changed, so PRs #29-#31 now point at
      commits on no branch and any old clone is invalid.**
-     **STILL OWED (only the user can do it):** GitHub keeps force-pushed objects reachable by SHA until it GCs, so
-     the old emails remain retrievable from a commit URL. **Delete and recreate the repo** from the current clone —
-     the same route as the earlier content purge, and the only hard guarantee. Do that before making it public.
+     **The rewrite had to cover EVERY ref, and the first verification pass missed that** — it checked only
+     `origin/main` and declared the job done. Five merged feature branches (`perf/indexing`,
+     `fix/project-scoped-index`, `fix/st-strings-and-definition`, `feat/insert-from-objects-tree`,
+     `docs/project-scoped-index-plan`) still carried 70-95 leaked identities each. Verified by tree hash that all
+     five tips are already in `main`'s history, so **the user is deleting them rather than rewriting them** — no
+     content is lost. Local copies deleted too, so a stray `push --all` cannot resurrect them.
+     **STILL OWED (only the user can do it):** neither a force-push nor a branch deletion actually retracts
+     anything — GitHub keeps the objects reachable by SHA until it GCs, so the old emails stay retrievable from a
+     commit URL. **Delete and recreate the repo** from the current clone: the same route as the earlier content
+     purge, and the only hard guarantee. Do that before making it public.
+     **Every new commit re-adds the leak** while the tooling authors as itself, so a mailmap pass has to run after
+     any further work — check `git log --all --pretty='%an <%ae> | %cn <%ce>' | sort | uniq -c` before pushing.
   **Open:** confirm the contractual right to open-source the extension. Not answerable from the repo — it turns on
   the employment IP-assignment clause and whether the customer engagement was employer work. The 44 employer-identity
   commits are evidence *against* assuming it; get written sign-off. Note `LICENSE` already asserts personal

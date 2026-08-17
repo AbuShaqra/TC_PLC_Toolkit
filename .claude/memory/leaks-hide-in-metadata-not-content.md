@@ -30,6 +30,16 @@ leaks survived anyway:
    them. (Deliberately not quoted here — this file is committed, and restating the originals would
    put back exactly what the sweep removed. `git log` has them if they are ever needed.)
 
+**Verify across every ref, and note `--all` is doing real work in that command.** After the rewrite here
+I checked `origin/main`, saw zeroes, and reported the job done. Five merged feature branches still
+carried 70-95 leaked identities each, and a `filter-repo` pass only rewrites the refs that exist at
+the moment it runs — branches fetched afterwards come back unrewritten. Loop over
+`git for-each-ref refs/heads/` and over `git ls-remote --heads origin`; they can disagree, and the
+remote is the one that leaks. Two further traps from the same day: **writing up the fix re-added it**
+(a before/after rename table restated six of the seven identifiers in a committed file, which is worse
+than the original comments), and **every commit made by the tooling re-adds its own identity**, so the
+mailmap pass has to be the last thing that happens before the final push, not the first.
+
 **How to apply:** run `git log --all --pretty='%an <%ae> | %cn <%ce>' | sort | uniq -c` early — it is
 one command and it found the worst item here. Treat a plausible-looking vendor or POU name in a
 comment as suspect until you can say where it came from; a name that is *oddly specific* (a typo, an
