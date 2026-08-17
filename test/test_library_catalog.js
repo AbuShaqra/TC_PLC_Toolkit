@@ -6,11 +6,11 @@
  * What the view exists for, and therefore what this guards: a library has **three** names in the
  * .plcproj, and they are routinely different strings —
  *
- *     <PlaceholderReference Include="Balluff BVS Sensor">                <- the placeholder name
- *       <DefaultResolution>Balluff Sesnor Library TC3, * (Balluff GmbH)</...>  <- the library title
- *       <Namespace>Balluff_BVS_Sensor</Namespace>                        <- what the CODE must say
+ *     <PlaceholderReference Include="Acme Vision Sensor">                <- the placeholder name
+ *       <DefaultResolution>Acme Sensor Library TC3, * (Acme GmbH)</...>  <- the library title
+ *       <Namespace>Acme_Vision_Sensor</Namespace>                        <- what the CODE must say
  *
- * Only the last one compiles. A programmer looking for the Balluff FB has no way to guess it from
+ * Only the last one compiles. A programmer looking for the Acme FB has no way to guess it from
  * either of the other two, which is exactly the confusion the view removes — so the mapping is what
  * is asserted here, on the real .plcproj, not on a mock.
  *

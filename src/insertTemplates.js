@@ -54,12 +54,12 @@ function callTemplate(callee, params) {
 /**
  * Derives an instance name from a function block's TYPE name.
  *
- * ST calls an *instance*, never the type: `FB_Clamping(bExecute := ...)` is not valid code, and
+ * ST calls an *instance*, never the type: `FB_Gripper(bExecute := ...)` is not valid code, and
  * inserting it would hand the user a snippet they have to restructure rather than fill in. So the
- * template is written against `fbClamping`, which the user is expected to replace with their real
+ * template is written against `fbGripper`, which the user is expected to replace with their real
  * instance — the same "the prefix is yours to fix" contract the Libraries view already documents for
  * methods. The leading `FB_` is stripped first so the result reads as camelCase rather than
- * `fbFB_Clamping`.
+ * `fbFB_Gripper`.
  * @param {string} typeName The function block's type name.
  * @returns {string} A plausible instance name for it.
  */
@@ -72,7 +72,7 @@ function instanceNameForFb(typeName) {
  * The bare name to insert for an Objects-tree node — what "Insert at Cursor" writes.
  *
  * This exists because the tree's label is not the symbol: a file row is labelled with the FILE name
- * (`FB_Clamping.TcPOU`), so the object's real name has to come from the parsed node. A member row's
+ * (`FB_Gripper.TcPOU`), so the object's real name has to come from the parsed node. A member row's
  * label *is* the symbol, and is passed in.
  * @param {Object|null} node The symbol node built from the object's XML (src/lsp/xmlIndexer.js).
  * @param {string|null} memberName Method/property/action name when a member row was clicked.

@@ -1,9 +1,9 @@
 # Only the synthetic project is committed. Everything else under sample/ is assumed to be a private,
 # real TwinCAT project and must never reach the repository.
 #
-# This file previously carried blanket negations (`!*.TcPOU`, `!*.plcproj`, `!*.compiled-library`, …)
-# from when a real customer project was tracked here. Those applied to EVERY directory under sample/,
-# so dropping a private project beside the synthetic one staged its sources — verified, it really did.
+# This file previously carried blanket negations (`!*.TcPOU`, `!*.plcproj`, `!*.compiled-library`, …).
+# Those applied to EVERY directory under sample/, so dropping a private project beside the synthetic
+# one staged its sources — verified, it really did.
 # Keep every negation scoped to TcToolkitSample/ and nothing else.
 
 # Ignore everything...

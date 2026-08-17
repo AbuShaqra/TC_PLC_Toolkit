@@ -19,7 +19,7 @@
  * The two matchers are chosen by file extension and never both run on one file. Chain-bearing files
  * (visu + text lists) share one shape — a dotted path whose prefix must provably resolve through the
  * type model — because their decoys share it too (text-list ids `TL_*.X`, visu-lib names
- * `VisuDialogs.*`, and plain dotted prose like `Encoderpos.Turn1` sitting in a text entry). Task
+ * `VisuDialogs.*`, and plain dotted prose like `Palletizer.Turn1` sitting in a text entry). Task
  * configs carry no paths at all, only a bare POU name, so the generic chain matcher would find nothing
  * there and is deliberately not run on them.
  */

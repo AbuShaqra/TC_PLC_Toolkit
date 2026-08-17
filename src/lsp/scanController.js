@@ -33,7 +33,7 @@ const { normalizeProjectPath } = require('./projectMap');
  */
 
 /**
- * Joined on NUL rather than a space or a comma: `C:\Software\PLC projects` is a real workspace here,
+ * Joined on NUL rather than a space or a comma: `C:\Projects\PLC projects` is a real workspace here,
  * and any separator a path may itself contain lets two different root sets share one key.
  * @type {string}
  */

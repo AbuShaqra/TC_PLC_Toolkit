@@ -249,7 +249,7 @@ Miss (4) and the project still looks correct in the editor: it either fails at b
 HMI reads a symbol that no longer exists.
 
 **But edit (4) only where the path provably resolves to the symbol you are renaming.** The decoys have
-exactly the same shape — a text list holds display keys (`Encoderpos.Turn1`) beside real symbol paths in
+exactly the same shape — a text list holds display keys (`Palletizer.Turn1`) beside real symbol paths in
 the same file, and visualisations are full of library names (`VisuElems.*`, `VisuDialogs.*`). So the
 polarity is the reverse of the code side: in ST, leave an occurrence you cannot resolve alone and let the
 compiler catch it; in a configuration object, an unproven edit silently corrupts the HMI, so change

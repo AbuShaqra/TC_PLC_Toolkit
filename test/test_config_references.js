@@ -238,8 +238,9 @@ const visuFiles = [visA, visB];
 // ------------------------------------------------------------------------------------------------
 // Synthetic .TcGTLO — a global text list. Its TextDefault entries are plain UI strings EXCEPT where
 // the text IS a PLC symbol path (dynamic visu text). The `[INDEX]` subscript must end the chain, and
-// the dotted prose ("Encoderpos.Turn1", straight from the real sample) is the decoy: it has the same
-// shape as a symbol path but resolves to nothing, so it must never be touched.
+// the dotted prose ("Palletizer.Turn1") is the decoy: it has the same shape as a symbol path but
+// resolves to nothing, so it must never be touched. Real text lists mix the two freely, which is
+// exactly why "looks like a chain" cannot be the test.
 // ------------------------------------------------------------------------------------------------
 const GTLO_BODY = `<?xml version="1.0" encoding="utf-8"?>
 <TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
@@ -258,11 +259,11 @@ const GTLO_BODY = `<?xml version="1.0" encoding="utf-8"?>
             </o>
             <o>
               <v n="TextID">"3"</v>
-              <v n="TextDefault">"Encoderpos.Turn1"</v>
+              <v n="TextDefault">"Palletizer.Turn1"</v>
             </o>
             <o>
               <v n="TextID">"4"</v>
-              <v n="TextDefault">"Encoderpos.Turn2"</v>
+              <v n="TextDefault">"Palletizer.Turn2"</v>
             </o>
             <o>
               <v n="TextID">"5"</v>
@@ -459,11 +460,11 @@ assert(tlRoot.occurrences.every(o => o.length === 'GVL_Sys'.length),
     'every text-list occurrence spans exactly the root segment (length 7)');
 // The decoy: dotted prose with the same shape. It cannot be matched because its first segment names
 // no workspace object — which is exactly what makes any query aimed at it unresolved.
-assert(!tlChains.includes('Encoderpos.Turn1') && !tlChains.includes('Encoderpos.Turn2'),
-    'text-key decoys Encoderpos.Turn1/.Turn2 NOT matched');
-const encoderpos = findConfigReferencesForSymbol({ rootName: 'Encoderpos', fileUri: uris['GVL_Sys.TcGVL'] }, index, textListFiles);
-assert(encoderpos.resolved === false && encoderpos.occurrences.length === 0,
-    'a query for "Encoderpos" is unresolved — no such object, so the decoy can never be targeted');
+assert(!tlChains.includes('Palletizer.Turn1') && !tlChains.includes('Palletizer.Turn2'),
+    'text-key decoys Palletizer.Turn1/.Turn2 NOT matched');
+const palletizer = findConfigReferencesForSymbol({ rootName: 'Palletizer', fileUri: uris['GVL_Sys.TcGVL'] }, index, textListFiles);
+assert(palletizer.resolved === false && palletizer.occurrences.length === 0,
+    'a query for "Palletizer" is unresolved — no such object, so the decoy can never be targeted');
 
 // Member rename reaches into text lists too.
 const tlMember = findConfigReferencesForSymbol(

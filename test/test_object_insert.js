@@ -62,8 +62,8 @@ const GOLDEN_PARAMS = [
     { name: 'nErr', scope: 'VAR_OUTPUT', type: '' }
 ];
 assertEq(
-    callTemplate('fbClamping', GOLDEN_PARAMS),
-    'fbClamping(\n'
+    callTemplate('fbGripper', GOLDEN_PARAMS),
+    'fbGripper(\n'
     + '    bExecute := ,  // BOOL\n'
     + '    nId      := ,  // UDINT\n'
     + '    refBuf   := ,  // ARRAY[1..8] OF BYTE\n'
@@ -91,9 +91,9 @@ assertEq(orderedParams(undefined).length, 0, 'orderedParams tolerates a node wit
 // ST calls an *instance*, never the type, so an FB's call template needs a name the user is expected
 // to replace with their real instance — the same "the prefix is yours to fix" contract the Libraries
 // view already documents for methods.
-assertEq(instanceNameForFb('FB_Clamping'), 'fbClamping', 'FB_Clamping -> fbClamping');
-assertEq(instanceNameForFb('fb_clamping'), 'fbClamping', 'a lower-case fb_ prefix is stripped too');
-assertEq(instanceNameForFb('Clamping'), 'fbClamping', 'a name with no FB_ prefix just gains fb');
+assertEq(instanceNameForFb('FB_Gripper'), 'fbGripper', 'FB_Gripper -> fbGripper');
+assertEq(instanceNameForFb('fb_gripper'), 'fbGripper', 'a lower-case fb_ prefix is stripped too');
+assertEq(instanceNameForFb('Gripper'), 'fbGripper', 'a name with no FB_ prefix just gains fb');
 assertEq(instanceNameForFb('MotorAxis'), 'fbMotorAxis', 'the remainder keeps its own casing');
 
 // ------------------------------------------ an FB with inputs, in-outs and outputs (synthetic XML)
@@ -101,8 +101,8 @@ assertEq(instanceNameForFb('MotorAxis'), 'fbMotorAxis', 'the remainder keeps its
 // real parser; only the declaration is invented.
 const SYNTHETIC_FB = `<?xml version="1.0" encoding="utf-8"?>
 <TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
-  <POU Name="FB_Clamping" Id="{00000000-0000-0000-0000-000000000001}" SpecialFunc="None">
-    <Declaration><![CDATA[FUNCTION_BLOCK FB_Clamping
+  <POU Name="FB_Gripper" Id="{00000000-0000-0000-0000-000000000001}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_Gripper
 VAR_OUTPUT
     bDone   : BOOL;
     bError  : BOOL;
@@ -124,11 +124,11 @@ END_VAR
   </POU>
 </TcPlcObject>`;
 
-const fbClamping = buildNodeFromXml(SYNTHETIC_FB, 'file:///c:/synthetic/FB_Clamping.TcPOU');
-assert(fbClamping && fbClamping.type === 'FUNCTION_BLOCK', 'the synthetic FB parses as a FUNCTION_BLOCK');
+const fbGripper = buildNodeFromXml(SYNTHETIC_FB, 'file:///c:/synthetic/FB_Gripper.TcPOU');
+assert(fbGripper && fbGripper.type === 'FUNCTION_BLOCK', 'the synthetic FB parses as a FUNCTION_BLOCK');
 assertEq(
-    objectDefinitionText(fbClamping, null),
-    'fbClamping(\n'
+    objectDefinitionText(fbGripper, null),
+    'fbGripper(\n'
     + '    bExecute := ,  // BOOL\n'
     + '    nTimeout := ,  // UDINT\n'
     + '    stData   := ,  // ST_Recipe\n'
@@ -138,7 +138,7 @@ assertEq(
     'an FB inserts an instance-name call template: := for inputs/in-outs, => for outputs, '
     + 'VAR_INPUT -> VAR_IN_OUT -> VAR_OUTPUT even though the XML declares outputs first'
 );
-assertEq(objectInsertText(fbClamping, null), 'FB_Clamping',
+assertEq(objectInsertText(fbGripper, null), 'FB_Gripper',
     'Insert at Cursor on the same FB yields the bare TYPE name, not the instance name');
 
 // ---------------------------------------------------------------- the real project

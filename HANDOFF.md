@@ -41,7 +41,7 @@ header comment — read it before adding colour.** The gradient-clipped wordmark
   **0.6.0 shipped a navigation regression, fixed in 0.6.1** (user report 2026-08-10 "references and definitions
   still broken in multi-project dirs"): the scan indexed each object from the partition's **normalized (lowercased)**
   path, so every scan-time symbol node carried a lowercased uri. The LSP still answered correctly (verified against
-  the user's real `C:\Software\TC_Start` and 8-project `C:\Software\PLC projects`), but `vscode.openWith()` treats a
+  the user's real `C:\Projects\TC_Start` and 8-project `C:\Projects\PLC projects`), but `vscode.openWith()` treats a
   differently-cased uri as a **different resource**, so every cross-file Go to Definition / reference click opened a
   DUPLICATE tab titled `gvl_system.tcgvl` with nothing highlighted — "definitions are broken" to a user, invisible
   to every headless gate (proven in a real dev host). Fix: `projectMap.js` keeps normalized keys for ownership but
@@ -53,7 +53,7 @@ header comment — read it before adding colour.** The gradient-clipped wordmark
   go-to-definition/types-map-deletion check. **Still owed (eyeball only):** status bar flips per file, tree groups
   per project.
 - **Indexing cost FIXED (0.6.2, branch `perf/indexing`)** — retires the old deferred perf note. On the real 8-project
-  `C:\Software\PLC projects`: startup **11.7 s warm → ~3.5 s** (one scan, not two), archive decodes **306 → 157**,
+  `C:\Projects\PLC projects`: startup **11.7 s warm → ~3.5 s** (one scan, not two), archive decodes **306 → 157**,
   `.plcproj` reads 3/project → 1. `TC_Start` 608/427 → 377/388 ms, no regression. **Cold (~20 s) is PROJECTED, not
   measured** — dropping the page cache needs admin; only the byte counts are hard evidence.
   The four invariants and their gates are in DEVELOPMENT.md **"Indexing cost"** — read that before touching this.
@@ -112,7 +112,7 @@ header comment — read it before adding colour.** The gradient-clipped wordmark
   for Itf) and the first member — the old `insertFolderIntoXml` appended them before `</POU>`, and XAE
   then dropped the FB's members from compile (C0004 per method/property). Fixed (root folders now join the
   contiguous folder group / land after the root `</Implementation>`; guarded in `test_xml_folderpath`);
-  one incident file existed in the wild (user's FB_Clamping, repaired separately). **Member insertion carried the
+  one incident file existed in the wild (repaired separately). **Member insertion carried the
   same latent defect and is now fixed** (`insertMemberIntoXml`, shared by create + paste): members anchor before
   the first root `<LineIds>`, `.TcIO` (no LineIds at all) falls back to the close tag, and the splice takes the
   anchor's LINE start — the old `lastIndexOf('</POU>')` also gave 6-space indent, `</POU>` at column 0 and bare
@@ -141,7 +141,7 @@ header comment — read it before adding colour.** The gradient-clipped wordmark
   for ROOT renames, only when the value has **no dot** (that rule is what protects the library POU
   `VisuElems.Visu_Prg`), value whitespace-trimmed with the offset carried. **Polarity flip is deliberate**:
   code-side keeps unresolvable occurrences, config-side renames ONLY what provably resolves through the type model
-  — decoys share the exact shape (text keys `Encoderpos.Turn1` sit beside real paths in the same GTLO; visu-lib
+  — decoys share the exact shape (text keys `Palletizer.Turn1` sit beside real paths in the same GTLO; visu-lib
   names `VisuDialogs.*`) and an unproven edit corrupts the HMI. All these formats carry a **UTF-8 BOM** the LSP must
   strip (VS Code documents exclude it → offsets shift by one). Surveyed and deliberately NOT scanned: `.TcIPO`
   (only `.svg` names), `.plcproj` (already synced by the file-rename step), `.tmc` (generated build artifact).
@@ -154,7 +154,7 @@ header comment — read it before adding colour.** The gradient-clipped wordmark
   Insert at Cursor = bare name; Insert Definition = a call template with the object's real parameters, the user's
   chosen shape. `callTemplate`/`PARAM_SCOPES` moved out of `libraryTreeProvider.js` into vscode-free
   `src/insertTemplates.js` so both views format identically (guarded byte-for-byte in `test_object_insert.js`).
-  An FB inserts a derived INSTANCE name (`FB_Clamping` → `fbClamping`) because ST calls an instance, not a type;
+  An FB inserts a derived INSTANCE name (`FB_Gripper` → `fbGripper`) because ST calls an instance, not a type;
   functions/programs use their own name; methods/actions insert bare (the instance is whatever the user has).
   Menu group is `1_insert@*`, not `twincat_*` — VS Code sorts context groups lexicographically, so a `twincat`
   prefix would drop them below the create/delete block. All four insert commands now explain themselves when run
@@ -234,7 +234,7 @@ decline on external). Disabling guard #1 → 79 false positives (`AXIS_REF.ReadS
   generated backing GVLs like `__TL_Foo__GVL`) are **hidden from the tree** (`getLibraryCatalog` filters `/^__/`;
   display-only, the names stay declared symbols).
 - **Struct hard-limit — investigated + verified, do NOT re-chase:** structs the `.tmc` doesn't cover stay in "Data
-  Types". struct/enum/alias share ONE "DUT" TypeGUID (`ST_Fanuc_DI`==`E_FanucState`==`{2db5746d}`), DUT nodes carry
+  Types". struct/enum/alias share ONE "DUT" TypeGUID (`ST_Robot_DI`==`E_RobotState`==`{2db5746d}`), DUT nodes carry
   no fields, signatures are bare names, and `GetLibraryIecDeclaration` is E_NOINTERFACE on this build → struct-vs-alias
   is not recoverable offline (closed routes: encrypted `__languagemodel` entropy 7.999; opaque binary `.object`;
   Beckhoff decoder DLLs need the dead-headless CODESYS host).
@@ -259,9 +259,9 @@ type via `classifyCallSite` kind `declInitList`.
 **Stray `.st` mirrors** (outside the skipped ST_Files/) shadowed same-named XML nodes — the node's uri was hijacked,
 the scan read the stale mirror and the real .TcPOU was invisible until opened. Fixed: `parseAndIndexDocument` never
 lets a plain .st steal an XML-backed symbol (`test_st_shadow`).
-**Duplicate object names from orphan files** (0.3.0 rename smoke, real project): a leftover `POUs\Modulezzz\` backup —
+**Duplicate object names from orphan files** (0.3.0 rename smoke, real project): a leftover `POUs\Modules_bak\` backup —
 a full copy of `Modules\`, NOT in the `.plcproj` — won the name-keyed index (last-write-wins, sorts last), so a
-GVL rename's reference scan visited the orphan `FB_Loading` (no refs) and never the real one; visu updated because it
+GVL rename's reference scan visited the orphan `FB_Feeder` (no refs) and never the real one; visu updated because it
 walks files directly. Fixed: the index is **scoped to the `.plcproj`** — each project's `objectPaths`
 (`createProjectMap`, `projectMap.js`) lists only what it `<Compile>`s, so an on-disk orphan is never indexed. The
 original fix used `collectPlcProjObjectPaths`, which unioned every `.plcproj` into one set; that union is exactly

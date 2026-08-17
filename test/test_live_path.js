@@ -140,7 +140,7 @@ let index = reindexSample();
 
 /**
  * Returns the pane text of a component of an indexed object, or null when absent.
- * @param {string} objName Object name as indexed (e.g. 'FB_Clamping').
+ * @param {string} objName Object name as indexed (e.g. 'FB_Gripper').
  * @param {string} componentId Component id (e.g. 'method_Cyclic', 'root').
  * @param {string} pane 'decl' or 'impl'.
  * @returns {string|null} The raw pane text.

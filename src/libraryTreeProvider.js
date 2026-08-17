@@ -6,11 +6,11 @@
  * Why the namespace is the label and not the library name: they are routinely different strings, and
  * only the namespace is typeable. The .plcproj says
  *
- *     <PlaceholderReference Include="Balluff BVS Sensor">
- *       <DefaultResolution>Balluff Sesnor Library TC3, * (Balluff GmbH)</DefaultResolution>
- *       <Namespace>Balluff_BVS_Sensor</Namespace>
+ *     <PlaceholderReference Include="Acme Vision Sensor">
+ *       <DefaultResolution>Acme Sensor Library TC3, * (Acme GmbH)</DefaultResolution>
+ *       <Namespace>Acme_Vision_Sensor</Namespace>
  *
- * — three names for one library, and `Balluff_BVS_Sensor.` is the only one the compiler answers to.
+ * — three names for one library, and `Acme_Vision_Sensor.` is the only one the compiler answers to.
  * Surfacing that mapping is the entire point of the view; the types beneath each library are a bonus
  * for the libraries the project already uses.
  *

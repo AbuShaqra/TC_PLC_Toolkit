@@ -43,9 +43,9 @@ const PLCPROJ = `<?xml version="1.0" encoding="utf-8"?>
       <DefaultResolution>Tc2_Standard, * (Beckhoff Automation GmbH)</DefaultResolution>
       <Namespace>Tc2_Standard</Namespace>
     </PlaceholderReference>
-    <PlaceholderReference Include="Balluff BVS Sensor">
-      <DefaultResolution>Balluff Sesnor Library TC3, * (Balluff GmbH)</DefaultResolution>
-      <Namespace>Balluff_BVS_Sensor</Namespace>
+    <PlaceholderReference Include="Acme Vision Sensor">
+      <DefaultResolution>Acme Sensor Library TC3, * (Acme GmbH)</DefaultResolution>
+      <Namespace>Acme_Vision_Sensor</Namespace>
     </PlaceholderReference>
   </ItemGroup>
   <ItemGroup>
@@ -106,7 +106,7 @@ try {
     // ---- 1. Namespace extraction from a synthetic .plcproj -------------------------------------
     const direct = extractNamespaces(PLCPROJ);
     assert(direct.length === 4, `extractNamespaces finds 4 namespaces (got ${direct.length})`);
-    assert(direct.includes('VisuElems') && direct.includes('Tc2_Standard') && direct.includes('Balluff_BVS_Sensor'),
+    assert(direct.includes('VisuElems') && direct.includes('Tc2_Standard') && direct.includes('Acme_Vision_Sensor'),
         'extractNamespaces returns the <PlaceholderReference> namespaces');
     assert(direct.includes('Tc2_EtherCAT'),
         'extractNamespaces returns the <LibraryReference> namespaces too');

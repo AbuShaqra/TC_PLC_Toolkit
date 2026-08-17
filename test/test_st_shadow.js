@@ -5,7 +5,7 @@
  * `P_Automatic.TcPOU` (outside the ST_Files/ folder that indexStDirectory skips), and because
  * `custom/reindex` runs indexTwinCatDirectory THEN indexStDirectory, parsing the mirror
  * overwrote the P_Automatic index node — hijacking its uri to the .st file. Find References for
- * FB_Loading.Home() then walked node uris, read the stale mirror (which lacked the call), and
+ * FB_Feeder.Home() then walked node uris, read the stale mirror (which lacked the call), and
  * the real .TcPOU was never scanned: the call site was invisible until the user opened the file
  * (syncDocument re-registered the node with the .TcPOU uri, masking the bug).
  *

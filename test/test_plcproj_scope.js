@@ -2,9 +2,9 @@
  * @file test_plcproj_scope.js
  * @description The workspace index is scoped to the .plcproj, not the filesystem.
  *
- * A real symptom this guards: a project had a leftover backup folder (POUs\Modulezzz\) that was a
+ * A real symptom this guards: a project had a leftover backup folder (POUs\Modules_bak\) that was a
  * full copy of POUs\Modules\ — same object names, but NOT in the .plcproj. Because the name-keyed
- * index is last-write-wins and the backup sorted last, the orphan FB_Loading won the index key, so a
+ * index is last-write-wins and the backup sorted last, the orphan FB_Feeder won the index key, so a
  * reference-aware rename scanned the orphan (no references) and never touched the real object. The
  * fix: collectPlcProjObjectPaths() lists the objects the .plcproj actually <Compile>s, and
  * indexTwinCatDirectory() skips anything on disk outside that set (falling back to indexing everything
@@ -13,7 +13,7 @@
  * That fix has since been superseded by the project-scoped index (see test_project_map.js and
  * test_multi_project_scope.js): `createProjectMap()` now answers "what does THIS project compile"
  * per project instead of as one workspace-wide union, and `collectPlcProjObjectPaths()` — the old
- * unioned API — was removed. This harness still asserts the exact same guarantee the Modulezzz
+ * unioned API — was removed. This harness still asserts the exact same guarantee the Modules_bak
  * incident demanded, just through `createProjectMap()`'s per-project `objectPaths` instead.
  */
 
@@ -30,12 +30,12 @@ function assert(cond, msg) {
 }
 
 // ------------------------------------------------------------------------------------------------
-// A temp project: the real Modules\FB_Loading.TcPOU (in the .plcproj) and an orphan backup copy in
-// Modulezzz\ (same object name, NOT in the .plcproj), plus a non-duplicate GVL.
+// A temp project: the real Modules\FB_Feeder.TcPOU (in the .plcproj) and an orphan backup copy in
+// Modules_bak\ (same object name, NOT in the .plcproj), plus a non-duplicate GVL.
 // ------------------------------------------------------------------------------------------------
 const ROOT = path.join(os.tmpdir(), 'plcproj_scope_' + Date.now());
 fs.mkdirSync(path.join(ROOT, 'POUs', 'Modules'), { recursive: true });
-fs.mkdirSync(path.join(ROOT, 'POUs', 'Modulezzz'), { recursive: true });
+fs.mkdirSync(path.join(ROOT, 'POUs', 'Modules_bak'), { recursive: true });
 fs.mkdirSync(path.join(ROOT, 'GVLs'), { recursive: true });
 
 function pou(name, body) {
@@ -53,11 +53,11 @@ END_VAR]]></Declaration>
 </TcPlcObject>`;
 }
 
-const realFb = path.join(ROOT, 'POUs', 'Modules', 'FB_Loading.TcPOU');
-const orphanFb = path.join(ROOT, 'POUs', 'Modulezzz', 'FB_Loading.TcPOU');
+const realFb = path.join(ROOT, 'POUs', 'Modules', 'FB_Feeder.TcPOU');
+const orphanFb = path.join(ROOT, 'POUs', 'Modules_bak', 'FB_Feeder.TcPOU');
 const gvl = path.join(ROOT, 'GVLs', 'GVL_Data.TcGVL');
-fs.writeFileSync(realFb, pou('FB_Loading', 'n := GVL_Data.nSpeed; // REAL'));
-fs.writeFileSync(orphanFb, pou('FB_Loading', 'n := 0; // ORPHAN — no GVL_Data reference'));
+fs.writeFileSync(realFb, pou('FB_Feeder', 'n := GVL_Data.nSpeed; // REAL'));
+fs.writeFileSync(orphanFb, pou('FB_Feeder', 'n := 0; // ORPHAN — no GVL_Data reference'));
 fs.writeFileSync(gvl, `<?xml version="1.0" encoding="utf-8"?>
 <TcPlcObject Version="1.1.0.1">
   <GVL Name="GVL_Data" Id="{b0000000-0000-4a00-8a00-000000000001}">
@@ -67,11 +67,11 @@ END_VAR]]></Declaration>
   </GVL>
 </TcPlcObject>`);
 
-// The .plcproj includes ONLY the real Modules\FB_Loading and the GVL — never the Modulezzz orphan.
+// The .plcproj includes ONLY the real Modules\FB_Feeder and the GVL — never the Modules_bak orphan.
 fs.writeFileSync(path.join(ROOT, 'Proj.plcproj'), `<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="14.0">
   <ItemGroup>
-    <Compile Include="POUs\\Modules\\FB_Loading.TcPOU"><SubType>Code</SubType></Compile>
+    <Compile Include="POUs\\Modules\\FB_Feeder.TcPOU"><SubType>Code</SubType></Compile>
     <Compile Include="GVLs\\GVL_Data.TcGVL"><SubType>Code</SubType></Compile>
   </ItemGroup>
 </Project>`);
@@ -84,8 +84,8 @@ const key = normalizeProjectPath(path.join(ROOT, 'Proj.plcproj'));
 const objects = map.get(key).objectPaths;
 
 assert(objects instanceof Set, 'a project carries a Set of <Compile>d object paths');
-assert(objects.has(normalizeProjectPath(realFb)), 'the real Modules\\FB_Loading is in the project');
-assert(!objects.has(normalizeProjectPath(orphanFb)), 'the orphan Modulezzz\\FB_Loading is NOT');
+assert(objects.has(normalizeProjectPath(realFb)), 'the real Modules\\FB_Feeder is in the project');
+assert(!objects.has(normalizeProjectPath(orphanFb)), 'the orphan Modules_bak\\FB_Feeder is NOT');
 assert(objects.size === 2, `exactly the two <Compile>d objects (got ${objects.size})`);
 
 // A root with no .plcproj anywhere yields an empty map, not a project to look up.
@@ -100,8 +100,8 @@ assert(createProjectMap([emptyDir]).isEmpty(), 'no .plcproj under any root yield
 // ------------------------------------------------------------------------------------------------
 const index = {};
 for (const p of objects) indexXmlFile(index, p);
-assert(!!index['FB_Loading'], 'FB_Loading is indexed');
-assert(/POUs\/Modules\/FB_Loading\.TcPOU$/i.test(index['FB_Loading'].uri),
+assert(!!index['FB_Feeder'], 'FB_Feeder is indexed');
+assert(/POUs\/Modules\/FB_Feeder\.TcPOU$/i.test(index['FB_Feeder'].uri),
     'the .plcproj copy wins the name key — the orphan is never indexed');
 assert(!!index['GVL_Data'], 'the GVL is indexed');
 

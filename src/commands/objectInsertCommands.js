@@ -20,7 +20,7 @@ const { objectInsertText, objectDefinitionText } = require('../insertTemplates')
 /**
  * Tree contextValues that stand for a member *inside* a file rather than the file's own object. For
  * these the tree item's label IS the symbol; for a file row the label is the file name
- * (`FB_Clamping.TcPOU`), so the object's name has to come from the parsed XML instead.
+ * (`FB_Gripper.TcPOU`), so the object's name has to come from the parsed XML instead.
  */
 const MEMBER_CONTEXTS = new Set(['component', 'propertyNode']);
 

@@ -262,11 +262,11 @@ function harvestArchiveFile(filePath) {
 /**
  * @typedef {Object} LibraryCatalogEntry
  * @property {string} include The reference's `Include` attribute — the placeholder name
- *           (`Balluff BVS Sensor`) or the pinned reference triple
+ *           (`Acme Vision Sensor`) or the pinned reference triple
  *           (`Tc2_EtherCAT,3.5.1.0,Beckhoff Automation GmbH`).
- * @property {string} title The library's own title (`Balluff Sesnor Library TC3`, `Tc2_EtherCAT`).
+ * @property {string} title The library's own title (`Acme Sensor Library TC3`, `Tc2_EtherCAT`).
  * @property {string} version Version exactly as the .plcproj writes it: `3.5.1.0`, `*`, `newest`.
- * @property {string} company Vendor (`Balluff GmbH`, `System`, `Beckhoff Automation GmbH`); '' if none.
+ * @property {string} company Vendor (`Acme GmbH`, `System`, `Beckhoff Automation GmbH`); '' if none.
  * @property {string} namespace The namespace the project imports the library under, in the
  *           .plcproj's own spelling — this is what the programmer actually types.
  * @property {'placeholder'|'reference'} kind Which reference element declared it.
@@ -277,8 +277,8 @@ function harvestArchiveFile(filePath) {
  * runs once per index pass, and there are two of them) cannot duplicate an entry.
  *
  * Why a catalog at all: a library's title, its placeholder name and its *namespace* are three different
- * strings, and only the last one is what a programmer types (`Balluff BVS Sensor` /
- * `Balluff Sesnor Library TC3` are both imported as `Balluff_BVS_Sensor`). The "TwinCAT Libraries" view
+ * strings, and only the last one is what a programmer types (`Acme Vision Sensor` /
+ * `Acme Sensor Library TC3` are both imported as `Acme_Vision_Sensor`). The "TwinCAT Libraries" view
  * exists to show that mapping, and this is the one place all three spellings are already in hand.
  * (`Map<string, LibraryCatalogEntry>`, lives at `registry.libraryCatalog` — see createLibraryRegistry.)
  */
@@ -531,8 +531,8 @@ function harvestArchive(buf) {
 //            -> file stem "Tc2_MC2"                     matches <Namespace>       -> Tc2_MC2
 //        _Libraries/system/recipe management/4.5.0.0/Recipe Management.compiled-library-ge33
 //            -> title dir "recipe management"           matches DefaultResolution -> Recipe_Management
-//        _Libraries/balluff gmbh/balluff sesnor library tc3/1.1/TwinCAT_V3x_BVS_Sensor_V11.library
-//            -> title dir "balluff sesnor library tc3"  matches DefaultResolution -> Balluff_BVS_Sensor
+//        _Libraries/acme gmbh/acme sensor library tc3/1.1/TwinCAT_V3x_BVS_Sensor_V11.library
+//            -> title dir "acme sensor library tc3"  matches DefaultResolution -> Acme_Vision_Sensor
 //      (the last one is exactly why the file stem alone is not enough — it echoes nothing).
 //
 //   2. The **.tmc**, which tags a type with the namespace that owns it, directly:

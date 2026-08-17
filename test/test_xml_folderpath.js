@@ -180,8 +180,8 @@ END_VAR]]></Declaration>
 // which XAE answers with C0004 for every member.
 const pouXml = `<?xml version="1.0" encoding="utf-8"?>
 <TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
-  <POU Name="FB_Clamping" Id="{bbbbbbbb-0000-0000-0000-000000000001}" SpecialFunc="None">
-    <Declaration><![CDATA[FUNCTION_BLOCK FB_Clamping
+  <POU Name="FB_Gripper" Id="{bbbbbbbb-0000-0000-0000-000000000001}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_Gripper
 VAR
 END_VAR]]></Declaration>
     <Implementation>
@@ -199,7 +199,7 @@ END_VAR]]></Declaration>
         <ST><![CDATA[Release := TRUE;]]></ST>
       </Implementation>
     </Method>
-    <LineIds Name="FB_Clamping">
+    <LineIds Name="FB_Gripper">
       <LineId Id="3" Count="0" />
     </LineIds>
   </POU>

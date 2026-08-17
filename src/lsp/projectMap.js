@@ -127,7 +127,7 @@ function readCompileIncludes(plcprojPath) {
     }
     const projDir = path.dirname(plcprojPath);
     const out = new Map();
-    // <Compile Include="POUs\Modules\FB_Loading.TcPOU"> — relative to the .plcproj, and TwinCAT
+    // <Compile Include="POUs\Modules\FB_Feeder.TcPOU"> — relative to the .plcproj, and TwinCAT
     // writes backslashes regardless of platform. A link uses the same element with a ..\ path.
     const includeRe = /<Compile\b[^>]*?\bInclude="([^"]+)"/gi;
     let m;

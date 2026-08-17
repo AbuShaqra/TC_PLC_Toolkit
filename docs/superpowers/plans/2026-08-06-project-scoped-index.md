@@ -297,7 +297,7 @@ function readCompileIncludes(plcprojPath) {
     }
     const projDir = path.dirname(plcprojPath);
     const out = new Set();
-    // <Compile Include="POUs\Modules\FB_Loading.TcPOU"> — relative to the .plcproj, and TwinCAT
+    // <Compile Include="POUs\Modules\FB_Feeder.TcPOU"> — relative to the .plcproj, and TwinCAT
     // writes backslashes regardless of platform. A link uses the same element with a ..\ path.
     const includeRe = /<Compile\b[^>]*?\bInclude="([^"]+)"/gi;
     let m;
@@ -1771,24 +1771,24 @@ Expected: `src/lsp/xmlIndexer.js` (definition + export) and `test/test_plcproj_s
 
 `collectPlcProjObjectPaths` is now redundant: `createProjectMap` answers the same question per project instead of as one union. **Delete it and its export**, and keep `indexTwinCatDirectory(index, dirPath, includedPaths)` — the loose/no-project fallback in `scanWorkspace` still uses it with `null`.
 
-Rewrite `test/test_plcproj_scope.js` to assert the same guarantee through the new API: build the same orphan fixture (`POUs/Modules/FB_Loading.TcPOU` in the `.plcproj`, `POUs/Modulezzz/FB_Loading.TcPOU` not), then:
+Rewrite `test/test_plcproj_scope.js` to assert the same guarantee through the new API: build the same orphan fixture (`POUs/Modules/FB_Feeder.TcPOU` in the `.plcproj`, `POUs/Modules_bak/FB_Feeder.TcPOU` not), then:
 
 ```js
 const map = createProjectMap([ROOT]);
 const key = normalizeProjectPath(path.join(ROOT, 'Proj.plcproj'));
 const objects = map.get(key).objectPaths;
 
-assert(objects.has(normalizeProjectPath(realFb)), 'the real Modules\\FB_Loading is in the project');
-assert(!objects.has(normalizeProjectPath(orphanFb)), 'the orphan Modulezzz\\FB_Loading is NOT');
+assert(objects.has(normalizeProjectPath(realFb)), 'the real Modules\\FB_Feeder is in the project');
+assert(!objects.has(normalizeProjectPath(orphanFb)), 'the orphan Modules_bak\\FB_Feeder is NOT');
 assert(objects.size === 2, `exactly the two <Compile>d objects (got ${objects.size})`);
 
 const index = {};
 for (const p of objects) indexXmlFile(index, p);
-assert(/POUs\/Modules\/FB_Loading\.TcPOU$/i.test(index['FB_Loading'].uri),
+assert(/POUs\/Modules\/FB_Feeder\.TcPOU$/i.test(index['FB_Feeder'].uri),
     'the .plcproj copy wins the name key — the orphan is never indexed');
 ```
 
-Keep the file's existing header comment (the Modulezzz incident is the reason it exists) and keep its sample-coverage check, rewritten against `map.get(key).objectPaths`.
+Keep the file's existing header comment (the Modules_bak incident is the reason it exists) and keep its sample-coverage check, rewritten against `map.get(key).objectPaths`.
 
 - [ ] **Step 3: Update DEVELOPMENT.md**
 
