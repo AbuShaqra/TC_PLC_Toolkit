@@ -20,12 +20,15 @@ leaks survived anyway:
    (`…@tq-group.com`), and 50 more as `abushaqraa@ABUSHAQRAA-M` — a git-default identity that puts the
    development machine's hostname in the email domain. HANDOFF claimed machine codenames were purged;
    they had been purged from *content*. No amount of blob grepping would ever have found these.
-2. **Real names in illustrative comments.** `Balluff BVS Sensor` / `Balluff Sesnor Library TC3` in a
-   `libraryTreeProvider.js` doc comment, `Encoderpos.Turn1` as a test decoy, `FB_Clamping`,
-   `FB_Loading`, `POUs\Modulezzz\`, `ST_Fanuc_DI`. All transcribed verbatim from the customer project
-   the extension was built against — the misspelling "Sesnor" is what proved they were copied rather
-   than invented. Two of the sites shipped inside the VSIX. They read as generic placeholders, which
-   is exactly why every previous sweep walked past them.
+2. **Real names in illustrative comments.** A third-party sensor-library vendor's product names in a
+   `libraryTreeProvider.js` doc comment, an HMI text key used as a test decoy, three POU names, a
+   backup-folder name, and a DUT pair naming the customer's robot brand — seven identifiers in all,
+   across comments, fixtures and developer docs. Every one transcribed verbatim from the customer
+   project the extension was built against; a **misspelling** carried along with one of the vendor
+   strings is what proved they were copied rather than invented. Two of the sites shipped inside the
+   VSIX. They read as generic placeholders, which is exactly why every previous sweep walked past
+   them. (Deliberately not quoted here — this file is committed, and restating the originals would
+   put back exactly what the sweep removed. `git log` has them if they are ever needed.)
 
 **How to apply:** run `git log --all --pretty='%an <%ae> | %cn <%ce>' | sort | uniq -c` early — it is
 one command and it found the worst item here. Treat a plausible-looking vendor or POU name in a

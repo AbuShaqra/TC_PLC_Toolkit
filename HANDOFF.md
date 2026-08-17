@@ -83,13 +83,15 @@ header comment — read it before adding colour.** The gradient-clipped wordmark
   an RFC 5737 placeholder or a library version; no customer-named path ever existed; 0 dangling objects; the
   committed `.tsproj`/`.xti`/`.tmc`/`.library` carry no AmsNetId, machine name or path.
   Two classes of leak were found and one is fixed:
-  1. **FIXED (commit `f93a058`)** — customer artifacts transcribed into comments/fixtures/docs, two of them
-     shipping in the VSIX: `Balluff*`→`Acme*`, `Encoderpos`→`Palletizer`, `FB_Clamping`→`FB_Gripper`,
-     `FB_Loading`→`FB_Feeder`, `Modulezzz`→`Modules_bak`, `ST_Fanuc_DI`/`E_FanucState`→`ST_Robot_DI`/`E_RobotState`,
-     `C:\Software\…`→`C:\Projects\…`. Every illustrative property was preserved deliberately — the three-spellings
-     library point, the unresolvable-decoy text key, the backup dir still sorting after `Modules\`, and the space
-     inside the path (which is why `scanController` joins root keys on NUL). Don't "tidy" these back into
-     realistic-looking names.
+  1. **FIXED** (pre-rewrite commit `f93a058`; SHA no longer exists — search the log for "synthetic equivalents")
+     — seven customer artifacts transcribed into comments/fixtures/docs, two of them shipping in the VSIX. The
+     names now in the tree are `Acme*` (vendor library), `Palletizer.Turn*` (HMI text key), `FB_Gripper`,
+     `FB_Feeder`, `Modules_bak\`, `ST_Robot_DI`/`E_RobotState`, and `C:\Projects\…` for the dev machine layout.
+     **The originals are deliberately not restated anywhere in the tree** — writing them here would undo the
+     sweep; `git log -p` has them. Every illustrative property was preserved on purpose: the three-spellings
+     library point, the text key that must NOT resolve, the backup dir still sorting after `Modules\`, and the
+     space inside the path (which is why `scanController` joins root keys on NUL). Don't "tidy" these back into
+     realistic-looking names, and don't reintroduce the originals when describing the change.
   2. **FIXED 2026-08-17 by a history rewrite** — commit metadata, which no content grep sees. 44 commits carried an
      employer email and 50 the dev machine's hostname (a git-default identity). `git filter-repo --mailmap`
      collapsed all authors/committers onto one personal identity and stripped 91 `Co-Authored-By:` and 4
