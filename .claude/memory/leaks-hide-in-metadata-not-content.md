@@ -16,10 +16,12 @@ commits came back completely clean — no emails, no `C:\Users\` paths, no keys,
 placeholder. HANDOFF recorded the history as already purged, and by that measure it was. Two real
 leaks survived anyway:
 
-1. **Commit metadata.** 44 of 125 commits were authored *and* committed as an employer address
-   (`…@tq-group.com`), and 50 more as `abushaqraa@ABUSHAQRAA-M` — a git-default identity that puts the
+1. **Commit metadata.** 44 of 125 commits were authored *and* committed under an employer email
+   address, and 50 more under a git-default identity of the form `<user>@<HOSTNAME>`, which puts the
    development machine's hostname in the email domain. HANDOFF claimed machine codenames were purged;
    they had been purged from *content*. No amount of blob grepping would ever have found these.
+   (Neither identifier is quoted here — see the trap below. `git log` on a pre-2026-08-17 clone has
+   them, and nothing else should.)
 2. **Real names in illustrative comments.** A third-party sensor-library vendor's product names in a
    `libraryTreeProvider.js` doc comment, an HMI text key used as a test decoy, three POU names, a
    backup-folder name, and a DUT pair naming the customer's robot brand — seven identifiers in all,
