@@ -4,10 +4,13 @@ Where the work *stands*. Read before starting; keep current (handoff rule in [CL
 100 lines — prune finished items rather than appending, but never drop a real finding to hit it. **Shipped features
 live in git history (PRs/commits); this file keeps the findings that would cost to re-derive.**
 
-**Last verified:** 2026-08-10 — `npm test` green (**57 harnesses, Coverage: FULL**), typecheck clean,
+**Last verified:** 2026-08-10 **on Windows** — `npm test` green (**57 harnesses, Coverage: FULL**), typecheck clean,
 **0 diagnostics on the sample in BOTH library configurations** (Beckhoff archives present and moved aside),
 both browser harnesses green, **dev-host harness green 8/8**. Shipped through **0.6.1**; **0.6.2 (indexing
 performance) is on branch `perf/indexing`**. Releases are in git history.
+**2026-08-17 (Linux container):** typecheck clean; suite runs **59 harnesses, 48 pass / 11 fail** — all 11 are the
+pre-existing Linux-only path-casing failures below, identical before and after that day's change. Not a regression,
+and not a Windows result.
 **0.6.1 VSIX installed to the user's VS Code 2026-08-10 — awaiting their confirmation after a FULL
 VS Code restart** (see the install trap below).
 **Install trap that cost a debug cycle:** VS Code keeps the old version dir until a FULL restart (reload-window is not
@@ -74,8 +77,37 @@ header comment — read it before adding colour.** The gradient-clipped wordmark
   sent, because scoping it naively made the view render **empty** even with one project — revisit only if the host
   is taught to send the active file.
 - **Publication:** history was rewritten + the GitHub repo recreated to purge customer/vendor content (`sample/`,
-  `.trust-lsp/`, machine codenames — 0 blobs match any customer id). Repo is **Private**. **Open:** confirm the
-  contractual right to open-source the extension itself.
+  `.trust-lsp/`, machine codenames). Repo is **Private**.
+  **Full re-sweep 2026-08-17** — working tree + all 125 commits + all 823 unique non-Monaco blobs. **Content is
+  clean**: no emails, `C:\Users\` paths, UNC paths, keys/tokens, or NDA markers anywhere in history; every IPv4 is
+  an RFC 5737 placeholder or a library version; no customer-named path ever existed; 0 dangling objects; the
+  committed `.tsproj`/`.xti`/`.tmc`/`.library` carry no AmsNetId, machine name or path.
+  Two classes of leak were found and one is fixed:
+  1. **FIXED (commit `f93a058`)** — customer artifacts transcribed into comments/fixtures/docs, two of them
+     shipping in the VSIX: `Balluff*`→`Acme*`, `Encoderpos`→`Palletizer`, `FB_Clamping`→`FB_Gripper`,
+     `FB_Loading`→`FB_Feeder`, `Modulezzz`→`Modules_bak`, `ST_Fanuc_DI`/`E_FanucState`→`ST_Robot_DI`/`E_RobotState`,
+     `C:\Software\…`→`C:\Projects\…`. Every illustrative property was preserved deliberately — the three-spellings
+     library point, the unresolvable-decoy text key, the backup dir still sorting after `Modules\`, and the space
+     inside the path (which is why `scanController` joins root keys on NUL). Don't "tidy" these back into
+     realistic-looking names.
+  2. **OPEN, gating** — **commit metadata**, which no content grep sees: 44 commits carry an employer email and
+     50 carry the dev machine's hostname (a git-default identity). Needs `git filter-repo --mailmap` + force-push,
+     and GitHub keeps force-pushed objects reachable by SHA, so **recreating the repo is the only hard guarantee**
+     (same route as the earlier purge). Plan + mailmap + script were handed to the user 2026-08-17, deliberately
+     NOT committed (they contain the address being removed) and **not executed** — the target identity is theirs
+     to pick. Merge outstanding branches BEFORE the rewrite; it invalidates every SHA and clone.
+  **Open:** confirm the contractual right to open-source the extension. Not answerable from the repo — it turns on
+  the employment IP-assignment clause and whether the customer engagement was employer work. The 44 employer-identity
+  commits are evidence *against* assuming it; get written sign-off. Note `LICENSE` already asserts personal
+  copyright and `package.json` declares MIT, so that claim has to actually be true.
+- **11 suites fail on Linux, pass on CI — pre-existing, NOT a regression.** `test_plcproj_scope`, `test_live_path`,
+  `test_lsp_features`, `test_config_references`, `test_st_shadow`, `test_uri_refs`, `test_references_*` (4),
+  `test_multi_project_scope`. Root cause: they feed **normalized (lowercased)** paths from `projectMap` straight
+  back into filesystem reads (`test_plcproj_scope.js:102`), which only resolves on a case-insensitive filesystem.
+  CI is `windows-latest`, so it is green there and this is invisible. Same lesson as
+  `.claude/memory/normalized-keys-are-not-file-paths.md`, this time in test code. Fix = index from the on-disk
+  spelling (`objectFiles`), not the key. Until then, a Linux checkout cannot verify the suite — diff the pass/fail
+  set before and after a change instead of reading the totals.
 - **`sample/` is GROUND TRUTH** — correct TwinCAT code (it **builds cleanly in XAE**, user-verified 2026-07-20), so
   every diagnostic on it is a bug. At **zero** against a baseline of **zero** (no slack);
   `test_sample_diagnostics`/`test_typecheck` ratchet it (never raise the baseline).
