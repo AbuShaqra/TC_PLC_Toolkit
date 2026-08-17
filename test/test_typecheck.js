@@ -59,7 +59,7 @@ if (!hasSample) {
         const xml = fs.readFileSync(f, 'utf8');
         const parsed = parseTwinCatXml(xml);
         if (!parsed) continue;
-        const uri = 'file:///' + f.replace(/\\/g, '/');
+        const uri = 'file:///' + f.replace(/\\/g, '/').replace(/^\//, '');
         // raw:true — the non-raw conversion strips declaration-site init lists and hides findings.
         sampleSt[f] = { stText: convertXmlToSt(parsed, { raw: true }).stText, uri };
         indexXmlObject(index, xml, uri);

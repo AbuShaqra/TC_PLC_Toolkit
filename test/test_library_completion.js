@@ -165,7 +165,7 @@ const MAIN_IMPL = 'nVersion := Global_Version;\n';
 const MAIN_XML = tcpou('MAIN', MAIN_DECL, MAIN_IMPL);
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tcxml_libcompl_'));
-const uriOf = (f) => 'file:///' + path.join(dir, f).replace(/\\/g, '/');
+const uriOf = (f) => 'file:///' + path.join(dir, f).replace(/\\/g, '/').replace(/^\//, '');
 
 /**
  * Runs completions the way the LSP server does — index the workspace, re-parse the active unit, and

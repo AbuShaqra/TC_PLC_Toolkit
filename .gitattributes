@@ -1,0 +1,48 @@
+# Line endings for TwinCAT's own file families.
+#
+# TwinCAT writes PLC object files as UTF-8 **with a BOM** and **CRLF** line endings, and both are
+# load-bearing here: `scripts/Create sample PLC project/build-sample-project.js` (writeTwinCatFile)
+# emits them that way on purpose, the LSP's offset handling assumes them, and several harnesses
+# read the real sample and assert against `\r\n` anchors.
+#
+# Without these rules the CRLF survived only by accident. Git's default on Windows
+# (core.autocrlf=true) converts LF to CRLF on checkout, so the committed sample — which is stored
+# with LF — LOOKED correct on the machine it was developed on, while a Linux or macOS clone got LF
+# and `test/browser/build.js` failed with "FB_Cylinder no longer starts the way the fixture
+# expects". Pinning eol=crlf makes the working tree identical on every platform regardless of a
+# developer's core.autocrlf setting, which is the only thing TwinCAT and the harnesses ever read.
+#
+# These stay `text` (not `-text`) so they still diff line-by-line in review; git normalizes to LF in
+# the object database and restores CRLF on checkout.
+
+*.TcPOU     text eol=crlf
+*.TcGVL     text eol=crlf
+*.TcDUT     text eol=crlf
+*.TcIO      text eol=crlf
+*.TcTTO     text eol=crlf
+*.TcVIS     text eol=crlf
+*.TcVMO     text eol=crlf
+*.TcTLO     text eol=crlf
+*.TcGTLO    text eol=crlf
+*.TcIPO     text eol=crlf
+
+# The XAE-authored solution skeleton. Visual Studio writes these CRLF, and the generator deliberately
+# preserves whatever XAE produced rather than rewriting it.
+*.sln       text eol=crlf
+*.tsproj    text eol=crlf
+*.plcproj   text eol=crlf
+*.xti       text eol=crlf
+*.xtv       text eol=crlf
+*.tmc       text eol=crlf
+
+# Library archives are ZIP containers (and `.compiled-library-v3` is an opaque binary format). Any
+# eol conversion would corrupt them and take the ZIP reader's harnesses down with it.
+*.library                   binary
+*.compiled-library          binary
+*.compiled-library-ge33     binary
+*.compiled-library-v3       binary
+
+# PowerShell is executed by Windows hosts; keep it CRLF.
+*.ps1       text eol=crlf
+*.bat       text eol=crlf
+*.cmd       text eol=crlf

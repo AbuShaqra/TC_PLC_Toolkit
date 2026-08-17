@@ -183,7 +183,7 @@ const MAIN_IMPL = [
 const MAIN_XML = tcpou('MAIN', MAIN_DECL, MAIN_IMPL);
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tcxml_libtypes_'));
-const uriOf = (f) => 'file:///' + path.join(dir, f).replace(/\\/g, '/');
+const uriOf = (f) => 'file:///' + path.join(dir, f).replace(/\\/g, '/').replace(/^\//, '');
 const MAIN_URI = uriOf('MAIN.TcPOU');
 
 /** Builds the workspace index the way server.js does, and returns the active unit's ST. */
@@ -486,7 +486,7 @@ try {
         const xml = fs.readFileSync(file, 'utf8');
         const parsed = parseTwinCatXml(xml);
         if (!parsed) continue;
-        const fileUri = 'file:///' + file.replace(/\\/g, '/');
+        const fileUri = 'file:///' + file.replace(/\\/g, '/').replace(/^\//, '');
         converted.push({ file, fileUri, stText: convertXmlToSt(parsed, { raw: true }).stText });
         indexXmlObject(sampleIndex, xml, fileUri);
     }

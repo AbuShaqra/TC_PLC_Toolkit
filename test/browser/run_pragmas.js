@@ -118,7 +118,11 @@ const NESTED = [
         process.exit(1);
     }
 
-    const browser = await chromium.launch();
+    // HARNESS_CHROMIUM lets a container point at a preinstalled Chromium (e.g.
+    // /opt/pw-browsers/chromium) instead of the build this playwright package wants to
+    // download — the download is what fails on an offline or image-based runner.
+    const browser = await chromium.launch(
+        process.env.HARNESS_CHROMIUM ? { executablePath: process.env.HARNESS_CHROMIUM } : {});
     const page = await browser.newPage();
     const consoleErrors = [];
     page.on('console', m => { if (m.type() === 'error' && !/favicon/.test(m.text())) consoleErrors.push(m.text()); });

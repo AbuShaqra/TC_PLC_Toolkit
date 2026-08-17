@@ -118,7 +118,7 @@ stFoo.nField := GVL_Data.g_var;]]></ST>
 </TcPlcObject>`
 };
 
-const toUri = (p) => 'file:///' + p.replace(/\\/g, '/');
+const toUri = (p) => 'file:///' + p.replace(/\\/g, '/').replace(/^\//, '');
 
 // Write fixtures to disk and index each into a FRESH local index (isolation from module globals).
 const index = {};

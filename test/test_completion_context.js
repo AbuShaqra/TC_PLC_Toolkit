@@ -136,7 +136,7 @@ const MAIN_XML = tcpou('MAIN', MAIN_DECL, MAIN_IMPL,
     [{ name: 'M_Calc', decl: 'METHOD M_Calc : INT\nVAR\n\tnLocal : INT;\nEND_VAR', impl: 'nLocal := 0;\n' }]);
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tcxml_complctx_'));
-const uriOf = (f) => 'file:///' + path.join(dir, f).replace(/\\/g, '/');
+const uriOf = (f) => 'file:///' + path.join(dir, f).replace(/\\/g, '/').replace(/^\//, '');
 
 /**
  * Runs completions inside a document exactly the way the LSP server does: the whole workspace is

@@ -127,7 +127,7 @@ function reindexSample() {
     const idx = getWorkspaceSymbolIndex();
     for (const f of files) {
         const xml = fs.readFileSync(f, 'utf8');
-        const uri = 'file:///' + f.replace(/\\/g, '/');
+        const uri = 'file:///' + f.replace(/\\/g, '/').replace(/^\//, '');
         const node = indexXmlObject(idx, xml, uri);
         if (node) byName[node.name] = { file: f, uri, xml };
     }

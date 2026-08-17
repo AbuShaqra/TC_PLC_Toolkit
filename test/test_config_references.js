@@ -20,6 +20,7 @@ const fs = require('fs');
 const path = require('path');
 const { indexXmlFile, indexTwinCatDirectory } = require('../src/lsp/xmlIndexer');
 const { findConfigReferencesForSymbol } = require('../src/lsp/features');
+const { uriToFsPath } = require('../src/lsp/workspaceScan');
 
 let errors = 0;
 function assert(cond, msg) {
@@ -33,7 +34,7 @@ function readStripped(filePath) {
     return raw.charCodeAt(0) === 0xFEFF ? raw.slice(1) : raw;
 }
 
-const toUri = (p) => 'file:///' + p.replace(/\\/g, '/');
+const toUri = (p) => 'file:///' + p.replace(/\\/g, '/').replace(/^\//, '');
 
 // =================================================================================================
 // PART 1 — synthetic fixtures
@@ -618,8 +619,9 @@ if (!sampleHasConfigObjects) {
     const strippedCache = new Map();
     const strippedFor = (uri) => {
         if (!strippedCache.has(uri)) {
-            const fsPath = decodeURIComponent(uri.replace(/^file:\/\/\//i, '')).replace(/\//g, '\\');
-            strippedCache.set(uri, readStripped(fsPath));
+            // The product's converter, not a local copy: a hand-rolled one here hard-coded the
+            // Windows separator flip and could not open a file on any POSIX filesystem.
+            strippedCache.set(uri, readStripped(uriToFsPath(uri)));
         }
         return strippedCache.get(uri);
     };

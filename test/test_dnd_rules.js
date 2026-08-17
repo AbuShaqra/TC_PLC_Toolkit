@@ -36,7 +36,7 @@ const p = (...segs) => path.join(ROOT, ...segs);
 
 /** A vscode.Uri stand-in exposing exactly what the matrix reads. */
 function fakeUri(fsPath) {
-    return { fsPath, toString() { return 'file:///' + fsPath.replace(/\\/g, '/'); } };
+    return { fsPath, toString() { return 'file:///' + fsPath.replace(/\\/g, '/').replace(/^\//, ''); } };
 }
 
 /** A TwinCatTreeItem stand-in. `extra` carries componentId / folderPath. */

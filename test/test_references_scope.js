@@ -34,7 +34,7 @@ function assert(cond, msg) {
 const DIR = path.join(os.tmpdir(), 'tc_ref_scope');
 fs.rmSync(DIR, { recursive: true, force: true });
 fs.mkdirSync(DIR, { recursive: true });
-const uriOf = (n) => 'file:///' + path.join(DIR, n).replace(/\\/g, '/');
+const uriOf = (n) => 'file:///' + path.join(DIR, n).replace(/\\/g, '/').replace(/^\//, '');
 
 const files = {
     // bDone is PRIVATE to Initialize. fVelocity is a PARAMETER of MoveAbsolute, so MAIN can name it.
@@ -128,7 +128,7 @@ fs.rmSync(DIR, { recursive: true, force: true });
 const DIR2 = path.join(os.tmpdir(), 'tc_ref_scope2');
 fs.rmSync(DIR2, { recursive: true, force: true });
 fs.mkdirSync(DIR2, { recursive: true });
-const uriOf2 = (n) => 'file:///' + path.join(DIR2, n).replace(/\\/g, '/');
+const uriOf2 = (n) => 'file:///' + path.join(DIR2, n).replace(/\\/g, '/').replace(/^\//, '');
 
 const files2 = {
     'FB_Drive.st': `FUNCTION_BLOCK FB_Drive
@@ -203,7 +203,7 @@ fs.rmSync(DIR2, { recursive: true, force: true });
 const DIR3 = path.join(os.tmpdir(), 'tc_ref_scope3');
 fs.rmSync(DIR3, { recursive: true, force: true });
 fs.mkdirSync(DIR3, { recursive: true });
-const uriOf3 = (n) => 'file:///' + path.join(DIR3, n).replace(/\\/g, '/');
+const uriOf3 = (n) => 'file:///' + path.join(DIR3, n).replace(/\\/g, '/').replace(/^\//, '');
 
 const files3 = {
     'FB_Motor.st': `FUNCTION_BLOCK FB_Motor

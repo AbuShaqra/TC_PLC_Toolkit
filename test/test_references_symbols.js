@@ -112,7 +112,7 @@ const uris = {};
 for (const [name, content] of Object.entries(files)) {
     const filePath = path.join(TEST_DIR, name);
     fs.writeFileSync(filePath, content, 'utf8');
-    uris[name] = 'file:///' + filePath.replace(/\\/g, '/');
+    uris[name] = 'file:///' + filePath.replace(/\\/g, '/').replace(/^\//, '');
     parseAndIndexDocument(content, uris[name]);
 }
 const index = getWorkspaceSymbolIndex();

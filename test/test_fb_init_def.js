@@ -120,7 +120,7 @@ const FILES = {
 };
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tcxml_fbinitdef_'));
-const uriOf = (f) => 'file:///' + path.join(dir, f).replace(/\\/g, '/');
+const uriOf = (f) => 'file:///' + path.join(dir, f).replace(/\\/g, '/').replace(/^\//, '');
 
 // Where the two rival `ipAxis` declarations live, in their own component's declaration pane.
 const OWN_IPAXIS_LINE = lineOf(FB_AXIS_DECL, /^\tipAxis\b/);

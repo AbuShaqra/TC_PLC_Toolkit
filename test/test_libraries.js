@@ -94,7 +94,7 @@ const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tcxml_libtest_'));
  * @returns {Object[]} LSP diagnostics.
  */
 function diagnose(fileName, xml) {
-    const fileUri = 'file:///' + path.join(dir, fileName).replace(/\\/g, '/');
+    const fileUri = 'file:///' + path.join(dir, fileName).replace(/\\/g, '/').replace(/^\//, '');
     const index = getWorkspaceSymbolIndex();
     indexXmlObject(index, xml, fileUri);
     const { stText } = convertXmlToSt(parseTwinCatXml(xml));

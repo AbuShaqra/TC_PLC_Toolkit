@@ -98,8 +98,15 @@ assert(createProjectMap([emptyDir]).isEmpty(), 'no .plcproj under any root yield
 // touched because it was never in the set to begin with (this is how workspaceScan.js indexes a
 // project today — one indexXmlFile() call per objectPaths entry, not a filtered directory walk).
 // ------------------------------------------------------------------------------------------------
+// objectFiles.values(), NOT objectPaths: the keys are lowercased identity keys, and indexing from
+// them only appears to work on a case-insensitive filesystem — on Linux every read misses. This
+// mirrors workspaceScan.js:190, which is the code path that actually runs.
+const project = map.get(key);
+assert(project.objectFiles.get(normalizeProjectPath(realFb)) === realFb,
+    'objectFiles maps the normalized key back to the on-disk spelling');
+
 const index = {};
-for (const p of objects) indexXmlFile(index, p);
+for (const objectFile of project.objectFiles.values()) indexXmlFile(index, objectFile);
 assert(!!index['FB_Feeder'], 'FB_Feeder is indexed');
 assert(/POUs\/Modules\/FB_Feeder\.TcPOU$/i.test(index['FB_Feeder'].uri),
     'the .plcproj copy wins the name key — the orphan is never indexed');

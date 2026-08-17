@@ -68,7 +68,7 @@ for (const file of files) {
     const parsed = parseTwinCatXml(xml);
     if (!parsed) { console.log(`  [skip] could not parse ${file}`); continue; }
     const { stText, lineMap } = convertXmlToSt(parsed, { raw: true });
-    const fileUri = 'file:///' + file.replace(/\\/g, '/');
+    const fileUri = 'file:///' + file.replace(/\\/g, '/').replace(/^\//, '');
     converted[file] = { stText, lineMap, fileUri, parsed };
     indexXmlObject(index, xml, fileUri);
 }

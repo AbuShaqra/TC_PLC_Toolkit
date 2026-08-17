@@ -146,7 +146,7 @@ assert(isLibrarySymbol('cProbeMax', sigIndex),
 function diagnoseWithLibs(file, index) {
     const parsed = parseTwinCatXml(fs.readFileSync(file, 'utf8'));
     const { stText } = convertXmlToSt(parsed, { raw: true });
-    const uri = 'file:///' + file.replace(/\\/g, '/');
+    const uri = 'file:///' + file.replace(/\\/g, '/').replace(/^\//, '');
     parseAndIndexDocument(stText, uri, index);
     registerLibrarySymbolNodes(index, stText);
     return provideDiagnostics(stText, index, uri);
@@ -209,7 +209,7 @@ assert(!!looseIndex['FB_SharedHelper'],
 function diagnoseLoose(file, index) {
     const parsed = parseTwinCatXml(fs.readFileSync(file, 'utf8'));
     const { stText } = convertXmlToSt(parsed, { raw: true });
-    const uri = 'file:///' + file.replace(/\\/g, '/');
+    const uri = 'file:///' + file.replace(/\\/g, '/').replace(/^\//, '');
     parseAndIndexDocument(stText, uri, index);
     return provideDiagnostics(stText, index, uri);
 }
@@ -282,7 +282,7 @@ assert(indexes.get(keyA)['GVL_System'].uri.includes('GVLs/GVL_System.TcGVL'),
 function diagnose(file, index) {
     const parsed = parseTwinCatXml(fs.readFileSync(file, 'utf8'));
     const { stText } = convertXmlToSt(parsed, { raw: true });
-    const uri = 'file:///' + file.replace(/\\/g, '/');
+    const uri = 'file:///' + file.replace(/\\/g, '/').replace(/^\//, '');
     parseAndIndexDocument(stText, uri, index);
     return { diags: provideDiagnostics(stText, index, uri), stText, uri };
 }
@@ -311,9 +311,9 @@ assert(refs.every(r => /LineA/i.test(r.uri)),
 // --- routing -----------------------------------------------------------------------------------
 assert(map.projectFor(mainA) === keyA, 'a request for LineA MAIN routes to LineA');
 assert(map.projectFor(mainB) === keyB, 'a request for LineB MAIN routes to LineB');
-assert(ws.indexForUri('file:///' + mainA.replace(/\\/g, '/')) === indexes.get(keyA),
+assert(ws.indexForUri('file:///' + mainA.replace(/\\/g, '/').replace(/^\//, '')) === indexes.get(keyA),
     "the scan routes a request for LineA's MAIN to LineA's index");
-assert(ws.indexForUri('file:///' + mainB.replace(/\\/g, '/')) === indexes.get(keyB),
+assert(ws.indexForUri('file:///' + mainB.replace(/\\/g, '/').replace(/^\//, '')) === indexes.get(keyB),
     "the scan routes a request for LineB's MAIN to LineB's index");
 
 // --- library namespaces are per project ------------------------------------------------------
@@ -418,8 +418,8 @@ assert(!catalogA.some(e => e.namespace.toLowerCase() === 'tc2_linebonly'),
 // resolved to nothing at all and silently skipped the config update.
 // (findConfigReferencesForSymbol is required at the top of this file.)
 
-const uriA = 'file:///' + mainA.replace(/\\/g, '/');
-const uriB = 'file:///' + mainB.replace(/\\/g, '/');
+const uriA = 'file:///' + mainA.replace(/\\/g, '/').replace(/^\//, '');
+const uriB = 'file:///' + mainB.replace(/\\/g, '/').replace(/^\//, '');
 
 // Both directions must now resolve — neither project is a "loser" any more.
 const fromA = findConfigReferencesForSymbol(

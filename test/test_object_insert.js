@@ -153,7 +153,7 @@ if (!fs.existsSync(SAMPLE)) {
      */
     const load = (rel) => {
         const p = path.join(SAMPLE, rel);
-        return buildNodeFromXml(fs.readFileSync(p, 'utf8'), 'file:///' + p.replace(/\\/g, '/'));
+        return buildNodeFromXml(fs.readFileSync(p, 'utf8'), 'file:///' + p.replace(/\\/g, '/').replace(/^\//, ''));
     };
 
     const fScale = load('POUs/F_Scale.TcPOU');

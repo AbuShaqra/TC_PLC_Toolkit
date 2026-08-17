@@ -54,7 +54,7 @@ try {
     indexTwinCatDirectory(getWorkspaceSymbolIndex(), dir);
 
     // Percent-encode the drive colon, mimicking VS Code's Uri.toString().
-    const encUri = (name) => 'file:///' + path.join(dir, name).replace(/\\/g, '/').replace(/:/, '%3A');
+    const encUri = (name) => 'file:///' + path.join(dir, name).replace(/\\/g, '/').replace(/^\//, '').replace(/:/, '%3A');
 
     // 2. Simulate opening FB_A during the session -> live re-index with an ENCODED uri.
     const aCtx = convertXmlToSt(parseTwinCatXml(files['FB_A.TcPOU']), { raw: true });

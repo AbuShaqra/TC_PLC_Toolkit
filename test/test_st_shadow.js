@@ -84,7 +84,7 @@ const files = {
 for (const [n, c] of Object.entries(files)) fs.writeFileSync(path.join(dir, n), c, 'utf8');
 
 /** The unencoded disk-scan uri, as xmlIndexer/indexStDirectory build it. */
-const diskUri = (name) => 'file:///' + path.join(dir, name).replace(/\\/g, '/');
+const diskUri = (name) => 'file:///' + path.join(dir, name).replace(/\\/g, '/').replace(/^\//, '');
 
 try {
     // ── 1. The server's startup/reindex order: XML objects first, then stray .st files. ──────────

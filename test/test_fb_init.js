@@ -152,7 +152,7 @@ const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tcxml_fbinit_'));
 function diagnose(fileName, extraXml) {
     clearWorkspaceIndex();
     const index = getWorkspaceSymbolIndex();
-    const uriOf = (f) => 'file:///' + path.join(dir, f).replace(/\\/g, '/');
+    const uriOf = (f) => 'file:///' + path.join(dir, f).replace(/\\/g, '/').replace(/^\//, '');
 
     for (const f of Object.keys(FILES)) indexXmlObject(index, FILES[f], uriOf(f));
     const xml = extraXml || FILES[fileName];

@@ -26,7 +26,7 @@ function assert(cond, msg) {
     else { console.error(`[FAIL] ${msg}`); errors++; }
 }
 
-const uriOf = (name) => 'file:///' + path.join(TEST_DIR, name).replace(/\\/g, '/');
+const uriOf = (name) => 'file:///' + path.join(TEST_DIR, name).replace(/\\/g, '/').replace(/^\//, '');
 
 /** Writes a file and waits until its mtime actually differs, so the test cannot race the cache key. */
 function write(name, text, previousMtime) {

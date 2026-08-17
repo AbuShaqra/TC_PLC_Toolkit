@@ -152,7 +152,7 @@ const FILES = {
 };
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tcxml_fbinitcompl_'));
-const uriOf = (f) => 'file:///' + path.join(dir, f).replace(/\\/g, '/');
+const uriOf = (f) => 'file:///' + path.join(dir, f).replace(/\\/g, '/').replace(/^\//, '');
 
 /**
  * Runs completions inside a synthetic document exactly the way the LSP server does: the whole

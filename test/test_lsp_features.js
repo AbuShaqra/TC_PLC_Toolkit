@@ -62,7 +62,7 @@ console.log("Writing temporary test files to disk:");
 for (const [name, content] of Object.entries(files)) {
     const filePath = path.join(TEST_DIR, name);
     fs.writeFileSync(filePath, content, 'utf8');
-    const fileUri = 'file:///' + filePath.replace(/\\/g, '/');
+    const fileUri = 'file:///' + filePath.replace(/\\/g, '/').replace(/^\//, '');
     console.log(`  Writing & Indexing: ${name} -> ${fileUri}`);
     parseAndIndexDocument(content, fileUri);
 }
@@ -85,7 +85,7 @@ function assert(condition, message) {
 // ----------------------------------------------------
 console.log("\n--- TEST 1: Diagnostics ---");
 const automaticPath = path.join(TEST_DIR, 'FB_Automatic.st');
-const automaticUri = 'file:///' + automaticPath.replace(/\\/g, '/');
+const automaticUri = 'file:///' + automaticPath.replace(/\\/g, '/').replace(/^\//, '');
 const automaticContent = files['FB_Automatic.st'];
 
 // Test diagnostics on valid content
@@ -152,14 +152,14 @@ assert(defMyPower && defMyPower.uri === automaticUri, "Definition should point t
 // Definition of 'bEnable' in 'fbMyPower.bEnable' on line 10 (char 15)
 const defEnable = provideDefinition(automaticContent, { line: 10, character: 15 }, index, automaticUri);
 console.log("Definition result for 'bEnable':", defEnable);
-const powerUri = 'file:///' + path.join(TEST_DIR, 'FB_Power.st').replace(/\\/g, '/');
+const powerUri = 'file:///' + path.join(TEST_DIR, 'FB_Power.st').replace(/\\/g, '/').replace(/^\//, '');
 assert(defEnable !== null, "Should find definition for member 'bEnable'");
 assert(defEnable && defEnable.uri === powerUri, "Definition should point to FB_Power.st");
 
 // Definition of 'g_bRunning' on line 9 (char 5)
 const defGlobal = provideDefinition(automaticContent, { line: 9, character: 5 }, index, automaticUri);
 console.log("Definition result for 'g_bRunning':", defGlobal);
-const globalUri = 'file:///' + path.join(TEST_DIR, 'GVL_Global.st').replace(/\\/g, '/');
+const globalUri = 'file:///' + path.join(TEST_DIR, 'GVL_Global.st').replace(/\\/g, '/').replace(/^\//, '');
 assert(defGlobal !== null, "Should find definition for global 'g_bRunning'");
 assert(defGlobal && defGlobal.uri === globalUri, "Definition should point to GVL_Global.st");
 assert(defGlobal && defGlobal.componentId === 'root', "Definition of GVL variable should have componentId 'root'");

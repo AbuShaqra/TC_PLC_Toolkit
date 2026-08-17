@@ -136,7 +136,7 @@ function walk(dir, out = []) {
     }
     return out;
 }
-const toUri = p => 'file:///' + p.split(path.sep).join('/');
+const toUri = p => 'file:///' + p.split(path.sep).join('/').replace(/^\//, '');
 
 const files = walk(path.join(REPO, 'sample'));
 lspParser.clearWorkspaceIndex();
