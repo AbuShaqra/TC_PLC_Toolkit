@@ -61,6 +61,32 @@ function findCodeCli() {
     fs.cpSync(SAMPLE, primary, { recursive: true });
     fs.cpSync(SAMPLE, path.join(ws, 'LineB'), { recursive: true });
 
+    // LineA contains TWO PLC projects under one real solution. This catches the hierarchy shape a
+    // pair of one-project solutions cannot: Solution → [primary PLC, auxiliary PLC]. The auxiliary
+    // project is a complete copied fixture so the LSP also has to keep all three compilation units
+    // isolated while the Objects provider groups two of them together.
+    const primaryProjectDir = path.join(primary, 'TcToolkitSample_PLC');
+    const auxiliaryProjectDir = path.join(primary, 'TcToolkitSample_Aux');
+    fs.cpSync(primaryProjectDir, auxiliaryProjectDir, { recursive: true });
+    fs.renameSync(
+        path.join(auxiliaryProjectDir, 'TcToolkitSample_PLC.plcproj'),
+        path.join(auxiliaryProjectDir, 'TcToolkitSample_Aux.plcproj')
+    );
+    const primaryTsproj = path.join(primary, 'TcToolkitSample.tsproj');
+    const tsprojText = fs.readFileSync(primaryTsproj, 'utf8');
+    fs.writeFileSync(primaryTsproj, tsprojText.replace(
+        '</Plc>',
+        '\t\t\t<Project File="TcToolkitSample_Aux.xti"/>\r\n\t\t</Plc>'
+    ), 'utf8');
+    fs.writeFileSync(
+        path.join(primary, '_Config', 'PLC', 'TcToolkitSample_Aux.xti'),
+        '<?xml version="1.0"?>\r\n<TcSmItem>\r\n' +
+        '\t<Project Name="TcToolkitSample_Aux" ' +
+        'PrjFilePath="..\\..\\TcToolkitSample_Aux\\TcToolkitSample_Aux.plcproj"/>\r\n' +
+        '</TcSmItem>\r\n',
+        'utf8'
+    );
+
     // Reproduce a real TwinCAT case-only folder rename: the `.plcproj` kept `machine`, while the
     // directory on disk is `Machine`. Windows resolves the include, but VS Code URI identity is
     // case-sensitive, so the index must canonicalize it to the explorer/custom-editor spelling.
@@ -120,10 +146,17 @@ function findCodeCli() {
     assert(!!step('done'), 'the in-host run reached the end');
 
     const multi = step('multi-project-ui');
-    const expectedLabels = ['TcToolkitSample_PLC — LineA', 'TcToolkitSample_PLC — LineB'];
-    assert(!!multi && expectedLabels.every(label => multi.treeLabels.includes(label)),
-        `the real Objects provider disambiguates duplicate project names (got ${multi ? JSON.stringify(multi.treeLabels) : 'no result'})`);
-    assert(!!multi && expectedLabels.every(label => multi.statusLabels.includes(label)),
+    const expectedSolutions = ['TcToolkitSample — LineA', 'TcToolkitSample — LineB'];
+    assert(!!multi && expectedSolutions.every(label => multi.solutionLabels.includes(label)),
+        `the real Objects provider renders both solution roots (got ${multi ? JSON.stringify(multi.solutionLabels) : 'no result'})`);
+    const lineAProjects = multi && multi.solutionProjects['TcToolkitSample — LineA'];
+    const lineBProjects = multi && multi.solutionProjects['TcToolkitSample — LineB'];
+    assert(!!lineAProjects && lineAProjects.join(',') === 'TcToolkitSample_Aux,TcToolkitSample_PLC',
+        `one solution renders both PLC projects (got ${JSON.stringify(lineAProjects)})`);
+    assert(!!lineBProjects && lineBProjects.join(',') === 'TcToolkitSample_PLC',
+        `the second solution renders its PLC project (got ${JSON.stringify(lineBProjects)})`);
+    const expectedStatusLabels = ['TcToolkitSample_PLC — LineA', 'TcToolkitSample_PLC — LineB'];
+    assert(!!multi && expectedStatusLabels.every(label => multi.statusLabels.includes(label)),
         `the real status-bar formatter uses the same project labels (got ${multi ? JSON.stringify(multi.statusLabels) : 'no result'})`);
     if (process.platform === 'win32') {
         const expectedStation = path.join(primary, 'TcToolkitSample_PLC', 'POUs', 'Machine', 'FB_Station.TcPOU');
@@ -195,6 +228,10 @@ function findCodeCli() {
     const actionReveal = revealRows.find(r => r.componentId === 'action_Act_Home' && r.ok);
     assert(!!actionReveal && actionReveal.parents.includes('Actions\\'),
         `virtual-folder action reveal expands through Actions\\ (${actionReveal ? JSON.stringify(actionReveal.parents) : 'missing'})`);
+    assert(!!actionReveal && actionReveal.parents.includes('TcToolkitSample_PLC') &&
+        actionReveal.parents.includes('TcToolkitSample — LineA'),
+        `exact component reveal expands through its PLC project and solution ` +
+        `(${actionReveal ? JSON.stringify(actionReveal.parents) : 'missing'})`);
 
     const retainedReveal = step('retained-component-tree-reveal');
     const retainedRows = (retainedReveal && retainedReveal.reveals) || [];

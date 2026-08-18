@@ -118,18 +118,26 @@ async function run() {
         // Drive the actual VS Code-bound Objects provider over two same-named `.plcproj` copies.
         // The pure formatter has unit coverage, but only this proves the provider renders those labels.
         const { createProjectMap, normalizeProjectPath } = require(path.join(REPO, 'src', 'lsp', 'projectMap.js'));
+        const { createSolutionMap } = require(path.join(REPO, 'src', 'solutionMap.js'));
         const { fileUriToFsPath } = require(path.join(REPO, 'src', 'fileUri.js'));
         const { TwinCatTreeDataProvider } = require(path.join(REPO, 'src', 'treeDataProvider.js'));
         const { projectLabel } = require(path.join(REPO, 'src', 'projectStatusBar.js'));
         const projectMap = createProjectMap([WS]);
-        const treeProvider = new TwinCatTreeDataProvider(() => projectMap);
+        const solutionMap = createSolutionMap([WS], projectMap);
+        const treeProvider = new TwinCatTreeDataProvider(() => projectMap, () => solutionMap);
         const roots = await treeProvider.getChildren();
+        const solutionProjects = {};
+        for (const root of roots) {
+            if (root.contextValue !== 'solution') continue;
+            solutionProjects[String(root.label)] = (await treeProvider.getChildren(root)).map(item => String(item.label));
+        }
         const mainA = path.join(SAMPLE, 'TcToolkitSample_PLC', 'POUs', 'MAIN.TcPOU');
         const mainB = path.join(WS, 'LineB', 'TcToolkitSample_PLC', 'POUs', 'MAIN.TcPOU');
         const station = path.join(SAMPLE, 'TcToolkitSample_PLC', 'POUs', 'Machine', 'FB_Station.TcPOU');
         const stationProject = projectMap.get(projectMap.projectFor(station));
         log('multi-project-ui', {
-            treeLabels: roots.map(item => String(item.label)),
+            solutionLabels: roots.filter(item => item.contextValue === 'solution').map(item => String(item.label)),
+            solutionProjects,
             statusLabels: [projectLabel(projectMap, mainA), projectLabel(projectMap, mainB)],
             indexedStationPath: stationProject && stationProject.objectFiles.get(normalizeProjectPath(station)),
             stationUri: vscode.Uri.file(station).toString()

@@ -57,7 +57,23 @@ Module._resolveFilename = function (req, ...rest) {
 
 let projectMapReads = 0;
 const rootPath = path.resolve('C:\\RevealWorkspace');
-const filePath = path.join(rootPath, 'POUs', 'FB_Reveal.TcPOU');
+const projectDir = path.join(rootPath, 'PLC');
+const filePath = path.join(projectDir, 'POUs', 'FB_Reveal.TcPOU');
+const projectKey = 'reveal-project';
+const projectRecord = { key: projectKey, name: 'PLC', displayName: 'PLC', dir: projectDir };
+const solutionRecord = {
+    key: 'reveal-solution', name: 'RevealSolution', displayName: 'RevealSolution',
+    slnPath: path.join(rootPath, 'RevealSolution.sln'), projects: [projectRecord]
+};
+const projectMap = {
+    projects: new Map([[projectKey, projectRecord]]),
+    displayName: () => 'PLC'
+};
+const solutionMap = {
+    solutions: [solutionRecord],
+    orphanProjects: [],
+    solutionForProject: key => key === projectKey ? solutionRecord : null
+};
 require.cache['vscode-tree-reveal-stub'] = {
     id: 'vscode-tree-reveal-stub', filename: 'vscode-tree-reveal-stub', loaded: true,
     exports: {
@@ -78,7 +94,7 @@ require.cache['vscode-tree-reveal-stub'] = {
 };
 
 const { TwinCatTreeDataProvider } = require('../src/treeDataProvider');
-const provider = new TwinCatTreeDataProvider(() => { projectMapReads++; return null; });
+const provider = new TwinCatTreeDataProvider(() => { projectMapReads++; return projectMap; }, () => solutionMap);
 const fileUri = uriFor(filePath);
 
 let errors = 0;
@@ -103,6 +119,8 @@ function parentIds(item) {
     assert(method.componentId === 'method_Run', 'method navigation resolves the exact method item');
     assert(JSON.stringify(parentIds(method).slice(0, 3)) === JSON.stringify(['Logic\\Nested\\', 'Logic\\', 'FB_Reveal.TcPOU']),
         `method parent chain includes nested virtual folders and file (${JSON.stringify(parentIds(method))})`);
+    assert(parentIds(method).slice(-2).join(',') === 'PLC,RevealSolution',
+        `method reveal ancestry reaches its PLC project and solution (${JSON.stringify(parentIds(method))})`);
 
     const property = await provider.getRevealItem(fileUri, 'prop_Value');
     assert(property.componentId === 'prop_Value', 'property navigation resolves the property node');
