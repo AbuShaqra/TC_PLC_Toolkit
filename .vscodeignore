@@ -2,6 +2,7 @@
 .git/**
 .gitignore
 .claude/**
+.codex/**
 scratch/**
 test/**
 sample/**
@@ -25,6 +26,7 @@ scripts/Build PLC project/**
 # would be wrong even though nothing invokes it.
 scripts/fetch-pragma-catalog.js
 CLAUDE.md
+AGENTS.md
 HANDOFF.md
 DEVELOPMENT.md
 # Implementation plans — developer working documents, same category as the three files above.
