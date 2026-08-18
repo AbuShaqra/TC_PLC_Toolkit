@@ -261,6 +261,9 @@ function assert(cond, msg) {
             await new Promise(r => setTimeout(r, 900));
             return {
                 before,
+                activeChanges: window.__harness.sent
+                    .filter(m => m.type === 'activeComponentChanged')
+                    .map(m => m.componentId),
                 after: {
                     widget: !!document.querySelector('.zone-widget'),
                     arrow: !!document.querySelector(arrowSel)
@@ -273,6 +276,8 @@ function assert(cond, msg) {
             `switching component dismisses the peek instead of orphaning it (${JSON.stringify(stale.after)})`);
         assert(!stale.after.arrow,
             'and no arrow decoration is left behind pointing at replaced content');
+        assert(stale.activeChanges.includes('method_Cyclic'),
+            `loading a component reports its exact id to the extension host (${JSON.stringify(stale.activeChanges)})`);
 
         // 8. Nothing may have thrown along the way — "Model not found" is the failure this whole
         //    design exists to make unreachable, and it surfaces as a console error.

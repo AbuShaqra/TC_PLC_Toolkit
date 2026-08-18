@@ -25,7 +25,7 @@ const WS = process.env.TCDEV_WS;
 const SAMPLE = process.env.TCDEV_SAMPLE || WS;
 const RESULTS = process.env.TCDEV_RESULTS;
 
-const out = { steps: [], panels: [] };
+const out = { steps: [], panels: [], treeReveals: [] };
 function log(step, data) {
     out.steps.push({ step, ...data });
     try { fs.writeFileSync(RESULTS, JSON.stringify(out, null, 2)); } catch (e) { /* keep going */ }
@@ -36,6 +36,42 @@ async function run() {
     const vscode = require('vscode');
     try {
         log('start', { ws: WS, folders: (vscode.workspace.workspaceFolders || []).map(f => f.uri.toString()) });
+
+        // Capture the real Objects TreeView's reveal calls before activation creates it. The wrapper
+        // still delegates to VS Code, so `ok` proves the provider's getParent chain is accepted—not
+        // merely that extension.js attempted to reveal a component-shaped stand-in.
+        const origCreateTreeView = vscode.window.createTreeView.bind(vscode.window);
+        vscode.window.createTreeView = function (viewId, options) {
+            const view = origCreateTreeView(viewId, options);
+            if (viewId !== 'twincatExplorer') return view;
+            const origReveal = view.reveal.bind(view);
+            view.reveal = async (element, revealOptions) => {
+                const rec = {
+                    uri: element && element.resourceUri && element.resourceUri.toString(),
+                    componentId: element && element.componentId,
+                    contextValue: element && element.contextValue,
+                    parents: []
+                };
+                let current = element;
+                for (let depth = 0; depth < 8 && current; depth++) {
+                    current = options.treeDataProvider.getParent(current);
+                    if (current) rec.parents.push(current.componentId || current.folderPath || String(current.label));
+                }
+                out.treeReveals.push(rec);
+                try {
+                    const result = await origReveal(element, revealOptions);
+                    rec.ok = true;
+                    return result;
+                } catch (e) {
+                    rec.ok = false;
+                    rec.error = String(e);
+                    throw e;
+                } finally {
+                    try { fs.writeFileSync(RESULTS, JSON.stringify(out, null, 2)); } catch (e) { /* keep going */ }
+                }
+            };
+            return view;
+        };
 
         // Patch the provider PROTOTYPE before any custom editor resolves: every future panel's
         // resolve → ready → init chain lands in `panels`. Same module instance as the extension's,
@@ -130,6 +166,40 @@ async function run() {
             await sleep(3000);
             log('after-def-nav', { tabs: vscode.window.tabGroups.all.flatMap(g => g.tabs.map(t => t.label)) });
         }
+
+        // 3b. Navigation must leave the Objects tree on the component the webview actually loaded,
+        // including virtual-folder members and both property accessors. The first open also emits a
+        // root reveal during file activation; activeComponentChanged must win with the exact id.
+        const station = path.join(SAMPLE, 'TcToolkitSample_PLC', 'POUs', 'Machine', 'FB_Station.TcPOU');
+        const stationUri = vscode.Uri.file(station);
+        const componentTargets = [
+            'method_Cyclic',
+            'prop_State',
+            'prop_State_get',
+            'prop_State_set',
+            'action_Act_Home'
+        ];
+        for (const componentId of componentTargets) {
+            await vscode.commands.executeCommand('twincat.openComponent', stationUri, componentId);
+            await sleep(900);
+        }
+        log('component-tree-reveal', {
+            requested: componentTargets,
+            reveals: out.treeReveals.filter(r => r.uri === stationUri.toString())
+        });
+
+        // A retained webview does not call loadComponent when its tab is reactivated. The host must
+        // remember the last activeComponentChanged id or this round trip would reveal the file root.
+        await vscode.commands.executeCommand('twincat.openComponent', stationUri, 'method_Cyclic');
+        await sleep(900);
+        const retainedStart = out.treeReveals.length;
+        await vscode.commands.executeCommand('vscode.openWith', gvlUri, 'twincat.xmlViewer');
+        await sleep(900);
+        await vscode.commands.executeCommand('vscode.openWith', stationUri, 'twincat.xmlViewer');
+        await sleep(900);
+        log('retained-component-tree-reveal', {
+            reveals: out.treeReveals.slice(retainedStart).filter(r => r.uri === stationUri.toString())
+        });
 
         // 4. The Objects-tree insert commands. Their module is vscode-bound (like the drag-and-drop
         //    and clipboard controllers), so only a real host can show that a context-menu invocation

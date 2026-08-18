@@ -116,8 +116,8 @@ function activate(context) {
     const projectStatusBar = createProjectStatusBar(context, () => hostProjectMap);
 
     let treeView;
-    const { TwinCatTreeItem } = require('./src/treeDataProvider');
-    const revealUri = async (uri) => {
+    let treeProvider;
+    const revealUri = async (uri, componentId = 'root') => {
         // Runs for every active-file change (custom-editor webview activation AND plain text
         // editors), independent of the tree-reveal eligibility check below, so switching to a
         // non-TwinCAT file correctly hides the indicator rather than leaving it showing the
@@ -129,31 +129,9 @@ function activate(context) {
             return;
         }
 
-        let contextValue = 'pouFile';
-        if (ext === '.tcio') {
-            contextValue = 'itfFile';
-        } else if (ext === '.tcgvl') {
-            contextValue = 'gvlFile';
-        } else if (ext === '.tcdut' || ext === '.tctleo') {
-            // `.tctleo` (EnumerationTextList) normalizes to a DUT root everywhere else in the codebase
-            // (xmlParser.js) — it IS one in every way that matters (an ordinary TYPE...END_TYPE enum
-            // declaration with display text attached). Same contextValue.
-            contextValue = 'dutFile';
-        } else if (ext === '.st') {
-            contextValue = 'stFile';
-        }
-
-        const fileItem = new TwinCatTreeItem(
-            path.basename(uri.fsPath),
-            uri,
-            vscode.TreeItemCollapsibleState.None,
-            contextValue,
-            null,
-            null
-        );
-
         try {
-            await treeView.reveal(fileItem, { select: true, focus: false, expand: true });
+            const item = await treeProvider.getRevealItem(uri, componentId);
+            await treeView.reveal(item, { select: true, focus: false, expand: true });
         } catch (err) {
             // Ignore error
         }
@@ -345,7 +323,7 @@ function activate(context) {
 
     // Register tree view provider. Drag & drop logic lives entirely in the controller (and the
     // pure matrix under it) — extension.js only supplies its dependencies.
-    const treeProvider = new TwinCatTreeDataProvider(() => hostProjectMap);
+    treeProvider = new TwinCatTreeDataProvider(() => hostProjectMap);
     treeView = vscode.window.createTreeView('twincatExplorer', {
         treeDataProvider: treeProvider,
         dragAndDropController: new TwinCatDragAndDropController({ treeProvider, applyXmlEdit })

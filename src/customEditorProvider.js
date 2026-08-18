@@ -104,7 +104,7 @@ const PEEK_MAX_TEXT_BYTES = 2 * 1024 * 1024;
 class TwinCatCustomEditorProvider {
     /**
      * @param {vscode.ExtensionContext} context The extension context.
-     * @param {Object} [options] { showReferences(targetWord, items) } sink for the References view.
+     * @param {Object} [options] References sink plus onActiveFileChange(uri, componentId) tree/status callback.
      */
     constructor(context, options = {}) {
         this.context = context;
@@ -185,6 +185,7 @@ class TwinCatCustomEditorProvider {
      */
     resolveCustomTextEditor(document, webviewPanel, token) {
         const uriStr = document.uri.toString();
+        let activeComponentId = 'root';
         this.activePanels.set(uriStr, webviewPanel);
         this.lastActivePanelUri = uriStr;
 
@@ -197,7 +198,10 @@ class TwinCatCustomEditorProvider {
             if (webviewPanel.active) {
                 this.lastActivePanelUri = uriStr;
                 if (this.options && typeof this.options.onActiveFileChange === 'function') {
-                    this.options.onActiveFileChange(document.uri);
+                    // A retained webview does not reload its component when its tab becomes active
+                    // again, so no fresh activeComponentChanged message follows this callback. Keep
+                    // the last confirmed id here or tab-away/tab-back would reselect the file root.
+                    this.options.onActiveFileChange(document.uri, activeComponentId);
                 }
             }
         });
@@ -269,6 +273,17 @@ class TwinCatCustomEditorProvider {
                     // The webview has actually highlighted the location, so the pending selection has
                     // done its job and must not be re-applied on a later open of the same file.
                     this.pendingSelections.delete(uriStr);
+                    break;
+                case 'activeComponentChanged':
+                    // The webview is authoritative about which component actually loaded. In
+                    // particular, openWith first activates the file (which reveals its root) and
+                    // only then applies a pending definition/reference target. Revealing here makes
+                    // the final Objects-tree selection the method/property/action/accessor rather
+                    // than letting the earlier file activation win that race.
+                    activeComponentId = message.componentId || 'root';
+                    if (this.options && typeof this.options.onActiveFileChange === 'function') {
+                        this.options.onActiveFileChange(document.uri, activeComponentId);
+                    }
                     break;
                 case 'saveSplitterRatio':
                     await this.context.globalState.update('twincat.splitterRatio', message.ratio);

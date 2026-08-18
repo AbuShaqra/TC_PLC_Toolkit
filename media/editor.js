@@ -1304,6 +1304,11 @@
 
         activeComponentId = id;
         selectEl.value = id;
+        // Tell the extension host what actually loaded. File activation happens before a pending
+        // Go to Definition / Find References selection is applied, so the host's earlier root-file
+        // reveal must be followed by this exact component reveal. This also keeps the Objects tree
+        // aligned when the user switches components from the dropdown.
+        vscode.postMessage({ type: 'activeComponentChanged', componentId: id });
 
         isUpdatingFromExtension = true;
 

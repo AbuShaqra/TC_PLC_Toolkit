@@ -144,6 +144,32 @@ function findCodeCli() {
     assert(gvlTabs.length === 1 && gvlTabs[0] === 'GVL_System.TcGVL',
         `definition navigation reuses the open tab with its real-cased title (tabs: ${nav ? JSON.stringify(nav.tabs) : 'none'})`);
 
+    // The final Objects-tree reveal follows the component the webview loaded, not the earlier
+    // active-file root reveal. These are the real TreeView.reveal calls and `ok` means VS Code
+    // accepted the provider's complete parent chain.
+    const componentReveal = step('component-tree-reveal');
+    const revealRows = (componentReveal && componentReveal.reveals) || [];
+    for (const componentId of (componentReveal && componentReveal.requested) || []) {
+        const hit = revealRows.find(r => r.componentId === componentId && r.ok);
+        assert(!!hit, `Objects tree reveals exact ${componentId} target in the real host`);
+    }
+    const getterReveal = revealRows.find(r => r.componentId === 'prop_State_get' && r.ok);
+    const setterReveal = revealRows.find(r => r.componentId === 'prop_State_set' && r.ok);
+    assert(!!getterReveal && getterReveal.parents[0] === 'prop_State',
+        `Get reveal expands through its property (${getterReveal ? JSON.stringify(getterReveal.parents) : 'missing'})`);
+    assert(!!setterReveal && setterReveal.parents[0] === 'prop_State',
+        `Set reveal expands through its property (${setterReveal ? JSON.stringify(setterReveal.parents) : 'missing'})`);
+    const actionReveal = revealRows.find(r => r.componentId === 'action_Act_Home' && r.ok);
+    assert(!!actionReveal && actionReveal.parents.includes('Actions\\'),
+        `virtual-folder action reveal expands through Actions\\ (${actionReveal ? JSON.stringify(actionReveal.parents) : 'missing'})`);
+
+    const retainedReveal = step('retained-component-tree-reveal');
+    const retainedRows = (retainedReveal && retainedReveal.reveals) || [];
+    const retainedLast = retainedRows[retainedRows.length - 1];
+    assert(!!retainedLast && retainedLast.ok && retainedLast.componentId === 'method_Cyclic',
+        `tab-away/tab-back keeps the retained webview's exact component ` +
+        `(got ${retainedLast ? retainedLast.componentId : 'no reveal'})`);
+
     // The window is still shutting down when the poll returns, so its user-data dir can hold a
     // lock for a few more seconds. Best-effort with retries; a leftover temp dir is harmless.
     try {

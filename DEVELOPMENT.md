@@ -91,6 +91,7 @@ per-suite without aborting on the first failure. The main ones:
 | `test/test_typecheck.js` | Semantic type checking: member access, call arguments, declaration types, assignment compatibility — plus the same `sample/` diagnostics ratchet. |
 | `test/test_references_scope.js` | Find References scope + coordinate spaces: private method `VAR` vs. parameters, named arguments belonging to the callee, and FB_init declaration-site arguments (`inst : FB_T(p := v)`). |
 | `test/test_references_tree.js` | References-view grouping (file → component → occurrence). |
+| `test/test_tree_reveal.js` | Objects-tree navigation targets and parent chains: file/root fallback; exact method, property, action, transition and Get/Set nodes; nested virtual-folder ancestry; and no project-map lookup until the logical component chain reaches the file/disk boundary. |
 | `test/test_st_shadow.js` | XML is the source of truth: a stray plain `.st` mirror (outside `ST_Files/`) must never steal an XML-backed symbol's index node — the references scan would follow the hijacked uri to the stale mirror and miss the real call sites. |
 | `test/test_library_catalog.js` | The data path behind the TwinCAT Libraries view: catalog built from the `.plcproj`, namespaces, `.tmc` types and their members. |
 | `test/test_dnd_rules.js` | The Objects-tree drag & drop and copy/paste compatibility matrices: what is draggable/copyable (not virtual folders, not Get/Set accessors; directories move but do not copy), components move only within their own file yet paste cross-file (POU↔interface gated), directory-cycle and no-op rejections, duplicate-in-place file paste. |
@@ -191,7 +192,10 @@ the two identical `.plcproj` basenames render as `TcToolkitSample_PLC — LineA`
 invokes the two **Objects-tree insert commands** and captures what reaches
 the webview — `src/commands/objectInsertCommands.js` is `vscode`-bound, so `test_object_insert.js` can
 only cover the pure template half, and this is the only place the rest of the path (tree node → XML
-parse → template → posted at the caret) is exercised at all. It asserts the URI keeps the **on-disk spelling** and that navigation **reuses**
+parse → template → posted at the caret) is exercised at all. The same real-host pass intercepts the
+`twincatExplorer` TreeView and verifies definition/reference navigation reveals the exact method,
+property, Get/Set accessor and virtual-folder action; switching away from and back to a retained
+webview must keep that component selected. It asserts the URI keeps the **on-disk spelling** and that navigation **reuses**
 the open tab — the 0.6.0 regression (fixed in 0.6.1) minted lowercased URIs from the normalized project
 partition, and every cross-file Go to Definition then opened a duplicate tab titled `gvl_system.tcgvl`
 with nothing highlighted. Results flow through a progressive JSON file the runner polls, so a hang
