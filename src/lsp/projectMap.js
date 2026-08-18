@@ -107,16 +107,73 @@ function decodeXmlAttribute(value) {
 }
 
 /**
+ * Returns an existing path with the spelling recorded by the Windows filesystem.
+ *
+ * TwinCAT can keep an older directory casing in `<Compile Include>` after the folder was renamed
+ * only by case. Windows still opens that path, but VS Code treats the include-spelled URI and the
+ * explorer/custom-editor URI as different resources. Walking directory entries is deliberate:
+ * `realpath` also expands 8.3 names and junctions, changing the workspace URI prefix even while it
+ * fixes the descendant's case. POSIX paths are case-sensitive already, so they stay byte-for-byte
+ * as written in the project. Missing/unreadable objects also stay present in the map under their
+ * include spelling; the indexer will conservatively skip them as before.
+ * @param {string} includePath Absolute path resolved from the `.plcproj` Include.
+ * @param {string} projectDir Directory spelling inherited from workspace discovery.
+ * @param {Map<string, Map<string, string>|null>} directoryCache Per-project directory entries,
+ *   keyed by normalized path; avoids an O(objects × path-depth) filesystem walk.
+ * @returns {string} Actual on-disk spelling when available, otherwise `includePath`.
+ */
+function pathWithDiskSpelling(includePath, projectDir, directoryCache) {
+    if (process.platform !== 'win32') return includePath;
+    try {
+        const projectResolved = path.resolve(projectDir);
+        const includeResolved = path.resolve(includePath);
+        const projectParsed = path.parse(projectResolved);
+        const includeParsed = path.parse(includeResolved);
+        if (projectParsed.root.toLowerCase() !== includeParsed.root.toLowerCase()) return includePath;
+
+        const projectParts = projectResolved.slice(projectParsed.root.length).split(path.sep).filter(Boolean);
+        const includeParts = includeResolved.slice(includeParsed.root.length).split(path.sep).filter(Boolean);
+        let common = 0;
+        while (common < projectParts.length && common < includeParts.length &&
+            projectParts[common].toLowerCase() === includeParts[common].toLowerCase()) common++;
+        let anchor = projectParsed.root;
+        if (common > 0) anchor = path.join(anchor, ...projectParts.slice(0, common));
+
+        let current = anchor;
+        for (const wanted of includeParts.slice(common)) {
+            const cacheKey = normalizeProjectPath(current);
+            if (!directoryCache.has(cacheKey)) {
+                let entries = null;
+                try {
+                    entries = new Map(fs.readdirSync(current).map(name => [name.toLowerCase(), name]));
+                } catch (e) {
+                    // Cache failures too: a project with many missing objects under one directory
+                    // should not retry the same unreadable path for every Include.
+                }
+                directoryCache.set(cacheKey, entries);
+            }
+            const entries = directoryCache.get(cacheKey);
+            const actual = entries && entries.get(wanted.toLowerCase());
+            if (!actual) return includePath;
+            current = path.join(current, actual);
+        }
+        return current;
+    } catch (e) {
+        return includePath;
+    }
+}
+
+/**
  * The TwinCAT objects a single `.plcproj` compiles.
  *
- * The value keeps the `.plcproj`'s own spelling (which TwinCAT writes to match the disk), because
- * the indexer builds every symbol node's uri from it: indexing from the normalized (lowercased)
- * form gave every scan-time node a lowercased uri, and a cross-file Go to Definition then opened a
- * DUPLICATE, lowercase-titled editor tab — vscode.openWith() treats a differently-cased uri as a
- * different resource (verified in a real dev host, user report 2026-08-10).
+ * The value keeps the real filesystem spelling for an existing Windows object (and the `.plcproj`
+ * spelling as a conservative fallback), because the indexer builds every symbol node's uri from it.
+ * Indexing from either the normalized key or a stale case-only Include gives the scan-time node a
+ * uri different from the explorer/custom editor's uri; cross-file Go to Definition then opens a
+ * DUPLICATE tab because vscode.openWith() treats different casing as a different resource.
  * @param {string} plcprojPath Absolute `.plcproj` path.
- * @returns {Map<string, string>} Normalized absolute object path → the same path in its on-disk
- *   spelling (empty when the file is unreadable).
+ * @returns {Map<string, string>} Normalized absolute object path → real on-disk spelling where it
+ *   can be recovered, otherwise the Include spelling (empty when the project file is unreadable).
  */
 function readCompileIncludes(plcprojPath) {
     let xml;
@@ -127,13 +184,17 @@ function readCompileIncludes(plcprojPath) {
     }
     const projDir = path.dirname(plcprojPath);
     const out = new Map();
+    /** @type {Map<string, Map<string, string>|null>} */
+    const directoryCache = new Map();
     // <Compile Include="POUs\Modules\FB_Feeder.TcPOU"> — relative to the .plcproj, and TwinCAT
     // writes backslashes regardless of platform. A link uses the same element with a ..\ path.
     const includeRe = /<Compile\b[^>]*?\bInclude="([^"]+)"/gi;
     let m;
     while ((m = includeRe.exec(xml)) !== null) {
         const abs = path.resolve(projDir, decodeXmlAttribute(m[1]).replace(/\\/g, path.sep));
-        if (TWINCAT_EXTS.has(path.extname(abs).toLowerCase())) out.set(normalizeProjectPath(abs), abs);
+        if (TWINCAT_EXTS.has(path.extname(abs).toLowerCase())) {
+            out.set(normalizeProjectPath(abs), pathWithDiskSpelling(abs, projDir, directoryCache));
+        }
     }
     return out;
 }
@@ -146,9 +207,10 @@ function readCompileIncludes(plcprojPath) {
  * @property {string} name Display name (the `.plcproj` basename without extension).
  * @property {Set<string>} objectPaths Normalized paths of the objects this project `<Compile>`s —
  *   the identity keys for ownership and membership tests.
- * @property {Map<string, string>} objectFiles Normalized path → the same path in its on-disk
- *   spelling. The indexer reads files (and mints symbol-node uris) from these values; the
- *   normalized form must never leak into a uri (see readCompileIncludes).
+ * @property {Map<string, string>} objectFiles Normalized path → real on-disk spelling for existing
+ *   Windows objects, otherwise Include spelling. The indexer reads files (and mints symbol-node
+ *   uris) from these values; neither the normalized form nor stale Include casing may leak into a
+ *   uri (see readCompileIncludes).
  */
 
 /**

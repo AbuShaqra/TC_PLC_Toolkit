@@ -117,7 +117,8 @@ async function run() {
 
         // Drive the actual VS Code-bound Objects provider over two same-named `.plcproj` copies.
         // The pure formatter has unit coverage, but only this proves the provider renders those labels.
-        const { createProjectMap } = require(path.join(REPO, 'src', 'lsp', 'projectMap.js'));
+        const { createProjectMap, normalizeProjectPath } = require(path.join(REPO, 'src', 'lsp', 'projectMap.js'));
+        const { fileUriToFsPath } = require(path.join(REPO, 'src', 'fileUri.js'));
         const { TwinCatTreeDataProvider } = require(path.join(REPO, 'src', 'treeDataProvider.js'));
         const { projectLabel } = require(path.join(REPO, 'src', 'projectStatusBar.js'));
         const projectMap = createProjectMap([WS]);
@@ -125,9 +126,13 @@ async function run() {
         const roots = await treeProvider.getChildren();
         const mainA = path.join(SAMPLE, 'TcToolkitSample_PLC', 'POUs', 'MAIN.TcPOU');
         const mainB = path.join(WS, 'LineB', 'TcToolkitSample_PLC', 'POUs', 'MAIN.TcPOU');
+        const station = path.join(SAMPLE, 'TcToolkitSample_PLC', 'POUs', 'Machine', 'FB_Station.TcPOU');
+        const stationProject = projectMap.get(projectMap.projectFor(station));
         log('multi-project-ui', {
             treeLabels: roots.map(item => String(item.label)),
-            statusLabels: [projectLabel(projectMap, mainA), projectLabel(projectMap, mainB)]
+            statusLabels: [projectLabel(projectMap, mainA), projectLabel(projectMap, mainB)],
+            indexedStationPath: stationProject && stationProject.objectFiles.get(normalizeProjectPath(station)),
+            stationUri: vscode.Uri.file(station).toString()
         });
 
         const GVL = path.join(SAMPLE, 'TcToolkitSample_PLC', 'GVLs', 'GVL_System.TcGVL');
@@ -157,7 +162,14 @@ async function run() {
             if (!def) await sleep(5000);
         }
         const refs = await vscode.commands.executeCommand('twincat.lsp.queryReferences', params);
-        log('lsp', { definition: def, refCount: Array.isArray(refs) ? refs.length : String(refs) });
+        log('lsp', {
+            definition: def,
+            refCount: Array.isArray(refs) ? refs.length : String(refs),
+            referenceUris: Array.isArray(refs) ? [...new Set(refs.map(r => r.uri))] : [],
+            referenceFsPaths: Array.isArray(refs)
+                ? [...new Set(refs.map(r => fileUriToFsPath(r.uri)))]
+                : []
+        });
 
         // 3. Navigate with the uri the definition returned — the openFile flow. The GVL is already
         //    open, so a correctly-spelled uri must REUSE that tab, not add a lowercase twin.
@@ -170,7 +182,6 @@ async function run() {
         // 3b. Navigation must leave the Objects tree on the component the webview actually loaded,
         // including virtual-folder members and both property accessors. The first open also emits a
         // root reveal during file activation; activeComponentChanged must win with the exact id.
-        const station = path.join(SAMPLE, 'TcToolkitSample_PLC', 'POUs', 'Machine', 'FB_Station.TcPOU');
         const stationUri = vscode.Uri.file(station);
         const componentTargets = [
             'method_Cyclic',

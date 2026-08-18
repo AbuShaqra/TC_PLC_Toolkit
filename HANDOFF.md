@@ -8,7 +8,7 @@ live in git history (PRs/commits); this file keeps the findings that would cost 
 typecheck clean, **0 diagnostics on the sample**, both browser harnesses green, installed-VS-Code dev-host green
 including a real two-project workspace. The earlier 2026-08-10 pass also verified 0 diagnostics with Beckhoff
 archives both present and moved aside. **0.6.2 (indexing)** and **0.7.0 (Objects-tree inserts)** are merged;
-`package.json` is at **0.7.2** for exact Objects-tree navigation. Remote history was rewritten 2026-08-17.
+`package.json` is at **0.7.3** for the Windows indexed-path casing hotfix. Remote history was rewritten 2026-08-17.
 The 2026-08-17 Linux pass was 60/60 FULL before the review fixes below.
 **Review fixes verified on `codex/review-fixes`:** bounded ZIP archive/input inflation (`libsymbols.js`); central path↔file-URI handling
 (`fileUri.js`); reference-cache identity is mtime+size+ctime+inode; FULL coverage now requires child harnesses to
@@ -16,9 +16,8 @@ report that gates actually ran; editor coordinate/peek helpers moved to producti
 imported by the live-path tests; duplicate `.plcproj` basenames use shortest-unique-parent labels in both Objects
 and status bar. The dev-host now copies the sample as LineA+LineB and asserts those real provider labels plus live
 cross-file navigation. The user's pre-existing newline edit in `sample/.../FB_Station.TcPOU` remains untouched.
-**0.7.2 VSIX installed to the user's VS Code 2026-08-18 — awaiting their confirmation after a FULL
-VS Code restart.** The CLI reports 0.7.2, while the running process still retains the 0.7.1 directory
-(see the install trap below).
+**0.7.3 VSIX installed to the user's VS Code 2026-08-18 — a FULL VS Code restart is required.**
+The CLI reports 0.7.3 (see the install trap below).
 **Install trap that cost a debug cycle:** VS Code keeps the old version dir until a FULL restart (reload-window is not
 always enough) — the user tested 0.3.1's feature against the still-running 0.3.0 code and reported it broken. Check
 `~/.vscode/extensions/` for side-by-side version dirs + `.obsolete` before debugging a "feature does nothing" report.
@@ -57,6 +56,15 @@ header; the gradient-clipped wordmark is deliberately left at 3.3–4.9:1 (a log
   assertions were case-blind by construction); tab identity + live client pinned by **`test/devhost/run.js`** — a
   run-by-hand harness that drives installed VS Code (see DEVELOPMENT.md). It now opens two same-named project
   copies and asserts the actual Objects-provider labels, status labels, navigation identity and live LSP bridge.
+  **Case-only Include regression fixed in 0.7.3:** a real project kept `Pneumatik` in
+  its `.plcproj` while disk/editor used `pneumatik`; Windows opened both, but the LSP URI split from
+  the custom editor and FB_Pneumatic navigation failed. `readCompileIncludes` now recovers actual
+  Windows entry casing with a per-directory cached walk while preserving workspace 8.3 prefixes and
+  junction identity; POSIX and missing includes remain unchanged. The real project indexes all 16
+  FB_Pneumatic methods at the editor-cased URI. `test_project_map` covers case, 8.3, junction and
+  missing-file behavior; the installed dev-host injects the mismatch and passes live reference URI
+  identity plus exact component reveal. Typecheck and 63/63 FULL suite are green. The requested
+  solution→PLC-project Objects hierarchy remains the next task.
 - **Indexing cost FIXED (0.6.2, merged)** — retires the old deferred perf note. On the real 8-project
   `C:\Projects\PLC projects`: startup **11.7 s warm → ~3.5 s** (one scan, not two), archive decodes **306 → 157**,
   `.plcproj` reads 3/project → 1. `TC_Start` 608/427 → 377/388 ms, no regression. **Cold (~20 s) is PROJECTED, not

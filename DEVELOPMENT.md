@@ -319,6 +319,11 @@ and routed at startup (and on `custom/reindex`), not one flat index for the whol
   a diagnostics pass has to be answered against one index; a linked file routes to the project whose
   directory physically contains it, while still being indexed into every owner. A file under no project
   at all (a loose `.st`, a backup copy no `.plcproj` compiles) routes to the shared `(loose)` key.
+  The parallel `objectFiles` values are the paths used to mint symbol URIs. On Windows their casing is
+  recovered from actual directory entries (cached once per directory), because TwinCAT can retain a
+  stale case-only folder spelling in an Include and VS Code treats that as a different resource. The
+  walk preserves workspace 8.3 prefixes and junction paths; missing/unreadable includes and all POSIX
+  paths retain the project spelling conservatively.
 - **`src/lsp/workspaceScan.js`** builds one index per project (`scanWorkspace`) and wraps the
   request-routing API (`indexForUri`, `projectForUri`, `configFilesFor`). It lives outside `server.js` on
   purpose: `server.js` opens a Node IPC connection at require time, so nothing that requires it is
@@ -354,7 +359,8 @@ one of them. Each registry is created lazily, on that index's first write (`ensu
 registry rather than an empty one — the fallback that keeps roughly 15 pre-existing standalone harnesses
 (which populate the default registry directly, with no index argument) working unchanged.
 
-`test/test_project_map.js` covers `projectMap.js`'s ownership rules, `projectLabel()` and
+`test/test_project_map.js` covers `projectMap.js`'s ownership rules, actual Windows casing without
+expanding workspace 8.3/junction identity, the missing-file fallback, `projectLabel()` and
 `groupRootsByProject()` (the Objects-tree per-project grouping) in isolation.
 `test/test_multi_project_scope.js` covers the whole thing end-to-end against a real two-project fixture
 built from `sample/` (the fixture helper is `test/_multiproject.js`, two copies of `sample/` under one
