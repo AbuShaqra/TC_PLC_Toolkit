@@ -115,6 +115,43 @@ function defKey(def) {
 }
 
 /**
+ * Resolves the declaration scope carried by a definition result.
+ *
+ * Cross-file XML definitions use component-local ranges, whereas live/transient ST nodes use whole-
+ * unit ranges. `componentId` is therefore authoritative when present; interpreting its local line as
+ * a whole-unit line can select an unrelated root variable at the same coordinates.
+ * @param {Object} def A definition from definitionAt().
+ * @param {Object} symbolIndex Workspace symbol index.
+ * @returns {{pou: Object|null, method: Object|null}}
+ */
+function definitionScope(def, symbolIndex) {
+    if (!def) return { pou: null, method: null };
+    const uriKey = normalizeUri(def.uri);
+    const pou = Object.keys(symbolIndex).map(k => symbolIndex[k]).find(node =>
+        node && node.uri && normalizeUri(node.uri) === uriKey) || null;
+    if (pou && typeof def.componentId === 'string' && def.componentId.startsWith('method_')) {
+        const methodName = def.componentId.slice('method_'.length).toLowerCase();
+        const method = (pou.methods || []).find(m => m.name.toLowerCase() === methodName) || null;
+        return { pou, method };
+    }
+    return findActiveScope(symbolIndex, def.uri, def.range.start.line + 1);
+}
+
+/** The method variable named by a definition, respecting component-local XML coordinates. */
+function methodVariableForDefinition(def, scope) {
+    if (!def || !scope || !scope.method) return null;
+    const variables = scope.method.variables || [];
+    if (typeof def.componentId === 'string' && def.componentId.startsWith('method_') && def.targetWord) {
+        const byName = variables.find(v => v.name.toLowerCase() === def.targetWord.toLowerCase());
+        if (byName) return byName;
+    }
+    return variables.find(v => {
+        const r = convertToLspRange(v.range);
+        return r.start.line === def.range.start.line && r.start.character === def.range.start.character;
+    }) || null;
+}
+
+/**
  * Describes a resolved definition: which POU owns it, and — when the definition *is* one of that
  * POU's declared members — the member's name.
  *
@@ -126,7 +163,7 @@ function defKey(def) {
  * @returns {{key: string, owner: Object|null, memberName: string|null, methodName?: string}}
  */
 function describeDef(def, symbolIndex) {
-    const scope = findActiveScope(symbolIndex, def.uri, def.range.start.line + 1);
+    const scope = definitionScope(def, symbolIndex);
     const owner = scope.pou;
     let memberName = null;
 
@@ -138,12 +175,12 @@ function describeDef(def, symbolIndex) {
     // override in a derived FB — FB_Indradrive.Halt over FB_Axis.Halt — still counts as the same
     // symbol, which it is.
     if (scope.method) {
-        const own = (scope.method.variables || []).find(v => {
-            const r = convertToLspRange(v.range);
-            return r.start.line === def.range.start.line && r.start.character === def.range.start.character;
-        });
+        const own = methodVariableForDefinition(def, scope);
         if (own) {
             return { key: defKey(def), owner, methodName: scope.method.name, memberName: own.name };
+        }
+        if (def.targetWord && scope.method.name.toLowerCase() === def.targetWord.toLowerCase()) {
+            return { key: defKey(def), owner, memberName: scope.method.name };
         }
     }
 
@@ -251,17 +288,14 @@ function sameSymbol(target, def, symbolIndex) {
  */
 function methodLocalScope(def, symbolIndex) {
     if (!def) return null;
-    const scope = findActiveScope(symbolIndex, def.uri, def.range.start.line + 1);
+    const scope = definitionScope(def, symbolIndex);
     const method = scope && scope.method;
     if (!method || !method.declRange) return null;
 
     // It must be one of the method's OWN declared variables — not a POU member merely *used* here. An
     // FB's members are reachable from outside through an instance (`fbAxis.bDone`), so they are never
     // confined this way.
-    const own = (method.variables || []).find(v => {
-        const r = convertToLspRange(v.range);
-        return r.start.line === def.range.start.line && r.start.character === def.range.start.character;
-    });
+    const own = methodVariableForDefinition(def, scope);
     if (!own || isCallParamScope(own.scope)) return null;
     return method;
 }
@@ -274,13 +308,10 @@ function methodLocalScope(def, symbolIndex) {
  */
 function isMethodScoped(def, symbolIndex) {
     if (!def) return false;
-    const scope = findActiveScope(symbolIndex, def.uri, def.range.start.line + 1);
+    const scope = definitionScope(def, symbolIndex);
     const method = scope && scope.method;
     if (!method) return false;
-    return (method.variables || []).some(v => {
-        const r = convertToLspRange(v.range);
-        return r.start.line === def.range.start.line && r.start.character === def.range.start.character;
-    });
+    return !!methodVariableForDefinition(def, scope);
 }
 
 /**
@@ -345,10 +376,10 @@ function isQualifiedOccurrence(text, range) {
  */
 function qualifiedBaseType(text, range, symbolIndex, uri) {
     const lineText = (text.split('\n')[range.start.line] || '').slice(0, range.start.character);
-    const m = lineText.match(/([a-zA-Z_][a-zA-Z0-9_]*(?:\[[^\]]*\])?(?:\s*\.\s*[a-zA-Z_][a-zA-Z0-9_]*(?:\[[^\]]*\])?)*)\s*\.\s*$/);
+    const m = lineText.match(/((?:(?:THIS|SUPER)\s*\^\s*\.\s*)?[a-zA-Z_][a-zA-Z0-9_]*(?:\[[^\]]*\])?(?:\s*\.\s*[a-zA-Z_][a-zA-Z0-9_]*(?:\[[^\]]*\])?)*)\s*\.\s*$/i);
     if (!m) return null;
 
-    const parts = m[1].replace(/\[[^\]]*\]/g, '').split('.').map(s => s.trim()).filter(Boolean);
+    const parts = m[1].replace(/\[[^\]]*\]/g, '').replace(/\s+/g, '').split('.').filter(Boolean);
     if (!parts.length) return null;
 
     const scope = findActiveScope(symbolIndex, uri, range.start.line + 1);
@@ -403,9 +434,19 @@ function provideReferences(code, position, symbolIndex, fileUri) {
         const first = localTo.declRange.startLine - 1;
         const last = (localTo.declRange.endLine || Number.MAX_SAFE_INTEGER) - 1;
         for (const range of findIdentifierOccurrences(code, targetWord, tokens)) {
-            if (range.start.line >= first && range.start.line <= last) {
-                references.push({ uri: fileUri, range });
+            if (range.start.line < first || range.start.line > last) continue;
+            if (isQualifiedOccurrence(code, range)) continue;
+
+            const tokIdx = tokens.findIndex(t =>
+                t.line === range.start.line + 1 && t.col - 1 === range.start.character);
+            if (tokIdx !== -1) {
+                const scope = findActiveScope(symbolIndex, fileUri, range.start.line + 1);
+                if (namedArgumentCallee(tokens, tokIdx, scope.pou, scope.method, symbolIndex)) continue;
             }
+
+            const def = definitionAt(code, tokens,
+                { line: range.start.line, character: range.start.character }, symbolIndex, fileUri);
+            if (sameSymbol(target, def, symbolIndex)) references.push({ uri: fileUri, range });
         }
         return references;
     }

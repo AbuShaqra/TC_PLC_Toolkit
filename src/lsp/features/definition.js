@@ -10,6 +10,7 @@ const {
     findActiveScope,
     classifyCallSite,
     nextMeaningful,
+    prevMeaningful,
     resolvePathType,
     isCallParamScope,
     convertToLspRange,
@@ -73,6 +74,25 @@ function definitionAt(code, tokens, position, symbolIndex, fileUri) {
     if (targetTokenIdx !== -1 && tokens[targetTokenIdx].type === TokenType.Identifier) {
         const targetTok = tokens[targetTokenIdx];
         const targetWordVal = targetTok.value;
+
+        // THIS^ and SUPER^ explicitly select an FB instance, so lexical method scope must not win
+        // merely because the method declares a same-named variable. They are tokenized as
+        // keyword, '^', '.', identifier; scan meaningful tokens so formatting is irrelevant.
+        const dotIdx = prevMeaningful(tokens, targetTokenIdx - 1);
+        const derefIdx = prevMeaningful(tokens, dotIdx - 1);
+        const qualifierIdx = prevMeaningful(tokens, derefIdx - 1);
+        const isExplicitInstance = dotIdx >= 0 && tokens[dotIdx].value === '.'
+            && derefIdx >= 0 && tokens[derefIdx].value === '^'
+            && qualifierIdx >= 0 && /^(THIS|SUPER)$/i.test(tokens[qualifierIdx].value);
+        if (isExplicitInstance) {
+            const qualifier = tokens[qualifierIdx].value.toUpperCase();
+            const owner = qualifier === 'THIS'
+                ? pou
+                : (pou && pou.extends ? findNode(symbolIndex, pou.extends) : null);
+            if (!owner) return null;
+            const found = findMemberInChain(owner, targetWordVal, symbolIndex);
+            return found ? { ...found, targetWord: targetWordVal } : null;
+        }
 
         // Shape of the call site enclosing the target word. The three forms bind their named
         // arguments to different declarations — see classifyCallSite, which provideCompletions
@@ -179,10 +199,10 @@ function definitionAt(code, tokens, position, symbolIndex, fileUri) {
 
     // 2. Check if part of a dotted path
     const leftText = lineText.substring(0, end);
-    const dotMatch = leftText.match(/([a-zA-Z_][a-zA-Z0-9_]*(?:\[[^\]]+\])?(?:\.[a-zA-Z_][a-zA-Z0-9_]*(?:\[[^\]]+\])?)*)$/);
+    const dotMatch = leftText.match(/((?:(?:THIS|SUPER)\s*\^\s*\.\s*)?[a-zA-Z_][a-zA-Z0-9_]*(?:\[[^\]]+\])?(?:\s*\.\s*[a-zA-Z_][a-zA-Z0-9_]*(?:\[[^\]]+\])?)*)$/i);
 
     if (dotMatch) {
-        const fullPath = dotMatch[1].replace(/\[[^\]]+\]/g, ''); // strip array indexes
+        const fullPath = dotMatch[1].replace(/\[[^\]]+\]/g, '').replace(/\s+/g, ''); // strip indexes/spacing
         const parts = fullPath.split('.');
         const lastPart = parts[parts.length - 1];
 

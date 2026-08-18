@@ -260,5 +260,142 @@ assert(motorRefs.length === 3,
     `FB_Motor.FB_init's nMaxSpeed has exactly 3 references: its declaration, its use, and the FB_Motor decl-site arg (got ${motorRefs.length})`);
 
 fs.rmSync(DIR3, { recursive: true, force: true });
+
+// ---------------------------------------------------------------------------------------------
+// THIS^ and SUPER^ name FB-instance members even when a method local has the same spelling.
+// The qualified occurrence must follow the explicit instance; the unqualified occurrence must
+// retain ordinary lexical scope. This is both a definition rule and a reference-identity rule.
+// ---------------------------------------------------------------------------------------------
+const DIR4 = path.join(os.tmpdir(), 'tc_ref_scope4');
+fs.rmSync(DIR4, { recursive: true, force: true });
+fs.mkdirSync(DIR4, { recursive: true });
+const uriOf4 = (n) => 'file:///' + path.join(DIR4, n).replace(/\\/g, '/').replace(/^\//, '');
+
+const files4 = {
+    'FB_Child.st': `FUNCTION_BLOCK FB_Child
+VAR
+    nNestedThis : INT;
+    nNestedParent : INT;
+END_VAR
+`,
+    'FB_OtherChild.st': `FUNCTION_BLOCK FB_OtherChild
+VAR
+    nNestedThis : INT;
+    nNestedParent : INT;
+END_VAR
+`,
+    'FB_Base.st': `FUNCTION_BLOCK FB_Base
+VAR
+    nParent : INT;
+    stParent : FB_Child;
+END_VAR
+`,
+    'FB_Derived.st': `FUNCTION_BLOCK FB_Derived EXTENDS FB_Base
+VAR
+    nThis : INT;
+    stThis : FB_Child;
+    stParent : FB_OtherChild;
+END_VAR
+
+METHOD Assign
+VAR
+    nThis : INT;
+    nParent : INT;
+    stThis : FB_OtherChild;
+    nNestedThis : INT;
+    nNestedParent : INT;
+END_VAR
+THIS^.nThis := nThis;
+SUPER^.nParent := nParent;
+THIS^.stThis.nNestedThis := nNestedThis;
+SUPER^.stParent.nNestedParent := nNestedParent;
+END_METHOD
+`
+};
+for (const [n, t] of Object.entries(files4)) fs.writeFileSync(path.join(DIR4, n), t, 'utf8');
+
+const refs4 = (file, needle, occurrence = 0) => {
+    clearWorkspaceIndex();
+    clearStFileCache();
+    for (const n of Object.keys(files4)) parseAndIndexDocument(files4[n], uriOf4(n));
+    const lines = files4[file].split('\n');
+    let seen = -1;
+    const line = lines.findIndex(l => l.includes(needle) && ++seen === occurrence);
+    const word = needle.match(/[a-zA-Z_][a-zA-Z0-9_]*/)[0];
+    return provideReferences(files4[file],
+        { line, character: lines[line].indexOf(word) + 1 }, getWorkspaceSymbolIndex(), uriOf4(file));
+};
+const lines4 = files4['FB_Derived.st'].split('\n');
+const thisLine = lines4.findIndex(l => l.includes('THIS^.nThis'));
+const superLine = lines4.findIndex(l => l.includes('SUPER^.nParent'));
+const localThisLine = lines4.findIndex((l, i) => i > 5 && l.includes('nThis : INT;'));
+const localParentLine = lines4.findIndex(l => l.includes('nParent : INT;'));
+const hasColumn = (refs, file, line, column) => refs.some(r =>
+    String(r.uri).includes(file) && r.range.start.line === line && r.range.start.character === column);
+const thisMemberCol = lines4[thisLine].indexOf('nThis');
+const thisLocalCol = lines4[thisLine].lastIndexOf('nThis');
+const superMemberCol = lines4[superLine].indexOf('nParent');
+const superLocalCol = lines4[superLine].lastIndexOf('nParent');
+
+const thisRootRefs = refs4('FB_Derived.st', 'nThis : INT;', 0);
+assert(thisRootRefs.length === 2 && hasColumn(thisRootRefs, 'FB_Derived', thisLine, thisMemberCol),
+    `the root nThis includes THIS^.nThis, and excludes Assign's same-named local (got ` +
+    `${JSON.stringify(thisRootRefs.map(r => r.range.start.line))})`);
+
+const thisLocalRefs = refs4('FB_Derived.st', 'nThis : INT;', 1);
+assert(thisLocalRefs.length === 2 && at(thisLocalRefs, 'FB_Derived', localThisLine)
+    && hasColumn(thisLocalRefs, 'FB_Derived', thisLine, thisLocalCol)
+    && !hasColumn(thisLocalRefs, 'FB_Derived', thisLine, thisMemberCol),
+    `Assign's local nThis includes its declaration and unqualified RHS, but not THIS^.nThis (got ` +
+    `${JSON.stringify(thisLocalRefs.map(r => r.range.start.line))})`);
+
+const superRootRefs = refs4('FB_Base.st', 'nParent : INT;');
+assert(superRootRefs.length === 2 && hasColumn(superRootRefs, 'FB_Derived', superLine, superMemberCol),
+    `the base nParent includes SUPER^.nParent, and excludes Assign's same-named local (got ` +
+    `${JSON.stringify(superRootRefs.map(r => [path.basename(r.uri), r.range.start.line]))})`);
+
+const superLocalRefs = refs4('FB_Derived.st', 'nParent : INT;');
+assert(superLocalRefs.length === 2 && at(superLocalRefs, 'FB_Derived', localParentLine)
+    && hasColumn(superLocalRefs, 'FB_Derived', superLine, superLocalCol)
+    && !hasColumn(superLocalRefs, 'FB_Derived', superLine, superMemberCol),
+    `Assign's local nParent includes its declaration and unqualified RHS, but not SUPER^.nParent (got ` +
+    `${JSON.stringify(superLocalRefs.map(r => r.range.start.line))})`);
+
+const nestedThisLine = lines4.findIndex(l => l.includes('THIS^.stThis.nNestedThis'));
+const nestedSuperLine = lines4.findIndex(l => l.includes('SUPER^.stParent.nNestedParent'));
+const nestedThisMemberCol = lines4[nestedThisLine].indexOf('nNestedThis');
+const nestedThisLocalCol = lines4[nestedThisLine].lastIndexOf('nNestedThis');
+const nestedSuperMemberCol = lines4[nestedSuperLine].indexOf('nNestedParent');
+const nestedSuperLocalCol = lines4[nestedSuperLine].lastIndexOf('nNestedParent');
+
+const nestedThisRefs = refs4('FB_Child.st', 'nNestedThis : INT;');
+assert(nestedThisRefs.length === 2
+    && hasColumn(nestedThisRefs, 'FB_Derived', nestedThisLine, nestedThisMemberCol)
+    && !hasColumn(nestedThisRefs, 'FB_Derived', nestedThisLine, nestedThisLocalCol),
+    `FB_Child.nNestedThis includes THIS^.stThis.nNestedThis, not the same-named method local ` +
+    `(got ${JSON.stringify(nestedThisRefs.map(r => [path.basename(r.uri), r.range.start.line, r.range.start.character]))})`);
+
+const nestedThisLocalRefs = refs4('FB_Derived.st', 'nNestedThis : INT;');
+assert(nestedThisLocalRefs.length === 2
+    && hasColumn(nestedThisLocalRefs, 'FB_Derived', nestedThisLine, nestedThisLocalCol)
+    && !hasColumn(nestedThisLocalRefs, 'FB_Derived', nestedThisLine, nestedThisMemberCol),
+    `Assign's nNestedThis includes the unqualified RHS, not THIS^.stThis.nNestedThis ` +
+    `(got ${JSON.stringify(nestedThisLocalRefs.map(r => [r.range.start.line, r.range.start.character]))})`);
+
+const nestedSuperRefs = refs4('FB_Child.st', 'nNestedParent : INT;');
+assert(nestedSuperRefs.length === 2
+    && hasColumn(nestedSuperRefs, 'FB_Derived', nestedSuperLine, nestedSuperMemberCol)
+    && !hasColumn(nestedSuperRefs, 'FB_Derived', nestedSuperLine, nestedSuperLocalCol),
+    `FB_Child.nNestedParent includes SUPER^.stParent.nNestedParent, not the same-named method local ` +
+    `(got ${JSON.stringify(nestedSuperRefs.map(r => [path.basename(r.uri), r.range.start.line, r.range.start.character]))})`);
+
+const nestedSuperLocalRefs = refs4('FB_Derived.st', 'nNestedParent : INT;');
+assert(nestedSuperLocalRefs.length === 2
+    && hasColumn(nestedSuperLocalRefs, 'FB_Derived', nestedSuperLine, nestedSuperLocalCol)
+    && !hasColumn(nestedSuperLocalRefs, 'FB_Derived', nestedSuperLine, nestedSuperMemberCol),
+    `Assign's nNestedParent includes the unqualified RHS, not SUPER^.stParent.nNestedParent ` +
+    `(got ${JSON.stringify(nestedSuperLocalRefs.map(r => [r.range.start.line, r.range.start.character]))})`);
+
+fs.rmSync(DIR4, { recursive: true, force: true });
 console.log(`\n--- REFERENCE SCOPE TESTS COMPLETE with ${errors} error(s) ---`);
 process.exit(errors > 0 ? 1 : 0);

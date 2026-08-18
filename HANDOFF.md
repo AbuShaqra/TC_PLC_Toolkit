@@ -8,7 +8,7 @@ live in git history (PRs/commits); this file keeps the findings that would cost 
 typecheck clean, **0 diagnostics on the sample**, both browser harnesses green, installed-VS-Code dev-host green
 including a real two-project workspace. The earlier 2026-08-10 pass also verified 0 diagnostics with Beckhoff
 archives both present and moved aside. **0.6.2 (indexing)** and **0.7.0 (Objects-tree inserts)** are merged;
-`package.json` is at **0.7.0**. Remote history was rewritten 2026-08-17 and remote `main` is the only remote branch.
+`package.json` is at **0.7.1** for the FB-init/instance-qualifier fix. Remote history was rewritten 2026-08-17.
 The 2026-08-17 Linux pass was 60/60 FULL before the review fixes below.
 **Review fixes verified on `codex/review-fixes`:** bounded ZIP archive/input inflation (`libsymbols.js`); central path↔file-URI handling
 (`fileUri.js`); reference-cache identity is mtime+size+ctime+inode; FULL coverage now requires child harnesses to
@@ -297,6 +297,17 @@ drops the library); **never name a local `$shellExe`** (PowerShell names are cas
 user's open shell); bitness is the user's choice, x64 the more complete source on the test rig.
 
 ## Find References: a bug in ONE FB is a PARSER bug until proven otherwise
+**FB_init qualifier/identity fix verified 2026-08-18:** the sample's
+`THIS^.refExtendOut REF= refExtendOut` exposed two independent collisions. Definition treated
+`THIS^`/`SUPER^` like an ordinary dotted path, then fell through to the same-named method variable;
+they now resolve explicitly from the current/immediate-base FB and never fall through. References
+also inferred a cross-file XML definition's scope from its component-local line as though it were a
+whole-ST-unit line, so GVL_System's `refExtendOut`/`refRetractOut` FB_init argument could be mistaken
+for a root variable at the same coordinates (the real sample returned zero references). `componentId`
+is now authoritative for method definitions; focused THIS^/SUPER^ definition+reference tests and the
+real sample live path cover both names. `THIS^`/`SUPER^` are also shared `resolvePathType` heads, so
+nested chains retain the explicit instance (`THIS^.stChild.value`, `SUPER^.stChild.value`) even when
+a method/current FB shadows `stChild`; separate nested definition+reference regressions cover both.
 The classic: `fbQueue.Get(Item:=n)` read as a GET **accessor** → parser scanned for an `END_GET` that never comes and
 swallowed 24 of an FB's 44 methods (their vars invisible → completion/diagnostics/definition silently broken there;
 references kept the unresolved). Check `node.methods.length` vs the `METHOD` lines. Guarded by `test_parser_constructs`.
