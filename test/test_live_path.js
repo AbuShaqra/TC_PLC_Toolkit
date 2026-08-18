@@ -171,6 +171,9 @@ const gvlDecl = paneText('GVL_System', 'root', 'decl');
 if (gvlDecl && !GVL_INIT_PARAM.test(gvlDecl)) {
     missing.push('GVL_System FB_init init-list arg "refExtendOut := GVL_Io..."');
 }
+if (gvlDecl && !/refRetractOut\s*:=\s*GVL_Io\./.test(gvlDecl)) {
+    missing.push('GVL_System FB_init init-list arg "refRetractOut := GVL_Io..."');
+}
 if (paneText('FB_Cylinder', 'method_FB_init', 'decl') === null) {
     missing.push('FB_Cylinder component method_FB_init');
 }
@@ -391,27 +394,51 @@ sampleTest('TEST 8: member-access diagnostic maps to the right pane', () => {
 });
 
 // ============================================================
-// TEST 9: go-to-definition on an FB-init parameter resolves to the FB that declares it
+// TEST 9: definition/references on an FB-init parameter resolve to the FB_init declaration
 //   GVL_System: fbCylinder : FB_Cylinder(refExtendOut := GVL_Io.bExtendOut, ...);
 //   The parens straight after the type mean these are FB_init's VAR_INPUT — and FB_Cylinder also
 //   has an own member named refExtendOut, so a jump to the member would be the wrong answer.
 // ============================================================
-sampleTest('TEST 9: go-to-definition on FB-init parameter', () => {
+sampleTest('TEST 9: definition/references on FB-init parameter', () => {
     const { xml, uri } = byName['GVL_System'];
     const { stText, lineMap } = assembleSt(xml, null);
     parseAndIndexDocument(stText, uri);
 
     const lines = paneLines(gvlDecl);
     const localLine0 = findLine(lines, GVL_INIT_PARAM);
-    const localCol0 = lines[localLine0].indexOf('refExtendOut') + 2; // cursor inside the word
-    const abs = localToAbsolute(lineMap, 'root', 'decl', localLine0 + 1, localCol0 + 1);
+    const cylinderUnit = assembleSt(byName['FB_Cylinder'].xml, null);
+    for (const paramName of ['refExtendOut', 'refRetractOut']) {
+        const localCol0 = lines[localLine0].indexOf(paramName) + 2; // cursor inside the word
+        const abs = localToAbsolute(lineMap, 'root', 'decl', localLine0 + 1, localCol0 + 1);
 
-    const def = provideDefinition(stText, abs, index, uri);
-    assert(def && /FB_Cylinder\.TcPOU$/i.test(def.uri),
-        `refExtendOut resolves into FB_Cylinder (got ${def && def.uri})`);
-    assert(def && def.targetWord === 'refExtendOut', `targetWord is refExtendOut (got ${def && def.targetWord})`);
-    assert(def && def.componentId === 'method_FB_init',
-        `must land on FB_init's VAR_INPUT, not the FB's own member of the same name (got componentId ${def && def.componentId})`);
+        const def = provideDefinition(stText, abs, index, uri);
+        assert(def && /FB_Cylinder\.TcPOU$/i.test(def.uri),
+            `${paramName} resolves into FB_Cylinder (got ${def && def.uri})`);
+        assert(def && def.targetWord === paramName, `targetWord is ${paramName} (got ${def && def.targetWord})`);
+        assert(def && def.componentId === 'method_FB_init',
+            `${paramName} must land on FB_init's VAR_INPUT, not the FB's own member ` +
+            `(got componentId ${def && def.componentId})`);
+
+        // The target definition above comes from the XML index, where ranges are component-local.
+        // The workspace scan re-indexes each occurrence from a whole ST unit, where ranges are
+        // absolute. Identity follows componentId + symbol, not an unrelated declaration which happens
+        // to occupy the same component-local coordinates.
+        const refs = provideReferences(stText, abs, index, uri);
+        const gvlRefs = refs.filter(r => r.uri === uri);
+        const cylinderRefs = refs.filter(r => /FB_Cylinder\.TcPOU$/i.test(r.uri));
+        const cylinderTargets = cylinderRefs.map(r =>
+            absoluteToLocal(cylinderUnit.lineMap, r.range.start.line)).filter(Boolean);
+        assert(refs.length === 3 && gvlRefs.length === 1 && cylinderRefs.length === 2,
+            `FB_init ${paramName} has its GVL argument plus declaration and RHS use (got ` +
+            `${JSON.stringify(refs.map(r => [path.basename(r.uri), r.range.start.line + 1]))})`);
+        assert(cylinderTargets.some(t => t.componentId === 'method_FB_init' && t.pane === 'decl')
+            && cylinderTargets.some(t => t.componentId === 'method_FB_init' && t.pane === 'impl'),
+            `both FB_Cylinder hits for ${paramName} belong to FB_init's panes ` +
+            `(got ${JSON.stringify(cylinderTargets)})`);
+        assert(!cylinderTargets.some(t => t.componentId === 'root'),
+            `the same-named FB_Cylinder root member is not the ${paramName} parameter reference ` +
+            `(got ${JSON.stringify(cylinderTargets)})`);
+    }
 });
 
 // ============================================================

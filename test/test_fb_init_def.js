@@ -86,33 +86,47 @@ function lineOf(text, re) {
 const FB_AXIS_DECL =
     'FUNCTION_BLOCK FB_Axis\n' +
     'VAR_INPUT\n\tbOwnInput : BOOL;\nEND_VAR\n' +
-    'VAR\n\tipAxis : I_Drive;\n\tbBusy : BOOL;\nEND_VAR';
+    'VAR\n\tipAxis : I_Drive;\n\tstChild : FB_Child;\n\tbBusy : BOOL;\nEND_VAR';
 const FB_AXIS_INIT_DECL =
     'METHOD FB_init : BOOL\n' +
     'VAR_INPUT\n' +
     '\tbInitRetains : BOOL;\n' +
     '\tbInCopyCode : BOOL;\n' +
     '\tipAxis : I_Drive;\n' +
-    'END_VAR';
+    'END_VAR\n' +
+    'VAR\n\tstChild : FB_OtherChild;\n\tnValue : INT;\nEND_VAR';
 
 // FB_init lives on the base only; the derived FB declares none of its own.
-const FB_BASE_DECL = 'FUNCTION_BLOCK FB_Base\nVAR\n\tnIdStored : INT;\nEND_VAR';
+const FB_BASE_DECL = 'FUNCTION_BLOCK FB_Base\nVAR\n\tnIdStored : INT;\n\tstChild : FB_Child;\nEND_VAR';
 const FB_BASE_INIT_DECL =
     'METHOD FB_init : BOOL\n' +
     'VAR_INPUT\n\tbInitRetains : BOOL;\n\tbInCopyCode : BOOL;\n\tnId : INT;\nEND_VAR';
+const FB_DERIVED_ASSIGN_DECL =
+    'METHOD Assign\n' +
+    'VAR\n\tipAxis : I_Drive;\n\tnIdStored : INT;\n\tnValue : INT;\nEND_VAR';
 
 const FILES = {
     'GVL_System.TcGVL': tcgvl('GVL_System', 'VAR_GLOBAL\n\tfbAxisX : I_Drive;\nEND_VAR'),
 
+    'FB_Child.TcPOU': tcpou('FB_Child',
+        'FUNCTION_BLOCK FB_Child\nVAR\n\tnValue : INT;\nEND_VAR', ''),
+    'FB_OtherChild.TcPOU': tcpou('FB_OtherChild',
+        'FUNCTION_BLOCK FB_OtherChild\nVAR\n\tnValue : INT;\nEND_VAR', ''),
+
     'FB_Axis.TcPOU': tcpou('FB_Axis', FB_AXIS_DECL, '', [
-        { name: 'FB_init', decl: FB_AXIS_INIT_DECL, impl: 'THIS^.ipAxis := ipAxis;' }
+        { name: 'FB_init', decl: FB_AXIS_INIT_DECL,
+            impl: 'THIS^.ipAxis := ipAxis;\nTHIS^.stChild.nValue := nValue;' }
     ]),
 
     'FB_Base.TcPOU': tcpou('FB_Base', FB_BASE_DECL, '', [
         { name: 'FB_init', decl: FB_BASE_INIT_DECL, impl: '' }
     ]),
     'FB_Derived.TcPOU': tcpou('FB_Derived',
-        'FUNCTION_BLOCK FB_Derived EXTENDS FB_Base\nVAR\n\tbFlag : BOOL;\nEND_VAR', ''),
+        'FUNCTION_BLOCK FB_Derived EXTENDS FB_Base\nVAR\n\tbFlag : BOOL;\n\tstChild : FB_OtherChild;\nEND_VAR', '', [
+            { name: 'Assign', decl: FB_DERIVED_ASSIGN_DECL,
+                impl: 'THIS^.bFlag := TRUE;\nSUPER^.nIdStored := nIdStored;\n' +
+                    'SUPER^.stChild.nValue := nValue;' }
+        ]),
 
     // Its base is NOT in the index — nothing about it can be resolved with certainty.
     'FB_Orphan.TcPOU': tcpou('FB_Orphan',
@@ -127,6 +141,8 @@ const OWN_IPAXIS_LINE = lineOf(FB_AXIS_DECL, /^\tipAxis\b/);
 const INIT_IPAXIS_LINE = lineOf(FB_AXIS_INIT_DECL, /^\tipAxis\b/);
 const OWN_INPUT_LINE = lineOf(FB_AXIS_DECL, /^\tbOwnInput\b/);
 const BASE_NID_LINE = lineOf(FB_BASE_INIT_DECL, /^\tnId\b/);
+const BASE_STORED_LINE = lineOf(FB_BASE_DECL, /^\tnIdStored\b/);
+const CHILD_VALUE_LINE = 3;
 
 /**
  * Runs go-to-definition on a word inside a synthetic document, exactly the way the LSP server does:
@@ -264,6 +280,73 @@ try {
     assert(!!valueHit && valueHit.componentId === 'root' && path.basename(valueHit.uri) === 'MAIN7.TcPOU',
         `the VALUE ':= ipAxis' resolves to MAIN7's own local, NOT FB_init's parameter ` +
         `(got ${valueHit && valueHit.componentId} in ${valueHit && path.basename(valueHit.uri)})`);
+
+    // ---- 7. Explicit instance qualifiers bypass a same-named method variable -------------------
+    // THIS^ names the current FB instance; the unqualified RHS still follows ordinary lexical
+    // scope and therefore names FB_init's parameter. Both words deliberately have the same spelling.
+    const thisMember = defineAt('FB_Axis.TcPOU', FILES['FB_Axis.TcPOU'],
+        /THIS\^\.ipAxis := ipAxis/, 'ipAxis', 0);
+    const thisLocal = defineAt('FB_Axis.TcPOU', FILES['FB_Axis.TcPOU'],
+        /THIS\^\.ipAxis := ipAxis/, 'ipAxis', 1);
+    dump('THIS^ member', thisMember);
+    dump('THIS^ local', thisLocal);
+    assert(!!thisMember && thisMember.componentId === 'root',
+        `THIS^.ipAxis resolves to FB_Axis's root member, not FB_init's parameter ` +
+        `(got ${thisMember && thisMember.componentId}, line ${thisMember && thisMember.range.start.line + 1})`);
+    assert(!!thisLocal && thisLocal.componentId === 'method_FB_init',
+        `the unqualified RHS ipAxis still resolves to FB_init's parameter ` +
+        `(got ${thisLocal && thisLocal.componentId}, line ${thisLocal && thisLocal.range.start.line + 1})`);
+
+    // SUPER^ starts at the immediate base FB, while the unqualified RHS remains the method local.
+    const superMember = defineAt('FB_Derived.TcPOU', FILES['FB_Derived.TcPOU'],
+        /SUPER\^\.nIdStored := nIdStored/, 'nIdStored', 0);
+    const superLocal = defineAt('FB_Derived.TcPOU', FILES['FB_Derived.TcPOU'],
+        /SUPER\^\.nIdStored := nIdStored/, 'nIdStored', 1);
+    dump('SUPER^ member', superMember);
+    dump('SUPER^ local', superLocal);
+    assert(!!superMember && superMember.componentId === 'root'
+        && path.basename(superMember.uri) === 'FB_Base.TcPOU'
+        && superMember.range.start.line + 1 === BASE_STORED_LINE,
+        `SUPER^.nIdStored resolves to FB_Base's root member ` +
+        `(got ${superMember && superMember.componentId} in ${superMember && path.basename(superMember.uri)}, ` +
+        `line ${superMember && superMember.range.start.line + 1})`);
+    assert(!!superLocal && superLocal.componentId === 'method_Assign'
+        && path.basename(superLocal.uri) === 'FB_Derived.TcPOU',
+        `the unqualified RHS nIdStored still resolves to Assign's local ` +
+        `(got ${superLocal && superLocal.componentId}, line ${superLocal && superLocal.range.start.line + 1})`);
+
+    // ---- 8. Explicit instance qualifiers remain semantic path heads through nested members -----
+    const thisNested = defineAt('FB_Axis.TcPOU', FILES['FB_Axis.TcPOU'],
+        /THIS\^\.stChild\.nValue := nValue/, 'nValue', 0);
+    const thisNestedLocal = defineAt('FB_Axis.TcPOU', FILES['FB_Axis.TcPOU'],
+        /THIS\^\.stChild\.nValue := nValue/, 'nValue', 1);
+    dump('THIS^ nested member', thisNested);
+    dump('THIS^ nested local', thisNestedLocal);
+    assert(!!thisNested && thisNested.componentId === 'root'
+        && path.basename(thisNested.uri) === 'FB_Child.TcPOU'
+        && thisNested.range.start.line + 1 === CHILD_VALUE_LINE,
+        `THIS^.stChild.nValue resolves through the current FB to FB_Child.nValue ` +
+        `(got ${thisNested && thisNested.componentId} in ${thisNested && path.basename(thisNested.uri)}, ` +
+        `line ${thisNested && thisNested.range.start.line + 1})`);
+    assert(!!thisNestedLocal && thisNestedLocal.componentId === 'method_FB_init',
+        `THIS^ nested chain does not steal the unqualified FB_init local on its RHS ` +
+        `(got ${thisNestedLocal && thisNestedLocal.componentId})`);
+
+    const superNested = defineAt('FB_Derived.TcPOU', FILES['FB_Derived.TcPOU'],
+        /SUPER\^\.stChild\.nValue := nValue/, 'nValue', 0);
+    const superNestedLocal = defineAt('FB_Derived.TcPOU', FILES['FB_Derived.TcPOU'],
+        /SUPER\^\.stChild\.nValue := nValue/, 'nValue', 1);
+    dump('SUPER^ nested member', superNested);
+    dump('SUPER^ nested local', superNestedLocal);
+    assert(!!superNested && superNested.componentId === 'root'
+        && path.basename(superNested.uri) === 'FB_Child.TcPOU'
+        && superNested.range.start.line + 1 === CHILD_VALUE_LINE,
+        `SUPER^.stChild.nValue resolves through the base FB to FB_Child.nValue ` +
+        `(got ${superNested && superNested.componentId} in ${superNested && path.basename(superNested.uri)}, ` +
+        `line ${superNested && superNested.range.start.line + 1})`);
+    assert(!!superNestedLocal && superNestedLocal.componentId === 'method_Assign',
+        `SUPER^ nested chain does not steal Assign's unqualified local on its RHS ` +
+        `(got ${superNestedLocal && superNestedLocal.componentId})`);
 } finally {
     clearWorkspaceIndex();
     fs.rmSync(dir, { recursive: true, force: true });

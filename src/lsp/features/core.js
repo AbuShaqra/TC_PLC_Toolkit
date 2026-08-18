@@ -254,7 +254,7 @@ function isBareTypeName(name, activePou, activeMethod, symbolIndex) {
 
 /**
  * Resolves the type of a dotted path.
- * @param {Array<string>} parts E.g., ['fbMCPower', 'Enable']
+ * @param {Array<string>} parts E.g., ['fbMCPower', 'Enable'] or ['THIS^', 'stChild'].
  * @param {Object} activePou
  * @param {Object} activeMethod
  * @param {Object} symbolIndex
@@ -265,8 +265,17 @@ function resolvePathType(parts, activePou, activeMethod, symbolIndex) {
     const firstPart = parts[0].toLowerCase();
     let currentType = null;
 
+    // Explicit FB-instance heads bypass lexical variables with the same name as the first member.
+    // THIS^ starts on the current POU; SUPER^ starts on its immediate base. Once seeded, the normal
+    // member walk below handles the remainder of the chain, including inherited members.
+    if (firstPart === 'this^') {
+        currentType = activePou && activePou.name;
+    } else if (firstPart === 'super^') {
+        currentType = activePou && activePou.extends;
+    }
+
     // Check local method variables
-    if (activeMethod) {
+    if (!currentType && firstPart !== 'this^' && firstPart !== 'super^' && activeMethod) {
         const found = activeMethod.variables.find(v => v.name.toLowerCase() === firstPart);
         if (found) currentType = cleanTypeName(found.type);
     }
@@ -279,13 +288,13 @@ function resolvePathType(parts, activePou, activeMethod, symbolIndex) {
     // keeps every occurrence it cannot resolve — then attached that line to any `bError` anywhere in
     // the workspace. Measured on the sample before this: 9,801 of 29,803 reported references (33%)
     // were kept purely because they failed to resolve.
-    if (!currentType && activePou) {
+    if (!currentType && firstPart !== 'this^' && firstPart !== 'super^' && activePou) {
         const found = findVarInChain(activePou, firstPart, symbolIndex);
         if (found) currentType = cleanTypeName(found.type);
     }
 
     // Check GVL globals
-    if (!currentType) {
+    if (!currentType && firstPart !== 'this^' && firstPart !== 'super^') {
         for (const key of Object.keys(symbolIndex)) {
             const node = symbolIndex[key];
             if (node.type === 'GVL') {
@@ -299,7 +308,7 @@ function resolvePathType(parts, activePou, activeMethod, symbolIndex) {
     }
 
     // Direct type match
-    if (!currentType) {
+    if (!currentType && firstPart !== 'this^' && firstPart !== 'super^') {
         const foundKey = Object.keys(symbolIndex).find(k => k.toLowerCase() === firstPart);
         if (foundKey) {
             currentType = foundKey;
