@@ -56,6 +56,16 @@ const SIG_ZIP64_EOCD = 0x06064b50;
 /** Maximum size of the EOCD record plus its (optional) trailing comment. */
 const MAX_EOCD_SEARCH = 66000;
 
+/**
+ * Defensive ZIP limits. Library archives are inputs from the workspace, not trusted application
+ * resources: a tiny deflate stream can otherwise make inflateRawSync allocate an arbitrary amount
+ * of memory in the language-server process. The largest observed TwinCAT string table is far below
+ * this ceiling; keep the limit explicit and raise it only alongside fixture measurements.
+ */
+const MAX_ARCHIVE_BYTES = 256 * 1024 * 1024;
+const MAX_ZIP_ENTRIES = 100000;
+const MAX_ZIP_ENTRY_BYTES = 16 * 1024 * 1024;
+
 /** The single archive entry that carries every serialized string. */
 const STRING_TABLE_ENTRY = /string_table.*\.auxiliary$/i;
 
@@ -228,6 +238,7 @@ function harvestArchiveFile(filePath) {
         return null;
     }
     __archiveStats.statted++;
+    if (!stat.isFile() || stat.size > MAX_ARCHIVE_BYTES) return null;
 
     const pathKey = path.resolve(filePath).toLowerCase();
     const known = identityCache.get(pathKey);
@@ -390,6 +401,9 @@ function findEndOfCentralDirectory(buf) {
  * @throws {Error} If the buffer is not a ZIP archive.
  */
 function readZipEntries(buf) {
+    if (!Buffer.isBuffer(buf) || buf.length > MAX_ARCHIVE_BYTES) {
+        throw new Error('ZIP archive exceeds the supported size limit');
+    }
     const eocd = findEndOfCentralDirectory(buf);
     if (eocd === -1) throw new Error('not a ZIP archive (no end-of-central-directory record)');
 
@@ -408,6 +422,13 @@ function readZipEntries(buf) {
         }
     }
 
+    if (!Number.isSafeInteger(count) || count < 0 || count > MAX_ZIP_ENTRIES) {
+        throw new Error('ZIP archive contains too many entries');
+    }
+    if (!Number.isSafeInteger(centralOffset) || centralOffset < 0 || centralOffset > eocd) {
+        throw new Error('ZIP archive has an invalid central-directory offset');
+    }
+
     const entries = [];
     let p = centralOffset;
     for (let i = 0; i < count; i++) {
@@ -415,6 +436,8 @@ function readZipEntries(buf) {
         const nameLen = buf.readUInt16LE(p + 28);
         const extraLen = buf.readUInt16LE(p + 30);
         const commentLen = buf.readUInt16LE(p + 32);
+        const next = p + 46 + nameLen + extraLen + commentLen;
+        if (next > buf.length) throw new Error('truncated ZIP central-directory entry');
         entries.push({
             name: buf.toString('utf8', p + 46, p + 46 + nameLen),
             method: buf.readUInt16LE(p + 10),
@@ -422,7 +445,7 @@ function readZipEntries(buf) {
             uncompressedSize: buf.readUInt32LE(p + 24),
             localHeaderOffset: buf.readUInt32LE(p + 42)
         });
-        p += 46 + nameLen + extraLen + commentLen;
+        p = next;
     }
     return entries;
 }
@@ -436,15 +459,35 @@ function readZipEntries(buf) {
  * @throws {Error} On an unsupported compression method or a corrupt header.
  */
 function readZipEntryData(buf, entry) {
+    if (!Number.isSafeInteger(entry.compressedSize) || entry.compressedSize < 0
+        || !Number.isSafeInteger(entry.uncompressedSize) || entry.uncompressedSize < 0
+        || entry.uncompressedSize > MAX_ZIP_ENTRY_BYTES) {
+        throw new Error(`ZIP entry "${entry.name}" exceeds the supported output limit`);
+    }
     const off = entry.localHeaderOffset;
     if (off + 30 > buf.length) throw new Error(`truncated local header for "${entry.name}"`);
     const nameLen = buf.readUInt16LE(off + 26);
     const extraLen = buf.readUInt16LE(off + 28);
     const start = off + 30 + nameLen + extraLen;
+    const end = start + entry.compressedSize;
+    if (start < off || end < start || end > buf.length) {
+        throw new Error(`truncated data for "${entry.name}"`);
+    }
     const raw = buf.subarray(start, start + entry.compressedSize);
 
-    if (entry.method === 0) return Buffer.from(raw);   // stored
-    if (entry.method === 8) return zlib.inflateRawSync(raw); // deflate
+    if (entry.method === 0) {
+        if (raw.length !== entry.uncompressedSize) {
+            throw new Error(`stored size mismatch for "${entry.name}"`);
+        }
+        return Buffer.from(raw);
+    }
+    if (entry.method === 8) {
+        const inflated = zlib.inflateRawSync(raw, { maxOutputLength: MAX_ZIP_ENTRY_BYTES });
+        if (inflated.length !== entry.uncompressedSize) {
+            throw new Error(`inflated size mismatch for "${entry.name}"`);
+        }
+        return inflated;
+    }
     throw new Error(`unsupported compression method ${entry.method} for "${entry.name}"`);
 }
 

@@ -23,6 +23,7 @@
 
 const { spawnSync } = require('child_process');
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 
 const dir = __dirname;
@@ -67,17 +68,6 @@ function detectFixtures() {
 
 const fixtures = detectFixtures();
 const requireFull = process.env.REQUIRE_FULL_SUITE === '1';
-
-if (requireFull && !fixtures.full) {
-    console.error(`\n${'═'.repeat(70)}`);
-    console.error('REQUIRE_FULL_SUITE=1 but the full-run fixtures are not present:');
-    for (const m of fixtures.missing) console.error(`  ✗ ${m}`);
-    console.error('\nA reduced run cannot exercise the sample diagnostics ratchet or the live-path');
-    console.error('guard, so it must not be mistaken for a clean gate. Restore the fixtures, or drop');
-    console.error('REQUIRE_FULL_SUITE to accept a reduced run.');
-    console.error('═'.repeat(70));
-    process.exit(1);
-}
 const files = fs.readdirSync(dir)
     .filter(f => /^test_.*\.js$/.test(f))
     .filter(f => !filter || f.includes(filter))
@@ -89,34 +79,67 @@ if (files.length === 0) {
 }
 
 const failed = [];
+const reports = new Map();
+const coverageDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tc-test-coverage-'));
+process.on('exit', () => {
+    try { fs.rmSync(coverageDir, { recursive: true, force: true }); } catch (e) { /* best effort */ }
+});
 const started = Date.now();
 
 for (const file of files) {
     process.stdout.write(`\n${'─'.repeat(70)}\n▶ ${file}\n${'─'.repeat(70)}\n`);
-    const res = spawnSync(process.execPath, [path.join(dir, file)], { stdio: 'inherit' });
+    const reportPath = path.join(coverageDir, `${file}.json`);
+    const res = spawnSync(process.execPath, [path.join(dir, file)], {
+        stdio: 'inherit',
+        env: { ...process.env, TC_TEST_COVERAGE_FILE: reportPath }
+    });
     if (res.status !== 0) failed.push(file);
+    if (fs.existsSync(reportPath)) {
+        try {
+            const report = JSON.parse(fs.readFileSync(reportPath, 'utf8'));
+            if (report && report.gate) reports.set(report.gate, report);
+        } catch (e) {
+            reports.set(file, { gate: file, status: 'skipped', detail: 'invalid coverage report' });
+        }
+    }
 }
 
 const secs = ((Date.now() - started) / 1000).toFixed(1);
 console.log(`\n${'═'.repeat(70)}`);
 console.log(`Ran ${files.length} suite(s) in ${secs}s — ${files.length - failed.length} passed, ${failed.length} failed`);
 
-// State the coverage the run actually achieved. A REDUCED run still reports "passed" per suite
-// (the sample-based harnesses skip themselves by design), so without this the summary overstates it.
-if (fixtures.full) {
+const requiredGates = [
+    'live-path-sample',
+    'sample-diagnostics',
+    'sample-typecheck',
+    'multi-project-sample',
+    'committed-library'
+];
+const missedGates = requiredGates
+    .map(gate => reports.get(gate) || { gate, status: 'skipped', detail: 'harness did not report execution' })
+    .filter(report => report.status !== 'ran');
+const coverageFull = !filter && fixtures.full && missedGates.length === 0;
+
+// State the coverage the run actually achieved. Fixture presence is only a preflight hint; FULL
+// requires the harnesses themselves to report that every load-bearing gate ran.
+if (filter) {
+    console.log(`Coverage: FILTERED — only suites matching "${filter}" ran.`);
+} else if (coverageFull) {
     console.log('Coverage: FULL — sample project, library archives and .tmc all present.');
 } else {
     console.log('Coverage: REDUCED — these gates did NOT run:');
     for (const m of fixtures.missing) console.log(`    · ${m}`);
+    for (const report of missedGates) console.log(`    · ${report.gate}: ${report.detail || 'skipped'}`);
     console.log('  Passing here does not prove the diagnostics ratchet held. Run locally with the');
     console.log('  fixtures present (REQUIRE_FULL_SUITE=1 enforces it) before trusting it as a gate.');
 }
 
-if (failed.length) {
+if (failed.length || (requireFull && !coverageFull)) {
     console.log('\nFAILED SUITES:');
     for (const f of failed) console.log(`  ✗ ${f}`);
+    if (requireFull && !coverageFull) console.log('  ✗ required FULL coverage was not achieved');
     console.log('═'.repeat(70));
     process.exit(1);
 }
-console.log(fixtures.full ? '✓ ALL SUITES PASSED (full coverage)' : '✓ ALL SUITES PASSED (reduced coverage)');
+console.log(coverageFull ? '✓ ALL SUITES PASSED (full coverage)' : '✓ ALL SUITES PASSED (reduced coverage)');
 console.log('═'.repeat(70));

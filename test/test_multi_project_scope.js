@@ -24,6 +24,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const { sampleAvailable, buildTwoProjectFixture, objectPath } = require('./_multiproject');
+const { reportCoverage } = require('./_coverage');
 
 const { parseTwinCatXml } = require('../src/xmlParser');
 const { convertXmlToSt } = require('../src/stConverter');
@@ -227,6 +228,7 @@ fs.rmSync(looseRoot, { recursive: true, force: true });
 if (!sampleAvailable()) {
     console.log('sample/ project not present — skipping the remaining (sample-based) multi-project scope tests.');
     console.log(`\n--- MULTI-PROJECT SCOPE TESTS COMPLETE with ${errors} error(s) ---`);
+    reportCoverage('multi-project-sample', 'skipped', 'sample/ project not present');
     process.exit(errors > 0 ? 1 : 0);
 }
 
@@ -453,5 +455,6 @@ assert(unscoped.occurrences.some(o => /LineA/i.test(o.uri)),
     'sanity: an UNSCOPED file list does reach the other project — the guard above is load-bearing');
 
 fx.cleanup();
+reportCoverage('multi-project-sample', 'ran', 'two project copies exercised');
 console.log(`\n--- MULTI-PROJECT SCOPE TESTS COMPLETE with ${errors} error(s) ---`);
 process.exit(errors > 0 ? 1 : 0);

@@ -24,6 +24,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const zlib = require('zlib');
+const { reportCoverage } = require('./_coverage');
 
 const {
     readZipEntries,
@@ -187,6 +188,32 @@ check('reads a stored (method 0) entry', () => {
 
 check('rejects a non-ZIP buffer instead of inventing entries', () => {
     assert.throws(() => readZipEntries(Buffer.from('not a zip file at all, no EOCD here')), /ZIP/i);
+});
+
+check('rejects a deflate entry whose declared output exceeds the resource limit', () => {
+    const oversized = buildZip([{
+        name: '__shared_data_storage_string_table__.auxiliary',
+        data: Buffer.alloc(17 * 1024 * 1024)
+    }]);
+    const entry = readZipEntries(oversized)[0];
+    assert(oversized.length < 32 * 1024, 'the adversarial fixture remains a small compressed input');
+    assert.throws(() => readZipEntryData(oversized, entry), /output limit/i);
+});
+
+check('the inflate output cap cannot be bypassed by a dishonest declared size', () => {
+    const oversized = buildZip([{
+        name: '__shared_data_storage_string_table__.auxiliary',
+        data: Buffer.alloc(17 * 1024 * 1024)
+    }]);
+    const entry = readZipEntries(oversized)[0];
+    entry.uncompressedSize = 1;
+    assert.throws(() => readZipEntryData(oversized, entry), /larger than|output length|size mismatch/i);
+});
+
+check('rejects an entry whose compressed range runs beyond the archive', () => {
+    const entry = readZipEntries(ARCHIVE)[0];
+    entry.compressedSize = ARCHIVE.length;
+    assert.throws(() => readZipEntryData(ARCHIVE, entry), /truncated data/i);
 });
 
 // ---------------------------------------------------------------------------------------------
@@ -399,6 +426,7 @@ const fixtures = sampleArchiveFixtures(SAMPLE_DIR);
 
 if (!fixtures.librariesDir) {
     console.log('  skip  sample/**/_Libraries not present — nothing to check.');
+    reportCoverage('committed-library', 'skipped', 'sample/**/_Libraries not present');
 } else {
     clearLibrarySymbols();
     const stats = indexLibrarySymbols(SAMPLE_DIR);
@@ -413,7 +441,9 @@ if (!fixtures.librariesDir) {
     if (!fixtures.hasMit) {
         console.log('  skip  the committed MIT archive is missing from this working copy — ' +
                     'restore sample/**/_Libraries/fisothemes/.');
+        reportCoverage('committed-library', 'skipped', 'committed MIT archive missing');
     } else {
+        reportCoverage('committed-library', 'ran', 'committed MIT archive decoded');
         check('the committed MIT archive harvests to exactly its known symbol set', () => {
             // A byte-fixed input: tcdyncollections.library v1.0.7 is committed, so an exact count is a
             // real ratchet on the ZIP reader and the LEB128 string-table decoder — a silently dropped

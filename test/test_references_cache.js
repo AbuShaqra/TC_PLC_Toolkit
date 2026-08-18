@@ -60,6 +60,7 @@ VAR
 END_VAR
 fbA(bEnable := TRUE);
 `;
+const CALLER_SAME_SIZE_NO_REF = CALLER_V1.replace(/FB_Pump/g, 'FB_Dump');
 // Spelled in a different case, because ST is case-insensitive: the pre-filter must not drop this.
 const OTHER = `FUNCTION_BLOCK FB_Other
 VAR
@@ -68,7 +69,11 @@ END_VAR
 `;
 
 write('FB_Pump.st', FB);
-const callerMtime = write('MAIN.st', CALLER_V1);
+write('MAIN.st', CALLER_V1);
+const callerPath = path.join(TEST_DIR, 'MAIN.st');
+const fixedMtime = new Date((Math.floor(Date.now() / 1000) - 5) * 1000);
+fs.utimesSync(callerPath, fixedMtime, fixedMtime);
+const callerMtime = fs.statSync(callerPath).mtimeMs;
 write('FB_Other.st', OTHER);
 
 const reindex = () => {
@@ -100,6 +105,18 @@ assert(countIn(refs, 'FB_Other.st') === 1,
 const refsAgain = search(index);
 assert(refsAgain.length === refs.length,
     `a repeat search returns the same references from cache (${refs.length} then ${refsAgain.length})`);
+
+// Deployment/copy tools can preserve mtime. This rewrite also preserves byte length, so an
+// mtime+size cache would still answer from CALLER_V1 even though MAIN no longer names FB_Pump.
+const beforePreservedEdit = fs.statSync(callerPath);
+fs.writeFileSync(callerPath, CALLER_SAME_SIZE_NO_REF, 'utf8');
+fs.utimesSync(callerPath, beforePreservedEdit.atime, beforePreservedEdit.mtime);
+const afterPreservedEdit = fs.statSync(callerPath);
+assert(afterPreservedEdit.mtimeMs === beforePreservedEdit.mtimeMs,
+    'fixture restored the original mtime after a same-size rewrite');
+const refsAfterPreservedEdit = search(index);
+assert(countIn(refsAfterPreservedEdit, 'MAIN.st') === 0,
+    `a same-size rewrite with preserved mtime invalidates the cache (got ${countIn(refsAfterPreservedEdit, 'MAIN.st')} stale hits)`);
 
 // The file changes on disk. The cache keys on mtime, so the new reference must appear WITHOUT any
 // reindex — a cache that ignored this would keep serving the old contents forever.

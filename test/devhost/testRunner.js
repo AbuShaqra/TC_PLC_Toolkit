@@ -22,6 +22,7 @@ const fs = require('fs');
 
 const REPO = path.resolve(__dirname, '..', '..');
 const WS = process.env.TCDEV_WS;
+const SAMPLE = process.env.TCDEV_SAMPLE || WS;
 const RESULTS = process.env.TCDEV_RESULTS;
 
 const out = { steps: [], panels: [] };
@@ -78,8 +79,23 @@ async function run() {
         await ext.activate();
         log('activated', { id: ext.id });
 
-        const GVL = path.join(WS, 'TcToolkitSample_PLC', 'GVLs', 'GVL_System.TcGVL');
-        const MAIN = path.join(WS, 'TcToolkitSample_PLC', 'POUs', 'MAIN.TcPOU');
+        // Drive the actual VS Code-bound Objects provider over two same-named `.plcproj` copies.
+        // The pure formatter has unit coverage, but only this proves the provider renders those labels.
+        const { createProjectMap } = require(path.join(REPO, 'src', 'lsp', 'projectMap.js'));
+        const { TwinCatTreeDataProvider } = require(path.join(REPO, 'src', 'treeDataProvider.js'));
+        const { projectLabel } = require(path.join(REPO, 'src', 'projectStatusBar.js'));
+        const projectMap = createProjectMap([WS]);
+        const treeProvider = new TwinCatTreeDataProvider(() => projectMap);
+        const roots = await treeProvider.getChildren();
+        const mainA = path.join(SAMPLE, 'TcToolkitSample_PLC', 'POUs', 'MAIN.TcPOU');
+        const mainB = path.join(WS, 'LineB', 'TcToolkitSample_PLC', 'POUs', 'MAIN.TcPOU');
+        log('multi-project-ui', {
+            treeLabels: roots.map(item => String(item.label)),
+            statusLabels: [projectLabel(projectMap, mainA), projectLabel(projectMap, mainB)]
+        });
+
+        const GVL = path.join(SAMPLE, 'TcToolkitSample_PLC', 'GVLs', 'GVL_System.TcGVL');
+        const MAIN = path.join(SAMPLE, 'TcToolkitSample_PLC', 'POUs', 'MAIN.TcPOU');
         const gvlUri = vscode.Uri.file(GVL);
 
         // 1. Open the GVL as a user would from the Explorer; the chain must complete.
@@ -128,7 +144,7 @@ async function run() {
             }
             return null;
         };
-        const FB = findFile(WS, 'FB_Cylinder.TcPOU');
+        const FB = findFile(SAMPLE, 'FB_Cylinder.TcPOU');
         if (FB) {
             await vscode.commands.executeCommand('vscode.openWith', vscode.Uri.file(FB), 'twincat.xmlViewer');
             await sleep(3000);

@@ -9,6 +9,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { fsPathToFileUri } = require('../fileUri');
 const { parseTwinCatXml } = require('../xmlParser');
 const { tokenize, parseVariablesBlock, TokenType } = require('./parser');
 const { createSymbolNode } = require('./symbolNode');
@@ -305,11 +306,7 @@ function indexXmlObject(index, xmlText, fileUri) {
 function indexXmlFile(index, filePath) {
     try {
         const xml = fs.readFileSync(filePath, 'utf8');
-        // The trailing strip keeps this to three slashes on POSIX, where the path already carries a
-        // root: `file:///` + `/home/x` would be `file:////home/x`, which no longer matches the URIs
-        // built anywhere else and so silently fails identity comparison. Windows is unaffected —
-        // `c:/x` has no leading slash to strip.
-        const fileUri = 'file:///' + filePath.replace(/\\/g, '/').replace(/^\//, '');
+        const fileUri = fsPathToFileUri(filePath);
         return indexXmlObject(index, xml, fileUri);
     } catch (e) {
         return null;

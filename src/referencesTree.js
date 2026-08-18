@@ -3,6 +3,8 @@
  * @description Pure (vscode-free) grouping logic for the References view, so it can be unit-tested.
  */
 
+const { fileUriBasename } = require('./fileUri');
+
 /**
  * Humanizes a component id for display (e.g. 'method_cyclic' -> 'cyclic()', 'root' -> 'Main').
  * @param {string} componentId
@@ -21,9 +23,7 @@ function componentLabel(componentId) {
 /** Extracts a file basename from a file URI string without depending on vscode. */
 function basenameFromUri(uri) {
     try {
-        const noQuery = String(uri).split(/[?#]/)[0];
-        const last = noQuery.split(/[\\/]/).pop() || noQuery;
-        return decodeURIComponent(last);
+        return fileUriBasename(uri);
     } catch (e) {
         return String(uri);
     }

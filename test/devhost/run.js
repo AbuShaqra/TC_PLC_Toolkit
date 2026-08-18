@@ -2,8 +2,8 @@
  * @file test/devhost/run.js
  * @description The automated dev-host pass — launches the INSTALLED VS Code as a separate instance
  * (fresh user-data/extensions dirs, so a running VS Code is untouched), loads this repo as a
- * development extension, and drives ./testRunner.js inside its extension host against a temp COPY
- * of the committed sample project. This reaches the two links nothing headless can:
+ * development extension, and drives ./testRunner.js inside its extension host against two temp
+ * copies of the committed sample project. This reaches the links nothing headless can:
  * vscode.openWith() uri identity (tab reuse vs duplicate) and the live vscode-languageclient
  * transport.
  *
@@ -56,8 +56,10 @@ function findCodeCli() {
 
     const work = fs.mkdtempSync(path.join(os.tmpdir(), 'tc_devhost_'));
     const ws = path.join(work, 'ws');
+    const primary = path.join(ws, 'LineA');
     const results = path.join(work, 'results.json');
-    fs.cpSync(SAMPLE, ws, { recursive: true });
+    fs.cpSync(SAMPLE, primary, { recursive: true });
+    fs.cpSync(SAMPLE, path.join(ws, 'LineB'), { recursive: true });
 
     const args = [
         '--new-window',
@@ -73,7 +75,7 @@ function findCodeCli() {
     // ("Program Files") then splits mid-argument.
     const quote = (s) => /[\s&()^]/.test(s) ? `"${s}"` : s;
     const launched = spawnSync([cli, ...args].map(quote).join(' '), {
-        env: { ...process.env, TCDEV_WS: ws, TCDEV_RESULTS: results },
+        env: { ...process.env, TCDEV_WS: ws, TCDEV_SAMPLE: primary, TCDEV_RESULTS: results },
         encoding: 'utf8',
         shell: true
     });
@@ -101,6 +103,13 @@ function findCodeCli() {
 
     assert(!step('CRASH'), 'the in-host run completed without crashing' + (step('CRASH') ? ': ' + step('CRASH').error : ''));
     assert(!!step('done'), 'the in-host run reached the end');
+
+    const multi = step('multi-project-ui');
+    const expectedLabels = ['TcToolkitSample_PLC — LineA', 'TcToolkitSample_PLC — LineB'];
+    assert(!!multi && expectedLabels.every(label => multi.treeLabels.includes(label)),
+        `the real Objects provider disambiguates duplicate project names (got ${multi ? JSON.stringify(multi.treeLabels) : 'no result'})`);
+    assert(!!multi && expectedLabels.every(label => multi.statusLabels.includes(label)),
+        `the real status-bar formatter uses the same project labels (got ${multi ? JSON.stringify(multi.statusLabels) : 'no result'})`);
 
     // The Objects-tree insert commands reach the webview's caret. Their module is vscode-bound, so
     // the pure template logic (test_object_insert.js) is all a Node harness can cover — this proves
