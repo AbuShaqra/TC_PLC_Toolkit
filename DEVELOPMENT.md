@@ -91,7 +91,7 @@ per-suite without aborting on the first failure. The main ones:
 | `test/test_typecheck.js` | Semantic type checking: member access, call arguments, declaration types, assignment compatibility — plus the same `sample/` diagnostics ratchet. |
 | `test/test_references_scope.js` | Find References scope + coordinate spaces: private method `VAR` vs. parameters, named arguments belonging to the callee, and FB_init declaration-site arguments (`inst : FB_T(p := v)`). |
 | `test/test_references_tree.js` | References-view grouping (file → component → occurrence). |
-| `test/test_tree_reveal.js` | Objects-tree navigation targets and parent chains: file/root fallback; exact method, property, action, transition and Get/Set nodes; nested virtual-folder ancestry; and no project-map lookup until the logical component chain reaches the file/disk boundary. |
+| `test/test_tree_reveal.js` | Objects-tree navigation targets and parent chains: file/root fallback; exact method, property, action, transition and Get/Set nodes; nested virtual-folder ancestry; solution → PLC-project ancestry; and no project-map lookup until the logical component chain reaches the file/disk boundary. |
 | `test/test_st_shadow.js` | XML is the source of truth: a stray plain `.st` mirror (outside `ST_Files/`) must never steal an XML-backed symbol's index node — the references scan would follow the hijacked uri to the stale mirror and miss the real call sites. |
 | `test/test_library_catalog.js` | The data path behind the TwinCAT Libraries view: catalog built from the `.plcproj`, namespaces, `.tmc` types and their members. |
 | `test/test_dnd_rules.js` | The Objects-tree drag & drop and copy/paste compatibility matrices: what is draggable/copyable (not virtual folders, not Get/Set accessors; directories move but do not copy), components move only within their own file yet paste cross-file (POU↔interface gated), directory-cycle and no-op rejections, duplicate-in-place file paste. |
@@ -110,6 +110,7 @@ per-suite without aborting on the first failure. The main ones:
 | `test/test_plcproj_scope.js` | The index is scoped to the `.plcproj`, not the filesystem: a project's `objectPaths` (from `createProjectMap`) names only the `<Compile>`d objects, so a backup/orphan copy on disk (a duplicate object name, absent from the project) can never win the name-keyed index and steal a real object's references. Includes the no-`.plcproj` empty-map case and a sample-coverage check proving the scoping is a no-op on the ratchet. Predates the project-scoped index (below) — the guarantee it pins now runs through `createProjectMap` per project instead of one workspace-wide union. |
 | `test/test_uri_fs_path.js` | `uriToFsPath()` must return a path the **running** platform can open. The former copies in `workspaceScan.js` and `features/core.js` once ended in an unconditional `.replace(/\//g,'\\')`, which is correct on Windows and on POSIX ate the root — `file:///home/u/a` became `\home\u\a` — so 11 of 59 suites failed on Linux while CI (`windows-latest`) stayed green. Both callers now delegate to the shared production helper in `src/fileUri.js`. Written to hold on **both** platforms so whichever one CI runs still guards the branch it takes: a round trip through the real filesystem (the load-bearing one — a merely plausible converter cannot satisfy it), paths containing a space in both encoded and unencoded form, separator/root shape per platform, bare-path and empty-input passthrough, caller delegation, and unchanged Windows mapping. |
 | `test/test_project_map.js` | `src/lsp/projectMap.js`: which `.plcproj` owns which file. Discovery, `objectPaths` per project, `ownersOf()` vs `projectFor()` (a linked file has two owners but a request for it routes to one), the orphan/no-project/case-insensitivity edges, `projectLabel()` (the status-bar text, from `src/projectStatusBar.js`) and `groupRootsByProject()` (the Objects-tree grouping) at both the &lt;2-projects (nothing shown, flat tree) and 2-projects ends. Also pins `TWINCAT_EXTS` staying in sync between `projectMap.js` and `xmlIndexer.js`'s own copies — a real review-caught bug: `projectMap.js`'s copy once missed `.tctleo`, silently dropping every enumeration-text-list object's symbols from a project-scoped scan. |
+| `test/test_solution_map.js` | `src/solutionMap.js`: the real `.sln` → `.tsproj` → `_Config/PLC/*.xti` → `.plcproj` chain, multiple PLC projects under one solution, multiple same-named solutions, project labels scoped within their solution, unrelated Visual Studio solutions ignored, and unreferenced PLC projects retained as top-level fallbacks. |
 | `test/test_multi_project_scope.js` | End-to-end: two copies of `sample/` under one workspace root (`test/_multiproject.js` builds the fixture, one copy deliberately diverged), driven through the real `scanWorkspace`. Asserts the partition (one index per project, nothing lost to a name collision), 0 diagnostics on the correct copy while the diverged copy's own real error still reports, references and the rename config scan never crossing the project boundary, and the library namespace/symbol registries staying per-project — including the Libraries-view union fallback when no project is specified. Needs `sample/`; skips cleanly when absent. |
 
 | `test/test_object_insert.js` | The Objects-tree insert commands' text, built by driving the **real** `buildNodeFromXml` over real `sample/` objects: the bare name for each kind, and the call template — instance name for an FB (`FB_Gripper` → `fbGripper`, since ST calls an instance, not the type), own name for a FUNCTION/PROGRAM, bare for a method/action, `Name();` when there are no parameters. Also pins that the extracted `callTemplate` is byte-identical to what `libraryTreeProvider` produced before the move, and that every `contextValue` named in the two new `when` clauses is one the Objects tree actually emits (read out of `treeDataProvider.js`, not hard-coded, so a rename cannot silently orphan the menu items). **One case is synthetic on purpose:** no FB in `sample/` declares root `VAR_INPUT`/`VAR_OUTPUT`, so the mixed `:=`/`=>` ordering case is driven from one clearly-marked XML string through the real parser. |
@@ -180,22 +181,23 @@ a visible window for ~30 s that closes itself):
 node test/devhost/run.js
 ```
 
-`run.js` copies the committed sample twice (`LineA`/`LineB`) under one temp workspace, launches the
-**installed** VS Code as a separate
+`run.js` copies the committed sample twice (`LineA`/`LineB`) under one temp workspace, adds a second
+PLC project to LineA's solution, and launches the **installed** VS Code as a separate
 instance (fresh `--user-data-dir`/`--extensions-dir`, so a running VS Code is untouched) with this repo
 as the development extension and `testRunner.js` as the `--extensionTestsPath` module. In-host, that
 module patches `TwinCatCustomEditorProvider.prototype.resolveCustomTextEditor` to trace every panel's
 resolve → `ready` → `init` chain (a break anywhere is a permanently blank viewer), opens a GVL, asks the
 live client for a cross-file definition and its references, then navigates with exactly the URI the
-definition returned. It drives the real Objects provider and status-bar formatter too, asserting that
-the two identical `.plcproj` basenames render as `TcToolkitSample_PLC — LineA` and `— LineB`. It also
+definition returned. It drives the real Objects provider and status-bar formatter too, asserting two
+solution roots, two PLC-project children under LineA, and the globally disambiguated status labels. It also
 invokes the two **Objects-tree insert commands** and captures what reaches
 the webview — `src/commands/objectInsertCommands.js` is `vscode`-bound, so `test_object_insert.js` can
 only cover the pure template half, and this is the only place the rest of the path (tree node → XML
 parse → template → posted at the caret) is exercised at all. The same real-host pass intercepts the
 `twincatExplorer` TreeView and verifies definition/reference navigation reveals the exact method,
-property, Get/Set accessor and virtual-folder action; switching away from and back to a retained
-webview must keep that component selected. It asserts the URI keeps the **on-disk spelling** and that navigation **reuses**
+property, Get/Set accessor and virtual-folder action through their PLC-project and solution parents;
+switching away from and back to a retained webview must keep that component selected. It asserts the
+URI keeps the **on-disk spelling** and that navigation **reuses**
 the open tab — the 0.6.0 regression (fixed in 0.6.1) minted lowercased URIs from the normalized project
 partition, and every cross-file Go to Definition then opened a duplicate tab titled `gvl_system.tcgvl`
 with nothing highlighted. Results flow through a progressive JSON file the runner polls, so a hang
@@ -240,7 +242,8 @@ src/
   customEditorProvider  Webview host: assembles full-file ST, bridges Monaco ↔ LSP, writes CDATA back
   editorMapping         Pure pane↔unit coordinate, pane-slice and peek-model helpers used by the host + tests
   fileUri               Central Windows path ↔ file URI conversion and comparison boundary
-  treeDataProvider      "TwinCAT Objects" explorer tree
+  treeDataProvider      "TwinCAT Objects" explorer tree and reveal parent chains
+  solutionMap           TwinCAT .sln → .tsproj → .xti → .plcproj presentation model for that tree
   projectStatusBar      Status-bar "which PLC project is this file in" indicator (2+ projects only);
                         projectLabel() is pure/vscode-free so it is unit-testable — vscode is required
                         lazily, inside createProjectStatusBar()
@@ -347,6 +350,14 @@ and routed at startup (and on `custom/reindex`), not one flat index for the whol
   Duplicate `.plcproj` basenames use the shortest unique parent suffix (for example
   `TcToolkitSample_PLC — LineA`); `projectMap.displayName()` supplies the same label to the Objects
   tree and status bar while unique project names keep their short basename.
+- **`src/solutionMap.js`** is the extension-host-only presentation model for the Objects tree. It
+  follows TwinCAT's `.sln` → `.tsproj` → `_Config/PLC/*.xti` → `PrjFilePath` chain, so a solution is
+  always the top-level node and every referenced PLC project is its child (including one solution
+  with several PLC projects). Duplicate solution names get shortest-unique-parent suffixes; project
+  names are disambiguated only against siblings in the same solution. Unreferenced PLC projects stay
+  as top-level fallbacks, and a workspace with no TwinCAT solution preserves the prior flat/per-project
+  behavior. This model must stay out of LSP ownership/routing: `.sln`, `.tsproj`, and `.xti` watcher
+  events rebuild the host tree only, while `.plcproj` remains the sole trigger for LSP reindexing.
 
 Two registries hang off each project's index: `Symbol.for('twincat.libraryNamespaces')`
 (`src/lsp/libraries.js`) and `Symbol.for('twincat.librarySymbols')` (`src/lsp/libsymbols.js`) — see
@@ -362,6 +373,8 @@ registry rather than an empty one — the fallback that keeps roughly 15 pre-exi
 `test/test_project_map.js` covers `projectMap.js`'s ownership rules, actual Windows casing without
 expanding workspace 8.3/junction identity, the missing-file fallback, `projectLabel()` and
 `groupRootsByProject()` (the Objects-tree per-project grouping) in isolation.
+`test/test_solution_map.js` covers solution membership and labels without VS Code; `test_tree_reveal`
+and the installed dev-host prove the project/solution parent chain is accepted by a real TreeView.
 `test/test_multi_project_scope.js` covers the whole thing end-to-end against a real two-project fixture
 built from `sample/` (the fixture helper is `test/_multiproject.js`, two copies of `sample/` under one
 root, one copy deliberately diverged) — the partition, zero diagnostics on correct code in either

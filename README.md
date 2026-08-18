@@ -25,6 +25,8 @@ Implementation below, separated by a resizable splitter. No raw XML.
 ### TwinCAT Objects explorer
 
 Browse POUs, interfaces, GVLs, DUTs and their methods, properties, actions and virtual folders.
+When TwinCAT solutions are present, the tree mirrors the real hierarchy: each solution is a
+top-level node with all of its PLC projects underneath it, including multi-project solutions.
 Create and delete files, folders, methods, properties and actions — the nearest `.plcproj` is kept in
 sync automatically. The tree follows you: switching editors reveals and highlights the matching item.
 

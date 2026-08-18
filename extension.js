@@ -94,19 +94,21 @@ function activate(context) {
     );
 
     // Extension-host copy of the project partition (the LSP's copy lives in the other process and
-    // is not reachable from here). A `.plcproj` walk plus one regex per file — cheap enough to
-    // rebuild on activation and on every `.plcproj` change (see refreshLibrariesFor below), never
-    // needs a dedicated watcher of its own.
+    // is not reachable from here). The sibling solution model is presentation-only and follows the
+    // `.sln`/`.tsproj`/`.xti` chain for the Objects tree. Both rebuild on activation and relevant
+    // project-structure changes; only `.plcproj` changes trigger an LSP reindex below.
     const { createProjectMap } = require('./src/lsp/projectMap');
+    const { createSolutionMap } = require('./src/solutionMap');
     const { createProjectStatusBar } = require('./src/projectStatusBar');
     let hostProjectMap = null;
+    let hostSolutionMap = null;
     /**
-     * Rebuilds the extension host's copy of the project partition. Cheap (a `.plcproj` walk plus one
-     * regex per file) and only run on activation and on a `.plcproj` change.
+     * Rebuilds the extension host's project partition and solution presentation hierarchy.
      */
     const refreshProjectMap = () => {
         const folders = vscode.workspace.workspaceFolders || [];
         hostProjectMap = createProjectMap(folders.map(f => f.uri.fsPath));
+        hostSolutionMap = createSolutionMap(folders.map(f => f.uri.fsPath), hostProjectMap);
     };
     refreshProjectMap();
     // Declared before revealUri (next) is defined: revealUri calls projectStatusBar.refresh() on
@@ -323,7 +325,7 @@ function activate(context) {
 
     // Register tree view provider. Drag & drop logic lives entirely in the controller (and the
     // pure matrix under it) — extension.js only supplies its dependencies.
-    treeProvider = new TwinCatTreeDataProvider(() => hostProjectMap);
+    treeProvider = new TwinCatTreeDataProvider(() => hostProjectMap, () => hostSolutionMap);
     treeView = vscode.window.createTreeView('twincatExplorer', {
         treeDataProvider: treeProvider,
         dragAndDropController: new TwinCatDragAndDropController({ treeProvider, applyXmlEdit })
@@ -392,14 +394,16 @@ function activate(context) {
     // A queued re-index firing into a torn-down extension host would reject against a dead client.
     context.subscriptions.push({ dispose: () => reindexForLibraries.cancel() });
 
-    const refreshLibrariesFor = (uri) => {
-        if (path.extname(uri.fsPath).toLowerCase() !== '.plcproj') return;
+    const refreshProjectStructureFor = (uri) => {
+        const ext = path.extname(uri.fsPath).toLowerCase();
+        if (!['.sln', '.tsproj', '.xti', '.plcproj'].includes(ext)) return;
         // The host's own partition (used by the status bar) is independent of the LSP's copy and
-        // must be rebuilt on the same trigger: a project added/removed/renamed changes which
-        // `.plcproj` owns which file, and how many projects there are to disambiguate. Deliberately
-        // NOT debounced — it is a `.plcproj` walk plus one regex per file, and the status bar reads
-        // it on the next file switch.
+        // must be rebuilt when either ownership or the solution membership chain changes.
         refreshProjectMap();
+        treeProvider.refresh();
+        // Only `.plcproj` content changes language/library indexing. Solution, system-project and
+        // XTI changes merely regroup already-known project directories in the Objects tree.
+        if (ext !== '.plcproj') return;
         if (!client) {
             libraryProvider.refresh();
             return;
@@ -411,10 +415,10 @@ function activate(context) {
         workspaceWatcher.onDidCreate(async uri => {
             if (shouldRefresh(uri)) {
                 treeProvider.refresh();
-                refreshLibrariesFor(uri);
+                refreshProjectStructureFor(uri);
                 // Only TwinCAT source files get cached/indexed. Creating a *folder* also fires this
                 // watcher, and reading a directory throws EISDIR — so gate on the extension, exactly
-                // as onDidChange does. (treeProvider/refreshLibrariesFor still run for any create.)
+                // as onDidChange does. (The tree refresh still runs for every relevant create.)
                 const extName = path.extname(uri.fsPath).toLowerCase();
                 if (['.tcpou', '.tcio', '.tcgvl', '.tcdut'].includes(extName)) {
                     await indexFileOnLsp(uri);
@@ -427,7 +431,7 @@ function activate(context) {
         workspaceWatcher.onDidDelete(uri => {
             if (shouldRefresh(uri)) {
                 treeProvider.refresh();
-                refreshLibrariesFor(uri);
+                refreshProjectStructureFor(uri);
             }
         })
     );
@@ -435,7 +439,7 @@ function activate(context) {
     context.subscriptions.push(
         workspaceWatcher.onDidChange(async uri => {
             if (shouldRefresh(uri)) {
-                refreshLibrariesFor(uri);
+                refreshProjectStructureFor(uri);
                 const extName = path.extname(uri.fsPath).toLowerCase();
                 if (['.tcpou', '.tcio', '.tcgvl', '.tcdut'].includes(extName)) {
                     treeProvider.refresh();

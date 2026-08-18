@@ -4,11 +4,11 @@ Where the work *stands*. Read before starting; keep current (handoff rule in [CL
 100 lines — prune finished items rather than appending, but never drop a real finding to hit it. **Shipped features
 live in git history (PRs/commits); this file keeps the findings that would cost to re-derive.**
 
-**Last verified:** 2026-08-18 — `REQUIRE_FULL_SUITE=1 npm test` green (**63/63 harnesses, Coverage: FULL**),
+**Last verified:** 2026-08-18 — `REQUIRE_FULL_SUITE=1 npm test` green (**64/64 harnesses, Coverage: FULL**),
 typecheck clean, **0 diagnostics on the sample**, both browser harnesses green, installed-VS-Code dev-host green
 including a real two-project workspace. The earlier 2026-08-10 pass also verified 0 diagnostics with Beckhoff
 archives both present and moved aside. **0.6.2 (indexing)** and **0.7.0 (Objects-tree inserts)** are merged;
-`package.json` is at **0.7.3** for the Windows indexed-path casing hotfix. Remote history was rewritten 2026-08-17.
+`package.json` is at **0.8.0** for the solution→PLC-project Objects hierarchy. Remote history was rewritten 2026-08-17.
 The 2026-08-17 Linux pass was 60/60 FULL before the review fixes below.
 **Review fixes verified on `codex/review-fixes`:** bounded ZIP archive/input inflation (`libsymbols.js`); central path↔file-URI handling
 (`fileUri.js`); reference-cache identity is mtime+size+ctime+inode; FULL coverage now requires child harnesses to
@@ -16,8 +16,8 @@ report that gates actually ran; editor coordinate/peek helpers moved to producti
 imported by the live-path tests; duplicate `.plcproj` basenames use shortest-unique-parent labels in both Objects
 and status bar. The dev-host now copies the sample as LineA+LineB and asserts those real provider labels plus live
 cross-file navigation. The user's pre-existing newline edit in `sample/.../FB_Station.TcPOU` remains untouched.
-**0.7.3 VSIX installed to the user's VS Code 2026-08-18 — a FULL VS Code restart is required.**
-The CLI reports 0.7.3 (see the install trap below).
+**0.8.0 VSIX installed to the user's VS Code 2026-08-18 — a FULL VS Code restart is required.**
+The CLI reports 0.8.0 (see the install trap below).
 **Install trap that cost a debug cycle:** VS Code keeps the old version dir until a FULL restart (reload-window is not
 always enough) — the user tested 0.3.1's feature against the still-running 0.3.0 code and reported it broken. Check
 `~/.vscode/extensions/` for side-by-side version dirs + `.obsolete` before debugging a "feature does nothing" report.
@@ -26,6 +26,15 @@ look clean; library member expansion is still not visually confirmed. CSS conven
 header; the gradient-clipped wordmark is deliberately left at 3.3–4.9:1 (a logotype, exempt).
 
 ## Constraints / still open
+- **Solution→PLC-project Objects hierarchy (0.8.0):** `solutionMap.js` follows the actual TwinCAT
+  `.sln`→`.tsproj`→`_Config/PLC/*.xti`→`PrjFilePath` chain in the extension host. Solutions are always
+  top-level when present; one solution can contain several PLC projects; same-named solutions get
+  shortest-parent suffixes while PLC-project labels are scoped within their solution. Orphan projects
+  stay top-level and no-solution workspaces keep the previous fallback. `.sln`/`.tsproj`/`.xti` watcher
+  events regroup the tree only; `.plcproj` remains the sole LSP reindex trigger. Exact navigation now
+  reveals through component→file→project→solution. Pure solution/reveal tests, 64/64 FULL, and the
+  installed dev-host pass two solutions + three PLC projects (two under LineA). The real
+  `hpr-venice_eol` workspace maps `EOL`→`HPR40_EOL` with no orphan project.
 - **Project-scoped indexing SHIPPED** (user report 2026-08-06; plan in
   `docs/superpowers/plans/2026-08-06-project-scoped-index.md`). A folder holding several PLC projects used to
   collide: the symbol index was one flat name-keyed map for the whole workspace, so **38 object files produced 19
@@ -63,8 +72,7 @@ header; the gradient-clipped wordmark is deliberately left at 3.3–4.9:1 (a log
   junction identity; POSIX and missing includes remain unchanged. The real project indexes all 16
   FB_Pneumatic methods at the editor-cased URI. `test_project_map` covers case, 8.3, junction and
   missing-file behavior; the installed dev-host injects the mismatch and passes live reference URI
-  identity plus exact component reveal. Typecheck and 63/63 FULL suite are green. The requested
-  solution→PLC-project Objects hierarchy remains the next task.
+  identity plus exact component reveal. Typecheck and 64/64 FULL suite are green.
 - **Indexing cost FIXED (0.6.2, merged)** — retires the old deferred perf note. On the real 8-project
   `C:\Projects\PLC projects`: startup **11.7 s warm → ~3.5 s** (one scan, not two), archive decodes **306 → 157**,
   `.plcproj` reads 3/project → 1. `TC_Start` 608/427 → 377/388 ms, no regression. **Cold (~20 s) is PROJECTED, not

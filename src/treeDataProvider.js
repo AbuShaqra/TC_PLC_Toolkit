@@ -48,6 +48,10 @@ class TwinCatTreeItem extends vscode.TreeItem {
         this.folderPath = undefined;
         /** @type {TwinCatTreeItem|undefined} Logical tree parent used by TreeView.reveal. */
         this.parent = undefined;
+        /** @type {string|undefined} PLC-project identity for a project grouping node. */
+        this.projectKey = undefined;
+        /** @type {string|undefined} Solution identity for a solution grouping node. */
+        this.solutionKey = undefined;
     }
 
     // @ts-expect-error — `id` is deliberately a lazy getter (not a constructor-set property):
@@ -56,6 +60,7 @@ class TwinCatTreeItem extends vscode.TreeItem {
     get id() {
         if (!this.resourceUri) return undefined;
         const cv = this.contextValue;
+        if (cv === 'solution') return this.resourceUri.toString() + '#solution';
         if (cv === 'component' || cv === 'propertyNode' || cv === 'Get' || cv === 'Set' || cv === 'Action' || cv === 'Transition') {
             return this.resourceUri.toString() + '#' + (this.componentId || this.label);
         } else if (cv && cv.startsWith('pouVirtualFolder')) {
@@ -78,11 +83,14 @@ class TwinCatTreeDataProvider {
      *   `createProjectStatusBar(context, getProjectMap)` in src/projectStatusBar.js, so both
      *   consumers share one map and one refresh point. Defaults to `() => null` (no grouping) so the
      *   provider stays constructible without an extension-host wiring, e.g. from a future test.
+     * @param {(() => Object|null)} [getSolutionMap] Supplies the cached solution-to-project
+     *   presentation model built by src/solutionMap.js.
      */
-    constructor(getProjectMap) {
+    constructor(getProjectMap, getSolutionMap) {
         this._onDidChangeTreeData = new vscode.EventEmitter();
         this.onDidChangeTreeData = this._onDidChangeTreeData.event;
         this.getProjectMap = getProjectMap || (() => null);
+        this.getSolutionMap = getSolutionMap || (() => null);
     }
 
     /**
@@ -114,11 +122,26 @@ class TwinCatTreeDataProvider {
         // logical ancestry on the items built by parseFileComponents so reveal() can expand the
         // exact path instead of stopping at and selecting the file's disk directory.
         if (element.parent) return element.parent;
+        if (element.contextValue === 'solution') return null;
 
         const folders = vscode.workspace.workspaceFolders;
         if (!folders) return null;
 
         const elementUri = element.resourceUri;
+        const projectMap = this.getProjectMap();
+        const solutionMap = this.getSolutionMap();
+        const projectGroups = groupRootsByProject(projectMap, folders.map(f => f.uri.fsPath));
+        const hasProjectHierarchy = !!(solutionMap && solutionMap.solutions.length > 0) || projectGroups.length > 0;
+
+        // A project directory is a logical child of its solution, not of the directory holding the
+        // `.sln`. This branch also handles an id-equivalent project node reconstructed while VS Code
+        // walks a reveal chain.
+        const projectAtElement = projectMap && Array.from(projectMap.projects.values()).find(project =>
+            vscode.Uri.file(project.dir).toString() === elementUri.toString());
+        if (projectAtElement && hasProjectHierarchy) {
+            const projectItem = this.createProjectItem(projectAtElement, solutionMap);
+            return projectItem.parent || null;
+        }
         // Several PLC projects: each project directory is ITSELF a top-level tree node (see
         // getChildren below), exactly like a workspace folder is — so an element that IS a project
         // directory must report no parent too, whatever depth it sits at under the workspace root
@@ -130,14 +153,17 @@ class TwinCatTreeDataProvider {
         // (resourceUri.toString(), per the TwinCatTreeItem id getter) already matches the real group
         // node's id, so VS Code's id-based reveal() matching resolves it correctly without any
         // further special-casing.
-        const isProjectRoot = groupRootsByProject(
-            this.getProjectMap(),
-            folders.map(f => f.uri.fsPath)
-        ).some(g => vscode.Uri.file(g.dir).toString() === elementUri.toString());
+        const isProjectRoot = projectGroups.some(g =>
+            vscode.Uri.file(g.dir).toString() === elementUri.toString());
         const isRoot = isProjectRoot || folders.some(f => f.uri.toString() === elementUri.toString());
         if (isRoot) return null;
 
         const parentUri = vscode.Uri.file(path.dirname(elementUri.fsPath));
+        const projectAtParent = projectMap && Array.from(projectMap.projects.values()).find(project =>
+            vscode.Uri.file(project.dir).toString() === parentUri.toString());
+        if (projectAtParent && hasProjectHierarchy) {
+            return this.createProjectItem(projectAtParent, solutionMap);
+        }
         const isParentRoot = folders.some(f => f.uri.toString() === parentUri.toString());
         if (isParentRoot) return null;
 
@@ -163,6 +189,13 @@ class TwinCatTreeDataProvider {
             const folders = vscode.workspace.workspaceFolders;
             if (!folders) return [];
 
+            const solutionMap = this.getSolutionMap();
+            if (solutionMap && solutionMap.solutions.length > 0) {
+                const solutionItems = solutionMap.solutions.map(solution => this.createSolutionItem(solution));
+                const orphanItems = solutionMap.orphanProjects.map(project => this.createProjectItem(project, solutionMap));
+                return solutionItems.concat(orphanItems);
+            }
+
             // Several PLC projects under one folder: give each its own top-level node. Symbols,
             // references and rename are scoped per project, so a flat tree would show two identical
             // MAIN entries with no way to tell them apart. Fewer than two projects (the common case)
@@ -172,14 +205,7 @@ class TwinCatTreeDataProvider {
                 folders.map(f => f.uri.fsPath)
             );
             if (groups.length > 0) {
-                return groups.map(g => new TwinCatTreeItem(
-                    g.name,
-                    vscode.Uri.file(g.dir),
-                    vscode.TreeItemCollapsibleState.Expanded,
-                    'directory',
-                    null,
-                    new vscode.ThemeIcon('circuit-board')
-                ));
+                return groups.map(g => this.createProjectItem(g, null));
             }
 
             let allItems = [];
@@ -189,6 +215,8 @@ class TwinCatTreeDataProvider {
             }
             return allItems;
         }
+
+        if (element.contextValue === 'solution') return element.children || [];
 
         if (element.contextValue === 'directory') {
             return this.readDir(element.resourceUri);
@@ -203,6 +231,45 @@ class TwinCatTreeDataProvider {
         }
 
         return [];
+    }
+
+    /** Builds a solution node and its attached PLC-project children. */
+    createSolutionItem(solution) {
+        const item = new TwinCatTreeItem(
+            solution.displayName,
+            vscode.Uri.file(solution.slnPath),
+            solution.projects.length > 0
+                ? vscode.TreeItemCollapsibleState.Expanded
+                : vscode.TreeItemCollapsibleState.None,
+            'solution',
+            null,
+            new vscode.ThemeIcon('project')
+        );
+        item.solutionKey = solution.key;
+        item.tooltip = `TwinCAT solution — ${solution.displayName}`;
+        item.children = solution.projects.map(project => this.createProjectItem(project, null, item));
+        return item;
+    }
+
+    /** Builds a PLC-project node, optionally attaching its solution parent for TreeView.reveal. */
+    createProjectItem(project, solutionMap, knownParent) {
+        let parent = knownParent || null;
+        if (!parent && solutionMap) {
+            const solution = solutionMap.solutionForProject(project.key);
+            if (solution) parent = this.createSolutionItem(solution);
+        }
+        const item = new TwinCatTreeItem(
+            project.displayName || project.name,
+            vscode.Uri.file(project.dir),
+            vscode.TreeItemCollapsibleState.Expanded,
+            'directory',
+            null,
+            new vscode.ThemeIcon('circuit-board')
+        );
+        item.projectKey = project.key;
+        item.parent = parent || undefined;
+        item.tooltip = `PLC project — ${project.displayName || project.name}`;
+        return item;
     }
 
     /**
