@@ -45,6 +45,8 @@ The language server has a standalone test suite; no VS Code instance is required
 npm test                     # run the whole suite via test/run.js
 node test/run.js references   # run only suites whose name matches a substring
 node test/test_live_path.js   # run a single harness directly
+node test/test_solution_map.js # solution → PLC-project discovery/grouping
+node test/test_tree_reveal.js # exact component → project → solution parent chains
 npm run typecheck             # type-check gate: tsc --noEmit (no emit — runtime stays plain JS)
 
 REQUIRE_FULL_SUITE=1 npm test # fail unless the full-run fixtures are present (see below)
@@ -305,6 +307,35 @@ media/
                         both editors, no build step. See "Folding" below.
 ```
 
+### Objects tree: solution and PLC-project hierarchy
+
+The Objects tree's grouping is a separate, extension-host-only presentation model. It must not alter
+which language-server index owns a file:
+
+1. `src/solutionMap.js` discovers TwinCAT `.sln` files and follows their actual metadata chain:
+   `.sln` project entry → `.tsproj` → `<Plc><Project File="…xti">` → the XTI's `PrjFilePath` →
+   `.plcproj`. Unrelated Visual Studio solutions are ignored.
+2. A solution is always a top-level node when present, even with one PLC project. One solution may
+   contain several PLC projects, and several solutions may coexist in one workspace. Duplicate
+   solution names use shortest-unique-parent suffixes; project labels are disambiguated only among
+   siblings in the same solution.
+3. A PLC project that no solution references remains a top-level fallback. With no TwinCAT solution,
+   the pre-0.8.0 behavior remains: two or more projects get project roots; a single project keeps the
+   flat directory-driven tree.
+4. `src/treeDataProvider.js` attaches logical parents for reveal:
+   component → virtual folder/property → file → disk folders → PLC project → solution. Rebuilding a
+   reveal target parses only its backing XML file and consumes the cached host maps; it never starts
+   another workspace scan.
+5. `.sln`, `.tsproj`, and `.xti` create/change/delete events rebuild and refresh only the host tree
+   model. A `.plcproj` event also rebuilds ownership and remains the sole project-structure event that
+   triggers `custom/reindex` and the Libraries refresh.
+
+Coverage is split deliberately: `test/test_solution_map.js` exercises discovery, multi-solution and
+multi-project grouping, label scope and fallbacks without VS Code; `test/test_tree_reveal.js` pins the
+logical ancestry; `node test/devhost/run.js` creates two solutions and three PLC projects (two under
+one solution) and proves the real VS Code TreeView accepts that ancestry. Run the dev-host harness
+whenever solution grouping, project grouping or reveal parents change.
+
 ### Project-scoped indexing
 
 A TwinCAT workspace can hold **more than one `.plcproj`**, and each is its own compilation unit — XAE
@@ -348,16 +379,9 @@ and routed at startup (and on `custom/reindex`), not one flat index for the whol
   `createProjectStatusBar()` requires `vscode` lazily, inside the function, specifically so
   `test_project_map.js` can call `projectLabel()` standalone without `vscode` ever being required.
   Duplicate `.plcproj` basenames use the shortest unique parent suffix (for example
-  `TcToolkitSample_PLC — LineA`); `projectMap.displayName()` supplies the same label to the Objects
-  tree and status bar while unique project names keep their short basename.
-- **`src/solutionMap.js`** is the extension-host-only presentation model for the Objects tree. It
-  follows TwinCAT's `.sln` → `.tsproj` → `_Config/PLC/*.xti` → `PrjFilePath` chain, so a solution is
-  always the top-level node and every referenced PLC project is its child (including one solution
-  with several PLC projects). Duplicate solution names get shortest-unique-parent suffixes; project
-  names are disambiguated only against siblings in the same solution. Unreferenced PLC projects stay
-  as top-level fallbacks, and a workspace with no TwinCAT solution preserves the prior flat/per-project
-  behavior. This model must stay out of LSP ownership/routing: `.sln`, `.tsproj`, and `.xti` watcher
-  events rebuild the host tree only, while `.plcproj` remains the sole trigger for LSP reindexing.
+  `TcToolkitSample_PLC — LineA`). The status bar needs that workspace-global label because it has no
+  solution parent; the Objects tree uses `solutionMap.projectLabel()` and disambiguates only among
+  sibling projects beneath the same visible solution.
 
 Two registries hang off each project's index: `Symbol.for('twincat.libraryNamespaces')`
 (`src/lsp/libraries.js`) and `Symbol.for('twincat.librarySymbols')` (`src/lsp/libsymbols.js`) — see
@@ -373,8 +397,6 @@ registry rather than an empty one — the fallback that keeps roughly 15 pre-exi
 `test/test_project_map.js` covers `projectMap.js`'s ownership rules, actual Windows casing without
 expanding workspace 8.3/junction identity, the missing-file fallback, `projectLabel()` and
 `groupRootsByProject()` (the Objects-tree per-project grouping) in isolation.
-`test/test_solution_map.js` covers solution membership and labels without VS Code; `test_tree_reveal`
-and the installed dev-host prove the project/solution parent chain is accepted by a real TreeView.
 `test/test_multi_project_scope.js` covers the whole thing end-to-end against a real two-project fixture
 built from `sample/` (the fixture helper is `test/_multiproject.js`, two copies of `sample/` under one
 root, one copy deliberately diverged) — the partition, zero diagnostics on correct code in either

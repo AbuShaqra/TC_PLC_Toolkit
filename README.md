@@ -25,10 +25,26 @@ Implementation below, separated by a resizable splitter. No raw XML.
 ### TwinCAT Objects explorer
 
 Browse POUs, interfaces, GVLs, DUTs and their methods, properties, actions and virtual folders.
-When TwinCAT solutions are present, the tree mirrors the real hierarchy: each solution is a
-top-level node with all of its PLC projects underneath it, including multi-project solutions.
 Create and delete files, folders, methods, properties and actions — the nearest `.plcproj` is kept in
 sync automatically. The tree follows you: switching editors reveals and highlights the matching item.
+
+**See the real TwinCAT hierarchy.** When the opened folder contains TwinCAT solutions, the explorer
+shows the solution first and every PLC project belonging to it underneath:
+
+```text
+EOL                         Solution (.sln)
+└─ HPR40_EOL                PLC project (.plcproj)
+   ├─ GVLs
+   ├─ POUs
+   └─ DUTs
+```
+
+A solution can contain any number of PLC projects, and a workspace can contain several solutions.
+Same-named solutions are given the shortest parent-folder suffix needed to distinguish them, while
+PLC-project names are compared only with siblings in their own solution. A `.plcproj` not referenced
+by a solution remains available as a top-level project. If there is no TwinCAT solution, the explorer
+keeps the existing project/folder view. Go to Definition and Find References expand this complete
+chain and highlight the exact method, property, accessor, action or transition that was opened.
 
 **Every kind carries its own icon**, so the tree is readable at a glance: function blocks, programs
 and functions are told apart rather than sharing one file icon, a DUT shows whether it is a
@@ -220,8 +236,9 @@ code --install-extension twincat-plc-toolkit-<version>.vsix --force
 or from inside VS Code: **Extensions** view → **⋯** menu → **Install from VSIX…**. On Windows,
 `scripts\install-vsix.bat` picks the newest `.vsix` in the folder and installs it for you.
 
-Then reload the window (**Developer: Reload Window**), open a folder containing a TwinCAT PLC project,
-and open any `.TcPOU` file — it opens in the TwinCAT PLC Toolkit editor.
+After replacing an older installed version, **fully restart VS Code** (a window reload may keep the
+old extension process alive). Open the folder containing your TwinCAT solution or PLC project, then
+open any `.TcPOU` file — it opens in the TwinCAT PLC Toolkit editor.
 
 > If a `.TcPOU` opens as raw XML instead, right-click the tab → **Reopen Editor With… → TwinCAT PLC
 > Toolkit**.
