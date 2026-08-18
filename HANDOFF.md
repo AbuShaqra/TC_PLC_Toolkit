@@ -4,26 +4,26 @@ Where the work *stands*. Read before starting; keep current (handoff rule in [CL
 100 lines — prune finished items rather than appending, but never drop a real finding to hit it. **Shipped features
 live in git history (PRs/commits); this file keeps the findings that would cost to re-derive.**
 
-**Last verified:** 2026-08-10 **on Windows** — `npm test` green (**57 harnesses, Coverage: FULL**), typecheck clean,
-**0 diagnostics on the sample in BOTH library configurations** (Beckhoff archives present and moved aside),
-both browser harnesses green, **dev-host harness green 8/8**. Shipped through **0.6.1**; **0.6.2 (indexing
-performance)** and **0.7.0 (Objects-tree inserts)** are merged; `package.json` is at **0.7.0**. Releases are in git
-history. **All feature branches were deleted 2026-08-17** after the metadata rewrite — `main` is the only branch,
-and every older reference to a `perf/*` or `fix/*` branch below means "in main's history", not "unmerged".
-**2026-08-17 (Linux container):** typecheck clean, **60/60 harnesses green at Coverage: FULL** — the first fully
-green run off Windows, after the platform-correctness fix below. Both browser harnesses build and pass every
-functional assertion. Not a substitute for a Windows pass: nothing here exercised VS Code or TwinCAT itself.
+**Last verified:** 2026-08-18 — `REQUIRE_FULL_SUITE=1 npm test` green (**62/62 harnesses, Coverage: FULL**),
+typecheck clean, **0 diagnostics on the sample**, both browser harnesses green, installed-VS-Code dev-host green
+including a real two-project workspace. The earlier 2026-08-10 pass also verified 0 diagnostics with Beckhoff
+archives both present and moved aside. **0.6.2 (indexing)** and **0.7.0 (Objects-tree inserts)** are merged;
+`package.json` is at **0.7.0**. Remote history was rewritten 2026-08-17 and remote `main` is the only remote branch.
+The 2026-08-17 Linux pass was 60/60 FULL before the review fixes below.
+**Review fixes verified on `codex/review-fixes`:** bounded ZIP archive/input inflation (`libsymbols.js`); central path↔file-URI handling
+(`fileUri.js`); reference-cache identity is mtime+size+ctime+inode; FULL coverage now requires child harnesses to
+report that gates actually ran; editor coordinate/peek helpers moved to production `editorMapping.js` and are
+imported by the live-path tests; duplicate `.plcproj` basenames use shortest-unique-parent labels in both Objects
+and status bar. The dev-host now copies the sample as LineA+LineB and asserts those real provider labels plus live
+cross-file navigation. The user's pre-existing newline edit in `sample/.../FB_Station.TcPOU` remains untouched.
 **0.6.1 VSIX installed to the user's VS Code 2026-08-10 — awaiting their confirmation after a FULL
 VS Code restart** (see the install trap below).
 **Install trap that cost a debug cycle:** VS Code keeps the old version dir until a FULL restart (reload-window is not
 always enough) — the user tested 0.3.1's feature against the still-running 0.3.0 code and reported it broken. Check
 `~/.vscode/extensions/` for side-by-side version dirs + `.obsolete` before debugging a "feature does nothing" report.
-**Not yet visually confirmed by the user:** the 0.1.3 library grouping and 0.1.4 member expansion in the tree UI —
-logic is verified on real data + guard tests, but nobody has eyeballed the rendered tree. Worth doing. Likewise
-the light-theme pass over `media/editor.css` — **no test covers CSS**, contrast was computed against VS Code's
-default themes, not eyeballed, and dark mode deliberately changed too. **Its conventions live in that file's own
-header comment — read it before adding colour.** The gradient-clipped wordmark is deliberately left at 3.3–4.9:1
-(a logotype, exempt); don't "fix" it without a design call.
+**Visual check 2026-08-18:** library root grouping and the editor's dark/light/narrow layouts were eyeballed and
+look clean; library member expansion is still not visually confirmed. CSS conventions live in `media/editor.css`'s
+header; the gradient-clipped wordmark is deliberately left at 3.3–4.9:1 (a logotype, exempt).
 
 ## Constraints / still open
 - **Project-scoped indexing SHIPPED** (user report 2026-08-06; plan in
@@ -54,9 +54,8 @@ header comment — read it before adding colour.** The gradient-clipped wordmark
   The entity decode is its own real bug: `time&amp;date` stayed `&amp;`, silently dropping **57 of OSCAT's 819**
   compiled objects. Casing pinned in `test_project_map.js` + `test_multi_project_scope.js` (the old `/LineA/i`
   assertions were case-blind by construction); tab identity + live client pinned by **`test/devhost/run.js`** — a
-  new run-by-hand harness that drives the installed VS Code headlessly (see DEVELOPMENT.md). That closes the owed
-  go-to-definition/types-map-deletion check. **Still owed (eyeball only):** status bar flips per file, tree groups
-  per project.
+  run-by-hand harness that drives installed VS Code (see DEVELOPMENT.md). It now opens two same-named project
+  copies and asserts the actual Objects-provider labels, status labels, navigation identity and live LSP bridge.
 - **Indexing cost FIXED (0.6.2, merged)** — retires the old deferred perf note. On the real 8-project
   `C:\Projects\PLC projects`: startup **11.7 s warm → ~3.5 s** (one scan, not two), archive decodes **306 → 157**,
   `.plcproj` reads 3/project → 1. `TC_Start` 608/427 → 377/388 ms, no regression. **Cold (~20 s) is PROJECTED, not

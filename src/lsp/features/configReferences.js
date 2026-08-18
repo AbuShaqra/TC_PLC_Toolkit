@@ -26,6 +26,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { fsPathToFileUri } = require('../../fileUri');
 const { findNode } = require('../types');
 const { registerLibrarySymbolNodes } = require('../libsymbols');
 const { normalizeUri, resolvePathType } = require('./core');
@@ -254,8 +255,7 @@ function findConfigReferencesForSymbol(spec, symbolIndex, configFilePaths) {
         // the extension host holds and will splice into), or a rename lands one code unit off on the
         // whole file.
         const text = raw.charCodeAt(0) === 0xFEFF ? raw.slice(1) : raw;
-        // Three slashes on POSIX too — see the note in xmlIndexer.js.
-        const uri = 'file:///' + filePath.replace(/\\/g, '/').replace(/^\//, '');
+        const uri = fsPathToFileUri(filePath);
 
         if (path.extname(filePath).toLowerCase() === TASK_EXT) {
             // Task configs name a POU and nothing else — a member is never named in one, so a member

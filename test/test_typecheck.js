@@ -23,6 +23,7 @@ const { convertXmlToSt } = require('../src/stConverter');
 const { parseAndIndexDocument, clearWorkspaceIndex, getWorkspaceSymbolIndex } = require('../src/lsp/parser');
 const { indexXmlObject } = require('../src/lsp/xmlIndexer');
 const { provideDiagnostics, setDiagnosticsConfig } = require('../src/lsp/features');
+const { reportCoverage } = require('./_coverage');
 const {
     SAMPLE_DIR,
     indexSampleLibraries,
@@ -45,6 +46,7 @@ const index = getWorkspaceSymbolIndex();
 // ---- Sample ratchet (skipped cleanly when sample/ is absent) ----
 if (!hasSample) {
     console.log('sample/ project not present — skipping the sample ratchet; synthetic probes still run.');
+    reportCoverage('sample-typecheck', 'skipped', 'sample/ project not present');
 } else {
     // The server's workspace scan: namespace heads from the .plcproj, symbol names from the library
     // archives, types from the .tmc. Which baseline applies depends on which of those (git-ignored)
@@ -86,6 +88,7 @@ if (!hasSample) {
     if (sampleDiagTotal < BASELINE_DIAGNOSTICS) {
         console.log(`       IMPROVEMENT: lower the "${modeInfo.mode}" baseline in scratch/_baseline.js to ${sampleDiagTotal} (both harnesses share it).`);
     }
+    reportCoverage('sample-typecheck', 'ran', `${sampleFiles.length} files diagnosed`);
 }
 
 // ---- Fixture: the types the synthetic probes are written against ----

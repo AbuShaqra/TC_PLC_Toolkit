@@ -6,23 +6,17 @@
  * import cycles.
  */
 
-const path = require('path');
 const { TokenType, isSkippable } = require('../parser');
 const { findNode, parentNames } = require('../types');
+const { fileUriToFsPath, normalizeFileUri } = require('../../fileUri');
 
 /**
- * Converts a file URI (file:///C:/...) to a filesystem path, so encoded (file:///c%3A/...) and
- * unencoded URIs resolve identically. Kept in step with workspaceScan.js's copy — read the note
- * there: the separator flip is guarded on `path.sep` because `file:///` strips the POSIX root, and
- * Windows behaviour is byte-for-byte unchanged.
+ * Converts a file URI to a platform-correct filesystem path. Bare paths pass through unchanged.
  * @param {string} uri File URI.
  * @returns {string} Filesystem path.
  */
 function uriToFsPath(uri) {
-    const raw = String(uri || '');
-    const stripped = decodeURIComponent(raw.replace(/^file:\/\/\//i, ''));
-    if (path.sep === '\\') return stripped.replace(/\//g, '\\');
-    return /^file:\/\/\//i.test(raw) ? '/' + stripped : stripped;
+    return fileUriToFsPath(uri);
 }
 
 /**
@@ -32,7 +26,7 @@ function uriToFsPath(uri) {
  * @returns {string} Normalized key.
  */
 function normalizeUri(uri) {
-    return decodeURIComponent(uri).toLowerCase();
+    return normalizeFileUri(uri);
 }
 
 /** Keywords that introduce a named return/alias type: `METHOD m : ▮`, `FUNCTION f : ▮`, `TYPE t : ▮`. */

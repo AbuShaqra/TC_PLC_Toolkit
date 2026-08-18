@@ -5,6 +5,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { fsPathToFileUri } = require('../fileUri');
 const { STANDARD_KEYWORDS } = require('./builtins');
 const { createSymbolNode } = require('./symbolNode');
 
@@ -1248,8 +1249,7 @@ function indexStDirectory(dirPath, index = workspaceSymbolIndex, indexForFile = 
         } else if (entry.isFile() && entry.name.toLowerCase().endsWith('.st')) {
             try {
                 const code = fs.readFileSync(fullPath, 'utf8');
-                // Three slashes on POSIX too — see the note in xmlIndexer.js.
-                const fileUri = 'file:///' + fullPath.replace(/\\/g, '/').replace(/^\//, '');
+                const fileUri = fsPathToFileUri(fullPath);
                 const targets = indexForFile ? indexForFile(fullPath) : index;
                 // A router may answer with several indexes (a loose .st that belongs to no single
                 // project routes to all of them — see workspaceScan.js's routeFile) — index the file

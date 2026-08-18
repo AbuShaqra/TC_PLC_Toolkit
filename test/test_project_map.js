@@ -182,9 +182,29 @@ assert(groups.every(g => fs.statSync(g.dir).isDirectory()),
 assert(groupRootsByProject(solo, [soloRoot]).length === 0,
     'a single-project workspace produces no groups — the tree stays flat');
 
+// Duplicate `.plcproj` basenames are common in versioned machine copies. They must remain distinct
+// in both the Objects tree and status bar even though their routing keys were already distinct.
+const duplicateRoot = path.join(os.tmpdir(), 'projmap_duplicates_' + Date.now());
+const dupA = path.join(duplicateRoot, 'AreaA', 'Cell', 'Shared');
+const dupB = path.join(duplicateRoot, 'AreaB', 'Cell', 'Shared');
+for (const dir of [dupA, dupB]) {
+    fs.mkdirSync(path.join(dir, 'POUs'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'POUs', 'MAIN.TcPOU'), '<TcPlcObject/>');
+    fs.writeFileSync(path.join(dir, 'Shared.plcproj'),
+        '<Project><ItemGroup><Compile Include="POUs\\MAIN.TcPOU"/></ItemGroup></Project>');
+}
+const duplicateMap = createProjectMap([duplicateRoot]);
+const duplicateGroups = groupRootsByProject(duplicateMap, [duplicateRoot]);
+assert(duplicateGroups.map(g => g.name).join(',') ===
+    ['Shared — AreaA / Cell', 'Shared — AreaB / Cell'].join(','),
+    `duplicate basenames use the shortest unique parent suffix (got ${duplicateGroups.map(g => g.name).join(',')})`);
+assert(projectLabel(duplicateMap, path.join(dupA, 'POUs', 'MAIN.TcPOU')) === 'Shared — AreaA / Cell',
+    'the status bar uses the same disambiguated label as the Objects tree');
+
 fs.rmSync(ROOT, { recursive: true, force: true });
 fs.rmSync(bare, { recursive: true, force: true });
 fs.rmSync(soloRoot, { recursive: true, force: true });
+fs.rmSync(duplicateRoot, { recursive: true, force: true });
 
 console.log(`\n--- PROJECT MAP TESTS COMPLETE with ${errors} error(s) ---`);
 process.exit(errors > 0 ? 1 : 0);

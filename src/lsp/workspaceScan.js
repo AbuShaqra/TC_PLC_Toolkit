@@ -18,6 +18,7 @@ const path = require('path');
 
 const { indexXmlFile, indexTwinCatDirectory } = require('./xmlIndexer');
 const { indexStDirectory } = require('./parser');
+const { fileUriToFsPath } = require('../fileUri');
 const {
     LOOSE_PROJECT_KEY,
     createProjectMap,
@@ -35,21 +36,12 @@ const CONFIG_OBJECT_EXTS = new Set(['.tcvis', '.tcvmo', '.tctlo', '.tcgtlo', '.t
 const CONFIG_OBJECT_SKIP_DIRS = new Set(['.git', 'node_modules', '.vscode', '_libraries']);
 
 /**
- * Converts an LSP file URI (file:///C:/...) to a filesystem path.
- *
- * The separator flip is guarded on `path.sep`, not applied unconditionally. `file:///` strips all
- * three slashes, which is right on Windows (`file:///c:/a` → `c:/a` → `c:\a`) but on POSIX eats the
- * root: `file:///home/u/a` became `home/u/a` and then `\home\u\a`, a relative path full of
- * backslashes that no `fs` call can open. Windows behaviour here is byte-for-byte what it was.
+ * Converts an LSP file URI to a platform-correct filesystem path. Bare paths pass through unchanged.
  * @param {string} uri File or folder URI.
  * @returns {string} Filesystem path.
  */
 function uriToFsPath(uri) {
-    const raw = String(uri || '');
-    const stripped = decodeURIComponent(raw.replace(/^file:\/\/\//i, ''));
-    if (path.sep === '\\') return stripped.replace(/\//g, '\\');
-    // Only a real file URI lost its root slash to the strip above; a bare path must pass through.
-    return /^file:\/\/\//i.test(raw) ? '/' + stripped : stripped;
+    return fileUriToFsPath(uri);
 }
 
 /**

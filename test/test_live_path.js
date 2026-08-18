@@ -29,11 +29,14 @@ const { convertXmlToSt, mapDiagnosticsToMonaco } = require('../src/stConverter')
 const { parseAndIndexDocument, clearWorkspaceIndex, getWorkspaceSymbolIndex } = require('../src/lsp/parser');
 const { indexXmlObject } = require('../src/lsp/xmlIndexer');
 const { provideCompletions, provideDefinition, provideDiagnostics, provideReferences } = require('../src/lsp/features');
+const { reportCoverage } = require('./_coverage');
+const { localToAbsolute, absoluteToLocal, paneTextFromUnit, peekPath } = require('../src/editorMapping');
 
 const SAMPLE_DIR = path.join(__dirname, '..', 'sample');
 
 if (!fs.existsSync(SAMPLE_DIR)) {
     console.log('sample/ project not present — skipping live-path test.');
+    reportCoverage('live-path-sample', 'skipped', 'sample/ project not present');
     process.exit(0);
 }
 
@@ -74,43 +77,6 @@ function assembleSt(xml, overlay) {
         }
     }
     return convertXmlToSt(parsed, { raw: true });
-}
-
-/**
- * Maps a Monaco pane position to an absolute 0-based position in the assembled unit.
- * @param {Object} lineMap The lineMap from convertXmlToSt.
- * @param {string} componentId Active component id.
- * @param {string} pane 'decl' or 'impl'.
- * @param {number} lineNumber Monaco 1-based line within the pane.
- * @param {number} column Monaco 1-based column.
- * @returns {Object|null} { line, character } 0-based, or null.
- */
-function localToAbsolute(lineMap, componentId, pane, lineNumber, column) {
-    const blocks = lineMap[componentId];
-    if (!blocks) return null;
-    const block = pane === 'decl' ? blocks.decl : blocks.impl;
-    if (!block || !block.start) return null;
-    return { line: (block.start - 1) + (lineNumber - 1), character: column - 1 };
-}
-
-/**
- * Maps an absolute 0-based line in the assembled unit back to a component pane and local line.
- * @param {Object} lineMap The lineMap from convertXmlToSt.
- * @param {number} absLine0 Absolute 0-based line in the unit.
- * @returns {Object|null} { componentId, pane, localLine0 } or null if outside every block.
- */
-function absoluteToLocal(lineMap, absLine0) {
-    const line1 = absLine0 + 1;
-    for (const componentId of Object.keys(lineMap)) {
-        const blocks = lineMap[componentId];
-        if (blocks.decl && blocks.decl.start && line1 >= blocks.decl.start && line1 <= blocks.decl.end) {
-            return { componentId, pane: 'decl', localLine0: line1 - blocks.decl.start };
-        }
-        if (blocks.impl && blocks.impl.start && line1 >= blocks.impl.start && line1 <= blocks.impl.end) {
-            return { componentId, pane: 'impl', localLine0: line1 - blocks.impl.start };
-        }
-    }
-    return null;
 }
 
 // --- Index the workspace from XML (as the LSP server does) ---
@@ -497,25 +463,6 @@ sampleTest('TEST 10: pane <-> unit position mapping round-trips', () => {
 // not the assembled unit. That is a different frame from everything else this harness guards, and
 // getting it wrong points the peek at the wrong line rather than failing loudly.
 
-/** Mirrors paneTextFromUnit in customEditorProvider.js. */
-function paneTextFromUnit(stLines, lineMap, componentId, pane) {
-    const blocks = lineMap && lineMap[componentId];
-    if (!blocks) return null;
-    const block = pane === 'decl' ? blocks.decl : blocks.impl;
-    if (!block || !block.start) return null;
-    return stLines.slice(block.start - 1, block.end).join('\n');
-}
-
-/** Mirrors peekPath in customEditorProvider.js. */
-function peekPath(fileUri, componentId, pane) {
-    let base = 'object';
-    try { base = decodeURIComponent(String(fileUri).split(/[\\/]/).pop() || base); } catch (e) { /* default */ }
-    const member = componentId === 'root'
-        ? 'root'
-        : String(componentId).replace(/^(method|prop|action|trans|get|set)_/i, '');
-    return `/${member}.${pane}/${base}`;
-}
-
 sampleTest('peek: every pane slice is addressed by its own local coordinates', () => {
     const unit = assembleSt(byName['FB_Cylinder'].xml, null);
     const unitLines = unit.stText.split('\n');
@@ -602,4 +549,6 @@ plainTest('peek: the synthetic URI path puts the FILE in Monaco\'s prominent slo
 });
 
 console.log(`\n--- LIVE PATH TESTS COMPLETE with ${errors} errors, ${ran} run, ${skipped} skipped ---`);
+reportCoverage('live-path-sample', skipped === 0 ? 'ran' : 'skipped',
+    skipped === 0 ? `${ran} cases ran` : `${skipped} sample-driven case(s) skipped`);
 process.exit(errors > 0 ? 1 : 0);

@@ -9,6 +9,8 @@ const fs = require('fs');
 const { parseTwinCatXml, replaceComponentCdata } = require('./xmlParser');
 const { updateDocument } = require('./plcProjHelper');
 const { convertXmlToSt, mapDiagnosticsToMonaco } = require('./stConverter');
+const { normalizeFileUri } = require('./fileUri');
+const { localToAbsolute, absoluteToLocal, paneTextFromUnit, peekPath } = require('./editorMapping');
 const EXT_VERSION = (() => { try { return require('../package.json').version; } catch (e) { return '?'; } })();
 
 /**
@@ -19,7 +21,7 @@ const EXT_VERSION = (() => { try { return require('../package.json').version; } 
  * @returns {string} Normalized key.
  */
 function normUri(uri) {
-    try { return decodeURIComponent(uri).toLowerCase(); } catch (e) { return (uri || '').toLowerCase(); }
+    return normalizeFileUri(uri);
 }
 
 /**
@@ -46,44 +48,6 @@ function assembleSt(document, overlay) {
     }
     // raw: keep declarations/implementations verbatim so the lineMap matches the editor content 1:1.
     return convertXmlToSt(parsed, { raw: true });
-}
-
-/**
- * Maps a Monaco editor position (within a component pane) to an absolute 0-based LSP position
- * inside the assembled ST unit.
- * @param {Object} lineMap The lineMap from convertXmlToSt.
- * @param {string} componentId Active component id.
- * @param {string} pane 'decl' or 'impl'.
- * @param {number} lineNumber Monaco 1-based line number within the pane.
- * @param {number} column Monaco 1-based column.
- * @returns {Object|null} { line, character } 0-based, or null.
- */
-function localToAbsolute(lineMap, componentId, pane, lineNumber, column) {
-    const blocks = lineMap[componentId];
-    if (!blocks) return null;
-    const block = pane === 'decl' ? blocks.decl : blocks.impl;
-    if (!block || !block.start) return null;
-    return { line: (block.start - 1) + (lineNumber - 1), character: column - 1 };
-}
-
-/**
- * Maps an absolute 0-based line in the assembled ST unit back to a component pane and local line.
- * @param {Object} lineMap The lineMap from convertXmlToSt.
- * @param {number} absLine0 Absolute 0-based line in the unit.
- * @returns {Object|null} { componentId, pane: 'decl'|'impl', localLine0 } or null if outside any block.
- */
-function absoluteToLocal(lineMap, absLine0) {
-    const line1 = absLine0 + 1;
-    for (const componentId of Object.keys(lineMap)) {
-        const blocks = lineMap[componentId];
-        if (blocks.decl && blocks.decl.start && line1 >= blocks.decl.start && line1 <= blocks.decl.end) {
-            return { componentId, pane: 'decl', localLine0: line1 - blocks.decl.start };
-        }
-        if (blocks.impl && blocks.impl.start && line1 >= blocks.impl.start && line1 <= blocks.impl.end) {
-            return { componentId, pane: 'impl', localLine0: line1 - blocks.impl.start };
-        }
-    }
-    return null;
 }
 
 /**
@@ -122,44 +86,6 @@ function createStResolver(activeFileUri, activeCtx) {
         cache.set(key, result);
         return result;
     };
-}
-
-/**
- * Slices one component pane's text out of an assembled ST unit — the content behind a hidden
- * Monaco model in the references peek.
- * @param {string[]} stLines The unit's lines (already split).
- * @param {Object} lineMap The lineMap from convertXmlToSt.
- * @param {string} componentId Component to slice.
- * @param {string} pane 'decl' or 'impl'.
- * @returns {string|null} The pane's text, or null when that component has no such block.
- */
-function paneTextFromUnit(stLines, lineMap, componentId, pane) {
-    const blocks = lineMap && lineMap[componentId];
-    if (!blocks) return null;
-    const block = pane === 'decl' ? blocks.decl : blocks.impl;
-    if (!block || !block.start) return null;
-    return stLines.slice(block.start - 1, block.end).join('\n');
-}
-
-/**
- * The path of a peek model's synthetic URI.
- *
- * Monaco renders a peek group as `basename` prominent + `dirname` dimmed, so the FILE goes last:
- * `/<member>.<pane>/<file>` reads as "**FB_Station.TcPOU** /root.decl", which is what a user scans
- * for. The obvious ordering (`/<file>/<member>.<pane>`) inverts it and puts "root.decl" in the
- * prominent slot with the file dimmed behind it — verified in a browser, not guessed.
- * @param {string} fileUri Owning file.
- * @param {string} componentId Component id ('root', 'method_Cyclic', …).
- * @param {string} pane 'decl' or 'impl'.
- * @returns {string} A URI path beginning with '/'.
- */
-function peekPath(fileUri, componentId, pane) {
-    let base = 'object';
-    try { base = decodeURIComponent(String(fileUri).split(/[\\/]/).pop() || base); } catch (e) { /* keep default */ }
-    const member = componentId === 'root'
-        ? 'root'
-        : String(componentId).replace(/^(method|prop|action|trans|get|set)_/i, '');
-    return `/${member}.${pane}/${base}`;
 }
 
 /**

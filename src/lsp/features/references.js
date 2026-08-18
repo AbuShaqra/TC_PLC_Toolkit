@@ -47,7 +47,7 @@ function findIdentifierOccurrences(text, word, preTokens) {
 }
 
 /**
- * Converted-file cache, keyed by path and invalidated on the file's mtime.
+ * Converted-file cache, keyed by path and invalidated on the file's stat identity.
  *
  * Find References walks every indexed document on *every* search, and none of that work was cached:
  * measured on the 152-file sample, one search spent 40.6 ms in readFileSync, 2.5 ms parsing the XML,
@@ -61,9 +61,10 @@ function findIdentifierOccurrences(text, word, preTokens) {
  * search are only the few that actually contain the word — the pre-filter in provideReferences drops
  * the rest before they are ever tokenized, which is where most of that 28.3 ms went anyway.
  *
- * The mtime check keeps the semantics identical to reading the file every time — including for a file
- * edited outside VS Code — at the price of one statSync per file, which is far cheaper than the read.
- * @type {Map<string, {mtimeMs: number, stText: string|null}>}
+ * mtime alone is insufficient: copy/deploy tools commonly preserve it, and can replace a file with
+ * different contents while leaving the old cache apparently valid. Size, ctime and inode/file-id
+ * close that correctness hole without giving up the cheap stat-only warm path.
+ * @type {Map<string, {signature: string, stText: string|null}>}
  */
 const stFileCache = new Map();
 
@@ -79,16 +80,17 @@ function clearStFileCache() {
  * @returns {string|null} ST text, or null on failure.
  */
 function readStForFile(fsPath) {
-    let mtimeMs;
+    let signature;
     try {
-        mtimeMs = fs.statSync(fsPath).mtimeMs;
+        const stat = fs.statSync(fsPath);
+        signature = `${stat.mtimeMs}|${stat.size}|${stat.ctimeMs}|${stat.ino || 0}`;
     } catch (e) {
         stFileCache.delete(fsPath);   // gone from disk
         return null;
     }
 
     const hit = stFileCache.get(fsPath);
-    if (hit && hit.mtimeMs === mtimeMs) return hit.stText;
+    if (hit && hit.signature === signature) return hit.stText;
 
     let stText = null;
     try {
@@ -103,7 +105,7 @@ function readStForFile(fsPath) {
         stText = null;
     }
 
-    stFileCache.set(fsPath, { mtimeMs, stText });
+    stFileCache.set(fsPath, { signature, stText });
     return stText;
 }
 

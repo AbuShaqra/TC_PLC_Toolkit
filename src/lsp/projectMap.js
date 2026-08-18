@@ -180,6 +180,8 @@ function createProjectMap(roots) {
         }
     }
 
+    const displayNames = buildProjectDisplayNames(projects);
+
     /** The project directory as a normalized prefix, so `startsWith` cannot match a sibling. */
     const dirPrefix = (proj) => normalizeProjectPath(proj.dir) + '/';
 
@@ -230,15 +232,64 @@ function createProjectMap(roots) {
         ownersOf,
         displayName: (key) => (key === LOOSE_PROJECT_KEY
             ? 'Loose files'
-            : ((projects.get(key) || {}).name || key))
+            : (displayNames.get(key) || ((projects.get(key) || {}).name || key)))
     };
+}
+
+/**
+ * Produces compact but unambiguous labels. Most projects keep their `.plcproj` basename; duplicate
+ * basenames gain the shortest unique parent suffix, skipping the common same-named project folder.
+ * @param {Map<string, Object>} projects Project records keyed by normalized `.plcproj` path.
+ * @returns {Map<string, string>} Project key to display label.
+ */
+function buildProjectDisplayNames(projects) {
+    const result = new Map();
+    const byName = new Map();
+    for (const project of projects.values()) {
+        const nameKey = project.name.toLowerCase();
+        if (!byName.has(nameKey)) byName.set(nameKey, []);
+        byName.get(nameKey).push(project);
+    }
+
+    for (const sameName of byName.values()) {
+        if (sameName.length === 1) {
+            result.set(sameName[0].key, sameName[0].name);
+            continue;
+        }
+
+        const partsFor = new Map();
+        let maxDepth = 1;
+        for (const project of sameName) {
+            const labelDir = path.basename(project.dir).toLowerCase() === project.name.toLowerCase()
+                ? path.dirname(project.dir)
+                : project.dir;
+            const parsed = path.parse(labelDir);
+            const parts = labelDir.slice(parsed.root.length).split(/[\\/]+/).filter(Boolean);
+            if (parsed.root) parts.unshift(parsed.root.replace(/[\\/]+$/, ''));
+            partsFor.set(project.key, parts);
+            maxDepth = Math.max(maxDepth, parts.length);
+        }
+
+        for (const project of sameName) {
+            const parts = partsFor.get(project.key);
+            let suffix = parts.join(' / ');
+            for (let depth = 1; depth <= maxDepth; depth++) {
+                const candidate = parts.slice(-depth).join(' / ');
+                const matches = sameName.filter(other =>
+                    partsFor.get(other.key).slice(-depth).join(' / ').toLowerCase() === candidate.toLowerCase());
+                if (matches.length === 1) { suffix = candidate; break; }
+            }
+            result.set(project.key, `${project.name} — ${suffix}`);
+        }
+    }
+    return result;
 }
 
 /**
  * The tree groups for a workspace: one per PLC project, sorted by name. Returns an EMPTY array when
  * there are fewer than two projects — the Objects tree then keeps its flat, directory-driven shape,
  * which is the right thing for the overwhelmingly common single-project workspace.
- * @param {{projects: Map<string, Object>}} projectMap The workspace partition.
+ * @param {{projects: Map<string, Object>, displayName: (key: string) => string}} projectMap The workspace partition.
  * @param {Array<string>} folderPaths Absolute workspace-root paths (unused today; kept so a future
  *   multi-root workspace can label a group with its containing folder without a signature change).
  * @returns {Array<{key: string, name: string, dir: string}>} Groups, or [] to stay flat.
@@ -246,8 +297,8 @@ function createProjectMap(roots) {
 function groupRootsByProject(projectMap, folderPaths) {
     if (!projectMap || projectMap.projects.size < 2) return [];
     return Array.from(projectMap.projects.values())
-        .map(p => ({ key: p.key, name: p.name, dir: p.dir }))
-        .sort((a, b) => a.name.localeCompare(b.name));
+        .map(p => ({ key: p.key, name: projectMap.displayName(p.key), dir: p.dir }))
+        .sort((a, b) => a.name.localeCompare(b.name) || a.key.localeCompare(b.key));
 }
 
 module.exports = {

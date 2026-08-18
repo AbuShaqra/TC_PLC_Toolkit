@@ -65,13 +65,18 @@ found running 2 of its 10 tests. Hence the classification below: a run states wh
 
 `test/run.js` therefore classifies every run and prints it in the summary:
 
-- **FULL** — sample project, library archives and `.tmc` all present. This is the normal state
-  everywhere, and the only run that proves the ratchet held.
-- **REDUCED** — lists exactly which fixtures are missing and what that means, and labels the final
-  line `(reduced coverage)`.
+- **FULL** — required fixtures are present **and each load-bearing harness reports that its gate
+  actually ran**. Fixture presence alone is not evidence: `test/_coverage.js` writes a per-child
+  report that `test/run.js` consumes for the live path, diagnostics/typecheck ratchets, committed
+  archive reader and multi-project fixture.
+- **REDUCED** — lists missing fixtures plus every gate that skipped or failed to report execution,
+  and labels the final line `(reduced coverage)`.
+- **FILTERED** — `node test/run.js <substring>` intentionally ran only a subset and can never claim
+  whole-suite FULL coverage.
 
-`REQUIRE_FULL_SUITE=1` turns a reduced run into a hard failure before any suite executes. Use it
-before packaging a release, so a degraded run can never be mistaken for a clean gate.
+`REQUIRE_FULL_SUITE=1` turns a reduced or filtered run into a hard failure after the harness reports
+are collected. Use it before packaging a release, so a silently skipped gate can never be mistaken
+for a clean one.
 
 `npm test` runs `node test/run.js`, which runs each harness in `test/` in its own process and reports
 per-suite without aborting on the first failure. The main ones:
@@ -81,6 +86,8 @@ per-suite without aborting on the first failure. The main ones:
 | `test/test_lsp_features.js` | Core LSP: completions, go-to-definition (incl. call parameters), references, diagnostics, on synthetic `.st` units. |
 | `test/test_sample_diagnostics.js` | **Diagnostics ratchet** on the real `sample/` TwinCAT project. The sample is valid code, so every diagnostic on it is a false positive; the harness measures them the way the LSP server does, prints a per-category breakdown, and **fails if the total rises above the baseline** in `test/_baseline.js`. The target — currently met — is zero. |
 | `test/test_live_path.js` | The live editor pipeline: full-file ST assembly, cursor mapping, per-pane diagnostics, member completion through references, method return types, token-aware and cross-file references. |
+| `test/test_editor_mapping.js` | The production `src/editorMapping.js` helpers directly: pane↔unit boundary mapping, synthesized-line rejection, pane slicing and encoded peek-model paths. `test_live_path.js` imports the same helpers rather than carrying copies. |
+| `test/test_file_uri.js` | The production filesystem-path/file-URI boundary: reserved characters, Unicode, encoded drive colons and UNC round trips. |
 | `test/test_typecheck.js` | Semantic type checking: member access, call arguments, declaration types, assignment compatibility — plus the same `sample/` diagnostics ratchet. |
 | `test/test_references_scope.js` | Find References scope + coordinate spaces: private method `VAR` vs. parameters, named arguments belonging to the callee, and FB_init declaration-site arguments (`inst : FB_T(p := v)`). |
 | `test/test_references_tree.js` | References-view grouping (file → component → occurrence). |
@@ -100,7 +107,7 @@ per-suite without aborting on the first failure. The main ones:
 | `test/test_folding.js` | Folding ranges (`media/stFolding.js`). Pins the two reported bugs by name — an unmatched `{endregion}` truncating the enclosing `VAR` fold, and an unindented `{attribute …}` growing a fold arrow of its own — plus the case designed for rather than discovered: `{IF defined(X)}` is a conditional *pragma*, not an `IF` block, and reading it as one leaves an unclosed block that eats every fold below. Also covers keywords inside comments/strings (`$`-escapes included), members named like keywords (`axis.Case`), the separate region/block stacks, every `VAR_*` variant, and a sweep over every pane of every `sample/` object asserting no range is ever out of bounds. |
 | `test/test_pragmas.js` | Pragma classification and the two catalogs, plus the highlighting rules in **both** grammars and the `{region}` folding markers. Pins the split the design rests on: shape decides the category (and therefore the colour), the catalog only enriches — so a user-defined attribute must be scoped exactly like a documented one. Also asserts catalog integrity (no duplicates, every documented entry has an Infosys node id, the curated file holds nothing Infosys documents, every curated entry carries measured counts), that pragma spans are consumed whole in the lexer and both grammars, and that the three folding-marker declarations — `pragmas.js`, `language-configuration.json`, `media/editor.js` — still agree, which nothing else can check because none of them can import the others. |
 | `test/test_plcproj_scope.js` | The index is scoped to the `.plcproj`, not the filesystem: a project's `objectPaths` (from `createProjectMap`) names only the `<Compile>`d objects, so a backup/orphan copy on disk (a duplicate object name, absent from the project) can never win the name-keyed index and steal a real object's references. Includes the no-`.plcproj` empty-map case and a sample-coverage check proving the scoping is a no-op on the ratchet. Predates the project-scoped index (below) — the guarantee it pins now runs through `createProjectMap` per project instead of one workspace-wide union. |
-| `test/test_uri_fs_path.js` | `uriToFsPath()` must return a path the **running** platform can open. Both copies (`workspaceScan.js`, `features/core.js`) once ended in an unconditional `.replace(/\//g,'\\')`, which is correct on Windows and on POSIX ate the root — `file:///home/u/a` became `\home\u\a` — so 11 of 59 suites failed on Linux while CI (`windows-latest`) stayed green. Written to hold on **both** platforms so whichever one CI runs still guards the branch it takes: a round trip through the real filesystem (the load-bearing one — a merely plausible converter cannot satisfy it), paths containing a space in both encoded and unencoded form, separator/root shape per platform, bare-path and empty-input passthrough, that the two duplicated copies have not drifted, and that the Windows mapping itself is unchanged. |
+| `test/test_uri_fs_path.js` | `uriToFsPath()` must return a path the **running** platform can open. The former copies in `workspaceScan.js` and `features/core.js` once ended in an unconditional `.replace(/\//g,'\\')`, which is correct on Windows and on POSIX ate the root — `file:///home/u/a` became `\home\u\a` — so 11 of 59 suites failed on Linux while CI (`windows-latest`) stayed green. Both callers now delegate to the shared production helper in `src/fileUri.js`. Written to hold on **both** platforms so whichever one CI runs still guards the branch it takes: a round trip through the real filesystem (the load-bearing one — a merely plausible converter cannot satisfy it), paths containing a space in both encoded and unencoded form, separator/root shape per platform, bare-path and empty-input passthrough, caller delegation, and unchanged Windows mapping. |
 | `test/test_project_map.js` | `src/lsp/projectMap.js`: which `.plcproj` owns which file. Discovery, `objectPaths` per project, `ownersOf()` vs `projectFor()` (a linked file has two owners but a request for it routes to one), the orphan/no-project/case-insensitivity edges, `projectLabel()` (the status-bar text, from `src/projectStatusBar.js`) and `groupRootsByProject()` (the Objects-tree grouping) at both the &lt;2-projects (nothing shown, flat tree) and 2-projects ends. Also pins `TWINCAT_EXTS` staying in sync between `projectMap.js` and `xmlIndexer.js`'s own copies — a real review-caught bug: `projectMap.js`'s copy once missed `.tctleo`, silently dropping every enumeration-text-list object's symbols from a project-scoped scan. |
 | `test/test_multi_project_scope.js` | End-to-end: two copies of `sample/` under one workspace root (`test/_multiproject.js` builds the fixture, one copy deliberately diverged), driven through the real `scanWorkspace`. Asserts the partition (one index per project, nothing lost to a name collision), 0 diagnostics on the correct copy while the diverged copy's own real error still reports, references and the rename config scan never crossing the project boundary, and the library namespace/symbol registries staying per-project — including the Libraries-view union fallback when no project is specified. Needs `sample/`; skips cleanly when absent. |
 
@@ -172,13 +179,16 @@ a visible window for ~30 s that closes itself):
 node test/devhost/run.js
 ```
 
-`run.js` copies the committed sample to a temp dir, launches the **installed** VS Code as a separate
+`run.js` copies the committed sample twice (`LineA`/`LineB`) under one temp workspace, launches the
+**installed** VS Code as a separate
 instance (fresh `--user-data-dir`/`--extensions-dir`, so a running VS Code is untouched) with this repo
 as the development extension and `testRunner.js` as the `--extensionTestsPath` module. In-host, that
 module patches `TwinCatCustomEditorProvider.prototype.resolveCustomTextEditor` to trace every panel's
 resolve → `ready` → `init` chain (a break anywhere is a permanently blank viewer), opens a GVL, asks the
 live client for a cross-file definition and its references, then navigates with exactly the URI the
-definition returned. It also invokes the two **Objects-tree insert commands** and captures what reaches
+definition returned. It drives the real Objects provider and status-bar formatter too, asserting that
+the two identical `.plcproj` basenames render as `TcToolkitSample_PLC — LineA` and `— LineB`. It also
+invokes the two **Objects-tree insert commands** and captures what reaches
 the webview — `src/commands/objectInsertCommands.js` is `vscode`-bound, so `test_object_insert.js` can
 only cover the pure template half, and this is the only place the rest of the path (tree node → XML
 parse → template → posted at the caret) is exercised at all. It asserts the URI keeps the **on-disk spelling** and that navigation **reuses**
@@ -224,6 +234,8 @@ src/
     lspBridgeCommands   openComponent navigation + the twincat.lsp.query* Monaco↔LSP bridges
   xaeShell              XAE shell discovery + the library-signature generator (the one non-offline path)
   customEditorProvider  Webview host: assembles full-file ST, bridges Monaco ↔ LSP, writes CDATA back
+  editorMapping         Pure pane↔unit coordinate, pane-slice and peek-model helpers used by the host + tests
+  fileUri               Central Windows path ↔ file URI conversion and comparison boundary
   treeDataProvider      "TwinCAT Objects" explorer tree
   projectStatusBar      Status-bar "which PLC project is this file in" indicator (2+ projects only);
                         projectLabel() is pure/vscode-free so it is unit-testable — vscode is required
@@ -323,6 +335,9 @@ and routed at startup (and on `custom/reindex`), not one flat index for the whol
   that decides the text, is pure and `vscode`-free so it is unit-testable under plain Node;
   `createProjectStatusBar()` requires `vscode` lazily, inside the function, specifically so
   `test_project_map.js` can call `projectLabel()` standalone without `vscode` ever being required.
+  Duplicate `.plcproj` basenames use the shortest unique parent suffix (for example
+  `TcToolkitSample_PLC — LineA`); `projectMap.displayName()` supplies the same label to the Objects
+  tree and status bar while unique project names keep their short basename.
 
 Two registries hang off each project's index: `Symbol.for('twincat.libraryNamespaces')`
 (`src/lsp/libraries.js`) and `Symbol.for('twincat.librarySymbols')` (`src/lsp/libsymbols.js`) — see

@@ -22,6 +22,7 @@ const { convertXmlToSt } = require('../src/stConverter');
 const { clearWorkspaceIndex, getWorkspaceSymbolIndex } = require('../src/lsp/parser');
 const { indexXmlObject } = require('../src/lsp/xmlIndexer');
 const { provideDiagnostics } = require('../src/lsp/features');
+const { reportCoverage } = require('./_coverage');
 const {
     SAMPLE_DIR,
     indexSampleLibraries,
@@ -32,6 +33,7 @@ const {
 
 if (!fs.existsSync(SAMPLE_DIR)) {
     console.log('sample/ project not present — skipping sample diagnostics test.');
+    reportCoverage('sample-diagnostics', 'skipped', 'sample/ project not present');
     process.exit(0);
 }
 
@@ -63,10 +65,11 @@ printBaselineMode(modeInfo);
 // First pass: index every TwinCAT object directly from XML (the real workspace cross-file index).
 const index = getWorkspaceSymbolIndex();
 const converted = {};
+let parseSkipped = 0;
 for (const file of files) {
     const xml = fs.readFileSync(file, 'utf8');
     const parsed = parseTwinCatXml(xml);
-    if (!parsed) { console.log(`  [skip] could not parse ${file}`); continue; }
+    if (!parsed) { console.log(`  [skip] could not parse ${file}`); parseSkipped++; continue; }
     const { stText, lineMap } = convertXmlToSt(parsed, { raw: true });
     const fileUri = 'file:///' + file.replace(/\\/g, '/').replace(/^\//, '');
     converted[file] = { stText, lineMap, fileUri, parsed };
@@ -111,6 +114,8 @@ byFile.sort((a, b) => b.count - a.count).slice(0, 10)
 const delta = total - BASELINE_DIAGNOSTICS;
 console.log(`\n--- TOTAL: ${total} diagnostics across ${files.length} files ` +
     `(mode ${modeInfo.mode}, baseline ${BASELINE_DIAGNOSTICS}, delta ${delta > 0 ? '+' : ''}${delta}) ---`);
+reportCoverage('sample-diagnostics', parseSkipped === 0 ? 'ran' : 'skipped',
+    parseSkipped === 0 ? `${files.length} files diagnosed` : `${parseSkipped} file(s) could not be parsed`);
 
 // ---- Ratchet ----
 if (total > BASELINE_DIAGNOSTICS) {
