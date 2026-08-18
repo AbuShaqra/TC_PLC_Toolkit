@@ -4,11 +4,11 @@ Where the work *stands*. Read before starting; keep current (handoff rule in [CL
 100 lines — prune finished items rather than appending, but never drop a real finding to hit it. **Shipped features
 live in git history (PRs/commits); this file keeps the findings that would cost to re-derive.**
 
-**Last verified:** 2026-08-18 — `REQUIRE_FULL_SUITE=1 npm test` green (**62/62 harnesses, Coverage: FULL**),
+**Last verified:** 2026-08-18 — `REQUIRE_FULL_SUITE=1 npm test` green (**63/63 harnesses, Coverage: FULL**),
 typecheck clean, **0 diagnostics on the sample**, both browser harnesses green, installed-VS-Code dev-host green
 including a real two-project workspace. The earlier 2026-08-10 pass also verified 0 diagnostics with Beckhoff
 archives both present and moved aside. **0.6.2 (indexing)** and **0.7.0 (Objects-tree inserts)** are merged;
-`package.json` is at **0.7.1** for the FB-init/instance-qualifier fix. Remote history was rewritten 2026-08-17.
+`package.json` is at **0.7.2** for exact Objects-tree navigation. Remote history was rewritten 2026-08-17.
 The 2026-08-17 Linux pass was 60/60 FULL before the review fixes below.
 **Review fixes verified on `codex/review-fixes`:** bounded ZIP archive/input inflation (`libsymbols.js`); central path↔file-URI handling
 (`fileUri.js`); reference-cache identity is mtime+size+ctime+inode; FULL coverage now requires child harnesses to
@@ -297,6 +297,15 @@ drops the library); **never name a local `$shellExe`** (PowerShell names are cas
 user's open shell); bitness is the user's choice, x64 the more complete source on the test rig.
 
 ## Find References: a bug in ONE FB is a PARSER bug until proven otherwise
+**Exact Objects-tree navigation fixed 2026-08-18:** definition/reference navigation already carried
+the target `componentId`, but `extension.js` discarded it and revealed a synthetic file node. The Objects provider
+also derived component parents from the backing file's disk path, skipping the file, virtual folders and property
+node, so VS Code could not expand to the actual descendant. The webview now reports every component it actually
+loads; the host reveals that exact method/property/action/transition/Get/Set and keeps the confirmed id while a
+retained tab is hidden. `treeDataProvider.js` attaches the logical parent chain and parses only the target XML—the
+shared cached project map is still used at the file/disk boundary, never rebuilt during reveal. Root/file activation
+still reveals the file. `test_tree_reveal` covers all component kinds plus nested virtual folders; the installed
+dev-host intercepts the real `twincatExplorer` TreeView and proves exact reveals (including tab-away/back).
 **FB_init qualifier/identity fix verified 2026-08-18:** the sample's
 `THIS^.refExtendOut REF= refExtendOut` exposed two independent collisions. Definition treated
 `THIS^`/`SUPER^` like an ordinary dotted path, then fell through to the same-named method variable;

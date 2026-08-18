@@ -46,6 +46,8 @@ class TwinCatTreeItem extends vscode.TreeItem {
         this.componentId = undefined;
         /** @type {string|undefined} Virtual-folder path, assigned externally after construction. */
         this.folderPath = undefined;
+        /** @type {TwinCatTreeItem|undefined} Logical tree parent used by TreeView.reveal. */
+        this.parent = undefined;
     }
 
     // @ts-expect-error — `id` is deliberately a lazy getter (not a constructor-set property):
@@ -106,6 +108,12 @@ class TwinCatTreeDataProvider {
      */
     getParent(element) {
         if (!element || !element.resourceUri) return null;
+
+        // Components do not live beside their backing file in the filesystem tree. They live under
+        // the file, optionally through virtual folders and, for Get/Set, a property node. Keep that
+        // logical ancestry on the items built by parseFileComponents so reveal() can expand the
+        // exact path instead of stopping at and selecting the file's disk directory.
+        if (element.parent) return element.parent;
 
         const folders = vscode.workspace.workspaceFolders;
         if (!folders) return null;
@@ -187,7 +195,7 @@ class TwinCatTreeDataProvider {
         }
 
         if (element.contextValue === 'pouFile' || element.contextValue === 'pouFileProgram' || element.contextValue === 'itfFile') {
-            return this.parseFileComponents(element.resourceUri, element.contextValue);
+            return this.parseFileComponents(element.resourceUri, element.contextValue, element);
         }
 
         if (element.contextValue && (element.contextValue.startsWith('pouVirtualFolder') || element.contextValue === 'propertyNode')) {
@@ -195,6 +203,43 @@ class TwinCatTreeDataProvider {
         }
 
         return [];
+    }
+
+    /**
+     * Builds the stable tree element passed to TreeView.reveal for a file or one of its components.
+     * Only the target file is parsed; the cached extension-host project map remains the sole source
+     * of project grouping, so navigation never launches another workspace scan.
+     * @param {vscode.Uri} fileUri Backing TwinCAT file URI.
+     * @param {string} componentId Component id, or `root` for the file itself.
+     * @returns {Promise<TwinCatTreeItem>} Exact component when found, otherwise the file item.
+     */
+    async getRevealItem(fileUri, componentId = 'root') {
+        const ext = path.extname(fileUri.fsPath).toLowerCase();
+        let contextValue = 'pouFile';
+        if (ext === '.tcio') contextValue = 'itfFile';
+        else if (ext === '.tcgvl') contextValue = 'gvlFile';
+        else if (ext === '.tcdut' || ext === '.tctleo') contextValue = 'dutFile';
+        else if (ext === '.st') contextValue = 'stFile';
+
+        const expandable = ext === '.tcpou' || ext === '.tcio';
+        const fileItem = new TwinCatTreeItem(
+            path.basename(fileUri.fsPath),
+            fileUri,
+            expandable ? vscode.TreeItemCollapsibleState.Collapsed : vscode.TreeItemCollapsibleState.None,
+            contextValue,
+            null,
+            null
+        );
+        if (!componentId || componentId === 'root' || !expandable) return fileItem;
+
+        const children = await this.parseFileComponents(fileUri, contextValue, fileItem);
+        const pending = children.slice();
+        while (pending.length > 0) {
+            const item = pending.shift();
+            if (item.componentId === componentId) return item;
+            if (item.children) pending.unshift(...item.children);
+        }
+        return fileItem;
     }
 
     /**
@@ -307,9 +352,10 @@ class TwinCatTreeDataProvider {
      * Parses virtual folders and sub-components inside a POU/Interface file and formats them for the tree view.
      * @param {vscode.Uri} fileUri File URI.
      * @param {string} fileType 'pouFile', 'pouFileProgram', or 'itfFile'.
+     * @param {TwinCatTreeItem} [fileItem] File node used as the logical parent during reveal.
      * @returns {Promise<Array<TwinCatTreeItem>>} List of nested virtual items.
      */
-    async parseFileComponents(fileUri, fileType) {
+    async parseFileComponents(fileUri, fileType, fileItem) {
         try {
             const document = await vscode.workspace.openTextDocument(fileUri);
             const text = document.getText();
@@ -359,7 +405,7 @@ class TwinCatTreeDataProvider {
                 current.components.push(c);
             });
 
-            const buildVirtualFolderItems = (folderNode, currentPath = '') => {
+            const buildVirtualFolderItems = (folderNode, currentPath = '', parentItem = fileItem) => {
                 const folderItems = [];
                 
                 // Add subfolders
@@ -380,13 +426,16 @@ class TwinCatTreeDataProvider {
                         new vscode.ThemeIcon('folder')
                     );
                     folderItem.folderPath = nextPath;
-                    folderItem.children = buildVirtualFolderItems(node, nextPath);
+                    folderItem.parent = parentItem;
+                    folderItem.children = buildVirtualFolderItems(node, nextPath, folderItem);
                     folderItems.push(folderItem);
                 }
                 
                 // Add components
                 for (const comp of folderNode.components) {
-                    folderItems.push(this.createComponentTreeItem(comp, fileUri, parsed.components));
+                    const item = this.createComponentTreeItem(comp, fileUri, parsed.components);
+                    item.parent = parentItem;
+                    folderItems.push(item);
                 }
                 
                 // Sort so folders come first, then components
@@ -460,6 +509,7 @@ class TwinCatTreeDataProvider {
         item.tooltip = `${tooltip} — ${c.name}`;
         if (children) {
             item.children = children;
+            for (const child of children) child.parent = item;
         }
         return item;
     }
