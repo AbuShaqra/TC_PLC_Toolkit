@@ -16,8 +16,9 @@ report that gates actually ran; editor coordinate/peek helpers moved to producti
 imported by the live-path tests; duplicate `.plcproj` basenames use shortest-unique-parent labels in both Objects
 and status bar. The dev-host now copies the sample as LineA+LineB and asserts those real provider labels plus live
 cross-file navigation. The user's pre-existing newline edit in `sample/.../FB_Station.TcPOU` remains untouched.
-**0.6.1 VSIX installed to the user's VS Code 2026-08-10 — awaiting their confirmation after a FULL
-VS Code restart** (see the install trap below).
+**0.7.2 VSIX installed to the user's VS Code 2026-08-18 — awaiting their confirmation after a FULL
+VS Code restart.** The CLI reports 0.7.2, while the running process still retains the 0.7.1 directory
+(see the install trap below).
 **Install trap that cost a debug cycle:** VS Code keeps the old version dir until a FULL restart (reload-window is not
 always enough) — the user tested 0.3.1's feature against the still-running 0.3.0 code and reported it broken. Check
 `~/.vscode/extensions/` for side-by-side version dirs + `.obsolete` before debugging a "feature does nothing" report.
