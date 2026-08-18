@@ -61,6 +61,21 @@ function findCodeCli() {
     fs.cpSync(SAMPLE, primary, { recursive: true });
     fs.cpSync(SAMPLE, path.join(ws, 'LineB'), { recursive: true });
 
+    // Reproduce a real TwinCAT case-only folder rename: the `.plcproj` kept `machine`, while the
+    // directory on disk is `Machine`. Windows resolves the include, but VS Code URI identity is
+    // case-sensitive, so the index must canonicalize it to the explorer/custom-editor spelling.
+    // POSIX cannot represent this as an existing include and therefore leaves the fixture alone.
+    if (process.platform === 'win32') {
+        const primaryPlcproj = path.join(primary, 'TcToolkitSample_PLC', 'TcToolkitSample_PLC.plcproj');
+        const text = fs.readFileSync(primaryPlcproj, 'utf8');
+        const changed = text.replace(
+            'Include="POUs\\Machine\\FB_Station.TcPOU"',
+            'Include="POUs\\machine\\FB_Station.TcPOU"'
+        );
+        assert(changed !== text, 'the dev-host fixture contains the FB_Station project include');
+        fs.writeFileSync(primaryPlcproj, changed, 'utf8');
+    }
+
     const args = [
         '--new-window',
         '--user-data-dir', path.join(work, 'udd'),
@@ -110,6 +125,12 @@ function findCodeCli() {
         `the real Objects provider disambiguates duplicate project names (got ${multi ? JSON.stringify(multi.treeLabels) : 'no result'})`);
     assert(!!multi && expectedLabels.every(label => multi.statusLabels.includes(label)),
         `the real status-bar formatter uses the same project labels (got ${multi ? JSON.stringify(multi.statusLabels) : 'no result'})`);
+    if (process.platform === 'win32') {
+        const expectedStation = path.join(primary, 'TcToolkitSample_PLC', 'POUs', 'Machine', 'FB_Station.TcPOU');
+        assert(!!multi && multi.indexedStationPath === expectedStation,
+            `stale .plcproj casing canonicalizes to the real editor path ` +
+            `(got ${multi ? JSON.stringify(multi.indexedStationPath) : 'no result'})`);
+    }
 
     // The Objects-tree insert commands reach the webview's caret. Their module is vscode-bound, so
     // the pure template logic (test_object_insert.js) is all a Node harness can cover — this proves
@@ -136,6 +157,18 @@ function findCodeCli() {
     assert(!!lsp && !!lsp.definition && lsp.definition.uri.includes('GVLs/GVL_System.TcGVL'),
         `the definition uri keeps the on-disk spelling (got ${lsp && lsp.definition && lsp.definition.uri})`);
     assert(!!lsp && lsp.refCount > 0, `references flow through the live client (got ${lsp && lsp.refCount})`);
+    if (process.platform === 'win32') {
+        const expectedStation = path.join(primary, 'TcToolkitSample_PLC', 'POUs', 'Machine', 'FB_Station.TcPOU');
+        // URI conversion conventionally lowercases the drive letter; every descendant character is
+        // still identity-significant to VS Code and must match the editor path exactly.
+        const hasStation = !!lsp && lsp.referenceFsPaths.some(p =>
+            p.length === expectedStation.length &&
+            p[0].toLowerCase() === expectedStation[0].toLowerCase() &&
+            p.slice(1) === expectedStation.slice(1));
+        assert(hasStation,
+            `references use the real-cased FB_Station editor URI ` +
+            `(got ${lsp ? JSON.stringify(lsp.referenceFsPaths) : 'no result'})`);
+    }
 
     // Navigating with that uri must REUSE the open tab — the 2026-08-10 regression opened
     // "gvl_system.tcgvl" as a second tab here.

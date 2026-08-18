@@ -127,6 +127,54 @@ assert(mapC.get(keyC).objectPaths.has(calNorm),
 assert(!!mapC.get(keyC).objectFiles.get(calNorm) && fs.existsSync(mapC.get(keyC).objectFiles.get(calNorm)),
     'the decoded object path exists on disk — the object is actually indexable');
 
+// TwinCAT can retain stale directory casing in `<Compile Include>` after a case-only folder rename.
+// Windows opens either spelling, but VS Code URI identity does not: indexing the include spelling
+// and opening the explorer spelling creates two resources, breaking method definitions/references.
+// Only Windows can construct this mismatch while the include still resolves; on POSIX the same
+// fixture also pins the conservative missing-file fallback.
+const casingRoot = path.join(os.tmpdir(), 'projmap_casing_' + Date.now());
+const casingProject = path.join(casingRoot, 'CaseProject');
+const casingActualDir = path.join(casingProject, 'POUs', 'pneumatik');
+fs.mkdirSync(casingActualDir, { recursive: true });
+const casingActualFile = path.join(casingActualDir, 'FB_Pneumatic.TcPOU');
+fs.writeFileSync(casingActualFile, '<TcPlcObject/>');
+let junctionInclude = '';
+let junctionFile = '';
+if (process.platform === 'win32') {
+    const junctionTarget = path.join(casingRoot, 'JunctionTarget');
+    fs.mkdirSync(path.join(junctionTarget, 'pneumatik'), { recursive: true });
+    fs.writeFileSync(path.join(junctionTarget, 'pneumatik', 'FB_Linked.TcPOU'), '<TcPlcObject/>');
+    const junctionPath = path.join(casingProject, 'Linked');
+    fs.symlinkSync(junctionTarget, junctionPath, 'junction');
+    junctionFile = path.join(junctionPath, 'pneumatik', 'FB_Linked.TcPOU');
+    junctionInclude = '  <Compile Include="Linked\\Pneumatik\\FB_Linked.TcPOU"/>\n';
+}
+fs.writeFileSync(path.join(casingProject, 'CaseProject.plcproj'), `<?xml version="1.0"?>
+<Project><ItemGroup>
+  <Compile Include="POUs\\Pneumatik\\FB_Pneumatic.TcPOU"/>
+  <Compile Include="POUs\\Missing\\FB_Missing.TcPOU"/>
+${junctionInclude}
+</ItemGroup></Project>`);
+const casingMap = createProjectMap([casingRoot]);
+const casingKey = normalizeProjectPath(path.join(casingProject, 'CaseProject.plcproj'));
+const casingStored = casingMap.get(casingKey).objectFiles.get(normalizeProjectPath(casingActualFile));
+if (process.platform === 'win32') {
+    assert(casingStored === casingActualFile,
+        `objectFiles uses the filesystem's actual directory casing (got ${casingStored})`);
+    assert(casingStored.includes(`${path.sep}pneumatik${path.sep}`),
+        'a stale Pneumatik include becomes the real lowercase pneumatik URI spelling');
+    const linkedStored = casingMap.get(casingKey).objectFiles.get(normalizeProjectPath(junctionFile));
+    assert(linkedStored === junctionFile,
+        `casing recovery preserves the junction URI instead of resolving to its target (got ${linkedStored})`);
+} else {
+    assert(casingStored.endsWith(path.join('POUs', 'Pneumatik', 'FB_Pneumatic.TcPOU')),
+        'POSIX keeps the include spelling instead of resolving a different case or symlink');
+}
+const missingNorm = normalizeProjectPath(path.join(casingProject, 'POUs', 'Missing', 'FB_Missing.TcPOU'));
+assert(casingMap.get(casingKey).objectFiles.get(missingNorm).endsWith(
+    path.join('POUs', 'Missing', 'FB_Missing.TcPOU')),
+    'a missing include is retained conservatively under its project spelling');
+
 // Not <Compile>d anywhere: routes to the nearest ancestor project (so an open orphan still gets
 // answers), and outside every project directory to the loose key.
 assert(map.projectFor(path.join(B, 'POUs', 'Orphan.TcPOU')) === keyB,
@@ -205,6 +253,7 @@ fs.rmSync(ROOT, { recursive: true, force: true });
 fs.rmSync(bare, { recursive: true, force: true });
 fs.rmSync(soloRoot, { recursive: true, force: true });
 fs.rmSync(duplicateRoot, { recursive: true, force: true });
+fs.rmSync(casingRoot, { recursive: true, force: true });
 
 console.log(`\n--- PROJECT MAP TESTS COMPLETE with ${errors} error(s) ---`);
 process.exit(errors > 0 ? 1 : 0);
