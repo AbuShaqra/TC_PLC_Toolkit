@@ -12,7 +12,7 @@ const assert = require('assert');
 const { parseTwinCatXml } = require('../src/xmlParser');
 const { normalizeFileUri } = require('../src/fileUri');
 const {
-    assembleSt, localToAbsolute, absoluteToLocal,
+    assembleSt, localToAbsolute, absoluteToLocal, createStResolver,
     mapDefinition, collectPeekReferences, listExternalReferences
 } = require('../src/livePath');
 
@@ -119,34 +119,6 @@ function makeCountingReadFile(filesByUri) {
 }
 
 /**
- * Minimal stand-in for createStResolver, built directly against the pre-assembled synthetic units
- * (rather than re-parsing XML through convertXmlToSt on every call) so the fixture stays a single
- * source of truth. Mirrors the real resolver's contract: active uri short-circuits to the given
- * unit with NO read, everything else goes through readFile.
- * @param {Object} opts { activeUri, activeUnit, readFile, unitsByUri }
- * @returns {Function} async (uri) => { st, lines } | null
- */
-function makeTestResolver({ activeUri, activeUnit, readFile, unitsByUri }) {
-    const cache = new Map();
-    return async function getSt(uri) {
-        const key = normalizeFileUri(uri);
-        if (cache.has(key)) return cache.get(key);
-        let result = null;
-        if (key === normalizeFileUri(activeUri)) {
-            result = { st: activeUnit, lines: activeUnit.stText.split('\n') };
-        } else {
-            try {
-                await readFile(uri); // exercised for its read-count side effect, same as production
-                const unit = unitsByUri[key];
-                if (unit) result = { st: unit, lines: unit.stText.split('\n') };
-            } catch (e) { /* unreadable */ }
-        }
-        cache.set(key, result);
-        return result;
-    };
-}
-
-/**
  * Locates the 0-based local line of the first line matching `re` in a pane's raw text, via the
  * REAL component extraction (parseTwinCatXml), so fixture line numbers are never hand-counted.
  * @param {string} xml Source XML.
@@ -189,10 +161,7 @@ function makeLoc(uri, lineMap, componentId, pane, localLine0, startCol0, endCol0
 // ==================================================================================================
 check('mapDefinition augments with (componentId, pane, localLine) agreeing with absoluteToLocal', async () => {
     const readFile = makeCountingReadFile({ [URI_B]: XML_B });
-    const resolveSt = makeTestResolver({
-        activeUri: URI_A, activeUnit: unitA, readFile,
-        unitsByUri: { [normalizeFileUri(URI_B)]: unitB }
-    });
+    const resolveSt = createStResolver({ activeUri: URI_A, activeUnit: unitA, readFile });
 
     const localLine0 = localLineOf(XML_B, 'method_DoIt', 'impl', /nCount := nCount \+ 1/);
     const def = makeLoc(URI_B, unitB.lineMap, 'method_DoIt', 'impl', localLine0, 0, 7);
@@ -213,7 +182,7 @@ check('mapDefinition augments with (componentId, pane, localLine) agreeing with 
 
 check('mapDefinition passes through an unresolvable/missing definition unchanged', async () => {
     const readFile = makeCountingReadFile({});
-    const resolveSt = makeTestResolver({ activeUri: URI_A, activeUnit: unitA, readFile, unitsByUri: {} });
+    const resolveSt = createStResolver({ activeUri: URI_A, activeUnit: unitA, readFile });
     assert.strictEqual(await mapDefinition(null, resolveSt), null, 'null definition passes through');
     const partial = { uri: URI_B }; // no .range
     assert.strictEqual(await mapDefinition(partial, resolveSt), partial, 'a definition missing .range passes through unchanged');
@@ -224,10 +193,7 @@ check('mapDefinition passes through an unresolvable/missing definition unchanged
 // ==================================================================================================
 check('a reference in the active file uses the active unit (no read) and is sameFile: true', async () => {
     const readFile = makeCountingReadFile({ [URI_A]: XML_A }); // present, but must never be hit
-    const resolveSt = makeTestResolver({
-        activeUri: URI_A, activeUnit: unitA, readFile,
-        unitsByUri: { [normalizeFileUri(URI_A)]: unitA }
-    });
+    const resolveSt = createStResolver({ activeUri: URI_A, activeUnit: unitA, readFile });
     const localLine0 = localLineOf(XML_A, 'root', 'impl', /nVal := nVal \+ 1/);
     const ref = makeLoc(URI_A, unitA.lineMap, 'root', 'impl', localLine0, 0, 4);
 
@@ -247,10 +213,7 @@ check('a reference in the active file uses the active unit (no read) and is same
 // ==================================================================================================
 check('two references into the same (file, component, pane) dedupe to one pane entry', async () => {
     const readFile = makeCountingReadFile({ [URI_B]: XML_B });
-    const resolveSt = makeTestResolver({
-        activeUri: URI_A, activeUnit: unitA, readFile,
-        unitsByUri: { [normalizeFileUri(URI_B)]: unitB }
-    });
+    const resolveSt = createStResolver({ activeUri: URI_A, activeUnit: unitA, readFile });
     const line0 = localLineOf(XML_B, 'method_DoIt', 'impl', /nCount := nCount \+ 1/);
     const line1 = localLineOf(XML_B, 'method_DoIt', 'impl', /nCount := nCount \+ 2/);
     const refA = makeLoc(URI_B, unitB.lineMap, 'method_DoIt', 'impl', line0, 0, 7);
@@ -270,10 +233,7 @@ check('two references into the same (file, component, pane) dedupe to one pane e
 // ==================================================================================================
 check('maxPanes: 1 bounds file reads — the second file is never opened, its refs are absent', async () => {
     const readFile = makeCountingReadFile({ [URI_B]: XML_B, [URI_C]: XML_C });
-    const resolveSt = makeTestResolver({
-        activeUri: URI_A, activeUnit: unitA, readFile,
-        unitsByUri: { [normalizeFileUri(URI_B)]: unitB, [normalizeFileUri(URI_C)]: unitC }
-    });
+    const resolveSt = createStResolver({ activeUri: URI_A, activeUnit: unitA, readFile });
     const doItLine = localLineOf(XML_B, 'method_DoIt', 'impl', /nCount := nCount \+ 1/);
     const otherLine = localLineOf(XML_B, 'method_Other', 'impl', /nCount := 0/);
     const cLine = localLineOf(XML_C, 'root', 'impl', /;/);
@@ -304,10 +264,7 @@ check('maxPanes: 1 bounds file reads — the second file is never opened, its re
 // ==================================================================================================
 check('maxTextBytes smaller than the pane text skips the pane but the reference still maps', async () => {
     const readFile = makeCountingReadFile({ [URI_B]: XML_B });
-    const resolveSt = makeTestResolver({
-        activeUri: URI_A, activeUnit: unitA, readFile,
-        unitsByUri: { [normalizeFileUri(URI_B)]: unitB }
-    });
+    const resolveSt = createStResolver({ activeUri: URI_A, activeUnit: unitA, readFile });
     const line0 = localLineOf(XML_B, 'method_DoIt', 'impl', /nCount := nCount \+ 1/);
     const ref = makeLoc(URI_B, unitB.lineMap, 'method_DoIt', 'impl', line0, 0, 7);
 
@@ -326,10 +283,7 @@ check('maxTextBytes smaller than the pane text skips the pane but the reference 
 // ==================================================================================================
 check('listExternalReferences: item fields, searchedWord from the first ref, unreadable uri skipped', async () => {
     const readFile = makeCountingReadFile({ [URI_B]: XML_B }); // URI_MISSING deliberately absent
-    const resolveSt = makeTestResolver({
-        activeUri: URI_A, activeUnit: unitA, readFile,
-        unitsByUri: { [normalizeFileUri(URI_B)]: unitB }
-    });
+    const resolveSt = createStResolver({ activeUri: URI_A, activeUnit: unitA, readFile });
     const line0 = localLineOf(XML_B, 'method_DoIt', 'impl', /nCount := nCount \+ 1/);
     const col0 = 0; // 'nCount' starts at column 0 of that line
     const refGood = makeLoc(URI_B, unitB.lineMap, 'method_DoIt', 'impl', line0, col0, col0 + 6);
@@ -356,10 +310,7 @@ check('listExternalReferences: a ref outside any known block still yields compon
     // A location whose line the lineMap does not cover (e.g. absoluteToLocal returns null) must not
     // throw and must fall back to the documented default shape.
     const readFile = makeCountingReadFile({ [URI_B]: XML_B });
-    const resolveSt = makeTestResolver({
-        activeUri: URI_A, activeUnit: unitA, readFile,
-        unitsByUri: { [normalizeFileUri(URI_B)]: unitB }
-    });
+    const resolveSt = createStResolver({ activeUri: URI_A, activeUnit: unitA, readFile });
     // Line far past the end of the assembled unit — absoluteToLocal must return null for it.
     const outOfRangeLine = unitB.stText.split('\n').length + 50;
     const ref = { uri: URI_B, range: { start: { line: outOfRangeLine, character: 0 }, end: { character: 1 } } };
