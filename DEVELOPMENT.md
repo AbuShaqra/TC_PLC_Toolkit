@@ -472,18 +472,17 @@ URI has no loaded model, so the peek could only ever show hits in the two live p
 therefore resolves *every* hit to a (file, component, pane, local line) and ships that pane's TEXT
 alongside; the webview builds a **hidden model** per pane (scheme `twincat-peek:`, the file/component/pane
 in its query) and points the Location at it. The live panes are still preferred where they apply — they
-hold unsaved edits. Bounded by `PEEK_MAX_PANES` / `PEEK_MAX_TEXT_BYTES` in `customEditorProvider.js`,
+hold unsaved edits. Bounded by `PEEK_MAX_PANES` / `PEEK_MAX_TEXT_BYTES` in `src/livePath.js`,
 since the peek is a preview and the References panel lists every hit uncapped. Clicking an entry routes
 through `twincat.openComponent` with the exact pane + line + columns. The pane-slice coordinates are the
 subtle part — a slice is a different frame from the assembled unit — and `test_live_path.js` guards that
 arithmetic against every block of a real sample object.
 
 `assembleSt`, the coordinate mapping (`localToAbsolute`/`absoluteToLocal`/`paneTextFromUnit`), the peek
-path builder (`peekPath`), the injected-read unit resolver (`createStResolver`), and the two
-`PEEK_MAX_*` constants all live in `src/livePath.js` — vscode-free, so it is unit-testable and the
-production code IS the code the harnesses exercise (no replica logic to drift out of sync).
-`customEditorProvider.js` supplies `livePath`'s `readFile` as a thin wrapper over
-`vscode.workspace.fs.readFile`.
+path builder (`peekPath`), and the injected-read unit resolver (`createStResolver`) all live alongside
+those constants in `src/livePath.js` — vscode-free, so it is unit-testable and the production code IS
+the code the harnesses exercise (no replica logic to drift out of sync). `customEditorProvider.js`
+supplies `livePath`'s `readFile` as a thin wrapper over `vscode.workspace.fs.readFile`.
 
 ### Pragmas
 
