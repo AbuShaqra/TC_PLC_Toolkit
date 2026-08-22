@@ -7,6 +7,7 @@ const vscode = require('vscode');
 const path = require('path');
 const { parseTwinCatXml, getFoldersDetailedFromXml } = require('./xmlParser');
 const { classifyPou, classifyDut, componentKind, ICONS, LABELS, COLORS } = require('./objectKinds');
+const { parse: parseComponentId, make: makeComponentId } = require('./componentId');
 const { groupRootsByProject } = require('./lsp/projectMap');
 
 /**
@@ -540,8 +541,9 @@ class TwinCatTreeDataProvider {
 
         let children = null;
         if (c.type === 'Property' && parsedComponents) {
-            const getAcc = parsedComponents.find(x => x.id === `${c.id}_get`);
-            const setAcc = parsedComponents.find(x => x.id === `${c.id}_set`);
+            const propName = (parseComponentId(c.id) || {}).name;
+            const getAcc = propName ? parsedComponents.find(x => x.id === makeComponentId('prop', propName, 'get')) : null;
+            const setAcc = propName ? parsedComponents.find(x => x.id === makeComponentId('prop', propName, 'set')) : null;
             
             const accItems = [];
             if (getAcc) {

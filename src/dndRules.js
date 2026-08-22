@@ -13,6 +13,7 @@
  */
 
 const path = require('path');
+const { parse: parseComponentId, isAccessor, KIND_TO_XML_TAG } = require('./componentId');
 
 /**
  * @typedef {{ fsPath: string, toString(): string }} UriLike
@@ -38,18 +39,6 @@ const path = require('path');
  * @property {string} [fsPath] Directory path — directory and workspaceRoot targets.
  */
 
-/**
- * Component-id prefix → the XML tag that id denotes (treeDataProvider assigns ids like
- * `method_Home`). Only the prefix is stripped: component names may themselves contain
- * underscores (`method_do_stuff` → Method "do_stuff").
- */
-const COMPONENT_ID_TAGS = [
-    ['method_', 'Method'],
-    ['prop_', 'Property'],
-    ['action_', 'Action'],
-    ['transition_', 'Transition']
-];
-
 /** contextValues of the physical-file tree items a user may move between directories. */
 const FILE_CONTEXT_VALUES = new Set([
     'pouFile', 'pouFileProgram', 'pouFileFunction', 'itfFile', 'gvlFile', 'dutFile', 'stFile'
@@ -71,17 +60,17 @@ function describeDragged(item) {
     if (cv === 'component' || cv === 'propertyNode') {
         const id = item.componentId || '';
         // Get/Set accessors carry the same 'component' contextValue as methods/actions, so they
-        // can only be told apart by their id shape (`prop_<name>_get` / `prop_<name>_set`).
-        if (/^prop_.+_(get|set)$/.test(id)) return null;
-        for (const [prefix, tag] of COMPONENT_ID_TAGS) {
-            if (id.startsWith(prefix) && id.length > prefix.length) {
-                return {
-                    kind: 'component',
-                    uri: item.resourceUri,
-                    componentType: /** @type {'Method'|'Property'|'Action'|'Transition'} */ (tag),
-                    componentName: id.substring(prefix.length)
-                };
-            }
+        // can only be told apart by their id shape (`prop_<name>_get` / `prop_<name>_set`); they
+        // live inside the property's tag and move with it.
+        if (isAccessor(id)) return null;
+        const p = parseComponentId(id);
+        if (p && p.kind !== 'root') {
+            return {
+                kind: 'component',
+                uri: item.resourceUri,
+                componentType: /** @type {'Method'|'Property'|'Action'|'Transition'} */ (KIND_TO_XML_TAG[p.kind]),
+                componentName: p.name
+            };
         }
         return null;
     }
