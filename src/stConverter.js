@@ -25,7 +25,7 @@ const STRUCT_FLATTEN_REWRITES = Object.freeze([
         typeName: 'ST_AxisErrors', baseName: 'ST_Errors',
         fields: '\n\t// Fields from ST_Errors\n\tbError\t\t\t\t: BOOL;\n\tnExternalErrorID\t: UDINT;\n\teErrorState\t\t\t: E_error_state := E_error_state.no_error;'
     }
-].map(Object.freeze));
+].map(row => Object.freeze(row)));
 
 /**
  * Converts a parsed TwinCAT XML object into standard Structured Text.
