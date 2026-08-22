@@ -78,7 +78,7 @@ function lookup(cache, filePath) {
 /**
  * Parses a ProduceAllLibrarySignatures XML string into the registry-ready records the merge consumes.
  * Pure and uncached — the string entry point (`indexLibrarySignaturesFromXml`) needs exactly this, and
- * `readSignatureRecords` needs it too, so it lives in one place.
+ * `signatureRecordsFor` needs it too, so it lives in one place.
  * @param {string} xml Raw dump XML.
  * @returns {SignatureRecords} Records; empty counts and lists for XML that declares nothing.
  */
