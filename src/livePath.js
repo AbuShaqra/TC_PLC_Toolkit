@@ -68,6 +68,11 @@ function paneTextFromUnit(stLines, lineMap, componentId, pane) {
     return stLines.slice(block.start - 1, block.end).join('\n');
 }
 
+// Mints the `pane.path` a peek pane travels under (see `collectPeekReferences` below). The
+// webview's `media/peekUri.js` embeds this path verbatim into its synthetic peek URI
+// (`encodePeekParts`'s `pane.path || '/reference'`) — it never computes one itself, because the
+// inputs here (`componentId`, `fileUriBasename`) are src-side vocabulary the webview has no access
+// to. Stays here rather than moving to `media/` for that reason.
 function peekPath(fileUri, componentId, pane) {
     let base = 'object';
     try { base = fileUriBasename(fileUri) || base; } catch (e) { /* keep default */ }

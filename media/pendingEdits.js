@@ -124,14 +124,23 @@
     }
 
     /**
+     * @callback ReplaceFn
+     * @param {string} text
+     * @param {Object} context
+     * @param {string} blockType
+     * @param {string} content
+     * @returns {string}
+     */
+
+    /**
      * Folds a list of pending-edit records into document text, one CDATA replacement per edit.
      * The host-side consumer of the record shape `stash` produces — `src/customEditorProvider.js`
      * calls this identically from its 'sync-pending' loop (:264-272) and its 'save' loop
      * (:288-296), which differed only in which variable held the accumulator.
      * @param {string} text The starting document text.
      * @param {Array<Object>} edits Records `{ context, blockType, content }`, applied in order.
-     * @param {function(string, Object, string, string): string} replace Typically
-     *   `replaceComponentCdata`; called as `replace(text, context, blockType, content)`.
+     * @param {ReplaceFn} replace Typically `replaceComponentCdata`; called as
+     *   `replace(text, context, blockType, content)`.
      * @returns {string} The text after every edit has been folded in, in array order.
      */
     function foldEdits(text, edits, replace) {

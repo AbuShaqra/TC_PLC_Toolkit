@@ -63,6 +63,11 @@ function main() {
         const store = createStore(seed);
         assert(store.count() === 1, `createStore(seed) starts with the seed's keys (got count ${store.count()})`);
         assert(store.snapshot()['Other_Declaration'].content === 'SEEDED', 'seeded record content preserved');
+        // createStore(initial) ALIASES the passed object rather than copying it — snapshot() returns
+        // the exact same reference. editor.js's 'init' handler relies on this: it passes
+        // message.cachedEdits straight in and later reads editsStore.snapshot() back out, so if the
+        // store ever started copying, that message-object identity would silently break.
+        assert(store.snapshot() === seed, 'createStore(initial) aliases the seed object (snapshot() === seed)');
 
         const emptyStore = createStore();
         assert(emptyStore.count() === 0, 'createStore() with no arg starts empty');

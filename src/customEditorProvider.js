@@ -10,6 +10,7 @@ const { parseTwinCatXml, replaceComponentCdata } = require('./xmlParser');
 const { updateDocument } = require('./plcProjHelper');
 const { convertXmlToSt } = require('./stConverter');
 const { assembleSt, localToAbsolute, createStResolver, mapDefinition, collectPeekReferences, listExternalReferences, mapDiagnosticsToLocal } = require('./livePath');
+const pendingEditsCore = require('../media/pendingEdits');
 const EXT_VERSION = (() => { try { return require('../package.json').version; } catch (e) { return '?'; } })();
 
 /**
@@ -261,15 +262,7 @@ class TwinCatCustomEditorProvider {
                     break;
                 case 'sync-pending':
                     // Apply all pending edits at once
-                    let pendingText = document.getText();
-                    for (const edit of message.edits) {
-                        pendingText = replaceComponentCdata(
-                            pendingText,
-                            edit.context,
-                            edit.blockType,
-                            edit.content
-                        );
-                    }
+                    let pendingText = pendingEditsCore.foldEdits(document.getText(), message.edits, replaceComponentCdata);
                     if (pendingText !== document.getText()) {
                         isEditingFromWebview = true;
                         try {
@@ -285,15 +278,7 @@ class TwinCatCustomEditorProvider {
                     break;
                 case 'save':
                     // Apply pending edits and save document
-                    let saveText = document.getText();
-                    for (const edit of message.edits) {
-                        saveText = replaceComponentCdata(
-                            saveText,
-                            edit.context,
-                            edit.blockType,
-                            edit.content
-                        );
-                    }
+                    let saveText = pendingEditsCore.foldEdits(document.getText(), message.edits, replaceComponentCdata);
                     if (saveText !== document.getText()) {
                         isEditingFromWebview = true;
                         try {
@@ -478,7 +463,12 @@ class TwinCatCustomEditorProvider {
         // separate file because the extension host needs the same algorithm for plain `.st` files, and
         // with no build step a dual-mode module is the only way to keep one copy.
         const foldingUri = webview.asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, 'media', 'stFolding.js'));
-        
+        // Dual-mode pure modules editor.js consumes as globals (diagnosticMarkers, peekUri, pendingEditsCore) — same
+        // reasoning as stFolding.js above: no build step, so one file that works both under Node and as a script tag.
+        const diagnosticMarkersUri = webview.asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, 'media', 'diagnosticMarkers.js'));
+        const peekUriUri = webview.asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, 'media', 'peekUri.js'));
+        const pendingEditsUri = webview.asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, 'media', 'pendingEdits.js'));
+
         const vsUri = webview.asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, 'media', 'monaco-editor', 'vs'));
         // The worker's AMD baseUrl must be the directory that CONTAINS `vs/`, because Monaco's module
         // ids already start with `vs/`. Pointing it at `.../vs/` doubled the segment (`vs/vs/…`), so the
@@ -577,6 +567,9 @@ class TwinCatCustomEditorProvider {
         </div>
     </div>
     <script src="${foldingUri}"></script>
+    <script src="${diagnosticMarkersUri}"></script>
+    <script src="${peekUriUri}"></script>
+    <script src="${pendingEditsUri}"></script>
     <script src="${scriptUri}"></script>
 </body>
 </html>`;
