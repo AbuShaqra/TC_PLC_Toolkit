@@ -35,4 +35,8 @@ const encoded = fsPathToFileUri(hashFsPath);
 assert.strictEqual(peekPath(encoded, 'method_Run', 'impl'), '/Run.impl/MAIN#copy.TcPOU');
 assert.strictEqual(peekPath('', 'root', 'decl'), '/root.decl/object');
 
+// A transition peek path carries the member name, not the raw id (trans_ never matched transition_).
+assert.ok(peekPath('file:///c%3A/x/FB_A.TcPOU', 'transition_Ready', 'impl').startsWith('/Ready.impl/'),
+    'transition peek path must strip the kind prefix');
+
 console.log('All production editor-mapping checks passed.');
