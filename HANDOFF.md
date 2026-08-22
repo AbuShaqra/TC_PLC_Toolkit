@@ -26,6 +26,15 @@ look clean; library member expansion is still not visually confirmed. CSS conven
 header; the gradient-clipped wordmark is deliberately left at 3.3–4.9:1 (a logotype, exempt).
 
 ## Constraints / still open
+- **Deepening roadmap PLANNED (2026-08-22):** nine refactor candidates from a full architecture
+  review, impact-ordered in `docs/superpowers/plans/2026-08-22-deepening-roadmap.md` (P1
+  componentId grammar — fixes a CONFIRMED bug: Transitions render as raw `transition_Ready` in the
+  References view/peek path because `editorMapping.js:43` (`trans_`) and `referencesTree.js:15` (no
+  transition case) both fail to parse the minted `transition_` prefix; P2 parseCache clone-rule;
+  P3 livePath module — `test_live_path.js:60-80` still re-implements `assembleSt` and tests a copy;
+  P4–P9 in the plan). Each phase needs its own detailed plan written just before execution; the
+  roadmap carries the gates and the open decisions (P4 fossil rewrites in `stConverter.js:425-462`,
+  P6 features.js fold, P9 go/no-go). Nothing implemented yet.
 - **Solution→PLC-project Objects hierarchy (0.8.0):** `solutionMap.js` follows the actual TwinCAT
   `.sln`→`.tsproj`→`_Config/PLC/*.xti`→`PrjFilePath` chain in the extension host. Solutions are always
   top-level when present; one solution can contain several PLC projects; same-named solutions get
