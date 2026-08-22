@@ -35,6 +35,10 @@ const XML = `<?xml version="1.0" encoding="utf-8"?>
         <Declaration><![CDATA[]]></Declaration><Implementation><ST><![CDATA[]]></ST></Implementation>
       </Set>
     </Property>
+    <Property Name="Data_get" Id="{00000000-0000-0000-0000-000000000011}">
+      <Declaration><![CDATA[PROPERTY Data_get : INT
+]]></Declaration>
+    </Property>
     <Action Name="Start" Id="{00000000-0000-0000-0000-000000000009}" FolderPath="Steps\\">
       <Implementation><ST><![CDATA[]]></ST></Implementation>
     </Action>
@@ -93,6 +97,7 @@ require.cache['vscode-tree-reveal-stub'] = {
     }
 };
 
+const vscode = require('vscode');
 const { TwinCatTreeDataProvider } = require('../src/treeDataProvider');
 const provider = new TwinCatTreeDataProvider(() => { projectMapReads++; return projectMap; }, () => solutionMap);
 const fileUri = uriFor(filePath);
@@ -133,6 +138,18 @@ function parentIds(item) {
         assert(provider.getParent(accessor).componentId === 'prop_Value',
             `${id.endsWith('_get') ? 'Get' : 'Set'} accessor reports its property as parent`);
     }
+
+    // Regression: a Property literally NAMED "Data_get" mints id `prop_Data_get`. componentId.parse()
+    // misreads that id as the Get accessor of a property named "Data" (the accessor grammar is
+    // ambiguous by design — see componentId.js's header). A parse()+make() accessor lookup would
+    // remint the property's OWN id here, so parsedComponents.find(...) would return the property
+    // itself as its own "Get accessor" and createComponentTreeItem would recurse on itself forever.
+    // The concatenative `${c.id}_get` lookup used in production code is immune: it only appends.
+    const dataGetProperty = await provider.getRevealItem(fileUri, 'prop_Data_get');
+    assert(dataGetProperty.componentId === 'prop_Data_get',
+        'a Property literally named "Data_get" resolves to itself, not a phantom self-accessor');
+    assert(dataGetProperty.collapsibleState === vscode.TreeItemCollapsibleState.None,
+        'the "Data_get" property finds no real Get/Set accessors and stays a leaf (no self-recursion)');
 
     for (const id of ['action_Start', 'transition_Ready']) {
         const item = await provider.getRevealItem(fileUri, id);

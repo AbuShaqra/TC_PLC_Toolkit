@@ -7,7 +7,6 @@ const vscode = require('vscode');
 const path = require('path');
 const { parseTwinCatXml, getFoldersDetailedFromXml } = require('./xmlParser');
 const { classifyPou, classifyDut, componentKind, ICONS, LABELS, COLORS } = require('./objectKinds');
-const { parse: parseComponentId, make: makeComponentId } = require('./componentId');
 const { groupRootsByProject } = require('./lsp/projectMap');
 
 /**
@@ -541,9 +540,13 @@ class TwinCatTreeDataProvider {
 
         let children = null;
         if (c.type === 'Property' && parsedComponents) {
-            const propName = (parseComponentId(c.id) || {}).name;
-            const getAcc = propName ? parsedComponents.find(x => x.id === makeComponentId('prop', propName, 'get')) : null;
-            const setAcc = propName ? parsedComponents.find(x => x.id === makeComponentId('prop', propName, 'set')) : null;
+            // Deliberately concatenative, not parse()+make(): componentId.parse() misreads a
+            // property NAMED `*_get`/`*_set` (e.g. "Data_get") as its own Get/Set accessor, which
+            // would remint the property's own id here and make createComponentTreeItem recurse on
+            // itself with no termination. c.id IS `prop_${subName}` (xmlParser mints it that way),
+            // so appending the accessor suffix is mint-identical to make('prop', subName, 'get').
+            const getAcc = parsedComponents.find(x => x.id === `${c.id}_get`);
+            const setAcc = parsedComponents.find(x => x.id === `${c.id}_set`);
             
             const accItems = [];
             if (getAcc) {
