@@ -4,6 +4,9 @@
  *
  * Thin facade over the focused modules in features/. Re-exports the public API unchanged so
  * server.js (and the test harnesses) can keep requiring './features'.
+ *
+ * The facade exists for require-path stability; features/core.js is the real shared interface
+ * between the feature modules.
  */
 
 const { provideCompletions } = require('./features/completions');

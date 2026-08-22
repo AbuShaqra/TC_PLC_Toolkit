@@ -44,6 +44,11 @@ const {
     createScanController
 } = require('./scanController');
 
+const {
+    createRequestRouter,
+    runLibraryIndexPipeline
+} = require('./requestPipeline');
+
 // The server OWNS the workspace and threads its indexes explicitly into the parser/indexer and every
 // language-feature call, rather than reaching for the parser.js module global. There is ONE INDEX
 // PER PLC PROJECT: a `.plcproj` is its own compilation unit (XAE does not resolve symbols across
@@ -96,52 +101,56 @@ const scanController = createScanController({ scan: rescan });
  *   given, so a scan rooted at `fsPath` alone can never reach it. Scan every root too.
  */
 function indexLibraries(fsPath, index, roots) {
-    indexLibraryNamespaces(fsPath, index);
-    const stats = indexLibrarySymbols(fsPath, index);
-    const tmc = indexTypeSystem(fsPath, index);
-    // Signatures merge AFTER the `.tmc`, so a `.tmc` type with real members wins over a signature's
-    // bare-name entry (see libsymbols.js indexLibrarySignaturesFromXml). A project with no generated
-    // library-signatures.xml gets zeroed stats and no registry change.
-    const sig = indexLibrarySignatures(fsPath, index);
-    // Also scan every workspace root for a signatures dump (see the `roots` param doc above). Skip a
-    // root that IS fsPath — already scanned on the line above, so scanning it again would only double
-    // the reported stats. Merging into every project's registry is safe even when a root sits ABOVE a
-    // sibling project's directory too (a multi-project workspace): namespaceForLibraryTitle() returns
-    // '' for a library this project's .plcproj does not reference, so an unattributed type lands only
-    // as a bare name in librarySymbols — which can only SILENCE an undeclared-identifier diagnostic,
-    // never raise one. The merge itself is documented additive/idempotent, so overlap with fsPath's own
-    // scan (or between two projects sharing a root) contributes nothing beyond wasted work.
-    for (const root of roots || []) {
-        if (normalizeProjectPath(root) === normalizeProjectPath(fsPath)) continue;
-        const rootSig = indexLibrarySignatures(root, index);
-        sig.files += rootSig.files;
-        sig.functions += rootSig.functions;
-        sig.functionBlocks += rootSig.functionBlocks;
-        sig.types += rootSig.types;
-        sig.added += rootSig.added;
-    }
-    // Browsercache enrichment runs LAST: it adds method/property NAMES to the FB/interface types the
-    // signatures and `.tmc` have already filed under a namespace (see libsymbols.js indexBrowserCache).
-    const bc = indexBrowserCache(fsPath, index);
-    if (stats.archives > 0 || stats.failed > 0 || tmc.files > 0 || sig.files > 0) {
-        connection.console.log(
-            `Library symbols: ${stats.symbols} from ${stats.archives} archive(s) ` +
-            `(${stats.failed} undecodable) in ${stats.ms} ms; ` +
-            `type system: ${tmc.files} .tmc file(s), ${tmc.symbols} total symbols in ${tmc.ms} ms; ` +
-            `signatures: ${sig.files} file(s), ${sig.functions} function(s), ` +
-            `${sig.functionBlocks} FB(s), ${sig.added} type(s) merged in ${sig.ms} ms; ` +
-            `browsercache: ${bc.methods} method(s) + ${bc.properties} propert${bc.properties === 1 ? 'y' : 'ies'} ` +
-            `on ${bc.types} type(s) from ${bc.libraries} librar${bc.libraries === 1 ? 'y' : 'ies'} in ${bc.ms} ms.`
-        );
-    }
+    // Shared between the `signatures` and `rootSignatures` runners below: runLibraryIndexPipeline's
+    // patch merge is shallow last-write-wins per key, not a sum, so the running total across the extra
+    // per-root scan has to be built by the runners themselves, closing over one object (see
+    // requestPipeline.js's runLibraryIndexPipeline doc).
+    let sig;
+    const result = runLibraryIndexPipeline({
+        namespaces: () => { indexLibraryNamespaces(fsPath, index); },
+        symbols: () => ({ stats: indexLibrarySymbols(fsPath, index) }),
+        typeSystem: () => ({ tmc: indexTypeSystem(fsPath, index) }),
+        // Signatures merge AFTER the `.tmc`, so a `.tmc` type with real members wins over a signature's
+        // bare-name entry (see libsymbols.js indexLibrarySignaturesFromXml). A project with no generated
+        // library-signatures.xml gets zeroed stats and no registry change.
+        signatures: () => {
+            sig = indexLibrarySignatures(fsPath, index);
+            return { sig };
+        },
+        // Also scan every workspace root for a signatures dump (see the `roots` param doc above). Skip a
+        // root that IS fsPath — already scanned by the `signatures` stage, so scanning it again would only
+        // double the reported stats. Merging into every project's registry is safe even when a root sits
+        // ABOVE a sibling project's directory too (a multi-project workspace): namespaceForLibraryTitle()
+        // returns '' for a library this project's .plcproj does not reference, so an unattributed type
+        // lands only as a bare name in librarySymbols — which can only SILENCE an undeclared-identifier
+        // diagnostic, never raise one. The merge itself is documented additive/idempotent, so overlap with
+        // fsPath's own scan (or between two projects sharing a root) contributes nothing beyond wasted work.
+        rootSignatures: () => {
+            for (const root of roots || []) {
+                if (normalizeProjectPath(root) === normalizeProjectPath(fsPath)) continue;
+                const rootSig = indexLibrarySignatures(root, index);
+                sig.files += rootSig.files;
+                sig.functions += rootSig.functions;
+                sig.functionBlocks += rootSig.functionBlocks;
+                sig.types += rootSig.types;
+                sig.added += rootSig.added;
+            }
+            return { sig };
+        },
+        // Browsercache enrichment runs LAST: it adds method/property NAMES to the FB/interface types the
+        // signatures and `.tmc` have already filed under a namespace (see libsymbols.js indexBrowserCache).
+        browsercache: () => ({ bc: indexBrowserCache(fsPath, index) })
+    }, { fsPath, index, roots });
+    if (result.logLine) connection.console.log(result.logLine);
 }
 
 /**
  * Brings the symbol index up to date with a document before any language feature runs on it:
  * parses the unit's own symbols, and registers the external-library symbols it references (see
  * libsymbols.js — this is what stops `DEFAULT_ADS_TIMEOUT`, `T_MaxString`, … being reported as
- * undeclared). Every custom/* handler and the .st document listener go through here, so no request
- * can be answered against an index that has not seen the document's library usage.
+ * undeclared). Every withDocument-wrapped custom/* handler and the .st document listener go through
+ * here (the router makes it unskippable), so no language request can be answered against an index
+ * that has not seen the document's library usage.
  * @param {string} code Structured Text of the document.
  * @param {string} fileUri Document URI.
  * @param {Object} index The owning project's symbol index.
@@ -260,80 +269,68 @@ connection.onDocumentHighlight((params) => {
 });
 
 // Custom JSON-RPC requests for Monaco Webview bridge
-connection.onRequest('custom/completions', (params) => {
-    try {
-        const index = workspace.indexForUri(params.fileUri);
-        syncDocument(params.code, params.fileUri, index);
-        return provideCompletions(params.code, params.position, index, params.fileUri);
-    } catch (e) {
-        return [];
-    }
+
+// The wrapper every custom/* language-feature request below goes through — see requestPipeline.js's
+// file header for why the sync must run before the handler, in that order, on every call, and for
+// what withoutDocument's absence of that sync means. Built with an ARROW around
+// `workspace.indexForUri`, not a bound method: `workspace` is REASSIGNED wholesale by rescan() (see
+// its declaration above), and capturing the method at construction time would freeze the router to
+// whatever `workspace` was before the first scan ever completed.
+const router = createRequestRouter({
+    getIndexForUri: (uri) => workspace.indexForUri(uri),
+    sync: syncDocument
 });
 
-connection.onRequest('custom/definition', (params) => {
-    try {
-        const index = workspace.indexForUri(params.fileUri);
-        syncDocument(params.code, params.fileUri, index);
-        return provideDefinition(params.code, params.position, index, params.fileUri);
-    } catch (e) {
-        return null;
-    }
-});
+connection.onRequest('custom/completions', router.withDocument([], (p, index) =>
+    provideCompletions(p.code, p.position, index, p.fileUri)
+));
 
-connection.onRequest('custom/references', (params) => {
-    try {
-        const index = workspace.indexForUri(params.fileUri);
-        syncDocument(params.code, params.fileUri, index);
-        return provideReferences(params.code, params.position, index, params.fileUri);
-    } catch (e) {
-        return [];
-    }
-});
+connection.onRequest('custom/definition', router.withDocument(null, (p, index) =>
+    provideDefinition(p.code, p.position, index, p.fileUri)
+));
+
+connection.onRequest('custom/references', router.withDocument([], (p, index) =>
+    provideReferences(p.code, p.position, index, p.fileUri)
+));
 
 // References for a symbol identified by NAME (root object, optionally a member), rather than by a
 // cursor position — what a rename needs, and the only way to seed on a GVL (whose own name never
 // appears in its converted ST). Deliberately NO syncDocument: there is no `code` param, and reading
 // the target's file from disk is the whole point (provideReferencesForSymbol does that itself).
-connection.onRequest('custom/referencesForSymbol', (params) => {
-    try {
-        return provideReferencesForSymbol(params, workspace.indexForUri(params.fileUri));
-    } catch (e) {
-        return { resolved: false, references: [], declaration: null };
-    }
-});
+connection.onRequest('custom/referencesForSymbol', router.withoutDocument(
+    { resolved: false, references: [], declaration: null },
+    (p, index) => provideReferencesForSymbol(p, index)
+));
 
 // References to a symbol inside the TwinCAT non-code objects — visualizations (.TcVIS/.TcVMO), text
 // lists (.TcTLO/.TcGTLO) and task configurations (.TcTTO). This is the other half of a rename: all
 // three name PLC symbols, and a stale one breaks the XAE build. Takes the same by-NAME spec as
 // custom/referencesForSymbol; the files are discovered on demand, scoped to the symbol's own project
 // so a rename never rewrites a same-named symbol's config objects in a project the user never opened.
-connection.onRequest('custom/configReferencesForSymbol', (params) => {
-    try {
-        const configFiles = workspace.configFilesFor(params.fileUri);
-        return findConfigReferencesForSymbol(params, workspace.indexForUri(params.fileUri), configFiles);
-    } catch (e) {
-        return { resolved: false, occurrences: [] };
-    }
-});
+// Needs a second workspace lookup (configFilesFor) beyond the index withoutDocument already resolves,
+// so it reads `workspace` directly here rather than forcing that through the single-index handler
+// signature.
+connection.onRequest('custom/configReferencesForSymbol', router.withoutDocument(
+    { resolved: false, occurrences: [] },
+    (p, index) => findConfigReferencesForSymbol(p, index, workspace.configFilesFor(p.fileUri))
+));
 
-connection.onRequest('custom/diagnostics', (params) => {
-    try {
-        const index = workspace.indexForUri(params.fileUri);
-        syncDocument(params.code, params.fileUri, index);
-        return provideDiagnostics(params.code, index, params.fileUri);
-    } catch (e) {
-        return [];
-    }
-});
+connection.onRequest('custom/diagnostics', router.withDocument([], (p, index) =>
+    provideDiagnostics(p.code, index, p.fileUri)
+));
 
-connection.onRequest('custom/updateDocument', (params) => {
-    try {
-        syncDocument(params.code, params.fileUri, workspace.indexForUri(params.fileUri));
-        return { success: true };
-    } catch (e) {
-        return { success: false, error: e.message };
-    }
-});
+// The sync IS the work here: updateDocument exists to bring the index up to date, not to answer a
+// language feature, so the handler itself just reports success.
+connection.onRequest('custom/updateDocument', router.withDocument(
+    (e) => ({ success: false, error: e.message }),
+    () => ({ success: true })
+));
+
+// The five requests below are deliberately left UNWRAPPED by the router: none of them carry a
+// document's live `params.code` for withDocument/withoutDocument to resolve an index around the same
+// way — reindex/indexReady act on workspace folders, setDiagnosticsConfig/indexXmlDocument take their
+// own payloads (a config object, raw XML), and libraries just reads the already-built catalog. Each
+// keeps its own try/catch with a fallback shaped for its own response, as before.
 
 // "The data changed, rebuild." UNCONDITIONAL, and it must stay that way: the .plcproj watcher and
 // twincat.updateLibraryDefinitions send it with the roots UNCHANGED — it is the content under them

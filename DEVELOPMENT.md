@@ -91,6 +91,7 @@ per-suite without aborting on the first failure. The main ones:
 | `test/test_editor_mapping.js` | The production `src/livePath.js` coordinate/peek helpers directly: pane↔unit boundary mapping, synthesized-line rejection, pane slicing and encoded peek-model paths. `test_live_path.js` imports the same module (including `assembleSt`) rather than carrying copies. |
 | `test/test_live_path_unit.js` | The three pure collectors in `src/livePath.js` — `mapDefinition`, `collectPeekReferences`, `listExternalReferences` — against synthetic in-memory XML fixtures (no `sample/` dependency) plus a counting `readFile` double. Pins the peek budget semantics as tests: `PEEK_MAX_PANES`/`maxTextBytes` bound FILE READS and PANE MODELS, never the mapped references — a ref into an already-opened file still maps past the pane cap, and a pane over the byte budget is skipped but its reference still maps. |
 | `test/test_file_uri.js` | The production filesystem-path/file-URI boundary: reserved characters, Unicode, encoded drive colons and UNC round trips. |
+| `test/test_request_pipeline.js` | `src/lsp/requestPipeline.js`: withDocument syncs exactly once BEFORE the handler (order pinned by a recorder), withoutDocument provably never syncs, value-vs-function fallbacks on every throw path, the frozen `LIBRARY_INDEX_STAGES` table + load-time order validation (a reordered copy throws naming the stages), and byte-exact log-line output on both singular/plural branches. |
 | `test/test_twincat_workspace.js` | `src/twincatWorkspace.js`, the discovery owner: the XML-entity decode chain, the generic walker (skip case-insensitivity, unreadable-dir tolerance, **regular files only** — a directory named like a match is never collected), the full skip-dir set MATRIX with its load-bearing relations (`ARCHIVE_SKIP_DIRS` has no `_libraries`; `PROJECT_SKIP_DIRS` is exactly that plus `_libraries`), the three extension vocabularies, the two-mode suffix-disambiguation core, and cross-pins holding `projectStatusBar`'s regex and `customEditorProvider`'s glob (read as text) to the owner's vocabularies. |
 | `test/test_component_id.js` | `src/componentId.js`, the component-id grammar owner: a conformance sweep driving the **real** `parseTwinCatXml` over a fixture minting every id shape (round-trip `parse`→`make` identity), the frozen parse table incl. the pinned `prop_X_get`-is-an-accessor ambiguity, `make`'s programmer-error throws, and the `label`/`memberName` display helpers incl. the transition fix. |
 | `test/test_typecheck.js` | Semantic type checking: member access, call arguments, declaration types, assignment compatibility — plus the same `sample/` diagnostics ratchet. |
@@ -297,6 +298,11 @@ src/
                         server.js on purpose: server.js opens an IPC connection at require time, so
                         nothing that requires it is loadable by a standalone harness — the connection is
                         injected here as log/error callbacks instead.
+    requestPipeline.js  The request router (withDocument makes the pre-handler document sync
+                        structural; withoutDocument is the EXPLICIT no-sync variant) and the
+                        library-index stage table (LIBRARY_INDEX_STAGES, order validated at module
+                        load; stage runners injected by server.js). IPC-free — the third instance
+                        of the same harness-loadability injection pattern as scanController.js.
     scanController.js   Decides WHEN to scan, separately from how. custom/reindex = "rebuild
                         unconditionally"; custom/indexReady = "resolve once these roots are indexed".
                         Outside server.js for the same harness reason; the scan is injected.
