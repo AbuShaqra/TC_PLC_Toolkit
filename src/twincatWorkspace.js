@@ -5,7 +5,7 @@
  * file-extension vocabularies, XML attribute decoding, and the duplicate-name suffix algorithm
  * used to label same-named solutions/projects.
  *
- * Before this module existed, six call sites (solutionMap.js, lsp/projectMap.js,
+ * Before this module existed, seven call sites (solutionMap.js, lsp/projectMap.js,
  * lsp/workspaceScan.js, lsp/libsymbols.js, lsp/plcprojRefs.js, lsp/xmlIndexer.js, lsp/parser.js)
  * each carried its own copy of a `readdirSync`-based walk and its own skip-dir Set — several with
  * subtly different memberships for a reason (see below), which made "does this scanner see
@@ -75,7 +75,7 @@ function decodeXmlAttribute(value) {
  * @param {string|Array<string>} rootOrRoots One root, or several roots to walk in order.
  * @param {Object} options
  * @param {Set<string>} options.skipDirs Lower-cased directory names never to descend into.
- * @param {(entryName: string, fullPath: string) => boolean} options.isMatch Decides whether a
+ * @param {(entryName: string, fullPath: string) => boolean} options.isMatch REQUIRED. Decides whether a
  *   FILE (never a directory) is collected. Receives both the bare entry name and its full path.
  * @param {Array<string>} [options.out] Array to append matches to (returned as-is); a fresh array
  *   is used when omitted.

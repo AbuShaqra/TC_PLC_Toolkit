@@ -4,7 +4,7 @@ Where the work *stands*. Read before starting; keep current (handoff rule in [CL
 100 lines — prune finished items rather than appending, but never drop a real finding to hit it. **Shipped features
 live in git history (PRs/commits); this file keeps the findings that would cost to re-derive.**
 
-**Last verified:** 2026-08-22 (Linux) — `REQUIRE_FULL_SUITE=1 npm test` green (**67/67 harnesses, Coverage: FULL**),
+**Last verified:** 2026-08-22 (Linux) — `REQUIRE_FULL_SUITE=1 npm test` green (**68/68 harnesses, Coverage: FULL**),
 typecheck clean; dev-host/browser gates not re-run since the 2026-08-18 pass below.
 Earlier full pass 2026-08-18 — 64/64 FULL,
 typecheck clean, **0 diagnostics on the sample**, both browser harnesses green, installed-VS-Code dev-host green
@@ -28,50 +28,35 @@ look clean; library member expansion is still not visually confirmed. CSS conven
 header; the gradient-clipped wordmark is deliberately left at 3.3–4.9:1 (a logotype, exempt).
 
 ## Constraints / still open
-- **Deepening roadmap: P1 DONE, P2–P9 open** (`docs/superpowers/plans/2026-08-22-deepening-roadmap.md`).
-  **Phase 1 shipped 2026-08-22** (6 commits, dc45d59..1b665ea, plan
-  `2026-08-22-deepen-01-component-id.md`): `src/componentId.js` now owns the component-id grammar;
-  all mint/parse sites converted; the Transition display bug (raw `transition_Ready` in References
-  view/peek path) is FIXED; suite 65/65 FULL on Linux, typecheck clean. Fix-round finding worth
-  remembering: **parse-then-remint of the ambiguous grammar is NOT identity** — a property named
-  `*_get` parses as its own accessor; `treeDataProvider.js:543-549` therefore keeps the
-  concatenative `${c.id}_get` lookup ON PURPOSE (regression-pinned in `test_tree_reveal`). Accepted
-  behaviour change: a method literally named `Value_get` now labels `Value_get()` (old code wrongly
-  stripped the suffix from any kind).
-  **G4 (dev-host) NOT run — no VS Code in the remote container**: on the user's machine, run
-  `node test/devhost/run.js` once to confirm References-view/peek transition labels live.
-  Also fixed en route: `test_file_uri.js`/`test_editor_mapping.js` had Windows-shaped `#`-fixture
-  paths (red on any Linux checkout since the 2026-08-17 review fixes; CI `windows-latest` masked
-  it) — now platform-native.
-  **P2 shipped 2026-08-22** (plan `2026-08-22-deepen-02-parsecache.md`): `signatureRecordsFor`
-  makes the parse-cache clone rule STRUCTURAL (cached parse, private copy every call, template
-  unreachable, old read/clone API deleted); componentId hardened (frozen `KINDS`, pinned
-  `prop__get` degenerate parse, `accessorIdsFor` — concatenative BY DESIGN, parse misreads
-  `prop_Data_get`). P1's deferred minors are all done.
-  **P3 shipped 2026-08-22** (plan `2026-08-22-deepen-03-livepath.md`): the live language path is one
-  vscode-free module, `src/livePath.js` (assembly, coordinate mapping, unit resolver with injected
-  readFile, peek budgets, and the three collectors); `editorMapping.js` deleted; the five webview
-  handlers are thin adapters; `test_live_path` drives PRODUCTION code (replica deleted) and the new
-  `test_live_path_unit` pins the frozen budget semantics (caps bound file reads/panes, never mapped
-  refs). Suite is now 66/66 FULL. Deferred: swap the unit harness's stand-in resolver for the
-  production `createStResolver` (its only uncovered export) — fold into P4.
-  **P4 shipped 2026-08-22** (plan `2026-08-22-deepen-04-coordinates.md`): ONE pane dialect
-  (`'decl'/'impl'`) system-wide — `mapDiagnosticsToLocal` lives in livePath (old
-  `mapDiagnosticsToMonaco` deleted); `renameEngine`'s internal `'declaration'/'implementation'`
-  tokens are a DELIBERATE survivor (isolated coordinate system for CDATA splices, verified not fed
-  by diagnostics). `stConverter` has no `RAW_MODE` global (raw is a threaded parameter) and the
-  three fossil struct-flattens are a frozen data table (`STRUCT_FLATTEN_REWRITES`, rows frozen
-  too). **Ruling:** fossils KEPT default-on — they only shape clean/portable .st export, never the
-  live raw path; removal is a one-entry table edit + conscious test edit (`length === 3` pin)
-  whenever the user decides. Unit harness now drives the production `createStResolver`; suite
-  67/67 FULL; browser harnesses no-regression vs recorded BASE.
-  **Container-checkout LF finding:** this remote environment materializes the workspace WITHOUT
-  git smudge filters, so `sample/` arrives LF despite `.gitattributes eol=crlf` and
-  `test/browser/build.js` throws its fixture check. Recipe: convert `sample/` to CRLF in the
-  working tree (e.g. `unix2dos`) for browser runs, then `git checkout -- sample/`. A NORMAL clone
-  still smudges to CRLF (2026-08-17 fix) — do NOT renormalize blobs to CRLF without revisiting the
-  recorded blob-stays-LF rationale.
-  **Next: P5 (workspace-discovery dedup), per the roadmap.**
+- **Deepening roadmap: P1–P5 SHIPPED 2026-08-22, P6/P8/P9 open, P7 needs the user's machine**
+  (`docs/superpowers/plans/2026-08-22-deepening-roadmap.md`; each phase has its own plan doc, and
+  each shipped via a reviewed, merged PR — details live in the plans and git history):
+  P1 `componentId.js` owns the id grammar (Transition display bug FIXED; trap: parse-then-remint of
+  the ambiguous grammar is NOT identity — `treeDataProvider` keeps concatenative accessor lookup ON
+  PURPOSE, pinned). P2 `signatureRecordsFor` made the parse-cache clone rule structural. P3
+  `livePath.js` owns the live path (editorMapping deleted; live-path gate tests PRODUCTION code;
+  peek budgets pinned). P4 one pane dialect `'decl'/'impl'` (`renameEngine`'s internal tokens are a
+  DELIBERATE survivor); `raw` is a parameter; fossil rewrites are a frozen table — **Ruling: kept
+  default-on**, removal is a table+test edit whenever the user decides. P5 `twincatWorkspace.js`
+  owns discovery (walker, skip-set MATRIX with variance preserved, ext vocabularies, decode, suffix
+  core; regex/glob held by cross-pins). Behaviour deltas, all deliberate+pinned: case-insensitive
+  skip matching (P5 R1); walkers collect regular files only; tree skip-chain case-insensitive.
+  **User checklist (needs a machine with VS Code / dev host):**
+  1. `node test/devhost/run.js` once — confirms transition labels + navigation identity live
+     (G4 was never runnable in the remote container).
+  2. **PROBABLE BUG — the `.tctleo` omission family**: the save/create/change watchers
+     (`extension.js`, now `TWINCAT_WATCH_EXTS`), `plcProjHelper`, `parser.js:760`'s .st-shadow
+     regex and `references.js:99`'s regex all omit `.tctleo`, so a `.TcTLEO` edit likely never
+     triggers reindex/plcproj-sync and its `.st` mirror is not shadow-suppressed. Memberships were
+     deliberately PRESERVED during P5 (behaviour-neutral phase); verify in the dev host, then widen
+     `TWINCAT_WATCH_EXTS` + the two regexes in one small change if confirmed.
+  **Container-checkout LF finding:** this remote environment materializes the workspace WITHOUT git
+  smudge filters, so `sample/` arrives LF despite `.gitattributes eol=crlf` and
+  `test/browser/build.js` throws. Recipe: convert `sample/` to CRLF in the working tree for browser
+  runs, then `git checkout -- sample/`. A NORMAL clone still smudges (2026-08-17 fix) — do NOT
+  renormalize blobs without revisiting the recorded blob-stays-LF rationale.
+  **Next: P6 (server request pipeline), per the roadmap. P7 (tree model) parked — its dev-host
+  gate is mandatory. P9 go/no-go re-evaluated when reached.**
   **GitHub Actions is account-level DEAD since 2026-08-18** — every run (main included) fails in
   ~5 s with no logs; jobs never start. Likely the Actions spending limit/billing. USER must fix in
   GitHub Settings → Billing; until then the local `REQUIRE_FULL_SUITE=1` gate is the merge gate.

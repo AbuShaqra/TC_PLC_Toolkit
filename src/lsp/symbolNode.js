@@ -31,7 +31,7 @@
  * @property {Array} actions      Nested actions.
  * @property {Object|null} bodyRange  Implementation body range, when computed.
  * @property {string} [dutKind]   Source-specific extra, added by xmlIndexer.js for DUT nodes:
- *                                'struct' | 'union' | 'enum' | 'alias' | 'subrange'. Not set by the
+ *                                'struct' | 'union' | 'enum' | 'alias' (a subrange classifies as 'alias'). Not set by the
  *                                factory — an example of a field layered on top of the core shape.
  */
 
