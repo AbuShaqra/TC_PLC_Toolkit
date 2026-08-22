@@ -16,13 +16,15 @@
  * cache has always used. Paths are compared lower-cased: TwinCAT is Windows-only, and the same dump is
  * reached under different casings (once as the project directory, once as a workspace root).
  *
- * **The clone is a correctness requirement, not an optimisation.** libsymbols.js
+ * **The copy is a correctness requirement, not an optimisation.** libsymbols.js
  * `indexLibrarySignaturesFromXml` rewrites each record's `namespace` to the namespace *this* project's
  * `.plcproj` imports the library under, then stores that same object in the project's
  * `typeSystemTypes`; `indexBrowserCache` later pushes onto its `methods` / `properties`. Handing the
  * same record object to two projects would therefore leak project A's namespace attribution and
  * browsercache members into project B — precisely the cross-project contamination the per-project
- * registries exist to prevent. Hence: the *template* is cached, and every consumer merges a clone.
+ * registries exist to prevent. Hence: `signatureRecordsFor` is the only way in, the *template* it
+ * caches never escapes the module, and every call returns a fresh copy — there is no separate clone
+ * step for a caller to forget.
  */
 
 const fs = require('fs');
@@ -93,46 +95,34 @@ function parseSignatureRecords(xml) {
 }
 
 /**
- * The parsed records of one `library-signatures.xml`, parsed at most once per (path, mtime, size).
+ * The parsed records of one `library-signatures.xml` — parsed at most once per
+ * (path, mtime, size), and returned as a PRIVATE COPY on every call.
  *
- * The returned object is the **shared template**: it must never be merged directly, only through
- * `cloneSignatureRecords` — see the file header for why sharing a record across projects is a
- * correctness bug, not a performance detail.
+ * There is deliberately no way to obtain the cached template: the merge rewrites
+ * `record.namespace` and the browsercache enrichment pushes onto `methods`/`properties`,
+ * so a shared record would leak one project's attribution into another. The copy depth
+ * matches what the merge writes: type records are copied, `symbols` and each record's
+ * `members` stay shared (read-only in every consumer; see the file header).
  * @param {string} filePath Absolute path to a `library-signatures.xml`.
- * @returns {SignatureRecords|null} null when the file cannot be read or parsed — the caller then
- *          contributes nothing rather than guessing, which is the pre-existing behaviour.
+ * @returns {SignatureRecords|null} A caller-owned copy, or null when unreadable/unparseable.
  */
-function readSignatureRecords(filePath) {
+function signatureRecordsFor(filePath) {
     const found = lookup(signatureCache, filePath);
     if (!found) return null;
-    if (found.value) {
+    let template = found.value;
+    if (template) {
         __stats.hits++;
-        return found.value;
+    } else {
+        let xml;
+        try {
+            xml = fs.readFileSync(filePath, 'utf8');
+        } catch (e) {
+            return null; // unreadable dump: contribute nothing rather than guess
+        }
+        template = parseSignatureRecords(xml);
+        __stats.parses++;
+        signatureCache.set(found.key, { mtimeMs: found.stat.mtimeMs, size: found.stat.size, value: template });
     }
-    let xml;
-    try {
-        xml = fs.readFileSync(filePath, 'utf8');
-    } catch (e) {
-        return null; // unreadable dump: contribute nothing rather than guess
-    }
-    const value = parseSignatureRecords(xml);
-    __stats.parses++;
-    signatureCache.set(found.key, { mtimeMs: found.stat.mtimeMs, size: found.stat.size, value });
-    return value;
-}
-
-/**
- * A per-project copy of a cached template, safe to mutate and to store in that project's registry.
- *
- * The records are flat (see librarySignatures.js `toRegistryTypes`), so a shallow `{...record}` is a
- * full copy of everything the merge or the browsercache enrichment writes: `namespace` is reassigned,
- * and `methods` / `properties` are created on the copy. `members` is deliberately **shared** — it is
- * only ever read (makeLibraryNode hands it straight to a node's `variables`, getLibraryCatalog copies
- * it out), and copying it per project would be pure waste on the hottest part of the merge.
- * @param {SignatureRecords} template A template from readSignatureRecords.
- * @returns {SignatureRecords} A copy whose type records are the caller's to mutate.
- */
-function cloneSignatureRecords(template) {
     __stats.clones++;
     return {
         functions: template.functions,
@@ -187,8 +177,7 @@ function clearParseCaches() {
 
 module.exports = {
     parseSignatureRecords,
-    readSignatureRecords,
-    cloneSignatureRecords,
+    signatureRecordsFor,
     readBrowserCacheDoc,
     clearParseCaches,
     __stats

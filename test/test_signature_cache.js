@@ -14,8 +14,12 @@
  * properties onto it. Caching the *records* instead of the *parse* would hand every project the same
  * objects, and one project's namespace attribution and library members would surface in another —
  * the exact cross-project contamination the per-project registries exist to prevent. So the isolation
- * section below asserts object IDENTITY, not just equal values: two projects that merely happen to
+ * sections below assert object IDENTITY, not just equal values: two projects that merely happen to
  * agree today would still be one shared mutation away from disagreeing.
+ *
+ * `signatureRecordsFor` is the single entry point: it parses at most once per (path, mtime, size) and
+ * hands back a private copy on every call — there is no way to reach the cached template directly, so
+ * a caller cannot forget to clone.
  */
 
 const fs = require('fs');
@@ -23,7 +27,8 @@ const os = require('os');
 const path = require('path');
 
 const {
-    readSignatureRecords,
+    parseSignatureRecords,
+    signatureRecordsFor,
     readBrowserCacheDoc,
     clearParseCaches,
     __stats
@@ -76,7 +81,40 @@ const projects = ['A', 'B', 'C'].map(name => {
     return { name, dir, index: /** @type {Object} */ ({}) };
 });
 
-// ── 1. One parse for the whole workspace, one merge per project ──────────────────────────────────
+// ── 1. signatureRecordsFor: one parse, N cache hits, N private copies ────────────────────────────
+{
+    clearParseCaches();
+    const a = signatureRecordsFor(dump);
+    const b = signatureRecordsFor(dump);
+    const c = signatureRecordsFor(dump);
+    assert(a && b && c, 'dump must parse');
+    assert(__stats.parses === 1, `parsed once, got ${__stats.parses}`);
+    assert(__stats.hits === 2, `two cache hits, got ${__stats.hits}`);
+    assert(__stats.clones === 3, `three copies handed out, got ${__stats.clones}`);
+
+    // Isolation by IDENTITY: distinct result objects, distinct types arrays, distinct records.
+    assert(a !== b && b !== c, 'each call returns its own object');
+    assert(a.types !== b.types, 'each call returns its own types array');
+    assert(a.types.length === 0 || a.types[0] !== b.types[0], 'type records are per-call copies');
+
+    // Isolation by MUTATION — the assertion that failed while records were shared: project A's
+    // merge rewrites namespace; project B must not see it.
+    if (a.types.length > 0) {
+        a.types[0].namespace = 'CONTAMINATED';
+        const d = signatureRecordsFor(dump);
+        assert(d.types[0].namespace !== 'CONTAMINATED', 'the cached template never escapes');
+    }
+
+    // Documented sharing stays: symbols array and each record's members are the same objects.
+    assert(a.symbols === b.symbols, 'symbols stay shared by design');
+
+    // The old API is gone — the unsafe call no longer exists to be made.
+    const parseCache = require('../src/lsp/parseCache');
+    assert(parseCache.readSignatureRecords === undefined, 'readSignatureRecords is retired');
+    assert(parseCache.cloneSignatureRecords === undefined, 'cloneSignatureRecords is retired');
+}
+
+// ── 2. One parse for the whole workspace, one merge per project (through the real pipeline) ─────
 {
     clearParseCaches();
     for (const project of projects) {
@@ -86,7 +124,7 @@ const projects = ['A', 'B', 'C'].map(name => {
 
     assert(__stats.parses === 1, `the dump is parsed once for the workspace (parses=${__stats.parses})`);
     assert(__stats.hits === 2, `the other two projects hit the cache (hits=${__stats.hits})`);
-    assert(__stats.clones === 3, `each project merges its own clone (clones=${__stats.clones})`);
+    assert(__stats.clones === 3, `each project gets its own copy (clones=${__stats.clones})`);
 
     for (const project of projects) {
         assert(isLibrarySymbol('cProbeMax', project.index),
@@ -94,7 +132,7 @@ const projects = ['A', 'B', 'C'].map(name => {
     }
 }
 
-// ── 2. Isolation: one project's mutations must be invisible to the next ──────────────────────────
+// ── 3. Isolation: one project's mutations must be invisible to the next ──────────────────────────
 {
     const recA = getLibraryType('FB_Probe', projects[0].index);
     const recB = getLibraryType('FB_Probe', projects[1].index);
@@ -118,12 +156,12 @@ const projects = ['A', 'B', 'C'].map(name => {
 
     // `members` is shared ON PURPOSE — it is only ever read (makeLibraryNode hands it to a node's
     // `variables`, getLibraryCatalog copies it out), so copying it per project would be pure waste.
-    // Pinned here so that "the clone is shallow" stays a decision rather than an accident.
+    // Pinned here so that "the copy is shallow" stays a decision rather than an accident.
     assert(recA.members === recB.members,
-        'the read-only `members` array is deliberately shared between the clones');
+        'the read-only `members` array is deliberately shared between the copies');
 }
 
-// ── 3. An edited dump is re-parsed ───────────────────────────────────────────────────────────────
+// ── 4. An edited dump is re-parsed ───────────────────────────────────────────────────────────────
 {
     const before = __stats.parses;
     const future = new Date(Date.now() + 5000);
@@ -133,7 +171,17 @@ const projects = ['A', 'B', 'C'].map(name => {
         `a changed mtime invalidates the cached parse (parses ${before} -> ${__stats.parses})`);
 }
 
-// ── 4. The browsercache document cache behaves the same way ──────────────────────────────────────
+// ── 5. signatureRecordsFor also re-parses directly on a changed mtime ────────────────────────────
+{
+    const before = __stats.parses;
+    const future = new Date(Date.now() + 10000);
+    fs.utimesSync(dump, future, future);
+    signatureRecordsFor(dump);
+    assert(__stats.parses === before + 1,
+        `signatureRecordsFor re-parses after a changed mtime (parses ${before} -> ${__stats.parses})`);
+}
+
+// ── 6. The browsercache document cache behaves the same way ──────────────────────────────────────
 // Driven through readBrowserCacheDoc directly: the real caller resolves its path under
 // %ProgramData%\…\Managed Libraries, which does not exist on CI.
 {
@@ -163,12 +211,19 @@ const projects = ['A', 'B', 'C'].map(name => {
     assert(__stats.parses === 2, `a changed mtime re-parses the browsercache (parses=${__stats.parses})`);
 }
 
-// ── 5. An unreadable file yields null, never a throw ─────────────────────────────────────────────
+// ── 7. An unreadable file yields null, never a throw ─────────────────────────────────────────────
 {
-    assert(readSignatureRecords(path.join(root, 'no-such-dump.xml')) === null,
+    assert(signatureRecordsFor(path.join(root, 'no-such-dump.xml')) === null,
         'a missing signatures dump reads as null');
     assert(readBrowserCacheDoc(path.join(root, 'no-such-browsercache')) === null,
         'a missing browsercache reads as null');
+}
+
+// ── 8. parseSignatureRecords stays a pure, uncached entry point ──────────────────────────────────
+{
+    const xml = fs.readFileSync(dump, 'utf8');
+    const direct = parseSignatureRecords(xml);
+    assert(direct && direct.types.length > 0, 'parseSignatureRecords parses a raw XML string directly');
 }
 
 fs.rmSync(root, { recursive: true, force: true });
