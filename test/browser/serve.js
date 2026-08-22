@@ -35,6 +35,13 @@ const TYPES = {
 function createServer() {
     return http.createServer((req, res) => {
         const urlPath = decodeURIComponent((req.url || '/').split('?')[0]);
+        // Some Chromium builds request a tab favicon even under automation; a 404 for it lands in
+        // the page console and trips run.js's "no browser errors" assertion. There is no icon —
+        // answer 204 so the request succeeds without content.
+        if (urlPath === '/favicon.ico') {
+            res.writeHead(204).end();
+            return;
+        }
         let filePath;
         if (urlPath === '/' || urlPath === '/harness' || urlPath === '/harness/') {
             filePath = path.join(OUT, 'index.html');
