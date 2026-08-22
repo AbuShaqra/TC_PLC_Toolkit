@@ -8,6 +8,7 @@ const path = require('path');
 const { fsPathToFileUri } = require('../fileUri');
 const { STANDARD_KEYWORDS } = require('./builtins');
 const { createSymbolNode } = require('./symbolNode');
+const { ST_INDEX_SKIP_DIRS } = require('../twincatWorkspace');
 
 /**
  * Token types for Lexer
@@ -1242,7 +1243,9 @@ function indexStDirectory(dirPath, index = workspaceSymbolIndex, indexForFile = 
     for (const entry of entries) {
         const fullPath = path.join(dirPath, entry.name);
         if (entry.isDirectory()) {
-            if (entry.name === '.git' || entry.name === 'node_modules' || entry.name === '.vscode' || entry.name === 'ST_Files') {
+            // R1: case-insensitive skip matching (was an exact-case chain) — see twincatWorkspace.js's
+            // walkFiles, whose ST_INDEX_SKIP_DIRS this reuses.
+            if (ST_INDEX_SKIP_DIRS.has(entry.name.toLowerCase())) {
                 continue;
             }
             indexStDirectory(fullPath, index, indexForFile);

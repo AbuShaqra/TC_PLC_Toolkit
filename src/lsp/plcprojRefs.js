@@ -24,33 +24,26 @@
  * guard the archive and parse caches use.
  *
  * The skip set lives here too, because it is the *project-artifact* set — see PROJECT_SKIP_DIRS in
- * libsymbols.js for the half of that story that must NOT skip `_libraries`.
+ * twincatWorkspace.js for the half of that story that must NOT skip `_libraries`.
  */
 
 const fs = require('fs');
 const path = require('path');
+const { walkFiles, PROJECT_SKIP_DIRS } = require('../twincatWorkspace');
 
 /**
  * Directories that never hold a project's own `.plcproj`, `.tmc` or signatures dump: vendored library
  * archives, generated ST exports, build output, VCS and tooling. Compared lower-cased.
  *
- * Verified identical to the two sets it replaces before they were unified — libraries.js's own
- * `SKIP_DIRS` and libsymbols.js's `PLCPROJ_SKIP_DIRS` listed exactly these six entries. That check
- * mattered: unifying two skip sets that quietly differ would silently change which files are indexed.
- *
- * Restated rather than imported because libsymbols.js imports THIS module, so taking its
- * `PROJECT_SKIP_DIRS` would be a require cycle. test_collect_scope.js pins the two equal, and pins the
- * one entry that must NOT be in libsymbols.js's archive-walker set.
+ * The same Set object as twincatWorkspace.js's PROJECT_SKIP_DIRS (the discovery owner) — imported
+ * directly, by identity, rather than restated. There is no require cycle to fear here: the owner is
+ * dependency-free (Node `fs`/`path` only), so it cannot import back into this module, unlike
+ * libsymbols.js, which imports THIS module and so cannot be the source instead. test_collect_scope.js
+ * pins this Set equal to libsymbols.js's PROJECT_SKIP_DIRS (now the same identity on both sides) and
+ * pins the one entry that must NOT be in the archive-walker's set.
  * @type {Set<string>}
  */
-const PLCPROJ_SKIP_DIRS = new Set([
-    '.git',
-    'node_modules',
-    '.vscode',
-    '_libraries',
-    'st_files',
-    '_compileinfo'
-]);
+const PLCPROJ_SKIP_DIRS = PROJECT_SKIP_DIRS;
 
 /**
  * @typedef {Object} LibraryReferenceBlock
@@ -164,21 +157,11 @@ function readLibraryReferences(filePath) {
  * @param {string[]} out Accumulator, mutated.
  */
 function collectPlcProjFiles(dirPath, out) {
-    let entries;
-    try {
-        entries = fs.readdirSync(dirPath, { withFileTypes: true });
-    } catch (e) {
-        return; // unreadable directory: skip, never throw out of indexing
-    }
-    for (const entry of entries) {
-        const fullPath = path.join(dirPath, entry.name);
-        if (entry.isDirectory()) {
-            if (PLCPROJ_SKIP_DIRS.has(entry.name.toLowerCase())) continue;
-            collectPlcProjFiles(fullPath, out);
-        } else if (entry.isFile() && entry.name.toLowerCase().endsWith('.plcproj')) {
-            out.push(fullPath);
-        }
-    }
+    return walkFiles(dirPath, {
+        skipDirs: PLCPROJ_SKIP_DIRS,
+        isMatch: (name) => name.toLowerCase().endsWith('.plcproj'),
+        out
+    });
 }
 
 /**

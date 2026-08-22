@@ -13,12 +13,12 @@
  * An object linked into two projects is indexed into BOTH, because it genuinely belongs to both.
  */
 
-const fs = require('fs');
 const path = require('path');
 
 const { indexXmlFile, indexTwinCatDirectory } = require('./xmlIndexer');
 const { indexStDirectory } = require('./parser');
 const { fileUriToFsPath } = require('../fileUri');
+const { walkFiles, CONFIG_OBJECT_SKIP_DIRS } = require('../twincatWorkspace');
 const {
     LOOSE_PROJECT_KEY,
     createProjectMap,
@@ -27,13 +27,11 @@ const {
 
 /**
  * TwinCAT non-code object extensions that can carry a PLC symbol reference (lower-cased): the two
- * visualization formats, the two text-list formats, and the task configuration.
+ * visualization formats, the two text-list formats, and the task configuration. Genuinely local to
+ * this walk (configuration objects, not source objects) — not part of the shared discovery owner.
  * @type {Set<string>}
  */
 const CONFIG_OBJECT_EXTS = new Set(['.tcvis', '.tcvmo', '.tctlo', '.tcgtlo', '.tctto']);
-
-/** Directories skipped when walking for configuration objects — the same set the XML indexer skips. */
-const CONFIG_OBJECT_SKIP_DIRS = new Set(['.git', 'node_modules', '.vscode', '_libraries']);
 
 /**
  * Converts an LSP file URI to a platform-correct filesystem path. Bare paths pass through unchanged.
@@ -51,26 +49,10 @@ function uriToFsPath(uri) {
  * @returns {Array<string>} Absolute configuration-object file paths.
  */
 function collectConfigObjectFiles(roots) {
-    const out = [];
-    const walk = (dir) => {
-        let entries;
-        try {
-            entries = fs.readdirSync(dir, { withFileTypes: true });
-        } catch (e) {
-            return;
-        }
-        for (const entry of entries) {
-            const full = path.join(dir, entry.name);
-            if (entry.isDirectory()) {
-                if (CONFIG_OBJECT_SKIP_DIRS.has(entry.name.toLowerCase())) continue;
-                walk(full);
-            } else if (entry.isFile()) {
-                if (CONFIG_OBJECT_EXTS.has(path.extname(entry.name).toLowerCase())) out.push(full);
-            }
-        }
-    };
-    for (const root of (roots || [])) walk(root);
-    return out;
+    return walkFiles(roots || [], {
+        skipDirs: CONFIG_OBJECT_SKIP_DIRS,
+        isMatch: (name) => CONFIG_OBJECT_EXTS.has(path.extname(name).toLowerCase())
+    });
 }
 
 /**
