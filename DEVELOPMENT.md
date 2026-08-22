@@ -423,10 +423,12 @@ warm / ~20 s cold projected, and the wait is visible. Four invariants hold that,
    unchanged and it is the content that moved (`test_scan_controller.js` pins both directions).
 2. **Read each file once per (path, size, mtime).** `parseCache.js` (signature dumps, browsercache),
    `plcprojRefs.js` (`.plcproj`), `harvestArchiveFile` (archives). A parse that is *stored* per
-   project must be **cloned** before use — the signature merge rewrites `record.namespace` and
+   project must be a private copy — the signature merge rewrites `record.namespace` and
    `indexBrowserCache` pushes members onto the stored object, so a shared record leaks one project's
-   attribution into another. `test_signature_cache.js` asserts that by object identity, because a
-   value comparison still passes while sharing.
+   attribution into another. Since Phase 2 this is **structural, not caller discipline**:
+   `signatureRecordsFor` (the only way to get signature records) returns a fresh copy on every call
+   and the cached template is unreachable. `test_signature_cache.js` asserts isolation by object
+   identity *and* by mutation, because a value comparison still passes while sharing.
 3. **Decode each archive once per content, not per path.** Every project vendors its own `_Libraries`,
    so the same vendor archives appear many times: 306 files / 156.5 MB on the measured workspace, but
    148 distinct / 74.2 MB. `harvestArchiveFile` keys decoded names on

@@ -37,13 +37,20 @@ header; the gradient-clipped wordmark is deliberately left at 3.3–4.9:1 (a log
   `*_get` parses as its own accessor; `treeDataProvider.js:543-549` therefore keeps the
   concatenative `${c.id}_get` lookup ON PURPOSE (regression-pinned in `test_tree_reveal`). Accepted
   behaviour change: a method literally named `Value_get` now labels `Value_get()` (old code wrongly
-  stripped the suffix from any kind). Deferred minors: freeze `KINDS`; give the owner an accessor-id
-  helper so even the tree exception speaks through it (fold into a later phase).
+  stripped the suffix from any kind).
   **G4 (dev-host) NOT run — no VS Code in the remote container**: on the user's machine, run
   `node test/devhost/run.js` once to confirm References-view/peek transition labels live.
   Also fixed en route: `test_file_uri.js`/`test_editor_mapping.js` had Windows-shaped `#`-fixture
   paths (red on any Linux checkout since the 2026-08-17 review fixes; CI `windows-latest` masked
-  it) — now platform-native. **Next: P2 (parseCache clone-rule), per the roadmap.**
+  it) — now platform-native.
+  **P2 shipped 2026-08-22** (plan `2026-08-22-deepen-02-parsecache.md`): `signatureRecordsFor`
+  makes the parse-cache clone rule STRUCTURAL (cached parse, private copy every call, template
+  unreachable, old read/clone API deleted); componentId hardened (frozen `KINDS`, pinned
+  `prop__get` degenerate parse, `accessorIdsFor` — concatenative BY DESIGN, parse misreads
+  `prop_Data_get`). P1's deferred minors are all done. **Next: P3 (livePath), per the roadmap.**
+  **GitHub Actions is account-level DEAD since 2026-08-18** — every run (main included) fails in
+  ~5 s with no logs; jobs never start. Likely the Actions spending limit/billing. USER must fix in
+  GitHub Settings → Billing; until then the local `REQUIRE_FULL_SUITE=1` gate is the merge gate.
   Open decisions unchanged: P4 fossil rewrites (`stConverter.js:425-462`), P6 features.js fold,
   P9 go/no-go.
 - **Solution→PLC-project Objects hierarchy (0.8.0):** `solutionMap.js` follows the actual TwinCAT
@@ -100,9 +107,10 @@ header; the gradient-clipped wordmark is deliberately left at 3.3–4.9:1 (a log
   The four invariants and their gates are in DEVELOPMENT.md **"Indexing cost"** — read that before touching this.
   Two that will bite hardest if forgotten: **never teach `custom/reindex` to skip** (on a `.plcproj` change the roots
   are unchanged, the CONTENT moved), and **never add `_libraries` to `SKIP_DIRS`** (`collectArchives` walks it —
-  ~171 false positives). Subtlest: a cached signature parse **must be cloned** per project — the merge rewrites
-  `record.namespace` and `indexBrowserCache` pushes onto the stored object; `test_signature_cache.js` asserts by
-  object IDENTITY because a value check still passes while sharing.
+  ~171 false positives). Subtlest: a cached signature parse must be a private copy per project — the merge rewrites
+  `record.namespace` and `indexBrowserCache` pushes onto the stored object. **Structural since P2:**
+  `signatureRecordsFor` copies on every call, the template is unreachable; `test_signature_cache.js` asserts
+  isolation by IDENTITY and by mutation because a value check still passes while sharing.
   **Latent:** `scanController` records completion in a microtask after `await scan(...)` — safe only while the scan
   is synchronous. Making it async needs in-flight de-duplication or two `ensureScanned` calls both scan.
   **Deliberately NOT done:** non-blocking/chunked scan with per-project readiness (biggest remaining win, and the

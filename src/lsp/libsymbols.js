@@ -41,8 +41,7 @@ const zlib = require('zlib');
 const { findBrowserCacheFile, MANAGED_LIBRARIES } = require('./browserCache');
 const {
     parseSignatureRecords,
-    readSignatureRecords,
-    cloneSignatureRecords,
+    signatureRecordsFor,
     readBrowserCacheDoc
 } = require('./parseCache');
 const { readLibraryReferences, collectPlcProjFiles } = require('./plcprojRefs');
@@ -1486,10 +1485,11 @@ function namespaceForLibraryTitle(title, index) {
  * the one *this* `.plcproj` imports the library under. Measured on the real 4 dumps (8.15 MB): parse
  * 68 ms, merge 13 ms — so the parse is what parseCache.js caches, and this still runs per project.
  *
- * **`records` must be this project's own to mutate** — a cached template has to come through
- * `cloneSignatureRecords` first. The loop below reassigns `record.namespace` and then stores that same
- * object in the registry, where indexBrowserCache later pushes methods and properties onto it; a
- * shared record would carry project A's namespace and members into project B.
+ * **`records` must be this project's own to mutate** — `signatureRecordsFor` guarantees that by
+ * construction: every call returns a private copy, and there is no way to reach the cached template
+ * directly. The loop below reassigns `record.namespace` and then stores that same object in the
+ * registry, where indexBrowserCache later pushes methods and properties onto it; a shared record
+ * would carry project A's namespace and members into project B.
  *
  * The merge rule is "the `.tmc` (or any richer entry) wins": a `typeSystemTypes` key that already
  * carries members (kind !== 'opaque') is left untouched, because signatures have nothing to add to it
@@ -1620,11 +1620,12 @@ function indexLibrarySignatures(rootDir, index) {
     for (const file of files) {
         // Parsed once per workspace, merged once per project: the same dump is reached by every
         // project's scan (and by every workspace root), and re-parsing 8 MB of XML for each of them
-        // was 1.7 s of a startup. The clone is mandatory — see parseCache.js.
-        const template = readSignatureRecords(file);
-        if (!template) continue; // unreadable dump: contribute nothing rather than guess
+        // was 1.7 s of a startup. signatureRecordsFor hands back a private copy every time, so the
+        // copy happens inside the entry point rather than at each call site.
+        const records = signatureRecordsFor(file);
+        if (!records) continue; // unreadable dump: contribute nothing rather than guess
         stats.files++;
-        const one = mergeSignatureRecords(cloneSignatureRecords(template), index);
+        const one = mergeSignatureRecords(records, index);
         stats.functions += one.functions;
         stats.functionBlocks += one.functionBlocks;
         stats.types += one.types;

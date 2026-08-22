@@ -11,7 +11,7 @@
  */
 
 /** Component kinds, in minted spelling. `root` has no name; only `prop` takes an accessor. */
-const KINDS = ['root', 'method', 'prop', 'action', 'transition'];
+const KINDS = Object.freeze(['root', 'method', 'prop', 'action', 'transition']);
 
 /** Kind → the TwinCAT XML tag that holds that component (root and accessors excluded). */
 const KIND_TO_XML_TAG = Object.freeze({
@@ -93,4 +93,21 @@ function memberName(id) {
     return p.name;
 }
 
-module.exports = { KINDS, KIND_TO_XML_TAG, make, parse, isAccessor, label, memberName };
+/**
+ * The Get/Set accessor ids of a property SIGNATURE id, by suffix concatenation.
+ *
+ * Concatenation is deliberate and load-bearing: it reproduces xmlParser's mint exactly
+ * (`prop_${name}` + `_get`) and is immune to the grammar's accessor ambiguity — parsing a
+ * property named `Foo_get` misreads it as an accessor of Foo, which is how the Objects tree
+ * once recursed infinitely. Callers must pass the property's own id, not an accessor id.
+ * @param {string} propertyId A `prop_<name>` id as minted for the property signature.
+ * @returns {{get: string, set: string}}
+ */
+function accessorIdsFor(propertyId) {
+    if (typeof propertyId !== 'string' || !/^prop_.+/.test(propertyId)) {
+        throw new Error(`componentId.accessorIdsFor: not a prop signature id: '${propertyId}'`);
+    }
+    return { get: `${propertyId}_get`, set: `${propertyId}_set` };
+}
+
+module.exports = { KINDS, KIND_TO_XML_TAG, make, parse, isAccessor, label, memberName, accessorIdsFor };
