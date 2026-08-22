@@ -4,7 +4,7 @@ Where the work *stands*. Read before starting; keep current (handoff rule in [CL
 100 lines — prune finished items rather than appending, but never drop a real finding to hit it. **Shipped features
 live in git history (PRs/commits); this file keeps the findings that would cost to re-derive.**
 
-**Last verified:** 2026-08-22 (Linux) — `REQUIRE_FULL_SUITE=1 npm test` green (**66/66 harnesses, Coverage: FULL**),
+**Last verified:** 2026-08-22 (Linux) — `REQUIRE_FULL_SUITE=1 npm test` green (**67/67 harnesses, Coverage: FULL**),
 typecheck clean; dev-host/browser gates not re-run since the 2026-08-18 pass below.
 Earlier full pass 2026-08-18 — 64/64 FULL,
 typecheck clean, **0 diagnostics on the sample**, both browser harnesses green, installed-VS-Code dev-host green
@@ -55,7 +55,23 @@ header; the gradient-clipped wordmark is deliberately left at 3.3–4.9:1 (a log
   `test_live_path_unit` pins the frozen budget semantics (caps bound file reads/panes, never mapped
   refs). Suite is now 66/66 FULL. Deferred: swap the unit harness's stand-in resolver for the
   production `createStResolver` (its only uncovered export) — fold into P4.
-  **Next: P4 (one coordinate dialect), per the roadmap.**
+  **P4 shipped 2026-08-22** (plan `2026-08-22-deepen-04-coordinates.md`): ONE pane dialect
+  (`'decl'/'impl'`) system-wide — `mapDiagnosticsToLocal` lives in livePath (old
+  `mapDiagnosticsToMonaco` deleted); `renameEngine`'s internal `'declaration'/'implementation'`
+  tokens are a DELIBERATE survivor (isolated coordinate system for CDATA splices, verified not fed
+  by diagnostics). `stConverter` has no `RAW_MODE` global (raw is a threaded parameter) and the
+  three fossil struct-flattens are a frozen data table (`STRUCT_FLATTEN_REWRITES`, rows frozen
+  too). **Ruling:** fossils KEPT default-on — they only shape clean/portable .st export, never the
+  live raw path; removal is a one-entry table edit + conscious test edit (`length === 3` pin)
+  whenever the user decides. Unit harness now drives the production `createStResolver`; suite
+  67/67 FULL; browser harnesses no-regression vs recorded BASE.
+  **Container-checkout LF finding:** this remote environment materializes the workspace WITHOUT
+  git smudge filters, so `sample/` arrives LF despite `.gitattributes eol=crlf` and
+  `test/browser/build.js` throws its fixture check. Recipe: convert `sample/` to CRLF in the
+  working tree (e.g. `unix2dos`) for browser runs, then `git checkout -- sample/`. A NORMAL clone
+  still smudges to CRLF (2026-08-17 fix) — do NOT renormalize blobs to CRLF without revisiting the
+  recorded blob-stays-LF rationale.
+  **Next: P5 (workspace-discovery dedup), per the roadmap.**
   **GitHub Actions is account-level DEAD since 2026-08-18** — every run (main included) fails in
   ~5 s with no logs; jobs never start. Likely the Actions spending limit/billing. USER must fix in
   GitHub Settings → Billing; until then the local `REQUIRE_FULL_SUITE=1` gate is the merge gate.

@@ -1,7 +1,7 @@
 /**
  * @file stConverter.js
- * @description Translates TwinCAT XML structures into clean, pure Structured Text (.st) files
- * and maps diagnostics back to Monaco editor relative line numbers.
+ * @description Translates TwinCAT XML structures into Structured Text: clean portable .st output,
+ * or a raw 1:1 unit for the live path (diagnostics mapping lives in livePath.js).
  */
 
 /**
@@ -12,6 +12,7 @@
  * exported .st text, never the live editor path.
  */
 const STRUCT_FLATTEN_REWRITES = Object.freeze([
+    // Rows are frozen too, so "auditable data" means immutable data, not just a fixed-length list.
     {
         typeName: 'ST_MES_Interlocking_Data', baseName: 'ST_MES_Basic_Data',
         fields: '\n\t// Fields from ST_MES_Basic_Data\n\tsOperationNumber\t\t: STRING(15);\n\tsMaterialNumber  \t\t: STRING(15);\n\tsOperator\t\t\t\t: STRING(25);\n\tsWorkstationName \t\t: STRING(25);\n\tsOrderNumber\t\t\t: STRING(15);\n\tsTestMethodName\t\t\t: eMESTestMethodNames;\n\tsTestProgramName \t\t: STRING(50);\n\tsTestEquipmentNumber \t: STRING(15);'
@@ -24,7 +25,7 @@ const STRUCT_FLATTEN_REWRITES = Object.freeze([
         typeName: 'ST_AxisErrors', baseName: 'ST_Errors',
         fields: '\n\t// Fields from ST_Errors\n\tbError\t\t\t\t: BOOL;\n\tnExternalErrorID\t: UDINT;\n\teErrorState\t\t\t: E_error_state := E_error_state.no_error;'
     }
-]);
+].map(Object.freeze));
 
 /**
  * Converts a parsed TwinCAT XML object into standard Structured Text.
