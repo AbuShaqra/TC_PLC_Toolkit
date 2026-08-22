@@ -90,6 +90,7 @@ per-suite without aborting on the first failure. The main ones:
 | `test/test_live_path.js` | The live editor pipeline: full-file ST assembly, cursor mapping, per-pane diagnostics, member completion through references, method return types, token-aware and cross-file references. |
 | `test/test_editor_mapping.js` | The production `src/editorMapping.js` helpers directly: pane↔unit boundary mapping, synthesized-line rejection, pane slicing and encoded peek-model paths. `test_live_path.js` imports the same helpers rather than carrying copies. |
 | `test/test_file_uri.js` | The production filesystem-path/file-URI boundary: reserved characters, Unicode, encoded drive colons and UNC round trips. |
+| `test/test_component_id.js` | `src/componentId.js`, the component-id grammar owner: a conformance sweep driving the **real** `parseTwinCatXml` over a fixture minting every id shape (round-trip `parse`→`make` identity), the frozen parse table incl. the pinned `prop_X_get`-is-an-accessor ambiguity, `make`'s programmer-error throws, and the `label`/`memberName` display helpers incl. the transition fix. |
 | `test/test_typecheck.js` | Semantic type checking: member access, call arguments, declaration types, assignment compatibility — plus the same `sample/` diagnostics ratchet. |
 | `test/test_references_scope.js` | Find References scope + coordinate spaces: private method `VAR` vs. parameters, named arguments belonging to the callee, and FB_init declaration-site arguments (`inst : FB_T(p := v)`). |
 | `test/test_references_tree.js` | References-view grouping (file → component → occurrence). |
@@ -244,6 +245,10 @@ src/
   customEditorProvider  Webview host: assembles full-file ST, bridges Monaco ↔ LSP, writes CDATA back
   editorMapping         Pure pane↔unit coordinate, pane-slice and peek-model helpers used by the host + tests
   fileUri               Central Windows path ↔ file URI conversion and comparison boundary
+  componentId           Single owner of the component-id string grammar (root/method_/prop_/
+                        prop_*_get/prop_*_set/action_/transition_) shared by webview, host and
+                        LSP; vscode-free. The grammar is FROZEN (ids travel over the bridge and
+                        into saved state); prop_X_get parses as accessor-of-X by pinned convention
   treeDataProvider      "TwinCAT Objects" explorer tree and reveal parent chains
   solutionMap           TwinCAT .sln → .tsproj → .xti → .plcproj presentation model for that tree
   projectStatusBar      Status-bar "which PLC project is this file in" indicator (2+ projects only);
