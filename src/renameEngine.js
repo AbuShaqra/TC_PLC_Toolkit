@@ -57,7 +57,7 @@ function computeLineStarts(text) {
 /**
  * Classifies an absolute (1-based) ST-unit line into the (componentId, pane) block that contains it,
  * checking each component's declaration range then its implementation range in lineMap insertion
- * order — identical to stConverter.mapDiagnosticsToMonaco, so the two paths cannot drift. Blocks with
+ * order — identical to livePath.mapDiagnosticsToLocal, so the two paths cannot drift. Blocks with
  * an impl range of {0,0} (interfaces, GVL/DUT, property signatures) never match (abs >= 1).
  * @param {number} abs 1-based ST-unit line.
  * @param {Object} lineMap componentId -> { decl:{start,end}, impl:{start,end} }.

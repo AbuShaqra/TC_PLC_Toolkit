@@ -300,65 +300,6 @@ function convertXmlToSt(parsedXml, options = {}) {
 }
 
 /**
- * Maps standard VS Code diagnostics for a combined .st file to relative editor components.
- * @param {Array<Object>} diagnostics The diagnostics array from VS Code.
- * @param {Object} lineMap The line offset mapping dictionary.
- * @returns {Array<Object>} List of mapped diagnostics with target componentId, pane, and Monaco range.
- */
-function mapDiagnosticsToMonaco(diagnostics, lineMap) {
-    const mapped = [];
-
-    for (const diag of diagnostics) {
-        // VS Code line numbers are 0-indexed, translate to 1-indexed.
-        const line = diag.range.start.line + 1;
-        const endLine = diag.range.end.line + 1;
-
-        for (const [componentId, blocks] of Object.entries(lineMap)) {
-            // Check declaration block
-            if (blocks.decl && line >= blocks.decl.start && line <= blocks.decl.end) {
-                const relativeStartLine = line - blocks.decl.start + 1;
-                const relativeEndLine = endLine - blocks.decl.start + 1;
-
-                mapped.push({
-                    componentId,
-                    pane: 'declaration',
-                    severity: diag.severity,
-                    message: diag.message,
-                    range: {
-                        startLineNumber: relativeStartLine,
-                        startColumn: diag.range.start.character + 1,
-                        endLineNumber: relativeEndLine,
-                        endColumn: diag.range.end.character + 1
-                    }
-                });
-                break;
-            }
-            // Check implementation block
-            if (blocks.impl && line >= blocks.impl.start && line <= blocks.impl.end) {
-                const relativeStartLine = line - blocks.impl.start + 1;
-                const relativeEndLine = endLine - blocks.impl.start + 1;
-
-                mapped.push({
-                    componentId,
-                    pane: 'implementation',
-                    severity: diag.severity,
-                    message: diag.message,
-                    range: {
-                        startLineNumber: relativeStartLine,
-                        startColumn: diag.range.start.character + 1,
-                        endLineNumber: relativeEndLine,
-                        endColumn: diag.range.end.character + 1
-                    }
-                });
-                break;
-            }
-        }
-    }
-
-    return mapped;
-}
-
-/**
  * Cleans TwinCAT-specific syntax elements from Structured Text declarations
  * to make them fully compliant with standard IEC 61131-3 compilers.
  * @param {string} declText Original declaration text.
@@ -492,6 +433,5 @@ function cleanImplementationText(implText, raw) {
 
 module.exports = {
     convertXmlToSt,
-    mapDiagnosticsToMonaco,
     STRUCT_FLATTEN_REWRITES
 };
