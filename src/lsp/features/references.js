@@ -9,6 +9,7 @@ const { findNode } = require('../types');
 const { registerLibrarySymbolNodes } = require('../libsymbols');
 const { parseTwinCatXml } = require('../../xmlParser');
 const { convertXmlToSt } = require('../../stConverter');
+const { parse: cidParse } = require('../../componentId');
 const {
     uriToFsPath,
     normalizeUri,
@@ -129,8 +130,9 @@ function definitionScope(def, symbolIndex) {
     const uriKey = normalizeUri(def.uri);
     const pou = Object.keys(symbolIndex).map(k => symbolIndex[k]).find(node =>
         node && node.uri && normalizeUri(node.uri) === uriKey) || null;
-    if (pou && typeof def.componentId === 'string' && def.componentId.startsWith('method_')) {
-        const methodName = def.componentId.slice('method_'.length).toLowerCase();
+    const defCid = cidParse(def.componentId);
+    if (pou && defCid && defCid.kind === 'method') {
+        const methodName = defCid.name.toLowerCase();
         const method = (pou.methods || []).find(m => m.name.toLowerCase() === methodName) || null;
         return { pou, method };
     }
@@ -141,7 +143,8 @@ function definitionScope(def, symbolIndex) {
 function methodVariableForDefinition(def, scope) {
     if (!def || !scope || !scope.method) return null;
     const variables = scope.method.variables || [];
-    if (typeof def.componentId === 'string' && def.componentId.startsWith('method_') && def.targetWord) {
+    const defCid = cidParse(def.componentId);
+    if (defCid && defCid.kind === 'method' && def.targetWord) {
         const byName = variables.find(v => v.name.toLowerCase() === def.targetWord.toLowerCase());
         if (byName) return byName;
     }

@@ -6,6 +6,7 @@
 
 const { tokenize, TokenType } = require('../parser');
 const { findNode, findMethodOwnerInChain } = require('../types');
+const { make: cidMake } = require('../../componentId');
 const {
     findActiveScope,
     classifyCallSite,
@@ -153,7 +154,7 @@ function definitionAt(code, tokens, position, symbolIndex, fileUri) {
                         return {
                             uri: found.owner.uri,
                             range: convertToLspRange(p.range),
-                            componentId: `method_${found.method.name}`,
+                            componentId: cidMake('method', found.method.name),
                             targetWord: targetWordVal
                         };
                     }
@@ -168,7 +169,7 @@ function definitionAt(code, tokens, position, symbolIndex, fileUri) {
                     return {
                         uri: resolvedTargetNode.uri,
                         range: convertToLspRange(v.range),
-                        componentId: `method_${resolvedMethod.name}`,
+                        componentId: cidMake('method', resolvedMethod.name),
                         targetWord: targetWordVal
                     };
                 }
@@ -232,7 +233,7 @@ function definitionAt(code, tokens, position, symbolIndex, fileUri) {
     // 3. Local method variables
     if (method) {
         const v = method.variables.find(x => x.name.toLowerCase() === wordLower);
-        if (v) return { uri: fileUri, range: convertToLspRange(v.range), componentId: `method_${method.name}`, targetWord: targetWord };
+        if (v) return { uri: fileUri, range: convertToLspRange(v.range), componentId: cidMake('method', method.name), targetWord: targetWord };
     }
 
     // 4. Parent POU variables or sub-elements
@@ -241,13 +242,13 @@ function definitionAt(code, tokens, position, symbolIndex, fileUri) {
         if (v) return { uri: fileUri, range: convertToLspRange(v.range), componentId: 'root', targetWord: targetWord };
 
         const m = pou.methods.find(x => x.name.toLowerCase() === wordLower);
-        if (m) return { uri: fileUri, range: convertToLspRange(m.nameRange), componentId: `method_${m.name}`, targetWord: targetWord };
+        if (m) return { uri: fileUri, range: convertToLspRange(m.nameRange), componentId: cidMake('method', m.name), targetWord: targetWord };
 
         const p = pou.properties.find(x => x.name.toLowerCase() === wordLower);
-        if (p) return { uri: fileUri, range: convertToLspRange(p.nameRange), componentId: `prop_${p.name}`, targetWord: targetWord };
+        if (p) return { uri: fileUri, range: convertToLspRange(p.nameRange), componentId: cidMake('prop', p.name), targetWord: targetWord };
 
         const a = pou.actions.find(x => x.name.toLowerCase() === wordLower);
-        if (a) return { uri: fileUri, range: convertToLspRange(a.nameRange), componentId: `action_${a.name}`, targetWord: targetWord };
+        if (a) return { uri: fileUri, range: convertToLspRange(a.nameRange), componentId: cidMake('action', a.name), targetWord: targetWord };
 
         // 4b. Inherited members via the EXTENDS chain (bare usage, no fb. prefix).
         // Walk ancestors resolved from the index; stop where the chain breaks.
@@ -257,13 +258,13 @@ function definitionAt(code, tokens, position, symbolIndex, fileUri) {
             if (av) return { uri: anc.uri, range: convertToLspRange(av.range), componentId: 'root', targetWord: targetWord };
 
             const am = (anc.methods || []).find(x => x.name.toLowerCase() === wordLower);
-            if (am) return { uri: anc.uri, range: convertToLspRange(am.nameRange), componentId: `method_${am.name}`, targetWord: targetWord };
+            if (am) return { uri: anc.uri, range: convertToLspRange(am.nameRange), componentId: cidMake('method', am.name), targetWord: targetWord };
 
             const ap = (anc.properties || []).find(x => x.name.toLowerCase() === wordLower);
-            if (ap) return { uri: anc.uri, range: convertToLspRange(ap.nameRange), componentId: `prop_${ap.name}`, targetWord: targetWord };
+            if (ap) return { uri: anc.uri, range: convertToLspRange(ap.nameRange), componentId: cidMake('prop', ap.name), targetWord: targetWord };
 
             const aa = (anc.actions || []).find(x => x.name.toLowerCase() === wordLower);
-            if (aa) return { uri: anc.uri, range: convertToLspRange(aa.nameRange), componentId: `action_${aa.name}`, targetWord: targetWord };
+            if (aa) return { uri: anc.uri, range: convertToLspRange(aa.nameRange), componentId: cidMake('action', aa.name), targetWord: targetWord };
         }
     }
 
