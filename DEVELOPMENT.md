@@ -88,7 +88,7 @@ per-suite without aborting on the first failure. The main ones:
 | `test/test_lsp_features.js` | Core LSP: completions, go-to-definition (incl. call parameters), references, diagnostics, on synthetic `.st` units. |
 | `test/test_sample_diagnostics.js` | **Diagnostics ratchet** on the real `sample/` TwinCAT project. The sample is valid code, so every diagnostic on it is a false positive; the harness measures them the way the LSP server does, prints a per-category breakdown, and **fails if the total rises above the baseline** in `test/_baseline.js`. The target — currently met — is zero. |
 | `test/test_live_path.js` | The live editor pipeline: full-file ST assembly, cursor mapping, per-pane diagnostics, member completion through references, method return types, token-aware and cross-file references. |
-| `test/test_editor_mapping.js` | The production `src/editorMapping.js` helpers directly: pane↔unit boundary mapping, synthesized-line rejection, pane slicing and encoded peek-model paths. `test_live_path.js` imports the same helpers rather than carrying copies. |
+| `test/test_editor_mapping.js` | The production `src/livePath.js` coordinate/peek helpers directly: pane↔unit boundary mapping, synthesized-line rejection, pane slicing and encoded peek-model paths. `test_live_path.js` imports the same module (including `assembleSt`) rather than carrying copies. |
 | `test/test_file_uri.js` | The production filesystem-path/file-URI boundary: reserved characters, Unicode, encoded drive colons and UNC round trips. |
 | `test/test_component_id.js` | `src/componentId.js`, the component-id grammar owner: a conformance sweep driving the **real** `parseTwinCatXml` over a fixture minting every id shape (round-trip `parse`→`make` identity), the frozen parse table incl. the pinned `prop_X_get`-is-an-accessor ambiguity, `make`'s programmer-error throws, and the `label`/`memberName` display helpers incl. the transition fix. |
 | `test/test_typecheck.js` | Semantic type checking: member access, call arguments, declaration types, assignment compatibility — plus the same `sample/` diagnostics ratchet. |
@@ -242,8 +242,12 @@ src/
     libraryCommands     "TwinCAT Libraries" commands (refresh, insert, copy, Update Library Definitions)
     lspBridgeCommands   openComponent navigation + the twincat.lsp.query* Monaco↔LSP bridges
   xaeShell              XAE shell discovery + the library-signature generator (the one non-offline path)
-  customEditorProvider  Webview host: assembles full-file ST, bridges Monaco ↔ LSP, writes CDATA back
-  editorMapping         Pure pane↔unit coordinate, pane-slice and peek-model helpers used by the host + tests
+  customEditorProvider  Webview host: bridges Monaco ↔ LSP via livePath, writes CDATA back
+  livePath              The live language-feature path, vscode-free: ST assembly (assembleSt),
+                        pane↔unit coordinate + pane-slice + peek-model helpers, and the injected-read
+                        unit resolver (createStResolver). Owns what editorMapping.js used to plus the
+                        assembly/resolver logic that lived in customEditorProvider.js; the host and the
+                        harnesses now drive the SAME functions.
   fileUri               Central Windows path ↔ file URI conversion and comparison boundary
   componentId           Single owner of the component-id string grammar (root/method_/prop_/
                         prop_*_get/prop_*_set/action_/transition_) shared by webview, host and
@@ -473,6 +477,13 @@ since the peek is a preview and the References panel lists every hit uncapped. C
 through `twincat.openComponent` with the exact pane + line + columns. The pane-slice coordinates are the
 subtle part — a slice is a different frame from the assembled unit — and `test_live_path.js` guards that
 arithmetic against every block of a real sample object.
+
+`assembleSt`, the coordinate mapping (`localToAbsolute`/`absoluteToLocal`/`paneTextFromUnit`), the peek
+path builder (`peekPath`), the injected-read unit resolver (`createStResolver`), and the two
+`PEEK_MAX_*` constants all live in `src/livePath.js` — vscode-free, so it is unit-testable and the
+production code IS the code the harnesses exercise (no replica logic to drift out of sync).
+`customEditorProvider.js` supplies `livePath`'s `readFile` as a thin wrapper over
+`vscode.workspace.fs.readFile`.
 
 ### Pragmas
 

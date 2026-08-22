@@ -25,12 +25,12 @@
 const fs = require('fs');
 const path = require('path');
 const { parseTwinCatXml } = require('../src/xmlParser');
-const { convertXmlToSt, mapDiagnosticsToMonaco } = require('../src/stConverter');
+const { mapDiagnosticsToMonaco } = require('../src/stConverter');
 const { parseAndIndexDocument, clearWorkspaceIndex, getWorkspaceSymbolIndex } = require('../src/lsp/parser');
 const { indexXmlObject } = require('../src/lsp/xmlIndexer');
 const { provideCompletions, provideDefinition, provideDiagnostics, provideReferences } = require('../src/lsp/features');
 const { reportCoverage } = require('./_coverage');
-const { localToAbsolute, absoluteToLocal, paneTextFromUnit, peekPath } = require('../src/editorMapping');
+const { assembleSt, localToAbsolute, absoluteToLocal, paneTextFromUnit, peekPath } = require('../src/livePath');
 
 const SAMPLE_DIR = path.join(__dirname, '..', 'sample');
 
@@ -55,28 +55,6 @@ let ran = 0;
 function assert(cond, msg) {
     if (cond) console.log(`[PASS] ${msg}`);
     else { console.error(`[FAIL] ${msg}`); errors++; }
-}
-
-// --- Replicated extension helpers (mirror customEditorProvider.js) ---
-
-/**
- * Assembles the whole XML object into one raw ST compilation unit, applying the webview's unsaved
- * edits for the active component as an overlay.
- * @param {string} xml Backing XML text.
- * @param {Object|null} overlay { componentId, decl?, impl? } live edits for the active component.
- * @returns {Object|null} { stText, lineMap } or null if the XML could not be parsed.
- */
-function assembleSt(xml, overlay) {
-    const parsed = parseTwinCatXml(xml);
-    if (!parsed) return null;
-    if (overlay && overlay.componentId) {
-        const comp = parsed.components.find(c => c.id === overlay.componentId);
-        if (comp) {
-            if (typeof overlay.decl === 'string' && comp.declaration != null) comp.declaration = overlay.decl;
-            if (typeof overlay.impl === 'string' && comp.implementation != null) comp.implementation = overlay.impl;
-        }
-    }
-    return convertXmlToSt(parsed, { raw: true });
 }
 
 // --- Index the workspace from XML (as the LSP server does) ---
