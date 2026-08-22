@@ -34,6 +34,7 @@ const {
 } = require('../xmlParser');
 const { applyReferenceEditsToXml } = require('../renameEngine');
 const { registerInPlcProj, unregisterFromPlcProj, registerTreeInPlcProj } = require('../plcProjHelper');
+const { TWINCAT_WATCH_EXTS } = require('../twincatWorkspace');
 
 /** IEC identifier: files and members. */
 const IDENT_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
@@ -42,9 +43,6 @@ const IDENT_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const OBJECT_FILE_CONTEXT_VALUES = new Set([
     'pouFile', 'pouFileProgram', 'pouFileFunction', 'itfFile', 'gvlFile', 'dutFile'
 ]);
-
-/** TwinCAT source extensions the reference query reads from disk — so unsaved copies must be flushed. */
-const TC_SOURCE_EXTS = ['.tcpou', '.tcio', '.tcgvl', '.tcdut'];
 
 /**
  * Registers the TwinCAT Objects explorer rename command.
@@ -812,7 +810,7 @@ function makeFolderValidator(oldName, collision) {
 async function saveDirtyTwinCatDocs() {
     for (const doc of vscode.workspace.textDocuments) {
         if (!doc.isDirty) continue;
-        if (TC_SOURCE_EXTS.includes(path.extname(doc.uri.fsPath).toLowerCase())) {
+        if (TWINCAT_WATCH_EXTS.has(path.extname(doc.uri.fsPath).toLowerCase())) {
             try {
                 await doc.save();
             } catch (e) {

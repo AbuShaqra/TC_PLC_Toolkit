@@ -9,6 +9,7 @@ const { parseTwinCatXml, getFoldersDetailedFromXml } = require('./xmlParser');
 const { classifyPou, classifyDut, componentKind, ICONS, LABELS, COLORS } = require('./objectKinds');
 const { groupRootsByProject } = require('./lsp/projectMap');
 const { accessorIdsFor } = require('./componentId');
+const { BASE_SKIP_DIRS } = require('./twincatWorkspace');
 
 /**
  * Builds the icon + tooltip for a kind from src/objectKinds.js. A kind with an entry in COLORS gets a
@@ -329,7 +330,7 @@ class TwinCatTreeDataProvider {
             for (const [name, type] of entries) {
                 const entryUri = vscode.Uri.joinPath(dirUri, name);
                 if (type === vscode.FileType.Directory) {
-                    if (name === '.git' || name === 'node_modules' || name === '.vscode') continue;
+                    if (BASE_SKIP_DIRS.has(name.toLowerCase())) continue;
                     items.push(new TwinCatTreeItem(
                         name,
                         entryUri,

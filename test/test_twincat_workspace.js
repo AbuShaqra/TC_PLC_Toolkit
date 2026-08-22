@@ -379,5 +379,48 @@ check('separators are literal: parts joined by " / ", name/suffix joined by " �
 
 fs.rmSync(WALK_ROOT, { recursive: true, force: true });
 
+// =====================================================================================
+// 6. Cross-pins — the two host-side call sites that stay regex/glob (Phase 5 Task 4) must still
+//    name exactly the owner's vocabulary, even though they cannot import the Set directly.
+// =====================================================================================
+
+check('projectStatusBar.TWINCAT_FILE_EXTS regex source names exactly TWINCAT_EDITOR_EXTS\' members', () => {
+    // projectStatusBar.js requires 'vscode' only lazily inside createProjectStatusBar (see its own
+    // header comment) so this require is safe standalone, same as test_project_map.js already relies on.
+    const { TWINCAT_FILE_EXTS } = require('../src/projectStatusBar');
+    assert.ok(TWINCAT_FILE_EXTS instanceof RegExp, 'TWINCAT_FILE_EXTS must be exported as a RegExp');
+    const match = TWINCAT_FILE_EXTS.source.match(/\\\.\(([^)]+)\)\$?$/);
+    assert.ok(match, `could not parse an alternation list out of ${TWINCAT_FILE_EXTS}`);
+    const regexExts = match[1].split('|').map(s => '.' + s.toLowerCase());
+    setEquals(new Set(regexExts), [...TWINCAT_EDITOR_EXTS], 'projectStatusBar TWINCAT_FILE_EXTS vs TWINCAT_EDITOR_EXTS');
+});
+
+check('customEditorProvider.js findFiles glob names exactly TWINCAT_XML_EXTS\' members in both casings', () => {
+    // customEditorProvider.js requires 'vscode' at module top level, so it cannot be require()d
+    // here — read it as plain text and extract the glob literal instead.
+    const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'customEditorProvider.js'), 'utf8');
+    const match = src.match(/findFiles\(\s*'\*\*\/\*\.\{([^}]+)\}'/);
+    assert.ok(match, 'could not find the workspace.findFiles(\'**/*.{...}\') glob literal in customEditorProvider.js');
+    const globExts = match[1].split(',').map(s => s.trim());
+
+    assert.strictEqual(globExts.length, TWINCAT_XML_EXTS.size * 2,
+        `expected ${TWINCAT_XML_EXTS.size * 2} glob entries (each TWINCAT_XML_EXTS member in both casings), got ${globExts.length}: ${globExts}`);
+
+    for (const ext of TWINCAT_XML_EXTS) {
+        const bare = ext.slice(1); // strip the leading '.'
+        const matchingEntries = globExts.filter(s => s.toLowerCase() === bare);
+        assert.strictEqual(matchingEntries.length, 2,
+            `expected exactly 2 casings of '${bare}' in the glob, found ${matchingEntries.length}: ${matchingEntries}`);
+        assert.ok(matchingEntries.includes(bare), `expected a lower-case '${bare}' entry in the glob`);
+        assert.ok(matchingEntries.some(s => s !== bare), `expected a differently-cased '${bare}' entry in the glob (not just lower-case twice)`);
+    }
+
+    // No stray extension outside TWINCAT_XML_EXTS is named by the glob.
+    for (const entry of globExts) {
+        const dotted = '.' + entry.toLowerCase();
+        assert.ok(TWINCAT_XML_EXTS.has(dotted), `glob names '${entry}', which is not a TWINCAT_XML_EXTS member`);
+    }
+});
+
 console.log(`\n--- TWINCAT WORKSPACE TESTS COMPLETE with ${failures} error(s) ---`);
 process.exit(failures > 0 ? 1 : 0);
