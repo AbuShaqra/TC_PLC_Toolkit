@@ -75,12 +75,23 @@ header; the gradient-clipped wordmark is deliberately left at 3.3–4.9:1 (a log
   **P8's G4 (dev-host) run is DEFERRED to the user's machine — walk
   `docs/superpowers/plans/2026-08-22-deepen-08-g4-checklist.md` (7 items; the pending-edit
   round-trip and Manual-Sync save path matter most).**
-  **Next: P9 go/no-go re-evaluation. P7 (tree model) parked — its dev-host gate is mandatory.**
+  **P9 RULED NO-GO 2026-08-22 — the roadmap-prescribed re-evaluation, recorded as its valid
+  completion.** Why: the two pains the split was scoped against are already gone — P2 removed the
+  parseCache coupling (`signatureRecordsFor` is the whole surface) and P5 removed the triple walk
+  (the three collectors are thin delegates to `twincatWorkspace.walkFiles`). What remains in
+  `libsymbols.js` (2035 lines) is the ZIP/`.tmc` decoding + the registry, which change together;
+  the split's one genuine win (structural registry-write ownership) costs converting ~16 harness
+  files off the `defaultRegistry` fallback while moving the repo's most incident-dense invariants
+  (on-demand registration, `(path,size,mtime)` guards, content-keyed archive identity) for zero
+  behaviour gain — and its G5 gate (Beckhoff-archives-aside re-run) is not even runnable in this
+  clone. Revisit only if the file grows a NEW seam, with G5 available.
+  **The deepening roadmap is now CLOSED on this machine: P1-P6 + P8 shipped (PRs #39-#45),
+  P9 ruled no-go. P7 (tree model) stays parked — its dev-host gate is mandatory, user's machine.**
   **GitHub Actions is account-level DEAD since 2026-08-18** — every run (main included) fails in
   ~5 s with no logs; jobs never start. Likely the Actions spending limit/billing. USER must fix in
   GitHub Settings → Billing; until then the local `REQUIRE_FULL_SUITE=1` gate is the merge gate.
   Open decisions remaining: the fossil-rewrite table's eventual removal (user's call, P4 ruling
-  keeps them), P9 go/no-go. (P6's features.js question is RULED: kept.)
+  keeps them). (P6 features.js: RULED kept. P9: RULED no-go, above.)
 - **Solution→PLC-project Objects hierarchy (0.8.0):** `solutionMap.js` follows the actual TwinCAT
   `.sln`→`.tsproj`→`_Config/PLC/*.xti`→`PrjFilePath` chain in the extension host. Solutions are always
   top-level when present; one solution can contain several PLC projects; same-named solutions get
