@@ -540,6 +540,11 @@ class TwinCatTreeDataProvider {
 
         let children = null;
         if (c.type === 'Property' && parsedComponents) {
+            // Deliberately concatenative, not parse()+make(): componentId.parse() misreads a
+            // property NAMED `*_get`/`*_set` (e.g. "Data_get") as its own Get/Set accessor, which
+            // would remint the property's own id here and make createComponentTreeItem recurse on
+            // itself with no termination. c.id IS `prop_${subName}` (xmlParser mints it that way),
+            // so appending the accessor suffix is mint-identical to make('prop', subName, 'get').
             const getAcc = parsedComponents.find(x => x.id === `${c.id}_get`);
             const setAcc = parsedComponents.find(x => x.id === `${c.id}_set`);
             

@@ -4,6 +4,7 @@
  */
 
 const { fileUriBasename } = require('./fileUri');
+const { memberName } = require('./componentId');
 
 function localToAbsolute(lineMap, componentId, pane, lineNumber, column) {
     const blocks = lineMap[componentId];
@@ -38,10 +39,7 @@ function paneTextFromUnit(stLines, lineMap, componentId, pane) {
 function peekPath(fileUri, componentId, pane) {
     let base = 'object';
     try { base = fileUriBasename(fileUri) || base; } catch (e) { /* keep default */ }
-    const member = componentId === 'root'
-        ? 'root'
-        : String(componentId).replace(/^(method|prop|action|trans|get|set)_/i, '');
-    return `/${member}.${pane}/${base}`;
+    return `/${memberName(componentId)}.${pane}/${base}`;
 }
 
 module.exports = { localToAbsolute, absoluteToLocal, paneTextFromUnit, peekPath };

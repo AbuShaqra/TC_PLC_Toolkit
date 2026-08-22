@@ -9,6 +9,7 @@
 const { TokenType, isSkippable } = require('../parser');
 const { findNode, parentNames } = require('../types');
 const { fileUriToFsPath, normalizeFileUri } = require('../../fileUri');
+const { make: cidMake } = require('../../componentId');
 
 /**
  * Converts a file URI to a platform-correct filesystem path. Bare paths pass through unchanged.
@@ -83,13 +84,13 @@ function findMemberInChain(node, name, index) {
         if (v) return { uri: owner.uri, range: convertToLspRange(v.range), componentId: 'root' };
 
         const m = (owner.methods || []).find(x => x.name.toLowerCase() === lower);
-        if (m) return { uri: owner.uri, range: convertToLspRange(m.nameRange), componentId: `method_${m.name}` };
+        if (m) return { uri: owner.uri, range: convertToLspRange(m.nameRange), componentId: cidMake('method', m.name) };
 
         const p = (owner.properties || []).find(x => x.name.toLowerCase() === lower);
-        if (p) return { uri: owner.uri, range: convertToLspRange(p.nameRange), componentId: `prop_${p.name}` };
+        if (p) return { uri: owner.uri, range: convertToLspRange(p.nameRange), componentId: cidMake('prop', p.name) };
 
         const a = (owner.actions || []).find(x => x.name.toLowerCase() === lower);
-        if (a) return { uri: owner.uri, range: convertToLspRange(a.nameRange), componentId: `action_${a.name}` };
+        if (a) return { uri: owner.uri, range: convertToLspRange(a.nameRange), componentId: cidMake('action', a.name) };
     }
     return null;
 }

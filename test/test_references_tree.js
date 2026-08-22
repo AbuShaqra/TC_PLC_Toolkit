@@ -37,6 +37,8 @@ assert(componentLabel('root') === 'Main', 'root -> Main');
 assert(componentLabel('method_cyclic') === 'cyclic()', 'method_cyclic -> cyclic()');
 assert(componentLabel('prop_N_BinID') === 'N_BinID', 'prop_N_BinID -> N_BinID');
 assert(componentLabel('action_Foo') === 'Foo', 'action_Foo -> Foo');
+// Transition components must label like actions do — the raw-id fallback was the bug.
+assert(componentLabel('transition_Ready') === 'Ready', 'a Transition must display its name, not its raw id');
 
 // basename
 assert(basenameFromUri('file:///c:/proj/POUs/FB_Bin.TcPOU') === 'FB_Bin.TcPOU', 'basename from file uri');

@@ -39,7 +39,11 @@ check('URI identity follows the platform filesystem case rules', () => {
 });
 
 check('URI normalization does not confuse a fragment with a literal hash in a filename', () => {
-    const uri = fsPathToFileUri('C:\\PLC\\MAIN#backup.TcPOU');
+    const fsPathIn = process.platform === 'win32'
+        ? 'C:\\PLC\\MAIN#backup.TcPOU'
+        : '/PLC/MAIN#backup.TcPOU';
+    const uri = fsPathToFileUri(fsPathIn);
+    assert.ok(!uri.includes('#'), 'the hash must be percent-encoded in the URI, not a fragment');
     assert.strictEqual(path.basename(fileUriToFsPath(uri)), 'MAIN#backup.TcPOU');
 });
 

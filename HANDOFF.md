@@ -4,7 +4,9 @@ Where the work *stands*. Read before starting; keep current (handoff rule in [CL
 100 lines — prune finished items rather than appending, but never drop a real finding to hit it. **Shipped features
 live in git history (PRs/commits); this file keeps the findings that would cost to re-derive.**
 
-**Last verified:** 2026-08-18 — `REQUIRE_FULL_SUITE=1 npm test` green (**64/64 harnesses, Coverage: FULL**),
+**Last verified:** 2026-08-22 (Linux) — `REQUIRE_FULL_SUITE=1 npm test` green (**65/65 harnesses, Coverage: FULL**),
+typecheck clean; dev-host/browser gates not re-run since the 2026-08-18 pass below.
+Earlier full pass 2026-08-18 — 64/64 FULL,
 typecheck clean, **0 diagnostics on the sample**, both browser harnesses green, installed-VS-Code dev-host green
 including a real two-project workspace. The earlier 2026-08-10 pass also verified 0 diagnostics with Beckhoff
 archives both present and moved aside. **0.6.2 (indexing)** and **0.7.0 (Objects-tree inserts)** are merged;
@@ -26,6 +28,24 @@ look clean; library member expansion is still not visually confirmed. CSS conven
 header; the gradient-clipped wordmark is deliberately left at 3.3–4.9:1 (a logotype, exempt).
 
 ## Constraints / still open
+- **Deepening roadmap: P1 DONE, P2–P9 open** (`docs/superpowers/plans/2026-08-22-deepening-roadmap.md`).
+  **Phase 1 shipped 2026-08-22** (6 commits, dc45d59..1b665ea, plan
+  `2026-08-22-deepen-01-component-id.md`): `src/componentId.js` now owns the component-id grammar;
+  all mint/parse sites converted; the Transition display bug (raw `transition_Ready` in References
+  view/peek path) is FIXED; suite 65/65 FULL on Linux, typecheck clean. Fix-round finding worth
+  remembering: **parse-then-remint of the ambiguous grammar is NOT identity** — a property named
+  `*_get` parses as its own accessor; `treeDataProvider.js:543-549` therefore keeps the
+  concatenative `${c.id}_get` lookup ON PURPOSE (regression-pinned in `test_tree_reveal`). Accepted
+  behaviour change: a method literally named `Value_get` now labels `Value_get()` (old code wrongly
+  stripped the suffix from any kind). Deferred minors: freeze `KINDS`; give the owner an accessor-id
+  helper so even the tree exception speaks through it (fold into a later phase).
+  **G4 (dev-host) NOT run — no VS Code in the remote container**: on the user's machine, run
+  `node test/devhost/run.js` once to confirm References-view/peek transition labels live.
+  Also fixed en route: `test_file_uri.js`/`test_editor_mapping.js` had Windows-shaped `#`-fixture
+  paths (red on any Linux checkout since the 2026-08-17 review fixes; CI `windows-latest` masked
+  it) — now platform-native. **Next: P2 (parseCache clone-rule), per the roadmap.**
+  Open decisions unchanged: P4 fossil rewrites (`stConverter.js:425-462`), P6 features.js fold,
+  P9 go/no-go.
 - **Solution→PLC-project Objects hierarchy (0.8.0):** `solutionMap.js` follows the actual TwinCAT
   `.sln`→`.tsproj`→`_Config/PLC/*.xti`→`PrjFilePath` chain in the extension host. Solutions are always
   top-level when present; one solution can contain several PLC projects; same-named solutions get

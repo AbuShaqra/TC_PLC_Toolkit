@@ -4,6 +4,7 @@
  */
 
 const crypto = require('crypto');
+const { make: makeComponentId } = require('./componentId');
 
 /**
  * Parses XML attributes from a string.
@@ -70,7 +71,7 @@ function parseTwinCatXml(xmlText) {
     const rootImpl = rootHasImpl ? getCdata(rootContent, '<ST>', '</ST>') : null;
     
     components.push({
-        id: 'root',
+        id: makeComponentId('root'),
         type: rootType,
         name: rootName,
         folderPath: '',
@@ -102,7 +103,7 @@ function parseTwinCatXml(xmlText) {
         if (subType === 'Property') {
             const propDecl = getCdata(subBlock, '<Declaration>', '</Declaration>');
             components.push({
-                id: `prop_${subName}`,
+                id: makeComponentId('prop', subName),
                 type: 'Property',
                 name: `${subName} (Property Signature)`,
                 folderPath,
@@ -127,7 +128,7 @@ function parseTwinCatXml(xmlText) {
                     const getImpl = hasST ? getCdata(getBlock, '<ST>', '</ST>') : null;
                     
                     components.push({
-                        id: `prop_${subName}_get`,
+                        id: makeComponentId('prop', subName, 'get'),
                         type: 'Get',
                         name: `${subName} [Get]`,
                         folderPath: folderPath,
@@ -153,7 +154,7 @@ function parseTwinCatXml(xmlText) {
                     const setImpl = hasST ? getCdata(setBlock, '<ST>', '</ST>') : null;
                     
                     components.push({
-                        id: `prop_${subName}_set`,
+                        id: makeComponentId('prop', subName, 'set'),
                         type: 'Set',
                         name: `${subName} [Set]`,
                         folderPath: folderPath,
@@ -175,7 +176,9 @@ function parseTwinCatXml(xmlText) {
             const impl = hasST ? getCdata(subBlock, '<ST>', '</ST>') : null;
             
             components.push({
-                id: `${subType.toLowerCase()}_${subName}`,
+                // subType is always 'Method'/'Action'/'Transition' here (the enclosing regex
+                // guarantees it), which are also valid componentId kinds once lowercased.
+                id: makeComponentId(/** @type {any} */ (subType.toLowerCase()), subName),
                 type: subType,
                 name: subName,
                 folderPath,

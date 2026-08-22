@@ -4,20 +4,16 @@
  */
 
 const { fileUriBasename } = require('./fileUri');
+const { label: componentIdLabel } = require('./componentId');
 
 /**
  * Humanizes a component id for display (e.g. 'method_cyclic' -> 'cyclic()', 'root' -> 'Main').
+ * Delegates to the grammar owner in componentId.js.
  * @param {string} componentId
  * @returns {string}
  */
 function componentLabel(componentId) {
-    if (!componentId || componentId === 'root') return 'Main';
-    const m = componentId.match(/^(method|prop|action|get|set)_(.+)$/);
-    if (m) {
-        const name = m[2].replace(/_(get|set)$/i, '');
-        return name + (m[1] === 'method' ? '()' : '');
-    }
-    return componentId;
+    return componentIdLabel(componentId);
 }
 
 /** Extracts a file basename from a file URI string without depending on vscode. */

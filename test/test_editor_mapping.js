@@ -28,8 +28,15 @@ const lines = Array.from({ length: 12 }, (_, i) => `line-${i + 1}`);
 assert.strictEqual(paneTextFromUnit(lines, lineMap, 'root', 'decl'), 'line-2\nline-3\nline-4');
 assert.strictEqual(paneTextFromUnit(lines, lineMap, 'method_Run', 'impl'), null);
 
-const encoded = fsPathToFileUri('C:\\PLC Projects\\MAIN#copy.TcPOU');
+const hashFsPath = process.platform === 'win32'
+    ? 'C:\\PLC Projects\\MAIN#copy.TcPOU'
+    : '/PLC Projects/MAIN#copy.TcPOU';
+const encoded = fsPathToFileUri(hashFsPath);
 assert.strictEqual(peekPath(encoded, 'method_Run', 'impl'), '/Run.impl/MAIN#copy.TcPOU');
 assert.strictEqual(peekPath('', 'root', 'decl'), '/root.decl/object');
+
+// A transition peek path carries the member name, not the raw id (trans_ never matched transition_).
+assert.ok(peekPath('file:///c%3A/x/FB_A.TcPOU', 'transition_Ready', 'impl').startsWith('/Ready.impl/'),
+    'transition peek path must strip the kind prefix');
 
 console.log('All production editor-mapping checks passed.');

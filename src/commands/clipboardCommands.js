@@ -13,6 +13,7 @@
 const vscode = require('vscode');
 const path = require('path');
 const { describeCopied, planPaste } = require('../dndRules');
+const { isAccessor: componentIdIsAccessor } = require('../componentId');
 const {
     parseTwinCatXml,
     extractComponentBlockFromXml,
@@ -74,9 +75,9 @@ function registerClipboardCommands(context, { treeView, treeProvider, applyXmlEd
                 // Not copyable — say why instead of silently ignoring Ctrl+C. Accessors get the
                 // specific hint (their exclusion is invisible from the tree); the rest (virtual
                 // folders, directories) the generic one.
-                const isAccessor = /^prop_.+_(get|set)$/.test(node.componentId || '');
+                const accessor = componentIdIsAccessor(node.componentId || '');
                 vscode.window.setStatusBarMessage(
-                    isAccessor
+                    accessor
                         ? 'Get/Set accessors are copied with their property'
                         : 'This item cannot be copied',
                     3000);
