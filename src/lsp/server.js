@@ -148,8 +148,9 @@ function indexLibraries(fsPath, index, roots) {
  * Brings the symbol index up to date with a document before any language feature runs on it:
  * parses the unit's own symbols, and registers the external-library symbols it references (see
  * libsymbols.js — this is what stops `DEFAULT_ADS_TIMEOUT`, `T_MaxString`, … being reported as
- * undeclared). Every custom/* handler and the .st document listener go through here, so no request
- * can be answered against an index that has not seen the document's library usage.
+ * undeclared). Every withDocument-wrapped custom/* handler and the .st document listener go through
+ * here (the router makes it unskippable), so no language request can be answered against an index
+ * that has not seen the document's library usage.
  * @param {string} code Structured Text of the document.
  * @param {string} fileUri Document URI.
  * @param {Object} index The owning project's symbol index.

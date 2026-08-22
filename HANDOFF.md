@@ -55,13 +55,18 @@ header; the gradient-clipped wordmark is deliberately left at 3.3–4.9:1 (a log
   `test/browser/build.js` throws. Recipe: convert `sample/` to CRLF in the working tree for browser
   runs, then `git checkout -- sample/`. A NORMAL clone still smudges (2026-08-17 fix) — do NOT
   renormalize blobs without revisiting the recorded blob-stays-LF rationale.
-  **Next: P6 (server request pipeline), per the roadmap. P7 (tree model) parked — its dev-host
-  gate is mandatory. P9 go/no-go re-evaluated when reached.**
+  P6 shipped 2026-08-22 (plan `2026-08-22-deepen-06-pipeline.md`): the sync invariant is
+  STRUCTURAL — `requestPipeline.js`'s router wraps all seven language-path `custom/*` handlers
+  (withoutDocument is the explicit no-sync variant); the library-index stage order is a frozen,
+  load-validated data table; the five control handlers are deliberately unwrapped. **Ruling:
+  `features.js` KEPT** (require-path stability; `features/core.js` named as the real interface).
+  **Next: P8 (webview pure pieces). P7 (tree model) parked — its dev-host gate is mandatory.
+  P9 go/no-go re-evaluated when reached.**
   **GitHub Actions is account-level DEAD since 2026-08-18** — every run (main included) fails in
   ~5 s with no logs; jobs never start. Likely the Actions spending limit/billing. USER must fix in
   GitHub Settings → Billing; until then the local `REQUIRE_FULL_SUITE=1` gate is the merge gate.
-  Open decisions unchanged: P4 fossil rewrites (`stConverter.js:425-462`), P6 features.js fold,
-  P9 go/no-go.
+  Open decisions remaining: the fossil-rewrite table's eventual removal (user's call, P4 ruling
+  keeps them), P9 go/no-go. (P6's features.js question is RULED: kept.)
 - **Solution→PLC-project Objects hierarchy (0.8.0):** `solutionMap.js` follows the actual TwinCAT
   `.sln`→`.tsproj`→`_Config/PLC/*.xti`→`PrjFilePath` chain in the extension host. Solutions are always
   top-level when present; one solution can contain several PLC projects; same-named solutions get
