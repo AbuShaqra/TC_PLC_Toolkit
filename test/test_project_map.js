@@ -26,12 +26,17 @@ function assert(cond, msg) {
 }
 
 // --- TWINCAT_EXTS must stay in sync with xmlIndexer.js's own copy --------------------------
-// projectMap.js is deliberately dependency-free, so it duplicates xmlIndexer.js's TWINCAT_EXTS
-// rather than importing it. A real bug (found in review): projectMap.js's set was missing
-// `.tctleo` (EnumerationTextList — a real ST enum), so scanWorkspace's Task-2 project-scoped scan
-// silently dropped every .TcTLEO object's symbols from the index, on any project using the
-// feature — a false "not declared" on real code. Asserting the two SETS are equal (not a fixed
-// literal list) catches drift in either direction, not just a re-encoding of this one miss.
+// projectMap.js's TWINCAT_EXTS is now an identity re-export of twincatWorkspace.js's
+// TWINCAT_XML_EXTS (the discovery owner), but xmlIndexer.js still carries its own separate Set
+// literal — so this is still a size+membership pin, not an identity check, until xmlIndexer.js
+// is converted too. A real bug (found in review) is why this pin exists at all: projectMap.js's
+// set was once missing `.tctleo` (EnumerationTextList — a real ST enum), so scanWorkspace's
+// Task-2 project-scoped scan silently dropped every .TcTLEO object's symbols from the index, on
+// any project using the feature — a false "not declared" on real code. Asserting the two SETS are
+// equal (not a fixed literal list) catches drift in either direction, not just a re-encoding of
+// this one miss.
+// TODO(T3): once xmlIndexer.js is converted to import TWINCAT_XML_EXTS from twincatWorkspace.js
+// too, tighten this to an identity check: assert(TWINCAT_EXTS === XML_INDEXER_TWINCAT_EXTS, ...).
 assert(TWINCAT_EXTS.size === XML_INDEXER_TWINCAT_EXTS.size &&
     [...TWINCAT_EXTS].every(ext => XML_INDEXER_TWINCAT_EXTS.has(ext)),
     `projectMap's TWINCAT_EXTS matches xmlIndexer's exactly ` +
