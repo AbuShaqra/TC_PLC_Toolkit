@@ -13,6 +13,6 @@
     "noImplicitThis": false,
     "types": ["node"]
   },
-  "include": ["extension.js", "src/**/*.js"],
-  "exclude": ["node_modules", "media", "scratch", "sample", "**/*.d.ts"]
+  "include": ["extension.js", "src/**/*.js", "media/peekUri.js", "media/diagnosticMarkers.js"],
+  "exclude": ["node_modules", "scratch", "sample", "**/*.d.ts"]
 }

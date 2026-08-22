@@ -27,9 +27,9 @@
     'use strict';
 
     /**
-     * Creates a pending-edit store: the keyed map of not-yet-flushed edits (Manual Sync mode),
-     * today's `pendingEdits` variable (editor.js:35), wrapped so the map itself never leaks out
-     * except through `snapshot`/`takeAll`.
+     * Creates a pending-edit store: the keyed map of not-yet-flushed edits (Manual Sync mode) —
+     * formerly editor.js's local `pendingEdits` variable — wrapped so the map itself never leaks
+     * out except through `snapshot`/`takeAll`.
      * @param {Object|undefined} initial The cached-edits object from the host's 'init' message
      *   (`message.cachedEdits`), or undefined. Absent -> starts empty.
      * @returns {Object} The store: stash/takeAll/count/snapshot.
@@ -40,7 +40,7 @@
         return {
             /**
              * Stashes one edit, keyed by component + block so a later edit to the same block
-             * overwrites rather than accumulates (editor.js:220-225).
+             * overwrites rather than accumulates (formerly inline in editor.js's edit handler).
              * @param {string} componentId
              * @param {string} blockType 'Declaration' or 'ST'.
              * @param {Object} context The component's `xmlContext`, carried verbatim so the host
@@ -54,7 +54,7 @@
             },
             /**
              * Returns every stashed record and empties the store — the flush/save payload
-             * (editor.js:153,167).
+             * (formerly editor.js's manual-sync and manual-save handlers, called separately).
              * @returns {Array<Object>} The stashed records, in no particular order.
              */
             takeAll: function () {
@@ -70,7 +70,7 @@
             },
             /**
              * Returns the raw keyed map itself, for the 'updatePendingEdits' message
-             * (editor.js:227-230 sends the map itself).
+             * (formerly editor.js sent the map itself, inline).
              * @returns {Object} The keyed map (componentId_blockType -> record).
              */
             snapshot: function () {
@@ -81,8 +81,8 @@
 
     /**
      * The status text/className `updateStatusText` derived from the pending-edit count
-     * (editor.js:141-150), minus the DOM writes — call sites still own the transient
-     * 'Saving...' state, which never comes from here.
+     * (formerly inline in editor.js's `updateStatusText`), minus the DOM writes — call sites
+     * still own the transient 'Saving...' state, which never comes from here.
      * @param {number} count `editsStore.count()`.
      * @returns {{text: string, className: string}}
      */
@@ -94,10 +94,11 @@
     }
 
     /**
-     * The init-restore matcher (editor.js:1482-1498 moved verbatim): for each cached edit, finds
-     * the component whose `xmlContext` matches on subType AND subName AND accessorType — the
-     * triple disambiguates get/set accessors, which otherwise share subType and subName — and
-     * overwrites `comp.declaration` (blockType 'Declaration') or `comp.implementation` (else).
+     * The init-restore matcher (formerly editor.js's init handler, moved verbatim): for each
+     * cached edit, finds the component whose `xmlContext` matches on subType AND subName AND
+     * accessorType — the triple disambiguates get/set accessors, which otherwise share subType
+     * and subName — and overwrites `comp.declaration` (blockType 'Declaration') or
+     * `comp.implementation` (else).
      * Mutates `components` in place; returns nothing, exactly as today.
      * @param {Array<Object>} components The loaded components (each with `.xmlContext`,
      *   `.declaration`, `.implementation`).
@@ -135,8 +136,9 @@
     /**
      * Folds a list of pending-edit records into document text, one CDATA replacement per edit.
      * The host-side consumer of the record shape `stash` produces — `src/customEditorProvider.js`
-     * calls this identically from its 'sync-pending' loop (:264-272) and its 'save' loop
-     * (:288-296), which differed only in which variable held the accumulator.
+     * calls this identically from its 'sync-pending' handler and its 'save' handler (currently
+     * one-line calls at :265 and :281; formerly separate multi-line fold loops there that
+     * differed only in which variable held the accumulator).
      * @param {string} text The starting document text.
      * @param {Array<Object>} edits Records `{ context, blockType, content }`, applied in order.
      * @param {ReplaceFn} replace Typically `replaceComponentCdata`; called as

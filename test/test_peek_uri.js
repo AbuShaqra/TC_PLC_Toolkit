@@ -59,6 +59,10 @@ function main() {
         const q = parseQuery(parts.query);
         assert(q.file === 'file:///a.TcPOU' && q.component === 'MAIN.Method1' && q.pane === 'decl',
             `encodePeekParts query round-trips (got ${JSON.stringify(q)})`);
+        // Byte-for-byte: pins key order (file, component, pane) and %-encoding, not just the
+        // decoded values parseQuery hands back above.
+        assert(parts.query === 'file=file%3A%2F%2F%2Fa.TcPOU&component=MAIN.Method1&pane=decl',
+            `encodePeekParts joined query is byte-identical (got ${parts.query})`);
 
         // Defaults
         const defaults = encodePeekParts({});
@@ -88,6 +92,11 @@ function main() {
         assert(q.word === 'MyVar', 'encodeGotoParts carries targetWord');
         assert(q.sl === '4' && q.sc === '2' && q.el === '4' && q.ec === '9', `encodeGotoParts carries range sl/sc/el/ec (got ${JSON.stringify(q)})`);
         assert(q.pane === 'impl' && q.ll === '12', `encodeGotoParts carries pane/ll (got pane=${q.pane}, ll=${q.ll})`);
+        // Byte-for-byte: pins key order (file, component, word, sl, sc, el, ec, pane, ll) and
+        // %-encoding for the full fixture (range + pane + ll all present), not just the decoded
+        // values parseQuery hands back above.
+        assert(parts.query === 'file=file%3A%2F%2F%2Fb.TcPOU&component=MAIN.Method1&word=MyVar&sl=4&sc=2&el=4&ec=9&pane=impl&ll=12',
+            `encodeGotoParts joined query is byte-identical (got ${parts.query})`);
 
         // Without def.uri -> falls back to activeFileUri.
         const noUri = encodeGotoParts({ componentId: 'root' }, 'Word', 'file:///active.TcPOU');

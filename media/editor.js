@@ -265,6 +265,9 @@
         }]);
         editor.focus();
         if (triggerSuggest) {
+            // 'twincat' here is Monaco's trigger() source tag (an arbitrary label for the
+            // triggering feature, shown in telemetry/debugging) — unrelated to peekUri.GOTO_SCHEME,
+            // which is also the string 'twincat'.
             editor.trigger('twincat', 'editor.action.triggerSuggest', {});
         }
     }
@@ -860,6 +863,8 @@
     function closeReferencePeek() {
         for (const ed of [declEditor, implEditor]) {
             if (!ed) continue;
+            // 'twincat' here is Monaco's trigger() source tag, not peekUri.GOTO_SCHEME — the two
+            // happen to share the string, but this argument never touches the URI vocabulary.
             try { ed.trigger('twincat', 'closeReferenceSearch', {}); } catch (e) { /* none open */ }
         }
     }
