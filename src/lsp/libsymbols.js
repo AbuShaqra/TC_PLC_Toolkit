@@ -1375,6 +1375,8 @@ function isBrowserCacheMemberName(namespace, name, index) {
  * @param {string[]} out Accumulator, mutated.
  */
 function collectTmcFiles(dir, out) {
+    // Regular files only — walkFiles' isFile gate deliberately excludes directory/symlink decoys
+    // the old inline walk admitted (see test_twincat_workspace.js's "regular FILES only" check).
     return walkFiles(dir, { skipDirs: PROJECT_SKIP_DIRS, isMatch: (name) => /\.tmc$/i.test(name), out });
 }
 
@@ -1546,6 +1548,8 @@ function indexLibrarySignaturesFromXml(xml, index) {
  * @param {string[]} out Accumulator, mutated.
  */
 function collectSignatureFiles(dir, out) {
+    // Regular files only — walkFiles' isFile gate deliberately excludes directory/symlink decoys
+    // the old inline walk admitted (see test_twincat_workspace.js's "regular FILES only" check).
     return walkFiles(dir, {
         skipDirs: PROJECT_SKIP_DIRS,
         isMatch: (name) => name.toLowerCase() === 'library-signatures.xml',

@@ -168,6 +168,23 @@ check('isMatch receives both the entry name and the full path', () => {
     fs.rmSync(root, { recursive: true, force: true });
 });
 
+check('walker only ever collects regular FILES, never a directory whose name matches isMatch', () => {
+    // Deliberate, tracked tightening (Phase 5 Task 3 fix round): the old inline bodies of
+    // libsymbols.js's collectTmcFiles/collectSignatureFiles matched on `!entry.isDirectory() &&
+    // <pattern>` — the `else` branch of the directory check — with no `isFile()` gate, so a
+    // symlink (or, in principle, any non-directory dirent) whose name matched the pattern was
+    // collected even though it was not a regular file. walkFiles gates every match on
+    // `entry.isFile()`, so a *directory* named to match isMatch is correctly excluded (proven
+    // here); the narrower, harder-to-fixture symlink case is the same gate at work.
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'twincat_workspace_regularonly_'));
+    fs.mkdirSync(path.join(root, 'decoy.tmc')); // a DIRECTORY whose name matches the isMatch pattern
+    fs.writeFileSync(path.join(root, 'real.tmc'), 'x');
+    const found = walkFiles(root, { skipDirs: new Set(), isMatch: (name) => /\.tmc$/i.test(name) });
+    assert.strictEqual(found.length, 1, `expected only the regular file, got ${JSON.stringify(found)}`);
+    assert.strictEqual(found[0], path.join(root, 'real.tmc'));
+    fs.rmSync(root, { recursive: true, force: true });
+});
+
 // =====================================================================================
 // 3. THE MATRIX — exact set memberships and their load-bearing relations
 // =====================================================================================
