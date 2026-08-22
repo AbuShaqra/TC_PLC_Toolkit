@@ -111,6 +111,9 @@ per-suite without aborting on the first failure. The main ones:
 | `test/test_lsp_types_sync.js` | Completions and go-to-definition still resolve correctly through symbol-index nodes that carry only stubbed ranges (`startLine:1,startCol:1,...`, no real declaration position) rather than ranges parsed from source — a defensive regression test, since no current indexer (`xmlIndexer.js` builds real ranges) produces stub nodes any more. |
 | `test/test_method_diagnostics.js` | Diagnostics for a method body analysed on its own, as the webview does — a valid method must produce none once its POU is indexed. |
 | `test/test_memory_bank.js` | The shared memory bank in `.claude/memory/` and the `SessionStart` hook that delivers it. The bank fails silently by nature — a malformed note is skipped, a renamed file breaks the `[[links]]` at it, a dropped hook stops the digest — and sessions just stop being told what the project already learned, which looks exactly like having nothing to tell. Pins the hook contract too (JSON carrying `hookSpecificOutput.additionalContext`, exit 0 whatever happens), since that is what the mechanism depends on and nothing else in the repo enforces it. |
+| `test/test_pending_edits.js` | `media/pendingEdits.js`, the edit-sync state machine: store keying (`${componentId}_${blockType}`), stash-overwrite semantics, `takeAll` clearing, `snapshot` shape, the EXACT status strings/classNames, `applyCachedEdits` matching on the full xmlContext triple (an accessorType mismatch must NOT match — the Get/Set disambiguation), `foldEdits` argument order and text threading, and the pinned ALIASING of `createStore(initial)` (`snapshot() === seed` — editor.js's 'init' path relies on it). |
+| `test/test_peek_uri.js` | `media/peekUri.js`, the synthetic peek/goto URI vocabulary: `parseQuery` against independent %-encoded literals, both encoders' defaults and their exact joined query strings (byte-pinned), `decodeGotoTarget` inverting `encodeGotoParts` incl. the null defaults and `Number()` conversions, and `peekOpenMessage`'s full 'openFile' body incl. the zero-length/null-range fallback to `targetWord.length`. |
+| `test/test_diagnostic_markers.js` | `media/diagnosticMarkers.js`: severity mapping (1→error, 2→warning, else info) through caller-injected sentinel values, other-component diagnostics dropped, `pane === 'decl'` vs everything-else routing (non-'decl' lands in impl — today's contract), and the marker field shape key-for-key. |
 | `test/test_folding.js` | Folding ranges (`media/stFolding.js`). Pins the two reported bugs by name — an unmatched `{endregion}` truncating the enclosing `VAR` fold, and an unindented `{attribute …}` growing a fold arrow of its own — plus the case designed for rather than discovered: `{IF defined(X)}` is a conditional *pragma*, not an `IF` block, and reading it as one leaves an unclosed block that eats every fold below. Also covers keywords inside comments/strings (`$`-escapes included), members named like keywords (`axis.Case`), the separate region/block stacks, every `VAR_*` variant, and a sweep over every pane of every `sample/` object asserting no range is ever out of bounds. |
 | `test/test_pragmas.js` | Pragma classification and the two catalogs, plus the highlighting rules in **both** grammars and the `{region}` folding markers. Pins the split the design rests on: shape decides the category (and therefore the colour), the catalog only enriches — so a user-defined attribute must be scoped exactly like a documented one. Also asserts catalog integrity (no duplicates, every documented entry has an Infosys node id, the curated file holds nothing Infosys documents, every curated entry carries measured counts), that pragma spans are consumed whole in the lexer and both grammars, and that the three folding-marker declarations — `pragmas.js`, `language-configuration.json`, `media/editor.js` — still agree, which nothing else can check because none of them can import the others. |
 | `test/test_plcproj_scope.js` | The index is scoped to the `.plcproj`, not the filesystem: a project's `objectPaths` (from `createProjectMap`) names only the `<Compile>`d objects, so a backup/orphan copy on disk (a duplicate object name, absent from the project) can never win the name-keyed index and steal a real object's references. Includes the no-`.plcproj` empty-map case and a sample-coverage check proving the scoping is a no-op on the ratchet. Predates the project-scoped index (below) — the guarantee it pins now runs through `createProjectMap` per project instead of one workspace-wide union. |
@@ -175,7 +178,11 @@ drops the peek to `References (1)` — the old behaviour — and four assertions
 
 Not in `npm test`, and **Playwright is not in `package.json`**: it is a heavy dependency that CI would
 install on every run for a harness CI cannot execute anyway. Both runners exit 2 with the install
-command when it is absent. **`media/editor.js` has no other test — run both whenever it changes.**
+command when it is absent. **Run both whenever `media/editor.js` changes.** Since Phase 8 the pure
+decisions extracted from it (`media/pendingEdits.js`, `media/peekUri.js`, `media/diagnosticMarkers.js`)
+have plain-Node harnesses in `npm test`, but the wiring, DOM writes and Monaco interplay that remain
+in `editor.js` are still browser-only surface — the extraction narrows what only these runners can
+catch; it does not waive them.
 
 **`test/devhost/`** runs the extension in a **real VS Code window** — the two links that neither the
 Node harnesses nor the browser harness can reach: `vscode.openWith()` URI identity (does a navigation
@@ -337,6 +344,19 @@ media/
   stFolding.js          ST folding ranges from block structure. Dual-mode: a <script> tag in the
                         webview, require()d by extension.js for plain .st files — one algorithm,
                         both editors, no build step. See "Folding" below.
+  pendingEdits.js       The pending-edit/manual-sync state machine (store, status text, cached-edit
+                        restore) — the logic that decides whether a user's edits reach disk. Dual-mode
+                        like stFolding, and ALSO require()d by src/customEditorProvider.js for
+                        foldEdits: the cross-process edit-record shape { context, blockType, content }
+                        is produced (webview stash) and consumed (host fold) by ONE module, so the
+                        contract is stated on both sides of the process boundary.
+  peekUri.js            The webview's synthetic peek/goto URI vocabulary: both schemes, the query
+                        codec, and the 'openFile' message built from a peek click. Dual-mode; pure
+                        (never touches monaco — callers wrap parts in monaco.Uri.from). The peek-model
+                        PATH is minted host-side by livePath.peekPath and embedded verbatim (recorded
+                        ruling: that function stays in src/).
+  diagnosticMarkers.js  Pane split + Monaco marker shape for per-component diagnostics. Dual-mode;
+                        monaco-free via caller-injected severity values.
 ```
 
 ### Objects tree: solution and PLC-project hierarchy
@@ -547,6 +567,12 @@ instead of producing a catalog that quietly disagrees.
 from one copy — `media/editor.js` for the panes, `extension.js` for plain `.st` files — which is why it
 is a dual-mode module (`<script>` tag in the webview, `require()` everywhere else; there is no build
 step to unify them). `test/test_folding.js` exercises it directly.
+
+stFolding established the dual-mode pattern; since Phase 8 there are **four** such modules — the
+other three (`media/pendingEdits.js`, `media/peekUri.js`, `media/diagnosticMarkers.js`, see the file
+map) carry the webview's pure decisions so plain-Node harnesses can reach them, and `pendingEdits.js`
+is additionally required by the extension host, stating the cross-process pending-edit contract on
+both sides.
 
 It replaced Monaco's indentation folding, which is the wrong model for ST — its blocks are
 keyword-delimited — and produced two user-reported bugs:

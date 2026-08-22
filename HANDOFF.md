@@ -4,8 +4,11 @@ Where the work *stands*. Read before starting; keep current (handoff rule in [CL
 100 lines — prune finished items rather than appending, but never drop a real finding to hit it. **Shipped features
 live in git history (PRs/commits); this file keeps the findings that would cost to re-derive.**
 
-**Last verified:** 2026-08-22 (Linux) — `REQUIRE_FULL_SUITE=1 npm test` green (**68/68 harnesses, Coverage: FULL**),
-typecheck clean; dev-host/browser gates not re-run since the 2026-08-18 pass below.
+**Last verified:** 2026-08-22 (Linux, P8 branch head) — `REQUIRE_FULL_SUITE=1 npm test` green (**72/72 harnesses,
+Coverage: FULL**), typecheck clean, and **both browser harnesses re-run in real Chromium** (`run.js` 22 PASS,
+`run_pragmas.js` 38 PASS, exit 0, PASS set identical to the pre-P8 baseline; the baseline needed a favicon-204
+route in `test/browser/serve.js` — some Chromium builds request `/favicon.ico` and the 404 tripped the no-errors
+assertion). Dev-host (G4) not re-run since the 2026-08-18 pass below.
 Earlier full pass 2026-08-18 — 64/64 FULL,
 typecheck clean, **0 diagnostics on the sample**, both browser harnesses green, installed-VS-Code dev-host green
 including a real two-project workspace. The earlier 2026-08-10 pass also verified 0 diagnostics with Beckhoff
@@ -60,8 +63,19 @@ header; the gradient-clipped wordmark is deliberately left at 3.3–4.9:1 (a log
   (withoutDocument is the explicit no-sync variant); the library-index stage order is a frozen,
   load-validated data table; the five control handlers are deliberately unwrapped. **Ruling:
   `features.js` KEPT** (require-path stability; `features/core.js` named as the real interface).
-  **Next: P8 (webview pure pieces). P7 (tree model) parked — its dev-host gate is mandatory.
-  P9 go/no-go re-evaluated when reached.**
+  P8 shipped 2026-08-22 (plan `2026-08-22-deepen-08-webview.md`): the webview's pure decisions are
+  dual-mode modules with Node harnesses — `media/pendingEdits.js` (the edit-sync state machine that
+  decides whether edits reach disk; `foldEdits` is ALSO required by `customEditorProvider`, stating
+  the cross-process edit-record contract on both sides), `media/peekUri.js` (synthetic peek/goto
+  URI vocabulary; **Ruling: `peekPath` stays in `livePath.js`** — the webview only embeds the
+  host-minted path), `media/diagnosticMarkers.js` (pane split, monaco-free via injected
+  severities). editor.js 1573→1411 lines. Trap: the pinned typescript@7.0.2 preview mis-parses
+  Closure-style `function(...)` JSDoc types, and a file enters the tsc program only when first
+  required from `src/` — see `.claude/memory/typecheck-graph-grows-with-requires.md`.
+  **P8's G4 (dev-host) run is DEFERRED to the user's machine — walk
+  `docs/superpowers/plans/2026-08-22-deepen-08-g4-checklist.md` (7 items; the pending-edit
+  round-trip and Manual-Sync save path matter most).**
+  **Next: P9 go/no-go re-evaluation. P7 (tree model) parked — its dev-host gate is mandatory.**
   **GitHub Actions is account-level DEAD since 2026-08-18** — every run (main included) fails in
   ~5 s with no logs; jobs never start. Likely the Actions spending limit/billing. USER must fix in
   GitHub Settings → Billing; until then the local `REQUIRE_FULL_SUITE=1` gate is the merge gate.
