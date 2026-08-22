@@ -28,7 +28,10 @@ const lines = Array.from({ length: 12 }, (_, i) => `line-${i + 1}`);
 assert.strictEqual(paneTextFromUnit(lines, lineMap, 'root', 'decl'), 'line-2\nline-3\nline-4');
 assert.strictEqual(paneTextFromUnit(lines, lineMap, 'method_Run', 'impl'), null);
 
-const encoded = fsPathToFileUri('C:\\PLC Projects\\MAIN#copy.TcPOU');
+const hashFsPath = process.platform === 'win32'
+    ? 'C:\\PLC Projects\\MAIN#copy.TcPOU'
+    : '/PLC Projects/MAIN#copy.TcPOU';
+const encoded = fsPathToFileUri(hashFsPath);
 assert.strictEqual(peekPath(encoded, 'method_Run', 'impl'), '/Run.impl/MAIN#copy.TcPOU');
 assert.strictEqual(peekPath('', 'root', 'decl'), '/root.decl/object');
 
