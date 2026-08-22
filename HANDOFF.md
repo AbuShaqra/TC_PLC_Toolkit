@@ -4,7 +4,7 @@ Where the work *stands*. Read before starting; keep current (handoff rule in [CL
 100 lines — prune finished items rather than appending, but never drop a real finding to hit it. **Shipped features
 live in git history (PRs/commits); this file keeps the findings that would cost to re-derive.**
 
-**Last verified:** 2026-08-22 (Linux) — `REQUIRE_FULL_SUITE=1 npm test` green (**65/65 harnesses, Coverage: FULL**),
+**Last verified:** 2026-08-22 (Linux) — `REQUIRE_FULL_SUITE=1 npm test` green (**66/66 harnesses, Coverage: FULL**),
 typecheck clean; dev-host/browser gates not re-run since the 2026-08-18 pass below.
 Earlier full pass 2026-08-18 — 64/64 FULL,
 typecheck clean, **0 diagnostics on the sample**, both browser harnesses green, installed-VS-Code dev-host green
@@ -47,7 +47,15 @@ header; the gradient-clipped wordmark is deliberately left at 3.3–4.9:1 (a log
   makes the parse-cache clone rule STRUCTURAL (cached parse, private copy every call, template
   unreachable, old read/clone API deleted); componentId hardened (frozen `KINDS`, pinned
   `prop__get` degenerate parse, `accessorIdsFor` — concatenative BY DESIGN, parse misreads
-  `prop_Data_get`). P1's deferred minors are all done. **Next: P3 (livePath), per the roadmap.**
+  `prop_Data_get`). P1's deferred minors are all done.
+  **P3 shipped 2026-08-22** (plan `2026-08-22-deepen-03-livepath.md`): the live language path is one
+  vscode-free module, `src/livePath.js` (assembly, coordinate mapping, unit resolver with injected
+  readFile, peek budgets, and the three collectors); `editorMapping.js` deleted; the five webview
+  handlers are thin adapters; `test_live_path` drives PRODUCTION code (replica deleted) and the new
+  `test_live_path_unit` pins the frozen budget semantics (caps bound file reads/panes, never mapped
+  refs). Suite is now 66/66 FULL. Deferred: swap the unit harness's stand-in resolver for the
+  production `createStResolver` (its only uncovered export) — fold into P4.
+  **Next: P4 (one coordinate dialect), per the roadmap.**
   **GitHub Actions is account-level DEAD since 2026-08-18** — every run (main included) fails in
   ~5 s with no logs; jobs never start. Likely the Actions spending limit/billing. USER must fix in
   GitHub Settings → Billing; until then the local `REQUIRE_FULL_SUITE=1` gate is the merge gate.

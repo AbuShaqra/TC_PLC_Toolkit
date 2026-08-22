@@ -2,8 +2,8 @@
  * @file test_live_path.js
  * @description Validates the live-editor pipeline end to end: assemble full ST (raw) from a
  * component overlay, map a pane-local Monaco cursor to the absolute unit, run LSP providers, and
- * map results/diagnostics back to component panes. Replicates the logic in customEditorProvider.js
- * (which cannot be imported directly because it depends on `vscode`).
+ * map results/diagnostics back to component panes. Drives the production `src/livePath.js` module
+ * directly — the same code the custom editor host runs; nothing here is a replica.
  *
  * The sample-driven tests address named objects of the sample/ project (TcToolkitSample):
  *

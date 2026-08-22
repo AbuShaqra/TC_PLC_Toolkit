@@ -9,7 +9,7 @@ const fs = require('fs');
 const { parseTwinCatXml, replaceComponentCdata } = require('./xmlParser');
 const { updateDocument } = require('./plcProjHelper');
 const { convertXmlToSt, mapDiagnosticsToMonaco } = require('./stConverter');
-const { assembleSt, localToAbsolute, absoluteToLocal, createStResolver, mapDefinition, collectPeekReferences, listExternalReferences } = require('./livePath');
+const { assembleSt, localToAbsolute, createStResolver, mapDefinition, collectPeekReferences, listExternalReferences } = require('./livePath');
 const EXT_VERSION = (() => { try { return require('../package.json').version; } catch (e) { return '?'; } })();
 
 /**
