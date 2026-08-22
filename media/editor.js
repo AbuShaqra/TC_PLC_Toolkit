@@ -83,7 +83,7 @@
                     endLineNumber: d.range.endLineNumber,
                     endColumn: d.range.endColumn
                 };
-                if (d.pane === 'declaration') declMarkers.push(marker);
+                if (d.pane === 'decl') declMarkers.push(marker);
                 else implMarkers.push(marker);
             });
 

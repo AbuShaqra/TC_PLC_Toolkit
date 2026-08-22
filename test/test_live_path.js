@@ -25,12 +25,11 @@
 const fs = require('fs');
 const path = require('path');
 const { parseTwinCatXml } = require('../src/xmlParser');
-const { mapDiagnosticsToMonaco } = require('../src/stConverter');
 const { parseAndIndexDocument, clearWorkspaceIndex, getWorkspaceSymbolIndex } = require('../src/lsp/parser');
 const { indexXmlObject } = require('../src/lsp/xmlIndexer');
 const { provideCompletions, provideDefinition, provideDiagnostics, provideReferences } = require('../src/lsp/features');
 const { reportCoverage } = require('./_coverage');
-const { assembleSt, localToAbsolute, absoluteToLocal, paneTextFromUnit, peekPath } = require('../src/livePath');
+const { assembleSt, localToAbsolute, absoluteToLocal, paneTextFromUnit, peekPath, mapDiagnosticsToLocal } = require('../src/livePath');
 
 const SAMPLE_DIR = path.join(__dirname, '..', 'sample');
 
@@ -198,7 +197,7 @@ sampleTest("TEST 1: FB_Station.Cyclic diagnostics (valid)", () => {
     const { stText, lineMap } = assembleSt(xml, null);
     parseAndIndexDocument(stText, uri); // server re-parses the active unit
     const diags = provideDiagnostics(stText, index, uri);
-    const mapped = mapDiagnosticsToMonaco(diags, lineMap);
+    const mapped = mapDiagnosticsToLocal(diags, lineMap);
 
     // Guard against a vacuous pass: if the lineMap lost the component, "no diagnostics for it" would
     // be trivially true. The block must exist and be non-empty before the count means anything.
@@ -265,8 +264,8 @@ sampleTest('TEST 4: typo in Cyclic maps to impl pane', () => {
     const { stText, lineMap } = assembleSt(xml, { componentId: 'method_Cyclic', impl: brokenImpl });
     parseAndIndexDocument(stText, uri);
     const diags = provideDiagnostics(stText, index, uri);
-    const mapped = mapDiagnosticsToMonaco(diags, lineMap);
-    const cyclicImpl = mapped.filter(m => m.componentId === 'method_Cyclic' && m.pane === 'implementation');
+    const mapped = mapDiagnosticsToLocal(diags, lineMap);
+    const cyclicImpl = mapped.filter(m => m.componentId === 'method_Cyclic' && m.pane === 'impl');
     assert(cyclicImpl.some(m => m.message.includes('bDoesNotExist')),
         `typo bDoesNotExist should be flagged in Cyclic implementation (got ${JSON.stringify(mapped)})`);
     assert(cyclicImpl.length === 1, `exactly one diagnostic expected in Cyclic impl (got ${cyclicImpl.length})`);
@@ -363,8 +362,8 @@ sampleTest('TEST 8: member-access diagnostic maps to the right pane', () => {
     const { stText, lineMap } = assembleSt(xml, { componentId: 'method_Cyclic', impl: brokenImpl });
     parseAndIndexDocument(stText, uri);
     const diags = provideDiagnostics(stText, index, uri);
-    const mapped = mapDiagnosticsToMonaco(diags, lineMap);
-    const m = mapped.find(x => x.componentId === 'method_Cyclic' && x.pane === 'implementation' && x.message.includes('NoSuchMember'));
+    const mapped = mapDiagnosticsToLocal(diags, lineMap);
+    const m = mapped.find(x => x.componentId === 'method_Cyclic' && x.pane === 'impl' && x.message.includes('NoSuchMember'));
     assert(!!m, `member typo flagged in Cyclic implementation (got ${JSON.stringify(mapped.map(x => x.message))})`);
     // 'refCylinder.' is 12 chars, so the member starts at pane line 1, column 13.
     assert(m && m.range.startLineNumber === 1 && m.range.startColumn === 13,

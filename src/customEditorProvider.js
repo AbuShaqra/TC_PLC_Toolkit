@@ -8,8 +8,8 @@ const path = require('path');
 const fs = require('fs');
 const { parseTwinCatXml, replaceComponentCdata } = require('./xmlParser');
 const { updateDocument } = require('./plcProjHelper');
-const { convertXmlToSt, mapDiagnosticsToMonaco } = require('./stConverter');
-const { assembleSt, localToAbsolute, createStResolver, mapDefinition, collectPeekReferences, listExternalReferences } = require('./livePath');
+const { convertXmlToSt } = require('./stConverter');
+const { assembleSt, localToAbsolute, createStResolver, mapDefinition, collectPeekReferences, listExternalReferences, mapDiagnosticsToLocal } = require('./livePath');
 const EXT_VERSION = (() => { try { return require('../package.json').version; } catch (e) { return '?'; } })();
 
 /**
@@ -410,7 +410,7 @@ class TwinCatCustomEditorProvider {
                                 fileUri: message.fileUri
                             });
                             // Map full-unit diagnostics back to per-component panes/lines.
-                            mapped = mapDiagnosticsToMonaco(diagnostics || [], ctx.lineMap);
+                            mapped = mapDiagnosticsToLocal(diagnostics || [], ctx.lineMap);
                         }
                         webviewPanel.webview.postMessage({
                             type: 'custom/diagnosticsResponse',

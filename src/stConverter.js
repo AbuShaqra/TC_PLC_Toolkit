@@ -1,15 +1,31 @@
 /**
  * @file stConverter.js
- * @description Translates TwinCAT XML structures into clean, pure Structured Text (.st) files
- * and maps diagnostics back to Monaco editor relative line numbers.
+ * @description Translates TwinCAT XML structures into Structured Text: clean portable .st output,
+ * or a raw 1:1 unit for the live path (diagnostics mapping lives in livePath.js).
  */
 
 /**
- * When true, cleanDeclarationText/cleanImplementationText pass text through verbatim.
- * Used by the live LSP path so the generated lineMap aligns 1:1 with the raw editor content.
- * Safe as a module flag because convertXmlToSt is fully synchronous.
+ * Portable-output rewrites for structs whose EXTENDS base cannot be resolved by a standard
+ * IEC 61131-3 compiler: the base's fields are flattened into the struct. Data, not code, so the
+ * list is auditable and removable per entry; applied only in clean (non-raw) mode. These names
+ * come from one real project — kept deliberately (recorded ruling, Phase 4): they only shape the
+ * exported .st text, never the live editor path.
  */
-let RAW_MODE = false;
+const STRUCT_FLATTEN_REWRITES = Object.freeze([
+    // Rows are frozen too, so "auditable data" means immutable data, not just a fixed-length list.
+    {
+        typeName: 'ST_MES_Interlocking_Data', baseName: 'ST_MES_Basic_Data',
+        fields: '\n\t// Fields from ST_MES_Basic_Data\n\tsOperationNumber\t\t: STRING(15);\n\tsMaterialNumber  \t\t: STRING(15);\n\tsOperator\t\t\t\t: STRING(25);\n\tsWorkstationName \t\t: STRING(25);\n\tsOrderNumber\t\t\t: STRING(15);\n\tsTestMethodName\t\t\t: eMESTestMethodNames;\n\tsTestProgramName \t\t: STRING(50);\n\tsTestEquipmentNumber \t: STRING(15);'
+    },
+    {
+        typeName: 'ST_MES_TestUnit_Data', baseName: 'ST_MES_Basic_Data',
+        fields: '\n\t// Fields from ST_MES_Basic_Data\n\tsOperationNumber\t\t: STRING(15);\n\tsMaterialNumber  \t\t: STRING(15);\n\tsOperator\t\t\t\t: STRING(25);\n\tsWorkstationName \t\t: STRING(25);\n\tsOrderNumber\t\t\t: STRING(15);\n\tsTestMethodName\t\t\t: eMESTestMethodNames;\n\tsTestProgramName \t\t: STRING(50);\n\tsTestEquipmentNumber \t: STRING(15);'
+    },
+    {
+        typeName: 'ST_AxisErrors', baseName: 'ST_Errors',
+        fields: '\n\t// Fields from ST_Errors\n\tbError\t\t\t\t: BOOL;\n\tnExternalErrorID\t: UDINT;\n\teErrorState\t\t\t: E_error_state := E_error_state.no_error;'
+    }
+].map(row => Object.freeze(row)));
 
 /**
  * Converts a parsed TwinCAT XML object into standard Structured Text.
@@ -19,7 +35,7 @@ let RAW_MODE = false;
  * @returns {Object} { stText: string, lineMap: Object }
  */
 function convertXmlToSt(parsedXml, options = {}) {
-    RAW_MODE = !!options.raw;
+    const raw = !!options.raw;
     const lines = [];
     const lineMap = {};
 
@@ -58,14 +74,14 @@ function convertXmlToSt(parsedXml, options = {}) {
 
         // Main POU Declaration
         const declStart = getLineCount() + 1;
-        append(cleanDeclarationText(decl));
+        append(cleanDeclarationText(decl, raw));
         const declEnd = getLineCount();
 
         append(``);
 
         // Main POU Implementation
         const implStart = getLineCount() + 1;
-        append(cleanImplementationText(root.implementation || ''));
+        append(cleanImplementationText(root.implementation || '', raw));
         const implEnd = getLineCount();
 
         lineMap['root'] = {
@@ -87,13 +103,13 @@ function convertXmlToSt(parsedXml, options = {}) {
             for (const comp of subComponents) {
                 if (comp.type === 'Method') {
                     const startDecl = getLineCount() + 1;
-                    append(cleanDeclarationText(comp.declaration || ''));
+                    append(cleanDeclarationText(comp.declaration || '', raw));
                     const endDecl = getLineCount();
 
                     append(``);
 
                     const startImpl = getLineCount() + 1;
-                    append(cleanImplementationText(comp.implementation || ''));
+                    append(cleanImplementationText(comp.implementation || '', raw));
                     const endImpl = getLineCount();
 
                     append(`END_METHOD`);
@@ -111,7 +127,7 @@ function convertXmlToSt(parsedXml, options = {}) {
                     append(``);
 
                     const startImpl = getLineCount() + 1;
-                    append(cleanImplementationText(comp.implementation || ''));
+                    append(cleanImplementationText(comp.implementation || '', raw));
                     const endImpl = getLineCount();
 
                     append(`END_ACTION`);
@@ -131,7 +147,7 @@ function convertXmlToSt(parsedXml, options = {}) {
                     const propSet = subComponents.find(c => c.type === 'Set' && c.xmlContext.subName === propName);
 
                     const startDecl = getLineCount() + 1;
-                    append(cleanDeclarationText(propSignature ? (propSignature.declaration || '') : `PROPERTY ${propName} : INT`));
+                    append(cleanDeclarationText(propSignature ? (propSignature.declaration || '') : `PROPERTY ${propName} : INT`, raw));
                     const endDecl = getLineCount();
 
                     if (propSignature) {
@@ -145,7 +161,7 @@ function convertXmlToSt(parsedXml, options = {}) {
                         const getDeclStart = getLineCount() + 1;
                         append(`GET`);
                         if (propGet.declaration) {
-                            const cleanedDecl = cleanDeclarationText(propGet.declaration);
+                            const cleanedDecl = cleanDeclarationText(propGet.declaration, raw);
                             if (cleanedDecl.replace(/\s/g, '') !== 'VAREND_VAR' && cleanedDecl.trim() !== '') {
                                 append(cleanedDecl);
                             }
@@ -155,7 +171,7 @@ function convertXmlToSt(parsedXml, options = {}) {
                         append(``);
 
                         const getImplStart = getLineCount() + 1;
-                        append(cleanImplementationText(propGet.implementation || ''));
+                        append(cleanImplementationText(propGet.implementation || '', raw));
                         const getImplEnd = getLineCount();
 
                         append(`END_GET`);
@@ -170,7 +186,7 @@ function convertXmlToSt(parsedXml, options = {}) {
                         const setDeclStart = getLineCount() + 1;
                         append(`SET`);
                         if (propSet.declaration) {
-                            const cleanedDecl = cleanDeclarationText(propSet.declaration);
+                            const cleanedDecl = cleanDeclarationText(propSet.declaration, raw);
                             if (cleanedDecl.replace(/\s/g, '') !== 'VAREND_VAR' && cleanedDecl.trim() !== '') {
                                 append(cleanedDecl);
                             }
@@ -180,7 +196,7 @@ function convertXmlToSt(parsedXml, options = {}) {
                         append(``);
 
                         const setImplStart = getLineCount() + 1;
-                        append(cleanImplementationText(propSet.implementation || ''));
+                        append(cleanImplementationText(propSet.implementation || '', raw));
                         const setImplEnd = getLineCount();
 
                         append(`END_SET`);
@@ -215,7 +231,7 @@ function convertXmlToSt(parsedXml, options = {}) {
     } else if (parsedXml.rootType === 'Itf') {
         // Interface Definition
         const declStart = getLineCount() + 1;
-        append(cleanDeclarationText(root.declaration || ''));
+        append(cleanDeclarationText(root.declaration || '', raw));
         const declEnd = getLineCount();
 
         lineMap['root'] = {
@@ -232,7 +248,7 @@ function convertXmlToSt(parsedXml, options = {}) {
             if (comp.type === 'Method') {
                 const startDecl = getLineCount() + 1;
                 let decl = comp.declaration || '';
-                append(cleanDeclarationText(decl));
+                append(cleanDeclarationText(decl, raw));
                 append(`END_METHOD`);
                 const endDecl = getLineCount();
                 append(``);
@@ -250,7 +266,7 @@ function convertXmlToSt(parsedXml, options = {}) {
 
                 const startDecl = getLineCount() + 1;
                 let decl = propSignature ? (propSignature.declaration || '') : `PROPERTY ${propName} : INT`;
-                append(cleanDeclarationText(decl));
+                append(cleanDeclarationText(decl, raw));
                 append(`END_PROPERTY`);
                 const endDecl = getLineCount();
 
@@ -269,7 +285,7 @@ function convertXmlToSt(parsedXml, options = {}) {
     } else if (parsedXml.rootType === 'GVL' || parsedXml.rootType === 'DUT') {
         // GVL or DUT
         const declStart = getLineCount() + 1;
-        append(cleanDeclarationText(root.declaration || ''));
+        append(cleanDeclarationText(root.declaration || '', raw));
         const declEnd = getLineCount();
 
         lineMap['root'] = {
@@ -285,73 +301,16 @@ function convertXmlToSt(parsedXml, options = {}) {
 }
 
 /**
- * Maps standard VS Code diagnostics for a combined .st file to relative editor components.
- * @param {Array<Object>} diagnostics The diagnostics array from VS Code.
- * @param {Object} lineMap The line offset mapping dictionary.
- * @returns {Array<Object>} List of mapped diagnostics with target componentId, pane, and Monaco range.
- */
-function mapDiagnosticsToMonaco(diagnostics, lineMap) {
-    const mapped = [];
-
-    for (const diag of diagnostics) {
-        // VS Code line numbers are 0-indexed, translate to 1-indexed.
-        const line = diag.range.start.line + 1;
-        const endLine = diag.range.end.line + 1;
-
-        for (const [componentId, blocks] of Object.entries(lineMap)) {
-            // Check declaration block
-            if (blocks.decl && line >= blocks.decl.start && line <= blocks.decl.end) {
-                const relativeStartLine = line - blocks.decl.start + 1;
-                const relativeEndLine = endLine - blocks.decl.start + 1;
-
-                mapped.push({
-                    componentId,
-                    pane: 'declaration',
-                    severity: diag.severity,
-                    message: diag.message,
-                    range: {
-                        startLineNumber: relativeStartLine,
-                        startColumn: diag.range.start.character + 1,
-                        endLineNumber: relativeEndLine,
-                        endColumn: diag.range.end.character + 1
-                    }
-                });
-                break;
-            }
-            // Check implementation block
-            if (blocks.impl && line >= blocks.impl.start && line <= blocks.impl.end) {
-                const relativeStartLine = line - blocks.impl.start + 1;
-                const relativeEndLine = endLine - blocks.impl.start + 1;
-
-                mapped.push({
-                    componentId,
-                    pane: 'implementation',
-                    severity: diag.severity,
-                    message: diag.message,
-                    range: {
-                        startLineNumber: relativeStartLine,
-                        startColumn: diag.range.start.character + 1,
-                        endLineNumber: relativeEndLine,
-                        endColumn: diag.range.end.character + 1
-                    }
-                });
-                break;
-            }
-        }
-    }
-
-    return mapped;
-}
-
-/**
  * Cleans TwinCAT-specific syntax elements from Structured Text declarations
  * to make them fully compliant with standard IEC 61131-3 compilers.
  * @param {string} declText Original declaration text.
+ * @param {boolean} [raw] When true, pass declText through verbatim (used by the live LSP path so
+ *   the generated lineMap aligns 1:1 with the raw editor content).
  * @returns {string} Cleaned declaration text.
  */
-function cleanDeclarationText(declText) {
+function cleanDeclarationText(declText, raw) {
     if (!declText) return '';
-    if (RAW_MODE) return declText;
+    if (raw) return declText;
     let text = declText;
 
     // Strip access modifiers (PUBLIC, PROTECTED, PRIVATE, INTERNAL) globally
@@ -421,18 +380,13 @@ function cleanDeclarationText(declText) {
         }
     }
 
-    // 6. Flat struct inheritance (replace EXTENDS ParentStruct with flattened fields)
-    if (/\bTYPE\s+ST_MES_Interlocking_Data\s+EXTENDS\s+ST_MES_Basic_Data\s*:/i.test(text)) {
-        text = text.replace(/\bTYPE\s+ST_MES_Interlocking_Data\s+EXTENDS\s+ST_MES_Basic_Data\s*:/i, 'TYPE ST_MES_Interlocking_Data :');
-        text = text.replace(/\bSTRUCT\b/i, `STRUCT\n\t// Fields from ST_MES_Basic_Data\n\tsOperationNumber\t\t: STRING(15);\n\tsMaterialNumber  \t\t: STRING(15);\n\tsOperator\t\t\t\t: STRING(25);\n\tsWorkstationName \t\t: STRING(25);\n\tsOrderNumber\t\t\t: STRING(15);\n\tsTestMethodName\t\t\t: eMESTestMethodNames;\n\tsTestProgramName \t\t: STRING(50);\n\tsTestEquipmentNumber \t: STRING(15);`);
-    }
-    if (/\bTYPE\s+ST_MES_TestUnit_Data\s+EXTENDS\s+ST_MES_Basic_Data\s*:/i.test(text)) {
-        text = text.replace(/\bTYPE\s+ST_MES_TestUnit_Data\s+EXTENDS\s+ST_MES_Basic_Data\s*:/i, 'TYPE ST_MES_TestUnit_Data :');
-        text = text.replace(/\bSTRUCT\b/i, `STRUCT\n\t// Fields from ST_MES_Basic_Data\n\tsOperationNumber\t\t: STRING(15);\n\tsMaterialNumber  \t\t: STRING(15);\n\tsOperator\t\t\t\t: STRING(25);\n\tsWorkstationName \t\t: STRING(25);\n\tsOrderNumber\t\t\t: STRING(15);\n\tsTestMethodName\t\t\t: eMESTestMethodNames;\n\tsTestProgramName \t\t: STRING(50);\n\tsTestEquipmentNumber \t: STRING(15);`);
-    }
-    if (/\bTYPE\s+ST_AxisErrors\s+EXTENDS\s+ST_Errors\s*:/i.test(text)) {
-        text = text.replace(/\bTYPE\s+ST_AxisErrors\s+EXTENDS\s+ST_Errors\s*:/i, 'TYPE ST_AxisErrors :');
-        text = text.replace(/\bSTRUCT\b/i, `STRUCT\n\t// Fields from ST_Errors\n\tbError\t\t\t\t: BOOL;\n\tnExternalErrorID\t: UDINT;\n\teErrorState\t\t\t: E_error_state := E_error_state.no_error;`);
+    // 6. Flatten struct inheritance the portable output cannot resolve (see table above).
+    for (const rw of STRUCT_FLATTEN_REWRITES) {
+        const headRe = new RegExp(`\\bTYPE\\s+${rw.typeName}\\s+EXTENDS\\s+${rw.baseName}\\s*:`, 'i');
+        if (headRe.test(text)) {
+            text = text.replace(headRe, `TYPE ${rw.typeName} :`);
+            text = text.replace(/\bSTRUCT\b/i, `STRUCT${rw.fields}`);
+        }
     }
 
     return text;
@@ -442,13 +396,15 @@ function cleanDeclarationText(declText) {
  * Cleans TwinCAT-specific syntax elements from Structured Text implementations
  * to make them fully compliant with standard IEC 61131-3 compilers.
  * @param {string} implText Original implementation text.
+ * @param {boolean} [raw] When true, pass implText through verbatim (used by the live LSP path so
+ *   the generated lineMap aligns 1:1 with the raw editor content).
  * @returns {string} Cleaned implementation text.
  */
-function cleanImplementationText(implText) {
+function cleanImplementationText(implText, raw) {
     if (!implText) return '';
-    if (RAW_MODE) return implText;
+    if (raw) return implText;
     let text = implText;
-    
+
     // Translate REF= to :=
     text = text.replace(/\bREF\s*=\s*/g, ':= ');
 
@@ -456,7 +412,9 @@ function cleanImplementationText(implText) {
     text = text.replace(/\bAND_THEN\b/gi, 'AND');
     text = text.replace(/\bOR_ELSE\b/gi, 'OR');
 
-    // Rewrite fbMCPower calls with Override keyword to use positional argument passing
+    // Rewrite fbMCPower calls with Override keyword to use positional argument passing.
+    // Project-specific portability rewrite kept by the same recorded ruling as
+    // STRUCT_FLATTEN_REWRITES (Phase 4) — one entry, so it stays a named block, not a table.
     text = text.replace(/fbMCPower\s*\(\s*Axis\s*:=\s*([a-zA-Z0-9_]+)\s*,\s*Override\s*:=\s*([a-zA-Z0-9_]+)\s*,\s*Busy\s*=>\s*([\s\S]*?)\)/gi, (match, axis, override, rest) => {
         return `fbMCPower(\n\t${axis},\n\tfbMCPower.Enable,\n\tfbMCPower.Enable_Positive,\n\tfbMCPower.Enable_Negative,\n\t${override},\n\tBusy => ${rest.trim()})`;
     });
@@ -476,5 +434,5 @@ function cleanImplementationText(implText) {
 
 module.exports = {
     convertXmlToSt,
-    mapDiagnosticsToMonaco
+    STRUCT_FLATTEN_REWRITES
 };

@@ -225,6 +225,75 @@ async function collectPeekReferences(refs, { activeUri, resolveSt, maxPanes = PE
 }
 
 /**
+ * Maps standard VS Code diagnostics for a combined ST unit back to relative editor components.
+ * Transcribed from the diagnostics-mapping loop that used to live in stConverter.js (Phase 4 Task 2)
+ * with exactly two token changes: 'declaration'/'implementation' -> 'decl'/'impl', so the whole
+ * system speaks one pane dialect. Behaviour is otherwise unchanged, including two things worth
+ * calling out:
+ *   - a diagnostic outside every decl/impl block (e.g. on a line the unit only uses to glue
+ *     components together) is silently skipped — never invented into a bogus pane;
+ *   - when a diagnostic's end line falls past its block's end (a multi-line diagnostic that runs off
+ *     the block), the end line is still expressed relative to the SAME block's start as the begin
+ *     line, so it comes out as a relative line number past the pane's own length rather than being
+ *     reclassified into whatever block happens to follow.
+ * @param {Array<Object>} diagnostics The diagnostics array from VS Code.
+ * @param {Object} lineMap The line offset mapping dictionary.
+ * @returns {Array<Object>} List of mapped diagnostics with target componentId, pane, and Monaco range.
+ */
+function mapDiagnosticsToLocal(diagnostics, lineMap) {
+    const mapped = [];
+
+    for (const diag of diagnostics) {
+        // VS Code line numbers are 0-indexed, translate to 1-indexed.
+        const line = diag.range.start.line + 1;
+        const endLine = diag.range.end.line + 1;
+
+        for (const [componentId, blocks] of Object.entries(lineMap)) {
+            // Check declaration block
+            if (blocks.decl && line >= blocks.decl.start && line <= blocks.decl.end) {
+                const relativeStartLine = line - blocks.decl.start + 1;
+                const relativeEndLine = endLine - blocks.decl.start + 1;
+
+                mapped.push({
+                    componentId,
+                    pane: 'decl',
+                    severity: diag.severity,
+                    message: diag.message,
+                    range: {
+                        startLineNumber: relativeStartLine,
+                        startColumn: diag.range.start.character + 1,
+                        endLineNumber: relativeEndLine,
+                        endColumn: diag.range.end.character + 1
+                    }
+                });
+                break;
+            }
+            // Check implementation block
+            if (blocks.impl && line >= blocks.impl.start && line <= blocks.impl.end) {
+                const relativeStartLine = line - blocks.impl.start + 1;
+                const relativeEndLine = endLine - blocks.impl.start + 1;
+
+                mapped.push({
+                    componentId,
+                    pane: 'impl',
+                    severity: diag.severity,
+                    message: diag.message,
+                    range: {
+                        startLineNumber: relativeStartLine,
+                        startColumn: diag.range.start.character + 1,
+                        endLineNumber: relativeEndLine,
+                        endColumn: diag.range.end.character + 1
+                    }
+                });
+                break;
+            }
+        }
+    }
+
+    return mapped;
+}
+
+/**
  * Resolves a Find References answer to a flat list of navigable items for the References panel:
  * (file, component, line text, target word). Cross-file references can't render in the webview
  * peek, so the panel is the only place they're listed.
@@ -278,6 +347,7 @@ module.exports = {
     mapDefinition,
     collectPeekReferences,
     listExternalReferences,
+    mapDiagnosticsToLocal,
     PEEK_MAX_PANES,
     PEEK_MAX_TEXT_BYTES
 };

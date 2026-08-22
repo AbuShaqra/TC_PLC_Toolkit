@@ -252,7 +252,10 @@ src/
                         LSP answer into what the webview/panel need — mapDefinition (go-to-def),
                         collectPeekReferences (peek panes + mapped refs, budget-bounded by
                         PEEK_MAX_PANES/PEEK_MAX_TEXT_BYTES), listExternalReferences (the References
-                        panel's flat item list). Owns what editorMapping.js used to plus the
+                        panel's flat item list) — plus mapDiagnosticsToLocal, the diagnostics→pane
+                        range mapping (moved out of stConverter, answering in the same
+                        'decl'/'impl' dialect as everything else here).
+                        Owns what editorMapping.js used to plus the
                         assembly/resolver/collection logic that lived in customEditorProvider.js;
                         the host and the harnesses now drive the SAME functions.
   fileUri               Central Windows path ↔ file URI conversion and comparison boundary
