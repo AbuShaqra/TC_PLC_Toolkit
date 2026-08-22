@@ -32,7 +32,7 @@
     let currentDeclPct = 50;
 
     let isAutoSync = true;
-    let pendingEdits = {}; // key -> { context, blockType, content }
+    let editsStore = pendingEditsCore.createStore();
     let activeFileUri = '';
     const pendingRequests = new Map();
 
@@ -69,23 +69,12 @@
             // Ignore stale responses if the user switched components meanwhile.
             if (requestedComponentId !== activeComponentId) return;
 
-            const declMarkers = [];
-            const implMarkers = [];
-
-            (diags || []).forEach(d => {
-                if (d.componentId !== activeComponentId) return;
-                const marker = {
-                    severity: d.severity === 1 ? monaco.MarkerSeverity.Error
-                        : (d.severity === 2 ? monaco.MarkerSeverity.Warning : monaco.MarkerSeverity.Info),
-                    message: d.message,
-                    startLineNumber: d.range.startLineNumber,
-                    startColumn: d.range.startColumn,
-                    endLineNumber: d.range.endLineNumber,
-                    endColumn: d.range.endColumn
-                };
-                if (d.pane === 'decl') declMarkers.push(marker);
-                else implMarkers.push(marker);
-            });
+            const severities = {
+                error: monaco.MarkerSeverity.Error,
+                warning: monaco.MarkerSeverity.Warning,
+                info: monaco.MarkerSeverity.Info
+            };
+            const { decl: declMarkers, impl: implMarkers } = diagnosticMarkers.splitDiagnostics(diags, activeComponentId, severities);
 
             if (paneDeclEl.style.display !== 'none') {
                 monaco.editor.setModelMarkers(declEditor.getModel(), 'st-validator', declMarkers);
@@ -139,18 +128,13 @@
     }
 
     function updateStatusText() {
-        const pendingCount = Object.keys(pendingEdits).length;
-        if (pendingCount > 0) {
-            statusEl.textContent = `Unsaved Changes (${pendingCount})`;
-            statusEl.className = 'status-indicator modified';
-        } else {
-            statusEl.textContent = 'Synced';
-            statusEl.className = 'status-indicator';
-        }
+        const status = pendingEditsCore.statusFor(editsStore.count());
+        statusEl.textContent = status.text;
+        statusEl.className = status.className;
     }
 
     function flushPendingEdits() {
-        const edits = Object.values(pendingEdits);
+        const edits = editsStore.takeAll();
         if (edits.length > 0) {
             statusEl.textContent = 'Saving...';
             statusEl.className = 'status-indicator modified';
@@ -158,20 +142,18 @@
                 type: 'sync-pending',
                 edits: edits
             });
-            pendingEdits = {};
         }
         updateStatusText();
     }
 
     function triggerManualSave() {
-        const edits = Object.values(pendingEdits);
+        const edits = editsStore.takeAll();
         statusEl.textContent = 'Saving...';
         statusEl.className = 'status-indicator modified';
         vscode.postMessage({
             type: 'save',
             edits: edits
         });
-        pendingEdits = {};
         updateStatusText();
     }
 
@@ -217,16 +199,11 @@
                 });
             }, 200);
         } else {
-            const key = `${activeComponentId}_${blockType}`;
-            pendingEdits[key] = {
-                context: activeComp.xmlContext,
-                blockType: blockType,
-                content: val
-            };
+            editsStore.stash(activeComponentId, blockType, activeComp.xmlContext, val);
             updateStatusText();
             vscode.postMessage({
                 type: 'updatePendingEdits',
-                pendingEdits: pendingEdits
+                pendingEdits: editsStore.snapshot()
             });
         }
     }
@@ -288,6 +265,9 @@
         }]);
         editor.focus();
         if (triggerSuggest) {
+            // 'twincat' here is Monaco's trigger() source tag (an arbitrary label for the
+            // triggering feature, shown in telemetry/debugging) — unrelated to peekUri.GOTO_SCHEME,
+            // which is also the string 'twincat'.
             editor.trigger('twincat', 'editor.action.triggerSuggest', {});
         }
     }
@@ -511,7 +491,7 @@
                 // Never answer for a hidden peek model: buildBridgeContext maps a position through
                 // the ACTIVE component's panes, so a position from some other component's model
                 // would be translated against the wrong block entirely.
-                if (model.uri && model.uri.scheme === PEEK_SCHEME) return { suggestions: [] };
+                if (model.uri && model.uri.scheme === peekUri.PEEK_SCHEME) return { suggestions: [] };
                 const word = model.getWordUntilPosition(position);
                 const range = {
                     startLineNumber: position.lineNumber,
@@ -562,7 +542,7 @@
         // the editor opener registered below performs the jumps Monaco cannot do on its own.
         monaco.languages.registerDefinitionProvider('iecst', {
             provideDefinition: async function(model, position) {
-                if (model.uri && model.uri.scheme === PEEK_SCHEME) return null; // see the completion guard
+                if (model.uri && model.uri.scheme === peekUri.PEEK_SCHEME) return null; // see the completion guard
                 const word = model.getWordAtPosition(position);
                 if (!word) return null;
 
@@ -605,9 +585,9 @@
                 }
 
                 // Other component / other file: nothing here is backed by a Monaco model, so hand
-                // back a synthetic location that says where to go (see GOTO_SCHEME).
+                // back a synthetic location that says where to go (see peekUri.GOTO_SCHEME).
                 return {
-                    uri: encodeGotoUri(def, targetWord),
+                    uri: monaco.Uri.from(peekUri.encodeGotoParts(def, targetWord, activeFileUri)),
                     range: new monaco.Range(1, 1, 1, 1)
                 };
             }
@@ -621,11 +601,11 @@
         if (typeof monaco.editor.registerEditorOpener === 'function') {
             monaco.editor.registerEditorOpener({
                 openCodeEditor: function(source, resource, selectionOrPosition) {
-                    if (resource.scheme === GOTO_SCHEME) {
-                        openGotoTarget(decodeGotoUri(resource));
+                    if (resource.scheme === peekUri.GOTO_SCHEME) {
+                        openGotoTarget(peekUri.decodeGotoTarget(resource.query));
                         return true;
                     }
-                    if (resource.scheme === PEEK_SCHEME) {
+                    if (resource.scheme === peekUri.PEEK_SCHEME) {
                         openPeekTarget(resource, selectionOrPosition, lastPeekWord);
                         return true;
                     }
@@ -652,7 +632,7 @@
         // Register Reference Provider (Find References)
         monaco.languages.registerReferenceProvider('iecst', {
             provideReferences: async function(model, position) {
-                if (model.uri && model.uri.scheme === PEEK_SCHEME) return []; // see the completion guard
+                if (model.uri && model.uri.scheme === peekUri.PEEK_SCHEME) return []; // see the completion guard
                 const response = await sendBridgeRequest('custom/references', buildBridgeContext(model, position));
                 const refs = (response && response.references) || [];
                 const panes = (response && response.panes) || [];
@@ -688,7 +668,7 @@
                     if (!pane) return null;
                     let m = null;
                     try {
-                        const uri = encodePeekUri(pane);
+                        const uri = monaco.Uri.from(peekUri.encodePeekParts(pane));
                         const key = uri.toString();
                         // Reuse rather than recreate: createModel throws on a URI that already has
                         // one, and a repeated search on the same symbol asks for the same panes.
@@ -870,31 +850,9 @@
     // (e.g. 'Init' must not land inside 'InitDone'). Matches Monaco's default separator set.
     const WORD_SEPARATORS = '`~!@#$%^&*()-=+[{]}\\|;:\'",.<>/?';
 
-    // ---------------------------------------------------------------------------------------
-    // Go to Definition targets
-    //
-    // A definition can land in another component, another pane or another file — none of which
-    // has a Monaco model in this webview. Monaco cannot open such a location itself, so the
-    // definition provider encodes the destination into a synthetic URI:
-    //
-    //     twincat:/goto?file=<fileUri>&component=<id>&word=<name>[&sl=&sc=&el=&ec=][&pane=&ll=]
-    //
-    // and the editor opener (registered next to the provider) decodes it and does the jump:
-    // same file -> loadComponent + highlightTarget; other file -> 'openFile' to the extension.
-    // sl/sc/el/ec carry the raw LSP range (0-indexed), which the extension host needs for the
-    // generated `.st` navigation branch of `twincat.openComponent`; pane/ll carry the same target
-    // expressed as a pane and a line WITHIN it, which is what selecting inside a component needs.
-    // Both are the host's answer, mapped through absoluteToLocal — never a search for the name.
-    // ---------------------------------------------------------------------------------------
-    const GOTO_SCHEME = 'twincat';
-
-    /**
-     * Scheme for the read-only models that back references-peek entries outside the two live panes.
-     * Monaco throws "Model not found" for a Location whose URI has no loaded model, which is why the
-     * peek used to be limited to the active component — so every other pane gets a hidden model
-     * holding just that pane's text, built from what the extension sends with the reference list.
-     */
-    const PEEK_SCHEME = 'twincat-peek';
+    // The synthetic peek/goto URI scheme constants and their encode/decode logic live in
+    // media/peekUri.js (loaded as the `peekUri` global) — see that file's header comment for the
+    // `twincat:/goto?...` vocabulary this webview and its editor opener speak.
 
     /**
      * Dismisses an open references peek in either pane. Safe to call when none is open.
@@ -905,6 +863,8 @@
     function closeReferencePeek() {
         for (const ed of [declEditor, implEditor]) {
             if (!ed) continue;
+            // 'twincat' here is Monaco's trigger() source tag, not peekUri.GOTO_SCHEME — the two
+            // happen to share the string, but this argument never touches the URI vocabulary.
             try { ed.trigger('twincat', 'closeReferenceSearch', {}); } catch (e) { /* none open */ }
         }
     }
@@ -934,22 +894,6 @@
     }
 
     /**
-     * The synthetic URI for one peek pane. Carries the file/component/pane so a click can be routed
-     * back to the real editor; the exact line and column come from the click position itself, so
-     * one model serves every occurrence inside that pane.
-     * @param {Object} pane { uri, componentId, pane, path } as sent by the extension.
-     * @returns {Object} A monaco.Uri with the PEEK_SCHEME scheme.
-     */
-    function encodePeekUri(pane) {
-        const query = [
-            'file=' + encodeURIComponent(pane.uri || ''),
-            'component=' + encodeURIComponent(pane.componentId || 'root'),
-            'pane=' + encodeURIComponent(pane.pane || 'impl')
-        ].join('&');
-        return monaco.Uri.from({ scheme: PEEK_SCHEME, path: pane.path || '/reference', query: query });
-    }
-
-    /**
      * Opens the real editor for a click on a peek entry backed by a hidden model.
      *
      * Routes through twincat.openComponent with the exact pane + local line + columns, the same
@@ -960,31 +904,7 @@
      * @param {string} targetWord The searched word, for the fallback highlight.
      */
     function openPeekTarget(resource, selectionOrPosition, targetWord) {
-        const q = {};
-        (resource.query || '').split('&').forEach(pair => {
-            if (!pair) return;
-            const eq = pair.indexOf('=');
-            q[eq < 0 ? pair : pair.substring(0, eq)] = eq < 0 ? '' : decodeURIComponent(pair.substring(eq + 1));
-        });
-        const range = toRange(selectionOrPosition);
-        const line0 = (range ? range.startLineNumber : 1) - 1;
-        const startCol0 = (range ? range.startColumn : 1) - 1;
-        // Monaco may hand back a bare position, which toRange widens into a zero-length range —
-        // that would place the caret but select nothing, so fall back to the word's own length.
-        let endCol0 = range ? range.endColumn - 1 : startCol0;
-        if (endCol0 <= startCol0) endCol0 = startCol0 + (targetWord || '').length;
-        vscode.postMessage({
-            type: 'openFile',
-            fileUri: q.file || activeFileUri,
-            componentId: q.component || 'root',
-            range: {
-                pane: q.pane || null,
-                localLine: line0,
-                start: { line: line0, character: startCol0 },
-                end: { line: line0, character: endCol0 }
-            },
-            targetWord: targetWord || ''
-        });
+        vscode.postMessage(peekUri.peekOpenMessage(resource.query, toRange(selectionOrPosition), targetWord, activeFileUri));
         // Dismiss the peek we just navigated out of. loadComponent() also does this, but only for a
         // target in THIS file — a cross-file hit opens a different document and never comes back
         // through it, which would leave this webview holding an orphaned widget. Deferred a tick so
@@ -993,70 +913,9 @@
     }
 
     /**
-     * Encodes an LSP definition into a synthetic navigation URI.
-     * @param {Object} def LSP definition { uri, componentId, range, targetWord }.
-     * @param {string} targetWord The word to select once the target is shown.
-     * @returns {Object} A monaco.Uri with the GOTO_SCHEME scheme.
-     */
-    function encodeGotoUri(def, targetWord) {
-        const parts = [
-            'file=' + encodeURIComponent(def.uri || activeFileUri),
-            'component=' + encodeURIComponent(def.componentId || 'root'),
-            'word=' + encodeURIComponent(targetWord || '')
-        ];
-        if (def.range && def.range.start && def.range.end) {
-            parts.push('sl=' + def.range.start.line);
-            parts.push('sc=' + def.range.start.character);
-            parts.push('el=' + def.range.end.line);
-            parts.push('ec=' + def.range.end.character);
-        }
-        // The exact destination inside the component. Without it the jump ends in a first-match word
-        // search over the target's declaration pane, which finds the name in a header comment before
-        // it finds the declaration.
-        if (def.pane && def.localLine != null) {
-            parts.push('pane=' + encodeURIComponent(def.pane));
-            parts.push('ll=' + def.localLine);
-        }
-        return monaco.Uri.from({ scheme: GOTO_SCHEME, path: '/goto', query: parts.join('&') });
-    }
-
-    /**
-     * Decodes a synthetic navigation URI produced by encodeGotoUri.
-     * @param {Object} uri A monaco.Uri.
-     * @returns {Object} { fileUri, componentId, targetWord, pane, localLine, range } — range is the
-     *                   raw LSP range ({ start:{line,character}, end:{...} }) or null when absent;
-     *                   pane/localLine are null when the host could not place the target.
-     */
-    function decodeGotoUri(uri) {
-        const q = {};
-        (uri.query || '').split('&').forEach(pair => {
-            if (!pair) return;
-            const eq = pair.indexOf('=');
-            const key = eq < 0 ? pair : pair.substring(0, eq);
-            const val = eq < 0 ? '' : pair.substring(eq + 1);
-            q[key] = decodeURIComponent(val);
-        });
-        const target = {
-            fileUri: q.file || '',
-            componentId: q.component || 'root',
-            targetWord: q.word || '',
-            pane: q.pane || null,
-            localLine: q.ll !== undefined ? Number(q.ll) : null,
-            range: null
-        };
-        if (q.sl !== undefined) {
-            target.range = {
-                start: { line: Number(q.sl), character: Number(q.sc) },
-                end: { line: Number(q.el), character: Number(q.ec) }
-            };
-        }
-        return target;
-    }
-
-    /**
      * Navigates to a decoded definition target. Called from the editor opener only — never from
      * the definition provider, which must stay a pure lookup.
-     * @param {Object} target Result of decodeGotoUri.
+     * @param {Object} target Result of peekUri.decodeGotoTarget.
      */
     function openGotoTarget(target) {
         const isSameFile = target.fileUri && activeFileUri &&
@@ -1478,24 +1337,8 @@
                     toggleText.textContent = 'Manual Sync';
                 }
 
-                pendingEdits = message.cachedEdits || {};
-                if (message.cachedEdits) {
-                    for (const edit of Object.values(message.cachedEdits)) {
-                        const comp = components.find(c => {
-                            const ctx = c.xmlContext;
-                            return ctx.subType === edit.context.subType &&
-                                   ctx.subName === edit.context.subName &&
-                                   ctx.accessorType === edit.context.accessorType;
-                        });
-                        if (comp) {
-                            if (edit.blockType === 'Declaration') {
-                                comp.declaration = edit.content;
-                            } else {
-                                comp.implementation = edit.content;
-                            }
-                        }
-                    }
-                }
+                editsStore = pendingEditsCore.createStore(message.cachedEdits);
+                pendingEditsCore.applyCachedEdits(components, message.cachedEdits);
 
                 populateDropdown();
                 const selectId = message.selectId || 'root';
