@@ -6,7 +6,7 @@ const {
     absoluteToLocal,
     paneTextFromUnit,
     peekPath
-} = require('../src/editorMapping');
+} = require('../src/livePath');
 const { fsPathToFileUri } = require('../src/fileUri');
 
 const lineMap = {
