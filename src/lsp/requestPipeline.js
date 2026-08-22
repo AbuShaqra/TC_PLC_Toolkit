@@ -158,9 +158,18 @@ validateStageOrder(LIBRARY_INDEX_STAGES);
  *   contributes nothing (e.g. `namespaces`, which only registers namespaces and reports no stats)
  *   returns `{}` or nothing. The real libsymbols.js/libraries.js calls are injected here by the
  *   caller — this function stays free of those requires.
+ *
+ *   The merge is a SHALLOW, LAST-WRITE-WINS overwrite per top-level key, not a sum: if two stages both
+ *   return a patch for the same key, the later one wholly replaces the earlier one — e.g. `signatures`
+ *   and `rootSignatures` both returning `sig` means whatever `rootSignatures` returns is the final
+ *   `sig`, not `signatures`' `sig` plus it. A runner that needs a running total across stages (as
+ *   server.js's current hand-written loop sums `sig.files`/`functions`/`functionBlocks`/`types`/`added`
+ *   across the extra per-root scan) must do that summing itself, inside its own closure — e.g. both the
+ *   `signatures` and `rootSignatures` runners closing over and mutating one shared `sig` object, each
+ *   returning `{ sig }` — not rely on this function to combine two separate objects.
  * @param {{fsPath: string, index: Object, roots: Array<string>}} ctx Passed unchanged to every stage.
- * @returns {{stats: Object, tmc: Object, sig: Object, bc: Object, line: string|null}} The merged stats
- *   plus the formatted log line, or `line: null` when nothing was indexed.
+ * @returns {{stats: Object, tmc: Object, sig: Object, bc: Object, logLine: string|null}} The merged
+ *   stats plus the formatted log line, or `logLine: null` when nothing was indexed.
  */
 function runLibraryIndexPipeline(runners, ctx) {
     const result = { stats: undefined, tmc: undefined, sig: undefined, bc: undefined };
@@ -177,9 +186,9 @@ function runLibraryIndexPipeline(runners, ctx) {
     // Moved verbatim from server.js indexLibraries (formerly lines 126-135), guard included: a project
     // with no archives, no undecodable archives, no .tmc and no signatures dump has nothing worth
     // logging.
-    let line = null;
+    let logLine = null;
     if (stats.archives > 0 || stats.failed > 0 || tmc.files > 0 || sig.files > 0) {
-        line =
+        logLine =
             `Library symbols: ${stats.symbols} from ${stats.archives} archive(s) ` +
             `(${stats.failed} undecodable) in ${stats.ms} ms; ` +
             `type system: ${tmc.files} .tmc file(s), ${tmc.symbols} total symbols in ${tmc.ms} ms; ` +
@@ -189,7 +198,7 @@ function runLibraryIndexPipeline(runners, ctx) {
             `on ${bc.types} type(s) from ${bc.libraries} librar${bc.libraries === 1 ? 'y' : 'ies'} in ${bc.ms} ms.`;
     }
 
-    return { stats, tmc, sig, bc, line };
+    return { stats, tmc, sig, bc, logLine };
 }
 
 module.exports = {

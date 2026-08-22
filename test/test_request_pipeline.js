@@ -179,11 +179,8 @@ function main() {
         assert(message.indexOf('signatures') !== -1 || message.indexOf('typeSystem') !== -1,
             `error message names what it must follow (got: ${message})`);
     }
-    {
-        // Module load itself validated the table without throwing — proven simply by having reached
-        // this line, since the require() at the top of this file would have thrown otherwise.
-        assert(true, 'requiring the module ran validateStageOrder at load with no throw');
-    }
+    // Module load itself validated the table without throwing — proven simply by having reached this
+    // point at all, since the require() at the top of this file would have thrown otherwise.
 
     // ---- Group 5: runLibraryIndexPipeline ----
     {
@@ -221,7 +218,7 @@ function main() {
             `1 FB(s), 4 type(s) merged in 2 ms; ` +
             `browsercache: 7 method(s) + 1 property ` +
             `on 2 type(s) from 1 library in 3 ms.`;
-        assert(result.line === expectedLine, `log line matches today's format, singular branch (got: ${result.line})`);
+        assert(result.logLine === expectedLine, `log line matches today's format, singular branch (got: ${result.logLine})`);
     }
     {
         // Plural branch of the same ternary: properties !== 1 and libraries !== 1 -> "properties"/"libraries".
@@ -234,8 +231,15 @@ function main() {
             browsercache: () => ({ bc: { methods: 0, properties: 4, types: 1, libraries: 3, ms: 0 } })
         };
         const result = runLibraryIndexPipeline(runners, { fsPath: '/p', index: {}, roots: ['/p'] });
-        assert(result.line.indexOf('4 properties') !== -1, `plural "properties" branch present (got: ${result.line})`);
-        assert(result.line.indexOf('3 libraries') !== -1, `plural "libraries" branch present (got: ${result.line})`);
+        const expectedLine =
+            `Library symbols: 0 from 0 archive(s) ` +
+            `(0 undecodable) in 0 ms; ` +
+            `type system: 1 .tmc file(s), 0 total symbols in 0 ms; ` +
+            `signatures: 0 file(s), 0 function(s), ` +
+            `0 FB(s), 0 type(s) merged in 0 ms; ` +
+            `browsercache: 0 method(s) + 4 properties ` +
+            `on 1 type(s) from 3 libraries in 0 ms.`;
+        assert(result.logLine === expectedLine, `log line matches today's format, plural branch (got: ${result.logLine})`);
     }
     {
         // The nothing-indexed guard: stats.archives === 0, stats.failed === 0, tmc.files === 0,
@@ -249,7 +253,7 @@ function main() {
             browsercache: () => ({ bc: { methods: 0, properties: 0, types: 0, libraries: 0, ms: 0 } })
         };
         const result = runLibraryIndexPipeline(runners, { fsPath: '/p', index: {}, roots: [] });
-        assert(result.line === null, `nothing-indexed guard returns a null line (got: ${JSON.stringify(result.line)})`);
+        assert(result.logLine === null, `nothing-indexed guard returns a null line (got: ${JSON.stringify(result.logLine)})`);
     }
     {
         // Guard is an OR across the four conditions — tmc.files > 0 alone must still produce a line.
@@ -262,7 +266,7 @@ function main() {
             browsercache: () => ({ bc: { methods: 0, properties: 0, types: 0, libraries: 0, ms: 0 } })
         };
         const result = runLibraryIndexPipeline(runners, { fsPath: '/p', index: {}, roots: [] });
-        assert(result.line !== null, 'tmc.files > 0 alone is enough to produce a log line (OR guard)');
+        assert(result.logLine !== null, 'tmc.files > 0 alone is enough to produce a log line (OR guard)');
     }
 
     console.log(errors === 0 ? '\nAll request-pipeline tests passed.' : `\n${errors} test(s) failed.`);
