@@ -5,6 +5,7 @@
 
 const vscode = require('vscode');
 const path = require('path');
+const { TWINCAT_WATCH_EXTS } = require('./twincatWorkspace');
 
 /**
  * Updates a text document with new content using WorkspaceEdit.
@@ -142,7 +143,7 @@ async function registerTreeInPlcProj(dirUri) {
                 await registerTreeInPlcProj(childUri);
             } else if (type === vscode.FileType.File) {
                 const ext = path.extname(name).toLowerCase();
-                if (['.tcpou', '.tcio', '.tcgvl', '.tcdut'].includes(ext)) {
+                if (TWINCAT_WATCH_EXTS.has(ext)) {
                     await registerInPlcProj(childUri, false);
                 }
             }

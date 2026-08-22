@@ -60,4 +60,4 @@ function createProjectStatusBar(context, getProjectMap) {
     return { refresh, dispose: () => item.dispose() };
 }
 
-module.exports = { projectLabel, createProjectStatusBar };
+module.exports = { projectLabel, createProjectStatusBar, TWINCAT_FILE_EXTS };

@@ -91,6 +91,7 @@ per-suite without aborting on the first failure. The main ones:
 | `test/test_editor_mapping.js` | The production `src/livePath.js` coordinate/peek helpers directly: pane↔unit boundary mapping, synthesized-line rejection, pane slicing and encoded peek-model paths. `test_live_path.js` imports the same module (including `assembleSt`) rather than carrying copies. |
 | `test/test_live_path_unit.js` | The three pure collectors in `src/livePath.js` — `mapDefinition`, `collectPeekReferences`, `listExternalReferences` — against synthetic in-memory XML fixtures (no `sample/` dependency) plus a counting `readFile` double. Pins the peek budget semantics as tests: `PEEK_MAX_PANES`/`maxTextBytes` bound FILE READS and PANE MODELS, never the mapped references — a ref into an already-opened file still maps past the pane cap, and a pane over the byte budget is skipped but its reference still maps. |
 | `test/test_file_uri.js` | The production filesystem-path/file-URI boundary: reserved characters, Unicode, encoded drive colons and UNC round trips. |
+| `test/test_twincat_workspace.js` | `src/twincatWorkspace.js`, the discovery owner: the XML-entity decode chain, the generic walker (skip case-insensitivity, unreadable-dir tolerance, **regular files only** — a directory named like a match is never collected), the full skip-dir set MATRIX with its load-bearing relations (`ARCHIVE_SKIP_DIRS` has no `_libraries`; `PROJECT_SKIP_DIRS` is exactly that plus `_libraries`), the three extension vocabularies, the two-mode suffix-disambiguation core, and cross-pins holding `projectStatusBar`'s regex and `customEditorProvider`'s glob (read as text) to the owner's vocabularies. |
 | `test/test_component_id.js` | `src/componentId.js`, the component-id grammar owner: a conformance sweep driving the **real** `parseTwinCatXml` over a fixture minting every id shape (round-trip `parse`→`make` identity), the frozen parse table incl. the pinned `prop_X_get`-is-an-accessor ambiguity, `make`'s programmer-error throws, and the `label`/`memberName` display helpers incl. the transition fix. |
 | `test/test_typecheck.js` | Semantic type checking: member access, call arguments, declaration types, assignment compatibility — plus the same `sample/` diagnostics ratchet. |
 | `test/test_references_scope.js` | Find References scope + coordinate spaces: private method `VAR` vs. parameters, named arguments belonging to the callee, and FB_init declaration-site arguments (`inst : FB_T(p := v)`). |
@@ -259,6 +260,12 @@ src/
                         assembly/resolver/collection logic that lived in customEditorProvider.js;
                         the host and the harnesses now drive the SAME functions.
   fileUri               Central Windows path ↔ file URI conversion and comparison boundary
+  twincatWorkspace      Single owner of workspace-discovery knowledge (fs/path only, a pure leaf):
+                        the recursive skip-walk (walkFiles, regular files only), the skip-dir set
+                        MATRIX (variance preserved deliberately — see its header), the three
+                        TwinCAT extension vocabularies, XML-entity decode, and the shared
+                        suffix-disambiguation core (two option modes: solution-scoped default,
+                        workspace-global for projectMap). Consumed by both host and LSP modules.
   componentId           Single owner of the component-id string grammar (root/method_/prop_/
                         prop_*_get/prop_*_set/action_/transition_) shared by webview, host and
                         LSP; vscode-free. The grammar is FROZEN (ids travel over the bridge and
@@ -361,8 +368,9 @@ A TwinCAT workspace can hold **more than one `.plcproj`**, and each is its own c
 does not resolve symbols across them. The LSP therefore keeps **one symbol index per project**, built
 and routed at startup (and on `custom/reindex`), not one flat index for the whole workspace:
 
-- **`src/lsp/projectMap.js`** is the single source of truth for the partition. It is dependency-free
-  (`fs`/`path` only — no `vscode`), so both the server and the extension host can require it.
+- **`src/lsp/projectMap.js`** is the single source of truth for the partition. It requires only
+  `fs`/`path` and the dependency-free `src/twincatWorkspace.js` discovery owner — no `vscode` —
+  so both the server and the extension host can require it.
   `createProjectMap(roots)` walks every root for `.plcproj` files and, for each, reads its `<Compile
   Include="...">` set into that project's `objectPaths`. Ownership is two different questions, answered
   by two functions: `ownersOf(file)` returns EVERY project that `<Compile>`s the file — a file linked

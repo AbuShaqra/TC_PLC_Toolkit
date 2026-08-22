@@ -2,8 +2,9 @@
  * @file solutionMap.js
  * @description Discovers TwinCAT solutions and maps their PLC projects for the Objects tree.
  *
- * Kept dependency-free (Node fs/path only) so the model is testable outside VS Code. This is an
- * extension-host presentation model: LSP ownership remains exclusively in lsp/projectMap.js.
+ * Kept dependency-free (Node fs/path plus ./lsp/projectMap and ./twincatWorkspace, no `vscode`) so
+ * the model is testable outside VS Code. This is an extension-host presentation model: LSP
+ * ownership remains exclusively in lsp/projectMap.js.
  */
 
 'use strict';
@@ -11,21 +12,7 @@
 const fs = require('fs');
 const path = require('path');
 const { normalizeProjectPath } = require('./lsp/projectMap');
-
-const SKIP_DIRS = new Set([
-    '.git', 'node_modules', '.vscode', '_libraries', '_boot', '_compileinfo'
-]);
-
-function decodeXmlAttribute(value) {
-    return String(value || '')
-        .replace(/&#x([0-9a-f]+);/gi, (_, hex) => String.fromCodePoint(parseInt(hex, 16)))
-        .replace(/&#(\d+);/g, (_, dec) => String.fromCodePoint(parseInt(dec, 10)))
-        .replace(/&lt;/g, '<')
-        .replace(/&gt;/g, '>')
-        .replace(/&quot;/g, '"')
-        .replace(/&apos;/g, "'")
-        .replace(/&amp;/g, '&');
-}
+const { SOLUTION_SKIP_DIRS, decodeXmlAttribute, walkFiles, suffixDisplayNames } = require('./twincatWorkspace');
 
 function readText(file) {
     try { return fs.readFileSync(file, 'utf8'); } catch (e) { return ''; }
@@ -33,20 +20,10 @@ function readText(file) {
 
 /** Finds `.sln` files without descending into generated/vendor directories. */
 function findSolutionFiles(roots) {
-    const out = [];
-    const walk = (dir) => {
-        let entries;
-        try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch (e) { return; }
-        for (const entry of entries) {
-            const full = path.join(dir, entry.name);
-            if (entry.isDirectory()) {
-                if (!SKIP_DIRS.has(entry.name.toLowerCase())) walk(full);
-            } else if (entry.isFile() && entry.name.toLowerCase().endsWith('.sln')) {
-                out.push(full);
-            }
-        }
-    };
-    for (const root of roots || []) walk(root);
+    const out = walkFiles(roots || [], {
+        skipDirs: SOLUTION_SKIP_DIRS,
+        isMatch: (n) => n.toLowerCase().endsWith('.sln')
+    });
     return out.sort((a, b) => a.localeCompare(b));
 }
 
@@ -93,45 +70,6 @@ function xtiReferences(tsprojPath) {
 function plcProjectFromXti(xtiPath) {
     const match = /\bPrjFilePath="([^"]+\.plcproj)"/i.exec(readText(xtiPath));
     return match ? resolveProjectPath(path.dirname(xtiPath), match[1]) : '';
-}
-
-function suffixDisplayNames(records, nameOf, dirOf) {
-    const result = new Map();
-    const buckets = new Map();
-    for (const record of records) {
-        const name = nameOf(record);
-        const key = name.toLowerCase();
-        if (!buckets.has(key)) buckets.set(key, []);
-        buckets.get(key).push(record);
-    }
-    for (const sameName of buckets.values()) {
-        if (sameName.length === 1) {
-            result.set(sameName[0].key, nameOf(sameName[0]));
-            continue;
-        }
-        const parts = new Map();
-        for (const record of sameName) {
-            const dir = dirOf(record);
-            const parsed = path.parse(dir);
-            const values = dir.slice(parsed.root.length).split(/[\\/]+/).filter(Boolean);
-            parts.set(record.key, values);
-        }
-        for (const record of sameName) {
-            const own = parts.get(record.key);
-            let suffix = own.join(' / ');
-            for (let depth = 1; depth <= own.length; depth++) {
-                const candidate = own.slice(-depth).join(' / ');
-                if (sameName.filter(other =>
-                    parts.get(other.key).slice(-depth).join(' / ').toLowerCase() === candidate.toLowerCase()
-                ).length === 1) {
-                    suffix = candidate;
-                    break;
-                }
-            }
-            result.set(record.key, `${nameOf(record)} — ${suffix}`);
-        }
-    }
-    return result;
 }
 
 function isInside(child, parent) {

@@ -8,7 +8,8 @@
  * object name — two projects with a `GVL_System` each collapsed onto one key, last-write-wins.
  *
  * This module is the single source of truth for the partition. It is deliberately dependency-free
- * (`fs`/`path` only, no `vscode`) so the LSP server and the extension host can both require it.
+ * (`fs`/`path`/`../twincatWorkspace` only, no `vscode`) so the LSP server and the extension host can
+ * both require it.
  *
  * Ownership has two flavours, and they are not the same question:
  *   - `ownersOf(file)`  — every project that `<Compile>`s the file. A file linked into two projects
@@ -20,25 +21,19 @@
 
 const fs = require('fs');
 const path = require('path');
+const {
+    PROJECT_WALK_SKIP_DIRS,
+    TWINCAT_XML_EXTS,
+    decodeXmlAttribute,
+    walkFiles,
+    suffixDisplayNames
+} = require('../twincatWorkspace');
 
-// `.tctleo` (EnumerationTextList) declares a real ST enum — xmlParser normalises its root element to
-// DUT, so it indexes as one. `.tctto` (task) and `.tctlo` (HMI text list) are NOT ST types. Kept in
-// sync with xmlIndexer.js's own TWINCAT_EXTS by hand (test_project_map.js pins the two against each
-// other): duplicated rather than imported because this module is deliberately dependency-free, and
-// importing xmlIndexer.js would pull in xmlParser + symbolNode for one constant.
+// Identity re-export: projectMap.js and xmlIndexer.js must agree on the same Set object, not merely
+// an equal one (test_project_map.js's cross-pin). twincatWorkspace.js is the shared owner now; this
+// module keeps its own name for the constant so every existing call site here reads unchanged.
 /** TwinCAT object extensions a `.plcproj` can `<Compile>` (lower-cased). */
-const TWINCAT_EXTS = new Set(['.tcpou', '.tcgvl', '.tcdut', '.tcio', '.tctleo']);
-
-/** Directories that never hold a `.plcproj`: VCS, tooling, vendor archives, generated/build output. */
-const SKIP_DIRS = new Set([
-    '.git',
-    'node_modules',
-    '.vscode',
-    '_libraries',
-    'st_files',
-    '_compileinfo',
-    '_boot'
-]);
+const TWINCAT_EXTS = TWINCAT_XML_EXTS;
 
 /**
  * The project key for files under no `.plcproj` — loose `.st` files, a bare folder of TwinCAT
@@ -64,46 +59,12 @@ function normalizeProjectPath(p) {
  * @returns {Array<string>} Absolute `.plcproj` paths, sorted for deterministic ordering.
  */
 function findPlcProjFiles(roots) {
-    const out = [];
-    const walk = (dir) => {
-        let entries;
-        try {
-            entries = fs.readdirSync(dir, { withFileTypes: true });
-        } catch (e) {
-            return; // unreadable directory: skip, never throw out of discovery
-        }
-        for (const entry of entries) {
-            const full = path.join(dir, entry.name);
-            if (entry.isDirectory()) {
-                if (SKIP_DIRS.has(entry.name.toLowerCase())) continue;
-                walk(full);
-            } else if (entry.isFile() && entry.name.toLowerCase().endsWith('.plcproj')) {
-                out.push(full);
-            }
-        }
-    };
-    for (const root of (roots || [])) walk(root);
+    const out = walkFiles(roots || [], {
+        skipDirs: PROJECT_WALK_SKIP_DIRS,
+        isMatch: (n) => n.toLowerCase().endsWith('.plcproj')
+    });
     out.sort();
     return out;
-}
-
-/**
- * Decodes the XML character entities legal in an attribute value. TwinCAT escapes them when
- * writing the `.plcproj`: a folder named `time&date` becomes `Include="POUs\time&amp;date\..."`.
- * Left undecoded, that path exists nowhere on disk and the object silently drops out of the index
- * (measured on a real OSCAT project: 57 of 819 compiled objects, every one under `time&date/`).
- * @param {string} value Raw attribute value.
- * @returns {string} Decoded text.
- */
-function decodeXmlAttribute(value) {
-    return value
-        .replace(/&#x([0-9a-f]+);/gi, (_, hex) => String.fromCodePoint(parseInt(hex, 16)))
-        .replace(/&#(\d+);/g, (_, dec) => String.fromCodePoint(parseInt(dec, 10)))
-        .replace(/&lt;/g, '<')
-        .replace(/&gt;/g, '>')
-        .replace(/&quot;/g, '"')
-        .replace(/&apos;/g, "'")
-        .replace(/&amp;/g, '&');
 }
 
 /**
@@ -242,7 +203,9 @@ function createProjectMap(roots) {
         }
     }
 
-    const displayNames = buildProjectDisplayNames(projects);
+    const displayNames = suffixDisplayNames(
+        Array.from(projects.values()), p => p.name, p => collapseOwnDir(p),
+        { includeRoot: true, sharedMaxDepth: true });
 
     /** The project directory as a normalized prefix, so `startsWith` cannot match a sibling. */
     const dirPrefix = (proj) => normalizeProjectPath(proj.dir) + '/';
@@ -299,52 +262,18 @@ function createProjectMap(roots) {
 }
 
 /**
- * Produces compact but unambiguous labels. Most projects keep their `.plcproj` basename; duplicate
- * basenames gain the shortest unique parent suffix, skipping the common same-named project folder.
- * @param {Map<string, Object>} projects Project records keyed by normalized `.plcproj` path.
- * @returns {Map<string, string>} Project key to display label.
+ * The directory that disambiguates a project's label. Skips the project's own directory when its
+ * basename repeats the project name (the common `MyProject/MyProject.plcproj` layout) so the suffix
+ * doesn't waste its first, most-specific segment restating the name that's already shown. This
+ * collapse rule is projectMap policy, not shared discovery knowledge, so it stays local and is
+ * passed into the shared `suffixDisplayNames` core as its `dirOf` callback.
+ * @param {{dir: string, name: string}} project
+ * @returns {string} The directory to disambiguate from.
  */
-function buildProjectDisplayNames(projects) {
-    const result = new Map();
-    const byName = new Map();
-    for (const project of projects.values()) {
-        const nameKey = project.name.toLowerCase();
-        if (!byName.has(nameKey)) byName.set(nameKey, []);
-        byName.get(nameKey).push(project);
-    }
-
-    for (const sameName of byName.values()) {
-        if (sameName.length === 1) {
-            result.set(sameName[0].key, sameName[0].name);
-            continue;
-        }
-
-        const partsFor = new Map();
-        let maxDepth = 1;
-        for (const project of sameName) {
-            const labelDir = path.basename(project.dir).toLowerCase() === project.name.toLowerCase()
-                ? path.dirname(project.dir)
-                : project.dir;
-            const parsed = path.parse(labelDir);
-            const parts = labelDir.slice(parsed.root.length).split(/[\\/]+/).filter(Boolean);
-            if (parsed.root) parts.unshift(parsed.root.replace(/[\\/]+$/, ''));
-            partsFor.set(project.key, parts);
-            maxDepth = Math.max(maxDepth, parts.length);
-        }
-
-        for (const project of sameName) {
-            const parts = partsFor.get(project.key);
-            let suffix = parts.join(' / ');
-            for (let depth = 1; depth <= maxDepth; depth++) {
-                const candidate = parts.slice(-depth).join(' / ');
-                const matches = sameName.filter(other =>
-                    partsFor.get(other.key).slice(-depth).join(' / ').toLowerCase() === candidate.toLowerCase());
-                if (matches.length === 1) { suffix = candidate; break; }
-            }
-            result.set(project.key, `${project.name} — ${suffix}`);
-        }
-    }
-    return result;
+function collapseOwnDir(project) {
+    return path.basename(project.dir).toLowerCase() === project.name.toLowerCase()
+        ? path.dirname(project.dir)
+        : project.dir;
 }
 
 /**

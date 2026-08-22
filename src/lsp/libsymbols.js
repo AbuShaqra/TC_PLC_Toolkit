@@ -38,6 +38,7 @@
 const fs = require('fs');
 const path = require('path');
 const zlib = require('zlib');
+const { walkFiles, ARCHIVE_SKIP_DIRS, PROJECT_SKIP_DIRS } = require('../twincatWorkspace');
 const { findBrowserCacheFile, MANAGED_LIBRARIES } = require('./browserCache');
 const {
     parseSignatureRecords,
@@ -82,8 +83,11 @@ const STRING_TABLE_ENTRY = /string_table.*\.auxiliary$/i;
  */
 const LIBRARY_EXT = /\.(compiled-library|compiled-library-ge33|library)$/i;
 
-/** Directories that never contain library archives (build output, VCS, tooling). */
-const SKIP_DIRS = new Set(['.git', 'node_modules', '.vscode', '_compileinfo', 'st_files']);
+/** Directories that never contain library archives (build output, VCS, tooling). Same Set object
+ *  as twincatWorkspace.js's ARCHIVE_SKIP_DIRS (the discovery owner) — kept under this module's own
+ *  name because test_collect_scope.js's mutation pin (adds '_libraries', asserts collectArchives
+ *  goes blind, deletes it) exercises SKIP_DIRS by identity. */
+const SKIP_DIRS = ARCHIVE_SKIP_DIRS;
 
 /**
  * A harvested name is only useful if it can appear as an identifier in Structured Text. The string
@@ -589,22 +593,11 @@ function harvestArchive(buf) {
 // resolve them, which is precisely the noise this design exists to avoid.
 // ---------------------------------------------------------------------------------------------
 
-/**
- * Directories to skip when walking for the project's OWN files — the `.plcproj`, the `.tmc`, the
- * `library-signatures.xml` dump. `_libraries` is in here and deliberately NOT in `SKIP_DIRS`:
- * `collectArchives` shares that set and MUST descend into `_Libraries`, which is where every vendor
- * archive lives. Adding `_libraries` there yields zero library symbols and takes the sample
- * diagnostics ratchet from 0 to ~171 false positives — `test_collect_scope.js` pins both halves.
- *
- * None of the three project artifacts is ever vendored under `_Libraries` (verified: zero `.tmc`
- * under any `_Libraries` across the 8-project workspace), so descending into 156 MB of archives to
- * look for them is pure cost: a full walk measured 150 ms into `_Libraries` vs 69 ms skipping it.
- *
- * Constructed from SKIP_DIRS rather than restated, so an entry added there cannot silently apply to
- * the archive walker alone. plcprojRefs.js states the same set for the `.plcproj` walk it owns
- * (it cannot import this one — libsymbols.js already imports it); test_collect_scope.js pins them equal.
- */
-const PROJECT_SKIP_DIRS = new Set([...SKIP_DIRS, '_libraries']);
+// PROJECT_SKIP_DIRS (the `.plcproj`/`.tmc`/signature walk's skip set — ARCHIVE_SKIP_DIRS/SKIP_DIRS
+// plus `_libraries`) is imported directly above, by identity, from twincatWorkspace.js — the
+// discovery owner. See that module's doc comment for the full rationale (why `_libraries` must be
+// excluded here but NOT from SKIP_DIRS, and the measured cost of not excluding it); plcprojRefs.js
+// imports the same Set as PLCPROJ_SKIP_DIRS, and test_collect_scope.js pins the two equal.
 
 /**
  * Normalizes a library title for comparison: Structured Text is case-insensitive, and the same
@@ -909,21 +902,7 @@ function getNamespaceCoverage(index) {
  * @param {string[]} out Accumulator, mutated.
  */
 function collectArchives(dirPath, out) {
-    let entries;
-    try {
-        entries = fs.readdirSync(dirPath, { withFileTypes: true });
-    } catch (e) {
-        return; // unreadable directory: skip, never throw out of indexing
-    }
-    for (const entry of entries) {
-        const fullPath = path.join(dirPath, entry.name);
-        if (entry.isDirectory()) {
-            if (SKIP_DIRS.has(entry.name.toLowerCase())) continue;
-            collectArchives(fullPath, out);
-        } else if (entry.isFile() && LIBRARY_EXT.test(entry.name)) {
-            out.push(fullPath);
-        }
-    }
+    return walkFiles(dirPath, { skipDirs: SKIP_DIRS, isMatch: (name) => LIBRARY_EXT.test(name), out });
 }
 
 /**
@@ -1396,21 +1375,11 @@ function isBrowserCacheMemberName(namespace, name, index) {
  * @param {string[]} out Accumulator, mutated.
  */
 function collectTmcFiles(dir, out) {
-    let entries;
-    try {
-        entries = fs.readdirSync(dir, { withFileTypes: true });
-    } catch (e) {
-        return;
-    }
-    for (const entry of entries) {
-        const full = path.join(dir, entry.name);
-        if (entry.isDirectory()) {
-            if (PROJECT_SKIP_DIRS.has(entry.name.toLowerCase())) continue;
-            collectTmcFiles(full, out);
-        } else if (/\.tmc$/i.test(entry.name)) {
-            out.push(full);
-        }
-    }
+    // Regular files only — walkFiles' isFile gate deliberately excludes directory/symlink decoys
+    // the old inline walk admitted (see test_twincat_workspace.js's "regular FILES only" check).
+    // Cost accepted with the tightening: a LEGITIMATE symlink to a real dump is dropped too — if
+    // that ever bites, it presents as resurrected library false positives.
+    return walkFiles(dir, { skipDirs: PROJECT_SKIP_DIRS, isMatch: (name) => /\.tmc$/i.test(name), out });
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -1581,21 +1550,15 @@ function indexLibrarySignaturesFromXml(xml, index) {
  * @param {string[]} out Accumulator, mutated.
  */
 function collectSignatureFiles(dir, out) {
-    let entries;
-    try {
-        entries = fs.readdirSync(dir, { withFileTypes: true });
-    } catch (e) {
-        return;
-    }
-    for (const entry of entries) {
-        const full = path.join(dir, entry.name);
-        if (entry.isDirectory()) {
-            if (PROJECT_SKIP_DIRS.has(entry.name.toLowerCase())) continue;
-            collectSignatureFiles(full, out);
-        } else if (entry.name.toLowerCase() === 'library-signatures.xml') {
-            out.push(full);
-        }
-    }
+    // Regular files only — walkFiles' isFile gate deliberately excludes directory/symlink decoys
+    // the old inline walk admitted (see test_twincat_workspace.js's "regular FILES only" check).
+    // Cost accepted with the tightening: a LEGITIMATE symlink to a real dump is dropped too — if
+    // that ever bites, it presents as resurrected library false positives.
+    return walkFiles(dir, {
+        skipDirs: PROJECT_SKIP_DIRS,
+        isMatch: (name) => name.toLowerCase() === 'library-signatures.xml',
+        out
+    });
 }
 
 /**

@@ -22,6 +22,7 @@ const { TwinCatLibraryTreeDataProvider } = require('./src/libraryTreeProvider');
 // cleanly as well so both editors fold ST identically from one copy of the algorithm.
 const stFolding = require('./media/stFolding');
 const { createDebouncer } = require('./src/util/debounce');
+const { TWINCAT_EDITOR_EXTS, TWINCAT_WATCH_EXTS } = require('./src/twincatWorkspace');
 const { LanguageClient, TransportKind, State } = require('vscode-languageclient/node');
 
 let client;
@@ -127,7 +128,7 @@ function activate(context) {
         projectStatusBar.refresh(uri);
         if (!treeView) return;
         const ext = path.extname(uri.fsPath).toLowerCase();
-        if (!['.tcpou', '.tcio', '.tcgvl', '.tcdut', '.tctleo', '.st'].includes(ext)) {
+        if (!TWINCAT_EDITOR_EXTS.has(ext)) {
             return;
         }
 
@@ -352,7 +353,7 @@ function activate(context) {
     context.subscriptions.push(
         vscode.workspace.onDidSaveTextDocument(async e => {
             const extName = path.extname(e.fileName).toLowerCase();
-            if (['.tcpou', '.tcio', '.tcgvl', '.tcdut'].includes(extName)) {
+            if (TWINCAT_WATCH_EXTS.has(extName)) {
                 treeProvider.refresh();
                 await indexFileOnLsp(e.uri);
             }
@@ -420,7 +421,7 @@ function activate(context) {
                 // watcher, and reading a directory throws EISDIR — so gate on the extension, exactly
                 // as onDidChange does. (The tree refresh still runs for every relevant create.)
                 const extName = path.extname(uri.fsPath).toLowerCase();
-                if (['.tcpou', '.tcio', '.tcgvl', '.tcdut'].includes(extName)) {
+                if (TWINCAT_WATCH_EXTS.has(extName)) {
                     await indexFileOnLsp(uri);
                 }
             }
@@ -441,7 +442,7 @@ function activate(context) {
             if (shouldRefresh(uri)) {
                 refreshProjectStructureFor(uri);
                 const extName = path.extname(uri.fsPath).toLowerCase();
-                if (['.tcpou', '.tcio', '.tcgvl', '.tcdut'].includes(extName)) {
+                if (TWINCAT_WATCH_EXTS.has(extName)) {
                     treeProvider.refresh();
                     await indexFileOnLsp(uri);
                 }
