@@ -135,6 +135,21 @@ check('KIND_TO_XML_TAG', () => {
     assert.deepStrictEqual(cid.KIND_TO_XML_TAG,
         { method: 'Method', prop: 'Property', action: 'Action', transition: 'Transition' });
 });
+check('KINDS is frozen', () => {
+    assert.ok(Object.isFrozen(cid.KINDS), 'KINDS must be frozen like KIND_TO_XML_TAG');
+});
+check('degenerate prop__get parse is pinned', () => {
+    // A property named '_get': the accessor regex requires a non-empty name before the suffix,
+    // so this is NOT an accessor — it is the correct reading, pinned so nobody "fixes" it.
+    assert.deepStrictEqual(cid.parse('prop__get'), { kind: 'prop', name: '_get', accessor: null });
+});
+check('accessorIdsFor builds mint-identical accessor ids by concatenation', () => {
+    assert.deepStrictEqual(cid.accessorIdsFor('prop_Speed'), { get: 'prop_Speed_get', set: 'prop_Speed_set' });
+    // The Phase-1 Critical shape: a property literally named Data_get must NOT self-collapse.
+    assert.deepStrictEqual(cid.accessorIdsFor('prop_Data_get'), { get: 'prop_Data_get_get', set: 'prop_Data_get_set' });
+    assert.throws(() => cid.accessorIdsFor('method_Run'), /prop/);
+    assert.throws(() => cid.accessorIdsFor('root'), /prop/);
+});
 
 process.exitCode = failures ? 1 : 0;
 console.log(failures ? `${failures} FAILURES` : 'ALL PASS');

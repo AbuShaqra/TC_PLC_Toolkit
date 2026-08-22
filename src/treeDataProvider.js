@@ -8,6 +8,7 @@ const path = require('path');
 const { parseTwinCatXml, getFoldersDetailedFromXml } = require('./xmlParser');
 const { classifyPou, classifyDut, componentKind, ICONS, LABELS, COLORS } = require('./objectKinds');
 const { groupRootsByProject } = require('./lsp/projectMap');
+const { accessorIdsFor } = require('./componentId');
 
 /**
  * Builds the icon + tooltip for a kind from src/objectKinds.js. A kind with an entry in COLORS gets a
@@ -540,13 +541,11 @@ class TwinCatTreeDataProvider {
 
         let children = null;
         if (c.type === 'Property' && parsedComponents) {
-            // Deliberately concatenative, not parse()+make(): componentId.parse() misreads a
-            // property NAMED `*_get`/`*_set` (e.g. "Data_get") as its own Get/Set accessor, which
-            // would remint the property's own id here and make createComponentTreeItem recurse on
-            // itself with no termination. c.id IS `prop_${subName}` (xmlParser mints it that way),
-            // so appending the accessor suffix is mint-identical to make('prop', subName, 'get').
-            const getAcc = parsedComponents.find(x => x.id === `${c.id}_get`);
-            const setAcc = parsedComponents.find(x => x.id === `${c.id}_set`);
+            // Accessor ids come from the grammar owner, which builds them by concatenation on purpose —
+            // parsing c.id would misread a property named `*_get` as its own accessor (see componentId.js).
+            const accessorIds = accessorIdsFor(c.id);
+            const getAcc = parsedComponents.find(x => x.id === accessorIds.get);
+            const setAcc = parsedComponents.find(x => x.id === accessorIds.set);
             
             const accItems = [];
             if (getAcc) {
