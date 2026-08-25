@@ -112,6 +112,7 @@ per-suite without aborting on the first failure. The main ones:
 | `test/test_method_diagnostics.js` | Diagnostics for a method body analysed on its own, as the webview does — a valid method must produce none once its POU is indexed. |
 | `test/test_memory_bank.js` | The shared memory bank in `.claude/memory/` and the `SessionStart` hook that delivers it. The bank fails silently by nature — a malformed note is skipped, a renamed file breaks the `[[links]]` at it, a dropped hook stops the digest — and sessions just stop being told what the project already learned, which looks exactly like having nothing to tell. Pins the hook contract too (JSON carrying `hookSpecificOutput.additionalContext`, exit 0 whatever happens), since that is what the mechanism depends on and nothing else in the repo enforces it. |
 | `test/test_pending_edits.js` | `media/pendingEdits.js`, the edit-sync state machine: store keying (`${componentId}_${blockType}`), stash-overwrite semantics, `takeAll` clearing, `snapshot` shape, the EXACT status strings/classNames, `applyCachedEdits` matching on the full xmlContext triple (an accessorType mismatch must NOT match — the Get/Set disambiguation), `foldEdits` argument order and text threading, and the pinned ALIASING of `createStore(initial)` (`snapshot() === seed` — editor.js's 'init' path relies on it). |
+| `test/test_pending_edits_persistence.js` | `src/pendingEditsStore.js`, the workspaceState-backed persistence behind Manual Sync's unsaved edits — the half that makes them survive a window reload. Runs the store over a fake in-memory Memento: a NEW store instance over the SAME memento still returns the edits (that IS the reload — the object dies, the memento does not), a fingerprint mismatch returns `{}` **and** removes the stale entry from the memento, deletes are per-URI, an empty edits object is a delete, an absent entry reads without writing, and the stored value survives the `JSON.parse(JSON.stringify(...))` round trip workspaceState puts it through. |
 | `test/test_peek_uri.js` | `media/peekUri.js`, the synthetic peek/goto URI vocabulary: `parseQuery` against independent %-encoded literals, both encoders' defaults and their exact joined query strings (byte-pinned), `decodeGotoTarget` inverting `encodeGotoParts` incl. the null defaults and `Number()` conversions, and `peekOpenMessage`'s full 'openFile' body incl. the zero-length/null-range fallback to `targetWord.length`. |
 | `test/test_diagnostic_markers.js` | `media/diagnosticMarkers.js`: severity mapping (1→error, 2→warning, else info) through caller-injected sentinel values, other-component diagnostics dropped, `pane === 'decl'` vs everything-else routing (non-'decl' lands in impl — today's contract), and the marker field shape key-for-key. |
 | `test/test_folding.js` | Folding ranges (`media/stFolding.js`). Pins the two reported bugs by name — an unmatched `{endregion}` truncating the enclosing `VAR` fold, and an unindented `{attribute …}` growing a fold arrow of its own — plus the case designed for rather than discovered: `{IF defined(X)}` is a conditional *pragma*, not an `IF` block, and reading it as one leaves an unclosed block that eats every fold below. Also covers keywords inside comments/strings (`$`-escapes included), members named like keywords (`axis.Case`), the separate region/block stacks, every `VAR_*` variant, and a sweep over every pane of every `sample/` object asserting no range is ever out of bounds. |
@@ -226,7 +227,9 @@ drives the REAL Monaco editors (typing goes through `onDidChangeModelContent`, s
 Auto/Manual branch runs) and reads page state back; it must load before `editor.js` because it memoizes
 `acquireVsCodeApi`, which throws on a second call. Seven phases cover: Manual-Sync edit accounting and
 the cross-process pending-edit round trip (tab **closed** and reopened, Get-vs-Set xmlContext-triple
-match), byte-identity of the flushed file against `foldEdits` over the webview's own records, the
+match, plus the PERSISTED `twincat.pendingEdits` workspaceState entry itself — closing a tab keeps the
+host alive, so only the persisted entry can speak to reload survival; the harness reaches the real
+`ExtensionContext` through `this.context` inside its provider-prototype patch), byte-identity of the flushed file against `foldEdits` over the webview's own records, the
 flush-vs-save asymmetry (an empty manual save still posts 'save'), Auto-mode per-keystroke saves,
 real-`MarkerSeverity` diagnostics in the correct pane including the collapsed-decl Action case, exact
 cross-file Go to Definition selection, and a cross-file peek row click-through (the peek list is
@@ -276,6 +279,15 @@ src/
   customEditorProvider  Webview host: bridges Monaco ↔ LSP via livePath, writes CDATA back. Each
                         custom/* handler is now assemble → query LSP → delegate to a livePath
                         collector → post; it holds no reference/definition mapping loops itself.
+  pendingEditsStore     Persistence for Manual Sync's unsaved edits, over `context.workspaceState`
+                        (per workspace, never globalState). In Manual mode the webview posts no
+                        'edit', so the TextDocument stays CLEAN and nothing else — not hot exit, not
+                        retainContextWhenHidden — carries the edits across a window reload; they
+                        used to live in an in-memory Map and were lost on Ctrl+R. Each entry is
+                        fingerprinted (`length:sha1`) against the document text it was captured
+                        from, and a read whose fingerprint no longer matches DISCARDS the entry
+                        rather than splicing stale edits into a changed file. vscode-free (it takes
+                        any Memento-shaped `{get, update}`), which is what makes it harness-testable.
   livePath              The live language-feature path, vscode-free: ST assembly (assembleSt),
                         pane↔unit coordinate + pane-slice + peek-model helpers, the injected-read
                         unit resolver (createStResolver), and the three collectors that turn a raw

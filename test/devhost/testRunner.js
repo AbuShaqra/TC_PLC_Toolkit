@@ -41,6 +41,21 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
 /** Every panel ever resolved, newest last. Closing and reopening a file makes a NEW one. */
 const livePanels = [];
+/** The extension's real ExtensionContext, captured from the patched provider resolve below. */
+let hostContext = null;
+
+/**
+ * Reads one document's PERSISTED pending-edit entry straight out of the extension's
+ * workspaceState — the only carrier of Manual-Sync edits across a window reload, and therefore
+ * the only thing that can be asserted about reload survival without reloading the window.
+ * @param {string} uriStr Document URI string.
+ * @returns {Object|null} `{fingerprint, edits}`, or null when nothing is stored (or unreachable).
+ */
+function persistedEntry(uriStr) {
+    if (!hostContext || !hostContext.workspaceState) return null;
+    const all = hostContext.workspaceState.get('twincat.pendingEdits', {}) || {};
+    return all[uriStr] || null;
+}
 /** Replies from the hook, consumed by `ask` and removed as they are matched. */
 const hookReplies = [];
 let requestSeq = 0;
@@ -175,6 +190,10 @@ async function run() {
         const cep = require(path.join(REPO, 'src', 'customEditorProvider.js'));
         const origResolve = cep.TwinCatCustomEditorProvider.prototype.resolveCustomTextEditor;
         cep.TwinCatCustomEditorProvider.prototype.resolveCustomTextEditor = function (document, panel, token) {
+            // `this` is the extension's OWN provider instance, so this is the harness's route to the
+            // real ExtensionContext — and therefore to the workspaceState the pending-edit store
+            // persists into. Nothing else exposes it (activate() returns no exports).
+            hostContext = this.context || hostContext;
             const rec = { uri: document.uri.toString(), textLen: document.getText().length, fromWebview: [], toWebview: [], resolveThrew: null };
             out.panels.push(rec);
             // Also keep the panel object itself: the P8 phases below need to post to a SPECIFIC
@@ -388,8 +407,10 @@ async function run() {
         // --- Phase p8-manual (checklist 3 + 2): Manual Sync accounting, and the cross-PROCESS
         //     round trip of the pending-edit record shape. Closing the tab is the whole point:
         //     webviews are retained when hidden, so only a dispose/re-resolve makes the host's
-        //     `pendingEditsMap` the sole carrier of the edits ('updatePendingEdits' -> host memory
-        //     -> 'init' cachedEdits -> applyCachedEdits).
+        //     `pendingEditsStore` the sole carrier of the edits ('updatePendingEdits' ->
+        //     workspaceState -> 'init' cachedEdits -> applyCachedEdits). The persisted entry is
+        //     read back here too: after a window RELOAD it is all that is left, so it must exist
+        //     while edits are pending and be gone once the flush folded them into the file.
         await vscode.commands.executeCommand('vscode.openWith', stationUri, 'twincat.xmlViewer');
         await sleep(2000);
         let stationPanel = panelFor(stationUriStr);
@@ -427,6 +448,9 @@ async function run() {
         // Close the tab (the document is CLEAN in Manual mode, so nothing prompts) and reopen.
         await vscode.commands.executeCommand('vscode.openWith', stationUri, 'twincat.xmlViewer');
         await sleep(1000);
+        // With three edits pending the persisted entry must exist and be fingerprinted: after a
+        // Ctrl+R the host's memory is gone and this entry is all `init` has to restore from.
+        const persistedPending = persistedEntry(stationUriStr);
         const panelsBeforeReopen = livePanels.length;
         await vscode.commands.executeCommand('workbench.action.closeActiveEditor');
         await sleep(2000);
@@ -457,7 +481,11 @@ async function run() {
             rootDeclRestored: !!(rootState && rootState.declValue && rootState.declValue.includes('devhost-m-decl')),
             rootImplRestored: !!(rootState && rootState.implValue && rootState.implValue.includes('devhost-m-impl2')),
             getRestored: !!(getState && getState.implValue && getState.implValue.includes('devhost-get-edit')),
-            setContaminated: !!(setState && setState.implValue && setState.implValue.includes('devhost-get-edit'))
+            setContaminated: !!(setState && setState.implValue && setState.implValue.includes('devhost-get-edit')),
+            workspaceStateReachable: !!(hostContext && hostContext.workspaceState),
+            persistedEditCount: persistedPending ? Object.keys(persistedPending.edits || {}).length : -1,
+            persistedFingerprinted: !!(persistedPending && typeof persistedPending.fingerprint === 'string' &&
+                persistedPending.fingerprint.length > 0)
         });
 
         // --- Phase p8-sync (checklist 3, the save half): Manual -> Auto flushes, and the file it
@@ -485,6 +513,9 @@ async function run() {
         const syncDiffAt = syncExpected === null ? -2 : firstDiffIndex(stationAfter, syncExpected);
         log('p8-sync', {
             status: (syncState && syncState.status) || null,
+            // The edits now live in the file, so the persisted entry must be gone — otherwise a
+            // later reload would re-apply edits that are already on disk.
+            persistedAfterFlush: !!persistedEntry(stationUriStr),
             documentDirty: !!(stationDoc() && stationDoc().isDirty),
             editCount: syncCaptured ? syncCaptured.edits.length : 0,
             byteIdentical: syncDiffAt === -1,
