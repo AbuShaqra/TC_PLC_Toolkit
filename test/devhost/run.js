@@ -275,7 +275,7 @@ function findCodeCli() {
 
     // Checklist 3 (accounting half) + 2: Manual Sync counts edits per component+pane, and the
     // record shape survives a real process boundary — the tab is CLOSED, so only the host's
-    // pendingEditsMap carries the edits back into the rebuilt webview.
+    // pendingEditsStore carries the edits back into the rebuilt webview.
     const manual = step('p8-manual');
     assert(!!manual, 'the Manual Sync phase ran');
     assert(!!manual && manual.syncText === 'Manual Sync',
@@ -300,6 +300,18 @@ function findCodeCli() {
     assert(!!manual && !manual.setContaminated,
         'the Get accessor edit does NOT leak into the same-named Set (the xmlContext triple match)');
 
+    // Reload survival. Closing the tab keeps the extension host alive, so the assertions above pass
+    // even against a purely in-memory cache; a Ctrl+R does not. What makes the edits survive one is
+    // that they are PERSISTED, so assert the workspaceState entry itself — read through the real
+    // ExtensionContext, captured from the provider instance in testRunner.js.
+    assert(!!manual && manual.workspaceStateReachable,
+        'the harness reached the real ExtensionContext workspaceState');
+    assert(!!manual && manual.persistedEditCount === 3,
+        `all three pending edits are persisted in workspaceState, not just held in memory ` +
+        `(got ${manual && manual.persistedEditCount})`);
+    assert(!!manual && manual.persistedFingerprinted,
+        'the persisted entry carries a document fingerprint (so a changed file discards it)');
+
     // Checklist 3 (save half): the strongest form of "everything outside the two edited CDATA
     // blocks is byte-identical" — the whole file must equal foldEdits over the posted records.
     const sync = step('p8-sync');
@@ -307,6 +319,9 @@ function findCodeCli() {
     assert(!!sync && sync.status === 'Synced' && !sync.documentDirty,
         `flushing leaves the status Synced and the document clean ` +
         `(status ${sync && sync.status}, dirty ${sync && sync.documentDirty})`);
+    assert(!!sync && sync.persistedAfterFlush === false,
+        `the flush clears the persisted pending-edit entry ` +
+        `(still present: ${sync && sync.persistedAfterFlush})`);
     assert(!!sync && sync.byteIdentical,
         `the flushed file is byte-identical to foldEdits over the webview's own records ` +
         `(firstDiffIndex ${sync && sync.firstDiffIndex}, len ${sync && sync.afterLen} vs ` +

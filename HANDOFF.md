@@ -4,11 +4,11 @@ Where the work *stands*. Read before starting; keep current (handoff rule in [CL
 100 lines — prune finished items rather than appending, but never drop a real finding to hit it. **Shipped features
 live in git history (PRs/commits); this file keeps the findings that would cost to re-derive.**
 
-**Last verified:** 2026-08-24 (Windows, user's machine, post-pull main + uncommitted `.tctleo` fix) —
-`REQUIRE_FULL_SUITE=1 npm test` green (**72/72, Coverage: FULL**), typecheck clean, and **`node
-test/devhost/run.js` all green** — the G4 dev-host gate now carries two new `.TcTLEO` watcher
-assertions AND the automated P8 webview checklist (29 assertions via the `TCDEV_TEST`-gated
-`media/devHostTestHook.js`; both below). One suite fix was needed first: `test_twincat_workspace.js`'s unreadable-directory
+**Last verified:** 2026-08-25 (Windows, user's machine, main incl. the `.tctleo` fix, G4 automation and
+pending-edit persistence) — `REQUIRE_FULL_SUITE=1 npm test` green (**73/73, Coverage: FULL, 6.3 s**),
+typecheck clean, and **`node test/devhost/run.js` all green** — the G4 dev-host gate carries two `.TcTLEO`
+watcher assertions AND the automated P8 webview checklist (29 assertions via the `TCDEV_TEST`-gated
+`media/devHostTestHook.js`, plus 4 pending-edit persistence assertions; all below). One suite fix was needed first: `test_twincat_workspace.js`'s unreadable-directory
 check assumed POSIX chmod enforcement and failed on Windows (71/72); it now probes enforcement via
 readdir and skips cleanly — lesson in `.claude/memory/permission-tests-need-enforcement-probes.md`.
 Earlier: 2026-08-22 Linux P8 pass (72/72 FULL, typecheck, both browser harnesses in real Chromium, PASS
@@ -21,8 +21,8 @@ report that gates actually ran; editor coordinate/peek helpers moved to producti
 imported by the live-path tests; duplicate `.plcproj` basenames use shortest-unique-parent labels in both Objects
 and status bar. The dev-host now copies the sample as LineA+LineB and asserts those real provider labels plus live
 cross-file navigation. The user's pre-existing newline edit in `sample/.../FB_Station.TcPOU` remains untouched.
-**0.8.0 VSIX rebuilt from post-pull code (P1–P8 + the `.tctleo` fix) and installed 2026-08-24 — a FULL
-VS Code restart is required**, doubly so because the version number did not change (see the install trap below).
+**0.8.0 VSIX rebuilt 2026-08-25 16:52 WITH the pending-edit persistence fix, installed (`--force`; content-checked:
+`pendingEditsStore.js` in, `devHostTestHook.js` out), fully restarted, and the Ctrl+R check passed live.**
 **Install trap that cost a debug cycle:** VS Code keeps the old version dir until a FULL restart (reload-window is not
 always enough) — the user tested 0.3.1's feature against the still-running 0.3.0 code and reported it broken. Check
 `~/.vscode/extensions/` for side-by-side version dirs + `.obsolete` before debugging a "feature does nothing" report.
@@ -84,8 +84,19 @@ header; the gradient-clipped wordmark is deliberately left at 3.3–4.9:1 (a log
   byte-identical to `foldEdits` over the webview's own records, empty-save asymmetry, Auto-mode
   save byte-identity, real MarkerSeverity 8 incl. the collapsed-decl Action, exact cross-file
   goto selection, peek row click-through (peek list is VIRTUALIZED — only the focused group
-  opens; the hook expands the target file's twistie first). **Manual residue, ~2 min: one Ctrl+R
-  reload with unsaved Manual-Sync edits pending, and eyeballing that squiggles render.**
+  opens; the hook expands the target file's twistie first). **Manual residue: eyeballing that squiggles render.**
+  **Manual-Sync edits lost on window reload — FIXED 2026-08-25 (user-verified live), found by that residue check.**
+  Not a regression: since 8da585b the host held them only in an in-memory `Map`, the webview never calls
+  `vscode.setState()`, and in Manual mode the `TextDocument` stays CLEAN so hot-exit never backs it up; a
+  Ctrl+R restarts the host → `init` sent `cachedEdits: {}`. Now `src/pendingEditsStore.js` persists them in
+  `context.workspaceState` (per-workspace, URI-keyed, key `twincat.pendingEdits`), **fingerprinted
+  `length:sha1` against the document text** — a read whose fingerprint no longer matches DISCARDS the entry
+  rather than splicing stale edits into a file that changed on disk (the in-memory map never had that hole
+  because it could not outlive the file). Pins: `test_pending_edits_persistence.js` (16, fake Memento; three
+  verified to FAIL with the fingerprint check stubbed out) + 4 dev-host assertions reading the real
+  `workspaceState` through `this.context` inside the harness's provider-prototype patch. The dev-host proves
+  the entry exists while pending and is gone after the flush; the actual Ctrl+R cannot be automated (nothing can
+  reload the window it runs in) and was confirmed by hand on the rebuilt VSIX.
   **P9 RULED NO-GO 2026-08-22 — the roadmap-prescribed re-evaluation, recorded as its valid
   completion.** Why: the two pains the split was scoped against are already gone — P2 removed the
   parseCache coupling (`signatureRecordsFor` is the whole surface) and P5 removed the triple walk
@@ -308,8 +319,7 @@ header; the gradient-clipped wordmark is deliberately left at 3.3–4.9:1 (a log
   `xmlIndexer`'s `variable.type` verbatim; library members never have one, so the Libraries view never showed it.
   Left as-is deliberately: it documents the default. Two lines in `insertTemplates.js` if it ever reads as noise.
 - **README.md** = public page (ships); **DEVELOPMENT.md** = build/test/architecture; CLAUDE/HANDOFF/DEVELOPMENT are
-  `.vscodeignore`d. Package `npx @vscode/vsce package`. `scripts/` ships (the generator). Stale local branches
-  `moe`/`native-editor` un-pushed.
+  `.vscodeignore`d. Package `npx @vscode/vsce package`. `scripts/` ships (the generator).
 - **Build harness lives in TWO places, synced BY HAND (2026-08-07 — the old TC_Start master rule is dropped;
   the user syncs manually now, so do not re-promote anything automatically).**
   - `scripts/Build PLC project/` — the newer, fuller generation (100 KB `.ps1` vs 45 KB), plus

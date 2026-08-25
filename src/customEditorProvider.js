@@ -11,6 +11,7 @@ const { updateDocument } = require('./plcProjHelper');
 const { convertXmlToSt } = require('./stConverter');
 const { assembleSt, localToAbsolute, createStResolver, mapDefinition, collectPeekReferences, listExternalReferences, mapDiagnosticsToLocal } = require('./livePath');
 const pendingEditsCore = require('../media/pendingEdits');
+const { createPendingEditsStore } = require('./pendingEditsStore');
 const EXT_VERSION = (() => { try { return require('../package.json').version; } catch (e) { return '?'; } })();
 
 /**
@@ -36,7 +37,10 @@ class TwinCatCustomEditorProvider {
         this.options = options;
         this.pendingSelections = new Map(); // URI string -> componentId
         this.activePanels = new Map(); // URI string -> WebviewPanel
-        this.pendingEditsMap = new Map(); // URI string -> pendingEdits object
+        // Manual Sync's unsaved edits. Persisted in workspaceState rather than held in memory: in
+        // Manual mode the document is never modified, so nothing else carries them across a window
+        // reload (see src/pendingEditsStore.js).
+        this.pendingEditsStore = createPendingEditsStore(context.workspaceState);
         // URI string of the panel the user was last in. A TwinCAT file is a *webview*, so
         // vscode.window.activeTextEditor is undefined for it and there is no other way to know which
         // document an Explorer-initiated insert should land in. Cleared when that panel is disposed.
@@ -175,7 +179,7 @@ class TwinCatCustomEditorProvider {
                     if (parsed) {
                         const pending = this.pendingSelections.get(uriStr);
                         const isAutoSync = this.context.globalState.get('twincat.isAutoSync', true);
-                        const cachedEdits = this.pendingEditsMap.get(uriStr) || {};
+                        const cachedEdits = this.pendingEditsStore.get(uriStr, text);
                         const splitterRatio = this.context.globalState.get('twincat.splitterRatio', 50);
                         webviewPanel.webview.postMessage({
                             type: 'init',
@@ -233,8 +237,9 @@ class TwinCatCustomEditorProvider {
                     }
                     break;
                 case 'updatePendingEdits':
-                    // Cache unsaved edits for this file in extension memory
-                    this.pendingEditsMap.set(uriStr, message.pendingEdits);
+                    // Cache unsaved edits for this file, fingerprinted against the document text
+                    // they were captured from, so a window reload can restore them safely.
+                    await this.pendingEditsStore.set(uriStr, message.pendingEdits, document.getText());
                     break;
                 case 'edit':
                     // Update document content on change
@@ -274,7 +279,7 @@ class TwinCatCustomEditorProvider {
                             isEditingFromWebview = false;
                         }
                     }
-                    this.pendingEditsMap.delete(uriStr);
+                    await this.pendingEditsStore.delete(uriStr);
                     break;
                 case 'save':
                     // Apply pending edits and save document
@@ -289,7 +294,7 @@ class TwinCatCustomEditorProvider {
                             isEditingFromWebview = false;
                         }
                     }
-                    this.pendingEditsMap.delete(uriStr);
+                    await this.pendingEditsStore.delete(uriStr);
                     // Trigger native document save
                     try {
                         await document.save();
