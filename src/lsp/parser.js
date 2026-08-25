@@ -757,7 +757,7 @@ function parseAndIndexDocument(code, fileUri, index = workspaceSymbolIndex) {
                 // is still parsed — the token walk below must run, and later branches mutate
                 // pouNode — but into a DETACHED node that never replaces the XML entry. The
                 // reverse direction (the XML indexer overwriting a .st-backed node) stays allowed.
-                const xmlObjectUri = /\.(tcpou|tcgvl|tcdut|tcio)$/i;
+                const xmlObjectUri = /\.(tcpou|tcgvl|tcdut|tcio|tctleo)$/i;
                 const shadowedByXml = !!(existingPou && existingPou.uri && existingPou.uri !== fileUri &&
                     xmlObjectUri.test(existingPou.uri) && !xmlObjectUri.test(fileUri));
 

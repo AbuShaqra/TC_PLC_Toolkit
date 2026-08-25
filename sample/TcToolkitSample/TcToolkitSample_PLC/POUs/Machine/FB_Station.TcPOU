@@ -14,7 +14,8 @@ VAR
 END_VAR
 ]]></Declaration>
     <Implementation>
-      <ST><![CDATA[Cyclic();]]></ST>
+      <ST><![CDATA[Cyclic();
+]]></ST>
     </Implementation>
     <Folder Name="Actions" Id="{e81da3d1-8551-49cc-bce9-534df56315e3}" />
     <Method Name="Cyclic" Id="{d83d5f63-b782-429a-b4e4-1fd8aac79cdb}">

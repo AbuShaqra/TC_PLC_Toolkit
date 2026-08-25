@@ -25,6 +25,10 @@ scripts/Build PLC project/**
 # run by a developer by hand; shipping it inside an extension whose whole premise is being offline
 # would be wrong even though nothing invokes it.
 scripts/fetch-pragma-catalog.js
+# Webview test instrumentation for test/devhost/. The provider only emits its script tag when the
+# dev-host harness sets TCDEV_TEST=1, so shipping it would be inert — but it is test code, and test
+# code does not belong in the VSIX any more than test/** does.
+media/devHostTestHook.js
 CLAUDE.md
 AGENTS.md
 HANDOFF.md

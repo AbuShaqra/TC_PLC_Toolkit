@@ -213,9 +213,30 @@ switching away from and back to a retained webview must keep that component sele
 URI keeps the **on-disk spelling** and that navigation **reuses**
 the open tab — the 0.6.0 regression (fixed in 0.6.1) minted lowercased URIs from the normalized project
 partition, and every cross-file Go to Definition then opened a duplicate tab titled `gvl_system.tcgvl`
-with nothing highlighted. Results flow through a progressive JSON file the runner polls, so a hang
+with nothing highlighted. The fixture also injects a **`.TcTLEO`** into LineA's project and the in-host
+pass edits it **on disk** and re-queries the live index — the gate for the 2026-08-24 watcher fix
+(`TWINCAT_WATCH_EXTS` omitted `.tctleo`, so an external `.TcTLEO` edit never reached the LSP; only a
+real host runs the watcher chain, so this is the one place it can be proven).
+
+The same pass also automates the **P8 webview checklist** (items 2–7 of
+`docs/superpowers/plans/2026-08-22-deepen-08-g4-checklist.md`) through **`media/devHostTestHook.js`** —
+webview instrumentation the provider injects **only** when `TCDEV_TEST=1` is set (which only
+`test/devhost/run.js` does; the file is also `.vscodeignore`d, so it is absent from the VSIX). The hook
+drives the REAL Monaco editors (typing goes through `onDidChangeModelContent`, so editor.js's own
+Auto/Manual branch runs) and reads page state back; it must load before `editor.js` because it memoizes
+`acquireVsCodeApi`, which throws on a second call. Seven phases cover: Manual-Sync edit accounting and
+the cross-process pending-edit round trip (tab **closed** and reopened, Get-vs-Set xmlContext-triple
+match), byte-identity of the flushed file against `foldEdits` over the webview's own records, the
+flush-vs-save asymmetry (an empty manual save still posts 'save'), Auto-mode per-keystroke saves,
+real-`MarkerSeverity` diagnostics in the correct pane including the collapsed-decl Action case, exact
+cross-file Go to Definition selection, and a cross-file peek row click-through (the peek list is
+virtualized and only the focused group opens — the hook expands the target file's group by its twistie
+first). The remaining MANUAL residue of that checklist is two gestures: a Ctrl+R window reload with
+unsaved Manual-Sync edits pending, and eyeballing that squiggles actually render. Results flow through a
+progressive JSON file the runner polls, so a hang
 still leaves evidence of the last step reached. **Run it whenever navigation identity, the
-custom-editor resolve chain, or the LSP bridge wiring changes.**
+custom-editor resolve chain, the file watchers, the webview edit-sync path, or the LSP bridge wiring
+changes.**
 
 **`asWebviewUri` must return ABSOLUTE urls.** Root-relative ones look equivalent, but the Monaco worker
 runs from a `blob:` URL with no base to resolve them against, and it fails with "Failed trying to load

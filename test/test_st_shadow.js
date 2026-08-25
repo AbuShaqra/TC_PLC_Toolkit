@@ -67,6 +67,16 @@ function tcgvl(name, decl) {
 </TcPlcObject>`;
 }
 
+/** Builds a .TcTLEO document — an <EnumerationTextList> root whose Declaration is an ordinary enum. */
+function tctleo(name, decl) {
+    return `<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1">
+  <EnumerationTextList Name="${name}" Id="${guid()}">
+    <Declaration><![CDATA[${decl}]]></Declaration>
+  </EnumerationTextList>
+</TcPlcObject>`;
+}
+
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tcxml_shadow_'));
 
 const files = {
@@ -80,6 +90,13 @@ const files = {
     'P_Main.st': 'PROGRAM P_Main\nVAR\n\tnOld : INT;\nEND_VAR\n\nnOld := nOld + 1;\n',
     // A genuine standalone .st source with no XML counterpart: must still be indexed.
     'FB_Solo.st': 'FUNCTION_BLOCK FB_Solo\nVAR\n\tbActive : BOOL;\nEND_VAR\n\nbActive := TRUE;\n',
+    // A .TcTLEO is XML-backed too (EnumerationTextList — a DUT in every way that matters), so a
+    // same-named .st must be just as powerless. The shadow-guard regex once omitted .tctleo. Note
+    // the mirror is POU-shaped ON PURPOSE: parseAndIndexDocument indexes no TYPE…END_TYPE at all
+    // (DUTs come exclusively from the XML indexer), so a TYPE-shaped mirror is inert by
+    // construction and only a POU-shaped one can actually steal the node.
+    'E_Mode.TcTLEO': tctleo('E_Mode', 'TYPE E_Mode :\n(\n\tIdle := 0,\n\tRunning := 1\n);\nEND_TYPE'),
+    'E_Mode.st': 'PROGRAM E_Mode\nVAR\n\tnStale : INT;\nEND_VAR\n',
 };
 for (const [n, c] of Object.entries(files)) fs.writeFileSync(path.join(dir, n), c, 'utf8');
 
@@ -98,6 +115,8 @@ try {
     assert(idx1['FB_Solo'] && /\.st$/i.test(idx1['FB_Solo'].uri),
         'FB_Solo (a standalone .st with no XML counterpart) is still indexed with its .st uri');
     assert(idx1['FB_Widget'] && idx1['GVL_X'], 'FB_Widget and GVL_X are indexed (fixture sanity)');
+    assert(idx1['E_Mode'] && /\.tctleo$/i.test(idx1['E_Mode'].uri),
+        `E_Mode stays backed by the .TcTLEO after the stale sibling .st is scanned (uri: ${idx1['E_Mode'] && idx1['E_Mode'].uri})`);
 
     // ── 2. Reverse order: XML must win no matter which side is scanned first. ────────────────────
     // The .st registers first here; indexXmlObject then overwrites it — that direction is the

@@ -468,6 +468,11 @@ class TwinCatCustomEditorProvider {
         const diagnosticMarkersUri = webview.asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, 'media', 'diagnosticMarkers.js'));
         const peekUriUri = webview.asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, 'media', 'peekUri.js'));
         const pendingEditsUri = webview.asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, 'media', 'pendingEdits.js'));
+        // Dev-host-only instrumentation, inert unless the dev-host harness (test/devhost/run.js) sets
+        // TCDEV_TEST=1, and `.vscodeignore`d so it never reaches the VSIX. It must load BEFORE
+        // editor.js: it memoizes `acquireVsCodeApi`, which throws on a second call.
+        const testHookUri = webview.asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, 'media', 'devHostTestHook.js'));
+        const testHookTag = process.env.TCDEV_TEST === '1' ? `<script src="${testHookUri}"></script>` : '';
 
         const vsUri = webview.asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, 'media', 'monaco-editor', 'vs'));
         // The worker's AMD baseUrl must be the directory that CONTAINS `vs/`, because Monaco's module
@@ -570,6 +575,7 @@ class TwinCatCustomEditorProvider {
     <script src="${diagnosticMarkersUri}"></script>
     <script src="${peekUriUri}"></script>
     <script src="${pendingEditsUri}"></script>
+    ${testHookTag}
     <script src="${scriptUri}"></script>
 </body>
 </html>`;

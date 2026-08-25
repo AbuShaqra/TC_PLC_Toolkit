@@ -164,14 +164,13 @@ const TWINCAT_XML_EXTS = new Set(['.tcpou', '.tcgvl', '.tcdut', '.tcio', '.tctle
 const TWINCAT_EDITOR_EXTS = new Set([...TWINCAT_XML_EXTS, '.st']);
 
 /**
- * The file-watcher vocabulary — 4 members, missing `.tctleo` (and `.st`, which is watched
- * separately). Preserved as-is rather than widened to match TWINCAT_XML_EXTS: this is today's
- * real watcher behaviour, transcribed rather than "fixed" here, because that fix is outside this
- * task's scope. The probable gap — a `.tctleo` rename/create/delete not triggering the same
- * re-scan a `.tcpou` change does — is worth a follow-up; see HANDOFF.md for the current pending
- * task pipeline before adding one.
+ * The file-watcher vocabulary (`.st` is watched separately). Same membership as TWINCAT_XML_EXTS
+ * but a distinct set on purpose: this one gates what the save/create/change watchers push to the
+ * LSP and what plcProjHelper (re)registers, while TWINCAT_XML_EXTS says what a `.plcproj` can
+ * `<Compile>`. `.tctleo` was missing until 2026-08-24 — an external `.TcTLEO` edit never reached
+ * the live index (confirmed in the dev host, which now gates it: test/devhost/run.js).
  */
-const TWINCAT_WATCH_EXTS = new Set(['.tcpou', '.tcio', '.tcgvl', '.tcdut']);
+const TWINCAT_WATCH_EXTS = new Set([...TWINCAT_XML_EXTS]);
 
 // --- Duplicate-name suffix core ------------------------------------------------------------
 

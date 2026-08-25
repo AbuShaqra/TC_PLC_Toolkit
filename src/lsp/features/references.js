@@ -96,7 +96,7 @@ function readStForFile(fsPath) {
     let stText = null;
     try {
         const raw = fs.readFileSync(fsPath, 'utf8');
-        if (/\.(tcpou|tcgvl|tcdut|tcio)$/i.test(fsPath) || /<TcPlcObject/i.test(raw)) {
+        if (/\.(tcpou|tcgvl|tcdut|tcio|tctleo)$/i.test(fsPath) || /<TcPlcObject/i.test(raw)) {
             const parsed = parseTwinCatXml(raw);
             stText = parsed ? convertXmlToSt(parsed, { raw: true }).stText : null;
         } else {

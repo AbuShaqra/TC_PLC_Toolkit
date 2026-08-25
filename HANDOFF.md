@@ -4,25 +4,25 @@ Where the work *stands*. Read before starting; keep current (handoff rule in [CL
 100 lines — prune finished items rather than appending, but never drop a real finding to hit it. **Shipped features
 live in git history (PRs/commits); this file keeps the findings that would cost to re-derive.**
 
-**Last verified:** 2026-08-22 (Linux, P8 branch head) — `REQUIRE_FULL_SUITE=1 npm test` green (**72/72 harnesses,
-Coverage: FULL**), typecheck clean, and **both browser harnesses re-run in real Chromium** (`run.js` 22 PASS,
-`run_pragmas.js` 38 PASS, exit 0, PASS set identical to the pre-P8 baseline; the baseline needed a favicon-204
-route in `test/browser/serve.js` — some Chromium builds request `/favicon.ico` and the 404 tripped the no-errors
-assertion). Dev-host (G4) not re-run since the 2026-08-18 pass below.
-Earlier full pass 2026-08-18 — 64/64 FULL,
-typecheck clean, **0 diagnostics on the sample**, both browser harnesses green, installed-VS-Code dev-host green
-including a real two-project workspace. The earlier 2026-08-10 pass also verified 0 diagnostics with Beckhoff
-archives both present and moved aside. **0.6.2 (indexing)** and **0.7.0 (Objects-tree inserts)** are merged;
-`package.json` is at **0.8.0** for the solution→PLC-project Objects hierarchy. Remote history was rewritten 2026-08-17.
-The 2026-08-17 Linux pass was 60/60 FULL before the review fixes below.
+**Last verified:** 2026-08-24 (Windows, user's machine, post-pull main + uncommitted `.tctleo` fix) —
+`REQUIRE_FULL_SUITE=1 npm test` green (**72/72, Coverage: FULL**), typecheck clean, and **`node
+test/devhost/run.js` all green** — the G4 dev-host gate now carries two new `.TcTLEO` watcher
+assertions AND the automated P8 webview checklist (29 assertions via the `TCDEV_TEST`-gated
+`media/devHostTestHook.js`; both below). One suite fix was needed first: `test_twincat_workspace.js`'s unreadable-directory
+check assumed POSIX chmod enforcement and failed on Windows (71/72); it now probes enforcement via
+readdir and skips cleanly — lesson in `.claude/memory/permission-tests-need-enforcement-probes.md`.
+Earlier: 2026-08-22 Linux P8 pass (72/72 FULL, typecheck, both browser harnesses in real Chromium, PASS
+set identical to pre-P8); 2026-08-18 full pass incl. dev-host two-project workspace and 0 sample
+diagnostics; 2026-08-10 verified 0 diagnostics with Beckhoff archives present AND moved aside.
+`package.json` is at **0.8.0** (solution→PLC-project Objects hierarchy). Remote history was rewritten 2026-08-17.
 **Review fixes verified on `codex/review-fixes`:** bounded ZIP archive/input inflation (`libsymbols.js`); central path↔file-URI handling
 (`fileUri.js`); reference-cache identity is mtime+size+ctime+inode; FULL coverage now requires child harnesses to
 report that gates actually ran; editor coordinate/peek helpers moved to production `editorMapping.js` and are
 imported by the live-path tests; duplicate `.plcproj` basenames use shortest-unique-parent labels in both Objects
 and status bar. The dev-host now copies the sample as LineA+LineB and asserts those real provider labels plus live
 cross-file navigation. The user's pre-existing newline edit in `sample/.../FB_Station.TcPOU` remains untouched.
-**0.8.0 VSIX installed to the user's VS Code 2026-08-18 — a FULL VS Code restart is required.**
-The CLI reports 0.8.0 (see the install trap below).
+**0.8.0 VSIX rebuilt from post-pull code (P1–P8 + the `.tctleo` fix) and installed 2026-08-24 — a FULL
+VS Code restart is required**, doubly so because the version number did not change (see the install trap below).
 **Install trap that cost a debug cycle:** VS Code keeps the old version dir until a FULL restart (reload-window is not
 always enough) — the user tested 0.3.1's feature against the still-running 0.3.0 code and reported it broken. Check
 `~/.vscode/extensions/` for side-by-side version dirs + `.obsolete` before debugging a "feature does nothing" report.
@@ -44,15 +44,19 @@ header; the gradient-clipped wordmark is deliberately left at 3.3–4.9:1 (a log
   owns discovery (walker, skip-set MATRIX with variance preserved, ext vocabularies, decode, suffix
   core; regex/glob held by cross-pins). Behaviour deltas, all deliberate+pinned: case-insensitive
   skip matching (P5 R1); walkers collect regular files only; tree skip-chain case-insensitive.
-  **User checklist (needs a machine with VS Code / dev host):**
-  1. `node test/devhost/run.js` once — confirms transition labels + navigation identity live
-     (G4 was never runnable in the remote container).
-  2. **PROBABLE BUG — the `.tctleo` omission family**: the save/create/change watchers
-     (`extension.js`, now `TWINCAT_WATCH_EXTS`), `plcProjHelper`, `parser.js:760`'s .st-shadow
-     regex and `references.js:99`'s regex all omit `.tctleo`, so a `.TcTLEO` edit likely never
-     triggers reindex/plcproj-sync and its `.st` mirror is not shadow-suppressed. Memberships were
-     deliberately PRESERVED during P5 (behaviour-neutral phase); verify in the dev host, then widen
-     `TWINCAT_WATCH_EXTS` + the two regexes in one small change if confirmed.
+  **Machine-bound checklist status (2026-08-24, user's machine):**
+  1. ~~`node test/devhost/run.js`~~ **DONE, all green** (navigation identity, exact reveals, live
+     LSP bridge, inserts, retained-webview component).
+  2. ~~The `.tctleo` omission family~~ **CONFIRMED LIVE AND FIXED (uncommitted).** The dev-host
+     harness now injects a `.TcTLEO` fixture, proves the startup scan indexes it, edits it ON DISK
+     and re-queries the live index: before the fix the renamed enum's definition was null (the
+     change watcher dropped it) — after, it resolves. Fix: `TWINCAT_WATCH_EXTS` now equals
+     `TWINCAT_XML_EXTS` membership (`twincatWorkspace.js`), and the `parser.js` .st-shadow +
+     `references.js` read-gate regexes gained `tctleo` (the latter was already rescued by its
+     `/<TcPlcObject/` content fallback — consistency, not behaviour). Pins: `test_twincat_workspace`
+     (5-member set), `test_st_shadow` (a POU-shaped `.st` mirror cannot steal a `.TcTLEO`-backed
+     node — TYPE-shaped mirrors are inert since the ST parser indexes no TYPE…END_TYPE; the new
+     assertion was verified to FAIL against the old regex), and the two dev-host assertions.
   **Container-checkout LF finding:** this remote environment materializes the workspace WITHOUT git
   smudge filters, so `sample/` arrives LF despite `.gitattributes eol=crlf` and
   `test/browser/build.js` throws. Recipe: convert `sample/` to CRLF in the working tree for browser
@@ -72,9 +76,16 @@ header; the gradient-clipped wordmark is deliberately left at 3.3–4.9:1 (a log
   severities). editor.js 1573→1411 lines. Trap: the pinned typescript@7.0.2 preview mis-parses
   Closure-style `function(...)` JSDoc types, and a file enters the tsc program only when first
   required from `src/` — see `.claude/memory/typecheck-graph-grows-with-requires.md`.
-  **P8's G4 (dev-host) run is DEFERRED to the user's machine — walk
-  `docs/superpowers/plans/2026-08-22-deepen-08-g4-checklist.md` (7 items; the pending-edit
-  round-trip and Manual-Sync save path matter most).**
+  **P8's G4: AUTOMATED 2026-08-24 (uncommitted).** Checklist items 2–7 now run inside
+  `test/devhost/run.js` via `media/devHostTestHook.js` — webview instrumentation injected ONLY
+  under `TCDEV_TEST=1` (set solely by the harness; `.vscodeignore`d, verified absent from the
+  VSIX). 29 new assertions, all green ×3 (implementer ×2 + independent re-run): Manual-Sync
+  counts, close/reopen pending-edit round trip with Get-vs-Set triple match, flushed file
+  byte-identical to `foldEdits` over the webview's own records, empty-save asymmetry, Auto-mode
+  save byte-identity, real MarkerSeverity 8 incl. the collapsed-decl Action, exact cross-file
+  goto selection, peek row click-through (peek list is VIRTUALIZED — only the focused group
+  opens; the hook expands the target file's twistie first). **Manual residue, ~2 min: one Ctrl+R
+  reload with unsaved Manual-Sync edits pending, and eyeballing that squiggles render.**
   **P9 RULED NO-GO 2026-08-22 — the roadmap-prescribed re-evaluation, recorded as its valid
   completion.** Why: the two pains the split was scoped against are already gone — P2 removed the
   parseCache coupling (`signatureRecordsFor` is the whole surface) and P5 removed the triple walk

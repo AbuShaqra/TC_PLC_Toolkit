@@ -110,14 +110,18 @@ check('walker survives an unreadable subdirectory without throwing', () => {
     fs.writeFileSync(path.join(blocked, 'hidden.plcproj'), 'x');
     fs.writeFileSync(path.join(root, 'visible.plcproj'), 'x');
 
+    // Probe whether the chmod is actually ENFORCED, not merely accepted: Windows accepts
+    // chmod(0o000) on a directory without restricting reads (mode bits need ACLs there), and
+    // root reads a 0o000 dir regardless. If we can still readdir it, skip cleanly.
     let chmodWorked = true;
     try { fs.chmodSync(blocked, 0o000); } catch (e) { chmodWorked = false; }
-
-    if (!chmodWorked || process.getuid && process.getuid() === 0) {
-        // root (or a platform without real chmod enforcement) can still read a 0o000 dir — skip
-        // this assertion cleanly rather than produce a flaky failure.
+    let enforced = false;
+    if (chmodWorked) {
+        try { fs.readdirSync(blocked); } catch (e) { enforced = true; }
+    }
+    if (!enforced) {
         console.log('[SKIP] unreadable-directory check (chmod not enforced for this process/platform)');
-        fs.chmodSync(blocked, 0o755);
+        try { fs.chmodSync(blocked, 0o755); } catch (e) { /* best effort */ }
         fs.rmSync(root, { recursive: true, force: true });
         return;
     }
@@ -280,8 +284,10 @@ check('TWINCAT_EDITOR_EXTS = TWINCAT_XML_EXTS + .st (6)', () => {
         'TWINCAT_EDITOR_EXTS');
 });
 
-check('TWINCAT_WATCH_EXTS = {.tcpou, .tcio, .tcgvl, .tcdut} (4)', () => {
-    setEquals(TWINCAT_WATCH_EXTS, ['.tcpou', '.tcio', '.tcgvl', '.tcdut'], 'TWINCAT_WATCH_EXTS');
+// `.tctleo` joined 2026-08-24: its omission meant an external `.TcTLEO` edit never reached the
+// live LSP index (confirmed and now gated in the dev host — test/devhost/run.js).
+check('TWINCAT_WATCH_EXTS = {.tcpou, .tcio, .tcgvl, .tcdut, .tctleo} (5)', () => {
+    setEquals(TWINCAT_WATCH_EXTS, ['.tcpou', '.tcio', '.tcgvl', '.tcdut', '.tctleo'], 'TWINCAT_WATCH_EXTS');
 });
 
 check('TWINCAT_WATCH_EXTS is a subset of TWINCAT_XML_EXTS', () => {

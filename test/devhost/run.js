@@ -102,6 +102,30 @@ function findCodeCli() {
         fs.writeFileSync(primaryPlcproj, changed, 'utf8');
     }
 
+    // The `.tctleo` watcher family (HANDOFF "probable bug"): a `.TcTLEO` declares a real ST enum
+    // and the startup scan indexes it — but an EXTERNAL on-disk edit must ALSO reach the live
+    // index through the change watcher, the path TWINCAT_WATCH_EXTS gates. Inject one into the
+    // primary project so the in-host half can query it, edit it on disk, and query again.
+    const tleoPath = path.join(primary, 'TcToolkitSample_PLC', 'DUTs', 'E_TleoState.TcTLEO');
+    fs.writeFileSync(tleoPath,
+        '<?xml version="1.0" encoding="utf-8"?>\r\n' +
+        '<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.0">\r\n' +
+        '  <EnumerationTextList Name="E_TleoState" Id="{4f21c9a7-90d5-4e0b-8a54-3f6f1b2f9c01}">\r\n' +
+        '    <Declaration><![CDATA[TYPE E_TleoState :\r\n(\r\n\tIdle := 0,\r\n\tRunning := 1\r\n);\r\nEND_TYPE\r\n]]></Declaration>\r\n' +
+        '  </EnumerationTextList>\r\n' +
+        '</TcPlcObject>\r\n', 'utf8');
+    const tleoPlcproj = path.join(primary, 'TcToolkitSample_PLC', 'TcToolkitSample_PLC.plcproj');
+    const tleoProjText = fs.readFileSync(tleoPlcproj, 'utf8');
+    const tleoProjChanged = tleoProjText.replace(
+        '<Compile Include="POUs\\MAIN.TcPOU">',
+        '<Compile Include="DUTs\\E_TleoState.TcTLEO">\r\n' +
+        '      <SubType>Code</SubType>\r\n' +
+        '    </Compile>\r\n' +
+        '    <Compile Include="POUs\\MAIN.TcPOU">'
+    );
+    assert(tleoProjChanged !== tleoProjText, 'the dev-host fixture injects the .TcTLEO project include');
+    fs.writeFileSync(tleoPlcproj, tleoProjChanged, 'utf8');
+
     const args = [
         '--new-window',
         '--user-data-dir', path.join(work, 'udd'),
@@ -116,7 +140,9 @@ function findCodeCli() {
     // ("Program Files") then splits mid-argument.
     const quote = (s) => /[\s&()^]/.test(s) ? `"${s}"` : s;
     const launched = spawnSync([cli, ...args].map(quote).join(' '), {
-        env: { ...process.env, TCDEV_WS: ws, TCDEV_SAMPLE: primary, TCDEV_RESULTS: results },
+        // TCDEV_TEST is what makes the provider emit `media/devHostTestHook.js` into the webview
+        // HTML. Nothing else sets it, so the hook is absent from every other run of the extension.
+        env: { ...process.env, TCDEV_WS: ws, TCDEV_SAMPLE: primary, TCDEV_RESULTS: results, TCDEV_TEST: '1' },
         encoding: 'utf8',
         shell: true
     });
@@ -125,8 +151,9 @@ function findCodeCli() {
         process.exit(1);
     }
 
-    // The CLI returns immediately; poll for the in-host module's progressive results.
-    const deadline = Date.now() + 180000;
+    // The CLI returns immediately; poll for the in-host module's progressive results. The P8
+    // webview phases add real wall time — debounces, LSP round trips and a close/reopen cycle.
+    const deadline = Date.now() + 300000;
     let data = null;
     while (Date.now() < deadline) {
         if (fs.existsSync(results)) {
@@ -239,6 +266,132 @@ function findCodeCli() {
     assert(!!retainedLast && retainedLast.ok && retainedLast.componentId === 'method_Cyclic',
         `tab-away/tab-back keeps the retained webview's exact component ` +
         `(got ${retainedLast ? retainedLast.componentId : 'no reveal'})`);
+
+    // ------------------------------------------------------------------------------------------
+    // The P8 / G4 webview checklist, item by item. Everything below was a manual walk in front of
+    // an Extension Development Host until media/devHostTestHook.js made it drivable: the numbers
+    // come off the real status indicator, the real Monaco markers and the real file bytes.
+    // ------------------------------------------------------------------------------------------
+
+    // Checklist 3 (accounting half) + 2: Manual Sync counts edits per component+pane, and the
+    // record shape survives a real process boundary — the tab is CLOSED, so only the host's
+    // pendingEditsMap carries the edits back into the rebuilt webview.
+    const manual = step('p8-manual');
+    assert(!!manual, 'the Manual Sync phase ran');
+    assert(!!manual && manual.syncText === 'Manual Sync',
+        `the sync toggle actually switched to Manual (got ${manual && manual.syncText})`);
+    assert(!!manual && manual.statusAfterDecl === 'Unsaved Changes (1)',
+        `a declaration edit counts one pending edit (got ${manual && manual.statusAfterDecl})`);
+    assert(!!manual && manual.statusAfterImpl === 'Unsaved Changes (2)',
+        `an implementation edit counts a second one (got ${manual && manual.statusAfterImpl})`);
+    assert(!!manual && manual.statusAfterReEdit === 'Unsaved Changes (2)',
+        `re-editing the same pane overwrites its record rather than adding one ` +
+        `(got ${manual && manual.statusAfterReEdit})`);
+    assert(!!manual && manual.statusAfterGetEdit === 'Unsaved Changes (3)',
+        `an edit in the property Get accessor counts separately (got ${manual && manual.statusAfterGetEdit})`);
+    assert(!!manual && manual.reopened, 'closing the tab disposed the webview and reopening resolved a new one');
+    assert(!!manual && manual.statusAfterReopen === 'Unsaved Changes (3)',
+        `pending edits survive close/reopen through the host's cache (got ${manual && manual.statusAfterReopen})`);
+    assert(!!manual && manual.rootDeclRestored && manual.rootImplRestored,
+        `both root panes are restored from the cached edits ` +
+        `(decl ${manual && manual.rootDeclRestored}, impl ${manual && manual.rootImplRestored})`);
+    assert(!!manual && manual.getRestored,
+        'the Get accessor edit is restored into the Get accessor');
+    assert(!!manual && !manual.setContaminated,
+        'the Get accessor edit does NOT leak into the same-named Set (the xmlContext triple match)');
+
+    // Checklist 3 (save half): the strongest form of "everything outside the two edited CDATA
+    // blocks is byte-identical" — the whole file must equal foldEdits over the posted records.
+    const sync = step('p8-sync');
+    assert(!!sync, 'the Manual Sync flush phase ran');
+    assert(!!sync && sync.status === 'Synced' && !sync.documentDirty,
+        `flushing leaves the status Synced and the document clean ` +
+        `(status ${sync && sync.status}, dirty ${sync && sync.documentDirty})`);
+    assert(!!sync && sync.byteIdentical,
+        `the flushed file is byte-identical to foldEdits over the webview's own records ` +
+        `(firstDiffIndex ${sync && sync.firstDiffIndex}, len ${sync && sync.afterLen} vs ` +
+        `${sync && sync.expectedLen}; on disk ${sync && sync.afterExcerpt}; ` +
+        `expected ${sync && sync.expectedExcerpt})`);
+
+    // Checklist 4: the flush-vs-save asymmetry. takeAll() is symmetric — only the call sites keep
+    // an empty manual save posting 'save' and running the native save.
+    const flush = step('p8-flush');
+    assert(!!flush, 'the flush-vs-save asymmetry phase ran');
+    assert(!!flush && flush.savePostedAfterSync,
+        'a manual save with zero pending edits still posts "save" to the host');
+    assert(!!flush && flush.saveEditCount === 0,
+        `that save carries an EMPTY edit list (got ${flush && flush.saveEditCount})`);
+    assert(!!flush && !flush.documentDirty && flush.bytesUnchanged,
+        `the empty fold is a no-op: document clean, bytes untouched ` +
+        `(dirty ${flush && flush.documentDirty}, unchanged ${flush && flush.bytesUnchanged})`);
+
+    // Checklist 7: Auto Sync is untouched — a keystroke still round-trips an 'edit' message and
+    // the file the host writes from it matches replaceComponentCdata over that same record.
+    const auto = step('p8-auto');
+    assert(!!auto, 'the Auto Sync phase ran');
+    assert(!!auto && auto.saved, 'an Auto-mode edit reaches disk without any explicit save');
+    assert(!!auto && auto.byteIdentical,
+        `the auto-saved file is byte-identical to replaceComponentCdata over the posted edit ` +
+        `(firstDiffIndex ${auto && auto.firstDiffIndex}; on disk ${auto && auto.diskExcerpt}; ` +
+        `expected ${auto && auto.expectedExcerpt})`);
+
+    // Checklist 6: real markers with REAL monaco.MarkerSeverity values (the browser harness feeds
+    // sentinels), in the right pane, including the Action case where the declaration pane is
+    // hidden and editor.js's `display !== 'none'` guards are the only thing preventing a throw.
+    const diag = step('p8-diag');
+    assert(!!diag, 'the diagnostics phase ran');
+    const errorSeverity = diag && diag.markerSeverityError;
+    const implErrors = (rows) => (rows || []).filter(m => m.pane === 'impl' && m.severity === errorSeverity);
+    assert(typeof errorSeverity === 'number',
+        `the page reported a real monaco.MarkerSeverity.Error value (got ${errorSeverity})`);
+    assert(!!diag && implErrors(diag.rootMarkers).length >= 1,
+        `an undeclared variable marks the implementation pane with a real Error severity ` +
+        `(got ${diag ? JSON.stringify(diag.rootMarkers) : 'no result'})`);
+    assert(!!diag && diag.actionDeclVisible === false,
+        `the Action component collapses its declaration pane (got ${diag && diag.actionDeclVisible})`);
+    assert(!!diag && implErrors(diag.actionMarkers).length >= 1,
+        `the collapsed-declaration component still marks its implementation pane ` +
+        `(got ${diag ? JSON.stringify(diag.actionMarkers) : 'no result'})`);
+    assert(!!diag && (diag.errors || []).length === 0,
+        `no webview error was thrown while marking a component with a hidden pane ` +
+        `(got ${diag ? JSON.stringify(diag.errors) : 'no result'})`);
+
+    // Checklist 5a: cross-file Go to Definition selects the EXACT word in the other file — the
+    // 0.6.3 bug landed on the first same-named occurrence (a header comment) instead.
+    const goto = step('p8-goto');
+    assert(!!goto && !!goto.member, `the phase found a GVL_System member to navigate from (got ${goto && goto.member})`);
+    assert(!!goto && !!goto.selectionText && !!goto.member &&
+        goto.selectionText.toLowerCase() === goto.member.toLowerCase(),
+        `Go to Definition selects exactly "${goto && goto.member}" in the target file ` +
+        `(got ${goto ? JSON.stringify(goto.selection) : 'no result'})`);
+    assert(!!goto && goto.selectionApplied,
+        'the target webview acked the selection with selectionApplied');
+
+    // Checklist 5b: a peek entry from another file drives the host, and the origin webview's peek
+    // must dismiss — Monaco cannot do it itself when the navigation leaves through the host.
+    const peek = step('p8-peek');
+    assert(!!peek && peek.peekOpened, 'Find All References opens the peek widget in the real webview');
+    assert(!!peek && peek.fileGroupExpanded,
+        `the other file's group is present in the peek and could be expanded ` +
+        `(got ${peek ? JSON.stringify(peek.expandedRowText) : 'no result'})`);
+    assert(!!peek && peek.rowFound,
+        `a cross-file peek row was found to double-click (got ${peek ? JSON.stringify(peek.rowText) : 'no result'})`);
+    assert(!!peek && peek.openFilePosted,
+        `double-clicking that row posts openFile to the extension host ` +
+        `(clicked ${peek ? JSON.stringify(peek.rowText) : 'nothing'}; rows ` +
+        `${peek ? JSON.stringify(peek.rows) : 'none'})`);
+    assert(!!peek && peek.peekDismissed,
+        'the peek widget is dismissed after navigating out of it (the deferred closeReferencePeek)');
+
+    // The .tctleo watcher family: the baseline proves scan-time indexing already covers the
+    // extension; the renamed probe proves the change watcher pushes an external .TcTLEO edit to
+    // the live index (the HANDOFF probable bug — TWINCAT_WATCH_EXTS omitting .tctleo fails this).
+    const tleo = step('tctleo-watch');
+    assert(!!tleo && !!tleo.baselineUri && /E_TleoState\.TcTLEO$/i.test(tleo.baselineUri),
+        `the startup scan indexes the injected .TcTLEO (definition uri: ${tleo && tleo.baselineUri})`);
+    assert(!!tleo && !!tleo.renamedUri && /E_TleoState\.TcTLEO$/i.test(tleo.renamedUri),
+        `an external .TcTLEO edit reaches the live index via the change watcher ` +
+        `(definition uri: ${tleo && tleo.renamedUri})`);
 
     // The window is still shutting down when the poll returns, so its user-data dir can hold a
     // lock for a few more seconds. Best-effort with retries; a leftover temp dir is harmless.
