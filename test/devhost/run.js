@@ -410,6 +410,22 @@ function findCodeCli() {
         `an external .TcTLEO edit reaches the live index via the change watcher ` +
         `(definition uri: ${tleo && tleo.renamedUri})`);
 
+    // Project-aware Generate ST: the picker lists all three projects, a full export writes each
+    // project's objects under its own ST_Files subtree (LineA/LineB MAINs never collide), and a
+    // subset export writes only the chosen project.
+    const gen = step('generate-st');
+    assert(!!gen && !gen.error, 'the project-aware Generate ST phase ran without throwing' + (gen && gen.error ? ': ' + gen.error : ''));
+    assert(!!gen && Array.isArray(gen.pickerLabels) && gen.pickerLabels.length === 3,
+        `listProjects() offers all three projects to the picker (got ${gen ? JSON.stringify(gen.pickerLabels) : 'no result'})`);
+    assert(!!gen && gen.lineAMain && gen.lineBMain && gen.auxMain,
+        `each project's MAIN is written under its own folder — identical paths do NOT collide ` +
+        `(A=${gen && gen.lineAMain}, B=${gen && gen.lineBMain}, Aux=${gen && gen.auxMain})`);
+    assert(!!gen && gen.stationNested,
+        `a nested object keeps its in-project path (LineA/.../POUs/Machine/FB_Station.st: ${gen && gen.stationNested})`);
+    assert(!!gen && gen.subset && gen.subset.auxWritten && gen.subset.plcSkipped,
+        `a subset export writes only the chosen project (aux=${gen && gen.subset && gen.subset.auxWritten}, ` +
+        `plc-skipped=${gen && gen.subset && gen.subset.plcSkipped})`);
+
     // The window is still shutting down when the poll returns, so its user-data dir can hold a
     // lock for a few more seconds. Best-effort with retries; a leftover temp dir is harmless.
     try {

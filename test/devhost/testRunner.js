@@ -43,6 +43,8 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 const livePanels = [];
 /** The extension's real ExtensionContext, captured from the patched provider resolve below. */
 let hostContext = null;
+/** The extension's real custom-editor provider instance, for the project-aware Generate-ST phase. */
+let hostProvider = null;
 
 /**
  * Reads one document's PERSISTED pending-edit entry straight out of the extension's
@@ -194,6 +196,7 @@ async function run() {
             // real ExtensionContext — and therefore to the workspaceState the pending-edit store
             // persists into. Nothing else exposes it (activate() returns no exports).
             hostContext = this.context || hostContext;
+            hostProvider = this; // the real provider instance — its generate-ST methods run below.
             const rec = { uri: document.uri.toString(), textLen: document.getText().length, fromWebview: [], toWebview: [], resolveThrew: null };
             out.panels.push(rec);
             // Also keep the panel object itself: the P8 phases below need to post to a SPECIFIC
@@ -736,6 +739,43 @@ async function run() {
             baselineUri: (tleoBaseline && tleoBaseline.uri) || null,
             renamedUri: (tleoRenamed && tleoRenamed.uri) || null
         });
+
+        // --- Phase generate-st: project-aware ST export over the three-project fixture. Proves the
+        //     real provider lists the projects for the webview picker and writes each project's
+        //     objects under its OWN ST_Files subtree — so LineA and LineB's identical MAIN paths do
+        //     not collide (the bug the old flat mirror had).
+        try {
+            const projectsForPicker = hostProvider ? hostProvider.listProjects() : [];
+            await hostProvider.generateAllStFiles(); // no keys → every project
+            await sleep(1500);
+            const stRoot = path.join(WS, 'ST_Files');
+            const exists = (rel) => fs.existsSync(path.join(stRoot, ...rel.split('/')));
+            log('generate-st', {
+                pickerLabels: projectsForPicker.map(p => p.label).sort(),
+                // Same relative object path in two different projects, kept apart by project folder:
+                lineAMain: exists('LineA/TcToolkitSample_PLC/POUs/MAIN.st'),
+                lineBMain: exists('LineB/TcToolkitSample_PLC/POUs/MAIN.st'),
+                auxMain: exists('LineA/TcToolkitSample_Aux/POUs/MAIN.st'),
+                stationNested: exists('LineA/TcToolkitSample_PLC/POUs/Machine/FB_Station.st'),
+                // A subset export writes only the chosen project.
+                subset: null
+            });
+            // Subset: regenerate just the Aux project into a clean dir and confirm scoping.
+            fs.rmSync(stRoot, { recursive: true, force: true });
+            const auxKey = projectsForPicker.find(p => /_Aux/.test(p.label));
+            if (auxKey) {
+                await hostProvider.generateAllStFiles([auxKey.key]);
+                await sleep(1000);
+                const s = out.steps.find(x => x.step === 'generate-st');
+                if (s) s.subset = {
+                    auxWritten: exists('LineA/TcToolkitSample_Aux/POUs/MAIN.st'),
+                    plcSkipped: !exists('LineA/TcToolkitSample_PLC/POUs/MAIN.st')
+                };
+                fs.writeFileSync(RESULTS, JSON.stringify(out, null, 2));
+            }
+        } catch (e) {
+            log('generate-st', { error: String((e && e.stack) || e) });
+        }
 
         log('done', {});
     } catch (e) {

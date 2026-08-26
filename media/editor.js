@@ -125,14 +125,75 @@
         });
     });
 
+    // Generate ST split button. The main button always generates EVERY project; the caret opens a
+    // checkbox menu (shown only when the host reports 2+ projects) to generate a chosen subset.
     const generateBtn = document.getElementById('generate-st-btn');
+    const generateCaret = document.getElementById('generate-st-caret');
+    const generateMenu = document.getElementById('generate-st-menu');
+    const generateProjects = document.getElementById('generate-st-projects');
+    const generateRun = document.getElementById('generate-st-run');
+
+    function closeGenerateMenu() {
+        if (!generateMenu) return;
+        generateMenu.hidden = true;
+        if (generateCaret) generateCaret.setAttribute('aria-expanded', 'false');
+    }
+
     if (generateBtn) {
         generateBtn.addEventListener('click', () => {
-            vscode.postMessage({
-                type: 'generate-st'
-            });
+            closeGenerateMenu();
+            vscode.postMessage({ type: 'generate-st' }); // no keys → all projects
         });
     }
+    if (generateCaret && generateMenu) {
+        generateCaret.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const opening = generateMenu.hidden;
+            generateMenu.hidden = !opening;
+            generateCaret.setAttribute('aria-expanded', String(opening));
+        });
+        // A click anywhere else dismisses the menu.
+        document.addEventListener('click', (e) => {
+            if (generateMenu.hidden) return;
+            if (!generateMenu.contains(e.target) && e.target !== generateCaret) closeGenerateMenu();
+        });
+    }
+    if (generateRun && generateProjects) {
+        generateRun.addEventListener('click', () => {
+            const keys = Array.from(generateProjects.querySelectorAll('input[type="checkbox"]:checked'))
+                .map(cb => cb.value);
+            closeGenerateMenu();
+            if (keys.length) vscode.postMessage({ type: 'generate-st', projectKeys: keys });
+        });
+    }
+
+    /** Populates the project checkbox menu and reveals the caret; hides both when <2 projects. */
+    function renderProjectPicker(projects) {
+        if (!generateCaret || !generateProjects) return;
+        if (!Array.isArray(projects) || projects.length < 2) {
+            generateCaret.hidden = true;
+            closeGenerateMenu();
+            return;
+        }
+        generateProjects.textContent = '';
+        for (const p of projects) {
+            const label = document.createElement('label');
+            label.className = 'split-menu-item';
+            const cb = document.createElement('input');
+            cb.type = 'checkbox';
+            cb.value = p.key;
+            cb.checked = true; // default: every project selected
+            const text = document.createElement('span');
+            text.textContent = p.label;
+            label.appendChild(cb);
+            label.appendChild(text);
+            generateProjects.appendChild(label);
+        }
+        generateCaret.hidden = false;
+    }
+
+    // Ask the host which projects exist, so the picker can appear only when it is useful.
+    vscode.postMessage({ type: 'requestProjects' });
 
     function updateStatusText() {
         const status = pendingEditsCore.statusFor(editsStore.count());
@@ -1287,6 +1348,9 @@
     window.addEventListener('message', event => {
         const message = event.data;
         switch (message.type) {
+            case 'projectList':
+                renderProjectPicker(message.projects);
+                break;
             case 'custom/completionsResponse': {
                 const resolve = pendingRequests.get(message.requestId);
                 if (resolve) {

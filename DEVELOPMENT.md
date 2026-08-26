@@ -110,6 +110,7 @@ per-suite without aborting on the first failure. The main ones:
 | `test/test_references_tree.js` | References-view grouping (file → component → occurrence). |
 | `test/test_tree_reveal.js` | Objects-tree navigation targets and parent chains: file/root fallback; exact method, property, action, transition and Get/Set nodes; nested virtual-folder ancestry; solution → PLC-project ancestry; and no project-map lookup until the logical component chain reaches the file/disk boundary. |
 | `test/test_st_shadow.js` | XML is the source of truth: a stray plain `.st` mirror (outside `ST_Files/`) must never steal an XML-backed symbol's index node — the references scan would follow the hijacked uri to the stale mirror and miss the real call sites. |
+| `test/test_st_output_path.js` | The pure output-path mapping behind project-aware **Generate ST** (`src/stOutputPath.js`): each project's objects land under `ST_Files/<project dir relative to workspace>/…` so two projects' identical object paths never collide, extensions become `.st`, a linked object cannot escape its project folder, and the single-root case carries no redundant workspace-name prefix. The end-to-end export (real provider, real disk, three-project fixture) is asserted by the dev-host `generate-st` phase. |
 | `test/test_library_catalog.js` | The data path behind the TwinCAT Libraries view: catalog built from the `.plcproj`, namespaces, `.tmc` types and their members. |
 | `test/test_dnd_rules.js` | The Objects-tree drag & drop and copy/paste compatibility matrices: what is draggable/copyable (not virtual folders, not Get/Set accessors; directories move but do not copy), components move only within their own file yet paste cross-file (POU↔interface gated), directory-cycle and no-op rejections, duplicate-in-place file paste. |
 | `test/test_xml_rename.js` | Structural rename primitives in `xmlParser`: `renameComponentInXml` (tag Name attr + declaration header + LineIds, Ids kept), `renameVirtualFolderInXml` (folder tag + member FolderPath prefix rewrite), and the no-op-safety composition the rename command relies on (header already renamed by the reference pass → attr/LineIds still fixed, no corruption). |
@@ -567,6 +568,14 @@ language server directly**. The extension bridges them over custom JSON-RPC requ
 (`custom/completions`, `custom/definition`, `custom/references`, `custom/referencesForSymbol`,
 `custom/configReferencesForSymbol`, `custom/diagnostics`, …) layered on the standard LSP transport
 (Node IPC).
+
+**Generate ST** is project-aware and lives entirely in the extension host (`customEditorProvider.js`):
+the webview asks `requestProjects` on load and shows a checkbox split-button menu only when the host's
+`projectList` reply has 2+ projects; clicking the button posts `generate-st` (all projects), the menu
+posts `generate-st` with a `projectKeys` subset. `generateAllStFiles` walks each selected project's
+`<Compile>` list from the `.plcproj` partition and writes `ST_Files/<project dir relative to workspace>/…`,
+so no two projects collide (the path math is the pure, tested `src/stOutputPath.js`). A workspace with no
+`.plcproj` falls back to the old flat workspace mirror.
 
 ### The live language-feature path
 
