@@ -535,27 +535,52 @@ END_VAR
 }
 
 /**
- * Applies an XML edit to a file Uri by opening it, modifying it, and saving it to disk.
+ * Reads a file's XML through the text-document layer — the same view the writer edits, so an open
+ * editor's unsaved content is never bypassed.
  * @param {vscode.Uri} fileUri File URI.
- * @param {Function} xmlModifier A function mapping old XML string to new XML string.
+ * @returns {Promise<string>} The document's current text (BOM-stripped, as VS Code supplies it).
+ */
+async function readXmlText(fileUri) {
+    const document = await vscode.workspace.openTextDocument(fileUri);
+    return document.getText();
+}
+
+/**
+ * Replaces a file's whole text through a WorkspaceEdit and saves it. Unchanged text is a no-op.
+ * A rejected edit THROWS: applyEdit resolving false means the write silently did not happen, and a
+ * caller that believes a file changed when it did not is exactly the failure this must not hide.
+ * @param {vscode.Uri} fileUri File URI.
+ * @param {string} newText The full replacement text.
+ * @returns {Promise<void>}
+ */
+async function writeXmlText(fileUri, newText) {
+    const document = await vscode.workspace.openTextDocument(fileUri);
+    const originalText = document.getText();
+    if (newText === originalText) return;
+
+    const edit = new vscode.WorkspaceEdit();
+    const lastLine = document.lineAt(document.lineCount - 1);
+    const range = new vscode.Range(new vscode.Position(0, 0), lastLine.range.end);
+    edit.replace(fileUri, range, newText);
+
+    const applied = await vscode.workspace.applyEdit(edit);
+    if (!applied) throw new Error(`the edit to "${path.basename(fileUri.fsPath)}" was not applied`);
+    await document.save();
+}
+
+/**
+ * Applies an XML edit to a file Uri by reading it, modifying it, and writing it back to disk.
+ * @param {vscode.Uri} fileUri File URI.
+ * @param {(xml: string) => string} xmlModifier A function mapping old XML string to new XML string.
  * @returns {Promise<void>}
  */
 async function applyXmlEdit(fileUri, xmlModifier) {
-    const document = await vscode.workspace.openTextDocument(fileUri);
-    const originalText = document.getText();
-    const newText = xmlModifier(originalText);
-
-    if (newText !== originalText) {
-        const edit = new vscode.WorkspaceEdit();
-        const lastLine = document.lineAt(document.lineCount - 1);
-        const range = new vscode.Range(new vscode.Position(0, 0), lastLine.range.end);
-        edit.replace(fileUri, range, newText);
-
-        await vscode.workspace.applyEdit(edit);
-        await document.save();
-    }
+    const originalText = await readXmlText(fileUri);
+    await writeXmlText(fileUri, xmlModifier(originalText));
 }
 
 // applyXmlEdit is exported for the drag & drop controller (extension.js injects it), so every
 // structural XML edit — menu command or drop — goes through the one byte-preserving write path.
-module.exports = { registerObjectCommands, applyXmlEdit };
+// readXmlText/writeXmlText are the same path split in two, for the rename transaction: it has to
+// read and write at separate moments (stage, then apply) without giving up that single writer.
+module.exports = { registerObjectCommands, applyXmlEdit, readXmlText, writeXmlText };

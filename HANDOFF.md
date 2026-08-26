@@ -4,7 +4,9 @@ Where the work *stands*. Read before starting; keep current (handoff rule in [CL
 100 lines — prune finished items rather than appending, but never drop a real finding to hit it. **Shipped features
 live in git history (PRs/commits); this file keeps the findings that would cost to re-derive.**
 
-**Last verified:** 2026-08-25 (Windows, user's machine, main incl. the `.tctleo` fix, G4 automation and
+**Last verified:** 2026-08-26 (Linux container, dev + transactional rename) — `REQUIRE_FULL_SUITE=1 npm test`
+green (**75/75, Coverage: FULL, 4.7 s**), typecheck clean. Prior full pass: 2026-08-25 (Windows, user's
+machine, main incl. the `.tctleo` fix, G4 automation and
 pending-edit persistence) — `REQUIRE_FULL_SUITE=1 npm test` green (**73/73, Coverage: FULL, 6.3 s**),
 typecheck clean, and **`node test/devhost/run.js` all green** — the G4 dev-host gate carries two `.TcTLEO`
 watcher assertions AND the automated P8 webview checklist (29 assertions via the `TCDEV_TEST`-gated
@@ -43,6 +45,21 @@ webview asks `requestProjects`→`projectList`, `generate-st` carries optional `
 No-`.plcproj` workspaces fall back to the old mirror. Verified: unit test, dev-host `generate-st` phase (real disk, 3-project
 fixture, subset scoping), and the dropdown eyeballed. Trap: `asRelativePath(dir, true)` prepends the folder name even for a
 SINGLE root (`ST_Files/ws/…`) — hence the hand-rolled `projectFolderRelPath`, which prefixes only for 2+ roots.
+**Improvement-plan phases (user-approved 2026-08-26, one PR per phase into `dev`):** an external review plan was
+assessed against the repo; adopted subset only. 1) transactional rename — DONE (below); 2) completion-provider
+split of `features/completions.js`; 3) ESLint; 4) structured LSP logging; 5) automatic CI for PRs targeting `dev`
+(**user-approved reversal** of the manual-only dev-CI ruling). Rejected: `libsymbols` split (P9 no-go stands),
+CI fixture (already done), editor/activate decomposition (done enough), ADR dir (memory bank + plans cover it).
+**Transactional cross-file rename (phase 1, on dev 2026-08-26):** `src/renameTransaction.js` — stage-then-apply
+with captured originals; pre-write re-read (`changed-on-disk` never written), reverse-order rollback on first
+failure, never-clobber verify on restore (`changed-after-write`), `revert()` when the on-disk file rename fails
+after content edits landed, rollback failures reported per file (real spelling via keyToUri — the lowercased key
+is identity only). `applyXmlEdit` split into `readXmlText`/`writeXmlText`; **`writeXmlText` now THROWS when
+`applyEdit` resolves false** (was silently ignored — a dropped edit mid-rename was invisible). `.plcproj` sync
+stays outside the transaction (own swallowing contract, many call sites — a later phase if wanted). Pins:
+`test_rename_transaction.js` (51 asserts, fault-injected io; all three guards verified to FAIL when removed).
+Trap: the pinned TS preview does not narrow `!res.ok` on a JSDoc union — see
+`.claude/memory/jsdoc-union-narrowing-needs-explicit-compare.md`.
 **Find References blanked the editor (shipped in 0.8.0, FIXED on dev 2026-08-26):** `media/editor.js`'s
 global `error` listener painted the "Webview Runtime Failure" overlay over both panes and toasted "Webview Error" for ANY
 window error event — and Chrome delivers its benign "ResizeObserver loop completed with undelivered notifications" notice
@@ -257,8 +274,8 @@ header; the gradient-clipped wordmark is deliberately left at 3.3–4.9:1 (a log
   one-liner before publishing). All 47 PR discussions were exported to a JSON archive and delivered to the
   user 2026-08-26 — deliberately NOT committed (old PR bodies may reference pre-rewrite names). PR/issue
   history, settings, secrets and branch protection did not carry over; recreate on the new repo as needed.
-  **Remaining: the user deletes `TC_PLC_Toolkit-old`** — until then the pre-rewrite objects are still
-  fetchable there. The old IP-sign-off open point is resolved and removed (user, 2026-08-26).
+  **`TC_PLC_Toolkit-old` is DELETED (user confirmed 2026-08-26)** — the retraction is complete; no
+  pre-rewrite object is reachable anywhere. The old IP-sign-off open point is resolved and removed (user, 2026-08-26).
 - **The suite is platform-correct now (fixed 2026-08-17) — don't reintroduce a Windows-shaped path assumption.**
   11 of 59 suites used to fail on any non-Windows checkout while CI (`windows-latest`) stayed green. Both copies of
   `uriToFsPath` ended in an unconditional `.replace(/\//g,'\\')`: right on Windows, but on POSIX it ate the root and
