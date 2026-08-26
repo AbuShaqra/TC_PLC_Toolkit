@@ -48,10 +48,13 @@ No-`.plcproj` workspaces fall back to the old mirror. Verified: unit test, dev-h
 fixture, subset scoping), and the dropdown eyeballed. Trap: `asRelativePath(dir, true)` prepends the folder name even for a
 SINGLE root (`ST_Files/ws/…`) — hence the hand-rolled `projectFolderRelPath`, which prefixes only for 2+ roots.
 **Improvement-plan phases (user-approved 2026-08-26, one PR per phase into `dev`):** an external review plan was
-assessed against the repo; adopted subset only. 1) transactional rename — DONE (below, PR #10); 2) completion-provider
-split of `features/completions.js` — in progress; 3) ESLint; 4) structured LSP logging; 5) automatic CI for PRs
-targeting `dev` + `REQUIRE_FULL_SUITE=1` enforced on CI — DONE (**user-approved reversal** of the manual-only
-dev-CI ruling; see Branching model). Rejected: `libsymbols` split (P9 no-go stands),
+assessed against the repo; adopted subset only. 1) transactional rename — DONE (below, PR #10); 2) completion split —
+DONE: `features/completions.js` 1361→191 lines (orchestrator+façade, public exports unchanged), parts in
+`src/lsp/completion/{pragma,context,namedParams,memberAccess,sources}.js`, acyclic require graph, verified
+behavior-IDENTICAL against the pre-split monolith (exhaustive probe: every caret position in a live-indexed unit,
+1186 probes + 18 named scenarios, 0 mismatches, order-sensitive deep equality); 3) ESLint; 4) structured LSP
+logging; 5) automatic CI for PRs targeting `dev` + `REQUIRE_FULL_SUITE=1` enforced on CI — DONE (**user-approved
+reversal** of the manual-only dev-CI ruling; see Branching model; first run proved green on PR #11 itself). Rejected: `libsymbols` split (P9 no-go stands),
 CI fixture (already done), editor/activate decomposition (done enough), ADR dir (memory bank + plans cover it).
 **Transactional cross-file rename (phase 1, on dev 2026-08-26):** `src/renameTransaction.js` — stage-then-apply
 with captured originals; pre-write re-read (`changed-on-disk` never written), reverse-order rollback on first

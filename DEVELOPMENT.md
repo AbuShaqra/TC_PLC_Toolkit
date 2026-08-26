@@ -387,6 +387,16 @@ src/
     parser.js           Structured Text lexer + symbol parser
     symbolNode.js       Single factory for a symbol node's core shape (parser + xmlIndexer build through it)
     features.js         Facade re-exporting features/{core,completions,definition,references,configReferences,highlights,diagnostics}
+    features/completions.js  Autocompletion ORCHESTRATOR + façade (public surface unchanged): walks
+                        pragma → member access → named params → caret-context classification and
+                        assembles what each context accepts. The systems live in completion/
+    completion/         The completion engine's parts, split by seam (behavior-identical extraction):
+      pragma.js           completions inside `{ … }` (pure, catalog-backed)
+      context.js          classifyCaretContext + the token/keyword vocabularies it reads
+      namedParams.js      argument-name completions for calls / FB init lists
+      memberAccess.js     the dotted-caret branch: project members, library namespaces (nested too),
+                          external (.tmc) type members, chained library member walks
+      sources.js          the push* candidate sources, ranking prefixes, snippets and keyword lists
     features/configReferences.js  Rename's non-code half: PLC symbol references inside visualizations, text lists and task configs
     builtins.js         Standard IEC/TwinCAT types, keywords, functions/FBs
     types.js            Type model, resolver, member lookup, assignability
