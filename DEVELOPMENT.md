@@ -37,6 +37,17 @@ same version: both directories end up under `~/.vscode/extensions/` and the old 
 `.obsolete` until a **full restart** — a window reload is not always enough. This has already cost one debug
 cycle chasing a "feature does nothing" report that was really old code still running.
 
+### Publish a GitHub release
+
+`.github/workflows/release.yml` is a **manual** workflow (`workflow_dispatch`; Actions tab → *Release* →
+*Run workflow*, or `gh workflow run release.yml`). It builds the VSIX from the selected ref — normally
+`main` — and publishes a GitHub release tagged `v<package.json version>` with the VSIX attached and notes
+generated from the PRs since the previous tag. Two toggles: `prerelease` and `draft` (draft lets the notes
+be edited before the release goes public). It never overwrites: if the tag or release already exists the
+run fails before building, so **the release procedure is bump `version` in `package.json`, merge, run the
+workflow**. It runs the same typecheck → test → package gates as CI first (a REDUCED test run, like CI),
+and also keeps the VSIX as a run artifact.
+
 ## Tests
 
 The language server has a standalone test suite; no VS Code instance is required.
@@ -260,6 +271,9 @@ on), with superseded runs cancelled and a read-only token. Two jobs:
   not to drop the version from the matrix.
 
 **CI is always a REDUCED run** — see the section above.
+
+Releases are a separate, manual workflow (`.github/workflows/release.yml`, the only one with a write
+token) — see "Publish a GitHub release" under "Package a VSIX".
 
 **`sample/` is ground truth.** It is a real, *correct* TwinCAT project, so every diagnostic reported
 on it is a bug. Never fix a red gate by raising the baseline.

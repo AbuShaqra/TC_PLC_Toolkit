@@ -23,6 +23,10 @@ and status bar. The dev-host now copies the sample as LineA+LineB and asserts th
 cross-file navigation. The user's pre-existing newline edit in `sample/.../FB_Station.TcPOU` remains untouched.
 **0.8.0 VSIX rebuilt 2026-08-25 16:52 WITH the pending-edit persistence fix, installed (`--force`; content-checked:
 `pendingEditsStore.js` in, `devHostTestHook.js` out), fully restarted, and the Ctrl+R check passed live.**
+**Release workflow (branch `feat/release-workflow`, PR pending merge, 2026-08-26):** `.github/workflows/release.yml`,
+manual-only; tags `v<package.json version>`, refuses an existing tag/release, gates typecheck+test+package, attaches
+the VSIX, `prerelease`/`draft` inputs. **Not yet exercised** — its first real run (after merge) is the proof; no tag or
+release exists on the recreated repo yet. Procedure in DEVELOPMENT.md "Publish a GitHub release".
 **Logo split into two generated images (branch `feat/social-preview-banner`, PR pending merge, 2026-08-26):**
 `media/icon.png` is now the **1280×640 GitHub social preview** (embedded at the top of README.md) (`scripts/make-social-preview.js`; upload it under repo Settings → Social preview — GitHub does not
 read it from the tree) and the square marketplace icon moved to `media/marketplace-icon.png` (`package.json` `icon`
