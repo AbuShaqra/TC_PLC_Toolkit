@@ -216,9 +216,9 @@ const copyB = plant('LineB', 'fisothemes', 'twincat dynamic collections', '1.0.7
         indexLibrarySymbols(dir, index);
         indexTypeSystem(dir, index);
         indexLibrarySignatures(dir, index);
-        for (const root of roots || []) {
-            if (normalizeProjectPath(root) === normalizeProjectPath(dir)) continue;
-            indexLibrarySignatures(root, index);
+        for (const otherRoot of roots || []) {
+            if (normalizeProjectPath(otherRoot) === normalizeProjectPath(dir)) continue;
+            indexLibrarySignatures(otherRoot, index);
         }
         indexBrowserCache(dir, index);
         seen.push({ dir, index });

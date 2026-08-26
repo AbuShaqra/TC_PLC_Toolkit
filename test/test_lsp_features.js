@@ -200,11 +200,11 @@ console.log("\nCleaning up temporary files...");
 for (const name of Object.keys(files)) {
     try {
         fs.unlinkSync(path.join(TEST_DIR, name));
-    } catch(e) {}
+    } catch { /* best-effort cleanup: a file the run never created is fine to miss */ }
 }
 try {
     fs.rmdirSync(TEST_DIR);
-} catch(e) {}
+} catch { /* best-effort cleanup: leaving a temp dir behind must not fail the suite */ }
 
 console.log(`\n--- LSP FEATURES TESTS COMPLETE with ${errors} errors ---`);
 process.exit(errors > 0 ? 1 : 0);

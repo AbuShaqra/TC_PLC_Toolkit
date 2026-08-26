@@ -52,8 +52,13 @@ assessed against the repo; adopted subset only. 1) transactional rename — DONE
 DONE: `features/completions.js` 1361→191 lines (orchestrator+façade, public exports unchanged), parts in
 `src/lsp/completion/{pragma,context,namedParams,memberAccess,sources}.js`, acyclic require graph, verified
 behavior-IDENTICAL against the pre-split monolith (exhaustive probe: every caret position in a live-indexed unit,
-1186 probes + 18 named scenarios, 0 mismatches, order-sensitive deep equality); 3) ESLint; 4) structured LSP
-logging; 5) automatic CI for PRs targeting `dev` + `REQUIRE_FULL_SUITE=1` enforced on CI — DONE (**user-approved
+1186 probes + 18 named scenarios, 0 mismatches, order-sensitive deep equality); 3) ESLint — DONE: `npm run lint`
+exits 0 (ESLint 9 flat CJS config, defect-focused; every relaxation documented IN `eslint.config.js` — notably
+`caughtErrors/args: 'none'` and `no-useless-escape` off, each argued there), 26 real fixes + 1 load-bearing inline
+disable (`xaeShell.js`'s `vscode` require feeds a JSDoc namespace — deleting it fails typecheck, verified), Lint
+step in CI `build` job only (ESLint 9 needs Node ≥18.18; runtime-compat runs Node 16). Deferred: ESLint 10 bump
+(9.x now deprecated; 10 raises the Node floor + re-triage), dev-only `brace-expansion` advisory (fix would drag 19
+unrelated lockfile packages); 4) structured LSP logging; 5) automatic CI for PRs targeting `dev` + `REQUIRE_FULL_SUITE=1` enforced on CI — DONE (**user-approved
 reversal** of the manual-only dev-CI ruling; see Branching model; first run proved green on PR #11 itself). Rejected: `libsymbols` split (P9 no-go stands),
 CI fixture (already done), editor/activate decomposition (done enough), ADR dir (memory bank + plans cover it).
 **Transactional cross-file rename (phase 1, on dev 2026-08-26):** `src/renameTransaction.js` — stage-then-apply

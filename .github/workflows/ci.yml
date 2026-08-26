@@ -48,6 +48,12 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # Defect-focused lint (recommended + a handful of correctness rules); the policy and every
+      # relaxation are documented in eslint.config.js. Deliberately only in this job: ESLint 9
+      # needs Node >= 18.18, and runtime-compat runs the suite on Node 16 on purpose.
+      - name: Lint
+        run: npm run lint
+
       # Type-check only (no emit) — a safety net over the JSDoc; the extension ships plain JS.
       - name: Type-check
         run: npm run typecheck

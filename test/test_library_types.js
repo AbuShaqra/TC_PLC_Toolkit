@@ -56,7 +56,7 @@ const path = require('path');
 
 const { parseTwinCatXml } = require('../src/xmlParser');
 const { convertXmlToSt } = require('../src/stConverter');
-const { parseAndIndexDocument, clearWorkspaceIndex, getWorkspaceSymbolIndex } = require('../src/lsp/parser');
+const { clearWorkspaceIndex, getWorkspaceSymbolIndex } = require('../src/lsp/parser');
 const { indexXmlObject } = require('../src/lsp/xmlIndexer');
 const { provideCompletions, provideDiagnostics, setDiagnosticsConfig } = require('../src/lsp/features');
 const { resolveSymbolType, lookupMember, typeFromNode, parseTypeString, isAssignable } = require('../src/lsp/types');

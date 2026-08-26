@@ -887,7 +887,6 @@ function parseAndIndexDocument(code, fileUri, index = workspaceSymbolIndex) {
         // 2. Variables declaration block
         if (tok.type === TokenType.Keyword && tok.value.toUpperCase().startsWith('VAR')) {
             const scopeName = tok.value.toUpperCase();
-            const startLine = tok.line;
             idx++;
 
             const { vars, nextIndex } = parseVariablesBlock(tokens, idx, scopeName);
