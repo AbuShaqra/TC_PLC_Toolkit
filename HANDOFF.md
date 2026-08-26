@@ -23,6 +23,10 @@ and status bar. The dev-host now copies the sample as LineA+LineB and asserts th
 cross-file navigation. The user's pre-existing newline edit in `sample/.../FB_Station.TcPOU` remains untouched.
 **0.8.0 VSIX rebuilt 2026-08-25 16:52 WITH the pending-edit persistence fix, installed (`--force`; content-checked:
 `pendingEditsStore.js` in, `devHostTestHook.js` out), fully restarted, and the Ctrl+R check passed live.**
+**Release workflow (branch `feat/release-workflow`, PR pending merge, 2026-08-26):** `.github/workflows/release.yml`,
+manual-only; tags `v<package.json version>`, refuses an existing tag/release, gates typecheck+test+package, attaches
+the VSIX, `prerelease`/`draft` inputs. **Not yet exercised** — its first real run (after merge) is the proof; no tag or
+release exists on the recreated repo yet. Procedure in DEVELOPMENT.md "Publish a GitHub release".
 **Install trap that cost a debug cycle:** VS Code keeps the old version dir until a FULL restart (reload-window is not
 always enough) — the user tested 0.3.1's feature against the still-running 0.3.0 code and reported it broken. Check
 `~/.vscode/extensions/` for side-by-side version dirs + `.obsolete` before debugging a "feature does nothing" report.
