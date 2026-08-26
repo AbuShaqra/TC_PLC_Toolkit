@@ -158,7 +158,9 @@ function activate(context) {
 
     const provider = new TwinCatCustomEditorProvider(context, {
         showReferences,
-        onActiveFileChange: revealUri
+        onActiveFileChange: revealUri,
+        // Re-read on every call: a `.plcproj` edit rebuilds the map (same contract as the tree/status bar).
+        getProjectMap: () => hostProjectMap
     });
 
     // Push a single TwinCAT file's raw XML to the LSP so it can build a real-range symbol node.

@@ -9,6 +9,7 @@ const fs = require('fs');
 const { parseTwinCatXml, replaceComponentCdata } = require('./xmlParser');
 const { updateDocument } = require('./plcProjHelper');
 const { convertXmlToSt } = require('./stConverter');
+const { stOutputRelPath, projectFolderRelPath } = require('./stOutputPath');
 const { assembleSt, localToAbsolute, createStResolver, mapDefinition, collectPeekReferences, listExternalReferences, mapDiagnosticsToLocal } = require('./livePath');
 const pendingEditsCore = require('../media/pendingEdits');
 const { createPendingEditsStore } = require('./pendingEditsStore');
@@ -437,8 +438,13 @@ class TwinCatCustomEditorProvider {
                         console.error(err);
                     }
                     break;
+                case 'requestProjects':
+                    // The webview asks once, on load, to decide whether to show the project picker.
+                    webviewPanel.webview.postMessage({ type: 'projectList', projects: this.listProjects() });
+                    break;
                 case 'generate-st':
-                    await this.generateAllStFiles();
+                    // `projectKeys` narrows to a chosen subset; absent/empty means every project.
+                    await this.generateAllStFiles(message.projectKeys);
                     break;
                 case 'openFile':
                     try {
@@ -542,7 +548,17 @@ class TwinCatCustomEditorProvider {
                 <select id="component-select" class="nav-select">
                     <!-- populated dynamically -->
                 </select>
-                <button id="generate-st-btn" class="action-btn">Generate ST</button>
+                <!-- Split button: the main part generates every project; the caret (shown only when
+                     the workspace has 2+ projects) opens a checkbox menu to narrow the selection. -->
+                <div id="generate-st-group" class="split-btn">
+                    <button id="generate-st-btn" class="action-btn">Generate ST</button>
+                    <button id="generate-st-caret" class="action-btn split-caret" title="Choose projects" aria-haspopup="true" aria-expanded="false" hidden>▾</button>
+                    <div id="generate-st-menu" class="split-menu" role="menu" hidden>
+                        <div class="split-menu-title">Generate ST for</div>
+                        <div id="generate-st-projects" class="split-menu-list"><!-- checkboxes injected --></div>
+                        <button id="generate-st-run" class="action-btn split-menu-run">Generate selected</button>
+                    </div>
+                </div>
                 <div class="sync-toggle-container active" id="sync-toggle-wrapper">
                     <span class="sync-toggle-label" id="sync-mode-text">Auto Sync</span>
                     <label class="switch">
@@ -589,58 +605,111 @@ class TwinCatCustomEditorProvider {
      * Converts all TwinCAT XML files in the workspace to Structured Text files
      * and saves them under the 'ST_Files' directory mirroring the layout.
      */
-    async generateAllStFiles() {
+    /**
+     * The workspace's PLC projects, for the webview's Generate-ST picker.
+     * @returns {Array<{key: string, label: string}>} `[]` when there are fewer than two projects,
+     *   so the webview shows the plain button rather than a one-entry menu.
+     */
+    listProjects() {
+        const projectMap = this.options && this.options.getProjectMap && this.options.getProjectMap();
+        if (!projectMap || projectMap.projects.size < 2) return [];
+        return projectMap.keys()
+            .map(key => ({ key, label: projectMap.displayName(key) }))
+            .sort((a, b) => a.label.localeCompare(b.label));
+    }
+
+    /**
+     * Writes an `.st` for every object of the selected PLC projects, project-aware: each project's
+     * objects go under `ST_Files/<project dir relative to the workspace>/…` so two projects that
+     * share an object path never overwrite each other (see stOutputPath.js). Files belonging to no
+     * `.plcproj` (loose `.st`, orphan XML) are not emitted.
+     * @param {string[]} [projectKeys] Project keys to export; absent/empty exports every project.
+     */
+    async generateAllStFiles(projectKeys) {
         const workspaceFolders = vscode.workspace.workspaceFolders;
         if (!workspaceFolders) {
             vscode.window.showErrorMessage('No active workspace folder found.');
             return;
         }
-        const workspaceRoot = workspaceFolders[0].uri;
-        const targetDir = vscode.Uri.joinPath(workspaceRoot, 'ST_Files');
+        const targetDir = vscode.Uri.joinPath(workspaceFolders[0].uri, 'ST_Files');
+        const projectMap = this.options && this.options.getProjectMap && this.options.getProjectMap();
 
-        // Find all TwinCAT XML files recursively
-        const files = await vscode.workspace.findFiles('**/*.{TcPOU,TcIO,TcGVL,TcDUT,TcTLEO,tcpou,tcio,tcgvl,tcdut,tctleo}');
-        
+        // No `.plcproj` anywhere (a bare folder of TwinCAT files): fall back to the flat
+        // workspace-relative mirror, so those users are not left with nothing to export.
+        if (!projectMap || projectMap.projects.size === 0) {
+            await this._generateWorkspaceMirror(targetDir);
+            return;
+        }
+
+        const wanted = Array.isArray(projectKeys) && projectKeys.length
+            ? new Set(projectKeys)
+            : new Set(projectMap.keys());
+
         let successCount = 0;
         let failCount = 0;
+        for (const key of projectMap.keys()) {
+            if (!wanted.has(key)) continue;
+            const project = projectMap.get(key);
+            if (!project) continue;
+            // The project's folder under ST_Files: its directory relative to the workspace, unique
+            // per project. Computed by hand rather than via asRelativePath, which prepends the
+            // folder name even for a single root (giving `ST_Files/<rootName>/…`). The root name is
+            // added only when there are 2+ roots, which is what keeps a multi-root export unambiguous.
+            const projectFolderRel = projectFolderRelPath(workspaceFolders.map(f => f.uri.fsPath), project.dir);
 
-        for (const fileUri of files) {
-            // Get relative path from workspace root
-            const relPath = vscode.workspace.asRelativePath(fileUri, false);
-            
-            // Ignore files already inside ST_Files/
-            if (relPath.startsWith('ST_Files/') || relPath.startsWith('ST_Files\\')) {
-                continue;
-            }
-
-            try {
-                const fileData = await vscode.workspace.fs.readFile(fileUri);
-                const text = Buffer.from(fileData).toString('utf8');
-                const parsed = parseTwinCatXml(text);
-                if (parsed) {
+            // objectFiles maps a normalized key → the file's real on-disk path (correct casing).
+            for (const filePath of project.objectFiles.values()) {
+                try {
+                    const fileData = await vscode.workspace.fs.readFile(vscode.Uri.file(filePath));
+                    const parsed = parseTwinCatXml(Buffer.from(fileData).toString('utf8'));
+                    if (!parsed) continue;
                     const { stText } = convertXmlToSt(parsed);
-                    
-                    // Determine output path: ST_Files/<relPath without extension>.st
-                    const ext = path.extname(relPath);
-                    const baseNameWithoutExt = path.basename(relPath, ext);
-                    const dirName = path.dirname(relPath);
-                    
-                    // Construct output URI
-                    const outDirUri = vscode.Uri.joinPath(targetDir, dirName);
-                    const outFileUri = vscode.Uri.joinPath(outDirUri, `${baseNameWithoutExt}.st`);
-                    
-                    // Ensure directory exists
-                    await vscode.workspace.fs.createDirectory(outDirUri);
-                    // Write file
+                    const outRel = stOutputRelPath(projectFolderRel, project.dir, filePath);
+                    const outFileUri = vscode.Uri.joinPath(targetDir, ...outRel.split(/[\\/]+/));
+                    await vscode.workspace.fs.createDirectory(vscode.Uri.joinPath(outFileUri, '..'));
                     await vscode.workspace.fs.writeFile(outFileUri, Buffer.from(stText, 'utf8'));
                     successCount++;
+                } catch (err) {
+                    console.error(`Failed to generate ST for ${filePath}:`, err);
+                    failCount++;
                 }
+            }
+        }
+
+        if (failCount === 0) {
+            vscode.window.showInformationMessage(`Successfully generated ${successCount} ST files inside "ST_Files" folder.`);
+        } else {
+            vscode.window.showWarningMessage(`Generated ${successCount} ST files. Failed to convert ${failCount} files.`);
+        }
+    }
+
+    /**
+     * The pre-project-aware behaviour, kept for workspaces with no `.plcproj`: mirror every TwinCAT
+     * object into `ST_Files/<workspace-relative path>.st`.
+     * @param {vscode.Uri} targetDir The `ST_Files` directory.
+     */
+    async _generateWorkspaceMirror(targetDir) {
+        const files = await vscode.workspace.findFiles('**/*.{TcPOU,TcIO,TcGVL,TcDUT,TcTLEO,tcpou,tcio,tcgvl,tcdut,tctleo}');
+        let successCount = 0;
+        let failCount = 0;
+        for (const fileUri of files) {
+            const relPath = vscode.workspace.asRelativePath(fileUri, false);
+            if (relPath.startsWith('ST_Files/') || relPath.startsWith('ST_Files\\')) continue;
+            try {
+                const fileData = await vscode.workspace.fs.readFile(fileUri);
+                const parsed = parseTwinCatXml(Buffer.from(fileData).toString('utf8'));
+                if (!parsed) continue;
+                const { stText } = convertXmlToSt(parsed);
+                const ext = path.extname(relPath);
+                const outFileUri = vscode.Uri.joinPath(targetDir, path.dirname(relPath), `${path.basename(relPath, ext)}.st`);
+                await vscode.workspace.fs.createDirectory(vscode.Uri.joinPath(outFileUri, '..'));
+                await vscode.workspace.fs.writeFile(outFileUri, Buffer.from(stText, 'utf8'));
+                successCount++;
             } catch (err) {
                 console.error(`Failed to generate ST for ${fileUri.fsPath}:`, err);
                 failCount++;
             }
         }
-
         if (failCount === 0) {
             vscode.window.showInformationMessage(`Successfully generated ${successCount} ST files inside "ST_Files" folder.`);
         } else {

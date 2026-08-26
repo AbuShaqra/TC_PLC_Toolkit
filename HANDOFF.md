@@ -14,7 +14,7 @@ readdir and skips cleanly — lesson in `.claude/memory/permission-tests-need-en
 Earlier: 2026-08-22 Linux P8 pass (72/72 FULL, typecheck, both browser harnesses in real Chromium, PASS
 set identical to pre-P8); 2026-08-18 full pass incl. dev-host two-project workspace and 0 sample
 diagnostics; 2026-08-10 verified 0 diagnostics with Beckhoff archives present AND moved aside.
-`package.json` is at **0.8.1** (the ResizeObserver Find-References fix; 0.8.0 was the solution→PLC-project Objects hierarchy). Remote history was rewritten 2026-08-17.
+`package.json` is at **0.8.2** (project-aware Generate ST + picker; 0.8.1 was the ResizeObserver Find-References fix; 0.8.0 the solution→PLC-project Objects hierarchy). Remote history was rewritten 2026-08-17.
 **Review fixes verified on `codex/review-fixes`:** bounded ZIP archive/input inflation (`libsymbols.js`); central path↔file-URI handling
 (`fileUri.js`); reference-cache identity is mtime+size+ctime+inode; FULL coverage now requires child harnesses to
 report that gates actually ran; editor coordinate/peek helpers moved to production `editorMapping.js` and are
@@ -35,6 +35,14 @@ dev gate, run by hand. **Proven 2026-08-26 (run 32942537490):** all three nested
 `ref: dev` → `git checkout -B dev refs/remotes/origin/dev`; PR #6's own run proved the `pull_request` path of the same
 `ci.yml`. It includes the VSIX build check on purpose (ruled: "is dev releasable" includes "does it package"; nothing is
 uploaded). Feature PRs targeting `dev` get no CI. `dev` has no ruleset — direct pushes are allowed.
+**Generate ST is project-aware (on dev, 2026-08-26):** the button is a split control — main = every project, caret opens a
+checkbox menu (shown only when 2+ projects) to pick a subset. Output moved from a flat `ST_Files/<workspace path>.st`
+mirror (which OVERWROTE across projects that shared an object path) to per-project `ST_Files/<project dir rel to workspace>/…`,
+walking each `.plcproj`'s `<Compile>` list. Path math is the pure `src/stOutputPath.js` (`test_st_output_path.js`); the
+webview asks `requestProjects`→`projectList`, `generate-st` carries optional `projectKeys`; provider gets `getProjectMap`.
+No-`.plcproj` workspaces fall back to the old mirror. Verified: unit test, dev-host `generate-st` phase (real disk, 3-project
+fixture, subset scoping), and the dropdown eyeballed. Trap: `asRelativePath(dir, true)` prepends the folder name even for a
+SINGLE root (`ST_Files/ws/…`) — hence the hand-rolled `projectFolderRelPath`, which prefixes only for 2+ roots.
 **Find References blanked the editor (shipped in 0.8.0, FIXED on dev 2026-08-26):** `media/editor.js`'s
 global `error` listener painted the "Webview Runtime Failure" overlay over both panes and toasted "Webview Error" for ANY
 window error event — and Chrome delivers its benign "ResizeObserver loop completed with undelivered notifications" notice
