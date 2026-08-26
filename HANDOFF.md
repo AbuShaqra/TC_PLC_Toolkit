@@ -23,6 +23,13 @@ and status bar. The dev-host now copies the sample as LineA+LineB and asserts th
 cross-file navigation. The user's pre-existing newline edit in `sample/.../FB_Station.TcPOU` remains untouched.
 **0.8.0 VSIX rebuilt 2026-08-25 16:52 WITH the pending-edit persistence fix, installed (`--force`; content-checked:
 `pendingEditsStore.js` in, `devHostTestHook.js` out), fully restarted, and the Ctrl+R check passed live.**
+**Logo split into two generated images (branch `feat/social-preview-banner`, PR pending merge, 2026-08-26):**
+`media/icon.png` is now the **1280×640 GitHub social preview** (embedded at the top of README.md) (`scripts/make-social-preview.js`; upload it under repo Settings → Social preview — GitHub does not
+read it from the tree) and the square marketplace icon moved to `media/marketplace-icon.png` (`package.json` `icon`
+repointed; `scripts/make-icon.js` writes there). Both draw the mark through the shared `scripts/glyphRaster.js`
+(`drawMark`), verified pixel-identical to the committed 256px icon on every visible pixel (only RGB under alpha-0
+differs). `.vscodeignore` excludes the banner and all three scripts; `vsce ls` confirmed (icon in, 0 dev files).
+Typecheck clean, 73/73 FULL after the change.
 **Install trap that cost a debug cycle:** VS Code keeps the old version dir until a FULL restart (reload-window is not
 always enough) — the user tested 0.3.1's feature against the still-running 0.3.0 code and reported it broken. Check
 `~/.vscode/extensions/` for side-by-side version dirs + `.obsolete` before debugging a "feature does nothing" report.

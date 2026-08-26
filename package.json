@@ -5,7 +5,7 @@
   "version": "0.8.0",
   "publisher": "a-abushaqra",
   "license": "MIT",
-  "icon": "media/icon.png",
+  "icon": "media/marketplace-icon.png",
   "repository": {
     "type": "git",
     "url": "https://github.com/AbuShaqra/TC_PLC_Toolkit.git"
