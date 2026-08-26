@@ -25,15 +25,15 @@ cross-file navigation. The user's pre-existing newline edit in `sample/.../FB_St
 `pendingEditsStore.js` in, `devHostTestHook.js` out), fully restarted, and the Ctrl+R check passed live.**
 **Release workflow (merged PR #2, in main 2026-08-26):** `.github/workflows/release.yml`, manual-only; tags
 `v<package.json version>`, refuses an existing tag/release, gates typecheck+test+package, attaches the VSIX,
-`prerelease`/`draft` inputs. **Not yet exercised** — its first real run is the proof; no tag or release exists on the
-recreated repo yet. Procedure in DEVELOPMENT.md "Publish a GitHub release". Ruleset `main-1` requires 1 approving
-review and has no bypass list or required status checks; the author cannot approve their own PR (options were laid out
-2026-08-26: approvals→0 + require the `build` check recommended, or add Repository admin to the bypass list).
-**Actions were DEAD after the 2026-08-26 repo recreate:** repo setting `allowed_actions: local_only` blocked
-`actions/checkout|setup-node|upload-artifact`, so every CI and Release run since the recreate ended in
-`startup_failure` — PRs #1 and #2 merged with NO CI execution (verified locally only). Fix is Settings → Actions →
-General → allow GitHub-created actions (`selected` + `github_owned_allowed`); re-run CI on main afterwards.
-Confirm `gh run list` shows a real conclusion before trusting a badge.
+`prerelease`/`draft` inputs. **Proven 2026-08-26 06:41:** published `v0.8.0` (tag at `fb9a11f`, VSIX attached, run
+green). vsce's "577 files / bundle your extension" warning is expected and ruled ignored (bundling contradicts the
+no-build-step invariant; ~385 files are LSP runtime deps). Procedure in DEVELOPMENT.md "Publish a GitHub release".
+**Repo settings after the 2026-08-26 recreate (all verified via `gh api`):** ruleset `main-1` on main = PR required,
+**0 approvals**, no bypass list, **no required status checks** (a red CI does not block the merge button — adding the
+`build` check is the one change that would); Actions permission = `selected` + GitHub-owned (it was `local_only`, which
+killed every run with `startup_failure` — PRs #1/#2 merged on local verification only). **CI is PR-only** (PR #3 merged
+with an invisible 0x03 byte that broke the file, PR #4 fixed it — see `.claude/memory/workflow-yaml-needs-a-byte-scan.md`;
+first green GitHub run: PR #4, all three jobs). Confirm `gh run list` shows a real conclusion before trusting a badge.
 **Logo split into two generated images (merged PR #1, in main 2026-08-26):**
 `media/icon.png` is now the **1280×640 GitHub social preview** (embedded at the top of README.md) (`scripts/make-social-preview.js`; upload it under repo Settings → Social preview — GitHub does not
 read it from the tree) and the square marketplace icon moved to `media/marketplace-icon.png` (`package.json` `icon`
