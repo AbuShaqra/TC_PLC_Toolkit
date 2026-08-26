@@ -7,7 +7,6 @@
  * "not declared" diagnostic (`1.5E-3` -> `E`, `1_000` -> `_000`).
  */
 
-const assert = require('assert');
 const { tokenize, TokenType } = require('../src/lsp/parser');
 
 let failures = 0;

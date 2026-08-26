@@ -30,7 +30,7 @@ const {
     clearLibrarySymbols
 } = require('../src/lsp/libsymbols');
 const { MANAGED_LIBRARIES } = require('../src/lsp/browserCache');
-const { indexLibraryNamespaces, clearLibraryNamespaces } = require('../src/lsp/libraries');
+const { clearLibraryNamespaces } = require('../src/lsp/libraries');
 const { parseAndIndexDocument, getWorkspaceSymbolIndex, clearWorkspaceIndex } = require('../src/lsp/parser');
 const { provideCompletions } = require('../src/lsp/features');
 

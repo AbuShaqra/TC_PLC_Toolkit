@@ -100,9 +100,9 @@ console.log('\n--- namespace symbol ranking ---');
         `a type only the browsercache declares takes tier 1 (got ${bcItem.sortText})`);
     ok(bcItem.detail === 'Function Block (Tc2_MC2)', `...also with a real kind (got ${bcItem.detail})`);
 
-    const itf = rank('I_Axis');
-    ok(itf.kind === 8 && itf.detail === 'Interface (Tc2_MC2)',
-        `an interface is reported as one, not as a Class (got kind=${itf.kind}, ${itf.detail})`);
+    const itfItem = rank('I_Axis');
+    ok(itfItem.kind === 8 && itfItem.detail === 'Interface (Tc2_MC2)',
+        `an interface is reported as one, not as a Class (got kind=${itfItem.kind}, ${itfItem.detail})`);
 
     const plain = rank('SomethingUnknown');
     ok(plain.sortText === undefined,

@@ -19,7 +19,8 @@
   "main": "./extension.js",
   "scripts": {
     "test": "node test/run.js",
-    "typecheck": "tsc --noEmit -p tsconfig.json"
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "lint": "eslint ."
   },
   "activationEvents": [
     "onLanguage:twincat-st",
@@ -433,8 +434,11 @@
     }
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.5",
     "@types/node": "^26.1.1",
     "@types/vscode": "^1.66.0",
+    "eslint": "^9.39.5",
+    "globals": "^17.11.0",
     "typescript": "^7.0.2"
   },
   "dependencies": {

@@ -513,11 +513,11 @@ function provideDiagnostics(code, symbolIndex, fileUri) {
 
             if (isFollowedByAssign) {
                 let isPrecededByCallStart = false;
-                let checkIdx = tokIdx - 1;
-                while (checkIdx >= 0) {
-                    const prev = tokens[checkIdx];
+                let callStartIdx = tokIdx - 1;
+                while (callStartIdx >= 0) {
+                    const prev = tokens[callStartIdx];
                     if (prev.type === TokenType.Whitespace || prev.type === TokenType.Comment) {
-                        checkIdx--;
+                        callStartIdx--;
                         continue;
                     }
                     if (prev.type === TokenType.Punctuation && (prev.value === '(' || prev.value === ',')) {

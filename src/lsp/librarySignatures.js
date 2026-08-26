@@ -57,9 +57,9 @@ function parseLibrarySignaturesXml(xml) {
     let libM;
     while ((libM = libRe.exec(xml)) !== null) {
         const libBody = libM[1];
-        const name = (/<LibraryName>([^<]*)<\/LibraryName>/.exec(libBody) || [, ''])[1].trim();
-        const version = (/<Version>([^<]*)<\/Version>/.exec(libBody) || [, ''])[1].trim();
-        const distributor = (/<Distributor>([^<]*)<\/Distributor>/.exec(libBody) || [, ''])[1].trim();
+        const name = (/<LibraryName>([^<]*)<\/LibraryName>/.exec(libBody) || ['', ''])[1].trim();
+        const version = (/<Version>([^<]*)<\/Version>/.exec(libBody) || ['', ''])[1].trim();
+        const distributor = (/<Distributor>([^<]*)<\/Distributor>/.exec(libBody) || ['', ''])[1].trim();
 
         const lib = { name, version, distributor, functions: [], functionBlocks: [], types: [], globals: [], interfaces: [] };
 
@@ -68,7 +68,7 @@ function parseLibrarySignaturesXml(xml) {
         while ((sigM = sigRe.exec(libBody)) !== null) {
             const kind = sigM[1];
             const body = sigM[2];
-            const nm = (/<Name>([^<]*)<\/Name>/.exec(body) || [, ''])[1].trim();
+            const nm = (/<Name>([^<]*)<\/Name>/.exec(body) || ['', ''])[1].trim();
             if (!IDENTIFIER.test(nm)) continue;
 
             if (kind === 'Function') {
