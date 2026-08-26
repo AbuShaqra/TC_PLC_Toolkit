@@ -44,8 +44,8 @@ cycle chasing a "feature does nothing" report that was really old code still run
 `main` — and publishes a GitHub release tagged `v<package.json version>` with the VSIX attached and notes
 generated from the PRs since the previous tag. Two toggles: `prerelease` and `draft` (draft lets the notes
 be edited before the release goes public). It never overwrites: if the tag or release already exists the
-run fails before building, so **the release procedure is bump `version` in `package.json`, merge, run the
-workflow**. It runs the same typecheck → test → package gates as CI first (a REDUCED test run, like CI),
+run fails before building, so **the release procedure is: bump `version` in `package.json` on `dev`, open and
+merge the `dev → main` PR, run the workflow on `main`**. It runs the same typecheck → test → package gates as CI first (a REDUCED test run, like CI),
 and also keeps the VSIX as a run artifact.
 
 ## Tests
@@ -256,8 +256,18 @@ changes.**
 runs from a `blob:` URL with no base to resolve them against, and it fails with "Failed trying to load
 default language strings" — the same symptom this project already records for a wrong AMD baseUrl.
 
+**Branches.** `main` is what gets released; **`dev`** is where day-to-day work is merged. When a release is
+ready: open a `dev → main` PR (CI runs on it), merge, then run the *Release* workflow on `main` (below).
+
 CI (`.github/workflows/ci.yml`) runs on every PR to `main` — PR-only by design: the `push` trigger is
-disabled so a merge does not re-run what the PR already proved — Windows-only (the platform users are
+disabled so a merge does not re-run what the PR already proved, and `dev` has **no automatic CI**. To check
+`dev`, run **CI (manual)** by hand: Actions tab → *CI (manual)* → *Run workflow*, or
+`gh workflow run ci-manual.yml`. Its `ref` input is what gets checked out and tested and **defaults to
+`dev`** — the branch dropdown beside it only selects which copy of the workflow files runs (GitHub lists a
+`workflow_dispatch` workflow from the default branch), so it can stay on `main`. `ci-manual.yml` is a shell
+whose single job `uses: ./.github/workflows/ci.yml` (which declares `workflow_call` with a `ref` input next
+to `pull_request` for exactly this; on a PR the input is empty and the checkout is the event's own ref), so
+the gates are defined once. CI itself is Windows-only (the platform users are
 on), with superseded runs cancelled and a read-only token. Two jobs:
 
 - **`build`** (current Node) — `npm run typecheck`, `npm test`, then a **VSIX build check**
