@@ -261,9 +261,9 @@ default language strings" — the same symptom this project already records for 
 **Branches.** `main` is what gets released; **`dev`** is where day-to-day work is merged. When a release is
 ready: open a `dev → main` PR (CI runs on it), merge, then run the *Release* workflow on `main` (below).
 
-CI (`.github/workflows/ci.yml`) runs on every PR to `main` — PR-only by design: the `push` trigger is
-disabled so a merge does not re-run what the PR already proved, and `dev` has **no automatic CI**. To check
-`dev`, run **CI (manual)** by hand: Actions tab → *CI (manual)* → *Run workflow*, or
+CI (`.github/workflows/ci.yml`) runs on every PR to **`main` or `dev`** — PR-only by design: the `push`
+trigger is disabled so a merge does not re-run what the PR already proved, and a direct push to `dev`
+triggers nothing. To check a ref without a PR, run **CI (manual)** by hand: Actions tab → *CI (manual)* → *Run workflow*, or
 `gh workflow run ci-manual.yml`. Its `ref` input is what gets checked out and tested and **defaults to
 `dev`** — the branch dropdown beside it only selects which copy of the workflow files runs (GitHub lists a
 `workflow_dispatch` workflow from the default branch), so it can stay on `main`. `ci-manual.yml` is a shell
@@ -272,9 +272,11 @@ to `pull_request` for exactly this; on a PR the input is empty and the checkout 
 the gates are defined once. CI itself is Windows-only (the platform users are
 on), with superseded runs cancelled and a read-only token. Two jobs:
 
-- **`build`** (current Node) — `npm run typecheck`, `npm test`, then a **VSIX build check**
-  (`vsce package`). Packaging is otherwise only exercised by hand at release time, where a broken
-  manifest or `.vscodeignore` would surface far too late.
+- **`build`** (current Node) — `npm run typecheck`, `npm test` with **`REQUIRE_FULL_SUITE=1`** (the
+  sample is committed, so CI achieves FULL coverage; a run whose load-bearing gates skipped fails
+  instead of passing quietly), then a **VSIX build check** (`vsce package`). Packaging is otherwise
+  only exercised by hand at release time, where a broken manifest or `.vscodeignore` would surface
+  far too late.
 - **`runtime-compat`** (Node 16 and 20) — `npm test` only. The extension runs on the Node that VS Code
   bundles, not the CI default: `engines.vscode` is `^1.66.0`, and VS Code 1.66 ships Electron 17
   (Node 16), so the suite must keep working there or that support claim is fiction. Tests only is

@@ -30,13 +30,15 @@ cross-file navigation. The user's pre-existing newline edit in `sample/.../FB_St
 `prerelease`/`draft` inputs. **Proven 2026-08-26 06:41:** published `v0.8.0` (tag at `fb9a11f`, VSIX attached, run
 green). vsce's "577 files / bundle your extension" warning is expected and ruled ignored (bundling contradicts the
 no-build-step invariant; ~385 files are LSP runtime deps). Procedure in DEVELOPMENT.md "Publish a GitHub release".
-**Branching model (2026-08-26):** `dev` (created from main `6cbb77c`) collects day-to-day work; a release is
-`dev → main` PR (CI runs on it) then *Release* on main. `dev` has NO automatic CI — *CI (manual)*
-(`.github/workflows/ci-manual.yml`, `ref` input defaults to `dev`, calls `ci.yml` via `workflow_call`) is the
-dev gate, run by hand. **Proven 2026-08-26 (run 32942537490):** all three nested jobs green and the checkout log shows
-`ref: dev` → `git checkout -B dev refs/remotes/origin/dev`; PR #6's own run proved the `pull_request` path of the same
-`ci.yml`. It includes the VSIX build check on purpose (ruled: "is dev releasable" includes "does it package"; nothing is
-uploaded). Feature PRs targeting `dev` get no CI. `dev` has no ruleset — direct pushes are allowed.
+**Branching model (updated 2026-08-26):** `dev` (created from main `6cbb77c`) collects day-to-day work; a release is
+`dev → main` PR (CI runs on it) then *Release* on main. **PRs targeting `dev` now run CI automatically**
+(`ci.yml` `pull_request: [main, dev]`, user-approved reversal of the manual-only ruling, phase 5 of the improvement
+plan) and the build job's Test step now sets **`REQUIRE_FULL_SUITE=1`** — a REDUCED run fails instead of passing
+(sample/ is committed, so FULL is achievable on CI; the old ci.yml comment claiming otherwise was stale and is fixed).
+*CI (manual)* (`ci-manual.yml`, `ref` defaults to `dev`, calls `ci.yml` via `workflow_call`) remains for direct
+pushes to `dev` (still trigger nothing) and ad-hoc refs. VSIX build check stays on purpose (ruled: "is dev
+releasable" includes "does it package"). `dev` has no ruleset — direct pushes are allowed. Earlier proof of the
+manual path: run 32942537490, all three nested jobs green.
 **Generate ST is project-aware (on dev, 2026-08-26):** the button is a split control — main = every project, caret opens a
 checkbox menu (shown only when 2+ projects) to pick a subset. Output moved from a flat `ST_Files/<workspace path>.st`
 mirror (which OVERWROTE across projects that shared an object path) to per-project `ST_Files/<project dir rel to workspace>/…`,
@@ -46,9 +48,10 @@ No-`.plcproj` workspaces fall back to the old mirror. Verified: unit test, dev-h
 fixture, subset scoping), and the dropdown eyeballed. Trap: `asRelativePath(dir, true)` prepends the folder name even for a
 SINGLE root (`ST_Files/ws/…`) — hence the hand-rolled `projectFolderRelPath`, which prefixes only for 2+ roots.
 **Improvement-plan phases (user-approved 2026-08-26, one PR per phase into `dev`):** an external review plan was
-assessed against the repo; adopted subset only. 1) transactional rename — DONE (below); 2) completion-provider
-split of `features/completions.js`; 3) ESLint; 4) structured LSP logging; 5) automatic CI for PRs targeting `dev`
-(**user-approved reversal** of the manual-only dev-CI ruling). Rejected: `libsymbols` split (P9 no-go stands),
+assessed against the repo; adopted subset only. 1) transactional rename — DONE (below, PR #10); 2) completion-provider
+split of `features/completions.js` — in progress; 3) ESLint; 4) structured LSP logging; 5) automatic CI for PRs
+targeting `dev` + `REQUIRE_FULL_SUITE=1` enforced on CI — DONE (**user-approved reversal** of the manual-only
+dev-CI ruling; see Branching model). Rejected: `libsymbols` split (P9 no-go stands),
 CI fixture (already done), editor/activate decomposition (done enough), ADR dir (memory bank + plans cover it).
 **Transactional cross-file rename (phase 1, on dev 2026-08-26):** `src/renameTransaction.js` — stage-then-apply
 with captured originals; pre-write re-read (`changed-on-disk` never written), reverse-order rollback on first
@@ -176,9 +179,9 @@ header; the gradient-clipped wordmark is deliberately left at 3.3–4.9:1 (a log
   clone. Revisit only if the file grows a NEW seam, with G5 available.
   **The deepening roadmap is now CLOSED on this machine: P1-P6 + P8 shipped (PRs #39-#45),
   P9 ruled no-go. P7 (tree model) stays parked — its dev-host gate is mandatory, user's machine.**
-  **GitHub Actions is account-level DEAD since 2026-08-18** — every run (main included) fails in
-  ~5 s with no logs; jobs never start. Likely the Actions spending limit/billing. USER must fix in
-  GitHub Settings → Billing; until then the local `REQUIRE_FULL_SUITE=1` gate is the merge gate.
+  (The 2026-08-18 "Actions account-level dead" note is OBSOLETE — that repo was deleted in the
+  recreate; on the recreated repo the startup failures were the `local_only` Actions permission,
+  fixed 2026-08-26, and runs are green since PR #4.)
   Open decisions remaining: the fossil-rewrite table's eventual removal (user's call, P4 ruling
   keeps them). (P6 features.js: RULED kept. P9: RULED no-go, above.)
 - **Solution→PLC-project Objects hierarchy (0.8.0):** `solutionMap.js` follows the actual TwinCAT
