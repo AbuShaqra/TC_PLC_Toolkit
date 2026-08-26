@@ -1,5 +1,7 @@
 # TwinCAT PLC Toolkit
 
+![TwinCAT PLC Toolkit](media/icon.png)
+
 A lightweight, offline VS Code extension for editing, navigating and analysing Beckhoff **TwinCAT**
 PLC projects (`.TcPOU`, `.TcGVL`, `.TcDUT`, `.TcIO`). It hides the XML wrappers behind a two-pane
 editor, adds **Structured Text (IEC 61131-3)** language support from a built-in language server, and
