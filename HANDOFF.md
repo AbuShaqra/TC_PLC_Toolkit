@@ -31,8 +31,10 @@ no-build-step invariant; ~385 files are LSP runtime deps). Procedure in DEVELOPM
 **Branching model (2026-08-26):** `dev` (created from main `6cbb77c`) collects day-to-day work; a release is
 `dev → main` PR (CI runs on it) then *Release* on main. `dev` has NO automatic CI — *CI (manual)*
 (`.github/workflows/ci-manual.yml`, `ref` input defaults to `dev`, calls `ci.yml` via `workflow_call`) is the
-dev gate, run by hand. **Its first run is the proof** that the reusable-workflow call and the `inputs.ref ||
-github.ref` checkout work on both paths — verify before trusting. Feature PRs targeting `dev` get no CI.
+dev gate, run by hand. **Proven 2026-08-26 (run 32942537490):** all three nested jobs green and the checkout log shows
+`ref: dev` → `git checkout -B dev refs/remotes/origin/dev`; PR #6's own run proved the `pull_request` path of the same
+`ci.yml`. It includes the VSIX build check on purpose (ruled: "is dev releasable" includes "does it package"; nothing is
+uploaded). Feature PRs targeting `dev` get no CI. `dev` has no ruleset — direct pushes are allowed.
 **Repo settings after the 2026-08-26 recreate (all verified via `gh api`):** ruleset `main-1` on main = PR required,
 **0 approvals**, no bypass list, **no required status checks** (a red CI does not block the merge button — adding the
 `build` check is the one change that would); Actions permission = `selected` + GitHub-owned (it was `local_only`, which
