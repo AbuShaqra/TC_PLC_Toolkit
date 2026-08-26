@@ -257,8 +257,8 @@ header; the gradient-clipped wordmark is deliberately left at 3.3–4.9:1 (a log
   one-liner before publishing). All 47 PR discussions were exported to a JSON archive and delivered to the
   user 2026-08-26 — deliberately NOT committed (old PR bodies may reference pre-rewrite names). PR/issue
   history, settings, secrets and branch protection did not carry over; recreate on the new repo as needed.
-  **Remaining: the user deletes `TC_PLC_Toolkit-old`** — until then the pre-rewrite objects are still
-  fetchable there. The old IP-sign-off open point is resolved and removed (user, 2026-08-26).
+  **`TC_PLC_Toolkit-old` is DELETED (user confirmed 2026-08-26)** — the retraction is complete; no
+  pre-rewrite object is reachable anywhere. The old IP-sign-off open point is resolved and removed (user, 2026-08-26).
 - **The suite is platform-correct now (fixed 2026-08-17) — don't reintroduce a Windows-shaped path assumption.**
   11 of 59 suites used to fail on any non-Windows checkout while CI (`windows-latest`) stayed green. Both copies of
   `uriToFsPath` ended in an unconditional `.replace(/\//g,'\\')`: right on Windows, but on POSIX it ate the root and
