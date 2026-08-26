@@ -14,7 +14,7 @@ readdir and skips cleanly — lesson in `.claude/memory/permission-tests-need-en
 Earlier: 2026-08-22 Linux P8 pass (72/72 FULL, typecheck, both browser harnesses in real Chromium, PASS
 set identical to pre-P8); 2026-08-18 full pass incl. dev-host two-project workspace and 0 sample
 diagnostics; 2026-08-10 verified 0 diagnostics with Beckhoff archives present AND moved aside.
-`package.json` is at **0.8.0** (solution→PLC-project Objects hierarchy). Remote history was rewritten 2026-08-17.
+`package.json` is at **0.8.1** (the ResizeObserver Find-References fix; 0.8.0 was the solution→PLC-project Objects hierarchy). Remote history was rewritten 2026-08-17.
 **Review fixes verified on `codex/review-fixes`:** bounded ZIP archive/input inflation (`libsymbols.js`); central path↔file-URI handling
 (`fileUri.js`); reference-cache identity is mtime+size+ctime+inode; FULL coverage now requires child harnesses to
 report that gates actually ran; editor coordinate/peek helpers moved to production `editorMapping.js` and are
