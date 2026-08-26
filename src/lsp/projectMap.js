@@ -28,6 +28,7 @@ const {
     walkFiles,
     suffixDisplayNames
 } = require('../twincatWorkspace');
+const log = require('./log');
 
 // Identity re-export: projectMap.js and xmlIndexer.js must agree on the same Set object, not merely
 // an equal one (test_project_map.js's cross-pin). twincatWorkspace.js is the shared owner now; this
@@ -109,7 +110,9 @@ function pathWithDiskSpelling(includePath, projectDir, directoryCache) {
                     entries = new Map(fs.readdirSync(current).map(name => [name.toLowerCase(), name]));
                 } catch (e) {
                     // Cache failures too: a project with many missing objects under one directory
-                    // should not retry the same unreadable path for every Include.
+                    // should not retry the same unreadable path for every Include. The caching is also
+                    // what keeps this record per-DIRECTORY rather than per-Include.
+                    log.debug('include-directory-read-failed', { dir: current, error: e });
                 }
                 directoryCache.set(cacheKey, entries);
             }
@@ -141,6 +144,11 @@ function readCompileIncludes(plcprojPath) {
     try {
         xml = fs.readFileSync(plcprojPath, 'utf8');
     } catch (e) {
+        // The ONE `warn` in the LSP's degraded-condition set, and it earns it: the walk just found this
+        // `.plcproj`, so failing to read it is not a routine skip — the project ends up compiling no
+        // objects at all, its index stays empty, and every feature on every file in it goes quiet. A
+        // healthy project never produces this line.
+        log.warn('plcproj-unreadable', { file: plcprojPath, error: e });
         return new Map();
     }
     const projDir = path.dirname(plcprojPath);

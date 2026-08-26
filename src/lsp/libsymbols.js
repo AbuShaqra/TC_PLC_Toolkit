@@ -46,6 +46,7 @@ const {
     readBrowserCacheDoc
 } = require('./parseCache');
 const { readLibraryReferences, collectPlcProjFiles } = require('./plcprojRefs');
+const log = require('./log');
 
 /** ZIP signatures. */
 const SIG_EOCD = 0x06054b50;        // End of central directory
@@ -265,6 +266,11 @@ function harvestArchiveFile(filePath) {
     try {
         names = harvestArchive(fs.readFileSync(filePath));
     } catch (e) {
+        // `debug`: an archive that will not decode is a normal fact of a vendored `_Libraries` tree,
+        // and the count of them is already reported at info level in the per-project summary line
+        // ("N undecodable"). This record only names WHICH one, for a session that is chasing a
+        // resurrected false positive back to its missing symbol source.
+        log.debug('archive-decode-failed', { file: filePath, error: e });
         return null; // undecodable archive: contribute nothing rather than guess
     }
     __archiveStats.inflated++;
@@ -1215,6 +1221,10 @@ function indexTypeSystem(rootDir, index) {
         try {
             xml = fs.readFileSync(file, 'utf8');
         } catch (e) {
+            // `debug`: the `.tmc` is a build artifact that a build can be rewriting underneath us.
+            // Worth having when struct fields or FB methods have gone missing (this file is their only
+            // source), not worth interrupting a healthy session for.
+            log.debug('tmc-unreadable', { file, error: e });
             continue; // unreadable: contribute nothing rather than guess
         }
         stats.files++;

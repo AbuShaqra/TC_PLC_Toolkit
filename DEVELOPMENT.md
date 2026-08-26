@@ -387,6 +387,11 @@ src/
                         Signature records are CLONED per project — see the warning in its header.
     plcprojRefs.js      One shared, cached .plcproj read (library references + namespaces). The same
                         file used to be read three times per project per scan.
+    log.js              Structured, quiet-by-default logging for the LSP process (threshold `warn`,
+                        TWINCAT_LSP_LOG=debug to opt in; stderr, one line per record; never throws;
+                        below-threshold calls cost one comparison). The request handlers still return
+                        their safe defaults on failure — the logger is what makes a default
+                        explicable. Routine healthy-project conditions belong at debug, never warn
     parser.js           Structured Text lexer + symbol parser
     symbolNode.js       Single factory for a symbol node's core shape (parser + xmlIndexer build through it)
     features.js         Facade re-exporting features/{core,completions,definition,references,configReferences,highlights,diagnostics}

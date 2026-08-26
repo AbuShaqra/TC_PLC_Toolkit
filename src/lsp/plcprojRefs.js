@@ -30,6 +30,7 @@
 const fs = require('fs');
 const path = require('path');
 const { walkFiles, PROJECT_SKIP_DIRS } = require('../twincatWorkspace');
+const log = require('./log');
 
 /**
  * Directories that never hold a project's own `.plcproj`, `.tmc` or signatures dump: vendored library
@@ -142,6 +143,10 @@ function readLibraryReferences(filePath) {
     try {
         xml = fs.readFileSync(filePath, 'utf8');
     } catch (e) {
+        // `debug` here, unlike projectMap.js's `warn` for the same file: that read decides a whole
+        // project's object list, this one only decides which library NAMESPACES it declares, and the
+        // consequence is a narrower library catalog rather than an empty index.
+        log.debug('plcproj-references-unreadable', { file: filePath, error: e });
         return null; // unreadable .plcproj: skip, never throw out of indexing
     }
     const value = parseLibraryReferences(xml);
