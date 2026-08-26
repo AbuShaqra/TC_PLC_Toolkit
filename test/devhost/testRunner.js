@@ -665,9 +665,10 @@ async function run() {
         await vscode.commands.executeCommand('vscode.openWith', mainUri, 'twincat.xmlViewer');
         await sleep(1500);
         await ask(mainPanel, { type: 'test:setPosition', pane: 'impl', line: memberLine, column: memberColumn });
+        const mainRec = recordFor(mainUriStr);
+        const preTriggerLen = ((mainRec && mainRec.fromWebview) || []).length;
         await ask(mainPanel, { type: 'test:trigger', pane: 'impl', actionId: 'editor.action.referenceSearch.trigger' });
         const peekState = await waitFor(mainPanel, s => s.peekOpen, 15000);
-        const mainRec = recordFor(mainUriStr);
         const peekFromLen = ((mainRec && mainRec.fromWebview) || []).length;
         // The peek opens with only the group holding the focused reference expanded — here that is
         // MAIN's own hit — and the list is virtualized, so FB_Station's reference row is not in
@@ -706,7 +707,11 @@ async function run() {
             matchedFileRow: !!(click && click.matchedFileRow),
             rows: peekRows,
             openFilePosted: openFilePosted,
-            peekDismissed: peekDismissed
+            peekDismissed: peekDismissed,
+            // editor.js's global error listener posts `error` to the host (and paints its overlay)
+            // for any window error event; opening the peek used to trip it via Chrome's benign
+            // ResizeObserver loop notice. Counted from the moment the search was triggered.
+            errorPosted: ((mainRec && mainRec.fromWebview) || []).slice(preTriggerLen).includes('error')
         });
 
         // 6. The .tctleo watcher family (HANDOFF "probable bug"): the startup scan indexes the

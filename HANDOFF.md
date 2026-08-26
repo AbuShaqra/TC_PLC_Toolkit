@@ -14,7 +14,7 @@ readdir and skips cleanly — lesson in `.claude/memory/permission-tests-need-en
 Earlier: 2026-08-22 Linux P8 pass (72/72 FULL, typecheck, both browser harnesses in real Chromium, PASS
 set identical to pre-P8); 2026-08-18 full pass incl. dev-host two-project workspace and 0 sample
 diagnostics; 2026-08-10 verified 0 diagnostics with Beckhoff archives present AND moved aside.
-`package.json` is at **0.8.0** (solution→PLC-project Objects hierarchy). Remote history was rewritten 2026-08-17.
+`package.json` is at **0.8.1** (the ResizeObserver Find-References fix; 0.8.0 was the solution→PLC-project Objects hierarchy). Remote history was rewritten 2026-08-17.
 **Review fixes verified on `codex/review-fixes`:** bounded ZIP archive/input inflation (`libsymbols.js`); central path↔file-URI handling
 (`fileUri.js`); reference-cache identity is mtime+size+ctime+inode; FULL coverage now requires child harnesses to
 report that gates actually ran; editor coordinate/peek helpers moved to production `editorMapping.js` and are
@@ -31,8 +31,22 @@ no-build-step invariant; ~385 files are LSP runtime deps). Procedure in DEVELOPM
 **Branching model (2026-08-26):** `dev` (created from main `6cbb77c`) collects day-to-day work; a release is
 `dev → main` PR (CI runs on it) then *Release* on main. `dev` has NO automatic CI — *CI (manual)*
 (`.github/workflows/ci-manual.yml`, `ref` input defaults to `dev`, calls `ci.yml` via `workflow_call`) is the
-dev gate, run by hand. **Its first run is the proof** that the reusable-workflow call and the `inputs.ref ||
-github.ref` checkout work on both paths — verify before trusting. Feature PRs targeting `dev` get no CI.
+dev gate, run by hand. **Proven 2026-08-26 (run 32942537490):** all three nested jobs green and the checkout log shows
+`ref: dev` → `git checkout -B dev refs/remotes/origin/dev`; PR #6's own run proved the `pull_request` path of the same
+`ci.yml`. It includes the VSIX build check on purpose (ruled: "is dev releasable" includes "does it package"; nothing is
+uploaded). Feature PRs targeting `dev` get no CI. `dev` has no ruleset — direct pushes are allowed.
+**Find References blanked the editor (shipped in 0.8.0, FIXED on dev 2026-08-26):** `media/editor.js`'s
+global `error` listener painted the "Webview Runtime Failure" overlay over both panes and toasted "Webview Error" for ANY
+window error event — and Chrome delivers its benign "ResizeObserver loop completed with undelivered notifications" notice
+as one when Monaco's `automaticLayout` observer reacts to the peek zone opening. Found only by LOOKING at a screenshot
+from the showcase run; every headless gate was green (Playwright's `pageerror` never sees that notice, and whether the
+loop fires at all is layout-timing dependent — it did not in headless Chromium, it did in the real window). Fix: the
+listener filters `/ResizeObserver loop/`. Pins: `test/browser/run.js` 3b (natural peek + a hand-dispatched notice +
+a genuine error that must still surface; verified red→green) and `test/devhost` `p8-peek.errorPosted` (green after the
+fix; its pre-fix red is the showcase screenshot, not a harness run). Lesson: `.claude/memory/benign-browser-notices-are-error-events.md`.
+**Showcase screenshots (community post):** `scratch/showcase/{run.js,runner.js,shot.ps1}` builds the LineA(2 PLC)+LineB
+workspace like the dev-host harness, launches the dev host with an in-host driver and captures the window via
+PrintWindow → `scratch/showcase/shots/*.png`. `scratch/` is git-ignored — move to `scripts/showcase/` (+.vscodeignore) if kept.
 **Repo settings after the 2026-08-26 recreate (all verified via `gh api`):** ruleset `main-1` on main = PR required,
 **0 approvals**, no bypass list, **no required status checks** (a red CI does not block the merge button — adding the
 `build` check is the one change that would); Actions permission = `selected` + GitHub-owned (it was `local_only`, which

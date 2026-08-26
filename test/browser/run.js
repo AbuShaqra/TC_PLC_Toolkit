@@ -120,6 +120,48 @@ function assert(cond, msg) {
         assert(peek.peekModels.length === 2,
             `exactly the two non-live panes get hidden models (${JSON.stringify(peek.peekModels)})`);
 
+        // 3b. The peek must not trip the page's own error overlay. editor.js paints "Webview Runtime
+        //     Failure" over both panes (and posts `error` to the host, which toasts it) for ANY
+        //     window error event — and Chrome delivers its benign "ResizeObserver loop completed with
+        //     undelivered notifications" notice as exactly that when Monaco's automaticLayout
+        //     observer reacts to the peek zone opening. Found by the 2026-08-26 screenshot run: every
+        //     Find References ended in a red screen. Whether the loop notice fires naturally depends
+        //     on layout timing, so after reading what the real peek did, the exact Chrome message is
+        //     also dispatched by hand — that probe is the deterministic half of this assertion.
+        const overlayProbe = async () => page.evaluate(() => {
+            const el = document.getElementById('error-overlay');
+            return {
+                shown: !!el && el.style.display !== 'none',
+                text: el ? el.innerText.replace(/\s+/g, ' ').slice(0, 100) : '',
+                errorsPosted: window.__harness.sent.filter(m => m && m.type === 'error').map(m => m.message)
+            };
+        });
+        const afterPeek = await overlayProbe();
+        assert(!afterPeek.shown && afterPeek.errorsPosted.length === 0,
+            `opening the peek leaves the error overlay hidden and posts no error ` +
+            `(overlay: ${JSON.stringify(afterPeek.text)}, posted: ${JSON.stringify(afterPeek.errorsPosted)})`);
+        await page.evaluate(() => {
+            window.dispatchEvent(new ErrorEvent('error', {
+                message: 'ResizeObserver loop completed with undelivered notifications.',
+                filename: location.href, lineno: 0, colno: 0
+            }));
+        });
+        const afterNotice = await overlayProbe();
+        assert(!afterNotice.shown && afterNotice.errorsPosted.length === 0,
+            `Chrome's ResizeObserver loop notice is not treated as a webview failure ` +
+            `(overlay: ${JSON.stringify(afterNotice.text)}, posted: ${JSON.stringify(afterNotice.errorsPosted)})`);
+        // And a REAL error must still reach both surfaces — the guard is a filter, not a mute.
+        await page.evaluate(() => {
+            window.dispatchEvent(new ErrorEvent('error', {
+                message: 'Uncaught TypeError: harness probe', filename: location.href, lineno: 1, colno: 1
+            }));
+        });
+        const afterReal = await overlayProbe();
+        assert(afterReal.shown && afterReal.errorsPosted.some(m => /harness probe/.test(m)),
+            `a genuine runtime error still shows the overlay and is posted to the host ` +
+            `(shown: ${afterReal.shown}, posted: ${JSON.stringify(afterReal.errorsPosted)})`);
+        await page.evaluate(() => { document.getElementById('error-overlay').style.display = 'none'; });
+
         // 4. Expand the FB_Station group and select its occurrence: the preview must show that
         //    file's real declaration, which is only possible if the hidden model holds its text.
         // Short timeouts on purpose: when the peek regresses, these rows simply are not there, and a
