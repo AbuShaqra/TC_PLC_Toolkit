@@ -35,6 +35,18 @@ dev gate, run by hand. **Proven 2026-08-26 (run 32942537490):** all three nested
 `ref: dev` → `git checkout -B dev refs/remotes/origin/dev`; PR #6's own run proved the `pull_request` path of the same
 `ci.yml`. It includes the VSIX build check on purpose (ruled: "is dev releasable" includes "does it package"; nothing is
 uploaded). Feature PRs targeting `dev` get no CI. `dev` has no ruleset — direct pushes are allowed.
+**Find References blanked the editor (shipped in 0.8.0, FIXED on dev 2026-08-26):** `media/editor.js`'s
+global `error` listener painted the "Webview Runtime Failure" overlay over both panes and toasted "Webview Error" for ANY
+window error event — and Chrome delivers its benign "ResizeObserver loop completed with undelivered notifications" notice
+as one when Monaco's `automaticLayout` observer reacts to the peek zone opening. Found only by LOOKING at a screenshot
+from the showcase run; every headless gate was green (Playwright's `pageerror` never sees that notice, and whether the
+loop fires at all is layout-timing dependent — it did not in headless Chromium, it did in the real window). Fix: the
+listener filters `/ResizeObserver loop/`. Pins: `test/browser/run.js` 3b (natural peek + a hand-dispatched notice +
+a genuine error that must still surface; verified red→green) and `test/devhost` `p8-peek.errorPosted` (green after the
+fix; its pre-fix red is the showcase screenshot, not a harness run). Lesson: `.claude/memory/benign-browser-notices-are-error-events.md`.
+**Showcase screenshots (community post):** `scratch/showcase/{run.js,runner.js,shot.ps1}` builds the LineA(2 PLC)+LineB
+workspace like the dev-host harness, launches the dev host with an in-host driver and captures the window via
+PrintWindow → `scratch/showcase/shots/*.png`. `scratch/` is git-ignored — move to `scripts/showcase/` (+.vscodeignore) if kept.
 **Repo settings after the 2026-08-26 recreate (all verified via `gh api`):** ruleset `main-1` on main = PR required,
 **0 approvals**, no bypass list, **no required status checks** (a red CI does not block the merge button — adding the
 `build` check is the one change that would); Actions permission = `selected` + GitHub-owned (it was `local_only`, which

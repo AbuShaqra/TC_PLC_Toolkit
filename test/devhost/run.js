@@ -386,6 +386,8 @@ function findCodeCli() {
     // must dismiss — Monaco cannot do it itself when the navigation leaves through the host.
     const peek = step('p8-peek');
     assert(!!peek && peek.peekOpened, 'Find All References opens the peek widget in the real webview');
+    assert(!!peek && !peek.errorPosted,
+        'opening the peek posts no webview `error` to the host (the ResizeObserver loop notice must not blank the editor)');
     assert(!!peek && peek.fileGroupExpanded,
         `the other file's group is present in the peek and could be expanded ` +
         `(got ${peek ? JSON.stringify(peek.expandedRowText) : 'no result'})`);

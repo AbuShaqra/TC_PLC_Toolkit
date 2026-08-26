@@ -3,6 +3,13 @@
 
     // Global Error Listener for Webview Debugging
     window.addEventListener('error', event => {
+        // Chrome reports a ResizeObserver callback that itself changes layout as a window error
+        // event ("ResizeObserver loop completed with undelivered notifications"). It is a benign,
+        // spec-sanctioned notice, not a failure: Monaco's automaticLayout observer raises it when a
+        // peek/zone widget opens inside a pane. Treating it as fatal blanked both panes with the
+        // overlay and toasted "Webview Error" on every Find References. Filtered by message —
+        // everything else still reaches the overlay and the host.
+        if (/ResizeObserver loop/.test(event.message || '')) return;
         const overlay = document.getElementById('error-overlay');
         if (overlay) {
             overlay.style.display = 'block';
