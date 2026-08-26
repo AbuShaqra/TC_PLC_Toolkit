@@ -47,7 +47,7 @@ header; the gradient-clipped wordmark is deliberately left at 3.3–4.9:1 (a log
   **Machine-bound checklist status (2026-08-24, user's machine):**
   1. ~~`node test/devhost/run.js`~~ **DONE, all green** (navigation identity, exact reveals, live
      LSP bridge, inserts, retained-webview component).
-  2. ~~The `.tctleo` omission family~~ **CONFIRMED LIVE AND FIXED (uncommitted).** The dev-host
+  2. ~~The `.tctleo` omission family~~ **CONFIRMED LIVE AND FIXED (committed, in main).** The dev-host
      harness now injects a `.TcTLEO` fixture, proves the startup scan indexes it, edits it ON DISK
      and re-queries the live index: before the fix the renamed enum's definition was null (the
      change watcher dropped it) — after, it resolves. Fix: `TWINCAT_WATCH_EXTS` now equals
@@ -62,6 +62,11 @@ header; the gradient-clipped wordmark is deliberately left at 3.3–4.9:1 (a log
   `test/browser/build.js` throws. Recipe: convert `sample/` to CRLF in the working tree for browser
   runs, then `git checkout -- sample/`. A NORMAL clone still smudges (2026-08-17 fix) — do NOT
   renormalize blobs without revisiting the recorded blob-stays-LF rationale.
+  **Container clones are also SHALLOW** — during the 2026-08-26 repo recreate this one silently held
+  147 of 209 commits (`git log` looks complete; grafts hide the boundary) and the push to the fresh
+  repo failed on a missing object until `git fetch --unshallow`. Check
+  `git rev-parse --is-shallow-repository` before treating a clone as a complete source of truth —
+  full lesson in `.claude/memory/shallow-clone-is-not-the-repo.md`.
   P6 shipped 2026-08-22 (plan `2026-08-22-deepen-06-pipeline.md`): the sync invariant is
   STRUCTURAL — `requestPipeline.js`'s router wraps all seven language-path `custom/*` handlers
   (withoutDocument is the explicit no-sync variant); the library-index stage order is a frozen,
@@ -76,7 +81,7 @@ header; the gradient-clipped wordmark is deliberately left at 3.3–4.9:1 (a log
   severities). editor.js 1573→1411 lines. Trap: the pinned typescript@7.0.2 preview mis-parses
   Closure-style `function(...)` JSDoc types, and a file enters the tsc program only when first
   required from `src/` — see `.claude/memory/typecheck-graph-grows-with-requires.md`.
-  **P8's G4: AUTOMATED 2026-08-24 (uncommitted).** Checklist items 2–7 now run inside
+  **P8's G4: AUTOMATED 2026-08-24 (committed, in main).** Checklist items 2–7 now run inside
   `test/devhost/run.js` via `media/devHostTestHook.js` — webview instrumentation injected ONLY
   under `TCDEV_TEST=1` (set solely by the harness; `.vscodeignore`d, verified absent from the
   VSIX). 29 new assertions, all green ×3 (implementer ×2 + independent re-run): Manual-Sync
@@ -197,19 +202,18 @@ header; the gradient-clipped wordmark is deliberately left at 3.3–4.9:1 (a log
     backup dir that still sorts after `Modules\`, and the space inside the path (why `scanController` joins root
     keys on NUL). **Don't "tidy" them into realistic-looking names, and don't restate the originals when
     describing the change** — that mistake was made once already and had to be reverted. `git log -p` has them.
-  - **Every SHA changed.** PRs #29-#31 point at commits on no branch, all merged branches were deleted, and any
-    clone older than 2026-08-17 is invalid — re-clone, never pull.
-  - **Every new commit re-adds the leak** while the tooling authors as itself. Run a `git filter-repo --mailmap`
-    pass as the LAST step before pushing, and check
-    `git log --all --pretty='%an <%ae> | %cn <%ce>' | sort | uniq -c` first.
-  **STILL OWED, and the only thing left: delete and recreate the GitHub repo.** Neither a force-push nor a branch
-  deletion retracts anything — GitHub keeps the objects reachable by SHA until it GCs, so the old employer email is
-  still fetchable from a commit URL. Recreating from the current clone is the only hard guarantee. **Do it before
-  the repo goes public.**
-  **Open:** confirm the contractual right to open-source the extension. Not answerable from the repo — it turns on
-  the employment IP-assignment clause and whether the customer engagement was employer work; the rewritten history
-  used to carry 44 commits under an employer identity, which is evidence *against* assuming it. Get written
-  sign-off. `LICENSE` asserts personal copyright and `package.json` declares MIT, so that claim has to be true.
+  - **Every SHA changed at the 2026-08-17 rewrite** — any clone older than that is invalid; re-clone, never pull.
+  **The repo DELETE-AND-RECREATE is DONE 2026-08-26** (the step the sweep owed — GitHub kept pre-rewrite objects
+  reachable by SHA and via `refs/pull/*`, so recreation was the only hard retraction): old repo renamed to
+  `TC_PLC_Toolkit-old`, fresh private `TC_PLC_Toolkit` created and pushed with the full verified history
+  (209 commits, `main` @ 6dc306f its sole branch; fsck clean; the identity one-liner
+  `git log --all --pretty='%an <%ae> | %cn <%ce>' | sort | uniq -c` shows only personal/Claude/GitHub
+  identities — the old "tooling re-adds its own identity" concern did NOT recur, but keep running that
+  one-liner before publishing). All 47 PR discussions were exported to a JSON archive and delivered to the
+  user 2026-08-26 — deliberately NOT committed (old PR bodies may reference pre-rewrite names). PR/issue
+  history, settings, secrets and branch protection did not carry over; recreate on the new repo as needed.
+  **Remaining: the user deletes `TC_PLC_Toolkit-old`** — until then the pre-rewrite objects are still
+  fetchable there. The old IP-sign-off open point is resolved and removed (user, 2026-08-26).
 - **The suite is platform-correct now (fixed 2026-08-17) — don't reintroduce a Windows-shaped path assumption.**
   11 of 59 suites used to fail on any non-Windows checkout while CI (`windows-latest`) stayed green. Both copies of
   `uriToFsPath` ended in an unconditional `.replace(/\//g,'\\')`: right on Windows, but on POSIX it ate the root and
