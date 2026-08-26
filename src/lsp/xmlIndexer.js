@@ -14,6 +14,7 @@ const { parseTwinCatXml } = require('../xmlParser');
 const { tokenize, parseVariablesBlock, TokenType } = require('./parser');
 const { createSymbolNode } = require('./symbolNode');
 const { TWINCAT_XML_EXTS, XML_INDEX_SKIP_DIRS } = require('../twincatWorkspace');
+const log = require('./log');
 
 // `.tctleo` (EnumerationTextList) declares a real ST enum — xmlParser normalises its root element to
 // DUT, so it indexes as one. `.tctto` (task) and `.tctlo` (HMI text list) are NOT ST types. Same Set
@@ -312,6 +313,10 @@ function indexXmlFile(index, filePath) {
         const fileUri = fsPathToFileUri(filePath);
         return indexXmlObject(index, xml, fileUri);
     } catch (e) {
+        // `debug`, not `warn`: a `.plcproj` that still `<Compile>`s a file someone moved or deleted is
+        // ordinary in the wild (projectMap.js keeps the Include spelling when the file cannot be found
+        // on disk), so this fires on projects that are not broken in any way the user cares about.
+        log.debug('xml-object-index-failed', { file: filePath, error: e });
         return null;
     }
 }
@@ -348,6 +353,7 @@ function indexTwinCatDirectory(index, dirPath, includedPaths) {
     try {
         entries = fs.readdirSync(dirPath, { withFileTypes: true });
     } catch (e) {
+        log.debug('object-directory-read-failed', { dir: dirPath, error: e });
         return;
     }
     for (const entry of entries) {

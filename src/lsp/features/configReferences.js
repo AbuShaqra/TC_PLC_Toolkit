@@ -31,6 +31,7 @@ const { findNode } = require('../types');
 const { registerLibrarySymbolNodes } = require('../libsymbols');
 const { normalizeUri, resolvePathType } = require('./core');
 const { pousRelated } = require('./references');
+const log = require('../log');
 
 /**
  * Every dotted identifier chain in a file — a leading identifier followed by at least one `.member`.
@@ -248,7 +249,15 @@ function findConfigReferencesForSymbol(spec, symbolIndex, configFilePaths) {
 
     for (const filePath of (configFilePaths || [])) {
         let raw;
-        try { raw = fs.readFileSync(filePath, 'utf8'); } catch (e) { continue; }
+        try {
+            raw = fs.readFileSync(filePath, 'utf8');
+        } catch (e) {
+            // `debug`: the file list comes from a directory walk, so a vanished entry is ordinary. It
+            // does mean a rename will not update that visualisation / text list / task config, which
+            // is exactly what this line lets a session establish after the fact.
+            log.debug('config-object-unreadable', { file: filePath, error: e });
+            continue;
+        }
 
         // Strip a leading BOM. TwinCAT configuration objects are UTF-8 *with* a BOM, but VS Code
         // documents exclude it — so every offset must be into the BOM-stripped text (the same string

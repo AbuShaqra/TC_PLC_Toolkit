@@ -49,6 +49,11 @@ const {
     runLibraryIndexPipeline
 } = require('./requestPipeline');
 
+// Quiet by default (threshold `warn`, from TWINCAT_LSP_LOG) and writes to stderr, which the extension
+// host captures — see log.js. Every handler below keeps returning its safe default on failure; the
+// logger is what makes that default explicable instead of indistinguishable from "nothing to report".
+const log = require('./log');
+
 // The server OWNS the workspace and threads its indexes explicitly into the parser/indexer and every
 // language-feature call, rather than reaching for the parser.js module global. There is ONE INDEX
 // PER PLC PROJECT: a `.plcproj` is its own compilation unit (XAE does not resolve symbols across
@@ -228,12 +233,32 @@ documents.onDidChangeContent((change) => {
     }
 });
 
+/**
+ * The `fields` object every request-failure record carries: which document, and where in it. The
+ * position is flattened into two numbers rather than nested, so one grep of the log line gives the
+ * coordinates the failing request was answering at.
+ * @param {string} uri Document URI.
+ * @param {{line: number, character: number}|undefined} position Cursor position, or undefined for a
+ *   request that has none (the by-symbol and workspace-level ones).
+ * @param {Error} error The swallowed error.
+ * @returns {Object} Flat field object for log.error.
+ */
+function requestFailureFields(uri, position, error) {
+    return {
+        uri,
+        line: position ? position.line : undefined,
+        character: position ? position.character : undefined,
+        error
+    };
+}
+
 connection.onCompletion((params) => {
     const doc = documents.get(params.textDocument.uri);
     if (!doc) return [];
     try {
         return provideCompletions(doc.getText(), params.position, workspace.indexForUri(params.textDocument.uri), doc.uri);
     } catch (e) {
+        log.error('completion-request-failed', requestFailureFields(doc.uri, params.position, e));
         return [];
     }
 });
@@ -244,6 +269,7 @@ connection.onDefinition((params) => {
     try {
         return provideDefinition(doc.getText(), params.position, workspace.indexForUri(params.textDocument.uri), doc.uri);
     } catch (e) {
+        log.error('definition-request-failed', requestFailureFields(doc.uri, params.position, e));
         return null;
     }
 });
@@ -254,6 +280,7 @@ connection.onReferences((params) => {
     try {
         return provideReferences(doc.getText(), params.position, workspace.indexForUri(params.textDocument.uri), doc.uri);
     } catch (e) {
+        log.error('references-request-failed', requestFailureFields(doc.uri, params.position, e));
         return [];
     }
 });
@@ -264,6 +291,7 @@ connection.onDocumentHighlight((params) => {
     try {
         return provideDocumentHighlights(doc.getText(), params.position);
     } catch (e) {
+        log.error('document-highlight-request-failed', requestFailureFields(doc.uri, params.position, e));
         return [];
     }
 });
@@ -278,19 +306,31 @@ connection.onDocumentHighlight((params) => {
 // whatever `workspace` was before the first scan ever completed.
 const router = createRequestRouter({
     getIndexForUri: (uri) => workspace.indexForUri(uri),
-    sync: syncDocument
+    sync: syncDocument,
+    // The router swallows every failure so a bad request cannot take the server down — which is also
+    // why a webview pane that suddenly offers no completions looks identical to one that has nothing
+    // to offer. Report it; the fallback the caller receives is unchanged. `params.code` is a whole
+    // document and never logged — only the identity and the coordinates of the failing request.
+    onError: ({ event, error, params }) => log.error(`${event}-request-failed`,
+        requestFailureFields(params && params.fileUri, params && params.position, error))
 });
 
-connection.onRequest('custom/completions', router.withDocument([], (p, index) =>
-    provideCompletions(p.code, p.position, index, p.fileUri)
+connection.onRequest('custom/completions', router.withDocument(
+    [],
+    (p, index) => provideCompletions(p.code, p.position, index, p.fileUri),
+    'completion'
 ));
 
-connection.onRequest('custom/definition', router.withDocument(null, (p, index) =>
-    provideDefinition(p.code, p.position, index, p.fileUri)
+connection.onRequest('custom/definition', router.withDocument(
+    null,
+    (p, index) => provideDefinition(p.code, p.position, index, p.fileUri),
+    'definition'
 ));
 
-connection.onRequest('custom/references', router.withDocument([], (p, index) =>
-    provideReferences(p.code, p.position, index, p.fileUri)
+connection.onRequest('custom/references', router.withDocument(
+    [],
+    (p, index) => provideReferences(p.code, p.position, index, p.fileUri),
+    'references'
 ));
 
 // References for a symbol identified by NAME (root object, optionally a member), rather than by a
@@ -299,7 +339,8 @@ connection.onRequest('custom/references', router.withDocument([], (p, index) =>
 // the target's file from disk is the whole point (provideReferencesForSymbol does that itself).
 connection.onRequest('custom/referencesForSymbol', router.withoutDocument(
     { resolved: false, references: [], declaration: null },
-    (p, index) => provideReferencesForSymbol(p, index)
+    (p, index) => provideReferencesForSymbol(p, index),
+    'references-for-symbol'
 ));
 
 // References to a symbol inside the TwinCAT non-code objects — visualizations (.TcVIS/.TcVMO), text
@@ -312,18 +353,22 @@ connection.onRequest('custom/referencesForSymbol', router.withoutDocument(
 // signature.
 connection.onRequest('custom/configReferencesForSymbol', router.withoutDocument(
     { resolved: false, occurrences: [] },
-    (p, index) => findConfigReferencesForSymbol(p, index, workspace.configFilesFor(p.fileUri))
+    (p, index) => findConfigReferencesForSymbol(p, index, workspace.configFilesFor(p.fileUri)),
+    'config-references-for-symbol'
 ));
 
-connection.onRequest('custom/diagnostics', router.withDocument([], (p, index) =>
-    provideDiagnostics(p.code, index, p.fileUri)
+connection.onRequest('custom/diagnostics', router.withDocument(
+    [],
+    (p, index) => provideDiagnostics(p.code, index, p.fileUri),
+    'diagnostics'
 ));
 
 // The sync IS the work here: updateDocument exists to bring the index up to date, not to answer a
 // language feature, so the handler itself just reports success.
 connection.onRequest('custom/updateDocument', router.withDocument(
     (e) => ({ success: false, error: e.message }),
-    () => ({ success: true })
+    () => ({ success: true }),
+    'update-document'
 ));
 
 // The five requests below are deliberately left UNWRAPPED by the router: none of them carry a
@@ -349,6 +394,7 @@ connection.onRequest('custom/reindex', async (params) => {
         }
         return { success: true };
     } catch (e) {
+        log.error('reindex-request-failed', { folders: (params && params.folders) || [], error: e });
         return { success: false, error: e.message };
     }
 });
@@ -363,6 +409,7 @@ connection.onRequest('custom/indexReady', async (params) => {
         const result = await scanController.ensureScanned(folders.map(f => uriToFsPath(f)));
         return { success: true, scanned: result.scanned };
     } catch (e) {
+        log.error('index-ready-request-failed', { folders: (params && params.folders) || [], error: e });
         return { success: false, error: e.message };
     }
 });
@@ -373,6 +420,7 @@ connection.onRequest('custom/setDiagnosticsConfig', (params) => {
         setDiagnosticsConfig(params || {});
         return { success: true };
     } catch (e) {
+        log.error('set-diagnostics-config-request-failed', { error: e });
         return { success: false, error: e.message };
     }
 });
@@ -394,6 +442,9 @@ connection.onRequest('custom/libraries', (params) => {
         // restores exactly what custom/libraries returned before per-project scoping.
         return getUnionLibraryCatalog(workspace.indexes.values());
     } catch (e) {
+        // The Libraries view renders empty on a `[]`, and an empty view has always been the visible
+        // symptom of this catch — this is the line that says whether it was empty or broken.
+        log.error('libraries-request-failed', { uri: (params && params.fileUri) || '', error: e });
         return [];
     }
 });
@@ -405,6 +456,7 @@ connection.onRequest('custom/indexXmlDocument', (params) => {
         indexXmlObject(workspace.indexForUri(params.fileUri), params.xml, params.fileUri);
         return { success: true };
     } catch (e) {
+        log.error('index-xml-document-request-failed', { uri: params && params.fileUri, error: e });
         return { success: false, error: e.message };
     }
 });

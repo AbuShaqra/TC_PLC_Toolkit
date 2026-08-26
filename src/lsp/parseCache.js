@@ -31,6 +31,7 @@ const fs = require('fs');
 const path = require('path');
 const { parseLibrarySignaturesXml, toRegistryTypes } = require('./librarySignatures');
 const { parseBrowserCache } = require('./browserCache');
+const log = require('./log');
 
 /**
  * @typedef {Object} SignatureRecords
@@ -117,6 +118,9 @@ function signatureRecordsFor(filePath) {
         try {
             xml = fs.readFileSync(filePath, 'utf8');
         } catch (e) {
+            // `debug`: the dump is optional (a project without one is normal and unaffected), so this
+            // matters only to a session asking why library function signatures went missing.
+            log.debug('signature-dump-unreadable', { file: filePath, error: e });
             return null; // unreadable dump: contribute nothing rather than guess
         }
         template = parseSignatureRecords(xml);
@@ -154,6 +158,9 @@ function readBrowserCacheDoc(filePath) {
     try {
         xml = fs.readFileSync(filePath, 'utf8');
     } catch (e) {
+        // `debug`: browsercache is an enrichment (member NAMES for library FBs), and it lives outside
+        // the workspace under %ProgramData%, where TwinCAT rewrites it on its own schedule.
+        log.debug('browsercache-doc-unreadable', { file: filePath, error: e });
         return null;
     }
     const value = parseBrowserCache(xml);

@@ -4,8 +4,8 @@ Where the work *stands*. Read before starting; keep current (handoff rule in [CL
 100 lines — prune finished items rather than appending, but never drop a real finding to hit it. **Shipped features
 live in git history (PRs/commits); this file keeps the findings that would cost to re-derive.**
 
-**Last verified:** 2026-08-26 (Linux container, dev + transactional rename) — `REQUIRE_FULL_SUITE=1 npm test`
-green (**75/75, Coverage: FULL, 4.7 s**), typecheck clean. Prior full pass: 2026-08-25 (Windows, user's
+**Last verified:** 2026-08-26 (Linux container, dev + all five improvement-plan phases) — `REQUIRE_FULL_SUITE=1
+npm test` green (**76/76, Coverage: FULL**), typecheck clean, `npm run lint` exit 0. Prior full pass: 2026-08-25 (Windows, user's
 machine, main incl. the `.tctleo` fix, G4 automation and
 pending-edit persistence) — `REQUIRE_FULL_SUITE=1 npm test` green (**73/73, Coverage: FULL, 6.3 s**),
 typecheck clean, and **`node test/devhost/run.js` all green** — the G4 dev-host gate carries two `.TcTLEO`
@@ -58,7 +58,13 @@ exits 0 (ESLint 9 flat CJS config, defect-focused; every relaxation documented I
 disable (`xaeShell.js`'s `vscode` require feeds a JSDoc namespace — deleting it fails typecheck, verified), Lint
 step in CI `build` job only (ESLint 9 needs Node ≥18.18; runtime-compat runs Node 16). Deferred: ESLint 10 bump
 (9.x now deprecated; 10 raises the Node floor + re-triage), dev-only `brace-expansion` advisory (fix would drag 19
-unrelated lockfile packages); 4) structured LSP logging; 5) automatic CI for PRs targeting `dev` + `REQUIRE_FULL_SUITE=1` enforced on CI — DONE (**user-approved
+unrelated lockfile packages); 4) structured LSP logging — DONE: `src/lsp/log.js` (quiet-by-default `warn`
+threshold via `TWINCAT_LSP_LOG`, stderr one-line records, never throws, below-threshold = one comparison);
+24 of 47 inventoried silent catch sites wired — 9 server.js handler catches + all 7 routed `custom/*` handlers
+via `requestPipeline`'s injected `onError` (reporter itself try/caught: strictly additive, `params.code` never
+logged), 14 per-file degraded sites at `debug`, exactly ONE `warn` (`plcproj-unreadable` — zeroes a project's
+index); ~20 routine sites deliberately left silent (noise even at debug). Healthy sample emits ZERO stderr even
+at debug. Pins: `test_log.js` (43 asserts; 3 broken variants verified red); 5) automatic CI for PRs targeting `dev` + `REQUIRE_FULL_SUITE=1` enforced on CI — DONE (**user-approved
 reversal** of the manual-only dev-CI ruling; see Branching model; first run proved green on PR #11 itself). Rejected: `libsymbols` split (P9 no-go stands),
 CI fixture (already done), editor/activate decomposition (done enough), ADR dir (memory bank + plans cover it).
 **Transactional cross-file rename (phase 1, on dev 2026-08-26):** `src/renameTransaction.js` — stage-then-apply
