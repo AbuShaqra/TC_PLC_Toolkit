@@ -256,7 +256,8 @@ changes.**
 runs from a `blob:` URL with no base to resolve them against, and it fails with "Failed trying to load
 default language strings" — the same symptom this project already records for a wrong AMD baseUrl.
 
-CI (`.github/workflows/ci.yml`) runs on every push/PR to `main`, Windows-only (the platform users are
+CI (`.github/workflows/ci.yml`) runs on every PR to `main` — PR-only by design: the `push` trigger is
+disabled so a merge does not re-run what the PR already proved — Windows-only (the platform users are
 on), with superseded runs cancelled and a read-only token. Two jobs:
 
 - **`build`** (current Node) — `npm run typecheck`, `npm test`, then a **VSIX build check**

@@ -23,11 +23,18 @@ and status bar. The dev-host now copies the sample as LineA+LineB and asserts th
 cross-file navigation. The user's pre-existing newline edit in `sample/.../FB_Station.TcPOU` remains untouched.
 **0.8.0 VSIX rebuilt 2026-08-25 16:52 WITH the pending-edit persistence fix, installed (`--force`; content-checked:
 `pendingEditsStore.js` in, `devHostTestHook.js` out), fully restarted, and the Ctrl+R check passed live.**
-**Release workflow (branch `feat/release-workflow`, PR pending merge, 2026-08-26):** `.github/workflows/release.yml`,
-manual-only; tags `v<package.json version>`, refuses an existing tag/release, gates typecheck+test+package, attaches
-the VSIX, `prerelease`/`draft` inputs. **Not yet exercised** — its first real run (after merge) is the proof; no tag or
-release exists on the recreated repo yet. Procedure in DEVELOPMENT.md "Publish a GitHub release".
-**Logo split into two generated images (branch `feat/social-preview-banner`, PR pending merge, 2026-08-26):**
+**Release workflow (merged PR #2, in main 2026-08-26):** `.github/workflows/release.yml`, manual-only; tags
+`v<package.json version>`, refuses an existing tag/release, gates typecheck+test+package, attaches the VSIX,
+`prerelease`/`draft` inputs. **Not yet exercised** — its first real run is the proof; no tag or release exists on the
+recreated repo yet. Procedure in DEVELOPMENT.md "Publish a GitHub release". Ruleset `main-1` requires 1 approving
+review and has no bypass list or required status checks; the author cannot approve their own PR (options were laid out
+2026-08-26: approvals→0 + require the `build` check recommended, or add Repository admin to the bypass list).
+**Actions were DEAD after the 2026-08-26 repo recreate:** repo setting `allowed_actions: local_only` blocked
+`actions/checkout|setup-node|upload-artifact`, so every CI and Release run since the recreate ended in
+`startup_failure` — PRs #1 and #2 merged with NO CI execution (verified locally only). Fix is Settings → Actions →
+General → allow GitHub-created actions (`selected` + `github_owned_allowed`); re-run CI on main afterwards.
+Confirm `gh run list` shows a real conclusion before trusting a badge.
+**Logo split into two generated images (merged PR #1, in main 2026-08-26):**
 `media/icon.png` is now the **1280×640 GitHub social preview** (embedded at the top of README.md) (`scripts/make-social-preview.js`; upload it under repo Settings → Social preview — GitHub does not
 read it from the tree) and the square marketplace icon moved to `media/marketplace-icon.png` (`package.json` `icon`
 repointed; `scripts/make-icon.js` writes there). Both draw the mark through the shared `scripts/glyphRaster.js`
