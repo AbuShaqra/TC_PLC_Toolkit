@@ -1,0 +1,80 @@
+name: Bug report
+description: Something in the extension is broken or behaves unexpectedly.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: Thanks for taking the time to report a bug. Please fill in what you can — the version and a way to reproduce it matter most.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What went wrong, and what did you expect instead?
+      placeholder: When I open a .TcPOU with … the editor …
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: The exact steps, so it can be reproduced.
+      placeholder: |
+        1. Open a project with …
+        2. Click …
+        3. See …
+    validations:
+      required: true
+
+  - type: input
+    id: ext-version
+    attributes:
+      label: Extension version
+      description: Shown in the editor header (e.g. v0.8.2), or in the Extensions view.
+      placeholder: v0.8.2
+    validations:
+      required: true
+
+  - type: input
+    id: vscode-version
+    attributes:
+      label: VS Code version
+      description: Help → About (e.g. 1.92.0).
+    validations:
+      required: true
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - Windows
+        - macOS
+        - Linux
+    validations:
+      required: true
+
+  - type: textarea
+    id: project-context
+    attributes:
+      label: Project context
+      description: Anything about the project that might matter — one `.plcproj` or several, which file types, whether libraries are involved.
+    validations:
+      required: false
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or screenshots
+      description: Screenshots, and any errors from Help → Toggle Developer Tools → Console or the Output panel.
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues and this has not been reported yet.
+          required: true
