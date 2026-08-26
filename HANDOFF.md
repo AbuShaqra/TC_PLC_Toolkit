@@ -28,6 +28,11 @@ cross-file navigation. The user's pre-existing newline edit in `sample/.../FB_St
 `prerelease`/`draft` inputs. **Proven 2026-08-26 06:41:** published `v0.8.0` (tag at `fb9a11f`, VSIX attached, run
 green). vsce's "577 files / bundle your extension" warning is expected and ruled ignored (bundling contradicts the
 no-build-step invariant; ~385 files are LSP runtime deps). Procedure in DEVELOPMENT.md "Publish a GitHub release".
+**Branching model (2026-08-26):** `dev` (created from main `6cbb77c`) collects day-to-day work; a release is
+`dev → main` PR (CI runs on it) then *Release* on main. `dev` has NO automatic CI — *CI (manual)*
+(`.github/workflows/ci-manual.yml`, `ref` input defaults to `dev`, calls `ci.yml` via `workflow_call`) is the
+dev gate, run by hand. **Its first run is the proof** that the reusable-workflow call and the `inputs.ref ||
+github.ref` checkout work on both paths — verify before trusting. Feature PRs targeting `dev` get no CI.
 **Repo settings after the 2026-08-26 recreate (all verified via `gh api`):** ruleset `main-1` on main = PR required,
 **0 approvals**, no bypass list, **no required status checks** (a red CI does not block the merge button — adding the
 `build` check is the one change that would); Actions permission = `selected` + GitHub-owned (it was `local_only`, which

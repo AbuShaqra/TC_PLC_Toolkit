@@ -1,0 +1,35 @@
+name: CI (manual)
+
+# The same CI as ci.yml, run by hand against `dev` — the branch that collects day-to-day work and
+# has no automatic CI (ci.yml only runs on pull requests to main).
+#
+# Actions tab → "CI (manual)" → Run workflow. The `ref` input is what gets checked out and tested,
+# and it defaults to `dev`; the branch dropdown next to it only picks which copy of the workflow
+# files runs (GitHub lists a workflow_dispatch workflow from the default branch), so it can stay on
+# main. Or: gh workflow run ci-manual.yml            (tests dev)
+#         gh workflow run ci-manual.yml -f ref=<x>  (tests something else)
+#
+# It calls ci.yml rather than copying its jobs, so there is exactly one definition of the gates.
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Branch, tag or SHA to test'
+        type: string
+        required: true
+        default: 'dev'
+
+# Read-only, like ci.yml. A called workflow can never hold more permissions than its caller grants.
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-manual-${{ inputs.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    name: CI on ${{ inputs.ref }}
+    uses: ./.github/workflows/ci.yml
+    with:
+      ref: ${{ inputs.ref }}

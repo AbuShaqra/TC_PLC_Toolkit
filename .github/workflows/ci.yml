@@ -1,10 +1,20 @@
 name: CI
 
 on:
-  # Pull requests only, deliberately: a `push` trigger on main re-ran exactly what the PR had
-  # already proved, so every change cost two runs.
+  # Pull requests to main only, deliberately: a `push` trigger on main re-ran exactly what the PR had
+  # already proved, so every change cost two runs. Day-to-day work merges into `dev`, which has no
+  # automatic CI — run ci-manual.yml against it by hand (it calls this workflow, see workflow_call).
   pull_request:
     branches: [main]
+  # Lets ci-manual.yml reuse these jobs without a second copy of them. Not a trigger on its own:
+  # nothing runs unless a caller workflow is dispatched.
+  workflow_call:
+    inputs:
+      ref:
+        description: 'Branch, tag or SHA to check out and test (empty = the ref the event is for)'
+        type: string
+        required: false
+        default: ''
 
 # This workflow only reads the repo — no publishing, no issue/PR writes.
 permissions:
@@ -21,7 +31,11 @@ jobs:
     # URI<->path handling is Windows-native, so CI runs on the platform users actually run on.
     runs-on: windows-latest
     steps:
+      # On a pull request `inputs` is empty, so this is the event's own ref (the PR merge commit) —
+      # the default. Called from ci-manual.yml it is whatever ref was asked for, `dev` by default.
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref || github.ref }}
 
       - name: Set up Node.js
         uses: actions/setup-node@v5
@@ -69,6 +83,8 @@ jobs:
     name: Test on Node ${{ matrix.node-version }}
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref || github.ref }}
 
       - name: Set up Node.js ${{ matrix.node-version }}
         uses: actions/setup-node@v5
