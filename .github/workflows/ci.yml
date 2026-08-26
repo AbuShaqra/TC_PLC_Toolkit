@@ -1,8 +1,8 @@
 name: CI
 
 on:
-  # push:
-   # branches: [main]
+  # Pull requests only, deliberately: a `push` trigger on main re-ran exactly what the PR had
+  # already proved, so every change cost two runs.
   pull_request:
     branches: [main]
 
