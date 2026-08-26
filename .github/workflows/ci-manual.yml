@@ -1,7 +1,8 @@
 name: CI (manual)
 
-# The same CI as ci.yml, run by hand against `dev` — the branch that collects day-to-day work and
-# has no automatic CI (ci.yml only runs on pull requests to main).
+# The same CI as ci.yml, run by hand against an arbitrary ref. Since 2026-08-26 pull requests into
+# `dev` run ci.yml automatically, so this exists for what still has no trigger: direct pushes to
+# `dev`, or testing any branch/tag/SHA without opening a PR.
 #
 # Actions tab → "CI (manual)" → Run workflow. The `ref` input is what gets checked out and tested,
 # and it defaults to `dev`; the branch dropdown next to it only picks which copy of the workflow
