@@ -1,11 +1,13 @@
 name: CI
 
 on:
-  # Pull requests to main only, deliberately: a `push` trigger on main re-ran exactly what the PR had
-  # already proved, so every change cost two runs. Day-to-day work merges into `dev`, which has no
-  # automatic CI — run ci-manual.yml against it by hand (it calls this workflow, see workflow_call).
+  # Pull requests only, deliberately: a `push` trigger re-ran exactly what the PR had already proved,
+  # so every change cost two runs. PRs into `dev` run CI automatically too (added 2026-08-26, by
+  # decision — it replaced the manual-only dev gate); direct pushes to `dev` still trigger nothing,
+  # so ci-manual.yml remains the way to test an arbitrary ref by hand (it calls this workflow, see
+  # workflow_call).
   pull_request:
-    branches: [main]
+    branches: [main, dev]
   # Lets ci-manual.yml reuse these jobs without a second copy of them. Not a trigger on its own:
   # nothing runs unless a caller workflow is dispatched.
   workflow_call:
@@ -46,19 +48,24 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # Defect-focused lint (recommended + a handful of correctness rules); the policy and every
+      # relaxation are documented in eslint.config.js. Deliberately only in this job: ESLint 9
+      # needs Node >= 18.18, and runtime-compat runs the suite on Node 16 on purpose.
+      - name: Lint
+        run: npm run lint
+
       # Type-check only (no emit) — a safety net over the JSDoc; the extension ships plain JS.
       - name: Type-check
         run: npm run typecheck
 
-      # sample/ is git-ignored (customer/vendor content), so it is absent on CI. The sample-based
-      # harnesses detect that and skip cleanly; every other suite runs.
-      #
-      # This run is therefore REDUCED, and deliberately so: the diagnostics ratchet and the live-path
-      # guard cannot execute here. test/run.js prints which gates were skipped and labels the summary,
-      # so a green badge is never mistaken for "the ratchet held" — that is proved only by a local run
-      # with the fixtures present (REQUIRE_FULL_SUITE=1 enforces it).
+      # sample/ is wholly synthetic and COMMITTED, so the diagnostics ratchet and the live-path
+      # guard run here like every other suite. REQUIRE_FULL_SUITE=1 makes that a hard gate: a run
+      # whose load-bearing gates skipped (REDUCED coverage) fails instead of passing quietly, so a
+      # green badge always means the ratchet actually held.
       - name: Test
         run: npm test
+        env:
+          REQUIRE_FULL_SUITE: '1'
 
       # Packaging is otherwise only exercised by hand at release time, where a broken manifest,
       # .vscodeignore or engines constraint would surface far too late. Building the VSIX here keeps

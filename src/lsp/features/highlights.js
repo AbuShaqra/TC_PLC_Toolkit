@@ -28,9 +28,12 @@ function provideDocumentHighlights(code, position) {
     const highlights = [];
     const regex = new RegExp(`\\b${word}\\b`, 'g');
 
-    lines.forEach((lineText, lineIdx) => {
+    // Named `scanLine`, not `lineText`: that name is already taken above by the CARET's line, which
+    // is what the word under the cursor was read from. One name for two different lines in one
+    // function is exactly the confusion no-shadow exists to prevent.
+    lines.forEach((scanLine, lineIdx) => {
         let match;
-        while ((match = regex.exec(lineText)) !== null) {
+        while ((match = regex.exec(scanLine)) !== null) {
             highlights.push({
                 range: {
                     start: { line: lineIdx, character: match.index },

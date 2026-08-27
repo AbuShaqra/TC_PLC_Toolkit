@@ -173,7 +173,7 @@ class TwinCatCustomEditorProvider {
         // Handle messages from the webview
         webviewPanel.webview.onDidReceiveMessage(async message => {
             switch (message.type) {
-                case 'ready':
+                case 'ready': {
                     // Send initial document state to the webview
                     const text = document.getText();
                     const parsed = parseTwinCatXml(text);
@@ -199,6 +199,7 @@ class TwinCatCustomEditorProvider {
                         // nothing to retry with.
                     }
                     break;
+                }
                 case 'selectionApplied':
                     // The webview has actually highlighted the location, so the pending selection has
                     // done its job and must not be re-applied on a later open of the same file.
@@ -242,7 +243,7 @@ class TwinCatCustomEditorProvider {
                     // they were captured from, so a window reload can restore them safely.
                     await this.pendingEditsStore.set(uriStr, message.pendingEdits, document.getText());
                     break;
-                case 'edit':
+                case 'edit': {
                     // Update document content on change
                     const currentText = document.getText();
                     const newText = replaceComponentCdata(
@@ -266,7 +267,8 @@ class TwinCatCustomEditorProvider {
                         }
                     }
                     break;
-                case 'sync-pending':
+                }
+                case 'sync-pending': {
                     // Apply all pending edits at once
                     let pendingText = pendingEditsCore.foldEdits(document.getText(), message.edits, replaceComponentCdata);
                     if (pendingText !== document.getText()) {
@@ -282,7 +284,8 @@ class TwinCatCustomEditorProvider {
                     }
                     await this.pendingEditsStore.delete(uriStr);
                     break;
-                case 'save':
+                }
+                case 'save': {
                     // Apply pending edits and save document
                     let saveText = pendingEditsCore.foldEdits(document.getText(), message.edits, replaceComponentCdata);
                     if (saveText !== document.getText()) {
@@ -303,6 +306,7 @@ class TwinCatCustomEditorProvider {
                         vscode.window.showErrorMessage(`Failed to save document: ${err.message}`);
                     }
                     break;
+                }
                 case 'custom/completions':
                     try {
                         const ctx = assembleSt(document.getText(), message);

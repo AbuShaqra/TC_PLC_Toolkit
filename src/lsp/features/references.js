@@ -20,6 +20,7 @@ const {
     classifyCallSite
 } = require('./core');
 const { definitionAt } = require('./definition');
+const log = require('../log');
 
 /**
  * Finds all identifier-token occurrences of a word in a code unit (case-insensitive, as ST is).
@@ -86,6 +87,9 @@ function readStForFile(fsPath) {
         const stat = fs.statSync(fsPath);
         signature = `${stat.mtimeMs}|${stat.size}|${stat.ctimeMs}|${stat.ino || 0}`;
     } catch (e) {
+        // `debug`: a reference scan walks the index, and an entry can legitimately have been deleted
+        // or renamed since the scan that produced it. The file simply contributes no references.
+        log.debug('reference-source-unreadable', { file: fsPath, error: e });
         stFileCache.delete(fsPath);   // gone from disk
         return null;
     }
@@ -103,6 +107,10 @@ function readStForFile(fsPath) {
             stText = raw;
         }
     } catch (e) {
+        // `debug`, but the more interesting of the two: the file exists and its XML→ST conversion
+        // failed, so this file is silently absent from every reference result and from rename's
+        // reference set. A "Find References found nothing" report starts here.
+        log.debug('reference-source-conversion-failed', { file: fsPath, error: e });
         stText = null;
     }
 

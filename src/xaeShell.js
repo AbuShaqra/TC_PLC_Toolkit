@@ -7,6 +7,10 @@
  * writes.
  */
 
+// No value in this file references `vscode`, but the JSDoc below does (`@param
+// {vscode.OutputChannel}`), and that is how `tsc --noEmit` resolves the namespace: deleting this
+// line fails the type-check gate with "TS2503: Cannot find namespace 'vscode'". Verified.
+// eslint-disable-next-line no-unused-vars
 const vscode = require('vscode');
 const fs = require('fs');
 const { spawn, execFileSync } = require('child_process');

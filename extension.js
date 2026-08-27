@@ -9,7 +9,7 @@ const path = require('path');
 // Import modular components
 const { registerLspBridgeCommands } = require('./src/commands/lspBridgeCommands');
 const { registerLibraryCommands } = require('./src/commands/libraryCommands');
-const { registerObjectCommands, applyXmlEdit } = require('./src/commands/objectCommands');
+const { registerObjectCommands, applyXmlEdit, readXmlText, writeXmlText } = require('./src/commands/objectCommands');
 const { registerObjectInsertCommands } = require('./src/commands/objectInsertCommands');
 const { registerClipboardCommands } = require('./src/commands/clipboardCommands');
 const { registerRenameCommands } = require('./src/commands/renameCommands');
@@ -474,8 +474,12 @@ function activate(context) {
     // Objects explorer rename (F2). Renames files, members, directories and virtual folders, and —
     // after a confirmation modal — updates cross-file references via the LSP + renameEngine. Needs
     // treeView (F2 carries no item, so the selection stands in) and getClient (the reference query),
-    // mirroring the clipboard and library command wiring.
-    registerRenameCommands(context, { treeView, treeProvider, applyXmlEdit, getClient: () => client });
+    // mirroring the clipboard and library command wiring. readXmlText/writeXmlText are the same
+    // byte-preserving write path split in two, which the rollback transaction needs (it reads at
+    // stage time and writes at apply time).
+    registerRenameCommands(context, {
+        treeView, treeProvider, applyXmlEdit, readXmlText, writeXmlText, getClient: () => client
+    });
 }
 
 function deactivate() {

@@ -478,7 +478,7 @@ sampleTest('peek: every pane slice is addressed by its own local coordinates', (
         for (const pane of ['decl', 'impl']) {
             const text = paneTextFromUnit(unitLines, unit.lineMap, componentId, pane);
             if (text === null) continue;
-            const paneLines = text.split('\n');
+            const sliceLines = text.split('\n');
             const block = pane === 'decl' ? unit.lineMap[componentId].decl : unit.lineMap[componentId].impl;
             for (let abs0 = block.start - 1; abs0 < block.end; abs0++) {
                 const loc = absoluteToLocal(unit.lineMap, abs0);
@@ -486,9 +486,9 @@ sampleTest('peek: every pane slice is addressed by its own local coordinates', (
                     assert(false, `absoluteToLocal(${abs0}) should land in ${componentId}/${pane}, got ${JSON.stringify(loc)}`);
                     return;
                 }
-                if (paneLines[loc.localLine0] !== unitLines[abs0]) {
+                if (sliceLines[loc.localLine0] !== unitLines[abs0]) {
                     assert(false, `${componentId}/${pane} line ${loc.localLine0} of the slice must equal unit line ${abs0} `
-                        + `(slice: ${JSON.stringify(paneLines[loc.localLine0])}, unit: ${JSON.stringify(unitLines[abs0])})`);
+                        + `(slice: ${JSON.stringify(sliceLines[loc.localLine0])}, unit: ${JSON.stringify(unitLines[abs0])})`);
                     return;
                 }
                 checked++;

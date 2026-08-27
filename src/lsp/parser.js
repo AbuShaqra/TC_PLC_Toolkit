@@ -9,6 +9,7 @@ const { fsPathToFileUri } = require('../fileUri');
 const { STANDARD_KEYWORDS } = require('./builtins');
 const { createSymbolNode } = require('./symbolNode');
 const { ST_INDEX_SKIP_DIRS } = require('../twincatWorkspace');
+const log = require('./log');
 
 /**
  * Token types for Lexer
@@ -887,7 +888,6 @@ function parseAndIndexDocument(code, fileUri, index = workspaceSymbolIndex) {
         // 2. Variables declaration block
         if (tok.type === TokenType.Keyword && tok.value.toUpperCase().startsWith('VAR')) {
             const scopeName = tok.value.toUpperCase();
-            const startLine = tok.line;
             idx++;
 
             const { vars, nextIndex } = parseVariablesBlock(tokens, idx, scopeName);
@@ -1237,6 +1237,7 @@ function indexStDirectory(dirPath, index = workspaceSymbolIndex, indexForFile = 
     try {
         entries = fs.readdirSync(dirPath, { withFileTypes: true });
     } catch (e) {
+        log.debug('st-directory-read-failed', { dir: dirPath, error: e });
         return;
     }
 
@@ -1261,7 +1262,11 @@ function indexStDirectory(dirPath, index = workspaceSymbolIndex, indexForFile = 
                     parseAndIndexDocument(code, fileUri, target);
                 }
             } catch (err) {
-                console.error(`Failed to parse and index ${entry.name}:`, err);
+                // Converted from a bare `console.error`: same stream (the LSP's stderr), but the file's
+                // full path and the error's first stack frame now come with it, and it is one grep-able
+                // record like every other. `error`, not `debug`: unlike a missing `<Compile>` target,
+                // this file was just listed by the walk, so failing to index it is a real defect.
+                log.error('st-file-index-failed', { file: fullPath, error: err });
             }
         }
     }

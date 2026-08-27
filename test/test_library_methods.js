@@ -212,20 +212,20 @@ console.log('\n--- chained member access on library types ---');
         'END_FUNCTION_BLOCK',
         ''
     ];
-    const code = lines.join('\n');
+    const chainCode = lines.join('\n');
     clearWorkspaceIndex();
-    parseAndIndexDocument(code, '/chain.st');
-    const index = getWorkspaceSymbolIndex();
+    parseAndIndexDocument(chainCode, '/chain.st');
+    const chainIndex = getWorkspaceSymbolIndex();
 
     // The head type is in the index because the document names it — exactly what
     // registerLibrarySymbolNodes would have done for a symbol the archives know.
-    index['ST_Outer'] = getLibraryTypeNode('ST_Outer');
-    index['ST_Arrayed'] = getLibraryTypeNode('ST_Arrayed');
-    assert(!!index['ST_Outer'] && index['ST_Outer'].external === true,
+    chainIndex['ST_Outer'] = getLibraryTypeNode('ST_Outer');
+    chainIndex['ST_Arrayed'] = getLibraryTypeNode('ST_Arrayed');
+    assert(!!chainIndex['ST_Outer'] && chainIndex['ST_Outer'].external === true,
         'getLibraryTypeNode builds an external node straight from the .tmc');
 
-    const sizeBefore = Object.keys(index).length;
-    const labelsAt = n => (provideCompletions(code, { line: n, character: lines[n].length }, index, '/chain.st') || [])
+    const sizeBefore = Object.keys(chainIndex).length;
+    const labelsAt = n => (provideCompletions(chainCode, { line: n, character: lines[n].length }, chainIndex, '/chain.st') || [])
         .map(i => i.label);
 
     const hop1 = labelsAt(lines.indexOf('stOuter.'));
@@ -251,13 +251,13 @@ console.log('\n--- chained member access on library types ---');
 
     // THE point: none of that put anything in the index. This is what separates resolving the chain
     // from registering it, and registering it is the 78 s cliff.
-    assert(Object.keys(index).length === sizeBefore,
-        `walking the chain registers nothing (index ${sizeBefore} -> ${Object.keys(index).length})`);
+    assert(Object.keys(chainIndex).length === sizeBefore,
+        `walking the chain registers nothing (index ${sizeBefore} -> ${Object.keys(chainIndex).length})`);
 
     // And it stays out of diagnostics: a library member is "uncertain", never "absent".
-    const diags = provideDiagnostics(code, index, '/chain.st');
-    assert(diags.length === 0,
-        `chained library access yields no diagnostics (got ${diags.length}: ${diags.map(d => d.message).join(' | ')})`);
+    const chainDiags = provideDiagnostics(chainCode, chainIndex, '/chain.st');
+    assert(chainDiags.length === 0,
+        `chained library access yields no diagnostics (got ${chainDiags.length}: ${chainDiags.map(d => d.message).join(' | ')})`);
 
     fs.rmSync(dir, { recursive: true, force: true });
     clearLibrarySymbols();

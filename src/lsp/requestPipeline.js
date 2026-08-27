@@ -34,31 +34,63 @@
 /**
  * Wraps `fn`, returning its result, or `fallback` (called with the error when it is a function, used
  * as-is otherwise) if `fn` throws.
+ *
+ * `report` is the only thing the catch does besides producing the fallback, and it is called BEFORE
+ * the fallback is built, inside its own try/catch: reporting is strictly additive, so a reporter that
+ * throws must not turn a swallowed failure into a thrown one, and must not change which value the
+ * caller gets.
  * @param {*} fallback A value, or a function `(error) => *`.
  * @param {() => *} fn
+ * @param {((error: Error) => void)|null} [report] Notified of the caught error; never affects the result.
  * @returns {*}
  */
-function callWithFallback(fallback, fn) {
+function callWithFallback(fallback, fn, report) {
     try {
         return fn();
     } catch (e) {
+        if (report) {
+            try {
+                report(e);
+            } catch (reportError) {
+                /* a failing reporter is not a reason to change what this request returns */
+            }
+        }
         return typeof fallback === 'function' ? fallback(e) : fallback;
     }
 }
 
 /**
  * Builds the two request-handler wrappers every custom/* LSP handler goes through.
- * @param {{getIndexForUri: (fileUri: string) => Object, sync: (code: string, fileUri: string, index: Object) => void}} deps
+ * @param {{
+ *   getIndexForUri: (fileUri: string) => Object,
+ *   sync: (code: string, fileUri: string, index: Object) => void,
+ *   onError?: (failure: {event: string, error: Error, params: Object}) => void
+ * }} deps
  *   `getIndexForUri` resolves a document's owning project index (workspaceScan.js's
  *   `indexForUri`/equivalent); `sync` brings that index up to date with the document's current code
- *   (server.js's `syncDocument`).
+ *   (server.js's `syncDocument`). `onError` is told about every swallowed failure — the wrappers'
+ *   whole purpose is that a request never crashes the server, which also means a request never says
+ *   why it returned its fallback; this is the seam where server.js attaches the logger. Injected, like
+ *   every other dependency here, so the harness can drive the router without a sink. It is notified,
+ *   never consulted: the fallback is unchanged whether it is supplied or not, or throws.
  * @returns {{
- *   withDocument: (fallback: *, handler: (params: Object, index: Object) => *) => (params: Object) => *,
- *   withoutDocument: (fallback: *, handler: (params: Object, index: Object) => *) => (params: Object) => *
+ *   withDocument: (fallback: *, handler: (params: Object, index: Object) => *, event?: string) => (params: Object) => *,
+ *   withoutDocument: (fallback: *, handler: (params: Object, index: Object) => *, event?: string) => (params: Object) => *
  * }}
  */
 function createRequestRouter(deps) {
-    const { getIndexForUri, sync } = deps || {};
+    const { getIndexForUri, sync, onError } = deps || {};
+
+    /**
+     * The `report` callback for one wrapped handler, or null when nobody is listening (so the catch
+     * path stays exactly as cheap as it was).
+     * @param {string|undefined} event The call site's label for this request.
+     * @param {Object} params The request params, passed through for context — the reporter decides
+     *   which of them are safe/useful to record (`params.code` is a whole document, for instance).
+     * @returns {((error: Error) => void)|null}
+     */
+    const reporterFor = (event, params) =>
+        (onError ? (error) => onError({ event: event || 'request', error, params }) : null);
 
     return {
         /**
@@ -68,14 +100,16 @@ function createRequestRouter(deps) {
          * turned into `fallback`, so a single malformed request can never crash the server.
          * @param {*} fallback A value, or `(error) => *`, used when sync or the handler throws.
          * @param {(params: Object, index: Object) => *} handler
+         * @param {string} [event] Label for this request, passed to `deps.onError` so a swallowed
+         *   failure can be reported as the feature it belongs to rather than as an anonymous throw.
          * @returns {(params: {code: string, fileUri: string}) => *}
          */
-        withDocument(fallback, handler) {
+        withDocument(fallback, handler, event) {
             return (params) => callWithFallback(fallback, () => {
                 const index = getIndexForUri(params.fileUri);
                 sync(params.code, params.fileUri, index);
                 return handler(params, index);
-            });
+            }, reporterFor(event, params));
         },
 
         /**
@@ -86,13 +120,14 @@ function createRequestRouter(deps) {
          * not to call sync" at each call site.
          * @param {*} fallback A value, or `(error) => *`, used when the handler throws.
          * @param {(params: Object, index: Object) => *} handler
+         * @param {string} [event] Label for this request — see `withDocument`.
          * @returns {(params: {fileUri: string}) => *}
          */
-        withoutDocument(fallback, handler) {
+        withoutDocument(fallback, handler, event) {
             return (params) => callWithFallback(fallback, () => {
                 const index = getIndexForUri(params.fileUri);
                 return handler(params, index);
-            });
+            }, reporterFor(event, params));
         }
     };
 }

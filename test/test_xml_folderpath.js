@@ -279,7 +279,7 @@ const afterSecond = insertFolderIntoXml(afterFirst, '', 'Properties', propsId);
         'Method', 'Release', 'Properties\\');
     // Root-level children all sit at exactly 4-space indent; nested content is deeper and the
     // CDATA bodies never match `    <word` in this fixture.
-    const seq = [...moved.matchAll(/^    <(\w+)/gm)].map(m => m[1]).join(',');
+    const seq = [...moved.matchAll(/^ {4}<(\w+)/gm)].map(m => m[1]).join(',');
     assert(seq === 'Declaration,Implementation,Folder,Folder,Method,Method,LineIds',
         `END-TO-END: canonical element order Declaration,Implementation,Folder,Folder,Method,Method,LineIds (got ${seq})`);
     assert(moved.includes('<Method Name="Clamp" Id="{bbbbbbbb-0000-0000-0000-000000000002}" FolderPath="Methods\\">')

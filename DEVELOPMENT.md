@@ -59,6 +59,8 @@ node test/test_live_path.js   # run a single harness directly
 node test/test_solution_map.js # solution → PLC-project discovery/grouping
 node test/test_tree_reveal.js # exact component → project → solution parent chains
 npm run typecheck             # type-check gate: tsc --noEmit (no emit — runtime stays plain JS)
+npm run lint                  # ESLint 9, flat config — a DEFECT check, not a style check; the
+                              # policy and every relaxation are documented in eslint.config.js
 
 REQUIRE_FULL_SUITE=1 npm test # fail unless the full-run fixtures are present (see below)
 ```
@@ -117,6 +119,7 @@ per-suite without aborting on the first failure. The main ones:
 | `test/test_xml_member_order.js` | WHERE a new member lands, for both `insertComponentIntoXml` (create) and `insertComponentBlockIntoXml` (paste), via the shared `insertMemberIntoXml`. TwinCAT's loader is order-sensitive inside `<POU>`/`<Itf>`: the canonical child order is Declaration, Implementation, `Folder*`, member*, `LineIds*`, so a member must land *before* the LineIds group — appending past it is the same class of defect as the root-`<Folder>` incident that made XAE drop an FB's members from compile. Also pins the seam's 4-space indent, the root close tag keeping its own indent, CRLF preservation (including an LF block pasted into a CRLF document), a `<LineIds` literal inside CDATA not being mistaken for the anchor, and the `.TcIO` fallback (interfaces carry no LineIds at all). |
 | `test/test_nested_namespace.js` | Nested library namespaces (`VisuElems.VisuElemBase.▮`): a library's namespace re-exports its dependencies' namespaces, so the inner segment names a library no `.plcproj` references and is resolved by name against the installed-library store, lazily and cached. Asserts the two properties that hold without any library installed — the gate (only a referenced namespace head opens the store, so `stAxis.MotionState.▮` never does) and the miss (uninstalled ⇒ cached empty list, never an exception). Real resolution runs only when the machine has a readable library, and says so when it does not. |
 | `test/test_rename_engine.js` | `src/renameEngine.js`: mapping workspace reference positions (raw-ST-unit coords) back into CDATA splices — synthesized-line skips (action headers, `GET`/`SET`), the PROGRAM→FUNCTION_BLOCK raw-mode column skew, the never-write-a-mismatch guard, CRLF byte preservation. |
+| `test/test_rename_transaction.js` | `src/renameTransaction.js`, the rollback transaction behind cross-file rename: stage-then-apply with first-staged-order writes, composed re-staging (original text kept from the first read), the pre-write re-read (`changed-on-disk` — a file that changed since staging is never written), reverse-order rollback on first failure, the rollback's own never-clobber verify (`changed-after-write`), per-file rollback-failure reporting, `revert()` after a successful apply (the failed-disk-rename escape hatch), and single-shot apply. Fault-injected over a fake io; the three guards are each verified to FAIL when removed. |
 | `test/test_references_for_symbol.js` | The LSP's by-symbol references entry point (`custom/referencesForSymbol`) that powers rename: FB/GVL/DUT roots (a GVL name never appears in its own ST text, so the position-based API cannot seed it), methods/properties/actions, the name-keyed-index identity guard, and index restoration after the scan. |
 | `test/test_config_references.js` | The non-code half of rename (`custom/configReferencesForSymbol`): dotted symbol paths inside visualizations `.TcVIS`/`.TcVMO` (`GVL_X.fb.member`, embedded `STSnippet` code) and text lists `.TcTLO`/`.TcGTLO` (a text entry whose text IS a symbol path) are found only when the chain provably resolves to the renamed symbol — text-list ids, visu-library names, dotted prose (`Palletizer.Turn1`) and unresolvable prefixes are never touched. Task configs `.TcTTO` use a separate rule: the `<PouCall>` `<Name>` matches only a dot-free name, so a library call (`VisuElems.Visu_Prg`) is never rewritten. BOM/offset fidelity, plus a sample-project pass when `sample/` is present. |
 | `test/test_lsp_parser.js` | Lexer, AST parser and symbol indexer on a synthetic FB: keyword tokenisation, `EXTENDS`/`IMPLEMENTS`, variable types and ranges, nested method params, property GET accessors. Lived outside the suite until 2026-08-05 and **printed `[FAIL]` while exiting 0** — it could report a broken parser and still be green. It counts failures and exits non-zero now. |
@@ -260,9 +263,9 @@ default language strings" — the same symptom this project already records for 
 **Branches.** `main` is what gets released; **`dev`** is where day-to-day work is merged. When a release is
 ready: open a `dev → main` PR (CI runs on it), merge, then run the *Release* workflow on `main` (below).
 
-CI (`.github/workflows/ci.yml`) runs on every PR to `main` — PR-only by design: the `push` trigger is
-disabled so a merge does not re-run what the PR already proved, and `dev` has **no automatic CI**. To check
-`dev`, run **CI (manual)** by hand: Actions tab → *CI (manual)* → *Run workflow*, or
+CI (`.github/workflows/ci.yml`) runs on every PR to **`main` or `dev`** — PR-only by design: the `push`
+trigger is disabled so a merge does not re-run what the PR already proved, and a direct push to `dev`
+triggers nothing. To check a ref without a PR, run **CI (manual)** by hand: Actions tab → *CI (manual)* → *Run workflow*, or
 `gh workflow run ci-manual.yml`. Its `ref` input is what gets checked out and tested and **defaults to
 `dev`** — the branch dropdown beside it only selects which copy of the workflow files runs (GitHub lists a
 `workflow_dispatch` workflow from the default branch), so it can stay on `main`. `ci-manual.yml` is a shell
@@ -271,9 +274,12 @@ to `pull_request` for exactly this; on a PR the input is empty and the checkout 
 the gates are defined once. CI itself is Windows-only (the platform users are
 on), with superseded runs cancelled and a read-only token. Two jobs:
 
-- **`build`** (current Node) — `npm run typecheck`, `npm test`, then a **VSIX build check**
-  (`vsce package`). Packaging is otherwise only exercised by hand at release time, where a broken
-  manifest or `.vscodeignore` would surface far too late.
+- **`build`** (current Node) — `npm run lint` (ESLint needs Node ≥ 18.18, so lint lives only in
+  this job), `npm run typecheck`, `npm test` with **`REQUIRE_FULL_SUITE=1`** (the
+  sample is committed, so CI achieves FULL coverage; a run whose load-bearing gates skipped fails
+  instead of passing quietly), then a **VSIX build check** (`vsce package`). Packaging is otherwise
+  only exercised by hand at release time, where a broken manifest or `.vscodeignore` would surface
+  far too late.
 - **`runtime-compat`** (Node 16 and 20) — `npm test` only. The extension runs on the Node that VS Code
   bundles, not the CI default: `engines.vscode` is `^1.66.0`, and VS Code 1.66 ships Electron 17
   (Node 16), so the suite must keep working there or that support claim is fiction. Tests only is
@@ -298,7 +304,8 @@ src/
   commands/             Command registration, split out of extension.js — each exports register*(context, deps)
     objectCommands      "TwinCAT Objects" create/delete (methods, properties, actions, files, folders)
     clipboardCommands   "TwinCAT Objects" copy/paste (duplicate a component cross-file or a file under a new name)
-    renameCommands      "TwinCAT Objects" rename (files, members, directories, virtual folders; reference-aware)
+    renameCommands      "TwinCAT Objects" rename (files, members, directories, virtual folders; reference-aware;
+                        cross-file updates staged and applied through renameTransaction)
     libraryCommands     "TwinCAT Libraries" commands (refresh, insert, copy, Update Library Definitions)
     lspBridgeCommands   openComponent navigation + the twincat.lsp.query* Monaco↔LSP bridges
   xaeShell              XAE shell discovery + the library-signature generator (the one non-offline path)
@@ -344,6 +351,10 @@ src/
                         lazily, inside createProjectStatusBar()
   dndRules              Objects-tree drag & drop + copy/paste compatibility matrices (vscode-free, so testable)
   renameEngine          Rename: maps LSP reference positions back into CDATA splices (vscode-free, so testable)
+  renameTransaction     Rename: the stage/apply/rollback transaction over the cross-file writes — a
+                        multi-file rename either fully lands or every already-written file is restored
+                        (reverse order, verify-before-write and verify-before-restore, rollback
+                        failures reported per file). Injected read/write, vscode-free, so testable
   treeDragAndDrop       Objects-tree drag & drop controller — executes the matrix's plans (needs VS Code 1.66+)
   libraryTreeProvider   "TwinCAT Libraries" explorer tree (library → types → members)
   referencesProvider    "TwinCAT References" results view (+ referencesTree grouping)
@@ -376,9 +387,24 @@ src/
                         Signature records are CLONED per project — see the warning in its header.
     plcprojRefs.js      One shared, cached .plcproj read (library references + namespaces). The same
                         file used to be read three times per project per scan.
+    log.js              Structured, quiet-by-default logging for the LSP process (threshold `warn`,
+                        TWINCAT_LSP_LOG=debug to opt in; stderr, one line per record; never throws;
+                        below-threshold calls cost one comparison). The request handlers still return
+                        their safe defaults on failure — the logger is what makes a default
+                        explicable. Routine healthy-project conditions belong at debug, never warn
     parser.js           Structured Text lexer + symbol parser
     symbolNode.js       Single factory for a symbol node's core shape (parser + xmlIndexer build through it)
     features.js         Facade re-exporting features/{core,completions,definition,references,configReferences,highlights,diagnostics}
+    features/completions.js  Autocompletion ORCHESTRATOR + façade (public surface unchanged): walks
+                        pragma → member access → named params → caret-context classification and
+                        assembles what each context accepts. The systems live in completion/
+    completion/         The completion engine's parts, split by seam (behavior-identical extraction):
+      pragma.js           completions inside `{ … }` (pure, catalog-backed)
+      context.js          classifyCaretContext + the token/keyword vocabularies it reads
+      namedParams.js      argument-name completions for calls / FB init lists
+      memberAccess.js     the dotted-caret branch: project members, library namespaces (nested too),
+                          external (.tmc) type members, chained library member walks
+      sources.js          the push* candidate sources, ranking prefixes, snippets and keyword lists
     features/configReferences.js  Rename's non-code half: PLC symbol references inside visualizations, text lists and task configs
     builtins.js         Standard IEC/TwinCAT types, keywords, functions/FBs
     types.js            Type model, resolver, member lookup, assignability

@@ -4,7 +4,9 @@ Where the work *stands*. Read before starting; keep current (handoff rule in [CL
 100 lines — prune finished items rather than appending, but never drop a real finding to hit it. **Shipped features
 live in git history (PRs/commits); this file keeps the findings that would cost to re-derive.**
 
-**Last verified:** 2026-08-25 (Windows, user's machine, main incl. the `.tctleo` fix, G4 automation and
+**Last verified:** 2026-08-26 (Linux container, dev + all five improvement-plan phases) — `REQUIRE_FULL_SUITE=1
+npm test` green (**76/76, Coverage: FULL**), typecheck clean, `npm run lint` exit 0. Prior full pass: 2026-08-25 (Windows, user's
+machine, main incl. the `.tctleo` fix, G4 automation and
 pending-edit persistence) — `REQUIRE_FULL_SUITE=1 npm test` green (**73/73, Coverage: FULL, 6.3 s**),
 typecheck clean, and **`node test/devhost/run.js` all green** — the G4 dev-host gate carries two `.TcTLEO`
 watcher assertions AND the automated P8 webview checklist (29 assertions via the `TCDEV_TEST`-gated
@@ -14,7 +16,7 @@ readdir and skips cleanly — lesson in `.claude/memory/permission-tests-need-en
 Earlier: 2026-08-22 Linux P8 pass (72/72 FULL, typecheck, both browser harnesses in real Chromium, PASS
 set identical to pre-P8); 2026-08-18 full pass incl. dev-host two-project workspace and 0 sample
 diagnostics; 2026-08-10 verified 0 diagnostics with Beckhoff archives present AND moved aside.
-`package.json` is at **0.8.2** (project-aware Generate ST + picker; 0.8.1 was the ResizeObserver Find-References fix; 0.8.0 the solution→PLC-project Objects hierarchy). Remote history was rewritten 2026-08-17.
+`package.json` is at **0.9.0** (the five improvement-plan phases; 0.8.2 was project-aware Generate ST + picker; 0.8.1 the ResizeObserver Find-References fix; 0.8.0 the solution→PLC-project Objects hierarchy). Remote history was rewritten 2026-08-17.
 **Review fixes verified on `codex/review-fixes`:** bounded ZIP archive/input inflation (`libsymbols.js`); central path↔file-URI handling
 (`fileUri.js`); reference-cache identity is mtime+size+ctime+inode; FULL coverage now requires child harnesses to
 report that gates actually ran; editor coordinate/peek helpers moved to production `editorMapping.js` and are
@@ -28,13 +30,15 @@ cross-file navigation. The user's pre-existing newline edit in `sample/.../FB_St
 `prerelease`/`draft` inputs. **Proven 2026-08-26 06:41:** published `v0.8.0` (tag at `fb9a11f`, VSIX attached, run
 green). vsce's "577 files / bundle your extension" warning is expected and ruled ignored (bundling contradicts the
 no-build-step invariant; ~385 files are LSP runtime deps). Procedure in DEVELOPMENT.md "Publish a GitHub release".
-**Branching model (2026-08-26):** `dev` (created from main `6cbb77c`) collects day-to-day work; a release is
-`dev → main` PR (CI runs on it) then *Release* on main. `dev` has NO automatic CI — *CI (manual)*
-(`.github/workflows/ci-manual.yml`, `ref` input defaults to `dev`, calls `ci.yml` via `workflow_call`) is the
-dev gate, run by hand. **Proven 2026-08-26 (run 32942537490):** all three nested jobs green and the checkout log shows
-`ref: dev` → `git checkout -B dev refs/remotes/origin/dev`; PR #6's own run proved the `pull_request` path of the same
-`ci.yml`. It includes the VSIX build check on purpose (ruled: "is dev releasable" includes "does it package"; nothing is
-uploaded). Feature PRs targeting `dev` get no CI. `dev` has no ruleset — direct pushes are allowed.
+**Branching model (updated 2026-08-26):** `dev` (created from main `6cbb77c`) collects day-to-day work; a release is
+`dev → main` PR (CI runs on it) then *Release* on main. **PRs targeting `dev` now run CI automatically**
+(`ci.yml` `pull_request: [main, dev]`, user-approved reversal of the manual-only ruling, phase 5 of the improvement
+plan) and the build job's Test step now sets **`REQUIRE_FULL_SUITE=1`** — a REDUCED run fails instead of passing
+(sample/ is committed, so FULL is achievable on CI; the old ci.yml comment claiming otherwise was stale and is fixed).
+*CI (manual)* (`ci-manual.yml`, `ref` defaults to `dev`, calls `ci.yml` via `workflow_call`) remains for direct
+pushes to `dev` (still trigger nothing) and ad-hoc refs. VSIX build check stays on purpose (ruled: "is dev
+releasable" includes "does it package"). `dev` has no ruleset — direct pushes are allowed. Earlier proof of the
+manual path: run 32942537490, all three nested jobs green.
 **Generate ST is project-aware (on dev, 2026-08-26):** the button is a split control — main = every project, caret opens a
 checkbox menu (shown only when 2+ projects) to pick a subset. Output moved from a flat `ST_Files/<workspace path>.st`
 mirror (which OVERWROTE across projects that shared an object path) to per-project `ST_Files/<project dir rel to workspace>/…`,
@@ -43,6 +47,36 @@ webview asks `requestProjects`→`projectList`, `generate-st` carries optional `
 No-`.plcproj` workspaces fall back to the old mirror. Verified: unit test, dev-host `generate-st` phase (real disk, 3-project
 fixture, subset scoping), and the dropdown eyeballed. Trap: `asRelativePath(dir, true)` prepends the folder name even for a
 SINGLE root (`ST_Files/ws/…`) — hence the hand-rolled `projectFolderRelPath`, which prefixes only for 2+ roots.
+**Improvement-plan phases (user-approved 2026-08-26, one PR per phase into `dev`):** an external review plan was
+assessed against the repo; adopted subset only. 1) transactional rename — DONE (below, PR #10); 2) completion split —
+DONE: `features/completions.js` 1361→191 lines (orchestrator+façade, public exports unchanged), parts in
+`src/lsp/completion/{pragma,context,namedParams,memberAccess,sources}.js`, acyclic require graph, verified
+behavior-IDENTICAL against the pre-split monolith (exhaustive probe: every caret position in a live-indexed unit,
+1186 probes + 18 named scenarios, 0 mismatches, order-sensitive deep equality); 3) ESLint — DONE: `npm run lint`
+exits 0 (ESLint 9 flat CJS config, defect-focused; every relaxation documented IN `eslint.config.js` — notably
+`caughtErrors/args: 'none'` and `no-useless-escape` off, each argued there), 26 real fixes + 1 load-bearing inline
+disable (`xaeShell.js`'s `vscode` require feeds a JSDoc namespace — deleting it fails typecheck, verified), Lint
+step in CI `build` job only (ESLint 9 needs Node ≥18.18; runtime-compat runs Node 16). Deferred: ESLint 10 bump
+(9.x now deprecated; 10 raises the Node floor + re-triage), dev-only `brace-expansion` advisory (fix would drag 19
+unrelated lockfile packages); 4) structured LSP logging — DONE: `src/lsp/log.js` (quiet-by-default `warn`
+threshold via `TWINCAT_LSP_LOG`, stderr one-line records, never throws, below-threshold = one comparison);
+24 of 47 inventoried silent catch sites wired — 9 server.js handler catches + all 7 routed `custom/*` handlers
+via `requestPipeline`'s injected `onError` (reporter itself try/caught: strictly additive, `params.code` never
+logged), 14 per-file degraded sites at `debug`, exactly ONE `warn` (`plcproj-unreadable` — zeroes a project's
+index); ~20 routine sites deliberately left silent (noise even at debug). Healthy sample emits ZERO stderr even
+at debug. Pins: `test_log.js` (43 asserts; 3 broken variants verified red); 5) automatic CI for PRs targeting `dev` + `REQUIRE_FULL_SUITE=1` enforced on CI — DONE (**user-approved
+reversal** of the manual-only dev-CI ruling; see Branching model; first run proved green on PR #11 itself). Rejected: `libsymbols` split (P9 no-go stands),
+CI fixture (already done), editor/activate decomposition (done enough), ADR dir (memory bank + plans cover it).
+**Transactional cross-file rename (phase 1, on dev 2026-08-26):** `src/renameTransaction.js` — stage-then-apply
+with captured originals; pre-write re-read (`changed-on-disk` never written), reverse-order rollback on first
+failure, never-clobber verify on restore (`changed-after-write`), `revert()` when the on-disk file rename fails
+after content edits landed, rollback failures reported per file (real spelling via keyToUri — the lowercased key
+is identity only). `applyXmlEdit` split into `readXmlText`/`writeXmlText`; **`writeXmlText` now THROWS when
+`applyEdit` resolves false** (was silently ignored — a dropped edit mid-rename was invisible). `.plcproj` sync
+stays outside the transaction (own swallowing contract, many call sites — a later phase if wanted). Pins:
+`test_rename_transaction.js` (51 asserts, fault-injected io; all three guards verified to FAIL when removed).
+Trap: the pinned TS preview does not narrow `!res.ok` on a JSDoc union — see
+`.claude/memory/jsdoc-union-narrowing-needs-explicit-compare.md`.
 **Find References blanked the editor (shipped in 0.8.0, FIXED on dev 2026-08-26):** `media/editor.js`'s
 global `error` listener painted the "Webview Runtime Failure" overlay over both panes and toasted "Webview Error" for ANY
 window error event — and Chrome delivers its benign "ResizeObserver loop completed with undelivered notifications" notice
@@ -159,9 +193,9 @@ header; the gradient-clipped wordmark is deliberately left at 3.3–4.9:1 (a log
   clone. Revisit only if the file grows a NEW seam, with G5 available.
   **The deepening roadmap is now CLOSED on this machine: P1-P6 + P8 shipped (PRs #39-#45),
   P9 ruled no-go. P7 (tree model) stays parked — its dev-host gate is mandatory, user's machine.**
-  **GitHub Actions is account-level DEAD since 2026-08-18** — every run (main included) fails in
-  ~5 s with no logs; jobs never start. Likely the Actions spending limit/billing. USER must fix in
-  GitHub Settings → Billing; until then the local `REQUIRE_FULL_SUITE=1` gate is the merge gate.
+  (The 2026-08-18 "Actions account-level dead" note is OBSOLETE — that repo was deleted in the
+  recreate; on the recreated repo the startup failures were the `local_only` Actions permission,
+  fixed 2026-08-26, and runs are green since PR #4.)
   Open decisions remaining: the fossil-rewrite table's eventual removal (user's call, P4 ruling
   keeps them). (P6 features.js: RULED kept. P9: RULED no-go, above.)
 - **Solution→PLC-project Objects hierarchy (0.8.0):** `solutionMap.js` follows the actual TwinCAT
@@ -257,8 +291,8 @@ header; the gradient-clipped wordmark is deliberately left at 3.3–4.9:1 (a log
   one-liner before publishing). All 47 PR discussions were exported to a JSON archive and delivered to the
   user 2026-08-26 — deliberately NOT committed (old PR bodies may reference pre-rewrite names). PR/issue
   history, settings, secrets and branch protection did not carry over; recreate on the new repo as needed.
-  **Remaining: the user deletes `TC_PLC_Toolkit-old`** — until then the pre-rewrite objects are still
-  fetchable there. The old IP-sign-off open point is resolved and removed (user, 2026-08-26).
+  **`TC_PLC_Toolkit-old` is DELETED (user confirmed 2026-08-26)** — the retraction is complete; no
+  pre-rewrite object is reachable anywhere. The old IP-sign-off open point is resolved and removed (user, 2026-08-26).
 - **The suite is platform-correct now (fixed 2026-08-17) — don't reintroduce a Windows-shaped path assumption.**
   11 of 59 suites used to fail on any non-Windows checkout while CI (`windows-latest`) stayed green. Both copies of
   `uriToFsPath` ended in an unconditional `.replace(/\//g,'\\')`: right on Windows, but on POSIX it ate the root and
