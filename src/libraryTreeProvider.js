@@ -18,6 +18,13 @@
  * out of an index that costs ~32k symbols and ~50 MB of archive reads, so the extension host asks for
  * it over the wire instead of building a second copy. This provider therefore never requires the lsp
  * modules — it is handed a `sendRequest` closure and knows nothing else about the client.
+ *
+ * **Scope.** A workspace can hold several PLC projects, and each `.plcproj` references its own
+ * libraries, so a flat union of all of them is wrong in exactly the way the "TwinCAT Objects" tree
+ * used to be: it shows names the active file cannot actually use. The provider therefore tracks the
+ * active file and asks for that file's project (`setActiveFile` → `{ fileUri }`), falling back to the
+ * union only when nothing owns the file. The scope decisions are the three pure functions below, so
+ * they are pinned by a standalone harness (test/test_library_scope.js).
  */
 
 const vscode = require('vscode');
@@ -25,6 +32,10 @@ const vscode = require('vscode');
 // a vscode-free module: this file cannot be loaded outside a VS Code host, and the two views must
 // lay a parameter list out identically.
 const { orderedParams, callTemplate } = require('./insertTemplates');
+const { LOOSE_PROJECT_KEY } = require('./lsp/projectMap');
+
+/** What the view's description says when it is showing every project's libraries at once. */
+const UNION_DESCRIPTION = 'All projects';
 
 /** Type kind (from the `.tmc` or the signatures dump) → the codicon that reads as that kind in VS Code. */
 const TYPE_ICONS = {
@@ -124,40 +135,154 @@ function formattedDefinitionForNode(node) {
     return insertTextForNode(node);
 }
 
+/**
+ * The key of the PLC project that owns a file, or '' when none does.
+ *
+ * '' covers all three "nothing to scope to" cases with one value the caller can test: no partition
+ * yet (activation has not built one), no active file, and a file the partition routes to
+ * `(loose)` — one under no project directory at all. The key is the extension host's own copy of the
+ * same identity the LSP routes by (projectMap.js), so host and server agree on what changed.
+ *
+ * Deliberately NOT gated on TwinCAT file extensions the way the status bar is: the status bar states
+ * a fact about the active file (a `.md` belongs to no PLC project, so it shows nothing), while this
+ * decides which library list to show, and flipping the whole view to the union because the user
+ * clicked a README inside the project would be noise, not accuracy.
+ * @param {Object|null} projectMap The extension host's partition (src/lsp/projectMap.js).
+ * @param {string} fsPath Absolute path of the active file, or ''.
+ * @returns {string} Project key, or '' when nothing owns it.
+ */
+function scopeProjectKey(projectMap, fsPath) {
+    if (!projectMap || !fsPath) return '';
+    const key = projectMap.projectFor(fsPath);
+    return key === LOOSE_PROJECT_KEY ? '' : key;
+}
+
+/**
+ * The TreeView description that tells the user which scope the list is on.
+ *
+ * Shown only in a workspace with two or more PLC projects — with one project there is nothing to
+ * disambiguate and the description is pure noise, which is the same rule (and the same reason) as
+ * the project status bar's.
+ *
+ * The scoped label comes from `projectMap.displayName()`, the same helper `projectLabel` uses: it is
+ * the project's real spelling. The key must never be shown — it is a lowercased identity string, not
+ * a name (see .claude/memory/normalized-keys-are-not-file-paths.md).
+ * @param {Object|null} projectMap The extension host's partition.
+ * @param {string} fsPath Absolute path of the active file, or ''.
+ * @param {'project'|'union'} scope The scope the LSP answered with.
+ * @returns {string} Description text, or '' when it should not be shown.
+ */
+function scopeDescription(projectMap, fsPath, scope) {
+    if (!projectMap || projectMap.projects.size < 2) return '';
+    const key = scope === 'project' ? scopeProjectKey(projectMap, fsPath) : '';
+    return key ? projectMap.displayName(key) : UNION_DESCRIPTION;
+}
+
+/**
+ * Normalizes a `custom/libraries` response.
+ *
+ * A bare array is the pre-scope response shape and is read as the union — the extension and the LSP
+ * ship together, but they are separate processes and a stale one must degrade to the old behaviour
+ * rather than to an empty view (an empty Libraries view is this feature's historical failure mode).
+ * @param {any} result Whatever came back over the wire.
+ * @returns {{scope: 'project'|'union', projectKey: string|null, libraries: Array<Object>}}
+ */
+function readLibraryResponse(result) {
+    if (Array.isArray(result)) return { scope: 'union', projectKey: null, libraries: result };
+    if (result && Array.isArray(result.libraries)) {
+        return {
+            scope: result.scope === 'project' ? 'project' : 'union',
+            projectKey: result.projectKey || null,
+            libraries: result.libraries
+        };
+    }
+    return { scope: 'union', projectKey: null, libraries: [] };
+}
+
 class TwinCatLibraryTreeDataProvider {
     /**
      * @param {(method: string, params?: Object) => Thenable<any>} sendRequest Sends a custom request
      *        to the LSP. extension.js owns the client handle and passes a closure over it, so this
      *        module never imports it.
+     * @param {{getProjectMap?: () => (Object|null), setDescription?: (text: string) => void}} [deps]
+     *        `getProjectMap` supplies the extension host's partition and is re-read on every call (a
+     *        `.plcproj` edit rebuilds it — the same contract the tree and the status bar have).
+     *        `setDescription` writes the TreeView's description; the view handle lives in
+     *        extension.js, so this module never touches vscode.window.
      */
-    constructor(sendRequest) {
+    constructor(sendRequest, deps) {
         this._onDidChangeTreeData = new vscode.EventEmitter();
         this.onDidChangeTreeData = this._onDidChangeTreeData.event;
         this.sendRequest = sendRequest;
+        const { getProjectMap = () => null, setDescription = () => {} } = deps || {};
+        this.getProjectMap = getProjectMap;
+        this.setDescription = setDescription;
         /** Cached catalog; null until the first fetch, and dropped by refresh(). @type {Array<Object>|null} */
         this.catalog = null;
+        /** The active file the catalog is asked for, as a URI string; '' when there is none. */
+        this.activeFileUri = '';
+        /** Its filesystem path — what the project lookup and the description label are computed from. */
+        this.activeFsPath = '';
+        /** The key of the project the active file belongs to; '' when none (see scopeProjectKey). */
+        this.scopeKey = '';
     }
 
-    /** Drops the cached catalog and re-renders (the next getChildren() re-fetches it). */
+    /**
+     * Drops the cached catalog and re-renders (the next getChildren() re-fetches it).
+     *
+     * The scope key is re-derived here too: a `.plcproj` change rebuilds the host's partition and
+     * then calls this, and a key left over from the old partition could swallow the *next*
+     * setActiveFile as a no-change.
+     */
     refresh() {
+        this.scopeKey = scopeProjectKey(this.getProjectMap(), this.activeFsPath);
         this.catalog = null;
         this._onDidChangeTreeData.fire(undefined);
+    }
+
+    /**
+     * Records which file is active, and re-scopes the view when that changes which project it is in.
+     *
+     * Called for every activation (extension.js's revealUri, which both the plain-text-editor and the
+     * custom-editor webview paths go through), so it must be cheap: switching between two files of the
+     * SAME project changes nothing the view shows, and must not drop the cache or refetch a catalog
+     * that costs an archive-backed index on the other side of the wire. Only a change of owning
+     * project — including to or from "no project at all" — invalidates anything.
+     * @param {{fsPath: string, toString: () => string}|null} uri The now-active file, or null.
+     */
+    setActiveFile(uri) {
+        const fsPath = (uri && uri.fsPath) || '';
+        this.activeFsPath = fsPath;
+        this.activeFileUri = uri && fsPath ? uri.toString() : '';
+        const key = scopeProjectKey(this.getProjectMap(), fsPath);
+        if (key === this.scopeKey) return;
+        this.scopeKey = key;
+        this.refresh();
     }
 
     /**
      * Fetches the catalog once and caches it. An LSP that is not up yet, or a request that fails, is
      * not an error the user should see: the view simply stays empty (its viewsWelcome message then
      * explains what is missing) and the Explorer keeps working.
+     *
+     * The active file rides along so the LSP can answer with that file's project; without one it
+     * answers with the union (see selectLibraryCatalog in src/lsp/workspaceScan.js).
      * @returns {Promise<Array<Object>>} Catalog entries, or [] when unavailable.
      */
     async getCatalog() {
         if (this.catalog) return this.catalog;
+        let response = null;
         try {
-            const result = await this.sendRequest('custom/libraries');
-            this.catalog = Array.isArray(result) ? result : [];
+            response = readLibraryResponse(await this.sendRequest('custom/libraries',
+                this.activeFileUri ? { fileUri: this.activeFileUri } : undefined));
         } catch (e) {
-            this.catalog = [];
+            response = null;
         }
+        this.catalog = response ? response.libraries : [];
+        // Deliberately after the assignment and outside the try: writing the description touches the
+        // view handle, and a failure there must never be mistaken for a failed request and blank a
+        // catalog that arrived intact.
+        if (response) this.setDescription(scopeDescription(this.getProjectMap(), this.activeFsPath, response.scope));
         return this.catalog;
     }
 
@@ -348,4 +473,12 @@ class TwinCatLibraryTreeDataProvider {
     }
 }
 
-module.exports = { TwinCatLibraryTreeDataProvider, insertTextForNode, formattedDefinitionForNode };
+module.exports = {
+    TwinCatLibraryTreeDataProvider,
+    insertTextForNode,
+    formattedDefinitionForNode,
+    scopeProjectKey,
+    scopeDescription,
+    readLibraryResponse,
+    UNION_DESCRIPTION
+};

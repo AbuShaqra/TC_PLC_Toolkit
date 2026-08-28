@@ -267,9 +267,17 @@ header; the gradient-clipped wordmark is deliberately left at 3.3–4.9:1 (a log
   entry goes sticky across restarts, needs FORMAT_VERSION discipline, ship the ZIP-central-directory fingerprint
   with it). Next cheap cut: memoize `collectSignatureFiles` per root — signatures are still ~850 ms/scan, now mostly
   16 directory walks rather than parsing.
-  **Deferred by decision:** the Libraries view falls back to the **union** of all projects when no `fileUri` is
-  sent, because scoping it naively made the view render **empty** even with one project — revisit only if the host
-  is taught to send the active file.
+  **Libraries view now SCOPES to the active file's project (2026-08-27, lifts the old union-only deferral):**
+  `revealUri` (both text-editor and webview activation paths) feeds `libraryProvider.setActiveFile`; the view
+  refetches only when the OWNING PROJECT changes and shows the scope in its TreeView description (project label /
+  `All projects`, 2+ project workspaces only — same rule as the status bar). `custom/libraries` returns
+  `{scope, projectKey, libraries}` via the pure `selectLibraryCatalog` (workspaceScan.js): a routed project answers
+  with ITS catalog **even when empty** (explicit scope never widens — pinned); union only for no-fileUri/loose (the
+  blank-view regression stays structurally impossible; a stale bare-array response degrades to union). Deliberate:
+  a non-TwinCAT file inside a project keeps that project's scope (documented in `scopeProjectKey`). Pins:
+  `test_library_scope.js` (39, real 2-plcproj routing; 3 broken variants verified red). Manual residue (dev-host,
+  user's machine): description rendering + webview tab switches live, startup seeding, `.plcproj`-watcher path
+  end-to-end.
 - **Publication:** repo is **Private**. History was rewritten twice — once (earlier) to purge customer/vendor
   content, once **2026-08-17** to purge commit metadata. **The 2026-08-17 sweep is complete and does not need
   redoing:** working tree + every commit + all 823 unique non-Monaco blobs, plus commit metadata, tags,
