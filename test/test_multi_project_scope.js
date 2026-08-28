@@ -381,9 +381,11 @@ assert(!isLibraryNamespace('Tc2_DefaultRegistryOnly', idxB),
     "LineB's already-written registry does NOT see a namespace known only to the default registry");
 
 // --- the Libraries view falls back to the union when no project-specific catalog is resolved -------
-// custom/libraries (server.js) composes exactly these two primitives — getLibraryCatalog(index) for a
-// specific project, and getUnionLibraryCatalog(indexes) as the fallback when no fileUri is given, or
-// the routed project's own catalog is empty. Tested at this level because server.js opens an IPC
+// custom/libraries (via selectLibraryCatalog in workspaceScan.js) composes exactly these two
+// primitives — getLibraryCatalog(index) for the routed project (even when its catalog is empty:
+// an explicit scope never widens), and getUnionLibraryCatalog(indexes) as the fallback when no
+// fileUri is given or it routes to no project. The selection itself is pinned by
+// test_library_scope.js; the two primitives are tested here because server.js opens an IPC
 // connection at require time and cannot be loaded standalone.
 // (indexLibraryTitles/getLibraryCatalog/getUnionLibraryCatalog/clearLibrarySymbols are required at the
 // top of this file.)
@@ -400,8 +402,9 @@ assert(catalogB.length === catalogA.length + 1,
     `LineB's own catalog includes exactly the one extra Tc2_LineBOnly reference LineA does not have ` +
     `(A: ${catalogA.length}, B: ${catalogB.length})`);
 
-// No fileUri (the extension host has not sent one), or a fileUri routing to an empty catalog: the
-// union, not nothing — that is the actual fix for the Libraries-view regression this review found.
+// No fileUri, or one routing to no project: the union, not nothing — that is the actual fix for the
+// Libraries-view regression this review found. (A fileUri routing to a real project now answers with
+// that project's catalog even when empty — see test_library_scope.js.)
 const union = getUnionLibraryCatalog(indexes.values());
 assert(union.length > 0, 'the union catalog is non-empty even with no project specified');
 assert(union.some(e => e.namespace.toLowerCase() === 'tc2_linebonly'),

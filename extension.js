@@ -120,12 +120,19 @@ function activate(context) {
 
     let treeView;
     let treeProvider;
+    // Assigned further down (it needs the LSP client closure), but referenced here: revealUri is the
+    // single hook every activation goes through, and the Libraries view scopes to the active file's
+    // project the same way the status bar labels it.
+    let libraryProvider;
     const revealUri = async (uri, componentId = 'root') => {
         // Runs for every active-file change (custom-editor webview activation AND plain text
         // editors), independent of the tree-reveal eligibility check below, so switching to a
         // non-TwinCAT file correctly hides the indicator rather than leaving it showing the
         // previously active project.
         projectStatusBar.refresh(uri);
+        // Cheap and idempotent: it only invalidates the catalog when the owning PROJECT changes, so
+        // switching between two files of one project costs nothing (see setActiveFile).
+        if (libraryProvider) libraryProvider.setActiveFile(uri);
         if (!treeView) return;
         const ext = path.extname(uri.fsPath).toLowerCase();
         if (!TWINCAT_EDITOR_EXTS.has(ext)) {
@@ -338,14 +345,30 @@ function activate(context) {
     // "TwinCAT Libraries" view: the .plcproj's libraries, listed under the namespace the code must
     // use — they are frequently different names. The catalog lives in the LSP (it falls out of the
     // library index), so the provider is handed a closure over the client rather than the client.
-    const libraryProvider = new TwinCatLibraryTreeDataProvider(
-        (method, params) => (client ? client.sendRequest(method, params) : Promise.resolve([]))
+    // The view scopes to the active file's project, and says so in its description — so it is also
+    // handed the partition and a writer for that description (the view handle lives here, not there).
+    let libraryView;
+    libraryProvider = new TwinCatLibraryTreeDataProvider(
+        (method, params) => (client ? client.sendRequest(method, params) : Promise.resolve([])),
+        {
+            getProjectMap: () => hostProjectMap,
+            setDescription: (text) => {
+                // undefined, not '': VS Code renders an empty string as a stray separator.
+                if (libraryView) libraryView.description = text || undefined;
+            }
+        }
     );
-    context.subscriptions.push(
-        vscode.window.createTreeView('twincatLibraries', {
-            treeDataProvider: libraryProvider
-        })
-    );
+    libraryView = vscode.window.createTreeView('twincatLibraries', {
+        treeDataProvider: libraryProvider
+    });
+    context.subscriptions.push(libraryView);
+    // The first revealUri already ran (above, for an editor that was open at activation) while
+    // libraryProvider was still undefined, so seed the scope from the active editor here. Without
+    // this the view opens on the union until the user switches files. A custom-editor tab needs no
+    // seeding: resolveCustomTextEditor fires onActiveFileChange after this point.
+    if (vscode.window.activeTextEditor && vscode.window.activeTextEditor.document) {
+        libraryProvider.setActiveFile(vscode.window.activeTextEditor.document.uri);
+    }
 
     // "TwinCAT Libraries" view commands: refresh, regenerate signatures (drives TwinCAT), copy
     // namespace / qualified name, and insert a symbol at the caret.
