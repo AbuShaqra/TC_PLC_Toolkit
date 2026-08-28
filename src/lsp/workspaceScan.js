@@ -113,6 +113,54 @@ function makeWorkspace(projectMap, rootPaths) {
 }
 
 /**
+ * @typedef {Object} LibraryCatalogResponse
+ * @property {'project'|'union'} scope Which catalog was answered with.
+ * @property {string|null} projectKey The project key when scoped, else null. An identity key, not a
+ *           path and not a label — never mint a URI or a display name from it.
+ * @property {Array<Object>} libraries The catalog entries.
+ */
+
+/**
+ * Picks the library catalog `custom/libraries` answers with, given the active file (if any).
+ *
+ * Lives here, not in server.js, for the reason the whole file exists: server.js opens IPC at require
+ * time and cannot be loaded by a harness, and *which index answers a request* is exactly the decision
+ * that needs a regression gate. The two catalog builders are injected rather than required so this
+ * module keeps its current require graph (libsymbols.js pulls in the archive readers).
+ *
+ * The scope rule, and why each half is the way it is:
+ * - A `fileUri` that routes to a real PLC project answers with **that project's** catalog, **even
+ *   when it is empty** — an explicit scope must never silently widen. A project that references no
+ *   libraries has an empty Libraries view, and that is the truth about it; showing the neighbour's
+ *   libraries there would be a lie the user cannot tell from a bug.
+ * - No `fileUri`, or one that routes to the `(loose)` index (a file under no project directory at
+ *   all), answers with the **union** of every project. There is no project to be right about, and an
+ *   empty view is the regression this fallback was added to prevent. `projectForUri` returning null
+ *   is the routing API's own way of saying "loose" — the key string is identity, never parsed here.
+ * @param {Workspace} workspace The routed workspace.
+ * @param {string} fileUri The active file's URI, or '' when the host has none.
+ * @param {{getLibraryCatalog: (index: Object) => Array<Object>,
+ *   getUnionLibraryCatalog: (indexes: Iterable<Object>) => Array<Object>}} catalogFns Injected builders.
+ * @returns {LibraryCatalogResponse}
+ */
+function selectLibraryCatalog(workspace, fileUri, catalogFns) {
+    const { getLibraryCatalog, getUnionLibraryCatalog } = catalogFns;
+    const project = fileUri ? workspace.projectForUri(fileUri) : null;
+    if (project) {
+        return {
+            scope: 'project',
+            projectKey: project.key,
+            libraries: getLibraryCatalog(workspace.indexForKey(project.key))
+        };
+    }
+    return {
+        scope: 'union',
+        projectKey: null,
+        libraries: getUnionLibraryCatalog(workspace.indexes.values())
+    };
+}
+
+/**
  * The pre-scan state, so a handler that fires before onInitialize never sees null.
  * @returns {Workspace}
  */
@@ -205,5 +253,6 @@ module.exports = {
     collectConfigObjectFiles,
     createEmptyWorkspace,
     scanWorkspace,
+    selectLibraryCatalog,
     normalizeProjectPath
 };

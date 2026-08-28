@@ -750,12 +750,14 @@ function getLibraryCatalog(index) {
 /**
  * Every project's library catalog, unioned and deduplicated by namespace (case-insensitive: ST is).
  *
- * This is the fallback `custom/libraries` (server.js) reaches for when no specific project's catalog
- * can be resolved — no `fileUri` was sent (the extension host has not been updated to send the active
- * file), or the routed project genuinely references no libraries. The Libraries view is read-only
+ * This is the fallback `custom/libraries` (see selectLibraryCatalog in workspaceScan.js) reaches for
+ * when there is no project to be right about: no `fileUri` was sent, or the one sent routes to the
+ * `(loose)` index — a file under no project directory at all. The Libraries view is read-only
  * browsing, so a superset is harmless; returning nothing (what happened before this existed) is the
  * actual regression it exists to fix. In a single-project workspace the union IS that project's own
  * catalog, so this restores exactly what `custom/libraries` returned before per-project scoping.
+ * A routed project whose own catalog is EMPTY is deliberately *not* widened to this — an explicit
+ * scope that silently shows the neighbour's libraries is a lie the user cannot tell from a bug.
  * @param {Iterable<Object>} indexes Every project's symbol index (e.g. `workspace.indexes.values()`).
  * @returns {Array<LibraryCatalogEntry & {symbolCount: number, types: LibraryType[]}>} First-writer-
  *          wins per namespace, in the order `indexes` iterates; not re-sorted (each project's own

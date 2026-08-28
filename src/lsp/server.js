@@ -36,6 +36,7 @@ const {
 const {
     createEmptyWorkspace,
     scanWorkspace,
+    selectLibraryCatalog,
     uriToFsPath,
     normalizeProjectPath
 } = require('./workspaceScan');
@@ -432,20 +433,16 @@ connection.onRequest('custom/setDiagnosticsConfig', (params) => {
 connection.onRequest('custom/libraries', (params) => {
     try {
         // The catalog is per project — two projects reference different libraries. The extension
-        // passes the active file so the view shows that project's libraries.
-        const catalog = getLibraryCatalog(workspace.indexForUri((params && params.fileUri) || ''));
-        if (catalog.length > 0) return catalog;
-        // No fileUri (the extension host has not been updated to send the active file), or the routed
-        // project genuinely references no libraries: fall back to every project's catalog, unioned.
-        // The view is read-only browsing, so a superset is harmless — showing nothing at all is the
-        // regression. In a single-project workspace the union IS that project's own catalog, so this
-        // restores exactly what custom/libraries returned before per-project scoping.
-        return getUnionLibraryCatalog(workspace.indexes.values());
+        // passes the active file so the view shows that project's libraries; the scope decision
+        // itself lives in workspaceScan.js, where the routing it depends on lives (and where a
+        // harness can reach it — nothing in this file is loadable standalone).
+        return selectLibraryCatalog(workspace, (params && params.fileUri) || '',
+            { getLibraryCatalog, getUnionLibraryCatalog });
     } catch (e) {
-        // The Libraries view renders empty on a `[]`, and an empty view has always been the visible
-        // symptom of this catch — this is the line that says whether it was empty or broken.
+        // The Libraries view renders empty on an empty `libraries`, and an empty view has always been
+        // the visible symptom of this catch — this is the line that says whether it was empty or broken.
         log.error('libraries-request-failed', { uri: (params && params.fileUri) || '', error: e });
-        return [];
+        return { scope: 'union', projectKey: null, libraries: [] };
     }
 });
 
