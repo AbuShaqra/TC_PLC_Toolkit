@@ -1,15 +1,14 @@
 /**
  * @file test_st_converter_portable.js
- * @description Pins stConverter.js's raw/clean output behavior across the Phase 4 refactor that
- * threads `raw` as a parameter (deleting the module-global RAW_MODE) and turns the three
- * copy-pasted struct-flatten rewrites into a frozen data table. These assertions PASS against
- * the pre-refactor code too (module-global RAW_MODE has no leakage hazard within a single
- * synchronous call) — only the STRUCT_FLATTEN_REWRITES export is new. Run this file before and
- * after the refactor: identical results prove the refactor changed nothing observable.
+ * @description Pins stConverter.js's raw/clean output behavior: raw mode is verbatim, clean mode
+ * applies the portable-output rewrites, `raw` does not leak between calls, and struct EXTENDS is
+ * flattened from struct definitions parsed out of the project itself (collectStructDefinitions) —
+ * never from a hard-coded list of type names.
  */
 const assert = require('assert');
 const { parseTwinCatXml } = require('../src/xmlParser');
-const { convertXmlToSt, STRUCT_FLATTEN_REWRITES } = require('../src/stConverter');
+const stConverter = require('../src/stConverter');
+const { convertXmlToSt, collectStructDefinitions } = stConverter;
 
 let failures = 0;
 function check(name, fn) {
@@ -17,9 +16,18 @@ function check(name, fn) {
     catch (e) { console.error(`[FAIL] ${name}: ${e.message}`); failures++; }
 }
 
+function dut(name, body) {
+    return `<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.0">
+  <DUT Name="${name}" Id="{22222222-2222-2222-2222-222222222222}">
+    <Declaration><![CDATA[${body}]]></Declaration>
+  </DUT>
+</TcPlcObject>`;
+}
+
 // Minimal POU fixture through the real parseTwinCatXml. The declaration carries a REFERENCE TO
-// field and a (syntactically loose, but that's fine — the rewrites are pure text regexes) struct
-// EXTENDS head matching one row of STRUCT_FLATTEN_REWRITES; the implementation carries AND_THEN.
+// field and (syntactically loose, but the rewrites are pure text regexes) a struct pair defined
+// in the same text, one EXTENDS the other; the implementation carries AND_THEN.
 const FIXTURE_XML = `<?xml version="1.0" encoding="utf-8"?>
 <TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.0">
   <POU Name="FB_Fixture" Id="{11111111-1111-1111-1111-111111111111}" SpecialFunc="None">
@@ -28,7 +36,13 @@ VAR
 	pRef : REFERENCE TO INT;
 END_VAR
 
-TYPE ST_MES_Interlocking_Data EXTENDS ST_MES_Basic_Data :
+TYPE ST_Base :
+STRUCT
+	nBaseValue : INT;
+END_STRUCT
+END_TYPE
+
+TYPE ST_Derived EXTENDS ST_Base :
 STRUCT
 	x : INT;
 END_STRUCT
@@ -41,57 +55,81 @@ END_IF]]></ST>
   </POU>
 </TcPlcObject>`;
 
-function convertRaw() {
-    const parsed = parseTwinCatXml(FIXTURE_XML);
+function convert(xml, options) {
+    const parsed = parseTwinCatXml(xml);
     assert.ok(parsed, 'parseTwinCatXml returned null for the fixture');
-    return convertXmlToSt(parsed, { raw: true });
+    return convertXmlToSt(parsed, options).stText;
 }
-function convertClean() {
-    const parsed = parseTwinCatXml(FIXTURE_XML);
-    assert.ok(parsed, 'parseTwinCatXml returned null for the fixture');
-    return convertXmlToSt(parsed, { raw: false });
-}
+const convertRaw = () => convert(FIXTURE_XML, { raw: true });
+const convertClean = () => convert(FIXTURE_XML, { raw: false });
 
-// 1. Raw mode is verbatim.
 check('raw mode keeps REFERENCE TO, AND_THEN and the EXTENDS head byte-for-byte', () => {
-    const { stText } = convertRaw();
+    const stText = convertRaw();
     assert.ok(stText.includes('REFERENCE TO INT'), 'raw stText lost REFERENCE TO');
     assert.ok(stText.includes('AND_THEN'), 'raw stText lost AND_THEN');
-    assert.ok(stText.includes('TYPE ST_MES_Interlocking_Data EXTENDS ST_MES_Basic_Data :'),
-        'raw stText lost the EXTENDS head');
+    assert.ok(stText.includes('TYPE ST_Derived EXTENDS ST_Base :'), 'raw stText lost the EXTENDS head');
 });
 
-// 2. Clean mode still rewrites.
-check('clean mode still applies the portable-output rewrites', () => {
-    const { stText } = convertClean();
+check('clean mode applies the portable-output rewrites, flattening from the file itself', () => {
+    const stText = convertClean();
     assert.ok(stText.includes('POINTER TO INT'), 'clean stText missing POINTER TO (REFERENCE TO rewrite)');
     assert.ok(!stText.includes('AND_THEN'), 'clean stText still has AND_THEN');
-    assert.ok(!stText.includes('EXTENDS ST_MES_Basic_Data'), 'clean stText still has the EXTENDS head');
-    assert.ok(stText.includes('TYPE ST_MES_Interlocking_Data :'), 'clean stText missing the flattened TYPE head');
-    assert.ok(stText.includes('// Fields from ST_MES_Basic_Data'), 'clean stText missing the flattened fields comment');
+    assert.ok(!/EXTENDS/i.test(stText), 'clean stText still has the EXTENDS head');
+    assert.ok(/TYPE ST_Derived :\s*STRUCT\s*\/\/ Fields from ST_Base\s*nBaseValue : INT;\s*x : INT;/.test(stText),
+        `flattened struct has the wrong shape:\n${stText}`);
 });
 
-// 3. No mode leakage: raw, then clean, then raw again — first and third must be identical.
-// (This is the pin for the hazard the old module-global RAW_MODE created across calls; it
-// already holds today because convertXmlToSt is synchronous end-to-end, and it must keep
-// holding once RAW_MODE is deleted and `raw` becomes an ordinary threaded parameter.)
 check('no mode leakage across interleaved raw/clean conversions', () => {
-    const first = convertRaw().stText;
+    const first = convertRaw();
     convertClean();
-    const third = convertRaw().stText;
-    assert.strictEqual(third, first, 'raw output changed after an interleaved clean conversion');
+    assert.strictEqual(convertRaw(), first, 'raw output changed after an interleaved clean conversion');
 });
 
-// 4. The fossil rewrites are data, not code.
-check('STRUCT_FLATTEN_REWRITES is exported, frozen, and has exactly 3 entries', () => {
-    assert.ok(STRUCT_FLATTEN_REWRITES, 'STRUCT_FLATTEN_REWRITES is not exported from stConverter');
-    assert.ok(Object.isFrozen(STRUCT_FLATTEN_REWRITES), 'STRUCT_FLATTEN_REWRITES must be frozen');
-    // Deleting a row is a real behavior change (drops a recorded portability rewrite) — pinning
-    // the count at 3 makes that a conscious test edit, not an accidental regression.
-    assert.strictEqual(STRUCT_FLATTEN_REWRITES.length, 3, 'expected exactly 3 struct-flatten rewrites');
-    for (const rw of STRUCT_FLATTEN_REWRITES) {
-        assert.ok(rw.typeName && rw.baseName && rw.fields, `malformed STRUCT_FLATTEN_REWRITES entry: ${JSON.stringify(rw)}`);
-    }
+check('no hard-coded struct table is exported any more', () => {
+    assert.strictEqual(stConverter.STRUCT_FLATTEN_REWRITES, undefined);
+});
+
+// Cross-file, multi-level: ST_Grand <- ST_Parent (file 2) <- ST_Child (file 3).
+const GRAND = dut('ST_Grand', 'TYPE ST_Grand :\nSTRUCT\n\tbFlag : BOOL;\nEND_STRUCT\nEND_TYPE');
+const PARENT = dut('ST_Parent', 'TYPE ST_Parent EXTENDS ST_Grand :\nSTRUCT\n\tnCount : UDINT;\nEND_STRUCT\nEND_TYPE');
+const CHILD = dut('ST_Child', 'TYPE ST_Child EXTENDS ST_Parent :\nSTRUCT\n\tsName : STRING(20);\nEND_STRUCT\nEND_TYPE');
+
+check('collectStructDefinitions reads name, base and body case-insensitively', () => {
+    const reg = collectStructDefinitions([GRAND, PARENT, CHILD].map(parseTwinCatXml));
+    assert.strictEqual(reg.size, 3);
+    const parent = reg.get('st_parent');
+    assert.ok(parent, 'ST_Parent not collected');
+    assert.strictEqual(parent.name, 'ST_Parent');
+    assert.strictEqual(parent.base, 'ST_Grand');
+    assert.ok(/nCount : UDINT;/.test(parent.body));
+    assert.strictEqual(reg.get('st_grand').base, null);
+});
+
+check('a project registry flattens a multi-level chain across files, root-most first', () => {
+    const structs = collectStructDefinitions([GRAND, PARENT, CHILD].map(parseTwinCatXml));
+    const stText = convert(CHILD, { structs });
+    assert.ok(!/EXTENDS/i.test(stText), stText);
+    assert.ok(/TYPE ST_Child :\s*STRUCT\s*\/\/ Fields from ST_Grand\s*bFlag : BOOL;\s*\/\/ Fields from ST_Parent\s*nCount : UDINT;\s*sName : STRING\(20\);/.test(stText),
+        `wrong flattened shape:\n${stText}`);
+});
+
+check('an unresolvable chain is left untouched (conservative)', () => {
+    // Base missing entirely (e.g. a library struct), and a chain whose root is missing.
+    assert.ok(convert(CHILD, { structs: new Map() }).includes('TYPE ST_Child EXTENDS ST_Parent :'));
+    const partial = collectStructDefinitions([PARENT].map(parseTwinCatXml)); // ST_Grand unknown
+    assert.ok(convert(CHILD, { structs: partial }).includes('TYPE ST_Child EXTENDS ST_Parent :'));
+});
+
+check('an EXTENDS cycle is left untouched and does not hang', () => {
+    const a = dut('ST_A', 'TYPE ST_A EXTENDS ST_B :\nSTRUCT\n\ta : INT;\nEND_STRUCT\nEND_TYPE');
+    const b = dut('ST_B', 'TYPE ST_B EXTENDS ST_A :\nSTRUCT\n\tb : INT;\nEND_STRUCT\nEND_TYPE');
+    const structs = collectStructDefinitions([a, b].map(parseTwinCatXml));
+    assert.ok(convert(a, { structs }).includes('TYPE ST_A EXTENDS ST_B :'));
+});
+
+check('raw mode never flattens, even with a registry', () => {
+    const structs = collectStructDefinitions([GRAND, PARENT, CHILD].map(parseTwinCatXml));
+    assert.ok(convert(CHILD, { raw: true, structs }).includes('TYPE ST_Child EXTENDS ST_Parent :'));
 });
 
 process.exitCode = failures ? 1 : 0;

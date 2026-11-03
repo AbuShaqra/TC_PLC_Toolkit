@@ -190,8 +190,8 @@ class of bug where diagnostics and references disagree about what a pane is.
 - Modify: `src/stConverter.js:12` (`RAW_MODE` module global → threaded parameter or split
   `toStUnit`/`toPortableSt` entry points), `src/stConverter.js:293–344`
   (`mapDiagnosticsToMonaco` becomes a projection over the Phase-3 `locate` primitive, answering
-  in ONE vocabulary), `src/stConverter.js:425–462` (hardcoded `ST_MES_*`/`ST_AxisErrors`/
-  `fbMCPower` rewrites → explicit data-driven table), `media/editor.js` (collapse the
+  in ONE vocabulary), `src/stConverter.js:425–462` (hardcoded project-specific struct/FB
+  rewrites → explicit data-driven table; since replaced by structs parsed from the project), `media/editor.js` (collapse the
   `'declaration'/'implementation'` vs `'decl'/'impl'` split — G3 applies)
 - Test: round-trip property in `test_live_path_unit.js` (`local→absolute→local` is identity over
   every component/pane of every sample object), plus one assertion that diagnostics and
