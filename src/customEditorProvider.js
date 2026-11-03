@@ -8,7 +8,7 @@ const path = require('path');
 const fs = require('fs');
 const { parseTwinCatXml, replaceComponentCdata } = require('./xmlParser');
 const { updateDocument } = require('./plcProjHelper');
-const { convertXmlToSt } = require('./stConverter');
+const { convertXmlToSt, collectStructDefinitions } = require('./stConverter');
 const { stOutputRelPath, projectFolderRelPath } = require('./stOutputPath');
 const { assembleSt, localToAbsolute, createStResolver, mapDefinition, collectPeekReferences, listExternalReferences, mapDiagnosticsToLocal } = require('./livePath');
 const pendingEditsCore = require('../media/pendingEdits');
@@ -662,12 +662,24 @@ class TwinCatCustomEditorProvider {
             const projectFolderRel = projectFolderRelPath(workspaceFolders.map(f => f.uri.fsPath), project.dir);
 
             // objectFiles maps a normalized key → the file's real on-disk path (correct casing).
+            // Two passes: parse the whole project first, so a struct that EXTENDS a struct from
+            // another file can be flattened from the project's own definitions.
+            /** @type {Array<{ filePath: string, parsed: any, error: any }>} */
+            const entries = [];
             for (const filePath of project.objectFiles.values()) {
                 try {
                     const fileData = await vscode.workspace.fs.readFile(vscode.Uri.file(filePath));
-                    const parsed = parseTwinCatXml(Buffer.from(fileData).toString('utf8'));
+                    entries.push({ filePath, parsed: parseTwinCatXml(Buffer.from(fileData).toString('utf8')), error: null });
+                } catch (err) {
+                    entries.push({ filePath, parsed: null, error: err });
+                }
+            }
+            const structs = collectStructDefinitions(entries.map(e => e.parsed));
+            for (const { filePath, parsed, error } of entries) {
+                try {
+                    if (error) throw error;
                     if (!parsed) continue;
-                    const { stText } = convertXmlToSt(parsed);
+                    const { stText } = convertXmlToSt(parsed, { structs });
                     const outRel = stOutputRelPath(projectFolderRel, project.dir, filePath);
                     const outFileUri = vscode.Uri.joinPath(targetDir, ...outRel.split(/[\\/]+/));
                     await vscode.workspace.fs.createDirectory(vscode.Uri.joinPath(outFileUri, '..'));
@@ -696,14 +708,25 @@ class TwinCatCustomEditorProvider {
         const files = await vscode.workspace.findFiles('**/*.{TcPOU,TcIO,TcGVL,TcDUT,TcTLEO,tcpou,tcio,tcgvl,tcdut,tctleo}');
         let successCount = 0;
         let failCount = 0;
+        // Two passes, as in generateAllStFiles: parse everything first to collect struct definitions.
+        /** @type {Array<{ fileUri: vscode.Uri, relPath: string, parsed: any, error: any }>} */
+        const entries = [];
         for (const fileUri of files) {
             const relPath = vscode.workspace.asRelativePath(fileUri, false);
             if (relPath.startsWith('ST_Files/') || relPath.startsWith('ST_Files\\')) continue;
             try {
                 const fileData = await vscode.workspace.fs.readFile(fileUri);
-                const parsed = parseTwinCatXml(Buffer.from(fileData).toString('utf8'));
+                entries.push({ fileUri, relPath, parsed: parseTwinCatXml(Buffer.from(fileData).toString('utf8')), error: null });
+            } catch (err) {
+                entries.push({ fileUri, relPath, parsed: null, error: err });
+            }
+        }
+        const structs = collectStructDefinitions(entries.map(e => e.parsed));
+        for (const { fileUri, relPath, parsed, error } of entries) {
+            try {
+                if (error) throw error;
                 if (!parsed) continue;
-                const { stText } = convertXmlToSt(parsed);
+                const { stText } = convertXmlToSt(parsed, { structs });
                 const ext = path.extname(relPath);
                 const outFileUri = vscode.Uri.joinPath(targetDir, path.dirname(relPath), `${path.basename(relPath, ext)}.st`);
                 await vscode.workspace.fs.createDirectory(vscode.Uri.joinPath(outFileUri, '..'));

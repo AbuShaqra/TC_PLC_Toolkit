@@ -132,7 +132,7 @@ A `.TcPOU` is one of:
 
 A `.TcDUT` is one of:
 - `TYPE X : STRUCT … END_STRUCT END_TYPE` — a structure. May `EXTENDS` another struct:
-  `TYPE ST_AxisErrors EXTENDS ST_Errors : STRUCT …`.
+  `TYPE ST_Derived EXTENDS ST_Base : STRUCT …`.
 - `TYPE X : UNION … END_UNION END_TYPE` — overlapping members.
 - `TYPE X : (A := 0, B, C) DINT; END_TYPE` — an **enum**: the body opens with `(`. The base type after
   the `)` is optional.

@@ -16,8 +16,9 @@ readdir and skips cleanly — lesson in `.claude/memory/permission-tests-need-en
 Earlier: 2026-08-22 Linux P8 pass (72/72 FULL, typecheck, both browser harnesses in real Chromium, PASS
 set identical to pre-P8); 2026-08-18 full pass incl. dev-host two-project workspace and 0 sample
 diagnostics; 2026-08-10 verified 0 diagnostics with Beckhoff archives present AND moved aside.
-`package.json` is at **0.10.0**, and **v0.10.0 is PUBLISHED** (2026-08-28 16:06 UTC: dev→main PR #20 merged at
-`3937d57`, Release run green, VSIX attached; `main` == `dev` at that merge). Version history: 0.10.0 =
+`package.json` is at **0.10.1** (release in progress 2026-11-03: PR #22 → dev, then dev→main + Release). Last
+published: v0.10.0 (2026-08-28, dev→main PR #20 at `3937d57`). Version history: 0.10.1 = Generate ST flattens
+struct EXTENDS from the project's own DUTs, project-specific rewrites removed (PR #22); 0.10.0 =
 Libraries-view active-project scoping (PR #18); 0.9.0 = the five improvement-plan phases (published 2026-08-27);
 0.8.2 project-aware Generate ST + picker; 0.8.1 the ResizeObserver Find-References fix; 0.8.0 the
 solution→PLC-project Objects hierarchy. Remote history was rewritten 2026-08-17.
@@ -122,8 +123,11 @@ header; the gradient-clipped wordmark is deliberately left at 3.3–4.9:1 (a log
   PURPOSE, pinned). P2 `signatureRecordsFor` made the parse-cache clone rule structural. P3
   `livePath.js` owns the live path (editorMapping deleted; live-path gate tests PRODUCTION code;
   peek budgets pinned). P4 one pane dialect `'decl'/'impl'` (`renameEngine`'s internal tokens are a
-  DELIBERATE survivor); `raw` is a parameter; fossil rewrites are a frozen table — **Ruling: kept
-  default-on**, removal is a table+test edit whenever the user decides. P5 `twincatWorkspace.js`
+  DELIBERATE survivor); `raw` is a parameter. The hard-coded fossil rewrites are GONE (2026-11-03, user: project-specific
+  names must not be in this public repo): struct EXTENDS flattening now uses
+  `collectStructDefinitions()` over the exported project's own DUTs (Generate ST parses the whole
+  project first); unresolvable/library chains are left untouched; the FB-call rewrite was dropped.
+  The old names remain in git history — user DECLINED a history rewrite for now (2026-11-03). P5 `twincatWorkspace.js`
   owns discovery (walker, skip-set MATRIX with variance preserved, ext vocabularies, decode, suffix
   core; regex/glob held by cross-pins). Behaviour deltas, all deliberate+pinned: case-insensitive
   skip matching (P5 R1); walkers collect regular files only; tree skip-chain case-insensitive.
@@ -200,8 +204,7 @@ header; the gradient-clipped wordmark is deliberately left at 3.3–4.9:1 (a log
   (The 2026-08-18 "Actions account-level dead" note is OBSOLETE — that repo was deleted in the
   recreate; on the recreated repo the startup failures were the `local_only` Actions permission,
   fixed 2026-08-26, and runs are green since PR #4.)
-  Open decisions remaining: the fossil-rewrite table's eventual removal (user's call, P4 ruling
-  keeps them). (P6 features.js: RULED kept. P9: RULED no-go, above.)
+  Open decisions remaining: none from P4 (fossil table removed 2026-11-03). (P6 features.js: RULED kept. P9: RULED no-go, above.)
 - **Solution→PLC-project Objects hierarchy (0.8.0):** `solutionMap.js` follows the actual TwinCAT
   `.sln`→`.tsproj`→`_Config/PLC/*.xti`→`PrjFilePath` chain in the extension host. Solutions are always
   top-level when present; one solution can contain several PLC projects; same-named solutions get
