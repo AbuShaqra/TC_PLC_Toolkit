@@ -4,38 +4,99 @@
  * or a raw 1:1 unit for the live path (diagnostics mapping lives in livePath.js).
  */
 
+/** Matches one struct DUT head and body: `TYPE Name [EXTENDS Base] : STRUCT … END_STRUCT`. */
+const STRUCT_DEF_RE = /\bTYPE\s+([A-Za-z_]\w*)\s*(?:EXTENDS\s+([A-Za-z_][\w.]*)\s*)?:\s*STRUCT\b([\s\S]*?)\bEND_STRUCT\b/gi;
+
 /**
- * Portable-output rewrites for structs whose EXTENDS base cannot be resolved by a standard
- * IEC 61131-3 compiler: the base's fields are flattened into the struct. Data, not code, so the
- * list is auditable and removable per entry; applied only in clean (non-raw) mode. These names
- * come from one real project — kept deliberately (recorded ruling, Phase 4): they only shape the
- * exported .st text, never the live editor path.
+ * @typedef {{ name: string, base: string|null, body: string }} StructDef
+ * @typedef {Map<string, StructDef>} StructRegistry Keyed by the lower-cased struct name (ST is
+ *   case-insensitive).
  */
-const STRUCT_FLATTEN_REWRITES = Object.freeze([
-    // Rows are frozen too, so "auditable data" means immutable data, not just a fixed-length list.
-    {
-        typeName: 'ST_MES_Interlocking_Data', baseName: 'ST_MES_Basic_Data',
-        fields: '\n\t// Fields from ST_MES_Basic_Data\n\tsOperationNumber\t\t: STRING(15);\n\tsMaterialNumber  \t\t: STRING(15);\n\tsOperator\t\t\t\t: STRING(25);\n\tsWorkstationName \t\t: STRING(25);\n\tsOrderNumber\t\t\t: STRING(15);\n\tsTestMethodName\t\t\t: eMESTestMethodNames;\n\tsTestProgramName \t\t: STRING(50);\n\tsTestEquipmentNumber \t: STRING(15);'
-    },
-    {
-        typeName: 'ST_MES_TestUnit_Data', baseName: 'ST_MES_Basic_Data',
-        fields: '\n\t// Fields from ST_MES_Basic_Data\n\tsOperationNumber\t\t: STRING(15);\n\tsMaterialNumber  \t\t: STRING(15);\n\tsOperator\t\t\t\t: STRING(25);\n\tsWorkstationName \t\t: STRING(25);\n\tsOrderNumber\t\t\t: STRING(15);\n\tsTestMethodName\t\t\t: eMESTestMethodNames;\n\tsTestProgramName \t\t: STRING(50);\n\tsTestEquipmentNumber \t: STRING(15);'
-    },
-    {
-        typeName: 'ST_AxisErrors', baseName: 'ST_Errors',
-        fields: '\n\t// Fields from ST_Errors\n\tbError\t\t\t\t: BOOL;\n\tnExternalErrorID\t: UDINT;\n\teErrorState\t\t\t: E_error_state := E_error_state.no_error;'
+
+/**
+ * Collects every struct definition (`TYPE X [EXTENDS Y] : STRUCT … END_STRUCT`) from the given
+ * parsed TwinCAT files, so portable output can flatten struct inheritance from the project's OWN
+ * types instead of from any hard-coded list. Pass every file of one PLC project; types are
+ * project-scoped, so a registry must not mix projects.
+ * @param {Array<Object|null|undefined>} parsedFiles Results of parseTwinCatXml.
+ * @param {StructRegistry} [into] Registry to add to (a new one when absent).
+ * @returns {StructRegistry}
+ */
+function collectStructDefinitions(parsedFiles, into) {
+    const registry = into || new Map();
+    for (const parsed of parsedFiles || []) {
+        if (!parsed || !Array.isArray(parsed.components)) continue;
+        for (const comp of parsed.components) {
+            const decl = comp && comp.declaration;
+            if (!decl) continue;
+            STRUCT_DEF_RE.lastIndex = 0;
+            let m;
+            while ((m = STRUCT_DEF_RE.exec(decl)) !== null) {
+                const key = m[1].toLowerCase();
+                // First definition wins: a duplicate name is a project error we must not paper over
+                // by silently picking whichever file happened to be read last.
+                if (!registry.has(key)) registry.set(key, { name: m[1], base: m[2] || null, body: m[3] });
+            }
+        }
     }
-].map(row => Object.freeze(row)));
+    return registry;
+}
+
+/**
+ * The inherited field text for a struct whose base is `baseName`: each ancestor's body, root-most
+ * first, under a `// Fields from <Ancestor>` comment. Returns null unless the WHOLE chain resolves
+ * in the registry — a partially known chain (e.g. a base from a library) would produce a struct
+ * that silently lacks fields, so it is left untouched instead.
+ * @param {string} baseName
+ * @param {StructRegistry} registry
+ * @returns {string|null}
+ */
+function inheritedFieldsText(baseName, registry) {
+    const chain = [];
+    const seen = new Set();
+    let current = baseName;
+    while (current) {
+        const key = current.toLowerCase();
+        if (seen.has(key)) return null; // EXTENDS cycle: not a valid project, do not rewrite
+        seen.add(key);
+        const def = registry.get(key);
+        if (!def) return null;
+        chain.unshift(def);
+        current = def.base;
+    }
+    return chain.map(def => `\n\t// Fields from ${def.name}${def.body.replace(/\s+$/, '')}`).join('');
+}
+
+/**
+ * Portable-output rewrite: a standard IEC 61131-3 compiler cannot resolve struct EXTENDS, so the
+ * base's fields are flattened into the struct, using definitions parsed from the project itself.
+ * Applied only in clean (non-raw) mode; never shapes the live editor path.
+ * @param {string} text Declaration text.
+ * @param {StructRegistry} registry
+ * @returns {string}
+ */
+function flattenStructInheritance(text, registry) {
+    if (!registry || registry.size === 0) return text;
+    return text.replace(
+        /\b(TYPE\s+[A-Za-z_]\w*)\s+EXTENDS\s+([A-Za-z_][\w.]*)(\s*:\s*STRUCT\b)/gi,
+        (match, head, baseName, structKw) => {
+            const fields = inheritedFieldsText(baseName, registry);
+            return fields === null ? match : `${head}${structKw}${fields}`;
+        });
+}
 
 /**
  * Converts a parsed TwinCAT XML object into standard Structured Text.
  * @param {Object} parsedXml The parsed object from parseTwinCatXml.
- * @param {Object} [options] { raw: boolean } — when raw, declarations/implementations are not
- *   cleaned, so line counts match the editor exactly (for diagnostics mapping).
+ * @param {Object} [options] { raw: boolean, structs: StructRegistry } — when raw,
+ *   declarations/implementations are not cleaned, so line counts match the editor exactly (for
+ *   diagnostics mapping). `structs` (from collectStructDefinitions over the whole project) lets the
+ *   clean output flatten struct EXTENDS across files; this file's own structs are always added.
  * @returns {Object} { stText: string, lineMap: Object }
  */
 function convertXmlToSt(parsedXml, options = {}) {
     const raw = !!options.raw;
+    const structs = raw ? null : collectStructDefinitions([parsedXml], new Map(options.structs || []));
     const lines = [];
     const lineMap = {};
 
@@ -74,7 +135,7 @@ function convertXmlToSt(parsedXml, options = {}) {
 
         // Main POU Declaration
         const declStart = getLineCount() + 1;
-        append(cleanDeclarationText(decl, raw));
+        append(cleanDeclarationText(decl, raw, structs));
         const declEnd = getLineCount();
 
         append(``);
@@ -103,7 +164,7 @@ function convertXmlToSt(parsedXml, options = {}) {
             for (const comp of subComponents) {
                 if (comp.type === 'Method') {
                     const startDecl = getLineCount() + 1;
-                    append(cleanDeclarationText(comp.declaration || '', raw));
+                    append(cleanDeclarationText(comp.declaration || '', raw, structs));
                     const endDecl = getLineCount();
 
                     append(``);
@@ -147,7 +208,7 @@ function convertXmlToSt(parsedXml, options = {}) {
                     const propSet = subComponents.find(c => c.type === 'Set' && c.xmlContext.subName === propName);
 
                     const startDecl = getLineCount() + 1;
-                    append(cleanDeclarationText(propSignature ? (propSignature.declaration || '') : `PROPERTY ${propName} : INT`, raw));
+                    append(cleanDeclarationText(propSignature ? (propSignature.declaration || '') : `PROPERTY ${propName} : INT`, raw, structs));
                     const endDecl = getLineCount();
 
                     if (propSignature) {
@@ -161,7 +222,7 @@ function convertXmlToSt(parsedXml, options = {}) {
                         const getDeclStart = getLineCount() + 1;
                         append(`GET`);
                         if (propGet.declaration) {
-                            const cleanedDecl = cleanDeclarationText(propGet.declaration, raw);
+                            const cleanedDecl = cleanDeclarationText(propGet.declaration, raw, structs);
                             if (cleanedDecl.replace(/\s/g, '') !== 'VAREND_VAR' && cleanedDecl.trim() !== '') {
                                 append(cleanedDecl);
                             }
@@ -186,7 +247,7 @@ function convertXmlToSt(parsedXml, options = {}) {
                         const setDeclStart = getLineCount() + 1;
                         append(`SET`);
                         if (propSet.declaration) {
-                            const cleanedDecl = cleanDeclarationText(propSet.declaration, raw);
+                            const cleanedDecl = cleanDeclarationText(propSet.declaration, raw, structs);
                             if (cleanedDecl.replace(/\s/g, '') !== 'VAREND_VAR' && cleanedDecl.trim() !== '') {
                                 append(cleanedDecl);
                             }
@@ -231,7 +292,7 @@ function convertXmlToSt(parsedXml, options = {}) {
     } else if (parsedXml.rootType === 'Itf') {
         // Interface Definition
         const declStart = getLineCount() + 1;
-        append(cleanDeclarationText(root.declaration || '', raw));
+        append(cleanDeclarationText(root.declaration || '', raw, structs));
         const declEnd = getLineCount();
 
         lineMap['root'] = {
@@ -248,7 +309,7 @@ function convertXmlToSt(parsedXml, options = {}) {
             if (comp.type === 'Method') {
                 const startDecl = getLineCount() + 1;
                 let decl = comp.declaration || '';
-                append(cleanDeclarationText(decl, raw));
+                append(cleanDeclarationText(decl, raw, structs));
                 append(`END_METHOD`);
                 const endDecl = getLineCount();
                 append(``);
@@ -266,7 +327,7 @@ function convertXmlToSt(parsedXml, options = {}) {
 
                 const startDecl = getLineCount() + 1;
                 let decl = propSignature ? (propSignature.declaration || '') : `PROPERTY ${propName} : INT`;
-                append(cleanDeclarationText(decl, raw));
+                append(cleanDeclarationText(decl, raw, structs));
                 append(`END_PROPERTY`);
                 const endDecl = getLineCount();
 
@@ -285,7 +346,7 @@ function convertXmlToSt(parsedXml, options = {}) {
     } else if (parsedXml.rootType === 'GVL' || parsedXml.rootType === 'DUT') {
         // GVL or DUT
         const declStart = getLineCount() + 1;
-        append(cleanDeclarationText(root.declaration || '', raw));
+        append(cleanDeclarationText(root.declaration || '', raw, structs));
         const declEnd = getLineCount();
 
         lineMap['root'] = {
@@ -306,12 +367,14 @@ function convertXmlToSt(parsedXml, options = {}) {
  * @param {string} declText Original declaration text.
  * @param {boolean} [raw] When true, pass declText through verbatim (used by the live LSP path so
  *   the generated lineMap aligns 1:1 with the raw editor content).
+ * @param {StructRegistry|null} [structs] Struct definitions for flattening EXTENDS.
  * @returns {string} Cleaned declaration text.
  */
-function cleanDeclarationText(declText, raw) {
+function cleanDeclarationText(declText, raw, structs) {
     if (!declText) return '';
     if (raw) return declText;
-    let text = declText;
+    // Flatten first, so the inherited fields pass through the same cleaning as the struct's own.
+    let text = flattenStructInheritance(declText, structs || null);
 
     // Strip access modifiers (PUBLIC, PROTECTED, PRIVATE, INTERNAL) globally
     text = text.replace(/\b(?:PUBLIC|PROTECTED|PRIVATE|INTERNAL)\b\s*/gi, '');
@@ -380,15 +443,6 @@ function cleanDeclarationText(declText, raw) {
         }
     }
 
-    // 6. Flatten struct inheritance the portable output cannot resolve (see table above).
-    for (const rw of STRUCT_FLATTEN_REWRITES) {
-        const headRe = new RegExp(`\\bTYPE\\s+${rw.typeName}\\s+EXTENDS\\s+${rw.baseName}\\s*:`, 'i');
-        if (headRe.test(text)) {
-            text = text.replace(headRe, `TYPE ${rw.typeName} :`);
-            text = text.replace(/\bSTRUCT\b/i, `STRUCT${rw.fields}`);
-        }
-    }
-
     return text;
 }
 
@@ -412,13 +466,6 @@ function cleanImplementationText(implText, raw) {
     text = text.replace(/\bAND_THEN\b/gi, 'AND');
     text = text.replace(/\bOR_ELSE\b/gi, 'OR');
 
-    // Rewrite fbMCPower calls with Override keyword to use positional argument passing.
-    // Project-specific portability rewrite kept by the same recorded ruling as
-    // STRUCT_FLATTEN_REWRITES (Phase 4) — one entry, so it stays a named block, not a table.
-    text = text.replace(/fbMCPower\s*\(\s*Axis\s*:=\s*([a-zA-Z0-9_]+)\s*,\s*Override\s*:=\s*([a-zA-Z0-9_]+)\s*,\s*Busy\s*=>\s*([\s\S]*?)\)/gi, (match, axis, override, rest) => {
-        return `fbMCPower(\n\t${axis},\n\tfbMCPower.Enable,\n\tfbMCPower.Enable_Positive,\n\tfbMCPower.Enable_Negative,\n\t${override},\n\tBusy => ${rest.trim()})`;
-    });
-
     // Strip empty arguments (e.g. name => ,  or  name := ,)
     text = text.replace(/\b[a-zA-Z0-9_]+\s*(?:=>|:=)\s*,/g, '');
     text = text.replace(/\b[a-zA-Z0-9_]+\s*(?:=>|:=)\s*(?=\))/g, '');
@@ -434,5 +481,5 @@ function cleanImplementationText(implText, raw) {
 
 module.exports = {
     convertXmlToSt,
-    STRUCT_FLATTEN_REWRITES
+    collectStructDefinitions
 };

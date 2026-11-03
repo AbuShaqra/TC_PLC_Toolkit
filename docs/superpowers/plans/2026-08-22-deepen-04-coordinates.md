@@ -12,7 +12,7 @@ deferral (production resolver coverage) lands.
 `mapDiagnosticsToLocal`, emitting the same pane tokens as every other livePath function —
 `media/editor.js` stops carrying two dialects for one concept. `RAW_MODE` becomes a threaded
 `raw` parameter (the caller-must-know invariant "safe because synchronous" becomes structurally
-unnecessary). The three struct-flatten fossils and the `fbMCPower` rewrite become entries in two
+unnecessary). The three struct-flatten fossils and the FB-call rewrite become entries in two
 data tables, byte-identical output, applied only in clean (non-raw) mode as today.
 
 **Tech Stack:** Plain CommonJS; `test/run.js`; `tsc --noEmit`; Playwright browser harnesses
@@ -59,27 +59,10 @@ that stays open; making them data isolates them for that later decision.
 `let RAW_MODE` deleted; two module-level frozen tables:
 
 ```js
-/**
- * Portable-output rewrites for structs whose EXTENDS base cannot be resolved by a standard
- * IEC 61131-3 compiler: the base's fields are flattened into the struct. Data, not code, so the
- * list is auditable and removable per entry; applied only in clean (non-raw) mode. These names
- * come from one real project — kept deliberately (recorded ruling, Phase 4): they only shape the
- * exported .st text, never the live editor path.
- */
-const STRUCT_FLATTEN_REWRITES = Object.freeze([
-    {
-        typeName: 'ST_MES_Interlocking_Data', baseName: 'ST_MES_Basic_Data',
-        fields: '\n\t// Fields from ST_MES_Basic_Data\n\tsOperationNumber\t\t: STRING(15);\n\tsMaterialNumber  \t\t: STRING(15);\n\tsOperator\t\t\t\t: STRING(25);\n\tsWorkstationName \t\t: STRING(25);\n\tsOrderNumber\t\t\t: STRING(15);\n\tsTestMethodName\t\t\t: eMESTestMethodNames;\n\tsTestProgramName \t\t: STRING(50);\n\tsTestEquipmentNumber \t: STRING(15);'
-    },
-    {
-        typeName: 'ST_MES_TestUnit_Data', baseName: 'ST_MES_Basic_Data',
-        fields: '\n\t// Fields from ST_MES_Basic_Data\n\tsOperationNumber\t\t: STRING(15);\n\tsMaterialNumber  \t\t: STRING(15);\n\tsOperator\t\t\t\t: STRING(25);\n\tsWorkstationName \t\t: STRING(25);\n\tsOrderNumber\t\t\t: STRING(15);\n\tsTestMethodName\t\t\t: eMESTestMethodNames;\n\tsTestProgramName \t\t: STRING(50);\n\tsTestEquipmentNumber \t: STRING(15);'
-    },
-    {
-        typeName: 'ST_AxisErrors', baseName: 'ST_Errors',
-        fields: '\n\t// Fields from ST_Errors\n\tbError\t\t\t\t: BOOL;\n\tnExternalErrorID\t: UDINT;\n\teErrorState\t\t\t: E_error_state := E_error_state.no_error;'
-    }
-]);
+// (Historical: this table held project-specific struct names and fields. It was later replaced
+// by collectStructDefinitions(), which parses struct definitions from the project being
+// exported — see src/stConverter.js.)
+const STRUCT_FLATTEN_REWRITES = Object.freeze([ /* { typeName, baseName, fields } rows */ ]);
 ```
 
 and the flatten application replacing the three copy-pasted `if` blocks:
@@ -95,7 +78,7 @@ and the flatten application replacing the three copy-pasted `if` blocks:
     }
 ```
 
-The `fbMCPower` impl rewrite stays a single named block in `cleanImplementationText` but gains a
+The project-specific FB-call impl rewrite (since removed) stays a single named block in `cleanImplementationText` but gains a
 comment naming it a project-specific portability rewrite kept by the same ruling (one entry does
 not need a table; do NOT invent one).
 
@@ -104,11 +87,11 @@ not need a table; do NOT invent one).
 
 ```js
 // 1. Raw mode is verbatim: convertXmlToSt(parsed, {raw:true}) on a fixture whose decl contains
-//    'REFERENCE TO', 'AND_THEN' and an ST_MES_Interlocking_Data EXTENDS head keeps all three
+//    'REFERENCE TO', 'AND_THEN' and a struct EXTENDS head keeps all three
 //    byte-for-byte in stText.
 // 2. Clean mode still rewrites: same fixture through {raw:false} — 'POINTER TO' present,
 //    'AND_THEN' gone (AND), the EXTENDS head replaced and the flattened
-//    'Fields from ST_MES_Basic_Data' comment present.
+//    'Fields from <base>' comment present.
 // 3. NO MODE LEAKAGE (the old module-global's hazard, now impossible — pin it): convert raw,
 //    then clean, then raw again; first and third stText strictly equal.
 // 4. The fossil tables are data: STRUCT_FLATTEN_REWRITES is exported frozen, has exactly 3

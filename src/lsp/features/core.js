@@ -255,7 +255,7 @@ function isBareTypeName(name, activePou, activeMethod, symbolIndex) {
 
 /**
  * Resolves the type of a dotted path.
- * @param {Array<string>} parts E.g., ['fbMCPower', 'Enable'] or ['THIS^', 'stChild'].
+ * @param {Array<string>} parts E.g., ['fbPower', 'Enable'] or ['THIS^', 'stChild'].
  * @param {Object} activePou
  * @param {Object} activeMethod
  * @param {Object} symbolIndex
@@ -327,7 +327,7 @@ function resolvePathType(parts, activePou, activeMethod, symbolIndex) {
         const typeNode = findNode(symbolIndex, currentType);
         if (!typeNode) return null;
 
-        // Inherited again: a struct EXTENDS a base struct (`ST_AxisErrors EXTENDS ST_Errors`) and an
+        // Inherited again: a struct EXTENDS a base struct (`ST_Derived EXTENDS ST_Base`) and an
         // FB extends an FB, so a hop must search the ancestors too, not just the node itself.
         const member = findVarInChain(typeNode, part, symbolIndex);
         if (member) {

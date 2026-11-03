@@ -369,7 +369,9 @@ src/
   util/
     debounce.js         Trailing-edge debouncer with injectable timers (vscode-free, so testable)
   xmlParser             Regex-based TwinCAT XML parse / structural edits (preserves formatting)
-  stConverter           XML → clean Structured Text + line map (also a raw mode for the live path)
+  stConverter           XML → clean Structured Text + line map (also a raw mode for the live path);
+                        clean mode flattens struct EXTENDS from collectStructDefinitions() over
+                        the exported project's own DUTs — no hard-coded type names
   plcProjHelper         Keeps the .plcproj file in sync on create/delete
   lsp/
     server.js           LSP server (Node IPC) + custom JSON-RPC bridge requests; owns the workspace index
