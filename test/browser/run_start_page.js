@@ -54,7 +54,7 @@ const { TEMPLATE_VERSIONS } = require(path.join(REPO, 'src', 'projectTemplate.js
         styleUri: `${ORIGIN}/media/startPage.css`,
         scriptUri: `${ORIGIN}/media/startPage.js`,
         nameScriptUri: `${ORIGIN}/media/projectName.js`,
-        iconSvg: fs.readFileSync(path.join(REPO, 'media', 'twincat-activitybar.svg'), 'utf8'),
+        logoUri: `${ORIGIN}/media/marketplace-icon.png`,
         versions: TEMPLATE_VERSIONS
     });
     fs.mkdirSync(path.join(HERE, 'out'), { recursive: true });

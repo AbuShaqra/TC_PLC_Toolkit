@@ -16,21 +16,64 @@ html, body {
     overflow-x: hidden;
 }
 
-.page {
-    max-width: 1040px;
-    margin: 0 auto;
-    padding: 24px 16px 40px;
+/* The one colour that is not the theme's: the red of the extension's logo, used as an accent only. */
+:root {
+    --tc-accent: rgba(226, 35, 26, 1);
+    --tc-accent-soft: rgba(226, 35, 26, 0.12);
+    --tc-accent-line: rgba(226, 35, 26, 0.55);
+    --tc-border: var(--vscode-panel-border, var(--vscode-widget-border, rgba(128, 128, 128, 0.35)));
+    --tc-radius: 10px;
 }
 
+.page {
+    max-width: 1080px;
+    margin: 0 auto;
+    padding: 20px 16px 28px;
+}
+
+/* Hero: the logo on a soft glow of its own red, fading into the editor background. */
 .masthead {
+    position: relative;
     display: flex;
     align-items: center;
-    gap: 14px;
-    margin-bottom: 20px;
+    gap: 18px;
+    margin-bottom: 22px;
+    padding: 22px 22px;
+    border: 1px solid var(--tc-border);
+    border-radius: var(--tc-radius);
+    background:
+        radial-gradient(120% 140% at 0% 0%, var(--tc-accent-soft), transparent 60%),
+        var(--vscode-sideBar-background, transparent);
+    overflow: hidden;
 }
-.masthead h1 { font-size: 1.6em; font-weight: 600; margin: 0 0 2px; }
-.logo { flex: none; color: var(--vscode-foreground); }
-.logo svg { display: block; }
+.masthead::after {
+    content: "";
+    position: absolute;
+    inset: auto 0 0 0;
+    height: 3px;
+    background: linear-gradient(90deg, var(--tc-accent), transparent 70%);
+}
+.logo {
+    flex: none;
+    display: block;
+    width: 64px;
+    height: 64px;
+    border-radius: 14px;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+}
+.masthead-text { min-width: 0; }
+.masthead h1 { font-size: 1.85em; font-weight: 700; letter-spacing: -0.01em; margin: 0 0 4px; }
+.masthead h1 .accent { color: var(--tc-accent); }
+.tagline { margin: 0; color: var(--vscode-descriptionForeground); }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.chips li {
+    padding: 2px 9px;
+    border: 1px solid var(--tc-border);
+    border-radius: 999px;
+    font-size: 0.85em;
+    color: var(--vscode-descriptionForeground);
+    background: var(--vscode-editor-background);
+}
 
 .grid {
     display: grid;
@@ -40,14 +83,47 @@ html, body {
 
 .card {
     min-width: 0;
-    padding: 16px;
-    border: 1px solid var(--vscode-panel-border, var(--vscode-widget-border, rgba(128, 128, 128, 0.35)));
-    border-radius: 4px;
+    padding: 18px;
+    border: 1px solid var(--tc-border);
+    border-radius: var(--tc-radius);
     background: var(--vscode-sideBar-background, transparent);
+    transition: border-color 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
 }
-#create { grid-row: span 2; }
-.card h2 { font-size: 1.15em; font-weight: 600; margin: 0 0 12px; }
-.card h3 { font-size: 1em; font-weight: 600; margin: 16px 0 6px; }
+.card:hover {
+    border-color: var(--tc-accent-line);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+}
+#create {
+    grid-row: span 2;
+    border-top: 3px solid var(--tc-accent);
+}
+.card h2 {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 1.15em;
+    font-weight: 600;
+    margin: 0 0 14px;
+}
+.badge {
+    flex: none;
+    display: inline-grid;
+    place-items: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
+    color: var(--tc-accent);
+    background: var(--tc-accent-soft);
+}
+.icon { display: block; flex: none; }
+.card h3 {
+    font-size: 0.8em;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--vscode-descriptionForeground);
+    margin: 18px 0 6px;
+}
 
 label { display: block; margin: 12px 0 4px; font-weight: 600; }
 label:first-of-type { margin-top: 0; }
@@ -58,8 +134,9 @@ input[type="text"], select {
     padding: 4px 6px;
     color: var(--vscode-input-foreground);
     background: var(--vscode-input-background);
-    border: 1px solid var(--vscode-input-border, transparent);
-    border-radius: 2px;
+    border: 1px solid var(--vscode-input-border, var(--tc-border));
+    border-radius: 6px;
+    padding: 6px 8px;
     font: inherit;
 }
 select {
@@ -82,11 +159,11 @@ button {
     font: inherit;
     padding: 4px 12px;
     border: 1px solid var(--vscode-button-border, transparent);
-    border-radius: 2px;
+    border-radius: 6px;
     cursor: pointer;
     max-width: 100%;
 }
-button.primary { color: var(--vscode-button-foreground); background: var(--vscode-button-background); }
+button.primary { color: var(--vscode-button-foreground); background: var(--vscode-button-background); padding: 6px 16px; font-weight: 600; }
 button.primary:hover:not(:disabled) { background: var(--vscode-button-hoverBackground); }
 button.secondary {
     flex: none;
@@ -103,19 +180,33 @@ code { font-family: var(--vscode-editor-font-family, monospace); }
 
 ul { list-style: none; margin: 0; padding: 0; }
 
-.actions li + li { margin-top: 6px; }
+.actions li + li { margin-top: 8px; }
 button.action {
-    display: block;
+    display: flex;
+    align-items: center;
+    gap: 10px;
     width: 100%;
     text-align: left;
-    padding: 6px 10px;
+    padding: 9px 12px;
     color: var(--vscode-foreground);
-    background: transparent;
-    border-color: var(--vscode-panel-border, rgba(128, 128, 128, 0.35));
+    background: var(--vscode-editor-background);
+    border-color: var(--tc-border);
+    border-radius: 8px;
+    transition: border-color 0.15s ease, background 0.15s ease;
 }
-button.action:hover:not(:disabled) { background: var(--vscode-list-hoverBackground); }
+button.action:hover:not(:disabled) { background: var(--vscode-list-hoverBackground); border-color: var(--tc-accent-line); }
+.action-text { flex: 1 1 auto; min-width: 0; }
 .action-label { display: block; font-weight: 600; }
 .action-detail { display: block; color: var(--vscode-descriptionForeground); }
+.chevron { color: var(--vscode-descriptionForeground); transition: transform 0.15s ease, color 0.15s ease; }
+button.action:hover:not(:disabled) .chevron { transform: translateX(3px); color: var(--tc-accent); }
+.soon {
+    flex: none;
+    padding: 1px 8px;
+    border-radius: 999px;
+    font-size: 0.8em;
+    border: 1px solid var(--tc-border);
+}
 
 .recents li { display: flex; align-items: center; gap: 4px; min-width: 0; }
 .recents li + li { margin-top: 2px; }
@@ -123,12 +214,14 @@ button.action:hover:not(:disabled) { background: var(--vscode-list-hoverBackgrou
     flex: 1 1 auto;
     min-width: 0;
     text-align: left;
-    padding: 3px 6px;
+    padding: 6px 8px 6px 10px;
+    border-left: 2px solid transparent;
+    border-radius: 6px;
     color: var(--vscode-textLink-foreground);
     background: transparent;
     border: none;
 }
-.recent-open:hover { background: var(--vscode-list-hoverBackground); }
+.recent-open:hover { background: var(--vscode-list-hoverBackground); border-left-color: var(--tc-accent); }
 .recent-name { display: block; font-weight: 600; }
 .recent-path {
     display: block;
@@ -145,6 +238,39 @@ button.action:hover:not(:disabled) { background: var(--vscode-list-hoverBackgrou
     border: none;
 }
 
-.links li + li { margin-top: 6px; }
+.links { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr)); gap: 6px; }
+.links a {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 8px 10px;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    color: var(--vscode-foreground);
+    text-decoration: none;
+}
+.links a:hover { background: var(--vscode-list-hoverBackground); border-color: var(--tc-border); text-decoration: none; }
+.link-icon { margin-top: 1px; color: var(--tc-accent); }
+.link-text { min-width: 0; }
+.link-label { display: block; font-weight: 600; color: var(--vscode-textLink-foreground); }
+.links .hint { display: block; margin: 0; }
 a { color: var(--vscode-textLink-foreground); text-decoration: none; }
 a:hover { color: var(--vscode-textLink-activeForeground); text-decoration: underline; }
+
+#settings .secondary { margin-top: 12px; }
+
+.footer {
+    margin-top: 22px;
+    text-align: center;
+    font-size: 0.85em;
+    color: var(--vscode-descriptionForeground);
+}
+
+@media (max-width: 480px) {
+    .masthead { flex-direction: column; align-items: flex-start; padding: 18px 16px; }
+    .masthead h1 { font-size: 1.5em; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .card, button.action, .chevron { transition: none; }
+}

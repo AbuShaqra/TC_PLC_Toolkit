@@ -99,7 +99,7 @@ assert(/^\^1\.66\./.test(pkg.engines.vscode), `engine stays ^1.66 (${pkg.engines
     const html = renderStartPageHtml({
         cspSource: 'vscode-webview://abc', nonce: 'N0nce', styleUri: 'vscode-webview://abc/startPage.css',
         scriptUri: 'vscode-webview://abc/startPage.js', nameScriptUri: 'vscode-webview://abc/projectName.js',
-        iconSvg: fs.readFileSync(path.join(REPO, 'media', 'twincat-activitybar.svg'), 'utf8'), versions: TEMPLATE_VERSIONS
+        logoUri: 'vscode-webview://abc/marketplace-icon.png', versions: TEMPLATE_VERSIONS
     });
     const csp = /Content-Security-Policy" content="([^"]+)"/.exec(html);
     assert(!!csp && /default-src 'none'/.test(csp[1]) && /script-src 'nonce-N0nce'/.test(csp[1]) && !/unsafe-inline|unsafe-eval|https?:/.test(csp[1]),
@@ -108,7 +108,8 @@ assert(/^\^1\.66\./.test(pkg.engines.vscode), `engine stays ^1.66 (${pkg.engines
     assert(scripts.length === 2 && scripts.every(s => /nonce="N0nce"/.test(s) && /src="vscode-webview:/.test(s)), 'only the two local nonce scripts');
     const urls = [...html.matchAll(/(?:src|href)="([^"#]+)"/g)].map(m => m[1]);
     assert(urls.every(u => u.startsWith('vscode-webview://')), `no remote load in the page (${urls.join(', ')})`);
-    assert(!/<img\b/.test(html) && /stroke="currentColor"/.test(html), 'the logo is inline and follows the theme colour');
+    assert(/<img class="logo" src="vscode-webview:\/\/abc\/marketplace-icon\.png"/.test(html) && /img-src vscode-webview:\/\/abc/.test(csp[1]),
+        'the page shows the extension icon (marketplace-icon.png), allowed by img-src');
     for (const v of TEMPLATE_VERSIONS) assert(html.includes(`value="${v.id}"`), `version ${v.id} is offered`);
     for (const l of HELP_LINKS) assert(html.includes(`data-link="${l.id}"`), `help link ${l.id} is on the page`);
     assert(/id="strucpp-check" disabled/.test(html) && /Coming in R3\.2/.test(html), 'Check with STruC++ is shown disabled (coming in R3.2)');

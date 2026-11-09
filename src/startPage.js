@@ -14,7 +14,6 @@
 
 const vscode = require('vscode');
 const crypto = require('crypto');
-const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { renderStartPageHtml, PROJECT_ACTIONS } = require('./startPageHtml');
@@ -36,14 +35,6 @@ const LINK_COMMANDS = Object.freeze({
     releaseNotes: 'twincat.openReleaseNotes',
     reportIssue: 'twincat.reportIssue'
 });
-
-/**
- * @param {string} extensionPath
- * @returns {string} The Activity Bar icon's SVG markup ('' if it cannot be read — the page still works).
- */
-function readIconSvg(extensionPath) {
-    try { return fs.readFileSync(path.join(extensionPath, 'media', 'twincat-activitybar.svg'), 'utf8'); } catch (e) { return ''; }
-}
 
 /**
  * Owns the singleton start-page panel.
@@ -85,7 +76,7 @@ class StartPageController {
      */
     attach(panel) {
         this.panel = panel;
-        panel.iconPath = vscode.Uri.joinPath(this.context.extensionUri, 'media', 'twincat-activitybar.svg');
+        panel.iconPath = vscode.Uri.joinPath(this.context.extensionUri, 'media', 'marketplace-icon.png');
         panel.webview.options = this.webviewOptions();
         const media = (file) => panel.webview.asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, 'media', file)).toString();
         panel.webview.html = renderStartPageHtml({
@@ -94,7 +85,7 @@ class StartPageController {
             styleUri: media('startPage.css'),
             scriptUri: media('startPage.js'),
             nameScriptUri: media('projectName.js'),
-            iconSvg: readIconSvg(this.context.extensionUri.fsPath),
+            logoUri: media('marketplace-icon.png'),
             versions: TEMPLATE_VERSIONS
         });
         const subs = [

@@ -1,8 +1,8 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#c5c5c5" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-  <!-- A neutral ladder-logic glyph: two power rails, two rungs, each with a contact and a coil. -->
-  <path d="M3 3v18M21 3v18"/>
-  <path d="M3 8h4M7 5.5v5M10 5.5v5M10 8h3M19 8h2"/>
-  <path d="M14.5 5.5a3 3 0 0 0 0 5M17.5 5.5a3 3 0 0 1 0 5"/>
-  <path d="M3 16h4M7 13.5v5M10 13.5v5M7.5 18l2-5M10 16h3M19 16h2"/>
-  <path d="M14.5 13.5a3 3 0 0 0 0 5M17.5 13.5a3 3 0 0 1 0 5"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
+  <!-- One-colour form of the extension icon: the rounded plate with "TC" cut out and a bar for "TOOLKIT".
+       VS Code draws Activity Bar icons as a mask in the theme colour, so the coloured PNG cannot be used here. -->
+  <path fill="#c5c5c5" fill-rule="evenodd" d="M6 2h12a4 4 0 0 1 4 4v12a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V6a4 4 0 0 1 4-4z
+    M4.4 5.6h6.2v2.1H8.55v7.3H6.45V7.7H4.4z
+    M18.95 7.6A4.5 4.5 0 1 0 18.95 13.4L17.5 12.15A2.6 2.6 0 1 1 17.5 8.85z
+    M5 16.6h14v1.7H5z"/>
 </svg>
