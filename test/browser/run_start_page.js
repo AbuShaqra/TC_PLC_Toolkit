@@ -90,7 +90,12 @@ const { TEMPLATE_VERSIONS } = require(path.join(REPO, 'src', 'projectTemplate.js
 
     const posted = () => page.evaluate(() => /** @type {any} */ (window).__posted.slice());
     const clearPosted = () => page.evaluate(() => { /** @type {any} */ (window).__posted.length = 0; });
-    const send = (m) => page.evaluate((msg) => window.postMessage(msg, '*'), m);
+    // postMessage is delivered as a later task: resolve only once the page has had a turn to handle it,
+    // or the next read races the handler (seen as a 1-in-4 flake on 'a picked folder replaces the location').
+    const send = (m) => page.evaluate((msg) => new Promise((resolve) => {
+        window.addEventListener('message', () => setTimeout(resolve, 0), { once: true });
+        window.postMessage(msg, '*');
+    }), m);
     const text = (sel) => page.$eval(sel, el => el.textContent);
     const visible = (sel) => page.$eval(sel, el => !el.hidden && getComputedStyle(el).display !== 'none');
     const disabled = (sel) => page.$eval(sel, el => /** @type {any} */ (el).disabled);
