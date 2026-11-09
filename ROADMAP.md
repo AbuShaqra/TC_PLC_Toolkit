@@ -17,7 +17,7 @@ after it. An item leaves the table for "Done" once its PR is merged into `dev`, 
 | Order | ID | Item | Estimate | Start | End | Status |
 |-------|----|------|----------|-------|-----|--------|
 | 1 | R5 | Keep PROGRAMs as PROGRAMs; TwinCAT XML parsing fixes; re-add a deleted property Get/Set ([#25](https://github.com/AbuShaqra/TC_PLC_Toolkit/issues/25)) | 3 d | 2026-11-10 | 2026-11-12 | In review: PR [#27](https://github.com/AbuShaqra/TC_PLC_Toolkit/pull/27) — XAE check on the user's machine pending |
-| 2 | R1 | Generate ST button keeps its rounded end in single-project workspaces | 0.5 d | 2026-11-13 | 2026-11-13 | Planned |
+| 2 | R1 | Generate ST button keeps its rounded end in single-project workspaces | 0.5 d | 2026-11-13 | 2026-11-13 | Done early (2026-11-09) — in review with R5 in PR [#27](https://github.com/AbuShaqra/TC_PLC_Toolkit/pull/27) |
 | 3 | R3.1 | STruC++ spike: sample project through the compiler under the TwinCAT dialect | 2 d | 2026-11-16 | 2026-11-17 | Planned |
 | 4 | R4 | Objects-tree model (deepening roadmap P7) | 4 d | 2026-11-18 | 2026-11-23 | Planned — needs the user's Windows machine |
 | 5 | R2 | Create a new TwinCAT project from the extension's start view | 6 d | 2026-11-24 | 2026-12-01 | Planned — needs a 4024 skeleton from the user's XAE |

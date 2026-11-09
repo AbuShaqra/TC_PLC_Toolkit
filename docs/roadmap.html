@@ -190,7 +190,7 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
 
     <details class="card" id="r1">
       <summary>
-        <div class="card-top"><span>#2</span><span class="id">R1</span><span class="pill planned">Planned</span><span class="chev" aria-hidden="true">›</span></div>
+        <div class="card-top"><span>#2</span><span class="id">R1</span><span class="pill done">Done · in PR #27</span><span class="chev" aria-hidden="true">›</span></div>
         <div class="card-title">Generate ST button keeps its rounded end in single-project workspaces</div>
         <div class="bar" aria-hidden="true"><span style="left:12.5%;width:4.2%"></span></div>
         <div class="card-foot"><span>0.5 d</span><span>Nov 13</span></div>
@@ -200,6 +200,7 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
         <div class="block"><h4>Cause</h4><p><code>media/editor.css:413-416</code> squares the main button's right corners in every case. The caret starts hidden (<code>src/customEditorProvider.js:559</code>) and <code>media/editor.js</code> shows it only for two or more projects.</p></div>
         <div class="block"><h4>Plan</h4><p>Square the corners only while the caret is visible: the webview toggles a class on the button group together with the caret, and the CSS keys on that class. CSS <code>:has()</code> is not an option: VS Code 1.66 ships a Chromium that predates it.</p></div>
         <div class="block"><h4>Done when</h4><p>Both states look right in the dev host, and both browser harnesses pass.</p></div>
+        <div class="block wide"><h4>Status, Nov 9</h4><p>Done early. The webview sets <code>has-caret</code> on the button group together with the caret, and the CSS squares the corners only then. A new check in the browser harness fails on the old code and passes now; both harnesses are green. Rides in PR #27 with R5.</p></div>
       </div>
     </details>
 

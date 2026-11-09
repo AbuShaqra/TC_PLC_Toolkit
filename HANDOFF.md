@@ -49,12 +49,13 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   never has; and `node test/devhost/run.js` plus a manual pass of the two new menu entries (each appears only while
   its accessor is missing; copy/paste/delete/rename/insert still on every property row). PR **#27** → `dev` is OPEN
   (2026-11-09); merge it by SQUASH (see Branching) only after those checks, then reply on issue #25 and move R5 to Done.
-- **Next task after R5: R1** — [ROADMAP.md](ROADMAP.md) (page https://claude.ai/artifact/8RG7TZtBV2cuupsrwWtknv,
-  source `docs/roadmap.html`). Order: R1 Generate ST split-button fix → R3.1 STruC++ spike → R4 Objects-tree model
-  (deepening P7) → R2 create a TwinCAT project → R3.2 check command → R3.3 packaging. Forecast end 2026-12-11.
-- **R1 in one line:** `media/editor.css:413-416` squares `#generate-st-btn`'s right corners even when the caret is
-  hidden (single project). Toggle a class on `#generate-st-group` with the caret's `hidden` and key the CSS on it;
-  no `:has()` (VS Code 1.66's Chromium lacks it). Webview change → run both `test/browser/` harnesses.
+- **R1 is DONE (2026-11-09)**, on the same branch, so it rides in PR #27: `media/editor.js` `setCaretVisible()`
+  toggles `has-caret` on `#generate-st-group` with the caret's `hidden`; `media/editor.css` keys the squared corners
+  on `.split-btn.has-caret`. `test/browser/run.js` section 7b checks both states (fails on the old code). Still to
+  eyeball in the real dev host on the user's machine (one- and two-project workspaces).
+- **Next task: R3.1** (STruC++ spike) — [ROADMAP.md](ROADMAP.md) (page https://claude.ai/artifact/8RG7TZtBV2cuupsrwWtknv,
+  source `docs/roadmap.html`). Order after it: R4 Objects-tree model (deepening P7) → R2 create a TwinCAT project →
+  R3.2 check command → R3.3 packaging. Forecast end 2026-12-11 (R1 finished early; dates not yet pulled in).
 - **R3 inputs:** STruC++ fork `AbuShaqra/STruCpp`, default branch `development` (@ `2c223c9`, v0.7.0, GPL-3.0-only,
   Node ≥ 22; dialect flags `--dialect-file`/`--dialect-path`, `src/dialect.ts`, `docs/DIALECTS.md`;
   `npm run build:bundle` → `dist/strucpp-bundle.cjs`). The TwinCAT profile is vendored at

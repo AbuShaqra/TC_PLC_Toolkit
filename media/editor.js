@@ -178,11 +178,22 @@
         });
     }
 
+    /**
+     * Shows or hides the caret, and marks the group with `has-caret` in the same step: the CSS squares
+     * the main button's right corners only while the caret is there to fuse with. (`:has()` would avoid
+     * the class, but VS Code 1.66's Chromium predates it.)
+     */
+    function setCaretVisible(visible) {
+        generateCaret.hidden = !visible;
+        const group = generateCaret.parentElement;
+        if (group) group.classList.toggle('has-caret', visible);
+    }
+
     /** Populates the project checkbox menu and reveals the caret; hides both when <2 projects. */
     function renderProjectPicker(projects) {
         if (!generateCaret || !generateProjects) return;
         if (!Array.isArray(projects) || projects.length < 2) {
-            generateCaret.hidden = true;
+            setCaretVisible(false);
             closeGenerateMenu();
             return;
         }
@@ -200,7 +211,7 @@
             label.appendChild(text);
             generateProjects.appendChild(label);
         }
-        generateCaret.hidden = false;
+        setCaretVisible(true);
     }
 
     // Ask the host which projects exist, so the picker can appear only when it is useful.
