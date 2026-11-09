@@ -275,11 +275,11 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
         <div class="card-top"><span>#1</span><span class="id">S2</span><span class="pill planned">In progress</span><span class="chev" aria-hidden="true">›</span></div>
         <div class="card-title">Close the fork's gaps: what it rejects on correct code, plus check-only output</div>
         <div class="bar" aria-hidden="true"><span style="left:3.03%;width:66.67%"></span></div>
-        <div class="card-foot"><span>22 d</span><span>Nov 10 – Dec 9</span></div>
+        <div class="card-foot"><span>22.5 d</span><span>Nov 10 – Dec 9</span></div>
       </summary>
       <div class="body">
-        <div class="block wide"><h4>Plan, decided Nov 9</h4><p>The spike, a first design and your compiler findings were merged and checked against the IEC 61131-3 Ed. 3 text, by clause number only. All 13 steps, one pull request each into the fork's <code>development</code>. <code>iec</code> means Ed. 3; standard forms are always on, and vendor forms sit behind new neutral features that no profile enables by default. Chained comparisons follow Annex A. Plan: <code>docs/s2-strucpp-fork-plan.md</code>.</p></div>
-        <div class="block"><h4>Order</h4><ol><li>Lexer positions and <code>--check --json</code></li><li>Pragmas (the toolkit's check can start here)</li><li><code>SUPER.</code> and the caret self form</li><li>Method calls through a member chain</li><li>Interface variables</li><li>Interface properties (standard gaps closed, 11 days)</li><li>Chained comparisons</li><li>Enum base after the list</li><li>Named global lists</li><li>Struct inheritance</li><li>UNION (two steps)</li><li>FB init arguments (the sample compiles with no workarounds)</li></ol></div>
+        <div class="block wide"><h4>Plan, decided Nov 9</h4><p>The spike, a first design and your compiler findings were merged and checked against the IEC 61131-3 Ed. 3 text, by clause number only. All 13 steps plus a small step 1b, one pull request each into the fork's <code>development</code>. <code>iec</code> means Ed. 3, and the built-in profile becomes <code>iec-3</code> with <code>iec</code> kept as an alias, so <code>iec-4</code> can be added later; standard forms are always on, and vendor forms sit behind new neutral features that no profile enables by default. Chained comparisons follow Annex A. Plan: <code>docs/s2-strucpp-fork-plan.md</code>.</p></div>
+        <div class="block"><h4>Order</h4><ol><li>Lexer positions and <code>--check --json</code>, then 1b: the profile id <code>iec-3</code> (<code>iec</code> stays an alias)</li><li>Pragmas (the toolkit's check can start here)</li><li><code>SUPER.</code> and the caret self form</li><li>Method calls through a member chain</li><li>Interface variables</li><li>Interface properties (standard gaps closed, 11 days)</li><li>Chained comparisons</li><li>Enum base after the list</li><li>Named global lists</li><li>Struct inheritance</li><li>UNION (two steps)</li><li>FB init arguments (the sample compiles with no workarounds)</li></ol></div>
         <div class="block"><h4>Later fork items, not S2</h4><ul><li>Other Ed. 3 forms the fork refuses: CHAR, LTIME, string index, <code>STRING[n]</code>, typed TRUNC, <code>STRUCT OVERLAP</code> (about 7 to 10 days).</li><li>An <code>iec</code> audit that narrows what it accepts.</li><li>Runtime safety and profile-handling defects; strict-mode policy; an Ed. 4 profile.</li></ul></div>
       </div>
     </details>
@@ -356,7 +356,7 @@ var PLAN = [
   { lane: 'TC PLC Toolkit', num: 3, id: 'R2',   card: 'r2',   name: 'Create TwinCAT project', est: '6 d',   start: '2026-11-18', end: '2026-11-25', machine: true },
   { lane: 'TC PLC Toolkit', num: 4, id: 'R3.2', card: 'r3-2', name: 'STruC++ check',          est: '7 d',   start: '2026-12-10', end: '2026-12-18' },
   { lane: 'TC PLC Toolkit', num: 5, id: 'R3.3', card: 'r3-3', name: 'STruC++ packaging',      est: '3 d',   start: '2026-12-21', end: '2026-12-23' },
-  { lane: 'STruC++ fork',   num: 1, id: 'S2',   card: 's2',   name: 'Fork compiler gaps',     est: '22 d',  start: '2026-11-10', end: '2026-12-09' }
+  { lane: 'STruC++ fork',   num: 1, id: 'S2',   card: 's2',   name: 'Fork compiler gaps',     est: '22.5 d', start: '2026-11-10', end: '2026-12-09' }
 ];
 var DOMAIN_START = '2026-11-09', DOMAIN_END = '2026-12-26'; /* exclusive */
 (function () {

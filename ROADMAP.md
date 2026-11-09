@@ -35,7 +35,7 @@ for it where a row says so.
 
 | Order | ID | Item | Estimate | Start | End | Status |
 |-------|----|------|----------|-------|-----|--------|
-| 1 | S2 | Close the fork's gaps: 13 PR-sized steps (plan: [docs/s2-strucpp-fork-plan.md](docs/s2-strucpp-fork-plan.md)) | 22 d | 2026-11-10 | 2026-12-09 | In progress — design done 2026-11-09; step 1 next. R3.2 waits for it |
+| 1 | S2 | Close the fork's gaps: 14 PR-sized steps (plan: [docs/s2-strucpp-fork-plan.md](docs/s2-strucpp-fork-plan.md)) | 22.5 d | 2026-11-10 | 2026-12-09 | In progress — design done 2026-11-09; step 1 next. R3.2 waits for it |
 
 **Why this order.**
 1. **R3.1 (spike) first:** the STruC++ work is the largest unknown. The spike needs no decisions, and what
@@ -98,13 +98,13 @@ Two ways around it:
 the user's compiler findings document merged and checked against the IEC 61131-3 Ed. 3 text (clause numbers
 and paraphrase only; the copy used is licensed to another party, so no text is reproduced).
 
-**Decided 2026-11-09:** all 13 steps (about 22 d), one PR each into the fork's `development`; `iec` means Ed. 3;
+**Decided 2026-11-09:** all 13 steps plus step 1b (about 22.5 d), one PR each into the fork's `development`; `iec` means Ed. 3, and the built-in profile becomes `iec-3` with `iec` kept as an alias (so an `iec-4` can be added later);
 standard forms always on (a wrongly refused standard construct is a defect fix), vendor forms behind new
 vendor-neutral features that no profile enables by default (`self_caret`, `property`, `postfix_enum_base`,
 `named_global_lists`, `struct_extends`, `union_type`, `fb_init`); chained comparisons follow Annex A;
 `--check --json`.
 
-**Order:** 1 lexer positions + `--check --json` → 2 pragmas (R3.2 can use the check from here) → 3 `SUPER.` /
+**Order:** 1 lexer positions + `--check --json` → 1b `iec-3` profile id (`iec` stays an alias) → 2 pragmas (R3.2 can use the check from here) → 3 `SUPER.` /
 `self_caret` → 4 member-chain calls → 5 interface variables → 6 interface properties (standard gaps closed,
 11 d) → 7 chained comparisons → 8 postfix enum base → 9 named global lists → 10 struct inheritance → 11–12
 UNION → 13 FB_init (the sample compiles with no workarounds).

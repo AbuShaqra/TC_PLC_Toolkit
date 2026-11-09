@@ -7,6 +7,9 @@ Roadmap item **S2** (fork lane). The merged design: the user's compiler findings
 
 - **Scope: all 13 steps** of §3 (about 22 working days), one PR per step into the fork's `development`.
 - **`iec` means Ed. 3 (2013).** Interface PROPERTY is therefore a vendor form, behind feature `property`.
+- **The built-in profile is renamed `iec-3`, with `iec` kept as an alias** (user, 2026-11-09: "so we can easily
+  add iec-4 later"). `--dialect iec`, `"extends": "iec"` and the no-flag default keep working unchanged;
+  diagnostics and `--check --json` report the canonical id `iec-3`; an `iec-4` profile is a later item. Step 1b.
 - **Chained comparisons follow the Annex A grammar** (equality binds looser than relational comparison).
 - **Standard forms are always on** — fixing a standard construct the fork wrongly refused is a defect fix and
   may widen what `iec` accepts; vendor forms stay behind features, off under `iec` (Q2; default taken, the
@@ -207,6 +210,7 @@ Rules for every step:
 | Step | PR | Content | Effort |
 |---|---|---|---|
 | 1 | Diagnostics plumbing | A13 lexer positions (one error converter; the parser runs after lexer errors); A14 `--check --json`; warnings on failure in every mode | 1.5 |
+| 1b | `iec-3` profile id | Rename the built-in profile to `iec-3`; keep `iec` as an alias (CLI, `extends`, default, language server); report the canonical id; docs (`DIALECTS.md`) | 0.5 |
 | 2 | Pragmas | A1, and the `IEC_COMPLIANCE.md` pragma rows | 1 |
 | 3 | Self and super forms | B1 `SUPER.` (always-on); A4 `self_caret`; A5 `REF=` on THIS members under `ref_assign`; correct `DIALECTS.md:79` and `IEC_COMPLIANCE.md:209` | 1.5 |
 | 4 | Member-chain calls | A3: instance chains, struct-held FBs, `arr[i].M()` | 2.5 |
@@ -219,7 +223,7 @@ Rules for every step:
 | 11–12 | UNION | A9 `union_type`: (a) tokens kept usable as identifiers, parser, analysis; (b) an overlay lowering in C++ that B9 can reuse later, plus the e2e | 3 |
 | 13 | FB_init | A11 `fb_init`, plus the warning when the feature is off | 3 |
 
-**About 22 d** (21.5–23).
+**About 22.5 d** (22–23.5), with step 1b.
 
 - Against the first S2 design (19 d), this adds A15 (+2), B1 (+0.5), B2 (+0.5) and plumbing (+0.5), and
   turns S2's always-on `THIS^` and interface PROPERTY into features (no change in effort).
