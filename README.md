@@ -301,6 +301,12 @@ symbols. That causes no false error — unknown simply stays unflagged.
 
 ---
 
+## Roadmap
+
+What is planned next, in what order and when, is on the public roadmap page:
+**[TwinCAT PLC Toolkit Roadmap](https://claude.ai/artifact/8RG7TZtBV2cuupsrwWtknv)**. It is kept current as
+work starts, moves and ships.
+
 ## License
 
 [MIT](LICENSE) © A. AbuShaqra — this covers the original code of this extension.

@@ -10,10 +10,10 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   merged at `3210d33`, Release run 41671593015 green, VSIX `twincat-plc-toolkit-0.10.1.vsix` attached).
 - **Version history:** 0.10.1 struct EXTENDS from own DUTs (PR #22); 0.10.0 Libraries scoping (PR #18); 0.9.0
   improvement-plan phases; 0.8.x project-aware Generate ST, ResizeObserver fix, solution→project Objects tree.
-- **Last verified:** 2026-11-09 (Linux container, `dev` @ `8c19d42`) — `REQUIRE_FULL_SUITE=1 npm test` green
-  (**77/77, Coverage: FULL**), `npm run typecheck` and `npm run lint` exit 0. Last Windows pass 2026-08-25 (user's
+- **Last verified:** 2026-11-09 (Linux container, `dev` @ `0ea9fcd`, i.e. after PR #27) — `REQUIRE_FULL_SUITE=1 npm test` green
+  (**82/82, Coverage: FULL**), `npm run typecheck` and `npm run lint` exit 0; both browser harnesses green. Last Windows pass 2026-08-25 (user's
   machine): full suite FULL plus **`node test/devhost/run.js` all green** (G4 webview checklist, `.TcTLEO` watcher,
-  pending-edit persistence). The dev-host and browser harnesses have not been re-run since.
+  pending-edit persistence). The dev-host harness has not been re-run since.
 - **Sample diagnostics: 0 against a baseline of 0** — verified with the Beckhoff archives present AND moved aside.
 
 ## Branching, CI and repo settings
@@ -33,29 +33,35 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
 - **Stale remote branches:** `claude/new-session-ynrdo4` and `claude/project-thread-o6i1sa` are merged into `dev`
   (checked 2026-11-09). The user asked to delete them, but this cloud session's git proxy drops every push
   except to the session branch, so they still exist — delete from the GitHub UI or a local clone.
-- **Merge `claude/focused-ptolemy-m6acaz` into `dev` by SQUASH only** (user decision 2026-11-09): its commit
-  `2b06874` carries a `Co-Authored-By: Claude` trailer, which CLAUDE.md forbids; force-pushing a fix was refused
-  in the cloud session, and the user chose to leave it and squash. Write the squash message without the trailer.
+- **Merge `claude/focused-ptolemy-m6acaz` into `dev` by SQUASH only, every time**: after PR #27 the branch was
+  restarted from `dev`, but force-pushing was refused, so the old branch was merged back in (no file changes);
+  its history still holds commit `2b06874` with a `Co-Authored-By` trailer that must never reach `dev`.
 - **Merge `ccr-d5b51254-r1vu2b` into `dev` by SQUASH only** (user decision 2026-11-09): commit `65d5b1c` on it
   names a private repository the user wants kept out of this repo; the final tree is clean. Delete the branch after.
 
 ## Start here (next session)
-- **R5 code is DONE (2026-11-09) on `claude/focused-ptolemy-m6acaz`, not merged** — commits `081e308` (PROGRAM
-  stays PROGRAM; SFC-transition warnings), `b5dfeda` (xmlParser: own-block reads/writes, `implementationLanguage`
-  + read-only note for non-ST bodies, bounded CDATA, attribute entity decode/encode, lone CR; BOM verified not to
-  leak), and the #25 commit (Add Get/Set Accessor; property contextValue `propertyNode[.noGet][.noSet]`).
-  Full suite 82/82 FULL, typecheck, lint green. **Still open, on the user's Windows machine:** an added accessor
-  (FB and interface) opens and builds in XAE — the new accessor carries no LineIds, as a newly created property
-  never has; and `node test/devhost/run.js` plus a manual pass of the two new menu entries (each appears only while
-  its accessor is missing; copy/paste/delete/rename/insert still on every property row). PR **#27** → `dev` is OPEN
-  (2026-11-09); merge it by SQUASH (see Branching) only after those checks, then reply on issue #25 and move R5 to Done.
-- **R1 is DONE (2026-11-09)**, on the same branch, so it rides in PR #27: `media/editor.js` `setCaretVisible()`
-  toggles `has-caret` on `#generate-st-group` with the caret's `hidden`; `media/editor.css` keys the squared corners
-  on `.split-btn.has-caret`. `test/browser/run.js` section 7b checks both states (fails on the old code). Still to
-  eyeball in the real dev host on the user's machine (one- and two-project workspaces).
-- **Next task: R3.1** (STruC++ spike) — [ROADMAP.md](ROADMAP.md) (page https://claude.ai/artifact/8RG7TZtBV2cuupsrwWtknv,
-  source `docs/roadmap.html`). Order after it: R4 Objects-tree model (deepening P7) → R2 create a TwinCAT project →
-  R3.2 check command → R3.3 packaging. Forecast end 2026-12-11 (R1 finished early; dates not yet pulled in).
+- **R5 + R1 are MERGED into `dev`** (PR #27, squash `0ea9fcd`, 2026-11-09) — **before their Windows check, at the
+  user's call** ("I will test it later when I have access to XAE"). Still owed on the user's machine, before the
+  next release: (1) an accessor added via *Add Get/Set Accessor* to an FB property (`sample/` `FB_Station.ErrorId`)
+  and an interface property (`I_Station.State`) opens and builds in XAE — the new accessor carries no LineIds,
+  as a newly created property never has; (2) the user's real case: delete an accessor IN XAE, re-add it here,
+  reopen in XAE; (3) `node test/devhost/run.js`; (4) manual: each Add entry shows only while its accessor is
+  missing, and copy/paste/delete/rename/insert stay on every property row (contextValue is now
+  `propertyNode[.noGet][.noSet]`); (5) the Generate ST button in a one- and a two-project workspace. Then reply on
+  issue #25 when it ships in a release (not yet replied).
+- **R3.1 spike findings are DONE** (2026-11-09): `docs/r3.1-strucpp-spike.md`. Headline: 27 parse errors as
+  converted; 1 converter cause (methods/properties emitted after the POU body — the compiler wants them first) +
+  9 compiler gaps; with scratch workarounds 0 errors under twincat3, 6 under iec (REFERENCE TO, REF=). No
+  check-only CLI flag (`analyze()` is check-only but unreachable from the CLI bundle; a wrapper or a fork
+  `--check --json` flag). Export-mode input is WRONG to check (it rewrites REFERENCE TO→POINTER TO, REF=→:=);
+  R3.2 must feed a raw-based unit. **Decided 2026-11-09:** wait for the fork (fork-lane item S2, before R3.2;
+  the roadmap now has a parallel STruC++ fork lane: S1 language-server dialect profiles — DONE, fork PR #4
+  `a529ea9`, client contract in its PR body; S2 compiler gaps next) and R3.2 full scope (7 d). Next roadmap item: R4.
+- **Was next: R3.1** (STruC++ spike) — [ROADMAP.md](ROADMAP.md) (page https://claude.ai/artifact/8RG7TZtBV2cuupsrwWtknv,
+  source `docs/roadmap.html`). Order: R3.1 → R4 Objects-tree model (deepening P7) → R2 create a TwinCAT project →
+  R3.2 check command → R3.3 packaging. Forecast end 2026-12-05. Every R2/R3 decision is SETTLED (2026-11-09,
+  recorded under each item in ROADMAP.md) — do not re-ask them. When an item starts, moves or merges, update
+  ROADMAP.md AND `docs/roadmap.html` and republish the page to the same URL (rule in CLAUDE.md).
 - **R3 inputs:** STruC++ fork `AbuShaqra/STruCpp`, default branch `development` (@ `2c223c9`, v0.7.0, GPL-3.0-only,
   Node ≥ 22; dialect flags `--dialect-file`/`--dialect-path`, `src/dialect.ts`, `docs/DIALECTS.md`;
   `npm run build:bundle` → `dist/strucpp-bundle.cjs`). The TwinCAT profile is vendored at
