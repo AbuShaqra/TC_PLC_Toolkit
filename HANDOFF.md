@@ -16,8 +16,8 @@ readdir and skips cleanly — lesson in `.claude/memory/permission-tests-need-en
 Earlier: 2026-08-22 Linux P8 pass (72/72 FULL, typecheck, both browser harnesses in real Chromium, PASS
 set identical to pre-P8); 2026-08-18 full pass incl. dev-host two-project workspace and 0 sample
 diagnostics; 2026-08-10 verified 0 diagnostics with Beckhoff archives present AND moved aside.
-`package.json` is at **0.10.1** (release in progress 2026-11-03: PR #22 → dev, then dev→main + Release). Last
-published: v0.10.0 (2026-08-28, dev→main PR #20 at `3937d57`). Version history: 0.10.1 = Generate ST flattens
+`package.json` is at **0.10.1**. Last published: **v0.10.1** (2026-11-03, dev→main PR #23; tag at `3210d33` =
+`main` HEAD, VSIX `twincat-plc-toolkit-0.10.1.vsix` attached by the Release workflow; checked 2026-11-09). Version history: 0.10.1 = Generate ST flattens
 struct EXTENDS from the project's own DUTs, project-specific rewrites removed (PR #22); 0.10.0 =
 Libraries-view active-project scoping (PR #18); 0.9.0 = the five improvement-plan phases (published 2026-08-27);
 0.8.2 project-aware Generate ST + picker; 0.8.1 the ResizeObserver Find-References fix; 0.8.0 the
