@@ -91,7 +91,9 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
 ## Working agreement
 Implementation is delegated to the **`implementer`** agent; the main conversation owns architecture/planning/review/
 commits. **Verify every agent claim** (several haven't survived checking); agents run in parallel only with strictly
-disjoint file ownership; `package.json`/`HANDOFF.md` stay centrally owned. **Verify your own claims too** — three
+disjoint file ownership, and never run `git stash`/`checkout`/`reset` while another agent has uncommitted work
+in the tree (2026-11-09: one stashed to count old-code failures; harmless only because the other's work was
+already committed); `package.json`/`HANDOFF.md` stay centrally owned. **Verify your own claims too** — three
 times an unmeasured but plausible assumption was wrong. Measure, then report.
 **Hard-won lessons live in `.claude/memory/`** (committed, so they cross machines), injected each session by the
 `SessionStart` hook in `.claude/settings.json`. Write new ones THERE, not in the per-machine bank — rules in

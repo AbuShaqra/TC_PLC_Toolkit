@@ -103,6 +103,17 @@
     const paneImplEl = document.getElementById('pane-impl');
     const splitterEl = document.getElementById('pane-splitter');
 
+    // Read-only note shown instead of the Implementation pane when a component's body is not
+    // Structured Text (SFC, LD/FBD networks, CFC): only ST is editable here, so rather than an empty
+    // pane whose edits would be refused, the user is told where the body lives. Styled as a pane
+    // header so it follows the theme without new CSS.
+    const implNoteEl = document.createElement('div');
+    implNoteEl.id = 'impl-language-note';
+    implNoteEl.className = 'pane-header';
+    implNoteEl.style.textTransform = 'none';
+    implNoteEl.style.display = 'none';
+    containerEl.appendChild(implNoteEl);
+
     const toggleEl = document.getElementById('sync-mode-toggle');
     const toggleWrapper = document.getElementById('sync-toggle-wrapper');
     const toggleText = document.getElementById('sync-mode-text');
@@ -1242,8 +1253,15 @@
         if (declEditor) {
             declEditor.setValue(comp.declaration || '');
         }
-        
-        if (comp.type === 'Action') {
+
+        // xmlParser records the element inside the component's own <Implementation>; anything but
+        // ST arrives with implementation === null. 'NWL' is TwinCAT's element for LD/FBD networks.
+        const lang = comp.implementationLanguage;
+        const foreignLanguage = lang && lang !== 'ST' ? (lang === 'NWL' ? 'LD/FBD' : lang) : null;
+        implNoteEl.textContent = foreignLanguage ? `Implementation is in ${foreignLanguage} \u2014 edit it in TwinCAT XAE.` : '';
+        implNoteEl.style.display = foreignLanguage ? 'block' : 'none';
+
+        if (comp.type === 'Action' && !foreignLanguage) {
             paneDeclEl.style.display = 'none';
             splitterEl.style.display = 'none';
             paneImplEl.style.display = 'flex';
@@ -1265,7 +1283,8 @@
                 implEditor.setValue(comp.implementation);
             }
         } else {
-            paneDeclEl.style.display = 'flex';
+            // An Action has no declaration of its own: a non-ST Action shows only the note.
+            paneDeclEl.style.display = comp.type === 'Action' ? 'none' : 'flex';
             paneImplEl.style.display = 'none';
             splitterEl.style.display = 'none';
             paneDeclEl.style.flex = '1 1 100%';
