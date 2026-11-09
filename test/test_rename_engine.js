@@ -358,11 +358,10 @@ END_VAR]]></Declaration>
 }
 
 // ══════════════════════════════════════════════════════════════════════════════════════════════════
-// 6. PROGRAM-with-methods: the presence of a method makes stConverter rewrite `PROGRAM`->`FUNCTION_BLOCK`
-//    in the raw ST unit (line count preserved, columns shifted on that line). The program's own name
-//    sits AFTER the keyword, so its column IS shifted; the guard therefore skips it (covered by the
-//    caller's renameRootObjectInXml). Verify the actual behavior, and that renameRootObjectInXml then
-//    yields a consistent file.
+// 6. PROGRAM-with-methods: stConverter keeps the header `PROGRAM MAIN` verbatim in the raw ST unit
+//    (a PROGRAM stays a PROGRAM even with methods), so the program's own name sits at its real CDATA
+//    column and the guard passes: the engine splices it like any other occurrence. The caller's
+//    renameRootObjectInXml must then leave the header renamed exactly once and the LineIds re-rooted.
 // ══════════════════════════════════════════════════════════════════════════════════════════════════
 
 const xmlProg = crlf(`<?xml version="1.0" encoding="utf-8"?>
@@ -392,27 +391,29 @@ END_VAR]]></Declaration>
 `);
 
 {
-    // Confirm the rewrite really shifts the name's column in the ST unit (design premise).
+    // The raw ST unit keeps the PROGRAM header as written (no FUNCTION_BLOCK rewrite).
     const { stText } = convertXmlToSt(parseTwinCatXml(xmlProg), { raw: true });
-    assert(/FUNCTION_BLOCK MAIN/.test(stText) && !/PROGRAM MAIN/.test(stText),
-        'PROGRAM: the raw ST unit shows FUNCTION_BLOCK MAIN (PROGRAM rewritten for method compilation)');
+    assert(/^PROGRAM MAIN\b/m.test(stText) && !/FUNCTION_BLOCK/.test(stText) && /^END_PROGRAM\s*$/m.test(stText),
+        'PROGRAM: the raw ST unit shows PROGRAM MAIN … END_PROGRAM (no FUNCTION_BLOCK rewrite)');
 
     const occ = occurrencesOf(xmlProg, 'MAIN');
-    assert(occ.length === 1 && occ[0].character === 15,
-        `PROGRAM: the sole in-block MAIN is the header, shifted to column 15 (got ${occ.length} @ ${occ[0] && occ[0].character})`);
+    assert(occ.length === 1 && occ[0].character === 8,
+        `PROGRAM: the sole in-block MAIN is the header, at its real column 8 (got ${occ.length} @ ${occ[0] && occ[0].character})`);
 
     const r = applyReferenceEditsToXml(xmlProg, occ, { oldName: 'MAIN', newName: 'PRG_Main' });
-    // The name sits after the rewritten keyword, so the column is shifted -> the guard skips it.
-    assert(r.applied === 0 && r.xmlText === xmlProg,
-        'PROGRAM: the shifted header occurrence is not spliced; the file is unchanged by the engine');
-    assert(r.skipped.length === 1 && r.skipped[0].coveredByStructuralRename === true,
-        'PROGRAM: the header skip is flagged coveredByStructuralRename (the caller completes it)');
+    // The column matches the CDATA, so the guard passes and the header is spliced directly.
+    assert(r.applied === 1 && r.skipped.length === 0,
+        `PROGRAM: the header occurrence is spliced (applied ${r.applied}, skipped ${JSON.stringify(r.skipped)})`);
+    assert(r.xmlText.includes('<![CDATA[PROGRAM PRG_Main\r\n') && r.xmlText.includes('<POU Name="MAIN"')
+        && r.xmlText.includes('<LineIds Name="MAIN">'),
+        'PROGRAM: the engine renames only the header CDATA; tag Name and LineIds are left to the caller');
 
     // The caller completes the rename structurally; the result must be consistent.
     const finished = renameRootObjectInXml(r.xmlText, 'PRG_Main');
     assert(finished.includes('<POU Name="PRG_Main"') && !/ Name="MAIN"/.test(finished),
         'PROGRAM: renameRootObjectInXml updates the root Name attribute');
-    assert(finished.includes('PROGRAM PRG_Main') && !finished.includes('PROGRAM MAIN'),
+    assert(finished.includes('<![CDATA[PROGRAM PRG_Main\r\nVAR') && !finished.includes('PROGRAM MAIN')
+        && (finished.match(/\bPRG_Main\b/g) || []).length === 4,
         'PROGRAM: the declaration header is renamed exactly once, consistently');
     assert(finished.includes('<LineIds Name="PRG_Main">') && finished.includes('<LineIds Name="PRG_Main.DoIt">')
         && !/<LineIds Name="MAIN/.test(finished),
