@@ -72,7 +72,12 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   methods/properties passes analysis but fails g++; IMPLEMENTS ignores methods from interface EXTENDS bases;
   an FB property inherited from a base FB fails in g++ when used on the derived instance. Step 7 (chained comparisons, Annex A; PR #12 `5fde942`) merged.
   Step 8 (`postfix_enum_base`; PR #13 `da78fe3`) merged. Also found: `TO_DINT(enumValue)` fails in g++ (pre-existing).
-  Next: step 9 (`named_global_lists`). The vendored profile now extends `iec-3`.
+  Step 9 (`named_global_lists`; PR #14 `fafc02e`) merged. List = file stem, override `--global-list <file>=<name>` /
+  API `globalListName`; a local may hide a global (`GVL_A.x` still reaches it); the same name in two lists is allowed
+  (plain use must be qualified). R3.2's converter must pass each GVL's name. Also found (pre-existing):
+  `gfb(a := 2);` on a top-level global FB fails in g++; bundled-library global `speed` collides with a user global;
+  `--feature` help text and DIALECTS.md "Checks" list stale; `GVL_A.units[0]()` does not parse; lexer accepts `a__b`.
+  Next: step 10 (`struct_extends`). The vendored profile now extends `iec-3`.
   The IEC Ed. 3 copy the user supplied is licensed to another party: cite clause numbers only, never its text. **R4 code DONE 2026-11-09, not merged** — `src/objectsTreeModel.js` (VS Code-free node graph; ids and contextValue set
   in one place, `getParent` = `node.parent`), thin `treeDataProvider.js`, `groupRootsByProject` moved out of
   `projectMap.js`; `test_objects_tree_ids.js` pins 396 ids / 301 reveal chains (a required gate); suite 84/84 FULL.
