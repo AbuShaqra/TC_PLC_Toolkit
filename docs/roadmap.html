@@ -55,10 +55,15 @@ a { color: var(--accent); }
 a:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 .summary { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
-table { width: 100%; border-collapse: collapse; font-size: 14px; min-width: 520px; }
+table { width: 100%; border-collapse: collapse; font-size: 14px; min-width: 720px; }
 th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
 th { font-family: var(--mono); font-size: 11px; font-weight: 500; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
 tr:last-child td { border-bottom: 0; }
+td.num, td.date { font-family: var(--mono); font-size: 13px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+td.id a { color: inherit; text-decoration: none; }
+td.id a:hover { text-decoration: underline; }
+.why { display: grid; gap: 10px; }
+.why ol { gap: 8px; }
 td.id { font-family: var(--mono); font-weight: 500; color: var(--accent); white-space: nowrap; }
 .pill { display: inline-block; font-family: var(--mono); font-size: 11px; padding: 2px 8px; border-radius: 999px; white-space: nowrap; }
 .pill.planned { background: var(--accent-soft); color: var(--accent); }
@@ -95,23 +100,37 @@ footer { font-size: 13px; color: var(--muted); border-top: 1px solid var(--line)
   <header>
     <div class="eyebrow">VS Code extension · twincat-plc-toolkit</div>
     <h1>TwinCAT PLC Toolkit Roadmap</h1>
-    <p>The order of planned work. Items run top to bottom; sizes are estimates. The source of truth is <code>ROADMAP.md</code> in the repository, and this page is updated with it.</p>
+    <p>The order of planned work. Estimates are working days for one developer; dates are forecasts over working days, assuming items run one after another. Only the order is binding. The source of truth is <code>ROADMAP.md</code> in the repository, and this page is updated with it.</p>
     <div class="meta">
       <span>Last updated <b>2026-11-09</b></span>
       <span>Current release <b>v0.10.1</b></span>
-      <span>Planned items <b>3</b></span>
+      <span>Planned work <b>19.5 days</b></span>
+      <span>Forecast finish <b>2026-12-07</b></span>
     </div>
   </header>
 
   <section class="summary" aria-label="Order of work">
     <table>
-      <thead><tr><th>#</th><th>Item</th><th>Size</th><th>Status</th></tr></thead>
+      <thead><tr><th>Order</th><th>ID</th><th>Item</th><th>Estimate</th><th>Start</th><th>End</th><th>Status</th></tr></thead>
       <tbody>
-        <tr><td class="id">R1</td><td>Generate ST button keeps its rounded end in single-project workspaces</td><td>S, under ½ day</td><td><span class="pill planned">Planned</span></td></tr>
-        <tr><td class="id">R2</td><td>Create a new TwinCAT project from the extension's start view</td><td>M–L</td><td><span class="pill open">Decisions open</span></td></tr>
-        <tr><td class="id">R3</td><td>Compile TwinCAT projects with STruC++ and the TwinCAT dialect</td><td>L</td><td><span class="pill open">Decisions open</span></td></tr>
+        <tr><td class="num">1</td><td class="id"><a href="#r1">R1</a></td><td>Generate ST button keeps its rounded end in single-project workspaces</td><td class="num">0.5 d</td><td class="date">2026-11-10</td><td class="date">2026-11-10</td><td><span class="pill planned">Planned</span></td></tr>
+        <tr><td class="num">2</td><td class="id"><a href="#r3">R3.1</a></td><td>STruC++ spike: the sample project through the compiler under the TwinCAT dialect</td><td class="num">2 d</td><td class="date">2026-11-11</td><td class="date">2026-11-12</td><td><span class="pill planned">Planned</span></td></tr>
+        <tr><td class="num">3</td><td class="id"><a href="#r4">R4</a></td><td>Objects-tree model (deepening roadmap P7)</td><td class="num">4 d</td><td class="date">2026-11-13</td><td class="date">2026-11-18</td><td><span class="pill planned">Needs Windows machine</span></td></tr>
+        <tr><td class="num">4</td><td class="id"><a href="#r2">R2</a></td><td>Create a new TwinCAT project from the extension's start view</td><td class="num">5 d</td><td class="date">2026-11-19</td><td class="date">2026-11-25</td><td><span class="pill open">Decisions open</span></td></tr>
+        <tr><td class="num">5</td><td class="id"><a href="#r3">R3.2</a></td><td>STruC++ compile command with errors mapped to the panes</td><td class="num">5 d</td><td class="date">2026-11-26</td><td class="date">2026-12-02</td><td><span class="pill open">Decisions open</span></td></tr>
+        <tr><td class="num">6</td><td class="id"><a href="#r3">R3.3</a></td><td>STruC++ packaging, licence files, settings, docs</td><td class="num">3 d</td><td class="date">2026-12-03</td><td class="date">2026-12-07</td><td><span class="pill open">Decisions open</span></td></tr>
       </tbody>
     </table>
+  </section>
+
+  <section class="why" aria-label="Why this order">
+    <h2>Why this order</h2>
+    <ol>
+      <li><b>R1 first.</b> Half a day, confined to the webview, and it fixes a visible defect now.</li>
+      <li><b>The STruC++ spike next.</b> The compiler work is the largest unknown. The spike needs no decisions, and what the compiler rejects on the sample project sizes R3 and settles its open questions while other work goes on.</li>
+      <li><b>R4 before R2.</b> R2 adds an empty state and a create flow to the Objects tree, and R4 rebuilds that tree's model. Doing R4 first means R2 is written once, against the new model.</li>
+      <li><b>R2, then the rest of R3.</b> Both need your decisions, listed under each item. R2 also needs its template proven in XAE on your machine, the same session R4's live test needs.</li>
+    </ol>
   </section>
 
   <section class="ladder" aria-label="Roadmap items">
@@ -119,7 +138,7 @@ footer { font-size: 13px; color: var(--muted); border-top: 1px solid var(--line)
       <div class="rung-head">
         <span class="rung-id">R1</span>
         <h3>Generate ST button: rounded end in single-project workspaces</h3>
-        <div class="rung-tags"><span class="pill planned">Planned</span></div>
+        <div class="rung-tags"><span class="pill planned">Order 1 · 0.5 d · Nov 10</span></div>
       </div>
       <div class="block">
         <h4>Problem</h4>
@@ -139,11 +158,31 @@ footer { font-size: 13px; color: var(--muted); border-top: 1px solid var(--line)
       </div>
     </article>
 
+    <article class="rung" id="r4">
+      <div class="rung-head">
+        <span class="rung-id">R4</span>
+        <h3>Objects-tree model (deepening roadmap P7)</h3>
+        <div class="rung-tags"><span class="pill planned">Order 3 · 4 d · Nov 13–18</span></div>
+      </div>
+      <div class="block">
+        <h4>Goal</h4>
+        <p>Give the TwinCAT Objects view a real node model with no VS Code dependency, so the tree provider becomes a thin adapter. This is the last open phase of the deepening roadmap.</p>
+      </div>
+      <div class="block">
+        <h4>Plan</h4>
+        <p>A new <code>src/objectsTreeModel.js</code> holds the node graph: parent links, children and stable ids. It also takes over the "fewer than two projects means a flat tree" rule, which today sits in the LSP's project-ownership module (<code>src/lsp/projectMap.js:297</code>). The tree provider then reads parents and children straight from the model, and the reveal test no longer needs a <code>vscode</code> stub.</p>
+      </div>
+      <div class="block">
+        <h4>Done when</h4>
+        <p>Finding a node's parent needs no scan and builds no sibling nodes; each node's id and menu context are set in one place; the suite and typecheck pass; and the live dev-host test passes on your Windows machine. That last test is mandatory, because reveal and tab identity are exactly what this changes, and only the live test caught the 0.6.0 duplicate-tab bug in this area.</p>
+      </div>
+    </article>
+
     <article class="rung" id="r2">
       <div class="rung-head">
         <span class="rung-id">R2</span>
         <h3>Create a new TwinCAT project from the extension</h3>
-        <div class="rung-tags"><span class="pill open">Decisions open</span></div>
+        <div class="rung-tags"><span class="pill open">Order 4 · 5 d · Nov 19–25 · Decisions open</span></div>
       </div>
       <div class="block">
         <h4>Goal</h4>
@@ -176,7 +215,7 @@ footer { font-size: 13px; color: var(--muted); border-top: 1px solid var(--line)
       <div class="rung-head">
         <span class="rung-id">R3</span>
         <h3>Compile TwinCAT projects with STruC++</h3>
-        <div class="rung-tags"><span class="pill open">Decisions open</span></div>
+        <div class="rung-tags"><span class="pill open">Orders 2, 5, 6 · 10 d · Decisions open</span></div>
       </div>
       <div class="block">
         <h4>Goal</h4>
@@ -202,9 +241,9 @@ footer { font-size: 13px; color: var(--muted); border-top: 1px solid var(--line)
       <div class="block">
         <h4>Phases</h4>
         <ol>
-          <li><b>Spike.</b> Vendor <code>twincat3.json</code>, run the sample project through the STruC++ CLI under the TwinCAT dialect, and list every construct it rejects. This sizes the rest.</li>
-          <li><b>Compile command.</b> Convert the project, run the compiler, and map errors to the right component and pane.</li>
-          <li><b>Packaging.</b> Bundle or locate the compiler, ship the licence files, add settings and documentation.</li>
+          <li><b>R3.1 Spike</b> (2 d, Nov 11–12). Vendor <code>twincat3.json</code>, run the sample project through the STruC++ CLI under the TwinCAT dialect, and list every construct it rejects. This sizes the rest.</li>
+          <li><b>R3.2 Compile command</b> (5 d, Nov 26 – Dec 2). Convert the project, run the compiler, and map errors to the right component and pane.</li>
+          <li><b>R3.3 Packaging</b> (3 d, Dec 3–7). Bundle or locate the compiler, ship the licence files, add settings and documentation.</li>
         </ol>
       </div>
       <div class="decisions">
@@ -222,7 +261,6 @@ footer { font-size: 13px; color: var(--muted); border-top: 1px solid var(--line)
     <h2>Backlog, not scheduled</h2>
     <p class="note">Carried from the project's handoff notes. Each waits for a recorded reason.</p>
     <ul>
-      <li>Tree-model refactor (P7): needs the live dev-host test on a Windows machine.</li>
       <li>Indexing speed: cache signature-file discovery per root; per-project background scan; persistent archive cache.</li>
       <li>Rename: keep <code>.plcproj</code> updates inside the rename transaction; rename sibling implementors of an interface.</li>
       <li>Reverse index for Find References, only past about 1000 files or 200 ms.</li>

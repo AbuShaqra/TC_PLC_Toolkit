@@ -32,17 +32,18 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
 - Repo is **Private**. History was rewritten twice and the repo deleted-and-recreated 2026-08-26; that sweep is
   complete. Before any future sweep read `.claude/memory/leaks-hide-in-metadata-not-content.md`, and never restate
   the original names that the synthetic ones (`Acme*`, `FB_Gripper`, `Modules_bak\`, …) replaced.
-- **Stale remote branches:** `claude/new-session-ynrdo4` (last used by PR #21) and `claude/project-thread-o6i1sa`
-  (PRs #22, #24) are merged; delete them when convenient (not done — needs the user's go-ahead).
+- **Stale remote branches:** `claude/new-session-ynrdo4` and `claude/project-thread-o6i1sa` are merged into `dev`
+  (checked 2026-11-09). The user asked to delete them, but this cloud session's git proxy drops every push
+  except to the session branch, so they still exist — delete from the GitHub UI or a local clone.
 
 ## Roadmap
 Planned work, in order, is in [ROADMAP.md](ROADMAP.md) (page: https://claude.ai/artifact/8RG7TZtBV2cuupsrwWtknv):
-R1 Generate ST split-button corner fix, R2 create a TwinCAT project from the start view, R3 compile with
-STruC++ + the TwinCAT dialect. R2 and R3 have open decisions listed there. None started yet.
+in order R1 Generate ST split-button fix → R3.1 STruC++ spike → R4 Objects-tree model (deepening P7) → R2 create
+a TwinCAT project → R3.2–R3.3 STruC++ compile + packaging; forecast end 2026-12-07. R2/R3 decisions open. None started.
 
 ## Open / deferred (each with the reason it waits)
-- **P7 (tree model)** of the deepening roadmap — parked: its dev-host gate is mandatory and needs the user's
-  machine. Everything else in that roadmap is shipped or ruled (P9 no-go); rulings in the findings file.
+- Deepening roadmap: everything but P7 is shipped or ruled (P9 no-go; rulings in the findings file). P7 is now
+  roadmap item R4; its dev-host gate is mandatory and needs the user's Windows machine.
 - **Manual residue on the user's machine:** Libraries-view scoping (TreeView description rendering, webview tab
   switches, startup seeding, `.plcproj`-watcher path end-to-end); library member expansion has never been visually
   confirmed; squiggle rendering is eyeballed only; peek dismissal over the real bridge round-trip.

@@ -6,16 +6,33 @@ Keep both current in the same change — rules in [CLAUDE.md](CLAUDE.md) ("Keep 
 
 **Last updated:** 2026-11-09 · **Current release:** v0.10.1
 
-How to read it: items run top to bottom in the order of the table. Sizes are estimates, not commitments.
-An item leaves the table for "Done" once its PR is merged into `dev`, with the PR number.
+How to read it: items run top to bottom in the **Order** column. IDs are stable names and do not change
+when the order does. Estimates are working days for one developer; start and end dates are **forecasts**
+over working days (Mon–Fri) assuming the items run one after another. An item may start early once the
+items before it are done. Only the order is binding. When an item slips, update its dates and every date
+after it. An item leaves the table for "Done" once its PR is merged into `dev`, with the PR number.
 
 ## Order of work
 
-| # | Item | Size | Status | Depends on |
-|---|------|------|--------|------------|
-| R1 | Generate ST button keeps its rounded end in single-project workspaces | S (< ½ day) | Planned | — |
-| R2 | Create a new TwinCAT project from the extension's start view | M–L | Planned — decisions open | — |
-| R3 | Compile TwinCAT projects with STruC++ and the TwinCAT dialect | L | Planned — decisions open | — |
+| Order | ID | Item | Estimate | Start | End | Status |
+|-------|----|------|----------|-------|-----|--------|
+| 1 | R1 | Generate ST button keeps its rounded end in single-project workspaces | 0.5 d | 2026-11-10 | 2026-11-10 | Planned |
+| 2 | R3.1 | STruC++ spike: sample project through the compiler under the TwinCAT dialect | 2 d | 2026-11-11 | 2026-11-12 | Planned |
+| 3 | R4 | Objects-tree model (deepening roadmap P7) | 4 d | 2026-11-13 | 2026-11-18 | Planned — needs the user's Windows machine |
+| 4 | R2 | Create a new TwinCAT project from the extension's start view | 5 d | 2026-11-19 | 2026-11-25 | Planned — decisions open |
+| 5 | R3.2 | STruC++ compile command with errors mapped to the panes | 5 d | 2026-11-26 | 2026-12-02 | Planned — decisions open |
+| 6 | R3.3 | STruC++ packaging, licence files, settings, docs | 3 d | 2026-12-03 | 2026-12-07 | Planned — decisions open |
+
+**Total:** 19.5 working days, forecast to finish **2026-12-07**.
+
+**Why this order.**
+1. **R1 first:** half a day, isolated to the webview, and it fixes a visible defect now.
+2. **R3.1 (spike) next:** the STruC++ work is the largest unknown. The spike needs no decisions, and what
+   the compiler rejects on the sample decides R3's size and the open R3 questions while other work proceeds.
+3. **R4 before R2:** R2 adds an empty state and a create flow to the Objects tree, and R4 rebuilds the
+   Objects tree's model. Doing R4 first means R2 is written once, against the new model.
+4. **R2 then R3.2–R3.3:** both need the user's decisions (listed under each item). R2 also needs the
+   template proven in XAE on the user's machine, the same session R4's dev-host gate needs.
 
 ### R1 — Generate ST button: rounded end in single-project workspaces
 
@@ -33,6 +50,23 @@ CSS `:has()` would avoid the class but is unsafe: `engines.vscode ^1.66` ships a
 
 **Done when.** Both states look right in the dev host (one project, several projects), and the browser
 harnesses (`test/browser/run.js`, `run_pragmas.js`) pass, since the webview changed.
+
+### R4 — Objects-tree model (deepening roadmap P7)
+
+**Goal.** Give the TwinCAT Objects view a real, VS Code-free node model, so the tree provider becomes a thin
+adapter. The last open phase of the deepening roadmap
+(`docs/superpowers/plans/2026-08-22-deepening-roadmap.md`, "Phase 7 — Candidate 05").
+
+**Plan.** Create `src/objectsTreeModel.js`: a node graph with parent links, children and stable ids. It also
+takes over the "fewer than two projects → flat tree" rule, which today sits in the LSP-ownership module
+`src/lsp/projectMap.js`. `src/treeDataProvider.js` then answers `getParent` from `node.parent` and
+`getChildren` from `node.children`. `test/test_tree_reveal.js` stops patching module resolution, because the
+model needs no `vscode` stub. New harness: `test/test_objects_tree_model.js`.
+
+**Done when.** `getParent` does no linear scans and builds no sibling nodes; `contextValue` and id are set in
+one place; the suite and typecheck pass; and **`node test/devhost/run.js` passes on the user's Windows
+machine**. That gate is mandatory: reveal ancestry and tab identity are exactly what this changes, and
+headless gates missed the 0.6.0 duplicate-tab regression in this area.
 
 ### R2 — Create a new TwinCAT project from the extension
 
@@ -82,12 +116,12 @@ template targets; (4) starter content (an empty `MAIN`, a task, a GVL?).
   `dist/strucpp-bundle.cjs`) fits better than a download on first use.
 - Turning the generated C++ into a binary needs `g++`; checking and generating C++ does not.
 
-**Phases.**
-1. **Spike** — vendor `twincat3.json`; run the `sample/` project's ST through the STruC++ CLI under the
+**Phases** (scheduled separately in the table above).
+1. **R3.1 Spike** — vendor `twincat3.json`; run the `sample/` project's ST through the STruC++ CLI under the
    TwinCAT dialect; list every construct it rejects. This sizes the rest.
-2. **Compile command** — a *Compile with STruC++* command that converts the project, runs the compiler and
+2. **R3.2 Compile command** — a *Compile with STruC++* command that converts the project, runs the compiler and
    maps errors to the right component and pane (VS Code Problems + pane markers).
-3. **Packaging** — bundle or locate the compiler, licence files, settings (compiler path, dialect, output
+3. **R3.3 Packaging** — bundle or locate the compiler, licence files, settings (compiler path, dialect, output
    folder), documentation.
 
 **Decisions open.** (1) what "compile" produces: checking only, generated C++, or a built binary; (2) bundle
@@ -98,7 +132,6 @@ or find a Node on the user's machine).
 
 Carried from [HANDOFF.md](HANDOFF.md) "Open / deferred"; each waits for the reason given there.
 
-- P7 tree model (deepening roadmap) — needs the dev-host gate on the user's machine.
 - Indexing: memoize `collectSignatureFiles` per root; non-blocking per-project scan; persisted archive cache.
 - Rename: `.plcproj` sync inside the rename transaction; rename sibling interface implementors.
 - L1 reverse index for references — only past ~1000 files or > 200 ms.
