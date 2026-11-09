@@ -35,7 +35,7 @@ for it where a row says so.
 
 | Order | ID | Item | Estimate | Start | End | Status |
 |-------|----|------|----------|-------|-----|--------|
-| 1 | S2 | Close the fork's gaps: 14 PR-sized steps (plan: [docs/s2-strucpp-fork-plan.md](docs/s2-strucpp-fork-plan.md)) | 22.5 d | 2026-11-10 | 2026-12-09 | In progress — design done 2026-11-09; step 1 next. R3.2 waits for it |
+| 1 | S2 | Close the fork's gaps: 14 PR-sized steps (plan: [docs/s2-strucpp-fork-plan.md](docs/s2-strucpp-fork-plan.md)) | 22.5 d | 2026-11-10 | 2026-12-09 | In progress — steps 1 (fork PR #5) and 1b (#6) merged 2026-11-09; step 2 (pragmas) next. R3.2 waits for it |
 
 **Why this order.**
 1. **R3.1 (spike) first:** the STruC++ work is the largest unknown. The spike needs no decisions, and what
@@ -124,7 +124,7 @@ an Ed. 4 profile.
   `--dialect-path` (`src/dialect.ts`, `docs/DIALECTS.md`). Profile features today: `program_methods`,
   `pointer_to`, `reference_to`, `ref_assign`.
 - The TwinCAT 3 dialect profile is vendored in this repo as `resources/dialects/twincat3.json` (profile id
-  `twincat3`, extends `iec`, enables all four features above). It is passed to the compiler with
+  `twincat3`, extends `iec-3` (the fork renamed `iec` to `iec-3`, S2 step 1b), enables all four features above). It is passed to the compiler with
   `--dialect-file`.
 - The toolkit already turns TwinCAT XML into one ST compilation unit per object with a line map back to each
   pane (`src/stConverter.js`, the live path) — the compiler's input, and the route for mapping its errors back.
