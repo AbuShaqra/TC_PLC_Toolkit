@@ -595,7 +595,7 @@ var DOMAIN_START = '2026-11-09', DOMAIN_END = '2026-11-20'; /* exclusive */
     var actual = it.status === 'done' && it.actualStart && it.actualEnd;
     if (actual) {
       startDay = (Date.parse(it.actualStart) - t0) / DAY;
-      len = Math.max((Date.parse(it.actualEnd) - Date.parse(it.actualStart)) / DAY, 0.04);
+      len = Math.max((Date.parse(it.actualEnd) - Date.parse(it.actualStart)) / DAY, 0.15);
     }
     var bar = document.createElement('button'); bar.type = 'button'; bar.className = 'g-bar' + (it.status ? ' ' + it.status : '') + (it.machine ? ' hatch' : '');
     bar.style.left = pct(startDay); bar.style.width = pct(len);
