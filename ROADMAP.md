@@ -4,7 +4,7 @@ The order of planned work for the extension. **This file is the source of truth*
 (<https://claude.ai/artifact/8RG7TZtBV2cuupsrwWtknv>) is rendered from it by hand out of `docs/roadmap.html`.
 Keep both current in the same change — rules in [CLAUDE.md](CLAUDE.md) ("Keep the roadmap current").
 
-**Last updated:** 2026-11-09 (R5, R1 merged) · **Current release:** v0.10.1
+**Last updated:** 2026-11-09 (Windows checks passed; 4024 skeleton in) · **Current release:** v0.10.1
 
 How to read it: items run top to bottom in the **Order** column. IDs are stable names and do not change
 when the order does. Estimates are working days for one developer; start and end dates are **forecasts**
@@ -17,14 +17,14 @@ after it. An item leaves the table for "Done" once its PR is merged into `dev`, 
 | Order | ID | Item | Planned | Re-measured | Start | End | Status |
 |-------|----|------|---------|-------------|-------|-----|--------|
 | 1 | R3.1 | STruC++ spike: sample project through the compiler under the TwinCAT dialect | 2 d | ~15 min (done) | 2026-11-09 | 2026-11-09 | Findings done 2026-11-09 ([docs/r3.1-strucpp-spike.md](docs/r3.1-strucpp-spike.md)); decisions taken |
-| 2 | R4 | Objects-tree model (deepening roadmap P7) | 4 d | ~3 h (code done) | 2026-11-09 | 2026-11-09 | Code done 2026-11-09 (suite 84/84 FULL) — PR #30 open; the mandatory dev-host gate needs the user's Windows machine before merge |
-| 3 | R2 | Create a new TwinCAT project from the extension's start view | 6 d | ~4 h + XAE proofs | 2026-11-12 | 2026-11-12 | Planned — needs a 4024 skeleton from the user's XAE; done-when needs both templates proven in XAE on the user's machine |
+| 2 | R4 | Objects-tree model (deepening roadmap P7) | 4 d | ~3 h (code done) | 2026-11-09 | 2026-11-09 | Code done; **dev-host gate passed** on the user's Windows machine 2026-11-09 — PR #30 merges once its CI is green |
+| 3 | R2 | Create a new TwinCAT project from the extension's start view | 6 d | ~4 h + XAE proofs | 2026-11-12 | 2026-11-12 | **Next.** 4024 skeleton received 2026-11-09 (`resources/templates/xae-3.1.4024/`); done-when still needs both templates proven in XAE on the user's machine |
 | 4 | R3.2 | STruC++ check command with errors mapped to the panes | 7 d | ~4 h | 2026-11-13 | 2026-11-13 | Planned (full scope, 2026-11-09) — after S2 |
 | 5 | R3.3 | STruC++ bundling, Node 22 discovery, licence files, settings, docs | 3 d | ~2 h | 2026-11-16 | 2026-11-16 | Planned |
 
 **Forecast (re-measured 2026-11-09):** the toolkit lane's code finishes about **2026-11-16**. What sets the pace now
-is not code but the steps only the user can do on Windows: R5's XAE check, R4's dev-host gate (PR #30), R2's 4024
-skeleton and XAE proofs. Those dates are not forecast; each item stays open until its gate passes. Decisions taken
+is not code but the steps only the user can do on Windows. R5's XAE check, R4's dev-host gate and R2's 4024 skeleton
+were done 2026-11-09; R2's XAE proofs remain. Those dates are not forecast; each item stays open until its gate passes. Decisions taken
 2026-11-09 after the R3.1 spike (`docs/r3.1-strucpp-spike.md`): **wait for the fork** — the check command must not
 put compiler errors on correct code, so the gaps are fixed in STruC++ first (S2, fork lane); **R3.2 takes its full
 scope** (5 → 7 d).
@@ -196,13 +196,12 @@ Roadmap items finished from now on are listed here with their PR.
 - **R5** — PROGRAMs stay PROGRAMs; TwinCAT XML parsing fixes (non-ST bodies, CDATA overrun, attribute
   entities, lone CR; BOM verified not to leak); SFC-transition warnings; Add Get / Add Set Accessor (issue
   [#25](https://github.com/AbuShaqra/TC_PLC_Toolkit/issues/25)). PR [#27](https://github.com/AbuShaqra/TC_PLC_Toolkit/pull/27),
-  squash-merged into `dev` 2026-11-09 as `0ea9fcd`. **Merged before its XAE check** (user's call): an added
-  accessor opening and building in XAE, `node test/devhost/run.js`, and a manual menu pass are still to do on the
-  user's Windows machine before the next release.
+  squash-merged into `dev` 2026-11-09 as `0ea9fcd`. Merged before its XAE check (user's call); the check
+  **passed** on the user's Windows machine 2026-11-09 (XAE, `node test/devhost/run.js`, the manual menu pass).
 - **S1** (fork lane) — the fork's language server honours dialect profiles: a client passes a whole profile
   object (`strucpp.dialect`) and overrides (`strucpp.features`) through the `strucpp` workspace configuration;
   every analysis and compile request uses it; malformed profiles are rejected without a crash; no profile means
   the compiler's own default. PR [AbuShaqra/STruCpp#4](https://github.com/AbuShaqra/STruCpp/pull/4),
   squash-merged into the fork's `development` 2026-11-09 as `a529ea9`.
-- **R1** — Generate ST keeps its rounded end in single-project workspaces. Same PR #27. Dev-host eyeball pending
-  with the R5 checks.
+- **R1** — Generate ST keeps its rounded end in single-project workspaces. Same PR #27. Checked on Windows 2026-11-09; that pass
+  found the multi-project Generate ST menu clipped in a narrow editor, fixed in `3b93ef1` (rides with PR #30).

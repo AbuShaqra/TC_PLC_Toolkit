@@ -40,15 +40,12 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   names a private repository the user wants kept out of this repo; the final tree is clean. Delete the branch after.
 
 ## Start here (next session)
-- **R5 + R1 are MERGED into `dev`** (PR #27, squash `0ea9fcd`, 2026-11-09) — **before their Windows check, at the
-  user's call** ("I will test it later when I have access to XAE"). Still owed on the user's machine, before the
-  next release: (1) an accessor added via *Add Get/Set Accessor* to an FB property (`sample/` `FB_Station.ErrorId`)
-  and an interface property (`I_Station.State`) opens and builds in XAE — the new accessor carries no LineIds,
-  as a newly created property never has; (2) the user's real case: delete an accessor IN XAE, re-add it here,
-  reopen in XAE; (3) `node test/devhost/run.js`; (4) manual: each Add entry shows only while its accessor is
-  missing, and copy/paste/delete/rename/insert stay on every property row (contextValue is now
-  `propertyNode[.noGet][.noSet]`); (5) the Generate ST button in a one- and a two-project workspace. Then reply on
-  issue #25 when it ships in a release (not yet replied).
+- **R5 + R1 are MERGED into `dev`** (PR #27, `0ea9fcd`) and their **Windows/XAE check PASSED** (user, 2026-11-09:
+  accessor add/re-add opens and builds in XAE, `node test/devhost/run.js`, menu pass). That pass found the multi-project
+  Generate ST menu clipped in a narrow editor (right-aligned to the caret → ran past the webview's left edge; long names
+  scrolled sideways): fixed in `3b93ef1` (`placeGenerateMenu` in `media/editor.js`, ellipsis + tooltip;
+  `test/browser/run.js` 7c checks 360/560/1200 px, all three failed before). Still owed: reply on issue #25 when it
+  ships in a release.
 - **R3.1 spike findings are DONE** (2026-11-09): `docs/r3.1-strucpp-spike.md`. Headline: 27 parse errors as
   converted; 1 converter cause (methods/properties emitted after the POU body — the compiler wants them first) +
   9 compiler gaps; with scratch workarounds 0 errors under twincat3, 6 under iec (REFERENCE TO, REF=). No
@@ -85,10 +82,8 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   The IEC Ed. 3 copy the user supplied is licensed to another party: cite clause numbers only, never its text. **R4 code DONE 2026-11-09, not merged** — `src/objectsTreeModel.js` (VS Code-free node graph; ids and contextValue set
   in one place, `getParent` = `node.parent`), thin `treeDataProvider.js`, `groupRootsByProject` moved out of
   `projectMap.js`; `test_objects_tree_ids.js` pins 396 ids / 301 reveal chains (a required gate); suite 84/84 FULL.
-  Intended fix: grouped-mode reveal chains now show the tree's own project label (86 mismatches gone). **Merge waits
-  for `node test/devhost/run.js` on the user's Windows machine** (mandatory per ROADMAP R4) plus a manual pass:
-  expansion state survives an update, context menus / drag-drop / copy-paste / rename on real nodes, refresh after
-  create/delete. and R3.2 full scope (7 d). Next roadmap item: R4.
+  Intended fix: grouped-mode reveal chains now show the tree's own project label (86 mismatches gone). **The dev-host gate PASSED** on the
+  user's Windows machine 2026-11-09; PR #30 (this session branch) squash-merges into `dev` once its CI is green. and R3.2 full scope (7 d). Next roadmap item: R4.
 - **Roadmap re-measured 2026-11-09** (user's ask): ~20 planned days were delivered in ~7 h that day (ROADMAP.md
   "Velocity"). New forecasts assume half that pace; toolkit code ~2026-11-16, S2 ~2026-11-11. The real pacing
   item is the user's Windows checks (R5 XAE, R4 dev-host via PR #30, R2 skeleton/XAE proofs) — never forecast.
@@ -103,8 +98,10 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   `resources/dialects/twincat3.json` — that file is the only external input. **Do not name, link or describe where
   it came from** in any file, commit or comment (user rule 2026-11-09: the source is a private repository the user
   has disconnected). The STruCpp repo has its own CLAUDE.md process rules — read them before changing it.
-- **Machine-bound steps:** R4's `node test/devhost/run.js` gate and R2's templates need the user's Windows machine;
-  R2's 3.1.4024 skeleton must be produced by a 4024 XAE there (the 4026.22 one is `sample/`'s).
+- **R2 inputs:** the 3.1.4024 skeleton arrived 2026-11-09 — `resources/templates/xae-3.1.4024/` (XAE 3.1.4024.62
+  output, `.vs`/`.bak`/`_Boot`/`_Libraries` left out; README there). It saves the system project as ONE `.tspproj`,
+  where 4026 (`sample/`) wrote `.tsproj` + `_Config/` — R2 must handle both shapes. Its GVL has a sample variable
+  and `qualified_only`; the template empties it. Still machine-bound: proving each template opens and builds in XAE.
 - **Cloud-session traps (2026-11-09):** the git proxy accepts pushes ONLY to the session branch (deleting other
   branches failed every time); `git reset --hard` was refused by the auto-mode classifier — use revert + merge.
 
