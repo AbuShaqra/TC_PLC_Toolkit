@@ -67,7 +67,10 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   method calls that omit a VAR_OUTPUT fail in g++; an unknown member in a chain (`x := mid.nothing`) is not flagged.
   Step 5 (interface-typed variables, `IEC_ITF<I>`; diamonds via virtual inheritance on shared edges only; PR #10
   `c5ee894`) merged — not yet: ARRAY OF / STRUCT field of interface type, properties through an interface variable.
-  Next: step 6 (interface PROPERTY behind `property`; a property with no GET/SET is refused until Q6 is decided). The vendored profile now extends `iec-3`.
+  Step 6 (interface PROPERTY behind `property`, explicit GET/SET; PR #11 `5b99425`) merged = **release B**.
+  More fork follow-ups: `THIS.a.b` does not parse; an FB that IMPLEMENTS an interface only through a base FB's
+  methods/properties passes analysis but fails g++; IMPLEMENTS ignores methods from interface EXTENDS bases;
+  an FB property inherited from a base FB fails in g++ when used on the derived instance. Next: step 7. The vendored profile now extends `iec-3`.
   The IEC Ed. 3 copy the user supplied is licensed to another party: cite clause numbers only, never its text. **R4 code DONE 2026-11-09, not merged** — `src/objectsTreeModel.js` (VS Code-free node graph; ids and contextValue set
   in one place, `getParent` = `node.parent`), thin `treeDataProvider.js`, `groupRootsByProject` moved out of
   `projectMap.js`; `test_objects_tree_ids.js` pins 396 ids / 301 reveal chains (a required gate); suite 84/84 FULL.
