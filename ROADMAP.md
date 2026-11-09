@@ -146,7 +146,8 @@ publisher `a-abushaqra` (must equal `package.json`
 DevOps token with the *Marketplace → Manage* scope as the repo secret `VSCE_PAT` (and an Open VSX token as
 `OVSX_PAT`). The publisher profile's "About" text was drafted 2026-11-09.
 
-**Our part (~1 h):** `CHANGELOG.md`; real `categories` / `keywords` / `homepage` / `bugs`; drop `--skip-license`
+**Licence:** switched to **AGPL-3.0-or-later** on 2026-11-09 (user's call); the first marketplace release is the
+first under it, and the CHANGELOG says so. **Our part (~1 h):** `CHANGELOG.md`; real `categories` / `keywords` / `homepage` / `bugs`; drop `--skip-license`
 from the package commands; a "not affiliated with Beckhoff" line in the README (TwinCAT is their trademark);
 README images HTTPS and not SVG; optional `"preview": true` until v1.0; a publish step in `release.yml` that runs
 only when the secret exists. **Before R3.3 ships**, the bundled GPL-3.0 STruC++ needs its licence text and source

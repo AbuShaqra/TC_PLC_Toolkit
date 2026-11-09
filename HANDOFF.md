@@ -92,9 +92,10 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   (native `viewsWelcome` buttons) plus Objects and Libraries MOVED out of the Explorer; "Open Start Page" opens a
   webview tab: create project (4024/4026, name, location), open existing (+ recent solutions), project actions
   (Generate ST, Update Library Definitions, STruC++ check once R3.2 ships), help/links, settings. 6 → 8.5 d.
-- **Licence change asked 2026-11-09:** the user wants copyleft. Options given (GPL-3.0-or-later recommended — it
-  matches the bundled GPL-3.0-only STruC++; GPL-3.0-only; MPL-2.0 per-file); **not decided yet**, MIT stays until
-  they pick. All shipped deps are MIT/ISC (Monaco MIT, its notice must stay); past MIT releases stay MIT.
+- **Licence switched to AGPL-3.0-or-later** (user's call 2026-11-09): `LICENSE` is the verbatim gnu.org text
+  (sha256 `0d96a4ff…abcb0`), `package.json` `license`, README "License" (≤ 0.10.1 stay MIT). Monaco keeps its MIT
+  notice (`media/monaco-editor/LICENSE.txt`, THIRD-PARTY-NOTICES.md). Takes effect with the next release (R11).
+  Optional, not done: SPDX headers per source file.
 - **R11 Marketplace publishing** added after R2 (user's ask 2026-11-09). The user CREATED accounts on the VS Code
   Marketplace and Open VSX 2026-11-09; the publisher ID must equal `a-abushaqra` (its page 404'd before that); the user creates it and either uploads the VSIX or adds `VSCE_PAT`/`OVSX_PAT` secrets; our part is
   ~1 h of metadata/CHANGELOG/README disclaimer + a secret-gated publish step in `release.yml`.

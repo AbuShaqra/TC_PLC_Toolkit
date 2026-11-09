@@ -309,7 +309,14 @@ work starts, moves and ships.
 
 ## License
 
-[MIT](LICENSE) © A. AbuShaqra — this covers the original code of this extension.
+Copyright © 2026 A. AbuShaqra.
+
+From the next release, this extension's original code is licensed under the
+**[GNU Affero General Public License v3.0 or later](LICENSE)** (`AGPL-3.0-or-later`):
+you may use, study, change and share it, and anyone who distributes a modified
+version, or offers one to users over a network, must make its full source available
+under the same licence. Versions up to and including 0.10.1 were released under the
+MIT licence, and copies of those versions keep it.
 
 Bundled third-party components (the Monaco Editor, the codicon font, the
 TypeScript language services, and the runtime npm dependencies) remain under

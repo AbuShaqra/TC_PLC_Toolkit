@@ -4,7 +4,7 @@
   "description": "Edit, navigate and analyse Beckhoff TwinCAT PLC projects: two-pane Structured Text editor, offline IntelliSense and diagnostics, object and library explorers. Unofficial; not affiliated with Beckhoff.",
   "version": "0.10.1",
   "publisher": "a-abushaqra",
-  "license": "MIT",
+  "license": "AGPL-3.0-or-later",
   "icon": "media/marketplace-icon.png",
   "repository": {
     "type": "git",
