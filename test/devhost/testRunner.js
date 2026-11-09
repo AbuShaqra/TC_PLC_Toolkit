@@ -777,6 +777,46 @@ async function run() {
             log('generate-st', { error: String((e && e.stack) || e) });
         }
 
+        // --- Phase start-page (R2): the TwinCAT Activity Bar container, its three views, the start
+        //     commands and the start page as a REAL VS Code host sees them — the parts no headless
+        //     harness can reach (test_start_contributions.js only reads package.json).
+        try {
+            const all = new Set(await vscode.commands.getCommands(true));
+            const wantedCommands = ['twincat.openStartPage', 'twincat.createProject', 'twincat.openProject',
+                'twincat.generateSt', 'twincat.openSettings', 'twincat.openGettingStarted', 'twincat.openRoadmap',
+                'twincat.openReleaseNotes', 'twincat.reportIssue', 'twincat.updateLibraryDefinitions'];
+            const focus = {};
+            for (const id of ['workbench.view.extension.twincat', 'twincatStart.focus', 'twincatExplorer.focus', 'twincatLibraries.focus']) {
+                try { await vscode.commands.executeCommand(id); focus[id] = true; } catch (e) { focus[id] = String(e); }
+            }
+            await vscode.commands.executeCommand('twincat.openStartPage');
+            await sleep(1500);
+            const tabs = vscode.window.tabGroups
+                ? vscode.window.tabGroups.all.flatMap(g => g.tabs).map(t => t.label)
+                : null;
+            const tmp = fs.mkdtempSync(path.join(require('os').tmpdir(), 'tcdev-create-'));
+            const created = await vscode.commands.executeCommand('twincat.createProject',
+                { version: '3.1.4026', name: 'DevHostCell', location: tmp, open: 'none', fromStartPage: true });
+            const created4024 = await vscode.commands.executeCommand('twincat.createProject',
+                { version: '3.1.4024', name: 'DevHostCell24', location: tmp, open: 'none', fromStartPage: true });
+            const refused = await vscode.commands.executeCommand('twincat.createProject',
+                { version: '3.1.4026', name: 'DevHostCell', location: tmp, open: 'none', fromStartPage: true });
+            const pkgJson = ext.packageJSON || {};
+            log('start-page', {
+                missingCommands: wantedCommands.filter(id => !all.has(id)),
+                focus,
+                tabs,
+                containerViews: ((pkgJson.contributes || {}).views || {}).twincat ? pkgJson.contributes.views.twincat.map(v => v.id) : null,
+                created: created || null,
+                createdSlnExists: !!(created && created.slnPath && fs.existsSync(created.slnPath)),
+                created4024SlnExists: !!(created4024 && created4024.slnPath && fs.existsSync(created4024.slnPath)),
+                refused: refused || null
+            });
+            try { fs.rmSync(tmp, { recursive: true, force: true }); } catch (e) { /* temp */ }
+        } catch (e) {
+            log('start-page', { error: String((e && e.stack) || e) });
+        }
+
         log('done', {});
     } catch (e) {
         log('CRASH', { error: String((e && e.stack) || e) });
