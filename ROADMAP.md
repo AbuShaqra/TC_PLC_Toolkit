@@ -16,7 +16,7 @@ after it. An item leaves the table for "Done" once its PR is merged into `dev`, 
 
 | Order | ID | Item | Estimate | Start | End | Status |
 |-------|----|------|----------|-------|-----|--------|
-| 1 | R3.1 | STruC++ spike: sample project through the compiler under the TwinCAT dialect | 2 d | 2026-11-10 | 2026-11-11 | Planned |
+| 1 | R3.1 | STruC++ spike: sample project through the compiler under the TwinCAT dialect | 2 d | 2026-11-10 | 2026-11-11 | In progress (started 2026-11-09) |
 | 2 | R4 | Objects-tree model (deepening roadmap P7) | 4 d | 2026-11-12 | 2026-11-17 | Planned — needs the user's Windows machine |
 | 3 | R2 | Create a new TwinCAT project from the extension's start view | 6 d | 2026-11-18 | 2026-11-25 | Planned — needs a 4024 skeleton from the user's XAE |
 | 4 | R3.2 | STruC++ check command with errors mapped to the panes | 5 d | 2026-11-26 | 2026-12-02 | Planned |
