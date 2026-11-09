@@ -144,6 +144,22 @@
     const generateProjects = document.getElementById('generate-st-projects');
     const generateRun = document.getElementById('generate-st-run');
 
+    /**
+     * Keeps the open menu inside the webview: it opens left-aligned under the split button and is
+     * shifted left when it would run past the right edge, but never past the left edge (a narrow
+     * editor clipped its left half when it was right-aligned to the caret).
+     */
+    function placeGenerateMenu() {
+        if (!generateMenu) return;
+        const margin = 8;
+        generateMenu.style.left = '0px';
+        const rect = generateMenu.getBoundingClientRect();
+        const overflowRight = rect.right - (window.innerWidth - margin);
+        let shift = overflowRight > 0 ? -overflowRight : 0;
+        if (rect.left + shift < margin) shift = margin - rect.left;
+        generateMenu.style.left = `${shift}px`;
+    }
+
     function closeGenerateMenu() {
         if (!generateMenu) return;
         generateMenu.hidden = true;
@@ -162,7 +178,9 @@
             const opening = generateMenu.hidden;
             generateMenu.hidden = !opening;
             generateCaret.setAttribute('aria-expanded', String(opening));
+            if (opening) placeGenerateMenu();
         });
+        window.addEventListener('resize', () => { if (!generateMenu.hidden) placeGenerateMenu(); });
         // A click anywhere else dismisses the menu.
         document.addEventListener('click', (e) => {
             if (generateMenu.hidden) return;
@@ -207,6 +225,7 @@
             cb.checked = true; // default: every project selected
             const text = document.createElement('span');
             text.textContent = p.label;
+            label.title = p.label;
             label.appendChild(cb);
             label.appendChild(text);
             generateProjects.appendChild(label);

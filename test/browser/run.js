@@ -346,6 +346,39 @@ function assert(cond, msg) {
         assert(!back.caretShown && back.right === back.left,
             `back to one project: the rounded end returns (${JSON.stringify(back)})`);
 
+        // 7c. The project menu stays inside a narrow webview. It was right-aligned to the caret, so a
+        //     narrow editor clipped its left half, and a long project name added a sideways scrollbar.
+        const viewport = page.viewportSize();
+        const menuFit = async (width) => {
+            await page.setViewportSize({ width, height: viewport.height });
+            await page.evaluate(() => window.postMessage({ type: 'projectList', projects: [
+                { key: 'a', label: 'PLC_' + 'VeryLongProjectName_'.repeat(4) + 'A' },
+                { key: 'b', label: 'PLC_B' }
+            ] }, '*'));
+            await page.waitForTimeout(50);
+            await page.click('#generate-st-caret');
+            await page.waitForTimeout(50);
+            const r = await page.evaluate(() => {
+                const menu = document.getElementById('generate-st-menu');
+                const list = document.getElementById('generate-st-projects');
+                const rect = menu.getBoundingClientRect();
+                const first = list.querySelector('.split-menu-item');
+                return {
+                    open: !menu.hidden, left: Math.round(rect.left), right: Math.round(rect.right),
+                    width: window.innerWidth, sideScroll: list.scrollWidth > list.clientWidth,
+                    tooltip: first ? first.title : ''
+                };
+            });
+            await page.click('#generate-st-caret'); // close again
+            return r;
+        };
+        for (const width of [360, 560, 1200]) {
+            const fit = await menuFit(width);
+            assert(fit.open && fit.left >= 0 && fit.right <= fit.width && !fit.sideScroll && fit.tooltip.length > 40,
+                `at ${width}px the project menu is fully inside the webview, without a sideways scrollbar, and a cut name keeps its tooltip (${JSON.stringify(fit)})`);
+        }
+        await page.setViewportSize(viewport);
+
         // 8. Nothing may have thrown along the way — "Model not found" is the failure this whole
         //    design exists to make unreachable, and it surfaces as a console error.
         assert(consoleErrors.length === 0,

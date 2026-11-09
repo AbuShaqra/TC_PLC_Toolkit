@@ -430,10 +430,12 @@ input:checked + .slider:before {
 .split-menu {
     position: absolute;
     top: calc(100% + 6px);
-    right: 0;
+    /* Opens under the split button; placeGenerateMenu() (editor.js) shifts it back inside the window. */
+    left: 0;
     z-index: 20;
-    min-width: 220px;
-    max-width: 360px;
+    min-width: min(220px, calc(100vw - 16px));
+    max-width: min(360px, calc(100vw - 16px));
+    box-sizing: border-box;
     padding: 6px;
     background: var(--vscode-dropdown-background, #2d2d2d);
     color: var(--vscode-dropdown-foreground, var(--fg-primary));
@@ -452,6 +454,7 @@ input:checked + .slider:before {
 .split-menu-list {
     max-height: 260px;
     overflow-y: auto;
+    overflow-x: hidden;
     display: flex;
     flex-direction: column;
 }
@@ -468,7 +471,13 @@ input:checked + .slider:before {
 .split-menu-item:hover {
     background: var(--vscode-list-hoverBackground, rgba(255, 255, 255, 0.06));
 }
-.split-menu-item input { cursor: pointer; }
+.split-menu-item input { cursor: pointer; flex-shrink: 0; }
+/* A long project name is cut with an ellipsis; the full name is in the item's tooltip. */
+.split-menu-item span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
 .split-menu-run {
     margin-top: 6px;
     width: 100%;
