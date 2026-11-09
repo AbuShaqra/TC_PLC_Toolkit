@@ -47,8 +47,8 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   Full suite 82/82 FULL, typecheck, lint green. **Still open, on the user's Windows machine:** an added accessor
   (FB and interface) opens and builds in XAE — the new accessor carries no LineIds, as a newly created property
   never has; and `node test/devhost/run.js` plus a manual pass of the two new menu entries (each appears only while
-  its accessor is missing; copy/paste/delete/rename/insert still on every property row). Then PR → `dev` (SQUASH,
-  see Branching), reply on issue #25, move R5 to Done.
+  its accessor is missing; copy/paste/delete/rename/insert still on every property row). PR **#27** → `dev` is OPEN
+  (2026-11-09); merge it by SQUASH (see Branching) only after those checks, then reply on issue #25 and move R5 to Done.
 - **Next task after R5: R1** — [ROADMAP.md](ROADMAP.md) (page https://claude.ai/artifact/8RG7TZtBV2cuupsrwWtknv,
   source `docs/roadmap.html`). Order: R1 Generate ST split-button fix → R3.1 STruC++ spike → R4 Objects-tree model
   (deepening P7) → R2 create a TwinCAT project → R3.2 check command → R3.3 packaging. Forecast end 2026-12-11.
