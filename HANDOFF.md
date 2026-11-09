@@ -121,8 +121,9 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   outside write per the strictness rule; stack-rooted bindings unbound after the call. Found while doing it
   (pre-existing): CONCAT on WSTRING fails g++; alias-typed PROGRAM vars without an init value are never initialised;
   REF()/ADR() of a CONFIGURATION global fail g++. Release D note posted (coordination doc). S3a running, one PR per item: signed typed literals +
-  typed CASE labels merged (PR #25 `0f7c1d0`); next GET/SET as identifiers, STRUCT alias assignment, ADR into POINTER TO
-  STRUCT, UNION one-member initial values. Found: LT#/LTIME# literals absent (S4); `SINT#200` unchecked. Found: the lexer refuses `INT#-123`/`LREAL#-0.9` (Ed. 3 Table 5 allows
+  typed CASE labels merged (PR #25 `0f7c1d0`); GET/SET as identifiers merged (PR #26 `cf320b7`); next STRUCT alias assignment, ADR into POINTER TO
+  STRUCT, UNION one-member initial values. Found: LT#/LTIME# literals absent (S4); `SINT#200` unchecked; an enum member named like a FUNCTION/METHOD hijacks
+  its return assignment in C++ (passes analysis, fails g++). Found: the lexer refuses `INT#-123`/`LREAL#-0.9` (Ed. 3 Table 5 allows
   it) — added to S3a.
   **Decided 2026-11-09 (user, by card):** `itf = 0`/`<> 0` stay always on; only `itf := 0` needs `interface_zero`.
   PROGRAM methods: one instance per PROGRAM — a PROGRAM is written once and called, never declared/instantiated like
