@@ -203,7 +203,7 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
 
     <details class="card" id="r4">
       <summary>
-        <div class="card-top"><span>#2</span><span class="id">R4</span><span class="pill wait">Needs Windows</span><span class="chev" aria-hidden="true">›</span></div>
+        <div class="card-top"><span>#2</span><span class="id">R4</span><span class="pill planned">In progress</span><span class="chev" aria-hidden="true">›</span></div>
         <div class="card-title">Objects-tree model (deepening roadmap P7)</div>
         <div class="bar" aria-hidden="true"><span style="left:13.04%;width:17.39%"></span></div>
         <div class="card-foot"><span>4 d</span><span>Nov 12 – 17</span></div>
@@ -272,12 +272,13 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
 
     <details class="card" id="s2">
       <summary>
-        <div class="card-top"><span>#1</span><span class="id">S2</span><span class="pill planned">Planned</span><span class="chev" aria-hidden="true">›</span></div>
+        <div class="card-top"><span>#1</span><span class="id">S2</span><span class="pill planned">Design pass</span><span class="chev" aria-hidden="true">›</span></div>
         <div class="card-title">The constructs it still rejects on correct TwinCAT code, plus check-only output</div>
         <div class="bar" aria-hidden="true"><span style="left:4.35%;width:43.48%"></span></div>
         <div class="card-foot"><span>10 d (rough)</span><span>Nov 10 – 23</span></div>
       </summary>
       <div class="body">
+        <div class="block wide"><h4>Status, Nov 9</h4><p>A design pass is under way: for each construct, a repro, its root cause, what IEC says, and whether it is always on (IEC) or behind a vendor-neutral dialect feature. No fork code changes until you approve the plan.</p></div>
         <div class="block"><h4>Why</h4><p>Decided Nov 9 after the spike: wait for the fork. Even with the converter fixed, STruC++ rejects constructs the correct sample uses, and the toolkit's check command must not report errors on correct code. The toolkit's R3.2 waits for this.</p></div>
         <div class="block"><h4>Scope</h4><ul><li><code>PROPERTY</code> in an interface; a method call through a member chain; <code>TYPE … EXTENDS … : STRUCT</code>; <code>UNION</code>; <code>THIS^</code>.</li><li>FB init arguments and GVL-qualified access, unless the converter covers them.</li><li>A check-only mode with machine-readable output, and real line and column for lexer errors.</li></ul></div>
         <div class="block wide"><h4>Done when</h4><p>The sample compiles with zero errors under the TwinCAT profile with no workarounds; each fix has a test in the fork; the fork's build, tests and lint pass; the toolkit pins the fork commit. The estimate is the spike's rough guess of 8 to 12 days.</p></div>

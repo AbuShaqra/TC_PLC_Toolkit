@@ -33,7 +33,7 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
 - **Stale remote branches:** `claude/new-session-ynrdo4` and `claude/project-thread-o6i1sa` are merged into `dev`
   (checked 2026-11-09). The user asked to delete them, but this cloud session's git proxy drops every push
   except to the session branch, so they still exist — delete from the GitHub UI or a local clone.
-- **Merge `claude/focused-ptolemy-m6acaz` into `dev` by SQUASH only, every time**: after PR #27 the branch was
+- **Merge `claude/focused-ptolemy-m6acaz` into `dev` by SQUASH only, every time** (PRs #27, #29 so far): after PR #27 the branch was
   restarted from `dev`, but force-pushing was refused, so the old branch was merged back in (no file changes);
   its history still holds commit `2b06874` with a `Co-Authored-By` trailer that must never reach `dev`.
 - **Merge `ccr-d5b51254-r1vu2b` into `dev` by SQUASH only** (user decision 2026-11-09): commit `65d5b1c` on it
@@ -56,7 +56,8 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   `--check --json` flag). Export-mode input is WRONG to check (it rewrites REFERENCE TO→POINTER TO, REF=→:=);
   R3.2 must feed a raw-based unit. **Decided 2026-11-09:** wait for the fork (fork-lane item S2, before R3.2;
   the roadmap now has a parallel STruC++ fork lane: S1 language-server dialect profiles — DONE, fork PR #4
-  `a529ea9`, client contract in its PR body; S2 compiler gaps next) and R3.2 full scope (7 d). Next roadmap item: R4.
+  `a529ea9`, client contract in its PR body; S2 compiler gaps: design pass running, no fork code until the
+  user approves the plan). **R4 started 2026-11-09** (early; an agent is building `src/objectsTreeModel.js`). and R3.2 full scope (7 d). Next roadmap item: R4.
 - **Was next: R3.1** (STruC++ spike) — [ROADMAP.md](ROADMAP.md) (page https://claude.ai/artifact/8RG7TZtBV2cuupsrwWtknv,
   source `docs/roadmap.html`). Order: R3.1 → R4 Objects-tree model (deepening P7) → R2 create a TwinCAT project →
   R3.2 check command → R3.3 packaging. Forecast end 2026-12-05. Every R2/R3 decision is SETTLED (2026-11-09,

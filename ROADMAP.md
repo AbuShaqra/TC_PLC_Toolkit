@@ -17,7 +17,7 @@ after it. An item leaves the table for "Done" once its PR is merged into `dev`, 
 | Order | ID | Item | Estimate | Start | End | Status |
 |-------|----|------|----------|-------|-----|--------|
 | 1 | R3.1 | STruC++ spike: sample project through the compiler under the TwinCAT dialect | 2 d | 2026-11-10 | 2026-11-11 | Findings done 2026-11-09 ([docs/r3.1-strucpp-spike.md](docs/r3.1-strucpp-spike.md)); decisions taken |
-| 2 | R4 | Objects-tree model (deepening roadmap P7) | 4 d | 2026-11-12 | 2026-11-17 | Planned — needs the user's Windows machine |
+| 2 | R4 | Objects-tree model (deepening roadmap P7) | 4 d | 2026-11-12 | 2026-11-17 | In progress (started early, 2026-11-09) — final gate needs the user's Windows machine |
 | 3 | R2 | Create a new TwinCAT project from the extension's start view | 6 d | 2026-11-18 | 2026-11-25 | Planned — needs a 4024 skeleton from the user's XAE |
 | 4 | R3.2 | STruC++ check command with errors mapped to the panes | 7 d | 2026-11-26 | 2026-12-04 | Planned (full scope, 2026-11-09) — after S2 |
 | 5 | R3.3 | STruC++ bundling, Node 22 discovery, licence files, settings, docs | 3 d | 2026-12-07 | 2026-12-09 | Planned |
@@ -35,7 +35,7 @@ for it where a row says so.
 
 | Order | ID | Item | Estimate | Start | End | Status |
 |-------|----|------|----------|-------|-----|--------|
-| 1 | S2 | The constructs it still rejects on correct TwinCAT code, plus check-only output | 10 d (rough) | 2026-11-10 | 2026-11-23 | Planned — R3.2 waits for it |
+| 1 | S2 | The constructs it still rejects on correct TwinCAT code, plus check-only output | 10 d (rough) | 2026-11-10 | 2026-11-23 | Design pass in progress (2026-11-09) — code waits for the user's OK on the plan; R3.2 waits for it |
 
 **Why this order.**
 1. **R3.1 (spike) first:** the STruC++ work is the largest unknown. The spike needs no decisions, and what
