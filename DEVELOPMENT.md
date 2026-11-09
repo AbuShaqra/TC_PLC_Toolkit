@@ -728,7 +728,7 @@ load-bearing (dropping any one resurrects false positives, or empties part of th
 the ZIP **archives** and the project **`.tmc`** (`libsymbols.js`), the **`.plcproj`** namespaces
 (`libraries.js`), the optional **`library-signatures.xml`** (`librarySignatures.js`), and TwinCAT's
 per-library **browsercache** (`browserCache.js`, for library FB/interface method + property *names*).
-See [HANDOFF.md](HANDOFF.md) for what each source uniquely provides and the traps.
+See [docs/handoff-findings.md](docs/handoff-findings.md) ("External symbols") for what each source uniquely provides and the traps.
 
 Each project's index carries its own copy of what `libraries.js`/`libsymbols.js` register — the
 `Symbol`-keyed registries described under "Project-scoped indexing" above — so two projects that
