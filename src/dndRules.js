@@ -14,6 +14,7 @@
 
 const path = require('path');
 const { parse: parseComponentId, isAccessor, KIND_TO_XML_TAG } = require('./componentId');
+const { isPropertyNode } = require('./objectKinds');
 
 /**
  * @typedef {{ fsPath: string, toString(): string }} UriLike
@@ -57,7 +58,7 @@ function describeDragged(item) {
     if (!item || !item.contextValue || !item.resourceUri) return null;
     const cv = item.contextValue;
 
-    if (cv === 'component' || cv === 'propertyNode') {
+    if (cv === 'component' || isPropertyNode(cv)) {
         const id = item.componentId || '';
         // Get/Set accessors carry the same 'component' contextValue as methods/actions, so they
         // can only be told apart by their id shape (`prop_<name>_get` / `prop_<name>_set`); they

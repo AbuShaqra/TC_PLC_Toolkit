@@ -152,4 +152,29 @@ function componentKind(componentType) {
     }
 }
 
-module.exports = { classifyPou, classifyDut, componentKind, ICONS, LABELS, COLORS };
+/**
+ * The Objects-tree contextValue of a property row. It says which accessors are MISSING, so the
+ * "Add Get Accessor" / "Add Set Accessor" menu entries can show only while there is something to
+ * add (issue #25): `propertyNode`, `propertyNode.noGet`, `propertyNode.noSet` or
+ * `propertyNode.noGet.noSet` — noGet always before noSet, which the package.json `when` regexes
+ * rely on. Every consumer that means "any property row" must test with isPropertyNode (code) or
+ * `viewItem =~ /^propertyNode\b/` (menus), never by equality with 'propertyNode'.
+ * @param {boolean} hasGet Whether the property has a Get accessor.
+ * @param {boolean} hasSet Whether the property has a Set accessor.
+ * @returns {string} The contextValue.
+ */
+function propertyContextValue(hasGet, hasSet) {
+    return 'propertyNode' + (hasGet ? '' : '.noGet') + (hasSet ? '' : '.noSet');
+}
+
+/**
+ * Whether a tree contextValue is a property row, whichever accessors it has (see
+ * propertyContextValue).
+ * @param {string|undefined|null} contextValue
+ * @returns {boolean}
+ */
+function isPropertyNode(contextValue) {
+    return typeof contextValue === 'string' && /^propertyNode(\.|$)/.test(contextValue);
+}
+
+module.exports = { classifyPou, classifyDut, componentKind, propertyContextValue, isPropertyNode, ICONS, LABELS, COLORS };

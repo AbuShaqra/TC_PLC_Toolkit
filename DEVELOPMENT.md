@@ -118,6 +118,8 @@ per-suite without aborting on the first failure. The main ones:
 | `test/test_dnd_rules.js` | The Objects-tree drag & drop and copy/paste compatibility matrices: what is draggable/copyable (not virtual folders, not Get/Set accessors; directories move but do not copy), components move only within their own file yet paste cross-file (POU↔interface gated), directory-cycle and no-op rejections, duplicate-in-place file paste. |
 | `test/test_xml_rename.js` | Structural rename primitives in `xmlParser`: `renameComponentInXml` (tag Name attr + declaration header + LineIds, Ids kept), `renameVirtualFolderInXml` (folder tag + member FolderPath prefix rewrite), and the no-op-safety composition the rename command relies on (header already renamed by the reference pass → attr/LineIds still fixed, no corruption). |
 | `test/test_xml_member_order.js` | WHERE a new member lands, for both `insertComponentIntoXml` (create) and `insertComponentBlockIntoXml` (paste), via the shared `insertMemberIntoXml`. TwinCAT's loader is order-sensitive inside `<POU>`/`<Itf>`: the canonical child order is Declaration, Implementation, `Folder*`, member*, `LineIds*`, so a member must land *before* the LineIds group — appending past it is the same class of defect as the root-`<Folder>` incident that made XAE drop an FB's members from compile. Also pins the seam's 4-space indent, the root close tag keeping its own indent, CRLF preservation (including an LF block pasted into a CRLF document), a `<LineIds` literal inside CDATA not being mistaken for the anchor, and the `.TcIO` fallback (interfaces carry no LineIds at all). |
+| `test/test_xml_property_accessor.js` | Re-adding a missing property accessor (issue #25), `insertPropertyAccessorIntoXml`: the block equals what `insertComponentIntoXml` writes for a NEW property's accessor (FB: `VAR/END_VAR` + empty ST; interface: declaration only) with one fresh Id; Get lands before an existing Set, Set after `</Get>`, either after the property Declaration when neither exists (both orders give Declaration, Get, Set); already present / unknown property / name prefix of another property → unchanged; CRLF, LF and tab-indented files; a `FolderPath` with `&amp;`; re-parse reports the accessor; no LineIds written. Byte fidelity by whole-string comparison against the original with the block spliced in. |
+| `test/test_property_node_context.js` | The property row's contextValue (`propertyNode`, `.noGet`, `.noSet`, `.noGet.noSet` — the MISSING accessors) and every consumer: the tree builds the right variant and the same tree id for each; `package.json` has no `viewItem == 'propertyNode'` left, the five property-row entries (insert, delete, copy, paste, rename) each match all four variants and nothing else, *Add Get/Set Accessor* match exactly their two variants and are hidden from the Command Palette; drag & drop accepts every variant; no `src/` file compares with `'propertyNode'` by equality. |
 | `test/test_xml_parse_robustness.js` | `xmlParser` on inputs the sample never shows: a non-ST POU/Action/Method (SFC, LD/FBD as `NWL`, CFC, FBD, LD) reads `implementation: null` plus its real `implementationLanguage`, never a member's ST, and an Implementation write to it is refused; empty and self-closing `<Declaration/>`/`<ST/>` never read or write a later block's CDATA; attribute entities (`&amp;`, numeric refs) decode on read and are re-encoded by every writer (folders, FolderPath, Name, LineIds); lone-CR text is normalised in the parse output only; a UTF-8 BOM never leaks into names, text or ST output and survives a write. Byte-fidelity is asserted on whole strings. |
 | `test/test_program_methods.js` | A PROGRAM with METHODs stays a PROGRAM through the converter (raw and export; `END_PROGRAM`, also when a comment mentions FUNCTION_BLOCK) and in the index, and `MAIN.Init()` from another POU resolves through diagnostics, definition, references and completion. Fixtures are written to a temp dir because find-references reads other documents from disk. |
 | `test/test_transition_warning.js` | `convertXmlToSt` names every SFC transition it cannot convert in `warnings`; export mode marks each with a comment without breaking the lineMap, raw (live) mode adds no text at all. |
@@ -306,7 +308,8 @@ on it is a bug. Never fix a red gate by raising the baseline.
 extension.js            Thin activation hub: wires providers/views/watchers/LSP client, delegates commands
 src/
   commands/             Command registration, split out of extension.js — each exports register*(context, deps)
-    objectCommands      "TwinCAT Objects" create/delete (methods, properties, actions, files, folders)
+    objectCommands      "TwinCAT Objects" create/delete (methods, properties, actions, files, folders);
+                        Add Get/Set Accessor re-adds a property's missing accessor (issue #25)
     clipboardCommands   "TwinCAT Objects" copy/paste (duplicate a component cross-file or a file under a new name)
     renameCommands      "TwinCAT Objects" rename (files, members, directories, virtual folders; reference-aware;
                         cross-file updates staged and applied through renameTransaction)
@@ -366,7 +369,10 @@ src/
                         only); union of all projects when nothing owns the active file. The scope
                         decisions are exported pure helpers, pinned by test_library_scope.js
   referencesProvider    "TwinCAT References" results view (+ referencesTree grouping)
-  objectKinds           Kind → codicon → tooltip for the Objects tree (vscode-free, so it is testable)
+  objectKinds           Kind → codicon → tooltip for the Objects tree (vscode-free, so it is testable);
+                        also owns the property row's contextValue (`propertyNode[.noGet][.noSet]`,
+                        naming the MISSING accessors) and `isPropertyNode` — test property rows with
+                        it in code and `viewItem =~ /^propertyNode\b/` in menus, never `== 'propertyNode'`
   insertTemplates       Call/usage templates + parameter ordering, shared by the Libraries AND Objects
                         insert commands so both produce identical text (vscode-free, so testable)
   util/
@@ -375,7 +381,8 @@ src/
                         CDATA/comment-aware element scanner: each component reads only its OWN
                         Declaration/Implementation (members = the root's direct children); a non-ST
                         body reads implementation: null + implementationLanguage; attribute values
-                        are decoded on read and re-encoded by every writer
+                        are decoded on read and re-encoded by every writer;
+                        insertPropertyAccessorIntoXml re-adds a missing Get/Set (Get before Set)
   stConverter           XML → clean Structured Text + line map (also a raw mode for the live path);
                         keeps the POU kind as written (a PROGRAM stays a PROGRAM) and returns
                         `warnings` for members it cannot convert (SFC transitions);

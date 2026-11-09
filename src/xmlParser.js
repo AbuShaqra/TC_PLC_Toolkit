@@ -737,6 +737,99 @@ function insertComponentIntoXml(xmlText, fileUri, isItf, name, componentType, fo
 }
 
 /**
+ * The whitespace that precedes `offset` on its own line, or null when something other than spaces
+ * and tabs sits between the line start and `offset` (the element does not start its line).
+ * @param {string} text
+ * @param {number} offset
+ * @returns {string|null}
+ */
+function lineIndentBefore(text, offset) {
+    let start = offset;
+    while (start > 0 && (text[start - 1] === ' ' || text[start - 1] === '\t')) start--;
+    if (start > 0 && text[start - 1] !== '\n' && text[start - 1] !== '\r') return null;
+    return text.slice(start, offset);
+}
+
+/**
+ * Re-adds a missing Get or Set accessor to an existing property (issue #25). The block has exactly
+ * the shape insertComponentIntoXml writes for a NEW property's accessor — interface: declaration
+ * only; function block: `VAR/END_VAR` declaration + empty ST implementation — with a fresh Id.
+ *
+ * Placement follows TwinCAT's child order inside <Property> (Declaration, Get, Set):
+ *  - Get with a Set present goes on its own line(s) immediately before `<Set`;
+ *  - Set goes after `</Get>`, or with neither accessor after the property's own `</Declaration>`
+ *    (Get likewise when there is no Set), or right after the open tag when even that is missing.
+ * Indentation is taken from the property's own children (falling back to the property's indent
+ * plus two spaces), and line endings follow the document, as insertMemberIntoXml does. Every byte
+ * outside the inserted block is preserved. No LineIds entry is written: a new property's accessors
+ * get none from insertComponentIntoXml either, and XAE writes them when it next saves the object.
+ *
+ * @param {string} xmlText The source POU/Itf XML text.
+ * @param {string} propertyName Decoded Name attribute of the property.
+ * @param {'Get'|'Set'} accessorType The accessor to add.
+ * @param {boolean} isItf Whether the parent is an Interface (.TcIO) — declaration-only accessor.
+ * @returns {string} The modified XML text, or the input unchanged when the property is not found,
+ *   is self-closing, already has that accessor, or `accessorType` is neither 'Get' nor 'Set'.
+ */
+function insertPropertyAccessorIntoXml(xmlText, propertyName, accessorType, isItf) {
+    if (accessorType !== 'Get' && accessorType !== 'Set') return xmlText;
+    // Found by decoded Name among the root's members (see findMember), never by a regex built
+    // from the name — a FolderPath or Name holding `&amp;` matches exactly as the parser reported it.
+    const property = findMember(xmlText, 'Property', propertyName);
+    if (!property || property.selfClosing) return xmlText;
+    const children = childElements(xmlText, property.openEnd, property.contentEnd);
+    if (children.some(c => c.name === accessorType)) return xmlText;
+
+    const eol = xmlText.includes('\r\n') ? '\r\n' : '\n';
+    const propIndent = lineIndentBefore(xmlText, property.start);
+    const firstChild = children[0];
+    const childIndentRaw = firstChild ? lineIndentBefore(xmlText, firstChild.start) : null;
+    const childIndent = childIndentRaw !== null && childIndentRaw !== ''
+        ? childIndentRaw
+        : (propIndent !== null ? propIndent : '    ') + '  ';
+    // One nesting step, as the file spells it (two spaces in everything XAE writes; a tab if the
+    // file is tab-indented).
+    const unit = propIndent !== null && childIndent.startsWith(propIndent) && childIndent.length > propIndent.length
+        ? childIndent.slice(propIndent.length)
+        : '  ';
+
+    const id = `{${crypto.randomUUID()}}`;
+    const inner = childIndent + unit;
+    const lines = [`${childIndent}<${accessorType} Name="${accessorType}" Id="${id}">`];
+    if (isItf) {
+        lines.push(`${inner}<Declaration><![CDATA[]]></Declaration>`);
+    } else {
+        lines.push(
+            `${inner}<Declaration><![CDATA[VAR`,
+            'END_VAR',
+            ']]></Declaration>',
+            `${inner}<Implementation>`,
+            `${inner}${unit}<ST><![CDATA[]]></ST>`,
+            `${inner}</Implementation>`
+        );
+    }
+    lines.push(`${childIndent}</${accessorType}>`);
+    const block = lines.join(eol);
+
+    const setEl = children.find(c => c.name === 'Set');
+    if (accessorType === 'Get' && setEl) {
+        // Before <Set>, on lines of its own: the Set line keeps its own indentation untouched.
+        const setIndent = lineIndentBefore(xmlText, setEl.start);
+        if (setIndent !== null) {
+            const at = setEl.start - setIndent.length;
+            return xmlText.slice(0, at) + block + eol + xmlText.slice(at);
+        }
+        // <Set> does not start its line: splice right before it, still as Get-then-Set.
+        return xmlText.slice(0, setEl.start) + block.slice(childIndent.length) + eol + childIndent + xmlText.slice(setEl.start);
+    }
+
+    const after = (accessorType === 'Set' && children.find(c => c.name === 'Get'))
+        || children.find(c => c.name === 'Declaration');
+    const at = after ? after.end : property.openEnd;
+    return xmlText.slice(0, at) + eol + block + xmlText.slice(at);
+}
+
+/**
  * Deletes a component block (or specific accessor) and its matching LineIds.
  * @param {string} xmlText POU XML text.
  * @param {string} rootName Root POU/Interface name.
@@ -1237,6 +1330,7 @@ module.exports = {
     getFoldersDetailedFromXml,
     insertFolderIntoXml,
     insertComponentIntoXml,
+    insertPropertyAccessorIntoXml,
     deleteComponentFromXml,
     setComponentFolderPathInXml,
     extractComponentBlockFromXml,

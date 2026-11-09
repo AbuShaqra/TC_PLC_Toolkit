@@ -6,7 +6,7 @@
 const vscode = require('vscode');
 const path = require('path');
 const { parseTwinCatXml, getFoldersDetailedFromXml } = require('./xmlParser');
-const { classifyPou, classifyDut, componentKind, ICONS, LABELS, COLORS } = require('./objectKinds');
+const { classifyPou, classifyDut, componentKind, propertyContextValue, isPropertyNode, ICONS, LABELS, COLORS } = require('./objectKinds');
 const { groupRootsByProject } = require('./lsp/projectMap');
 const { accessorIdsFor } = require('./componentId');
 const { BASE_SKIP_DIRS } = require('./twincatWorkspace');
@@ -63,7 +63,7 @@ class TwinCatTreeItem extends vscode.TreeItem {
         if (!this.resourceUri) return undefined;
         const cv = this.contextValue;
         if (cv === 'solution') return this.resourceUri.toString() + '#solution';
-        if (cv === 'component' || cv === 'propertyNode' || cv === 'Get' || cv === 'Set' || cv === 'Action' || cv === 'Transition') {
+        if (cv === 'component' || isPropertyNode(cv) || cv === 'Get' || cv === 'Set' || cv === 'Action' || cv === 'Transition') {
             return this.resourceUri.toString() + '#' + (this.componentId || this.label);
         } else if (cv && cv.startsWith('pouVirtualFolder')) {
             return this.resourceUri.toString() + '#folder#' + (this.folderPath || this.label);
@@ -228,7 +228,7 @@ class TwinCatTreeDataProvider {
             return this.parseFileComponents(element.resourceUri, element.contextValue, element);
         }
 
-        if (element.contextValue && (element.contextValue.startsWith('pouVirtualFolder') || element.contextValue === 'propertyNode')) {
+        if (element.contextValue && (element.contextValue.startsWith('pouVirtualFolder') || isPropertyNode(element.contextValue))) {
             return element.children;
         }
 
@@ -538,7 +538,8 @@ class TwinCatTreeDataProvider {
     createComponentTreeItem(c, fileUri, parsedComponents) {
         const { icon, tooltip } = decorate(componentKind(c.type));
         let collapsible = vscode.TreeItemCollapsibleState.None;
-        const contextValue = c.type === 'Property' ? 'propertyNode' : 'component';
+        // A property whose accessors are unknown (no parsedComponents) offers no "Add … Accessor".
+        let contextValue = c.type === 'Property' ? propertyContextValue(true, true) : 'component';
 
         let children = null;
         if (c.type === 'Property' && parsedComponents) {
@@ -547,6 +548,8 @@ class TwinCatTreeDataProvider {
             const accessorIds = accessorIdsFor(c.id);
             const getAcc = parsedComponents.find(x => x.id === accessorIds.get);
             const setAcc = parsedComponents.find(x => x.id === accessorIds.set);
+            // Which accessors are missing drives the "Add Get/Set Accessor" menu entries (issue #25).
+            contextValue = propertyContextValue(!!getAcc, !!setAcc);
             
             const accItems = [];
             if (getAcc) {
