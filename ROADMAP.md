@@ -62,7 +62,7 @@ for it where a row says so.
 
 | Order | ID | Item | Planned | Re-measured | Start | End | Status |
 |-------|----|------|---------|-------------|-------|-----|--------|
-| 1 | S2 | Close the fork's gaps: 14 PR-sized steps + the folded-in items (plan: [docs/s2-strucpp-fork-plan.md](docs/s2-strucpp-fork-plan.md)) | 22.5 d + ~5 d folded | ~9 h | 2026-11-09 | 2026-11-11 | In progress — steps 1 (fork PR #5), 1b (#6), 2 (#7), 3 (#8), 4 (#9), 5 (#10), 6 (#11, release B), 7 (#12), 8 (#13), 9 (#14), 10 (#15), 11 (#16), 12 (#17) and 13 (#18) merged 2026-11-09 — **all 13 steps done**; release C noted. Folded-in items: `REFERENCE TO` inputs bound at the call (#19), typed `TRUNC_<type>` (#20), `trunc_dint` (#21), `interface_zero` (#22) and PROGRAMs reached by name (#23) merged; FB `VAR_IN_OUT` by reference last; the other five measured 2026-11-09 — FB `VAR_IN_OUT` by reference ~5 d, typed `TRUNC_<type>` ~1 d, plain `TRUNC`→DINT (`trunc_dint`) ~0.5–1 d, `:= 0` on an interface (`interface_zero`) ~1 d, a PROGRAM's method from another POU ~3–4 d (≈ 11 d planned, ~5.5 h); two need a decision. R3.2 waits for it |
+| 1 | S2 | Close the fork's gaps: 13 steps + 1b + the folded-in items | 27.5 d (+ ~11 d folded, measured) | ~11.2 h actual | 2026-11-09 | 2026-11-09 | **Done** 2026-11-09 23:17 UTC — see Done |
 | 2 | S3a | False positives on correct code found during S2: a STRUCT alias is not assignment-compatible with its STRUCT; `POINTER TO <STRUCT> := ADR(s)` refused; UNION initial values ("not supported yet"); a method named `Get` is a parse error (`GET` is a keyword); a typed literal with a sign after `#` (`INT#-123`, Ed. 3 Table 5) is refused | 3 d | ~1.5 h | 2026-11-12 | 2026-11-12 | Planned — **before R3.2** (a check that flags correct code is worse than none) |
 | 3 | S3b | The other S2 follow-ups (list below): code the checker passes but g++ rejects, checker gaps, parser gaps, housekeeping | 7 d | ~3.5 h | 2026-11-12 | 2026-11-13 | Planned |
 | 4 | S4 | Ed. 3 forms the fork refuses: CHAR/WCHAR, LTIME, string index, `STRING[n]` (needs a decision), typed `TRUNC_<type>`, g++-only literal cases, `STRUCT OVERLAP` (reuses the UNION lowering) | 8.5 d (7–10) | ~4.5 h | 2026-11-13 | 2026-11-16 | Planned |
@@ -264,6 +264,12 @@ The former backlog is now scheduled as R6–R10 (2026-11-09, user's ask); each i
 
 Shipped work lives in git history and the [releases](https://github.com/AbuShaqra/TC_PLC_Toolkit/releases).
 Roadmap items finished from now on are listed here with their PR.
+
+- **S2** (fork lane) — closed the fork's gaps, 12:04–23:17 UTC on 2026-11-09. Steps 1–13 + 1b (fork PRs
+  [#5](https://github.com/AbuShaqra/STruCpp/pull/5)–[#18](https://github.com/AbuShaqra/STruCpp/pull/18); releases A, B, C)
+  and the folded-in items: `REFERENCE TO` inputs bound at the call (#19), typed `TRUNC_<type>` (#20), `trunc_dint` (#21),
+  `interface_zero` (#22), PROGRAMs reached by name (#23), FB `VAR_IN_OUT` by reference (#24, `b286bc2`). Nothing that
+  compiled and ran correctly before is refused; every narrowing is listed in its PR and the release notes.
 
 - **R4** — Objects-tree model: a VS Code-free node graph (`src/objectsTreeModel.js`) behind a thin tree provider;
   396 tree ids and 301 reveal chains pinned. Dev-host gate passed on Windows 2026-11-09. PR
