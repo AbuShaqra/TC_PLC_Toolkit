@@ -6,10 +6,14 @@
  * rebuilt only a file node and the Objects provider treated every component URI as a filesystem
  * child. VS Code therefore selected the parent file (or its directory) instead of the method,
  * property, action/transition, or property accessor that actually opened.
+ *
+ * Drives src/objectsTreeModel.js directly with an in-memory host: the model has no `vscode`
+ * dependency, so no module-resolution patching is needed. src/treeDataProvider.js forwards
+ * getRevealItem/getParent to it unchanged (test_objects_tree_ids.js covers that adapter).
  */
 
-const Module = require('module');
 const path = require('path');
+const { createObjectsTreeModel } = require('../src/objectsTreeModel');
 
 const XML = `<?xml version="1.0" encoding="utf-8"?>
 <TcPlcObject Version="1.1.0.1">
@@ -53,12 +57,6 @@ const uriFor = (fsPath) => ({
     toString: () => 'file:///' + fsPath.replace(/\\/g, '/').replace(/^\/+/, '')
 });
 
-const ModuleResolve = Module._resolveFilename;
-Module._resolveFilename = function (req, ...rest) {
-    if (req === 'vscode') return 'vscode-tree-reveal-stub';
-    return ModuleResolve.call(this, req, ...rest);
-};
-
 let projectMapReads = 0;
 const rootPath = path.resolve('C:\\RevealWorkspace');
 const projectDir = path.join(rootPath, 'PLC');
@@ -70,7 +68,7 @@ const solutionRecord = {
     slnPath: path.join(rootPath, 'RevealSolution.sln'), projects: [projectRecord]
 };
 const projectMap = {
-    projects: new Map([[projectKey, projectRecord]]),
+    get projects() { projectMapReads++; return new Map([[projectKey, projectRecord]]); },
     displayName: () => 'PLC'
 };
 const solutionMap = {
@@ -78,28 +76,19 @@ const solutionMap = {
     orphanProjects: [],
     solutionForProject: key => key === projectKey ? solutionRecord : null
 };
-require.cache['vscode-tree-reveal-stub'] = {
-    id: 'vscode-tree-reveal-stub', filename: 'vscode-tree-reveal-stub', loaded: true,
-    exports: {
-        EventEmitter: class { constructor() { this.event = () => {}; } fire() {} },
-        TreeItem: class { constructor(label, state) { this.label = label; this.collapsibleState = state; } },
-        TreeItemCollapsibleState: { None: 0, Collapsed: 1, Expanded: 2 },
-        ThemeIcon: class { constructor(id, color) { this.id = id; this.color = color; } },
-        ThemeColor: class { constructor(id) { this.id = id; } },
-        Uri: {
-            file: uriFor,
-            joinPath: (base, name) => uriFor(path.join(base.fsPath, name))
-        },
-        workspace: {
-            workspaceFolders: [{ uri: uriFor(rootPath) }],
-            openTextDocument: async () => ({ getText: () => XML })
-        }
-    }
+/** The model's whole I/O surface. No `vscode` module is involved anywhere in this harness. */
+const host = {
+    uriForPath: uriFor,
+    joinPath: (base, name) => uriFor(path.join(base.fsPath, name)),
+    readDirectory: async () => [],
+    readFileText: async () => XML,
+    readDocumentText: async () => XML
 };
-
-const vscode = require('vscode');
-const { TwinCatTreeDataProvider } = require('../src/treeDataProvider');
-const provider = new TwinCatTreeDataProvider(() => { projectMapReads++; return projectMap; }, () => solutionMap);
+const model = createObjectsTreeModel({ host, workspaceFolders: [uriFor(rootPath)], projectMap, solutionMap });
+const provider = {
+    getRevealItem: (uri, id) => model.revealTarget(uri, id),
+    getParent: (node) => node.parent
+};
 const fileUri = uriFor(filePath);
 
 let errors = 0;
@@ -107,6 +96,8 @@ function assert(cond, msg) {
     if (cond) console.log(`[PASS] ${msg}`);
     else { console.error(`[FAIL] ${msg}`); errors++; }
 }
+
+const collapsibleOf = (node) => node.collapsible;
 
 function parentIds(item) {
     const ids = [];
@@ -148,7 +139,7 @@ function parentIds(item) {
     const dataGetProperty = await provider.getRevealItem(fileUri, 'prop_Data_get');
     assert(dataGetProperty.componentId === 'prop_Data_get',
         'a Property literally named "Data_get" resolves to itself, not a phantom self-accessor');
-    assert(dataGetProperty.collapsibleState === vscode.TreeItemCollapsibleState.None,
+    assert(collapsibleOf(dataGetProperty) === 'none',
         'the "Data_get" property finds no real Get/Set accessors and stays a leaf (no self-recursion)');
 
     for (const id of ['action_Start', 'transition_Ready']) {
@@ -162,19 +153,22 @@ function parentIds(item) {
     assert(!missing.componentId && missing.resourceUri.toString() === fileUri.toString(),
         'a stale component id conservatively falls back to the file');
 
-    // Attached component/folder/property ancestors do not consult the project map. Only the final
-    // file-to-disk ancestry lookup needs the already-cached map supplied by extension.js.
+    // getParent is a field read: a whole reveal chain, up to the solution, consults neither the project
+    // map nor anything else. The model reads the project map once, when it is built.
     projectMapReads = 0;
     const accessor = await provider.getRevealItem(fileUri, 'prop_Value_get');
-    const propParent = provider.getParent(accessor);
-    const nestedParent = provider.getParent(propParent);
-    const logicParent = provider.getParent(nestedParent);
-    const fileParent = provider.getParent(logicParent);
-    assert(fileParent.resourceUri.toString() === fileUri.toString() && projectMapReads === 0,
-        `component-to-file ancestry needs no project-map lookup (got ${projectMapReads})`);
-    provider.getParent(fileParent);
-    assert(projectMapReads === 1,
-        `the cached project map is first consulted at the file/disk boundary (got ${projectMapReads})`);
+    const chain = [];
+    for (let p = provider.getParent(accessor); p; p = provider.getParent(p)) chain.push(p);
+    assert(projectMapReads === 0, `a reveal and its getParent chain read no project map (got ${projectMapReads})`);
+    assert(chain.map(n => n.componentId || n.folderPath || n.label).join(' < ') ===
+        'prop_Value < Logic\\Nested\\ < Logic\\ < FB_Reveal.TcPOU < POUs < PLC < RevealSolution',
+        `the accessor's whole ancestry is attached (${chain.map(n => n.label).join(' < ')})`);
+    // The project and solution in that chain are the tree's own root rows, not look-alikes.
+    const roots = await model.childrenOf(null);
+    assert(chain[chain.length - 1] === roots[0] && chain[chain.length - 2] === roots[0].children[0],
+        'the reveal chain ends in the very solution and project rows getChildren returns');
+    assert(collapsibleOf(chain[3]) === 'collapsed' && chain[3].contextValue === 'pouFile',
+        'the revealed file row is expandable');
 
     if (errors) process.exit(1);
     console.log('\nAll Objects-tree reveal assertions passed.');

@@ -17,7 +17,7 @@ after it. An item leaves the table for "Done" once its PR is merged into `dev`, 
 | Order | ID | Item | Estimate | Start | End | Status |
 |-------|----|------|----------|-------|-----|--------|
 | 1 | R3.1 | STruC++ spike: sample project through the compiler under the TwinCAT dialect | 2 d | 2026-11-10 | 2026-11-11 | Findings done 2026-11-09 ([docs/r3.1-strucpp-spike.md](docs/r3.1-strucpp-spike.md)); decisions taken |
-| 2 | R4 | Objects-tree model (deepening roadmap P7) | 4 d | 2026-11-12 | 2026-11-17 | In progress (started early, 2026-11-09) — final gate needs the user's Windows machine |
+| 2 | R4 | Objects-tree model (deepening roadmap P7) | 4 d | 2026-11-12 | 2026-11-17 | Code done 2026-11-09 (suite 84/84 FULL) — PR open; the mandatory dev-host gate needs the user's Windows machine before merge |
 | 3 | R2 | Create a new TwinCAT project from the extension's start view | 6 d | 2026-11-18 | 2026-11-25 | Planned — needs a 4024 skeleton from the user's XAE |
 | 4 | R3.2 | STruC++ check command with errors mapped to the panes | 7 d | 2026-12-10 | 2026-12-18 | Planned (full scope, 2026-11-09) — after S2 |
 | 5 | R3.3 | STruC++ bundling, Node 22 discovery, licence files, settings, docs | 3 d | 2026-12-21 | 2026-12-23 | Planned |

@@ -51,7 +51,7 @@ const FILE_CONTEXT_VALUES = new Set([
  * folders (v1 exclusion — moving one means rewriting every member's FolderPath prefix), and
  * workspace roots.
  * @param {{ contextValue?: string, resourceUri?: UriLike, componentId?: string }} item A
- * TwinCatTreeItem (or a test stand-in with the same shape).
+ * Objects-tree node (src/objectsTreeModel.js) or a test stand-in with the same shape.
  * @returns {DraggedDescriptor|null} The descriptor, or null when the item is not draggable.
  */
 function describeDragged(item) {
@@ -199,7 +199,7 @@ function isItfUri(uri) {
  * (v1 exclusion — a recursive directory duplicate mass-produces duplicate symbols). The accessor
  * exclusion is identical: Get/Set ride with their property.
  * @param {{ contextValue?: string, resourceUri?: UriLike, componentId?: string }} item A
- * TwinCatTreeItem (or a test stand-in with the same shape).
+ * Objects-tree node (src/objectsTreeModel.js) or a test stand-in with the same shape.
  * @returns {CopiedDescriptor|null} The descriptor, or null when the item is not copyable.
  */
 function describeCopied(item) {

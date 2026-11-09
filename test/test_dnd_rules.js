@@ -39,7 +39,7 @@ function fakeUri(fsPath) {
     return { fsPath, toString() { return 'file:///' + fsPath.replace(/\\/g, '/').replace(/^\//, ''); } };
 }
 
-/** A TwinCatTreeItem stand-in. `extra` carries componentId / folderPath. */
+/** An Objects-tree node stand-in. `extra` carries componentId / folderPath. */
 function item(contextValue, fsPath, extra = {}) {
     return Object.assign({ contextValue, resourceUri: fakeUri(fsPath) }, extra);
 }

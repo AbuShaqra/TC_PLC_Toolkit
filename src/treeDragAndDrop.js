@@ -23,10 +23,9 @@ const { registerInPlcProj, registerTreeInPlcProj, unregisterFromPlcProj } = requ
 const TREE_MIME = 'application/vnd.code.tree.twincatexplorer';
 
 /**
- * @typedef {vscode.TreeItem & { componentId?: string, folderPath?: string }} TwinCatTreeItemLike
- * The Objects tree's items (treeDataProvider.js TwinCatTreeItem), typed structurally: the class
- * only reaches tsc through a CommonJS `module.exports = {…}`, which JSDoc's import() cannot
- * surface as a type — and the controller only reads these members anyway.
+ * @typedef {import('./objectsTreeModel').ObjectsTreeNode} TwinCatTreeItemLike
+ * The Objects tree's elements: plain model nodes from src/objectsTreeModel.js. The controller
+ * reads only `contextValue`, `resourceUri`, `componentId`, `folderPath` and `label`.
  */
 
 /**
