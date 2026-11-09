@@ -40,14 +40,18 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   names a private repository the user wants kept out of this repo; the final tree is clean. Delete the branch after.
 
 ## Start here (next session)
-- **Next task: R5** — the first item of [ROADMAP.md](ROADMAP.md) (page https://claude.ai/artifact/8RG7TZtBV2cuupsrwWtknv,
-  source `docs/roadmap.html`). Work strictly in the roadmap's order: R5 keep PROGRAMs as PROGRAMs + five
-  `xmlParser` fixes + issue #25 (re-add a missing property Get/Set) → R1 Generate ST split-button fix → R3.1
-  STruC++ spike → R4 Objects-tree model (deepening P7) → R2 create a TwinCAT project → R3.2 check command →
-  R3.3 packaging. Forecast end 2026-12-11. R5 was added 2026-11-09 and put first by the user; its full plan
-  (verified line numbers, what "done" means) is in ROADMAP.md. Nothing is started. Every R2/R3 decision is SETTLED (2026-11-09, recorded under each
-  item in ROADMAP.md) — do not re-ask them. When an item starts, moves or merges, update ROADMAP.md AND
-  `docs/roadmap.html` and republish the page to the same URL (rule in CLAUDE.md).
+- **R5 code is DONE (2026-11-09) on `claude/focused-ptolemy-m6acaz`, not merged** — commits `081e308` (PROGRAM
+  stays PROGRAM; SFC-transition warnings), `b5dfeda` (xmlParser: own-block reads/writes, `implementationLanguage`
+  + read-only note for non-ST bodies, bounded CDATA, attribute entity decode/encode, lone CR; BOM verified not to
+  leak), and the #25 commit (Add Get/Set Accessor; property contextValue `propertyNode[.noGet][.noSet]`).
+  Full suite 82/82 FULL, typecheck, lint green. **Still open, on the user's Windows machine:** an added accessor
+  (FB and interface) opens and builds in XAE — the new accessor carries no LineIds, as a newly created property
+  never has; and `node test/devhost/run.js` plus a manual pass of the two new menu entries (each appears only while
+  its accessor is missing; copy/paste/delete/rename/insert still on every property row). Then PR → `dev` (SQUASH,
+  see Branching), reply on issue #25, move R5 to Done.
+- **Next task after R5: R1** — [ROADMAP.md](ROADMAP.md) (page https://claude.ai/artifact/8RG7TZtBV2cuupsrwWtknv,
+  source `docs/roadmap.html`). Order: R1 Generate ST split-button fix → R3.1 STruC++ spike → R4 Objects-tree model
+  (deepening P7) → R2 create a TwinCAT project → R3.2 check command → R3.3 packaging. Forecast end 2026-12-11.
 - **R1 in one line:** `media/editor.css:413-416` squares `#generate-st-btn`'s right corners even when the caret is
   hidden (single project). Toggle a class on `#generate-st-group` with the caret's `hidden` and key the CSS on it;
   no `:has()` (VS Code 1.66's Chromium lacks it). Webview change → run both `test/browser/` harnesses.
