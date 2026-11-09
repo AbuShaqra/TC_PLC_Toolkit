@@ -94,7 +94,16 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   warns when an init arg reads a holder member the holder's FB_init assigns. Ed. 3 cannot express the pattern
   (6.5.1.3: initial values are literals/constant expressions). Found (pre-existing, before S2 too): a method named
   `Get` is a parse error (added to S3a); `x : INT := zz;` passes analysis; a global `LOG` clashes in C++.
-  Next in S2: the folded-in items (REFERENCE TO input SIGSEGV first); release C note posted in the coordination doc. The vendored profile now extends `iec-3`.
+  Release C note posted in the coordination doc. Folded item 1 (`REFERENCE TO` inputs bound at the call; PR #19
+  `f422ad1`) merged: FB call wrote through an unbound ref (SIGSEGV); fn/method calls did not build. Newly refused
+  (feature on): literal/expression/constant/other-type/REF_TO-without-^/subrange args. Alias-typed VARIABLES are not
+  IECVar-wrapped → binding/REF= to one refused at compile only ("not supported yet"); wrapping them ~1.5–2.5 d (S3b).
+  Remaining folded items measured: (a) FB VAR_IN_OUT by reference ~5 d (changes the bundled softmotion .stlib C++);
+  (b) typed TRUNC_<type> ~1 d (passes --check, fails g++, even under iec-3); (c) plain TRUNC→DINT, feature
+  `trunc_dint` ~0.5–1 d; (d) `:= 0` on an interface, feature `interface_zero` ~1 d — `itf = 0`/`<> 0` already pass in
+  every dialect incl. iec-3 (decision: keep them always on?); (e) PROGRAM method from another POU ~3–4 d, needs an
+  instance-model decision. Also found: undeclared function calls pass --check; side-effect call order not
+  left-to-right; positional FB inputs counted differently by analysis vs codegen; REF= source unchecked. The vendored profile now extends `iec-3`.
   The IEC Ed. 3 copy the user supplied is licensed to another party: cite clause numbers only, never its text. **R4 DONE 2026-11-09** — `src/objectsTreeModel.js` (VS Code-free node graph; ids and contextValue set
   in one place, `getParent` = `node.parent`), thin `treeDataProvider.js`, `groupRootsByProject` moved out of
   `projectMap.js`; `test_objects_tree_ids.js` pins 396 ids / 301 reveal chains (a required gate); suite 84/84 FULL.
