@@ -129,8 +129,8 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
       <div class="meta">
         <span>Updated <b>2026-11-09</b></span>
         <span>Release <b>v0.10.1</b></span>
-        <span>Planned <b>20.5 working days</b></span>
-        <span>Forecast finish <b>2026-12-08</b></span>
+        <span>Planned <b>23.5 working days</b></span>
+        <span>Forecast finish <b>2026-12-11</b></span>
       </div>
     </div>
     <div class="tools">
@@ -139,25 +139,50 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
     </div>
   </header>
 
-  <p>Cards run in work order. Open a card for its details. Estimates are working days for one developer; dates are forecasts over working days, assuming items run one after another, and only the order is binding. The bar on each card shows where it falls between Nov 10 and Dec 8. Source of truth: <code>ROADMAP.md</code>.</p>
+  <p>Cards run in work order. Open a card for its details. Estimates are working days for one developer; dates are forecasts over working days, assuming items run one after another, and only the order is binding. The bar on each card shows where it falls between Nov 10 and Dec 11. Source of truth: <code>ROADMAP.md</code>.</p>
 
   <section class="gantt" aria-labelledby="gantt-title">
     <div class="gantt-head">
       <h2 id="gantt-title">Timeline</h2>
       <div class="legend"><span><i></i>Can run in the cloud session</span><span><i class="hatch"></i>Needs your Windows machine</span></div>
     </div>
-    <div class="g-scroll"><div class="g-chart" id="gantt" role="img" aria-label="Gantt chart of the six planned items from Nov 10 to Dec 8, 2026, in work order."></div></div>
+    <div class="g-scroll"><div class="g-chart" id="gantt" role="img" aria-label="Gantt chart of the seven planned items from Nov 10 to Dec 11, 2026, in work order."></div></div>
     <div class="g-note">Calendar days; shaded columns are weekends. Hover or focus a bar for its dates; click it to open its card.</div>
   </section>
 
   <section class="grid" aria-label="Order of work">
 
+    <details class="card" id="r5">
+      <summary>
+        <div class="card-top"><span>#1</span><span class="id">R5</span><span class="pill planned">Planned</span><span class="chev" aria-hidden="true">›</span></div>
+        <div class="card-title">Keep PROGRAMs as PROGRAMs, TwinCAT XML parsing fixes, re-add a property's Get or Set</div>
+        <div class="bar" aria-hidden="true"><span style="left:0%;width:12.5%"></span></div>
+        <div class="card-foot"><span>3 d</span><span>Nov 10 – 12</span></div>
+      </summary>
+      <div class="body">
+        <div class="block wide"><h4>What it is</h4><p>Five bug fixes and one suggestion from your Nov 6 notes, plus the user-reported issue <a href="https://github.com/AbuShaqra/TC_PLC_Toolkit/issues/25">#25</a>. The five fixes only show up on inputs the tests do not cover, so each one lands with a test file that reproduces it first.</p></div>
+        <div class="block"><h4>Main change: keep PROGRAM a PROGRAM</h4><p><code>src/stConverter.js:130-134</code> turns any PROGRAM with methods into a FUNCTION_BLOCK, on the live path, the .st export and Find References. TwinCAT does not, and it breaks callers: <code>MAIN.Init()</code> needs a PROGRAM, a function block needs an instance. The rewrite was for trust-runtime, which the live path no longer feeds. Drop it everywhere and check the parser scopes methods under a PROGRAM.</p></div>
+        <div class="block"><h4>Parser fixes</h4>
+          <ol>
+            <li><b>Most serious:</b> an SFC, LD, FBD or CFC POU with an ST method or action shows that method's code as its own body (<code>xmlParser.js:73</code> takes the first <code>&lt;ST&gt;</code> in the file). Read only the root's own implementation and record its real language.</li>
+            <li><code>getCdata</code> can run on into a later CDATA block.</li>
+            <li>Entities such as <code>&amp;amp;</code> and <code>&amp;lt;</code> in attributes are not decoded.</li>
+            <li>Lone CR line endings are not turned into newlines.</li>
+            <li>A UTF-8 byte-order mark stays at the start of the text.</li>
+          </ol>
+        </div>
+        <div class="block"><h4>Issue #25: re-add a missing Get or Set</h4><p>A user may delete a property's Get or Set accessor, usually in TwinCAT, and later want it back. Today the only way is to delete and recreate the whole property. The property's right-click menu gets <b>Add Get Accessor</b> and <b>Add Set Accessor</b>, each shown only while that accessor is missing, for function-block and interface properties. A new property still gets both by default; the user can delete either one and add it back later.</p></div>
+        <div class="block"><h4>Suggestion</h4><p>SFC transitions are dropped silently today; at least warn.</p></div>
+        <div class="block wide"><h4>Done when</h4><p>Each fix has a test that failed before it; the live-path test still passes; the sample still has zero diagnostics; a missing Get or Set can be added back on its own on both kinds of property and the file opens in XAE; <code>MAIN.Init()</code> resolves through Go to Definition and Find References; the suite, type check and lint pass.</p></div>
+      </div>
+    </details>
+
     <details class="card" id="r1">
       <summary>
-        <div class="card-top"><span>#1</span><span class="id">R1</span><span class="pill planned">Planned</span><span class="chev" aria-hidden="true">›</span></div>
+        <div class="card-top"><span>#2</span><span class="id">R1</span><span class="pill planned">Planned</span><span class="chev" aria-hidden="true">›</span></div>
         <div class="card-title">Generate ST button keeps its rounded end in single-project workspaces</div>
-        <div class="bar" aria-hidden="true"><span style="left:0%;width:4.8%"></span></div>
-        <div class="card-foot"><span>0.5 d</span><span>Nov 10</span></div>
+        <div class="bar" aria-hidden="true"><span style="left:12.5%;width:4.2%"></span></div>
+        <div class="card-foot"><span>0.5 d</span><span>Nov 13</span></div>
       </summary>
       <div class="body">
         <div class="block"><h4>Problem</h4><p>Generate ST is a split button: the main button plus a caret that opens the project picker. The caret appears only with two or more PLC projects. With one project it is hidden, but the main button keeps its squared right corners, so it looks cut off.</p></div>
@@ -169,13 +194,13 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
 
     <details class="card" id="r3-1">
       <summary>
-        <div class="card-top"><span>#2</span><span class="id">R3.1</span><span class="pill planned">Planned</span><span class="chev" aria-hidden="true">›</span></div>
+        <div class="card-top"><span>#3</span><span class="id">R3.1</span><span class="pill planned">Planned</span><span class="chev" aria-hidden="true">›</span></div>
         <div class="card-title">STruC++ spike: the sample project through the compiler under the TwinCAT dialect</div>
-        <div class="bar" aria-hidden="true"><span style="left:4.8%;width:9.5%"></span></div>
-        <div class="card-foot"><span>2 d</span><span>Nov 11 – 12</span></div>
+        <div class="bar" aria-hidden="true"><span style="left:16.7%;width:8.3%"></span></div>
+        <div class="card-foot"><span>2 d</span><span>Nov 16 – 17</span></div>
       </summary>
       <div class="body">
-        <div class="block wide"><h4>Goal of R3 overall</h4><p>Check a TwinCAT project from the extension with the IEC 61131-3 compiler STruC++ (the <code>AbuShaqra/STruCpp</code> fork) under the TwinCAT dialect, and show its errors in the editor panes. R3 runs in three phases: this spike, the check command (#5) and packaging (#6).</p></div>
+        <div class="block wide"><h4>Goal of R3 overall</h4><p>Check a TwinCAT project from the extension with the IEC 61131-3 compiler STruC++ (the <code>AbuShaqra/STruCpp</code> fork) under the TwinCAT dialect, and show its errors in the editor panes. R3 runs in three phases: this spike, the check command (#6) and packaging (#7).</p></div>
         <div class="block"><h4>This phase</h4><p>Run the sample project through the STruC++ CLI with the TwinCAT dialect profile and list every construct it rejects. That list sizes the check command and packaging.</p></div>
         <div class="block"><h4>What exists</h4>
           <ul>
@@ -203,10 +228,10 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
 
     <details class="card" id="r4">
       <summary>
-        <div class="card-top"><span>#3</span><span class="id">R4</span><span class="pill wait">Needs Windows</span><span class="chev" aria-hidden="true">›</span></div>
+        <div class="card-top"><span>#4</span><span class="id">R4</span><span class="pill wait">Needs Windows</span><span class="chev" aria-hidden="true">›</span></div>
         <div class="card-title">Objects-tree model (deepening roadmap P7)</div>
-        <div class="bar" aria-hidden="true"><span style="left:14.3%;width:19%"></span></div>
-        <div class="card-foot"><span>4 d</span><span>Nov 13 – 18</span></div>
+        <div class="bar" aria-hidden="true"><span style="left:25%;width:16.7%"></span></div>
+        <div class="card-foot"><span>4 d</span><span>Nov 18 – 23</span></div>
       </summary>
       <div class="body">
         <div class="block"><h4>Goal</h4><p>Give the TwinCAT Objects view a real node model with no VS Code dependency, so the tree provider becomes a thin adapter. The last open phase of the deepening roadmap.</p></div>
@@ -217,10 +242,10 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
 
     <details class="card" id="r2">
       <summary>
-        <div class="card-top"><span>#4</span><span class="id">R2</span><span class="pill wait">Needs Windows</span><span class="chev" aria-hidden="true">›</span></div>
+        <div class="card-top"><span>#5</span><span class="id">R2</span><span class="pill wait">Needs Windows</span><span class="chev" aria-hidden="true">›</span></div>
         <div class="card-title">Create a new TwinCAT project from the extension's start view</div>
-        <div class="bar" aria-hidden="true"><span style="left:33.3%;width:28.6%"></span></div>
-        <div class="card-foot"><span>6 d</span><span>Nov 19 – 26</span></div>
+        <div class="bar" aria-hidden="true"><span style="left:41.7%;width:25%"></span></div>
+        <div class="card-foot"><span>6 d</span><span>Nov 24 – Dec 1</span></div>
       </summary>
       <div class="body">
         <div class="block"><h4>Goal</h4><p>A user with no TwinCAT project in the workspace, or an empty folder, creates one from the extension without opening TwinCAT XAE first.</p></div>
@@ -239,27 +264,27 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
 
     <details class="card" id="r3-2">
       <summary>
-        <div class="card-top"><span>#5</span><span class="id">R3.2</span><span class="pill planned">Planned</span><span class="chev" aria-hidden="true">›</span></div>
+        <div class="card-top"><span>#6</span><span class="id">R3.2</span><span class="pill planned">Planned</span><span class="chev" aria-hidden="true">›</span></div>
         <div class="card-title">STruC++ check command with errors mapped to the panes</div>
-        <div class="bar" aria-hidden="true"><span style="left:61.9%;width:23.8%"></span></div>
-        <div class="card-foot"><span>5 d</span><span>Nov 27 – Dec 3</span></div>
+        <div class="bar" aria-hidden="true"><span style="left:66.7%;width:20.8%"></span></div>
+        <div class="card-foot"><span>5 d</span><span>Dec 2 – 8</span></div>
       </summary>
       <div class="body">
         <div class="block"><h4>This phase</h4><p>A <b>Check with STruC++</b> command converts the project to ST, runs the compiler as a full semantic check, and maps each error to the right component and pane, in both the Problems view and the pane markers.</p></div>
-        <div class="block"><h4>Depends on</h4><p>The spike (#2): what the compiler rejects on the sample decides how much conversion work this needs. Background, constraints and decisions are on the #2 card.</p></div>
+        <div class="block"><h4>Depends on</h4><p>The spike (#3): what the compiler rejects on the sample decides how much conversion work this needs. Background, constraints and decisions are on the #3 card.</p></div>
       </div>
     </details>
 
     <details class="card" id="r3-3">
       <summary>
-        <div class="card-top"><span>#6</span><span class="id">R3.3</span><span class="pill planned">Planned</span><span class="chev" aria-hidden="true">›</span></div>
+        <div class="card-top"><span>#7</span><span class="id">R3.3</span><span class="pill planned">Planned</span><span class="chev" aria-hidden="true">›</span></div>
         <div class="card-title">STruC++ bundling, Node 22 discovery, licence files, settings, docs</div>
-        <div class="bar" aria-hidden="true"><span style="left:85.7%;width:14.3%"></span></div>
-        <div class="card-foot"><span>3 d</span><span>Dec 4 – 8</span></div>
+        <div class="bar" aria-hidden="true"><span style="left:87.5%;width:12.5%"></span></div>
+        <div class="card-foot"><span>3 d</span><span>Dec 9 – 11</span></div>
       </summary>
       <div class="body">
         <div class="block"><h4>This phase</h4><p>Bundle the single-file compiler in the extension, find a Node 22 or later on the user's machine and explain clearly when there is none, ship the GPL licence and source link, and add settings (Node path, dialect file) and documentation.</p></div>
-        <div class="block"><h4>Depends on</h4><p>The check command (#5). Background, constraints and decisions are on the #2 card.</p></div>
+        <div class="block"><h4>Depends on</h4><p>The check command (#6). Background, constraints and decisions are on the #3 card.</p></div>
       </div>
     </details>
 
@@ -274,7 +299,8 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
       <div class="body">
         <div class="block wide">
           <ol>
-            <li><b>R1 first.</b> Half a day, confined to the webview, and it fixes a visible defect now.</li>
+            <li><b>R5 first</b> (your choice, Nov 9). A non-ST POU can hand the language server a method's code as its body, and a PROGRAM with methods is checked as a function block, so every feature downstream reads wrong input until these are fixed. Issue #25 rides along: it is user-reported and touches the same module.</li>
+            <li><b>R1 next.</b> Half a day, confined to the webview, and it fixes a visible defect now.</li>
             <li><b>The STruC++ spike next.</b> The compiler work is the largest unknown, and the spike sizes the rest of R3 while other work goes on.</li>
             <li><b>R4 before R2.</b> R2 adds an empty state and a create flow to the Objects tree, and R4 rebuilds that tree's model. Doing R4 first means R2 is written once.</li>
             <li><b>R2, then the rest of R3.</b> R2 needs its templates made and proven in XAE on your machine, the same session R4's live test needs. The rest of R3 builds on the spike.</li>
@@ -327,14 +353,15 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
 <script>
 /* Timeline data: keep in step with the "Order of work" table in ROADMAP.md. end is inclusive. */
 var PLAN = [
-  { id: 'R1',   card: 'r1',   name: 'Generate ST button fix',      est: '0.5 d', start: '2026-11-10', end: '2026-11-10', days: 0.5 },
-  { id: 'R3.1', card: 'r3-1', name: 'STruC++ spike',               est: '2 d',   start: '2026-11-11', end: '2026-11-12' },
-  { id: 'R4',   card: 'r4',   name: 'Objects-tree model',         est: '4 d',   start: '2026-11-13', end: '2026-11-18', machine: true },
-  { id: 'R2',   card: 'r2',   name: 'Create TwinCAT project',     est: '6 d',   start: '2026-11-19', end: '2026-11-26', machine: true },
-  { id: 'R3.2', card: 'r3-2', name: 'STruC++ check',              est: '5 d',   start: '2026-11-27', end: '2026-12-03' },
-  { id: 'R3.3', card: 'r3-3', name: 'STruC++ packaging',           est: '3 d',   start: '2026-12-04', end: '2026-12-08' }
+  { id: 'R5',   card: 'r5',   name: 'PROGRAM + parser fixes, #25', est: '3 d',   start: '2026-11-10', end: '2026-11-12' },
+  { id: 'R1',   card: 'r1',   name: 'Generate ST button fix',      est: '0.5 d', start: '2026-11-13', end: '2026-11-13', days: 0.5 },
+  { id: 'R3.1', card: 'r3-1', name: 'STruC++ spike',               est: '2 d',   start: '2026-11-16', end: '2026-11-17' },
+  { id: 'R4',   card: 'r4',   name: 'Objects-tree model',         est: '4 d',   start: '2026-11-18', end: '2026-11-23', machine: true },
+  { id: 'R2',   card: 'r2',   name: 'Create TwinCAT project',     est: '6 d',   start: '2026-11-24', end: '2026-12-01', machine: true },
+  { id: 'R3.2', card: 'r3-2', name: 'STruC++ check',              est: '5 d',   start: '2026-12-02', end: '2026-12-08' },
+  { id: 'R3.3', card: 'r3-3', name: 'STruC++ packaging',           est: '3 d',   start: '2026-12-09', end: '2026-12-11' }
 ];
-var DOMAIN_START = '2026-11-09', DOMAIN_END = '2026-12-10'; /* exclusive */
+var DOMAIN_START = '2026-11-09', DOMAIN_END = '2026-12-13'; /* exclusive */
 (function () {
   var DAY = 86400000;
   function d(s) { var p = s.split('-'); return Date.UTC(+p[0], +p[1] - 1, +p[2]); }

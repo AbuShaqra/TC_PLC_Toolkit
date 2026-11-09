@@ -37,10 +37,12 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   names a private repository the user wants kept out of this repo; the final tree is clean. Delete the branch after.
 
 ## Start here (next session)
-- **Next task: R1** — the first item of [ROADMAP.md](ROADMAP.md) (page https://claude.ai/artifact/8RG7TZtBV2cuupsrwWtknv,
-  source `docs/roadmap.html`). Work strictly in the roadmap's order: R1 Generate ST split-button fix → R3.1 STruC++
-  spike → R4 Objects-tree model (deepening P7) → R2 create a TwinCAT project → R3.2 check command → R3.3 packaging.
-  Forecast end 2026-12-08. Nothing is started. Every R2/R3 decision is SETTLED (2026-11-09, recorded under each
+- **Next task: R5** — the first item of [ROADMAP.md](ROADMAP.md) (page https://claude.ai/artifact/8RG7TZtBV2cuupsrwWtknv,
+  source `docs/roadmap.html`). Work strictly in the roadmap's order: R5 keep PROGRAMs as PROGRAMs + five
+  `xmlParser` fixes + issue #25 (re-add a missing property Get/Set) → R1 Generate ST split-button fix → R3.1
+  STruC++ spike → R4 Objects-tree model (deepening P7) → R2 create a TwinCAT project → R3.2 check command →
+  R3.3 packaging. Forecast end 2026-12-11. R5 was added 2026-11-09 and put first by the user; its full plan
+  (verified line numbers, what "done" means) is in ROADMAP.md. Nothing is started. Every R2/R3 decision is SETTLED (2026-11-09, recorded under each
   item in ROADMAP.md) — do not re-ask them. When an item starts, moves or merges, update ROADMAP.md AND
   `docs/roadmap.html` and republish the page to the same URL (rule in CLAUDE.md).
 - **R1 in one line:** `media/editor.css:413-416` squares `#generate-st-btn`'s right corners even when the caret is
