@@ -140,8 +140,8 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
       <div class="meta">
         <span>Updated <b>2026-11-09</b></span>
         <span>Release <b>v0.10.1</b></span>
-        <span>Remaining <b>20 working days</b></span>
-        <span>Forecast finish <b>2026-12-05</b></span>
+        <span>Remaining <b>22 working days</b></span>
+        <span>Forecast finish <b>2026-12-09</b></span>
       </div>
     </div>
     <div class="tools">
@@ -150,14 +150,14 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
     </div>
   </header>
 
-  <p>Cards run in work order. Open a card for its details. Estimates are working days for one developer; dates are forecasts over working days, assuming items run one after another, and only the order is binding. The bar on each card shows where it falls between Nov 10 and Dec 5. Source of truth: <code>ROADMAP.md</code>.</p>
+  <p>Cards run in work order. Open a card for its details. Estimates are working days for one developer; dates are forecasts over working days, assuming items run one after another, and only the order is binding. The bar on each card shows where it falls between Nov 10 and Dec 9. Source of truth: <code>ROADMAP.md</code>.</p>
 
   <section class="gantt" aria-labelledby="gantt-title">
     <div class="gantt-head">
       <h2 id="gantt-title">Timeline</h2>
       <div class="legend"><span><i></i>Can run in the cloud session</span><span><i class="hatch"></i>Needs your Windows machine</span></div>
     </div>
-    <div class="g-scroll"><div class="g-chart" id="gantt" role="img" aria-label="Gantt chart of the five planned items from Nov 10 to Dec 5, 2026, in work order."></div></div>
+    <div class="g-scroll"><div class="g-chart" id="gantt" role="img" aria-label="Gantt chart of the six planned items from Nov 10 to Dec 9, 2026, in work order."></div></div>
     <div class="g-note">Calendar days; shaded columns are weekends. Hover or focus a bar for its dates; click it to open its card. Drag the line after the names to widen or narrow that column (double-click or double-tap resets it).</div>
   </section>
 
@@ -167,11 +167,11 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
       <summary>
         <div class="card-top"><span>#1</span><span class="id">R3.1</span><span class="pill planned">In progress</span><span class="chev" aria-hidden="true">›</span></div>
         <div class="card-title">STruC++ spike: the sample project through the compiler under the TwinCAT dialect</div>
-        <div class="bar" aria-hidden="true"><span style="left:0%;width:10%"></span></div>
+        <div class="bar" aria-hidden="true"><span style="left:0%;width:9.09%"></span></div>
         <div class="card-foot"><span>2 d</span><span>Nov 10 – 11</span></div>
       </summary>
       <div class="body">
-        <div class="block wide"><h4>Goal of R3 overall</h4><p>Check a TwinCAT project from the extension with the IEC 61131-3 compiler STruC++ (the <code>AbuShaqra/STruCpp</code> fork) under the TwinCAT dialect, and show its errors in the editor panes. R3 runs in three phases: this spike, the check command (#4) and packaging (#5).</p></div>
+        <div class="block wide"><h4>Goal of R3 overall</h4><p>Check a TwinCAT project from the extension with the IEC 61131-3 compiler STruC++ (the <code>AbuShaqra/STruCpp</code> fork) under the TwinCAT dialect, and show its errors in the editor panes. R3 runs in three phases: this spike, the check command (#5) and packaging (#6).</p></div>
         <div class="block"><h4>This phase</h4><p>Run the sample project through the STruC++ CLI with the TwinCAT dialect profile and list every construct it rejects. That list sizes the check command and packaging.</p></div>
         <div class="block"><h4>What exists</h4>
           <ul>
@@ -197,12 +197,28 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
       </div>
     </details>
 
+    <details class="card" id="r6">
+      <summary>
+        <div class="card-top"><span>#2</span><span class="id">R6</span><span class="pill planned">Planned</span><span class="chev" aria-hidden="true">›</span></div>
+        <div class="card-title">Language server reads the dialect profile, the same file the compiler gets</div>
+        <div class="bar" aria-hidden="true"><span style="left:9.09%;width:9.09%"></span></div>
+        <div class="card-foot"><span>2 d</span><span>Nov 12 – 13</span></div>
+      </summary>
+      <div class="body">
+        <div class="block"><h4>Goal</h4><p>The toolkit's own language server loads the same dialect profile the compiler gets (<code>resources/dialects/twincat3.json</code> by default) and uses its feature flags to decide what it accepts and what it flags, so the editor and the STruC++ check agree on what is valid.</p></div>
+        <div class="block"><h4>Today</h4><p>The server has no notion of a dialect: it accepts <code>POINTER TO</code>, <code>REFERENCE TO</code>, <code>REF=</code> and methods on a PROGRAM unconditionally.</p></div>
+        <div class="block"><h4>Plan</h4><ul><li>A small module loads a profile, resolves <code>extends</code> and answers whether a feature is on, in the compiler's own profile format.</li><li>The extension sends the feature set to the server; one setting names the profile file, shared later with the compiler.</li><li>A construct is flagged only when its feature is off, with a message naming the feature. Navigation keeps working either way.</li><li>The default profile changes nothing on the sample: it stays at zero diagnostics.</li></ul></div>
+        <div class="block"><h4>Done when</h4><p>Each feature has a test that accepts its construct under the TwinCAT profile and flags it under plain IEC; the sample stays at zero; switching the setting needs no reload; suite, type check and lint pass.</p></div>
+        <div class="block wide"><h4>Order</h4><p>Scope confirmed with you on Nov 9. Placed right after the spike, which shows which features real code needs, and before the check command, so the editor and compiler use the same rules from the start. Move it if the slot is wrong.</p></div>
+      </div>
+    </details>
+
     <details class="card" id="r4">
       <summary>
-        <div class="card-top"><span>#2</span><span class="id">R4</span><span class="pill wait">Needs Windows</span><span class="chev" aria-hidden="true">›</span></div>
+        <div class="card-top"><span>#3</span><span class="id">R4</span><span class="pill wait">Needs Windows</span><span class="chev" aria-hidden="true">›</span></div>
         <div class="card-title">Objects-tree model (deepening roadmap P7)</div>
-        <div class="bar" aria-hidden="true"><span style="left:10%;width:20%"></span></div>
-        <div class="card-foot"><span>4 d</span><span>Nov 12 – 17</span></div>
+        <div class="bar" aria-hidden="true"><span style="left:18.18%;width:18.18%"></span></div>
+        <div class="card-foot"><span>4 d</span><span>Nov 16 – 19</span></div>
       </summary>
       <div class="body">
         <div class="block"><h4>Goal</h4><p>Give the TwinCAT Objects view a real node model with no VS Code dependency, so the tree provider becomes a thin adapter. The last open phase of the deepening roadmap.</p></div>
@@ -213,10 +229,10 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
 
     <details class="card" id="r2">
       <summary>
-        <div class="card-top"><span>#3</span><span class="id">R2</span><span class="pill wait">Needs Windows</span><span class="chev" aria-hidden="true">›</span></div>
+        <div class="card-top"><span>#4</span><span class="id">R2</span><span class="pill wait">Needs Windows</span><span class="chev" aria-hidden="true">›</span></div>
         <div class="card-title">Create a new TwinCAT project from the extension's start view</div>
-        <div class="bar" aria-hidden="true"><span style="left:30%;width:30%"></span></div>
-        <div class="card-foot"><span>6 d</span><span>Nov 18 – 25</span></div>
+        <div class="bar" aria-hidden="true"><span style="left:36.36%;width:27.27%"></span></div>
+        <div class="card-foot"><span>6 d</span><span>Nov 20 – 27</span></div>
       </summary>
       <div class="body">
         <div class="block"><h4>Goal</h4><p>A user with no TwinCAT project in the workspace, or an empty folder, creates one from the extension without opening TwinCAT XAE first.</p></div>
@@ -235,10 +251,10 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
 
     <details class="card" id="r3-2">
       <summary>
-        <div class="card-top"><span>#4</span><span class="id">R3.2</span><span class="pill planned">Planned</span><span class="chev" aria-hidden="true">›</span></div>
+        <div class="card-top"><span>#5</span><span class="id">R3.2</span><span class="pill planned">Planned</span><span class="chev" aria-hidden="true">›</span></div>
         <div class="card-title">STruC++ check command with errors mapped to the panes</div>
-        <div class="bar" aria-hidden="true"><span style="left:60%;width:25%"></span></div>
-        <div class="card-foot"><span>5 d</span><span>Nov 26 – Dec 2</span></div>
+        <div class="bar" aria-hidden="true"><span style="left:63.64%;width:22.73%"></span></div>
+        <div class="card-foot"><span>5 d</span><span>Nov 30 – Dec 4</span></div>
       </summary>
       <div class="body">
         <div class="block"><h4>This phase</h4><p>A <b>Check with STruC++</b> command converts the project to ST, runs the compiler as a full semantic check, and maps each error to the right component and pane, in both the Problems view and the pane markers.</p></div>
@@ -248,14 +264,14 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
 
     <details class="card" id="r3-3">
       <summary>
-        <div class="card-top"><span>#5</span><span class="id">R3.3</span><span class="pill planned">Planned</span><span class="chev" aria-hidden="true">›</span></div>
+        <div class="card-top"><span>#6</span><span class="id">R3.3</span><span class="pill planned">Planned</span><span class="chev" aria-hidden="true">›</span></div>
         <div class="card-title">STruC++ bundling, Node 22 discovery, licence files, settings, docs</div>
-        <div class="bar" aria-hidden="true"><span style="left:85%;width:15%"></span></div>
-        <div class="card-foot"><span>3 d</span><span>Dec 3 – 5</span></div>
+        <div class="bar" aria-hidden="true"><span style="left:86.36%;width:13.64%"></span></div>
+        <div class="card-foot"><span>3 d</span><span>Dec 7 – 9</span></div>
       </summary>
       <div class="body">
         <div class="block"><h4>This phase</h4><p>Bundle the single-file compiler in the extension, find a Node 22 or later on the user's machine and explain clearly when there is none, ship the GPL licence and source link, and add settings (Node path, dialect file) and documentation.</p></div>
-        <div class="block"><h4>Depends on</h4><p>The check command (#4). Background, constraints and decisions are on the #1 card.</p></div>
+        <div class="block"><h4>Depends on</h4><p>The check command (#5). Background, constraints and decisions are on the #1 card.</p></div>
       </div>
     </details>
 
@@ -271,6 +287,7 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
         <div class="block wide">
           <ol>
             <li><b>The STruC++ spike first.</b> The compiler work is the largest unknown, and the spike sizes the rest of R3 while other work goes on.</li>
+            <li><b>R6 right after the spike.</b> The spike shows which dialect features real code needs, which is what R6 must honour; doing it before the check command means the editor and the compiler use the same rules from the start.</li>
             <li><b>R4 before R2.</b> R2 adds an empty state and a create flow to the Objects tree, and R4 rebuilds that tree's model. Doing R4 first means R2 is written once.</li>
             <li><b>R2, then the rest of R3.</b> R2 needs its templates made and proven in XAE on your machine, the same session R4's live test needs. The rest of R3 builds on the spike.</li>
           </ol>
@@ -325,12 +342,13 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
 /* Timeline data: keep in step with the "Order of work" table in ROADMAP.md. end is inclusive. */
 var PLAN = [
   { id: 'R3.1', card: 'r3-1', name: 'STruC++ spike',               est: '2 d',   start: '2026-11-10', end: '2026-11-11' },
-  { id: 'R4',   card: 'r4',   name: 'Objects-tree model',         est: '4 d',   start: '2026-11-12', end: '2026-11-17', machine: true },
-  { id: 'R2',   card: 'r2',   name: 'Create TwinCAT project',     est: '6 d',   start: '2026-11-18', end: '2026-11-25', machine: true },
-  { id: 'R3.2', card: 'r3-2', name: 'STruC++ check',              est: '5 d',   start: '2026-11-26', end: '2026-12-02' },
-  { id: 'R3.3', card: 'r3-3', name: 'STruC++ packaging',           est: '3 d',   start: '2026-12-03', end: '2026-12-05' }
+  { id: 'R6',   card: 'r6',   name: 'LSP dialect profile',        est: '2 d',   start: '2026-11-12', end: '2026-11-13' },
+  { id: 'R4',   card: 'r4',   name: 'Objects-tree model',         est: '4 d',   start: '2026-11-16', end: '2026-11-19', machine: true },
+  { id: 'R2',   card: 'r2',   name: 'Create TwinCAT project',     est: '6 d',   start: '2026-11-20', end: '2026-11-27', machine: true },
+  { id: 'R3.2', card: 'r3-2', name: 'STruC++ check',              est: '5 d',   start: '2026-11-30', end: '2026-12-04' },
+  { id: 'R3.3', card: 'r3-3', name: 'STruC++ packaging',           est: '3 d',   start: '2026-12-07', end: '2026-12-09' }
 ];
-var DOMAIN_START = '2026-11-09', DOMAIN_END = '2026-12-08'; /* exclusive */
+var DOMAIN_START = '2026-11-09', DOMAIN_END = '2026-12-12'; /* exclusive */
 (function () {
   var DAY = 86400000;
   function d(s) { var p = s.split('-'); return Date.UTC(+p[0], +p[1] - 1, +p[2]); }
