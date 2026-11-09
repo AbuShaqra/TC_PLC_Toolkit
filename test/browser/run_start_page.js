@@ -120,7 +120,7 @@ const { TEMPLATE_VERSIONS } = require(path.join(REPO, 'src', 'projectTemplate.js
         assert((await page.$$('#recent-list li')).length === 2 && !(await visible('#recent-empty')), 'state renders the recent solutions');
         assert(await page.$eval('[data-command="twincat.generateSt"]', el => /** @type {any} */ (el).disabled) && await visible('#no-project'),
             'project actions are disabled while no project is open');
-        assert(await disabled('#strucpp-check'), 'Check with STruC++ is disabled');
+        assert(await disabled('#check-project'), 'Check project is disabled');
 
         // Validation as the user types.
         for (const [bad, why] of [['1abc', /Start with a letter/], ['My Project', /letters, digits/], ['a__b', /two underscores/], ['Line_', /end the name/], ['CON', /reserved/]]) {
