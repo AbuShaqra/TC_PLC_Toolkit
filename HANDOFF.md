@@ -56,8 +56,9 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   `--check --json` flag). Export-mode input is WRONG to check (it rewrites REFERENCE TO→POINTER TO, REF=→:=);
   R3.2 must feed a raw-based unit. **Decided 2026-11-09:** wait for the fork (fork-lane item S2, before R3.2;
   the roadmap now has a parallel STruC++ fork lane: S1 language-server dialect profiles — DONE, fork PR #4
-  `a529ea9`, client contract in its PR body; S2 compiler gaps: design pass running, no fork code until the
-  user approves the plan). **R4 started 2026-11-09** (early; an agent is building `src/objectsTreeModel.js`). and R3.2 full scope (7 d). Next roadmap item: R4.
+  `a529ea9`, client contract in its PR body; S2 compiler gaps: plan DONE and decided 2026-11-09 —
+  `docs/s2-strucpp-fork-plan.md`, all 13 steps (~22 d), `iec` = Ed. 3, Annex A precedence; step 1 next).
+  The IEC Ed. 3 copy the user supplied is licensed to another party: cite clause numbers only, never its text. **R4 started 2026-11-09** (early; an agent is building `src/objectsTreeModel.js`). and R3.2 full scope (7 d). Next roadmap item: R4.
 - **Was next: R3.1** (STruC++ spike) — [ROADMAP.md](ROADMAP.md) (page https://claude.ai/artifact/8RG7TZtBV2cuupsrwWtknv,
   source `docs/roadmap.html`). Order: R3.1 → R4 Objects-tree model (deepening P7) → R2 create a TwinCAT project →
   R3.2 check command → R3.3 packaging. Forecast end 2026-12-05. Every R2/R3 decision is SETTLED (2026-11-09,

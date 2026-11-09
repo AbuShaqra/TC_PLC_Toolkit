@@ -19,10 +19,10 @@ after it. An item leaves the table for "Done" once its PR is merged into `dev`, 
 | 1 | R3.1 | STruC++ spike: sample project through the compiler under the TwinCAT dialect | 2 d | 2026-11-10 | 2026-11-11 | Findings done 2026-11-09 ([docs/r3.1-strucpp-spike.md](docs/r3.1-strucpp-spike.md)); decisions taken |
 | 2 | R4 | Objects-tree model (deepening roadmap P7) | 4 d | 2026-11-12 | 2026-11-17 | In progress (started early, 2026-11-09) — final gate needs the user's Windows machine |
 | 3 | R2 | Create a new TwinCAT project from the extension's start view | 6 d | 2026-11-18 | 2026-11-25 | Planned — needs a 4024 skeleton from the user's XAE |
-| 4 | R3.2 | STruC++ check command with errors mapped to the panes | 7 d | 2026-11-26 | 2026-12-04 | Planned (full scope, 2026-11-09) — after S2 |
-| 5 | R3.3 | STruC++ bundling, Node 22 discovery, licence files, settings, docs | 3 d | 2026-12-07 | 2026-12-09 | Planned |
+| 4 | R3.2 | STruC++ check command with errors mapped to the panes | 7 d | 2026-12-10 | 2026-12-18 | Planned (full scope, 2026-11-09) — after S2 |
+| 5 | R3.3 | STruC++ bundling, Node 22 discovery, licence files, settings, docs | 3 d | 2026-12-21 | 2026-12-23 | Planned |
 
-**Total remaining (toolkit lane):** 22 working days, forecast to finish **2026-12-09**. Decisions taken 2026-11-09
+**Total remaining (toolkit lane):** 22 working days of work, forecast to finish **2026-12-23** (it waits for S2). Decisions taken 2026-11-09
 after the R3.1 spike (`docs/r3.1-strucpp-spike.md`): **wait for the fork** — the check command must not put compiler
 errors on correct code, so the gaps are fixed in STruC++ first (S2, fork lane); **R3.2 takes its full scope**
 (5 → 7 d).
@@ -35,7 +35,7 @@ for it where a row says so.
 
 | Order | ID | Item | Estimate | Start | End | Status |
 |-------|----|------|----------|-------|-----|--------|
-| 1 | S2 | The constructs it still rejects on correct TwinCAT code, plus check-only output | 10 d (rough) | 2026-11-10 | 2026-11-23 | Design pass in progress (2026-11-09) — code waits for the user's OK on the plan; R3.2 waits for it |
+| 1 | S2 | Close the fork's gaps: 13 PR-sized steps (plan: [docs/s2-strucpp-fork-plan.md](docs/s2-strucpp-fork-plan.md)) | 22 d | 2026-11-10 | 2026-12-09 | In progress — design done 2026-11-09; step 1 next. R3.2 waits for it |
 
 **Why this order.**
 1. **R3.1 (spike) first:** the STruC++ work is the largest unknown. The spike needs no decisions, and what
@@ -94,23 +94,25 @@ Two ways around it:
 
 ### S2 — STruC++ fork: close the gaps the spike found
 
-**Why** (decided 2026-11-09). With the converter fixed, STruC++ still rejects constructs the correct `sample/`
-uses, so a check command would report errors on correct code. The fix goes into the fork (`AbuShaqra/STruCpp`,
-branch `development`) before R3.2. Read the fork's CLAUDE.md first; it is GPL-3.0-only and its code stays there.
+**Plan:** [docs/s2-strucpp-fork-plan.md](docs/s2-strucpp-fork-plan.md) — the R3.1 spike, a first S2 design and
+the user's compiler findings document merged and checked against the IEC 61131-3 Ed. 3 text (clause numbers
+and paraphrase only; the copy used is licensed to another party, so no text is reproduced).
 
-**Scope** (rows of `docs/r3.1-strucpp-spike.md`; confirm each with a repro before fixing):
-- `PROPERTY` in an `INTERFACE`; a method call through a member chain (`GVL_System.fbCylinder.Cyclic()`);
-  `TYPE … EXTENDS … : STRUCT`; `UNION`; `THIS^.member` and `REF=` on a `THIS` member;
-- FB instance declared with init arguments (`FB_init`) and GVL-qualified access (`GVL_Hmi.x`), unless R3.2's
-  converter emitter covers them;
-- a check-only CLI mode with machine-readable output (`--check --json`), and lexer errors that report a real
-  line and column instead of `0:0`.
-Pragmas and the enum base type after the list are handled by R3.2's converter emitter instead.
+**Decided 2026-11-09:** all 13 steps (about 22 d), one PR each into the fork's `development`; `iec` means Ed. 3;
+standard forms always on (a wrongly refused standard construct is a defect fix), vendor forms behind new
+vendor-neutral features that no profile enables by default (`self_caret`, `property`, `postfix_enum_base`,
+`named_global_lists`, `struct_extends`, `union_type`, `fb_init`); chained comparisons follow Annex A;
+`--check --json`.
 
-**Done when.** The spike's sample, through the raw-based check unit, compiles with 0 errors under the vendored
-TwinCAT dialect profile with no workarounds; each fixed construct has a test in the fork; the fork's build,
-tests and lint pass; the toolkit pins the fork commit it uses. Was "R7" for an hour on 2026-11-09; renamed when the fork lane
-was split out.
+**Order:** 1 lexer positions + `--check --json` → 2 pragmas (R3.2 can use the check from here) → 3 `SUPER.` /
+`self_caret` → 4 member-chain calls → 5 interface variables → 6 interface properties (standard gaps closed,
+11 d) → 7 chained comparisons → 8 postfix enum base → 9 named global lists → 10 struct inheritance → 11–12
+UNION → 13 FB_init (the sample compiles with no workarounds).
+
+**Later fork items, not S2** (sizes from the plan, not measured): other Ed. 3 forms the fork refuses (CHAR,
+LTIME, string index, `STRING[n]`, typed TRUNC, `STRUCT OVERLAP`; about 7–10 d); an `iec` audit that narrows
+what `iec` accepts; runtime safety defects; profile-handling defects; strict-mode policy for vendor profiles;
+an Ed. 4 profile.
 
 ### R3 — Compile TwinCAT projects with STruC++
 
