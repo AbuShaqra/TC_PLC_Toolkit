@@ -77,7 +77,11 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   (plain use must be qualified). R3.2's converter must pass each GVL's name. Also found (pre-existing):
   `gfb(a := 2);` on a top-level global FB fails in g++; bundled-library global `speed` collides with a user global;
   `--feature` help text and DIALECTS.md "Checks" list stale; `GVL_A.units[0]()` does not parse; lexer accepts `a__b`.
-  Next: step 10 (`struct_extends`). The vendored profile now extends `iec-3`.
+  Step 10 (`struct_extends`; PR #15 `a962890`) merged: flattened in the AST; derived↔base assignment and arguments
+  refused (6.4.4.6); a library STRUCT as base refused for now (manifests carry no initial values). Also found
+  (pre-existing, plain STRUCTs): unknown member `s.zz` unflagged in ST; `POINTER TO ST := ADR(s)` refused;
+  `REF(s)`/`REF=`/STRUCT `=` fail in g++; unrelated-STRUCT arguments unchecked in ST (fail in g++).
+  Next: steps 11–12 (`union`). The vendored profile now extends `iec-3`.
   The IEC Ed. 3 copy the user supplied is licensed to another party: cite clause numbers only, never its text. **R4 code DONE 2026-11-09, not merged** — `src/objectsTreeModel.js` (VS Code-free node graph; ids and contextValue set
   in one place, `getParent` = `node.parent`), thin `treeDataProvider.js`, `groupRootsByProject` moved out of
   `projectMap.js`; `test_objects_tree_ids.js` pins 396 ids / 301 reveal chains (a required gate); suite 84/84 FULL.
