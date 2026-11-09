@@ -270,26 +270,12 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
   </section>
   <section class="grid" aria-label="STruC++ fork lane items">
 
-    <details class="card" id="s1">
-      <summary>
-        <div class="card-top"><span>#1</span><span class="id">S1</span><span class="pill planned">In progress</span><span class="chev" aria-hidden="true">›</span></div>
-        <div class="card-title">The fork's language server honours dialect profiles</div>
-        <div class="bar" aria-hidden="true"><span style="left:0%;width:8.7%"></span></div>
-        <div class="card-foot"><span>1.5 d</span><span>Nov 9 – 10</span></div>
-      </summary>
-      <div class="body">
-        <div class="block"><h4>Goal</h4><p>The fork's language server analyses with the dialect profile a client gives it, so an editor marks the same code as the real compile.</p></div>
-        <div class="block"><h4>Scope</h4><ul><li>A client sends a whole resolved profile object, plus single-feature overrides, at start and on change; a change re-analyses every open document.</li><li>The server reads no profile files.</li><li>A malformed profile gets a clear error and does not crash the server.</li><li>With no profile, it behaves exactly as today.</li></ul></div>
-        <div class="block wide"><h4>Done when</h4><p>Tests show different diagnostics with and without a feature, an update mid-session, parity with a real compile, and no crash on a bad profile; the fork's build, tests and lint pass; merged into the fork's <code>development</code>.</p></div>
-      </div>
-    </details>
-
     <details class="card" id="s2">
       <summary>
-        <div class="card-top"><span>#2</span><span class="id">S2</span><span class="pill planned">Planned</span><span class="chev" aria-hidden="true">›</span></div>
+        <div class="card-top"><span>#1</span><span class="id">S2</span><span class="pill planned">Planned</span><span class="chev" aria-hidden="true">›</span></div>
         <div class="card-title">The constructs it still rejects on correct TwinCAT code, plus check-only output</div>
-        <div class="bar" aria-hidden="true"><span style="left:8.7%;width:43.48%"></span></div>
-        <div class="card-foot"><span>10 d (rough)</span><span>Nov 11 – 24</span></div>
+        <div class="bar" aria-hidden="true"><span style="left:4.35%;width:43.48%"></span></div>
+        <div class="card-foot"><span>10 d (rough)</span><span>Nov 10 – 23</span></div>
       </summary>
       <div class="body">
         <div class="block"><h4>Why</h4><p>Decided Nov 9 after the spike: wait for the fork. Even with the converter fixed, STruC++ rejects constructs the correct sample uses, and the toolkit's check command must not report errors on correct code. The toolkit's R3.2 waits for this.</p></div>
@@ -339,10 +325,11 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
     <details class="card" id="done">
       <summary>
         <div class="card-top"><span>Done</span><span class="chev" aria-hidden="true">›</span></div>
-        <div class="card-title">Finished items · R5, R1</div>
+        <div class="card-title">Finished items · R5, R1, S1</div>
       </summary>
       <div class="body">
         <div class="block wide"><h4>R5 · PR <a href="https://github.com/AbuShaqra/TC_PLC_Toolkit/pull/27">#27</a>, merged Nov 9</h4><p>PROGRAMs stay PROGRAMs; TwinCAT XML parsing fixes (non-ST bodies, CDATA overrun, attribute entities, lone CR; the byte-order mark was verified not to leak); warnings for dropped SFC transitions; Add Get / Add Set Accessor (issue <a href="https://github.com/AbuShaqra/TC_PLC_Toolkit/issues/25">#25</a>). <b>Merged before its XAE check</b>, at your call: an added accessor opening and building in XAE, the dev-host test and a manual menu pass are still to do on your Windows machine before the next release.</p></div>
+        <div class="block wide"><h4>S1 · fork PR <a href="https://github.com/AbuShaqra/STruCpp/pull/4">#4</a>, merged Nov 9</h4><p>The fork's language server honours dialect profiles: a client passes a whole profile object and feature overrides through its workspace settings, every analysis and compile request uses it, a malformed profile is rejected without a crash, and with no profile the compiler's own default applies.</p></div>
         <div class="block wide"><h4>R1 · same PR #27</h4><p>Generate ST keeps its rounded end in single-project workspaces. The dev-host eyeball is pending with the R5 checks.</p></div>
         <div class="block wide"><p>Earlier work is in the repository's releases.</p></div>
       </div>
@@ -369,8 +356,7 @@ var PLAN = [
   { lane: 'TC PLC Toolkit', num: 3, id: 'R2',   card: 'r2',   name: 'Create TwinCAT project', est: '6 d',   start: '2026-11-18', end: '2026-11-25', machine: true },
   { lane: 'TC PLC Toolkit', num: 4, id: 'R3.2', card: 'r3-2', name: 'STruC++ check',          est: '7 d',   start: '2026-11-26', end: '2026-12-04' },
   { lane: 'TC PLC Toolkit', num: 5, id: 'R3.3', card: 'r3-3', name: 'STruC++ packaging',      est: '3 d',   start: '2026-12-07', end: '2026-12-09' },
-  { lane: 'STruC++ fork',   num: 1, id: 'S1',   card: 's1',   name: 'LSP dialect profiles',   est: '1.5 d', start: '2026-11-09', end: '2026-11-10', days: 1.5 },
-  { lane: 'STruC++ fork',   num: 2, id: 'S2',   card: 's2',   name: 'Fork compiler gaps',     est: '10 d',  start: '2026-11-11', end: '2026-11-24' }
+  { lane: 'STruC++ fork',   num: 1, id: 'S2',   card: 's2',   name: 'Fork compiler gaps',     est: '10 d',  start: '2026-11-10', end: '2026-11-23' }
 ];
 var DOMAIN_START = '2026-11-09', DOMAIN_END = '2026-12-12'; /* exclusive */
 (function () {

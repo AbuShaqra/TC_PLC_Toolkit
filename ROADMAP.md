@@ -35,8 +35,7 @@ for it where a row says so.
 
 | Order | ID | Item | Estimate | Start | End | Status |
 |-------|----|------|----------|-------|-----|--------|
-| 1 | S1 | The fork's language server honours dialect profiles (a client passes a profile object) | 1.5 d | 2026-11-09 | 2026-11-10 | In progress (started 2026-11-09) |
-| 2 | S2 | The constructs it still rejects on correct TwinCAT code, plus check-only output | 10 d (rough) | 2026-11-11 | 2026-11-24 | Planned — R3.2 waits for it |
+| 1 | S2 | The constructs it still rejects on correct TwinCAT code, plus check-only output | 10 d (rough) | 2026-11-10 | 2026-11-23 | Planned — R3.2 waits for it |
 
 **Why this order.**
 1. **R3.1 (spike) first:** the STruC++ work is the largest unknown. The spike needs no decisions, and what
@@ -92,13 +91,6 @@ Two ways around it:
    XAE 3.1.4026.22 wrote for `sample/`; the 4024 skeleton must be produced by a 4024 XAE on the user's
    machine. Each template is proven to open and build in its own XAE version.
 4. **Starter content:** `PROGRAM MAIN`, the `PlcTask` that calls it, and an empty GVL.
-
-### S1 — Fork language server honours dialect profiles
-
-**Goal.** The fork's language server analyses with the dialect profile a client gives it, so an editor marks
-the same code as the real compile. A client sends a whole resolved profile object (and single-feature
-overrides); the server reads no profile files; a malformed profile gets a clear error and does not crash it;
-with no profile it behaves as today. Lands as a PR into the fork's `development`.
 
 ### S2 — STruC++ fork: close the gaps the spike found
 
@@ -183,5 +175,10 @@ Roadmap items finished from now on are listed here with their PR.
   squash-merged into `dev` 2026-11-09 as `0ea9fcd`. **Merged before its XAE check** (user's call): an added
   accessor opening and building in XAE, `node test/devhost/run.js`, and a manual menu pass are still to do on the
   user's Windows machine before the next release.
+- **S1** (fork lane) — the fork's language server honours dialect profiles: a client passes a whole profile
+  object (`strucpp.dialect`) and overrides (`strucpp.features`) through the `strucpp` workspace configuration;
+  every analysis and compile request uses it; malformed profiles are rejected without a crash; no profile means
+  the compiler's own default. PR [AbuShaqra/STruCpp#4](https://github.com/AbuShaqra/STruCpp/pull/4),
+  squash-merged into the fork's `development` 2026-11-09 as `a529ea9`.
 - **R1** — Generate ST keeps its rounded end in single-project workspaces. Same PR #27. Dev-host eyeball pending
   with the R5 checks.
