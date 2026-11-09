@@ -205,7 +205,7 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
       <summary>
         <div class="card-top"><span>#2</span><span class="id">R4</span><span class="pill done">Dev-host gate passed</span><span class="chev" aria-hidden="true">›</span></div>
         <div class="card-title">Objects-tree model (deepening roadmap P7)</div>
-        <div class="bar" aria-hidden="true"><span style="left:0%;width:16.67%"></span></div>
+        <div class="bar" aria-hidden="true"><span style="left:0%;width:10%"></span></div>
         <div class="card-foot"><span>4 d → ~3 h</span><span>Nov 9 · merging</span></div>
       </summary>
       <div class="body">
@@ -219,7 +219,7 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
       <summary>
         <div class="card-top"><span>#3</span><span class="id">R2</span><span class="pill planned">Next · skeleton in</span><span class="chev" aria-hidden="true">›</span></div>
         <div class="card-title">Create a new TwinCAT project from the extension's start view</div>
-        <div class="bar" aria-hidden="true"><span style="left:50%;width:16.67%"></span></div>
+        <div class="bar" aria-hidden="true"><span style="left:30%;width:10%"></span></div>
         <div class="card-foot"><span>6 d → ~4 h + XAE</span><span>Nov 12</span></div>
       </summary>
       <div class="body">
@@ -241,7 +241,7 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
       <summary>
         <div class="card-top"><span>#4</span><span class="id">R3.2</span><span class="pill planned">Planned</span><span class="chev" aria-hidden="true">›</span></div>
         <div class="card-title">STruC++ check command with errors mapped to the panes</div>
-        <div class="bar" aria-hidden="true"><span style="left:66.67%;width:16.67%"></span></div>
+        <div class="bar" aria-hidden="true"><span style="left:40%;width:10%"></span></div>
         <div class="card-foot"><span>7 d → ~4 h</span><span>Nov 13</span></div>
       </summary>
       <div class="body">
@@ -254,12 +254,78 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
       <summary>
         <div class="card-top"><span>#5</span><span class="id">R3.3</span><span class="pill planned">Planned</span><span class="chev" aria-hidden="true">›</span></div>
         <div class="card-title">STruC++ bundling, Node 22 discovery, licence files, settings, docs</div>
-        <div class="bar" aria-hidden="true"><span style="left:83.33%;width:16.67%"></span></div>
+        <div class="bar" aria-hidden="true"><span style="left:70%;width:10%"></span></div>
         <div class="card-foot"><span>3 d → ~2 h</span><span>Nov 16</span></div>
       </summary>
       <div class="body">
         <div class="block"><h4>This phase</h4><p>Bundle the single-file compiler in the extension, find a Node 22 or later on the user's machine and explain clearly when there is none, ship the GPL licence and source link, and add settings (Node path, dialect file) and documentation.</p></div>
         <div class="block"><h4>Depends on</h4><p>The check command (#4). Background, constraints and decisions are on the #1 card.</p></div>
+      </div>
+    </details>
+
+    <details class="card" id="r6">
+      <summary>
+        <div class="card-top"><span>#6</span><span class="id">R6</span><span class="pill planned">Planned</span><span class="chev" aria-hidden="true">›</span></div>
+        <div class="card-title">Indexing speed</div>
+        <div class="bar" aria-hidden="true"><span style="left:80%;width:10%"></span></div>
+        <div class="card-foot"><span>5.5 d → ~4 h</span><span>Nov 17</span></div>
+      </summary>
+      <div class="body">
+        <div class="block wide"><h4>Scope</h4><p>Cache signature-file discovery per root (about 850 ms per scan today, mostly 16 directory walks); a persisted archive cache across sessions (needs a format version and a ZIP fingerprint); a per-project background scan, the biggest win, which rewrites the multi-project spine.</p></div>
+        <div class="block"><h4>Risk</h4><p>A wrong readiness gate answers from a partial index, so the background scan lands last, behind the other two.</p></div>
+        <div class="block wide"><h4>How it was estimated</h4><p>My sizing from the item list, not measured. Session time uses the Nov 9 velocity (about 30 min per planned day for fork work, about 45 min for toolkit work); dates assume about 4 hours of session per working day.</p></div>
+      </div>
+    </details>
+
+    <details class="card" id="r7">
+      <summary>
+        <div class="card-top"><span>#7</span><span class="id">R7</span><span class="pill planned">Planned</span><span class="chev" aria-hidden="true">›</span></div>
+        <div class="card-title">Rename: lift the v1 limits</div>
+        <div class="bar" aria-hidden="true"><span style="left:90%;width:10%"></span></div>
+        <div class="card-foot"><span>2.5 d → ~2 h</span><span>Nov 18</span></div>
+      </summary>
+      <div class="body">
+        <div class="block wide"><h4>Scope</h4><p>Keep the <code>.plcproj</code> update inside the rename transaction, so an undo restores it; rename the sibling implementors of a shared interface method, which XAE flags today.</p></div>
+        <div class="block wide"><h4>How it was estimated</h4><p>My sizing from the item list, not measured. Session time uses the Nov 9 velocity (about 30 min per planned day for fork work, about 45 min for toolkit work); dates assume about 4 hours of session per working day.</p></div>
+      </div>
+    </details>
+
+    <details class="card" id="r8">
+      <summary>
+        <div class="card-top"><span>#8</span><span class="id">R8</span><span class="pill planned">Planned</span><span class="chev" aria-hidden="true">›</span></div>
+        <div class="card-title">Language: nested block comments, pragma hover</div>
+        <div class="bar" aria-hidden="true"><span style="left:90%;width:10%"></span></div>
+        <div class="card-foot"><span>1.5 d → ~1 h</span><span>Nov 18</span></div>
+      </summary>
+      <div class="body">
+        <div class="block wide"><h4>Scope</h4><p>Nested <code>(* … *)</code> comments in the lexer and folding; hover help for pragmas and attributes.</p></div>
+        <div class="block wide"><h4>How it was estimated</h4><p>My sizing from the item list, not measured. Session time uses the Nov 9 velocity (about 30 min per planned day for fork work, about 45 min for toolkit work); dates assume about 4 hours of session per working day.</p></div>
+      </div>
+    </details>
+
+    <details class="card" id="r9">
+      <summary>
+        <div class="card-top"><span>#9</span><span class="id">R9</span><span class="pill planned">Planned</span><span class="chev" aria-hidden="true">›</span></div>
+        <div class="card-title">Tooling: ESLint 10, dev advisory</div>
+        <div class="bar" aria-hidden="true"><span style="left:90%;width:10%"></span></div>
+        <div class="card-foot"><span>0.75 d → ~30 min</span><span>Nov 18</span></div>
+      </summary>
+      <div class="body">
+        <div class="block wide"><h4>Scope</h4><p>Move to ESLint 10 (9.x is deprecated; it raises the Node floor and needs a re-triage of findings) and clear the development-only <code>brace-expansion</code> advisory.</p></div>
+        <div class="block wide"><h4>How it was estimated</h4><p>My sizing from the item list, not measured. Session time uses the Nov 9 velocity (about 30 min per planned day for fork work, about 45 min for toolkit work); dates assume about 4 hours of session per working day.</p></div>
+      </div>
+    </details>
+
+    <details class="card" id="r10">
+      <summary>
+        <div class="card-top"><span>#10</span><span class="id">R10</span><span class="pill wait">On trigger</span><span class="chev" aria-hidden="true">›</span></div>
+        <div class="card-title">Reverse index for Find References</div>
+        <div class="bar" aria-hidden="true"><span style="left:0%;width:0%"></span></div>
+        <div class="card-foot"><span>2 d → ~1.5 h</span><span>when needed</span></div>
+      </summary>
+      <div class="body">
+        <div class="block wide"><h4>Trigger</h4><p>Only once a workspace passes about 1000 files or a search takes over 200 ms. Today a search takes 29 ms cold and about 4 ms warm, so it has no date.</p></div>
+        <div class="block wide"><h4>How it was estimated</h4><p>My sizing from the item list, not measured. Session time uses the Nov 9 velocity (about 30 min per planned day for fork work, about 45 min for toolkit work); dates assume about 4 hours of session per working day.</p></div>
       </div>
     </details>
 
@@ -274,7 +340,7 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
       <summary>
         <div class="card-top"><span>#1</span><span class="id">S2</span><span class="pill planned">In progress</span><span class="chev" aria-hidden="true">›</span></div>
         <div class="card-title">Close the fork's gaps: what it rejects on correct code, plus check-only output</div>
-        <div class="bar" aria-hidden="true"><span style="left:0%;width:50%"></span></div>
+        <div class="bar" aria-hidden="true"><span style="left:0%;width:30%"></span></div>
         <div class="card-foot"><span>27.5 d → ~9 h</span><span>Nov 9 – 11</span></div>
       </summary>
       <div class="body">
@@ -282,7 +348,101 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
         <div class="block wide"><h4>Progress</h4><p>Merged Nov 9: step 1, real positions for lexer errors and <code>--check --json</code> (fork PR #5), step 1b, the profile renamed <code>iec-3</code> (fork PR #6); and step 2, pragmas skipped with a warning and conditional pragmas refused (fork PR #7); step 3, <code>SUPER.</code> accepted and <code>THIS^</code> behind <code>self_caret</code> (fork PR #8); step 4, method calls through a member chain (fork PR #9); step 5, interface-typed variables (fork PR #10); step 6, interface properties behind <code>property</code> (fork PR #11), which is release B; step 7, chained comparisons with the Annex A grouping (fork PR #12); step 8, the enum base type after the list behind <code>postfix_enum_base</code> (fork PR #13); step 9, globals qualified by their list name behind <code>named_global_lists</code> (fork PR #14); step 10, STRUCT inheritance behind <code>struct_extends</code> (fork PR #15); step 11, UNION parsed and analysed behind <code>union</code> (fork PR #16). Next: step 12, UNION in C++.</p></div>
         <div class="block wide"><h4>Plan, decided Nov 9</h4><p>The spike, a first design and your compiler findings were merged and checked against the IEC 61131-3 Ed. 3 text, by clause number only. All 13 steps plus a small step 1b, one pull request each into the fork's <code>development</code>. <code>iec</code> means Ed. 3, and the built-in profile is renamed <code>iec-3</code> with no alias, so <code>iec-4</code> can be added later; standard forms are always on, and vendor forms sit behind new neutral features that no profile enables by default. Chained comparisons follow Annex A. Plan: <code>docs/s2-strucpp-fork-plan.md</code>.</p></div>
         <div class="block"><h4>Order</h4><ol><li>Lexer positions and <code>--check --json</code>, then 1b: the profile id <code>iec-3</code></li><li>Pragmas (the toolkit's check can start here)</li><li><code>SUPER.</code> and the caret self form</li><li>Method calls through a member chain</li><li>Interface variables</li><li>Interface properties (standard gaps closed, 11 days)</li><li>Chained comparisons</li><li>Enum base after the list</li><li>Named global lists</li><li>Struct inheritance</li><li>UNION (two steps)</li><li>FB init arguments (the sample compiles with no workarounds)</li></ol></div>
-        <div class="block"><h4>Later fork items, not S2</h4><ul><li>Other Ed. 3 forms the fork refuses: CHAR, LTIME, string index, <code>STRING[n]</code>, typed TRUNC, <code>STRUCT OVERLAP</code> (about 7 to 10 days).</li><li>An <code>iec</code> audit that narrows what it accepts.</li><li>Runtime safety and profile-handling defects; strict-mode policy; an Ed. 4 profile.</li></ul></div>
+        <div class="block"><h4>After S2</h4><p>S3a to S8 below. S3a goes before the toolkit's check (R3.2). Not estimable yet: a strict-mode policy for vendor profiles, an Ed. 4 profile, and the rest of the vendor-feature catalogue.</p></div>
+      </div>
+    </details>
+
+    <details class="card" id="s3a">
+      <summary>
+        <div class="card-top"><span>#2</span><span class="id">S3a</span><span class="pill planned">Before R3.2</span><span class="chev" aria-hidden="true">›</span></div>
+        <div class="card-title">False positives on correct code</div>
+        <div class="bar" aria-hidden="true"><span style="left:30%;width:10%"></span></div>
+        <div class="card-foot"><span>2 d → ~1 h</span><span>Nov 12</span></div>
+      </summary>
+      <div class="body">
+        <div class="block wide"><h4>Scope</h4><p>Three errors the compiler puts on correct code, found during S2: a STRUCT alias is not assignment-compatible with its STRUCT; <code>POINTER TO</code> a STRUCT cannot take <code>ADR(s)</code>; initial values in a UNION are refused as not supported yet.</p></div>
+        <div class="block"><h4>Why first</h4><p>The toolkit's check (R3.2) must not flag correct code, so these go in before it.</p></div>
+        <div class="block wide"><h4>How it was estimated</h4><p>My sizing from the item list, not measured. Session time uses the Nov 9 velocity (about 30 min per planned day for fork work, about 45 min for toolkit work); dates assume about 4 hours of session per working day.</p></div>
+      </div>
+    </details>
+
+    <details class="card" id="s3b">
+      <summary>
+        <div class="card-top"><span>#3</span><span class="id">S3b</span><span class="pill planned">Planned</span><span class="chev" aria-hidden="true">›</span></div>
+        <div class="card-title">The other follow-ups found during S2</div>
+        <div class="bar" aria-hidden="true"><span style="left:30%;width:20%"></span></div>
+        <div class="card-foot"><span>7 d → ~3.5 h</span><span>Nov 12 – 13</span></div>
+      </summary>
+      <div class="body">
+        <div class="block wide"><h4>Passes the checker, fails in g++</h4><p><code>p^.M()</code> behind REF_TO; <code>inst.Nope()</code>; positional method calls that omit a VAR_OUTPUT; an interface implemented only through a base FB; an inherited FB property; <code>TO_DINT</code> of an enum; calling a global FB instance; <code>REF</code>, <code>REF=</code> and <code>=</code> on STRUCTs; a STRUCT argument of an unrelated STRUCT type.</p></div>
+        <div class="block wide"><h4>Checker and parser gaps</h4><p>An unknown member in a chain; an array member assigned to an INT; plain <code>SUPER()</code>; <code>SUPER.x :=</code>; <code>THIS.a.b</code>; <code>GVL_A.units[0]()</code>; methods from interface EXTENDS bases; arrays and STRUCT fields of an interface type; properties through an interface variable; a library STRUCT as an EXTENDS base.</p></div>
+        <div class="block"><h4>Housekeeping</h4><p>The <code>--feature</code> help text and the dialect doc's check list; a bundled-library global colliding with a user global.</p></div>
+        <div class="block wide"><h4>How it was estimated</h4><p>My sizing from the item list, not measured. Session time uses the Nov 9 velocity (about 30 min per planned day for fork work, about 45 min for toolkit work); dates assume about 4 hours of session per working day.</p></div>
+      </div>
+    </details>
+
+    <details class="card" id="s4">
+      <summary>
+        <div class="card-top"><span>#4</span><span class="id">S4</span><span class="pill planned">Planned</span><span class="chev" aria-hidden="true">›</span></div>
+        <div class="card-title">Ed. 3 forms the fork still refuses</div>
+        <div class="bar" aria-hidden="true"><span style="left:40%;width:40%"></span></div>
+        <div class="card-foot"><span>8.5 d → ~4.5 h</span><span>Nov 13 – 16</span></div>
+      </summary>
+      <div class="body">
+        <div class="block wide"><h4>Scope</h4><p>CHAR and WCHAR, LTIME, string indexing, <code>STRING[n]</code> (a decision first), typed <code>TRUNC_&lt;type&gt;</code>, literal-only cases that fail in g++, and <code>STRUCT OVERLAP</code>, which reuses the UNION lowering. The S2 plan sized it at 7 to 10 days.</p></div>
+        <div class="block wide"><h4>How it was estimated</h4><p>My sizing from the item list, not measured. Session time uses the Nov 9 velocity (about 30 min per planned day for fork work, about 45 min for toolkit work); dates assume about 4 hours of session per working day.</p></div>
+      </div>
+    </details>
+
+    <details class="card" id="s5">
+      <summary>
+        <div class="card-top"><span>#5</span><span class="id">S5</span><span class="pill planned">Planned</span><span class="chev" aria-hidden="true">›</span></div>
+        <div class="card-title">Profile-handling defects</div>
+        <div class="bar" aria-hidden="true"><span style="left:70%;width:10%"></span></div>
+        <div class="card-foot"><span>1 d → ~30 min</span><span>Nov 16</span></div>
+      </summary>
+      <div class="body">
+        <div class="block wide"><h4>Scope</h4><p>The profile defects listed in the S2 plan's section 1d.</p></div>
+        <div class="block wide"><h4>How it was estimated</h4><p>My sizing from the item list, not measured. Session time uses the Nov 9 velocity (about 30 min per planned day for fork work, about 45 min for toolkit work); dates assume about 4 hours of session per working day.</p></div>
+      </div>
+    </details>
+
+    <details class="card" id="s6">
+      <summary>
+        <div class="card-top"><span>#6</span><span class="id">S6</span><span class="pill planned">Planned</span><span class="chev" aria-hidden="true">›</span></div>
+        <div class="card-title">Runtime safety defects</div>
+        <div class="bar" aria-hidden="true"><span style="left:70%;width:20%"></span></div>
+        <div class="card-foot"><span>7 d → ~3.5 h</span><span>Nov 16 – 17</span></div>
+      </summary>
+      <div class="body">
+        <div class="block wide"><h4>Scope</h4><p>Fourteen runtime defects from the S2 plan's section 1d: division and MOD by zero, out-of-range indexes, SEL evaluating both inputs, VAR_TEMP keeping its value, FB_exit never called, a WSTRING conversion crash, wrong to-string forms, inflated SIZEOF and pointer stride, no subrange check, 32-bit intermediates, and silent truncation.</p></div>
+        <div class="block wide"><h4>How it was estimated</h4><p>My sizing from the item list, not measured. Session time uses the Nov 9 velocity (about 30 min per planned day for fork work, about 45 min for toolkit work); dates assume about 4 hours of session per working day.</p></div>
+      </div>
+    </details>
+
+    <details class="card" id="s7">
+      <summary>
+        <div class="card-top"><span>#7</span><span class="id">S7</span><span class="pill wait">Needs a decision</span><span class="chev" aria-hidden="true">›</span></div>
+        <div class="card-title">Audit: narrow what iec-3 accepts</div>
+        <div class="bar" aria-hidden="true"><span style="left:80%;width:20%"></span></div>
+        <div class="card-foot"><span>6 d → ~3 h</span><span>Nov 17 – 18</span></div>
+      </summary>
+      <div class="body">
+        <div class="block wide"><h4>Scope</h4><p>Nine leaks the S2 plan lists (C1–C9), such as FB properties, ACTIONs in ST, identifiers with double underscores, overrides without OVERRIDE, and the enum dot form.</p></div>
+        <div class="block"><h4>Decision first</h4><p>Each one narrows what is accepted today, so it needs your call on what <code>iec-3</code> refuses, without destabilising the no-flag default.</p></div>
+        <div class="block wide"><h4>How it was estimated</h4><p>My sizing from the item list, not measured. Session time uses the Nov 9 velocity (about 30 min per planned day for fork work, about 45 min for toolkit work); dates assume about 4 hours of session per working day.</p></div>
+      </div>
+    </details>
+
+    <details class="card" id="s8">
+      <summary>
+        <div class="card-top"><span>#8</span><span class="id">S8</span><span class="pill wait">After R3.3</span><span class="chev" aria-hidden="true">›</span></div>
+        <div class="card-title">Make iec-3 the default, in its own release</div>
+        <div class="bar" aria-hidden="true"><span style="left:90%;width:10%"></span></div>
+        <div class="card-foot"><span>0.5 d → ~20 min</span><span>Nov 18</span></div>
+      </summary>
+      <div class="body">
+        <div class="block wide"><h4>Scope</h4><p>Flip the no-flag default to <code>iec-3</code> once downstream callers pass <code>--dialect</code> (the toolkit does after R3.3), in a release of its own with a note.</p></div>
       </div>
     </details>
 
@@ -309,16 +469,13 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
     <details class="card" id="backlog">
       <summary>
         <div class="card-top"><span>Backlog</span><span class="chev" aria-hidden="true">›</span></div>
-        <div class="card-title">Not scheduled · 5 groups</div>
+        <div class="card-title">Not scheduled · 2 items</div>
       </summary>
       <div class="body">
-        <div class="block wide">
+        <div class="block wide"><p>The former backlog is now scheduled as R6 to R10. What remains has no estimate on purpose:</p>
           <ul>
-            <li>Indexing speed: cache signature-file discovery per root; per-project background scan; persistent archive cache.</li>
-            <li>Rename: keep <code>.plcproj</code> updates inside the rename transaction; rename sibling implementors of an interface.</li>
-            <li>Reverse index for Find References, only past about 1000 files or 200 ms.</li>
-            <li>Tooling: ESLint 10; a development-only dependency advisory.</li>
-            <li>Language: nested block comments; hover help for pragmas.</li>
+            <li><b>On your Windows machine, about 1 hour of your time:</b> Libraries-view scoping, library member expansion, squiggle rendering, and closing the peek over the real bridge.</li>
+            <li><b>Showcase screenshots:</b> the scripts live only on your machine; moving them into the repo takes about 30 minutes once they are here.</li>
           </ul>
         </div>
       </div>
@@ -358,9 +515,20 @@ var PLAN = [
   { lane: 'TC PLC Toolkit', num: 3, id: 'R2',   card: 'r2',   name: 'Create TwinCAT project', est: '6 d → ~4 h',  start: '2026-11-12', end: '2026-11-12', machine: true },
   { lane: 'TC PLC Toolkit', num: 4, id: 'R3.2', card: 'r3-2', name: 'STruC++ check',          est: '7 d → ~4 h',  start: '2026-11-13', end: '2026-11-13' },
   { lane: 'TC PLC Toolkit', num: 5, id: 'R3.3', card: 'r3-3', name: 'STruC++ packaging',      est: '3 d → ~2 h',  start: '2026-11-16', end: '2026-11-16' },
-  { lane: 'STruC++ fork',   num: 1, id: 'S2',   card: 's2',   name: 'Fork compiler gaps',     est: '27.5 d → ~9 h', start: '2026-11-09', end: '2026-11-11' }
+  { lane: 'TC PLC Toolkit', num: 6, id: 'R6',   card: 'r6',   name: 'Indexing speed',         est: '5.5 d → ~4 h', start: '2026-11-17', end: '2026-11-17' },
+  { lane: 'TC PLC Toolkit', num: 7, id: 'R7',   card: 'r7',   name: 'Rename limits',          est: '2.5 d → ~2 h', start: '2026-11-18', end: '2026-11-18', days: 0.5 },
+  { lane: 'TC PLC Toolkit', num: 8, id: 'R8',   card: 'r8',   name: 'Comments, pragma hover', est: '1.5 d → ~1 h', start: '2026-11-18', end: '2026-11-18', days: 0.3, offset: 0.5 },
+  { lane: 'TC PLC Toolkit', num: 9, id: 'R9',   card: 'r9',   name: 'ESLint 10',              est: '0.75 d → ~30 min', start: '2026-11-18', end: '2026-11-18', days: 0.2, offset: 0.8 },
+  { lane: 'STruC++ fork',   num: 1, id: 'S2',   card: 's2',   name: 'Fork compiler gaps',     est: '27.5 d → ~9 h', start: '2026-11-09', end: '2026-11-11' },
+  { lane: 'STruC++ fork',   num: 2, id: 'S3a',  card: 's3a',  name: 'False positives',        est: '2 d → ~1 h',  start: '2026-11-12', end: '2026-11-12', days: 0.3 },
+  { lane: 'STruC++ fork',   num: 3, id: 'S3b',  card: 's3b',  name: 'S2 follow-ups',          est: '7 d → ~3.5 h', start: '2026-11-12', end: '2026-11-13', days: 1.2, offset: 0.3 },
+  { lane: 'STruC++ fork',   num: 4, id: 'S4',   card: 's4',   name: 'Ed. 3 refusals',         est: '8.5 d → ~4.5 h', start: '2026-11-13', end: '2026-11-16', offset: 0.5, days: 3.6 },
+  { lane: 'STruC++ fork',   num: 5, id: 'S5',   card: 's5',   name: 'Profile handling',       est: '1 d → ~30 min', start: '2026-11-16', end: '2026-11-16', days: 0.2, offset: 0.1 },
+  { lane: 'STruC++ fork',   num: 6, id: 'S6',   card: 's6',   name: 'Runtime safety',         est: '7 d → ~3.5 h', start: '2026-11-16', end: '2026-11-17', days: 1.5, offset: 0.3 },
+  { lane: 'STruC++ fork',   num: 7, id: 'S7',   card: 's7',   name: 'iec-3 audit (decision)', est: '6 d → ~3 h',  start: '2026-11-17', end: '2026-11-18', days: 1.3, offset: 0.8 },
+  { lane: 'STruC++ fork',   num: 8, id: 'S8',   card: 's8',   name: 'Default → iec-3',        est: '0.5 d → ~20 min', start: '2026-11-18', end: '2026-11-18', days: 0.2, offset: 0.8 }
 ];
-var DOMAIN_START = '2026-11-09', DOMAIN_END = '2026-11-18'; /* exclusive */
+var DOMAIN_START = '2026-11-09', DOMAIN_END = '2026-11-19'; /* exclusive */
 (function () {
   var DAY = 86400000;
   function d(s) { var p = s.split('-'); return Date.UTC(+p[0], +p[1] - 1, +p[2]); }
@@ -400,7 +568,7 @@ var DOMAIN_START = '2026-11-09', DOMAIN_END = '2026-11-18'; /* exclusive */
     lab.innerHTML = '<span class="id"></span><span class="nm"></span>';
     lab.firstChild.textContent = it.id; lab.lastChild.textContent = it.name; lab.title = it.name;
     var tr = document.createElement('div'); tr.className = 'g-track';
-    var startDay = (d(it.start) - t0) / DAY, len = it.days || ((d(it.end) - d(it.start)) / DAY + 1);
+    var startDay = (d(it.start) - t0) / DAY + (it.offset || 0), len = it.days || ((d(it.end) - d(it.start)) / DAY + 1);
     var bar = document.createElement('button'); bar.type = 'button'; bar.className = 'g-bar' + (it.machine ? ' hatch' : '');
     bar.style.left = pct(startDay); bar.style.width = pct(len);
     var when = it.start === it.end ? fmt(it.start) : fmt(it.start) + ' – ' + fmt(it.end);

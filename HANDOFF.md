@@ -88,6 +88,9 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   `projectMap.js`; `test_objects_tree_ids.js` pins 396 ids / 301 reveal chains (a required gate); suite 84/84 FULL.
   Intended fix: grouped-mode reveal chains now show the tree's own project label (86 mismatches gone). **The dev-host gate PASSED** on the
   user's Windows machine 2026-11-09; PR #30 (this session branch) squash-merges into `dev` once its CI is green. and R3.2 full scope (7 d). Next roadmap item: R4.
+- **Backlog scheduled 2026-11-09 (user's ask):** toolkit R6–R10 (R10 on trigger only) and fork S3a–S8 are now rows in
+  ROADMAP.md with my own sizing (not measured) at the Nov 9 velocity, ~4 h of session per working day. **S3a (three
+  false positives on correct code) goes before R3.2**; S7 (iec-3 audit) needs the user's decision first; S8 after R3.3.
 - **Roadmap re-measured 2026-11-09** (user's ask): ~20 planned days were delivered in ~7 h that day (ROADMAP.md
   "Velocity"). New forecasts assume half that pace; toolkit code ~2026-11-16, S2 ~2026-11-11. The real pacing
   item is the user's Windows checks (R5 XAE, R4 dev-host via PR #30, R2 skeleton/XAE proofs) — never forecast.

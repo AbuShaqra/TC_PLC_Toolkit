@@ -4,7 +4,7 @@ The order of planned work for the extension. **This file is the source of truth*
 (<https://claude.ai/artifact/8RG7TZtBV2cuupsrwWtknv>) is rendered from it by hand out of `docs/roadmap.html`.
 Keep both current in the same change — rules in [CLAUDE.md](CLAUDE.md) ("Keep the roadmap current").
 
-**Last updated:** 2026-11-09 (Windows checks passed; 4024 skeleton in) · **Current release:** v0.10.1
+**Last updated:** 2026-11-09 (backlog and fork follow-ups scheduled, user's ask) · **Current release:** v0.10.1
 
 How to read it: items run top to bottom in the **Order** column. IDs are stable names and do not change
 when the order does. Estimates are working days for one developer; start and end dates are **forecasts**
@@ -21,6 +21,11 @@ after it. An item leaves the table for "Done" once its PR is merged into `dev`, 
 | 3 | R2 | Create a new TwinCAT project from the extension's start view | 6 d | ~4 h + XAE proofs | 2026-11-12 | 2026-11-12 | **Next.** 4024 skeleton received 2026-11-09 (`resources/templates/xae-3.1.4024/`); done-when still needs both templates proven in XAE on the user's machine |
 | 4 | R3.2 | STruC++ check command with errors mapped to the panes | 7 d | ~4 h | 2026-11-13 | 2026-11-13 | Planned (full scope, 2026-11-09) — after S2 |
 | 5 | R3.3 | STruC++ bundling, Node 22 discovery, licence files, settings, docs | 3 d | ~2 h | 2026-11-16 | 2026-11-16 | Planned |
+| 6 | R6 | Indexing speed: memoize signature-file discovery per root; persisted archive cache; per-project background scan | 5.5 d | ~4 h | 2026-11-17 | 2026-11-17 | Planned (from the backlog, 2026-11-09) |
+| 7 | R7 | Rename v1 limits: `.plcproj` sync inside the rename transaction; rename sibling implementors of a shared interface | 2.5 d | ~2 h | 2026-11-18 | 2026-11-18 | Planned (from the backlog) |
+| 8 | R8 | Language: nested block comments; hover help for pragmas | 1.5 d | ~1 h | 2026-11-18 | 2026-11-18 | Planned (from the backlog) |
+| 9 | R9 | Tooling: ESLint 10 (re-triage, Node floor); the dev-only `brace-expansion` advisory | 0.75 d | ~30 min | 2026-11-18 | 2026-11-18 | Planned (from the backlog) |
+| 10 | R10 | L1 reverse index for Find References | 2 d | ~1.5 h | — | — | **On trigger only:** past ~1000 files or > 200 ms per search (today 29 ms cold) |
 
 **Forecast (re-measured 2026-11-09):** the toolkit lane's code finishes about **2026-11-16**. What sets the pace now
 is not code but the steps only the user can do on Windows. R5's XAE check, R4's dev-host gate and R2's 4024 skeleton
@@ -58,6 +63,13 @@ for it where a row says so.
 | Order | ID | Item | Planned | Re-measured | Start | End | Status |
 |-------|----|------|---------|-------------|-------|-----|--------|
 | 1 | S2 | Close the fork's gaps: 14 PR-sized steps + the folded-in items (plan: [docs/s2-strucpp-fork-plan.md](docs/s2-strucpp-fork-plan.md)) | 22.5 d + ~5 d folded | ~9 h | 2026-11-09 | 2026-11-11 | In progress — steps 1 (fork PR #5), 1b (#6), 2 (#7), 3 (#8), 4 (#9), 5 (#10), 6 (#11, release B), 7 (#12), 8 (#13), 9 (#14), 10 (#15) and 11 (#16) merged 2026-11-09; step 12 (UNION in C++) next. R3.2 waits for it |
+| 2 | S3a | False positives on correct code found during S2: a STRUCT alias is not assignment-compatible with its STRUCT; `POINTER TO <STRUCT> := ADR(s)` refused; UNION initial values ("not supported yet") | 2 d | ~1 h | 2026-11-12 | 2026-11-12 | Planned — **before R3.2** (a check that flags correct code is worse than none) |
+| 3 | S3b | The other S2 follow-ups (list below): code the checker passes but g++ rejects, checker gaps, parser gaps, housekeeping | 7 d | ~3.5 h | 2026-11-12 | 2026-11-13 | Planned |
+| 4 | S4 | Ed. 3 forms the fork refuses: CHAR/WCHAR, LTIME, string index, `STRING[n]` (needs a decision), typed `TRUNC_<type>`, g++-only literal cases, `STRUCT OVERLAP` (reuses the UNION lowering) | 8.5 d (7–10) | ~4.5 h | 2026-11-13 | 2026-11-16 | Planned |
+| 5 | S5 | Profile-handling defects (S2 plan §1d) | 1 d | ~30 min | 2026-11-16 | 2026-11-16 | Planned |
+| 6 | S6 | Runtime safety defects (S2 plan §1d, 14 items: `/0` and `MOD 0`, out-of-range index, SEL evaluating both inputs, VAR_TEMP keeping values, FB_exit never called, conversions and to-string forms, SIZEOF/stride, subrange checks, 32-bit intermediates, silent truncation) | 7 d | ~3.5 h | 2026-11-16 | 2026-11-17 | Planned — estimate not measured |
+| 7 | S7 | `iec` audit: narrow what `iec-3` accepts (C1–C9) | 6 d | ~3 h | 2026-11-17 | 2026-11-18 | **Needs a decision first** (what to narrow, and that the no-flag default stays stable) |
+| 8 | S8 | Flip the no-flag default to `iec-3`, in its own release | 0.5 d | ~20 min | 2026-11-18 | 2026-11-18 | After R3.3 (downstream callers pass `--dialect`) |
 
 **Why this order.**
 1. **R3.1 (spike) first:** the STruC++ work is the largest unknown. The spike needs no decisions, and what
@@ -131,10 +143,25 @@ vendor-neutral features that no profile enables by default (`self_caret`, `prope
 11 d) → 7 chained comparisons → 8 postfix enum base → 9 named global lists → 10 struct inheritance → 11–12
 UNION → 13 FB_init (the sample compiles with no workarounds).
 
-**Later fork items, not S2** (sizes from the plan, not measured): other Ed. 3 forms the fork refuses (CHAR,
-LTIME, string index, `STRING[n]`, typed TRUNC, `STRUCT OVERLAP`; about 7–10 d); an `iec` audit that narrows
-what `iec` accepts; runtime safety defects; profile-handling defects; strict-mode policy for vendor profiles;
-an Ed. 4 profile.
+**After S2** the fork lane runs S3a–S8 (rows above). S3a comes before the toolkit's R3.2, because it removes errors
+the compiler puts on correct code. **Not estimable yet:** a strict-mode policy for vendor profiles (a decision
+first), an Ed. 4 profile (needs a full Ed. 4 read), the rest of the vendor-feature catalogue (explicitly not a plan).
+
+**S3b's list** (each found during an S2 step; all also on `development` before it):
+- *Passes the checker, fails in g++:* `p^.M()` on an FB behind REF_TO; `inst.Nope()` / `intVar.M()`; positional
+  method calls omitting a VAR_OUTPUT; an FB implementing an interface only through its base FB; an FB property
+  inherited from a base FB; `TO_DINT(enumValue)`; `gfb(a := 2);` on a global FB instance; `REF(s)`, `REF=` and `=`
+  on STRUCTs; a STRUCT argument of an unrelated STRUCT type.
+- *Checker gaps:* an unknown member in a chain (`x := mid.nothing`, `s.zz := 1`); an array member assigned to an INT.
+- *Parser and language gaps:* plain `SUPER()`; `SUPER.x :=` as a target; `THIS.a.b`; `GVL_A.units[0]()`; IMPLEMENTS
+  ignoring methods from interface EXTENDS bases; ARRAY OF / STRUCT field of an interface type; properties through an
+  interface variable; a library STRUCT as an EXTENDS base.
+- *Housekeeping:* the `--feature` help text and the DIALECTS.md "Checks" list; a bundled-library global (`speed`)
+  colliding with a user global.
+
+**How these were estimated (2026-11-09):** the planned days are my sizing from the lists above, not measured; the
+re-measured column applies the velocity below (about 30 min per planned day for fork work, ~45 min for toolkit work),
+and the calendar assumes about 4 hours of session per working day, weekends off.
 
 ### R3 — Compile TwinCAT projects with STruC++
 
@@ -180,13 +207,14 @@ an Ed. 4 profile.
 
 ## Backlog (not scheduled)
 
-Each waits for the reason recorded in [docs/handoff-findings.md](docs/handoff-findings.md) "Deferred work".
+The former backlog is now scheduled as R6–R10 (2026-11-09, user's ask); each item's reason and numbers stay in
+[docs/handoff-findings.md](docs/handoff-findings.md) "Deferred work". What remains here has no estimate on purpose:
 
-- Indexing: memoize `collectSignatureFiles` per root; non-blocking per-project scan; persisted archive cache.
-- Rename: `.plcproj` sync inside the rename transaction; rename sibling interface implementors.
-- L1 reverse index for references — only past ~1000 files or > 200 ms.
-- Tooling: ESLint 10; `brace-expansion` dev advisory.
-- Language: nested block comments; pragma hover.
+- **On the user's Windows machine (~1 h of the user's time, no date):** Libraries-view scoping (tree descriptions,
+  webview tab switches, startup seeding, the `.plcproj`-watcher path end to end); library member expansion seen
+  once; squiggle rendering; peek dismissal over the real bridge.
+- **Showcase screenshots:** the scripts exist only on the user's machine (`scratch/showcase/`); moving them to
+  `scripts/showcase/` takes ~30 min once they are in the repo.
 
 ## Done
 
