@@ -59,7 +59,8 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   `a529ea9`, client contract in its PR body; S2 compiler gaps: plan DONE and decided 2026-11-09 —
   `docs/s2-strucpp-fork-plan.md`, all 13 steps + 1b (~22.5 d), `iec` = Ed. 3, Annex A precedence). Merged in the fork: step 1
   (`--check --json`, lexer positions; PR #5 `8aea9a7`) and 1b (`iec` renamed `iec-3`, no alias, id reserved; PR #6
-  `5fda1bc`). Next: step 2 (pragmas). The vendored profile now extends `iec-3`.
+  `5fda1bc`). Step 2 (pragmas skipped with a warning, conditional ones refused; PR #7 `47c99fa`) also merged — the toolkit's
+  check (R3.2) can now analyse every sample file. Next: step 3. The vendored profile now extends `iec-3`.
   The IEC Ed. 3 copy the user supplied is licensed to another party: cite clause numbers only, never its text. **R4 started 2026-11-09** (early; an agent is building `src/objectsTreeModel.js`). and R3.2 full scope (7 d). Next roadmap item: R4.
 - **Was next: R3.1** (STruC++ spike) — [ROADMAP.md](ROADMAP.md) (page https://claude.ai/artifact/8RG7TZtBV2cuupsrwWtknv,
   source `docs/roadmap.html`). Order: R3.1 → R4 Objects-tree model (deepening P7) → R2 create a TwinCAT project →
