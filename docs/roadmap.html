@@ -533,7 +533,7 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
 var PLAN = [
   { lane: 'TC PLC Toolkit', num: 1, id: 'R3.1', card: 'r3-1', name: 'STruC++ spike',          est: '2 d → ~15 min', start: '2026-11-09', end: '2026-11-09', days: 0.3, status: 'done', actualStart: '2026-11-09T11:45:00Z', actualEnd: '2026-11-09T12:03:42Z' },
   { lane: 'TC PLC Toolkit', num: 2, id: 'R4',   card: 'r4',   name: 'Objects-tree model',     est: '4 d → ~3 h',  start: '2026-11-09', end: '2026-11-09', machine: true, status: 'done', actualStart: '2026-11-09T12:04:17Z', actualEnd: '2026-11-09T19:56:34Z' },
-  { lane: 'TC PLC Toolkit', num: 3, id: 'R2',   card: 'r2',   name: 'Sidebar + new project',  est: '8.5 d → ~6 h', start: '2026-11-12', end: '2026-11-13', days: 1.5, machine: true, status: 'progress' },
+  { lane: 'TC PLC Toolkit', num: 3, id: 'R2',   card: 'r2',   name: 'Sidebar + new project',  est: '8.5 d → ~6 h', start: '2026-11-12', end: '2026-11-13', machine: true, status: 'progress', actualStart: '2026-11-09T19:57:00Z' },
   { lane: 'TC PLC Toolkit', num: '3b', id: 'R11', card: 'r11', name: 'Marketplace publishing', est: '0.5 d → ~1 h', start: '2026-11-13', end: '2026-11-13', days: 0.3, offset: 0.5, machine: true },
   { lane: 'TC PLC Toolkit', num: 4, id: 'R3.2', card: 'r3-2', name: 'STruC++ check',          est: '7 d → ~4 h',  start: '2026-11-16', end: '2026-11-16' },
   { lane: 'TC PLC Toolkit', num: 5, id: 'R3.3', card: 'r3-3', name: 'STruC++ packaging',      est: '3 d → ~2 h',  start: '2026-11-17', end: '2026-11-17', days: 0.5 },
@@ -541,7 +541,7 @@ var PLAN = [
   { lane: 'TC PLC Toolkit', num: 7, id: 'R7',   card: 'r7',   name: 'Rename limits',          est: '2.5 d → ~2 h', start: '2026-11-19', end: '2026-11-19', days: 0.5 },
   { lane: 'TC PLC Toolkit', num: 8, id: 'R8',   card: 'r8',   name: 'Comments, pragma hover', est: '1.5 d → ~1 h', start: '2026-11-19', end: '2026-11-19', days: 0.3, offset: 0.5 },
   { lane: 'TC PLC Toolkit', num: 9, id: 'R9',   card: 'r9',   name: 'ESLint 10',              est: '0.75 d → ~30 min', start: '2026-11-19', end: '2026-11-19', days: 0.2, offset: 0.8 },
-  { lane: 'STruC++ fork',   num: 1, id: 'S2',   card: 's2',   name: 'Fork compiler gaps',     est: '27.5 d → ~9 h', start: '2026-11-09', end: '2026-11-11', status: 'progress' },
+  { lane: 'STruC++ fork',   num: 1, id: 'S2',   card: 's2',   name: 'Fork compiler gaps',     est: '27.5 d → ~9 h', start: '2026-11-09', end: '2026-11-11', status: 'progress', actualStart: '2026-11-09T12:04:17Z' },
   { lane: 'STruC++ fork',   num: 2, id: 'S3a',  card: 's3a',  name: 'False positives',        est: '2 d → ~1 h',  start: '2026-11-12', end: '2026-11-12', days: 0.3 },
   { lane: 'STruC++ fork',   num: 3, id: 'S3b',  card: 's3b',  name: 'S2 follow-ups',          est: '7 d → ~3.5 h', start: '2026-11-12', end: '2026-11-13', days: 1.2, offset: 0.3 },
   { lane: 'STruC++ fork',   num: 4, id: 'S4',   card: 's4',   name: 'Ed. 3 refusals',         est: '8.5 d → ~4.5 h', start: '2026-11-13', end: '2026-11-16', offset: 0.5, days: 3.6 },
@@ -597,11 +597,18 @@ var DOMAIN_START = '2026-11-09', DOMAIN_END = '2026-11-20'; /* exclusive */
       startDay = (Date.parse(it.actualStart) - t0) / DAY;
       len = Math.max((Date.parse(it.actualEnd) - Date.parse(it.actualStart)) / DAY, 0.15);
     }
+    // An item in progress starts at its real start time and runs to the end of its forecast end day.
+    var started = it.status === 'progress' && it.actualStart;
+    if (started) {
+      startDay = (Date.parse(it.actualStart) - t0) / DAY;
+      len = Math.max((d(it.end) + DAY - Date.parse(it.actualStart)) / DAY, 0.15);
+    }
     var bar = document.createElement('button'); bar.type = 'button'; bar.className = 'g-bar' + (it.status ? ' ' + it.status : '') + (it.machine ? ' hatch' : '');
     bar.style.left = pct(startDay); bar.style.width = pct(len);
     function hm(iso) { var x = new Date(Date.parse(iso)); return String(x.getUTCHours()).padStart(2, '0') + ':' + String(x.getUTCMinutes()).padStart(2, '0'); }
     var when = actual
       ? fmt(it.actualStart.slice(0, 10)) + ' ' + hm(it.actualStart) + '–' + (it.actualEnd.slice(0, 10) === it.actualStart.slice(0, 10) ? '' : fmt(it.actualEnd.slice(0, 10)) + ' ') + hm(it.actualEnd) + ' UTC (actual)'
+      : started ? 'since ' + fmt(it.actualStart.slice(0, 10)) + ' ' + hm(it.actualStart) + ' UTC, forecast end ' + fmt(it.end)
       : it.start === it.end ? fmt(it.start) : fmt(it.start) + ' – ' + fmt(it.end);
     var stateText = it.status === 'done' ? 'done' : it.status === 'progress' ? 'in progress' : 'planned';
     bar.setAttribute('aria-label', it.lane + ' #' + it.num + ' ' + it.id + ' ' + it.name + ', ' + stateText + ', ' + it.est + ', ' + when + (it.machine ? ', needs your Windows machine' : ''));
