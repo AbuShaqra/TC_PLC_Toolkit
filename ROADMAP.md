@@ -18,7 +18,7 @@ after it. An item leaves the table for "Done" once its PR is merged into `dev`, 
 |-------|----|------|---------|-------------|-------|-----|--------|
 | 1 | R3.1 | STruC++ spike: sample project through the compiler under the TwinCAT dialect | 2 d | ~15 min (done) | 2026-11-09 | 2026-11-09 | Findings done 2026-11-09 ([docs/r3.1-strucpp-spike.md](docs/r3.1-strucpp-spike.md)); decisions taken |
 | 3 | R2 | TwinCAT sidebar (Activity Bar icon) + start page; create a new project (3.1.4024 / 3.1.4026) | 8.5 d | ~6 h + XAE proofs | 2026-11-12 | 2026-11-13 | **Next** — scope grown 2026-11-09 (user's ask). 4024 skeleton received 2026-11-09 (`resources/templates/xae-3.1.4024/`); done-when still needs both templates proven in XAE on the user's machine |
-| 3b | R11 | Publish to the VS Code Marketplace (and Open VSX) | 0.5 d | ~1 h + your account step | 2026-11-13 | 2026-11-13 | Planned (user's ask 2026-11-09) — after R2, so the first public version has the TwinCAT sidebar |
+| 3b | R11 | Publish to the VS Code Marketplace (and Open VSX) | 0.5 d | ~1 h + your account step | 2026-11-13 | 2026-11-13 | Planned — **accounts created** on both marketplaces (user, 2026-11-09); ships with the first release after R2 |
 | 4 | R3.2 | STruC++ check command with errors mapped to the panes | 7 d | ~4 h | 2026-11-16 | 2026-11-16 | Planned (full scope, 2026-11-09) — after S2 |
 | 5 | R3.3 | STruC++ bundling, Node 22 discovery, licence files, settings, docs | 3 d | ~2 h | 2026-11-17 | 2026-11-17 | Planned |
 | 6 | R6 | Indexing speed: memoize signature-file discovery per root; persisted archive cache; per-project background scan | 5.5 d | ~4 h | 2026-11-17 | 2026-11-18 | Planned (from the backlog, 2026-11-09) |
@@ -140,7 +140,8 @@ Two ways around it:
 **Goal.** The extension installs from the VS Code Marketplace (and Open VSX, for VSCodium, Cursor and similar),
 starting with the first release that carries R2's TwinCAT sidebar.
 
-**The user's part (one-off, ~15 min):** create the publisher `a-abushaqra` (must equal `package.json`
+**The user's part (one-off, ~15 min):** accounts on both marketplaces were created 2026-11-09. Still to confirm: the
+publisher `a-abushaqra` (must equal `package.json`
 `publisher`) at marketplace.visualstudio.com/manage; then either upload the release VSIX by hand, or add an Azure
 DevOps token with the *Marketplace → Manage* scope as the repo secret `VSCE_PAT` (and an Open VSX token as
 `OVSX_PAT`). The publisher profile's "About" text was drafted 2026-11-09.
