@@ -54,8 +54,8 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   9 compiler gaps; with scratch workarounds 0 errors under twincat3, 6 under iec (REFERENCE TO, REF=). No
   check-only CLI flag (`analyze()` is check-only but unreachable from the CLI bundle; a wrapper or a fork
   `--check --json` flag). Export-mode input is WRONG to check (it rewrites REFERENCE TO→POINTER TO, REF=→:=);
-  R3.2 must feed a raw-based unit. **Two decisions are open with the user** (see ROADMAP.md under the table)
-  before R3.2 starts.
+  R3.2 must feed a raw-based unit. **Decided 2026-11-09:** wait for the fork (fork-lane item S2, before R3.2;
+  the roadmap now has a parallel STruC++ fork lane: S1 language-server dialect profiles, S2 compiler gaps) and R3.2 full scope (7 d). Next roadmap item: R4.
 - **Was next: R3.1** (STruC++ spike) — [ROADMAP.md](ROADMAP.md) (page https://claude.ai/artifact/8RG7TZtBV2cuupsrwWtknv,
   source `docs/roadmap.html`). Order: R3.1 → R4 Objects-tree model (deepening P7) → R2 create a TwinCAT project →
   R3.2 check command → R3.3 packaging. Forecast end 2026-12-05. Every R2/R3 decision is SETTLED (2026-11-09,

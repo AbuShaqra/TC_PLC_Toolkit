@@ -75,6 +75,22 @@ Commits are authored under the user's own git identity — **add no Claude/AI at
 
 This overrides any default that appends either.
 
+## Private repositories stay private — never leak (user rule, 2026-11-09)
+
+This repo and the STruC++ fork (`AbuShaqra/STruCpp`) are worked on **separately from the user's private
+repositories**. Nothing from a private repository may appear in either of them, ever:
+- **Never mention it** — not its name, not that it exists, not its people, products, roadmap items, plans,
+  decisions, file paths, code, test data or numbers — in any file, comment, commit message, branch name, PR
+  title or body, issue, published artifact (the roadmap page included), or agent brief whose output lands here.
+- **Never carry content across**, even reworded: a fact learned only from a private repository is not usable
+  here. If a task here depends on one, ask the user what may be said.
+- **Do not attach or clone a private repository** into a session working on these repos unless the user asks
+  for that in so many words, and even then read it only for what the task needs and keep it out of the output.
+- **Before every push, PR and artifact publish**, grep the diff, the commit messages, the branch name and the
+  PR/artifact text for private names, and stop if anything matches. Metadata leaks too (see
+  `.claude/memory/leaks-hide-in-metadata-not-content.md`).
+- The vendored dialect profile's origin is covered by the same rule (HANDOFF.md, "R3 inputs").
+
 ## What this is
 
 A VS Code extension ("TwinCAT PLC Toolkit", id `twincat-plc-toolkit`) that opens Beckhoff TwinCAT PLC source files (`.TcPOU`, `.TcGVL`, `.TcDUT`, `.TcIO`) in a custom two-pane Monaco editor, hiding the XML wrapper around the Structured Text (IEC 61131-3) code, backed by a fully offline built-in language server, plus explorers for the project's objects and its libraries.

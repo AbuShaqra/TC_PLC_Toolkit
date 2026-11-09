@@ -16,27 +16,36 @@ after it. An item leaves the table for "Done" once its PR is merged into `dev`, 
 
 | Order | ID | Item | Estimate | Start | End | Status |
 |-------|----|------|----------|-------|-----|--------|
-| 1 | R3.1 | STruC++ spike: sample project through the compiler under the TwinCAT dialect | 2 d | 2026-11-10 | 2026-11-11 | Findings done 2026-11-09 ([docs/r3.1-strucpp-spike.md](docs/r3.1-strucpp-spike.md)) — 2 decisions open |
+| 1 | R3.1 | STruC++ spike: sample project through the compiler under the TwinCAT dialect | 2 d | 2026-11-10 | 2026-11-11 | Findings done 2026-11-09 ([docs/r3.1-strucpp-spike.md](docs/r3.1-strucpp-spike.md)); decisions taken |
 | 2 | R4 | Objects-tree model (deepening roadmap P7) | 4 d | 2026-11-12 | 2026-11-17 | Planned — needs the user's Windows machine |
 | 3 | R2 | Create a new TwinCAT project from the extension's start view | 6 d | 2026-11-18 | 2026-11-25 | Planned — needs a 4024 skeleton from the user's XAE |
-| 4 | R3.2 | STruC++ check command with errors mapped to the panes | 5 d | 2026-11-26 | 2026-12-02 | Planned |
-| 5 | R3.3 | STruC++ bundling, Node 22 discovery, licence files, settings, docs | 3 d | 2026-12-03 | 2026-12-05 | Planned |
+| 4 | R3.2 | STruC++ check command with errors mapped to the panes | 7 d | 2026-11-26 | 2026-12-04 | Planned (full scope, 2026-11-09) — after S2 |
+| 5 | R3.3 | STruC++ bundling, Node 22 discovery, licence files, settings, docs | 3 d | 2026-12-07 | 2026-12-09 | Planned |
 
-**Total remaining:** 20 working days, forecast to finish **2026-12-05**. R2's and R3's original decisions are settled
-(2026-11-09). **Open from the R3.1 spike** (`docs/r3.1-strucpp-spike.md`): (1) STruC++ still rejects five
-constructs the correct `sample/` uses (PROPERTY in an INTERFACE, a method call through a member chain,
-`TYPE … EXTENDS … : STRUCT`, `UNION`, `THIS^`) — suppress them, label them as compiler limitations, or wait for
-the fork; (2) R3.2 grows from 5 d to 6–7 d for its full scope (a line-preserving check emitter in the converter
-and check-only plumbing), or keeps 5 d with a narrower scope.
-R5 and R1 merged on 2026-11-09, ahead of their forecast, so the later dates were pulled in.
+**Total remaining (toolkit lane):** 22 working days, forecast to finish **2026-12-09**. Decisions taken 2026-11-09
+after the R3.1 spike (`docs/r3.1-strucpp-spike.md`): **wait for the fork** — the check command must not put compiler
+errors on correct code, so the gaps are fixed in STruC++ first (S2, fork lane); **R3.2 takes its full scope**
+(5 → 7 d).
+
+## STruC++ fork lane (parallel)
+
+Work in the compiler fork (`AbuShaqra/STruCpp`, branch `development`, GPL-3.0-only — its code stays there; read
+its CLAUDE.md first). It runs **alongside** the toolkit lane (user's call, 2026-11-09); the toolkit only waits
+for it where a row says so.
+
+| Order | ID | Item | Estimate | Start | End | Status |
+|-------|----|------|----------|-------|-----|--------|
+| 1 | S1 | The fork's language server honours dialect profiles (a client passes a profile object) | 1.5 d | 2026-11-09 | 2026-11-10 | In progress (started 2026-11-09) |
+| 2 | S2 | The constructs it still rejects on correct TwinCAT code, plus check-only output | 10 d (rough) | 2026-11-11 | 2026-11-24 | Planned — R3.2 waits for it |
 
 **Why this order.**
 1. **R3.1 (spike) first:** the STruC++ work is the largest unknown. The spike needs no decisions, and what
    the compiler rejects on the sample decides the size of R3.2–R3.3 while other work proceeds.
 2. **R4 before R2:** R2 adds an empty state and a create flow to the Objects tree, and R4 rebuilds the
    Objects tree's model. Doing R4 first means R2 is written once, against the new model.
-3. **R2 then R3.2–R3.3:** R2 needs its templates made and proven in XAE on the user's machine, the same
-   session R4's dev-host gate needs. R3.2–R3.3 build on what the spike finds.
+3. **R2, then R3.2–R3.3 once S2 is merged:** R2 needs its templates made and proven in XAE on the user's machine, the same
+   session R4's dev-host gate needs. S2 (fork lane) comes before R3.2 because a check command that flags correct code is
+   worse than none (decided 2026-11-09); R3.2–R3.3 then build on a compiler that accepts the sample.
 
 ### R4 — Objects-tree model (deepening roadmap P7)
 
@@ -84,6 +93,33 @@ Two ways around it:
    machine. Each template is proven to open and build in its own XAE version.
 4. **Starter content:** `PROGRAM MAIN`, the `PlcTask` that calls it, and an empty GVL.
 
+### S1 — Fork language server honours dialect profiles
+
+**Goal.** The fork's language server analyses with the dialect profile a client gives it, so an editor marks
+the same code as the real compile. A client sends a whole resolved profile object (and single-feature
+overrides); the server reads no profile files; a malformed profile gets a clear error and does not crash it;
+with no profile it behaves as today. Lands as a PR into the fork's `development`.
+
+### S2 — STruC++ fork: close the gaps the spike found
+
+**Why** (decided 2026-11-09). With the converter fixed, STruC++ still rejects constructs the correct `sample/`
+uses, so a check command would report errors on correct code. The fix goes into the fork (`AbuShaqra/STruCpp`,
+branch `development`) before R3.2. Read the fork's CLAUDE.md first; it is GPL-3.0-only and its code stays there.
+
+**Scope** (rows of `docs/r3.1-strucpp-spike.md`; confirm each with a repro before fixing):
+- `PROPERTY` in an `INTERFACE`; a method call through a member chain (`GVL_System.fbCylinder.Cyclic()`);
+  `TYPE … EXTENDS … : STRUCT`; `UNION`; `THIS^.member` and `REF=` on a `THIS` member;
+- FB instance declared with init arguments (`FB_init`) and GVL-qualified access (`GVL_Hmi.x`), unless R3.2's
+  converter emitter covers them;
+- a check-only CLI mode with machine-readable output (`--check --json`), and lexer errors that report a real
+  line and column instead of `0:0`.
+Pragmas and the enum base type after the list are handled by R3.2's converter emitter instead.
+
+**Done when.** The spike's sample, through the raw-based check unit, compiles with 0 errors under the vendored
+TwinCAT dialect profile with no workarounds; each fixed construct has a test in the fork; the fork's build,
+tests and lint pass; the toolkit pins the fork commit it uses. Was "R7" for an hour on 2026-11-09; renamed when the fork lane
+was split out.
+
 ### R3 — Compile TwinCAT projects with STruC++
 
 **Goal.** Compile a TwinCAT project from the extension with the IEC 61131-3 compiler STruC++ (fork:
@@ -111,7 +147,9 @@ Two ways around it:
 **Phases** (scheduled separately in the table above).
 1. **R3.1 Spike** — run the `sample/` project's ST through the STruC++ CLI with `resources/dialects/twincat3.json`, under the
    TwinCAT dialect; list every construct it rejects. This sizes the rest.
-2. **R3.2 Check command** — a *Check with STruC++* command that converts the project, runs the compiler as a
+2. **R3.2 Check command** (full scope, 7 d, decided 2026-11-09; after fork item S2) — a line-preserving *check* emitter in
+   the converter (members before the POU body, pragmas blanked, IEC enum base type), a raw-based unit (export
+   mode rewrites `REFERENCE TO`/`REF=` and must not be checked), check-only output, and a *Check with STruC++* command that converts the project, runs the compiler as a
    full semantic check and maps its errors to the right component and pane (VS Code Problems + pane markers).
 3. **R3.3 Packaging** — bundle the compiler, find a Node ≥ 22, ship the licence files, add settings (Node
    path, dialect file) and documentation.
