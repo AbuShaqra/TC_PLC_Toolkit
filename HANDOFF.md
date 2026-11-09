@@ -83,11 +83,11 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   STRING members allowed; initial values refused as "not supported yet" (possible R3.2 false positive); compile()
   refuses UNION until step 12. Found (pre-existing): a STRUCT alias is not assignment-compatible with its STRUCT;
   `STRING[n]` does not parse (B6, use `STRING(n)`). Next: step 12 (UNION C++ lowering, raw storage), running. The vendored profile now extends `iec-3`.
-  The IEC Ed. 3 copy the user supplied is licensed to another party: cite clause numbers only, never its text. **R4 code DONE 2026-11-09, not merged** — `src/objectsTreeModel.js` (VS Code-free node graph; ids and contextValue set
+  The IEC Ed. 3 copy the user supplied is licensed to another party: cite clause numbers only, never its text. **R4 DONE 2026-11-09** — `src/objectsTreeModel.js` (VS Code-free node graph; ids and contextValue set
   in one place, `getParent` = `node.parent`), thin `treeDataProvider.js`, `groupRootsByProject` moved out of
   `projectMap.js`; `test_objects_tree_ids.js` pins 396 ids / 301 reveal chains (a required gate); suite 84/84 FULL.
-  Intended fix: grouped-mode reveal chains now show the tree's own project label (86 mismatches gone). **The dev-host gate PASSED** on the
-  user's Windows machine 2026-11-09; PR #30 (this session branch) squash-merges into `dev` once its CI is green. and R3.2 full scope (7 d). Next roadmap item: R4.
+  Intended fix: grouped-mode reveal chains now show the tree's own project label (86 mismatches gone). **MERGED** — PR #30 squash `d97cec3`
+  into `dev` 2026-11-09 after the dev-host gate passed on Windows; the session branch was restarted from `dev`. and R3.2 full scope (7 d). Next roadmap item: R4.
 - **R2 scope grown 2026-11-09 (user's ask, decided by card):** an Activity Bar container `TwinCAT` with a Start view
   (native `viewsWelcome` buttons) plus Objects and Libraries MOVED out of the Explorer; "Open Start Page" opens a
   webview tab: create project (4024/4026, name, location), open existing (+ recent solutions), project actions

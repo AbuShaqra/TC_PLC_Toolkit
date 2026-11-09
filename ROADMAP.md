@@ -4,7 +4,7 @@ The order of planned work for the extension. **This file is the source of truth*
 (<https://claude.ai/artifact/8RG7TZtBV2cuupsrwWtknv>) is rendered from it by hand out of `docs/roadmap.html`.
 Keep both current in the same change — rules in [CLAUDE.md](CLAUDE.md) ("Keep the roadmap current").
 
-**Last updated:** 2026-11-09 (R2 grows: TwinCAT sidebar + start page, user's ask) · **Current release:** v0.10.1
+**Last updated:** 2026-11-09 (R4 merged, PR #30) · **Current release:** v0.10.1
 
 How to read it: items run top to bottom in the **Order** column. IDs are stable names and do not change
 when the order does. Estimates are working days for one developer; start and end dates are **forecasts**
@@ -17,7 +17,6 @@ after it. An item leaves the table for "Done" once its PR is merged into `dev`, 
 | Order | ID | Item | Planned | Re-measured | Start | End | Status |
 |-------|----|------|---------|-------------|-------|-----|--------|
 | 1 | R3.1 | STruC++ spike: sample project through the compiler under the TwinCAT dialect | 2 d | ~15 min (done) | 2026-11-09 | 2026-11-09 | Findings done 2026-11-09 ([docs/r3.1-strucpp-spike.md](docs/r3.1-strucpp-spike.md)); decisions taken |
-| 2 | R4 | Objects-tree model (deepening roadmap P7) | 4 d | ~3 h (code done) | 2026-11-09 | 2026-11-09 | Code done; **dev-host gate passed** on the user's Windows machine 2026-11-09 — PR #30 merges once its CI is green |
 | 3 | R2 | TwinCAT sidebar (Activity Bar icon) + start page; create a new project (3.1.4024 / 3.1.4026) | 8.5 d | ~6 h + XAE proofs | 2026-11-12 | 2026-11-13 | **Next** — scope grown 2026-11-09 (user's ask). 4024 skeleton received 2026-11-09 (`resources/templates/xae-3.1.4024/`); done-when still needs both templates proven in XAE on the user's machine |
 | 4 | R3.2 | STruC++ check command with errors mapped to the panes | 7 d | ~4 h | 2026-11-16 | 2026-11-16 | Planned (full scope, 2026-11-09) — after S2 |
 | 5 | R3.3 | STruC++ bundling, Node 22 discovery, licence files, settings, docs | 3 d | ~2 h | 2026-11-17 | 2026-11-17 | Planned |
@@ -229,6 +228,11 @@ The former backlog is now scheduled as R6–R10 (2026-11-09, user's ask); each i
 
 Shipped work lives in git history and the [releases](https://github.com/AbuShaqra/TC_PLC_Toolkit/releases).
 Roadmap items finished from now on are listed here with their PR.
+
+- **R4** — Objects-tree model: a VS Code-free node graph (`src/objectsTreeModel.js`) behind a thin tree provider;
+  396 tree ids and 301 reveal chains pinned. Dev-host gate passed on Windows 2026-11-09. PR
+  [#30](https://github.com/AbuShaqra/TC_PLC_Toolkit/pull/30), squash-merged into `dev` 2026-11-09 as `d97cec3`, with
+  the Generate ST menu fixes (clipping, Select all) and the XAE 3.1.4024 skeleton.
 
 - **R5** — PROGRAMs stay PROGRAMs; TwinCAT XML parsing fixes (non-ST bodies, CDATA overrun, attribute
   entities, lone CR; BOM verified not to leak); SFC-transition warnings; Add Get / Add Set Accessor (issue
