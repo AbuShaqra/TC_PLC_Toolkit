@@ -105,7 +105,8 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   instance-model decision. Also found: undeclared function calls pass --check; side-effect call order not
   left-to-right; positional FB inputs counted differently by analysis vs codegen; REF= source unchecked.
   Typed `TRUNC_<type>` merged (PR #20 `5d969b3`); `trunc_dint` merged (PR #21 `904ca42`; the CLI `--feature` help is now
-  derived from KNOWN_FEATURES, so it no longer goes stale). Found: the lexer refuses `INT#-123`/`LREAL#-0.9` (Ed. 3 Table 5 allows
+  derived from KNOWN_FEATURES, so it no longer goes stale); `interface_zero` merged (PR #22 `d76fc91`). Found: a STRUCT
+  field `f : I_A := 0` is accepted everywhere and fails in g++ (interface STRUCT fields: S3b). Next: PROGRAM methods. Found: the lexer refuses `INT#-123`/`LREAL#-0.9` (Ed. 3 Table 5 allows
   it) — added to S3a.
   **Decided 2026-11-09 (user, by card):** `itf = 0`/`<> 0` stay always on; only `itf := 0` needs `interface_zero`.
   PROGRAM methods: one instance per PROGRAM — a PROGRAM is written once and called, never declared/instantiated like
