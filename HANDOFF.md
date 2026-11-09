@@ -8,10 +8,8 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
 ## Status
 - **Released:** `package.json` is at **0.10.1**, and **v0.10.1 is PUBLISHED** (2026-11-03 16:13 UTC: dev→main PR #23
   merged at `3210d33`, Release run 41671593015 green, VSIX `twincat-plc-toolkit-0.10.1.vsix` attached).
-- **Version history:** 0.10.1 = Generate ST flattens struct EXTENDS from the project's own DUTs, project-specific
-  rewrites removed (PR #22); 0.10.0 = Libraries-view active-project scoping (PR #18); 0.9.0 = the five
-  improvement-plan phases (2026-08-27); 0.8.2 project-aware Generate ST + picker; 0.8.1 the ResizeObserver
-  Find-References fix; 0.8.0 the solution→PLC-project Objects hierarchy.
+- **Version history:** 0.10.1 struct EXTENDS from own DUTs (PR #22); 0.10.0 Libraries scoping (PR #18); 0.9.0
+  improvement-plan phases; 0.8.x project-aware Generate ST, ResizeObserver fix, solution→project Objects tree.
 - **Last verified:** 2026-11-09 (Linux container, `dev` @ `8c19d42`) — `REQUIRE_FULL_SUITE=1 npm test` green
   (**77/77, Coverage: FULL**), `npm run typecheck` and `npm run lint` exit 0. Last Windows pass 2026-08-25 (user's
   machine): full suite FULL plus **`node test/devhost/run.js` all green** (G4 webview checklist, `.TcTLEO` watcher,
@@ -38,35 +36,38 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
 - **Merge `ccr-d5b51254-r1vu2b` into `dev` by SQUASH only** (user decision 2026-11-09): commit `65d5b1c` on it
   names a private repository the user wants kept out of this repo; the final tree is clean. Delete the branch after.
 
-## Roadmap
-Planned work, in order, is in [ROADMAP.md](ROADMAP.md) (page: https://claude.ai/artifact/8RG7TZtBV2cuupsrwWtknv):
-in order R1 Generate ST split-button fix → R3.1 STruC++ spike → R4 Objects-tree model (deepening P7) → R2 create
-a TwinCAT project → R3.2–R3.3 STruC++ compile + packaging; forecast end 2026-12-08. All R2/R3 decisions settled 2026-11-09 (see ROADMAP.md). None started.
+## Start here (next session)
+- **Next task: R1** — the first item of [ROADMAP.md](ROADMAP.md) (page https://claude.ai/artifact/8RG7TZtBV2cuupsrwWtknv,
+  source `docs/roadmap.html`). Work strictly in the roadmap's order: R1 Generate ST split-button fix → R3.1 STruC++
+  spike → R4 Objects-tree model (deepening P7) → R2 create a TwinCAT project → R3.2 check command → R3.3 packaging.
+  Forecast end 2026-12-08. Nothing is started. Every R2/R3 decision is SETTLED (2026-11-09, recorded under each
+  item in ROADMAP.md) — do not re-ask them. When an item starts, moves or merges, update ROADMAP.md AND
+  `docs/roadmap.html` and republish the page to the same URL (rule in CLAUDE.md).
+- **R1 in one line:** `media/editor.css:413-416` squares `#generate-st-btn`'s right corners even when the caret is
+  hidden (single project). Toggle a class on `#generate-st-group` with the caret's `hidden` and key the CSS on it;
+  no `:has()` (VS Code 1.66's Chromium lacks it). Webview change → run both `test/browser/` harnesses.
+- **R3 inputs:** STruC++ fork `AbuShaqra/STruCpp`, default branch `development` (@ `2c223c9`, v0.7.0, GPL-3.0-only,
+  Node ≥ 22; dialect flags `--dialect-file`/`--dialect-path`, `src/dialect.ts`, `docs/DIALECTS.md`;
+  `npm run build:bundle` → `dist/strucpp-bundle.cjs`). The TwinCAT profile is vendored at
+  `resources/dialects/twincat3.json` — that file is the only external input. **Do not name, link or describe where
+  it came from** in any file, commit or comment (user rule 2026-11-09: the source is a private repository the user
+  has disconnected). The STruCpp repo has its own CLAUDE.md process rules — read them before changing it.
+- **Machine-bound steps:** R4's `node test/devhost/run.js` gate and R2's templates need the user's Windows machine;
+  R2's 3.1.4024 skeleton must be produced by a 4024 XAE there (the 4026.22 one is `sample/`'s).
+- **Cloud-session traps (2026-11-09):** the git proxy accepts pushes ONLY to the session branch (deleting other
+  branches failed every time); `git reset --hard` was refused by the auto-mode classifier — use revert + merge.
 
 ## Open / deferred (each with the reason it waits)
-- Deepening roadmap: everything but P7 is shipped or ruled (P9 no-go; rulings in the findings file). P7 is now
-  roadmap item R4; its dev-host gate is mandatory and needs the user's Windows machine.
+- Deepening roadmap: everything but P7 (now roadmap R4) is shipped or ruled (P9 no-go; rulings in the findings file).
 - **Manual residue on the user's machine:** Libraries-view scoping (TreeView description rendering, webview tab
   switches, startup seeding, `.plcproj`-watcher path end-to-end); library member expansion has never been visually
   confirmed; squiggle rendering is eyeballed only; peek dismissal over the real bridge round-trip.
 - **Showcase screenshots** (`scratch/showcase/{run.js,runner.js,shot.ps1}`) exist only on the user's machine
   (`scratch/` is git-ignored) — move to `scripts/showcase/` (+ `.vscodeignore`) if they are worth keeping.
-- **Indexing cost — next cuts, deliberately not done:** memoize `collectSignatureFiles` per root (cheap; ~850
-  ms/scan, mostly 16 directory walks); non-blocking per-project-readiness scan (biggest win, but rewrites the
-  multi-project spine — a wrong readiness gate answers against a partial index); persisted cross-session archive
-  cache (needs FORMAT_VERSION discipline + a ZIP-central-directory fingerprint). **Latent:** `scanController`
-  records completion in a microtask after `await scan(...)` — safe only while the scan is synchronous; an async
-  scan needs in-flight de-duplication. Cold startup (~20 s, 8 projects) is PROJECTED, not measured.
-- **L1 reverse index** deferred by decision — reference search is 29 ms cold / ~4 ms warm; reopen past ~1000 files
-  or >200 ms.
-- **Rename v1 limits:** `.plcproj` sync is outside the rename transaction; sibling implementors of a shared
-  interface are not renamed (XAE flags them).
-- **Tooling:** ESLint 10 bump (9.x deprecated; raises the Node floor, needs re-triage); dev-only `brace-expansion`
-  advisory (the fix drags 19 unrelated lockfile packages).
+- **Deferred by decision** (indexing cuts, L1 reverse index, rename v1 limits, ESLint 10, small language gaps): the
+  ROADMAP.md backlog lists them; each one's reason and numbers are in `docs/handoff-findings.md` "Deferred work".
 - **Browser harnesses:** each trips its "browser reported no errors" catch-all on a worker-level 404 that reproduces
   with the old code too — environmental, not yet chased down.
-- **Small known gaps:** nested block comments `(* (* *) *)` unsupported (a CODESYS option, default off); no pragma
-  hover; the lexer's Pragma token is unclassified (nothing consumes it).
 
 ## Do-not-break list (details in the findings file / DEVELOPMENT.md)
 - `sample/` is ground truth: every diagnostic on it is a bug; never raise a baseline. Verify library-related

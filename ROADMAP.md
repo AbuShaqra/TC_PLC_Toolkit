@@ -140,7 +140,7 @@ Two ways around it:
 
 ## Backlog (not scheduled)
 
-Carried from [HANDOFF.md](HANDOFF.md) "Open / deferred"; each waits for the reason given there.
+Each waits for the reason recorded in [docs/handoff-findings.md](docs/handoff-findings.md) "Deferred work".
 
 - Indexing: memoize `collectSignatureFiles` per root; non-blocking per-project scan; persisted archive cache.
 - Rename: `.plcproj` sync inside the rename transaction; rename sibling interface implementors.

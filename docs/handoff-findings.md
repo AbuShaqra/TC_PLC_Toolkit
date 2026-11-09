@@ -5,6 +5,22 @@ again to re-derive. HANDOFF.md says where the work *stands*; this file says what
 accurate rather than short — prune a finding only when the code it describes is gone. Architecture lives in
 [DEVELOPMENT.md](../DEVELOPMENT.md), process lessons in `.claude/memory/`; don't duplicate either here.
 
+## Deferred work (moved from HANDOFF.md 2026-11-09; listed in the ROADMAP.md backlog)
+- **Indexing cost — next cuts, deliberately not done:** memoize `collectSignatureFiles` per root (cheap; ~850
+  ms/scan, mostly 16 directory walks); non-blocking per-project-readiness scan (biggest win, but rewrites the
+  multi-project spine — a wrong readiness gate answers against a partial index); persisted cross-session archive
+  cache (needs FORMAT_VERSION discipline + a ZIP-central-directory fingerprint). **Latent:** `scanController`
+  records completion in a microtask after `await scan(...)` — safe only while the scan is synchronous; an async
+  scan needs in-flight de-duplication. Cold startup (~20 s, 8 projects) is PROJECTED, not measured.
+- **L1 reverse index** deferred by decision — reference search is 29 ms cold / ~4 ms warm; reopen past ~1000 files
+  or >200 ms.
+- **Rename v1 limits:** `.plcproj` sync is outside the rename transaction; sibling implementors of a shared
+  interface are not renamed (XAE flags them).
+- **Tooling:** ESLint 10 bump (9.x deprecated; raises the Node floor, needs re-triage); dev-only `brace-expansion`
+  advisory (the fix drags 19 unrelated lockfile packages).
+- **Small known gaps:** nested block comments `(* (* *) *)` unsupported (a CODESYS option, default off); no pragma
+  hover; the lexer's Pragma token is unclassified (nothing consumes it).
+
 ## Process, tooling and environment traps
 - **Install trap:** VS Code keeps the old version dir until a FULL restart (reload-window is not always enough) —
   the user once tested 0.3.1's feature against the still-running 0.3.0 code and reported it broken. Check
