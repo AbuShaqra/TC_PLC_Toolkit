@@ -62,8 +62,8 @@ for it where a row says so.
 
 | Order | ID | Item | Planned | Re-measured | Start | End | Status |
 |-------|----|------|---------|-------------|-------|-----|--------|
-| 1 | S2 | Close the fork's gaps: 14 PR-sized steps + the folded-in items (plan: [docs/s2-strucpp-fork-plan.md](docs/s2-strucpp-fork-plan.md)) | 22.5 d + ~5 d folded | ~9 h | 2026-11-09 | 2026-11-11 | In progress — steps 1 (fork PR #5), 1b (#6), 2 (#7), 3 (#8), 4 (#9), 5 (#10), 6 (#11, release B), 7 (#12), 8 (#13), 9 (#14), 10 (#15), 11 (#16) and 12 (#17) merged 2026-11-09; step 13 (FB_init) next. R3.2 waits for it |
-| 2 | S3a | False positives on correct code found during S2: a STRUCT alias is not assignment-compatible with its STRUCT; `POINTER TO <STRUCT> := ADR(s)` refused; UNION initial values ("not supported yet") | 2 d | ~1 h | 2026-11-12 | 2026-11-12 | Planned — **before R3.2** (a check that flags correct code is worse than none) |
+| 1 | S2 | Close the fork's gaps: 14 PR-sized steps + the folded-in items (plan: [docs/s2-strucpp-fork-plan.md](docs/s2-strucpp-fork-plan.md)) | 22.5 d + ~5 d folded | ~9 h | 2026-11-09 | 2026-11-11 | In progress — steps 1 (fork PR #5), 1b (#6), 2 (#7), 3 (#8), 4 (#9), 5 (#10), 6 (#11, release B), 7 (#12), 8 (#13), 9 (#14), 10 (#15), 11 (#16), 12 (#17) and 13 (#18) merged 2026-11-09 — **all 13 steps done**; release C noted; the folded-in items are next. R3.2 waits for it |
+| 2 | S3a | False positives on correct code found during S2: a STRUCT alias is not assignment-compatible with its STRUCT; `POINTER TO <STRUCT> := ADR(s)` refused; UNION initial values ("not supported yet"); a method named `Get` is a parse error (`GET` is a keyword) | 2.5 d | ~1.25 h | 2026-11-12 | 2026-11-12 | Planned — **before R3.2** (a check that flags correct code is worse than none) |
 | 3 | S3b | The other S2 follow-ups (list below): code the checker passes but g++ rejects, checker gaps, parser gaps, housekeeping | 7 d | ~3.5 h | 2026-11-12 | 2026-11-13 | Planned |
 | 4 | S4 | Ed. 3 forms the fork refuses: CHAR/WCHAR, LTIME, string index, `STRING[n]` (needs a decision), typed `TRUNC_<type>`, g++-only literal cases, `STRUCT OVERLAP` (reuses the UNION lowering) | 8.5 d (7–10) | ~4.5 h | 2026-11-13 | 2026-11-16 | Planned |
 | 5 | S5 | Profile-handling defects (S2 plan §1d) | 1 d | ~30 min | 2026-11-16 | 2026-11-16 | Planned |
@@ -200,7 +200,8 @@ first), an Ed. 4 profile (needs a full Ed. 4 read), the rest of the vendor-featu
   ignoring methods from interface EXTENDS bases; ARRAY OF / STRUCT field of an interface type; properties through an
   interface variable; a library STRUCT as an EXTENDS base.
 - *Housekeeping:* the `--feature` help text and the DIALECTS.md "Checks" list; a bundled-library global (`speed`)
-  colliding with a user global.
+  colliding with a user global; an undeclared name in a plain initial value (`x : INT := zz;`) passing analysis; a
+  global named like a standard function (`LOG`) clashing in C++.
 
 **How these were estimated (2026-11-09):** the planned days are my sizing from the lists above, not measured; the
 re-measured column applies the velocity below (about 30 min per planned day for fork work, ~45 min for toolkit work),

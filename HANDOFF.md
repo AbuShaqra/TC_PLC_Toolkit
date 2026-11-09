@@ -86,9 +86,15 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   + memcpy views, STRING reads bounded; UNION left out of the debug table; RETAIN/REF/REFERENCE TO/library-STRUCT in a
   UNION refused at compile only. Found (pre-existing): POINTER/REF to a whole STRUCT does not compile; a library
   function's plain VAR locals are exported as inputs; no LEN for WSTRING; SIZEOF of STRUCT counts wrapper overhead.
-  Next: step 13 (`fb_init`), rule decided 2026-11-09 by card: FB_init runs once per instance after initial values,
-  before the first cycle; globals first (declaration order across files), then programs; nested before holder;
-  bInitRetains = bInCopyCode = FALSE always. The vendored profile now extends `iec-3`.
+  Step 13 (`fb_init`; PR #18 `635c962`) merged — **all 13 S2 steps done**. Rules (user, by card): FB_init once per
+  instance after initial values, before the first cycle; globals first, then programs; nested before holder; flags
+  FALSE; inheritance = base-first chain (explicit SUPER.FB_init refused at compile). User's TwinCAT finding: an
+  interface passed to a nested instance through the holder's FB_init page-faults in TwinCAT (nested inits first);
+  the fork binds a member's init arg naming a HOLDER FB_init input to the holder's instantiation value (works), and
+  warns when an init arg reads a holder member the holder's FB_init assigns. Ed. 3 cannot express the pattern
+  (6.5.1.3: initial values are literals/constant expressions). Found (pre-existing, before S2 too): a method named
+  `Get` is a parse error (added to S3a); `x : INT := zz;` passes analysis; a global `LOG` clashes in C++.
+  Next in S2: the folded-in items (REFERENCE TO input SIGSEGV first); release C note posted in the coordination doc. The vendored profile now extends `iec-3`.
   The IEC Ed. 3 copy the user supplied is licensed to another party: cite clause numbers only, never its text. **R4 DONE 2026-11-09** — `src/objectsTreeModel.js` (VS Code-free node graph; ids and contextValue set
   in one place, `getParent` = `node.parent`), thin `treeDataProvider.js`, `groupRootsByProject` moved out of
   `projectMap.js`; `test_objects_tree_ids.js` pins 396 ids / 301 reveal chains (a required gate); suite 84/84 FULL.
