@@ -16,7 +16,7 @@ after it. An item leaves the table for "Done" once its PR is merged into `dev`, 
 
 | Order | ID | Item | Estimate | Start | End | Status |
 |-------|----|------|----------|-------|-----|--------|
-| 1 | R5 | Keep PROGRAMs as PROGRAMs; TwinCAT XML parsing fixes; re-add a deleted property Get/Set ([#25](https://github.com/AbuShaqra/TC_PLC_Toolkit/issues/25)) | 3 d | 2026-11-10 | 2026-11-12 | Planned |
+| 1 | R5 | Keep PROGRAMs as PROGRAMs; TwinCAT XML parsing fixes; re-add a deleted property Get/Set ([#25](https://github.com/AbuShaqra/TC_PLC_Toolkit/issues/25)) | 3 d | 2026-11-10 | 2026-11-12 | In progress (started 2026-11-09) |
 | 2 | R1 | Generate ST button keeps its rounded end in single-project workspaces | 0.5 d | 2026-11-13 | 2026-11-13 | Planned |
 | 3 | R3.1 | STruC++ spike: sample project through the compiler under the TwinCAT dialect | 2 d | 2026-11-16 | 2026-11-17 | Planned |
 | 4 | R4 | Objects-tree model (deepening roadmap P7) | 4 d | 2026-11-18 | 2026-11-23 | Planned — needs the user's Windows machine |
@@ -58,15 +58,19 @@ rewrite on every path (the closing keyword at `:277-281` then follows the real P
 `MAIN.Init()` from another POU resolves).
 
 **Parser fixes (`src/xmlParser.js`).**
-1. **Non-ST POU takes a method's code as its body — the most serious.** `:73` reads the root implementation
+1. **Non-ST POU takes a method's code as its body — the most serious.** `:71` reads the root implementation
    with `getCdata(rootContent, '<ST>', '</ST>')`, i.e. the first `<ST>` anywhere in the file. An SFC, LD,
    FBD or CFC POU with an ST method or action therefore shows that method's code as its own body. Fix: read
    only the root's own `<Implementation>` (before the first `<Method|Property|Action|Transition>`), and
-   record the real implementation language on the component.
+   record the real implementation language on the component. **The write side has the same bug** (found
+   2026-11-09): `replaceComponentCdata` (`:238-246`) saves the root implementation into the first `<ST>` in
+   the file, so editing an SFC POU's "body" overwrites its method. Fix both.
 2. **`getCdata` overrun** (`:31-41`): when the requested block has no CDATA, the search for `<![CDATA[`
    runs on into a later block. Bound the search to the requested element.
 3. **Entities in attributes:** `parseAttrs` (`:14-22`) does not decode `&amp;`, `&lt;`, `&gt;`, `&quot;`,
-   `&apos;` (or numeric references), so names and folder paths come through encoded.
+   `&apos;` (or numeric references), so names and folder paths come through encoded. Decoding on read means
+   every writer that rebuilds a `Name="…"`/`FolderPath="…"` match from a parsed value must encode (and
+   regex-escape) it again, or edits to that component or folder silently stop matching.
 4. **Lone CR line endings** are not turned into newlines (`stConverter.js:105` splits on `\r?\n` only).
 5. **UTF-8 byte-order mark** is kept at the start of the text.
 

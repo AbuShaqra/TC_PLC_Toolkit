@@ -165,7 +165,7 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
 
     <details class="card" id="r5">
       <summary>
-        <div class="card-top"><span>#1</span><span class="id">R5</span><span class="pill planned">Planned</span><span class="chev" aria-hidden="true">›</span></div>
+        <div class="card-top"><span>#1</span><span class="id">R5</span><span class="pill planned">In progress</span><span class="chev" aria-hidden="true">›</span></div>
         <div class="card-title">Keep PROGRAMs as PROGRAMs, TwinCAT XML parsing fixes, re-add a property's Get or Set</div>
         <div class="bar" aria-hidden="true"><span style="left:0%;width:12.5%"></span></div>
         <div class="card-foot"><span>3 d</span><span>Nov 10 – 12</span></div>
@@ -175,7 +175,7 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
         <div class="block"><h4>Main change: keep PROGRAM a PROGRAM</h4><p><code>src/stConverter.js:130-134</code> turns any PROGRAM with methods into a FUNCTION_BLOCK, on the live path, the .st export and Find References. TwinCAT does not, and it breaks callers: <code>MAIN.Init()</code> needs a PROGRAM, a function block needs an instance. The rewrite was for trust-runtime, which the live path no longer feeds. Drop it everywhere and check the parser scopes methods under a PROGRAM.</p></div>
         <div class="block"><h4>Parser fixes</h4>
           <ol>
-            <li><b>Most serious:</b> an SFC, LD, FBD or CFC POU with an ST method or action shows that method's code as its own body (<code>xmlParser.js:73</code> takes the first <code>&lt;ST&gt;</code> in the file). Read only the root's own implementation and record its real language.</li>
+            <li><b>Most serious:</b> an SFC, LD, FBD or CFC POU with an ST method or action shows that method's code as its own body (<code>xmlParser.js:73</code> takes the first <code>&lt;ST&gt;</code> in the file). Read only the root's own implementation and record its real language. Saving has the same bug: editing that body overwrites the method's code.</li>
             <li><code>getCdata</code> can run on into a later CDATA block.</li>
             <li>Entities such as <code>&amp;amp;</code> and <code>&amp;lt;</code> in attributes are not decoded.</li>
             <li>Lone CR line endings are not turned into newlines.</li>
