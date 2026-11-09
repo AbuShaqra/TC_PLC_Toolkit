@@ -31,8 +31,9 @@ const CORRECTNESS_RULES = {
         // documented, not a leftover: `resolveCustomTextEditor(document, webviewPanel, token)`
         // matches the VS Code API, `Module._load(request, parent, isMain)` matches Node's (and
         // forwards `arguments`), `classifyCaretContext(code, position, pou, method, symbolIndex)`
-        // states its call contract in JSDoc, and `groupRootsByProject`'s `folderPaths` carries a
-        // JSDoc note saying it is kept deliberately for a future multi-root workspace. Renaming
+        // states its call contract in JSDoc, and `groupRootsByProject`'s `folderPaths`
+        // (src/objectsTreeModel.js) carries a JSDoc note saying it is kept deliberately for a
+        // future multi-root workspace. Renaming
         // those to `_token` / `_symbolIndex` would degrade the documentation to satisfy a linter.
         args: 'none',
         // Same call, for the same reason. ESLint 9 changed this default to 'all', which flagged 97

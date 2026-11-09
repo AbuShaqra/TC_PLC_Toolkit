@@ -58,6 +58,8 @@ node test/run.js references   # run only suites whose name matches a substring
 node test/test_live_path.js   # run a single harness directly
 node test/test_solution_map.js # solution → PLC-project discovery/grouping
 node test/test_tree_reveal.js # exact component → project → solution parent chains
+node test/test_objects_tree_model.js # the vscode-free Objects-tree model
+node test/test_objects_tree_ids.js   # every Objects-tree id pinned on sample/ (--write regenerates)
 npm run typecheck             # type-check gate: tsc --noEmit (no emit — runtime stays plain JS)
 npm run lint                  # ESLint 9, flat config — a DEFECT check, not a style check; the
                               # policy and every relaxation are documented in eslint.config.js
@@ -83,7 +85,7 @@ found running 2 of its 10 tests. Hence the classification below: a run states wh
 - **FULL** — required fixtures are present **and each load-bearing harness reports that its gate
   actually ran**. Fixture presence alone is not evidence: `test/_coverage.js` writes a per-child
   report that `test/run.js` consumes for the live path, diagnostics/typecheck ratchets, committed
-  archive reader and multi-project fixture.
+  archive reader, multi-project fixture and Objects-tree id pin.
 - **REDUCED** — lists missing fixtures plus every gate that skipped or failed to report execution,
   and labels the final line `(reduced coverage)`.
 - **FILTERED** — `node test/run.js <substring>` intentionally ran only a subset and can never claim
@@ -110,7 +112,9 @@ per-suite without aborting on the first failure. The main ones:
 | `test/test_typecheck.js` | Semantic type checking: member access, call arguments, declaration types, assignment compatibility — plus the same `sample/` diagnostics ratchet. |
 | `test/test_references_scope.js` | Find References scope + coordinate spaces: private method `VAR` vs. parameters, named arguments belonging to the callee, and FB_init declaration-site arguments (`inst : FB_T(p := v)`). |
 | `test/test_references_tree.js` | References-view grouping (file → component → occurrence). |
-| `test/test_tree_reveal.js` | Objects-tree navigation targets and parent chains: file/root fallback; exact method, property, action, transition and Get/Set nodes; nested virtual-folder ancestry; solution → PLC-project ancestry; and no project-map lookup until the logical component chain reaches the file/disk boundary. |
+| `test/test_tree_reveal.js` | Objects-tree navigation targets and parent chains, driven on `src/objectsTreeModel.js` with an in-memory host (no `vscode` stub): file/root fallback; exact method, property, action, transition and Get/Set nodes; nested virtual-folder ancestry; solution → PLC-project ancestry ending in the tree's own root rows; and a whole reveal chain reads no project map (`getParent` is a field read). |
+| `test/test_objects_tree_model.js` | `src/objectsTreeModel.js` with an in-memory host, no `vscode` stub: the shape rule (solutions → projects; one root per project at 2+; flat below), `makeNode` as the single assignment site of id and contextValue (and the historical id formulas), file classification and icons, directory listing (sorting, skip dirs, symlinked dirs, unreadable dirs, re-read on every expansion), virtual folders and their per-file-kind contextValue, property accessors and `propertyNode[.noGet][.noSet]`, and reveal ancestry (flat stops at the workspace root, a file outside the workspace terminates, a reveal's project ancestor is the tree's own row, with its label). |
+| `test/test_objects_tree_ids.js` | Pins every element the VS Code adapter (`src/treeDataProvider.js`) renders on `sample/` against `test/fixtures/objects-tree-ids.json`, recorded from the provider before the R4 model refactor: id, label, contextValue, collapsible state, icon, tooltip, click command and `getParent`, plus the id and ancestor ids `getRevealItem` gives every file and component. Five tree shapes (one solution, two solutions, two projects with no solution, one project with no solution, flat). Also asserts directly that `getParent` returns the element that listed the child and that reveal ancestors carry the tree's ids and labels. Ids drive VS Code's expansion state and reveal, so a change here is user-visible; regenerate with `--write` only for a deliberate, reviewed change. Required gate `objects-tree-ids`. |
 | `test/test_st_shadow.js` | XML is the source of truth: a stray plain `.st` mirror (outside `ST_Files/`) must never steal an XML-backed symbol's index node — the references scan would follow the hijacked uri to the stale mirror and miss the real call sites. |
 | `test/test_st_output_path.js` | The pure output-path mapping behind project-aware **Generate ST** (`src/stOutputPath.js`): each project's objects land under `ST_Files/<project dir relative to workspace>/…` so two projects' identical object paths never collide, extensions become `.st`, a linked object cannot escape its project folder, and the single-root case carries no redundant workspace-name prefix. The end-to-end export (real provider, real disk, three-project fixture) is asserted by the dev-host `generate-st` phase. |
 | `test/test_library_catalog.js` | The data path behind the TwinCAT Libraries view: catalog built from the `.plcproj`, namespaces, `.tmc` types and their members. |
@@ -140,11 +144,11 @@ per-suite without aborting on the first failure. The main ones:
 | `test/test_pragmas.js` | Pragma classification and the two catalogs, plus the highlighting rules in **both** grammars and the `{region}` folding markers. Pins the split the design rests on: shape decides the category (and therefore the colour), the catalog only enriches — so a user-defined attribute must be scoped exactly like a documented one. Also asserts catalog integrity (no duplicates, every documented entry has an Infosys node id, the curated file holds nothing Infosys documents, every curated entry carries measured counts), that pragma spans are consumed whole in the lexer and both grammars, and that the three folding-marker declarations — `pragmas.js`, `language-configuration.json`, `media/editor.js` — still agree, which nothing else can check because none of them can import the others. |
 | `test/test_plcproj_scope.js` | The index is scoped to the `.plcproj`, not the filesystem: a project's `objectPaths` (from `createProjectMap`) names only the `<Compile>`d objects, so a backup/orphan copy on disk (a duplicate object name, absent from the project) can never win the name-keyed index and steal a real object's references. Includes the no-`.plcproj` empty-map case and a sample-coverage check proving the scoping is a no-op on the ratchet. Predates the project-scoped index (below) — the guarantee it pins now runs through `createProjectMap` per project instead of one workspace-wide union. |
 | `test/test_uri_fs_path.js` | `uriToFsPath()` must return a path the **running** platform can open. The former copies in `workspaceScan.js` and `features/core.js` once ended in an unconditional `.replace(/\//g,'\\')`, which is correct on Windows and on POSIX ate the root — `file:///home/u/a` became `\home\u\a` — so 11 of 59 suites failed on Linux while CI (`windows-latest`) stayed green. Both callers now delegate to the shared production helper in `src/fileUri.js`. Written to hold on **both** platforms so whichever one CI runs still guards the branch it takes: a round trip through the real filesystem (the load-bearing one — a merely plausible converter cannot satisfy it), paths containing a space in both encoded and unencoded form, separator/root shape per platform, bare-path and empty-input passthrough, caller delegation, and unchanged Windows mapping. |
-| `test/test_project_map.js` | `src/lsp/projectMap.js`: which `.plcproj` owns which file. Discovery, `objectPaths` per project, `ownersOf()` vs `projectFor()` (a linked file has two owners but a request for it routes to one), the orphan/no-project/case-insensitivity edges, `projectLabel()` (the status-bar text, from `src/projectStatusBar.js`) and `groupRootsByProject()` (the Objects-tree grouping) at both the &lt;2-projects (nothing shown, flat tree) and 2-projects ends. Also pins `TWINCAT_EXTS` staying in sync between `projectMap.js` and `xmlIndexer.js`'s own copies — a real review-caught bug: `projectMap.js`'s copy once missed `.tctleo`, silently dropping every enumeration-text-list object's symbols from a project-scoped scan. |
+| `test/test_project_map.js` | `src/lsp/projectMap.js`: which `.plcproj` owns which file. Discovery, `objectPaths` per project, `ownersOf()` vs `projectFor()` (a linked file has two owners but a request for it routes to one), the orphan/no-project/case-insensitivity edges, `projectLabel()` (the status-bar text, from `src/projectStatusBar.js`) and `groupRootsByProject()` (the Objects-tree grouping, now in `src/objectsTreeModel.js`, fed this module's map) at both the &lt;2-projects (nothing shown, flat tree) and 2-projects ends. Also pins `TWINCAT_EXTS` staying in sync between `projectMap.js` and `xmlIndexer.js`'s own copies — a real review-caught bug: `projectMap.js`'s copy once missed `.tctleo`, silently dropping every enumeration-text-list object's symbols from a project-scoped scan. |
 | `test/test_solution_map.js` | `src/solutionMap.js`: the real `.sln` → `.tsproj` → `_Config/PLC/*.xti` → `.plcproj` chain, multiple PLC projects under one solution, multiple same-named solutions, project labels scoped within their solution, unrelated Visual Studio solutions ignored, and unreferenced PLC projects retained as top-level fallbacks. |
 | `test/test_multi_project_scope.js` | End-to-end: two copies of `sample/` under one workspace root (`test/_multiproject.js` builds the fixture, one copy deliberately diverged), driven through the real `scanWorkspace`. Asserts the partition (one index per project, nothing lost to a name collision), 0 diagnostics on the correct copy while the diverged copy's own real error still reports, references and the rename config scan never crossing the project boundary, and the library namespace/symbol registries staying per-project — including the Libraries-view union fallback when no project is specified. Needs `sample/`; skips cleanly when absent. |
 
-| `test/test_object_insert.js` | The Objects-tree insert commands' text, built by driving the **real** `buildNodeFromXml` over real `sample/` objects: the bare name for each kind, and the call template — instance name for an FB (`FB_Gripper` → `fbGripper`, since ST calls an instance, not the type), own name for a FUNCTION/PROGRAM, bare for a method/action, `Name();` when there are no parameters. Also pins that the extracted `callTemplate` is byte-identical to what `libraryTreeProvider` produced before the move, and that every `contextValue` named in the two new `when` clauses is one the Objects tree actually emits (read out of `treeDataProvider.js`, not hard-coded, so a rename cannot silently orphan the menu items). **One case is synthetic on purpose:** no FB in `sample/` declares root `VAR_INPUT`/`VAR_OUTPUT`, so the mixed `:=`/`=>` ordering case is driven from one clearly-marked XML string through the real parser. |
+| `test/test_object_insert.js` | The Objects-tree insert commands' text, built by driving the **real** `buildNodeFromXml` over real `sample/` objects: the bare name for each kind, and the call template — instance name for an FB (`FB_Gripper` → `fbGripper`, since ST calls an instance, not the type), own name for a FUNCTION/PROGRAM, bare for a method/action, `Name();` when there are no parameters. Also pins that the extracted `callTemplate` is byte-identical to what `libraryTreeProvider` produced before the move, and that every `contextValue` named in the two new `when` clauses is one the Objects tree actually emits (read out of `objectsTreeModel.js`, not hard-coded, so a rename cannot silently orphan the menu items). **One case is synthetic on purpose:** no FB in `sample/` declares root `VAR_INPUT`/`VAR_OUTPUT`, so the mixed `:=`/`=>` ordering case is driven from one clearly-marked XML string through the real parser. |
 | `test/test_st_strings.js` | ST string literals across **all three** grammars that must agree — the `src/lsp/parser.js` lexer, the webview's Monarch tokenizer and `syntaxes/twincat-st.tmLanguage.json`. IEC 61131-3 escapes with `$` (`$'`, `$$`, `$N`, `$0D`, …) and a **backslash is an ordinary character**; both highlighting grammars had C-style `\\.` escape rules copied from Monaco's sample, so `'C:\Temp\x\'` swallowed its own closing quote and ran on to the next apostrophe anywhere below — in the reported case an `FB's` inside a comment 16 lines down. Uses that verbatim case. The lexer was always right; only the two grammars were wrong, which is exactly why one harness now pins all three together. |
 | `test/test_scan_controller.js` | `src/lsp/scanController.js`: which of the two scan-triggering requests actually has to run a scan. Pins that `ensureScanned` twice over one root set scans **once** (the duplicate startup scan this replaced), that `rescan` after it scans **again** — the assertion that stops a future "optimisation" from teaching the `.plcproj` watcher to skip, since on a content change the roots are unchanged — and that a throwing scan leaves no completed state. Root sets compare order-, case- and separator-insensitively; the empty set is a legitimate *completed* state, or a window with no folders would re-request forever. |
 | `test/test_debounce.js` | `src/util/debounce.js`: trailing edge only, one invocation per burst carrying the **last** arguments, every caller's promise resolved. Timers are injected, so it asserts on a fake clock rather than racing a real one. |
@@ -351,7 +355,14 @@ src/
                         prop_*_get/prop_*_set/action_/transition_) shared by webview, host and
                         LSP; vscode-free. The grammar is FROZEN (ids travel over the bridge and
                         into saved state); prop_X_get parses as accessor-of-X by pinned convention
-  treeDataProvider      "TwinCAT Objects" explorer tree and reveal parent chains
+  objectsTreeModel      The "TwinCAT Objects" tree as a vscode-free node graph: shape rule (solutions →
+                        projects; one root per project at 2+; else flat), nodes with parent links,
+                        children and stable ids; makeNode is the ONE place id and contextValue are set.
+                        I/O and uris come from an injected host
+  treeDataProvider      Thin VS Code adapter over objectsTreeModel: elements ARE model nodes (commands
+                        receive them), getTreeItem builds the TreeItem, getParent = node.parent,
+                        getChildren/getRevealItem forward to the model (cached until refresh() or a
+                        project/solution map or workspace-folder change)
   solutionMap           TwinCAT .sln → .tsproj → .xti → .plcproj presentation model for that tree
   projectStatusBar      Status-bar "which PLC project is this file in" indicator (2+ projects only);
                         projectLabel() is pure/vscode-free so it is unit-testable — vscode is required
@@ -490,18 +501,22 @@ which language-server index owns a file:
    siblings in the same solution.
 3. A PLC project that no solution references remains a top-level fallback. With no TwinCAT solution,
    the pre-0.8.0 behavior remains: two or more projects get project roots; a single project keeps the
-   flat directory-driven tree.
-4. `src/treeDataProvider.js` attaches logical parents for reveal:
-   component → virtual folder/property → file → disk folders → PLC project → solution. Rebuilding a
-   reveal target parses only its backing XML file and consumes the cached host maps; it never starts
-   another workspace scan.
+   flat directory-driven tree. This shape rule (`groupRootsByProject` included) lives in
+   `src/objectsTreeModel.js`, not in the LSP ownership module `src/lsp/projectMap.js`.
+4. `src/objectsTreeModel.js` creates every node with its logical parent:
+   component → virtual folder/property → file → disk folders → PLC project → solution, so the
+   adapter's `getParent` is a field read with no scans and no node construction. A reveal target
+   (`revealTarget`) gets its whole ancestor chain when it is built: disk directories up to the tree's
+   own project row (a Map lookup by directory uri) or a workspace root (a Set lookup). It parses only
+   its backing XML file and consumes the cached host maps; it never starts another workspace scan.
 5. `.sln`, `.tsproj`, and `.xti` create/change/delete events rebuild and refresh only the host tree
    model. A `.plcproj` event also rebuilds ownership and remains the sole project-structure event that
    triggers `custom/reindex` and the Libraries refresh.
 
 Coverage is split deliberately: `test/test_solution_map.js` exercises discovery, multi-solution and
-multi-project grouping, label scope and fallbacks without VS Code; `test/test_tree_reveal.js` pins the
-logical ancestry; `node test/devhost/run.js` creates two solutions and three PLC projects (two under
+multi-project grouping, label scope and fallbacks without VS Code; `test/test_objects_tree_model.js`
+and `test/test_tree_reveal.js` pin the model and the logical ancestry without VS Code;
+`test/test_objects_tree_ids.js` pins every id the adapter renders on `sample/`; `node test/devhost/run.js` creates two solutions and three PLC projects (two under
 one solution) and proves the real VS Code TreeView accepts that ancestry. Run the dev-host harness
 whenever solution grouping, project grouping or reveal parents change.
 
@@ -566,7 +581,8 @@ registry rather than an empty one — the fallback that keeps roughly 15 pre-exi
 
 `test/test_project_map.js` covers `projectMap.js`'s ownership rules, actual Windows casing without
 expanding workspace 8.3/junction identity, the missing-file fallback, `projectLabel()` and
-`groupRootsByProject()` (the Objects-tree per-project grouping) in isolation.
+`groupRootsByProject()` (the Objects-tree per-project grouping, owned by `src/objectsTreeModel.js`) in
+isolation.
 `test/test_multi_project_scope.js` covers the whole thing end-to-end against a real two-project fixture
 built from `sample/` (the fixture helper is `test/_multiproject.js`, two copies of `sample/` under one
 root, one copy deliberately diverged) — the partition, zero diagnostics on correct code in either

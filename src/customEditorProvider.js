@@ -583,6 +583,7 @@ class TwinCatCustomEditorProvider {
                     <button id="generate-st-caret" class="action-btn split-caret" title="Choose projects" aria-haspopup="true" aria-expanded="false" hidden>▾</button>
                     <div id="generate-st-menu" class="split-menu" role="menu" hidden>
                         <div class="split-menu-title">Generate ST for</div>
+                        <label class="split-menu-item split-menu-all"><input type="checkbox" id="generate-st-all" checked><span>Select all</span></label>
                         <div id="generate-st-projects" class="split-menu-list"><!-- checkboxes injected --></div>
                         <button id="generate-st-run" class="action-btn split-menu-run">Generate selected</button>
                     </div>

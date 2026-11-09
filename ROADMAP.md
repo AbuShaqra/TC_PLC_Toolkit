@@ -4,7 +4,7 @@ The order of planned work for the extension. **This file is the source of truth*
 (<https://claude.ai/artifact/8RG7TZtBV2cuupsrwWtknv>) is rendered from it by hand out of `docs/roadmap.html`.
 Keep both current in the same change — rules in [CLAUDE.md](CLAUDE.md) ("Keep the roadmap current").
 
-**Last updated:** 2026-11-09 (R5, R1 merged) · **Current release:** v0.10.1
+**Last updated:** 2026-11-09 (R2 grows: TwinCAT sidebar + start page, user's ask) · **Current release:** v0.10.1
 
 How to read it: items run top to bottom in the **Order** column. IDs are stable names and do not change
 when the order does. Estimates are working days for one developer; start and end dates are **forecasts**
@@ -14,18 +14,45 @@ after it. An item leaves the table for "Done" once its PR is merged into `dev`, 
 
 ## Order of work
 
-| Order | ID | Item | Estimate | Start | End | Status |
-|-------|----|------|----------|-------|-----|--------|
-| 1 | R3.1 | STruC++ spike: sample project through the compiler under the TwinCAT dialect | 2 d | 2026-11-10 | 2026-11-11 | Findings done 2026-11-09 ([docs/r3.1-strucpp-spike.md](docs/r3.1-strucpp-spike.md)); decisions taken |
-| 2 | R4 | Objects-tree model (deepening roadmap P7) | 4 d | 2026-11-12 | 2026-11-17 | Planned — needs the user's Windows machine |
-| 3 | R2 | Create a new TwinCAT project from the extension's start view | 6 d | 2026-11-18 | 2026-11-25 | Planned — needs a 4024 skeleton from the user's XAE |
-| 4 | R3.2 | STruC++ check command with errors mapped to the panes | 7 d | 2026-11-26 | 2026-12-04 | Planned (full scope, 2026-11-09) — after S2 |
-| 5 | R3.3 | STruC++ bundling, Node 22 discovery, licence files, settings, docs | 3 d | 2026-12-07 | 2026-12-09 | Planned |
+| Order | ID | Item | Planned | Re-measured | Start | End | Status |
+|-------|----|------|---------|-------------|-------|-----|--------|
+| 1 | R3.1 | STruC++ spike: sample project through the compiler under the TwinCAT dialect | 2 d | ~15 min (done) | 2026-11-09 | 2026-11-09 | Findings done 2026-11-09 ([docs/r3.1-strucpp-spike.md](docs/r3.1-strucpp-spike.md)); decisions taken |
+| 2 | R4 | Objects-tree model (deepening roadmap P7) | 4 d | ~3 h (code done) | 2026-11-09 | 2026-11-09 | Code done; **dev-host gate passed** on the user's Windows machine 2026-11-09 — PR #30 merges once its CI is green |
+| 3 | R2 | TwinCAT sidebar (Activity Bar icon) + start page; create a new project (3.1.4024 / 3.1.4026) | 8.5 d | ~6 h + XAE proofs | 2026-11-12 | 2026-11-13 | **Next** — scope grown 2026-11-09 (user's ask). 4024 skeleton received 2026-11-09 (`resources/templates/xae-3.1.4024/`); done-when still needs both templates proven in XAE on the user's machine |
+| 4 | R3.2 | STruC++ check command with errors mapped to the panes | 7 d | ~4 h | 2026-11-16 | 2026-11-16 | Planned (full scope, 2026-11-09) — after S2 |
+| 5 | R3.3 | STruC++ bundling, Node 22 discovery, licence files, settings, docs | 3 d | ~2 h | 2026-11-17 | 2026-11-17 | Planned |
+| 6 | R6 | Indexing speed: memoize signature-file discovery per root; persisted archive cache; per-project background scan | 5.5 d | ~4 h | 2026-11-17 | 2026-11-18 | Planned (from the backlog, 2026-11-09) |
+| 7 | R7 | Rename v1 limits: `.plcproj` sync inside the rename transaction; rename sibling implementors of a shared interface | 2.5 d | ~2 h | 2026-11-19 | 2026-11-19 | Planned (from the backlog) |
+| 8 | R8 | Language: nested block comments; hover help for pragmas | 1.5 d | ~1 h | 2026-11-19 | 2026-11-19 | Planned (from the backlog) |
+| 9 | R9 | Tooling: ESLint 10 (re-triage, Node floor); the dev-only `brace-expansion` advisory | 0.75 d | ~30 min | 2026-11-19 | 2026-11-19 | Planned (from the backlog) |
+| 10 | R10 | L1 reverse index for Find References | 2 d | ~1.5 h | — | — | **On trigger only:** past ~1000 files or > 200 ms per search (today 29 ms cold) |
 
-**Total remaining (toolkit lane):** 22 working days, forecast to finish **2026-12-09**. Decisions taken 2026-11-09
-after the R3.1 spike (`docs/r3.1-strucpp-spike.md`): **wait for the fork** — the check command must not put compiler
-errors on correct code, so the gaps are fixed in STruC++ first (S2, fork lane); **R3.2 takes its full scope**
-(5 → 7 d).
+**Forecast (re-measured 2026-11-09):** the toolkit lane's code (through R3.3) finishes about **2026-11-17**, the scheduled backlog (R6–R9) about **2026-11-19**. What sets the pace now
+is not code but the steps only the user can do on Windows. R5's XAE check, R4's dev-host gate and R2's 4024 skeleton
+were done 2026-11-09; R2's XAE proofs remain. Those dates are not forecast; each item stays open until its gate passes. Decisions taken
+2026-11-09 after the R3.1 spike (`docs/r3.1-strucpp-spike.md`): **wait for the fork** — the check command must not
+put compiler errors on correct code, so the gaps are fixed in STruC++ first (S2, fork lane); **R3.2 takes its full
+scope** (5 → 7 d).
+
+### Velocity (measured 2026-11-09)
+
+"Planned" is the original estimate in one developer's working days; "Re-measured" is session time (agents doing
+the work in parallel, plus review, checks and merge), taken from the commit and merge times of 2026-11-09:
+
+| Item | Planned | Actual (wall clock) | Notes |
+|---|---|---|---|
+| R5 (3 fixes + #25) | 3 d | ~30 min to code-complete | three agents in parallel; merged later with R1 |
+| R1 | 0.5 d | ~10 min | |
+| R3.1 spike | 2 d | ~15 min | |
+| S1 (fork language server) | 1.5 d | ~25 min | |
+| R4 | 4 d | ~3 h | includes a worker restart and a re-run |
+| S2 design pass + merge with the user's findings | — | ~1.7 h | |
+| S2 steps 1, 1b, 2, 3, 4, 5 | 9 d | ~2 h 5 min (14:03 → 16:08) | each step 10–30 min, review and full fork checks included |
+
+About **20 planned days in ~7 hours** of one session day. One day is not a trend: these were well-specified items with
+a written plan behind them. The re-measured column therefore assumes **about half** the observed speed (~30 min per
+planned day for fork steps, more for toolkit items that touch the webview or the tree), and the calendar assumes one
+working session per day.
 
 ## STruC++ fork lane (parallel)
 
@@ -33,9 +60,16 @@ Work in the compiler fork (`AbuShaqra/STruCpp`, branch `development`, GPL-3.0-on
 its CLAUDE.md first). It runs **alongside** the toolkit lane (user's call, 2026-11-09); the toolkit only waits
 for it where a row says so.
 
-| Order | ID | Item | Estimate | Start | End | Status |
-|-------|----|------|----------|-------|-----|--------|
-| 1 | S2 | The constructs it still rejects on correct TwinCAT code, plus check-only output | 10 d (rough) | 2026-11-10 | 2026-11-23 | Planned — R3.2 waits for it |
+| Order | ID | Item | Planned | Re-measured | Start | End | Status |
+|-------|----|------|---------|-------------|-------|-----|--------|
+| 1 | S2 | Close the fork's gaps: 14 PR-sized steps + the folded-in items (plan: [docs/s2-strucpp-fork-plan.md](docs/s2-strucpp-fork-plan.md)) | 22.5 d + ~5 d folded | ~9 h | 2026-11-09 | 2026-11-11 | In progress — steps 1 (fork PR #5), 1b (#6), 2 (#7), 3 (#8), 4 (#9), 5 (#10), 6 (#11, release B), 7 (#12), 8 (#13), 9 (#14), 10 (#15) and 11 (#16) merged 2026-11-09; step 12 (UNION in C++) next. R3.2 waits for it |
+| 2 | S3a | False positives on correct code found during S2: a STRUCT alias is not assignment-compatible with its STRUCT; `POINTER TO <STRUCT> := ADR(s)` refused; UNION initial values ("not supported yet") | 2 d | ~1 h | 2026-11-12 | 2026-11-12 | Planned — **before R3.2** (a check that flags correct code is worse than none) |
+| 3 | S3b | The other S2 follow-ups (list below): code the checker passes but g++ rejects, checker gaps, parser gaps, housekeeping | 7 d | ~3.5 h | 2026-11-12 | 2026-11-13 | Planned |
+| 4 | S4 | Ed. 3 forms the fork refuses: CHAR/WCHAR, LTIME, string index, `STRING[n]` (needs a decision), typed `TRUNC_<type>`, g++-only literal cases, `STRUCT OVERLAP` (reuses the UNION lowering) | 8.5 d (7–10) | ~4.5 h | 2026-11-13 | 2026-11-16 | Planned |
+| 5 | S5 | Profile-handling defects (S2 plan §1d) | 1 d | ~30 min | 2026-11-16 | 2026-11-16 | Planned |
+| 6 | S6 | Runtime safety defects (S2 plan §1d, 14 items: `/0` and `MOD 0`, out-of-range index, SEL evaluating both inputs, VAR_TEMP keeping values, FB_exit never called, conversions and to-string forms, SIZEOF/stride, subrange checks, 32-bit intermediates, silent truncation) | 7 d | ~3.5 h | 2026-11-16 | 2026-11-17 | Planned — estimate not measured |
+| 7 | S7 | `iec` audit: narrow what `iec-3` accepts (C1–C9) | 6 d | ~3 h | 2026-11-17 | 2026-11-18 | **Needs a decision first** (what to narrow, and that the no-flag default stays stable) |
+| 8 | S8 | Flip the no-flag default to `iec-3`, in its own release | 0.5 d | ~20 min | 2026-11-18 | 2026-11-18 | After R3.3 (downstream callers pass `--dialect`) |
 
 **Why this order.**
 1. **R3.1 (spike) first:** the STruC++ work is the largest unknown. The spike needs no decisions, and what
@@ -63,14 +97,23 @@ one place; the suite and typecheck pass; and **`node test/devhost/run.js` passes
 machine**. That gate is mandatory: reveal ancestry and tab identity are exactly what this changes, and
 headless gates missed the 0.6.0 duplicate-tab regression in this area.
 
-### R2 — Create a new TwinCAT project from the extension
+### R2 — TwinCAT sidebar, start page, and creating a new project
 
-**Goal.** A user with no TwinCAT project in the workspace (or an empty folder) can create one from the
-extension, starting from its start view, without opening TwinCAT XAE first.
+**Goal.** The extension gets its own icon in the Activity Bar. It opens a TwinCAT sidebar, and from there a user
+with no TwinCAT project in the workspace (or an empty folder) can create one without opening TwinCAT XAE first.
 
-**Start view.** The TwinCAT Objects view has no empty-state content today (`package.json` `viewsWelcome`
-covers only the References and Libraries views). Add one with a **Create TwinCAT Project** button bound to a
-new command; the same command goes in the Command Palette.
+**Sidebar and start page (user's ask 2026-11-09; decided that day by card):**
+- **Views:** a new Activity Bar container `TwinCAT` (`viewsContainers.activitybar`, own monochrome icon) holds a
+  **Start** view plus the **TwinCAT Objects** and **TwinCAT Libraries** views, which *move out of the Explorer*
+  (users can still drag them back). References stays in the panel.
+- **Form:** sidebar **and** full page. The Start view shows compact native buttons (`viewsWelcome`, offline);
+  **Open Start Page** opens a full page in an editor tab (a webview) with the create-project form and the rest.
+- **Start page options:** *Create new project* (version 3.1.4024 or 3.1.4026, name, location); *Open existing
+  project* (a solution or folder, plus recently opened TwinCAT solutions); *Project actions* (Generate ST for all
+  or chosen projects, Update Library Definitions, and Check with STruC++ once R3.2 ships); *Help and links*
+  (getting started, the roadmap page, release notes, report an issue); *Settings* (the extension's settings).
+- **Command Palette:** every action is also a command (`TwinCAT: Create New Project`, `TwinCAT: Open Start Page`, …).
+- **Size:** R2 grows from 6 d to about 8.5 d (~6 h of session); the sidebar and start page are the extra 2.5 d.
 
 **Key constraint (from earlier work).** A TwinCAT solution is `.sln` → `.tsproj` → `.plcproj`, and only XAE
 has ever written a skeleton that XAE accepts: hand-written ones were refused, and the on-disk template is a
@@ -94,23 +137,40 @@ Two ways around it:
 
 ### S2 — STruC++ fork: close the gaps the spike found
 
-**Why** (decided 2026-11-09). With the converter fixed, STruC++ still rejects constructs the correct `sample/`
-uses, so a check command would report errors on correct code. The fix goes into the fork (`AbuShaqra/STruCpp`,
-branch `development`) before R3.2. Read the fork's CLAUDE.md first; it is GPL-3.0-only and its code stays there.
+**Plan:** [docs/s2-strucpp-fork-plan.md](docs/s2-strucpp-fork-plan.md) — the R3.1 spike, a first S2 design and
+the user's compiler findings document merged and checked against the IEC 61131-3 Ed. 3 text (clause numbers
+and paraphrase only; the copy used is licensed to another party, so no text is reproduced).
 
-**Scope** (rows of `docs/r3.1-strucpp-spike.md`; confirm each with a repro before fixing):
-- `PROPERTY` in an `INTERFACE`; a method call through a member chain (`GVL_System.fbCylinder.Cyclic()`);
-  `TYPE … EXTENDS … : STRUCT`; `UNION`; `THIS^.member` and `REF=` on a `THIS` member;
-- FB instance declared with init arguments (`FB_init`) and GVL-qualified access (`GVL_Hmi.x`), unless R3.2's
-  converter emitter covers them;
-- a check-only CLI mode with machine-readable output (`--check --json`), and lexer errors that report a real
-  line and column instead of `0:0`.
-Pragmas and the enum base type after the list are handled by R3.2's converter emitter instead.
+**Decided 2026-11-09:** all 13 steps plus step 1b (about 22.5 d), one PR each into the fork's `development`; `iec` means Ed. 3, and the built-in profile is renamed `iec-3` with no `iec` alias (so an `iec-4` can be added later; `iec` is refused with an error naming `iec-3`);
+standard forms always on (a wrongly refused standard construct is a defect fix), vendor forms behind new
+vendor-neutral features that no profile enables by default (`self_caret`, `property`, `postfix_enum_base`,
+`named_global_lists`, `struct_extends`, `union`, `fb_init`); chained comparisons follow Annex A;
+`--check --json`.
 
-**Done when.** The spike's sample, through the raw-based check unit, compiles with 0 errors under the vendored
-TwinCAT dialect profile with no workarounds; each fixed construct has a test in the fork; the fork's build,
-tests and lint pass; the toolkit pins the fork commit it uses. Was "R7" for an hour on 2026-11-09; renamed when the fork lane
-was split out.
+**Order:** 1 lexer positions + `--check --json` → 1b `iec-3` profile id (no alias) → 2 pragmas (R3.2 can use the check from here) → 3 `SUPER.` /
+`self_caret` → 4 member-chain calls → 5 interface variables → 6 interface properties (standard gaps closed,
+11 d) → 7 chained comparisons → 8 postfix enum base → 9 named global lists → 10 struct inheritance → 11–12
+UNION → 13 FB_init (the sample compiles with no workarounds).
+
+**After S2** the fork lane runs S3a–S8 (rows above). S3a comes before the toolkit's R3.2, because it removes errors
+the compiler puts on correct code. **Not estimable yet:** a strict-mode policy for vendor profiles (a decision
+first), an Ed. 4 profile (needs a full Ed. 4 read), the rest of the vendor-feature catalogue (explicitly not a plan).
+
+**S3b's list** (each found during an S2 step; all also on `development` before it):
+- *Passes the checker, fails in g++:* `p^.M()` on an FB behind REF_TO; `inst.Nope()` / `intVar.M()`; positional
+  method calls omitting a VAR_OUTPUT; an FB implementing an interface only through its base FB; an FB property
+  inherited from a base FB; `TO_DINT(enumValue)`; `gfb(a := 2);` on a global FB instance; `REF(s)`, `REF=` and `=`
+  on STRUCTs; a STRUCT argument of an unrelated STRUCT type.
+- *Checker gaps:* an unknown member in a chain (`x := mid.nothing`, `s.zz := 1`); an array member assigned to an INT.
+- *Parser and language gaps:* plain `SUPER()`; `SUPER.x :=` as a target; `THIS.a.b`; `GVL_A.units[0]()`; IMPLEMENTS
+  ignoring methods from interface EXTENDS bases; ARRAY OF / STRUCT field of an interface type; properties through an
+  interface variable; a library STRUCT as an EXTENDS base.
+- *Housekeeping:* the `--feature` help text and the DIALECTS.md "Checks" list; a bundled-library global (`speed`)
+  colliding with a user global.
+
+**How these were estimated (2026-11-09):** the planned days are my sizing from the lists above, not measured; the
+re-measured column applies the velocity below (about 30 min per planned day for fork work, ~45 min for toolkit work),
+and the calendar assumes about 4 hours of session per working day, weekends off.
 
 ### R3 — Compile TwinCAT projects with STruC++
 
@@ -122,7 +182,7 @@ was split out.
   `--dialect-path` (`src/dialect.ts`, `docs/DIALECTS.md`). Profile features today: `program_methods`,
   `pointer_to`, `reference_to`, `ref_assign`.
 - The TwinCAT 3 dialect profile is vendored in this repo as `resources/dialects/twincat3.json` (profile id
-  `twincat3`, extends `iec`, enables all four features above). It is passed to the compiler with
+  `twincat3`, extends `iec-3` (the fork renamed `iec` to `iec-3`, S2 step 1b), enables all four features above). It is passed to the compiler with
   `--dialect-file`.
 - The toolkit already turns TwinCAT XML into one ST compilation unit per object with a line map back to each
   pane (`src/stConverter.js`, the live path) — the compiler's input, and the route for mapping its errors back.
@@ -156,13 +216,14 @@ was split out.
 
 ## Backlog (not scheduled)
 
-Each waits for the reason recorded in [docs/handoff-findings.md](docs/handoff-findings.md) "Deferred work".
+The former backlog is now scheduled as R6–R10 (2026-11-09, user's ask); each item's reason and numbers stay in
+[docs/handoff-findings.md](docs/handoff-findings.md) "Deferred work". What remains here has no estimate on purpose:
 
-- Indexing: memoize `collectSignatureFiles` per root; non-blocking per-project scan; persisted archive cache.
-- Rename: `.plcproj` sync inside the rename transaction; rename sibling interface implementors.
-- L1 reverse index for references — only past ~1000 files or > 200 ms.
-- Tooling: ESLint 10; `brace-expansion` dev advisory.
-- Language: nested block comments; pragma hover.
+- **On the user's Windows machine (~1 h of the user's time, no date):** Libraries-view scoping (tree descriptions,
+  webview tab switches, startup seeding, the `.plcproj`-watcher path end to end); library member expansion seen
+  once; squiggle rendering; peek dismissal over the real bridge.
+- **Showcase screenshots:** the scripts exist only on the user's machine (`scratch/showcase/`); moving them to
+  `scripts/showcase/` takes ~30 min once they are in the repo.
 
 ## Done
 
@@ -172,13 +233,12 @@ Roadmap items finished from now on are listed here with their PR.
 - **R5** — PROGRAMs stay PROGRAMs; TwinCAT XML parsing fixes (non-ST bodies, CDATA overrun, attribute
   entities, lone CR; BOM verified not to leak); SFC-transition warnings; Add Get / Add Set Accessor (issue
   [#25](https://github.com/AbuShaqra/TC_PLC_Toolkit/issues/25)). PR [#27](https://github.com/AbuShaqra/TC_PLC_Toolkit/pull/27),
-  squash-merged into `dev` 2026-11-09 as `0ea9fcd`. **Merged before its XAE check** (user's call): an added
-  accessor opening and building in XAE, `node test/devhost/run.js`, and a manual menu pass are still to do on the
-  user's Windows machine before the next release.
+  squash-merged into `dev` 2026-11-09 as `0ea9fcd`. Merged before its XAE check (user's call); the check
+  **passed** on the user's Windows machine 2026-11-09 (XAE, `node test/devhost/run.js`, the manual menu pass).
 - **S1** (fork lane) — the fork's language server honours dialect profiles: a client passes a whole profile
   object (`strucpp.dialect`) and overrides (`strucpp.features`) through the `strucpp` workspace configuration;
   every analysis and compile request uses it; malformed profiles are rejected without a crash; no profile means
   the compiler's own default. PR [AbuShaqra/STruCpp#4](https://github.com/AbuShaqra/STruCpp/pull/4),
   squash-merged into the fork's `development` 2026-11-09 as `a529ea9`.
-- **R1** — Generate ST keeps its rounded end in single-project workspaces. Same PR #27. Dev-host eyeball pending
-  with the R5 checks.
+- **R1** — Generate ST keeps its rounded end in single-project workspaces. Same PR #27. Checked on Windows 2026-11-09; that pass
+  found the multi-project Generate ST menu clipped in a narrow editor, fixed in `3b93ef1`; at the user's request the menu also gained a tri-state *Select all*. Both ride with PR #30.

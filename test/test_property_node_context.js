@@ -84,7 +84,8 @@ require.cache['vscode-property-context-stub'] = {
     }
 };
 
-const { TwinCatTreeDataProvider, TwinCatTreeItem } = require('../src/treeDataProvider');
+const { TwinCatTreeDataProvider } = require('../src/treeDataProvider');
+const { makeNode } = require('../src/objectsTreeModel');
 const { isPropertyNode, propertyContextValue } = require('../src/objectKinds');
 const { describeDragged } = require('../src/dndRules');
 
@@ -113,7 +114,7 @@ const fileUri = uriFor(filePath);
     for (const [id, cv] of Object.entries(expected)) {
         const item = await provider.getRevealItem(fileUri, id);
         assert(item && item.contextValue === cv, `TREE: ${id} → contextValue '${cv}' (got '${item && item.contextValue}')`);
-        assert(item && item.id === fileUri.toString() + '#' + id,
+        assert(item && provider.getTreeItem(item).id === fileUri.toString() + '#' + id,
             `TREE: ${id} keeps the component-shaped tree id whatever its variant (got ${item && item.id})`);
     }
     for (const id of ['prop_Both_get', 'prop_Both_set', 'prop_OnlyGet_get', 'prop_OnlySet_set']) {
@@ -121,13 +122,15 @@ const fileUri = uriFor(filePath);
         assert(item && item.contextValue === 'component', `TREE: accessor ${id} stays a plain 'component' row`);
     }
     const neither = await provider.getRevealItem(fileUri, 'prop_Neither');
-    assert(neither && neither.collapsibleState === 0, 'TREE: a property with no accessors is a leaf');
+    assert(neither && provider.getTreeItem(neither).collapsibleState === 0, 'TREE: a property with no accessors is a leaf');
 
-    // The id getter accepts every variant (a constructed item, independent of the fixture).
-    for (const cv of VARIANTS) {
-        const item = new TwinCatTreeItem('P', fileUri, 0, cv, null, null);
-        item.componentId = 'prop_P';
-        assert(item.id === fileUri.toString() + '#prop_P', `ID: '${cv}' yields the component id`);
+    // The id is the same for every accessor combination (a constructed node, independent of the fixture).
+    for (const [hasGet, hasSet] of [[true, true], [false, true], [true, false], [false, false]]) {
+        const node = makeNode({ kind: 'component', label: 'P', resourceUri: fileUri, componentId: 'prop_P',
+            facts: { type: 'Property', hasGet, hasSet } });
+        const cv = propertyContextValue(hasGet, hasSet);
+        assert(node.contextValue === cv && node.id === fileUri.toString() + '#prop_P',
+            `ID: '${cv}' yields the component id`);
     }
 
     // ── 2. Helpers ───────────────────────────────────────────────────────────────────────────────

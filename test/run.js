@@ -113,7 +113,8 @@ const requiredGates = [
     'sample-diagnostics',
     'sample-typecheck',
     'multi-project-sample',
-    'committed-library'
+    'committed-library',
+    'objects-tree-ids'
 ];
 const missedGates = requiredGates
     .map(gate => reports.get(gate) || { gate, status: 'skipped', detail: 'harness did not report execution' })

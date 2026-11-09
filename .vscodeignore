@@ -46,3 +46,6 @@ docs/**
 # needs listing here — .gitignore has no effect on what vsce packages, so this shipped 1.12 MB of
 # internal review material (including identifiers redacted out of the source) until it was caught.
 .superpowers/**
+
+# R2 template sources: raw XAE output, not shipped until R2 derives its templates from them
+resources/templates/**

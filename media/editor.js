@@ -143,6 +143,52 @@
     const generateMenu = document.getElementById('generate-st-menu');
     const generateProjects = document.getElementById('generate-st-projects');
     const generateRun = document.getElementById('generate-st-run');
+    const generateAll = document.getElementById('generate-st-all');
+
+    /** The project checkboxes in the menu (not the Select all box). */
+    function projectBoxes() {
+        return generateProjects
+            ? Array.from(generateProjects.querySelectorAll('input[type="checkbox"]'))
+            : [];
+    }
+
+    /**
+     * Mirrors the project boxes onto Select all — checked when all are ticked, empty when none,
+     * indeterminate in between — and disables "Generate selected" while nothing is ticked.
+     */
+    function syncSelectAll() {
+        const boxes = projectBoxes();
+        const ticked = boxes.filter(cb => cb.checked).length;
+        if (generateAll) {
+            generateAll.checked = boxes.length > 0 && ticked === boxes.length;
+            generateAll.indeterminate = ticked > 0 && ticked < boxes.length;
+        }
+        if (generateRun) generateRun.disabled = ticked === 0;
+    }
+
+    if (generateAll) {
+        generateAll.addEventListener('change', () => {
+            for (const cb of projectBoxes()) cb.checked = generateAll.checked;
+            syncSelectAll();
+        });
+    }
+    if (generateProjects) generateProjects.addEventListener('change', syncSelectAll);
+
+    /**
+     * Keeps the open menu inside the webview: it opens left-aligned under the split button and is
+     * shifted left when it would run past the right edge, but never past the left edge (a narrow
+     * editor clipped its left half when it was right-aligned to the caret).
+     */
+    function placeGenerateMenu() {
+        if (!generateMenu) return;
+        const margin = 8;
+        generateMenu.style.left = '0px';
+        const rect = generateMenu.getBoundingClientRect();
+        const overflowRight = rect.right - (window.innerWidth - margin);
+        let shift = overflowRight > 0 ? -overflowRight : 0;
+        if (rect.left + shift < margin) shift = margin - rect.left;
+        generateMenu.style.left = `${shift}px`;
+    }
 
     function closeGenerateMenu() {
         if (!generateMenu) return;
@@ -162,7 +208,9 @@
             const opening = generateMenu.hidden;
             generateMenu.hidden = !opening;
             generateCaret.setAttribute('aria-expanded', String(opening));
+            if (opening) placeGenerateMenu();
         });
+        window.addEventListener('resize', () => { if (!generateMenu.hidden) placeGenerateMenu(); });
         // A click anywhere else dismisses the menu.
         document.addEventListener('click', (e) => {
             if (generateMenu.hidden) return;
@@ -207,10 +255,12 @@
             cb.checked = true; // default: every project selected
             const text = document.createElement('span');
             text.textContent = p.label;
+            label.title = p.label;
             label.appendChild(cb);
             label.appendChild(text);
             generateProjects.appendChild(label);
         }
+        syncSelectAll();
         setCaretVisible(true);
     }
 

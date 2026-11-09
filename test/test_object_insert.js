@@ -234,20 +234,20 @@ if (!fs.existsSync(SAMPLE)) {
 }
 
 // ------------------------------------------------- the menu `when` clauses name real contextValues
-// The two new menu items are gated on contextValue strings that only src/treeDataProvider.js
+// The two new menu items are gated on contextValue strings that only src/objectsTreeModel.js
 // produces. Nothing links the two files, so a rename there would silently orphan the menu entries —
 // the commands would simply stop appearing, with no error anywhere. Read the vocabulary out of the
-// provider instead of hard-coding it, so this assertion tracks the rename.
-const providerSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'treeDataProvider.js'), 'utf8');
+// model instead of hard-coding it, so this assertion tracks the rename.
+const modelSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'objectsTreeModel.js'), 'utf8');
 const vocabulary = new Set();
-for (const line of providerSrc.split('\n')) {
-    // Every contextValue in the provider is assigned or compared on a line naming the variable that
-    // carries it (`contextValue`, or `folderContext` for the virtual-folder branch).
-    if (!/contextValue|folderContext/.test(line)) continue;
+for (const line of modelSrc.split('\n')) {
+    // Every contextValue in the model is produced on a line naming what carries it (`contextValueOf`,
+    // `propertyContextValue`, or `fileContext` for file rows) or returned from contextValueOf.
+    if (!/[cC]ontextValue|fileContext|return '/.test(line)) continue;
     for (const m of line.matchAll(/'([A-Za-z][A-Za-z0-9]*)'/g)) vocabulary.add(m[1]);
 }
 assert(vocabulary.has('pouFile') && vocabulary.has('component') && vocabulary.size > 8,
-    `the contextValue vocabulary was extracted from treeDataProvider.js (${vocabulary.size} values)`);
+    `the contextValue vocabulary was extracted from objectsTreeModel.js (${vocabulary.size} values)`);
 
 const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
 const menuItems = pkg.contributes.menus['view/item/context'];
@@ -260,7 +260,7 @@ for (const command of ['twincat.insertObjectAtCursor', 'twincat.insertObjectDefi
     assert(used.length > 0, `${command} names at least one contextValue`);
     const unknown = used.filter(v => !vocabulary.has(v));
     assert(unknown.length === 0,
-        `every contextValue in ${command}'s when clause exists in treeDataProvider.js`
+        `every contextValue in ${command}'s when clause exists in objectsTreeModel.js`
         + `${unknown.length ? ` — unknown: ${unknown.join(', ')}` : ` (${used.join(', ')})`}`);
     assert(pkg.contributes.commands.some(c => c.command === command), `${command} is a declared command`);
 }

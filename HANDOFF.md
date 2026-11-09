@@ -33,22 +33,20 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
 - **Stale remote branches:** `claude/new-session-ynrdo4` and `claude/project-thread-o6i1sa` are merged into `dev`
   (checked 2026-11-09). The user asked to delete them, but this cloud session's git proxy drops every push
   except to the session branch, so they still exist — delete from the GitHub UI or a local clone.
-- **Merge `claude/focused-ptolemy-m6acaz` into `dev` by SQUASH only, every time**: after PR #27 the branch was
+- **Merge `claude/focused-ptolemy-m6acaz` into `dev` by SQUASH only, every time** (PRs #27, #29 so far): after PR #27 the branch was
   restarted from `dev`, but force-pushing was refused, so the old branch was merged back in (no file changes);
   its history still holds commit `2b06874` with a `Co-Authored-By` trailer that must never reach `dev`.
 - **Merge `ccr-d5b51254-r1vu2b` into `dev` by SQUASH only** (user decision 2026-11-09): commit `65d5b1c` on it
   names a private repository the user wants kept out of this repo; the final tree is clean. Delete the branch after.
 
 ## Start here (next session)
-- **R5 + R1 are MERGED into `dev`** (PR #27, squash `0ea9fcd`, 2026-11-09) — **before their Windows check, at the
-  user's call** ("I will test it later when I have access to XAE"). Still owed on the user's machine, before the
-  next release: (1) an accessor added via *Add Get/Set Accessor* to an FB property (`sample/` `FB_Station.ErrorId`)
-  and an interface property (`I_Station.State`) opens and builds in XAE — the new accessor carries no LineIds,
-  as a newly created property never has; (2) the user's real case: delete an accessor IN XAE, re-add it here,
-  reopen in XAE; (3) `node test/devhost/run.js`; (4) manual: each Add entry shows only while its accessor is
-  missing, and copy/paste/delete/rename/insert stay on every property row (contextValue is now
-  `propertyNode[.noGet][.noSet]`); (5) the Generate ST button in a one- and a two-project workspace. Then reply on
-  issue #25 when it ships in a release (not yet replied).
+- **R5 + R1 are MERGED into `dev`** (PR #27, `0ea9fcd`) and their **Windows/XAE check PASSED** (user, 2026-11-09:
+  accessor add/re-add opens and builds in XAE, `node test/devhost/run.js`, menu pass). That pass found the multi-project
+  Generate ST menu clipped in a narrow editor (right-aligned to the caret → ran past the webview's left edge; long names
+  scrolled sideways): fixed in `3b93ef1` (`placeGenerateMenu` in `media/editor.js`, ellipsis + tooltip;
+  `test/browser/run.js` 7c checks 360/560/1200 px, all three failed before). Still owed: reply on issue #25 when it
+  ships in a release. User request 2026-11-09, done: a tri-state *Select all* in that menu (`#generate-st-all`,
+  `syncSelectAll`; "Generate selected" disabled while nothing is ticked; harness 7d).
 - **R3.1 spike findings are DONE** (2026-11-09): `docs/r3.1-strucpp-spike.md`. Headline: 27 parse errors as
   converted; 1 converter cause (methods/properties emitted after the POU body — the compiler wants them first) +
   9 compiler gaps; with scratch workarounds 0 errors under twincat3, 6 under iec (REFERENCE TO, REF=). No
@@ -56,7 +54,50 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   `--check --json` flag). Export-mode input is WRONG to check (it rewrites REFERENCE TO→POINTER TO, REF=→:=);
   R3.2 must feed a raw-based unit. **Decided 2026-11-09:** wait for the fork (fork-lane item S2, before R3.2;
   the roadmap now has a parallel STruC++ fork lane: S1 language-server dialect profiles — DONE, fork PR #4
-  `a529ea9`, client contract in its PR body; S2 compiler gaps next) and R3.2 full scope (7 d). Next roadmap item: R4.
+  `a529ea9`, client contract in its PR body; S2 compiler gaps: plan DONE and decided 2026-11-09 —
+  `docs/s2-strucpp-fork-plan.md`, all 13 steps + 1b (~22.5 d), `iec` = Ed. 3, Annex A precedence). Merged in the fork: step 1
+  (`--check --json`, lexer positions; PR #5 `8aea9a7`) and 1b (`iec` renamed `iec-3`, no alias, id reserved; PR #6
+  `5fda1bc`). Step 2 (pragmas skipped with a warning, conditional ones refused; PR #7 `47c99fa`) also merged — the toolkit's
+  check (R3.2) can now analyse every sample file. Step 3 (`SUPER.` always on, `THIS^` behind `self_caret`; PR #8
+  `db0f53c`) merged. Step 4 (member-chain method calls; PR #9 `19f91a7`) merged. Fork follow-ups found
+  along the way, not yet scheduled: plain `SUPER()` body call; `SUPER.x :=` as a target; `p^.M()` (C++ for an FB behind
+  REF_TO does not build); single-dot `inst.Nope()`/`intVar.M()` pass the checker and fail only in g++; positional
+  method calls that omit a VAR_OUTPUT fail in g++; an unknown member in a chain (`x := mid.nothing`) is not flagged.
+  Step 5 (interface-typed variables, `IEC_ITF<I>`; diamonds via virtual inheritance on shared edges only; PR #10
+  `c5ee894`) merged — not yet: ARRAY OF / STRUCT field of interface type, properties through an interface variable.
+  Step 6 (interface PROPERTY behind `property`, explicit GET/SET; PR #11 `5b99425`) merged = **release B**.
+  More fork follow-ups: `THIS.a.b` does not parse; an FB that IMPLEMENTS an interface only through a base FB's
+  methods/properties passes analysis but fails g++; IMPLEMENTS ignores methods from interface EXTENDS bases;
+  an FB property inherited from a base FB fails in g++ when used on the derived instance. Step 7 (chained comparisons, Annex A; PR #12 `5fde942`) merged.
+  Step 8 (`postfix_enum_base`; PR #13 `da78fe3`) merged. Also found: `TO_DINT(enumValue)` fails in g++ (pre-existing).
+  Step 9 (`named_global_lists`; PR #14 `fafc02e`) merged. List = file stem, override `--global-list <file>=<name>` /
+  API `globalListName`; a local may hide a global (`GVL_A.x` still reaches it); the same name in two lists is allowed
+  (plain use must be qualified). R3.2's converter must pass each GVL's name. Also found (pre-existing):
+  `gfb(a := 2);` on a top-level global FB fails in g++; bundled-library global `speed` collides with a user global;
+  `--feature` help text and DIALECTS.md "Checks" list stale; `GVL_A.units[0]()` does not parse; lexer accepts `a__b`.
+  Step 10 (`struct_extends`; PR #15 `a962890`) merged: flattened in the AST; derived↔base assignment and arguments
+  refused (6.4.4.6); a library STRUCT as base refused for now (manifests carry no initial values). Also found
+  (pre-existing, plain STRUCTs): unknown member `s.zz` unflagged in ST; `POINTER TO ST := ADR(s)` refused;
+  `REF(s)`/`REF=`/STRUCT `=` fail in g++; unrelated-STRUCT arguments unchecked in ST (fail in g++).
+  Step 11 (`union` parse + analysis; PR #16 `337817f`) merged: contextual (no new tokens, `union` stays a name);
+  STRING members allowed; initial values refused as "not supported yet" (possible R3.2 false positive); compile()
+  refuses UNION until step 12. Found (pre-existing): a STRUCT alias is not assignment-compatible with its STRUCT;
+  `STRING[n]` does not parse (B6, use `STRING(n)`). Next: step 12 (UNION C++ lowering, raw storage), running. The vendored profile now extends `iec-3`.
+  The IEC Ed. 3 copy the user supplied is licensed to another party: cite clause numbers only, never its text. **R4 code DONE 2026-11-09, not merged** — `src/objectsTreeModel.js` (VS Code-free node graph; ids and contextValue set
+  in one place, `getParent` = `node.parent`), thin `treeDataProvider.js`, `groupRootsByProject` moved out of
+  `projectMap.js`; `test_objects_tree_ids.js` pins 396 ids / 301 reveal chains (a required gate); suite 84/84 FULL.
+  Intended fix: grouped-mode reveal chains now show the tree's own project label (86 mismatches gone). **The dev-host gate PASSED** on the
+  user's Windows machine 2026-11-09; PR #30 (this session branch) squash-merges into `dev` once its CI is green. and R3.2 full scope (7 d). Next roadmap item: R4.
+- **R2 scope grown 2026-11-09 (user's ask, decided by card):** an Activity Bar container `TwinCAT` with a Start view
+  (native `viewsWelcome` buttons) plus Objects and Libraries MOVED out of the Explorer; "Open Start Page" opens a
+  webview tab: create project (4024/4026, name, location), open existing (+ recent solutions), project actions
+  (Generate ST, Update Library Definitions, STruC++ check once R3.2 ships), help/links, settings. 6 → 8.5 d.
+- **Backlog scheduled 2026-11-09 (user's ask):** toolkit R6–R10 (R10 on trigger only) and fork S3a–S8 are now rows in
+  ROADMAP.md with my own sizing (not measured) at the Nov 9 velocity, ~4 h of session per working day. **S3a (three
+  false positives on correct code) goes before R3.2**; S7 (iec-3 audit) needs the user's decision first; S8 after R3.3.
+- **Roadmap re-measured 2026-11-09** (user's ask): ~20 planned days were delivered in ~7 h that day (ROADMAP.md
+  "Velocity"). New forecasts assume half that pace; toolkit R2–R3.3 ~2026-11-17, R6–R9 ~2026-11-19, S2 ~2026-11-11, fork S3a–S8 ~2026-11-18. The real pacing
+  item is the user's Windows checks (R5 XAE, R4 dev-host via PR #30, R2 skeleton/XAE proofs) — never forecast.
 - **Was next: R3.1** (STruC++ spike) — [ROADMAP.md](ROADMAP.md) (page https://claude.ai/artifact/8RG7TZtBV2cuupsrwWtknv,
   source `docs/roadmap.html`). Order: R3.1 → R4 Objects-tree model (deepening P7) → R2 create a TwinCAT project →
   R3.2 check command → R3.3 packaging. Forecast end 2026-12-05. Every R2/R3 decision is SETTLED (2026-11-09,
@@ -68,8 +109,10 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   `resources/dialects/twincat3.json` — that file is the only external input. **Do not name, link or describe where
   it came from** in any file, commit or comment (user rule 2026-11-09: the source is a private repository the user
   has disconnected). The STruCpp repo has its own CLAUDE.md process rules — read them before changing it.
-- **Machine-bound steps:** R4's `node test/devhost/run.js` gate and R2's templates need the user's Windows machine;
-  R2's 3.1.4024 skeleton must be produced by a 4024 XAE there (the 4026.22 one is `sample/`'s).
+- **R2 inputs:** the 3.1.4024 skeleton arrived 2026-11-09 — `resources/templates/xae-3.1.4024/` (XAE 3.1.4024.62
+  output, `.vs`/`.bak`/`_Boot`/`_Libraries` left out; README there). It saves the system project as ONE `.tspproj`,
+  where 4026 (`sample/`) wrote `.tsproj` + `_Config/` — R2 must handle both shapes. Its GVL has a sample variable
+  and `qualified_only`; the template empties it. Still machine-bound: proving each template opens and builds in XAE.
 - **Cloud-session traps (2026-11-09):** the git proxy accepts pushes ONLY to the session branch (deleting other
   branches failed every time); `git reset --hard` was refused by the auto-mode classifier — use revert + merge.
 
