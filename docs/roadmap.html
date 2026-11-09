@@ -531,8 +531,8 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
 <script>
 /* Timeline data: keep in step with the "Order of work" table in ROADMAP.md. end is inclusive. */
 var PLAN = [
-  { lane: 'TC PLC Toolkit', num: 1, id: 'R3.1', card: 'r3-1', name: 'STruC++ spike',          est: '2 d → ~15 min', start: '2026-11-09', end: '2026-11-09', days: 0.3, status: 'done' },
-  { lane: 'TC PLC Toolkit', num: 2, id: 'R4',   card: 'r4',   name: 'Objects-tree model',     est: '4 d → ~3 h',  start: '2026-11-09', end: '2026-11-09', machine: true, status: 'done' },
+  { lane: 'TC PLC Toolkit', num: 1, id: 'R3.1', card: 'r3-1', name: 'STruC++ spike',          est: '2 d → ~15 min', start: '2026-11-09', end: '2026-11-09', days: 0.3, status: 'done', actualStart: '2026-11-09T11:45:00Z', actualEnd: '2026-11-09T12:03:42Z' },
+  { lane: 'TC PLC Toolkit', num: 2, id: 'R4',   card: 'r4',   name: 'Objects-tree model',     est: '4 d → ~3 h',  start: '2026-11-09', end: '2026-11-09', machine: true, status: 'done', actualStart: '2026-11-09T12:04:17Z', actualEnd: '2026-11-09T19:56:34Z' },
   { lane: 'TC PLC Toolkit', num: 3, id: 'R2',   card: 'r2',   name: 'Sidebar + new project',  est: '8.5 d → ~6 h', start: '2026-11-12', end: '2026-11-13', days: 1.5, machine: true, status: 'progress' },
   { lane: 'TC PLC Toolkit', num: '3b', id: 'R11', card: 'r11', name: 'Marketplace publishing', est: '0.5 d → ~1 h', start: '2026-11-13', end: '2026-11-13', days: 0.3, offset: 0.5, machine: true },
   { lane: 'TC PLC Toolkit', num: 4, id: 'R3.2', card: 'r3-2', name: 'STruC++ check',          est: '7 d → ~4 h',  start: '2026-11-16', end: '2026-11-16' },
@@ -591,9 +591,18 @@ var DOMAIN_START = '2026-11-09', DOMAIN_END = '2026-11-20'; /* exclusive */
     lab.firstChild.textContent = it.id; lab.lastChild.textContent = it.name; lab.title = it.name;
     var tr = document.createElement('div'); tr.className = 'g-track';
     var startDay = (d(it.start) - t0) / DAY + (it.offset || 0), len = it.days || ((d(it.end) - d(it.start)) / DAY + 1);
+    // A finished item is drawn over the time it really took (ISO timestamps), not its forecast.
+    var actual = it.status === 'done' && it.actualStart && it.actualEnd;
+    if (actual) {
+      startDay = (Date.parse(it.actualStart) - t0) / DAY;
+      len = Math.max((Date.parse(it.actualEnd) - Date.parse(it.actualStart)) / DAY, 0.04);
+    }
     var bar = document.createElement('button'); bar.type = 'button'; bar.className = 'g-bar' + (it.status ? ' ' + it.status : '') + (it.machine ? ' hatch' : '');
     bar.style.left = pct(startDay); bar.style.width = pct(len);
-    var when = it.start === it.end ? fmt(it.start) : fmt(it.start) + ' – ' + fmt(it.end);
+    function hm(iso) { var x = new Date(Date.parse(iso)); return String(x.getUTCHours()).padStart(2, '0') + ':' + String(x.getUTCMinutes()).padStart(2, '0'); }
+    var when = actual
+      ? fmt(it.actualStart.slice(0, 10)) + ' ' + hm(it.actualStart) + '–' + (it.actualEnd.slice(0, 10) === it.actualStart.slice(0, 10) ? '' : fmt(it.actualEnd.slice(0, 10)) + ' ') + hm(it.actualEnd) + ' UTC (actual)'
+      : it.start === it.end ? fmt(it.start) : fmt(it.start) + ' – ' + fmt(it.end);
     var stateText = it.status === 'done' ? 'done' : it.status === 'progress' ? 'in progress' : 'planned';
     bar.setAttribute('aria-label', it.lane + ' #' + it.num + ' ' + it.id + ' ' + it.name + ', ' + stateText + ', ' + it.est + ', ' + when + (it.machine ? ', needs your Windows machine' : ''));
     function show() {
