@@ -93,9 +93,10 @@ html, body {
     border-color: var(--tc-accent-line);
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
 }
+/* The main card always wears the light red frame the others get on hover. */
 #create {
     grid-row: span 2;
-    border-top: 3px solid var(--tc-accent);
+    border-color: var(--tc-accent-line);
 }
 .card h2 {
     display: flex;
