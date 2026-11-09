@@ -103,7 +103,11 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   `trunc_dint` ~0.5–1 d; (d) `:= 0` on an interface, feature `interface_zero` ~1 d — `itf = 0`/`<> 0` already pass in
   every dialect incl. iec-3 (decision: keep them always on?); (e) PROGRAM method from another POU ~3–4 d, needs an
   instance-model decision. Also found: undeclared function calls pass --check; side-effect call order not
-  left-to-right; positional FB inputs counted differently by analysis vs codegen; REF= source unchecked. The vendored profile now extends `iec-3`.
+  left-to-right; positional FB inputs counted differently by analysis vs codegen; REF= source unchecked.
+  **Decided 2026-11-09 (user, by card):** `itf = 0`/`<> 0` stay always on; only `itf := 0` needs `interface_zero`.
+  PROGRAM methods: one instance per PROGRAM — a PROGRAM is written once and called, never declared/instantiated like
+  an FB, so `PRG_A.M()` reaches that single instance from anywhere. Order: typed TRUNC, `trunc_dint`,
+  `interface_zero` first (~3 d), then PROGRAM methods, then FB VAR_IN_OUT by reference last. The vendored profile now extends `iec-3`.
   The IEC Ed. 3 copy the user supplied is licensed to another party: cite clause numbers only, never its text. **R4 DONE 2026-11-09** — `src/objectsTreeModel.js` (VS Code-free node graph; ids and contextValue set
   in one place, `getParent` = `node.parent`), thin `treeDataProvider.js`, `groupRootsByProject` moved out of
   `projectMap.js`; `test_objects_tree_ids.js` pins 396 ids / 301 reveal chains (a required gate); suite 84/84 FULL.
