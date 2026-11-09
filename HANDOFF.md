@@ -33,6 +33,9 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
 - **Stale remote branches:** `claude/new-session-ynrdo4` and `claude/project-thread-o6i1sa` are merged into `dev`
   (checked 2026-11-09). The user asked to delete them, but this cloud session's git proxy drops every push
   except to the session branch, so they still exist — delete from the GitHub UI or a local clone.
+- **Merge `claude/focused-ptolemy-m6acaz` into `dev` by SQUASH only** (user decision 2026-11-09): its commit
+  `2b06874` carries a `Co-Authored-By: Claude` trailer, which CLAUDE.md forbids; force-pushing a fix was refused
+  in the cloud session, and the user chose to leave it and squash. Write the squash message without the trailer.
 - **Merge `ccr-d5b51254-r1vu2b` into `dev` by SQUASH only** (user decision 2026-11-09): commit `65d5b1c` on it
   names a private repository the user wants kept out of this repo; the final tree is clean. Delete the branch after.
 

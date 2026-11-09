@@ -98,7 +98,7 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
 .legend i { display: inline-block; width: 18px; height: 10px; border-radius: 3px; vertical-align: -1px; margin-right: 6px; background: var(--bar); }
 .legend i.hatch, .g-bar.hatch { background: repeating-linear-gradient(135deg, var(--bar) 0 4px, color-mix(in srgb, var(--bar) 45%, var(--surface)) 4px 7px); }
 .g-scroll { overflow-x: auto; }
-.g-chart { min-width: 680px; display: grid; grid-template-columns: 190px 1fr; row-gap: 0; position: relative; }
+.g-chart { --label-w: 190px; min-width: 680px; display: grid; grid-template-columns: var(--label-w) 1fr; row-gap: 0; position: relative; }
 .g-axis-pad { height: 22px; }
 .g-axis { position: relative; height: 22px; font-family: var(--mono); font-size: 11px; color: var(--muted); }
 .g-axis span { position: absolute; top: 2px; transform: translateX(-50%); white-space: nowrap; }
@@ -106,7 +106,18 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
 .g-label .id { font-family: var(--mono); font-size: 12px; color: var(--accent); flex-shrink: 0; width: 34px; }
 .g-label .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .g-track { position: relative; z-index: 1; height: 34px; border-top: 1px solid var(--grid); }
-.g-bg { position: absolute; z-index: 0; top: 22px; bottom: 0; left: 190px; right: 0; pointer-events: none; }
+.g-bg { position: absolute; z-index: 0; top: 22px; bottom: 0; left: var(--label-w); right: 0; pointer-events: none; }
+/* Column resizer: a thin visible line inside a 28px-wide touch target, centred on the column edge. */
+.g-resize { position: absolute; z-index: 3; top: 22px; bottom: 0; left: var(--label-w); width: 28px; margin-left: -14px;
+  cursor: col-resize; touch-action: none; -webkit-user-select: none; user-select: none; background: transparent; border: 0; padding: 0; }
+.g-resize::before { content: ""; position: absolute; top: 0; bottom: 0; left: 13px; width: 2px; background: var(--line); border-radius: 1px; transition: background 0.12s; }
+.g-resize::after { content: ""; position: absolute; top: 50%; left: 9px; width: 10px; height: 28px; margin-top: -14px; border-radius: 5px;
+  background: var(--surface); border: 1px solid var(--line); box-shadow: inset 2px 0 0 -1px var(--surface), inset -2px 0 0 -1px var(--surface); }
+.g-resize:hover::before, .g-resize.dragging::before, .g-resize:focus-visible::before { background: var(--accent); }
+.g-resize:hover::after, .g-resize.dragging::after, .g-resize:focus-visible::after { border-color: var(--accent); }
+.g-resize:focus-visible { outline: none; }
+.g-chart.resizing { cursor: col-resize; -webkit-user-select: none; user-select: none; }
+.g-chart.resizing .g-bar { pointer-events: none; }
 .g-bg .we { position: absolute; top: 0; bottom: 0; background: var(--weekend); }
 .g-bg .wk { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--grid); }
 .g-bg .today { position: absolute; top: -18px; bottom: 0; width: 2px; background: var(--warn); }
@@ -117,7 +128,7 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
 .g-tip { position: absolute; z-index: 5; pointer-events: none; background: var(--fg); color: var(--bg); font-size: 12px; line-height: 1.4; padding: 6px 9px; border-radius: 6px; max-width: 260px; box-shadow: 0 4px 14px rgba(0,0,0,0.18); }
 .g-tip b { font-family: var(--mono); font-weight: 500; }
 .g-note { font-size: 12px; color: var(--muted); }
-@media (prefers-reduced-motion: reduce) { .card-top .chev { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .card-top .chev, .g-resize::before { transition: none; } }
 @media (max-width: 520px) { .body { grid-template-columns: 1fr; padding: 12px; } }
 </style>
 
@@ -147,7 +158,7 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
       <div class="legend"><span><i></i>Can run in the cloud session</span><span><i class="hatch"></i>Needs your Windows machine</span></div>
     </div>
     <div class="g-scroll"><div class="g-chart" id="gantt" role="img" aria-label="Gantt chart of the seven planned items from Nov 10 to Dec 11, 2026, in work order."></div></div>
-    <div class="g-note">Calendar days; shaded columns are weekends. Hover or focus a bar for its dates; click it to open its card.</div>
+    <div class="g-note">Calendar days; shaded columns are weekends. Hover or focus a bar for its dates; click it to open its card. Drag the line after the names to widen or narrow that column (double-click or double-tap resets it).</div>
   </section>
 
   <section class="grid" aria-label="Order of work">
@@ -421,5 +432,54 @@ var DOMAIN_START = '2026-11-09', DOMAIN_END = '2026-12-13'; /* exclusive */
     root.appendChild(lab); root.appendChild(tr);
   });
   root.appendChild(bg); root.appendChild(tip);
+
+  /* Draggable label-column edge. Pointer events cover mouse, pen and touch alike; touch-action: none on the
+     handle stops the browser from scrolling the chart while a finger drags it. Arrow keys work too. */
+  var KEY = 'roadmap.gantt.labelWidth', DEF = 190, MIN = 70;
+  var handle = document.createElement('div'); handle.className = 'g-resize';
+  handle.setAttribute('role', 'separator'); handle.setAttribute('aria-orientation', 'vertical');
+  handle.setAttribute('aria-label', 'Resize the item-name column'); handle.tabIndex = 0;
+  function maxW() { return Math.max(MIN, Math.min(420, root.clientWidth - 240)); }
+  function setW(w, save) {
+    w = Math.round(Math.max(MIN, Math.min(maxW(), w)));
+    root.style.setProperty('--label-w', w + 'px');
+    handle.setAttribute('aria-valuenow', String(w)); handle.setAttribute('aria-valuemin', String(MIN)); handle.setAttribute('aria-valuemax', String(maxW()));
+    if (save) { try { localStorage.setItem(KEY, String(w)); } catch (e) { /* storage unavailable: width just isn't remembered */ } }
+    return w;
+  }
+  var saved = null; try { saved = parseInt(localStorage.getItem(KEY), 10); } catch (e) { saved = null; }
+  var cur = setW(saved > 0 ? saved : DEF, false);
+  var drag = null, lastTap = 0;
+  handle.addEventListener('pointerdown', function (e) {
+    if (e.button !== undefined && e.button > 0) return;
+    e.preventDefault();
+    var now2 = Date.now();
+    if (e.pointerType !== 'mouse' && now2 - lastTap < 350) { cur = setW(DEF, true); lastTap = 0; return; }
+    lastTap = now2;
+    drag = { id: e.pointerId, x: e.clientX, w: cur };
+    try { handle.setPointerCapture(e.pointerId); } catch (err) { /* older engines */ }
+    handle.classList.add('dragging'); root.classList.add('resizing'); tip.hidden = true;
+  });
+  handle.addEventListener('pointermove', function (e) {
+    if (!drag || e.pointerId !== drag.id) return;
+    e.preventDefault(); cur = setW(drag.w + (e.clientX - drag.x), false);
+  });
+  function end(e) {
+    if (!drag || e.pointerId !== drag.id) return;
+    drag = null; handle.classList.remove('dragging'); root.classList.remove('resizing'); setW(cur, true);
+  }
+  handle.addEventListener('pointerup', end); handle.addEventListener('pointercancel', end);
+  handle.addEventListener('dblclick', function () { cur = setW(DEF, true); });
+  handle.addEventListener('keydown', function (e) {
+    var step = e.shiftKey ? 40 : 10;
+    if (e.key === 'ArrowLeft') cur = setW(cur - step, true);
+    else if (e.key === 'ArrowRight') cur = setW(cur + step, true);
+    else if (e.key === 'Home') cur = setW(MIN, true);
+    else if (e.key === 'End') cur = setW(maxW(), true);
+    else return;
+    e.preventDefault();
+  });
+  window.addEventListener('resize', function () { cur = setW(cur, false); });
+  root.appendChild(handle);
 })();
 </script>
