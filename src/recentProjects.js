@@ -9,8 +9,6 @@
 
 'use strict';
 
-const path = require('path');
-
 /** `globalState` key. Global, not per workspace: the list exists to get from one project to another. */
 const RECENTS_KEY = 'twincat.recentSolutions';
 
@@ -36,6 +34,16 @@ function pathKey(p) {
 }
 
 /**
+ * The solution's name from its path, whichever separator the path uses (a list written on Windows
+ * may be read anywhere).
+ * @param {string} slnPath
+ * @returns {string}
+ */
+function solutionName(slnPath) {
+    return String(slnPath).split(/[\\/]/).pop().replace(/\.sln$/i, '');
+}
+
+/**
  * Keeps only well-formed entries (globalState is user-writable storage; never trust its shape).
  * @param {unknown} list
  * @returns {RecentSolution[]}
@@ -45,7 +53,7 @@ function sanitize(list) {
     return list.filter(e => e && typeof e.slnPath === 'string' && e.slnPath && /\.sln$/i.test(e.slnPath))
         .map(e => ({
             slnPath: e.slnPath,
-            name: typeof e.name === 'string' && e.name ? e.name : path.basename(e.slnPath).replace(/\.sln$/i, ''),
+            name: typeof e.name === 'string' && e.name ? e.name : solutionName(e.slnPath),
             at: typeof e.at === 'number' ? e.at : 0
         }));
 }
@@ -59,7 +67,7 @@ function sanitize(list) {
  */
 function addRecent(list, slnPath, now = Date.now()) {
     const key = pathKey(slnPath);
-    const entry = { slnPath, name: path.basename(slnPath).replace(/\.sln$/i, ''), at: now };
+    const entry = { slnPath, name: solutionName(slnPath), at: now };
     return [entry, ...sanitize(list).filter(e => pathKey(e.slnPath) !== key)].slice(0, MAX_RECENTS);
 }
 
