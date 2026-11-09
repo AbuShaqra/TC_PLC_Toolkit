@@ -17,6 +17,8 @@
   --warn-soft: #fbf0d9;
   --ok: #2d6a3e;
   --ok-soft: #e1f0e5;
+  --done-bar: #3f9b5a;
+  --progress-bar: #d08a1e;
   --code-bg: #eef2f5;
   --bar: #1f7ac2;
   --weekend: #eef1f4;
@@ -29,13 +31,13 @@
   :root:not([data-theme="light"]) {
     --bg: #10171d; --surface: #172129; --fg: #e3eaef; --muted: #9aabb8; --line: #2a3843;
     --accent: #8cc6e2; --accent-soft: #1b3442; --track: #22303a; --warn: #f0c46c; --warn-soft: #3a2f17;
-    --ok: #8fd3a2; --ok-soft: #1c3424; --code-bg: #1f2c36; --bar: #3b8fd9; --weekend: #1b262f; --grid: #26333d; color-scheme: dark;
+    --ok: #8fd3a2; --ok-soft: #1c3424; --code-bg: #1f2c36; --bar: #3b8fd9; --done-bar: #4fb36d; --progress-bar: #e3a23b; --weekend: #1b262f; --grid: #26333d; color-scheme: dark;
   }
 }
 :root[data-theme="dark"] {
   --bg: #10171d; --surface: #172129; --fg: #e3eaef; --muted: #9aabb8; --line: #2a3843;
   --accent: #8cc6e2; --accent-soft: #1b3442; --track: #22303a; --warn: #f0c46c; --warn-soft: #3a2f17;
-  --ok: #8fd3a2; --ok-soft: #1c3424; --code-bg: #1f2c36; --bar: #3b8fd9; --weekend: #1b262f; --grid: #26333d; color-scheme: dark;
+  --ok: #8fd3a2; --ok-soft: #1c3424; --code-bg: #1f2c36; --bar: #3b8fd9; --done-bar: #4fb36d; --progress-bar: #e3a23b; --weekend: #1b262f; --grid: #26333d; color-scheme: dark;
 }
 * { box-sizing: border-box; }
 body {
@@ -95,8 +97,8 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
 .gantt { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px 12px; display: grid; gap: 10px; min-width: 0; }
 .gantt-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 16px; }
 .legend { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 12px; color: var(--muted); }
-.legend i { display: inline-block; width: 18px; height: 10px; border-radius: 3px; vertical-align: -1px; margin-right: 6px; background: var(--bar); }
-.legend i.hatch, .g-bar.hatch { background: repeating-linear-gradient(135deg, var(--bar) 0 4px, color-mix(in srgb, var(--bar) 45%, var(--surface)) 4px 7px); }
+.legend i { --c: var(--bar); display: inline-block; width: 18px; height: 10px; border-radius: 3px; vertical-align: -1px; margin-right: 6px; background: var(--c); }
+.legend i.hatch, .g-bar.hatch { background: repeating-linear-gradient(135deg, var(--c) 0 4px, color-mix(in srgb, var(--c) 45%, var(--surface)) 4px 7px); }
 .g-scroll { overflow-x: auto; }
 .g-chart { --label-w: 190px; min-width: 680px; display: grid; grid-template-columns: var(--label-w) 1fr; row-gap: 0; position: relative; }
 .g-axis-pad { height: 22px; }
@@ -123,7 +125,10 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
 .g-bg .wk { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--grid); }
 .g-bg .today { position: absolute; top: -18px; bottom: 0; width: 2px; background: var(--warn); }
 .g-bg .today b { position: absolute; top: 0; left: 5px; font: 500 10px var(--mono); color: var(--warn); white-space: nowrap; }
-.g-bar { position: absolute; top: 9px; height: 16px; border-radius: 4px; background: var(--bar); border: 0; padding: 0; cursor: pointer; }
+.g-bar { --c: var(--bar); position: absolute; top: 9px; height: 16px; border-radius: 4px; background: var(--c); border: 0; padding: 0; cursor: pointer; }
+/* Status colours (rule: done and in-progress bars always stand out from planned ones). */
+.g-bar.done, .legend i.done { --c: var(--done-bar); }
+.g-bar.progress, .legend i.progress { --c: var(--progress-bar); }
 .g-bar:hover, .g-bar:focus-visible { outline: 2px solid var(--fg); outline-offset: 1px; }
 .g-bar::before { content: ""; position: absolute; inset: -8px -4px; }
 .g-tip { position: absolute; z-index: 5; pointer-events: none; background: var(--fg); color: var(--bg); font-size: 12px; line-height: 1.4; padding: 6px 9px; border-radius: 6px; max-width: 260px; box-shadow: 0 4px 14px rgba(0,0,0,0.18); }
@@ -157,7 +162,7 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
   <section class="gantt" aria-labelledby="gantt-title">
     <div class="gantt-head">
       <h2 id="gantt-title">Timeline</h2>
-      <div class="legend"><span><i></i>Can run in the cloud session</span><span><i class="hatch"></i>Needs your Windows machine</span></div>
+      <div class="legend"><span><i class="done"></i>Done</span><span><i class="progress"></i>In progress</span><span><i></i>Planned</span><span><i class="hatch"></i>Needs your Windows machine</span></div>
     </div>
     <div class="g-scroll"><div class="g-chart" id="gantt" role="img" aria-label="Gantt chart of the two lanes of planned items, toolkit and STruC++ fork, from Nov 9 to Nov 19, 2026, in work order."></div></div>
     <div class="g-note">Calendar days; shaded columns are weekends. Hover or focus a bar for its dates; click it to open its card. Drag the line after the names to widen or narrow that column (double-click or double-tap resets it).</div>
@@ -526,9 +531,9 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
 <script>
 /* Timeline data: keep in step with the "Order of work" table in ROADMAP.md. end is inclusive. */
 var PLAN = [
-  { lane: 'TC PLC Toolkit', num: 1, id: 'R3.1', card: 'r3-1', name: 'STruC++ spike',          est: '2 d → ~15 min', start: '2026-11-09', end: '2026-11-09', days: 0.3 },
-  { lane: 'TC PLC Toolkit', num: 2, id: 'R4',   card: 'r4',   name: 'Objects-tree model',     est: '4 d → ~3 h',  start: '2026-11-09', end: '2026-11-09', machine: true },
-  { lane: 'TC PLC Toolkit', num: 3, id: 'R2',   card: 'r2',   name: 'Sidebar + new project',  est: '8.5 d → ~6 h', start: '2026-11-12', end: '2026-11-13', days: 1.5, machine: true },
+  { lane: 'TC PLC Toolkit', num: 1, id: 'R3.1', card: 'r3-1', name: 'STruC++ spike',          est: '2 d → ~15 min', start: '2026-11-09', end: '2026-11-09', days: 0.3, status: 'done' },
+  { lane: 'TC PLC Toolkit', num: 2, id: 'R4',   card: 'r4',   name: 'Objects-tree model',     est: '4 d → ~3 h',  start: '2026-11-09', end: '2026-11-09', machine: true, status: 'done' },
+  { lane: 'TC PLC Toolkit', num: 3, id: 'R2',   card: 'r2',   name: 'Sidebar + new project',  est: '8.5 d → ~6 h', start: '2026-11-12', end: '2026-11-13', days: 1.5, machine: true, status: 'progress' },
   { lane: 'TC PLC Toolkit', num: '3b', id: 'R11', card: 'r11', name: 'Marketplace publishing', est: '0.5 d → ~1 h', start: '2026-11-13', end: '2026-11-13', days: 0.3, offset: 0.5, machine: true },
   { lane: 'TC PLC Toolkit', num: 4, id: 'R3.2', card: 'r3-2', name: 'STruC++ check',          est: '7 d → ~4 h',  start: '2026-11-16', end: '2026-11-16' },
   { lane: 'TC PLC Toolkit', num: 5, id: 'R3.3', card: 'r3-3', name: 'STruC++ packaging',      est: '3 d → ~2 h',  start: '2026-11-17', end: '2026-11-17', days: 0.5 },
@@ -536,7 +541,7 @@ var PLAN = [
   { lane: 'TC PLC Toolkit', num: 7, id: 'R7',   card: 'r7',   name: 'Rename limits',          est: '2.5 d → ~2 h', start: '2026-11-19', end: '2026-11-19', days: 0.5 },
   { lane: 'TC PLC Toolkit', num: 8, id: 'R8',   card: 'r8',   name: 'Comments, pragma hover', est: '1.5 d → ~1 h', start: '2026-11-19', end: '2026-11-19', days: 0.3, offset: 0.5 },
   { lane: 'TC PLC Toolkit', num: 9, id: 'R9',   card: 'r9',   name: 'ESLint 10',              est: '0.75 d → ~30 min', start: '2026-11-19', end: '2026-11-19', days: 0.2, offset: 0.8 },
-  { lane: 'STruC++ fork',   num: 1, id: 'S2',   card: 's2',   name: 'Fork compiler gaps',     est: '27.5 d → ~9 h', start: '2026-11-09', end: '2026-11-11' },
+  { lane: 'STruC++ fork',   num: 1, id: 'S2',   card: 's2',   name: 'Fork compiler gaps',     est: '27.5 d → ~9 h', start: '2026-11-09', end: '2026-11-11', status: 'progress' },
   { lane: 'STruC++ fork',   num: 2, id: 'S3a',  card: 's3a',  name: 'False positives',        est: '2 d → ~1 h',  start: '2026-11-12', end: '2026-11-12', days: 0.3 },
   { lane: 'STruC++ fork',   num: 3, id: 'S3b',  card: 's3b',  name: 'S2 follow-ups',          est: '7 d → ~3.5 h', start: '2026-11-12', end: '2026-11-13', days: 1.2, offset: 0.3 },
   { lane: 'STruC++ fork',   num: 4, id: 'S4',   card: 's4',   name: 'Ed. 3 refusals',         est: '8.5 d → ~4.5 h', start: '2026-11-13', end: '2026-11-16', offset: 0.5, days: 3.6 },
@@ -586,15 +591,16 @@ var DOMAIN_START = '2026-11-09', DOMAIN_END = '2026-11-20'; /* exclusive */
     lab.firstChild.textContent = it.id; lab.lastChild.textContent = it.name; lab.title = it.name;
     var tr = document.createElement('div'); tr.className = 'g-track';
     var startDay = (d(it.start) - t0) / DAY + (it.offset || 0), len = it.days || ((d(it.end) - d(it.start)) / DAY + 1);
-    var bar = document.createElement('button'); bar.type = 'button'; bar.className = 'g-bar' + (it.machine ? ' hatch' : '');
+    var bar = document.createElement('button'); bar.type = 'button'; bar.className = 'g-bar' + (it.status ? ' ' + it.status : '') + (it.machine ? ' hatch' : '');
     bar.style.left = pct(startDay); bar.style.width = pct(len);
     var when = it.start === it.end ? fmt(it.start) : fmt(it.start) + ' – ' + fmt(it.end);
-    bar.setAttribute('aria-label', it.lane + ' #' + it.num + ' ' + it.id + ' ' + it.name + ', ' + it.est + ', ' + when + (it.machine ? ', needs your Windows machine' : ''));
+    var stateText = it.status === 'done' ? 'done' : it.status === 'progress' ? 'in progress' : 'planned';
+    bar.setAttribute('aria-label', it.lane + ' #' + it.num + ' ' + it.id + ' ' + it.name + ', ' + stateText + ', ' + it.est + ', ' + when + (it.machine ? ', needs your Windows machine' : ''));
     function show() {
       tip.innerHTML = '<b></b><div></div><div></div>';
       tip.children[0].textContent = it.lane + ' · #' + it.num + ' · ' + it.id;
       tip.children[1].textContent = it.name;
-      tip.children[2].textContent = it.est + ' · ' + when + (it.machine ? ' · Windows machine' : '');
+      tip.children[2].textContent = stateText + ' · ' + it.est + ' · ' + when + (it.machine ? ' · Windows machine' : '');
       tip.hidden = false;
       var cr = root.getBoundingClientRect(), br = bar.getBoundingClientRect();
       var left = br.left - cr.left, top = br.bottom - cr.top + 6;

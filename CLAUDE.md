@@ -63,7 +63,9 @@ It ships to no user (it is `.vscodeignore`d), so it has no length budget like HA
 **Work in the roadmap's order.** Whenever an item is added, starts, finishes a phase, settles a decision,
 is blocked, or merges, update `ROADMAP.md` **and** `docs/roadmap.html` (its cards *and* the `PLAN` array that draws
 the timeline chart) in the same change, and republish
-the page to that same URL (Artifact tool: publish `docs/roadmap.html` with `url` set to it). A new request
+the page to that same URL (Artifact tool: publish `docs/roadmap.html` with `url` set to it). **Timeline colours (user rule, 2026-11-09):** every `PLAN` row carries a `status` — `'done'` (green) or
+`'progress'` (amber); a row without one is planned (blue) — and the bar's colour follows it, with the legend
+showing all three. Update the status in the same change that moves the item. A new request
 from the user goes onto the roadmap when it is accepted; a merged item moves to "Done" with its PR. The
 markdown file wins if the two disagree.
 
