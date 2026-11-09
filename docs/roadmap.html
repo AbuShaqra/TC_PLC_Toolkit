@@ -376,7 +376,7 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
         <div class="card-foot"><span>2 d → ~1 h</span><span>Nov 12</span></div>
       </summary>
       <div class="body">
-        <div class="block wide"><h4>Scope</h4><p>Three errors the compiler puts on correct code, found during S2: a STRUCT alias is not assignment-compatible with its STRUCT; <code>POINTER TO</code> a STRUCT cannot take <code>ADR(s)</code>; initial values in a UNION are refused as not supported yet.</p></div>
+        <div class="block wide"><h4>Scope</h4><p>Three errors the compiler puts on correct code, found during S2: a STRUCT alias is not assignment-compatible with its STRUCT; <code>POINTER TO</code> a STRUCT cannot take <code>ADR(s)</code>; initial values in a UNION are refused as not supported yet; a method named <code>Get</code> is a parse error.</p></div>
         <div class="block"><h4>Why first</h4><p>The toolkit's check (R3.2) must not flag correct code, so these go in before it.</p></div>
         <div class="block wide"><h4>How it was estimated</h4><p>My sizing from the item list, not measured. Session time uses the Nov 9 velocity (about 30 min per planned day for fork work, about 45 min for toolkit work); dates assume about 4 hours of session per working day.</p></div>
       </div>
