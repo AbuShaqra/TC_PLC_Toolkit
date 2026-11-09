@@ -17,51 +17,21 @@ after it. An item leaves the table for "Done" once its PR is merged into `dev`, 
 | Order | ID | Item | Estimate | Start | End | Status |
 |-------|----|------|----------|-------|-----|--------|
 | 1 | R3.1 | STruC++ spike: sample project through the compiler under the TwinCAT dialect | 2 d | 2026-11-10 | 2026-11-11 | In progress (started 2026-11-09) |
-| 2 | R6 | Language server reads the dialect profile (same file the compiler gets) | 2 d | 2026-11-12 | 2026-11-13 | Planned |
-| 3 | R4 | Objects-tree model (deepening roadmap P7) | 4 d | 2026-11-16 | 2026-11-19 | Planned — needs the user's Windows machine |
-| 4 | R2 | Create a new TwinCAT project from the extension's start view | 6 d | 2026-11-20 | 2026-11-27 | Planned — needs a 4024 skeleton from the user's XAE |
-| 5 | R3.2 | STruC++ check command with errors mapped to the panes | 5 d | 2026-11-30 | 2026-12-04 | Planned |
-| 6 | R3.3 | STruC++ bundling, Node 22 discovery, licence files, settings, docs | 3 d | 2026-12-07 | 2026-12-09 | Planned |
+| 2 | R4 | Objects-tree model (deepening roadmap P7) | 4 d | 2026-11-12 | 2026-11-17 | Planned — needs the user's Windows machine |
+| 3 | R2 | Create a new TwinCAT project from the extension's start view | 6 d | 2026-11-18 | 2026-11-25 | Planned — needs a 4024 skeleton from the user's XAE |
+| 4 | R3.2 | STruC++ check command with errors mapped to the panes | 5 d | 2026-11-26 | 2026-12-02 | Planned |
+| 5 | R3.3 | STruC++ bundling, Node 22 discovery, licence files, settings, docs | 3 d | 2026-12-03 | 2026-12-05 | Planned |
 
-**Total remaining:** 22 working days, forecast to finish **2026-12-09**. All decisions are settled (2026-11-09).
-R5 and R1 merged on 2026-11-09, ahead of their forecast; R6 (added 2026-11-09) added two days.
+**Total remaining:** 20 working days, forecast to finish **2026-12-05**. All decisions are settled (2026-11-09).
+R5 and R1 merged on 2026-11-09, ahead of their forecast, so the later dates were pulled in.
 
 **Why this order.**
 1. **R3.1 (spike) first:** the STruC++ work is the largest unknown. The spike needs no decisions, and what
    the compiler rejects on the sample decides the size of R3.2–R3.3 while other work proceeds.
-2. **R6 right after the spike** (placement proposed 2026-11-09; the user confirmed the scope — move it if the slot is wrong): the spike shows which profile features the
-   compiler actually needs on real code, which is exactly what R6 must honour, and doing it before R3.2 means
-   the editor and the compiler judge the same code by the same rules from the first check command.
-3. **R4 before R2:** R2 adds an empty state and a create flow to the Objects tree, and R4 rebuilds the
+2. **R4 before R2:** R2 adds an empty state and a create flow to the Objects tree, and R4 rebuilds the
    Objects tree's model. Doing R4 first means R2 is written once, against the new model.
-4. **R2 then R3.2–R3.3:** R2 needs its templates made and proven in XAE on the user's machine, the same
+3. **R2 then R3.2–R3.3:** R2 needs its templates made and proven in XAE on the user's machine, the same
    session R4's dev-host gate needs. R3.2–R3.3 build on what the spike finds.
-
-### R6 — Language server reads the dialect profile
-
-**Goal** (scope agreed with the user 2026-11-09). The toolkit's own language server loads the same dialect
-profile the compiler gets (`resources/dialects/twincat3.json` by default) and uses its feature flags to decide
-what it accepts and what it flags, so the editor and the STruC++ check (R3.2) agree on what is valid.
-
-**Today.** The server has no notion of a dialect: it accepts every TwinCAT construct unconditionally —
-`POINTER TO` / `REFERENCE TO` (`src/lsp/types.js:216`, `src/lsp/parser.js`), `REF=` (`parser.js:416`), and
-METHODs on a PROGRAM (verified in R5). Profile features today: `program_methods`, `pointer_to`, `reference_to`,
-`ref_assign`; a profile can `extend` another (`twincat3` extends `iec`).
-
-**Plan.**
-- A small vscode-free module (e.g. `src/lsp/dialect.js`) loads a profile file, resolves `extends`, and answers
-  `has(feature)`. The format follows the compiler's (`docs/DIALECTS.md`, `src/dialect.ts` in STruCpp) — read it,
-  do not invent a second one.
-- The extension host sends the resolved feature set to the server (a `custom/setDialect` request, or extend
-  `custom/setDiagnosticsConfig`); a setting names the profile file — the same setting R3.3 planned for the
-  compiler, introduced here and reused there.
-- Diagnostics flag a construct **only** when its feature is off (e.g. `REFERENCE TO` under plain `iec`), with
-  a message naming the feature. Parsing and navigation keep working either way — the rule stays conservative.
-- Default profile `twincat3` ⇒ **zero change on `sample/`** (diagnostics stay at 0).
-
-**Done when.** A test per feature shows the construct accepted under `twincat3` and flagged under `iec`;
-sample diagnostics stay 0 with the default; the setting switches profile without a reload; suite, typecheck,
-lint pass; DEVELOPMENT.md documents the module and the request.
 
 ### R4 — Objects-tree model (deepening roadmap P7)
 
@@ -139,7 +109,7 @@ Two ways around it:
 2. **R3.2 Check command** — a *Check with STruC++* command that converts the project, runs the compiler as a
    full semantic check and maps its errors to the right component and pane (VS Code Problems + pane markers).
 3. **R3.3 Packaging** — bundle the compiler, find a Node ≥ 22, ship the licence files, add settings (Node
-   path; the dialect-file setting comes from R6) and documentation.
+   path, dialect file) and documentation.
 
 **Decisions (settled 2026-11-09).**
 1. **Output:** check only — errors in the panes, no files written, no `g++` needed. Generated C++ or a built

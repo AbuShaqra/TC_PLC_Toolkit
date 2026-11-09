@@ -50,9 +50,8 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   `propertyNode[.noGet][.noSet]`); (5) the Generate ST button in a one- and a two-project workspace. Then reply on
   issue #25 when it ships in a release (not yet replied).
 - **Next task: R3.1** (STruC++ spike) — [ROADMAP.md](ROADMAP.md) (page https://claude.ai/artifact/8RG7TZtBV2cuupsrwWtknv,
-  source `docs/roadmap.html`). Order: R3.1 → R6 language server reads the dialect profile (added 2026-11-09, scope
-  confirmed by the user, slot proposed) → R4 Objects-tree model (deepening P7) → R2 create a TwinCAT project →
-  R3.2 check command → R3.3 packaging. Forecast end 2026-12-09. Every R2/R3 decision is SETTLED (2026-11-09,
+  source `docs/roadmap.html`). Order: R3.1 → R4 Objects-tree model (deepening P7) → R2 create a TwinCAT project →
+  R3.2 check command → R3.3 packaging. Forecast end 2026-12-05. Every R2/R3 decision is SETTLED (2026-11-09,
   recorded under each item in ROADMAP.md) — do not re-ask them. When an item starts, moves or merges, update
   ROADMAP.md AND `docs/roadmap.html` and republish the page to the same URL (rule in CLAUDE.md).
 - **R3 inputs:** STruC++ fork `AbuShaqra/STruCpp`, default branch `development` (@ `2c223c9`, v0.7.0, GPL-3.0-only,
