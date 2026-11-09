@@ -137,8 +137,8 @@ function renderStartPageHtml(o) {
                 <h2 id="actions-title"><span class="badge">${icon('actions')}</span>Project actions</h2>
                 <p id="no-project" class="hint" hidden>Open a folder with a TwinCAT project to use these.</p>
                 <ul class="actions">${actions}
-                    <li><button type="button" class="action" id="check-project" disabled title="Arrives in a later release">` +
-        `<span class="action-text"><span class="action-label">Check project</span><span class="action-detail">Coming in a later release</span></span><span class="soon">Soon</span></button></li>
+                    <li><button type="button" class="action" id="compile-project" disabled title="Arrives in a later release">` +
+        `<span class="action-text"><span class="action-label">Compile project</span><span class="action-detail">Coming in a later release</span></span><span class="soon">Soon</span></button></li>
                 </ul>
             </section>
             <section class="card" id="help" aria-labelledby="help-title">

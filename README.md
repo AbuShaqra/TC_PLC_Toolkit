@@ -38,7 +38,7 @@ page in an editor tab with:
 - **Create new project** — choose TwinCAT 3.1.4024 or 3.1.4026, a name and a location, then *Create*.
 - **Open existing project** — a solution (`.sln`) or a folder, and the ten most recent TwinCAT solutions
   you opened or created here.
-- **Project actions** — *Generate ST* and *Update Library Definitions* (*Check project* is shown,
+- **Project actions** — *Generate ST* and *Update Library Definitions* (*Compile project* is shown,
   disabled, until it ships).
 - **Help and links**, and **Settings**.
 

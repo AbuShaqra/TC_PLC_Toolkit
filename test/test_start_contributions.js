@@ -112,7 +112,7 @@ assert(/^\^1\.66\./.test(pkg.engines.vscode), `engine stays ^1.66 (${pkg.engines
         'the page shows the extension icon (marketplace-icon.png), allowed by img-src');
     for (const v of TEMPLATE_VERSIONS) assert(html.includes(`value="${v.id}"`), `version ${v.id} is offered`);
     for (const l of HELP_LINKS) assert(html.includes(`data-link="${l.id}"`), `help link ${l.id} is on the page`);
-    assert(/id="check-project" disabled/.test(html) && /Coming in a later release/.test(html) && !/STruC\+\+/i.test(html), 'Check project is shown disabled, with no compiler name on the page');
+    assert(/id="compile-project" disabled/.test(html) && /Coming in a later release/.test(html) && !/STruC\+\+/i.test(html), 'Compile project is shown disabled, with no compiler name on the page');
     const css = fs.readFileSync(path.join(REPO, 'media', 'startPage.css'), 'utf8');
     assert(!/https?:|@import|url\(/.test(css), 'the stylesheet loads nothing');
     const colours = (css.match(/#[0-9a-fA-F]{3,6}\b|rgb\(/g) || []).length;
