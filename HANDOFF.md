@@ -97,7 +97,7 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   notice (`media/monaco-editor/LICENSE.txt`, THIRD-PARTY-NOTICES.md). Takes effect with the next release (R11).
   Optional, not done: SPDX headers per source file.
 - **R11 Marketplace publishing** added after R2 (user's ask 2026-11-09). The user CREATED accounts on the VS Code
-  Marketplace and Open VSX 2026-11-09; the publisher ID must equal `a-abushaqra` (its page 404'd before that); the user creates it and either uploads the VSIX or adds `VSCE_PAT`/`OVSX_PAT` secrets; our part is
+  Marketplace and Open VSX 2026-11-09; publisher ID confirmed as `a-abushaqra` (= `package.json`); the user creates it and either uploads the VSIX or adds `VSCE_PAT`/`OVSX_PAT` secrets; our part is
   ~1 h of metadata/CHANGELOG/README disclaimer + a secret-gated publish step in `release.yml`.
 - **Backlog scheduled 2026-11-09 (user's ask):** toolkit R6–R10 (R10 on trigger only) and fork S3a–S8 are now rows in
   ROADMAP.md with my own sizing (not measured) at the Nov 9 velocity, ~4 h of session per working day. **S3a (three

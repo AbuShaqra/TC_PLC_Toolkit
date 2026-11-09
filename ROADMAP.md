@@ -140,7 +140,8 @@ Two ways around it:
 **Goal.** The extension installs from the VS Code Marketplace (and Open VSX, for VSCodium, Cursor and similar),
 starting with the first release that carries R2's TwinCAT sidebar.
 
-**The user's part (one-off, ~15 min):** accounts on both marketplaces were created 2026-11-09. Still to confirm: the
+**The user's part (one-off, ~15 min):** accounts on both marketplaces were created 2026-11-09 and the publisher ID is
+`a-abushaqra`, matching `package.json` (confirmed by the user). Remaining: the
 publisher `a-abushaqra` (must equal `package.json`
 `publisher`) at marketplace.visualstudio.com/manage; then either upload the release VSIX by hand, or add an Azure
 DevOps token with the *Marketplace → Manage* scope as the repo secret `VSCE_PAT` (and an Open VSX token as
