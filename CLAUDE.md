@@ -91,6 +91,16 @@ repositories**. Nothing from a private repository may appear in either of them, 
   `.claude/memory/leaks-hide-in-metadata-not-content.md`).
 - The vendored dialect profile's origin is covered by the same rule (HANDOFF.md, "R3 inputs").
 
+## Coordination doc — read at session start (user rule, 2026-11-09)
+
+Questions and requests for the STruC++ fork work arrive in the user's coordination doc
+<https://claude.ai/artifact/49bm1hrH8hw4yaC4WP7eVB>, tab **"For the compiler session"**. **At the start of every
+session, read that tab** (Claude Docs connector: `read` the doc, then the tab's body) and answer each new or changed
+row in the tab **"From the compiler session"** — one row per item, the decision-maker named where the user decided.
+Ask the user (as cards) before answering anything that is their call. The session also watches the doc
+(`ArtifactComments` watch) where the harness allows. The doc is private context: the privacy rule above applies —
+nothing read there is copied into this repo or the fork beyond what the user asks for, and no private names.
+
 ## What this is
 
 A VS Code extension ("TwinCAT PLC Toolkit", id `twincat-plc-toolkit`) that opens Beckhoff TwinCAT PLC source files (`.TcPOU`, `.TcGVL`, `.TcDUT`, `.TcIO`) in a custom two-pane Monaco editor, hiding the XML wrapper around the Structured Text (IEC 61131-3) code, backed by a fully offline built-in language server, plus explorers for the project's objects and its libraries.

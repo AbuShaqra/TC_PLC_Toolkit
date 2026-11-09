@@ -18,6 +18,18 @@ Roadmap item **S2** (fork lane). The merged design: the user's compiler findings
   user stated no preference).
 - **Interface-typed variables are in the core** (step 5, Q3) and the CLI shape is **`--check --json`** (Q4)
   — defaults taken, no preference stated.
+- **More decisions (user, 2026-11-09, second round):**
+  - Q6: an interface PROPERTY must declare `GET` and/or `SET` explicitly; a bare one is an error. Converters emit
+    the accessors the XML has.
+  - UNION's feature id is **`union`** (not `union_type`).
+  - The compiler will **not** accept members after the POU body; converters move them before it.
+  - The no-flag default flips to `iec-3` in its **own release**, when downstream callers pass `--dialect`; no S2
+    step changes the default.
+  - **Folded into S2 as extra steps (sized next):** FB `VAR_IN_OUT` by reference; `REFERENCE TO` inputs bound at
+    the call (a SIGSEGV today — first); typed `TRUNC_<type>`; plain `TRUNC` returning `DINT` under vendor
+    profiles; `= 0` on an interface by profile; calling a PROGRAM's method from another POU.
+  - Release points for downstream pins: now (`development` at `c5ee894`), after step 6, after step 13; each with a
+    note listing new feature ids, anything narrowed, and generated-C++ changes.
 - Still open, decided per step when it starts: Q5, Q6, Q7, Q9, Q10, Q11 (settle feature ids before step 3),
   Q12.
 
@@ -65,7 +77,7 @@ Legend:
 | A6 | `PROPERTY` in an `INTERFACE` | **Not in Ed. 3**: 3.55 has an interface hold method prototypes only, and Annex A's `Interface_Decl` takes only `Method_Prototype`. Ed3 has no PROPERTY construct at all. **In Ed. 4**: 3.53 adds property prototypes. | `Expected END_INTERFACE, found PROPERTY` (S) | Feature `property` | 2 | Ed3, doc, spike, S2 |
 | A7 | GVL-qualified access `GVL_X.var` | **Ext.** In Ed3, global variables live in CONFIGURATION, RESOURCE and PROGRAM (`Global_Var_Decls`). Namespaces (6.9; Annex A `Namespace_Elements`) may hold types, functions, FBs, classes, interfaces and namespaces, but **not variables**. So a namespace wrapper is not IEC either. | `Undeclared variable 'GVL_A'` (S) | Feature `named_global_lists`; the caller supplies list names | 2.5 | Ed3, doc, spike, S2 |
 | A8 | `TYPE X EXTENDS B : STRUCT` | **Ext.** `Struct_Type_Decl` takes no EXTENDS. 3.46 limits inheritance to classes, FB types and interfaces. 6.4.4.6 makes two structured variables assignment-compatible only if they have the same type. Ed. 4: n.e.i. | `Expected Colon, found EXTENDS` (S) | Feature `struct_extends` | 2 | Ed3, doc, spike, S2 |
-| A9 | `UNION … END_UNION` | **Ext.** No UNION in Ed3. The IEC overlay mechanism is `STRUCT OVERLAP` with relative `AT` locations (6.4.4.7, Table 11; `Struct_Decl`), see B9. | Parse error (S) | Feature `union_type`; `union` must stay usable as a name under `iec` | 3 | Ed3, doc, spike, S2 |
+| A9 | `UNION … END_UNION` | **Ext.** No UNION in Ed3. The IEC overlay mechanism is `STRUCT OVERLAP` with relative `AT` locations (6.4.4.7, Table 11; `Struct_Decl`), see B9. | Parse error (S) | Feature `union`; `UNION` must stay usable as a name under `iec-3` | 3 | Ed3, doc, spike, S2 |
 | A10 | Enum base written after the list, `( … ) DINT` | **Variant.** 6.4.4.3 and Annex A `Enum_Type_Decl` put the optional elementary base type **before** the named-value list. | `Expected Colon, found ;` (S). The base-first form passes. | Feature `postfix_enum_base` | 0.5 | Ed3, doc, spike, S2 |
 | A11 | FB instance with init arguments `fb : FB_T(p := v)`, and FB_init running | **Ext.** 6.6.3.3 and Table 41 (feature 2), plus Annex A `FB_Decl_Init`: IEC instance initialisation is `:=` followed by a parenthesised list that sets inputs, outputs or public variables. Ed3 has no initialisation method. | Parse error. The IEC form `fb : FB_A := (p := 3)` passes (S). A method named FB_init compiles but never runs (D, ran). | Feature `fb_init`, plus a warning when FB_init is declared with the feature off | 3 | Ed3, doc, spike, S2 |
 | A12 | Enum qualified as `E_X.Member` (dot), used by the sample | **Variant.** 6.4.4.2 and 6.4.4.3 and Annex A `Enum_Value` qualify with `Type#Member` only. | Accepted under `iec` (R): a leak that the sample relies on | No S2 work. If the iec audit narrows it, it needs a feature (for example `enum_dot_qualify`) that the sample's profile enables. | – | Ed3, doc, re-run |
@@ -222,7 +234,7 @@ Rules for every step:
 | 8 | Postfix enum base | A10 `postfix_enum_base` | 0.5 |
 | 9 | Named global lists | A7 `named_global_lists`; `qualified_only` not enforced | 2.5 |
 | 10 | Struct inheritance | A8 `struct_extends`; derived-to-base assignment refused | 2 |
-| 11–12 | UNION | A9 `union_type`: (a) tokens kept usable as identifiers, parser, analysis; (b) an overlay lowering in C++ that B9 can reuse later, plus the e2e | 3 |
+| 11–12 | UNION | A9 `union`: (a) tokens kept usable as identifiers, parser, analysis; (b) an overlay lowering in C++ that B9 can reuse later, plus the e2e | 3 |
 | 13 | FB_init | A11 `fb_init`, plus the warning when the feature is off | 3 |
 
 **About 22.5 d** (22–23.5), with step 1b.
@@ -233,7 +245,7 @@ Rules for every step:
   - after step 2 (**2.5 d**), R3.2 can use `--check --json`, and every sample file reaches analysis;
   - after step 6 (**11 d**), the IEC gaps the sample hits are closed, along with the interface defect;
   - after step 13, the sample compiles with no workarounds under a profile that adds `self_caret`,
-    `property`, `postfix_enum_base`, `named_global_lists`, `struct_extends`, `union_type` and `fb_init` to
+    `property`, `postfix_enum_base`, `named_global_lists`, `struct_extends`, `union` and `fb_init` to
     the existing four.
 - **R3.2's own converter work is unchanged:**
   - put members before the body (A2);

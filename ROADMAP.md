@@ -101,7 +101,7 @@ and paraphrase only; the copy used is licensed to another party, so no text is r
 **Decided 2026-11-09:** all 13 steps plus step 1b (about 22.5 d), one PR each into the fork's `development`; `iec` means Ed. 3, and the built-in profile is renamed `iec-3` with no `iec` alias (so an `iec-4` can be added later; `iec` is refused with an error naming `iec-3`);
 standard forms always on (a wrongly refused standard construct is a defect fix), vendor forms behind new
 vendor-neutral features that no profile enables by default (`self_caret`, `property`, `postfix_enum_base`,
-`named_global_lists`, `struct_extends`, `union_type`, `fb_init`); chained comparisons follow Annex A;
+`named_global_lists`, `struct_extends`, `union`, `fb_init`); chained comparisons follow Annex A;
 `--check --json`.
 
 **Order:** 1 lexer positions + `--check --json` → 1b `iec-3` profile id (no alias) → 2 pragmas (R3.2 can use the check from here) → 3 `SUPER.` /
