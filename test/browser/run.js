@@ -379,6 +379,45 @@ function assert(cond, msg) {
         }
         await page.setViewportSize(viewport);
 
+        // 7d. Select all: a tri-state box over the project list. Unticking it clears every project and
+        //     disables "Generate selected"; one project ticked makes it indeterminate; ticking it again
+        //     selects all, and the run then posts every project key.
+        await page.evaluate(() => window.postMessage({ type: 'projectList', projects: [
+            { key: 'a', label: 'PLC_A' }, { key: 'b', label: 'PLC_B' }, { key: 'c', label: 'PLC_C' }
+        ] }, '*'));
+        await page.waitForTimeout(50);
+        await page.click('#generate-st-caret');
+        await page.waitForTimeout(50);
+        const allState = () => page.evaluate(() => {
+            const all = document.getElementById('generate-st-all');
+            const boxes = Array.from(document.querySelectorAll('#generate-st-projects input[type="checkbox"]'));
+            return {
+                all: all.checked, mixed: all.indeterminate,
+                ticked: boxes.filter(b => b.checked).length,
+                runDisabled: document.getElementById('generate-st-run').disabled
+            };
+        });
+        const fresh = await allState();
+        assert(fresh.all && !fresh.mixed && fresh.ticked === 3 && !fresh.runDisabled,
+            `a fresh project list starts with Select all ticked and every project selected (${JSON.stringify(fresh)})`);
+        await page.click('#generate-st-all');
+        const none = await allState();
+        assert(!none.all && !none.mixed && none.ticked === 0 && none.runDisabled,
+            `unticking Select all clears every project and disables Generate selected (${JSON.stringify(none)})`);
+        await page.click('#generate-st-projects .split-menu-item:nth-child(2) input');
+        const mixed = await allState();
+        assert(mixed.mixed && mixed.ticked === 1 && !mixed.runDisabled,
+            `one project ticked makes Select all indeterminate and enables the run (${JSON.stringify(mixed)})`);
+        await page.click('#generate-st-all');
+        const every = await allState();
+        assert(every.all && !every.mixed && every.ticked === 3,
+            `ticking Select all from the mixed state selects every project (${JSON.stringify(every)})`);
+        await page.evaluate(() => { window.__harness.sent.length = 0; });
+        await page.click('#generate-st-run');
+        const runMsg = await page.evaluate(() => window.__harness.sent.filter(m => m.type === 'generate-st'));
+        assert(runMsg.length === 1 && JSON.stringify(runMsg[0].projectKeys) === '["a","b","c"]',
+            `Generate selected then posts every project key (${JSON.stringify(runMsg)})`);
+
         // 8. Nothing may have thrown along the way — "Model not found" is the failure this whole
         //    design exists to make unreachable, and it surfaces as a console error.
         assert(consoleErrors.length === 0,

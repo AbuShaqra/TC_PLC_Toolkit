@@ -472,6 +472,14 @@ input:checked + .slider:before {
     background: var(--vscode-list-hoverBackground, rgba(255, 255, 255, 0.06));
 }
 .split-menu-item input { cursor: pointer; flex-shrink: 0; }
+/* The Select all row: separated from the project list it controls. */
+.split-menu-all {
+    border-bottom: 1px solid var(--border-color);
+    border-radius: 4px 4px 0 0;
+    margin-bottom: 4px;
+    padding-bottom: 7px;
+}
+.split-menu-run:disabled { opacity: 0.5; cursor: default; }
 /* A long project name is cut with an ellipsis; the full name is in the item's tooltip. */
 .split-menu-item span {
     min-width: 0;

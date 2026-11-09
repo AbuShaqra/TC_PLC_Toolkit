@@ -204,4 +204,4 @@ Roadmap items finished from now on are listed here with their PR.
   the compiler's own default. PR [AbuShaqra/STruCpp#4](https://github.com/AbuShaqra/STruCpp/pull/4),
   squash-merged into the fork's `development` 2026-11-09 as `a529ea9`.
 - **R1** — Generate ST keeps its rounded end in single-project workspaces. Same PR #27. Checked on Windows 2026-11-09; that pass
-  found the multi-project Generate ST menu clipped in a narrow editor, fixed in `3b93ef1` (rides with PR #30).
+  found the multi-project Generate ST menu clipped in a narrow editor, fixed in `3b93ef1`; at the user's request the menu also gained a tri-state *Select all*. Both ride with PR #30.

@@ -45,7 +45,8 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   Generate ST menu clipped in a narrow editor (right-aligned to the caret → ran past the webview's left edge; long names
   scrolled sideways): fixed in `3b93ef1` (`placeGenerateMenu` in `media/editor.js`, ellipsis + tooltip;
   `test/browser/run.js` 7c checks 360/560/1200 px, all three failed before). Still owed: reply on issue #25 when it
-  ships in a release.
+  ships in a release. User request 2026-11-09, done: a tri-state *Select all* in that menu (`#generate-st-all`,
+  `syncSelectAll`; "Generate selected" disabled while nothing is ticked; harness 7d).
 - **R3.1 spike findings are DONE** (2026-11-09): `docs/r3.1-strucpp-spike.md`. Headline: 27 parse errors as
   converted; 1 converter cause (methods/properties emitted after the POU body — the compiler wants them first) +
   9 compiler gaps; with scratch workarounds 0 errors under twincat3, 6 under iec (REFERENCE TO, REF=). No
