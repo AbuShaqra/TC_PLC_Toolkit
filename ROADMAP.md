@@ -17,7 +17,7 @@ after it. An item leaves the table for "Done" once its PR is merged into `dev`, 
 | Order | ID | Item | Planned | Re-measured | Start | End | Status |
 |-------|----|------|---------|-------------|-------|-----|--------|
 | 1 | R3.1 | STruC++ spike: sample project through the compiler under the TwinCAT dialect | 2 d | ~15 min (done) | 2026-11-09 | 2026-11-09 | Findings done 2026-11-09 ([docs/r3.1-strucpp-spike.md](docs/r3.1-strucpp-spike.md)); decisions taken |
-| 3 | R2 | TwinCAT sidebar (Activity Bar icon) + start page; create a new project (3.1.4024 / 3.1.4026) | 8.5 d | ~6 h + XAE proofs | 2026-11-12 | 2026-11-13 | **Next** — scope grown 2026-11-09 (user's ask). 4024 skeleton received 2026-11-09 (`resources/templates/xae-3.1.4024/`); done-when still needs both templates proven in XAE on the user's machine |
+| 3 | R2 | TwinCAT sidebar (Activity Bar icon) + start page; create a new project (3.1.4024 / 3.1.4026) | 8.5 d | ~6 h + XAE proofs | 2026-11-12 | 2026-11-13 | **Phase 1 built** 2026-11-09 on `claude/focused-ptolemy-m6acaz` (sidebar, start page, create from both templates; suite green). Open: both templates proven in XAE on the user's machine, the dev-host pass, then PR; phase 2 (XAE automation) after |
 | 3b | R11 | Publish to the VS Code Marketplace (and Open VSX) | 0.5 d | ~1 h + your account step | 2026-11-13 | 2026-11-13 | Planned — **accounts created** on both marketplaces (user, 2026-11-09); ships with the first release after R2 |
 | 4 | R3.2 | STruC++ check command with errors mapped to the panes | 7 d | ~4 h | 2026-11-16 | 2026-11-16 | Planned (full scope, 2026-11-09) — after S2 |
 | 5 | R3.3 | STruC++ bundling, Node 22 discovery, licence files, settings, docs | 3 d | ~2 h | 2026-11-17 | 2026-11-17 | Planned |
@@ -134,6 +134,21 @@ Two ways around it:
    XAE 3.1.4026.22 wrote for `sample/`; the 4024 skeleton must be produced by a 4024 XAE on the user's
    machine. Each template is proven to open and build in its own XAE version.
 4. **Starter content:** `PROGRAM MAIN`, the `PlcTask` that calls it, and an empty GVL.
+
+**Status (2026-11-09).**
+- **Phase 1 — built** on `claude/focused-ptolemy-m6acaz`, not yet a PR: the `TwinCAT` Activity Bar container
+  (Start, TwinCAT Objects, TwinCAT Libraries; ids unchanged), the start page, and *TwinCAT: Create New
+  Project* from templates derived from the XAE skeletons (`scripts/build-project-templates.js` →
+  `resources/templates/tc3.1.4024/`, `tc3.1.4026/`; every identity GUID re-issued, inventory in
+  DEVELOPMENT.md "Project templates"). Starter content `MAIN`, `PlcTask`, an empty `GVL_Main`. A created
+  project shows zero diagnostics. Found on the way: the Objects tree ignored the single-file `.tspproj`
+  that 3.1.4024 writes (fixed in `src/solutionMap.js`).
+- **Before merge (user, Windows):** create a project with each version through the command and prove it
+  opens and builds in XAE 3.1.4024 and 3.1.4026; run `node test/devhost/run.js` (it now has a start-page
+  phase); look over the sidebar and the start page by eye.
+- **TODO — phase 2:** decision 1's XAE automation — *Create New Project* drives XAE (as
+  `scripts/Create sample PLC project/build-sample-solution.ps1` does) where TwinCAT is installed. Not
+  started.
 
 ### R11 — Publish to the VS Code Marketplace (user's ask 2026-11-09)
 

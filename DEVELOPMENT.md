@@ -146,6 +146,11 @@ per-suite without aborting on the first failure. The main ones:
 | `test/test_uri_fs_path.js` | `uriToFsPath()` must return a path the **running** platform can open. The former copies in `workspaceScan.js` and `features/core.js` once ended in an unconditional `.replace(/\//g,'\\')`, which is correct on Windows and on POSIX ate the root — `file:///home/u/a` became `\home\u\a` — so 11 of 59 suites failed on Linux while CI (`windows-latest`) stayed green. Both callers now delegate to the shared production helper in `src/fileUri.js`. Written to hold on **both** platforms so whichever one CI runs still guards the branch it takes: a round trip through the real filesystem (the load-bearing one — a merely plausible converter cannot satisfy it), paths containing a space in both encoded and unencoded form, separator/root shape per platform, bare-path and empty-input passthrough, caller delegation, and unchanged Windows mapping. |
 | `test/test_project_map.js` | `src/lsp/projectMap.js`: which `.plcproj` owns which file. Discovery, `objectPaths` per project, `ownersOf()` vs `projectFor()` (a linked file has two owners but a request for it routes to one), the orphan/no-project/case-insensitivity edges, `projectLabel()` (the status-bar text, from `src/projectStatusBar.js`) and `groupRootsByProject()` (the Objects-tree grouping, now in `src/objectsTreeModel.js`, fed this module's map) at both the &lt;2-projects (nothing shown, flat tree) and 2-projects ends. Also pins `TWINCAT_EXTS` staying in sync between `projectMap.js` and `xmlIndexer.js`'s own copies — a real review-caught bug: `projectMap.js`'s copy once missed `.tctleo`, silently dropping every enumeration-text-list object's symbols from a project-scoped scan. |
 | `test/test_solution_map.js` | `src/solutionMap.js`: the real `.sln` → `.tsproj` → `_Config/PLC/*.xti` → `.plcproj` chain, multiple PLC projects under one solution, multiple same-named solutions, project labels scoped within their solution, unrelated Visual Studio solutions ignored, and unreferenced PLC projects retained as top-level fallbacks. |
+| `test/test_project_template.js` | `src/projectTemplate.js` on both shipped templates: the committed templates match `scripts/build-project-templates.js --check`; every GUID classified; every identity GUID re-issued with every reference following it and each occurrence's case kept (`.sln` upper, `.plcproj` lower); every type GUID kept; no template name left in a path or a byte; BOM, CRLF/LF, tabs and trailing newline preserved and nothing but names and GUIDs changed; starter objects exactly MAIN, PlcTask (calling MAIN) and an empty GVL_Main; the `.tspproj` (4024) and `.tsproj` + `_Config/` (4026) shapes; the created project read back by `projectMap` and `solutionMap`; refusal of a target holding a solution or a file it would write (nothing touched); name validation. |
+| `test/test_template_diagnostics.js` | A project created from each template, indexed like `test_sample_diagnostics.js` with every check on: ZERO diagnostics, again after the first edit a user makes (a variable in the `qualified_only` `GVL_Main` used from MAIN as `GVL_Main.x`), and a deliberate undeclared name IS reported (the gate is live). |
+| `test/test_start_contributions.js` | package.json for R2: the `twincat` Activity Bar container holding Start, TwinCAT Objects, TwinCAT Libraries in that order with ids unchanged, none left in the Explorer, References still in its panel, no dangling view id in a when-clause; each start command contributed under TwinCAT, in the palette, registered, with an `onCommand` activation event (needed on 1.66); Start view welcome links; a monochrome offline icon; the start page's strict CSP and no remote load; `.vscodeignore` shipping the derived templates but not the raw XAE source. |
+| `test/test_start_commands.js` | `src/commands/startCommands.js` + `src/startPage.js` under a recording `vscode` stub: create with args and with prompts (files, recents, last location, open here/new/add/none), refusals inline vs as a notification, a deleted recent solution pruned, Generate ST's project pick, help links and settings, the singleton panel, its `state` message, and the command allow-list. |
+| `test/test_recent_projects.js` | `src/recentProjects.js`: newest first, de-duplicated (Windows paths case-insensitive, either separator), capped at 10, missing solutions pruned, malformed stored data ignored, and the globalState adapter. |
 | `test/test_multi_project_scope.js` | End-to-end: two copies of `sample/` under one workspace root (`test/_multiproject.js` builds the fixture, one copy deliberately diverged), driven through the real `scanWorkspace`. Asserts the partition (one index per project, nothing lost to a name collision), 0 diagnostics on the correct copy while the diverged copy's own real error still reports, references and the rename config scan never crossing the project boundary, and the library namespace/symbol registries staying per-project — including the Libraries-view union fallback when no project is specified. Needs `sample/`; skips cleanly when absent. |
 
 | `test/test_object_insert.js` | The Objects-tree insert commands' text, built by driving the **real** `buildNodeFromXml` over real `sample/` objects: the bare name for each kind, and the call template — instance name for an FB (`FB_Gripper` → `fbGripper`, since ST calls an instance, not the type), own name for a FUNCTION/PROGRAM, bare for a method/action, `Name();` when there are no parameters. Also pins that the extracted `callTemplate` is byte-identical to what `libraryTreeProvider` produced before the move, and that every `contextValue` named in the two new `when` clauses is one the Objects tree actually emits (read out of `objectsTreeModel.js`, not hard-coded, so a rename cannot silently orphan the menu items). **One case is synthetic on purpose:** no FB in `sample/` declares root `VAR_INPUT`/`VAR_OUTPUT`, so the mixed `:=`/`=>` ordering case is driven from one clearly-marked XML string through the real parser. |
@@ -178,6 +183,7 @@ test can reach. Two runners, both outside `npm test` (its runner only discovers 
 npm i --no-save playwright               # optional dep, deliberately NOT in package.json (see below)
 node test/browser/run.js                 # the references peek
 node test/browser/run_pragmas.js         # ST folding + the Monarch pragma rules
+node test/browser/run_start_page.js      # the TwinCAT start page (R2)
 
 # On a runner that already has a browser and cannot download one (offline, image-based CI):
 HARNESS_CHROMIUM=/opt/pw-browsers/chromium node test/browser/run.js
@@ -193,6 +199,7 @@ perfectly good Chromium already.
 | `build.js` | Generates the page by calling the **real** `getHtmlForWebview()` with a stubbed `vscode` module — a hand-copied page would quietly stop matching what ships. Substitutes only `acquireVsCodeApi()` (records outgoing messages, answers bridge requests from a fixture built off the real sample) and drops the webview CSP, which names `vscode-webview:` sources that do not exist over http. |
 | `serve.js` | Serves it. Monaco's AMD loader and its worker Blob both need a real origin. `require()` it for `start(port)`, or run it standalone to poke at the page by hand. |
 | `run.js` | The references peek: builds for the port it will serve on, drives Find References, asserts. Also pins the page's global error overlay: opening the peek must leave it hidden, Chrome's benign "ResizeObserver loop completed" notice (dispatched by hand, because whether the real loop fires is layout-timing dependent) must not raise it or post `error`, and a genuine error still must. `HARNESS_PORT` moves it off 8123; `HARNESS_SHOT=x.png` saves a screenshot. Also pins the Generate ST split button (roadmap R1): with one project the caret is hidden and the main button keeps its rounded right end; with two or more the inner corners square off to fuse with the caret (`has-caret` on `#generate-st-group`, set by `editor.js` with the caret's `hidden` flag — no `:has()`, which VS Code 1.66's Chromium lacks). Transitions are disabled for that check so it reads the end state, not a frame mid-animation. |
+| `run_start_page.js` | The start page (roadmap R2): renders the real `renderStartPageHtml()` output WITH its CSP (only `acquireVsCodeApi()` is stubbed, through Playwright's init script), and asserts no request leaves the page's origin, the project name is validated while typing (shared `media/projectName.js` rules, `aria-invalid`), Create posts `{version, name, location}` and shows a host refusal, every other control posts its message, project actions are disabled while no project is open, the form survives in webview state, and there is no horizontal scroll at 360/560/1200 px (one column at 360). Defaults to port 8125. |
 | `run_pragmas.js` | Folding and pragma highlighting. Folds real blocks and reads back the rendered lines, then tokenizes through Monaco's **own** tokenizer. Both fail silently if they regress, which is the point of driving a browser: a unit test on `stFolding.js` cannot prove Monaco actually *used* it rather than its own indentation provider. Carries the two reported bugs as regressions, and asserts implementation-pane blocks still fold — registering a provider replaces indentation folding, so that is the thing most likely to disappear unnoticed. Verified: removing the provider turns 6 assertions red, and the failure text reproduces both original bug reports verbatim. Defaults to port 8124. |
 
 `run.js` asserts what only a browser can show: that the peek lists cross-file hits at all, that exactly
@@ -242,7 +249,11 @@ partition, and every cross-file Go to Definition then opened a duplicate tab tit
 with nothing highlighted. The fixture also injects a **`.TcTLEO`** into LineA's project and the in-host
 pass edits it **on disk** and re-queries the live index — the gate for the 2026-08-24 watcher fix
 (`TWINCAT_WATCH_EXTS` omitted `.tctleo`, so an external `.TcTLEO` edit never reached the LSP; only a
-real host runs the watcher chain, so this is the one place it can be proven).
+real host runs the watcher chain, so this is the one place it can be proven). The **start-page phase**
+(roadmap R2) checks what only a real host shows: every start command registered, the `TwinCAT` Activity
+Bar container and its Start / Objects / Libraries views open (`workbench.view.extension.twincat`,
+`<view>.focus`), *TwinCAT: Open Start Page* opens the `TwinCAT Start` tab, and *Create New Project* (with
+its arguments, so no dialog) writes a 3.1.4026 and a 3.1.4024 solution and refuses a second create.
 
 The same pass also automates the **P8 webview checklist** (items 2–7 of
 `docs/superpowers/plans/2026-08-22-deepen-08-g4-checklist.md`) through **`media/devHostTestHook.js`** —
@@ -319,6 +330,22 @@ src/
                         cross-file updates staged and applied through renameTransaction)
     libraryCommands     "TwinCAT Libraries" commands (refresh, insert, copy, Update Library Definitions)
     lspBridgeCommands   openComponent navigation + the twincat.lsp.query* Monaco↔LSP bridges
+    startCommands       The TwinCAT sidebar's Start view (an empty tree, so its viewsWelcome buttons show)
+                        and the start commands: Open Start Page, Create New Project (version → name →
+                        location prompts, or all three as args from the start page; then open here /
+                        new window / add to workspace), Open Existing Project (.sln or folder, or a
+                        recent entry), Generate ST (multi-pick when 2+ projects), Open Settings and the
+                        help links. The start page runs these same commands — no second code path
+  projectTemplate       Create a NEW TwinCAT solution from a shipped template (roadmap R2): copy,
+                        rename solution/system/PLC project (`<Name>`, `<Name>_PLC`), re-issue every
+                        identity GUID consistently, keep every byte else. vscode-free, unit-tested.
+                        See "Project templates" below
+  startPage             The start page: a singleton webview panel (+ serializer) whose messages map
+                        onto the twincat.* commands; command allow-list; links leave via openExternal
+  startPageHtml         The start page's HTML (pure; strict CSP, no remote loads) — the browser
+                        harness renders this same function
+  recentProjects        Recent TwinCAT solutions for the start page (pure list logic + a globalState
+                        adapter): newest first, max 10, case-insensitive on Windows paths, pruned on read
   xaeShell              XAE shell discovery + the library-signature generator (the one non-offline path)
   customEditorProvider  Webview host: bridges Monaco ↔ LSP via livePath, writes CDATA back. Each
                         custom/* handler is now assemble → query LSP → delegate to a livePath
@@ -363,7 +390,9 @@ src/
                         receive them), getTreeItem builds the TreeItem, getParent = node.parent,
                         getChildren/getRevealItem forward to the model (cached until refresh() or a
                         project/solution map or workspace-folder change)
-  solutionMap           TwinCAT .sln → .tsproj → .xti → .plcproj presentation model for that tree
+  solutionMap           TwinCAT .sln → .tsproj → .xti → .plcproj presentation model for that tree (also the
+                        single-file .tspproj system project 3.1.4024 writes, whose <Plc><Project> names
+                        the .plcproj inline)
   projectStatusBar      Status-bar "which PLC project is this file in" indicator (2+ projects only);
                         projectLabel() is pure/vscode-free so it is unit-testable — vscode is required
                         lazily, inside createProjectStatusBar()
@@ -476,16 +505,89 @@ media/
                         ruling: that function stays in src/).
   diagnosticMarkers.js  Pane split + Monaco marker shape for per-component diagnostics. Dual-mode;
                         monaco-free via caller-injected severity values.
+  projectName.js        The project-name rule (identifier-safe, Windows-safe, no `__`, no trailing `_`).
+                        Dual-mode: the start page validates while typing, src/projectTemplate.js refuses
+                        the same names host-side
+  startPage.js / startPage.css  The start page's script and theme-variable stylesheet (single column
+                        under ~640 px)
+  twincat-activitybar.svg  The Activity Bar icon (monochrome ladder glyph, drawn for this project; no
+                        vendor artwork). Inlined into the start page with currentColor
   marketplace-icon.png  The 256px extension icon package.json points at. GENERATED by
                         scripts/make-icon.js — never hand-edited.
   icon.png              The 1280x640 GitHub social preview (same mark beside the name). GENERATED by
                         scripts/make-social-preview.js; .vscodeignored, nothing in the extension uses it.
+resources/
+  templates/tc3.1.4024/, tc3.1.4026/  The shipped project templates, GENERATED by
+                        scripts/build-project-templates.js — never hand-edited
+  templates/xae-3.1.4024/  Raw XAE 3.1.4024.62 output, the 4024 template's source (.vscodeignored)
+  dialects/twincat3.json   The vendored STruC++ dialect profile (R3)
 scripts/
+  build-project-templates.js  Derives resources/templates/tc3.1.40xx/ from the XAE skeletons;
+                        `--check` exits 1 when the committed copies are stale. .vscodeignored
   glyphRaster.js        The renderer behind both images: TrueType outline reader, scanline rasterizer,
                         hand-rolled PNG encoder, and drawMark (the logo itself, so both draw the SAME
                         mark). Reads Segoe UI from C:/Windows/Fonts; only the pixels are committed.
                         Dev-only, .vscodeignored, not in the typecheck graph.
 ```
+
+### Project templates (Create New Project, roadmap R2)
+
+Only TwinCAT XAE has ever written a `.sln` → system project → `.plcproj` skeleton that XAE accepts, so
+**Create New Project copies an XAE-made skeleton** instead of writing one. Two templates ship:
+
+| version | source | shape |
+|---|---|---|
+| 3.1.4026 | the XAE 3.1.4026.22 skeleton under `sample/TcToolkitSample/` | `.sln` + `.tsproj` + `_Config/` (PLC `.xti`, instance `.xti`/`.xtv`) |
+| 3.1.4024 | `resources/templates/xae-3.1.4024/` (XAE 3.1.4024.62) | `.sln` + one `.tspproj` (PLC project named inline, no `_Config/`) |
+
+`node scripts/build-project-templates.js` derives `resources/templates/tc3.1.4024/` and `tc3.1.4026/`
+(names `TcTemplate` / `TcTemplate_PLC`); `--check` fails when the committed copies are stale, and
+`test/test_project_template.js` runs that check. What the derivation does:
+- **4024:** the GVL becomes `GVL_Main` with its sample variable removed — XAE's own default GVL text,
+  `{attribute 'qualified_only'}` / `VAR_GLOBAL` / `END_VAR` — and the `.plcproj` `<Compile>` follows.
+- **4026:** strips what `scripts/Create sample PLC project/build-sample-project.js` injected (its objects'
+  `<Compile>` entries, read from its exported `OBJECTS`, and every `<Folder>` beyond XAE's
+  `DUTs`/`GVLs`/`VISUs`/`POUs`), plus what the sample gained by hand or by building: the
+  `TwinCat Dynamic Collections` reference and the `<None Include="….tmc">` item. The sample's `MAIN` was
+  overwritten with synthetic code, so `MAIN` and `GVL_Main` take XAE's object text from the 4024 skeleton
+  (minus `ProductVersion`, since this `.plcproj` has `WriteProductVersion` false), with derived Ids.
+- Never a `.tmc`. Starter content is exactly `MAIN`, the `PlcTask` that calls it, and the empty `GVL_Main`.
+
+`src/projectTemplate.js` then creates `<location>/<Name>/`: solution and system project `<Name>`, PLC
+project `<Name>_PLC`, names replaced in paths and text in one longest-first pass; BOMs, CRLF/LF, tabs,
+attribute order and a missing trailing newline are carried over byte for byte. It refuses a target that
+already holds a `.sln`/`.tsproj`/`.tspproj`/`.plcproj` (scope is a new solution only) or any file it
+would write, opens every file exclusively, and removes what it wrote if a write fails.
+
+**GUID inventory.** Every GUID in a template is classified by where it sits (`IDENTITY_CONTEXTS` /
+`KEEP_CONTEXTS` in `src/projectTemplate.js`); one that is neither, or both, fails the template build and
+every create — a guess either way can produce a project XAE refuses.
+
+Re-issued (same old GUID → same new GUID in every file; each occurrence keeps its letter case — the
+`.sln` writes them upper-case, the `.plcproj` lower-case). These are what XAE mints fresh for a new
+project; `LibraryReferences`, `Application`, `TypeSystem` and the `Implicit_*` ids differ between the two
+XAE skeletons, which is what shows they are per-project ids and not kind GUIDs:
+
+| GUID | where |
+|---|---|
+| system project | `.sln` `Project(…) = …, "{ID}"`; `.tsproj`/`.tspproj` `ProjectGUID` |
+| solution | `.sln` `SolutionGuid` |
+| PLC project | `.sln` configuration lines; `.tspproj` or `_Config/PLC/*.xti` `<Project GUID>`; `.plcproj` `ProjectGuid` |
+| PLC project objects | `.plcproj` `Application`, `TypeSystem`, `Implicit_Task_Info`, `Implicit_KindOfTask`, `Implicit_Jitter_Distribution`, `LibraryReferences` |
+| task | `PlcTask.TcTTO` `Task Id`, `TaskFBGuid`, `Fb_init`, `Fb_exit`, `CycleUpdate`, `PostCycleUpdate` |
+| objects | every `Id="{…}"` in `.TcPOU`/`.TcGVL`/`.TcDUT`/`.TcIO` (MAIN, GVL_Main) |
+
+Kept (identical in every project XAE writes):
+
+| GUID | why |
+|---|---|
+| `.sln` `Project("{…}")` type — `{DFBE7525-…}` (.tspproj), `{B1E792BE-…}` (.tsproj) | the project KIND |
+| instance `.xti` `<CLSID>` `{08500001-0000-0000-F000-000000000064}` | the TcCOM class of a PLC instance |
+| `.xtv` `TmcHash` | a content hash of the `.tmc`, not an identity; XAE recomputes it on build |
+| everything inside the `.plcproj` `<XmlArchive>` (`{40450F57-…}`, `{54dd0eac-…}`, …) | option category and type keys |
+
+Still owed, on the user's Windows machine: each template, created through the command, opened and built
+in its own XAE version (3.1.4024 and 3.1.4026).
 
 ### Objects tree: solution and PLC-project hierarchy
 
@@ -494,7 +596,8 @@ which language-server index owns a file:
 
 1. `src/solutionMap.js` discovers TwinCAT `.sln` files and follows their actual metadata chain:
    `.sln` project entry → `.tsproj` → `<Plc><Project File="…xti">` → the XTI's `PrjFilePath` →
-   `.plcproj`. Unrelated Visual Studio solutions are ignored.
+   `.plcproj`. A 3.1.4024 `.tspproj` names the `.plcproj` inline (`<Plc><Project PrjFilePath="…">`, no
+   XTI) and is followed too. Unrelated Visual Studio solutions are ignored.
 2. A solution is always a top-level node when present, even with one PLC project. One solution may
    contain several PLC projects, and several solutions may coexist in one workspace. Duplicate
    solution names use shortest-unique-parent suffixes; project labels are disambiguated only among

@@ -5,7 +5,8 @@
 A lightweight, offline VS Code extension for editing, navigating and analysing Beckhoff **TwinCAT**
 PLC projects (`.TcPOU`, `.TcGVL`, `.TcDUT`, `.TcIO`). It hides the XML wrappers behind a two-pane
 editor, adds **Structured Text (IEC 61131-3)** language support from a built-in language server, and
-gives you explorers for the project's objects and its libraries.
+gives you a TwinCAT sidebar with the project's objects and its libraries, a start page, and a way to
+create a new TwinCAT project without opening TwinCAT XAE.
 
 TwinCAT stores PLC code as XML, with the actual Structured Text buried inside `<![CDATA[ ... ]]>`
 blocks. This extension parses that XML, presents the declaration and implementation in two editor
@@ -23,6 +24,38 @@ are required.
 
 Opens `.TcPOU` / `.TcGVL` / `.TcDUT` / `.TcIO` with the Declaration (variables) on top and the
 Implementation below, separated by a resizable splitter. No raw XML.
+
+### TwinCAT sidebar and start page
+
+The extension has its own icon in the Activity Bar. It opens the **TwinCAT** sidebar, which holds three
+views: **Start**, **TwinCAT Objects** and **TwinCAT Libraries**. (Objects and Libraries used to live in
+the Explorer; you can still drag them back there.)
+
+**Start** offers *Create New Project…*, *Open Existing Project…* and *Open Start Page*, plus links to this
+guide, the roadmap, the release notes, the issue tracker and the settings. **Open Start Page** opens a full
+page in an editor tab with:
+
+- **Create new project** — choose TwinCAT 3.1.4024 or 3.1.4026, a name and a location, then *Create*.
+- **Open existing project** — a solution (`.sln`) or a folder, and the ten most recent TwinCAT solutions
+  you opened or created here.
+- **Project actions** — *Generate ST* and *Update Library Definitions* (*Check with STruC++* is shown,
+  disabled, until it ships).
+- **Help and links**, and **Settings**.
+
+Every one of these is also a Command Palette command under **TwinCAT:** (*TwinCAT: Create New
+Project…*, *TwinCAT: Open Start Page*, *TwinCAT: Generate ST*, …). The page works offline and follows
+your colour theme.
+
+### Create a new TwinCAT project
+
+*TwinCAT: Create New Project…* writes a new, empty TwinCAT solution to `<location>/<Name>/`, from a
+template TwinCAT XAE itself produced: the solution and the system project are named `<Name>`, the PLC
+project `<Name>_PLC`, and it contains `MAIN`, the `PlcTask` that calls it, and an empty global variable
+list `GVL_Main`. Every project identity (GUID) is generated fresh, so two projects made this way never
+clash. The name must be a valid identifier (letters, digits, underscores). It creates a new solution
+only: a folder that already holds a TwinCAT solution is refused. When it is done you choose whether to
+open it in this window, in a new window, or add it to the workspace. No TwinCAT installation is
+needed to create one; you need TwinCAT XAE to build and run it.
 
 ### TwinCAT Objects explorer
 
@@ -202,7 +235,7 @@ unsaved work. It briefly opens a TwinCAT window while it runs (about a minute).
 ### Generate ST
 
 Export the whole workspace to clean, compiler-friendly `.st` files under `ST_Files/` (toolbar button
-in the editor).
+in the editor, *TwinCAT: Generate ST*, or the start page; with several PLC projects you pick which).
 
 ### For AI coding assistants
 
