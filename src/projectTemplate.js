@@ -37,18 +37,7 @@ const TEMPLATE_VERSIONS = Object.freeze([
     Object.freeze({ id: '3.1.4024', dir: 'tc3.1.4024', label: 'TwinCAT 3.1 Build 4024' })
 ]);
 
-/** Suffix that turns the project name into the PLC project's name (both XAE skeletons use it). */
-const PLC_SUFFIX = '_PLC';
-
-/** Longest name accepted. Leaves room for `<Name>_PLC Instance.xti` under deep Windows paths. */
-const MAX_NAME_LENGTH = 48;
-
-/** Windows device names: a file or folder named after one cannot be created on Windows. */
-const RESERVED_WINDOWS_NAMES = new Set([
-    'con', 'prn', 'aux', 'nul',
-    'com1', 'com2', 'com3', 'com4', 'com5', 'com6', 'com7', 'com8', 'com9',
-    'lpt1', 'lpt2', 'lpt3', 'lpt4', 'lpt5', 'lpt6', 'lpt7', 'lpt8', 'lpt9'
-]);
+const { PLC_SUFFIX, MAX_NAME_LENGTH, validateProjectName } = require('../media/projectName');
 
 /** Extensions read as text and rewritten (names, GUIDs). Anything else is copied byte-for-byte. */
 const TEXT_EXTS = new Set([
@@ -104,23 +93,6 @@ const KEEP_CONTEXTS = [
     { exts: ['.plcproj'], what: 'PLC option-archive category / type keys (inside <XmlArchive>)',
         re: /<XmlArchive>[\s\S]*?<\/XmlArchive>/g }
 ];
-
-/**
- * Validates a project name. It names the solution, the system project, the PLC project (with
- * `_PLC`), their folders and files, so it must be a safe file name AND a safe IEC identifier.
- * @param {string} name
- * @returns {string|null} A user-facing reason it is refused, or null when it is accepted.
- */
-function validateProjectName(name) {
-    if (typeof name !== 'string' || name.length === 0) return 'Enter a project name.';
-    if (name.length > MAX_NAME_LENGTH) return `Use at most ${MAX_NAME_LENGTH} characters.`;
-    if (!/^[A-Za-z_]/.test(name)) return 'Start with a letter or an underscore.';
-    if (!/^[A-Za-z0-9_]+$/.test(name)) return 'Use only letters, digits and underscores.';
-    if (/__/.test(name)) return 'Do not use two underscores in a row (not a valid IEC identifier).';
-    if (/_$/.test(name)) return `Do not end the name with an underscore (the PLC project would be ${name}_${PLC_SUFFIX.slice(1)} with two in a row).`;
-    if (RESERVED_WINDOWS_NAMES.has(name.toLowerCase())) return `"${name}" is reserved on Windows.`;
-    return null;
-}
 
 /**
  * Lists every file under a directory, relative paths with `/` separators, sorted.

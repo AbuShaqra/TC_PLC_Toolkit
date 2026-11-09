@@ -13,6 +13,7 @@ const { registerObjectCommands, applyXmlEdit, readXmlText, writeXmlText } = requ
 const { registerObjectInsertCommands } = require('./src/commands/objectInsertCommands');
 const { registerClipboardCommands } = require('./src/commands/clipboardCommands');
 const { registerRenameCommands } = require('./src/commands/renameCommands');
+const { registerStartCommands } = require('./src/commands/startCommands');
 const { TwinCatDragAndDropController } = require('./src/treeDragAndDrop');
 const { TwinCatCustomEditorProvider } = require('./src/customEditorProvider');
 const { TwinCatTreeDataProvider } = require('./src/treeDataProvider');
@@ -503,6 +504,13 @@ function activate(context) {
     registerRenameCommands(context, {
         treeView, treeProvider, applyXmlEdit, readXmlText, writeXmlText, getClient: () => client
     });
+
+    // TwinCAT sidebar Start view + start page (create / open a project, project actions, help,
+    // settings). The solutions this workspace holds are recorded as recently opened for the page.
+    const start = registerStartCommands(context, {
+        provider, getProjectMap: () => hostProjectMap, getSolutionMap: () => hostSolutionMap
+    });
+    start.recordOpenSolutions();
 }
 
 function deactivate() {

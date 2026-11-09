@@ -47,5 +47,7 @@ docs/**
 # internal review material (including identifiers redacted out of the source) until it was caught.
 .superpowers/**
 
-# R2 template sources: raw XAE output, not shipped until R2 derives its templates from them
-resources/templates/**
+# R2 template SOURCE: raw XAE output. scripts/build-project-templates.js derives the shipped
+# templates (resources/templates/tc3.1.4024/ and tc3.1.4026/) from it; those ship, this does not.
+resources/templates/xae-3.1.4024/**
+scripts/build-project-templates.js
