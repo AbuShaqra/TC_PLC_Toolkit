@@ -4,7 +4,7 @@ The order of planned work for the extension. **This file is the source of truth*
 (<https://claude.ai/artifact/8RG7TZtBV2cuupsrwWtknv>) is rendered from it by hand out of `docs/roadmap.html`.
 Keep both current in the same change — rules in [CLAUDE.md](CLAUDE.md) ("Keep the roadmap current").
 
-**Last updated:** 2026-11-09 (backlog and fork follow-ups scheduled, user's ask) · **Current release:** v0.10.1
+**Last updated:** 2026-11-09 (R2 grows: TwinCAT sidebar + start page, user's ask) · **Current release:** v0.10.1
 
 How to read it: items run top to bottom in the **Order** column. IDs are stable names and do not change
 when the order does. Estimates are working days for one developer; start and end dates are **forecasts**
@@ -18,16 +18,16 @@ after it. An item leaves the table for "Done" once its PR is merged into `dev`, 
 |-------|----|------|---------|-------------|-------|-----|--------|
 | 1 | R3.1 | STruC++ spike: sample project through the compiler under the TwinCAT dialect | 2 d | ~15 min (done) | 2026-11-09 | 2026-11-09 | Findings done 2026-11-09 ([docs/r3.1-strucpp-spike.md](docs/r3.1-strucpp-spike.md)); decisions taken |
 | 2 | R4 | Objects-tree model (deepening roadmap P7) | 4 d | ~3 h (code done) | 2026-11-09 | 2026-11-09 | Code done; **dev-host gate passed** on the user's Windows machine 2026-11-09 — PR #30 merges once its CI is green |
-| 3 | R2 | Create a new TwinCAT project from the extension's start view | 6 d | ~4 h + XAE proofs | 2026-11-12 | 2026-11-12 | **Next.** 4024 skeleton received 2026-11-09 (`resources/templates/xae-3.1.4024/`); done-when still needs both templates proven in XAE on the user's machine |
-| 4 | R3.2 | STruC++ check command with errors mapped to the panes | 7 d | ~4 h | 2026-11-13 | 2026-11-13 | Planned (full scope, 2026-11-09) — after S2 |
-| 5 | R3.3 | STruC++ bundling, Node 22 discovery, licence files, settings, docs | 3 d | ~2 h | 2026-11-16 | 2026-11-16 | Planned |
-| 6 | R6 | Indexing speed: memoize signature-file discovery per root; persisted archive cache; per-project background scan | 5.5 d | ~4 h | 2026-11-17 | 2026-11-17 | Planned (from the backlog, 2026-11-09) |
-| 7 | R7 | Rename v1 limits: `.plcproj` sync inside the rename transaction; rename sibling implementors of a shared interface | 2.5 d | ~2 h | 2026-11-18 | 2026-11-18 | Planned (from the backlog) |
-| 8 | R8 | Language: nested block comments; hover help for pragmas | 1.5 d | ~1 h | 2026-11-18 | 2026-11-18 | Planned (from the backlog) |
-| 9 | R9 | Tooling: ESLint 10 (re-triage, Node floor); the dev-only `brace-expansion` advisory | 0.75 d | ~30 min | 2026-11-18 | 2026-11-18 | Planned (from the backlog) |
+| 3 | R2 | TwinCAT sidebar (Activity Bar icon) + start page; create a new project (3.1.4024 / 3.1.4026) | 8.5 d | ~6 h + XAE proofs | 2026-11-12 | 2026-11-13 | **Next** — scope grown 2026-11-09 (user's ask). 4024 skeleton received 2026-11-09 (`resources/templates/xae-3.1.4024/`); done-when still needs both templates proven in XAE on the user's machine |
+| 4 | R3.2 | STruC++ check command with errors mapped to the panes | 7 d | ~4 h | 2026-11-16 | 2026-11-16 | Planned (full scope, 2026-11-09) — after S2 |
+| 5 | R3.3 | STruC++ bundling, Node 22 discovery, licence files, settings, docs | 3 d | ~2 h | 2026-11-17 | 2026-11-17 | Planned |
+| 6 | R6 | Indexing speed: memoize signature-file discovery per root; persisted archive cache; per-project background scan | 5.5 d | ~4 h | 2026-11-17 | 2026-11-18 | Planned (from the backlog, 2026-11-09) |
+| 7 | R7 | Rename v1 limits: `.plcproj` sync inside the rename transaction; rename sibling implementors of a shared interface | 2.5 d | ~2 h | 2026-11-19 | 2026-11-19 | Planned (from the backlog) |
+| 8 | R8 | Language: nested block comments; hover help for pragmas | 1.5 d | ~1 h | 2026-11-19 | 2026-11-19 | Planned (from the backlog) |
+| 9 | R9 | Tooling: ESLint 10 (re-triage, Node floor); the dev-only `brace-expansion` advisory | 0.75 d | ~30 min | 2026-11-19 | 2026-11-19 | Planned (from the backlog) |
 | 10 | R10 | L1 reverse index for Find References | 2 d | ~1.5 h | — | — | **On trigger only:** past ~1000 files or > 200 ms per search (today 29 ms cold) |
 
-**Forecast (re-measured 2026-11-09):** the toolkit lane's code finishes about **2026-11-16**. What sets the pace now
+**Forecast (re-measured 2026-11-09):** the toolkit lane's code (through R3.3) finishes about **2026-11-17**, the scheduled backlog (R6–R9) about **2026-11-19**. What sets the pace now
 is not code but the steps only the user can do on Windows. R5's XAE check, R4's dev-host gate and R2's 4024 skeleton
 were done 2026-11-09; R2's XAE proofs remain. Those dates are not forecast; each item stays open until its gate passes. Decisions taken
 2026-11-09 after the R3.1 spike (`docs/r3.1-strucpp-spike.md`): **wait for the fork** — the check command must not
@@ -97,14 +97,23 @@ one place; the suite and typecheck pass; and **`node test/devhost/run.js` passes
 machine**. That gate is mandatory: reveal ancestry and tab identity are exactly what this changes, and
 headless gates missed the 0.6.0 duplicate-tab regression in this area.
 
-### R2 — Create a new TwinCAT project from the extension
+### R2 — TwinCAT sidebar, start page, and creating a new project
 
-**Goal.** A user with no TwinCAT project in the workspace (or an empty folder) can create one from the
-extension, starting from its start view, without opening TwinCAT XAE first.
+**Goal.** The extension gets its own icon in the Activity Bar. It opens a TwinCAT sidebar, and from there a user
+with no TwinCAT project in the workspace (or an empty folder) can create one without opening TwinCAT XAE first.
 
-**Start view.** The TwinCAT Objects view has no empty-state content today (`package.json` `viewsWelcome`
-covers only the References and Libraries views). Add one with a **Create TwinCAT Project** button bound to a
-new command; the same command goes in the Command Palette.
+**Sidebar and start page (user's ask 2026-11-09; decided that day by card):**
+- **Views:** a new Activity Bar container `TwinCAT` (`viewsContainers.activitybar`, own monochrome icon) holds a
+  **Start** view plus the **TwinCAT Objects** and **TwinCAT Libraries** views, which *move out of the Explorer*
+  (users can still drag them back). References stays in the panel.
+- **Form:** sidebar **and** full page. The Start view shows compact native buttons (`viewsWelcome`, offline);
+  **Open Start Page** opens a full page in an editor tab (a webview) with the create-project form and the rest.
+- **Start page options:** *Create new project* (version 3.1.4024 or 3.1.4026, name, location); *Open existing
+  project* (a solution or folder, plus recently opened TwinCAT solutions); *Project actions* (Generate ST for all
+  or chosen projects, Update Library Definitions, and Check with STruC++ once R3.2 ships); *Help and links*
+  (getting started, the roadmap page, release notes, report an issue); *Settings* (the extension's settings).
+- **Command Palette:** every action is also a command (`TwinCAT: Create New Project`, `TwinCAT: Open Start Page`, …).
+- **Size:** R2 grows from 6 d to about 8.5 d (~6 h of session); the sidebar and start page are the extra 2.5 d.
 
 **Key constraint (from earlier work).** A TwinCAT solution is `.sln` → `.tsproj` → `.plcproj`, and only XAE
 has ever written a skeleton that XAE accepts: hand-written ones were refused, and the on-disk template is a

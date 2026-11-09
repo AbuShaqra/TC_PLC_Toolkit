@@ -159,7 +159,7 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
       <h2 id="gantt-title">Timeline</h2>
       <div class="legend"><span><i></i>Can run in the cloud session</span><span><i class="hatch"></i>Needs your Windows machine</span></div>
     </div>
-    <div class="g-scroll"><div class="g-chart" id="gantt" role="img" aria-label="Gantt chart of the two lanes of planned items, toolkit and STruC++ fork, from Nov 9 to Nov 16, 2026, in work order."></div></div>
+    <div class="g-scroll"><div class="g-chart" id="gantt" role="img" aria-label="Gantt chart of the two lanes of planned items, toolkit and STruC++ fork, from Nov 9 to Nov 19, 2026, in work order."></div></div>
     <div class="g-note">Calendar days; shaded columns are weekends. Hover or focus a bar for its dates; click it to open its card. Drag the line after the names to widen or narrow that column (double-click or double-tap resets it).</div>
   </section>
 
@@ -205,7 +205,7 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
       <summary>
         <div class="card-top"><span>#2</span><span class="id">R4</span><span class="pill done">Dev-host gate passed</span><span class="chev" aria-hidden="true">›</span></div>
         <div class="card-title">Objects-tree model (deepening roadmap P7)</div>
-        <div class="bar" aria-hidden="true"><span style="left:0%;width:10%"></span></div>
+        <div class="bar" aria-hidden="true"><span style="left:0.00%;width:9.09%"></span></div>
         <div class="card-foot"><span>4 d → ~3 h</span><span>Nov 9 · merging</span></div>
       </summary>
       <div class="body">
@@ -218,13 +218,13 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
     <details class="card" id="r2">
       <summary>
         <div class="card-top"><span>#3</span><span class="id">R2</span><span class="pill planned">Next · skeleton in</span><span class="chev" aria-hidden="true">›</span></div>
-        <div class="card-title">Create a new TwinCAT project from the extension's start view</div>
-        <div class="bar" aria-hidden="true"><span style="left:30%;width:10%"></span></div>
-        <div class="card-foot"><span>6 d → ~4 h + XAE</span><span>Nov 12</span></div>
+        <div class="card-title">TwinCAT sidebar and start page; create a new project (4024 / 4026)</div>
+        <div class="bar" aria-hidden="true"><span style="left:27.27%;width:13.64%"></span></div>
+        <div class="card-foot"><span>8.5 d → ~6 h + XAE</span><span>Nov 12 – 13</span></div>
       </summary>
       <div class="body">
-        <div class="block"><h4>Goal</h4><p>A user with no TwinCAT project in the workspace, or an empty folder, creates one from the extension without opening TwinCAT XAE first.</p></div>
-        <div class="block"><h4>Start view</h4><p>The TwinCAT Objects view has no empty-state content today. It gets a <b>Create TwinCAT Project</b> button bound to a new command, also in the Command Palette.</p></div>
+        <div class="block"><h4>Goal</h4><p>The extension gets its own place in the Activity Bar, and a user with no TwinCAT project, or an empty folder, creates one there without opening TwinCAT XAE first.</p></div>
+        <div class="block wide"><h4>Sidebar and start page, decided Nov 9 (your ask)</h4><p>A <b>TwinCAT</b> icon in the Activity Bar opens a sidebar with a <b>Start</b> view plus TwinCAT Objects and TwinCAT Libraries, which move out of the Explorer (you can still drag them back). The Start view has compact buttons; <b>Open Start Page</b> opens a full page in an editor tab with: <b>create a new project</b> (3.1.4024 or 3.1.4026, name, location), <b>open an existing project</b> (with recent solutions), <b>project actions</b> (Generate ST, Update Library Definitions, and the STruC++ check once R3.2 ships), <b>help and links</b>, and <b>settings</b>. Every action is also a command. This grows R2 from 6 to about 8.5 days.</p></div>
         <div class="block wide"><h4>Key constraint</h4><p>A TwinCAT solution chains <code>.sln</code> → <code>.tsproj</code> → <code>.plcproj</code>, and only XAE has ever written a skeleton XAE accepts: hand-written ones were refused. So the templates are skeletons XAE produced, copied with every identity GUID regenerated.</p></div>
         <div class="block wide settled"><h4>Decisions, settled Nov 9</h4>
           <ol>
@@ -241,8 +241,8 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
       <summary>
         <div class="card-top"><span>#4</span><span class="id">R3.2</span><span class="pill planned">Planned</span><span class="chev" aria-hidden="true">›</span></div>
         <div class="card-title">STruC++ check command with errors mapped to the panes</div>
-        <div class="bar" aria-hidden="true"><span style="left:40%;width:10%"></span></div>
-        <div class="card-foot"><span>7 d → ~4 h</span><span>Nov 13</span></div>
+        <div class="bar" aria-hidden="true"><span style="left:63.64%;width:9.09%"></span></div>
+        <div class="card-foot"><span>7 d → ~4 h</span><span>Nov 16</span></div>
       </summary>
       <div class="body">
         <div class="block"><h4>This phase</h4><p>A <b>Check with STruC++</b> command converts the project to ST, runs the compiler as a full semantic check, and maps each error to the right component and pane, in both the Problems view and the pane markers.</p></div>
@@ -254,8 +254,8 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
       <summary>
         <div class="card-top"><span>#5</span><span class="id">R3.3</span><span class="pill planned">Planned</span><span class="chev" aria-hidden="true">›</span></div>
         <div class="card-title">STruC++ bundling, Node 22 discovery, licence files, settings, docs</div>
-        <div class="bar" aria-hidden="true"><span style="left:70%;width:10%"></span></div>
-        <div class="card-foot"><span>3 d → ~2 h</span><span>Nov 16</span></div>
+        <div class="bar" aria-hidden="true"><span style="left:72.73%;width:4.55%"></span></div>
+        <div class="card-foot"><span>3 d → ~2 h</span><span>Nov 17</span></div>
       </summary>
       <div class="body">
         <div class="block"><h4>This phase</h4><p>Bundle the single-file compiler in the extension, find a Node 22 or later on the user's machine and explain clearly when there is none, ship the GPL licence and source link, and add settings (Node path, dialect file) and documentation.</p></div>
@@ -267,8 +267,8 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
       <summary>
         <div class="card-top"><span>#6</span><span class="id">R6</span><span class="pill planned">Planned</span><span class="chev" aria-hidden="true">›</span></div>
         <div class="card-title">Indexing speed</div>
-        <div class="bar" aria-hidden="true"><span style="left:80%;width:10%"></span></div>
-        <div class="card-foot"><span>5.5 d → ~4 h</span><span>Nov 17</span></div>
+        <div class="bar" aria-hidden="true"><span style="left:77.27%;width:9.09%"></span></div>
+        <div class="card-foot"><span>5.5 d → ~4 h</span><span>Nov 17 – 18</span></div>
       </summary>
       <div class="body">
         <div class="block wide"><h4>Scope</h4><p>Cache signature-file discovery per root (about 850 ms per scan today, mostly 16 directory walks); a persisted archive cache across sessions (needs a format version and a ZIP fingerprint); a per-project background scan, the biggest win, which rewrites the multi-project spine.</p></div>
@@ -281,8 +281,8 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
       <summary>
         <div class="card-top"><span>#7</span><span class="id">R7</span><span class="pill planned">Planned</span><span class="chev" aria-hidden="true">›</span></div>
         <div class="card-title">Rename: lift the v1 limits</div>
-        <div class="bar" aria-hidden="true"><span style="left:90%;width:10%"></span></div>
-        <div class="card-foot"><span>2.5 d → ~2 h</span><span>Nov 18</span></div>
+        <div class="bar" aria-hidden="true"><span style="left:90.91%;width:4.55%"></span></div>
+        <div class="card-foot"><span>2.5 d → ~2 h</span><span>Nov 19</span></div>
       </summary>
       <div class="body">
         <div class="block wide"><h4>Scope</h4><p>Keep the <code>.plcproj</code> update inside the rename transaction, so an undo restores it; rename the sibling implementors of a shared interface method, which XAE flags today.</p></div>
@@ -294,8 +294,8 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
       <summary>
         <div class="card-top"><span>#8</span><span class="id">R8</span><span class="pill planned">Planned</span><span class="chev" aria-hidden="true">›</span></div>
         <div class="card-title">Language: nested block comments, pragma hover</div>
-        <div class="bar" aria-hidden="true"><span style="left:90%;width:10%"></span></div>
-        <div class="card-foot"><span>1.5 d → ~1 h</span><span>Nov 18</span></div>
+        <div class="bar" aria-hidden="true"><span style="left:95.45%;width:2.73%"></span></div>
+        <div class="card-foot"><span>1.5 d → ~1 h</span><span>Nov 19</span></div>
       </summary>
       <div class="body">
         <div class="block wide"><h4>Scope</h4><p>Nested <code>(* … *)</code> comments in the lexer and folding; hover help for pragmas and attributes.</p></div>
@@ -307,8 +307,8 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
       <summary>
         <div class="card-top"><span>#9</span><span class="id">R9</span><span class="pill planned">Planned</span><span class="chev" aria-hidden="true">›</span></div>
         <div class="card-title">Tooling: ESLint 10, dev advisory</div>
-        <div class="bar" aria-hidden="true"><span style="left:90%;width:10%"></span></div>
-        <div class="card-foot"><span>0.75 d → ~30 min</span><span>Nov 18</span></div>
+        <div class="bar" aria-hidden="true"><span style="left:98.18%;width:1.82%"></span></div>
+        <div class="card-foot"><span>0.75 d → ~30 min</span><span>Nov 19</span></div>
       </summary>
       <div class="body">
         <div class="block wide"><h4>Scope</h4><p>Move to ESLint 10 (9.x is deprecated; it raises the Node floor and needs a re-triage of findings) and clear the development-only <code>brace-expansion</code> advisory.</p></div>
@@ -340,7 +340,7 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
       <summary>
         <div class="card-top"><span>#1</span><span class="id">S2</span><span class="pill planned">In progress</span><span class="chev" aria-hidden="true">›</span></div>
         <div class="card-title">Close the fork's gaps: what it rejects on correct code, plus check-only output</div>
-        <div class="bar" aria-hidden="true"><span style="left:0%;width:30%"></span></div>
+        <div class="bar" aria-hidden="true"><span style="left:0.00%;width:27.27%"></span></div>
         <div class="card-foot"><span>27.5 d → ~9 h</span><span>Nov 9 – 11</span></div>
       </summary>
       <div class="body">
@@ -356,7 +356,7 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
       <summary>
         <div class="card-top"><span>#2</span><span class="id">S3a</span><span class="pill planned">Before R3.2</span><span class="chev" aria-hidden="true">›</span></div>
         <div class="card-title">False positives on correct code</div>
-        <div class="bar" aria-hidden="true"><span style="left:30%;width:10%"></span></div>
+        <div class="bar" aria-hidden="true"><span style="left:27.27%;width:2.73%"></span></div>
         <div class="card-foot"><span>2 d → ~1 h</span><span>Nov 12</span></div>
       </summary>
       <div class="body">
@@ -370,7 +370,7 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
       <summary>
         <div class="card-top"><span>#3</span><span class="id">S3b</span><span class="pill planned">Planned</span><span class="chev" aria-hidden="true">›</span></div>
         <div class="card-title">The other follow-ups found during S2</div>
-        <div class="bar" aria-hidden="true"><span style="left:30%;width:20%"></span></div>
+        <div class="bar" aria-hidden="true"><span style="left:30.00%;width:10.91%"></span></div>
         <div class="card-foot"><span>7 d → ~3.5 h</span><span>Nov 12 – 13</span></div>
       </summary>
       <div class="body">
@@ -385,7 +385,7 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
       <summary>
         <div class="card-top"><span>#4</span><span class="id">S4</span><span class="pill planned">Planned</span><span class="chev" aria-hidden="true">›</span></div>
         <div class="card-title">Ed. 3 forms the fork still refuses</div>
-        <div class="bar" aria-hidden="true"><span style="left:40%;width:40%"></span></div>
+        <div class="bar" aria-hidden="true"><span style="left:40.91%;width:32.73%"></span></div>
         <div class="card-foot"><span>8.5 d → ~4.5 h</span><span>Nov 13 – 16</span></div>
       </summary>
       <div class="body">
@@ -398,7 +398,7 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
       <summary>
         <div class="card-top"><span>#5</span><span class="id">S5</span><span class="pill planned">Planned</span><span class="chev" aria-hidden="true">›</span></div>
         <div class="card-title">Profile-handling defects</div>
-        <div class="bar" aria-hidden="true"><span style="left:70%;width:10%"></span></div>
+        <div class="bar" aria-hidden="true"><span style="left:64.55%;width:1.82%"></span></div>
         <div class="card-foot"><span>1 d → ~30 min</span><span>Nov 16</span></div>
       </summary>
       <div class="body">
@@ -411,7 +411,7 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
       <summary>
         <div class="card-top"><span>#6</span><span class="id">S6</span><span class="pill planned">Planned</span><span class="chev" aria-hidden="true">›</span></div>
         <div class="card-title">Runtime safety defects</div>
-        <div class="bar" aria-hidden="true"><span style="left:70%;width:20%"></span></div>
+        <div class="bar" aria-hidden="true"><span style="left:66.36%;width:13.64%"></span></div>
         <div class="card-foot"><span>7 d → ~3.5 h</span><span>Nov 16 – 17</span></div>
       </summary>
       <div class="body">
@@ -424,7 +424,7 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
       <summary>
         <div class="card-top"><span>#7</span><span class="id">S7</span><span class="pill wait">Needs a decision</span><span class="chev" aria-hidden="true">›</span></div>
         <div class="card-title">Audit: narrow what iec-3 accepts</div>
-        <div class="bar" aria-hidden="true"><span style="left:80%;width:20%"></span></div>
+        <div class="bar" aria-hidden="true"><span style="left:80.00%;width:11.82%"></span></div>
         <div class="card-foot"><span>6 d → ~3 h</span><span>Nov 17 – 18</span></div>
       </summary>
       <div class="body">
@@ -438,7 +438,7 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
       <summary>
         <div class="card-top"><span>#8</span><span class="id">S8</span><span class="pill wait">After R3.3</span><span class="chev" aria-hidden="true">›</span></div>
         <div class="card-title">Make iec-3 the default, in its own release</div>
-        <div class="bar" aria-hidden="true"><span style="left:90%;width:10%"></span></div>
+        <div class="bar" aria-hidden="true"><span style="left:89.09%;width:1.82%"></span></div>
         <div class="card-foot"><span>0.5 d → ~20 min</span><span>Nov 18</span></div>
       </summary>
       <div class="body">
@@ -512,13 +512,13 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
 var PLAN = [
   { lane: 'TC PLC Toolkit', num: 1, id: 'R3.1', card: 'r3-1', name: 'STruC++ spike',          est: '2 d → ~15 min', start: '2026-11-09', end: '2026-11-09', days: 0.3 },
   { lane: 'TC PLC Toolkit', num: 2, id: 'R4',   card: 'r4',   name: 'Objects-tree model',     est: '4 d → ~3 h',  start: '2026-11-09', end: '2026-11-09', machine: true },
-  { lane: 'TC PLC Toolkit', num: 3, id: 'R2',   card: 'r2',   name: 'Create TwinCAT project', est: '6 d → ~4 h',  start: '2026-11-12', end: '2026-11-12', machine: true },
-  { lane: 'TC PLC Toolkit', num: 4, id: 'R3.2', card: 'r3-2', name: 'STruC++ check',          est: '7 d → ~4 h',  start: '2026-11-13', end: '2026-11-13' },
-  { lane: 'TC PLC Toolkit', num: 5, id: 'R3.3', card: 'r3-3', name: 'STruC++ packaging',      est: '3 d → ~2 h',  start: '2026-11-16', end: '2026-11-16' },
-  { lane: 'TC PLC Toolkit', num: 6, id: 'R6',   card: 'r6',   name: 'Indexing speed',         est: '5.5 d → ~4 h', start: '2026-11-17', end: '2026-11-17' },
-  { lane: 'TC PLC Toolkit', num: 7, id: 'R7',   card: 'r7',   name: 'Rename limits',          est: '2.5 d → ~2 h', start: '2026-11-18', end: '2026-11-18', days: 0.5 },
-  { lane: 'TC PLC Toolkit', num: 8, id: 'R8',   card: 'r8',   name: 'Comments, pragma hover', est: '1.5 d → ~1 h', start: '2026-11-18', end: '2026-11-18', days: 0.3, offset: 0.5 },
-  { lane: 'TC PLC Toolkit', num: 9, id: 'R9',   card: 'r9',   name: 'ESLint 10',              est: '0.75 d → ~30 min', start: '2026-11-18', end: '2026-11-18', days: 0.2, offset: 0.8 },
+  { lane: 'TC PLC Toolkit', num: 3, id: 'R2',   card: 'r2',   name: 'Sidebar + new project',  est: '8.5 d → ~6 h', start: '2026-11-12', end: '2026-11-13', days: 1.5, machine: true },
+  { lane: 'TC PLC Toolkit', num: 4, id: 'R3.2', card: 'r3-2', name: 'STruC++ check',          est: '7 d → ~4 h',  start: '2026-11-16', end: '2026-11-16' },
+  { lane: 'TC PLC Toolkit', num: 5, id: 'R3.3', card: 'r3-3', name: 'STruC++ packaging',      est: '3 d → ~2 h',  start: '2026-11-17', end: '2026-11-17', days: 0.5 },
+  { lane: 'TC PLC Toolkit', num: 6, id: 'R6',   card: 'r6',   name: 'Indexing speed',         est: '5.5 d → ~4 h', start: '2026-11-17', end: '2026-11-18', days: 1, offset: 0.5 },
+  { lane: 'TC PLC Toolkit', num: 7, id: 'R7',   card: 'r7',   name: 'Rename limits',          est: '2.5 d → ~2 h', start: '2026-11-19', end: '2026-11-19', days: 0.5 },
+  { lane: 'TC PLC Toolkit', num: 8, id: 'R8',   card: 'r8',   name: 'Comments, pragma hover', est: '1.5 d → ~1 h', start: '2026-11-19', end: '2026-11-19', days: 0.3, offset: 0.5 },
+  { lane: 'TC PLC Toolkit', num: 9, id: 'R9',   card: 'r9',   name: 'ESLint 10',              est: '0.75 d → ~30 min', start: '2026-11-19', end: '2026-11-19', days: 0.2, offset: 0.8 },
   { lane: 'STruC++ fork',   num: 1, id: 'S2',   card: 's2',   name: 'Fork compiler gaps',     est: '27.5 d → ~9 h', start: '2026-11-09', end: '2026-11-11' },
   { lane: 'STruC++ fork',   num: 2, id: 'S3a',  card: 's3a',  name: 'False positives',        est: '2 d → ~1 h',  start: '2026-11-12', end: '2026-11-12', days: 0.3 },
   { lane: 'STruC++ fork',   num: 3, id: 'S3b',  card: 's3b',  name: 'S2 follow-ups',          est: '7 d → ~3.5 h', start: '2026-11-12', end: '2026-11-13', days: 1.2, offset: 0.3 },
@@ -528,7 +528,7 @@ var PLAN = [
   { lane: 'STruC++ fork',   num: 7, id: 'S7',   card: 's7',   name: 'iec-3 audit (decision)', est: '6 d → ~3 h',  start: '2026-11-17', end: '2026-11-18', days: 1.3, offset: 0.8 },
   { lane: 'STruC++ fork',   num: 8, id: 'S8',   card: 's8',   name: 'Default → iec-3',        est: '0.5 d → ~20 min', start: '2026-11-18', end: '2026-11-18', days: 0.2, offset: 0.8 }
 ];
-var DOMAIN_START = '2026-11-09', DOMAIN_END = '2026-11-19'; /* exclusive */
+var DOMAIN_START = '2026-11-09', DOMAIN_END = '2026-11-20'; /* exclusive */
 (function () {
   var DAY = 86400000;
   function d(s) { var p = s.split('-'); return Date.UTC(+p[0], +p[1] - 1, +p[2]); }
