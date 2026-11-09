@@ -101,9 +101,9 @@ template targets; (4) starter content (an empty `MAIN`, a task, a GVL?).
 - The fork (v0.7.0) has **dialect profiles**: JSON files selected with `--dialect`, `--dialect-file` or
   `--dialect-path` (`src/dialect.ts`, `docs/DIALECTS.md`). Profile features today: `program_methods`,
   `pointer_to`, `reference_to`, `ref_assign`.
-- The TwinCAT profile is `twincat3.json` in Lemvane (`adapters/plc-strucpp/src/plc_strucpp/dialects/`).
-  **It is vendored as a single file and is the only thing taken from Lemvane**; Lemvane is otherwise
-  read-only to this project and nothing else is copied or referenced from it. Record provenance next to the copy.
+- The TwinCAT 3 dialect profile is vendored in this repo as `resources/dialects/twincat3.json` (profile id
+  `twincat3`, extends `iec`, enables all four features above). It is passed to the compiler with
+  `--dialect-file`.
 - The toolkit already turns TwinCAT XML into one ST compilation unit per object with a line map back to each
   pane (`src/stConverter.js`, the live path) — the compiler's input, and the route for mapping its errors back.
 
@@ -117,7 +117,7 @@ template targets; (4) starter content (an empty `MAIN`, a task, a GVL?).
 - Turning the generated C++ into a binary needs `g++`; checking and generating C++ does not.
 
 **Phases** (scheduled separately in the table above).
-1. **R3.1 Spike** — vendor `twincat3.json`; run the `sample/` project's ST through the STruC++ CLI under the
+1. **R3.1 Spike** — run the `sample/` project's ST through the STruC++ CLI with `resources/dialects/twincat3.json`, under the
    TwinCAT dialect; list every construct it rejects. This sizes the rest.
 2. **R3.2 Compile command** — a *Compile with STruC++* command that converts the project, runs the compiler and
    maps errors to the right component and pane (VS Code Problems + pane markers).

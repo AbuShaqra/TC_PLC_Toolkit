@@ -64,8 +64,7 @@ It ships to no user (it is `.vscodeignore`d), so it has no length budget like HA
 is blocked, or merges, update `ROADMAP.md` **and** `docs/roadmap.html` in the same change, and republish
 the page to that same URL (Artifact tool: publish `docs/roadmap.html` with `url` set to it). A new request
 from the user goes onto the roadmap when it is accepted; a merged item moves to "Done" with its PR. The
-markdown file wins if the two disagree. Lemvane is a read-only reference for this repo: the only file
-taken from it is the vendored TwinCAT dialect profile (roadmap R3).
+markdown file wins if the two disagree.
 
 ## Git attribution
 

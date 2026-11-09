@@ -225,7 +225,7 @@ footer { font-size: 13px; color: var(--muted); border-top: 1px solid var(--line)
         <h4>What exists</h4>
         <ul>
           <li>The fork (v0.7.0) loads <b>dialect profiles</b>: JSON files selected with <code>--dialect</code>, <code>--dialect-file</code> or <code>--dialect-path</code>. Profile features today: <code>program_methods</code>, <code>pointer_to</code>, <code>reference_to</code>, <code>ref_assign</code>.</li>
-          <li>The TwinCAT profile, <code>twincat3.json</code>, is vendored from Lemvane as a single file. It is the only thing taken from Lemvane, which stays read-only to this project.</li>
+          <li>The TwinCAT 3 dialect profile is already in the repository as <code>resources/dialects/twincat3.json</code>: it builds on plain IEC and turns on all four features. It is passed to the compiler with <code>--dialect-file</code>.</li>
           <li>The toolkit already turns TwinCAT XML into one ST unit per object, with a line map back to each pane. That is the compiler's input and the route for mapping its errors back.</li>
         </ul>
       </div>
@@ -241,7 +241,7 @@ footer { font-size: 13px; color: var(--muted); border-top: 1px solid var(--line)
       <div class="block">
         <h4>Phases</h4>
         <ol>
-          <li><b>R3.1 Spike</b> (2 d, Nov 11–12). Vendor <code>twincat3.json</code>, run the sample project through the STruC++ CLI under the TwinCAT dialect, and list every construct it rejects. This sizes the rest.</li>
+          <li><b>R3.1 Spike</b> (2 d, Nov 11–12). Run the sample project through the STruC++ CLI with the TwinCAT dialect profile, and list every construct it rejects. This sizes the rest.</li>
           <li><b>R3.2 Compile command</b> (5 d, Nov 26 – Dec 2). Convert the project, run the compiler, and map errors to the right component and pane.</li>
           <li><b>R3.3 Packaging</b> (3 d, Dec 3–7). Bundle or locate the compiler, ship the licence files, add settings and documentation.</li>
         </ol>
