@@ -75,6 +75,9 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   for `node test/devhost/run.js` on the user's Windows machine** (mandatory per ROADMAP R4) plus a manual pass:
   expansion state survives an update, context menus / drag-drop / copy-paste / rename on real nodes, refresh after
   create/delete. and R3.2 full scope (7 d). Next roadmap item: R4.
+- **Roadmap re-measured 2026-11-09** (user's ask): ~20 planned days were delivered in ~7 h that day (ROADMAP.md
+  "Velocity"). New forecasts assume half that pace; toolkit code ~2026-11-16, S2 ~2026-11-11. The real pacing
+  item is the user's Windows checks (R5 XAE, R4 dev-host via PR #30, R2 skeleton/XAE proofs) — never forecast.
 - **Was next: R3.1** (STruC++ spike) — [ROADMAP.md](ROADMAP.md) (page https://claude.ai/artifact/8RG7TZtBV2cuupsrwWtknv,
   source `docs/roadmap.html`). Order: R3.1 → R4 Objects-tree model (deepening P7) → R2 create a TwinCAT project →
   R3.2 check command → R3.3 packaging. Forecast end 2026-12-05. Every R2/R3 decision is SETTLED (2026-11-09,

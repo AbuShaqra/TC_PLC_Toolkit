@@ -14,18 +14,40 @@ after it. An item leaves the table for "Done" once its PR is merged into `dev`, 
 
 ## Order of work
 
-| Order | ID | Item | Estimate | Start | End | Status |
-|-------|----|------|----------|-------|-----|--------|
-| 1 | R3.1 | STruC++ spike: sample project through the compiler under the TwinCAT dialect | 2 d | 2026-11-10 | 2026-11-11 | Findings done 2026-11-09 ([docs/r3.1-strucpp-spike.md](docs/r3.1-strucpp-spike.md)); decisions taken |
-| 2 | R4 | Objects-tree model (deepening roadmap P7) | 4 d | 2026-11-12 | 2026-11-17 | Code done 2026-11-09 (suite 84/84 FULL) — PR open; the mandatory dev-host gate needs the user's Windows machine before merge |
-| 3 | R2 | Create a new TwinCAT project from the extension's start view | 6 d | 2026-11-18 | 2026-11-25 | Planned — needs a 4024 skeleton from the user's XAE |
-| 4 | R3.2 | STruC++ check command with errors mapped to the panes | 7 d | 2026-12-10 | 2026-12-18 | Planned (full scope, 2026-11-09) — after S2 |
-| 5 | R3.3 | STruC++ bundling, Node 22 discovery, licence files, settings, docs | 3 d | 2026-12-21 | 2026-12-23 | Planned |
+| Order | ID | Item | Planned | Re-measured | Start | End | Status |
+|-------|----|------|---------|-------------|-------|-----|--------|
+| 1 | R3.1 | STruC++ spike: sample project through the compiler under the TwinCAT dialect | 2 d | ~15 min (done) | 2026-11-09 | 2026-11-09 | Findings done 2026-11-09 ([docs/r3.1-strucpp-spike.md](docs/r3.1-strucpp-spike.md)); decisions taken |
+| 2 | R4 | Objects-tree model (deepening roadmap P7) | 4 d | ~3 h (code done) | 2026-11-09 | 2026-11-09 | Code done 2026-11-09 (suite 84/84 FULL) — PR #30 open; the mandatory dev-host gate needs the user's Windows machine before merge |
+| 3 | R2 | Create a new TwinCAT project from the extension's start view | 6 d | ~4 h + XAE proofs | 2026-11-12 | 2026-11-12 | Planned — needs a 4024 skeleton from the user's XAE; done-when needs both templates proven in XAE on the user's machine |
+| 4 | R3.2 | STruC++ check command with errors mapped to the panes | 7 d | ~4 h | 2026-11-13 | 2026-11-13 | Planned (full scope, 2026-11-09) — after S2 |
+| 5 | R3.3 | STruC++ bundling, Node 22 discovery, licence files, settings, docs | 3 d | ~2 h | 2026-11-16 | 2026-11-16 | Planned |
 
-**Total remaining (toolkit lane):** 22 working days of work, forecast to finish **2026-12-23** (it waits for S2). Decisions taken 2026-11-09
-after the R3.1 spike (`docs/r3.1-strucpp-spike.md`): **wait for the fork** — the check command must not put compiler
-errors on correct code, so the gaps are fixed in STruC++ first (S2, fork lane); **R3.2 takes its full scope**
-(5 → 7 d).
+**Forecast (re-measured 2026-11-09):** the toolkit lane's code finishes about **2026-11-16**. What sets the pace now
+is not code but the steps only the user can do on Windows: R5's XAE check, R4's dev-host gate (PR #30), R2's 4024
+skeleton and XAE proofs. Those dates are not forecast; each item stays open until its gate passes. Decisions taken
+2026-11-09 after the R3.1 spike (`docs/r3.1-strucpp-spike.md`): **wait for the fork** — the check command must not
+put compiler errors on correct code, so the gaps are fixed in STruC++ first (S2, fork lane); **R3.2 takes its full
+scope** (5 → 7 d).
+
+### Velocity (measured 2026-11-09)
+
+"Planned" is the original estimate in one developer's working days; "Re-measured" is session time (agents doing
+the work in parallel, plus review, checks and merge), taken from the commit and merge times of 2026-11-09:
+
+| Item | Planned | Actual (wall clock) | Notes |
+|---|---|---|---|
+| R5 (3 fixes + #25) | 3 d | ~30 min to code-complete | three agents in parallel; merged later with R1 |
+| R1 | 0.5 d | ~10 min | |
+| R3.1 spike | 2 d | ~15 min | |
+| S1 (fork language server) | 1.5 d | ~25 min | |
+| R4 | 4 d | ~3 h | includes a worker restart and a re-run |
+| S2 design pass + merge with the user's findings | — | ~1.7 h | |
+| S2 steps 1, 1b, 2, 3, 4, 5 | 9 d | ~2 h 5 min (14:03 → 16:08) | each step 10–30 min, review and full fork checks included |
+
+About **20 planned days in ~7 hours** of one session day. One day is not a trend: these were well-specified items with
+a written plan behind them. The re-measured column therefore assumes **about half** the observed speed (~30 min per
+planned day for fork steps, more for toolkit items that touch the webview or the tree), and the calendar assumes one
+working session per day.
 
 ## STruC++ fork lane (parallel)
 
@@ -33,9 +55,9 @@ Work in the compiler fork (`AbuShaqra/STruCpp`, branch `development`, GPL-3.0-on
 its CLAUDE.md first). It runs **alongside** the toolkit lane (user's call, 2026-11-09); the toolkit only waits
 for it where a row says so.
 
-| Order | ID | Item | Estimate | Start | End | Status |
-|-------|----|------|----------|-------|-----|--------|
-| 1 | S2 | Close the fork's gaps: 14 PR-sized steps (plan: [docs/s2-strucpp-fork-plan.md](docs/s2-strucpp-fork-plan.md)) | 22.5 d | 2026-11-10 | 2026-12-09 | In progress — steps 1 (fork PR #5), 1b (#6), 2 (#7), 3 (#8), 4 (#9) and 5 (#10) merged 2026-11-09; step 6 next. R3.2 waits for it |
+| Order | ID | Item | Planned | Re-measured | Start | End | Status |
+|-------|----|------|---------|-------------|-------|-----|--------|
+| 1 | S2 | Close the fork's gaps: 14 PR-sized steps + the folded-in items (plan: [docs/s2-strucpp-fork-plan.md](docs/s2-strucpp-fork-plan.md)) | 22.5 d + ~5 d folded | ~9 h | 2026-11-09 | 2026-11-11 | In progress — steps 1 (fork PR #5), 1b (#6), 2 (#7), 3 (#8), 4 (#9) and 5 (#10) merged 2026-11-09 (9 planned days in ~2 h); step 6 running. R3.2 waits for it |
 
 **Why this order.**
 1. **R3.1 (spike) first:** the STruC++ work is the largest unknown. The spike needs no decisions, and what
