@@ -60,7 +60,8 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   `docs/s2-strucpp-fork-plan.md`, all 13 steps + 1b (~22.5 d), `iec` = Ed. 3, Annex A precedence). Merged in the fork: step 1
   (`--check --json`, lexer positions; PR #5 `8aea9a7`) and 1b (`iec` renamed `iec-3`, no alias, id reserved; PR #6
   `5fda1bc`). Step 2 (pragmas skipped with a warning, conditional ones refused; PR #7 `47c99fa`) also merged — the toolkit's
-  check (R3.2) can now analyse every sample file. Next: step 3. The vendored profile now extends `iec-3`.
+  check (R3.2) can now analyse every sample file. Step 3 (`SUPER.` always on, `THIS^` behind `self_caret`; PR #8
+  `db0f53c`) merged. Not done in step 3: plain `SUPER()` body call, `SUPER.x :=` as a target. Next: step 4. The vendored profile now extends `iec-3`.
   The IEC Ed. 3 copy the user supplied is licensed to another party: cite clause numbers only, never its text. **R4 code DONE 2026-11-09, not merged** — `src/objectsTreeModel.js` (VS Code-free node graph; ids and contextValue set
   in one place, `getParent` = `node.parent`), thin `treeDataProvider.js`, `groupRootsByProject` moved out of
   `projectMap.js`; `test_objects_tree_ids.js` pins 396 ids / 301 reveal chains (a required gate); suite 84/84 FULL.
