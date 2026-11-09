@@ -80,8 +80,9 @@ function renderStartPageHtml(o) {
         `<span class="action-text"><span class="action-label">${escapeHtml(a.label)}</span><span class="action-detail">${escapeHtml(a.detail)}</span></span>` +
         `${icon('chevron', 'icon chevron')}</button></li>`).join('');
     const links = HELP_LINKS.map(l =>
-        `<li><a href="#" data-link="${escapeHtml(l.id)}">${icon(/** @type {any} */ (l.id), 'icon link-icon')}` +
-        `<span class="link-text"><span class="link-label">${escapeHtml(l.label)}</span> <span class="hint">${escapeHtml(l.detail)}</span></span></a></li>`).join('');
+        `<li><a href="#" data-link="${escapeHtml(l.id)}">${icon(/** @type {any} */ (l.id), 'icon tile-icon')}` +
+        `<span class="link-text"><span class="link-label">${escapeHtml(l.label)}</span> <span class="hint">${escapeHtml(l.detail)}</span></span>` +
+        `${icon('chevron', 'icon chevron')}</a></li>`).join('');
     return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -146,8 +147,9 @@ function renderStartPageHtml(o) {
             </section>
             <section class="card" id="settings" aria-labelledby="settings-title">
                 <h2 id="settings-title"><span class="badge">${icon('settings')}</span>Settings</h2>
-                <p class="hint">Diagnostics, library definitions and the XAE shell.</p>
-                <button type="button" class="secondary" data-command="twincat.openSettings">Open Settings</button>
+                <button type="button" class="tile" data-command="twincat.openSettings">` +
+        `<span class="action-text"><span class="action-label">Open Settings</span><span class="action-detail">Diagnostics, library definitions and the XAE shell</span></span>` +
+        `${icon('chevron', 'icon chevron')}</button>
             </section>
         </div>
         <footer class="footer">TwinCAT PLC Toolkit · AGPL-3.0-or-later · Not affiliated with Beckhoff Automation</footer>

@@ -21,6 +21,7 @@ html, body {
     --tc-accent: rgba(226, 35, 26, 1);
     --tc-accent-soft: rgba(226, 35, 26, 0.12);
     --tc-accent-line: rgba(226, 35, 26, 0.55);
+    --tc-accent-frame: rgba(226, 35, 26, 0.32);
     --tc-border: var(--vscode-panel-border, var(--vscode-widget-border, rgba(128, 128, 128, 0.35)));
     --tc-radius: 10px;
 }
@@ -39,7 +40,7 @@ html, body {
     gap: 18px;
     margin-bottom: 22px;
     padding: 22px 22px;
-    border: 1px solid var(--tc-border);
+    border: 1px solid var(--tc-accent-frame);
     border-radius: var(--tc-radius);
     background:
         radial-gradient(120% 140% at 0% 0%, var(--tc-accent-soft), transparent 60%),
@@ -84,20 +85,17 @@ html, body {
 .card {
     min-width: 0;
     padding: 18px;
-    border: 1px solid var(--tc-border);
+    border: 1px solid var(--tc-accent-frame);
     border-radius: var(--tc-radius);
     background: var(--vscode-sideBar-background, transparent);
-    transition: border-color 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
+/* Every card wears the same light red frame; hover deepens it. */
 .card:hover {
     border-color: var(--tc-accent-line);
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
 }
-/* The main card always wears the light red frame the others get on hover. */
-#create {
-    grid-row: span 2;
-    border-color: var(--tc-accent-line);
-}
+#create { grid-row: span 2; }
 .card h2 {
     display: flex;
     align-items: center;
@@ -181,26 +179,43 @@ code { font-family: var(--vscode-editor-font-family, monospace); }
 
 ul { list-style: none; margin: 0; padding: 0; }
 
-.actions li + li { margin-top: 8px; }
-button.action {
+/* One tile style for every clickable row: project actions, recent solutions, help links, settings. */
+.actions, .recents, .links { display: grid; gap: 8px; }
+.links { grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr)); }
+.tile, button.action, .recents li, .links a {
     display: flex;
     align-items: center;
     gap: 10px;
     width: 100%;
-    text-align: left;
+    min-width: 0;
     padding: 9px 12px;
+    text-align: left;
     color: var(--vscode-foreground);
     background: var(--vscode-editor-background);
-    border-color: var(--tc-border);
+    border: 1px solid var(--tc-border);
     border-radius: 8px;
+    text-decoration: none;
     transition: border-color 0.15s ease, background 0.15s ease;
 }
-button.action:hover:not(:disabled) { background: var(--vscode-list-hoverBackground); border-color: var(--tc-accent-line); }
-.action-text { flex: 1 1 auto; min-width: 0; }
-.action-label { display: block; font-weight: 600; }
-.action-detail { display: block; color: var(--vscode-descriptionForeground); }
+.tile:hover:not(:disabled), button.action:hover:not(:disabled), .recents li:hover, .links a:hover {
+    background: var(--vscode-list-hoverBackground);
+    border-color: var(--tc-accent-line);
+    text-decoration: none;
+}
+.tile-icon { color: var(--tc-accent); }
+.action-text, .link-text, .recent-open { flex: 1 1 auto; min-width: 0; }
+.action-label, .link-label, .recent-name { display: block; font-weight: 600; color: var(--vscode-foreground); }
+.action-detail, .links .hint, .recent-path {
+    display: block;
+    margin: 0;
+    color: var(--vscode-descriptionForeground);
+}
+.recent-path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .chevron { color: var(--vscode-descriptionForeground); transition: transform 0.15s ease, color 0.15s ease; }
-button.action:hover:not(:disabled) .chevron { transform: translateX(3px); color: var(--tc-accent); }
+.tile:hover:not(:disabled) .chevron, button.action:hover:not(:disabled) .chevron, .links a:hover .chevron, .recents li:hover .chevron {
+    transform: translateX(3px);
+    color: var(--tc-accent);
+}
 .soon {
     flex: none;
     padding: 1px 8px;
@@ -208,28 +223,12 @@ button.action:hover:not(:disabled) .chevron { transform: translateX(3px); color:
     font-size: 0.8em;
     border: 1px solid var(--tc-border);
 }
-
-.recents li { display: flex; align-items: center; gap: 4px; min-width: 0; }
-.recents li + li { margin-top: 2px; }
 .recent-open {
-    flex: 1 1 auto;
-    min-width: 0;
-    text-align: left;
-    padding: 6px 8px 6px 10px;
-    border-left: 2px solid transparent;
-    border-radius: 6px;
-    color: var(--vscode-textLink-foreground);
+    padding: 0;
+    color: inherit;
     background: transparent;
     border: none;
-}
-.recent-open:hover { background: var(--vscode-list-hoverBackground); border-left-color: var(--tc-accent); }
-.recent-name { display: block; font-weight: 600; }
-.recent-path {
-    display: block;
-    color: var(--vscode-descriptionForeground);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    text-align: left;
 }
 .recent-remove {
     flex: none;
@@ -238,27 +237,10 @@ button.action:hover:not(:disabled) .chevron { transform: translateX(3px); color:
     background: transparent;
     border: none;
 }
-
-.links { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr)); gap: 6px; }
-.links a {
-    display: flex;
-    align-items: flex-start;
-    gap: 10px;
-    padding: 8px 10px;
-    border: 1px solid transparent;
-    border-radius: 8px;
-    color: var(--vscode-foreground);
-    text-decoration: none;
-}
-.links a:hover { background: var(--vscode-list-hoverBackground); border-color: var(--tc-border); text-decoration: none; }
-.link-icon { margin-top: 1px; color: var(--tc-accent); }
-.link-text { min-width: 0; }
-.link-label { display: block; font-weight: 600; color: var(--vscode-textLink-foreground); }
-.links .hint { display: block; margin: 0; }
+.recent-remove:hover { color: var(--tc-accent); }
 a { color: var(--vscode-textLink-foreground); text-decoration: none; }
 a:hover { color: var(--vscode-textLink-activeForeground); text-decoration: underline; }
-
-#settings .secondary { margin-top: 12px; }
+.card > .hint { margin-bottom: 12px; }
 
 .footer {
     margin-top: 22px;
@@ -273,5 +255,5 @@ a:hover { color: var(--vscode-textLink-activeForeground); text-decoration: under
 }
 
 @media (prefers-reduced-motion: reduce) {
-    .card, button.action, .chevron { transition: none; }
+    .card, .tile, button.action, .recents li, .links a, .chevron { transition: none; }
 }
