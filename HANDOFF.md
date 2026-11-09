@@ -82,7 +82,13 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   Step 11 (`union` parse + analysis; PR #16 `337817f`) merged: contextual (no new tokens, `union` stays a name);
   STRING members allowed; initial values refused as "not supported yet" (possible R3.2 false positive); compile()
   refuses UNION until step 12. Found (pre-existing): a STRUCT alias is not assignment-compatible with its STRUCT;
-  `STRING[n]` does not parse (B6, use `STRING(n)`). Next: step 12 (UNION C++ lowering, raw storage), running. The vendored profile now extends `iec-3`.
+  `STRING[n]` does not parse (B6, use `STRING(n)`). Step 12 (UNION C++ lowering; PR #17 `fd19d10`) merged: raw byte storage
+  + memcpy views, STRING reads bounded; UNION left out of the debug table; RETAIN/REF/REFERENCE TO/library-STRUCT in a
+  UNION refused at compile only. Found (pre-existing): POINTER/REF to a whole STRUCT does not compile; a library
+  function's plain VAR locals are exported as inputs; no LEN for WSTRING; SIZEOF of STRUCT counts wrapper overhead.
+  Next: step 13 (`fb_init`), rule decided 2026-11-09 by card: FB_init runs once per instance after initial values,
+  before the first cycle; globals first (declaration order across files), then programs; nested before holder;
+  bInitRetains = bInCopyCode = FALSE always. The vendored profile now extends `iec-3`.
   The IEC Ed. 3 copy the user supplied is licensed to another party: cite clause numbers only, never its text. **R4 DONE 2026-11-09** — `src/objectsTreeModel.js` (VS Code-free node graph; ids and contextValue set
   in one place, `getParent` = `node.parent`), thin `treeDataProvider.js`, `groupRootsByProject` moved out of
   `projectMap.js`; `test_objects_tree_ids.js` pins 396 ids / 301 reveal chains (a required gate); suite 84/84 FULL.
