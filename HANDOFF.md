@@ -35,6 +35,11 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
 - **Stale remote branches:** `claude/new-session-ynrdo4` (last used by PR #21) and `claude/project-thread-o6i1sa`
   (PRs #22, #24) are merged; delete them when convenient (not done — needs the user's go-ahead).
 
+## Roadmap
+Planned work, in order, is in [ROADMAP.md](ROADMAP.md) (page: https://claude.ai/artifact/8RG7TZtBV2cuupsrwWtknv):
+R1 Generate ST split-button corner fix, R2 create a TwinCAT project from the start view, R3 compile with
+STruC++ + the TwinCAT dialect. R2 and R3 have open decisions listed there. None started yet.
+
 ## Open / deferred (each with the reason it waits)
 - **P7 (tree model)** of the deepening roadmap — parked: its dev-host gate is mandatory and needs the user's
   machine. Everything else in that roadmap is shipped or ruled (P9 no-go); rulings in the findings file.

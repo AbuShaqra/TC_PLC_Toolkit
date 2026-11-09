@@ -56,6 +56,17 @@ that in the suite.
 
 It ships to no user (it is `.vscodeignore`d), so it has no length budget like HANDOFF — but it must never contradict the repo. If they disagree, the repo wins and DEVELOPMENT.md is what needs fixing.
 
+## Keep the roadmap current — always
+
+[ROADMAP.md](ROADMAP.md) is the ordered plan of work, and its published page is
+<https://claude.ai/artifact/8RG7TZtBV2cuupsrwWtknv>, rendered by hand from `docs/roadmap.html`.
+**Work in the roadmap's order.** Whenever an item is added, starts, finishes a phase, settles a decision,
+is blocked, or merges, update `ROADMAP.md` **and** `docs/roadmap.html` in the same change, and republish
+the page to that same URL (Artifact tool: publish `docs/roadmap.html` with `url` set to it). A new request
+from the user goes onto the roadmap when it is accepted; a merged item moves to "Done" with its PR. The
+markdown file wins if the two disagree. Lemvane is a read-only reference for this repo: the only file
+taken from it is the vendored TwinCAT dialect profile (roadmap R3).
+
 ## Git attribution
 
 Commits are authored under the user's own git identity — **add no Claude/AI attribution of any kind:**

@@ -1,0 +1,242 @@
+<title>TwinCAT PLC Toolkit Roadmap</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a single reading column; the ordered items hang off a left "power rail" like rungs on a ladder diagram. */
+:root {
+  --bg: #f5f7f8;
+  --surface: #ffffff;
+  --fg: #16212b;
+  --muted: #566573;
+  --line: #d5dde3;
+  --rail: #2f6f8f;
+  --accent: #1f5e7c;
+  --accent-soft: #e2eef4;
+  --warn: #8a5a00;
+  --warn-soft: #fbf0d9;
+  --ok: #2d6a3e;
+  --ok-soft: #e1f0e5;
+  --code-bg: #eef2f5;
+  --display: "Barlow Semi Condensed", "Arial Narrow", system-ui, sans-serif;
+  --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #10171d; --surface: #172129; --fg: #e3eaef; --muted: #9aabb8; --line: #2a3843;
+    --rail: #5ea9cc; --accent: #8cc6e2; --accent-soft: #1b3442; --warn: #f0c46c; --warn-soft: #3a2f17;
+    --ok: #8fd3a2; --ok-soft: #1c3424; --code-bg: #1f2c36; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #10171d; --surface: #172129; --fg: #e3eaef; --muted: #9aabb8; --line: #2a3843;
+  --rail: #5ea9cc; --accent: #8cc6e2; --accent-soft: #1b3442; --warn: #f0c46c; --warn-soft: #3a2f17;
+  --ok: #8fd3a2; --ok-soft: #1c3424; --code-bg: #1f2c36; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--fg); font-family: var(--body); font-size: 15px; line-height: 1.6;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.page { max-width: 820px; margin: 0 auto; padding-block: 40px 64px; display: grid; gap: 36px; }
+header { display: grid; gap: 10px; }
+.eyebrow { font-family: var(--mono); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+h1 { font-family: var(--display); font-weight: 700; font-size: clamp(30px, 6vw, 42px); line-height: 1.05; margin: 0; text-wrap: balance; }
+h2 { font-family: var(--display); font-weight: 600; font-size: 24px; margin: 0; text-wrap: balance; }
+h3 { font-family: var(--display); font-weight: 600; font-size: 20px; margin: 0; line-height: 1.25; text-wrap: balance; }
+h4 { font-family: var(--mono); font-size: 12px; font-weight: 500; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); margin: 0; }
+p { margin: 0; max-width: 68ch; }
+.meta { display: flex; flex-wrap: wrap; gap: 8px 20px; font-size: 13px; color: var(--muted); }
+.meta b { color: var(--fg); font-weight: 600; }
+code { font-family: var(--mono); font-size: 0.86em; background: var(--code-bg); padding: 1px 5px; border-radius: 4px; overflow-wrap: anywhere; }
+a { color: var(--accent); }
+a:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.summary { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+table { width: 100%; border-collapse: collapse; font-size: 14px; min-width: 520px; }
+th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-family: var(--mono); font-size: 11px; font-weight: 500; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+tr:last-child td { border-bottom: 0; }
+td.id { font-family: var(--mono); font-weight: 500; color: var(--accent); white-space: nowrap; }
+.pill { display: inline-block; font-family: var(--mono); font-size: 11px; padding: 2px 8px; border-radius: 999px; white-space: nowrap; }
+.pill.planned { background: var(--accent-soft); color: var(--accent); }
+.pill.open { background: var(--warn-soft); color: var(--warn); }
+.pill.done { background: var(--ok-soft); color: var(--ok); }
+
+.ladder { position: relative; display: grid; gap: 28px; padding-left: 34px; }
+.ladder::before { content: ""; position: absolute; left: 7px; top: 6px; bottom: 6px; width: 3px; background: var(--rail); border-radius: 2px; }
+.rung { position: relative; display: grid; gap: 14px; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 20px 22px; min-width: 0; }
+.rung::before { content: ""; position: absolute; left: -27px; top: 28px; width: 27px; height: 3px; background: var(--rail); }
+.rung-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 12px; }
+.rung-id { font-family: var(--mono); font-weight: 500; color: var(--accent); }
+.rung-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-left: auto; }
+.block { display: grid; gap: 6px; min-width: 0; }
+ul, ol { margin: 0; padding-left: 20px; display: grid; gap: 6px; max-width: 68ch; }
+.decisions { background: var(--warn-soft); border-radius: 6px; padding: 12px 14px; display: grid; gap: 6px; }
+.decisions h4 { color: var(--warn); }
+.note { border-left: 3px solid var(--rail); padding-left: 12px; color: var(--muted); font-size: 14px; }
+
+.backlog { display: grid; gap: 12px; }
+.backlog ul { color: var(--fg); }
+footer { font-size: 13px; color: var(--muted); border-top: 1px solid var(--line); padding-top: 16px; display: grid; gap: 4px; }
+
+@media (max-width: 520px) {
+  .ladder { padding-left: 22px; }
+  .ladder::before { left: 3px; }
+  .rung { padding: 16px; }
+  .rung::before { left: -19px; width: 19px; }
+  .rung-tags { margin-left: 0; }
+}
+</style>
+
+<div class="page">
+  <header>
+    <div class="eyebrow">VS Code extension · twincat-plc-toolkit</div>
+    <h1>TwinCAT PLC Toolkit Roadmap</h1>
+    <p>The order of planned work. Items run top to bottom; sizes are estimates. The source of truth is <code>ROADMAP.md</code> in the repository, and this page is updated with it.</p>
+    <div class="meta">
+      <span>Last updated <b>2026-11-09</b></span>
+      <span>Current release <b>v0.10.1</b></span>
+      <span>Planned items <b>3</b></span>
+    </div>
+  </header>
+
+  <section class="summary" aria-label="Order of work">
+    <table>
+      <thead><tr><th>#</th><th>Item</th><th>Size</th><th>Status</th></tr></thead>
+      <tbody>
+        <tr><td class="id">R1</td><td>Generate ST button keeps its rounded end in single-project workspaces</td><td>S, under ½ day</td><td><span class="pill planned">Planned</span></td></tr>
+        <tr><td class="id">R2</td><td>Create a new TwinCAT project from the extension's start view</td><td>M–L</td><td><span class="pill open">Decisions open</span></td></tr>
+        <tr><td class="id">R3</td><td>Compile TwinCAT projects with STruC++ and the TwinCAT dialect</td><td>L</td><td><span class="pill open">Decisions open</span></td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section class="ladder" aria-label="Roadmap items">
+    <article class="rung" id="r1">
+      <div class="rung-head">
+        <span class="rung-id">R1</span>
+        <h3>Generate ST button: rounded end in single-project workspaces</h3>
+        <div class="rung-tags"><span class="pill planned">Planned</span></div>
+      </div>
+      <div class="block">
+        <h4>Problem</h4>
+        <p>Generate ST is a split button: the main button plus a caret that opens the project picker. The caret appears only when the workspace has two or more PLC projects. With one project it is hidden, but the main button keeps its squared right corners, so it looks cut off.</p>
+      </div>
+      <div class="block">
+        <h4>Cause</h4>
+        <p><code>media/editor.css:413-416</code> squares the main button's right corners in every case. The caret starts hidden (<code>src/customEditorProvider.js:559</code>) and <code>media/editor.js</code> shows it only for two or more projects.</p>
+      </div>
+      <div class="block">
+        <h4>Plan</h4>
+        <p>Square the corners only while the caret is visible: the webview toggles a class on the button group together with the caret, and the CSS keys on that class. CSS <code>:has()</code> is not an option, because the oldest supported VS Code (1.66) ships a Chromium that predates it.</p>
+      </div>
+      <div class="block">
+        <h4>Done when</h4>
+        <p>Both states look right in the dev host, and both browser harnesses pass.</p>
+      </div>
+    </article>
+
+    <article class="rung" id="r2">
+      <div class="rung-head">
+        <span class="rung-id">R2</span>
+        <h3>Create a new TwinCAT project from the extension</h3>
+        <div class="rung-tags"><span class="pill open">Decisions open</span></div>
+      </div>
+      <div class="block">
+        <h4>Goal</h4>
+        <p>A user with no TwinCAT project in the workspace, or an empty folder, creates one from the extension's start view without opening TwinCAT XAE first.</p>
+      </div>
+      <div class="block">
+        <h4>Start view</h4>
+        <p>The TwinCAT Objects view has no empty-state content today. It gets a <b>Create TwinCAT Project</b> button bound to a new command, also available from the Command Palette.</p>
+      </div>
+      <div class="block">
+        <h4>Key constraint</h4>
+        <p>A TwinCAT solution chains <code>.sln</code> → <code>.tsproj</code> → <code>.plcproj</code>. Only XAE has ever written a skeleton XAE accepts: hand-written ones were refused, and the on-disk template is a 67-byte stub XAE expands when it inserts a project. Two routes:</p>
+        <ul>
+          <li><b>Template from an XAE-made skeleton.</b> Ship a skeleton XAE produced, then copy it, rename it and regenerate every identity GUID. Offline, any OS, no TwinCAT needed. Must be proven to open and build in XAE first.</li>
+          <li><b>Drive XAE.</b> Automate XAE the way the sample-project script already does. Always valid, but Windows-only and needs TwinCAT installed.</li>
+        </ul>
+      </div>
+      <div class="decisions">
+        <h4>Decisions open</h4>
+        <ol>
+          <li>Template, XAE automation, or the template with XAE automation where TwinCAT is present.</li>
+          <li>A full solution only, or also a PLC project added to an existing solution.</li>
+          <li>Which TwinCAT version the template targets.</li>
+          <li>Starter content: an empty <code>MAIN</code>, a task, a GVL.</li>
+        </ol>
+      </div>
+    </article>
+
+    <article class="rung" id="r3">
+      <div class="rung-head">
+        <span class="rung-id">R3</span>
+        <h3>Compile TwinCAT projects with STruC++</h3>
+        <div class="rung-tags"><span class="pill open">Decisions open</span></div>
+      </div>
+      <div class="block">
+        <h4>Goal</h4>
+        <p>Compile a TwinCAT project from the extension with the IEC 61131-3 compiler STruC++ (the <code>AbuShaqra/STruCpp</code> fork), under the TwinCAT dialect, and show its errors in the editor panes.</p>
+      </div>
+      <div class="block">
+        <h4>What exists</h4>
+        <ul>
+          <li>The fork (v0.7.0) loads <b>dialect profiles</b>: JSON files selected with <code>--dialect</code>, <code>--dialect-file</code> or <code>--dialect-path</code>. Profile features today: <code>program_methods</code>, <code>pointer_to</code>, <code>reference_to</code>, <code>ref_assign</code>.</li>
+          <li>The TwinCAT profile, <code>twincat3.json</code>, is vendored from Lemvane as a single file. It is the only thing taken from Lemvane, which stays read-only to this project.</li>
+          <li>The toolkit already turns TwinCAT XML into one ST unit per object, with a line map back to each pane. That is the compiler's input and the route for mapping its errors back.</li>
+        </ul>
+      </div>
+      <div class="block">
+        <h4>Constraints</h4>
+        <ul>
+          <li><b>Licence.</b> STruC++ is GPL-3.0-only, with a runtime-library exception for compiled programs; the extension is MIT. The compiler stays a separate program the extension runs as a process, never loaded into the extension, and any bundled copy ships with its licence and a source reference.</li>
+          <li><b>Runtime.</b> STruC++ needs Node 22 or later; the extension supports VS Code 1.66 and later, whose bundled Node is older.</li>
+          <li><b>Offline.</b> The extension works offline, so a bundled compiler fits better than a download on first use.</li>
+          <li><b>Binaries.</b> Building the generated C++ into a program needs <code>g++</code>; checking and generating C++ does not.</li>
+        </ul>
+      </div>
+      <div class="block">
+        <h4>Phases</h4>
+        <ol>
+          <li><b>Spike.</b> Vendor <code>twincat3.json</code>, run the sample project through the STruC++ CLI under the TwinCAT dialect, and list every construct it rejects. This sizes the rest.</li>
+          <li><b>Compile command.</b> Convert the project, run the compiler, and map errors to the right component and pane.</li>
+          <li><b>Packaging.</b> Bundle or locate the compiler, ship the licence files, add settings and documentation.</li>
+        </ol>
+      </div>
+      <div class="decisions">
+        <h4>Decisions open</h4>
+        <ol>
+          <li>What compiling produces: checking only, generated C++, or a built program.</li>
+          <li>Bundle the compiler in the extension, or use one the user installs.</li>
+          <li>How to supply Node 22: raise the minimum VS Code version, or find a Node on the user's machine.</li>
+        </ol>
+      </div>
+    </article>
+  </section>
+
+  <section class="backlog" aria-label="Backlog">
+    <h2>Backlog, not scheduled</h2>
+    <p class="note">Carried from the project's handoff notes. Each waits for a recorded reason.</p>
+    <ul>
+      <li>Tree-model refactor (P7): needs the live dev-host test on a Windows machine.</li>
+      <li>Indexing speed: cache signature-file discovery per root; per-project background scan; persistent archive cache.</li>
+      <li>Rename: keep <code>.plcproj</code> updates inside the rename transaction; rename sibling implementors of an interface.</li>
+      <li>Reverse index for Find References, only past about 1000 files or 200 ms.</li>
+      <li>Tooling: ESLint 10; a development-only dependency advisory.</li>
+      <li>Language: nested block comments; hover help for pragmas.</li>
+    </ul>
+  </section>
+
+  <section class="backlog" aria-label="Done">
+    <h2>Done</h2>
+    <p>Roadmap items finished from now on are listed here with their pull request. Earlier work is in the repository's releases.</p>
+  </section>
+
+  <footer>
+    <span>Source: <code>ROADMAP.md</code> in <code>AbuShaqra/TC_PLC_Toolkit</code>.</span>
+  </footer>
+</div>
