@@ -3,16 +3,16 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <style>
-/* Layout: a single reading column; the ordered items hang off a left "power rail" like rungs on a ladder diagram. */
+/* Layout: a header, then a grid of compact collapsed cards in work order; an opened card spans the full row. */
 :root {
-  --bg: #f5f7f8;
+  --bg: #f4f6f8;
   --surface: #ffffff;
   --fg: #16212b;
-  --muted: #566573;
-  --line: #d5dde3;
-  --rail: #2f6f8f;
+  --muted: #5a6876;
+  --line: #d6dde3;
   --accent: #1f5e7c;
   --accent-soft: #e2eef4;
+  --track: #e6ebef;
   --warn: #8a5a00;
   --warn-soft: #fbf0d9;
   --ok: #2d6a3e;
@@ -25,256 +25,263 @@
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     --bg: #10171d; --surface: #172129; --fg: #e3eaef; --muted: #9aabb8; --line: #2a3843;
-    --rail: #5ea9cc; --accent: #8cc6e2; --accent-soft: #1b3442; --warn: #f0c46c; --warn-soft: #3a2f17;
+    --accent: #8cc6e2; --accent-soft: #1b3442; --track: #22303a; --warn: #f0c46c; --warn-soft: #3a2f17;
     --ok: #8fd3a2; --ok-soft: #1c3424; --code-bg: #1f2c36; color-scheme: dark;
   }
 }
 :root[data-theme="dark"] {
   --bg: #10171d; --surface: #172129; --fg: #e3eaef; --muted: #9aabb8; --line: #2a3843;
-  --rail: #5ea9cc; --accent: #8cc6e2; --accent-soft: #1b3442; --warn: #f0c46c; --warn-soft: #3a2f17;
+  --accent: #8cc6e2; --accent-soft: #1b3442; --track: #22303a; --warn: #f0c46c; --warn-soft: #3a2f17;
   --ok: #8fd3a2; --ok-soft: #1c3424; --code-bg: #1f2c36; color-scheme: dark;
 }
 * { box-sizing: border-box; }
 body {
-  background: var(--bg); color: var(--fg); font-family: var(--body); font-size: 15px; line-height: 1.6;
+  background: var(--bg); color: var(--fg); font-family: var(--body); font-size: 14px; line-height: 1.55;
   padding-left: max(16px, env(safe-area-inset-left, 0px));
   padding-right: max(16px, env(safe-area-inset-right, 0px));
 }
-.page { max-width: 820px; margin: 0 auto; padding-block: 40px 64px; display: grid; gap: 36px; }
-header { display: grid; gap: 10px; }
-.eyebrow { font-family: var(--mono); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
-h1 { font-family: var(--display); font-weight: 700; font-size: clamp(30px, 6vw, 42px); line-height: 1.05; margin: 0; text-wrap: balance; }
-h2 { font-family: var(--display); font-weight: 600; font-size: 24px; margin: 0; text-wrap: balance; }
-h3 { font-family: var(--display); font-weight: 600; font-size: 20px; margin: 0; line-height: 1.25; text-wrap: balance; }
-h4 { font-family: var(--mono); font-size: 12px; font-weight: 500; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); margin: 0; }
-p { margin: 0; max-width: 68ch; }
-.meta { display: flex; flex-wrap: wrap; gap: 8px 20px; font-size: 13px; color: var(--muted); }
-.meta b { color: var(--fg); font-weight: 600; }
+.page { max-width: 1120px; margin: 0 auto; padding-block: 28px 48px; display: grid; gap: 22px; }
+header { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px 24px; }
+.title { display: grid; gap: 6px; min-width: 0; }
+.eyebrow { font-family: var(--mono); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+h1 { font-family: var(--display); font-weight: 700; font-size: clamp(26px, 5vw, 36px); line-height: 1.05; margin: 0; text-wrap: balance; }
+h2 { font-family: var(--display); font-weight: 600; font-size: 19px; margin: 0; }
+.meta { display: flex; flex-wrap: wrap; gap: 4px 18px; font-size: 13px; color: var(--muted); }
+.meta b { color: var(--fg); font-weight: 600; font-variant-numeric: tabular-nums; }
+.tools { display: flex; gap: 8px; }
+button {
+  font: 500 12px var(--mono); color: var(--accent); background: var(--surface); border: 1px solid var(--line);
+  border-radius: 6px; padding: 6px 10px; cursor: pointer;
+}
+button:hover { background: var(--accent-soft); }
+button:focus-visible, summary:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 code { font-family: var(--mono); font-size: 0.86em; background: var(--code-bg); padding: 1px 5px; border-radius: 4px; overflow-wrap: anywhere; }
 a { color: var(--accent); }
-a:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+p { margin: 0; max-width: 72ch; }
 
-.summary { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
-table { width: 100%; border-collapse: collapse; font-size: 14px; min-width: 720px; }
-th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
-th { font-family: var(--mono); font-size: 11px; font-weight: 500; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
-tr:last-child td { border-bottom: 0; }
-td.num, td.date { font-family: var(--mono); font-size: 13px; white-space: nowrap; font-variant-numeric: tabular-nums; }
-td.id a { color: inherit; text-decoration: none; }
-td.id a:hover { text-decoration: underline; }
-.why { display: grid; gap: 10px; }
-.why ol { gap: 8px; }
-td.id { font-family: var(--mono); font-weight: 500; color: var(--accent); white-space: nowrap; }
-.pill { display: inline-block; font-family: var(--mono); font-size: 11px; padding: 2px 8px; border-radius: 999px; white-space: nowrap; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 12px; align-items: start; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; min-width: 0; }
+.card[open] { grid-column: 1 / -1; border-color: var(--accent); }
+.card > summary { list-style: none; cursor: pointer; padding: 12px 14px; display: grid; gap: 8px; }
+.card > summary::-webkit-details-marker { display: none; }
+.card-top { display: flex; align-items: center; gap: 8px; font-family: var(--mono); font-size: 12px; color: var(--muted); }
+.card-top .id { color: var(--accent); font-weight: 500; }
+.card-top .chev { margin-left: auto; transition: transform 0.15s; }
+.card[open] .chev { transform: rotate(90deg); }
+.card-title { font-family: var(--display); font-weight: 600; font-size: 17px; line-height: 1.25; text-wrap: balance; }
+.card:not([open]) .card-title { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.card-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; font-family: var(--mono); font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.bar { position: relative; height: 4px; background: var(--track); border-radius: 2px; overflow: hidden; }
+.bar span { position: absolute; top: 0; bottom: 0; background: var(--accent); border-radius: 2px; }
+.pill { display: inline-block; font-family: var(--mono); font-size: 11px; padding: 1px 8px; border-radius: 999px; white-space: nowrap; }
 .pill.planned { background: var(--accent-soft); color: var(--accent); }
-.pill.open { background: var(--warn-soft); color: var(--warn); }
+.pill.wait { background: var(--warn-soft); color: var(--warn); }
 .pill.done { background: var(--ok-soft); color: var(--ok); }
 
-.ladder { position: relative; display: grid; gap: 28px; padding-left: 34px; }
-.ladder::before { content: ""; position: absolute; left: 7px; top: 6px; bottom: 6px; width: 3px; background: var(--rail); border-radius: 2px; }
-.rung { position: relative; display: grid; gap: 14px; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 20px 22px; min-width: 0; }
-.rung::before { content: ""; position: absolute; left: -27px; top: 28px; width: 27px; height: 3px; background: var(--rail); }
-.rung-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 12px; }
-.rung-id { font-family: var(--mono); font-weight: 500; color: var(--accent); }
-.rung-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-left: auto; }
-.block { display: grid; gap: 6px; min-width: 0; }
-ul, ol { margin: 0; padding-left: 20px; display: grid; gap: 6px; max-width: 68ch; }
-.decisions { background: var(--warn-soft); border-radius: 6px; padding: 12px 14px; display: grid; gap: 6px; }
-.decisions h4 { color: var(--warn); }
-.note { border-left: 3px solid var(--rail); padding-left: 12px; color: var(--muted); font-size: 14px; }
-
-.backlog { display: grid; gap: 12px; }
-.backlog ul { color: var(--fg); }
-footer { font-size: 13px; color: var(--muted); border-top: 1px solid var(--line); padding-top: 16px; display: grid; gap: 4px; }
-
-@media (max-width: 520px) {
-  .ladder { padding-left: 22px; }
-  .ladder::before { left: 3px; }
-  .rung { padding: 16px; }
-  .rung::before { left: -19px; width: 19px; }
-  .rung-tags { margin-left: 0; }
-}
+.body { border-top: 1px solid var(--line); padding: 14px 16px 18px; display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
+.block { display: grid; gap: 4px; min-width: 0; align-content: start; }
+.block.wide { grid-column: 1 / -1; }
+h4 { font-family: var(--mono); font-size: 11px; font-weight: 500; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); margin: 0; }
+ul, ol { margin: 0; padding-left: 18px; display: grid; gap: 4px; max-width: 72ch; }
+.settled { background: var(--ok-soft); border-radius: 6px; padding: 10px 12px; }
+.settled h4 { color: var(--ok); }
+.sub h2 { margin-bottom: 10px; }
+footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line); padding-top: 12px; }
+@media (prefers-reduced-motion: reduce) { .card-top .chev { transition: none; } }
+@media (max-width: 520px) { .body { grid-template-columns: 1fr; padding: 12px; } }
 </style>
 
 <div class="page">
   <header>
-    <div class="eyebrow">VS Code extension · twincat-plc-toolkit</div>
-    <h1>TwinCAT PLC Toolkit Roadmap</h1>
-    <p>The order of planned work. Estimates are working days for one developer; dates are forecasts over working days, assuming items run one after another. Only the order is binding. The source of truth is <code>ROADMAP.md</code> in the repository, and this page is updated with it.</p>
-    <div class="meta">
-      <span>Last updated <b>2026-11-09</b></span>
-      <span>Current release <b>v0.10.1</b></span>
-      <span>Planned work <b>19.5 days</b></span>
-      <span>Forecast finish <b>2026-12-07</b></span>
+    <div class="title">
+      <div class="eyebrow">VS Code extension · twincat-plc-toolkit</div>
+      <h1>TwinCAT PLC Toolkit Roadmap</h1>
+      <div class="meta">
+        <span>Updated <b>2026-11-09</b></span>
+        <span>Release <b>v0.10.1</b></span>
+        <span>Planned <b>20.5 working days</b></span>
+        <span>Forecast finish <b>2026-12-08</b></span>
+      </div>
+    </div>
+    <div class="tools">
+      <button type="button" id="expand-all">Expand all</button>
+      <button type="button" id="collapse-all">Collapse all</button>
     </div>
   </header>
 
-  <section class="summary" aria-label="Order of work">
-    <table>
-      <thead><tr><th>Order</th><th>ID</th><th>Item</th><th>Estimate</th><th>Start</th><th>End</th><th>Status</th></tr></thead>
-      <tbody>
-        <tr><td class="num">1</td><td class="id"><a href="#r1">R1</a></td><td>Generate ST button keeps its rounded end in single-project workspaces</td><td class="num">0.5 d</td><td class="date">2026-11-10</td><td class="date">2026-11-10</td><td><span class="pill planned">Planned</span></td></tr>
-        <tr><td class="num">2</td><td class="id"><a href="#r3">R3.1</a></td><td>STruC++ spike: the sample project through the compiler under the TwinCAT dialect</td><td class="num">2 d</td><td class="date">2026-11-11</td><td class="date">2026-11-12</td><td><span class="pill planned">Planned</span></td></tr>
-        <tr><td class="num">3</td><td class="id"><a href="#r4">R4</a></td><td>Objects-tree model (deepening roadmap P7)</td><td class="num">4 d</td><td class="date">2026-11-13</td><td class="date">2026-11-18</td><td><span class="pill planned">Needs Windows machine</span></td></tr>
-        <tr><td class="num">4</td><td class="id"><a href="#r2">R2</a></td><td>Create a new TwinCAT project from the extension's start view</td><td class="num">5 d</td><td class="date">2026-11-19</td><td class="date">2026-11-25</td><td><span class="pill open">Decisions open</span></td></tr>
-        <tr><td class="num">5</td><td class="id"><a href="#r3">R3.2</a></td><td>STruC++ compile command with errors mapped to the panes</td><td class="num">5 d</td><td class="date">2026-11-26</td><td class="date">2026-12-02</td><td><span class="pill open">Decisions open</span></td></tr>
-        <tr><td class="num">6</td><td class="id"><a href="#r3">R3.3</a></td><td>STruC++ packaging, licence files, settings, docs</td><td class="num">3 d</td><td class="date">2026-12-03</td><td class="date">2026-12-07</td><td><span class="pill open">Decisions open</span></td></tr>
-      </tbody>
-    </table>
+  <p>Cards run in work order. Open a card for its details. Estimates are working days for one developer; dates are forecasts over working days, assuming items run one after another, and only the order is binding. The bar on each card shows where it falls between Nov 10 and Dec 8. Source of truth: <code>ROADMAP.md</code>.</p>
+
+  <section class="grid" aria-label="Order of work">
+
+    <details class="card" id="r1">
+      <summary>
+        <div class="card-top"><span>#1</span><span class="id">R1</span><span class="pill planned">Planned</span><span class="chev" aria-hidden="true">›</span></div>
+        <div class="card-title">Generate ST button keeps its rounded end in single-project workspaces</div>
+        <div class="bar" aria-hidden="true"><span style="left:0%;width:4.8%"></span></div>
+        <div class="card-foot"><span>0.5 d</span><span>Nov 10</span></div>
+      </summary>
+      <div class="body">
+        <div class="block"><h4>Problem</h4><p>Generate ST is a split button: the main button plus a caret that opens the project picker. The caret appears only with two or more PLC projects. With one project it is hidden, but the main button keeps its squared right corners, so it looks cut off.</p></div>
+        <div class="block"><h4>Cause</h4><p><code>media/editor.css:413-416</code> squares the main button's right corners in every case. The caret starts hidden (<code>src/customEditorProvider.js:559</code>) and <code>media/editor.js</code> shows it only for two or more projects.</p></div>
+        <div class="block"><h4>Plan</h4><p>Square the corners only while the caret is visible: the webview toggles a class on the button group together with the caret, and the CSS keys on that class. CSS <code>:has()</code> is not an option: VS Code 1.66 ships a Chromium that predates it.</p></div>
+        <div class="block"><h4>Done when</h4><p>Both states look right in the dev host, and both browser harnesses pass.</p></div>
+      </div>
+    </details>
+
+    <details class="card" id="r3-1">
+      <summary>
+        <div class="card-top"><span>#2</span><span class="id">R3.1</span><span class="pill planned">Planned</span><span class="chev" aria-hidden="true">›</span></div>
+        <div class="card-title">STruC++ spike: the sample project through the compiler under the TwinCAT dialect</div>
+        <div class="bar" aria-hidden="true"><span style="left:4.8%;width:9.5%"></span></div>
+        <div class="card-foot"><span>2 d</span><span>Nov 11 – 12</span></div>
+      </summary>
+      <div class="body">
+        <div class="block wide"><h4>Goal of R3 overall</h4><p>Check a TwinCAT project from the extension with the IEC 61131-3 compiler STruC++ (the <code>AbuShaqra/STruCpp</code> fork) under the TwinCAT dialect, and show its errors in the editor panes. R3 runs in three phases: this spike, the check command (#5) and packaging (#6).</p></div>
+        <div class="block"><h4>This phase</h4><p>Run the sample project through the STruC++ CLI with the TwinCAT dialect profile and list every construct it rejects. That list sizes the check command and packaging.</p></div>
+        <div class="block"><h4>What exists</h4>
+          <ul>
+            <li>The fork (v0.7.0) loads dialect profiles with <code>--dialect-file</code>; features today: <code>program_methods</code>, <code>pointer_to</code>, <code>reference_to</code>, <code>ref_assign</code>.</li>
+            <li>The profile is in the repository as <code>resources/dialects/twincat3.json</code>: it builds on plain IEC and turns on all four features.</li>
+            <li>The toolkit already turns TwinCAT XML into one ST unit per object, with a line map back to each pane.</li>
+          </ul>
+        </div>
+        <div class="block"><h4>Constraints</h4>
+          <ul>
+            <li><b>Licence.</b> STruC++ is GPL-3.0-only; the extension is MIT. The compiler always runs as a separate process, never loaded into the extension, and ships with its licence and a source link.</li>
+            <li><b>Runtime.</b> STruC++ needs Node 22 or later.</li>
+            <li><b>Offline.</b> Nothing is downloaded at run time.</li>
+          </ul>
+        </div>
+        <div class="block wide settled"><h4>Decisions, settled Nov 9</h4>
+          <ol>
+            <li><b>Output:</b> check only. Errors in the panes, no files written, no g++ needed. Generated C++ or a built program can come later as a new item.</li>
+            <li><b>Compiler:</b> bundled in the extension as a single-file build.</li>
+            <li><b>Node 22:</b> found on the user's machine (PATH or a setting), with a clear message when it is missing. VS Code 1.66 support stays.</li>
+          </ol>
+        </div>
+      </div>
+    </details>
+
+    <details class="card" id="r4">
+      <summary>
+        <div class="card-top"><span>#3</span><span class="id">R4</span><span class="pill wait">Needs Windows</span><span class="chev" aria-hidden="true">›</span></div>
+        <div class="card-title">Objects-tree model (deepening roadmap P7)</div>
+        <div class="bar" aria-hidden="true"><span style="left:14.3%;width:19%"></span></div>
+        <div class="card-foot"><span>4 d</span><span>Nov 13 – 18</span></div>
+      </summary>
+      <div class="body">
+        <div class="block"><h4>Goal</h4><p>Give the TwinCAT Objects view a real node model with no VS Code dependency, so the tree provider becomes a thin adapter. The last open phase of the deepening roadmap.</p></div>
+        <div class="block"><h4>Plan</h4><p>A new <code>src/objectsTreeModel.js</code> holds the node graph: parent links, children and stable ids. It takes over the "fewer than two projects means a flat tree" rule from the LSP's project-ownership module (<code>src/lsp/projectMap.js:297</code>). The provider reads parents and children straight from the model, and the reveal test no longer needs a <code>vscode</code> stub.</p></div>
+        <div class="block wide"><h4>Done when</h4><p>Finding a node's parent needs no scan and builds no sibling nodes; each node's id and menu context are set in one place; the suite and typecheck pass; and the live dev-host test passes on your Windows machine. That test is mandatory: reveal and tab identity are exactly what this changes, and only the live test caught the 0.6.0 duplicate-tab bug in this area.</p></div>
+      </div>
+    </details>
+
+    <details class="card" id="r2">
+      <summary>
+        <div class="card-top"><span>#4</span><span class="id">R2</span><span class="pill wait">Needs Windows</span><span class="chev" aria-hidden="true">›</span></div>
+        <div class="card-title">Create a new TwinCAT project from the extension's start view</div>
+        <div class="bar" aria-hidden="true"><span style="left:33.3%;width:28.6%"></span></div>
+        <div class="card-foot"><span>6 d</span><span>Nov 19 – 26</span></div>
+      </summary>
+      <div class="body">
+        <div class="block"><h4>Goal</h4><p>A user with no TwinCAT project in the workspace, or an empty folder, creates one from the extension without opening TwinCAT XAE first.</p></div>
+        <div class="block"><h4>Start view</h4><p>The TwinCAT Objects view has no empty-state content today. It gets a <b>Create TwinCAT Project</b> button bound to a new command, also in the Command Palette.</p></div>
+        <div class="block wide"><h4>Key constraint</h4><p>A TwinCAT solution chains <code>.sln</code> → <code>.tsproj</code> → <code>.plcproj</code>, and only XAE has ever written a skeleton XAE accepts: hand-written ones were refused. So the templates are skeletons XAE produced, copied with every identity GUID regenerated.</p></div>
+        <div class="block wide settled"><h4>Decisions, settled Nov 9</h4>
+          <ol>
+            <li><b>Approach:</b> the template, with XAE automation offered as well where TwinCAT is installed.</li>
+            <li><b>Scope:</b> a new solution only, in an empty or project-less folder.</li>
+            <li><b>TwinCAT version:</b> both 3.1.4026 and 3.1.4024, the user picks. The 4026 skeleton already exists; the 4024 one must be made by a 4024 XAE on your machine. Each is proven to open and build in its own XAE.</li>
+            <li><b>Starter content:</b> <code>PROGRAM MAIN</code>, the <code>PlcTask</code> that calls it, and an empty GVL.</li>
+          </ol>
+        </div>
+      </div>
+    </details>
+
+    <details class="card" id="r3-2">
+      <summary>
+        <div class="card-top"><span>#5</span><span class="id">R3.2</span><span class="pill planned">Planned</span><span class="chev" aria-hidden="true">›</span></div>
+        <div class="card-title">STruC++ check command with errors mapped to the panes</div>
+        <div class="bar" aria-hidden="true"><span style="left:61.9%;width:23.8%"></span></div>
+        <div class="card-foot"><span>5 d</span><span>Nov 27 – Dec 3</span></div>
+      </summary>
+      <div class="body">
+        <div class="block"><h4>This phase</h4><p>A <b>Check with STruC++</b> command converts the project to ST, runs the compiler as a full semantic check, and maps each error to the right component and pane, in both the Problems view and the pane markers.</p></div>
+        <div class="block"><h4>Depends on</h4><p>The spike (#2): what the compiler rejects on the sample decides how much conversion work this needs. Background, constraints and decisions are on the #2 card.</p></div>
+      </div>
+    </details>
+
+    <details class="card" id="r3-3">
+      <summary>
+        <div class="card-top"><span>#6</span><span class="id">R3.3</span><span class="pill planned">Planned</span><span class="chev" aria-hidden="true">›</span></div>
+        <div class="card-title">STruC++ bundling, Node 22 discovery, licence files, settings, docs</div>
+        <div class="bar" aria-hidden="true"><span style="left:85.7%;width:14.3%"></span></div>
+        <div class="card-foot"><span>3 d</span><span>Dec 4 – 8</span></div>
+      </summary>
+      <div class="body">
+        <div class="block"><h4>This phase</h4><p>Bundle the single-file compiler in the extension, find a Node 22 or later on the user's machine and explain clearly when there is none, ship the GPL licence and source link, and add settings (Node path, dialect file) and documentation.</p></div>
+        <div class="block"><h4>Depends on</h4><p>The check command (#5). Background, constraints and decisions are on the #2 card.</p></div>
+      </div>
+    </details>
+
   </section>
 
-  <section class="why" aria-label="Why this order">
-    <h2>Why this order</h2>
-    <ol>
-      <li><b>R1 first.</b> Half a day, confined to the webview, and it fixes a visible defect now.</li>
-      <li><b>The STruC++ spike next.</b> The compiler work is the largest unknown. The spike needs no decisions, and what the compiler rejects on the sample project sizes R3 and settles its open questions while other work goes on.</li>
-      <li><b>R4 before R2.</b> R2 adds an empty state and a create flow to the Objects tree, and R4 rebuilds that tree's model. Doing R4 first means R2 is written once, against the new model.</li>
-      <li><b>R2, then the rest of R3.</b> Both need your decisions, listed under each item. R2 also needs its template proven in XAE on your machine, the same session R4's live test needs.</li>
-    </ol>
+  <section class="grid sub" aria-label="More">
+    <details class="card" id="why">
+      <summary>
+        <div class="card-top"><span>About</span><span class="chev" aria-hidden="true">›</span></div>
+        <div class="card-title">Why this order</div>
+      </summary>
+      <div class="body">
+        <div class="block wide">
+          <ol>
+            <li><b>R1 first.</b> Half a day, confined to the webview, and it fixes a visible defect now.</li>
+            <li><b>The STruC++ spike next.</b> The compiler work is the largest unknown, and the spike sizes the rest of R3 while other work goes on.</li>
+            <li><b>R4 before R2.</b> R2 adds an empty state and a create flow to the Objects tree, and R4 rebuilds that tree's model. Doing R4 first means R2 is written once.</li>
+            <li><b>R2, then the rest of R3.</b> R2 needs its templates made and proven in XAE on your machine, the same session R4's live test needs. The rest of R3 builds on the spike.</li>
+          </ol>
+        </div>
+      </div>
+    </details>
+
+    <details class="card" id="backlog">
+      <summary>
+        <div class="card-top"><span>Backlog</span><span class="chev" aria-hidden="true">›</span></div>
+        <div class="card-title">Not scheduled · 5 groups</div>
+      </summary>
+      <div class="body">
+        <div class="block wide">
+          <ul>
+            <li>Indexing speed: cache signature-file discovery per root; per-project background scan; persistent archive cache.</li>
+            <li>Rename: keep <code>.plcproj</code> updates inside the rename transaction; rename sibling implementors of an interface.</li>
+            <li>Reverse index for Find References, only past about 1000 files or 200 ms.</li>
+            <li>Tooling: ESLint 10; a development-only dependency advisory.</li>
+            <li>Language: nested block comments; hover help for pragmas.</li>
+          </ul>
+        </div>
+      </div>
+    </details>
+
+    <details class="card" id="done">
+      <summary>
+        <div class="card-top"><span>Done</span><span class="chev" aria-hidden="true">›</span></div>
+        <div class="card-title">Finished items · none yet</div>
+      </summary>
+      <div class="body">
+        <div class="block wide"><p>Roadmap items finished from now on are listed here with their pull request. Earlier work is in the repository's releases.</p></div>
+      </div>
+    </details>
   </section>
 
-  <section class="ladder" aria-label="Roadmap items">
-    <article class="rung" id="r1">
-      <div class="rung-head">
-        <span class="rung-id">R1</span>
-        <h3>Generate ST button: rounded end in single-project workspaces</h3>
-        <div class="rung-tags"><span class="pill planned">Order 1 · 0.5 d · Nov 10</span></div>
-      </div>
-      <div class="block">
-        <h4>Problem</h4>
-        <p>Generate ST is a split button: the main button plus a caret that opens the project picker. The caret appears only when the workspace has two or more PLC projects. With one project it is hidden, but the main button keeps its squared right corners, so it looks cut off.</p>
-      </div>
-      <div class="block">
-        <h4>Cause</h4>
-        <p><code>media/editor.css:413-416</code> squares the main button's right corners in every case. The caret starts hidden (<code>src/customEditorProvider.js:559</code>) and <code>media/editor.js</code> shows it only for two or more projects.</p>
-      </div>
-      <div class="block">
-        <h4>Plan</h4>
-        <p>Square the corners only while the caret is visible: the webview toggles a class on the button group together with the caret, and the CSS keys on that class. CSS <code>:has()</code> is not an option, because the oldest supported VS Code (1.66) ships a Chromium that predates it.</p>
-      </div>
-      <div class="block">
-        <h4>Done when</h4>
-        <p>Both states look right in the dev host, and both browser harnesses pass.</p>
-      </div>
-    </article>
-
-    <article class="rung" id="r4">
-      <div class="rung-head">
-        <span class="rung-id">R4</span>
-        <h3>Objects-tree model (deepening roadmap P7)</h3>
-        <div class="rung-tags"><span class="pill planned">Order 3 · 4 d · Nov 13–18</span></div>
-      </div>
-      <div class="block">
-        <h4>Goal</h4>
-        <p>Give the TwinCAT Objects view a real node model with no VS Code dependency, so the tree provider becomes a thin adapter. This is the last open phase of the deepening roadmap.</p>
-      </div>
-      <div class="block">
-        <h4>Plan</h4>
-        <p>A new <code>src/objectsTreeModel.js</code> holds the node graph: parent links, children and stable ids. It also takes over the "fewer than two projects means a flat tree" rule, which today sits in the LSP's project-ownership module (<code>src/lsp/projectMap.js:297</code>). The tree provider then reads parents and children straight from the model, and the reveal test no longer needs a <code>vscode</code> stub.</p>
-      </div>
-      <div class="block">
-        <h4>Done when</h4>
-        <p>Finding a node's parent needs no scan and builds no sibling nodes; each node's id and menu context are set in one place; the suite and typecheck pass; and the live dev-host test passes on your Windows machine. That last test is mandatory, because reveal and tab identity are exactly what this changes, and only the live test caught the 0.6.0 duplicate-tab bug in this area.</p>
-      </div>
-    </article>
-
-    <article class="rung" id="r2">
-      <div class="rung-head">
-        <span class="rung-id">R2</span>
-        <h3>Create a new TwinCAT project from the extension</h3>
-        <div class="rung-tags"><span class="pill open">Order 4 · 5 d · Nov 19–25 · Decisions open</span></div>
-      </div>
-      <div class="block">
-        <h4>Goal</h4>
-        <p>A user with no TwinCAT project in the workspace, or an empty folder, creates one from the extension's start view without opening TwinCAT XAE first.</p>
-      </div>
-      <div class="block">
-        <h4>Start view</h4>
-        <p>The TwinCAT Objects view has no empty-state content today. It gets a <b>Create TwinCAT Project</b> button bound to a new command, also available from the Command Palette.</p>
-      </div>
-      <div class="block">
-        <h4>Key constraint</h4>
-        <p>A TwinCAT solution chains <code>.sln</code> → <code>.tsproj</code> → <code>.plcproj</code>. Only XAE has ever written a skeleton XAE accepts: hand-written ones were refused, and the on-disk template is a 67-byte stub XAE expands when it inserts a project. Two routes:</p>
-        <ul>
-          <li><b>Template from an XAE-made skeleton.</b> Ship a skeleton XAE produced, then copy it, rename it and regenerate every identity GUID. Offline, any OS, no TwinCAT needed. Must be proven to open and build in XAE first.</li>
-          <li><b>Drive XAE.</b> Automate XAE the way the sample-project script already does. Always valid, but Windows-only and needs TwinCAT installed.</li>
-        </ul>
-      </div>
-      <div class="decisions">
-        <h4>Decisions open</h4>
-        <ol>
-          <li>Template, XAE automation, or the template with XAE automation where TwinCAT is present.</li>
-          <li>A full solution only, or also a PLC project added to an existing solution.</li>
-          <li>Which TwinCAT version the template targets.</li>
-          <li>Starter content: an empty <code>MAIN</code>, a task, a GVL.</li>
-        </ol>
-      </div>
-    </article>
-
-    <article class="rung" id="r3">
-      <div class="rung-head">
-        <span class="rung-id">R3</span>
-        <h3>Compile TwinCAT projects with STruC++</h3>
-        <div class="rung-tags"><span class="pill open">Orders 2, 5, 6 · 10 d · Decisions open</span></div>
-      </div>
-      <div class="block">
-        <h4>Goal</h4>
-        <p>Compile a TwinCAT project from the extension with the IEC 61131-3 compiler STruC++ (the <code>AbuShaqra/STruCpp</code> fork), under the TwinCAT dialect, and show its errors in the editor panes.</p>
-      </div>
-      <div class="block">
-        <h4>What exists</h4>
-        <ul>
-          <li>The fork (v0.7.0) loads <b>dialect profiles</b>: JSON files selected with <code>--dialect</code>, <code>--dialect-file</code> or <code>--dialect-path</code>. Profile features today: <code>program_methods</code>, <code>pointer_to</code>, <code>reference_to</code>, <code>ref_assign</code>.</li>
-          <li>The TwinCAT 3 dialect profile is already in the repository as <code>resources/dialects/twincat3.json</code>: it builds on plain IEC and turns on all four features. It is passed to the compiler with <code>--dialect-file</code>.</li>
-          <li>The toolkit already turns TwinCAT XML into one ST unit per object, with a line map back to each pane. That is the compiler's input and the route for mapping its errors back.</li>
-        </ul>
-      </div>
-      <div class="block">
-        <h4>Constraints</h4>
-        <ul>
-          <li><b>Licence.</b> STruC++ is GPL-3.0-only, with a runtime-library exception for compiled programs; the extension is MIT. The compiler stays a separate program the extension runs as a process, never loaded into the extension, and any bundled copy ships with its licence and a source reference.</li>
-          <li><b>Runtime.</b> STruC++ needs Node 22 or later; the extension supports VS Code 1.66 and later, whose bundled Node is older.</li>
-          <li><b>Offline.</b> The extension works offline, so a bundled compiler fits better than a download on first use.</li>
-          <li><b>Binaries.</b> Building the generated C++ into a program needs <code>g++</code>; checking and generating C++ does not.</li>
-        </ul>
-      </div>
-      <div class="block">
-        <h4>Phases</h4>
-        <ol>
-          <li><b>R3.1 Spike</b> (2 d, Nov 11–12). Run the sample project through the STruC++ CLI with the TwinCAT dialect profile, and list every construct it rejects. This sizes the rest.</li>
-          <li><b>R3.2 Compile command</b> (5 d, Nov 26 – Dec 2). Convert the project, run the compiler, and map errors to the right component and pane.</li>
-          <li><b>R3.3 Packaging</b> (3 d, Dec 3–7). Bundle or locate the compiler, ship the licence files, add settings and documentation.</li>
-        </ol>
-      </div>
-      <div class="decisions">
-        <h4>Decisions open</h4>
-        <ol>
-          <li>What compiling produces: checking only, generated C++, or a built program.</li>
-          <li>Bundle the compiler in the extension, or use one the user installs.</li>
-          <li>How to supply Node 22: raise the minimum VS Code version, or find a Node on the user's machine.</li>
-        </ol>
-      </div>
-    </article>
-  </section>
-
-  <section class="backlog" aria-label="Backlog">
-    <h2>Backlog, not scheduled</h2>
-    <p class="note">Carried from the project's handoff notes. Each waits for a recorded reason.</p>
-    <ul>
-      <li>Indexing speed: cache signature-file discovery per root; per-project background scan; persistent archive cache.</li>
-      <li>Rename: keep <code>.plcproj</code> updates inside the rename transaction; rename sibling implementors of an interface.</li>
-      <li>Reverse index for Find References, only past about 1000 files or 200 ms.</li>
-      <li>Tooling: ESLint 10; a development-only dependency advisory.</li>
-      <li>Language: nested block comments; hover help for pragmas.</li>
-    </ul>
-  </section>
-
-  <section class="backlog" aria-label="Done">
-    <h2>Done</h2>
-    <p>Roadmap items finished from now on are listed here with their pull request. Earlier work is in the repository's releases.</p>
-  </section>
-
-  <footer>
-    <span>Source: <code>ROADMAP.md</code> in <code>AbuShaqra/TC_PLC_Toolkit</code>.</span>
-  </footer>
+  <footer>Source: <code>ROADMAP.md</code> in <code>AbuShaqra/TC_PLC_Toolkit</code>.</footer>
 </div>
+
+<script>
+(function () {
+  var cards = function () { return document.querySelectorAll('details.card'); };
+  document.getElementById('expand-all').addEventListener('click', function () { cards().forEach(function (d) { d.open = true; }); });
+  document.getElementById('collapse-all').addEventListener('click', function () { cards().forEach(function (d) { d.open = false; }); });
+  var id = (location.hash || '').slice(1);
+  if (id) { var el = document.getElementById(id); if (el && el.tagName === 'DETAILS') el.open = true; }
+})();
+</script>

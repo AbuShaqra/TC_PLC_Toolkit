@@ -19,20 +19,21 @@ after it. An item leaves the table for "Done" once its PR is merged into `dev`, 
 | 1 | R1 | Generate ST button keeps its rounded end in single-project workspaces | 0.5 d | 2026-11-10 | 2026-11-10 | Planned |
 | 2 | R3.1 | STruC++ spike: sample project through the compiler under the TwinCAT dialect | 2 d | 2026-11-11 | 2026-11-12 | Planned |
 | 3 | R4 | Objects-tree model (deepening roadmap P7) | 4 d | 2026-11-13 | 2026-11-18 | Planned — needs the user's Windows machine |
-| 4 | R2 | Create a new TwinCAT project from the extension's start view | 5 d | 2026-11-19 | 2026-11-25 | Planned — decisions open |
-| 5 | R3.2 | STruC++ compile command with errors mapped to the panes | 5 d | 2026-11-26 | 2026-12-02 | Planned — decisions open |
-| 6 | R3.3 | STruC++ packaging, licence files, settings, docs | 3 d | 2026-12-03 | 2026-12-07 | Planned — decisions open |
+| 4 | R2 | Create a new TwinCAT project from the extension's start view | 6 d | 2026-11-19 | 2026-11-26 | Planned — needs a 4024 skeleton from the user's XAE |
+| 5 | R3.2 | STruC++ check command with errors mapped to the panes | 5 d | 2026-11-27 | 2026-12-03 | Planned |
+| 6 | R3.3 | STruC++ bundling, Node 22 discovery, licence files, settings, docs | 3 d | 2026-12-04 | 2026-12-08 | Planned |
 
-**Total:** 19.5 working days, forecast to finish **2026-12-07**.
+**Total:** 20.5 working days, forecast to finish **2026-12-08**. All decisions are settled (2026-11-09);
+targeting two TwinCAT versions added a day to R2.
 
 **Why this order.**
 1. **R1 first:** half a day, isolated to the webview, and it fixes a visible defect now.
 2. **R3.1 (spike) next:** the STruC++ work is the largest unknown. The spike needs no decisions, and what
-   the compiler rejects on the sample decides R3's size and the open R3 questions while other work proceeds.
+   the compiler rejects on the sample decides the size of R3.2–R3.3 while other work proceeds.
 3. **R4 before R2:** R2 adds an empty state and a create flow to the Objects tree, and R4 rebuilds the
    Objects tree's model. Doing R4 first means R2 is written once, against the new model.
-4. **R2 then R3.2–R3.3:** both need the user's decisions (listed under each item). R2 also needs the
-   template proven in XAE on the user's machine, the same session R4's dev-host gate needs.
+4. **R2 then R3.2–R3.3:** R2 needs its templates made and proven in XAE on the user's machine, the same
+   session R4's dev-host gate needs. R3.2–R3.3 build on what the spike finds.
 
 ### R1 — Generate ST button: rounded end in single-project workspaces
 
@@ -88,9 +89,14 @@ Two ways around it:
 - **(b) Drive XAE** — automate XAE as `scripts/Create sample PLC project/build-sample-solution.ps1` already
   does. Always valid output, but Windows-only and needs TwinCAT installed.
 
-**Decisions open.** (1) approach (a), (b), or (a) with (b) where TwinCAT is present; (2) what gets created —
-a full solution, or a PLC project added to an existing solution as well; (3) which TwinCAT version the
-template targets; (4) starter content (an empty `MAIN`, a task, a GVL?).
+**Decisions (settled 2026-11-09).**
+1. **Approach:** (a) the template, with (b) XAE automation offered as well where TwinCAT is installed.
+2. **Scope:** a new solution only (`.sln` → `.tsproj` → `.plcproj`) in an empty or project-less folder.
+   Adding a PLC project to an existing solution is out of scope.
+3. **TwinCAT version:** both 3.1.4026 and 3.1.4024, the user picks. The 4026 skeleton comes from the one
+   XAE 3.1.4026.22 wrote for `sample/`; the 4024 skeleton must be produced by a 4024 XAE on the user's
+   machine. Each template is proven to open and build in its own XAE version.
+4. **Starter content:** `PROGRAM MAIN`, the `PlcTask` that calls it, and an empty GVL.
 
 ### R3 — Compile TwinCAT projects with STruC++
 
@@ -119,14 +125,18 @@ template targets; (4) starter content (an empty `MAIN`, a task, a GVL?).
 **Phases** (scheduled separately in the table above).
 1. **R3.1 Spike** — run the `sample/` project's ST through the STruC++ CLI with `resources/dialects/twincat3.json`, under the
    TwinCAT dialect; list every construct it rejects. This sizes the rest.
-2. **R3.2 Compile command** — a *Compile with STruC++* command that converts the project, runs the compiler and
-   maps errors to the right component and pane (VS Code Problems + pane markers).
-3. **R3.3 Packaging** — bundle or locate the compiler, licence files, settings (compiler path, dialect, output
-   folder), documentation.
+2. **R3.2 Check command** — a *Check with STruC++* command that converts the project, runs the compiler as a
+   full semantic check and maps its errors to the right component and pane (VS Code Problems + pane markers).
+3. **R3.3 Packaging** — bundle the compiler, find a Node ≥ 22, ship the licence files, add settings (Node
+   path, dialect file) and documentation.
 
-**Decisions open.** (1) what "compile" produces: checking only, generated C++, or a built binary; (2) bundle
-the compiler in the VSIX or use one the user installs; (3) how to supply Node ≥ 22 (raise `engines.vscode`,
-or find a Node on the user's machine).
+**Decisions (settled 2026-11-09).**
+1. **Output:** check only — errors in the panes, no files written, no `g++` needed. Generated C++ or a built
+   program can be added later as a new roadmap item.
+2. **Compiler source:** bundled in the VSIX (`dist/strucpp-bundle.cjs`), run as a separate process, shipped
+   with its GPL licence and a link to its source.
+3. **Node ≥ 22:** found on the user's machine (`PATH`, or a setting that names it). When none is found, the
+   command explains what is missing and how to fix it. `engines.vscode` stays at `^1.66`.
 
 ## Backlog (not scheduled)
 

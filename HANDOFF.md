@@ -35,11 +35,13 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
 - **Stale remote branches:** `claude/new-session-ynrdo4` and `claude/project-thread-o6i1sa` are merged into `dev`
   (checked 2026-11-09). The user asked to delete them, but this cloud session's git proxy drops every push
   except to the session branch, so they still exist — delete from the GitHub UI or a local clone.
+- **Merge `ccr-d5b51254-r1vu2b` into `dev` by SQUASH only** (user decision 2026-11-09): commit `65d5b1c` on it
+  names a private repository the user wants kept out of this repo; the final tree is clean. Delete the branch after.
 
 ## Roadmap
 Planned work, in order, is in [ROADMAP.md](ROADMAP.md) (page: https://claude.ai/artifact/8RG7TZtBV2cuupsrwWtknv):
 in order R1 Generate ST split-button fix → R3.1 STruC++ spike → R4 Objects-tree model (deepening P7) → R2 create
-a TwinCAT project → R3.2–R3.3 STruC++ compile + packaging; forecast end 2026-12-07. R2/R3 decisions open. None started.
+a TwinCAT project → R3.2–R3.3 STruC++ compile + packaging; forecast end 2026-12-08. All R2/R3 decisions settled 2026-11-09 (see ROADMAP.md). None started.
 
 ## Open / deferred (each with the reason it waits)
 - Deepening roadmap: everything but P7 is shipped or ruled (P9 no-go; rulings in the findings file). P7 is now
