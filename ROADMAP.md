@@ -35,7 +35,7 @@ for it where a row says so.
 
 | Order | ID | Item | Estimate | Start | End | Status |
 |-------|----|------|----------|-------|-----|--------|
-| 1 | S2 | Close the fork's gaps: 14 PR-sized steps (plan: [docs/s2-strucpp-fork-plan.md](docs/s2-strucpp-fork-plan.md)) | 22.5 d | 2026-11-10 | 2026-12-09 | In progress — steps 1 (fork PR #5), 1b (#6), 2 (#7), 3 (#8) and 4 (#9) merged 2026-11-09; step 5 next. R3.2 waits for it |
+| 1 | S2 | Close the fork's gaps: 14 PR-sized steps (plan: [docs/s2-strucpp-fork-plan.md](docs/s2-strucpp-fork-plan.md)) | 22.5 d | 2026-11-10 | 2026-12-09 | In progress — steps 1 (fork PR #5), 1b (#6), 2 (#7), 3 (#8), 4 (#9) and 5 (#10) merged 2026-11-09; step 6 next. R3.2 waits for it |
 
 **Why this order.**
 1. **R3.1 (spike) first:** the STruC++ work is the largest unknown. The spike needs no decisions, and what
