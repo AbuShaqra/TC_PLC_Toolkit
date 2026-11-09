@@ -7,9 +7,11 @@ Roadmap item **S2** (fork lane). The merged design: the user's compiler findings
 
 - **Scope: all 13 steps** of §3 (about 22 working days), one PR per step into the fork's `development`.
 - **`iec` means Ed. 3 (2013).** Interface PROPERTY is therefore a vendor form, behind feature `property`.
-- **The built-in profile is renamed `iec-3`, with `iec` kept as an alias** (user, 2026-11-09: "so we can easily
-  add iec-4 later"). `--dialect iec`, `"extends": "iec"` and the no-flag default keep working unchanged;
-  diagnostics and `--check --json` report the canonical id `iec-3`; an `iec-4` profile is a later item. Step 1b.
+- **The built-in profile is renamed `iec-3`, with NO `iec` alias** (user, 2026-11-09: "so we can easily add
+  iec-4 later"; alias dropped "to avoid confusion"). Every `iec` in the fork (CLI default, tests, docs,
+  examples) becomes `iec-3`; `--dialect iec` and `"extends": "iec"` are refused with an error that names
+  `iec-3` (a hint, not an alias); the toolkit's vendored profile changes `extends` to `iec-3` in the same step.
+  An `iec-4` profile is a later item. Step 1b.
 - **Chained comparisons follow the Annex A grammar** (equality binds looser than relational comparison).
 - **Standard forms are always on** — fixing a standard construct the fork wrongly refused is a defect fix and
   may widen what `iec` accepts; vendor forms stay behind features, off under `iec` (Q2; default taken, the
@@ -210,7 +212,7 @@ Rules for every step:
 | Step | PR | Content | Effort |
 |---|---|---|---|
 | 1 | Diagnostics plumbing | A13 lexer positions (one error converter; the parser runs after lexer errors); A14 `--check --json`; warnings on failure in every mode | 1.5 |
-| 1b | `iec-3` profile id | Rename the built-in profile to `iec-3`; keep `iec` as an alias (CLI, `extends`, default, language server); report the canonical id; docs (`DIALECTS.md`) | 0.5 |
+| 1b | `iec-3` profile id | Rename the built-in profile to `iec-3`, no alias: CLI default, every test/doc/example, the language server's docs; `iec` refused with an error naming `iec-3`; toolkit's vendored profile `extends` → `iec-3` | 0.5 |
 | 2 | Pragmas | A1, and the `IEC_COMPLIANCE.md` pragma rows | 1 |
 | 3 | Self and super forms | B1 `SUPER.` (always-on); A4 `self_caret`; A5 `REF=` on THIS members under `ref_assign`; correct `DIALECTS.md:79` and `IEC_COMPLIANCE.md:209` | 1.5 |
 | 4 | Member-chain calls | A3: instance chains, struct-held FBs, `arr[i].M()` | 2.5 |
