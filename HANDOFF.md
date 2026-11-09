@@ -111,6 +111,16 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   XAE 3.1.4024 / 3.1.4026 — the `.xtv` `TmcHash` is kept stale on purpose (XAE recomputes it) and is the first thing
   to suspect if 4026 complains; (2) `node test/devhost/run.js`; (3) eyeball sidebar, welcome buttons and the start
   page in light + dark themes; (4) phase 2 (XAE automation, decision 1) — not started, TODO in ROADMAP.md R2.
+- **Licence switched to AGPL-3.0-or-later** (user's call 2026-11-09): `LICENSE` is the verbatim gnu.org text
+  (sha256 `0d96a4ff…abcb0`), `package.json` `license`, README "License" (≤ 0.10.1 stay MIT). Monaco keeps its MIT
+  notice (`media/monaco-editor/LICENSE.txt`, THIRD-PARTY-NOTICES.md). Takes effect with the next release (R11).
+  Optional, not done: SPDX headers per source file.
+- **R11 Marketplace publishing** added after R2 (user's ask 2026-11-09). The user CREATED accounts on the VS Code
+  Marketplace and Open VSX 2026-11-09; publisher ID confirmed as `a-abushaqra` (= `package.json`); per release the user either uploads the VSIX or adds `VSCE_PAT`/`OVSX_PAT` secrets; our part is
+  ~1 h of metadata/CHANGELOG/README disclaimer + a secret-gated publish step in `release.yml`.
+- **Compiler name in the UI (user ruling 2026-11-09):** the extension's UI and user-facing README name no compiler
+  ("Compile project", not "Check with STruC++"); `test_start_contributions.js` pins that the start page never says
+  STruC++. Developer docs, ROADMAP.md and the published roadmap page may keep the name.
 - **Backlog scheduled 2026-11-09 (user's ask):** toolkit R6–R10 (R10 on trigger only) and fork S3a–S8 are now rows in
   ROADMAP.md with my own sizing (not measured) at the Nov 9 velocity, ~4 h of session per working day. **S3a (three
   false positives on correct code) goes before R3.2**; S7 (iec-3 audit) needs the user's decision first; S8 after R3.3.
