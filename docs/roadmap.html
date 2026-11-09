@@ -165,13 +165,14 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
 
     <details class="card" id="r3-1">
       <summary>
-        <div class="card-top"><span>#1</span><span class="id">R3.1</span><span class="pill planned">In progress</span><span class="chev" aria-hidden="true">›</span></div>
+        <div class="card-top"><span>#1</span><span class="id">R3.1</span><span class="pill wait">Findings done · 2 decisions</span><span class="chev" aria-hidden="true">›</span></div>
         <div class="card-title">STruC++ spike: the sample project through the compiler under the TwinCAT dialect</div>
         <div class="bar" aria-hidden="true"><span style="left:0%;width:10%"></span></div>
         <div class="card-foot"><span>2 d</span><span>Nov 10 – 11</span></div>
       </summary>
       <div class="body">
         <div class="block wide"><h4>Goal of R3 overall</h4><p>Check a TwinCAT project from the extension with the IEC 61131-3 compiler STruC++ (the <code>AbuShaqra/STruCpp</code> fork) under the TwinCAT dialect, and show its errors in the editor panes. R3 runs in three phases: this spike, the check command (#4) and packaging (#5).</p></div>
+        <div class="block wide settled" style="background:var(--warn-soft)"><h4 style="color:var(--warn)">Spike findings, Nov 9 · two decisions for you</h4><p>The sample, as converted, gives 27 parse errors. Ten constructs stand in the way: one is ours (methods emitted after the POU body), nine are compiler gaps. With scratch workarounds it compiles with 0 errors under the TwinCAT profile and 6 under plain IEC, exactly the profile's <code>REFERENCE TO</code> and <code>REF=</code>. Errors map back to the right pane. <b>Decide:</b> (1) what to do with the five constructs the compiler will still reject on correct code (suppress, label as compiler limitations, or wait for the fork); (2) R3.2 at 6&ndash;7 days for its full scope, or 5 days narrower. Details: <code>docs/r3.1-strucpp-spike.md</code>.</p></div>
         <div class="block"><h4>This phase</h4><p>Run the sample project through the STruC++ CLI with the TwinCAT dialect profile and list every construct it rejects. That list sizes the check command and packaging.</p></div>
         <div class="block"><h4>What exists</h4>
           <ul>

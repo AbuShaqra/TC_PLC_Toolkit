@@ -16,13 +16,18 @@ after it. An item leaves the table for "Done" once its PR is merged into `dev`, 
 
 | Order | ID | Item | Estimate | Start | End | Status |
 |-------|----|------|----------|-------|-----|--------|
-| 1 | R3.1 | STruC++ spike: sample project through the compiler under the TwinCAT dialect | 2 d | 2026-11-10 | 2026-11-11 | In progress (started 2026-11-09) |
+| 1 | R3.1 | STruC++ spike: sample project through the compiler under the TwinCAT dialect | 2 d | 2026-11-10 | 2026-11-11 | Findings done 2026-11-09 ([docs/r3.1-strucpp-spike.md](docs/r3.1-strucpp-spike.md)) — 2 decisions open |
 | 2 | R4 | Objects-tree model (deepening roadmap P7) | 4 d | 2026-11-12 | 2026-11-17 | Planned — needs the user's Windows machine |
 | 3 | R2 | Create a new TwinCAT project from the extension's start view | 6 d | 2026-11-18 | 2026-11-25 | Planned — needs a 4024 skeleton from the user's XAE |
 | 4 | R3.2 | STruC++ check command with errors mapped to the panes | 5 d | 2026-11-26 | 2026-12-02 | Planned |
 | 5 | R3.3 | STruC++ bundling, Node 22 discovery, licence files, settings, docs | 3 d | 2026-12-03 | 2026-12-05 | Planned |
 
-**Total remaining:** 20 working days, forecast to finish **2026-12-05**. All decisions are settled (2026-11-09).
+**Total remaining:** 20 working days, forecast to finish **2026-12-05**. R2's and R3's original decisions are settled
+(2026-11-09). **Open from the R3.1 spike** (`docs/r3.1-strucpp-spike.md`): (1) STruC++ still rejects five
+constructs the correct `sample/` uses (PROPERTY in an INTERFACE, a method call through a member chain,
+`TYPE … EXTENDS … : STRUCT`, `UNION`, `THIS^`) — suppress them, label them as compiler limitations, or wait for
+the fork; (2) R3.2 grows from 5 d to 6–7 d for its full scope (a line-preserving check emitter in the converter
+and check-only plumbing), or keeps 5 d with a narrower scope.
 R5 and R1 merged on 2026-11-09, ahead of their forecast, so the later dates were pulled in.
 
 **Why this order.**
