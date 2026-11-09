@@ -4,7 +4,7 @@ The order of planned work for the extension. **This file is the source of truth*
 (<https://claude.ai/artifact/8RG7TZtBV2cuupsrwWtknv>) is rendered from it by hand out of `docs/roadmap.html`.
 Keep both current in the same change — rules in [CLAUDE.md](CLAUDE.md) ("Keep the roadmap current").
 
-**Last updated:** 2026-11-09 (R4 merged, PR #30) · **Current release:** v0.10.1
+**Last updated:** 2026-11-09 (marketplace publishing added after R2, user's ask) · **Current release:** v0.10.1
 
 How to read it: items run top to bottom in the **Order** column. IDs are stable names and do not change
 when the order does. Estimates are working days for one developer; start and end dates are **forecasts**
@@ -18,6 +18,7 @@ after it. An item leaves the table for "Done" once its PR is merged into `dev`, 
 |-------|----|------|---------|-------------|-------|-----|--------|
 | 1 | R3.1 | STruC++ spike: sample project through the compiler under the TwinCAT dialect | 2 d | ~15 min (done) | 2026-11-09 | 2026-11-09 | Findings done 2026-11-09 ([docs/r3.1-strucpp-spike.md](docs/r3.1-strucpp-spike.md)); decisions taken |
 | 3 | R2 | TwinCAT sidebar (Activity Bar icon) + start page; create a new project (3.1.4024 / 3.1.4026) | 8.5 d | ~6 h + XAE proofs | 2026-11-12 | 2026-11-13 | **Next** — scope grown 2026-11-09 (user's ask). 4024 skeleton received 2026-11-09 (`resources/templates/xae-3.1.4024/`); done-when still needs both templates proven in XAE on the user's machine |
+| 3b | R11 | Publish to the VS Code Marketplace (and Open VSX) | 0.5 d | ~1 h + your account step | 2026-11-13 | 2026-11-13 | Planned (user's ask 2026-11-09) — after R2, so the first public version has the TwinCAT sidebar |
 | 4 | R3.2 | STruC++ check command with errors mapped to the panes | 7 d | ~4 h | 2026-11-16 | 2026-11-16 | Planned (full scope, 2026-11-09) — after S2 |
 | 5 | R3.3 | STruC++ bundling, Node 22 discovery, licence files, settings, docs | 3 d | ~2 h | 2026-11-17 | 2026-11-17 | Planned |
 | 6 | R6 | Indexing speed: memoize signature-file discovery per root; persisted archive cache; per-project background scan | 5.5 d | ~4 h | 2026-11-17 | 2026-11-18 | Planned (from the backlog, 2026-11-09) |
@@ -133,6 +134,22 @@ Two ways around it:
    XAE 3.1.4026.22 wrote for `sample/`; the 4024 skeleton must be produced by a 4024 XAE on the user's
    machine. Each template is proven to open and build in its own XAE version.
 4. **Starter content:** `PROGRAM MAIN`, the `PlcTask` that calls it, and an empty GVL.
+
+### R11 — Publish to the VS Code Marketplace (user's ask 2026-11-09)
+
+**Goal.** The extension installs from the VS Code Marketplace (and Open VSX, for VSCodium, Cursor and similar),
+starting with the first release that carries R2's TwinCAT sidebar.
+
+**The user's part (one-off, ~15 min):** create the publisher `a-abushaqra` (must equal `package.json`
+`publisher`) at marketplace.visualstudio.com/manage; then either upload the release VSIX by hand, or add an Azure
+DevOps token with the *Marketplace → Manage* scope as the repo secret `VSCE_PAT` (and an Open VSX token as
+`OVSX_PAT`). The publisher profile's "About" text was drafted 2026-11-09.
+
+**Our part (~1 h):** `CHANGELOG.md`; real `categories` / `keywords` / `homepage` / `bugs`; drop `--skip-license`
+from the package commands; a "not affiliated with Beckhoff" line in the README (TwinCAT is their trademark);
+README images HTTPS and not SVG; optional `"preview": true` until v1.0; a publish step in `release.yml` that runs
+only when the secret exists. **Before R3.3 ships**, the bundled GPL-3.0 STruC++ needs its licence text and source
+link in the VSIX (already in R3.3's scope).
 
 ### S2 — STruC++ fork: close the gaps the spike found
 

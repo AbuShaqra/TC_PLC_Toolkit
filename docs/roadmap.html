@@ -237,6 +237,20 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
       </div>
     </details>
 
+    <details class="card" id="r11">
+      <summary>
+        <div class="card-top"><span>#3b</span><span class="id">R11</span><span class="pill planned">Planned</span><span class="chev" aria-hidden="true">›</span></div>
+        <div class="card-title">Publish to the VS Code Marketplace and Open VSX</div>
+        <div class="bar" aria-hidden="true"><span style="left:40.91%;width:2.73%"></span></div>
+        <div class="card-foot"><span>0.5 d → ~1 h</span><span>Nov 13</span></div>
+      </summary>
+      <div class="body">
+        <div class="block"><h4>Goal</h4><p>Install the extension straight from the Marketplace, and from Open VSX for VSCodium and Cursor, starting with the first release that has the TwinCAT sidebar (your ask, Nov 9).</p></div>
+        <div class="block"><h4>Your part, about 15 minutes</h4><p>Create the publisher <code>a-abushaqra</code> on the Marketplace management page; then upload the release VSIX by hand, or add a Marketplace token as the repo secret <code>VSCE_PAT</code> (and <code>OVSX_PAT</code> for Open VSX) so releases publish themselves.</p></div>
+        <div class="block wide"><h4>Our part, about 1 hour</h4><p>A changelog; real categories, keywords and links; licence included in the package; a line saying the extension is not affiliated with Beckhoff; README images checked; optionally a preview flag until v1.0; and a publish step in the release workflow that runs only when the secret exists.</p></div>
+      </div>
+    </details>
+
     <details class="card" id="r3-2">
       <summary>
         <div class="card-top"><span>#4</span><span class="id">R3.2</span><span class="pill planned">Planned</span><span class="chev" aria-hidden="true">›</span></div>
@@ -513,6 +527,7 @@ var PLAN = [
   { lane: 'TC PLC Toolkit', num: 1, id: 'R3.1', card: 'r3-1', name: 'STruC++ spike',          est: '2 d → ~15 min', start: '2026-11-09', end: '2026-11-09', days: 0.3 },
   { lane: 'TC PLC Toolkit', num: 2, id: 'R4',   card: 'r4',   name: 'Objects-tree model',     est: '4 d → ~3 h',  start: '2026-11-09', end: '2026-11-09', machine: true },
   { lane: 'TC PLC Toolkit', num: 3, id: 'R2',   card: 'r2',   name: 'Sidebar + new project',  est: '8.5 d → ~6 h', start: '2026-11-12', end: '2026-11-13', days: 1.5, machine: true },
+  { lane: 'TC PLC Toolkit', num: '3b', id: 'R11', card: 'r11', name: 'Marketplace publishing', est: '0.5 d → ~1 h', start: '2026-11-13', end: '2026-11-13', days: 0.3, offset: 0.5, machine: true },
   { lane: 'TC PLC Toolkit', num: 4, id: 'R3.2', card: 'r3-2', name: 'STruC++ check',          est: '7 d → ~4 h',  start: '2026-11-16', end: '2026-11-16' },
   { lane: 'TC PLC Toolkit', num: 5, id: 'R3.3', card: 'r3-3', name: 'STruC++ packaging',      est: '3 d → ~2 h',  start: '2026-11-17', end: '2026-11-17', days: 0.5 },
   { lane: 'TC PLC Toolkit', num: 6, id: 'R6',   card: 'r6',   name: 'Indexing speed',         est: '5.5 d → ~4 h', start: '2026-11-17', end: '2026-11-18', days: 1, offset: 0.5 },

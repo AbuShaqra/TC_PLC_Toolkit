@@ -92,6 +92,9 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   (native `viewsWelcome` buttons) plus Objects and Libraries MOVED out of the Explorer; "Open Start Page" opens a
   webview tab: create project (4024/4026, name, location), open existing (+ recent solutions), project actions
   (Generate ST, Update Library Definitions, STruC++ check once R3.2 ships), help/links, settings. 6 → 8.5 d.
+- **R11 Marketplace publishing** added after R2 (user's ask 2026-11-09): publisher `a-abushaqra` does not exist yet
+  (its page 404s); the user creates it and either uploads the VSIX or adds `VSCE_PAT`/`OVSX_PAT` secrets; our part is
+  ~1 h of metadata/CHANGELOG/README disclaimer + a secret-gated publish step in `release.yml`.
 - **Backlog scheduled 2026-11-09 (user's ask):** toolkit R6–R10 (R10 on trigger only) and fork S3a–S8 are now rows in
   ROADMAP.md with my own sizing (not measured) at the Nov 9 velocity, ~4 h of session per working day. **S3a (three
   false positives on correct code) goes before R3.2**; S7 (iec-3 audit) needs the user's decision first; S8 after R3.3.
