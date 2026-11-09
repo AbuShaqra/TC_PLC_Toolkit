@@ -1,7 +1,7 @@
 # HANDOFF
 
 Where the work *stands*. Read before starting; keep current (handoff rule in [CLAUDE.md](CLAUDE.md)). Target under
-100 lines — prune finished items rather than appending, but never drop a real finding to hit it. **Shipped features
+500 lines (user ruling 2026-11-09) — prune finished items rather than appending, but never drop a real finding to hit it. **Shipped features
 live in git history (PRs/commits); the findings that would cost to re-derive live in
 [docs/handoff-findings.md](docs/handoff-findings.md)** — read the section covering what you are about to touch.
 
