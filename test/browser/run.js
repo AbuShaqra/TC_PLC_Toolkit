@@ -321,6 +321,31 @@ function assert(cond, msg) {
         assert(stale.activeChanges.includes('method_Cyclic'),
             `loading a component reports its exact id to the extension host (${JSON.stringify(stale.activeChanges)})`);
 
+        // 7b. Generate ST split button (roadmap R1): with one project the caret is hidden, and the main
+        //     button must keep its rounded right end; with two or more the caret shows and the inner
+        //     corners are squared so the two fuse. The bug was the squaring applying in both cases.
+        // .action-btn animates its radius; measure the end state, not a frame mid-transition.
+        await page.addStyleTag({ content: '#generate-st-group * { transition: none !important; }' });
+        const corners = async (projects) => {
+            await page.evaluate((p) => window.postMessage({ type: 'projectList', projects: p }, '*'), projects);
+            await page.waitForTimeout(50);
+            return page.evaluate(() => {
+                const btn = document.getElementById('generate-st-btn');
+                const caret = document.getElementById('generate-st-caret');
+                const cs = getComputedStyle(btn);
+                return { right: cs.borderTopRightRadius, left: cs.borderTopLeftRadius, caretShown: !caret.hidden };
+            });
+        };
+        const one = await corners([{ key: 'a', label: 'PLC_A' }]);
+        assert(!one.caretShown && one.right === one.left && one.right !== '0px',
+            `one project: caret hidden and Generate ST keeps its rounded right end (${JSON.stringify(one)})`);
+        const two = await corners([{ key: 'a', label: 'PLC_A' }, { key: 'b', label: 'PLC_B' }]);
+        assert(two.caretShown && two.right === '0px' && two.left !== '0px',
+            `two projects: caret shown and the inner corners are squared to fuse with it (${JSON.stringify(two)})`);
+        const back = await corners([{ key: 'a', label: 'PLC_A' }]);
+        assert(!back.caretShown && back.right === back.left,
+            `back to one project: the rounded end returns (${JSON.stringify(back)})`);
+
         // 8. Nothing may have thrown along the way — "Model not found" is the failure this whole
         //    design exists to make unreachable, and it surfaces as a console error.
         assert(consoleErrors.length === 0,

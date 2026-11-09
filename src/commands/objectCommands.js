@@ -1,8 +1,8 @@
 /**
  * @file objectCommands.js
  * @description Registers the "TwinCAT Objects" explorer create/delete commands: methods, properties and
- * actions on a POU; new FB/PRG/FUN/ITF/GVL files; physical folders; and virtual (in-XML) folders and
- * components. Every structural edit goes through applyXmlEdit so TwinCAT's XML is preserved byte-for-byte
+ * actions on a POU; re-adding a property's missing Get/Set accessor; new FB/PRG/FUN/ITF/GVL files;
+ * physical folders; and virtual (in-XML) folders and components. Every structural edit goes through applyXmlEdit so TwinCAT's XML is preserved byte-for-byte
  * outside the edited region, and through plcProjHelper so the nearest .plcproj stays in sync.
  */
 
@@ -14,6 +14,7 @@ const {
     getFoldersDetailedFromXml,
     insertFolderIntoXml,
     insertComponentIntoXml,
+    insertPropertyAccessorIntoXml,
     deleteComponentFromXml,
     deleteFolderTagFromXml
 } = require('../xmlParser');
@@ -213,6 +214,18 @@ function registerObjectCommands(context, { treeProvider }) {
         })
     );
 
+    // Add Get / Add Set Accessor Commands (issue #25): re-add an accessor deleted from a property,
+    // here or in XAE. The menu shows each only while that accessor is missing (the property row's
+    // contextValue says which — see objectKinds.propertyContextValue).
+    for (const accessorType of /** @type {const} */ (['Get', 'Set'])) {
+        context.subscriptions.push(
+            vscode.commands.registerCommand(`twincat.add${accessorType}Accessor`, async (node) => {
+                if (!node || !node.resourceUri || !node.componentId) return;
+                await handleAccessorCreation(node, accessorType);
+            })
+        );
+    }
+
     // Delete Virtual Folder Command
     context.subscriptions.push(
         vscode.commands.registerCommand('twincat.deleteVirtualFolder', async (node) => {
@@ -255,6 +268,32 @@ function registerObjectCommands(context, { treeProvider }) {
             treeProvider.refresh();
         })
     );
+
+    /**
+     * Adds a missing Get or Set accessor to the property a tree node stands for. Same read/modify/
+     * write path as Delete Component (applyXmlEdit through the text document, so an open editor's
+     * content is never bypassed); accessors live inside the property's XML, so the .plcproj has
+     * nothing to sync.
+     * @param {vscode.TreeItem & {componentId?: string}} node The property tree item.
+     * @param {'Get'|'Set'} accessorType The accessor to add.
+     */
+    async function handleAccessorCreation(node, accessorType) {
+        const fileUri = node.resourceUri;
+        const isItf = path.extname(fileUri.fsPath).toLowerCase() === '.tcio';
+        try {
+            await applyXmlEdit(fileUri, (xmlText) => {
+                const parsed = parseTwinCatXml(xmlText);
+                if (!parsed) return xmlText;
+                const prop = parsed.components.find(c => c.id === node.componentId);
+                if (!prop || prop.type !== 'Property' || !prop.xmlContext.subName) return xmlText;
+                return insertPropertyAccessorIntoXml(xmlText, prop.xmlContext.subName, accessorType, isItf);
+            });
+        } catch (err) {
+            vscode.window.showErrorMessage(`Failed to add ${accessorType} accessor: ${err.message}`);
+            return;
+        }
+        treeProvider.refresh();
+    }
 
     /**
      * Coordinates the QuickPick selection dialogue and inputs when creating a sub-component.

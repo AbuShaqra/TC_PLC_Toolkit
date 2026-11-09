@@ -16,13 +16,20 @@
 const vscode = require('vscode');
 const { buildNodeFromXml } = require('../lsp/xmlIndexer');
 const { objectInsertText, objectDefinitionText } = require('../insertTemplates');
+const { isPropertyNode } = require('../objectKinds');
 
 /**
- * Tree contextValues that stand for a member *inside* a file rather than the file's own object. For
- * these the tree item's label IS the symbol; for a file row the label is the file name
- * (`FB_Gripper.TcPOU`), so the object's name has to come from the parsed XML instead.
+ * Whether a tree contextValue stands for a member *inside* a file rather than the file's own object
+ * — a component row, or a property row in any of its accessor variants (see
+ * objectKinds.propertyContextValue). For these the tree item's label IS the symbol; for a file row
+ * the label is the file name (`FB_Gripper.TcPOU`), so the object's name has to come from the parsed
+ * XML instead.
+ * @param {string|undefined} contextValue
+ * @returns {boolean}
  */
-const MEMBER_CONTEXTS = new Set(['component', 'propertyNode']);
+function isMemberContext(contextValue) {
+    return contextValue === 'component' || isPropertyNode(contextValue);
+}
 
 /**
  * Registers the TwinCAT Objects explorer insert commands.
@@ -52,7 +59,7 @@ function registerObjectInsertCommands(context, { provider }) {
         // TreeItem.label is `string | TreeItemLabel` in the API; this tree always builds the string
         // form, but reading it blind would insert "[object Object]" if that ever changed.
         const label = typeof node.label === 'string' ? node.label : (node.label && node.label.label);
-        const memberName = MEMBER_CONTEXTS.has(node.contextValue) && label ? label : null;
+        const memberName = isMemberContext(node.contextValue) && label ? label : null;
         return { symbolNode, memberName };
     }
 
@@ -108,4 +115,4 @@ function registerObjectInsertCommands(context, { provider }) {
     );
 }
 
-module.exports = { registerObjectInsertCommands, MEMBER_CONTEXTS };
+module.exports = { registerObjectInsertCommands, isMemberContext };

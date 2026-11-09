@@ -14,6 +14,7 @@ const vscode = require('vscode');
 const path = require('path');
 const { describeCopied, planPaste } = require('../dndRules');
 const { isAccessor: componentIdIsAccessor } = require('../componentId');
+const { isPropertyNode } = require('../objectKinds');
 const {
     parseTwinCatXml,
     extractComponentBlockFromXml,
@@ -138,7 +139,7 @@ function registerClipboardCommands(context, { treeView, treeProvider, applyXmlEd
         if (FILE_CONTEXT_VALUES.has(cv)) {
             return { kind: 'file', uri: node.resourceUri, contextValue: cv };
         }
-        if (cv === 'component' || cv === 'propertyNode') {
+        if (cv === 'component' || isPropertyNode(cv)) {
             // Pasting onto a component means "as its sibling": same file, same virtual folder
             // (an accessor item carries its property's folderPath, so it lands beside the
             // property — the only sensible reading).

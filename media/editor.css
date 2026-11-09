@@ -409,8 +409,10 @@ input:checked + .slider:before {
     align-items: stretch;
     flex-shrink: 0;
 }
-/* Fuse the two buttons into one control: square off the inner corners. */
-.split-btn #generate-st-btn {
+/* Fuse the two buttons into one control: square off the inner corners — only while the caret is
+   shown (multi-project workspaces); with one project the main button keeps its rounded end.
+   editor.js sets `has-caret` together with the caret's `hidden` flag. */
+.split-btn.has-caret #generate-st-btn {
     border-top-right-radius: 0;
     border-bottom-right-radius: 0;
 }

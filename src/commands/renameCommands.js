@@ -43,6 +43,7 @@ const { applyReferenceEditsToXml } = require('../renameEngine');
 const { createRenameTransaction } = require('../renameTransaction');
 const { registerInPlcProj, unregisterFromPlcProj, registerTreeInPlcProj } = require('../plcProjHelper');
 const { TWINCAT_WATCH_EXTS } = require('../twincatWorkspace');
+const { isPropertyNode } = require('../objectKinds');
 
 /** IEC identifier: files and members. */
 const IDENT_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
@@ -82,7 +83,7 @@ function registerRenameCommands(context, { treeView, treeProvider, applyXmlEdit,
                     await renameStFile(node);
                 } else if (OBJECT_FILE_CONTEXT_VALUES.has(cv)) {
                     await renameObjectFile(node);
-                } else if (cv === 'component' || cv === 'propertyNode') {
+                } else if (cv === 'component' || isPropertyNode(cv)) {
                     await renameMember(node);
                 } else if (cv === 'directory') {
                     await renameDirectory(node);

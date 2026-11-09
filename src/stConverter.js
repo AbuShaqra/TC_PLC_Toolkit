@@ -92,13 +92,17 @@ function flattenStructInheritance(text, registry) {
  *   declarations/implementations are not cleaned, so line counts match the editor exactly (for
  *   diagnostics mapping). `structs` (from collectStructDefinitions over the whole project) lets the
  *   clean output flatten struct EXTENDS across files; this file's own structs are always added.
- * @returns {Object} { stText: string, lineMap: Object }
+ * @returns {{ stText: string, lineMap: Object, warnings: string[] }} `warnings` names every member
+ *   that could not be converted (today: SFC transitions), one human-readable line each, so a caller
+ *   can tell the user what the output is missing. Raw mode reports them too but never adds text.
  */
 function convertXmlToSt(parsedXml, options = {}) {
     const raw = !!options.raw;
     const structs = raw ? null : collectStructDefinitions([parsedXml], new Map(options.structs || []));
     const lines = [];
     const lineMap = {};
+    /** @type {string[]} */
+    const warnings = [];
 
     function append(text) {
         if (text === null || text === undefined) return;
@@ -119,19 +123,15 @@ function convertXmlToSt(parsedXml, options = {}) {
 
     const root = parsedXml.components.find(c => c.id === 'root');
     if (!root) {
-        return { stText: lines.join('\n'), lineMap };
+        return { stText: lines.join('\n'), lineMap, warnings };
     }
 
     // GVL / DUT / Itf / POU
     if (parsedXml.rootType === 'POU') {
         const subComponents = parsedXml.components.filter(c => c.id !== 'root');
-        const hasMethods = subComponents.some(c => c.type === 'Method');
-        
-        let decl = root.declaration || '';
-        if (hasMethods && /\bPROGRAM\b/i.test(decl)) {
-            // Replace PROGRAM with FUNCTION_BLOCK to compile methods correctly in trust-runtime
-            decl = decl.replace(/\bPROGRAM\b/gi, 'FUNCTION_BLOCK');
-        }
+        // The POU kind is kept as written: TwinCAT keeps a PROGRAM with METHODs a PROGRAM (its
+        // methods are called without an instance, `MAIN.Init()`), and so does every converter path.
+        const decl = root.declaration || '';
 
         // Main POU Declaration
         const declStart = getLineCount() + 1;
@@ -270,20 +270,25 @@ function convertXmlToSt(parsedXml, options = {}) {
 
                     append(`END_PROPERTY`);
                     append(``);
+                } else if (comp.type === 'Transition') {
+                    // An SFC transition is a condition attached to a chart step; a single ST unit
+                    // has nowhere to put it. Say so rather than drop it silently. The export gets
+                    // a marker comment (appended like any other line, so the lineMap stays exact);
+                    // the raw live unit gets nothing, since every line of it must map to a pane.
+                    const warning = `Transition '${comp.name}' of '${parsedXml.rootName || 'Unnamed'}' is not exported: ` +
+                        'transitions have no Structured Text equivalent in a single compilation unit';
+                    warnings.push(warning);
+                    if (!raw) {
+                        append(`// WARNING: ${warning}`);
+                        append(``);
+                    }
                 }
             }
         }
 
         // Append closing POU keyword (END_FUNCTION_BLOCK, END_PROGRAM, or END_FUNCTION)
-        let closingKeyword = '';
-        const rootDecl = decl;
-        if (/\bFUNCTION_BLOCK\b/i.test(rootDecl)) {
-            closingKeyword = 'END_FUNCTION_BLOCK';
-        } else if (/\bPROGRAM\b/i.test(rootDecl)) {
-            closingKeyword = 'END_PROGRAM';
-        } else if (/\bFUNCTION\b/i.test(rootDecl)) {
-            closingKeyword = 'END_FUNCTION';
-        }
+        const pouKind = leadingPouKeyword(decl);
+        const closingKeyword = pouKind ? `END_${pouKind}` : '';
 
         if (closingKeyword) {
             append(closingKeyword);
@@ -357,8 +362,23 @@ function convertXmlToSt(parsedXml, options = {}) {
 
     return {
         stText: lines.join('\n'),
-        lineMap
+        lineMap,
+        warnings
     };
+}
+
+/**
+ * The POU keyword that opens a root declaration — the first of FUNCTION_BLOCK / PROGRAM / FUNCTION
+ * outside comments and pragmas — so a PROGRAM whose comment mentions FUNCTION_BLOCK still closes
+ * with END_PROGRAM.
+ * @param {string} declText Root declaration text.
+ * @returns {'FUNCTION_BLOCK'|'PROGRAM'|'FUNCTION'|null}
+ */
+function leadingPouKeyword(declText) {
+    const code = (declText || '')
+        .replace(/\(\*[\s\S]*?\*\)|\/\*[\s\S]*?\*\/|\/\/[^\n]*|\{[^}]*\}/g, ' ');
+    const m = /\b(FUNCTION_BLOCK|PROGRAM|FUNCTION)\b/i.exec(code);
+    return m ? /** @type {'FUNCTION_BLOCK'|'PROGRAM'|'FUNCTION'} */ (m[1].toUpperCase()) : null;
 }
 
 /**

@@ -108,6 +108,16 @@
         "category": "TwinCAT"
       },
       {
+        "command": "twincat.addGetAccessor",
+        "title": "Add Get Accessor",
+        "category": "TwinCAT"
+      },
+      {
+        "command": "twincat.addSetAccessor",
+        "title": "Add Set Accessor",
+        "category": "TwinCAT"
+      },
+      {
         "command": "twincat.deleteComponent",
         "title": "Delete Component",
         "category": "TwinCAT"
@@ -258,6 +268,16 @@
           "group": "navigation@2"
         }
       ],
+      "commandPalette": [
+        {
+          "command": "twincat.addGetAccessor",
+          "when": "false"
+        },
+        {
+          "command": "twincat.addSetAccessor",
+          "when": "false"
+        }
+      ],
       "view/item/context": [
         {
           "command": "twincat.insertAtCursor",
@@ -281,7 +301,7 @@
         },
         {
           "command": "twincat.insertObjectAtCursor",
-          "when": "view == twincatExplorer && (viewItem == 'pouFile' || viewItem == 'pouFileProgram' || viewItem == 'pouFileFunction' || viewItem == 'itfFile' || viewItem == 'gvlFile' || viewItem == 'dutFile' || viewItem == 'component' || viewItem == 'propertyNode')",
+          "when": "view == twincatExplorer && (viewItem == 'pouFile' || viewItem == 'pouFileProgram' || viewItem == 'pouFileFunction' || viewItem == 'itfFile' || viewItem == 'gvlFile' || viewItem == 'dutFile' || viewItem == 'component' || viewItem =~ /^propertyNode\\b/)",
           "group": "1_insert@1"
         },
         {
@@ -310,8 +330,18 @@
           "group": "twincat@3"
         },
         {
+          "command": "twincat.addGetAccessor",
+          "when": "view == twincatExplorer && viewItem =~ /^propertyNode\\.noGet\\b/",
+          "group": "twincat@3.1"
+        },
+        {
+          "command": "twincat.addSetAccessor",
+          "when": "view == twincatExplorer && viewItem =~ /^propertyNode\\b.*\\.noSet\\b/",
+          "group": "twincat@3.2"
+        },
+        {
           "command": "twincat.deleteComponent",
-          "when": "view == twincatExplorer && (viewItem == 'component' || viewItem == 'propertyNode')",
+          "when": "view == twincatExplorer && (viewItem == 'component' || viewItem =~ /^propertyNode\\b/)",
           "group": "twincat@4"
         },
         {
@@ -356,17 +386,17 @@
         },
         {
           "command": "twincat.copyObject",
-          "when": "view == twincatExplorer && (viewItem == 'component' || viewItem == 'propertyNode' || viewItem == 'pouFile' || viewItem == 'pouFileProgram' || viewItem == 'pouFileFunction' || viewItem == 'itfFile' || viewItem == 'gvlFile' || viewItem == 'dutFile' || viewItem == 'stFile')",
+          "when": "view == twincatExplorer && (viewItem == 'component' || viewItem =~ /^propertyNode\\b/ || viewItem == 'pouFile' || viewItem == 'pouFileProgram' || viewItem == 'pouFileFunction' || viewItem == 'itfFile' || viewItem == 'gvlFile' || viewItem == 'dutFile' || viewItem == 'stFile')",
           "group": "twincat_0_clipboard@1"
         },
         {
           "command": "twincat.pasteObject",
-          "when": "view == twincatExplorer && twincat.canPaste && (viewItem == 'directory' || viewItem == 'pouFile' || viewItem == 'pouFileProgram' || viewItem == 'itfFile' || viewItem == 'pouVirtualFolder' || viewItem == 'pouVirtualFolderProgram' || viewItem == 'pouVirtualFolderInterface' || viewItem == 'component' || viewItem == 'propertyNode')",
+          "when": "view == twincatExplorer && twincat.canPaste && (viewItem == 'directory' || viewItem == 'pouFile' || viewItem == 'pouFileProgram' || viewItem == 'itfFile' || viewItem == 'pouVirtualFolder' || viewItem == 'pouVirtualFolderProgram' || viewItem == 'pouVirtualFolderInterface' || viewItem == 'component' || viewItem =~ /^propertyNode\\b/)",
           "group": "twincat_0_clipboard@2"
         },
         {
           "command": "twincat.renameObject",
-          "when": "view == twincatExplorer && (viewItem == 'directory' || viewItem == 'pouFile' || viewItem == 'pouFileProgram' || viewItem == 'pouFileFunction' || viewItem == 'itfFile' || viewItem == 'gvlFile' || viewItem == 'dutFile' || viewItem == 'stFile' || viewItem == 'component' || viewItem == 'propertyNode' || viewItem == 'pouVirtualFolder' || viewItem == 'pouVirtualFolderProgram' || viewItem == 'pouVirtualFolderInterface')",
+          "when": "view == twincatExplorer && (viewItem == 'directory' || viewItem == 'pouFile' || viewItem == 'pouFileProgram' || viewItem == 'pouFileFunction' || viewItem == 'itfFile' || viewItem == 'gvlFile' || viewItem == 'dutFile' || viewItem == 'stFile' || viewItem == 'component' || viewItem =~ /^propertyNode\\b/ || viewItem == 'pouVirtualFolder' || viewItem == 'pouVirtualFolderProgram' || viewItem == 'pouVirtualFolderInterface')",
           "group": "twincat_0_clipboard@3"
         }
       ]

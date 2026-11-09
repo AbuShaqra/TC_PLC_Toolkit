@@ -6,8 +6,43 @@
 const crypto = require('crypto');
 const { make: makeComponentId } = require('./componentId');
 
+// ── Attribute values: decode on read, encode on write ───────────────────────────────────────────
+// Attribute values are entity-encoded in the file (`FolderPath="In &amp; Out\"`). Every value the
+// parser RETURNS is decoded, and every writer that finds a tag by a value or inserts one goes
+// through encodeXmlAttr / attrValueSpan — never a regex or string built from the raw value — so a
+// decoded name handed back by a caller still finds its tag.
+
+/** @type {Record<string, string>} */
+const XML_NAMED_ENTITIES = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" };
+
 /**
- * Parses XML attributes from a string.
+ * Decodes the five predefined XML entities and numeric character references (`&#38;`, `&#x26;`)
+ * in an attribute value. Anything else (an unknown or malformed reference) is left as written.
+ * @param {string} value Raw attribute value as it appears between the quotes.
+ * @returns {string} The decoded value.
+ */
+function decodeXmlAttr(value) {
+    if (value.indexOf('&') === -1) return value;
+    return value.replace(/&(?:#x([0-9A-Fa-f]+)|#([0-9]+)|(amp|lt|gt|quot|apos));/g, (ref, hex, dec, named) => {
+        if (named) return XML_NAMED_ENTITIES[named];
+        const codePoint = hex !== undefined ? parseInt(hex, 16) : parseInt(dec, 10);
+        return codePoint <= 0x10FFFF ? String.fromCodePoint(codePoint) : ref;
+    });
+}
+
+/**
+ * Encodes a value for a double-quoted XML attribute: `&`, `<`, `>` and `"` — the set .NET's
+ * XmlWriter (and so TwinCAT) escapes.
+ * @param {string} value Decoded value.
+ * @returns {string} The value as it must appear between the quotes.
+ */
+function encodeXmlAttr(value) {
+    return String(value).replace(/[&<>"]/g, ch =>
+        ch === '&' ? '&amp;' : ch === '<' ? '&lt;' : ch === '>' ? '&gt;' : '&quot;');
+}
+
+/**
+ * Parses XML attributes from a string. Values are entity-decoded.
  * @param {string} attrString The attributes string from an XML tag.
  * @returns {Object} Key-value pairs of attributes.
  */
@@ -16,67 +51,289 @@ function parseAttrs(attrString) {
     const regex = /(\w+)="([^"]*)"/g;
     let match;
     while ((match = regex.exec(attrString)) !== null) {
-        attrs[match[1]] = match[2];
+        attrs[match[1]] = decodeXmlAttr(match[2]);
     }
     return attrs;
 }
 
 /**
- * Extracts CDATA content within a given tag range.
+ * Locates one attribute's VALUE inside a single tag string, so a writer can splice exactly those
+ * bytes (and nothing else of the tag) with an encoded replacement.
+ * @param {string} tag An opening tag, e.g. `<Method Name="Go" FolderPath="A &amp; B\">`.
+ * @param {string} attrName Attribute name (exact; `Name` does not match `FolderName`).
+ * @returns {{start: number, end: number, value: string}|null} Offsets of the raw value within `tag`
+ * and its decoded value; null when the attribute is absent.
+ */
+function attrValueSpan(tag, attrName) {
+    const match = new RegExp(`\\s${attrName}="([^"]*)"`).exec(tag);
+    if (!match) return null;
+    const start = match.index + match[0].length - match[1].length - 1;
+    return { start, end: start + match[1].length, value: decodeXmlAttr(match[1]) };
+}
+
+/**
+ * Turns lone CR line breaks (old Mac style) into LF; CRLF and LF are left alone. Applied to the
+ * code the parser RETURNS only — Monaco treats a lone CR as a line break while the ST converter
+ * splits on `\r?\n`, so without this the pane's lines and the unit's lines disagree. The file text
+ * is never normalised (byte fidelity outside an edited CDATA).
+ * @param {string} text
+ * @returns {string}
+ */
+function normalizeLoneCr(text) {
+    return text.indexOf('\r') === -1 ? text : text.replace(/\r(?!\n)/g, '\n');
+}
+
+// ── Element scanning ────────────────────────────────────────────────────────────────────────────
+// Still regex-based (TwinCAT's exact bytes must survive), but CDATA-, comment- and nesting-aware:
+// a `<ST>` or `</Declaration>` inside ST code, or inside a NESTED element, is never taken for the
+// element being looked for.
+
+/**
+ * @typedef {Object} XmlElementSpan
+ * @property {string} name Element name.
+ * @property {string} openTag The opening tag text (the whole tag when self-closing).
+ * @property {number} start Offset of `<` of the opening tag.
+ * @property {number} openEnd Offset just past the opening tag (content start).
+ * @property {number} contentEnd Offset of the closing tag (=== openEnd when self-closing).
+ * @property {number} end Offset just past the closing tag.
+ * @property {boolean} selfClosing
+ */
+
+/**
+ * Yields the tags in `text[from, to)`, skipping CDATA sections, comments and processing
+ * instructions (their contents are never markup).
+ * @param {string} text
+ * @param {number} from
+ * @param {number} to
+ * @returns {Generator<{closing: boolean, name: string, selfClosing: boolean, start: number, end: number, raw: string}>}
+ */
+function* scanTags(text, from, to) {
+    const regex = /<!\[CDATA\[|<!--|<\?|<(\/?)([A-Za-z_][\w:.-]*)[^>]*?(\/?)>/g;
+    regex.lastIndex = from;
+    let match;
+    while ((match = regex.exec(text)) !== null && match.index < to) {
+        const opener = match[0];
+        if (opener === '<![CDATA[' || opener === '<!--' || opener === '<?') {
+            const terminator = opener === '<![CDATA[' ? ']]>' : opener === '<!--' ? '-->' : '?>';
+            const termIdx = text.indexOf(terminator, match.index + opener.length);
+            if (termIdx === -1) return;
+            regex.lastIndex = termIdx + terminator.length;
+            continue;
+        }
+        const end = match.index + opener.length;
+        if (end > to) return;
+        yield { closing: match[1] === '/', name: match[2], selfClosing: match[3] === '/', start: match.index, end, raw: opener };
+    }
+}
+
+/**
+ * The direct child elements of the element whose content is `text[from, to)`, in document order.
+ * Assumes well-formed nesting (TwinCAT writes it); close-tag names are not cross-checked.
+ * @param {string} text
+ * @param {number} from Content start of the parent.
+ * @param {number} to Content end of the parent (offset of its closing tag).
+ * @returns {XmlElementSpan[]}
+ */
+function childElements(text, from, to) {
+    const children = [];
+    const stack = [];
+    for (const tag of scanTags(text, from, to)) {
+        if (tag.closing) {
+            const open = stack.pop();
+            if (open && stack.length === 0) {
+                children.push({ ...open, contentEnd: tag.start, end: tag.end, selfClosing: false });
+            }
+        } else if (tag.selfClosing) {
+            if (stack.length === 0) {
+                children.push({ name: tag.name, openTag: tag.raw, start: tag.start, openEnd: tag.end, contentEnd: tag.end, end: tag.end, selfClosing: true });
+            }
+        } else {
+            stack.push({ name: tag.name, openTag: tag.raw, start: tag.start, openEnd: tag.end });
+        }
+    }
+    return children;
+}
+
+/**
+ * The first element named `name` in `text[from, to)` at any depth (outside CDATA/comments).
+ * @param {string} text
+ * @param {string} name
+ * @param {number} [from]
+ * @param {number} [to]
+ * @returns {XmlElementSpan|null}
+ */
+function findFirstElement(text, name, from = 0, to = text.length) {
+    let open = null;
+    let depth = 0;
+    for (const tag of scanTags(text, from, to)) {
+        if (tag.name !== name) continue;
+        if (!open) {
+            if (tag.closing) continue;
+            if (tag.selfClosing) {
+                return { name, openTag: tag.raw, start: tag.start, openEnd: tag.end, contentEnd: tag.end, end: tag.end, selfClosing: true };
+            }
+            open = tag;
+            depth = 1;
+        } else if (tag.closing) {
+            if (--depth === 0) {
+                return { name, openTag: open.raw, start: open.start, openEnd: open.end, contentEnd: tag.start, end: tag.end, selfClosing: false };
+            }
+        } else if (!tag.selfClosing) {
+            depth++;
+        }
+    }
+    return null;
+}
+
+/**
+ * The CDATA payload span of an element, bounded to that element: from the first `<![CDATA[` in its
+ * content to the last `]]>` before its closing tag (TwinCAT splits a payload containing `]]>` into
+ * adjacent sections; the span keeps them together, as before). Null when the element holds none —
+ * the search never runs on into a later element.
+ * @param {string} text
+ * @param {XmlElementSpan} element
+ * @returns {{start: number, end: number}|null} Offsets of the payload (inside the markers).
+ */
+function cdataSpan(text, element) {
+    if (element.selfClosing) return null;
+    const cdataStart = text.indexOf('<![CDATA[', element.openEnd);
+    if (cdataStart === -1 || cdataStart >= element.contentEnd) return null;
+    const cdataEnd = text.lastIndexOf(']]>', element.contentEnd - 3);
+    if (cdataEnd === -1 || cdataEnd < cdataStart + 9) return null;
+    return { start: cdataStart + 9, end: cdataEnd };
+}
+
+/**
+ * Extracts CDATA content within a given tag range — the first `startTag` element at any depth,
+ * outside CDATA. An element without CDATA (`<X />`, `<X></X>`) yields '' rather than a LATER
+ * element's payload.
  * @param {string} blockText The source text containing the XML blocks.
  * @param {string} startTag The opening tag (e.g., '<Declaration>').
- * @param {string} endTag The closing tag (e.g., '</Declaration>').
+ * @param {string} endTag The closing tag (e.g., '</Declaration>'); implied by startTag, kept for
+ * call-signature stability.
  * @returns {string} The text inside the CDATA wrapper, or empty string if not found.
  */
 function getCdata(blockText, startTag, endTag) {
-    const startTagIdx = blockText.indexOf(startTag);
-    if (startTagIdx === -1) return '';
-    const cdataStart = blockText.indexOf('<![CDATA[', startTagIdx + startTag.length);
-    if (cdataStart === -1) return '';
-    const endTagIdx = blockText.indexOf(endTag, cdataStart);
-    if (endTagIdx === -1) return '';
-    const cdataEnd = blockText.lastIndexOf(']]>', endTagIdx);
-    if (cdataEnd === -1 || cdataEnd < cdataStart) return '';
-    return blockText.substring(cdataStart + 9, cdataEnd);
+    const element = findFirstElement(blockText, startTag.replace(/^<|>$/g, ''));
+    if (!element) return '';
+    const span = cdataSpan(blockText, element);
+    return span ? blockText.substring(span.start, span.end) : '';
+}
+
+/**
+ * The root element of a TwinCAT object file and its direct children.
+ * `.TcTLEO` objects use an <EnumerationTextList> root, but their <Declaration> is an ordinary
+ * `TYPE X : (…); END_TYPE` enum — i.e. a DUT in every way that matters to the language server.
+ * Normalising the type here means stConverter, xmlIndexer and the webview need no special case;
+ * only the close-tag lookup needs the real element name.
+ * @param {string} xmlText
+ * @returns {{rootElement: string, rootType: string, rootTag: string, rootAttrs: Object, start: number, openEnd: number, contentEnd: number, children: XmlElementSpan[]}|null}
+ */
+function locateRoot(xmlText) {
+    const rootMatch = xmlText.match(/<(POU|GVL|DUT|Itf|EnumerationTextList)\b([^>]*)>/);
+    if (!rootMatch) return null;
+    const rootElement = rootMatch[1];
+    const openEnd = rootMatch.index + rootMatch[0].length;
+    const contentEnd = xmlText.indexOf(`</${rootElement}>`, rootMatch.index);
+    if (contentEnd === -1) return null;
+    return {
+        rootElement,
+        rootType: rootElement === 'EnumerationTextList' ? 'DUT' : rootElement,
+        rootTag: rootMatch[0],
+        rootAttrs: parseAttrs(rootMatch[2]),
+        start: rootMatch.index,
+        openEnd,
+        contentEnd,
+        children: childElements(xmlText, openEnd, contentEnd)
+    };
+}
+
+const MEMBER_ELEMENTS = new Set(['Method', 'Property', 'Action', 'Transition']);
+
+/**
+ * A member (Method/Property/Action/Transition) of the root, found among the root's DIRECT children
+ * by its decoded Name — the same elements parseTwinCatXml reports, so a name the parser returned
+ * always finds its tag (entities and all), and nothing nested in a body (e.g. inside an SFC
+ * `<Implementation>`) is ever mistaken for one.
+ * @param {string} xmlText
+ * @param {string} memberType 'Method', 'Property', 'Action', 'Transition'.
+ * @param {string} memberName Decoded Name attribute.
+ * @returns {XmlElementSpan|null}
+ */
+function findMember(xmlText, memberType, memberName) {
+    const root = locateRoot(xmlText);
+    if (!root) return null;
+    return root.children.find(c => c.name === memberType && parseAttrs(c.openTag).Name === memberName) || null;
+}
+
+/**
+ * The body element of an owner's own <Implementation> — its first child element (`<ST>`, `<SFC>`,
+ * `<NWL>` for LD/FBD, `<CFC>`, …) — and the language that element names.
+ * @param {string} text
+ * @param {XmlElementSpan[]} ownerChildren The owner's direct children.
+ * @returns {{language: string|null, body: XmlElementSpan|null}} language null when the owner has
+ * no Implementation (or an empty one).
+ */
+function implementationBody(text, ownerChildren) {
+    const impl = ownerChildren.find(c => c.name === 'Implementation');
+    if (!impl || impl.selfClosing) return { language: null, body: null };
+    const body = childElements(text, impl.openEnd, impl.contentEnd)[0] || null;
+    return { language: body ? body.name : null, body };
+}
+
+/**
+ * Reads an owner element's Declaration and ST implementation from its own direct children.
+ * @param {string} text
+ * @param {XmlElementSpan[]} ownerChildren
+ * @returns {{declaration: string, implementation: string|null, implementationLanguage: string|null}}
+ * implementation is null unless the owner's own Implementation is ST.
+ */
+function readOwnBlocks(text, ownerChildren) {
+    const declEl = ownerChildren.find(c => c.name === 'Declaration');
+    const declSpan = declEl ? cdataSpan(text, declEl) : null;
+    const { language, body } = implementationBody(text, ownerChildren);
+    let implementation = null;
+    if (language === 'ST' && body) {
+        const implSpan = cdataSpan(text, body);
+        implementation = normalizeLoneCr(implSpan ? text.substring(implSpan.start, implSpan.end) : '');
+    }
+    return {
+        declaration: normalizeLoneCr(declSpan ? text.substring(declSpan.start, declSpan.end) : ''),
+        implementation,
+        implementationLanguage: language
+    };
 }
 
 /**
  * Parses a TwinCAT XML file content to extract its root and sub-components.
+ *
+ * Every Declaration/Implementation is read from its OWNER's direct children: the root's own
+ * <Implementation> is the one before its members, never the first `<ST>` in the file — on an
+ * SFC/LD/FBD/CFC POU that is a member's code. Each component records `implementationLanguage`
+ * (the element inside its Implementation: 'ST', 'SFC', 'NWL', 'CFC', …; null when it has none),
+ * and `implementation` is null unless that language is ST — the webview's "no implementation pane".
  * @param {string} xmlText TwinCAT XML file text.
  * @returns {Object|null} The parsed root type, root name, and list of components.
  */
 function parseTwinCatXml(xmlText) {
-    // `.TcTLEO` objects use an <EnumerationTextList> root, but their <Declaration> is an ordinary
-    // `TYPE X : (…); END_TYPE` enum — i.e. a DUT in every way that matters to the language server.
-    // Normalising the type here means stConverter, xmlIndexer and the webview need no special case;
-    // only the close-tag lookup needs the real element name.
-    const rootMatch = xmlText.match(/<(POU|GVL|DUT|Itf|EnumerationTextList)\b([^>]*)>/);
-    if (!rootMatch) return null;
+    const root = locateRoot(xmlText);
+    if (!root) return null;
 
-    const rootElement = rootMatch[1];
-    const rootType = rootElement === 'EnumerationTextList' ? 'DUT' : rootElement;
-    const rootAttrs = parseAttrs(rootMatch[2]);
-    const rootName = rootAttrs.Name || 'Unnamed';
-    const rootCloseIndex = xmlText.indexOf(`</${rootElement}>`, rootMatch.index);
-    if (rootCloseIndex === -1) return null;
-    
-    const rootContentStart = rootMatch.index + rootMatch[0].length;
-    const rootContent = xmlText.substring(rootContentStart, rootCloseIndex);
-    
+    const rootType = root.rootType;
+    const rootName = root.rootAttrs.Name || 'Unnamed';
+
     const components = [];
-    
-    // Root Level Component
-    let rootHasImpl = rootType === 'POU';
-    const rootDecl = getCdata(rootContent, '<Declaration>', '</Declaration>');
-    const rootImpl = rootHasImpl ? getCdata(rootContent, '<ST>', '</ST>') : null;
-    
+
+    // Root Level Component. Only a POU has an implementation.
+    const rootBlocks = readOwnBlocks(xmlText, root.children);
     components.push({
         id: makeComponentId('root'),
         type: rootType,
         name: rootName,
         folderPath: '',
-        declaration: rootDecl,
-        implementation: rootImpl,
+        declaration: rootBlocks.declaration,
+        implementation: rootType === 'POU' ? rootBlocks.implementation : null,
+        implementationLanguage: rootType === 'POU' ? rootBlocks.implementationLanguage : null,
         xmlContext: {
             rootType,
             subType: null,
@@ -84,31 +341,27 @@ function parseTwinCatXml(xmlText) {
             accessorType: null
         }
     });
-    
-    // Search for Method, Property, Action, Transition inside rootContent
-    const childRegex = /<(Method|Property|Action|Transition)\b([^>]*)>/g;
-    let match;
-    while ((match = childRegex.exec(rootContent)) !== null) {
-        const subType = match[1];
-        const subAttrs = parseAttrs(match[2]);
+
+    // Method, Property, Action, Transition: the root's direct children
+    for (const member of root.children) {
+        if (!MEMBER_ELEMENTS.has(member.name)) continue;
+        const subType = member.name;
+        const subAttrs = parseAttrs(member.openTag);
         const subName = subAttrs.Name || 'Unnamed';
         const folderPath = subAttrs.FolderPath || '';
-        
-        const closeTag = `</${subType}>`;
-        const closeTagIdx = rootContent.indexOf(closeTag, match.index);
-        if (closeTagIdx === -1) continue;
-        
-        const subBlock = rootContent.substring(match.index, closeTagIdx + closeTag.length);
-        
+        const memberChildren = member.selfClosing ? [] : childElements(xmlText, member.openEnd, member.contentEnd);
+
         if (subType === 'Property') {
-            const propDecl = getCdata(subBlock, '<Declaration>', '</Declaration>');
+            const propDecl = memberChildren.find(c => c.name === 'Declaration');
+            const propDeclSpan = propDecl ? cdataSpan(xmlText, propDecl) : null;
             components.push({
                 id: makeComponentId('prop', subName),
                 type: 'Property',
                 name: `${subName} (Property Signature)`,
                 folderPath,
-                declaration: propDecl,
+                declaration: normalizeLoneCr(propDeclSpan ? xmlText.substring(propDeclSpan.start, propDeclSpan.end) : ''),
                 implementation: null,
+                implementationLanguage: null,
                 xmlContext: {
                     rootType,
                     subType: 'Property',
@@ -116,74 +369,42 @@ function parseTwinCatXml(xmlText) {
                     accessorType: null
                 }
             });
-            
-            // Check Get/Set
-            const getMatch = subBlock.match(/<Get\b([^>]*)>/);
-            if (getMatch) {
-                const getCloseIdx = subBlock.indexOf('</Get>', getMatch.index);
-                if (getCloseIdx !== -1) {
-                    const getBlock = subBlock.substring(getMatch.index, getCloseIdx + 6);
-                    const getDecl = getCdata(getBlock, '<Declaration>', '</Declaration>');
-                    const hasST = getBlock.includes('<ST>');
-                    const getImpl = hasST ? getCdata(getBlock, '<ST>', '</ST>') : null;
-                    
-                    components.push({
-                        id: makeComponentId('prop', subName, 'get'),
-                        type: 'Get',
-                        name: `${subName} [Get]`,
-                        folderPath: folderPath,
-                        declaration: getDecl,
-                        implementation: getImpl,
-                        xmlContext: {
-                            rootType,
-                            subType: 'Property',
-                            subName,
-                            accessorType: 'Get'
-                        }
-                    });
-                }
-            }
-            
-            const setMatch = subBlock.match(/<Set\b([^>]*)>/);
-            if (setMatch) {
-                const setCloseIdx = subBlock.indexOf('</Set>', setMatch.index);
-                if (setCloseIdx !== -1) {
-                    const setBlock = subBlock.substring(setMatch.index, setCloseIdx + 6);
-                    const setDecl = getCdata(setBlock, '<Declaration>', '</Declaration>');
-                    const hasST = setBlock.includes('<ST>');
-                    const setImpl = hasST ? getCdata(setBlock, '<ST>', '</ST>') : null;
-                    
-                    components.push({
-                        id: makeComponentId('prop', subName, 'set'),
-                        type: 'Set',
-                        name: `${subName} [Set]`,
-                        folderPath: folderPath,
-                        declaration: setDecl,
-                        implementation: setImpl,
-                        xmlContext: {
-                            rootType,
-                            subType: 'Property',
-                            subName,
-                            accessorType: 'Set'
-                        }
-                    });
-                }
+
+            // Get/Set accessors: the Property's own children
+            for (const accessorType of ['Get', 'Set']) {
+                const accessor = memberChildren.find(c => c.name === accessorType);
+                if (!accessor) continue;
+                const accessorChildren = accessor.selfClosing ? [] : childElements(xmlText, accessor.openEnd, accessor.contentEnd);
+                const blocks = readOwnBlocks(xmlText, accessorChildren);
+                components.push({
+                    id: makeComponentId('prop', subName, accessorType === 'Get' ? 'get' : 'set'),
+                    type: accessorType,
+                    name: `${subName} [${accessorType}]`,
+                    folderPath: folderPath,
+                    declaration: blocks.declaration,
+                    implementation: blocks.implementation,
+                    implementationLanguage: blocks.implementationLanguage,
+                    xmlContext: {
+                        rootType,
+                        subType: 'Property',
+                        subName,
+                        accessorType
+                    }
+                });
             }
         } else {
             // Method, Action, Transition
-            const decl = getCdata(subBlock, '<Declaration>', '</Declaration>');
-            const hasST = subBlock.includes('<ST>');
-            const impl = hasST ? getCdata(subBlock, '<ST>', '</ST>') : null;
-            
+            const blocks = readOwnBlocks(xmlText, memberChildren);
             components.push({
-                // subType is always 'Method'/'Action'/'Transition' here (the enclosing regex
-                // guarantees it), which are also valid componentId kinds once lowercased.
+                // subType is always 'Method'/'Action'/'Transition' here (MEMBER_ELEMENTS minus
+                // Property), which are also valid componentId kinds once lowercased.
                 id: makeComponentId(/** @type {any} */ (subType.toLowerCase()), subName),
                 type: subType,
                 name: subName,
                 folderPath,
-                declaration: decl,
-                implementation: impl,
+                declaration: blocks.declaration,
+                implementation: blocks.implementation,
+                implementationLanguage: blocks.implementationLanguage,
                 xmlContext: {
                     rootType,
                     subType,
@@ -193,7 +414,7 @@ function parseTwinCatXml(xmlText) {
             });
         }
     }
-    
+
     return {
         rootType,
         rootName,
@@ -202,33 +423,34 @@ function parseTwinCatXml(xmlText) {
 }
 
 /**
- * Helper to replace the first CDATA segment in a block of text.
- * @param {string} text The block of XML text.
- * @param {string} startTag The starting tag.
- * @param {string} endTag The ending tag.
- * @param {string} newContent The new contents to put in the CDATA block.
- * @returns {string} The modified XML text.
+ * Replaces the CDATA payload of one element, bounded to that element. An element that has no CDATA
+ * yet (`<ST />`, `<Declaration></Declaration>`) gets one — the edit stays inside the element, never
+ * in a later block's CDATA. An element holding non-CDATA text is left alone (refused).
+ * @param {string} text
+ * @param {XmlElementSpan} element
+ * @param {string} newContent
+ * @returns {string} The modified text, or `text` unchanged when refused.
  */
-function replaceFirstCdataOccurrence(text, startTag, endTag, newContent) {
-    const startTagIndex = text.indexOf(startTag);
-    if (startTagIndex === -1) return text;
-    
-    const cdataStartIndex = text.indexOf('<![CDATA[', startTagIndex + startTag.length);
-    if (cdataStartIndex === -1) return text;
-    
-    const endTagIndex = text.indexOf(endTag, cdataStartIndex);
-    if (endTagIndex === -1) return text;
-    
-    const cdataEndIndex = text.lastIndexOf(']]>', endTagIndex);
-    if (cdataEndIndex === -1 || cdataEndIndex < cdataStartIndex) return text;
-    
-    return text.substring(0, cdataStartIndex + 9) +
-           newContent +
-           text.substring(cdataEndIndex);
+function replaceElementCdata(text, element, newContent) {
+    const cdata = `<![CDATA[${newContent}]]>`;
+    if (element.selfClosing) {
+        const openTag = element.openTag.replace(/\s*\/>$/, '>');
+        return text.substring(0, element.start) + openTag + cdata + `</${element.name}>` + text.substring(element.end);
+    }
+    const span = cdataSpan(text, element);
+    if (span) {
+        return text.substring(0, span.start) + newContent + text.substring(span.end);
+    }
+    if (text.substring(element.openEnd, element.contentEnd).trim() !== '') return text;
+    return text.substring(0, element.openEnd) + cdata + text.substring(element.contentEnd);
 }
 
 /**
- * Replaces the CDATA section of a component inside the XML text.
+ * Replaces the CDATA section of a component inside the XML text. The target is always the
+ * component's OWN Declaration / Implementation (its owner's direct children), mirroring
+ * parseTwinCatXml. An Implementation write is refused (text returned unchanged) unless the owner's
+ * own Implementation is ST — on an SFC/LD/FBD/CFC body there is nothing ST to write, and writing
+ * the first `<ST>` found would overwrite a member's code.
  * @param {string} xmlText The entire XML file content.
  * @param {Object} context Context metadata of the component.
  * @param {string} blockType 'Declaration' or 'Implementation'.
@@ -236,60 +458,39 @@ function replaceFirstCdataOccurrence(text, startTag, endTag, newContent) {
  * @returns {string} The modified XML text.
  */
 function replaceComponentCdata(xmlText, context, blockType, newContent) {
+    let ownerChildren;
     if (!context.subType) {
         // Root POU, GVL, DUT, Itf
-        if (blockType === 'Declaration') {
-            return replaceFirstCdataOccurrence(xmlText, '<Declaration>', '</Declaration>', newContent);
-        } else {
-            return replaceFirstCdataOccurrence(xmlText, '<ST>', '</ST>', newContent);
-        }
-    }
-    
-    const subType = context.subType;
-    const subName = context.subName;
-    const openTagRegex = new RegExp(`<${subType}\\b[^>]*Name="${subName}"[^>]*>`);
-    const openTagMatch = xmlText.match(openTagRegex);
-    if (!openTagMatch) return xmlText;
-    
-    const closeTag = `</${subType}>`;
-    const closeTagIndex = xmlText.indexOf(closeTag, openTagMatch.index);
-    if (closeTagIndex === -1) return xmlText;
-    
-    let subXml = xmlText.substring(openTagMatch.index, closeTagIndex + closeTag.length);
-    
-    if (subType === 'Property' && context.accessorType) {
-        const accessorType = context.accessorType; // 'Get' or 'Set'
-        const accOpenTagRegex = new RegExp(`<${accessorType}\\b[^>]*>`);
-        const accOpenTagMatch = subXml.match(accOpenTagRegex);
-        if (!accOpenTagMatch) return xmlText;
-        
-        const accCloseTag = `</${accessorType}>`;
-        const accCloseTagIndex = subXml.indexOf(accCloseTag, accOpenTagMatch.index);
-        if (accCloseTagIndex === -1) return xmlText;
-        
-        let accXml = subXml.substring(accOpenTagMatch.index, accCloseTagIndex + accCloseTag.length);
-        let newAccXml;
-        if (blockType === 'Declaration') {
-            newAccXml = replaceFirstCdataOccurrence(accXml, '<Declaration>', '</Declaration>', newContent);
-        } else {
-            newAccXml = replaceFirstCdataOccurrence(accXml, '<ST>', '</ST>', newContent);
-        }
-        
-        const newSubXml = subXml.substring(0, accOpenTagMatch.index) + newAccXml + subXml.substring(accCloseTagIndex + accCloseTag.length);
-        return xmlText.substring(0, openTagMatch.index) + newSubXml + xmlText.substring(closeTagIndex + closeTag.length);
+        const root = locateRoot(xmlText);
+        if (!root) return xmlText;
+        ownerChildren = root.children;
     } else {
-        let newSubXml;
-        if (blockType === 'Declaration') {
-            newSubXml = replaceFirstCdataOccurrence(subXml, '<Declaration>', '</Declaration>', newContent);
-        } else {
-            newSubXml = replaceFirstCdataOccurrence(subXml, '<ST>', '</ST>', newContent);
+        const member = findMember(xmlText, context.subType, context.subName);
+        if (!member || member.selfClosing) return xmlText;
+        ownerChildren = childElements(xmlText, member.openEnd, member.contentEnd);
+        if (context.subType === 'Property' && context.accessorType) {
+            const accessor = ownerChildren.find(c => c.name === context.accessorType); // 'Get' or 'Set'
+            if (!accessor || accessor.selfClosing) return xmlText;
+            ownerChildren = childElements(xmlText, accessor.openEnd, accessor.contentEnd);
         }
-        return xmlText.substring(0, openTagMatch.index) + newSubXml + xmlText.substring(closeTagIndex + closeTag.length);
     }
+
+    let target;
+    if (blockType === 'Declaration') {
+        target = ownerChildren.find(c => c.name === 'Declaration');
+    } else {
+        const { language, body } = implementationBody(xmlText, ownerChildren);
+        if (language !== 'ST') return xmlText;
+        target = body;
+    }
+    if (!target) return xmlText;
+    return replaceElementCdata(xmlText, target, newContent);
 }
 
+
 /**
- * Extracts virtual folders defined in the XML.
+ * Extracts virtual folders defined in the XML. Names and paths are entity-decoded; `startIndex` /
+ * `length` locate the raw opening tag in `xmlText`.
  * @param {string} xmlText TwinCAT XML file text.
  * @returns {Array<Object>} Details of the defined folders.
  */
@@ -308,8 +509,10 @@ function getFoldersDetailedFromXml(xmlText) {
             const attrsContent = match[1];
             const selfClosing = attrsContent.trim().endsWith('/');
             
-            const nameMatch = attrsContent.match(/Name="([^"]*)"/);
-            const folderName = nameMatch ? nameMatch[1] : '';
+            // Decoded (`In &amp; Out` -> `In & Out`), so paths compare equal to the decoded
+            // FolderPath values parseTwinCatXml reports.
+            const folderAttrs = parseAttrs(attrsContent);
+            const folderName = folderAttrs.Name || '';
             
             if (folderName) {
                 stack.push(folderName);
@@ -321,7 +524,7 @@ function getFoldersDetailedFromXml(xmlText) {
                     startIndex: match.index,
                     length: match[0].length,
                     selfClosing: selfClosing,
-                    id: (attrsContent.match(/Id="([^"]*)"/) || [])[1] || ''
+                    id: folderAttrs.Id || ''
                 });
                 
                 if (selfClosing) {
@@ -398,13 +601,14 @@ function insertRootFolderIntoXml(xmlText, newFolderTag) {
 /**
  * Inserts a Folder tag inside another folder or at the POU root.
  * @param {string} xmlText The source POU XML text.
- * @param {string} parentFolderPath Parent folder path (e.g. 'Methods\\Internal\\') or empty string for root.
- * @param {string} newFolderName Name of the folder to insert.
+ * @param {string} parentFolderPath Parent folder path (e.g. 'Methods\\Internal\\') or empty string for root
+ * (decoded, as getFoldersDetailedFromXml reports it).
+ * @param {string} newFolderName Name of the folder to insert (decoded; encoded on the way in).
  * @param {string} newFolderUuid UUID of the new folder.
  * @returns {string} The modified XML text.
  */
 function insertFolderIntoXml(xmlText, parentFolderPath, newFolderName, newFolderUuid) {
-    const newFolderTag = `<Folder Name="${newFolderName}" Id="${newFolderUuid}" />`;
+    const newFolderTag = `<Folder Name="${encodeXmlAttr(newFolderName)}" Id="${newFolderUuid}" />`;
 
     if (!parentFolderPath) {
         return insertRootFolderIntoXml(xmlText, newFolderTag);
@@ -424,7 +628,9 @@ function insertFolderIntoXml(xmlText, parentFolderPath, newFolderName, newFolder
     }
     
     if (parentFolder.selfClosing) {
-        const replacement = `<Folder Name="${parentFolder.name}" Id="${parentFolder.id}">\n${indent}  ${newFolderTag}\n${indent}</Folder>`;
+        // Expand the parent's OWN tag (raw bytes, attributes and encoding kept) into an open tag.
+        const parentTag = xmlText.substring(parentFolder.startIndex, parentFolder.startIndex + parentFolder.length);
+        const replacement = `${parentTag.replace(/\s*\/>$/, '>')}\n${indent}  ${newFolderTag}\n${indent}</Folder>`;
         return xmlText.substring(0, parentFolder.startIndex) + replacement + xmlText.substring(parentFolder.startIndex + parentFolder.length);
     } else {
         const insertIndex = parentFolder.startIndex + parentFolder.length;
@@ -499,32 +705,128 @@ function insertMemberIntoXml(xmlText, memberXml, isItf) {
  */
 function insertComponentIntoXml(xmlText, fileUri, isItf, name, componentType, folderPath) {
     const uuid = `{${crypto.randomUUID()}}`;
-    const folderPathAttr = folderPath ? ` FolderPath="${folderPath}"` : '';
-    
+    const folderPathAttr = folderPath ? ` FolderPath="${encodeXmlAttr(folderPath)}"` : '';
+    // Attribute copy of the name. Member names are IEC identifiers (validated by every caller), so
+    // this is the name itself; encoding just keeps the attribute well-formed whatever it is.
+    const nameAttr = encodeXmlAttr(name);
+
     let componentXml = '';
     if (componentType === 'Property') {
         const getUuid = `{${crypto.randomUUID()}}`;
         const setUuid = `{${crypto.randomUUID()}}`;
         if (isItf) {
-            componentXml = `    <Property Name="${name}" Id="${uuid}"${folderPathAttr}>\n      <Declaration><![CDATA[PROPERTY ${name} : INT]]></Declaration>\n      <Get Name="Get" Id="${getUuid}">\n        <Declaration><![CDATA[]]></Declaration>\n      </Get>\n      <Set Name="Set" Id="${setUuid}">\n        <Declaration><![CDATA[]]></Declaration>\n      </Set>\n    </Property>\n`;
+            componentXml = `    <Property Name="${nameAttr}" Id="${uuid}"${folderPathAttr}>\n      <Declaration><![CDATA[PROPERTY ${name} : INT]]></Declaration>\n      <Get Name="Get" Id="${getUuid}">\n        <Declaration><![CDATA[]]></Declaration>\n      </Get>\n      <Set Name="Set" Id="${setUuid}">\n        <Declaration><![CDATA[]]></Declaration>\n      </Set>\n    </Property>\n`;
         } else {
-            componentXml = `    <Property Name="${name}" Id="${uuid}"${folderPathAttr}>\n      <Declaration><![CDATA[PROPERTY ${name} : INT]]></Declaration>\n      <Get Name="Get" Id="${getUuid}">\n        <Declaration><![CDATA[VAR\nEND_VAR\n]]></Declaration>\n        <Implementation>\n          <ST><![CDATA[]]></ST>\n        </Implementation>\n      </Get>\n      <Set Name="Set" Id="${setUuid}">\n        <Declaration><![CDATA[VAR\nEND_VAR\n]]></Declaration>\n        <Implementation>\n          <ST><![CDATA[]]></ST>\n        </Implementation>\n      </Set>\n    </Property>\n`;
+            componentXml = `    <Property Name="${nameAttr}" Id="${uuid}"${folderPathAttr}>\n      <Declaration><![CDATA[PROPERTY ${name} : INT]]></Declaration>\n      <Get Name="Get" Id="${getUuid}">\n        <Declaration><![CDATA[VAR\nEND_VAR\n]]></Declaration>\n        <Implementation>\n          <ST><![CDATA[]]></ST>\n        </Implementation>\n      </Get>\n      <Set Name="Set" Id="${setUuid}">\n        <Declaration><![CDATA[VAR\nEND_VAR\n]]></Declaration>\n        <Implementation>\n          <ST><![CDATA[]]></ST>\n        </Implementation>\n      </Set>\n    </Property>\n`;
         }
     } else if (componentType === 'Action') {
         if (isItf) {
-            componentXml = `    <Action Name="${name}" Id="${uuid}"${folderPathAttr}>\n    </Action>\n`;
+            componentXml = `    <Action Name="${nameAttr}" Id="${uuid}"${folderPathAttr}>\n    </Action>\n`;
         } else {
-            componentXml = `    <Action Name="${name}" Id="${uuid}"${folderPathAttr}>\n      <Implementation>\n        <ST><![CDATA[]]></ST>\n      </Implementation>\n    </Action>\n`;
+            componentXml = `    <Action Name="${nameAttr}" Id="${uuid}"${folderPathAttr}>\n      <Implementation>\n        <ST><![CDATA[]]></ST>\n      </Implementation>\n    </Action>\n`;
         }
     } else { // Method
         if (isItf) {
-            componentXml = `    <Method Name="${name}" Id="${uuid}"${folderPathAttr}>\n      <Declaration><![CDATA[METHOD ${name} : BOOL\n]]></Declaration>\n    </Method>\n`;
+            componentXml = `    <Method Name="${nameAttr}" Id="${uuid}"${folderPathAttr}>\n      <Declaration><![CDATA[METHOD ${name} : BOOL\n]]></Declaration>\n    </Method>\n`;
         } else {
-            componentXml = `    <Method Name="${name}" Id="${uuid}"${folderPathAttr}>\n      <Declaration><![CDATA[METHOD ${name} : BOOL\nVAR_INPUT\nEND_VAR\n]]></Declaration>\n      <Implementation>\n        <ST><![CDATA[]]></ST>\n      </Implementation>\n    </Method>\n`;
+            componentXml = `    <Method Name="${nameAttr}" Id="${uuid}"${folderPathAttr}>\n      <Declaration><![CDATA[METHOD ${name} : BOOL\nVAR_INPUT\nEND_VAR\n]]></Declaration>\n      <Implementation>\n        <ST><![CDATA[]]></ST>\n      </Implementation>\n    </Method>\n`;
         }
     }
 
     return insertMemberIntoXml(xmlText, componentXml, isItf);
+}
+
+/**
+ * The whitespace that precedes `offset` on its own line, or null when something other than spaces
+ * and tabs sits between the line start and `offset` (the element does not start its line).
+ * @param {string} text
+ * @param {number} offset
+ * @returns {string|null}
+ */
+function lineIndentBefore(text, offset) {
+    let start = offset;
+    while (start > 0 && (text[start - 1] === ' ' || text[start - 1] === '\t')) start--;
+    if (start > 0 && text[start - 1] !== '\n' && text[start - 1] !== '\r') return null;
+    return text.slice(start, offset);
+}
+
+/**
+ * Re-adds a missing Get or Set accessor to an existing property (issue #25). The block has exactly
+ * the shape insertComponentIntoXml writes for a NEW property's accessor — interface: declaration
+ * only; function block: `VAR/END_VAR` declaration + empty ST implementation — with a fresh Id.
+ *
+ * Placement follows TwinCAT's child order inside <Property> (Declaration, Get, Set):
+ *  - Get with a Set present goes on its own line(s) immediately before `<Set`;
+ *  - Set goes after `</Get>`, or with neither accessor after the property's own `</Declaration>`
+ *    (Get likewise when there is no Set), or right after the open tag when even that is missing.
+ * Indentation is taken from the property's own children (falling back to the property's indent
+ * plus two spaces), and line endings follow the document, as insertMemberIntoXml does. Every byte
+ * outside the inserted block is preserved. No LineIds entry is written: a new property's accessors
+ * get none from insertComponentIntoXml either, and XAE writes them when it next saves the object.
+ *
+ * @param {string} xmlText The source POU/Itf XML text.
+ * @param {string} propertyName Decoded Name attribute of the property.
+ * @param {'Get'|'Set'} accessorType The accessor to add.
+ * @param {boolean} isItf Whether the parent is an Interface (.TcIO) — declaration-only accessor.
+ * @returns {string} The modified XML text, or the input unchanged when the property is not found,
+ *   is self-closing, already has that accessor, or `accessorType` is neither 'Get' nor 'Set'.
+ */
+function insertPropertyAccessorIntoXml(xmlText, propertyName, accessorType, isItf) {
+    if (accessorType !== 'Get' && accessorType !== 'Set') return xmlText;
+    // Found by decoded Name among the root's members (see findMember), never by a regex built
+    // from the name — a FolderPath or Name holding `&amp;` matches exactly as the parser reported it.
+    const property = findMember(xmlText, 'Property', propertyName);
+    if (!property || property.selfClosing) return xmlText;
+    const children = childElements(xmlText, property.openEnd, property.contentEnd);
+    if (children.some(c => c.name === accessorType)) return xmlText;
+
+    const eol = xmlText.includes('\r\n') ? '\r\n' : '\n';
+    const propIndent = lineIndentBefore(xmlText, property.start);
+    const firstChild = children[0];
+    const childIndentRaw = firstChild ? lineIndentBefore(xmlText, firstChild.start) : null;
+    const childIndent = childIndentRaw !== null && childIndentRaw !== ''
+        ? childIndentRaw
+        : (propIndent !== null ? propIndent : '    ') + '  ';
+    // One nesting step, as the file spells it (two spaces in everything XAE writes; a tab if the
+    // file is tab-indented).
+    const unit = propIndent !== null && childIndent.startsWith(propIndent) && childIndent.length > propIndent.length
+        ? childIndent.slice(propIndent.length)
+        : '  ';
+
+    const id = `{${crypto.randomUUID()}}`;
+    const inner = childIndent + unit;
+    const lines = [`${childIndent}<${accessorType} Name="${accessorType}" Id="${id}">`];
+    if (isItf) {
+        lines.push(`${inner}<Declaration><![CDATA[]]></Declaration>`);
+    } else {
+        lines.push(
+            `${inner}<Declaration><![CDATA[VAR`,
+            'END_VAR',
+            ']]></Declaration>',
+            `${inner}<Implementation>`,
+            `${inner}${unit}<ST><![CDATA[]]></ST>`,
+            `${inner}</Implementation>`
+        );
+    }
+    lines.push(`${childIndent}</${accessorType}>`);
+    const block = lines.join(eol);
+
+    const setEl = children.find(c => c.name === 'Set');
+    if (accessorType === 'Get' && setEl) {
+        // Before <Set>, on lines of its own: the Set line keeps its own indentation untouched.
+        const setIndent = lineIndentBefore(xmlText, setEl.start);
+        if (setIndent !== null) {
+            const at = setEl.start - setIndent.length;
+            return xmlText.slice(0, at) + block + eol + xmlText.slice(at);
+        }
+        // <Set> does not start its line: splice right before it, still as Get-then-Set.
+        return xmlText.slice(0, setEl.start) + block.slice(childIndent.length) + eol + childIndent + xmlText.slice(setEl.start);
+    }
+
+    const after = (accessorType === 'Set' && children.find(c => c.name === 'Get'))
+        || children.find(c => c.name === 'Declaration');
+    const at = after ? after.end : property.openEnd;
+    return xmlText.slice(0, at) + eol + block + xmlText.slice(at);
 }
 
 /**
@@ -537,19 +839,22 @@ function insertComponentIntoXml(xmlText, fileUri, isItf, name, componentType, fo
  * @returns {string} The modified XML text.
  */
 function deleteComponentFromXml(xmlText, rootName, componentType, componentName, accessorType = null) {
-    const openTagRegex = new RegExp(`<${componentType}\\b[^>]*Name="${componentName}"[^>]*>`);
-    const openTagMatch = xmlText.match(openTagRegex);
-    if (!openTagMatch) return xmlText;
-    
-    const closeTag = `</${componentType}>`;
-    const closeTagIndex = xmlText.indexOf(closeTag, openTagMatch.index);
-    if (closeTagIndex === -1) return xmlText;
-    
-    const endIndex = closeTagIndex + closeTag.length;
-    
+    // Found by decoded Name among the root's members (see findMember), never by a regex built
+    // from the name.
+    const member = findMember(xmlText, componentType, componentName);
+    if (!member) return xmlText;
+    const endIndex = member.end;
+
+    // LineIds names are attribute values too: compared decoded, never spliced into a regex. Every
+    // LineIds element is visited (a self-closing one is its own whole match, so it can never swallow
+    // the next block); only the targets are dropped.
+    const removeLineIds = (text, isTarget) =>
+        text.replace(/\s*<LineIds\s+Name="([^"]*)"[^>]*?(?:\/>|>[^]*?<\/LineIds>)/g,
+            (block, rawName) => (isTarget(decodeXmlAttr(rawName)) ? '' : block));
+
     if (accessorType) {
         // Deleting only the Get/Set accessor inside the Property block
-        const propBlock = xmlText.substring(openTagMatch.index, endIndex);
+        const propBlock = xmlText.substring(member.start, endIndex);
         const accOpenRegex = new RegExp(`<${accessorType}\\b[^>]*>`);
         const accOpenMatch = propBlock.match(accOpenRegex);
         if (!accOpenMatch) return xmlText;
@@ -572,16 +877,15 @@ function deleteComponentFromXml(xmlText, rootName, componentType, componentName,
         }
         
         const updatedPropBlock = propBlock.substring(0, accStartIdx) + propBlock.substring(accEndIndex);
-        let cleanedText = xmlText.substring(0, openTagMatch.index) + updatedPropBlock + xmlText.substring(endIndex);
+        const cleanedText = xmlText.substring(0, member.start) + updatedPropBlock + xmlText.substring(endIndex);
         
         // Remove line ids for rootName.componentName.accessorType
-        const lineIdsRegex = new RegExp(`\\s*<LineIds\\s+Name="${rootName}\\.${componentName}\\.${accessorType}"[^>]*>[^]*?</LineIds>`, 'g');
-        cleanedText = cleanedText.replace(lineIdsRegex, '');
-        return cleanedText;
+        const accessorLineIds = `${rootName}.${componentName}.${accessorType}`;
+        return removeLineIds(cleanedText, name => name === accessorLineIds);
     }
     
     // Remove the block and any leading whitespace/newlines before it
-    let startIdx = openTagMatch.index;
+    let startIdx = member.start;
     while (startIdx > 0 && (xmlText[startIdx - 1] === ' ' || xmlText[startIdx - 1] === '\t')) {
         startIdx--;
     }
@@ -592,13 +896,11 @@ function deleteComponentFromXml(xmlText, rootName, componentType, componentName,
         }
     }
     
-    let cleanedText = xmlText.substring(0, startIdx) + xmlText.substring(endIndex);
+    const cleanedText = xmlText.substring(0, startIdx) + xmlText.substring(endIndex);
     
-    // Remove corresponding LineIds block
-    const lineIdsRegex = new RegExp(`\\s*<LineIds\\s+Name="${rootName}\\.${componentName}(\\.[^"]*)?"[^>]*>[^]*?</LineIds>`, 'g');
-    cleanedText = cleanedText.replace(lineIdsRegex, '');
-    
-    return cleanedText;
+    // Remove corresponding LineIds block (`Root.Member` and `Root.Member.<suffix>`)
+    const memberLineIds = `${rootName}.${componentName}`;
+    return removeLineIds(cleanedText, name => name === memberLineIds || name.startsWith(memberLineIds + '.'));
 }
 
 /**
@@ -608,22 +910,24 @@ function deleteComponentFromXml(xmlText, rootName, componentType, componentName,
  * All splicing is done with string slices (never String.replace with a computed replacement):
  * folder paths contain backslashes and could contain '$', both special in replacement strings.
  * @param {string} tag The component's opening tag (e.g. `<Method Name="Home" Id="{…}">`).
- * @param {string} newFolderPath New virtual folder path (trailing backslash), or '' to remove.
+ * @param {string} newFolderPath New virtual folder path (trailing backslash, decoded — it is
+ * entity-encoded here), or '' to remove.
  * @returns {string} The modified tag; the input unchanged when there is nothing to change.
  */
 function setFolderPathOnTag(tag, newFolderPath) {
     const attrMatch = tag.match(/\sFolderPath="[^"]*"/);
+    const encoded = encodeXmlAttr(newFolderPath);
     if (attrMatch) {
         return newFolderPath
-            ? tag.slice(0, attrMatch.index) + ` FolderPath="${newFolderPath}"` + tag.slice(attrMatch.index + attrMatch[0].length)
+            ? tag.slice(0, attrMatch.index) + ` FolderPath="${encoded}"` + tag.slice(attrMatch.index + attrMatch[0].length)
             : tag.slice(0, attrMatch.index) + tag.slice(attrMatch.index + attrMatch[0].length);
     }
     if (!newFolderPath) return tag; // absent + root: nothing to do
     // Insert before the closing '>'. Component tags are never self-closing in real TwinCAT
     // files (they always wrap Declaration/Implementation), but handle '/>' defensively.
     return tag.endsWith('/>')
-        ? tag.slice(0, -2).replace(/\s*$/, '') + ` FolderPath="${newFolderPath}" />`
-        : tag.slice(0, -1) + ` FolderPath="${newFolderPath}">`;
+        ? tag.slice(0, -2).replace(/\s*$/, '') + ` FolderPath="${encoded}" />`
+        : tag.slice(0, -1) + ` FolderPath="${encoded}">`;
 }
 
 /**
@@ -641,17 +945,14 @@ function setFolderPathOnTag(tag, newFolderPath) {
  * there is nothing to change.
  */
 function setComponentFolderPathInXml(xmlText, componentType, componentName, newFolderPath) {
-    // Same anchoring as deleteComponentFromXml, but the name is regex-escaped: IEC identifiers
-    // cannot contain metacharacters today, but a malformed name must not corrupt the match.
-    const nameEsc = componentName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const openTagRegex = new RegExp(`<${componentType}\\b[^>]*Name="${nameEsc}"[^>]*>`);
-    const openTagMatch = xmlText.match(openTagRegex);
-    if (!openTagMatch) return xmlText;
+    // Same anchoring as deleteComponentFromXml: the member is found by its decoded Name.
+    const member = findMember(xmlText, componentType, componentName);
+    if (!member) return xmlText;
 
-    const tag = openTagMatch[0];
+    const tag = member.openTag;
     const newTag = setFolderPathOnTag(tag, newFolderPath);
     if (newTag === tag) return xmlText;
-    return xmlText.substring(0, openTagMatch.index) + newTag + xmlText.substring(openTagMatch.index + tag.length);
+    return xmlText.substring(0, member.start) + newTag + xmlText.substring(member.start + tag.length);
 }
 
 /**
@@ -666,19 +967,11 @@ function setComponentFolderPathInXml(xmlText, componentType, componentName, newF
  * @returns {string|null} The block string, or null when the component is not found.
  */
 function extractComponentBlockFromXml(xmlText, componentType, componentName) {
-    // Same open-tag anchoring as deleteComponentFromXml/setComponentFolderPathInXml.
-    const nameEsc = componentName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const openTagRegex = new RegExp(`<${componentType}\\b[^>]*Name="${nameEsc}"[^>]*>`);
-    const openTagMatch = xmlText.match(openTagRegex);
-    if (!openTagMatch) return null;
-
-    // Never self-closing in real files, but a defensive '/>' is its own complete block.
-    if (openTagMatch[0].endsWith('/>')) return openTagMatch[0];
-
-    const closeTag = `</${componentType}>`;
-    const closeTagIndex = xmlText.indexOf(closeTag, openTagMatch.index);
-    if (closeTagIndex === -1) return null;
-    return xmlText.substring(openTagMatch.index, closeTagIndex + closeTag.length);
+    // Same anchoring as deleteComponentFromXml/setComponentFolderPathInXml. The span ends at the
+    // MATCHING close tag (a defensive self-closing tag is its own complete block).
+    const member = findMember(xmlText, componentType, componentName);
+    if (!member) return null;
+    return xmlText.substring(member.start, member.end);
 }
 
 /**
@@ -701,10 +994,9 @@ function insertComponentBlockIntoXml(targetXml, block, { oldName, newName, newFo
     if (!openTagMatch) return targetXml;
     let tag = openTagMatch[0];
     if (newName !== oldName) {
-        const nameAttr = ` Name="${oldName}"`;
-        const nameIdx = tag.indexOf(nameAttr);
-        if (nameIdx !== -1) {
-            tag = tag.slice(0, nameIdx) + ` Name="${newName}"` + tag.slice(nameIdx + nameAttr.length);
+        const nameSpan = attrValueSpan(tag, 'Name');
+        if (nameSpan && nameSpan.value === oldName) {
+            tag = tag.slice(0, nameSpan.start) + encodeXmlAttr(newName) + tag.slice(nameSpan.end);
         }
     }
     tag = setFolderPathOnTag(tag, newFolderPath);
@@ -804,14 +1096,12 @@ function renameRootObjectInXml(xmlText, newName) {
     const oldName = parseAttrs(rootMatch[2]).Name;
     if (!oldName || oldName === newName) return xmlText;
 
-    // Root Name attribute — spliced inside the matched root tag only.
+    // Root Name attribute — only its value is spliced, inside the matched root tag only.
     let result = xmlText;
-    const tag = rootMatch[0];
-    const nameAttr = ` Name="${oldName}"`;
-    const nameIdx = tag.indexOf(nameAttr);
-    if (nameIdx !== -1) {
-        const absIdx = rootMatch.index + nameIdx;
-        result = result.slice(0, absIdx) + ` Name="${newName}"` + result.slice(absIdx + nameAttr.length);
+    const nameSpan = attrValueSpan(rootMatch[0], 'Name');
+    if (nameSpan) {
+        const absStart = rootMatch.index + nameSpan.start;
+        result = result.slice(0, absStart) + encodeXmlAttr(newName) + result.slice(rootMatch.index + nameSpan.end);
     }
 
     // Declaration header. GVLs have no header naming the object (their declaration is VAR_GLOBAL
@@ -831,7 +1121,8 @@ function renameRootObjectInXml(xmlText, newName) {
     let last = 0;
     let match;
     while ((match = lineIdsRegex.exec(result)) !== null) {
-        const name = match[2];
+        const rawName = match[2];
+        const name = decodeXmlAttr(rawName);
         const nameLower = name.toLowerCase();
         let renamed = null;
         if (nameLower === oldLower) {
@@ -841,8 +1132,8 @@ function renameRootObjectInXml(xmlText, newName) {
         }
         if (renamed !== null) {
             const valueStart = match.index + match[1].length;
-            out += result.slice(last, valueStart) + renamed;
-            last = valueStart + name.length;
+            out += result.slice(last, valueStart) + encodeXmlAttr(renamed);
+            last = valueStart + rawName.length;
         }
     }
     result = out + result.slice(last);
@@ -870,37 +1161,25 @@ function renameRootObjectInXml(xmlText, newName) {
 function renameComponentInXml(xmlText, rootName, componentType, componentName, newName) {
     if (componentName === newName) return xmlText;
 
-    // Same open-tag anchoring as setComponentFolderPathInXml/deleteComponentFromXml, name escaped:
-    // a malformed name must never corrupt the match or the replacement.
-    const nameEsc = componentName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const openTagRegex = new RegExp(`<${componentType}\\b[^>]*Name="${nameEsc}"[^>]*>`);
-    const openTagMatch = xmlText.match(openTagRegex);
-    if (!openTagMatch) return xmlText;
+    // Same anchoring as setComponentFolderPathInXml/deleteComponentFromXml: found by decoded Name.
+    const member = findMember(xmlText, componentType, componentName);
+    if (!member) return xmlText;
 
-    const openTag = openTagMatch[0];
-    const openStart = openTagMatch.index;
+    const openTag = member.openTag;
+    const openStart = member.start;
 
     // The component block: opening tag through matching close tag (a Property's Get/Set included),
     // or just the tag when defensively self-closing. Scoping the header rename to THIS block is
     // essential — on the whole file renameFirstHeaderOccurrence would hit the ROOT's <Declaration>.
-    let blockEnd;
-    if (openTag.endsWith('/>')) {
-        blockEnd = openStart + openTag.length;
-    } else {
-        const closeTag = `</${componentType}>`;
-        const closeTagIndex = xmlText.indexOf(closeTag, openStart);
-        if (closeTagIndex === -1) return xmlText;
-        blockEnd = closeTagIndex + closeTag.length;
-    }
+    const blockEnd = member.end;
     const block = xmlText.substring(openStart, blockEnd);
 
-    // 1. Rewrite the opening tag's Name attribute (matched tag only) via indexOf+slice — never a
+    // 1. Rewrite the opening tag's Name attribute VALUE (matched tag only) via slice — never a
     //    computed String.replace (the technique in insertComponentBlockIntoXml).
     let newTag = openTag;
-    const nameAttr = ` Name="${componentName}"`;
-    const nameIdx = newTag.indexOf(nameAttr);
-    if (nameIdx !== -1) {
-        newTag = newTag.slice(0, nameIdx) + ` Name="${newName}"` + newTag.slice(nameIdx + nameAttr.length);
+    const nameSpan = attrValueSpan(newTag, 'Name');
+    if (nameSpan) {
+        newTag = newTag.slice(0, nameSpan.start) + encodeXmlAttr(newName) + newTag.slice(nameSpan.end);
     }
     let newBlock = newTag + block.slice(openTag.length);
 
@@ -924,7 +1203,8 @@ function renameComponentInXml(xmlText, rootName, componentType, componentName, n
     let last = 0;
     let match;
     while ((match = lineIdsRegex.exec(result)) !== null) {
-        const name = match[2];
+        const rawName = match[2];
+        const name = decodeXmlAttr(rawName);
         const nameLower = name.toLowerCase();
         let renamed = null;
         if (nameLower === oldFullLower) {
@@ -934,8 +1214,8 @@ function renameComponentInXml(xmlText, rootName, componentType, componentName, n
         }
         if (renamed !== null) {
             const valueStart = match.index + match[1].length;
-            out += result.slice(last, valueStart) + renamed;
-            last = valueStart + name.length;
+            out += result.slice(last, valueStart) + encodeXmlAttr(renamed);
+            last = valueStart + rawName.length;
         }
     }
     result = out + result.slice(last);
@@ -944,91 +1224,48 @@ function renameComponentInXml(xmlText, rootName, componentType, componentName, n
 }
 
 /**
- * Deletes a Folder tag from the XML.
+ * Deletes a Folder tag from the XML — a self-closing tag alone, or an open tag through its MATCHING
+ * `</Folder>` (sub-folders included) — plus the whitespace/newline that leads it.
  * @param {string} xmlText TwinCAT XML text.
- * @param {string} folderPath Virtual folder path (e.g. 'Methods\\Internal\\').
+ * @param {string} folderPath Virtual folder path, decoded as getFoldersDetailedFromXml reports it
+ * (e.g. 'Methods\\Internal\\'; the trailing backslash is optional).
  * @returns {string} The modified XML text.
  */
 function deleteFolderTagFromXml(xmlText, folderPath) {
-    const parts = folderPath.split('\\').map(p => p.trim()).filter(p => p.length > 0);
+    const parts = folderPath.split('\\').filter(p => p.length > 0);
     if (parts.length === 0) return xmlText;
-    
-    let searchStartIdx = 0;
-    let targetMatch = null;
-    
-    for (let i = 0; i < parts.length; i++) {
-        const name = parts[i];
-        const isTarget = (i === parts.length - 1);
-        
-        if (isTarget) {
-            // Find self-closing
-            const scRegex = new RegExp(`<Folder\\s+Name="${name}"\\s+Id="([^"]*)"\\s*/>`);
-            const scMatch = xmlText.substring(searchStartIdx).match(scRegex);
-            if (scMatch) {
-                targetMatch = {
-                    index: searchStartIdx + scMatch.index,
-                    length: scMatch[0].length,
-                    type: 'self'
-                };
-                break;
-            }
-            
-            // Find non-self-closing
-            const opRegex = new RegExp(`<Folder\\s+Name="${name}"\\s+Id="([^"]*)"\\s*>`);
-            const opMatch = xmlText.substring(searchStartIdx).match(opRegex);
-            if (opMatch) {
-                targetMatch = {
-                    index: searchStartIdx + opMatch.index,
-                    length: opMatch[0].length,
-                    type: 'block'
-                };
-                break;
-            }
-        } else {
-            // Find parent opening tag to narrow search scope
-            const opRegex = new RegExp(`<Folder\\s+Name="${name}"\\s+Id="([^"]*)"\\s*>`);
-            const opMatch = xmlText.substring(searchStartIdx).match(opRegex);
-            if (opMatch) {
-                searchStartIdx = searchStartIdx + opMatch.index + opMatch[0].length;
-            } else {
-                break;
-            }
-        }
-    }
-    
-    if (!targetMatch) return xmlText;
-    
-    if (targetMatch.type === 'self') {
-        let startIdx = targetMatch.index;
-        while (startIdx > 0 && (xmlText[startIdx - 1] === ' ' || xmlText[startIdx - 1] === '\t')) {
-            startIdx--;
-        }
-        if (startIdx > 0 && xmlText[startIdx - 1] === '\n') {
-            startIdx--;
-            if (startIdx > 0 && xmlText[startIdx - 1] === '\r') {
-                startIdx--;
-            }
-        }
-        return xmlText.substring(0, startIdx) + xmlText.substring(targetMatch.index + targetMatch.length);
+    // Located by its decoded path through the same nesting walk the tree uses, so a folder whose
+    // name holds entities (`In &amp; Out`) is found by the name the user sees.
+    const target = getFoldersDetailedFromXml(xmlText).find(f => f.path === parts.join('\\') + '\\');
+    if (!target) return xmlText;
+
+    let endIdx;
+    if (target.selfClosing) {
+        endIdx = target.startIndex + target.length;
     } else {
-        const closeTag = '</Folder>';
-        const closeIdx = xmlText.indexOf(closeTag, targetMatch.index);
-        if (closeIdx !== -1) {
-            let startIdx = targetMatch.index;
-            while (startIdx > 0 && (xmlText[startIdx - 1] === ' ' || xmlText[startIdx - 1] === '\t')) {
-                startIdx--;
-            }
-            if (startIdx > 0 && xmlText[startIdx - 1] === '\n') {
-                startIdx--;
-                if (startIdx > 0 && xmlText[startIdx - 1] === '\r') {
-                    startIdx--;
-                }
-            }
-            return xmlText.substring(0, startIdx) + xmlText.substring(closeIdx + closeTag.length);
+        const regex = /<Folder\b[^>]*?(\/?)>|<\/Folder>/g;
+        regex.lastIndex = target.startIndex + target.length;
+        let depth = 1;
+        let match = null;
+        while (depth > 0 && (match = regex.exec(xmlText)) !== null) {
+            if (match[0] === '</Folder>') depth--;
+            else if (match[1] !== '/') depth++;
+        }
+        if (depth > 0 || !match) return xmlText;
+        endIdx = match.index + match[0].length;
+    }
+
+    let startIdx = target.startIndex;
+    while (startIdx > 0 && (xmlText[startIdx - 1] === ' ' || xmlText[startIdx - 1] === '\t')) {
+        startIdx--;
+    }
+    if (startIdx > 0 && xmlText[startIdx - 1] === '\n') {
+        startIdx--;
+        if (startIdx > 0 && xmlText[startIdx - 1] === '\r') {
+            startIdx--;
         }
     }
-    
-    return xmlText;
+    return xmlText.substring(0, startIdx) + xmlText.substring(endIdx);
 }
 
 /**
@@ -1039,8 +1276,8 @@ function deleteFolderTagFromXml(xmlText, folderPath) {
  * path from nesting and are left alone, and every other byte is preserved.
  * @param {string} xmlText POU/Interface XML text.
  * @param {string} folderPath Full virtual path of the folder to rename, with trailing backslash
- * (e.g. 'Methods\\Internal\\').
- * @param {string} newName The new (leaf) folder name.
+ * (e.g. 'Methods\\Internal\\'), decoded as getFoldersDetailedFromXml reports it.
+ * @param {string} newName The new (leaf) folder name (decoded; written entity-encoded).
  * @returns {string} The modified XML text; the input unchanged when the folder is not found or the
  * rename is a no-op.
  */
@@ -1055,12 +1292,11 @@ function renameVirtualFolderInXml(xmlText, folderPath, newName) {
     const parentSegments = parts.slice(0, -1);
     const newPath = (parentSegments.length ? parentSegments.join('\\') + '\\' : '') + newName + '\\';
 
-    // 1. Rewrite the folder tag's Name attribute (matched tag only) via slice.
+    // 1. Rewrite the folder tag's Name attribute VALUE (matched tag only, encoded) via slice.
     const tag = xmlText.substring(folder.startIndex, folder.startIndex + folder.length);
-    const nameAttr = ` Name="${folder.name}"`;
-    const nameIdx = tag.indexOf(nameAttr);
-    if (nameIdx === -1) return xmlText;
-    const newTag = tag.slice(0, nameIdx) + ` Name="${newName}"` + tag.slice(nameIdx + nameAttr.length);
+    const nameSpan = attrValueSpan(tag, 'Name');
+    if (!nameSpan) return xmlText;
+    const newTag = tag.slice(0, nameSpan.start) + encodeXmlAttr(newName) + tag.slice(nameSpan.end);
     let result = xmlText.substring(0, folder.startIndex) + newTag + xmlText.substring(folder.startIndex + folder.length);
 
     // 2. Repoint every member FolderPath that starts with the old path prefix (case-sensitive, as
@@ -1072,12 +1308,13 @@ function renameVirtualFolderInXml(xmlText, folderPath, newName) {
     let last = 0;
     let match;
     while ((match = faRegex.exec(result)) !== null) {
-        const value = match[1];
+        const rawValue = match[1];
+        const value = decodeXmlAttr(rawValue);
         if (value.startsWith(folderPath)) {
             const newValue = newPath + value.slice(folderPath.length);
             const valueStart = match.index + match[0].indexOf('"') + 1;
-            out += result.slice(last, valueStart) + newValue;
-            last = valueStart + value.length;
+            out += result.slice(last, valueStart) + encodeXmlAttr(newValue);
+            last = valueStart + rawValue.length;
         }
     }
     result = out + result.slice(last);
@@ -1093,6 +1330,7 @@ module.exports = {
     getFoldersDetailedFromXml,
     insertFolderIntoXml,
     insertComponentIntoXml,
+    insertPropertyAccessorIntoXml,
     deleteComponentFromXml,
     setComponentFolderPathInXml,
     extractComponentBlockFromXml,

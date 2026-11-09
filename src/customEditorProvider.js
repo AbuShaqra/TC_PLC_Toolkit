@@ -25,6 +25,30 @@ async function readFile(uri) {
 }
 
 /**
+ * Reports the outcome of a Generate ST run in one notification: the success/failure counts, plus
+ * the members the converter could not export (SFC transitions), named, when there are any.
+ * @param {number} successCount Files written.
+ * @param {number} failCount Files that failed to convert.
+ * @param {string[]} warnings Converter warnings collected across the run.
+ */
+function reportGenerateResult(successCount, failCount, warnings) {
+    const summary = failCount === 0
+        ? `Successfully generated ${successCount} ST files inside "ST_Files" folder.`
+        : `Generated ${successCount} ST files. Failed to convert ${failCount} files.`;
+    if (warnings.length > 0) {
+        for (const w of warnings) console.warn(`Generate ST: ${w}`);
+        const shown = warnings.slice(0, 5).map(w => w.replace(/ is not exported:.*$/, '')).join('; ');
+        const more = warnings.length > 5 ? `; and ${warnings.length - 5} more` : '';
+        vscode.window.showWarningMessage(`${summary} ${warnings.length} SFC transition(s) were not exported ` +
+            `(no Structured Text equivalent; marked by a comment in the .st file): ${shown}${more}.`);
+    } else if (failCount === 0) {
+        vscode.window.showInformationMessage(summary);
+    } else {
+        vscode.window.showWarningMessage(summary);
+    }
+}
+
+/**
  * Custom text editor provider that acts as a wrapper around TwinCAT XML files
  * and serves the Monaco webview editor.
  */
@@ -651,6 +675,8 @@ class TwinCatCustomEditorProvider {
 
         let successCount = 0;
         let failCount = 0;
+        /** @type {string[]} */
+        const warnings = [];
         for (const key of projectMap.keys()) {
             if (!wanted.has(key)) continue;
             const project = projectMap.get(key);
@@ -679,11 +705,12 @@ class TwinCatCustomEditorProvider {
                 try {
                     if (error) throw error;
                     if (!parsed) continue;
-                    const { stText } = convertXmlToSt(parsed, { structs });
+                    const { stText, warnings: fileWarnings } = convertXmlToSt(parsed, { structs });
                     const outRel = stOutputRelPath(projectFolderRel, project.dir, filePath);
                     const outFileUri = vscode.Uri.joinPath(targetDir, ...outRel.split(/[\\/]+/));
                     await vscode.workspace.fs.createDirectory(vscode.Uri.joinPath(outFileUri, '..'));
                     await vscode.workspace.fs.writeFile(outFileUri, Buffer.from(stText, 'utf8'));
+                    warnings.push(...fileWarnings); // only for files actually written
                     successCount++;
                 } catch (err) {
                     console.error(`Failed to generate ST for ${filePath}:`, err);
@@ -692,11 +719,7 @@ class TwinCatCustomEditorProvider {
             }
         }
 
-        if (failCount === 0) {
-            vscode.window.showInformationMessage(`Successfully generated ${successCount} ST files inside "ST_Files" folder.`);
-        } else {
-            vscode.window.showWarningMessage(`Generated ${successCount} ST files. Failed to convert ${failCount} files.`);
-        }
+        reportGenerateResult(successCount, failCount, warnings);
     }
 
     /**
@@ -708,6 +731,8 @@ class TwinCatCustomEditorProvider {
         const files = await vscode.workspace.findFiles('**/*.{TcPOU,TcIO,TcGVL,TcDUT,TcTLEO,tcpou,tcio,tcgvl,tcdut,tctleo}');
         let successCount = 0;
         let failCount = 0;
+        /** @type {string[]} */
+        const warnings = [];
         // Two passes, as in generateAllStFiles: parse everything first to collect struct definitions.
         /** @type {Array<{ fileUri: vscode.Uri, relPath: string, parsed: any, error: any }>} */
         const entries = [];
@@ -726,22 +751,19 @@ class TwinCatCustomEditorProvider {
             try {
                 if (error) throw error;
                 if (!parsed) continue;
-                const { stText } = convertXmlToSt(parsed, { structs });
+                const { stText, warnings: fileWarnings } = convertXmlToSt(parsed, { structs });
                 const ext = path.extname(relPath);
                 const outFileUri = vscode.Uri.joinPath(targetDir, path.dirname(relPath), `${path.basename(relPath, ext)}.st`);
                 await vscode.workspace.fs.createDirectory(vscode.Uri.joinPath(outFileUri, '..'));
                 await vscode.workspace.fs.writeFile(outFileUri, Buffer.from(stText, 'utf8'));
+                warnings.push(...fileWarnings); // only for files actually written
                 successCount++;
             } catch (err) {
                 console.error(`Failed to generate ST for ${fileUri.fsPath}:`, err);
                 failCount++;
             }
         }
-        if (failCount === 0) {
-            vscode.window.showInformationMessage(`Successfully generated ${successCount} ST files inside "ST_Files" folder.`);
-        } else {
-            vscode.window.showWarningMessage(`Generated ${successCount} ST files. Failed to convert ${failCount} files.`);
-        }
+        reportGenerateResult(successCount, failCount, warnings);
     }
 }
 

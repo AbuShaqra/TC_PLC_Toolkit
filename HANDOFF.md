@@ -33,19 +33,29 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
 - **Stale remote branches:** `claude/new-session-ynrdo4` and `claude/project-thread-o6i1sa` are merged into `dev`
   (checked 2026-11-09). The user asked to delete them, but this cloud session's git proxy drops every push
   except to the session branch, so they still exist — delete from the GitHub UI or a local clone.
+- **Merge `claude/focused-ptolemy-m6acaz` into `dev` by SQUASH only** (user decision 2026-11-09): its commit
+  `2b06874` carries a `Co-Authored-By: Claude` trailer, which CLAUDE.md forbids; force-pushing a fix was refused
+  in the cloud session, and the user chose to leave it and squash. Write the squash message without the trailer.
 - **Merge `ccr-d5b51254-r1vu2b` into `dev` by SQUASH only** (user decision 2026-11-09): commit `65d5b1c` on it
   names a private repository the user wants kept out of this repo; the final tree is clean. Delete the branch after.
 
 ## Start here (next session)
-- **Next task: R1** — the first item of [ROADMAP.md](ROADMAP.md) (page https://claude.ai/artifact/8RG7TZtBV2cuupsrwWtknv,
-  source `docs/roadmap.html`). Work strictly in the roadmap's order: R1 Generate ST split-button fix → R3.1 STruC++
-  spike → R4 Objects-tree model (deepening P7) → R2 create a TwinCAT project → R3.2 check command → R3.3 packaging.
-  Forecast end 2026-12-08. Nothing is started. Every R2/R3 decision is SETTLED (2026-11-09, recorded under each
-  item in ROADMAP.md) — do not re-ask them. When an item starts, moves or merges, update ROADMAP.md AND
-  `docs/roadmap.html` and republish the page to the same URL (rule in CLAUDE.md).
-- **R1 in one line:** `media/editor.css:413-416` squares `#generate-st-btn`'s right corners even when the caret is
-  hidden (single project). Toggle a class on `#generate-st-group` with the caret's `hidden` and key the CSS on it;
-  no `:has()` (VS Code 1.66's Chromium lacks it). Webview change → run both `test/browser/` harnesses.
+- **R5 code is DONE (2026-11-09) on `claude/focused-ptolemy-m6acaz`, not merged** — commits `081e308` (PROGRAM
+  stays PROGRAM; SFC-transition warnings), `b5dfeda` (xmlParser: own-block reads/writes, `implementationLanguage`
+  + read-only note for non-ST bodies, bounded CDATA, attribute entity decode/encode, lone CR; BOM verified not to
+  leak), and the #25 commit (Add Get/Set Accessor; property contextValue `propertyNode[.noGet][.noSet]`).
+  Full suite 82/82 FULL, typecheck, lint green. **Still open, on the user's Windows machine:** an added accessor
+  (FB and interface) opens and builds in XAE — the new accessor carries no LineIds, as a newly created property
+  never has; and `node test/devhost/run.js` plus a manual pass of the two new menu entries (each appears only while
+  its accessor is missing; copy/paste/delete/rename/insert still on every property row). PR **#27** → `dev` is OPEN
+  (2026-11-09); merge it by SQUASH (see Branching) only after those checks, then reply on issue #25 and move R5 to Done.
+- **R1 is DONE (2026-11-09)**, on the same branch, so it rides in PR #27: `media/editor.js` `setCaretVisible()`
+  toggles `has-caret` on `#generate-st-group` with the caret's `hidden`; `media/editor.css` keys the squared corners
+  on `.split-btn.has-caret`. `test/browser/run.js` section 7b checks both states (fails on the old code). Still to
+  eyeball in the real dev host on the user's machine (one- and two-project workspaces).
+- **Next task: R3.1** (STruC++ spike) — [ROADMAP.md](ROADMAP.md) (page https://claude.ai/artifact/8RG7TZtBV2cuupsrwWtknv,
+  source `docs/roadmap.html`). Order after it: R4 Objects-tree model (deepening P7) → R2 create a TwinCAT project →
+  R3.2 check command → R3.3 packaging. Forecast end 2026-12-11 (R1 finished early; dates not yet pulled in).
 - **R3 inputs:** STruC++ fork `AbuShaqra/STruCpp`, default branch `development` (@ `2c223c9`, v0.7.0, GPL-3.0-only,
   Node ≥ 22; dialect flags `--dialect-file`/`--dialect-path`, `src/dialect.ts`, `docs/DIALECTS.md`;
   `npm run build:bundle` → `dist/strucpp-bundle.cjs`). The TwinCAT profile is vendored at
@@ -86,7 +96,9 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
 ## Working agreement
 Implementation is delegated to the **`implementer`** agent; the main conversation owns architecture/planning/review/
 commits. **Verify every agent claim** (several haven't survived checking); agents run in parallel only with strictly
-disjoint file ownership; `package.json`/`HANDOFF.md` stay centrally owned. **Verify your own claims too** — three
+disjoint file ownership, and never run `git stash`/`checkout`/`reset` while another agent has uncommitted work
+in the tree (2026-11-09: one stashed to count old-code failures; harmless only because the other's work was
+already committed); `package.json`/`HANDOFF.md` stay centrally owned. **Verify your own claims too** — three
 times an unmeasured but plausible assumption was wrong. Measure, then report.
 **Hard-won lessons live in `.claude/memory/`** (committed, so they cross machines), injected each session by the
 `SessionStart` hook in `.claude/settings.json`. Write new ones THERE, not in the per-machine bank — rules in
