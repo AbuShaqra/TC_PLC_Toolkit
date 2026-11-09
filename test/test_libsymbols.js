@@ -487,7 +487,7 @@ if (!fixtures.librariesDir) {
 
     // BONUS COVERAGE (developer machine only). The Beckhoff archives are `.compiled-library-ge33`
     // containers, a different extension and a different vendor's writer from the MIT `.library` above
-    // — dropping `-ge33` support once stranded four libraries (see HANDOFF.md), so this list is worth
+    // — dropping `-ge33` support once stranded four libraries (see docs/handoff-findings.md), so this list is worth
     // keeping even though CI cannot run it. Names discovered the same way, by reading the registry
     // back (2026-07-20), spread across all three libraries and across symbol shapes:
     //   Tc2_Standard : TON, TOF, CTUD, RS, CONCAT

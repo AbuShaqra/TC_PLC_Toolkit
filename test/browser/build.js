@@ -64,7 +64,7 @@ const provider = new TwinCatCustomEditorProvider(
 // ABSOLUTE urls, as the real asWebviewUri returns (https://file+.vscode-resource.vscode-cdn.net/…).
 // Root-relative paths look equivalent but are not: the Monaco worker runs from a blob: URL, which
 // has no base to resolve them against, and its NLS strings 404 with "Failed trying to load default
-// language strings" — the same symptom HANDOFF records for getting the AMD baseUrl wrong.
+// language strings" — the same symptom docs/handoff-findings.md records for getting the AMD baseUrl wrong.
 const ORIGIN = process.env.HARNESS_ORIGIN || 'http://localhost:8123';
 const fakeWebview = {
     cspSource: ORIGIN,
@@ -244,7 +244,7 @@ for (const r of refs) {
 // occurrence of the name in the pane.
 // Sync the document into the index first, exactly as server.js does before answering any custom
 // request. Skipping it leaves the symbol carrying the XML indexer's coordinates, and the definition
-// comes back pointing at a line that is not the declaration — the trap HANDOFF records under
+// comes back pointing at a line that is not the declaration — the trap docs/handoff-findings.md records under
 // "Diagnostics: how to measure".
 lspParser.parseAndIndexDocument(unit.stText, active.uri);
 const defUseLine = unitLines.findIndex(l => new RegExp('^\\s*' + DEF_SYMBOL + '\\s*:=').test(l));

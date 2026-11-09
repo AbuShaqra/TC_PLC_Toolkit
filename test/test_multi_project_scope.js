@@ -63,7 +63,7 @@ function assert(cond, msg) {
 // identifier. Drives scanWorkspace with a REAL (non-stub) indexLibraries: the stub every other section
 // of this file uses for `deps.indexLibraries` is exactly why nine prior task reviews missed this bug —
 // it never exercises the callback the bug lives in. server.js cannot be required standalone (it opens
-// an IPC connection at require time — see HANDOFF.md "Diagnostics: how to measure"), so this mirrors
+// an IPC connection at require time — see docs/handoff-findings.md "Diagnostics: how to measure"), so this mirrors
 // its indexLibraries composition, including the fix under test: scan every workspace root for a
 // signatures dump, in addition to `dir`.
 // =====================================================================================================

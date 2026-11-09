@@ -7,7 +7,7 @@
  * Two things this module owns:
  *
  * 1. **The measuring recipe** — syncDocument() below mirrors `syncDocument()` in src/lsp/server.js
- *    exactly. Measure any other way and the number is meaningless (see HANDOFF.md):
+ *    exactly. Measure any other way and the number is meaningless (see docs/handoff-findings.md):
  *      - `convertXmlToSt(parsed, { raw: true })` — the NON-raw conversion silently strips
  *        declaration-site init lists (`fb : FB_X(a := b)` becomes `fb : FB_X;`), hiding real findings.
  *        The sample's `GVL_System.fbCylinder : FB_Cylinder(refExtendOut := GVL_Io.bExtendOut, …)` is

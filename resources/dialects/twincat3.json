@@ -1,0 +1,2 @@
+{"id": "twincat3", "name": "TwinCAT 3", "extends": "iec",
+ "features": ["program_methods", "pointer_to", "reference_to", "ref_assign"], "semantics": {}}

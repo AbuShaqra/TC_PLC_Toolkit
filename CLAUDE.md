@@ -15,7 +15,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Rules for the file: it reflects the present, not a changelog — replace stale entries instead of appending to them, and delete items once they are done and committed. Never let it contradict the repo; if they disagree, the repo wins and HANDOFF.md is what needs fixing. Prefer specifics (`file:line`, real counts, real error text) over summaries.
 
-**Keep HANDOFF.md under 100 lines.** It is read at the start of every session, so length is a real cost. Treat going over as a signal to prune, not to append: delete what is finished, and fold detail into the git history or a linked file. But the limit serves the reader, not the other way round — if information is genuinely necessary to act and cannot be shortened without losing it, keep it and run over. Never drop or garble a real finding just to hit the number.
+**Keep HANDOFF.md under 500 lines** (user ruling 2026-11-09; it was 100). It is read at the start of every session, so length is a real cost. Treat going over as a signal to prune, not to append: delete what is finished, and fold detail into the git history or a linked file. But the limit serves the reader, not the other way round — if information is genuinely necessary to act and cannot be shortened without losing it, keep it and run over. Never drop or garble a real finding just to hit the number.
 
 ## Shared memory — read it, and write to it
 
@@ -55,6 +55,17 @@ that in the suite.
 - change **build or packaging** (the no-build-step invariant, the VSIX command, the offline/Monaco-vendoring constraint).
 
 It ships to no user (it is `.vscodeignore`d), so it has no length budget like HANDOFF — but it must never contradict the repo. If they disagree, the repo wins and DEVELOPMENT.md is what needs fixing.
+
+## Keep the roadmap current — always
+
+[ROADMAP.md](ROADMAP.md) is the ordered plan of work, and its published page is
+<https://claude.ai/artifact/8RG7TZtBV2cuupsrwWtknv>, rendered by hand from `docs/roadmap.html`.
+**Work in the roadmap's order.** Whenever an item is added, starts, finishes a phase, settles a decision,
+is blocked, or merges, update `ROADMAP.md` **and** `docs/roadmap.html` (its cards *and* the `PLAN` array that draws
+the timeline chart) in the same change, and republish
+the page to that same URL (Artifact tool: publish `docs/roadmap.html` with `url` set to it). A new request
+from the user goes onto the roadmap when it is accepted; a merged item moves to "Done" with its PR. The
+markdown file wins if the two disagree.
 
 ## Git attribution
 
