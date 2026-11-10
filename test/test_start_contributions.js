@@ -4,7 +4,8 @@
  * Activity Bar container, its three views in order with their ids unchanged, every start command
  * contributed, registered, reachable from the Command Palette and able to activate the extension on
  * VS Code 1.66, the welcome buttons pointing at real commands, an offline monochrome icon, and an
- * offline start page (CSP, no remote loads).
+ * offline start page (CSP, no remote loads). Also the settings this adds: the recent-list length and
+ * the two machine-scoped XAE Shell paths, with the detect command and the page's allow-lists.
  */
 
 'use strict';
@@ -13,6 +14,16 @@ const fs = require('fs');
 const path = require('path');
 const { renderStartPageHtml, HELP_LINKS, PROJECT_ACTIONS } = require('../src/startPageHtml');
 const { TEMPLATE_VERSIONS } = require('../src/projectTemplate');
+const { MAX_RECENTS, DEFAULT_RECENTS_SHOWN } = require('../src/recentProjects');
+const { XAE_SHELL_VERSIONS } = require('../src/xaeShellDetect');
+// src/startPage.js needs `vscode` only when it runs; its allow-lists are plain data.
+const Module = require('module');
+const realLoad = Module._load;
+Module._load = function (request) {
+    if (request === 'vscode') return {};
+    return realLoad.apply(this, arguments);
+};
+const { ALLOWED_COMMANDS, SETTINGS_SECTIONS } = require('../src/startPage');
 
 let errors = 0;
 function assert(cond, msg) {
@@ -57,7 +68,7 @@ assert(dangling.length === 0, `every view id in a when-clause exists (${dangling
 const START_COMMANDS = [
     'twincat.openStartPage', 'twincat.createProject', 'twincat.openProject', 'twincat.generateSt',
     'twincat.openSettings', 'twincat.openGettingStarted', 'twincat.openRoadmap', 'twincat.openReleaseNotes',
-    'twincat.reportIssue'
+    'twincat.reportIssue', 'twincat.detectXaeShell'
 ];
 const contributed = new Map(c.commands.map(cmd => [cmd.command, cmd]));
 const hidden = new Set((c.menus.commandPalette || []).filter(m => m.when === 'false').map(m => m.command));
@@ -77,6 +88,28 @@ assert(contributed.has('twincat.updateLibraryDefinitions') && registered.has('tw
     'Update Library Definitions (reused by the start page) is still contributed and registered');
 for (const a of PROJECT_ACTIONS) assert(registered.has(a.command), `start-page action ${a.command} is a registered command`);
 assert(/^\^1\.66\./.test(pkg.engines.vscode), `engine stays ^1.66 (${pkg.engines.vscode})`);
+
+// ── Settings: the recent-list length and the XAE Shell paths ─────────────────────────────────────
+{
+    const props = c.configuration.properties;
+    const shown = props['twincat.startPage.recentProjectsShown'];
+    assert(!!shown && shown.type === 'integer' && shown.default === DEFAULT_RECENTS_SHOWN && shown.default === 5 && shown.minimum === 1 && shown.maximum === MAX_RECENTS,
+        'twincat.startPage.recentProjectsShown: integer, default 5, 1 to 10 (the stored cap)');
+    assert(contributed.get('twincat.detectXaeShell').title === 'Detect XAE Shell Installations', 'the command reads "TwinCAT: Detect XAE Shell Installations"');
+    for (const v of XAE_SHELL_VERSIONS) {
+        const p = props[v.setting];
+        assert(!!p && p.type === 'string' && p.default === '' && p.scope === 'machine', `${v.setting} is a machine-scoped string, empty by default`);
+        assert(!!p && typeof p.markdownDescription === 'string' && p.markdownDescription.includes(v.version) && /TcXaeShell\.exe/.test(p.markdownDescription)
+            && p.markdownDescription.includes('Filled automatically with the installation found on this machine; change it if yours is elsewhere. Empty = not found.'),
+            `${v.setting} describes itself (version ${v.version}, the full path, auto-filled, empty = not found)`);
+    }
+    assert(/32-bit/.test(props['twincat.xaeShell.path4024'].markdownDescription) && /64-bit/.test(props['twincat.xaeShell.path4026'].markdownDescription),
+        'the descriptions say which shell is 32-bit and which is 64-bit');
+    assert(ALLOWED_COMMANDS.has('twincat.detectXaeShell') && [...ALLOWED_COMMANDS].every(id => id.startsWith('twincat.') && registered.has(id)),
+        'every command the start page may run is a registered twincat.* command');
+    assert(JSON.stringify(SETTINGS_SECTIONS) === JSON.stringify({ xaeShell: 'twincat.xaeShell' }), 'the page may open the Settings UI filtered to twincat.xaeShell only');
+    assert(!/STruC\+\+/i.test(JSON.stringify(c.configuration)), 'no setting names the compiler');
+}
 
 // ── Welcome content ─────────────────────────────────────────────────────────────────────────────
 {
@@ -113,6 +146,11 @@ assert(/^\^1\.66\./.test(pkg.engines.vscode), `engine stays ^1.66 (${pkg.engines
     for (const v of TEMPLATE_VERSIONS) assert(html.includes(`value="${v.id}"`), `version ${v.id} is offered`);
     for (const l of HELP_LINKS) assert(html.includes(`data-link="${l.id}"`), `help link ${l.id} is on the page`);
     assert(/id="compile-project" disabled/.test(html) && /Coming in a later release/.test(html) && !/STruC\+\+/i.test(html), 'Compile project is shown disabled, with no compiler name on the page');
+    const settingsCard = /<section class="card" id="settings"[\s\S]*?<\/section>/.exec(html);
+    assert(!!settingsCard && /<ul id="xae-list"/.test(settingsCard[0]) && /<button type="button" id="xae-change"[^>]*>Change…<\/button>/.test(settingsCard[0])
+        && /data-command="twincat\.detectXaeShell">Detect again<\/button>/.test(settingsCard[0]),
+        'the Settings card has the XAE Shell rows, Change… and Detect again');
+    assert(!/style="/.test(html) && !/ on[a-z]+="/.test(html), 'no inline style or event handler (the CSP would block them)');
     const css = fs.readFileSync(path.join(REPO, 'media', 'startPage.css'), 'utf8');
     assert(!/https?:|@import|url\(/.test(css), 'the stylesheet loads nothing');
     const colours = (css.match(/#[0-9a-fA-F]{3,6}\b|rgb\(/g) || []).length;

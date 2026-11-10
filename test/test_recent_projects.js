@@ -8,7 +8,7 @@
 'use strict';
 
 const {
-    MAX_RECENTS, RECENTS_KEY, addRecent, removeRecent, pruneRecents, createRecentStore
+    MAX_RECENTS, DEFAULT_RECENTS_SHOWN, recentsShownLimit, RECENTS_KEY, addRecent, removeRecent, pruneRecents, createRecentStore
 } = require('../src/recentProjects');
 
 let errors = 0;
@@ -57,6 +57,13 @@ assert(JSON.stringify(paths(recents.list())) === JSON.stringify(['/p/One.sln']),
 assert(store.get(RECENTS_KEY).length === 1, 'and writes the pruned list back');
 recents.remove('/p/One.sln');
 assert(recents.list().length === 0, 'remove empties it');
+
+// The start page's row limit (twincat.startPage.recentProjectsShown), as read from hand-editable settings.
+assert(DEFAULT_RECENTS_SHOWN === 5 && recentsShownLimit(undefined) === 5 && recentsShownLimit('8') === 5 && recentsShownLimit(NaN) === 5 && recentsShownLimit(null) === 5,
+    'the shown limit defaults to 5 for anything that is not a number');
+assert(recentsShownLimit(1) === 1 && recentsShownLimit(7) === 7 && recentsShownLimit(10) === 10, 'a value from 1 to 10 is used as is');
+assert(recentsShownLimit(0) === 1 && recentsShownLimit(-3) === 1 && recentsShownLimit(11) === MAX_RECENTS && recentsShownLimit(Infinity) === 5 && recentsShownLimit(3.7) === 3,
+    'out-of-range values are clamped to 1..10 and fractions floored');
 
 if (errors) {
     console.error(`\n${errors} failure(s)`);

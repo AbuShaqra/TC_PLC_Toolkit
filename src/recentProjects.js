@@ -15,6 +15,20 @@ const RECENTS_KEY = 'twincat.recentSolutions';
 /** Most entries kept. */
 const MAX_RECENTS = 10;
 
+/** Rows the start page shows before "Show all" when `twincat.startPage.recentProjectsShown` is unusable. */
+const DEFAULT_RECENTS_SHOWN = 5;
+
+/**
+ * The `twincat.startPage.recentProjectsShown` setting as a usable row count (settings.json is
+ * hand-editable: the schema's bounds are not enforced on what `get` returns).
+ * @param {unknown} value
+ * @returns {number} An integer from 1 to MAX_RECENTS; DEFAULT_RECENTS_SHOWN for anything not a number.
+ */
+function recentsShownLimit(value) {
+    if (typeof value !== 'number' || !Number.isFinite(value)) return DEFAULT_RECENTS_SHOWN;
+    return Math.min(MAX_RECENTS, Math.max(1, Math.floor(value)));
+}
+
 /**
  * @typedef {Object} RecentSolution
  * @property {string} slnPath Absolute path of the `.sln`.
@@ -125,4 +139,4 @@ function createRecentStore(memento, exists) {
     };
 }
 
-module.exports = { RECENTS_KEY, MAX_RECENTS, addRecent, removeRecent, pruneRecents, createRecentStore, pathKey };
+module.exports = { RECENTS_KEY, MAX_RECENTS, DEFAULT_RECENTS_SHOWN, recentsShownLimit, addRecent, removeRecent, pruneRecents, createRecentStore, pathKey };

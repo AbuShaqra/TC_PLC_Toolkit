@@ -14,6 +14,7 @@
 const vscode = require('vscode');
 const fs = require('fs');
 const { spawn, execFileSync } = require('child_process');
+const { resolveShellExe } = require('./xaeShellDetect');
 
 /**
  * The TwinCAT XAE shells the signature generator knows how to drive, newest first.
@@ -21,17 +22,22 @@ const { spawn, execFileSync } = require('child_process');
  * Both may be installed side by side, and they are **not** interchangeable: a library's signatures can
  * differ depending on which shell produced them — visualisation libraries especially — so the user is
  * asked which one to drive rather than us picking the first hit.
- * @type {{id: string, label: string, progId: string, exePath: string}[]}
+ *
+ * `settingKey` is the `twincat.xaeShell` setting that can name this shell's .exe: the 64-bit shell is
+ * the TwinCAT 3.1.4026 one, the 32-bit shell the 3.1.4024 one.
+ * @type {{id: string, label: string, progId: string, exePath: string, settingKey: string}[]}
  */
 const TCXAESHELL_CANDIDATES = [
     {
         id: 'x64',
+        settingKey: 'path4026',
         label: 'TcXaeShell (64-bit)',
         progId: 'TcXaeShell.DTE.17.0',
         exePath: 'C:\\Program Files\\Beckhoff\\TcXaeShell\\Common7\\IDE\\TcXaeShell.exe'
     },
     {
         id: 'x86',
+        settingKey: 'path4024',
         label: 'TcXaeShell (32-bit)',
         progId: 'TcXaeShell.DTE.15.0',
         exePath: 'C:\\Program Files (x86)\\Beckhoff\\TcXaeShell\\Common7\\IDE\\TcXaeShell.exe'
@@ -90,12 +96,21 @@ function shellExeFromRegistry(progId) {
  * Probed before the generator is spawned so a user without TwinCAT gets an immediate, honest message
  * instead of a PowerShell window that fails a minute later — and so the user can be asked *which* shell
  * to drive when both are present.
+ *
+ * A path configured in `twincat.xaeShell.path4026` / `path4024` wins for its shell when the file
+ * exists; otherwise discovery is what it always was (default location, then the COM registration).
+ * @param {{path4024?: unknown, path4026?: unknown}} [configured] The `twincat.xaeShell` settings.
  * @returns {{id: string, label: string, progId: string, exePath: string}[]} Possibly empty.
  */
-function findTwinCatShells() {
+function findTwinCatShells(configured = {}) {
     const shells = [];
     for (const cand of TCXAESHELL_CANDIDATES) {
-        const exePath = fs.existsSync(cand.exePath) ? cand.exePath : shellExeFromRegistry(cand.progId);
+        const exePath = resolveShellExe({
+            configured: configured[cand.settingKey],
+            defaultPath: cand.exePath,
+            exists: (p) => fs.existsSync(p),
+            fromRegistry: () => shellExeFromRegistry(cand.progId)
+        });
         if (!exePath) continue;
         shells.push(Object.assign({}, cand, { exePath }));
     }

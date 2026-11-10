@@ -36,11 +36,13 @@ guide, the roadmap, the release notes, the issue tracker and the settings. **Ope
 page in an editor tab with:
 
 - **Create new project** — choose TwinCAT 3.1.4024 or 3.1.4026, a name and a location, then *Create*.
-- **Open existing project** — a solution (`.sln`) or a folder, and the ten most recent TwinCAT solutions
-  you opened or created here.
+- **Open existing project** — a solution (`.sln`) or a folder, and the most recent TwinCAT solutions
+  you opened or created here. Five are listed; when more are remembered (up to ten), a **Show all** tile
+  expands the list. `twincat.startPage.recentProjectsShown` changes how many are listed.
 - **Project actions** — *Generate ST* and *Update Library Definitions* (*Compile project* is shown,
   disabled, until it ships).
-- **Help and links**, and **Settings**.
+- **Help and links**, and **Settings** — which also shows where the XAE Shell of each TwinCAT version
+  was found (see [Settings](#settings)), with *Change…* and *Detect again*.
 
 Every one of these is also a Command Palette command under **TwinCAT:** (*TwinCAT: Create New
 Project…*, *TwinCAT: Open Start Page*, *TwinCAT: Generate ST*, …). The page works offline and follows
@@ -185,7 +187,8 @@ dump them into a `library-signatures.xml` in the workspace, which the extension 
 It asks **which XAE Shell to use, 32-bit or 64-bit**, every time. That is not a formality: a library's
 signatures can differ between the two — visualisation libraries especially — so pick the one your
 project is built with. If you always use the same one, set `twincat.libraryDefinitions.shell` and the
-prompt goes away.
+prompt goes away. If a shell is installed somewhere unusual, put its path in `twincat.xaeShell.path4026`
+(64-bit) or `twincat.xaeShell.path4024` (32-bit): a configured path that exists is the one that is driven.
 
 If your project pins a library version that the chosen shell does not have installed, the closest
 installed version of the same major release is used instead, rather than dropping the library.
@@ -289,6 +292,18 @@ open any `.TcPOU` file — it opens in the TwinCAT PLC Toolkit editor.
 | `twincat.diagnostics.declarationTypes` | `false` | Flag declarations with an unknown type. Off by default — types from unreadable `.compiled-library-v3` archives are invisible to the indexer, so this can report false positives in projects that use them. |
 | `twincat.diagnostics.typeCompatibility` | `true` | Flag assignments whose value type is clearly incompatible with the target. |
 | `twincat.libraryDefinitions.shell` | `ask` | Which XAE Shell **Update Library Definitions** drives: `ask`, `x64` or `x86`. Signatures can differ between the two, so it asks by default. |
+| `twincat.startPage.recentProjectsShown` | `5` | How many recent TwinCAT solutions the start page lists (1 to 10). When more are remembered, a **Show all** tile expands the list. |
+| `twincat.xaeShell.path4024` | *(detected)* | Full path to `TcXaeShell.exe` of the XAE Shell for TwinCAT 3.1.4024 (the 32-bit shell). Empty = not found. |
+| `twincat.xaeShell.path4026` | *(detected)* | Full path to `TcXaeShell.exe` of the XAE Shell for TwinCAT 3.1.4026 (the 64-bit shell). Empty = not found. |
+
+**XAE Shell paths.** On Windows the two `twincat.xaeShell.*` settings are filled automatically with the
+installation found on your machine: first from the shell's COM registration, then from the default
+location under `Program Files` (3.1.4026) or `Program Files (x86)` (3.1.4024). Only an **empty** setting
+is ever filled — a path you set yourself is never overwritten, so change it if your shell is elsewhere.
+**TwinCAT: Detect XAE Shell Installations** looks again and tells you, per version, whether it found the
+shell, kept your value, or found nothing. The settings are per machine (they are not synced and cannot be
+set per workspace). Today they are used by **Update Library Definitions**, which drives the shell at a
+configured path when that file exists; on other platforms nothing is detected and they stay empty.
 
 ---
 

@@ -241,14 +241,23 @@ function registerStartCommands(context, { provider, getProjectMap, getSolutionMa
             await provider.generateAllStFiles(picked.map(p => p.key));
         }),
 
-        vscode.commands.registerCommand('twincat.openSettings', () =>
-            vscode.commands.executeCommand('workbench.action.openSettings', `@ext:${context.extension.id}`)),
+        // `query` narrows the Settings UI to one of the extension's own sections (the start page's
+        // "Change…" passes `twincat.xaeShell`); anything else opens all of the extension's settings.
+        vscode.commands.registerCommand('twincat.openSettings', (query) =>
+            vscode.commands.executeCommand('workbench.action.openSettings',
+                typeof query === 'string' && /^twincat\.[A-Za-z0-9.]+$/.test(query) ? query : `@ext:${context.extension.id}`)),
         vscode.commands.registerCommand('twincat.openGettingStarted', () =>
             vscode.commands.executeCommand('markdown.showPreview', vscode.Uri.file(path.join(context.extensionPath, 'README.md')))),
         vscode.commands.registerCommand('twincat.openRoadmap', () => vscode.env.openExternal(vscode.Uri.parse(LINKS.roadmap))),
         vscode.commands.registerCommand('twincat.openReleaseNotes', () => vscode.env.openExternal(vscode.Uri.parse(LINKS.releaseNotes))),
         vscode.commands.registerCommand('twincat.reportIssue', () => vscode.env.openExternal(vscode.Uri.parse(LINKS.reportIssue)))
     );
+
+    // A change to what the page shows from the settings (the recent-list length, the XAE Shell paths)
+    // reaches an open start page at once.
+    context.subscriptions.push(vscode.workspace.onDidChangeConfiguration((e) => {
+        if (e.affectsConfiguration('twincat.startPage') || e.affectsConfiguration('twincat.xaeShell')) startPage.postState();
+    }));
 
     /** Records the TwinCAT solutions open in this workspace as recently opened. */
     function recordOpenSolutions() {

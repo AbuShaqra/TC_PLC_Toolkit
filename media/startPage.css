@@ -238,6 +238,31 @@ ul { list-style: none; margin: 0; padding: 0; }
     border: none;
 }
 .recent-remove:hover { color: var(--tc-accent); }
+/* "Show all (K)" / "Show fewer": a recent-list tile whose whole row is the button. */
+.recent-toggle .recent-open { cursor: pointer; }
+.recent-toggle .recent-name { color: var(--vscode-textLink-foreground); }
+
+/* The XAE Shell paths in the Settings card: version, then the path (wrapping anywhere) or "not found". */
+.xae-paths { display: grid; gap: 6px; margin-bottom: 10px; }
+.xae-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2px 8px;
+    min-width: 0;
+    padding: 7px 10px;
+    border: 1px solid var(--tc-border);
+    border-radius: 8px;
+    background: var(--vscode-editor-background);
+}
+.xae-version { flex: none; font-weight: 600; }
+.xae-path { flex: 1 1 12em; min-width: 0; overflow-wrap: anywhere; font-family: var(--vscode-editor-font-family, monospace); }
+.xae-row.unset .xae-path { font-family: inherit; color: var(--vscode-descriptionForeground); }
+.xae-row.missing {
+    border-color: var(--vscode-inputValidation-warningBorder, var(--vscode-editorWarning-foreground));
+    background: var(--vscode-inputValidation-warningBackground, var(--vscode-editor-background));
+}
+.xae-warning { flex: 1 1 100%; color: var(--vscode-editorWarning-foreground, var(--vscode-foreground)); }
+.row.wrap { flex-wrap: wrap; }
 a { color: var(--vscode-textLink-foreground); text-decoration: none; }
 a:hover { color: var(--vscode-textLink-activeForeground); text-decoration: underline; }
 .card > .hint { margin-bottom: 12px; }

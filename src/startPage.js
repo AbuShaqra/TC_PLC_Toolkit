@@ -14,10 +14,13 @@
 
 const vscode = require('vscode');
 const crypto = require('crypto');
+const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { renderStartPageHtml, PROJECT_ACTIONS } = require('./startPageHtml');
 const { TEMPLATE_VERSIONS } = require('./projectTemplate');
+const { recentsShownLimit } = require('./recentProjects');
+const { XAE_SHELL_SECTION, describeConfiguredShells } = require('./xaeShellDetect');
 
 /** The panel's view type (also the `onWebviewPanel:` activation event and the serializer key). */
 const START_PAGE_VIEW_TYPE = 'twincat.startPage';
@@ -26,7 +29,10 @@ const START_PAGE_VIEW_TYPE = 'twincat.startPage';
 const LAST_LOCATION_KEY = 'twincat.lastProjectLocation';
 
 /** Commands the page may run. Anything else a (compromised) page posts is ignored. */
-const ALLOWED_COMMANDS = new Set([...PROJECT_ACTIONS.map(a => a.command), 'twincat.openSettings']);
+const ALLOWED_COMMANDS = new Set([...PROJECT_ACTIONS.map(a => a.command), 'twincat.openSettings', 'twincat.detectXaeShell']);
+
+/** Settings sections the page may open filtered (`openSettings {section}`) → the Settings UI query. */
+const SETTINGS_SECTIONS = Object.freeze({ xaeShell: XAE_SHELL_SECTION });
 
 /** Help link ids → the command that opens each. */
 const LINK_COMMANDS = Object.freeze({
@@ -109,12 +115,15 @@ class StartPageController {
     /** Sends the page what it cannot know by itself. Safe to call when no page is open. */
     postState() {
         if (!this.panel) return;
+        const xaeConfig = vscode.workspace.getConfiguration(XAE_SHELL_SECTION);
         this.panel.webview.postMessage({
             type: 'state',
             location: this.defaultLocation(),
             sep: path.sep,
             recents: this.deps.recents.list(),
-            hasProject: this.deps.hasProject()
+            recentsShown: recentsShownLimit(vscode.workspace.getConfiguration('twincat.startPage').get('recentProjectsShown')),
+            hasProject: this.deps.hasProject(),
+            xaeShells: describeConfiguredShells((key) => xaeConfig.get(key), (p) => fs.existsSync(p))
         });
     }
 
@@ -162,6 +171,11 @@ class StartPageController {
             case 'command':
                 if (ALLOWED_COMMANDS.has(msg.command)) await vscode.commands.executeCommand(msg.command);
                 break;
+            case 'openSettings':
+                if (Object.prototype.hasOwnProperty.call(SETTINGS_SECTIONS, msg.section)) {
+                    await vscode.commands.executeCommand('twincat.openSettings', SETTINGS_SECTIONS[msg.section]);
+                }
+                break;
             case 'link':
                 if (Object.prototype.hasOwnProperty.call(LINK_COMMANDS, msg.id)) {
                     await vscode.commands.executeCommand(LINK_COMMANDS[msg.id]);
@@ -171,4 +185,4 @@ class StartPageController {
     }
 }
 
-module.exports = { StartPageController, START_PAGE_VIEW_TYPE, LAST_LOCATION_KEY, ALLOWED_COMMANDS, LINK_COMMANDS };
+module.exports = { StartPageController, START_PAGE_VIEW_TYPE, LAST_LOCATION_KEY, ALLOWED_COMMANDS, LINK_COMMANDS, SETTINGS_SECTIONS };

@@ -8,7 +8,8 @@
  * one nonce for the two local scripts; there is no remote font, image or script anywhere. Colours and
  * fonts come from VS Code's theme variables in media/startPage.css, so it follows the user's theme.
  *
- * Dynamic content (the default location, recent solutions, whether a project is open) is not rendered
+ * Dynamic content (the default location, recent solutions, whether a project is open, the XAE Shell
+ * paths) is not rendered
  * here: media/startPage.js asks the host for it with a `ready` message, so a refresh never rebuilds
  * the page and loses what the user typed.
  */
@@ -150,6 +151,12 @@ function renderStartPageHtml(o) {
                 <button type="button" class="tile" data-command="twincat.openSettings">` +
         `<span class="action-text"><span class="action-label">Open Settings</span><span class="action-detail">Diagnostics, library definitions and the XAE shell</span></span>` +
         `${icon('chevron', 'icon chevron')}</button>
+                <h3 id="xae-title">XAE Shell</h3>
+                <ul id="xae-list" class="xae-paths" aria-labelledby="xae-title"></ul>
+                <div class="row wrap">
+                    <button type="button" id="xae-change" class="secondary">Change…</button>
+                    <button type="button" class="secondary" data-command="twincat.detectXaeShell">Detect again</button>
+                </div>
             </section>
         </div>
         <footer class="footer">TwinCAT PLC Toolkit · AGPL-3.0-or-later · Not affiliated with Beckhoff Automation</footer>

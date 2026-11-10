@@ -6,9 +6,10 @@
  * the file system, the network or a command directly.
  *
  * Messages to the host:  ready · browseLocation · create {version, name, location} · openProject ·
- *                        openRecent {slnPath} · removeRecent {slnPath} · command {command} · link {id}
- * Messages from the host: state {location, sep, recents, hasProject} · location {location} ·
- *                         createResult {ok, error?}
+ *                        openRecent {slnPath} · removeRecent {slnPath} · command {command} · link {id} ·
+ *                        openSettings {section}
+ * Messages from the host: state {location, sep, recents, recentsShown, hasProject, xaeShells} ·
+ *                         location {location} · createResult {ok, error?}
  */
 
 (function () {
@@ -93,13 +94,27 @@
         });
     }
 
+    $('xae-change').addEventListener('click', () => vscode.postMessage({ type: 'openSettings', section: 'xaeShell' }));
+
+    /** The last recent list and row limit the host sent; kept so the toggle can re-render without it. */
+    let lastRecents = [];
+    let recentsShown = 5;
+    // "Show all" is a view state of this page only: deliberately not saved, so a reload starts collapsed.
+    let recentsExpanded = false;
+
     /**
-     * @param {Array<{slnPath: string, name: string}>} recents
+     * Renders the recent solutions: at most `recentsShown` rows, then one "Show all (K)" tile when more
+     * are stored, which expands the list in place and becomes "Show fewer".
+     * @param {boolean} [focusToggle] Put the focus back on the toggle (it was just activated and the
+     *   list is rebuilt around it, which would otherwise drop keyboard focus to the page).
      */
-    function renderRecents(recents) {
+    function renderRecents(focusToggle) {
         const list = $('recent-list');
         list.textContent = '';
-        for (const r of recents || []) {
+        const all = lastRecents;
+        const overflow = all.length > recentsShown;
+        if (!overflow) recentsExpanded = false;
+        for (const r of recentsExpanded ? all : all.slice(0, recentsShown)) {
             const li = document.createElement('li');
             const open = document.createElement('button');
             open.type = 'button';
@@ -123,7 +138,58 @@
             li.append(open, remove);
             list.append(li);
         }
-        $('recent-empty').hidden = (recents || []).length > 0;
+        if (overflow) {
+            const li = document.createElement('li');
+            li.className = 'recent-toggle';
+            const toggle = document.createElement('button');
+            toggle.type = 'button';
+            toggle.id = 'recent-toggle';
+            toggle.className = 'recent-open';
+            toggle.setAttribute('aria-expanded', recentsExpanded ? 'true' : 'false');
+            toggle.setAttribute('aria-controls', 'recent-list');
+            const label = document.createElement('span');
+            label.className = 'recent-name';
+            label.textContent = recentsExpanded ? 'Show fewer' : 'Show all (' + all.length + ')';
+            toggle.append(label);
+            toggle.addEventListener('click', () => {
+                recentsExpanded = !recentsExpanded;
+                renderRecents(true);
+            });
+            li.append(toggle);
+            list.append(li);
+            if (focusToggle) toggle.focus();
+        }
+        $('recent-empty').hidden = all.length > 0;
+    }
+
+    /**
+     * Renders the two XAE Shell path settings: "3.1.4024: <path>" or "not found", with a warning when
+     * a configured path is not a file on this machine.
+     * @param {Array<{id: string, version: string, path: string, exists: boolean}>} shells
+     */
+    function renderXaeShells(shells) {
+        const list = $('xae-list');
+        list.textContent = '';
+        for (const s of shells) {
+            const li = document.createElement('li');
+            const missing = !!s.path && !s.exists;
+            li.className = 'xae-row' + (missing ? ' missing' : '') + (s.path ? '' : ' unset');
+            li.setAttribute('data-xae', s.id);
+            const version = document.createElement('span');
+            version.className = 'xae-version';
+            version.textContent = s.version + ':';
+            const where = document.createElement('span');
+            where.className = 'xae-path';
+            where.textContent = s.path || 'not found';
+            li.append(version, where);
+            if (missing) {
+                const warning = document.createElement('span');
+                warning.className = 'xae-warning';
+                warning.textContent = 'This file does not exist.';
+                li.append(warning);
+            }
+            list.append(li);
+        }
     }
 
     window.addEventListener('message', (event) => {
@@ -132,7 +198,10 @@
             case 'state':
                 if (msg.sep) sep = msg.sep;
                 if (msg.location && !locationInput.value) locationInput.value = msg.location;
-                renderRecents(msg.recents);
+                lastRecents = Array.isArray(msg.recents) ? msg.recents : [];
+                if (typeof msg.recentsShown === 'number' && msg.recentsShown >= 1) recentsShown = Math.floor(msg.recentsShown);
+                renderRecents();
+                renderXaeShells(Array.isArray(msg.xaeShells) ? msg.xaeShells : []);
                 $('no-project').hidden = !!msg.hasProject;
                 for (const b of document.querySelectorAll('[data-needs-project]')) b.disabled = !msg.hasProject;
                 refresh();

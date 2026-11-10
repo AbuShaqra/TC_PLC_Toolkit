@@ -3,8 +3,10 @@
  * @description Drives the TwinCAT start page (roadmap R2) in a real Chromium: renders the page the
  * extension ships (src/startPageHtml.js, media/startPage.{js,css}, media/projectName.js) with its CSP
  * intact, and checks that it loads nothing remote, validates the project name as the user types,
- * posts the right message for every control, shows results the host sends back, and has no
- * horizontal scroll at 360 px.
+ * posts the right message for every control, shows results the host sends back, limits the recent
+ * list to the configured number of rows behind a keyboard-operable "Show all (K)" / "Show fewer" tile,
+ * shows the XAE Shell paths (with a warning for a path that is not on disk), and has no horizontal
+ * scroll at 360 px.
  *
  * Only `acquireVsCodeApi()` is stubbed (through Playwright's init script, which the CSP does not
  * block): it records what the page posts, standing in for the extension host.
@@ -59,6 +61,9 @@ const { TEMPLATE_VERSIONS } = require(path.join(REPO, 'src', 'projectTemplate.js
     });
     fs.mkdirSync(path.join(HERE, 'out'), { recursive: true });
     fs.writeFileSync(path.join(HERE, 'out', 'start.html'), html);
+    // Stand-ins for the two theme colours the warning row uses (a page outside VS Code has none).
+    fs.writeFileSync(path.join(HERE, 'out', 'theme.css'),
+        ':root { --vscode-inputValidation-warningBorder: rgb(184, 149, 0); --vscode-editorWarning-foreground: rgb(184, 149, 0); }\n');
 
     const { start } = require('./serve.js');
     let served;
@@ -174,6 +179,99 @@ const { TEMPLATE_VERSIONS } = require(path.join(REPO, 'src', 'projectTemplate.js
         assert(msgs.length === 2 && msgs[0].command === 'twincat.generateSt' && msgs[1].command === 'twincat.updateLibraryDefinitions',
             'with a project open the actions run Generate ST and Update Library Definitions');
         assert(await visible('#recent-empty'), 'an empty recent list says so');
+
+        // ── Recent list: at most `recentsShown` rows, then "Show all (K)" ──────────────────────────
+        const eight = Array.from({ length: 8 }, (_, i) => ({ slnPath: `C:\\Projects\\Line_${i + 1}\\Line_${i + 1}.sln`, name: `Line_${i + 1}` }));
+        const xaeShells = [
+            { id: '4024', version: '3.1.4024', path: 'C:\\Program Files (x86)\\Beckhoff\\TcXaeShell\\Common7\\IDE\\TcXaeShell.exe', exists: true },
+            { id: '4026', version: '3.1.4026', path: '', exists: false }
+        ];
+        const stateWith = (extra) => Object.assign({ type: 'state', location: 'C:\\Projects', sep: '\\', hasProject: true, recents: eight, recentsShown: 5, xaeShells }, extra);
+        const rows = () => page.$$eval('#recent-list li:not(.recent-toggle)', els => els.length);
+        const toggleText = () => page.$eval('#recent-toggle', el => el.textContent).catch(() => null);
+        const expanded = () => page.$eval('#recent-toggle', el => el.getAttribute('aria-expanded'));
+        await send(stateWith({}));
+        assert((await rows()) === 5 && (await toggleText()) === 'Show all (8)' && (await expanded()) === 'false',
+            `8 stored, 5 shown: five rows and a "Show all (8)" tile (${await rows()} rows, "${await toggleText()}")`);
+        assert((await text('#recent-list li:not(.recent-toggle) .recent-name')) === 'Line_1', 'the rows shown are the most recent ones');
+        const tileStyle = await page.evaluate(() => {
+            const pick = (el) => { const c = getComputedStyle(el); return [c.display, c.padding, c.borderRadius, c.borderTopWidth, c.backgroundColor].join('|'); };
+            return [pick(document.querySelector('#recent-list li:not(.recent-toggle)')), pick(document.querySelector('#recent-list li.recent-toggle'))];
+        });
+        assert(tileStyle[0] === tileStyle[1], `the toggle is a tile like the rows above it (${tileStyle[1]})`);
+        await page.click('#recent-toggle');
+        assert((await rows()) === 8 && (await toggleText()) === 'Show fewer' && (await expanded()) === 'true', 'clicking it expands the list in place and it becomes "Show fewer"');
+        assert(await page.evaluate(() => document.activeElement && document.activeElement.id === 'recent-toggle'), 'focus stays on the toggle after the list is rebuilt');
+        await send(stateWith({}));
+        assert((await rows()) === 8, 'a state refresh from the host keeps the list expanded');
+        await page.focus('#recent-toggle');
+        await page.keyboard.press('Enter');
+        assert((await rows()) === 5 && (await toggleText()) === 'Show all (8)', 'Enter on the toggle collapses it again (keyboard operable)');
+        await page.keyboard.press('Space');
+        assert((await rows()) === 8, 'Space expands it');
+        await page.keyboard.press('Space');
+        assert(await page.$eval('#recent-toggle', el => el.tagName === 'BUTTON' && /** @type {any} */ (el).tabIndex === 0 && el.getAttribute('aria-controls') === 'recent-list'),
+            'the toggle is a focusable button that names the list it controls');
+        // Reachable with Tab from the last shown row's remove button.
+        await page.focus('#recent-list li:nth-child(5) .recent-remove');
+        await page.keyboard.press('Tab');
+        assert(await page.evaluate(() => document.activeElement && document.activeElement.id === 'recent-toggle'), 'Tab from the last row reaches the toggle');
+        await clearPosted();
+        await page.click('#recent-toggle');
+        assert((await posted()).length === 0, 'expanding is local to the page: nothing is posted to the host');
+        await page.click('#recent-list li:nth-child(8) .recent-open');
+        msgs = await posted();
+        assert(msgs.length === 1 && msgs[0].type === 'openRecent' && msgs[0].slnPath.endsWith('Line_8.sln'), 'a row revealed by "Show all" opens its own solution');
+
+        // The setting changes while the page is open.
+        await send(stateWith({ recentsShown: 3 }));
+        assert((await rows()) === 8 && (await toggleText()) === 'Show fewer', 'a new limit does not collapse an expanded list');
+        await page.click('#recent-toggle');
+        assert((await rows()) === 3 && (await toggleText()) === 'Show all (8)', 'collapsed, the new limit applies (3 rows)');
+        await send(stateWith({ recentsShown: 10 }));
+        assert((await rows()) === 8 && (await toggleText()) === null, 'a limit that covers every stored entry shows them all and no toggle');
+        await send(stateWith({ recentsShown: 5, recents: eight.slice(0, 5) }));
+        assert((await rows()) === 5 && (await toggleText()) === null, 'exactly as many stored as shown: no toggle');
+        await send(stateWith({ recentsShown: 5 }));
+        assert((await rows()) === 5 && (await toggleText()) === 'Show all (8)', 'the list starts collapsed again once the toggle had gone');
+        await send(stateWith({ recentsShown: 1 }));
+        assert((await rows()) === 1 && (await toggleText()) === 'Show all (8)', 'the minimum, 1, shows one row');
+        const noLimit = stateWith({});
+        delete noLimit.recentsShown;
+        await send(stateWith({ recentsShown: 5 }));
+        await send(noLimit);
+        assert((await rows()) === 5, 'a state without a limit keeps the last one');
+
+        // ── Settings card: the XAE Shell paths ─────────────────────────────────────────────────────
+        const xaeRow = (id) => page.$eval(`#xae-list [data-xae="${id}"]`, el => ({ text: el.textContent, cls: el.className }));
+        const r24 = await xaeRow('4024');
+        let r26 = await xaeRow('4026');
+        assert(r24.text === '3.1.4024:C:\\Program Files (x86)\\Beckhoff\\TcXaeShell\\Common7\\IDE\\TcXaeShell.exe' && !/missing|unset/.test(r24.cls),
+            `a configured, existing path is shown as "3.1.4024: <path>" (${r24.text})`);
+        assert(r26.text === '3.1.4026:not found' && /unset/.test(r26.cls) && !/missing/.test(r26.cls), `an empty setting reads "3.1.4026: not found" (${r26.text})`);
+        await send(stateWith({ xaeShells: [xaeShells[0], { id: '4026', version: '3.1.4026', path: 'D:\\Old\\TcXaeShell.exe', exists: false }] }));
+        r26 = await xaeRow('4026');
+        assert(/missing/.test(r26.cls) && /D:\\Old\\TcXaeShell\.exe/.test(r26.text) && /does not exist/.test(r26.text), `a configured path that is not on disk carries a warning (${r26.text})`);
+        assert(await visible('#xae-list [data-xae="4026"] .xae-warning'), 'the warning text is visible');
+        // Outside VS Code the theme variables are unset, so the warning colours need stand-ins to be told apart.
+        await page.addStyleTag({ url: `${ORIGIN}/harness/theme.css` });
+        const themed = await page.evaluate(() => [...document.querySelectorAll('#xae-list li')].map(el => getComputedStyle(el).borderTopColor));
+        assert(themed.length === 2 && themed[0] !== themed[1] && themed[1] === 'rgb(184, 149, 0)', `with theme colours the missing row is styled as a warning (${themed.join(' vs ')})`);
+        await clearPosted();
+        await page.click('#xae-change');
+        await page.click('#settings [data-command="twincat.detectXaeShell"]');
+        msgs = await posted();
+        assert(msgs.length === 2 && msgs[0].type === 'openSettings' && msgs[0].section === 'xaeShell' && msgs[1].type === 'command' && msgs[1].command === 'twincat.detectXaeShell',
+            `Change… posts openSettings {section: xaeShell}; Detect again posts the detect command (${JSON.stringify(msgs)})`);
+        await send({ type: 'state', location: 'C:\\Projects', sep: '\\', hasProject: true, recents: [] });
+        assert((await page.$$('#xae-list li')).length === 0 && await visible('#recent-empty'), 'a state without XAE paths renders no rows and breaks nothing');
+        // Leave long content in place for the width checks below: an expanded list and a long, missing path.
+        await send(stateWith({
+            recents: eight.concat([{ slnPath: 'D:\\Very\\Long\\Path\\That\\Keeps\\Going\\And\\Going\\For\\A\\While\\Plant_42\\Plant_42.sln', name: 'Plant_42' }]),
+            xaeShells: [xaeShells[0], { id: '4026', version: '3.1.4026', path: 'D:\\A\\Very\\Long\\Custom\\Install\\Location\\Beckhoff\\TcXaeShell\\Common7\\IDE\\TcXaeShell.exe', exists: false }]
+        }));
+        await page.click('#recent-toggle');
+        assert((await rows()) === 9, 'the width checks below run with the list expanded (9 rows) and a long missing path');
 
         // Typed values survive the panel being hidden (vscode state).
         await page.fill('#project-name', 'Kept_1');

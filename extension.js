@@ -14,6 +14,7 @@ const { registerObjectInsertCommands } = require('./src/commands/objectInsertCom
 const { registerClipboardCommands } = require('./src/commands/clipboardCommands');
 const { registerRenameCommands } = require('./src/commands/renameCommands');
 const { registerStartCommands } = require('./src/commands/startCommands');
+const { registerXaeShellCommands } = require('./src/commands/xaeShellCommands');
 const { TwinCatDragAndDropController } = require('./src/treeDragAndDrop');
 const { TwinCatCustomEditorProvider } = require('./src/customEditorProvider');
 const { TwinCatTreeDataProvider } = require('./src/treeDataProvider');
@@ -527,6 +528,12 @@ function activate(context) {
         provider, getProjectMap: () => hostProjectMap, getSolutionMap: () => hostSolutionMap
     });
     start.recordOpenSolutions();
+
+    // XAE Shell path settings: `twincat.detectXaeShell`, plus one silent fill of the EMPTY settings.
+    // Deliberately last and not awaited — it queries the registry (Windows only) and must neither
+    // delay activation nor be able to fail it; `autoFill` never rejects.
+    const xaeShell = registerXaeShellCommands(context);
+    setTimeout(() => { xaeShell.autoFill(); }, 0);
 }
 
 function deactivate() {
