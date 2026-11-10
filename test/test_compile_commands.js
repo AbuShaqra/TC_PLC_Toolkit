@@ -460,6 +460,33 @@ const settle = () => new Promise(r => setTimeout(r, 10));
         provider.activePanels.delete(gvlDoc.uri.toString());
     }
 
+    // ── Library symbols (R3.4): the filter's count and the one-time "no dump" hint ───────────────
+    {
+        projectList = [project('a', 'PLC', [fbPath, gvlPath])];
+        const plcproj = path.join(ROOT, 'PLC', 'PLC.plcproj');
+        fs.writeFileSync(plcproj, '<Project><ItemGroup><PlaceholderReference Include="Synthetic Lib"><Namespace>SynLib</Namespace></PlaceholderReference></ItemGroup></Project>');
+        compilerAnswer = () => ({ stdout: JSON.stringify({ dialect: 'twincat3', files: [], summary: {}, diagnostics: [
+            { file: '1.st', line: 1, column: 1, severity: 'error', message: "Undeclared variable 'SYNLIB'" },
+            { file: '1.st', line: 1, column: 1, severity: 'error', message: "Undeclared variable 'NNOPE'" }
+        ] }), code: 1 });
+        for (const k of ['errors', 'infos', 'warnings']) calls[k].length = 0;
+        answers.message.push(undefined);
+        result = await run('twincat.compileProject');
+        await settle();
+        const summaryText = (calls.errors[0] || { m: '' }).m;
+        assert(result.ok === true && result.errors === 1 && result.filteredLibraryDiagnostics === 1,
+            `LIBRARY: an error on a library name is filtered and counted, the user's own error stays (${result.errors}/${result.filteredLibraryDiagnostics})`);
+        assert(/1 error\(s\) on library symbols with no declaration available were not shown/.test(summaryText) &&
+            /Run "TC Toolkit: Update Library Definitions" to check calls into libraries too\./.test(summaryText),
+            `LIBRARY: the summary shows the count, and — with no signatures dump — the hint (${summaryText})`);
+        calls.errors.length = 0;
+        answers.message.push(undefined);
+        await run('twincat.compileProject');
+        await settle();
+        assert(!/Update Library Definitions/.test((calls.errors[0] || { m: '' }).m), 'LIBRARY: the hint is given once per session');
+        fs.rmSync(plcproj);
+    }
+
     // ── The product name of the compiler stays out of the UI strings ────────────────────────────
     const uiText = JSON.stringify([calls.errors, calls.infos, calls.warnings, calls.progress]);
     assert(!/STruC/i.test(uiText), 'UI: no message names the compiler product');

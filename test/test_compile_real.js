@@ -22,7 +22,13 @@
  *   - an error planted in one method is reported on that file, component, pane and line;
  *   - an error planted in a declaration pane and in a GVL land there too;
  *   - in the second sample, calling a method only the first sample's same-named FB_Cylinder has is an
- *     error there — the projects are never compiled together.
+ *     error there — the projects are never compiled together;
+ *   - library declarations (R3.4, src/libraryDecls.js), on a project that calls a SYNTHETIC library
+ *     through a synthetic signatures dump, `.tmc` and archive (test/_synthLibProject.js): correct
+ *     calls give zero errors (and many without the declarations); a wrong argument type and an
+ *     unknown parameter on a library call ARE reported; a library name with no declaration is
+ *     filtered; a user typo is still reported; without the dump the correct project stays at zero.
+ *     The sample runs go through the same library preparation as the command.
  */
 
 const fs = require('fs');
@@ -31,6 +37,8 @@ const { reportCoverage } = require('./_coverage');
 const { parseTwinCatXml } = require('../src/xmlParser');
 const { createProjectMap } = require('../src/lsp/projectMap');
 const cc = require('../src/compileCheck');
+const { prepareLibraryCheck } = require('../src/libraryDecls');
+const { buildSynthLibProject } = require('./_synthLibProject');
 
 const GATE = 'compile-real';
 const bundle = process.env.TWINCAT_COMPILER_BUNDLE || '';
@@ -82,17 +90,23 @@ function assert(cond, msg) {
         const text = fs.readFileSync(filePath, 'utf8');
         return { filePath, text: edit ? edit(filePath, text) : text };
     });
-    const checkFiles = async (filePaths, edit) => {
+    // As the command runs it: the library preparation first (projectDir/roots), then the check.
+    const checkFiles = async (filePaths, edit, libraryOptions) => {
         const built = cc.buildCheckInputs(read(filePaths, edit), parseTwinCatXml);
-        const result = await cc.runCheck({ nodeCommand: setup.nodeCommand, nodeEnv: setup.nodeEnv, compilerPath: setup.compilerPath, dialectFile, inputs: built.inputs });
-        return { built, result };
+        const lib = libraryOptions === null ? null
+            : prepareLibraryCheck({ projectDir: (libraryOptions && libraryOptions.projectDir) || path.dirname(filePaths[0]),
+                roots: (libraryOptions && libraryOptions.roots) || [sampleDir], inputs: built.inputs, compilerPath: setup.compilerPath });
+        const result = await cc.runCheck({ nodeCommand: setup.nodeCommand, nodeEnv: setup.nodeEnv, compilerPath: setup.compilerPath, dialectFile,
+            inputs: lib ? lib.inputs : built.inputs, extraFiles: lib ? lib.extraFiles : [], libraryFilter: lib ? lib.filter : undefined });
+        return { built, result, lib };
     };
     const show = (d) => `${path.basename(d.filePath || '?')} ${d.componentId || ''} ${d.pane || ''}:${d.line}:${d.column} ${d.severity}: ${d.message}`;
 
     // ── The ratchet: zero errors on every sample project ────────────────────────────────────────
     for (const project of projects) {
         const filePaths = filesOf(project);
-        const clean = await checkFiles(filePaths, null);
+        const started = Date.now();
+        const clean = await checkFiles(filePaths, null, { projectDir: project.dir, roots: [sampleDir] });
         const tag = project.name;
         assert(clean.result.status === 'done', `${tag}: the check ran (${clean.result.status}${clean.result.message ? ': ' + clean.result.message : ''})`);
         assert(clean.built.inputs.length === filePaths.length && clean.built.unparsed.length === 0,
@@ -102,13 +116,16 @@ function assert(cond, msg) {
             `${tag}: ${clean.result.errors} error(s) against a baseline of ${SAMPLE_ERROR_BASELINE} — every error on the sample is a bug`);
         assert(clean.result.warnings <= SAMPLE_WARNING_BASELINE,
             `${tag}: ${clean.result.warnings} warning(s) after the filter, against a baseline of ${SAMPLE_WARNING_BASELINE}`);
-        console.log(`    ${tag}: filtered pragma warnings: ${clean.result.filteredPragmaWarnings}; ${clean.result.durationMs} ms`);
+        console.log(`    ${tag}: filtered pragma warnings: ${clean.result.filteredPragmaWarnings}; library: ${clean.lib.extraFiles.length} declaration(s), ` +
+            `${clean.result.filteredLibraryDiagnostics} filtered, preparation ${clean.lib.stats.ms} ms; check ${clean.result.durationMs} ms; total ${Date.now() - started} ms`);
+        assert(clean.result.filteredLibraryDiagnostics === 0 && clean.result.libraryMessages.length === 0,
+            `${tag}: the library filter drops nothing on the sample, and no generated declaration draws a message`);
         assert(clean.result.general.length === 0, `${tag}: no diagnostic is left without a file`);
     }
 
     // The planted errors below are written against the FIRST sample's objects.
     const first = projects.find(p => /[\\/]TcToolkitSample[\\/]/i.test(p.dir + path.sep)) || projects[0];
-    const check = (edit) => checkFiles(filesOf(first), edit);
+    const check = (edit) => checkFiles(filesOf(first), edit, { projectDir: first.dir, roots: [sampleDir] });
 
     // ── A planted error in a method body ────────────────────────────────────────────────────────
     const plantIn = (basename, from, to) => (filePath, text) => {
@@ -151,6 +168,61 @@ function assert(cond, msg) {
         assert(errs.length >= 1 && errs.every(d => d.filePath.startsWith(second.dir)) &&
             errs.some(d => path.basename(d.filePath) === 'MAIN.TcPOU' && d.componentId === 'root' && d.pane === 'impl' && d.line === 11),
             `PLANT (${second.name}): a method of the OTHER project's FB_Cylinder is an error in this project's MAIN, implementation line 11`);
+    }
+
+    // ── Library declarations (R3.4) on a synthetic library ──────────────────────────────────────
+    {
+        const synth = (options) => buildSynthLibProject(options);
+        const runSynth = async (options, withLibrary = true) => {
+            const p = synth(options);
+            try {
+                const r = await checkFiles(p.files, null, withLibrary ? { projectDir: p.projectDir, roots: [p.ws] } : null);
+                return { ...r, p };
+            } finally { p.cleanup(); }
+        };
+        const plantMain = (extra) => ({ edit: (name, o) => (name === 'MAIN' ? { decl: o.decl, impl: `${o.impl}\r\n${extra}` } : o) });
+        const libErrs = (r) => r.result.diagnostics.filter(d => d.severity === 'error');
+
+        const before = await runSynth({}, false);
+        assert(before.result.status === 'done' && before.result.errors >= 3,
+            `LIB: without library declarations the correct project has errors (${before.result.errors})`);
+        const ok = await runSynth({});
+        for (const d of [...ok.result.diagnostics, ...ok.result.general]) console.log(`    ${show(d)}`);
+        assert(ok.result.status === 'done' && ok.result.errors === 0 && ok.result.warnings === 0,
+            `LIB: with them the correct calls give 0 errors (${ok.result.errors}), ${ok.lib.extraFiles.length} declaration(s), ${ok.result.filteredLibraryDiagnostics} filtered, ${ok.result.durationMs} ms`);
+        assert(ok.result.filteredLibraryDiagnostics >= 2 && ok.result.libraryMessages.length === 0,
+            `LIB: library names with no declaration are filtered (${ok.result.filteredLibraryDiagnostics}); every generated declaration compiles (${ok.result.libraryMessages.map(m => m.message).join('; ')})`);
+
+        const { MAIN_IMPL } = require('./_synthLibProject');
+        const plantLine = MAIN_IMPL.split('\r\n').length + 1;
+        let r = await runSynth(plantMain('fDist := F_SynDistance(stFrom := stLimits, stTo := stPos);'));
+        let le = libErrs(r);
+        for (const d of le) console.log(`    ${show(d)}`);
+        assert(le.length === 1 && path.basename(le[0].filePath) === 'MAIN.TcPOU' && le[0].pane === 'impl' && le[0].line === plantLine && /ST_SYNLIMITS/i.test(le[0].message),
+            'LIB: a wrong argument type on a library function call IS reported, in MAIN\'s implementation pane');
+        r = await runSynth(plantMain('nSum := F_SynAdd(nA := 1, nC := 2);'));
+        le = libErrs(r);
+        assert(le.length === 1 && le[0].line === plantLine && /NC/.test(le[0].message), 'LIB: an unknown parameter on a library call IS reported');
+        r = await runSynth(plantMain('nSum := SynMotion.F_SynAdd(nA := 1, nB := 2) + F_SynArchiveOnly(3);'));
+        le = libErrs(r);
+        assert(le.length === 0 && r.result.filteredLibraryDiagnostics > ok.result.filteredLibraryDiagnostics,
+            `LIB: a library name known only from an archive (no declaration) is filtered; the qualified call checks (${le.length} error(s))`);
+        r = await runSynth(plantMain('nSumm := 1;'));
+        le = libErrs(r);
+        assert(le.length === 1 && le[0].line === plantLine && le[0].column === 1 && /NSUMM/.test(le[0].message), 'LIB: a user typo is still reported, at its line and column');
+        r = await runSynth(plantMain('fbAxis.ActSynHomeX();'));
+        le = libErrs(r);
+        assert(le.length === 1 && /ACTSYNHOMEX/.test(le[0].message), 'LIB: a typo in a member of a library function block is still reported');
+        const qualified = 'nSum := SynMotion.F_SynNope(1);';
+        r = await runSynth(plantMain(qualified));
+        le = libErrs(r);
+        for (const d of le) console.log(`    ${show(d)}`);
+        assert(le.length === 1 && le[0].line === plantLine && le[0].column === qualified.indexOf('F_SynNope') + 1 && /F_SYNNOPE/.test(le[0].message),
+            'LIB: an unknown name behind a library qualifier is reported, at its column in the pane (the qualifier is blanked, not removed)');
+        const noDump = await runSynth({ withDump: false });
+        for (const d of [...noDump.result.diagnostics, ...noDump.result.general]) console.log(`    ${show(d)}`);
+        assert(noDump.result.status === 'done' && noDump.result.errors === 0 && !noDump.lib.hasSignatures,
+            `LIB: without the dump the correct project stays at 0 errors (${noDump.result.errors}; ${noDump.result.filteredLibraryDiagnostics} filtered)`);
     }
 
     reportCoverage(GATE, 'ran');

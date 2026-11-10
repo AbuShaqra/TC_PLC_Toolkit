@@ -34,6 +34,7 @@ const pendingEditsCore = require('../../media/pendingEdits');
 const {
     COMPILER_SECTION, isCompilerAvailable, checkSetup, buildCheckInputs, runCheck, summarize, describeLocation, paneRange
 } = require('../compileCheck');
+const { prepareLibraryCheck } = require('../libraryDecls');
 
 /** The `source` of every diagnostic this command publishes. */
 const DIAGNOSTIC_SOURCE = 'TC Toolkit compile';
@@ -72,6 +73,8 @@ function registerCompileCommands(context, { provider, getProjectMap, onSettingsC
     const openTargetUsed = new Set();
     let nextProblemId = 1;
     let running = false;
+    /** The "no library dump" hint is given once per session, not on every run. */
+    let dumpHintGiven = false;
 
     const readSettings = () => {
         const config = vscode.workspace.getConfiguration(COMPILER_SECTION);
@@ -278,18 +281,28 @@ function registerCompileCommands(context, { provider, getProjectMap, onSettingsC
                         }
                         const built = buildCheckInputs(files, parseTwinCatXml);
                         if (built.inputs.length === 0) {
-                            return { result: null, built, unreadable };
+                            return { result: null, built, unreadable, library: null };
                         }
+                        // Library declarations, from this machine's own library files (libraryDecls.js);
+                        // they exist only inside runCheck's temporary directory.
+                        const library = prepareLibraryCheck({
+                            projectDir: project.dir,
+                            roots: (vscode.workspace.workspaceFolders || []).map(f => f.uri.fsPath),
+                            inputs: built.inputs,
+                            compilerPath: setup.compilerPath
+                        });
                         const result = await runCheck({
                             nodeCommand: setup.nodeCommand,
                             nodeEnv: setup.nodeEnv,
                             compilerPath: setup.compilerPath,
                             dialectFile: path.join(context.extensionPath, 'resources', 'dialects', 'twincat3.json'),
-                            inputs: built.inputs,
+                            inputs: library.inputs,
+                            extraFiles: library.extraFiles,
+                            libraryFilter: library.filter,
                             spawn: /** @type {any} */ (spawn),
                             onCancel: (cancel) => { token.onCancellationRequested(cancel); if (token.isCancellationRequested) cancel(); }
                         });
-                        return { result, built, unreadable };
+                        return { result, built, unreadable, library };
                     });
 
                 if (!outcome || (outcome.result && outcome.result.status === 'cancelled')) {
@@ -299,7 +312,7 @@ function registerCompileCommands(context, { provider, getProjectMap, onSettingsC
                     vscode.window.showWarningMessage(`Compile Project: ${projectName} has no TwinCAT objects to compile.`);
                     return { ok: false, reason: 'empty' };
                 }
-                const { result, built, unreadable } = outcome;
+                const { result, built, unreadable, library } = outcome;
                 if (result.status !== 'done') {
                     // The previous results stay: a run that did not finish says nothing about the code.
                     vscode.window.showErrorMessage(`Compile Project did not finish. ${result.message}`);
@@ -327,6 +340,17 @@ function registerCompileCommands(context, { provider, getProjectMap, onSettingsC
                 const left = unreadable.length + built.unparsed.length;
                 if (left > 0) notes.push(`${left} file(s) could not be read as TwinCAT objects and were not compiled`);
                 if (built.skipped.length > 0) notes.push(`${built.skipped.length} SFC transition(s) were not compiled`);
+                if (result.filteredLibraryDiagnostics > 0) {
+                    notes.push(`${result.filteredLibraryDiagnostics} error(s) on library symbols with no declaration available were not shown`);
+                }
+                if (result.libraryMessages.length > 0) {
+                    notes.push(`${result.libraryMessages.length} message(s) about the generated library declarations (not your code) were not shown: ` +
+                        result.libraryMessages.slice(0, 2).map(m => m.message).join('; ') + (result.libraryMessages.length > 2 ? '; …' : ''));
+                }
+                if (library && !library.hasSignatures && library.referencesLibraries && !dumpHintGiven) {
+                    dumpHintGiven = true;
+                    notes.push('Run "TC Toolkit: Update Library Definitions" to check calls into libraries too.');
+                }
                 const summary = [summarize(result, projectName), ...notes].join(' ');
                 const hasProblems = byFile.size > 0;
                 const show = result.errors > 0 ? vscode.window.showErrorMessage
@@ -338,7 +362,8 @@ function registerCompileCommands(context, { provider, getProjectMap, onSettingsC
                 });
                 return {
                     ok: true, projectKey: key, errors: result.errors, warnings: result.warnings,
-                    filteredPragmaWarnings: result.filteredPragmaWarnings, durationMs: result.durationMs, summary
+                    filteredPragmaWarnings: result.filteredPragmaWarnings, filteredLibraryDiagnostics: result.filteredLibraryDiagnostics,
+                    libraryDeclarations: library ? library.extraFiles.length : 0, durationMs: result.durationMs, summary
                 };
             } finally {
                 running = false;
