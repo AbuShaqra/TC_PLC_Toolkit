@@ -399,6 +399,7 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
         <div class="block wide"><h4>Checker and parser gaps</h4><p>An unknown member in a chain; an array member assigned to an INT; plain <code>SUPER()</code>; <code>SUPER.x :=</code>; <code>THIS.a.b</code>; <code>GVL_A.units[0]()</code>; methods from interface EXTENDS bases; arrays and STRUCT fields of an interface type; properties through an interface variable; a library STRUCT as an EXTENDS base.</p></div>
         <div class="block wide"><h4>Progress</h4><p>Batch 1 (10 checker gaps, #30–#39) and batch 2 (accepted code that failed g++, #40–#50) are merged. <code>INSERT</code> now follows IEC (#51, user decision; a run-time behaviour change). Batch 3 running: unknown named arguments on FB calls refused (#52); <code>REF()</code> of STRING/WSTRING/enum (#53); string functions with literal arguments (#54); a typed enum literal as an enum type's default (#55). Byte access through a differently shaped pointer runs wrong today (also in 14 bundled OSCAT functions): fixed at the root by S9, moved up (user: fix the root cause). Decided by the user: a named argument that binds an FB's private VAR variable is always an error.</p></div>
         <div class="block wide"><h4>Found during batch 2</h4><p><code>INSERT</code> with two literal arguments fails g++; named arguments to an FB member call are not checked; <code>REF()</code> of a STRING, WSTRING or enum variable fails g++.</p></div>
+        <div class="block wide"><h4>Batch 4: vendor forms the toolkit sample uses</h4><p>Before the toolkit's compile check: <code>end_semicolon_optional</code> (a missing <code>;</code> after <code>END_IF</code> and the like, on in the vendor profiles); an empty FOR body; <code>0</code> into any <code>POINTER TO</code> as NULL; <code>POINTER TO STRING := ADR(str)</code>; in-FB ACTIONs before the body; a <code>VAR</code> part in a property accessor; <code>GVL.x</code> in FB init arguments.</p></div>
         <div class="block"><h4>Housekeeping</h4><p>The <code>--feature</code> help text and the dialect doc's check list; a bundled-library global colliding with a user global.</p></div>
         <div class="block wide"><h4>How it was estimated</h4><p>My sizing from the item list, not measured. Session time uses the Nov 9 velocity (about 30 min per planned day for fork work, about 45 min for toolkit work); dates assume about 4 hours of session per working day.</p></div>
       </div>
@@ -412,7 +413,7 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
         <div class="card-foot"><span>8.5 d → ~4.5 h</span><span>Nov 13 – 16</span></div>
       </summary>
       <div class="body">
-        <div class="block wide"><h4>Scope</h4><p>CHAR and WCHAR, LTIME, string indexing, <code>STRING[n]</code> (a decision first), typed <code>TRUNC_&lt;type&gt;</code>, literal-only cases that fail in g++, and <code>STRUCT OVERLAP</code>, which reuses the UNION lowering. The S2 plan sized it at 7 to 10 days.</p></div>
+        <div class="block wide"><h4>Scope</h4><p>LTIME first (type, <code>LTIME#</code>, arithmetic, the timers' L-variants), then LDATE/LTOD/LDT, CHAR and WCHAR, string indexing, <code>STRING[n]</code> and <code>WSTRING[n]</code> (decided Nov 10: accepted in every profile), typed <code>TRUNC_&lt;type&gt;</code>, literal-only cases that fail in g++, and <code>STRUCT OVERLAP</code>, which reuses the UNION lowering. The S2 plan sized it at 7 to 10 days.</p></div>
         <div class="block wide"><h4>How it was estimated</h4><p>My sizing from the item list, not measured. Session time uses the Nov 9 velocity (about 30 min per planned day for fork work, about 45 min for toolkit work); dates assume about 4 hours of session per working day.</p></div>
       </div>
     </details>
@@ -480,6 +481,19 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
         <div class="block wide"><h4>Scope</h4><p>Every runtime variable carries its forcing state next to its value, so a BYTE takes 3 bytes and memory is not laid out as on a PLC. Reading a DWORD's bytes through <code>POINTER TO ARRAY OF BYTE</code>, or walking an array or STRUCT with <code>POINTER TO BYTE</code>, reads wrong values. Move the forcing state out of the variable (a table the runtime applies at cycle boundaries), so these forms read real bytes. 14 functions of the bundled OSCAT library use the STRING form and read wrong today.</p></div>
         <div class="block"><h4>Decided</h4><p>User, Nov 10: fix the root cause. Moved ahead of S4–S8, right after S3b batch 3 item 7. Forcing moves to a table applied at cycle boundaries.</p></div>
         <div class="block"><h4>Impact</h4><p>Changes all generated C++; its own release.</p></div>
+      </div>
+    </details>
+
+
+    <details class="card" id="s10">
+      <summary>
+        <div class="card-top"><span>#10</span><span class="id">S10</span><span class="pill planned">Planned</span><span class="chev" aria-hidden="true">›</span></div>
+        <div class="card-title">Vendor types under twincat3</div>
+        <div class="bar" aria-hidden="true"><span style="left:90.91%;width:4.55%"></span></div>
+        <div class="card-foot"><span>1 d → ~30 min</span><span>Nov 19</span></div>
+      </summary>
+      <div class="body">
+        <div class="block wide"><h4>Scope</h4><p><code>platform_types</code>: <code>__XINT</code>/<code>XINT</code>, <code>__UXINT</code>/<code>UXINT</code>, <code>XWORD</code> and <code>PVOID</code> at 64-bit widths. <code>bit_type</code>: BIT as a STRUCT member, stored as a BOOL. Both off by default and under <code>iec-3</code>. HRESULT and OTCID stay library types, supplied by a vendor library rather than built in.</p></div>
       </div>
     </details>
 
@@ -565,7 +579,8 @@ var PLAN = [
   { lane: 'STruC++ fork',   num: 6, id: 'S6',   card: 's6',   name: 'Runtime safety',         est: '7 d → ~3.5 h', start: '2026-11-16', end: '2026-11-17', days: 1.5, offset: 0.3 },
   { lane: 'STruC++ fork',   num: 7, id: 'S7',   card: 's7',   name: 'iec-3 audit (decision)', est: '6 d → ~3 h',  start: '2026-11-17', end: '2026-11-18', days: 1.3, offset: 0.8 },
   { lane: 'STruC++ fork',   num: 8, id: 'S8',   card: 's8',   name: 'Default → iec-3',        est: '0.5 d → ~20 min', start: '2026-11-18', end: '2026-11-18', days: 0.2, offset: 0.8 },
-  { lane: 'STruC++ fork',   num: 9, id: 'S9',   card: 's9',   name: 'Raw memory layout',      est: '4 d → ~2 h',  start: '2026-11-11', end: '2026-11-11', days: 1.0, offset: 0 }
+  { lane: 'STruC++ fork',   num: 9, id: 'S9',   card: 's9',   name: 'Raw memory layout',      est: '4 d → ~2 h',  start: '2026-11-11', end: '2026-11-11', days: 1.0, offset: 0 },
+  { lane: 'STruC++ fork',   num: 10, id: 'S10', card: 's10',  name: 'Vendor types',           est: '1 d → ~30 min', start: '2026-11-19', end: '2026-11-19', days: 0.5, offset: 0 }
 ];
 var DOMAIN_START = '2026-11-09', DOMAIN_END = '2026-11-20'; /* exclusive */
 (function () {
