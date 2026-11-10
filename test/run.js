@@ -19,6 +19,8 @@
  *
  * Env:    REQUIRE_FULL_SUITE=1        fail instead of running REDUCED — use before packaging a
  *                                     release, so a degraded run can never be mistaken for a clean one.
+ *         TWINCAT_COMPILER_BUNDLE     path of an external compiler's bundled CLI file: lets the
+ *                                     optional real-compiler gate (test_compile_real.js) run.
  */
 
 const { spawnSync } = require('child_process');
@@ -121,6 +123,12 @@ const missedGates = requiredGates
     .filter(report => report.status !== 'ran');
 const coverageFull = !filter && fixtures.full && missedGates.length === 0;
 
+// Gates that need something CI does not have (an external compiler). They never decide FULL vs
+// REDUCED and never fail REQUIRE_FULL_SUITE — but whether each ran is printed, so a skip is seen.
+const optionalGates = [
+    'compile-real'
+];
+
 // State the coverage the run actually achieved. Fixture presence is only a preflight hint; FULL
 // requires the harnesses themselves to report that every load-bearing gate ran.
 if (filter) {
@@ -133,6 +141,15 @@ if (filter) {
     for (const report of missedGates) console.log(`    · ${report.gate}: ${report.detail || 'skipped'}`);
     console.log('  Passing here does not prove the diagnostics ratchet held. Run locally with the');
     console.log('  fixtures present (REQUIRE_FULL_SUITE=1 enforces it) before trusting it as a gate.');
+}
+
+if (!filter) {
+    console.log('Optional gates (not required for FULL):');
+    for (const gate of optionalGates) {
+        const report = reports.get(gate);
+        const state = report && report.status === 'ran' ? 'ran' : `skipped — ${(report && report.detail) || 'harness did not report execution'}`;
+        console.log(`    · ${gate}: ${state}`);
+    }
 }
 
 if (failed.length || (requireFull && !coverageFull)) {
