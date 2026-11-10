@@ -644,7 +644,7 @@ class TwinCatCustomEditorProvider {
         <!-- Top bar with object details and dropdown -->
         <header class="app-header">
             <div class="header-left">
-                <span class="logo-text">TwinCAT</span>
+                <span class="logo-text">TC Toolkit</span>
                 <span class="pill" title="Extension build">v${EXT_VERSION}</span>
                 <span id="obj-type" class="pill">POU</span>
                 <h1 id="obj-name">MAIN</h1>
