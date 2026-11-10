@@ -51,3 +51,8 @@ docs/**
 # templates (resources/templates/tc3.1.4024/ and tc3.1.4026/) from it; those ship, this does not.
 resources/templates/xae-3.1.4024/**
 scripts/build-project-templates.js
+
+# R3.3: the bundled compiler under resources/compiler/ SHIPS (the bundle, its two libraries, its
+# licence files and SOURCE.md — the GPL-3.0 notices must reach every recipient). The script that
+# writes it from a fork checkout is developer tooling.
+scripts/vendor-compiler.js

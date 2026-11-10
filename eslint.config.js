@@ -71,6 +71,8 @@ module.exports = [
         ignores: [
             'node_modules/',
             'media/monaco-editor/',
+            // The bundled compiler: a third-party build output written by scripts/vendor-compiler.js.
+            'resources/compiler/',
             // Vendored third-party skill scripts, not project source.
             '.claude/skills/',
             // Git-ignored local playground; nothing in it is tracked.

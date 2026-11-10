@@ -1,0 +1,1260 @@
+{
+  "formatVersion": 1,
+  "manifest": {
+    "name": "iec-std-functions",
+    "version": "1.0.0",
+    "namespace": "strucpp",
+    "functions": [
+      {
+        "name": "ABS",
+        "returnType": "ANY_NUM",
+        "parameters": [
+          {
+            "name": "IN",
+            "type": "ANY_NUM",
+            "direction": "input"
+          }
+        ],
+        "category": "Numerical"
+      },
+      {
+        "name": "ACOS",
+        "returnType": "ANY_REAL",
+        "parameters": [
+          {
+            "name": "IN",
+            "type": "ANY_REAL",
+            "direction": "input"
+          }
+        ],
+        "category": "Numerical"
+      },
+      {
+        "name": "ADD",
+        "returnType": "ANY_NUM",
+        "parameters": [
+          {
+            "name": "IN1",
+            "type": "ANY_NUM",
+            "direction": "input"
+          },
+          {
+            "name": "IN2",
+            "type": "ANY_NUM",
+            "direction": "input"
+          }
+        ],
+        "variadic": {
+          "minArgs": 2
+        },
+        "category": "Arithmetic"
+      },
+      {
+        "name": "ADR",
+        "returnType": "__XWORD",
+        "parameters": [
+          {
+            "name": "IN",
+            "type": "ANY",
+            "direction": "input"
+          }
+        ],
+        "category": "System"
+      },
+      {
+        "name": "AND",
+        "returnType": "ANY_BIT",
+        "parameters": [
+          {
+            "name": "IN1",
+            "type": "ANY_BIT",
+            "direction": "input"
+          },
+          {
+            "name": "IN2",
+            "type": "ANY_BIT",
+            "direction": "input"
+          }
+        ],
+        "variadic": {
+          "minArgs": 2
+        },
+        "category": "Bitwise"
+      },
+      {
+        "name": "ASIN",
+        "returnType": "ANY_REAL",
+        "parameters": [
+          {
+            "name": "IN",
+            "type": "ANY_REAL",
+            "direction": "input"
+          }
+        ],
+        "category": "Numerical"
+      },
+      {
+        "name": "ATAN",
+        "returnType": "ANY_REAL",
+        "parameters": [
+          {
+            "name": "IN",
+            "type": "ANY_REAL",
+            "direction": "input"
+          }
+        ],
+        "category": "Numerical"
+      },
+      {
+        "name": "ATAN2",
+        "returnType": "ANY_REAL",
+        "parameters": [
+          {
+            "name": "IN1",
+            "type": "ANY_REAL",
+            "direction": "input"
+          },
+          {
+            "name": "IN2",
+            "type": "ANY_REAL",
+            "direction": "input"
+          }
+        ],
+        "category": "Numerical"
+      },
+      {
+        "name": "CONCAT",
+        "returnType": "ANY_STRING",
+        "parameters": [
+          {
+            "name": "IN1",
+            "type": "ANY_STRING",
+            "direction": "input"
+          },
+          {
+            "name": "IN2",
+            "type": "ANY_STRING",
+            "direction": "input"
+          }
+        ],
+        "variadic": {
+          "minArgs": 2
+        },
+        "category": "CharacterString"
+      },
+      {
+        "name": "COS",
+        "returnType": "ANY_REAL",
+        "parameters": [
+          {
+            "name": "IN",
+            "type": "ANY_REAL",
+            "direction": "input"
+          }
+        ],
+        "category": "Numerical"
+      },
+      {
+        "name": "CURRENT_DT",
+        "returnType": "DT",
+        "parameters": [],
+        "category": "Time"
+      },
+      {
+        "name": "DELETE",
+        "returnType": "ANY_STRING",
+        "parameters": [
+          {
+            "name": "IN",
+            "type": "ANY_STRING",
+            "direction": "input"
+          },
+          {
+            "name": "L",
+            "type": "INT",
+            "direction": "input"
+          },
+          {
+            "name": "P",
+            "type": "INT",
+            "direction": "input"
+          }
+        ],
+        "category": "CharacterString"
+      },
+      {
+        "name": "DIV",
+        "returnType": "ANY_NUM",
+        "parameters": [
+          {
+            "name": "IN1",
+            "type": "ANY_NUM",
+            "direction": "input"
+          },
+          {
+            "name": "IN2",
+            "type": "ANY_NUM",
+            "direction": "input"
+          }
+        ],
+        "category": "Arithmetic"
+      },
+      {
+        "name": "EQ",
+        "returnType": "BOOL",
+        "parameters": [
+          {
+            "name": "IN1",
+            "type": "ANY_ELEMENTARY",
+            "direction": "input"
+          },
+          {
+            "name": "IN2",
+            "type": "ANY_ELEMENTARY",
+            "direction": "input"
+          }
+        ],
+        "variadic": {
+          "minArgs": 2
+        },
+        "category": "Comparison"
+      },
+      {
+        "name": "EXP",
+        "returnType": "ANY_REAL",
+        "parameters": [
+          {
+            "name": "IN",
+            "type": "ANY_REAL",
+            "direction": "input"
+          }
+        ],
+        "category": "Numerical"
+      },
+      {
+        "name": "EXPT",
+        "returnType": "ANY_REAL",
+        "parameters": [
+          {
+            "name": "IN1",
+            "type": "ANY_REAL",
+            "direction": "input"
+          },
+          {
+            "name": "IN2",
+            "type": "ANY_REAL",
+            "direction": "input"
+          }
+        ],
+        "category": "Numerical"
+      },
+      {
+        "name": "FIND",
+        "returnType": "INT",
+        "parameters": [
+          {
+            "name": "IN1",
+            "type": "ANY_STRING",
+            "direction": "input"
+          },
+          {
+            "name": "IN2",
+            "type": "ANY_STRING",
+            "direction": "input"
+          }
+        ],
+        "category": "CharacterString"
+      },
+      {
+        "name": "GE",
+        "returnType": "BOOL",
+        "parameters": [
+          {
+            "name": "IN1",
+            "type": "ANY_ELEMENTARY",
+            "direction": "input"
+          },
+          {
+            "name": "IN2",
+            "type": "ANY_ELEMENTARY",
+            "direction": "input"
+          }
+        ],
+        "variadic": {
+          "minArgs": 2
+        },
+        "category": "Comparison"
+      },
+      {
+        "name": "GT",
+        "returnType": "BOOL",
+        "parameters": [
+          {
+            "name": "IN1",
+            "type": "ANY_ELEMENTARY",
+            "direction": "input"
+          },
+          {
+            "name": "IN2",
+            "type": "ANY_ELEMENTARY",
+            "direction": "input"
+          }
+        ],
+        "variadic": {
+          "minArgs": 2
+        },
+        "category": "Comparison"
+      },
+      {
+        "name": "INSERT",
+        "returnType": "ANY_STRING",
+        "parameters": [
+          {
+            "name": "IN1",
+            "type": "ANY_STRING",
+            "direction": "input"
+          },
+          {
+            "name": "IN2",
+            "type": "ANY_STRING",
+            "direction": "input"
+          },
+          {
+            "name": "P",
+            "type": "INT",
+            "direction": "input"
+          }
+        ],
+        "category": "CharacterString"
+      },
+      {
+        "name": "LE",
+        "returnType": "BOOL",
+        "parameters": [
+          {
+            "name": "IN1",
+            "type": "ANY_ELEMENTARY",
+            "direction": "input"
+          },
+          {
+            "name": "IN2",
+            "type": "ANY_ELEMENTARY",
+            "direction": "input"
+          }
+        ],
+        "variadic": {
+          "minArgs": 2
+        },
+        "category": "Comparison"
+      },
+      {
+        "name": "LEFT",
+        "returnType": "ANY_STRING",
+        "parameters": [
+          {
+            "name": "IN",
+            "type": "ANY_STRING",
+            "direction": "input"
+          },
+          {
+            "name": "L",
+            "type": "INT",
+            "direction": "input"
+          }
+        ],
+        "category": "CharacterString"
+      },
+      {
+        "name": "LEN",
+        "returnType": "INT",
+        "parameters": [
+          {
+            "name": "IN",
+            "type": "ANY_STRING",
+            "direction": "input"
+          }
+        ],
+        "category": "CharacterString"
+      },
+      {
+        "name": "LIMIT",
+        "returnType": "ANY_ELEMENTARY",
+        "parameters": [
+          {
+            "name": "MN",
+            "type": "ANY_ELEMENTARY",
+            "direction": "input"
+          },
+          {
+            "name": "IN",
+            "type": "ANY_ELEMENTARY",
+            "direction": "input"
+          },
+          {
+            "name": "MX",
+            "type": "ANY_ELEMENTARY",
+            "direction": "input"
+          }
+        ],
+        "category": "Selection"
+      },
+      {
+        "name": "LN",
+        "returnType": "ANY_REAL",
+        "parameters": [
+          {
+            "name": "IN",
+            "type": "ANY_REAL",
+            "direction": "input"
+          }
+        ],
+        "category": "Numerical"
+      },
+      {
+        "name": "LOG",
+        "returnType": "ANY_REAL",
+        "parameters": [
+          {
+            "name": "IN",
+            "type": "ANY_REAL",
+            "direction": "input"
+          }
+        ],
+        "category": "Numerical"
+      },
+      {
+        "name": "LOWER_BOUND",
+        "returnType": "DINT",
+        "parameters": [
+          {
+            "name": "ARR",
+            "type": "ANY",
+            "direction": "input"
+          },
+          {
+            "name": "DIM",
+            "type": "ANY_INT",
+            "direction": "input"
+          }
+        ],
+        "category": "System"
+      },
+      {
+        "name": "LT",
+        "returnType": "BOOL",
+        "parameters": [
+          {
+            "name": "IN1",
+            "type": "ANY_ELEMENTARY",
+            "direction": "input"
+          },
+          {
+            "name": "IN2",
+            "type": "ANY_ELEMENTARY",
+            "direction": "input"
+          }
+        ],
+        "variadic": {
+          "minArgs": 2
+        },
+        "category": "Comparison"
+      },
+      {
+        "name": "MAX",
+        "returnType": "ANY_ELEMENTARY",
+        "parameters": [
+          {
+            "name": "IN1",
+            "type": "ANY_ELEMENTARY",
+            "direction": "input"
+          },
+          {
+            "name": "IN2",
+            "type": "ANY_ELEMENTARY",
+            "direction": "input"
+          }
+        ],
+        "variadic": {
+          "minArgs": 2
+        },
+        "category": "Selection"
+      },
+      {
+        "name": "MEMCPY",
+        "returnType": "ULINT",
+        "parameters": [
+          {
+            "name": "DEST",
+            "type": "ANY",
+            "direction": "input"
+          },
+          {
+            "name": "SRC",
+            "type": "ANY",
+            "direction": "input"
+          },
+          {
+            "name": "N",
+            "type": "ANY_INT",
+            "direction": "input"
+          }
+        ],
+        "category": "System"
+      },
+      {
+        "name": "MID",
+        "returnType": "ANY_STRING",
+        "parameters": [
+          {
+            "name": "IN",
+            "type": "ANY_STRING",
+            "direction": "input"
+          },
+          {
+            "name": "L",
+            "type": "INT",
+            "direction": "input"
+          },
+          {
+            "name": "P",
+            "type": "INT",
+            "direction": "input"
+          }
+        ],
+        "category": "CharacterString"
+      },
+      {
+        "name": "MIN",
+        "returnType": "ANY_ELEMENTARY",
+        "parameters": [
+          {
+            "name": "IN1",
+            "type": "ANY_ELEMENTARY",
+            "direction": "input"
+          },
+          {
+            "name": "IN2",
+            "type": "ANY_ELEMENTARY",
+            "direction": "input"
+          }
+        ],
+        "variadic": {
+          "minArgs": 2
+        },
+        "category": "Selection"
+      },
+      {
+        "name": "MOD",
+        "returnType": "ANY_NUM",
+        "parameters": [
+          {
+            "name": "IN1",
+            "type": "ANY_NUM",
+            "direction": "input"
+          },
+          {
+            "name": "IN2",
+            "type": "ANY_NUM",
+            "direction": "input"
+          }
+        ],
+        "category": "Arithmetic"
+      },
+      {
+        "name": "MOVE",
+        "returnType": "ANY",
+        "parameters": [
+          {
+            "name": "IN",
+            "type": "ANY",
+            "direction": "input"
+          }
+        ],
+        "category": "Selection"
+      },
+      {
+        "name": "MUL",
+        "returnType": "ANY_NUM",
+        "parameters": [
+          {
+            "name": "IN1",
+            "type": "ANY_NUM",
+            "direction": "input"
+          },
+          {
+            "name": "IN2",
+            "type": "ANY_NUM",
+            "direction": "input"
+          }
+        ],
+        "variadic": {
+          "minArgs": 2
+        },
+        "category": "Arithmetic"
+      },
+      {
+        "name": "MUX",
+        "returnType": "ANY",
+        "parameters": [
+          {
+            "name": "K",
+            "type": "INT",
+            "direction": "input"
+          },
+          {
+            "name": "IN0",
+            "type": "ANY",
+            "direction": "input"
+          },
+          {
+            "name": "IN1",
+            "type": "ANY",
+            "direction": "input"
+          }
+        ],
+        "variadic": {
+          "minArgs": 3
+        },
+        "category": "Selection"
+      },
+      {
+        "name": "NE",
+        "returnType": "BOOL",
+        "parameters": [
+          {
+            "name": "IN1",
+            "type": "ANY_ELEMENTARY",
+            "direction": "input"
+          },
+          {
+            "name": "IN2",
+            "type": "ANY_ELEMENTARY",
+            "direction": "input"
+          }
+        ],
+        "variadic": {
+          "minArgs": 2
+        },
+        "category": "Comparison"
+      },
+      {
+        "name": "NEG",
+        "returnType": "ANY_NUM",
+        "parameters": [
+          {
+            "name": "IN",
+            "type": "ANY_NUM",
+            "direction": "input"
+          }
+        ],
+        "category": "Numerical"
+      },
+      {
+        "name": "NOT",
+        "returnType": "ANY_BIT",
+        "parameters": [
+          {
+            "name": "IN",
+            "type": "ANY_BIT",
+            "direction": "input"
+          }
+        ],
+        "category": "Bitwise"
+      },
+      {
+        "name": "OR",
+        "returnType": "ANY_BIT",
+        "parameters": [
+          {
+            "name": "IN1",
+            "type": "ANY_BIT",
+            "direction": "input"
+          },
+          {
+            "name": "IN2",
+            "type": "ANY_BIT",
+            "direction": "input"
+          }
+        ],
+        "variadic": {
+          "minArgs": 2
+        },
+        "category": "Bitwise"
+      },
+      {
+        "name": "REF_LINK",
+        "returnType": "__XWORD",
+        "parameters": [
+          {
+            "name": "IN",
+            "type": "ANY",
+            "direction": "input"
+          }
+        ],
+        "category": "System"
+      },
+      {
+        "name": "REPLACE",
+        "returnType": "ANY_STRING",
+        "parameters": [
+          {
+            "name": "IN1",
+            "type": "ANY_STRING",
+            "direction": "input"
+          },
+          {
+            "name": "IN2",
+            "type": "ANY_STRING",
+            "direction": "input"
+          },
+          {
+            "name": "L",
+            "type": "INT",
+            "direction": "input"
+          },
+          {
+            "name": "P",
+            "type": "INT",
+            "direction": "input"
+          }
+        ],
+        "category": "CharacterString"
+      },
+      {
+        "name": "RIGHT",
+        "returnType": "ANY_STRING",
+        "parameters": [
+          {
+            "name": "IN",
+            "type": "ANY_STRING",
+            "direction": "input"
+          },
+          {
+            "name": "L",
+            "type": "INT",
+            "direction": "input"
+          }
+        ],
+        "category": "CharacterString"
+      },
+      {
+        "name": "ROL",
+        "returnType": "ANY_BIT",
+        "parameters": [
+          {
+            "name": "IN",
+            "type": "ANY_BIT",
+            "direction": "input"
+          },
+          {
+            "name": "N",
+            "type": "INT",
+            "direction": "input"
+          }
+        ],
+        "category": "BitShift"
+      },
+      {
+        "name": "ROR",
+        "returnType": "ANY_BIT",
+        "parameters": [
+          {
+            "name": "IN",
+            "type": "ANY_BIT",
+            "direction": "input"
+          },
+          {
+            "name": "N",
+            "type": "INT",
+            "direction": "input"
+          }
+        ],
+        "category": "BitShift"
+      },
+      {
+        "name": "ROUND",
+        "returnType": "ANY_REAL",
+        "parameters": [
+          {
+            "name": "IN",
+            "type": "ANY_REAL",
+            "direction": "input"
+          }
+        ],
+        "category": "Numerical"
+      },
+      {
+        "name": "SEL",
+        "returnType": "ANY",
+        "parameters": [
+          {
+            "name": "G",
+            "type": "BOOL",
+            "direction": "input"
+          },
+          {
+            "name": "IN0",
+            "type": "ANY",
+            "direction": "input"
+          },
+          {
+            "name": "IN1",
+            "type": "ANY",
+            "direction": "input"
+          }
+        ],
+        "category": "Selection"
+      },
+      {
+        "name": "SHL",
+        "returnType": "ANY_BIT",
+        "parameters": [
+          {
+            "name": "IN",
+            "type": "ANY_BIT",
+            "direction": "input"
+          },
+          {
+            "name": "N",
+            "type": "INT",
+            "direction": "input"
+          }
+        ],
+        "category": "BitShift"
+      },
+      {
+        "name": "SHR",
+        "returnType": "ANY_BIT",
+        "parameters": [
+          {
+            "name": "IN",
+            "type": "ANY_BIT",
+            "direction": "input"
+          },
+          {
+            "name": "N",
+            "type": "INT",
+            "direction": "input"
+          }
+        ],
+        "category": "BitShift"
+      },
+      {
+        "name": "SIN",
+        "returnType": "ANY_REAL",
+        "parameters": [
+          {
+            "name": "IN",
+            "type": "ANY_REAL",
+            "direction": "input"
+          }
+        ],
+        "category": "Numerical"
+      },
+      {
+        "name": "SIZEOF",
+        "returnType": "UDINT",
+        "parameters": [
+          {
+            "name": "IN",
+            "type": "ANY",
+            "direction": "input"
+          }
+        ],
+        "category": "System"
+      },
+      {
+        "name": "SQRT",
+        "returnType": "ANY_REAL",
+        "parameters": [
+          {
+            "name": "IN",
+            "type": "ANY_REAL",
+            "direction": "input"
+          }
+        ],
+        "category": "Numerical"
+      },
+      {
+        "name": "SUB",
+        "returnType": "ANY_NUM",
+        "parameters": [
+          {
+            "name": "IN1",
+            "type": "ANY_NUM",
+            "direction": "input"
+          },
+          {
+            "name": "IN2",
+            "type": "ANY_NUM",
+            "direction": "input"
+          }
+        ],
+        "category": "Arithmetic"
+      },
+      {
+        "name": "TAN",
+        "returnType": "ANY_REAL",
+        "parameters": [
+          {
+            "name": "IN",
+            "type": "ANY_REAL",
+            "direction": "input"
+          }
+        ],
+        "category": "Numerical"
+      },
+      {
+        "name": "TIME",
+        "returnType": "TIME",
+        "parameters": [],
+        "category": "Time"
+      },
+      {
+        "name": "TIME_FROM_MS",
+        "returnType": "TIME",
+        "parameters": [
+          {
+            "name": "IN",
+            "type": "LINT",
+            "direction": "input"
+          }
+        ],
+        "category": "Time"
+      },
+      {
+        "name": "TIME_FROM_S",
+        "returnType": "TIME",
+        "parameters": [
+          {
+            "name": "IN",
+            "type": "LREAL",
+            "direction": "input"
+          }
+        ],
+        "category": "Time"
+      },
+      {
+        "name": "TIME_TO_MS",
+        "returnType": "LINT",
+        "parameters": [
+          {
+            "name": "IN",
+            "type": "TIME",
+            "direction": "input"
+          }
+        ],
+        "category": "Time"
+      },
+      {
+        "name": "TIME_TO_S",
+        "returnType": "LREAL",
+        "parameters": [
+          {
+            "name": "IN",
+            "type": "TIME",
+            "direction": "input"
+          }
+        ],
+        "category": "Time"
+      },
+      {
+        "name": "TO_BOOL",
+        "returnType": "BOOL",
+        "parameters": [
+          {
+            "name": "IN",
+            "type": "ANY",
+            "direction": "input"
+          }
+        ],
+        "category": "TypeConversion"
+      },
+      {
+        "name": "TO_BYTE",
+        "returnType": "BYTE",
+        "parameters": [
+          {
+            "name": "IN",
+            "type": "ANY",
+            "direction": "input"
+          }
+        ],
+        "category": "TypeConversion"
+      },
+      {
+        "name": "TO_DATE",
+        "returnType": "DATE",
+        "parameters": [
+          {
+            "name": "IN",
+            "type": "ANY",
+            "direction": "input"
+          }
+        ],
+        "category": "TypeConversion"
+      },
+      {
+        "name": "TO_DINT",
+        "returnType": "DINT",
+        "parameters": [
+          {
+            "name": "IN",
+            "type": "ANY",
+            "direction": "input"
+          }
+        ],
+        "category": "TypeConversion"
+      },
+      {
+        "name": "TO_DT",
+        "returnType": "DT",
+        "parameters": [
+          {
+            "name": "IN",
+            "type": "ANY",
+            "direction": "input"
+          }
+        ],
+        "category": "TypeConversion"
+      },
+      {
+        "name": "TO_DWORD",
+        "returnType": "DWORD",
+        "parameters": [
+          {
+            "name": "IN",
+            "type": "ANY",
+            "direction": "input"
+          }
+        ],
+        "category": "TypeConversion"
+      },
+      {
+        "name": "TO_INT",
+        "returnType": "INT",
+        "parameters": [
+          {
+            "name": "IN",
+            "type": "ANY",
+            "direction": "input"
+          }
+        ],
+        "category": "TypeConversion"
+      },
+      {
+        "name": "TO_LINT",
+        "returnType": "LINT",
+        "parameters": [
+          {
+            "name": "IN",
+            "type": "ANY",
+            "direction": "input"
+          }
+        ],
+        "category": "TypeConversion"
+      },
+      {
+        "name": "TO_LREAL",
+        "returnType": "LREAL",
+        "parameters": [
+          {
+            "name": "IN",
+            "type": "ANY",
+            "direction": "input"
+          }
+        ],
+        "category": "TypeConversion"
+      },
+      {
+        "name": "TO_LWORD",
+        "returnType": "LWORD",
+        "parameters": [
+          {
+            "name": "IN",
+            "type": "ANY",
+            "direction": "input"
+          }
+        ],
+        "category": "TypeConversion"
+      },
+      {
+        "name": "TO_REAL",
+        "returnType": "REAL",
+        "parameters": [
+          {
+            "name": "IN",
+            "type": "ANY",
+            "direction": "input"
+          }
+        ],
+        "category": "TypeConversion"
+      },
+      {
+        "name": "TO_SINT",
+        "returnType": "SINT",
+        "parameters": [
+          {
+            "name": "IN",
+            "type": "ANY",
+            "direction": "input"
+          }
+        ],
+        "category": "TypeConversion"
+      },
+      {
+        "name": "TO_STRING",
+        "returnType": "STRING",
+        "parameters": [
+          {
+            "name": "IN",
+            "type": "ANY",
+            "direction": "input"
+          }
+        ],
+        "category": "TypeConversion"
+      },
+      {
+        "name": "TO_TIME",
+        "returnType": "TIME",
+        "parameters": [
+          {
+            "name": "IN",
+            "type": "ANY",
+            "direction": "input"
+          }
+        ],
+        "category": "TypeConversion"
+      },
+      {
+        "name": "TO_TOD",
+        "returnType": "TOD",
+        "parameters": [
+          {
+            "name": "IN",
+            "type": "ANY",
+            "direction": "input"
+          }
+        ],
+        "category": "TypeConversion"
+      },
+      {
+        "name": "TO_UDINT",
+        "returnType": "UDINT",
+        "parameters": [
+          {
+            "name": "IN",
+            "type": "ANY",
+            "direction": "input"
+          }
+        ],
+        "category": "TypeConversion"
+      },
+      {
+        "name": "TO_UINT",
+        "returnType": "UINT",
+        "parameters": [
+          {
+            "name": "IN",
+            "type": "ANY",
+            "direction": "input"
+          }
+        ],
+        "category": "TypeConversion"
+      },
+      {
+        "name": "TO_ULINT",
+        "returnType": "ULINT",
+        "parameters": [
+          {
+            "name": "IN",
+            "type": "ANY",
+            "direction": "input"
+          }
+        ],
+        "category": "TypeConversion"
+      },
+      {
+        "name": "TO_USINT",
+        "returnType": "USINT",
+        "parameters": [
+          {
+            "name": "IN",
+            "type": "ANY",
+            "direction": "input"
+          }
+        ],
+        "category": "TypeConversion"
+      },
+      {
+        "name": "TO_WORD",
+        "returnType": "WORD",
+        "parameters": [
+          {
+            "name": "IN",
+            "type": "ANY",
+            "direction": "input"
+          }
+        ],
+        "category": "TypeConversion"
+      },
+      {
+        "name": "TRUNC",
+        "returnType": "ANY_INT",
+        "parameters": [
+          {
+            "name": "IN",
+            "type": "ANY_REAL",
+            "direction": "input"
+          }
+        ],
+        "category": "Numerical"
+      },
+      {
+        "name": "UPPER_BOUND",
+        "returnType": "DINT",
+        "parameters": [
+          {
+            "name": "ARR",
+            "type": "ANY",
+            "direction": "input"
+          },
+          {
+            "name": "DIM",
+            "type": "ANY_INT",
+            "direction": "input"
+          }
+        ],
+        "category": "System"
+      },
+      {
+        "name": "XOR",
+        "returnType": "ANY_BIT",
+        "parameters": [
+          {
+            "name": "IN1",
+            "type": "ANY_BIT",
+            "direction": "input"
+          },
+          {
+            "name": "IN2",
+            "type": "ANY_BIT",
+            "direction": "input"
+          }
+        ],
+        "variadic": {
+          "minArgs": 2
+        },
+        "category": "Bitwise"
+      }
+    ],
+    "functionBlocks": [],
+    "types": [],
+    "headers": [],
+    "isBuiltin": true,
+    "displayName": "Standard Functions",
+    "description": "IEC 61131-3 standard functions (ADD/SUB/MUX/SHL/CONCAT/...) — synthesized from strucpp's StdFunctionRegistry. No ST sources: every function is a compiler+runtime intrinsic. The .stlib exists purely so editor tooling can list, categorize, and type-check standard functions through the same path it uses for ordinary libraries."
+  },
+  "chunks": [],
+  "dependencies": []
+}
