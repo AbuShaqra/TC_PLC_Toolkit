@@ -122,7 +122,7 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   (pre-existing): CONCAT on WSTRING fails g++; alias-typed PROGRAM vars without an init value are never initialised;
   REF()/ADR() of a CONFIGURATION global fail g++. Release D note posted (coordination doc). S3a running, one PR per item: signed typed literals +
   typed CASE labels merged (PR #25 `0f7c1d0`); GET/SET as identifiers merged (PR #26 `cf320b7`); STRUCT/UNION alias = same type merged (PR #27 `554c409`); ADR into POINTER TO STRUCT/UNION/FB merged (PR #28
-  `8851856`); next ADR into POINTER TO
+  `8851856`); UNION one-member initial values merged (PR #29 `bc171d0`) — **S3a DONE**. Was next: ADR into POINTER TO
   STRUCT, UNION one-member initial values. Found: LT#/LTIME# literals absent (S4); `SINT#200` unchecked; an enum member named like a FUNCTION/METHOD hijacks
   its return assignment in C++ (passes analysis, fails g++); alias-of-base := alias-of-derived STRUCT is accepted
   (the EXTENDS check is skipped when both sides are alias names); `REF(s)` into REF_TO STRUCT passes analysis, fails

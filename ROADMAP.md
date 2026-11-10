@@ -63,7 +63,7 @@ for it where a row says so.
 | Order | ID | Item | Planned | Re-measured | Start | End | Status |
 |-------|----|------|---------|-------------|-------|-----|--------|
 | 1 | S2 | Close the fork's gaps: 13 steps + 1b + the folded-in items | 27.5 d (+ ~11 d folded, measured) | ~11.2 h actual | 2026-11-09 | 2026-11-09 | **Done** 2026-11-09 23:17 UTC — see Done |
-| 2 | S3a | False positives on correct code found during S2: a STRUCT alias is not assignment-compatible with its STRUCT; `POINTER TO <STRUCT> := ADR(s)` refused; UNION initial values ("not supported yet"); a method named `Get` is a parse error (`GET` is a keyword); a typed literal with a sign after `#` (`INT#-123`, Ed. 3 Table 5) is refused | 3 d | ~1.5 h | 2026-11-12 | 2026-11-12 | **In progress** (since 2026-11-09 23:18 UTC) — signed typed literals (#25) `Get`/`Set` as names (#26) STRUCT alias assignment (#27) and `ADR` into a STRUCT pointer (#28) merged; UNION initial values to go |
+| 2 | S3a | False positives on correct code found during S2: a STRUCT alias is not assignment-compatible with its STRUCT; `POINTER TO <STRUCT> := ADR(s)` refused; UNION initial values ("not supported yet"); a method named `Get` is a parse error (`GET` is a keyword); a typed literal with a sign after `#` (`INT#-123`, Ed. 3 Table 5) is refused | 3 d | ~1 h actual | 2026-11-12 | 2026-11-12 | **Done** 2026-11-10 00:15 UTC — five fixes merged (fork PRs #25–#29), see Done |
 | 3 | S3b | The other S2 follow-ups (list below): code the checker passes but g++ rejects, checker gaps, parser gaps, housekeeping | 7 d | ~3.5 h | 2026-11-12 | 2026-11-13 | Planned |
 | 4 | S4 | Ed. 3 forms the fork refuses: CHAR/WCHAR, LTIME, string index, `STRING[n]` (needs a decision), typed `TRUNC_<type>`, g++-only literal cases, `STRUCT OVERLAP` (reuses the UNION lowering) | 8.5 d (7–10) | ~4.5 h | 2026-11-13 | 2026-11-16 | Planned |
 | 5 | S5 | Profile-handling defects (S2 plan §1d) | 1 d | ~30 min | 2026-11-16 | 2026-11-16 | Planned |
@@ -199,6 +199,11 @@ first), an Ed. 4 profile (needs a full Ed. 4 read), the rest of the vendor-featu
 - *Parser and language gaps:* plain `SUPER()`; `SUPER.x :=` as a target; `THIS.a.b`; `GVL_A.units[0]()`; IMPLEMENTS
   ignoring methods from interface EXTENDS bases; ARRAY OF / STRUCT field of an interface type; properties through an
   interface variable; a library STRUCT as an EXTENDS base.
+- *Found during S3a and the folded items:* an omitted function input with a default emits `F(, 0)` / `0` instead of
+  the default (wrong at run time); an enum member named like a FUNCTION/METHOD hijacks its return; `REF(s)` into a
+  REF_TO STRUCT and `REF()`/`ADR()` of a CONFIGURATION global fail in g++; an FB call through a pointer does not
+  parse; an unknown STRUCT initialiser element passes; alias-of-base := alias-of-derived STRUCT passes; `SINT#200`
+  unchecked; `CONCAT` on WSTRING fails g++; uninitialised alias-typed PROGRAM variables; `p : PRG; p();` fails g++.
 - *Housekeeping:* the `--feature` help text and the DIALECTS.md "Checks" list; a bundled-library global (`speed`)
   colliding with a user global; an undeclared name in a plain initial value (`x : INT := zz;`) passing analysis; a
   global named like a standard function (`LOG`) clashing in C++.
@@ -265,6 +270,9 @@ The former backlog is now scheduled as R6–R10 (2026-11-09, user's ask); each i
 Shipped work lives in git history and the [releases](https://github.com/AbuShaqra/TC_PLC_Toolkit/releases).
 Roadmap items finished from now on are listed here with their PR.
 
+- **S3a** (fork lane) — false errors on correct code, 23:18 UTC 2026-11-09 to 00:15 UTC 2026-11-10: signed typed
+  literals and typed CASE labels (#25), `Get`/`Set` as names (#26), STRUCT/UNION alias = same type (#27), `ADR` into a
+  POINTER TO a STRUCT/UNION/FB (#28), UNION initial values naming one member (#29, `bc171d0`). Nothing narrowed.
 - **S2** (fork lane) — closed the fork's gaps, 12:04–23:17 UTC on 2026-11-09. Steps 1–13 + 1b (fork PRs
   [#5](https://github.com/AbuShaqra/STruCpp/pull/5)–[#18](https://github.com/AbuShaqra/STruCpp/pull/18); releases A, B, C)
   and the folded-in items: `REFERENCE TO` inputs bound at the call (#19), typed `TRUNC_<type>` (#20), `trunc_dint` (#21),
