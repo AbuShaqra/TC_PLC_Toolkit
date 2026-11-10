@@ -17,7 +17,7 @@ after it. An item leaves the table for "Done" once its PR is merged into `dev`, 
 | Order | ID | Item | Planned | Re-measured | Start | End | Status |
 |-------|----|------|---------|-------------|-------|-----|--------|
 | 1 | R3.1 | STruC++ spike: sample project through the compiler under the TwinCAT dialect | 2 d | ~15 min (done) | 2026-11-09 | 2026-11-09 | Findings done 2026-11-09 ([docs/r3.1-strucpp-spike.md](docs/r3.1-strucpp-spike.md)); decisions taken |
-| 3 | R2 | TwinCAT sidebar (Activity Bar icon) + start page; create a new project (3.1.4024 / 3.1.4026) | 8.5 d | ~6 h + XAE proofs | 2026-11-12 | 2026-11-13 | **Phase 1 built** 2026-11-09 on `claude/focused-ptolemy-m6acaz` (sidebar, start page, create from both templates; suite green). Open: both templates proven in XAE on the user's machine, the dev-host pass, then PR; phase 2 (XAE automation) after **Windows checks passed (user, 2026-11-10):** both created projects open and build in XAE with no errors, the dev-host test passes, light and dark themes approved. Added at the user's request (`068a517`): the recent list shows 5 (setting `twincat.startPage.recentProjectsShown`) with Show all / Show fewer; settings `twincat.xaeShell.path4024` / `path4026`, auto-detected on Windows and editable, `TwinCAT: Detect XAE Shell Installations`, shown on the start page; Update Library Definitions prefers a configured path. The Objects tree follows the active file only while its view is visible (`f035b10`). **Waiting for one Windows check of the XAE path detection, then merge** |
+| 3 | R2 | TwinCAT sidebar (Activity Bar icon) + start page; create a new project (3.1.4024 / 3.1.4026) | 8.5 d | ~7 h actual + your XAE proofs | 2026-11-09 | 2026-11-10 | **Done** 2026-11-10 — PR #31, see Done. Phase 2 (create through XAE where TwinCAT is installed) stays a TODO; the XAE Shell path detection still wants one look on Windows |
 | 5 | R11 | Publish to the VS Code Marketplace (and Open VSX) | 0.5 d | ~1 h + your account step | 2026-11-17 | 2026-11-17 | Planned — **accounts created** on both marketplaces (user, 2026-11-09); **moved after R3.2 (user, 2026-11-10: "continue with R3.2 after R2 finishes")** |
 | 4 | R3.2 | STruC++ check command with errors mapped to the panes | 7 d | ~4 h | 2026-11-11 | 2026-11-12 | **Next, right after R2** (user, 2026-11-10); the fork side is ready since S3b batch 4 (release G) |
 | 6 | R3.3 | STruC++ bundling, Node 22 discovery, licence files, settings, docs | 3 d | ~2 h | 2026-11-17 | 2026-11-17 | Planned |
@@ -272,6 +272,11 @@ The former backlog is now scheduled as R6–R10 (2026-11-09, user's ask); each i
 Shipped work lives in git history and the [releases](https://github.com/AbuShaqra/TC_PLC_Toolkit/releases).
 Roadmap items finished from now on are listed here with their PR.
 
+- **R2** — TwinCAT sidebar, start page and Create New Project, 2026-11-09 19:57 UTC to 2026-11-10 ([PR #31](https://github.com/AbuShaqra/TC_PLC_Toolkit/pull/31)):
+  an Activity Bar container with Start, TwinCAT Objects and TwinCAT Libraries; a start page (create, open with
+  recent projects — two shown, Show all — project actions, help, settings); projects created from real XAE output for
+  3.1.4024 and 3.1.4026, **both proven to open and build in XAE by the user**; XAE Shell path settings with
+  detection; the Objects tree follows the active file only while visible; the licence changed to AGPL-3.0-or-later.
 - **S9** (fork lane) — raw memory layout, 09:40–12:05 UTC 2026-11-10 (user: fix the root cause): library manifests
   list only a FUNCTION's inputs/outputs/in-outs (#58), force table (#59), a force scope in every PROGRAM cycle and
   2-byte enums (#60), forcing at cycle boundaries through the table (#61, user decision), variables laid out as their
