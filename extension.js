@@ -216,6 +216,12 @@ function activate(context) {
         documentSelector: [{ scheme: 'file', language: 'twincat-st' }],
         synchronize: {
             fileEvents: vscode.workspace.createFileSystemWatcher('**/*.st')
+        },
+        // Where the server persists decoded library-archive names between sessions (R6): this
+        // extension's own global storage, on this machine only — never the workspace, the repo or the
+        // VSIX. The server creates the directory on its first write.
+        initializationOptions: {
+            archiveCacheDir: context.globalStorageUri ? context.globalStorageUri.fsPath : ''
         }
     };
     client = new LanguageClient(

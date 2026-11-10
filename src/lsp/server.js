@@ -21,6 +21,9 @@ const {
 
 const {
     registerLibrarySymbolNodes,
+    configureArchiveCache,
+    flushArchiveCache,
+    archiveCacheInfo,
     getLibraryCatalog,
     getUnionLibraryCatalog
 } = require('./libsymbols');
@@ -65,6 +68,12 @@ function rescan(rootPaths) {
         error: (m) => connection.console.error(m),
         indexLibraries
     });
+    // Persist what this scan decoded, so the next session reads names instead of inflating archives.
+    // A no-op when nothing changed or no storage directory was given. A rejected (corrupt, foreign or
+    // outdated) cache file was ignored and is rewritten by this flush; say so at debug level.
+    const info = archiveCacheInfo();
+    if (info.rejected || info.dropped) log.debug('archive-cache-ignored', { reason: info.rejected, dropped: info.dropped });
+    flushArchiveCache();
 }
 
 // Which of the two requests that can trigger a scan actually has to run one. `custom/reindex` means
@@ -117,6 +126,13 @@ const documents = new TextDocuments(TextDocument);
 
 connection.onInitialize((params) => {
     const folders = params.workspaceFolders || [];
+    // The persisted archive-name cache lives in the extension's global storage (the host passes the
+    // path); without one the cache stays in memory only, exactly as before. Configured BEFORE the
+    // first scan, which is the scan that benefits.
+    const initOptions = params.initializationOptions || {};
+    if (typeof initOptions.archiveCacheDir === 'string' && initOptions.archiveCacheDir) {
+        configureArchiveCache(initOptions.archiveCacheDir);
+    }
     // Through the controller, not rescan() directly, so the completion is RECORDED — that record is
     // what lets the extension host's custom/indexReady resolve without scanning the same roots again.
     // scanWorkspace is synchronous, so this still blocks initialize exactly as it always has; the
@@ -387,6 +403,12 @@ connection.onRequest('custom/indexXmlDocument', (params) => {
         log.error('index-xml-document-request-failed', { uri: params && params.fileUri, error: e });
         return { success: false, error: e.message };
     }
+});
+
+// Write any names decoded since the last scan (a lazily harvested nested namespace) before the
+// process goes away.
+connection.onShutdown(() => {
+    flushArchiveCache();
 });
 
 // Make the text document manager listen on the connection

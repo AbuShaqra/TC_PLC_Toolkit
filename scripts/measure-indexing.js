@@ -14,12 +14,14 @@
  *   node scripts/measure-indexing.js --projects 2 --objects 20 --libraries 5 --runs 3
  *   node scripts/measure-indexing.js --samples             # the committed sample/ folder as-is
  *   node scripts/measure-indexing.js --keep                # keep the generated workspace
+ *   node scripts/measure-indexing.js --drop-caches         # Linux, root: drop the OS page cache
+ *                                                          # before every session (true cold disk)
  *
  * What it reports, per run (median over --runs):
  *   cold   — a fresh process with no persisted archive cache (the first session ever on a machine);
  *   warm   — a fresh process reusing the persisted archive cache the cold run wrote (a second session);
  *   first  — time from scan start until each project's index is ready to answer (per project).
- * The OS page cache is NOT dropped (that needs root/admin), so "cold" means "cold for the toolkit".
+ * Without --drop-caches the OS page cache stays warm, so "cold" means "cold for the toolkit" only.
  */
 
 'use strict';
@@ -59,13 +61,17 @@ function varint(value) {
 
 /**
  * A ZIP archive with a deflated string-table entry and a stored filler entry, so the file has a
- * realistic size to read even though only the table is decoded.
- * @param {string[]} names
+ * realistic size to read even though only the table is decoded. The table also carries `junk`
+ * non-identifier strings (doc-comment shaped), as real tables do, so the decode has real work.
+ * @param {string[]} identifiers
  * @param {number} fillerBytes
+ * @param {number} junk
  * @returns {Buffer}
  */
-function archiveOf(names, fillerBytes) {
+function archiveOf(identifiers, fillerBytes, junk) {
     const entries = [];
+    const names = identifiers.slice();
+    for (let j = 0; j < junk; j++) names.push(`Synthetic comment ${j}: the value is clamped to the configured range (${j % 97}).`);
     const table = Buffer.concat([varint(names.length), ...names.flatMap((n, i) => {
         const b = Buffer.from(n, 'utf8');
         return [varint(i), varint(b.length), b];
@@ -123,7 +129,7 @@ function generatedPou(name) {
  * tree and a docs folder (noise every directory walk has to cross), plus one workspace-level
  * `library-signatures.xml`.
  * @param {{dir: string, projects: number, objects: number, libraries: number, names: number,
- *   filler: number}} opts
+ *   filler: number, junk: number}} opts
  * @returns {string} The workspace root.
  */
 function buildWorkspace(opts) {
@@ -133,7 +139,7 @@ function buildWorkspace(opts) {
     for (let l = 0; l < opts.libraries; l++) {
         const names = [];
         for (let n = 0; n < opts.names; n++) names.push(`SynLib${l}_Sym${n}`);
-        archives.push({ title: `SynLib${l}`, buf: archiveOf(names, opts.filler) });
+        archives.push({ title: `SynLib${l}`, buf: archiveOf(names, opts.filler, opts.junk) });
     }
     const fixedTime = new Date('2026-01-01T00:00:00Z');
     for (let p = 0; p < opts.projects; p++) {
@@ -228,9 +234,14 @@ function child(roots, cacheDir) {
  * Runs one session in a fresh process.
  * @param {string[]} roots
  * @param {string} cacheDir
+ * @param {boolean} dropCaches Drop the OS page cache first (Linux, root).
  * @returns {Object}
  */
-function session(roots, cacheDir) {
+function session(roots, cacheDir, dropCaches) {
+    if (dropCaches) {
+        spawnSync('sync');
+        fs.writeFileSync('/proc/sys/vm/drop_caches', '3');
+    }
     const r = spawnSync(process.execPath, [__filename, '--child', JSON.stringify({ roots, cacheDir })], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
     if (r.status !== 0) throw new Error(`session failed: ${r.stderr}`);
     return JSON.parse(r.stdout);
@@ -263,18 +274,20 @@ function main() {
             objects: Number(args.objects || 150),
             libraries: Number(args.libraries || 40),
             names: Number(args.names || 4000),
-            filler: Number(args.filler || 400 * 1024)
+            filler: Number(args.filler || 400 * 1024),
+            junk: Number(args.junk || 15000)
         };
         const t = Date.now();
         roots = [buildWorkspace(opts)];
         console.log(`Built ${opts.projects} project(s) x ${opts.objects} objects, ${opts.libraries} libraries ` +
-            `(${opts.names} names, ${Math.round(opts.filler / 1024)} KB filler each) at ${roots[0]} in ${Date.now() - t} ms`);
+            `(${opts.names} names + ${opts.junk} comment strings, ${Math.round(opts.filler / 1024)} KB filler each) ` +
+            `at ${roots[0]} in ${Date.now() - t} ms`);
     }
     const rows = { cold: [], warm: [] };
     for (let i = 0; i < runs; i++) {
         const cacheDir = path.join(tmp, `cache${i}`);
-        rows.cold.push(session(roots, cacheDir));
-        rows.warm.push(session(roots, cacheDir));
+        rows.cold.push(session(roots, cacheDir, !!args['drop-caches']));
+        rows.warm.push(session(roots, cacheDir, !!args['drop-caches']));
     }
     for (const kind of ['cold', 'warm']) {
         const r = rows[kind];

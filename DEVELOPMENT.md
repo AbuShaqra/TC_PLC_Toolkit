@@ -204,6 +204,7 @@ per-suite without aborting on the first failure. The main ones:
 | `test/test_st_strings.js` | ST string literals across **all three** grammars that must agree — the `src/lsp/parser.js` lexer, the webview's Monarch tokenizer and `syntaxes/twincat-st.tmLanguage.json`. IEC 61131-3 escapes with `$` (`$'`, `$$`, `$N`, `$0D`, …) and a **backslash is an ordinary character**; both highlighting grammars had C-style `\\.` escape rules copied from Monaco's sample, so `'C:\Temp\x\'` swallowed its own closing quote and ran on to the next apostrophe anywhere below — in the reported case an `FB's` inside a comment 16 lines down. Uses that verbatim case. The lexer was always right; only the two grammars were wrong, which is exactly why one harness now pins all three together. |
 | `test/test_scan_controller.js` | `src/lsp/scanController.js`: which of the two scan-triggering requests actually has to run a scan. Pins that `ensureScanned` twice over one root set scans **once** (the duplicate startup scan this replaced), that `rescan` after it scans **again** — the assertion that stops a future "optimisation" from teaching the `.plcproj` watcher to skip, since on a content change the roots are unchanged — and that a throwing scan leaves no completed state. Root sets compare order-, case- and separator-insensitively; the empty set is a legitimate *completed* state, or a window with no folders would re-request forever. |
 | `test/test_debounce.js` | `src/util/debounce.js`: trailing edge only, one invocation per burst carrying the **last** arguments, every caller's promise resolved. Timers are injected, so it asserts on a fake clock rather than racing a real one. |
+| `test/test_archive_store.js` | R6's persisted archive-name cache (`src/lsp/archiveStore.js` + `harvestArchiveFile`), each "session" a fresh Node process: off when no directory is configured; a second session decodes nothing and gets identical names; an archive rewritten with the SAME size and mtime is caught by the central-directory fingerprint and decoded afresh; garbage, truncated, empty, foreign, other-version and other-decoder files are ignored and rewritten, a malformed entry dropped alone; entry and name-character caps evict least-recently-used; eight vendored copies are one stored entry; only names reach the file; two windows keep each other's entries; file and buffer fingerprints agree, also when the central directory starts before the 66 KB tail window. |
 | `test/test_discovery_memo.js` | R6's per-scan directory-listing memo (`createDirectoryListingMemo`, `src/twincatWorkspace.js`): a memoized signature/`.tmc` walk equals the unmemoized one (same files, order, caller-spelled paths); a 3-project scan reads each directory from disk exactly once; and through the REAL scan composition a dump or `.tmc` added after a scan is found by the next one, a removed one is gone, and one three levels below a project is found — the memo never outlives its scan. |
 | `test/test_collect_scope.js` | Which directories each library walker descends. The `.tmc` and signature walkers must **skip** `_Libraries` while `collectArchives` must **enter** it, and the harness proves the second half is load-bearing by adding `_libraries` to `SKIP_DIRS` and watching archive collection go blind — the tempting one-line "fix" that would silently cost ~171 false positives. |
 | `test/test_signature_cache.js` | `src/lsp/parseCache.js`: one dump, three projects → parsed once, two cache hits, all three resolving its symbols. The load-bearing half is **isolation**: each project must hold a *different record object* (asserted by identity, not value — a value check still passes while sharing), so that the merge's `record.namespace` rewrite and `indexBrowserCache`'s member pushes cannot leak between projects. An mtime bump re-parses. |
@@ -586,6 +587,12 @@ src/
                         `readOnlyParse` / `signatureLibrariesFor` are shared, DEEP-FROZEN parses for
                         readers that build fresh objects from them (libraryDecls.js: the dump's
                         libraries, each .tmc's declaration model).
+    archiveStore.js     The PERSISTED archive-name cache (R6): decoded library symbol names kept across
+                        sessions in the extension's global storage (`initializationOptions
+                        .archiveCacheDir`, set by extension.js). Same content key as the in-memory
+                        cache; an entry is used only when the decoder id, the key and the archive's
+                        ZIP central-directory fingerprint (read from the file now) all match. Corrupt,
+                        partial or foreign files are ignored; bounded (entries, name characters, LRU).
     plcprojRefs.js      One shared, cached .plcproj read (library references + namespaces). The same
                         file used to be read three times per project per scan.
     log.js              Structured, quiet-by-default logging for the LSP process (threshold `warn`,
@@ -869,8 +876,23 @@ warm / ~20 s cold projected, and the wait is visible. Four invariants hold that,
    so the same vendor archives appear many times: 306 files / 156.5 MB on the measured workspace, but
    148 distinct / 74.2 MB. `harvestArchiveFile` keys decoded names on
    `<title>/<version>/<file>` + size + mtime, which took 306 decodes to 157. If that identity ever
-   proves too weak, the documented hardening is a ZIP central-directory fingerprint over the ≤66 KB
-   EOCD tail (`MAX_EOCD_SEARCH`) — a genuine content hash for one small read.
+   proves too weak *in memory*, the hardening is the ZIP central-directory fingerprint the persisted
+   cache already uses (below) — a genuine content hash for one small read at the file's end.
+
+**Decoded names persist across sessions** (R6, `src/lsp/archiveStore.js`). The extension passes its
+global storage path as `initializationOptions.archiveCacheDir`; `harvestArchiveFile` consults the
+store after both in-memory caches miss, and `rescan()` flushes it after every scan (and on shutdown).
+It stores only what the in-memory cache holds — the identifier-shaped names — under the same content
+key, so the cross-project dedup carries over (eight vendored copies are one entry). **It never trusts
+a stale entry:** use requires the file's `decoder` id to equal libsymbols.js `DECODER_ID` (a hash of
+the ZIP reader's and string-table parser's *source*, so a decoder change discards old names with no
+version to forget), the content key to match, and the archive's central-directory fingerprint (SHA-1
+over the CD + EOCD, read from the file *now*; the CD carries every entry's CRC-32) to equal the stored
+one. A corrupt, truncated, foreign or other-version file is ignored and rewritten; a malformed entry is
+dropped alone; writes are temp-file + rename. Bounded at 4,000 entries / 40 M name characters, least
+recently used first. Measured with `scripts/measure-indexing.js --drop-caches` (8 projects, 48
+distinct archives of ~1.6 MB): cold 1,711 ms → warm 1,203 ms; the archive stage 1,212 → 625 ms. What
+remains warm is filing the names into each project's registry, which no decode cache removes.
 4. **`SKIP_DIRS` must never gain `_libraries`.** `collectArchives` walks it; excluding it there finds
    zero archives and costs ~171 false positives. `PROJECT_SKIP_DIRS` is the excluding set, for the
    `.tmc`/signature/`.plcproj` walkers only. `test_collect_scope.js` proves both halves.
