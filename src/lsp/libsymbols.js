@@ -2035,6 +2035,8 @@ module.exports = {
     getUnionLibraryCatalog,
     // .tmc type-system structure
     parseTmcDataType,
+    tmcMemberType,
+    namespaceForLibraryTitle,
     getLibraryType,
     getTypeSystemNamespaceTypes,
     getBrowserCacheNamespaceTypes,
