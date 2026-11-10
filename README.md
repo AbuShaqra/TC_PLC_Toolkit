@@ -61,7 +61,7 @@ needed to create one; you need TwinCAT XAE to build and run it.
 
 Browse POUs, interfaces, GVLs, DUTs and their methods, properties, actions and virtual folders.
 Create and delete files, folders, methods, properties and actions — the nearest `.plcproj` is kept in
-sync automatically. The tree follows you: switching editors reveals and highlights the matching item.
+sync automatically. The tree follows you: while the TwinCAT Objects view is showing, switching editors reveals and highlights the matching item; when you open the view later, it goes to the file you are in.
 
 **See the real TwinCAT hierarchy.** When the opened folder contains TwinCAT solutions, the explorer
 shows the solution first and every PLC project belonging to it underneath:

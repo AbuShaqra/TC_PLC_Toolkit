@@ -244,7 +244,11 @@ function findCodeCli() {
     const revealRows = (componentReveal && componentReveal.reveals) || [];
     for (const componentId of (componentReveal && componentReveal.requested) || []) {
         const hit = revealRows.find(r => r.componentId === componentId && r.ok);
-        assert(!!hit, `Objects tree reveals exact ${componentId} target in the real host`);
+        const tried = revealRows.filter(r => r.componentId === componentId);
+        const why = hit ? '' : tried.length === 0
+            ? ` (no reveal was attempted; reveals seen: ${JSON.stringify(revealRows.map(r => r.componentId))})`
+            : ` (rejected: ${tried.map(r => r.error).join(' | ')})`;
+        assert(!!hit, `Objects tree reveals exact ${componentId} target in the real host${why}`);
     }
     const getterReveal = revealRows.find(r => r.componentId === 'prop_State_get' && r.ok);
     const setterReveal = revealRows.find(r => r.componentId === 'prop_State_set' && r.ok);
