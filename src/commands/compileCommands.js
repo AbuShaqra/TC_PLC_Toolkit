@@ -259,6 +259,8 @@ function registerCompileCommands(context, { provider, getProjectMap, onSettingsC
             const projectName = projectMap.displayName(key);
 
             running = true;
+            const tellEditors = (/** @type {boolean} */ on) => { if (provider && typeof provider.setCompileRunning === 'function') provider.setCompileRunning(on); };
+            tellEditors(true);
             try {
                 const setup = await checkSetup(readSettings(), { ...(nodeDiscovery || {}), spawn: /** @type {any} */ (spawn), extensionRoot: context.extensionPath });
                 if (!setup.ok) return { ok: false, reason: 'setup', message: reportSetupProblems(setup.problems) };
@@ -340,6 +342,7 @@ function registerCompileCommands(context, { provider, getProjectMap, onSettingsC
                 };
             } finally {
                 running = false;
+                tellEditors(false);
             }
         }),
 

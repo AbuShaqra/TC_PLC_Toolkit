@@ -248,7 +248,8 @@ never read back as sources.
 
 ### Compile project
 
-*TwinCAT: Compile Project* (also on the start page) checks a PLC project with **an external IEC 61131-3
+*TwinCAT: Compile Project* (also on the start page, and as the **Compile** button next to *Generate ST*
+in the editor's toolbar, which compiles the project the open file belongs to) checks a PLC project with **an external IEC 61131-3
 compiler** — a full compiler front end, so it catches what the built-in diagnostics deliberately leave
 alone. With several PLC projects you pick which one. It only checks: nothing is generated, and nothing is
 written into your project (the compiler reads temporary copies, deleted when the run ends).

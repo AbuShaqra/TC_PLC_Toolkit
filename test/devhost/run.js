@@ -505,6 +505,14 @@ function findCodeCli() {
             .map(x => `${r.label}: ${path.basename(x.file)}: ${x.message}`));
         assert(runs.length > 0 && foreign.length === 0,
             `no compile error on the sample's own code (${foreign.length ? JSON.stringify(foreign.slice(0, 5)) : 'none'})`);
+        // The toolbar's Compile button, clicked for real in the station editor: the host resolves the
+        // file's ONE owning project (no pick), the run starts and ends, and the button follows it.
+        const cb = step('compile-button');
+        assert(!!cb && cb.present && cb.clicked, `the editor toolbar has a Compile button and it was clicked (${JSON.stringify(cb)})`);
+        assert(!!cb && Array.isArray(cb.resolvedFor) && cb.resolvedFor.length === 1 && Array.isArray(cb.resolvedFor[0].owners) && cb.resolvedFor[0].owners.length === 1,
+            `the click compiles the project that owns the file (${JSON.stringify(cb && cb.resolvedFor)})`);
+        assert(!!cb && JSON.stringify(cb.seen) === '[true,false]' && cb.disabledAfter === false,
+            `the click runs Compile Project to the end and the button is enabled again (${JSON.stringify(cb && { seen: cb.seen, during: cb.disabledDuring, after: cb.disabledAfter })})`);
         // Each project's files carry exactly that project's last results (other projects keep theirs).
         const mismatched = runs.filter(r => !r.result || !r.dir || r.problemsPanel !== r.result.errors + r.result.warnings);
         assert(runs.length > 0 && mismatched.length === 0,

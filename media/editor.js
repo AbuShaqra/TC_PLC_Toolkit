@@ -258,6 +258,23 @@
         });
     }
 
+    // Compile button: Compile Project for the PLC project that owns this file. The host resolves the
+    // project; while a run is in progress (`compileRunning`) the button is disabled.
+    const compileBtn = document.getElementById('compile-btn');
+    if (compileBtn) {
+        compileBtn.addEventListener('click', () => {
+            closeGenerateMenu();
+            if (!compileBtn.disabled) vscode.postMessage({ type: 'compile-project' });
+        });
+    }
+    /** @param {boolean} running */
+    function setCompileRunning(running) {
+        if (!compileBtn) return;
+        compileBtn.disabled = !!running;
+        compileBtn.classList.toggle('running', !!running);
+        compileBtn.setAttribute('aria-busy', String(!!running));
+    }
+
     /**
      * Shows or hides the caret, and marks the group with `has-caret` in the same step: the CSS squares
      * the main button's right corners only while the caret is there to fuse with. (`:has()` would avoid
@@ -1464,6 +1481,9 @@
             case 'projectList':
                 renderProjectPicker(message.projects);
                 break;
+            case 'compileRunning':
+                setCompileRunning(message.running);
+                break;
             case 'custom/completionsResponse': {
                 const resolve = pendingRequests.get(message.requestId);
                 if (resolve) {
@@ -1522,6 +1542,7 @@
                 }
 
                 compileDiagnostics = Array.isArray(message.compileDiagnostics) ? message.compileDiagnostics : [];
+                setCompileRunning(message.compileRunning === true);
                 editsStore = pendingEditsCore.createStore(message.cachedEdits);
                 pendingEditsCore.applyCachedEdits(components, message.cachedEdits);
 

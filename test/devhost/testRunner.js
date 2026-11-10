@@ -905,6 +905,42 @@ async function run() {
                     });
                 }
                 log('compile', { compilerPath, compilerBundled: setup.compilerBundled, node: `${setup.nodeVersion} (${setup.nodeLabel})`, runs });
+
+                // The editor toolbar's Compile button: a REAL click in a real webview. The provider's
+                // run-state hook is wrapped to see the run start and end, and compileProjectFor to see
+                // which file the host resolved the project from.
+                await vscode.commands.executeCommand('vscode.openWith', stationUri, 'twincat.xmlViewer');
+                await sleep(1500);
+                const btnPanel = panelFor(stationUri.toString());
+                const before = await waitFor(btnPanel, s => s.ready, 30000);
+                const seen = [];
+                const resolvedFor = [];
+                const realSet = hostProvider.setCompileRunning.bind(hostProvider);
+                const realFor = hostProvider.compileProjectFor.bind(hostProvider);
+                hostProvider.setCompileRunning = (on) => { seen.push(!!on); realSet(on); };
+                hostProvider.compileProjectFor = (fsPath) => {
+                    const pm = compileProjectMap;
+                    resolvedFor.push({ file: fsPath, owners: pm && pm.ownersOf ? pm.ownersOf(fsPath) : null });
+                    return realFor(fsPath);
+                };
+                let during = null;
+                try {
+                    const clickReply = await ask(btnPanel, { type: 'test:clickCompile' });
+                    for (let i = 0; i < 50 && !seen.includes(true); i++) await sleep(100);
+                    during = await state(btnPanel);
+                    for (let i = 0; i < 1200 && !seen.includes(false); i++) await sleep(100);
+                    if (!seen.includes(false)) await vscode.commands.executeCommand('workbench.action.closeQuickOpen');
+                    const after = await state(btnPanel);
+                    log('compile-button', {
+                        present: !!(before && before.compileButton && before.compileButton.present),
+                        clicked: !!clickReply && clickReply.type === 'test:done', seen, resolvedFor,
+                        disabledDuring: !!(during && during.compileButton && during.compileButton.disabled),
+                        disabledAfter: !!(after && after.compileButton && after.compileButton.disabled)
+                    });
+                } finally {
+                    hostProvider.setCompileRunning = realSet;
+                    hostProvider.compileProjectFor = realFor;
+                }
             }
         } catch (e) {
             log('compile', { error: String((e && e.stack) || e) });

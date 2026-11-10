@@ -72,6 +72,7 @@ const message = (bucket) => async (m, ...buttons) => { calls[bucket].push({ m, b
 const vscodeStub = {
     Uri: {
         file: uri,
+        joinPath: (base, ...parts) => uri(path.join(base.fsPath, ...parts)),
         parse: (s) => { const m = /^([a-z-]+):\/\/([^/]*)([^?]*)\??(.*)$/.exec(s) || []; return { scheme: m[1], authority: m[2], path: m[3], query: m[4] || '', fsPath: s, toString: () => s }; }
     },
     Range, Diagnostic,
@@ -148,7 +149,8 @@ const projectMap = () => ({
     projects: new Map(projectList.map(p => [p.key, p])),
     keys: () => projectList.map(p => p.key),
     get: (k) => projectList.find(p => p.key === k),
-    displayName: (k) => projectList.find(p => p.key === k).name
+    displayName: (k) => projectList.find(p => p.key === k).name,
+    ownersOf: (p) => projectList.filter(pr => [...pr.objectFiles.values()].includes(p)).map(pr => pr.key)
 });
 const provider = new TwinCatCustomEditorProvider(context, { getProjectMap: projectMap });
 // An open editor of FB_A, as the provider tracks it.
@@ -385,6 +387,78 @@ const settle = () => new Promise(r => setTimeout(r, 10));
     listeners.config.forEach(fn => fn({ affectsConfiguration: (s) => s === 'twincat.compiler' }));
     listeners.config.forEach(fn => fn({ affectsConfiguration: () => false }));
     assert(settingsChanged === 1, 'SETTINGS: a change to twincat.compiler.* is passed on (the start page re-reads the tile state)');
+
+    // ── The editor toolbar's Compile button, host side ──────────────────────────────────────────
+    // The real resolveCustomTextEditor with a fake panel: `compile-project` from the webview runs the
+    // command for the project that owns the editor's file, and every editor's button follows the run.
+    {
+        const toPanel = [];
+        let onMessage = null;
+        const panel = {
+            active: true,
+            onDidChangeViewState: () => ({ dispose() {} }),
+            onDidDispose: () => ({ dispose() {} }),
+            webview: {
+                options: {}, html: '', cspSource: 'vscode-webview://x',
+                asWebviewUri: (u) => u,
+                postMessage: (m) => { toPanel.push(m); return Promise.resolve(true); },
+                onDidReceiveMessage: (fn) => { onMessage = fn; return { dispose() {} }; }
+            }
+        };
+        const gvlDoc = { uri: uri(gvlPath), fileName: gvlPath, getText: () => fs.readFileSync(gvlPath, 'utf8'), isDirty: false };
+        provider.resolveCustomTextEditor(gvlDoc, panel, { isCancellationRequested: false });
+        assert(typeof onMessage === 'function' && /id="compile-btn"/.test(panel.webview.html), 'TOOLBAR: the editor page has the Compile button and a message handler');
+
+        // Two projects, the GVL owned by the second only: the button compiles THAT project, no pick.
+        projectList = [project('a', 'PLC', [fbPath]), project('b', 'PLC_Two', [gvlPath])];
+        for (const k of ['executed', 'errors', 'infos', 'warnings', 'progress']) calls[k].length = 0;
+        toPanel.length = 0;
+        const pickBefore = calls.lastPick;
+        await onMessage({ type: 'compile-project' });
+        await settle();
+        const ran = calls.executed.filter(c => c.id === 'twincat.compileProject');
+        assert(ran.length === 1 && ran[0].args[0] && ran[0].args[0].projectKey === 'b' && calls.lastPick === pickBefore,
+            `TOOLBAR: compile-project runs Compile Project for the project that owns the file, without asking (${JSON.stringify(ran.map(r => r.args))})`);
+        assert(calls.infos.some(i => /PLC_Two: no errors/.test(i.m)), `TOOLBAR: the run's summary names that project (${JSON.stringify(calls.infos.map(i => i.m))})`);
+        const running = toPanel.filter(m => m.type === 'compileRunning').map(m => m.running);
+        assert(JSON.stringify(running) === '[true,false]', `TOOLBAR: every open editor is told the run started and ended (${JSON.stringify(running)})`);
+
+        // A file no project owns (one several own takes the same branch): the command asks, as from the palette.
+        projectList = [project('a', 'PLC', [fbPath]), project('b', 'PLC_Two', [fbPath])];
+        answers.quickPick.push(undefined);
+        await onMessage({ type: 'compile-project' });
+        const asked = calls.executed.filter(c => c.id === 'twincat.compileProject').pop();
+        assert(asked && asked.args[0] && asked.args[0].projectKey === undefined && calls.lastPick !== pickBefore,
+            'TOOLBAR: a file no single project owns leaves the choice to the command\'s project pick');
+
+        // Setup problems reach the user exactly as from the command.
+        projectList = [project('a', 'PLC', [fbPath, gvlPath])];
+        settings['twincat.compiler.path'] = path.join(ROOT, 'gone.cjs');
+        for (const k of ['executed', 'errors', 'infos', 'warnings', 'progress']) calls[k].length = 0;
+        answers.message.push(undefined);
+        await onMessage({ type: 'compile-project' });
+        await settle();
+        assert(calls.errors.length === 1 && /^Compile Project cannot run\. The compiler file/.test(calls.errors[0].m),
+            `TOOLBAR: with the compiler missing the button gives the command's own message (${calls.errors[0] && calls.errors[0].m})`);
+        settings['twincat.compiler.path'] = bundlePath;
+        nodeVersion = 'v18.19.0';
+        calls.errors.length = 0;
+        answers.message.push(undefined);
+        await onMessage({ type: 'compile-project' });
+        await settle();
+        assert(calls.errors.length === 1 && /Node\.js 18\.19\.0 was found/.test(calls.errors[0].m),
+            'TOOLBAR: with no usable Node the button gives the command\'s own message');
+        nodeVersion = 'v22.5.0';
+
+        // An editor opened while a run is in progress starts with its button disabled.
+        provider.setCompileRunning(true);
+        toPanel.length = 0;
+        await onMessage({ type: 'ready' });
+        const init = toPanel.find(m => m.type === 'init');
+        assert(!!init && init.compileRunning === true, 'TOOLBAR: init tells a new editor a run is in progress');
+        provider.setCompileRunning(false);
+        provider.activePanels.delete(gvlDoc.uri.toString());
+    }
 
     // ── The product name of the compiler stays out of the UI strings ────────────────────────────
     const uiText = JSON.stringify([calls.errors, calls.infos, calls.warnings, calls.progress]);
