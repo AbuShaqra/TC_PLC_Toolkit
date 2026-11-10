@@ -3,7 +3,8 @@
  * @description The compiler that ships with the extension (`resources/compiler/`, written by
  * scripts/vendor-compiler.js): it is all there, it is exactly what SOURCE.md records (the
  * corresponding-source link of the GPL-3.0 compiler names a full commit), its licence files and
- * third-party notices are present and ship, and the bundle needs no npm package at run time.
+ * third-party notices are present and ship, the bundle needs no npm package at run time, and the
+ * only dialect profile shipped is resources/dialects/twincat3.json.
  * The REAL run of it is test/test_compile_real.js.
  */
 
@@ -58,6 +59,15 @@ assert(/resources\/compiler\//.test(notices) && /GPL-3\.0/.test(notices) && /che
 const ignore = fs.readFileSync(path.join(REPO, '.vscodeignore'), 'utf8').split(/\r?\n/).map(l => l.trim()).filter(l => l && !l.startsWith('#'));
 assert(!ignore.some(l => /^(resources|resources\/compiler)(\/\*\*)?$/.test(l) || /\.cjs$|\.stlib$/.test(l)), '.vscodeignore keeps resources/compiler/ in the VSIX');
 assert(ignore.includes('scripts/vendor-compiler.js'), '.vscodeignore drops the vendoring script');
+
+// Dialect profiles (user rule): the extension ships the TwinCAT profile and no other — none from the
+// fork either (its CODESYS or IEC profiles are never copied; the bundle's built-in library importer is
+// code, not a profile file).
+const dialects = fs.readdirSync(path.join(REPO, 'resources', 'dialects')).sort();
+assert(JSON.stringify(dialects) === '["twincat3.json"]', `resources/dialects/ holds exactly twincat3.json (${dialects.join(', ')})`);
+assert(!walk(DIR).some(f => /\.json$/i.test(f)), 'resources/compiler/ carries no .json (no dialect profile from the fork)');
+const profileFiles = walk(path.join(REPO, 'resources')).filter(f => /dialect/i.test(rel(f)) || /[\\/]dialects[\\/]/.test(f));
+assert(profileFiles.length === 1 && path.basename(profileFiles[0]) === 'twincat3.json', `the only dialect profile under resources/ is twincat3.json (${profileFiles.map(f => path.relative(REPO, f)).join(', ')})`);
 
 // Self-contained: the bundle requires Node built-ins only.
 const bundle = fs.readFileSync(path.join(DIR, 'compiler.cjs'), 'utf8');
