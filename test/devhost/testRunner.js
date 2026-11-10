@@ -864,6 +864,34 @@ async function run() {
             log('start-page', { error: String((e && e.stack) || e) });
         }
 
+        // --- Phase compile (R3.2): Compile Project through the real command on every PLC project.
+        //     Needs an external compiler (run.js writes twincat.compiler.path into the fresh profile
+        //     only when TWINCAT_COMPILER_BUNDLE is set); without one the phase says it was skipped.
+        try {
+            const vscode = require('vscode');
+            const compilerPath = vscode.workspace.getConfiguration('twincat.compiler').get('path', '');
+            if (!compilerPath) {
+                log('compile', { skipped: 'twincat.compiler.path is empty (set TWINCAT_COMPILER_BUNDLE to run it)' });
+            } else {
+                const runs = [];
+                const compileProblems = () => vscode.languages.getDiagnostics()
+                    .flatMap(([, list]) => list.filter(d => d.source === 'TwinCAT compile'));
+                for (const p of (hostProvider ? hostProvider.listProjects() : [])) {
+                    const result = await vscode.commands.executeCommand('twincat.compileProject', { projectKey: p.key });
+                    const problems = compileProblems();
+                    runs.push({
+                        label: p.label,
+                        result: result || null,
+                        problems: problems.filter(d => d.severity === vscode.DiagnosticSeverity.Error).map(d => d.message),
+                        problemsPanel: problems.length
+                    });
+                }
+                log('compile', { compilerPath, runs });
+            }
+        } catch (e) {
+            log('compile', { error: String((e && e.stack) || e) });
+        }
+
         log('done', {});
     } catch (e) {
         log('CRASH', { error: String((e && e.stack) || e) });

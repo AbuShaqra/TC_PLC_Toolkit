@@ -126,6 +126,19 @@ function findCodeCli() {
     assert(tleoProjChanged !== tleoProjText, 'the dev-host fixture injects the .TcTLEO project include');
     fs.writeFileSync(tleoPlcproj, tleoProjChanged, 'utf8');
 
+    // Compile Project (R3.2) needs an external compiler, which only a developer's machine has. With
+    // TWINCAT_COMPILER_BUNDLE set, the fresh profile is given it (and TWINCAT_COMPILER_NODE, if set);
+    // without it the in-host compile phase reports itself skipped and nothing fails.
+    const compilerBundle = process.env.TWINCAT_COMPILER_BUNDLE || '';
+    if (compilerBundle) {
+        const userDir = path.join(work, 'udd', 'User');
+        fs.mkdirSync(userDir, { recursive: true });
+        fs.writeFileSync(path.join(userDir, 'settings.json'), JSON.stringify({
+            'twincat.compiler.path': path.resolve(compilerBundle),
+            'twincat.compiler.nodePath': process.env.TWINCAT_COMPILER_NODE || ''
+        }, null, 2), 'utf8');
+    }
+
     const args = [
         '--new-window',
         '--user-data-dir', path.join(work, 'udd'),
@@ -452,6 +465,28 @@ function findCodeCli() {
         `TwinCAT: Create New Project writes a 3.1.4026 and a 3.1.4024 solution (${sp ? JSON.stringify(sp.created) : 'no result'})`);
     assert(!!sp && sp.refused && sp.refused.ok === false && /already contains/.test(sp.refused.error || ''),
         `creating over an existing solution is refused (${sp ? JSON.stringify(sp.refused) : 'no result'})`);
+
+    // R3.2: Compile Project in a real host, over every PLC project of the fixture. Optional: it runs
+    // only when TWINCAT_COMPILER_BUNDLE named a compiler (the in-host phase then finds
+    // twincat.compiler.path set); otherwise it is reported as skipped and asserts nothing.
+    const comp = step('compile');
+    if (comp && comp.skipped) {
+        console.log(`[SKIP] compile phase: ${comp.skipped}`);
+    } else {
+        assert(!!comp && !comp.error, 'the Compile Project phase ran without throwing' + (comp && comp.error ? ': ' + comp.error : ''));
+        const runs = (comp && comp.runs) || [];
+        assert(runs.length > 0 && runs.every(r => r.result && r.result.ok === true),
+            `Compile Project finishes on every project (${JSON.stringify(runs.map(r => [r.label, r.result && (r.result.ok ? 'ok' : r.result.reason)]))})`);
+        // The fixture is the CORRECT sample; the only errors allowed are the ones the P8 phases typed
+        // on purpose (identifiers containing "devhost"), which reach the compiler as unsaved edits.
+        const foreign = runs.flatMap(r => (r.problems || []).filter(m => !/devhost/i.test(m)).map(m => `${r.label}: ${m}`));
+        assert(runs.length > 0 && foreign.length === 0,
+            `no compile error on the sample's own code (${foreign.length ? JSON.stringify(foreign.slice(0, 5)) : 'none'})`);
+        const last = runs[runs.length - 1];
+        assert(!!last && last.result && last.problemsPanel === last.result.errors + last.result.warnings,
+            `the Problems panel holds exactly the last run's results (${last && last.problemsPanel} entries, ` +
+            `${last && last.result && last.result.errors} error(s) + ${last && last.result && last.result.warnings} warning(s))`);
+    }
 
     // The window is still shutting down when the poll returns, so its user-data dir can hold a
     // lock for a few more seconds. Best-effort with retries; a leftover temp dir is harmless.

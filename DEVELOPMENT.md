@@ -271,7 +271,13 @@ real host runs the watcher chain, so this is the one place it can be proven). Th
 (roadmap R2) checks what only a real host shows: every start command registered, the `TwinCAT` Activity
 Bar container and its Start / Objects / Libraries views open (`workbench.view.extension.twincat`,
 `<view>.focus`), *TwinCAT: Open Start Page* opens the `TwinCAT Start` tab, and *Create New Project* (with
-its arguments, so no dialog) writes a 3.1.4026 and a 3.1.4024 solution and refuses a second create.
+its arguments, so no dialog) writes a 3.1.4026 and a 3.1.4024 solution and refuses a second create. The
+optional **compile phase** (R3.2) runs *TwinCAT: Compile Project* on every PLC project of the fixture
+through the real command: it runs only when `TWINCAT_COMPILER_BUNDLE` (and optionally
+`TWINCAT_COMPILER_NODE`) is set, which `run.js` writes into the fresh profile's `twincat.compiler.*`
+settings; without it the phase prints `[SKIP]` and asserts nothing. It asserts every run finishes, that no
+error is reported on the sample's own code (only the identifiers the P8 phases typed on purpose, which
+reach the compiler as unsaved edits), and that the Problems panel holds exactly the last run's results.
 
 The same pass also automates the **P8 webview checklist** (items 2–7 of
 `docs/superpowers/plans/2026-08-22-deepen-08-g4-checklist.md`) through **`media/devHostTestHook.js`** —
