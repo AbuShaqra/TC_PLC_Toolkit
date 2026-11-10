@@ -868,7 +868,6 @@ async function run() {
         //     Needs an external compiler (run.js writes twincat.compiler.path into the fresh profile
         //     only when TWINCAT_COMPILER_BUNDLE is set); without one the phase says it was skipped.
         try {
-            const vscode = require('vscode');
             const compilerPath = vscode.workspace.getConfiguration('twincat.compiler').get('path', '');
             if (!compilerPath) {
                 log('compile', { skipped: 'twincat.compiler.path is empty (set TWINCAT_COMPILER_BUNDLE to run it)' });
