@@ -1,0 +1,21 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <Itf Name="I_Valve" Id="{fbaa47fe-d0d9-42e9-91ce-6670802fec89}">
+    <Declaration><![CDATA[INTERFACE I_Valve
+]]></Declaration>
+    <Method Name="Open" Id="{5328a085-5906-42d7-8998-6e575ad59e3c}">
+      <Declaration><![CDATA[METHOD Open : BOOL
+]]></Declaration>
+    </Method>
+    <Property Name="State" Id="{f73f887f-087b-4edc-b5b2-8ce8f0dfad06}">
+      <Declaration><![CDATA[PROPERTY State : E_ValveState
+]]></Declaration>
+      <Get Name="Get" Id="{8f7ea9e1-0a9d-41ac-b57b-61ed5fc58b3b}">
+        <Declaration><![CDATA[]]></Declaration>
+      </Get>
+      <Set Name="Set" Id="{6d6ce055-980f-4bee-aab4-a282cee0e164}">
+        <Declaration><![CDATA[]]></Declaration>
+      </Set>
+    </Property>
+  </Itf>
+</TcPlcObject>

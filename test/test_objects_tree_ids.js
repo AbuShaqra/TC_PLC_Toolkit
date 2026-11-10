@@ -17,9 +17,11 @@
  *  - the element getRevealItem() returns for a file or component has the same id, and the same ancestor
  *    ids, as that element in the expanded tree.
  *
- * Five tree shapes are covered: one solution (the sample), two solutions (the two-project fixture),
- * two PLC projects without a solution (grouped roots), one PLC project without a solution, and the
- * flat tree (no project map).
+ * Six tree shapes are covered: one solution (the first sample, copied alone into a temp root so its
+ * ids keep their `<ROOT>/TcToolkitSample/…` form), two solutions (the two-project fixture), two PLC
+ * projects without a solution (grouped roots), one PLC project without a solution, the flat tree (no
+ * project map), and the committed `sample/` itself — two solutions of different layouts (3.1.4026's
+ * `.tsproj` and 3.1.4024's `.tspproj`, `TcToolkitSample2/`).
  *
  * This harness drives the VS Code-facing adapter (src/treeDataProvider.js), so it needs a `vscode`
  * stub. The stub is backed by the real filesystem. The model itself is tested without one in
@@ -32,7 +34,8 @@ const Module = require('module');
 const fs = require('fs');
 const path = require('path');
 const { reportCoverage } = require('./_coverage');
-const { sampleAvailable, buildTwoProjectFixture } = require('./_multiproject');
+const os = require('os');
+const { sampleAvailable, buildTwoProjectFixture, SAMPLE_PROJECT } = require('./_multiproject');
 
 const SNAPSHOT = path.join(__dirname, 'fixtures', 'objects-tree-ids.json');
 const WRITE = process.argv.includes('--write');
@@ -174,20 +177,28 @@ async function capture(root, projectMap, solutionMap) {
 
 (async () => {
     const fixture = buildTwoProjectFixture();
+    // The first sample alone under a root of its own: sample/ now holds a second solution, and these
+    // single-solution shapes pin the first sample's ids exactly as they were recorded.
+    const oneRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'tc_tree_ids_'));
+    fs.cpSync(SAMPLE_PROJECT, path.join(oneRoot, path.basename(SAMPLE_PROJECT)), { recursive: true });
     const captured = {};
     try {
-        const sampleProjects = createProjectMap([SAMPLE_ROOT]);
-        captured['one-solution'] = await capture(SAMPLE_ROOT, sampleProjects, createSolutionMap([SAMPLE_ROOT], sampleProjects));
+        const sampleProjects = createProjectMap([oneRoot]);
+        captured['one-solution'] = await capture(oneRoot, sampleProjects, createSolutionMap([oneRoot], sampleProjects));
 
         const twoProjects = createProjectMap([fixture.root]);
         captured['two-solutions'] = await capture(fixture.root, twoProjects, createSolutionMap([fixture.root], twoProjects));
         captured['two-projects-grouped'] = await capture(fixture.root, twoProjects, null);
         // One project and no solution: the solution map exists but is empty, so the tree stays flat.
-        captured['one-project-no-solution'] = await capture(SAMPLE_ROOT, sampleProjects,
+        captured['one-project-no-solution'] = await capture(oneRoot, sampleProjects,
             { solutions: [], orphanProjects: [], solutionForProject: () => null });
-        captured['flat'] = await capture(SAMPLE_ROOT, null, null);
+        captured['flat'] = await capture(oneRoot, null, null);
+        // The committed sample/ as a workspace: two solutions, one per template layout.
+        const bothProjects = createProjectMap([SAMPLE_ROOT]);
+        captured['two-sample-solutions'] = await capture(SAMPLE_ROOT, bothProjects, createSolutionMap([SAMPLE_ROOT], bothProjects));
     } finally {
         fixture.cleanup();
+        fs.rmSync(oneRoot, { recursive: true, force: true });
     }
 
     for (const [name, shot] of Object.entries(captured)) {

@@ -37,8 +37,10 @@ const {
     getLibraryNamespaces,
     clearLibraryNamespaces
 } = require('../src/lsp/libraries');
+// The real-.plcproj sections pin the FIRST sample's four references; sample/ also holds a second
+// solution with its own (template) references.
 const {
-    SAMPLE_DIR,
+    SAMPLE_PROJECT_DIR: SAMPLE_DIR,
     MIT_NAMESPACE,
     MIT_SYMBOL_COUNT,
     indexSampleLibraries,

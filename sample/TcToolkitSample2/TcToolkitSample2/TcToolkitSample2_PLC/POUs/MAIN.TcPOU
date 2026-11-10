@@ -1,0 +1,37 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <POU Name="MAIN" Id="{07040196-cf87-43ec-a5f1-3fdef02c9969}" SpecialFunc="None">
+    <Declaration><![CDATA[PROGRAM MAIN
+VAR
+	fbValve		: FB_Valve;
+	ipValve		: I_Valve;
+	fbCylinder	: FB_Cylinder;
+	nStroke		: UINT;
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[GVL_Main.nCycles := GVL_Main.nCycles + 1;
+ipValve := fbValve;
+IF GVL_Main.bFillRequest AND GVL_Main.stTank.fLevel < GVL_Main.stTank.fSetpoint THEN
+	ipValve.Open();
+END_IF
+fbValve(bClose := GVL_Main.stTank.fLevel >= GVL_Main.stTank.fSetpoint);
+GVL_Main.stTank.eInlet := fbValve.State;
+GVL_Main.stTank.bAlarm := GVL_Main.stTank.eInlet = E_ValveState.Open AND NOT fbValve.bIsOpen;
+fbCylinder(bExtend := fbValve.bIsOpen);
+nStroke := fbCylinder.Stroke();]]></ST>
+    </Implementation>
+    <LineIds Name="MAIN">
+      <LineId Id="1" Count="0" />
+      <LineId Id="2" Count="0" />
+      <LineId Id="3" Count="0" />
+      <LineId Id="4" Count="0" />
+      <LineId Id="5" Count="0" />
+      <LineId Id="6" Count="0" />
+      <LineId Id="7" Count="0" />
+      <LineId Id="8" Count="0" />
+      <LineId Id="9" Count="0" />
+      <LineId Id="10" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>
