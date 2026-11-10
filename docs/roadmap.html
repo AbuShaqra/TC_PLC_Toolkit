@@ -245,13 +245,13 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
 
     <details class="card" id="r3-2">
       <summary>
-        <div class="card-top"><span>#4</span><span class="id">R3.2</span><span class="pill planned">In progress</span><span class="chev" aria-hidden="true">›</span></div>
+        <div class="card-top"><span>#4</span><span class="id">R3.2</span><span class="pill done">Done · Nov 10</span><span class="chev" aria-hidden="true">›</span></div>
         <div class="card-title">STruC++ check command with errors mapped to the panes</div>
         <div class="bar" aria-hidden="true"><span style="left:18.18%;width:13.64%"></span></div>
-        <div class="card-foot"><span>7 d → ~4 h</span><span>Nov 11 – 12</span></div>
+        <div class="card-foot"><span>7 d → ~5 h actual</span><span>Nov 10</span></div>
       </summary>
       <div class="body">
-        <div class="block wide"><h4>Status, Nov 10</h4><p><b>Built:</b> TwinCAT: Compile Project checks one PLC project with the external compiler and puts its errors in the Problems panel and as markers in the right pane; unsaved edits are included. Your sample checks with 0 errors in about a second. It runs without <code>--strict</code>, which refuses code TwinCAT accepts. <b>Now also done:</b> tests, docs, and a second sample project, <code>TcToolkitSample2</code> (3.1.4024), for multi-project testing (your request). Both samples check with 0 errors, and the second one already caught a real false error in the extension (an <code>IMPLEMENTS</code> list on a multi-line header). <b>Left:</b> showing generated ST files in the Objects tree, then your Windows checks.</p></div>
+        <div class="block wide"><h4>Done, Nov 10 · PR #32</h4><p><b>TwinCAT: Compile Project</b> checks a PLC project with the external compiler and shows its errors in the Problems panel, at the line and column you see in the pane (changed at your request: the XML position confused), and as markers in the right pane. Unsaved edits are included. It runs without <code>--strict</code>, which refuses code TwinCAT accepts. Generate ST now writes into each project's own <code>ST_Files</code> folder, shown in the Objects tree, and a second sample project, <code>TcToolkitSample2</code> (3.1.4024), tests multi-project workspaces. <b>Your Windows checks passed:</b> both samples check with 0 errors, an undeclared variable is reported and clears on edit, and the dev-host test passes with and without the compiler.</p></div>
         <div class="block"><h4>This phase</h4><p>A <b>Check with STruC++</b> command converts the project to ST, runs the compiler as a full semantic check, and maps each error to the right component and pane, in both the Problems view and the pane markers.</p></div>
         <div class="block"><h4>Depends on</h4><p>The spike (#1) and the fork lane's S2, which it waits for. Full scope, decided Nov 9: a check emitter in the converter that keeps lines aligned (members before the POU body, pragmas blanked, IEC enum base type), a raw-based unit, since export mode rewrites <code>REFERENCE TO</code> and <code>REF=</code>, and check-only output. Background, constraints and decisions are on the #1 card.</p></div>
       </div>
@@ -566,7 +566,7 @@ var PLAN = [
   { lane: 'TC PLC Toolkit', num: 1, id: 'R3.1', card: 'r3-1', name: 'STruC++ spike',          est: '2 d → ~15 min', start: '2026-11-09', end: '2026-11-09', days: 0.3, status: 'done', actualStart: '2026-11-09T11:45:00Z', actualEnd: '2026-11-09T12:03:42Z' },
   { lane: 'TC PLC Toolkit', num: 2, id: 'R4',   card: 'r4',   name: 'Objects-tree model',     est: '4 d → ~3 h',  start: '2026-11-09', end: '2026-11-09', machine: true, status: 'done', actualStart: '2026-11-09T12:04:17Z', actualEnd: '2026-11-09T19:56:34Z' },
   { lane: 'TC PLC Toolkit', num: 3, id: 'R2',   card: 'r2',   name: 'Sidebar + new project',  est: '8.5 d → ~7 h', start: '2026-11-09', end: '2026-11-10', machine: true, status: 'done', actualStart: '2026-11-09T19:57:00Z', actualEnd: '2026-11-10T20:55:00Z' },
-  { lane: 'TC PLC Toolkit', num: 4, id: 'R3.2', card: 'r3-2', name: 'Compile project (check)', est: '7 d → ~4 h',  start: '2026-11-11', end: '2026-11-12', status: 'progress', actualStart: '2026-11-10T21:00:00Z' },
+  { lane: 'TC PLC Toolkit', num: 4, id: 'R3.2', card: 'r3-2', name: 'Compile project (check)', est: '7 d → ~4 h',  start: '2026-11-11', end: '2026-11-12', status: 'done', actualStart: '2026-11-10T21:00:00Z', actualEnd: '2026-11-10T22:22:00Z' },
   { lane: 'TC PLC Toolkit', num: 5, id: 'R11', card: 'r11', name: 'Marketplace publishing', est: '0.5 d → ~1 h', start: '2026-11-17', end: '2026-11-17', days: 0.3, offset: 0, machine: true },
   { lane: 'TC PLC Toolkit', num: 6, id: 'R3.3', card: 'r3-3', name: 'STruC++ packaging',      est: '3 d → ~2 h',  start: '2026-11-17', end: '2026-11-17', days: 0.5 },
   { lane: 'TC PLC Toolkit', num: 6, id: 'R6',   card: 'r6',   name: 'Indexing speed',         est: '5.5 d → ~4 h', start: '2026-11-17', end: '2026-11-18', days: 1, offset: 0.5 },
