@@ -5,7 +5,7 @@
  * of test_start_commands.js). No compiler runs here.
  *
  * Pinned: the project pick (one project runs at once, several ask), the setup refusal with its
- * "Open Settings" offer, a clean run, a run with errors (the Problems entries: file, XML range,
+ * "Open Settings" offer, a clean run, a run with errors (the Problems entries: file, pane range,
  * message with component/pane/line, source, link; the pane markers; the status text; the summary),
  * unsaved edits reaching the compiler, "Go to Problem…" and the entry links navigating through
  * `twincat.openComponent` with the exact pane and line, a component edit dropping its results, the
@@ -249,12 +249,11 @@ const settle = () => new Promise(r => setTimeout(r, 10));
     const entries = problems.map.get(fbUri.toString()) || [];
     assert(problems.map.size === 1 && entries.length === 2, 'PROBLEMS: both diagnostics are published on the object\'s file; the GVL has none');
     const err = entries.find(d => d.severity === 0);
-    const xmlLines = onDiskXml.split(CRLF);
     assert(!!err && err.source === DIAGNOSTIC_SOURCE && err.source === 'TwinCAT compile' &&
         err.message === "Undeclared variable 'NNOPE' [Run, implementation line 2]",
         `PROBLEMS: the entry names the component, pane and pane line (${err && err.message})`);
-    assert(!!err && xmlLines[err.range.start.line].substring(err.range.start.character, err.range.end.character) === 'nNope := 5;',
-        'PROBLEMS: its range is the real text inside the XML document');
+    assert(!!err && err.range.start.line === 1 && err.range.start.character === 0 && err.range.end.line === 1 && err.range.end.character === 11,
+        `PROBLEMS: its range is the pane's line and column, so Ln/Col match what the pane shows (${err && JSON.stringify(err.range)})`);
     assert(!!err && err.code.value === 'Run, implementation line 2' && /^vscode:\/\/pub\.twincat-plc-toolkit\/compileProblem\?id=\d+$/.test(err.code.target.toString()),
         `PROBLEMS: its code is a link back into the extension (${err && err.code.target.toString()})`);
     const warn = entries.find(d => d.severity === 1);
@@ -315,15 +314,10 @@ const settle = () => new Promise(r => setTimeout(r, 10));
         'UNSAVED: a Manual Sync pending edit is folded in, so the check sees what the pane shows');
     await provider.pendingEditsStore.delete(fbUri.toString());
 
-    // A document edit re-positions the file's Problems entries against the new text.
+    // A run with problems, for the failed run below to keep.
     compilerAnswer = (call, units) => errorReport(units['1.st'].split('\n').indexOf('nNope := 5;') + 1);
-    let docText = fbXml(`n := 0;${CRLF}nNope := 5;`);
-    openDoc.getText = () => docText;
+    openDoc.getText = () => fbXml(`n := 0;${CRLF}nNope := 5;`);
     await run('twincat.compileProject');
-    const lineBefore = problems.map.get(fbUri.toString()).find(d => d.severity === 0).range.start.line;
-    docText = docText.replace('<TcPlcObject Version="1.1.0.1">', `<TcPlcObject Version="1.1.0.1">${CRLF}<!-- pushed down -->`);
-    listeners.docChange.forEach(fn => fn({ document: openDoc }));
-    assert(problems.map.get(fbUri.toString()).find(d => d.severity === 0).range.start.line === lineBefore + 1, 'EDIT: a change to the document moves the Problems entry with its text');
     vscodeStub.workspace.textDocuments = [];
 
     // ── A failed run keeps the previous results; the next good run replaces them ────────────────

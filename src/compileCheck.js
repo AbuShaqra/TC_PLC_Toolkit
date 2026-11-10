@@ -26,7 +26,6 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { buildCheckUnit, mapUnitPosition } = require('./checkUnit');
-const { componentCdataSpan } = require('./xmlParser');
 
 /** The oldest Node major version the compiler runs on. */
 const MIN_NODE_MAJOR = 22;
@@ -438,34 +437,20 @@ function describeLocation(d, memberName) {
 }
 
 /**
- * Turns a pane position into a range in the XML document that holds the pane's text, so a
- * diagnostic published for the file points at the real characters.
- * @param {string} xmlText The object's XML text.
- * @param {Object} xmlContext The component's `xmlContext` (from parseTwinCatXml).
- * @param {{pane: 'decl'|'impl', line: number, column: number, endLine: number, endColumn: number}} at
- * @returns {{start: {line: number, character: number}, end: {line: number, character: number}}|null}
- *   0-based, or null when the block cannot be located (the caller falls back to the file's top).
+ * The Problems-panel range of a compile diagnostic: the PANE's line and column, 0-based. The
+ * panel shows `Ln/Col` from this range, and the user reads the pane, not the XML around it, so the
+ * numbers must be the ones the pane's gutter shows (a range inside the XML read as e.g. Ln 23 for
+ * implementation line 2). The pane is named in the message, which the panel cannot express.
+ * @param {{line: number, column: number, endLine?: number, endColumn?: number}} at 1-based pane position.
+ * @returns {{start: {line: number, character: number}, end: {line: number, character: number}}}
  */
-function xmlRangeFor(xmlText, xmlContext, at) {
-    const span = componentCdataSpan(xmlText, xmlContext, at.pane === 'decl' ? 'Declaration' : 'Implementation');
-    if (!span) return null;
-    const payload = xmlText.substring(span.start, span.end);
-    // Offsets of each pane line's first character inside the payload.
-    const starts = [0];
-    const breakRe = /\r\n|\r|\n/g;
-    let m;
-    while ((m = breakRe.exec(payload)) !== null) starts.push(m.index + m[0].length);
-    const offsetOf = (/** @type {number} */ line, /** @type {number} */ column) => {
-        const index = Math.min(Math.max(line, 1), starts.length) - 1;
-        const lineEnd = index + 1 < starts.length ? starts[index + 1] : payload.length;
-        return span.start + Math.min(starts[index] + Math.max(column, 1) - 1, lineEnd);
-    };
-    const position = (/** @type {number} */ offset) => {
-        const before = xmlText.substring(0, offset);
-        const lines = before.split(/\r\n|\r|\n/);
-        return { line: lines.length - 1, character: lines[lines.length - 1].length };
-    };
-    return { start: position(offsetOf(at.line, at.column)), end: position(offsetOf(at.endLine, at.endColumn)) };
+function paneRange(at) {
+    const line = Math.max(at.line || 1, 1);
+    const column = Math.max(at.column || 1, 1);
+    let endLine = Math.max(at.endLine || line, 1);
+    let endColumn = Math.max(at.endColumn || column, 1);
+    if (endLine < line || (endLine === line && endColumn < column)) { endLine = line; endColumn = column; }
+    return { start: { line: line - 1, character: column - 1 }, end: { line: endLine - 1, character: endColumn - 1 } };
 }
 
 module.exports = {
@@ -486,5 +471,5 @@ module.exports = {
     runCheck,
     summarize,
     describeLocation,
-    xmlRangeFor
+    paneRange
 };

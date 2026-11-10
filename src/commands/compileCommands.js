@@ -32,7 +32,7 @@ const { normalizeFileUri } = require('../fileUri');
 const { memberName } = require('../componentId');
 const pendingEditsCore = require('../../media/pendingEdits');
 const {
-    COMPILER_SECTION, isCompilerConfigured, checkSetup, buildCheckInputs, runCheck, summarize, describeLocation, xmlRangeFor
+    COMPILER_SECTION, isCompilerConfigured, checkSetup, buildCheckInputs, runCheck, summarize, describeLocation, paneRange
 } = require('../compileCheck');
 
 /** The `source` of every diagnostic this command publishes. */
@@ -96,18 +96,6 @@ function registerCompileCommands(context, { provider, getProjectMap, onSettingsC
         return edits.length ? pendingEditsCore.foldEdits(text, edits, replaceComponentCdata) : text;
     }
 
-    /**
-     * The text a file's problems are positioned against, without waiting: the open document, else disk.
-     * @param {vscode.Uri} uri
-     * @returns {string|null}
-     */
-    function textForRanges(uri) {
-        const key = keyOf(uri.toString());
-        const open = (vscode.workspace.textDocuments || []).find(d => keyOf(d.uri.toString()) === key);
-        if (open) return open.getText();
-        try { return fs.readFileSync(uri.fsPath, 'utf8'); } catch (e) { return null; }
-    }
-
     /** Publishes one file's problems to the Problems panel (or clears the file when it has none). */
     function publishFile(/** @type {string} */ key) {
         const entry = byFile.get(key);
@@ -116,14 +104,10 @@ function registerCompileCommands(context, { provider, getProjectMap, onSettingsC
             byFile.delete(key);
             return;
         }
-        const text = textForRanges(entry.uri);
-        const parsed = text ? parseTwinCatXml(text) : null;
         const diagnostics = entry.problems.map((p) => {
-            const comp = parsed ? parsed.components.find((/** @type {any} */ c) => c.id === p.componentId) : null;
-            const at = comp && text ? xmlRangeFor(text, comp.xmlContext, p) : null;
-            const range = at
-                ? new vscode.Range(at.start.line, at.start.character, at.end.line, at.end.character)
-                : new vscode.Range(0, 0, 0, 0);
+            // Pane coordinates, so Ln/Col in the panel match the pane the user reads.
+            const at = paneRange(p);
+            const range = new vscode.Range(at.start.line, at.start.character, at.end.line, at.end.character);
             const where = describeLocation(p, memberName);
             const d = new vscode.Diagnostic(range, `${p.message} [${where}]`,
                 p.severity === 'error' ? vscode.DiagnosticSeverity.Error
@@ -388,11 +372,6 @@ function registerCompileCommands(context, { provider, getProjectMap, onSettingsC
     }
 
     context.subscriptions.push(
-        // An edit moves text inside the XML document: re-position that file's Problems entries.
-        vscode.workspace.onDidChangeTextDocument((e) => {
-            const key = keyOf(e.document.uri.toString());
-            if (byFile.has(key)) publishFile(key);
-        }),
         vscode.workspace.onDidChangeConfiguration((e) => {
             if (e.affectsConfiguration(COMPILER_SECTION) && onSettingsChanged) onSettingsChanged();
         })

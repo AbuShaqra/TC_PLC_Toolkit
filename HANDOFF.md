@@ -14,6 +14,12 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   green (**89/89, Coverage: FULL**), `npm run typecheck` and `npm run lint` exit 0; all three browser harnesses green
   (`run.js`, `run_pragmas.js`, new `run_start_page.js`; Chromium via `HARNESS_CHROMIUM=/opt/pw-browsers/chromium-1243/chrome-linux64/chrome`).
   The dev-host harness was last run on Windows 2026-11-09 for R4; its new R2 start-page phase has never run.
+- **R3.2 Compile Project (branch, PR not yet open):** user's Windows checks 2026-11-10 passed — both samples 0 errors,
+  an undeclared variable reported, markers clear on edit, Generate ST per project. Dev-host WITHOUT the compiler
+  passes; WITH it 2 fails were test bugs, fixed: the object-insert phase leaves an `FB_Cylinder`+`FB_init(…)` snippet
+  unsaved in one FB_Cylinder copy (Aux project), and the panel-count check compared all projects' entries with
+  the last run's. Also changed on the user's report: Problems entries use PANE line/column (`paneRange`), not the
+  XML position. Next: user re-runs the dev-host test with `TWINCAT_COMPILER_BUNDLE`, then open the R3.2 PR into `dev`.
 - **Sample diagnostics: 0 against a baseline of 0** — verified with the Beckhoff archives present AND moved aside.
 
 ## Branching, CI and repo settings

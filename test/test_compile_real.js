@@ -108,15 +108,6 @@ function assert(cond, msg) {
         `PLANT: it is reported in FB_Cylinder.TcPOU, method Extend, implementation pane, line 2 (${show(e)})`);
     assert(/nnotdeclared/i.test(e.message || ''), `PLANT: the message names the undeclared variable (${e.message})`);
 
-    // The same position, found in the XML document (what the Problems panel points at).
-    if (e.filePath) {
-        const text = plantIn('FB_Cylinder.TcPOU', 'refExtendOut := TRUE;', 'refExtendOut := TRUE;\r\nnNotDeclared := 5;')(e.filePath, fs.readFileSync(e.filePath, 'utf8'));
-        const comp = parseTwinCatXml(text).components.find(c => c.id === e.componentId);
-        const range = cc.xmlRangeFor(text, comp.xmlContext, e);
-        const line = text.split(/\r\n|\r|\n/)[range.start.line] || '';
-        assert(line.substring(range.start.character).startsWith('nNotDeclared := 5;'), `PLANT: the XML range starts at the planted statement (${JSON.stringify(line)})`);
-    }
-
     // ── A planted error in a declaration pane ───────────────────────────────────────────────────
     planted = await check(plantIn('FB_Cylinder.TcPOU', 'METHOD Extend : BOOL\r\nVAR\r\n', 'METHOD Extend : BOOL\r\nVAR\r\n\tx : T_NoSuchType;\r\n'));
     errs = planted.result.diagnostics.filter(d => d.severity === 'error');

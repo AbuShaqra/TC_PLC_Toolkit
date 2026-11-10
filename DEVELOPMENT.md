@@ -164,7 +164,7 @@ per-suite without aborting on the first failure. The main ones:
 | `test/test_start_contributions.js` | package.json for R2: the `twincat` Activity Bar container holding Start, TwinCAT Objects, TwinCAT Libraries in that order with ids unchanged, none left in the Explorer, References still in its panel, no dangling view id in a when-clause; each start command contributed under TwinCAT, in the palette, registered, with an `onCommand` activation event (needed on 1.66); Start view welcome links; a monochrome offline icon; the start page's strict CSP and no remote load; `.vscodeignore` shipping the derived templates but not the raw XAE source; the `twincat.startPage.recentProjectsShown` and machine-scoped `twincat.xaeShell.path*` settings, and the page's command / settings-section allow-lists. |
 | `test/test_start_commands.js` | `src/commands/startCommands.js` + `src/startPage.js` under a recording `vscode` stub: create with args and with prompts (files, recents, last location, open here/new/add/none), refusals inline vs as a notification, a deleted recent solution pruned, Generate ST's project pick, help links and settings, the singleton panel, its `state` message (including the recent-list length, clamped, and the XAE Shell paths), a settings change re-posting state to an open page, `openSettings {section}` and Open Settings' query argument, and the command allow-list. |
 | `test/test_check_unit.js` | `src/checkUnit.js`: one origin per emitted line, every pane line exactly once and verbatim in pane order (so a reported line/column IS the pane's), generated lines anchored on their component, members before the body, no rewriting (`REFERENCE TO`, `REF=`, pragmas survive), every sample file round-trips. |
-| `test/test_compile_check.js` | `src/compileCheck.js` with a fake child process: setup messages (compiler missing, Node missing/too old, each naming its setting), the command line, the JSON report (clean, errors, malformed, exit 2, crash), mapping to file/component/pane/line, the pragma-warning filter and its count, temp-dir lifetime, timeout, cancellation, `xmlRangeFor`. |
+| `test/test_compile_check.js` | `src/compileCheck.js` with a fake child process: setup messages (compiler missing, Node missing/too old, each naming its setting), the command line, the JSON report (clean, errors, malformed, exit 2, crash), mapping to file/component/pane/line, the pragma-warning filter and its count, temp-dir lifetime, timeout, cancellation, `paneRange`. |
 | `test/test_compile_commands.js` | `src/commands/compileCommands.js` + the provider hooks under a recording `vscode` stub: project pick, setup refusal, clean run, a run with errors (Problems entries, pane markers, status text, summary), unsaved edits reaching the compiler, Go to Problem and the entry links, an edit dropping its component's results, a failed run keeping the previous results, cancellation, a fresh open landing on the first problem. |
 | `test/test_compile_real.js` | **Optional gate `compile-real`**: the REAL compiler (`TWINCAT_COMPILER_BUNDLE`) over every PLC project in `sample/`, through the same code the command uses: ZERO errors and zero warnings after the pragma filter (a ratchet, like the diagnostics baseline), plus planted errors in a method body, a method declaration and a GVL landing on the right file/component/pane/line, and — in the second sample — a call to a method only the FIRST sample's same-named `FB_Cylinder` has, reported in the second sample's MAIN (the projects are never compiled together). Skips (and says so) without a compiler. |
 | `test/test_recent_projects.js` | `src/recentProjects.js`: newest first, de-duplicated (Windows paths case-insensitive, either separator), capped at 10, missing solutions pruned, malformed stored data ignored, the globalState adapter, and `recentsShownLimit` (the start page's row limit: default 2, clamped to 1..10). |
@@ -279,7 +279,8 @@ through the real command: it runs only when `TWINCAT_COMPILER_BUNDLE` (and optio
 `TWINCAT_COMPILER_NODE`) is set, which `run.js` writes into the fresh profile's `twincat.compiler.*`
 settings; without it the phase prints `[SKIP]` and asserts nothing. It asserts every run finishes, that no
 error is reported on the sample's own code (only the identifiers the P8 phases typed on purpose, which
-reach the compiler as unsaved edits), and that the Problems panel holds exactly the last run's results.
+reach the compiler as unsaved edits, plus the object-insert phase's snippet in its file), and that each
+project's files in the Problems panel hold exactly that project's results.
 
 The same pass also automates the **P8 webview checklist** (items 2–7 of
 `docs/superpowers/plans/2026-08-22-deepen-08-g4-checklist.md`) through **`media/devHostTestHook.js`** —
@@ -413,7 +414,7 @@ src/
                         PROCESS (`--check --json --dialect-file resources/dialects/twincat3.json`,
                         `--global-list N.st=<GVL>` per GVL; never `require()`d, never `--strict`) in
                         a temp dir deleted afterwards, timeout + cancel, JSON report → file/component/
-                        pane/line, the pragma-warning filter (counted), xmlRangeFor. Spawn injected
+                        pane/line, the pragma-warning filter (counted), paneRange. Spawn injected
   projectTemplate       Create a NEW TwinCAT solution from a shipped template (roadmap R2): copy,
                         rename solution/system/PLC project (`<Name>`, `<Name>_PLC`), re-issue every
                         identity GUID consistently, keep every byte else. vscode-free, unit-tested.
@@ -973,8 +974,10 @@ surfaces (UI, README) never name the compiler product — a user ruling, pinned 
 4. **Map** — each diagnostic's unit line → `origins[line]` → file/component/pane/line (the column is
    the pane's, because pane text is verbatim). Warnings matching `/^Pragma ignored:/` are filtered and
    counted; nothing else is.
-5. **Show** — Problems (`twincat-compile` collection, keyed by `normalizeFileUri`, at `xmlRangeFor`'s
-   position inside the CDATA), and the panes: the provider posts **`compileDiagnostics`
+5. **Show** — Problems (`twincat-compile` collection, keyed by `normalizeFileUri`, at `paneRange`: the
+   PANE's line and column, so the panel's Ln/Col match the pane the user reads — decided 2026-11-10, a
+   range inside the XML read as e.g. Ln 23 for implementation line 2; the message names the component
+   and pane), and the panes: the provider posts **`compileDiagnostics`
    `{diagnostics: [{componentId, pane, severity, message, range}]}`** to every open webview of that file
    (and includes them in `init`). `media/editor.js` keeps them under marker owner **`twincat-compile`**,
    separate from the language server's `st-validator`, and re-applies them at the top of

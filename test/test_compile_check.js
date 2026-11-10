@@ -177,23 +177,18 @@ const FILES = [
     assert(cc.describeLocation(d0, memberName) === 'Run, implementation line 2' && cc.describeLocation(d1, memberName) === 'declaration line 3',
         'MAP: locations read "Run, implementation line 2" / "declaration line 3"');
 
-    // ── The XML range of a pane position ────────────────────────────────────────────────────────
-    const fbParsed = parseTwinCatXml(fbXml);
-    const ctxOf = (id) => fbParsed.components.find(c => c.id === id).xmlContext;
-    const xmlLines = fbXml.split(CRLF);
-    let range = cc.xmlRangeFor(fbXml, ctxOf('method_Run'), { pane: 'impl', line: 2, column: 1, endLine: 2, endColumn: 12 });
-    assert(range && xmlLines[range.start.line].substring(range.start.character, range.end.character) === 'nNope := 5;' && range.end.line === range.start.line,
-        'XML: line 2 of a method body is found in the XML document');
-    range = cc.xmlRangeFor(fbXml, ctxOf('method_Run'), { pane: 'impl', line: 1, column: 1, endLine: 1, endColumn: 8 });
-    assert(range && xmlLines[range.start.line].substring(range.start.character, range.end.character) === 'n := 0;',
-        'XML: line 1 starts right after the CDATA marker, on the element\'s own line');
-    range = cc.xmlRangeFor(fbXml, ctxOf('root'), { pane: 'decl', line: 3, column: 2, endLine: 3, endColumn: 3 });
-    assert(range && xmlLines[range.start.line].substring(range.start.character, range.end.character) === 'n',
-        'XML: a declaration position with columns');
-    range = cc.xmlRangeFor(fbXml, ctxOf('root'), { pane: 'impl', line: 99, column: 99, endLine: 99, endColumn: 120 });
-    assert(range && xmlLines[range.start.line].includes('n := n + 1;'), 'XML: a position past the pane is clamped into it');
-    assert(cc.xmlRangeFor(fbXml, { rootType: 'POU', subType: 'Method', subName: 'Gone', accessorType: null }, { pane: 'impl', line: 1, column: 1, endLine: 1, endColumn: 1 }) === null,
-        'XML: a component that is not in the file has no range');
+    // ── The Problems-panel range of a pane position ─────────────────────────────────────────────
+    // The Problems-panel range is the pane's own line and column (0-based), not a position in the XML.
+    let range = cc.paneRange({ pane: 'impl', line: 2, column: 1, endLine: 2, endColumn: 12 });
+    assert(JSON.stringify(range) === JSON.stringify({ start: { line: 1, character: 0 }, end: { line: 1, character: 11 } }),
+        `RANGE: implementation line 2 is Ln 2 in the Problems panel (${JSON.stringify(range)})`);
+    range = cc.paneRange({ pane: 'decl', line: 3, column: 2 });
+    assert(JSON.stringify(range) === JSON.stringify({ start: { line: 2, character: 1 }, end: { line: 2, character: 1 } }),
+        'RANGE: no end position gives an empty range at the start');
+    range = cc.paneRange({ pane: 'impl', line: 4, column: 5, endLine: 3, endColumn: 1 });
+    assert(range.end.line === 3 && range.end.character === 4, 'RANGE: an end before the start collapses to the start');
+    range = cc.paneRange({ pane: 'impl', line: 0, column: 0 });
+    assert(range.start.line === 0 && range.start.character === 0, 'RANGE: a missing line/column is the pane\'s first character');
 
     // ── Running the check ───────────────────────────────────────────────────────────────────────
     const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'tc-compile-test-'));

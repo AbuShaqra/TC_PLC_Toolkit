@@ -408,7 +408,7 @@ async function run() {
                 { resourceUri: vscode.Uri.file(FB), contextValue: 'component', label: 'FB_init' });
             await sleep(700);
             const panel = out.panels.filter(p => /FB_Cylinder\.TcPOU$/i.test(p.uri)).pop();
-            log('object-insert', { inserted: (panel && panel.inserted) || [] });
+            log('object-insert', { file: FB, inserted: (panel && panel.inserted) || [] });
         } else {
             log('object-insert', { skipped: 'FB_Cylinder.TcPOU not found', inserted: [] });
         }
@@ -880,15 +880,22 @@ async function run() {
                 log('compile', { skipped: 'twincat.compiler.path is empty (set TWINCAT_COMPILER_BUNDLE to run it)' });
             } else {
                 const runs = [];
-                const compileProblems = () => vscode.languages.getDiagnostics()
-                    .flatMap(([, list]) => list.filter(d => d.source === 'TwinCAT compile'));
+                // Every project keeps its own results, so a run is judged on its own project's files.
+                const compileProjectMap = hostProvider && hostProvider.options && hostProvider.options.getProjectMap
+                    ? hostProvider.options.getProjectMap() : null;
+                const dirOf = (key) => { const pr = compileProjectMap && compileProjectMap.projects.get(key); return pr ? pr.dir : ''; };
+                const under = (file, dir) => !!dir && path.relative(dir, file) !== '' && !path.relative(dir, file).startsWith('..') && !path.isAbsolute(path.relative(dir, file));
+                const compileProblems = (dir) => vscode.languages.getDiagnostics()
+                    .filter(([uri]) => under(uri.fsPath, dir))
+                    .flatMap(([uri, list]) => list.filter(d => d.source === 'TwinCAT compile').map(d => ({ file: uri.fsPath, d })));
                 for (const p of (hostProvider ? hostProvider.listProjects() : [])) {
                     const result = await vscode.commands.executeCommand('twincat.compileProject', { projectKey: p.key });
-                    const problems = compileProblems();
+                    const problems = compileProblems(dirOf(p.key));
                     runs.push({
                         label: p.label,
+                        dir: dirOf(p.key),
                         result: result || null,
-                        problems: problems.filter(d => d.severity === vscode.DiagnosticSeverity.Error).map(d => d.message),
+                        problems: problems.filter(x => x.d.severity === vscode.DiagnosticSeverity.Error).map(x => ({ file: x.file, message: x.d.message })),
                         problemsPanel: problems.length
                     });
                 }

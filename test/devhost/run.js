@@ -492,15 +492,20 @@ function findCodeCli() {
         const runs = (comp && comp.runs) || [];
         assert(runs.length > 0 && runs.every(r => r.result && r.result.ok === true),
             `Compile Project finishes on every project (${JSON.stringify(runs.map(r => [r.label, r.result && (r.result.ok ? 'ok' : r.result.reason)]))})`);
-        // The fixture is the CORRECT sample; the only errors allowed are the ones the P8 phases typed
-        // on purpose (identifiers containing "devhost"), which reach the compiler as unsaved edits.
-        const foreign = runs.flatMap(r => (r.problems || []).filter(m => !/devhost/i.test(m)).map(m => `${r.label}: ${m}`));
+        // The fixture is the CORRECT sample; the only errors allowed are the ones earlier phases typed
+        // on purpose, which reach the compiler as unsaved edits: the P8 edits (identifiers containing
+        // "devhost") and the object-insert phase's `FB_Cylinder` + `FB_init(...)` snippet in its file.
+        const insert = step('object-insert');
+        const insertedFile = insert && insert.file ? path.resolve(insert.file).toLowerCase() : '';
+        const foreign = runs.flatMap(r => (r.problems || [])
+            .filter(x => !/devhost/i.test(x.message) && path.resolve(x.file).toLowerCase() !== insertedFile)
+            .map(x => `${r.label}: ${path.basename(x.file)}: ${x.message}`));
         assert(runs.length > 0 && foreign.length === 0,
             `no compile error on the sample's own code (${foreign.length ? JSON.stringify(foreign.slice(0, 5)) : 'none'})`);
-        const last = runs[runs.length - 1];
-        assert(!!last && last.result && last.problemsPanel === last.result.errors + last.result.warnings,
-            `the Problems panel holds exactly the last run's results (${last && last.problemsPanel} entries, ` +
-            `${last && last.result && last.result.errors} error(s) + ${last && last.result && last.result.warnings} warning(s))`);
+        // Each project's files carry exactly that project's last results (other projects keep theirs).
+        const mismatched = runs.filter(r => !r.result || !r.dir || r.problemsPanel !== r.result.errors + r.result.warnings);
+        assert(runs.length > 0 && mismatched.length === 0,
+            `the Problems panel holds exactly each project's results (${JSON.stringify(runs.map(r => [r.label, r.problemsPanel, r.result && r.result.errors, r.result && r.result.warnings]))})`);
     }
 
     // The window is still shutting down when the poll returns, so its user-data dir can hold a
