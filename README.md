@@ -69,8 +69,8 @@ sync automatically. The tree follows you: while the TwinCAT Objects view is show
 shows the solution first and every PLC project belonging to it underneath:
 
 ```text
-EOL                         Solution (.sln)
-└─ HPR40_EOL                PLC project (.plcproj)
+TcToolkitSample             Solution (.sln)
+└─ TcToolkitSample_PLC      PLC project (.plcproj)
    ├─ GVLs
    ├─ POUs
    └─ DUTs
