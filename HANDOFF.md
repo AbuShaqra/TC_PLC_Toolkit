@@ -14,10 +14,15 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   green (**89/89, Coverage: FULL**), `npm run typecheck` and `npm run lint` exit 0; all three browser harnesses green
   (`run.js`, `run_pragmas.js`, new `run_start_page.js`; Chromium via `HARNESS_CHROMIUM=/opt/pw-browsers/chromium-1243/chrome-linux64/chrome`).
   The dev-host harness was last run on Windows 2026-11-09 for R4; its new R2 start-page phase has never run.
-- **R3.2 Compile Project: MERGED** into `dev` as PR #32 (`28f24f1`, 2026-11-10 22:22 UTC) after the user's Windows
-  checks (both samples 0 errors, planted error placed and cleared on edit, Generate ST per project, dev-host green with
-  and without `TWINCAT_COMPILER_BUNDLE`). Problems entries use PANE line/column (`paneRange`, user report). Branch
-  merged level with `dev` (`f7b1cbc`). Next toolkit item by order: R3.3. R11 (publishing) moved to the END (user, 2026-11-10: no new release until the current roadmap items are done).
+- **R3.2 Compile Project: MERGED** into `dev` as PR #32 (`28f24f1`, 2026-11-10 22:22 UTC).
+- **On the branch, NOT yet in a PR (waiting for the user's Windows dev-host run):** R3.3 — compiler vendored in
+  `resources/compiler/` (fork `e884d87`; `scripts/vendor-compiler.js` updates it), used by default, Node ≥ 22 discovery
+  (setting → PATH → Windows install dirs → VS Code's runtime if ≥ 22), only `twincat3.json` ships (user rule, tested);
+  toolbar Compile button (`921d2e0`); header + all visible names renamed to "TC Toolkit" (`a665238`, `8e457e0`,
+  `98948c5`; user, trademark). User to run `node test/devhost/run.js` with no `TWINCAT_COMPILER_*` set; also
+  `node scripts/make-social-preview.js` on Windows (needs Segoe UI) to regenerate `media/icon.png`, which still says
+  "TwinCAT". Then one PR into `dev`. R3.4 (library declarations, local-only) follows on the same branch.
+- **R11 publishing:** last — after the toolkit lane AND the fork lane are done (user, 2026-11-10).
 - **Sample diagnostics: 0 against a baseline of 0** — verified with the Beckhoff archives present AND moved aside.
 
 ## Branching, CI and repo settings
