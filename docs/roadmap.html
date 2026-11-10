@@ -473,11 +473,11 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
       <summary>
         <div class="card-top"><span>#9</span><span class="id">S9</span><span class="pill planned">Next</span><span class="chev" aria-hidden="true">›</span></div>
         <div class="card-title">Raw memory layout in the runtime</div>
-        <div class="bar" aria-hidden="true"><span style="left:90.91%;width:9.09%"></span></div>
-        <div class="card-foot"><span>4 d → ~2 h</span><span>Nov 19</span></div>
+        <div class="bar" aria-hidden="true"><span style="left:18.18%;width:9.09%"></span></div>
+        <div class="card-foot"><span>4 d → ~2 h</span><span>Nov 11</span></div>
       </summary>
       <div class="body">
-        <div class="block wide"><h4>Scope</h4><p>Every runtime variable carries its forcing state next to its value, so a BYTE takes 3 bytes and memory is not laid out as on a PLC. Reading a DWORD's bytes through <code>POINTER TO ARRAY OF BYTE</code>, or walking an array or STRUCT with <code>POINTER TO BYTE</code>, reads wrong values. Move the forcing state out of the variable, then lift the refusal S3b adds for these forms.</p></div>
+        <div class="block wide"><h4>Scope</h4><p>Every runtime variable carries its forcing state next to its value, so a BYTE takes 3 bytes and memory is not laid out as on a PLC. Reading a DWORD's bytes through <code>POINTER TO ARRAY OF BYTE</code>, or walking an array or STRUCT with <code>POINTER TO BYTE</code>, reads wrong values. Move the forcing state out of the variable (a table the runtime applies at cycle boundaries), so these forms read real bytes. 14 functions of the bundled OSCAT library use the STRING form and read wrong today.</p></div>
         <div class="block"><h4>Decided</h4><p>User, Nov 10: fix the root cause. Moved ahead of S4–S8, right after S3b batch 3 item 7. Forcing moves to a table applied at cycle boundaries.</p></div>
         <div class="block"><h4>Impact</h4><p>Changes all generated C++; its own release.</p></div>
       </div>
@@ -565,7 +565,7 @@ var PLAN = [
   { lane: 'STruC++ fork',   num: 6, id: 'S6',   card: 's6',   name: 'Runtime safety',         est: '7 d → ~3.5 h', start: '2026-11-16', end: '2026-11-17', days: 1.5, offset: 0.3 },
   { lane: 'STruC++ fork',   num: 7, id: 'S7',   card: 's7',   name: 'iec-3 audit (decision)', est: '6 d → ~3 h',  start: '2026-11-17', end: '2026-11-18', days: 1.3, offset: 0.8 },
   { lane: 'STruC++ fork',   num: 8, id: 'S8',   card: 's8',   name: 'Default → iec-3',        est: '0.5 d → ~20 min', start: '2026-11-18', end: '2026-11-18', days: 0.2, offset: 0.8 },
-  { lane: 'STruC++ fork',   num: 9, id: 'S9',   card: 's9',   name: 'Raw memory layout',      est: '4 d → ~2 h',  start: '2026-11-19', end: '2026-11-19', days: 1.0, offset: 0 }
+  { lane: 'STruC++ fork',   num: 9, id: 'S9',   card: 's9',   name: 'Raw memory layout',      est: '4 d → ~2 h',  start: '2026-11-11', end: '2026-11-11', days: 1.0, offset: 0 }
 ];
 var DOMAIN_START = '2026-11-09', DOMAIN_END = '2026-11-20'; /* exclusive */
 (function () {
