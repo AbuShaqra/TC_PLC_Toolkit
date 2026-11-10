@@ -26,7 +26,7 @@ const HELP_LINKS = Object.freeze([
 
 /** Project actions: the existing commands the page may run (the host re-checks this list). */
 const PROJECT_ACTIONS = Object.freeze([
-    Object.freeze({ command: 'twincat.generateSt', label: 'Generate ST', detail: 'Export every object as Structured Text under ST_Files' }),
+    Object.freeze({ command: 'twincat.generateSt', label: 'Generate ST', detail: 'Export every object as Structured Text into each project’s ST_Files folder' }),
     Object.freeze({ command: 'twincat.updateLibraryDefinitions', label: 'Update Library Definitions', detail: 'Read library signatures through TwinCAT XAE (requires TwinCAT)' })
 ]);
 

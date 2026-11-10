@@ -237,8 +237,11 @@ unsaved work. It briefly opens a TwinCAT window while it runs (about a minute).
 
 ### Generate ST
 
-Export the whole workspace to clean, compiler-friendly `.st` files under `ST_Files/` (toolbar button
-in the editor, *TwinCAT: Generate ST*, or the start page; with several PLC projects you pick which).
+Export the PLC projects to clean, compiler-friendly `.st` files (toolbar button in the editor,
+*TwinCAT: Generate ST*, or the start page; with several PLC projects you pick which). Each project's
+files are written inside that project's own folder, under `<PLC project>/ST_Files/`, mirroring the
+project's layout. A folder of TwinCAT files without a `.plcproj` is exported to `ST_Files/` at the top
+of the workspace.
 
 ### For AI coding assistants
 

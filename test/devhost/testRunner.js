@@ -771,14 +771,19 @@ async function run() {
 
         // --- Phase generate-st: project-aware ST export over the three-project fixture. Proves the
         //     real provider lists the projects for the webview picker and writes each project's
-        //     objects under its OWN ST_Files subtree — so LineA and LineB's identical MAIN paths do
+        //     objects into that project's OWN ST_Files folder — so LineA and LineB's identical MAIN paths do
         //     not collide (the bug the old flat mirror had).
         try {
             const projectsForPicker = hostProvider ? hostProvider.listProjects() : [];
             await hostProvider.generateAllStFiles(); // no keys → every project
             await sleep(1500);
-            const stRoot = path.join(WS, 'ST_Files');
-            const exists = (rel) => fs.existsSync(path.join(stRoot, ...rel.split('/')));
+            // `<project dir>/ST_Files/<path in the project>.st`, given as `<project dir>/<path>`.
+            const stDir = (projectRel) => path.join(WS, ...projectRel.split('/'), 'ST_Files');
+            const exists = (rel) => {
+                const parts = rel.split('/');
+                return fs.existsSync(path.join(stDir(parts.slice(0, 2).join('/')), ...parts.slice(2)));
+            };
+            const projectDirs = ['LineA/TcToolkitSample_PLC', 'LineB/TcToolkitSample_PLC', 'LineA/TcToolkitSample_Aux'];
             log('generate-st', {
                 pickerLabels: projectsForPicker.map(p => p.label).sort(),
                 // Same relative object path in two different projects, kept apart by project folder:
@@ -786,11 +791,13 @@ async function run() {
                 lineBMain: exists('LineB/TcToolkitSample_PLC/POUs/MAIN.st'),
                 auxMain: exists('LineA/TcToolkitSample_Aux/POUs/MAIN.st'),
                 stationNested: exists('LineA/TcToolkitSample_PLC/POUs/Machine/FB_Station.st'),
+                // Nothing is written into the workspace's top-level folder any more.
+                noTopLevel: !fs.existsSync(path.join(WS, 'ST_Files')),
                 // A subset export writes only the chosen project.
                 subset: null
             });
             // Subset: regenerate just the Aux project into a clean dir and confirm scoping.
-            fs.rmSync(stRoot, { recursive: true, force: true });
+            for (const d of projectDirs) fs.rmSync(stDir(d), { recursive: true, force: true });
             const auxKey = projectsForPicker.find(p => /_Aux/.test(p.label));
             if (auxKey) {
                 await hostProvider.generateAllStFiles([auxKey.key]);
@@ -802,6 +809,8 @@ async function run() {
                 };
                 fs.writeFileSync(RESULTS, JSON.stringify(out, null, 2));
             }
+            // Leave the fixture as it was: the outputs live inside the project folders now.
+            for (const d of projectDirs) fs.rmSync(stDir(d), { recursive: true, force: true });
         } catch (e) {
             log('generate-st', { error: String((e && e.stack) || e) });
         }

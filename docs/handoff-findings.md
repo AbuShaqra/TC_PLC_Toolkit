@@ -47,10 +47,10 @@ accurate rather than short — prune a finding only when the code it describes i
   deliberately left at 3.3–4.9:1 contrast (a logotype, exempt).
 
 ## Shipped features: rulings and traps
-- **Generate ST is project-aware:** per-project output `ST_Files/<project dir rel to workspace>/…`, walking each
+- **Generate ST is project-aware:** per-project output `<project dir>/ST_Files/<path in the project>.st` (user
+  request 2026-11-10; it was `<workspace>/ST_Files/<project dir rel to workspace>/…`), walking each
   `.plcproj`'s `<Compile>` list (the old flat mirror OVERWROTE across projects sharing an object path). Path math
-  is the pure `src/stOutputPath.js`. Trap: `asRelativePath(dir, true)` prepends the folder name even for a
-  SINGLE root (`ST_Files/ws/…`) — hence the hand-rolled `projectFolderRelPath`, which prefixes only for 2+ roots.
+  is the pure `src/stOutputPath.js`. An old top-level `ST_Files` is left alone.
   No-`.plcproj` workspaces fall back to the old mirror. Contract: the webview asks `requestProjects`→`projectList`,
   `generate-st` carries optional `projectKeys`, the provider gets `getProjectMap`. Pin: `test_st_output_path.js`
   plus the dev-host `generate-st` phase.

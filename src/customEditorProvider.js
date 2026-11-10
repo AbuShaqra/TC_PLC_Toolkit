@@ -9,7 +9,7 @@ const fs = require('fs');
 const { parseTwinCatXml, replaceComponentCdata } = require('./xmlParser');
 const { updateDocument } = require('./plcProjHelper');
 const { convertXmlToSt, collectStructDefinitions } = require('./stConverter');
-const { stOutputRelPath, projectFolderRelPath } = require('./stOutputPath');
+const { stOutputPath, isUnderStFiles } = require('./stOutputPath');
 const { assembleSt, localToAbsolute, createStResolver, mapDefinition, collectPeekReferences, listExternalReferences, mapDiagnosticsToLocal } = require('./livePath');
 const pendingEditsCore = require('../media/pendingEdits');
 const { createPendingEditsStore } = require('./pendingEditsStore');
@@ -25,16 +25,19 @@ async function readFile(uri) {
 }
 
 /**
- * Reports the outcome of a Generate ST run in one notification: the success/failure counts, plus
- * the members the converter could not export (SFC transitions), named, when there are any.
+ * Reports the outcome of a Generate ST run in one notification: the success/failure counts and where
+ * the files went, plus the members the converter could not export (SFC transitions), named, when
+ * there are any.
  * @param {number} successCount Files written.
  * @param {number} failCount Files that failed to convert.
  * @param {string[]} warnings Converter warnings collected across the run.
+ * @param {string} where Where the files were written, as it reads after "in": `MyPlc/ST_Files`,
+ *   `each project's ST_Files folder`, or `the "ST_Files" folder`.
  */
-function reportGenerateResult(successCount, failCount, warnings) {
+function reportGenerateResult(successCount, failCount, warnings, where) {
     const summary = failCount === 0
-        ? `Successfully generated ${successCount} ST files inside "ST_Files" folder.`
-        : `Generated ${successCount} ST files. Failed to convert ${failCount} files.`;
+        ? `Successfully generated ${successCount} ST files in ${where}.`
+        : `Generated ${successCount} ST files in ${where}. Failed to convert ${failCount} files.`;
     if (warnings.length > 0) {
         for (const w of warnings) console.warn(`Generate ST: ${w}`);
         const shown = warnings.slice(0, 5).map(w => w.replace(/ is not exported:.*$/, '')).join('; ');
@@ -631,10 +634,6 @@ class TwinCatCustomEditorProvider {
 </html>`;
     }
     /**
-     * Converts all TwinCAT XML files in the workspace to Structured Text files
-     * and saves them under the 'ST_Files' directory mirroring the layout.
-     */
-    /**
      * The workspace's PLC projects, for the webview's Generate-ST picker.
      * @returns {Array<{key: string, label: string}>} `[]` when there are fewer than two projects,
      *   so the webview shows the plain button rather than a one-entry menu.
@@ -649,9 +648,10 @@ class TwinCatCustomEditorProvider {
 
     /**
      * Writes an `.st` for every object of the selected PLC projects, project-aware: each project's
-     * objects go under `ST_Files/<project dir relative to the workspace>/…` so two projects that
-     * share an object path never overwrite each other (see stOutputPath.js). Files belonging to no
-     * `.plcproj` (loose `.st`, orphan XML) are not emitted.
+     * objects go into that project's own directory, `<project dir>/ST_Files/<path in the project>.st`,
+     * so two projects that share an object path never overwrite each other and nothing lands in the
+     * workspace's top-level folder (see stOutputPath.js). Files belonging to no `.plcproj` (loose
+     * `.st`, orphan XML) are not emitted.
      * @param {string[]} [projectKeys] Project keys to export; absent/empty exports every project.
      */
     async generateAllStFiles(projectKeys) {
@@ -660,13 +660,12 @@ class TwinCatCustomEditorProvider {
             vscode.window.showErrorMessage('No active workspace folder found.');
             return;
         }
-        const targetDir = vscode.Uri.joinPath(workspaceFolders[0].uri, 'ST_Files');
         const projectMap = this.options && this.options.getProjectMap && this.options.getProjectMap();
 
         // No `.plcproj` anywhere (a bare folder of TwinCAT files): fall back to the flat
         // workspace-relative mirror, so those users are not left with nothing to export.
         if (!projectMap || projectMap.projects.size === 0) {
-            await this._generateWorkspaceMirror(targetDir);
+            await this._generateWorkspaceMirror(vscode.Uri.joinPath(workspaceFolders[0].uri, 'ST_Files'));
             return;
         }
 
@@ -678,22 +677,21 @@ class TwinCatCustomEditorProvider {
         let failCount = 0;
         /** @type {string[]} */
         const warnings = [];
+        /** @type {string[]} */
+        const exportedDirs = [];
         for (const key of projectMap.keys()) {
             if (!wanted.has(key)) continue;
             const project = projectMap.get(key);
             if (!project) continue;
-            // The project's folder under ST_Files: its directory relative to the workspace, unique
-            // per project. Computed by hand rather than via asRelativePath, which prepends the
-            // folder name even for a single root (giving `ST_Files/<rootName>/…`). The root name is
-            // added only when there are 2+ roots, which is what keeps a multi-root export unambiguous.
-            const projectFolderRel = projectFolderRelPath(workspaceFolders.map(f => f.uri.fsPath), project.dir);
-
+            exportedDirs.push(project.dir);
             // objectFiles maps a normalized key → the file's real on-disk path (correct casing).
             // Two passes: parse the whole project first, so a struct that EXTENDS a struct from
             // another file can be flattened from the project's own definitions.
             /** @type {Array<{ filePath: string, parsed: any, error: any }>} */
             const entries = [];
             for (const filePath of project.objectFiles.values()) {
+                // An output of an earlier run is never an input, wherever its ST_Files folder is.
+                if (isUnderStFiles(filePath)) continue;
                 try {
                     const fileData = await vscode.workspace.fs.readFile(vscode.Uri.file(filePath));
                     entries.push({ filePath, parsed: parseTwinCatXml(Buffer.from(fileData).toString('utf8')), error: null });
@@ -707,8 +705,7 @@ class TwinCatCustomEditorProvider {
                     if (error) throw error;
                     if (!parsed) continue;
                     const { stText, warnings: fileWarnings } = convertXmlToSt(parsed, { structs });
-                    const outRel = stOutputRelPath(projectFolderRel, project.dir, filePath);
-                    const outFileUri = vscode.Uri.joinPath(targetDir, ...outRel.split(/[\\/]+/));
+                    const outFileUri = vscode.Uri.file(stOutputPath(project.dir, filePath));
                     await vscode.workspace.fs.createDirectory(vscode.Uri.joinPath(outFileUri, '..'));
                     await vscode.workspace.fs.writeFile(outFileUri, Buffer.from(stText, 'utf8'));
                     warnings.push(...fileWarnings); // only for files actually written
@@ -720,7 +717,9 @@ class TwinCatCustomEditorProvider {
             }
         }
 
-        reportGenerateResult(successCount, failCount, warnings);
+        reportGenerateResult(successCount, failCount, warnings, exportedDirs.length === 1
+            ? `${path.basename(exportedDirs[0])}/ST_Files`
+            : "each project's ST_Files folder");
     }
 
     /**
@@ -739,7 +738,7 @@ class TwinCatCustomEditorProvider {
         const entries = [];
         for (const fileUri of files) {
             const relPath = vscode.workspace.asRelativePath(fileUri, false);
-            if (relPath.startsWith('ST_Files/') || relPath.startsWith('ST_Files\\')) continue;
+            if (isUnderStFiles(relPath)) continue;
             try {
                 const fileData = await vscode.workspace.fs.readFile(fileUri);
                 entries.push({ fileUri, relPath, parsed: parseTwinCatXml(Buffer.from(fileData).toString('utf8')), error: null });
@@ -764,7 +763,7 @@ class TwinCatCustomEditorProvider {
                 failCount++;
             }
         }
-        reportGenerateResult(successCount, failCount, warnings);
+        reportGenerateResult(successCount, failCount, warnings, 'the "ST_Files" folder');
     }
 }
 

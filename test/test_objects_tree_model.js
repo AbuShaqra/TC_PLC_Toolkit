@@ -92,6 +92,8 @@ const FILES = {
     [P('LineA', 'PLC', 'PLC.plcproj')]: '<Project/>',
     [P('LineA', 'PLC', 'Notes.txt')]: 'not shown',
     [P('LineA', 'PLC', '.git', 'HEAD')]: 'skipped dir',
+    // Generate ST output: a project's own ST_Files is hidden.
+    [P('LineA', 'PLC', 'ST_Files', 'POUs', 'MAIN.st')]: 'PROGRAM MAIN END_PROGRAM',
     [P('LineB', 'PLC', 'POUs', 'MAIN.TcPOU')]: pou('PROGRAM MAIN')
 };
 
@@ -235,6 +237,8 @@ const labels = (nodes) => nodes.map(n => n.label).join(',');
     const duts = await grouped.childrenOf(plcRows.find(n => n.label === 'DUTs'));
     assert(duts.every(n => n.contextValue === 'dutFile') && duts[0].icon.id !== duts[1].icon.id,
         'DIR: DUT rows get their kind-specific icons');
+    assert(!plcRows.some(n => n.label.toLowerCase() === 'st_files'),
+        `DIR: a project's own ST_Files (Generate ST output) is not listed (${labels(plcRows)})`);
     const before = readDirectoryCalls;
     const again = await grouped.childrenOf(projectRow);
     assert(readDirectoryCalls === before + 1 && again !== plcRows, 'DIR: children are re-read on every expansion');

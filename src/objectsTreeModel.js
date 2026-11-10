@@ -352,6 +352,11 @@ function createObjectsTreeModel({ host, workspaceFolders, projectMap = null, sol
     const rootKeys = new Set(folders.map(u => u.toString()));
     /** Project directory uri string → its project row, for reveal ancestry. Empty in the flat tree. */
     const projectByDir = new Map();
+    /** Every PLC project directory, lower-cased: a project's own `ST_Files` folder is not listed. */
+    const projectDirs = new Set();
+    if (projectMap && projectMap.projects) {
+        for (const p of projectMap.projects.values()) if (p && p.dir) projectDirs.add(path.resolve(p.dir).toLowerCase());
+    }
 
     const projectNode = (project, label, parent) => {
         const node = makeNode({
@@ -413,6 +418,8 @@ function createObjectsTreeModel({ host, workspaceFolders, projectMap = null, sol
             const entryUri = host.joinPath(dirUri, name);
             if (type === ENTRY_TYPE.Directory) {
                 if (BASE_SKIP_DIRS.has(name.toLowerCase())) continue;
+                // Generate ST writes into `<project dir>/ST_Files`: derived output, not project content.
+                if (name.toLowerCase() === 'st_files' && projectDirs.has(path.resolve(dirUri.fsPath).toLowerCase())) continue;
                 rows.push(makeNode({
                     kind: 'directory', label: name, resourceUri: entryUri, collapsible: 'collapsed',
                     icon: { id: 'folder', color: null }, parent
