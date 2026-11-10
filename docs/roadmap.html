@@ -288,7 +288,7 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
 
     <details class="card" id="r6">
       <summary>
-        <div class="card-top"><span>#7</span><span class="id">R6</span><span class="pill planned">In progress</span><span class="chev" aria-hidden="true">›</span></div>
+        <div class="card-top"><span>#7</span><span class="id">R6</span><span class="pill planned">Built · your check</span><span class="chev" aria-hidden="true">›</span></div>
         <div class="card-title">Indexing speed</div>
         <div class="bar" aria-hidden="true"><span style="left:77.27%;width:9.09%"></span></div>
         <div class="card-foot"><span>5.5 d → ~4 h</span><span>Nov 17 – 18</span></div>
@@ -302,7 +302,7 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
 
     <details class="card" id="r7">
       <summary>
-        <div class="card-top"><span>#8</span><span class="id">R7</span><span class="pill planned">Planned</span><span class="chev" aria-hidden="true">›</span></div>
+        <div class="card-top"><span>#8</span><span class="id">R7</span><span class="pill planned">In progress</span><span class="chev" aria-hidden="true">›</span></div>
         <div class="card-title">Rename: lift the v1 limits</div>
         <div class="bar" aria-hidden="true"><span style="left:90.91%;width:4.55%"></span></div>
         <div class="card-foot"><span>2.5 d → ~2 h</span><span>Nov 19</span></div>
@@ -586,8 +586,8 @@ var PLAN = [
   { lane: 'TC PLC Toolkit', num: 4, id: 'R3.2', card: 'r3-2', name: 'Compile project (check)', est: '7 d → ~4 h',  start: '2026-11-11', end: '2026-11-12', status: 'done', actualStart: '2026-11-10T21:00:00Z', actualEnd: '2026-11-10T22:22:00Z' },
   { lane: 'TC PLC Toolkit', num: 5, id: 'R3.3', card: 'r3-3', name: 'STruC++ packaging',      est: '3 d → ~2 h',  start: '2026-11-10', end: '2026-11-11', days: 0.5, status: 'progress', actualStart: '2026-11-10T22:40:00Z' },
   { lane: 'TC PLC Toolkit', num: 6, id: 'R3.4', card: 'r3-4', name: 'Library declarations',   est: '2 d → ~1.5 h', start: '2026-11-10', end: '2026-11-11', days: 0.4, status: 'progress', actualStart: '2026-11-10T23:30:00Z' }, // built; awaiting the user's Windows check
-  { lane: 'TC PLC Toolkit', num: 7, id: 'R6',   card: 'r6',   name: 'Indexing speed',         est: '5.5 d → ~4 h', start: '2026-11-11', end: '2026-11-11', days: 1, offset: 0.5, status: 'progress', actualStart: '2026-11-11T00:10:00Z' },
-  { lane: 'TC PLC Toolkit', num: 8, id: 'R7',   card: 'r7',   name: 'Rename limits',          est: '2.5 d → ~2 h', start: '2026-11-19', end: '2026-11-19', days: 0.5 },
+  { lane: 'TC PLC Toolkit', num: 7, id: 'R6',   card: 'r6',   name: 'Indexing speed',         est: '5.5 d → ~4 h', start: '2026-11-11', end: '2026-11-11', days: 1, offset: 0.5, status: 'progress', actualStart: '2026-11-11T00:10:00Z' } // built; awaiting the user's Windows check,
+  { lane: 'TC PLC Toolkit', num: 8, id: 'R7',   card: 'r7',   name: 'Rename limits',          est: '2.5 d → ~2 h', start: '2026-11-11', end: '2026-11-11', days: 0.5, status: 'progress', actualStart: '2026-11-11T00:45:00Z' },
   { lane: 'TC PLC Toolkit', num: 9, id: 'R8',   card: 'r8',   name: 'Comments, pragma hover', est: '1.5 d → ~1 h', start: '2026-11-19', end: '2026-11-19', days: 0.3, offset: 0.5 },
   { lane: 'TC PLC Toolkit', num: 10, id: 'R9',   card: 'r9',   name: 'ESLint 10',              est: '0.75 d → ~30 min', start: '2026-11-19', end: '2026-11-19', days: 0.2, offset: 0.8 },
   { lane: 'TC PLC Toolkit', num: 11, id: 'R11', card: 'r11', name: 'Marketplace publishing', est: '0.5 d → ~1 h', start: '2026-11-20', end: '2026-11-20', days: 0.3, offset: 0, machine: true },

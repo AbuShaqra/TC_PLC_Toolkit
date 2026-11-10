@@ -29,6 +29,11 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   silently dropped — kept broad per the project's no-false-positive rule; tighten to dump/.tmc names if the user
   prefers. User's Windows check on a real project: steps in the R3.4 report (hint before Update Library Definitions;
   far fewer errors after; planted typos still reported; no `lib-*.st` left in `%TEMP%\twincat-compile-*`).
+- **R6 indexing speed: built on the branch** (`05b350a`, `103df64`, `d4f39c8`; 102 suites FULL): per-scan
+  directory memo (`createDirectoryListingMemo`), persisted archive names (`src/lsp/archiveStore.js`, global storage
+  `archive-names-v1.json`, decoder-id + central-directory fingerprint), per-project background scan with readiness
+  gate (`src/lsp/workspaceState.js`, `whenIndexed`; `initialize` no longer waits). Measure on Windows:
+  `node scripts/measure-indexing.js --workspace "<folder>" --runs 3`. User must re-run the dev-host test.
 - **R11 publishing:** last — after the toolkit lane AND the fork lane are done (user, 2026-11-10).
 - **Sample diagnostics: 0 against a baseline of 0** — verified with the Beckhoff archives present AND moved aside.
 
