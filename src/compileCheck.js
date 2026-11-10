@@ -395,7 +395,7 @@ async function runCheck(o) {
         if (run.outcome === 'timeout') return ended('timeout', `The compiler did not finish within ${Math.round((o.timeoutMs || DEFAULT_CHECK_TIMEOUT_MS) / 1000)} seconds and was stopped.`);
         if (run.outcome === 'spawn-error') return ended('failed', `The compiler could not be started: ${run.error}`);
         const parsed = parseCheckOutput(run.stdout, run.code, run.stderr);
-        if (!parsed.ok) return ended('failed', parsed.message);
+        if (parsed.ok === false) return ended('failed', parsed.message);
         const mapped = mapCheckDiagnostics(parsed.diagnostics, o.inputs);
         const all = [...mapped.diagnostics, ...mapped.general];
         return {
