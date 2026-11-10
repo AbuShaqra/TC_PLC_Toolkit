@@ -17,7 +17,7 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
 - **R3.2 Compile Project: MERGED** into `dev` as PR #32 (`28f24f1`, 2026-11-10 22:22 UTC) after the user's Windows
   checks (both samples 0 errors, planted error placed and cleared on edit, Generate ST per project, dev-host green with
   and without `TWINCAT_COMPILER_BUNDLE`). Problems entries use PANE line/column (`paneRange`, user report). Branch
-  merged level with `dev` (`f7b1cbc`). Next toolkit item by order: R11 (needs the user's publish step), then R3.3.
+  merged level with `dev` (`f7b1cbc`). Next toolkit item by order: R3.3. R11 (publishing) moved to the END (user, 2026-11-10: no new release until the current roadmap items are done).
 - **Sample diagnostics: 0 against a baseline of 0** — verified with the Beckhoff archives present AND moved aside.
 
 ## Branching, CI and repo settings

@@ -257,24 +257,10 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
       </div>
     </details>
 
-    <details class="card" id="r11">
-      <summary>
-        <div class="card-top"><span>#5</span><span class="id">R11</span><span class="pill planned">In progress</span><span class="chev" aria-hidden="true">›</span></div>
-        <div class="card-title">Publish to the VS Code Marketplace and Open VSX</div>
-        <div class="bar" aria-hidden="true"><span style="left:72.73%;width:2.73%"></span></div>
-        <div class="card-foot"><span>0.5 d → ~1 h</span><span>Nov 10 – 11</span></div>
-      </summary>
-      <div class="body">
-        <div class="block"><h4>Goal</h4><p>Install the extension straight from the Marketplace, and from Open VSX for VSCodium and Cursor, starting with the first release that has the TwinCAT sidebar (your ask, Nov 9).</p></div>
-        <div class="block"><h4>Your part, about 15 minutes</h4><p>Done Nov 9: accounts on both marketplaces, publisher ID <code>a-abushaqra</code>. Still to do: upload each release VSIX by hand, or add a Marketplace token as the repo secret <code>VSCE_PAT</code> (and <code>OVSX_PAT</code> for Open VSX) so releases publish themselves.</p></div>
-        <div class="block wide"><h4>Licence</h4><p>Switched to AGPL-3.0-or-later on Nov 9 (your call). The first marketplace release is the first under it; versions up to 0.10.1 stay MIT.</p></div>
-        <div class="block wide"><h4>Our part, about 1 hour</h4><p>A changelog; real categories, keywords and links; licence included in the package; a line saying the extension is not affiliated with Beckhoff; README images checked; optionally a preview flag until v1.0; and a publish step in the release workflow that runs only when the secret exists.</p></div>
-      </div>
-    </details>
 
     <details class="card" id="r3-3">
       <summary>
-        <div class="card-top"><span>#6</span><span class="id">R3.3</span><span class="pill planned">Planned</span><span class="chev" aria-hidden="true">›</span></div>
+        <div class="card-top"><span>#5</span><span class="id">R3.3</span><span class="pill planned">Planned</span><span class="chev" aria-hidden="true">›</span></div>
         <div class="card-title">STruC++ bundling, Node 22 discovery, licence files, settings, docs</div>
         <div class="bar" aria-hidden="true"><span style="left:72.73%;width:4.55%"></span></div>
         <div class="card-foot"><span>3 d → ~2 h</span><span>Nov 17</span></div>
@@ -335,6 +321,22 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
       <div class="body">
         <div class="block wide"><h4>Scope</h4><p>Move to ESLint 10 (9.x is deprecated; it raises the Node floor and needs a re-triage of findings) and clear the development-only <code>brace-expansion</code> advisory.</p></div>
         <div class="block wide"><h4>How it was estimated</h4><p>My sizing from the item list, not measured. Session time uses the Nov 9 velocity (about 30 min per planned day for fork work, about 45 min for toolkit work); dates assume about 4 hours of session per working day.</p></div>
+      </div>
+    </details>
+
+    <details class="card" id="r11">
+      <summary>
+        <div class="card-top"><span>#10</span><span class="id">R11</span><span class="pill planned">Planned · last</span><span class="chev" aria-hidden="true">›</span></div>
+        <div class="card-title">Publish to the VS Code Marketplace and Open VSX</div>
+        <div class="bar" aria-hidden="true"><span style="left:72.73%;width:2.73%"></span></div>
+        <div class="card-foot"><span>0.5 d → ~1 h</span><span>Nov 20</span></div>
+      </summary>
+      <div class="body">
+        <div class="block wide"><h4>Moved to the end, Nov 10</h4><p>Your call: no new release until the roadmap's current items are finished, so publishing comes last.</p></div>
+        <div class="block"><h4>Goal</h4><p>Install the extension straight from the Marketplace, and from Open VSX for VSCodium and Cursor, starting with the first release that has the TwinCAT sidebar (your ask, Nov 9).</p></div>
+        <div class="block"><h4>Your part, about 15 minutes</h4><p>Done Nov 9: accounts on both marketplaces, publisher ID <code>a-abushaqra</code>. Still to do: upload each release VSIX by hand, or add a Marketplace token as the repo secret <code>VSCE_PAT</code> (and <code>OVSX_PAT</code> for Open VSX) so releases publish themselves.</p></div>
+        <div class="block wide"><h4>Licence</h4><p>Switched to AGPL-3.0-or-later on Nov 9 (your call). The first marketplace release is the first under it; versions up to 0.10.1 stay MIT.</p></div>
+        <div class="block wide"><h4>Our part, about 1 hour</h4><p>A changelog; real categories, keywords and links; licence included in the package; a line saying the extension is not affiliated with Beckhoff; README images checked; optionally a preview flag until v1.0; and a publish step in the release workflow that runs only when the secret exists.</p></div>
       </div>
     </details>
 
@@ -567,12 +569,12 @@ var PLAN = [
   { lane: 'TC PLC Toolkit', num: 2, id: 'R4',   card: 'r4',   name: 'Objects-tree model',     est: '4 d → ~3 h',  start: '2026-11-09', end: '2026-11-09', machine: true, status: 'done', actualStart: '2026-11-09T12:04:17Z', actualEnd: '2026-11-09T19:56:34Z' },
   { lane: 'TC PLC Toolkit', num: 3, id: 'R2',   card: 'r2',   name: 'Sidebar + new project',  est: '8.5 d → ~7 h', start: '2026-11-09', end: '2026-11-10', machine: true, status: 'done', actualStart: '2026-11-09T19:57:00Z', actualEnd: '2026-11-10T20:55:00Z' },
   { lane: 'TC PLC Toolkit', num: 4, id: 'R3.2', card: 'r3-2', name: 'Compile project (check)', est: '7 d → ~4 h',  start: '2026-11-11', end: '2026-11-12', status: 'done', actualStart: '2026-11-10T21:00:00Z', actualEnd: '2026-11-10T22:22:00Z' },
-  { lane: 'TC PLC Toolkit', num: 5, id: 'R11', card: 'r11', name: 'Marketplace publishing', est: '0.5 d → ~1 h', start: '2026-11-10', end: '2026-11-11', days: 0.3, offset: 0, machine: true, status: 'progress', actualStart: '2026-11-10T22:30:00Z' },
-  { lane: 'TC PLC Toolkit', num: 6, id: 'R3.3', card: 'r3-3', name: 'STruC++ packaging',      est: '3 d → ~2 h',  start: '2026-11-17', end: '2026-11-17', days: 0.5 },
+  { lane: 'TC PLC Toolkit', num: 5, id: 'R3.3', card: 'r3-3', name: 'STruC++ packaging',      est: '3 d → ~2 h',  start: '2026-11-17', end: '2026-11-17', days: 0.5 },
   { lane: 'TC PLC Toolkit', num: 6, id: 'R6',   card: 'r6',   name: 'Indexing speed',         est: '5.5 d → ~4 h', start: '2026-11-17', end: '2026-11-18', days: 1, offset: 0.5 },
   { lane: 'TC PLC Toolkit', num: 7, id: 'R7',   card: 'r7',   name: 'Rename limits',          est: '2.5 d → ~2 h', start: '2026-11-19', end: '2026-11-19', days: 0.5 },
   { lane: 'TC PLC Toolkit', num: 8, id: 'R8',   card: 'r8',   name: 'Comments, pragma hover', est: '1.5 d → ~1 h', start: '2026-11-19', end: '2026-11-19', days: 0.3, offset: 0.5 },
   { lane: 'TC PLC Toolkit', num: 9, id: 'R9',   card: 'r9',   name: 'ESLint 10',              est: '0.75 d → ~30 min', start: '2026-11-19', end: '2026-11-19', days: 0.2, offset: 0.8 },
+  { lane: 'TC PLC Toolkit', num: 10, id: 'R11', card: 'r11', name: 'Marketplace publishing', est: '0.5 d → ~1 h', start: '2026-11-20', end: '2026-11-20', days: 0.3, offset: 0, machine: true },
   { lane: 'STruC++ fork',   num: 1, id: 'S2',   card: 's2',   name: 'Fork compiler gaps',     est: '27.5 d → ~9 h', start: '2026-11-09', end: '2026-11-11', status: 'done', actualStart: '2026-11-09T12:04:17Z', actualEnd: '2026-11-09T23:16:55Z' },
   { lane: 'STruC++ fork',   num: 2, id: 'S3a',  card: 's3a',  name: 'False positives',        est: '2 d → ~1 h',  start: '2026-11-12', end: '2026-11-12', days: 0.3, status: 'done', actualStart: '2026-11-09T23:18:00Z', actualEnd: '2026-11-10T00:12:35Z' },
   { lane: 'STruC++ fork',   num: 3, id: 'S3b',  card: 's3b',  name: 'S2 follow-ups',          est: '7 d → ~3.5 h', start: '2026-11-12', end: '2026-11-13', days: 1.2, offset: 0.3, status: 'progress', actualStart: '2026-11-10T00:14:00Z' },
