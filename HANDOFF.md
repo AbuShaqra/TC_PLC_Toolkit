@@ -21,7 +21,14 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   toolbar Compile button (`921d2e0`); header + all visible names renamed to "TC Toolkit" (`a665238`, `8e457e0`,
   `98948c5`; user, trademark). User to run `node test/devhost/run.js` with no `TWINCAT_COMPILER_*` set; also
   `node scripts/make-social-preview.js` on Windows (needs Segoe UI) to regenerate `media/icon.png`, which still says
-  "TwinCAT". Then one PR into `dev`. R3.4 (library declarations, local-only) follows on the same branch.
+  "TwinCAT". Then one PR into `dev`. R3.4 is built on the same branch too (`ff7d8ae`..`bf5eadb`, `src/libraryDecls.js`,
+  `test/test_library_decls.js`; 98 suites FULL): declarations from the signatures dump + library-owned `.tmc` types +
+  archive names, only symbols the project references, written only into the check's temp dir; errors on undeclared
+  library symbols filtered and counted. **Open for the user:** the filter uses archive names, which include member/local
+  names (the sample archive yields 479, e.g. Get/Set/Contains), so an undeclared user variable sharing such a name is
+  silently dropped — kept broad per the project's no-false-positive rule; tighten to dump/.tmc names if the user
+  prefers. User's Windows check on a real project: steps in the R3.4 report (hint before Update Library Definitions;
+  far fewer errors after; planted typos still reported; no `lib-*.st` left in `%TEMP%\twincat-compile-*`).
 - **R11 publishing:** last — after the toolkit lane AND the fork lane are done (user, 2026-11-10).
 - **Sample diagnostics: 0 against a baseline of 0** — verified with the Beckhoff archives present AND moved aside.
 
