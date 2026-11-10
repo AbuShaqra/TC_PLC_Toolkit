@@ -408,7 +408,7 @@ async function run() {
                 { resourceUri: vscode.Uri.file(FB), contextValue: 'component', label: 'FB_init' });
             await sleep(700);
             const panel = out.panels.filter(p => /FB_Cylinder\.TcPOU$/i.test(p.uri)).pop();
-            log('object-insert', { inserted: (panel && panel.inserted) || [] });
+            log('object-insert', { file: FB, inserted: (panel && panel.inserted) || [] });
         } else {
             log('object-insert', { skipped: 'FB_Cylinder.TcPOU not found', inserted: [] });
         }
@@ -771,26 +771,48 @@ async function run() {
 
         // --- Phase generate-st: project-aware ST export over the three-project fixture. Proves the
         //     real provider lists the projects for the webview picker and writes each project's
-        //     objects under its OWN ST_Files subtree — so LineA and LineB's identical MAIN paths do
+        //     objects into that project's OWN ST_Files folder — so LineA and LineB's identical MAIN paths do
         //     not collide (the bug the old flat mirror had).
         try {
             const projectsForPicker = hostProvider ? hostProvider.listProjects() : [];
-            await hostProvider.generateAllStFiles(); // no keys → every project
+            const counts = await hostProvider.generateAllStFiles(); // no keys → every project
             await sleep(1500);
-            const stRoot = path.join(WS, 'ST_Files');
-            const exists = (rel) => fs.existsSync(path.join(stRoot, ...rel.split('/')));
+            // Every object of every project must be written: one `.st` per `<Compile>`d object, none failed.
+            const hostMap = hostProvider.options.getProjectMap();
+            let expectedObjects = 0;
+            for (const key of hostMap.keys()) expectedObjects += hostMap.get(key).objectFiles.size;
+            const countSt = (dir) => !fs.existsSync(dir) ? 0 : fs.readdirSync(dir, { withFileTypes: true })
+                .reduce((n, e) => n + (e.isDirectory() ? countSt(path.join(dir, e.name)) : (/\.st$/i.test(e.name) ? 1 : 0)), 0);
+            // `<project dir>/ST_Files/<path in the project>.st`, given as `<project dir>/<path>`.
+            const stDir = (projectRel) => path.join(WS, ...projectRel.split('/'), 'ST_Files');
+            const exists = (rel) => {
+                const parts = rel.split('/');
+                return fs.existsSync(path.join(stDir(parts.slice(0, 2).join('/')), ...parts.slice(2)));
+            };
+            const projectDirs = ['LineA/TcToolkitSample_PLC', 'LineB/TcToolkitSample_PLC', 'LineA/TcToolkitSample_Aux'];
+            // The second committed sample (3.1.4024 layout), when run.js copied it in: its PLC project
+            // sits one level deeper, under the system project's folder.
+            const sample2Dir = path.join(WS, 'TcToolkitSample2', 'TcToolkitSample2', 'TcToolkitSample2_PLC');
+            const sample2St = path.join(sample2Dir, 'ST_Files');
             log('generate-st', {
                 pickerLabels: projectsForPicker.map(p => p.label).sort(),
+                counts: counts || null,
+                expectedObjects,
+                stFilesOnDisk: projectDirs.reduce((n, d) => n + countSt(stDir(d)), 0) + countSt(sample2St),
+                sample2Main: fs.existsSync(path.join(sample2St, 'POUs', 'MAIN.st')),
                 // Same relative object path in two different projects, kept apart by project folder:
                 lineAMain: exists('LineA/TcToolkitSample_PLC/POUs/MAIN.st'),
                 lineBMain: exists('LineB/TcToolkitSample_PLC/POUs/MAIN.st'),
                 auxMain: exists('LineA/TcToolkitSample_Aux/POUs/MAIN.st'),
                 stationNested: exists('LineA/TcToolkitSample_PLC/POUs/Machine/FB_Station.st'),
+                // Nothing is written into the workspace's top-level folder any more.
+                noTopLevel: !fs.existsSync(path.join(WS, 'ST_Files')),
                 // A subset export writes only the chosen project.
                 subset: null
             });
             // Subset: regenerate just the Aux project into a clean dir and confirm scoping.
-            fs.rmSync(stRoot, { recursive: true, force: true });
+            for (const d of projectDirs) fs.rmSync(stDir(d), { recursive: true, force: true });
+            fs.rmSync(sample2St, { recursive: true, force: true });
             const auxKey = projectsForPicker.find(p => /_Aux/.test(p.label));
             if (auxKey) {
                 await hostProvider.generateAllStFiles([auxKey.key]);
@@ -802,6 +824,9 @@ async function run() {
                 };
                 fs.writeFileSync(RESULTS, JSON.stringify(out, null, 2));
             }
+            // Leave the fixture as it was: the outputs live inside the project folders now.
+            for (const d of projectDirs) fs.rmSync(stDir(d), { recursive: true, force: true });
+            fs.rmSync(sample2St, { recursive: true, force: true });
         } catch (e) {
             log('generate-st', { error: String((e && e.stack) || e) });
         }
@@ -844,6 +869,40 @@ async function run() {
             try { fs.rmSync(tmp, { recursive: true, force: true }); } catch (e) { /* temp */ }
         } catch (e) {
             log('start-page', { error: String((e && e.stack) || e) });
+        }
+
+        // --- Phase compile (R3.2): Compile Project through the real command on every PLC project.
+        //     Needs an external compiler (run.js writes twincat.compiler.path into the fresh profile
+        //     only when TWINCAT_COMPILER_BUNDLE is set); without one the phase says it was skipped.
+        try {
+            const compilerPath = vscode.workspace.getConfiguration('twincat.compiler').get('path', '');
+            if (!compilerPath) {
+                log('compile', { skipped: 'twincat.compiler.path is empty (set TWINCAT_COMPILER_BUNDLE to run it)' });
+            } else {
+                const runs = [];
+                // Every project keeps its own results, so a run is judged on its own project's files.
+                const compileProjectMap = hostProvider && hostProvider.options && hostProvider.options.getProjectMap
+                    ? hostProvider.options.getProjectMap() : null;
+                const dirOf = (key) => { const pr = compileProjectMap && compileProjectMap.projects.get(key); return pr ? pr.dir : ''; };
+                const under = (file, dir) => !!dir && path.relative(dir, file) !== '' && !path.relative(dir, file).startsWith('..') && !path.isAbsolute(path.relative(dir, file));
+                const compileProblems = (dir) => vscode.languages.getDiagnostics()
+                    .filter(([uri]) => under(uri.fsPath, dir))
+                    .flatMap(([uri, list]) => list.filter(d => d.source === 'TwinCAT compile').map(d => ({ file: uri.fsPath, d })));
+                for (const p of (hostProvider ? hostProvider.listProjects() : [])) {
+                    const result = await vscode.commands.executeCommand('twincat.compileProject', { projectKey: p.key });
+                    const problems = compileProblems(dirOf(p.key));
+                    runs.push({
+                        label: p.label,
+                        dir: dirOf(p.key),
+                        result: result || null,
+                        problems: problems.filter(x => x.d.severity === vscode.DiagnosticSeverity.Error).map(x => ({ file: x.file, message: x.d.message })),
+                        problemsPanel: problems.length
+                    });
+                }
+                log('compile', { compilerPath, runs });
+            }
+        } catch (e) {
+            log('compile', { error: String((e && e.stack) || e) });
         }
 
         log('done', {});

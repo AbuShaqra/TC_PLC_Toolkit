@@ -5,7 +5,9 @@
  * contributed, registered, reachable from the Command Palette and able to activate the extension on
  * VS Code 1.66, the welcome buttons pointing at real commands, an offline monochrome icon, and an
  * offline start page (CSP, no remote loads). Also the settings this adds: the recent-list length and
- * the two machine-scoped XAE Shell paths, with the detect command and the page's allow-lists.
+ * the two machine-scoped XAE Shell paths, with the detect command and the page's allow-lists; and
+ * Compile Project (R3.2): its command, its two settings, and no compiler product name in anything a
+ * user sees (package.json, README.md, the shipped sources).
  */
 
 'use strict';
@@ -109,6 +111,30 @@ assert(/^\^1\.66\./.test(pkg.engines.vscode), `engine stays ^1.66 (${pkg.engines
         'every command the start page may run is a registered twincat.* command');
     assert(JSON.stringify(SETTINGS_SECTIONS) === JSON.stringify({ xaeShell: 'twincat.xaeShell' }), 'the page may open the Settings UI filtered to twincat.xaeShell only');
     assert(!/STruC\+\+/i.test(JSON.stringify(c.configuration)), 'no setting names the compiler');
+}
+
+// ── Compile Project (R3.2): command, settings, and no compiler product name anywhere a user sees ──
+{
+    const cmd = contributed.get('twincat.compileProject');
+    assert(!!cmd && cmd.category === 'TwinCAT' && cmd.title === 'Compile Project', 'twincat.compileProject is contributed as "TwinCAT: Compile Project"');
+    assert(!hidden.has('twincat.compileProject') && registered.has('twincat.compileProject'), 'Compile Project is in the Command Palette and registered');
+    assert(pkg.activationEvents.includes('onCommand:twincat.compileProject'), 'Compile Project activates the extension (onCommand)');
+    assert(ALLOWED_COMMANDS.has('twincat.compileProject'), 'the start page may run Compile Project');
+    const props = c.configuration.properties;
+    for (const key of ['twincat.compiler.path', 'twincat.compiler.nodePath']) {
+        const p = props[key];
+        assert(!!p && p.type === 'string' && p.default === '' && p.scope === 'machine' && /TwinCAT: Compile Project/.test(p.markdownDescription),
+            `${key} is a machine-scoped string, empty by default, describing Compile Project`);
+    }
+    assert(/an external IEC 61131-3 compiler|the external IEC 61131-3 compiler/.test(props['twincat.compiler.path'].markdownDescription),
+        'the compiler setting calls it an external IEC 61131-3 compiler');
+    // User ruling 2026-11-09: the extension UI and README name no compiler product.
+    const userFacing = ['package.json', 'README.md',
+        ...fs.readdirSync(path.join(REPO, 'media')).filter(f => /\.(js|css)$/.test(f)).map(f => path.join('media', f)),
+        ...['src', path.join('src', 'commands'), path.join('src', 'lsp')].flatMap(d =>
+            fs.readdirSync(path.join(REPO, d)).filter(f => f.endsWith('.js')).map(f => path.join(d, f)))];
+    const naming = userFacing.filter(f => /STruC\+\+|strucpp/i.test(fs.readFileSync(path.join(REPO, f), 'utf8')));
+    assert(naming.length === 0, `no shipped source, package.json or README names the compiler product (${naming.join(', ') || 'none'})`);
 }
 
 // ── Welcome content ─────────────────────────────────────────────────────────────────────────────

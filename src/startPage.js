@@ -29,7 +29,7 @@ const START_PAGE_VIEW_TYPE = 'twincat.startPage';
 const LAST_LOCATION_KEY = 'twincat.lastProjectLocation';
 
 /** Commands the page may run. Anything else a (compromised) page posts is ignored. */
-const ALLOWED_COMMANDS = new Set([...PROJECT_ACTIONS.map(a => a.command), 'twincat.openSettings', 'twincat.detectXaeShell']);
+const ALLOWED_COMMANDS = new Set([...PROJECT_ACTIONS.map(a => a.command), 'twincat.compileProject', 'twincat.openSettings', 'twincat.detectXaeShell']);
 
 /** Settings sections the page may open filtered (`openSettings {section}`) → the Settings UI query. */
 const SETTINGS_SECTIONS = Object.freeze({ xaeShell: XAE_SHELL_SECTION });
@@ -48,7 +48,8 @@ const LINK_COMMANDS = Object.freeze({
 class StartPageController {
     /**
      * @param {vscode.ExtensionContext} context
-     * @param {{recents: {list: () => any[], remove: (p: string) => Thenable<void>}, hasProject: () => boolean}} deps
+     * @param {{recents: {list: () => any[], remove: (p: string) => Thenable<void>}, hasProject: () => boolean,
+     *   compilerReady?: () => boolean}} deps `compilerReady`: a compiler is configured and its file exists.
      */
     constructor(context, deps) {
         this.context = context;
@@ -123,6 +124,7 @@ class StartPageController {
             recents: this.deps.recents.list(),
             recentsShown: recentsShownLimit(vscode.workspace.getConfiguration('twincat.startPage').get('recentProjectsShown')),
             hasProject: this.deps.hasProject(),
+            compilerReady: !!(this.deps.compilerReady && this.deps.compilerReady()),
             xaeShells: describeConfiguredShells((key) => xaeConfig.get(key), (p) => fs.existsSync(p))
         });
     }

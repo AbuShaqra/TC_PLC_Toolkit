@@ -14,6 +14,7 @@ const { registerObjectInsertCommands } = require('./src/commands/objectInsertCom
 const { registerClipboardCommands } = require('./src/commands/clipboardCommands');
 const { registerRenameCommands } = require('./src/commands/renameCommands');
 const { registerStartCommands } = require('./src/commands/startCommands');
+const { registerCompileCommands } = require('./src/commands/compileCommands');
 const { registerXaeShellCommands } = require('./src/commands/xaeShellCommands');
 const { TwinCatDragAndDropController } = require('./src/treeDragAndDrop');
 const { TwinCatCustomEditorProvider } = require('./src/customEditorProvider');
@@ -24,7 +25,7 @@ const { TwinCatLibraryTreeDataProvider } = require('./src/libraryTreeProvider');
 // cleanly as well so both editors fold ST identically from one copy of the algorithm.
 const stFolding = require('./media/stFolding');
 const { createDebouncer } = require('./src/util/debounce');
-const { TWINCAT_EDITOR_EXTS, TWINCAT_WATCH_EXTS } = require('./src/twincatWorkspace');
+const { TWINCAT_EDITOR_EXTS, TWINCAT_WATCH_EXTS, isWatchEventRelevant, isGeneratedOutputEvent } = require('./src/twincatWorkspace');
 const { LanguageClient, TransportKind, State } = require('vscode-languageclient/node');
 
 let client;
@@ -38,6 +39,9 @@ let client;
  * @type {number}
  */
 const PLCPROJ_REINDEX_DEBOUNCE_MS = 400;
+
+/** Quiet period after the last watcher event under an `ST_Files` folder before the Objects tree refreshes. */
+const ST_FILES_REFRESH_DEBOUNCE_MS = 500;
 
 /**
  * Activates the extension. Sets up providers, watches workspace changes, and registers commands.
@@ -178,7 +182,9 @@ function activate(context) {
         showReferences,
         onActiveFileChange: revealUri,
         // Re-read on every call: a `.plcproj` edit rebuilds the map (same contract as the tree/status bar).
-        getProjectMap: () => hostProjectMap
+        getProjectMap: () => hostProjectMap,
+        // One Objects-tree refresh after a Generate ST run: the watcher ignores each ST_Files event.
+        onStFilesWritten: () => { if (treeProvider) treeProvider.refresh(); }
     });
 
     // Push a single TwinCAT file's raw XML to the LSP so it can build a real-range symbol node.
@@ -406,14 +412,16 @@ function activate(context) {
     // Watch filesystem for external creations, deletions, and changes
     const workspaceWatcher = vscode.workspace.createFileSystemWatcher('**/*');
 
-    const shouldRefresh = (uri) => {
-        const fsPath = uri.fsPath;
-        const parts = fsPath.split(path.sep);
-        if (parts.includes('.git') || parts.includes('node_modules') || parts.includes('.vscode')) {
-            return false;
-        }
-        return true;
-    };
+    // Generated output (any `ST_Files` folder) and VCS/editor metadata never trigger a refresh:
+    // see isWatchEventRelevant in src/twincatWorkspace.js.
+    const shouldRefresh = (uri) => isWatchEventRelevant(uri.fsPath);
+    // ...except that the Objects tree lists each project's ST_Files: a hand-made change there (or a
+    // Generate ST run, whose own end-of-run refresh comes first) becomes ONE trailing refresh, never
+    // one per file.
+    const refreshForGeneratedOutput = createDebouncer(() => { treeProvider.refresh(); }, ST_FILES_REFRESH_DEBOUNCE_MS);
+    context.subscriptions.push({ dispose: () => refreshForGeneratedOutput.cancel() });
+    const noteGeneratedOutput = (uri) => { if (isGeneratedOutputEvent(uri.fsPath)) refreshForGeneratedOutput.schedule(); };
+    context.subscriptions.push(workspaceWatcher.onDidCreate(noteGeneratedOutput), workspaceWatcher.onDidDelete(noteGeneratedOutput));
 
     // The .plcproj is where the library references live, so it is the only file whose change can
     // change the Libraries view. The catalog is built by the LSP's library index, so refreshing the
@@ -524,10 +532,20 @@ function activate(context) {
 
     // TwinCAT sidebar Start view + start page (create / open a project, project actions, help,
     // settings). The solutions this workspace holds are recorded as recently opened for the page.
-    const start = registerStartCommands(context, {
-        provider, getProjectMap: () => hostProjectMap, getSolutionMap: () => hostSolutionMap
+    // Compile Project (an external IEC 61131-3 compiler, run as a child process). Registered before
+    // the start page so the page can ask whether a compiler is configured.
+    /** @type {{startPage: {postState: () => void}}|null} */
+    let start = null;
+    const compile = registerCompileCommands(context, {
+        provider, getProjectMap: () => hostProjectMap,
+        onSettingsChanged: () => { if (start) start.startPage.postState(); }
     });
-    start.recordOpenSolutions();
+
+    start = registerStartCommands(context, {
+        provider, getProjectMap: () => hostProjectMap, getSolutionMap: () => hostSolutionMap,
+        isCompilerConfigured: compile.isConfigured
+    });
+    /** @type {any} */ (start).recordOpenSolutions();
 
     // XAE Shell path settings: `twincat.detectXaeShell`, plus one silent fill of the EMPTY settings.
     // Deliberately last and not awaited — it queries the registry (Windows only) and must neither

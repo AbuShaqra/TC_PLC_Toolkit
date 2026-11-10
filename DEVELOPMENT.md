@@ -85,11 +85,23 @@ found running 2 of its 10 tests. Hence the classification below: a run states wh
 - **FULL** — required fixtures are present **and each load-bearing harness reports that its gate
   actually ran**. Fixture presence alone is not evidence: `test/_coverage.js` writes a per-child
   report that `test/run.js` consumes for the live path, diagnostics/typecheck ratchets, committed
-  archive reader, multi-project fixture and Objects-tree id pin.
+  archive reader, multi-project fixture, Objects-tree id pin and the two-sample workspace.
 - **REDUCED** — lists missing fixtures plus every gate that skipped or failed to report execution,
   and labels the final line `(reduced coverage)`.
 - **FILTERED** — `node test/run.js <substring>` intentionally ran only a subset and can never claim
   whole-suite FULL coverage.
+
+**Optional gates** are listed in the summary as *ran* or *skipped* but never make a run REDUCED:
+today only `compile-real` (`test/test_compile_real.js`, Compile Project against a real external
+compiler, which CI does not have). Run it by hand with the compiler's bundled CLI:
+
+```bash
+TWINCAT_COMPILER_BUNDLE=/path/to/compiler-bundle.cjs node test/test_compile_real.js
+# optional: TWINCAT_COMPILER_NODE=/path/to/node (>= 22), else `node` on PATH
+```
+
+Build the bundle from the compiler's `development` branch (`npm ci && npm run build:bundle`, which
+writes the bundled CLI under `dist/`) in a scratch clone. Never make `compile-real` required in `test/run.js`.
 
 `REQUIRE_FULL_SUITE=1` turns a reduced or filtered run into a hard failure after the harness reports
 are collected. Use it before packaging a release, so a silently skipped gate can never be mistaken
@@ -101,7 +113,7 @@ per-suite without aborting on the first failure. The main ones:
 | Harness | What it checks |
 |---------|----------------|
 | `test/test_lsp_features.js` | Core LSP: completions, go-to-definition (incl. call parameters), references, diagnostics, on synthetic `.st` units. |
-| `test/test_sample_diagnostics.js` | **Diagnostics ratchet** on the real `sample/` TwinCAT project. The sample is valid code, so every diagnostic on it is a false positive; the harness measures them the way the LSP server does, prints a per-category breakdown, and **fails if the total rises above the baseline** in `test/_baseline.js`. The target — currently met — is zero. |
+| `test/test_sample_diagnostics.js` | **Diagnostics ratchet** on every PLC project under `sample/` (two solutions), each in its own index as the server partitions a workspace. The samples are valid code, so every diagnostic on them is a false positive; the harness measures them the way the LSP server does — in order, and again with each object opened fresh (scan-time index + that unit) — prints a per-category breakdown, and **fails if the total rises above the baseline** in `test/_baseline.js`. The target — currently met — is zero. |
 | `test/test_live_path.js` | The live editor pipeline: full-file ST assembly, cursor mapping, per-pane diagnostics, member completion through references, method return types, token-aware and cross-file references. |
 | `test/test_editor_mapping.js` | The production `src/livePath.js` coordinate/peek helpers directly: pane↔unit boundary mapping, synthesized-line rejection, pane slicing and encoded peek-model paths. `test_live_path.js` imports the same module (including `assembleSt`) rather than carrying copies. |
 | `test/test_live_path_unit.js` | The three pure collectors in `src/livePath.js` — `mapDefinition`, `collectPeekReferences`, `listExternalReferences` — against synthetic in-memory XML fixtures (no `sample/` dependency) plus a counting `readFile` double. Pins the peek budget semantics as tests: `PEEK_MAX_PANES`/`maxTextBytes` bound FILE READS and PANE MODELS, never the mapped references — a ref into an already-opened file still maps past the pane cap, and a pane over the byte budget is skipped but its reference still maps. |
@@ -109,14 +121,15 @@ per-suite without aborting on the first failure. The main ones:
 | `test/test_request_pipeline.js` | `src/lsp/requestPipeline.js`: withDocument syncs exactly once BEFORE the handler (order pinned by a recorder), withoutDocument provably never syncs, value-vs-function fallbacks on every throw path, the frozen `LIBRARY_INDEX_STAGES` table + load-time order validation (a reordered copy throws naming the stages), and byte-exact log-line output on both singular/plural branches. |
 | `test/test_twincat_workspace.js` | `src/twincatWorkspace.js`, the discovery owner: the XML-entity decode chain, the generic walker (skip case-insensitivity, unreadable-dir tolerance, **regular files only** — a directory named like a match is never collected), the full skip-dir set MATRIX with its load-bearing relations (`ARCHIVE_SKIP_DIRS` has no `_libraries`; `PROJECT_SKIP_DIRS` is exactly that plus `_libraries`), the three extension vocabularies, the two-mode suffix-disambiguation core, and cross-pins holding `projectStatusBar`'s regex and `customEditorProvider`'s glob (read as text) to the owner's vocabularies. |
 | `test/test_component_id.js` | `src/componentId.js`, the component-id grammar owner: a conformance sweep driving the **real** `parseTwinCatXml` over a fixture minting every id shape (round-trip `parse`→`make` identity), the frozen parse table incl. the pinned `prop_X_get`-is-an-accessor ambiguity, `make`'s programmer-error throws, and the `label`/`memberName` display helpers incl. the transition fix. |
-| `test/test_typecheck.js` | Semantic type checking: member access, call arguments, declaration types, assignment compatibility — plus the same `sample/` diagnostics ratchet. |
+| `test/test_typecheck.js` | Semantic type checking: member access, call arguments, declaration types, assignment compatibility — plus the same `sample/` diagnostics ratchet, per project. |
+| `test/test_two_samples.js` | The committed `sample/` as a multi-project workspace (two DIFFERENT solutions, unlike `test_multi_project_scope.js`'s copies): the second sample matches a fresh build of `build-sample-project2.js` and is the 3.1.4024 layout; the real `scanWorkspace` partition (19 + 7 objects, each project's own `FB_Cylinder` in its own index); Go to Definition on `FB_Cylinder` landing in the asking project's own FB; references not crossing projects; the scan reading `IMPLEMENTS` on a CRLF multi-line head; and the real `generateAllStFiles` (under a `vscode` stub, on a temp copy) writing one `.st` per object into each project's own `ST_Files`. Required gate `two-samples`. |
 | `test/test_references_scope.js` | Find References scope + coordinate spaces: private method `VAR` vs. parameters, named arguments belonging to the callee, and FB_init declaration-site arguments (`inst : FB_T(p := v)`). |
 | `test/test_references_tree.js` | References-view grouping (file → component → occurrence). |
 | `test/test_tree_reveal.js` | Objects-tree navigation targets and parent chains, driven on `src/objectsTreeModel.js` with an in-memory host (no `vscode` stub): file/root fallback; exact method, property, action, transition and Get/Set nodes; nested virtual-folder ancestry; solution → PLC-project ancestry ending in the tree's own root rows; and a whole reveal chain reads no project map (`getParent` is a field read). |
 | `test/test_objects_tree_model.js` | `src/objectsTreeModel.js` with an in-memory host, no `vscode` stub: the shape rule (solutions → projects; one root per project at 2+; flat below), `makeNode` as the single assignment site of id and contextValue (and the historical id formulas), file classification and icons, directory listing (sorting, skip dirs, symlinked dirs, unreadable dirs, re-read on every expansion), virtual folders and their per-file-kind contextValue, property accessors and `propertyNode[.noGet][.noSet]`, and reveal ancestry (flat stops at the workspace root, a file outside the workspace terminates, a reveal's project ancestor is the tree's own row, with its label). |
-| `test/test_objects_tree_ids.js` | Pins every element the VS Code adapter (`src/treeDataProvider.js`) renders on `sample/` against `test/fixtures/objects-tree-ids.json`, recorded from the provider before the R4 model refactor: id, label, contextValue, collapsible state, icon, tooltip, click command and `getParent`, plus the id and ancestor ids `getRevealItem` gives every file and component. Five tree shapes (one solution, two solutions, two projects with no solution, one project with no solution, flat). Also asserts directly that `getParent` returns the element that listed the child and that reveal ancestors carry the tree's ids and labels. Ids drive VS Code's expansion state and reveal, so a change here is user-visible; regenerate with `--write` only for a deliberate, reviewed change. Required gate `objects-tree-ids`. |
+| `test/test_objects_tree_ids.js` | Pins every element the VS Code adapter (`src/treeDataProvider.js`) renders on `sample/` against `test/fixtures/objects-tree-ids.json`, recorded from the provider before the R4 model refactor: id, label, contextValue, collapsible state, icon, tooltip, click command and `getParent`, plus the id and ancestor ids `getRevealItem` gives every file and component. Six tree shapes (one solution — the first sample copied alone into a temp root, so its recorded ids are unchanged —, two solutions, two projects with no solution, one project with no solution, flat, and `two-sample-solutions`: the committed `sample/` with its 3.1.4026 and 3.1.4024 solutions). Also asserts directly that `getParent` returns the element that listed the child and that reveal ancestors carry the tree's ids and labels. Ids drive VS Code's expansion state and reveal, so a change here is user-visible; regenerate with `--write` only for a deliberate, reviewed change. Required gate `objects-tree-ids`. |
 | `test/test_st_shadow.js` | XML is the source of truth: a stray plain `.st` mirror (outside `ST_Files/`) must never steal an XML-backed symbol's index node — the references scan would follow the hijacked uri to the stale mirror and miss the real call sites. |
-| `test/test_st_output_path.js` | The pure output-path mapping behind project-aware **Generate ST** (`src/stOutputPath.js`): each project's objects land under `ST_Files/<project dir relative to workspace>/…` so two projects' identical object paths never collide, extensions become `.st`, a linked object cannot escape its project folder, and the single-root case carries no redundant workspace-name prefix. The end-to-end export (real provider, real disk, three-project fixture) is asserted by the dev-host `generate-st` phase. |
+| `test/test_st_output_path.js` | The pure output-path mapping behind project-aware **Generate ST** (`src/stOutputPath.js`): each project's objects land inside that project, `<project dir>/ST_Files/<path in the project>.st`, so two projects' identical object paths never collide and nothing is written at the workspace's top level; extensions become `.st`, a linked object cannot escape its project's `ST_Files`, and a path under any `ST_Files` is never an input. The end-to-end export (real provider, real disk, three-project fixture) is asserted by the dev-host `generate-st` phase. |
 | `test/test_library_catalog.js` | The data path behind the TwinCAT Libraries view: catalog built from the `.plcproj`, namespaces, `.tmc` types and their members. |
 | `test/test_library_scope.js` | The Libraries view's active-project scoping, both halves. Server side: `selectLibraryCatalog` (workspaceScan.js) over REAL routing on a two-`.plcproj` fixture — a file's project answers with its own catalog **even when empty** (an explicit scope never widens to the union; that widening was the old behavior and is pinned OUT), union only for no-fileUri/loose. Host side: `scopeProjectKey`/`scopeDescription`/`readLibraryResponse` plus the provider under the vscode stub — refetch only on owning-project change, description only in 2+-project workspaces (real spelling, never the identity key), bare-array responses degrade to the union, a failed request never throws. |
 | `test/test_dnd_rules.js` | The Objects-tree drag & drop and copy/paste compatibility matrices: what is draggable/copyable (not virtual folders, not Get/Set accessors; directories move but do not copy), components move only within their own file yet paste cross-file (POU↔interface gated), directory-cycle and no-op rejections, duplicate-in-place file paste. |
@@ -150,6 +163,10 @@ per-suite without aborting on the first failure. The main ones:
 | `test/test_template_diagnostics.js` | A project created from each template, indexed like `test_sample_diagnostics.js` with every check on: ZERO diagnostics, again after the first edit a user makes (a variable in the `qualified_only` `GVL_Main` used from MAIN as `GVL_Main.x`), and a deliberate undeclared name IS reported (the gate is live). |
 | `test/test_start_contributions.js` | package.json for R2: the `twincat` Activity Bar container holding Start, TwinCAT Objects, TwinCAT Libraries in that order with ids unchanged, none left in the Explorer, References still in its panel, no dangling view id in a when-clause; each start command contributed under TwinCAT, in the palette, registered, with an `onCommand` activation event (needed on 1.66); Start view welcome links; a monochrome offline icon; the start page's strict CSP and no remote load; `.vscodeignore` shipping the derived templates but not the raw XAE source; the `twincat.startPage.recentProjectsShown` and machine-scoped `twincat.xaeShell.path*` settings, and the page's command / settings-section allow-lists. |
 | `test/test_start_commands.js` | `src/commands/startCommands.js` + `src/startPage.js` under a recording `vscode` stub: create with args and with prompts (files, recents, last location, open here/new/add/none), refusals inline vs as a notification, a deleted recent solution pruned, Generate ST's project pick, help links and settings, the singleton panel, its `state` message (including the recent-list length, clamped, and the XAE Shell paths), a settings change re-posting state to an open page, `openSettings {section}` and Open Settings' query argument, and the command allow-list. |
+| `test/test_check_unit.js` | `src/checkUnit.js`: one origin per emitted line, every pane line exactly once and verbatim in pane order (so a reported line/column IS the pane's), generated lines anchored on their component, members before the body, no rewriting (`REFERENCE TO`, `REF=`, pragmas survive), every sample file round-trips. |
+| `test/test_compile_check.js` | `src/compileCheck.js` with a fake child process: setup messages (compiler missing, Node missing/too old, each naming its setting), the command line, the JSON report (clean, errors, malformed, exit 2, crash), mapping to file/component/pane/line, the pragma-warning filter and its count, temp-dir lifetime, timeout, cancellation, `paneRange`. |
+| `test/test_compile_commands.js` | `src/commands/compileCommands.js` + the provider hooks under a recording `vscode` stub: project pick, setup refusal, clean run, a run with errors (Problems entries, pane markers, status text, summary), unsaved edits reaching the compiler, Go to Problem and the entry links, an edit dropping its component's results, a failed run keeping the previous results, cancellation, a fresh open landing on the first problem. |
+| `test/test_compile_real.js` | **Optional gate `compile-real`**: the REAL compiler (`TWINCAT_COMPILER_BUNDLE`) over every PLC project in `sample/`, through the same code the command uses: ZERO errors and zero warnings after the pragma filter (a ratchet, like the diagnostics baseline), plus planted errors in a method body, a method declaration and a GVL landing on the right file/component/pane/line, and — in the second sample — a call to a method only the FIRST sample's same-named `FB_Cylinder` has, reported in the second sample's MAIN (the projects are never compiled together). Skips (and says so) without a compiler. |
 | `test/test_recent_projects.js` | `src/recentProjects.js`: newest first, de-duplicated (Windows paths case-insensitive, either separator), capped at 10, missing solutions pruned, malformed stored data ignored, the globalState adapter, and `recentsShownLimit` (the start page's row limit: default 2, clamped to 1..10). |
 | `test/test_xae_shell_detect.js` | `src/xaeShellDetect.js` with every dependency faked (runs off Windows): the COM registration for both shells (quoted and argument-suffixed `LocalServer32`, the 32-bit view for 4024, a localized value name), the default locations with and without the environment variables, a registered file that is missing, a non-GUID ProgID value, rejecting / throwing registry and existence probes, non-Windows (nothing found, registry never queried), `createRegQuery` over a fake `execFile` (argument array, timeout, errors → null), `describeConfiguredShells`, and `resolveShellExe` (configured-and-existing wins, else default location, else registry). |
 | `test/test_xae_shell_commands.js` | `src/commands/xaeShellCommands.js` under a recording `vscode` stub with detection faked: an empty setting is filled (Global target), a non-empty one is kept even when its file is missing, nothing found writes nothing, `autoFill` never rejects, `twincat.detectXaeShell` reports found / kept / not found in one message whose button opens the filtered settings. Also `findTwinCatShells` in `src/xaeShell.js`: `path4026` ↔ the 64-bit shell, `path4024` ↔ the 32-bit one, a missing configured path ignored (those checks are skipped on Windows, where a real shell may be installed). |
@@ -200,8 +217,8 @@ perfectly good Chromium already.
 |---|---|
 | `build.js` | Generates the page by calling the **real** `getHtmlForWebview()` with a stubbed `vscode` module — a hand-copied page would quietly stop matching what ships. Substitutes only `acquireVsCodeApi()` (records outgoing messages, answers bridge requests from a fixture built off the real sample) and drops the webview CSP, which names `vscode-webview:` sources that do not exist over http. |
 | `serve.js` | Serves it. Monaco's AMD loader and its worker Blob both need a real origin. `require()` it for `start(port)`, or run it standalone to poke at the page by hand. |
-| `run.js` | The references peek: builds for the port it will serve on, drives Find References, asserts. Also pins the page's global error overlay: opening the peek must leave it hidden, Chrome's benign "ResizeObserver loop completed" notice (dispatched by hand, because whether the real loop fires is layout-timing dependent) must not raise it or post `error`, and a genuine error still must. `HARNESS_PORT` moves it off 8123; `HARNESS_SHOT=x.png` saves a screenshot. Also pins the Generate ST split button (roadmap R1): with one project the caret is hidden and the main button keeps its rounded right end; with two or more the inner corners square off to fuse with the caret (`has-caret` on `#generate-st-group`, set by `editor.js` with the caret's `hidden` flag — no `:has()`, which VS Code 1.66's Chromium lacks). Transitions are disabled for that check so it reads the end state, not a frame mid-animation. |
-| `run_start_page.js` | The start page (roadmap R2): renders the real `renderStartPageHtml()` output WITH its CSP (only `acquireVsCodeApi()` is stubbed, through Playwright's init script), and asserts no request leaves the page's origin, the project name is validated while typing (shared `media/projectName.js` rules, `aria-invalid`), Create posts `{version, name, location}` and shows a host refusal, every other control posts its message, project actions are disabled while no project is open, the form survives in webview state, the recent list shows at most `recentsShown` rows behind a keyboard-operable "Show all (K)" / "Show fewer" tile (local to the page, follows a changed limit), the Settings card shows the two XAE Shell paths with a warning row for a path that is not on disk and posts `openSettings {section}` / the detect command, and there is no horizontal scroll at 360/560/1200 px (one column at 360). Defaults to port 8125. |
+| `run.js` | The references peek: builds for the port it will serve on, drives Find References, asserts. Also pins the page's global error overlay: opening the peek must leave it hidden, Chrome's benign "ResizeObserver loop completed" notice (dispatched by hand, because whether the real loop fires is layout-timing dependent) must not raise it or post `error`, and a genuine error still must. `HARNESS_PORT` moves it off 8123; `HARNESS_SHOT=x.png` saves a screenshot. Also pins the Generate ST split button (roadmap R1): with one project the caret is hidden and the main button keeps its rounded right end; with two or more the inner corners square off to fuse with the caret (`has-caret` on `#generate-st-group`, set by `editor.js` with the caret's `hidden` flag — no `:has()`, which VS Code 1.66's Chromium lacks). Transitions are disabled for that check so it reads the end state, not a frame mid-animation. Step 7e pins Compile Project's pane markers: `compileDiagnostics` → owner `twincat-compile` on the active component's panes, `st-validator` markers surviving both ways and across a diagnostics refresh, a component switch showing only that component's markers, an edit dropping the edited component's markers and posting `compileDiagnosticsStale`; it writes a pane-marker screenshot (`HARNESS_COMPILE_SHOT`, default `test/browser/out/compile-markers.png`; empty = none). |
+| `run_start_page.js` | The start page (roadmap R2): renders the real `renderStartPageHtml()` output WITH its CSP (only `acquireVsCodeApi()` is stubbed, through Playwright's init script), and asserts no request leaves the page's origin, the project name is validated while typing (shared `media/projectName.js` rules, `aria-invalid`), Create posts `{version, name, location}` and shows a host refusal, every other control posts its message, project actions are disabled while no project is open, Compile project is enabled only with `compilerReady` AND a project (and names no compiler product), the form survives in webview state, the recent list shows at most `recentsShown` rows behind a keyboard-operable "Show all (K)" / "Show fewer" tile (local to the page, follows a changed limit), the Settings card shows the two XAE Shell paths with a warning row for a path that is not on disk and posts `openSettings {section}` / the detect command, and there is no horizontal scroll at 360/560/1200 px (one column at 360). Defaults to port 8125. |
 | `run_pragmas.js` | Folding and pragma highlighting. Folds real blocks and reads back the rendered lines, then tokenizes through Monaco's **own** tokenizer. Both fail silently if they regress, which is the point of driving a browser: a unit test on `stFolding.js` cannot prove Monaco actually *used* it rather than its own indentation provider. Carries the two reported bugs as regressions, and asserts implementation-pane blocks still fold — registering a provider replaces indentation folding, so that is the thing most likely to disappear unnoticed. Verified: removing the provider turns 6 assertions red, and the failure text reproduces both original bug reports verbatim. Defaults to port 8124. |
 
 `run.js` asserts what only a browser can show: that the peek lists cross-file hits at all, that exactly
@@ -229,8 +246,9 @@ a visible window for ~30 s that closes itself):
 node test/devhost/run.js
 ```
 
-`run.js` copies the committed sample twice (`LineA`/`LineB`) under one temp workspace, adds a second
-PLC project to LineA's solution, and launches the **installed** VS Code as a separate
+`run.js` copies the committed first sample twice (`LineA`/`LineB`) under one temp workspace, adds a second
+PLC project to LineA's solution, copies in the second sample (`TcToolkitSample2/`, the 3.1.4024
+`.tspproj` layout) as a third solution, and launches the **installed** VS Code as a separate
 instance (fresh `--user-data-dir`/`--extensions-dir`, so a running VS Code is untouched) with this repo
 as the development extension and `testRunner.js` as the `--extensionTestsPath` module. In-host, that
 module patches `TwinCatCustomEditorProvider.prototype.resolveCustomTextEditor` to trace every panel's
@@ -255,7 +273,14 @@ real host runs the watcher chain, so this is the one place it can be proven). Th
 (roadmap R2) checks what only a real host shows: every start command registered, the `TwinCAT` Activity
 Bar container and its Start / Objects / Libraries views open (`workbench.view.extension.twincat`,
 `<view>.focus`), *TwinCAT: Open Start Page* opens the `TwinCAT Start` tab, and *Create New Project* (with
-its arguments, so no dialog) writes a 3.1.4026 and a 3.1.4024 solution and refuses a second create.
+its arguments, so no dialog) writes a 3.1.4026 and a 3.1.4024 solution and refuses a second create. The
+optional **compile phase** (R3.2) runs *TwinCAT: Compile Project* on every PLC project of the fixture
+through the real command: it runs only when `TWINCAT_COMPILER_BUNDLE` (and optionally
+`TWINCAT_COMPILER_NODE`) is set, which `run.js` writes into the fresh profile's `twincat.compiler.*`
+settings; without it the phase prints `[SKIP]` and asserts nothing. It asserts every run finishes, that no
+error is reported on the sample's own code (only the identifiers the P8 phases typed on purpose, which
+reach the compiler as unsaved edits, plus the object-insert phase's snippet in its file), and that each
+project's files in the Problems panel hold exactly that project's results.
 
 The same pass also automates the **P8 webview checklist** (items 2–7 of
 `docs/superpowers/plans/2026-08-22-deepen-08-g4-checklist.md`) through **`media/devHostTestHook.js`** —
@@ -316,8 +341,39 @@ on), with superseded runs cancelled and a read-only token. Two jobs:
 Releases are a separate, manual workflow (`.github/workflows/release.yml`, the only one with a write
 token) — see "Publish a GitHub release" under "Package a VSIX".
 
-**`sample/` is ground truth.** It is a real, *correct* TwinCAT project, so every diagnostic reported
-on it is a bug. Never fix a red gate by raising the baseline.
+**`sample/` is ground truth.** It holds two *correct* TwinCAT solutions, so every diagnostic reported
+on either is a bug. Never fix a red gate by raising the baseline.
+
+- **`sample/TcToolkitSample/`** — XAE 3.1.4026's layout (`.sln` + `.tsproj` + `_Config/`), 19 objects,
+  and the library fixtures (the committed `.tmc`, the MIT archive, four library references). Made by
+  `scripts/Create sample PLC project/build-sample-solution.ps1` (XAE, once) +
+  `build-sample-project.js <plcProjectRoot>` (the objects). Harnesses that pin library facts read this
+  solution only (`SAMPLE_PROJECT_DIR` in `test/_baseline.js`).
+- **`sample/TcToolkitSample2/`** — the 3.1.4024 layout (`.sln` + a single-file `.tspproj`, the PLC project
+  `TcToolkitSample2_PLC` nested under the system project's folder), 7 objects: `MAIN` and `FB_Cylinder`
+  (same names as the first sample, different code and members), a GVL, a STRUCT, an enum, the interface
+  `I_Valve` and `FB_Valve` implementing it with a method, a GET/SET property and an action. No library
+  symbol, no `.tmc`. Generated in full — no XAE needed — by
+  `scripts/Create sample PLC project/build-sample-project2.js`: `createProject` from
+  `src/projectTemplate.js` over the shipped 3.1.4024 template (identity GUIDs DERIVED from a counter, so a
+  rebuild is byte-identical), then the objects through `build-sample-project.js`'s `renderObject` /
+  `registerObjectsInPlcProj` (the element shapes the Objects-tree commands write). Regenerate:
+
+  ```bash
+  node "scripts/Create sample PLC project/build-sample-project2.js" --check   # committed tree == fresh build?
+  node "scripts/Create sample PLC project/build-sample-project2.js" --write   # rewrite the generated files in place
+  node "scripts/Create sample PLC project/build-sample-project2.js"           # first creation (refuses if it exists)
+  ```
+
+  `test/test_two_samples.js` runs the `--check` comparison, so an edit to the generator, the template or
+  the committed files without the other fails the suite. After building it in XAE, the `.tmc` and build
+  output stay untracked (`sample/.gitignore`).
+
+The ratchets diagnose **one PLC project at a time** (`sampleProjects()` in `test/_baseline.js`, the
+product's `createProjectMap` partition): one flat index over both samples would report their same-named
+objects as false positives the product never shows. `test_sample_diagnostics.js` also diagnoses every
+object **opened fresh** (the scan-time index plus that one unit) — the state the server is in for the
+first file a user opens, which the in-order pass masks.
 
 ## Architecture
 
@@ -340,9 +396,25 @@ src/
                         help links. The start page runs these same commands — no second code path.
                         Open Settings takes an optional `twincat.*` section as its Settings-UI query;
                         a change to twincat.startPage.* / twincat.xaeShell.* re-posts an open page's state
+    compileCommands     `twincat.compileProject` (roadmap R3.2): project pick, setup refusal with "Open
+                        Settings", the run under a cancellable progress notification, and where the
+                        results go — a DiagnosticCollection `twincat-compile` (Problems, at the XML
+                        position), the panes (through the provider), a status-bar item, a summary
+                        notification with "Go to Problem…" (`twincat.compile.goToProblem`), and a URI
+                        handler for each entry's code link (`/compileProblem?id=N`). The VS Code half
+                        of compileCheck
     xaeShellCommands    `twincat.detectXaeShell` + the silent activation-time fill of the two
                         `twincat.xaeShell.path*` settings (EMPTY ones only, ConfigurationTarget.Global;
                         never overwrites). The VS Code half of xaeShellDetect
+  checkUnit             Compile Project's check unit: one ST unit per TwinCAT object with a per-LINE
+                        origin map back to component/pane/line. Pane text verbatim (never the export's
+                        rewrites), members BEFORE the POU body. NOT the live path's unit. vscode-free
+  compileCheck          Compile Project's vscode-free half: setup check (compiler file exists, Node
+                        >= 22 probed), check inputs from object texts, the compiler run as a CHILD
+                        PROCESS (`--check --json --dialect-file resources/dialects/twincat3.json`,
+                        `--global-list N.st=<GVL>` per GVL; never `require()`d, never `--strict`) in
+                        a temp dir deleted afterwards, timeout + cancel, JSON report → file/component/
+                        pane/line, the pragma-warning filter (counted), paneRange. Spawn injected
   projectTemplate       Create a NEW TwinCAT solution from a shipped template (roadmap R2): copy,
                         rename solution/system/PLC project (`<Name>`, `<Name>_PLC`), re-issue every
                         identity GUID consistently, keep every byte else. vscode-free, unit-tested.
@@ -638,8 +710,9 @@ which language-server index owns a file:
 Coverage is split deliberately: `test/test_solution_map.js` exercises discovery, multi-solution and
 multi-project grouping, label scope and fallbacks without VS Code; `test/test_objects_tree_model.js`
 and `test/test_tree_reveal.js` pin the model and the logical ancestry without VS Code;
-`test/test_objects_tree_ids.js` pins every id the adapter renders on `sample/`; `node test/devhost/run.js` creates two solutions and three PLC projects (two under
-one solution) and proves the real VS Code TreeView accepts that ancestry. Run the dev-host harness
+`test/test_objects_tree_ids.js` pins every id the adapter renders on the first sample (copied alone
+into a temp root) and on `sample/` itself (two solutions, two layouts); `node test/devhost/run.js` creates
+three solutions and four PLC projects (two under one solution, one a 3.1.4024 `.tspproj` solution) and proves the real VS Code TreeView accepts that ancestry. Run the dev-host harness
 whenever solution grouping, project grouping or reveal parents change.
 
 ### Project-scoped indexing
@@ -760,9 +833,25 @@ language server directly**. The extension bridges them over custom JSON-RPC requ
 the webview asks `requestProjects` on load and shows a checkbox split-button menu only when the host's
 `projectList` reply has 2+ projects; clicking the button posts `generate-st` (all projects), the menu
 posts `generate-st` with a `projectKeys` subset. `generateAllStFiles` walks each selected project's
-`<Compile>` list from the `.plcproj` partition and writes `ST_Files/<project dir relative to workspace>/…`,
-so no two projects collide (the path math is the pure, tested `src/stOutputPath.js`). A workspace with no
-`.plcproj` falls back to the old flat workspace mirror.
+`<Compile>` list from the `.plcproj` partition and writes `<project dir>/ST_Files/<path in the project>.st`,
+so no two projects collide and nothing lands in the workspace's top-level folder (the path math is the pure,
+tested `src/stOutputPath.js`). A workspace with no `.plcproj` falls back to the old flat mirror in
+`<workspace root>/ST_Files`. Every scanner (the LSP's indexers, the project and solution walkers) skips a
+directory named `ST_Files` at any depth, so generated `.st` files are never indexed as sources. The Objects
+tree DOES list the output: an `ST_Files` folder directly in a PLC project's directory (or in a workspace
+root, for the flat mirror) and every folder below it get contextValue `generatedDirectory`, and its `.st`
+files `generatedStFile` (other files in there are not listed). No menu, paste or drag-and-drop rule names
+those two values, so no TwinCAT create/delete/rename/insert command applies; a click opens the `.st` as
+text (`twincat.openComponent`). An `ST_Files` folder anywhere else is an ordinary folder. The workspace file
+watcher still ignores every individual path under an `ST_Files` folder for re-indexing and refreshes
+(`isWatchEventRelevant` in `src/twincatWorkspace.js`) — a run writes hundreds of files, and each one used to
+refresh the whole Objects tree. Instead the tree refreshes ONCE when a run ends (`onStFilesWritten`, called
+by `generateAllStFiles` and the flat mirror), and hand-made creates/deletes there
+(`isGeneratedOutputEvent`) collapse into one trailing refresh 500 ms after the last event
+(`ST_FILES_REFRESH_DEBOUNCE_MS` in `extension.js`); during a run that adds at most one refresh after the
+end-of-run one. The project-aware export reads and writes with Node `fs.promises`,
+not `vscode.workspace.fs`: a burst of writes through the editor's file service was rejected with "Canceled" on a
+real multi-project workspace. A failed run names its first error in the notification.
 
 ### The live language-feature path
 
@@ -867,6 +956,39 @@ line.** ST strings are single-quoted, so the apostrophe in `{region "Motion FB's
 open a string running to the next quote anywhere in the file — which is how IntelliSense once switched
 off for a whole VAR block — and an unterminated `{` would swallow the rest of the document. That holds
 in three places: the lexer (`parser.js`), the Monarch tokenizer, and the TextMate grammar.
+
+### Compile Project (roadmap R3.2)
+
+`twincat.compileProject` checks one PLC project with an external IEC 61131-3 compiler. The user-facing
+surfaces (UI, README) never name the compiler product — a user ruling, pinned by
+`test_start_contributions.js`. The pipeline:
+
+1. **Texts** — every object the `.plcproj` `<Compile>`s, read from the open TextDocument when there is one
+   (unsaved edits count) with Manual Sync's pending edits folded in, else from disk.
+2. **Units** — `buildCheckInputs` → `checkUnit.buildCheckUnit` per object, written as `N.st` in a
+   `mkdtemp` directory (deleted however the run ends); a GVL gets `--global-list N.st=<name>`.
+3. **Run** — `node <compilerPath> --check --json --dialect-file resources/dialects/twincat3.json …` as
+   a child process, Node >= 22 probed first, 2-minute timeout, cancellable. **No `--strict`** (decided:
+   it refuses TwinCAT-legal DINT→INT narrowing and WORD arithmetic). Exit 1 without errors, or a report
+   that is not JSON, is a failed run; a failed/timed-out/cancelled run keeps the previous results.
+4. **Map** — each diagnostic's unit line → `origins[line]` → file/component/pane/line (the column is
+   the pane's, because pane text is verbatim). Warnings matching `/^Pragma ignored:/` are filtered and
+   counted; nothing else is.
+5. **Show** — Problems (`twincat-compile` collection, keyed by `normalizeFileUri`, at `paneRange`: the
+   PANE's line and column, so the panel's Ln/Col match the pane the user reads — decided 2026-11-10, a
+   range inside the XML read as e.g. Ln 23 for implementation line 2; the message names the component
+   and pane), and the panes: the provider posts **`compileDiagnostics`
+   `{diagnostics: [{componentId, pane, severity, message, range}]}`** to every open webview of that file
+   (and includes them in `init`). `media/editor.js` keeps them under marker owner **`twincat-compile`**,
+   separate from the language server's `st-validator`, and re-applies them at the top of
+   `updateDiagnostics` (the panes share two models across components — keep that call there). An edit
+   to a component drops its compile markers and posts **`compileDiagnosticsStale {componentId}`**, so
+   the host drops the matching Problems entries.
+
+The start page's *Compile project* tile is enabled when `twincat.compiler.path` is set, the file exists,
+and a project is open (`state.compilerReady` + `hasProject`); a change to `twincat.compiler.*` re-posts
+the page's state. Results live in memory only (problem-link ids included) — a compile result describes
+one moment.
 
 ### Writes
 

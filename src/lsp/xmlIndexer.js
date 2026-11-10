@@ -189,7 +189,11 @@ function parseInheritance(decl) {
         result.extendsAll = ext[1].split(',').map(s => s.trim()).filter(Boolean);
         if (result.extendsAll.length) result.extends = result.extendsAll[0];
     }
-    const impl = decl.match(/\bIMPLEMENTS\s+([a-zA-Z_][a-zA-Z0-9_.,\s]*)/i);
+    // The same comma-separated identifier list as EXTENDS. The old character class also took
+    // whitespace, so on a multi-line head it ran on into the VAR block ("I_A\r\nVAR_INPUT\r\n\tx"),
+    // the interface name never matched, and assigning the FB to its interface was reported as a type
+    // mismatch until the FB's own unit had been parsed.
+    const impl = decl.match(/\bIMPLEMENTS\s+([a-zA-Z_][a-zA-Z0-9_.]*(?:\s*,\s*[a-zA-Z_][a-zA-Z0-9_.]*)*)/i);
     if (impl) {
         result.implements = impl[1].split(',').map(s => s.trim()).filter(Boolean);
     }

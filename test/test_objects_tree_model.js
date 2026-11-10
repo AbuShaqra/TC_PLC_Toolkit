@@ -92,6 +92,10 @@ const FILES = {
     [P('LineA', 'PLC', 'PLC.plcproj')]: '<Project/>',
     [P('LineA', 'PLC', 'Notes.txt')]: 'not shown',
     [P('LineA', 'PLC', '.git', 'HEAD')]: 'skipped dir',
+    // Generate ST output: a project's own ST_Files is listed, read-only (no TwinCAT objects in it).
+    [P('LineA', 'PLC', 'ST_Files', 'POUs', 'MAIN.st')]: 'PROGRAM MAIN END_PROGRAM',
+    [P('LineA', 'PLC', 'ST_Files', 'Stray.TcPOU')]: pou('PROGRAM Stray'),
+    [P('LineA', 'PLC', 'POUs', 'ST_Files', 'Nested.st')]: 'PROGRAM N END_PROGRAM',
     [P('LineB', 'PLC', 'POUs', 'MAIN.TcPOU')]: pou('PROGRAM MAIN')
 };
 
@@ -218,12 +222,15 @@ const labels = (nodes) => nodes.map(n => n.label).join(',');
     // ── 5. directory listing ─────────────────────────────────────────────────────────────────────
     const projectRow = groupRoots[0];
     const plcRows = await grouped.childrenOf(projectRow);
-    assert(labels(plcRows) === 'DUTs,GVLs,POUs,Text.st',
+    assert(labels(plcRows) === 'DUTs,GVLs,POUs,ST_Files,Text.st',
         `DIR: directories first, then shown files; .git, symlinked dirs and other files are skipped (${labels(plcRows)})`);
     assert(plcRows.every(n => n.parent === projectRow) && projectRow.children === plcRows,
         'DIR: listed rows point at the row that listed them');
     const pous = await grouped.childrenOf(plcRows.find(n => n.label === 'POUs'));
-    assert(labels(pous) === 'F_Add.TcPOU,FB_Empty.TcPOU,FB_Motor.TcPOU,I_X.TcIO,MAIN.TcPOU', `DIR: files sorted by name (${labels(pous)})`);
+    assert(labels(pous) === 'ST_Files,F_Add.TcPOU,FB_Empty.TcPOU,FB_Motor.TcPOU,I_X.TcIO,MAIN.TcPOU', `DIR: files sorted by name (${labels(pous)})`);
+    const nestedSt = pous.find(n => n.label === 'ST_Files');
+    assert(!!nestedSt && nestedSt.contextValue === 'directory',
+        `DIR: an ST_Files folder that is NOT directly in a project directory is an ordinary folder (${nestedSt && nestedSt.contextValue})`);
     const byName = Object.fromEntries(pous.map(n => [n.label, n]));
     assert(byName['F_Add.TcPOU'].contextValue === 'pouFileFunction' && byName['F_Add.TcPOU'].icon.id === 'symbol-operator',
         'DIR: a function file has the function icon');
@@ -235,6 +242,28 @@ const labels = (nodes) => nodes.map(n => n.label).join(',');
     const duts = await grouped.childrenOf(plcRows.find(n => n.label === 'DUTs'));
     assert(duts.every(n => n.contextValue === 'dutFile') && duts[0].icon.id !== duts[1].icon.id,
         'DIR: DUT rows get their kind-specific icons');
+    // A project's own ST_Files (Generate ST output) is listed, but nothing in it takes a TwinCAT command:
+    // its rows have their own contextValues, which no menu, paste or drag rule names.
+    const out = plcRows.find(n => n.label === 'ST_Files');
+    assert(!!out && out.contextValue === 'generatedDirectory' && out.collapsible === 'collapsed' && out.icon.id === 'folder' && out.opens === null,
+        `DIR: a project's own ST_Files is listed as generated output (${out && out.contextValue})`);
+    const outRows = await grouped.childrenOf(out);
+    assert(labels(outRows) === 'POUs', `DIR: inside ST_Files only folders and .st files are listed, not stray TwinCAT files (${labels(outRows)})`);
+    assert(outRows[0].contextValue === 'generatedDirectory', 'DIR: a folder below ST_Files is generated output too');
+    const outFiles = await grouped.childrenOf(outRows[0]);
+    assert(outFiles.length === 1 && outFiles[0].label === 'MAIN.st' && outFiles[0].contextValue === 'generatedStFile'
+        && outFiles[0].opens === 'root' && outFiles[0].collapsible === 'none' && /^Generated Structured Text/.test(outFiles[0].tooltip),
+        `DIR: a generated .st is a read-only row that opens as text (${outFiles[0] && outFiles[0].contextValue})`);
+    const plain = plcRows.find(n => n.label === 'Text.st');
+    assert(!!plain && plain.contextValue === 'stFile', 'DIR: a .st outside ST_Files keeps the ordinary stFile row');
+    const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
+    const menuText = JSON.stringify(pkg.contributes.menus);
+    assert(!/generatedDirectory|generatedStFile/.test(menuText) && !/viewItem =~ \/[^/]*(directory|stFile)/.test(menuText),
+        'DIR: no context-menu entry matches the generated rows (every menu tests exact contextValues)');
+    const { describeDragged, describeCopied } = require('../src/dndRules');
+    assert(describeDragged(out) === null && describeDragged(outFiles[0]) === null
+        && describeCopied(out) === null && describeCopied(outFiles[0]) === null,
+        'DIR: generated rows can be neither dragged nor copied');
     const before = readDirectoryCalls;
     const again = await grouped.childrenOf(projectRow);
     assert(readDirectoryCalls === before + 1 && again !== plcRows, 'DIR: children are re-read on every expansion');

@@ -24,6 +24,8 @@ const { spawnSync } = require('child_process');
 
 const REPO = path.resolve(__dirname, '..', '..');
 const SAMPLE = path.join(REPO, 'sample', 'TcToolkitSample');
+/** The second committed sample (3.1.4024 layout, `.tspproj`), copied in as a third, different solution. */
+const SAMPLE2 = path.join(REPO, 'sample', 'TcToolkitSample2');
 
 let errors = 0;
 function assert(cond, msg) {
@@ -60,6 +62,10 @@ function findCodeCli() {
     const results = path.join(work, 'results.json');
     fs.cpSync(SAMPLE, primary, { recursive: true });
     fs.cpSync(SAMPLE, path.join(ws, 'LineB'), { recursive: true });
+    // A third solution that is NOT a copy: the 3.1.4024 layout (single-file `.tspproj`), with its own
+    // MAIN and its own FB_Cylinder. The real host must group it and keep its index apart.
+    const hasSample2 = fs.existsSync(SAMPLE2);
+    if (hasSample2) fs.cpSync(SAMPLE2, path.join(ws, 'TcToolkitSample2'), { recursive: true });
 
     // LineA contains TWO PLC projects under one real solution. This catches the hierarchy shape a
     // pair of one-project solutions cannot: Solution → [primary PLC, auxiliary PLC]. The auxiliary
@@ -126,6 +132,19 @@ function findCodeCli() {
     assert(tleoProjChanged !== tleoProjText, 'the dev-host fixture injects the .TcTLEO project include');
     fs.writeFileSync(tleoPlcproj, tleoProjChanged, 'utf8');
 
+    // Compile Project (R3.2) needs an external compiler, which only a developer's machine has. With
+    // TWINCAT_COMPILER_BUNDLE set, the fresh profile is given it (and TWINCAT_COMPILER_NODE, if set);
+    // without it the in-host compile phase reports itself skipped and nothing fails.
+    const compilerBundle = process.env.TWINCAT_COMPILER_BUNDLE || '';
+    if (compilerBundle) {
+        const userDir = path.join(work, 'udd', 'User');
+        fs.mkdirSync(userDir, { recursive: true });
+        fs.writeFileSync(path.join(userDir, 'settings.json'), JSON.stringify({
+            'twincat.compiler.path': path.resolve(compilerBundle),
+            'twincat.compiler.nodePath': process.env.TWINCAT_COMPILER_NODE || ''
+        }, null, 2), 'utf8');
+    }
+
     const args = [
         '--new-window',
         '--user-data-dir', path.join(work, 'udd'),
@@ -182,6 +201,12 @@ function findCodeCli() {
         `one solution renders both PLC projects (got ${JSON.stringify(lineAProjects)})`);
     assert(!!lineBProjects && lineBProjects.join(',') === 'TcToolkitSample_PLC',
         `the second solution renders its PLC project (got ${JSON.stringify(lineBProjects)})`);
+    if (hasSample2) {
+        const s2Projects = multi && multi.solutionProjects['TcToolkitSample2'];
+        assert(!!s2Projects && s2Projects.join(',') === 'TcToolkitSample2_PLC',
+            `the 3.1.4024 solution (.tspproj) renders as its own root with its PLC project (got ${JSON.stringify(s2Projects)}; ` +
+            `roots ${multi ? JSON.stringify(multi.solutionLabels) : 'no result'})`);
+    }
     const expectedStatusLabels = ['TcToolkitSample_PLC — LineA', 'TcToolkitSample_PLC — LineB'];
     assert(!!multi && expectedStatusLabels.every(label => multi.statusLabels.includes(label)),
         `the real status-bar formatter uses the same project labels (got ${multi ? JSON.stringify(multi.statusLabels) : 'no result'})`);
@@ -415,15 +440,24 @@ function findCodeCli() {
         `(definition uri: ${tleo && tleo.renamedUri})`);
 
     // Project-aware Generate ST: the picker lists all three projects, a full export writes each
-    // project's objects under its own ST_Files subtree (LineA/LineB MAINs never collide), and a
+    // project's objects into that project's own ST_Files folder (LineA/LineB MAINs never collide), and a
     // subset export writes only the chosen project.
     const gen = step('generate-st');
     assert(!!gen && !gen.error, 'the project-aware Generate ST phase ran without throwing' + (gen && gen.error ? ': ' + gen.error : ''));
-    assert(!!gen && Array.isArray(gen.pickerLabels) && gen.pickerLabels.length === 3,
-        `listProjects() offers all three projects to the picker (got ${gen ? JSON.stringify(gen.pickerLabels) : 'no result'})`);
+    const projectCount = hasSample2 ? 4 : 3;
+    assert(!!gen && Array.isArray(gen.pickerLabels) && gen.pickerLabels.length === projectCount,
+        `listProjects() offers all ${projectCount} projects to the picker (got ${gen ? JSON.stringify(gen.pickerLabels) : 'no result'})`);
+    assert(!hasSample2 || (!!gen && gen.sample2Main),
+        `the 3.1.4024 sample's MAIN is written under its own project folder (${gen && gen.sample2Main})`);
     assert(!!gen && gen.lineAMain && gen.lineBMain && gen.auxMain,
         `each project's MAIN is written under its own folder — identical paths do NOT collide ` +
         `(A=${gen && gen.lineAMain}, B=${gen && gen.lineBMain}, Aux=${gen && gen.auxMain})`);
+    assert(!!gen && gen.counts && gen.counts.failCount === 0 && gen.expectedObjects > 0 &&
+        gen.counts.successCount === gen.expectedObjects && gen.stFilesOnDisk === gen.expectedObjects,
+        `a full export writes every object of every project with zero failures ` +
+        `(${gen && JSON.stringify(gen.counts)}, expected ${gen && gen.expectedObjects}, on disk ${gen && gen.stFilesOnDisk})`);
+    assert(!!gen && gen.noTopLevel,
+        `nothing is written into the workspace's top-level ST_Files (${gen && gen.noTopLevel})`);
     assert(!!gen && gen.stationNested,
         `a nested object keeps its in-project path (LineA/.../POUs/Machine/FB_Station.st: ${gen && gen.stationNested})`);
     assert(!!gen && gen.subset && gen.subset.auxWritten && gen.subset.plcSkipped,
@@ -446,6 +480,33 @@ function findCodeCli() {
         `TwinCAT: Create New Project writes a 3.1.4026 and a 3.1.4024 solution (${sp ? JSON.stringify(sp.created) : 'no result'})`);
     assert(!!sp && sp.refused && sp.refused.ok === false && /already contains/.test(sp.refused.error || ''),
         `creating over an existing solution is refused (${sp ? JSON.stringify(sp.refused) : 'no result'})`);
+
+    // R3.2: Compile Project in a real host, over every PLC project of the fixture. Optional: it runs
+    // only when TWINCAT_COMPILER_BUNDLE named a compiler (the in-host phase then finds
+    // twincat.compiler.path set); otherwise it is reported as skipped and asserts nothing.
+    const comp = step('compile');
+    if (comp && comp.skipped) {
+        console.log(`[SKIP] compile phase: ${comp.skipped}`);
+    } else {
+        assert(!!comp && !comp.error, 'the Compile Project phase ran without throwing' + (comp && comp.error ? ': ' + comp.error : ''));
+        const runs = (comp && comp.runs) || [];
+        assert(runs.length > 0 && runs.every(r => r.result && r.result.ok === true),
+            `Compile Project finishes on every project (${JSON.stringify(runs.map(r => [r.label, r.result && (r.result.ok ? 'ok' : r.result.reason)]))})`);
+        // The fixture is the CORRECT sample; the only errors allowed are the ones earlier phases typed
+        // on purpose, which reach the compiler as unsaved edits: the P8 edits (identifiers containing
+        // "devhost") and the object-insert phase's `FB_Cylinder` + `FB_init(...)` snippet in its file.
+        const insert = step('object-insert');
+        const insertedFile = insert && insert.file ? path.resolve(insert.file).toLowerCase() : '';
+        const foreign = runs.flatMap(r => (r.problems || [])
+            .filter(x => !/devhost/i.test(x.message) && path.resolve(x.file).toLowerCase() !== insertedFile)
+            .map(x => `${r.label}: ${path.basename(x.file)}: ${x.message}`));
+        assert(runs.length > 0 && foreign.length === 0,
+            `no compile error on the sample's own code (${foreign.length ? JSON.stringify(foreign.slice(0, 5)) : 'none'})`);
+        // Each project's files carry exactly that project's last results (other projects keep theirs).
+        const mismatched = runs.filter(r => !r.result || !r.dir || r.problemsPanel !== r.result.errors + r.result.warnings);
+        assert(runs.length > 0 && mismatched.length === 0,
+            `the Problems panel holds exactly each project's results (${JSON.stringify(runs.map(r => [r.label, r.problemsPanel, r.result && r.result.errors, r.result && r.result.warnings]))})`);
+    }
 
     // The window is still shutting down when the poll returns, so its user-data dir can hold a
     // lock for a few more seconds. Best-effort with retries; a leftover temp dir is harmless.

@@ -74,10 +74,12 @@ const PRODUCT_VERSION = '3.1.4024.12';
  * forced so the value has the shape TwinCAT (and `regenerateObjectIdsInXml`'s
  * `Id="{8-4-4-4-12}"` regex) expects.
  * @param {string} key Stable identity of the element, e.g. 'FB_Station/Method/Cyclic'.
+ * @param {string} [namespace] GUID namespace; a second sample project passes its own, so two objects
+ *   with the same name in two projects do not share an id.
  * @returns {string} A brace-wrapped GUID, e.g. '{2f9a…-…-…-…-…}'.
  */
-function guid(key) {
-    const hex = crypto.createHash('sha1').update(`${GUID_NAMESPACE}|${key}`).digest('hex').slice(0, 32);
+function guid(key, namespace = GUID_NAMESPACE) {
+    const hex = crypto.createHash('sha1').update(`${namespace}|${key}`).digest('hex').slice(0, 32);
     const variant = ((parseInt(hex[16], 16) & 0x3) | 0x8).toString(16);
     const v = hex.slice(0, 12) + '4' + hex.slice(13, 16) + variant + hex.slice(17, 32);
     return `{${v.slice(0, 8)}-${v.slice(8, 12)}-${v.slice(12, 16)}-${v.slice(16, 20)}-${v.slice(20, 32)}}`;
@@ -625,14 +627,16 @@ function createLineIdCounter() {
  * (C0004 apiece) — an incident that reached a real project. Building the document section by section
  * here is what makes the order structural rather than a convention a fixture can drift out of.
  * @param {ObjectSpec} spec
+ * @param {string} [guidNamespace] Namespace of the derived GUIDs (default: the first sample's).
  * @returns {string} XML text with LF line endings (converted to CRLF on write).
  */
-function renderObject(spec) {
+function renderObject(spec, guidNamespace = GUID_NAMESPACE) {
+    const id = (/** @type {string} */ key) => guid(key, guidNamespace);
     const isPou = spec.root === 'POU';
     const isItf = spec.root === 'Itf';
     const lineIds = createLineIdCounter();
 
-    const rootAttrs = [`Name="${spec.name}"`, `Id="${guid(spec.name)}"`];
+    const rootAttrs = [`Name="${spec.name}"`, `Id="${id(spec.name)}"`];
     if (isPou) rootAttrs.push('SpecialFunc="None"');
 
     const out = [
@@ -651,7 +655,7 @@ function renderObject(spec) {
 
     // 3. Root virtual folders, as a contiguous group directly after the root block.
     for (const folder of spec.folders || []) {
-        out.push(`    <Folder Name="${folder}" Id="${guid(`${spec.name}/Folder/${folder}`)}" />`);
+        out.push(`    <Folder Name="${folder}" Id="${id(`${spec.name}/Folder/${folder}`)}" />`);
     }
 
     // 4. Members, in spec order.
@@ -659,7 +663,7 @@ function renderObject(spec) {
     if (isPou) lineIdBlocks.push(lineIds.block(spec.name, spec.implementation));
 
     for (const member of spec.members || []) {
-        const attrs = [`Name="${member.name}"`, `Id="${guid(`${spec.name}/${member.kind}/${member.name}`)}"`];
+        const attrs = [`Name="${member.name}"`, `Id="${id(`${spec.name}/${member.kind}/${member.name}`)}"`];
         if (member.folderPath) attrs.push(`FolderPath="${member.folderPath}"`);
         const open = `    <${member.kind} ${attrs.join(' ')}>`;
 
@@ -669,7 +673,7 @@ function renderObject(spec) {
             for (const accessor of ['Get', 'Set']) {
                 const acc = member[accessor.toLowerCase()];
                 if (!acc) continue;
-                const accId = guid(`${spec.name}/${member.kind}/${member.name}/${accessor}`);
+                const accId = id(`${spec.name}/${member.kind}/${member.name}/${accessor}`);
                 out.push(`      <${accessor} Name="${accessor}" Id="${accId}">`);
                 out.push(`        <Declaration>${cdata(acc.declaration)}</Declaration>`);
                 // An interface's accessors are signatures only: no implementation, no LineIds.
@@ -721,8 +725,8 @@ function renderObject(spec) {
  * with TwinCAT's backslash separators.
  * @returns {string[]}
  */
-function compileIncludes() {
-    return OBJECTS.map(spec => `${spec.dir.replace(/\//g, '\\')}\\${spec.file}`);
+function compileIncludes(objects = OBJECTS) {
+    return objects.map(spec => `${spec.dir.replace(/\//g, '\\')}\\${spec.file}`);
 }
 
 /**
@@ -730,9 +734,9 @@ function compileIncludes() {
  * live in, plus each of its ancestors, first-seen order.
  * @returns {string[]}
  */
-function folderIncludes() {
+function folderIncludes(objects = OBJECTS) {
     const folders = [];
-    for (const spec of OBJECTS) {
+    for (const spec of objects) {
         const parts = spec.dir.split('/');
         for (let i = 0; i < parts.length; i++) {
             const p = parts.slice(0, i + 1).join('\\');
@@ -811,16 +815,17 @@ function injectItems(text, tag, includes, render) {
  * Idempotent by construction: entries already present are filtered out, so a second run adds nothing
  * and the file comes back byte-identical.
  * @param {string} text The current `.plcproj` text.
+ * @param {ObjectSpec[]} [objects] The objects to register (default: this sample's).
  * @returns {{text: string, compiles: number, folders: number}} Updated text and what was added.
  */
-function registerObjectsInPlcProj(text) {
+function registerObjectsInPlcProj(text, objects = OBJECTS) {
     const haveCompiles = existingIncludes(text, 'Compile');
     const haveFolders = existingIncludes(text, 'Folder');
 
     // MAIN.TcPOU is XAE's own default object; the skeleton already lists it. Filtering here is what
     // keeps it from being duplicated even though the spec regenerates its contents.
-    const newCompiles = compileIncludes().filter(inc => !haveCompiles.has(inc.toLowerCase()));
-    const newFolders = folderIncludes().filter(inc => !haveFolders.has(inc.toLowerCase()));
+    const newCompiles = compileIncludes(objects).filter(inc => !haveCompiles.has(inc.toLowerCase()));
+    const newFolders = folderIncludes(objects).filter(inc => !haveFolders.has(inc.toLowerCase()));
 
     let out = injectItems(text, 'Compile', newCompiles, (indent, inc, eol) =>
         `${indent}<Compile Include="${inc}">${eol}` +
@@ -1214,6 +1219,6 @@ if (require.main === module) {
 }
 
 module.exports = {
-    build, renderObject, registerObjectsInPlcProj, guid, OBJECTS,
+    build, renderObject, registerObjectsInPlcProj, writeTwinCatFile, guid, OBJECTS,
     cloneSolution, nextFreeSolutionDir, applyNameMap
 };

@@ -458,33 +458,58 @@ function replaceElementCdata(text, element, newContent) {
  * @returns {string} The modified XML text.
  */
 function replaceComponentCdata(xmlText, context, blockType, newContent) {
+    const target = findComponentBlock(xmlText, context, blockType);
+    if (!target) return xmlText;
+    return replaceElementCdata(xmlText, target, newContent);
+}
+
+/**
+ * Locates a component's OWN Declaration element, or the ST body of its own Implementation — the
+ * element replaceComponentCdata writes and componentCdataSpan measures.
+ * @param {string} xmlText The entire XML file content.
+ * @param {Object} context Context metadata of the component.
+ * @param {string} blockType 'Declaration' or 'Implementation'.
+ * @returns {XmlElementSpan|null} null when the component or block does not exist, or the
+ *   implementation is not ST.
+ */
+function findComponentBlock(xmlText, context, blockType) {
     let ownerChildren;
     if (!context.subType) {
         // Root POU, GVL, DUT, Itf
         const root = locateRoot(xmlText);
-        if (!root) return xmlText;
+        if (!root) return null;
         ownerChildren = root.children;
     } else {
         const member = findMember(xmlText, context.subType, context.subName);
-        if (!member || member.selfClosing) return xmlText;
+        if (!member || member.selfClosing) return null;
         ownerChildren = childElements(xmlText, member.openEnd, member.contentEnd);
         if (context.subType === 'Property' && context.accessorType) {
             const accessor = ownerChildren.find(c => c.name === context.accessorType); // 'Get' or 'Set'
-            if (!accessor || accessor.selfClosing) return xmlText;
+            if (!accessor || accessor.selfClosing) return null;
             ownerChildren = childElements(xmlText, accessor.openEnd, accessor.contentEnd);
         }
     }
 
-    let target;
     if (blockType === 'Declaration') {
-        target = ownerChildren.find(c => c.name === 'Declaration');
-    } else {
-        const { language, body } = implementationBody(xmlText, ownerChildren);
-        if (language !== 'ST') return xmlText;
-        target = body;
+        return ownerChildren.find(c => c.name === 'Declaration') || null;
     }
-    if (!target) return xmlText;
-    return replaceElementCdata(xmlText, target, newContent);
+    const { language, body } = implementationBody(xmlText, ownerChildren);
+    if (language !== 'ST') return null;
+    return body || null;
+}
+
+/**
+ * Where a component's Declaration or ST Implementation text sits in the file: the offsets of the
+ * CDATA payload. Read-only counterpart of replaceComponentCdata (same target), used to turn a
+ * pane position into a position in the XML document.
+ * @param {string} xmlText The entire XML file content.
+ * @param {Object} context Context metadata of the component.
+ * @param {string} blockType 'Declaration' or 'Implementation'.
+ * @returns {{start: number, end: number}|null} null when the block has no CDATA.
+ */
+function componentCdataSpan(xmlText, context, blockType) {
+    const target = findComponentBlock(xmlText, context, blockType);
+    return target ? cdataSpan(xmlText, target) : null;
 }
 
 
@@ -1327,6 +1352,7 @@ module.exports = {
     getCdata,
     parseTwinCatXml,
     replaceComponentCdata,
+    componentCdataSpan,
     getFoldersDetailedFromXml,
     insertFolderIntoXml,
     insertComponentIntoXml,

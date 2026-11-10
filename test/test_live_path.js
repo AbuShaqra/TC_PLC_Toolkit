@@ -31,7 +31,9 @@ const { provideCompletions, provideDefinition, provideDiagnostics, provideRefere
 const { reportCoverage } = require('./_coverage');
 const { assembleSt, localToAbsolute, absoluteToLocal, paneTextFromUnit, peekPath, mapDiagnosticsToLocal } = require('../src/livePath');
 
-const SAMPLE_DIR = path.join(__dirname, '..', 'sample');
+// The tests address the FIRST sample's named objects (FB_Station, GVL_System …); sample/ also holds a
+// second solution whose same-named MAIN / FB_Cylinder would collide in this harness's one flat index.
+const SAMPLE_DIR = path.join(__dirname, '..', 'sample', 'TcToolkitSample');
 
 if (!fs.existsSync(SAMPLE_DIR)) {
     console.log('sample/ project not present — skipping live-path test.');

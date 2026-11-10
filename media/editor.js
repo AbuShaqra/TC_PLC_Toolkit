@@ -56,9 +56,41 @@
         });
     }
 
+    // Compile Project's results for this file ({ componentId, pane, severity, message, range }),
+    // pushed by the host (`compileDiagnostics`, and with `init`). They are a SEPARATE marker owner
+    // from the language server's 'st-validator' markers, so neither set erases the other.
+    const COMPILE_MARKER_OWNER = 'twincat-compile';
+    let compileDiagnostics = [];
+
+    /** Shows the active component's compile markers in the two panes (or clears them). */
+    function applyCompileMarkers() {
+        if (!declEditor || !implEditor || !window.monaco) return;
+        const { decl, impl } = diagnosticMarkers.splitDiagnostics(compileDiagnostics, activeComponentId, {
+            error: monaco.MarkerSeverity.Error,
+            warning: monaco.MarkerSeverity.Warning,
+            info: monaco.MarkerSeverity.Info
+        });
+        if (declEditor.getModel()) monaco.editor.setModelMarkers(declEditor.getModel(), COMPILE_MARKER_OWNER, decl);
+        if (implEditor.getModel()) monaco.editor.setModelMarkers(implEditor.getModel(), COMPILE_MARKER_OWNER, impl);
+    }
+
+    /**
+     * Drops one component's compile markers because the user edited it: the compiler's answer was
+     * about the text before the edit. The host is told, so the Problems panel follows.
+     */
+    function dropCompileDiagnostics(componentId) {
+        if (!compileDiagnostics.some(d => d.componentId === componentId)) return;
+        compileDiagnostics = compileDiagnostics.filter(d => d.componentId !== componentId);
+        applyCompileMarkers();
+        vscode.postMessage({ type: 'compileDiagnosticsStale', componentId: componentId });
+    }
+
     let diagDebounceTimer = null;
     function updateDiagnostics() {
         if (!declEditor || !implEditor || !activeFileUri || !window.monaco) return;
+        // Every component load and edit comes through here; the panes share two models across
+        // components, so the compile markers are re-applied for whichever component is showing.
+        applyCompileMarkers();
         clearTimeout(diagDebounceTimer);
         diagDebounceTimer = setTimeout(async () => {
             // Diagnostics run against the whole document (assembled in the extension); results
@@ -324,6 +356,7 @@
         } else {
             activeComp.implementation = val;
         }
+        dropCompileDiagnostics(activeComponentId);
 
         if (isAutoSync) {
             statusEl.textContent = 'Saving...';
@@ -1488,6 +1521,7 @@
                     toggleText.textContent = 'Manual Sync';
                 }
 
+                compileDiagnostics = Array.isArray(message.compileDiagnostics) ? message.compileDiagnostics : [];
                 editsStore = pendingEditsCore.createStore(message.cachedEdits);
                 pendingEditsCore.applyCachedEdits(components, message.cachedEdits);
 
@@ -1500,6 +1534,12 @@
                 }
 
                 updateStatusText();
+                break;
+            }
+            case 'compileDiagnostics': {
+                // A Compile Project run finished (or its results were cleared): replace the markers.
+                compileDiagnostics = Array.isArray(message.diagnostics) ? message.diagnostics : [];
+                applyCompileMarkers();
                 break;
             }
             case 'refreshDiagnostics': {

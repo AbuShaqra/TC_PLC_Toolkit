@@ -9,7 +9,10 @@
  *  (d) base FB absent from index — conservative case: NO undeclared-identifier diagnostics
  *      at all (and no flag on the EXTENDS type name);
  *  (e) genuinely-undeclared identifier in a derived FB WITH a fully-resolved base is still flagged;
- *  (f) a cycle (A extends B, B extends A) does not hang.
+ *  (f) a cycle (A extends B, B extends A) does not hang;
+ *  (g) an FB known only from the XML scan (xmlIndexer), whose `IMPLEMENTS` sits on a CRLF multi-line
+ *      head, is assignable to its interface — the scan used to read the interface name as
+ *      "I_V\r\nVAR_INPUT\r\n\tb" and report a type mismatch until the FB's own unit was parsed.
  */
 
 const { parseAndIndexDocument, clearWorkspaceIndex, getWorkspaceSymbolIndex } = require('../src/lsp/parser');
@@ -229,6 +232,27 @@ const compCyc = provideCompletions(cycACode, { line: 5, character: 0 }, index, c
 const elapsed = Date.now() - started;
 assert(elapsed < 2000, `Cyclic EXTENDS resolves quickly (no hang). Took ${elapsed}ms`);
 assert(Array.isArray(diagsF) && defCyc !== undefined && Array.isArray(compCyc), 'Cyclic EXTENDS returns normally from all providers');
+
+// (g) IMPLEMENTS read by the XML scan on a multi-line CRLF head.
+{
+    const { indexXmlObject, buildNodeFromXml } = require('../src/lsp/xmlIndexer');
+    clearWorkspaceIndex();
+    const idx = getWorkspaceSymbolIndex();
+    const xml = (root, name, decl, impl) => '<?xml version="1.0" encoding="utf-8"?>\r\n<TcPlcObject Version="1.1.0.1">\r\n' +
+        `  <${root} Name="${name}" Id="{00000000-0000-4000-8000-00000000000${root === 'Itf' ? 1 : 2}}">\r\n` +
+        `    <Declaration><![CDATA[${decl}]]></Declaration>\r\n` +
+        (impl === undefined ? '' : `    <Implementation><ST><![CDATA[${impl}]]></ST></Implementation>\r\n`) +
+        `  </${root}>\r\n</TcPlcObject>\r\n`;
+    const fbXml = xml('POU', 'FB_V', 'FUNCTION_BLOCK FB_V IMPLEMENTS I_V\r\nVAR_INPUT\r\n\tb : BOOL;\r\nEND_VAR\r\n', '');
+    indexXmlObject(idx, xml('Itf', 'I_V', 'INTERFACE I_V\r\n'), 'file:///g/I_V.TcIO');
+    indexXmlObject(idx, fbXml, 'file:///g/FB_V.TcPOU');
+    const node = buildNodeFromXml(fbXml, 'file:///g/FB_V.TcPOU');
+    assert(!!node && JSON.stringify(node.implements) === '["I_V"]', `(g) the scan reads IMPLEMENTS as the interface list only (${node && JSON.stringify(node.implements)})`);
+    const mainCode = 'PROGRAM P_G\nVAR\n\tfb : FB_V;\n\tip : I_V;\nEND_VAR\nip := fb;\nEND_PROGRAM\n';
+    parseAndIndexDocument(mainCode, 'file:///g/P_G.st');
+    const diagsG = provideDiagnostics(mainCode, getWorkspaceSymbolIndex(), 'file:///g/P_G.st');
+    assert(diagsG.length === 0, `(g) assigning a scan-only FB to its interface is not a type mismatch (${diagsG.map(d => d.message).join(' | ')})`);
+}
 
 console.log(`\n--- INHERITANCE TESTS COMPLETE with ${errors} errors ---`);
 process.exit(errors > 0 ? 1 : 0);

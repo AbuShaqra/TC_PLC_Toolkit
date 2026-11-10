@@ -248,7 +248,36 @@ function suffixDisplayNames(records, nameOf, dirOf, options) {
     return result;
 }
 
+/**
+ * Whether a file-system watcher event is worth reacting to (tree refresh, project-structure
+ * rebuild, re-index). Not for VCS/package/editor metadata, and not for anything under an `ST_Files`
+ * folder at any depth: that is Generate ST's own output, written in bursts of hundreds of files,
+ * and reacting to each one refreshed the whole Objects tree once per generated file.
+ * @param {string} fsPath The event's path, with either separator.
+ * @returns {boolean}
+ */
+function isWatchEventRelevant(fsPath) {
+    const parts = String(fsPath || '').split(/[\\/]+/);
+    // The last part is the entry itself: a created FOLDER named ST_Files is output too.
+    return !parts.some(part => BASE_SKIP_DIRS.has(part.toLowerCase()) || part.toLowerCase() === 'st_files');
+}
+
+/**
+ * Whether a watcher event is inside generated output (an `ST_Files` folder, or that folder itself) and
+ * outside VCS/editor metadata. Such events never re-index or refresh per event (see
+ * isWatchEventRelevant); the host collects them into ONE debounced Objects-tree refresh, so files the
+ * user adds or deletes there by hand still show.
+ * @param {string} fsPath The event's path, with either separator.
+ * @returns {boolean}
+ */
+function isGeneratedOutputEvent(fsPath) {
+    const parts = String(fsPath || '').split(/[\\/]+/).map(p => p.toLowerCase());
+    return parts.includes('st_files') && !parts.some(part => BASE_SKIP_DIRS.has(part));
+}
+
 module.exports = {
+    isWatchEventRelevant,
+    isGeneratedOutputEvent,
     decodeXmlAttribute,
     walkFiles,
     BASE_SKIP_DIRS,

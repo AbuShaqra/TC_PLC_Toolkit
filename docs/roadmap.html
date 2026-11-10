@@ -224,11 +224,11 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
       <summary>
         <div class="card-top"><span>#3</span><span class="id">R2</span><span class="pill done">Done · Nov 10</span><span class="chev" aria-hidden="true">›</span></div>
         <div class="card-title">TwinCAT sidebar and start page; create a new project (4024 / 4026)</div>
-        <div class="bar" aria-hidden="true"><span style="left:27.27%;width:13.64%"></span></div>
-        <div class="card-foot"><span>8.5 d → ~6 h + XAE</span><span>Nov 12 – 13</span></div>
+        <div class="bar" aria-hidden="true"><span style="left:7.56%;width:9.45%"></span></div>
+        <div class="card-foot"><span>8.5 d → ~7 h actual</span><span>Nov 9 – 10</span></div>
       </summary>
       <div class="body">
-        <div class="block wide"><h4>Status, Nov 10</h4><p>Your Windows checks passed: both created projects open and build in XAE with no errors, the dev-host test passes, and both themes look right. Added at your request: the recent list shows 5 with a Show all toggle (a setting changes the number); two settings hold the XAE Shell path for 3.1.4024 and 3.1.4026, filled automatically on Windows and editable; the start page shows them. The Objects tree now follows the open file only while its view is showing. Merged as PR #31 on Nov 10. The path detection still wants one look on Windows; R3.2 is next.</p></div>
+        <div class="block wide"><h4>Status, Nov 10</h4><p>Your Windows checks passed: both created projects open and build in XAE with no errors, the dev-host test passes, and both themes look right. Added at your request: the recent list shows 5 with a Show all toggle (a setting changes the number); two settings hold the XAE Shell path for 3.1.4024 and 3.1.4026, filled automatically on Windows and editable; the start page shows them. The Objects tree now follows the open file only while its view is showing. Merged as PR #31 on Nov 10; you confirmed the path detection on Windows. R3.2 is running.</p></div>
         <div class="block"><h4>Goal</h4><p>The extension gets its own place in the Activity Bar, and a user with no TwinCAT project, or an empty folder, creates one there without opening TwinCAT XAE first.</p></div>
         <div class="block wide"><h4>Sidebar and start page, decided Nov 9 (your ask)</h4><p>A <b>TwinCAT</b> icon in the Activity Bar opens a sidebar with a <b>Start</b> view plus TwinCAT Objects and TwinCAT Libraries, which move out of the Explorer (you can still drag them back). The Start view has compact buttons; <b>Open Start Page</b> opens a full page in an editor tab with: <b>create a new project</b> (3.1.4024 or 3.1.4026, name, location), <b>open an existing project</b> (with recent solutions), <b>project actions</b> (Generate ST, Update Library Definitions, and the STruC++ check once R3.2 ships), <b>help and links</b>, and <b>settings</b>. Every action is also a command. This grows R2 from 6 to about 8.5 days.</p></div>
         <div class="block wide"><h4>Key constraint</h4><p>A TwinCAT solution chains <code>.sln</code> → <code>.tsproj</code> → <code>.plcproj</code>, and only XAE has ever written a skeleton XAE accepts: hand-written ones were refused. So the templates are skeletons XAE produced, copied with every identity GUID regenerated.</p></div>
@@ -240,18 +240,18 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
             <li><b>Starter content:</b> <code>PROGRAM MAIN</code>, the <code>PlcTask</code> that calls it, and an empty GVL.</li>
           </ol>
         </div>
-        <div class="block wide"><h4>Status, Nov 9</h4><p><b>Phase 1 is built</b> (not yet a PR): the TwinCAT sidebar, the start page, and <b>Create New Project</b> from templates made from the XAE skeletons, with every identity GUID regenerated. A new project has <code>MAIN</code>, the <code>PlcTask</code> and an empty <code>GVL_Main</code>, and shows zero diagnostics. <b>Before merge, on your machine:</b> create one project per version and prove it opens and builds in XAE 3.1.4024 and 3.1.4026, and run the dev-host pass. <b>Phase 2</b>, creating through XAE where TwinCAT is installed, is not started.</p></div>
-      </div>
+        </div>
     </details>
 
     <details class="card" id="r3-2">
       <summary>
-        <div class="card-top"><span>#4</span><span class="id">R3.2</span><span class="pill planned">Next</span><span class="chev" aria-hidden="true">›</span></div>
+        <div class="card-top"><span>#4</span><span class="id">R3.2</span><span class="pill planned">In progress</span><span class="chev" aria-hidden="true">›</span></div>
         <div class="card-title">STruC++ check command with errors mapped to the panes</div>
         <div class="bar" aria-hidden="true"><span style="left:18.18%;width:13.64%"></span></div>
         <div class="card-foot"><span>7 d → ~4 h</span><span>Nov 11 – 12</span></div>
       </summary>
       <div class="body">
+        <div class="block wide"><h4>Status, Nov 10</h4><p><b>Built:</b> TwinCAT: Compile Project checks one PLC project with the external compiler and puts its errors in the Problems panel and as markers in the right pane; unsaved edits are included. Your sample checks with 0 errors in about a second. It runs without <code>--strict</code>, which refuses code TwinCAT accepts. <b>Now also done:</b> tests, docs, and a second sample project, <code>TcToolkitSample2</code> (3.1.4024), for multi-project testing (your request). Both samples check with 0 errors, and the second one already caught a real false error in the extension (an <code>IMPLEMENTS</code> list on a multi-line header). <b>Left:</b> showing generated ST files in the Objects tree, then your Windows checks.</p></div>
         <div class="block"><h4>This phase</h4><p>A <b>Check with STruC++</b> command converts the project to ST, runs the compiler as a full semantic check, and maps each error to the right component and pane, in both the Problems view and the pane markers.</p></div>
         <div class="block"><h4>Depends on</h4><p>The spike (#1) and the fork lane's S2, which it waits for. Full scope, decided Nov 9: a check emitter in the converter that keeps lines aligned (members before the POU body, pragmas blanked, IEC enum base type), a raw-based unit, since export mode rewrites <code>REFERENCE TO</code> and <code>REF=</code>, and check-only output. Background, constraints and decisions are on the #1 card.</p></div>
       </div>
@@ -397,7 +397,7 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
       </summary>
       <div class="body">
         <div class="block wide"><h4>Still open</h4><p>Batch 3: library function named arguments, <code>REF()</code> of an enum array element, string length in <code>REF_TO STRING(10)</code>, enum values as integers, enum initial values, enum array bounds, two PROGRAM self-reference cases, user function named arguments, interface method signatures. Batch 4 (below). The runtime C++ tests. Batch 5: plain <code>SUPER()</code>, <code>SUPER.x :=</code>, <code>THIS.a.b</code>, <code>GVL_A.units[0]()</code>, interface-typed arrays and fields, properties through an interface, a library STRUCT as an EXTENDS base, the alias-of-derived STRUCT loophole, <code>SINT#200</code>, <code>REF()</code>/<code>ADR()</code> of a CONFIGURATION global, the threaded forced-global race, the feature help text.</p></div>
-        <div class="block wide"><h4>Progress</h4><p>Batch 1 (10 checker gaps, #30–#39) and batch 2 (accepted code that failed g++, #40–#50) are merged. <code>INSERT</code> now follows IEC (#51, user decision; a run-time behaviour change). Batch 3 running: unknown named arguments on FB calls refused (#52); <code>REF()</code> of STRING/WSTRING/enum (#53); string functions with literal arguments (#54); a typed enum literal as an enum type's default (#55); <code>PRG_A.x</code> inside PRG_A (#56); alias and subrange variables initialised (#57). Release E cut. After S9 (release F): user names shadowing bundled-library names (#65); POUs and types named like standard functions (#66); unknown named arguments on method calls (#67); named arguments that bind an FB's private variables refused (#68, user decision); library functions take named arguments by name (#69); <code>REF()</code> of an enum array element (#70); string length kept behind references and type aliases (#71); string functions with arguments of different lengths (#72) and full-length results (#73); enum values used as integers refused (#74). Batch 4 is running because it gates the toolkit's compile check: <code>end_semicolon_optional</code> (#75) an empty FOR body under <code>--strict</code> (#76) <code>0</code> as NULL for every pointer (#77) ACTIONs before the body (#78) <code>VAR</code> blocks in property accessors (#79) <code>GVL.x</code> in declarations (#80) and <code>ADR</code> as a pointer's initial value (#81) merged. Batch 4 is done and release G is cut. Since then: globals ordered by dependency (#82); enum initial values checked (#83); constant and enum array bounds (#84). The rest of batch 3 continues; the rest of batch 3, then batch 4. Byte access through a differently shaped pointer runs wrong today (also in 14 bundled OSCAT functions): fixed at the root by S9, moved up (user: fix the root cause). Decided by the user: a named argument that binds an FB's private VAR variable is always an error.</p></div>
+        <div class="block wide"><h4>Progress</h4><p>Batch 1 (10 checker gaps, #30–#39) and batch 2 (accepted code that failed g++, #40–#50) are merged. <code>INSERT</code> now follows IEC (#51, user decision; a run-time behaviour change). Batch 3 running: unknown named arguments on FB calls refused (#52); <code>REF()</code> of STRING/WSTRING/enum (#53); string functions with literal arguments (#54); a typed enum literal as an enum type's default (#55); <code>PRG_A.x</code> inside PRG_A (#56); alias and subrange variables initialised (#57). Release E cut. After S9 (release F): user names shadowing bundled-library names (#65); POUs and types named like standard functions (#66); unknown named arguments on method calls (#67); named arguments that bind an FB's private variables refused (#68, user decision); library functions take named arguments by name (#69); <code>REF()</code> of an enum array element (#70); string length kept behind references and type aliases (#71); string functions with arguments of different lengths (#72) and full-length results (#73); enum values used as integers refused (#74). Batch 4 is running because it gates the toolkit's compile check: <code>end_semicolon_optional</code> (#75) an empty FOR body under <code>--strict</code> (#76) <code>0</code> as NULL for every pointer (#77) ACTIONs before the body (#78) <code>VAR</code> blocks in property accessors (#79) <code>GVL.x</code> in declarations (#80) and <code>ADR</code> as a pointer's initial value (#81) merged. Batch 4 is done and release G is cut. Since then: globals ordered by dependency (#82); enum initial values checked (#83); constant and enum array bounds (#84); a PROGRAM's own member past a method local (#85); an enum alias is its enum (#86, fixes a release G regression); unknown named arguments on FUNCTION calls refused (#88). The build scripts run on Windows (#87). The rest of batch 3 continues; the rest of batch 3, then batch 4. Byte access through a differently shaped pointer runs wrong today (also in 14 bundled OSCAT functions): fixed at the root by S9, moved up (user: fix the root cause). Decided by the user: a named argument that binds an FB's private VAR variable is always an error.</p></div>
         <div class="block wide"><h4>Batch 4: vendor forms the toolkit sample uses (done, #75–#81)</h4><p>Before the toolkit's compile check: <code>end_semicolon_optional</code> (a missing <code>;</code> after <code>END_IF</code> and the like, on in the vendor profiles); an empty FOR body; <code>0</code> into any <code>POINTER TO</code> as NULL; <code>POINTER TO STRING := ADR(str)</code>; in-FB ACTIONs before the body; a <code>VAR</code> part in a property accessor; <code>GVL.x</code> in FB init arguments.</p></div>
         <div class="block wide"><h4>How it was estimated</h4><p>My sizing from the item list, not measured. Session time uses the Nov 9 velocity (about 30 min per planned day for fork work, about 45 min for toolkit work); dates assume about 4 hours of session per working day.</p></div>
       </div>
@@ -565,8 +565,8 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
 var PLAN = [
   { lane: 'TC PLC Toolkit', num: 1, id: 'R3.1', card: 'r3-1', name: 'STruC++ spike',          est: '2 d → ~15 min', start: '2026-11-09', end: '2026-11-09', days: 0.3, status: 'done', actualStart: '2026-11-09T11:45:00Z', actualEnd: '2026-11-09T12:03:42Z' },
   { lane: 'TC PLC Toolkit', num: 2, id: 'R4',   card: 'r4',   name: 'Objects-tree model',     est: '4 d → ~3 h',  start: '2026-11-09', end: '2026-11-09', machine: true, status: 'done', actualStart: '2026-11-09T12:04:17Z', actualEnd: '2026-11-09T19:56:34Z' },
-  { lane: 'TC PLC Toolkit', num: 3, id: 'R2',   card: 'r2',   name: 'Sidebar + new project',  est: '8.5 d → ~6 h', start: '2026-11-12', end: '2026-11-13', machine: true, status: 'done', actualStart: '2026-11-09T19:57:00Z', actualEnd: '2026-11-10T20:55:00Z' },
-  { lane: 'TC PLC Toolkit', num: 4, id: 'R3.2', card: 'r3-2', name: 'STruC++ check',          est: '7 d → ~4 h',  start: '2026-11-11', end: '2026-11-12' },
+  { lane: 'TC PLC Toolkit', num: 3, id: 'R2',   card: 'r2',   name: 'Sidebar + new project',  est: '8.5 d → ~7 h', start: '2026-11-09', end: '2026-11-10', machine: true, status: 'done', actualStart: '2026-11-09T19:57:00Z', actualEnd: '2026-11-10T20:55:00Z' },
+  { lane: 'TC PLC Toolkit', num: 4, id: 'R3.2', card: 'r3-2', name: 'Compile project (check)', est: '7 d → ~4 h',  start: '2026-11-11', end: '2026-11-12', status: 'progress', actualStart: '2026-11-10T21:00:00Z' },
   { lane: 'TC PLC Toolkit', num: 5, id: 'R11', card: 'r11', name: 'Marketplace publishing', est: '0.5 d → ~1 h', start: '2026-11-17', end: '2026-11-17', days: 0.3, offset: 0, machine: true },
   { lane: 'TC PLC Toolkit', num: 6, id: 'R3.3', card: 'r3-3', name: 'STruC++ packaging',      est: '3 d → ~2 h',  start: '2026-11-17', end: '2026-11-17', days: 0.5 },
   { lane: 'TC PLC Toolkit', num: 6, id: 'R6',   card: 'r6',   name: 'Indexing speed',         est: '5.5 d → ~4 h', start: '2026-11-17', end: '2026-11-18', days: 1, offset: 0.5 },
@@ -597,6 +597,9 @@ var DOMAIN_START = '2026-11-09', DOMAIN_END = '2026-11-20'; /* exclusive */
   var axis = document.createElement('div'); axis.className = 'g-axis';
   var now = new Date(), today = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
   var todayIdx = (today - t0) / DAY, showToday = todayIdx >= 0 && todayIdx < span;
+  // The marker sits at the current time (UTC, like the bars' real timestamps), not at the middle of
+  // the day: a finished bar must never reach past it.
+  var nowIdx = Math.min(Math.max((now.getTime() - t0) / DAY, 0), span);
   for (var i = 0; i < span; i++) {
     var day = new Date(t0 + i * DAY), wd = day.getUTCDay();
     if (wd === 6) { var we = document.createElement('div'); we.className = 'we'; we.style.left = pct(i); we.style.width = pct(Math.min(2, span - i)); bg.appendChild(we); }
@@ -607,7 +610,7 @@ var DOMAIN_START = '2026-11-09', DOMAIN_END = '2026-11-20'; /* exclusive */
     }
   }
   if (showToday) {
-    var tl = document.createElement('div'); tl.className = 'today'; tl.style.left = pct(todayIdx + 0.5);
+    var tl = document.createElement('div'); tl.className = 'today'; tl.style.left = pct(nowIdx);
     tl.innerHTML = '<b>Today</b>'; bg.appendChild(tl);
   }
   var pad = document.createElement('div'); pad.className = 'g-axis-pad';
@@ -637,7 +640,9 @@ var DOMAIN_START = '2026-11-09', DOMAIN_END = '2026-11-20'; /* exclusive */
       startDay = (Date.parse(it.actualStart) - t0) / DAY;
       len = Math.max((d(it.end) + DAY - Date.parse(it.actualStart)) / DAY, 0.15);
     }
-    var bar = document.createElement('button'); bar.type = 'button'; bar.className = 'g-bar' + (it.status ? ' ' + it.status : '') + (it.machine ? ' hatch' : '');
+    // The hatch marks a step still waiting for the Windows machine; a finished item has had it.
+    var needsMachine = it.machine && it.status !== 'done';
+    var bar = document.createElement('button'); bar.type = 'button'; bar.className = 'g-bar' + (it.status ? ' ' + it.status : '') + (needsMachine ? ' hatch' : '');
     bar.style.left = pct(startDay); bar.style.width = pct(len);
     function hm(iso) { var x = new Date(Date.parse(iso)); return String(x.getUTCHours()).padStart(2, '0') + ':' + String(x.getUTCMinutes()).padStart(2, '0'); }
     var when = actual
@@ -645,12 +650,12 @@ var DOMAIN_START = '2026-11-09', DOMAIN_END = '2026-11-20'; /* exclusive */
       : started ? 'since ' + fmt(it.actualStart.slice(0, 10)) + ' ' + hm(it.actualStart) + ' UTC, forecast end ' + fmt(it.end)
       : it.start === it.end ? fmt(it.start) : fmt(it.start) + ' – ' + fmt(it.end);
     var stateText = it.status === 'done' ? 'done' : it.status === 'progress' ? 'in progress' : 'planned';
-    bar.setAttribute('aria-label', it.lane + ' #' + it.num + ' ' + it.id + ' ' + it.name + ', ' + stateText + ', ' + it.est + ', ' + when + (it.machine ? ', needs your Windows machine' : ''));
+    bar.setAttribute('aria-label', it.lane + ' #' + it.num + ' ' + it.id + ' ' + it.name + ', ' + stateText + ', ' + it.est + ', ' + when + (needsMachine ? ', needs your Windows machine' : ''));
     function show() {
       tip.innerHTML = '<b></b><div></div><div></div>';
       tip.children[0].textContent = it.lane + ' · #' + it.num + ' · ' + it.id;
       tip.children[1].textContent = it.name;
-      tip.children[2].textContent = stateText + ' · ' + it.est + ' · ' + when + (it.machine ? ' · Windows machine' : '');
+      tip.children[2].textContent = stateText + ' · ' + it.est + ' · ' + when + (needsMachine ? ' · Windows machine' : '');
       tip.hidden = false;
       var cr = root.getBoundingClientRect(), br = bar.getBoundingClientRect();
       var left = br.left - cr.left, top = br.bottom - cr.top + 6;
