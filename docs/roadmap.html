@@ -224,8 +224,8 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
       <summary>
         <div class="card-top"><span>#3</span><span class="id">R2</span><span class="pill done">Done · Nov 10</span><span class="chev" aria-hidden="true">›</span></div>
         <div class="card-title">TwinCAT sidebar and start page; create a new project (4024 / 4026)</div>
-        <div class="bar" aria-hidden="true"><span style="left:27.27%;width:13.64%"></span></div>
-        <div class="card-foot"><span>8.5 d → ~6 h + XAE</span><span>Nov 12 – 13</span></div>
+        <div class="bar" aria-hidden="true"><span style="left:7.56%;width:9.45%"></span></div>
+        <div class="card-foot"><span>8.5 d → ~7 h actual</span><span>Nov 9 – 10</span></div>
       </summary>
       <div class="body">
         <div class="block wide"><h4>Status, Nov 10</h4><p>Your Windows checks passed: both created projects open and build in XAE with no errors, the dev-host test passes, and both themes look right. Added at your request: the recent list shows 5 with a Show all toggle (a setting changes the number); two settings hold the XAE Shell path for 3.1.4024 and 3.1.4026, filled automatically on Windows and editable; the start page shows them. The Objects tree now follows the open file only while its view is showing. Merged as PR #31 on Nov 10; you confirmed the path detection on Windows. R3.2 is running.</p></div>
@@ -240,8 +240,7 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
             <li><b>Starter content:</b> <code>PROGRAM MAIN</code>, the <code>PlcTask</code> that calls it, and an empty GVL.</li>
           </ol>
         </div>
-        <div class="block wide"><h4>Status, Nov 9</h4><p><b>Phase 1 is built</b> (not yet a PR): the TwinCAT sidebar, the start page, and <b>Create New Project</b> from templates made from the XAE skeletons, with every identity GUID regenerated. A new project has <code>MAIN</code>, the <code>PlcTask</code> and an empty <code>GVL_Main</code>, and shows zero diagnostics. <b>Before merge, on your machine:</b> create one project per version and prove it opens and builds in XAE 3.1.4024 and 3.1.4026, and run the dev-host pass. <b>Phase 2</b>, creating through XAE where TwinCAT is installed, is not started.</p></div>
-      </div>
+        </div>
     </details>
 
     <details class="card" id="r3-2">
@@ -565,7 +564,7 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
 var PLAN = [
   { lane: 'TC PLC Toolkit', num: 1, id: 'R3.1', card: 'r3-1', name: 'STruC++ spike',          est: '2 d → ~15 min', start: '2026-11-09', end: '2026-11-09', days: 0.3, status: 'done', actualStart: '2026-11-09T11:45:00Z', actualEnd: '2026-11-09T12:03:42Z' },
   { lane: 'TC PLC Toolkit', num: 2, id: 'R4',   card: 'r4',   name: 'Objects-tree model',     est: '4 d → ~3 h',  start: '2026-11-09', end: '2026-11-09', machine: true, status: 'done', actualStart: '2026-11-09T12:04:17Z', actualEnd: '2026-11-09T19:56:34Z' },
-  { lane: 'TC PLC Toolkit', num: 3, id: 'R2',   card: 'r2',   name: 'Sidebar + new project',  est: '8.5 d → ~6 h', start: '2026-11-12', end: '2026-11-13', machine: true, status: 'done', actualStart: '2026-11-09T19:57:00Z', actualEnd: '2026-11-10T20:55:00Z' },
+  { lane: 'TC PLC Toolkit', num: 3, id: 'R2',   card: 'r2',   name: 'Sidebar + new project',  est: '8.5 d → ~7 h', start: '2026-11-09', end: '2026-11-10', machine: true, status: 'done', actualStart: '2026-11-09T19:57:00Z', actualEnd: '2026-11-10T20:55:00Z' },
   { lane: 'TC PLC Toolkit', num: 4, id: 'R3.2', card: 'r3-2', name: 'Compile project (check)', est: '7 d → ~4 h',  start: '2026-11-11', end: '2026-11-12', status: 'progress', actualStart: '2026-11-10T21:00:00Z' },
   { lane: 'TC PLC Toolkit', num: 5, id: 'R11', card: 'r11', name: 'Marketplace publishing', est: '0.5 d → ~1 h', start: '2026-11-17', end: '2026-11-17', days: 0.3, offset: 0, machine: true },
   { lane: 'TC PLC Toolkit', num: 6, id: 'R3.3', card: 'r3-3', name: 'STruC++ packaging',      est: '3 d → ~2 h',  start: '2026-11-17', end: '2026-11-17', days: 0.5 },
@@ -597,6 +596,9 @@ var DOMAIN_START = '2026-11-09', DOMAIN_END = '2026-11-20'; /* exclusive */
   var axis = document.createElement('div'); axis.className = 'g-axis';
   var now = new Date(), today = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
   var todayIdx = (today - t0) / DAY, showToday = todayIdx >= 0 && todayIdx < span;
+  // The marker sits at the current time (UTC, like the bars' real timestamps), not at the middle of
+  // the day: a finished bar must never reach past it.
+  var nowIdx = Math.min(Math.max((now.getTime() - t0) / DAY, 0), span);
   for (var i = 0; i < span; i++) {
     var day = new Date(t0 + i * DAY), wd = day.getUTCDay();
     if (wd === 6) { var we = document.createElement('div'); we.className = 'we'; we.style.left = pct(i); we.style.width = pct(Math.min(2, span - i)); bg.appendChild(we); }
@@ -607,7 +609,7 @@ var DOMAIN_START = '2026-11-09', DOMAIN_END = '2026-11-20'; /* exclusive */
     }
   }
   if (showToday) {
-    var tl = document.createElement('div'); tl.className = 'today'; tl.style.left = pct(todayIdx + 0.5);
+    var tl = document.createElement('div'); tl.className = 'today'; tl.style.left = pct(nowIdx);
     tl.innerHTML = '<b>Today</b>'; bg.appendChild(tl);
   }
   var pad = document.createElement('div'); pad.className = 'g-axis-pad';
@@ -637,7 +639,9 @@ var DOMAIN_START = '2026-11-09', DOMAIN_END = '2026-11-20'; /* exclusive */
       startDay = (Date.parse(it.actualStart) - t0) / DAY;
       len = Math.max((d(it.end) + DAY - Date.parse(it.actualStart)) / DAY, 0.15);
     }
-    var bar = document.createElement('button'); bar.type = 'button'; bar.className = 'g-bar' + (it.status ? ' ' + it.status : '') + (it.machine ? ' hatch' : '');
+    // The hatch marks a step still waiting for the Windows machine; a finished item has had it.
+    var needsMachine = it.machine && it.status !== 'done';
+    var bar = document.createElement('button'); bar.type = 'button'; bar.className = 'g-bar' + (it.status ? ' ' + it.status : '') + (needsMachine ? ' hatch' : '');
     bar.style.left = pct(startDay); bar.style.width = pct(len);
     function hm(iso) { var x = new Date(Date.parse(iso)); return String(x.getUTCHours()).padStart(2, '0') + ':' + String(x.getUTCMinutes()).padStart(2, '0'); }
     var when = actual
@@ -645,12 +649,12 @@ var DOMAIN_START = '2026-11-09', DOMAIN_END = '2026-11-20'; /* exclusive */
       : started ? 'since ' + fmt(it.actualStart.slice(0, 10)) + ' ' + hm(it.actualStart) + ' UTC, forecast end ' + fmt(it.end)
       : it.start === it.end ? fmt(it.start) : fmt(it.start) + ' – ' + fmt(it.end);
     var stateText = it.status === 'done' ? 'done' : it.status === 'progress' ? 'in progress' : 'planned';
-    bar.setAttribute('aria-label', it.lane + ' #' + it.num + ' ' + it.id + ' ' + it.name + ', ' + stateText + ', ' + it.est + ', ' + when + (it.machine ? ', needs your Windows machine' : ''));
+    bar.setAttribute('aria-label', it.lane + ' #' + it.num + ' ' + it.id + ' ' + it.name + ', ' + stateText + ', ' + it.est + ', ' + when + (needsMachine ? ', needs your Windows machine' : ''));
     function show() {
       tip.innerHTML = '<b></b><div></div><div></div>';
       tip.children[0].textContent = it.lane + ' · #' + it.num + ' · ' + it.id;
       tip.children[1].textContent = it.name;
-      tip.children[2].textContent = stateText + ' · ' + it.est + ' · ' + when + (it.machine ? ' · Windows machine' : '');
+      tip.children[2].textContent = stateText + ' · ' + it.est + ' · ' + when + (needsMachine ? ' · Windows machine' : '');
       tip.hidden = false;
       var cr = root.getBoundingClientRect(), br = bar.getBoundingClientRect();
       var left = br.left - cr.left, top = br.bottom - cr.top + 6;
