@@ -132,7 +132,8 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   inherited PROPERTY read on a derived FB fails g++; POINTER TO ARRAY OF BYTE over ADR(dword) reads 0. Unknown
   STRUCT-initialiser elements reported (PR #34 `db25cb3`; an unused TYPE-level default stays accepted). Undeclared names in initial values reported
   (PR #35 `17ee57a`); a bare member of several enums is now settled by the target's enum type and emits `E1::B`
-  (widening). Found: `E2#B` with an enum named E2 lexes as a numeric literal. Was next: ADR into POINTER TO
+  (widening). Found: `E2#B` with an enum named E2 lexes as a numeric literal. Return variable wins over a same-named enum member
+  inside its own body (PR #36 `bfe50d5`). Was next: ADR into POINTER TO
   STRUCT, UNION one-member initial values. Found: LT#/LTIME# literals absent (S4); `SINT#200` unchecked; an enum member named like a FUNCTION/METHOD hijacks
   its return assignment in C++ (passes analysis, fails g++); alias-of-base := alias-of-derived STRUCT is accepted
   (the EXTENDS check is skipped when both sides are alias names); `REF(s)` into REF_TO STRUCT passes analysis, fails
