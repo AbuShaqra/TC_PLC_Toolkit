@@ -126,7 +126,8 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   check but run wrong or fail g++): omitted function/method inputs take their declared default (PR #30 `4e245bf`;
   also fixed positional method calls omitting a VAR_OUTPUT); undeclared functions reported (PR #31 `c911311`; a
   198-name runtime-function list synced from the headers by a test keeps runtime helpers like TIME_TO_US accepted;
-  units with `{external}` are not checked). Was next: ADR into POINTER TO
+  units with `{external}` are not checked); unknown method calls reported (PR #32 `371ac37`; `inst.sub()`, a STRUCT-held
+  FB `s.f()`, `rr.M()` and library `tn.M()` stay accepted — the last two fail g++, logged). Was next: ADR into POINTER TO
   STRUCT, UNION one-member initial values. Found: LT#/LTIME# literals absent (S4); `SINT#200` unchecked; an enum member named like a FUNCTION/METHOD hijacks
   its return assignment in C++ (passes analysis, fails g++); alias-of-base := alias-of-derived STRUCT is accepted
   (the EXTENDS check is skipped when both sides are alias names); `REF(s)` into REF_TO STRUCT passes analysis, fails
