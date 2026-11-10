@@ -134,7 +134,8 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   (PR #35 `17ee57a`); a bare member of several enums is now settled by the target's enum type and emits `E1::B`
   (widening). Found: `E2#B` with an enum named E2 lexes as a numeric literal. Return variable wins over a same-named enum member
   inside its own body (PR #36 `bfe50d5`). Globals named like runtime-only helpers emitted as `NAME_` (PR #37 `6e2a520`;
-  204-name set re-derived from the headers by a g++ test; `LOG` with libs stays an analysis refusal). `TO_<type>` of enum values builds (PR #38 `b6dffeb`, runtime-only).
+  204-name set re-derived from the headers by a g++ test; `LOG` with libs stays an analysis refusal). `TO_<type>` of enum values builds (PR #38 `b6dffeb`, runtime-only). Unrelated STRUCT arguments to
+  VAR_INPUT/VAR_IN_OUT reported (PR #39 `852d856`; library STRUCTs not checked). **S3b batch 1 DONE** (10 PRs).
   Was next: ADR into POINTER TO
   STRUCT, UNION one-member initial values. Found: LT#/LTIME# literals absent (S4); `SINT#200` unchecked; an enum member named like a FUNCTION/METHOD hijacks
   its return assignment in C++ (passes analysis, fails g++); alias-of-base := alias-of-derived STRUCT is accepted
