@@ -1,7 +1,8 @@
 /**
  * @file test/browser/run.js
  * @description The automated pass over media/editor.js — builds the harness, serves it, drives a
- * real Chromium through Find References, and asserts what the references peek does.
+ * real Chromium through Find References, and asserts what the references peek does — plus the
+ * Generate ST menu and Compile Project's pane markers (owner 'twincat-compile').
  *
  * This exists because media/editor.js is the one part of the codebase no Node test can reach, and
  * it is where the peek actually lives. Everything asserted here was found by hand first; encoding
@@ -417,6 +418,82 @@ function assert(cond, msg) {
         const runMsg = await page.evaluate(() => window.__harness.sent.filter(m => m.type === 'generate-st'));
         assert(runMsg.length === 1 && JSON.stringify(runMsg[0].projectKeys) === '["a","b","c"]',
             `Generate selected then posts every project key (${JSON.stringify(runMsg)})`);
+
+        // 7e. Compile Project's markers (R3.2). The host pushes them as `compileDiagnostics`; they live
+        //     under their own marker owner, so the language server's 'st-validator' markers and the
+        //     compile markers never erase each other — on the shared pane models, across component
+        //     switches and diagnostics refreshes. An edit to a component drops ITS compile markers
+        //     (the compiler judged the old text) and tells the host, so the Problems panel follows.
+        await page.keyboard.press('Escape');
+        const markersNow = () => page.evaluate(() => {
+            const panes = monaco.editor.getEditors().filter(e => e.getModel() && e.getModel().uri.scheme === 'inmemory');
+            const byPane = (owner) => panes.map(e => monaco.editor.getModelMarkers({ owner, resource: e.getModel().uri }).map(m => m.message));
+            return {
+                first: panes.map(e => e.getModel().getLineContent(1)),
+                compile: byPane('twincat-compile'),
+                lsp: byPane('st-validator')
+            };
+        });
+        const settle = (ms) => page.evaluate((t) => new Promise(r => setTimeout(r, t)), ms);
+        await page.evaluate(() => {
+            window.__harness.lspDiagnostics = [{ componentId: 'root', pane: 'decl', severity: 2, message: 'harness LSP warning',
+                range: { startLineNumber: 1, startColumn: 1, endLineNumber: 1, endColumn: 15 } }];
+            window.postMessage({ type: 'selectComponent', id: 'root' }, '*');
+        });
+        await settle(700);
+        await page.evaluate(() => window.postMessage({ type: 'compileDiagnostics', diagnostics: [
+            { componentId: 'root', pane: 'decl', severity: 1, message: 'harness compile error (decl)',
+                range: { startLineNumber: 3, startColumn: 5, endLineNumber: 3, endColumn: 20 } },
+            { componentId: 'root', pane: 'impl', severity: 2, message: 'harness compile warning (impl)',
+                range: { startLineNumber: 1, startColumn: 1, endLineNumber: 1, endColumn: 10 } },
+            { componentId: 'method_Cyclic', pane: 'impl', severity: 1, message: 'harness compile error (method)',
+                range: { startLineNumber: 1, startColumn: 1, endLineNumber: 1, endColumn: 5 } }
+        ] }, '*'));
+        await settle(100);
+        let mk = await markersNow();
+        assert(JSON.stringify(mk.compile) === JSON.stringify([['harness compile error (decl)'], ['harness compile warning (impl)']]),
+            `compileDiagnostics puts the active component's markers on its two panes, owner twincat-compile (${JSON.stringify(mk.compile)})`);
+        assert(JSON.stringify(mk.lsp[0]) === JSON.stringify(['harness LSP warning']),
+            `the language server's st-validator markers survive the compile markers (${JSON.stringify(mk.lsp)})`);
+        await page.evaluate(() => window.postMessage({ type: 'refreshDiagnostics' }, '*'));
+        await settle(700);
+        mk = await markersNow();
+        assert(mk.compile[0].length === 1 && mk.compile[1].length === 1 && mk.lsp[0].length === 1,
+            `a diagnostics refresh keeps both owners' markers (${JSON.stringify(mk)})`);
+        if (process.env.HARNESS_COMPILE_SHOT !== '') {
+            const shot = process.env.HARNESS_COMPILE_SHOT || path.join(HERE, 'out', 'compile-markers.png');
+            await page.screenshot({ path: shot });
+            console.log('pane-marker screenshot written to ' + shot);
+        }
+        await page.evaluate(() => window.postMessage({ type: 'selectComponent', id: 'method_Cyclic' }, '*'));
+        await settle(700);
+        mk = await markersNow();
+        assert(JSON.stringify(mk.compile) === JSON.stringify([[], ['harness compile error (method)']]),
+            `switching component shows that component's compile markers only (${JSON.stringify(mk.compile)})`);
+        await page.evaluate(() => window.postMessage({ type: 'selectComponent', id: 'root' }, '*'));
+        await settle(700);
+        await page.evaluate(() => { window.__harness.sent.length = 0; });
+        await page.evaluate(() => {
+            const decl = monaco.editor.getEditors().find(e => e.getModel() && e.getModel().uri.scheme === 'inmemory'
+                && /FUNCTION_BLOCK\s+FB_Cylinder/.test(e.getModel().getLineContent(1)));
+            const model = decl.getModel();
+            const end = model.getLineMaxColumn(1);
+            decl.executeEdits('harness', [{ range: new monaco.Range(1, end, 1, end), text: ' ' }]);
+        });
+        await settle(700);
+        mk = await markersNow();
+        const staleMsgs = await page.evaluate(() => window.__harness.sent.filter(m => m.type === 'compileDiagnosticsStale'));
+        assert(mk.compile[0].length === 0 && mk.compile[1].length === 0,
+            `an edit drops the edited component's compile markers (${JSON.stringify(mk.compile)})`);
+        assert(staleMsgs.length === 1 && staleMsgs[0].componentId === 'root',
+            `and posts compileDiagnosticsStale for that component (${JSON.stringify(staleMsgs)})`);
+        assert(mk.lsp[0].length === 1, `the st-validator markers are untouched by the edit (${JSON.stringify(mk.lsp)})`);
+        await page.evaluate(() => window.postMessage({ type: 'selectComponent', id: 'method_Cyclic' }, '*'));
+        await settle(700);
+        mk = await markersNow();
+        assert(JSON.stringify(mk.compile[1]) === JSON.stringify(['harness compile error (method)']),
+            `another component's compile markers survive that edit (${JSON.stringify(mk.compile)})`);
+        await page.evaluate(() => { window.__harness.lspDiagnostics = null; });
 
         // 8. Nothing may have thrown along the way — "Model not found" is the failure this whole
         //    design exists to make unreachable, and it surfaces as a console error.
