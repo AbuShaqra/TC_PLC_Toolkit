@@ -25,7 +25,7 @@ const { TwinCatLibraryTreeDataProvider } = require('./src/libraryTreeProvider');
 // cleanly as well so both editors fold ST identically from one copy of the algorithm.
 const stFolding = require('./media/stFolding');
 const { createDebouncer } = require('./src/util/debounce');
-const { TWINCAT_EDITOR_EXTS, TWINCAT_WATCH_EXTS, isWatchEventRelevant } = require('./src/twincatWorkspace');
+const { TWINCAT_EDITOR_EXTS, TWINCAT_WATCH_EXTS, isWatchEventRelevant, isGeneratedOutputEvent } = require('./src/twincatWorkspace');
 const { LanguageClient, TransportKind, State } = require('vscode-languageclient/node');
 
 let client;
@@ -39,6 +39,9 @@ let client;
  * @type {number}
  */
 const PLCPROJ_REINDEX_DEBOUNCE_MS = 400;
+
+/** Quiet period after the last watcher event under an `ST_Files` folder before the Objects tree refreshes. */
+const ST_FILES_REFRESH_DEBOUNCE_MS = 500;
 
 /**
  * Activates the extension. Sets up providers, watches workspace changes, and registers commands.
@@ -179,7 +182,9 @@ function activate(context) {
         showReferences,
         onActiveFileChange: revealUri,
         // Re-read on every call: a `.plcproj` edit rebuilds the map (same contract as the tree/status bar).
-        getProjectMap: () => hostProjectMap
+        getProjectMap: () => hostProjectMap,
+        // One Objects-tree refresh after a Generate ST run: the watcher ignores each ST_Files event.
+        onStFilesWritten: () => { if (treeProvider) treeProvider.refresh(); }
     });
 
     // Push a single TwinCAT file's raw XML to the LSP so it can build a real-range symbol node.
@@ -410,6 +415,13 @@ function activate(context) {
     // Generated output (any `ST_Files` folder) and VCS/editor metadata never trigger a refresh:
     // see isWatchEventRelevant in src/twincatWorkspace.js.
     const shouldRefresh = (uri) => isWatchEventRelevant(uri.fsPath);
+    // ...except that the Objects tree lists each project's ST_Files: a hand-made change there (or a
+    // Generate ST run, whose own end-of-run refresh comes first) becomes ONE trailing refresh, never
+    // one per file.
+    const refreshForGeneratedOutput = createDebouncer(() => { treeProvider.refresh(); }, ST_FILES_REFRESH_DEBOUNCE_MS);
+    context.subscriptions.push({ dispose: () => refreshForGeneratedOutput.cancel() });
+    const noteGeneratedOutput = (uri) => { if (isGeneratedOutputEvent(uri.fsPath)) refreshForGeneratedOutput.schedule(); };
+    context.subscriptions.push(workspaceWatcher.onDidCreate(noteGeneratedOutput), workspaceWatcher.onDidDelete(noteGeneratedOutput));
 
     // The .plcproj is where the library references live, so it is the only file whose change can
     // change the Libraries view. The catalog is built by the LSP's library index, so refreshing the

@@ -835,10 +835,20 @@ posts `generate-st` with a `projectKeys` subset. `generateAllStFiles` walks each
 `<Compile>` list from the `.plcproj` partition and writes `<project dir>/ST_Files/<path in the project>.st`,
 so no two projects collide and nothing lands in the workspace's top-level folder (the path math is the pure,
 tested `src/stOutputPath.js`). A workspace with no `.plcproj` falls back to the old flat mirror in
-`<workspace root>/ST_Files`. Every scanner skips a directory named `ST_Files` at any depth, the Objects
-tree does not list a project's own `ST_Files` folder, and the workspace file watcher ignores every path under an
-`ST_Files` folder (`isWatchEventRelevant` in `src/twincatWorkspace.js`) — a run writes hundreds of files, and each
-one used to refresh the whole Objects tree. The project-aware export reads and writes with Node `fs.promises`,
+`<workspace root>/ST_Files`. Every scanner (the LSP's indexers, the project and solution walkers) skips a
+directory named `ST_Files` at any depth, so generated `.st` files are never indexed as sources. The Objects
+tree DOES list the output: an `ST_Files` folder directly in a PLC project's directory (or in a workspace
+root, for the flat mirror) and every folder below it get contextValue `generatedDirectory`, and its `.st`
+files `generatedStFile` (other files in there are not listed). No menu, paste or drag-and-drop rule names
+those two values, so no TwinCAT create/delete/rename/insert command applies; a click opens the `.st` as
+text (`twincat.openComponent`). An `ST_Files` folder anywhere else is an ordinary folder. The workspace file
+watcher still ignores every individual path under an `ST_Files` folder for re-indexing and refreshes
+(`isWatchEventRelevant` in `src/twincatWorkspace.js`) — a run writes hundreds of files, and each one used to
+refresh the whole Objects tree. Instead the tree refreshes ONCE when a run ends (`onStFilesWritten`, called
+by `generateAllStFiles` and the flat mirror), and hand-made creates/deletes there
+(`isGeneratedOutputEvent`) collapse into one trailing refresh 500 ms after the last event
+(`ST_FILES_REFRESH_DEBOUNCE_MS` in `extension.js`); during a run that adds at most one refresh after the
+end-of-run one. The project-aware export reads and writes with Node `fs.promises`,
 not `vscode.workspace.fs`: a burst of writes through the editor's file service was rejected with "Canceled" on a
 real multi-project workspace. A failed run names its first error in the notification.
 

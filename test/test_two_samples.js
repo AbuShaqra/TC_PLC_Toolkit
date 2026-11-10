@@ -178,9 +178,10 @@ const uriInside = (uri, dir) => decodeURIComponent(uri).toLowerCase().replace(/\
         const { TwinCatCustomEditorProvider } = require('../src/customEditorProvider');
         Module._load = realLoad;
         const tmpMap = createProjectMap([tmp]);
+        let refreshed = 0;
         const provider = new TwinCatCustomEditorProvider(
             { workspaceState: { get: (k, d) => d, update: () => Promise.resolve() } },
-            { getProjectMap: () => tmpMap });
+            { getProjectMap: () => tmpMap, onStFilesWritten: () => { refreshed++; } });
         const counts = await provider.generateAllStFiles();
         const countSt = (dir) => !fs.existsSync(dir) ? 0 : fs.readdirSync(dir, { withFileTypes: true })
             .reduce((n, e) => n + (e.isDirectory() ? countSt(path.join(dir, e.name)) : (/\.st$/i.test(e.name) ? 1 : 0)), 0);
@@ -201,6 +202,7 @@ const uriInside = (uri, dir) => decodeURIComponent(uri).toLowerCase().replace(/\
         assert(fs.existsSync(path.join(st1, 'POUs', 'Actuators', 'FB_Cylinder.st')) && fs.existsSync(path.join(st2, 'POUs', 'FB_Cylinder.st')),
             "each FB_Cylinder lands at its own project's path");
         assert(!fs.existsSync(path.join(tmp, 'ST_Files')), 'nothing is written into the workspace top-level ST_Files');
+        assert(refreshed === 1, `the run ends with exactly one onStFilesWritten (one Objects-tree refresh) (${refreshed})`);
         assert(shown.length === 1 && /each project's ST_Files folder/.test(shown[0]), `one summary names each project's folder (${JSON.stringify(shown)})`);
     } finally {
         fs.rmSync(tmp, { recursive: true, force: true });

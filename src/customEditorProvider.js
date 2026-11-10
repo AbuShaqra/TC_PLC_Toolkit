@@ -771,7 +771,19 @@ class TwinCatCustomEditorProvider {
         reportGenerateResult(successCount, failCount, warnings, exportedDirs.length === 1
             ? `${path.basename(exportedDirs[0])}/ST_Files`
             : "each project's ST_Files folder", firstError);
+        this._afterStFilesWritten();
         return { successCount, failCount };
+    }
+
+    /**
+     * Tells the host a Generate ST run has finished writing, so the Objects tree refreshes ONCE: the
+     * file watcher deliberately ignores every individual event under `ST_Files` (one per file).
+     */
+    _afterStFilesWritten() {
+        const done = this.options && this.options.onStFilesWritten;
+        if (typeof done === 'function') {
+            try { done(); } catch (e) { console.error('onStFilesWritten failed:', e); }
+        }
     }
 
     /**
@@ -819,6 +831,7 @@ class TwinCatCustomEditorProvider {
             }
         }
         reportGenerateResult(successCount, failCount, warnings, 'the "ST_Files" folder', firstError);
+        this._afterStFilesWritten();
     }
 }
 

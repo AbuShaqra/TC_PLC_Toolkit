@@ -241,7 +241,10 @@ Export the PLC projects to clean, compiler-friendly `.st` files (toolbar button 
 *TwinCAT: Generate ST*, or the start page; with several PLC projects you pick which). Each project's
 files are written inside that project's own folder, under `<PLC project>/ST_Files/`, mirroring the
 project's layout. A folder of TwinCAT files without a `.plcproj` is exported to `ST_Files/` at the top
-of the workspace.
+of the workspace. The generated files show up in the **TwinCAT Objects** tree under each project's
+`ST_Files` folder right after a run; click one to open it as text. That folder is output, not project
+content: the TwinCAT create, delete, rename and paste commands do not apply there, and its `.st` files are
+never read back as sources.
 
 ### Compile project
 

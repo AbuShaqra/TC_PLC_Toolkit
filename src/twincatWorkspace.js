@@ -262,8 +262,22 @@ function isWatchEventRelevant(fsPath) {
     return !parts.some(part => BASE_SKIP_DIRS.has(part.toLowerCase()) || part.toLowerCase() === 'st_files');
 }
 
+/**
+ * Whether a watcher event is inside generated output (an `ST_Files` folder, or that folder itself) and
+ * outside VCS/editor metadata. Such events never re-index or refresh per event (see
+ * isWatchEventRelevant); the host collects them into ONE debounced Objects-tree refresh, so files the
+ * user adds or deletes there by hand still show.
+ * @param {string} fsPath The event's path, with either separator.
+ * @returns {boolean}
+ */
+function isGeneratedOutputEvent(fsPath) {
+    const parts = String(fsPath || '').split(/[\\/]+/).map(p => p.toLowerCase());
+    return parts.includes('st_files') && !parts.some(part => BASE_SKIP_DIRS.has(part));
+}
+
 module.exports = {
     isWatchEventRelevant,
+    isGeneratedOutputEvent,
     decodeXmlAttribute,
     walkFiles,
     BASE_SKIP_DIRS,

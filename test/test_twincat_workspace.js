@@ -271,6 +271,16 @@ check('isWatchEventRelevant ignores ST_Files output and VCS/editor metadata, kee
     }
 });
 
+check('isGeneratedOutputEvent picks out ST_Files events (for one debounced tree refresh), never metadata', () => {
+    const { isGeneratedOutputEvent } = twincatWorkspace;
+    for (const p of ['C:\\ws\\LineA\\PLC\\ST_Files\\POUs\\MAIN.st', '/ws/ST_Files/MAIN.st', '/ws/PLC/st_files', '/ws/PLC/ST_Files/POUs']) {
+        assert.strictEqual(isGeneratedOutputEvent(p), true, `${p} is generated output`);
+    }
+    for (const p of ['/ws/PLC/POUs/MAIN.TcPOU', '/ws/PLC/Loose.st', '/ws/PLC/POUs/ST_Files.TcPOU', '/ws/.git/ST_Files/x', '/ws/node_modules/ST_Files/a.st']) {
+        assert.strictEqual(isGeneratedOutputEvent(p), false, `${p} is not`);
+    }
+});
+
 check('sets are plain mutable Sets, not frozen', () => {
     assert.doesNotThrow(() => {
         const probe = new Set([...BASE_SKIP_DIRS]);
