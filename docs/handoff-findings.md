@@ -6,12 +6,13 @@ accurate rather than short — prune a finding only when the code it describes i
 [DEVELOPMENT.md](../DEVELOPMENT.md), process lessons in `.claude/memory/`; don't duplicate either here.
 
 ## Deferred work (moved from HANDOFF.md 2026-11-09; listed in the ROADMAP.md backlog)
-- **Indexing cost — next cuts, deliberately not done:** memoize `collectSignatureFiles` per root (cheap; ~850
-  ms/scan, mostly 16 directory walks); non-blocking per-project-readiness scan (biggest win, but rewrites the
-  multi-project spine — a wrong readiness gate answers against a partial index); persisted cross-session archive
-  cache (needs FORMAT_VERSION discipline + a ZIP-central-directory fingerprint). **Latent:** `scanController`
-  records completion in a microtask after `await scan(...)` — safe only while the scan is synchronous; an async
-  scan needs in-flight de-duplication. Cold startup (~20 s, 8 projects) is PROJECTED, not measured.
+- **Indexing cost — the three cuts are done (R6, 2026-11-10):** `05b350a` memoizes signature/`.tmc` discovery
+  per scan (readdir calls 9,282 → 3,771 on 8 projects); `103df64` persists decoded archive names across sessions
+  (decoder-id + content key + ZIP-central-directory fingerprint, bounded LRU in global storage); `d4f39c8` makes
+  the scan per-project and non-blocking behind a readiness gate (`workspaceState.js`), and `scanController` now
+  joins a scan in flight and records completion only for the latest one (the old latent microtask hazard is
+  closed). Follow-up (R7): a `*.tmc` or `library-signatures.xml` event now sends `custom/reindex`
+  (`src/indexInputs.js`). Cold startup (~20 s, 8 projects) is still PROJECTED, not measured on Windows.
 - **L1 reverse index** deferred by decision — reference search is 29 ms cold / ~4 ms warm; reopen past ~1000 files
   or >200 ms.
 - **Rename v1 limits:** `.plcproj` sync is outside the rename transaction; sibling implementors of a shared
@@ -188,14 +189,15 @@ Plans: `docs/superpowers/plans/2026-08-22-deepening-roadmap.md` and one doc per 
   `record.namespace` and `indexBrowserCache` pushes onto the stored object. **Structural since P2:**
   `signatureRecordsFor` copies on every call, the template is unreachable; `test_signature_cache.js` asserts
   isolation by IDENTITY and by mutation because a value check still passes while sharing.
-  **Latent:** `scanController` records completion in a microtask after `await scan(...)` — safe only while the scan
-  is synchronous. Making it async needs in-flight de-duplication or two `ensureScanned` calls both scan.
-  **Deliberately NOT done:** non-blocking/chunked scan with per-project readiness (biggest remaining win, and the
-  only route to granular `3/8` progress — but it rewrites the multi-project spine, and a wrong readiness gate
-  answers against a partial index = false diagnostics); persisted cross-session archive cache (cold → ~5-7 s; a bad
-  entry goes sticky across restarts, needs FORMAT_VERSION discipline, ship the ZIP-central-directory fingerprint
-  with it). Next cheap cut: memoize `collectSignatureFiles` per root — signatures are still ~850 ms/scan, now mostly
-  16 directory walks rather than parsing.
+  **R6 delivered the remaining cuts (2026-11-10):** `collectSignatureFiles`/`.tmc` discovery memoized per scan
+  (`createDirectoryListingMemo`, `05b350a`; invalidation is the scan boundary only); decoded archive names
+  persisted across sessions (`103df64`, `archiveStore.js`; an entry is used only when decoder id, content key and
+  the ZIP central-directory fingerprint all match, so a bad entry cannot go sticky); the non-blocking per-project
+  scan with a readiness gate (`d4f39c8`, `workspaceState.js` + `whenIndexed` in server.js; requests never see a
+  partial index). The old latent hazard is closed: `scanController` joins an in-flight `ensureScanned` and records
+  completion only for the latest scan. Because the memo makes the scan boundary the only invalidation, the host
+  watcher now reindexes on `*.tmc` / `library-signatures.xml` events (`src/indexInputs.js`, debounced, own
+  writes from Update Library Definitions suppressed).
   **Libraries view now SCOPES to the active file's project (2026-08-27, lifts the old union-only deferral):**
   `revealUri` (both text-editor and webview activation paths) feeds `libraryProvider.setActiveFile`; the view
   refetches only when the OWNING PROJECT changes and shows the scope in its TreeView description (project label /

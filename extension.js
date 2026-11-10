@@ -25,6 +25,7 @@ const { TwinCatLibraryTreeDataProvider } = require('./src/libraryTreeProvider');
 // cleanly as well so both editors fold ST identically from one copy of the algorithm.
 const stFolding = require('./media/stFolding');
 const { createDebouncer } = require('./src/util/debounce');
+const { isIndexInputFile, createOwnWriteGate } = require('./src/indexInputs');
 const { TWINCAT_EDITOR_EXTS, TWINCAT_WATCH_EXTS, isWatchEventRelevant, isGeneratedOutputEvent } = require('./src/twincatWorkspace');
 const { LanguageClient, TransportKind, State } = require('vscode-languageclient/node');
 
@@ -39,6 +40,15 @@ let client;
  * @type {number}
  */
 const PLCPROJ_REINDEX_DEBOUNCE_MS = 400;
+
+/**
+ * Quiet period for `.tmc` / `library-signatures.xml` watcher events, in milliseconds, before they are
+ * handed to the `.plcproj` re-index debouncer. Longer than the `.plcproj` window: one TwinCAT build
+ * rewrites the `.tmc` of every project it builds, often seconds apart, and all of them must land in
+ * ONE full scan.
+ * @type {number}
+ */
+const INDEX_INPUT_REINDEX_DEBOUNCE_MS = 1500;
 
 /** Quiet period after the last watcher event under an `ST_Files` folder before the Objects tree refreshes. */
 const ST_FILES_REFRESH_DEBOUNCE_MS = 500;
@@ -401,7 +411,10 @@ function activate(context) {
 
     // "PLC Libraries" view commands: refresh, regenerate signatures (drives TwinCAT), copy
     // namespace / qualified name, and insert a symbol at the caret.
-    registerLibraryCommands(context, { libraryProvider, provider, getClient: () => client });
+    // Update Library Definitions writes library-signatures.xml and then re-indexes itself; this gate
+    // keeps the watcher below from answering that write with a second full scan.
+    const ownIndexWrites = createOwnWriteGate();
+    registerLibraryCommands(context, { libraryProvider, provider, getClient: () => client, ownIndexWrites });
 
     // Watch for document saves/changes to refresh the explorer tree and the LSP index
     context.subscriptions.push(
@@ -444,12 +457,28 @@ function activate(context) {
             client.sendRequest('custom/reindex', { folders: folders.map(f => f.uri.toString()) })
         ).then(() => libraryProvider.refresh())
             .catch(e => {
-                console.error('Failed to re-index after a .plcproj change:', e);
+                console.error('Failed to re-index after a .plcproj, .tmc or signatures change:', e);
                 libraryProvider.refresh(); // still re-render: a stale list beats a frozen one
             });
     }, PLCPROJ_REINDEX_DEBOUNCE_MS);
     // A queued re-index firing into a torn-down extension host would reject against a dead client.
     context.subscriptions.push({ dispose: () => reindexForLibraries.cancel() });
+
+    // A TwinCAT build writes each project's `.tmc`, and Update Library Definitions writes
+    // `library-signatures.xml`; the scan reads both, but only at a (re)index. Hand them to the same
+    // re-index as the `.plcproj` (through a longer window, so a build's burst across projects is one
+    // scan), unless the write is our own.
+    const reindexForIndexInputs = createDebouncer(() => { reindexForLibraries.schedule(); }, INDEX_INPUT_REINDEX_DEBOUNCE_MS);
+    context.subscriptions.push({ dispose: () => reindexForIndexInputs.cancel() });
+    const noteIndexInput = (uri) => {
+        if (!client || !isIndexInputFile(uri.fsPath) || ownIndexWrites.suppressed()) return;
+        reindexForIndexInputs.schedule();
+    };
+    context.subscriptions.push(
+        workspaceWatcher.onDidCreate(noteIndexInput),
+        workspaceWatcher.onDidChange(noteIndexInput),
+        workspaceWatcher.onDidDelete(noteIndexInput)
+    );
 
     const refreshProjectStructureFor = (uri) => {
         const ext = path.extname(uri.fsPath).toLowerCase();

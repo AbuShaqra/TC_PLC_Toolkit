@@ -133,7 +133,7 @@ function walkFiles(rootOrRoots, options) {
  * **Invalidation is the scan boundary, and nothing else.** A memo is created at the start of a scan
  * and dropped with it; it is never stored across scans. So a `library-signatures.xml` or `.tmc` that is
  * added or removed is found by the next scan — startup, or the `custom/reindex` that the `.plcproj`
- * watcher and Update Library Definitions send — exactly as it was before the memo existed. No time
+ * watcher, the `.tmc`/dump watcher (src/indexInputs.js) and Update Library Definitions send. No time
  * window and no mtime sampling: a directory's own mtime does not change when a file appears two levels
  * below it, so a guard on it would call a stale listing current.
  *

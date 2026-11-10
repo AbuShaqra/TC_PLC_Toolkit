@@ -203,6 +203,7 @@ per-suite without aborting on the first failure. The main ones:
 | `test/test_object_insert.js` | The Objects-tree insert commands' text, built by driving the **real** `buildNodeFromXml` over real `sample/` objects: the bare name for each kind, and the call template — instance name for an FB (`FB_Gripper` → `fbGripper`, since ST calls an instance, not the type), own name for a FUNCTION/PROGRAM, bare for a method/action, `Name();` when there are no parameters. Also pins that the extracted `callTemplate` is byte-identical to what `libraryTreeProvider` produced before the move, and that every `contextValue` named in the two new `when` clauses is one the Objects tree actually emits (read out of `objectsTreeModel.js`, not hard-coded, so a rename cannot silently orphan the menu items). **One case is synthetic on purpose:** no FB in `sample/` declares root `VAR_INPUT`/`VAR_OUTPUT`, so the mixed `:=`/`=>` ordering case is driven from one clearly-marked XML string through the real parser. |
 | `test/test_st_strings.js` | ST string literals across **all three** grammars that must agree — the `src/lsp/parser.js` lexer, the webview's Monarch tokenizer and `syntaxes/twincat-st.tmLanguage.json`. IEC 61131-3 escapes with `$` (`$'`, `$$`, `$N`, `$0D`, …) and a **backslash is an ordinary character**; both highlighting grammars had C-style `\\.` escape rules copied from Monaco's sample, so `'C:\Temp\x\'` swallowed its own closing quote and ran on to the next apostrophe anywhere below — in the reported case an `FB's` inside a comment 16 lines down. Uses that verbatim case. The lexer was always right; only the two grammars were wrong, which is exactly why one harness now pins all three together. |
 | `test/test_scan_controller.js` | `src/lsp/scanController.js`: which of the two scan-triggering requests actually has to run a scan. Pins that `ensureScanned` twice over one root set scans **once** (the duplicate startup scan this replaced), that `rescan` after it scans **again** — the assertion that stops a future "optimisation" from teaching the `.plcproj` watcher to skip, since on a content change the roots are unchanged — and that a throwing scan leaves no completed state. Root sets compare order-, case- and separator-insensitively; the empty set is a legitimate *completed* state, or a window with no folders would re-request forever. |
+| `test/test_index_inputs.js` | `src/indexInputs.js`: `*.tmc` and `library-signatures.xml` re-index (case-insensitive) but not when under a directory the scan skips (`_Libraries`, `_CompileInfo`, `ST_Files`, `.git`); the own-write gate suppresses during the write and its grace period and never sticks closed after a throw; a build burst plus a `.plcproj` change is ONE reindex on a fake clock; static checks that `extension.js` and Update Library Definitions are wired to it. |
 | `test/test_debounce.js` | `src/util/debounce.js`: trailing edge only, one invocation per burst carrying the **last** arguments, every caller's promise resolved. Timers are injected, so it asserts on a fake clock rather than racing a real one. |
 | `test/test_archive_store.js` | R6's persisted archive-name cache (`src/lsp/archiveStore.js` + `harvestArchiveFile`), each "session" a fresh Node process: off when no directory is configured; a second session decodes nothing and gets identical names; an archive rewritten with the SAME size and mtime is caught by the central-directory fingerprint and decoded afresh; garbage, truncated, empty, foreign, other-version and other-decoder files are ignored and rewritten, a malformed entry dropped alone; entry and name-character caps evict least-recently-used; eight vendored copies are one stored entry; only names reach the file; two windows keep each other's entries; file and buffer fingerprints agree, also when the central directory starts before the 66 KB tail window. |
 | `test/test_scan_readiness.js` | R6's per-project background scan with a HAND-STEPPED event loop: background indexes equal the one-pass scan's (objects, libraries, routed `.st`); a request for a project is released only when that project's index is complete (snapshot identical to the finished index) while other projects are still unindexed; a waited-for project jumps the queue; a file under no project waits for the whole scan; a reindex supersedes mid-scan and the old scan's waiters are answered from the NEW workspace; a throwing scan leaves the last complete workspace answering; the controller joins an in-flight `ensureScanned`, never lets `rescan` skip, and records completion only for the latest scan. |
@@ -549,6 +550,8 @@ src/
                         it in code and `viewItem =~ /^propertyNode\b/` in menus, never `== 'propertyNode'`
   insertTemplates       Call/usage templates + parameter ordering, shared by the Libraries AND Objects
                         insert commands so both produce identical text (vscode-free, so testable)
+  indexInputs           Which watcher events (`*.tmc`, `library-signatures.xml`) re-index, and the
+                        own-write gate for Update Library Definitions (vscode-free, so testable)
   util/
     debounce.js         Trailing-edge debouncer with injectable timers (vscode-free, so testable)
   xmlParser             TwinCAT XML parse / structural edits (preserves formatting). A small
@@ -782,7 +785,8 @@ which language-server index owns a file:
    its backing XML file and consumes the cached host maps; it never starts another workspace scan.
 5. `.sln`, `.tsproj`, and `.xti` create/change/delete events rebuild and refresh only the host tree
    model. A `.plcproj` event also rebuilds ownership and remains the sole project-structure event that
-   triggers `custom/reindex` and the Libraries refresh.
+   triggers `custom/reindex` and the Libraries refresh. (The other watcher path that re-indexes is not
+   project structure: a `*.tmc` or `library-signatures.xml` event, see "Index inputs" below.)
 
 Coverage is split deliberately: `test/test_solution_map.js` exercises discovery, multi-solution and
 multi-project grouping, label scope and fallbacks without VS Code; `test/test_objects_tree_model.js`
@@ -921,6 +925,15 @@ dies with its scan, so an added or removed dump or `.tmc` is found by the next s
 `custom/reindex` the `.plcproj` watcher and Update Library Definitions send) exactly as before. No
 directory-mtime guard — a file added two levels down does not change the project directory's mtime.
 `test_discovery_memo.js` pins it.
+
+**Index inputs (`src/indexInputs.js`).** Because the memo makes the scan boundary the only
+invalidation, the host's workspace watcher sends a `custom/reindex` when a `*.tmc` (a TwinCAT build) or
+`library-signatures.xml` is created, changed or deleted outside the walkers' `PROJECT_SKIP_DIRS`
+(`isIndexInputFile`). Events go through a 1.5 s debouncer that feeds the `.plcproj` 400 ms debouncer, so
+one build rewriting every project's `.tmc` plus a `.plcproj` costs one scan. Update Library Definitions
+writes the dump and sends its own reindex inside `createOwnWriteGate().run(...)`; the watcher ignores
+events while it runs and for a 2 s grace period after, so our own write never scans twice.
+`test_index_inputs.js` pins the matching, the gate and the wiring.
 
 **The background scan (R6).** The scan used to be one synchronous pass: the server's event loop stopped
 for its whole duration and every request queued unread until the finished workspace replaced the old one

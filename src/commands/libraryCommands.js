@@ -19,8 +19,10 @@ const { insertTextForNode, formattedDefinitionForNode } = require('../libraryTre
  * @param {any} deps.libraryProvider The library tree data provider.
  * @param {any} deps.provider The custom editor provider (for insert-at-caret routing).
  * @param {() => any} deps.getClient Returns the live LSP client, or undefined before start.
+ * @param {import('../indexInputs').OwnWriteGate} deps.ownIndexWrites Suppresses the host's
+ *   `.tmc`/signatures watcher while this command writes the dump and re-indexes on its own.
  */
-function registerLibraryCommands(context, { libraryProvider, provider, getClient }) {
+function registerLibraryCommands(context, { libraryProvider, provider, getClient, ownIndexWrites }) {
     /**
      * Tells the user where the insert commands actually live. Both need the tree node the context
      * menu was opened on, so from the Command Palette they have nothing to act on.
@@ -108,36 +110,43 @@ function registerLibraryCommands(context, { libraryProvider, provider, getClient
             output.clear();
             output.show(true);
 
-            const code = await vscode.window.withProgress({
-                location: vscode.ProgressLocation.Notification,
-                title: 'Updating TwinCAT library definitions',
-                cancellable: false
-            }, async (progress) => {
-                progress.report({ message: `Starting ${shell.label} (this can take a minute)...` });
-                return runSignatureGenerator(scriptPath, workspaceFolder, shell, output, (line) => {
-                    // The script's own progress lines are already user-facing prose — surface them as-is.
-                    progress.report({ message: line });
+            // The dump write and our own re-index run inside the gate, so the watcher does not answer the
+            // write with a second full scan.
+            const code = await ownIndexWrites.run(async () => {
+                const exit = await vscode.window.withProgress({
+                    location: vscode.ProgressLocation.Notification,
+                    title: 'Updating TwinCAT library definitions',
+                    cancellable: false
+                }, async (progress) => {
+                    progress.report({ message: `Starting ${shell.label} (this can take a minute)...` });
+                    return runSignatureGenerator(scriptPath, workspaceFolder, shell, output, (line) => {
+                        // The script's own progress lines are already user-facing prose — surface them as-is.
+                        progress.report({ message: line });
+                    });
                 });
-            });
 
-            if (code !== 0) {
-                vscode.window.showErrorMessage(
-                    'Failed to update library definitions. See the "TC Toolkit Library Definitions" output channel for details.'
-                );
-                return;
-            }
-
-            // The dump is only data on disk until the LSP re-reads it: custom/reindex is what runs
-            // indexLibrarySignatures and merges it into the type registry. Refresh the view afterwards so
-            // the two can never disagree about what is indexed (same order as the .plcproj watcher).
-            const client = getClient();
-            if (client) {
-                try {
-                    await client.sendRequest('custom/reindex', { folders: folders.map(f => f.uri.toString()) });
-                } catch (e) {
-                    console.error('Failed to re-index after updating library definitions:', e);
+                if (exit !== 0) {
+                    vscode.window.showErrorMessage(
+                        'Failed to update library definitions. See the "TC Toolkit Library Definitions" output channel for details.'
+                    );
+                    return exit;
                 }
-            }
+
+                // The dump is only data on disk until the LSP re-reads it: custom/reindex is what runs
+                // indexLibrarySignatures and merges it into the type registry. Refresh the view afterwards so
+                // the two can never disagree about what is indexed (same order as the .plcproj watcher).
+                const client = getClient();
+                if (client) {
+                    try {
+                        await client.sendRequest('custom/reindex', { folders: folders.map(f => f.uri.toString()) });
+                    } catch (e) {
+                        console.error('Failed to re-index after updating library definitions:', e);
+                    }
+                }
+                return exit;
+            });
+            if (code !== 0) return;
+
             libraryProvider.refresh();
             vscode.window.showInformationMessage('TwinCAT library definitions updated.');
         }),
