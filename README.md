@@ -39,8 +39,8 @@ page in an editor tab with:
 - **Open existing project** — a solution (`.sln`) or a folder, and the most recent TwinCAT solutions
   you opened or created here. Two are listed; when more are remembered (up to ten), a **Show all** tile
   expands the list. `twincat.startPage.recentProjectsShown` changes how many are listed.
-- **Project actions** — *Generate ST* and *Update Library Definitions* (*Compile project* is shown,
-  disabled, until it ships).
+- **Project actions** — *Generate ST*, *Update Library Definitions* and *Compile project* (enabled once
+  a compiler is configured, see [Compile project](#compile-project)).
 - **Help and links**, and **Settings** — which also shows where the XAE Shell of each TwinCAT version
   was found (see [Settings](#settings)), with *Change…* and *Detect again*.
 
@@ -243,6 +243,27 @@ files are written inside that project's own folder, under `<PLC project>/ST_File
 project's layout. A folder of TwinCAT files without a `.plcproj` is exported to `ST_Files/` at the top
 of the workspace.
 
+### Compile project
+
+*TwinCAT: Compile Project* (also on the start page) checks a PLC project with **an external IEC 61131-3
+compiler** — a full compiler front end, so it catches what the built-in diagnostics deliberately leave
+alone. With several PLC projects you pick which one. It only checks: nothing is generated, and nothing is
+written into your project (the compiler reads temporary copies, deleted when the run ends).
+
+- What is checked is what you see: unsaved edits, and Manual Sync edits not yet written, are included.
+- Errors and warnings appear in the **Problems** panel on the object's file, with the component, pane and
+  line in the message, and as squiggles in the editor panes. A problem's code is a link that opens that
+  component and pane on the right line; *Go to Problem…* on the summary notification lists them all.
+- The status bar shows the last run's error and warning counts. Editing a component clears its results
+  (they described the old text); the next run replaces them all.
+- A run can be cancelled, and is stopped after two minutes.
+
+The compiler is **not bundled**. Point `twincat.compiler.path` at its bundled command-line file (`.cjs`);
+it runs under Node.js 22 or newer — `node` on your `PATH`, or the executable in
+`twincat.compiler.nodePath`. Until the path is set, the start-page tile stays disabled and the command
+explains what is missing. Symbols from vendor libraries are not visible to the compiler and may be
+reported as undeclared; the built-in diagnostics remain the conservative check.
+
 ### For AI coding assistants
 
 [`templates/twincat-project-CLAUDE.md`](templates/twincat-project-CLAUDE.md) is a portable field guide
@@ -298,6 +319,8 @@ open any `.TcPOU` file — it opens in the TwinCAT PLC Toolkit editor.
 | `twincat.startPage.recentProjectsShown` | `2` | How many recent TwinCAT solutions the start page lists (1 to 10). When more are remembered, a **Show all** tile expands the list. |
 | `twincat.xaeShell.path4024` | *(detected)* | Full path to `TcXaeShell.exe` of the XAE Shell for TwinCAT 3.1.4024 (the 32-bit shell). Empty = not found. |
 | `twincat.xaeShell.path4026` | *(detected)* | Full path to `TcXaeShell.exe` of the XAE Shell for TwinCAT 3.1.4026 (the 64-bit shell). Empty = not found. |
+| `twincat.compiler.path` | *(empty)* | Full path to the bundled command-line file (`.cjs`) of the external IEC 61131-3 compiler that **Compile Project** runs. Empty = no compiler; the command explains what is missing. Per machine. |
+| `twincat.compiler.nodePath` | *(empty)* | Full path to a Node.js 22+ executable that runs the compiler. Empty = `node` on `PATH`. Per machine. |
 
 **XAE Shell paths.** On Windows the two `twincat.xaeShell.*` settings are filled automatically with the
 installation found on your machine: first from the shell's COM registration, then from the default
