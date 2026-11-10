@@ -1,12 +1,15 @@
-# TwinCAT PLC Toolkit
+# TC Toolkit
 
-![TwinCAT PLC Toolkit](media/icon.png)
+![TC Toolkit: Structured Text editor and project tools for Beckhoff TwinCAT 3 PLC projects](media/icon.png)
 
-A lightweight, offline VS Code extension for editing, navigating and analysing Beckhoff **TwinCAT**
-PLC projects (`.TcPOU`, `.TcGVL`, `.TcDUT`, `.TcIO`). It hides the XML wrappers behind a two-pane
-editor, adds **Structured Text (IEC 61131-3)** language support from a built-in language server, and
-gives you a TwinCAT sidebar with the project's objects and its libraries, a start page, and a way to
-create a new TwinCAT project without opening TwinCAT XAE.
+**TC Toolkit** is a lightweight, offline VS Code extension for editing, navigating and analysing
+**Beckhoff TwinCAT 3 PLC projects** (`.TcPOU`, `.TcGVL`, `.TcDUT`, `.TcIO`). It hides the XML wrappers
+behind a two-pane editor, adds **Structured Text (IEC 61131-3)** language support from a built-in
+language server, and gives you a sidebar with the project's objects and its libraries, a start page,
+and a way to create a new TwinCAT project without opening TwinCAT XAE.
+
+> TC Toolkit is not affiliated with or endorsed by Beckhoff Automation. TwinCAT is a registered
+> trademark of Beckhoff Automation GmbH.
 
 TwinCAT stores PLC code as XML, with the actual Structured Text buried inside `<![CDATA[ ... ]]>`
 blocks. This extension parses that XML, presents the declaration and implementation in two editor
@@ -25,10 +28,10 @@ are required.
 Opens `.TcPOU` / `.TcGVL` / `.TcDUT` / `.TcIO` with the Declaration (variables) on top and the
 Implementation below, separated by a resizable splitter. No raw XML.
 
-### TwinCAT sidebar and start page
+### TC Toolkit sidebar and start page
 
-The extension has its own icon in the Activity Bar. It opens the **TwinCAT** sidebar, which holds three
-views: **Start**, **TwinCAT Objects** and **TwinCAT Libraries**. (Objects and Libraries used to live in
+The extension has its own icon in the Activity Bar. It opens the **TC Toolkit** sidebar, which holds three
+views: **Start**, **PLC Objects** and **PLC Libraries**. (Objects and Libraries used to live in
 the Explorer; you can still drag them back there.)
 
 **Start** offers *Create New Project…*, *Open Existing Project…* and *Open Start Page*, plus links to this
@@ -44,13 +47,13 @@ page in an editor tab with:
 - **Help and links**, and **Settings** — which also shows where the XAE Shell of each TwinCAT version
   was found (see [Settings](#settings)), with *Change…* and *Detect again*.
 
-Every one of these is also a Command Palette command under **TwinCAT:** (*TwinCAT: Create New
-Project…*, *TwinCAT: Open Start Page*, *TwinCAT: Generate ST*, …). The page works offline and follows
+Every one of these is also a Command Palette command under **TC Toolkit:** (*TC Toolkit: Create New
+Project…*, *TC Toolkit: Open Start Page*, *TC Toolkit: Generate ST*, …). The page works offline and follows
 your colour theme.
 
 ### Create a new TwinCAT project
 
-*TwinCAT: Create New Project…* writes a new, empty TwinCAT solution to `<location>/<Name>/`, from a
+*TC Toolkit: Create New Project…* writes a new, empty TwinCAT solution to `<location>/<Name>/`, from a
 template TwinCAT XAE itself produced: the solution and the system project are named `<Name>`, the PLC
 project `<Name>_PLC`, and it contains `MAIN`, the `PlcTask` that calls it, and an empty global variable
 list `GVL_Main`. Every project identity (GUID) is generated fresh, so two projects made this way never
@@ -59,11 +62,11 @@ only: a folder that already holds a TwinCAT solution is refused. When it is done
 open it in this window, in a new window, or add it to the workspace. No TwinCAT installation is
 needed to create one; you need TwinCAT XAE to build and run it.
 
-### TwinCAT Objects explorer
+### PLC Objects explorer
 
 Browse POUs, interfaces, GVLs, DUTs and their methods, properties, actions and virtual folders.
 Create and delete files, folders, methods, properties and actions — the nearest `.plcproj` is kept in
-sync automatically. The tree follows you: while the TwinCAT Objects view is showing, switching editors reveals and highlights the matching item; when you open the view later, it goes to the file you are in.
+sync automatically. The tree follows you: while the PLC Objects view is showing, switching editors reveals and highlights the matching item; when you open the view later, it goes to the file you are in.
 
 **See the real TwinCAT hierarchy.** When the opened folder contains TwinCAT solutions, the explorer
 shows the solution first and every PLC project belonging to it underneath:
@@ -136,7 +139,7 @@ call is only rewritten when it names that exact object (never a library POU like
 `VisuElems.Visu_Prg`), and any occurrence that cannot be matched exactly is skipped and reported
 rather than guessed at.
 
-### TwinCAT Libraries explorer
+### PLC Libraries explorer
 
 Lists every library referenced by the project's `.plcproj` **by the namespace you actually type in
 code**. That matters, because the three names a library carries often differ — TwinCAT's recipe
@@ -216,7 +219,7 @@ unsaved work. It briefly opens a TwinCAT window while it runs (about a minute).
   [Settings](#settings).
 - **Go to Definition** works across components and files, jumping into the right file and pane and
   highlighting the symbol — including named parameters at call sites and FB-instance initializers.
-- **Find References** always populates the dedicated **TwinCAT References** panel with the complete
+- **Find References** always populates the dedicated **PLC References** panel with the complete
   result set — every occurrence across files and components, grouped by file and component — and also
   shows the in-view occurrences in Monaco's inline peek. Named arguments resolve to the right owner,
   including `FB_init` inputs written at an FB's declaration site (`inst : FB_T(p := v)`). Matching is
@@ -238,17 +241,17 @@ unsaved work. It briefly opens a TwinCAT window while it runs (about a minute).
 ### Generate ST
 
 Export the PLC projects to clean, compiler-friendly `.st` files (toolbar button in the editor,
-*TwinCAT: Generate ST*, or the start page; with several PLC projects you pick which). Each project's
+*TC Toolkit: Generate ST*, or the start page; with several PLC projects you pick which). Each project's
 files are written inside that project's own folder, under `<PLC project>/ST_Files/`, mirroring the
 project's layout. A folder of TwinCAT files without a `.plcproj` is exported to `ST_Files/` at the top
-of the workspace. The generated files show up in the **TwinCAT Objects** tree under each project's
+of the workspace. The generated files show up in the **PLC Objects** tree under each project's
 `ST_Files` folder right after a run; click one to open it as text. That folder is output, not project
-content: the TwinCAT create, delete, rename and paste commands do not apply there, and its `.st` files are
+content: the create, delete, rename and paste commands of the PLC Objects view do not apply there, and its `.st` files are
 never read back as sources.
 
 ### Compile project
 
-*TwinCAT: Compile Project* (also on the start page, and as the **Compile** button next to *Generate ST*
+*TC Toolkit: Compile Project* (also on the start page, and as the **Compile** button next to *Generate ST*
 in the editor's toolbar, which compiles the project the open file belongs to) checks a PLC project with **an external IEC 61131-3
 compiler** — a full compiler front end, so it catches what the built-in diagnostics deliberately leave
 alone. With several PLC projects you pick which one. It only checks: nothing is generated, and nothing is
@@ -312,10 +315,9 @@ or from inside VS Code: **Extensions** view → **⋯** menu → **Install from 
 
 After replacing an older installed version, **fully restart VS Code** (a window reload may keep the
 old extension process alive). Open the folder containing your TwinCAT solution or PLC project, then
-open any `.TcPOU` file — it opens in the TwinCAT PLC Toolkit editor.
+open any `.TcPOU` file — it opens in the TC Toolkit editor.
 
-> If a `.TcPOU` opens as raw XML instead, right-click the tab → **Reopen Editor With… → TwinCAT PLC
-> Toolkit**.
+> If a `.TcPOU` opens as raw XML instead, right-click the tab → **Reopen Editor With… → TC Toolkit**.
 
 ---
 
@@ -338,7 +340,7 @@ open any `.TcPOU` file — it opens in the TwinCAT PLC Toolkit editor.
 installation found on your machine: first from the shell's COM registration, then from the default
 location under `Program Files` (3.1.4026) or `Program Files (x86)` (3.1.4024). Only an **empty** setting
 is ever filled — a path you set yourself is never overwritten, so change it if your shell is elsewhere.
-**TwinCAT: Detect XAE Shell Installations** looks again and tells you, per version, whether it found the
+**TC Toolkit: Detect XAE Shell Installations** looks again and tells you, per version, whether it found the
 shell, kept your value, or found nothing. The settings are per machine (they are not synced and cannot be
 set per workspace). Today they are used by **Update Library Definitions**, which drives the shell at a
 configured path when that file exists; on other platforms nothing is detected and they stay empty.
@@ -382,7 +384,7 @@ symbols. That causes no false error — unknown simply stays unflagged.
 - **Member completion stops after one hop**: `axis.Status.▮` offers nothing, because a member's type
   is only indexed when the document itself names it.
 - The inline **references peek** only shows occurrences in the active component's visible panes — a
-  constraint of the split-pane editor. Cross-file and cross-component usages appear in the **TwinCAT
+  constraint of the split-pane editor. Cross-file and cross-component usages appear in the **PLC
   References** panel instead.
 
 ---
@@ -390,7 +392,7 @@ symbols. That causes no false error — unknown simply stays unflagged.
 ## Roadmap
 
 What is planned next, in what order and when, is on the public roadmap page:
-**[TwinCAT PLC Toolkit Roadmap](https://claude.ai/artifact/8RG7TZtBV2cuupsrwWtknv)**. It is kept current as
+**[TC Toolkit Roadmap](https://claude.ai/artifact/8RG7TZtBV2cuupsrwWtknv)**. It is kept current as
 work starts, moves and ships.
 
 ## License
@@ -413,6 +415,9 @@ inventory is in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
 ## Disclaimer
 
 This is an independent, community-built project. It is **not affiliated with,
-endorsed by, or sponsored by Beckhoff Automation GmbH & Co. KG.** "TwinCAT" and
-"Beckhoff" are trademarks of Beckhoff Automation, used here only to describe
-compatibility. All other trademarks are the property of their respective owners.
+endorsed by, or sponsored by Beckhoff Automation GmbH & Co. KG.** TwinCAT is a
+registered trademark of Beckhoff Automation GmbH, and "Beckhoff" is a trademark of
+Beckhoff Automation; both are used here only to describe compatibility. That is why
+the extension is called **TC Toolkit** and its views **PLC Objects**, **PLC
+Libraries** and **PLC References** rather than carrying the TwinCAT name. All other
+trademarks are the property of their respective owners.

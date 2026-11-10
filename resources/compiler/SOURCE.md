@@ -1,6 +1,6 @@
 # Bundled compiler: source and licences
 
-This directory holds the external IEC 61131-3 compiler that *TwinCAT: Compile Project* runs, as
+This directory holds the external IEC 61131-3 compiler that *TC Toolkit: Compile Project* runs, as
 a separate Node.js process. It is **STruC++**, distributed under the **GNU General Public
 License version 3** (`LICENSE`; the licensing overview is `COPYING`, the runtime library
 exception `COPYING.RUNTIME`). The extension's own licence does not cover these files.

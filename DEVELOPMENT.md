@@ -1,7 +1,20 @@
 # Development
 
-Building, testing and hacking on TwinCAT PLC Toolkit. For what the extension *does*, see
+Building, testing and hacking on TC Toolkit. For what the extension *does*, see
 [README.md](README.md); for the current state of the work, see [HANDOFF.md](HANDOFF.md).
+
+**Naming.** The user-facing name is **TC Toolkit**: the display name, the Activity Bar container, the
+command category (`TC Toolkit: Compile Project`), the settings title, the custom editor, status-bar texts,
+notifications, quick-pick titles, output channels (`TC Toolkit Language Server`, `TC Toolkit Library
+Definitions`) and diagnostic sources (`TC Toolkit compile`, `TC Toolkit ST Validator`). The views are
+**PLC Objects**, **PLC Libraries** and **PLC References**, and the start page's tab is `TC Toolkit Start`.
+"TwinCAT" is Beckhoff's registered trademark, so it is used only **descriptively** ("for Beckhoff TwinCAT 3
+PLC projects", "a TwinCAT solution", "requires TwinCAT XAE") and never as the name of the product or of
+anything in its UI; `test/test_start_contributions.js` fails if a contributed name contains it. **Internal
+identifiers keep the `twincat.*` prefix** (extension id `twincat-plc-toolkit`, command ids, setting keys,
+view and container ids, context keys, the `twincat.xmlViewer` viewType, the `twincat-compile`
+DiagnosticCollection name): renaming those would break users' keybindings, settings and editor
+associations, and nobody reads them as a name.
 
 ## Run from source
 
@@ -143,7 +156,7 @@ per-suite without aborting on the first failure. The main ones:
 | `test/test_objects_tree_ids.js` | Pins every element the VS Code adapter (`src/treeDataProvider.js`) renders on `sample/` against `test/fixtures/objects-tree-ids.json`, recorded from the provider before the R4 model refactor: id, label, contextValue, collapsible state, icon, tooltip, click command and `getParent`, plus the id and ancestor ids `getRevealItem` gives every file and component. Six tree shapes (one solution — the first sample copied alone into a temp root, so its recorded ids are unchanged —, two solutions, two projects with no solution, one project with no solution, flat, and `two-sample-solutions`: the committed `sample/` with its 3.1.4026 and 3.1.4024 solutions). Also asserts directly that `getParent` returns the element that listed the child and that reveal ancestors carry the tree's ids and labels. Ids drive VS Code's expansion state and reveal, so a change here is user-visible; regenerate with `--write` only for a deliberate, reviewed change. Required gate `objects-tree-ids`. |
 | `test/test_st_shadow.js` | XML is the source of truth: a stray plain `.st` mirror (outside `ST_Files/`) must never steal an XML-backed symbol's index node — the references scan would follow the hijacked uri to the stale mirror and miss the real call sites. |
 | `test/test_st_output_path.js` | The pure output-path mapping behind project-aware **Generate ST** (`src/stOutputPath.js`): each project's objects land inside that project, `<project dir>/ST_Files/<path in the project>.st`, so two projects' identical object paths never collide and nothing is written at the workspace's top level; extensions become `.st`, a linked object cannot escape its project's `ST_Files`, and a path under any `ST_Files` is never an input. The end-to-end export (real provider, real disk, three-project fixture) is asserted by the dev-host `generate-st` phase. |
-| `test/test_library_catalog.js` | The data path behind the TwinCAT Libraries view: catalog built from the `.plcproj`, namespaces, `.tmc` types and their members. |
+| `test/test_library_catalog.js` | The data path behind the PLC Libraries view: catalog built from the `.plcproj`, namespaces, `.tmc` types and their members. |
 | `test/test_library_scope.js` | The Libraries view's active-project scoping, both halves. Server side: `selectLibraryCatalog` (workspaceScan.js) over REAL routing on a two-`.plcproj` fixture — a file's project answers with its own catalog **even when empty** (an explicit scope never widens to the union; that widening was the old behavior and is pinned OUT), union only for no-fileUri/loose. Host side: `scopeProjectKey`/`scopeDescription`/`readLibraryResponse` plus the provider under the vscode stub — refetch only on owning-project change, description only in 2+-project workspaces (real spelling, never the identity key), bare-array responses degrade to the union, a failed request never throws. |
 | `test/test_dnd_rules.js` | The Objects-tree drag & drop and copy/paste compatibility matrices: what is draggable/copyable (not virtual folders, not Get/Set accessors; directories move but do not copy), components move only within their own file yet paste cross-file (POU↔interface gated), directory-cycle and no-op rejections, duplicate-in-place file paste. |
 | `test/test_xml_rename.js` | Structural rename primitives in `xmlParser`: `renameComponentInXml` (tag Name attr + declaration header + LineIds, Ids kept), `renameVirtualFolderInXml` (folder tag + member FolderPath prefix rewrite), and the no-op-safety composition the rename command relies on (header already renamed by the reference pass → attr/LineIds still fixed, no corruption). |
@@ -174,7 +187,7 @@ per-suite without aborting on the first failure. The main ones:
 | `test/test_solution_map.js` | `src/solutionMap.js`: the real `.sln` → `.tsproj` → `_Config/PLC/*.xti` → `.plcproj` chain, multiple PLC projects under one solution, multiple same-named solutions, project labels scoped within their solution, unrelated Visual Studio solutions ignored, and unreferenced PLC projects retained as top-level fallbacks. |
 | `test/test_project_template.js` | `src/projectTemplate.js` on both shipped templates: the committed templates match `scripts/build-project-templates.js --check`; every GUID classified; every identity GUID re-issued with every reference following it and each occurrence's case kept (`.sln` upper, `.plcproj` lower); every type GUID kept; no template name left in a path or a byte; BOM, CRLF/LF, tabs and trailing newline preserved and nothing but names and GUIDs changed; starter objects exactly MAIN, PlcTask (calling MAIN) and an empty GVL_Main; the `.tspproj` (4024) and `.tsproj` + `_Config/` (4026) shapes; the created project read back by `projectMap` and `solutionMap`; refusal of a target holding a solution or a file it would write (nothing touched); name validation. |
 | `test/test_template_diagnostics.js` | A project created from each template, indexed like `test_sample_diagnostics.js` with every check on: ZERO diagnostics, again after the first edit a user makes (a variable in the `qualified_only` `GVL_Main` used from MAIN as `GVL_Main.x`), and a deliberate undeclared name IS reported (the gate is live). |
-| `test/test_start_contributions.js` | package.json for R2: the `twincat` Activity Bar container holding Start, TwinCAT Objects, TwinCAT Libraries in that order with ids unchanged, none left in the Explorer, References still in its panel, no dangling view id in a when-clause; each start command contributed under TwinCAT, in the palette, registered, with an `onCommand` activation event (needed on 1.66); Start view welcome links; a monochrome offline icon; the start page's strict CSP and no remote load; `.vscodeignore` shipping the derived templates but not the raw XAE source; the `twincat.startPage.recentProjectsShown` and machine-scoped `twincat.xaeShell.path*` settings, and the page's command / settings-section allow-lists. |
+| `test/test_start_contributions.js` | package.json for R2: the branding guard (no contributed name — display name, settings title, custom editor, view containers, views, command categories — contains "TwinCAT"; the extension id is unchanged); the `twincat` Activity Bar container (titled `TC Toolkit`) holding Start, PLC Objects, PLC Libraries in that order with ids unchanged, none left in the Explorer, References still in its panel, no dangling view id in a when-clause; each start command contributed under the `TC Toolkit` category, in the palette, registered, with an `onCommand` activation event (needed on 1.66); Start view welcome links; a monochrome offline icon; the start page's strict CSP and no remote load; `.vscodeignore` shipping the derived templates but not the raw XAE source; the `twincat.startPage.recentProjectsShown` and machine-scoped `twincat.xaeShell.path*` settings, and the page's command / settings-section allow-lists. |
 | `test/test_start_commands.js` | `src/commands/startCommands.js` + `src/startPage.js` under a recording `vscode` stub: create with args and with prompts (files, recents, last location, open here/new/add/none), refusals inline vs as a notification, a deleted recent solution pruned, Generate ST's project pick, help links and settings, the singleton panel, its `state` message (including the recent-list length, clamped, and the XAE Shell paths), a settings change re-posting state to an open page, `openSettings {section}` and Open Settings' query argument, and the command allow-list. |
 | `test/test_check_unit.js` | `src/checkUnit.js`: one origin per emitted line, every pane line exactly once and verbatim in pane order (so a reported line/column IS the pane's), generated lines anchored on their component, members before the body, no rewriting (`REFERENCE TO`, `REF=`, pragmas survive), every sample file round-trips. |
 | `test/test_compile_check.js` | `src/compileCheck.js` with a fake child process: the bundled compiler as default and the setting as override, Node discovery (order on Windows, the version gate, the editor runtime as last resort with `ELECTRON_RUN_AS_NODE=1`, a configured Node path as the only candidate), setup messages (compiler missing, Node missing/too old, each naming its setting), the command line, the JSON report (clean, errors, malformed, exit 2, crash), mapping to file/component/pane/line, the pragma-warning filter and its count, temp-dir lifetime, timeout, cancellation, `paneRange`. |
@@ -284,11 +297,11 @@ with nothing highlighted. The fixture also injects a **`.TcTLEO`** into LineA's 
 pass edits it **on disk** and re-queries the live index — the gate for the 2026-08-24 watcher fix
 (`TWINCAT_WATCH_EXTS` omitted `.tctleo`, so an external `.TcTLEO` edit never reached the LSP; only a
 real host runs the watcher chain, so this is the one place it can be proven). The **start-page phase**
-(roadmap R2) checks what only a real host shows: every start command registered, the `TwinCAT` Activity
+(roadmap R2) checks what only a real host shows: every start command registered, the `TC Toolkit` Activity
 Bar container and its Start / Objects / Libraries views open (`workbench.view.extension.twincat`,
-`<view>.focus`), *TwinCAT: Open Start Page* opens the `TwinCAT Start` tab, and *Create New Project* (with
+`<view>.focus`), *TC Toolkit: Open Start Page* opens the `TC Toolkit Start` tab, and *Create New Project* (with
 its arguments, so no dialog) writes a 3.1.4026 and a 3.1.4024 solution and refuses a second create. The
-**compile phase** (R3.2/R3.3) runs *TwinCAT: Compile Project* on every PLC project of the fixture
+**compile phase** (R3.2/R3.3) runs *TC Toolkit: Compile Project* on every PLC project of the fixture
 through the real command, with the **bundled** compiler (asserted) — `TWINCAT_COMPILER_BUNDLE` (and
 `TWINCAT_COMPILER_NODE`) override it, written by `run.js` into the fresh profile's `twincat.compiler.*`
 settings. Only when the host's `checkSetup` finds no Node >= 22 does the phase print `[SKIP]` and assert
@@ -396,12 +409,12 @@ first file a user opens, which the in-order pass masks.
 extension.js            Thin activation hub: wires providers/views/watchers/LSP client, delegates commands
 src/
   commands/             Command registration, split out of extension.js — each exports register*(context, deps)
-    objectCommands      "TwinCAT Objects" create/delete (methods, properties, actions, files, folders);
+    objectCommands      "PLC Objects" create/delete (methods, properties, actions, files, folders);
                         Add Get/Set Accessor re-adds a property's missing accessor (issue #25)
-    clipboardCommands   "TwinCAT Objects" copy/paste (duplicate a component cross-file or a file under a new name)
-    renameCommands      "TwinCAT Objects" rename (files, members, directories, virtual folders; reference-aware;
+    clipboardCommands   "PLC Objects" copy/paste (duplicate a component cross-file or a file under a new name)
+    renameCommands      "PLC Objects" rename (files, members, directories, virtual folders; reference-aware;
                         cross-file updates staged and applied through renameTransaction)
-    libraryCommands     "TwinCAT Libraries" commands (refresh, insert, copy, Update Library Definitions)
+    libraryCommands     "PLC Libraries" commands (refresh, insert, copy, Update Library Definitions)
     lspBridgeCommands   openComponent navigation + the twincat.lsp.query* Monaco↔LSP bridges
     startCommands       The TwinCAT sidebar's Start view (an empty tree, so its viewsWelcome buttons show)
                         and the start commands: Open Start Page, Create New Project (version → name →
@@ -489,7 +502,7 @@ src/
                         prop_*_get/prop_*_set/action_/transition_) shared by webview, host and
                         LSP; vscode-free. The grammar is FROZEN (ids travel over the bridge and
                         into saved state); prop_X_get parses as accessor-of-X by pinned convention
-  objectsTreeModel      The "TwinCAT Objects" tree as a vscode-free node graph: shape rule (solutions →
+  objectsTreeModel      The "PLC Objects" tree as a vscode-free node graph: shape rule (solutions →
                         projects; one root per project at 2+; else flat), nodes with parent links,
                         children and stable ids; makeNode is the ONE place id and contextValue are set.
                         I/O and uris come from an injected host
@@ -510,12 +523,12 @@ src/
                         (reverse order, verify-before-write and verify-before-restore, rollback
                         failures reported per file). Injected read/write, vscode-free, so testable
   treeDragAndDrop       Objects-tree drag & drop controller — executes the matrix's plans (needs VS Code 1.66+)
-  libraryTreeProvider   "TwinCAT Libraries" explorer tree (library → types → members). Scopes to the
+  libraryTreeProvider   "PLC Libraries" explorer tree (library → types → members). Scopes to the
                         ACTIVE file's project (revealUri → setActiveFile; refetches only when the
                         owning project changes) and says so in the view description (2+ projects
                         only); union of all projects when nothing owns the active file. The scope
                         decisions are exported pure helpers, pinned by test_library_scope.js
-  referencesProvider    "TwinCAT References" results view (+ referencesTree grouping)
+  referencesProvider    "PLC References" results view (+ referencesTree grouping)
   objectKinds           Kind → codicon → tooltip for the Objects tree (vscode-free, so it is testable);
                         also owns the property row's contextValue (`propertyNode[.noGet][.noSet]`,
                         naming the MISSING accessors) and `isPropertyNode` — test property rows with
@@ -841,7 +854,7 @@ warm / ~20 s cold projected, and the wait is visible. Four invariants hold that,
 
 The scan is still **synchronous**, so the server's event loop stops for its duration and requests
 queue unread. That is why the progress indicator lives in the **extension host** — a separate process
-whose loop stays free — and why it is deliberately indeterminate ("TwinCAT: indexing…", no `3 of 8`):
+whose loop stays free — and why it is deliberately indeterminate ("TC Toolkit: indexing…", no `3 of 8`):
 per-project counts would need the scan to yield between projects, which it does not do. Making it
 yield (with per-project readiness, so the active file's project answers first) is the known next step
 and is deliberately not done: it rewrites the multi-project spine, and a wrong readiness gate answers
