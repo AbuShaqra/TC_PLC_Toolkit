@@ -91,14 +91,14 @@ function renderStartPageHtml(o) {
     <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${o.cspSource}; img-src ${o.cspSource}; script-src 'nonce-${o.nonce}';">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="stylesheet" href="${escapeHtml(o.styleUri)}">
-    <title>TwinCAT Start</title>
+    <title>TC Toolkit Start</title>
 </head>
 <body>
     <main class="page">
         <header class="masthead">
             <img class="logo" src="${escapeHtml(o.logoUri)}" alt="" width="64" height="64">
             <div class="masthead-text">
-                <h1>TwinCAT PLC <span class="accent">Toolkit</span></h1>
+                <h1>TC <span class="accent">Toolkit</span></h1>
                 <p class="tagline">Create a TwinCAT 3 project, open one, or run a project action.</p>
                 <ul class="chips" aria-label="Highlights">
                     <li>Works offline</li><li>TwinCAT 3.1.4024 and 3.1.4026</li><li>IEC 61131-3 Structured Text</li>
@@ -160,7 +160,7 @@ function renderStartPageHtml(o) {
                 </div>
             </section>
         </div>
-        <footer class="footer">TwinCAT PLC Toolkit · AGPL-3.0-or-later · Not affiliated with Beckhoff Automation</footer>
+        <footer class="footer">TC Toolkit · AGPL-3.0-or-later · Not affiliated with or endorsed by Beckhoff Automation. TwinCAT is a registered trademark of Beckhoff Automation GmbH.</footer>
     </main>
     <script nonce="${o.nonce}" src="${escapeHtml(o.nameScriptUri)}"></script>
     <script nonce="${o.nonce}" src="${escapeHtml(o.scriptUri)}"></script>

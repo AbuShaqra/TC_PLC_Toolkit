@@ -468,7 +468,7 @@ function createDiagnostic(line, startCol, endCol, message, severity = 1) {
             end: { line: line - 1, character: endCol - 1 }
         },
         severity: severity, // 1 = Error, 2 = Warning, 3 = Information
-        source: 'TwinCAT ST Validator',
+        source: 'TC Toolkit ST Validator',
         message: message
     };
 }

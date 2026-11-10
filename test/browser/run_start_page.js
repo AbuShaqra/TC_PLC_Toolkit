@@ -1,6 +1,6 @@
 /**
  * @file test/browser/run_start_page.js
- * @description Drives the TwinCAT start page (roadmap R2) in a real Chromium: renders the page the
+ * @description Drives the start page (roadmap R2) in a real Chromium: renders the page the
  * extension ships (src/startPageHtml.js, media/startPage.{js,css}, media/projectName.js) with its CSP
  * intact, and checks that it loads nothing remote, validates the project name as the user types,
  * posts the right message for every control, shows results the host sends back, limits the recent

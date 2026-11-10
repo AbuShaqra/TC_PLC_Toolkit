@@ -116,7 +116,7 @@ function registerXaeShellCommands(context, { detect = detectOnThisMachine, platf
 
     return {
         autoFill: () => fillXaeShellSettings(detect).catch((err) => {
-            console.error('TwinCAT: could not fill the XAE Shell settings:', err);
+            console.error('TC Toolkit: could not fill the XAE Shell settings:', err);
             return [];
         })
     };

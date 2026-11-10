@@ -36,7 +36,7 @@ const {
 } = require('../compileCheck');
 
 /** The `source` of every diagnostic this command publishes. */
-const DIAGNOSTIC_SOURCE = 'TwinCAT compile';
+const DIAGNOSTIC_SOURCE = 'TC Toolkit compile';
 
 /** The path of the links the Problems entries carry (`<scheme>://<extension id>/compileProblem?id=N`). */
 const PROBLEM_LINK_PATH = '/compileProblem';
@@ -211,7 +211,7 @@ function registerCompileCommands(context, { provider, getProjectMap, onSettingsC
         } else {
             statusItem.text = `$(error) ${counts.errors} $(warning) ${counts.warnings} Compile`;
         }
-        statusItem.tooltip = 'Result of the last TwinCAT: Compile Project run. Click to open the Problems panel.';
+        statusItem.tooltip = 'Result of the last TC Toolkit: Compile Project run. Click to open the Problems panel.';
         statusItem.show();
     }
 
@@ -350,7 +350,7 @@ function registerCompileCommands(context, { provider, getProjectMap, onSettingsC
         vscode.commands.registerCommand(GO_TO_PROBLEM_COMMAND, async () => {
             const problems = allProblems().sort((x, y) => (x.severity === y.severity ? 0 : (x.severity === 'error' ? -1 : 1)));
             if (problems.length === 0) {
-                vscode.window.showInformationMessage('There are no compile problems. Run TwinCAT: Compile Project first.');
+                vscode.window.showInformationMessage('There are no compile problems. Run TC Toolkit: Compile Project first.');
                 return;
             }
             const items = problems.map(p => ({

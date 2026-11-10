@@ -39,7 +39,7 @@ const c = pkg.contributes;
 
 // ── Container and views ─────────────────────────────────────────────────────────────────────────
 const bar = (c.viewsContainers.activitybar || []).find(v => v.id === 'twincat');
-assert(!!bar && bar.title === 'TwinCAT', 'an Activity Bar container "twincat" titled TwinCAT');
+assert(!!bar && bar.title === 'TC Toolkit', 'an Activity Bar container "twincat" titled TC Toolkit');
 assert(!!bar && fs.existsSync(path.join(REPO, bar.icon)), `its icon exists (${bar && bar.icon})`);
 const views = (c.views.twincat || []).map(v => v.id);
 assert(JSON.stringify(views) === JSON.stringify(['twincatStart', 'twincatExplorer', 'twincatLibraries']),
@@ -48,8 +48,28 @@ assert(!c.views.explorer || !c.views.explorer.some(v => ['twincatExplorer', 'twi
     'Objects and Libraries are no longer contributed to the Explorer');
 assert((c.views['twincat-references-panel'] || []).some(v => v.id === 'twincatReferences'), 'References stays in its panel');
 const names = Object.fromEntries((c.views.twincat || []).map(v => [v.id, v.name]));
-assert(names.twincatExplorer === 'TwinCAT Objects' && names.twincatLibraries === 'TwinCAT Libraries' && names.twincatStart === 'Start',
-    'view names unchanged (TwinCAT Objects, TwinCAT Libraries) plus Start');
+assert(names.twincatExplorer === 'PLC Objects' && names.twincatLibraries === 'PLC Libraries' && names.twincatStart === 'Start',
+    'view names: PLC Objects, PLC Libraries, plus Start');
+assert((c.views['twincat-references-panel'] || []).find(v => v.id === 'twincatReferences').name === 'PLC References',
+    'the references view is named PLC References');
+// ── Branding: "TwinCAT" is Beckhoff's trademark, so it never NAMES the product or its UI ────────
+// (descriptive use, such as "for Beckhoff TwinCAT 3 PLC projects", stays allowed in prose).
+{
+    const named = [
+        ['displayName', pkg.displayName],
+        ['configuration title', c.configuration.title],
+        ...c.customEditors.map(e => [`custom editor ${e.viewType}`, e.displayName]),
+        ...Object.values(c.viewsContainers).flat().map(v => [`view container ${v.id}`, v.title]),
+        ...Object.values(c.views).flat().map(v => [`view ${v.id}`, v.name]),
+        ...c.commands.map(cmd => [`category of ${cmd.command}`, cmd.category])
+    ];
+    const offenders = named.filter(([, text]) => typeof text === 'string' && /TwinCAT/i.test(text)).map(([where]) => where);
+    assert(offenders.length === 0, `no product or UI name contains "TwinCAT" (${offenders.join(', ') || 'none'})`);
+    assert(pkg.displayName === 'TC Toolkit' && c.configuration.title === 'TC Toolkit'
+        && c.customEditors.every(e => e.displayName === 'TC Toolkit'), 'the extension, its settings and its editor are named TC Toolkit');
+    assert(pkg.name === 'twincat-plc-toolkit', 'the extension id is unchanged');
+    assert(/Beckhoff TwinCAT 3 PLC projects/.test(pkg.description), 'the description says what it is for, descriptively');
+}
 // Every view id used in a when-clause or keybinding still exists.
 const allViewIds = new Set(Object.values(c.views).flat().map(v => v.id));
 const whenText = JSON.stringify([c.menus, c.keybindings]);
@@ -79,7 +99,7 @@ const sources = [path.join(REPO, 'extension.js'), ...fs.readdirSync(path.join(RE
 const registered = new Set([...sources.matchAll(/registerCommand\(\s*'([^']+)'/g)].map(m => m[1]));
 for (const id of START_COMMANDS) {
     const cmd = contributed.get(id);
-    assert(!!cmd && cmd.category === 'TwinCAT', `${id} is contributed under the TwinCAT category`);
+    assert(!!cmd && cmd.category === 'TC Toolkit', `${id} is contributed under the TC Toolkit category`);
     assert(!hidden.has(id), `${id} is in the Command Palette`);
     assert(registered.has(id), `${id} is registered`);
     assert(pkg.activationEvents.includes(`onCommand:${id}`), `${id} activates the extension (onCommand, needed on VS Code 1.66)`);
@@ -97,7 +117,7 @@ assert(/^\^1\.66\./.test(pkg.engines.vscode), `engine stays ^1.66 (${pkg.engines
     const shown = props['twincat.startPage.recentProjectsShown'];
     assert(!!shown && shown.type === 'integer' && shown.default === DEFAULT_RECENTS_SHOWN && shown.default === 2 && shown.minimum === 1 && shown.maximum === MAX_RECENTS,
         'twincat.startPage.recentProjectsShown: integer, default 2, 1 to 10 (the stored cap)');
-    assert(contributed.get('twincat.detectXaeShell').title === 'Detect XAE Shell Installations', 'the command reads "TwinCAT: Detect XAE Shell Installations"');
+    assert(contributed.get('twincat.detectXaeShell').title === 'Detect XAE Shell Installations', 'the command reads "TC Toolkit: Detect XAE Shell Installations"');
     for (const v of XAE_SHELL_VERSIONS) {
         const p = props[v.setting];
         assert(!!p && p.type === 'string' && p.default === '' && p.scope === 'machine', `${v.setting} is a machine-scoped string, empty by default`);
@@ -116,14 +136,14 @@ assert(/^\^1\.66\./.test(pkg.engines.vscode), `engine stays ^1.66 (${pkg.engines
 // ── Compile Project (R3.2): command, settings, and no compiler product name anywhere a user sees ──
 {
     const cmd = contributed.get('twincat.compileProject');
-    assert(!!cmd && cmd.category === 'TwinCAT' && cmd.title === 'Compile Project', 'twincat.compileProject is contributed as "TwinCAT: Compile Project"');
+    assert(!!cmd && cmd.category === 'TC Toolkit' && cmd.title === 'Compile Project', 'twincat.compileProject is contributed as "TC Toolkit: Compile Project"');
     assert(!hidden.has('twincat.compileProject') && registered.has('twincat.compileProject'), 'Compile Project is in the Command Palette and registered');
     assert(pkg.activationEvents.includes('onCommand:twincat.compileProject'), 'Compile Project activates the extension (onCommand)');
     assert(ALLOWED_COMMANDS.has('twincat.compileProject'), 'the start page may run Compile Project');
     const props = c.configuration.properties;
     for (const key of ['twincat.compiler.path', 'twincat.compiler.nodePath']) {
         const p = props[key];
-        assert(!!p && p.type === 'string' && p.default === '' && p.scope === 'machine' && /TwinCAT: Compile Project/.test(p.markdownDescription),
+        assert(!!p && p.type === 'string' && p.default === '' && p.scope === 'machine' && /TC Toolkit: Compile Project/.test(p.markdownDescription),
             `${key} is a machine-scoped string, empty by default, describing Compile Project`);
     }
     assert(/an external IEC 61131-3 compiler|the external IEC 61131-3 compiler/.test(props['twincat.compiler.path'].markdownDescription),

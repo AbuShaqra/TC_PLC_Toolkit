@@ -298,7 +298,7 @@ function harvestArchiveFile(filePath) {
  *
  * Why a catalog at all: a library's title, its placeholder name and its *namespace* are three different
  * strings, and only the last one is what a programmer types (`Acme Vision Sensor` /
- * `Acme Sensor Library TC3` are both imported as `Acme_Vision_Sensor`). The "TwinCAT Libraries" view
+ * `Acme Sensor Library TC3` are both imported as `Acme_Vision_Sensor`). The "PLC Libraries" view
  * exists to show that mapping, and this is the one place all three spellings are already in hand.
  * (`Map<string, LibraryCatalogEntry>`, lives at `registry.libraryCatalog` — see createLibraryRegistry.)
  */
@@ -810,7 +810,7 @@ function indexLibraryTitles(rootDir, index) {
             // `<DefaultResolution>Recipe Management, * (System)</DefaultResolution>` — likewise.
             if (block.resolution) addLibraryTitle(block.resolution.split(',')[0], namespace, index);
 
-            // The same three strings, kept whole this time: the "TwinCAT Libraries" view shows the
+            // The same three strings, kept whole this time: the "PLC Libraries" view shows the
             // library → namespace mapping, and this block is where all of it is already parsed.
             addCatalogEntry(block.kind, block.include, block.resolution, namespace, index);
         }
@@ -2030,7 +2030,7 @@ module.exports = {
     getNamespaceSymbols,
     getLibraryNamespaceNames,
     getNamespaceCoverage,
-    // library catalog (the "TwinCAT Libraries" view)
+    // library catalog (the "PLC Libraries" view)
     getLibraryCatalog,
     getUnionLibraryCatalog,
     // .tmc type-system structure

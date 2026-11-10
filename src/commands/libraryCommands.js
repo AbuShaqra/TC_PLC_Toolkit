@@ -1,6 +1,6 @@
 /**
  * @file libraryCommands.js
- * @description Registers the "TwinCAT Libraries" view commands: refresh, regenerate the library
+ * @description Registers the "PLC Libraries" view commands: refresh, regenerate the library
  * signatures by driving a TwinCAT XAE shell, copy a namespace / qualified name, and insert a library
  * symbol (name-only or with its full parameter list) at the caret. The signature regeneration is the
  * one place the extension touches TwinCAT — see src/xaeShell.js — and only when the user asks for it.
@@ -13,7 +13,7 @@ const { findTwinCatShells, runSignatureGenerator } = require('../xaeShell');
 const { insertTextForNode, formattedDefinitionForNode } = require('../libraryTreeProvider');
 
 /**
- * Registers the TwinCAT Libraries view commands.
+ * Registers the PLC Libraries view commands.
  * @param {vscode.ExtensionContext} context The extension context.
  * @param {object} deps Injected collaborators owned by extension.js.
  * @param {any} deps.libraryProvider The library tree data provider.
@@ -28,7 +28,7 @@ function registerLibraryCommands(context, { libraryProvider, provider, getClient
      */
     function insertNeedsANode() {
         vscode.window.showInformationMessage(
-            'Right-click a library, type or member in the TwinCAT Libraries view (or an object in TwinCAT Objects) to insert it at the cursor.'
+            'Right-click a library, type or member in the PLC Libraries view (or an object in PLC Objects) to insert it at the cursor.'
         );
     }
 
@@ -104,7 +104,7 @@ function registerLibraryCommands(context, { libraryProvider, provider, getClient
                 shell = picked.shell;
             }
 
-            const output = vscode.window.createOutputChannel('TwinCAT Library Definitions');
+            const output = vscode.window.createOutputChannel('TC Toolkit Library Definitions');
             output.clear();
             output.show(true);
 
@@ -122,7 +122,7 @@ function registerLibraryCommands(context, { libraryProvider, provider, getClient
 
             if (code !== 0) {
                 vscode.window.showErrorMessage(
-                    'Failed to update library definitions. See the "TwinCAT Library Definitions" output channel for details.'
+                    'Failed to update library definitions. See the "TC Toolkit Library Definitions" output channel for details.'
                 );
                 return;
             }

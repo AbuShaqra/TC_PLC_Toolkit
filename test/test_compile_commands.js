@@ -261,7 +261,7 @@ const settle = () => new Promise(r => setTimeout(r, 10));
     const entries = problems.map.get(fbUri.toString()) || [];
     assert(problems.map.size === 1 && entries.length === 2, 'PROBLEMS: both diagnostics are published on the object\'s file; the GVL has none');
     const err = entries.find(d => d.severity === 0);
-    assert(!!err && err.source === DIAGNOSTIC_SOURCE && err.source === 'TwinCAT compile' &&
+    assert(!!err && err.source === DIAGNOSTIC_SOURCE && err.source === 'TC Toolkit compile' &&
         err.message === "Undeclared variable 'NNOPE' [Run, implementation line 2]",
         `PROBLEMS: the entry names the component, pane and pane line (${err && err.message})`);
     assert(!!err && err.range.start.line === 1 && err.range.start.character === 0 && err.range.end.line === 1 && err.range.end.character === 11,

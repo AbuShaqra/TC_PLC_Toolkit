@@ -31,7 +31,7 @@
     let declEditor = null;
     let implEditor = null;
     // The pane the user was last typing in. Needed because an insert can arrive from the Explorer
-    // (the "TwinCAT Libraries" view), and clicking a tree item pulls DOM focus out of the webview:
+    // (the "PLC Libraries" view), and clicking a tree item pulls DOM focus out of the webview:
     // Monaco keeps each pane's selection, but only this tells us which pane the caret belongs to.
     let lastFocusedEditor = null;
     let isUpdatingFromExtension = false;
@@ -815,7 +815,7 @@
         } else {
             // Fail safe: without the opener, definitions outside the current pane simply do
             // nothing (no crash, no rogue navigation).
-            console.error('[TwinCAT XML Viewer] monaco.editor.registerEditorOpener is unavailable; ' +
+            console.error('[TC Toolkit] monaco.editor.registerEditorOpener is unavailable; ' +
                 'Go to Definition cannot navigate outside the current pane.');
         }
 
@@ -894,7 +894,7 @@
 
                 // Only now, with the new set built, let go of the panes no longer referenced.
                 retirePeekModels(inUse);
-                // Always populate the "TwinCAT References" panel with the FULL result set, independent of
+                // Always populate the "PLC References" panel with the FULL result set, independent of
                 // the peek. The peek now renders hits outside the active component too, but it is still a
                 // preview — PEEK_MAX_PANES bounds how many panes it will materialise, and the panel is
                 // what lists every hit without a cap. (This is the extra queryReferences pass noted in
@@ -1519,7 +1519,7 @@
                 break;
             }
             case 'insertText': {
-                // From the "TwinCAT Libraries" view's Insert at Cursor: a namespace, a qualified type
+                // From the "PLC Libraries" view's Insert at Cursor: a namespace, a qualified type
                 // name, or a member name, dropped at the caret of the pane the user was last in.
                 insertTextAtCursor(message.text, message.triggerSuggest);
                 break;

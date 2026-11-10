@@ -1,6 +1,6 @@
 /**
  * @file libraryTreeProvider.js
- * @description TreeDataProvider for the "TwinCAT Libraries" view: the libraries the project's
+ * @description TreeDataProvider for the "PLC Libraries" view: the libraries the project's
  * .plcproj references, each shown under the **namespace** the code has to use.
  *
  * Why the namespace is the label and not the library name: they are routinely different strings, and
@@ -20,7 +20,7 @@
  * modules — it is handed a `sendRequest` closure and knows nothing else about the client.
  *
  * **Scope.** A workspace can hold several PLC projects, and each `.plcproj` references its own
- * libraries, so a flat union of all of them is wrong in exactly the way the "TwinCAT Objects" tree
+ * libraries, so a flat union of all of them is wrong in exactly the way the "PLC Objects" tree
  * used to be: it shows names the active file cannot actually use. The provider therefore tracks the
  * active file and asks for that file's project (`setActiveFile` → `{ fileUri }`), falling back to the
  * union only when nothing owns the file. The scope decisions are the three pure functions below, so
@@ -28,7 +28,7 @@
  */
 
 const vscode = require('vscode');
-// The call formatter is shared with the "TwinCAT Objects" explorer's Insert commands, so it lives in
+// The call formatter is shared with the "PLC Objects" explorer's Insert commands, so it lives in
 // a vscode-free module: this file cannot be loaded outside a VS Code host, and the two views must
 // lay a parameter list out identically.
 const { orderedParams, callTemplate } = require('./insertTemplates');

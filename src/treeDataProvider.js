@@ -1,6 +1,6 @@
 /**
  * @file treeDataProvider.js
- * @description VS Code adapter for the TwinCAT Objects tree. The tree itself (its shape, nodes, ids,
+ * @description VS Code adapter for the PLC Objects tree. The tree itself (its shape, nodes, ids,
  * contextValues and parent links) is src/objectsTreeModel.js; this file only turns model nodes into
  * TreeItems and does the VS Code I/O the model asks for.
  *

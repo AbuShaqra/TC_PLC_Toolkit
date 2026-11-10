@@ -339,7 +339,7 @@ async function run() {
             'action_Act_Home'
         ];
         // The tree follows the active file only while it is visible (a reveal would otherwise pull
-        // the sidebar to the TwinCAT container on every file activation), so show it first, as a
+        // the sidebar to the TC Toolkit container on every file activation), so show it first, as a
         // user following along in the Objects view would.
         await vscode.commands.executeCommand('twincatExplorer.focus');
         await sleep(1500);
@@ -831,7 +831,7 @@ async function run() {
             log('generate-st', { error: String((e && e.stack) || e) });
         }
 
-        // --- Phase start-page (R2): the TwinCAT Activity Bar container, its three views, the start
+        // --- Phase start-page (R2): the TC Toolkit Activity Bar container, its three views, the start
         //     commands and the start page as a REAL VS Code host sees them — the parts no headless
         //     harness can reach (test_start_contributions.js only reads package.json).
         try {
@@ -892,7 +892,7 @@ async function run() {
                 const under = (file, dir) => !!dir && path.relative(dir, file) !== '' && !path.relative(dir, file).startsWith('..') && !path.isAbsolute(path.relative(dir, file));
                 const compileProblems = (dir) => vscode.languages.getDiagnostics()
                     .filter(([uri]) => under(uri.fsPath, dir))
-                    .flatMap(([uri, list]) => list.filter(d => d.source === 'TwinCAT compile').map(d => ({ file: uri.fsPath, d })));
+                    .flatMap(([uri, list]) => list.filter(d => d.source === 'TC Toolkit compile').map(d => ({ file: uri.fsPath, d })));
                 for (const p of (hostProvider ? hostProvider.listProjects() : [])) {
                     const result = await vscode.commands.executeCommand('twincat.compileProject', { projectKey: p.key });
                     const problems = compileProblems(dirOf(p.key));

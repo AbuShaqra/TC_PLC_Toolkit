@@ -64,7 +64,7 @@ class StartPageController {
             this.panel.reveal();
             return;
         }
-        const panel = vscode.window.createWebviewPanel(START_PAGE_VIEW_TYPE, 'TwinCAT Start',
+        const panel = vscode.window.createWebviewPanel(START_PAGE_VIEW_TYPE, 'TC Toolkit Start',
             vscode.ViewColumn.Active, this.webviewOptions());
         this.attach(panel);
     }

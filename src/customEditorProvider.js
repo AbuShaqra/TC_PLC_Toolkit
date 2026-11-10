@@ -560,7 +560,7 @@ class TwinCatCustomEditorProvider {
                     }
                     break;
                 case 'error':
-                    console.error(`[TwinCAT PLC Toolkit Webview Error]: ${message.message}\nStack: ${message.error}`);
+                    console.error(`[TC Toolkit Webview Error]: ${message.message}\nStack: ${message.error}`);
                     vscode.window.showErrorMessage(`Webview Error: ${message.message}`);
                     break;
             }

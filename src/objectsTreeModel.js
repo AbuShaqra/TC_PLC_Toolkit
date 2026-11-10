@@ -1,6 +1,6 @@
 /**
  * @file objectsTreeModel.js
- * @description The TwinCAT Objects tree as a plain node graph, with no dependency on `vscode`.
+ * @description The PLC Objects tree as a plain node graph, with no dependency on `vscode`.
  *
  * Every row of the Objects view is an {@link ObjectsTreeNode}: a solution, a PLC project, a disk
  * directory, a TwinCAT file, a virtual folder inside a POU, or a component (method, property, action,

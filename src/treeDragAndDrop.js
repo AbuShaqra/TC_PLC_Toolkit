@@ -1,6 +1,6 @@
 /**
  * @file treeDragAndDrop.js
- * @description Drag & drop controller for the "TwinCAT Objects" explorer. Two motions are
+ * @description Drag & drop controller for the "PLC Objects" explorer. Two motions are
  * supported: dragging a POU member (method/property/action/transition) into a virtual folder of
  * its own file (an XML FolderPath edit), and dragging a file or physical directory into another
  * directory or the empty area (= workspace root; a filesystem move plus .plcproj sync).
@@ -98,7 +98,7 @@ class TwinCatDragAndDropController {
                     await this._executeMove(plan);
                 }
             } catch (err) {
-                console.error('TwinCAT: drop failed:', err);
+                console.error('TC Toolkit: drop failed:', err);
                 vscode.window.showErrorMessage(`Failed to move "${label}": ${err.message}`);
             }
         }

@@ -1,6 +1,6 @@
 /**
  * @file run.js
- * @description Test runner for the TwinCAT PLC Toolkit suite. Discovers every `test_*.js` in this
+ * @description Test runner for the TC Toolkit suite. Discovers every `test_*.js` in this
  * directory and runs each in its OWN Node process, because the harnesses rely on module-global state
  * (the workspace symbol index) and call `process.exit(1)` on failure — so they must be isolated.
  *

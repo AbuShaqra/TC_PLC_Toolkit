@@ -1,6 +1,6 @@
 /**
  * @file renameCommands.js
- * @description Registers the "TwinCAT Objects" explorer rename command (twincat.renameObject, bound
+ * @description Registers the "PLC Objects" explorer rename command (twincat.renameObject, bound
  * to F2). One command dispatches on the selected tree item's contextValue to five shapes of rename:
  *   - a TwinCAT object FILE (.TcPOU/.TcIO/.TcGVL/.TcDUT) — renames the root object inside the XML
  *     (Name attr + declaration header + LineIds via renameRootObjectInXml), renames the file on disk,
@@ -54,7 +54,7 @@ const OBJECT_FILE_CONTEXT_VALUES = new Set([
 ]);
 
 /**
- * Registers the TwinCAT Objects explorer rename command.
+ * Registers the PLC Objects explorer rename command.
  * @param {vscode.ExtensionContext} context The extension context.
  * @param {object} deps Injected collaborators owned by extension.js.
  * @param {vscode.TreeView<any>} deps.treeView The Objects tree view (F2 carries no item argument, so
@@ -95,7 +95,7 @@ function registerRenameCommands(context, { treeView, treeProvider, applyXmlEdit,
                 }
             } catch (err) {
                 // A failed rename must not be silent: the user just performed an explicit gesture.
-                console.error('TwinCAT: rename failed:', err);
+                console.error('TC Toolkit: rename failed:', err);
                 vscode.window.showErrorMessage(`Failed to rename: ${err.message}`);
             }
         })
@@ -261,7 +261,7 @@ function registerRenameCommands(context, { treeView, treeProvider, applyXmlEdit,
         const collision = buildCollisionSet(names, oldName);
 
         const newName = await vscode.window.showInputBox({
-            title: `TwinCAT — Rename ${componentType}`,
+            title: `TC Toolkit — Rename ${componentType}`,
             ignoreFocusOut: true,
             value: oldName,
             prompt: `New name for ${componentType.toLowerCase()} "${oldName}"`,
@@ -349,7 +349,7 @@ function registerRenameCommands(context, { treeView, treeProvider, applyXmlEdit,
         }
 
         const raw = await vscode.window.showInputBox({
-            title: 'TwinCAT — Rename Folder',
+            title: 'TC Toolkit — Rename Folder',
             ignoreFocusOut: true,
             value: oldName,
             prompt: `New name for folder "${oldName}"`,
@@ -401,7 +401,7 @@ function registerRenameCommands(context, { treeView, treeProvider, applyXmlEdit,
         }
 
         const raw = await vscode.window.showInputBox({
-            title: 'TwinCAT — Rename Virtual Folder',
+            title: 'TC Toolkit — Rename Virtual Folder',
             ignoreFocusOut: true,
             value: oldLeaf,
             prompt: `New name for virtual folder "${oldLeaf}"`,
@@ -532,7 +532,7 @@ function registerRenameCommands(context, { treeView, treeProvider, applyXmlEdit,
             const r = await client.sendRequest('custom/referencesForSymbol', spec);
             return r || unresolved;
         } catch (e) {
-            console.error('TwinCAT: referencesForSymbol failed:', e);
+            console.error('TC Toolkit: referencesForSymbol failed:', e);
             return unresolved;
         }
     }
@@ -554,7 +554,7 @@ function registerRenameCommands(context, { treeView, treeProvider, applyXmlEdit,
             if (r && r.resolved && Array.isArray(r.occurrences)) return r.occurrences;
             return [];
         } catch (e) {
-            console.error('TwinCAT: configReferencesForSymbol failed:', e);
+            console.error('TC Toolkit: configReferencesForSymbol failed:', e);
             return [];
         }
     }
@@ -801,7 +801,7 @@ async function promptFileStem(fileUri, ext) {
         taken.add(name.toLowerCase());
     }
     return vscode.window.showInputBox({
-        title: 'TwinCAT — Rename File',
+        title: 'TC Toolkit — Rename File',
         ignoreFocusOut: true,
         value: oldStem,
         prompt: `New name for ${selfName}`,
@@ -899,7 +899,7 @@ async function saveDirtyTwinCatDocs() {
                 await doc.save();
             } catch (e) {
                 // Best effort: a file that will not save simply keeps its unsaved edits out of the query.
-                console.error('TwinCAT: could not save before reference query:', e);
+                console.error('TC Toolkit: could not save before reference query:', e);
             }
         }
     }

@@ -1,7 +1,7 @@
 /**
  * @file objectKinds.js
  * @description Classifies a TwinCAT object from its ST declaration, and maps each kind to the
- * codicon the TwinCAT Objects tree draws for it. Kept free of any `vscode` dependency so the
+ * codicon the PLC Objects tree draws for it. Kept free of any `vscode` dependency so the
  * classification can be exercised by the standalone harnesses (scratch/test_object_kinds.js).
  */
 
