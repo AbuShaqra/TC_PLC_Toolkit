@@ -98,7 +98,7 @@
 
     /** The last recent list and row limit the host sent; kept so the toggle can re-render without it. */
     let lastRecents = [];
-    let recentsShown = 5;
+    let recentsShown = 2;
     // "Show all" is a view state of this page only: deliberately not saved, so a reload starts collapsed.
     let recentsExpanded = false;
 

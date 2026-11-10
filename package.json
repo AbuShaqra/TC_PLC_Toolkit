@@ -552,7 +552,7 @@
         },
         "twincat.startPage.recentProjectsShown": {
           "type": "integer",
-          "default": 5,
+          "default": 2,
           "minimum": 1,
           "maximum": 10,
           "markdownDescription": "How many recent TwinCAT solutions the start page lists under **Open existing project**. When more are remembered (up to 10), a **Show all** tile expands the list."

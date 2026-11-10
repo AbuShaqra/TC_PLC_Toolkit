@@ -59,10 +59,10 @@ recents.remove('/p/One.sln');
 assert(recents.list().length === 0, 'remove empties it');
 
 // The start page's row limit (twincat.startPage.recentProjectsShown), as read from hand-editable settings.
-assert(DEFAULT_RECENTS_SHOWN === 5 && recentsShownLimit(undefined) === 5 && recentsShownLimit('8') === 5 && recentsShownLimit(NaN) === 5 && recentsShownLimit(null) === 5,
-    'the shown limit defaults to 5 for anything that is not a number');
+assert(DEFAULT_RECENTS_SHOWN === 2 && recentsShownLimit(undefined) === 2 && recentsShownLimit('8') === 2 && recentsShownLimit(NaN) === 2 && recentsShownLimit(null) === 2,
+    'the shown limit defaults to 2 for anything that is not a number');
 assert(recentsShownLimit(1) === 1 && recentsShownLimit(7) === 7 && recentsShownLimit(10) === 10, 'a value from 1 to 10 is used as is');
-assert(recentsShownLimit(0) === 1 && recentsShownLimit(-3) === 1 && recentsShownLimit(11) === MAX_RECENTS && recentsShownLimit(Infinity) === 5 && recentsShownLimit(3.7) === 3,
+assert(recentsShownLimit(0) === 1 && recentsShownLimit(-3) === 1 && recentsShownLimit(11) === MAX_RECENTS && recentsShownLimit(Infinity) === 2 && recentsShownLimit(3.7) === 3,
     'out-of-range values are clamped to 1..10 and fractions floored');
 
 if (errors) {

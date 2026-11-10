@@ -16,7 +16,7 @@ const RECENTS_KEY = 'twincat.recentSolutions';
 const MAX_RECENTS = 10;
 
 /** Rows the start page shows before "Show all" when `twincat.startPage.recentProjectsShown` is unusable. */
-const DEFAULT_RECENTS_SHOWN = 5;
+const DEFAULT_RECENTS_SHOWN = 2;
 
 /**
  * The `twincat.startPage.recentProjectsShown` setting as a usable row count (settings.json is

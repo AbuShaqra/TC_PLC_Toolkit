@@ -93,8 +93,8 @@ assert(/^\^1\.66\./.test(pkg.engines.vscode), `engine stays ^1.66 (${pkg.engines
 {
     const props = c.configuration.properties;
     const shown = props['twincat.startPage.recentProjectsShown'];
-    assert(!!shown && shown.type === 'integer' && shown.default === DEFAULT_RECENTS_SHOWN && shown.default === 5 && shown.minimum === 1 && shown.maximum === MAX_RECENTS,
-        'twincat.startPage.recentProjectsShown: integer, default 5, 1 to 10 (the stored cap)');
+    assert(!!shown && shown.type === 'integer' && shown.default === DEFAULT_RECENTS_SHOWN && shown.default === 2 && shown.minimum === 1 && shown.maximum === MAX_RECENTS,
+        'twincat.startPage.recentProjectsShown: integer, default 2, 1 to 10 (the stored cap)');
     assert(contributed.get('twincat.detectXaeShell').title === 'Detect XAE Shell Installations', 'the command reads "TwinCAT: Detect XAE Shell Installations"');
     for (const v of XAE_SHELL_VERSIONS) {
         const p = props[v.setting];

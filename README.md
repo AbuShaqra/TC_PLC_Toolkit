@@ -37,7 +37,7 @@ page in an editor tab with:
 
 - **Create new project** — choose TwinCAT 3.1.4024 or 3.1.4026, a name and a location, then *Create*.
 - **Open existing project** — a solution (`.sln`) or a folder, and the most recent TwinCAT solutions
-  you opened or created here. Five are listed; when more are remembered (up to ten), a **Show all** tile
+  you opened or created here. Two are listed; when more are remembered (up to ten), a **Show all** tile
   expands the list. `twincat.startPage.recentProjectsShown` changes how many are listed.
 - **Project actions** — *Generate ST* and *Update Library Definitions* (*Compile project* is shown,
   disabled, until it ships).
@@ -292,7 +292,7 @@ open any `.TcPOU` file — it opens in the TwinCAT PLC Toolkit editor.
 | `twincat.diagnostics.declarationTypes` | `false` | Flag declarations with an unknown type. Off by default — types from unreadable `.compiled-library-v3` archives are invisible to the indexer, so this can report false positives in projects that use them. |
 | `twincat.diagnostics.typeCompatibility` | `true` | Flag assignments whose value type is clearly incompatible with the target. |
 | `twincat.libraryDefinitions.shell` | `ask` | Which XAE Shell **Update Library Definitions** drives: `ask`, `x64` or `x86`. Signatures can differ between the two, so it asks by default. |
-| `twincat.startPage.recentProjectsShown` | `5` | How many recent TwinCAT solutions the start page lists (1 to 10). When more are remembered, a **Show all** tile expands the list. |
+| `twincat.startPage.recentProjectsShown` | `2` | How many recent TwinCAT solutions the start page lists (1 to 10). When more are remembered, a **Show all** tile expands the list. |
 | `twincat.xaeShell.path4024` | *(detected)* | Full path to `TcXaeShell.exe` of the XAE Shell for TwinCAT 3.1.4024 (the 32-bit shell). Empty = not found. |
 | `twincat.xaeShell.path4026` | *(detected)* | Full path to `TcXaeShell.exe` of the XAE Shell for TwinCAT 3.1.4026 (the 64-bit shell). Empty = not found. |
 

@@ -215,7 +215,7 @@ const recents = () => (state.get('twincat.recentSolutions') || []).map(e => e.sl
     const st = panel.posted.find(m => m.type === 'state');
     assert(!!st && st.location === loc && st.recents[0].slnPath === sln && st.hasProject === false && st.sep === path.sep,
         'ready → state: last location, recent solutions, no project open');
-    assert(st.recentsShown === 5, 'state carries the recent-list length, 5 by default');
+    assert(st.recentsShown === 2, 'state carries the recent-list length, 2 by default');
     assert(Array.isArray(st.xaeShells) && st.xaeShells.length === 2 && st.xaeShells[0].version === '3.1.4024' && st.xaeShells[1].version === '3.1.4026'
         && st.xaeShells.every(x => x.path === '' && x.exists === false), 'state carries the two XAE Shell paths (unset: not found)');
 
@@ -227,7 +227,7 @@ const recents = () => (state.get('twincat.recentSolutions') || []).map(e => e.sl
     changeConfig('twincat.startPage.recentProjectsShown');
     assert(panel.posted.filter(m => m.type === 'state').pop().recentsShown === 3 && panel.posted.filter(m => m.type === 'state').length === statesBefore + 1,
         'changing twincat.startPage.recentProjectsShown updates the open page');
-    for (const [raw, want] of [[0, 1], [99, 10], [2.9, 2], ['7', 5], [null, 5]]) {
+    for (const [raw, want] of [[0, 1], [99, 10], [3.9, 3], ['7', 2], [null, 2]]) {
         settings['twincat.startPage.recentProjectsShown'] = raw;
         changeConfig('twincat.startPage');
         const got = panel.posted.filter(m => m.type === 'state').pop().recentsShown;
