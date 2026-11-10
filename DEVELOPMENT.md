@@ -192,7 +192,8 @@ per-suite without aborting on the first failure. The main ones:
 | `test/test_check_unit.js` | `src/checkUnit.js`: one origin per emitted line, every pane line exactly once and verbatim in pane order (so a reported line/column IS the pane's), generated lines anchored on their component, members before the body, no rewriting (`REFERENCE TO`, `REF=`, pragmas survive), every sample file round-trips. |
 | `test/test_compile_check.js` | `src/compileCheck.js` with a fake child process: the bundled compiler as default and the setting as override, Node discovery (order on Windows, the version gate, the editor runtime as last resort with `ELECTRON_RUN_AS_NODE=1`, a configured Node path as the only candidate), setup messages (compiler missing, Node missing/too old, each naming its setting), the command line, the JSON report (clean, errors, malformed, exit 2, crash), mapping to file/component/pane/line, the pragma-warning filter and its count, temp-dir lifetime, timeout, cancellation, `paneRange`. |
 | `test/test_compile_commands.js` | `src/commands/compileCommands.js` + the provider hooks under a recording `vscode` stub: the bundled compiler run when nothing is configured, the toolbar button's host side (`compile-project` from a real `resolveCustomTextEditor` runs the command with the owning project's key, or asks when no single project owns the file; `compileRunning` posted at start and end and carried in `init`; the command's own setup messages), project pick, setup refusal (a missing override), clean run, a run with errors (Problems entries, pane markers, status text, summary), unsaved edits reaching the compiler, Go to Problem and the entry links, an edit dropping its component's results, a failed run keeping the previous results, cancellation, a fresh open landing on the first problem. |
-| `test/test_compile_real.js` | **Optional gate `compile-real`**: the REAL compiler — the bundled one, or `TWINCAT_COMPILER_BUNDLE` — first proving the bundled IEC libraries load (`TON`, `R_TRIG`, `CTU`, `LIMIT` resolve; `PID`, from a library NOT shipped, does not), then over every PLC project in `sample/`, through the same code the command uses: ZERO errors and zero warnings after the pragma filter (a ratchet, like the diagnostics baseline), plus planted errors in a method body, a method declaration and a GVL landing on the right file/component/pane/line, and — in the second sample — a call to a method only the FIRST sample's same-named `FB_Cylinder` has, reported in the second sample's MAIN (the projects are never compiled together). Skips (and says so) without a Node >= 22. |
+| `test/test_compile_real.js` | **Optional gate `compile-real`**: the REAL compiler — the bundled one, or `TWINCAT_COMPILER_BUNDLE` — first proving the bundled IEC libraries load (`TON`, `R_TRIG`, `CTU`, `LIMIT` resolve; `PID`, from a library NOT shipped, does not), then over every PLC project in `sample/`, through the same code the command uses (library preparation included): ZERO errors and zero warnings after the pragma filter (a ratchet, like the diagnostics baseline), nothing library-filtered, plus planted errors in a method body, a method declaration and a GVL landing on the right file/component/pane/line, and — in the second sample — a call to a method only the FIRST sample's same-named `FB_Cylinder` has, reported in the second sample's MAIN (the projects are never compiled together). Then R3.4 on the synthetic library project (`test/_synthLibProject.js`): errors without the declarations, 0 with them; a wrong argument type and an unknown parameter on a library call reported; an archive-only library name filtered; a user typo, a typo on a library FB member and an unknown name behind a qualifier reported (the last at its pane column); 0 errors without the dump. Prints the sample's timing. Skips (and says so) without a Node >= 22. |
+| `test/test_library_decls.js` | `src/libraryDecls.js` without a compiler, on the SYNTHETIC library project (`test/_synthLibProject.js`: dump, `.tmc`, a generated archive — every name invented): the `.tmc` model (library-owned types only; interfaces and the project's own types skipped; no comment/string text read), gathering, each declaration kind's exact text, conflicts (compiler names, user names, a dependency the user redefines), dependency-only declarations, nothing guessed for unreadable types, qualifier blanking (same lengths; members/comments/strings/user names untouched), the filter case by case (a user typo kept), **temp-dir lifetime** (the declarations exist only in runCheck's temp dir during the run; gone after, also on a failed run; project, workspace and `sample/` unchanged), the no-dump case. |
 | `test/test_vendored_compiler.js` | `resources/compiler/`: exactly the files `SOURCE.md` lists, each matching its recorded size and SHA-256; a full 40-hex commit and the source link at it; the GPL-3.0, Apache-2.0 and MIT texts; `THIRD-PARTY-NOTICES.md` naming the commit; `.vscodeignore` shipping the directory and dropping `scripts/vendor-compiler.js`; the bundle requiring Node built-ins only; `resources/dialects/` holding exactly `twincat3.json` and no profile anywhere else (user rule). |
 | `test/test_recent_projects.js` | `src/recentProjects.js`: newest first, de-duplicated (Windows paths case-insensitive, either separator), capped at 10, missing solutions pruned, malformed stored data ignored, the globalState adapter, and `recentsShownLimit` (the start page's row limit: default 2, clamped to 1..10). |
 | `test/test_xae_shell_detect.js` | `src/xaeShellDetect.js` with every dependency faked (runs off Windows): the COM registration for both shells (quoted and argument-suffixed `LocalServer32`, the 32-bit view for 4024, a localized value name), the default locations with and without the environment variables, a registered file that is missing, a non-GUID ProgID value, rejecting / throwing registry and existence probes, non-Windows (nothing found, registry never queried), `createRegQuery` over a fake `execFile` (argument array, timeout, errors → null), `describeConfiguredShells`, and `resolveShellExe` (configured-and-existing wins, else default location, else registry). |
@@ -443,7 +444,16 @@ src/
                         PROCESS (`--check --json --dialect-file resources/dialects/twincat3.json`,
                         `--global-list N.st=<GVL>` per GVL; never `require()`d, never `--strict`) in
                         a temp dir deleted afterwards, timeout + cancel, JSON report → file/component/
-                        pane/line, the pragma-warning filter (counted), paneRange. Spawn injected
+                        pane/line, the pragma-warning filter (counted), the library filter (counted;
+                        messages on the generated declarations kept apart), paneRange. Spawn injected
+  libraryDecls          Compile Project's library declarations (R3.4): reads the project's library
+                        knowledge from THIS machine (signatures dump, .tmc, archive names, .plcproj
+                        namespaces — through lsp/libsymbols, libraries, parseCache), writes
+                        interface-only ST declarations of the referenced library symbols as extra
+                        compiler inputs (strings; runCheck's temp dir is the only place they are ever
+                        files), blanks library namespace qualifiers column-stably, and builds the
+                        filter for undeclared-library-symbol errors. vscode-free. See "Library
+                        declarations" under Compile Project below
   projectTemplate       Create a NEW TwinCAT solution from a shipped template (roadmap R2): copy,
                         rename solution/system/PLC project (`<Name>`, `<Name>_PLC`), re-issue every
                         identity GUID consistently, keep every byte else. vscode-free, unit-tested.
@@ -568,6 +578,9 @@ src/
                         Outside server.js for the same harness reason; the scan is injected.
     parseCache.js       library-signatures.xml + browsercache parses, cached on (path, size, mtime).
                         Signature records are CLONED per project — see the warning in its header.
+                        `readOnlyParse` / `signatureLibrariesFor` are shared, DEEP-FROZEN parses for
+                        readers that build fresh objects from them (libraryDecls.js: the dump's
+                        libraries, each .tmc's declaration model).
     plcprojRefs.js      One shared, cached .plcproj read (library references + namespaces). The same
                         file used to be read three times per project per scan.
     log.js              Structured, quiet-by-default logging for the LSP process (threshold `warn`,
@@ -1010,7 +1023,7 @@ surfaces (UI, README) never name the compiler product — a user ruling, pinned 
    that is not JSON, is a failed run; a failed/timed-out/cancelled run keeps the previous results.
 4. **Map** — each diagnostic's unit line → `origins[line]` → file/component/pane/line (the column is
    the pane's, because pane text is verbatim). Warnings matching `/^Pragma ignored:/` are filtered and
-   counted; nothing else is.
+   counted; so are errors the library filter drops (below); nothing else is.
 5. **Show** — Problems (`twincat-compile` collection, keyed by `normalizeFileUri`, at `paneRange`: the
    PANE's line and column, so the panel's Ln/Col match the pane the user reads — decided 2026-11-10, a
    range inside the XML read as e.g. Ln 23 for implementation line 2; the message names the component
@@ -1028,6 +1041,51 @@ the override `twincat.compiler.path` names — and a project is open (`state.com
 found". A missing Node is not known to the tile: the command explains it on click. A change to
 `twincat.compiler.*` re-posts the page's state. Results live in memory only (problem-link ids included) — a compile result describes
 one moment.
+
+**Library declarations (R3.4, `src/libraryDecls.js`).** The compiler knows only the IEC standard
+library, so before step 2's run `prepareLibraryCheck` adds what this machine knows about the project's
+libraries. Decided by the user 2026-11-10: declarations plus a filter, **local-only** (Beckhoff licence
+§4(3): licensed material must not reach third parties).
+- **Sources** (a fresh symbol index — the language server's registries are not touched; the archive and
+  dump parses come through the existing content-guarded caches): `library-signatures.xml` found under
+  the project dir and every workspace root (parsed with `parseLibrarySignaturesXml`, which now keeps
+  every function output); the project's `.tmc`, read by `parseTmcDeclarations` — only **library-owned**
+  `<DataType>`s (`Namespace="…"` or `TcBaseType="true"` on the name: the project's own types, which a
+  stale `.tmc` still lists, are skipped), interfaces (`TcPlcInterfaceType`) skipped, `<Comment>` cut
+  before anything is read; archive string-table names; `.plcproj` namespaces.
+- **Emitted**, one file per declaration (`lib-N.st`, before the units; a GVL gets `--global-list`):
+  FUNCTION (inputs, further outputs, in-outs; the like-named output is the return type),
+  FUNCTION_BLOCK (dump parameters, else the `.tmc`'s ItemType members; `.tmc` methods with parameters,
+  properties from `__get`/`__set` accessors, actions — all bodiless; EXTENDS; inherited members not
+  repeated), STRUCT (EXTENDS), enumeration (values and integer base from the `.tmc`; the dump's
+  self-typed var lists), alias (`<BaseType>`), VAR_GLOBAL [CONSTANT] lists (dump constants are
+  CONSTANT; numeric/boolean `.tmc` defaults only — never a string). **Selection**: the library symbols
+  the units name (a GVL or enum also through a member), from the `.tmc` or a dump library the
+  `.plcproj` references; then the types those need (from any dump library); then pruned to a closed
+  set. A type `readType` cannot read exactly (a constant array bound or string length, a foreign
+  qualifier, a type the compiler lacks: LTIME, PVOID, XINT …) drops the declaration (or just the
+  method/property/field/global), never guessed. **Never redeclared**: names in the bundled `.stlib`
+  manifests (TON, R_TRIG, CONCAT …), conversion names, the elementary types, and every top-level name the
+  project declares (POUs, types, GVLs, globals — the user's own wins).
+- **Qualifiers**: `stripQualifiers` blanks `Ns.` (a `.plcproj` namespace, not a project name, not after
+  a `.`, outside comments/strings) with spaces — the compiler cannot parse `p : Ns.T;` — so every column
+  is unchanged and mapUnitPosition needs nothing new. The run gets copies of the units.
+- **Filter** (`createLibraryFilter`, errors only, counted as `filteredLibraryDiagnostics` and shown in
+  the summary): `Undeclared variable/function 'X'`, `Undefined type 'X'`, `'X' is not a constant`
+  (array bound) — when X is a known library name the project does not declare; `'T' has no
+  member/method 'X'` only when T is a library FB/struct this run declared; `T has no input or output
+  named X` only when T's parameters came from the `.tmc` alone; `'X' is not a variable of global
+  variable list 'G'` only for a generated G; a `… got X` cascade only with X's dropped undefined-type
+  error. The compiler's messages about the generated files are returned apart (`libraryMessages`) and
+  noted, never placed on the user's code.
+- **No dump**: the `.tmc` types and the archive names still work; the summary says once per session
+  'Run "TC Toolkit: Update Library Definitions" to check calls into libraries too.'
+- **Where it lives**: strings in memory, then files only inside runCheck's `mkdtemp` directory, deleted
+  however the run ends (`test_library_decls.js` pins it). Tests use synthetic libraries only.
+- **Known limits**: a POU that names a type with no declaration (an interface, an opaque dump type) is
+  not checked past that point by the compiler (its undefined-type error is filtered); archive names
+  include member and local names, so an undeclared variable that happens to share a name with anything
+  in a referenced archive is filtered too.
 
 **The editor toolbar's Compile button** (`#compile-btn`, after the Generate ST split button; an
 inline-SVG glyph in the codicon style, since the webview is offline). A click posts **`compile-project`**;

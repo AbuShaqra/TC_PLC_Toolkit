@@ -273,8 +273,16 @@ none is found, the command says what it tried and how to fix it: install Node.js
 nodejs.org, or set `twincat.compiler.nodePath` to a Node.js 22+ executable.
 
 The IEC standard function blocks and functions (`TON`, `R_TRIG`, `CTU`, `LIMIT` …) are known to it.
-Symbols from TwinCAT and vendor libraries are not, and may be reported as undeclared; the built-in
-diagnostics remain the conservative check. To use a different build of the compiler, point
+**Library calls** (Tc2_System, Tc2_Utilities, Tc3_… and third-party libraries) are checked from what your
+own machine already has: the signatures written by *TC Toolkit: Update Library Definitions*, the project's
+`.tmc`, and the library archives the project references. For each run the extension writes declarations
+of the library functions, function blocks, types and constants the project uses — their interfaces only:
+no library code and no library documentation — into the run's temporary folder, and deletes them with it;
+nothing is stored or sent anywhere. Library calls are then checked like your own (argument and parameter
+names, types). Where a library symbol has no usable declaration (no signatures yet, a type the compiler
+does not support), an "undeclared" error about that symbol is not shown; the summary says how many were
+left out. Without the signatures only types are checked, and the summary suggests running *Update Library
+Definitions*. The built-in diagnostics remain the conservative check. To use a different build of the compiler, point
 `twincat.compiler.path` at its command-line file (`.cjs`). The compiler is free software under the GNU
 GPL v3; its licence, source link and third-party notices are in `resources/compiler/` and
 [`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md).
