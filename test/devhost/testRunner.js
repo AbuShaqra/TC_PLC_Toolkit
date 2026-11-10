@@ -790,11 +790,16 @@ async function run() {
                 return fs.existsSync(path.join(stDir(parts.slice(0, 2).join('/')), ...parts.slice(2)));
             };
             const projectDirs = ['LineA/TcToolkitSample_PLC', 'LineB/TcToolkitSample_PLC', 'LineA/TcToolkitSample_Aux'];
+            // The second committed sample (3.1.4024 layout), when run.js copied it in: its PLC project
+            // sits one level deeper, under the system project's folder.
+            const sample2Dir = path.join(WS, 'TcToolkitSample2', 'TcToolkitSample2', 'TcToolkitSample2_PLC');
+            const sample2St = path.join(sample2Dir, 'ST_Files');
             log('generate-st', {
                 pickerLabels: projectsForPicker.map(p => p.label).sort(),
                 counts: counts || null,
                 expectedObjects,
-                stFilesOnDisk: projectDirs.reduce((n, d) => n + countSt(stDir(d)), 0),
+                stFilesOnDisk: projectDirs.reduce((n, d) => n + countSt(stDir(d)), 0) + countSt(sample2St),
+                sample2Main: fs.existsSync(path.join(sample2St, 'POUs', 'MAIN.st')),
                 // Same relative object path in two different projects, kept apart by project folder:
                 lineAMain: exists('LineA/TcToolkitSample_PLC/POUs/MAIN.st'),
                 lineBMain: exists('LineB/TcToolkitSample_PLC/POUs/MAIN.st'),
@@ -807,6 +812,7 @@ async function run() {
             });
             // Subset: regenerate just the Aux project into a clean dir and confirm scoping.
             for (const d of projectDirs) fs.rmSync(stDir(d), { recursive: true, force: true });
+            fs.rmSync(sample2St, { recursive: true, force: true });
             const auxKey = projectsForPicker.find(p => /_Aux/.test(p.label));
             if (auxKey) {
                 await hostProvider.generateAllStFiles([auxKey.key]);
@@ -820,6 +826,7 @@ async function run() {
             }
             // Leave the fixture as it was: the outputs live inside the project folders now.
             for (const d of projectDirs) fs.rmSync(stDir(d), { recursive: true, force: true });
+            fs.rmSync(sample2St, { recursive: true, force: true });
         } catch (e) {
             log('generate-st', { error: String((e && e.stack) || e) });
         }

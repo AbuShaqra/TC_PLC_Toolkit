@@ -9,12 +9,17 @@
  * summary as ran or skipped, and never makes a run REDUCED.
  *
  * Asserted:
- *   - the sample is a CORRECT TwinCAT project, so the compiler reports ZERO errors on it (a ratchet,
+ *   - every PLC project under sample/ (two today: TcToolkitSample, 3.1.4026 layout, and
+ *     TcToolkitSample2, 3.1.4024 layout) is checked on its own, as the command checks one project per
+ *     run;
+ *   - each is a CORRECT TwinCAT project, so the compiler reports ZERO errors on it (a ratchet,
  *     like the diagnostics baseline — an error here is a bug in the unit, the dialect profile or the
  *     compiler, and must not be answered by suppressing it);
  *   - the only warnings filtered are the pragma-skipped ones, and nothing else is left;
  *   - an error planted in one method is reported on that file, component, pane and line;
- *   - an error planted in a declaration pane and in a GVL land there too.
+ *   - an error planted in a declaration pane and in a GVL land there too;
+ *   - in the second sample, calling a method only the first sample's same-named FB_Cylinder has is an
+ *     error there — the projects are never compiled together.
  */
 
 const fs = require('fs');
@@ -53,31 +58,40 @@ function assert(cond, msg) {
     if (!setup.ok) skip(setup.problems.map(p => p.message).join(' '));
 
     const projectMap = createProjectMap([sampleDir]);
-    const project = [...projectMap.projects.values()][0];
-    const filePaths = [...project.objectFiles.values()].sort();
-    const read = (edit) => filePaths.map(filePath => {
+    const projects = [...projectMap.projects.values()].sort((a, b) => a.dir.localeCompare(b.dir));
+    assert(projects.length >= 2, `sample/ holds every sample PLC project (${projects.map(p => p.name).join(', ')})`);
+    const filesOf = (project) => [...project.objectFiles.values()].sort();
+    const read = (filePaths, edit) => filePaths.map(filePath => {
         const text = fs.readFileSync(filePath, 'utf8');
         return { filePath, text: edit ? edit(filePath, text) : text };
     });
-    const check = async (edit) => {
-        const built = cc.buildCheckInputs(read(edit), parseTwinCatXml);
+    const checkFiles = async (filePaths, edit) => {
+        const built = cc.buildCheckInputs(read(filePaths, edit), parseTwinCatXml);
         const result = await cc.runCheck({ nodeCommand: setup.nodeCommand, compilerPath: setup.compilerPath, dialectFile, inputs: built.inputs });
         return { built, result };
     };
     const show = (d) => `${path.basename(d.filePath || '?')} ${d.componentId || ''} ${d.pane || ''}:${d.line}:${d.column} ${d.severity}: ${d.message}`;
 
-    // ── The ratchet: zero errors on the sample ──────────────────────────────────────────────────
-    const clean = await check(null);
-    assert(clean.result.status === 'done', `the check ran (${clean.result.status}${clean.result.message ? ': ' + clean.result.message : ''})`);
-    assert(clean.built.inputs.length === filePaths.length && clean.built.unparsed.length === 0,
-        `all ${filePaths.length} sample objects became check units`);
-    for (const d of [...clean.result.diagnostics, ...clean.result.general]) console.log(`    ${show(d)}`);
-    assert(clean.result.errors <= SAMPLE_ERROR_BASELINE,
-        `SAMPLE: ${clean.result.errors} error(s) against a baseline of ${SAMPLE_ERROR_BASELINE} — every error on the sample is a bug`);
-    assert(clean.result.warnings <= SAMPLE_WARNING_BASELINE,
-        `SAMPLE: ${clean.result.warnings} warning(s) after the filter, against a baseline of ${SAMPLE_WARNING_BASELINE}`);
-    console.log(`    filtered pragma warnings: ${clean.result.filteredPragmaWarnings}; ${clean.result.durationMs} ms`);
-    assert(clean.result.general.length === 0, 'SAMPLE: no diagnostic is left without a file');
+    // ── The ratchet: zero errors on every sample project ────────────────────────────────────────
+    for (const project of projects) {
+        const filePaths = filesOf(project);
+        const clean = await checkFiles(filePaths, null);
+        const tag = project.name;
+        assert(clean.result.status === 'done', `${tag}: the check ran (${clean.result.status}${clean.result.message ? ': ' + clean.result.message : ''})`);
+        assert(clean.built.inputs.length === filePaths.length && clean.built.unparsed.length === 0,
+            `${tag}: all ${filePaths.length} objects became check units`);
+        for (const d of [...clean.result.diagnostics, ...clean.result.general]) console.log(`    ${show(d)}`);
+        assert(clean.result.errors <= SAMPLE_ERROR_BASELINE,
+            `${tag}: ${clean.result.errors} error(s) against a baseline of ${SAMPLE_ERROR_BASELINE} — every error on the sample is a bug`);
+        assert(clean.result.warnings <= SAMPLE_WARNING_BASELINE,
+            `${tag}: ${clean.result.warnings} warning(s) after the filter, against a baseline of ${SAMPLE_WARNING_BASELINE}`);
+        console.log(`    ${tag}: filtered pragma warnings: ${clean.result.filteredPragmaWarnings}; ${clean.result.durationMs} ms`);
+        assert(clean.result.general.length === 0, `${tag}: no diagnostic is left without a file`);
+    }
+
+    // The planted errors below are written against the FIRST sample's objects.
+    const first = projects.find(p => /[\\/]TcToolkitSample[\\/]/i.test(p.dir + path.sep)) || projects[0];
+    const check = (edit) => checkFiles(filesOf(first), edit);
 
     // ── A planted error in a method body ────────────────────────────────────────────────────────
     const plantIn = (basename, from, to) => (filePath, text) => {
@@ -117,6 +131,19 @@ function assert(cond, msg) {
     for (const d of errs) console.log(`    ${show(d)}`);
     assert(errs.length >= 1 && errs.some(d => path.basename(d.filePath) === 'GVL_Hmi.TcGVL' && d.componentId === 'root' && d.pane === 'decl' && d.line === 4),
         'PLANT: an unknown type in a GVL is reported in that GVL, declaration pane, line 4');
+
+    // ── A planted error in the SECOND sample, naming a member only the FIRST sample's FB_Cylinder has ──
+    // Each project is its own compilation unit: Retract() exists on the other project's FB_Cylinder
+    // only, so it must be reported, and in the second sample's MAIN.
+    const second = projects.find(p => p !== first);
+    if (second) {
+        planted = await checkFiles(filesOf(second), plantIn('MAIN.TcPOU', 'nStroke := fbCylinder.Stroke();', 'nStroke := fbCylinder.Stroke();\r\nfbCylinder.Retract();'));
+        errs = planted.result.diagnostics.filter(d => d.severity === 'error');
+        for (const d of errs) console.log(`    ${show(d)}`);
+        assert(errs.length >= 1 && errs.every(d => d.filePath.startsWith(second.dir)) &&
+            errs.some(d => path.basename(d.filePath) === 'MAIN.TcPOU' && d.componentId === 'root' && d.pane === 'impl' && d.line === 11),
+            `PLANT (${second.name}): a method of the OTHER project's FB_Cylinder is an error in this project's MAIN, implementation line 11`);
+    }
 
     reportCoverage(GATE, 'ran');
     if (errors > 0) {
