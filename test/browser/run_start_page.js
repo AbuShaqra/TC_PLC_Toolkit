@@ -5,7 +5,8 @@
  * intact, and checks that it loads nothing remote, validates the project name as the user types,
  * posts the right message for every control, shows results the host sends back, limits the recent
  * list to the configured number of rows behind a keyboard-operable "Show all (K)" / "Show fewer" tile,
- * shows the XAE Shell paths (with a warning for a path that is not on disk), and has no horizontal
+ * shows the XAE Shell paths (with a warning for a path that is not on disk), enables Compile project
+ * only with a configured compiler and an open project, and has no horizontal
  * scroll at 360 px.
  *
  * Only `acquireVsCodeApi()` is stubbed (through Playwright's init script, which the CSP does not
@@ -179,6 +180,23 @@ const { TEMPLATE_VERSIONS } = require(path.join(REPO, 'src', 'projectTemplate.js
         assert(msgs.length === 2 && msgs[0].command === 'twincat.generateSt' && msgs[1].command === 'twincat.updateLibraryDefinitions',
             'with a project open the actions run Generate ST and Update Library Definitions');
         assert(await visible('#recent-empty'), 'an empty recent list says so');
+
+        // ── Compile project: enabled only with a configured compiler AND an open project ─────────
+        assert(await disabled('#compile-project') && /later release/.test(await text('#compile-detail')),
+            'with a project but no compiler, Compile project stays disabled and "Coming in a later release"');
+        await send({ type: 'state', location: 'C:\\Projects', sep: '\\', hasProject: false, compilerReady: true, recents: [] });
+        assert(await disabled('#compile-project') && !(await visible('#compile-soon')),
+            'with a compiler but no project, Compile project is disabled (and no longer marked Soon)');
+        await send({ type: 'state', location: 'C:\\Projects', sep: '\\', hasProject: true, compilerReady: true, recents: [] });
+        assert(!(await disabled('#compile-project')) && /external IEC 61131-3 compiler/.test(await text('#compile-detail')),
+            `with a compiler and a project, Compile project is enabled (${await text('#compile-detail')})`);
+        assert(!/STruC\+\+/i.test(await page.content()), 'the page names no compiler product');
+        await clearPosted();
+        await page.click('#compile-project');
+        msgs = await posted();
+        assert(msgs.length === 1 && msgs[0].type === 'command' && msgs[0].command === 'twincat.compileProject', 'clicking it runs twincat.compileProject');
+        await send({ type: 'state', location: 'C:\\Projects', sep: '\\', hasProject: true, compilerReady: false, recents: [] });
+        assert(await disabled('#compile-project') && await visible('#compile-soon'), 'clearing the compiler setting disables it again');
 
         // ── Recent list: at most `recentsShown` rows, then "Show all (K)" ──────────────────────────
         const eight = Array.from({ length: 8 }, (_, i) => ({ slnPath: `C:\\Projects\\Line_${i + 1}\\Line_${i + 1}.sln`, name: `Line_${i + 1}` }));

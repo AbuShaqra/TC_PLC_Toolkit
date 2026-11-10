@@ -6,7 +6,8 @@
  * the palette, the chosen open mode honoured), opening a recent solution that is gone, Generate ST's
  * project pick, and the start page's message handling (singleton panel, state — including the
  * recent-list length and the XAE Shell paths from the settings — the command allow-list, help links,
- * the filtered Settings view, and a settings change refreshing an open page).
+ * the filtered Settings view, a settings change refreshing an open page, and whether a compiler is
+ * configured for the Compile project tile).
  */
 
 'use strict';
@@ -115,10 +116,13 @@ const context = {
 let projects = [];
 const generated = [];
 const provider = { listProjects: () => projects, generateAllStFiles: async (keys) => { generated.push(keys); } };
+/** What the stubbed Compile Project answers to "is a compiler configured?". */
+let compilerConfigured = false;
 const { startPage } = registerStartCommands(context, {
     provider,
     getProjectMap: () => ({ projects: new Map() }),
-    getSolutionMap: () => ({ solutions: [] })
+    getSolutionMap: () => ({ solutions: [] }),
+    isCompilerConfigured: () => compilerConfigured
 });
 const run = (id, ...args) => vscodeStub.commands.executeCommand(id, ...args);
 const executedIds = () => calls.executed.map(c => c.id);
@@ -218,6 +222,12 @@ const recents = () => (state.get('twincat.recentSolutions') || []).map(e => e.sl
     assert(st.recentsShown === 2, 'state carries the recent-list length, 2 by default');
     assert(Array.isArray(st.xaeShells) && st.xaeShells.length === 2 && st.xaeShells[0].version === '3.1.4024' && st.xaeShells[1].version === '3.1.4026'
         && st.xaeShells.every(x => x.path === '' && x.exists === false), 'state carries the two XAE Shell paths (unset: not found)');
+    assert(st.compilerReady === false, 'state says no compiler is ready while none is configured');
+    compilerConfigured = true;
+    startPage.postState();
+    assert(panel.posted.filter(m => m.type === 'state').pop().compilerReady === true, 'state says the compiler is ready once one is configured');
+    compilerConfigured = false;
+    startPage.postState();
 
     // A settings change reaches the open page; unrelated settings do not.
     const statesBefore = panel.posted.filter(m => m.type === 'state').length;
@@ -255,10 +265,12 @@ const recents = () => (state.get('twincat.recentSolutions') || []).map(e => e.sl
     calls.executed.length = 0;
     await panel.send({ type: 'command', command: 'workbench.action.terminal.new' });
     await panel.send({ type: 'command', command: 'twincat.generateSt' });
+    await panel.send({ type: 'command', command: 'twincat.compileProject' });
     await panel.send({ type: 'link', id: 'constructor' });
     await panel.send({ type: 'link', id: 'reportIssue' });
     assert(!executedIds().includes('workbench.action.terminal.new'), 'a command outside the allow-list is ignored');
-    assert(executedIds().includes('twincat.generateSt') && executedIds().includes('twincat.reportIssue') && executedIds().length === 2,
+    assert(executedIds().includes('twincat.compileProject'), 'the Compile project tile’s command is allow-listed');
+    assert(executedIds().includes('twincat.generateSt') && executedIds().includes('twincat.reportIssue') && executedIds().length === 3,
         'allowed actions and known links run their command; unknown ids do nothing');
     await panel.send({ type: 'create', version: '3.1.4026', name: 'Cell_1', location: loc });
     const res = panel.posted.filter(m => m.type === 'createResult').pop();
