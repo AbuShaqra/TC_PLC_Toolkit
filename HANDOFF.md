@@ -138,7 +138,8 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   VAR_INPUT/VAR_IN_OUT reported (PR #39 `852d856`; library STRUCTs not checked). **S3b batch 1 DONE** (10 PRs). S3b batch 2 running (accepted code that fails g++ → make it
   build): FB calls on member/global instances + `w.C3` + `fbb : FBB` method calls (PR #40 `4dd4750`); a PROGRAM-typed variable call runs its body
   (PR #41 `a1bbdfd`). Inherited properties + bare (own and inherited) property names merged (PR #42 `0f34ef2`) — the
-  bare-name case was a false "Undeclared variable" on correct code. Was next: ADR into POINTER TO
+  bare-name case was a false "Undeclared variable" on correct code. Interfaces implemented through a base FB build
+  (PR #43 `186a633`); narrowed: interface methods inherited via EXTENDS are now required (failed g++ before). Was next: ADR into POINTER TO
   STRUCT, UNION one-member initial values. Found: LT#/LTIME# literals absent (S4); `SINT#200` unchecked; an enum member named like a FUNCTION/METHOD hijacks
   its return assignment in C++ (passes analysis, fails g++); alias-of-base := alias-of-derived STRUCT is accepted
   (the EXTENDS check is skipped when both sides are alias names); `REF(s)` into REF_TO STRUCT passes analysis, fails
