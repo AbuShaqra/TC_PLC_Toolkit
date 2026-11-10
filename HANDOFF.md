@@ -127,7 +127,9 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   also fixed positional method calls omitting a VAR_OUTPUT); undeclared functions reported (PR #31 `c911311`; a
   198-name runtime-function list synced from the headers by a test keeps runtime helpers like TIME_TO_US accepted;
   units with `{external}` are not checked); unknown method calls reported (PR #32 `371ac37`; `inst.sub()`, a STRUCT-held
-  FB `s.f()`, `rr.M()` and library `tn.M()` stay accepted — the last two fail g++, logged). Was next: ADR into POINTER TO
+  FB `s.f()`, `rr.M()` and library `tn.M()` stay accepted — the last two fail g++, logged); unknown members and
+  array↔single-value assignments reported (PR #33 `bf457f1`; `w.C3` bit-by-constant stays accepted, fails g++). Found:
+  inherited PROPERTY read on a derived FB fails g++; POINTER TO ARRAY OF BYTE over ADR(dword) reads 0. Was next: ADR into POINTER TO
   STRUCT, UNION one-member initial values. Found: LT#/LTIME# literals absent (S4); `SINT#200` unchecked; an enum member named like a FUNCTION/METHOD hijacks
   its return assignment in C++ (passes analysis, fails g++); alias-of-base := alias-of-derived STRUCT is accepted
   (the EXTENDS check is skipped when both sides are alias names); `REF(s)` into REF_TO STRUCT passes analysis, fails
