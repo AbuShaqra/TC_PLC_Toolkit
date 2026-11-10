@@ -14,8 +14,12 @@
  *   - Check only. The units are written to a temporary directory that is deleted when the run ends,
  *     however it ends; nothing is written into the project.
  *   - It cannot hang: every child process has a timeout and the run can be cancelled.
- *   - Nothing is suppressed silently. The one filter (pragma-skipped warnings) is counted and the
- *     count is returned.
+ *   - Nothing is suppressed silently. Both filters are counted and the counts are returned: the
+ *     pragma-skipped warnings, and the library filter of src/libraryDecls.js (an error that a
+ *     symbol is undeclared, when that symbol is a known library name the project does not declare).
+ *   - Library declarations (src/libraryDecls.js) are extra inputs written into the SAME temporary
+ *     directory, so they are deleted with it; their own messages are returned apart, never placed
+ *     on the user's code.
  *
  * Everything that touches the outside (spawn, the file system, the temp directory) is injected, so
  * test/test_compile_check.js drives the same code with a fake child process.
@@ -358,14 +362,28 @@ function buildCheckInputs(files, parse) {
 }
 
 /**
+ * @typedef {Object} ExtraInput A generated input that is not a project object (library
+ *   declarations, src/libraryDecls.js).
+ * @property {string} name File name in the temporary directory; must not be `<n>.st`.
+ * @property {string} text
+ * @property {string|null} globalListName
+ */
+
+/**
  * The compiler's command line for one check (everything after the Node executable).
- * @param {{compilerPath: string, dialectFile: string, inputs: Array<{name: string, unit: {globalListName: string|null}}>}} o
+ * @param {{compilerPath: string, dialectFile: string, inputs: Array<{name: string, unit: {globalListName: string|null}}>,
+ *   extraFiles?: ExtraInput[]}} o
  * @returns {string[]}
  */
 function buildCheckArgs(o) {
     const args = [o.compilerPath, '--check', '--json', '--dialect-file', o.dialectFile];
+    const extra = o.extraFiles || [];
+    for (const file of extra) args.push(file.name);
     for (const input of o.inputs) args.push(input.name);
     // A global variable list is addressed by its TwinCAT name (`GVL_Io.bIn`), not by a file stem.
+    for (const file of extra) {
+        if (file.globalListName) args.push('--global-list', `${file.name}=${file.globalListName}`);
+    }
     for (const input of o.inputs) {
         if (input.unit.globalListName) args.push('--global-list', `${input.name}=${input.unit.globalListName}`);
     }
@@ -449,21 +467,35 @@ function parseCheckOutput(stdout, exitCode, stderr = '') {
  * Places the compiler's diagnostics in the panes.
  * @param {RawDiagnostic[]} diagnostics
  * @param {CheckInput[]} inputs The inputs of the same run.
- * @returns {{diagnostics: CompileDiagnostic[], general: RawDiagnostic[], filteredPragmaWarnings: number}}
+ * @param {{extraFiles?: ExtraInput[], libraryFilter?: {select: (d: RawDiagnostic[]) => Set<any>}}} [options]
+ * @returns {{diagnostics: CompileDiagnostic[], general: RawDiagnostic[], filteredPragmaWarnings: number,
+ *   filteredLibraryDiagnostics: number, libraryMessages: RawDiagnostic[]}}
  *   `general` holds diagnostics that name no input file (they cannot be placed, and are still
- *   reported); `filteredPragmaWarnings` counts the pragma-skipped warnings that were dropped.
+ *   reported); `filteredPragmaWarnings` counts the pragma-skipped warnings that were dropped;
+ *   `filteredLibraryDiagnostics` the errors the library filter dropped; `libraryMessages` are the
+ *   compiler's messages about the generated library declarations themselves.
  */
-function mapCheckDiagnostics(diagnostics, inputs) {
+function mapCheckDiagnostics(diagnostics, inputs, options = {}) {
     const byName = new Map(inputs.map(i => [i.name, i]));
+    const extraNames = new Set((options.extraFiles || []).map(f => f.name));
+    const fileOf = (/** @type {RawDiagnostic} */ d) => (d.file ? path.basename(d.file.replace(/\\/g, '/')) : '');
     /** @type {CompileDiagnostic[]} */
     const mapped = [];
     /** @type {RawDiagnostic[]} */
     const general = [];
+    /** @type {RawDiagnostic[]} */
+    const libraryMessages = [];
     let filteredPragmaWarnings = 0;
+    let filteredLibraryDiagnostics = 0;
+    // The library filter looks at the user's diagnostics only, all together (see libraryDecls.js).
+    const onUserCode = (diagnostics || []).filter(d => d.file && (byName.has(d.file) || byName.has(fileOf(d))));
+    const dropped = options.libraryFilter ? options.libraryFilter.select(onUserCode) : new Set();
     for (const d of diagnostics || []) {
         if (d.severity === 'warning' && PRAGMA_SKIPPED_RE.test(d.message)) { filteredPragmaWarnings++; continue; }
+        if (d.file && extraNames.has(fileOf(d))) { libraryMessages.push(d); continue; }
+        if (dropped.has(d)) { filteredLibraryDiagnostics++; continue; }
         // The compiler echoes the path it was given; accept a `./` or directory prefix on it.
-        const input = d.file ? (byName.get(d.file) || byName.get(path.basename(d.file.replace(/\\/g, '/')))) : null;
+        const input = d.file ? (byName.get(d.file) || byName.get(fileOf(d))) : null;
         if (!input) { general.push(d); continue; }
         const at = mapUnitPosition(input.unit, d);
         mapped.push({
@@ -471,7 +503,7 @@ function mapCheckDiagnostics(diagnostics, inputs) {
             endLine: at.endLine, endColumn: at.endColumn, severity: d.severity, message: d.message, exact: at.exact
         });
     }
-    return { diagnostics: mapped, general, filteredPragmaWarnings };
+    return { diagnostics: mapped, general, filteredPragmaWarnings, filteredLibraryDiagnostics, libraryMessages };
 }
 
 /**
@@ -481,6 +513,9 @@ function mapCheckDiagnostics(diagnostics, inputs) {
  * @property {CompileDiagnostic[]} diagnostics
  * @property {RawDiagnostic[]} general
  * @property {number} filteredPragmaWarnings
+ * @property {number} filteredLibraryDiagnostics Errors on library symbols the filter dropped.
+ * @property {RawDiagnostic[]} libraryMessages The compiler's messages about the generated library
+ *   declarations (not the user's code; not counted as errors or warnings).
  * @property {number} errors Errors after mapping (placed + general).
  * @property {number} warnings Warnings after filtering (placed + general).
  * @property {number} durationMs
@@ -495,6 +530,9 @@ function mapCheckDiagnostics(diagnostics, inputs) {
  * @param {string} o.compilerPath The compiler's bundled command-line file.
  * @param {string} o.dialectFile The dialect profile to compile under.
  * @param {CheckInput[]} o.inputs
+ * @param {ExtraInput[]} [o.extraFiles] Generated library declarations: written into the same
+ *   temporary directory as the units, and deleted with it.
+ * @param {{select: (d: RawDiagnostic[]) => Set<any>}} [o.libraryFilter] The library filter.
  * @param {number} [o.timeoutMs]
  * @param {(cancel: () => void) => void} [o.onCancel] Receives the function that stops the run.
  * @param {SpawnLike} [o.spawn]
@@ -506,29 +544,33 @@ async function runCheck(o) {
     const started = Date.now();
     /** @type {(status: CheckResult['status'], message?: string) => CheckResult} */
     const ended = (status, message = '') => ({
-        status, message, diagnostics: [], general: [], filteredPragmaWarnings: 0, errors: 0, warnings: 0,
+        status, message, diagnostics: [], general: [], filteredPragmaWarnings: 0, filteredLibraryDiagnostics: 0,
+        libraryMessages: [], errors: 0, warnings: 0,
         durationMs: Date.now() - started
     });
     let dir = '';
     try {
         try {
             dir = fs.mkdtempSync(path.join(o.tmpRoot || os.tmpdir(), 'twincat-compile-'));
+            for (const file of o.extraFiles || []) fs.writeFileSync(path.join(dir, file.name), file.text, 'utf8');
             for (const input of o.inputs) fs.writeFileSync(path.join(dir, input.name), input.unit.stText + '\n', 'utf8');
         } catch (err) {
             return ended('failed', `The temporary files for the check could not be written: ${err && /** @type {any} */ (err).message ? /** @type {any} */ (err).message : err}`);
         }
-        const run = await runChild(spawn, o.nodeCommand, buildCheckArgs({ compilerPath: o.compilerPath, dialectFile: o.dialectFile, inputs: o.inputs }),
+        const run = await runChild(spawn, o.nodeCommand, buildCheckArgs({ compilerPath: o.compilerPath, dialectFile: o.dialectFile, inputs: o.inputs, extraFiles: o.extraFiles }),
             { cwd: dir, timeoutMs: o.timeoutMs || DEFAULT_CHECK_TIMEOUT_MS, onCancel: o.onCancel, env: o.nodeEnv ? { ...process.env, ...o.nodeEnv } : undefined });
         if (run.outcome === 'cancelled') return ended('cancelled');
         if (run.outcome === 'timeout') return ended('timeout', `The compiler did not finish within ${Math.round((o.timeoutMs || DEFAULT_CHECK_TIMEOUT_MS) / 1000)} seconds and was stopped.`);
         if (run.outcome === 'spawn-error') return ended('failed', `The compiler could not be started: ${run.error}`);
         const parsed = parseCheckOutput(run.stdout, run.code, run.stderr);
         if (parsed.ok === false) return ended('failed', parsed.message);
-        const mapped = mapCheckDiagnostics(parsed.diagnostics, o.inputs);
+        const mapped = mapCheckDiagnostics(parsed.diagnostics, o.inputs, { extraFiles: o.extraFiles, libraryFilter: o.libraryFilter });
         const all = [...mapped.diagnostics, ...mapped.general];
         return {
             status: 'done', message: '', diagnostics: mapped.diagnostics, general: mapped.general,
             filteredPragmaWarnings: mapped.filteredPragmaWarnings,
+            filteredLibraryDiagnostics: mapped.filteredLibraryDiagnostics,
+            libraryMessages: mapped.libraryMessages,
             errors: all.filter(d => d.severity === 'error').length,
             warnings: all.filter(d => d.severity === 'warning').length,
             durationMs: Date.now() - started
