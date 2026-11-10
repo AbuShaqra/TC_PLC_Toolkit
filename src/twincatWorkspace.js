@@ -79,18 +79,22 @@ function decodeXmlAttribute(value) {
  *   FILE (never a directory) is collected. Receives both the bare entry name and its full path.
  * @param {Array<string>} [options.out] Array to append matches to (returned as-is); a fresh array
  *   is used when omitted.
+ * @param {DirectoryListingMemo|null} [options.listing] A scan's listing memo (see
+ *   createDirectoryListingMemo): each directory is then read from disk at most once per memo, however
+ *   many walks cross it. The result is identical to an unmemoized walk of the same snapshot.
  * @returns {Array<string>} `options.out`, or a new array, containing every matched file path.
  */
 function walkFiles(rootOrRoots, options) {
     const skipDirs = (options && options.skipDirs) || new Set();
     const isMatch = options && options.isMatch;
     const out = (options && options.out) || [];
+    const listing = (options && options.listing) || null;
     const roots = Array.isArray(rootOrRoots) ? rootOrRoots : [rootOrRoots];
 
     const walk = (dir) => {
         let entries;
         try {
-            entries = fs.readdirSync(dir, { withFileTypes: true });
+            entries = listing ? listing.list(dir) : fs.readdirSync(dir, { withFileTypes: true });
         } catch (e) {
             return; // unreadable directory: skip, never throw out of discovery
         }
@@ -106,6 +110,62 @@ function walkFiles(rootOrRoots, options) {
     };
     for (const root of roots) walk(root);
     return out;
+}
+
+/**
+ * @typedef {Object} DirectoryListingMemo
+ * @property {(dir: string) => Array<fs.Dirent>} list The directory's entries (`readdirSync` with
+ *   `withFileTypes`), read from disk on the first call for that directory and replayed after; a
+ *   directory that could not be read throws the same way on every call.
+ * @property {() => number} reads Directories actually read from disk (for the harnesses).
+ */
+
+/**
+ * A memo of directory listings for the lifetime of ONE workspace scan.
+ *
+ * Every project of a scan walks the same workspace roots for the `library-signatures.xml` dump (it is
+ * a workspace-level artifact that sits above every project), and each project directory again for its
+ * own dump and `.tmc` — on an 8-project workspace that was 16 full walks per scan, ~850 ms on Windows.
+ * Sharing the listings makes the first walk pay for the disk and every later one an in-memory
+ * replay, and because the walker itself is unchanged (same skip sets, same order, same paths spelled
+ * from the caller's own `dir`), the result is exactly what an unmemoized walk of that snapshot returns.
+ *
+ * **Invalidation is the scan boundary, and nothing else.** A memo is created at the start of a scan
+ * and dropped with it; it is never stored across scans. So a `library-signatures.xml` or `.tmc` that is
+ * added or removed is found by the next scan — startup, or the `custom/reindex` that the `.plcproj`
+ * watcher and Update Library Definitions send — exactly as it was before the memo existed. No time
+ * window and no mtime sampling: a directory's own mtime does not change when a file appears two levels
+ * below it, so a guard on it would call a stale listing current.
+ *
+ * Keys are absolute paths, case-folded only on Windows (where the filesystem is case-insensitive).
+ * @returns {DirectoryListingMemo}
+ */
+function createDirectoryListingMemo() {
+    /** @type {Map<string, {entries?: Array<fs.Dirent>, error?: Error}>} */
+    const cache = new Map();
+    let reads = 0;
+    const keyOf = (dir) => {
+        const resolved = path.resolve(dir);
+        return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
+    };
+    return {
+        list: (dir) => {
+            const key = keyOf(dir);
+            let hit = cache.get(key);
+            if (!hit) {
+                reads++;
+                try {
+                    hit = { entries: fs.readdirSync(dir, { withFileTypes: true }) };
+                } catch (e) {
+                    hit = { error: e };
+                }
+                cache.set(key, hit);
+            }
+            if (hit.error) throw hit.error;
+            return hit.entries;
+        },
+        reads: () => reads
+    };
 }
 
 // --- Skip-dir sets ----------------------------------------------------------------------------
@@ -280,6 +340,7 @@ module.exports = {
     isGeneratedOutputEvent,
     decodeXmlAttribute,
     walkFiles,
+    createDirectoryListingMemo,
     BASE_SKIP_DIRS,
     PROJECT_WALK_SKIP_DIRS,
     SOLUTION_SKIP_DIRS,

@@ -20,14 +20,6 @@ const {
 } = require('./xmlIndexer');
 
 const {
-    indexLibraryNamespaces
-} = require('./libraries');
-
-const {
-    indexLibrarySymbols,
-    indexTypeSystem,
-    indexLibrarySignatures,
-    indexBrowserCache,
     registerLibrarySymbolNodes,
     getLibraryCatalog,
     getUnionLibraryCatalog
@@ -37,8 +29,7 @@ const {
     createEmptyWorkspace,
     scanWorkspace,
     selectLibraryCatalog,
-    uriToFsPath,
-    normalizeProjectPath
+    uriToFsPath
 } = require('./workspaceScan');
 
 const {
@@ -46,9 +37,10 @@ const {
 } = require('./scanController');
 
 const {
-    createRequestRouter,
-    runLibraryIndexPipeline
+    createRequestRouter
 } = require('./requestPipeline');
+
+const { createIndexLibraries } = require('./libraryIndex');
 
 // Quiet by default (threshold `warn`, from TWINCAT_LSP_LOG) and writes to stderr, which the extension
 // host captures — see log.js. Every handler below keeps returning its safe default on failure; the
@@ -84,71 +76,10 @@ function rescan(rootPaths) {
 // time), so the scan is injected the way workspaceScan.js injects indexLibraries.
 const scanController = createScanController({ scan: rescan });
 
-/**
- * Indexes everything external a workspace folder depends on: library namespaces from the .plcproj,
- * symbol names from the ZIP `.compiled-library` archives, and the project's TwinCAT type system
- * (`.tmc`). The type system is required, not a nicety: some types the project resolves are in no
- * readable archive (a library may ship only as the opaque `.compiled-library-v3`, and some names
- * live outside the string table), yet TwinCAT exports every one of them into the plain-XML `.tmc`.
- *
- * The harvested names are NOT put into the symbol index here — that happens per document, in
- * syncDocument(), so the index stays at project scale.
- * @param {string} fsPath Absolute folder path — the PROJECT directory, so only that project's own
- *   .plcproj, archives and .tmc are read.
- * @param {Object} [index] The owning project's symbol index. Every registry below is attached to it
- *   (see libraries.js / libsymbols.js registryFor / libRegistryFor), so two projects' libraries never
- *   union — each project stays quiet only about the libraries it actually references.
- * @param {Array<string>} [roots] The full set of workspace roots (see workspaceScan.js scanWorkspace).
- *   `library-signatures.xml` is a WORKSPACE-level artifact — `twincat.updateLibraryDefinitions` writes
- *   it to `folders[0].fsPath` (libraryCommands.js), and `scripts/generate-library-signatures.ps1`
- *   documents that target as `<workspace>\library-signatures.xml` — not a per-project one, and in the
- *   normal TwinCAT layout it sits ABOVE `fsPath` (the `.plcproj` directory is at least one level
- *   below the workspace root). `indexLibrarySignatures` only scans DOWNWARD from the directory it is
- *   given, so a scan rooted at `fsPath` alone can never reach it. Scan every root too.
- */
-function indexLibraries(fsPath, index, roots) {
-    // Shared between the `signatures` and `rootSignatures` runners below: runLibraryIndexPipeline's
-    // patch merge is shallow last-write-wins per key, not a sum, so the running total across the extra
-    // per-root scan has to be built by the runners themselves, closing over one object (see
-    // requestPipeline.js's runLibraryIndexPipeline doc).
-    let sig;
-    const result = runLibraryIndexPipeline({
-        namespaces: () => { indexLibraryNamespaces(fsPath, index); },
-        symbols: () => ({ stats: indexLibrarySymbols(fsPath, index) }),
-        typeSystem: () => ({ tmc: indexTypeSystem(fsPath, index) }),
-        // Signatures merge AFTER the `.tmc`, so a `.tmc` type with real members wins over a signature's
-        // bare-name entry (see libsymbols.js indexLibrarySignaturesFromXml). A project with no generated
-        // library-signatures.xml gets zeroed stats and no registry change.
-        signatures: () => {
-            sig = indexLibrarySignatures(fsPath, index);
-            return { sig };
-        },
-        // Also scan every workspace root for a signatures dump (see the `roots` param doc above). Skip a
-        // root that IS fsPath — already scanned by the `signatures` stage, so scanning it again would only
-        // double the reported stats. Merging into every project's registry is safe even when a root sits
-        // ABOVE a sibling project's directory too (a multi-project workspace): namespaceForLibraryTitle()
-        // returns '' for a library this project's .plcproj does not reference, so an unattributed type
-        // lands only as a bare name in librarySymbols — which can only SILENCE an undeclared-identifier
-        // diagnostic, never raise one. The merge itself is documented additive/idempotent, so overlap with
-        // fsPath's own scan (or between two projects sharing a root) contributes nothing beyond wasted work.
-        rootSignatures: () => {
-            for (const root of roots || []) {
-                if (normalizeProjectPath(root) === normalizeProjectPath(fsPath)) continue;
-                const rootSig = indexLibrarySignatures(root, index);
-                sig.files += rootSig.files;
-                sig.functions += rootSig.functions;
-                sig.functionBlocks += rootSig.functionBlocks;
-                sig.types += rootSig.types;
-                sig.added += rootSig.added;
-            }
-            return { sig };
-        },
-        // Browsercache enrichment runs LAST: it adds method/property NAMES to the FB/interface types the
-        // signatures and `.tmc` have already filed under a namespace (see libsymbols.js indexBrowserCache).
-        browsercache: () => ({ bc: indexBrowserCache(fsPath, index) })
-    }, { fsPath, index, roots });
-    if (result.logLine) connection.console.log(result.logLine);
-}
+// The per-project library composition lives in libraryIndex.js, where the harnesses and the timing
+// script drive the same code (nothing in this file is loadable standalone). `connection` is read at
+// call time, after module load.
+const indexLibraries = createIndexLibraries({ log: (m) => connection.console.log(m) });
 
 /**
  * Brings the symbol index up to date with a document before any language feature runs on it:

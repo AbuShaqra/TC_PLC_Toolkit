@@ -22,6 +22,7 @@ scripts/install-vsix.bat
 scripts/make-icon.js
 scripts/make-social-preview.js
 scripts/glyphRaster.js
+scripts/measure-indexing.js
 scripts/Create sample PLC project/**
 scripts/Build PLC project/**
 # The only thing in the repo that talks to the internet. It regenerates a committed data file and is

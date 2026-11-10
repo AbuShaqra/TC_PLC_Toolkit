@@ -18,7 +18,7 @@ const path = require('path');
 const { indexXmlFile, indexTwinCatDirectory } = require('./xmlIndexer');
 const { indexStDirectory } = require('./parser');
 const { fileUriToFsPath } = require('../fileUri');
-const { walkFiles, CONFIG_OBJECT_SKIP_DIRS } = require('../twincatWorkspace');
+const { walkFiles, createDirectoryListingMemo, CONFIG_OBJECT_SKIP_DIRS } = require('../twincatWorkspace');
 const {
     LOOSE_PROJECT_KEY,
     createProjectMap,
@@ -172,7 +172,7 @@ function createEmptyWorkspace() {
  * Discovers the projects under the given roots and indexes each one's objects into its own index.
  * @param {Array<string>} rootPaths Absolute workspace-root paths.
  * @param {{log?: (m: string) => void, error?: (m: string) => void,
- *   indexLibraries?: (dir: string, index: Object, roots: Array<string>) => void}} [deps] Injected side
+ *   indexLibraries?: (dir: string, index: Object, roots: Array<string>, listing: Object) => void}} [deps] Injected side
  *   effects. `indexLibraries` is stubbed by the harnesses that only care about the partition.
  *   The third argument is the full set of workspace roots — `library-signatures.xml` is a
  *   WORKSPACE-level artifact (`twincat.updateLibraryDefinitions` writes it to `folders[0].fsPath`, see
@@ -186,6 +186,10 @@ function scanWorkspace(rootPaths, deps) {
     const roots = rootPaths || [];
     const projectMap = createProjectMap(roots);
     const workspace = makeWorkspace(projectMap, roots.slice());
+    // One directory-listing memo per scan, handed to every project's library index: they all walk the
+    // same workspace roots for the signatures dump. Dropped with the scan — never reused by the next
+    // one, which is what keeps an added or removed dump or `.tmc` visible to the next reindex.
+    const listing = createDirectoryListingMemo();
 
     if (projectMap.isEmpty()) {
         // No .plcproj anywhere: a fresh clone, or a loose folder of TwinCAT files. Index everything
@@ -195,7 +199,7 @@ function scanWorkspace(rootPaths, deps) {
             try {
                 indexTwinCatDirectory(loose, root, null);
                 indexStDirectory(root, loose);
-                indexLibraries(root, loose, roots);
+                indexLibraries(root, loose, roots, listing);
             } catch (e) {
                 error(`Failed to index folder ${root}: ${e.message}`);
             }
@@ -213,7 +217,7 @@ function scanWorkspace(rootPaths, deps) {
             indexXmlFile(index, objectFile);
         }
         try {
-            indexLibraries(project.dir, index, roots);
+            indexLibraries(project.dir, index, roots, listing);
         } catch (e) {
             error(`Failed to index libraries for ${project.name}: ${e.message}`);
         }

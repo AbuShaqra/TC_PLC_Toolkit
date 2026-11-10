@@ -204,6 +204,7 @@ per-suite without aborting on the first failure. The main ones:
 | `test/test_st_strings.js` | ST string literals across **all three** grammars that must agree — the `src/lsp/parser.js` lexer, the webview's Monarch tokenizer and `syntaxes/twincat-st.tmLanguage.json`. IEC 61131-3 escapes with `$` (`$'`, `$$`, `$N`, `$0D`, …) and a **backslash is an ordinary character**; both highlighting grammars had C-style `\\.` escape rules copied from Monaco's sample, so `'C:\Temp\x\'` swallowed its own closing quote and ran on to the next apostrophe anywhere below — in the reported case an `FB's` inside a comment 16 lines down. Uses that verbatim case. The lexer was always right; only the two grammars were wrong, which is exactly why one harness now pins all three together. |
 | `test/test_scan_controller.js` | `src/lsp/scanController.js`: which of the two scan-triggering requests actually has to run a scan. Pins that `ensureScanned` twice over one root set scans **once** (the duplicate startup scan this replaced), that `rescan` after it scans **again** — the assertion that stops a future "optimisation" from teaching the `.plcproj` watcher to skip, since on a content change the roots are unchanged — and that a throwing scan leaves no completed state. Root sets compare order-, case- and separator-insensitively; the empty set is a legitimate *completed* state, or a window with no folders would re-request forever. |
 | `test/test_debounce.js` | `src/util/debounce.js`: trailing edge only, one invocation per burst carrying the **last** arguments, every caller's promise resolved. Timers are injected, so it asserts on a fake clock rather than racing a real one. |
+| `test/test_discovery_memo.js` | R6's per-scan directory-listing memo (`createDirectoryListingMemo`, `src/twincatWorkspace.js`): a memoized signature/`.tmc` walk equals the unmemoized one (same files, order, caller-spelled paths); a 3-project scan reads each directory from disk exactly once; and through the REAL scan composition a dump or `.tmc` added after a scan is found by the next one, a removed one is gone, and one three levels below a project is found — the memo never outlives its scan. |
 | `test/test_collect_scope.js` | Which directories each library walker descends. The `.tmc` and signature walkers must **skip** `_Libraries` while `collectArchives` must **enter** it, and the harness proves the second half is load-bearing by adding `_libraries` to `SKIP_DIRS` and watching archive collection go blind — the tempting one-line "fix" that would silently cost ~171 false positives. |
 | `test/test_signature_cache.js` | `src/lsp/parseCache.js`: one dump, three projects → parsed once, two cache hits, all three resolving its symbols. The load-bearing half is **isolation**: each project must hold a *different record object* (asserted by identity, not value — a value check still passes while sharing), so that the merge's `record.namespace` rewrite and `indexBrowserCache`'s member pushes cannot leak between projects. An mtime bump re-parses. |
 | `test/test_plcproj_cache.js` | `src/lsp/plcprojRefs.js`: the same `.plcproj` read **once** across all three indexers that need it, not three times, with an equivalence gate comparing every result against a control run that clears the cache between every call — the two consumers genuinely read the file differently (all `<Namespace>` tags vs the first tag whatever it holds) and the shared record has to preserve both. |
@@ -573,6 +574,10 @@ src/
                         library-index stage table (LIBRARY_INDEX_STAGES, order validated at module
                         load; stage runners injected by server.js). IPC-free — the third instance
                         of the same harness-loadability injection pattern as scanController.js.
+    libraryIndex.js     The per-project library composition (`createIndexLibraries`): namespaces,
+                        archives, .tmc, signatures (project dir + every workspace root), browsercache,
+                        run through the stage table. Moved out of server.js so the harnesses and
+                        scripts/measure-indexing.js drive the code the server runs, not a copy.
     scanController.js   Decides WHEN to scan, separately from how. custom/reindex = "rebuild
                         unconditionally"; custom/indexReady = "resolve once these roots are indexed".
                         Outside server.js for the same harness reason; the scan is injected.
@@ -669,6 +674,11 @@ scripts/
                         hand-rolled PNG encoder, and drawMark (the logo itself, so both draw the SAME
                         mark). Reads Segoe UI from C:/Windows/Fonts; only the pixels are committed.
                         Dev-only, .vscodeignored, not in the typecheck graph.
+  measure-indexing.js   Timing harness for the workspace scan: builds an N-project copy of the sample
+                        (synthetic archives, noise directories, a root signatures dump) in a temp dir
+                        and times the real scan in fresh processes — cold, warm (second session) and
+                        per-project ready time. Measures, never gates; not in `npm test`. Dev-only,
+                        .vscodeignored. `--samples` times the committed sample/ as-is.
 ```
 
 ### Project templates (Create New Project, roadmap R2)
@@ -864,6 +874,18 @@ warm / ~20 s cold projected, and the wait is visible. Four invariants hold that,
 4. **`SKIP_DIRS` must never gain `_libraries`.** `collectArchives` walks it; excluding it there finds
    zero archives and costs ~171 false positives. `PROJECT_SKIP_DIRS` is the excluding set, for the
    `.tmc`/signature/`.plcproj` walkers only. `test_collect_scope.js` proves both halves.
+
+**Signature and `.tmc` discovery is memoized per scan** (R6). Every project of a scan walks the
+workspace roots for `library-signatures.xml` (it sits above every project) plus its own directory for
+the dump and the `.tmc`: 16 full walks per scan on 8 projects, ~850 ms on Windows. `scanWorkspace` now
+creates one `createDirectoryListingMemo()` (`src/twincatWorkspace.js`) per scan and hands it to every
+project's `indexLibraries`; `walkFiles` replays a directory it has already read. Measured with
+`scripts/measure-indexing.js` (8 projects): readdir calls per scan 9,282 → 3,771, the signature/`.tmc`
+walks 5,000 → 333 (one root walk). **Invalidation is the scan boundary and nothing else:** the memo
+dies with its scan, so an added or removed dump or `.tmc` is found by the next scan (startup, or the
+`custom/reindex` the `.plcproj` watcher and Update Library Definitions send) exactly as before. No
+directory-mtime guard — a file added two levels down does not change the project directory's mtime.
+`test_discovery_memo.js` pins it.
 
 The scan is still **synchronous**, so the server's event loop stops for its duration and requests
 queue unread. That is why the progress indicator lives in the **extension host** — a separate process

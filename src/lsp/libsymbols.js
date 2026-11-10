@@ -39,6 +39,7 @@ const fs = require('fs');
 const path = require('path');
 const zlib = require('zlib');
 const { walkFiles, ARCHIVE_SKIP_DIRS, PROJECT_SKIP_DIRS } = require('../twincatWorkspace');
+/** @typedef {import('../twincatWorkspace').DirectoryListingMemo} DirectoryListingMemo */
 const { findBrowserCacheFile, MANAGED_LIBRARIES } = require('./browserCache');
 const {
     parseSignatureRecords,
@@ -1202,12 +1203,14 @@ function parseTmcDataType(block, index) {
  * (`<Type Namespace="Tc2_MC2">ST_AxisStatus</Type>`), which reaches types no readable archive holds.
  * @param {string} rootDir Workspace folder to scan.
  * @param {Object} [index] The project's symbol index. Omit for the default registry.
+ * @param {DirectoryListingMemo|null} [listing] The scan's directory-listing memo (see
+ *   twincatWorkspace.js createDirectoryListingMemo); omitted, the walk reads the disk directly.
  * @returns {{files: number, symbols: number, attributed: number, types: number, structured: number,
  *            ms: number}} Indexing statistics; `attributed` counts the type names the `.tmc` assigned
  *          to a library namespace, `types` the `<DataType>` blocks parsed and `structured` those of
  *          them that carry members (struct / fb / enum).
  */
-function indexTypeSystem(rootDir, index) {
+function indexTypeSystem(rootDir, index, listing) {
     const started = Date.now();
     const stats = { files: 0, symbols: 0, attributed: 0, types: 0, structured: 0, ms: 0 };
     if (!rootDir || !fs.existsSync(rootDir)) return stats;
@@ -1216,7 +1219,7 @@ function indexTypeSystem(rootDir, index) {
     indexLibraryTitles(rootDir, index); // establishes which namespaces the project actually imports
 
     const files = [];
-    collectTmcFiles(rootDir, files);
+    collectTmcFiles(rootDir, files, listing);
 
     for (const file of files) {
         let xml;
@@ -1385,13 +1388,14 @@ function isBrowserCacheMemberName(namespace, name, index) {
  * the `.tmc` is a build output of the *project*, never something a vendor ships in an archive tree.
  * @param {string} dir Directory to scan.
  * @param {string[]} out Accumulator, mutated.
+ * @param {DirectoryListingMemo|null} [listing] The scan's directory-listing memo, if any.
  */
-function collectTmcFiles(dir, out) {
+function collectTmcFiles(dir, out, listing) {
     // Regular files only — walkFiles' isFile gate deliberately excludes directory/symlink decoys
     // the old inline walk admitted (see test_twincat_workspace.js's "regular FILES only" check).
     // Cost accepted with the tightening: a LEGITIMATE symlink to a real dump is dropped too — if
     // that ever bites, it presents as resurrected library false positives.
-    return walkFiles(dir, { skipDirs: PROJECT_SKIP_DIRS, isMatch: (name) => /\.tmc$/i.test(name), out });
+    return walkFiles(dir, { skipDirs: PROJECT_SKIP_DIRS, isMatch: (name) => /\.tmc$/i.test(name), out, listing });
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -1560,8 +1564,9 @@ function indexLibrarySignaturesFromXml(xml, index) {
  * never vendored inside an archive tree.
  * @param {string} dir Directory to scan.
  * @param {string[]} out Accumulator, mutated.
+ * @param {DirectoryListingMemo|null} [listing] The scan's directory-listing memo, if any.
  */
-function collectSignatureFiles(dir, out) {
+function collectSignatureFiles(dir, out, listing) {
     // Regular files only — walkFiles' isFile gate deliberately excludes directory/symlink decoys
     // the old inline walk admitted (see test_twincat_workspace.js's "regular FILES only" check).
     // Cost accepted with the tightening: a LEGITIMATE symlink to a real dump is dropped too — if
@@ -1569,7 +1574,8 @@ function collectSignatureFiles(dir, out) {
     return walkFiles(dir, {
         skipDirs: PROJECT_SKIP_DIRS,
         isMatch: (name) => name.toLowerCase() === 'library-signatures.xml',
-        out
+        out,
+        listing
     });
 }
 
@@ -1581,16 +1587,19 @@ function collectSignatureFiles(dir, out) {
  * everything it touches, so a reindex re-merges cleanly.
  * @param {string} rootDir Absolute workspace folder.
  * @param {Object} [index] The project's symbol index. Omit for the default registry.
+ * @param {DirectoryListingMemo|null} [listing] The scan's directory-listing memo (see
+ *   twincatWorkspace.js createDirectoryListingMemo). Every project of a scan walks the same workspace
+ *   roots for the dump, so this is what turns 2 walks per project into one walk per directory.
  * @returns {{files: number, functions: number, functionBlocks: number, types: number, added: number,
  *            ms: number}} Indexing statistics.
  */
-function indexLibrarySignatures(rootDir, index) {
+function indexLibrarySignatures(rootDir, index, listing) {
     const started = Date.now();
     const stats = { files: 0, functions: 0, functionBlocks: 0, types: 0, added: 0, ms: 0 };
     if (!rootDir || !fs.existsSync(rootDir)) return stats;
 
     const files = [];
-    collectSignatureFiles(rootDir, files);
+    collectSignatureFiles(rootDir, files, listing);
 
     for (const file of files) {
         // Parsed once per workspace, merged once per project: the same dump is reached by every
