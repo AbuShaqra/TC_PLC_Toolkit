@@ -139,7 +139,10 @@ function walk(dir, out = []) {
 }
 const toUri = p => 'file:///' + p.split(path.sep).join('/').replace(/^\//, '');
 
-const files = walk(path.join(REPO, 'sample'));
+// The first sample only: the fixtures name its objects (FB_Cylinder, FB_Station, GVL_System), and
+// sample/ also holds a second solution whose same-named MAIN / FB_Cylinder would collide in this one
+// flat index.
+const files = walk(path.join(REPO, 'sample', 'TcToolkitSample'));
 lspParser.clearWorkspaceIndex();
 const index = lspParser.getWorkspaceSymbolIndex();
 const byName = {}, byUri = {};
