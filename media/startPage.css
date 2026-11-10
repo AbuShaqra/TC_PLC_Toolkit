@@ -283,5 +283,5 @@ a:hover { color: var(--vscode-textLink-activeForeground); text-decoration: under
     .card, .tile, button.action, .recents li, .links a, .chevron { transition: none; }
 }
 
-/* Compile project: an ordinary action once a compiler is configured; until then no chevron. */
+/* Compile project: an ordinary action while its compiler file exists; without it, no chevron. */
 #compile-project:not(.ready) .compile-chevron { display: none; }

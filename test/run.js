@@ -19,8 +19,9 @@
  *
  * Env:    REQUIRE_FULL_SUITE=1        fail instead of running REDUCED — use before packaging a
  *                                     release, so a degraded run can never be mistaken for a clean one.
- *         TWINCAT_COMPILER_BUNDLE     path of an external compiler's bundled CLI file: lets the
- *                                     optional real-compiler gate (test_compile_real.js) run.
+ *         TWINCAT_COMPILER_BUNDLE     path of a compiler CLI file to use INSTEAD of the bundled
+ *                                     resources/compiler/compiler.cjs in the optional real-compiler
+ *                                     gate (test_compile_real.js), which needs a Node >= 22.
  */
 
 const { spawnSync } = require('child_process');

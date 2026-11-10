@@ -872,12 +872,17 @@ async function run() {
         }
 
         // --- Phase compile (R3.2): Compile Project through the real command on every PLC project.
-        //     Needs an external compiler (run.js writes twincat.compiler.path into the fresh profile
-        //     only when TWINCAT_COMPILER_BUNDLE is set); without one the phase says it was skipped.
+        //     Runs the bundled compiler (run.js writes twincat.compiler.path only as an override, when
+        //     TWINCAT_COMPILER_BUNDLE is set). Without a Node >= 22 the phase says it was skipped.
         try {
-            const compilerPath = vscode.workspace.getConfiguration('twincat.compiler').get('path', '');
-            if (!compilerPath) {
-                log('compile', { skipped: 'twincat.compiler.path is empty (set TWINCAT_COMPILER_BUNDLE to run it)' });
+            const compilerPath = vscode.workspace.getConfiguration('twincat.compiler').get('path', '') || '(bundled)';
+            const { checkSetup } = require(path.join(REPO, 'src', 'compileCheck.js'));
+            const setup = await checkSetup({
+                compilerPath: vscode.workspace.getConfiguration('twincat.compiler').get('path', ''),
+                nodePath: vscode.workspace.getConfiguration('twincat.compiler').get('nodePath', '')
+            });
+            if (!setup.ok) {
+                log('compile', { skipped: setup.problems.map(p => p.message).join(' ') });
             } else {
                 const runs = [];
                 // Every project keeps its own results, so a run is judged on its own project's files.
@@ -899,7 +904,7 @@ async function run() {
                         problemsPanel: problems.length
                     });
                 }
-                log('compile', { compilerPath, runs });
+                log('compile', { compilerPath, compilerBundled: setup.compilerBundled, node: `${setup.nodeVersion} (${setup.nodeLabel})`, runs });
             }
         } catch (e) {
             log('compile', { error: String((e && e.stack) || e) });

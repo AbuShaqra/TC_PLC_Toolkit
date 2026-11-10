@@ -532,8 +532,8 @@ function activate(context) {
 
     // TwinCAT sidebar Start view + start page (create / open a project, project actions, help,
     // settings). The solutions this workspace holds are recorded as recently opened for the page.
-    // Compile Project (an external IEC 61131-3 compiler, run as a child process). Registered before
-    // the start page so the page can ask whether a compiler is configured.
+    // Compile Project (an external IEC 61131-3 compiler that ships with the extension, run as a child
+    // process). Registered before the start page so the page can ask whether the compiler is there.
     /** @type {{startPage: {postState: () => void}}|null} */
     let start = null;
     const compile = registerCompileCommands(context, {
@@ -543,7 +543,7 @@ function activate(context) {
 
     start = registerStartCommands(context, {
         provider, getProjectMap: () => hostProjectMap, getSolutionMap: () => hostSolutionMap,
-        isCompilerConfigured: compile.isConfigured
+        isCompilerAvailable: compile.isAvailable
     });
     /** @type {any} */ (start).recordOpenSolutions();
 

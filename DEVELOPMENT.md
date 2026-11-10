@@ -92,16 +92,17 @@ found running 2 of its 10 tests. Hence the classification below: a run states wh
   whole-suite FULL coverage.
 
 **Optional gates** are listed in the summary as *ran* or *skipped* but never make a run REDUCED:
-today only `compile-real` (`test/test_compile_real.js`, Compile Project against a real external
-compiler, which CI does not have). Run it by hand with the compiler's bundled CLI:
+today only `compile-real` (`test/test_compile_real.js`, Compile Project against the REAL compiler —
+the bundled `resources/compiler/compiler.cjs`). It needs a Node >= 22, found the way the command finds
+one; without it (CI's Node 16/20 legs) it skips. It runs in every `npm test` on Node 22+ (CI's lint/test
+leg uses Node 24). To try another compiler build instead of the bundled one:
 
 ```bash
-TWINCAT_COMPILER_BUNDLE=/path/to/compiler-bundle.cjs node test/test_compile_real.js
-# optional: TWINCAT_COMPILER_NODE=/path/to/node (>= 22), else `node` on PATH
+TWINCAT_COMPILER_BUNDLE=/path/to/strucpp-bundle.cjs node test/test_compile_real.js
+# optional: TWINCAT_COMPILER_NODE=/path/to/node (>= 22)
 ```
 
-Build the bundle from the compiler's `development` branch (`npm ci && npm run build:bundle`, which
-writes the bundled CLI under `dist/`) in a scratch clone. Never make `compile-real` required in `test/run.js`.
+Never make `compile-real` required in `test/run.js` — a Node < 22 machine must still run a FULL suite.
 
 `REQUIRE_FULL_SUITE=1` turns a reduced or filtered run into a hard failure after the harness reports
 are collected. Use it before packaging a release, so a silently skipped gate can never be mistaken
@@ -164,9 +165,10 @@ per-suite without aborting on the first failure. The main ones:
 | `test/test_start_contributions.js` | package.json for R2: the `twincat` Activity Bar container holding Start, TwinCAT Objects, TwinCAT Libraries in that order with ids unchanged, none left in the Explorer, References still in its panel, no dangling view id in a when-clause; each start command contributed under TwinCAT, in the palette, registered, with an `onCommand` activation event (needed on 1.66); Start view welcome links; a monochrome offline icon; the start page's strict CSP and no remote load; `.vscodeignore` shipping the derived templates but not the raw XAE source; the `twincat.startPage.recentProjectsShown` and machine-scoped `twincat.xaeShell.path*` settings, and the page's command / settings-section allow-lists. |
 | `test/test_start_commands.js` | `src/commands/startCommands.js` + `src/startPage.js` under a recording `vscode` stub: create with args and with prompts (files, recents, last location, open here/new/add/none), refusals inline vs as a notification, a deleted recent solution pruned, Generate ST's project pick, help links and settings, the singleton panel, its `state` message (including the recent-list length, clamped, and the XAE Shell paths), a settings change re-posting state to an open page, `openSettings {section}` and Open Settings' query argument, and the command allow-list. |
 | `test/test_check_unit.js` | `src/checkUnit.js`: one origin per emitted line, every pane line exactly once and verbatim in pane order (so a reported line/column IS the pane's), generated lines anchored on their component, members before the body, no rewriting (`REFERENCE TO`, `REF=`, pragmas survive), every sample file round-trips. |
-| `test/test_compile_check.js` | `src/compileCheck.js` with a fake child process: setup messages (compiler missing, Node missing/too old, each naming its setting), the command line, the JSON report (clean, errors, malformed, exit 2, crash), mapping to file/component/pane/line, the pragma-warning filter and its count, temp-dir lifetime, timeout, cancellation, `paneRange`. |
-| `test/test_compile_commands.js` | `src/commands/compileCommands.js` + the provider hooks under a recording `vscode` stub: project pick, setup refusal, clean run, a run with errors (Problems entries, pane markers, status text, summary), unsaved edits reaching the compiler, Go to Problem and the entry links, an edit dropping its component's results, a failed run keeping the previous results, cancellation, a fresh open landing on the first problem. |
-| `test/test_compile_real.js` | **Optional gate `compile-real`**: the REAL compiler (`TWINCAT_COMPILER_BUNDLE`) over every PLC project in `sample/`, through the same code the command uses: ZERO errors and zero warnings after the pragma filter (a ratchet, like the diagnostics baseline), plus planted errors in a method body, a method declaration and a GVL landing on the right file/component/pane/line, and — in the second sample — a call to a method only the FIRST sample's same-named `FB_Cylinder` has, reported in the second sample's MAIN (the projects are never compiled together). Skips (and says so) without a compiler. |
+| `test/test_compile_check.js` | `src/compileCheck.js` with a fake child process: the bundled compiler as default and the setting as override, Node discovery (order on Windows, the version gate, the editor runtime as last resort with `ELECTRON_RUN_AS_NODE=1`, a configured Node path as the only candidate), setup messages (compiler missing, Node missing/too old, each naming its setting), the command line, the JSON report (clean, errors, malformed, exit 2, crash), mapping to file/component/pane/line, the pragma-warning filter and its count, temp-dir lifetime, timeout, cancellation, `paneRange`. |
+| `test/test_compile_commands.js` | `src/commands/compileCommands.js` + the provider hooks under a recording `vscode` stub: the bundled compiler run when nothing is configured, project pick, setup refusal (a missing override), clean run, a run with errors (Problems entries, pane markers, status text, summary), unsaved edits reaching the compiler, Go to Problem and the entry links, an edit dropping its component's results, a failed run keeping the previous results, cancellation, a fresh open landing on the first problem. |
+| `test/test_compile_real.js` | **Optional gate `compile-real`**: the REAL compiler — the bundled one, or `TWINCAT_COMPILER_BUNDLE` — first proving the bundled IEC libraries load (`TON`, `R_TRIG`, `CTU`, `LIMIT` resolve; `PID`, from a library NOT shipped, does not), then over every PLC project in `sample/`, through the same code the command uses: ZERO errors and zero warnings after the pragma filter (a ratchet, like the diagnostics baseline), plus planted errors in a method body, a method declaration and a GVL landing on the right file/component/pane/line, and — in the second sample — a call to a method only the FIRST sample's same-named `FB_Cylinder` has, reported in the second sample's MAIN (the projects are never compiled together). Skips (and says so) without a Node >= 22. |
+| `test/test_vendored_compiler.js` | `resources/compiler/`: exactly the files `SOURCE.md` lists, each matching its recorded size and SHA-256; a full 40-hex commit and the source link at it; the GPL-3.0, Apache-2.0 and MIT texts; `THIRD-PARTY-NOTICES.md` naming the commit; `.vscodeignore` shipping the directory and dropping `scripts/vendor-compiler.js`; the bundle requiring Node built-ins only. |
 | `test/test_recent_projects.js` | `src/recentProjects.js`: newest first, de-duplicated (Windows paths case-insensitive, either separator), capped at 10, missing solutions pruned, malformed stored data ignored, the globalState adapter, and `recentsShownLimit` (the start page's row limit: default 2, clamped to 1..10). |
 | `test/test_xae_shell_detect.js` | `src/xaeShellDetect.js` with every dependency faked (runs off Windows): the COM registration for both shells (quoted and argument-suffixed `LocalServer32`, the 32-bit view for 4024, a localized value name), the default locations with and without the environment variables, a registered file that is missing, a non-GUID ProgID value, rejecting / throwing registry and existence probes, non-Windows (nothing found, registry never queried), `createRegQuery` over a fake `execFile` (argument array, timeout, errors → null), `describeConfiguredShells`, and `resolveShellExe` (configured-and-existing wins, else default location, else registry). |
 | `test/test_xae_shell_commands.js` | `src/commands/xaeShellCommands.js` under a recording `vscode` stub with detection faked: an empty setting is filled (Global target), a non-empty one is kept even when its file is missing, nothing found writes nothing, `autoFill` never rejects, `twincat.detectXaeShell` reports found / kept / not found in one message whose button opens the filtered settings. Also `findTwinCatShells` in `src/xaeShell.js`: `path4026` ↔ the 64-bit shell, `path4024` ↔ the 32-bit one, a missing configured path ignored (those checks are skipped on Windows, where a real shell may be installed). |
@@ -218,7 +220,7 @@ perfectly good Chromium already.
 | `build.js` | Generates the page by calling the **real** `getHtmlForWebview()` with a stubbed `vscode` module — a hand-copied page would quietly stop matching what ships. Substitutes only `acquireVsCodeApi()` (records outgoing messages, answers bridge requests from a fixture built off the real sample) and drops the webview CSP, which names `vscode-webview:` sources that do not exist over http. |
 | `serve.js` | Serves it. Monaco's AMD loader and its worker Blob both need a real origin. `require()` it for `start(port)`, or run it standalone to poke at the page by hand. |
 | `run.js` | The references peek: builds for the port it will serve on, drives Find References, asserts. Also pins the page's global error overlay: opening the peek must leave it hidden, Chrome's benign "ResizeObserver loop completed" notice (dispatched by hand, because whether the real loop fires is layout-timing dependent) must not raise it or post `error`, and a genuine error still must. `HARNESS_PORT` moves it off 8123; `HARNESS_SHOT=x.png` saves a screenshot. Also pins the Generate ST split button (roadmap R1): with one project the caret is hidden and the main button keeps its rounded right end; with two or more the inner corners square off to fuse with the caret (`has-caret` on `#generate-st-group`, set by `editor.js` with the caret's `hidden` flag — no `:has()`, which VS Code 1.66's Chromium lacks). Transitions are disabled for that check so it reads the end state, not a frame mid-animation. Step 7e pins Compile Project's pane markers: `compileDiagnostics` → owner `twincat-compile` on the active component's panes, `st-validator` markers surviving both ways and across a diagnostics refresh, a component switch showing only that component's markers, an edit dropping the edited component's markers and posting `compileDiagnosticsStale`; it writes a pane-marker screenshot (`HARNESS_COMPILE_SHOT`, default `test/browser/out/compile-markers.png`; empty = none). |
-| `run_start_page.js` | The start page (roadmap R2): renders the real `renderStartPageHtml()` output WITH its CSP (only `acquireVsCodeApi()` is stubbed, through Playwright's init script), and asserts no request leaves the page's origin, the project name is validated while typing (shared `media/projectName.js` rules, `aria-invalid`), Create posts `{version, name, location}` and shows a host refusal, every other control posts its message, project actions are disabled while no project is open, Compile project is enabled only with `compilerReady` AND a project (and names no compiler product), the form survives in webview state, the recent list shows at most `recentsShown` rows behind a keyboard-operable "Show all (K)" / "Show fewer" tile (local to the page, follows a changed limit), the Settings card shows the two XAE Shell paths with a warning row for a path that is not on disk and posts `openSettings {section}` / the detect command, and there is no horizontal scroll at 360/560/1200 px (one column at 360). Defaults to port 8125. |
+| `run_start_page.js` | The start page (roadmap R2): renders the real `renderStartPageHtml()` output WITH its CSP (only `acquireVsCodeApi()` is stubbed, through Playwright's init script), and asserts no request leaves the page's origin, the project name is validated while typing (shared `media/projectName.js` rules, `aria-invalid`), Create posts `{version, name, location}` and shows a host refusal, every other control posts its message, project actions are disabled while no project is open, Compile project is enabled only with `compilerReady` (the compiler file exists — by default the bundled one) AND a project, shows "Compiler file not found" otherwise (and names no compiler product), the form survives in webview state, the recent list shows at most `recentsShown` rows behind a keyboard-operable "Show all (K)" / "Show fewer" tile (local to the page, follows a changed limit), the Settings card shows the two XAE Shell paths with a warning row for a path that is not on disk and posts `openSettings {section}` / the detect command, and there is no horizontal scroll at 360/560/1200 px (one column at 360). Defaults to port 8125. |
 | `run_pragmas.js` | Folding and pragma highlighting. Folds real blocks and reads back the rendered lines, then tokenizes through Monaco's **own** tokenizer. Both fail silently if they regress, which is the point of driving a browser: a unit test on `stFolding.js` cannot prove Monaco actually *used* it rather than its own indentation provider. Carries the two reported bugs as regressions, and asserts implementation-pane blocks still fold — registering a provider replaces indentation folding, so that is the thing most likely to disappear unnoticed. Verified: removing the provider turns 6 assertions red, and the failure text reproduces both original bug reports verbatim. Defaults to port 8124. |
 
 `run.js` asserts what only a browser can show: that the peek lists cross-file hits at all, that exactly
@@ -274,10 +276,11 @@ real host runs the watcher chain, so this is the one place it can be proven). Th
 Bar container and its Start / Objects / Libraries views open (`workbench.view.extension.twincat`,
 `<view>.focus`), *TwinCAT: Open Start Page* opens the `TwinCAT Start` tab, and *Create New Project* (with
 its arguments, so no dialog) writes a 3.1.4026 and a 3.1.4024 solution and refuses a second create. The
-optional **compile phase** (R3.2) runs *TwinCAT: Compile Project* on every PLC project of the fixture
-through the real command: it runs only when `TWINCAT_COMPILER_BUNDLE` (and optionally
-`TWINCAT_COMPILER_NODE`) is set, which `run.js` writes into the fresh profile's `twincat.compiler.*`
-settings; without it the phase prints `[SKIP]` and asserts nothing. It asserts every run finishes, that no
+**compile phase** (R3.2/R3.3) runs *TwinCAT: Compile Project* on every PLC project of the fixture
+through the real command, with the **bundled** compiler (asserted) — `TWINCAT_COMPILER_BUNDLE` (and
+`TWINCAT_COMPILER_NODE`) override it, written by `run.js` into the fresh profile's `twincat.compiler.*`
+settings. Only when the host's `checkSetup` finds no Node >= 22 does the phase print `[SKIP]` and assert
+nothing. It asserts every run finishes, that no
 error is reported on the sample's own code (only the identifiers the P8 phases typed on purpose, which
 reach the compiler as unsaved edits, plus the object-insert phase's snippet in its file), and that each
 project's files in the Problems panel hold exactly that project's results.
@@ -409,8 +412,9 @@ src/
   checkUnit             Compile Project's check unit: one ST unit per TwinCAT object with a per-LINE
                         origin map back to component/pane/line. Pane text verbatim (never the export's
                         rewrites), members BEFORE the POU body. NOT the live path's unit. vscode-free
-  compileCheck          Compile Project's vscode-free half: setup check (compiler file exists, Node
-                        >= 22 probed), check inputs from object texts, the compiler run as a CHILD
+  compileCheck          Compile Project's vscode-free half: setup check (the bundled compiler
+                        resources/compiler/compiler.cjs unless twincat.compiler.path overrides it;
+                        Node >= 22 FOUND by nodeCandidates/findNode), check inputs from object texts, the compiler run as a CHILD
                         PROCESS (`--check --json --dialect-file resources/dialects/twincat3.json`,
                         `--global-list N.st=<GVL>` per GVL; never `require()`d, never `--strict`) in
                         a temp dir deleted afterwards, timeout + cancel, JSON report → file/component/
@@ -612,7 +616,15 @@ resources/
                         scripts/build-project-templates.js — never hand-edited
   templates/xae-3.1.4024/  Raw XAE 3.1.4024.62 output, the 4024 template's source (.vscodeignored)
   dialects/twincat3.json   The vendored STruC++ dialect profile (R3)
+  compiler/             The bundled STruC++ compiler (R3.3), WRITTEN by scripts/vendor-compiler.js —
+                        never hand-edited: compiler.cjs (the fork's dist/strucpp-bundle.cjs, renamed so
+                        no product name reaches the UI), libs/iec-standard-fb.stlib +
+                        iec-std-functions.stlib, the GPL-3.0 LICENSE/COPYING/COPYING.RUNTIME,
+                        third-party/ (chevrotain Apache-2.0, lodash-es MIT), SOURCE.md (repo, commit,
+                        size + SHA-256 per file). Ships in the VSIX
 scripts/
+  vendor-compiler.js    Copies a BUILT, clean fork checkout into resources/compiler/ and records its
+                        commit. Dev-only, .vscodeignored
   build-project-templates.js  Derives resources/templates/tc3.1.40xx/ from the XAE skeletons;
                         `--check` exits 1 when the committed copies are stale. .vscodeignored
   glyphRaster.js        The renderer behind both images: TrueType outline reader, scanline rasterizer,
@@ -957,7 +969,7 @@ open a string running to the next quote anywhere in the file — which is how In
 off for a whole VAR block — and an unterminated `{` would swallow the rest of the document. That holds
 in three places: the lexer (`parser.js`), the Monarch tokenizer, and the TextMate grammar.
 
-### Compile Project (roadmap R3.2)
+### Compile Project (roadmap R3.2, bundled in R3.3)
 
 `twincat.compileProject` checks one PLC project with an external IEC 61131-3 compiler. The user-facing
 surfaces (UI, README) never name the compiler product — a user ruling, pinned by
@@ -967,7 +979,7 @@ surfaces (UI, README) never name the compiler product — a user ruling, pinned 
    (unsaved edits count) with Manual Sync's pending edits folded in, else from disk.
 2. **Units** — `buildCheckInputs` → `checkUnit.buildCheckUnit` per object, written as `N.st` in a
    `mkdtemp` directory (deleted however the run ends); a GVL gets `--global-list N.st=<name>`.
-3. **Run** — `node <compilerPath> --check --json --dialect-file resources/dialects/twincat3.json …` as
+3. **Run** — `<node> <compilerPath> --check --json --dialect-file resources/dialects/twincat3.json …` as
    a child process, Node >= 22 probed first, 2-minute timeout, cancellable. **No `--strict`** (decided:
    it refuses TwinCAT-legal DINT→INT narrowing and WORD arithmetic). Exit 1 without errors, or a report
    that is not JSON, is a failed run; a failed/timed-out/cancelled run keeps the previous results.
@@ -985,10 +997,44 @@ surfaces (UI, README) never name the compiler product — a user ruling, pinned 
    to a component drops its compile markers and posts **`compileDiagnosticsStale {componentId}`**, so
    the host drops the matching Problems entries.
 
-The start page's *Compile project* tile is enabled when `twincat.compiler.path` is set, the file exists,
-and a project is open (`state.compilerReady` + `hasProject`); a change to `twincat.compiler.*` re-posts
-the page's state. Results live in memory only (problem-link ids included) — a compile result describes
+The start page's *Compile project* tile is enabled when the compiler file exists — the bundled one, or
+the override `twincat.compiler.path` names — and a project is open (`state.compilerReady` +
+`hasProject`); only a missing override (or a damaged install) disables it, with "Compiler file not
+found". A missing Node is not known to the tile: the command explains it on click. A change to
+`twincat.compiler.*` re-posts the page's state. Results live in memory only (problem-link ids included) — a compile result describes
 one moment.
+
+**The bundled compiler (R3.3).** The compiler ships in `resources/compiler/`, so an empty
+`twincat.compiler.path` means `bundledCompilerPath()` (`resolveCompilerPath`); a set path is an
+override. It is GPL-3.0 and is only ever run as a child process. The bundle loads every `.stlib` in the
+`libs/` next to itself (`findBundledLibsDir` in the fork tries `../../libs` and `../libs` first — neither
+exists in the extension); only the two IEC libraries ship, because the fork's others (OSCAT, softmotion,
+extra FBs such as `PID`) are not TwinCAT's and would make names resolve that TwinCAT refuses.
+`compile-real` pins both directions.
+
+**Node discovery** (`nodeCandidates` → `findNode`, everything injected: `platform`, `env`, `runtime`,
+`spawn`, `exists`). A set `twincat.compiler.nodePath` is the ONLY candidate (a configured path that fails
+is reported, never silently replaced). Otherwise, in order: `node` on PATH; on Windows
+`%ProgramFiles%`/`%ProgramW6432%`/`%ProgramFiles(x86)%\nodejs\node.exe`, `%NVM_SYMLINK%\node.exe`,
+`%VOLTA_HOME%\bin`, `%LOCALAPPDATA%\Volta\bin`, `%ProgramFiles%\Volta`, `%FNM_DIR%\aliases\default`,
+`%APPDATA%\fnm\aliases\default` (each only if the file exists); last, the editor's own runtime
+(`process.execPath` with `ELECTRON_RUN_AS_NODE=1`), only when `process.versions.node` is 22+. Each is
+probed with `--version`; the first at 22+ wins, and its `env` travels with it to the check run
+(`nodeEnv`). When none qualifies, one message lists what was tried and how to fix it.
+
+**Updating the compiler.** In a scratch clone of the fork (never the checkout another session works in):
+
+```bash
+git clone https://github.com/AbuShaqra/STruCpp /tmp/fork && cd /tmp/fork
+git checkout <commit on origin/development>     # must be pushed: SOURCE.md links it
+npm ci && npm run build:bundle                  # Node 22+
+cd <toolkit> && node scripts/vendor-compiler.js /tmp/fork
+```
+
+The script refuses a dirty checkout or a bundle older than HEAD, replaces `resources/compiler/` whole,
+and warns when the commit is on no remote branch. Then update the version/commit in
+`THIRD-PARTY-NOTICES.md` (`test_vendored_compiler.js` fails until it names the new commit), run
+`compile-real` and the suite, and package a VSIX to check `resources/compiler/` is in it.
 
 ### Writes
 

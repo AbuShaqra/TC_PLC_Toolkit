@@ -168,7 +168,9 @@ const fake = createFakeSpawn((call) => {
     return compilerAnswer(call, units);
 });
 let settingsChanged = 0;
-const compile = registerCompileCommands(context, { provider, getProjectMap: projectMap, onSettingsChanged: () => { settingsChanged++; }, spawn: fake.spawn });
+const compile = registerCompileCommands(context, { provider, getProjectMap: projectMap, onSettingsChanged: () => { settingsChanged++; }, spawn: fake.spawn,
+    // Only `node` on PATH (the fake): the editor's own runtime would otherwise rescue a too-old Node.
+    nodeDiscovery: { platform: 'linux', env: {}, runtime: null } });
 const run = (id, ...args) => vscodeStub.commands.executeCommand(id, ...args);
 const problems = collections[0];
 const unitLineOf = (xml, text) => buildCheckUnit(parseTwinCatXml(xml)).lines.indexOf(text) + 1;
@@ -185,24 +187,32 @@ const settle = () => new Promise(r => setTimeout(r, 10));
     assert(handlers.has('twincat.compileProject') && handlers.has(GO_TO_PROBLEM_COMMAND) && !!uriHandler && problems.name === 'twincat-compile',
         'REGISTER: the command, the problem picker, the link handler and one diagnostic collection');
 
-    // ── Not configured ──────────────────────────────────────────────────────────────────────────
-    assert(compile.isConfigured() === false, 'TILE: no compiler is configured by default');
-    answers.message.push('Open Settings');
+    // ── The bundled compiler, and the setting as an override ───────────────────────────────────
+    const BUNDLED = path.join(REPO, 'resources', 'compiler', 'compiler.cjs');
+    assert(compile.isAvailable() === true, 'TILE: with the setting empty the bundled compiler is available');
     let result = await run('twincat.compileProject');
     await settle();
+    const bundledCall = fake.calls[fake.calls.length - 1];
+    assert(result.ok === true && bundledCall.args[0] === BUNDLED && bundledCall.args.includes('--check'),
+        `BUNDLED: with nothing configured the command runs the bundled compiler (${bundledCall.args[0]})`);
+    for (const k of ['executed', 'errors', 'infos', 'warnings', 'progress']) calls[k].length = 0;
+
+    settings['twincat.compiler.path'] = path.join(ROOT, 'gone.cjs');
+    assert(compile.isAvailable() === false, 'TILE: an override path that does not exist makes the compiler unavailable');
+    answers.message.push('Open Settings');
+    const probesFrom = fake.calls.length;
+    result = await run('twincat.compileProject');
+    await settle();
     assert(result.ok === false && result.reason === 'setup' && calls.errors.length === 1 &&
-        /Compile Project cannot run\. No compiler is installed/.test(calls.errors[0].m) && /twincat\.compiler\.path/.test(calls.errors[0].m) &&
+        /Compile Project cannot run\. The compiler file ".*gone\.cjs" \(setting "twincat\.compiler\.path"\) does not exist/.test(calls.errors[0].m) &&
         calls.errors[0].buttons.join() === 'Open Settings',
-        'SETUP: without a compiler the command explains what is missing and offers the settings');
+        `SETUP: a missing override compiler is explained and the settings are offered (${calls.errors[0] && calls.errors[0].m})`);
     assert(calls.executed.some(c => c.id === 'twincat.openSettings' && c.args[0] === 'twincat.compiler'),
         'SETUP: "Open Settings" opens the compiler settings');
-    assert(fake.calls.every(c => c.args[0] === '--version') && seenUnits.length === 0 && problems.map.size === 0, 'SETUP: the compiler was not started');
+    assert(fake.calls.slice(probesFrom).every(c => c.args[0] === '--version') && problems.map.size === 0, 'SETUP: the compiler was not started');
 
     settings['twincat.compiler.path'] = bundlePath;
-    assert(compile.isConfigured() === true, 'TILE: a compiler path that exists counts as configured');
-    settings['twincat.compiler.path'] = path.join(ROOT, 'gone.cjs');
-    assert(compile.isConfigured() === false, 'TILE: a compiler path that does not exist does not');
-    settings['twincat.compiler.path'] = bundlePath;
+    assert(compile.isAvailable() === true, 'TILE: an override path that exists counts as available');
 
     nodeVersion = 'v18.19.0';
     calls.errors.length = 0;

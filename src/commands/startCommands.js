@@ -50,15 +50,16 @@ function isTwinCatSolution(slnPath) {
  * @param {any} deps.provider The custom editor provider (owns Generate ST).
  * @param {() => any} deps.getProjectMap The host's current project partition.
  * @param {() => any} deps.getSolutionMap The host's current solution model.
- * @param {() => boolean} [deps.isCompilerConfigured] Whether Compile Project has a compiler to run.
+ * @param {() => boolean} [deps.isCompilerAvailable] Whether Compile Project's compiler file exists (the
+ *   bundled one, or the override the setting names).
  * @returns {{startPage: InstanceType<typeof StartPageController>, recordOpenSolutions: () => void}}
  */
-function registerStartCommands(context, { provider, getProjectMap, getSolutionMap, isCompilerConfigured }) {
+function registerStartCommands(context, { provider, getProjectMap, getSolutionMap, isCompilerAvailable }) {
     const recents = createRecentStore(context.globalState, (p) => fs.existsSync(p));
     const startPage = new StartPageController(context, {
         recents,
         hasProject: () => { const m = getProjectMap(); return !!(m && m.projects && m.projects.size > 0); },
-        compilerReady: () => !!(isCompilerConfigured && isCompilerConfigured())
+        compilerReady: () => !!(isCompilerAvailable && isCompilerAvailable())
     });
     const templatesRoot = path.join(context.extensionPath, 'resources', 'templates');
 

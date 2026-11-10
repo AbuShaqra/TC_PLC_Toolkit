@@ -49,7 +49,7 @@ class StartPageController {
     /**
      * @param {vscode.ExtensionContext} context
      * @param {{recents: {list: () => any[], remove: (p: string) => Thenable<void>}, hasProject: () => boolean,
-     *   compilerReady?: () => boolean}} deps `compilerReady`: a compiler is configured and its file exists.
+     *   compilerReady?: () => boolean}} deps `compilerReady`: the compiler file exists (the bundled one, or the override).
      */
     constructor(context, deps) {
         this.context = context;

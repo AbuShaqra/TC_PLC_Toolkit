@@ -3,12 +3,15 @@
  * @description The REAL-compiler gate of Compile Project: runs an external IEC 61131-3 compiler over
  * the committed sample, through the same code the command uses (`src/compileCheck.js`).
  *
- * It runs only when `TWINCAT_COMPILER_BUNDLE` names the compiler's bundled command-line file and a
- * Node >= 22 is available (`TWINCAT_COMPILER_NODE`, else `node` on PATH); otherwise it SKIPS and
- * says so. CI has no compiler, so this gate is optional in test/run.js — it is listed in the run
+ * It runs the compiler that ships with the extension (`resources/compiler/compiler.cjs`), or the one
+ * `TWINCAT_COMPILER_BUNDLE` names instead (an override, like the `twincat.compiler.path` setting).
+ * It needs a Node >= 22, found as the command finds one (`TWINCAT_COMPILER_NODE`, else `node` on
+ * PATH, the usual install locations, then this process's own runtime); without one it SKIPS and
+ * says so. It stays optional in test/run.js (CI's Node 16/20 legs skip it) — it is listed in the run
  * summary as ran or skipped, and never makes a run REDUCED.
  *
  * Asserted:
+ *   - the bundled IEC standard libraries are found (TON, R_TRIG, LIMIT resolve; an unknown FB does not);
  *   - every PLC project under sample/ (two today: TcToolkitSample, 3.1.4026 layout, and
  *     TcToolkitSample2, 3.1.4024 layout) is checked on its own, as the command checks one project per
  *     run;
@@ -52,10 +55,24 @@ function assert(cond, msg) {
 }
 
 (async () => {
-    if (!bundle) skip('TWINCAT_COMPILER_BUNDLE is not set');
     if (!fs.existsSync(sampleDir)) skip('sample/ is absent');
     const setup = await cc.checkSetup({ compilerPath: bundle, nodePath: process.env.TWINCAT_COMPILER_NODE || '' });
     if (!setup.ok) skip(setup.problems.map(p => p.message).join(' '));
+    console.log(`    compiler: ${setup.compilerBundled ? 'bundled' : 'override'} ${setup.compilerPath}; Node ${setup.nodeVersion} (${setup.nodeLabel})`);
+    if (!bundle) assert(setup.compilerBundled && setup.compilerPath === cc.bundledCompilerPath(), 'with no override, the gate runs the bundled compiler');
+
+    // ── The bundled libraries: IEC standard FBs and functions resolve, anything else does not ──
+    {
+        const pou = (decl, impl) => cc.buildCheckInputs([{ filePath: path.join(sampleDir, 'P_Libs.TcPOU'), text:
+            `<?xml version="1.0" encoding="utf-8"?>\r\n<TcPlcObject Version="1.1.0.1">\r\n  <POU Name="P_Libs" Id="{00000000-0000-0000-0000-000000000001}" SpecialFunc="None">\r\n` +
+            `    <Declaration><![CDATA[${decl}]]></Declaration>\r\n    <Implementation><ST><![CDATA[${impl}]]></ST></Implementation>\r\n  </POU>\r\n</TcPlcObject>` }], parseTwinCatXml).inputs;
+        const ok = await cc.runCheck({ nodeCommand: setup.nodeCommand, nodeEnv: setup.nodeEnv, compilerPath: setup.compilerPath, dialectFile,
+            inputs: pou('PROGRAM P_Libs\r\nVAR\r\n\tt : TON;\r\n\tr : R_TRIG;\r\n\tc : CTU;\r\n\tx : INT;\r\nEND_VAR', 't(IN := TRUE, PT := T#1S);\r\nx := LIMIT(0, x, 5);') });
+        assert(ok.status === 'done' && ok.errors === 0, `LIBS: TON, R_TRIG, CTU and LIMIT resolve from the bundled libraries (${ok.status} ${ok.message} ${ok.errors} error(s))`);
+        const bad = await cc.runCheck({ nodeCommand: setup.nodeCommand, nodeEnv: setup.nodeEnv, compilerPath: setup.compilerPath, dialectFile,
+            inputs: pou('PROGRAM P_Libs\r\nVAR\r\n\tp : PID;\r\nEND_VAR', '') });
+        assert(bad.status === 'done' && bad.errors === 1, `LIBS: a function block from a library that is NOT shipped (PID) is an error (${bad.errors})`);
+    }
 
     const projectMap = createProjectMap([sampleDir]);
     const projects = [...projectMap.projects.values()].sort((a, b) => a.dir.localeCompare(b.dir));
@@ -67,7 +84,7 @@ function assert(cond, msg) {
     });
     const checkFiles = async (filePaths, edit) => {
         const built = cc.buildCheckInputs(read(filePaths, edit), parseTwinCatXml);
-        const result = await cc.runCheck({ nodeCommand: setup.nodeCommand, compilerPath: setup.compilerPath, dialectFile, inputs: built.inputs });
+        const result = await cc.runCheck({ nodeCommand: setup.nodeCommand, nodeEnv: setup.nodeEnv, compilerPath: setup.compilerPath, dialectFile, inputs: built.inputs });
         return { built, result };
     };
     const show = (d) => `${path.basename(d.filePath || '?')} ${d.componentId || ''} ${d.pane || ''}:${d.line}:${d.column} ${d.severity}: ${d.message}`;

@@ -132,9 +132,9 @@ function findCodeCli() {
     assert(tleoProjChanged !== tleoProjText, 'the dev-host fixture injects the .TcTLEO project include');
     fs.writeFileSync(tleoPlcproj, tleoProjChanged, 'utf8');
 
-    // Compile Project (R3.2) needs an external compiler, which only a developer's machine has. With
-    // TWINCAT_COMPILER_BUNDLE set, the fresh profile is given it (and TWINCAT_COMPILER_NODE, if set);
-    // without it the in-host compile phase reports itself skipped and nothing fails.
+    // Compile Project runs the compiler that ships with the extension (R3.3). TWINCAT_COMPILER_BUNDLE
+    // overrides it (and TWINCAT_COMPILER_NODE names the Node, if set): the fresh profile is given
+    // them as twincat.compiler.*. Without a Node >= 22 the in-host phase reports itself skipped.
     const compilerBundle = process.env.TWINCAT_COMPILER_BUNDLE || '';
     if (compilerBundle) {
         const userDir = path.join(work, 'udd', 'User');
@@ -481,14 +481,17 @@ function findCodeCli() {
     assert(!!sp && sp.refused && sp.refused.ok === false && /already contains/.test(sp.refused.error || ''),
         `creating over an existing solution is refused (${sp ? JSON.stringify(sp.refused) : 'no result'})`);
 
-    // R3.2: Compile Project in a real host, over every PLC project of the fixture. Optional: it runs
-    // only when TWINCAT_COMPILER_BUNDLE named a compiler (the in-host phase then finds
-    // twincat.compiler.path set); otherwise it is reported as skipped and asserts nothing.
+    // R3.2/R3.3: Compile Project in a real host, over every PLC project of the fixture, with the
+    // bundled compiler unless TWINCAT_COMPILER_BUNDLE overrides it. Skipped (asserting nothing) only
+    // when the command finds no Node >= 22 on this machine.
     const comp = step('compile');
     if (comp && comp.skipped) {
         console.log(`[SKIP] compile phase: ${comp.skipped}`);
     } else {
         assert(!!comp && !comp.error, 'the Compile Project phase ran without throwing' + (comp && comp.error ? ': ' + comp.error : ''));
+        if (!compilerBundle) {
+            assert(!!comp && comp.compilerBundled === true, `with no override the host runs the bundled compiler (${comp && comp.compilerPath}; Node ${comp && comp.node})`);
+        }
         const runs = (comp && comp.runs) || [];
         assert(runs.length > 0 && runs.every(r => r.result && r.result.ok === true),
             `Compile Project finishes on every project (${JSON.stringify(runs.map(r => [r.label, r.result && (r.result.ok ? 'ok' : r.result.reason)]))})`);

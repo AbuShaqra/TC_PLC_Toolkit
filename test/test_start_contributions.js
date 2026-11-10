@@ -171,7 +171,8 @@ assert(/^\^1\.66\./.test(pkg.engines.vscode), `engine stays ^1.66 (${pkg.engines
         'the page shows the extension icon (marketplace-icon.png), allowed by img-src');
     for (const v of TEMPLATE_VERSIONS) assert(html.includes(`value="${v.id}"`), `version ${v.id} is offered`);
     for (const l of HELP_LINKS) assert(html.includes(`data-link="${l.id}"`), `help link ${l.id} is on the page`);
-    assert(/id="compile-project" disabled/.test(html) && /Coming in a later release/.test(html) && !/STruC\+\+/i.test(html), 'Compile project is shown disabled, with no compiler name on the page');
+    assert(/id="compile-project" disabled/.test(html) && /external IEC 61131-3 compiler/.test(html) && !/later release/.test(html) && !/STruC\+\+/i.test(html),
+        'Compile project is disabled until the host says a project is open, is no longer "coming later", and names no compiler product');
     const settingsCard = /<section class="card" id="settings"[\s\S]*?<\/section>/.exec(html);
     assert(!!settingsCard && /<ul id="xae-list"/.test(settingsCard[0]) && /<button type="button" id="xae-change"[^>]*>Change…<\/button>/.test(settingsCard[0])
         && /data-command="twincat\.detectXaeShell">Detect again<\/button>/.test(settingsCard[0]),

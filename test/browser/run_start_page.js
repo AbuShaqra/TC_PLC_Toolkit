@@ -6,7 +6,7 @@
  * posts the right message for every control, shows results the host sends back, limits the recent
  * list to the configured number of rows behind a keyboard-operable "Show all (K)" / "Show fewer" tile,
  * shows the XAE Shell paths (with a warning for a path that is not on disk), enables Compile project
- * only with a configured compiler and an open project, and has no horizontal
+ * only while the compiler file exists (by default the bundled one) and a project is open, and has no horizontal
  * scroll at 360 px.
  *
  * Only `acquireVsCodeApi()` is stubbed (through Playwright's init script, which the CSP does not
@@ -181,22 +181,23 @@ const { TEMPLATE_VERSIONS } = require(path.join(REPO, 'src', 'projectTemplate.js
             'with a project open the actions run Generate ST and Update Library Definitions');
         assert(await visible('#recent-empty'), 'an empty recent list says so');
 
-        // ── Compile project: enabled only with a configured compiler AND an open project ─────────
-        assert(await disabled('#compile-project') && /later release/.test(await text('#compile-detail')),
-            'with a project but no compiler, Compile project stays disabled and "Coming in a later release"');
+        // ── Compile project: enabled while the compiler file exists (by default the bundled one) AND a project is open ──
+        assert(await disabled('#compile-project') && /Compiler file not found/.test(await text('#compile-detail')) && await visible('#compile-missing'),
+            `with a project but the compiler file missing (compilerReady false), Compile project is disabled and says so (${await text('#compile-detail')})`);
+        assert(!/later release/i.test(await page.content()), 'Compile project is no longer "coming in a later release"');
         await send({ type: 'state', location: 'C:\\Projects', sep: '\\', hasProject: false, compilerReady: true, recents: [] });
-        assert(await disabled('#compile-project') && !(await visible('#compile-soon')),
-            'with a compiler but no project, Compile project is disabled (and no longer marked Soon)');
+        assert(await disabled('#compile-project') && !(await visible('#compile-missing')),
+            'with the compiler but no project, Compile project is disabled (and not marked missing)');
         await send({ type: 'state', location: 'C:\\Projects', sep: '\\', hasProject: true, compilerReady: true, recents: [] });
         assert(!(await disabled('#compile-project')) && /external IEC 61131-3 compiler/.test(await text('#compile-detail')),
-            `with a compiler and a project, Compile project is enabled (${await text('#compile-detail')})`);
+            `with the compiler and a project, Compile project is enabled (${await text('#compile-detail')})`);
         assert(!/STruC\+\+/i.test(await page.content()), 'the page names no compiler product');
         await clearPosted();
         await page.click('#compile-project');
         msgs = await posted();
         assert(msgs.length === 1 && msgs[0].type === 'command' && msgs[0].command === 'twincat.compileProject', 'clicking it runs twincat.compileProject');
         await send({ type: 'state', location: 'C:\\Projects', sep: '\\', hasProject: true, compilerReady: false, recents: [] });
-        assert(await disabled('#compile-project') && await visible('#compile-soon'), 'clearing the compiler setting disables it again');
+        assert(await disabled('#compile-project') && await visible('#compile-missing'), 'an override path to a missing file disables it again');
 
         // ── Recent list: at most `recentsShown` rows, then "Show all (K)" ──────────────────────────
         const eight = Array.from({ length: 8 }, (_, i) => ({ slnPath: `C:\\Projects\\Line_${i + 1}\\Line_${i + 1}.sln`, name: `Line_${i + 1}` }));

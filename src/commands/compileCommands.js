@@ -32,7 +32,7 @@ const { normalizeFileUri } = require('../fileUri');
 const { memberName } = require('../componentId');
 const pendingEditsCore = require('../../media/pendingEdits');
 const {
-    COMPILER_SECTION, isCompilerConfigured, checkSetup, buildCheckInputs, runCheck, summarize, describeLocation, paneRange
+    COMPILER_SECTION, isCompilerAvailable, checkSetup, buildCheckInputs, runCheck, summarize, describeLocation, paneRange
 } = require('../compileCheck');
 
 /** The `source` of every diagnostic this command publishes. */
@@ -56,9 +56,10 @@ const GO_TO_PROBLEM_COMMAND = 'twincat.compile.goToProblem';
  * @param {() => any} deps.getProjectMap The host's current project partition.
  * @param {() => void} [deps.onSettingsChanged] Called when a `twincat.compiler.*` setting changes.
  * @param {Function} [deps.spawn] Child-process factory, for tests.
- * @returns {{isConfigured: () => boolean, problemsFor: (uriStr: string) => StoredProblem[]}}
+ * @param {import('../compileCheck').NodeDiscovery} [deps.nodeDiscovery] Where Node is looked for, for tests.
+ * @returns {{isAvailable: () => boolean, problemsFor: (uriStr: string) => StoredProblem[]}}
  */
-function registerCompileCommands(context, { provider, getProjectMap, onSettingsChanged, spawn }) {
+function registerCompileCommands(context, { provider, getProjectMap, onSettingsChanged, spawn, nodeDiscovery }) {
     const collection = vscode.languages.createDiagnosticCollection('twincat-compile');
     const statusItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 98);
     statusItem.command = 'workbench.actions.view.problems';
@@ -76,7 +77,8 @@ function registerCompileCommands(context, { provider, getProjectMap, onSettingsC
         const config = vscode.workspace.getConfiguration(COMPILER_SECTION);
         return { compilerPath: String(config.get('path', '') || ''), nodePath: String(config.get('nodePath', '') || '') };
     };
-    const isConfigured = () => isCompilerConfigured(readSettings().compilerPath);
+    // The compiler ships in the extension; the setting only overrides it.
+    const isAvailable = () => isCompilerAvailable(readSettings().compilerPath, { extensionRoot: context.extensionPath });
     const keyOf = (/** @type {string} */ uriStr) => normalizeFileUri(uriStr);
 
     /**
@@ -258,7 +260,7 @@ function registerCompileCommands(context, { provider, getProjectMap, onSettingsC
 
             running = true;
             try {
-                const setup = await checkSetup(readSettings(), { spawn: /** @type {any} */ (spawn) });
+                const setup = await checkSetup(readSettings(), { ...(nodeDiscovery || {}), spawn: /** @type {any} */ (spawn), extensionRoot: context.extensionPath });
                 if (!setup.ok) return { ok: false, reason: 'setup', message: reportSetupProblems(setup.problems) };
 
                 const outcome = await vscode.window.withProgress(
@@ -278,6 +280,7 @@ function registerCompileCommands(context, { provider, getProjectMap, onSettingsC
                         }
                         const result = await runCheck({
                             nodeCommand: setup.nodeCommand,
+                            nodeEnv: setup.nodeEnv,
                             compilerPath: setup.compilerPath,
                             dialectFile: path.join(context.extensionPath, 'resources', 'dialects', 'twincat3.json'),
                             inputs: built.inputs,
@@ -377,7 +380,7 @@ function registerCompileCommands(context, { provider, getProjectMap, onSettingsC
         })
     );
 
-    return { isConfigured, problemsFor: (uriStr) => { const e = byFile.get(keyOf(uriStr)); return e ? e.problems.slice() : []; } };
+    return { isAvailable, problemsFor: (uriStr) => { const e = byFile.get(keyOf(uriStr)); return e ? e.problems.slice() : []; } };
 }
 
 module.exports = { registerCompileCommands, DIAGNOSTIC_SOURCE, PROBLEM_LINK_PATH, GO_TO_PROBLEM_COMMAND };
