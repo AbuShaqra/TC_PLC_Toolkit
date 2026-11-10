@@ -244,7 +244,11 @@ function findCodeCli() {
     const revealRows = (componentReveal && componentReveal.reveals) || [];
     for (const componentId of (componentReveal && componentReveal.requested) || []) {
         const hit = revealRows.find(r => r.componentId === componentId && r.ok);
-        assert(!!hit, `Objects tree reveals exact ${componentId} target in the real host`);
+        const tried = revealRows.filter(r => r.componentId === componentId);
+        const why = hit ? '' : tried.length === 0
+            ? ` (no reveal was attempted; reveals seen: ${JSON.stringify(revealRows.map(r => r.componentId))})`
+            : ` (rejected: ${tried.map(r => r.error).join(' | ')})`;
+        assert(!!hit, `Objects tree reveals exact ${componentId} target in the real host${why}`);
     }
     const getterReveal = revealRows.find(r => r.componentId === 'prop_State_get' && r.ok);
     const setterReveal = revealRows.find(r => r.componentId === 'prop_State_set' && r.ok);
@@ -425,6 +429,23 @@ function findCodeCli() {
     assert(!!gen && gen.subset && gen.subset.auxWritten && gen.subset.plcSkipped,
         `a subset export writes only the chosen project (aux=${gen && gen.subset && gen.subset.auxWritten}, ` +
         `plc-skipped=${gen && gen.subset && gen.subset.plcSkipped})`);
+
+    // R2: the TwinCAT Activity Bar container and the start page in a real host. Only the user can
+    // run this (Windows, VS Code installed); the package.json side is in test_start_contributions.js.
+    const sp = step('start-page');
+    assert(!!sp && !sp.error, 'the start-page phase ran without throwing' + (sp && sp.error ? ': ' + sp.error : ''));
+    assert(!!sp && Array.isArray(sp.missingCommands) && sp.missingCommands.length === 0,
+        `every start command is registered in the host (missing: ${sp ? JSON.stringify(sp.missingCommands) : 'no result'})`);
+    assert(!!sp && sp.focus && Object.values(sp.focus).every(v => v === true),
+        `the TwinCAT container and its Start / Objects / Libraries views open (${sp ? JSON.stringify(sp.focus) : 'no result'})`);
+    assert(!!sp && JSON.stringify(sp.containerViews) === JSON.stringify(['twincatStart', 'twincatExplorer', 'twincatLibraries']),
+        `the container holds Start, Objects, Libraries in order (${sp ? JSON.stringify(sp.containerViews) : 'no result'})`);
+    assert(!!sp && (sp.tabs === null || sp.tabs.includes('TwinCAT Start')),
+        `TwinCAT: Open Start Page opens the "TwinCAT Start" tab (tabs: ${sp ? JSON.stringify(sp.tabs) : 'no result'})`);
+    assert(!!sp && sp.created && sp.created.ok && sp.createdSlnExists && sp.created4024SlnExists,
+        `TwinCAT: Create New Project writes a 3.1.4026 and a 3.1.4024 solution (${sp ? JSON.stringify(sp.created) : 'no result'})`);
+    assert(!!sp && sp.refused && sp.refused.ok === false && /already contains/.test(sp.refused.error || ''),
+        `creating over an existing solution is refused (${sp ? JSON.stringify(sp.refused) : 'no result'})`);
 
     // The window is still shutting down when the poll returns, so its user-data dir can hold a
     // lock for a few more seconds. Best-effort with retries; a leftover temp dir is harmless.

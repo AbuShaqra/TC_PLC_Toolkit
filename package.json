@@ -4,7 +4,7 @@
   "description": "Edit, navigate and analyse Beckhoff TwinCAT PLC projects: two-pane Structured Text editor, offline IntelliSense and diagnostics, object and library explorers. Unofficial; not affiliated with Beckhoff.",
   "version": "0.10.1",
   "publisher": "a-abushaqra",
-  "license": "MIT",
+  "license": "AGPL-3.0-or-later",
   "icon": "media/marketplace-icon.png",
   "repository": {
     "type": "git",
@@ -24,9 +24,22 @@
   },
   "activationEvents": [
     "onLanguage:twincat-st",
+    "onView:twincatStart",
     "onView:twincatExplorer",
     "onView:twincatLibraries",
-    "onCustomEditor:twincat.xmlViewer"
+    "onCustomEditor:twincat.xmlViewer",
+    "onWebviewPanel:twincat.startPage",
+    "onCommand:twincat.openStartPage",
+    "onCommand:twincat.createProject",
+    "onCommand:twincat.openProject",
+    "onCommand:twincat.generateSt",
+    "onCommand:twincat.openSettings",
+    "onCommand:twincat.detectXaeShell",
+    "onCommand:twincat.openGettingStarted",
+    "onCommand:twincat.openRoadmap",
+    "onCommand:twincat.openReleaseNotes",
+    "onCommand:twincat.reportIssue",
+    "onCommand:twincat.updateLibraryDefinitions"
   ],
   "contributes": {
     "customEditors": [
@@ -51,6 +64,13 @@
       }
     ],
     "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "twincat",
+          "title": "TwinCAT",
+          "icon": "media/twincat-activitybar.svg"
+        }
+      ],
       "panel": [
         {
           "id": "twincat-references-panel",
@@ -60,14 +80,18 @@
       ]
     },
     "views": {
-      "explorer": [
+      "twincat": [
         {
-          "id": "twincatLibraries",
-          "name": "TwinCAT Libraries"
+          "id": "twincatStart",
+          "name": "Start"
         },
         {
           "id": "twincatExplorer",
           "name": "TwinCAT Objects"
+        },
+        {
+          "id": "twincatLibraries",
+          "name": "TwinCAT Libraries"
         }
       ],
       "twincat-references-panel": [
@@ -79,6 +103,14 @@
     },
     "viewsWelcome": [
       {
+        "view": "twincatStart",
+        "contents": "Create a TwinCAT 3 project, or open one.\n[Create New Project…](command:twincat.createProject)\n[Open Existing Project…](command:twincat.openProject)\n[Open Start Page](command:twincat.openStartPage)\n[Getting started](command:twincat.openGettingStarted) · [Roadmap](https://claude.ai/artifact/8RG7TZtBV2cuupsrwWtknv) · [Release notes](https://github.com/AbuShaqra/TC_PLC_Toolkit/releases) · [Report an issue](https://github.com/AbuShaqra/TC_PLC_Toolkit/issues) · [Settings](command:twincat.openSettings)"
+      },
+      {
+        "view": "twincatExplorer",
+        "contents": "No TwinCAT project in this workspace.\n[Create New Project…](command:twincat.createProject)\n[Open Existing Project…](command:twincat.openProject)"
+      },
+      {
         "view": "twincatReferences",
         "contents": "No references yet. Right-click a symbol in the editor and choose \"Go to References\"."
       },
@@ -88,6 +120,59 @@
       }
     ],
     "commands": [
+      {
+        "command": "twincat.openStartPage",
+        "title": "Open Start Page",
+        "category": "TwinCAT",
+        "icon": "$(home)"
+      },
+      {
+        "command": "twincat.createProject",
+        "title": "Create New Project…",
+        "category": "TwinCAT",
+        "icon": "$(new-folder)"
+      },
+      {
+        "command": "twincat.openProject",
+        "title": "Open Existing Project…",
+        "category": "TwinCAT",
+        "icon": "$(folder-opened)"
+      },
+      {
+        "command": "twincat.generateSt",
+        "title": "Generate ST",
+        "category": "TwinCAT"
+      },
+      {
+        "command": "twincat.openSettings",
+        "title": "Open Settings",
+        "category": "TwinCAT"
+      },
+      {
+        "command": "twincat.detectXaeShell",
+        "title": "Detect XAE Shell Installations",
+        "category": "TwinCAT"
+      },
+      {
+        "command": "twincat.openGettingStarted",
+        "title": "Getting Started",
+        "category": "TwinCAT"
+      },
+      {
+        "command": "twincat.openRoadmap",
+        "title": "Open Roadmap",
+        "category": "TwinCAT"
+      },
+      {
+        "command": "twincat.openReleaseNotes",
+        "title": "Release Notes",
+        "category": "TwinCAT"
+      },
+      {
+        "command": "twincat.reportIssue",
+        "title": "Report an Issue",
+        "category": "TwinCAT"
+      },
       {
         "command": "twincat.openComponent",
         "title": "Open Component"
@@ -252,6 +337,11 @@
     ],
     "menus": {
       "view/title": [
+        {
+          "command": "twincat.openStartPage",
+          "when": "view == twincatStart",
+          "group": "navigation@1"
+        },
         {
           "command": "twincat.clearReferences",
           "when": "view == twincatReferences",
@@ -459,6 +549,25 @@
           ],
           "default": "ask",
           "markdownDescription": "Which TwinCAT XAE Shell **Update Library Definitions** should drive. A library's signatures can differ between the 32-bit and 64-bit shell — visualisation libraries especially — so this defaults to asking. Set it if you always build with the same one. If the chosen shell is not installed, you are asked anyway rather than given the wrong signatures."
+        },
+        "twincat.startPage.recentProjectsShown": {
+          "type": "integer",
+          "default": 2,
+          "minimum": 1,
+          "maximum": 10,
+          "markdownDescription": "How many recent TwinCAT solutions the start page lists under **Open existing project**. When more are remembered (up to 10), a **Show all** tile expands the list."
+        },
+        "twincat.xaeShell.path4024": {
+          "type": "string",
+          "default": "",
+          "scope": "machine",
+          "markdownDescription": "Full path to `TcXaeShell.exe` of the XAE Shell for **TwinCAT 3.1.4024** (the 32-bit shell). Filled automatically with the installation found on this machine; change it if yours is elsewhere. Empty = not found. Run **TwinCAT: Detect XAE Shell Installations** to look again."
+        },
+        "twincat.xaeShell.path4026": {
+          "type": "string",
+          "default": "",
+          "scope": "machine",
+          "markdownDescription": "Full path to `TcXaeShell.exe` of the XAE Shell for **TwinCAT 3.1.4026** (the 64-bit shell). Filled automatically with the installation found on this machine; change it if yours is elsewhere. Empty = not found. Run **TwinCAT: Detect XAE Shell Installations** to look again."
         }
       }
     }

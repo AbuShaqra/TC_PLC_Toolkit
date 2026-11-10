@@ -5,7 +5,8 @@
 A lightweight, offline VS Code extension for editing, navigating and analysing Beckhoff **TwinCAT**
 PLC projects (`.TcPOU`, `.TcGVL`, `.TcDUT`, `.TcIO`). It hides the XML wrappers behind a two-pane
 editor, adds **Structured Text (IEC 61131-3)** language support from a built-in language server, and
-gives you explorers for the project's objects and its libraries.
+gives you a TwinCAT sidebar with the project's objects and its libraries, a start page, and a way to
+create a new TwinCAT project without opening TwinCAT XAE.
 
 TwinCAT stores PLC code as XML, with the actual Structured Text buried inside `<![CDATA[ ... ]]>`
 blocks. This extension parses that XML, presents the declaration and implementation in two editor
@@ -24,11 +25,45 @@ are required.
 Opens `.TcPOU` / `.TcGVL` / `.TcDUT` / `.TcIO` with the Declaration (variables) on top and the
 Implementation below, separated by a resizable splitter. No raw XML.
 
+### TwinCAT sidebar and start page
+
+The extension has its own icon in the Activity Bar. It opens the **TwinCAT** sidebar, which holds three
+views: **Start**, **TwinCAT Objects** and **TwinCAT Libraries**. (Objects and Libraries used to live in
+the Explorer; you can still drag them back there.)
+
+**Start** offers *Create New Project…*, *Open Existing Project…* and *Open Start Page*, plus links to this
+guide, the roadmap, the release notes, the issue tracker and the settings. **Open Start Page** opens a full
+page in an editor tab with:
+
+- **Create new project** — choose TwinCAT 3.1.4024 or 3.1.4026, a name and a location, then *Create*.
+- **Open existing project** — a solution (`.sln`) or a folder, and the most recent TwinCAT solutions
+  you opened or created here. Two are listed; when more are remembered (up to ten), a **Show all** tile
+  expands the list. `twincat.startPage.recentProjectsShown` changes how many are listed.
+- **Project actions** — *Generate ST* and *Update Library Definitions* (*Compile project* is shown,
+  disabled, until it ships).
+- **Help and links**, and **Settings** — which also shows where the XAE Shell of each TwinCAT version
+  was found (see [Settings](#settings)), with *Change…* and *Detect again*.
+
+Every one of these is also a Command Palette command under **TwinCAT:** (*TwinCAT: Create New
+Project…*, *TwinCAT: Open Start Page*, *TwinCAT: Generate ST*, …). The page works offline and follows
+your colour theme.
+
+### Create a new TwinCAT project
+
+*TwinCAT: Create New Project…* writes a new, empty TwinCAT solution to `<location>/<Name>/`, from a
+template TwinCAT XAE itself produced: the solution and the system project are named `<Name>`, the PLC
+project `<Name>_PLC`, and it contains `MAIN`, the `PlcTask` that calls it, and an empty global variable
+list `GVL_Main`. Every project identity (GUID) is generated fresh, so two projects made this way never
+clash. The name must be a valid identifier (letters, digits, underscores). It creates a new solution
+only: a folder that already holds a TwinCAT solution is refused. When it is done you choose whether to
+open it in this window, in a new window, or add it to the workspace. No TwinCAT installation is
+needed to create one; you need TwinCAT XAE to build and run it.
+
 ### TwinCAT Objects explorer
 
 Browse POUs, interfaces, GVLs, DUTs and their methods, properties, actions and virtual folders.
 Create and delete files, folders, methods, properties and actions — the nearest `.plcproj` is kept in
-sync automatically. The tree follows you: switching editors reveals and highlights the matching item.
+sync automatically. The tree follows you: while the TwinCAT Objects view is showing, switching editors reveals and highlights the matching item; when you open the view later, it goes to the file you are in.
 
 **See the real TwinCAT hierarchy.** When the opened folder contains TwinCAT solutions, the explorer
 shows the solution first and every PLC project belonging to it underneath:
@@ -152,7 +187,8 @@ dump them into a `library-signatures.xml` in the workspace, which the extension 
 It asks **which XAE Shell to use, 32-bit or 64-bit**, every time. That is not a formality: a library's
 signatures can differ between the two — visualisation libraries especially — so pick the one your
 project is built with. If you always use the same one, set `twincat.libraryDefinitions.shell` and the
-prompt goes away.
+prompt goes away. If a shell is installed somewhere unusual, put its path in `twincat.xaeShell.path4026`
+(64-bit) or `twincat.xaeShell.path4024` (32-bit): a configured path that exists is the one that is driven.
 
 If your project pins a library version that the chosen shell does not have installed, the closest
 installed version of the same major release is used instead, rather than dropping the library.
@@ -202,7 +238,7 @@ unsaved work. It briefly opens a TwinCAT window while it runs (about a minute).
 ### Generate ST
 
 Export the whole workspace to clean, compiler-friendly `.st` files under `ST_Files/` (toolbar button
-in the editor).
+in the editor, *TwinCAT: Generate ST*, or the start page; with several PLC projects you pick which).
 
 ### For AI coding assistants
 
@@ -256,6 +292,18 @@ open any `.TcPOU` file — it opens in the TwinCAT PLC Toolkit editor.
 | `twincat.diagnostics.declarationTypes` | `false` | Flag declarations with an unknown type. Off by default — types from unreadable `.compiled-library-v3` archives are invisible to the indexer, so this can report false positives in projects that use them. |
 | `twincat.diagnostics.typeCompatibility` | `true` | Flag assignments whose value type is clearly incompatible with the target. |
 | `twincat.libraryDefinitions.shell` | `ask` | Which XAE Shell **Update Library Definitions** drives: `ask`, `x64` or `x86`. Signatures can differ between the two, so it asks by default. |
+| `twincat.startPage.recentProjectsShown` | `2` | How many recent TwinCAT solutions the start page lists (1 to 10). When more are remembered, a **Show all** tile expands the list. |
+| `twincat.xaeShell.path4024` | *(detected)* | Full path to `TcXaeShell.exe` of the XAE Shell for TwinCAT 3.1.4024 (the 32-bit shell). Empty = not found. |
+| `twincat.xaeShell.path4026` | *(detected)* | Full path to `TcXaeShell.exe` of the XAE Shell for TwinCAT 3.1.4026 (the 64-bit shell). Empty = not found. |
+
+**XAE Shell paths.** On Windows the two `twincat.xaeShell.*` settings are filled automatically with the
+installation found on your machine: first from the shell's COM registration, then from the default
+location under `Program Files` (3.1.4026) or `Program Files (x86)` (3.1.4024). Only an **empty** setting
+is ever filled — a path you set yourself is never overwritten, so change it if your shell is elsewhere.
+**TwinCAT: Detect XAE Shell Installations** looks again and tells you, per version, whether it found the
+shell, kept your value, or found nothing. The settings are per machine (they are not synced and cannot be
+set per workspace). Today they are used by **Update Library Definitions**, which drives the shell at a
+configured path when that file exists; on other platforms nothing is detected and they stay empty.
 
 ---
 
@@ -309,7 +357,14 @@ work starts, moves and ships.
 
 ## License
 
-[MIT](LICENSE) © A. AbuShaqra — this covers the original code of this extension.
+Copyright © 2026 A. AbuShaqra.
+
+From the next release, this extension's original code is licensed under the
+**[GNU Affero General Public License v3.0 or later](LICENSE)** (`AGPL-3.0-or-later`):
+you may use, study, change and share it, and anyone who distributes a modified
+version, or offers one to users over a network, must make its full source available
+under the same licence. Versions up to and including 0.10.1 were released under the
+MIT licence, and copies of those versions keep it.
 
 Bundled third-party components (the Monaco Editor, the codicon font, the
 TypeScript language services, and the runtime npm dependencies) remain under

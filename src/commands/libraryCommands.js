@@ -45,7 +45,9 @@ function registerLibraryCommands(context, { libraryProvider, provider, getClient
                 return;
             }
 
-            const shells = findTwinCatShells();
+            // A path set in twincat.xaeShell.* (and present on disk) wins over discovery for its shell.
+            const xaeConfig = vscode.workspace.getConfiguration('twincat.xaeShell');
+            const shells = findTwinCatShells({ path4024: xaeConfig.get('path4024', ''), path4026: xaeConfig.get('path4026', '') });
             if (shells.length === 0) {
                 vscode.window.showErrorMessage(
                     'Updating library definitions requires a TwinCAT XAE installation (TcXaeShell) on this machine, ' +

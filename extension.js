@@ -13,6 +13,8 @@ const { registerObjectCommands, applyXmlEdit, readXmlText, writeXmlText } = requ
 const { registerObjectInsertCommands } = require('./src/commands/objectInsertCommands');
 const { registerClipboardCommands } = require('./src/commands/clipboardCommands');
 const { registerRenameCommands } = require('./src/commands/renameCommands');
+const { registerStartCommands } = require('./src/commands/startCommands');
+const { registerXaeShellCommands } = require('./src/commands/xaeShellCommands');
 const { TwinCatDragAndDropController } = require('./src/treeDragAndDrop');
 const { TwinCatCustomEditorProvider } = require('./src/customEditorProvider');
 const { TwinCatTreeDataProvider } = require('./src/treeDataProvider');
@@ -124,6 +126,8 @@ function activate(context) {
     // single hook every activation goes through, and the Libraries view scopes to the active file's
     // project the same way the status bar labels it.
     let libraryProvider;
+    /** @type {{uri: vscode.Uri, componentId: string} | null} Last TwinCAT target revealUri was asked for. */
+    let lastRevealTarget = null;
     const revealUri = async (uri, componentId = 'root') => {
         // Runs for every active-file change (custom-editor webview activation AND plain text
         // editors), independent of the tree-reveal eligibility check below, so switching to a
@@ -138,6 +142,13 @@ function activate(context) {
         if (!TWINCAT_EDITOR_EXTS.has(ext)) {
             return;
         }
+        // Remembered even when the view is hidden, so showing the view later lands on this target.
+        lastRevealTarget = { uri, componentId };
+        // TreeView.reveal SHOWS a hidden view. With the Objects view in its own Activity Bar
+        // container, an unconditional reveal would pull the sidebar away from the Explorer (or
+        // Search, or Source Control) every time a TwinCAT file is activated. So the tree follows the
+        // active file only while it is visible, and catches up when it becomes visible (below).
+        if (!treeView.visible) return;
 
         try {
             const item = await treeProvider.getRevealItem(uri, componentId);
@@ -341,6 +352,13 @@ function activate(context) {
         dragAndDropController: new TwinCatDragAndDropController({ treeProvider, applyXmlEdit })
     });
     context.subscriptions.push(treeView);
+    // revealUri skips a hidden view; when the view is shown, bring it to the file (and component)
+    // that is active now.
+    context.subscriptions.push(treeView.onDidChangeVisibility((e) => {
+        if (e.visible && lastRevealTarget) {
+            revealUri(lastRevealTarget.uri, lastRevealTarget.componentId);
+        }
+    }));
 
     // "TwinCAT Libraries" view: the .plcproj's libraries, listed under the namespace the code must
     // use — they are frequently different names. The catalog lives in the LSP (it falls out of the
@@ -503,6 +521,19 @@ function activate(context) {
     registerRenameCommands(context, {
         treeView, treeProvider, applyXmlEdit, readXmlText, writeXmlText, getClient: () => client
     });
+
+    // TwinCAT sidebar Start view + start page (create / open a project, project actions, help,
+    // settings). The solutions this workspace holds are recorded as recently opened for the page.
+    const start = registerStartCommands(context, {
+        provider, getProjectMap: () => hostProjectMap, getSolutionMap: () => hostSolutionMap
+    });
+    start.recordOpenSolutions();
+
+    // XAE Shell path settings: `twincat.detectXaeShell`, plus one silent fill of the EMPTY settings.
+    // Deliberately last and not awaited — it queries the registry (Windows only) and must neither
+    // delay activation nor be able to fail it; `autoFill` never rejects.
+    const xaeShell = registerXaeShellCommands(context);
+    setTimeout(() => { xaeShell.autoFill(); }, 0);
 }
 
 function deactivate() {

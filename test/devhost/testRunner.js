@@ -338,9 +338,32 @@ async function run() {
             'prop_State_set',
             'action_Act_Home'
         ];
+        // The tree follows the active file only while it is visible (a reveal would otherwise pull
+        // the sidebar to the TwinCAT container on every file activation), so show it first, as a
+        // user following along in the Objects view would.
+        await vscode.commands.executeCommand('twincatExplorer.focus');
+        await sleep(1500);
+        /**
+         * Waits until a successful reveal of one component of the station file is recorded at or
+         * after `fromIndex` — a fixed sleep raced the first webview creation on slower machines.
+         * @param {string} componentId The component whose reveal is awaited.
+         * @param {number} fromIndex Index into `out.treeReveals` to start looking from.
+         * @returns {Promise<boolean>} True once seen, false after the 10 s deadline.
+         */
+        const waitForReveal = async (componentId, fromIndex) => {
+            const deadline = Date.now() + 10000;
+            for (;;) {
+                const hit = out.treeReveals.slice(fromIndex).some(r =>
+                    r.uri === stationUri.toString() && r.componentId === componentId && r.ok);
+                if (hit) return true;
+                if (Date.now() >= deadline) return false;
+                await sleep(150);
+            }
+        };
         for (const componentId of componentTargets) {
+            const from = out.treeReveals.length;
             await vscode.commands.executeCommand('twincat.openComponent', stationUri, componentId);
-            await sleep(900);
+            await waitForReveal(componentId, from);
         }
         log('component-tree-reveal', {
             requested: componentTargets,
@@ -349,13 +372,14 @@ async function run() {
 
         // A retained webview does not call loadComponent when its tab is reactivated. The host must
         // remember the last activeComponentChanged id or this round trip would reveal the file root.
+        const cyclicFrom = out.treeReveals.length;
         await vscode.commands.executeCommand('twincat.openComponent', stationUri, 'method_Cyclic');
-        await sleep(900);
+        await waitForReveal('method_Cyclic', cyclicFrom);
         const retainedStart = out.treeReveals.length;
         await vscode.commands.executeCommand('vscode.openWith', gvlUri, 'twincat.xmlViewer');
         await sleep(900);
         await vscode.commands.executeCommand('vscode.openWith', stationUri, 'twincat.xmlViewer');
-        await sleep(900);
+        await waitForReveal('method_Cyclic', retainedStart);
         log('retained-component-tree-reveal', {
             reveals: out.treeReveals.slice(retainedStart).filter(r => r.uri === stationUri.toString())
         });
@@ -508,6 +532,11 @@ async function run() {
             if (settled || Date.now() >= syncDeadline) break;
             await sleep(500);
         }
+        // The host deletes the persisted entry right AFTER document.save() resolves, while the
+        // file on disk and the dirty flag settle slightly before that — so give the delete a
+        // moment instead of reading in that gap.
+        const persistDeadline = Date.now() + 5000;
+        while (persistedEntry(stationUriStr) && Date.now() < persistDeadline) await sleep(100);
         const stationRec = recordFor(stationUriStr);
         const syncCaptured = ((stationRec && stationRec.captured) || []).filter(c => c.type === 'sync-pending').pop();
         const syncExpected = syncCaptured
@@ -775,6 +804,46 @@ async function run() {
             }
         } catch (e) {
             log('generate-st', { error: String((e && e.stack) || e) });
+        }
+
+        // --- Phase start-page (R2): the TwinCAT Activity Bar container, its three views, the start
+        //     commands and the start page as a REAL VS Code host sees them — the parts no headless
+        //     harness can reach (test_start_contributions.js only reads package.json).
+        try {
+            const all = new Set(await vscode.commands.getCommands(true));
+            const wantedCommands = ['twincat.openStartPage', 'twincat.createProject', 'twincat.openProject',
+                'twincat.generateSt', 'twincat.openSettings', 'twincat.openGettingStarted', 'twincat.openRoadmap',
+                'twincat.openReleaseNotes', 'twincat.reportIssue', 'twincat.updateLibraryDefinitions'];
+            const focus = {};
+            for (const id of ['workbench.view.extension.twincat', 'twincatStart.focus', 'twincatExplorer.focus', 'twincatLibraries.focus']) {
+                try { await vscode.commands.executeCommand(id); focus[id] = true; } catch (e) { focus[id] = String(e); }
+            }
+            await vscode.commands.executeCommand('twincat.openStartPage');
+            await sleep(1500);
+            const tabs = vscode.window.tabGroups
+                ? vscode.window.tabGroups.all.flatMap(g => g.tabs).map(t => t.label)
+                : null;
+            const tmp = fs.mkdtempSync(path.join(require('os').tmpdir(), 'tcdev-create-'));
+            const created = await vscode.commands.executeCommand('twincat.createProject',
+                { version: '3.1.4026', name: 'DevHostCell', location: tmp, open: 'none', fromStartPage: true });
+            const created4024 = await vscode.commands.executeCommand('twincat.createProject',
+                { version: '3.1.4024', name: 'DevHostCell24', location: tmp, open: 'none', fromStartPage: true });
+            const refused = await vscode.commands.executeCommand('twincat.createProject',
+                { version: '3.1.4026', name: 'DevHostCell', location: tmp, open: 'none', fromStartPage: true });
+            const pkgJson = ext.packageJSON || {};
+            log('start-page', {
+                missingCommands: wantedCommands.filter(id => !all.has(id)),
+                focus,
+                tabs,
+                containerViews: ((pkgJson.contributes || {}).views || {}).twincat ? pkgJson.contributes.views.twincat.map(v => v.id) : null,
+                created: created || null,
+                createdSlnExists: !!(created && created.slnPath && fs.existsSync(created.slnPath)),
+                created4024SlnExists: !!(created4024 && created4024.slnPath && fs.existsSync(created4024.slnPath)),
+                refused: refused || null
+            });
+            try { fs.rmSync(tmp, { recursive: true, force: true }); } catch (e) { /* temp */ }
+        } catch (e) {
+            log('start-page', { error: String((e && e.stack) || e) });
         }
 
         log('done', {});

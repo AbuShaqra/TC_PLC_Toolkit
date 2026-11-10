@@ -4,7 +4,7 @@ The order of planned work for the extension. **This file is the source of truth*
 (<https://claude.ai/artifact/8RG7TZtBV2cuupsrwWtknv>) is rendered from it by hand out of `docs/roadmap.html`.
 Keep both current in the same change — rules in [CLAUDE.md](CLAUDE.md) ("Keep the roadmap current").
 
-**Last updated:** 2026-11-09 (R2 grows: TwinCAT sidebar + start page, user's ask) · **Current release:** v0.10.1
+**Last updated:** 2026-11-09 (marketplace publishing added after R2, user's ask) · **Current release:** v0.10.1
 
 How to read it: items run top to bottom in the **Order** column. IDs are stable names and do not change
 when the order does. Estimates are working days for one developer; start and end dates are **forecasts**
@@ -17,10 +17,10 @@ after it. An item leaves the table for "Done" once its PR is merged into `dev`, 
 | Order | ID | Item | Planned | Re-measured | Start | End | Status |
 |-------|----|------|---------|-------------|-------|-----|--------|
 | 1 | R3.1 | STruC++ spike: sample project through the compiler under the TwinCAT dialect | 2 d | ~15 min (done) | 2026-11-09 | 2026-11-09 | Findings done 2026-11-09 ([docs/r3.1-strucpp-spike.md](docs/r3.1-strucpp-spike.md)); decisions taken |
-| 2 | R4 | Objects-tree model (deepening roadmap P7) | 4 d | ~3 h (code done) | 2026-11-09 | 2026-11-09 | Code done; **dev-host gate passed** on the user's Windows machine 2026-11-09 — PR #30 merges once its CI is green |
-| 3 | R2 | TwinCAT sidebar (Activity Bar icon) + start page; create a new project (3.1.4024 / 3.1.4026) | 8.5 d | ~6 h + XAE proofs | 2026-11-12 | 2026-11-13 | **Next** — scope grown 2026-11-09 (user's ask). 4024 skeleton received 2026-11-09 (`resources/templates/xae-3.1.4024/`); done-when still needs both templates proven in XAE on the user's machine |
-| 4 | R3.2 | STruC++ check command with errors mapped to the panes | 7 d | ~4 h | 2026-11-16 | 2026-11-16 | Planned (full scope, 2026-11-09) — after S2 |
-| 5 | R3.3 | STruC++ bundling, Node 22 discovery, licence files, settings, docs | 3 d | ~2 h | 2026-11-17 | 2026-11-17 | Planned |
+| 3 | R2 | TwinCAT sidebar (Activity Bar icon) + start page; create a new project (3.1.4024 / 3.1.4026) | 8.5 d | ~7 h actual + your XAE proofs | 2026-11-09 | 2026-11-10 | **Done** 2026-11-10 — PR #31, see Done. Phase 2 (create through XAE where TwinCAT is installed) stays a TODO; the XAE Shell path detection still wants one look on Windows |
+| 5 | R11 | Publish to the VS Code Marketplace (and Open VSX) | 0.5 d | ~1 h + your account step | 2026-11-17 | 2026-11-17 | Planned — **accounts created** on both marketplaces (user, 2026-11-09); **moved after R3.2 (user, 2026-11-10: "continue with R3.2 after R2 finishes")** |
+| 4 | R3.2 | STruC++ check command with errors mapped to the panes | 7 d | ~4 h | 2026-11-11 | 2026-11-12 | **Next, right after R2** (user, 2026-11-10); the fork side is ready since S3b batch 4 (release G) |
+| 6 | R3.3 | STruC++ bundling, Node 22 discovery, licence files, settings, docs | 3 d | ~2 h | 2026-11-17 | 2026-11-17 | Planned |
 | 6 | R6 | Indexing speed: memoize signature-file discovery per root; persisted archive cache; per-project background scan | 5.5 d | ~4 h | 2026-11-17 | 2026-11-18 | Planned (from the backlog, 2026-11-09) |
 | 7 | R7 | Rename v1 limits: `.plcproj` sync inside the rename transaction; rename sibling implementors of a shared interface | 2.5 d | ~2 h | 2026-11-19 | 2026-11-19 | Planned (from the backlog) |
 | 8 | R8 | Language: nested block comments; hover help for pragmas | 1.5 d | ~1 h | 2026-11-19 | 2026-11-19 | Planned (from the backlog) |
@@ -62,14 +62,16 @@ for it where a row says so.
 
 | Order | ID | Item | Planned | Re-measured | Start | End | Status |
 |-------|----|------|---------|-------------|-------|-----|--------|
-| 1 | S2 | Close the fork's gaps: 14 PR-sized steps + the folded-in items (plan: [docs/s2-strucpp-fork-plan.md](docs/s2-strucpp-fork-plan.md)) | 22.5 d + ~5 d folded | ~9 h | 2026-11-09 | 2026-11-11 | In progress — steps 1 (fork PR #5), 1b (#6), 2 (#7), 3 (#8), 4 (#9), 5 (#10), 6 (#11, release B), 7 (#12), 8 (#13), 9 (#14), 10 (#15) and 11 (#16) merged 2026-11-09; step 12 (UNION in C++) next. R3.2 waits for it |
-| 2 | S3a | False positives on correct code found during S2: a STRUCT alias is not assignment-compatible with its STRUCT; `POINTER TO <STRUCT> := ADR(s)` refused; UNION initial values ("not supported yet") | 2 d | ~1 h | 2026-11-12 | 2026-11-12 | Planned — **before R3.2** (a check that flags correct code is worse than none) |
-| 3 | S3b | The other S2 follow-ups (list below): code the checker passes but g++ rejects, checker gaps, parser gaps, housekeeping | 7 d | ~3.5 h | 2026-11-12 | 2026-11-13 | Planned |
-| 4 | S4 | Ed. 3 forms the fork refuses: CHAR/WCHAR, LTIME, string index, `STRING[n]` (needs a decision), typed `TRUNC_<type>`, g++-only literal cases, `STRUCT OVERLAP` (reuses the UNION lowering) | 8.5 d (7–10) | ~4.5 h | 2026-11-13 | 2026-11-16 | Planned |
+| 1 | S2 | Close the fork's gaps: 13 steps + 1b + the folded-in items | 27.5 d (+ ~11 d folded, measured) | ~11.2 h actual | 2026-11-09 | 2026-11-09 | **Done** 2026-11-09 23:17 UTC — see Done |
+| 2 | S3a | False positives on correct code found during S2: a STRUCT alias is not assignment-compatible with its STRUCT; `POINTER TO <STRUCT> := ADR(s)` refused; UNION initial values ("not supported yet"); a method named `Get` is a parse error (`GET` is a keyword); a typed literal with a sign after `#` (`INT#-123`, Ed. 3 Table 5) is refused | 3 d | ~1 h actual | 2026-11-12 | 2026-11-12 | **Done** 2026-11-10 00:13 UTC — five fixes merged (fork PRs #25–#29), see Done |
+| 3 | S3b | The other S2 follow-ups (list below): code the checker passes but g++ rejects, checker gaps, parser gaps, housekeeping | 7 d | ~3.5 h | 2026-11-12 | 2026-11-13 | **In progress** (since 2026-11-10 00:14 UTC), batch 1 of the list: omitted inputs take their declared default (#30) undeclared functions reported (#31) unknown method calls (#32) unknown members / array↔value assignments (#33) unknown STRUCT-initialiser elements (#34) and undeclared names in initial values (#35, also settling bare enum members by the target type) reported, and a function's return variable winning over a same-named enum member (#36) and globals named like runtime helpers emitted as `NAME_` (#37) `TO_<type>` of enum values (#38) and unrelated STRUCT arguments reported (#39), merged — **batch 1 done**; batch 2 (codegen fixes for accepted code): FB calls on member/global instances and `w.C3` (#40) calling a PROGRAM-typed variable (#41) and inherited/bare PROPERTY access (#42, also removing a false "undeclared" on bare property names) and interfaces implemented through a base FB (#43) `REF`/`REF TO` of STRUCTs and FBs (#44) method and FB calls through a reference or pointer (#45) STRUCT `=`/`<>` (#46) the string functions on WSTRING (#47) `a.b.fb()` (#49) and library FB methods with named arguments (#50) merged — **batch 2 done**; `INSERT`/`WINSERT` now follow IEC (#51, user decision; a run-time behaviour change, C++ unchanged) merged; batch 3: unknown named arguments on FB instance calls refused in every mode (#52) `REF()` of STRING/WSTRING/enum (#53) the string functions with literal arguments (#54) a typed enum literal as an enum type's default (#55) a PROGRAM naming its own members as `PRG_A.x` (#56) and alias/subrange variables initialised (#57) merged — **release E cut at `55ad29b`**; batch 3's other items resumed after S9: user names shadowing bundled-library names (#65) and POUs/types named like standard functions emitted renamed, the user's function winning (#66) and unknown named arguments on method calls refused (#67) and named arguments binding an FB's non-parameter members refused (#68, user decision) and library functions binding named arguments by name with their defaults (#69) `REF()` of an enum array element (#70) STRING length kept behind references and type aliases (#71) string functions sized for their longest argument (#72) returning a full-length result cut only on assignment (#73) and enum values used as integers refused (#74) merged; batch 4 running (it gates R3.2): `end_semicolon_optional`, which relaxes the `--strict` END_ terminator check (#75), an empty statement as a FOR body under `--strict` (#76) `0` as NULL for every `POINTER TO` (#77) ACTIONs before the body (#78) `VAR` parts in property accessors (#79) `GVL.x` in initial values and FB init arguments (#80) and `ADR` as a pointer's initial value (#81) merged — **batch 4 done, release G cut at `8fe3343`**; globals emitted in dependency order (#82) and enum initial values checked, dotted enum type defaults accepted (#83) and constant and enum ARRAY bounds resolved (#84; a named array type with a constant bound was silently one element) merged; then the rest of batch 3; decided (user, 2026-11-10): a named argument binding an FB's VAR local is always an error, and byte access through a differently shaped pointer (runs wrong today, incl. 14 bundled OSCAT functions) is fixed at the root by S9, moved up to run right after batch 3's item 7 (user, 2026-11-10: "fix the root cause"; the interim refusal is dropped because it stops the bundled OSCAT library from building) |
+| 4 | S4 | Ed. 3 forms the fork refuses: LTIME first (type, `LTIME#`, arithmetic, the timers' L-variants), then LDATE/LTOD/LDT, CHAR/WCHAR, string index, `STRING[n]` and `WSTRING[n]` (decided 2026-11-10: accepted in every profile, Ed. 3 form), typed `TRUNC_<type>`, g++-only literal cases, `STRUCT OVERLAP` (reuses the UNION lowering) | 8.5 d (7–10) | ~4.5 h | 2026-11-13 | 2026-11-16 | Planned |
 | 5 | S5 | Profile-handling defects (S2 plan §1d) | 1 d | ~30 min | 2026-11-16 | 2026-11-16 | Planned |
 | 6 | S6 | Runtime safety defects (S2 plan §1d, 14 items: `/0` and `MOD 0`, out-of-range index, SEL evaluating both inputs, VAR_TEMP keeping values, FB_exit never called, conversions and to-string forms, SIZEOF/stride, subrange checks, 32-bit intermediates, silent truncation) | 7 d | ~3.5 h | 2026-11-16 | 2026-11-17 | Planned — estimate not measured |
 | 7 | S7 | `iec` audit: narrow what `iec-3` accepts (C1–C9) | 6 d | ~3 h | 2026-11-17 | 2026-11-18 | **Needs a decision first** (what to narrow, and that the no-flag default stays stable) |
 | 8 | S8 | Flip the no-flag default to `iec-3`, in its own release | 0.5 d | ~20 min | 2026-11-18 | 2026-11-18 | After R3.3 (downstream callers pass `--dialect`) |
+| 9 | S9 | Raw memory layout in the runtime: a variable is just its value (`IECVar<T>` = one `T`, `sizeof` as on a PLC), STRING a NUL-terminated `char[N+1]`, enums `: INT`; forcing moves to a bounded table written at cycle start and end. Fixes byte access through a differently shaped pointer (`POINTER TO ARRAY OF BYTE` over a DWORD or STRING — 14 bundled OSCAT functions — `POINTER TO BYTE` walking an array or STRUCT). Steps, one PR each: S0 library manifest lists FUNCTION locals as inputs (OSCAT functions not callable) · S1 force table · S2 codegen (`ForceScope` in `run()`, enum base) · S3a forcing users (debugger, REPL, extension) · S3b layout · S4 STRING · S5 OSCAT real-call e2e | 4 d (3–5) | ~2.5 h actual | 2026-11-11 | 2026-11-11 | **Done** 2026-11-10 12:05 UTC — seven PRs (fork #58–#64), see Done. **Release F cut at `e071f4f`** (user kept STRING(n) = n+1 bytes, the vendor layout); note posted in the coordination doc |
+| 10 | S10 | Vendor types and forms for the `twincat3` and `codesys3` profiles (CODESYS findings arrived 2026-11-10): `__ISVALIDREF` (on with `reference_to`) first; `vendor_operators` (`XSIZEOF`, `BITADR`, `INDEXOF`, `__POSITION`, `__POUNAME`); `type_colon_optional` (`TYPE name STRUCT` without the colon) and `conditional_return` (`RETURN (cond);`) under `codesys3`; `platform_types` (`__XINT`/`XINT`, `__UXINT`/`UXINT`, `XWORD`, `PVOID`); `bit_type` (BIT as a STRUCT member); a hint on "missing required input" for implicit-parameter attributes. Each off by default and under `iec-3`. Not planned until real code needs it: multicore operators, the vector type, quoted identifiers, persistent instance paths, `__CURRENTTASK`/`__POOL`, `INI`/`CALC`. Library types (HRESULT, OTCID, VERSION) come from a vendor library, not the compiler | 3 d | ~1.5 h | 2026-11-19 | 2026-11-19 | Planned (after S4; can move earlier if imported code needs it) |
 
 **Why this order.**
 1. **R3.1 (spike) first:** the STruC++ work is the largest unknown. The spike needs no decisions, and what
@@ -135,6 +137,40 @@ Two ways around it:
    machine. Each template is proven to open and build in its own XAE version.
 4. **Starter content:** `PROGRAM MAIN`, the `PlcTask` that calls it, and an empty GVL.
 
+**Status (2026-11-09).**
+- **Phase 1 — built** on `claude/focused-ptolemy-m6acaz`, not yet a PR: the `TwinCAT` Activity Bar container
+  (Start, TwinCAT Objects, TwinCAT Libraries; ids unchanged), the start page, and *TwinCAT: Create New
+  Project* from templates derived from the XAE skeletons (`scripts/build-project-templates.js` →
+  `resources/templates/tc3.1.4024/`, `tc3.1.4026/`; every identity GUID re-issued, inventory in
+  DEVELOPMENT.md "Project templates"). Starter content `MAIN`, `PlcTask`, an empty `GVL_Main`. A created
+  project shows zero diagnostics. Found on the way: the Objects tree ignored the single-file `.tspproj`
+  that 3.1.4024 writes (fixed in `src/solutionMap.js`).
+- **Before merge (user, Windows):** create a project with each version through the command and prove it
+  opens and builds in XAE 3.1.4024 and 3.1.4026; run `node test/devhost/run.js` (it now has a start-page
+  phase); look over the sidebar and the start page by eye.
+- **TODO — phase 2:** decision 1's XAE automation — *Create New Project* drives XAE (as
+  `scripts/Create sample PLC project/build-sample-solution.ps1` does) where TwinCAT is installed. Not
+  started.
+
+### R11 — Publish to the VS Code Marketplace (user's ask 2026-11-09)
+
+**Goal.** The extension installs from the VS Code Marketplace (and Open VSX, for VSCodium, Cursor and similar),
+starting with the first release that carries R2's TwinCAT sidebar.
+
+**The user's part (one-off, ~15 min):** accounts on both marketplaces were created 2026-11-09 and the publisher ID is
+`a-abushaqra`, matching `package.json` (confirmed by the user). Remaining: the
+publisher `a-abushaqra` (must equal `package.json`
+`publisher`) at marketplace.visualstudio.com/manage; then either upload the release VSIX by hand, or add an Azure
+DevOps token with the *Marketplace → Manage* scope as the repo secret `VSCE_PAT` (and an Open VSX token as
+`OVSX_PAT`). The publisher profile's "About" text was drafted 2026-11-09.
+
+**Licence:** switched to **AGPL-3.0-or-later** on 2026-11-09 (user's call); the first marketplace release is the
+first under it, and the CHANGELOG says so. **Our part (~1 h):** `CHANGELOG.md`; real `categories` / `keywords` / `homepage` / `bugs`; drop `--skip-license`
+from the package commands; a "not affiliated with Beckhoff" line in the README (TwinCAT is their trademark);
+README images HTTPS and not SVG; optional `"preview": true` until v1.0; a publish step in `release.yml` that runs
+only when the secret exists. **Before R3.3 ships**, the bundled GPL-3.0 STruC++ needs its licence text and source
+link in the VSIX (already in R3.3's scope).
+
 ### S2 — STruC++ fork: close the gaps the spike found
 
 **Plan:** [docs/s2-strucpp-fork-plan.md](docs/s2-strucpp-fork-plan.md) — the R3.1 spike, a first S2 design and
@@ -156,17 +192,23 @@ UNION → 13 FB_init (the sample compiles with no workarounds).
 the compiler puts on correct code. **Not estimable yet:** a strict-mode policy for vendor profiles (a decision
 first), an Ed. 4 profile (needs a full Ed. 4 read), the rest of the vendor-feature catalogue (explicitly not a plan).
 
-**S3b's list** (each found during an S2 step; all also on `development` before it):
-- *Passes the checker, fails in g++:* `p^.M()` on an FB behind REF_TO; `inst.Nope()` / `intVar.M()`; positional
-  method calls omitting a VAR_OUTPUT; an FB implementing an interface only through its base FB; an FB property
-  inherited from a base FB; `TO_DINT(enumValue)`; `gfb(a := 2);` on a global FB instance; `REF(s)`, `REF=` and `=`
-  on STRUCTs; a STRUCT argument of an unrelated STRUCT type.
-- *Checker gaps:* an unknown member in a chain (`x := mid.nothing`, `s.zz := 1`); an array member assigned to an INT.
-- *Parser and language gaps:* plain `SUPER()`; `SUPER.x :=` as a target; `THIS.a.b`; `GVL_A.units[0]()`; IMPLEMENTS
-  ignoring methods from interface EXTENDS bases; ARRAY OF / STRUCT field of an interface type; properties through an
-  interface variable; a library STRUCT as an EXTENDS base.
-- *Housekeeping:* the `--feature` help text and the DIALECTS.md "Checks" list; a bundled-library global (`speed`)
-  colliding with a user global.
+**S3b's list, still open** (2026-11-10; merged so far: batches 1–2 #30–#50, batch 3 #51–#57 and #65–#68):
+- *Batch 3, running (one PR each):* library FUNCTION named arguments reordered; `REF()` of an ARRAY OF enum element;
+  `REF_TO STRING(10)` / `TYPE T : STRING(10)` keep their length; cross-length STRING mixes (probably fixed by S9);
+  an enum value used as an integer refused like the variable form; enum VAR initialisers checked;
+  `ARRAY[E#A..E#B]` by the standard; `:= E.B` as a type default; `PRG_A.zz` and a method-local `x` inside PRG_A; enum
+  alias wrapping; an unknown named argument on a user FUNCTION; interface method signatures checked.
+- *Batch 4, vendor forms the toolkit sample uses (decided 2026-11-10, before R3.2):* feature `end_semicolon_optional`
+  (a missing `;` after `END_IF`/`END_FOR`/…, on in the vendor profiles); an empty FOR body (every profile, Annex A);
+  `0` assigned to any `POINTER TO` means NULL under `pointer_to`; `POINTER TO STRING := ADR(str)` refused (false
+  positive); in-FB ACTIONs before the body like METHODs; a `VAR…END_VAR` part in a property's GET/SET;
+  `GVL.x` in an FB instance's init arguments.
+- *Part C:* the runtime's C++ tests: 4 failing cases, `test_iec_composite.cpp` (does not compile), wired into `npm test`.
+- *Batch 5, the rest of the original list:* plain `SUPER()`; `SUPER.x :=` as a target; `THIS.a.b`;
+  `GVL_A.units[0]()`; ARRAY OF / STRUCT field of an interface type; properties through an interface variable; a
+  library STRUCT as an EXTENDS base; alias-of-base := alias-of-derived STRUCT passing; `SINT#200` unchecked;
+  `REF()`/`ADR()` of a CONFIGURATION global; the threaded forced-global race; the `--feature` help text and the
+  DIALECTS.md "Checks" list.
 
 **How these were estimated (2026-11-09):** the planned days are my sizing from the lists above, not measured; the
 re-measured column applies the velocity below (about 30 min per planned day for fork work, ~45 min for toolkit work),
@@ -229,6 +271,31 @@ The former backlog is now scheduled as R6–R10 (2026-11-09, user's ask); each i
 
 Shipped work lives in git history and the [releases](https://github.com/AbuShaqra/TC_PLC_Toolkit/releases).
 Roadmap items finished from now on are listed here with their PR.
+
+- **R2** — TwinCAT sidebar, start page and Create New Project, 2026-11-09 19:57 UTC to 2026-11-10 ([PR #31](https://github.com/AbuShaqra/TC_PLC_Toolkit/pull/31)):
+  an Activity Bar container with Start, TwinCAT Objects and TwinCAT Libraries; a start page (create, open with
+  recent projects — two shown, Show all — project actions, help, settings); projects created from real XAE output for
+  3.1.4024 and 3.1.4026, **both proven to open and build in XAE by the user**; XAE Shell path settings with
+  detection; the Objects tree follows the active file only while visible; the licence changed to AGPL-3.0-or-later.
+- **S9** (fork lane) — raw memory layout, 09:40–12:05 UTC 2026-11-10 (user: fix the root cause): library manifests
+  list only a FUNCTION's inputs/outputs/in-outs (#58), force table (#59), a force scope in every PROGRAM cycle and
+  2-byte enums (#60), forcing at cycle boundaries through the table (#61, user decision), variables laid out as their
+  values with alias-safe pointer punning (#62), NUL-terminated STRING/WSTRING (#63), and the 14 pointer-based OSCAT
+  string functions pinned through real calls (#64, `e071f4f`). Byte access through any pointer shape now reads real
+  bytes; `SIZEOF` returns PLC sizes; RAM per elementary variable drops to a third.
+- **S3a** (fork lane) — false errors on correct code, 23:18 UTC 2026-11-09 to 00:13 UTC 2026-11-10: signed typed
+  literals and typed CASE labels (#25), `Get`/`Set` as names (#26), STRUCT/UNION alias = same type (#27), `ADR` into a
+  POINTER TO a STRUCT/UNION/FB (#28), UNION initial values naming one member (#29, `bc171d0`). Nothing narrowed.
+- **S2** (fork lane) — closed the fork's gaps, 12:04–23:17 UTC on 2026-11-09. Steps 1–13 + 1b (fork PRs
+  [#5](https://github.com/AbuShaqra/STruCpp/pull/5)–[#18](https://github.com/AbuShaqra/STruCpp/pull/18); releases A, B, C)
+  and the folded-in items: `REFERENCE TO` inputs bound at the call (#19), typed `TRUNC_<type>` (#20), `trunc_dint` (#21),
+  `interface_zero` (#22), PROGRAMs reached by name (#23), FB `VAR_IN_OUT` by reference (#24, `b286bc2`). Nothing that
+  compiled and ran correctly before is refused; every narrowing is listed in its PR and the release notes.
+
+- **R4** — Objects-tree model: a VS Code-free node graph (`src/objectsTreeModel.js`) behind a thin tree provider;
+  396 tree ids and 301 reveal chains pinned. Dev-host gate passed on Windows 2026-11-09. PR
+  [#30](https://github.com/AbuShaqra/TC_PLC_Toolkit/pull/30), squash-merged into `dev` 2026-11-09 as `d97cec3`, with
+  the Generate ST menu fixes (clipping, Select all) and the XAE 3.1.4024 skeleton.
 
 - **R5** — PROGRAMs stay PROGRAMs; TwinCAT XML parsing fixes (non-ST bodies, CDATA overrun, attribute
   entities, lone CR; BOM verified not to leak); SFC-transition warnings; Add Get / Add Set Accessor (issue
