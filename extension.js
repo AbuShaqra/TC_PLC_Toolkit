@@ -14,6 +14,7 @@ const { registerObjectInsertCommands } = require('./src/commands/objectInsertCom
 const { registerClipboardCommands } = require('./src/commands/clipboardCommands');
 const { registerRenameCommands } = require('./src/commands/renameCommands');
 const { registerStartCommands } = require('./src/commands/startCommands');
+const { registerCompileCommands } = require('./src/commands/compileCommands');
 const { registerXaeShellCommands } = require('./src/commands/xaeShellCommands');
 const { TwinCatDragAndDropController } = require('./src/treeDragAndDrop');
 const { TwinCatCustomEditorProvider } = require('./src/customEditorProvider');
@@ -519,10 +520,20 @@ function activate(context) {
 
     // TwinCAT sidebar Start view + start page (create / open a project, project actions, help,
     // settings). The solutions this workspace holds are recorded as recently opened for the page.
-    const start = registerStartCommands(context, {
-        provider, getProjectMap: () => hostProjectMap, getSolutionMap: () => hostSolutionMap
+    // Compile Project (an external IEC 61131-3 compiler, run as a child process). Registered before
+    // the start page so the page can ask whether a compiler is configured.
+    /** @type {{startPage: {postState: () => void}}|null} */
+    let start = null;
+    const compile = registerCompileCommands(context, {
+        provider, getProjectMap: () => hostProjectMap,
+        onSettingsChanged: () => { if (start) start.startPage.postState(); }
     });
-    start.recordOpenSolutions();
+
+    start = registerStartCommands(context, {
+        provider, getProjectMap: () => hostProjectMap, getSolutionMap: () => hostSolutionMap,
+        isCompilerConfigured: compile.isConfigured
+    });
+    /** @type {any} */ (start).recordOpenSolutions();
 
     // XAE Shell path settings: `twincat.detectXaeShell`, plus one silent fill of the EMPTY settings.
     // Deliberately last and not awaited — it queries the registry (Windows only) and must neither

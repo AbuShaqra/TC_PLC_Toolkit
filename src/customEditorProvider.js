@@ -75,6 +75,35 @@ class TwinCatCustomEditorProvider {
         // vscode.window.activeTextEditor is undefined for it and there is no other way to know which
         // document an Explorer-initiated insert should land in. Cleared when that panel is disposed.
         this.lastActivePanelUri = null;
+        /**
+         * Compile Project's results, as far as the editor needs them (src/commands/compileCommands.js
+         * sets this). Null until that command is registered; every use tolerates null.
+         * @type {{paneDiagnostics: (uriStr: string) => Array<Object>,
+         *   onComponentEdited: (uriStr: string, componentId: string) => void,
+         *   openTarget: (uriStr: string) => ({componentId: string, range: Object, targetWord: string|null}|null)}|null}
+         */
+        this.compileSource = null;
+    }
+
+    /**
+     * Connects Compile Project's results to the editors.
+     * @param {TwinCatCustomEditorProvider['compileSource']} source
+     */
+    setCompileSource(source) {
+        this.compileSource = source;
+    }
+
+    /**
+     * Sends every open TwinCAT editor its file's current compile markers (an empty list clears them).
+     * The webview keeps them under their own marker owner, apart from the language server's.
+     */
+    refreshCompileDiagnostics() {
+        for (const [uriStr, panel] of this.activePanels.entries()) {
+            panel.webview.postMessage({
+                type: 'compileDiagnostics',
+                diagnostics: this.compileSource ? this.compileSource.paneDiagnostics(uriStr) : []
+            });
+        }
     }
 
     /**
@@ -207,7 +236,11 @@ class TwinCatCustomEditorProvider {
                     const text = document.getText();
                     const parsed = parseTwinCatXml(text);
                     if (parsed) {
-                        const pending = this.pendingSelections.get(uriStr);
+                        // A file with compile problems that is opened fresh (a click on a Problems
+                        // entry does exactly that) starts on its first problem — unless something
+                        // asked for a specific place, which always wins.
+                        const pending = this.pendingSelections.get(uriStr)
+                            || (this.compileSource ? this.compileSource.openTarget(uriStr) : null);
                         const isAutoSync = this.context.globalState.get('twincat.isAutoSync', true);
                         const cachedEdits = this.pendingEditsStore.get(uriStr, text);
                         const splitterRatio = this.context.globalState.get('twincat.splitterRatio', 50);
@@ -221,7 +254,8 @@ class TwinCatCustomEditorProvider {
                             isAutoSync: isAutoSync,
                             cachedEdits: cachedEdits,
                             splitterRatio: splitterRatio,
-                            fileUri: uriStr
+                            fileUri: uriStr,
+                            compileDiagnostics: this.compileSource ? this.compileSource.paneDiagnostics(uriStr) : []
                         });
                         // Cleared by the webview's `selectionApplied` ack, not here: if the highlight
                         // never lands (the panes were not populated yet), dropping it now would leave
@@ -233,6 +267,12 @@ class TwinCatCustomEditorProvider {
                     // The webview has actually highlighted the location, so the pending selection has
                     // done its job and must not be re-applied on a later open of the same file.
                     this.pendingSelections.delete(uriStr);
+                    break;
+                case 'compileDiagnosticsStale':
+                    // The user edited a component: what the compiler said about it no longer holds.
+                    if (this.compileSource && typeof message.componentId === 'string') {
+                        this.compileSource.onComponentEdited(uriStr, message.componentId);
+                    }
                     break;
                 case 'activeComponentChanged':
                     // The webview is authoritative about which component actually loaded. In

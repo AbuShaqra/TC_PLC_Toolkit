@@ -8,8 +8,8 @@
  * one nonce for the two local scripts; there is no remote font, image or script anywhere. Colours and
  * fonts come from VS Code's theme variables in media/startPage.css, so it follows the user's theme.
  *
- * Dynamic content (the default location, recent solutions, whether a project is open, the XAE Shell
- * paths) is not rendered
+ * Dynamic content (the default location, recent solutions, whether a project is open, whether a
+ * compiler is configured, the XAE Shell paths) is not rendered
  * here: media/startPage.js asks the host for it with a `ready` message, so a refresh never rebuilds
  * the page and loses what the user typed.
  */
@@ -139,7 +139,8 @@ function renderStartPageHtml(o) {
                 <p id="no-project" class="hint" hidden>Open a folder with a TwinCAT project to use these.</p>
                 <ul class="actions">${actions}
                     <li><button type="button" class="action" id="compile-project" disabled title="Arrives in a later release">` +
-        `<span class="action-text"><span class="action-label">Compile project</span><span class="action-detail">Coming in a later release</span></span><span class="soon">Soon</span></button></li>
+        `<span class="action-text"><span class="action-label">Compile project</span><span class="action-detail" id="compile-detail">Coming in a later release</span></span>` +
+        `<span class="soon" id="compile-soon">Soon</span>${icon('chevron', 'icon chevron compile-chevron')}</button></li>
                 </ul>
             </section>
             <section class="card" id="help" aria-labelledby="help-title">

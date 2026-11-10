@@ -8,7 +8,7 @@
  * Messages to the host:  ready · browseLocation · create {version, name, location} · openProject ·
  *                        openRecent {slnPath} · removeRecent {slnPath} · command {command} · link {id} ·
  *                        openSettings {section}
- * Messages from the host: state {location, sep, recents, recentsShown, hasProject, xaeShells} ·
+ * Messages from the host: state {location, sep, recents, recentsShown, hasProject, compilerReady, xaeShells} ·
  *                         location {location} · createResult {ok, error?}
  */
 
@@ -192,6 +192,24 @@
         }
     }
 
+    /**
+     * The Compile project tile. Without a configured compiler it stays as it shipped: disabled,
+     * "Coming in a later release". With one it is an ordinary project action.
+     * @param {boolean} ready A compiler is configured and its file exists.
+     * @param {boolean} hasProject A PLC project is open.
+     */
+    function renderCompileTile(ready, hasProject) {
+        const tile = $('compile-project');
+        tile.disabled = !(ready && hasProject);
+        tile.classList.toggle('ready', ready);
+        tile.title = ready ? '' : 'Arrives in a later release';
+        $('compile-detail').textContent = ready
+            ? 'Check the project with an external IEC 61131-3 compiler'
+            : 'Coming in a later release';
+        $('compile-soon').hidden = ready;
+    }
+    $('compile-project').addEventListener('click', () => vscode.postMessage({ type: 'command', command: 'twincat.compileProject' }));
+
     window.addEventListener('message', (event) => {
         const msg = event.data || {};
         switch (msg.type) {
@@ -204,6 +222,7 @@
                 renderXaeShells(Array.isArray(msg.xaeShells) ? msg.xaeShells : []);
                 $('no-project').hidden = !!msg.hasProject;
                 for (const b of document.querySelectorAll('[data-needs-project]')) b.disabled = !msg.hasProject;
+                renderCompileTile(!!msg.compilerReady, !!msg.hasProject);
                 refresh();
                 break;
             case 'location':
