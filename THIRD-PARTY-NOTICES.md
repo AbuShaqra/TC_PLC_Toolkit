@@ -2,7 +2,7 @@
 
 This extension bundles third-party software. Each component is distributed under
 its own license, reproduced or linked below. The root [`LICENSE`](LICENSE)
-(MIT © A. AbuShaqra) applies **only** to the original code of this extension — it
+(AGPL-3.0-or-later © A. AbuShaqra; versions up to 0.10.1 were MIT) applies **only** to the original code of this extension — it
 does not cover the bundled components listed here, which remain under the
 licenses of their respective owners.
 
