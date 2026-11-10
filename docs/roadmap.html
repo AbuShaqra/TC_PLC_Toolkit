@@ -472,14 +472,14 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
 
     <details class="card" id="s9">
       <summary>
-        <div class="card-top"><span>#9</span><span class="id">S9</span><span class="pill planned">In progress</span><span class="chev" aria-hidden="true">›</span></div>
+        <div class="card-top"><span>#9</span><span class="id">S9</span><span class="pill done">Done · Nov 10</span><span class="chev" aria-hidden="true">›</span></div>
         <div class="card-title">Raw memory layout in the runtime</div>
         <div class="bar" aria-hidden="true"><span style="left:18.18%;width:9.09%"></span></div>
         <div class="card-foot"><span>4 d → ~2 h</span><span>Nov 11</span></div>
       </summary>
       <div class="body">
         <div class="block wide"><h4>Scope</h4><p>Every runtime variable carries its forcing state next to its value, so a BYTE takes 3 bytes and memory is not laid out as on a PLC. Reading a DWORD's bytes through <code>POINTER TO ARRAY OF BYTE</code>, or walking an array or STRUCT with <code>POINTER TO BYTE</code>, reads wrong values; 14 functions of the bundled OSCAT library do this with STRINGs. After S9 a variable is just its value, a STRING is a NUL-terminated buffer, and forcing lives in a bounded table written at cycle start and end.</p></div>
-        <div class="block wide"><h4>Steps (one PR each)</h4><p>S0 library manifest lists FUNCTION locals as inputs (merged, #58) · S1 force table (merged, #59) · S2 code generation (merged, #60) · S3a debugger, REPL and editor forcing (merged, #61) · S3b the layout (merged, #62) · S4 STRING (merged, #63) · S5 OSCAT functions run through real calls. About 1,550 lines of source and 2,200 of tests.</p></div>
+        <div class="block wide"><h4>Steps (one PR each)</h4><p>S0 library manifest lists FUNCTION locals as inputs (merged, #58) · S1 force table (merged, #59) · S2 code generation (merged, #60) · S3a debugger, REPL and editor forcing (merged, #61) · S3b the layout (merged, #62) · S4 STRING (merged, #63) · S5 OSCAT functions through real calls (merged, #64). Done. About 1,550 lines of source and 2,200 of tests.</p></div>
         <div class="block"><h4>Decided</h4><p>User, Nov 10: fix the root cause; PLC-style forcing (applied at cycle start and end, a program write wins until cycle end). Mine: force table bounded at 64 + 8 strings (16 + 1 on AVR), overridable.</p></div>
         <div class="block"><h4>Design check</h4><p>A prototype runtime compiled today's generated C++ unchanged and fixed every wrong-byte case and 7 OSCAT functions. Strict aliasing must be handled (an attribute, plus a build flag as backup).</p></div>
         <div class="block"><h4>Impact</h4><p>Release F on its own. Users see: the forcing change, <code>SIZEOF</code> as on a PLC (<code>STRING(80)</code> = 81), a STRING ending at its first <code>$00</code>, a bound on forced variables.</p></div>
@@ -581,7 +581,7 @@ var PLAN = [
   { lane: 'STruC++ fork',   num: 6, id: 'S6',   card: 's6',   name: 'Runtime safety',         est: '7 d → ~3.5 h', start: '2026-11-16', end: '2026-11-17', days: 1.5, offset: 0.3 },
   { lane: 'STruC++ fork',   num: 7, id: 'S7',   card: 's7',   name: 'iec-3 audit (decision)', est: '6 d → ~3 h',  start: '2026-11-17', end: '2026-11-18', days: 1.3, offset: 0.8 },
   { lane: 'STruC++ fork',   num: 8, id: 'S8',   card: 's8',   name: 'Default → iec-3',        est: '0.5 d → ~20 min', start: '2026-11-18', end: '2026-11-18', days: 0.2, offset: 0.8 },
-  { lane: 'STruC++ fork',   num: 9, id: 'S9',   card: 's9',   name: 'Raw memory layout',      est: '4 d → ~2 h',  start: '2026-11-11', end: '2026-11-11', days: 1.0, offset: 0, status: 'progress', actualStart: '2026-11-10T09:40:00Z' },
+  { lane: 'STruC++ fork',   num: 9, id: 'S9',   card: 's9',   name: 'Raw memory layout',      est: '4 d → ~2 h',  start: '2026-11-11', end: '2026-11-11', days: 1.0, offset: 0, status: 'done', actualStart: '2026-11-10T09:40:00Z', actualEnd: '2026-11-10T12:05:00Z' },
   { lane: 'STruC++ fork',   num: 10, id: 'S10', card: 's10',  name: 'Vendor types',           est: '1 d → ~30 min', start: '2026-11-19', end: '2026-11-19', days: 0.5, offset: 0 }
 ];
 var DOMAIN_START = '2026-11-09', DOMAIN_END = '2026-11-20'; /* exclusive */
