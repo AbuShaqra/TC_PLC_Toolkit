@@ -96,12 +96,12 @@ today only `compile-real` (`test/test_compile_real.js`, Compile Project against 
 compiler, which CI does not have). Run it by hand with the compiler's bundled CLI:
 
 ```bash
-TWINCAT_COMPILER_BUNDLE=/path/to/strucpp-bundle.cjs node test/test_compile_real.js
+TWINCAT_COMPILER_BUNDLE=/path/to/compiler-bundle.cjs node test/test_compile_real.js
 # optional: TWINCAT_COMPILER_NODE=/path/to/node (>= 22), else `node` on PATH
 ```
 
-Build the bundle from the compiler's `development` branch (`npm ci && npm run build:bundle` →
-`dist/strucpp-bundle.cjs`) in a scratch clone. Never make `compile-real` required in `test/run.js`.
+Build the bundle from the compiler's `development` branch (`npm ci && npm run build:bundle`, which
+writes the bundled CLI under `dist/`) in a scratch clone. Never make `compile-real` required in `test/run.js`.
 
 `REQUIRE_FULL_SUITE=1` turns a reduced or filtered run into a hard failure after the harness reports
 are collected. Use it before packaging a release, so a silently skipped gate can never be mistaken
