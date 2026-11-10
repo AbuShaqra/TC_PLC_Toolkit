@@ -13,12 +13,19 @@
  * An object linked into two projects is indexed into BOTH, because it genuinely belongs to both.
  */
 
+const fs = require('fs');
 const path = require('path');
 
 const { indexXmlFile, indexTwinCatDirectory } = require('./xmlIndexer');
-const { indexStDirectory } = require('./parser');
-const { fileUriToFsPath } = require('../fileUri');
-const { walkFiles, createDirectoryListingMemo, CONFIG_OBJECT_SKIP_DIRS } = require('../twincatWorkspace');
+const { indexStDirectory, parseAndIndexDocument } = require('./parser');
+const { fileUriToFsPath, fsPathToFileUri } = require('../fileUri');
+const {
+    walkFiles,
+    createDirectoryListingMemo,
+    CONFIG_OBJECT_SKIP_DIRS,
+    ST_INDEX_SKIP_DIRS
+} = require('../twincatWorkspace');
+const stLog = require('./log');
 const {
     LOOSE_PROJECT_KEY,
     createProjectMap,
@@ -161,27 +168,57 @@ function selectLibraryCatalog(workspace, fileUri, catalogFns) {
 }
 
 /**
- * The pre-scan state, so a handler that fires before onInitialize never sees null.
- * @returns {Workspace}
+ * @typedef {Object} ReadinessGate
+ * @property {(fileUri: string) => Promise<boolean>} readyFor Resolves once the index that answers this
+ *   file is COMPLETE: true when it is, false when this workspace was superseded or its scan failed
+ *   before getting there (the caller then re-resolves against the current workspace). A file in a
+ *   project waits for that project only; a file under no project waits for the whole scan.
+ * @property {() => Promise<boolean>} readyAll Resolves once every index is complete (true), or false as above.
+ * @property {(fileUri: string) => boolean} isReadyFor Synchronous form of readyFor's "true".
+ * @property {() => boolean} isComplete True once every index is complete.
  */
-function createEmptyWorkspace() {
-    return makeWorkspace(null, []);
+
+/**
+ * The gate of a workspace that is complete the moment it exists (the pre-scan empty workspace and a
+ * synchronous scan's result).
+ * @returns {ReadinessGate}
+ */
+function completeGate() {
+    return {
+        readyFor: () => Promise.resolve(true),
+        readyAll: () => Promise.resolve(true),
+        isReadyFor: () => true,
+        isComplete: () => true
+    };
 }
 
 /**
- * Discovers the projects under the given roots and indexes each one's objects into its own index.
- * @param {Array<string>} rootPaths Absolute workspace-root paths.
- * @param {{log?: (m: string) => void, error?: (m: string) => void,
- *   indexLibraries?: (dir: string, index: Object, roots: Array<string>, listing: Object) => void}} [deps] Injected side
- *   effects. `indexLibraries` is stubbed by the harnesses that only care about the partition.
- *   The third argument is the full set of workspace roots — `library-signatures.xml` is a
- *   WORKSPACE-level artifact (`twincat.updateLibraryDefinitions` writes it to `folders[0].fsPath`, see
- *   libraryCommands.js), not a per-project one, and it normally sits ABOVE `project.dir` in the tree,
- *   so a callee that only scans `dir` downward can never reach it. server.js's `indexLibraries` uses
- *   this to also scan the roots for that dump.
- * @returns {Workspace}
+ * The pre-scan state, so a handler that fires before onInitialize never sees null.
+ * @returns {Workspace & ReadinessGate}
  */
-function scanWorkspace(rootPaths, deps) {
+function createEmptyWorkspace() {
+    return Object.assign(makeWorkspace(null, []), completeGate());
+}
+
+/**
+ * @typedef {Object} ScanTask One unit of a scan that leaves ONE index complete.
+ * @property {string} key The project key whose index this task completes.
+ * @property {() => void} run Indexes everything that index will ever receive in this scan.
+ */
+
+/**
+ * Discovers the projects under the roots and plans their indexing as one task per index.
+ *
+ * A task holds EVERYTHING its index receives in a scan — its objects, its libraries, and the loose
+ * `.st` files routed to it — so once a task has run, that index is final for the scan and may answer
+ * requests while other projects are still being indexed. Nothing a task does reads or writes another
+ * project's index (the archive, parse and listing caches it shares are content caches), so the tasks
+ * can run in any order and each index comes out the same as in a one-pass scan.
+ * @param {Array<string>} rootPaths Absolute workspace-root paths.
+ * @param {Object} [deps] As scanWorkspace's.
+ * @returns {{workspace: Workspace, tasks: Array<ScanTask>, finish: () => void}}
+ */
+function planWorkspaceScan(rootPaths, deps) {
     const { log = () => {}, error = () => {}, indexLibraries = () => {} } = deps || {};
     const roots = rootPaths || [];
     const projectMap = createProjectMap(roots);
@@ -193,66 +230,251 @@ function scanWorkspace(rootPaths, deps) {
 
     if (projectMap.isEmpty()) {
         // No .plcproj anywhere: a fresh clone, or a loose folder of TwinCAT files. Index everything
-        // into one index — the pre-existing fallback, unchanged.
+        // into one index — the pre-existing fallback, unchanged, as ONE task.
         const loose = workspace.indexForKey(LOOSE_PROJECT_KEY);
-        for (const root of roots) {
+        return {
+            workspace,
+            tasks: [{
+                key: LOOSE_PROJECT_KEY,
+                run: () => {
+                    for (const root of roots) {
+                        try {
+                            indexTwinCatDirectory(loose, root, null);
+                            indexStDirectory(root, loose);
+                            indexLibraries(root, loose, roots, listing);
+                        } catch (e) {
+                            error(`Failed to index folder ${root}: ${e.message}`);
+                        }
+                    }
+                }
+            }],
+            finish: () => {}
+        };
+    }
+
+    // Loose .st files route to the project whose directory contains them, or to EVERY project when no
+    // project directory contains one: a .st file is not a `.plcproj` compilation unit, so there is no
+    // correctness argument for hiding it from a project the way an unlisted .TcPOU orphan is hidden —
+    // the pre-existing (single-index) behaviour put every .st where every document could see it.
+    // Collected once, up front, by the same walk indexStDirectory does (same skip set, same order), so
+    // each project's task can index exactly the files routed to it, in walk order.
+    const allKeys = projectMap.keys();
+    const stFiles = [];
+    for (const root of roots) {
+        for (const fsPath of walkFiles(root, {
+            skipDirs: ST_INDEX_SKIP_DIRS,
+            isMatch: (name) => name.toLowerCase().endsWith('.st')
+        })) {
+            const key = projectMap.projectFor(fsPath);
+            stFiles.push({ fsPath, keys: key !== LOOSE_PROJECT_KEY ? [key] : allKeys });
+        }
+    }
+    // A .st routed to several projects is read once per scan, not once per project.
+    /** @type {Map<string, {code?: string, error?: Error}>} */
+    const stText = new Map();
+    const readSt = (fsPath) => {
+        let hit = stText.get(fsPath);
+        if (!hit) {
             try {
-                indexTwinCatDirectory(loose, root, null);
-                indexStDirectory(root, loose);
-                indexLibraries(root, loose, roots, listing);
+                hit = { code: fs.readFileSync(fsPath, 'utf8') };
             } catch (e) {
-                error(`Failed to index folder ${root}: ${e.message}`);
+                hit = { error: e };
+            }
+            stText.set(fsPath, hit);
+        }
+        return hit;
+    };
+
+    const tasks = Array.from(projectMap.projects.values()).map((project) => ({
+        key: project.key,
+        run: () => {
+            const index = workspace.indexForKey(project.key);
+            // objectFiles values, NOT objectPaths: the normalized (lowercased) keys exist for ownership
+            // identity only. A symbol node's uri is minted from the path given here, and a lowercased
+            // uri makes every cross-file navigation open a duplicate, lowercase-titled editor tab
+            // (vscode.openWith treats a differently-cased uri as a different resource).
+            for (const objectFile of project.objectFiles.values()) {
+                indexXmlFile(index, objectFile);
+            }
+            try {
+                indexLibraries(project.dir, index, roots, listing);
+            } catch (e) {
+                error(`Failed to index libraries for ${project.name}: ${e.message}`);
+            }
+            // The .st files last, as in the one-pass scan (a .st redefining an object's name wins).
+            for (const st of stFiles) {
+                if (!st.keys.includes(project.key)) continue;
+                const text = readSt(st.fsPath);
+                try {
+                    if (text.error) throw text.error;
+                    parseAndIndexDocument(text.code, fsPathToFileUri(st.fsPath), index);
+                } catch (err) {
+                    stLog.error('st-file-index-failed', { file: st.fsPath, error: err });
+                }
             }
         }
-        return workspace;
-    }
+    }));
 
-    for (const project of projectMap.projects.values()) {
-        const index = workspace.indexForKey(project.key);
-        // objectFiles values, NOT objectPaths: the normalized (lowercased) keys exist for ownership
-        // identity only. A symbol node's uri is minted from the path given here, and a lowercased
-        // uri makes every cross-file navigation open a duplicate, lowercase-titled editor tab
-        // (vscode.openWith treats a differently-cased uri as a different resource).
-        for (const objectFile of project.objectFiles.values()) {
-            indexXmlFile(index, objectFile);
+    return {
+        workspace,
+        tasks,
+        finish: () => {
+            log(`Indexed ${projectMap.projects.size} PLC project(s): ` + projectMap.keys()
+                .map(k => `${projectMap.displayName(k)} (${Object.keys(workspace.indexForKey(k)).length} symbols)`)
+                .join(', '));
         }
-        try {
-            indexLibraries(project.dir, index, roots, listing);
-        } catch (e) {
-            error(`Failed to index libraries for ${project.name}: ${e.message}`);
-        }
-    }
-
-    // Loose .st files route to the project whose directory contains them (every project, when NO
-    // project directory contains it — see routeFile below). The `index` fallback argument here is
-    // never read — indexForFile is supplied on every call, including the recursive ones, so every .st
-    // is routed through routeFile.
-    const routeFile = (fsPath) => {
-        const key = projectMap.projectFor(fsPath);
-        if (key !== LOOSE_PROJECT_KEY) return workspace.indexForKey(key);
-        // A .st file is not a `.plcproj` compilation unit, so there is no correctness argument for
-        // hiding it from a project the way an unlisted .TcPOU orphan is hidden — the pre-existing
-        // (single-index) behaviour put every .st where every document could see it. Restore that by
-        // indexing it into EVERY project, rather than into the `(loose)` index nothing ever consults
-        // (indexForUri only ever resolves to (loose) for a file under no project directory at all).
-        return Array.from(projectMap.projects.values()).map(p => workspace.indexForKey(p.key));
     };
-    for (const root of roots) {
-        try {
-            indexStDirectory(root, {}, routeFile);
-        } catch (e) {
-            error(`Failed to index .st files under ${root}: ${e.message}`);
-        }
-    }
+}
 
-    log(`Indexed ${projectMap.projects.size} PLC project(s): ` + projectMap.keys()
-        .map(k => `${projectMap.displayName(k)} (${Object.keys(workspace.indexForKey(k)).length} symbols)`)
-        .join(', '));
-    return workspace;
+/**
+ * Discovers the projects under the given roots and indexes each one's objects into its own index, in
+ * one synchronous pass. The language server uses startWorkspaceScan (below), which runs the same tasks
+ * with the event loop free between projects; this form is for the harnesses and any caller that wants
+ * the finished workspace in hand.
+ * @param {Array<string>} rootPaths Absolute workspace-root paths.
+ * @param {{log?: (m: string) => void, error?: (m: string) => void,
+ *   indexLibraries?: (dir: string, index: Object, roots: Array<string>, listing: Object) => void}} [deps]
+ *   Injected side effects. `indexLibraries` is stubbed by the harnesses that only care about the
+ *   partition. The third argument is the full set of workspace roots — `library-signatures.xml` is a
+ *   WORKSPACE-level artifact (`twincat.updateLibraryDefinitions` writes it to `folders[0].fsPath`, see
+ *   libraryCommands.js), not a per-project one, and it normally sits ABOVE `project.dir` in the tree,
+ *   so a callee that only scans `dir` downward can never reach it. The fourth is the scan's
+ *   directory-listing memo.
+ * @returns {Workspace & ReadinessGate}
+ */
+function scanWorkspace(rootPaths, deps) {
+    const plan = planWorkspaceScan(rootPaths, deps);
+    for (const task of plan.tasks) task.run();
+    plan.finish();
+    return Object.assign(plan.workspace, completeGate());
+}
+
+/**
+ * @typedef {Object} ScanHandle
+ * @property {Workspace & ReadinessGate} workspace Routes immediately; each index answers only once its
+ *   gate says so.
+ * @property {Promise<'complete'|'cancelled'>} done Settles when the scan finishes or is cancelled;
+ *   rejects when a task throws (every pending gate then resolves false first).
+ * @property {() => void} cancel Stops after the task in progress; pending gates resolve false.
+ */
+
+/**
+ * Starts a scan that indexes one project at a time with the event loop free in between, so a request
+ * for a project that is already indexed is answered while the rest of the workspace is still being
+ * scanned, and a request for one that is not yet indexed moves that project to the front of the queue.
+ *
+ * **The readiness gate is the whole point, and it is per index.** A project's gate opens only after its
+ * task — objects, libraries and its `.st` files — has run to the end; nothing writes to that index for
+ * the rest of the scan. A request must await `readyFor(uri)` before it touches `indexForUri(uri)`, and
+ * between that await resolving and the handler running nothing else can run (one thread), so a request
+ * can never see a half-built index. A file under no project (or a workspace with no projects at all)
+ * waits for the whole scan.
+ * @param {Array<string>} rootPaths Absolute workspace-root paths.
+ * @param {Object} [deps] As scanWorkspace's, plus:
+ *   `yieldToEventLoop` — () => Promise<void>, how the scan lets requests in between projects
+ *   (setImmediate by default; the harness steps it by hand);
+ *   `onProjectReady` — (key: string) => void, told as each project's gate opens;
+ *   `onFailure` — (error: Error) => void, called when a task throws, BEFORE any pending gate resolves
+ *   false, so whoever owns "the current workspace" has already moved off this one when a waiter wakes.
+ * @returns {ScanHandle}
+ */
+function startWorkspaceScan(rootPaths, deps) {
+    const {
+        yieldToEventLoop = () => new Promise(resolve => setImmediate(resolve)),
+        onProjectReady = () => {},
+        onFailure = () => {}
+    } = deps || {};
+    const plan = planWorkspaceScan(rootPaths, deps);
+    // Every gate method is attached below, before the handle is returned.
+    const workspace = /** @type {Workspace & ReadinessGate} */ (plan.workspace);
+
+    /** A promise with its settle functions outside. */
+    const deferred = () => {
+        let settle;
+        const promise = new Promise(resolve => { settle = resolve; });
+        return { promise, settle, settled: false, value: false };
+    };
+    const gates = new Map(plan.tasks.map(t => [t.key, deferred()]));
+    const all = deferred();
+    const open = (gate, value) => {
+        if (gate.settled) return;
+        gate.settled = true;
+        gate.value = value;
+        gate.settle(value);
+    };
+    const failPending = () => {
+        for (const gate of gates.values()) open(gate, false);
+        open(all, false);
+    };
+
+    const queue = plan.tasks.slice();
+    let cancelled = false;
+    const gateKeyFor = (fileUri) => {
+        if (!workspace.projectMap || workspace.projectMap.isEmpty()) return null;
+        const key = workspace.projectMap.projectFor(uriToFsPath(fileUri));
+        return gates.has(key) ? key : null;
+    };
+
+    Object.assign(workspace, {
+        readyFor: (fileUri) => {
+            const key = gateKeyFor(fileUri);
+            if (key === null) return all.promise;
+            const gate = gates.get(key);
+            if (!gate.settled) {
+                // Asked for before it was indexed: index it next.
+                const at = queue.findIndex(t => t.key === key);
+                if (at > 0) queue.unshift(queue.splice(at, 1)[0]);
+            }
+            return gate.promise;
+        },
+        readyAll: () => all.promise,
+        isReadyFor: (fileUri) => {
+            const key = gateKeyFor(fileUri);
+            const gate = key === null ? all : gates.get(key);
+            return gate.settled && gate.value === true;
+        },
+        isComplete: () => all.settled && all.value === true
+    });
+
+    const done = (async () => {
+        // Yield first: the caller (onInitialize) answers before any project is indexed.
+        await yieldToEventLoop();
+        while (queue.length > 0) {
+            if (cancelled) break;
+            const task = queue.shift();
+            task.run();
+            open(gates.get(task.key), true);
+            onProjectReady(task.key);
+            await yieldToEventLoop();
+        }
+        if (cancelled) {
+            failPending();
+            return 'cancelled';
+        }
+        plan.finish();
+        open(all, true);
+        return 'complete';
+    })().catch((e) => {
+        try {
+            onFailure(e);
+        } catch (hookError) {
+            /* the gates must still resolve */
+        }
+        failPending();
+        throw e;
+    });
+
+    return {
+        workspace,
+        done,
+        cancel: () => { cancelled = true; }
+    };
 }
 
 module.exports = {
     CONFIG_OBJECT_EXTS,
+    startWorkspaceScan,
+    planWorkspaceScan,
     uriToFsPath,
     collectConfigObjectFiles,
     createEmptyWorkspace,

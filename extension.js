@@ -235,15 +235,14 @@ function activate(context) {
     /**
      * Runs an indexing round-trip under the status-bar progress indicator.
      *
-     * The extension host is a SEPARATE process from the LSP, so its event loop is free even while
-     * the server is blocked inside a synchronous scan — which is exactly why a host-side indicator
-     * works at all, and why it is the only honest signal available today. `ProgressLocation.Window`
-     * is the status-bar spot language servers conventionally use; `Notification` would put a popup on
-     * screen every time a window opens.
+     * The indicator covers the WHOLE scan (the barrier resolves when every project is indexed). The
+     * server indexes one project at a time in the background (R6) and answers a request as soon as
+     * that request's own project is ready, so language features in an open file usually work before
+     * the indicator goes away. `ProgressLocation.Window` is the status-bar spot language servers
+     * conventionally use; `Notification` would put a popup on screen every time a window opens.
      *
-     * The progress is deliberately INDETERMINATE — no "3 of 8". Per-project counts would need the
-     * scan to yield to the event loop between projects, which it does not do; a fabricated percentage
-     * would be a worse lie than a spinner.
+     * The progress is still INDETERMINATE — no "3 of 8": the server reports no per-project progress
+     * to the host yet, and a fabricated percentage would be a worse lie than a spinner.
      *
      * `Promise.resolve` wraps the Thenable withProgress returns, so callers get a real Promise with
      * `.catch` rather than a bare `.then`.

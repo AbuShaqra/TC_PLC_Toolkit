@@ -20,7 +20,9 @@
  * What it reports, per run (median over --runs):
  *   cold   — a fresh process with no persisted archive cache (the first session ever on a machine);
  *   warm   — a fresh process reusing the persisted archive cache the cold run wrote (a second session);
- *   first  — time from scan start until each project's index is ready to answer (per project).
+ *   ready  — time from scan start until the first and the last project's index can answer, and until
+ *            a request for the LAST-discovered project (an editor open on it at startup) is answered.
+ *            Before R6 part 3 every one of these equals the whole scan.
  * Without --drop-caches the OS page cache stays warm, so "cold" means "cold for the toolkit" only.
  */
 
@@ -203,12 +205,15 @@ function child(roots, cacheDir) {
     const ms = () => Number(process.hrtime.bigint() - t0) / 1e6;
     const libsymbols = require(path.join(REPO, 'src/lsp/libsymbols'));
     if (cacheDir && typeof libsymbols.configureArchiveCache === 'function') libsymbols.configureArchiveCache(cacheDir);
-    const { scanWorkspace } = require(path.join(REPO, 'src/lsp/workspaceScan'));
+    const scanModule = require(path.join(REPO, 'src/lsp/workspaceScan'));
     const { createIndexLibraries } = require(path.join(REPO, 'src/lsp/libraryIndex'));
     const loadMs = ms();
     const logs = [];
     const indexLibraries = createIndexLibraries({ log: (l) => logs.push(l) });
+    /** Project key -> ms from scan start until its index could answer. */
     const ready = {};
+    /** Ms from scan start until a request for the LAST-discovered project was answered. */
+    let lastProjectAnswer = null;
     const done = (ws) => {
         const scanMs = ms() - loadMs;
         if (typeof libsymbols.flushArchiveCache === 'function') libsymbols.flushArchiveCache();
@@ -218,16 +223,32 @@ function child(roots, cacheDir) {
             loadMs, scanMs, readdirCalls, readdirMs, sigMs, archMs,
             projects: ws.projectMap ? ws.projectMap.projects.size : 0,
             archive: { ...libsymbols.__archiveStats },
-            ready
+            ready,
+            lastProjectAnswer
         }));
     };
-    const result = scanWorkspace(roots, {
+    if (typeof scanModule.startWorkspaceScan !== 'function') {
+        // The one-pass scan (before R6 part 3): nothing can answer until all of it has run.
+        const ws = scanModule.scanWorkspace(roots, { indexLibraries });
+        const t = ms() - loadMs;
+        for (const k of ws.projectMap.keys()) ready[k] = t;
+        lastProjectAnswer = t;
+        done(ws);
+        return;
+    }
+    const handle = scanModule.startWorkspaceScan(roots, {
         indexLibraries,
         onProjectReady: (key) => { ready[key] = ms() - loadMs; }
     });
-    if (result && typeof result.then === 'function') result.then(done);
-    else if (result && result.whenComplete) result.whenComplete().then(() => done(result));
-    else done(result);
+    // An editor open on a file of the LAST project in discovery order asks at once — the worst case
+    // for a scan without priority, and the case per-project readiness exists for.
+    if (handle.workspace.projectMap && handle.workspace.projectMap.projects.size > 0) {
+        const projects = Array.from(handle.workspace.projectMap.projects.values());
+        const last = projects[projects.length - 1];
+        const file = Array.from(last.objectFiles.values())[0];
+        if (file) handle.workspace.readyFor(file).then(() => { lastProjectAnswer = ms() - loadMs; });
+    }
+    handle.done.then(() => done(handle.workspace));
 }
 
 /**
@@ -300,7 +321,9 @@ function main() {
             `archive stage ${median(r.map(x => x.archMs))} ms, signature stage ${median(r.map(x => x.sigMs))} ms, ` +
             `readdir ${last.readdirCalls} calls / ${median(r.map(x => x.readdirMs)).toFixed(0)} ms, ` +
             `projects ${last.projects}, archives ${JSON.stringify(last.archive)}` +
-            (firstReady !== null ? `, first project ready ${firstReady.toFixed(0)} ms, last ${lastReady.toFixed(0)} ms` : ''));
+            (firstReady !== null ? `, first project ready ${firstReady.toFixed(0)} ms, last ${lastReady.toFixed(0)} ms` : '') +
+            (r.every(x => x.lastProjectAnswer !== null)
+                ? `, a request for the last project answered at ${median(r.map(x => x.lastProjectAnswer)).toFixed(0)} ms` : ''));
     }
     if (!args.keep) fs.rmSync(tmp, { recursive: true, force: true });
     else console.log(`Kept ${tmp}`);

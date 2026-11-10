@@ -205,6 +205,8 @@ per-suite without aborting on the first failure. The main ones:
 | `test/test_scan_controller.js` | `src/lsp/scanController.js`: which of the two scan-triggering requests actually has to run a scan. Pins that `ensureScanned` twice over one root set scans **once** (the duplicate startup scan this replaced), that `rescan` after it scans **again** — the assertion that stops a future "optimisation" from teaching the `.plcproj` watcher to skip, since on a content change the roots are unchanged — and that a throwing scan leaves no completed state. Root sets compare order-, case- and separator-insensitively; the empty set is a legitimate *completed* state, or a window with no folders would re-request forever. |
 | `test/test_debounce.js` | `src/util/debounce.js`: trailing edge only, one invocation per burst carrying the **last** arguments, every caller's promise resolved. Timers are injected, so it asserts on a fake clock rather than racing a real one. |
 | `test/test_archive_store.js` | R6's persisted archive-name cache (`src/lsp/archiveStore.js` + `harvestArchiveFile`), each "session" a fresh Node process: off when no directory is configured; a second session decodes nothing and gets identical names; an archive rewritten with the SAME size and mtime is caught by the central-directory fingerprint and decoded afresh; garbage, truncated, empty, foreign, other-version and other-decoder files are ignored and rewritten, a malformed entry dropped alone; entry and name-character caps evict least-recently-used; eight vendored copies are one stored entry; only names reach the file; two windows keep each other's entries; file and buffer fingerprints agree, also when the central directory starts before the 66 KB tail window. |
+| `test/test_scan_readiness.js` | R6's per-project background scan with a HAND-STEPPED event loop: background indexes equal the one-pass scan's (objects, libraries, routed `.st`); a request for a project is released only when that project's index is complete (snapshot identical to the finished index) while other projects are still unindexed; a waited-for project jumps the queue; a file under no project waits for the whole scan; a reindex supersedes mid-scan and the old scan's waiters are answered from the NEW workspace; a throwing scan leaves the last complete workspace answering; the controller joins an in-flight `ensureScanned`, never lets `rescan` skip, and records completion only for the latest scan. |
+| `test/test_server_ipc.js` | The REAL `src/lsp/server.js` in its own process over Node IPC (`vscode-jsonrpc`): `initialize` answers without waiting for the scan; `custom/diagnostics` for the last project sent at once, and right after `custom/reindex`, return ZERO diagnostics on the correct sample (a control shows a partial index gives 10); `custom/indexReady` joins the startup scan; `custom/libraries` answers per project; the archive names land in `initializationOptions.archiveCacheDir` as one entry for four vendored copies, and a second server session only reads that file. |
 | `test/test_discovery_memo.js` | R6's per-scan directory-listing memo (`createDirectoryListingMemo`, `src/twincatWorkspace.js`): a memoized signature/`.tmc` walk equals the unmemoized one (same files, order, caller-spelled paths); a 3-project scan reads each directory from disk exactly once; and through the REAL scan composition a dump or `.tmc` added after a scan is found by the next one, a removed one is gone, and one three levels below a project is found — the memo never outlives its scan. |
 | `test/test_collect_scope.js` | Which directories each library walker descends. The `.tmc` and signature walkers must **skip** `_Libraries` while `collectArchives` must **enter** it, and the harness proves the second half is load-bearing by adding `_libraries` to `SKIP_DIRS` and watching archive collection go blind — the tempting one-line "fix" that would silently cost ~171 false positives. |
 | `test/test_signature_cache.js` | `src/lsp/parseCache.js`: one dump, three projects → parsed once, two cache hits, all three resolving its symbols. The load-bearing half is **isolation**: each project must hold a *different record object* (asserted by identity, not value — a value check still passes while sharing), so that the merge's `record.namespace` rewrite and `indexBrowserCache`'s member pushes cannot leak between projects. An mtime bump re-parses. |
@@ -566,10 +568,17 @@ src/
     projectMap.js       Which .plcproj owns which file: ownersOf() (every project that <Compile>s the
                         file) vs projectFor() (the one project a request routes to). Dependency-free
                         (fs/path only, no vscode) so both the server and the extension host can use it.
-    workspaceScan.js    One symbol index per PLC project + the request-routing API. Kept out of
-                        server.js on purpose: server.js opens an IPC connection at require time, so
-                        nothing that requires it is loadable by a standalone harness — the connection is
-                        injected here as log/error callbacks instead.
+    workspaceScan.js    One symbol index per PLC project + the request-routing API. Plans a scan as one
+                        task per index (`planWorkspaceScan`); `scanWorkspace` runs them in one pass,
+                        `startWorkspaceScan` one project at a time in the background with a per-index
+                        readiness gate (`readyFor`/`readyAll`). Kept out of server.js on purpose:
+                        server.js opens an IPC connection at require time, so nothing that requires it
+                        is loadable by a standalone harness — the connection is injected here as
+                        log/error callbacks instead.
+    workspaceState.js   Which workspace answers while scans come and go (R6): `settledFor(uri)` /
+                        `settledAll()` resolve with the CURRENT workspace once the index a request
+                        reads is complete; a superseded scan's waiters move to the new one; a failed
+                        scan falls back to the last complete workspace.
     requestPipeline.js  The request router (withDocument makes the pre-handler document sync
                         structural; withoutDocument is the EXPLICIT no-sync variant) and the
                         library-index stage table (LIBRARY_INDEX_STAGES, order validated at module
@@ -580,8 +589,9 @@ src/
                         run through the stage table. Moved out of server.js so the harnesses and
                         scripts/measure-indexing.js drive the code the server runs, not a copy.
     scanController.js   Decides WHEN to scan, separately from how. custom/reindex = "rebuild
-                        unconditionally"; custom/indexReady = "resolve once these roots are indexed".
-                        Outside server.js for the same harness reason; the scan is injected.
+                        unconditionally"; custom/indexReady = "resolve once these roots are indexed"
+                        (JOINS a scan of the same roots in flight). Only the latest scan records
+                        completion. Outside server.js for the same harness reason; the scan is injected.
     parseCache.js       library-signatures.xml + browsercache parses, cached on (path, size, mtime).
                         Signature records are CLONED per project — see the warning in its header.
                         `readOnlyParse` / `signatureLibrariesFor` are shared, DEEP-FROZEN parses for
@@ -805,7 +815,8 @@ and routed at startup (and on `custom/reindex`), not one flat index for the whol
   stale case-only folder spelling in an Include and VS Code treats that as a different resource. The
   walk preserves workspace 8.3 prefixes and junction paths; missing/unreadable includes and all POSIX
   paths retain the project spelling conservatively.
-- **`src/lsp/workspaceScan.js`** builds one index per project (`scanWorkspace`) and wraps the
+- **`src/lsp/workspaceScan.js`** builds one index per project (`scanWorkspace`, or `startWorkspaceScan`
+  in the server — see "The background scan" below) and wraps the
   request-routing API (`indexForUri`, `projectForUri`, `configFilesFor`). It lives outside `server.js` on
   purpose: `server.js` opens a Node IPC connection at require time, so nothing that requires it is
   loadable by a standalone test harness — `workspaceScan.js` takes the connection as injected
@@ -864,6 +875,8 @@ warm / ~20 s cold projected, and the wait is visible. Four invariants hold that,
    `src/lsp/scanController.js` decides, on exactly two facts: a scan **completed**, and its normalized
    root set matches. **Never teach `reindex` to skip** — on a `.plcproj` change the roots are
    unchanged and it is the content that moved (`test_scan_controller.js` pins both directions).
+   Since the scan runs in the background, an `indexReady` that arrives mid-scan **joins** that scan
+   rather than starting another, and only the latest scan records completion (`test_scan_readiness.js`).
 2. **Read each file once per (path, size, mtime).** `parseCache.js` (signature dumps, browsercache),
    `plcprojRefs.js` (`.plcproj`), `harvestArchiveFile` (archives). A parse that is *stored* per
    project must be a private copy — the signature merge rewrites `record.namespace` and
@@ -909,13 +922,39 @@ dies with its scan, so an added or removed dump or `.tmc` is found by the next s
 directory-mtime guard — a file added two levels down does not change the project directory's mtime.
 `test_discovery_memo.js` pins it.
 
-The scan is still **synchronous**, so the server's event loop stops for its duration and requests
-queue unread. That is why the progress indicator lives in the **extension host** — a separate process
-whose loop stays free — and why it is deliberately indeterminate ("TC Toolkit: indexing…", no `3 of 8`):
-per-project counts would need the scan to yield between projects, which it does not do. Making it
-yield (with per-project readiness, so the active file's project answers first) is the known next step
-and is deliberately not done: it rewrites the multi-project spine, and a wrong readiness gate answers
-against a partial index, which means false diagnostics.
+**The background scan (R6).** The scan used to be one synchronous pass: the server's event loop stopped
+for its whole duration and every request queued unread until the finished workspace replaced the old one
+in a single assignment. It now runs **one project at a time with the loop free in between**, and the
+guarantee that made the old design safe — no request ever sees a half-built index — is kept by a
+readiness gate per index:
+
+- `planWorkspaceScan` (workspaceScan.js) turns a scan into **one task per index**, and a task holds
+  everything that index receives: its objects, its libraries, and the loose `.st` files routed to it
+  (collected up front by the same walk; a `.st` under no project still goes to every project, last, as
+  before). Once a task has run, nothing writes to that index for the rest of the scan. Tasks share only
+  content caches, so order cannot change an index — `test_scan_readiness.js` compares each background
+  index with the one-pass `scanWorkspace` index.
+- `startWorkspaceScan` yields before the first task (so `initialize` answers at once) and between tasks,
+  opens a project's gate when its task ends, and moves a project someone is waiting for to the front.
+  A file under no project, and the union catalog, wait for the whole scan.
+- `workspaceState.js` owns "the current workspace". **Every server handler that reads an index first
+  awaits `settledFor(uri)` / `settledAll()` (server.js `whenIndexed`), then reads `currentWorkspace()`
+  with no await in between** — that pairing is the gate; a new handler that reads an index without it
+  is the bug this design exists to prevent. A reindex replaces the workspace at once and cancels the old
+  scan; its waiters move to the new workspace (as a request queued behind the old synchronous scan
+  would have got the new index). A scan that throws reverts to the last complete workspace before any
+  waiter wakes.
+- `scanController.js` joins: an `ensureScanned` for roots already being scanned awaits that scan, and
+  only the latest scan records completion — the "latent" double-scan hazard of an async scan.
+
+Measured with `scripts/measure-indexing.js --drop-caches` on 8 synthetic projects: the first project
+answers at ~540 ms cold / ~350 ms warm, against ~1,480 ms for any answer before R6 (the whole scan);
+a request for the last-discovered project at startup is answered at the same ~540 ms because it jumps
+the queue. The first task costs most: it decodes the shared vendor archives every later project reuses.
+`test_server_ipc.js` runs the real server over IPC: requests sent during the startup scan and right
+after a reindex return zero diagnostics on the sample (the control shows a partial index does not).
+The progress indicator still lives in the **extension host** and is still indeterminate ("TC Toolkit:
+indexing…", no `3 of 8`): the server does not report per-project progress to the host yet.
 
 Three processes cooperate, with the extension host as the hub — **the webview never talks to the
 language server directly**. The extension bridges them over custom JSON-RPC requests
