@@ -192,30 +192,23 @@ UNION → 13 FB_init (the sample compiles with no workarounds).
 the compiler puts on correct code. **Not estimable yet:** a strict-mode policy for vendor profiles (a decision
 first), an Ed. 4 profile (needs a full Ed. 4 read), the rest of the vendor-feature catalogue (explicitly not a plan).
 
-**S3b's list** (each found during an S2 step; all also on `development` before it):
-- *Passes the checker, fails in g++:* `p^.M()` on an FB behind REF_TO; `inst.Nope()` / `intVar.M()`; positional
-  method calls omitting a VAR_OUTPUT; an FB implementing an interface only through its base FB; an FB property
-  inherited from a base FB; `TO_DINT(enumValue)`; `gfb(a := 2);` on a global FB instance; `REF(s)`, `REF=` and `=`
-  on STRUCTs; a STRUCT argument of an unrelated STRUCT type.
-- *Checker gaps:* an unknown member in a chain (`x := mid.nothing`, `s.zz := 1`); an array member assigned to an INT.
-- *Parser and language gaps:* plain `SUPER()`; `SUPER.x :=` as a target; `THIS.a.b`; `GVL_A.units[0]()`; IMPLEMENTS
-  ignoring methods from interface EXTENDS bases; ARRAY OF / STRUCT field of an interface type; properties through an
-  interface variable; a library STRUCT as an EXTENDS base.
-- *Found during S3a and the folded items:* an omitted function input with a default emits `F(, 0)` / `0` instead of
-  the default (wrong at run time); an enum member named like a FUNCTION/METHOD hijacks its return; `REF(s)` into a
-  REF_TO STRUCT and `REF()`/`ADR()` of a CONFIGURATION global fail in g++; an FB call through a pointer does not
-  parse; an unknown STRUCT initialiser element passes; alias-of-base := alias-of-derived STRUCT passes; `SINT#200`
-  unchecked; `CONCAT` on WSTRING fails g++; uninitialised alias-typed PROGRAM variables; `p : PRG; p();` fails g++.
-- *Found during batch 2 (still open):* `INSERT` with two literal arguments fails g++; named arguments to an FB member call are unchecked (`inst.sub(zz := 3)` passes, fails g++);
-  `REF()` of a STRING, WSTRING or enum variable fails g++.
+**S3b's list, still open** (2026-11-10; merged so far: batches 1–2 #30–#50, batch 3 #51–#57 and #65–#68):
+- *Batch 3, running (one PR each):* library FUNCTION named arguments reordered; `REF()` of an ARRAY OF enum element;
+  `REF_TO STRING(10)` / `TYPE T : STRING(10)` keep their length; cross-length STRING mixes (probably fixed by S9);
+  an enum value used as an integer refused like the variable form; enum VAR initialisers checked;
+  `ARRAY[E#A..E#B]` by the standard; `:= E.B` as a type default; `PRG_A.zz` and a method-local `x` inside PRG_A; enum
+  alias wrapping; an unknown named argument on a user FUNCTION; interface method signatures checked.
 - *Batch 4, vendor forms the toolkit sample uses (decided 2026-11-10, before R3.2):* feature `end_semicolon_optional`
   (a missing `;` after `END_IF`/`END_FOR`/…, on in the vendor profiles); an empty FOR body (every profile, Annex A);
   `0` assigned to any `POINTER TO` means NULL under `pointer_to`; `POINTER TO STRING := ADR(str)` refused (false
   positive); in-FB ACTIONs before the body like METHODs; a `VAR…END_VAR` part in a property's GET/SET;
   `GVL.x` in an FB instance's init arguments.
-- *Housekeeping:* the `--feature` help text and the DIALECTS.md "Checks" list; a bundled-library global (`speed`)
-  colliding with a user global; an undeclared name in a plain initial value (`x : INT := zz;`) passing analysis; a
-  global named like a standard function (`LOG`) clashing in C++.
+- *Part C:* the runtime's C++ tests: 4 failing cases, `test_iec_composite.cpp` (does not compile), wired into `npm test`.
+- *Batch 5, the rest of the original list:* plain `SUPER()`; `SUPER.x :=` as a target; `THIS.a.b`;
+  `GVL_A.units[0]()`; ARRAY OF / STRUCT field of an interface type; properties through an interface variable; a
+  library STRUCT as an EXTENDS base; alias-of-base := alias-of-derived STRUCT passing; `SINT#200` unchecked;
+  `REF()`/`ADR()` of a CONFIGURATION global; the threaded forced-global race; the `--feature` help text and the
+  DIALECTS.md "Checks" list.
 
 **How these were estimated (2026-11-09):** the planned days are my sizing from the lists above, not measured; the
 re-measured column applies the velocity below (about 30 min per planned day for fork work, ~45 min for toolkit work),
