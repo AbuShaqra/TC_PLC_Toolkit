@@ -33,11 +33,13 @@ async function readFile(uri) {
  * @param {string[]} warnings Converter warnings collected across the run.
  * @param {string} where Where the files were written, as it reads after "in": `MyPlc/ST_Files`,
  *   `each project's ST_Files folder`, or `the "ST_Files" folder`.
+ * @param {any} [firstError] The first failure, so the notification says WHY without the console.
  */
-function reportGenerateResult(successCount, failCount, warnings, where) {
+function reportGenerateResult(successCount, failCount, warnings, where, firstError) {
+    const reason = firstError ? `: ${firstError && firstError.message ? firstError.message : firstError}` : '';
     const summary = failCount === 0
         ? `Successfully generated ${successCount} ST files in ${where}.`
-        : `Generated ${successCount} ST files in ${where}. Failed to convert ${failCount} files.`;
+        : `Generated ${successCount} ST files in ${where}. Failed to convert ${failCount} files${reason}.`;
     if (warnings.length > 0) {
         for (const w of warnings) console.warn(`Generate ST: ${w}`);
         const shown = warnings.slice(0, 5).map(w => w.replace(/ is not exported:.*$/, '')).join('; ');
@@ -652,7 +654,14 @@ class TwinCatCustomEditorProvider {
      * so two projects that share an object path never overwrite each other and nothing lands in the
      * workspace's top-level folder (see stOutputPath.js). Files belonging to no `.plcproj` (loose
      * `.st`, orphan XML) are not emitted.
+     *
+     * Reads and writes go through Node's `fs`, not `vscode.workspace.fs`: these are always local
+     * project paths (the project map itself is fs-based), and a burst of several hundred writes
+     * through the editor's file service was rejected with "Canceled" on a real multi-project
+     * workspace.
      * @param {string[]} [projectKeys] Project keys to export; absent/empty exports every project.
+     * @returns {Promise<{successCount: number, failCount: number}|undefined>} The counts of a
+     *   project-aware run; undefined when there was no workspace or the mirror fallback ran.
      */
     async generateAllStFiles(projectKeys) {
         const workspaceFolders = vscode.workspace.workspaceFolders;
@@ -675,6 +684,8 @@ class TwinCatCustomEditorProvider {
 
         let successCount = 0;
         let failCount = 0;
+        /** @type {any} */
+        let firstError = null;
         /** @type {string[]} */
         const warnings = [];
         /** @type {string[]} */
@@ -693,8 +704,7 @@ class TwinCatCustomEditorProvider {
                 // An output of an earlier run is never an input, wherever its ST_Files folder is.
                 if (isUnderStFiles(filePath)) continue;
                 try {
-                    const fileData = await vscode.workspace.fs.readFile(vscode.Uri.file(filePath));
-                    entries.push({ filePath, parsed: parseTwinCatXml(Buffer.from(fileData).toString('utf8')), error: null });
+                    entries.push({ filePath, parsed: parseTwinCatXml(await fs.promises.readFile(filePath, 'utf8')), error: null });
                 } catch (err) {
                     entries.push({ filePath, parsed: null, error: err });
                 }
@@ -705,13 +715,14 @@ class TwinCatCustomEditorProvider {
                     if (error) throw error;
                     if (!parsed) continue;
                     const { stText, warnings: fileWarnings } = convertXmlToSt(parsed, { structs });
-                    const outFileUri = vscode.Uri.file(stOutputPath(project.dir, filePath));
-                    await vscode.workspace.fs.createDirectory(vscode.Uri.joinPath(outFileUri, '..'));
-                    await vscode.workspace.fs.writeFile(outFileUri, Buffer.from(stText, 'utf8'));
+                    const outPath = stOutputPath(project.dir, filePath);
+                    await fs.promises.mkdir(path.dirname(outPath), { recursive: true });
+                    await fs.promises.writeFile(outPath, stText, 'utf8');
                     warnings.push(...fileWarnings); // only for files actually written
                     successCount++;
                 } catch (err) {
                     console.error(`Failed to generate ST for ${filePath}:`, err);
+                    if (!firstError) firstError = err;
                     failCount++;
                 }
             }
@@ -719,7 +730,8 @@ class TwinCatCustomEditorProvider {
 
         reportGenerateResult(successCount, failCount, warnings, exportedDirs.length === 1
             ? `${path.basename(exportedDirs[0])}/ST_Files`
-            : "each project's ST_Files folder");
+            : "each project's ST_Files folder", firstError);
+        return { successCount, failCount };
     }
 
     /**
@@ -731,6 +743,8 @@ class TwinCatCustomEditorProvider {
         const files = await vscode.workspace.findFiles('**/*.{TcPOU,TcIO,TcGVL,TcDUT,TcTLEO,tcpou,tcio,tcgvl,tcdut,tctleo}');
         let successCount = 0;
         let failCount = 0;
+        /** @type {any} */
+        let firstError = null;
         /** @type {string[]} */
         const warnings = [];
         // Two passes, as in generateAllStFiles: parse everything first to collect struct definitions.
@@ -760,10 +774,11 @@ class TwinCatCustomEditorProvider {
                 successCount++;
             } catch (err) {
                 console.error(`Failed to generate ST for ${fileUri.fsPath}:`, err);
+                if (!firstError) firstError = err;
                 failCount++;
             }
         }
-        reportGenerateResult(successCount, failCount, warnings, 'the "ST_Files" folder');
+        reportGenerateResult(successCount, failCount, warnings, 'the "ST_Files" folder', firstError);
     }
 }
 

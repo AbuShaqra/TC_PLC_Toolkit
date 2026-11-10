@@ -258,6 +258,19 @@ check('PROJECT_SKIP_DIRS is ARCHIVE_SKIP_DIRS + _libraries and nothing else', ()
     for (const item of PROJECT_SKIP_DIRS) assert.ok(expected.has(item));
 });
 
+// Watcher events: Generate ST's own output must trigger nothing, wherever its ST_Files folder is.
+check('isWatchEventRelevant ignores ST_Files output and VCS/editor metadata, keeps everything else', () => {
+    const { isWatchEventRelevant } = twincatWorkspace;
+    for (const p of ['C:\\ws\\LineA\\PLC\\ST_Files\\POUs\\MAIN.st', '/ws/LineA/PLC/ST_Files/POUs/MAIN.st', '/ws/ST_Files/MAIN.st',
+        '/ws/PLC/st_files/a/b/X.st', '/ws/PLC/ST_Files', '/ws/PLC/ST_Files/POUs', '/ws/.git/HEAD', '/ws/node_modules/x/y.js', 'C:\\ws\\.vscode\\settings.json']) {
+        assert.strictEqual(isWatchEventRelevant(p), false, `${p} must be ignored`);
+    }
+    for (const p of ['/ws/LineA/PLC/POUs/MAIN.TcPOU', 'C:\\ws\\PLC\\PLC.plcproj', '/ws/Sol.sln', '/ws/PLC/POUs', '/ws/PLC/Loose.st',
+        '/ws/PLC/POUs/ST_Files.TcPOU', '/ws/PLC/My_ST_Files_Backup/X.TcPOU']) {
+        assert.strictEqual(isWatchEventRelevant(p), true, `${p} must be reacted to`);
+    }
+});
+
 check('sets are plain mutable Sets, not frozen', () => {
     assert.doesNotThrow(() => {
         const probe = new Set([...BASE_SKIP_DIRS]);

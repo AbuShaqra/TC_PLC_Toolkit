@@ -775,8 +775,14 @@ async function run() {
         //     not collide (the bug the old flat mirror had).
         try {
             const projectsForPicker = hostProvider ? hostProvider.listProjects() : [];
-            await hostProvider.generateAllStFiles(); // no keys → every project
+            const counts = await hostProvider.generateAllStFiles(); // no keys → every project
             await sleep(1500);
+            // Every object of every project must be written: one `.st` per `<Compile>`d object, none failed.
+            const hostMap = hostProvider.options.getProjectMap();
+            let expectedObjects = 0;
+            for (const key of hostMap.keys()) expectedObjects += hostMap.get(key).objectFiles.size;
+            const countSt = (dir) => !fs.existsSync(dir) ? 0 : fs.readdirSync(dir, { withFileTypes: true })
+                .reduce((n, e) => n + (e.isDirectory() ? countSt(path.join(dir, e.name)) : (/\.st$/i.test(e.name) ? 1 : 0)), 0);
             // `<project dir>/ST_Files/<path in the project>.st`, given as `<project dir>/<path>`.
             const stDir = (projectRel) => path.join(WS, ...projectRel.split('/'), 'ST_Files');
             const exists = (rel) => {
@@ -786,6 +792,9 @@ async function run() {
             const projectDirs = ['LineA/TcToolkitSample_PLC', 'LineB/TcToolkitSample_PLC', 'LineA/TcToolkitSample_Aux'];
             log('generate-st', {
                 pickerLabels: projectsForPicker.map(p => p.label).sort(),
+                counts: counts || null,
+                expectedObjects,
+                stFilesOnDisk: projectDirs.reduce((n, d) => n + countSt(stDir(d)), 0),
                 // Same relative object path in two different projects, kept apart by project folder:
                 lineAMain: exists('LineA/TcToolkitSample_PLC/POUs/MAIN.st'),
                 lineBMain: exists('LineB/TcToolkitSample_PLC/POUs/MAIN.st'),

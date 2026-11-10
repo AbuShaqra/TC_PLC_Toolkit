@@ -763,8 +763,12 @@ posts `generate-st` with a `projectKeys` subset. `generateAllStFiles` walks each
 `<Compile>` list from the `.plcproj` partition and writes `<project dir>/ST_Files/<path in the project>.st`,
 so no two projects collide and nothing lands in the workspace's top-level folder (the path math is the pure,
 tested `src/stOutputPath.js`). A workspace with no `.plcproj` falls back to the old flat mirror in
-`<workspace root>/ST_Files`. Every scanner skips a directory named `ST_Files` at any depth, and the Objects
-tree does not list a project's own `ST_Files` folder.
+`<workspace root>/ST_Files`. Every scanner skips a directory named `ST_Files` at any depth, the Objects
+tree does not list a project's own `ST_Files` folder, and the workspace file watcher ignores every path under an
+`ST_Files` folder (`isWatchEventRelevant` in `src/twincatWorkspace.js`) — a run writes hundreds of files, and each
+one used to refresh the whole Objects tree. The project-aware export reads and writes with Node `fs.promises`,
+not `vscode.workspace.fs`: a burst of writes through the editor's file service was rejected with "Canceled" on a
+real multi-project workspace. A failed run names its first error in the notification.
 
 ### The live language-feature path
 

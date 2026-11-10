@@ -424,6 +424,10 @@ function findCodeCli() {
     assert(!!gen && gen.lineAMain && gen.lineBMain && gen.auxMain,
         `each project's MAIN is written under its own folder — identical paths do NOT collide ` +
         `(A=${gen && gen.lineAMain}, B=${gen && gen.lineBMain}, Aux=${gen && gen.auxMain})`);
+    assert(!!gen && gen.counts && gen.counts.failCount === 0 && gen.expectedObjects > 0 &&
+        gen.counts.successCount === gen.expectedObjects && gen.stFilesOnDisk === gen.expectedObjects,
+        `a full export writes every object of every project with zero failures ` +
+        `(${gen && JSON.stringify(gen.counts)}, expected ${gen && gen.expectedObjects}, on disk ${gen && gen.stFilesOnDisk})`);
     assert(!!gen && gen.noTopLevel,
         `nothing is written into the workspace's top-level ST_Files (${gen && gen.noTopLevel})`);
     assert(!!gen && gen.stationNested,

@@ -24,7 +24,7 @@ const { TwinCatLibraryTreeDataProvider } = require('./src/libraryTreeProvider');
 // cleanly as well so both editors fold ST identically from one copy of the algorithm.
 const stFolding = require('./media/stFolding');
 const { createDebouncer } = require('./src/util/debounce');
-const { TWINCAT_EDITOR_EXTS, TWINCAT_WATCH_EXTS } = require('./src/twincatWorkspace');
+const { TWINCAT_EDITOR_EXTS, TWINCAT_WATCH_EXTS, isWatchEventRelevant } = require('./src/twincatWorkspace');
 const { LanguageClient, TransportKind, State } = require('vscode-languageclient/node');
 
 let client;
@@ -406,14 +406,9 @@ function activate(context) {
     // Watch filesystem for external creations, deletions, and changes
     const workspaceWatcher = vscode.workspace.createFileSystemWatcher('**/*');
 
-    const shouldRefresh = (uri) => {
-        const fsPath = uri.fsPath;
-        const parts = fsPath.split(path.sep);
-        if (parts.includes('.git') || parts.includes('node_modules') || parts.includes('.vscode')) {
-            return false;
-        }
-        return true;
-    };
+    // Generated output (any `ST_Files` folder) and VCS/editor metadata never trigger a refresh:
+    // see isWatchEventRelevant in src/twincatWorkspace.js.
+    const shouldRefresh = (uri) => isWatchEventRelevant(uri.fsPath);
 
     // The .plcproj is where the library references live, so it is the only file whose change can
     // change the Libraries view. The catalog is built by the LSP's library index, so refreshing the
