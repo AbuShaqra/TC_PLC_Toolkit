@@ -255,6 +255,25 @@ async function run() {
         await ext.activate();
         log('activated', { id: ext.id });
 
+        // The activation's settings migration (run.js planted two old twincat.* User values). It is
+        // not awaited by activate(), so wait for the old key to clear.
+        try {
+            const cfg = () => vscode.workspace.getConfiguration();
+            const pair = (rest) => {
+                const o = cfg().inspect(`twincat.${rest}`), n = cfg().inspect(`tcToolkit.${rest}`);
+                return { oldGlobal: o && o.globalValue, newGlobal: n && n.globalValue };
+            };
+            for (let i = 0; i < 100 && (pair('startPage.recentProjectsShown').oldGlobal !== undefined
+                || pair('diagnostics.declarationTypes').oldGlobal !== undefined); i++) await sleep(100);
+            log('settings-migration', {
+                moved: pair('startPage.recentProjectsShown'),
+                kept: pair('diagnostics.declarationTypes'),
+                recentsShownRead: vscode.workspace.getConfiguration('tcToolkit.startPage').get('recentProjectsShown')
+            });
+        } catch (e) {
+            log('settings-migration', { error: String((e && e.stack) || e) });
+        }
+
         // Drive the actual VS Code-bound Objects provider over two same-named `.plcproj` copies.
         // The pure formatter has unit coverage, but only this proves the provider renders those labels.
         const { createProjectMap, normalizeProjectPath } = require(path.join(REPO, 'src', 'lsp', 'projectMap.js'));
@@ -872,14 +891,14 @@ async function run() {
         }
 
         // --- Phase compile (R3.2): Compile Project through the real command on every PLC project.
-        //     Runs the bundled compiler (run.js writes twincat.compiler.path only as an override, when
+        //     Runs the bundled compiler (run.js writes tcToolkit.compiler.path only as an override, when
         //     TWINCAT_COMPILER_BUNDLE is set). Without a Node >= 22 the phase says it was skipped.
         try {
-            const compilerPath = vscode.workspace.getConfiguration('twincat.compiler').get('path', '') || '(bundled)';
+            const compilerPath = vscode.workspace.getConfiguration('tcToolkit.compiler').get('path', '') || '(bundled)';
             const { checkSetup } = require(path.join(REPO, 'src', 'compileCheck.js'));
             const setup = await checkSetup({
-                compilerPath: vscode.workspace.getConfiguration('twincat.compiler').get('path', ''),
-                nodePath: vscode.workspace.getConfiguration('twincat.compiler').get('nodePath', '')
+                compilerPath: vscode.workspace.getConfiguration('tcToolkit.compiler').get('path', ''),
+                nodePath: vscode.workspace.getConfiguration('tcToolkit.compiler').get('nodePath', '')
             });
             if (!setup.ok) {
                 log('compile', { skipped: setup.problems.map(p => p.message).join(' ') });

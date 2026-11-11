@@ -143,18 +143,24 @@ function findCodeCli() {
     assert(tleoProjChanged !== tleoProjText, 'the dev-host fixture injects the .TcTLEO project include');
     fs.writeFileSync(tleoPlcproj, tleoProjChanged, 'utf8');
 
-    // Compile Project runs the compiler that ships with the extension (R3.3). TWINCAT_COMPILER_BUNDLE
-    // overrides it (and TWINCAT_COMPILER_NODE names the Node, if set): the fresh profile is given
-    // them as twincat.compiler.*. Without a Node >= 22 the in-host phase reports itself skipped.
+    // The fresh profile's User settings. Compile Project runs the compiler that ships with the
+    // extension (R3.3); TWINCAT_COMPILER_BUNDLE overrides it (and TWINCAT_COMPILER_NODE names the
+    // Node, if set) through tcToolkit.compiler.*. Without a Node >= 22 the in-host phase reports
+    // itself skipped. Two OLD twincat.* keys are planted for the activation migration
+    // (src/settingsMigration.js): one to be moved, and one whose new key is already set (kept).
+    const userSettings = {
+        'twincat.startPage.recentProjectsShown': 7,
+        'twincat.diagnostics.declarationTypes': true,
+        'tcToolkit.diagnostics.declarationTypes': false
+    };
     const compilerBundle = process.env.TWINCAT_COMPILER_BUNDLE || '';
     if (compilerBundle) {
-        const userDir = path.join(work, 'udd', 'User');
-        fs.mkdirSync(userDir, { recursive: true });
-        fs.writeFileSync(path.join(userDir, 'settings.json'), JSON.stringify({
-            'twincat.compiler.path': path.resolve(compilerBundle),
-            'twincat.compiler.nodePath': process.env.TWINCAT_COMPILER_NODE || ''
-        }, null, 2), 'utf8');
+        userSettings['tcToolkit.compiler.path'] = path.resolve(compilerBundle);
+        userSettings['tcToolkit.compiler.nodePath'] = process.env.TWINCAT_COMPILER_NODE || '';
     }
+    const userDir = path.join(work, 'udd', 'User');
+    fs.mkdirSync(userDir, { recursive: true });
+    fs.writeFileSync(path.join(userDir, 'settings.json'), JSON.stringify(userSettings, null, 2), 'utf8');
 
     const args = [
         '--new-window',
@@ -202,6 +208,14 @@ function findCodeCli() {
 
     assert(!step('CRASH'), 'the in-host run completed without crashing' + (step('CRASH') ? ': ' + step('CRASH').error : ''));
     assert(!!step('done'), 'the in-host run reached the end');
+
+    // The one-time settings migration ran on activation against the planted old keys.
+    const mig = step('settings-migration');
+    assert(!!mig && mig.moved.newGlobal === 7 && mig.moved.oldGlobal === undefined,
+        `an old twincat.* User value moves to its tcToolkit.* key and the old one is removed (got ${JSON.stringify(mig && mig.moved)})`);
+    assert(!!mig && mig.kept.newGlobal === false && mig.kept.oldGlobal === undefined,
+        `a value already under the new key is kept, and the old one removed (got ${JSON.stringify(mig && mig.kept)})`);
+    assert(!!mig && mig.recentsShownRead === 7, `the extension reads the migrated value (got ${mig && mig.recentsShownRead})`);
 
     const multi = step('multi-project-ui');
     const expectedSolutions = ['TcToolkitSample — LineA', 'TcToolkitSample — LineB'];

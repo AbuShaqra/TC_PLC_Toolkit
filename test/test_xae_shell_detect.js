@@ -46,9 +46,9 @@ const existsIn = (...files) => (p) => files.includes(p);
     // ── The version table ───────────────────────────────────────────────────────────────────────
     const byId = Object.fromEntries(XAE_SHELL_VERSIONS.map(v => [v.id, v]));
     assert(JSON.stringify(XAE_SHELL_VERSIONS.map(v => v.id)) === '["4024","4026"]', 'two versions, 4024 then 4026');
-    assert(byId['4024'].progId === 'TcXaeShell.DTE.15.0' && byId['4024'].setting === 'twincat.xaeShell.path4024'
+    assert(byId['4024'].progId === 'TcXaeShell.DTE.15.0' && byId['4024'].setting === 'tcToolkit.xaeShell.path4024'
         && byId['4024'].clsidRoots[0] === 'HKCR\\WOW6432Node\\CLSID', '4024 is DTE.15.0, registered in the 32-bit view');
-    assert(byId['4026'].progId === 'TcXaeShell.DTE.17.0' && byId['4026'].setting === 'twincat.xaeShell.path4026'
+    assert(byId['4026'].progId === 'TcXaeShell.DTE.17.0' && byId['4026'].setting === 'tcToolkit.xaeShell.path4026'
         && JSON.stringify(byId['4026'].clsidRoots) === '["HKCR\\\\CLSID"]', '4026 is DTE.17.0, registered in the 64-bit view');
 
     // ── Parsing ─────────────────────────────────────────────────────────────────────────────────

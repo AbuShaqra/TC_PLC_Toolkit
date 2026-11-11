@@ -41,7 +41,7 @@ page in an editor tab with:
 - **Create new project** — choose TwinCAT 3.1.4024 or 3.1.4026, a name and a location, then *Create*.
 - **Open existing project** — a solution (`.sln`) or a folder, and the most recent TwinCAT solutions
   you opened or created here. Two are listed; when more are remembered (up to ten), a **Show all** tile
-  expands the list. `twincat.startPage.recentProjectsShown` changes how many are listed.
+  expands the list. `tcToolkit.startPage.recentProjectsShown` changes how many are listed.
 - **Project actions** — *Generate ST*, *Update Library Definitions* and *Compile project* (see
   [Compile project](#compile-project)).
 - **Help and links**, and **Settings** — which also shows where the XAE Shell of each TwinCAT version
@@ -193,9 +193,9 @@ dump them into a `library-signatures.xml` in the workspace, which the extension 
 
 It asks **which XAE Shell to use, 32-bit or 64-bit**, every time. That is not a formality: a library's
 signatures can differ between the two — visualisation libraries especially — so pick the one your
-project is built with. If you always use the same one, set `twincat.libraryDefinitions.shell` and the
-prompt goes away. If a shell is installed somewhere unusual, put its path in `twincat.xaeShell.path4026`
-(64-bit) or `twincat.xaeShell.path4024` (32-bit): a configured path that exists is the one that is driven.
+project is built with. If you always use the same one, set `tcToolkit.libraryDefinitions.shell` and the
+prompt goes away. If a shell is installed somewhere unusual, put its path in `tcToolkit.xaeShell.path4026`
+(64-bit) or `tcToolkit.xaeShell.path4024` (32-bit): a configured path that exists is the one that is driven.
 
 If your project pins a library version that the chosen shell does not have installed, the closest
 installed version of the same major release is used instead, rather than dropping the library.
@@ -275,7 +275,7 @@ separate process under **Node.js 22 or newer**, which the command finds by itsel
 `PATH`, then (on Windows) the usual install locations — the Node.js installer, nvm-windows, Volta and
 fnm — and last VS Code's own runtime, when that is Node.js 22 or newer (recent VS Code versions are). If
 none is found, the command says what it tried and how to fix it: install Node.js 22 or newer from
-nodejs.org, or set `twincat.compiler.nodePath` to a Node.js 22+ executable.
+nodejs.org, or set `tcToolkit.compiler.nodePath` to a Node.js 22+ executable.
 
 The IEC standard function blocks and functions (`TON`, `R_TRIG`, `CTU`, `LIMIT` …) are known to it.
 **Library calls** (Tc2_System, Tc2_Utilities, Tc3_… and third-party libraries) are checked from what your
@@ -288,7 +288,7 @@ names, types). Where a library symbol has no usable declaration (no signatures y
 does not support), an "undeclared" error about that symbol is not shown; the summary says how many were
 left out. Without the signatures only types are checked, and the summary suggests running *Update Library
 Definitions*. The built-in diagnostics remain the conservative check. To use a different build of the compiler, point
-`twincat.compiler.path` at its command-line file (`.cjs`). The compiler is free software under the GNU
+`tcToolkit.compiler.path` at its command-line file (`.cjs`). The compiler is free software under the GNU
 GPL v3; its licence, source link and third-party notices are in `resources/compiler/` and
 [`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md).
 
@@ -336,20 +336,24 @@ open any `.TcPOU` file — it opens in the TC Toolkit editor.
 
 ## Settings
 
+The settings are under `tcToolkit.*`. Versions up to 0.10.1 named them `twincat.*`; a value you set
+under an old name is moved to the new one automatically the first time the extension starts, and the
+old entry is removed from your `settings.json`.
+
 | Setting | Default | Description |
 |---------|---------|-------------|
-| `twincat.diagnostics.memberAccess` | `true` | Flag access to members that don't exist on a resolved type. |
-| `twincat.diagnostics.callArguments` | `true` | Flag named call arguments that aren't parameters of the callee. |
-| `twincat.diagnostics.declarationTypes` | `false` | Flag declarations with an unknown type. Off by default — types from unreadable `.compiled-library-v3` archives are invisible to the indexer, so this can report false positives in projects that use them. |
-| `twincat.diagnostics.typeCompatibility` | `true` | Flag assignments whose value type is clearly incompatible with the target. |
-| `twincat.libraryDefinitions.shell` | `ask` | Which XAE Shell **Update Library Definitions** drives: `ask`, `x64` or `x86`. Signatures can differ between the two, so it asks by default. |
-| `twincat.startPage.recentProjectsShown` | `2` | How many recent TwinCAT solutions the start page lists (1 to 10). When more are remembered, a **Show all** tile expands the list. |
-| `twincat.xaeShell.path4024` | *(detected)* | Full path to `TcXaeShell.exe` of the XAE Shell for TwinCAT 3.1.4024 (the 32-bit shell). Empty = not found. |
-| `twincat.xaeShell.path4026` | *(detected)* | Full path to `TcXaeShell.exe` of the XAE Shell for TwinCAT 3.1.4026 (the 64-bit shell). Empty = not found. |
-| `twincat.compiler.path` | *(empty)* | Full path to the command-line file (`.cjs`) of an external IEC 61131-3 compiler for **Compile Project** to run instead of the bundled one. Empty = the bundled compiler. Per machine. |
-| `twincat.compiler.nodePath` | *(empty)* | Full path to a Node.js 22+ executable that runs the compiler. Empty = found automatically (`node` on `PATH`, the usual Windows install locations, then VS Code's own runtime when it is Node.js 22+). Per machine. |
+| `tcToolkit.diagnostics.memberAccess` | `true` | Flag access to members that don't exist on a resolved type. |
+| `tcToolkit.diagnostics.callArguments` | `true` | Flag named call arguments that aren't parameters of the callee. |
+| `tcToolkit.diagnostics.declarationTypes` | `false` | Flag declarations with an unknown type. Off by default — types from unreadable `.compiled-library-v3` archives are invisible to the indexer, so this can report false positives in projects that use them. |
+| `tcToolkit.diagnostics.typeCompatibility` | `true` | Flag assignments whose value type is clearly incompatible with the target. |
+| `tcToolkit.libraryDefinitions.shell` | `ask` | Which XAE Shell **Update Library Definitions** drives: `ask`, `x64` or `x86`. Signatures can differ between the two, so it asks by default. |
+| `tcToolkit.startPage.recentProjectsShown` | `2` | How many recent TwinCAT solutions the start page lists (1 to 10). When more are remembered, a **Show all** tile expands the list. |
+| `tcToolkit.xaeShell.path4024` | *(detected)* | Full path to `TcXaeShell.exe` of the XAE Shell for TwinCAT 3.1.4024 (the 32-bit shell). Empty = not found. |
+| `tcToolkit.xaeShell.path4026` | *(detected)* | Full path to `TcXaeShell.exe` of the XAE Shell for TwinCAT 3.1.4026 (the 64-bit shell). Empty = not found. |
+| `tcToolkit.compiler.path` | *(empty)* | Full path to the command-line file (`.cjs`) of an external IEC 61131-3 compiler for **Compile Project** to run instead of the bundled one. Empty = the bundled compiler. Per machine. |
+| `tcToolkit.compiler.nodePath` | *(empty)* | Full path to a Node.js 22+ executable that runs the compiler. Empty = found automatically (`node` on `PATH`, the usual Windows install locations, then VS Code's own runtime when it is Node.js 22+). Per machine. |
 
-**XAE Shell paths.** On Windows the two `twincat.xaeShell.*` settings are filled automatically with the
+**XAE Shell paths.** On Windows the two `tcToolkit.xaeShell.*` settings are filled automatically with the
 installation found on your machine: first from the shell's COM registration, then from the default
 location under `Program Files` (3.1.4026) or `Program Files (x86)` (3.1.4024). Only an **empty** setting
 is ever filled — a path you set yourself is never overwritten, so change it if your shell is elsewhere.

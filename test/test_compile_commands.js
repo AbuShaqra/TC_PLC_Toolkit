@@ -199,21 +199,21 @@ const settle = () => new Promise(r => setTimeout(r, 10));
         `BUNDLED: with nothing configured the command runs the bundled compiler (${bundledCall.args[0]})`);
     for (const k of ['executed', 'errors', 'infos', 'warnings', 'progress']) calls[k].length = 0;
 
-    settings['twincat.compiler.path'] = path.join(ROOT, 'gone.cjs');
+    settings['tcToolkit.compiler.path'] = path.join(ROOT, 'gone.cjs');
     assert(compile.isAvailable() === false, 'TILE: an override path that does not exist makes the compiler unavailable');
     answers.message.push('Open Settings');
     const probesFrom = fake.calls.length;
     result = await run('twincat.compileProject');
     await settle();
     assert(result.ok === false && result.reason === 'setup' && calls.errors.length === 1 &&
-        /Compile Project cannot run\. The compiler file ".*gone\.cjs" \(setting "twincat\.compiler\.path"\) does not exist/.test(calls.errors[0].m) &&
+        /Compile Project cannot run\. The compiler file ".*gone\.cjs" \(setting "tcToolkit\.compiler\.path"\) does not exist/.test(calls.errors[0].m) &&
         calls.errors[0].buttons.join() === 'Open Settings',
         `SETUP: a missing override compiler is explained and the settings are offered (${calls.errors[0] && calls.errors[0].m})`);
-    assert(calls.executed.some(c => c.id === 'twincat.openSettings' && c.args[0] === 'twincat.compiler'),
+    assert(calls.executed.some(c => c.id === 'twincat.openSettings' && c.args[0] === 'tcToolkit.compiler'),
         'SETUP: "Open Settings" opens the compiler settings');
     assert(fake.calls.slice(probesFrom).every(c => c.args[0] === '--version') && problems.map.size === 0, 'SETUP: the compiler was not started');
 
-    settings['twincat.compiler.path'] = bundlePath;
+    settings['tcToolkit.compiler.path'] = bundlePath;
     assert(compile.isAvailable() === true, 'TILE: an override path that exists counts as available');
 
     nodeVersion = 'v18.19.0';
@@ -222,12 +222,12 @@ const settle = () => new Promise(r => setTimeout(r, 10));
     assert(result.reason === 'setup' && /Node\.js 18\.19\.0 was found/.test(calls.errors[0].m) && /Node\.js 22 or newer/.test(calls.errors[0].m),
         'SETUP: a Node that is too old is named with its version');
     nodeVersion = 'v22.5.0';
-    settings['twincat.compiler.nodePath'] = path.join(ROOT, 'no-node');
+    settings['tcToolkit.compiler.nodePath'] = path.join(ROOT, 'no-node');
     calls.errors.length = 0;
     result = await run('twincat.compileProject');
-    assert(result.reason === 'setup' && /does not exist/.test(calls.errors[0].m) && /twincat\.compiler\.nodePath/.test(calls.errors[0].m),
+    assert(result.reason === 'setup' && /does not exist/.test(calls.errors[0].m) && /tcToolkit\.compiler\.nodePath/.test(calls.errors[0].m),
         'SETUP: a Node path that does not exist is named');
-    delete settings['twincat.compiler.nodePath'];
+    delete settings['tcToolkit.compiler.nodePath'];
 
     // ── A clean run ─────────────────────────────────────────────────────────────────────────────
     calls.errors.length = 0;
@@ -384,9 +384,9 @@ const settle = () => new Promise(r => setTimeout(r, 10));
     assert(result.reason === 'no-project' && /needs a TwinCAT PLC project/.test(calls.warnings[0].m), 'NO PROJECT: without a .plcproj the command says so');
 
     // ── Settings changes reach the start page ───────────────────────────────────────────────────
-    listeners.config.forEach(fn => fn({ affectsConfiguration: (s) => s === 'twincat.compiler' }));
+    listeners.config.forEach(fn => fn({ affectsConfiguration: (s) => s === 'tcToolkit.compiler' }));
     listeners.config.forEach(fn => fn({ affectsConfiguration: () => false }));
-    assert(settingsChanged === 1, 'SETTINGS: a change to twincat.compiler.* is passed on (the start page re-reads the tile state)');
+    assert(settingsChanged === 1, 'SETTINGS: a change to tcToolkit.compiler.* is passed on (the start page re-reads the tile state)');
 
     // ── The editor toolbar's Compile button, host side ──────────────────────────────────────────
     // The real resolveCustomTextEditor with a fake panel: `compile-project` from the webview runs the
@@ -433,14 +433,14 @@ const settle = () => new Promise(r => setTimeout(r, 10));
 
         // Setup problems reach the user exactly as from the command.
         projectList = [project('a', 'PLC', [fbPath, gvlPath])];
-        settings['twincat.compiler.path'] = path.join(ROOT, 'gone.cjs');
+        settings['tcToolkit.compiler.path'] = path.join(ROOT, 'gone.cjs');
         for (const k of ['executed', 'errors', 'infos', 'warnings', 'progress']) calls[k].length = 0;
         answers.message.push(undefined);
         await onMessage({ type: 'compile-project' });
         await settle();
         assert(calls.errors.length === 1 && /^Compile Project cannot run\. The compiler file/.test(calls.errors[0].m),
             `TOOLBAR: with the compiler missing the button gives the command's own message (${calls.errors[0] && calls.errors[0].m})`);
-        settings['twincat.compiler.path'] = bundlePath;
+        settings['tcToolkit.compiler.path'] = bundlePath;
         nodeVersion = 'v18.19.0';
         calls.errors.length = 0;
         answers.message.push(undefined);

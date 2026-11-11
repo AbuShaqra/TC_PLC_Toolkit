@@ -36,6 +36,9 @@ function assert(cond, msg) {
 const REPO = path.join(__dirname, '..');
 const pkg = JSON.parse(fs.readFileSync(path.join(REPO, 'package.json'), 'utf8'));
 const c = pkg.contributes;
+/** Every contributed setting, across the configuration's sections (an array since the tcToolkit.* rename). */
+const sections = Array.isArray(c.configuration) ? c.configuration : [c.configuration];
+const allProps = Object.assign({}, ...sections.map(s => s.properties));
 
 // ── Container and views ─────────────────────────────────────────────────────────────────────────
 const bar = (c.viewsContainers.activitybar || []).find(v => v.id === 'twincat');
@@ -57,7 +60,7 @@ assert((c.views['twincat-references-panel'] || []).find(v => v.id === 'twincatRe
 {
     const named = [
         ['displayName', pkg.displayName],
-        ['configuration title', c.configuration.title],
+        ...sections.map(s => [`settings section ${s.id}`, s.title]),
         ...c.customEditors.map(e => [`custom editor ${e.viewType}`, e.displayName]),
         ...Object.values(c.viewsContainers).flat().map(v => [`view container ${v.id}`, v.title]),
         ...Object.values(c.views).flat().map(v => [`view ${v.id}`, v.name]),
@@ -65,10 +68,34 @@ assert((c.views['twincat-references-panel'] || []).find(v => v.id === 'twincatRe
     ];
     const offenders = named.filter(([, text]) => typeof text === 'string' && /TwinCAT/i.test(text)).map(([where]) => where);
     assert(offenders.length === 0, `no product or UI name contains "TwinCAT" (${offenders.join(', ') || 'none'})`);
-    assert(pkg.displayName === 'TC Toolkit' && c.configuration.title === 'TC Toolkit'
-        && c.customEditors.every(e => e.displayName === 'TC Toolkit'), 'the extension, its settings and its editor are named TC Toolkit');
+    assert(pkg.displayName === 'TC Toolkit' && c.customEditors.every(e => e.displayName === 'TC Toolkit'),
+        'the extension and its editor are named TC Toolkit (the Settings editor groups the sections under the display name)');
     assert(pkg.name === 'twincat-plc-toolkit', 'the extension id is unchanged');
     assert(/Beckhoff TwinCAT 3 PLC projects/.test(pkg.description), 'the description says what it is for, descriptively');
+}
+// ── Setting keys (user report 2026-11-11): the Settings editor builds a setting's label from its KEY,
+// so a live setting key must not start with `twincat.`. The old keys stay contributed only as
+// deprecated stand-ins, so the activation migration can still remove their values.
+{
+    const { SETTING_RENAMES } = require(path.join(REPO, 'src', 'settingsMigration.js'));
+    const live = Object.keys(allProps).filter(k => !allProps[k].deprecationMessage);
+    const deprecated = Object.keys(allProps).filter(k => allProps[k].deprecationMessage);
+    assert(live.length === 10 && live.every(k => k.startsWith('tcToolkit.')),
+        `all 10 live settings are tcToolkit.* (got ${JSON.stringify(live)})`);
+    assert(!live.some(k => k.startsWith('twincat.')), 'no live (non-deprecated) setting key starts with twincat.');
+    assert(SETTING_RENAMES.length === 10 && SETTING_RENAMES.every(r => live.includes(r.to) && deprecated.includes(r.from)
+            && r.from === r.to.replace(/^tcToolkit\./, 'twincat.')),
+        'the migration table maps each deprecated twincat.* key to its tcToolkit.* key, all 10');
+    assert(deprecated.length === 10 && deprecated.every(k => k.startsWith('twincat.')), 'exactly the 10 old twincat.* keys remain, deprecated');
+    for (const r of SETTING_RENAMES) {
+        const o = allProps[r.from], n = allProps[r.to];
+        assert(o.type === n.type && o.scope === n.scope && JSON.stringify(o.default) === JSON.stringify(n.default)
+            && typeof o.markdownDeprecationMessage === 'string' && o.markdownDeprecationMessage.includes(`#${r.to}#`),
+            `${r.from} keeps the type, scope and default of ${r.to} and points at it`);
+    }
+    assert(sections.every(s => typeof s.id === 'string' && s.id.startsWith('tcToolkit.') && typeof s.title === 'string'
+            && Object.keys(s.properties).every(k => k.replace(/^twincat\./, 'tcToolkit.').startsWith(s.id + '.'))),
+        'each settings section is one tcToolkit.<group>, holding only that group\'s keys (its id trims the label to the leaf)');
 }
 // Every view id used in a when-clause or keybinding still exists.
 const allViewIds = new Set(Object.values(c.views).flat().map(v => v.id));
@@ -113,10 +140,10 @@ assert(/^\^1\.66\./.test(pkg.engines.vscode), `engine stays ^1.66 (${pkg.engines
 
 // ── Settings: the recent-list length and the XAE Shell paths ─────────────────────────────────────
 {
-    const props = c.configuration.properties;
-    const shown = props['twincat.startPage.recentProjectsShown'];
+    const props = allProps;
+    const shown = props['tcToolkit.startPage.recentProjectsShown'];
     assert(!!shown && shown.type === 'integer' && shown.default === DEFAULT_RECENTS_SHOWN && shown.default === 2 && shown.minimum === 1 && shown.maximum === MAX_RECENTS,
-        'twincat.startPage.recentProjectsShown: integer, default 2, 1 to 10 (the stored cap)');
+        'tcToolkit.startPage.recentProjectsShown: integer, default 2, 1 to 10 (the stored cap)');
     assert(contributed.get('twincat.detectXaeShell').title === 'Detect XAE Shell Installations', 'the command reads "TC Toolkit: Detect XAE Shell Installations"');
     for (const v of XAE_SHELL_VERSIONS) {
         const p = props[v.setting];
@@ -125,12 +152,12 @@ assert(/^\^1\.66\./.test(pkg.engines.vscode), `engine stays ^1.66 (${pkg.engines
             && p.markdownDescription.includes('Filled automatically with the installation found on this machine; change it if yours is elsewhere. Empty = not found.'),
             `${v.setting} describes itself (version ${v.version}, the full path, auto-filled, empty = not found)`);
     }
-    assert(/32-bit/.test(props['twincat.xaeShell.path4024'].markdownDescription) && /64-bit/.test(props['twincat.xaeShell.path4026'].markdownDescription),
+    assert(/32-bit/.test(props['tcToolkit.xaeShell.path4024'].markdownDescription) && /64-bit/.test(props['tcToolkit.xaeShell.path4026'].markdownDescription),
         'the descriptions say which shell is 32-bit and which is 64-bit');
     assert(ALLOWED_COMMANDS.has('twincat.detectXaeShell') && [...ALLOWED_COMMANDS].every(id => id.startsWith('twincat.') && registered.has(id)),
         'every command the start page may run is a registered twincat.* command');
-    assert(JSON.stringify(SETTINGS_SECTIONS) === JSON.stringify({ xaeShell: 'twincat.xaeShell' }), 'the page may open the Settings UI filtered to twincat.xaeShell only');
-    assert(!/STruC\+\+/i.test(JSON.stringify(c.configuration)), 'no setting names the compiler');
+    assert(JSON.stringify(SETTINGS_SECTIONS) === JSON.stringify({ xaeShell: 'tcToolkit.xaeShell' }), 'the page may open the Settings UI filtered to tcToolkit.xaeShell only');
+    assert(!/STruC\+\+/i.test(JSON.stringify(sections)), 'no setting names the compiler');
 }
 
 // ── Compile Project (R3.2): command, settings, and no compiler product name anywhere a user sees ──
@@ -140,13 +167,13 @@ assert(/^\^1\.66\./.test(pkg.engines.vscode), `engine stays ^1.66 (${pkg.engines
     assert(!hidden.has('twincat.compileProject') && registered.has('twincat.compileProject'), 'Compile Project is in the Command Palette and registered');
     assert(pkg.activationEvents.includes('onCommand:twincat.compileProject'), 'Compile Project activates the extension (onCommand)');
     assert(ALLOWED_COMMANDS.has('twincat.compileProject'), 'the start page may run Compile Project');
-    const props = c.configuration.properties;
-    for (const key of ['twincat.compiler.path', 'twincat.compiler.nodePath']) {
+    const props = allProps;
+    for (const key of ['tcToolkit.compiler.path', 'tcToolkit.compiler.nodePath']) {
         const p = props[key];
         assert(!!p && p.type === 'string' && p.default === '' && p.scope === 'machine' && /TC Toolkit: Compile Project/.test(p.markdownDescription),
             `${key} is a machine-scoped string, empty by default, describing Compile Project`);
     }
-    assert(/an external IEC 61131-3 compiler|the external IEC 61131-3 compiler/.test(props['twincat.compiler.path'].markdownDescription),
+    assert(/an external IEC 61131-3 compiler|the external IEC 61131-3 compiler/.test(props['tcToolkit.compiler.path'].markdownDescription),
         'the compiler setting calls it an external IEC 61131-3 compiler');
     // User ruling 2026-11-09: the extension UI and README name no compiler product.
     const userFacing = ['package.json', 'README.md',

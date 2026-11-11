@@ -58,7 +58,7 @@ assert(store.get(RECENTS_KEY).length === 1, 'and writes the pruned list back');
 recents.remove('/p/One.sln');
 assert(recents.list().length === 0, 'remove empties it');
 
-// The start page's row limit (twincat.startPage.recentProjectsShown), as read from hand-editable settings.
+// The start page's row limit (tcToolkit.startPage.recentProjectsShown), as read from hand-editable settings.
 assert(DEFAULT_RECENTS_SHOWN === 2 && recentsShownLimit(undefined) === 2 && recentsShownLimit('8') === 2 && recentsShownLimit(NaN) === 2 && recentsShownLimit(null) === 2,
     'the shown limit defaults to 2 for anything that is not a number');
 assert(recentsShownLimit(1) === 1 && recentsShownLimit(7) === 7 && recentsShownLimit(10) === 10, 'a value from 1 to 10 is used as is');

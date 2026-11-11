@@ -47,8 +47,8 @@ function registerLibraryCommands(context, { libraryProvider, provider, getClient
                 return;
             }
 
-            // A path set in twincat.xaeShell.* (and present on disk) wins over discovery for its shell.
-            const xaeConfig = vscode.workspace.getConfiguration('twincat.xaeShell');
+            // A path set in tcToolkit.xaeShell.* (and present on disk) wins over discovery for its shell.
+            const xaeConfig = vscode.workspace.getConfiguration('tcToolkit.xaeShell');
             const shells = findTwinCatShells({ path4024: xaeConfig.get('path4024', ''), path4026: xaeConfig.get('path4026', '') });
             if (shells.length === 0) {
                 vscode.window.showErrorMessage(
@@ -71,18 +71,18 @@ function registerLibraryCommands(context, { libraryProvider, provider, getClient
             // are the known case). So confirm — with one shell installed the pick is a confirmation,
             // with two it is a choice — and treat a cancelled pick as "do nothing".
             //
-            // `twincat.libraryDefinitions.shell` skips the prompt for people who always use the same
+            // `tcToolkit.libraryDefinitions.shell` skips the prompt for people who always use the same
             // one. A configured shell that is NOT installed falls back to asking rather than to the
             // other bitness: silently producing the signatures the user configured *against* is the one
             // outcome this whole setting exists to prevent.
-            const configured = vscode.workspace.getConfiguration('twincat').get('libraryDefinitions.shell', 'ask');
+            const configured = vscode.workspace.getConfiguration('tcToolkit').get('libraryDefinitions.shell', 'ask');
             const preferred = configured !== 'ask' ? shells.find(s => s.id === configured) : null;
 
             let shell = preferred;
             if (!shell) {
                 if (configured !== 'ask') {
                     vscode.window.showWarningMessage(
-                        `twincat.libraryDefinitions.shell is set to "${configured}", but that XAE Shell is not ` +
+                        `tcToolkit.libraryDefinitions.shell is set to "${configured}", but that XAE Shell is not ` +
                         'installed. Choose one instead.'
                     );
                 }
