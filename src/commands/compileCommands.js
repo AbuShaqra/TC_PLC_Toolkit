@@ -35,7 +35,7 @@ const {
     COMPILER_SECTION, isCompilerAvailable, checkSetup, buildCheckInputs, runCheck, summarize, describeLocation, paneRange
 } = require('../compileCheck');
 const { prepareLibraryCheck } = require('../libraryDecls');
-const { projectDefineArgs } = require('../compilerDefines');
+const { projectDefineArgs, fileDefineArgs } = require('../compilerDefines');
 
 /** The `source` of every diagnostic this command publishes. */
 const DIAGNOSTIC_SOURCE = 'TC Toolkit compile';
@@ -303,12 +303,18 @@ function registerCompileCommands(context, { provider, getProjectMap, onSettingsC
                             inputs: built.inputs,
                             compilerPath: setup.compilerPath
                         });
-                        // The project's compiler defines choose the branches of {IF defined(X)} pragmas.
-                        const defines = projectDefineArgs(project.plcprojPath, (p) => {
+                        // The project's compiler defines choose the branches of {IF defined(X)} pragmas;
+                        // an object's own defines apply to the unit built from that object only.
+                        const projectDefines = projectDefineArgs(project.plcprojPath, (p) => {
                             const doc = (vscode.workspace.textDocuments || []).find(d => keyOf(d.uri.toString()) === keyOf(vscode.Uri.file(p).toString()));
                             return doc ? doc.getText() : fs.readFileSync(p, 'utf8');
                         });
-                        if (defines.defines.length > 0 || defines.notes.length > 0) {
+                        const perObject = fileDefineArgs(projectDefines.objects, library.inputs, project.plcprojPath);
+                        const defines = {
+                            defines: projectDefines.defines, objects: projectDefines.objects,
+                            args: [...projectDefines.args, ...perObject.args], notes: [...projectDefines.notes, ...perObject.notes]
+                        };
+                        if (defines.args.length > 0 || defines.notes.length > 0) {
                             const channel = outputChannel();
                             channel.appendLine(`[${new Date().toISOString()}] ${projectName}: compiler defines ` +
                                 (defines.args.length > 0 ? defines.args.join(' ') : '(none used)'));

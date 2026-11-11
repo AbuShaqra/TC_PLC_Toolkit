@@ -1,19 +1,22 @@
 /**
  * @file test_compiler_defines.js
  * @description src/compilerDefines.js: a PLC project's compiler defines read from its `.plcproj`
- * (`<CompilerDefines>` in a `<PropertyGroup>`) and turned into the compiler's `-D` arguments.
+ * (`<CompilerDefines>` in a `<PropertyGroup>`, and per object in an item) and turned into the compiler's
+ * `--pragma-define` / `--file-define` arguments.
  *
  * Pinned: names and `NAME := 'value'` entries, spacing, case kept, duplicates, empty/missing
- * elements, malformed entries skipped with a note, per-object defines ignored, MSBuild's last-wins
+ * elements, malformed entries skipped with a note, per-object defines read per item (conditions, `%(CompilerDefines)`,
+ * notes) and mapped to their check unit, MSBuild's last-wins
  * and `$(CompilerDefines)`, MSBuild `Condition`s evaluated for Debug|TwinCAT RT (x64) on property groups
  * and elements (the spellings real `.plcproj` files use; undecidable ones left out with a note), XML
- * entities, integer values passed as a name only (the compiler would declare a global constant), and
+ * entities, numeric values passed exactly (a pragma define is never a global constant), and
  * an unreadable file.
  */
 
 'use strict';
 
-const { readCompilerDefines, parseDefineList, defineArgs, projectDefineArgs, evaluateCondition, CHECK_CONFIGURATION } = require('../src/compilerDefines');
+const path = require('path');
+const { readCompilerDefines, parseDefineList, defineArgs, fileDefineArgs, projectDefineArgs, evaluateCondition, CHECK_CONFIGURATION } = require('../src/compilerDefines');
 
 let errors = 0;
 function assert(cond, msg) {
@@ -59,11 +62,25 @@ assert(r.defines.length === 0 && r.problems.length === 0, 'PLCPROJ: whitespace o
 r = readCompilerDefines(project(group('    <CompilerDefines>A</CompilerDefines>'),
     '  <ItemGroup>\r\n    <Compile Include="POUs\\MAIN.TcPOU">\r\n      <SubType>Code</SubType>\r\n      <CompilerDefines>PER_OBJECT</CompilerDefines>\r\n    </Compile>\r\n  </ItemGroup>'));
 assert(show(r.defines) === 'A', 'PLCPROJ: a per-object <CompilerDefines> in an item is not a project define');
-assert(r.problems.length === 1 && /per-object compiler defines on POUs\\MAIN\.TcPOU \(PER_OBJECT\) are not passed/.test(r.problems[0]),
-    `PLCPROJ: a per-object define gets a note naming the object and the list (${r.problems.join(' | ')})`);
+assert(r.problems.length === 0 && r.objects.length === 1 && r.objects[0].include === 'POUs\\MAIN.TcPOU' && show(r.objects[0].defines) === 'PER_OBJECT',
+    `PLCPROJ: a per-object define is returned for its item, with no note (${JSON.stringify(r.objects)}; ${r.problems.join(' | ')})`);
 r = readCompilerDefines(project(group(''),
     '  <ItemGroup>\r\n    <Compile Include="POUs\\MAIN.TcPOU">\r\n      <CompilerDefines />\r\n    </Compile>\r\n    <Compile Include="POUs\\FB.TcPOU" />\r\n  </ItemGroup>'));
-assert(r.defines.length === 0 && r.problems.length === 0, 'PLCPROJ: an empty per-object define and a self-closed item give no note');
+assert(r.defines.length === 0 && r.problems.length === 0 && r.objects.length === 0, 'PLCPROJ: an empty per-object define and a self-closed item give no object and no note');
+// Per-object defines: case kept, quoted values, conditions on the item group, the item and the element.
+const items = (...xml) => project(group("    <Mode>fast</Mode>"), ...xml);
+r = readCompilerDefines(items('  <ItemGroup>', "    <Compile Include=\"POUs\\A.TcPOU\">\r\n      <CompilerDefines>Local, N := '4', M := '$(Mode)', 2bad</CompilerDefines>\r\n    </Compile>",
+    "    <Compile Include=\"POUs\\B.TcPOU\" Condition=\" '$(Configuration)' == 'Release' \">\r\n      <CompilerDefines>REL</CompilerDefines>\r\n    </Compile>",
+    "    <Compile Include=\"POUs\\C.TcPOU\">\r\n      <CompilerDefines Condition=\"'$(Configuration)|$(Platform)'=='Debug|TwinCAT RT (x64)'\">DBG</CompilerDefines>\r\n" +
+    "      <CompilerDefines>%(CompilerDefines), MORE</CompilerDefines>\r\n    </Compile>",
+    "    <Compile Include=\"POUs\\D.TcPOU\" Condition=\"Exists('x')\">\r\n      <CompilerDefines>UNSURE</CompilerDefines>\r\n    </Compile>",
+    '  </ItemGroup>', "  <ItemGroup Condition=\" '$(Configuration)' == 'Release' \">", "    <Compile Include=\"POUs\\E.TcPOU\">\r\n      <CompilerDefines>RELGROUP</CompilerDefines>\r\n    </Compile>", '  </ItemGroup>'));
+const objs = r.objects.map(o => `${o.include}:${show(o.defines)}`).join(' ; ');
+assert(objs === 'POUs\\A.TcPOU:Local N="4" M="fast" ; POUs\\C.TcPOU:DBG MORE',
+    `ITEMS: per-object values kept exactly (case, a numeric value, $(Prop)); a Release item and a Release item group skipped; %(CompilerDefines) expanded (${objs})`);
+assert(r.problems.length === 2 && r.problems.some(p => /per-object compiler defines on POUs\\A\.TcPOU: compiler define "2bad" skipped/.test(p)) &&
+    r.problems.some(p => /per-object compiler defines on POUs\\D\.TcPOU were not passed: its Condition="Exists\('x'\)" cannot be evaluated/.test(p)),
+    `ITEMS: a malformed entry and an undecidable item condition each get a note (${r.problems.join(' | ')})`);
 r = parseDefineList('A, B, A');
 assert(show(r.defines) === 'B A', `LIST: a repeated name keeps its last entry at its last place (${show(r.defines)})`);
 r = readCompilerDefines(project(group('    <CompilerDefines>ABC</CompilerDefines>\r\n    <CompilerDefines>$(CompilerDefines), backstop, EMLabeling</CompilerDefines>')));
@@ -188,20 +205,37 @@ assert(show(r.defines) === 'A' && r.problems.length === 1 && /uses a property wh
 
 // ── The arguments ───────────────────────────────────────────────────────────────────────────────
 let a = defineArgs(parseDefineList("SIM, Mode := 'fast', Sp := 'a b', E := ''").defines);
-assert(JSON.stringify(a.args) === JSON.stringify(['-D', 'SIM', '-D', 'Mode=fast', '-D', 'Sp=a b', '-D', 'E=']) && a.notes.length === 0,
-    `ARGS: NAME → -D NAME, NAME := 'v' → -D NAME=v (${a.args.join(' ')})`);
+assert(JSON.stringify(a.args) === JSON.stringify(['--pragma-define', 'SIM', '--pragma-define', 'Mode=fast', '--pragma-define', 'Sp=a b', '--pragma-define', 'E=']) && a.notes.length === 0,
+    `ARGS: NAME → --pragma-define NAME, NAME := 'v' → --pragma-define NAME=v (${a.args.join(' ')})`);
 a = defineArgs(parseDefineList("Axes := '4', Neg := '-1', Lead := '12abc', Ver := 'v2'").defines);
-assert(JSON.stringify(a.args) === JSON.stringify(['-D', 'Axes', '-D', 'Neg', '-D', 'Lead', '-D', 'Ver=v2']) && a.notes.length === 3 &&
-    a.notes.every(n => /passed as ".*" only: hasvalue/.test(n)),
-    `ARGS: a value the compiler would read as an integer constant is passed as a name only, with a note (${a.args.join(' ')})`);
+assert(JSON.stringify(a.args) === JSON.stringify(['--pragma-define', 'Axes=4', '--pragma-define', 'Neg=-1', '--pragma-define', 'Lead=12abc', '--pragma-define', 'Ver=v2']) && a.notes.length === 0,
+    `ARGS: numeric values are passed exactly, with no note (a pragma define is never a global constant) (${a.args.join(' ')})`);
 a = defineArgs([]);
 assert(a.args.length === 0 && a.notes.length === 0, 'ARGS: no defines, no arguments');
 
+// ── Per-object arguments: an item's Include → the check unit built from that object ────────────
+const proj = path.resolve('/x/Proj/P.plcproj');
+const inputs = [{ filePath: path.resolve('/x/Proj/POUs/FB_A.TcPOU'), name: '1.st' }, { filePath: path.resolve('/x/Proj/POUs/MAIN.TcPOU'), name: '2.st' },
+    { filePath: path.resolve('/x/Shared/FB_Linked.TcPOU'), name: '3.st' }];
+const objects = readCompilerDefines(project(group(''), '  <ItemGroup>',
+    "    <Compile Include=\"POUs\\MAIN.TcPOU\">\r\n      <CompilerDefines>Local, N := '4'</CompilerDefines>\r\n    </Compile>",
+    "    <Compile Include=\"pous\\fb_a.tcpou\">\r\n      <CompilerDefines>OTHER</CompilerDefines>\r\n    </Compile>",
+    "    <Compile Include=\"..\\Shared\\FB_Linked.TcPOU\">\r\n      <CompilerDefines>LINKED</CompilerDefines>\r\n    </Compile>",
+    "    <Compile Include=\"POUs\\Seq.TcPOU\">\r\n      <CompilerDefines>SFC</CompilerDefines>\r\n    </Compile>", '  </ItemGroup>')).objects;
+a = fileDefineArgs(objects, inputs, proj);
+assert(JSON.stringify(a.args) === JSON.stringify(['--file-define', '2.st=Local', '--file-define', '2.st=N=4', '--file-define', '1.st=OTHER', '--file-define', '3.st=LINKED']),
+    `FILE ARGS: each object's defines go to its own unit, resolved against the .plcproj's folder (case-insensitively, as the project map does; a ..\\ link too) (${a.args.join(' ')})`);
+assert(a.notes.length === 1 && /per-object compiler defines on POUs\\Seq\.TcPOU \(SFC\) were not passed: the check compiles no Structured Text unit from that object/.test(a.notes[0]),
+    `FILE ARGS: an item that matches no unit gets a note (${a.notes.join(' | ')})`);
+a = fileDefineArgs([], inputs, proj);
+assert(a.args.length === 0 && a.notes.length === 0, 'FILE ARGS: no per-object defines, no arguments');
+
 // ── One project ─────────────────────────────────────────────────────────────────────────────────
 let p = projectDefineArgs('/x/P.plcproj', () => project(group("    <CompilerDefines>SIM, 2x, N := '7'</CompilerDefines>")));
-assert(p.args.join(' ') === '-D SIM -D N' && p.notes.length === 2, `PROJECT: arguments plus the skipped-entry and integer notes (${p.notes.join(' | ')})`);
+assert(p.args.join(' ') === '--pragma-define SIM --pragma-define N=7' && p.notes.length === 1 && p.objects.length === 0,
+    `PROJECT: arguments (the numeric value exact) plus the skipped-entry note (${p.notes.join(' | ')})`);
 p = projectDefineArgs('/x/P.plcproj', () => { throw new Error('EACCES'); });
-assert(p.args.length === 0 && p.notes.length === 1 && /not read: EACCES/.test(p.notes[0]), 'PROJECT: an unreadable .plcproj gives no defines and a note');
+assert(p.args.length === 0 && p.objects.length === 0 && p.notes.length === 1 && /not read: EACCES/.test(p.notes[0]), 'PROJECT: an unreadable .plcproj gives no defines and a note');
 p = projectDefineArgs(null);
 assert(p.args.length === 0 && p.notes.length === 0, 'PROJECT: no .plcproj, nothing');
 

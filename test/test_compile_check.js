@@ -198,9 +198,9 @@ const FILES = [
         `ARGS: check-only JSON, the dialect file, every unit, and each global list by its TwinCAT name (${args.join(' ')})`);
     assert(!args.includes('--strict') && !args.includes('-o') && !args.includes('--build'), 'ARGS: no --strict, no output file, no build');
     const withDefines = cc.buildCheckArgs({ compilerPath: '/c/bundle.cjs', dialectFile: '/x/twincat3.json', inputs: built.inputs,
-        defineArgs: ['-D', 'SIM', '-D', 'Mode=fast'] });
-    assert(withDefines.join(' ') === '/c/bundle.cjs --check --json --dialect-file /x/twincat3.json -D SIM -D Mode=fast 1.st 2.st --global-list 2.st=GVL_Io',
-        `ARGS: the project's compiler defines follow the profile, before the units (${withDefines.join(' ')})`);
+        defineArgs: ['--pragma-define', 'SIM', '--pragma-define', 'N=4', '--file-define', '1.st=LOCAL'] });
+    assert(withDefines.join(' ') === '/c/bundle.cjs --check --json --dialect-file /x/twincat3.json --pragma-define SIM --pragma-define N=4 --file-define 1.st=LOCAL 1.st 2.st --global-list 2.st=GVL_Io',
+        `ARGS: the compiler defines (project and per-object) follow the profile, before the units (${withDefines.join(' ')})`);
 
     // ── Reading the report ──────────────────────────────────────────────────────────────────────
     const report = (diagnostics) => JSON.stringify({ dialect: 'twincat3', files: ['1.st', '2.st'], diagnostics, summary: {} });

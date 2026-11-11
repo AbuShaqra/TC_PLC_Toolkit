@@ -372,8 +372,8 @@ function buildCheckInputs(files, parse) {
 /**
  * The compiler's command line for one check (everything after the Node executable).
  * @param {{compilerPath: string, dialectFile: string, inputs: Array<{name: string, unit: {globalListName: string|null}}>,
- *   extraFiles?: ExtraInput[], defineArgs?: string[]}} o `defineArgs`: the project's compiler defines as
- *   `-D` arguments (src/compilerDefines.js `defineArgs`).
+ *   extraFiles?: ExtraInput[], defineArgs?: string[]}} o `defineArgs`: the compiler defines as
+ *   `--pragma-define` and `--file-define` arguments (src/compilerDefines.js `defineArgs`, `fileDefineArgs`).
  * @returns {string[]}
  */
 function buildCheckArgs(o) {
@@ -534,7 +534,7 @@ function mapCheckDiagnostics(diagnostics, inputs, options = {}) {
  * @param {ExtraInput[]} [o.extraFiles] Generated library declarations: written into the same
  *   temporary directory as the units, and deleted with it.
  * @param {{select: (d: RawDiagnostic[]) => Set<any>}} [o.libraryFilter] The library filter.
- * @param {string[]} [o.defineArgs] The project's compiler defines as `-D` arguments.
+ * @param {string[]} [o.defineArgs] The compiler defines as `--pragma-define` / `--file-define` arguments.
  * @param {number} [o.timeoutMs]
  * @param {(cancel: () => void) => void} [o.onCancel] Receives the function that stops the run.
  * @param {SpawnLike} [o.spawn]

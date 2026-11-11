@@ -13,26 +13,32 @@
  *     </PropertyGroup>
  *
  * An empty field is `<CompilerDefines />` or an element holding only whitespace. A `<CompilerDefines>`
- * inside an `<ItemGroup>` item (`<Compile Include="…">`) is a per-object define: it is not a project
- * define and is not read here (the check compiles the project as one unit, so it has no per-file
- * defines to give the compiler); each non-empty one gets a note, since `{IF defined(...)}` in that object
- * then takes its ELSE branch. Several `<CompilerDefines>` in property groups follow MSBuild: the
- * last wins, and `$(CompilerDefines)` in it stands for the value before.
+ * inside an `<ItemGroup>` item (`<Compile Include="…">`) is a per-object define: it applies inside that
+ * object only, on top of the project defines. Those are returned per item (`objects`) and passed with
+ * `--file-define <unit>=NAME[=VALUE]` for the check unit built from that object (`fileDefineArgs`); an
+ * item that matches no unit (an object the check does not compile) gets a note. Several
+ * `<CompilerDefines>` in property groups follow MSBuild: the last wins, and `$(CompilerDefines)` in it
+ * stands for the value before; in an item, `%(CompilerDefines)` stands for the item's value before.
  *
- * A `Condition` on the property group or on the element is evaluated for one build configuration,
- * `CHECK_CONFIGURATION` (Debug, TwinCAT RT (x64)), by `evaluateCondition`: true applies it in document
+ * A `Condition` on the property group, the item group, the item or the element is evaluated for one
+ * build configuration, `CHECK_CONFIGURATION` (Debug, TwinCAT RT (x64)), by `evaluateCondition`: true
+ * applies it in document
  * order, false skips it silently (a Release-only group is normal), and a condition it cannot read or
  * decide (`Exists(...)`, a property function, `<`) leaves the group or element out, with a note, and
  * makes every property it sets unreadable, so later conditions on them are not guessed.
  *
- * Define names are case-sensitive and kept exactly as written.
+ * Define names are case-sensitive and kept exactly as written. Every define is passed as a pragma
+ * define (`--pragma-define`, `--file-define`): the compiler never turns one into a global constant, so a
+ * numeric value is passed exactly and a `VAR_GLOBAL CONSTANT` of the same name still compiles.
  */
 
 'use strict';
 
 const fs = require('fs');
+const path = require('path');
+const { normalizeProjectPath } = require('./lsp/projectMap');
 
-/** A define name, as the compiler accepts it (`-D` refuses anything else). */
+/** A define name, as the compiler accepts it (`--pragma-define` refuses anything else). */
 const NAME_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
 /**
@@ -54,6 +60,13 @@ const ATTRS = `((?:[^>"']|"[^"]*"|'[^']*')*?)`;
  * @typedef {Object} DefineList
  * @property {CompilerDefine[]} defines In list order; a name given twice keeps its last entry, at its last place.
  * @property {string[]} problems One line per entry that was skipped, or per part of the file not read.
+ */
+
+/**
+ * @typedef {Object} ObjectDefines The per-object defines of one `.plcproj` item.
+ * @property {string} include The item's `Include`, as written (XML-decoded; TwinCAT writes backslashes).
+ * @property {string} list The define list as read (for notes).
+ * @property {CompilerDefine[]} defines
  */
 
 /** @param {string} text */
@@ -327,6 +340,95 @@ function conditionOf(attrs) {
     return null;
 }
 
+/**
+ * Reads the per-object defines: `<CompilerDefines>` metadata of the items in `<ItemGroup>`s. MSBuild
+ * evaluates items after every property, so their conditions see the final property values (`props`).
+ * @param {string} text The `.plcproj` text, comments removed.
+ * @param {Map<string, string|null>} props
+ * @param {{configuration: string, platform: string}} config
+ * @param {string[]} problems Notes are appended here.
+ * @returns {ObjectDefines[]}
+ */
+function readObjectDefines(text, props, config, problems) {
+    /** @type {ObjectDefines[]} */
+    const objects = [];
+    const groupRe = new RegExp(`<ItemGroup\\b${ATTRS}(?:\\/>|>([\\s\\S]*?)(?:<\\/ItemGroup\\s*>|$))`, 'g');
+    const itemRe = new RegExp(`<([A-Za-z_][\\w.-]*)\\b${ATTRS}(?:\\/>|>([\\s\\S]*?)<\\/\\1\\s*>)`, 'g');
+    const metaRe = new RegExp(`<CompilerDefines\\b${ATTRS}(?:\\/>|>([\\s\\S]*?)<\\/CompilerDefines\\s*>)`, 'g');
+    let group;
+    while ((group = groupRe.exec(text)) !== null) {
+        if (group[2] === undefined) continue;
+        const groupCond = conditionOf(group[1]);
+        const groupOn = groupCond === null ? true : evaluateCondition(groupCond, props);
+        if (groupOn === false) continue;
+        itemRe.lastIndex = 0;
+        let item;
+        while ((item = itemRe.exec(group[2])) !== null) {
+            if (item[3] === undefined || !/<CompilerDefines\b/.test(item[3])) continue;
+            const include = attributeOf(item[2], 'Include');
+            if (include === null) continue;
+            /** @type {(why: string) => void} */
+            const undecided = (why) => problems.push(`per-object compiler defines on ${include} were not passed: ${why}`);
+            if (groupOn === null) {
+                undecided(`its item group's Condition="${groupCond}" cannot be evaluated for ${configLabel(config)}`);
+                continue;
+            }
+            const itemCond = conditionOf(item[2]);
+            const itemOn = itemCond === null ? true : evaluateCondition(itemCond, props);
+            if (itemOn === false) continue;
+            if (itemOn === null) {
+                undecided(`its Condition="${itemCond}" cannot be evaluated for ${configLabel(config)}`);
+                continue;
+            }
+            /** @type {string|null} */
+            let value = '';
+            metaRe.lastIndex = 0;
+            let meta;
+            while ((meta = metaRe.exec(item[3])) !== null && value !== null) {
+                const metaCond = conditionOf(meta[1]);
+                const metaOn = metaCond === null ? true : evaluateCondition(metaCond, props);
+                if (metaOn === false) continue;
+                if (metaOn === null) {
+                    undecided(`its <CompilerDefines Condition="${metaCond}"> cannot be evaluated for ${configLabel(config)}`);
+                    value = null;
+                    break;
+                }
+                // %(CompilerDefines) is the item's value before; $(Prop) expands like a property's.
+                const own = decodeXml(meta[2] || '').replace(/%\(\s*CompilerDefines\s*\)/gi, () => value || '');
+                const expanded = expandProps(own, props);
+                if (expanded === null) {
+                    undecided(`<CompilerDefines>${own.trim()}</CompilerDefines> uses a value that cannot be read`);
+                    value = null;
+                    break;
+                }
+                value = expanded;
+            }
+            if (value === null || !value.trim()) continue;
+            const parsed = parseDefineList(value);
+            for (const p of parsed.problems) problems.push(`per-object compiler defines on ${include}: ${p}`);
+            if (parsed.defines.length > 0) objects.push({ include, list: value.trim(), defines: parsed.defines });
+        }
+    }
+    return objects;
+}
+
+/**
+ * One attribute's value, XML-decoded, or null.
+ * @param {string} attrs
+ * @param {string} name
+ */
+function attributeOf(attrs, name) {
+    const attrRe = /([^\s=]+)\s*=\s*(?:"([^"]*)"|'([^']*)')/g;
+    let m;
+    while ((m = attrRe.exec(attrs)) !== null) {
+        if (m[1] === name) return decodeXml(m[2] !== undefined ? m[2] : m[3]);
+    }
+    return null;
+}
+
+/** @param {CompilerDefine} d `NAME` or `NAME=VALUE`, as `--pragma-define` and `--file-define` take it. */
+const defineSpec = (d) => (d.value === null ? d.name : `${d.name}=${d.value}`);
+
 /** @param {{configuration: string, platform: string}} config */
 const configLabel = (config) => `${config.configuration}|${config.platform}`;
 
@@ -334,7 +436,8 @@ const configLabel = (config) => `${config.configuration}|${config.platform}`;
  * Reads the project's compiler defines from a `.plcproj` text, for one build configuration.
  * @param {string} xml
  * @param {{configuration: string, platform: string}} [config] Default: CHECK_CONFIGURATION.
- * @returns {DefineList}
+ * @returns {DefineList & {objects: ObjectDefines[]}} `objects`: the per-object defines, one entry per
+ *   item whose list is not empty after its conditions.
  */
 function readCompilerDefines(xml, config = CHECK_CONFIGURATION) {
     const text = String(xml || '').replace(/<!--[\s\S]*?-->/g, '');
@@ -402,45 +505,51 @@ function readCompilerDefines(xml, config = CHECK_CONFIGURATION) {
             }
         }
     }
-    const itemRe = /<(\w+)\s[^>]*?\bInclude\s*=\s*"([^"]*)"[^>]*?(?<!\/)>([\s\S]*?)<\/\1\s*>/g;
-    let item;
-    while ((item = itemRe.exec(text)) !== null) {
-        const own = /<CompilerDefines\b[^>]*>([\s\S]*?)<\/CompilerDefines\s*>/.exec(item[3]);
-        const list = own ? decodeXml(own[1]).trim() : '';
-        if (list) {
-            problems.push(`per-object compiler defines on ${decodeXml(item[2])} (${list}) are not passed; ` +
-                '{IF defined(...)} in that object uses its ELSE branch');
-        }
-    }
-    if (value === null) return { defines: [], problems };
+    const objects = readObjectDefines(text, allProps(), config, problems);
+    if (value === null) return { defines: [], problems, objects };
     const parsed = parseDefineList(value);
-    return { defines: parsed.defines, problems: [...problems, ...parsed.problems] };
+    return { defines: parsed.defines, problems: [...problems, ...parsed.problems], objects };
 }
 
 /**
- * The compiler arguments for the defines. `NAME` → `-D NAME`; `NAME := 'v'` → `-D NAME=v`. The
- * compiler also turns a `-D NAME=v` whose `v` starts with an integer (JavaScript `parseInt`) into a
- * global constant `NAME`, which TwinCAT does not have: a project global of that name then reads as
- * declared twice, and an undeclared use of the name passes. Such a define is passed as `-D NAME`
- * instead (`defined(NAME)` is still true; `hasvalue(NAME, 'v')` is not), with a note.
+ * The compiler arguments for the project defines: `NAME` → `--pragma-define NAME`, `NAME := 'v'` →
+ * `--pragma-define NAME=v`. A pragma define is never a global constant, so every value is passed exactly.
  * @param {CompilerDefine[]} defines
  * @returns {{args: string[], notes: string[]}}
  */
 function defineArgs(defines) {
     /** @type {string[]} */
     const args = [];
+    for (const d of defines || []) args.push('--pragma-define', defineSpec(d));
+    return { args, notes: [] };
+}
+
+/**
+ * The compiler arguments for the per-object defines: `--file-define <unit>=NAME[=VALUE]` for the check
+ * unit built from each item's object. An item's `Include` is resolved against the `.plcproj`'s directory
+ * and compared as the project map compares object paths (normalizeProjectPath). An item that matches
+ * no unit (an object the check does not compile, or a missing file) gets a note.
+ * @param {ObjectDefines[]} objects From readCompilerDefines / projectDefineArgs.
+ * @param {Array<{filePath: string, name: string}>} inputs The check inputs (`name` is the unit's file).
+ * @param {string} plcprojPath
+ * @returns {{args: string[], notes: string[]}}
+ */
+function fileDefineArgs(objects, inputs, plcprojPath) {
+    /** @type {string[]} */
+    const args = [];
     /** @type {string[]} */
     const notes = [];
-    for (const d of defines || []) {
-        if (d.value === null) {
-            args.push('-D', d.name);
-        } else if (!Number.isNaN(parseInt(d.value, 10))) {
-            args.push('-D', d.name);
-            notes.push(`compiler define "${d.name} := '${d.value}'" passed as "${d.name}" only: hasvalue(${d.name}, …) is not checked ` +
-                'for a value that starts with a number (the compiler would also declare a global constant of that name)');
-        } else {
-            args.push('-D', `${d.name}=${d.value}`);
+    if (!objects || objects.length === 0 || !plcprojPath) return { args, notes };
+    const byPath = new Map((inputs || []).map(i => [normalizeProjectPath(i.filePath), i]));
+    const dir = path.dirname(plcprojPath);
+    for (const o of objects) {
+        const input = byPath.get(normalizeProjectPath(path.resolve(dir, o.include.replace(/\\/g, path.sep))));
+        if (!input) {
+            notes.push(`per-object compiler defines on ${o.include} (${o.list}) were not passed: ` +
+                'the check compiles no Structured Text unit from that object');
+            continue;
         }
+        for (const d of o.defines) args.push('--file-define', `${input.name}=${defineSpec(d)}`);
     }
     return { args, notes };
 }
@@ -451,20 +560,21 @@ function defineArgs(defines) {
  * @param {string|undefined|null} plcprojPath
  * @param {(p: string) => string} [read] Reads a file as text (default: fs, UTF-8).
  * @param {{configuration: string, platform: string}} [config] The configuration a `Condition` is evaluated for.
- * @returns {{defines: CompilerDefine[], args: string[], notes: string[]}}
+ * @returns {{defines: CompilerDefine[], objects: ObjectDefines[], args: string[], notes: string[]}} `args`
+ *   pass the project defines; `objects` are the per-object defines, for fileDefineArgs.
  */
 function projectDefineArgs(plcprojPath, read = (p) => fs.readFileSync(p, 'utf8'), config = CHECK_CONFIGURATION) {
-    if (!plcprojPath) return { defines: [], args: [], notes: [] };
+    if (!plcprojPath) return { defines: [], objects: [], args: [], notes: [] };
     let xml;
     try {
         xml = read(plcprojPath);
     } catch (err) {
         const why = err && /** @type {any} */ (err).message ? /** @type {any} */ (err).message : String(err);
-        return { defines: [], args: [], notes: [`compiler defines not read: ${why}`] };
+        return { defines: [], objects: [], args: [], notes: [`compiler defines not read: ${why}`] };
     }
     const list = readCompilerDefines(xml, config);
     const mapped = defineArgs(list.defines);
-    return { defines: list.defines, args: mapped.args, notes: [...list.problems, ...mapped.notes] };
+    return { defines: list.defines, objects: list.objects, args: mapped.args, notes: [...list.problems, ...mapped.notes] };
 }
 
-module.exports = { readCompilerDefines, parseDefineList, defineArgs, projectDefineArgs, evaluateCondition, CHECK_CONFIGURATION };
+module.exports = { readCompilerDefines, parseDefineList, defineArgs, fileDefineArgs, projectDefineArgs, evaluateCondition, CHECK_CONFIGURATION };

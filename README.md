@@ -272,8 +272,10 @@ written into your project (the compiler reads temporary copies, deleted when the
 - The project's **compiler defines** (the *Compiler defines* field of the PLC project's Compile settings,
   `NAME` or `NAME := 'value'`, comma-separated) are passed on, so `{IF defined(NAME)}` and
   `{IF hasvalue(NAME, 'value')}` blocks are checked the way they build — for the *Debug* configuration
-  on *TwinCAT RT (x64)* when the `.plcproj` gives defines per configuration; an entry that cannot be used is
-  listed in the *TC Toolkit Compile* output.
+  on *TwinCAT RT (x64)* when the `.plcproj` gives defines per configuration. Values are passed exactly, numbers
+  included, and a define never becomes a variable, so a global constant of the same name still compiles. An
+  object's own compiler defines (set in that object's properties) apply inside that object only, on top of
+  the project's. An entry that cannot be used is listed in the *TC Toolkit Compile* output.
 
 **The compiler ships with the extension** — there is nothing to build or download. It runs as a
 separate process under **Node.js 22 or newer**, which the command finds by itself: `node` on your

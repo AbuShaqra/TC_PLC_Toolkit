@@ -24,24 +24,24 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   Search results read "Tc Toolkit › Compiler: Path" (VS Code cannot show an uppercase "TC" from a key). **Merged** as
   PR #34 (`cd52afc`, 2026-11-11) after the user's Windows check (old values moved; custom XAE path kept).
 - **Compiler release I + compiler defines: BUILT 2026-11-11** on `claude/focused-ptolemy-m6acaz`, open as PR #35
-  into `dev`; awaiting the user's Windows check. Compiler vendored at fork `fe4d492` (release I) from a clean
-  worktree; `twincat3.json` gains `conditional_pragmas`; Compile Project passes `<CompilerDefines>` from the
-  project's `.plcproj` `<PropertyGroup>` as `-D` (`src/compilerDefines.js`; format checked against public
-  `.plcproj` files on GitHub — XAE writes `<CompilerDefines />` or a whitespace-only element when empty, entries
-  like `InclSerialCom := 'true'`; per-object `<CompilerDefines>` inside `<Compile>` items exist and are NOT passed, but each non-empty one is noted
-  in the `TC Toolkit Compile` output). **`Condition`s evaluated** (user decision 2026-11-11): on a group or a
-  `<CompilerDefines>` element, for Debug | `TwinCAT RT (x64)` (`CHECK_CONFIGURATION`); true applies, false skips
-  silently, undecidable (`Exists`, property functions, `<`, `MSBuild*`/`Solution*` properties) is left out with a
-  note and what it sets becomes unreadable for later conditions. Review fixes: self-closing groups no longer
-  swallow the next group; empty `Condition` = true; `$(Prop)` expands in define values. Public `.plcproj` files only
+  into `dev`; awaiting the user's Windows check. **Compiler now vendored at fork `eb52d2c`** (development after
+  #119, S11b: `--pragma-define`, `--file-define`) from a clean worktree; `twincat3.json` gains `conditional_pragmas`.
+  Compile Project reads `<CompilerDefines>` from the project's `.plcproj` (`src/compilerDefines.js`; format checked
+  against public `.plcproj` files on GitHub — XAE writes `<CompilerDefines />` or a whitespace-only element when
+  empty, entries like `InclSerialCom := 'true'`). **Project defines → `--pragma-define NAME[=VALUE]`**: values exact
+  (numbers too), never a global constant, seen by `project_defined()` (fork DIALECTS.md + `src/node/cli.ts`, and
+  the e2e gate). **Per-object defines** (`<CompilerDefines>` in a `<Compile Include>` item) **→ `--file-define
+  <N.st>=NAME[=VALUE]`** for the check unit built from that object (one unit per object, `buildCheckInputs`;
+  Include resolved against the `.plcproj` folder, matched with `normalizeProjectPath`); an item with no unit (a
+  task, a missing file) gets a note. **`Condition`s evaluated** (user decision 2026-11-11) on property groups,
+  item groups, items and `<CompilerDefines>` elements, for Debug | `TwinCAT RT (x64)` (`CHECK_CONFIGURATION`);
+  true applies, false skips silently, undecidable (`Exists`, property functions, `<`, `MSBuild*`/`Solution*`
+  properties) is left out with a note. Notes go to the `TC Toolkit Compile` output. Public `.plcproj` files only
   show XAE's `" '$(Configuration)' == 'Debug' "` / `'Release'` groups, none holding `<CompilerDefines>`.
-  110/110 FULL, lint/typecheck 0, Linux dev-host: only the known P8 line-ending failure.
-  **Gap (fork follow-up):** the CLI's `-D NAME=V` also declares a global constant `NAME` when `parseInt(V)` is a
-  number (probed: a project global `LEVEL` + `-D LEVEL=7` → "Symbol 'LEVEL' already defined in scope 'global'";
-  an undeclared `LEVEL` passes). No pragma-only option exists (profile has no defines), so such a define is passed
-  as `-D NAME` only and `hasvalue(NAME, '4')` is false in the check (noted in the `TC Toolkit Compile` output).
-  Needed from the fork: a pragma-only define flag (e.g. `--pragma-define NAME=V`). Also unsupported: per-object
-  defines (one unit per project, no per-file `-D`; a POU using one compiles its ELSE branch in the check).
+  Gates on `eb52d2c` (2026-11-11, Linux): `REQUIRE_FULL_SUITE=1 npm test` 110/110 FULL (compile-real ran: numeric
+  `hasvalue` next to a same-named `VAR_GLOBAL CONSTANT`, a per-object define selecting its branch in FB_Valve and
+  not in FB_Cylinder, a per-object value winning over the project's), lint/typecheck 0, Linux dev-host 103 pass /
+  1 fail — only the known P8 line-ending failure.
   **LSP finding (not fixed, user decides):** the built-in diagnostics ignore `{IF}` pragmas; valid code that picks
   one of two block heads per branch gives a false ERROR "Unterminated block: missing matching "END_IF"" —
   repro: body `{IF defined(SIM)}` / `IF c THEN` / `{ELSE}` / `IF NOT c THEN` / `{END_IF}` / `x := 1;` / `END_IF`
