@@ -735,7 +735,7 @@ function insertComponentIntoXml(xmlText, fileUri, isItf, name, componentType, fo
     // this is the name itself; encoding just keeps the attribute well-formed whatever it is.
     const nameAttr = encodeXmlAttr(name);
 
-    let componentXml = '';
+    let componentXml;
     if (componentType === 'Property') {
         const getUuid = `{${crypto.randomUUID()}}`;
         const setUuid = `{${crypto.randomUUID()}}`;

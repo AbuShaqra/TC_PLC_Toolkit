@@ -890,7 +890,7 @@
                     if (modelByKey.has(ref.paneKey)) return modelByKey.get(ref.paneKey);
                     const pane = paneByKey.get(ref.paneKey);
                     if (!pane) return null;
-                    let m = null;
+                    let m;
                     try {
                         const uri = monaco.Uri.from(peekUri.encodePeekParts(pane));
                         const key = uri.toString();

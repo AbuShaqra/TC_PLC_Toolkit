@@ -257,7 +257,7 @@ async function findNode(configuredNode, deps) {
     let skippedAbsent = 0;
     for (const c of nodeCandidates(configuredNode, deps)) {
         if (c.mustExist) {
-            let present = false;
+            let present;
             try { present = deps.exists(c.command); } catch (e) { present = false; }
             if (!present) {
                 if (c.explicit) tried.push(`The Node.js executable ${c.label} does not exist.`);
@@ -302,7 +302,7 @@ async function checkSetup(settings, deps = {}) {
     const problems = [];
 
     const compiler = resolveCompilerPath(settings && settings.compilerPath, deps.extensionRoot);
-    let compilerPresent = false;
+    let compilerPresent;
     try { compilerPresent = exists(compiler.path); } catch (e) { compilerPresent = false; }
     if (!compilerPresent) {
         problems.push({
@@ -349,7 +349,7 @@ function buildCheckInputs(files, parse) {
     /** @type {string[]} */
     const skipped = [];
     for (const file of files || []) {
-        let parsed = null;
+        let parsed;
         try { parsed = parse(file.text); } catch (e) { parsed = null; }
         const unit = parsed ? buildCheckUnit(parsed) : null;
         if (!unit) { unparsed.push(file.filePath); continue; }
@@ -412,7 +412,7 @@ function buildCheckArgs(o) {
 function parseCheckOutput(stdout, exitCode, stderr = '') {
     const tail = (/** @type {string} */ text) => String(text || '').trim().split(/\r?\n/).slice(-3).join(' ').slice(0, 400);
     /** @type {any} */
-    let report = null;
+    let report;
     try { report = JSON.parse(String(stdout || '')); } catch (e) { report = null; }
     const shaped = report && typeof report === 'object' && Array.isArray(report.diagnostics);
     if (exitCode === 2) {

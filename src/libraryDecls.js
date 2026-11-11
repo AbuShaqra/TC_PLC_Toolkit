@@ -87,7 +87,8 @@ function compilerProvidedNames(compilerPath) {
     const names = new Set(ELEMENTARY);
     let found = false;
     const libDir = path.join(path.dirname(String(compilerPath || '')), 'libs');
-    let entries = [];
+    /** @type {string[]} */
+    let entries;
     try { entries = fs.readdirSync(libDir); } catch (e) { entries = []; }
     for (const file of entries) {
         if (!/\.stlib$/i.test(file)) continue;

@@ -17,8 +17,7 @@ accurate rather than short — prune a finding only when the code it describes i
   or >200 ms.
 - **Rename v1 limits — lifted by R7 (2026-11-11):** see "Objects-tree rename" below for what changed and the
   undo limits that remain.
-- **Tooling:** ESLint 10 bump (9.x deprecated; raises the Node floor, needs re-triage); dev-only `brace-expansion`
-  advisory (the fix drags 19 unrelated lockfile packages).
+- **Tooling:** `brace-expansion` advisory (the fix drags 19 unrelated lockfile packages).
 - **Small known gaps:** the lexer's Pragma token is unclassified (`features/hover.js` classifies it on demand).
 
 ## Process, tooling and environment traps
@@ -73,8 +72,8 @@ accurate rather than short — prune a finding only when the code it describes i
   behaviour-IDENTICAL against the pre-split monolith (1186 caret probes + 18 scenarios, order-sensitive).
 - **ESLint** (`eslint.config.js`): defect-focused; every relaxation argued in the config (`caughtErrors/args:
   'none'`, `no-useless-escape` off). One load-bearing inline disable: `xaeShell.js`'s `vscode` require feeds a
-  JSDoc namespace — deleting it fails typecheck. Lint runs in the CI `build` job only (ESLint 9 needs Node ≥18.18;
-  runtime-compat runs Node 16).
+  JSDoc namespace — deleting it fails typecheck. Lint runs in the CI `build` job only (ESLint 10 needs Node ^20.19 || ^22.13 ||
+  ≥24; runtime-compat runs Node 16 and 20).
 - **Structured LSP logging** (`src/lsp/log.js`): quiet by default (`warn` threshold, `TWINCAT_LSP_LOG`), stderr
   one-liners, never throws. `requestPipeline`'s injected `onError` covers the routed `custom/*` handlers and never
   logs `params.code`. Exactly ONE `warn` site (`plcproj-unreadable` — it zeroes a project's index); ~20 routine

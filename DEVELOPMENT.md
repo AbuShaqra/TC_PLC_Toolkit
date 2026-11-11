@@ -86,7 +86,7 @@ node test/test_tree_reveal.js # exact component → project → solution parent 
 node test/test_objects_tree_model.js # the vscode-free Objects-tree model
 node test/test_objects_tree_ids.js   # every Objects-tree id pinned on sample/ (--write regenerates)
 npm run typecheck             # type-check gate: tsc --noEmit (no emit — runtime stays plain JS)
-npm run lint                  # ESLint 9, flat config — a DEFECT check, not a style check; the
+npm run lint                  # ESLint 10, flat config — a DEFECT check, not a style check; the
                               # policy and every relaxation are documented in eslint.config.js
 
 REQUIRE_FULL_SUITE=1 npm test # fail unless the full-run fixtures are present (see below)
@@ -374,8 +374,8 @@ to `pull_request` for exactly this; on a PR the input is empty and the checkout 
 the gates are defined once. CI itself is Windows-only (the platform users are
 on), with superseded runs cancelled and a read-only token. Two jobs:
 
-- **`build`** (current Node) — `npm run lint` (ESLint needs Node ≥ 18.18, so lint lives only in
-  this job), `npm run typecheck`, `npm test` with **`REQUIRE_FULL_SUITE=1`** (the
+- **`build`** (current Node) — `npm run lint` (ESLint 10 needs Node ^20.19 || ^22.13 || ≥ 24, so
+  lint lives only in this job; the Node 16/20 legs never run it), `npm run typecheck`, `npm test` with **`REQUIRE_FULL_SUITE=1`** (the
   sample is committed, so CI achieves FULL coverage; a run whose load-bearing gates skipped fails
   instead of passing quietly), then a **VSIX build check** (`vsce package`). Packaging is otherwise
   only exercised by hand at release time, where a broken manifest or `.vscodeignore` would surface

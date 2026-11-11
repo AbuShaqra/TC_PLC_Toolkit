@@ -113,7 +113,7 @@ A VS Code extension ("TC Toolkit", id `twincat-plc-toolkit`) that opens Beckhoff
 
 **Internal identifiers keep the `twincat.*` prefix** — the extension id `twincat-plc-toolkit`, command ids and setting keys `twincat.*`, the view and view-container ids, context keys, the custom editor viewType `twincat.xmlViewer`, the `twincat-st` language id. Those are deliberate, not leftovers: users never read them as a name, and renaming them would break saved keybindings, settings and editor associations for no user-visible gain.
 
-Plain CommonJS JavaScript throughout — **no build/transpile step**. `extension.js` is the entry point and is loaded directly. There is a **type-check-only** gate (`npm run typecheck` → `tsc --noEmit`, config in `tsconfig.json`) that leans on the existing JSDoc as a safety net; it never emits, so the runtime stays plain JS. Linting is `npm run lint` (ESLint 9 flat config, `eslint.config.js`) — a **defect check, not a style check**: recommended rules plus a handful of correctness rules; every relaxation is documented in the config itself, which is the one place to change policy.
+Plain CommonJS JavaScript throughout — **no build/transpile step**. `extension.js` is the entry point and is loaded directly. There is a **type-check-only** gate (`npm run typecheck` → `tsc --noEmit`, config in `tsconfig.json`) that leans on the existing JSDoc as a safety net; it never emits, so the runtime stays plain JS. Linting is `npm run lint` (ESLint 10 flat config, pinned exactly; `eslint.config.js`) — a **defect check, not a style check**: recommended rules plus a handful of correctness rules; every relaxation is documented in the config itself, which is the one place to change policy.
 
 ## Commands
 

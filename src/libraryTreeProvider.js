@@ -271,7 +271,7 @@ class TwinCatLibraryTreeDataProvider {
      */
     async getCatalog() {
         if (this.catalog) return this.catalog;
-        let response = null;
+        let response;
         try {
             response = readLibraryResponse(await this.sendRequest('custom/libraries',
                 this.activeFileUri ? { fileUri: this.activeFileUri } : undefined));

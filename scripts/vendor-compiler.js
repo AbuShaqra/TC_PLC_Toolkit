@@ -86,7 +86,7 @@ function main() {
     const bundleAt = fs.statSync(copies[0].from).mtimeMs;
     if (bundleAt < committedAt) fail('dist/strucpp-bundle.cjs is older than HEAD; rebuild it (npm run build:bundle)');
 
-    let published = '';
+    let published;
     try { published = git(fork, 'branch', '-r', '--contains', commit); } catch (e) { published = ''; }
 
     fs.rmSync(TARGET, { recursive: true, force: true });

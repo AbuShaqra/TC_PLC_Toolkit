@@ -238,7 +238,7 @@ function planPaste(copied, target) {
 
     if (copied.kind === 'component') {
         /** @type {UriLike|null} */
-        let targetUri = null;
+        let targetUri;
         let newFolderPath = '';
         if (target.kind === 'virtualFolder') {
             targetUri = target.uri;

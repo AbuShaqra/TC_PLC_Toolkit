@@ -100,7 +100,7 @@ async function state(panel) {
  */
 async function waitFor(panel, predicate, timeoutMs) {
     const deadline = Date.now() + (timeoutMs || 15000);
-    let last = null;
+    let last;
     for (;;) {
         last = await state(panel);
         if (last && predicate(last)) return last;

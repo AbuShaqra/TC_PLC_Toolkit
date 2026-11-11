@@ -12,6 +12,15 @@
  * Every rule that is relaxed below is relaxed HERE, at the policy level, with the reason written
  * down — not by sprinkling inline disables through the source. If a relaxation ever stops being
  * true of the codebase, this file is the one place to tighten it.
+ *
+ * ESLint 10 (pinned exactly in package.json; it needs Node ^20.19 || ^22.13 || >= 24, so CI lints
+ * only in the Node 24 `build` job) added three rules to `recommended`. All three stay ON:
+ *   - `no-useless-assignment` flagged 12 sites, every one a default (`let x = null;`) that every
+ *     path overwrote before reading — no defect, but the rule also catches a write that is lost to
+ *     a second write, which is one. The 12 dead initialisers were dropped rather than the rule.
+ *   - `preserve-caught-error` flagged 2 rethrows in scripts/fetch-pragma-catalog.js that dropped
+ *     the original error; they now pass it as `cause`.
+ *   - `no-unassigned-vars` flagged nothing.
  */
 
 'use strict';
@@ -36,7 +45,7 @@ const CORRECTNESS_RULES = {
         // future multi-root workspace. Renaming
         // those to `_token` / `_symbolIndex` would degrade the documentation to satisfy a linter.
         args: 'none',
-        // Same call, for the same reason. ESLint 9 changed this default to 'all', which flagged 97
+        // Same call, for the same reason. ESLint 9 changed this default to 'all' (10 keeps it), which flagged 97
         // sites — the repo's pervasive `try { … } catch (e) { <deliberate fallback> }` idiom, where
         // the binding is named for readability at the catch site even when the body does not read
         // it. Ninety-seven renames to `_e` would catch no defect. Empty catch BLOCKS are still

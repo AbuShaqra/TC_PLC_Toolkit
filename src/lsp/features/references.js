@@ -97,7 +97,7 @@ function readStForFile(fsPath) {
     const hit = stFileCache.get(fsPath);
     if (hit && hit.signature === signature) return hit.stText;
 
-    let stText = null;
+    let stText;
     try {
         const raw = fs.readFileSync(fsPath, 'utf8');
         if (/\.(tcpou|tcgvl|tcdut|tcio|tctleo)$/i.test(fsPath) || /<TcPlcObject/i.test(raw)) {
