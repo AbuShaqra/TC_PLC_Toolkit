@@ -23,6 +23,24 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   one-time migration at activation (`src/settingsMigration.js`), old keys stay contributed as deprecated stand-ins.
   Search results read "Tc Toolkit › Compiler: Path" (VS Code cannot show an uppercase "TC" from a key). **Merged** as
   PR #34 (`cd52afc`, 2026-11-11) after the user's Windows check (old values moved; custom XAE path kept).
+- **Compiler release I + compiler defines: BUILT 2026-11-11** on `claude/focused-ptolemy-m6acaz`, unpushed at
+  handover, no PR; awaiting the user's Windows check. Compiler vendored at fork `fe4d492` (release I) from a clean
+  worktree; `twincat3.json` gains `conditional_pragmas`; Compile Project passes `<CompilerDefines>` from the
+  project's `.plcproj` `<PropertyGroup>` as `-D` (`src/compilerDefines.js`; format checked against public
+  `.plcproj` files on GitHub — XAE writes `<CompilerDefines />` or a whitespace-only element when empty, entries
+  like `InclSerialCom := 'true'`; per-object `<CompilerDefines>` inside `<Compile>` items exist and are NOT read).
+  110/110 FULL, lint/typecheck 0, Linux dev-host: only the known P8 line-ending failure.
+  **Gap (fork follow-up):** the CLI's `-D NAME=V` also declares a global constant `NAME` when `parseInt(V)` is a
+  number (probed: a project global `LEVEL` + `-D LEVEL=7` → "Symbol 'LEVEL' already defined in scope 'global'";
+  an undeclared `LEVEL` passes). No pragma-only option exists (profile has no defines), so such a define is passed
+  as `-D NAME` only and `hasvalue(NAME, '4')` is false in the check (noted in the `TC Toolkit Compile` output).
+  Needed from the fork: a pragma-only define flag (e.g. `--pragma-define NAME=V`). Also unsupported: per-object
+  defines (one unit per project, no per-file `-D`).
+  **LSP finding (not fixed, user decides):** the built-in diagnostics ignore `{IF}` pragmas; valid code that picks
+  one of two block heads per branch gives a false ERROR "Unterminated block: missing matching "END_IF"" —
+  repro: body `{IF defined(SIM)}` / `IF c THEN` / `{ELSE}` / `IF NOT c THEN` / `{END_IF}` / `x := 1;` / `END_IF`
+  (the compiler accepts it with and without `-D SIM`). Duplicate declarations in alternative branches, names
+  declared only in a branch, `{define}`/`{undefine}`, `hasvalue`/`project_defined` gave 0 diagnostics.
 - **R11 publishing:** last — after the toolkit lane AND the fork lane are done (user, 2026-11-10).
 - **Sample diagnostics: 0 against a baseline of 0** — verified with the Beckhoff archives present AND moved aside.
 

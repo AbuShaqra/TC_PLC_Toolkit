@@ -269,6 +269,10 @@ written into your project (the compiler reads temporary copies, deleted when the
 - The status bar shows the last run's error and warning counts. Editing a component clears its results
   (they described the old text); the next run replaces them all.
 - A run can be cancelled, and is stopped after two minutes.
+- The project's **compiler defines** (the *Compiler defines* field of the PLC project's Compile settings,
+  `NAME` or `NAME := 'value'`, comma-separated) are passed on, so `{IF defined(NAME)}` and
+  `{IF hasvalue(NAME, 'value')}` blocks are checked the way they build; an entry that cannot be used is
+  listed in the *TC Toolkit Compile* output.
 
 **The compiler ships with the extension** — there is nothing to build or download. It runs as a
 separate process under **Node.js 22 or newer**, which the command finds by itself: `node` on your
