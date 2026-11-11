@@ -1,7 +1,7 @@
 {
   "name": "twincat-plc-toolkit",
-  "displayName": "TwinCAT PLC Toolkit",
-  "description": "Edit, navigate and analyse Beckhoff TwinCAT PLC projects: two-pane Structured Text editor, offline IntelliSense and diagnostics, object and library explorers. Unofficial; not affiliated with Beckhoff.",
+  "displayName": "TC Toolkit",
+  "description": "Structured Text editor, language server and project tools for Beckhoff TwinCAT 3 PLC projects: two-pane editor, offline IntelliSense and diagnostics, object and library explorers. Unofficial; not affiliated with Beckhoff.",
   "version": "0.10.1",
   "publisher": "a-abushaqra",
   "license": "AGPL-3.0-or-later",
@@ -46,7 +46,7 @@
     "customEditors": [
       {
         "viewType": "twincat.xmlViewer",
-        "displayName": "TwinCAT PLC Toolkit",
+        "displayName": "TC Toolkit",
         "selector": [
           {
             "filenamePattern": "*.TcPOU"
@@ -68,14 +68,14 @@
       "activitybar": [
         {
           "id": "twincat",
-          "title": "TwinCAT",
+          "title": "TC Toolkit",
           "icon": "media/twincat-activitybar.svg"
         }
       ],
       "panel": [
         {
           "id": "twincat-references-panel",
-          "title": "TwinCAT References",
+          "title": "PLC References",
           "icon": "$(references)"
         }
       ]
@@ -88,17 +88,17 @@
         },
         {
           "id": "twincatExplorer",
-          "name": "TwinCAT Objects"
+          "name": "PLC Objects"
         },
         {
           "id": "twincatLibraries",
-          "name": "TwinCAT Libraries"
+          "name": "PLC Libraries"
         }
       ],
       "twincat-references-panel": [
         {
           "id": "twincatReferences",
-          "name": "TwinCAT References"
+          "name": "PLC References"
         }
       ]
     },
@@ -124,60 +124,60 @@
       {
         "command": "twincat.openStartPage",
         "title": "Open Start Page",
-        "category": "TwinCAT",
+        "category": "TC Toolkit",
         "icon": "$(home)"
       },
       {
         "command": "twincat.createProject",
         "title": "Create New Project…",
-        "category": "TwinCAT",
+        "category": "TC Toolkit",
         "icon": "$(new-folder)"
       },
       {
         "command": "twincat.openProject",
         "title": "Open Existing Project…",
-        "category": "TwinCAT",
+        "category": "TC Toolkit",
         "icon": "$(folder-opened)"
       },
       {
         "command": "twincat.generateSt",
         "title": "Generate ST",
-        "category": "TwinCAT"
+        "category": "TC Toolkit"
       },
       {
         "command": "twincat.compileProject",
         "title": "Compile Project",
-        "category": "TwinCAT"
+        "category": "TC Toolkit"
       },
       {
         "command": "twincat.openSettings",
         "title": "Open Settings",
-        "category": "TwinCAT"
+        "category": "TC Toolkit"
       },
       {
         "command": "twincat.detectXaeShell",
         "title": "Detect XAE Shell Installations",
-        "category": "TwinCAT"
+        "category": "TC Toolkit"
       },
       {
         "command": "twincat.openGettingStarted",
         "title": "Getting Started",
-        "category": "TwinCAT"
+        "category": "TC Toolkit"
       },
       {
         "command": "twincat.openRoadmap",
         "title": "Open Roadmap",
-        "category": "TwinCAT"
+        "category": "TC Toolkit"
       },
       {
         "command": "twincat.openReleaseNotes",
         "title": "Release Notes",
-        "category": "TwinCAT"
+        "category": "TC Toolkit"
       },
       {
         "command": "twincat.reportIssue",
         "title": "Report an Issue",
-        "category": "TwinCAT"
+        "category": "TC Toolkit"
       },
       {
         "command": "twincat.openComponent",
@@ -186,140 +186,145 @@
       {
         "command": "twincat.createMethod",
         "title": "Create Method",
-        "category": "TwinCAT"
+        "category": "TC Toolkit"
       },
       {
         "command": "twincat.createProperty",
         "title": "Create Property",
-        "category": "TwinCAT"
+        "category": "TC Toolkit"
       },
       {
         "command": "twincat.createVirtualFolder",
         "title": "Create Virtual Folder",
-        "category": "TwinCAT"
+        "category": "TC Toolkit"
       },
       {
         "command": "twincat.addGetAccessor",
         "title": "Add Get Accessor",
-        "category": "TwinCAT"
+        "category": "TC Toolkit"
       },
       {
         "command": "twincat.addSetAccessor",
         "title": "Add Set Accessor",
-        "category": "TwinCAT"
+        "category": "TC Toolkit"
       },
       {
         "command": "twincat.deleteComponent",
         "title": "Delete Component",
-        "category": "TwinCAT"
+        "category": "TC Toolkit"
       },
       {
         "command": "twincat.deleteVirtualFolder",
         "title": "Delete Virtual Folder",
-        "category": "TwinCAT"
+        "category": "TC Toolkit"
       },
       {
         "command": "twincat.createAction",
         "title": "Create Action",
-        "category": "TwinCAT"
+        "category": "TC Toolkit"
       },
       {
         "command": "twincat.createFileFB",
         "title": "Create Function Block (FB)",
-        "category": "TwinCAT"
+        "category": "TC Toolkit"
       },
       {
         "command": "twincat.createFileProgram",
         "title": "Create Program (PRG)",
-        "category": "TwinCAT"
+        "category": "TC Toolkit"
       },
       {
         "command": "twincat.createFileFunction",
         "title": "Create Function (FUN)",
-        "category": "TwinCAT"
+        "category": "TC Toolkit"
       },
       {
         "command": "twincat.createFileInterface",
         "title": "Create Interface (ITF)",
-        "category": "TwinCAT"
+        "category": "TC Toolkit"
       },
       {
         "command": "twincat.createFileGVL",
         "title": "Create Global Variable List (GVL)",
-        "category": "TwinCAT"
+        "category": "TC Toolkit"
       },
       {
         "command": "twincat.createPhysicalFolder",
         "title": "Create Folder",
-        "category": "TwinCAT"
+        "category": "TC Toolkit"
       },
       {
         "command": "twincat.deletePhysicalItem",
         "title": "Delete",
-        "category": "TwinCAT"
+        "category": "TC Toolkit"
       },
       {
         "command": "twincat.clearReferences",
         "title": "Clear References",
-        "category": "TwinCAT",
+        "category": "TC Toolkit",
         "icon": "$(clear-all)"
       },
       {
         "command": "twincat.insertAtCursor",
         "title": "Insert at Cursor",
-        "category": "TwinCAT"
+        "category": "TC Toolkit"
       },
       {
         "command": "twincat.insertDefinitionAtCursor",
         "title": "Insert Definition at Cursor",
-        "category": "TwinCAT"
+        "category": "TC Toolkit"
       },
       {
         "command": "twincat.insertObjectAtCursor",
         "title": "Insert at Cursor",
-        "category": "TwinCAT"
+        "category": "TC Toolkit"
       },
       {
         "command": "twincat.insertObjectDefinitionAtCursor",
         "title": "Insert Definition at Cursor",
-        "category": "TwinCAT"
+        "category": "TC Toolkit"
       },
       {
         "command": "twincat.copyLibraryNamespace",
         "title": "Copy Namespace",
-        "category": "TwinCAT"
+        "category": "TC Toolkit"
       },
       {
         "command": "twincat.copyQualifiedName",
         "title": "Copy Qualified Name",
-        "category": "TwinCAT"
+        "category": "TC Toolkit"
       },
       {
         "command": "twincat.refreshLibraries",
         "title": "Refresh",
-        "category": "TwinCAT",
+        "category": "TC Toolkit",
         "icon": "$(refresh)"
       },
       {
         "command": "twincat.updateLibraryDefinitions",
         "title": "Update Library Definitions (requires TwinCAT)",
-        "category": "TwinCAT",
+        "category": "TC Toolkit",
         "icon": "$(cloud-download)"
       },
       {
         "command": "twincat.copyObject",
         "title": "Copy",
-        "category": "TwinCAT"
+        "category": "TC Toolkit"
       },
       {
         "command": "twincat.pasteObject",
         "title": "Paste",
-        "category": "TwinCAT"
+        "category": "TC Toolkit"
       },
       {
         "command": "twincat.renameObject",
         "title": "Rename",
-        "category": "TwinCAT"
+        "category": "TC Toolkit"
+      },
+      {
+        "command": "twincat.undoLastRename",
+        "title": "Undo Last Rename",
+        "category": "TC Toolkit"
       }
     ],
     "keybindings": [
@@ -519,7 +524,7 @@
       }
     ],
     "configuration": {
-      "title": "TwinCAT PLC Toolkit",
+      "title": "TC Toolkit",
       "properties": {
         "twincat.diagnostics.memberAccess": {
           "type": "boolean",
@@ -567,34 +572,34 @@
           "type": "string",
           "default": "",
           "scope": "machine",
-          "markdownDescription": "Full path to `TcXaeShell.exe` of the XAE Shell for **TwinCAT 3.1.4024** (the 32-bit shell). Filled automatically with the installation found on this machine; change it if yours is elsewhere. Empty = not found. Run **TwinCAT: Detect XAE Shell Installations** to look again."
+          "markdownDescription": "Full path to `TcXaeShell.exe` of the XAE Shell for **TwinCAT 3.1.4024** (the 32-bit shell). Filled automatically with the installation found on this machine; change it if yours is elsewhere. Empty = not found. Run **TC Toolkit: Detect XAE Shell Installations** to look again."
         },
         "twincat.xaeShell.path4026": {
           "type": "string",
           "default": "",
           "scope": "machine",
-          "markdownDescription": "Full path to `TcXaeShell.exe` of the XAE Shell for **TwinCAT 3.1.4026** (the 64-bit shell). Filled automatically with the installation found on this machine; change it if yours is elsewhere. Empty = not found. Run **TwinCAT: Detect XAE Shell Installations** to look again."
+          "markdownDescription": "Full path to `TcXaeShell.exe` of the XAE Shell for **TwinCAT 3.1.4026** (the 64-bit shell). Filled automatically with the installation found on this machine; change it if yours is elsewhere. Empty = not found. Run **TC Toolkit: Detect XAE Shell Installations** to look again."
         },
         "twincat.compiler.path": {
           "type": "string",
           "default": "",
           "scope": "machine",
-          "markdownDescription": "Full path to the bundled command-line file (`.cjs`) of the external IEC 61131-3 compiler that **TwinCAT: Compile Project** runs. Empty = no compiler installed; the command then explains what is missing."
+          "markdownDescription": "Full path to the command-line file (`.cjs`) of an external IEC 61131-3 compiler for **TC Toolkit: Compile Project** to run instead of the one that ships with the extension. Empty = the bundled compiler (the usual choice)."
         },
         "twincat.compiler.nodePath": {
           "type": "string",
           "default": "",
           "scope": "machine",
-          "markdownDescription": "Full path to a Node.js executable, version 22 or newer, that runs the compiler for **TwinCAT: Compile Project**. Empty = `node` on `PATH`. The version is checked before each run."
+          "markdownDescription": "Full path to a Node.js executable, version 22 or newer, that runs the compiler for **TC Toolkit: Compile Project**. Empty = found automatically: `node` on `PATH`, then on Windows the usual install locations (Node.js installer, nvm-windows, Volta, fnm), then VS Code's own runtime when it is Node.js 22 or newer. The version is checked before each run."
         }
       }
     }
   },
   "devDependencies": {
-    "@eslint/js": "^9.39.5",
+    "@eslint/js": "10.0.1",
     "@types/node": "^26.1.1",
     "@types/vscode": "^1.66.0",
-    "eslint": "^9.39.5",
+    "eslint": "10.14.0",
     "globals": "^17.11.0",
     "typescript": "^7.0.2"
   },

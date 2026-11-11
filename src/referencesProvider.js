@@ -1,6 +1,6 @@
 /**
  * @file referencesProvider.js
- * @description TreeDataProvider for the "TwinCAT References" view. Presents reference results
+ * @description TreeDataProvider for the "PLC References" view. Presents reference results
  * grouped by file and component, navigable via the twincat.openComponent command. Used instead of
  * Monaco's peek widget for cross-file / cross-component usages, which the split-pane webview
  * cannot render as live models.

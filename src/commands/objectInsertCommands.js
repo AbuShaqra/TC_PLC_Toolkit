@@ -1,6 +1,6 @@
 /**
  * @file objectInsertCommands.js
- * @description Registers the "TwinCAT Objects" explorer insert commands: write a project object's
+ * @description Registers the "PLC Objects" explorer insert commands: write a project object's
  * own name at the caret, or a ready-to-fill call template for it.
  *
  * The Libraries view has had both since 0.1.x, but only for *library* symbols — right-clicking your
@@ -32,7 +32,7 @@ function isMemberContext(contextValue) {
 }
 
 /**
- * Registers the TwinCAT Objects explorer insert commands.
+ * Registers the PLC Objects explorer insert commands.
  * @param {vscode.ExtensionContext} context The extension context.
  * @param {object} deps Injected collaborators owned by extension.js.
  * @param {any} deps.provider The custom editor provider (for insert-at-caret routing).
@@ -92,7 +92,7 @@ function registerObjectInsertCommands(context, { provider }) {
      * hunt — the search that led here is exactly the one that should get a pointer.)
      */
     const sayWhereItLives = () => vscode.window.showInformationMessage(
-        'Right-click an object in the TwinCAT Objects view (or a symbol in TwinCAT Libraries) to insert it at the cursor.'
+        'Right-click an object in the PLC Objects view (or a symbol in PLC Libraries) to insert it at the cursor.'
     );
 
     context.subscriptions.push(

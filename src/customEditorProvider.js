@@ -10,8 +10,9 @@ const { parseTwinCatXml, replaceComponentCdata } = require('./xmlParser');
 const { updateDocument } = require('./plcProjHelper');
 const { convertXmlToSt, collectStructDefinitions } = require('./stConverter');
 const { stOutputPath, isUnderStFiles } = require('./stOutputPath');
-const { assembleSt, localToAbsolute, createStResolver, mapDefinition, collectPeekReferences, listExternalReferences, mapDiagnosticsToLocal } = require('./livePath');
+const { assembleSt, localToAbsolute, createStResolver, mapDefinition, collectPeekReferences, listExternalReferences, mapDiagnosticsToLocal, mapHoverToLocal } = require('./livePath');
 const pendingEditsCore = require('../media/pendingEdits');
+const { isDocumentationUrl } = require('./lsp/pragmas');
 const { createPendingEditsStore } = require('./pendingEditsStore');
 const EXT_VERSION = (() => { try { return require('../package.json').version; } catch (e) { return '?'; } })();
 
@@ -83,6 +84,33 @@ class TwinCatCustomEditorProvider {
          *   openTarget: (uriStr: string) => ({componentId: string, range: Object, targetWord: string|null}|null)}|null}
          */
         this.compileSource = null;
+        /** Whether a Compile Project run is in progress (the toolbar button is disabled meanwhile). */
+        this.compileRunning = false;
+    }
+
+    /**
+     * Compile Project starts or ends a run: every open editor's Compile button follows.
+     * @param {boolean} running
+     */
+    setCompileRunning(running) {
+        this.compileRunning = !!running;
+        for (const panel of this.activePanels.values()) {
+            panel.webview.postMessage({ type: 'compileRunning', running: this.compileRunning });
+        }
+    }
+
+    /**
+     * Runs Compile Project for the PLC project that owns a file — the toolbar button's action. A file
+     * owned by exactly one project names it; otherwise (a loose file, or one linked into several
+     * projects) the command asks, as it does from the palette. Setup problems (no compiler, no Node)
+     * are explained by the command itself.
+     * @param {string} fsPath The editor's file.
+     * @returns {Promise<any>} The command's result.
+     */
+    compileProjectFor(fsPath) {
+        const projectMap = this.options && this.options.getProjectMap && this.options.getProjectMap();
+        const owners = projectMap && typeof projectMap.ownersOf === 'function' ? projectMap.ownersOf(fsPath) : [];
+        return Promise.resolve(vscode.commands.executeCommand('twincat.compileProject', owners.length === 1 ? { projectKey: owners[0] } : {}));
     }
 
     /**
@@ -255,7 +283,8 @@ class TwinCatCustomEditorProvider {
                             cachedEdits: cachedEdits,
                             splitterRatio: splitterRatio,
                             fileUri: uriStr,
-                            compileDiagnostics: this.compileSource ? this.compileSource.paneDiagnostics(uriStr) : []
+                            compileDiagnostics: this.compileSource ? this.compileSource.paneDiagnostics(uriStr) : [],
+                            compileRunning: this.compileRunning
                         });
                         // Cleared by the webview's `selectionApplied` ack, not here: if the highlight
                         // never lands (the panes were not populated yet), dropping it now would leave
@@ -463,6 +492,37 @@ class TwinCatCustomEditorProvider {
                         console.error(err);
                     }
                     break;
+                case 'custom/hover':
+                    try {
+                        const ctx = assembleSt(document.getText(), message);
+                        let hover = null;
+                        if (ctx) {
+                            const abs = localToAbsolute(ctx.lineMap, message.componentId, message.pane, message.position.lineNumber, message.position.column);
+                            if (abs) {
+                                const raw = await vscode.commands.executeCommand('twincat.lsp.queryHover', {
+                                    code: ctx.stText,
+                                    position: abs,
+                                    fileUri: message.fileUri
+                                });
+                                hover = mapHoverToLocal(/** @type {any} */ (raw), abs, message.position.lineNumber);
+                            }
+                        }
+                        webviewPanel.webview.postMessage({
+                            type: 'custom/hoverResponse',
+                            requestId: message.requestId,
+                            hover: hover
+                        });
+                    } catch (err) {
+                        console.error(err);
+                    }
+                    break;
+                case 'openDocumentationLink':
+                    // Only the pragma catalogue's own documentation pages: the hover's links. Anything
+                    // else a webview asks to open is ignored.
+                    if (typeof message.url === 'string' && isDocumentationUrl(message.url)) {
+                        vscode.env.openExternal(vscode.Uri.parse(message.url));
+                    }
+                    break;
                 case 'custom/diagnostics':
                     try {
                         const ctx = assembleSt(document.getText(), message);
@@ -519,6 +579,10 @@ class TwinCatCustomEditorProvider {
                     // `projectKeys` narrows to a chosen subset; absent/empty means every project.
                     await this.generateAllStFiles(message.projectKeys);
                     break;
+                case 'compile-project':
+                    // The toolbar's Compile button: the project that owns THIS file.
+                    await this.compileProjectFor(document.uri.fsPath);
+                    break;
                 case 'openFile':
                     try {
                         const fileUri = vscode.Uri.parse(message.fileUri);
@@ -528,7 +592,7 @@ class TwinCatCustomEditorProvider {
                     }
                     break;
                 case 'error':
-                    console.error(`[TwinCAT PLC Toolkit Webview Error]: ${message.message}\nStack: ${message.error}`);
+                    console.error(`[TC Toolkit Webview Error]: ${message.message}\nStack: ${message.error}`);
                     vscode.window.showErrorMessage(`Webview Error: ${message.message}`);
                     break;
             }
@@ -612,7 +676,7 @@ class TwinCatCustomEditorProvider {
         <!-- Top bar with object details and dropdown -->
         <header class="app-header">
             <div class="header-left">
-                <span class="logo-text">TwinCAT</span>
+                <span class="logo-text">TC Toolkit</span>
                 <span class="pill" title="Extension build">v${EXT_VERSION}</span>
                 <span id="obj-type" class="pill">POU</span>
                 <h1 id="obj-name">MAIN</h1>
@@ -624,7 +688,7 @@ class TwinCatCustomEditorProvider {
                 <!-- Split button: the main part generates every project; the caret (shown only when
                      the workspace has 2+ projects) opens a checkbox menu to narrow the selection. -->
                 <div id="generate-st-group" class="split-btn">
-                    <button id="generate-st-btn" class="action-btn">Generate ST</button>
+                    <button id="generate-st-btn" class="action-btn" title="Generate ST: export every PLC project to .st files">Generate ST</button>
                     <button id="generate-st-caret" class="action-btn split-caret" title="Choose projects" aria-haspopup="true" aria-expanded="false" hidden>▾</button>
                     <div id="generate-st-menu" class="split-menu" role="menu" hidden>
                         <div class="split-menu-title">Generate ST for</div>
@@ -633,6 +697,12 @@ class TwinCatCustomEditorProvider {
                         <button id="generate-st-run" class="action-btn split-menu-run">Generate selected</button>
                     </div>
                 </div>
+                <!-- Compile Project for the PLC project that owns this file (check only). The glyph is
+                     inline SVG in the codicon style (16px grid, currentColor): the webview is offline. -->
+                <button id="compile-btn" class="action-btn icon-btn" title="Compile Project: check this PLC project with the IEC 61131-3 compiler" aria-label="Compile Project">` +
+        `<svg class="btn-icon" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">` +
+        `<path fill="currentColor" d="M3 2.5v11l1.5.8 8-5.5v-1.6l-8-5.5L3 2.5zm1.5 1.4L11.2 8l-6.7 4.6V3.9z"/></svg>` +
+        `<span class="btn-label">Compile</span></button>
                 <div class="sync-toggle-container active" id="sync-toggle-wrapper">
                     <span class="sync-toggle-label" id="sync-mode-text">Auto Sync</span>
                     <label class="switch">

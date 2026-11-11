@@ -1,7 +1,7 @@
 /**
  * @file test_library_catalog.js
  * @description The library catalog (src/lsp/libsymbols.js `getLibraryCatalog()`) that backs the
- * "TwinCAT Libraries" view.
+ * "PLC Libraries" view.
  *
  * What the view exists for, and therefore what this guards: a library has **three** names in the
  * .plcproj, and they are routinely different strings —
@@ -279,7 +279,7 @@ try {
 
             // The negative that keeps the view honest: the sample's `.tmc` describes the project's
             // OWN types too (FB_Cylinder, ST_StationStatus, …), and those carry no `Namespace="…"`
-            // attribute. A library row must never claim them — "TwinCAT Libraries" would then list
+            // attribute. A library row must never claim them — "PLC Libraries" would then list
             // the user's own code as somebody's library.
             const ownTypes = ['FB_Cylinder', 'ST_StationStatus', 'E_StationState', 'GVL_Io'];
             const misfiled = catalog.filter(e => e.types.some(t => ownTypes.includes(t.name)))

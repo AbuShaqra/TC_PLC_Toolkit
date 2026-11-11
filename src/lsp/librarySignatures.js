@@ -78,7 +78,10 @@ function parseLibrarySignaturesXml(xml) {
                     inputs: parseVars(body, 'Inputs', 'Input', SCOPE.input),
                     inouts: parseVars(body, 'InOuts', 'InOut', SCOPE.inout),
                     // A function's return value is emitted as its single like-named Output.
-                    returnType: outputs.length ? outputs[0].type : ''
+                    returnType: outputs.length ? outputs[0].type : '',
+                    // Every output as written (Compile Project's declarations separate the return
+                    // value from a function's further VAR_OUTPUTs).
+                    outputs
                 });
             } else if (kind === 'FunctionBlock') {
                 lib.functionBlocks.push({

@@ -72,6 +72,7 @@ const message = (bucket) => async (m, ...buttons) => { calls[bucket].push({ m, b
 const vscodeStub = {
     Uri: {
         file: uri,
+        joinPath: (base, ...parts) => uri(path.join(base.fsPath, ...parts)),
         parse: (s) => { const m = /^([a-z-]+):\/\/([^/]*)([^?]*)\??(.*)$/.exec(s) || []; return { scheme: m[1], authority: m[2], path: m[3], query: m[4] || '', fsPath: s, toString: () => s }; }
     },
     Range, Diagnostic,
@@ -148,7 +149,8 @@ const projectMap = () => ({
     projects: new Map(projectList.map(p => [p.key, p])),
     keys: () => projectList.map(p => p.key),
     get: (k) => projectList.find(p => p.key === k),
-    displayName: (k) => projectList.find(p => p.key === k).name
+    displayName: (k) => projectList.find(p => p.key === k).name,
+    ownersOf: (p) => projectList.filter(pr => [...pr.objectFiles.values()].includes(p)).map(pr => pr.key)
 });
 const provider = new TwinCatCustomEditorProvider(context, { getProjectMap: projectMap });
 // An open editor of FB_A, as the provider tracks it.
@@ -168,7 +170,9 @@ const fake = createFakeSpawn((call) => {
     return compilerAnswer(call, units);
 });
 let settingsChanged = 0;
-const compile = registerCompileCommands(context, { provider, getProjectMap: projectMap, onSettingsChanged: () => { settingsChanged++; }, spawn: fake.spawn });
+const compile = registerCompileCommands(context, { provider, getProjectMap: projectMap, onSettingsChanged: () => { settingsChanged++; }, spawn: fake.spawn,
+    // Only `node` on PATH (the fake): the editor's own runtime would otherwise rescue a too-old Node.
+    nodeDiscovery: { platform: 'linux', env: {}, runtime: null } });
 const run = (id, ...args) => vscodeStub.commands.executeCommand(id, ...args);
 const problems = collections[0];
 const unitLineOf = (xml, text) => buildCheckUnit(parseTwinCatXml(xml)).lines.indexOf(text) + 1;
@@ -185,24 +189,32 @@ const settle = () => new Promise(r => setTimeout(r, 10));
     assert(handlers.has('twincat.compileProject') && handlers.has(GO_TO_PROBLEM_COMMAND) && !!uriHandler && problems.name === 'twincat-compile',
         'REGISTER: the command, the problem picker, the link handler and one diagnostic collection');
 
-    // ── Not configured ──────────────────────────────────────────────────────────────────────────
-    assert(compile.isConfigured() === false, 'TILE: no compiler is configured by default');
-    answers.message.push('Open Settings');
+    // ── The bundled compiler, and the setting as an override ───────────────────────────────────
+    const BUNDLED = path.join(REPO, 'resources', 'compiler', 'compiler.cjs');
+    assert(compile.isAvailable() === true, 'TILE: with the setting empty the bundled compiler is available');
     let result = await run('twincat.compileProject');
     await settle();
+    const bundledCall = fake.calls[fake.calls.length - 1];
+    assert(result.ok === true && bundledCall.args[0] === BUNDLED && bundledCall.args.includes('--check'),
+        `BUNDLED: with nothing configured the command runs the bundled compiler (${bundledCall.args[0]})`);
+    for (const k of ['executed', 'errors', 'infos', 'warnings', 'progress']) calls[k].length = 0;
+
+    settings['twincat.compiler.path'] = path.join(ROOT, 'gone.cjs');
+    assert(compile.isAvailable() === false, 'TILE: an override path that does not exist makes the compiler unavailable');
+    answers.message.push('Open Settings');
+    const probesFrom = fake.calls.length;
+    result = await run('twincat.compileProject');
+    await settle();
     assert(result.ok === false && result.reason === 'setup' && calls.errors.length === 1 &&
-        /Compile Project cannot run\. No compiler is installed/.test(calls.errors[0].m) && /twincat\.compiler\.path/.test(calls.errors[0].m) &&
+        /Compile Project cannot run\. The compiler file ".*gone\.cjs" \(setting "twincat\.compiler\.path"\) does not exist/.test(calls.errors[0].m) &&
         calls.errors[0].buttons.join() === 'Open Settings',
-        'SETUP: without a compiler the command explains what is missing and offers the settings');
+        `SETUP: a missing override compiler is explained and the settings are offered (${calls.errors[0] && calls.errors[0].m})`);
     assert(calls.executed.some(c => c.id === 'twincat.openSettings' && c.args[0] === 'twincat.compiler'),
         'SETUP: "Open Settings" opens the compiler settings');
-    assert(fake.calls.every(c => c.args[0] === '--version') && seenUnits.length === 0 && problems.map.size === 0, 'SETUP: the compiler was not started');
+    assert(fake.calls.slice(probesFrom).every(c => c.args[0] === '--version') && problems.map.size === 0, 'SETUP: the compiler was not started');
 
     settings['twincat.compiler.path'] = bundlePath;
-    assert(compile.isConfigured() === true, 'TILE: a compiler path that exists counts as configured');
-    settings['twincat.compiler.path'] = path.join(ROOT, 'gone.cjs');
-    assert(compile.isConfigured() === false, 'TILE: a compiler path that does not exist does not');
-    settings['twincat.compiler.path'] = bundlePath;
+    assert(compile.isAvailable() === true, 'TILE: an override path that exists counts as available');
 
     nodeVersion = 'v18.19.0';
     calls.errors.length = 0;
@@ -249,7 +261,7 @@ const settle = () => new Promise(r => setTimeout(r, 10));
     const entries = problems.map.get(fbUri.toString()) || [];
     assert(problems.map.size === 1 && entries.length === 2, 'PROBLEMS: both diagnostics are published on the object\'s file; the GVL has none');
     const err = entries.find(d => d.severity === 0);
-    assert(!!err && err.source === DIAGNOSTIC_SOURCE && err.source === 'TwinCAT compile' &&
+    assert(!!err && err.source === DIAGNOSTIC_SOURCE && err.source === 'TC Toolkit compile' &&
         err.message === "Undeclared variable 'NNOPE' [Run, implementation line 2]",
         `PROBLEMS: the entry names the component, pane and pane line (${err && err.message})`);
     assert(!!err && err.range.start.line === 1 && err.range.start.character === 0 && err.range.end.line === 1 && err.range.end.character === 11,
@@ -375,6 +387,105 @@ const settle = () => new Promise(r => setTimeout(r, 10));
     listeners.config.forEach(fn => fn({ affectsConfiguration: (s) => s === 'twincat.compiler' }));
     listeners.config.forEach(fn => fn({ affectsConfiguration: () => false }));
     assert(settingsChanged === 1, 'SETTINGS: a change to twincat.compiler.* is passed on (the start page re-reads the tile state)');
+
+    // ── The editor toolbar's Compile button, host side ──────────────────────────────────────────
+    // The real resolveCustomTextEditor with a fake panel: `compile-project` from the webview runs the
+    // command for the project that owns the editor's file, and every editor's button follows the run.
+    {
+        const toPanel = [];
+        let onMessage = null;
+        const panel = {
+            active: true,
+            onDidChangeViewState: () => ({ dispose() {} }),
+            onDidDispose: () => ({ dispose() {} }),
+            webview: {
+                options: {}, html: '', cspSource: 'vscode-webview://x',
+                asWebviewUri: (u) => u,
+                postMessage: (m) => { toPanel.push(m); return Promise.resolve(true); },
+                onDidReceiveMessage: (fn) => { onMessage = fn; return { dispose() {} }; }
+            }
+        };
+        const gvlDoc = { uri: uri(gvlPath), fileName: gvlPath, getText: () => fs.readFileSync(gvlPath, 'utf8'), isDirty: false };
+        provider.resolveCustomTextEditor(gvlDoc, panel, { isCancellationRequested: false });
+        assert(typeof onMessage === 'function' && /id="compile-btn"/.test(panel.webview.html), 'TOOLBAR: the editor page has the Compile button and a message handler');
+
+        // Two projects, the GVL owned by the second only: the button compiles THAT project, no pick.
+        projectList = [project('a', 'PLC', [fbPath]), project('b', 'PLC_Two', [gvlPath])];
+        for (const k of ['executed', 'errors', 'infos', 'warnings', 'progress']) calls[k].length = 0;
+        toPanel.length = 0;
+        const pickBefore = calls.lastPick;
+        await onMessage({ type: 'compile-project' });
+        await settle();
+        const ran = calls.executed.filter(c => c.id === 'twincat.compileProject');
+        assert(ran.length === 1 && ran[0].args[0] && ran[0].args[0].projectKey === 'b' && calls.lastPick === pickBefore,
+            `TOOLBAR: compile-project runs Compile Project for the project that owns the file, without asking (${JSON.stringify(ran.map(r => r.args))})`);
+        assert(calls.infos.some(i => /PLC_Two: no errors/.test(i.m)), `TOOLBAR: the run's summary names that project (${JSON.stringify(calls.infos.map(i => i.m))})`);
+        const running = toPanel.filter(m => m.type === 'compileRunning').map(m => m.running);
+        assert(JSON.stringify(running) === '[true,false]', `TOOLBAR: every open editor is told the run started and ended (${JSON.stringify(running)})`);
+
+        // A file no project owns (one several own takes the same branch): the command asks, as from the palette.
+        projectList = [project('a', 'PLC', [fbPath]), project('b', 'PLC_Two', [fbPath])];
+        answers.quickPick.push(undefined);
+        await onMessage({ type: 'compile-project' });
+        const asked = calls.executed.filter(c => c.id === 'twincat.compileProject').pop();
+        assert(asked && asked.args[0] && asked.args[0].projectKey === undefined && calls.lastPick !== pickBefore,
+            'TOOLBAR: a file no single project owns leaves the choice to the command\'s project pick');
+
+        // Setup problems reach the user exactly as from the command.
+        projectList = [project('a', 'PLC', [fbPath, gvlPath])];
+        settings['twincat.compiler.path'] = path.join(ROOT, 'gone.cjs');
+        for (const k of ['executed', 'errors', 'infos', 'warnings', 'progress']) calls[k].length = 0;
+        answers.message.push(undefined);
+        await onMessage({ type: 'compile-project' });
+        await settle();
+        assert(calls.errors.length === 1 && /^Compile Project cannot run\. The compiler file/.test(calls.errors[0].m),
+            `TOOLBAR: with the compiler missing the button gives the command's own message (${calls.errors[0] && calls.errors[0].m})`);
+        settings['twincat.compiler.path'] = bundlePath;
+        nodeVersion = 'v18.19.0';
+        calls.errors.length = 0;
+        answers.message.push(undefined);
+        await onMessage({ type: 'compile-project' });
+        await settle();
+        assert(calls.errors.length === 1 && /Node\.js 18\.19\.0 was found/.test(calls.errors[0].m),
+            'TOOLBAR: with no usable Node the button gives the command\'s own message');
+        nodeVersion = 'v22.5.0';
+
+        // An editor opened while a run is in progress starts with its button disabled.
+        provider.setCompileRunning(true);
+        toPanel.length = 0;
+        await onMessage({ type: 'ready' });
+        const init = toPanel.find(m => m.type === 'init');
+        assert(!!init && init.compileRunning === true, 'TOOLBAR: init tells a new editor a run is in progress');
+        provider.setCompileRunning(false);
+        provider.activePanels.delete(gvlDoc.uri.toString());
+    }
+
+    // ── Library symbols (R3.4): the filter's count and the one-time "no dump" hint ───────────────
+    {
+        projectList = [project('a', 'PLC', [fbPath, gvlPath])];
+        const plcproj = path.join(ROOT, 'PLC', 'PLC.plcproj');
+        fs.writeFileSync(plcproj, '<Project><ItemGroup><PlaceholderReference Include="Synthetic Lib"><Namespace>SynLib</Namespace></PlaceholderReference></ItemGroup></Project>');
+        compilerAnswer = () => ({ stdout: JSON.stringify({ dialect: 'twincat3', files: [], summary: {}, diagnostics: [
+            { file: '1.st', line: 1, column: 1, severity: 'error', message: "Undeclared variable 'SYNLIB'" },
+            { file: '1.st', line: 1, column: 1, severity: 'error', message: "Undeclared variable 'NNOPE'" }
+        ] }), code: 1 });
+        for (const k of ['errors', 'infos', 'warnings']) calls[k].length = 0;
+        answers.message.push(undefined);
+        result = await run('twincat.compileProject');
+        await settle();
+        const summaryText = (calls.errors[0] || { m: '' }).m;
+        assert(result.ok === true && result.errors === 1 && result.filteredLibraryDiagnostics === 1,
+            `LIBRARY: an error on a library name is filtered and counted, the user's own error stays (${result.errors}/${result.filteredLibraryDiagnostics})`);
+        assert(/1 error\(s\) on library symbols with no declaration available were not shown/.test(summaryText) &&
+            /Run "TC Toolkit: Update Library Definitions" to check calls into libraries too\./.test(summaryText),
+            `LIBRARY: the summary shows the count, and — with no signatures dump — the hint (${summaryText})`);
+        calls.errors.length = 0;
+        answers.message.push(undefined);
+        await run('twincat.compileProject');
+        await settle();
+        assert(!/Update Library Definitions/.test((calls.errors[0] || { m: '' }).m), 'LIBRARY: the hint is given once per session');
+        fs.rmSync(plcproj);
+    }
 
     // ── The product name of the compiler stays out of the UI strings ────────────────────────────
     const uiText = JSON.stringify([calls.errors, calls.infos, calls.warnings, calls.progress]);

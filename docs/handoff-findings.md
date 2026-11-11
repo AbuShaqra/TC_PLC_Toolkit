@@ -6,20 +6,21 @@ accurate rather than short — prune a finding only when the code it describes i
 [DEVELOPMENT.md](../DEVELOPMENT.md), process lessons in `.claude/memory/`; don't duplicate either here.
 
 ## Deferred work (moved from HANDOFF.md 2026-11-09; listed in the ROADMAP.md backlog)
-- **Indexing cost — next cuts, deliberately not done:** memoize `collectSignatureFiles` per root (cheap; ~850
-  ms/scan, mostly 16 directory walks); non-blocking per-project-readiness scan (biggest win, but rewrites the
-  multi-project spine — a wrong readiness gate answers against a partial index); persisted cross-session archive
-  cache (needs FORMAT_VERSION discipline + a ZIP-central-directory fingerprint). **Latent:** `scanController`
-  records completion in a microtask after `await scan(...)` — safe only while the scan is synchronous; an async
-  scan needs in-flight de-duplication. Cold startup (~20 s, 8 projects) is PROJECTED, not measured.
+- **Indexing cost — the three cuts are done (R6, 2026-11-10):** `05b350a` memoizes signature/`.tmc` discovery
+  per scan (readdir calls 9,282 → 3,771 on 8 projects); `103df64` persists decoded archive names across sessions
+  (decoder-id + content key + ZIP-central-directory fingerprint, bounded LRU in global storage); `d4f39c8` makes
+  the scan per-project and non-blocking behind a readiness gate (`workspaceState.js`), and `scanController` now
+  joins a scan in flight and records completion only for the latest one (the old latent microtask hazard is
+  closed). Follow-up (R7): a `*.tmc` or `library-signatures.xml` event now sends `custom/reindex`
+  (`src/indexInputs.js`). Cold startup (~20 s, 8 projects) is still PROJECTED, not measured on Windows.
 - **L1 reverse index** deferred by decision — reference search is 29 ms cold / ~4 ms warm; reopen past ~1000 files
   or >200 ms.
-- **Rename v1 limits:** `.plcproj` sync is outside the rename transaction; sibling implementors of a shared
-  interface are not renamed (XAE flags them).
-- **Tooling:** ESLint 10 bump (9.x deprecated; raises the Node floor, needs re-triage); dev-only `brace-expansion`
-  advisory (the fix drags 19 unrelated lockfile packages).
-- **Small known gaps:** nested block comments `(* (* *) *)` unsupported (a CODESYS option, default off); no pragma
-  hover; the lexer's Pragma token is unclassified (nothing consumes it).
+- **Rename v1 limits — lifted by R7 (2026-11-11):** see "Objects-tree rename" below for what changed and the
+  undo limits that remain.
+- **Tooling:** `npm audit` reports a MODERATE dev-only advisory, minimatch 7.0.0-11.0.0 (GHSA-g3hv-75wg-m249), through
+  ESLint 10's own `minimatch@^10.2.6`; the fix is minimatch 11, outside ESLint's range, so it waits for ESLint.
+  `npm audit --omit=dev` is clean.
+- **Small known gaps:** the lexer's Pragma token is unclassified (`features/hover.js` classifies it on demand).
 
 ## Process, tooling and environment traps
 - **Install trap:** VS Code keeps the old version dir until a FULL restart (reload-window is not always enough) —
@@ -31,6 +32,12 @@ accurate rather than short — prune a finding only when the code it describes i
   NORMAL clone still smudges — do NOT renormalize blobs without revisiting the blob-stays-LF rationale (below,
   "platform-correct"). Container clones are also SHALLOW (one held 147 of 209 commits and a push to a fresh repo
   failed on a missing object) — `.claude/memory/shallow-clone-is-not-the-repo.md`.
+- **The devhost harness runs headless in a container** (2026-11-11): download VS Code
+  (`update.code.visualstudio.com/latest/linux-x64/stable` is reachable), then `TCDEV_CODE=<dir>/VSCode-linux-x64/code
+  TCDEV_CODE_ARGS="--no-sandbox --disable-gpu" xvfb-run -a node test/devhost/run.js`. Use the `code` binary, not
+  `bin/code` (the shim returns at once and xvfb tears the window down), and keep `--user-data-dir` short (the IPC
+  socket path must stay under 107 chars — run.js's `os.tmpdir()` dir is fine, a scratchpad path is not). One P8 check
+  (flushed file vs `foldEdits`) fails on Linux on a `\r\n`/`\n` difference, identically on the pre-R7 commit.
 - **Release workflow** (`.github/workflows/release.yml`, manual-only, procedure in DEVELOPMENT.md "Publish a
   GitHub release"): tags `v<package.json version>`, refuses an existing tag/release, gates
   typecheck+test+package, attaches the VSIX. vsce's "577 files / bundle your extension" warning is expected and
@@ -67,8 +74,8 @@ accurate rather than short — prune a finding only when the code it describes i
   behaviour-IDENTICAL against the pre-split monolith (1186 caret probes + 18 scenarios, order-sensitive).
 - **ESLint** (`eslint.config.js`): defect-focused; every relaxation argued in the config (`caughtErrors/args:
   'none'`, `no-useless-escape` off). One load-bearing inline disable: `xaeShell.js`'s `vscode` require feeds a
-  JSDoc namespace — deleting it fails typecheck. Lint runs in the CI `build` job only (ESLint 9 needs Node ≥18.18;
-  runtime-compat runs Node 16).
+  JSDoc namespace — deleting it fails typecheck. Lint runs in the CI `build` job only (ESLint 10 needs Node ^20.19 || ^22.13 ||
+  ≥24; runtime-compat runs Node 16 and 20).
 - **Structured LSP logging** (`src/lsp/log.js`): quiet by default (`warn` threshold, `TWINCAT_LSP_LOG`), stderr
   one-liners, never throws. `requestPipeline`'s injected `onError` covers the routed `custom/*` handlers and never
   logs `params.code`. Exactly ONE `warn` site (`plcproj-unreadable` — it zeroes a project's index); ~20 routine
@@ -188,14 +195,15 @@ Plans: `docs/superpowers/plans/2026-08-22-deepening-roadmap.md` and one doc per 
   `record.namespace` and `indexBrowserCache` pushes onto the stored object. **Structural since P2:**
   `signatureRecordsFor` copies on every call, the template is unreachable; `test_signature_cache.js` asserts
   isolation by IDENTITY and by mutation because a value check still passes while sharing.
-  **Latent:** `scanController` records completion in a microtask after `await scan(...)` — safe only while the scan
-  is synchronous. Making it async needs in-flight de-duplication or two `ensureScanned` calls both scan.
-  **Deliberately NOT done:** non-blocking/chunked scan with per-project readiness (biggest remaining win, and the
-  only route to granular `3/8` progress — but it rewrites the multi-project spine, and a wrong readiness gate
-  answers against a partial index = false diagnostics); persisted cross-session archive cache (cold → ~5-7 s; a bad
-  entry goes sticky across restarts, needs FORMAT_VERSION discipline, ship the ZIP-central-directory fingerprint
-  with it). Next cheap cut: memoize `collectSignatureFiles` per root — signatures are still ~850 ms/scan, now mostly
-  16 directory walks rather than parsing.
+  **R6 delivered the remaining cuts (2026-11-10):** `collectSignatureFiles`/`.tmc` discovery memoized per scan
+  (`createDirectoryListingMemo`, `05b350a`; invalidation is the scan boundary only); decoded archive names
+  persisted across sessions (`103df64`, `archiveStore.js`; an entry is used only when decoder id, content key and
+  the ZIP central-directory fingerprint all match, so a bad entry cannot go sticky); the non-blocking per-project
+  scan with a readiness gate (`d4f39c8`, `workspaceState.js` + `whenIndexed` in server.js; requests never see a
+  partial index). The old latent hazard is closed: `scanController` joins an in-flight `ensureScanned` and records
+  completion only for the latest scan. Because the memo makes the scan boundary the only invalidation, the host
+  watcher now reindexes on `*.tmc` / `library-signatures.xml` events (`src/indexInputs.js`, debounced, own
+  writes from Update Library Definitions suppressed).
   **Libraries view now SCOPES to the active file's project (2026-08-27, lifts the old union-only deferral):**
   `revealUri` (both text-editor and webview activation paths) feeds `libraryProvider.setActiveFile`; the view
   refetches only when the OWNING PROJECT changes and shows the scope in its TreeView description (project label /
@@ -309,8 +317,22 @@ Plans: `docs/superpowers/plans/2026-08-22-deepening-roadmap.md` and one doc per 
   methods exist** (stConverter:54-57), shifting the root header column → guard-skip, completed by
   `renameRootObjectInXml`, which the engine deliberately never applies (caller contract). `propagateDeclRenames`
   structurally renames related interface/override decl headers (splice alone would desync tag Name + LineIds =
-  corruption); **sibling implementors of a shared interface are NOT in the reference set** (pairwise relation) —
-  v1 limit, XAE flags them. `.st` rename = disk-only (never a `.plcproj` member anywhere in the codebase).
+  corruption). **R7 (2026-11-11):** a Method/Property target carries `memberRenameFamily` (features/references.js)
+  — every POU sharing the member's slot: interfaces/bases that DECLARE it in the ancestry, closed over everything
+  deriving from them (siblings, a second interface a sibling implements, an interface's second `EXTENDS` parent —
+  `inheritanceFamily` read only `extends`, never `extendsAll`, until then). An ancestor that does not declare the
+  member is a path, not an anchor, so name-alikes stay out. It only ADDS to `pousRelated` (Find References keeps the
+  pairwise relation). A sibling that already has a member by the new name stops the rename at stage time.
+  `.plcproj` is rewritten IN PLACE (`src/plcProjText.js`): the old unregister+register moved the entry to the end
+  and dropped children such as `<LinkAlways>true</LinkAlways>` (present on the sample's GVLs). A file not in the
+  `.plcproj` stays out of it (the old code added it). **Undo, measured in a real VS Code 1.145 (devhost here,
+  2026-11-11):** one `applyEdit` holding text edits + `renameFile` is ONE undo group; `undo` from a TEXT editor of
+  any participating file restores every buffer and moves the file back (buffers dirty until saved); three separate
+  edits undid only the last one; `undo` with no text editor focused (tree view, explorer focus via command) does
+  nothing. The webview's Monaco owns Ctrl+Z, so `twincat.undoLastRename` opens the `.plcproj` (or a participant)
+  as text, runs `undo`, verifies every file is back, and saves. Limits: only the LAST rename of the session; refused
+  once a participating file changed; a renamed file other projects also `<Compile>` is updated only in the nearest
+  `.plcproj` (as before). `.st` rename = disk-only (never a `.plcproj` member anywhere in the codebase).
   References modal excludes the self-declaration via the response's separate `declaration` field.
   **Non-code objects** (user's smoke test caught the gap — XAE build broke): rename scans them via
   `custom/configReferencesForSymbol` (`features/configReferences.js`). Two matcher families, dispatched by ext:
@@ -323,7 +345,7 @@ Plans: `docs/superpowers/plans/2026-08-22-deepening-roadmap.md` and one doc per 
   — decoys share the exact shape (text keys `Palletizer.Turn1` sit beside real paths in the same GTLO; visu-lib
   names `VisuDialogs.*`) and an unproven edit corrupts the HMI. All these formats carry a **UTF-8 BOM** the LSP must
   strip (VS Code documents exclude it → offsets shift by one). Surveyed and deliberately NOT scanned: `.TcIPO`
-  (only `.svg` names), `.plcproj` (already synced by the file-rename step), `.tmc` (generated build artifact).
+  (only `.svg` names), `.plcproj` (rewritten by the rename itself, `plcProjText.js`), `.tmc` (generated build artifact).
   Counts above were measured on the old customer sample; on the synthetic one `MAIN` = 1 (the PlcTask PouCall).
 - **Insert at Cursor / Insert Definition at Cursor in the OBJECTS tree** (0.7.0, `objectInsertCommands.js`).
   Reported as "the functionality disappeared" — it had not: checked **52 revisions of package.json** across both

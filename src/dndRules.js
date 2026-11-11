@@ -1,6 +1,6 @@
 /**
  * @file dndRules.js
- * @description The drag & drop AND copy/paste compatibility matrices for the "TwinCAT Objects"
+ * @description The drag & drop AND copy/paste compatibility matrices for the "PLC Objects"
  * explorer, as pure data-in/data-out functions — no vscode, no fs — so both matrices are
  * unit-testable (test/test_dnd_rules.js). treeDragAndDrop.js / clipboardCommands.js own the side
  * effects (XML edits, filesystem moves/writes, .plcproj sync); everything that decides WHETHER a
@@ -238,7 +238,7 @@ function planPaste(copied, target) {
 
     if (copied.kind === 'component') {
         /** @type {UriLike|null} */
-        let targetUri = null;
+        let targetUri;
         let newFolderPath = '';
         if (target.kind === 'virtualFolder') {
             targetUri = target.uri;

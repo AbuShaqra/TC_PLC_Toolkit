@@ -82,6 +82,7 @@ body {
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     flex-shrink: 0;
+    white-space: nowrap;
 }
 
 .pill {
@@ -347,13 +348,20 @@ input:checked + .slider:before {
     border-radius: 50%;
 }
 
-/* Responsive Header wrapping for narrow layouts */
-@media (max-width: 680px) {
+/* Responsive Header wrapping for narrow layouts. The breakpoint is where the one-row header stops
+   fitting (measured with the Compile button: the status pill was pushed off the right edge at 700 and
+   820px); test/browser/run.js checks the toolbar at 360-1200px for sideways overflow. */
+@media (max-width: 900px) {
     .app-header {
         flex-direction: column;
         align-items: flex-start;
         gap: 10px;
         padding: 10px 16px;
+    }
+    /* In the column the left group would otherwise size to its content and run past the edge
+       (the object name then never gets its ellipsis). */
+    .header-left {
+        max-width: 100%;
     }
     .header-right {
         width: 100%;
@@ -426,6 +434,40 @@ input:checked + .slider:before {
     line-height: 1;
 }
 .split-caret[hidden] { display: none; }
+
+/* Compile button: a codicon-style glyph (inline SVG, currentColor) plus its label. */
+.icon-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+}
+.btn-icon { flex: none; display: block; }
+/* Disabled while a Compile Project run is in progress: no lift, no glow. */
+.action-btn:disabled,
+.action-btn:disabled:hover {
+    opacity: 0.55;
+    cursor: default;
+    transform: none;
+    filter: none;
+    box-shadow: none;
+}
+#generate-st-btn {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* A tight header keeps both buttons: Generate ST gets compact, Compile drops to its glyph (its name
+   stays in the tooltip and aria-label). Below 900px the header wraps anyway (see above). */
+@media (max-width: 1100px) {
+    .header-right .action-btn {
+        padding: 6px 10px;
+        letter-spacing: 0;
+    }
+    .split-btn .split-caret { padding: 6px 8px; }
+    #compile-btn .btn-label { display: none; }
+}
 
 .split-menu {
     position: absolute;

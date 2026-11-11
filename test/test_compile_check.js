@@ -3,8 +3,10 @@
  * @description The vscode-free half of Compile Project (`src/compileCheck.js`), with a fake child
  * process — no compiler and no Node probe is run for real (that is test/test_compile_real.js).
  *
- * Pinned: the setup messages (compiler missing, Node missing, Node too old — each naming the setting
- * that fixes it), the command line, reading the JSON report (clean, errors, malformed, exit code 2,
+ * Pinned: the bundled compiler as the default and the setting as its override, Node discovery (its
+ * order, the version gate, the Windows install locations, the editor's own runtime as the last
+ * resort), the setup messages (compiler missing, Node missing, Node too old — each naming the
+ * setting that fixes it), the command line, reading the JSON report (clean, errors, malformed, exit code 2,
  * a crash), mapping diagnostics to file/component/pane/line, the pragma-warning filter and its
  * count, the temporary directory's lifetime, timeout and cancellation, and the XML range of a pane
  * position.
@@ -57,60 +59,135 @@ const FILES = [
     // ── Setup check ─────────────────────────────────────────────────────────────────────────────
     const existsOnly = (...paths) => (p) => paths.includes(p);
     const nodeSays = (text, code = 0) => createFakeSpawn(() => ({ stdout: text, code }));
+    // Linux, no editor runtime: `node` on PATH is the only automatic candidate.
+    const plain = { platform: 'linux', env: {}, runtime: null };
+    const BUNDLED = cc.bundledCompilerPath();
+
+    // The compiler: bundled by default, the setting overrides it.
+    assert(BUNDLED === path.join(__dirname, '..', 'resources', 'compiler', 'compiler.cjs') && fs.existsSync(BUNDLED),
+        'BUNDLED: the default compiler is resources/compiler/compiler.cjs, and it is in the repo');
+    assert(cc.resolveCompilerPath('', '/ext').path === path.join('/ext', 'resources', 'compiler', 'compiler.cjs') && cc.resolveCompilerPath('  ', '/ext').bundled === true &&
+        cc.resolveCompilerPath(undefined).path === BUNDLED, 'BUNDLED: an empty setting resolves to the bundled compiler under the extension root');
+    assert(cc.resolveCompilerPath(' /c/mine.cjs ', '/ext').path === '/c/mine.cjs' && cc.resolveCompilerPath('/c/mine.cjs').bundled === false,
+        'OVERRIDE: a set compiler path wins over the bundled one');
 
     let fake = nodeSays('v22.3.0\n');
-    let setup = await cc.checkSetup({ compilerPath: '/c/bundle.cjs', nodePath: '' }, { spawn: fake.spawn, exists: existsOnly('/c/bundle.cjs') });
-    assert(setup.ok && setup.nodeCommand === 'node' && setup.nodeVersion === '22.3.0' && setup.compilerPath === '/c/bundle.cjs',
-        'SETUP: a compiler file and Node 22 on PATH are enough');
-    assert(fake.calls.length === 1 && fake.calls[0].command === 'node' && fake.calls[0].args.join(' ') === '--version' && fake.calls[0].options.shell === false,
-        'SETUP: the Node version is checked with `node --version`, without a shell');
+    let setup = await cc.checkSetup({ compilerPath: '', nodePath: '' }, { ...plain, spawn: fake.spawn });
+    assert(setup.ok && setup.compilerPath === BUNDLED && setup.compilerBundled && setup.nodeCommand === 'node' && setup.nodeVersion === '22.3.0' && setup.nodeEnv === undefined,
+        'SETUP: with nothing configured, the bundled compiler and Node 22 on PATH are enough');
+    assert(fake.calls.length === 1 && fake.calls[0].command === 'node' && fake.calls[0].args.join(' ') === '--version' && fake.calls[0].options.shell === false &&
+        fake.calls[0].options.env === undefined, 'SETUP: the Node version is checked with `node --version`, without a shell, in the inherited environment');
 
-    fake = nodeSays('v22.3.0');
-    setup = await cc.checkSetup({ compilerPath: '', nodePath: '' }, { spawn: fake.spawn, exists: () => false });
+    setup = await cc.checkSetup({ compilerPath: '/c/bundle.cjs', nodePath: '' }, { ...plain, spawn: nodeSays('v22.3.0').spawn, exists: existsOnly('/c/bundle.cjs') });
+    assert(setup.ok && setup.compilerPath === '/c/bundle.cjs' && !setup.compilerBundled, 'SETUP: an override compiler file that exists is used');
+
+    setup = await cc.checkSetup({}, { ...plain, spawn: nodeSays('v22.3.0').spawn, exists: () => false, extensionRoot: '/ext' });
     assert(!setup.ok && setup.problems.length === 1 && setup.problems[0].setting === 'twincat.compiler.path' &&
-        /No compiler is installed/.test(setup.problems[0].message) && /twincat\.compiler\.path/.test(setup.problems[0].message),
-        'SETUP: an empty compiler path says no compiler is installed and names the setting');
+        /ships with the extension is missing/.test(setup.problems[0].message) && /Reinstall the extension/.test(setup.problems[0].message),
+        'SETUP: a missing bundled compiler says so and how to fix it');
 
-    setup = await cc.checkSetup({ compilerPath: '/gone/bundle.cjs' }, { spawn: nodeSays('v23.0.0').spawn, exists: () => false });
-    assert(!setup.ok && /"\/gone\/bundle\.cjs"/.test(setup.problems[0].message) && /does not exist/.test(setup.problems[0].message),
-        'SETUP: a compiler path that is not a file is named');
+    setup = await cc.checkSetup({ compilerPath: '/gone/bundle.cjs' }, { ...plain, spawn: nodeSays('v23.0.0').spawn, exists: () => false });
+    assert(!setup.ok && /"\/gone\/bundle\.cjs"/.test(setup.problems[0].message) && /does not exist/.test(setup.problems[0].message) &&
+        /clear the setting/.test(setup.problems[0].message), 'SETUP: an override compiler path that is not a file is named, with the way back to the bundled one');
 
-    setup = await cc.checkSetup({ compilerPath: '/c/bundle.cjs', nodePath: '' }, { spawn: nodeSays('v18.20.4').spawn, exists: existsOnly('/c/bundle.cjs') });
+    setup = await cc.checkSetup({ compilerPath: '/c/bundle.cjs', nodePath: '' }, { ...plain, spawn: nodeSays('v18.20.4').spawn, exists: existsOnly('/c/bundle.cjs') });
     assert(!setup.ok && setup.problems.length === 1 && setup.problems[0].setting === 'twincat.compiler.nodePath' &&
         /Node\.js 18\.20\.4 was found/.test(setup.problems[0].message) && /needs Node\.js 22 or newer/.test(setup.problems[0].message) &&
         /"node" on PATH/.test(setup.problems[0].message),
         'SETUP: a Node that is too old is reported with its version, where it was found and what is needed');
 
     fake = createFakeSpawn(() => ({ error: 'spawn node ENOENT' }));
-    setup = await cc.checkSetup({ compilerPath: '/c/bundle.cjs' }, { spawn: fake.spawn, exists: existsOnly('/c/bundle.cjs') });
+    setup = await cc.checkSetup({ compilerPath: '/c/bundle.cjs' }, { ...plain, spawn: fake.spawn, exists: existsOnly('/c/bundle.cjs') });
     assert(!setup.ok && /could not be started/.test(setup.problems[0].message) && /ENOENT/.test(setup.problems[0].message) &&
         /Install Node\.js 22 or newer, or set "twincat\.compiler\.nodePath"/.test(setup.problems[0].message),
         'SETUP: no Node on PATH says so and says how to fix it');
 
     fake = nodeSays('v22.0.0');
-    setup = await cc.checkSetup({ compilerPath: '/c/bundle.cjs', nodePath: '/opt/node' }, { spawn: fake.spawn, exists: existsOnly('/c/bundle.cjs') });
+    setup = await cc.checkSetup({ compilerPath: '/c/bundle.cjs', nodePath: '/opt/node' }, { ...plain, spawn: fake.spawn, exists: existsOnly('/c/bundle.cjs') });
     assert(!setup.ok && fake.calls.length === 0 && /"\/opt\/node" \(setting "twincat\.compiler\.nodePath"\) does not exist/.test(setup.problems[0].message),
         'SETUP: a configured Node path that does not exist is reported without trying to run it');
 
     fake = nodeSays('v22.0.0');
-    setup = await cc.checkSetup({ compilerPath: '/c/bundle.cjs', nodePath: ' /opt/node ' }, { spawn: fake.spawn, exists: existsOnly('/c/bundle.cjs', '/opt/node') });
+    setup = await cc.checkSetup({ compilerPath: '/c/bundle.cjs', nodePath: ' /opt/node ' }, { ...plain, spawn: fake.spawn, exists: existsOnly('/c/bundle.cjs', '/opt/node') });
     assert(setup.ok && setup.nodeCommand === '/opt/node' && fake.calls[0].command === '/opt/node', 'SETUP: a configured Node path is the one that runs');
 
-    setup = await cc.checkSetup({ compilerPath: '/c/bundle.cjs' }, { spawn: nodeSays('Python 3.12').spawn, exists: existsOnly('/c/bundle.cjs') });
+    setup = await cc.checkSetup({ compilerPath: '/c/bundle.cjs' }, { ...plain, spawn: nodeSays('Python 3.12').spawn, exists: existsOnly('/c/bundle.cjs') });
     assert(!setup.ok && /is not a Node\.js executable/.test(setup.problems[0].message), 'SETUP: something that reports no Node version is refused');
 
     fake = createFakeSpawn(() => ({ hang: true }));
-    setup = await cc.checkSetup({ compilerPath: '/c/bundle.cjs' }, { spawn: fake.spawn, exists: existsOnly('/c/bundle.cjs'), timeoutMs: 30 });
+    setup = await cc.checkSetup({ compilerPath: '/c/bundle.cjs' }, { ...plain, spawn: fake.spawn, exists: existsOnly('/c/bundle.cjs'), timeoutMs: 30 });
     assert(!setup.ok && /did not answer/.test(setup.problems[0].message) && fake.calls[0].killed, 'SETUP: a Node probe that hangs is stopped and reported');
 
-    setup = await cc.checkSetup({}, { spawn: nodeSays('v16.0.0').spawn, exists: () => false });
+    setup = await cc.checkSetup({ compilerPath: '/gone.cjs' }, { ...plain, spawn: nodeSays('v16.0.0').spawn, exists: () => false });
     assert(setup.problems.length === 2 && setup.problems.map(p => p.setting).join() === 'twincat.compiler.path,twincat.compiler.nodePath',
         'SETUP: every problem is reported at once');
 
-    assert(cc.isCompilerConfigured('/c/b.cjs', () => true) && !cc.isCompilerConfigured('/c/b.cjs', () => false) &&
-        !cc.isCompilerConfigured('', () => true) && !cc.isCompilerConfigured(undefined, () => true) &&
-        !cc.isCompilerConfigured('/c/b.cjs', () => { throw new Error('x'); }),
-        'TILE: a compiler counts as configured only when the path is set and the file exists');
+    // ── Node discovery: order, version gate, Windows locations, the editor's runtime ─────────────
+    const winEnv = {
+        ProgramFiles: 'C:\\Program Files', ProgramW6432: 'C:\\Program Files', 'ProgramFiles(x86)': 'C:\\Program Files (x86)',
+        NVM_SYMLINK: 'C:\\nvm4w\\nodejs', LOCALAPPDATA: 'C:\\Users\\u\\AppData\\Local', APPDATA: 'C:\\Users\\u\\AppData\\Roaming'
+    };
+    const winRuntime = { execPath: 'C:\\Code\\Code.exe', nodeVersion: '22.15.1' };
+    const order = cc.nodeCandidates('', { platform: 'win32', env: winEnv, runtime: winRuntime }).map(c => c.command);
+    assert(JSON.stringify(order) === JSON.stringify([
+        'node',
+        'C:\\Program Files\\nodejs\\node.exe',
+        'C:\\Program Files (x86)\\nodejs\\node.exe',
+        'C:\\nvm4w\\nodejs\\node.exe',
+        'C:\\Users\\u\\AppData\\Local\\Volta\\bin\\node.exe',
+        'C:\\Program Files\\Volta\\node.exe',
+        'C:\\Users\\u\\AppData\\Roaming\\fnm\\aliases\\default\\node.exe',
+        'C:\\Code\\Code.exe'
+    ]), `DISCOVER: Windows order is PATH, installer, nvm-windows, Volta, fnm, then the editor's runtime, each once (${order.join(' | ')})`);
+    const runtimeCandidate = cc.nodeCandidates('', { platform: 'win32', env: winEnv, runtime: winRuntime }).pop();
+    assert(runtimeCandidate.env && runtimeCandidate.env.ELECTRON_RUN_AS_NODE === '1', 'DISCOVER: the editor\'s runtime is run as Node (ELECTRON_RUN_AS_NODE=1)');
+    assert(cc.nodeCandidates('', { platform: 'win32', env: { VOLTA_HOME: 'D:\\volta', FNM_DIR: 'D:\\fnm' }, runtime: null }).map(c => c.command).join() ===
+        'node,D:\\volta\\bin\\node.exe,D:\\fnm\\aliases\\default\\node.exe', 'DISCOVER: VOLTA_HOME and FNM_DIR are honoured');
+    assert(cc.nodeCandidates('', { platform: 'win32', env: winEnv, runtime: { execPath: 'C:\\Code\\Code.exe', nodeVersion: '20.18.0' } })
+        .every(c => c.command !== 'C:\\Code\\Code.exe'), 'DISCOVER: an editor runtime older than Node 22 is not a candidate');
+    assert(cc.nodeCandidates('', { platform: 'linux', env: winEnv, runtime: null }).map(c => c.command).join() === 'node',
+        'DISCOVER: off Windows, only PATH (and the editor runtime) are tried');
+    assert(cc.nodeCandidates('C:\\n\\node.exe', { platform: 'win32', env: winEnv, runtime: winRuntime }).map(c => c.command).join() === 'C:\\n\\node.exe',
+        'DISCOVER: a configured Node path is the only candidate — it is never silently replaced');
+
+    // A probe script: what each executable answers.
+    const answers = (map) => createFakeSpawn((call) => {
+        const a = map[call.command];
+        return a === undefined ? { error: `spawn ${call.command} ENOENT` } : (typeof a === 'string' ? { stdout: a } : a);
+    });
+    const winDeps = (spawn, ...present) => ({ platform: 'win32', env: winEnv, runtime: winRuntime, spawn, exists: existsOnly(BUNDLED, ...present) });
+
+    fake = answers({ 'C:\\Program Files\\nodejs\\node.exe': 'v22.11.0', 'C:\\Code\\Code.exe': 'v22.15.1' });
+    setup = await cc.checkSetup({}, winDeps(fake.spawn, 'C:\\Program Files\\nodejs\\node.exe'));
+    assert(setup.ok && setup.nodeCommand === 'C:\\Program Files\\nodejs\\node.exe' && setup.nodeEnv === undefined &&
+        fake.calls.map(c => c.command).join() === 'node,C:\\Program Files\\nodejs\\node.exe',
+        'DISCOVER: no node on PATH → the installer\'s node.exe is probed next and used; nothing later is tried');
+
+    fake = answers({ node: 'v18.20.4', 'C:\\nvm4w\\nodejs\\node.exe': 'v20.1.0', 'C:\\Users\\u\\AppData\\Roaming\\fnm\\aliases\\default\\node.exe': 'v24.1.0' });
+    setup = await cc.checkSetup({}, winDeps(fake.spawn, 'C:\\nvm4w\\nodejs\\node.exe', 'C:\\Users\\u\\AppData\\Roaming\\fnm\\aliases\\default\\node.exe'));
+    assert(setup.ok && setup.nodeCommand === 'C:\\Users\\u\\AppData\\Roaming\\fnm\\aliases\\default\\node.exe' && setup.nodeVersion === '24.1.0' &&
+        fake.calls.length === 3, 'DISCOVER: candidates older than Node 22 are passed over (the version gate), absent ones are not run');
+
+    fake = answers({ node: 'v18.20.4', 'C:\\Code\\Code.exe': 'v22.15.1' });
+    setup = await cc.checkSetup({}, winDeps(fake.spawn));
+    const last = fake.calls[fake.calls.length - 1];
+    assert(setup.ok && setup.nodeCommand === 'C:\\Code\\Code.exe' && setup.nodeEnv && setup.nodeEnv.ELECTRON_RUN_AS_NODE === '1' &&
+        last.command === 'C:\\Code\\Code.exe' && last.options.env && last.options.env.ELECTRON_RUN_AS_NODE === '1',
+        'DISCOVER: with no usable Node installed, the editor\'s own Node 22 runtime is the last resort, probed and run with ELECTRON_RUN_AS_NODE=1');
+
+    fake = answers({ node: 'v18.20.4' });
+    setup = await cc.checkSetup({}, { ...winDeps(fake.spawn), runtime: null });
+    assert(!setup.ok && setup.problems.length === 1 && /^No Node\.js 22 or newer was found to run the compiler\./.test(setup.problems[0].message) &&
+        /Node\.js 18\.20\.4 was found at "node" on PATH/.test(setup.problems[0].message) &&
+        /usual install locations \(Node\.js installer, nvm-windows, Volta, fnm\) hold no Node\.js/.test(setup.problems[0].message) &&
+        /Install Node\.js 22 or newer, or set "twincat\.compiler\.nodePath"/.test(setup.problems[0].message),
+        `DISCOVER: when none is found, the message says what was tried, what is missing and how to fix it (${setup.problems[0] && setup.problems[0].message})`);
+
+    // The tile's cheap check.
+    assert(cc.isCompilerAvailable('') && cc.isCompilerAvailable(undefined), 'TILE: with the setting empty the bundled compiler is available');
+    assert(cc.isCompilerAvailable('/c/b.cjs', { exists: () => true }) && !cc.isCompilerAvailable('/c/b.cjs', { exists: () => false }) &&
+        !cc.isCompilerAvailable('/c/b.cjs', { exists: () => { throw new Error('x'); } }) && !cc.isCompilerAvailable('', { exists: () => false }),
+        'TILE: the compiler is unavailable only when its file (override or bundled) does not exist');
 
     // ── Inputs and the command line ─────────────────────────────────────────────────────────────
     const built = cc.buildCheckInputs(FILES, parseTwinCatXml);

@@ -1,6 +1,6 @@
 /**
  * @file extension.js
- * @description Main entry point and orchestration controller for the TwinCAT PLC Toolkit VS Code extension.
+ * @description Main entry point and orchestration controller for the TC Toolkit VS Code extension.
  */
 
 const vscode = require('vscode');
@@ -25,6 +25,7 @@ const { TwinCatLibraryTreeDataProvider } = require('./src/libraryTreeProvider');
 // cleanly as well so both editors fold ST identically from one copy of the algorithm.
 const stFolding = require('./media/stFolding');
 const { createDebouncer } = require('./src/util/debounce');
+const { isIndexInputFile, createOwnWriteGate } = require('./src/indexInputs');
 const { TWINCAT_EDITOR_EXTS, TWINCAT_WATCH_EXTS, isWatchEventRelevant, isGeneratedOutputEvent } = require('./src/twincatWorkspace');
 const { LanguageClient, TransportKind, State } = require('vscode-languageclient/node');
 
@@ -39,6 +40,15 @@ let client;
  * @type {number}
  */
 const PLCPROJ_REINDEX_DEBOUNCE_MS = 400;
+
+/**
+ * Quiet period for `.tmc` / `library-signatures.xml` watcher events, in milliseconds, before they are
+ * handed to the `.plcproj` re-index debouncer. Longer than the `.plcproj` window: one TwinCAT build
+ * rewrites the `.tmc` of every project it builds, often seconds apart, and all of them must land in
+ * ONE full scan.
+ * @type {number}
+ */
+const INDEX_INPUT_REINDEX_DEBOUNCE_MS = 1500;
 
 /** Quiet period after the last watcher event under an `ST_Files` folder before the Objects tree refreshes. */
 const ST_FILES_REFRESH_DEBOUNCE_MS = 500;
@@ -57,7 +67,7 @@ function activate(context) {
         referencesProvider.setReferences(targetWord, items);
         vscode.commands.executeCommand('setContext', 'twincat.hasReferences', items && items.length > 0);
         if (items && items.length > 0 && referencesProvider.roots.length > 0) {
-            referencesView.title = `TwinCAT References (${referencesProvider.total})`;
+            referencesView.title = `PLC References (${referencesProvider.total})`;
             // Reveal, but never focus. This runs *while Monaco is opening its peek widget* inside the
             // webview — the webview posts `showExternalReferences` from within provideReferences — so
             // focusing the panel here pulled focus out of the webview and the peek was destroyed before
@@ -87,7 +97,7 @@ function activate(context) {
                     }
                     await referencesView.reveal(roots[0], { focus: false, expand: 2 });
                 } catch (err) {
-                    console.error('TwinCAT: could not reveal the References view', err);
+                    console.error('TC Toolkit: could not reveal the References view', err);
                 }
             })();
         }
@@ -216,11 +226,17 @@ function activate(context) {
         documentSelector: [{ scheme: 'file', language: 'twincat-st' }],
         synchronize: {
             fileEvents: vscode.workspace.createFileSystemWatcher('**/*.st')
+        },
+        // Where the server persists decoded library-archive names between sessions (R6): this
+        // extension's own global storage, on this machine only — never the workspace, the repo or the
+        // VSIX. The server creates the directory on its first write.
+        initializationOptions: {
+            archiveCacheDir: context.globalStorageUri ? context.globalStorageUri.fsPath : ''
         }
     };
     client = new LanguageClient(
         'twincatStLsp',
-        'TwinCAT Structured Text LSP',
+        'TC Toolkit Language Server',
         serverOptions,
         clientOptions
     );
@@ -229,15 +245,14 @@ function activate(context) {
     /**
      * Runs an indexing round-trip under the status-bar progress indicator.
      *
-     * The extension host is a SEPARATE process from the LSP, so its event loop is free even while
-     * the server is blocked inside a synchronous scan — which is exactly why a host-side indicator
-     * works at all, and why it is the only honest signal available today. `ProgressLocation.Window`
-     * is the status-bar spot language servers conventionally use; `Notification` would put a popup on
-     * screen every time a window opens.
+     * The indicator covers the WHOLE scan (the barrier resolves when every project is indexed). The
+     * server indexes one project at a time in the background (R6) and answers a request as soon as
+     * that request's own project is ready, so language features in an open file usually work before
+     * the indicator goes away. `ProgressLocation.Window` is the status-bar spot language servers
+     * conventionally use; `Notification` would put a popup on screen every time a window opens.
      *
-     * The progress is deliberately INDETERMINATE — no "3 of 8". Per-project counts would need the
-     * scan to yield to the event loop between projects, which it does not do; a fabricated percentage
-     * would be a worse lie than a spinner.
+     * The progress is still INDETERMINATE — no "3 of 8": the server reports no per-project progress
+     * to the host yet, and a fabricated percentage would be a worse lie than a spinner.
      *
      * `Promise.resolve` wraps the Thenable withProgress returns, so callers get a real Promise with
      * `.catch` rather than a bare `.then`.
@@ -261,17 +276,17 @@ function activate(context) {
             if (e.newState === State.Running) {
                 lspStatus.hide();
             } else if (e.newState === State.Starting) {
-                lspStatus.text = '$(sync~spin) TwinCAT: starting…';
-                lspStatus.tooltip = 'The TwinCAT language server is starting.';
+                lspStatus.text = '$(sync~spin) TC Toolkit: starting…';
+                lspStatus.tooltip = 'The TC Toolkit language server is starting.';
                 lspStatus.show();
             } else {
                 // Stopped. Reached by a crash and by the clean shutdown in deactivate() alike; the
                 // item is disposed with the extension, so the shutdown case is never seen for long.
-                lspStatus.text = '$(warning) TwinCAT: language server stopped';
-                lspStatus.tooltip = 'The TwinCAT language server is not running: completion, go to '
+                lspStatus.text = '$(warning) TC Toolkit: language server stopped';
+                lspStatus.tooltip = 'The TC Toolkit language server is not running: completion, go to '
                     + 'definition, references and diagnostics are unavailable. Reload the window to restart it.';
                 lspStatus.show();
-                console.error('TwinCAT: the language server stopped.');
+                console.error('TC Toolkit: the language server stopped.');
             }
         })
     );
@@ -330,7 +345,7 @@ function activate(context) {
     if (client) {
         const folders = vscode.workspace.workspaceFolders || [];
         const folderUris = folders.map(f => f.uri.toString());
-        withIndexingProgress('TwinCAT: indexing…', () =>
+        withIndexingProgress('TC Toolkit: indexing…', () =>
             client.sendRequest('custom/indexReady', { folders: folderUris })
                 .catch(() => client.sendRequest('custom/reindex', { folders: folderUris }))
         ).then(() => {
@@ -366,7 +381,7 @@ function activate(context) {
         }
     }));
 
-    // "TwinCAT Libraries" view: the .plcproj's libraries, listed under the namespace the code must
+    // "PLC Libraries" view: the .plcproj's libraries, listed under the namespace the code must
     // use — they are frequently different names. The catalog lives in the LSP (it falls out of the
     // library index), so the provider is handed a closure over the client rather than the client.
     // The view scopes to the active file's project, and says so in its description — so it is also
@@ -394,9 +409,12 @@ function activate(context) {
         libraryProvider.setActiveFile(vscode.window.activeTextEditor.document.uri);
     }
 
-    // "TwinCAT Libraries" view commands: refresh, regenerate signatures (drives TwinCAT), copy
+    // "PLC Libraries" view commands: refresh, regenerate signatures (drives TwinCAT), copy
     // namespace / qualified name, and insert a symbol at the caret.
-    registerLibraryCommands(context, { libraryProvider, provider, getClient: () => client });
+    // Update Library Definitions writes library-signatures.xml and then re-indexes itself; this gate
+    // keeps the watcher below from answering that write with a second full scan.
+    const ownIndexWrites = createOwnWriteGate();
+    registerLibraryCommands(context, { libraryProvider, provider, getClient: () => client, ownIndexWrites });
 
     // Watch for document saves/changes to refresh the explorer tree and the LSP index
     context.subscriptions.push(
@@ -435,16 +453,32 @@ function activate(context) {
     // would index the `.plcproj` as it stood before the change that triggered it).
     const reindexForLibraries = createDebouncer(() => {
         const folders = vscode.workspace.workspaceFolders || [];
-        return withIndexingProgress('TwinCAT: indexing…', () =>
+        return withIndexingProgress('TC Toolkit: indexing…', () =>
             client.sendRequest('custom/reindex', { folders: folders.map(f => f.uri.toString()) })
         ).then(() => libraryProvider.refresh())
             .catch(e => {
-                console.error('Failed to re-index after a .plcproj change:', e);
+                console.error('Failed to re-index after a .plcproj, .tmc or signatures change:', e);
                 libraryProvider.refresh(); // still re-render: a stale list beats a frozen one
             });
     }, PLCPROJ_REINDEX_DEBOUNCE_MS);
     // A queued re-index firing into a torn-down extension host would reject against a dead client.
     context.subscriptions.push({ dispose: () => reindexForLibraries.cancel() });
+
+    // A TwinCAT build writes each project's `.tmc`, and Update Library Definitions writes
+    // `library-signatures.xml`; the scan reads both, but only at a (re)index. Hand them to the same
+    // re-index as the `.plcproj` (through a longer window, so a build's burst across projects is one
+    // scan), unless the write is our own.
+    const reindexForIndexInputs = createDebouncer(() => { reindexForLibraries.schedule(); }, INDEX_INPUT_REINDEX_DEBOUNCE_MS);
+    context.subscriptions.push({ dispose: () => reindexForIndexInputs.cancel() });
+    const noteIndexInput = (uri) => {
+        if (!client || !isIndexInputFile(uri.fsPath) || ownIndexWrites.suppressed()) return;
+        reindexForIndexInputs.schedule();
+    };
+    context.subscriptions.push(
+        workspaceWatcher.onDidCreate(noteIndexInput),
+        workspaceWatcher.onDidChange(noteIndexInput),
+        workspaceWatcher.onDidDelete(noteIndexInput)
+    );
 
     const refreshProjectStructureFor = (uri) => {
         const ext = path.extname(uri.fsPath).toLowerCase();
@@ -506,7 +540,7 @@ function activate(context) {
     // LSP-bridge routing + the tree-view "open component and select" navigation command.
     registerLspBridgeCommands(context, { provider, getClient: () => client });
 
-    // TwinCAT Objects explorer create/delete commands (methods, properties, actions; new files;
+    // PLC Objects explorer create/delete commands (methods, properties, actions; new files;
     // physical and virtual folders; components).
     registerObjectCommands(context, { treeProvider });
 
@@ -532,8 +566,8 @@ function activate(context) {
 
     // TwinCAT sidebar Start view + start page (create / open a project, project actions, help,
     // settings). The solutions this workspace holds are recorded as recently opened for the page.
-    // Compile Project (an external IEC 61131-3 compiler, run as a child process). Registered before
-    // the start page so the page can ask whether a compiler is configured.
+    // Compile Project (an external IEC 61131-3 compiler that ships with the extension, run as a child
+    // process). Registered before the start page so the page can ask whether the compiler is there.
     /** @type {{startPage: {postState: () => void}}|null} */
     let start = null;
     const compile = registerCompileCommands(context, {
@@ -543,7 +577,7 @@ function activate(context) {
 
     start = registerStartCommands(context, {
         provider, getProjectMap: () => hostProjectMap, getSolutionMap: () => hostSolutionMap,
-        isCompilerConfigured: compile.isConfigured
+        isCompilerAvailable: compile.isAvailable
     });
     /** @type {any} */ (start).recordOpenSolutions();
 

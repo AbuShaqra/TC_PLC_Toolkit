@@ -36,6 +36,9 @@ function assert(cond, msg) {
 // The CLI shim (bin/code.cmd on Windows, `code` elsewhere) forwards args correctly; the Electron
 // binary itself rejects them when invoked directly.
 function findCodeCli() {
+    // TCDEV_CODE names a VS Code to use instead (a CLI shim, or on Linux the `code` binary of an
+    // unpacked build, run under `xvfb-run` with TCDEV_CODE_ARGS="--no-sandbox" when headless as root).
+    if (process.env.TCDEV_CODE) return fs.existsSync(process.env.TCDEV_CODE) ? process.env.TCDEV_CODE : null;
     const candidates = process.platform === 'win32'
         ? [
             path.join(process.env['ProgramFiles'] || 'C:\\Program Files', 'Microsoft VS Code', 'bin', 'code.cmd'),
@@ -49,6 +52,14 @@ function findCodeCli() {
     if (!fs.existsSync(SAMPLE)) {
         console.error('[SKIP] sample/TcToolkitSample is missing — nothing to open.');
         process.exit(2);
+    }
+    // A stale node_modules (a branch switch that changed package-lock.json) makes the extension fail
+    // to activate, and every later assertion then fails with it. Say so once instead.
+    for (const dep of Object.keys(require(path.join(REPO, 'package.json')).dependencies || {})) {
+        try { require.resolve(dep, { paths: [REPO] }); } catch (e) {
+            console.error(`[FAIL] the extension's dependency '${dep}' is not installed. Run "npm ci" in ${REPO}, then run this again.`);
+            process.exit(1);
+        }
     }
     const cli = findCodeCli();
     if (!cli) {
@@ -132,9 +143,9 @@ function findCodeCli() {
     assert(tleoProjChanged !== tleoProjText, 'the dev-host fixture injects the .TcTLEO project include');
     fs.writeFileSync(tleoPlcproj, tleoProjChanged, 'utf8');
 
-    // Compile Project (R3.2) needs an external compiler, which only a developer's machine has. With
-    // TWINCAT_COMPILER_BUNDLE set, the fresh profile is given it (and TWINCAT_COMPILER_NODE, if set);
-    // without it the in-host compile phase reports itself skipped and nothing fails.
+    // Compile Project runs the compiler that ships with the extension (R3.3). TWINCAT_COMPILER_BUNDLE
+    // overrides it (and TWINCAT_COMPILER_NODE names the Node, if set): the fresh profile is given
+    // them as twincat.compiler.*. Without a Node >= 22 the in-host phase reports itself skipped.
     const compilerBundle = process.env.TWINCAT_COMPILER_BUNDLE || '';
     if (compilerBundle) {
         const userDir = path.join(work, 'udd', 'User');
@@ -152,6 +163,7 @@ function findCodeCli() {
         '--extensionDevelopmentPath', REPO,
         '--extensionTestsPath', path.join(__dirname, 'testRunner.js'),
         '--disable-workspace-trust', '--skip-welcome', '--skip-release-notes',
+        ...(process.env.TCDEV_CODE_ARGS || '').split(/\s+/).filter(Boolean),
         ws
     ];
     // One explicitly quoted command line: the CLI is a .cmd on Windows (needs a shell), and
@@ -464,31 +476,34 @@ function findCodeCli() {
         `a subset export writes only the chosen project (aux=${gen && gen.subset && gen.subset.auxWritten}, ` +
         `plc-skipped=${gen && gen.subset && gen.subset.plcSkipped})`);
 
-    // R2: the TwinCAT Activity Bar container and the start page in a real host. Only the user can
+    // R2: the TC Toolkit Activity Bar container and the start page in a real host. Only the user can
     // run this (Windows, VS Code installed); the package.json side is in test_start_contributions.js.
     const sp = step('start-page');
     assert(!!sp && !sp.error, 'the start-page phase ran without throwing' + (sp && sp.error ? ': ' + sp.error : ''));
     assert(!!sp && Array.isArray(sp.missingCommands) && sp.missingCommands.length === 0,
         `every start command is registered in the host (missing: ${sp ? JSON.stringify(sp.missingCommands) : 'no result'})`);
     assert(!!sp && sp.focus && Object.values(sp.focus).every(v => v === true),
-        `the TwinCAT container and its Start / Objects / Libraries views open (${sp ? JSON.stringify(sp.focus) : 'no result'})`);
+        `the TC Toolkit container and its Start / Objects / Libraries views open (${sp ? JSON.stringify(sp.focus) : 'no result'})`);
     assert(!!sp && JSON.stringify(sp.containerViews) === JSON.stringify(['twincatStart', 'twincatExplorer', 'twincatLibraries']),
         `the container holds Start, Objects, Libraries in order (${sp ? JSON.stringify(sp.containerViews) : 'no result'})`);
-    assert(!!sp && (sp.tabs === null || sp.tabs.includes('TwinCAT Start')),
-        `TwinCAT: Open Start Page opens the "TwinCAT Start" tab (tabs: ${sp ? JSON.stringify(sp.tabs) : 'no result'})`);
+    assert(!!sp && (sp.tabs === null || sp.tabs.includes('TC Toolkit Start')),
+        `TC Toolkit: Open Start Page opens the "TC Toolkit Start" tab (tabs: ${sp ? JSON.stringify(sp.tabs) : 'no result'})`);
     assert(!!sp && sp.created && sp.created.ok && sp.createdSlnExists && sp.created4024SlnExists,
-        `TwinCAT: Create New Project writes a 3.1.4026 and a 3.1.4024 solution (${sp ? JSON.stringify(sp.created) : 'no result'})`);
+        `TC Toolkit: Create New Project writes a 3.1.4026 and a 3.1.4024 solution (${sp ? JSON.stringify(sp.created) : 'no result'})`);
     assert(!!sp && sp.refused && sp.refused.ok === false && /already contains/.test(sp.refused.error || ''),
         `creating over an existing solution is refused (${sp ? JSON.stringify(sp.refused) : 'no result'})`);
 
-    // R3.2: Compile Project in a real host, over every PLC project of the fixture. Optional: it runs
-    // only when TWINCAT_COMPILER_BUNDLE named a compiler (the in-host phase then finds
-    // twincat.compiler.path set); otherwise it is reported as skipped and asserts nothing.
+    // R3.2/R3.3: Compile Project in a real host, over every PLC project of the fixture, with the
+    // bundled compiler unless TWINCAT_COMPILER_BUNDLE overrides it. Skipped (asserting nothing) only
+    // when the command finds no Node >= 22 on this machine.
     const comp = step('compile');
     if (comp && comp.skipped) {
         console.log(`[SKIP] compile phase: ${comp.skipped}`);
     } else {
         assert(!!comp && !comp.error, 'the Compile Project phase ran without throwing' + (comp && comp.error ? ': ' + comp.error : ''));
+        if (!compilerBundle) {
+            assert(!!comp && comp.compilerBundled === true, `with no override the host runs the bundled compiler (${comp && comp.compilerPath}; Node ${comp && comp.node})`);
+        }
         const runs = (comp && comp.runs) || [];
         assert(runs.length > 0 && runs.every(r => r.result && r.result.ok === true),
             `Compile Project finishes on every project (${JSON.stringify(runs.map(r => [r.label, r.result && (r.result.ok ? 'ok' : r.result.reason)]))})`);
@@ -502,10 +517,38 @@ function findCodeCli() {
             .map(x => `${r.label}: ${path.basename(x.file)}: ${x.message}`));
         assert(runs.length > 0 && foreign.length === 0,
             `no compile error on the sample's own code (${foreign.length ? JSON.stringify(foreign.slice(0, 5)) : 'none'})`);
+        // The toolbar's Compile button, clicked for real in the station editor: the host resolves the
+        // file's ONE owning project (no pick), the run starts and ends, and the button follows it.
+        const cb = step('compile-button');
+        assert(!!cb && cb.present && cb.clicked, `the editor toolbar has a Compile button and it was clicked (${JSON.stringify(cb)})`);
+        assert(!!cb && Array.isArray(cb.resolvedFor) && cb.resolvedFor.length === 1 && Array.isArray(cb.resolvedFor[0].owners) && cb.resolvedFor[0].owners.length === 1,
+            `the click compiles the project that owns the file (${JSON.stringify(cb && cb.resolvedFor)})`);
+        assert(!!cb && JSON.stringify(cb.seen) === '[true,false]' && cb.disabledAfter === false,
+            `the click runs Compile Project to the end and the button is enabled again (${JSON.stringify(cb && { seen: cb.seen, during: cb.disabledDuring, after: cb.disabledAfter })})`);
         // Each project's files carry exactly that project's last results (other projects keep theirs).
         const mismatched = runs.filter(r => !r.result || !r.dir || r.problemsPanel !== r.result.errors + r.result.warnings);
         assert(runs.length > 0 && mismatched.length === 0,
             `the Problems panel holds exactly each project's results (${JSON.stringify(runs.map(r => [r.label, r.problemsPanel, r.result && r.result.errors, r.result && r.result.warnings]))})`);
+    }
+
+    // R7: rename is ONE WorkspaceEdit and Undo Last Rename restores the LineB copy byte for byte.
+    const ru = step('rename-undo');
+    assert(!!ru && !ru.error, `the rename/undo phase ran${ru && ru.error ? ': ' + ru.error : ''}`);
+    if (ru && !ru.error) {
+        const sep = path.sep;
+        const want = ['POUs' + sep + 'Interfaces' + sep + 'I_Resettable.TcIO', 'POUs' + sep + 'Machine' + sep + 'FB_Station.TcPOU', 'POUs' + sep + 'P_Startup.TcPOU'];
+        assert(ru.member.applyCalls === 1, `a member rename is ONE WorkspaceEdit (got ${ru.member.applyCalls})`);
+        assert(ru.member.itfRenamed && ru.member.callsRenamed && want.every(f => ru.member.changed.includes(f)),
+            `FB_Station.Reset -> ResetAll renames the interface method and both calls (changed ${JSON.stringify(ru.member.changed)})`);
+        assert(ru.member.dirty.length === 0, `every edited file was saved (dirty ${JSON.stringify(ru.member.dirty)})`);
+        assert(ru.memberUndo.changed.length === 0 && ru.memberUndo.dirty.length === 0,
+            `Undo Last Rename restores every file byte for byte and saves it (changed ${JSON.stringify(ru.memberUndo.changed)}, dirty ${JSON.stringify(ru.memberUndo.dirty)})`);
+        assert(ru.file.applyCalls === 1 && ru.file.renamedOnDisk && ru.file.plcprojUpdated,
+            `a file rename is ONE WorkspaceEdit carrying the .plcproj entry and the move (${JSON.stringify({ calls: ru.file.applyCalls, moved: ru.file.renamedOnDisk, plcproj: ru.file.plcprojUpdated })})`);
+        assert(ru.file.bom === 'efbbbf', `the moved file keeps its UTF-8 BOM (got ${ru.file.bom})`);
+        assert(ru.file.dirty.length === 0, `every edited file was saved (dirty ${JSON.stringify(ru.file.dirty)})`);
+        assert(ru.fileUndo.changed.length === 0 && ru.fileUndo.dirty.length === 0,
+            `Undo Last Rename restores the file name, its content and the .plcproj byte for byte (changed ${JSON.stringify(ru.fileUndo.changed)}, dirty ${JSON.stringify(ru.fileUndo.dirty)})`);
     }
 
     // The window is still shutting down when the poll returns, so its user-data dir can hold a

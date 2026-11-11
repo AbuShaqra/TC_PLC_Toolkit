@@ -20,35 +20,31 @@ const {
 } = require('./xmlIndexer');
 
 const {
-    indexLibraryNamespaces
-} = require('./libraries');
-
-const {
-    indexLibrarySymbols,
-    indexTypeSystem,
-    indexLibrarySignatures,
-    indexBrowserCache,
     registerLibrarySymbolNodes,
+    configureArchiveCache,
+    flushArchiveCache,
+    archiveCacheInfo,
     getLibraryCatalog,
     getUnionLibraryCatalog
 } = require('./libsymbols');
 
 const {
-    createEmptyWorkspace,
-    scanWorkspace,
+    startWorkspaceScan,
     selectLibraryCatalog,
-    uriToFsPath,
-    normalizeProjectPath
+    uriToFsPath
 } = require('./workspaceScan');
 
 const {
     createScanController
 } = require('./scanController');
 
+const { createWorkspaceState } = require('./workspaceState');
+
 const {
-    createRequestRouter,
-    runLibraryIndexPipeline
+    createRequestRouter
 } = require('./requestPipeline');
+
+const { createIndexLibraries } = require('./libraryIndex');
 
 // Quiet by default (threshold `warn`, from TWINCAT_LSP_LOG) and writes to stderr, which the extension
 // host captures — see log.js. Every handler below keeps returning its safe default on failure; the
@@ -60,20 +56,68 @@ const log = require('./log');
 // PER PLC PROJECT: a `.plcproj` is its own compilation unit (XAE does not resolve symbols across
 // projects), and a single flat name-keyed map made two projects' same-named objects collide —
 // last-write-wins, so half the workspace vanished and references pointed into the wrong project.
-/** @type {import('./workspaceScan').Workspace} */
-let workspace = createEmptyWorkspace();
-
-/**
- * Rebuilds the partition and every index from the given roots.
- * @param {Array<string>} rootPaths Absolute workspace-root paths.
- */
-function rescan(rootPaths) {
-    workspace = scanWorkspace(rootPaths, {
+//
+// Which workspace answers, and when, is workspaceState.js's job (R6): the scan indexes ONE PROJECT AT
+// A TIME with the event loop free in between, so a request for a project that is already indexed is
+// answered while the others are still being scanned. Every handler below that reads an index first
+// awaits `settledFor(uri)` / `settledAll()` — resolved only when the index it will read is complete
+// and its workspace current — and then reads `currentWorkspace()` with no await in between. That
+// pairing is what guarantees no request ever sees a half-built index.
+const workspaceState = createWorkspaceState({
+    startScan: (rootPaths, hooks) => startWorkspaceScan(rootPaths, {
         log: (m) => connection.console.log(m),
         error: (m) => connection.console.error(m),
-        indexLibraries
-    });
+        indexLibraries,
+        onFailure: hooks.onFailure
+    }),
+    onComplete: () => {
+        // Persist what this scan decoded, so the next session reads names instead of inflating
+        // archives. A no-op when nothing changed or no storage directory was given. A rejected
+        // (corrupt, foreign or outdated) cache file was ignored and is rewritten by this flush.
+        const info = archiveCacheInfo();
+        if (info.rejected || info.dropped) log.debug('archive-cache-ignored', { reason: info.rejected, dropped: info.dropped });
+        flushArchiveCache();
+    }
+});
+
+/**
+ * The workspace requests route through right now. Read an index from it only straight after awaiting
+ * settledFor/settledAll (see above), never across another await.
+ * @returns {import('./workspaceState').GatedWorkspace}
+ */
+function currentWorkspace() {
+    return workspaceState.current();
 }
+
+/**
+ * Rebuilds the partition and every index from the given roots, superseding a scan in flight.
+ * Resolves when this scan has finished ('cancelled' if a later one superseded it).
+ * @param {Array<string>} rootPaths Absolute workspace-root paths.
+ * @returns {Promise<'complete'|'cancelled'>}
+ */
+function rescan(rootPaths) {
+    return workspaceState.scan(rootPaths);
+}
+
+/**
+ * Wraps a handler so it runs only once the index it will read is complete: the project's own for a
+ * request that names a file, every project's for one that does not.
+ * @param {(params: Object) => (string|undefined)} uriOf The file the request is about.
+ * @param {(params: Object) => *} handler Reads `currentWorkspace()` synchronously.
+ * @returns {(params: Object) => Promise<*>}
+ */
+function whenIndexed(uriOf, handler) {
+    return async (params) => {
+        const uri = uriOf(params);
+        await (uri ? workspaceState.settledFor(uri) : workspaceState.settledAll());
+        return handler(params);
+    };
+}
+
+/** The `fileUri` of a custom/* request, when it has one. */
+const paramsFileUri = (params) => (params && params.fileUri) || undefined;
+/** The document of a standard LSP request. */
+const paramsDocumentUri = (params) => (params && params.textDocument && params.textDocument.uri) || undefined;
 
 // Which of the two requests that can trigger a scan actually has to run one. `custom/reindex` means
 // "the data changed, rebuild"; `custom/indexReady` means "resolve once these roots are indexed", and
@@ -84,71 +128,10 @@ function rescan(rootPaths) {
 // time), so the scan is injected the way workspaceScan.js injects indexLibraries.
 const scanController = createScanController({ scan: rescan });
 
-/**
- * Indexes everything external a workspace folder depends on: library namespaces from the .plcproj,
- * symbol names from the ZIP `.compiled-library` archives, and the project's TwinCAT type system
- * (`.tmc`). The type system is required, not a nicety: some types the project resolves are in no
- * readable archive (a library may ship only as the opaque `.compiled-library-v3`, and some names
- * live outside the string table), yet TwinCAT exports every one of them into the plain-XML `.tmc`.
- *
- * The harvested names are NOT put into the symbol index here — that happens per document, in
- * syncDocument(), so the index stays at project scale.
- * @param {string} fsPath Absolute folder path — the PROJECT directory, so only that project's own
- *   .plcproj, archives and .tmc are read.
- * @param {Object} [index] The owning project's symbol index. Every registry below is attached to it
- *   (see libraries.js / libsymbols.js registryFor / libRegistryFor), so two projects' libraries never
- *   union — each project stays quiet only about the libraries it actually references.
- * @param {Array<string>} [roots] The full set of workspace roots (see workspaceScan.js scanWorkspace).
- *   `library-signatures.xml` is a WORKSPACE-level artifact — `twincat.updateLibraryDefinitions` writes
- *   it to `folders[0].fsPath` (libraryCommands.js), and `scripts/generate-library-signatures.ps1`
- *   documents that target as `<workspace>\library-signatures.xml` — not a per-project one, and in the
- *   normal TwinCAT layout it sits ABOVE `fsPath` (the `.plcproj` directory is at least one level
- *   below the workspace root). `indexLibrarySignatures` only scans DOWNWARD from the directory it is
- *   given, so a scan rooted at `fsPath` alone can never reach it. Scan every root too.
- */
-function indexLibraries(fsPath, index, roots) {
-    // Shared between the `signatures` and `rootSignatures` runners below: runLibraryIndexPipeline's
-    // patch merge is shallow last-write-wins per key, not a sum, so the running total across the extra
-    // per-root scan has to be built by the runners themselves, closing over one object (see
-    // requestPipeline.js's runLibraryIndexPipeline doc).
-    let sig;
-    const result = runLibraryIndexPipeline({
-        namespaces: () => { indexLibraryNamespaces(fsPath, index); },
-        symbols: () => ({ stats: indexLibrarySymbols(fsPath, index) }),
-        typeSystem: () => ({ tmc: indexTypeSystem(fsPath, index) }),
-        // Signatures merge AFTER the `.tmc`, so a `.tmc` type with real members wins over a signature's
-        // bare-name entry (see libsymbols.js indexLibrarySignaturesFromXml). A project with no generated
-        // library-signatures.xml gets zeroed stats and no registry change.
-        signatures: () => {
-            sig = indexLibrarySignatures(fsPath, index);
-            return { sig };
-        },
-        // Also scan every workspace root for a signatures dump (see the `roots` param doc above). Skip a
-        // root that IS fsPath — already scanned by the `signatures` stage, so scanning it again would only
-        // double the reported stats. Merging into every project's registry is safe even when a root sits
-        // ABOVE a sibling project's directory too (a multi-project workspace): namespaceForLibraryTitle()
-        // returns '' for a library this project's .plcproj does not reference, so an unattributed type
-        // lands only as a bare name in librarySymbols — which can only SILENCE an undeclared-identifier
-        // diagnostic, never raise one. The merge itself is documented additive/idempotent, so overlap with
-        // fsPath's own scan (or between two projects sharing a root) contributes nothing beyond wasted work.
-        rootSignatures: () => {
-            for (const root of roots || []) {
-                if (normalizeProjectPath(root) === normalizeProjectPath(fsPath)) continue;
-                const rootSig = indexLibrarySignatures(root, index);
-                sig.files += rootSig.files;
-                sig.functions += rootSig.functions;
-                sig.functionBlocks += rootSig.functionBlocks;
-                sig.types += rootSig.types;
-                sig.added += rootSig.added;
-            }
-            return { sig };
-        },
-        // Browsercache enrichment runs LAST: it adds method/property NAMES to the FB/interface types the
-        // signatures and `.tmc` have already filed under a namespace (see libsymbols.js indexBrowserCache).
-        browsercache: () => ({ bc: indexBrowserCache(fsPath, index) })
-    }, { fsPath, index, roots });
-    if (result.logLine) connection.console.log(result.logLine);
-}
+// The per-project library composition lives in libraryIndex.js, where the harnesses and the timing
+// script drive the same code (nothing in this file is loadable standalone). `connection` is read at
+// call time, after module load.
+const indexLibraries = createIndexLibraries({ log: (m) => connection.console.log(m) });
 
 /**
  * Brings the symbol index up to date with a document before any language feature runs on it:
@@ -173,6 +156,7 @@ const {
     provideReferencesForSymbol,
     findConfigReferencesForSymbol,
     provideDocumentHighlights,
+    provideHover,
     provideDiagnostics,
     setDiagnosticsConfig,
     clearStFileCache
@@ -186,13 +170,20 @@ const documents = new TextDocuments(TextDocument);
 
 connection.onInitialize((params) => {
     const folders = params.workspaceFolders || [];
+    // The persisted archive-name cache lives in the extension's global storage (the host passes the
+    // path); without one the cache stays in memory only, exactly as before. Configured BEFORE the
+    // first scan, which is the scan that benefits.
+    const initOptions = params.initializationOptions || {};
+    if (typeof initOptions.archiveCacheDir === 'string' && initOptions.archiveCacheDir) {
+        configureArchiveCache(initOptions.archiveCacheDir);
+    }
     // Through the controller, not rescan() directly, so the completion is RECORDED — that record is
-    // what lets the extension host's custom/indexReady resolve without scanning the same roots again.
-    // scanWorkspace is synchronous, so this still blocks initialize exactly as it always has; the
-    // promise is only the barrier's shape. An empty folder list is scanned too (it costs nothing —
-    // no roots to walk, and the resulting workspace routes identically to createEmptyWorkspace's),
-    // because that is what makes "no workspace folders" a *completed* state rather than one the host
-    // would then re-request.
+    // what lets the extension host's custom/indexReady resolve without scanning the same roots again
+    // (it JOINS this scan while it runs). The scan runs in the background, one project at a time:
+    // initialize answers at once, and every request waits only for the project it needs. An empty
+    // folder list is scanned too (it costs nothing — no roots to walk, and the resulting workspace
+    // routes identically to createEmptyWorkspace's), because that is what makes "no workspace
+    // folders" a *completed* state rather than one the host would then re-request.
     scanController.ensureScanned(folders.map(f => uriToFsPath(f.uri)))
         .catch(e => connection.console.error(`Initial workspace scan failed: ${e.message}`));
 
@@ -205,7 +196,8 @@ connection.onInitialize((params) => {
             },
             definitionProvider: true,
             referencesProvider: true,
-            documentHighlightProvider: true
+            documentHighlightProvider: true,
+            hoverProvider: true
         }
     };
 });
@@ -221,11 +213,12 @@ function isGeneratedSt(uri) {
 }
 
 // Standard Document Event Handlers (for .st text documents opened directly).
-documents.onDidChangeContent((change) => {
+documents.onDidChangeContent(async (change) => {
     const doc = change.document;
     if (isGeneratedSt(doc.uri)) return; // ignore generated exports
+    await workspaceState.settledFor(doc.uri);
     try {
-        const index = workspace.indexForUri(doc.uri);
+        const index = currentWorkspace().indexForUri(doc.uri);
         syncDocument(doc.getText(), doc.uri, index);
         const diagnostics = provideDiagnostics(doc.getText(), index, doc.uri);
         connection.sendDiagnostics({ uri: doc.uri, diagnostics });
@@ -253,38 +246,38 @@ function requestFailureFields(uri, position, error) {
     };
 }
 
-connection.onCompletion((params) => {
+connection.onCompletion(whenIndexed(paramsDocumentUri, (params) => {
     const doc = documents.get(params.textDocument.uri);
     if (!doc) return [];
     try {
-        return provideCompletions(doc.getText(), params.position, workspace.indexForUri(params.textDocument.uri), doc.uri);
+        return provideCompletions(doc.getText(), params.position, currentWorkspace().indexForUri(params.textDocument.uri), doc.uri);
     } catch (e) {
         log.error('completion-request-failed', requestFailureFields(doc.uri, params.position, e));
         return [];
     }
-});
+}));
 
-connection.onDefinition((params) => {
+connection.onDefinition(whenIndexed(paramsDocumentUri, (params) => {
     const doc = documents.get(params.textDocument.uri);
     if (!doc) return null;
     try {
-        return provideDefinition(doc.getText(), params.position, workspace.indexForUri(params.textDocument.uri), doc.uri);
+        return provideDefinition(doc.getText(), params.position, currentWorkspace().indexForUri(params.textDocument.uri), doc.uri);
     } catch (e) {
         log.error('definition-request-failed', requestFailureFields(doc.uri, params.position, e));
         return null;
     }
-});
+}));
 
-connection.onReferences((params) => {
+connection.onReferences(whenIndexed(paramsDocumentUri, (params) => {
     const doc = documents.get(params.textDocument.uri);
     if (!doc) return [];
     try {
-        return provideReferences(doc.getText(), params.position, workspace.indexForUri(params.textDocument.uri), doc.uri);
+        return provideReferences(doc.getText(), params.position, currentWorkspace().indexForUri(params.textDocument.uri), doc.uri);
     } catch (e) {
         log.error('references-request-failed', requestFailureFields(doc.uri, params.position, e));
         return [];
     }
-});
+}));
 
 connection.onDocumentHighlight((params) => {
     const doc = documents.get(params.textDocument.uri);
@@ -297,16 +290,30 @@ connection.onDocumentHighlight((params) => {
     }
 });
 
+// Pragma hover help (features/hover.js). Reads only the document, never the index, so it does not wait
+// for a scan.
+connection.onHover((params) => {
+    const doc = documents.get(params.textDocument.uri);
+    if (!doc) return null;
+    try {
+        return provideHover(doc.getText(), params.position);
+    } catch (e) {
+        log.error('hover-request-failed', requestFailureFields(doc.uri, params.position, e));
+        return null;
+    }
+});
+
 // Custom JSON-RPC requests for Monaco Webview bridge
 
 // The wrapper every custom/* language-feature request below goes through — see requestPipeline.js's
 // file header for why the sync must run before the handler, in that order, on every call, and for
 // what withoutDocument's absence of that sync means. Built with an ARROW around
-// `workspace.indexForUri`, not a bound method: `workspace` is REASSIGNED wholesale by rescan() (see
-// its declaration above), and capturing the method at construction time would freeze the router to
-// whatever `workspace` was before the first scan ever completed.
+// `currentWorkspace().indexForUri`, not a bound method: the workspace is REPLACED wholesale by every
+// scan, and capturing the method at construction time would freeze the router to whatever workspace
+// existed before the first scan. Every router-wrapped request is also wrapped in whenIndexed, OUTSIDE
+// the router, so the index it resolves is complete.
 const router = createRequestRouter({
-    getIndexForUri: (uri) => workspace.indexForUri(uri),
+    getIndexForUri: (uri) => currentWorkspace().indexForUri(uri),
     sync: syncDocument,
     // The router swallows every failure so a bad request cannot take the server down — which is also
     // why a webview pane that suddenly offers no completions looks identical to one that has nothing
@@ -316,33 +323,33 @@ const router = createRequestRouter({
         requestFailureFields(params && params.fileUri, params && params.position, error))
 });
 
-connection.onRequest('custom/completions', router.withDocument(
+connection.onRequest('custom/completions', whenIndexed(paramsFileUri, router.withDocument(
     [],
     (p, index) => provideCompletions(p.code, p.position, index, p.fileUri),
     'completion'
-));
+)));
 
-connection.onRequest('custom/definition', router.withDocument(
+connection.onRequest('custom/definition', whenIndexed(paramsFileUri, router.withDocument(
     null,
     (p, index) => provideDefinition(p.code, p.position, index, p.fileUri),
     'definition'
-));
+)));
 
-connection.onRequest('custom/references', router.withDocument(
+connection.onRequest('custom/references', whenIndexed(paramsFileUri, router.withDocument(
     [],
     (p, index) => provideReferences(p.code, p.position, index, p.fileUri),
     'references'
-));
+)));
 
 // References for a symbol identified by NAME (root object, optionally a member), rather than by a
 // cursor position — what a rename needs, and the only way to seed on a GVL (whose own name never
 // appears in its converted ST). Deliberately NO syncDocument: there is no `code` param, and reading
 // the target's file from disk is the whole point (provideReferencesForSymbol does that itself).
-connection.onRequest('custom/referencesForSymbol', router.withoutDocument(
+connection.onRequest('custom/referencesForSymbol', whenIndexed(paramsFileUri, router.withoutDocument(
     { resolved: false, references: [], declaration: null },
     (p, index) => provideReferencesForSymbol(p, index),
     'references-for-symbol'
-));
+)));
 
 // References to a symbol inside the TwinCAT non-code objects — visualizations (.TcVIS/.TcVMO), text
 // lists (.TcTLO/.TcGTLO) and task configurations (.TcTTO). This is the other half of a rename: all
@@ -352,25 +359,37 @@ connection.onRequest('custom/referencesForSymbol', router.withoutDocument(
 // Needs a second workspace lookup (configFilesFor) beyond the index withoutDocument already resolves,
 // so it reads `workspace` directly here rather than forcing that through the single-index handler
 // signature.
-connection.onRequest('custom/configReferencesForSymbol', router.withoutDocument(
+connection.onRequest('custom/configReferencesForSymbol', whenIndexed(paramsFileUri, router.withoutDocument(
     { resolved: false, occurrences: [] },
-    (p, index) => findConfigReferencesForSymbol(p, index, workspace.configFilesFor(p.fileUri)),
+    (p, index) => findConfigReferencesForSymbol(p, index, currentWorkspace().configFilesFor(p.fileUri)),
     'config-references-for-symbol'
-));
+)));
 
-connection.onRequest('custom/diagnostics', router.withDocument(
+connection.onRequest('custom/diagnostics', whenIndexed(paramsFileUri, router.withDocument(
     [],
     (p, index) => provideDiagnostics(p.code, index, p.fileUri),
     'diagnostics'
-));
+)));
+
+// The webview's pragma hover. Deliberately NOT routed through whenIndexed/router: it reads only the
+// assembled unit it is sent (no index, no document sync), so a hover never waits for a scan and never
+// re-syncs the index on every mouse move.
+connection.onRequest('custom/hover', (params) => {
+    try {
+        return provideHover((params && params.code) || '', params && params.position);
+    } catch (e) {
+        log.error('hover-request-failed', requestFailureFields(params && params.fileUri, params && params.position, e));
+        return null;
+    }
+});
 
 // The sync IS the work here: updateDocument exists to bring the index up to date, not to answer a
 // language feature, so the handler itself just reports success.
-connection.onRequest('custom/updateDocument', router.withDocument(
+connection.onRequest('custom/updateDocument', whenIndexed(paramsFileUri, router.withDocument(
     (e) => ({ success: false, error: e.message }),
     () => ({ success: true }),
     'update-document'
-));
+)));
 
 // The five requests below are deliberately left UNWRAPPED by the router: none of them carry a
 // document's live `params.code` for withDocument/withoutDocument to resolve an index around the same
@@ -430,13 +449,13 @@ connection.onRequest('custom/setDiagnosticsConfig', (params) => {
 // Answered from here rather than read directly by the extension host: the catalog is a by-product of
 // an index that costs ~32k symbols and ~50 MB of archive reads, and duplicating that in a second
 // process would pay for it twice.
-connection.onRequest('custom/libraries', (params) => {
+connection.onRequest('custom/libraries', whenIndexed(paramsFileUri, (params) => {
     try {
         // The catalog is per project — two projects reference different libraries. The extension
         // passes the active file so the view shows that project's libraries; the scope decision
         // itself lives in workspaceScan.js, where the routing it depends on lives (and where a
         // harness can reach it — nothing in this file is loadable standalone).
-        return selectLibraryCatalog(workspace, (params && params.fileUri) || '',
+        return selectLibraryCatalog(currentWorkspace(), (params && params.fileUri) || '',
             { getLibraryCatalog, getUnionLibraryCatalog });
     } catch (e) {
         // The Libraries view renders empty on an empty `libraries`, and an empty view has always been
@@ -444,18 +463,24 @@ connection.onRequest('custom/libraries', (params) => {
         log.error('libraries-request-failed', { uri: (params && params.fileUri) || '', error: e });
         return { scope: 'union', projectKey: null, libraries: [] };
     }
-});
+}));
 
 // Index (or re-index) a single TwinCAT XML object from its raw content. Called by the
 // extension when a TwinCAT file is created, changed, or saved.
-connection.onRequest('custom/indexXmlDocument', (params) => {
+connection.onRequest('custom/indexXmlDocument', whenIndexed(paramsFileUri, (params) => {
     try {
-        indexXmlObject(workspace.indexForUri(params.fileUri), params.xml, params.fileUri);
+        indexXmlObject(currentWorkspace().indexForUri(params.fileUri), params.xml, params.fileUri);
         return { success: true };
     } catch (e) {
         log.error('index-xml-document-request-failed', { uri: params && params.fileUri, error: e });
         return { success: false, error: e.message };
     }
+}));
+
+// Write any names decoded since the last scan (a lazily harvested nested namespace) before the
+// process goes away.
+connection.onShutdown(() => {
+    flushArchiveCache();
 });
 
 // Make the text document manager listen on the connection

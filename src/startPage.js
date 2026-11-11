@@ -49,7 +49,7 @@ class StartPageController {
     /**
      * @param {vscode.ExtensionContext} context
      * @param {{recents: {list: () => any[], remove: (p: string) => Thenable<void>}, hasProject: () => boolean,
-     *   compilerReady?: () => boolean}} deps `compilerReady`: a compiler is configured and its file exists.
+     *   compilerReady?: () => boolean}} deps `compilerReady`: the compiler file exists (the bundled one, or the override).
      */
     constructor(context, deps) {
         this.context = context;
@@ -64,7 +64,7 @@ class StartPageController {
             this.panel.reveal();
             return;
         }
-        const panel = vscode.window.createWebviewPanel(START_PAGE_VIEW_TYPE, 'TwinCAT Start',
+        const panel = vscode.window.createWebviewPanel(START_PAGE_VIEW_TYPE, 'TC Toolkit Start',
             vscode.ViewColumn.Active, this.webviewOptions());
         this.attach(panel);
     }

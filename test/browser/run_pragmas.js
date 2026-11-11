@@ -15,6 +15,11 @@
  *      The fixture below is deliberately written with NO indentation inside the VAR block, so an
  *      indentation-derived range cannot account for the fold: if lines collapse, the marker did it.
  *
+ *   3. **Pragma hover reaches the screen.** The host's answer is computed in Node with the real
+ *      `provideHover` + `mapHoverToLocal` and armed in the stub; this checks the webview asks for it
+ *      with the right pane position, renders it, skips the round trip on a line with no `{`, and hands
+ *      a clicked documentation link to the host instead of navigating the webview.
+ *
  *   2. **Monaco's own tokenizer agrees with the rules we wrote.** `test_pragmas.js` re-implements the
  *      Monarch matcher to check rule order; this runs the actual tokenizer. It is the direct test of
  *      the invariant the rules exist for — the apostrophe in `{region "Motion FB's"}` must not open a
@@ -46,6 +51,9 @@ try {
     console.error('       npm i --no-save playwright && npx playwright install chromium');
     process.exit(2);
 }
+
+const { provideHover } = require('../../src/lsp/features/hover');
+const { mapHoverToLocal } = require('../../src/livePath');
 
 let errors = 0;
 function assert(cond, msg) {
@@ -275,7 +283,10 @@ const NESTED = [
                     "\tbTriggerOld\t: BOOL;\t\t// so the FB's rising edge always fires"),
                 dollarEscape: scopes("sMsg := 'It$'s done'; nAfter := 1;"),
                 halfTypedDollar: scopes("sMsg := 'abc$\nnAfter := 1;"),
-                wstring: scopes('wsName := "wide"; nAfter := 1;')
+                wstring: scopes('wsName := "wide"; nAfter := 1;'),
+                // TwinCAT nests (* *) comments: the inner *) must not return to code.
+                nested: scopes('(* a (* b *) still *) nX := 1;'),
+                nestedLines: scopes('(* l1\n (* l2 *) IF\n*) nY := 1;')
             };
         });
 
@@ -332,6 +343,63 @@ const NESTED = [
             `a double-quoted WSTRING literal is scoped as a string (got ${JSON.stringify(tokens.wstring[0])})`);
         assert(!/string/.test(lastType(tokens.wstring[0])),
             `and it closes at its own quote (got ${lastType(tokens.wstring[0])})`);
+
+        // ------------------------------------------------------------- 3c. nested block comments
+        // The type in force at an offset is the last token starting at or before it.
+        const typeAt = (lineTokens, offset) => lineTokens.filter(t => t.offset <= offset).pop().type;
+        assert(/comment/.test(typeAt(tokens.nested[0], 14)),
+            `Monaco: "still", after the inner *), is still comment (got ${typeAt(tokens.nested[0], 14)})`);
+        assert(!/comment/.test(typeAt(tokens.nested[0], 22)),
+            `Monaco: nX, after the outer *), is code again (got ${typeAt(tokens.nested[0], 22)})`);
+        assert(tokens.nestedLines[1].every(t => /comment/.test(t.type)),
+            `Monaco: a line holding an inner *) and an IF stays comment (got ${JSON.stringify(tokens.nestedLines[1])})`);
+        assert(!/comment/.test(typeAt(tokens.nestedLines[2], 3)),
+            `Monaco: the code after the outer *) on the next line is code (got ${JSON.stringify(tokens.nestedLines[2])})`);
+
+        // ---------------------------------------------------------------- 3d. pragma hover
+        const HOVER_DECL = ['FUNCTION_BLOCK FB_H', 'VAR', "    {attribute 'qualified_only'}", '    bX : BOOL;', 'END_VAR'].join('\n');
+        // The pane IS the unit here (a root decl starts at unit line 1), so the host's mapping is the
+        // identity on lines; mapHoverToLocal is still run so the reply has the host's exact shape.
+        const absPos = { line: 2, character: 8 };
+        const hoverReply = mapHoverToLocal(provideHover(HOVER_DECL, absPos), absPos, 3);
+        assert(!!hoverReply, 'Node side: the real provideHover answers for the fixture');
+        const hover = await page.evaluate(async ({ decl, reply }) => {
+            const ed = monaco.editor.getEditors()[0];
+            ed.getModel().setValue(decl);
+            window.__harness.hoverReply = reply;
+            const before = window.__harness.sent.length;
+            ed.focus();
+            ed.setPosition({ lineNumber: 3, column: 9 });
+            await ed.getAction('editor.action.showHover').run();
+            await new Promise(r => setTimeout(r, 600));
+            const widget = document.querySelector('.monaco-hover:not(.hidden)');
+            const shown = widget ? widget.innerText : '';
+            const asked = window.__harness.sent.slice(before).filter(m => m.type === 'custom/hover');
+
+            // Click the documentation link, as a user would.
+            const link = widget ? widget.querySelector('a') : null;
+            const beforeClick = window.__harness.sent.length;
+            if (link) link.click();
+            await new Promise(r => setTimeout(r, 300));
+            const opened = window.__harness.sent.slice(beforeClick).filter(m => m.type === 'openDocumentationLink');
+
+            // A line with no '{' must not cost a round trip.
+            const beforeCode = window.__harness.sent.length;
+            ed.setPosition({ lineNumber: 4, column: 6 });
+            await ed.getAction('editor.action.showHover').run();
+            await new Promise(r => setTimeout(r, 400));
+            const askedOnCode = window.__harness.sent.slice(beforeCode).filter(m => m.type === 'custom/hover').length;
+            window.__harness.hoverReply = null;
+            return { shown, asked, opened, askedOnCode, href: link ? (link.getAttribute('data-href') || link.getAttribute('href')) : null };
+        }, { decl: HOVER_DECL, reply: hoverReply });
+        assert(hover.asked.length >= 1 && hover.asked[0].pane === 'decl' &&
+            hover.asked[0].position.lineNumber === 3 && hover.asked[0].position.column === 9,
+            `the webview asks the host for a hover at the pane position (got ${JSON.stringify(hover.asked.map(m => ({ pane: m.pane, position: m.position })))})`);
+        assert(/attribute 'qualified_only'/.test(hover.shown) && /Attribute pragma/.test(hover.shown),
+            `Monaco renders the hover (got ${JSON.stringify(hover.shown.slice(0, 200))})`);
+        assert(hover.opened.length === 1 && /^https:\/\/infosys\.beckhoff\.com\//.test(hover.opened[0].url),
+            `a clicked documentation link goes to the host as openDocumentationLink (href ${hover.href}, got ${JSON.stringify(hover.opened)})`);
+        assert(hover.askedOnCode === 0, `a line with no '{' is answered without a bridge request (got ${hover.askedOnCode})`);
 
         // ---------------------------------------------------------------- 4. nothing threw
         assert(consoleErrors.length === 0,

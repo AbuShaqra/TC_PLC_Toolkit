@@ -49,8 +49,9 @@ jobs:
         run: npm ci
 
       # Defect-focused lint (recommended + a handful of correctness rules); the policy and every
-      # relaxation are documented in eslint.config.js. Deliberately only in this job: ESLint 9
-      # needs Node >= 18.18, and runtime-compat runs the suite on Node 16 on purpose.
+      # relaxation are documented in eslint.config.js. Deliberately only in this job: ESLint 10
+      # needs Node ^20.19 || ^22.13 || >= 24, and runtime-compat runs the suite on Node 16 and 20 on
+      # purpose (npm ci there only warns about the engine; nothing in that job runs ESLint).
       - name: Lint
         run: npm run lint
 

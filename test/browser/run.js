@@ -495,6 +495,92 @@ function assert(cond, msg) {
             `another component's compile markers survive that edit (${JSON.stringify(mk.compile)})`);
         await page.evaluate(() => { window.__harness.lspDiagnostics = null; });
 
+        // 7f. The toolbar's Compile button (next to Generate ST): present with its glyph, posts
+        //     `compile-project` (the host resolves this file's project), is disabled while the host says
+        //     a run is in progress, and both buttons stay inside a narrow editor.
+        await page.addStyleTag({ content: '#compile-btn, #compile-btn * { transition: none !important; }' });
+        const compileInfo = await page.evaluate(() => {
+            const btn = document.getElementById('compile-btn');
+            const gen = document.getElementById('generate-st-group');
+            return {
+                present: !!btn, glyph: !!(btn && btn.querySelector('svg.btn-icon path')),
+                label: btn ? btn.getAttribute('aria-label') : '', tooltip: btn ? btn.title : '',
+                afterGenerate: !!(btn && gen && gen.nextElementSibling === btn),
+                genTooltip: document.getElementById('generate-st-btn').title
+            };
+        });
+        assert(compileInfo.present && compileInfo.glyph && compileInfo.label === 'Compile Project' && /Compile Project/.test(compileInfo.tooltip) &&
+            compileInfo.afterGenerate && /Generate ST/.test(compileInfo.genTooltip),
+            `the Compile button sits right after Generate ST, with a glyph, a name and a tooltip (${JSON.stringify(compileInfo)})`);
+        await page.evaluate(() => { window.__harness.sent.length = 0; });
+        await page.click('#compile-btn');
+        let compileMsgs = await page.evaluate(() => window.__harness.sent.filter(m => m.type === 'compile-project'));
+        assert(compileMsgs.length === 1 && Object.keys(compileMsgs[0]).join() === 'type',
+            `clicking Compile posts compile-project to the host (${JSON.stringify(compileMsgs)})`);
+        await page.evaluate(() => window.postMessage({ type: 'compileRunning', running: true }, '*'));
+        await settle(50);
+        await page.evaluate(() => { window.__harness.sent.length = 0; document.getElementById('compile-btn').click(); });
+        compileMsgs = await page.evaluate(() => window.__harness.sent.filter(m => m.type === 'compile-project'));
+        const busy = await page.evaluate(() => ({ disabled: document.getElementById('compile-btn').disabled, aria: document.getElementById('compile-btn').getAttribute('aria-busy') }));
+        assert(busy.disabled && busy.aria === 'true' && compileMsgs.length === 0, `while a run is in progress the button is disabled and posts nothing (${JSON.stringify(busy)})`);
+        await page.evaluate(() => window.postMessage({ type: 'compileRunning', running: false }, '*'));
+        await settle(50);
+        assert(!(await page.evaluate(() => document.getElementById('compile-btn').disabled)), 'when the run ends the button is enabled again');
+
+        // Narrow editors: both buttons stay whole and inside the webview; the page never scrolls sideways.
+        await page.evaluate(() => window.postMessage({ type: 'projectList', projects: [{ key: 'a', label: 'PLC_A' }, { key: 'b', label: 'PLC_B' }] }, '*'));
+        const toolbarAt = async (width) => {
+            await page.setViewportSize({ width, height: viewport.height });
+            await settle(80);
+            return page.evaluate(() => {
+                const box = (id) => { const r = document.getElementById(id).getBoundingClientRect(); return { left: Math.round(r.left), right: Math.round(r.right), width: Math.round(r.width), top: Math.round(r.top) }; };
+                const gen = document.getElementById('generate-st-btn');
+                const label = document.querySelector('#compile-btn .btn-label');
+                return {
+                    width: window.innerWidth, gen: box('generate-st-btn'), caret: box('generate-st-caret'), compile: box('compile-btn'),
+                    genCut: gen.scrollWidth > gen.clientWidth, labelShown: getComputedStyle(label).display !== 'none',
+                    sideScroll: document.documentElement.scrollWidth > window.innerWidth || document.body.scrollWidth > window.innerWidth
+                };
+            });
+        };
+        for (const width of [320, 360, 560, 700, 820, 900, 960, 1100, 1200]) {
+            const t = await toolbarAt(width);
+            const inside = (b) => b.width > 0 && b.left >= 0 && b.right <= t.width;
+            assert(inside(t.gen) && inside(t.caret) && inside(t.compile) && t.compile.width >= 28 && t.gen.width >= 40 && !t.sideScroll,
+                `at ${width}px Generate ST, its caret and Compile are all visible inside the editor, with no sideways scroll (${JSON.stringify(t)})`);
+            assert(width > 1100 ? t.labelShown : !t.labelShown,
+                `at ${width}px the Compile label is ${width > 1100 ? 'shown' : 'dropped to the glyph (name kept in the tooltip)'}`);
+        }
+
+        // Screenshots of the toolbar, normal and narrow, dark (the harness default) and light.
+        if (process.env.HARNESS_TOOLBAR_SHOTS) {
+            const light = {
+                '--vscode-editor-background': '#ffffff', '--vscode-editor-foreground': '#333333',
+                '--vscode-titleBar-activeBackground': '#dddddd', '--vscode-foreground': '#333333',
+                '--vscode-dropdown-background': '#ffffff', '--vscode-dropdown-foreground': '#333333',
+                '--vscode-panel-border': 'rgba(128, 128, 128, 0.35)'
+            };
+            for (const theme of ['dark', 'light']) {
+                await page.evaluate(([th, vars]) => {
+                    document.body.classList.toggle('vscode-light', th === 'light');
+                    document.body.classList.toggle('vscode-dark', th === 'dark');
+                    for (const [k, v] of Object.entries(vars)) {
+                        if (th === 'light') document.documentElement.style.setProperty(k, v);
+                        else document.documentElement.style.removeProperty(k);
+                    }
+                }, [theme, light]);
+                for (const [name, width] of [['normal', 1200], ['narrow', 960], ['wrapped', 820], ['phone', 400]]) {
+                    await page.setViewportSize({ width, height: viewport.height });
+                    await settle(150);
+                    const shot = path.join(process.env.HARNESS_TOOLBAR_SHOTS, `toolbar-${theme}-${name}-${width}.png`);
+                    await page.screenshot({ path: shot, clip: { x: 0, y: 0, width, height: width <= 900 ? 170 : 120 } });
+                    console.log('toolbar screenshot written to ' + shot);
+                }
+            }
+            await page.evaluate(() => { document.body.classList.remove('vscode-light', 'vscode-dark'); document.documentElement.removeAttribute('style'); });
+        }
+        await page.setViewportSize(viewport);
+
         // 8. Nothing may have thrown along the way — "Model not found" is the failure this whole
         //    design exists to make unreachable, and it surfaces as a console error.
         assert(consoleErrors.length === 0,

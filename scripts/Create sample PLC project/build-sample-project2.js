@@ -13,7 +13,7 @@
  *     name-keyed structure is workspace-flat instead of per project.
  *
  * How it is made, in two steps, both deterministic:
- *   1. **Skeleton** — `createProject` from `src/projectTemplate.js` (the code behind *TwinCAT: Create New
+ *   1. **Skeleton** — `createProject` from `src/projectTemplate.js` (the code behind *TC Toolkit: Create New
  *      Project…*) over `resources/templates/tc3.1.4024/`, with an injected GUID source that DERIVES each
  *      identity GUID from a counter (SHA-1), so a rebuild is byte-identical instead of re-minting them.
  *   2. **Objects** — rendered by `build-sample-project.js`'s `renderObject` (canonical element order,

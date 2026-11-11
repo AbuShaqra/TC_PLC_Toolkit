@@ -31,6 +31,8 @@
  *   lands somewhere the user can see.
  */
 
+const { blankComments } = require('./stComments');
+
 /**
  * @typedef {Object} CheckUnit
  * @property {string} stText The unit's text, lines joined with `\n`.
@@ -60,8 +62,7 @@ function paneLines(text) {
  * @returns {string|null}
  */
 function leadingPouKeyword(declText) {
-    const code = (declText || '')
-        .replace(/\(\*[\s\S]*?\*\)|\/\*[\s\S]*?\*\/|\/\/[^\n]*|\{[^}]*\}/g, ' ');
+    const code = blankComments(declText || '', { pragmas: true });
     const m = /\b(FUNCTION_BLOCK|PROGRAM|FUNCTION)\b/i.exec(code);
     return m ? m[1].toUpperCase() : null;
 }

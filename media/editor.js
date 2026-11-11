@@ -31,7 +31,7 @@
     let declEditor = null;
     let implEditor = null;
     // The pane the user was last typing in. Needed because an insert can arrive from the Explorer
-    // (the "TwinCAT Libraries" view), and clicking a tree item pulls DOM focus out of the webview:
+    // (the "PLC Libraries" view), and clicking a tree item pulls DOM focus out of the webview:
     // Monaco keeps each pane's selection, but only this tells us which pane the caret belongs to.
     let lastFocusedEditor = null;
     let isUpdatingFromExtension = false;
@@ -256,6 +256,23 @@
             closeGenerateMenu();
             if (keys.length) vscode.postMessage({ type: 'generate-st', projectKeys: keys });
         });
+    }
+
+    // Compile button: Compile Project for the PLC project that owns this file. The host resolves the
+    // project; while a run is in progress (`compileRunning`) the button is disabled.
+    const compileBtn = document.getElementById('compile-btn');
+    if (compileBtn) {
+        compileBtn.addEventListener('click', () => {
+            closeGenerateMenu();
+            if (!compileBtn.disabled) vscode.postMessage({ type: 'compile-project' });
+        });
+    }
+    /** @param {boolean} running */
+    function setCompileRunning(running) {
+        if (!compileBtn) return;
+        compileBtn.disabled = !!running;
+        compileBtn.classList.toggle('running', !!running);
+        compileBtn.setAttribute('aria-busy', String(!!running));
     }
 
     /**
@@ -643,10 +660,14 @@
                     [/\/\/.*$/, 'comment'],
                 ],
 
+                // (* *) comments NEST in TwinCAT: each inner (* pushes this state again and each *)
+                // pops one level, so only the outermost *) returns to code. Kept in step with
+                // src/lsp/parser.js by test/test_nested_comments.js.
                 comment_block1: [
-                    [/[^\*]+/, 'comment'],
+                    [/[^\*\(]+/, 'comment'],
+                    [/\(\*/, 'comment', '@push'],
                     [/\*\)/, 'comment', '@pop'],
-                    [/\*/, 'comment']
+                    [/[\*\(]/, 'comment']
                 ],
 
                 comment_block2: [
@@ -766,6 +787,36 @@
             }
         });
 
+        // Hover help for pragmas ({attribute '…'}, {warning …}, {IF …}, {region …}), answered by the
+        // language server from the pragma catalogue (src/lsp/features/hover.js). A pragma never
+        // spans lines, so a line with no '{' is answered here without a round trip: Monaco asks on
+        // every mouse rest, and nearly all of them are over code.
+        monaco.languages.registerHoverProvider('iecst', {
+            provideHover: async function(model, position) {
+                if (model.uri && model.uri.scheme === peekUri.PEEK_SCHEME) return null; // see the completion guard
+                if (model.getLineContent(position.lineNumber).indexOf('{') === -1) return null;
+                const hover = await sendBridgeRequest('custom/hover', buildBridgeContext(model, position));
+                if (!hover || typeof hover.contents !== 'string' || !hover.range) return null;
+                return {
+                    range: new monaco.Range(hover.range.startLineNumber, hover.range.startColumn,
+                        hover.range.endLineNumber, hover.range.endColumn),
+                    contents: [{ value: hover.contents }]
+                };
+            }
+        });
+
+        // A link in a hover (the pragma's documentation page) cannot open inside the webview: hand it
+        // to the host, which opens it in the browser if it is one of the catalogue's pages.
+        if (typeof monaco.editor.registerLinkOpener === 'function') {
+            monaco.editor.registerLinkOpener({
+                open: function(resource) {
+                    if (resource.scheme !== 'https') return false;
+                    vscode.postMessage({ type: 'openDocumentationLink', url: resource.toString(true) });
+                    return true;
+                }
+            });
+        }
+
         // Perform the navigation for locations Monaco cannot open by itself: our synthetic
         // 'twincat:' targets, and models that live in the *other* pane of this webview (Monaco's
         // standalone handler only reveals inside the editor the action started from). Returning
@@ -798,7 +849,7 @@
         } else {
             // Fail safe: without the opener, definitions outside the current pane simply do
             // nothing (no crash, no rogue navigation).
-            console.error('[TwinCAT XML Viewer] monaco.editor.registerEditorOpener is unavailable; ' +
+            console.error('[TC Toolkit] monaco.editor.registerEditorOpener is unavailable; ' +
                 'Go to Definition cannot navigate outside the current pane.');
         }
 
@@ -839,7 +890,7 @@
                     if (modelByKey.has(ref.paneKey)) return modelByKey.get(ref.paneKey);
                     const pane = paneByKey.get(ref.paneKey);
                     if (!pane) return null;
-                    let m = null;
+                    let m;
                     try {
                         const uri = monaco.Uri.from(peekUri.encodePeekParts(pane));
                         const key = uri.toString();
@@ -877,7 +928,7 @@
 
                 // Only now, with the new set built, let go of the panes no longer referenced.
                 retirePeekModels(inUse);
-                // Always populate the "TwinCAT References" panel with the FULL result set, independent of
+                // Always populate the "PLC References" panel with the FULL result set, independent of
                 // the peek. The peek now renders hits outside the active component too, but it is still a
                 // preview — PEEK_MAX_PANES bounds how many panes it will materialise, and the panel is
                 // what lists every hit without a cap. (This is the extra queryReferences pass noted in
@@ -1464,6 +1515,9 @@
             case 'projectList':
                 renderProjectPicker(message.projects);
                 break;
+            case 'compileRunning':
+                setCompileRunning(message.running);
+                break;
             case 'custom/completionsResponse': {
                 const resolve = pendingRequests.get(message.requestId);
                 if (resolve) {
@@ -1476,6 +1530,14 @@
                 const resolve = pendingRequests.get(message.requestId);
                 if (resolve) {
                     resolve(message.definition);
+                    pendingRequests.delete(message.requestId);
+                }
+                break;
+            }
+            case 'custom/hoverResponse': {
+                const resolve = pendingRequests.get(message.requestId);
+                if (resolve) {
+                    resolve(message.hover);
                     pendingRequests.delete(message.requestId);
                 }
                 break;
@@ -1499,7 +1561,7 @@
                 break;
             }
             case 'insertText': {
-                // From the "TwinCAT Libraries" view's Insert at Cursor: a namespace, a qualified type
+                // From the "PLC Libraries" view's Insert at Cursor: a namespace, a qualified type
                 // name, or a member name, dropped at the caret of the pane the user was last in.
                 insertTextAtCursor(message.text, message.triggerSuggest);
                 break;
@@ -1522,6 +1584,7 @@
                 }
 
                 compileDiagnostics = Array.isArray(message.compileDiagnostics) ? message.compileDiagnostics : [];
+                setCompileRunning(message.compileRunning === true);
                 editsStore = pendingEditsCore.createStore(message.cachedEdits);
                 pendingEditsCore.applyCachedEdits(components, message.cachedEdits);
 

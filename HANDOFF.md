@@ -14,12 +14,39 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   green (**89/89, Coverage: FULL**), `npm run typecheck` and `npm run lint` exit 0; all three browser harnesses green
   (`run.js`, `run_pragmas.js`, new `run_start_page.js`; Chromium via `HARNESS_CHROMIUM=/opt/pw-browsers/chromium-1243/chrome-linux64/chrome`).
   The dev-host harness was last run on Windows 2026-11-09 for R4; its new R2 start-page phase has never run.
-- **R3.2 Compile Project (branch, PR not yet open):** user's Windows checks 2026-11-10 passed — both samples 0 errors,
-  an undeclared variable reported, markers clear on edit, Generate ST per project. Dev-host WITHOUT the compiler
-  passes; WITH it 2 fails were test bugs, fixed: the object-insert phase leaves an `FB_Cylinder`+`FB_init(…)` snippet
-  unsaved in one FB_Cylinder copy (Aux project), and the panel-count check compared all projects' entries with
-  the last run's. Also changed on the user's report: Problems entries use PANE line/column (`paneRange`), not the
-  XML position. Next: user re-runs the dev-host test with `TWINCAT_COMPILER_BUNDLE`, then open the R3.2 PR into `dev`.
+- **R3.2 Compile Project: MERGED** into `dev` as PR #32 (`28f24f1`, 2026-11-10 22:22 UTC).
+- **On the branch, NOT yet in a PR (waiting for the user's Windows dev-host run):** R3.3 — compiler vendored in
+  `resources/compiler/` (fork `e884d87`; `scripts/vendor-compiler.js` updates it), used by default, Node ≥ 22 discovery
+  (setting → PATH → Windows install dirs → VS Code's runtime if ≥ 22), only `twincat3.json` ships (user rule, tested);
+  toolbar Compile button (`921d2e0`); header + all visible names renamed to "TC Toolkit" (`a665238`, `8e457e0`,
+  `98948c5`; user, trademark). User to run `node test/devhost/run.js` with no `TWINCAT_COMPILER_*` set; also
+  `node scripts/make-social-preview.js` on Windows (needs Segoe UI) to regenerate `media/icon.png`, which still says
+  "TwinCAT". Then one PR into `dev`. R3.4 is built on the same branch too (`ff7d8ae`..`bf5eadb`, `src/libraryDecls.js`,
+  `test/test_library_decls.js`; 98 suites FULL): declarations from the signatures dump + library-owned `.tmc` types +
+  archive names, only symbols the project references, written only into the check's temp dir; errors on undeclared
+  library symbols filtered and counted. **Decided (user, 2026-11-11): keep the filter broad** — archive names count too
+  (they include member/local names such as Get/Set/Contains, so a typo matching one is not reported), per the
+  no-false-positive rule. User's Windows check on a real project: steps in the R3.4 report (hint before Update Library Definitions;
+  far fewer errors after; planted typos still reported; no `lib-*.st` left in `%TEMP%\twincat-compile-*`).
+- **R6 indexing speed: built on the branch** (`05b350a`, `103df64`, `d4f39c8`; 102 suites FULL): per-scan
+  directory memo (`createDirectoryListingMemo`), persisted archive names (`src/lsp/archiveStore.js`, global storage
+  `archive-names-v1.json`, decoder-id + central-directory fingerprint), per-project background scan with readiness
+  gate (`src/lsp/workspaceState.js`, `whenIndexed`; `initialize` no longer waits). Measure on Windows:
+  `node scripts/measure-indexing.js --workspace "<folder>" --runs 3`. User must re-run the dev-host test.
+- **R7 rename: built on the branch** (`20d5980`, `afd89b4`, `3900e46`; 106 suites FULL): `.tmc`/dump watcher reindex
+  (`src/indexInputs.js`); one WorkspaceEdit per rename with in-place `.plcproj` edit (`src/plcProjText.js`) + command
+  **TC Toolkit: Undo Last Rename** (Ctrl+Z from the tree/webview cannot reach it — VS Code limit, measured); interface
+  method family rename (`test_rename_family.js`; `EXTENDS I_A, I_B` now follows both). Known Linux-only devhost P8
+  flush mismatch (`\r\n` vs `\n`), pre-existing. **Decided (user, 2026-11-11): an Undo button on the rename notification** (runs Undo
+  Last Rename; done, tested). Still open, low: sibling implementors in Find References? F2 rename from call sites?
+- **R8/R9: built on the branch** (`4af3e38`, `fb4f0ae`, `84cef85`, `a67e91c`; 108 suites FULL): nested comments
+  (`src/stComments.js`, all 7 scanners), pragma hover (`src/lsp/features/hover.js`, `custom/hover`; catalogue holds
+  names/syntax/page ids only — test-guarded), ESLint 10.14.0, brace-expansion 2.1.7 (shipped in the VSIX before).
+  **Decided (user, 2026-11-11): `/* */` stays non-nesting** unless a TwinCAT build shows
+  otherwise. Low, open: pragma syntax forms vs name+link only; minimatch 11 override for the dev-only advisory.
+- **The whole toolkit lane through R9 is built on the branch** and waits for one Windows session from the user
+  (dev-host test + the manual checks per item), then one PR into `dev`. R10 is trigger-only; R11 is last.
+- **R11 publishing:** last — after the toolkit lane AND the fork lane are done (user, 2026-11-10).
 - **Sample diagnostics: 0 against a baseline of 0** — verified with the Beckhoff archives present AND moved aside.
 
 ## Branching, CI and repo settings

@@ -1,12 +1,15 @@
-# TwinCAT PLC Toolkit
+# TC Toolkit
 
-![TwinCAT PLC Toolkit](media/icon.png)
+![TC Toolkit: Structured Text editor and project tools for Beckhoff TwinCAT 3 PLC projects](media/icon.png)
 
-A lightweight, offline VS Code extension for editing, navigating and analysing Beckhoff **TwinCAT**
-PLC projects (`.TcPOU`, `.TcGVL`, `.TcDUT`, `.TcIO`). It hides the XML wrappers behind a two-pane
-editor, adds **Structured Text (IEC 61131-3)** language support from a built-in language server, and
-gives you a TwinCAT sidebar with the project's objects and its libraries, a start page, and a way to
-create a new TwinCAT project without opening TwinCAT XAE.
+**TC Toolkit** is a lightweight, offline VS Code extension for editing, navigating and analysing
+**Beckhoff TwinCAT 3 PLC projects** (`.TcPOU`, `.TcGVL`, `.TcDUT`, `.TcIO`). It hides the XML wrappers
+behind a two-pane editor, adds **Structured Text (IEC 61131-3)** language support from a built-in
+language server, and gives you a sidebar with the project's objects and its libraries, a start page,
+and a way to create a new TwinCAT project without opening TwinCAT XAE.
+
+> TC Toolkit is not affiliated with or endorsed by Beckhoff Automation. TwinCAT is a registered
+> trademark of Beckhoff Automation GmbH.
 
 TwinCAT stores PLC code as XML, with the actual Structured Text buried inside `<![CDATA[ ... ]]>`
 blocks. This extension parses that XML, presents the declaration and implementation in two editor
@@ -25,10 +28,10 @@ are required.
 Opens `.TcPOU` / `.TcGVL` / `.TcDUT` / `.TcIO` with the Declaration (variables) on top and the
 Implementation below, separated by a resizable splitter. No raw XML.
 
-### TwinCAT sidebar and start page
+### TC Toolkit sidebar and start page
 
-The extension has its own icon in the Activity Bar. It opens the **TwinCAT** sidebar, which holds three
-views: **Start**, **TwinCAT Objects** and **TwinCAT Libraries**. (Objects and Libraries used to live in
+The extension has its own icon in the Activity Bar. It opens the **TC Toolkit** sidebar, which holds three
+views: **Start**, **PLC Objects** and **PLC Libraries**. (Objects and Libraries used to live in
 the Explorer; you can still drag them back there.)
 
 **Start** offers *Create New Project…*, *Open Existing Project…* and *Open Start Page*, plus links to this
@@ -39,18 +42,18 @@ page in an editor tab with:
 - **Open existing project** — a solution (`.sln`) or a folder, and the most recent TwinCAT solutions
   you opened or created here. Two are listed; when more are remembered (up to ten), a **Show all** tile
   expands the list. `twincat.startPage.recentProjectsShown` changes how many are listed.
-- **Project actions** — *Generate ST*, *Update Library Definitions* and *Compile project* (enabled once
-  a compiler is configured, see [Compile project](#compile-project)).
+- **Project actions** — *Generate ST*, *Update Library Definitions* and *Compile project* (see
+  [Compile project](#compile-project)).
 - **Help and links**, and **Settings** — which also shows where the XAE Shell of each TwinCAT version
   was found (see [Settings](#settings)), with *Change…* and *Detect again*.
 
-Every one of these is also a Command Palette command under **TwinCAT:** (*TwinCAT: Create New
-Project…*, *TwinCAT: Open Start Page*, *TwinCAT: Generate ST*, …). The page works offline and follows
+Every one of these is also a Command Palette command under **TC Toolkit:** (*TC Toolkit: Create New
+Project…*, *TC Toolkit: Open Start Page*, *TC Toolkit: Generate ST*, …). The page works offline and follows
 your colour theme.
 
 ### Create a new TwinCAT project
 
-*TwinCAT: Create New Project…* writes a new, empty TwinCAT solution to `<location>/<Name>/`, from a
+*TC Toolkit: Create New Project…* writes a new, empty TwinCAT solution to `<location>/<Name>/`, from a
 template TwinCAT XAE itself produced: the solution and the system project are named `<Name>`, the PLC
 project `<Name>_PLC`, and it contains `MAIN`, the `PlcTask` that calls it, and an empty global variable
 list `GVL_Main`. Every project identity (GUID) is generated fresh, so two projects made this way never
@@ -59,11 +62,11 @@ only: a folder that already holds a TwinCAT solution is refused. When it is done
 open it in this window, in a new window, or add it to the workspace. No TwinCAT installation is
 needed to create one; you need TwinCAT XAE to build and run it.
 
-### TwinCAT Objects explorer
+### PLC Objects explorer
 
 Browse POUs, interfaces, GVLs, DUTs and their methods, properties, actions and virtual folders.
 Create and delete files, folders, methods, properties and actions — the nearest `.plcproj` is kept in
-sync automatically. The tree follows you: while the TwinCAT Objects view is showing, switching editors reveals and highlights the matching item; when you open the view later, it goes to the file you are in.
+sync automatically. The tree follows you: while the PLC Objects view is showing, switching editors reveals and highlights the matching item; when you open the view later, it goes to the file you are in.
 
 **See the real TwinCAT hierarchy.** When the opened folder contains TwinCAT solutions, the explorer
 shows the solution first and every PLC project belonging to it underneath:
@@ -134,9 +137,13 @@ calls (`.TcTTO`) — so the project keeps building. Updates are applied conserva
 rewritten when it provably resolves to the renamed symbol through the project's types, a task's POU
 call is only rewritten when it names that exact object (never a library POU like
 `VisuElems.Visu_Prg`), and any occurrence that cannot be matched exactly is skipped and reported
-rather than guessed at.
+rather than guessed at. Renaming a method or property of an interface (or one that implements it) also
+renames it in the interface and in every other function block that implements it, so the project
+still builds; a method that only shares the name is left alone. A rename is one undoable step:
+**TC Toolkit: Undo Last Rename** (Command Palette) puts back every file it changed, the file name and
+the `.plcproj` entry included.
 
-### TwinCAT Libraries explorer
+### PLC Libraries explorer
 
 Lists every library referenced by the project's `.plcproj` **by the namespace you actually type in
 code**. That matters, because the three names a library carries often differ — TwinCAT's recipe
@@ -216,7 +223,7 @@ unsaved work. It briefly opens a TwinCAT window while it runs (about a minute).
   [Settings](#settings).
 - **Go to Definition** works across components and files, jumping into the right file and pane and
   highlighting the symbol — including named parameters at call sites and FB-instance initializers.
-- **Find References** always populates the dedicated **TwinCAT References** panel with the complete
+- **Find References** always populates the dedicated **PLC References** panel with the complete
   result set — every occurrence across files and components, grouped by file and component — and also
   shows the in-view occurrences in Monaco's inline peek. Named arguments resolve to the right owner,
   including `FB_init` inputs written at an FB's declaration site (`inst : FB_T(p := v)`). Matching is
@@ -227,7 +234,8 @@ unsaved work. It briefly opens a TwinCAT window while it runs (about a minute).
   attribute names** — the ones
   Beckhoff documents plus the ones that only occur in the wild (`object_name`, `TcGenerated`, …).
   Unknown names are never flagged: TwinCAT supports user-defined attributes, and one you invented is
-  highlighted exactly like a built-in.
+  highlighted exactly like a built-in. **Hovering a pragma** explains its category, shows its syntax and
+  links its Beckhoff Infosys page where there is one.
 - **Folding follows ST's structure**, not indentation. `{region "…"}` … `{endregion}` collapses (nested
   regions included), as do `VAR`…`END_VAR` and every other declaration section, `IF`, `CASE`, `FOR`,
   `WHILE`, `REPEAT`, `STRUCT`, `UNION` and `TYPE` — in the declaration pane as well as the
@@ -238,17 +246,18 @@ unsaved work. It briefly opens a TwinCAT window while it runs (about a minute).
 ### Generate ST
 
 Export the PLC projects to clean, compiler-friendly `.st` files (toolbar button in the editor,
-*TwinCAT: Generate ST*, or the start page; with several PLC projects you pick which). Each project's
+*TC Toolkit: Generate ST*, or the start page; with several PLC projects you pick which). Each project's
 files are written inside that project's own folder, under `<PLC project>/ST_Files/`, mirroring the
 project's layout. A folder of TwinCAT files without a `.plcproj` is exported to `ST_Files/` at the top
-of the workspace. The generated files show up in the **TwinCAT Objects** tree under each project's
+of the workspace. The generated files show up in the **PLC Objects** tree under each project's
 `ST_Files` folder right after a run; click one to open it as text. That folder is output, not project
-content: the TwinCAT create, delete, rename and paste commands do not apply there, and its `.st` files are
+content: the create, delete, rename and paste commands of the PLC Objects view do not apply there, and its `.st` files are
 never read back as sources.
 
 ### Compile project
 
-*TwinCAT: Compile Project* (also on the start page) checks a PLC project with **an external IEC 61131-3
+*TC Toolkit: Compile Project* (also on the start page, and as the **Compile** button next to *Generate ST*
+in the editor's toolbar, which compiles the project the open file belongs to) checks a PLC project with **an external IEC 61131-3
 compiler** — a full compiler front end, so it catches what the built-in diagnostics deliberately leave
 alone. With several PLC projects you pick which one. It only checks: nothing is generated, and nothing is
 written into your project (the compiler reads temporary copies, deleted when the run ends).
@@ -261,11 +270,27 @@ written into your project (the compiler reads temporary copies, deleted when the
   (they described the old text); the next run replaces them all.
 - A run can be cancelled, and is stopped after two minutes.
 
-The compiler is **not bundled**. Point `twincat.compiler.path` at its bundled command-line file (`.cjs`);
-it runs under Node.js 22 or newer — `node` on your `PATH`, or the executable in
-`twincat.compiler.nodePath`. Until the path is set, the start-page tile stays disabled and the command
-explains what is missing. Symbols from vendor libraries are not visible to the compiler and may be
-reported as undeclared; the built-in diagnostics remain the conservative check.
+**The compiler ships with the extension** — there is nothing to build or download. It runs as a
+separate process under **Node.js 22 or newer**, which the command finds by itself: `node` on your
+`PATH`, then (on Windows) the usual install locations — the Node.js installer, nvm-windows, Volta and
+fnm — and last VS Code's own runtime, when that is Node.js 22 or newer (recent VS Code versions are). If
+none is found, the command says what it tried and how to fix it: install Node.js 22 or newer from
+nodejs.org, or set `twincat.compiler.nodePath` to a Node.js 22+ executable.
+
+The IEC standard function blocks and functions (`TON`, `R_TRIG`, `CTU`, `LIMIT` …) are known to it.
+**Library calls** (Tc2_System, Tc2_Utilities, Tc3_… and third-party libraries) are checked from what your
+own machine already has: the signatures written by *TC Toolkit: Update Library Definitions*, the project's
+`.tmc`, and the library archives the project references. For each run the extension writes declarations
+of the library functions, function blocks, types and constants the project uses — their interfaces only:
+no library code and no library documentation — into the run's temporary folder, and deletes them with it;
+nothing is stored or sent anywhere. Library calls are then checked like your own (argument and parameter
+names, types). Where a library symbol has no usable declaration (no signatures yet, a type the compiler
+does not support), an "undeclared" error about that symbol is not shown; the summary says how many were
+left out. Without the signatures only types are checked, and the summary suggests running *Update Library
+Definitions*. The built-in diagnostics remain the conservative check. To use a different build of the compiler, point
+`twincat.compiler.path` at its command-line file (`.cjs`). The compiler is free software under the GNU
+GPL v3; its licence, source link and third-party notices are in `resources/compiler/` and
+[`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md).
 
 ### For AI coding assistants
 
@@ -303,10 +328,9 @@ or from inside VS Code: **Extensions** view → **⋯** menu → **Install from 
 
 After replacing an older installed version, **fully restart VS Code** (a window reload may keep the
 old extension process alive). Open the folder containing your TwinCAT solution or PLC project, then
-open any `.TcPOU` file — it opens in the TwinCAT PLC Toolkit editor.
+open any `.TcPOU` file — it opens in the TC Toolkit editor.
 
-> If a `.TcPOU` opens as raw XML instead, right-click the tab → **Reopen Editor With… → TwinCAT PLC
-> Toolkit**.
+> If a `.TcPOU` opens as raw XML instead, right-click the tab → **Reopen Editor With… → TC Toolkit**.
 
 ---
 
@@ -322,14 +346,14 @@ open any `.TcPOU` file — it opens in the TwinCAT PLC Toolkit editor.
 | `twincat.startPage.recentProjectsShown` | `2` | How many recent TwinCAT solutions the start page lists (1 to 10). When more are remembered, a **Show all** tile expands the list. |
 | `twincat.xaeShell.path4024` | *(detected)* | Full path to `TcXaeShell.exe` of the XAE Shell for TwinCAT 3.1.4024 (the 32-bit shell). Empty = not found. |
 | `twincat.xaeShell.path4026` | *(detected)* | Full path to `TcXaeShell.exe` of the XAE Shell for TwinCAT 3.1.4026 (the 64-bit shell). Empty = not found. |
-| `twincat.compiler.path` | *(empty)* | Full path to the bundled command-line file (`.cjs`) of the external IEC 61131-3 compiler that **Compile Project** runs. Empty = no compiler; the command explains what is missing. Per machine. |
-| `twincat.compiler.nodePath` | *(empty)* | Full path to a Node.js 22+ executable that runs the compiler. Empty = `node` on `PATH`. Per machine. |
+| `twincat.compiler.path` | *(empty)* | Full path to the command-line file (`.cjs`) of an external IEC 61131-3 compiler for **Compile Project** to run instead of the bundled one. Empty = the bundled compiler. Per machine. |
+| `twincat.compiler.nodePath` | *(empty)* | Full path to a Node.js 22+ executable that runs the compiler. Empty = found automatically (`node` on `PATH`, the usual Windows install locations, then VS Code's own runtime when it is Node.js 22+). Per machine. |
 
 **XAE Shell paths.** On Windows the two `twincat.xaeShell.*` settings are filled automatically with the
 installation found on your machine: first from the shell's COM registration, then from the default
 location under `Program Files` (3.1.4026) or `Program Files (x86)` (3.1.4024). Only an **empty** setting
 is ever filled — a path you set yourself is never overwritten, so change it if your shell is elsewhere.
-**TwinCAT: Detect XAE Shell Installations** looks again and tells you, per version, whether it found the
+**TC Toolkit: Detect XAE Shell Installations** looks again and tells you, per version, whether it found the
 shell, kept your value, or found nothing. The settings are per machine (they are not synced and cannot be
 set per workspace). Today they are used by **Update Library Definitions**, which drives the shell at a
 configured path when that file exists; on other platforms nothing is detected and they stay empty.
@@ -373,7 +397,7 @@ symbols. That causes no false error — unknown simply stays unflagged.
 - **Member completion stops after one hop**: `axis.Status.▮` offers nothing, because a member's type
   is only indexed when the document itself names it.
 - The inline **references peek** only shows occurrences in the active component's visible panes — a
-  constraint of the split-pane editor. Cross-file and cross-component usages appear in the **TwinCAT
+  constraint of the split-pane editor. Cross-file and cross-component usages appear in the **PLC
   References** panel instead.
 
 ---
@@ -381,7 +405,7 @@ symbols. That causes no false error — unknown simply stays unflagged.
 ## Roadmap
 
 What is planned next, in what order and when, is on the public roadmap page:
-**[TwinCAT PLC Toolkit Roadmap](https://claude.ai/artifact/8RG7TZtBV2cuupsrwWtknv)**. It is kept current as
+**[TC Toolkit Roadmap](https://claude.ai/artifact/8RG7TZtBV2cuupsrwWtknv)**. It is kept current as
 work starts, moves and ships.
 
 ## License
@@ -404,6 +428,9 @@ inventory is in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
 ## Disclaimer
 
 This is an independent, community-built project. It is **not affiliated with,
-endorsed by, or sponsored by Beckhoff Automation GmbH & Co. KG.** "TwinCAT" and
-"Beckhoff" are trademarks of Beckhoff Automation, used here only to describe
-compatibility. All other trademarks are the property of their respective owners.
+endorsed by, or sponsored by Beckhoff Automation GmbH & Co. KG.** TwinCAT is a
+registered trademark of Beckhoff Automation GmbH, and "Beckhoff" is a trademark of
+Beckhoff Automation; both are used here only to describe compatibility. That is why
+the extension is called **TC Toolkit** and its views **PLC Objects**, **PLC
+Libraries** and **PLC References** rather than carrying the TwinCAT name. All other
+trademarks are the property of their respective owners.

@@ -1,6 +1,6 @@
 /**
  * @file test_object_insert.js
- * @description "Insert at Cursor" / "Insert Definition at Cursor" for the **TwinCAT Objects** tree
+ * @description "Insert at Cursor" / "Insert Definition at Cursor" for the **PLC Objects** tree
  * (the project's own objects), plus the refactor that made it possible.
  *
  * The call-template formatter used to live inside `src/libraryTreeProvider.js`, which requires

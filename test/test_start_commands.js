@@ -6,8 +6,8 @@
  * the palette, the chosen open mode honoured), opening a recent solution that is gone, Generate ST's
  * project pick, and the start page's message handling (singleton panel, state — including the
  * recent-list length and the XAE Shell paths from the settings — the command allow-list, help links,
- * the filtered Settings view, a settings change refreshing an open page, and whether a compiler is
- * configured for the Compile project tile).
+ * the filtered Settings view, a settings change refreshing an open page, and whether the compiler file
+ * is there for the Compile project tile).
  */
 
 'use strict';
@@ -116,13 +116,13 @@ const context = {
 let projects = [];
 const generated = [];
 const provider = { listProjects: () => projects, generateAllStFiles: async (keys) => { generated.push(keys); } };
-/** What the stubbed Compile Project answers to "is a compiler configured?". */
-let compilerConfigured = false;
+/** What the stubbed Compile Project answers to "is the compiler file there?" (the bundled one: yes). */
+let compilerAvailable = true;
 const { startPage } = registerStartCommands(context, {
     provider,
     getProjectMap: () => ({ projects: new Map() }),
     getSolutionMap: () => ({ solutions: [] }),
-    isCompilerConfigured: () => compilerConfigured
+    isCompilerAvailable: () => compilerAvailable
 });
 const run = (id, ...args) => vscodeStub.commands.executeCommand(id, ...args);
 const executedIds = () => calls.executed.map(c => c.id);
@@ -222,11 +222,11 @@ const recents = () => (state.get('twincat.recentSolutions') || []).map(e => e.sl
     assert(st.recentsShown === 2, 'state carries the recent-list length, 2 by default');
     assert(Array.isArray(st.xaeShells) && st.xaeShells.length === 2 && st.xaeShells[0].version === '3.1.4024' && st.xaeShells[1].version === '3.1.4026'
         && st.xaeShells.every(x => x.path === '' && x.exists === false), 'state carries the two XAE Shell paths (unset: not found)');
-    assert(st.compilerReady === false, 'state says no compiler is ready while none is configured');
-    compilerConfigured = true;
+    assert(st.compilerReady === true, 'state says the compiler is ready by default (it ships with the extension)');
+    compilerAvailable = false;
     startPage.postState();
-    assert(panel.posted.filter(m => m.type === 'state').pop().compilerReady === true, 'state says the compiler is ready once one is configured');
-    compilerConfigured = false;
+    assert(panel.posted.filter(m => m.type === 'state').pop().compilerReady === false, 'state says the compiler is not ready when its file is missing');
+    compilerAvailable = true;
     startPage.postState();
 
     // A settings change reaches the open page; unrelated settings do not.

@@ -4,6 +4,8 @@
  * or a raw 1:1 unit for the live path (diagnostics mapping lives in livePath.js).
  */
 
+const { blankComments } = require('./stComments');
+
 /** Matches one struct DUT head and body: `TYPE Name [EXTENDS Base] : STRUCT … END_STRUCT`. */
 const STRUCT_DEF_RE = /\bTYPE\s+([A-Za-z_]\w*)\s*(?:EXTENDS\s+([A-Za-z_][\w.]*)\s*)?:\s*STRUCT\b([\s\S]*?)\bEND_STRUCT\b/gi;
 
@@ -375,8 +377,7 @@ function convertXmlToSt(parsedXml, options = {}) {
  * @returns {'FUNCTION_BLOCK'|'PROGRAM'|'FUNCTION'|null}
  */
 function leadingPouKeyword(declText) {
-    const code = (declText || '')
-        .replace(/\(\*[\s\S]*?\*\)|\/\*[\s\S]*?\*\/|\/\/[^\n]*|\{[^}]*\}/g, ' ');
+    const code = blankComments(declText || '', { pragmas: true });
     const m = /\b(FUNCTION_BLOCK|PROGRAM|FUNCTION)\b/i.exec(code);
     return m ? /** @type {'FUNCTION_BLOCK'|'PROGRAM'|'FUNCTION'} */ (m[1].toUpperCase()) : null;
 }

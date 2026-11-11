@@ -193,20 +193,21 @@
     }
 
     /**
-     * The Compile project tile. Without a configured compiler it stays as it shipped: disabled,
-     * "Coming in a later release". With one it is an ordinary project action.
-     * @param {boolean} ready A compiler is configured and its file exists.
+     * The Compile project tile. The compiler ships with the extension, so it is an ordinary project
+     * action; only a compiler setting that names a missing file disables it, and the tile says so.
+     * A missing Node.js is not known here: the command explains it when the tile is clicked.
+     * @param {boolean} ready The compiler file exists.
      * @param {boolean} hasProject A PLC project is open.
      */
     function renderCompileTile(ready, hasProject) {
         const tile = $('compile-project');
         tile.disabled = !(ready && hasProject);
         tile.classList.toggle('ready', ready);
-        tile.title = ready ? '' : 'Arrives in a later release';
+        tile.title = ready ? '' : 'The compiler file named in the Compile Project settings does not exist';
         $('compile-detail').textContent = ready
             ? 'Check the project with an external IEC 61131-3 compiler'
-            : 'Coming in a later release';
-        $('compile-soon').hidden = ready;
+            : 'Compiler file not found — check the compiler setting';
+        $('compile-missing').hidden = ready;
     }
     $('compile-project').addEventListener('click', () => vscode.postMessage({ type: 'command', command: 'twincat.compileProject' }));
 

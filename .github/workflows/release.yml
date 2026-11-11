@@ -109,7 +109,7 @@ jobs:
           [ "$DRAFT" = "true" ] && flags+=(--draft)
           gh release create "$TAG" "$VSIX" \
             --target "$GITHUB_SHA" \
-            --title "TwinCAT PLC Toolkit $VERSION" \
+            --title "TC Toolkit $VERSION" \
             --generate-notes \
             "${flags[@]}"
           echo "Released $TAG from $GITHUB_SHA with $VSIX attached"

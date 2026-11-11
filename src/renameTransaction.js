@@ -16,6 +16,12 @@
  * A rollback that cannot complete is therefore never silent: the caller receives the exact list of
  * files left modified and why, which is the one outcome a user has to be told about.
  *
+ * `applyAsOne(commit)` is the same transaction with ONE write step instead of one per file: the caller's
+ * `commit` writes every staged change at once (the rename commands build a single WorkspaceEdit that
+ * also carries the file rename, so one VS Code undo restores the whole rename). It keeps both guards:
+ * every file is verified before the commit, and a commit that fails restores whatever of it landed,
+ * by the same verify-before-restore rule.
+ *
  * Deliberately free of vscode and fs: the caller injects `read`/`write` and keys are opaque identity
  * strings, so the whole state machine is testable in plain Node.
  */
@@ -47,6 +53,7 @@
 /**
  * @typedef {{ stage: (key: string, modify: (text: string) => string) => Promise<void>,
  *             apply: () => Promise<ApplySuccess|ApplyFailure>,
+ *             applyAsOne: (commit: (changes: StagedChange[]) => Promise<void>) => Promise<ApplySuccess|ApplyFailure>,
  *             revert: () => Promise<RevertResult>,
  *             readonly state: string }} RenameTransaction
  */
@@ -158,6 +165,71 @@ function createRenameTransaction(io) {
     }
 
     /**
+     * Writes every staged change in ONE caller-supplied step. Every file is first re-read and must
+     * still equal the text it was staged from; a mismatch fails before anything is written. If the
+     * commit throws, it may have landed partly, so each staged file is re-read: one still holding its
+     * original needs nothing, one holding OUR text is restored, anything else is reported, never
+     * overwritten. Callable once, like apply().
+     * @param {(changes: StagedChange[]) => Promise<void>} commit Writes all changes at once. An error
+     *   may carry `key` to name the file that stopped it.
+     * @returns {Promise<ApplySuccess|ApplyFailure>}
+     */
+    async function applyAsOne(commit) {
+        if (state !== 'staging') {
+            throw new Error(`cannot apply: the transaction is already ${state}`);
+        }
+        const changes = Array.from(staged.values());
+        for (const change of changes) {
+            let current;
+            try {
+                current = await io.read(change.key);
+            } catch (err) {
+                state = 'failed';
+                return { ok: false, failedKey: change.key, reason: `read-failed: ${err.message}`, rolledBack: [], rollbackFailures: [] };
+            }
+            if (current !== change.originalText) {
+                state = 'failed';
+                return { ok: false, failedKey: change.key, reason: 'changed-on-disk', rolledBack: [], rollbackFailures: [] };
+            }
+        }
+        try {
+            await commit(changes.map(c => ({ ...c })));
+        } catch (err) {
+            /** @type {string[]} */
+            const rolledBack = [];
+            /** @type {RollbackFailure[]} */
+            const rollbackFailures = [];
+            for (let i = changes.length - 1; i >= 0; i--) {
+                const change = changes[i];
+                let current;
+                try {
+                    current = await io.read(change.key);
+                } catch (readErr) {
+                    rollbackFailures.push({ key: change.key, reason: `restore-failed: ${readErr.message}` });
+                    continue;
+                }
+                if (current === change.originalText) continue;
+                if (current !== change.newText) {
+                    rollbackFailures.push({ key: change.key, reason: 'changed-after-write' });
+                    continue;
+                }
+                try {
+                    await io.write(change.key, change.originalText);
+                    rolledBack.push(change.key);
+                } catch (writeErr) {
+                    rollbackFailures.push({ key: change.key, reason: `restore-failed: ${writeErr.message}` });
+                }
+            }
+            state = 'failed';
+            const failedKey = err && typeof err.key === 'string' ? err.key : (changes.length ? changes[0].key : '');
+            return { ok: false, failedKey, reason: `commit-failed: ${err && err.message}`, rolledBack, rollbackFailures };
+        }
+        for (const change of changes) written.push(change.key);
+        state = 'applied';
+        return { ok: true, written: written.slice() };
+    }
+
+    /**
      * Fails the apply: rolls back what was written and reports which key stopped it.
      * @param {string} failedKey
      * @param {string} reason
@@ -177,8 +249,7 @@ function createRenameTransaction(io) {
 
     /**
      * Undoes a SUCCESSFUL apply — the escape hatch for a caller whose own follow-up step failed after
-     * the writes landed (the rename commands use it when the on-disk file rename fails). Only valid in
-     * state 'applied'; a failed apply has already rolled itself back.
+     * the writes landed. Only valid in state 'applied'; a failed apply has already rolled itself back.
      * @returns {Promise<RevertResult>}
      */
     async function revert() {
@@ -193,6 +264,7 @@ function createRenameTransaction(io) {
     return {
         stage,
         apply,
+        applyAsOne,
         revert,
         get state() { return state; }
     };

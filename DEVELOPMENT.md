@@ -1,7 +1,20 @@
 # Development
 
-Building, testing and hacking on TwinCAT PLC Toolkit. For what the extension *does*, see
+Building, testing and hacking on TC Toolkit. For what the extension *does*, see
 [README.md](README.md); for the current state of the work, see [HANDOFF.md](HANDOFF.md).
+
+**Naming.** The user-facing name is **TC Toolkit**: the display name, the Activity Bar container, the
+command category (`TC Toolkit: Compile Project`), the settings title, the custom editor, status-bar texts,
+notifications, quick-pick titles, output channels (`TC Toolkit Language Server`, `TC Toolkit Library
+Definitions`) and diagnostic sources (`TC Toolkit compile`, `TC Toolkit ST Validator`). The views are
+**PLC Objects**, **PLC Libraries** and **PLC References**, and the start page's tab is `TC Toolkit Start`.
+"TwinCAT" is Beckhoff's registered trademark, so it is used only **descriptively** ("for Beckhoff TwinCAT 3
+PLC projects", "a TwinCAT solution", "requires TwinCAT XAE") and never as the name of the product or of
+anything in its UI; `test/test_start_contributions.js` fails if a contributed name contains it. **Internal
+identifiers keep the `twincat.*` prefix** (extension id `twincat-plc-toolkit`, command ids, setting keys,
+view and container ids, context keys, the `twincat.xmlViewer` viewType, the `twincat-compile`
+DiagnosticCollection name): renaming those would break users' keybindings, settings and editor
+associations, and nobody reads them as a name.
 
 ## Run from source
 
@@ -37,6 +50,18 @@ same version: both directories end up under `~/.vscode/extensions/` and the old 
 `.obsolete` until a **full restart** — a window reload is not always enough. This has already cost one debug
 cycle chasing a "feature does nothing" report that was really old code still running.
 
+**What the VSIX must carry for Compile Project.** `resources/compiler/` ships whole (the bundle, its two
+libraries, the GPL-3.0 licence files, `third-party/`, `SOURCE.md`). **The only dialect profile shipped is
+`resources/dialects/twincat3.json`** (user rule, 2026-11-10): no CODESYS or other profile, and none copied
+from the fork — `test_vendored_compiler.js` pins `resources/dialects/` to exactly that file. (The bundle's
+built-in CODESYS *library importer* is compiler code, not a profile, and stays.) After packaging, check:
+
+```bash
+unzip -l twincat-plc-toolkit-<version>.vsix | grep -E 'resources/(compiler|dialects)/'
+# expect resources/compiler/{compiler.cjs,libs/*.stlib,LICENSE,COPYING,COPYING.RUNTIME,SOURCE.md,third-party/*}
+# and exactly one profile: resources/dialects/twincat3.json
+```
+
 ### Publish a GitHub release
 
 `.github/workflows/release.yml` is a **manual** workflow (`workflow_dispatch`; Actions tab → *Release* →
@@ -61,7 +86,7 @@ node test/test_tree_reveal.js # exact component → project → solution parent 
 node test/test_objects_tree_model.js # the vscode-free Objects-tree model
 node test/test_objects_tree_ids.js   # every Objects-tree id pinned on sample/ (--write regenerates)
 npm run typecheck             # type-check gate: tsc --noEmit (no emit — runtime stays plain JS)
-npm run lint                  # ESLint 9, flat config — a DEFECT check, not a style check; the
+npm run lint                  # ESLint 10, flat config — a DEFECT check, not a style check; the
                               # policy and every relaxation are documented in eslint.config.js
 
 REQUIRE_FULL_SUITE=1 npm test # fail unless the full-run fixtures are present (see below)
@@ -92,16 +117,17 @@ found running 2 of its 10 tests. Hence the classification below: a run states wh
   whole-suite FULL coverage.
 
 **Optional gates** are listed in the summary as *ran* or *skipped* but never make a run REDUCED:
-today only `compile-real` (`test/test_compile_real.js`, Compile Project against a real external
-compiler, which CI does not have). Run it by hand with the compiler's bundled CLI:
+today only `compile-real` (`test/test_compile_real.js`, Compile Project against the REAL compiler —
+the bundled `resources/compiler/compiler.cjs`). It needs a Node >= 22, found the way the command finds
+one; without it (CI's Node 16/20 legs) it skips. It runs in every `npm test` on Node 22+ (CI's lint/test
+leg uses Node 24). To try another compiler build instead of the bundled one:
 
 ```bash
-TWINCAT_COMPILER_BUNDLE=/path/to/compiler-bundle.cjs node test/test_compile_real.js
-# optional: TWINCAT_COMPILER_NODE=/path/to/node (>= 22), else `node` on PATH
+TWINCAT_COMPILER_BUNDLE=/path/to/strucpp-bundle.cjs node test/test_compile_real.js
+# optional: TWINCAT_COMPILER_NODE=/path/to/node (>= 22)
 ```
 
-Build the bundle from the compiler's `development` branch (`npm ci && npm run build:bundle`, which
-writes the bundled CLI under `dist/`) in a scratch clone. Never make `compile-real` required in `test/run.js`.
+Never make `compile-real` required in `test/run.js` — a Node < 22 machine must still run a FULL suite.
 
 `REQUIRE_FULL_SUITE=1` turns a reduced or filtered run into a hard failure after the harness reports
 are collected. Use it before packaging a release, so a silently skipped gate can never be mistaken
@@ -130,7 +156,7 @@ per-suite without aborting on the first failure. The main ones:
 | `test/test_objects_tree_ids.js` | Pins every element the VS Code adapter (`src/treeDataProvider.js`) renders on `sample/` against `test/fixtures/objects-tree-ids.json`, recorded from the provider before the R4 model refactor: id, label, contextValue, collapsible state, icon, tooltip, click command and `getParent`, plus the id and ancestor ids `getRevealItem` gives every file and component. Six tree shapes (one solution — the first sample copied alone into a temp root, so its recorded ids are unchanged —, two solutions, two projects with no solution, one project with no solution, flat, and `two-sample-solutions`: the committed `sample/` with its 3.1.4026 and 3.1.4024 solutions). Also asserts directly that `getParent` returns the element that listed the child and that reveal ancestors carry the tree's ids and labels. Ids drive VS Code's expansion state and reveal, so a change here is user-visible; regenerate with `--write` only for a deliberate, reviewed change. Required gate `objects-tree-ids`. |
 | `test/test_st_shadow.js` | XML is the source of truth: a stray plain `.st` mirror (outside `ST_Files/`) must never steal an XML-backed symbol's index node — the references scan would follow the hijacked uri to the stale mirror and miss the real call sites. |
 | `test/test_st_output_path.js` | The pure output-path mapping behind project-aware **Generate ST** (`src/stOutputPath.js`): each project's objects land inside that project, `<project dir>/ST_Files/<path in the project>.st`, so two projects' identical object paths never collide and nothing is written at the workspace's top level; extensions become `.st`, a linked object cannot escape its project's `ST_Files`, and a path under any `ST_Files` is never an input. The end-to-end export (real provider, real disk, three-project fixture) is asserted by the dev-host `generate-st` phase. |
-| `test/test_library_catalog.js` | The data path behind the TwinCAT Libraries view: catalog built from the `.plcproj`, namespaces, `.tmc` types and their members. |
+| `test/test_library_catalog.js` | The data path behind the PLC Libraries view: catalog built from the `.plcproj`, namespaces, `.tmc` types and their members. |
 | `test/test_library_scope.js` | The Libraries view's active-project scoping, both halves. Server side: `selectLibraryCatalog` (workspaceScan.js) over REAL routing on a two-`.plcproj` fixture — a file's project answers with its own catalog **even when empty** (an explicit scope never widens to the union; that widening was the old behavior and is pinned OUT), union only for no-fileUri/loose. Host side: `scopeProjectKey`/`scopeDescription`/`readLibraryResponse` plus the provider under the vscode stub — refetch only on owning-project change, description only in 2+-project workspaces (real spelling, never the identity key), bare-array responses degrade to the union, a failed request never throws. |
 | `test/test_dnd_rules.js` | The Objects-tree drag & drop and copy/paste compatibility matrices: what is draggable/copyable (not virtual folders, not Get/Set accessors; directories move but do not copy), components move only within their own file yet paste cross-file (POU↔interface gated), directory-cycle and no-op rejections, duplicate-in-place file paste. |
 | `test/test_xml_rename.js` | Structural rename primitives in `xmlParser`: `renameComponentInXml` (tag Name attr + declaration header + LineIds, Ids kept), `renameVirtualFolderInXml` (folder tag + member FolderPath prefix rewrite), and the no-op-safety composition the rename command relies on (header already renamed by the reference pass → attr/LineIds still fixed, no corruption). |
@@ -142,7 +168,10 @@ per-suite without aborting on the first failure. The main ones:
 | `test/test_transition_warning.js` | `convertXmlToSt` names every SFC transition it cannot convert in `warnings`; export mode marks each with a comment without breaking the lineMap, raw (live) mode adds no text at all. |
 | `test/test_nested_namespace.js` | Nested library namespaces (`VisuElems.VisuElemBase.▮`): a library's namespace re-exports its dependencies' namespaces, so the inner segment names a library no `.plcproj` references and is resolved by name against the installed-library store, lazily and cached. Asserts the two properties that hold without any library installed — the gate (only a referenced namespace head opens the store, so `stAxis.MotionState.▮` never does) and the miss (uninstalled ⇒ cached empty list, never an exception). Real resolution runs only when the machine has a readable library, and says so when it does not. |
 | `test/test_rename_engine.js` | `src/renameEngine.js`: mapping workspace reference positions (raw-ST-unit coords) back into CDATA splices — synthesized-line skips (action headers, `GET`/`SET`), the PROGRAM→FUNCTION_BLOCK raw-mode column skew, the never-write-a-mismatch guard, CRLF byte preservation. |
-| `test/test_rename_transaction.js` | `src/renameTransaction.js`, the rollback transaction behind cross-file rename: stage-then-apply with first-staged-order writes, composed re-staging (original text kept from the first read), the pre-write re-read (`changed-on-disk` — a file that changed since staging is never written), reverse-order rollback on first failure, the rollback's own never-clobber verify (`changed-after-write`), per-file rollback-failure reporting, `revert()` after a successful apply (the failed-disk-rename escape hatch), and single-shot apply. Fault-injected over a fake io; the three guards are each verified to FAIL when removed. |
+| `test/test_rename_transaction.js` | `src/renameTransaction.js`, the rollback transaction behind cross-file rename: stage-then-apply with first-staged-order writes, composed re-staging (original text kept from the first read), the pre-write re-read (`changed-on-disk` — a file that changed since staging is never written), reverse-order rollback on first failure, the rollback's own never-clobber verify (`changed-after-write`), per-file rollback-failure reporting, `revert()` after a successful apply, and single-shot apply. Fault-injected over a fake io; the three guards are each verified to FAIL when removed. `applyAsOne` (the rename's single WorkspaceEdit): one commit receives every change, a stale file fails before the commit runs, a commit that throws after landing part of the edit gets exactly the landed files restored, and a file holding neither text is reported, never overwritten. |
+| `test/test_rename_family.js` | R7: `memberRenameFamily` (features/references.js) — renaming a Method/Property reaches every implementor of a shared interface method, a second interface one of them also implements (and ITS implementors), an interface's second `EXTENDS` parent, a derived FB that inherits or overrides it, and the call sites through any of them (`itf.Start()` included); NOT a POU that only shares the name, an unrelated interface's same-named method, or another method of the same interface. Applied through `renameEngine` as the command does (structural Method renames, other files byte-identical), and the visualization side follows the same family. Verified to fail 32 ways without the family. |
+| `test/test_plcproj_text.js` | `src/plcProjText.js`: the `.plcproj` rewrite a rename makes changes only the Include value (entry kept in place with its children, CRLF kept), case-insensitive, prefix-safe (`FB_A` vs `FB_AB`, `Sub` vs `SubX`), directory renames rewrite their nested Folder/Compile entries, library references are never touched, XML entities round-trip, and on both committed sample `.plcproj` files a rename inserts exactly the new characters and renaming back is byte-identical. |
+| `test/test_rename_commands.js` | `src/commands/renameCommands.js` end to end under a stubbed `vscode` with the real by-symbol query: a file, member or directory rename is ONE WorkspaceEdit (text edits, then the move LAST; the `.plcproj` edit inside it), the sibling implementor follows and the name-alike does not, a sibling that already has the new name stops the rename before any write, a failed move restores every landed buffer, and *Undo Last Rename* runs `undo` from a text editor and restores every file byte for byte — refusing once a participating file changed. The stub's `undo` follows the rule measured in a real VS Code (only from a text editor of a file in the group). |
 | `test/test_references_for_symbol.js` | The LSP's by-symbol references entry point (`custom/referencesForSymbol`) that powers rename: FB/GVL/DUT roots (a GVL name never appears in its own ST text, so the position-based API cannot seed it), methods/properties/actions, the name-keyed-index identity guard, and index restoration after the scan. |
 | `test/test_config_references.js` | The non-code half of rename (`custom/configReferencesForSymbol`): dotted symbol paths inside visualizations `.TcVIS`/`.TcVMO` (`GVL_X.fb.member`, embedded `STSnippet` code) and text lists `.TcTLO`/`.TcGTLO` (a text entry whose text IS a symbol path) are found only when the chain provably resolves to the renamed symbol — text-list ids, visu-library names, dotted prose (`Palletizer.Turn1`) and unresolvable prefixes are never touched. Task configs `.TcTTO` use a separate rule: the `<PouCall>` `<Name>` matches only a dot-free name, so a library call (`VisuElems.Visu_Prg`) is never rewritten. BOM/offset fidelity, plus a sample-project pass when `sample/` is present. |
 | `test/test_lsp_parser.js` | Lexer, AST parser and symbol indexer on a synthetic FB: keyword tokenisation, `EXTENDS`/`IMPLEMENTS`, variable types and ranges, nested method params, property GET accessors. Lived outside the suite until 2026-08-05 and **printed `[FAIL]` while exiting 0** — it could report a broken parser and still be green. It counts failures and exits non-zero now. |
@@ -154,6 +183,7 @@ per-suite without aborting on the first failure. The main ones:
 | `test/test_peek_uri.js` | `media/peekUri.js`, the synthetic peek/goto URI vocabulary: `parseQuery` against independent %-encoded literals, both encoders' defaults and their exact joined query strings (byte-pinned), `decodeGotoTarget` inverting `encodeGotoParts` incl. the null defaults and `Number()` conversions, and `peekOpenMessage`'s full 'openFile' body incl. the zero-length/null-range fallback to `targetWord.length`. |
 | `test/test_diagnostic_markers.js` | `media/diagnosticMarkers.js`: severity mapping (1→error, 2→warning, else info) through caller-injected sentinel values, other-component diagnostics dropped, `pane === 'decl'` vs everything-else routing (non-'decl' lands in impl — today's contract), and the marker field shape key-for-key. |
 | `test/test_folding.js` | Folding ranges (`media/stFolding.js`). Pins the two reported bugs by name — an unmatched `{endregion}` truncating the enclosing `VAR` fold, and an unindented `{attribute …}` growing a fold arrow of its own — plus the case designed for rather than discovered: `{IF defined(X)}` is a conditional *pragma*, not an `IF` block, and reading it as one leaves an unclosed block that eats every fold below. Also covers keywords inside comments/strings (`$`-escapes included), members named like keywords (`axis.Case`), the separate region/block stacks, every `VAR_*` variant, and a sweep over every pane of every `sample/` object asserting no range is ever out of bounds. |
+| `test/test_pragma_hover.js` | Pragma hover (`src/lsp/features/hover.js`): every directive (`{text}`/`{info}`/`{warning}`/`{error}`, the six conditional heads, `{region}`/`{endregion}`, `{warning disable/restore}`) is titled, described and linked; documented attributes show syntax (the `:=` form when valued) and their own Infosys page; observed ones say so without the maintainers' measurement notes; an unknown attribute gets a NEUTRAL hover; an unknown head, code, comments (nested included), strings and line comments get none. The webview's path: `assembleSt` → `localToAbsolute` → `provideHover` → `mapHoverToLocal` lands on the right pane line and columns in a method's decl and impl panes, and a hover on another line is dropped. `isDocumentationUrl` (what the host will open) and a provenance guard: the generated catalogue holds names, syntax and page ids only, so a copied description cannot slip in. |
 | `test/test_pragmas.js` | Pragma classification and the two catalogs, plus the highlighting rules in **both** grammars and the `{region}` folding markers. Pins the split the design rests on: shape decides the category (and therefore the colour), the catalog only enriches — so a user-defined attribute must be scoped exactly like a documented one. Also asserts catalog integrity (no duplicates, every documented entry has an Infosys node id, the curated file holds nothing Infosys documents, every curated entry carries measured counts), that pragma spans are consumed whole in the lexer and both grammars, and that the three folding-marker declarations — `pragmas.js`, `language-configuration.json`, `media/editor.js` — still agree, which nothing else can check because none of them can import the others. |
 | `test/test_plcproj_scope.js` | The index is scoped to the `.plcproj`, not the filesystem: a project's `objectPaths` (from `createProjectMap`) names only the `<Compile>`d objects, so a backup/orphan copy on disk (a duplicate object name, absent from the project) can never win the name-keyed index and steal a real object's references. Includes the no-`.plcproj` empty-map case and a sample-coverage check proving the scoping is a no-op on the ratchet. Predates the project-scoped index (below) — the guarantee it pins now runs through `createProjectMap` per project instead of one workspace-wide union. |
 | `test/test_uri_fs_path.js` | `uriToFsPath()` must return a path the **running** platform can open. The former copies in `workspaceScan.js` and `features/core.js` once ended in an unconditional `.replace(/\//g,'\\')`, which is correct on Windows and on POSIX ate the root — `file:///home/u/a` became `\home\u\a` — so 11 of 59 suites failed on Linux while CI (`windows-latest`) stayed green. Both callers now delegate to the shared production helper in `src/fileUri.js`. Written to hold on **both** platforms so whichever one CI runs still guards the branch it takes: a round trip through the real filesystem (the load-bearing one — a merely plausible converter cannot satisfy it), paths containing a space in both encoded and unencoded form, separator/root shape per platform, bare-path and empty-input passthrough, caller delegation, and unchanged Windows mapping. |
@@ -161,21 +191,29 @@ per-suite without aborting on the first failure. The main ones:
 | `test/test_solution_map.js` | `src/solutionMap.js`: the real `.sln` → `.tsproj` → `_Config/PLC/*.xti` → `.plcproj` chain, multiple PLC projects under one solution, multiple same-named solutions, project labels scoped within their solution, unrelated Visual Studio solutions ignored, and unreferenced PLC projects retained as top-level fallbacks. |
 | `test/test_project_template.js` | `src/projectTemplate.js` on both shipped templates: the committed templates match `scripts/build-project-templates.js --check`; every GUID classified; every identity GUID re-issued with every reference following it and each occurrence's case kept (`.sln` upper, `.plcproj` lower); every type GUID kept; no template name left in a path or a byte; BOM, CRLF/LF, tabs and trailing newline preserved and nothing but names and GUIDs changed; starter objects exactly MAIN, PlcTask (calling MAIN) and an empty GVL_Main; the `.tspproj` (4024) and `.tsproj` + `_Config/` (4026) shapes; the created project read back by `projectMap` and `solutionMap`; refusal of a target holding a solution or a file it would write (nothing touched); name validation. |
 | `test/test_template_diagnostics.js` | A project created from each template, indexed like `test_sample_diagnostics.js` with every check on: ZERO diagnostics, again after the first edit a user makes (a variable in the `qualified_only` `GVL_Main` used from MAIN as `GVL_Main.x`), and a deliberate undeclared name IS reported (the gate is live). |
-| `test/test_start_contributions.js` | package.json for R2: the `twincat` Activity Bar container holding Start, TwinCAT Objects, TwinCAT Libraries in that order with ids unchanged, none left in the Explorer, References still in its panel, no dangling view id in a when-clause; each start command contributed under TwinCAT, in the palette, registered, with an `onCommand` activation event (needed on 1.66); Start view welcome links; a monochrome offline icon; the start page's strict CSP and no remote load; `.vscodeignore` shipping the derived templates but not the raw XAE source; the `twincat.startPage.recentProjectsShown` and machine-scoped `twincat.xaeShell.path*` settings, and the page's command / settings-section allow-lists. |
+| `test/test_start_contributions.js` | package.json for R2: the branding guard (no contributed name — display name, settings title, custom editor, view containers, views, command categories — contains "TwinCAT"; the extension id is unchanged); the `twincat` Activity Bar container (titled `TC Toolkit`) holding Start, PLC Objects, PLC Libraries in that order with ids unchanged, none left in the Explorer, References still in its panel, no dangling view id in a when-clause; each start command contributed under the `TC Toolkit` category, in the palette, registered, with an `onCommand` activation event (needed on 1.66); Start view welcome links; a monochrome offline icon; the start page's strict CSP and no remote load; `.vscodeignore` shipping the derived templates but not the raw XAE source; the `twincat.startPage.recentProjectsShown` and machine-scoped `twincat.xaeShell.path*` settings, and the page's command / settings-section allow-lists. |
 | `test/test_start_commands.js` | `src/commands/startCommands.js` + `src/startPage.js` under a recording `vscode` stub: create with args and with prompts (files, recents, last location, open here/new/add/none), refusals inline vs as a notification, a deleted recent solution pruned, Generate ST's project pick, help links and settings, the singleton panel, its `state` message (including the recent-list length, clamped, and the XAE Shell paths), a settings change re-posting state to an open page, `openSettings {section}` and Open Settings' query argument, and the command allow-list. |
 | `test/test_check_unit.js` | `src/checkUnit.js`: one origin per emitted line, every pane line exactly once and verbatim in pane order (so a reported line/column IS the pane's), generated lines anchored on their component, members before the body, no rewriting (`REFERENCE TO`, `REF=`, pragmas survive), every sample file round-trips. |
-| `test/test_compile_check.js` | `src/compileCheck.js` with a fake child process: setup messages (compiler missing, Node missing/too old, each naming its setting), the command line, the JSON report (clean, errors, malformed, exit 2, crash), mapping to file/component/pane/line, the pragma-warning filter and its count, temp-dir lifetime, timeout, cancellation, `paneRange`. |
-| `test/test_compile_commands.js` | `src/commands/compileCommands.js` + the provider hooks under a recording `vscode` stub: project pick, setup refusal, clean run, a run with errors (Problems entries, pane markers, status text, summary), unsaved edits reaching the compiler, Go to Problem and the entry links, an edit dropping its component's results, a failed run keeping the previous results, cancellation, a fresh open landing on the first problem. |
-| `test/test_compile_real.js` | **Optional gate `compile-real`**: the REAL compiler (`TWINCAT_COMPILER_BUNDLE`) over every PLC project in `sample/`, through the same code the command uses: ZERO errors and zero warnings after the pragma filter (a ratchet, like the diagnostics baseline), plus planted errors in a method body, a method declaration and a GVL landing on the right file/component/pane/line, and — in the second sample — a call to a method only the FIRST sample's same-named `FB_Cylinder` has, reported in the second sample's MAIN (the projects are never compiled together). Skips (and says so) without a compiler. |
+| `test/test_compile_check.js` | `src/compileCheck.js` with a fake child process: the bundled compiler as default and the setting as override, Node discovery (order on Windows, the version gate, the editor runtime as last resort with `ELECTRON_RUN_AS_NODE=1`, a configured Node path as the only candidate), setup messages (compiler missing, Node missing/too old, each naming its setting), the command line, the JSON report (clean, errors, malformed, exit 2, crash), mapping to file/component/pane/line, the pragma-warning filter and its count, temp-dir lifetime, timeout, cancellation, `paneRange`. |
+| `test/test_compile_commands.js` | `src/commands/compileCommands.js` + the provider hooks under a recording `vscode` stub: the bundled compiler run when nothing is configured, the toolbar button's host side (`compile-project` from a real `resolveCustomTextEditor` runs the command with the owning project's key, or asks when no single project owns the file; `compileRunning` posted at start and end and carried in `init`; the command's own setup messages), project pick, setup refusal (a missing override), clean run, a run with errors (Problems entries, pane markers, status text, summary), unsaved edits reaching the compiler, Go to Problem and the entry links, an edit dropping its component's results, a failed run keeping the previous results, cancellation, a fresh open landing on the first problem. |
+| `test/test_compile_real.js` | **Optional gate `compile-real`**: the REAL compiler — the bundled one, or `TWINCAT_COMPILER_BUNDLE` — first proving the bundled IEC libraries load (`TON`, `R_TRIG`, `CTU`, `LIMIT` resolve; `PID`, from a library NOT shipped, does not), then over every PLC project in `sample/`, through the same code the command uses (library preparation included): ZERO errors and zero warnings after the pragma filter (a ratchet, like the diagnostics baseline), nothing library-filtered, plus planted errors in a method body, a method declaration and a GVL landing on the right file/component/pane/line, and — in the second sample — a call to a method only the FIRST sample's same-named `FB_Cylinder` has, reported in the second sample's MAIN (the projects are never compiled together). Then R3.4 on the synthetic library project (`test/_synthLibProject.js`): errors without the declarations, 0 with them; a wrong argument type and an unknown parameter on a library call reported; an archive-only library name filtered; a user typo, a typo on a library FB member and an unknown name behind a qualifier reported (the last at its pane column); 0 errors without the dump. Prints the sample's timing. Skips (and says so) without a Node >= 22. |
+| `test/test_library_decls.js` | `src/libraryDecls.js` without a compiler, on the SYNTHETIC library project (`test/_synthLibProject.js`: dump, `.tmc`, a generated archive — every name invented): the `.tmc` model (library-owned types only; interfaces and the project's own types skipped; no comment/string text read), gathering, each declaration kind's exact text, conflicts (compiler names, user names, a dependency the user redefines), dependency-only declarations, nothing guessed for unreadable types, qualifier blanking (same lengths; members/comments/strings/user names untouched), the filter case by case (a user typo kept), **temp-dir lifetime** (the declarations exist only in runCheck's temp dir during the run; gone after, also on a failed run; project, workspace and `sample/` unchanged), the no-dump case. |
+| `test/test_vendored_compiler.js` | `resources/compiler/`: exactly the files `SOURCE.md` lists, each matching its recorded size and SHA-256; a full 40-hex commit and the source link at it; the GPL-3.0, Apache-2.0 and MIT texts; `THIRD-PARTY-NOTICES.md` naming the commit; `.vscodeignore` shipping the directory and dropping `scripts/vendor-compiler.js`; the bundle requiring Node built-ins only; `resources/dialects/` holding exactly `twincat3.json` and no profile anywhere else (user rule). |
 | `test/test_recent_projects.js` | `src/recentProjects.js`: newest first, de-duplicated (Windows paths case-insensitive, either separator), capped at 10, missing solutions pruned, malformed stored data ignored, the globalState adapter, and `recentsShownLimit` (the start page's row limit: default 2, clamped to 1..10). |
 | `test/test_xae_shell_detect.js` | `src/xaeShellDetect.js` with every dependency faked (runs off Windows): the COM registration for both shells (quoted and argument-suffixed `LocalServer32`, the 32-bit view for 4024, a localized value name), the default locations with and without the environment variables, a registered file that is missing, a non-GUID ProgID value, rejecting / throwing registry and existence probes, non-Windows (nothing found, registry never queried), `createRegQuery` over a fake `execFile` (argument array, timeout, errors → null), `describeConfiguredShells`, and `resolveShellExe` (configured-and-existing wins, else default location, else registry). |
 | `test/test_xae_shell_commands.js` | `src/commands/xaeShellCommands.js` under a recording `vscode` stub with detection faked: an empty setting is filled (Global target), a non-empty one is kept even when its file is missing, nothing found writes nothing, `autoFill` never rejects, `twincat.detectXaeShell` reports found / kept / not found in one message whose button opens the filtered settings. Also `findTwinCatShells` in `src/xaeShell.js`: `path4026` ↔ the 64-bit shell, `path4024` ↔ the 32-bit one, a missing configured path ignored (those checks are skipped on Windows, where a real shell may be installed). |
 | `test/test_multi_project_scope.js` | End-to-end: two copies of `sample/` under one workspace root (`test/_multiproject.js` builds the fixture, one copy deliberately diverged), driven through the real `scanWorkspace`. Asserts the partition (one index per project, nothing lost to a name collision), 0 diagnostics on the correct copy while the diverged copy's own real error still reports, references and the rename config scan never crossing the project boundary, and the library namespace/symbol registries staying per-project — including the Libraries-view union fallback when no project is specified. Needs `sample/`; skips cleanly when absent. |
 
 | `test/test_object_insert.js` | The Objects-tree insert commands' text, built by driving the **real** `buildNodeFromXml` over real `sample/` objects: the bare name for each kind, and the call template — instance name for an FB (`FB_Gripper` → `fbGripper`, since ST calls an instance, not the type), own name for a FUNCTION/PROGRAM, bare for a method/action, `Name();` when there are no parameters. Also pins that the extracted `callTemplate` is byte-identical to what `libraryTreeProvider` produced before the move, and that every `contextValue` named in the two new `when` clauses is one the Objects tree actually emits (read out of `objectsTreeModel.js`, not hard-coded, so a rename cannot silently orphan the menu items). **One case is synthetic on purpose:** no FB in `sample/` declares root `VAR_INPUT`/`VAR_OUTPUT`, so the mixed `:=`/`=>` ordering case is driven from one clearly-marked XML string through the real parser. |
+| `test/test_nested_comments.js` | Nested `(* … *)` comments (TwinCAT nests them; Infosys "ST comments" documents the form) across **every** scanner: the `parser.js` lexer, `src/stComments.js` and the helpers on it (object kinds, DUT kind, enum members, the check unit's POU keyword), the fold scanner, the Monarch `comment_block1` state (rebuilt from source and run with a state stack) and the TextMate grammar's self-including rule. One table of cases runs through all of them: `*)`-looking text in an inner level, three levels, a quote / `//` / slash-star inside, unterminated, `(*)`. Plus markers inside STRING/WSTRING literals, slash-star staying non-nesting, token positions after a multi-line nested comment, and the language features on a TcPOU whose comments hide declarations and code: zero diagnostics, only the real variable declared, and Go to Definition mapped back through `localToAbsolute`/`absoluteToLocal` to the right pane line. Verified red on the pre-change code (24 failures). |
 | `test/test_st_strings.js` | ST string literals across **all three** grammars that must agree — the `src/lsp/parser.js` lexer, the webview's Monarch tokenizer and `syntaxes/twincat-st.tmLanguage.json`. IEC 61131-3 escapes with `$` (`$'`, `$$`, `$N`, `$0D`, …) and a **backslash is an ordinary character**; both highlighting grammars had C-style `\\.` escape rules copied from Monaco's sample, so `'C:\Temp\x\'` swallowed its own closing quote and ran on to the next apostrophe anywhere below — in the reported case an `FB's` inside a comment 16 lines down. Uses that verbatim case. The lexer was always right; only the two grammars were wrong, which is exactly why one harness now pins all three together. |
 | `test/test_scan_controller.js` | `src/lsp/scanController.js`: which of the two scan-triggering requests actually has to run a scan. Pins that `ensureScanned` twice over one root set scans **once** (the duplicate startup scan this replaced), that `rescan` after it scans **again** — the assertion that stops a future "optimisation" from teaching the `.plcproj` watcher to skip, since on a content change the roots are unchanged — and that a throwing scan leaves no completed state. Root sets compare order-, case- and separator-insensitively; the empty set is a legitimate *completed* state, or a window with no folders would re-request forever. |
+| `test/test_index_inputs.js` | `src/indexInputs.js`: `*.tmc` and `library-signatures.xml` re-index (case-insensitive) but not when under a directory the scan skips (`_Libraries`, `_CompileInfo`, `ST_Files`, `.git`); the own-write gate suppresses during the write and its grace period and never sticks closed after a throw; a build burst plus a `.plcproj` change is ONE reindex on a fake clock; static checks that `extension.js` and Update Library Definitions are wired to it. |
 | `test/test_debounce.js` | `src/util/debounce.js`: trailing edge only, one invocation per burst carrying the **last** arguments, every caller's promise resolved. Timers are injected, so it asserts on a fake clock rather than racing a real one. |
+| `test/test_archive_store.js` | R6's persisted archive-name cache (`src/lsp/archiveStore.js` + `harvestArchiveFile`), each "session" a fresh Node process: off when no directory is configured; a second session decodes nothing and gets identical names; an archive rewritten with the SAME size and mtime is caught by the central-directory fingerprint and decoded afresh; garbage, truncated, empty, foreign, other-version and other-decoder files are ignored and rewritten, a malformed entry dropped alone; entry and name-character caps evict least-recently-used; eight vendored copies are one stored entry; only names reach the file; two windows keep each other's entries; file and buffer fingerprints agree, also when the central directory starts before the 66 KB tail window. |
+| `test/test_scan_readiness.js` | R6's per-project background scan with a HAND-STEPPED event loop: background indexes equal the one-pass scan's (objects, libraries, routed `.st`); a request for a project is released only when that project's index is complete (snapshot identical to the finished index) while other projects are still unindexed; a waited-for project jumps the queue; a file under no project waits for the whole scan; a reindex supersedes mid-scan and the old scan's waiters are answered from the NEW workspace; a throwing scan leaves the last complete workspace answering; the controller joins an in-flight `ensureScanned`, never lets `rescan` skip, and records completion only for the latest scan. |
+| `test/test_server_ipc.js` | The REAL `src/lsp/server.js` in its own process over Node IPC (`vscode-jsonrpc`): `initialize` answers without waiting for the scan and advertises hover; `custom/hover` answers at once; `custom/diagnostics` for the last project sent at once, and right after `custom/reindex`, return ZERO diagnostics on the correct sample (a control shows a partial index gives 10); `custom/indexReady` joins the startup scan; `custom/libraries` answers per project; the archive names land in `initializationOptions.archiveCacheDir` as one entry for four vendored copies, and a second server session only reads that file. |
+| `test/test_discovery_memo.js` | R6's per-scan directory-listing memo (`createDirectoryListingMemo`, `src/twincatWorkspace.js`): a memoized signature/`.tmc` walk equals the unmemoized one (same files, order, caller-spelled paths); a 3-project scan reads each directory from disk exactly once; and through the REAL scan composition a dump or `.tmc` added after a scan is found by the next one, a removed one is gone, and one three levels below a project is found — the memo never outlives its scan. |
 | `test/test_collect_scope.js` | Which directories each library walker descends. The `.tmc` and signature walkers must **skip** `_Libraries` while `collectArchives` must **enter** it, and the harness proves the second half is load-bearing by adding `_libraries` to `SKIP_DIRS` and watching archive collection go blind — the tempting one-line "fix" that would silently cost ~171 false positives. |
 | `test/test_signature_cache.js` | `src/lsp/parseCache.js`: one dump, three projects → parsed once, two cache hits, all three resolving its symbols. The load-bearing half is **isolation**: each project must hold a *different record object* (asserted by identity, not value — a value check still passes while sharing), so that the merge's `record.namespace` rewrite and `indexBrowserCache`'s member pushes cannot leak between projects. An mtime bump re-parses. |
 | `test/test_plcproj_cache.js` | `src/lsp/plcprojRefs.js`: the same `.plcproj` read **once** across all three indexers that need it, not three times, with an equivalence gate comparing every result against a control run that clears the cache between every call — the two consumers genuinely read the file differently (all `<Namespace>` tags vs the first tag whatever it holds) and the shared record has to preserve both. |
@@ -217,9 +255,9 @@ perfectly good Chromium already.
 |---|---|
 | `build.js` | Generates the page by calling the **real** `getHtmlForWebview()` with a stubbed `vscode` module — a hand-copied page would quietly stop matching what ships. Substitutes only `acquireVsCodeApi()` (records outgoing messages, answers bridge requests from a fixture built off the real sample) and drops the webview CSP, which names `vscode-webview:` sources that do not exist over http. |
 | `serve.js` | Serves it. Monaco's AMD loader and its worker Blob both need a real origin. `require()` it for `start(port)`, or run it standalone to poke at the page by hand. |
-| `run.js` | The references peek: builds for the port it will serve on, drives Find References, asserts. Also pins the page's global error overlay: opening the peek must leave it hidden, Chrome's benign "ResizeObserver loop completed" notice (dispatched by hand, because whether the real loop fires is layout-timing dependent) must not raise it or post `error`, and a genuine error still must. `HARNESS_PORT` moves it off 8123; `HARNESS_SHOT=x.png` saves a screenshot. Also pins the Generate ST split button (roadmap R1): with one project the caret is hidden and the main button keeps its rounded right end; with two or more the inner corners square off to fuse with the caret (`has-caret` on `#generate-st-group`, set by `editor.js` with the caret's `hidden` flag — no `:has()`, which VS Code 1.66's Chromium lacks). Transitions are disabled for that check so it reads the end state, not a frame mid-animation. Step 7e pins Compile Project's pane markers: `compileDiagnostics` → owner `twincat-compile` on the active component's panes, `st-validator` markers surviving both ways and across a diagnostics refresh, a component switch showing only that component's markers, an edit dropping the edited component's markers and posting `compileDiagnosticsStale`; it writes a pane-marker screenshot (`HARNESS_COMPILE_SHOT`, default `test/browser/out/compile-markers.png`; empty = none). |
-| `run_start_page.js` | The start page (roadmap R2): renders the real `renderStartPageHtml()` output WITH its CSP (only `acquireVsCodeApi()` is stubbed, through Playwright's init script), and asserts no request leaves the page's origin, the project name is validated while typing (shared `media/projectName.js` rules, `aria-invalid`), Create posts `{version, name, location}` and shows a host refusal, every other control posts its message, project actions are disabled while no project is open, Compile project is enabled only with `compilerReady` AND a project (and names no compiler product), the form survives in webview state, the recent list shows at most `recentsShown` rows behind a keyboard-operable "Show all (K)" / "Show fewer" tile (local to the page, follows a changed limit), the Settings card shows the two XAE Shell paths with a warning row for a path that is not on disk and posts `openSettings {section}` / the detect command, and there is no horizontal scroll at 360/560/1200 px (one column at 360). Defaults to port 8125. |
-| `run_pragmas.js` | Folding and pragma highlighting. Folds real blocks and reads back the rendered lines, then tokenizes through Monaco's **own** tokenizer. Both fail silently if they regress, which is the point of driving a browser: a unit test on `stFolding.js` cannot prove Monaco actually *used* it rather than its own indentation provider. Carries the two reported bugs as regressions, and asserts implementation-pane blocks still fold — registering a provider replaces indentation folding, so that is the thing most likely to disappear unnoticed. Verified: removing the provider turns 6 assertions red, and the failure text reproduces both original bug reports verbatim. Defaults to port 8124. |
+| `run.js` | The references peek: builds for the port it will serve on, drives Find References, asserts. Also pins the page's global error overlay: opening the peek must leave it hidden, Chrome's benign "ResizeObserver loop completed" notice (dispatched by hand, because whether the real loop fires is layout-timing dependent) must not raise it or post `error`, and a genuine error still must. `HARNESS_PORT` moves it off 8123; `HARNESS_SHOT=x.png` saves a screenshot. Also pins the Generate ST split button (roadmap R1): with one project the caret is hidden and the main button keeps its rounded right end; with two or more the inner corners square off to fuse with the caret (`has-caret` on `#generate-st-group`, set by `editor.js` with the caret's `hidden` flag — no `:has()`, which VS Code 1.66's Chromium lacks). Transitions are disabled for that check so it reads the end state, not a frame mid-animation. Step 7e pins Compile Project's pane markers: `compileDiagnostics` → owner `twincat-compile` on the active component's panes, `st-validator` markers surviving both ways and across a diagnostics refresh, a component switch showing only that component's markers, an edit dropping the edited component's markers and posting `compileDiagnosticsStale`; it writes a pane-marker screenshot (`HARNESS_COMPILE_SHOT`, default `test/browser/out/compile-markers.png`; empty = none). Step 7f pins the toolbar's Compile button: right after Generate ST, with its glyph, name and tooltip; a click posts `compile-project`; `compileRunning` disables it (a click then posts nothing) and re-enables it; at 320–1200 px Generate ST, its caret and Compile all stay inside the editor with no sideways scroll, and the Compile label drops to the glyph at <= 1100 px. `HARNESS_TOOLBAR_SHOTS=<dir>` writes toolbar screenshots (dark and light; 1200, 960, 820, 400 px). |
+| `run_start_page.js` | The start page (roadmap R2): renders the real `renderStartPageHtml()` output WITH its CSP (only `acquireVsCodeApi()` is stubbed, through Playwright's init script), and asserts no request leaves the page's origin, the project name is validated while typing (shared `media/projectName.js` rules, `aria-invalid`), Create posts `{version, name, location}` and shows a host refusal, every other control posts its message, project actions are disabled while no project is open, Compile project is enabled only with `compilerReady` (the compiler file exists — by default the bundled one) AND a project, shows "Compiler file not found" otherwise (and names no compiler product), the form survives in webview state, the recent list shows at most `recentsShown` rows behind a keyboard-operable "Show all (K)" / "Show fewer" tile (local to the page, follows a changed limit), the Settings card shows the two XAE Shell paths with a warning row for a path that is not on disk and posts `openSettings {section}` / the detect command, and there is no horizontal scroll at 360/560/1200 px (one column at 360). Defaults to port 8125. |
+| `run_pragmas.js` | Folding and pragma highlighting. Folds real blocks and reads back the rendered lines, then tokenizes through Monaco's **own** tokenizer. Both fail silently if they regress, which is the point of driving a browser: a unit test on `stFolding.js` cannot prove Monaco actually *used* it rather than its own indentation provider. Carries the two reported bugs as regressions, and asserts implementation-pane blocks still fold — registering a provider replaces indentation folding, so that is the thing most likely to disappear unnoticed. Also runs nested `(* (* *) *)` comments through Monaco's own tokenizer (the inner `*)` must not return to code), and the pragma hover end to end in the webview: the stub answers with the real `provideHover` + `mapHoverToLocal` computed in Node, and the harness checks the request's pane position, the rendered widget, that a line with no `{` costs no round trip, and that a clicked documentation link goes to the host (`openDocumentationLink`) rather than navigating the webview. Verified: removing the provider turns 6 assertions red, and the failure text reproduces both original bug reports verbatim. Defaults to port 8124. |
 
 `run.js` asserts what only a browser can show: that the peek lists cross-file hits at all, that exactly
 the **non-live** panes get hidden models (a hit in the active component must use the live pane), that a
@@ -270,17 +308,31 @@ with nothing highlighted. The fixture also injects a **`.TcTLEO`** into LineA's 
 pass edits it **on disk** and re-queries the live index — the gate for the 2026-08-24 watcher fix
 (`TWINCAT_WATCH_EXTS` omitted `.tctleo`, so an external `.TcTLEO` edit never reached the LSP; only a
 real host runs the watcher chain, so this is the one place it can be proven). The **start-page phase**
-(roadmap R2) checks what only a real host shows: every start command registered, the `TwinCAT` Activity
+(roadmap R2) checks what only a real host shows: every start command registered, the `TC Toolkit` Activity
 Bar container and its Start / Objects / Libraries views open (`workbench.view.extension.twincat`,
-`<view>.focus`), *TwinCAT: Open Start Page* opens the `TwinCAT Start` tab, and *Create New Project* (with
+`<view>.focus`), *TC Toolkit: Open Start Page* opens the `TC Toolkit Start` tab, and *Create New Project* (with
 its arguments, so no dialog) writes a 3.1.4026 and a 3.1.4024 solution and refuses a second create. The
-optional **compile phase** (R3.2) runs *TwinCAT: Compile Project* on every PLC project of the fixture
-through the real command: it runs only when `TWINCAT_COMPILER_BUNDLE` (and optionally
-`TWINCAT_COMPILER_NODE`) is set, which `run.js` writes into the fresh profile's `twincat.compiler.*`
-settings; without it the phase prints `[SKIP]` and asserts nothing. It asserts every run finishes, that no
+**compile phase** (R3.2/R3.3) runs *TC Toolkit: Compile Project* on every PLC project of the fixture
+through the real command, with the **bundled** compiler (asserted) — `TWINCAT_COMPILER_BUNDLE` (and
+`TWINCAT_COMPILER_NODE`) override it, written by `run.js` into the fresh profile's `twincat.compiler.*`
+settings. Only when the host's `checkSetup` finds no Node >= 22 does the phase print `[SKIP]` and assert
+nothing. It also clicks the toolbar's Compile button in the station editor for real (hook message `test:clickCompile`) and asserts the host resolved the file's one owning project and the run started and ended (`compile-button` step). It asserts every run finishes, that no
 error is reported on the sample's own code (only the identifiers the P8 phases typed on purpose, which
 reach the compiler as unsaved edits, plus the object-insert phase's snippet in its file), and that each
-project's files in the Problems panel hold exactly that project's results.
+project's files in the Problems panel hold exactly that project's results. The **rename-undo phase**
+(R7) renames `FB_Station.Reset` (a method of a shared interface) and then `FB_Cylinder.TcPOU` in the
+LineB copy through the real `twincat.renameObject` (the input box and confirmation are answered by
+wrapping the shared API object), each with the file open in the custom editor, and asserts each rename
+is ONE `applyEdit`, the interface method and its calls follow, the `.plcproj` entry is rewritten, the
+moved file keeps its UTF-8 BOM, nothing is left dirty, and *TC Toolkit: Undo Last Rename* puts every
+file of the copy back byte for byte, the file name included.
+
+`TCDEV_CODE` points `run.js` at another VS Code (a CLI shim, or the `code` binary of an unpacked build)
+and `TCDEV_CODE_ARGS` adds launch arguments. Headless Linux as root:
+`TCDEV_CODE=<dir>/VSCode-linux-x64/code TCDEV_CODE_ARGS="--no-sandbox --disable-gpu" xvfb-run -a node test/devhost/run.js`.
+On Linux the P8 "flushed file is byte-identical to foldEdits" check fails on a line-ending difference
+(`\r\n` on disk vs `\n` expected), identically on the pre-R7 commit; it is a Linux-only EOL artefact,
+not a product regression, and passes on Windows.
 
 The same pass also automates the **P8 webview checklist** (items 2–7 of
 `docs/superpowers/plans/2026-08-22-deepen-08-g4-checklist.md`) through **`media/devHostTestHook.js`** —
@@ -322,8 +374,8 @@ to `pull_request` for exactly this; on a PR the input is empty and the checkout 
 the gates are defined once. CI itself is Windows-only (the platform users are
 on), with superseded runs cancelled and a read-only token. Two jobs:
 
-- **`build`** (current Node) — `npm run lint` (ESLint needs Node ≥ 18.18, so lint lives only in
-  this job), `npm run typecheck`, `npm test` with **`REQUIRE_FULL_SUITE=1`** (the
+- **`build`** (current Node) — `npm run lint` (ESLint 10 needs Node ^20.19 || ^22.13 || ≥ 24, so
+  lint lives only in this job; the Node 16/20 legs never run it), `npm run typecheck`, `npm test` with **`REQUIRE_FULL_SUITE=1`** (the
   sample is committed, so CI achieves FULL coverage; a run whose load-bearing gates skipped fails
   instead of passing quietly), then a **VSIX build check** (`vsce package`). Packaging is otherwise
   only exercised by hand at release time, where a broken manifest or `.vscodeignore` would surface
@@ -381,12 +433,14 @@ first file a user opens, which the in-order pass masks.
 extension.js            Thin activation hub: wires providers/views/watchers/LSP client, delegates commands
 src/
   commands/             Command registration, split out of extension.js — each exports register*(context, deps)
-    objectCommands      "TwinCAT Objects" create/delete (methods, properties, actions, files, folders);
+    objectCommands      "PLC Objects" create/delete (methods, properties, actions, files, folders);
                         Add Get/Set Accessor re-adds a property's missing accessor (issue #25)
-    clipboardCommands   "TwinCAT Objects" copy/paste (duplicate a component cross-file or a file under a new name)
-    renameCommands      "TwinCAT Objects" rename (files, members, directories, virtual folders; reference-aware;
-                        cross-file updates staged and applied through renameTransaction)
-    libraryCommands     "TwinCAT Libraries" commands (refresh, insert, copy, Update Library Definitions)
+    clipboardCommands   "PLC Objects" copy/paste (duplicate a component cross-file or a file under a new name)
+    renameCommands      "PLC Objects" rename (files, members, directories, virtual folders; reference-aware;
+                        cross-file updates staged through renameTransaction and written as ONE
+                        WorkspaceEdit with the .plcproj entry and the file move, so one undo restores
+                        it all) + TC Toolkit: Undo Last Rename (runs `undo` from a text editor)
+    libraryCommands     "PLC Libraries" commands (refresh, insert, copy, Update Library Definitions)
     lspBridgeCommands   openComponent navigation + the twincat.lsp.query* Monaco↔LSP bridges
     startCommands       The TwinCAT sidebar's Start view (an empty tree, so its viewsWelcome buttons show)
                         and the start commands: Open Start Page, Create New Project (version → name →
@@ -409,12 +463,22 @@ src/
   checkUnit             Compile Project's check unit: one ST unit per TwinCAT object with a per-LINE
                         origin map back to component/pane/line. Pane text verbatim (never the export's
                         rewrites), members BEFORE the POU body. NOT the live path's unit. vscode-free
-  compileCheck          Compile Project's vscode-free half: setup check (compiler file exists, Node
-                        >= 22 probed), check inputs from object texts, the compiler run as a CHILD
+  compileCheck          Compile Project's vscode-free half: setup check (the bundled compiler
+                        resources/compiler/compiler.cjs unless twincat.compiler.path overrides it;
+                        Node >= 22 FOUND by nodeCandidates/findNode), check inputs from object texts, the compiler run as a CHILD
                         PROCESS (`--check --json --dialect-file resources/dialects/twincat3.json`,
                         `--global-list N.st=<GVL>` per GVL; never `require()`d, never `--strict`) in
                         a temp dir deleted afterwards, timeout + cancel, JSON report → file/component/
-                        pane/line, the pragma-warning filter (counted), paneRange. Spawn injected
+                        pane/line, the pragma-warning filter (counted), the library filter (counted;
+                        messages on the generated declarations kept apart), paneRange. Spawn injected
+  libraryDecls          Compile Project's library declarations (R3.4): reads the project's library
+                        knowledge from THIS machine (signatures dump, .tmc, archive names, .plcproj
+                        namespaces — through lsp/libsymbols, libraries, parseCache), writes
+                        interface-only ST declarations of the referenced library symbols as extra
+                        compiler inputs (strings; runCheck's temp dir is the only place they are ever
+                        files), blanks library namespace qualifiers column-stably, and builds the
+                        filter for undeclared-library-symbol errors. vscode-free. See "Library
+                        declarations" under Compile Project below
   projectTemplate       Create a NEW TwinCAT solution from a shipped template (roadmap R2): copy,
                         rename solution/system/PLC project (`<Name>`, `<Name>_PLC`), re-issue every
                         identity GUID consistently, keep every byte else. vscode-free, unit-tested.
@@ -473,7 +537,7 @@ src/
                         prop_*_get/prop_*_set/action_/transition_) shared by webview, host and
                         LSP; vscode-free. The grammar is FROZEN (ids travel over the bridge and
                         into saved state); prop_X_get parses as accessor-of-X by pinned convention
-  objectsTreeModel      The "TwinCAT Objects" tree as a vscode-free node graph: shape rule (solutions →
+  objectsTreeModel      The "PLC Objects" tree as a vscode-free node graph: shape rule (solutions →
                         projects; one root per project at 2+; else flat), nodes with parent links,
                         children and stable ids; makeNode is the ONE place id and contextValue are set.
                         I/O and uris come from an injected host
@@ -492,20 +556,33 @@ src/
   renameTransaction     Rename: the stage/apply/rollback transaction over the cross-file writes — a
                         multi-file rename either fully lands or every already-written file is restored
                         (reverse order, verify-before-write and verify-before-restore, rollback
-                        failures reported per file). Injected read/write, vscode-free, so testable
+                        failures reported per file). `applyAsOne(commit)` writes everything in ONE
+                        caller step (the rename's single WorkspaceEdit) and restores what landed if
+                        that step fails. Injected read/write, vscode-free, so testable
+  plcProjText           Rename: the in-place `.plcproj` Include rewrite for a renamed file or directory
+                        (keeps the entry's place and children, e.g. <LinkAlways>; vscode-free, testable)
   treeDragAndDrop       Objects-tree drag & drop controller — executes the matrix's plans (needs VS Code 1.66+)
-  libraryTreeProvider   "TwinCAT Libraries" explorer tree (library → types → members). Scopes to the
+  libraryTreeProvider   "PLC Libraries" explorer tree (library → types → members). Scopes to the
                         ACTIVE file's project (revealUri → setActiveFile; refetches only when the
                         owning project changes) and says so in the view description (2+ projects
                         only); union of all projects when nothing owns the active file. The scope
                         decisions are exported pure helpers, pinned by test_library_scope.js
-  referencesProvider    "TwinCAT References" results view (+ referencesTree grouping)
+  referencesProvider    "PLC References" results view (+ referencesTree grouping)
   objectKinds           Kind → codicon → tooltip for the Objects tree (vscode-free, so it is testable);
                         also owns the property row's contextValue (`propertyNode[.noGet][.noSet]`,
                         naming the MISSING accessors) and `isPropertyNode` — test property rows with
                         it in code and `viewItem =~ /^propertyNode\b/` in menus, never `== 'propertyNode'`
+  stComments            The Node-side ST comment scanner (`blockCommentEnd`, `blankComments`): NESTED
+                        `(* (* *) *)` comments as TwinCAT documents them, non-nesting slash-star, `//`,
+                        strings recognised so a `(*` inside one is text. Used by every helper that blanks
+                        comments before a keyword regex (objectKinds, xmlIndexer's DUT/enum readers,
+                        checkUnit/stConverter's POU keyword, libraryDecls). The lexer, stFolding.js, the
+                        Monarch tokenizer and the TextMate grammar implement the same rules on their
+                        own (none can require it); test_nested_comments.js keeps all of them in step
   insertTemplates       Call/usage templates + parameter ordering, shared by the Libraries AND Objects
                         insert commands so both produce identical text (vscode-free, so testable)
+  indexInputs           Which watcher events (`*.tmc`, `library-signatures.xml`) re-index, and the
+                        own-write gate for Update Library Definitions (vscode-free, so testable)
   util/
     debounce.js         Trailing-edge debouncer with injectable timers (vscode-free, so testable)
   xmlParser             TwinCAT XML parse / structural edits (preserves formatting). A small
@@ -525,20 +602,41 @@ src/
     projectMap.js       Which .plcproj owns which file: ownersOf() (every project that <Compile>s the
                         file) vs projectFor() (the one project a request routes to). Dependency-free
                         (fs/path only, no vscode) so both the server and the extension host can use it.
-    workspaceScan.js    One symbol index per PLC project + the request-routing API. Kept out of
-                        server.js on purpose: server.js opens an IPC connection at require time, so
-                        nothing that requires it is loadable by a standalone harness — the connection is
-                        injected here as log/error callbacks instead.
+    workspaceScan.js    One symbol index per PLC project + the request-routing API. Plans a scan as one
+                        task per index (`planWorkspaceScan`); `scanWorkspace` runs them in one pass,
+                        `startWorkspaceScan` one project at a time in the background with a per-index
+                        readiness gate (`readyFor`/`readyAll`). Kept out of server.js on purpose:
+                        server.js opens an IPC connection at require time, so nothing that requires it
+                        is loadable by a standalone harness — the connection is injected here as
+                        log/error callbacks instead.
+    workspaceState.js   Which workspace answers while scans come and go (R6): `settledFor(uri)` /
+                        `settledAll()` resolve with the CURRENT workspace once the index a request
+                        reads is complete; a superseded scan's waiters move to the new one; a failed
+                        scan falls back to the last complete workspace.
     requestPipeline.js  The request router (withDocument makes the pre-handler document sync
                         structural; withoutDocument is the EXPLICIT no-sync variant) and the
                         library-index stage table (LIBRARY_INDEX_STAGES, order validated at module
                         load; stage runners injected by server.js). IPC-free — the third instance
                         of the same harness-loadability injection pattern as scanController.js.
+    libraryIndex.js     The per-project library composition (`createIndexLibraries`): namespaces,
+                        archives, .tmc, signatures (project dir + every workspace root), browsercache,
+                        run through the stage table. Moved out of server.js so the harnesses and
+                        scripts/measure-indexing.js drive the code the server runs, not a copy.
     scanController.js   Decides WHEN to scan, separately from how. custom/reindex = "rebuild
-                        unconditionally"; custom/indexReady = "resolve once these roots are indexed".
-                        Outside server.js for the same harness reason; the scan is injected.
+                        unconditionally"; custom/indexReady = "resolve once these roots are indexed"
+                        (JOINS a scan of the same roots in flight). Only the latest scan records
+                        completion. Outside server.js for the same harness reason; the scan is injected.
     parseCache.js       library-signatures.xml + browsercache parses, cached on (path, size, mtime).
                         Signature records are CLONED per project — see the warning in its header.
+                        `readOnlyParse` / `signatureLibrariesFor` are shared, DEEP-FROZEN parses for
+                        readers that build fresh objects from them (libraryDecls.js: the dump's
+                        libraries, each .tmc's declaration model).
+    archiveStore.js     The PERSISTED archive-name cache (R6): decoded library symbol names kept across
+                        sessions in the extension's global storage (`initializationOptions
+                        .archiveCacheDir`, set by extension.js). Same content key as the in-memory
+                        cache; an entry is used only when the decoder id, the key and the archive's
+                        ZIP central-directory fingerprint (read from the file now) all match. Corrupt,
+                        partial or foreign files are ignored; bounded (entries, name characters, LRU).
     plcprojRefs.js      One shared, cached .plcproj read (library references + namespaces). The same
                         file used to be read three times per project per scan.
     log.js              Structured, quiet-by-default logging for the LSP process (threshold `warn`,
@@ -548,7 +646,9 @@ src/
                         explicable. Routine healthy-project conditions belong at debug, never warn
     parser.js           Structured Text lexer + symbol parser
     symbolNode.js       Single factory for a symbol node's core shape (parser + xmlIndexer build through it)
-    features.js         Facade re-exporting features/{core,completions,definition,references,configReferences,highlights,diagnostics}
+    features.js         Facade re-exporting features/{core,completions,definition,references,configReferences,highlights,hover,diagnostics}
+    features/hover.js   Pragma hover: category summary (this project's own words), syntax form, Infosys
+                        link. Reads the document only — no index, so it never waits for a scan
     features/completions.js  Autocompletion ORCHESTRATOR + façade (public surface unchanged): walks
                         pragma → member access → named params → caret-context classification and
                         assembles what each context accepts. The systems live in completion/
@@ -612,13 +712,26 @@ resources/
                         scripts/build-project-templates.js — never hand-edited
   templates/xae-3.1.4024/  Raw XAE 3.1.4024.62 output, the 4024 template's source (.vscodeignored)
   dialects/twincat3.json   The vendored STruC++ dialect profile (R3)
+  compiler/             The bundled STruC++ compiler (R3.3), WRITTEN by scripts/vendor-compiler.js —
+                        never hand-edited: compiler.cjs (the fork's dist/strucpp-bundle.cjs, renamed so
+                        no product name reaches the UI), libs/iec-standard-fb.stlib +
+                        iec-std-functions.stlib, the GPL-3.0 LICENSE/COPYING/COPYING.RUNTIME,
+                        third-party/ (chevrotain Apache-2.0, lodash-es MIT), SOURCE.md (repo, commit,
+                        size + SHA-256 per file). Ships in the VSIX
 scripts/
+  vendor-compiler.js    Copies a BUILT, clean fork checkout into resources/compiler/ and records its
+                        commit. Dev-only, .vscodeignored
   build-project-templates.js  Derives resources/templates/tc3.1.40xx/ from the XAE skeletons;
                         `--check` exits 1 when the committed copies are stale. .vscodeignored
   glyphRaster.js        The renderer behind both images: TrueType outline reader, scanline rasterizer,
                         hand-rolled PNG encoder, and drawMark (the logo itself, so both draw the SAME
                         mark). Reads Segoe UI from C:/Windows/Fonts; only the pixels are committed.
                         Dev-only, .vscodeignored, not in the typecheck graph.
+  measure-indexing.js   Timing harness for the workspace scan: builds an N-project copy of the sample
+                        (synthetic archives, noise directories, a root signatures dump) in a temp dir
+                        and times the real scan in fresh processes — cold, warm (second session) and
+                        per-project ready time. Measures, never gates; not in `npm test`. Dev-only,
+                        .vscodeignored. `--samples` times the committed sample/ as-is.
 ```
 
 ### Project templates (Create New Project, roadmap R2)
@@ -705,7 +818,8 @@ which language-server index owns a file:
    its backing XML file and consumes the cached host maps; it never starts another workspace scan.
 5. `.sln`, `.tsproj`, and `.xti` create/change/delete events rebuild and refresh only the host tree
    model. A `.plcproj` event also rebuilds ownership and remains the sole project-structure event that
-   triggers `custom/reindex` and the Libraries refresh.
+   triggers `custom/reindex` and the Libraries refresh. (The other watcher path that re-indexes is not
+   project structure: a `*.tmc` or `library-signatures.xml` event, see "Index inputs" below.)
 
 Coverage is split deliberately: `test/test_solution_map.js` exercises discovery, multi-solution and
 multi-project grouping, label scope and fallbacks without VS Code; `test/test_objects_tree_model.js`
@@ -738,7 +852,8 @@ and routed at startup (and on `custom/reindex`), not one flat index for the whol
   stale case-only folder spelling in an Include and VS Code treats that as a different resource. The
   walk preserves workspace 8.3 prefixes and junction paths; missing/unreadable includes and all POSIX
   paths retain the project spelling conservatively.
-- **`src/lsp/workspaceScan.js`** builds one index per project (`scanWorkspace`) and wraps the
+- **`src/lsp/workspaceScan.js`** builds one index per project (`scanWorkspace`, or `startWorkspaceScan`
+  in the server — see "The background scan" below) and wraps the
   request-routing API (`indexForUri`, `projectForUri`, `configFilesFor`). It lives outside `server.js` on
   purpose: `server.js` opens a Node IPC connection at require time, so nothing that requires it is
   loadable by a standalone test harness — `workspaceScan.js` takes the connection as injected
@@ -797,6 +912,8 @@ warm / ~20 s cold projected, and the wait is visible. Four invariants hold that,
    `src/lsp/scanController.js` decides, on exactly two facts: a scan **completed**, and its normalized
    root set matches. **Never teach `reindex` to skip** — on a `.plcproj` change the roots are
    unchanged and it is the content that moved (`test_scan_controller.js` pins both directions).
+   Since the scan runs in the background, an `indexReady` that arrives mid-scan **joins** that scan
+   rather than starting another, and only the latest scan records completion (`test_scan_readiness.js`).
 2. **Read each file once per (path, size, mtime).** `parseCache.js` (signature dumps, browsercache),
    `plcprojRefs.js` (`.plcproj`), `harvestArchiveFile` (archives). A parse that is *stored* per
    project must be a private copy — the signature merge rewrites `record.namespace` and
@@ -809,24 +926,86 @@ warm / ~20 s cold projected, and the wait is visible. Four invariants hold that,
    so the same vendor archives appear many times: 306 files / 156.5 MB on the measured workspace, but
    148 distinct / 74.2 MB. `harvestArchiveFile` keys decoded names on
    `<title>/<version>/<file>` + size + mtime, which took 306 decodes to 157. If that identity ever
-   proves too weak, the documented hardening is a ZIP central-directory fingerprint over the ≤66 KB
-   EOCD tail (`MAX_EOCD_SEARCH`) — a genuine content hash for one small read.
+   proves too weak *in memory*, the hardening is the ZIP central-directory fingerprint the persisted
+   cache already uses (below) — a genuine content hash for one small read at the file's end.
+
+**Decoded names persist across sessions** (R6, `src/lsp/archiveStore.js`). The extension passes its
+global storage path as `initializationOptions.archiveCacheDir`; `harvestArchiveFile` consults the
+store after both in-memory caches miss, and `rescan()` flushes it after every scan (and on shutdown).
+It stores only what the in-memory cache holds — the identifier-shaped names — under the same content
+key, so the cross-project dedup carries over (eight vendored copies are one entry). **It never trusts
+a stale entry:** use requires the file's `decoder` id to equal libsymbols.js `DECODER_ID` (a hash of
+the ZIP reader's and string-table parser's *source*, so a decoder change discards old names with no
+version to forget), the content key to match, and the archive's central-directory fingerprint (SHA-1
+over the CD + EOCD, read from the file *now*; the CD carries every entry's CRC-32) to equal the stored
+one. A corrupt, truncated, foreign or other-version file is ignored and rewritten; a malformed entry is
+dropped alone; writes are temp-file + rename. Bounded at 4,000 entries / 40 M name characters, least
+recently used first. Measured with `scripts/measure-indexing.js --drop-caches` (8 projects, 48
+distinct archives of ~1.6 MB): cold 1,711 ms → warm 1,203 ms; the archive stage 1,212 → 625 ms. What
+remains warm is filing the names into each project's registry, which no decode cache removes.
 4. **`SKIP_DIRS` must never gain `_libraries`.** `collectArchives` walks it; excluding it there finds
    zero archives and costs ~171 false positives. `PROJECT_SKIP_DIRS` is the excluding set, for the
    `.tmc`/signature/`.plcproj` walkers only. `test_collect_scope.js` proves both halves.
 
-The scan is still **synchronous**, so the server's event loop stops for its duration and requests
-queue unread. That is why the progress indicator lives in the **extension host** — a separate process
-whose loop stays free — and why it is deliberately indeterminate ("TwinCAT: indexing…", no `3 of 8`):
-per-project counts would need the scan to yield between projects, which it does not do. Making it
-yield (with per-project readiness, so the active file's project answers first) is the known next step
-and is deliberately not done: it rewrites the multi-project spine, and a wrong readiness gate answers
-against a partial index, which means false diagnostics.
+**Signature and `.tmc` discovery is memoized per scan** (R6). Every project of a scan walks the
+workspace roots for `library-signatures.xml` (it sits above every project) plus its own directory for
+the dump and the `.tmc`: 16 full walks per scan on 8 projects, ~850 ms on Windows. `scanWorkspace` now
+creates one `createDirectoryListingMemo()` (`src/twincatWorkspace.js`) per scan and hands it to every
+project's `indexLibraries`; `walkFiles` replays a directory it has already read. Measured with
+`scripts/measure-indexing.js` (8 projects): readdir calls per scan 9,282 → 3,771, the signature/`.tmc`
+walks 5,000 → 333 (one root walk). **Invalidation is the scan boundary and nothing else:** the memo
+dies with its scan, so an added or removed dump or `.tmc` is found by the next scan (startup, or the
+`custom/reindex` the `.plcproj` watcher and Update Library Definitions send) exactly as before. No
+directory-mtime guard — a file added two levels down does not change the project directory's mtime.
+`test_discovery_memo.js` pins it.
+
+**Index inputs (`src/indexInputs.js`).** Because the memo makes the scan boundary the only
+invalidation, the host's workspace watcher sends a `custom/reindex` when a `*.tmc` (a TwinCAT build) or
+`library-signatures.xml` is created, changed or deleted outside the walkers' `PROJECT_SKIP_DIRS`
+(`isIndexInputFile`). Events go through a 1.5 s debouncer that feeds the `.plcproj` 400 ms debouncer, so
+one build rewriting every project's `.tmc` plus a `.plcproj` costs one scan. Update Library Definitions
+writes the dump and sends its own reindex inside `createOwnWriteGate().run(...)`; the watcher ignores
+events while it runs and for a 2 s grace period after, so our own write never scans twice.
+`test_index_inputs.js` pins the matching, the gate and the wiring.
+
+**The background scan (R6).** The scan used to be one synchronous pass: the server's event loop stopped
+for its whole duration and every request queued unread until the finished workspace replaced the old one
+in a single assignment. It now runs **one project at a time with the loop free in between**, and the
+guarantee that made the old design safe — no request ever sees a half-built index — is kept by a
+readiness gate per index:
+
+- `planWorkspaceScan` (workspaceScan.js) turns a scan into **one task per index**, and a task holds
+  everything that index receives: its objects, its libraries, and the loose `.st` files routed to it
+  (collected up front by the same walk; a `.st` under no project still goes to every project, last, as
+  before). Once a task has run, nothing writes to that index for the rest of the scan. Tasks share only
+  content caches, so order cannot change an index — `test_scan_readiness.js` compares each background
+  index with the one-pass `scanWorkspace` index.
+- `startWorkspaceScan` yields before the first task (so `initialize` answers at once) and between tasks,
+  opens a project's gate when its task ends, and moves a project someone is waiting for to the front.
+  A file under no project, and the union catalog, wait for the whole scan.
+- `workspaceState.js` owns "the current workspace". **Every server handler that reads an index first
+  awaits `settledFor(uri)` / `settledAll()` (server.js `whenIndexed`), then reads `currentWorkspace()`
+  with no await in between** — that pairing is the gate; a new handler that reads an index without it
+  is the bug this design exists to prevent. A reindex replaces the workspace at once and cancels the old
+  scan; its waiters move to the new workspace (as a request queued behind the old synchronous scan
+  would have got the new index). A scan that throws reverts to the last complete workspace before any
+  waiter wakes.
+- `scanController.js` joins: an `ensureScanned` for roots already being scanned awaits that scan, and
+  only the latest scan records completion — the "latent" double-scan hazard of an async scan.
+
+Measured with `scripts/measure-indexing.js --drop-caches` on 8 synthetic projects: the first project
+answers at ~540 ms cold / ~350 ms warm, against ~1,480 ms for any answer before R6 (the whole scan);
+a request for the last-discovered project at startup is answered at the same ~540 ms because it jumps
+the queue. The first task costs most: it decodes the shared vendor archives every later project reuses.
+`test_server_ipc.js` runs the real server over IPC: requests sent during the startup scan and right
+after a reindex return zero diagnostics on the sample (the control shows a partial index does not).
+The progress indicator still lives in the **extension host** and is still indeterminate ("TC Toolkit:
+indexing…", no `3 of 8`): the server does not report per-project progress to the host yet.
 
 Three processes cooperate, with the extension host as the hub — **the webview never talks to the
 language server directly**. The extension bridges them over custom JSON-RPC requests
 (`custom/completions`, `custom/definition`, `custom/references`, `custom/referencesForSymbol`,
-`custom/configReferencesForSymbol`, `custom/diagnostics`, …) layered on the standard LSP transport
+`custom/configReferencesForSymbol`, `custom/diagnostics`, `custom/hover`, …) layered on the standard LSP transport
 (Node IPC).
 
 **Generate ST** is project-aware and lives entirely in the extension host (`customEditorProvider.js`):
@@ -913,6 +1092,15 @@ The script scrapes the one open-ended list (attribute pragmas publish one child 
 *verifies* the four closed grammars against their own pages, so a documentation rewrite fails loudly
 instead of producing a catalog that quietly disagrees.
 
+**Hover.** `src/lsp/features/hover.js` answers both the standard `textDocument/hover` (loose `.st`
+files) and the webview's `custom/hover` (Monaco hover provider → host `twincat.lsp.queryHover` →
+`mapHoverToLocal`). The text is built from the catalogue: a category summary written for this project,
+the syntax form and the Infosys link. **No description text is taken from Beckhoff's documentation** —
+the catalogue holds names, syntax forms and page ids only, and `test_pragma_hover.js` fails if an entry
+grows any other field. The webview skips the round trip for a line with no `{`, and hands a clicked link
+to the host (`openDocumentationLink`), which opens it only if `isDocumentationUrl` says it is a catalogue
+page.
+
 ### Folding
 
 `media/stFolding.js` computes folding ranges from ST's **block structure**. It is registered twice
@@ -957,7 +1145,7 @@ open a string running to the next quote anywhere in the file — which is how In
 off for a whole VAR block — and an unterminated `{` would swallow the rest of the document. That holds
 in three places: the lexer (`parser.js`), the Monarch tokenizer, and the TextMate grammar.
 
-### Compile Project (roadmap R3.2)
+### Compile Project (roadmap R3.2, bundled in R3.3)
 
 `twincat.compileProject` checks one PLC project with an external IEC 61131-3 compiler. The user-facing
 surfaces (UI, README) never name the compiler product — a user ruling, pinned by
@@ -967,13 +1155,13 @@ surfaces (UI, README) never name the compiler product — a user ruling, pinned 
    (unsaved edits count) with Manual Sync's pending edits folded in, else from disk.
 2. **Units** — `buildCheckInputs` → `checkUnit.buildCheckUnit` per object, written as `N.st` in a
    `mkdtemp` directory (deleted however the run ends); a GVL gets `--global-list N.st=<name>`.
-3. **Run** — `node <compilerPath> --check --json --dialect-file resources/dialects/twincat3.json …` as
+3. **Run** — `<node> <compilerPath> --check --json --dialect-file resources/dialects/twincat3.json …` as
    a child process, Node >= 22 probed first, 2-minute timeout, cancellable. **No `--strict`** (decided:
    it refuses TwinCAT-legal DINT→INT narrowing and WORD arithmetic). Exit 1 without errors, or a report
    that is not JSON, is a failed run; a failed/timed-out/cancelled run keeps the previous results.
 4. **Map** — each diagnostic's unit line → `origins[line]` → file/component/pane/line (the column is
    the pane's, because pane text is verbatim). Warnings matching `/^Pragma ignored:/` are filtered and
-   counted; nothing else is.
+   counted; so are errors the library filter drops (below); nothing else is.
 5. **Show** — Problems (`twincat-compile` collection, keyed by `normalizeFileUri`, at `paneRange`: the
    PANE's line and column, so the panel's Ln/Col match the pane the user reads — decided 2026-11-10, a
    range inside the XML read as e.g. Ln 23 for implementation line 2; the message names the component
@@ -985,10 +1173,99 @@ surfaces (UI, README) never name the compiler product — a user ruling, pinned 
    to a component drops its compile markers and posts **`compileDiagnosticsStale {componentId}`**, so
    the host drops the matching Problems entries.
 
-The start page's *Compile project* tile is enabled when `twincat.compiler.path` is set, the file exists,
-and a project is open (`state.compilerReady` + `hasProject`); a change to `twincat.compiler.*` re-posts
-the page's state. Results live in memory only (problem-link ids included) — a compile result describes
+The start page's *Compile project* tile is enabled when the compiler file exists — the bundled one, or
+the override `twincat.compiler.path` names — and a project is open (`state.compilerReady` +
+`hasProject`); only a missing override (or a damaged install) disables it, with "Compiler file not
+found". A missing Node is not known to the tile: the command explains it on click. A change to
+`twincat.compiler.*` re-posts the page's state. Results live in memory only (problem-link ids included) — a compile result describes
 one moment.
+
+**Library declarations (R3.4, `src/libraryDecls.js`).** The compiler knows only the IEC standard
+library, so before step 2's run `prepareLibraryCheck` adds what this machine knows about the project's
+libraries. Decided by the user 2026-11-10: declarations plus a filter, **local-only** (Beckhoff licence
+§4(3): licensed material must not reach third parties).
+- **Sources** (a fresh symbol index — the language server's registries are not touched; the archive and
+  dump parses come through the existing content-guarded caches): `library-signatures.xml` found under
+  the project dir and every workspace root (parsed with `parseLibrarySignaturesXml`, which now keeps
+  every function output); the project's `.tmc`, read by `parseTmcDeclarations` — only **library-owned**
+  `<DataType>`s (`Namespace="…"` or `TcBaseType="true"` on the name: the project's own types, which a
+  stale `.tmc` still lists, are skipped), interfaces (`TcPlcInterfaceType`) skipped, `<Comment>` cut
+  before anything is read; archive string-table names; `.plcproj` namespaces.
+- **Emitted**, one file per declaration (`lib-N.st`, before the units; a GVL gets `--global-list`):
+  FUNCTION (inputs, further outputs, in-outs; the like-named output is the return type),
+  FUNCTION_BLOCK (dump parameters, else the `.tmc`'s ItemType members; `.tmc` methods with parameters,
+  properties from `__get`/`__set` accessors, actions — all bodiless; EXTENDS; inherited members not
+  repeated), STRUCT (EXTENDS), enumeration (values and integer base from the `.tmc`; the dump's
+  self-typed var lists), alias (`<BaseType>`), VAR_GLOBAL [CONSTANT] lists (dump constants are
+  CONSTANT; numeric/boolean `.tmc` defaults only — never a string). **Selection**: the library symbols
+  the units name (a GVL or enum also through a member), from the `.tmc` or a dump library the
+  `.plcproj` references; then the types those need (from any dump library); then pruned to a closed
+  set. A type `readType` cannot read exactly (a constant array bound or string length, a foreign
+  qualifier, a type the compiler lacks: LTIME, PVOID, XINT …) drops the declaration (or just the
+  method/property/field/global), never guessed. **Never redeclared**: names in the bundled `.stlib`
+  manifests (TON, R_TRIG, CONCAT …), conversion names, the elementary types, and every top-level name the
+  project declares (POUs, types, GVLs, globals — the user's own wins).
+- **Qualifiers**: `stripQualifiers` blanks `Ns.` (a `.plcproj` namespace, not a project name, not after
+  a `.`, outside comments/strings) with spaces — the compiler cannot parse `p : Ns.T;` — so every column
+  is unchanged and mapUnitPosition needs nothing new. The run gets copies of the units.
+- **Filter** (`createLibraryFilter`, errors only, counted as `filteredLibraryDiagnostics` and shown in
+  the summary): `Undeclared variable/function 'X'`, `Undefined type 'X'`, `'X' is not a constant`
+  (array bound) — when X is a known library name the project does not declare; `'T' has no
+  member/method 'X'` only when T is a library FB/struct this run declared; `T has no input or output
+  named X` only when T's parameters came from the `.tmc` alone; `'X' is not a variable of global
+  variable list 'G'` only for a generated G; a `… got X` cascade only with X's dropped undefined-type
+  error. The compiler's messages about the generated files are returned apart (`libraryMessages`) and
+  noted, never placed on the user's code.
+- **No dump**: the `.tmc` types and the archive names still work; the summary says once per session
+  'Run "TC Toolkit: Update Library Definitions" to check calls into libraries too.'
+- **Where it lives**: strings in memory, then files only inside runCheck's `mkdtemp` directory, deleted
+  however the run ends (`test_library_decls.js` pins it). Tests use synthetic libraries only.
+- **Known limits**: a POU that names a type with no declaration (an interface, an opaque dump type) is
+  not checked past that point by the compiler (its undefined-type error is filtered); archive names
+  include member and local names, so an undeclared variable that happens to share a name with anything
+  in a referenced archive is filtered too.
+
+**The editor toolbar's Compile button** (`#compile-btn`, after the Generate ST split button; an
+inline-SVG glyph in the codicon style, since the webview is offline). A click posts **`compile-project`**;
+the provider's `compileProjectFor(file)` runs `twincat.compileProject` with `{projectKey}` when exactly
+one project `ownersOf` the file, else with no key (the command's own pick). Setup problems come from
+the command, so the messages are the palette's. `compileCommands` calls `provider.setCompileRunning`
+around each run; the provider posts **`compileRunning {running}`** to every open editor (and puts
+`compileRunning` in `init`), and the button is disabled meanwhile. Layout: at <= 1100 px the action
+buttons go compact and Compile drops to its glyph (name in the tooltip / `aria-label`); at <= 900 px the
+header wraps into rows (it was 680 px, where the status pill already ran off the edge at 700 px).
+
+**The bundled compiler (R3.3).** The compiler ships in `resources/compiler/`, so an empty
+`twincat.compiler.path` means `bundledCompilerPath()` (`resolveCompilerPath`); a set path is an
+override. It is GPL-3.0 and is only ever run as a child process. The bundle loads every `.stlib` in the
+`libs/` next to itself (`findBundledLibsDir` in the fork tries `../../libs` and `../libs` first — neither
+exists in the extension); only the two IEC libraries ship, because the fork's others (OSCAT, softmotion,
+extra FBs such as `PID`) are not TwinCAT's and would make names resolve that TwinCAT refuses.
+`compile-real` pins both directions.
+
+**Node discovery** (`nodeCandidates` → `findNode`, everything injected: `platform`, `env`, `runtime`,
+`spawn`, `exists`). A set `twincat.compiler.nodePath` is the ONLY candidate (a configured path that fails
+is reported, never silently replaced). Otherwise, in order: `node` on PATH; on Windows
+`%ProgramFiles%`/`%ProgramW6432%`/`%ProgramFiles(x86)%\nodejs\node.exe`, `%NVM_SYMLINK%\node.exe`,
+`%VOLTA_HOME%\bin`, `%LOCALAPPDATA%\Volta\bin`, `%ProgramFiles%\Volta`, `%FNM_DIR%\aliases\default`,
+`%APPDATA%\fnm\aliases\default` (each only if the file exists); last, the editor's own runtime
+(`process.execPath` with `ELECTRON_RUN_AS_NODE=1`), only when `process.versions.node` is 22+. Each is
+probed with `--version`; the first at 22+ wins, and its `env` travels with it to the check run
+(`nodeEnv`). When none qualifies, one message lists what was tried and how to fix it.
+
+**Updating the compiler.** In a scratch clone of the fork (never the checkout another session works in):
+
+```bash
+git clone https://github.com/AbuShaqra/STruCpp /tmp/fork && cd /tmp/fork
+git checkout <commit on origin/development>     # must be pushed: SOURCE.md links it
+npm ci && npm run build:bundle                  # Node 22+
+cd <toolkit> && node scripts/vendor-compiler.js /tmp/fork
+```
+
+The script refuses a dirty checkout or a bundle older than HEAD, replaces `resources/compiler/` whole,
+and warns when the commit is on no remote branch. Then update the version/commit in
+`THIRD-PARTY-NOTICES.md` (`test_vendored_compiler.js` fails until it names the new commit), run
+`compile-real` and the suite, and package a VSIX to check `resources/compiler/` is in it.
 
 ### Writes
 

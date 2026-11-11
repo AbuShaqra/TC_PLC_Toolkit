@@ -1,6 +1,6 @@
 /**
  * @file clipboardCommands.js
- * @description Registers the "TwinCAT Objects" explorer copy/paste commands. Copy = duplicate —
+ * @description Registers the "PLC Objects" explorer copy/paste commands. Copy = duplicate —
  * drag & drop is the move — so a component pastes CROSS-FILE (into another POU/interface) and a
  * file pastes into any directory, its own included. WHAT a paste does is decided by the pure
  * matrix in dndRules.js (describeCopied/planPaste, unit-tested in test/test_dnd_rules.js); this
@@ -53,7 +53,7 @@ function firstFreeName(base, isTaken) {
 }
 
 /**
- * Registers the TwinCAT Objects explorer copy/paste commands.
+ * Registers the PLC Objects explorer copy/paste commands.
  * @param {vscode.ExtensionContext} context The extension context.
  * @param {object} deps Injected collaborators owned by extension.js.
  * @param {vscode.TreeView<any>} deps.treeView The Objects tree view (keybinding invocations carry
@@ -110,7 +110,7 @@ function registerClipboardCommands(context, { treeView, treeProvider, applyXmlEd
                 }
             } catch (err) {
                 // A failed paste must not be silent: the user just performed an explicit gesture.
-                console.error('TwinCAT: paste failed:', err);
+                console.error('TC Toolkit: paste failed:', err);
                 vscode.window.showErrorMessage(`Failed to paste: ${err.message}`);
             }
         })
@@ -187,7 +187,7 @@ function registerClipboardCommands(context, { treeView, treeProvider, applyXmlEd
             // is easy to miss at the top of the window, and the default focus-out dismissal made a
             // missed prompt look like the paste silently did nothing (user report).
             newName = await vscode.window.showInputBox({
-                title: `TwinCAT — Paste ${plan.componentType}`,
+                title: `TC Toolkit — Paste ${plan.componentType}`,
                 ignoreFocusOut: true,
                 prompt: `"${plan.componentName}" already exists in ${path.basename(targetUri.fsPath)} — name for the pasted copy`,
                 value: firstFreeName(plan.componentName, (cand) => taken.has(cand.toLowerCase())),
@@ -225,7 +225,7 @@ function registerClipboardCommands(context, { treeView, treeProvider, applyXmlEd
         const isTaken = (cand) => existing.has((cand + ext).toLowerCase());
 
         const newName = await vscode.window.showInputBox({
-            title: 'TwinCAT — Paste File',
+            title: 'TC Toolkit — Paste File',
             ignoreFocusOut: true,
             prompt: `Name for the copy of ${path.basename(plan.sourceFsPath)}`,
             value: firstFreeName(stem, isTaken),

@@ -1,6 +1,6 @@
 /**
  * @file objectCommands.js
- * @description Registers the "TwinCAT Objects" explorer create/delete commands: methods, properties and
+ * @description Registers the "PLC Objects" explorer create/delete commands: methods, properties and
  * actions on a POU; re-adding a property's missing Get/Set accessor; new FB/PRG/FUN/ITF/GVL files;
  * physical folders; and virtual (in-XML) folders and components. Every structural edit goes through applyXmlEdit so TwinCAT's XML is preserved byte-for-byte
  * outside the edited region, and through plcProjHelper so the nearest .plcproj stays in sync.
@@ -20,7 +20,7 @@ const {
 } = require('../xmlParser');
 
 /**
- * Registers the TwinCAT Objects explorer create/delete commands.
+ * Registers the PLC Objects explorer create/delete commands.
  * @param {vscode.ExtensionContext} context The extension context.
  * @param {object} deps Injected collaborators owned by extension.js.
  * @param {any} deps.treeProvider The Objects tree data provider (refreshed after edits).
@@ -100,7 +100,7 @@ function registerObjectCommands(context, { treeProvider }) {
             // prompt (user report). The title bar makes the widget taller and self-explaining; the
             // prompt now stays until answered or Esc.
             const folderName = await vscode.window.showInputBox({
-                title: 'TwinCAT — Create Folder',
+                title: 'TC Toolkit — Create Folder',
                 ignoreFocusOut: true,
                 prompt: 'Enter Folder Name',
                 placeHolder: 'e.g. MyFolder',
@@ -157,7 +157,7 @@ function registerObjectCommands(context, { treeProvider }) {
             if (!node || !node.resourceUri) return;
 
             const folderName = await vscode.window.showInputBox({
-                title: 'TwinCAT — Create Virtual Folder',
+                title: 'TC Toolkit — Create Virtual Folder',
                 ignoreFocusOut: true,
                 prompt: 'Enter Folder Name',
                 placeHolder: 'e.g. Internal',
@@ -324,7 +324,7 @@ function registerObjectCommands(context, { treeProvider }) {
         }
 
         const name = await vscode.window.showInputBox({
-            title: `TwinCAT — Create ${componentType}`,
+            title: `TC Toolkit — Create ${componentType}`,
             ignoreFocusOut: true,
             prompt: `Enter ${componentType} Name`,
             placeHolder: componentType === 'Property' ? 'e.g. MyProperty' : (componentType === 'Method' ? 'e.g. M_DoSomething' : 'e.g. A_DoSomething'),
@@ -360,7 +360,7 @@ function registerObjectCommands(context, { treeProvider }) {
 
         const quickPick = vscode.window.createQuickPick();
         quickPick.items = quickPickItems;
-        quickPick.title = `TwinCAT — Select folder for ${componentType} "${name}"`;
+        quickPick.title = `TC Toolkit — Select folder for ${componentType} "${name}"`;
         // Same rationale as the name prompts above: a focus-out here silently aborted the whole
         // create flow one step before the name prompt.
         quickPick.ignoreFocusOut = true;
@@ -394,7 +394,7 @@ function registerObjectCommands(context, { treeProvider }) {
 
         if (selectedItem.isCreateNew) {
             newFolderName = await vscode.window.showInputBox({
-                title: 'TwinCAT — Create Virtual Folder',
+                title: 'TC Toolkit — Create Virtual Folder',
                 ignoreFocusOut: true,
                 prompt: 'Enter New Folder Name',
                 placeHolder: 'e.g. Internal',
@@ -471,7 +471,7 @@ function registerObjectCommands(context, { treeProvider }) {
     async function handleFileCreation(node, fileType) {
         const dirUri = node.resourceUri;
         const name = await vscode.window.showInputBox({
-            title: `TwinCAT — Create ${fileType}`,
+            title: `TC Toolkit — Create ${fileType}`,
             ignoreFocusOut: true,
             prompt: `Enter ${fileType} Name`,
             placeHolder: `e.g. My${fileType}`,

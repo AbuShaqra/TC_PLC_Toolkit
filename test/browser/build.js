@@ -79,7 +79,7 @@ html = html.replace(/<meta http-equiv="Content-Security-Policy"[^>]*>/, '<!-- CS
 const stub = `
     <script>
     (function () {
-        window.__harness = { sent: [], fixture: null, ready: false, definitionEnabled: false, lspDiagnostics: null };
+        window.__harness = { sent: [], fixture: null, ready: false, definitionEnabled: false, lspDiagnostics: null, hoverReply: null };
         window.acquireVsCodeApi = function () {
             return {
                 postMessage: function (msg) {
@@ -97,6 +97,10 @@ const stub = `
                     } else if (msg.type === 'custom/diagnostics') {
                         // The language server's answer; empty unless a test sets lspDiagnostics.
                         window.postMessage({ type: 'custom/diagnosticsResponse', requestId: msg.requestId, diagnostics: window.__harness.lspDiagnostics || [] }, '*');
+                    } else if (msg.type === 'custom/hover') {
+                        // The host's mapped answer; a test computes it in Node with the real
+                        // provideHover + mapHoverToLocal and arms it here.
+                        window.postMessage({ type: 'custom/hoverResponse', requestId: msg.requestId, hover: window.__harness.hoverReply }, '*');
                     } else if (msg.type === 'custom/completions') {
                         window.postMessage({ type: 'custom/completionsResponse', requestId: msg.requestId, suggestions: [] }, '*');
                     } else if (msg.type === 'custom/definition') {
