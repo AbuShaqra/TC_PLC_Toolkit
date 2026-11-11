@@ -168,7 +168,10 @@ per-suite without aborting on the first failure. The main ones:
 | `test/test_transition_warning.js` | `convertXmlToSt` names every SFC transition it cannot convert in `warnings`; export mode marks each with a comment without breaking the lineMap, raw (live) mode adds no text at all. |
 | `test/test_nested_namespace.js` | Nested library namespaces (`VisuElems.VisuElemBase.▮`): a library's namespace re-exports its dependencies' namespaces, so the inner segment names a library no `.plcproj` references and is resolved by name against the installed-library store, lazily and cached. Asserts the two properties that hold without any library installed — the gate (only a referenced namespace head opens the store, so `stAxis.MotionState.▮` never does) and the miss (uninstalled ⇒ cached empty list, never an exception). Real resolution runs only when the machine has a readable library, and says so when it does not. |
 | `test/test_rename_engine.js` | `src/renameEngine.js`: mapping workspace reference positions (raw-ST-unit coords) back into CDATA splices — synthesized-line skips (action headers, `GET`/`SET`), the PROGRAM→FUNCTION_BLOCK raw-mode column skew, the never-write-a-mismatch guard, CRLF byte preservation. |
-| `test/test_rename_transaction.js` | `src/renameTransaction.js`, the rollback transaction behind cross-file rename: stage-then-apply with first-staged-order writes, composed re-staging (original text kept from the first read), the pre-write re-read (`changed-on-disk` — a file that changed since staging is never written), reverse-order rollback on first failure, the rollback's own never-clobber verify (`changed-after-write`), per-file rollback-failure reporting, `revert()` after a successful apply (the failed-disk-rename escape hatch), and single-shot apply. Fault-injected over a fake io; the three guards are each verified to FAIL when removed. |
+| `test/test_rename_transaction.js` | `src/renameTransaction.js`, the rollback transaction behind cross-file rename: stage-then-apply with first-staged-order writes, composed re-staging (original text kept from the first read), the pre-write re-read (`changed-on-disk` — a file that changed since staging is never written), reverse-order rollback on first failure, the rollback's own never-clobber verify (`changed-after-write`), per-file rollback-failure reporting, `revert()` after a successful apply, and single-shot apply. Fault-injected over a fake io; the three guards are each verified to FAIL when removed. `applyAsOne` (the rename's single WorkspaceEdit): one commit receives every change, a stale file fails before the commit runs, a commit that throws after landing part of the edit gets exactly the landed files restored, and a file holding neither text is reported, never overwritten. |
+| `test/test_rename_family.js` | R7: `memberRenameFamily` (features/references.js) — renaming a Method/Property reaches every implementor of a shared interface method, a second interface one of them also implements (and ITS implementors), an interface's second `EXTENDS` parent, a derived FB that inherits or overrides it, and the call sites through any of them (`itf.Start()` included); NOT a POU that only shares the name, an unrelated interface's same-named method, or another method of the same interface. Applied through `renameEngine` as the command does (structural Method renames, other files byte-identical), and the visualization side follows the same family. Verified to fail 32 ways without the family. |
+| `test/test_plcproj_text.js` | `src/plcProjText.js`: the `.plcproj` rewrite a rename makes changes only the Include value (entry kept in place with its children, CRLF kept), case-insensitive, prefix-safe (`FB_A` vs `FB_AB`, `Sub` vs `SubX`), directory renames rewrite their nested Folder/Compile entries, library references are never touched, XML entities round-trip, and on both committed sample `.plcproj` files a rename inserts exactly the new characters and renaming back is byte-identical. |
+| `test/test_rename_commands.js` | `src/commands/renameCommands.js` end to end under a stubbed `vscode` with the real by-symbol query: a file, member or directory rename is ONE WorkspaceEdit (text edits, then the move LAST; the `.plcproj` edit inside it), the sibling implementor follows and the name-alike does not, a sibling that already has the new name stops the rename before any write, a failed move restores every landed buffer, and *Undo Last Rename* runs `undo` from a text editor and restores every file byte for byte — refusing once a participating file changed. The stub's `undo` follows the rule measured in a real VS Code (only from a text editor of a file in the group). |
 | `test/test_references_for_symbol.js` | The LSP's by-symbol references entry point (`custom/referencesForSymbol`) that powers rename: FB/GVL/DUT roots (a GVL name never appears in its own ST text, so the position-based API cannot seed it), methods/properties/actions, the name-keyed-index identity guard, and index restoration after the scan. |
 | `test/test_config_references.js` | The non-code half of rename (`custom/configReferencesForSymbol`): dotted symbol paths inside visualizations `.TcVIS`/`.TcVMO` (`GVL_X.fb.member`, embedded `STSnippet` code) and text lists `.TcTLO`/`.TcGTLO` (a text entry whose text IS a symbol path) are found only when the chain provably resolves to the renamed symbol — text-list ids, visu-library names, dotted prose (`Palletizer.Turn1`) and unresolvable prefixes are never touched. Task configs `.TcTTO` use a separate rule: the `<PouCall>` `<Name>` matches only a dot-free name, so a library call (`VisuElems.Visu_Prg`) is never rewritten. BOM/offset fidelity, plus a sample-project pass when `sample/` is present. |
 | `test/test_lsp_parser.js` | Lexer, AST parser and symbol indexer on a synthetic FB: keyword tokenisation, `EXTENDS`/`IMPLEMENTS`, variable types and ranges, nested method params, property GET accessors. Lived outside the suite until 2026-08-05 and **printed `[FAIL]` while exiting 0** — it could report a broken parser and still be green. It counts failures and exits non-zero now. |
@@ -314,7 +317,20 @@ settings. Only when the host's `checkSetup` finds no Node >= 22 does the phase p
 nothing. It also clicks the toolbar's Compile button in the station editor for real (hook message `test:clickCompile`) and asserts the host resolved the file's one owning project and the run started and ended (`compile-button` step). It asserts every run finishes, that no
 error is reported on the sample's own code (only the identifiers the P8 phases typed on purpose, which
 reach the compiler as unsaved edits, plus the object-insert phase's snippet in its file), and that each
-project's files in the Problems panel hold exactly that project's results.
+project's files in the Problems panel hold exactly that project's results. The **rename-undo phase**
+(R7) renames `FB_Station.Reset` (a method of a shared interface) and then `FB_Cylinder.TcPOU` in the
+LineB copy through the real `twincat.renameObject` (the input box and confirmation are answered by
+wrapping the shared API object), each with the file open in the custom editor, and asserts each rename
+is ONE `applyEdit`, the interface method and its calls follow, the `.plcproj` entry is rewritten, the
+moved file keeps its UTF-8 BOM, nothing is left dirty, and *TC Toolkit: Undo Last Rename* puts every
+file of the copy back byte for byte, the file name included.
+
+`TCDEV_CODE` points `run.js` at another VS Code (a CLI shim, or the `code` binary of an unpacked build)
+and `TCDEV_CODE_ARGS` adds launch arguments. Headless Linux as root:
+`TCDEV_CODE=<dir>/VSCode-linux-x64/code TCDEV_CODE_ARGS="--no-sandbox --disable-gpu" xvfb-run -a node test/devhost/run.js`.
+On Linux the P8 "flushed file is byte-identical to foldEdits" check fails on a line-ending difference
+(`\r\n` on disk vs `\n` expected), identically on the pre-R7 commit; it is a Linux-only EOL artefact,
+not a product regression, and passes on Windows.
 
 The same pass also automates the **P8 webview checklist** (items 2–7 of
 `docs/superpowers/plans/2026-08-22-deepen-08-g4-checklist.md`) through **`media/devHostTestHook.js`** —
@@ -419,7 +435,9 @@ src/
                         Add Get/Set Accessor re-adds a property's missing accessor (issue #25)
     clipboardCommands   "PLC Objects" copy/paste (duplicate a component cross-file or a file under a new name)
     renameCommands      "PLC Objects" rename (files, members, directories, virtual folders; reference-aware;
-                        cross-file updates staged and applied through renameTransaction)
+                        cross-file updates staged through renameTransaction and written as ONE
+                        WorkspaceEdit with the .plcproj entry and the file move, so one undo restores
+                        it all) + TC Toolkit: Undo Last Rename (runs `undo` from a text editor)
     libraryCommands     "PLC Libraries" commands (refresh, insert, copy, Update Library Definitions)
     lspBridgeCommands   openComponent navigation + the twincat.lsp.query* Monaco↔LSP bridges
     startCommands       The TwinCAT sidebar's Start view (an empty tree, so its viewsWelcome buttons show)
@@ -536,7 +554,11 @@ src/
   renameTransaction     Rename: the stage/apply/rollback transaction over the cross-file writes — a
                         multi-file rename either fully lands or every already-written file is restored
                         (reverse order, verify-before-write and verify-before-restore, rollback
-                        failures reported per file). Injected read/write, vscode-free, so testable
+                        failures reported per file). `applyAsOne(commit)` writes everything in ONE
+                        caller step (the rename's single WorkspaceEdit) and restores what landed if
+                        that step fails. Injected read/write, vscode-free, so testable
+  plcProjText           Rename: the in-place `.plcproj` Include rewrite for a renamed file or directory
+                        (keeps the entry's place and children, e.g. <LinkAlways>; vscode-free, testable)
   treeDragAndDrop       Objects-tree drag & drop controller — executes the matrix's plans (needs VS Code 1.66+)
   libraryTreeProvider   "PLC Libraries" explorer tree (library → types → members). Scopes to the
                         ACTIVE file's project (revealUri → setActiveFile; refetches only when the

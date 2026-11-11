@@ -36,6 +36,9 @@ function assert(cond, msg) {
 // The CLI shim (bin/code.cmd on Windows, `code` elsewhere) forwards args correctly; the Electron
 // binary itself rejects them when invoked directly.
 function findCodeCli() {
+    // TCDEV_CODE names a VS Code to use instead (a CLI shim, or on Linux the `code` binary of an
+    // unpacked build, run under `xvfb-run` with TCDEV_CODE_ARGS="--no-sandbox" when headless as root).
+    if (process.env.TCDEV_CODE) return fs.existsSync(process.env.TCDEV_CODE) ? process.env.TCDEV_CODE : null;
     const candidates = process.platform === 'win32'
         ? [
             path.join(process.env['ProgramFiles'] || 'C:\\Program Files', 'Microsoft VS Code', 'bin', 'code.cmd'),
@@ -152,6 +155,7 @@ function findCodeCli() {
         '--extensionDevelopmentPath', REPO,
         '--extensionTestsPath', path.join(__dirname, 'testRunner.js'),
         '--disable-workspace-trust', '--skip-welcome', '--skip-release-notes',
+        ...(process.env.TCDEV_CODE_ARGS || '').split(/\s+/).filter(Boolean),
         ws
     ];
     // One explicitly quoted command line: the CLI is a .cmd on Windows (needs a shell), and
@@ -517,6 +521,26 @@ function findCodeCli() {
         const mismatched = runs.filter(r => !r.result || !r.dir || r.problemsPanel !== r.result.errors + r.result.warnings);
         assert(runs.length > 0 && mismatched.length === 0,
             `the Problems panel holds exactly each project's results (${JSON.stringify(runs.map(r => [r.label, r.problemsPanel, r.result && r.result.errors, r.result && r.result.warnings]))})`);
+    }
+
+    // R7: rename is ONE WorkspaceEdit and Undo Last Rename restores the LineB copy byte for byte.
+    const ru = step('rename-undo');
+    assert(!!ru && !ru.error, `the rename/undo phase ran${ru && ru.error ? ': ' + ru.error : ''}`);
+    if (ru && !ru.error) {
+        const sep = path.sep;
+        const want = ['POUs' + sep + 'Interfaces' + sep + 'I_Resettable.TcIO', 'POUs' + sep + 'Machine' + sep + 'FB_Station.TcPOU', 'POUs' + sep + 'P_Startup.TcPOU'];
+        assert(ru.member.applyCalls === 1, `a member rename is ONE WorkspaceEdit (got ${ru.member.applyCalls})`);
+        assert(ru.member.itfRenamed && ru.member.callsRenamed && want.every(f => ru.member.changed.includes(f)),
+            `FB_Station.Reset -> ResetAll renames the interface method and both calls (changed ${JSON.stringify(ru.member.changed)})`);
+        assert(ru.member.dirty.length === 0, `every edited file was saved (dirty ${JSON.stringify(ru.member.dirty)})`);
+        assert(ru.memberUndo.changed.length === 0 && ru.memberUndo.dirty.length === 0,
+            `Undo Last Rename restores every file byte for byte and saves it (changed ${JSON.stringify(ru.memberUndo.changed)}, dirty ${JSON.stringify(ru.memberUndo.dirty)})`);
+        assert(ru.file.applyCalls === 1 && ru.file.renamedOnDisk && ru.file.plcprojUpdated,
+            `a file rename is ONE WorkspaceEdit carrying the .plcproj entry and the move (${JSON.stringify({ calls: ru.file.applyCalls, moved: ru.file.renamedOnDisk, plcproj: ru.file.plcprojUpdated })})`);
+        assert(ru.file.bom === 'efbbbf', `the moved file keeps its UTF-8 BOM (got ${ru.file.bom})`);
+        assert(ru.file.dirty.length === 0, `every edited file was saved (dirty ${JSON.stringify(ru.file.dirty)})`);
+        assert(ru.fileUndo.changed.length === 0 && ru.fileUndo.dirty.length === 0,
+            `Undo Last Rename restores the file name, its content and the .plcproj byte for byte (changed ${JSON.stringify(ru.fileUndo.changed)}, dirty ${JSON.stringify(ru.fileUndo.dirty)})`);
     }
 
     // The window is still shutting down when the poll returns, so its user-data dir can hold a

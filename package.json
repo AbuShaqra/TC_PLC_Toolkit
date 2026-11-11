@@ -320,6 +320,11 @@
         "command": "twincat.renameObject",
         "title": "Rename",
         "category": "TC Toolkit"
+      },
+      {
+        "command": "twincat.undoLastRename",
+        "title": "Undo Last Rename",
+        "category": "TC Toolkit"
       }
     ],
     "keybindings": [

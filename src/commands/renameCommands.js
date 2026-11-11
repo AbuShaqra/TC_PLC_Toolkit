@@ -4,12 +4,15 @@
  * to F2). One command dispatches on the selected tree item's contextValue to five shapes of rename:
  *   - a TwinCAT object FILE (.TcPOU/.TcIO/.TcGVL/.TcDUT) — renames the root object inside the XML
  *     (Name attr + declaration header + LineIds via renameRootObjectInXml), renames the file on disk,
- *     re-syncs the .plcproj, and — after a confirmation modal — updates cross-file references;
+ *     rewrites its .plcproj entry in place, and — after a confirmation modal — updates cross-file
+ *     references;
  *   - a plain .st FILE — a bare on-disk rename (no XML, no .plcproj, no references), because .st files
  *     carry no wrapper and are never .plcproj members;
  *   - a MEMBER (Method/Property/Action/Transition) — renames it in place via renameComponentInXml and,
- *     for Method/Property/Action, offers to update references (Transitions are never referenced);
- *   - a physical DIRECTORY — an on-disk rename plus a .plcproj tree re-registration;
+ *     for Method/Property/Action, offers to update references (Transitions are never referenced). For
+ *     a Method/Property the reference set spans every implementor of a shared interface method and
+ *     every override of a shared base method (the LSP's memberRenameFamily), so siblings stay in step;
+ *   - a physical DIRECTORY — an on-disk rename plus an in-place rewrite of its .plcproj entries;
  *   - a VIRTUAL (in-XML) folder — renames the Folder tag and rewrites every member's FolderPath prefix
  *     via renameVirtualFolderInXml.
  *
@@ -22,12 +25,17 @@
  * or its readXmlText/writeXmlText halves) and the .plcproj stays in sync, exactly as in
  * objectCommands.js / clipboardCommands.js. Deps are injected by extension.js.
  *
- * Cross-file updates are TRANSACTIONAL (renameTransaction.js): every reference and configuration edit
- * is staged first and applied in one pass, so a rename either fully lands or the workspace is put
- * back. A failure mid-apply restores every file already written; a failed on-disk file rename reverts
- * the content edits that preceded it; and a rollback that cannot complete is reported loudly, naming
- * each file left modified and why. Single-file renames (rename-only, Transitions, virtual folders)
- * keep the plain applyXmlEdit — one write has nothing to coordinate.
+ * Multi-file renames are TRANSACTIONAL (renameTransaction.js) and ONE undo step: every reference,
+ * configuration and .plcproj edit is staged first, verified, and then written by ONE WorkspaceEdit that
+ * also carries the on-disk file/directory rename (renameTransaction `applyAsOne`). VS Code records that
+ * edit as one undo group, so undo from a text editor of any participating file restores all of it, the
+ * file name included (verified in a real VS Code 1.145; three separate edits undid only the last one).
+ * The Objects tree and the custom (webview) editor cannot reach that undo — Ctrl+Z in a Monaco pane is
+ * Monaco's own — so `twincat.undoLastRename` drives it: it focuses a participating file's text editor
+ * and runs `undo`, then saves. A commit that fails restores whatever of it landed, and a rollback that
+ * cannot complete is reported loudly, naming each file left modified and why. Single-file renames
+ * (rename-only members, Transitions, virtual folders) keep the plain applyXmlEdit — one write is one
+ * undo step already.
  */
 
 const vscode = require('vscode');
@@ -41,7 +49,8 @@ const {
 } = require('../xmlParser');
 const { applyReferenceEditsToXml } = require('../renameEngine');
 const { createRenameTransaction } = require('../renameTransaction');
-const { registerInPlcProj, unregisterFromPlcProj, registerTreeInPlcProj } = require('../plcProjHelper');
+const { findPlcProjFile } = require('../plcProjHelper');
+const { renamePlcProjEntries } = require('../plcProjText');
 const { TWINCAT_WATCH_EXTS } = require('../twincatWorkspace');
 const { isPropertyNode } = require('../objectKinds');
 
@@ -70,7 +79,14 @@ const OBJECT_FILE_CONTEXT_VALUES = new Set([
  * Closure over the (possibly not-yet-started) LSP client — mirrors registerLibraryCommands.
  */
 function registerRenameCommands(context, { treeView, treeProvider, applyXmlEdit, readXmlText, writeXmlText, getClient }) {
+    /**
+     * The last multi-file rename this session applied as one WorkspaceEdit, for Undo Last Rename.
+     * @type {LastRename|null}
+     */
+    let lastRename = null;
+
     context.subscriptions.push(
+        vscode.commands.registerCommand('twincat.undoLastRename', () => undoLastRename()),
         vscode.commands.registerCommand('twincat.renameObject', async (item) => {
             // F2 passes nothing, so the current selection stands in; no selection at all means nothing
             // to rename.
@@ -146,43 +162,27 @@ function registerRenameCommands(context, { treeView, treeProvider, applyXmlEdit,
         if (decision.mode === 'abort') return;
 
         const tally = newTally();
-        // Holds the applied transaction (null on the rename-only path) so a failed disk rename below
-        // can put the content edits back.
-        /** @type {ReturnType<typeof createXmlTransaction>|null} */
-        let appliedTxn = null;
+        const newUri = vscode.Uri.file(path.join(path.dirname(fileUri.fsPath), newName + ext));
+        if (!(await destinationIsFree(fileUri, newUri))) return;
+
+        const ctx = createXmlTransaction();
         if (decision.mode === 'updateRefs') {
-            const ctx = createXmlTransaction();
             await stageReferenceUpdates(ctx.stageXml, fileUri, rootName, newName, decision.refs, false, tally, (xml) =>
                 renameRootObjectInXml(xml, newName));
-            // Config edits must land BEFORE the on-disk rename below — every config object references
-            // the OLD uri, exactly as the code references do.
+            // Config objects reference the OLD uri, exactly as the code references do; all of these
+            // text edits precede the file rename inside the one WorkspaceEdit.
             await stageConfigUpdates(ctx.stageXml, configOccs, rootName, newName, tally);
-            // Nothing on disk has changed yet: a failed apply has already restored itself, so the
-            // rename stops here, before the file rename and the .plcproj re-sync.
-            const res = await ctx.txn.apply();
-            // `=== false`, not `!res.ok`: only an explicit comparison narrows the result union under
-            // the type-check gate's JSDoc parsing.
-            if (res.ok === false) {
-                reportApplyFailure(res, ctx.displayPath, rootName);
-                return;
-            }
-            appliedTxn = ctx;
         } else {
             // Rename-only: the object's own XML and file name must still stay in sync. Configuration
             // objects are left untouched by the user's explicit choice.
-            await applyXmlEdit(fileUri, (xml) => renameRootObjectInXml(xml, newName));
+            await ctx.stageXml(fileUri, (xml) => renameRootObjectInXml(xml, newName));
         }
+        // The .plcproj entry is rewritten in place, inside the same edit, so one undo restores it too.
+        await stagePlcProjRename(ctx.stageXml, fileUri, newUri, false);
 
-        // Rename on disk AFTER the XML writes (which opened/saved the old uri), then re-sync .plcproj.
-        const newUri = vscode.Uri.file(path.join(path.dirname(fileUri.fsPath), newName + ext));
-        if (!(await renameFileOnDisk(fileUri, newUri))) {
-            // The references now name a file that kept its old name — undo them rather than leave the
-            // workspace inconsistent. renameFileOnDisk has already reported its own error.
-            if (appliedTxn) reportRevertOutcome(await appliedTxn.txn.revert(), appliedTxn.displayPath);
-            return;
-        }
-        await unregisterFromPlcProj(fileUri, false);
-        await registerInPlcProj(newUri, false);
+        // Text edits first, then the file rename, as ONE WorkspaceEdit. Nothing is written until every
+        // staged file has been verified; a failed commit restores whatever of it landed.
+        if (!(await commitRename(ctx, `${oldStem}${ext} → ${newName}${ext}`, { from: fileUri, to: newUri }, rootName))) return;
         treeProvider.refresh();
 
         reportRename(oldStem, newName, decision.mode === 'updateRefs' ? tally : null, 0);
@@ -312,13 +312,9 @@ function registerRenameCommands(context, { treeView, treeProvider, applyXmlEdit,
             // Members carry no on-disk file rename, so ordering vs a disk move is moot here; config
             // edits simply follow the code edits.
             await stageConfigUpdates(ctx.stageXml, configOccs, oldName, newName, tally);
-            // No disk rename follows, so a failed apply (already rolled back) simply ends the rename
-            // before the tree refresh and the success report.
-            const res = await ctx.txn.apply();
-            if (res.ok === false) {
-                reportApplyFailure(res, ctx.displayPath, oldName);
-                return;
-            }
+            // One WorkspaceEdit across every file (one undo step); a failed commit has already put
+            // back what landed, so the rename simply ends before the tree refresh and the report.
+            if (!(await commitRename(ctx, `${parsed.rootName}.${oldName} → ${newName}`, null, oldName))) return;
         } else {
             await applyXmlEdit(fileUri, (xml) =>
                 renameComponentInXml(xml, parsed.rootName, componentType, oldName, newName));
@@ -359,9 +355,12 @@ function registerRenameCommands(context, { treeView, treeProvider, applyXmlEdit,
         const newName = raw.trim();
 
         const newUri = vscode.Uri.file(path.join(path.dirname(dirUri.fsPath), newName));
-        if (!(await renameFileOnDisk(dirUri, newUri))) return;
-        await unregisterFromPlcProj(dirUri, true);
-        await registerTreeInPlcProj(newUri);
+        if (!(await destinationIsFree(dirUri, newUri))) return;
+        // The .plcproj entries of the directory and everything under it are rewritten in place and
+        // moved together with the directory in one WorkspaceEdit (one undo step).
+        const ctx = createXmlTransaction();
+        await stagePlcProjRename(ctx.stageXml, dirUri, newUri, true);
+        if (!(await commitRename(ctx, `${oldName} → ${newName}`, { from: dirUri, to: newUri }, oldName))) return;
         treeProvider.refresh();
         vscode.window.setStatusBarMessage(`Renamed ${oldName} → ${newName}`, 4000);
     }
@@ -426,6 +425,7 @@ function registerRenameCommands(context, { treeView, treeProvider, applyXmlEdit,
      * for a key, and both io halves and displayPath resolve through that, so the on-disk spelling is
      * never replaced by the lowercased one.
      * @returns {{ txn: import('../renameTransaction').RenameTransaction,
+     *             uriFor: (key: string) => vscode.Uri,
      *             stageXml: (targetUri: vscode.Uri, modify: (xml: string) => string) => Promise<void>,
      *             displayPath: (key: string) => string }}
      */
@@ -443,6 +443,7 @@ function registerRenameCommands(context, { treeView, treeProvider, applyXmlEdit,
         });
         return {
             txn,
+            uriFor,
             stageXml: (targetUri, modify) => {
                 const key = targetUri.fsPath.toLowerCase();
                 if (!keyToUri.has(key)) keyToUri.set(key, targetUri);
@@ -455,6 +456,141 @@ function registerRenameCommands(context, { treeView, treeProvider, applyXmlEdit,
                 return uri ? uri.fsPath : key;
             }
         };
+    }
+
+    /**
+     * Applies a staged rename as ONE WorkspaceEdit (renameTransaction `applyAsOne`): every staged text
+     * edit, then the optional file/directory move, so VS Code records a single undo group. Saves every
+     * edited document at its final location afterwards and remembers the rename for Undo Last Rename.
+     * @param {ReturnType<typeof createXmlTransaction>} ctx
+     * @param {string} label What was renamed, for messages.
+     * @param {{from: vscode.Uri, to: vscode.Uri}|null} move The on-disk rename, if any.
+     * @param {string} name The symbol being renamed, as shown in a failure report.
+     * @returns {Promise<boolean>} true when the rename landed.
+     */
+    async function commitRename(ctx, label, move, name) {
+        /** @type {Array<import('../renameTransaction').StagedChange>} */
+        let committed = [];
+        const res = await ctx.txn.applyAsOne(async (changes) => {
+            committed = changes;
+            const edit = new vscode.WorkspaceEdit();
+            for (const c of changes) {
+                const uri = ctx.uriFor(c.key);
+                const doc = await vscode.workspace.openTextDocument(uri);
+                edit.replace(uri, fullDocumentRange(doc), c.newText);
+            }
+            // LAST: VS Code validates all text edits before applying any, so the move is the only step
+            // that can fail after edits landed — and then the transaction restores them.
+            if (move) edit.renameFile(move.from, move.to);
+            const applied = await vscode.workspace.applyEdit(edit);
+            if (!applied) throw new Error('VS Code did not apply the rename edit');
+        });
+        if (res.ok === false) {
+            reportApplyFailure(res, ctx.displayPath, name);
+            return false;
+        }
+        const participants = committed.map(c => {
+            const originalUri = ctx.uriFor(c.key);
+            return { originalUri, finalUri: movedUri(originalUri, move), originalText: c.originalText, newText: c.newText };
+        });
+        const unsaved = [];
+        for (const p of participants) {
+            try {
+                const doc = await vscode.workspace.openTextDocument(p.finalUri);
+                if (doc.isDirty && !(await doc.save())) unsaved.push(p.finalUri.fsPath);
+            } catch (err) {
+                unsaved.push(p.finalUri.fsPath);
+            }
+        }
+        if (unsaved.length > 0) {
+            vscode.window.showErrorMessage(
+                `Renamed ${label}, but ${unsaved.length} file(s) could not be saved and hold the change unsaved: ${unsaved.join(', ')}`);
+        }
+        lastRename = participants.length > 0 ? { label, participants, move } : null;
+        return true;
+    }
+
+    /**
+     * Stages the in-place `.plcproj` rewrite for a renamed file or directory, in the nearest
+     * `.plcproj` (the same one plcProjHelper keeps in sync on create/delete). A directory that holds
+     * its own `.plcproj` changes no project-relative path, and an entry that is not in the project
+     * stays out of it — nothing is staged for either.
+     * @param {(targetUri: vscode.Uri, modify: (xml: string) => string) => Promise<void>} stageXml
+     * @param {vscode.Uri} oldUri
+     * @param {vscode.Uri} newUri
+     * @param {boolean} isFolder
+     * @returns {Promise<void>}
+     */
+    async function stagePlcProjRename(stageXml, oldUri, newUri, isFolder) {
+        const plcProjUri = await findPlcProjFile(isFolder ? oldUri.fsPath : path.dirname(oldUri.fsPath));
+        if (!plcProjUri) return;
+        const projDir = path.dirname(plcProjUri.fsPath);
+        const oldRel = path.relative(projDir, oldUri.fsPath);
+        if (!oldRel || oldRel.startsWith('..') || path.isAbsolute(oldRel)) return;
+        const newRel = path.relative(projDir, newUri.fsPath);
+        const toProj = (rel) => rel.split(path.sep).join('\\');
+        await stageXml(plcProjUri, (text) => renamePlcProjEntries(text, toProj(oldRel), toProj(newRel), isFolder).text);
+    }
+
+    /**
+     * Undoes the last multi-file rename as the one undo step it was recorded as. VS Code only routes
+     * `undo` to that workspace edit from a focused TEXT editor of a participating file, which neither
+     * the Objects tree nor the webview editor is, so this opens one, runs `undo`, and saves. Refused
+     * when any participating file changed since the rename: `undo` would then undo that newer change.
+     * @returns {Promise<void>}
+     */
+    async function undoLastRename() {
+        const last = lastRename;
+        if (!last) {
+            vscode.window.showInformationMessage('There is no rename to undo in this session.');
+            return;
+        }
+        for (const p of last.participants) {
+            let text;
+            try {
+                text = (await vscode.workspace.openTextDocument(p.finalUri)).getText();
+            } catch (err) {
+                text = null;
+            }
+            if (text !== p.newText) {
+                lastRename = null;
+                vscode.window.showWarningMessage(
+                    `Cannot undo the rename ${last.label}: "${p.finalUri.fsPath}" changed after it. Undo it with Edit > Undo in a text editor of that file, or restore it from version control.`);
+                return;
+            }
+        }
+        // Prefer the .plcproj (plain text, never a custom editor); any participant works.
+        const anchor = last.participants.find(p => /\.plcproj$/i.test(p.finalUri.fsPath)) || last.participants[0];
+        const wasOpen = vscode.window.visibleTextEditors.some(e => e.document.uri.toString() === anchor.finalUri.toString());
+        const doc = await vscode.workspace.openTextDocument(anchor.finalUri);
+        await vscode.window.showTextDocument(doc, { preview: true, preserveFocus: false });
+        await vscode.commands.executeCommand('undo');
+
+        const notRestored = [];
+        for (const p of last.participants) {
+            try {
+                const d = await vscode.workspace.openTextDocument(p.originalUri);
+                if (d.getText() !== p.originalText) { notRestored.push(p.originalUri.fsPath); continue; }
+                if (d.isDirty) await d.save();
+            } catch (err) {
+                notRestored.push(p.originalUri.fsPath);
+            }
+        }
+        if (!wasOpen) {
+            const active = vscode.window.activeTextEditor;
+            if (active && (active.document.uri.toString() === anchor.originalUri.toString()
+                || active.document.uri.toString() === anchor.finalUri.toString())) {
+                await vscode.commands.executeCommand('workbench.action.closeActiveEditor');
+            }
+        }
+        lastRename = null;
+        treeProvider.refresh();
+        if (notRestored.length > 0) {
+            vscode.window.showErrorMessage(
+                `Undo of the rename ${last.label} did not restore ${notRestored.length} file(s): ${notRestored.join(', ')}. Check them, or restore them from version control.`);
+            return;
+        }
+        vscode.window.setStatusBarMessage(`Undid rename ${last.label}`, 4000);
     }
 
     /**
@@ -486,6 +622,10 @@ function registerRenameCommands(context, { treeView, treeProvider, applyXmlEdit,
             }
             await stageXml(targetUri, (xml) => {
                 const r = applyReferenceEditsToXml(xml, occs, { oldName, newName, propagateDeclRenames: propagate });
+                // A related object (an interface, a sibling implementor, an override) gets its member
+                // renamed structurally; refuse before anything is written if it already has one by the
+                // new name, or the rename would leave it with two.
+                if (r.renamedDeclComponents.length > 0) assertNoMemberNamed(xml, newName, targetUri);
                 collectResult(tally, targetUri, r);
                 return r.xmlText;
             });
@@ -594,6 +734,24 @@ function collectResult(tally, uri, r) {
         // Skips flagged coveredByStructuralRename are expected (a synthesized declaration line the
         // structural rename handles) — only genuinely uncovered skips are user-facing problems.
         if (!s.coveredByStructuralRename) tally.uncovered++;
+    }
+}
+
+/**
+ * Throws when the object in `xml` already has a member (Method/Property/Action/Transition) named
+ * `newName`, compared case-insensitively as ST does. Runs at stage time, so nothing has been written.
+ * @param {string} xml
+ * @param {string} newName
+ * @param {vscode.Uri} uri For the message.
+ */
+function assertNoMemberNamed(xml, newName, uri) {
+    const parsed = parseTwinCatXml(xml);
+    if (!parsed) return;
+    const lower = newName.toLowerCase();
+    const clash = parsed.components.some(c => c.xmlContext && !c.xmlContext.accessorType
+        && c.xmlContext.subName && c.xmlContext.subName.toLowerCase() === lower);
+    if (clash) {
+        throw new Error(`"${newName}" already exists in ${parsed.rootName} (${path.basename(uri.fsPath)}), which shares this member; nothing was renamed`);
     }
 }
 
@@ -816,29 +974,35 @@ async function promptFileStem(fileUri, ext) {
 }
 
 /**
+ * Whether `newUri` may be the target of renaming `oldUri`: refuses to clobber an existing destination,
+ * and says so. A case-only rename is exempted: on win32 the destination stats as existing because it
+ * IS the same entry.
+ * @param {vscode.Uri} oldUri
+ * @param {vscode.Uri} newUri
+ * @returns {Promise<boolean>}
+ */
+async function destinationIsFree(oldUri, newUri) {
+    const oldBase = path.basename(oldUri.fsPath);
+    const newBase = path.basename(newUri.fsPath);
+    if (newBase.toLowerCase() === oldBase.toLowerCase()) return true;
+    try {
+        await vscode.workspace.fs.stat(newUri);
+    } catch (err) {
+        return true;
+    }
+    vscode.window.showErrorMessage(`Cannot rename "${oldBase}": "${newUri.fsPath}" already exists.`);
+    return false;
+}
+
+/**
  * Renames a file or directory on disk through a WorkspaceEdit (so open editors follow it), refusing to
- * clobber an existing destination. A case-only rename is exempted from the clobber guard: on win32 the
- * destination stats as existing because it IS the same entry.
+ * clobber an existing destination. Used where the rename is the only change (a `.st` file).
  * @param {vscode.Uri} oldUri
  * @param {vscode.Uri} newUri
  * @returns {Promise<boolean>} true when the rename was applied.
  */
 async function renameFileOnDisk(oldUri, newUri) {
-    const oldBase = path.basename(oldUri.fsPath);
-    const newBase = path.basename(newUri.fsPath);
-    const caseOnly = newBase.toLowerCase() === oldBase.toLowerCase();
-    if (!caseOnly) {
-        let destinationTaken = true;
-        try {
-            await vscode.workspace.fs.stat(newUri);
-        } catch (err) {
-            destinationTaken = false;
-        }
-        if (destinationTaken) {
-            vscode.window.showErrorMessage(`Cannot rename "${oldBase}": "${newUri.fsPath}" already exists.`);
-            return false;
-        }
-    }
+    if (!(await destinationIsFree(oldUri, newUri))) return false;
     const edit = new vscode.WorkspaceEdit();
     edit.renameFile(oldUri, newUri);
     try {
@@ -846,10 +1010,42 @@ async function renameFileOnDisk(oldUri, newUri) {
         if (!applied) throw new Error('the filesystem rename was not applied');
         return true;
     } catch (err) {
-        vscode.window.showErrorMessage(`Failed to rename "${oldBase}": ${err.message}`);
+        vscode.window.showErrorMessage(`Failed to rename "${path.basename(oldUri.fsPath)}": ${err.message}`);
         return false;
     }
 }
+
+/**
+ * The whole-document range of a text document, as writeXmlText builds it.
+ * @param {vscode.TextDocument} doc
+ * @returns {vscode.Range}
+ */
+function fullDocumentRange(doc) {
+    const lastLine = doc.lineAt(doc.lineCount - 1);
+    return new vscode.Range(new vscode.Position(0, 0), lastLine.range.end);
+}
+
+/**
+ * Where a file is after a move: itself, the move's target, or its place under a moved directory.
+ * @param {vscode.Uri} uri
+ * @param {{from: vscode.Uri, to: vscode.Uri}|null} move
+ * @returns {vscode.Uri}
+ */
+function movedUri(uri, move) {
+    if (!move) return uri;
+    const from = move.from.fsPath;
+    const p = uri.fsPath;
+    if (p.toLowerCase() === from.toLowerCase()) return move.to;
+    const prefix = from.toLowerCase() + path.sep;
+    if (p.toLowerCase().startsWith(prefix)) return vscode.Uri.file(path.join(move.to.fsPath, p.slice(prefix.length)));
+    return uri;
+}
+
+/**
+ * @typedef {{ label: string,
+ *             participants: Array<{ originalUri: vscode.Uri, finalUri: vscode.Uri, originalText: string, newText: string }>,
+ *             move: {from: vscode.Uri, to: vscode.Uri}|null }} LastRename
+ */
 
 /**
  * Builds a case-insensitive collision set from candidate names, excluding the old name by EXACT match
@@ -936,7 +1132,9 @@ function reportRename(oldName, newName, tally, structuralCount) {
  * @param {string} name The symbol being renamed, as shown to the user.
  */
 function reportApplyFailure(res, displayPath, name) {
-    const lead = `Rename of "${name}" was aborted: could not update "${displayPath(res.failedKey)}" (${res.reason}).`;
+    const lead = res.reason.startsWith('commit-failed')
+        ? `Rename of "${name}" was aborted: VS Code did not apply it (${res.reason}).`
+        : `Rename of "${name}" was aborted: could not update "${displayPath(res.failedKey)}" (${res.reason}).`;
     if (res.rollbackFailures.length > 0) {
         reportRollbackFailures(res.rollbackFailures, displayPath, lead);
         return;
@@ -946,24 +1144,7 @@ function reportApplyFailure(res, displayPath, name) {
 }
 
 /**
- * Reports the revert that follows a failed on-disk file rename: the content edits had already landed,
- * so leaving them would point every reference at a name the file does not carry. renameFileOnDisk has
- * already shown its own error, so the clean case is only a warning; a failed restore is still loud.
- * @param {import('../renameTransaction').RevertResult} rb
- * @param {(key: string) => string} displayPath Transaction key → the file's real on-disk spelling.
- */
-function reportRevertOutcome(rb, displayPath) {
-    if (rb.failures.length > 0) {
-        reportRollbackFailures(rb.failures, displayPath,
-            'The file rename failed after the reference updates had been written.');
-        return;
-    }
-    vscode.window.showWarningMessage(
-        `The file rename failed, so all ${rb.reverted.length} updated file(s) were restored to their previous contents.`);
-}
-
-/**
- * The loud case both reports share: files that were changed and could NOT be put back. Each is named
+ * The loud case: files that were changed and could NOT be put back. Each is named
  * by its real path with the reason it was left alone, because a silent half-rename is precisely the
  * outcome the transaction exists to prevent.
  * @param {Array<{key: string, reason: string}>} failures

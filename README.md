@@ -137,7 +137,11 @@ calls (`.TcTTO`) — so the project keeps building. Updates are applied conserva
 rewritten when it provably resolves to the renamed symbol through the project's types, a task's POU
 call is only rewritten when it names that exact object (never a library POU like
 `VisuElems.Visu_Prg`), and any occurrence that cannot be matched exactly is skipped and reported
-rather than guessed at.
+rather than guessed at. Renaming a method or property of an interface (or one that implements it) also
+renames it in the interface and in every other function block that implements it, so the project
+still builds; a method that only shares the name is left alone. A rename is one undoable step:
+**TC Toolkit: Undo Last Rename** (Command Palette) puts back every file it changed, the file name and
+the `.plcproj` entry included.
 
 ### PLC Libraries explorer
 

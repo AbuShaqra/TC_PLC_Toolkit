@@ -15,8 +15,8 @@ accurate rather than short — prune a finding only when the code it describes i
   (`src/indexInputs.js`). Cold startup (~20 s, 8 projects) is still PROJECTED, not measured on Windows.
 - **L1 reverse index** deferred by decision — reference search is 29 ms cold / ~4 ms warm; reopen past ~1000 files
   or >200 ms.
-- **Rename v1 limits:** `.plcproj` sync is outside the rename transaction; sibling implementors of a shared
-  interface are not renamed (XAE flags them).
+- **Rename v1 limits — lifted by R7 (2026-11-11):** see "Objects-tree rename" below for what changed and the
+  undo limits that remain.
 - **Tooling:** ESLint 10 bump (9.x deprecated; raises the Node floor, needs re-triage); dev-only `brace-expansion`
   advisory (the fix drags 19 unrelated lockfile packages).
 - **Small known gaps:** nested block comments `(* (* *) *)` unsupported (a CODESYS option, default off); no pragma
@@ -32,6 +32,12 @@ accurate rather than short — prune a finding only when the code it describes i
   NORMAL clone still smudges — do NOT renormalize blobs without revisiting the blob-stays-LF rationale (below,
   "platform-correct"). Container clones are also SHALLOW (one held 147 of 209 commits and a push to a fresh repo
   failed on a missing object) — `.claude/memory/shallow-clone-is-not-the-repo.md`.
+- **The devhost harness runs headless in a container** (2026-11-11): download VS Code
+  (`update.code.visualstudio.com/latest/linux-x64/stable` is reachable), then `TCDEV_CODE=<dir>/VSCode-linux-x64/code
+  TCDEV_CODE_ARGS="--no-sandbox --disable-gpu" xvfb-run -a node test/devhost/run.js`. Use the `code` binary, not
+  `bin/code` (the shim returns at once and xvfb tears the window down), and keep `--user-data-dir` short (the IPC
+  socket path must stay under 107 chars — run.js's `os.tmpdir()` dir is fine, a scratchpad path is not). One P8 check
+  (flushed file vs `foldEdits`) fails on Linux on a `\r\n`/`\n` difference, identically on the pre-R7 commit.
 - **Release workflow** (`.github/workflows/release.yml`, manual-only, procedure in DEVELOPMENT.md "Publish a
   GitHub release"): tags `v<package.json version>`, refuses an existing tag/release, gates
   typecheck+test+package, attaches the VSIX. vsce's "577 files / bundle your extension" warning is expected and
@@ -311,8 +317,22 @@ Plans: `docs/superpowers/plans/2026-08-22-deepening-roadmap.md` and one doc per 
   methods exist** (stConverter:54-57), shifting the root header column → guard-skip, completed by
   `renameRootObjectInXml`, which the engine deliberately never applies (caller contract). `propagateDeclRenames`
   structurally renames related interface/override decl headers (splice alone would desync tag Name + LineIds =
-  corruption); **sibling implementors of a shared interface are NOT in the reference set** (pairwise relation) —
-  v1 limit, XAE flags them. `.st` rename = disk-only (never a `.plcproj` member anywhere in the codebase).
+  corruption). **R7 (2026-11-11):** a Method/Property target carries `memberRenameFamily` (features/references.js)
+  — every POU sharing the member's slot: interfaces/bases that DECLARE it in the ancestry, closed over everything
+  deriving from them (siblings, a second interface a sibling implements, an interface's second `EXTENDS` parent —
+  `inheritanceFamily` read only `extends`, never `extendsAll`, until then). An ancestor that does not declare the
+  member is a path, not an anchor, so name-alikes stay out. It only ADDS to `pousRelated` (Find References keeps the
+  pairwise relation). A sibling that already has a member by the new name stops the rename at stage time.
+  `.plcproj` is rewritten IN PLACE (`src/plcProjText.js`): the old unregister+register moved the entry to the end
+  and dropped children such as `<LinkAlways>true</LinkAlways>` (present on the sample's GVLs). A file not in the
+  `.plcproj` stays out of it (the old code added it). **Undo, measured in a real VS Code 1.145 (devhost here,
+  2026-11-11):** one `applyEdit` holding text edits + `renameFile` is ONE undo group; `undo` from a TEXT editor of
+  any participating file restores every buffer and moves the file back (buffers dirty until saved); three separate
+  edits undid only the last one; `undo` with no text editor focused (tree view, explorer focus via command) does
+  nothing. The webview's Monaco owns Ctrl+Z, so `twincat.undoLastRename` opens the `.plcproj` (or a participant)
+  as text, runs `undo`, verifies every file is back, and saves. Limits: only the LAST rename of the session; refused
+  once a participating file changed; a renamed file other projects also `<Compile>` is updated only in the nearest
+  `.plcproj` (as before). `.st` rename = disk-only (never a `.plcproj` member anywhere in the codebase).
   References modal excludes the self-declaration via the response's separate `declaration` field.
   **Non-code objects** (user's smoke test caught the gap — XAE build broke): rename scans them via
   `custom/configReferencesForSymbol` (`features/configReferences.js`). Two matcher families, dispatched by ext:
@@ -325,7 +345,7 @@ Plans: `docs/superpowers/plans/2026-08-22-deepening-roadmap.md` and one doc per 
   — decoys share the exact shape (text keys `Palletizer.Turn1` sit beside real paths in the same GTLO; visu-lib
   names `VisuDialogs.*`) and an unproven edit corrupts the HMI. All these formats carry a **UTF-8 BOM** the LSP must
   strip (VS Code documents exclude it → offsets shift by one). Surveyed and deliberately NOT scanned: `.TcIPO`
-  (only `.svg` names), `.plcproj` (already synced by the file-rename step), `.tmc` (generated build artifact).
+  (only `.svg` names), `.plcproj` (rewritten by the rename itself, `plcProjText.js`), `.tmc` (generated build artifact).
   Counts above were measured on the old customer sample; on the synthetic one `MAIN` = 1 (the PlcTask PouCall).
 - **Insert at Cursor / Insert Definition at Cursor in the OBJECTS tree** (0.7.0, `objectInsertCommands.js`).
   Reported as "the functionality disappeared" — it had not: checked **52 revisions of package.json** across both

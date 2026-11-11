@@ -946,6 +946,92 @@ async function run() {
             log('compile', { error: String((e && e.stack) || e) });
         }
 
+        // --- Phase rename-undo (R7): a member rename across a shared interface and a file rename
+        //     (with its .plcproj entry) each land as ONE WorkspaceEdit, and Undo Last Rename restores
+        //     every file of the LineB copy byte for byte (BOM and CRLF included), the file name too.
+        //     The input box and the confirmation modal are answered by wrapping the shared API object.
+        try {
+            const crypto = require('crypto');
+            const { parseTwinCatXml: parseXml } = require(path.join(REPO, 'src', 'xmlParser.js'));
+            const plcB = path.join(WS, 'LineB', 'TcToolkitSample_PLC');
+            const snap = () => {
+                const outMap = {};
+                (function walk(dir) {
+                    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+                        const p = path.join(dir, e.name);
+                        if (e.isDirectory()) walk(p);
+                        else outMap[path.relative(plcB, p)] = crypto.createHash('sha1').update(fs.readFileSync(p)).digest('hex');
+                    }
+                })(plcB);
+                return outMap;
+            };
+            const diffKeys = (a, b) => Array.from(new Set([...Object.keys(a), ...Object.keys(b)])).filter(k => a[k] !== b[k]).sort();
+            const dirtyDocs = () => vscode.workspace.textDocuments.filter(d => d.isDirty).map(d => d.uri.fsPath);
+            const readB = (rel) => fs.readFileSync(path.join(plcB, rel), 'utf8');
+            const answers = [];
+            const realInput = vscode.window.showInputBox;
+            const realWarn = vscode.window.showWarningMessage;
+            const realApply = vscode.workspace.applyEdit;
+            let applyCalls = 0;
+            vscode.window.showInputBox = async () => answers.shift();
+            vscode.window.showWarningMessage = async (m, o, ...buttons) => buttons.find(b => /^Rename and update/.test(String(b))) || buttons[0];
+            vscode.workspace.applyEdit = function (...a) { applyCalls++; return realApply.apply(this, a); };
+            const result = {};
+            try {
+                const before = snap();
+                const stationB = path.join(plcB, 'POUs', 'Machine', 'FB_Station.TcPOU');
+                const resetId = parseXml(fs.readFileSync(stationB, 'utf8')).components
+                    .find(c => c.xmlContext && c.xmlContext.subType === 'Method' && c.xmlContext.subName === 'Reset').id;
+                // Open in the custom editor first, so the rename runs with a webview holding the document.
+                await vscode.commands.executeCommand('vscode.openWith', vscode.Uri.file(stationB), 'twincat.xmlViewer');
+                await sleep(1500);
+                answers.push('ResetAll');
+                applyCalls = 0;
+                await vscode.commands.executeCommand('twincat.renameObject', { contextValue: 'component', resourceUri: vscode.Uri.file(stationB), componentId: resetId });
+                await sleep(1000);
+                const afterMember = snap();
+                result.member = {
+                    applyCalls,
+                    changed: diffKeys(before, afterMember),
+                    itfRenamed: /<Method Name="ResetAll"/.test(readB(path.join('POUs', 'Interfaces', 'I_Resettable.TcIO'))),
+                    callsRenamed: /fbStation\.ResetAll\(\);[\s\S]*fbDerived\.ResetAll\(\);/.test(readB(path.join('POUs', 'P_Startup.TcPOU'))),
+                    dirty: dirtyDocs()
+                };
+                await vscode.commands.executeCommand('twincat.undoLastRename');
+                await sleep(1000);
+                result.memberUndo = { changed: diffKeys(before, snap()), dirty: dirtyDocs() };
+
+                const cylB = path.join(plcB, 'POUs', 'Actuators', 'FB_Cylinder.TcPOU');
+                await vscode.commands.executeCommand('vscode.openWith', vscode.Uri.file(cylB), 'twincat.xmlViewer');
+                await sleep(1500);
+                answers.push('FB_CylinderX');
+                applyCalls = 0;
+                await vscode.commands.executeCommand('twincat.renameObject', { contextValue: 'pouFile', resourceUri: vscode.Uri.file(cylB) });
+                await sleep(1500);
+                const afterFile = snap();
+                const plcproj = readB('TcToolkitSample_PLC.plcproj');
+                result.file = {
+                    applyCalls,
+                    changed: diffKeys(before, afterFile),
+                    renamedOnDisk: fs.existsSync(path.join(plcB, 'POUs', 'Actuators', 'FB_CylinderX.TcPOU')) && !fs.existsSync(cylB),
+                    plcprojUpdated: plcproj.includes('Include="POUs\\Actuators\\FB_CylinderX.TcPOU"') && !plcproj.includes('Include="POUs\\Actuators\\FB_Cylinder.TcPOU"'),
+                    bom: fs.readFileSync(path.join(plcB, 'POUs', 'Actuators', 'FB_CylinderX.TcPOU')).subarray(0, 3).toString('hex'),
+                    tabs: vscode.window.tabGroups.all.flatMap(g => g.tabs.map(t => t.label)),
+                    dirty: dirtyDocs()
+                };
+                await vscode.commands.executeCommand('twincat.undoLastRename');
+                await sleep(1500);
+                result.fileUndo = { changed: diffKeys(before, snap()), dirty: dirtyDocs(), tabs: vscode.window.tabGroups.all.flatMap(g => g.tabs.map(t => t.label)) };
+            } finally {
+                vscode.window.showInputBox = realInput;
+                vscode.window.showWarningMessage = realWarn;
+                vscode.workspace.applyEdit = realApply;
+            }
+            log('rename-undo', result);
+        } catch (e) {
+            log('rename-undo', { error: String((e && e.stack) || e) });
+        }
+
         log('done', {});
     } catch (e) {
         log('CRASH', { error: String((e && e.stack) || e) });
