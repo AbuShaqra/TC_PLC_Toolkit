@@ -116,7 +116,8 @@ function snapshotDisk() {
 const sameDisk = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 
 // ── A `vscode` stub with documents, one-group workspace edits and VS Code's undo rule ──────────────
-const toUriString = (p) => 'file://' + p.split(path.sep).join('/');
+// Real file URLs both ways, so the stub agrees with VS Code on Windows drive paths (file:///C:/...).
+const toUriString = (p) => require('url').pathToFileURL(p).href;
 const mkUri = (p) => ({ fsPath: p, scheme: 'file', path: p, toString: () => toUriString(p) });
 class Position { constructor(line, character) { this.line = line; this.character = character; } }
 class Range { constructor(a, b) { this.start = a; this.end = b; } }
@@ -142,7 +143,7 @@ const state = { applyEdits: [], errors: [], warnings: [], infos: [], status: [],
 const vscodeStub = {
     Uri: {
         file: mkUri,
-        parse: (s) => mkUri(decodeURIComponent(s.replace(/^file:\/\//, '')).split('/').join(path.sep)),
+        parse: (s) => mkUri(require('url').fileURLToPath(s)),
         joinPath: (base, ...parts) => mkUri(path.join(base.fsPath, ...parts))
     },
     Position, Range, WorkspaceEdit,

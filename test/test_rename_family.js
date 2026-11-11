@@ -265,12 +265,14 @@ const byUri = new Map();
 for (const r of res.references) {
     if (r.uri === res.declaration.uri && r.range.start.line === res.declaration.range.start.line
         && r.range.start.character === res.declaration.range.start.character) continue;
-    if (!byUri.has(r.uri)) byUri.set(r.uri, []);
-    byUri.get(r.uri).push({ line: r.range.start.line, character: r.range.start.character });
+    // Keyed by file name: the server may spell the same file's URI differently (drive-letter case, %3A).
+    const key = decodeURIComponent(r.uri).split('/').pop();
+    if (!byUri.has(key)) byUri.set(key, []);
+    byUri.get(key).push({ line: r.range.start.line, character: r.range.start.character });
 }
 const out = {};
 for (const [name, xml] of Object.entries(files)) {
-    const occs = byUri.get(uris[name]) || [];
+    const occs = byUri.get(name) || [];
     let next = applyReferenceEditsToXml(xml, occs, { oldName: 'Start', newName: 'Begin', propagateDeclRenames: true });
     let text = next.xmlText;
     if (name === 'FB_A.TcPOU' && !next.renamedDeclComponents.some(d => d.componentName === 'Start')) {
