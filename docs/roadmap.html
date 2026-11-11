@@ -420,9 +420,23 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
       </div>
     </details>
 
+    <details class="card" id="s11">
+      <summary>
+        <div class="card-top"><span>#4</span><span class="id">S11</span><span class="pill planned">Planned</span><span class="chev" aria-hidden="true">›</span></div>
+        <div class="card-title">Conditional compilation pragmas</div>
+        <div class="bar" aria-hidden="true"><span style="left:36.36%;width:3.64%"></span></div>
+        <div class="card-foot"><span>2 d → ~1 h</span><span>Nov 13</span></div>
+      </summary>
+      <div class="body">
+        <div class="block wide"><h4>Decided Nov 11 (your call)</h4><p>A compiler feature, after S3b. It replaces the earlier "not a feature now". Until then every profile refuses <code>{IF defined(X)}</code>, so Compile Project reports those lines as errors.</p></div>
+        <div class="block"><h4>Scope</h4><p>A dialect feature, on in <code>twincat3</code>, that evaluates <code>{IF}</code>, <code>{ELSIF}</code>, <code>{ELSE}</code> and <code>{END_IF}</code> with <code>defined(...)</code>, <code>AND</code>, <code>OR</code> and <code>NOT</code>, and keeps line numbers. Defines come in with <code>-D</code>.</p></div>
+        <div class="block"><h4>Toolkit side</h4><p>Compile Project then reads the PLC project's compiler defines from the <code>.plcproj</code> and passes them on.</p></div>
+      </div>
+    </details>
+
     <details class="card" id="s4">
       <summary>
-        <div class="card-top"><span>#4</span><span class="id">S4</span><span class="pill planned">Planned</span><span class="chev" aria-hidden="true">›</span></div>
+        <div class="card-top"><span>#5</span><span class="id">S4</span><span class="pill planned">Planned</span><span class="chev" aria-hidden="true">›</span></div>
         <div class="card-title">Ed. 3 forms the fork still refuses</div>
         <div class="bar" aria-hidden="true"><span style="left:40.91%;width:32.73%"></span></div>
         <div class="card-foot"><span>8.5 d → ~4.5 h</span><span>Nov 13 – 16</span></div>
@@ -435,7 +449,7 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
 
     <details class="card" id="s5">
       <summary>
-        <div class="card-top"><span>#5</span><span class="id">S5</span><span class="pill planned">Planned</span><span class="chev" aria-hidden="true">›</span></div>
+        <div class="card-top"><span>#6</span><span class="id">S5</span><span class="pill planned">Planned</span><span class="chev" aria-hidden="true">›</span></div>
         <div class="card-title">Profile-handling defects</div>
         <div class="bar" aria-hidden="true"><span style="left:64.55%;width:1.82%"></span></div>
         <div class="card-foot"><span>1 d → ~30 min</span><span>Nov 16</span></div>
@@ -448,7 +462,7 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
 
     <details class="card" id="s6">
       <summary>
-        <div class="card-top"><span>#6</span><span class="id">S6</span><span class="pill planned">Planned</span><span class="chev" aria-hidden="true">›</span></div>
+        <div class="card-top"><span>#7</span><span class="id">S6</span><span class="pill planned">Planned</span><span class="chev" aria-hidden="true">›</span></div>
         <div class="card-title">Runtime safety defects</div>
         <div class="bar" aria-hidden="true"><span style="left:66.36%;width:13.64%"></span></div>
         <div class="card-foot"><span>7 d → ~3.5 h</span><span>Nov 16 – 17</span></div>
@@ -461,7 +475,7 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
 
     <details class="card" id="s7">
       <summary>
-        <div class="card-top"><span>#7</span><span class="id">S7</span><span class="pill wait">Needs a decision</span><span class="chev" aria-hidden="true">›</span></div>
+        <div class="card-top"><span>#8</span><span class="id">S7</span><span class="pill wait">Needs a decision</span><span class="chev" aria-hidden="true">›</span></div>
         <div class="card-title">Audit: narrow what iec-3 accepts</div>
         <div class="bar" aria-hidden="true"><span style="left:80.00%;width:11.82%"></span></div>
         <div class="card-foot"><span>6 d → ~3 h</span><span>Nov 17 – 18</span></div>
@@ -475,7 +489,7 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
 
     <details class="card" id="s8">
       <summary>
-        <div class="card-top"><span>#8</span><span class="id">S8</span><span class="pill wait">After R3.3</span><span class="chev" aria-hidden="true">›</span></div>
+        <div class="card-top"><span>#9</span><span class="id">S8</span><span class="pill wait">After R3.3</span><span class="chev" aria-hidden="true">›</span></div>
         <div class="card-title">Make iec-3 the default, in its own release</div>
         <div class="bar" aria-hidden="true"><span style="left:89.09%;width:1.82%"></span></div>
         <div class="card-foot"><span>0.5 d → ~20 min</span><span>Nov 18</span></div>
@@ -487,7 +501,7 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
 
     <details class="card" id="s9">
       <summary>
-        <div class="card-top"><span>#9</span><span class="id">S9</span><span class="pill done">Done · Nov 10</span><span class="chev" aria-hidden="true">›</span></div>
+        <div class="card-top"><span>#10</span><span class="id">S9</span><span class="pill done">Done · Nov 10</span><span class="chev" aria-hidden="true">›</span></div>
         <div class="card-title">Raw memory layout in the runtime</div>
         <div class="bar" aria-hidden="true"><span style="left:18.18%;width:9.09%"></span></div>
         <div class="card-foot"><span>4 d → ~2 h</span><span>Nov 11</span></div>
@@ -504,7 +518,7 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
 
     <details class="card" id="s10">
       <summary>
-        <div class="card-top"><span>#10</span><span class="id">S10</span><span class="pill planned">Planned</span><span class="chev" aria-hidden="true">›</span></div>
+        <div class="card-top"><span>#11</span><span class="id">S10</span><span class="pill planned">Planned</span><span class="chev" aria-hidden="true">›</span></div>
         <div class="card-title">Vendor types and forms (TwinCAT and CODESYS)</div>
         <div class="bar" aria-hidden="true"><span style="left:90.91%;width:4.55%"></span></div>
         <div class="card-foot"><span>3 d → ~1.5 h</span><span>Nov 19</span></div>
@@ -594,13 +608,14 @@ var PLAN = [
   { lane: 'STruC++ fork',   num: 1, id: 'S2',   card: 's2',   name: 'Fork compiler gaps',     est: '27.5 d → ~9 h', start: '2026-11-09', end: '2026-11-11', status: 'done', actualStart: '2026-11-09T12:04:17Z', actualEnd: '2026-11-09T23:16:55Z' },
   { lane: 'STruC++ fork',   num: 2, id: 'S3a',  card: 's3a',  name: 'False positives',        est: '2 d → ~1 h',  start: '2026-11-12', end: '2026-11-12', days: 0.3, status: 'done', actualStart: '2026-11-09T23:18:00Z', actualEnd: '2026-11-10T00:12:35Z' },
   { lane: 'STruC++ fork',   num: 3, id: 'S3b',  card: 's3b',  name: 'S2 follow-ups',          est: '7 d → ~3.5 h', start: '2026-11-12', end: '2026-11-13', days: 1.2, offset: 0.3, status: 'progress', actualStart: '2026-11-10T00:14:00Z' },
-  { lane: 'STruC++ fork',   num: 4, id: 'S4',   card: 's4',   name: 'Ed. 3 refusals',         est: '8.5 d → ~4.5 h', start: '2026-11-13', end: '2026-11-16', offset: 0.5, days: 3.6 },
-  { lane: 'STruC++ fork',   num: 5, id: 'S5',   card: 's5',   name: 'Profile handling',       est: '1 d → ~30 min', start: '2026-11-16', end: '2026-11-16', days: 0.2, offset: 0.1 },
-  { lane: 'STruC++ fork',   num: 6, id: 'S6',   card: 's6',   name: 'Runtime safety',         est: '7 d → ~3.5 h', start: '2026-11-16', end: '2026-11-17', days: 1.5, offset: 0.3 },
-  { lane: 'STruC++ fork',   num: 7, id: 'S7',   card: 's7',   name: 'iec-3 audit (decision)', est: '6 d → ~3 h',  start: '2026-11-17', end: '2026-11-18', days: 1.3, offset: 0.8 },
-  { lane: 'STruC++ fork',   num: 8, id: 'S8',   card: 's8',   name: 'Default → iec-3',        est: '0.5 d → ~20 min', start: '2026-11-18', end: '2026-11-18', days: 0.2, offset: 0.8 },
-  { lane: 'STruC++ fork',   num: 9, id: 'S9',   card: 's9',   name: 'Raw memory layout',      est: '4 d → ~2 h',  start: '2026-11-11', end: '2026-11-11', days: 1.0, offset: 0, status: 'done', actualStart: '2026-11-10T09:40:00Z', actualEnd: '2026-11-10T12:05:00Z' },
-  { lane: 'STruC++ fork',   num: 10, id: 'S10', card: 's10',  name: 'Vendor types + forms',           est: '3 d → ~1.5 h', start: '2026-11-19', end: '2026-11-19', days: 0.5, offset: 0 }
+  { lane: 'STruC++ fork',   num: 4, id: 'S11',  card: 's11',  name: 'Conditional pragmas',    est: '2 d → ~1 h',  start: '2026-11-13', end: '2026-11-13', days: 0.4, offset: 0.2 },
+  { lane: 'STruC++ fork',   num: 5, id: 'S4',   card: 's4',   name: 'Ed. 3 refusals',         est: '8.5 d → ~4.5 h', start: '2026-11-13', end: '2026-11-16', offset: 0.5, days: 3.6 },
+  { lane: 'STruC++ fork',   num: 6, id: 'S5',   card: 's5',   name: 'Profile handling',       est: '1 d → ~30 min', start: '2026-11-16', end: '2026-11-16', days: 0.2, offset: 0.1 },
+  { lane: 'STruC++ fork',   num: 7, id: 'S6',   card: 's6',   name: 'Runtime safety',         est: '7 d → ~3.5 h', start: '2026-11-16', end: '2026-11-17', days: 1.5, offset: 0.3 },
+  { lane: 'STruC++ fork',   num: 8, id: 'S7',   card: 's7',   name: 'iec-3 audit (decision)', est: '6 d → ~3 h',  start: '2026-11-17', end: '2026-11-18', days: 1.3, offset: 0.8 },
+  { lane: 'STruC++ fork',   num: 9, id: 'S8',   card: 's8',   name: 'Default → iec-3',        est: '0.5 d → ~20 min', start: '2026-11-18', end: '2026-11-18', days: 0.2, offset: 0.8 },
+  { lane: 'STruC++ fork',   num: 10, id: 'S9',   card: 's9',   name: 'Raw memory layout',      est: '4 d → ~2 h',  start: '2026-11-11', end: '2026-11-11', days: 1.0, offset: 0, status: 'done', actualStart: '2026-11-10T09:40:00Z', actualEnd: '2026-11-10T12:05:00Z' },
+  { lane: 'STruC++ fork',   num: 11, id: 'S10', card: 's10',  name: 'Vendor types + forms',           est: '3 d → ~1.5 h', start: '2026-11-19', end: '2026-11-19', days: 0.5, offset: 0 }
 ];
 var DOMAIN_START = '2026-11-09', DOMAIN_END = '2026-11-21'; /* exclusive */
 (function () {
