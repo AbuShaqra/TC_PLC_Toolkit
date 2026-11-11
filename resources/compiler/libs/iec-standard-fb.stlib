@@ -22,6 +22,7 @@
         ],
         "inouts": [],
         "methods": [],
+        "properties": [],
         "locals": [
           {
             "name": "M",
@@ -47,6 +48,7 @@
         ],
         "inouts": [],
         "methods": [],
+        "properties": [],
         "locals": [
           {
             "name": "M",
@@ -76,6 +78,7 @@
         ],
         "inouts": [],
         "methods": [],
+        "properties": [],
         "locals": [],
         "documentation": "The SR bistable is a latch where the Set dominates."
       },
@@ -99,6 +102,7 @@
         ],
         "inouts": [],
         "methods": [],
+        "properties": [],
         "locals": [],
         "documentation": "The RS bistable is a latch where the Reset dominates."
       },
@@ -122,6 +126,7 @@
         ],
         "inouts": [],
         "methods": [],
+        "properties": [],
         "locals": [
           {
             "name": "Q_INTERNAL",
@@ -158,6 +163,7 @@
         ],
         "inouts": [],
         "methods": [],
+        "properties": [],
         "locals": [
           {
             "name": "CU_T",
@@ -194,6 +200,7 @@
         ],
         "inouts": [],
         "methods": [],
+        "properties": [],
         "locals": [
           {
             "name": "CD_T",
@@ -242,6 +249,7 @@
         ],
         "inouts": [],
         "methods": [],
+        "properties": [],
         "locals": [
           {
             "name": "CU_T",
@@ -282,6 +290,7 @@
         ],
         "inouts": [],
         "methods": [],
+        "properties": [],
         "locals": [
           {
             "name": "CU_T",
@@ -318,6 +327,7 @@
         ],
         "inouts": [],
         "methods": [],
+        "properties": [],
         "locals": [
           {
             "name": "CU_T",
@@ -354,6 +364,7 @@
         ],
         "inouts": [],
         "methods": [],
+        "properties": [],
         "locals": [
           {
             "name": "CU_T",
@@ -390,6 +401,7 @@
         ],
         "inouts": [],
         "methods": [],
+        "properties": [],
         "locals": [
           {
             "name": "CU_T",
@@ -426,6 +438,7 @@
         ],
         "inouts": [],
         "methods": [],
+        "properties": [],
         "locals": [
           {
             "name": "CD_T",
@@ -462,6 +475,7 @@
         ],
         "inouts": [],
         "methods": [],
+        "properties": [],
         "locals": [
           {
             "name": "CD_T",
@@ -498,6 +512,7 @@
         ],
         "inouts": [],
         "methods": [],
+        "properties": [],
         "locals": [
           {
             "name": "CD_T",
@@ -534,6 +549,7 @@
         ],
         "inouts": [],
         "methods": [],
+        "properties": [],
         "locals": [
           {
             "name": "CD_T",
@@ -582,6 +598,7 @@
         ],
         "inouts": [],
         "methods": [],
+        "properties": [],
         "locals": [
           {
             "name": "CU_T",
@@ -634,6 +651,7 @@
         ],
         "inouts": [],
         "methods": [],
+        "properties": [],
         "locals": [
           {
             "name": "CU_T",
@@ -686,6 +704,7 @@
         ],
         "inouts": [],
         "methods": [],
+        "properties": [],
         "locals": [
           {
             "name": "CU_T",
@@ -738,6 +757,7 @@
         ],
         "inouts": [],
         "methods": [],
+        "properties": [],
         "locals": [
           {
             "name": "CU_T",
@@ -774,6 +794,7 @@
         ],
         "inouts": [],
         "methods": [],
+        "properties": [],
         "locals": [
           {
             "name": "STATE",
@@ -818,6 +839,7 @@
         ],
         "inouts": [],
         "methods": [],
+        "properties": [],
         "locals": [
           {
             "name": "STATE",
@@ -862,6 +884,7 @@
         ],
         "inouts": [],
         "methods": [],
+        "properties": [],
         "locals": [
           {
             "name": "STATE",

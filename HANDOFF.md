@@ -10,10 +10,10 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   merged at `3210d33`, Release run 41671593015 green, VSIX `twincat-plc-toolkit-0.10.1.vsix` attached).
 - **Version history:** 0.10.1 struct EXTENDS from own DUTs (PR #22); 0.10.0 Libraries scoping (PR #18); 0.9.0
   improvement-plan phases; 0.8.x project-aware Generate ST, ResizeObserver fix, solution→project Objects tree.
-- **Last verified:** 2026-11-09 (Linux container, `claude/focused-ptolemy-m6acaz` with R2 phase 1) — `REQUIRE_FULL_SUITE=1 npm test`
-  green (**89/89, Coverage: FULL**), `npm run typecheck` and `npm run lint` exit 0; all three browser harnesses green
-  (`run.js`, `run_pragmas.js`, new `run_start_page.js`; Chromium via `HARNESS_CHROMIUM=/opt/pw-browsers/chromium-1243/chrome-linux64/chrome`).
-  The dev-host harness was last run on Windows 2026-11-09 for R4; its new R2 start-page phase has never run.
+- **Last verified:** 2026-11-11 (Linux container, `claude/focused-ptolemy-m6acaz` with R3.5 at compiler `eb52d2c`) —
+  `REQUIRE_FULL_SUITE=1 npm test` green (**110/110, Coverage: FULL**, compile-real ran), `npm run typecheck` and
+  `npm run lint` exit 0; Linux dev-host (`xvfb-run -a node test/devhost/run.js`) 103 pass / 1 fail, the fail being the
+  known P8 line-ending one. Browser harnesses last run 2026-11-09 (all green); the webview has not changed since.
 - **R3.2 Compile Project: MERGED** into `dev` as PR #32 (`28f24f1`, 2026-11-10 22:22 UTC).
 - **R3.3–R9 MERGED** into `dev` as PR #33 (`6424968`, 2026-11-11 09:30 UTC) after the user's Windows checks
   (dev-host green after `npm ci`; manual checks all passed). Details per item are in git history and ROADMAP "Done".
@@ -21,8 +21,33 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   Toolkit lane is done except R10 (trigger-only) and R11 (publishing, last, after the fork lane).
 - **Settings keys renamed `twincat.*` → `tcToolkit.*`** (user report 2026-11-11; `c6145b6`, `765b5e1`, 109 suites):
   one-time migration at activation (`src/settingsMigration.js`), old keys stay contributed as deprecated stand-ins.
-  Search results read "Tc Toolkit › Compiler: Path" (VS Code cannot show an uppercase "TC" from a key). PR into
-  `dev` pending the user's Windows check (old values move; custom XAE path kept).
+  Search results read "Tc Toolkit › Compiler: Path" (VS Code cannot show an uppercase "TC" from a key). **Merged** as
+  PR #34 (`cd52afc`, 2026-11-11) after the user's Windows check (old values moved; custom XAE path kept).
+- **Compiler release I + compiler defines: BUILT 2026-11-11** on `claude/focused-ptolemy-m6acaz`, open as PR #35
+  into `dev`; awaiting the user's Windows check. **Compiler now vendored at fork `eb52d2c`** (development after
+  #119, S11b: `--pragma-define`, `--file-define`) from a clean worktree; `twincat3.json` gains `conditional_pragmas`.
+  Compile Project reads `<CompilerDefines>` from the project's `.plcproj` (`src/compilerDefines.js`; format checked
+  against public `.plcproj` files on GitHub — XAE writes `<CompilerDefines />` or a whitespace-only element when
+  empty, entries like `InclSerialCom := 'true'`). **Project defines → `--pragma-define NAME[=VALUE]`**: values exact
+  (numbers too), never a global constant, seen by `project_defined()` (fork DIALECTS.md + `src/node/cli.ts`; the
+  compile-real gate checks it, and that a per-object define is not seen). **Per-object defines** (`<CompilerDefines>` in a `<Compile Include>` item) **→ `--file-define
+  <N.st>=NAME[=VALUE]`** for the check unit built from that object (one unit per object, `buildCheckInputs`;
+  Include resolved against the `.plcproj` folder, matched with `normalizeProjectPath`); an item with no unit (a
+  task, a missing file) gets a note. **`Condition`s evaluated** (user decision 2026-11-11) on property groups,
+  item groups, items and `<CompilerDefines>` elements, for Debug | `TwinCAT RT (x64)` (`CHECK_CONFIGURATION`);
+  true applies, false skips silently, undecidable (`Exists`, property functions, `<`, `MSBuild*`/`Solution*`
+  properties) is left out with a note. Notes go to the `TC Toolkit Compile` output. Public `.plcproj` files only
+  show XAE's `" '$(Configuration)' == 'Debug' "` / `'Release'` groups, none holding `<CompilerDefines>`.
+  Gates on `eb52d2c` (2026-11-11, Linux): `REQUIRE_FULL_SUITE=1 npm test` 110/110 FULL (compile-real ran: numeric
+  `hasvalue` next to a same-named `VAR_GLOBAL CONSTANT`, a per-object define selecting its branch in FB_Valve and
+  not in FB_Cylinder, a per-object value winning over the project's, `project_defined()` true for a project define and false for a
+  per-object one), lint/typecheck 0, Linux dev-host 103 pass /
+  1 fail — only the known P8 line-ending failure.
+  **LSP finding (not fixed, user decides):** the built-in diagnostics ignore `{IF}` pragmas; valid code that picks
+  one of two block heads per branch gives a false ERROR "Unterminated block: missing matching "END_IF"" —
+  repro: body `{IF defined(SIM)}` / `IF c THEN` / `{ELSE}` / `IF NOT c THEN` / `{END_IF}` / `x := 1;` / `END_IF`
+  (the compiler accepts it with and without `-D SIM`). Duplicate declarations in alternative branches, names
+  declared only in a branch, `{define}`/`{undefine}`, `hasvalue`/`project_defined` gave 0 diagnostics.
 - **R11 publishing:** last — after the toolkit lane AND the fork lane are done (user, 2026-11-10).
 - **Sample diagnostics: 0 against a baseline of 0** — verified with the Beckhoff archives present AND moved aside.
 

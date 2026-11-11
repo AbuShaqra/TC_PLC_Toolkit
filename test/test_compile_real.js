@@ -28,7 +28,17 @@
  *     calls give zero errors (and many without the declarations); a wrong argument type and an
  *     unknown parameter on a library call ARE reported; a library name with no declaration is
  *     filtered; a user typo is still reported; without the dump the correct project stays at zero.
- *     The sample runs go through the same library preparation as the command.
+ *     The sample runs go through the same library preparation as the command;
+ *   - compiler defines, on a temporary copy of the second sample whose MAIN has `{IF defined(X)}` and
+ *     `{IF hasvalue(X, 'v')}` blocks and whose .plcproj carries `<CompilerDefines>`: read through the
+ *     command's own reader (src/compilerDefines.js), the defines select the branches (no defines →
+ *     the ELSE branches' planted errors; the right defines → 0 errors; wrong case or value → ELSE
+ *     again); a malformed entry is skipped; a numeric value is passed exactly, so `hasvalue(X, '4')`
+ *     holds and declares no global constant (a `VAR_GLOBAL CONSTANT` of the same name still compiles); a
+ *     Debug-conditioned property group's define selects its branch, a Release-only one does not;
+ *   - per-object compiler defines (`<CompilerDefines>` in a `<Compile>` item), passed with `--file-define`
+ *     on that object's unit: they select a branch in that POU only, never in another POU using the same
+ *     `{IF}`, and a per-object value wins over the project's for `hasvalue`.
  */
 
 const fs = require('fs');
@@ -39,6 +49,7 @@ const { createProjectMap } = require('../src/lsp/projectMap');
 const cc = require('../src/compileCheck');
 const { prepareLibraryCheck } = require('../src/libraryDecls');
 const { buildSynthLibProject } = require('./_synthLibProject');
+const { projectDefineArgs, fileDefineArgs } = require('../src/compilerDefines');
 
 const GATE = 'compile-real';
 const bundle = process.env.TWINCAT_COMPILER_BUNDLE || '';
@@ -91,13 +102,14 @@ function assert(cond, msg) {
         return { filePath, text: edit ? edit(filePath, text) : text };
     });
     // As the command runs it: the library preparation first (projectDir/roots), then the check.
-    const checkFiles = async (filePaths, edit, libraryOptions) => {
+    const checkFiles = async (filePaths, edit, libraryOptions, defineArgs) => {
         const built = cc.buildCheckInputs(read(filePaths, edit), parseTwinCatXml);
         const lib = libraryOptions === null ? null
             : prepareLibraryCheck({ projectDir: (libraryOptions && libraryOptions.projectDir) || path.dirname(filePaths[0]),
                 roots: (libraryOptions && libraryOptions.roots) || [sampleDir], inputs: built.inputs, compilerPath: setup.compilerPath });
         const result = await cc.runCheck({ nodeCommand: setup.nodeCommand, nodeEnv: setup.nodeEnv, compilerPath: setup.compilerPath, dialectFile,
-            inputs: lib ? lib.inputs : built.inputs, extraFiles: lib ? lib.extraFiles : [], libraryFilter: lib ? lib.filter : undefined });
+            inputs: lib ? lib.inputs : built.inputs, extraFiles: lib ? lib.extraFiles : [], libraryFilter: lib ? lib.filter : undefined,
+            defineArgs: typeof defineArgs === 'function' ? defineArgs(lib ? lib.inputs : built.inputs) : defineArgs });
         return { built, result, lib };
     };
     const show = (d) => `${path.basename(d.filePath || '?')} ${d.componentId || ''} ${d.pane || ''}:${d.line}:${d.column} ${d.severity}: ${d.message}`;
@@ -168,6 +180,139 @@ function assert(cond, msg) {
         assert(errs.length >= 1 && errs.every(d => d.filePath.startsWith(second.dir)) &&
             errs.some(d => path.basename(d.filePath) === 'MAIN.TcPOU' && d.componentId === 'root' && d.pane === 'impl' && d.line === 11),
             `PLANT (${second.name}): a method of the OTHER project's FB_Cylinder is an error in this project's MAIN, implementation line 11`);
+    }
+
+    // ── Compiler defines: a temp copy of the second sample with {IF} blocks and <CompilerDefines> ──
+    // The defines come from the copy's .plcproj through the command's own reader (compilerDefines.js);
+    // the branch they select decides whether the planted undeclared name is compiled at all.
+    if (second) {
+        const tmp = fs.mkdtempSync(path.join(require('os').tmpdir(), 'tc_compile_defines_'));
+        try {
+            const copyDir = path.join(tmp, path.basename(second.dir));
+            fs.cpSync(second.dir, copyDir, { recursive: true });
+            const mainPath = path.join(copyDir, 'POUs', 'MAIN.TcPOU');
+            const anchorLine = 'nStroke := fbCylinder.Stroke();';
+            const mainText = fs.readFileSync(mainPath, 'utf8');
+            if (!mainText.includes(anchorLine)) throw new Error(`fixture drift: MAIN.TcPOU no longer contains ${anchorLine}`);
+            fs.writeFileSync(mainPath, mainText.replace(anchorLine, anchorLine + [
+                '', '{IF defined(TkSim)}', 'nStroke := 1;', '{ELSE}', 'nSimOff := 1;', '{END_IF}',
+                "{IF hasvalue(TkMode, 'fast')}", 'nStroke := 2;', '{ELSE}', 'nModeOff := 1;', '{END_IF}'].join('\r\n')));
+            const plcprojPath = fs.readdirSync(copyDir).filter(f => /\.plcproj$/i.test(f)).map(f => path.join(copyDir, f))[0];
+            const plcprojText = fs.readFileSync(plcprojPath, 'utf8');
+            const runWith = async (definesXml, groupsXml = '') => {
+                const withDefines = definesXml === null ? plcprojText
+                    : plcprojText.replace('</PropertyGroup>', `  <CompilerDefines>${definesXml}</CompilerDefines>\r\n  </PropertyGroup>`);
+                fs.writeFileSync(plcprojPath, groupsXml ? withDefines.replace('</PropertyGroup>', `</PropertyGroup>\r\n${groupsXml}`) : withDefines);
+                const map = createProjectMap([tmp]);
+                const proj = [...map.projects.values()][0];
+                const defines = projectDefineArgs(proj.plcprojPath);
+                const r = await checkFiles([...proj.objectFiles.values()].sort(), null, { projectDir: proj.dir, roots: [tmp] },
+                    (inputs) => [...defines.args, ...fileDefineArgs(defines.objects, inputs, proj.plcprojPath).args]);
+                const names = r.result.diagnostics.filter(d => d.severity === 'error').map(d => (/'(\w+)'/.exec(d.message) || [])[1] || d.message);
+                return { r, defines, names };
+            };
+            let d = await runWith(null);
+            assert(d.r.result.status === 'done' && d.defines.args.length === 0 && d.names.join() === 'NSIMOFF,NMODEOFF',
+                `DEFINES: with no <CompilerDefines> both ELSE branches compile, and their undeclared names are errors (${d.names.join(', ')})`);
+            const simLine = d.r.result.diagnostics.find(x => /NSIMOFF/i.test(x.message));
+            assert(!!simLine && path.basename(simLine.filePath) === 'MAIN.TcPOU' && simLine.pane === 'impl' && simLine.line === 14,
+                `DEFINES: the error is placed on its line in MAIN's implementation pane (${simLine ? show(simLine) : 'none'})`);
+            d = await runWith("TkSim, TkMode := 'fast'");
+            assert(d.r.result.status === 'done' && d.defines.args.join(' ') === '--pragma-define TkSim --pragma-define TkMode=fast' && d.r.result.errors === 0,
+                `DEFINES: with "TkSim, TkMode := 'fast'" in the .plcproj both IF branches compile: 0 errors (${d.defines.args.join(' ')}; ${d.names.join(', ')})`);
+            d = await runWith("TKSIM, TkMode := 'slow'");
+            assert(d.r.result.status === 'done' && d.names.join() === 'NSIMOFF,NMODEOFF',
+                `DEFINES: names are case-sensitive and hasvalue compares the value: TKSIM / 'slow' select the ELSE branches (${d.names.join(', ')})`);
+            d = await runWith("TkSim, TkMode := 'fast', 9bad");
+            assert(d.r.result.status === 'done' && d.r.result.errors === 0 && d.defines.notes.length === 1 && /"9bad" skipped/.test(d.defines.notes[0]),
+                'DEFINES: a malformed entry is skipped with a note; the run still uses the others');
+            // TwinCAT: a define is never a variable. As a pragma define, `nSimOff := '3'` declares no global
+            // constant: the ELSE branch's `nSimOff := 1` stays an undeclared name, not "Cannot assign to CONSTANT".
+            d = await runWith("nSimOff := '3'");
+            const simMsg = (d.r.result.diagnostics.find(x => x.severity === 'error' && /NSIMOFF/i.test(x.message)) || { message: '' }).message;
+            assert(d.r.result.status === 'done' && d.defines.args.join(' ') === '--pragma-define nSimOff=3' && d.defines.notes.length === 0 &&
+                d.names.join() === 'NSIMOFF,NMODEOFF' && /Undeclared variable/i.test(simMsg) && !/CONSTANT/i.test(simMsg),
+                `DEFINES: a numeric value is passed exactly and declares no global constant (${d.defines.args.join(' ')}; ${simMsg})`);
+            // Conditions are evaluated for Debug | TwinCAT RT (x64): a Debug group selects the IF branch, a Release one does not.
+            d = await runWith(null, "  <PropertyGroup Condition=\" '$(Configuration)|$(Platform)' == 'Debug|TwinCAT RT (x64)' \">\r\n" +
+                '    <CompilerDefines>TkSim</CompilerDefines>\r\n  </PropertyGroup>\r\n' +
+                "  <PropertyGroup Condition=\" '$(Configuration)' == 'Release' \">\r\n    <CompilerDefines>$(CompilerDefines), TkMode := 'fast'</CompilerDefines>\r\n  </PropertyGroup>");
+            assert(d.r.result.status === 'done' && d.defines.args.join(' ') === '--pragma-define TkSim' && d.defines.notes.length === 0 && d.names.join() === 'NMODEOFF',
+                `DEFINES: a Debug-conditioned define selects its IF branch, a Release-only one does not, and neither gives a note (${d.defines.args.join(' ')}; ${d.names.join(', ')})`);
+        } finally {
+            fs.rmSync(tmp, { recursive: true, force: true });
+        }
+    }
+
+    // ── Numeric project values and per-object defines: a temp copy of the second sample ─────────
+    // FB_Valve and FB_Cylinder carry the same {IF defined(TkLocal)}; only FB_Valve's item defines it. A
+    // name compiled only in a branch that must NOT be taken is undeclared, so a wrong branch is an error.
+    // FB_Valve also checks project_defined(TkLevel): true for a .plcproj define, false for a per-object one.
+    if (second) {
+        const tmp = fs.mkdtempSync(path.join(require('os').tmpdir(), 'tc_compile_filedefs_'));
+        try {
+            const copyDir = path.join(tmp, path.basename(second.dir));
+            fs.cpSync(second.dir, copyDir, { recursive: true });
+            const prependBody = (rel, lines) => {
+                const file = path.join(copyDir, ...rel.split('/'));
+                const text = fs.readFileSync(file, 'utf8');
+                const at = '<ST><![CDATA[';
+                if (!text.includes(at)) throw new Error(`fixture drift: ${rel} has no implementation`);
+                fs.writeFileSync(file, text.replace(at, at + lines.join('\r\n') + '\r\n'));
+            };
+            prependBody('POUs/FB_Valve.TcPOU', ["{IF hasvalue(TkLevel, '4')}", '_nTicks := 4;', '{ELSE}', 'nValveLevelOff := 1;', '{END_IF}',
+                '{IF defined(TkLocal)}', '_nTicks := 5;', '{ELSE}', 'nValveLocalOff := 1;', '{END_IF}',
+                '{IF project_defined(TkLevel)}', '_nTicks := 6;', '{ELSE}', 'nValveProjOff := 1;', '{END_IF}']);
+            prependBody('POUs/FB_Cylinder.TcPOU', ["{IF hasvalue(TkLevel, '4')}", '_nTicks := 4;', '{ELSE}', 'nCylLevelOff := 1;', '{END_IF}',
+                '{IF defined(TkLocal)}', 'nCylLocalOn := 1;', '{END_IF}']);
+            // A global constant named like the project define: TwinCAT keeps the two apart.
+            const gvlPath = path.join(copyDir, 'GVLs', 'GVL_Main.TcGVL');
+            const gvlText = fs.readFileSync(gvlPath, 'utf8');
+            if (!gvlText.includes('END_VAR\r\n]]>') && !gvlText.includes('END_VAR\n]]>')) throw new Error('fixture drift: GVL_Main.TcGVL');
+            fs.writeFileSync(gvlPath, gvlText.replace(/END_VAR(\r?\n)\]\]>/, 'END_VAR$1VAR_GLOBAL CONSTANT$1\tTkLevel : INT := 4;$1END_VAR$1]]>'));
+            const plcprojPath = fs.readdirSync(copyDir).filter(f => /\.plcproj$/i.test(f)).map(f => path.join(copyDir, f))[0];
+            const plcprojText = fs.readFileSync(plcprojPath, 'utf8');
+            const item = (name) => new RegExp(`(<Compile Include="POUs\\\\${name}\\.TcPOU">)`);
+            if (!item('FB_Valve').test(plcprojText) || !item('FB_Cylinder').test(plcprojText)) throw new Error('fixture drift: .plcproj items');
+            const runWith = async (projectXml, valveXml, cylinderXml) => {
+                let text = plcprojText.replace('</PropertyGroup>', `  <CompilerDefines>${projectXml}</CompilerDefines>\r\n  </PropertyGroup>`);
+                if (valveXml) text = text.replace(item('FB_Valve'), `$1\r\n      <CompilerDefines>${valveXml}</CompilerDefines>`);
+                if (cylinderXml) text = text.replace(item('FB_Cylinder'), `$1\r\n      <CompilerDefines>${cylinderXml}</CompilerDefines>`);
+                fs.writeFileSync(plcprojPath, text);
+                const proj = [...createProjectMap([tmp]).projects.values()][0];
+                const defines = projectDefineArgs(proj.plcprojPath);
+                /** @type {any} */
+                let fileArgs = null;
+                const r = await checkFiles([...proj.objectFiles.values()].sort(), null, { projectDir: proj.dir, roots: [tmp] }, (inputs) => {
+                    fileArgs = fileDefineArgs(defines.objects, inputs, proj.plcprojPath);
+                    return [...defines.args, ...fileArgs.args];
+                });
+                const names = r.result.diagnostics.filter(x => x.severity === 'error').map(x => (/'(\w+)'/.exec(x.message) || [])[1] || x.message).sort();
+                return { r, defines, fileArgs, names };
+            };
+            let d = await runWith("TkLevel := '4'", 'TkLocal', null);
+            const valveUnit = (d.r.lib ? d.r.lib.inputs : d.r.built.inputs).find(i => path.basename(i.filePath) === 'FB_Valve.TcPOU');
+            assert(d.r.result.status === 'done' && d.r.result.errors === 0 && d.defines.args.join(' ') === '--pragma-define TkLevel=4' &&
+                !!valveUnit && d.fileArgs.args.join(' ') === `--file-define ${valveUnit.name}=TkLocal` && d.fileArgs.notes.length === 0,
+                `FILE DEFINES: hasvalue(TkLevel, '4') holds from the .plcproj value '4' next to a VAR_GLOBAL CONSTANT TkLevel, and FB_Valve's own TkLocal ` +
+                `selects its branch there but not in FB_Cylinder's same {IF}: 0 errors (${d.defines.args.join(' ')} ${d.fileArgs.args.join(' ')}; ${d.names.join(', ')}; ` +
+                `${d.r.result.general.map(g => g.message).join('; ')})`);
+            d = await runWith("TkLevel := '4'", null, null);
+            assert(d.r.result.status === 'done' && d.names.join() === 'NVALVELOCALOFF' && d.fileArgs.args.length === 0,
+                `FILE DEFINES: without FB_Valve's item define its ELSE branch compiles (${d.names.join(', ')})`);
+            d = await runWith("TkLevel := '4'", 'TkLocal', "TkLevel := '5'");
+            assert(d.r.result.status === 'done' && d.names.join() === 'NCYLLEVELOFF',
+                `FILE DEFINES: a per-object value wins over the project's for hasvalue, in that object only (${d.names.join(', ')})`);
+            d = await runWith('TkOther', 'TkLocal', null);
+            assert(d.r.result.status === 'done' && d.names.join() === 'NCYLLEVELOFF,NVALVELEVELOFF,NVALVEPROJOFF',
+                `FILE DEFINES: without the project value both hasvalue blocks and project_defined take ELSE, and the GVL constant does not make it defined (${d.names.join(', ')})`);
+            d = await runWith('TkOther', "TkLocal, TkLevel := '4'", null);
+            assert(d.r.result.status === 'done' && d.names.join() === 'NCYLLEVELOFF,NVALVEPROJOFF' &&
+                d.fileArgs.args.join(' ') === `--file-define ${valveUnit ? valveUnit.name : '?'}=TkLocal --file-define ${valveUnit ? valveUnit.name : '?'}=TkLevel=4`,
+                `FILE DEFINES: a per-object TkLevel satisfies hasvalue in FB_Valve but project_defined() does not see it (${d.fileArgs.args.join(' ')}; ${d.names.join(', ')})`);
+        } finally {
+            fs.rmSync(tmp, { recursive: true, force: true });
+        }
     }
 
     // ── Library declarations (R3.4) on a synthetic library ──────────────────────────────────────

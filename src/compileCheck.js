@@ -372,11 +372,12 @@ function buildCheckInputs(files, parse) {
 /**
  * The compiler's command line for one check (everything after the Node executable).
  * @param {{compilerPath: string, dialectFile: string, inputs: Array<{name: string, unit: {globalListName: string|null}}>,
- *   extraFiles?: ExtraInput[]}} o
+ *   extraFiles?: ExtraInput[], defineArgs?: string[]}} o `defineArgs`: the compiler defines as
+ *   `--pragma-define` and `--file-define` arguments (src/compilerDefines.js `defineArgs`, `fileDefineArgs`).
  * @returns {string[]}
  */
 function buildCheckArgs(o) {
-    const args = [o.compilerPath, '--check', '--json', '--dialect-file', o.dialectFile];
+    const args = [o.compilerPath, '--check', '--json', '--dialect-file', o.dialectFile, ...(o.defineArgs || [])];
     const extra = o.extraFiles || [];
     for (const file of extra) args.push(file.name);
     for (const input of o.inputs) args.push(input.name);
@@ -533,6 +534,7 @@ function mapCheckDiagnostics(diagnostics, inputs, options = {}) {
  * @param {ExtraInput[]} [o.extraFiles] Generated library declarations: written into the same
  *   temporary directory as the units, and deleted with it.
  * @param {{select: (d: RawDiagnostic[]) => Set<any>}} [o.libraryFilter] The library filter.
+ * @param {string[]} [o.defineArgs] The compiler defines as `--pragma-define` / `--file-define` arguments.
  * @param {number} [o.timeoutMs]
  * @param {(cancel: () => void) => void} [o.onCancel] Receives the function that stops the run.
  * @param {SpawnLike} [o.spawn]
@@ -557,7 +559,7 @@ async function runCheck(o) {
         } catch (err) {
             return ended('failed', `The temporary files for the check could not be written: ${err && /** @type {any} */ (err).message ? /** @type {any} */ (err).message : err}`);
         }
-        const run = await runChild(spawn, o.nodeCommand, buildCheckArgs({ compilerPath: o.compilerPath, dialectFile: o.dialectFile, inputs: o.inputs, extraFiles: o.extraFiles }),
+        const run = await runChild(spawn, o.nodeCommand, buildCheckArgs({ compilerPath: o.compilerPath, dialectFile: o.dialectFile, inputs: o.inputs, extraFiles: o.extraFiles, defineArgs: o.defineArgs }),
             { cwd: dir, timeoutMs: o.timeoutMs || DEFAULT_CHECK_TIMEOUT_MS, onCancel: o.onCancel, env: o.nodeEnv ? { ...process.env, ...o.nodeEnv } : undefined });
         if (run.outcome === 'cancelled') return ended('cancelled');
         if (run.outcome === 'timeout') return ended('timeout', `The compiler did not finish within ${Math.round((o.timeoutMs || DEFAULT_CHECK_TIMEOUT_MS) / 1000)} seconds and was stopped.`);

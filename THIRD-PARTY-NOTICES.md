@@ -36,7 +36,7 @@ Monaco bundles further components under `media/monaco-editor/vs/`:
 
 - Location: `resources/compiler/` (`compiler.cjs`, `libs/`), run as a separate Node.js process —
   never loaded into the extension
-- Version: 0.7.0, built from commit `e884d871e358367fb6ad0243d24f6493d0b8ee9d` of
+- Version: 0.7.0, built from commit `eb52d2cab39ffd2eeaf69ea06c5c1454eae8d95c` of
   https://github.com/AbuShaqra/STruCpp (a fork of https://github.com/Autonomy-Logic/STruCpp)
 - Copyright © 2025 Autonomy® and contributors (see `resources/compiler/COPYING.RUNTIME`)
 - License: GNU General Public License version 3 (GPL-3.0-only) — full text at
@@ -44,7 +44,7 @@ Monaco bundles further components under `media/monaco-editor/vs/`:
   [`resources/compiler/COPYING`](resources/compiler/COPYING) and runtime library exception
   [`resources/compiler/COPYING.RUNTIME`](resources/compiler/COPYING.RUNTIME)
 - Corresponding source: the commit above —
-  https://github.com/AbuShaqra/STruCpp/tree/e884d871e358367fb6ad0243d24f6493d0b8ee9d — with the
+  https://github.com/AbuShaqra/STruCpp/tree/eb52d2cab39ffd2eeaf69ea06c5c1454eae8d95c — with the
   build command and a checksum of every file in
   [`resources/compiler/SOURCE.md`](resources/compiler/SOURCE.md)
 

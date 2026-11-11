@@ -9329,6 +9329,10 @@ var CONDITIONAL_PRAGMA = /^\{\s*(IF|ELSIF|ELSE|END_IF|DEFINE|UNDEFINE)\b/i;
 function isConditionalPragma(image) {
   return CONDITIONAL_PRAGMA.test(image);
 }
+var CONDITIONAL_PRAGMA_ANYWHERE = new RegExp(CONDITIONAL_PRAGMA.source.replace(/^\^/, ""), CONDITIONAL_PRAGMA.flags);
+function hasConditionalPragma(text) {
+  return CONDITIONAL_PRAGMA_ANYWHERE.test(text);
+}
 function matchComment(text, startOffset) {
   if (text.charAt(startOffset) === "/" && text.charAt(startOffset + 1) === "/") {
     let end = startOffset + 2;
@@ -10894,13 +10898,22 @@ var STParser = class _STParser extends CstParser {
       { ALT: () => this.CONSUME(VAR_GLOBAL) },
       { ALT: () => this.CONSUME(VAR_TEMP) }
     ]);
-    this.MANY2(() => {
-      this.OR2([
-        { ALT: () => this.CONSUME(CONSTANT) },
-        { ALT: () => this.CONSUME(RETAIN) },
-        { ALT: () => this.CONSUME(NON_RETAIN) },
-        { ALT: () => this.CONSUME(PERSISTENT) }
-      ]);
+    this.MANY2({
+      GATE: () => this.isVarQualifierAhead(),
+      DEF: () => {
+        this.OR2([
+          { ALT: () => this.CONSUME(CONSTANT) },
+          { ALT: () => this.CONSUME(RETAIN) },
+          { ALT: () => this.CONSUME(NON_RETAIN) },
+          { ALT: () => this.CONSUME(PERSISTENT) },
+          // Variable access specifiers (Ed. 3 Table 53, 11a-11d); INTERNAL is
+          // no keyword (the MANY2 gate admits it only before a non-declaration).
+          { ALT: () => this.CONSUME(PUBLIC) },
+          { ALT: () => this.CONSUME(PRIVATE) },
+          { ALT: () => this.CONSUME(PROTECTED) },
+          { ALT: () => this.CONSUME(Identifier) }
+        ]);
+      }
     });
     this.MANY(() => {
       this.SUBRULE(this.varDeclaration);
@@ -11368,6 +11381,7 @@ var STParser = class _STParser extends CstParser {
     this.CONSUME2(Identifier);
     this.MANY(() => {
       this.OR([
+        { ALT: () => this.SUBRULE(this.varBlock) },
         { ALT: () => this.SUBRULE(this.taskDeclaration) },
         { ALT: () => this.SUBRULE(this.programInstance) }
       ]);
@@ -11524,6 +11538,10 @@ var STParser = class _STParser extends CstParser {
     this.OPTION4(() => this.CONSUME(Caret));
     this.CONSUME(Dot);
     this.SUBRULE(this.identifierOrKeyword);
+    this.OPTION5({
+      GATE: () => this.isMemberStepAhead(),
+      DEF: () => this.SUBRULE(this.memberSteps)
+    });
     this.OR([
       {
         // Assignment: THIS.member := expression;
@@ -11563,6 +11581,15 @@ var STParser = class _STParser extends CstParser {
   /**
    * Lookahead helper to detect if next token starts a VAR block.
    */
+  /** A VAR section qualifier next: CONSTANT, RETAIN, ..., or an access specifier. */
+  isVarQualifierAhead() {
+    const t = this.LA(1).tokenType;
+    if (t === CONSTANT || t === RETAIN || t === NON_RETAIN || t === PERSISTENT || t === PUBLIC || t === PRIVATE || t === PROTECTED) {
+      return true;
+    }
+    const next = this.LA(2).tokenType;
+    return t === Identifier && this.LA(1).image.toUpperCase() === "INTERNAL" && next !== Colon && next !== Comma && next !== AT;
+  }
   isVarBlockAhead() {
     const t = this.LA(1).tokenType;
     return t === VAR || t === VAR_INPUT || t === VAR_OUTPUT || t === VAR_IN_OUT || t === VAR_EXTERNAL || t === VAR_GLOBAL || t === VAR_TEMP;
@@ -11752,22 +11779,31 @@ var STParser = class _STParser extends CstParser {
     if (this.LA(2).tokenType === Caret && this.LA(3).tokenType === LParen) {
       return true;
     }
-    if (this.LA(2).tokenType !== LBracket)
-      return false;
     const MAX_LOOKAHEAD = 64;
-    let depth = 0;
-    for (let i = 2; i <= MAX_LOOKAHEAD; i++) {
-      const tokenType = this.LA(i)?.tokenType;
-      if (tokenType === void 0)
+    let i = 2;
+    let subscripted = false;
+    while (i <= MAX_LOOKAHEAD) {
+      const t = this.LA(i)?.tokenType;
+      if (t === void 0)
         return false;
-      if (tokenType === LBracket) {
-        depth++;
-      } else if (tokenType === RBracket) {
-        depth--;
-        if (depth === 0)
-          return this.LA(i + 1)?.tokenType === LParen;
-      } else if (tokenType === Semicolon) {
-        return false;
+      if (t === Dot && this.isIdentifierOrKeywordToken(this.LA(i + 1).tokenType)) {
+        subscripted = false;
+        i += 2;
+      } else if (t === LBracket) {
+        let depth = 0;
+        for (; i <= MAX_LOOKAHEAD; i++) {
+          const inner = this.LA(i)?.tokenType;
+          if (inner === void 0 || inner === Semicolon)
+            return false;
+          if (inner === LBracket)
+            depth++;
+          else if (inner === RBracket && --depth === 0)
+            break;
+        }
+        subscripted = true;
+        i++;
+      } else {
+        return t === LParen && subscripted;
       }
     }
     return false;
@@ -11839,6 +11875,15 @@ var STParser = class _STParser extends CstParser {
     this.CONSUME(SUPER);
     this.OR([
       {
+        // SUPER(); — parent body call (Ed. 3 form)
+        GATE: () => this.LA(1).tokenType === LParen,
+        ALT: () => {
+          this.CONSUME2(LParen);
+          this.OPTION2(() => this.SUBRULE2(this.argumentList));
+          this.CONSUME2(RParen);
+        }
+      },
+      {
         GATE: () => this.LA(1).tokenType === Caret,
         ALT: () => {
           this.CONSUME(Caret);
@@ -11864,24 +11909,85 @@ var STParser = class _STParser extends CstParser {
         ALT: () => this.SUBRULE2(this.superMemberTail)
       }
     ]);
+    this.OPTION3(() => {
+      this.OR3([
+        {
+          ALT: () => {
+            this.CONSUME(Assign);
+            this.SUBRULE(this.expression);
+          }
+        },
+        {
+          ALT: () => {
+            this.CONSUME(RefAssign);
+            this.SUBRULE(this.variable);
+          }
+        }
+      ]);
+    });
     this.CONSUME(Semicolon);
+  });
+  /** Further steps of a THIS or SUPER access path: `.b`, `.0`, `[i, j]`, `^`. */
+  memberSteps = this.RULE("memberSteps", () => {
+    this.AT_LEAST_ONE(() => {
+      this.OR([
+        {
+          ALT: () => {
+            this.CONSUME(LBracket);
+            this.AT_LEAST_ONE_SEP({
+              SEP: Comma,
+              DEF: () => this.SUBRULE(this.expression)
+            });
+            this.CONSUME(RBracket);
+          }
+        },
+        {
+          ALT: () => {
+            this.CONSUME(Dot);
+            this.OR2({
+              DEF: [
+                { ALT: () => this.SUBRULE(this.identifierOrKeyword) },
+                { ALT: () => this.CONSUME(IntegerLiteral) }
+              ],
+              IGNORE_AMBIGUITIES: true
+            });
+          }
+        },
+        { ALT: () => this.CONSUME(Caret) }
+      ]);
+    });
   });
   /** `.member` or `.method(args)` after SUPER or SUPER^. */
   superMemberTail = this.RULE("superMemberTail", () => {
     this.CONSUME(Dot);
     this.SUBRULE(this.identifierOrKeyword);
-    this.OPTION(() => {
-      this.CONSUME(LParen);
-      this.OPTION2(() => this.SUBRULE(this.argumentList));
-      this.CONSUME(RParen);
-    });
+    this.OR([
+      {
+        GATE: () => this.LA(1).tokenType === LParen,
+        ALT: () => {
+          this.CONSUME(LParen);
+          this.OPTION2(() => this.SUBRULE(this.argumentList));
+          this.CONSUME(RParen);
+        }
+      },
+      {
+        GATE: () => this.isMemberStepAhead(),
+        ALT: () => this.SUBRULE(this.memberSteps)
+      },
+      { ALT: () => void 0 }
+    ]);
   });
   /** SUPER followed by `^` (caret form) or `.` (IEC form). */
   isSuperAhead() {
     if (this.LA(1).tokenType !== SUPER)
       return false;
     const next = this.LA(2).tokenType;
-    return next === Caret || next === Dot;
+    return next === Caret || next === Dot || next === LParen;
+  }
+  /** A further step of an access path next: `.name`, `.0`, `[i]` or `^`. */
+  isMemberStepAhead() {
+    const t = this.LA(1).tokenType;
+    return t === Dot || t === LBracket || t === Caret;
   }
   /**
    * External code pragma: {external ... }
@@ -12351,11 +12457,21 @@ var STParser = class _STParser extends CstParser {
   selfMemberTail = this.RULE("selfMemberTail", () => {
     this.CONSUME(Dot);
     this.SUBRULE(this.identifierOrKeyword);
-    this.OPTION(() => {
-      this.CONSUME(LParen);
-      this.OPTION2(() => this.SUBRULE(this.argumentList));
-      this.CONSUME(RParen);
-    });
+    this.OR([
+      {
+        GATE: () => this.LA(1).tokenType === LParen,
+        ALT: () => {
+          this.CONSUME(LParen);
+          this.OPTION2(() => this.SUBRULE(this.argumentList));
+          this.CONSUME(RParen);
+        }
+      },
+      {
+        GATE: () => this.isMemberStepAhead(),
+        ALT: () => this.SUBRULE(this.memberSteps)
+      },
+      { ALT: () => void 0 }
+    ]);
   });
   /**
    * SUPER.method(args) or SUPER.member (IEC), or the caret forms SUPER^(),
@@ -14090,6 +14206,9 @@ var ASTBuilder = class {
       const elementChain = this.elementReferenceChain(elementTypeNode);
       if (elementChain)
         result.elementReferenceChain = elementChain;
+      const elementLength = this.elementMaxLength(elementTypeNode);
+      if (elementLength !== void 0)
+        result.elementMaxLength = elementLength;
     }
     return result;
   }
@@ -14186,7 +14305,15 @@ var ASTBuilder = class {
     }
     const resources = [];
     for (const resourceNode of getAllNodes(children.resourceDeclaration)) {
-      resources.push(this.buildResourceDeclaration(resourceNode));
+      const resource = this.buildResourceDeclaration(resourceNode);
+      resources.push(resource);
+      const resourceChildren = resourceNode.children;
+      for (const varBlockNode of getAllNodes(resourceChildren.varBlock)) {
+        varBlocks.push({
+          ...this.buildVarBlock(varBlockNode),
+          resourceName: resource.name
+        });
+      }
     }
     return {
       kind: "ConfigurationDeclaration",
@@ -14293,6 +14420,12 @@ var ASTBuilder = class {
     const isConstant = !!children.CONSTANT;
     const isRetain = !!children.RETAIN || !!children.PERSISTENT;
     const isNonRetain = !!children.NON_RETAIN;
+    const access = [
+      ...getAllTokens(children.PUBLIC),
+      ...getAllTokens(children.PRIVATE),
+      ...getAllTokens(children.PROTECTED),
+      ...getAllTokens(children.Identifier)
+    ].sort((a, b) => a.startOffset - b.startOffset).map((t) => t.image.toUpperCase());
     const declarations = [];
     for (const declNode of getAllNodes(children.varDeclaration)) {
       declarations.push(this.buildVarDeclaration(declNode));
@@ -14304,7 +14437,8 @@ var ASTBuilder = class {
       isConstant,
       isRetain,
       isNonRetain,
-      declarations
+      declarations,
+      ...access.length > 0 ? { access } : {}
     };
   }
   /**
@@ -14623,7 +14757,16 @@ var ASTBuilder = class {
     const elementChain = this.elementReferenceChain(elementTypeNode);
     if (elementChain)
       result.elementReferenceChain = elementChain;
+    const elementLength = this.elementMaxLength(elementTypeNode);
+    if (elementLength !== void 0)
+      result.elementMaxLength = elementLength;
     return result;
+  }
+  /** The STRING / WSTRING length of an array's element type, when written. */
+  elementMaxLength(elementTypeNode) {
+    if (!elementTypeNode)
+      return void 0;
+    return this.buildTypeReference(elementTypeNode).maxLength;
   }
   /**
    * The reference levels of an array's element type (`POINTER TO INT` in
@@ -15743,13 +15886,13 @@ var ASTBuilder = class {
    * Sorts Dot tokens, LBracket tokens, and Caret tokens by source offset
    * to reconstruct the correct interleaving order.
    */
-  buildAccessChain(children) {
+  buildAccessChain(children, firstField2 = 1) {
     const markers = [];
     const dotTokens = getAllTokens(children.Dot);
     const idOrKwNodes = getAllNodes(children.identifierOrKeyword);
     const intLiteralTokens = getAllTokens(children.IntegerLiteral);
     const fieldTargets = [];
-    for (let i = 1; i < idOrKwNodes.length; i++) {
+    for (let i = firstField2; i < idOrKwNodes.length; i++) {
       const n = idOrKwNodes[i];
       fieldTargets.push({
         offset: getNodeStartOffset(n),
@@ -15818,6 +15961,8 @@ var ASTBuilder = class {
    */
   buildMemberTail(node) {
     const children = node.children;
+    const stepsNode = getFirstNode(children.memberSteps);
+    const steps = stepsNode ? this.buildAccessChain(stepsNode.children, 0) : [];
     const idOrKw = getFirstNode(children.identifierOrKeyword);
     const args = [];
     const argListNode = getFirstNode(children.argumentList);
@@ -15830,8 +15975,30 @@ var ASTBuilder = class {
     return {
       name: idOrKw ? getIdentifierOrKeywordImage(idOrKw) : "",
       isCall: children.LParen !== void 0,
-      args
+      args,
+      steps
     };
+  }
+  /**
+   * `THIS.member` / `SUPER.member` followed by further `steps` as one
+   * variable access: `THIS.a.b`, `SUPER.arr[i]`.
+   */
+  selfAccessVariable(self2, member, steps, span) {
+    const expr = {
+      kind: "VariableExpression",
+      sourceSpan: span,
+      name: self2,
+      subscripts: steps.flatMap((s) => s.kind === "subscript" ? s.indices : []),
+      fieldAccess: [
+        member,
+        ...steps.flatMap((s) => s.kind === "field" ? [s.name] : [])
+      ],
+      isDereference: steps.some((s) => s.kind === "dereference")
+    };
+    if (steps.length > 0) {
+      expr.accessChain = [{ kind: "field", name: member }, ...steps];
+    }
+    return expr;
   }
   /**
    * Build a THIS access expression from a thisAccess CST node.
@@ -15865,12 +16032,7 @@ var ASTBuilder = class {
       };
     }
     return {
-      kind: "VariableExpression",
-      sourceSpan: nodeToSourceSpan(node),
-      name: "THIS",
-      subscripts: [],
-      fieldAccess: [tail.name],
-      isDereference: false,
+      ...this.selfAccessVariable("THIS", tail.name, tail.steps, nodeToSourceSpan(node)),
       ...caret
     };
   }
@@ -15908,14 +16070,7 @@ var ASTBuilder = class {
         arguments: tail.args
       };
     }
-    return {
-      kind: "VariableExpression",
-      sourceSpan: nodeToSourceSpan(node),
-      name: "SUPER",
-      subscripts: [],
-      fieldAccess: [tail.name],
-      isDereference: false
-    };
+    return this.selfAccessVariable("SUPER", tail.name, tail.steps, nodeToSourceSpan(node));
   }
   /**
    * Build a method call expression: instance.method(args)
@@ -16167,13 +16322,9 @@ var ASTBuilder = class {
     const idOrKwNodes = getAllNodes(children.identifierOrKeyword);
     const memberName = idOrKwNodes.length > 0 ? getIdentifierOrKeywordImage(idOrKwNodes[0]) : "";
     const caret = children.Caret ? { selfCaret: true } : {};
+    const stepsNode = getFirstNode(children.memberSteps);
     const target = {
-      kind: "VariableExpression",
-      sourceSpan: nodeToSourceSpan(node),
-      name: "THIS",
-      subscripts: [],
-      fieldAccess: [memberName],
-      isDereference: false,
+      ...this.selfAccessVariable("THIS", memberName, stepsNode ? this.buildAccessChain(stepsNode.children, 0) : [], nodeToSourceSpan(node)),
       ...caret
     };
     if (children.RefAssign) {
@@ -16222,6 +16373,26 @@ var ASTBuilder = class {
   buildSuperCallStatement(node) {
     const children = node.children;
     const tailNode = getFirstNode(children.superMemberTail);
+    if (tailNode && (children.Assign || children.RefAssign)) {
+      const tail2 = this.buildMemberTail(tailNode);
+      const target = this.selfAccessVariable("SUPER", tail2.name, tail2.steps, nodeToSourceSpan(tailNode));
+      if (children.RefAssign) {
+        const sourceNode = getFirstNode(children.variable);
+        return {
+          kind: "RefAssignStatement",
+          sourceSpan: nodeToSourceSpan(node),
+          target,
+          source: sourceNode ? this.buildVariableExpression(sourceNode) : this.createDummyVariable(node)
+        };
+      }
+      const exprNode = getFirstNode(children.expression);
+      return {
+        kind: "AssignmentStatement",
+        sourceSpan: nodeToSourceSpan(node),
+        target,
+        value: exprNode ? this.buildExpression(exprNode) ?? this.createDummyLiteral(node) : this.createDummyLiteral(node)
+      };
+    }
     if (!tailNode) {
       const args = [];
       const argListNode = getFirstNode(children.argumentList);
@@ -17516,6 +17687,7 @@ function toProjectVarDeclaration(name, decl, block) {
     ...decl.type.arrayDimensions !== void 0 ? { arrayDimensions: decl.type.arrayDimensions } : {},
     ...decl.type.elementTypeName !== void 0 ? { elementTypeName: decl.type.elementTypeName } : {},
     ...decl.type.elementReferenceChain !== void 0 ? { elementReferenceChain: decl.type.elementReferenceChain } : {},
+    ...decl.type.elementMaxLength !== void 0 ? { elementMaxLength: decl.type.elementMaxLength } : {},
     ...decl.type.referenceKind !== void 0 && decl.type.referenceKind !== "none" ? { referenceKind: decl.type.referenceKind } : {},
     ...decl.type.referenceChain !== void 0 ? { referenceChain: decl.type.referenceChain } : {}
   };
@@ -17757,11 +17929,71 @@ var ProjectModelBuilder = class {
     for (const resource of config.resources) {
       resources.push(this.processResource(resource, config.name));
     }
+    this.checkResourceGlobals(config);
     this.configurations.push({
       name: config.name,
       globalVars,
       resources
     });
+  }
+  /**
+   * A RESOURCE declares only VAR_GLOBAL blocks, under names no other block of
+   * the configuration declares, and its globals are reached only by the
+   * program instances of that resource.
+   */
+  checkResourceGlobals(config) {
+    const declaredBy = /* @__PURE__ */ new Map();
+    for (const block of config.varBlocks) {
+      const at = block.sourceSpan;
+      if (block.resourceName !== void 0 && block.blockType !== "VAR_GLOBAL") {
+        this.addError(`RESOURCE '${block.resourceName}' declares a ${block.blockType} block; a RESOURCE declares only VAR_GLOBAL`, at.startLine, at.startCol, at.file);
+        continue;
+      }
+      if (block.blockType !== "VAR_GLOBAL")
+        continue;
+      for (const decl of block.declarations) {
+        for (const name of decl.names) {
+          const key = name.toUpperCase();
+          if (declaredBy.has(key) && (block.resourceName !== void 0 || declaredBy.get(key) !== void 0)) {
+            const other = declaredBy.get(key);
+            this.addError(`Global '${name}' of ${block.resourceName !== void 0 ? `RESOURCE '${block.resourceName}'` : `CONFIGURATION '${config.name}'`} is also declared by ${other !== void 0 ? `RESOURCE '${other}'` : `CONFIGURATION '${config.name}'`}; the globals of a configuration and its resources need distinct names`, decl.sourceSpan.startLine, decl.sourceSpan.startCol, decl.sourceSpan.file);
+            continue;
+          }
+          if (!declaredBy.has(key))
+            declaredBy.set(key, block.resourceName);
+        }
+      }
+    }
+    for (const block of config.varBlocks) {
+      if (block.blockType !== "VAR_GLOBAL")
+        continue;
+      for (const decl of block.declarations) {
+        if (decl.initialValue === void 0)
+          continue;
+        walkAST(decl.initialValue, (node) => {
+          if (node.kind !== "VariableExpression")
+            return;
+          const name = node.name;
+          const owner = declaredBy.get(name.toUpperCase());
+          if (owner === void 0 || owner.toUpperCase() === block.resourceName?.toUpperCase()) {
+            return;
+          }
+          this.addError(`The initial value of '${decl.names.join(", ")}' names '${name}', a global of RESOURCE '${owner}'`, node.sourceSpan.startLine, node.sourceSpan.startCol, node.sourceSpan.file);
+        });
+      }
+    }
+    for (const resource of config.resources) {
+      for (const instance of resource.programInstances) {
+        const prog = this.programs.get(instance.programType.toUpperCase());
+        for (const ext of prog?.varExternal ?? []) {
+          const owner = declaredBy.get(ext.name.toUpperCase());
+          if (owner === void 0 || owner.toUpperCase() === resource.name.toUpperCase()) {
+            continue;
+          }
+          this.addError(`Program instance '${instance.instanceName}' of RESOURCE '${resource.name}' reaches '${ext.name}', a global of RESOURCE '${owner}'`, instance.sourceSpan.startLine, instance.sourceSpan.startCol, instance.sourceSpan.file);
+        }
+      }
+    }
   }
   /**
    * Process a resource declaration.
@@ -17914,6 +18146,7 @@ var ProjectModelBuilder = class {
       ...decl.type.arrayDimensions !== void 0 ? { arrayDimensions: decl.type.arrayDimensions } : {},
       ...decl.type.elementTypeName !== void 0 ? { elementTypeName: decl.type.elementTypeName } : {},
       ...decl.type.elementReferenceChain !== void 0 ? { elementReferenceChain: decl.type.elementReferenceChain } : {},
+      ...decl.type.elementMaxLength !== void 0 ? { elementMaxLength: decl.type.elementMaxLength } : {},
       ...decl.type.referenceKind !== void 0 && decl.type.referenceKind !== "none" ? { referenceKind: decl.type.referenceKind } : {},
       ...decl.type.referenceChain !== void 0 ? { referenceChain: decl.type.referenceChain } : {}
     };
@@ -18534,7 +18767,8 @@ function elementOf(type, lookup) {
     return {
       name: type.elementTypeName,
       referenceKind: chain2[0] ?? "none",
-      ...chain2.length > 1 ? { referenceChain: chain2 } : {}
+      ...chain2.length > 1 ? { referenceChain: chain2 } : {},
+      ...type.elementMaxLength !== void 0 ? { maxLength: type.elementMaxLength } : {}
     };
   }
   const element = lookup.arrayElement(type.name);
@@ -20475,9 +20709,15 @@ function namedGlobals(decl, owner) {
   return names;
 }
 function orderGlobals(ast) {
+  return orderGlobalBlocks(ast.globalVarBlocks);
+}
+function orderConfigurationGlobals(config) {
+  return orderGlobalBlocks(config.varBlocks.filter((b) => b.blockType === "VAR_GLOBAL"));
+}
+function orderGlobalBlocks(blocks) {
   const items = [];
   const owner = /* @__PURE__ */ new Map();
-  for (const block of ast.globalVarBlocks) {
+  for (const block of blocks) {
     for (const decl of block.declarations) {
       for (const name of decl.names) {
         items.push({ block, decl, name });
@@ -20539,7 +20779,8 @@ var KNOWN_FEATURES = [
   "fb_init",
   "trunc_dint",
   "interface_zero",
-  "end_semicolon_optional"
+  "end_semicolon_optional",
+  "conditional_pragmas"
 ];
 var DEFAULT_FEATURES = /* @__PURE__ */ new Set([
   "pointer_to",
@@ -20910,6 +21151,102 @@ function structExtends(ast, derived, base) {
     if (current === target)
       return true;
   }
+}
+
+// dist/semantic/std-function-args.js
+var NUMBERED = /^(.*?)(\d+)$/;
+var SELECTED_BY_NUMBER = /* @__PURE__ */ new Set(["MUX"]);
+function slotOf(upper, params, variadic) {
+  const index = params.findIndex((p) => p.name.toUpperCase() === upper);
+  if (index >= 0)
+    return index;
+  if (!variadic || params.length === 0)
+    return void 0;
+  const last2 = NUMBERED.exec(params[params.length - 1].name.toUpperCase());
+  const arg = NUMBERED.exec(upper);
+  if (!last2 || !arg || last2[1] !== arg[1] || arg[2].startsWith("0")) {
+    return void 0;
+  }
+  const n = Number(arg[2]);
+  const lastN = Number(last2[2]);
+  return n > lastN ? params.length - 1 + (n - lastN) : void 0;
+}
+function slotName(slot, params) {
+  const param = params[slot];
+  if (param)
+    return param.name;
+  const lastParam = params[params.length - 1];
+  const last2 = NUMBERED.exec(lastParam.name);
+  return `${last2[1]}${Number(last2[2]) + slot - (params.length - 1)}`;
+}
+function bindStdFunctionArguments(functionName, params, variadic, args) {
+  const issues = [];
+  const user = args.filter((a) => !isEnEnoArgument(a));
+  if (!user.some((a) => a.name !== void 0)) {
+    return { issues, failed: false };
+  }
+  const slots = /* @__PURE__ */ new Map();
+  let failed = false;
+  for (const arg of user) {
+    if (arg.name === void 0)
+      continue;
+    const slot = slotOf(arg.name.toUpperCase(), params, variadic);
+    if (slot === void 0) {
+      issues.push({
+        severity: "error",
+        message: `Function '${functionName}' has no parameter named '${arg.name}'`,
+        argument: arg
+      });
+      failed = true;
+      continue;
+    }
+    if (slots.has(slot)) {
+      issues.push({
+        severity: "error",
+        message: `Parameter '${slotName(slot, params)}' of '${functionName}' is given more than once`,
+        argument: arg
+      });
+      failed = true;
+      continue;
+    }
+    if (arg.isOutput) {
+      issues.push({
+        severity: "warning",
+        message: `Output argument '=>' used for input parameter '${slotName(slot, params).toLowerCase()}' \u2014 did you mean ':='?`,
+        argument: arg
+      });
+    }
+    slots.set(slot, arg);
+  }
+  let next = 0;
+  for (const arg of user) {
+    if (arg.name !== void 0)
+      continue;
+    while (slots.has(next))
+      next++;
+    slots.set(next, arg);
+  }
+  const count = slots.size === 0 ? 0 : Math.max(...slots.keys()) + 1;
+  const closesUp = variadic && !SELECTED_BY_NUMBER.has(functionName);
+  for (let i = 0; i < count; i++) {
+    if (slots.has(i) || closesUp)
+      continue;
+    issues.push({
+      severity: "error",
+      message: `Function '${functionName}' is missing parameter '${slotName(i, params)}'`
+    });
+    failed = true;
+  }
+  if (failed)
+    return { issues, failed };
+  const ordered = [];
+  for (let i = 0; i < count; i++) {
+    const arg = slots.get(i);
+    if (arg)
+      ordered.push(arg);
+  }
+  ordered.push(...args.filter((a) => isEnEnoArgument(a)));
+  return { ordered, issues, failed };
 }
 
 // dist/semantic/fb-init.js
@@ -21393,6 +21730,13 @@ function stringLengthsDiffer(a, b) {
     return la !== lb;
   return false;
 }
+function isStringBase(name) {
+  const upper = name.toUpperCase();
+  return upper === "STRING" || upper === "WSTRING";
+}
+function stringText(shape) {
+  return shape.length === void 0 ? shape.base : `${shape.base}(${String(shape.length)})`;
+}
 function isNullInitializer(expr) {
   return expr.kind === "LiteralExpression" && (expr.literalType === "NULL" || expr.value === 0);
 }
@@ -21482,6 +21826,14 @@ function strictIsExactWidening(from, to) {
   }
   return false;
 }
+var MEMBER_KIND = {
+  VAR: "internal",
+  VAR_TEMP: "internal",
+  VAR_EXTERNAL: "external",
+  VAR_INPUT: "input",
+  VAR_OUTPUT: "output",
+  VAR_IN_OUT: "inout"
+};
 var TypeChecker = class _TypeChecker {
   symbolTables;
   stdRegistry;
@@ -21509,6 +21861,16 @@ var TypeChecker = class _TypeChecker {
     this.warnings = [];
     this.strictReported.clear();
     this.ast = ast;
+    this.writeTargets = /* @__PURE__ */ new Set();
+    walkAST(ast, (node) => {
+      if (node.kind === "AssignmentStatement") {
+        this.writeTargets.add(node.target);
+      } else if (node.kind === "RefAssignStatement") {
+        this.writeTargets.add(node.target);
+      } else if (node.kind === "Argument" && node.isOutput) {
+        this.writeTargets.add(node.value);
+      }
+    });
     this.checkAllInitializerElements(ast);
     this.checkGlobalInitialCycles(ast);
     this.checkStructReferenceDefaults(ast);
@@ -21618,24 +21980,33 @@ var TypeChecker = class _TypeChecker {
       if (local)
         return local;
     }
-    const fb = this.symbolTables.lookupFunctionBlock(typeName2);
-    if (fb) {
-      const fu = fieldName.toUpperCase();
+    const fu = fieldName.toUpperCase();
+    const seen = /* @__PURE__ */ new Set();
+    let fb = this.symbolTables.lookupFunctionBlock(typeName2);
+    while (fb !== void 0 && !seen.has(fb.name.toUpperCase())) {
+      seen.add(fb.name.toUpperCase());
       for (const m of [
         ...fb.inputs,
         ...fb.outputs,
         ...fb.inouts,
-        ...fb.locals
+        ...fb.locals,
+        ...fb.temps ?? []
       ]) {
         if (m.name.toUpperCase() === fu)
           return m.declaration?.type?.name;
       }
+      const prop = fb.declaration.properties.find((p) => p.name.toUpperCase() === fu);
+      if (prop !== void 0 && fb.libraryName !== void 0) {
+        return prop.type.name;
+      }
+      const base = fb.libraryName !== void 0 ? fb.declaration.extends : void 0;
+      fb = base !== void 0 ? this.symbolTables.lookupFunctionBlock(base) : void 0;
     }
     const ty = this.symbolTables.lookupType(typeName2);
     if (ty?.resolvedType?.typeKind === "struct") {
-      const fu = fieldName.toUpperCase();
+      const fu2 = fieldName.toUpperCase();
       for (const [fname, ftype] of ty.resolvedType.fields) {
-        if (fname.toUpperCase() === fu) {
+        if (fname.toUpperCase() === fu2) {
           return ftype.name;
         }
       }
@@ -21683,6 +22054,127 @@ var TypeChecker = class _TypeChecker {
     this.addError(t === "array" ? "Cannot assign a single value to an array" : "Cannot assign an array to a single value", span.startLine, span.startCol, span.file);
     return true;
   }
+  /**
+   * The function block declaring `member` of `typeName` (or of a base) as an
+   * internal variable (VAR, VAR_TEMP) or a VAR_EXTERNAL; undefined for an
+   * interface variable or a name that is no FB member.
+   */
+  internalMemberOwner(typeName2, member) {
+    const upper = member.toUpperCase();
+    const seen = /* @__PURE__ */ new Set();
+    let current = typeName2.toUpperCase();
+    while (current !== void 0 && !seen.has(current)) {
+      seen.add(current);
+      const name = current;
+      const fb = this.ast?.functionBlocks.find((f) => f.name.toUpperCase() === name);
+      if (fb !== void 0) {
+        for (const block of fb.varBlocks) {
+          const declared = block.declarations.some((d) => d.names.some((n) => n.toUpperCase() === upper));
+          if (!declared)
+            continue;
+          const kind = MEMBER_KIND[block.blockType];
+          if (kind === void 0)
+            return void 0;
+          const access = block.access?.[0];
+          return access !== void 0 ? { name: fb.name, kind, access } : { name: fb.name, kind };
+        }
+        current = fb.extends?.toUpperCase();
+        continue;
+      }
+      const lib = this.symbolTables.lookupFunctionBlock(name);
+      if (lib?.libraryName === void 0)
+        return void 0;
+      const named = (v) => v.name.toUpperCase() === upper;
+      if (lib.inputs.some(named))
+        return { name: lib.name, kind: "input" };
+      if (lib.outputs.some(named))
+        return { name: lib.name, kind: "output" };
+      if (lib.inouts.some(named))
+        return { name: lib.name, kind: "inout" };
+      const local = lib.locals.find(named);
+      if (local !== void 0) {
+        return local.access !== void 0 ? { name: lib.name, kind: "internal", access: local.access } : { name: lib.name, kind: "internal" };
+      }
+      if ((lib.temps ?? []).some(named)) {
+        return { name: lib.name, kind: "internal" };
+      }
+      current = lib.declaration.extends?.toUpperCase();
+    }
+    return void 0;
+  }
+  /** The function block `name` and the blocks it EXTENDS, upper case. */
+  fbLineage(name) {
+    const out = /* @__PURE__ */ new Set();
+    let current = name.toUpperCase();
+    while (current !== void 0 && !out.has(current)) {
+      out.add(current);
+      const upper = current;
+      const fb = this.ast?.functionBlocks.find((f) => f.name.toUpperCase() === upper);
+      current = fb !== void 0 ? fb.extends?.toUpperCase() : this.symbolTables.lookupFunctionBlock(upper)?.declaration.extends?.toUpperCase();
+    }
+    return out;
+  }
+  /**
+   * Refuse `inst.x` (or `x := ...` in an instance initializer) where x is an
+   * internal variable or VAR_EXTERNAL of the instance's block, outside that
+   * block and the blocks derived from it (`context`, the current block).
+   */
+  refuseInternalMember(typeName2, member, expr, context = this.currentFBName, initializer = false) {
+    const upper = member.toUpperCase();
+    if (upper === "EN" || upper === "ENO")
+      return;
+    const owner = this.internalMemberOwner(this.aliasBase(typeName2), member);
+    if (owner === void 0)
+      return;
+    const write = initializer || this.writeTargets.has(expr);
+    if (owner.kind === "input" && write || owner.kind === "output" && !write) {
+      return;
+    }
+    if (owner.access === "PUBLIC")
+      return;
+    const ownerUpper = owner.name.toUpperCase();
+    const inside = context !== void 0 && (owner.access === "PRIVATE" ? context.toUpperCase() === ownerUpper : this.fbLineage(context).has(ownerUpper));
+    if (inside)
+      return;
+    const span = expr.sourceSpan;
+    const key = `${span.file ?? ""}:${span.startLine}:${span.startCol}:internal:${member.toUpperCase()}`;
+    if (this.unknownMemberReported.has(key))
+      return;
+    this.unknownMemberReported.add(key);
+    const fb = `FUNCTION_BLOCK '${owner.name}'`;
+    const message = {
+      internal: owner.access === "PRIVATE" ? `'${member}' is a PRIVATE variable of ${fb}; only '${owner.name}' itself can access it` : `'${member}' is an internal variable of ${fb} and cannot be accessed from outside`,
+      external: `'${member}' is a VAR_EXTERNAL of ${fb}, not a member it exposes, and cannot be accessed from outside`,
+      input: `'${member}' is a VAR_INPUT of ${fb}; from outside it can be written, not read`,
+      output: `'${member}' is a VAR_OUTPUT of ${fb}; from outside it can be read, not written`,
+      inout: `'${member}' is a VAR_IN_OUT of ${fb}; from outside it is bound in the call, not accessed through the instance`
+    }[owner.kind];
+    this.addError(message, span.startLine, span.startCol, span.file);
+  }
+  /** `THIS.x` / `SUPER.x` in a block: x may be a base's PRIVATE variable. */
+  refuseSelfMember(expr) {
+    const self2 = expr.name.toUpperCase();
+    if (self2 !== "THIS" && self2 !== "SUPER" || this.currentFBName === void 0) {
+      return;
+    }
+    const fb = this.ast?.functionBlocks.find((f) => f.name.toUpperCase() === this.currentFBName?.toUpperCase());
+    let type = self2 === "THIS" ? this.currentFBName : fb?.extends;
+    const steps = expr.accessChain ?? expr.fieldAccess.map((name) => ({ kind: "field", name }));
+    for (const step of steps) {
+      if (type === void 0 || step.kind === "dereference")
+        return;
+      if (step.kind === "subscript") {
+        if (this.ast) {
+          type = resolveArrayElementType(type, this.ast) ?? type;
+        }
+        continue;
+      }
+      this.refuseInternalMember(type, step.name, expr);
+      type = this.resolveFieldTypeAnywhere(this.aliasBase(type), step.name);
+    }
+  }
+  /** Assignment and REF= targets and `=>` output targets of the unit: the access paths that write. */
+  writeTargets = /* @__PURE__ */ new Set();
   /** Unknown-member reports already made, so an expression visited twice reports once. */
   unknownMemberReported = /* @__PURE__ */ new Set();
   /**
@@ -21731,28 +22223,36 @@ var TypeChecker = class _TypeChecker {
    */
   checkAllInitializerElements(ast) {
     this.typeDefaults = new Set(ast.types.flatMap((t) => t.defaultValue ? [t.defaultValue] : []));
-    walkAST(ast, (node) => {
+    const seen = /* @__PURE__ */ new Set();
+    const visit = (root2, context) => walkAST(root2, (node) => {
       if (node.kind !== "VarDeclaration")
         return;
       const decl = node;
+      if (seen.has(decl))
+        return;
+      seen.add(decl);
       if (decl.initialValue) {
-        this.checkInitializerElements(decl.type, decl.initialValue);
+        this.checkInitializerElements(decl.type, decl.initialValue, context);
       }
     });
+    for (const fb of ast.functionBlocks)
+      visit(fb, fb.name);
+    visit(ast, void 0);
   }
   /**
    * Report an element a structure initializer names that its STRUCT or
    * function block does not have, at any depth: `(zz := 1)`, `[(zz := 1)]`,
    * `(p := (zz := 1))`. Only types whose whole EXTENDS chain is declared here.
    */
-  checkInitializerElements(type, value) {
+  checkInitializerElements(type, value, context) {
     if (!this.ast || !type || type.referenceKind !== "none" || type.referenceChain !== void 0) {
       return;
     }
     if (value.kind === "ArrayLiteralExpression") {
       const element = type.arrayDimensions !== void 0 ? type.elementTypeName !== void 0 && type.elementReferenceChain === void 0 ? { name: type.elementTypeName, referenceKind: "none" } : void 0 : resolveArrayElementAccessType(type.name, this.ast);
-      for (const e of value.elements)
-        this.checkInitializerElements(element, e);
+      for (const e of value.elements) {
+        this.checkInitializerElements(element, e, context);
+      }
       return;
     }
     if (value.kind !== "StructInitializerExpression" && type.arrayDimensions === void 0) {
@@ -21764,8 +22264,9 @@ var TypeChecker = class _TypeChecker {
     const upper = this.aliasBase(type.name);
     for (const el of value.elements) {
       const field = resolveFieldDeclaration(upper, el.name, this.ast);
+      this.refuseInternalMember(upper, el.name, el, context, true);
       if (field) {
-        this.checkInitializerElements(field.type, el.value);
+        this.checkInitializerElements(field.type, el.value, context);
         continue;
       }
       if (this.resolveFieldTypeAnywhere(upper, el.name) !== void 0)
@@ -21847,9 +22348,17 @@ var TypeChecker = class _TypeChecker {
       seen.add(current);
       const name = current;
       const fb = this.ast?.functionBlocks.find((f) => f.name.toUpperCase() === name);
-      if (!fb)
-        return false;
       const named = (n) => n.name.toUpperCase() === memberUpper;
+      if (!fb) {
+        const lib = this.symbolTables.lookupFunctionBlock(name);
+        if (lib?.libraryMethodNames === void 0)
+          return false;
+        if (lib.libraryMethodNames.some((m) => m.toUpperCase() === memberUpper) || lib.declaration.properties.some(named)) {
+          return false;
+        }
+        current = lib.declaration.extends?.toUpperCase();
+        continue;
+      }
       if (fb.methods.some(named) || fb.actions.some(named) || fb.properties.some(named)) {
         return false;
       }
@@ -22016,6 +22525,7 @@ var TypeChecker = class _TypeChecker {
   inferVariableType(expr, scope) {
     const symbol = scope.lookup(expr.name);
     if (symbol === void 0) {
+      this.refuseSelfMember(expr);
       return void 0;
     }
     const enumValueType = this.enumValueType(expr, symbol);
@@ -22032,6 +22542,7 @@ var TypeChecker = class _TypeChecker {
     } else if (currentType && symbol.kind !== "program") {
       currentTypeName = symbol.declaration?.type?.name;
     }
+    this.refuseReferenceToCaret(expr, symbol);
     let inUnion = false;
     if (expr.accessChain && expr.accessChain.length > 0 && this.ast) {
       for (const step of expr.accessChain) {
@@ -22042,6 +22553,7 @@ var TypeChecker = class _TypeChecker {
             inUnion = true;
           const fieldType = this.resolveFieldTypeAnywhere(currentTypeName, step.name);
           if (fieldType) {
+            this.refuseInternalMember(currentTypeName, step.name, expr);
             currentTypeName = fieldType;
             currentType = this.resolveNamedType(fieldType);
           } else {
@@ -22067,6 +22579,7 @@ var TypeChecker = class _TypeChecker {
           }
           for (const idx of step.indices) {
             this.resolveExprType(idx, scope);
+            this.refuseEnumIndex(idx);
           }
         } else if (step.kind === "dereference") {
           inUnion = false;
@@ -22085,6 +22598,7 @@ var TypeChecker = class _TypeChecker {
       if (expr.subscripts.length > 0 && currentTypeName) {
         for (const sub of expr.subscripts) {
           this.resolveExprType(sub, scope);
+          this.refuseEnumIndex(sub);
         }
         const elemType = resolveArrayElementType(currentTypeName, this.ast);
         if (elemType) {
@@ -22104,6 +22618,7 @@ var TypeChecker = class _TypeChecker {
               inUnion = true;
             const fieldType = this.resolveFieldTypeAnywhere(currentTypeName, field);
             if (fieldType) {
+              this.refuseInternalMember(currentTypeName, field, expr);
               currentTypeName = fieldType;
               currentType = this.resolveNamedType(fieldType);
             } else {
@@ -22130,6 +22645,28 @@ var TypeChecker = class _TypeChecker {
       expr.resolvedType = currentType;
     }
     return currentType;
+  }
+  /** Variables already checked by refuseReferenceToCaret. */
+  checkedReferenceCarets = /* @__PURE__ */ new WeakSet();
+  /**
+   * `rr^` with `rr` a REFERENCE TO: the reference is dereferenced
+   * implicitly, so `^` names nothing (the C++ has no such operator).
+   */
+  refuseReferenceToCaret(expr, symbol) {
+    if (this.checkedReferenceCarets.has(expr))
+      return;
+    this.checkedReferenceCarets.add(expr);
+    if (symbol.kind !== "variable")
+      return;
+    const type = symbol.declaration?.type;
+    if (type?.referenceKind !== "reference_to" || (type.referenceChain?.length ?? 1) !== 1 || type.arrayDimensions !== void 0) {
+      return;
+    }
+    const first2 = expr.accessChain?.[0];
+    const caret = first2 !== void 0 ? first2.kind === "dereference" : expr.isDereference && expr.fieldAccess.length === 0 && expr.subscripts.length === 0;
+    if (!caret)
+      return;
+    this.addError(`'${expr.name}' is a REFERENCE TO, dereferenced implicitly: '^' does not apply to it`, expr.sourceSpan.startLine, expr.sourceSpan.startCol, expr.sourceSpan.file);
   }
   /**
    * Infer type of a binary expression.
@@ -22214,6 +22751,7 @@ var TypeChecker = class _TypeChecker {
    * Infer type of a function call expression.
    */
   inferFunctionCallType(expr, scope) {
+    this.bindStdFunctionCallArguments(expr, scope);
     for (const arg of expr.arguments) {
       this.resolveExprType(arg.value, scope);
     }
@@ -22225,6 +22763,7 @@ var TypeChecker = class _TypeChecker {
     this.validateInterfaceArguments(inputs, expr.arguments);
     this.markPointerZeroArguments(inputs, expr.arguments);
     this.validateStructArguments(inputs, expr.arguments);
+    this.validateEnumArguments(inputs, expr.arguments);
     this.validateReferenceToArguments(inputs, expr.arguments, scope);
     this.validateInOutArguments(inputs, expr.arguments, scope, this.isFBInstanceCall(expr, scope), expr);
     if (this.strict) {
@@ -22238,18 +22777,29 @@ var TypeChecker = class _TypeChecker {
         expr.resolvedType = retType;
       return retType;
     }
-    const ownMethod = this.ownProgramMethod(expr.functionName);
+    const ownMethod = this.ownMethod(expr.functionName);
     if (ownMethod) {
       const retType = this.methodReturnType(ownMethod);
       if (retType)
         expr.resolvedType = retType;
       return retType;
     }
+    if (!expr.instance && this.calledInstance(expr.functionName, scope)) {
+      this.refuseInstanceCallValue(expr, scope);
+      return void 0;
+    }
+    this.checkBoundDimension(expr, scope);
+    const selected = this.selectionEnumResult(expr);
+    if (selected !== void 0) {
+      if (selected !== "refused")
+        expr.resolvedType = selected;
+      return selected === "refused" ? void 0 : selected;
+    }
     const funcSymbol = this.symbolTables.lookupFunction(expr.functionName);
     if (funcSymbol !== void 0) {
       let returnType = funcSymbol.returnType;
       if (returnType && isGenericGroupType(returnType) && this.stdRegistry) {
-        const desc = this.stdRegistry.lookup(nameUpper);
+        const desc = this.unboundStdFunctionCalls.has(expr) ? void 0 : this.stdRegistry.lookup(nameUpper);
         if (desc && this.refuseEnumOrderingArguments(expr, desc.params)) {
           return void 0;
         }
@@ -22277,7 +22827,7 @@ var TypeChecker = class _TypeChecker {
         }
       }
       const desc = this.stdRegistry.lookup(nameUpper) ?? this.stdRegistry.resolveTypedTrunc(nameUpper);
-      if (desc) {
+      if (desc && !this.unboundStdFunctionCalls.has(expr)) {
         if (desc.specificReturnType) {
           const retType = ELEMENTARY_TYPES[desc.specificReturnType.toUpperCase()];
           if (retType) {
@@ -22331,6 +22881,7 @@ var TypeChecker = class _TypeChecker {
       const chainInputs = this.methodInputsOf(owner?.name, expr.methodName);
       this.validateInterfaceArguments(chainInputs, expr.arguments);
       this.validateStructArguments(chainInputs, expr.arguments);
+      this.validateEnumArguments(chainInputs, expr.arguments);
       this.validateReferenceToArguments(chainInputs, expr.arguments, scope);
       this.validateInOutArguments(chainInputs, expr.arguments, scope, false, expr);
       if (this.strict) {
@@ -22344,6 +22895,7 @@ var TypeChecker = class _TypeChecker {
     const methodInputs = this.methodInputs(objType, expr, scope);
     this.validateInterfaceArguments(methodInputs, expr.arguments);
     this.validateStructArguments(methodInputs, expr.arguments);
+    this.validateEnumArguments(methodInputs, expr.arguments);
     this.validateReferenceToArguments(methodInputs, expr.arguments, scope);
     this.validateInOutArguments(methodInputs, expr.arguments, scope, false, expr);
     if (this.strict) {
@@ -22426,8 +22978,10 @@ var TypeChecker = class _TypeChecker {
     const span = expr.sourceSpan;
     const notInstance = () => this.addError(`Cannot call method '${methodName}' on '${prefix}': it is not a function block instance`, span.startLine, span.startCol, span.file);
     const kind = this.callTargetKind(type);
-    if (kind === void 0)
+    if (kind === void 0) {
+      this.checkLibraryMethodCall(type, methodName, span);
       return;
+    }
     const upper = this.aliasBase(type.name);
     if (kind !== "value" && this.lookupChainMethod(upper, methodName) !== "missing") {
       return;
@@ -22435,6 +22989,7 @@ var TypeChecker = class _TypeChecker {
     const direct = type.arrayDimensions === void 0 && (type.referenceKind === "none" || type.referenceKind === "reference_to");
     const member = direct ? this.lookupMember(upper, methodName) : void 0;
     if (member !== void 0) {
+      this.refuseInternalMember(upper, methodName, expr);
       if (this.callTargetKind(member.type) === "value") {
         this.addError(`Cannot call '${prefix}.${methodName}': it is a member that is not a function block instance, not a method`, span.startLine, span.startCol, span.file);
       } else {
@@ -22449,6 +23004,36 @@ var TypeChecker = class _TypeChecker {
     const isFb = kind === "fb";
     const owner = this.ast.functionBlocks.find((f) => f.name.toUpperCase() === upper)?.name ?? this.ast.interfaces.find((i) => i.name.toUpperCase() === upper)?.name ?? upper;
     this.addError(`${isFb ? "Function block" : "Interface"} '${owner}' has no method '${methodName}'`, span.startLine, span.startCol, span.file);
+  }
+  /**
+   * `v.M()` on a library block whose archive lists all its members: M must be
+   * a method or action of the block or of a base, or a member (an FB instance).
+   */
+  checkLibraryMethodCall(type, methodName, span) {
+    if (type.arrayDimensions !== void 0 || type.referenceChain !== void 0 || type.referenceKind !== "none" && type.referenceKind !== "reference_to") {
+      return;
+    }
+    const upper = this.aliasBase(type.name);
+    if (this.ast?.functionBlocks.some((f) => f.name.toUpperCase() === upper) === true) {
+      return;
+    }
+    if (this.resolveFieldTypeAnywhere(upper, methodName) !== void 0)
+      return;
+    const methodUpper = methodName.toUpperCase();
+    const seen = /* @__PURE__ */ new Set();
+    let current = upper;
+    while (current !== void 0 && !seen.has(current)) {
+      seen.add(current);
+      const lib = this.symbolTables.lookupFunctionBlock(current);
+      if (lib?.libraryMethodNames === void 0)
+        return;
+      if (lib.libraryMethodNames.some((m) => m.toUpperCase() === methodUpper)) {
+        return;
+      }
+      current = lib.declaration.extends?.toUpperCase();
+    }
+    const owner = this.symbolTables.lookupFunctionBlock(upper)?.name ?? upper;
+    this.addError(`Function block '${owner}' has no method '${methodName}'`, span.startLine, span.startCol, span.file);
   }
   /**
    * What a declared type is as a call target: "value" when it surely has no
@@ -22504,9 +23089,12 @@ var TypeChecker = class _TypeChecker {
     let methodName;
     if (parts.length === 1) {
       methodName = parts[0];
-      if (this.symbolTables.lookupFunction(methodName) !== void 0)
+      if (this.ownMethod(methodName) === void 0 && this.symbolTables.lookupFunction(methodName) !== void 0) {
         return;
+      }
       if (scope.lookup(methodName)?.kind === "variable")
+        return;
+      if (this.calledInstance(methodName, scope))
         return;
       owner = enclosing;
     } else if (parts.length === 2) {
@@ -22546,6 +23134,58 @@ var TypeChecker = class _TypeChecker {
       this.addError(`Method '${found.name}' of '${ownerName}' has no parameter named '${arg.name ?? ""}'`, arg.sourceSpan.startLine, arg.sourceSpan.startCol, arg.sourceSpan.file);
     }
   }
+  /** Standard function calls whose arguments were already bound. */
+  boundStdFunctionCalls = /* @__PURE__ */ new WeakSet();
+  /** Standard function calls whose named arguments could not be bound. */
+  unboundStdFunctionCalls = /* @__PURE__ */ new WeakSet();
+  /**
+   * A standard function call with named arguments: put its arguments in the
+   * IEC parameter order every later pass and the C++ call rely on, and refuse
+   * names the function does not declare. A user FUNCTION of the name, an FB
+   * instance or an own program method is not a standard function call.
+   */
+  bindStdFunctionCallArguments(expr, scope) {
+    if (!this.stdRegistry || expr.instance)
+      return;
+    if (this.boundStdFunctionCalls.has(expr))
+      return;
+    this.boundStdFunctionCalls.add(expr);
+    const name = expr.functionName;
+    if (name.includes(".") || this.findUserFunction(name))
+      return;
+    if (scope.lookup(name)?.kind === "variable")
+      return;
+    if (this.calledInstance(name, scope))
+      return;
+    if (this.ownMethod(name))
+      return;
+    const upper = name.toUpperCase();
+    const desc = this.stdRegistry.lookup(upper);
+    let params = desc?.params;
+    let variadic = desc?.isVariadic === true;
+    if (!params && this.stdRegistry.resolveConversion(upper)) {
+      params = [{ name: "IN", constraint: "ANY", isByRef: false }];
+      variadic = false;
+    }
+    if (!params && this.symbolTables.lookupFunction(upper) === void 0) {
+      params = this.stdRegistry.resolveTypedTrunc(upper)?.params;
+    }
+    if (!params)
+      return;
+    const binding = bindStdFunctionArguments(desc?.name ?? upper, params, variadic, expr.arguments);
+    for (const issue of binding.issues) {
+      const span = issue.argument?.sourceSpan ?? expr.sourceSpan;
+      if (issue.severity === "error") {
+        this.addError(issue.message, span.startLine, span.startCol, span.file);
+      } else {
+        this.addWarning(issue.message, span.startLine, span.startCol, span.file);
+      }
+    }
+    if (binding.ordered)
+      expr.arguments = binding.ordered;
+    if (binding.failed)
+      this.unboundStdFunctionCalls.add(expr);
+  }
   /** Function calls whose argument names were already checked. */
   checkedFunctionCallNames = /* @__PURE__ */ new WeakSet();
   /**
@@ -22565,7 +23205,9 @@ var TypeChecker = class _TypeChecker {
       return;
     if (scope.lookup(name)?.kind === "variable")
       return;
-    if (this.ownProgramMethod(name))
+    if (this.calledInstance(name, scope))
+      return;
+    if (this.ownMethod(name))
       return;
     let declaredName;
     let params;
@@ -22727,12 +23369,58 @@ var TypeChecker = class _TypeChecker {
     const upper = parts[1].toUpperCase();
     return this.methodsOfType(sym.name)?.find((m) => m.name.toUpperCase() === upper);
   }
-  /** A bare `Name(...)` inside a PROGRAM that names one of its methods. */
-  ownProgramMethod(name) {
-    if (!this.currentProgram || name.includes("."))
+  /**
+   * A bare `Name(...)` inside a PROGRAM or FUNCTION_BLOCK that names one of
+   * its methods, inherited ones included. The method is called, as the C++
+   * member shadows a FUNCTION or standard function of the same name.
+   */
+  ownMethod(name) {
+    if (name.includes("."))
       return void 0;
     const upper = name.toUpperCase();
-    return this.currentProgram.methods.find((m) => m.name.toUpperCase() === upper);
+    if (this.currentFBName !== void 0) {
+      const found = this.lookupChainMethod(this.currentFBName, name);
+      return typeof found === "object" ? found : void 0;
+    }
+    return this.currentProgram?.methods.find((m) => m.name.toUpperCase() === upper);
+  }
+  /**
+   * A bare `name(...)` that invokes a PROGRAM, or a variable in scope of a
+   * FUNCTION_BLOCK or PROGRAM type: it shadows a FUNCTION or standard
+   * function of its name, as the C++ member does.
+   */
+  calledInstance(name, scope) {
+    if (name.includes("."))
+      return false;
+    const sym = scope.lookup(name);
+    if (sym?.kind === "program")
+      return true;
+    const type = sym?.kind === "variable" ? sym.declaration?.type : this.inheritedMemberType(name);
+    if (type === void 0 || type.arrayDimensions !== void 0)
+      return false;
+    const upper = this.aliasBase(type.name).toUpperCase();
+    return this.ast?.functionBlocks.some((f) => f.name.toUpperCase() === upper) === true || this.ast?.programs.some((p) => p.name.toUpperCase() === upper) === true || this.symbolTables.lookupFunctionBlock(upper) !== void 0;
+  }
+  /** The declared type of a member the enclosing FB inherits from a base. */
+  inheritedMemberType(name) {
+    const upper = name.toUpperCase();
+    const seen = /* @__PURE__ */ new Set();
+    let current = this.ast?.functionBlocks.find((f) => f.name.toUpperCase() === this.currentFBName?.toUpperCase())?.extends;
+    while (current !== void 0 && !seen.has(current.toUpperCase())) {
+      const base = current.toUpperCase();
+      seen.add(base);
+      const fb = this.ast?.functionBlocks.find((f) => f.name.toUpperCase() === base);
+      if (!fb)
+        return void 0;
+      for (const block of fb.varBlocks) {
+        for (const d of block.declarations) {
+          if (d.names.some((n) => n.toUpperCase() === upper))
+            return d.type;
+        }
+      }
+      current = fb.extends;
+    }
+    return void 0;
   }
   /** The declared return type of a method, or undefined when it has none. */
   methodReturnType(method) {
@@ -22764,7 +23452,15 @@ var TypeChecker = class _TypeChecker {
    * initial values that depend on each other cannot be created.
    */
   checkGlobalInitialCycles(ast) {
-    const { cycles, order } = orderGlobals(ast);
+    for (const ordered of [
+      orderGlobals(ast),
+      ...ast.configurations.map(orderConfigurationGlobals)
+    ]) {
+      this.reportGlobalInitialCycles(ordered);
+    }
+  }
+  /** Report each cycle of `ordered`, at its first global. */
+  reportGlobalInitialCycles({ cycles, order }) {
     for (const cycle of cycles) {
       const quoted = cycle.map((n) => `'${n}'`);
       const list = quoted.length > 1 ? `${quoted.slice(0, -1).join(", ")} and ${quoted[quoted.length - 1]}` : quoted[0];
@@ -22773,8 +23469,8 @@ var TypeChecker = class _TypeChecker {
     }
   }
   /**
-   * A POINTER TO field of a STRUCT takes no address or pointer as its
-   * default: the type is created before any variable, and a copy of the
+   * A POINTER TO, REF_TO or REFERENCE TO field of a STRUCT takes no address
+   * or reference as its default: the type is created before any variable, and a copy of the
    * STRUCT would keep the address of the instance it was copied from.
    */
   checkStructReferenceDefaults(ast) {
@@ -22783,10 +23479,16 @@ var TypeChecker = class _TypeChecker {
         continue;
       for (const field of type.definition.fields) {
         const value = field.initialValue;
-        if (value === void 0 || field.type.referenceKind !== "pointer_to" || isNullInitializer(value)) {
+        const kind = field.type.referenceChain?.[0] ?? field.type.referenceKind;
+        const spelled = {
+          pointer_to: "POINTER TO",
+          ref_to: "REF_TO",
+          reference_to: "REFERENCE TO"
+        }[kind];
+        if (value === void 0 || spelled === void 0 || kind !== "reference_to" && isNullInitializer(value)) {
           continue;
         }
-        this.addError(`POINTER TO initializers are not supported in a STRUCT; assign '${type.name.toUpperCase()}.${(field.names[0] ?? "").toUpperCase()}' in the body instead`, value.sourceSpan.startLine, value.sourceSpan.startCol, value.sourceSpan.file);
+        this.addError(`${spelled} initializers are not supported in a STRUCT; assign '${type.name.toUpperCase()}.${(field.names[0] ?? "").toUpperCase()}' in the body instead`, value.sourceSpan.startLine, value.sourceSpan.startCol, value.sourceSpan.file);
       }
     }
   }
@@ -22961,6 +23663,12 @@ var TypeChecker = class _TypeChecker {
           if (targetShape?.chain.length === 1 && targetShape.chain[0] === "reference_to" && sourceShape !== void 0 && stmt.source.kind === "VariableExpression") {
             this.markAliasReferenceBinding(targetShape, sourceShape, stmt.source);
           }
+          if (targetShape?.chain.length === 1 && (targetShape.chain[0] === "ref_to" || targetShape.chain[0] === "reference_to") && sourceShape !== void 0 && stmt.source.kind === "VariableExpression") {
+            const mismatch = this.referenceBindingMismatch(targetShape, sourceShape, stmt.source);
+            if (mismatch !== void 0) {
+              this.addError(mismatch, stmt.source.sourceSpan.startLine, stmt.source.sourceSpan.startCol, stmt.source.sourceSpan.file);
+            }
+          }
           if (declared) {
             const refKind = declared.referenceKind;
             if (refKind !== "ref_to" && refKind !== "reference_to") {
@@ -22994,6 +23702,9 @@ var TypeChecker = class _TypeChecker {
             this.resolveExprType(label.start, scope);
             if (label.end)
               this.resolveExprType(label.end, scope);
+            this.validateCaseLabelType(selectorType, label.start);
+            if (label.end)
+              this.validateCaseLabelType(selectorType, label.end);
           }
           this.checkStatements(c.statements, scope);
         }
@@ -23057,6 +23768,9 @@ var TypeChecker = class _TypeChecker {
         break;
       }
       case "FunctionCallStatement": {
+        if (stmt.call.kind === "FunctionCallExpression") {
+          this.statementCalls.add(stmt.call);
+        }
         this.resolveExprType(stmt.call, scope);
         if (this.strict && stmt.call.kind === "FunctionCallExpression") {
           this.checkStrictDiscardedResult(stmt.call, scope);
@@ -23340,6 +24054,45 @@ var TypeChecker = class _TypeChecker {
    * An argument of one STRUCT type bound to a VAR_INPUT or VAR_IN_OUT of
    * another (aliases name the same type). Only STRUCTs this compile declares.
    */
+  /**
+   * An enumeration value bound to an input of another type (an integer, or
+   * another enumeration), or a value of another type bound to an enumeration
+   * input: the C++ enum class converts neither way.
+   */
+  validateEnumArguments(inputs, args) {
+    if (!inputs)
+      return;
+    stripEnEno([...args]).forEach((arg, i) => {
+      if (arg.isOutput)
+        return;
+      const argName = arg.name?.toUpperCase();
+      const input = argName === void 0 ? inputs[i] : inputs.find((p) => p.name.toUpperCase() === argName);
+      if (!input || input.inOut)
+        return;
+      const refKind = input.type.referenceKind;
+      if (refKind !== void 0 && refKind !== "none")
+        return;
+      if (input.type.arrayDimensions !== void 0)
+        return;
+      const valueType = arg.value.resolvedType;
+      if (valueType === void 0)
+        return;
+      const paramType = this.resolveNamedType(input.type.name);
+      if (paramType === void 0)
+        return;
+      const argEnum = valueType.typeKind === "enum";
+      const paramEnum = paramType.typeKind === "enum";
+      if (!argEnum && !paramEnum)
+        return;
+      if (argEnum && paramEnum && typeName(valueType).toUpperCase() === typeName(paramType).toUpperCase()) {
+        return;
+      }
+      const other = argEnum ? paramType : valueType;
+      if (other.typeKind !== "enum" && other.typeKind !== "elementary")
+        return;
+      this.addError(`Cannot assign ${typeName(valueType)} to parameter '${input.name}' of type ${typeName(paramType)}`, arg.value.sourceSpan.startLine, arg.value.sourceSpan.startCol, arg.value.sourceSpan.file);
+    });
+  }
   validateStructArguments(inputs, args) {
     if (!inputs)
       return;
@@ -23411,25 +24164,69 @@ var TypeChecker = class _TypeChecker {
       const source = this.declaredReferenceShape(value, scope);
       if (!source)
         return;
-      const levelsOk = source.chain.length === 0 || source.chain.length === 1 && source.chain[0] === "reference_to";
-      if (levelsOk) {
-        if (!this.isReferableType(target.base) || !this.isReferableType(source.base)) {
-          return;
-        }
-        if (canonicalElementaryName(this.aliasBase(target.base)) === canonicalElementaryName(this.aliasBase(source.base))) {
-          this.markAliasReferenceBinding(target, source, value);
-          return;
-        }
-      }
-      fail(`${describeReferenceShape(target)} cannot refer to a ${describeReferenceShape(source)} variable${levelsOk ? this.referenceMismatchReason(this.aliasBase(source.base)) : ""}`);
+      const mismatch = this.referenceBindingMismatch(target, source, value);
+      if (mismatch !== void 0)
+        fail(mismatch);
     });
+  }
+  /**
+   * Why a REF_TO or REFERENCE TO (one level, `target`) cannot refer to the
+   * variable `value` of shape `source` (a plain variable or a REFERENCE TO,
+   * which refers on): another type, or another STRING length. Undefined
+   * when it can or the types are not known here; an alias source is marked.
+   */
+  referenceBindingMismatch(target, source, value) {
+    const levelsOk = source.chain.length === 0 || source.chain.length === 1 && source.chain[0] === "reference_to";
+    if (levelsOk) {
+      if (!this.isReferableType(target.base) || !this.isReferableType(source.base)) {
+        return void 0;
+      }
+      if (canonicalElementaryName(this.aliasBase(target.base)) === canonicalElementaryName(this.aliasBase(source.base))) {
+        const t = this.stringAliasResolved(target);
+        const v = this.stringAliasResolved(source);
+        if (isStringBase(t.base) && stringLengthsDiffer(t, v)) {
+          return `${describeReferenceShape(t)} cannot refer to a ${stringText(v)} variable`;
+        }
+        if (target.chain[0] === "reference_to") {
+          this.markAliasReferenceBinding(target, source, value);
+        }
+        return void 0;
+      }
+    }
+    return `${describeReferenceShape(target)} cannot refer to a ${describeReferenceShape(source)} variable${levelsOk ? this.referenceMismatchReason(this.aliasBase(source.base)) : ""}`;
+  }
+  /**
+   * `shape` with an alias of STRING(n) / WSTRING(n) (chained) as its base
+   * replaced by the string type and its length; any other shape unchanged.
+   */
+  stringAliasResolved(shape) {
+    let base = shape.base.toUpperCase();
+    let length = shape.length;
+    for (let i = 0; i < 32; i++) {
+      const upper = base;
+      const def = this.ast?.types.find((td) => td.name.toUpperCase() === upper)?.definition;
+      if (def?.kind !== "TypeReference" || def.arrayDimensions !== void 0 || def.referenceKind !== void 0 && def.referenceKind !== "none") {
+        break;
+      }
+      base = def.name.toUpperCase();
+      length ??= def.maxLength;
+    }
+    if (!isStringBase(base) || base === shape.base.toUpperCase())
+      return shape;
+    return {
+      ...shape,
+      base,
+      ...length !== void 0 ? { length } : {}
+    };
   }
   /** A call of a function-block instance (`fb(...)`, `arr[i](...)`). */
   isFBInstanceCall(expr, scope) {
     if (expr.instance !== void 0)
       return true;
-    if (this.ownProgramMethod(expr.functionName))
+    if (this.ownMethod(expr.functionName))
       return false;
+    if (this.calledInstance(expr.functionName, scope))
+      return true;
     if (this.findUserFunction(expr.functionName))
       return false;
     return scope.lookup(expr.functionName)?.kind === "variable";
@@ -23513,6 +24310,10 @@ var TypeChecker = class _TypeChecker {
     const argType = this.hasMemberAccess(value) ? resolveAccessType(declared.type, value, this.accessLookup) : declared.type;
     if (!argType)
       return;
+    if (this.stringElementLengthsDiffer(input.type, argType)) {
+      arg.inOutCopy = true;
+      return;
+    }
     const mismatch = this.inOutTypeMismatch(input.type, argType);
     if (mismatch === void 0)
       return;
@@ -23555,6 +24356,42 @@ var TypeChecker = class _TypeChecker {
     };
   }
   /**
+   * Two ARRAYs of STRING (or of WSTRING) whose elements differ only in length:
+   * distinct C++ types, so an in-out between them is passed by copy.
+   */
+  stringElementLengthsDiffer(a, b) {
+    const element = (t) => {
+      if (t.referenceKind !== void 0 && t.referenceKind !== "none") {
+        return void 0;
+      }
+      let name;
+      let length;
+      if (t.arrayDimensions !== void 0) {
+        if (t.elementReferenceChain !== void 0)
+          return void 0;
+        name = t.elementTypeName;
+        length = t.elementMaxLength;
+      } else {
+        const upper2 = t.name.toUpperCase();
+        const def = this.ast?.types.find((td) => td.name.toUpperCase() === upper2)?.definition;
+        if (def?.kind !== "ArrayDefinition")
+          return void 0;
+        if (def.elementType.referenceKind !== void 0 && def.elementType.referenceKind !== "none") {
+          return void 0;
+        }
+        name = def.elementType.name;
+        length = def.elementType.maxLength;
+      }
+      const upper = name?.toUpperCase();
+      if (upper !== "STRING" && upper !== "WSTRING")
+        return void 0;
+      return { name: upper, length: String(length ?? 254).toUpperCase() };
+    };
+    const x = element(a);
+    const y = element(b);
+    return x !== void 0 && y !== void 0 && x.name === y.name && x.length !== y.length;
+  }
+  /**
    * `inst.x := v` where `x` is a VAR_IN_OUT of the instance's block: written
    * from outside the block (IEC 61131-3 Figure 13, 6b).
    */
@@ -23580,6 +24417,9 @@ var TypeChecker = class _TypeChecker {
         return;
       if (step.kind === "field") {
         if (this.isInOutMemberOf(current.name, step.name)) {
+          const inside = this.currentFBName !== void 0 && this.fbLineage(this.currentFBName).has(current.name.toUpperCase());
+          if (!inside)
+            return;
           this.inOutDiagnostic(`'${step.name}' is a VAR_IN_OUT of '${current.name}' and cannot be written from outside the function block`, "the write goes to the variable the last call bound", target);
           return;
         }
@@ -23748,12 +24588,15 @@ var TypeChecker = class _TypeChecker {
     return true;
   }
   /** Report `value` when it cannot be held by a target of shape `t`. */
-  validateReferenceValue(t, value, scope) {
+  validateReferenceValue(declaredTarget, value, scope) {
+    let t = declaredTarget;
     if (t.chain[0] !== "ref_to")
       return;
-    const v = this.declaredReferenceShape(value, scope);
-    if (!v || v.chain.length === 0)
+    const declaredValue = this.declaredReferenceShape(value, scope);
+    if (!declaredValue || declaredValue.chain.length === 0)
       return;
+    t = this.stringAliasResolved(t);
+    const v = this.stringAliasResolved(declaredValue);
     if (!this.isExactlyKnownType(t.base) || !this.isExactlyKnownType(v.base)) {
       return;
     }
@@ -23787,9 +24630,29 @@ var TypeChecker = class _TypeChecker {
       return void 0;
     const type = this.hasMemberAccess(expr) ? resolveAccessType(declared.type, expr, this.accessLookup) : declared.type;
     const shape = type ? referenceShapeOf(type) : void 0;
-    if (shape && this.hasSubscript(expr))
+    if (shape && this.hasSubscript(expr) && !this.isDirectElementOfDeclaredArray(expr, declared.type)) {
       shape.lengthUnknown = true;
+    }
     return shape;
+  }
+  /**
+   * `a[i]`: one subscript straight on a variable of an inline ARRAY or an
+   * ARRAY type declared in this compile, whose element carries its length.
+   */
+  isDirectElementOfDeclaredArray(expr, type) {
+    const steps = expr.accessChain ?? [
+      ...expr.subscripts.length > 0 ? [{ kind: "subscript", indices: expr.subscripts }] : [],
+      ...expr.fieldAccess.map((name) => ({ kind: "field", name }))
+    ];
+    if (steps.length !== 1 || steps[0].kind !== "subscript")
+      return false;
+    if (type.referenceKind !== void 0 && type.referenceKind !== "none") {
+      return false;
+    }
+    if (type.arrayDimensions !== void 0)
+      return true;
+    const upper = type.name.toUpperCase();
+    return this.ast?.types.some((t) => t.name.toUpperCase() === upper && t.definition.kind === "ArrayDefinition") === true;
   }
   /** Whether an access path indexes an array anywhere. */
   hasSubscript(expr) {
@@ -23809,12 +24672,15 @@ var TypeChecker = class _TypeChecker {
       type: d.type,
       inOut: b.blockType === "VAR_IN_OUT"
     }))));
-    const ownMethod = this.ownProgramMethod(expr.functionName);
+    const ownMethod = this.ownMethod(expr.functionName);
     if (ownMethod)
       return fromBlocks(ownMethod.varBlocks);
-    const fn = this.findUserFunction(expr.functionName);
+    const fn = this.calledInstance(expr.functionName, scope) ? void 0 : this.findUserFunction(expr.functionName);
     if (fn)
       return fromBlocks(fn.varBlocks);
+    const libraryInputs = this.libraryReferenceFunctionInputs(expr, scope);
+    if (libraryInputs)
+      return libraryInputs;
     const sym = scope.lookup(expr.functionName);
     if (sym?.kind !== "variable" || expr.instance)
       return void 0;
@@ -23845,6 +24711,30 @@ var TypeChecker = class _TypeChecker {
       type: m.declaration.type,
       inOut
     }));
+  }
+  /**
+   * The inputs and in/outs of a library FUNCTION that has a REFERENCE TO
+   * input (an archive that records it), so its arguments are checked as a
+   * user function's are. Undefined for any other callee.
+   */
+  libraryReferenceFunctionInputs(expr, scope) {
+    const name = expr.functionName;
+    if (expr.instance || name.includes("."))
+      return void 0;
+    if (this.calledInstance(name, scope) || this.ownMethod(name)) {
+      return void 0;
+    }
+    const fn = this.symbolTables.lookupFunction(name);
+    if (fn === void 0 || this.findUserFunction(name))
+      return void 0;
+    const params = fn.parameters.filter((p) => p.isInput || p.isInOut);
+    if (!params.some((p) => p.declaration?.type.referenceKind === "reference_to")) {
+      return void 0;
+    }
+    return params.flatMap((p) => {
+      const type = p.declaration?.type;
+      return type ? [{ name: p.name, type, inOut: p.isInOut }] : [];
+    });
   }
   /** The REF_TO check for each argument passed to a REF_TO input. */
   validateReferenceArguments(expr, scope) {
@@ -23924,6 +24814,131 @@ var TypeChecker = class _TypeChecker {
       this.addError(`Condition must be a boolean or bit type, got ${typeName(condType)}`, condExpr.sourceSpan.startLine, condExpr.sourceSpan.startCol, condExpr.sourceSpan.file);
     }
   }
+  /** Calls written as statements (their value, if any, is discarded). */
+  statementCalls = /* @__PURE__ */ new WeakSet();
+  /** Calls already checked by refuseInstanceCallValue. */
+  checkedInstanceCallValues = /* @__PURE__ */ new WeakSet();
+  /**
+   * `x := fb(...)`: a FUNCTION_BLOCK instance call used as a value, which it
+   * has none of (also where a FUNCTION of its name exists, which the
+   * instance hides).
+   */
+  refuseInstanceCallValue(expr, scope) {
+    if (this.statementCalls.has(expr))
+      return;
+    if (this.checkedInstanceCallValues.has(expr))
+      return;
+    this.checkedInstanceCallValues.add(expr);
+    const sym = scope.lookup(expr.functionName);
+    if (sym?.kind === "program")
+      return;
+    this.addError(`'${expr.functionName}' is a FUNCTION_BLOCK instance: its call has no value`, expr.sourceSpan.startLine, expr.sourceSpan.startCol, expr.sourceSpan.file);
+  }
+  /** Calls already checked by checkBoundDimension. */
+  checkedBoundDimensions = /* @__PURE__ */ new WeakSet();
+  /**
+   * LOWER_BOUND / UPPER_BOUND (arr, dim) of a fixed array of two or three
+   * dimensions with a literal `dim` it does not have. (A one-dimensional
+   * array answers any dim, so it is left alone.)
+   */
+  checkBoundDimension(expr, scope) {
+    const upper = expr.functionName.toUpperCase();
+    if (upper !== "LOWER_BOUND" && upper !== "UPPER_BOUND")
+      return;
+    if (expr.instance || this.findUserFunction(upper))
+      return;
+    if (this.checkedBoundDimensions.has(expr))
+      return;
+    this.checkedBoundDimensions.add(expr);
+    const [arr, dim] = stripEnEno([...expr.arguments]);
+    if (arr?.value.kind !== "VariableExpression" || dim === void 0)
+      return;
+    if (dim.value.kind !== "LiteralExpression" || typeof dim.value.value !== "number") {
+      return;
+    }
+    const sym = scope.lookup(arr.value.name);
+    if (sym?.kind !== "variable")
+      return;
+    const declared = sym.declaration?.type;
+    if (declared === void 0)
+      return;
+    const type = this.hasMemberAccess(arr.value) ? resolveAccessType(declared, arr.value, this.accessLookup) : declared;
+    if (type === void 0)
+      return;
+    let rank = type.arrayDimensions?.length;
+    if (rank === void 0 && (type.referenceKind ?? "none") === "none") {
+      const named = type.name.toUpperCase();
+      const def = this.ast?.types.find((t) => t.name.toUpperCase() === named)?.definition;
+      if (def?.kind === "ArrayDefinition")
+        rank = def.dimensions.length;
+    }
+    if (rank === void 0 || rank < 2 || rank > 3)
+      return;
+    const value = dim.value.value;
+    if (Number.isInteger(value) && value >= 1 && value <= rank)
+      return;
+    this.addError(`${upper} has no dimension ${String(value)}: the array has ${rank}`, dim.value.sourceSpan.startLine, dim.value.sourceSpan.startCol, dim.value.sourceSpan.file);
+  }
+  /**
+   * The result of the standard SEL or MUX when any selected input is an
+   * enumeration: that enumeration when every one is of it (aliases are the
+   * enumeration), else "refused" after an error. Undefined otherwise.
+   */
+  selectionEnumResult(expr) {
+    const upper = expr.functionName.toUpperCase();
+    if (upper !== "SEL" && upper !== "MUX")
+      return void 0;
+    if (expr.instance || this.findUserFunction(upper))
+      return void 0;
+    if (this.ownMethod(upper))
+      return void 0;
+    if (this.unboundStdFunctionCalls.has(expr))
+      return void 0;
+    const values2 = stripEnEno([...expr.arguments]).slice(1);
+    const types = values2.map((a) => a.value.resolvedType);
+    const enumType = types.find((t) => t?.typeKind === "enum");
+    if (enumType === void 0)
+      return void 0;
+    const name = typeName(enumType).toUpperCase();
+    const at = types.findIndex((t) => t !== void 0 && (t.typeKind !== "enum" || typeName(t).toUpperCase() !== name));
+    const other = values2[at];
+    if (other === void 0)
+      return enumType;
+    this.addError(`The inputs of ${upper} must be of one type: got ${typeName(enumType)} and ${typeName(other.value.resolvedType)}`, other.value.sourceSpan.startLine, other.value.sourceSpan.startCol, other.value.sourceSpan.file);
+    return "refused";
+  }
+  /** Indices already checked by refuseEnumIndex. */
+  checkedEnumIndices = /* @__PURE__ */ new WeakSet();
+  /** An enumeration value as an array index: the C++ enum class is no index. */
+  refuseEnumIndex(index) {
+    if (this.checkedEnumIndices.has(index))
+      return;
+    this.checkedEnumIndices.add(index);
+    const type = index.resolvedType;
+    if (type?.typeKind !== "enum")
+      return;
+    this.addError(`Array index must be an integer, got ${typeName(type)}`, index.sourceSpan.startLine, index.sourceSpan.startCol, index.sourceSpan.file);
+  }
+  /**
+   * A CASE label of another type than an enumeration selector, or an
+   * enumeration label of an integer selector: never equal in the C++.
+   */
+  validateCaseLabelType(selectorType, label) {
+    const labelType = label.resolvedType;
+    if (selectorType === void 0 || labelType === void 0)
+      return;
+    const selectorEnum = selectorType.typeKind === "enum";
+    const labelEnum = labelType.typeKind === "enum";
+    if (!selectorEnum && !labelEnum)
+      return;
+    if (selectorEnum && labelEnum && typeName(selectorType).toUpperCase() === typeName(labelType).toUpperCase()) {
+      return;
+    }
+    const other = selectorEnum ? labelType : selectorType;
+    if (other.typeKind !== "enum" && other.typeKind !== "elementary")
+      return;
+    this.addError(`CASE label of type ${typeName(labelType)} does not match the selector of type ${typeName(selectorType)}`, label.sourceSpan.startLine, label.sourceSpan.startCol, label.sourceSpan.file);
+  }
   validateCaseSelector(selectorType, selectorExpr) {
     if (!isTypeInCategory(selectorType, "ANY_INT") && !isTypeInCategory(selectorType, "ANY_BIT") && selectorType.typeKind !== "enum") {
       this.addError(`CASE selector must be an integer, bit, or enum type, got ${typeName(selectorType)}`, selectorExpr.sourceSpan.startLine, selectorExpr.sourceSpan.startCol, selectorExpr.sourceSpan.file);
@@ -23953,6 +24968,8 @@ var TypeChecker = class _TypeChecker {
     const desc = this.stdRegistry.lookup(nameUpper) ?? this.stdRegistry.resolveTypedTrunc(nameUpper);
     if (!desc)
       return;
+    if (this.unboundStdFunctionCalls.has(expr))
+      return;
     this.refuseEnumOrderingArguments(expr, desc.params);
     const userArgs = stripEnEno(expr.arguments);
     for (let i = 0; i < userArgs.length && i < desc.params.length; i++) {
@@ -23961,7 +24978,8 @@ var TypeChecker = class _TypeChecker {
       const argType = arg.value.resolvedType;
       if (!argType || argType.typeKind !== "elementary")
         continue;
-      const argTypeName = argType.name;
+      const argDisplay = argType.name;
+      const argTypeName = this.aliasBase(argDisplay);
       if (param.constraint === "specific" && param.specificType) {
         const specUpper = param.specificType.toUpperCase();
         if (argTypeName.toUpperCase() !== specUpper) {
@@ -23972,16 +24990,16 @@ var TypeChecker = class _TypeChecker {
                 this.addStrictError(strictConversionMessage(argTypeName, specUpper), arg.value);
                 continue;
               }
-              this.addWarning(`Argument '${param.name}' of '${nameUpper}' expects ${param.specificType}, got ${argTypeName} (narrowing)`, arg.value.sourceSpan.startLine, arg.value.sourceSpan.startCol, arg.value.sourceSpan.file);
+              this.addWarning(`Argument '${param.name}' of '${nameUpper}' expects ${param.specificType}, got ${argDisplay} (narrowing)`, arg.value.sourceSpan.startLine, arg.value.sourceSpan.startCol, arg.value.sourceSpan.file);
             } else {
-              this.addError(`Argument '${param.name}' of '${nameUpper}' expects ${param.specificType}, got ${argTypeName}`, arg.value.sourceSpan.startLine, arg.value.sourceSpan.startCol, arg.value.sourceSpan.file);
+              this.addError(`Argument '${param.name}' of '${nameUpper}' expects ${param.specificType}, got ${argDisplay}`, arg.value.sourceSpan.startLine, arg.value.sourceSpan.startCol, arg.value.sourceSpan.file);
             }
           }
         }
       } else if (!matchesConstraint(argTypeName, param.constraint)) {
         const canWiden = this.canWidenToConstraint(argTypeName, param.constraint);
         if (!canWiden) {
-          this.addError(`Argument '${param.name}' of '${nameUpper}' expects ${param.constraint}, got ${argTypeName}`, arg.value.sourceSpan.startLine, arg.value.sourceSpan.startCol, arg.value.sourceSpan.file);
+          this.addError(`Argument '${param.name}' of '${nameUpper}' expects ${param.constraint}, got ${argDisplay}`, arg.value.sourceSpan.startLine, arg.value.sourceSpan.startCol, arg.value.sourceSpan.file);
         }
       }
     }
@@ -24103,6 +25121,8 @@ var TypeChecker = class _TypeChecker {
     if (call.instance)
       return;
     if (scope.lookup(call.functionName)?.kind === "variable")
+      return;
+    if (this.calledInstance(call.functionName, scope))
       return;
     const fn = this.symbolTables.lookupFunction(call.functionName);
     if (!fn?.returnType)
@@ -24290,7 +25310,7 @@ var TypeChecker = class _TypeChecker {
    * from (SEL's G and MUX's K excluded). Undefined for any other call.
    */
   strictGenericArgs(expr) {
-    if (!this.stdRegistry || this.findUserFunction(expr.functionName)) {
+    if (!this.stdRegistry || this.findUserFunction(expr.functionName) || this.ownMethod(expr.functionName)) {
       return void 0;
     }
     const desc = this.stdRegistry.lookup(expr.functionName.toUpperCase());
@@ -25125,8 +26145,12 @@ var GlobalListResolver = class {
       case "FunctionCallExpression":
         for (const arg of expr.arguments)
           arg.value = ex(arg.value);
-        if (expr.instance)
+        if (expr.instance) {
           expr.instance = ex(expr.instance);
+          if (expr.instance.kind === "VariableExpression") {
+            expr.functionName = expr.instance.name;
+          }
+        }
         this.rewriteCallee(expr, scope);
         return expr;
       case "MethodCallExpression":
@@ -25878,6 +26902,7 @@ var SemanticAnalyzer = class {
     this.validateInterfaceProperties(ast);
     this.validatePostfixEnumBases(ast);
     this.validateConfigurationGlobalsHoldNoFB(ast);
+    this.validateDeclaredEno(ast);
     if (this.features.has("fb_init")) {
       validateFbInitArguments(ast, (upper) => this.symbolTables.lookupFunctionBlock(upper) !== void 0, (message, span) => this.addError(message, span.startLine, span.startCol, span.file));
     }
@@ -25900,6 +26925,30 @@ var SemanticAnalyzer = class {
       errors: this.errors,
       warnings: this.warnings
     };
+  }
+  /**
+   * A PROGRAM or a FUNCTION_BLOCK without a base that declares ENO declares
+   * its ENO output, which must be a plain BOOL. (A derived block's ENO only
+   * shadows its base's and keeps working as a variable.)
+   */
+  validateDeclaredEno(ast) {
+    const blocks = [
+      ...ast.programs.map((p) => ({ ...p, label: "PROGRAM" })),
+      ...ast.functionBlocks.filter((f) => f.extends === void 0).map((f) => ({ ...f, label: "FUNCTION_BLOCK" }))
+    ];
+    for (const block of blocks) {
+      for (const vb of block.varBlocks) {
+        for (const decl of vb.declarations) {
+          if (!decl.names.some((n) => n.toUpperCase() === "ENO"))
+            continue;
+          const t = decl.type;
+          if (t.arrayDimensions === void 0 && t.referenceKind === "none" && t.name.toUpperCase() === "BOOL") {
+            continue;
+          }
+          this.addError(`'ENO' of ${block.label} ${block.name} must be BOOL: it is the block's ENO output`, decl.sourceSpan.startLine, decl.sourceSpan.startCol, decl.sourceSpan.file);
+        }
+      }
+    }
   }
   /** Report a global-list diagnostic; returns true when it must gate the later passes. */
   reportGlobalList(d) {
@@ -26804,6 +27853,7 @@ var SemanticAnalyzer = class {
     this.validateOOPModifiers(ast);
     this.validateAbstractInstantiation(ast);
     this.validatePropertyAccess(ast);
+    this.validateVarAccessSpecifiers(ast);
     this.validateAccessModifiers(ast);
     this.validateProgramMethodCalls(ast);
     this.validateProgramAccess(ast, reaches);
@@ -27515,7 +28565,7 @@ var SemanticAnalyzer = class {
         for (const ifaceName of fb.implements) {
           const requiredMethods = /* @__PURE__ */ new Set();
           const seenIfaces = /* @__PURE__ */ new Set();
-          const collect = (name) => {
+          const collect2 = (name) => {
             const upper = name.toUpperCase();
             if (seenIfaces.has(upper))
               return;
@@ -27523,14 +28573,65 @@ var SemanticAnalyzer = class {
             for (const m of ifaceMap.get(upper) ?? [])
               requiredMethods.add(m);
             for (const base of ifaceDecls.get(upper)?.extends ?? []) {
-              collect(base);
+              collect2(base);
             }
           };
-          collect(ifaceName);
+          collect2(ifaceName);
+          this.validateInterfaceMethodSignatures(fb, parentMethods, [...seenIfaces].flatMap((n) => {
+            const decl = ifaceDecls.get(n);
+            return decl ? [decl] : [];
+          }));
           for (const reqMethod of requiredMethods) {
             if (!fbMethodNames.has(reqMethod)) {
               this.addError(`FUNCTION_BLOCK '${fb.name}' implements '${ifaceName}' but does not provide method '${reqMethod}'.`, fb.sourceSpan.startLine, fb.sourceSpan.startCol, fb.sourceSpan.file);
             }
+          }
+        }
+      }
+    }
+  }
+  /**
+   * Each method an FB provides for an interface method must have its C++
+   * signature: the same inputs (by value) and outputs or in/outs (by
+   * reference) in order, of the same types, and the same return type. A
+   * parameter named otherwise only warns: the C++ still overrides.
+   */
+  validateInterfaceMethodSignatures(fb, parentMethods, interfaces) {
+    for (const iface of interfaces) {
+      for (const required of iface.methods) {
+        const upper = required.name.toUpperCase();
+        const method = fb.methods.find((m) => m.fromAction !== true && m.name.toUpperCase() === upper) ?? parentMethods.get(upper);
+        if (!method || method.fromAction === true)
+          continue;
+        const where = `Method '${method.name}' of FUNCTION_BLOCK '${fb.name}' does not match interface '${iface.name}'`;
+        const span = method.sourceSpan;
+        const fail = (detail) => this.addError(`${where}: ${detail}`, span.startLine, span.startCol, span.file);
+        const own = signatureParams(method);
+        const want = signatureParams(required);
+        const ownRet = method.returnType ? cppTypeKey(method.returnType) : "";
+        const wantRet = required.returnType ? cppTypeKey(required.returnType) : "";
+        if (!sameCppType(ownRet, wantRet)) {
+          fail(`it returns ${method.returnType ? typeText(method.returnType) : "nothing"}, the interface ${required.returnType ? typeText(required.returnType) : "nothing"}`);
+          continue;
+        }
+        if (own.length !== want.length) {
+          fail(`it has ${own.length} parameter(s), the interface ${want.length}`);
+          continue;
+        }
+        for (let i = 0; i < own.length; i++) {
+          const a = own[i];
+          const b = want[i];
+          const byRef = a.blockType !== "VAR_INPUT";
+          if (byRef !== (b.blockType !== "VAR_INPUT")) {
+            fail(`parameter ${i + 1} '${a.name}' is ${a.blockType}, the interface's '${b.name}' is ${b.blockType}`);
+            break;
+          }
+          if (!sameCppType(cppTypeKey(a.type), cppTypeKey(b.type))) {
+            fail(`parameter ${i + 1} '${a.name}' is ${typeText(a.type)}, the interface's '${b.name}' is ${typeText(b.type)}`);
+            break;
+          }
+          if (a.name.toUpperCase() !== b.name.toUpperCase()) {
+            this.addWarning(`Parameter ${i + 1} '${a.name}' of method '${method.name}' of FUNCTION_BLOCK '${fb.name}' is named '${b.name}' in interface '${iface.name}': a call with named arguments through the FB differs from one through the interface`, span.startLine, span.startCol, span.file);
           }
         }
       }
@@ -27643,6 +28744,28 @@ var SemanticAnalyzer = class {
     }
   }
   /**
+   * A variable access specifier (PUBLIC, PRIVATE, PROTECTED, INTERNAL) is
+   * allowed on a FUNCTION_BLOCK's own VAR section only, once (Ed. 3 6.6.5.10:
+   * improper uses are errors).
+   */
+  validateVarAccessSpecifiers(ast) {
+    const allowed = new Set(ast.functionBlocks.flatMap((fb) => fb.varBlocks.filter((b) => b.blockType === "VAR")));
+    walkAST(ast, (node) => {
+      if (node.kind !== "VarBlock")
+        return;
+      const block = node;
+      const access = block.access ?? [];
+      if (access.length === 0)
+        return;
+      const at = block.sourceSpan;
+      if (!allowed.has(block)) {
+        this.addError(`${access[0]} applies only to a VAR section of a FUNCTION_BLOCK, not to ${block.blockType} here`, at.startLine, at.startCol, at.file);
+      } else if (access.length > 1) {
+        this.addError(`A VAR section takes one access specifier, not ${access.join(" and ")}`, at.startLine, at.startCol, at.file);
+      }
+    });
+  }
+  /**
    * Validate that properties without setters are not written to.
    * Best-effort check for direct `x.Property := value;` assignments.
    */
@@ -27652,6 +28775,28 @@ var SemanticAnalyzer = class {
       for (const prop of fb.properties) {
         const key = `${fb.name.toUpperCase()}.${prop.name.toUpperCase()}`;
         propertyInfo.set(key, { hasSetter: prop.setter !== void 0 });
+      }
+    }
+    const fbProps = /* @__PURE__ */ new Map();
+    for (const sym of this.symbolTables.globalScope.getAllSymbols()) {
+      if (sym.kind === "functionBlock" && sym.libraryName !== void 0) {
+        fbProps.set(sym.name.toUpperCase(), sym.declaration);
+      }
+    }
+    for (const fb of ast.functionBlocks)
+      fbProps.set(fb.name.toUpperCase(), fb);
+    for (const [name, fb] of fbProps) {
+      const seen = /* @__PURE__ */ new Set();
+      let current = fb;
+      while (current !== void 0 && !seen.has(current.name.toUpperCase())) {
+        seen.add(current.name.toUpperCase());
+        for (const prop of current.properties) {
+          const key = `${name}.${prop.name.toUpperCase()}`;
+          if (!propertyInfo.has(key)) {
+            propertyInfo.set(key, { hasSetter: prop.setter !== void 0 });
+          }
+        }
+        current = current.extends !== void 0 ? fbProps.get(current.extends.toUpperCase()) : void 0;
       }
     }
     if (this.features.has("property")) {
@@ -27807,6 +28952,7 @@ var SemanticAnalyzer = class {
    */
   validateExpressions(ast) {
     for (const prog of ast.programs) {
+      this.callOwner = { programName: prog.name };
       const varTypeMap = this.buildVarTypeMap(prog.varBlocks);
       this.walkStatementsForExpressionValidation(prog.body, varTypeMap, ast);
       for (const method of prog.methods) {
@@ -27817,11 +28963,13 @@ var SemanticAnalyzer = class {
         this.walkStatementsForExpressionValidation(method.body, methodVarTypeMap, ast);
       }
     }
+    this.callOwner = {};
     for (const func of ast.functions) {
       const varTypeMap = this.buildVarTypeMap(func.varBlocks);
       this.walkStatementsForExpressionValidation(func.body, varTypeMap, ast);
     }
     for (const fb of ast.functionBlocks) {
+      this.callOwner = { fbName: fb.name };
       const varTypeMap = this.buildVarTypeMap(fb.varBlocks);
       this.walkStatementsForExpressionValidation(fb.body, varTypeMap, ast);
       for (const method of fb.methods) {
@@ -27840,6 +28988,63 @@ var SemanticAnalyzer = class {
         }
       }
     }
+    this.callOwner = {};
+  }
+  /**
+   * True when `upper` names an FB or PROGRAM instance of the body being
+   * walked: a local, a member of its block or of one of the block's bases.
+   */
+  isVisibleVariable(upper, varTypeMap) {
+    const isBlock = (typeName2) => {
+      if (typeName2 === void 0)
+        return false;
+      const kind = this.symbolTables.globalScope.lookup(typeName2)?.kind;
+      return kind === "functionBlock" || kind === "program";
+    };
+    if (varTypeMap.has(upper))
+      return isBlock(varTypeMap.get(upper));
+    const seen = /* @__PURE__ */ new Set();
+    let fbName = this.callOwner.fbName;
+    while (fbName !== void 0 && !seen.has(fbName.toUpperCase())) {
+      seen.add(fbName.toUpperCase());
+      const fb = this.symbolTables.globalScope.lookup(fbName);
+      if (fb?.kind !== "functionBlock")
+        return false;
+      for (const b of fb.declaration.varBlocks) {
+        for (const d of b.declarations) {
+          if (d.names.some((n) => n.toUpperCase() === upper)) {
+            return d.type.arrayDimensions === void 0 && isBlock(d.type.name);
+          }
+        }
+      }
+      fbName = fb.declaration.extends;
+    }
+    return false;
+  }
+  /** The PROGRAM or FUNCTION_BLOCK whose bodies validateExpressions walks. */
+  callOwner = {};
+  /**
+   * True when the PROGRAM or FUNCTION_BLOCK of `ctx` declares, or inherits,
+   * a method `upper`: a bare call of it calls the method.
+   */
+  hasOwnMethod(upper, ctx) {
+    const has2 = (methods) => methods?.some((m) => m.name.toUpperCase() === upper) === true;
+    if (ctx.programName !== void 0) {
+      const prog = this.symbolTables.globalScope.lookup(ctx.programName);
+      return prog?.kind === "program" && has2(prog.declaration.methods);
+    }
+    const seen = /* @__PURE__ */ new Set();
+    let fbName = ctx.fbName;
+    while (fbName !== void 0 && !seen.has(fbName.toUpperCase())) {
+      seen.add(fbName.toUpperCase());
+      const fb = this.symbolTables.globalScope.lookup(fbName);
+      if (fb?.kind !== "functionBlock")
+        return false;
+      if (has2(fb.declaration.methods))
+        return true;
+      fbName = fb.declaration.extends;
+    }
+    return false;
   }
   /**
    * Walk statements checking expressions for bit access bounds and ADR l-value issues.
@@ -27902,7 +29107,7 @@ var SemanticAnalyzer = class {
       this.requireFeature("self_caret", "THIS^.member", expr.sourceSpan);
     }
     if (expr.kind === "FunctionCallExpression" && !expr.functionName.includes(".")) {
-      this.checkStdFunctionArgs(expr);
+      this.checkStdFunctionArgs(expr, varTypeMap);
     }
     if (expr.kind === "BinaryExpression") {
       this.validateExpression(expr.left, varTypeMap, ast);
@@ -27936,11 +29141,18 @@ var SemanticAnalyzer = class {
    * success around the call site, but they are not part of any function's
    * declared signature. Strip them before counting against the registry.
    */
-  checkStdFunctionArgs(expr) {
+  checkStdFunctionArgs(expr, varTypeMap) {
     const nameUpper = expr.functionName.toUpperCase();
+    if (this.hasOwnMethod(nameUpper, this.callOwner))
+      return;
+    if (expr.instance || this.isVisibleVariable(nameUpper, varTypeMap)) {
+      return;
+    }
     const userArgs = stripEnEno(expr.arguments);
     const argCount = userArgs.length;
     const sym = this.symbolTables.globalScope.lookup(nameUpper);
+    if (sym?.kind === "program")
+      return;
     const userFunction = sym?.kind === "function" && !this.symbolTables.globalScope.definedByLibrary(nameUpper);
     const desc = userFunction ? void 0 : this.stdRegistry.lookup(nameUpper) ?? (sym?.kind === "function" ? void 0 : this.stdRegistry.resolveTypedTrunc(nameUpper));
     if (desc) {
@@ -28186,6 +29398,10 @@ var SemanticAnalyzer = class {
         this.walkExpressionForAccessViolations(arg.value, varTypeMap, methodVisibility, callerFB, getAncestors);
       }
     } else if (expr.kind === "FunctionCallExpression") {
+      const call = expr;
+      if (call.instance === void 0 && call.functionName.includes(".")) {
+        this.checkDottedFunctionCallAccess(call.functionName, call.sourceSpan, varTypeMap, methodVisibility, callerFB, getAncestors);
+      }
       const args = expr.arguments;
       for (const arg of args) {
         this.walkExpressionForAccessViolations(arg.value, varTypeMap, methodVisibility, callerFB, getAncestors);
@@ -28215,19 +29431,29 @@ var SemanticAnalyzer = class {
     const calleeFBType = varTypeMap.get(objName.toUpperCase());
     if (!calleeFBType)
       return;
-    const visKey = `${calleeFBType}.${methodName.toUpperCase()}`;
-    const visibility = methodVisibility.get(visKey);
-    if (!visibility)
+    this.checkMethodVisibility(calleeFBType, methodName, sourceSpan, methodVisibility, callerFB, getAncestors);
+  }
+  /**
+   * A call of `methodName` on an instance of `calleeFBType`, from `callerFB`
+   * (null: a PROGRAM or FUNCTION): refused when the method, declared by the
+   * type or inherited from a base, is PRIVATE to another FB or PROTECTED
+   * outside its FB and the FBs derived from it.
+   */
+  checkMethodVisibility(calleeFBType, methodName, sourceSpan, methodVisibility, callerFB, getAncestors) {
+    const upper = methodName.toUpperCase();
+    const owner = [calleeFBType, ...getAncestors(calleeFBType)].find((t) => methodVisibility.has(`${t}.${upper}`));
+    if (owner === void 0)
       return;
+    const visibility = methodVisibility.get(`${owner}.${upper}`);
     if (visibility === "PRIVATE") {
-      if (callerFB !== calleeFBType) {
-        this.addError(`Cannot call PRIVATE method '${methodName}' of '${calleeFBType}' from outside '${calleeFBType}'.`, sourceSpan.startLine, sourceSpan.startCol, sourceSpan.file);
+      if (callerFB !== owner) {
+        this.addError(`Cannot call PRIVATE method '${methodName}' of '${owner}' from outside '${owner}'.`, sourceSpan.startLine, sourceSpan.startCol, sourceSpan.file);
       }
     } else if (visibility === "PROTECTED") {
-      if (callerFB !== calleeFBType) {
+      if (callerFB !== owner) {
         const ancestors = callerFB ? getAncestors(callerFB) : /* @__PURE__ */ new Set();
-        if (!ancestors.has(calleeFBType)) {
-          this.addError(`Cannot call PROTECTED method '${methodName}' of '${calleeFBType}' from '${callerFB ?? "PROGRAM"}'.`, sourceSpan.startLine, sourceSpan.startCol, sourceSpan.file);
+        if (!ancestors.has(owner)) {
+          this.addError(`Cannot call PROTECTED method '${methodName}' of '${owner}' from '${callerFB ?? "PROGRAM"}'.`, sourceSpan.startLine, sourceSpan.startCol, sourceSpan.file);
         }
       }
     }
@@ -28244,27 +29470,32 @@ var SemanticAnalyzer = class {
     const calleeFBType = varTypeMap.get(varExpr.name.toUpperCase());
     if (!calleeFBType)
       return;
-    const visKey = `${calleeFBType}.${call.methodName.toUpperCase()}`;
-    const visibility = methodVisibility.get(visKey);
-    if (!visibility)
-      return;
-    if (visibility === "PRIVATE") {
-      if (callerFB !== calleeFBType) {
-        this.addError(`Cannot call PRIVATE method '${call.methodName}' of '${calleeFBType}' from outside '${calleeFBType}'.`, call.sourceSpan.startLine, call.sourceSpan.startCol, call.sourceSpan.file);
-      }
-    } else if (visibility === "PROTECTED") {
-      if (callerFB !== calleeFBType) {
-        const ancestors = callerFB ? getAncestors(callerFB) : /* @__PURE__ */ new Set();
-        if (!ancestors.has(calleeFBType)) {
-          this.addError(`Cannot call PROTECTED method '${call.methodName}' of '${calleeFBType}' from '${callerFB ?? "PROGRAM"}'.`, call.sourceSpan.startLine, call.sourceSpan.startCol, call.sourceSpan.file);
-        }
-      }
-    }
+    this.checkMethodVisibility(calleeFBType, call.methodName, call.sourceSpan, methodVisibility, callerFB, getAncestors);
   }
   /**
    * Recurse into control flow statements for access violation checks.
    */
   recurseStatementsForAccessViolations(stmt, varTypeMap, methodVisibility, callerFB, getAncestors) {
+    const walk = (e) => {
+      if (e !== void 0) {
+        this.walkExpressionForAccessViolations(e, varTypeMap, methodVisibility, callerFB, getAncestors);
+      }
+    };
+    if (stmt.kind === "IfStatement") {
+      walk(stmt.condition);
+      for (const clause of stmt.elsifClauses)
+        walk(clause.condition);
+    } else if (stmt.kind === "WhileStatement") {
+      walk(stmt.condition);
+    } else if (stmt.kind === "RepeatStatement") {
+      walk(stmt.condition);
+    } else if (stmt.kind === "ForStatement") {
+      walk(stmt.start);
+      walk(stmt.end);
+      walk(stmt.step);
+    } else if (stmt.kind === "CaseStatement") {
+      walk(stmt.selector);
+    }
     if (stmt.kind === "IfStatement") {
       const s = stmt;
       this.walkStatementsForAccessViolations(s.thenStatements, varTypeMap, methodVisibility, callerFB, getAncestors);
@@ -28971,6 +30202,10 @@ var SemanticAnalyzer = class {
     if (expr.typedLiteral) {
       if (sym.kind === "type" && sym.resolvedType?.typeKind === "enum")
         return;
+      const type = this.symbolTables.lookupType(expr.name);
+      if (type?.kind === "type" && type.resolvedType?.typeKind === "enum") {
+        return;
+      }
       const member = expr.fieldAccess[0] ?? "";
       const hint = /^[0-9A-F_]+$/i.test(member) ? `; did you mean '16#${member}' or '${expr.name}#16#${member}'?` : ".";
       this.addError(`'${expr.name}#${member}' is not a valid literal: '${expr.name}' is not an enumeration${hint}`, expr.sourceSpan.startLine, expr.sourceSpan.startCol, expr.sourceSpan.file);
@@ -28992,6 +30227,41 @@ var SemanticAnalyzer = class {
     if (noun === null)
       return;
     this.addError(`Cannot access members of ${noun} '${expr.name}' directly \u2014 declare a variable of type '${expr.name}' first.`, expr.sourceSpan.startLine, expr.sourceSpan.startCol, expr.sourceSpan.file);
+  }
+  /**
+   * A bare name in a derived block reaching a base's `VAR PRIVATE` variable
+   * (Ed. 3 6.6.5.10: PRIVATE is not accessible to derived blocks).
+   */
+  refuseInheritedPrivate(upper, ctx, span) {
+    if (ctx.fbName === void 0)
+      return;
+    const own = this.symbolTables.globalScope.lookup(ctx.fbName);
+    if (own?.kind !== "functionBlock")
+      return;
+    if (this.symbolTables.getFBScope(ctx.fbName)?.lookupLocal(upper))
+      return;
+    const visited = /* @__PURE__ */ new Set();
+    let base = own.declaration.extends;
+    while (base !== void 0 && !visited.has(base.toUpperCase())) {
+      visited.add(base.toUpperCase());
+      const sym = this.symbolTables.globalScope.lookup(base);
+      if (sym?.kind !== "functionBlock")
+        return;
+      const block = sym.declaration.varBlocks.find((b) => b.declarations.some((d) => d.names.some((n) => n.toUpperCase() === upper)));
+      const libMember = sym.locals.find((v) => v.name.toUpperCase() === upper);
+      const declared = block !== void 0 || libMember !== void 0;
+      if (declared) {
+        const priv = block?.blockType === "VAR" && block.access?.[0] === "PRIVATE" ? true : libMember?.access === "PRIVATE";
+        if (priv) {
+          this.addError(`'${upper}' is a PRIVATE variable of FUNCTION_BLOCK '${sym.name}'; only '${sym.name}' itself can access it`, span.startLine, span.startCol, span.file);
+        }
+        return;
+      }
+      if (sym.declaration.properties.some((p) => p.name.toUpperCase() === upper)) {
+        return;
+      }
+      base = sym.declaration.extends;
+    }
   }
   /**
    * True when `upper` names, in the body `ctx` describes, an inherited FB
@@ -29118,8 +30388,10 @@ var SemanticAnalyzer = class {
     const scopeHit = scope.lookup(upper);
     if (scopeHit && scopeHit.kind !== "enumValue")
       return;
-    if (this.isContextName(upper, ctx))
+    if (this.isContextName(upper, ctx)) {
+      this.refuseInheritedPrivate(upper, ctx, sourceSpan);
       return;
+    }
     if (this.stdRegistry.isStandardFunction(name))
       return;
     const enumEntry = this.enumMemberMap.get(upper);
@@ -29162,16 +30434,96 @@ var SemanticAnalyzer = class {
     const setupScope = this.buildTestScope(testFile.setup?.varBlocks ?? [], typeScope);
     if (testFile.setup) {
       this.walkTestStatementsForUndeclaredVars(testFile.setup.body, setupScope);
+      this.checkTestMemberAccess(testFile.setup.body, setupScope);
     }
     if (testFile.teardown) {
       this.walkTestStatementsForUndeclaredVars(testFile.teardown.body, setupScope);
+      this.checkTestMemberAccess(testFile.teardown.body, setupScope);
     }
     for (const tc of testFile.testCases) {
       const testScope = this.buildTestScope(tc.varBlocks, setupScope);
       this.walkTestStatementsForUndeclaredVars(tc.body, testScope);
+      this.checkTestMemberAccess(tc.body, testScope, testFile.setup?.body ?? []);
     }
     this.testTypeNames.clear();
     return { errors: [...this.errors], warnings: [...this.warnings] };
+  }
+  /**
+   * A test body is outside every function block: `inst.x` follows the same
+   * rule as in a PROGRAM (inputs written, outputs read, PUBLIC sections; no
+   * internal variable, in-out or VAR_EXTERNAL), except on the path to an
+   * instance the test or its SETUP MOCKs; from the mock down the rule holds.
+   */
+  checkTestMemberAccess(stmts, scope, inherited = []) {
+    const mocked = [...inherited, ...stmts].flatMap((stmt) => stmt.kind === "MockFBStatement" ? [stmt.instancePath.map((p) => p.toUpperCase())] : []);
+    const onMockPath = (path) => mocked.some((m) => path.length <= m.length && path.every((part, i) => part === m[i]));
+    const roots = stmts.flatMap((stmt) => {
+      switch (stmt.kind) {
+        case "AssertCall":
+          return stmt.args;
+        case "AdvanceTimeStatement":
+          return [stmt.duration];
+        case "MockFunctionStatement":
+          return [stmt.returnValue];
+        case "MockVerifyCallCountStatement":
+          return [stmt.expectedCount];
+        case "MockFBStatement":
+        case "MockVerifyCalledStatement":
+          return [];
+        default:
+          return [stmt];
+      }
+    });
+    const writes = /* @__PURE__ */ new Set();
+    for (const stmt of roots) {
+      walkAST(stmt, (node) => {
+        if (node.kind === "AssignmentStatement") {
+          writes.add(node.target);
+        } else if (node.kind === "RefAssignStatement") {
+          writes.add(node.target);
+        } else if (node.kind === "Argument" && node.isOutput) {
+          writes.add(node.value);
+        }
+      });
+    }
+    for (const stmt of roots) {
+      walkAST(stmt, (node) => {
+        if (node.kind !== "VariableExpression")
+          return;
+        const expr = node;
+        const sym = scope.lookup(expr.name);
+        if (sym?.kind !== "variable")
+          return;
+        let typeName2 = sym.declaration?.type?.name;
+        const path = [expr.name.toUpperCase()];
+        for (const step of expr.accessChain ?? expr.fieldAccess.map((name) => ({ kind: "field", name }))) {
+          if (step.kind !== "field" || typeName2 === void 0)
+            return;
+          const fb = this.symbolTables.lookupFunctionBlock(typeName2);
+          if (fb === void 0)
+            return;
+          const found = testMemberOf(this.symbolTables, fb.name, step.name);
+          if (found === void 0)
+            return;
+          path.push(step.name.toUpperCase());
+          const write = writes.has(expr);
+          const refused = !onMockPath(path) && found.access !== "PUBLIC" && !(found.kind === "input" && write) && !(found.kind === "output" && !write);
+          if (refused) {
+            const fbText = `FUNCTION_BLOCK '${found.owner}'`;
+            const message = {
+              internal: found.access === "PRIVATE" ? `'${step.name}' is a PRIVATE variable of ${fbText}; only '${found.owner}' itself can access it` : `'${step.name}' is an internal variable of ${fbText} and cannot be accessed from outside`,
+              external: `'${step.name}' is a VAR_EXTERNAL of ${fbText}, not a member it exposes, and cannot be accessed from outside`,
+              input: `'${step.name}' is a VAR_INPUT of ${fbText}; from outside it can be written, not read`,
+              output: `'${step.name}' is a VAR_OUTPUT of ${fbText}; from outside it can be read, not written`,
+              inout: `'${step.name}' is a VAR_IN_OUT of ${fbText}; from outside it is bound in the call, not accessed through the instance`
+            }[found.kind];
+            this.addError(message, expr.sourceSpan.startLine, expr.sourceSpan.startCol, expr.sourceSpan.file);
+            return;
+          }
+          typeName2 = found.type;
+        }
+      });
+    }
   }
   /** Scope holding the TYPEs hoisted from a test file's inline enumerations and subranges. */
   buildTestTypeScope(testFile) {
@@ -29335,6 +30687,94 @@ var SemanticAnalyzer = class {
 function analyzeTestFile(testFile, sourceSymbolTables) {
   const analyzer = new SemanticAnalyzer();
   return analyzer.analyzeTestFile(testFile, sourceSymbolTables);
+}
+function signatureParams(method) {
+  const out = [];
+  for (const block of method.varBlocks) {
+    if (block.blockType !== "VAR_INPUT" && block.blockType !== "VAR_OUTPUT" && block.blockType !== "VAR_IN_OUT") {
+      continue;
+    }
+    for (const decl of block.declarations) {
+      for (const name of decl.names) {
+        out.push({ name, type: decl.type, blockType: block.blockType });
+      }
+    }
+  }
+  return out;
+}
+function cppTypeKey(type) {
+  const name = type.name.toUpperCase();
+  const maxLength = type.maxLength;
+  const dims = type.arrayDimensions;
+  const element = type.elementTypeName;
+  const ref = type.referenceKind ?? "none";
+  const isString2 = name === "STRING" || name === "WSTRING";
+  const len = !isString2 ? "" : typeof maxLength === "string" ? "(*)" : `(${maxLength ?? 254})`;
+  const arr = dims === void 0 ? "" : `[${dims.map((d) => `${d.start}..${d.end}`).join(",")}] OF ${(element ?? "").toUpperCase()}`;
+  return `${ref} ${name}${len}${arr}`;
+}
+function sameCppType(a, b) {
+  if (a === b)
+    return true;
+  if (!a.includes("(*)") && !b.includes("(*)"))
+    return false;
+  const strip = (k) => k.replace(/\([^)]*\)/, "");
+  return strip(a) === strip(b);
+}
+function typeText(type) {
+  return type.maxLength === void 0 ? type.name : `${type.name}(${String(type.maxLength)})`;
+}
+function testMemberOf(tables, fbName, member) {
+  const upper = member.toUpperCase();
+  const seen = /* @__PURE__ */ new Set();
+  let current = fbName;
+  while (current !== void 0 && !seen.has(current.toUpperCase())) {
+    seen.add(current.toUpperCase());
+    const fb = tables.lookupFunctionBlock(current);
+    if (fb === void 0)
+      return void 0;
+    const named = (v) => v.name.toUpperCase() === upper;
+    const kinds = {
+      VAR: "internal",
+      VAR_TEMP: "internal",
+      VAR_EXTERNAL: "external",
+      VAR_INPUT: "input",
+      VAR_OUTPUT: "output",
+      VAR_IN_OUT: "inout"
+    };
+    for (const block of fb.declaration.varBlocks) {
+      const decl = block.declarations.find((d) => d.names.some((n) => n.toUpperCase() === upper));
+      if (decl === void 0)
+        continue;
+      const kind = kinds[block.blockType];
+      if (kind === void 0)
+        return void 0;
+      const access = block.access?.[0];
+      return {
+        owner: fb.name,
+        kind,
+        type: decl.type.name,
+        ...access !== void 0 ? { access } : {}
+      };
+    }
+    const lib = [
+      [fb.inputs, "input"],
+      [fb.outputs, "output"],
+      [fb.inouts, "inout"],
+      [fb.locals, "internal"],
+      [fb.temps ?? [], "internal"]
+    ].map(([list, kind]) => ({ hit: list.find(named), kind })).find((x) => x.hit !== void 0);
+    if (lib?.hit !== void 0) {
+      return {
+        owner: fb.name,
+        kind: lib.kind,
+        type: lib.hit.declaration.type.name,
+        ...lib.hit.access !== void 0 ? { access: lib.hit.access } : {}
+      };
+    }
+    current = fb.declaration.extends;
+  }
+  return void 0;
 }
 
 // dist/semantic/type-registry.js
@@ -29624,7 +31064,9 @@ var REFERENCE_SPELLING = {
   ref_to: "REF_TO ",
   reference_to: "REFERENCE TO "
 };
-function typeText(v) {
+function typeText2(v) {
+  if (v.maxLength !== void 0)
+    return `${v.type}(${String(v.maxLength)})`;
   const levels = v.referenceChain ?? (v.referenceKind ? [v.referenceKind] : []);
   const prefix = levels.map((k) => k === "none" ? "" : REFERENCE_SPELLING[k]).join("");
   if (v.arrayDimensions && v.arrayDimensions.length > 0) {
@@ -29645,8 +31087,8 @@ function libraryMethodDeclarations(fb) {
     inout: "VAR_IN_OUT"
   };
   const methods = fb.methods.map((m) => {
-    const ret = m.returnType ? ` : ${typeText(m.returnType)}` : "";
-    const params = m.parameters.map((p) => `${blockOf[p.direction]} ${p.name} : ${typeText(p)}${p.initialValue !== void 0 ? ` := ${p.initialValue}` : ""}; END_VAR`);
+    const ret = m.returnType ? ` : ${typeText2(m.returnType)}` : "";
+    const params = m.parameters.map((p) => `${blockOf[p.direction]} ${p.name} : ${typeText2(p)}${p.initialValue !== void 0 ? ` := ${p.initialValue}` : ""}; END_VAR`);
     return [
       `METHOD ${m.visibility ?? ""} ${m.name}${ret}`,
       ...params,
@@ -29672,7 +31114,7 @@ function libraryFunctionDeclaration(fn) {
     output: "VAR_OUTPUT",
     inout: "VAR_IN_OUT"
   };
-  const params = fn.parameters.map((p) => `${blockOf[p.direction]} ${p.name} : ${p.type}${p.initialValue !== void 0 ? ` := ${p.initialValue}` : ""}; END_VAR`);
+  const params = fn.parameters.map((p) => `${blockOf[p.direction]} ${p.name} : ${p.referenceKind === "reference_to" ? "REFERENCE TO " : ""}${p.type}${p.maxLength !== void 0 ? `(${String(p.maxLength)})` : ""}${p.initialValue !== void 0 ? ` := ${p.initialValue}` : ""}; END_VAR`);
   const source = [
     `FUNCTION ${fn.name} : ${fn.returnType}`,
     ...params,
@@ -29842,11 +31284,70 @@ function userDefinedTypeNames(ast) {
     names.add(prog.name.toUpperCase());
   return names;
 }
+function typeShadowingMemberNames(ast) {
+  const userTypes = userDefinedTypeNames(ast);
+  const result = /* @__PURE__ */ new Set();
+  const scopes = [];
+  const add = (scope, blocks) => {
+    for (const block of blocks) {
+      for (const decl of block.declarations)
+        addDecl(scope, decl);
+    }
+  };
+  const addDecl = (scope, decl) => {
+    for (const name of decl.names) {
+      scope.push({ name: name.toUpperCase(), type: typeNameOf(decl.type) });
+    }
+  };
+  const typeNameOf = (type) => (type.arrayDimensions !== void 0 && type.elementTypeName !== void 0 ? type.elementTypeName : type.name).toUpperCase();
+  const withMethods = (blocks, methods, extraTypes) => {
+    const scope = [];
+    add(scope, blocks);
+    for (const m of methods) {
+      add(scope, m.varBlocks);
+      if (m.returnType)
+        scope.push({ type: typeNameOf(m.returnType) });
+    }
+    for (const t of extraTypes)
+      scope.push({ type: typeNameOf(t) });
+    return scope;
+  };
+  for (const fb of ast.functionBlocks) {
+    scopes.push(withMethods(fb.varBlocks, fb.methods, fb.properties.map((p) => p.type)));
+  }
+  for (const prog of ast.programs) {
+    scopes.push(withMethods(prog.varBlocks, prog.methods, []));
+  }
+  for (const fn of ast.functions) {
+    scopes.push(withMethods(fn.varBlocks, [], [fn.returnType]));
+  }
+  for (const type of ast.types) {
+    if (type.definition.kind !== "StructDefinition")
+      continue;
+    const scope = [];
+    for (const decl of type.definition.fields)
+      addDecl(scope, decl);
+    scopes.push(scope);
+  }
+  for (const scope of scopes) {
+    for (const entry of scope) {
+      const name = entry.name;
+      if (name === void 0 || !userTypes.has(name))
+        continue;
+      if (scope.some((other) => other !== entry && other.type === name)) {
+        result.add(name);
+      }
+    }
+  }
+  return result;
+}
 function needsMemberMangling(memberName, memberTypeName, ctx) {
   const upperMember = memberName.toUpperCase();
   if (memberTypeName !== void 0 && memberTypeName !== "" && upperMember === memberTypeName.toUpperCase() && ctx.isUserDefinedType(memberTypeName)) {
     return true;
   }
+  if (ctx.shadowingNames?.has(upperMember) === true)
+    return true;
   return ctx.interfaceMethods?.has(upperMember) === true;
 }
 function mangledMemberName(memberName, memberTypeName, ctx) {
@@ -30313,7 +31814,7 @@ var TypeCodeGenerator = class {
   structFieldCppType(type) {
     let cppType;
     if (type.arrayDimensions && type.elementTypeName) {
-      const elemCpp = this.arrayElementTypeToCpp(type.elementTypeName, type.elementReferenceChain);
+      const elemCpp = this.arrayElementTypeToCpp(type.elementTypeName, type.elementReferenceChain, type.elementMaxLength);
       cppType = formatArrayType(elemCpp, type.arrayDimensions);
     } else {
       cppType = this.mapStructFieldTypeToCpp(type.name, type.maxLength);
@@ -30332,7 +31833,8 @@ var TypeCodeGenerator = class {
    */
   structFieldEmitName(fieldName, type) {
     return mangledMemberName(fieldName, type.name, {
-      isUserDefinedType: this.options.isUserDefinedType
+      isUserDefinedType: this.options.isUserDefinedType,
+      shadowingNames: this.options.shadowingNames
     });
   }
   /**
@@ -30422,7 +31924,7 @@ var TypeCodeGenerator = class {
    */
   generateArrayType(name, def) {
     const elementKind = def.elementType.referenceKind;
-    const elementType = this.arrayElementTypeToCpp(def.elementType.name, elementKind === void 0 || elementKind === "none" ? void 0 : def.elementType.referenceChain ?? [elementKind]);
+    const elementType = this.arrayElementTypeToCpp(def.elementType.name, elementKind === void 0 || elementKind === "none" ? void 0 : def.elementType.referenceChain ?? [elementKind], def.elementType.maxLength);
     const numDims = def.dimensions.length;
     const bounds = [];
     for (const dim of def.dimensions) {
@@ -30498,8 +32000,11 @@ var TypeCodeGenerator = class {
    * element, or for an element declared POINTER TO / REF_TO the wrapper a
    * variable of that type gets (`IEC_Ptr<INT_t>`).
    */
-  arrayElementTypeToCpp(typeName2, referenceChain) {
-    return referenceChain ? wrapReferenceChain(referenceChain, this.mapTypeToCpp(typeName2)) : this.mapStructFieldTypeToCpp(typeName2);
+  arrayElementTypeToCpp(typeName2, referenceChain, maxLength) {
+    return referenceChain ? wrapReferenceChain(referenceChain, this.mapTypeRefToCpp({
+      name: typeName2,
+      ...maxLength !== void 0 ? { maxLength } : {}
+    })) : this.mapStructFieldTypeToCpp(typeName2, maxLength);
   }
   /**
    * Map an IEC type name to its C++ equivalent (raw/unwrapped)
@@ -30547,6 +32052,9 @@ var TypeCodeGenerator = class {
     if (this.knownEnumNames.has(upperName)) {
       return `IEC_${typeName2}`;
     }
+    if (this.options.isInterfaceType?.(typeName2) === true) {
+      return `IEC_ITF<${typeName2}>`;
+    }
     return typeName2;
   }
   /**
@@ -30583,6 +32091,10 @@ var TypeCodeGenerator = class {
       case "WSTRING": {
         const inner = expr.rawValue.replace(/^["']|["']$/g, "");
         return `u"${translateIECString(inner, true)}"`;
+      }
+      case "REAL": {
+        const str = String(expr.value);
+        return str.includes(".") || /[eE]/.test(str) ? str : `${str}.0`;
       }
       case "TIME": {
         const timeVal = parseTimeLiteral(String(expr.value));
@@ -31074,6 +32586,8 @@ var CodeGenerator = class _CodeGenerator {
    *  while emitting a program body; access to these is rewritten to go through
    *  the GlobalVar pointer (g->read() / g->write() / g->with_lock()). */
   programExternals = /* @__PURE__ */ new Set();
+  /** UPPER(names) of the CONFIGURATION globals, set while their storage is emitted. */
+  configGlobalInitNames = /* @__PURE__ */ new Set();
   /** UPPER(names) of the current PROGRAM's VAR_EXTERNAL globals whose type is
    *  NOT elementary (struct / array / function-block). Subset of
    *  programExternals. Scalar externals get full read()/write() codegen;
@@ -31135,6 +32649,8 @@ var CodeGenerator = class _CodeGenerator {
   fileScopeGlobalNameCache;
   /** UPPER library FB name → its methods, from archives that list them. */
   libraryMethods = /* @__PURE__ */ new Map();
+  /** Library FB name → the library FB it EXTENDS (both upper case). */
+  libraryFBExtends = /* @__PURE__ */ new Map();
   /** Library functions by upper-cased name, and their parsed declarations. */
   libraryFunctions = /* @__PURE__ */ new Map();
   libraryFunctionDecls = /* @__PURE__ */ new Map();
@@ -31287,6 +32803,17 @@ var CodeGenerator = class _CodeGenerator {
    * &-reference — matching the previous behavior of the call sites that
    * went through `mapVarTypeToCpp(decl.type.name)` without maxLength.
    */
+  /**
+   * The shape of a parameter passed by reference (VAR_IN_OUT, VAR_OUTPUT of
+   * a FUNCTION or METHOD): as toParamTypeRef, keeping a STRING length so the
+   * C++ reference has the declared type.
+   */
+  byRefParamTypeRef(typeRef) {
+    const upper = typeRef.name.toUpperCase();
+    const isString2 = upper === "STRING" || upper === "WSTRING";
+    const shape = this.toParamTypeRef(typeRef);
+    return isString2 && typeRef.maxLength !== void 0 ? { ...shape, maxLength: typeRef.maxLength } : shape;
+  }
   toParamTypeRef(typeRef) {
     const upper = typeRef.name.toUpperCase();
     const isString2 = upper === "STRING" || upper === "WSTRING";
@@ -31296,6 +32823,7 @@ var CodeGenerator = class _CodeGenerator {
       ...typeRef.arrayDimensions !== void 0 ? { arrayDimensions: typeRef.arrayDimensions } : {},
       ...typeRef.elementTypeName !== void 0 ? { elementTypeName: typeRef.elementTypeName } : {},
       ...typeRef.elementReferenceChain !== void 0 ? { elementReferenceChain: typeRef.elementReferenceChain } : {},
+      ...typeRef.elementMaxLength !== void 0 ? { elementMaxLength: typeRef.elementMaxLength } : {},
       ...typeRef.referenceKind !== void 0 ? { referenceKind: typeRef.referenceKind } : {},
       ...typeRef.referenceChain !== void 0 ? { referenceChain: typeRef.referenceChain } : {}
     };
@@ -31315,6 +32843,7 @@ var CodeGenerator = class _CodeGenerator {
       ...spec.arrayDimensions !== void 0 ? { arrayDimensions: spec.arrayDimensions } : {},
       ...spec.elementTypeName !== void 0 ? { elementTypeName: spec.elementTypeName } : {},
       ...spec.elementReferenceChain !== void 0 ? { elementReferenceChain: spec.elementReferenceChain } : {},
+      ...spec.elementMaxLength !== void 0 ? { elementMaxLength: spec.elementMaxLength } : {},
       ...spec.referenceKind !== void 0 ? { referenceKind: spec.referenceKind } : {},
       ...spec.referenceChain !== void 0 ? { referenceChain: spec.referenceChain } : {}
     };
@@ -31333,9 +32862,16 @@ var CodeGenerator = class _CodeGenerator {
   mapTypeRefToCpp(typeRef) {
     let baseType;
     if (typeRef.arrayDimensions && typeRef.elementTypeName) {
+      const elementLength = typeRef.elementMaxLength;
       const elemCpp = typeRef.elementReferenceChain ? (
         // ARRAY OF POINTER TO / REF_TO: each element is the wrapper a variable gets.
-        wrapReferenceChain(typeRef.elementReferenceChain, this.rawReferencedType(typeRef.elementTypeName))
+        wrapReferenceChain(typeRef.elementReferenceChain, elementLength !== void 0 ? this.typeCodeGen.mapTypeRefToCpp({
+          name: typeRef.elementTypeName,
+          maxLength: elementLength
+        }) : this.rawReferencedType(typeRef.elementTypeName))
+      ) : elementLength !== void 0 ? this.typeCodeGen.mapStructFieldTypeToCpp(typeRef.elementTypeName, elementLength) : this.isInterfaceType(typeRef.elementTypeName) ? (
+        // An INTERFACE element holds a nullable reference, as a variable does.
+        `IEC_ITF<${typeRef.elementTypeName}>`
       ) : (
         // An enumeration element is the variable a scalar gets (IEC_E), as in a
         // STRUCT field or named ARRAY type, so REF/ADR of it see one type.
@@ -31345,6 +32881,10 @@ var CodeGenerator = class _CodeGenerator {
     } else if (typeRef.elementReferenceChain && VLA_TYPE_NAME.test(typeRef.name)) {
       const [, ndims, elem] = VLA_TYPE_NAME.exec(typeRef.name);
       const elemCpp = wrapReferenceChain(typeRef.elementReferenceChain, this.rawReferencedType(elem));
+      baseType = `ArrayView${ndims}D<${elemCpp}>`;
+    } else if (typeRef.elementMaxLength !== void 0 && VLA_TYPE_NAME.test(typeRef.name)) {
+      const [, ndims, elem] = VLA_TYPE_NAME.exec(typeRef.name);
+      const elemCpp = this.typeCodeGen.mapStructFieldTypeToCpp(elem, typeRef.elementMaxLength);
       baseType = `ArrayView${ndims}D<${elemCpp}>`;
     } else {
       baseType = this.mapVarTypeToCpp(typeRef.name, typeof typeRef.maxLength === "number" ? typeRef.maxLength : void 0);
@@ -31436,6 +32976,12 @@ var CodeGenerator = class _CodeGenerator {
         const methods = libraryMethodDeclarations(fb);
         if (methods !== void 0 && methods.length > 0) {
           this.libraryMethods.set(fb.name.toUpperCase(), methods);
+        }
+        for (const prop of fb.properties ?? []) {
+          this.propertyNameMap.set(`${fb.name.toUpperCase()}.${prop.name.toUpperCase()}`, prop.name);
+        }
+        if (fb.extends !== void 0) {
+          this.libraryFBExtends.set(fb.name.toUpperCase(), fb.extends.toUpperCase());
         }
       }
       this.registerLibraryFBTypes(archive.manifest.functionBlocks.map((fb) => {
@@ -31754,7 +33300,9 @@ var CodeGenerator = class _CodeGenerator {
       emitChunkMarkers: this.options.emitChunkMarkers ?? false,
       // Struct fields must mangle by the same rule as everything else that
       // names them, and only codegen knows the FB / program type names.
-      isUserDefinedType: (t) => this.isUserDefinedType(t)
+      isUserDefinedType: (t) => this.isUserDefinedType(t),
+      shadowingNames: this.shadowingNames(),
+      isInterfaceType: (t) => this.isInterfaceType(t)
     });
     if (ast.types.length > 0) {
       const lateStructNames = new Set(lateStructs.map((n) => n.toUpperCase()));
@@ -32069,7 +33617,7 @@ var CodeGenerator = class _CodeGenerator {
         this.emitHeader(`    ${m.cppType} ${m.mangledName};`);
       }
     }
-    if (!fb.extends) {
+    if (!fb.extends && this.declaredEnoType(fb.name) === void 0) {
       this.emitHeader("");
       this.emitHeader("    // Implicit IEC 61131-3 ENO pin (mirrors EN)");
       this.emitHeader("    IEC_BOOL ENO = true;");
@@ -32228,9 +33776,11 @@ var CodeGenerator = class _CodeGenerator {
     }
     this.emitProgramVarInstMembers(prog.methods);
     this.emitHeader("");
-    this.emitHeader("    // Implicit IEC 61131-3 ENO pin (mirrors EN)");
-    this.emitHeader("    IEC_BOOL ENO = true;");
-    this.emitHeader("");
+    if (this.declaredEnoType(prog.name) === void 0) {
+      this.emitHeader("    // Implicit IEC 61131-3 ENO pin (mirrors EN)");
+      this.emitHeader("    IEC_BOOL ENO = true;");
+      this.emitHeader("");
+    }
     this.emitHeader("    // Constructor");
     this.emitHeader(`    Program_${prog.name}();`);
     this.emitHeader("");
@@ -32305,7 +33855,7 @@ var CodeGenerator = class _CodeGenerator {
       } else if (block.blockType === "VAR_OUTPUT") {
         for (const decl of block.declarations) {
           for (const name of decl.names) {
-            params.push(`${this.mapTypeRefToCpp(this.toParamTypeRef(decl.type))}& ${name}`);
+            params.push(`${this.mapTypeRefToCpp(this.byRefParamTypeRef(decl.type))}& ${name}`);
           }
         }
       }
@@ -32488,7 +34038,7 @@ var CodeGenerator = class _CodeGenerator {
       } else if (block.blockType === "VAR_OUTPUT") {
         for (const decl of block.declarations) {
           for (const name of decl.names) {
-            params.push(`${this.mapTypeRefToCpp(this.toParamTypeRef(decl.type))}& ${name}`);
+            params.push(`${this.mapTypeRefToCpp(this.byRefParamTypeRef(decl.type))}& ${name}`);
           }
         }
       }
@@ -32549,7 +34099,7 @@ var CodeGenerator = class _CodeGenerator {
           for (const name of decl.names) {
             const cppType = this.mapTypeRefToCpp(decl.type);
             const initValue = decl.initialValue ? ` = ${this.generateInitializer(decl.initialValue, cppType, decl.type.name)}` : this.scalarTypeInit(decl.type);
-            this.emit(`    ${cppType} ${name}${initValue};`);
+            this.emit(`    ${cppType} ${this.localCppName(name)}${initValue};`);
           }
         }
       }
@@ -32792,7 +34342,7 @@ var CodeGenerator = class _CodeGenerator {
             for (const name of decl.names) {
               const cppType = this.mapTypeRefToCpp(decl.type);
               const initValue = decl.initialValue ? ` = ${this.generateInitializer(decl.initialValue, cppType, decl.type.name)}` : this.scalarTypeInit(decl.type);
-              this.emit(`    ${cppType} ${name}${initValue};`);
+              this.emit(`    ${cppType} ${this.localCppName(name)}${initValue};`);
             }
           }
         }
@@ -32888,6 +34438,7 @@ var CodeGenerator = class _CodeGenerator {
           ...decl.arrayDimensions !== void 0 ? { arrayDimensions: decl.arrayDimensions } : {},
           ...decl.elementTypeName !== void 0 ? { elementTypeName: decl.elementTypeName } : {},
           ...decl.elementReferenceChain !== void 0 ? { elementReferenceChain: decl.elementReferenceChain } : {},
+          ...decl.elementMaxLength !== void 0 ? { elementMaxLength: decl.elementMaxLength } : {},
           ...decl.referenceKind !== void 0 ? { referenceKind: decl.referenceKind } : {},
           ...decl.referenceChain !== void 0 ? { referenceChain: decl.referenceChain } : {}
         });
@@ -32925,9 +34476,11 @@ var CodeGenerator = class _CodeGenerator {
       this.emitProgramVarInstMembers(astProg.methods);
     }
     this.emitHeader("");
-    this.emitHeader("    // Implicit IEC 61131-3 ENO pin (mirrors EN)");
-    this.emitHeader("    IEC_BOOL ENO = true;");
-    this.emitHeader("");
+    if (this.declaredEnoType(prog.name) === void 0) {
+      this.emitHeader("    // Implicit IEC 61131-3 ENO pin (mirrors EN)");
+      this.emitHeader("    IEC_BOOL ENO = true;");
+      this.emitHeader("");
+    }
     this.emitHeader("    // Constructor");
     if (prog.varExternal.length > 0) {
       const params = prog.varExternal.map((ext) => {
@@ -33227,13 +34780,25 @@ var CodeGenerator = class _CodeGenerator {
       this.emitHeader("");
     }
   }
+  /** `config`'s globals, each after the globals its initial value names. */
+  orderedConfigurationGlobals(config) {
+    const decl = this.ast?.configurations.find((c) => c.name.toUpperCase() === config.name.toUpperCase());
+    if (decl === void 0)
+      return config.globalVars;
+    const rank = new Map(orderConfigurationGlobals(decl).order.map((item, i) => [
+      item.name.toUpperCase(),
+      i
+    ]));
+    return [...config.globalVars].sort((a, b) => (rank.get(a.name.toUpperCase()) ?? 0) - (rank.get(b.name.toUpperCase()) ?? 0));
+  }
   emitFileScopeGlobals() {
     if (!this.projectModel)
       return;
     const seen = /* @__PURE__ */ new Set();
     let emittedAny = false;
     for (const config of this.projectModel.configurations) {
-      for (const gvar of config.globalVars) {
+      this.configGlobalInitNames = new Set(config.globalVars.map((g) => g.name.toUpperCase()));
+      for (const gvar of this.orderedConfigurationGlobals(config)) {
         const key = gvar.name.toUpperCase();
         if (seen.has(key))
           continue;
@@ -33258,6 +34823,7 @@ var CodeGenerator = class _CodeGenerator {
         }
       }
     }
+    this.configGlobalInitNames = /* @__PURE__ */ new Set();
     if (emittedAny)
       this.emitHeader("");
   }
@@ -33768,10 +35334,11 @@ var CodeGenerator = class _CodeGenerator {
     const isCompositeGlobal = (e) => e.kind === "VariableExpression" && !e.isDereference && this.compositeExternals.has(e.name.toUpperCase()) && this.lastFieldBitIndex(e) === void 0;
     const isUnionMember = (e) => e.kind === "VariableExpression" && e.unionMember === true;
     const rendersBound = (e) => e.kind === "VariableExpression" && !e.isDereference && (this.programExternals.has(e.name.toUpperCase()) || this.currentScopeVarRefKinds.get(e.name.toUpperCase()) === "reference_to");
-    if (!call.arguments.some((a) => isCompositeGlobal(a.value) || isUnionMember(a.value) || rendersBound(a.value) || a.inOutCopy === true)) {
+    const varBlocks = this.calleeVarBlocks(call) ?? this.librarySizedStringBlocks(call);
+    const hasSizedStringParam = varBlocks?.some((b) => (b.blockType === "VAR_OUTPUT" || b.blockType === "VAR_IN_OUT") && b.declarations.some((d) => this.sizedStringLength(d.type) !== void 0 || this.arrayStringElementLength(d.type) !== void 0 || this.vlaStringElementCpp(d.type) !== void 0)) === true;
+    if (!hasSizedStringParam && !call.arguments.some((a) => isCompositeGlobal(a.value) || isUnionMember(a.value) || rendersBound(a.value) || a.inOutCopy === true)) {
       return [];
     }
-    const varBlocks = this.calleeVarBlocks(call);
     if (!varBlocks)
       return [];
     const params = [];
@@ -33800,10 +35367,18 @@ var CodeGenerator = class _CodeGenerator {
       if (value.kind !== "VariableExpression")
         continue;
       if (param.blockType === "VAR_IN_OUT" && !arg.isOutput) {
-        if (arg.inOutCopy === true) {
+        const sized = this.sizedStringLength(param.type);
+        if (arg.inOutCopy === true || sized !== void 0 && !isCompositeGlobal(value) && !isUnionMember(value) && !rendersBound(value) && !this.hasStringLength(value, sized)) {
           result.push({
             value,
-            cppType: this.inOutParamType(this.toParamTypeRef(param.type))
+            cppType: this.inOutParamType(param.type)
+          });
+        } else if (!isCompositeGlobal(value) && !isUnionMember(value) && !rendersBound(value) && this.vlaStringElementDiffers(param.type, value)) {
+          const elem = this.vlaStringElementCpp(param.type);
+          const read = this.generateVariableExpression(value);
+          result.push({
+            value,
+            cppType: `array_rebind_t<typename std::decay<decltype(${read})>::type, ${elem}>`
           });
         } else if (value.unionMember === true) {
           result.push({ value });
@@ -33813,11 +35388,137 @@ var CodeGenerator = class _CodeGenerator {
             this.warnSharedGlobalInOut(value.name, param.name, call);
           }
         }
+      } else if (param.blockType === "VAR_OUTPUT" && !isCompositeGlobal(value) && !isUnionMember(value) && (this.sizedStringLength(param.type) !== void 0 && !this.hasStringLength(value, this.sizedStringLength(param.type)) || this.stringElementLengthDiffers(param.type, value))) {
+        result.push({ value, cppType: this.inOutParamType(param.type) });
       } else if ((arg.isOutput || param.blockType === "VAR_OUTPUT") && (isCompositeGlobal(value) || isUnionMember(value))) {
         result.push({ value });
       }
     }
     return result;
+  }
+  /**
+   * The length of a STRING or WSTRING declared with one other than the
+   * default (a constant resolved when known, else its name in upper case);
+   * undefined for any other type.
+   */
+  sizedStringLength(type) {
+    const upper = type.name.toUpperCase();
+    if (upper !== "STRING" && upper !== "WSTRING")
+      return void 0;
+    if (type.arrayDimensions !== void 0)
+      return void 0;
+    if (type.referenceKind !== void 0 && type.referenceKind !== "none") {
+      return void 0;
+    }
+    let length = type.maxLength;
+    if (typeof length === "string") {
+      const constants = this.options.globalConstants;
+      const key = Object.keys(constants).find((k) => k.toUpperCase() === length.toUpperCase());
+      if (key !== void 0)
+        length = constants[key];
+    }
+    if (length === void 0 || length === 254)
+      return void 0;
+    return String(length).toUpperCase();
+  }
+  /**
+   * The declaration blocks of a library FUNCTION `call` invokes, when it has
+   * a STRING(n) output or in/out (its archive records the length).
+   */
+  librarySizedStringBlocks(call) {
+    if (call.kind !== "FunctionCallExpression" || call.instance)
+      return void 0;
+    if (call.functionName.includes("."))
+      return void 0;
+    if (this.getFBInvocationType(call.functionName, void 0) !== void 0) {
+      return void 0;
+    }
+    const blocks = this.libraryFunctionDeclaration(call.functionName)?.varBlocks;
+    const sized = blocks?.some((b) => (b.blockType === "VAR_OUTPUT" || b.blockType === "VAR_IN_OUT") && b.declarations.some((d) => this.sizedStringLength(d.type) !== void 0));
+    return sized === true ? blocks : void 0;
+  }
+  /**
+   * The element length (upper case text, "254" by default) of an ARRAY of
+   * STRING or WSTRING, inline or declared here; undefined for anything else.
+   */
+  arrayStringElementLength(type) {
+    if (type.referenceKind !== void 0 && type.referenceKind !== "none") {
+      return void 0;
+    }
+    let name;
+    let length;
+    if (type.arrayDimensions !== void 0) {
+      if (type.elementReferenceChain !== void 0)
+        return void 0;
+      name = type.elementTypeName;
+      length = type.elementMaxLength;
+    } else {
+      const upper = type.name.toUpperCase();
+      const def = this.ast?.types.find((t) => t.name.toUpperCase() === upper)?.definition;
+      if (def?.kind !== "ArrayDefinition")
+        return void 0;
+      const kind = def.elementType.referenceKind;
+      if (kind !== void 0 && kind !== "none")
+        return void 0;
+      name = def.elementType.name;
+      length = def.elementType.maxLength;
+    }
+    const upperName = name?.toUpperCase();
+    if (upperName !== "STRING" && upperName !== "WSTRING")
+      return void 0;
+    return `${upperName}(${String(length ?? 254).toUpperCase()})`;
+  }
+  /** The C++ element of an ARRAY[*] OF STRING / WSTRING parameter. */
+  vlaStringElementCpp(type) {
+    const vla = VLA_TYPE_NAME.exec(type.name);
+    if (!vla || type.elementReferenceChain !== void 0)
+      return void 0;
+    const upper = vla[2].toUpperCase();
+    if (upper !== "STRING" && upper !== "WSTRING")
+      return void 0;
+    return this.typeCodeGen.mapStructFieldTypeToCpp(upper, type.elementMaxLength);
+  }
+  /**
+   * True when `param` is an ARRAY[*] OF STRING and `value` a fixed ARRAY of
+   * STRING whose element length differs (or is not known).
+   */
+  vlaStringElementDiffers(param, value) {
+    const vla = VLA_TYPE_NAME.exec(param.name);
+    if (!vla || this.vlaStringElementCpp(param) === void 0)
+      return false;
+    const want = `${vla[2].toUpperCase()}(${String(param.elementMaxLength ?? 254).toUpperCase()})`;
+    const hasAccess = value.subscripts.length > 0 || value.fieldAccess.length > 0 || value.isDereference || value.accessChain !== void 0 && value.accessChain.length > 0;
+    const root2 = this.currentScopeVarTypeRefs.get(value.name.toUpperCase()) ?? this.namespaceGlobalTypeRef(value.name.toUpperCase());
+    const type = root2 !== void 0 && hasAccess ? resolveAccessType(root2, value, this.accessLookup) : root2;
+    if (type === void 0)
+      return false;
+    if (VLA_TYPE_NAME.test(type.name))
+      return false;
+    const have = this.arrayStringElementLength(type);
+    return have !== void 0 && have !== want;
+  }
+  /**
+   * True when `param` is an ARRAY of STRING and `value` is not a plain
+   * variable of an ARRAY with the same element length (another C++ type).
+   */
+  stringElementLengthDiffers(param, value) {
+    const want = this.arrayStringElementLength(param);
+    if (want === void 0)
+      return false;
+    const hasAccess = value.subscripts.length > 0 || value.fieldAccess.length > 0 || value.isDereference || value.accessChain !== void 0 && value.accessChain.length > 0;
+    const root2 = this.currentScopeVarTypeRefs.get(value.name.toUpperCase()) ?? this.namespaceGlobalTypeRef(value.name.toUpperCase());
+    const type = root2 !== void 0 && hasAccess ? resolveAccessType(root2, value, this.accessLookup) : root2;
+    return type === void 0 || this.arrayStringElementLength(type) !== want;
+  }
+  /**
+   * True when `value` is a plain variable declared as a STRING or WSTRING of
+   * `length` (the length text as written); false when unknown.
+   */
+  hasStringLength(value, length) {
+    const hasAccess = value.subscripts.length > 0 || value.fieldAccess.length > 0 || value.isDereference || value.accessChain !== void 0 && value.accessChain.length > 0;
+    const root2 = this.currentScopeVarTypeRefs.get(value.name.toUpperCase()) ?? this.namespaceGlobalTypeRef(value.name.toUpperCase());
+    const type = root2 !== void 0 && hasAccess ? resolveAccessType(root2, value, this.accessLookup) : root2;
+    return type !== void 0 && this.sizedStringLength(type) === length;
   }
   /** The declaration blocks of the method or user FUNCTION `call` invokes;
    *  undefined for a function block invocation, a standard function or a
@@ -33832,6 +35533,9 @@ var CodeGenerator = class _CodeGenerator {
       return this.findMethodDeclaration(this.dottedCallOwnerType(name.substring(0, dotIdx)), name.substring(dotIdx + 1))?.varBlocks;
     }
     const nameUpper = name.toUpperCase();
+    const ownMethod = this.ownMethodCalled(call);
+    if (ownMethod)
+      return ownMethod.varBlocks;
     if (this.getFBInvocationType(name, call.instance) !== void 0 || this.stdRegistry.resolveConversion(nameUpper) || this.stdRegistry.lookup(nameUpper)) {
       return void 0;
     }
@@ -33852,7 +35556,13 @@ var CodeGenerator = class _CodeGenerator {
    * for REF_TO targets.
    */
   generateRefAssignStatement(stmt, indent) {
-    const target = this.generateExpression(stmt.target);
+    this.keepReferenceWrapper = true;
+    let target;
+    try {
+      target = this.generateExpression(stmt.target);
+    } finally {
+      this.keepReferenceWrapper = false;
+    }
     const source = this.addressedOperand(stmt.source, "REF=", stmt);
     const targetKind = stmt.target.kind === "VariableExpression" ? this.refAssignTargetKind(stmt.target) : void 0;
     if (targetKind === "ref_to") {
@@ -34231,6 +35941,9 @@ var CodeGenerator = class _CodeGenerator {
     if (selfProperty)
       return this.generateVariableExpression(selfProperty);
     const nameUpper = expr.name.toUpperCase();
+    if (!this.keepReferenceWrapper && this.isPlainStringReference(expr)) {
+      return `${this.resolveVariableBaseName(expr.name)}.target()`;
+    }
     const reachedProgram = this.reachedProgramNamed(expr.name);
     if (reachedProgram !== void 0) {
       return this.renderAccessTail(this.sharedProgramInstance(reachedProgram), expr, nameUpper, reachedProgram);
@@ -34242,6 +35955,9 @@ var CodeGenerator = class _CodeGenerator {
       const ptr = this.resolveVariableBaseName(expr.name);
       const inner = this.renderAccessTail("(*__glk)", expr, nameUpper);
       return `${ptr}->with_lock([&](auto* __glk){ return ${inner}; })`;
+    }
+    if ((nameUpper === "THIS" || nameUpper === "SUPER" && this.currentFBExtends !== void 0) && expr.accessChain?.some((step) => step.kind !== "field") === true) {
+      return nameUpper === "THIS" ? this.renderAccessTail("(*this)", expr, nameUpper, this.currentFBName) : this.renderAccessTail(`static_cast<${this.currentFBExtends}&>(*this)`, expr, nameUpper, this.currentFBExtends);
     }
     if (nameUpper === "THIS") {
       if (expr.fieldAccess.length === 0) {
@@ -34320,13 +36036,17 @@ var CodeGenerator = class _CodeGenerator {
         }
       }
     }
+    if (this.configGlobalInitNames.has(nameUpper)) {
+      result = `${globalCppName(expr.name)}.value`;
+    }
     if (this.scopeInOutRefs.has(nameUpper) && !this.isCurrentFunctionResult(nameUpper)) {
       result = `(*${result})`;
     }
     if (expr.enumType !== void 0)
       return `${expr.enumType}::${expr.name}`;
     const enumEntry = this.enumMemberToType.get(nameUpper);
-    if (enumEntry?.typeName && !this.currentScopeVarTypes.has(nameUpper) && !this.isCurrentFunctionResult(nameUpper) && expr.fieldAccess.length === 0 && (!expr.accessChain || expr.accessChain.length === 0)) {
+    if (enumEntry?.typeName && !this.currentScopeVarTypes.has(nameUpper) && !this.isCurrentFunctionResult(nameUpper) && // In a SET body the property's name is the value being set.
+    this.currentSetterProperty !== nameUpper && expr.fieldAccess.length === 0 && (!expr.accessChain || expr.accessChain.length === 0)) {
       return `${enumEntry.typeName}::${expr.name}`;
     }
     if (this.enumTypeMembers.has(nameUpper)) {
@@ -34357,6 +36077,38 @@ var CodeGenerator = class _CodeGenerator {
       return this.renderInOutBound(operand);
     }
     return what === "ADR" ? this.generateLvalue(operand) : this.generateExpression(operand);
+  }
+  /** {@link typeShadowingMemberNames} of the unit, computed once per AST. */
+  shadowingNamesCache;
+  shadowingNames() {
+    if (!this.ast)
+      return void 0;
+    if (this.shadowingNamesCache?.ast !== this.ast) {
+      this.shadowingNamesCache = {
+        ast: this.ast,
+        names: typeShadowingMemberNames(this.ast)
+      };
+    }
+    return this.shadowingNamesCache.names;
+  }
+  /** A local's C++ name: renamed as the body names it (see enterScope). */
+  localCppName(name) {
+    return this.memberMangledNames.get(name.toUpperCase()) ?? name;
+  }
+  /** Set while a REF= target is generated: it names the reference itself. */
+  keepReferenceWrapper = false;
+  /** `rr`, a REFERENCE TO STRING / WSTRING variable of the scope, with no access. */
+  isPlainStringReference(expr) {
+    const upper = expr.name.toUpperCase();
+    if (this.currentScopeVarRefKinds.get(upper) !== "reference_to" || this.isCurrentFunctionResult(upper) || expr.isDereference || expr.fieldAccess.length > 0 || expr.subscripts.length > 0 || (expr.accessChain?.length ?? 0) > 0) {
+      return false;
+    }
+    const type = this.currentScopeVarTypeRefs.get(upper);
+    if (type === void 0 || (type.referenceChain?.length ?? 1) !== 1) {
+      return false;
+    }
+    const base = type.name.toUpperCase();
+    return base === "STRING" || base === "WSTRING";
   }
   /**
    * `r.member` / `r[i]` on a REFERENCE TO variable of the scope: the access
@@ -34562,10 +36314,11 @@ var CodeGenerator = class _CodeGenerator {
     const left = this.generateExpression(expr.left);
     const right = this.generateExpression(expr.right);
     if ((expr.operator === "=" || expr.operator === "<>") && expr.comparesReferences !== true) {
-      const rt = expr.left.resolvedType;
-      const structName = rt !== void 0 && "name" in rt && typeof rt.name === "string" ? rt.name : void 0;
-      if (structName !== void 0 && this.structFieldsOf(structName) !== void 0) {
-        const eq2 = `[&](const auto& __l, const auto& __r) { return ${this.memberwiseEqual(structName, "__l", "__r", 0)}; }(${left}, ${right})`;
+      const structName = this.comparedStructName(expr.left) ?? this.comparedStructName(expr.right);
+      if (structName !== void 0) {
+        const l = this.structOperand(expr.left, left);
+        const r = this.structOperand(expr.right, right);
+        const eq2 = `[&](const auto& __l, const auto& __r) { return ${this.memberwiseEqual(structName, "__l", "__r", 0)}; }(${l}, ${r})`;
         return expr.operator === "=" ? eq2 : `!${eq2}`;
       }
     }
@@ -34630,6 +36383,41 @@ var CodeGenerator = class _CodeGenerator {
    * C++ for `l = r` on two values of type `typeName`: field by field for a
    * STRUCT, element by element for an ARRAY, else `==`.
    */
+  /**
+   * The STRUCT an operand of `=` / `<>` is a value of: by its checked type,
+   * or for a variable reached through `^` or a REFERENCE TO, by its
+   * declaration. Undefined for anything else.
+   */
+  comparedStructName(expr) {
+    const rt = expr.resolvedType;
+    if (rt !== void 0 && "name" in rt && typeof rt.name === "string") {
+      if (this.structFieldsOf(rt.name) !== void 0)
+        return rt.name;
+    }
+    if (expr.kind !== "VariableExpression")
+      return void 0;
+    const upper = expr.name.toUpperCase();
+    const root2 = this.currentScopeVarTypeRefs.get(upper);
+    if (root2 === void 0)
+      return void 0;
+    const hasAccess = expr.subscripts.length > 0 || expr.fieldAccess.length > 0 || expr.isDereference || expr.accessChain !== void 0 && expr.accessChain.length > 0;
+    const type = hasAccess ? resolveAccessType(root2, expr, this.accessLookup) : root2;
+    if (type === void 0 || type.arrayDimensions !== void 0) {
+      return void 0;
+    }
+    const kind = type.referenceKind ?? "none";
+    if (kind !== "none" && !(kind === "reference_to" && !hasAccess)) {
+      return void 0;
+    }
+    return this.structFieldsOf(type.name) !== void 0 ? type.name : void 0;
+  }
+  /** A STRUCT operand as its value: a plain REFERENCE TO is its target. */
+  structOperand(expr, generated) {
+    if (expr.kind === "VariableExpression" && this.currentScopeVarRefKinds.get(expr.name.toUpperCase()) === "reference_to" && !expr.isDereference && expr.fieldAccess.length === 0 && expr.subscripts.length === 0 && (expr.accessChain?.length ?? 0) === 0) {
+      return `${this.resolveVariableBaseName(expr.name)}.target()`;
+    }
+    return generated;
+  }
   memberwiseEqual(typeName2, l, r, depth) {
     const fields = this.structFieldsOf(typeName2);
     if (fields === void 0)
@@ -34780,6 +36568,9 @@ var CodeGenerator = class _CodeGenerator {
       }
       case "FunctionCallExpression": {
         const fnUpper = expr.functionName.toUpperCase();
+        const ownMethod = this.ownMethodCalled(expr);
+        if (ownMethod)
+          return ownMethod.returnType?.name.toUpperCase();
         if (this.ast) {
           const funcDecl = this.ast.functions.find((f) => f.name.toUpperCase() === fnUpper);
           if (funcDecl)
@@ -35080,6 +36871,35 @@ var CodeGenerator = class _CodeGenerator {
    * named argument reordering, and user-defined function calls.
    */
   generateFunctionCallExpression(expr) {
+    return this.qualifyHiddenFunctionCall(expr, this.generateFunctionCallExpressionUnqualified(expr));
+  }
+  /**
+   * A FUNCTION or standard function called where a variable of its name (a
+   * local, parameter or member, in any case) hides it in the C++ scope: the
+   * call is qualified by the namespace the function lives in.
+   */
+  qualifyHiddenFunctionCall(expr, call) {
+    const name = expr.functionName;
+    if (expr.instance !== void 0 || name.includes("."))
+      return call;
+    const upper = name.toUpperCase();
+    const hidden = this.currentScopeVarTypes.has(upper) || this.inheritedMemberTypeName(upper) !== void 0;
+    if (!hidden)
+      return call;
+    if (this.getFBInvocationType(name, void 0) !== void 0)
+      return call;
+    if (this.ownMethodCalled(expr) !== void 0)
+      return call;
+    if (this.reachedProgramNamed(name) !== void 0)
+      return call;
+    if (!/^[A-Za-z_][A-Za-z0-9_]*\(/.test(call))
+      return call;
+    const userFunction = this.ast?.functions.some((f) => f.name.toUpperCase() === upper) === true;
+    const runtime = !userFunction && this.libraryFunctionDeclaration(upper) === void 0 && (this.stdRegistry.lookup(upper) !== void 0 || this.stdRegistry.resolveConversion(upper) !== void 0 || this.typedTrunc(upper) !== void 0);
+    const ns = runtime ? "strucpp" : this.projectModel ? getProjectNamespace(this.projectModel) : "strucpp";
+    return `::${ns}::${call}`;
+  }
+  generateFunctionCallExpressionUnqualified(expr) {
     if (expr.functionName.includes(".")) {
       const dotIdx = expr.functionName.indexOf(".");
       const prefix = expr.functionName.substring(0, dotIdx);
@@ -35110,6 +36930,11 @@ var CodeGenerator = class _CodeGenerator {
     if (nameUpper === "SUPER" && this.currentFBExtends) {
       const args2 = expr.arguments.map((arg) => this.generateExpression(arg.value));
       return `${this.currentFBExtends}::operator()(${args2.join(", ")})`;
+    }
+    const ownMethod = this.ownMethodCalled(expr);
+    if (ownMethod) {
+      const bound = this.generateMethodCallArgs(this.currentFBName ?? this.currentProgramName, ownMethod.name, expr.arguments, expr.sourceSpan);
+      return `${expr.functionName}(${bound.join(", ")})`;
     }
     const userFunction = this.ast?.functions.some((f) => f.name.toUpperCase() === nameUpper) === true;
     if (!userFunction) {
@@ -35211,6 +37036,19 @@ var CodeGenerator = class _CodeGenerator {
     }
     return `${expr.functionName}(${args.join(", ")})`;
   }
+  /**
+   * The method of the enclosing FUNCTION_BLOCK (inherited ones included) or
+   * PROGRAM a bare call `M(...)` names; an FB instance of the name is not one.
+   */
+  ownMethodCalled(expr) {
+    const name = expr.functionName;
+    if (expr.instance || name.includes("."))
+      return void 0;
+    if (this.getFBInvocationType(name, expr.instance) !== void 0) {
+      return void 0;
+    }
+    return this.findMethodDeclaration(this.currentFBName ?? this.currentProgramName, name);
+  }
   /** The type that owns the method of a dotted call `prefix.M(...)`:
    *  THIS (or the program's own name) is the enclosing block, SUPER its base,
    *  anything else the declared type of the variable `prefix`. */
@@ -35253,6 +37091,32 @@ var CodeGenerator = class _CodeGenerator {
    * interface, walking the base chain of function blocks. Undefined when the
    * type is not declared in this compilation unit (a library block).
    */
+  /**
+   * The type name (upper case) of the ENO an FB, its bases included, or a
+   * PROGRAM declares; undefined when it has only the implicit one.
+   */
+  declaredEnoType(typeName2) {
+    const seen = /* @__PURE__ */ new Set();
+    let current = typeName2.toUpperCase();
+    while (current !== void 0 && !seen.has(current)) {
+      seen.add(current);
+      const upper = current;
+      const fb = this.ast?.functionBlocks.find((f) => f.name.toUpperCase() === upper);
+      const owner = fb ?? this.ast?.programs.find((p) => p.name.toUpperCase() === upper);
+      if (!owner)
+        return void 0;
+      for (const block of owner.varBlocks) {
+        for (const decl of block.declarations) {
+          if (decl.names.some((n) => n.toUpperCase() === "ENO")) {
+            const plain = decl.type.arrayDimensions === void 0 && decl.type.referenceKind === "none";
+            return plain ? decl.type.name.toUpperCase() : "";
+          }
+        }
+      }
+      current = fb?.extends?.toUpperCase();
+    }
+    return void 0;
+  }
   findMethodDeclaration(typeName2, methodName) {
     if (!typeName2 || !this.ast)
       return void 0;
@@ -35504,6 +37368,8 @@ var CodeGenerator = class _CodeGenerator {
     const u = typeName2.toUpperCase();
     if (!memberNames.has(u))
       return "";
+    if (this.isUserDefinedType(typeName2))
+      return "";
     if (this.enumTypeMembers.has(u))
       return "";
     if (this.knownFBTypes.has(u))
@@ -35643,7 +37509,7 @@ var CodeGenerator = class _CodeGenerator {
    * for an interface type (not its variable wrapper), else the declared type.
    */
   inOutParamType(type) {
-    return !type.arrayDimensions && (type.referenceKind === void 0 || type.referenceKind === "none") && this.isInterfaceType(type.name) ? type.name : this.mapTypeRefToCpp(this.toParamTypeRef(type));
+    return !type.arrayDimensions && (type.referenceKind === void 0 || type.referenceKind === "none") && this.isInterfaceType(type.name) ? type.name : this.mapTypeRefToCpp(this.byRefParamTypeRef(type));
   }
   /**
    * Check if a type name refers to a known interface type.
@@ -35689,6 +37555,10 @@ var CodeGenerator = class _CodeGenerator {
         return own;
       const owner = current;
       const fb = this.ast?.functionBlocks.find((f) => f.name.toUpperCase() === owner);
+      if (!fb && this.libraryFBExtends.has(owner)) {
+        current = this.libraryFBExtends.get(owner);
+        continue;
+      }
       if (!fb || fb.varBlocks.some((b) => b.declarations.some((d) => d.names.some((n) => n.toUpperCase() === field)))) {
         return void 0;
       }
@@ -35860,10 +37730,12 @@ var CodeGenerator = class _CodeGenerator {
           if (decl.type.referenceKind !== void 0 && decl.type.referenceKind !== "none") {
             this.currentScopeVarRefKinds.set(name.toUpperCase(), decl.type.referenceKind);
           }
-          if (this.isUserDefinedType(decl.type.name) && name.toUpperCase() === cppType.toUpperCase()) {
-            this.memberMangledNames.set(name.toUpperCase(), `${name}_`);
-          }
-          if (this.currentFBInterfaceMethods.has(name.toUpperCase())) {
+          const isParameter = stackBlocks.includes(block) && (block.blockType === "VAR_INPUT" || block.blockType === "VAR_OUTPUT" || block.blockType === "VAR_IN_OUT");
+          if (this.isUserDefinedType(decl.type.name) && name.toUpperCase() === cppType.toUpperCase() || (isParameter ? this.currentFBInterfaceMethods.has(name.toUpperCase()) : needsMemberMangling(name, decl.type.name, {
+            isUserDefinedType: (t) => this.isUserDefinedType(t),
+            shadowingNames: this.shadowingNames(),
+            interfaceMethods: this.currentFBInterfaceMethods
+          }))) {
             this.memberMangledNames.set(name.toUpperCase(), `${name}_`);
           }
         }
@@ -36003,7 +37875,12 @@ var CodeGenerator = class _CodeGenerator {
       const target = base === void 0 ? void 0 : resolveAccessType(base, instance, this.accessLookup);
       return target !== void 0 && (target.referenceKind === void 0 || target.referenceKind === "none") && target.arrayDimensions === void 0 && this.isFBType(target.name) ? target.name : void 0;
     }
-    const declaredType = isElementCall ? this.currentScopeVarTypes.get(functionName.toUpperCase()) : this.invocationTargetType(functionName);
+    const globalArray = isElementCall ? this.namespaceGlobalTypeRef(functionName.toUpperCase()) : void 0;
+    if (globalArray?.arrayDimensions !== void 0) {
+      const element = globalArray.elementTypeName ?? globalArray.name;
+      return this.isFBType(element) ? element : void 0;
+    }
+    const declaredType = isElementCall ? this.currentScopeVarTypes.get(functionName.toUpperCase()) ?? globalArray?.name : this.invocationTargetType(functionName);
     if (!declaredType)
       return void 0;
     const varType = isElementCall ? this.ast ? resolveArrayElementType(declaredType, this.ast) : void 0 : declaredType;
@@ -36049,10 +37926,31 @@ var CodeGenerator = class _CodeGenerator {
   invocationTargetType(functionName) {
     const [root2, ...members2] = functionName.split(".");
     const rootUpper = root2.toUpperCase();
-    let type = this.currentScopeVarTypes.get(rootUpper) ?? this.namespaceGlobalType(rootUpper);
+    let type = this.currentScopeVarTypes.get(rootUpper) ?? this.inheritedMemberTypeName(rootUpper) ?? this.namespaceGlobalType(rootUpper);
     for (const member of members2)
       type = this.resolveMemberType(type, member);
     return type;
+  }
+  /** Declared type name of a member the current FB inherits from a base. */
+  inheritedMemberTypeName(upper) {
+    const seen = /* @__PURE__ */ new Set();
+    let current = this.currentFBExtends;
+    while (current !== void 0 && !seen.has(current.toUpperCase())) {
+      const base = current.toUpperCase();
+      seen.add(base);
+      const fb = this.ast?.functionBlocks.find((f) => f.name.toUpperCase() === base);
+      if (!fb)
+        return void 0;
+      for (const block of fb.varBlocks) {
+        for (const d of block.declarations) {
+          if (d.names.some((n) => n.toUpperCase() === upper)) {
+            return d.type.name;
+          }
+        }
+      }
+      current = fb.extends;
+    }
+    return void 0;
   }
   /** Declared type of a file-level or library VAR_GLOBAL not shadowed here. */
   namespaceGlobalTypeRef(upper) {
@@ -36124,7 +38022,30 @@ var CodeGenerator = class _CodeGenerator {
    * has, which also overwrites any FALSE left behind by a prior gated
    * invocation.
    */
-  emitEnEnoWrapper(indent, enExpr, enoVar, emitBody, instanceEnoTarget = null) {
+  emitEnEnoWrapper(indent, enExpr, enoVar, emitBody, instanceEnoTarget = null, instanceEnoDeclared = false) {
+    if (instanceEnoDeclared && instanceEnoTarget !== null) {
+      const copyOut = (atIndent, value) => {
+        if (enoVar !== null)
+          this.emit(`${atIndent}${enoVar} = ${value};`);
+      };
+      const run = (atIndent) => {
+        this.emit(`${atIndent}${instanceEnoTarget} = true;`);
+        emitBody(atIndent);
+        copyOut(atIndent, instanceEnoTarget);
+      };
+      if (enExpr === null) {
+        run(indent);
+        return;
+      }
+      const bodyIndent = indent + this.options.indent;
+      this.emit(`${indent}if (${enExpr}) {`);
+      run(bodyIndent);
+      this.emit(`${indent}} else {`);
+      this.emit(`${bodyIndent}${instanceEnoTarget} = false;`);
+      copyOut(bodyIndent, "false");
+      this.emit(`${indent}}`);
+      return;
+    }
     const targets = [enoVar, instanceEnoTarget].filter((t) => t !== null);
     const writeTargets = (atIndent, value) => {
       for (const t of targets) {
@@ -36213,7 +38134,7 @@ var CodeGenerator = class _CodeGenerator {
       } else {
         this.emitPOUCallLine(instanceName, call.functionName, bi);
       }
-    }, `${instanceName}.ENO`);
+    }, `${instanceName}.ENO`, fbTypeName !== void 0 && this.declaredEnoType(fbTypeName) === "BOOL");
     for (const { target, source } of copyOuts) {
       this.emitCaptureToLvalue(target, source, indent);
     }
@@ -36403,6 +38324,7 @@ var CodeGenerator = class _CodeGenerator {
   mangleMemberIfNeeded(name, stTypeName) {
     const mangled = mangledMemberName(name, stTypeName, {
       isUserDefinedType: (t) => this.isUserDefinedType(t),
+      shadowingNames: this.shadowingNames(),
       interfaceMethods: this.currentFBInterfaceMethods
     });
     if (mangled !== name) {
@@ -36434,6 +38356,7 @@ var CodeGenerator = class _CodeGenerator {
   needsFieldMangling(fieldName, fieldTypeName, parentTypeName) {
     return needsMemberMangling(fieldName, fieldTypeName, {
       isUserDefinedType: (t) => this.isUserDefinedType(t),
+      shadowingNames: this.shadowingNames(),
       interfaceMethods: parentTypeName !== void 0 ? this.fbInterfaceMethodNames.get(parentTypeName.toUpperCase()) : void 0
     });
   }
@@ -37129,6 +39052,7 @@ function generateDebugTable(ast, projectModel, symbolTables, opts = {}) {
     programByName.set(p.name.toUpperCase(), p);
   const reached = programsReachedByName(ast);
   const interfaceNames = new Set(ast.interfaces.map((i) => i.name.toUpperCase()));
+  const shadowingNames = typeShadowingMemberNames(ast);
   const isUserDefinedType = (typeName2) => {
     const upper = typeName2.toUpperCase();
     if (isElementaryType(upper))
@@ -37371,6 +39295,7 @@ function generateDebugTable(ast, projectModel, symbolTables, opts = {}) {
   const libraryMemberCppName = (v, ownerTypeName) => v.cppName ?? memberCppName(v.name, v.declaration.type, ownerTypeName);
   const memberCppName = (varName, typeRef, ownerTypeName) => mangledMemberName(varName, typeRef?.name, {
     isUserDefinedType,
+    shadowingNames,
     interfaceMethods: ownerTypeName !== void 0 ? fbInterfaceMethods.get(ownerTypeName.toUpperCase()) : void 0
   });
   const visitVarDecl = (path, cppExpr, decl, flags, ownerTypeName) => {
@@ -37591,9 +39516,12 @@ var BoundResolver = class {
   enumNames = /* @__PURE__ */ new Set();
   locals = /* @__PURE__ */ new Map();
   evaluating = /* @__PURE__ */ new Set();
+  /** Names of the caller-supplied constants, emitted as C++ constants. */
+  suppliedNames = /* @__PURE__ */ new Set();
   constructor(ast, supplied) {
     for (const [name, value] of Object.entries(supplied)) {
       this.globals.set(name.toUpperCase(), value);
+      this.suppliedNames.add(name.toUpperCase());
     }
     this.addConstants(ast.globalVarBlocks, this.globals);
     for (const type of ast.types) {
@@ -37647,6 +39575,21 @@ var BoundResolver = class {
     }
     const member = this.bareMembers.get(upper);
     return typeof member === "number" ? { value: member } : { unknown: upper };
+  }
+  /**
+   * The value of a STRING length written as a constant's name, when it names
+   * an ST constant in scope; undefined for a caller-supplied constant (the
+   * C++ names it) or anything else.
+   */
+  stringLength(name) {
+    const upper = name.toUpperCase();
+    if (!this.locals.has(upper) && this.suppliedNames.has(upper)) {
+      return void 0;
+    }
+    if (!this.locals.has(upper) && !this.globals.has(upper))
+      return void 0;
+    const result = this.constant(upper);
+    return "value" in result ? result.value : void 0;
   }
   evaluate(expr) {
     switch (expr.kind) {
@@ -37751,10 +39694,24 @@ function resolveArrayBounds(unit, supplied = {}) {
     type.arrayDimensions = dims;
     type.elementTypeName = pending.elementTypeName;
   };
+  const stringLength = (type) => {
+    if (typeof type.maxLength === "string") {
+      const value = resolver.stringLength(type.maxLength);
+      if (value !== void 0)
+        type.maxLength = value;
+    }
+    if (typeof type.elementMaxLength === "string") {
+      const value = resolver.stringLength(type.elementMaxLength);
+      if (value !== void 0)
+        type.elementMaxLength = value;
+    }
+  };
   const visit = (root2) => {
     walkAST(root2, (node) => {
-      if (node.kind === "TypeReference")
+      if (node.kind === "TypeReference") {
         inline(node);
+        stringLength(node);
+      }
     });
   };
   resolver.enter([]);
@@ -37790,6 +39747,161 @@ function resolveArrayBounds(unit, supplied = {}) {
   }
   resolver.enter([]);
   visit(unit);
+  return errors;
+}
+
+// dist/semantic/struct-defaults.js
+function collect(blocks, into) {
+  for (const block of blocks) {
+    if (block.blockType !== "VAR_GLOBAL")
+      continue;
+    if (block.globalListName !== void 0) {
+      into.lists.add(block.globalListName.toUpperCase());
+    }
+    for (const decl of block.declarations) {
+      for (const name of decl.names) {
+        const upper = name.toUpperCase();
+        if (block.isConstant) {
+          into.constants.set(upper, decl.initialValue ?? null);
+        } else {
+          into.variables.add(upper);
+        }
+      }
+    }
+  }
+}
+function globalName(expr, globals) {
+  if (expr.subscripts.length > 0 || expr.isDereference)
+    return void 0;
+  if (expr.fieldAccess.length === 0)
+    return expr.name.toUpperCase();
+  if (expr.fieldAccess.length === 1 && globals.lists.has(expr.name.toUpperCase())) {
+    return (expr.fieldAccess[0] ?? "").toUpperCase();
+  }
+  return void 0;
+}
+var Folder = class {
+  globals;
+  supplied;
+  errors;
+  evaluating = /* @__PURE__ */ new Set();
+  /** The fields of the STRUCT being folded: a bare name naming one is no global. */
+  shadowed = /* @__PURE__ */ new Set();
+  constructor(globals, supplied, errors) {
+    this.globals = globals;
+    this.supplied = supplied;
+    this.errors = errors;
+  }
+  /** `expr` with every global constant it names replaced by its value. */
+  fold(expr, field) {
+    switch (expr.kind) {
+      case "VariableExpression": {
+        const name = globalName(expr, this.globals);
+        if (name === void 0)
+          return expr;
+        if (expr.fieldAccess.length === 0 && this.shadowed.has(name)) {
+          return expr;
+        }
+        const value = this.constant(name, expr, field);
+        return value ?? expr;
+      }
+      case "ParenthesizedExpression":
+        return { ...expr, expression: this.fold(expr.expression, field) };
+      case "UnaryExpression":
+        return { ...expr, operand: this.fold(expr.operand, field) };
+      case "BinaryExpression":
+        return {
+          ...expr,
+          left: this.fold(expr.left, field),
+          right: this.fold(expr.right, field)
+        };
+      case "FunctionCallExpression":
+        return {
+          ...expr,
+          arguments: expr.arguments.map((a) => ({
+            ...a,
+            value: this.fold(a.value, field)
+          }))
+        };
+      case "ArrayLiteralExpression":
+        return {
+          ...expr,
+          elements: expr.elements.map((e) => this.fold(e, field))
+        };
+      case "StructInitializerExpression":
+        return {
+          ...expr,
+          elements: expr.elements.map((e) => ({
+            ...e,
+            value: this.fold(e.value, field)
+          }))
+        };
+      default:
+        return expr;
+    }
+  }
+  /** The folded value of global `name`; undefined when it is no constant. */
+  constant(name, at, field) {
+    const entry = this.globals.constants.get(name);
+    if (entry !== void 0) {
+      if (entry === null || this.evaluating.has(name))
+        return void 0;
+      this.evaluating.add(name);
+      const folded = this.fold(entry, field);
+      this.evaluating.delete(name);
+      return {
+        kind: "ParenthesizedExpression",
+        sourceSpan: at.sourceSpan,
+        expression: { ...folded, sourceSpan: at.sourceSpan }
+      };
+    }
+    const supplied = Object.entries(this.supplied).find(([key]) => key.toUpperCase() === name);
+    if (supplied !== void 0) {
+      const literal = {
+        kind: "LiteralExpression",
+        sourceSpan: at.sourceSpan,
+        literalType: "INT",
+        value: supplied[1],
+        rawValue: String(supplied[1])
+      };
+      return literal;
+    }
+    if (this.globals.variables.has(name)) {
+      this.errors.push({
+        message: `The default of STRUCT field '${field}' must be a constant expression: '${name}' is a global variable, not a constant`,
+        line: at.sourceSpan.startLine,
+        column: at.sourceSpan.startCol,
+        severity: "error",
+        ...at.sourceSpan.file !== void 0 ? { file: at.sourceSpan.file } : {}
+      });
+    }
+    return void 0;
+  }
+};
+function foldStructFieldDefaults(unit, supplied = {}) {
+  const globals = {
+    constants: /* @__PURE__ */ new Map(),
+    variables: /* @__PURE__ */ new Set(),
+    lists: /* @__PURE__ */ new Set()
+  };
+  collect(unit.globalVarBlocks, globals);
+  for (const config of unit.configurations)
+    collect(config.varBlocks, globals);
+  const errors = [];
+  const folder = new Folder(globals, supplied, errors);
+  for (const type of unit.types) {
+    if (type.definition.kind !== "StructDefinition")
+      continue;
+    const fields = new Set(type.definition.fields.flatMap((f) => f.names.map((n) => n.toUpperCase())));
+    folder.shadowed = fields;
+    for (const field of type.definition.fields) {
+      if (field.initialValue === void 0 || field.type.referenceKind !== "none" || field.type.referenceChain !== void 0) {
+        continue;
+      }
+      const name = `${type.name}.${field.names[0] ?? ""}`.toUpperCase();
+      field.initialValue = folder.fold(field.initialValue, name);
+    }
+  }
   return errors;
 }
 
@@ -37963,6 +40075,9 @@ function lowerAccessorLocals(unit) {
   const errors = [];
   for (const fb of unit.functionBlocks) {
     for (const prop of fb.properties) {
+      if (prop.getterVarBlocks === void 0 && prop.getter !== void 0 && prop.getter.length > 0 && getterChangesInstance(unit, fb, prop)) {
+        prop.getterVarBlocks = [];
+      }
       if (prop.getterVarBlocks !== void 0 && prop.getter !== void 0) {
         const name = lowerOne2(fb, prop, "GET", prop.getterVarBlocks, prop.getter, errors);
         if (name !== void 0) {
@@ -37982,6 +40097,555 @@ function lowerAccessorLocals(unit) {
     }
   }
   return errors;
+}
+function getterChangesInstance(unit, fb, prop) {
+  const members2 = /* @__PURE__ */ new Set();
+  const methods = /* @__PURE__ */ new Set();
+  const seen = /* @__PURE__ */ new Set();
+  let current = fb;
+  while (current !== void 0 && !seen.has(current.name.toUpperCase())) {
+    seen.add(current.name.toUpperCase());
+    for (const block of current.varBlocks) {
+      for (const decl of block.declarations) {
+        for (const n of decl.names)
+          members2.add(n.toUpperCase());
+      }
+    }
+    for (const m of current.methods)
+      methods.add(m.name.toUpperCase());
+    for (const p of current.properties)
+      members2.add(p.name.toUpperCase());
+    const base = current.extends?.toUpperCase();
+    current = base === void 0 ? void 0 : unit.functionBlocks.find((f) => f.name.toUpperCase() === base);
+  }
+  const self2 = prop.name.toUpperCase();
+  const rootOf = (name) => name.split(".")[0].toUpperCase();
+  const isInstance = (root2) => root2 === "THIS" || root2 === "SUPER" || members2.has(root2);
+  let changes = false;
+  for (const stmt of prop.getter ?? []) {
+    walkAST(stmt, (node) => {
+      if (changes)
+        return false;
+      if (node.kind === "AssignmentStatement" || node.kind === "RefAssignStatement") {
+        const target = node.target;
+        if (target.kind === "VariableExpression") {
+          const root2 = target.name.toUpperCase();
+          if (root2 !== self2 && isInstance(root2))
+            changes = true;
+        }
+      } else if (node.kind === "FunctionCallExpression") {
+        const call = node;
+        const root2 = rootOf(call.functionName);
+        if (call.instance !== void 0 || isInstance(root2) || !call.functionName.includes(".") && methods.has(root2)) {
+          changes = true;
+        }
+      } else if (node.kind === "MethodCallExpression") {
+        const object = node.object;
+        if (object.kind === "VariableExpression" && isInstance(object.name.toUpperCase())) {
+          changes = true;
+        }
+      }
+      return void 0;
+    });
+    if (changes)
+      return true;
+  }
+  return changes;
+}
+
+// dist/frontend/conditional-pragmas.js
+var PRAGMA_DEFINE_NAME_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
+function isPragmaDefineName(name) {
+  return PRAGMA_DEFINE_NAME_RE.test(name);
+}
+function validatePragmaDefines(defines) {
+  if (defines === void 0)
+    return;
+  if (typeof defines !== "object" || defines === null || Array.isArray(defines)) {
+    throw new TypeError("pragmaDefines must be an object of name \u2192 string");
+  }
+  for (const [name, value] of Object.entries(defines)) {
+    if (!isPragmaDefineName(name)) {
+      throw new TypeError(`pragmaDefines key ${JSON.stringify(name)} is not an identifier`);
+    }
+    if (typeof value !== "string") {
+      throw new TypeError(`pragmaDefines[${JSON.stringify(name)}] must be a string`);
+    }
+  }
+}
+function sourcePrepFor(dialect, pragmaDefines) {
+  return {
+    enabled: dialect.features.has("conditional_pragmas"),
+    defines: new Map(Object.entries(pragmaDefines ?? {}))
+  };
+}
+var CONDITIONAL_PRAGMA_REFUSAL = "Conditional compilation pragmas are not supported";
+function conditionalPragmaHint(dialect) {
+  const profiles = profilesWithFeature(dialect, "conditional_pragmas");
+  return "; they need the feature conditional_pragmas" + (profiles.length > 0 ? ` (profiles: ${profiles.join(", ")})` : "");
+}
+function withPragmaHint(errors, hint) {
+  if (hint === "")
+    return errors;
+  for (const e of errors) {
+    if (e.message.startsWith(CONDITIONAL_PRAGMA_REFUSAL))
+      e.message += hint;
+  }
+  return errors;
+}
+function lineStarts(source) {
+  const starts = [0];
+  for (let i = 0; i < source.length; i++) {
+    const c = source.charCodeAt(i);
+    if (c === 10)
+      starts.push(i + 1);
+    else if (c === 13) {
+      if (source.charCodeAt(i + 1) === 10)
+        i++;
+      starts.push(i + 1);
+    }
+  }
+  return starts;
+}
+function lineColAt(starts, offset) {
+  let lo = 0;
+  let hi = starts.length - 1;
+  while (lo < hi) {
+    const mid = lo + hi + 1 >> 1;
+    if (starts[mid] <= offset)
+      lo = mid;
+    else
+      hi = mid - 1;
+  }
+  return { line: lo + 1, column: offset - starts[lo] + 1 };
+}
+var REFUSED_OPERATORS = /* @__PURE__ */ new Set([
+  "HASATTRIBUTE",
+  "HASTYPE",
+  "HASCONSTANTVALUE",
+  "HASCONSTANTTYPE"
+]);
+var REFUSED_DEFINED_KINDS = /* @__PURE__ */ new Set(["VARIABLE", "TYPE", "POU"]);
+var ConditionSyntaxError = class extends Error {
+  offset;
+  constructor(message, offset) {
+    super(message);
+    this.offset = offset;
+  }
+};
+function lexCondition(text, base) {
+  const out = [];
+  let i = 0;
+  while (i < text.length) {
+    const c = text.charAt(i);
+    if (/\s/.test(c)) {
+      i++;
+    } else if (/[A-Za-z_]/.test(c)) {
+      const m = /^[A-Za-z_][A-Za-z0-9_]*/.exec(text.substring(i));
+      out.push({ kind: "name", text: m[0], offset: base + i });
+      i += m[0].length;
+    } else if (c === "(" || c === ")" || c === "," || c === ":") {
+      out.push({ kind: "punct", text: c, offset: base + i });
+      i++;
+    } else if (c === "'") {
+      const close = text.indexOf("'", i + 1);
+      if (close < 0) {
+        out.push({
+          kind: "bad",
+          text: "unterminated string",
+          offset: base + i
+        });
+        break;
+      }
+      out.push({
+        kind: "string",
+        text: text.substring(i + 1, close),
+        offset: base + i,
+        length: close + 1 - i
+      });
+      i = close + 1;
+    } else {
+      out.push({ kind: "bad", text: c, offset: base + i });
+      i++;
+    }
+  }
+  out.push({ kind: "end", offset: base + text.length });
+  return out;
+}
+var ConditionParser = class {
+  toks;
+  pos = 0;
+  problems = [];
+  constructor(toks) {
+    this.toks = toks;
+  }
+  parse() {
+    const node = this.or();
+    const t = this.peek();
+    if (t.kind !== "end")
+      throw this.unexpected(t, "end of condition");
+    return node;
+  }
+  peek() {
+    return this.toks[this.pos];
+  }
+  next() {
+    const t = this.toks[this.pos];
+    if (t.kind !== "end")
+      this.pos++;
+    return t;
+  }
+  isWord(t, word) {
+    return t.kind === "name" && t.text.toUpperCase() === word;
+  }
+  isPunct(t, p) {
+    return t.kind === "punct" && t.text === p;
+  }
+  unexpected(t, expected) {
+    if (t.kind === "bad" && t.text === "unterminated string") {
+      return new ConditionSyntaxError("Malformed conditional pragma expression: unterminated string", t.offset);
+    }
+    return new ConditionSyntaxError(`Malformed conditional pragma expression: expected ${expected}`, t.offset);
+  }
+  expectPunct(p) {
+    const t = this.peek();
+    if (!this.isPunct(t, p))
+      throw this.unexpected(t, `'${p}'`);
+    this.next();
+  }
+  expectName() {
+    const t = this.peek();
+    if (t.kind !== "name")
+      throw this.unexpected(t, "a name");
+    this.next();
+    return t.text;
+  }
+  or() {
+    let left = this.and();
+    while (this.isWord(this.peek(), "OR")) {
+      this.next();
+      left = { kind: "or", left, right: this.and() };
+    }
+    return left;
+  }
+  and() {
+    let left = this.not();
+    while (this.isWord(this.peek(), "AND")) {
+      this.next();
+      left = { kind: "and", left, right: this.not() };
+    }
+    return left;
+  }
+  not() {
+    if (this.isWord(this.peek(), "NOT")) {
+      this.next();
+      return { kind: "not", operand: this.not() };
+    }
+    return this.primary();
+  }
+  primary() {
+    const t = this.peek();
+    if (this.isPunct(t, "(")) {
+      this.next();
+      const inner = this.or();
+      this.expectPunct(")");
+      return inner;
+    }
+    if (t.kind !== "name")
+      throw this.unexpected(t, "a condition");
+    this.next();
+    return this.call(t.text, t.offset);
+  }
+  /** Skip a balanced argument list after `(` has been consumed. */
+  skipArguments() {
+    let depth = 1;
+    for (; ; ) {
+      const t = this.peek();
+      if (t.kind === "end")
+        throw this.unexpected(t, "')'");
+      if (t.kind === "bad" && t.text === "unterminated string") {
+        throw this.unexpected(t, "')'");
+      }
+      this.next();
+      if (this.isPunct(t, "("))
+        depth++;
+      else if (this.isPunct(t, ")") && --depth === 0)
+        return;
+    }
+  }
+  call(op, opOffset) {
+    const upper = op.toUpperCase();
+    this.expectPunct("(");
+    if (upper === "DEFINED") {
+      const name = this.expectName();
+      if (this.isPunct(this.peek(), ":")) {
+        this.next();
+        this.expectName();
+        this.expectPunct(")");
+        const kind = name.toUpperCase();
+        this.problems.push({
+          message: REFUSED_DEFINED_KINDS.has(kind) ? `Conditional pragma operator 'defined(${name.toLowerCase()}:...)' is not supported` : `unknown operator 'defined(${name}:...)' in a conditional pragma`,
+          offset: opOffset
+        });
+        return { kind: "false" };
+      }
+      this.expectPunct(")");
+      return { kind: "defined", name, projectOnly: false };
+    }
+    if (upper === "PROJECT_DEFINED") {
+      const name = this.expectName();
+      this.expectPunct(")");
+      return { kind: "defined", name, projectOnly: true };
+    }
+    if (upper === "HASVALUE") {
+      const name = this.expectName();
+      this.expectPunct(",");
+      const v = this.peek();
+      if (v.kind !== "string")
+        throw this.unexpected(v, "a quoted value");
+      this.next();
+      this.expectPunct(")");
+      return { kind: "hasvalue", name, value: v.text };
+    }
+    this.problems.push({
+      message: REFUSED_OPERATORS.has(upper) ? `Conditional pragma operator '${op.toLowerCase()}' is not supported` : `unknown operator '${op}' in a conditional pragma`,
+      offset: opOffset
+    });
+    this.skipArguments();
+    return { kind: "false" };
+  }
+};
+function defineValue(scope, name) {
+  return scope.source.get(name) ?? scope.file.get(name) ?? scope.project.get(name);
+}
+function evaluate(node, scope) {
+  switch (node.kind) {
+    case "and":
+      return evaluate(node.left, scope) && evaluate(node.right, scope);
+    case "or":
+      return evaluate(node.left, scope) || evaluate(node.right, scope);
+    case "not":
+      return !evaluate(node.operand, scope);
+    case "defined":
+      return scope.project.has(node.name) || !node.projectOnly && (scope.file.has(node.name) || scope.source.has(node.name));
+    case "hasvalue":
+      return defineValue(scope, node.name) === node.value;
+    case "false":
+      return false;
+  }
+}
+function parseDefineAction(keyword, rest, restOffset, closeOffset) {
+  const what = `Malformed {${keyword.toLowerCase()}}`;
+  const toks = lexCondition(rest, restOffset);
+  const at = (t) => t.kind === "end" ? closeOffset : t.offset;
+  const first2 = toks[0];
+  if (first2.kind !== "name") {
+    throw new ConditionSyntaxError(`${what}: expected a name`, at(first2));
+  }
+  let i = 1;
+  let value;
+  if (keyword === "DEFINE") {
+    value = "";
+    const v = toks[i];
+    if (v.kind === "string") {
+      value = v.text;
+      i++;
+    } else if (v.kind === "bad" && v.text === "unterminated string") {
+      throw new ConditionSyntaxError(`${what}: unterminated string`, v.offset);
+    } else if (v.kind !== "end") {
+      throw new ConditionSyntaxError(`${what}: expected a quoted value or '}'`, v.offset);
+    }
+  }
+  const extra = toks[i];
+  if (extra.kind !== "end") {
+    throw new ConditionSyntaxError(`${what}: expected '}'`, extra.offset);
+  }
+  return value === void 0 ? { name: first2.text } : { name: first2.text, value };
+}
+var DIRECTIVE = /^\{(\s*)(IF|ELSIF|ELSE|END_IF|DEFINE|UNDEFINE)\b/i;
+function blank(text, start, end) {
+  return text.substring(start, end).replace(/[^\r\n]/g, " ");
+}
+function lengthStableCopy(source) {
+  return source.replace(/[^\p{ASCII}]/gu, (c) => c.toUpperCase().length === c.length ? c : "_".repeat(c.length));
+}
+var DIRECTIVE_LINE = /^[ \t]*\{\s*(?:IF|ELSIF|ELSE|END_IF|DEFINE|UNDEFINE)\b/i;
+function applyConditionalPragmas(source, defines, lex, fileDefines = /* @__PURE__ */ new Map()) {
+  if (!hasConditionalPragma(source)) {
+    return { text: source, errors: [], blankedLines: [] };
+  }
+  let lexed;
+  try {
+    lexed = lex(lengthStableCopy(source));
+  } catch {
+    return { text: source, errors: [], blankedLines: [] };
+  }
+  const pragmas = lexed.groups[PRAGMA_GROUP] ?? [];
+  const starts = lineStarts(source);
+  const errors = [];
+  const report = (message, offset, length) => {
+    errors.push({ message, ...lineColAt(starts, offset), length, offset });
+  };
+  for (const tok of lexed.tokens) {
+    if (!/[\r\n]/.test(tok.image))
+      continue;
+    const text2 = source.substring(tok.startOffset, tok.startOffset + tok.image.length);
+    const lineBreak = /\r\n?|\n/g;
+    let m;
+    while ((m = lineBreak.exec(text2)) !== null) {
+      const lineStart = m.index + m[0].length;
+      const rest = text2.substring(lineStart);
+      const hit = DIRECTIVE_LINE.exec(rest);
+      if (hit) {
+        const brace = tok.startOffset + lineStart + hit[0].indexOf("{");
+        report("Conditional pragma directive inside a string literal that spans lines", brace, 1);
+      }
+    }
+  }
+  const directives = [];
+  for (const tok of [...pragmas].sort((a, b) => a.startOffset - b.startOffset)) {
+    const image = source.substring(tok.startOffset, tok.startOffset + tok.image.length);
+    if (!isConditionalPragma(image)) {
+      if (isConditionalPragma(tok.image)) {
+        report("Internal error: conditional pragma offsets do not match the source", tok.startOffset, 1);
+      }
+      continue;
+    }
+    const m = DIRECTIVE.exec(image);
+    const keyword = m[2].toUpperCase();
+    const restStart = 1 + m[1].length + m[2].length;
+    const d = {
+      keyword,
+      start: tok.startOffset,
+      end: tok.startOffset + image.length,
+      rest: image.substring(restStart, image.length - 1),
+      restOffset: tok.startOffset + restStart
+    };
+    directives.push(d);
+    if (keyword === "DEFINE" || keyword === "UNDEFINE") {
+      try {
+        d.action = parseDefineAction(keyword, d.rest, d.restOffset, d.end - 1);
+      } catch (e) {
+        if (!(e instanceof ConditionSyntaxError))
+          throw e;
+        report(e.message, e.offset, 1);
+      }
+    } else if (keyword === "IF" || keyword === "ELSIF") {
+      if (d.rest.trim() === "") {
+        report("Malformed conditional pragma expression: expected a condition", d.end - 1, 1);
+        continue;
+      }
+      const parser2 = new ConditionParser(lexCondition(d.rest, d.restOffset));
+      try {
+        d.condition = parser2.parse();
+      } catch (e) {
+        if (!(e instanceof ConditionSyntaxError))
+          throw e;
+        for (const p of parser2.problems)
+          report(p.message, p.offset, 1);
+        report(e.message, e.offset, 1);
+        continue;
+      }
+      for (const p of parser2.problems)
+        report(p.message, p.offset, 1);
+    } else if (d.rest.trim() !== "") {
+      const lead = d.rest.length - d.rest.trimStart().length;
+      report(`Malformed conditional pragma: {${keyword}} takes no condition`, d.restOffset + lead, 1);
+    }
+  }
+  if (directives.length === 0) {
+    errors.sort((a, b) => a.offset - b.offset);
+    return { text: source, errors, blankedLines: [] };
+  }
+  const stack = [];
+  const isActive = () => stack.length === 0 || stack[stack.length - 1].active;
+  const sourceDefines = /* @__PURE__ */ new Map();
+  const scope = {
+    project: defines,
+    file: fileDefines,
+    source: sourceDefines
+  };
+  const choose = (d) => d.condition !== void 0 && evaluate(d.condition, scope);
+  const parts = [];
+  let cursor = 0;
+  for (const d of directives) {
+    const region = source.substring(cursor, d.start);
+    parts.push(isActive() ? region : blank(source, cursor, d.start));
+    parts.push(blank(source, d.start, d.end));
+    cursor = d.end;
+    const top = stack[stack.length - 1];
+    const length = d.end - d.start;
+    switch (d.keyword) {
+      case "IF": {
+        const parentActive = isActive();
+        const active = parentActive && choose(d);
+        stack.push({
+          ifTok: d,
+          parentActive,
+          taken: active,
+          active,
+          sawElse: false
+        });
+        break;
+      }
+      case "ELSIF":
+        if (!top) {
+          report("{ELSIF} without a matching {IF}", d.start, length);
+        } else if (top.sawElse) {
+          report("{ELSIF} after {ELSE}", d.start, length);
+          top.active = false;
+        } else {
+          top.active = top.parentActive && !top.taken && choose(d);
+          top.taken ||= top.active;
+        }
+        break;
+      case "ELSE":
+        if (!top) {
+          report("{ELSE} without a matching {IF}", d.start, length);
+        } else if (top.sawElse) {
+          report("second {ELSE} in one {IF}", d.start, length);
+          top.active = false;
+        } else {
+          top.sawElse = true;
+          top.active = top.parentActive && !top.taken;
+          top.taken ||= top.active;
+        }
+        break;
+      case "END_IF":
+        if (!top)
+          report("{END_IF} without a matching {IF}", d.start, length);
+        else
+          stack.pop();
+        break;
+      case "DEFINE":
+        if (d.action && isActive()) {
+          sourceDefines.set(d.action.name, d.action.value ?? "");
+        }
+        break;
+      case "UNDEFINE":
+        if (d.action && isActive())
+          sourceDefines.delete(d.action.name);
+        break;
+    }
+  }
+  parts.push(isActive() ? source.substring(cursor) : blank(source, cursor, source.length));
+  for (const frame of stack) {
+    report("{IF} has no matching {END_IF}", frame.ifTok.start, frame.ifTok.end - frame.ifTok.start);
+  }
+  errors.sort((a, b) => a.offset - b.offset);
+  const text = parts.join("");
+  return { text, errors, blankedLines: newlyBlankLines(source, text, starts) };
+}
+function newlyBlankLines(before, after, starts) {
+  const out = [];
+  for (let i = 0; i < starts.length; i++) {
+    const from = starts[i];
+    const to = i + 1 < starts.length ? starts[i + 1] : before.length;
+    if (/\S/.test(before.substring(from, to)) && !/\S/.test(after.substring(from, to))) {
+      out.push(i + 1);
+    }
+  }
+  return out;
 }
 
 // dist/library/library-loader.js
@@ -38071,7 +40735,8 @@ function makeVarSymbol(v, direction) {
     isRetain: v.retain === true,
     // Only present when the library's codegen mangled the member; the walk
     // prefers it over re-deriving the rule against the wrong unit.
-    ...v.cppName !== void 0 ? { cppName: v.cppName } : {}
+    ...v.cppName !== void 0 ? { cppName: v.cppName } : {},
+    ...v.access !== void 0 ? { access: v.access } : {}
   };
 }
 function loadLibraryManifest(json) {
@@ -38203,7 +40868,11 @@ function registerLibrarySymbols(manifest, symbolTables) {
         },
         returnType,
         parameters: fn.parameters.map((p) => {
-          const sym = makeVarSymbol({ name: p.name, type: p.type }, p.direction);
+          const sym = makeVarSymbol({
+            name: p.name,
+            type: p.type,
+            ...p.referenceKind ? { referenceKind: p.referenceKind } : {}
+          }, p.direction);
           if (p.initialValue !== void 0)
             sym.initialValue = p.initialValue;
           return sym;
@@ -38269,9 +40938,18 @@ function registerLibrarySymbols(manifest, symbolTables) {
           name: fb.name,
           isAbstract: false,
           isFinal: false,
+          ...fb.extends !== void 0 ? { extends: fb.extends } : {},
           varBlocks: [],
           methods: [],
-          properties: [],
+          properties: (fb.properties ?? []).map((p) => ({
+            kind: "PropertyDeclaration",
+            sourceSpan: createDefaultSourceSpan(),
+            name: p.name,
+            type: makeTypeRef(p.type),
+            visibility: "PUBLIC",
+            ...p.get === true ? { getter: [] } : {},
+            ...p.set === true ? { setter: [] } : {}
+          })),
           actions: [],
           body: []
         },
@@ -38282,6 +40960,8 @@ function registerLibrarySymbols(manifest, symbolTables) {
         // this empty and a RETAINed instance of its blocks covers the visible
         // surface only, with a warning naming the block.
         locals: (fb.locals ?? []).map((l) => makeVarSymbol(l, "local")),
+        ...fb.temps !== void 0 ? { temps: fb.temps.map((t) => makeVarSymbol(t, "local")) } : {},
+        ...fb.properties !== void 0 && fb.methods !== void 0 ? { libraryMethodNames: fb.methods.map((m) => m.name) } : {},
         libraryName: manifest.name
       });
     } catch (e) {
@@ -38361,6 +41041,23 @@ function loadStlibArchive(json) {
       gc[key] = val;
     }
     archive.globalConstants = gc;
+  }
+  if (obj.pragmaDefines !== void 0) {
+    const pd = obj.pragmaDefines;
+    if (typeof pd !== "object" || pd === null || Array.isArray(pd)) {
+      throw new LibraryManifestError("Invalid stlib archive: pragmaDefines must be an object");
+    }
+    const out = {};
+    for (const [key, val] of Object.entries(pd)) {
+      if (!isPragmaDefineName(key)) {
+        throw new LibraryManifestError(`Invalid stlib archive: pragmaDefines key ${JSON.stringify(key)} is not an identifier`);
+      }
+      if (typeof val !== "string") {
+        throw new LibraryManifestError(`Invalid stlib archive: pragmaDefines["${key}"] must be a string, got ${typeof val}`);
+      }
+      out[key] = val;
+    }
+    archive.pragmaDefines = out;
   }
   return archive;
 }
@@ -38664,15 +41361,31 @@ function spanOfStatements(body) {
   }
   return { start, end };
 }
+function extendBodyOverBlankedLines(range, blankedLines) {
+  const blanked = blankedLines.get(range.file);
+  if (!blanked || !range.bodySpan)
+    return;
+  let floor = range.pouStartLine;
+  for (const s of range.varBlockSpans)
+    floor = Math.max(floor, s.end);
+  let start = range.bodySpan.start;
+  while (start - 1 > floor && blanked.has(start - 1))
+    start--;
+  range.bodySpan = { start, end: range.bodySpan.end };
+}
 function lineInside(line, span) {
   return line >= span.start && line <= span.end;
 }
-function annotateErrorsWithPouContext(errors, ast) {
+function annotateErrorsWithPouContext(errors, ast, blankedLines) {
   if (errors.length === 0)
     return;
   const ranges = buildPouRanges(ast);
   if (ranges.length === 0)
     return;
+  if (blankedLines && blankedLines.size > 0) {
+    for (const r of ranges)
+      extendBodyOverBlankedLines(r, blankedLines);
+  }
   for (const err of errors) {
     if (err.line <= 0)
       continue;
@@ -39154,6 +41867,19 @@ function serializeVarType(name, typeRef) {
   }
   return entry;
 }
+function byReferenceStringLength(direction, type) {
+  if (direction === "input")
+    return void 0;
+  const upper = type.name.toUpperCase();
+  if (upper !== "STRING" && upper !== "WSTRING")
+    return void 0;
+  if (type.arrayDimensions !== void 0)
+    return void 0;
+  if (type.referenceKind !== void 0 && type.referenceKind !== "none") {
+    return void 0;
+  }
+  return type.maxLength;
+}
 function parameterDirection(blockType) {
   switch (blockType) {
     case "VAR_INPUT":
@@ -39166,6 +41892,18 @@ function parameterDirection(blockType) {
       return void 0;
   }
 }
+function serializeProperty(prop) {
+  return {
+    name: prop.name,
+    type: serializeVarType(prop.name, prop.type),
+    ...prop.getter !== void 0 ? { get: true } : {},
+    ...prop.setter !== void 0 ? { set: true } : {}
+  };
+}
+function serializeTemps(fb) {
+  const temps = fb.varBlocks.filter((b) => b.blockType === "VAR_TEMP").flatMap((b) => b.declarations.flatMap((d) => d.names.map((n) => serializeVarType(n, d.type))));
+  return temps.length > 0 ? { temps } : {};
+}
 function serializeMethod(method) {
   const parameters = method.varBlocks.flatMap((block) => {
     const direction = parameterDirection(block.blockType);
@@ -39173,10 +41911,12 @@ function serializeMethod(method) {
       return [];
     return block.declarations.flatMap((decl) => {
       const initialValue = direction === "input" && decl.initialValue !== void 0 ? serializeInitialValue(decl.initialValue) : void 0;
+      const maxLength = byReferenceStringLength(direction, decl.type);
       return decl.names.map((name) => ({
         ...serializeVarType(name, decl.type),
         direction,
-        ...initialValue !== void 0 ? { initialValue } : {}
+        ...initialValue !== void 0 ? { initialValue } : {},
+        ...maxLength !== void 0 ? { maxLength } : {}
       }));
     });
   });
@@ -39196,6 +41936,9 @@ function serializeLocal(name, decl, block, ctx) {
     entry.readOnly = true;
   if (block.isRetain)
     entry.retain = true;
+  const access = block.access?.[0];
+  if (access === "PUBLIC" || access === "PRIVATE")
+    entry.access = access;
   return entry;
 }
 var POU_HEADER_RE = /^[ \t]*(FUNCTION_BLOCK|FUNCTION|PROGRAM|TYPE)[ \t]+(\w+)/gm;
@@ -39425,6 +42168,8 @@ function compileLibrary(sources, options) {
     compileOpts.features = options.features;
   if (options.dialectIO)
     compileOpts.dialectIO = options.dialectIO;
+  if (options.pragmaDefines)
+    compileOpts.pragmaDefines = options.pragmaDefines;
   if (options.dependencies) {
     compileOpts.libraries = options.dependencies;
   }
@@ -39464,6 +42209,7 @@ function compileLibrary(sources, options) {
   const ast = result.ast;
   const headerFileName = `${options.name}.hpp`;
   const userTypes = userDefinedTypeNames(ast);
+  const shadowingNames = typeShadowingMemberNames(ast);
   const ifaceMethods = /* @__PURE__ */ new Map();
   {
     const byInterface = /* @__PURE__ */ new Map();
@@ -39484,7 +42230,8 @@ function compileLibrary(sources, options) {
   }
   const manglingCtx = (fb) => ({
     isUserDefinedType: (n) => userTypes.has(n.toUpperCase()),
-    interfaceMethods: ifaceMethods.get(fb.name.toUpperCase())
+    interfaceMethods: ifaceMethods.get(fb.name.toUpperCase()),
+    shadowingNames
   });
   const { chunks, cleanHeader, cleanCpp } = buildChunks(result.headerCode, result.cppCode, "\n", ast, options.name, options.dependencies ?? []);
   const builtManifest = {
@@ -39500,13 +42247,17 @@ function compileLibrary(sources, options) {
           return [];
         return block.declarations.flatMap((decl) => {
           const initialValue = decl.initialValue !== void 0 ? serializeInitialValue(decl.initialValue) : void 0;
+          const byReference = decl.type.referenceKind === "reference_to" && (decl.type.referenceChain?.length ?? 1) === 1 && decl.type.arrayDimensions === void 0;
+          const maxLength = byReferenceStringLength(direction, decl.type);
           return decl.names.map((name) => ({
             name,
             type: decl.type.name,
             direction,
+            ...maxLength !== void 0 ? { maxLength } : {},
             // Present ⇒ optional input (default supplied); absent ⇒
             // mandatory. Preserved from user ST and CODESYS-imported ST.
-            ...initialValue !== void 0 ? { initialValue } : {}
+            ...initialValue !== void 0 ? { initialValue } : {},
+            ...byReference ? { referenceKind: "reference_to" } : {}
           }));
         });
       })
@@ -39521,6 +42272,9 @@ function compileLibrary(sources, options) {
         // interface arrays above are. A RETAINed instance retains these
         // too; without them a retained TON keeps Q and ET and loses the
         // state that makes them mean anything.
+        properties: fb.properties.map(serializeProperty),
+        ...serializeTemps(fb),
+        ...fb.extends !== void 0 ? { extends: fb.extends } : {},
         locals: fb.varBlocks.filter((b) => b.blockType === "VAR").flatMap((b) => b.declarations.flatMap((d) => d.names.map((n) => serializeLocal(n, d, b, manglingCtx(fb)))))
       }, catByName), docByName)),
       ...nativeEntries.functionBlocks
@@ -39605,6 +42359,15 @@ function compileStlib(sources, options) {
   }
   if (options.globalConstants && Object.keys(options.globalConstants).length > 0) {
     archive.globalConstants = options.globalConstants;
+  }
+  const dialect = resolveDialect({
+    ...options.dialect !== void 0 ? { dialect: options.dialect } : {},
+    ...options.dialectFiles ? { dialectFiles: options.dialectFiles } : {},
+    ...options.dialectPath ? { dialectPath: options.dialectPath } : {},
+    ...options.features ? { features: options.features } : {}
+  }, options.dialectIO?.readFile, options.dialectIO?.listDir);
+  if (dialect.features.has("conditional_pragmas")) {
+    archive.pragmaDefines = { ...options.pragmaDefines ?? {} };
   }
   return {
     success: true,
@@ -40588,7 +43351,8 @@ function generateReplMain(ast, projectModel, options = { headerFileName: "genera
 function emitVarDescriptors(lines, programs, ast) {
   const userTypes = userDefinedTypeNames(ast);
   const ctx = {
-    isUserDefinedType: (typeName2) => userTypes.has(typeName2.toUpperCase())
+    isUserDefinedType: (typeName2) => userTypes.has(typeName2.toUpperCase()),
+    shadowingNames: typeShadowingMemberNames(ast)
   };
   for (const prog of programs) {
     if (prog.vars.length > 0) {
@@ -40699,11 +43463,46 @@ function extractIncludePaths(flags) {
 }
 
 // dist/testing/test-parser.js
-function parseTestFile(source, fileName) {
+function parseTestFile(source, fileName, options) {
   const errors = [];
-  const parseResult = parseTestSource(source);
+  const opts = options ?? {};
+  validatePragmaDefines(opts.pragmaDefines);
+  let text = source;
+  let pragmaHint = "";
+  let dialect;
+  try {
+    dialect = resolveDialect({
+      ...opts.dialect !== void 0 ? { dialect: opts.dialect } : {},
+      ...opts.dialectFiles ? { dialectFiles: opts.dialectFiles } : {},
+      ...opts.dialectPath ? { dialectPath: opts.dialectPath } : {},
+      ...opts.features ? { features: opts.features } : {}
+    }, opts.dialectIO?.readFile, opts.dialectIO?.listDir);
+  } catch (e) {
+    if (!(e instanceof DialectError))
+      throw e;
+    errors.push({
+      message: e.message,
+      line: 0,
+      column: 0,
+      severity: "error",
+      file: fileName
+    });
+    return { errors };
+  }
+  const prep = sourcePrepFor(dialect, opts.pragmaDefines);
+  if (prep.enabled) {
+    const pragmaResult = applyConditionalPragmas(source, prep.defines, tokenizeTest);
+    if (pragmaResult.errors.length > 0) {
+      errors.push(...toCompileErrors(pragmaResult.errors, fileName));
+      return { errors };
+    }
+    text = pragmaResult.text;
+  } else {
+    pragmaHint = conditionalPragmaHint(dialect);
+  }
+  const parseResult = parseTestSource(text);
   if (parseResult.errors.length > 0) {
-    errors.push(...toCompileErrors(parseResult.errors, fileName));
+    errors.push(...withPragmaHint(toCompileErrors(parseResult.errors, fileName), pragmaHint));
     return { errors };
   }
   if (!parseResult.cst) {
@@ -41477,6 +44276,11 @@ function validateCompileOptions(options) {
       throw new TypeError(`globalListName ${JSON.stringify(name)} is not an identifier`);
     }
   }
+  validatePragmaDefines(options.pragmaDefines);
+  validatePragmaDefines(options.filePragmaDefines);
+  for (const addl of options.additionalSources ?? []) {
+    validatePragmaDefines(addl.pragmaDefines);
+  }
 }
 function dialectRequestFromOptions(options) {
   const req = {};
@@ -41731,6 +44535,40 @@ function userDeclarationSpan(ast, upperName) {
   }
   return void 0;
 }
+function prepareFile(text, fileName, prep, lex, fileDefines) {
+  const errors = [];
+  let out = text;
+  let stopsOnError = false;
+  let blankedLines = [];
+  if (prep.enabled) {
+    const pragmaResult = applyConditionalPragmas(text, prep.defines, lex, new Map(Object.entries(fileDefines ?? {})));
+    out = pragmaResult.text;
+    blankedLines = pragmaResult.blankedLines;
+    if (pragmaResult.errors.length > 0) {
+      errors.push(...toCompileErrors(pragmaResult.errors, fileName));
+      stopsOnError = true;
+    }
+  }
+  const ilResult = transpileILSource(out, fileName);
+  if (ilResult.hasIL) {
+    out = ilResult.stSource;
+    stopsOnError = true;
+    for (const err of ilResult.errors) {
+      const entry = {
+        message: err.message,
+        line: err.line,
+        column: err.column,
+        severity: err.severity
+      };
+      if (err.file)
+        entry.file = err.file;
+      else if (fileName !== void 0)
+        entry.file = fileName;
+      errors.push(entry);
+    }
+  }
+  return { text: out, errors, stopsOnError, blankedLines };
+}
 function runPipeline(source, options, continueOnError) {
   const mergedOptions = { ...defaultOptions, ...options };
   validateCompileOptions(mergedOptions);
@@ -41760,40 +44598,34 @@ function runPipeline(source, options, continueOnError) {
     };
   }
   fbInit = dialect.features.has("fb_init");
+  const prep = sourcePrepFor(dialect, mergedOptions.pragmaDefines);
+  const pragmaHint = prep.enabled ? "" : conditionalPragmaHint(dialect);
   let effectiveSource = source;
+  const blankedByFile = /* @__PURE__ */ new Map();
   {
-    const ilResult = transpileILSource(source, mergedOptions.fileName);
-    if (ilResult.hasIL) {
-      effectiveSource = ilResult.stSource;
-      for (const err of ilResult.errors) {
-        const entry = {
-          message: err.message,
-          line: err.line,
-          column: err.column,
-          severity: err.severity
-        };
-        if (err.file)
-          entry.file = err.file;
-        errors.push(entry);
-      }
-      if (errors.length > 0 && !continueOnError) {
-        return {
-          ast,
-          projectModel,
-          symbolTables,
-          errors,
-          warnings,
-          allArchives,
-          mergedOptions,
-          fbInit
-        };
-      }
+    const prepared = prepareFile(source, mergedOptions.fileName, prep, tokenize, mergedOptions.filePragmaDefines);
+    effectiveSource = prepared.text;
+    if (prepared.blankedLines.length > 0) {
+      blankedByFile.set(mergedOptions.fileName ?? "main.st", new Set(prepared.blankedLines));
+    }
+    errors.push(...prepared.errors);
+    if (prepared.stopsOnError && errors.length > 0 && !continueOnError) {
+      return {
+        ast,
+        projectModel,
+        symbolTables,
+        errors,
+        warnings,
+        allArchives,
+        mergedOptions,
+        fbInit
+      };
     }
   }
   const parseResult = parse(effectiveSource);
   warnings.push(...pragmaWarnings(parseResult.pragmas, effectiveSource, mergedOptions.fileName));
   if (parseResult.errors.length > 0) {
-    errors.push(...toCompileErrors(parseResult.errors, mergedOptions.fileName));
+    errors.push(...withPragmaHint(toCompileErrors(parseResult.errors, mergedOptions.fileName), pragmaHint));
     if (!continueOnError) {
       return {
         ast,
@@ -41833,31 +44665,19 @@ function runPipeline(source, options, continueOnError) {
     const units = [primaryAst];
     if (mergedOptions.additionalSources) {
       for (const addlSource of mergedOptions.additionalSources) {
-        let effectiveAddlSource = addlSource.source;
-        const addlIlResult = transpileILSource(addlSource.source, addlSource.fileName);
-        if (addlIlResult.hasIL) {
-          effectiveAddlSource = addlIlResult.stSource;
-          for (const err of addlIlResult.errors) {
-            const entry = {
-              message: err.message,
-              line: err.line,
-              column: err.column,
-              severity: err.severity
-            };
-            if (err.file)
-              entry.file = err.file;
-            else
-              entry.file = addlSource.fileName;
-            errors.push(entry);
-          }
-          if (errors.length > 0 && !continueOnError) {
-            continue;
-          }
+        const prepared = prepareFile(addlSource.source, addlSource.fileName, prep, tokenize, addlSource.pragmaDefines);
+        const effectiveAddlSource = prepared.text;
+        if (prepared.blankedLines.length > 0) {
+          blankedByFile.set(addlSource.fileName, new Set(prepared.blankedLines));
+        }
+        errors.push(...prepared.errors);
+        if (prepared.stopsOnError && errors.length > 0 && !continueOnError) {
+          continue;
         }
         const addlParseResult = parse(effectiveAddlSource);
         warnings.push(...pragmaWarnings(addlParseResult.pragmas, effectiveAddlSource, addlSource.fileName));
         if (addlParseResult.errors.length > 0) {
-          errors.push(...toCompileErrors(addlParseResult.errors, addlSource.fileName));
+          errors.push(...withPragmaHint(toCompileErrors(addlParseResult.errors, addlSource.fileName), pragmaHint));
           if (!continueOnError) {
             continue;
           }
@@ -41894,6 +44714,7 @@ function runPipeline(source, options, continueOnError) {
     ast = mergeCompilationUnits(units);
     const loweringErrors = [
       ...resolveArrayBounds(ast, mergedOptions.globalConstants ?? {}),
+      ...foldStructFieldDefaults(ast, mergedOptions.globalConstants ?? {}),
       ...lowerActions(ast),
       ...lowerAccessorLocals(ast),
       ...lowerInlineTypes(ast)
@@ -42088,8 +44909,8 @@ function runPipeline(source, options, continueOnError) {
   }
   errors.push(...libraryShadowErrors(ast, allArchives));
   if (ast) {
-    annotateErrorsWithPouContext(errors, ast);
-    annotateErrorsWithPouContext(warnings, ast);
+    annotateErrorsWithPouContext(errors, ast, blankedByFile);
+    annotateErrorsWithPouContext(warnings, ast, blankedByFile);
   }
   return {
     ast,
@@ -42494,7 +45315,9 @@ function parseArgs(args) {
     noSource: false,
     builtin: false,
     test: [],
-    defines: {}
+    defines: {},
+    pragmaDefines: {},
+    fileDefines: []
   };
   const usageExit = args.includes("--check") ? 2 : 1;
   let i = 0;
@@ -42622,22 +45445,43 @@ function parseArgs(args) {
       if (nextArg !== void 0) {
         options.importLib = nextArg;
       }
-    } else if (arg === "--define") {
-      i++;
-      const nextArg = args[i];
-      if (nextArg !== void 0) {
-        parseDefine(nextArg, options.defines);
-      }
-    } else if (arg !== void 0 && arg.startsWith("-D")) {
-      const inline = arg.substring(2);
-      if (inline.length > 0) {
-        parseDefine(inline, options.defines);
-      } else {
+    } else if (arg === "--define" || arg !== void 0 && arg.startsWith("-D")) {
+      const inline = arg === "--define" ? "" : arg.substring(2);
+      let spec = inline;
+      if (inline.length === 0) {
         i++;
-        const nextArg = args[i];
-        if (nextArg !== void 0) {
-          parseDefine(nextArg, options.defines);
-        }
+        spec = args[i];
+      }
+      if (spec === void 0) {
+        console.error(`error: ${arg} needs a value`);
+        process.exit(usageExit);
+      }
+      const problem = parseDefine(spec, options.defines, options.pragmaDefines);
+      if (problem !== void 0) {
+        console.error(`error: ${problem}`);
+        process.exit(usageExit);
+      }
+    } else if (arg === "--pragma-define") {
+      i++;
+      const spec = args[i];
+      const problem = spec === void 0 ? `${arg} needs a value` : parsePragmaDefine(spec, arg, options.pragmaDefines);
+      if (problem !== void 0) {
+        console.error(`error: ${problem}`);
+        process.exit(usageExit);
+      }
+    } else if (arg === "--file-define") {
+      i++;
+      const spec = args[i] ?? "";
+      const eq2 = spec.indexOf("=");
+      const file = spec.slice(0, Math.max(eq2, 0));
+      const one = {};
+      const problem = eq2 <= 0 ? `--file-define needs <file>=NAME[=VALUE], got '${spec}'` : parsePragmaDefine(spec.slice(eq2 + 1), arg, one);
+      if (problem !== void 0) {
+        console.error(`error: ${problem}`);
+        process.exit(usageExit);
+      }
+      for (const [name, value] of Object.entries(one)) {
+        options.fileDefines.push({ file, name, value });
       }
     } else if (arg === "--test") {
       i++;
@@ -42650,6 +45494,14 @@ function parseArgs(args) {
       options.inputs.push(arg);
     }
     i++;
+  }
+  for (const { file } of options.fileDefines) {
+    const path = (0, import_path.resolve)(file);
+    const problem = options.compileLib ? "cannot be used with --compile-lib" : !options.inputs.some((input) => (0, import_path.resolve)(input) === path) ? "is not an input file" : void 0;
+    if (problem !== void 0) {
+      console.error(`error: --file-define file '${file}' ${problem}`);
+      process.exit(usageExit);
+    }
   }
   const listFiles = /* @__PURE__ */ new Set();
   for (const { file } of options.globalLists) {
@@ -42672,9 +45524,21 @@ function globalListNameFor(options, input) {
   const path = (0, import_path.resolve)(input);
   return options.globalLists.find((g) => (0, import_path.resolve)(g.file) === path)?.name;
 }
-function withGlobalListName(options, input, entry) {
+function fileDefinesFor(options, input) {
+  const path = (0, import_path.resolve)(input);
+  const hits = options.fileDefines.filter((d) => (0, import_path.resolve)(d.file) === path);
+  if (hits.length === 0)
+    return void 0;
+  return Object.fromEntries(hits.map((d) => [d.name, d.value]));
+}
+function withGlobalListName(options, input, entry, primary = false) {
   const name = globalListNameFor(options, input);
-  return name === void 0 ? entry : { ...entry, globalListName: name };
+  const defines = fileDefinesFor(options, input);
+  return {
+    ...entry,
+    ...name !== void 0 ? { globalListName: name } : {},
+    ...defines === void 0 ? {} : primary ? { filePragmaDefines: defines } : { pragmaDefines: defines }
+  };
 }
 var HELP_INDENT = 28;
 var HELP_WIDTH = 80;
@@ -42734,7 +45598,18 @@ Options:
   --cxx-flags <flags>       Extra C++ compiler flags
   -L, --lib-path <path>     Library search path (repeatable)
   --no-default-libs         Do not auto-add bundled library paths
-  -D, --define NAME=VALUE   Define a global constant (repeatable)
+  -D, --define NAME[=VALUE] Define a name for conditional pragmas (feature
+                            conditional_pragmas); an integer VALUE also
+                            defines a global constant (repeatable)
+  --pragma-define NAME[=VALUE]
+                            Define a name for conditional pragmas only, never
+                            a global constant, whatever VALUE is (repeatable)
+  --file-define <file>=NAME[=VALUE]
+                            Define a name for the conditional pragmas of input
+                            <file> only, on top of the project's defines: seen
+                            by defined() and hasvalue() (over a project define
+                            of the same name), not by project_defined()
+                            (repeatable; not with --compile-lib)
   -v, --version             Show version
   -h, --help                Show this help
 
@@ -42784,6 +45659,9 @@ function dialectCompileOptions(options) {
     out.features = options.features;
   if (out.dialectFiles || out.dialectPath)
     out.dialectIO = nodeDialectIO;
+  if (Object.keys(options.pragmaDefines).length > 0) {
+    out.pragmaDefines = options.pragmaDefines;
+  }
   return out;
 }
 function checkDialect(options) {
@@ -42803,15 +45681,32 @@ function checkDialect(options) {
     process.exit(1);
   }
 }
-function parseDefine(input, defines) {
+function parseDefine(input, defines, pragmaDefines) {
   const eqIdx = input.indexOf("=");
-  if (eqIdx > 0) {
-    const name = input.substring(0, eqIdx);
-    const value = parseInt(input.substring(eqIdx + 1), 10);
-    if (!isNaN(value)) {
-      defines[name] = value;
-    }
+  const name = eqIdx >= 0 ? input.substring(0, eqIdx) : input;
+  if (!isPragmaDefineName(name)) {
+    return `-D needs NAME or NAME=VALUE with an identifier name, got '${input}'`;
   }
+  if (eqIdx < 0) {
+    pragmaDefines[name] = "";
+    return void 0;
+  }
+  const text = input.substring(eqIdx + 1);
+  pragmaDefines[name] = text;
+  const value = parseInt(text, 10);
+  if (!isNaN(value)) {
+    defines[name] = value;
+  }
+  return void 0;
+}
+function parsePragmaDefine(input, option, pragmaDefines) {
+  const eqIdx = input.indexOf("=");
+  const name = eqIdx >= 0 ? input.substring(0, eqIdx) : input;
+  if (!isPragmaDefineName(name)) {
+    return `${option} needs NAME or NAME=VALUE with an identifier name, got '${input}'`;
+  }
+  pragmaDefines[name] = eqIdx >= 0 ? input.substring(eqIdx + 1) : "";
+  return void 0;
 }
 function hasWinget() {
   try {
@@ -43007,7 +45902,7 @@ function runTestMode(options) {
     isTestBuild: true,
     strict: options.strict,
     ...dialectCompileOptions(options),
-    ...withGlobalListName(options, primaryInput, {})
+    ...withGlobalListName(options, primaryInput, {}, true)
   };
   if (additionalSources.length > 0) {
     compileOptions.additionalSources = additionalSources;
@@ -43042,7 +45937,7 @@ function runTestMode(options) {
       process.exit(1);
     }
     testSources.push({ fileName: (0, import_path.basename)(testPath), source: testSource });
-    const parseResult = parseTestFile(testSource, (0, import_path.basename)(testPath));
+    const parseResult = parseTestFile(testSource, (0, import_path.basename)(testPath), dialectCompileOptions(options));
     if (parseResult.errors.length > 0) {
       console.error(`Error parsing ${(0, import_path.basename)(testPath)}:
 `);
@@ -43166,6 +46061,10 @@ function decompileLibMode(options) {
     console.log(`  ${outPath}`);
   }
   console.log(`Extracted ${archive.sources.length} file(s) from ${archive.manifest.name} v${archive.manifest.version}`);
+  if (archive.pragmaDefines !== void 0) {
+    const flags = Object.entries(archive.pragmaDefines).map(([name, value]) => value === "" ? `-D ${name}` : `-D ${name}=${/[\s"'\\$]/.test(value) ? JSON.stringify(value) : value}`);
+    console.log("Compiled with conditional pragmas (feature conditional_pragmas)" + (flags.length > 0 ? `; defines: ${flags.join(" ")}` : "; no defines"));
+  }
 }
 async function importLibMode(options) {
   if (!options.libName) {
@@ -43317,7 +46216,7 @@ function checkMode(options) {
       strict: options.strict,
       ...dialectOptions,
       fileName: sources[0].fileName,
-      ...withGlobalListName(options, files[0], {})
+      ...withGlobalListName(options, files[0], {}, true)
     };
     if (sources.length > 1) {
       analyzeOptions.additionalSources = sources.slice(1).map((src, i) => withGlobalListName(options, files[i + 1], src));
@@ -43419,7 +46318,7 @@ async function main() {
     headerFileName,
     cppFileName: (0, import_path.basename)(outputPath),
     fileName: (0, import_path.basename)(inputPath),
-    ...withGlobalListName(options, primaryInput, {})
+    ...withGlobalListName(options, primaryInput, {}, true)
   };
   if (additionalSources.length > 0) {
     compileOptions.additionalSources = additionalSources;
