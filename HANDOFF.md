@@ -40,6 +40,13 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   method family rename (`test_rename_family.js`; `EXTENDS I_A, I_B` now follows both). Known Linux-only devhost P8
   flush mismatch (`\r\n` vs `\n`), pre-existing. Open for the user: Undo button on the rename message? sibling
   implementors in Find References? F2 rename from call sites (new feature)?
+- **R8/R9: built on the branch** (`4af3e38`, `fb4f0ae`, `84cef85`, `a67e91c`; 108 suites FULL): nested comments
+  (`src/stComments.js`, all 7 scanners), pragma hover (`src/lsp/features/hover.js`, `custom/hover`; catalogue holds
+  names/syntax/page ids only — test-guarded), ESLint 10.14.0, brace-expansion 2.1.7 (shipped in the VSIX before).
+  Open for the user: should `/* */` nest (only a TwinCAT build can tell)? show pragma syntax forms or name+link only?
+  override minimatch 11 for the dev-only advisory?
+- **The whole toolkit lane through R9 is built on the branch** and waits for one Windows session from the user
+  (dev-host test + the manual checks per item), then one PR into `dev`. R10 is trigger-only; R11 is last.
 - **R11 publishing:** last — after the toolkit lane AND the fork lane are done (user, 2026-11-10).
 - **Sample diagnostics: 0 against a baseline of 0** — verified with the Beckhoff archives present AND moved aside.
 
