@@ -34,6 +34,12 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   `archive-names-v1.json`, decoder-id + central-directory fingerprint), per-project background scan with readiness
   gate (`src/lsp/workspaceState.js`, `whenIndexed`; `initialize` no longer waits). Measure on Windows:
   `node scripts/measure-indexing.js --workspace "<folder>" --runs 3`. User must re-run the dev-host test.
+- **R7 rename: built on the branch** (`20d5980`, `afd89b4`, `3900e46`; 106 suites FULL): `.tmc`/dump watcher reindex
+  (`src/indexInputs.js`); one WorkspaceEdit per rename with in-place `.plcproj` edit (`src/plcProjText.js`) + command
+  **TC Toolkit: Undo Last Rename** (Ctrl+Z from the tree/webview cannot reach it — VS Code limit, measured); interface
+  method family rename (`test_rename_family.js`; `EXTENDS I_A, I_B` now follows both). Known Linux-only devhost P8
+  flush mismatch (`\r\n` vs `\n`), pre-existing. Open for the user: Undo button on the rename message? sibling
+  implementors in Find References? F2 rename from call sites (new feature)?
 - **R11 publishing:** last — after the toolkit lane AND the fork lane are done (user, 2026-11-10).
 - **Sample diagnostics: 0 against a baseline of 0** — verified with the Beckhoff archives present AND moved aside.
 
