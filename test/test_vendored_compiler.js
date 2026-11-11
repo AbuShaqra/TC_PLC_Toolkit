@@ -78,6 +78,10 @@ const builtins = new Set(require('module').builtinModules);
 const required = [...new Set([...bundle.matchAll(/\brequire\(\s*["']([^"']+)["']\s*\)/g)].map(m => m[1]))];
 const foreign = required.filter(r => !builtins.has(r.replace(/^node:/, '')));
 assert(required.length > 0 && foreign.length === 0, `the bundle requires Node built-ins only (${foreign.join(', ') || 'none foreign'})`);
+// Compile Project passes the .plcproj compiler defines with these options (src/compilerDefines.js); a
+// compiler without them stops every run of a project that has defines with a usage error.
+assert(bundle.includes('"--pragma-define"') && bundle.includes('"--file-define"'),
+    'the bundle accepts --pragma-define and --file-define (vendored at fork eb52d2c or later)');
 
 if (errors > 0) {
     console.error(`\n${errors} vendored-compiler assertion(s) failed.`);

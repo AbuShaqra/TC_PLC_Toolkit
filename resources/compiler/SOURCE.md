@@ -8,8 +8,8 @@ exception `COPYING.RUNTIME`). The extension's own licence does not cover these f
 ## Corresponding source
 
 - Repository: https://github.com/AbuShaqra/STruCpp
-- Commit: `fe4d492129942720aedc06484408f58b5929f127`
-- Source at that commit: https://github.com/AbuShaqra/STruCpp/tree/fe4d492129942720aedc06484408f58b5929f127
+- Commit: `eb52d2cab39ffd2eeaf69ea06c5c1454eae8d95c`
+- Source at that commit: https://github.com/AbuShaqra/STruCpp/tree/eb52d2cab39ffd2eeaf69ea06c5c1454eae8d95c
 - Compiler version: 0.7.0
 - Built with: `npm ci && npm run build:bundle` (Node.js 22 or newer)
 - `compiler.cjs` is that build's `dist/strucpp-bundle.cjs`, renamed; `libs/` holds two of the
@@ -20,7 +20,7 @@ exception `COPYING.RUNTIME`). The extension's own licence does not cover these f
 
 | File | Bytes | SHA-256 |
 | --- | --- | --- |
-| `compiler.cjs` | 1660174 | `08f56aa3f65e1ae93f21fc9efae64894962836b3108ffec66c82a5bac145039f` |
+| `compiler.cjs` | 1663739 | `07eb9319860b450e571074e6beeb277d4a3ced8369a9adb71dbe4183744ae3b7` |
 | `libs/iec-standard-fb.stlib` | 51736 | `2076bf05fd4c1d67115237834880a73a2273c003167d07f00901479513f74fb3` |
 | `libs/iec-std-functions.stlib` | 27504 | `6fdc4bcbbfd2d75883b6c6b281f3ca09f1d64870ebcfdf33d7540c8e979e8b67` |
 | `LICENSE` | 35149 | `3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986` |

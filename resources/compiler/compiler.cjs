@@ -32052,6 +32052,9 @@ var TypeCodeGenerator = class {
     if (this.knownEnumNames.has(upperName)) {
       return `IEC_${typeName2}`;
     }
+    if (this.options.isInterfaceType?.(typeName2) === true) {
+      return `IEC_ITF<${typeName2}>`;
+    }
     return typeName2;
   }
   /**
@@ -32866,7 +32869,10 @@ var CodeGenerator = class _CodeGenerator {
           name: typeRef.elementTypeName,
           maxLength: elementLength
         }) : this.rawReferencedType(typeRef.elementTypeName))
-      ) : elementLength !== void 0 ? this.typeCodeGen.mapStructFieldTypeToCpp(typeRef.elementTypeName, elementLength) : (
+      ) : elementLength !== void 0 ? this.typeCodeGen.mapStructFieldTypeToCpp(typeRef.elementTypeName, elementLength) : this.isInterfaceType(typeRef.elementTypeName) ? (
+        // An INTERFACE element holds a nullable reference, as a variable does.
+        `IEC_ITF<${typeRef.elementTypeName}>`
+      ) : (
         // An enumeration element is the variable a scalar gets (IEC_E), as in a
         // STRUCT field or named ARRAY type, so REF/ADR of it see one type.
         this.mapVarTypeToCpp(typeRef.elementTypeName)
@@ -33295,7 +33301,8 @@ var CodeGenerator = class _CodeGenerator {
       // Struct fields must mangle by the same rule as everything else that
       // names them, and only codegen knows the FB / program type names.
       isUserDefinedType: (t) => this.isUserDefinedType(t),
-      shadowingNames: this.shadowingNames()
+      shadowingNames: this.shadowingNames(),
+      isInterfaceType: (t) => this.isInterfaceType(t)
     });
     if (ast.types.length > 0) {
       const lateStructNames = new Set(lateStructs.map((n) => n.toUpperCase()));
@@ -40409,7 +40416,7 @@ var ConditionParser = class {
   }
 };
 function defineValue(scope, name) {
-  return scope.source.get(name) ?? scope.project.get(name);
+  return scope.source.get(name) ?? scope.file.get(name) ?? scope.project.get(name);
 }
 function evaluate(node, scope) {
   switch (node.kind) {
@@ -40420,7 +40427,7 @@ function evaluate(node, scope) {
     case "not":
       return !evaluate(node.operand, scope);
     case "defined":
-      return scope.project.has(node.name) || !node.projectOnly && scope.source.has(node.name);
+      return scope.project.has(node.name) || !node.projectOnly && (scope.file.has(node.name) || scope.source.has(node.name));
     case "hasvalue":
       return defineValue(scope, node.name) === node.value;
     case "false":
@@ -40463,7 +40470,7 @@ function lengthStableCopy(source) {
   return source.replace(/[^\p{ASCII}]/gu, (c) => c.toUpperCase().length === c.length ? c : "_".repeat(c.length));
 }
 var DIRECTIVE_LINE = /^[ \t]*\{\s*(?:IF|ELSIF|ELSE|END_IF|DEFINE|UNDEFINE)\b/i;
-function applyConditionalPragmas(source, defines, lex) {
+function applyConditionalPragmas(source, defines, lex, fileDefines = /* @__PURE__ */ new Map()) {
   if (!hasConditionalPragma(source)) {
     return { text: source, errors: [], blankedLines: [] };
   }
@@ -40553,7 +40560,11 @@ function applyConditionalPragmas(source, defines, lex) {
   const stack = [];
   const isActive = () => stack.length === 0 || stack[stack.length - 1].active;
   const sourceDefines = /* @__PURE__ */ new Map();
-  const scope = { project: defines, source: sourceDefines };
+  const scope = {
+    project: defines,
+    file: fileDefines,
+    source: sourceDefines
+  };
   const choose = (d) => d.condition !== void 0 && evaluate(d.condition, scope);
   const parts = [];
   let cursor = 0;
@@ -44266,6 +44277,10 @@ function validateCompileOptions(options) {
     }
   }
   validatePragmaDefines(options.pragmaDefines);
+  validatePragmaDefines(options.filePragmaDefines);
+  for (const addl of options.additionalSources ?? []) {
+    validatePragmaDefines(addl.pragmaDefines);
+  }
 }
 function dialectRequestFromOptions(options) {
   const req = {};
@@ -44520,13 +44535,13 @@ function userDeclarationSpan(ast, upperName) {
   }
   return void 0;
 }
-function prepareFile(text, fileName, prep, lex) {
+function prepareFile(text, fileName, prep, lex, fileDefines) {
   const errors = [];
   let out = text;
   let stopsOnError = false;
   let blankedLines = [];
   if (prep.enabled) {
-    const pragmaResult = applyConditionalPragmas(text, prep.defines, lex);
+    const pragmaResult = applyConditionalPragmas(text, prep.defines, lex, new Map(Object.entries(fileDefines ?? {})));
     out = pragmaResult.text;
     blankedLines = pragmaResult.blankedLines;
     if (pragmaResult.errors.length > 0) {
@@ -44588,7 +44603,7 @@ function runPipeline(source, options, continueOnError) {
   let effectiveSource = source;
   const blankedByFile = /* @__PURE__ */ new Map();
   {
-    const prepared = prepareFile(source, mergedOptions.fileName, prep, tokenize);
+    const prepared = prepareFile(source, mergedOptions.fileName, prep, tokenize, mergedOptions.filePragmaDefines);
     effectiveSource = prepared.text;
     if (prepared.blankedLines.length > 0) {
       blankedByFile.set(mergedOptions.fileName ?? "main.st", new Set(prepared.blankedLines));
@@ -44650,7 +44665,7 @@ function runPipeline(source, options, continueOnError) {
     const units = [primaryAst];
     if (mergedOptions.additionalSources) {
       for (const addlSource of mergedOptions.additionalSources) {
-        const prepared = prepareFile(addlSource.source, addlSource.fileName, prep, tokenize);
+        const prepared = prepareFile(addlSource.source, addlSource.fileName, prep, tokenize, addlSource.pragmaDefines);
         const effectiveAddlSource = prepared.text;
         if (prepared.blankedLines.length > 0) {
           blankedByFile.set(addlSource.fileName, new Set(prepared.blankedLines));
@@ -45301,7 +45316,8 @@ function parseArgs(args) {
     builtin: false,
     test: [],
     defines: {},
-    pragmaDefines: {}
+    pragmaDefines: {},
+    fileDefines: []
   };
   const usageExit = args.includes("--check") ? 2 : 1;
   let i = 0;
@@ -45445,6 +45461,28 @@ function parseArgs(args) {
         console.error(`error: ${problem}`);
         process.exit(usageExit);
       }
+    } else if (arg === "--pragma-define") {
+      i++;
+      const spec = args[i];
+      const problem = spec === void 0 ? `${arg} needs a value` : parsePragmaDefine(spec, arg, options.pragmaDefines);
+      if (problem !== void 0) {
+        console.error(`error: ${problem}`);
+        process.exit(usageExit);
+      }
+    } else if (arg === "--file-define") {
+      i++;
+      const spec = args[i] ?? "";
+      const eq2 = spec.indexOf("=");
+      const file = spec.slice(0, Math.max(eq2, 0));
+      const one = {};
+      const problem = eq2 <= 0 ? `--file-define needs <file>=NAME[=VALUE], got '${spec}'` : parsePragmaDefine(spec.slice(eq2 + 1), arg, one);
+      if (problem !== void 0) {
+        console.error(`error: ${problem}`);
+        process.exit(usageExit);
+      }
+      for (const [name, value] of Object.entries(one)) {
+        options.fileDefines.push({ file, name, value });
+      }
     } else if (arg === "--test") {
       i++;
       while (i < args.length && args[i] !== void 0 && !args[i].startsWith("-")) {
@@ -45456,6 +45494,14 @@ function parseArgs(args) {
       options.inputs.push(arg);
     }
     i++;
+  }
+  for (const { file } of options.fileDefines) {
+    const path = (0, import_path.resolve)(file);
+    const problem = options.compileLib ? "cannot be used with --compile-lib" : !options.inputs.some((input) => (0, import_path.resolve)(input) === path) ? "is not an input file" : void 0;
+    if (problem !== void 0) {
+      console.error(`error: --file-define file '${file}' ${problem}`);
+      process.exit(usageExit);
+    }
   }
   const listFiles = /* @__PURE__ */ new Set();
   for (const { file } of options.globalLists) {
@@ -45478,9 +45524,21 @@ function globalListNameFor(options, input) {
   const path = (0, import_path.resolve)(input);
   return options.globalLists.find((g) => (0, import_path.resolve)(g.file) === path)?.name;
 }
-function withGlobalListName(options, input, entry) {
+function fileDefinesFor(options, input) {
+  const path = (0, import_path.resolve)(input);
+  const hits = options.fileDefines.filter((d) => (0, import_path.resolve)(d.file) === path);
+  if (hits.length === 0)
+    return void 0;
+  return Object.fromEntries(hits.map((d) => [d.name, d.value]));
+}
+function withGlobalListName(options, input, entry, primary = false) {
   const name = globalListNameFor(options, input);
-  return name === void 0 ? entry : { ...entry, globalListName: name };
+  const defines = fileDefinesFor(options, input);
+  return {
+    ...entry,
+    ...name !== void 0 ? { globalListName: name } : {},
+    ...defines === void 0 ? {} : primary ? { filePragmaDefines: defines } : { pragmaDefines: defines }
+  };
 }
 var HELP_INDENT = 28;
 var HELP_WIDTH = 80;
@@ -45543,6 +45601,15 @@ Options:
   -D, --define NAME[=VALUE] Define a name for conditional pragmas (feature
                             conditional_pragmas); an integer VALUE also
                             defines a global constant (repeatable)
+  --pragma-define NAME[=VALUE]
+                            Define a name for conditional pragmas only, never
+                            a global constant, whatever VALUE is (repeatable)
+  --file-define <file>=NAME[=VALUE]
+                            Define a name for the conditional pragmas of input
+                            <file> only, on top of the project's defines: seen
+                            by defined() and hasvalue() (over a project define
+                            of the same name), not by project_defined()
+                            (repeatable; not with --compile-lib)
   -v, --version             Show version
   -h, --help                Show this help
 
@@ -45630,6 +45697,15 @@ function parseDefine(input, defines, pragmaDefines) {
   if (!isNaN(value)) {
     defines[name] = value;
   }
+  return void 0;
+}
+function parsePragmaDefine(input, option, pragmaDefines) {
+  const eqIdx = input.indexOf("=");
+  const name = eqIdx >= 0 ? input.substring(0, eqIdx) : input;
+  if (!isPragmaDefineName(name)) {
+    return `${option} needs NAME or NAME=VALUE with an identifier name, got '${input}'`;
+  }
+  pragmaDefines[name] = eqIdx >= 0 ? input.substring(eqIdx + 1) : "";
   return void 0;
 }
 function hasWinget() {
@@ -45826,7 +45902,7 @@ function runTestMode(options) {
     isTestBuild: true,
     strict: options.strict,
     ...dialectCompileOptions(options),
-    ...withGlobalListName(options, primaryInput, {})
+    ...withGlobalListName(options, primaryInput, {}, true)
   };
   if (additionalSources.length > 0) {
     compileOptions.additionalSources = additionalSources;
@@ -46140,7 +46216,7 @@ function checkMode(options) {
       strict: options.strict,
       ...dialectOptions,
       fileName: sources[0].fileName,
-      ...withGlobalListName(options, files[0], {})
+      ...withGlobalListName(options, files[0], {}, true)
     };
     if (sources.length > 1) {
       analyzeOptions.additionalSources = sources.slice(1).map((src, i) => withGlobalListName(options, files[i + 1], src));
@@ -46242,7 +46318,7 @@ async function main() {
     headerFileName,
     cppFileName: (0, import_path.basename)(outputPath),
     fileName: (0, import_path.basename)(inputPath),
-    ...withGlobalListName(options, primaryInput, {})
+    ...withGlobalListName(options, primaryInput, {}, true)
   };
   if (additionalSources.length > 0) {
     compileOptions.additionalSources = additionalSources;
