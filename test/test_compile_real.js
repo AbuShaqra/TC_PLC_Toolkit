@@ -247,6 +247,7 @@ function assert(cond, msg) {
     // ── Numeric project values and per-object defines: a temp copy of the second sample ─────────
     // FB_Valve and FB_Cylinder carry the same {IF defined(TkLocal)}; only FB_Valve's item defines it. A
     // name compiled only in a branch that must NOT be taken is undeclared, so a wrong branch is an error.
+    // FB_Valve also checks project_defined(TkLevel): true for a .plcproj define, false for a per-object one.
     if (second) {
         const tmp = fs.mkdtempSync(path.join(require('os').tmpdir(), 'tc_compile_filedefs_'));
         try {
@@ -260,7 +261,8 @@ function assert(cond, msg) {
                 fs.writeFileSync(file, text.replace(at, at + lines.join('\r\n') + '\r\n'));
             };
             prependBody('POUs/FB_Valve.TcPOU', ["{IF hasvalue(TkLevel, '4')}", '_nTicks := 4;', '{ELSE}', 'nValveLevelOff := 1;', '{END_IF}',
-                '{IF defined(TkLocal)}', '_nTicks := 5;', '{ELSE}', 'nValveLocalOff := 1;', '{END_IF}']);
+                '{IF defined(TkLocal)}', '_nTicks := 5;', '{ELSE}', 'nValveLocalOff := 1;', '{END_IF}',
+                '{IF project_defined(TkLevel)}', '_nTicks := 6;', '{ELSE}', 'nValveProjOff := 1;', '{END_IF}']);
             prependBody('POUs/FB_Cylinder.TcPOU', ["{IF hasvalue(TkLevel, '4')}", '_nTicks := 4;', '{ELSE}', 'nCylLevelOff := 1;', '{END_IF}',
                 '{IF defined(TkLocal)}', 'nCylLocalOn := 1;', '{END_IF}']);
             // A global constant named like the project define: TwinCAT keeps the two apart.
@@ -302,8 +304,12 @@ function assert(cond, msg) {
             assert(d.r.result.status === 'done' && d.names.join() === 'NCYLLEVELOFF',
                 `FILE DEFINES: a per-object value wins over the project's for hasvalue, in that object only (${d.names.join(', ')})`);
             d = await runWith('TkOther', 'TkLocal', null);
-            assert(d.r.result.status === 'done' && d.names.join() === 'NCYLLEVELOFF,NVALVELEVELOFF',
-                `FILE DEFINES: without the project value both hasvalue blocks take ELSE, and the GVL constant does not make it defined (${d.names.join(', ')})`);
+            assert(d.r.result.status === 'done' && d.names.join() === 'NCYLLEVELOFF,NVALVELEVELOFF,NVALVEPROJOFF',
+                `FILE DEFINES: without the project value both hasvalue blocks and project_defined take ELSE, and the GVL constant does not make it defined (${d.names.join(', ')})`);
+            d = await runWith('TkOther', "TkLocal, TkLevel := '4'", null);
+            assert(d.r.result.status === 'done' && d.names.join() === 'NCYLLEVELOFF,NVALVEPROJOFF' &&
+                d.fileArgs.args.join(' ') === `--file-define ${valveUnit ? valveUnit.name : '?'}=TkLocal --file-define ${valveUnit ? valveUnit.name : '?'}=TkLevel=4`,
+                `FILE DEFINES: a per-object TkLevel satisfies hasvalue in FB_Valve but project_defined() does not see it (${d.fileArgs.args.join(' ')}; ${d.names.join(', ')})`);
         } finally {
             fs.rmSync(tmp, { recursive: true, force: true });
         }
