@@ -53,6 +53,14 @@ function findCodeCli() {
         console.error('[SKIP] sample/TcToolkitSample is missing — nothing to open.');
         process.exit(2);
     }
+    // A stale node_modules (a branch switch that changed package-lock.json) makes the extension fail
+    // to activate, and every later assertion then fails with it. Say so once instead.
+    for (const dep of Object.keys(require(path.join(REPO, 'package.json')).dependencies || {})) {
+        try { require.resolve(dep, { paths: [REPO] }); } catch (e) {
+            console.error(`[FAIL] the extension's dependency '${dep}' is not installed. Run "npm ci" in ${REPO}, then run this again.`);
+            process.exit(1);
+        }
+    }
     const cli = findCodeCli();
     if (!cli) {
         console.error('[SKIP] no installed VS Code CLI found — this harness needs a real VS Code.');
