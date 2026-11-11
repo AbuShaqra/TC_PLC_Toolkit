@@ -660,10 +660,14 @@
                     [/\/\/.*$/, 'comment'],
                 ],
 
+                // (* *) comments NEST in TwinCAT: each inner (* pushes this state again and each *)
+                // pops one level, so only the outermost *) returns to code. Kept in step with
+                // src/lsp/parser.js by test/test_nested_comments.js.
                 comment_block1: [
-                    [/[^\*]+/, 'comment'],
+                    [/[^\*\(]+/, 'comment'],
+                    [/\(\*/, 'comment', '@push'],
                     [/\*\)/, 'comment', '@pop'],
-                    [/\*/, 'comment']
+                    [/[\*\(]/, 'comment']
                 ],
 
                 comment_block2: [

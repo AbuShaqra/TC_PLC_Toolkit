@@ -190,30 +190,28 @@ function tokenize(code) {
             continue;
         }
 
-        // (* *) block comment
+        // (* *) block comment. These NEST in TwinCAT (Infosys, "ST comments": `(* a; (* inner *) b; *)`),
+        // so the first `*)` only closes the innermost one. Inside, only `(*` and `*)` count — a quote,
+        // `//` or `/*` is comment text. Unterminated runs to the end of the text. Same rules as
+        // src/stComments.js; test_nested_comments.js keeps the two in step.
         if (char === '(' && code[i + 1] === '*') {
-            let value = '(*';
             const start = i;
             const startLine = line;
             const startCol = col;
             i += 2;
             col += 2;
-            while (i < code.length && !(code[i] === '*' && code[i + 1] === ')')) {
-                const c = code[i];
-                value += c;
-                if (c === '\n') {
-                    line++;
-                    col = 1;
-                } else {
-                    col++;
+            let depth = 1;
+            while (i < code.length) {
+                if (code[i] === '(' && code[i + 1] === '*') { depth++; i += 2; col += 2; continue; }
+                if (code[i] === '*' && code[i + 1] === ')') {
+                    depth--; i += 2; col += 2;
+                    if (depth === 0) break;
+                    continue;
                 }
+                if (code[i] === '\n') { line++; col = 1; } else { col++; }
                 i++;
             }
-            if (i < code.length) {
-                value += '*)';
-                i += 2;
-                col += 2;
-            }
+            const value = code.slice(start, i);
             tokens.push({
                 type: TokenType.Comment,
                 value: value,

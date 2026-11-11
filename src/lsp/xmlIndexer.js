@@ -11,6 +11,7 @@ const fs = require('fs');
 const path = require('path');
 const { fsPathToFileUri } = require('../fileUri');
 const { parseTwinCatXml } = require('../xmlParser');
+const { blankComments } = require('../stComments');
 const { tokenize, parseVariablesBlock, TokenType } = require('./parser');
 const { createSymbolNode } = require('./symbolNode');
 const { TWINCAT_XML_EXTS, XML_INDEX_SKIP_DIRS } = require('../twincatWorkspace');
@@ -96,8 +97,8 @@ function extractVars(declText) {
 function extractEnumMembers(declText) {
     const members = [];
     if (!declText) return members;
-    // Strip comments to avoid false parens.
-    const clean = declText.replace(/\/\/.*$/gm, '').replace(/\(\*[\s\S]*?\*\)/g, '');
+    // Blank comments (nested ones included) to avoid false parens.
+    const clean = blankComments(declText);
     const colonIdx = clean.indexOf(':');
     if (colonIdx === -1) return members;
     const parenStart = clean.indexOf('(', colonIdx);
@@ -137,8 +138,8 @@ function extractEnumMembers(declText) {
  */
 function dutKindFromDecl(decl) {
     if (!decl) return 'alias';
-    // Strip comments so a commented-out keyword or paren cannot decide the kind.
-    const clean = decl.replace(/\/\/.*$/gm, '').replace(/\(\*[\s\S]*?\*\)/g, '');
+    // Blank comments (nested ones included) so a commented-out keyword or paren cannot decide the kind.
+    const clean = blankComments(decl);
 
     // `\bUNION\b` / `\bSTRUCT\b` cannot match inside END_UNION / END_STRUCT: '_' is a word character.
     if (/\bUNION\b/i.test(clean)) return 'union';

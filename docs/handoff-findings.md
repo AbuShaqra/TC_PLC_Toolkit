@@ -19,7 +19,7 @@ accurate rather than short — prune a finding only when the code it describes i
   undo limits that remain.
 - **Tooling:** ESLint 10 bump (9.x deprecated; raises the Node floor, needs re-triage); dev-only `brace-expansion`
   advisory (the fix drags 19 unrelated lockfile packages).
-- **Small known gaps:** nested block comments `(* (* *) *)` unsupported (a CODESYS option, default off); no pragma
+- **Small known gaps:** no pragma
   hover; the lexer's Pragma token is unclassified (nothing consumes it).
 
 ## Process, tooling and environment traps

@@ -5,6 +5,8 @@
  * classification can be exercised by the standalone harnesses (scratch/test_object_kinds.js).
  */
 
+const { blankComments } = require('./stComments');
+
 /**
  * Strips what must never decide a kind: block comments, line comments and pragmas. A POU whose
  * header comment says "this replaces the old FUNCTION" must not be classified as a function.
@@ -12,11 +14,8 @@
  * @returns {string} Declaration with comments and pragmas blanked out.
  */
 function stripNoise(declaration) {
-    return String(declaration || '')
-        .replace(/\(\*[\s\S]*?\*\)/g, ' ')
-        .replace(/\/\*[\s\S]*?\*\//g, ' ')
-        .replace(/\/\/[^\n]*/g, ' ')
-        .replace(/\{[^}\n]*\}/g, ' ');
+    // Nested `(* (* *) *)` comments are TwinCAT syntax; stComments.js scans them properly.
+    return blankComments(String(declaration || ''), { pragmas: true });
 }
 
 /**

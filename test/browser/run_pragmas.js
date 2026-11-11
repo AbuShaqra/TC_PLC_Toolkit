@@ -275,7 +275,10 @@ const NESTED = [
                     "\tbTriggerOld\t: BOOL;\t\t// so the FB's rising edge always fires"),
                 dollarEscape: scopes("sMsg := 'It$'s done'; nAfter := 1;"),
                 halfTypedDollar: scopes("sMsg := 'abc$\nnAfter := 1;"),
-                wstring: scopes('wsName := "wide"; nAfter := 1;')
+                wstring: scopes('wsName := "wide"; nAfter := 1;'),
+                // TwinCAT nests (* *) comments: the inner *) must not return to code.
+                nested: scopes('(* a (* b *) still *) nX := 1;'),
+                nestedLines: scopes('(* l1\n (* l2 *) IF\n*) nY := 1;')
             };
         });
 
@@ -332,6 +335,18 @@ const NESTED = [
             `a double-quoted WSTRING literal is scoped as a string (got ${JSON.stringify(tokens.wstring[0])})`);
         assert(!/string/.test(lastType(tokens.wstring[0])),
             `and it closes at its own quote (got ${lastType(tokens.wstring[0])})`);
+
+        // ------------------------------------------------------------- 3c. nested block comments
+        // The type in force at an offset is the last token starting at or before it.
+        const typeAt = (lineTokens, offset) => lineTokens.filter(t => t.offset <= offset).pop().type;
+        assert(/comment/.test(typeAt(tokens.nested[0], 14)),
+            `Monaco: "still", after the inner *), is still comment (got ${typeAt(tokens.nested[0], 14)})`);
+        assert(!/comment/.test(typeAt(tokens.nested[0], 22)),
+            `Monaco: nX, after the outer *), is code again (got ${typeAt(tokens.nested[0], 22)})`);
+        assert(tokens.nestedLines[1].every(t => /comment/.test(t.type)),
+            `Monaco: a line holding an inner *) and an IF stays comment (got ${JSON.stringify(tokens.nestedLines[1])})`);
+        assert(!/comment/.test(typeAt(tokens.nestedLines[2], 3)),
+            `Monaco: the code after the outer *) on the next line is code (got ${JSON.stringify(tokens.nestedLines[2])})`);
 
         // ---------------------------------------------------------------- 4. nothing threw
         assert(consoleErrors.length === 0,

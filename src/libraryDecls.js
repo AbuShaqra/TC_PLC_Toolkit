@@ -41,6 +41,7 @@ const path = require('path');
 const libsymbols = require('./lsp/libsymbols');
 const { indexLibraryNamespaces, getLibraryNamespaces } = require('./lsp/libraries');
 const { readOnlyParse, signatureLibrariesFor } = require('./lsp/parseCache');
+const { blockCommentEnd } = require('./stComments');
 
 /** An IEC identifier. */
 const IDENT = /^[A-Za-z_][A-Za-z0-9_]*$/;
@@ -510,7 +511,7 @@ function blankCommentsAndStrings(text) {
     while (i < s.length) {
         const two = s.slice(i, i + 2);
         let end = -1;
-        if (two === '(*') { end = s.indexOf('*)', i + 2); end = end < 0 ? s.length : end + 2; }
+        if (two === '(*') end = blockCommentEnd(s, i);   // nests: (* (* *) *)
         else if (two === '/*') { end = s.indexOf('*/', i + 2); end = end < 0 ? s.length : end + 2; }
         else if (two === '//') { end = s.indexOf('\n', i); end = end < 0 ? s.length : end; }
         else if (s[i] === '{') { end = s.indexOf('}', i + 1); end = end < 0 ? s.length : end + 1; }
