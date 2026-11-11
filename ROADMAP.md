@@ -233,10 +233,17 @@ first), an Ed. 4 profile (needs a full Ed. 4 read), the rest of the vendor-featu
   #119; D6, properties through an
   interface variable, skipped — already works; D7, a library STRUCT as an EXTENDS base, stays refused with a clear
   error — user, 2026-11-11; project STRUCTs extend as before), D8 merged as #120, D9 as #121, D10 as #122, D12 as #123, D11 as #124 — batch 5 done.
-- *Found after release H (2026-11-11), now being worked on (F1–F3, after batch 5; F3 stops for a user decision if the duplicate compiles and runs):* a name declared twice in one CONFIGURATION `VAR_GLOBAL` is accepted
-  (#110 checks only clashes between the configuration and a resource); a `VAR_EXTERNAL` inside an FB reaching another
-  resource's global through the instance that runs it is not refused (#110 covers direct instances and initialisers
-  only); PRIVATE/PROTECTED properties read or written from outside are accepted (#108 checks methods only).
+- *Found after release H (2026-11-11):* F1 PRIVATE/PROTECTED properties used from outside refused (#125, `488ea4f`)
+  and F2 a `VAR_EXTERNAL` in an FB reaching another RESOURCE's global refused (#126, `a20859e`), merged — both refuse
+  code that ran (release J note). Open, in this order (user decisions, 2026-11-11):
+  - **F3** refuse a name declared twice in one CONFIGURATION `VAR_GLOBAL` (today the first declaration silently wins);
+  - **F4** store STRING as Windows-1252, one byte per character, as TwinCAT does (WSTRING stays UTF-16): today STRING
+    literals are UTF-8, so `LEN('ä')` is 2, OSCAT's CHARNAME/CHARCODE are wrong for every non-ASCII character and three
+    CHARNAMES strings are cut short; a character outside CP1252 in a STRING literal becomes an error (run-time change,
+    release J note);
+  - the standard-function argument check with libraries loaded (backlog item from #114), probed first for code it
+    would newly refuse;
+  - then release J.
 
 **How these were estimated (2026-11-09):** the planned days are my sizing from the lists above, not measured; the
 re-measured column applies the velocity below (about 30 min per planned day for fork work, ~45 min for toolkit work),
@@ -321,11 +328,6 @@ The former backlog was scheduled as R6–R10 on 2026-11-09 (the user asked). R6�
   Left open by PR #31.
 - **Deprecated `twincat.*` setting stand-ins** (PR #34): decide in which release they and the migration in
   `src/settingsMigration.js` are removed.
-- **Fork: standard-function argument constraints are not checked when libraries are loaded** (the CLI). A standard
-  function then resolves as a library function symbol and `inferFunctionCallType` returns before
-  `validateFunctionCallArgs`, so `LEN(i)` with `i : INT` passes analysis and fails only in g++. Not fixed: enabling the
-  check could refuse code that builds today where a runtime template is wider than the IEC constraint. Found during
-  fork #114, 2026-11-11.
 - **Fork: S11's symbol operators** — `defined(variable:…)`, `defined(type:…)`, `defined(pou:…)`, `hasattribute`,
   `hastype`, `hasconstantvalue`, `hasconstanttype` in `{IF}` pragmas. #116 refuses them with a positioned error;
   evaluating them needs the symbol tables. Follow-up from fork #116, 2026-11-11.
@@ -351,7 +353,7 @@ Roadmap items finished from now on are listed here with their PR.
   FB held in a global array element, `units[0](...)` and `GVL_A.units[0](...)`
   ([#117](https://github.com/AbuShaqra/STruCpp/pull/117), D4, `fe4d492`). **Release I** cut at `fe4d492` the same day
   (#111–#117).
-- **S3b fork PRs #118–#124** (fork lane) — merged 2026-11-11 18:37 UTC: an INTERFACE as an ARRAY element or STRUCT field
+- **S3b fork PRs #118–#126** (fork lane) — merged 2026-11-11 18:37 UTC: an INTERFACE as an ARRAY element or STRUCT field
   holds a reference ([#118](https://github.com/AbuShaqra/STruCpp/pull/118), D5, `38ad2ca`); S11b, pragma-only and
   per-file defines, `--pragma-define` and `--file-define` ([#119](https://github.com/AbuShaqra/STruCpp/pull/119),
   `eb52d2c`). The extension bundles `eb52d2c` in R3.5 (PR #35). D8, STRUCT aliases related through their targets'
@@ -359,7 +361,9 @@ Roadmap items finished from now on are listed here with their PR.
   ([#121](https://github.com/AbuShaqra/STruCpp/pull/121), `caf3d93`; release J note); D10, CONFIGURATION pointer and
   reference globals ([#122](https://github.com/AbuShaqra/STruCpp/pull/122), `b77f36f`); D12, empty `--feature` id message and the
   DIALECTS.md Checks list ([#123](https://github.com/AbuShaqra/STruCpp/pull/123), `aacc31a`); D11, forced and debugged globals
-  take the global's lock in threaded builds ([#124](https://github.com/AbuShaqra/STruCpp/pull/124), `039d65f`). Batch 5 is done.
+  take the global's lock in threaded builds ([#124](https://github.com/AbuShaqra/STruCpp/pull/124), `039d65f`). Batch 5 is done. F1, private/protected
+  properties refused from outside ([#125](https://github.com/AbuShaqra/STruCpp/pull/125)), and F2, a VAR_EXTERNAL in an FB reaching another
+  resource's global refused ([#126](https://github.com/AbuShaqra/STruCpp/pull/126)); both refuse code that ran (release J note).
 - **Settings keys `tcToolkit.*`** — 2026-11-11 09:48–10:28 UTC ([PR #34](https://github.com/AbuShaqra/TC_PLC_Toolkit/pull/34), `cd52afc`): VS Code labels settings from their keys, so the 10 settings moved from `twincat.*` with a one-time migration (user report).
 - **R3.3–R9** — merged together 2026-11-11 09:33 UTC after the user's Windows checks ([PR #33](https://github.com/AbuShaqra/TC_PLC_Toolkit/pull/33), `6424968`):
   the compiler bundled (GPL licence + source link, only the TwinCAT dialect profile, Node 22+ found automatically, a
