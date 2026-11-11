@@ -17,7 +17,9 @@ accurate rather than short — prune a finding only when the code it describes i
   or >200 ms.
 - **Rename v1 limits — lifted by R7 (2026-11-11):** see "Objects-tree rename" below for what changed and the
   undo limits that remain.
-- **Tooling:** `brace-expansion` advisory (the fix drags 19 unrelated lockfile packages).
+- **Tooling:** `npm audit` reports a MODERATE dev-only advisory, minimatch 7.0.0-11.0.0 (GHSA-g3hv-75wg-m249), through
+  ESLint 10's own `minimatch@^10.2.6`; the fix is minimatch 11, outside ESLint's range, so it waits for ESLint.
+  `npm audit --omit=dev` is clean.
 - **Small known gaps:** the lexer's Pragma token is unclassified (`features/hover.js` classifies it on demand).
 
 ## Process, tooling and environment traps
