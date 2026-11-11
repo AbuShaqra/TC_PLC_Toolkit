@@ -116,7 +116,12 @@ const vscodeStub = {
             }
             return task({ report() {} }, token);
         },
-        registerUriHandler: (h) => { uriHandler = h; return { dispose() {} }; }
+        registerUriHandler: (h) => { uriHandler = h; return { dispose() {} }; },
+        createOutputChannel: (name) => {
+            const ch = { name, lines: [], appendLine(l) { this.lines.push(l); }, show() {}, dispose() {} };
+            calls.outputs = (calls.outputs || []).concat([ch]);
+            return ch;
+        }
     },
     commands: {
         registerCommand: (id, fn) => { handlers.set(id, fn); return { dispose() {} }; },
@@ -132,7 +137,7 @@ Module._load = function (request) {
     return realLoad.apply(this, arguments);
 };
 
-const { registerCompileCommands, DIAGNOSTIC_SOURCE, GO_TO_PROBLEM_COMMAND } = require('../src/commands/compileCommands');
+const { registerCompileCommands, DIAGNOSTIC_SOURCE, GO_TO_PROBLEM_COMMAND, OUTPUT_CHANNEL_NAME } = require('../src/commands/compileCommands');
 const { TwinCatCustomEditorProvider } = require('../src/customEditorProvider');
 const { buildCheckUnit } = require('../src/checkUnit');
 const { parseTwinCatXml } = require('../src/xmlParser');
@@ -485,6 +490,53 @@ const settle = () => new Promise(r => setTimeout(r, 10));
         await settle();
         assert(!/Update Library Definitions/.test((calls.errors[0] || { m: '' }).m), 'LIBRARY: the hint is given once per session');
         fs.rmSync(plcproj);
+    }
+
+    // ── Compiler defines (the project's "Compiler defines" field) reach the compiler as -D ────────
+    {
+        const plcproj = path.join(ROOT, 'PLC', 'PLC.plcproj');
+        assert(!calls.outputs, 'DEFINES: a project without compiler defines opens no output channel');
+        fs.writeFileSync(plcproj, ['<Project>', '  <PropertyGroup>', '    <Name>PLC</Name>',
+            "    <CompilerDefines>SIM, Mode := 'fast', Axes := '4', 2bad, Plain:=x</CompilerDefines>",
+            '  </PropertyGroup>', '  <ItemGroup>', '    <Compile Include="POUs\\FB_A.TcPOU">',
+            '      <CompilerDefines>PER_OBJECT</CompilerDefines>', '    </Compile>', '  </ItemGroup>', '</Project>'].join(CRLF));
+        projectList = [{ ...project('a', 'PLC', [fbPath, gvlPath]), plcprojPath: plcproj }];
+        compilerAnswer = () => ({ stdout: JSON.stringify({ dialect: 'twincat3', files: [], diagnostics: [], summary: {} }), code: 0 });
+        for (const k of ['errors', 'infos', 'warnings']) calls[k].length = 0;
+        answers.message.push(undefined);
+        result = await run('twincat.compileProject');
+        await settle();
+        const call = fake.calls[fake.calls.length - 1];
+        const afterDialect = call.args.slice(call.args.indexOf('--dialect-file') + 2, call.args.indexOf('--dialect-file') + 8);
+        assert(JSON.stringify(afterDialect) === JSON.stringify(['-D', 'SIM', '-D', 'Mode=fast', '-D', 'Axes']),
+            `DEFINES: the compiler gets -D SIM -D Mode=fast -D Axes, case kept, right after the profile (${afterDialect.join(' ')})`);
+        assert(!call.args.includes('PER_OBJECT') && !call.args.some(a => /2bad|Plain/.test(a)),
+            'DEFINES: a per-object define and the malformed entries are not passed');
+        assert(result.ok === true && result.defineArgs.join(' ') === '-D SIM -D Mode=fast -D Axes' && result.defineNotes.length === 3,
+            `DEFINES: the command reports the arguments and three notes (${result.defineNotes.join(' | ')})`);
+        const channel = (calls.outputs || []).find(c => c.name === OUTPUT_CHANNEL_NAME);
+        assert(OUTPUT_CHANNEL_NAME === 'TC Toolkit Compile' && !!channel && channel.lines.some(l => /PLC: compiler defines -D SIM -D Mode=fast -D Axes$/.test(l)) &&
+            channel.lines.some(l => /"2bad" skipped/.test(l)) && channel.lines.some(l => /"Plain:=x" skipped/.test(l)) &&
+            channel.lines.some(l => /"Axes := '4'" passed as "Axes" only/.test(l)),
+            `DEFINES: the output channel lists the arguments, each skipped entry and the integer-value note (${channel ? channel.lines.join(' | ') : 'no channel'})`);
+        const summaryText = (calls.warnings[0] || { m: '' }).m;
+        assert(/3 note\(s\) on the project's compiler defines: see the "TC Toolkit Compile" output\./.test(summaryText),
+            `DEFINES: the summary points to the output channel (${summaryText})`);
+
+        fs.writeFileSync(plcproj, '<Project><PropertyGroup><CompilerDefines /></PropertyGroup></Project>');
+        answers.message.push(undefined);
+        result = await run('twincat.compileProject');
+        await settle();
+        const emptyCall = fake.calls[fake.calls.length - 1];
+        assert(result.ok === true && !emptyCall.args.includes('-D') && result.defineArgs.length === 0, 'DEFINES: an empty <CompilerDefines /> passes no -D');
+        fs.rmSync(plcproj);
+        answers.message.push(undefined);
+        result = await run('twincat.compileProject');
+        await settle();
+        assert(result.ok === true && !fake.calls[fake.calls.length - 1].args.includes('-D') && result.defineNotes.length === 1 &&
+            /compiler defines not read/.test(result.defineNotes[0]),
+            `DEFINES: a .plcproj that cannot be read passes no -D and says so, without failing the run (${result.defineNotes[0]})`);
+        projectList = [project('a', 'PLC', [fbPath, gvlPath])];
     }
 
     // ── The product name of the compiler stays out of the UI strings ────────────────────────────

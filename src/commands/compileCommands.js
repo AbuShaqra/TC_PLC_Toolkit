@@ -35,6 +35,7 @@ const {
     COMPILER_SECTION, isCompilerAvailable, checkSetup, buildCheckInputs, runCheck, summarize, describeLocation, paneRange
 } = require('../compileCheck');
 const { prepareLibraryCheck } = require('../libraryDecls');
+const { projectDefineArgs } = require('../compilerDefines');
 
 /** The `source` of every diagnostic this command publishes. */
 const DIAGNOSTIC_SOURCE = 'TC Toolkit compile';
@@ -44,6 +45,8 @@ const PROBLEM_LINK_PATH = '/compileProblem';
 
 /** Internal command: pick one of the current compile problems and go to it. */
 const GO_TO_PROBLEM_COMMAND = 'twincat.compile.goToProblem';
+/** The output channel for what a run did not show elsewhere (the project's compiler defines). */
+const OUTPUT_CHANNEL_NAME = 'TC Toolkit Compile';
 
 /**
  * @typedef {import('../compileCheck').CompileDiagnostic & {id: number}} StoredProblem
@@ -75,6 +78,15 @@ function registerCompileCommands(context, { provider, getProjectMap, onSettingsC
     let running = false;
     /** The "no library dump" hint is given once per session, not on every run. */
     let dumpHintGiven = false;
+    /** @type {any} Created on first use: only a project with compiler defines writes to it. */
+    let output = null;
+    const outputChannel = () => {
+        if (!output) {
+            output = vscode.window.createOutputChannel(OUTPUT_CHANNEL_NAME);
+            context.subscriptions.push(output);
+        }
+        return output;
+    };
 
     const readSettings = () => {
         const config = vscode.workspace.getConfiguration(COMPILER_SECTION);
@@ -281,7 +293,7 @@ function registerCompileCommands(context, { provider, getProjectMap, onSettingsC
                         }
                         const built = buildCheckInputs(files, parseTwinCatXml);
                         if (built.inputs.length === 0) {
-                            return { result: null, built, unreadable, library: null };
+                            return { result: null, built, unreadable, library: null, defines: null };
                         }
                         // Library declarations, from this machine's own library files (libraryDecls.js);
                         // they exist only inside runCheck's temporary directory.
@@ -291,8 +303,20 @@ function registerCompileCommands(context, { provider, getProjectMap, onSettingsC
                             inputs: built.inputs,
                             compilerPath: setup.compilerPath
                         });
+                        // The project's compiler defines choose the branches of {IF defined(X)} pragmas.
+                        const defines = projectDefineArgs(project.plcprojPath, (p) => {
+                            const doc = (vscode.workspace.textDocuments || []).find(d => keyOf(d.uri.toString()) === keyOf(vscode.Uri.file(p).toString()));
+                            return doc ? doc.getText() : fs.readFileSync(p, 'utf8');
+                        });
+                        if (defines.defines.length > 0 || defines.notes.length > 0) {
+                            const channel = outputChannel();
+                            channel.appendLine(`[${new Date().toISOString()}] ${projectName}: compiler defines ` +
+                                (defines.args.length > 0 ? defines.args.join(' ') : '(none used)'));
+                            for (const note of defines.notes) channel.appendLine(`  ${note}`);
+                        }
                         const result = await runCheck({
                             nodeCommand: setup.nodeCommand,
+                            defineArgs: defines.args,
                             nodeEnv: setup.nodeEnv,
                             compilerPath: setup.compilerPath,
                             dialectFile: path.join(context.extensionPath, 'resources', 'dialects', 'twincat3.json'),
@@ -302,7 +326,7 @@ function registerCompileCommands(context, { provider, getProjectMap, onSettingsC
                             spawn: /** @type {any} */ (spawn),
                             onCancel: (cancel) => { token.onCancellationRequested(cancel); if (token.isCancellationRequested) cancel(); }
                         });
-                        return { result, built, unreadable, library };
+                        return { result, built, unreadable, library, defines };
                     });
 
                 if (!outcome || (outcome.result && outcome.result.status === 'cancelled')) {
@@ -312,7 +336,7 @@ function registerCompileCommands(context, { provider, getProjectMap, onSettingsC
                     vscode.window.showWarningMessage(`Compile Project: ${projectName} has no TwinCAT objects to compile.`);
                     return { ok: false, reason: 'empty' };
                 }
-                const { result, built, unreadable, library } = outcome;
+                const { result, built, unreadable, library, defines } = outcome;
                 if (result.status !== 'done') {
                     // The previous results stay: a run that did not finish says nothing about the code.
                     vscode.window.showErrorMessage(`Compile Project did not finish. ${result.message}`);
@@ -347,6 +371,9 @@ function registerCompileCommands(context, { provider, getProjectMap, onSettingsC
                     notes.push(`${result.libraryMessages.length} message(s) about the generated library declarations (not your code) were not shown: ` +
                         result.libraryMessages.slice(0, 2).map(m => m.message).join('; ') + (result.libraryMessages.length > 2 ? '; …' : ''));
                 }
+                if (defines && defines.notes.length > 0) {
+                    notes.push(`${defines.notes.length} note(s) on the project's compiler defines: see the "${OUTPUT_CHANNEL_NAME}" output.`);
+                }
                 if (library && !library.hasSignatures && library.referencesLibraries && !dumpHintGiven) {
                     dumpHintGiven = true;
                     notes.push('Run "TC Toolkit: Update Library Definitions" to check calls into libraries too.');
@@ -363,7 +390,8 @@ function registerCompileCommands(context, { provider, getProjectMap, onSettingsC
                 return {
                     ok: true, projectKey: key, errors: result.errors, warnings: result.warnings,
                     filteredPragmaWarnings: result.filteredPragmaWarnings, filteredLibraryDiagnostics: result.filteredLibraryDiagnostics,
-                    libraryDeclarations: library ? library.extraFiles.length : 0, durationMs: result.durationMs, summary
+                    libraryDeclarations: library ? library.extraFiles.length : 0, durationMs: result.durationMs, summary,
+                    defineArgs: defines ? defines.args.slice() : [], defineNotes: defines ? defines.notes.slice() : []
                 };
             } finally {
                 running = false;
@@ -411,4 +439,4 @@ function registerCompileCommands(context, { provider, getProjectMap, onSettingsC
     return { isAvailable, problemsFor: (uriStr) => { const e = byFile.get(keyOf(uriStr)); return e ? e.problems.slice() : []; } };
 }
 
-module.exports = { registerCompileCommands, DIAGNOSTIC_SOURCE, PROBLEM_LINK_PATH, GO_TO_PROBLEM_COMMAND };
+module.exports = { registerCompileCommands, DIAGNOSTIC_SOURCE, PROBLEM_LINK_PATH, GO_TO_PROBLEM_COMMAND, OUTPUT_CHANNEL_NAME };
