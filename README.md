@@ -234,7 +234,8 @@ unsaved work. It briefly opens a TwinCAT window while it runs (about a minute).
   attribute names** — the ones
   Beckhoff documents plus the ones that only occur in the wild (`object_name`, `TcGenerated`, …).
   Unknown names are never flagged: TwinCAT supports user-defined attributes, and one you invented is
-  highlighted exactly like a built-in.
+  highlighted exactly like a built-in. **Hovering a pragma** explains its category, shows its syntax and
+  links its Beckhoff Infosys page where there is one.
 - **Folding follows ST's structure**, not indentation. `{region "…"}` … `{endregion}` collapses (nested
   regions included), as do `VAR`…`END_VAR` and every other declaration section, `IF`, `CASE`, `FOR`,
   `WHILE`, `REPEAT`, `STRUCT`, `UNION` and `TYPE` — in the declaration pane as well as the

@@ -19,8 +19,7 @@ accurate rather than short — prune a finding only when the code it describes i
   undo limits that remain.
 - **Tooling:** ESLint 10 bump (9.x deprecated; raises the Node floor, needs re-triage); dev-only `brace-expansion`
   advisory (the fix drags 19 unrelated lockfile packages).
-- **Small known gaps:** no pragma
-  hover; the lexer's Pragma token is unclassified (nothing consumes it).
+- **Small known gaps:** the lexer's Pragma token is unclassified (`features/hover.js` classifies it on demand).
 
 ## Process, tooling and environment traps
 - **Install trap:** VS Code keeps the old version dir until a FULL restart (reload-window is not always enough) —

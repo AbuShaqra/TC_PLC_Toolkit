@@ -7,7 +7,7 @@
  * against a PARTIAL index are not zero (asserted below as the control). So "a request sent while the scan
  * is still running returns zero diagnostics" is the end-to-end form of "no request ever sees a half-built
  * index". Pinned:
- *   - `initialize` answers without waiting for the scan;
+ *   - `initialize` answers without waiting for the scan, and advertises hover; custom/hover answers at once;
  *   - a custom/diagnostics request for the LAST project, sent at once, returns zero diagnostics;
  *   - custom/indexReady resolves (joining the startup scan) and custom/libraries answers per project;
  *   - a custom/reindex followed at once by a request still answers with zero diagnostics;
@@ -84,7 +84,7 @@ async function session(label) {
     const server = startServer();
     const { connection } = server;
     const t0 = Date.now();
-    await within(30000, connection.sendRequest('initialize', {
+    const init = await within(30000, connection.sendRequest('initialize', {
         processId: process.pid,
         rootUri: null,
         capabilities: {},
@@ -93,6 +93,13 @@ async function session(label) {
     }), 'initialize');
     const initMs = Date.now() - t0;
     connection.sendNotification('initialized', {});
+    assert(init && init.capabilities && init.capabilities.hoverProvider === true, `${label}: the server advertises hover`);
+
+    // custom/hover answers from the code it is sent, without waiting for the scan.
+    const hover = await within(10000, connection.sendRequest('custom/hover', {
+        code: "{attribute 'qualified_only'}\nVAR_GLOBAL\nEND_VAR", position: { line: 0, character: 3 }, fileUri: unitFor('LineD', 'POUs/MAIN.TcPOU').fileUri
+    }), 'hover');
+    assert(hover && hover.contents && /qualified_only/.test(hover.contents.value), `${label}: custom/hover answers a pragma hover over IPC`);
 
     // At once, before anything says the index is ready: the LAST project's MAIN, and its FB.
     const main = unitFor('LineD', 'POUs/MAIN.TcPOU');

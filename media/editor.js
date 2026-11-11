@@ -787,6 +787,36 @@
             }
         });
 
+        // Hover help for pragmas ({attribute '…'}, {warning …}, {IF …}, {region …}), answered by the
+        // language server from the pragma catalogue (src/lsp/features/hover.js). A pragma never
+        // spans lines, so a line with no '{' is answered here without a round trip: Monaco asks on
+        // every mouse rest, and nearly all of them are over code.
+        monaco.languages.registerHoverProvider('iecst', {
+            provideHover: async function(model, position) {
+                if (model.uri && model.uri.scheme === peekUri.PEEK_SCHEME) return null; // see the completion guard
+                if (model.getLineContent(position.lineNumber).indexOf('{') === -1) return null;
+                const hover = await sendBridgeRequest('custom/hover', buildBridgeContext(model, position));
+                if (!hover || typeof hover.contents !== 'string' || !hover.range) return null;
+                return {
+                    range: new monaco.Range(hover.range.startLineNumber, hover.range.startColumn,
+                        hover.range.endLineNumber, hover.range.endColumn),
+                    contents: [{ value: hover.contents }]
+                };
+            }
+        });
+
+        // A link in a hover (the pragma's documentation page) cannot open inside the webview: hand it
+        // to the host, which opens it in the browser if it is one of the catalogue's pages.
+        if (typeof monaco.editor.registerLinkOpener === 'function') {
+            monaco.editor.registerLinkOpener({
+                open: function(resource) {
+                    if (resource.scheme !== 'https') return false;
+                    vscode.postMessage({ type: 'openDocumentationLink', url: resource.toString(true) });
+                    return true;
+                }
+            });
+        }
+
         // Perform the navigation for locations Monaco cannot open by itself: our synthetic
         // 'twincat:' targets, and models that live in the *other* pane of this webview (Monaco's
         // standalone handler only reveals inside the editor the action started from). Returning
@@ -1500,6 +1530,14 @@
                 const resolve = pendingRequests.get(message.requestId);
                 if (resolve) {
                     resolve(message.definition);
+                    pendingRequests.delete(message.requestId);
+                }
+                break;
+            }
+            case 'custom/hoverResponse': {
+                const resolve = pendingRequests.get(message.requestId);
+                if (resolve) {
+                    resolve(message.hover);
                     pendingRequests.delete(message.requestId);
                 }
                 break;

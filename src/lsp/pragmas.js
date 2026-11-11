@@ -285,8 +285,20 @@ function lookupDirective(head) {
     return directiveIndex.get(String(head).toLowerCase()) || null;
 }
 
+/**
+ * True for a link to one of the catalogue's own documentation pages (`<docBase><digits>.html`) — the
+ * only links a pragma hover carries, and so the only ones the webview may ask the host to open.
+ * @param {string} url
+ * @returns {boolean}
+ */
+function isDocumentationUrl(url) {
+    const s = String(url || '');
+    return s.startsWith(documented.docBase) && /^\d+\.html$/.test(s.slice(documented.docBase.length));
+}
+
 module.exports = {
     PragmaKind,
+    isDocumentationUrl,
     REGION_MARKER_START,
     REGION_MARKER_END,
     classifyPragma,

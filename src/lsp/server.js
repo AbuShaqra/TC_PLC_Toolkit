@@ -156,6 +156,7 @@ const {
     provideReferencesForSymbol,
     findConfigReferencesForSymbol,
     provideDocumentHighlights,
+    provideHover,
     provideDiagnostics,
     setDiagnosticsConfig,
     clearStFileCache
@@ -195,7 +196,8 @@ connection.onInitialize((params) => {
             },
             definitionProvider: true,
             referencesProvider: true,
-            documentHighlightProvider: true
+            documentHighlightProvider: true,
+            hoverProvider: true
         }
     };
 });
@@ -288,6 +290,19 @@ connection.onDocumentHighlight((params) => {
     }
 });
 
+// Pragma hover help (features/hover.js). Reads only the document, never the index, so it does not wait
+// for a scan.
+connection.onHover((params) => {
+    const doc = documents.get(params.textDocument.uri);
+    if (!doc) return null;
+    try {
+        return provideHover(doc.getText(), params.position);
+    } catch (e) {
+        log.error('hover-request-failed', requestFailureFields(doc.uri, params.position, e));
+        return null;
+    }
+});
+
 // Custom JSON-RPC requests for Monaco Webview bridge
 
 // The wrapper every custom/* language-feature request below goes through — see requestPipeline.js's
@@ -355,6 +370,18 @@ connection.onRequest('custom/diagnostics', whenIndexed(paramsFileUri, router.wit
     (p, index) => provideDiagnostics(p.code, index, p.fileUri),
     'diagnostics'
 )));
+
+// The webview's pragma hover. Deliberately NOT routed through whenIndexed/router: it reads only the
+// assembled unit it is sent (no index, no document sync), so a hover never waits for a scan and never
+// re-syncs the index on every mouse move.
+connection.onRequest('custom/hover', (params) => {
+    try {
+        return provideHover((params && params.code) || '', params && params.position);
+    } catch (e) {
+        log.error('hover-request-failed', requestFailureFields(params && params.fileUri, params && params.position, e));
+        return null;
+    }
+});
 
 // The sync IS the work here: updateDocument exists to bring the index up to date, not to answer a
 // language feature, so the handler itself just reports success.

@@ -10,8 +10,9 @@ const { parseTwinCatXml, replaceComponentCdata } = require('./xmlParser');
 const { updateDocument } = require('./plcProjHelper');
 const { convertXmlToSt, collectStructDefinitions } = require('./stConverter');
 const { stOutputPath, isUnderStFiles } = require('./stOutputPath');
-const { assembleSt, localToAbsolute, createStResolver, mapDefinition, collectPeekReferences, listExternalReferences, mapDiagnosticsToLocal } = require('./livePath');
+const { assembleSt, localToAbsolute, createStResolver, mapDefinition, collectPeekReferences, listExternalReferences, mapDiagnosticsToLocal, mapHoverToLocal } = require('./livePath');
 const pendingEditsCore = require('../media/pendingEdits');
+const { isDocumentationUrl } = require('./lsp/pragmas');
 const { createPendingEditsStore } = require('./pendingEditsStore');
 const EXT_VERSION = (() => { try { return require('../package.json').version; } catch (e) { return '?'; } })();
 
@@ -489,6 +490,37 @@ class TwinCatCustomEditorProvider {
                         });
                     } catch (err) {
                         console.error(err);
+                    }
+                    break;
+                case 'custom/hover':
+                    try {
+                        const ctx = assembleSt(document.getText(), message);
+                        let hover = null;
+                        if (ctx) {
+                            const abs = localToAbsolute(ctx.lineMap, message.componentId, message.pane, message.position.lineNumber, message.position.column);
+                            if (abs) {
+                                const raw = await vscode.commands.executeCommand('twincat.lsp.queryHover', {
+                                    code: ctx.stText,
+                                    position: abs,
+                                    fileUri: message.fileUri
+                                });
+                                hover = mapHoverToLocal(/** @type {any} */ (raw), abs, message.position.lineNumber);
+                            }
+                        }
+                        webviewPanel.webview.postMessage({
+                            type: 'custom/hoverResponse',
+                            requestId: message.requestId,
+                            hover: hover
+                        });
+                    } catch (err) {
+                        console.error(err);
+                    }
+                    break;
+                case 'openDocumentationLink':
+                    // Only the pragma catalogue's own documentation pages: the hover's links. Anything
+                    // else a webview asks to open is ignored.
+                    if (typeof message.url === 'string' && isDocumentationUrl(message.url)) {
+                        vscode.env.openExternal(vscode.Uri.parse(message.url));
                     }
                     break;
                 case 'custom/diagnostics':
