@@ -507,6 +507,16 @@ function registerRenameCommands(context, { treeView, treeProvider, applyXmlEdit,
                 `Renamed ${label}, but ${unsaved.length} file(s) could not be saved and hold the change unsaved: ${unsaved.join(', ')}`);
         }
         lastRename = participants.length > 0 ? { label, participants, move } : null;
+        if (lastRename && unsaved.length === 0) {
+            // Ctrl+Z cannot reach this undo group from the tree or the webview, so offer it here
+            // (user decision 2026-11-11). Not awaited: the rename is done whether or not it is clicked.
+            const offered = lastRename;
+            Promise.resolve(vscode.window.showInformationMessage(`Renamed ${label}.`, 'Undo')).then((choice) => {
+                if (choice === 'Undo' && lastRename === offered) return undoLastRename();
+                if (choice === 'Undo') vscode.window.showInformationMessage('A newer rename replaced this one; use TC Toolkit: Undo Last Rename for the latest.');
+                return undefined;
+            }, () => undefined);
+        }
         return true;
     }
 

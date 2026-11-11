@@ -139,7 +139,7 @@ function makeDoc(p, text) {
     docs.set(p, doc);
     return doc;
 }
-const state = { applyEdits: [], errors: [], warnings: [], infos: [], status: [], executed: [], inputs: [], failMove: false, undoGroups: [] };
+const state = { applyEdits: [], errors: [], warnings: [], infos: [], infoButtons: [], infoChoices: [], status: [], executed: [], inputs: [], failMove: false, undoGroups: [] };
 const vscodeStub = {
     Uri: {
         file: mkUri,
@@ -199,7 +199,7 @@ const vscodeStub = {
         },
         async showWarningMessage(m, opts, ...buttons) { state.warnings.push(m); return buttons.find(b => /^Rename and update/.test(b)); },
         async showErrorMessage(m) { state.errors.push(m); },
-        async showInformationMessage(m) { state.infos.push(m); },
+        async showInformationMessage(m, ...buttons) { state.infos.push(m); state.infoButtons.push(buttons); return buttons.length ? state.infoChoices.shift() : undefined; },
         setStatusBarMessage(m) { state.status.push(m); },
         async showTextDocument(doc) {
             const editor = { document: doc };
@@ -281,7 +281,7 @@ registerRenameCommands({ subscriptions: [] }, {
 const run = (id, ...args) => vscodeStub.commands.executeCommand(id, ...args);
 function reset() {
     docs.clear();
-    state.applyEdits = []; state.errors = []; state.warnings = []; state.infos = []; state.status = []; state.executed = [];
+    state.applyEdits = []; state.errors = []; state.warnings = []; state.infos = []; state.infoButtons = []; state.infoChoices = []; state.status = []; state.executed = [];
     state.inputs = []; state.failMove = false; state.undoGroups = [];
     vscodeStub.window.activeTextEditor = undefined;
     vscodeStub.window.visibleTextEditors = [];
@@ -315,6 +315,9 @@ async function main() {
     assert(after['Plc.plcproj'] === before['Plc.plcproj'].replace('POUs\\FB_A.TcPOU', 'POUs\\FB_Axis.TcPOU'),
         'disk: the .plcproj changed ONLY in that Include value (entry kept in place with <LinkAlways>)');
     assert(dirty().length === 0, `every edited document was saved (dirty: ${dirty()})`);
+    const offer = state.infos.indexOf('Renamed FB_A.TcPOU → FB_Axis.TcPOU.');
+    assert(offer >= 0 && JSON.stringify(state.infoButtons[offer]) === '["Undo"]',
+        `the rename notification offers an Undo button (got ${JSON.stringify(state.infos)})`);
 
     console.log('\n--- Undo Last Rename (file) ---');
     await run('twincat.undoLastRename');
@@ -324,6 +327,14 @@ async function main() {
     assert(dirty().length === 0, 'undo saved what it restored');
     await run('twincat.undoLastRename');
     assert(state.infos.some(m => /no rename to undo/.test(m)), 'a second Undo Last Rename has nothing to undo');
+
+    console.log('\n--- the notification\'s Undo button ---');
+    reset();
+    state.inputs.push('FB_Axis');
+    state.infoChoices.push('Undo');
+    await run('twincat.renameObject', { contextValue: 'pouFile', resourceUri: mkUri(P('POUs/FB_A.TcPOU')) });
+    for (let i = 0; i < 20 && !state.executed.includes('undo'); i++) await new Promise(r => setTimeout(r, 10));
+    assert(state.executed.includes('undo') && sameDisk(snapshotDisk(), before), 'clicking Undo on the notification undoes the rename byte for byte');
 
     // ── 2. Interface method: sibling implementor, not the name-alike ──
     console.log('\n--- member rename: FB_A.Start -> Begin ---');

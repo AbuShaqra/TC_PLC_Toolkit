@@ -24,10 +24,9 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   "TwinCAT". Then one PR into `dev`. R3.4 is built on the same branch too (`ff7d8ae`..`bf5eadb`, `src/libraryDecls.js`,
   `test/test_library_decls.js`; 98 suites FULL): declarations from the signatures dump + library-owned `.tmc` types +
   archive names, only symbols the project references, written only into the check's temp dir; errors on undeclared
-  library symbols filtered and counted. **Open for the user:** the filter uses archive names, which include member/local
-  names (the sample archive yields 479, e.g. Get/Set/Contains), so an undeclared user variable sharing such a name is
-  silently dropped — kept broad per the project's no-false-positive rule; tighten to dump/.tmc names if the user
-  prefers. User's Windows check on a real project: steps in the R3.4 report (hint before Update Library Definitions;
+  library symbols filtered and counted. **Decided (user, 2026-11-11): keep the filter broad** — archive names count too
+  (they include member/local names such as Get/Set/Contains, so a typo matching one is not reported), per the
+  no-false-positive rule. User's Windows check on a real project: steps in the R3.4 report (hint before Update Library Definitions;
   far fewer errors after; planted typos still reported; no `lib-*.st` left in `%TEMP%\twincat-compile-*`).
 - **R6 indexing speed: built on the branch** (`05b350a`, `103df64`, `d4f39c8`; 102 suites FULL): per-scan
   directory memo (`createDirectoryListingMemo`), persisted archive names (`src/lsp/archiveStore.js`, global storage
@@ -38,13 +37,13 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   (`src/indexInputs.js`); one WorkspaceEdit per rename with in-place `.plcproj` edit (`src/plcProjText.js`) + command
   **TC Toolkit: Undo Last Rename** (Ctrl+Z from the tree/webview cannot reach it — VS Code limit, measured); interface
   method family rename (`test_rename_family.js`; `EXTENDS I_A, I_B` now follows both). Known Linux-only devhost P8
-  flush mismatch (`\r\n` vs `\n`), pre-existing. Open for the user: Undo button on the rename message? sibling
-  implementors in Find References? F2 rename from call sites (new feature)?
+  flush mismatch (`\r\n` vs `\n`), pre-existing. **Decided (user, 2026-11-11): an Undo button on the rename notification** (runs Undo
+  Last Rename; done, tested). Still open, low: sibling implementors in Find References? F2 rename from call sites?
 - **R8/R9: built on the branch** (`4af3e38`, `fb4f0ae`, `84cef85`, `a67e91c`; 108 suites FULL): nested comments
   (`src/stComments.js`, all 7 scanners), pragma hover (`src/lsp/features/hover.js`, `custom/hover`; catalogue holds
   names/syntax/page ids only — test-guarded), ESLint 10.14.0, brace-expansion 2.1.7 (shipped in the VSIX before).
-  Open for the user: should `/* */` nest (only a TwinCAT build can tell)? show pragma syntax forms or name+link only?
-  override minimatch 11 for the dev-only advisory?
+  **Decided (user, 2026-11-11): `/* */` stays non-nesting** unless a TwinCAT build shows
+  otherwise. Low, open: pragma syntax forms vs name+link only; minimatch 11 override for the dev-only advisory.
 - **The whole toolkit lane through R9 is built on the branch** and waits for one Windows session from the user
   (dev-host test + the manual checks per item), then one PR into `dev`. R10 is trigger-only; R11 is last.
 - **R11 publishing:** last — after the toolkit lane AND the fork lane are done (user, 2026-11-10).
