@@ -37,7 +37,7 @@ lane (S10 forecast 2026-11-19), so about **2026-11-20**. Decisions taken
 put compiler errors on correct code, so the gaps are fixed in STruC++ first (S2, fork lane); **R3.2 takes its full
 scope** (5 → 7 d).
 
-### Velocity (measured 2026-11-09)
+### Velocity (measured 2026-11-09, re-measured 2026-11-11)
 
 "Planned" is the original estimate in one developer's working days; "Re-measured" is session time (agents doing
 the work in parallel, plus review, checks and merge), taken from the commit and merge times of 2026-11-09:
@@ -51,8 +51,12 @@ the work in parallel, plus review, checks and merge), taken from the commit and 
 | R4 | 4 d | ~3 h | includes a worker restart and a re-run |
 | S2 design pass + merge with the user's findings | — | ~1.7 h | |
 | S2 steps 1, 1b, 2, 3, 4, 5 | 9 d | ~2 h 5 min (14:03 → 16:08) | each step 10–30 min, review and full fork checks included |
+| S9 (fork, raw memory layout) | 4 d | ~2 h 30 min (09:40 → 12:07, Nov 10) | 7 PRs |
+| R3.2 | 7 d | ~1 h 30 min (20:53 → 22:21, Nov 10) | plus the user's Windows checks |
+| R3.3, R3.4, R6, R7, R8, R9 | 15.25 d | ~3 h of build (22:25 → 01:30, Nov 10–11) | merged 09:33 Nov 11 after the user's overnight Windows check |
+| S3b fork fixes (#88–#111) | — | ~35 min per PR | probe, fix, full gates with g++, review, merge; 24 PRs Nov 10–11 |
 
-About **20 planned days in ~7 hours** of one session day. One day is not a trend: these were well-specified items with
+**Re-measured 2026-11-11:** Nov 10–11 confirm the pace — the toolkit lane's code (about 30 planned days) was built in about 6 hours of agent time; what sets the calendar is the user's Windows checks, not the build. Fork fixes run about 35 minutes each. About **20 planned days in ~7 hours** of one session day. One day is not a trend: these were well-specified items with
 a written plan behind them. The re-measured column therefore assumes **about half** the observed speed (~30 min per
 planned day for fork steps, more for toolkit items that touch the webview or the tree), and the calendar assumes one
 working session per day.
