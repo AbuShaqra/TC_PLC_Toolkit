@@ -271,7 +271,8 @@ written into your project (the compiler reads temporary copies, deleted when the
 - A run can be cancelled, and is stopped after two minutes.
 - The project's **compiler defines** (the *Compiler defines* field of the PLC project's Compile settings,
   `NAME` or `NAME := 'value'`, comma-separated) are passed on, so `{IF defined(NAME)}` and
-  `{IF hasvalue(NAME, 'value')}` blocks are checked the way they build; an entry that cannot be used is
+  `{IF hasvalue(NAME, 'value')}` blocks are checked the way they build — for the *Debug* configuration
+  on *TwinCAT RT (x64)* when the `.plcproj` gives defines per configuration; an entry that cannot be used is
   listed in the *TC Toolkit Compile* output.
 
 **The compiler ships with the extension** — there is nothing to build or download. It runs as a

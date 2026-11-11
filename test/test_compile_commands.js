@@ -530,6 +530,23 @@ const settle = () => new Promise(r => setTimeout(r, 10));
         await settle();
         const emptyCall = fake.calls[fake.calls.length - 1];
         assert(result.ok === true && !emptyCall.args.includes('-D') && result.defineArgs.length === 0, 'DEFINES: an empty <CompilerDefines /> passes no -D');
+
+        fs.writeFileSync(plcproj, ['<Project>', '  <PropertyGroup>', '    <CompilerDefines>BASE</CompilerDefines>', '  </PropertyGroup>',
+            "  <PropertyGroup Condition=\" '$(Configuration)|$(Platform)' == 'Debug|TwinCAT RT (x64)' \">",
+            '    <CompilerDefines>$(CompilerDefines), DBG</CompilerDefines>', '  </PropertyGroup>',
+            "  <PropertyGroup Condition=\" '$(Configuration)' == 'Release' \">", '    <CompilerDefines>REL</CompilerDefines>', '  </PropertyGroup>',
+            '</Project>'].join(CRLF));
+        const outputsBefore = (calls.outputs || []).reduce((n, c) => n + c.lines.length, 0);
+        for (const k of ['errors', 'infos', 'warnings']) calls[k].length = 0;
+        answers.message.push(undefined);
+        result = await run('twincat.compileProject');
+        await settle();
+        const condCall = fake.calls[fake.calls.length - 1];
+        assert(result.ok === true && result.defineArgs.join(' ') === '-D BASE -D DBG' && condCall.args.includes('DBG') && !condCall.args.includes('REL') &&
+            result.defineNotes.length === 0 && !calls.warnings.some(w => /note\(s\) on the project's compiler defines/.test(w.m)),
+            `DEFINES: a Debug-conditioned group is applied, a Release one skipped, and neither gives a note (${result.defineArgs.join(' ')}; ${result.defineNotes.join(' | ')})`);
+        const newLines = (calls.outputs || []).flatMap(c => c.lines).slice(outputsBefore);
+        assert(!newLines.some(l => /Condition|not used/.test(l)), `DEFINES: the output channel says nothing about the conditions (${newLines.join(' | ')})`);
         fs.rmSync(plcproj);
         answers.message.push(undefined);
         result = await run('twincat.compileProject');

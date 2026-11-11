@@ -33,7 +33,8 @@
  *     `{IF hasvalue(X, 'v')}` blocks and whose .plcproj carries `<CompilerDefines>`: read through the
  *     command's own reader (src/compilerDefines.js), the defines select the branches (no defines →
  *     the ELSE branches' planted errors; the right defines → 0 errors; wrong case or value → ELSE
- *     again); a malformed entry is skipped; an integer value declares no global constant.
+ *     again); a malformed entry is skipped; an integer value declares no global constant; a
+ *     Debug-conditioned property group's define selects its branch, a Release-only one does not.
  */
 
 const fs = require('fs');
@@ -193,9 +194,10 @@ function assert(cond, msg) {
                 "{IF hasvalue(TkMode, 'fast')}", 'nStroke := 2;', '{ELSE}', 'nModeOff := 1;', '{END_IF}'].join('\r\n')));
             const plcprojPath = fs.readdirSync(copyDir).filter(f => /\.plcproj$/i.test(f)).map(f => path.join(copyDir, f))[0];
             const plcprojText = fs.readFileSync(plcprojPath, 'utf8');
-            const runWith = async (definesXml) => {
-                fs.writeFileSync(plcprojPath, definesXml === null ? plcprojText
-                    : plcprojText.replace('</PropertyGroup>', `  <CompilerDefines>${definesXml}</CompilerDefines>\r\n  </PropertyGroup>`));
+            const runWith = async (definesXml, groupsXml = '') => {
+                const withDefines = definesXml === null ? plcprojText
+                    : plcprojText.replace('</PropertyGroup>', `  <CompilerDefines>${definesXml}</CompilerDefines>\r\n  </PropertyGroup>`);
+                fs.writeFileSync(plcprojPath, groupsXml ? withDefines.replace('</PropertyGroup>', `</PropertyGroup>\r\n${groupsXml}`) : withDefines);
                 const map = createProjectMap([tmp]);
                 const proj = [...map.projects.values()][0];
                 const defines = projectDefineArgs(proj.plcprojPath);
@@ -225,6 +227,12 @@ function assert(cond, msg) {
             assert(d.r.result.status === 'done' && d.defines.args.join(' ') === '-D nSimOff' && d.names.join() === 'NSIMOFF,NMODEOFF' &&
                 /Undeclared variable/i.test(simMsg) && !/CONSTANT/i.test(simMsg),
                 `DEFINES: an integer value is passed as a name only, so it declares no global constant (${d.defines.args.join(' ')}; ${simMsg})`);
+            // Conditions are evaluated for Debug | TwinCAT RT (x64): a Debug group selects the IF branch, a Release one does not.
+            d = await runWith(null, "  <PropertyGroup Condition=\" '$(Configuration)|$(Platform)' == 'Debug|TwinCAT RT (x64)' \">\r\n" +
+                '    <CompilerDefines>TkSim</CompilerDefines>\r\n  </PropertyGroup>\r\n' +
+                "  <PropertyGroup Condition=\" '$(Configuration)' == 'Release' \">\r\n    <CompilerDefines>$(CompilerDefines), TkMode := 'fast'</CompilerDefines>\r\n  </PropertyGroup>");
+            assert(d.r.result.status === 'done' && d.defines.args.join(' ') === '-D TkSim' && d.defines.notes.length === 0 && d.names.join() === 'NMODEOFF',
+                `DEFINES: a Debug-conditioned define selects its IF branch, a Release-only one does not, and neither gives a note (${d.defines.args.join(' ')}; ${d.names.join(', ')})`);
         } finally {
             fs.rmSync(tmp, { recursive: true, force: true });
         }

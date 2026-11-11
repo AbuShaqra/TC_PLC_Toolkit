@@ -23,13 +23,16 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   one-time migration at activation (`src/settingsMigration.js`), old keys stay contributed as deprecated stand-ins.
   Search results read "Tc Toolkit › Compiler: Path" (VS Code cannot show an uppercase "TC" from a key). **Merged** as
   PR #34 (`cd52afc`, 2026-11-11) after the user's Windows check (old values moved; custom XAE path kept).
-- **Compiler release I + compiler defines: BUILT 2026-11-11** on `claude/focused-ptolemy-m6acaz`, unpushed at
-  handover, no PR; awaiting the user's Windows check. Compiler vendored at fork `fe4d492` (release I) from a clean
+- **Compiler release I + compiler defines: BUILT 2026-11-11** on `claude/focused-ptolemy-m6acaz`, open as PR #35
+  into `dev`; awaiting the user's Windows check. Compiler vendored at fork `fe4d492` (release I) from a clean
   worktree; `twincat3.json` gains `conditional_pragmas`; Compile Project passes `<CompilerDefines>` from the
   project's `.plcproj` `<PropertyGroup>` as `-D` (`src/compilerDefines.js`; format checked against public
   `.plcproj` files on GitHub — XAE writes `<CompilerDefines />` or a whitespace-only element when empty, entries
   like `InclSerialCom := 'true'`; per-object `<CompilerDefines>` inside `<Compile>` items exist and are NOT passed, but each non-empty one is noted
-  in the `TC Toolkit Compile` output; a `Condition` on the group or the element is ignored with a note).
+  in the `TC Toolkit Compile` output). **`Condition`s evaluated** (user decision 2026-11-11): on a group or a
+  `<CompilerDefines>` element, for Debug | `TwinCAT RT (x64)` (`CHECK_CONFIGURATION`); true applies, false skips
+  silently, undecidable (`Exists`, property functions, `<`) is left out with a note. Public `.plcproj` files only
+  show XAE's `" '$(Configuration)' == 'Debug' "` / `'Release'` groups, none holding `<CompilerDefines>`.
   110/110 FULL, lint/typecheck 0, Linux dev-host: only the known P8 line-ending failure.
   **Gap (fork follow-up):** the CLI's `-D NAME=V` also declares a global constant `NAME` when `parseInt(V)` is a
   number (probed: a project global `LEVEL` + `-D LEVEL=7` → "Symbol 'LEVEL' already defined in scope 'global'";
