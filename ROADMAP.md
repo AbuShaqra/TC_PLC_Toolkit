@@ -200,7 +200,7 @@ first), an Ed. 4 profile (needs a full Ed. 4 read), the rest of the vendor-featu
 `e071f4f`, G `8fe3343`, H `a5da588`; Part C #111 `146e6fa`. #48 was closed unmerged and replaced by #49, and #58–#64
 are S9). Batches 1–4, Part C and the private-variable item (#112) are done.
 - *Batch 5 (started 2026-11-11; D1–D3 merged as #115), still open:* `GVL_A.units[0]()`; ARRAY OF / STRUCT field of an interface type; properties through an interface variable (already works — skipped); a
-  library STRUCT as an EXTENDS base (already a clear refusal — left as is); alias-of-base := alias-of-derived STRUCT passing; `SINT#200` unchecked (to be refused);
+  library STRUCT as an EXTENDS base (refused today; to be supported, as in TwinCAT — user, 2026-11-11); alias-of-base := alias-of-derived STRUCT passing; `SINT#200` unchecked (to be refused);
   `REF()`/`ADR()` of a CONFIGURATION global; the threaded forced-global race; the `--feature` help text and the
   DIALECTS.md "Checks" list.
 - *Found after release H (2026-11-11), not fixed:* a name declared twice in one CONFIGURATION `VAR_GLOBAL` is accepted
