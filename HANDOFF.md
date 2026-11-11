@@ -21,8 +21,8 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   Toolkit lane is done except R10 (trigger-only) and R11 (publishing, last, after the fork lane).
 - **Settings keys renamed `twincat.*` → `tcToolkit.*`** (user report 2026-11-11; `c6145b6`, `765b5e1`, 109 suites):
   one-time migration at activation (`src/settingsMigration.js`), old keys stay contributed as deprecated stand-ins.
-  Search results read "Tc Toolkit › Compiler: Path" (VS Code cannot show an uppercase "TC" from a key). PR into
-  `dev` pending the user's Windows check (old values move; custom XAE path kept).
+  Search results read "Tc Toolkit › Compiler: Path" (VS Code cannot show an uppercase "TC" from a key). **Merged** as
+  PR #34 (`cd52afc`, 2026-11-11) after the user's Windows check (old values moved; custom XAE path kept).
 - **R11 publishing:** last — after the toolkit lane AND the fork lane are done (user, 2026-11-10).
 - **Sample diagnostics: 0 against a baseline of 0** — verified with the Beckhoff archives present AND moved aside.
 

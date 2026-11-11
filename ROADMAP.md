@@ -276,6 +276,7 @@ The former backlog is now scheduled as R6–R10 (2026-11-09, user's ask); each i
 Shipped work lives in git history and the [releases](https://github.com/AbuShaqra/TC_PLC_Toolkit/releases).
 Roadmap items finished from now on are listed here with their PR.
 
+- **Settings keys `tcToolkit.*`** — 2026-11-11 ([PR #34](https://github.com/AbuShaqra/TC_PLC_Toolkit/pull/34)): VS Code labels settings from their keys, so the 10 settings moved from `twincat.*` with a one-time migration (user report).
 - **R3.3–R9** — merged together 2026-11-11 09:30 UTC after the user's Windows checks ([PR #33](https://github.com/AbuShaqra/TC_PLC_Toolkit/pull/33)):
   the compiler bundled (GPL licence + source link, only the TwinCAT dialect profile, Node 22+ found automatically, a
   toolbar Compile button); the visible name **TC Toolkit** (trademark; internal ids unchanged); R3.4 vendor-library
