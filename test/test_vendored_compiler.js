@@ -68,6 +68,9 @@ assert(JSON.stringify(dialects) === '["twincat3.json"]', `resources/dialects/ ho
 assert(!walk(DIR).some(f => /\.json$/i.test(f)), 'resources/compiler/ carries no .json (no dialect profile from the fork)');
 const profileFiles = walk(path.join(REPO, 'resources')).filter(f => /dialect/i.test(rel(f)) || /[\\/]dialects[\\/]/.test(f));
 assert(profileFiles.length === 1 && path.basename(profileFiles[0]) === 'twincat3.json', `the only dialect profile under resources/ is twincat3.json (${profileFiles.map(f => path.relative(REPO, f)).join(', ')})`);
+// {IF defined(X)} … {END_IF} is TwinCAT code: without the feature every such block is an error.
+const profile = JSON.parse(fs.readFileSync(path.join(REPO, 'resources', 'dialects', 'twincat3.json'), 'utf8'));
+assert(Array.isArray(profile.features) && profile.features.includes('conditional_pragmas'), 'the TwinCAT profile turns on conditional_pragmas');
 
 // Self-contained: the bundle requires Node built-ins only.
 const bundle = fs.readFileSync(path.join(DIR, 'compiler.cjs'), 'utf8');
