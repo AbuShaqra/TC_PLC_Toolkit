@@ -76,7 +76,7 @@ markdown file wins if the two disagree.
 - the item's row/card and its `PLAN` status and timestamps;
 - the **Done** section (markdown) and the **Done** card (HTML): every finished item listed with its PR and date;
 - the **Backlog** section and card: add follow-ups and open questions the PR left, remove what it settled;
-- the page header (title "TC Toolkit Roadmap", "Updated" date, release, forecast) and any card text the PR made stale.
+- the page header (title "TC Toolkit Roadmap", "Updated" date, "Re-measured" date with the velocity table behind it, release, forecast) and any card text the PR made stale.
 
 Then load the page in a browser and confirm the chart draws with no script error before republishing — a
 syntax slip in `PLAN` blanks the whole timeline silently (it happened once on 2026-11-11).
