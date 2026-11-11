@@ -71,6 +71,16 @@ from there to the end of its forecast end day. Update the status in the same cha
 from the user goes onto the roadmap when it is accepted; a merged item moves to "Done" with its PR. The
 markdown file wins if the two disagree.
 
+**After every merged PR — in this repo or the fork — scan the whole roadmap and bring it up to date** (user rule,
+2026-11-11), not just the row the PR touched. In both `ROADMAP.md` and `docs/roadmap.html` check:
+- the item's row/card and its `PLAN` status and timestamps;
+- the **Done** section (markdown) and the **Done** card (HTML): every finished item listed with its PR and date;
+- the **Backlog** section and card: add follow-ups and open questions the PR left, remove what it settled;
+- the page header (title "TC Toolkit Roadmap", "Updated" date, release, forecast) and any card text the PR made stale.
+
+Then load the page in a browser and confirm the chart draws with no script error before republishing — a
+syntax slip in `PLAN` blanks the whole timeline silently (it happened once on 2026-11-11).
+
 ## Git attribution
 
 Commits are authored under the user's own git identity — **add no Claude/AI attribution of any kind:**
