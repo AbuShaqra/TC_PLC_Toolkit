@@ -585,11 +585,11 @@ var PLAN = [
   { lane: 'TC PLC Toolkit', num: 3, id: 'R2',   card: 'r2',   name: 'Sidebar + new project',  est: '8.5 d → ~7 h', start: '2026-11-09', end: '2026-11-10', machine: true, status: 'done', actualStart: '2026-11-09T19:57:00Z', actualEnd: '2026-11-10T20:55:00Z' },
   { lane: 'TC PLC Toolkit', num: 4, id: 'R3.2', card: 'r3-2', name: 'Compile project (check)', est: '7 d → ~4 h',  start: '2026-11-11', end: '2026-11-12', status: 'done', actualStart: '2026-11-10T21:00:00Z', actualEnd: '2026-11-10T22:22:00Z' },
   { lane: 'TC PLC Toolkit', num: 5, id: 'R3.3', card: 'r3-3', name: 'STruC++ packaging',      est: '3 d → ~2 h',  start: '2026-11-10', end: '2026-11-11', days: 0.5, status: 'progress', actualStart: '2026-11-10T22:40:00Z' },
-  { lane: 'TC PLC Toolkit', num: 6, id: 'R3.4', card: 'r3-4', name: 'Library declarations',   est: '2 d → ~1.5 h', start: '2026-11-10', end: '2026-11-11', days: 0.4, status: 'progress', actualStart: '2026-11-10T23:30:00Z' }, // built; awaiting the user's Windows check
-  { lane: 'TC PLC Toolkit', num: 7, id: 'R6',   card: 'r6',   name: 'Indexing speed',         est: '5.5 d → ~4 h', start: '2026-11-11', end: '2026-11-11', days: 1, offset: 0.5, status: 'progress', actualStart: '2026-11-11T00:10:00Z' } // built; awaiting the user's Windows check,
-  { lane: 'TC PLC Toolkit', num: 8, id: 'R7',   card: 'r7',   name: 'Rename limits',          est: '2.5 d → ~2 h', start: '2026-11-11', end: '2026-11-11', days: 0.5, status: 'progress', actualStart: '2026-11-11T00:45:00Z' } // built; awaiting the user's Windows check,
-  { lane: 'TC PLC Toolkit', num: 9, id: 'R8',   card: 'r8',   name: 'Comments, pragma hover', est: '1.5 d → ~1 h', start: '2026-11-11', end: '2026-11-11', days: 0.3, offset: 0.5, status: 'progress', actualStart: '2026-11-11T01:15:00Z' } // built; awaiting the user's Windows check,
-  { lane: 'TC PLC Toolkit', num: 10, id: 'R9',   card: 'r9',   name: 'ESLint 10',              est: '0.75 d → ~30 min', start: '2026-11-11', end: '2026-11-11', days: 0.2, offset: 0.8, status: 'progress', actualStart: '2026-11-11T01:15:00Z' } // built; awaiting the user's Windows check,
+  { lane: 'TC PLC Toolkit', num: 6, id: 'R3.4', card: 'r3-4', name: 'Library declarations',   est: '2 d → ~1.5 h', start: '2026-11-10', end: '2026-11-11', days: 0.4, status: 'progress', actualStart: '2026-11-10T23:30:00Z' },
+  { lane: 'TC PLC Toolkit', num: 7, id: 'R6',   card: 'r6',   name: 'Indexing speed',         est: '5.5 d → ~4 h', start: '2026-11-11', end: '2026-11-11', days: 1, offset: 0.5, status: 'progress', actualStart: '2026-11-11T00:10:00Z' },
+  { lane: 'TC PLC Toolkit', num: 8, id: 'R7',   card: 'r7',   name: 'Rename limits',          est: '2.5 d → ~2 h', start: '2026-11-11', end: '2026-11-11', days: 0.5, status: 'progress', actualStart: '2026-11-11T00:45:00Z' },
+  { lane: 'TC PLC Toolkit', num: 9, id: 'R8',   card: 'r8',   name: 'Comments, pragma hover', est: '1.5 d → ~1 h', start: '2026-11-11', end: '2026-11-11', days: 0.3, offset: 0.5, status: 'progress', actualStart: '2026-11-11T01:15:00Z' },
+  { lane: 'TC PLC Toolkit', num: 10, id: 'R9',   card: 'r9',   name: 'ESLint 10',              est: '0.75 d → ~30 min', start: '2026-11-11', end: '2026-11-11', days: 0.2, offset: 0.8, status: 'progress', actualStart: '2026-11-11T01:15:00Z' },
   { lane: 'TC PLC Toolkit', num: 11, id: 'R11', card: 'r11', name: 'Marketplace publishing', est: '0.5 d → ~1 h', start: '2026-11-20', end: '2026-11-20', days: 0.3, offset: 0, machine: true },
   { lane: 'STruC++ fork',   num: 1, id: 'S2',   card: 's2',   name: 'Fork compiler gaps',     est: '27.5 d → ~9 h', start: '2026-11-09', end: '2026-11-11', status: 'done', actualStart: '2026-11-09T12:04:17Z', actualEnd: '2026-11-09T23:16:55Z' },
   { lane: 'STruC++ fork',   num: 2, id: 'S3a',  card: 's3a',  name: 'False positives',        est: '2 d → ~1 h',  start: '2026-11-12', end: '2026-11-12', days: 0.3, status: 'done', actualStart: '2026-11-09T23:18:00Z', actualEnd: '2026-11-10T00:12:35Z' },
@@ -602,7 +602,7 @@ var PLAN = [
   { lane: 'STruC++ fork',   num: 9, id: 'S9',   card: 's9',   name: 'Raw memory layout',      est: '4 d → ~2 h',  start: '2026-11-11', end: '2026-11-11', days: 1.0, offset: 0, status: 'done', actualStart: '2026-11-10T09:40:00Z', actualEnd: '2026-11-10T12:05:00Z' },
   { lane: 'STruC++ fork',   num: 10, id: 'S10', card: 's10',  name: 'Vendor types + forms',           est: '3 d → ~1.5 h', start: '2026-11-19', end: '2026-11-19', days: 0.5, offset: 0 }
 ];
-var DOMAIN_START = '2026-11-09', DOMAIN_END = '2026-11-20'; /* exclusive */
+var DOMAIN_START = '2026-11-09', DOMAIN_END = '2026-11-21'; /* exclusive */
 (function () {
   var DAY = 86400000;
   function d(s) { var p = s.split('-'); return Date.UTC(+p[0], +p[1] - 1, +p[2]); }
