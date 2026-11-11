@@ -22,7 +22,8 @@
  * A `Condition` on the property group or on the element is evaluated for one build configuration,
  * `CHECK_CONFIGURATION` (Debug, TwinCAT RT (x64)), by `evaluateCondition`: true applies it in document
  * order, false skips it silently (a Release-only group is normal), and a condition it cannot read or
- * decide (`Exists(...)`, a property function, `<`) leaves the group or element out, with a note.
+ * decide (`Exists(...)`, a property function, `<`) leaves the group or element out, with a note, and
+ * makes every property it sets unreadable, so later conditions on them are not guessed.
  *
  * Define names are case-sensitive and kept exactly as written.
  */
@@ -117,7 +118,16 @@ function parseDefineList(text) {
 }
 
 /**
- * Expands `$(Name)` property references (MSBuild names are case-insensitive; an undefined one is '').
+ * Properties MSBuild or Visual Studio set outside the file (reserved `MSBuild*`, solution and project
+ * paths): never '' in a real build, so a reference to one that the file does not set is not readable.
+ * @param {string} lower A property name, lower case.
+ */
+const setOutsideFile = (lower) => /^(msbuild|solution|vs|visualstudio|devenv)/.test(lower) ||
+    /^(project(dir|name|path|filename|ext|extensionspath)|configurationname|platformname|outdir|targetdir|targetname|targetpath|targetext|intdir)$/.test(lower);
+
+/**
+ * Expands `$(Name)` property references (MSBuild names are case-insensitive; an undefined one is '',
+ * except one MSBuild sets outside the file, which is not readable).
  * @param {string} text
  * @param {Map<string, string|null>} props Keyed by lower-case name; null = set to something not readable.
  * @returns {string|null} null when the text uses a property whose value is not readable, or anything
@@ -128,8 +138,9 @@ function expandProps(text, props) {
     if (/[$@%]\(/.test(text.replace(ref, ''))) return null;
     let unreadable = false;
     const out = text.replace(ref, (all, name) => {
-        const v = props.get(name.toLowerCase());
-        if (v === null) unreadable = true;
+        const lower = name.toLowerCase();
+        const v = props.get(lower);
+        if (v === null || (v === undefined && setOutsideFile(lower))) unreadable = true;
         return v || '';
     });
     return unreadable ? null : out;
@@ -142,7 +153,7 @@ class ConditionSyntax extends Error {}
  * Evaluates an MSBuild `Condition` for the given properties. Reads the forms `.plcproj` files use:
  * `'$(Configuration)|$(Platform)' == 'Debug|TwinCAT RT (x64)'`, `'$(Configuration)' != 'Release'`,
  * `==` / `!=` compared case-insensitively (numerically when both sides are numbers), `And` / `Or` / `!`
- * and parentheses, bare `true` / `false`. `Exists(...)` and any other function are undecided; with
+ * and parentheses, bare `true` / `false`, an empty condition (true). `Exists(...)` and any other function are undecided; with
  * `And` / `Or` a decided side can still settle the result (`false And Exists(x)` is false). Never throws.
  * @param {string} condition The attribute's text, XML-decoded.
  * @param {Map<string, string|null>} props Property values keyed by lower-case name (Configuration, Platform, …); null = unreadable.
@@ -227,12 +238,11 @@ function evaluateCondition(condition, props) {
             }
             if (op && op.type === 'relational') throw new ConditionSyntax('relational operators are not read');
             if (left.kind === 'unknown') return null;
-            const b = left.text.trim().toLowerCase();
-            if (['true', 'on', 'yes'].includes(b)) return true;
-            if (['false', 'off', 'no'].includes(b)) return false;
-            throw new ConditionSyntax('not a boolean');
+            const b = asBoolean(left.text);
+            if (b === null) throw new ConditionSyntax('not a boolean');
+            return b;
         };
-        if (tokens.length === 0) return null;
+        if (tokens.length === 0) return true; // MSBuild: an empty Condition is true
         const result = orExpr();
         if (pos !== tokens.length) return null;
         return result;
@@ -241,12 +251,29 @@ function evaluateCondition(condition, props) {
     }
 }
 
-/** MSBuild's `==`: numbers by value, anything else case-insensitively. */
+/** MSBuild's `==`: numbers by value, then booleans (`on` == `true`), anything else case-insensitively. */
 function sameValue(a, b) {
-    const num = (/** @type {string} */ x) => (/^\s*-?(\d+(\.\d+)?|0x[0-9a-f]+)\s*$/i.test(x) ? Number(x.trim()) : NaN);
+    const num = (/** @type {string} */ x) => {
+        const m = /^\s*(-?)(\d+(?:\.\d+)?|0x[0-9a-f]+)\s*$/i.exec(x);
+        return m ? (m[1] ? -1 : 1) * Number(m[2]) : NaN;
+    };
     const na = num(a), nb = num(b);
     if (!Number.isNaN(na) && !Number.isNaN(nb)) return na === nb;
+    const ba = asBoolean(a), bb = asBoolean(b);
+    if (ba !== null && bb !== null) return ba === bb;
     return a.toLowerCase() === b.toLowerCase();
+}
+
+/**
+ * MSBuild's boolean spellings: `true` / `on` / `yes` and their `!`-negations, `false` / `off` / `no`.
+ * @param {string} text
+ * @returns {boolean|null} null: not a boolean.
+ */
+function asBoolean(text) {
+    const b = text.trim().toLowerCase();
+    if (['true', 'on', 'yes', '!false', '!off', '!no'].includes(b)) return true;
+    if (['false', 'off', 'no', '!true', '!on', '!yes'].includes(b)) return false;
+    return null;
 }
 
 /**
@@ -287,10 +314,17 @@ function tokenizeCondition(text) {
     return tokens;
 }
 
-/** @param {string} attrs */
+/**
+ * The `Condition` attribute's value; attributes are read whole, so `Condition=` inside another one's value is not it.
+ * @param {string} attrs
+ */
 function conditionOf(attrs) {
-    const m = /\bCondition\s*=\s*(?:"([^"]*)"|'([^']*)')/.exec(attrs);
-    return m ? decodeXml(m[1] !== undefined ? m[1] : m[2]) : null;
+    const attrRe = /([^\s=]+)\s*=\s*(?:"([^"]*)"|'([^']*)')/g;
+    let m;
+    while ((m = attrRe.exec(attrs)) !== null) {
+        if (m[1] === 'Condition') return decodeXml(m[2] !== undefined ? m[2] : m[3]);
+    }
+    return null;
 }
 
 /** @param {{configuration: string, platform: string}} config */
@@ -312,11 +346,15 @@ function readCompilerDefines(xml, config = CHECK_CONFIGURATION) {
     const props = new Map();
     const fixed = new Map([['configuration', config.configuration], ['platform', config.platform]]);
     const allProps = () => new Map([...props, ...fixed]);
-    const groupRe = new RegExp(`<PropertyGroup\\b${ATTRS}(\\/?)>([\\s\\S]*?)(?:<\\/PropertyGroup\\s*>|$)`, 'g');
+    /** A property an undecided group or element may or may not set: later conditions on it are undecided too. */
+    const unknown = (/** @type {string} */ name) => { if (!fixed.has(name.toLowerCase())) props.set(name.toLowerCase(), null); };
+    const elemPattern = `<([A-Za-z_][\\w.-]*)\\b${ATTRS}(?:\\/>|>([\\s\\S]*?)<\\/\\1\\s*>)`;
+    // A self-closing group is its own alternative, so it never takes the next group's body.
+    const groupRe = new RegExp(`<PropertyGroup\\b${ATTRS}(?:\\/>|>([\\s\\S]*?)(?:<\\/PropertyGroup\\s*>|$))`, 'g');
     let group;
     while ((group = groupRe.exec(text)) !== null) {
-        if (group[2] === '/') continue;
-        const body = group[3];
+        if (group[2] === undefined) continue;
+        const body = group[2];
         const groupCond = conditionOf(group[1]);
         if (groupCond !== null) {
             const v = evaluateCondition(groupCond, allProps());
@@ -326,10 +364,13 @@ function readCompilerDefines(xml, config = CHECK_CONFIGURATION) {
                     problems.push(`a <CompilerDefines> in a property group whose Condition="${groupCond}" cannot be evaluated for ` +
                         `${configLabel(config)} was not used`);
                 }
+                const names = new RegExp(elemPattern, 'g');
+                let e;
+                while ((e = names.exec(body)) !== null) unknown(e[1]);
                 continue;
             }
         }
-        const elemRe = new RegExp(`<([A-Za-z_][\\w.-]*)\\b${ATTRS}(?:\\/>|>([\\s\\S]*?)<\\/\\1\\s*>)`, 'g');
+        const elemRe = new RegExp(elemPattern, 'g');
         let elem;
         while ((elem = elemRe.exec(body)) !== null) {
             const name = elem[1];
@@ -341,12 +382,20 @@ function readCompilerDefines(xml, config = CHECK_CONFIGURATION) {
                     if (name === 'CompilerDefines') {
                         problems.push(`a <CompilerDefines Condition="${elemCond}"> that cannot be evaluated for ${configLabel(config)} was not used`);
                     }
+                    unknown(name);
                     continue;
                 }
             }
             const own = decodeXml(elem[3] || '');
             if (name === 'CompilerDefines') {
-                value = own.replace(/\$\(CompilerDefines\)/gi, value || '');
+                // $(CompilerDefines) is the value before; any other $(Prop) expands like MSBuild's.
+                const expanded = expandProps(own, new Map([...allProps(), ['compilerdefines', value || '']]));
+                if (expanded === null) {
+                    problems.push(`<CompilerDefines>${own.trim()}</CompilerDefines> uses a property whose value cannot be read; it was not used`);
+                    unknown(name);
+                    continue;
+                }
+                value = expanded;
                 props.set('compilerdefines', value);
             } else if (!fixed.has(name.toLowerCase())) {
                 props.set(name.toLowerCase(), expandProps(own, allProps()));

@@ -100,7 +100,11 @@ const cases = [
     // Undecidable, unreadable
     ["Exists('C:\\x.props')", null], ["Exists('x') And '$(Configuration)' == 'Debug'", null], ["Exists('x') And '$(Configuration)' == 'Release'", false],
     ["Exists('x') Or '$(Configuration)' == 'Debug'", true], ["HasTrailingSlash('$(OutputPath)')", null],
-    ["'$(Configuration)' > 'A'", null], ["'$(Configuration)' == 'Debug", null], ["'$(Configuration)' ==", null], ["", null], ["Debug", null],
+    ["'$(Configuration)' > 'A'", null], ["'$(Configuration)' == 'Debug", null], ["'$(Configuration)' ==", null], ["Debug", null],
+    // MSBuild: an empty condition is true; booleans compare as booleans; signed hex by value
+    ["", true], ["  ", true], ["'on' == 'true'", true], ["'yes' != 'false'", true], ["'-0x1' == '-1'", true],
+    // Properties MSBuild sets outside the file are not '' in a real build: not readable
+    ["'$(MSBuildProjectName)' == ''", null], ["'$(SolutionDir)' != ''", null], ["'$(ProjectDir)' == ''", null],
     ["('$(Configuration)' == 'Debug'", null], ["'$([System.DateTime]::Now.Year)' == '2026'", null], ["'@(Compile)' == ''", null],
     ["'$(Configuration)' == 'Debug' Xor true", null],
 ];
@@ -151,6 +155,36 @@ r = readCompilerDefines(project("  <PropertyGroup>\r\n    <Configuration Conditi
     "  <PropertyGroup Condition=\" '$(Configuration)' == 'Release' \">\r\n    <OutputPath>bin\\Release\\</OutputPath>\r\n  </PropertyGroup>",
     "  <PropertyGroup Condition=\" '$(Configuration)' == 'Debug' \" />"));
 assert(r.defines.length === 0 && r.problems.length === 0, 'PLCPROJ: the shape XAE writes gives no defines and no note');
+
+// A self-closing group (XAE writes them) consumes no body: the group after it is still read.
+r = readCompilerDefines(project(group('    <CompilerDefines>BASE</CompilerDefines>'), "  <PropertyGroup Condition=\" '$(Configuration)' == 'Release' \" />",
+    group('    <CompilerDefines>$(CompilerDefines), DBG</CompilerDefines>', debugGroup)));
+assert(show(r.defines) === 'BASE DBG' && r.problems.length === 0, `PLCPROJ: a self-closing Release group before a Debug group (${show(r.defines)})`);
+r = readCompilerDefines(project("  <PropertyGroup Condition=\"'$(Configuration)'=='Debug'\" />", group('    <CompilerDefines>A</CompilerDefines>')));
+assert(show(r.defines) === 'A' && r.problems.length === 0, `PLCPROJ: a self-closing group before an unconditioned defines group (${show(r.defines)})`);
+// What an undecided group or element may set is unknown: later conditions on it are undecided, with a note.
+r = readCompilerDefines(project(group('    <Sim>1</Sim>', " Condition=\"Exists('sim.flag')\""), group('    <CompilerDefines>REAL_HW</CompilerDefines>', " Condition=\"'$(Sim)'==''\"")));
+assert(r.defines.length === 0 && r.problems.length === 1 && /Condition="'\$\(Sim\)'==''" cannot be evaluated/.test(r.problems[0]),
+    `PLCPROJ: a property set in an undecided group makes a later condition on it undecided (${show(r.defines)}; ${r.problems.join(' | ')})`);
+r = readCompilerDefines(project(group('    <Sim>1</Sim>', " Condition=\"Exists('sim.flag')\""), group('    <CompilerDefines>SIM</CompilerDefines>', " Condition=\"'$(Sim)'=='1'\"")));
+assert(r.defines.length === 0 && r.problems.length === 1, `PLCPROJ: ... whichever way the later condition reads (${r.problems.join(' | ')})`);
+r = readCompilerDefines(project(group("    <Sim Condition=\"Exists('sim.flag')\">1</Sim>"), group('    <CompilerDefines>REAL_HW</CompilerDefines>', " Condition=\"'$(Sim)'!='1'\"")));
+assert(r.defines.length === 0 && r.problems.length === 1, `PLCPROJ: ... and the same for an undecided element (${r.problems.join(' | ')})`);
+r = readCompilerDefines(project(group('    <CompilerDefines>A</CompilerDefines>'), group('    <CompilerDefines>B</CompilerDefines>', " Condition=\"Exists('x')\""),
+    group('    <CompilerDefines>$(CompilerDefines), C</CompilerDefines>', " Condition=\"'$(CompilerDefines)'=='A'\"")));
+assert(show(r.defines) === 'A' && r.problems.length === 2, `PLCPROJ: a condition on $(CompilerDefines) after an undecided one is undecided (${show(r.defines)}; ${r.problems.join(' | ')})`);
+// Empty condition, Condition= inside another attribute, well-known properties, $(Prop) in a define value.
+r = readCompilerDefines(project(group('    <CompilerDefines>A</CompilerDefines>', ' Condition=""')));
+assert(show(r.defines) === 'A' && r.problems.length === 0, 'PLCPROJ: an empty Condition is true, as in MSBuild');
+r = readCompilerDefines(project(group('    <CompilerDefines>A</CompilerDefines>', " Label=\"Condition='x'\"")));
+assert(show(r.defines) === 'A' && r.problems.length === 0, 'PLCPROJ: "Condition=" inside another attribute\'s value is not a condition');
+r = readCompilerDefines(project(group('    <CompilerDefines>A</CompilerDefines>', " Condition=\"'$(MSBuildProjectName)'==''\"")));
+assert(r.defines.length === 0 && r.problems.length === 1, 'PLCPROJ: a condition on a property MSBuild sets outside the file is undecided, with a note');
+r = readCompilerDefines(project(group("    <M>fast</M>\r\n    <CompilerDefines>SIM, MODE := '$(M)'</CompilerDefines>")));
+assert(show(r.defines) === 'SIM MODE="fast"' && r.problems.length === 0, `PLCPROJ: $(Prop) in a define value expands from the file (${show(r.defines)})`);
+r = readCompilerDefines(project(group('    <CompilerDefines>A</CompilerDefines>'), group("    <CompilerDefines>$(CompilerDefines), D := '$(SolutionName)'</CompilerDefines>")));
+assert(show(r.defines) === 'A' && r.problems.length === 1 && /uses a property whose value cannot be read; it was not used/.test(r.problems[0]),
+    `PLCPROJ: a define value using a property that cannot be read is left out with a note (${show(r.defines)}; ${r.problems.join(' | ')})`);
 
 // ── The arguments ───────────────────────────────────────────────────────────────────────────────
 let a = defineArgs(parseDefineList("SIM, Mode := 'fast', Sp := 'a b', E := ''").defines);

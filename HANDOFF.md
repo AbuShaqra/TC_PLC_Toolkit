@@ -31,7 +31,9 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   like `InclSerialCom := 'true'`; per-object `<CompilerDefines>` inside `<Compile>` items exist and are NOT passed, but each non-empty one is noted
   in the `TC Toolkit Compile` output). **`Condition`s evaluated** (user decision 2026-11-11): on a group or a
   `<CompilerDefines>` element, for Debug | `TwinCAT RT (x64)` (`CHECK_CONFIGURATION`); true applies, false skips
-  silently, undecidable (`Exists`, property functions, `<`) is left out with a note. Public `.plcproj` files only
+  silently, undecidable (`Exists`, property functions, `<`, `MSBuild*`/`Solution*` properties) is left out with a
+  note and what it sets becomes unreadable for later conditions. Review fixes: self-closing groups no longer
+  swallow the next group; empty `Condition` = true; `$(Prop)` expands in define values. Public `.plcproj` files only
   show XAE's `" '$(Configuration)' == 'Debug' "` / `'Release'` groups, none holding `<CompilerDefines>`.
   110/110 FULL, lint/typecheck 0, Linux dev-host: only the known P8 line-ending failure.
   **Gap (fork follow-up):** the CLI's `-D NAME=V` also declares a global constant `NAME` when `parseInt(V)` is a
