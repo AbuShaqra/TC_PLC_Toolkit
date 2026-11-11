@@ -57,6 +57,16 @@ assert(r.defines.length === 0 && r.problems.length === 0, 'PLCPROJ: whitespace o
 r = readCompilerDefines(project(group('    <CompilerDefines>A</CompilerDefines>'),
     '  <ItemGroup>\r\n    <Compile Include="POUs\\MAIN.TcPOU">\r\n      <SubType>Code</SubType>\r\n      <CompilerDefines>PER_OBJECT</CompilerDefines>\r\n    </Compile>\r\n  </ItemGroup>'));
 assert(show(r.defines) === 'A', 'PLCPROJ: a per-object <CompilerDefines> in an item is not a project define');
+assert(r.problems.length === 1 && /per-object compiler defines on POUs\\MAIN\.TcPOU \(PER_OBJECT\) are not passed/.test(r.problems[0]),
+    `PLCPROJ: a per-object define gets a note naming the object and the list (${r.problems.join(' | ')})`);
+r = readCompilerDefines(project(group(''),
+    '  <ItemGroup>\r\n    <Compile Include="POUs\\MAIN.TcPOU">\r\n      <CompilerDefines />\r\n    </Compile>\r\n    <Compile Include="POUs\\FB.TcPOU" />\r\n  </ItemGroup>'));
+assert(r.defines.length === 0 && r.problems.length === 0, 'PLCPROJ: an empty per-object define and a self-closed item give no note');
+r = readCompilerDefines(project(group("    <CompilerDefines>A</CompilerDefines>\r\n    <CompilerDefines Condition=\"'$(Configuration)'=='Debug'\">DBG</CompilerDefines>")));
+assert(show(r.defines) === 'A' && r.problems.length === 1 && /conditional <CompilerDefines>/.test(r.problems[0]),
+    `PLCPROJ: a Condition on the element itself is not used either, and says so (${show(r.defines)}; ${r.problems.join(' | ')})`);
+r = parseDefineList('A, B, A');
+assert(show(r.defines) === 'B A', `LIST: a repeated name keeps its last entry at its last place (${show(r.defines)})`);
 r = readCompilerDefines(project(group('    <CompilerDefines>ABC</CompilerDefines>\r\n    <CompilerDefines>$(CompilerDefines), backstop, EMLabeling</CompilerDefines>')));
 assert(show(r.defines) === 'ABC backstop EMLabeling', `PLCPROJ: MSBuild last-wins with $(CompilerDefines) (${show(r.defines)})`);
 r = readCompilerDefines(project(group('    <CompilerDefines>A</CompilerDefines>'), group('    <CompilerDefines>B</CompilerDefines>')));

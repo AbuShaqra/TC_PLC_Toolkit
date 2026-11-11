@@ -28,14 +28,15 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   worktree; `twincat3.json` gains `conditional_pragmas`; Compile Project passes `<CompilerDefines>` from the
   project's `.plcproj` `<PropertyGroup>` as `-D` (`src/compilerDefines.js`; format checked against public
   `.plcproj` files on GitHub — XAE writes `<CompilerDefines />` or a whitespace-only element when empty, entries
-  like `InclSerialCom := 'true'`; per-object `<CompilerDefines>` inside `<Compile>` items exist and are NOT read).
+  like `InclSerialCom := 'true'`; per-object `<CompilerDefines>` inside `<Compile>` items exist and are NOT passed, but each non-empty one is noted
+  in the `TC Toolkit Compile` output; a `Condition` on the group or the element is ignored with a note).
   110/110 FULL, lint/typecheck 0, Linux dev-host: only the known P8 line-ending failure.
   **Gap (fork follow-up):** the CLI's `-D NAME=V` also declares a global constant `NAME` when `parseInt(V)` is a
   number (probed: a project global `LEVEL` + `-D LEVEL=7` → "Symbol 'LEVEL' already defined in scope 'global'";
   an undeclared `LEVEL` passes). No pragma-only option exists (profile has no defines), so such a define is passed
   as `-D NAME` only and `hasvalue(NAME, '4')` is false in the check (noted in the `TC Toolkit Compile` output).
   Needed from the fork: a pragma-only define flag (e.g. `--pragma-define NAME=V`). Also unsupported: per-object
-  defines (one unit per project, no per-file `-D`).
+  defines (one unit per project, no per-file `-D`; a POU using one compiles its ELSE branch in the check).
   **LSP finding (not fixed, user decides):** the built-in diagnostics ignore `{IF}` pragmas; valid code that picks
   one of two block heads per branch gives a false ERROR "Unterminated block: missing matching "END_IF"" —
   repro: body `{IF defined(SIM)}` / `IF c THEN` / `{ELSE}` / `IF NOT c THEN` / `{END_IF}` / `x := 1;` / `END_IF`

@@ -512,15 +512,16 @@ const settle = () => new Promise(r => setTimeout(r, 10));
             `DEFINES: the compiler gets -D SIM -D Mode=fast -D Axes, case kept, right after the profile (${afterDialect.join(' ')})`);
         assert(!call.args.includes('PER_OBJECT') && !call.args.some(a => /2bad|Plain/.test(a)),
             'DEFINES: a per-object define and the malformed entries are not passed');
-        assert(result.ok === true && result.defineArgs.join(' ') === '-D SIM -D Mode=fast -D Axes' && result.defineNotes.length === 3,
-            `DEFINES: the command reports the arguments and three notes (${result.defineNotes.join(' | ')})`);
+        assert(result.ok === true && result.defineArgs.join(' ') === '-D SIM -D Mode=fast -D Axes' && result.defineNotes.length === 4,
+            `DEFINES: the command reports the arguments and four notes (${result.defineNotes.join(' | ')})`);
         const channel = (calls.outputs || []).find(c => c.name === OUTPUT_CHANNEL_NAME);
         assert(OUTPUT_CHANNEL_NAME === 'TC Toolkit Compile' && !!channel && channel.lines.some(l => /PLC: compiler defines -D SIM -D Mode=fast -D Axes$/.test(l)) &&
             channel.lines.some(l => /"2bad" skipped/.test(l)) && channel.lines.some(l => /"Plain:=x" skipped/.test(l)) &&
-            channel.lines.some(l => /"Axes := '4'" passed as "Axes" only/.test(l)),
-            `DEFINES: the output channel lists the arguments, each skipped entry and the integer-value note (${channel ? channel.lines.join(' | ') : 'no channel'})`);
+            channel.lines.some(l => /"Axes := '4'" passed as "Axes" only/.test(l)) &&
+            channel.lines.some(l => /per-object compiler defines on POUs\\FB_A\.TcPOU \(PER_OBJECT\) are not passed/.test(l)),
+            `DEFINES: the output channel lists the arguments, each skipped entry, the integer-value note and the per-object note (${channel ? channel.lines.join(' | ') : 'no channel'})`);
         const summaryText = (calls.warnings[0] || { m: '' }).m;
-        assert(/3 note\(s\) on the project's compiler defines: see the "TC Toolkit Compile" output\./.test(summaryText),
+        assert(/4 note\(s\) on the project's compiler defines: see the "TC Toolkit Compile" output\./.test(summaryText),
             `DEFINES: the summary points to the output channel (${summaryText})`);
 
         fs.writeFileSync(plcproj, '<Project><PropertyGroup><CompilerDefines /></PropertyGroup></Project>');

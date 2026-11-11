@@ -15,9 +15,10 @@
  * An empty field is `<CompilerDefines />` or an element holding only whitespace. A `<CompilerDefines>`
  * inside an `<ItemGroup>` item (`<Compile Include="…">`) is a per-object define: it is not a project
  * define and is not read here (the check compiles the project as one unit, so it has no per-file
- * defines to give the compiler). Several `<CompilerDefines>` in property groups follow MSBuild: the
- * last wins, and `$(CompilerDefines)` in it stands for the value before. A property group with a
- * `Condition` is build-configuration specific and is ignored (said so in the notes).
+ * defines to give the compiler); each non-empty one gets a note, since `{IF defined(...)}` in that object
+ * then takes its ELSE branch. Several `<CompilerDefines>` in property groups follow MSBuild: the
+ * last wins, and `$(CompilerDefines)` in it stands for the value before. A `Condition` on the property
+ * group or on the element itself is build-configuration specific and is ignored (said so in the notes).
  *
  * Define names are case-sensitive and kept exactly as written.
  */
@@ -37,7 +38,7 @@ const NAME_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
 /**
  * @typedef {Object} DefineList
- * @property {CompilerDefine[]} defines In list order; a name given twice keeps its last entry, at its first place.
+ * @property {CompilerDefine[]} defines In list order; a name given twice keeps its last entry, at its last place.
  * @property {string[]} problems One line per entry that was skipped, or per part of the file not read.
  */
 
@@ -118,15 +119,29 @@ function readCompilerDefines(xml) {
     while ((group = groupRe.exec(text)) !== null) {
         if (group[2] === '/') continue;
         const body = group[3];
-        const elemRe = /<CompilerDefines\b[^>]*?(?:\/>|>([\s\S]*?)<\/CompilerDefines\s*>)/g;
+        const elemRe = /<CompilerDefines\b([^>]*?)(?:\/>|>([\s\S]*?)<\/CompilerDefines\s*>)/g;
         let elem;
         while ((elem = elemRe.exec(body)) !== null) {
             if (/\bCondition\s*=/.test(group[1])) {
                 problems.push(`a <CompilerDefines> in a conditional property group (${group[1].trim()}) was not used`);
                 continue;
             }
-            const own = decodeXml(elem[1] || '');
+            if (/\bCondition\s*=/.test(elem[1])) {
+                problems.push(`a conditional <CompilerDefines> (${elem[1].trim()}) was not used`);
+                continue;
+            }
+            const own = decodeXml(elem[2] || '');
             value = own.replace(/\$\(CompilerDefines\)/g, value || '');
+        }
+    }
+    const itemRe = /<(\w+)\s[^>]*?\bInclude\s*=\s*"([^"]*)"[^>]*?(?<!\/)>([\s\S]*?)<\/\1\s*>/g;
+    let item;
+    while ((item = itemRe.exec(text)) !== null) {
+        const own = /<CompilerDefines\b[^>]*>([\s\S]*?)<\/CompilerDefines\s*>/.exec(item[3]);
+        const list = own ? decodeXml(own[1]).trim() : '';
+        if (list) {
+            problems.push(`per-object compiler defines on ${decodeXml(item[2])} (${list}) are not passed; ` +
+                '{IF defined(...)} in that object uses its ELSE branch');
         }
     }
     if (value === null) return { defines: [], problems };

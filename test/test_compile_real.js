@@ -219,10 +219,12 @@ function assert(cond, msg) {
             assert(d.r.result.status === 'done' && d.r.result.errors === 0 && d.defines.notes.length === 1 && /"9bad" skipped/.test(d.defines.notes[0]),
                 'DEFINES: a malformed entry is skipped with a note; the run still uses the others');
             // TwinCAT: a define is never a variable. `-D nSimOff=3` would also declare a global constant
-            // nSimOff, and the ELSE branch's `nSimOff := 1` would no longer be reported as undeclared.
+            // nSimOff, and the ELSE branch's `nSimOff := 1` would read "Cannot assign to CONSTANT variable".
             d = await runWith("nSimOff := '3'");
-            assert(d.r.result.status === 'done' && d.defines.args.join(' ') === '-D nSimOff' && d.names.join() === 'NSIMOFF,NMODEOFF',
-                `DEFINES: an integer value is passed as a name only, so it declares no global constant (${d.defines.args.join(' ')}; ${d.names.join(', ')})`);
+            const simMsg = (d.r.result.diagnostics.find(x => x.severity === 'error' && /NSIMOFF/i.test(x.message)) || { message: '' }).message;
+            assert(d.r.result.status === 'done' && d.defines.args.join(' ') === '-D nSimOff' && d.names.join() === 'NSIMOFF,NMODEOFF' &&
+                /Undeclared variable/i.test(simMsg) && !/CONSTANT/i.test(simMsg),
+                `DEFINES: an integer value is passed as a name only, so it declares no global constant (${d.defines.args.join(' ')}; ${simMsg})`);
         } finally {
             fs.rmSync(tmp, { recursive: true, force: true });
         }
