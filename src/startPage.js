@@ -122,7 +122,7 @@ class StartPageController {
             location: this.defaultLocation(),
             sep: path.sep,
             recents: this.deps.recents.list(),
-            recentsShown: recentsShownLimit(vscode.workspace.getConfiguration('twincat.startPage').get('recentProjectsShown')),
+            recentsShown: recentsShownLimit(vscode.workspace.getConfiguration('tcToolkit.startPage').get('recentProjectsShown')),
             hasProject: this.deps.hasProject(),
             compilerReady: !!(this.deps.compilerReady && this.deps.compilerReady()),
             xaeShells: describeConfiguredShells((key) => xaeConfig.get(key), (p) => fs.existsSync(p))

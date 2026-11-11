@@ -23,7 +23,7 @@ const { resolveShellExe } = require('./xaeShellDetect');
  * differ depending on which shell produced them — visualisation libraries especially — so the user is
  * asked which one to drive rather than us picking the first hit.
  *
- * `settingKey` is the `twincat.xaeShell` setting that can name this shell's .exe: the 64-bit shell is
+ * `settingKey` is the `tcToolkit.xaeShell` setting that can name this shell's .exe: the 64-bit shell is
  * the TwinCAT 3.1.4026 one, the 32-bit shell the 3.1.4024 one.
  * @type {{id: string, label: string, progId: string, exePath: string, settingKey: string}[]}
  */
@@ -97,9 +97,9 @@ function shellExeFromRegistry(progId) {
  * instead of a PowerShell window that fails a minute later — and so the user can be asked *which* shell
  * to drive when both are present.
  *
- * A path configured in `twincat.xaeShell.path4026` / `path4024` wins for its shell when the file
+ * A path configured in `tcToolkit.xaeShell.path4026` / `path4024` wins for its shell when the file
  * exists; otherwise discovery is what it always was (default location, then the COM registration).
- * @param {{path4024?: unknown, path4026?: unknown}} [configured] The `twincat.xaeShell` settings.
+ * @param {{path4024?: unknown, path4026?: unknown}} [configured] The `tcToolkit.xaeShell` settings.
  * @returns {{id: string, label: string, progId: string, exePath: string}[]} Possibly empty.
  */
 function findTwinCatShells(configured = {}) {

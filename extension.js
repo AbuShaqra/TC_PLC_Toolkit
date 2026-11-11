@@ -16,6 +16,7 @@ const { registerRenameCommands } = require('./src/commands/renameCommands');
 const { registerStartCommands } = require('./src/commands/startCommands');
 const { registerCompileCommands } = require('./src/commands/compileCommands');
 const { registerXaeShellCommands } = require('./src/commands/xaeShellCommands');
+const { migrateSettings } = require('./src/settingsMigration');
 const { TwinCatDragAndDropController } = require('./src/treeDragAndDrop');
 const { TwinCatCustomEditorProvider } = require('./src/customEditorProvider');
 const { TwinCatTreeDataProvider } = require('./src/treeDataProvider');
@@ -58,6 +59,15 @@ const ST_FILES_REFRESH_DEBOUNCE_MS = 500;
  * @param {vscode.ExtensionContext} context The extension context.
  */
 function activate(context) {
+    // Move values from the old `twincat.*` setting keys to `tcToolkit.*` before anything writes the
+    // new keys (the XAE Shell auto-fill below waits for it). Not awaited, and it never rejects; a
+    // reader that ran first sees the change through onDidChangeConfiguration.
+    const settingsMigrated = migrateSettings({
+        getConfiguration: (section, scope) => /** @type {any} */ (vscode.workspace.getConfiguration(section, /** @type {any} */ (scope))),
+        workspaceFolders: vscode.workspace.workspaceFolders || [],
+        ConfigurationTarget: vscode.ConfigurationTarget
+    });
+
     // References results view (populated when the user runs Find All References in the editor).
     const referencesProvider = new TwinCatReferencesProvider();
     const referencesView = vscode.window.createTreeView('twincatReferences', { treeDataProvider: referencesProvider });
@@ -316,7 +326,7 @@ function activate(context) {
     // Push diagnostics configuration to the LSP, and keep it in sync with settings changes.
     const sendDiagnosticsConfig = () => {
         if (!client) return;
-        const cfg = vscode.workspace.getConfiguration('twincat.diagnostics');
+        const cfg = vscode.workspace.getConfiguration('tcToolkit.diagnostics');
         client.sendRequest('custom/setDiagnosticsConfig', {
             memberAccess: cfg.get('memberAccess', true),
             callArguments: cfg.get('callArguments', true),
@@ -326,7 +336,7 @@ function activate(context) {
     };
     context.subscriptions.push(
         vscode.workspace.onDidChangeConfiguration(e => {
-            if (e.affectsConfiguration('twincat.diagnostics')) {
+            if (e.affectsConfiguration('tcToolkit.diagnostics')) {
                 sendDiagnosticsConfig();
                 // Re-run diagnostics in open webviews so the change takes effect immediately.
                 for (const panel of provider.activePanels.values()) {
@@ -583,9 +593,10 @@ function activate(context) {
 
     // XAE Shell path settings: `twincat.detectXaeShell`, plus one silent fill of the EMPTY settings.
     // Deliberately last and not awaited — it queries the registry (Windows only) and must neither
-    // delay activation nor be able to fail it; `autoFill` never rejects.
+    // delay activation nor be able to fail it; `autoFill` never rejects. It runs after the settings
+    // migration, so a path the user set under the old key is moved, not shadowed by a detected one.
     const xaeShell = registerXaeShellCommands(context);
-    setTimeout(() => { xaeShell.autoFill(); }, 0);
+    settingsMigrated.then(() => { xaeShell.autoFill(); });
 }
 
 function deactivate() {

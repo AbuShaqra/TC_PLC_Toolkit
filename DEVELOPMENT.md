@@ -4,17 +4,33 @@ Building, testing and hacking on TC Toolkit. For what the extension *does*, see
 [README.md](README.md); for the current state of the work, see [HANDOFF.md](HANDOFF.md).
 
 **Naming.** The user-facing name is **TC Toolkit**: the display name, the Activity Bar container, the
-command category (`TC Toolkit: Compile Project`), the settings title, the custom editor, status-bar texts,
+command category (`TC Toolkit: Compile Project`), the settings sections, the custom editor, status-bar texts,
 notifications, quick-pick titles, output channels (`TC Toolkit Language Server`, `TC Toolkit Library
 Definitions`) and diagnostic sources (`TC Toolkit compile`, `TC Toolkit ST Validator`). The views are
 **PLC Objects**, **PLC Libraries** and **PLC References**, and the start page's tab is `TC Toolkit Start`.
 "TwinCAT" is Beckhoff's registered trademark, so it is used only **descriptively** ("for Beckhoff TwinCAT 3
 PLC projects", "a TwinCAT solution", "requires TwinCAT XAE") and never as the name of the product or of
 anything in its UI; `test/test_start_contributions.js` fails if a contributed name contains it. **Internal
-identifiers keep the `twincat.*` prefix** (extension id `twincat-plc-toolkit`, command ids, setting keys,
+identifiers keep the `twincat.*` prefix** (extension id `twincat-plc-toolkit`, command ids,
 view and container ids, context keys, the `twincat.xmlViewer` viewType, the `twincat-compile`
-DiagnosticCollection name): renaming those would break users' keybindings, settings and editor
-associations, and nobody reads them as a name.
+DiagnosticCollection name): renaming those would break users' keybindings and editor associations,
+and nobody reads them as a name.
+
+**Setting keys are the exception: they are `tcToolkit.*`** (user report 2026-11-11). VS Code's Settings
+editor builds each setting's label from its key, so `twincat.compiler.path` showed as "Twincat › Compiler:
+Path". `contributes.configuration` is an array of one section per group (`tcToolkit.diagnostics`,
+`.compiler`, `.xaeShell`, `.libraryDefinitions`, `.startPage`), each with a short title and its key prefix
+as `id`: the Settings editor trims a setting's category when it starts with its section's id, so browsing
+the table of contents (**TC Toolkit › Compiler**, under the display name) a setting reads just "Path".
+Search results — which includes the `@ext:` filter and Open Settings' section query — have no section, so
+they show the full category built from the key: "Tc Toolkit › Compiler: Path" (VS Code capitalises each
+camelCase word; the uppercase "TC" is not reachable through a key).
+`src/settingsMigration.js` moves values from the old keys once, at activation (below, file map). The ten
+old `twincat.*` keys stay contributed **deprecated** (`deprecationMessage` → the new key), which the
+Settings editor hides unless one is set: measured on VS Code 1.145, `inspect` reads an uncontributed key
+and removing one works, but writing one is refused, and the older releases `^1.66` admits are not known
+to allow even the removal. `test/test_start_contributions.js` guards it: no live key starts with
+`twincat.`, all ten exist under `tcToolkit.`, and each deprecated key matches its successor.
 
 ## Run from source
 
@@ -191,7 +207,7 @@ per-suite without aborting on the first failure. The main ones:
 | `test/test_solution_map.js` | `src/solutionMap.js`: the real `.sln` → `.tsproj` → `_Config/PLC/*.xti` → `.plcproj` chain, multiple PLC projects under one solution, multiple same-named solutions, project labels scoped within their solution, unrelated Visual Studio solutions ignored, and unreferenced PLC projects retained as top-level fallbacks. |
 | `test/test_project_template.js` | `src/projectTemplate.js` on both shipped templates: the committed templates match `scripts/build-project-templates.js --check`; every GUID classified; every identity GUID re-issued with every reference following it and each occurrence's case kept (`.sln` upper, `.plcproj` lower); every type GUID kept; no template name left in a path or a byte; BOM, CRLF/LF, tabs and trailing newline preserved and nothing but names and GUIDs changed; starter objects exactly MAIN, PlcTask (calling MAIN) and an empty GVL_Main; the `.tspproj` (4024) and `.tsproj` + `_Config/` (4026) shapes; the created project read back by `projectMap` and `solutionMap`; refusal of a target holding a solution or a file it would write (nothing touched); name validation. |
 | `test/test_template_diagnostics.js` | A project created from each template, indexed like `test_sample_diagnostics.js` with every check on: ZERO diagnostics, again after the first edit a user makes (a variable in the `qualified_only` `GVL_Main` used from MAIN as `GVL_Main.x`), and a deliberate undeclared name IS reported (the gate is live). |
-| `test/test_start_contributions.js` | package.json for R2: the branding guard (no contributed name — display name, settings title, custom editor, view containers, views, command categories — contains "TwinCAT"; the extension id is unchanged); the `twincat` Activity Bar container (titled `TC Toolkit`) holding Start, PLC Objects, PLC Libraries in that order with ids unchanged, none left in the Explorer, References still in its panel, no dangling view id in a when-clause; each start command contributed under the `TC Toolkit` category, in the palette, registered, with an `onCommand` activation event (needed on 1.66); Start view welcome links; a monochrome offline icon; the start page's strict CSP and no remote load; `.vscodeignore` shipping the derived templates but not the raw XAE source; the `twincat.startPage.recentProjectsShown` and machine-scoped `twincat.xaeShell.path*` settings, and the page's command / settings-section allow-lists. |
+| `test/test_start_contributions.js` | package.json for R2: the branding guard (no contributed name — display name, settings section titles, custom editor, view containers, views, command categories — contains "TwinCAT"; the extension id is unchanged); the setting keys (all ten live keys under `tcToolkit.`, none under `twincat.`, each old key contributed deprecated with its successor's type/scope/default, sections one per key group, the migration table in step); the `twincat` Activity Bar container (titled `TC Toolkit`) holding Start, PLC Objects, PLC Libraries in that order with ids unchanged, none left in the Explorer, References still in its panel, no dangling view id in a when-clause; each start command contributed under the `TC Toolkit` category, in the palette, registered, with an `onCommand` activation event (needed on 1.66); Start view welcome links; a monochrome offline icon; the start page's strict CSP and no remote load; `.vscodeignore` shipping the derived templates but not the raw XAE source; the `tcToolkit.startPage.recentProjectsShown` and machine-scoped `tcToolkit.xaeShell.path*` settings, and the page's command / settings-section allow-lists. |
 | `test/test_start_commands.js` | `src/commands/startCommands.js` + `src/startPage.js` under a recording `vscode` stub: create with args and with prompts (files, recents, last location, open here/new/add/none), refusals inline vs as a notification, a deleted recent solution pruned, Generate ST's project pick, help links and settings, the singleton panel, its `state` message (including the recent-list length, clamped, and the XAE Shell paths), a settings change re-posting state to an open page, `openSettings {section}` and Open Settings' query argument, and the command allow-list. |
 | `test/test_check_unit.js` | `src/checkUnit.js`: one origin per emitted line, every pane line exactly once and verbatim in pane order (so a reported line/column IS the pane's), generated lines anchored on their component, members before the body, no rewriting (`REFERENCE TO`, `REF=`, pragmas survive), every sample file round-trips. |
 | `test/test_compile_check.js` | `src/compileCheck.js` with a fake child process: the bundled compiler as default and the setting as override, Node discovery (order on Windows, the version gate, the editor runtime as last resort with `ELECTRON_RUN_AS_NODE=1`, a configured Node path as the only candidate), setup messages (compiler missing, Node missing/too old, each naming its setting), the command line, the JSON report (clean, errors, malformed, exit 2, crash), mapping to file/component/pane/line, the pragma-warning filter and its count, temp-dir lifetime, timeout, cancellation, `paneRange`. |
@@ -199,6 +215,7 @@ per-suite without aborting on the first failure. The main ones:
 | `test/test_compile_real.js` | **Optional gate `compile-real`**: the REAL compiler — the bundled one, or `TWINCAT_COMPILER_BUNDLE` — first proving the bundled IEC libraries load (`TON`, `R_TRIG`, `CTU`, `LIMIT` resolve; `PID`, from a library NOT shipped, does not), then over every PLC project in `sample/`, through the same code the command uses (library preparation included): ZERO errors and zero warnings after the pragma filter (a ratchet, like the diagnostics baseline), nothing library-filtered, plus planted errors in a method body, a method declaration and a GVL landing on the right file/component/pane/line, and — in the second sample — a call to a method only the FIRST sample's same-named `FB_Cylinder` has, reported in the second sample's MAIN (the projects are never compiled together). Then R3.4 on the synthetic library project (`test/_synthLibProject.js`): errors without the declarations, 0 with them; a wrong argument type and an unknown parameter on a library call reported; an archive-only library name filtered; a user typo, a typo on a library FB member and an unknown name behind a qualifier reported (the last at its pane column); 0 errors without the dump. Prints the sample's timing. Skips (and says so) without a Node >= 22. |
 | `test/test_library_decls.js` | `src/libraryDecls.js` without a compiler, on the SYNTHETIC library project (`test/_synthLibProject.js`: dump, `.tmc`, a generated archive — every name invented): the `.tmc` model (library-owned types only; interfaces and the project's own types skipped; no comment/string text read), gathering, each declaration kind's exact text, conflicts (compiler names, user names, a dependency the user redefines), dependency-only declarations, nothing guessed for unreadable types, qualifier blanking (same lengths; members/comments/strings/user names untouched), the filter case by case (a user typo kept), **temp-dir lifetime** (the declarations exist only in runCheck's temp dir during the run; gone after, also on a failed run; project, workspace and `sample/` unchanged), the no-dump case. |
 | `test/test_vendored_compiler.js` | `resources/compiler/`: exactly the files `SOURCE.md` lists, each matching its recorded size and SHA-256; a full 40-hex commit and the source link at it; the GPL-3.0, Apache-2.0 and MIT texts; `THIRD-PARTY-NOTICES.md` naming the commit; `.vscodeignore` shipping the directory and dropping `scripts/vendor-compiler.js`; the bundle requiring Node built-ins only; `resources/dialects/` holding exactly `twincat3.json` and no profile anywhere else (user rule). |
+| `test/test_settings_migration.js` | `src/settingsMigration.js` over a fake VS Code configuration store: the rename table, User / Workspace / per-folder values each moved within their own scope, a value already under the new key never overwritten (old one still removed), a second run a no-op, a failed copy logged with the old value left for the next run, a synchronous throw / failing removal / throwing `getConfiguration` / unreadable folder list all logged and never thrown. |
 | `test/test_recent_projects.js` | `src/recentProjects.js`: newest first, de-duplicated (Windows paths case-insensitive, either separator), capped at 10, missing solutions pruned, malformed stored data ignored, the globalState adapter, and `recentsShownLimit` (the start page's row limit: default 2, clamped to 1..10). |
 | `test/test_xae_shell_detect.js` | `src/xaeShellDetect.js` with every dependency faked (runs off Windows): the COM registration for both shells (quoted and argument-suffixed `LocalServer32`, the 32-bit view for 4024, a localized value name), the default locations with and without the environment variables, a registered file that is missing, a non-GUID ProgID value, rejecting / throwing registry and existence probes, non-Windows (nothing found, registry never queried), `createRegQuery` over a fake `execFile` (argument array, timeout, errors → null), `describeConfiguredShells`, and `resolveShellExe` (configured-and-existing wins, else default location, else registry). |
 | `test/test_xae_shell_commands.js` | `src/commands/xaeShellCommands.js` under a recording `vscode` stub with detection faked: an empty setting is filled (Global target), a non-empty one is kept even when its file is missing, nothing found writes nothing, `autoFill` never rejects, `twincat.detectXaeShell` reports found / kept / not found in one message whose button opens the filtered settings. Also `findTwinCatShells` in `src/xaeShell.js`: `path4026` ↔ the 64-bit shell, `path4024` ↔ the 32-bit one, a missing configured path ignored (those checks are skipped on Windows, where a real shell may be installed). |
@@ -307,14 +324,17 @@ partition, and every cross-file Go to Definition then opened a duplicate tab tit
 with nothing highlighted. The fixture also injects a **`.TcTLEO`** into LineA's project and the in-host
 pass edits it **on disk** and re-queries the live index — the gate for the 2026-08-24 watcher fix
 (`TWINCAT_WATCH_EXTS` omitted `.tctleo`, so an external `.TcTLEO` edit never reached the LSP; only a
-real host runs the watcher chain, so this is the one place it can be proven). The **start-page phase**
+real host runs the watcher chain, so this is the one place it can be proven). `run.js` also plants two
+OLD `twincat.*` User settings in the fresh profile, and the **settings-migration step** asserts that the
+real activation moved one to its `tcToolkit.*` key, kept the other's already-set new value, removed both
+old values, and that the extension reads the moved value. The **start-page phase**
 (roadmap R2) checks what only a real host shows: every start command registered, the `TC Toolkit` Activity
 Bar container and its Start / Objects / Libraries views open (`workbench.view.extension.twincat`,
 `<view>.focus`), *TC Toolkit: Open Start Page* opens the `TC Toolkit Start` tab, and *Create New Project* (with
 its arguments, so no dialog) writes a 3.1.4026 and a 3.1.4024 solution and refuses a second create. The
 **compile phase** (R3.2/R3.3) runs *TC Toolkit: Compile Project* on every PLC project of the fixture
 through the real command, with the **bundled** compiler (asserted) — `TWINCAT_COMPILER_BUNDLE` (and
-`TWINCAT_COMPILER_NODE`) override it, written by `run.js` into the fresh profile's `twincat.compiler.*`
+`TWINCAT_COMPILER_NODE`) override it, written by `run.js` into the fresh profile's `tcToolkit.compiler.*`
 settings. Only when the host's `checkSetup` finds no Node >= 22 does the phase print `[SKIP]` and assert
 nothing. It also clicks the toolbar's Compile button in the station editor for real (hook message `test:clickCompile`) and asserts the host resolved the file's one owning project and the run started and ended (`compile-button` step). It asserts every run finishes, that no
 error is reported on the sample's own code (only the identifiers the P8 phases typed on purpose, which
@@ -448,8 +468,8 @@ src/
                         new window / add to workspace), Open Existing Project (.sln or folder, or a
                         recent entry), Generate ST (multi-pick when 2+ projects), Open Settings and the
                         help links. The start page runs these same commands — no second code path.
-                        Open Settings takes an optional `twincat.*` section as its Settings-UI query;
-                        a change to twincat.startPage.* / twincat.xaeShell.* re-posts an open page's state
+                        Open Settings takes an optional `tcToolkit.*` section as its Settings-UI query;
+                        a change to tcToolkit.startPage.* / tcToolkit.xaeShell.* re-posts an open page's state
     compileCommands     `twincat.compileProject` (roadmap R3.2): project pick, setup refusal with "Open
                         Settings", the run under a cancellable progress notification, and where the
                         results go — a DiagnosticCollection `twincat-compile` (Problems, at the XML
@@ -458,13 +478,13 @@ src/
                         handler for each entry's code link (`/compileProblem?id=N`). The VS Code half
                         of compileCheck
     xaeShellCommands    `twincat.detectXaeShell` + the silent activation-time fill of the two
-                        `twincat.xaeShell.path*` settings (EMPTY ones only, ConfigurationTarget.Global;
+                        `tcToolkit.xaeShell.path*` settings (EMPTY ones only, ConfigurationTarget.Global;
                         never overwrites). The VS Code half of xaeShellDetect
   checkUnit             Compile Project's check unit: one ST unit per TwinCAT object with a per-LINE
                         origin map back to component/pane/line. Pane text verbatim (never the export's
                         rewrites), members BEFORE the POU body. NOT the live path's unit. vscode-free
   compileCheck          Compile Project's vscode-free half: setup check (the bundled compiler
-                        resources/compiler/compiler.cjs unless twincat.compiler.path overrides it;
+                        resources/compiler/compiler.cjs unless tcToolkit.compiler.path overrides it;
                         Node >= 22 FOUND by nodeCandidates/findNode), check inputs from object texts, the compiler run as a CHILD
                         PROCESS (`--check --json --dialect-file resources/dialects/twincat3.json`,
                         `--global-list N.st=<GVL>` per GVL; never `require()`d, never `--strict`) in
@@ -483,10 +503,17 @@ src/
                         rename solution/system/PLC project (`<Name>`, `<Name>_PLC`), re-issue every
                         identity GUID consistently, keep every byte else. vscode-free, unit-tested.
                         See "Project templates" below
+  settingsMigration     The one-time move from the old `twincat.*` setting keys to `tcToolkit.*`, run
+                        un-awaited at the top of activate(): per key and per scope holding an OLD value
+                        (User, Workspace, each folder) copy it to the new key unless that scope already
+                        has one, then remove the old value; a failed copy keeps the old value so the
+                        next activation retries. Never rejects (failures go to console.warn). The XAE
+                        Shell auto-fill waits for it, so a detected path never shadows a moved one.
+                        vscode-light (config injected)
   startPage             The start page: a singleton webview panel (+ serializer) whose messages map
                         onto the twincat.* commands; command allow-list; links leave via openExternal.
                         Its `state` message also carries the recent-list length
-                        (twincat.startPage.recentProjectsShown) and the two XAE Shell paths with
+                        (tcToolkit.startPage.recentProjectsShown) and the two XAE Shell paths with
                         whether each exists; `openSettings {section}` opens an allow-listed section
   startPageHtml         The start page's HTML (pure; strict CSP, no remote loads) — the browser
                         harness renders this same function
@@ -494,10 +521,10 @@ src/
                         adapter): newest first, max 10, case-insensitive on Windows paths, pruned on read;
                         `recentsShownLimit` clamps the shown-rows setting to 1..10 (default 2)
   xaeShell              XAE shell discovery + the library-signature generator (the one non-offline path).
-                        A configured twincat.xaeShell.path4026 (64-bit) / path4024 (32-bit) that exists
+                        A configured tcToolkit.xaeShell.path4026 (64-bit) / path4024 (32-bit) that exists
                         wins for its shell; otherwise default location, then the COM registration
   xaeShellDetect        Where the XAE Shell of 3.1.4024 / 3.1.4026 is installed, for the
-                        twincat.xaeShell.path* settings: COM registration (ProgID → CLSID →
+                        tcToolkit.xaeShell.path* settings: COM registration (ProgID → CLSID →
                         LocalServer32 via `reg.exe query`, 3 s timeout), then the default Program Files
                         location. Pure — platform, env, exists and regQuery are injected; off Windows
                         it finds nothing and spawns nothing. Also `resolveShellExe`, the choice
@@ -1174,10 +1201,10 @@ surfaces (UI, README) never name the compiler product — a user ruling, pinned 
    the host drops the matching Problems entries.
 
 The start page's *Compile project* tile is enabled when the compiler file exists — the bundled one, or
-the override `twincat.compiler.path` names — and a project is open (`state.compilerReady` +
+the override `tcToolkit.compiler.path` names — and a project is open (`state.compilerReady` +
 `hasProject`); only a missing override (or a damaged install) disables it, with "Compiler file not
 found". A missing Node is not known to the tile: the command explains it on click. A change to
-`twincat.compiler.*` re-posts the page's state. Results live in memory only (problem-link ids included) — a compile result describes
+`tcToolkit.compiler.*` re-posts the page's state. Results live in memory only (problem-link ids included) — a compile result describes
 one moment.
 
 **Library declarations (R3.4, `src/libraryDecls.js`).** The compiler knows only the IEC standard
@@ -1236,7 +1263,7 @@ buttons go compact and Compile drops to its glyph (name in the tooltip / `aria-l
 header wraps into rows (it was 680 px, where the status pill already ran off the edge at 700 px).
 
 **The bundled compiler (R3.3).** The compiler ships in `resources/compiler/`, so an empty
-`twincat.compiler.path` means `bundledCompilerPath()` (`resolveCompilerPath`); a set path is an
+`tcToolkit.compiler.path` means `bundledCompilerPath()` (`resolveCompilerPath`); a set path is an
 override. It is GPL-3.0 and is only ever run as a child process. The bundle loads every `.stlib` in the
 `libs/` next to itself (`findBundledLibsDir` in the fork tries `../../libs` and `../libs` first — neither
 exists in the extension); only the two IEC libraries ship, because the fork's others (OSCAT, softmotion,
@@ -1244,7 +1271,7 @@ extra FBs such as `PID`) are not TwinCAT's and would make names resolve that Twi
 `compile-real` pins both directions.
 
 **Node discovery** (`nodeCandidates` → `findNode`, everything injected: `platform`, `env`, `runtime`,
-`spawn`, `exists`). A set `twincat.compiler.nodePath` is the ONLY candidate (a configured path that fails
+`spawn`, `exists`). A set `tcToolkit.compiler.nodePath` is the ONLY candidate (a configured path that fails
 is reported, never silently replaced). Otherwise, in order: `node` on PATH; on Windows
 `%ProgramFiles%`/`%ProgramW6432%`/`%ProgramFiles(x86)%\nodejs\node.exe`, `%NVM_SYMLINK%\node.exe`,
 `%VOLTA_HOME%\bin`, `%LOCALAPPDATA%\Volta\bin`, `%ProgramFiles%\Volta`, `%FNM_DIR%\aliases\default`,

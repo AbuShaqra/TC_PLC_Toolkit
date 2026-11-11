@@ -1,7 +1,7 @@
 /**
  * @file xaeShellCommands.js
- * @description The VS Code half of the XAE Shell path settings (`twincat.xaeShell.path4024` /
- * `twincat.xaeShell.path4026`): fills an EMPTY setting with the installation found on this machine —
+ * @description The VS Code half of the XAE Shell path settings (`tcToolkit.xaeShell.path4024` /
+ * `tcToolkit.xaeShell.path4026`): fills an EMPTY setting with the installation found on this machine —
  * once in the background after activation, and again on `twincat.detectXaeShell` — and never
  * overwrites a value the user has set.
  *

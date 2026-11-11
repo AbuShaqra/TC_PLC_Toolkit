@@ -4,7 +4,7 @@
  * the committed sample, through the same code the command uses (`src/compileCheck.js`).
  *
  * It runs the compiler that ships with the extension (`resources/compiler/compiler.cjs`), or the one
- * `TWINCAT_COMPILER_BUNDLE` names instead (an override, like the `twincat.compiler.path` setting).
+ * `TWINCAT_COMPILER_BUNDLE` names instead (an override, like the `tcToolkit.compiler.path` setting).
  * It needs a Node >= 22, found as the command finds one (`TWINCAT_COMPILER_NODE`, else `node` on
  * PATH, the usual install locations, then this process's own runtime); without one it SKIPS and
  * says so. It stays optional in test/run.js (CI's Node 16/20 legs skip it) — it is listed in the run

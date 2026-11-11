@@ -55,7 +55,7 @@ const GO_TO_PROBLEM_COMMAND = 'twincat.compile.goToProblem';
  * @param {object} deps
  * @param {any} deps.provider The custom editor provider (pane markers, pending edits).
  * @param {() => any} deps.getProjectMap The host's current project partition.
- * @param {() => void} [deps.onSettingsChanged] Called when a `twincat.compiler.*` setting changes.
+ * @param {() => void} [deps.onSettingsChanged] Called when a `tcToolkit.compiler.*` setting changes.
  * @param {Function} [deps.spawn] Child-process factory, for tests.
  * @param {import('../compileCheck').NodeDiscovery} [deps.nodeDiscovery] Where Node is looked for, for tests.
  * @returns {{isAvailable: () => boolean, problemsFor: (uriStr: string) => StoredProblem[]}}

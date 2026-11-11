@@ -26,7 +26,7 @@ const realExe = path.join(ROOT, 'TcXaeShell.exe');
 fs.writeFileSync(realExe, '');
 
 // ── A recording `vscode` stub ───────────────────────────────────────────────────────────────────
-const settings = { 'twincat.xaeShell.path4024': '', 'twincat.xaeShell.path4026': '' };
+const settings = { 'tcToolkit.xaeShell.path4024': '', 'tcToolkit.xaeShell.path4026': '' };
 const calls = { updates: [], infos: [], errors: [], executed: [] };
 const handlers = new Map();
 let infoAnswer;
@@ -67,8 +67,8 @@ let detectCalls = 0;
 let detectThrows = false;
 const detect = async () => { detectCalls++; if (detectThrows) throw new Error('detection broke'); return detected; };
 const reset = (s4024, s4026) => {
-    settings['twincat.xaeShell.path4024'] = s4024;
-    settings['twincat.xaeShell.path4026'] = s4026;
+    settings['tcToolkit.xaeShell.path4024'] = s4024;
+    settings['tcToolkit.xaeShell.path4026'] = s4026;
     calls.updates.length = 0; calls.infos.length = 0; calls.errors.length = 0; calls.executed.length = 0;
 };
 const tick = () => new Promise(r => setTimeout(r, 0));
@@ -82,14 +82,14 @@ const tick = () => new Promise(r => setTimeout(r, 0));
     detected = { '4024': { path: 'C:\\x86\\TcXaeShell.exe', source: 'registry' }, '4026': { path: 'C:\\x64\\TcXaeShell.exe', source: 'default' } };
     reset('', '');
     let results = await xae.autoFill();
-    assert(settings['twincat.xaeShell.path4024'] === 'C:\\x86\\TcXaeShell.exe' && settings['twincat.xaeShell.path4026'] === 'C:\\x64\\TcXaeShell.exe',
+    assert(settings['tcToolkit.xaeShell.path4024'] === 'C:\\x86\\TcXaeShell.exe' && settings['tcToolkit.xaeShell.path4026'] === 'C:\\x64\\TcXaeShell.exe',
         'both empty settings are filled with what was detected');
     assert(calls.updates.length === 2 && calls.updates.every(u => u.target === vscodeStub.ConfigurationTarget.Global), 'they are written to the user settings (ConfigurationTarget.Global)');
     assert(results.every(r => r.status === 'found') && calls.infos.length === 0 && calls.errors.length === 0, 'the activation fill reports found and shows nothing');
 
     reset(realExe, '');
     results = await xae.autoFill();
-    assert(settings['twincat.xaeShell.path4024'] === realExe && calls.updates.length === 1 && calls.updates[0].key === 'twincat.xaeShell.path4026',
+    assert(settings['tcToolkit.xaeShell.path4024'] === realExe && calls.updates.length === 1 && calls.updates[0].key === 'tcToolkit.xaeShell.path4026',
         'a non-empty setting is never overwritten; the empty one is still filled');
     assert(results[0].status === 'kept' && results[0].path === realExe && results[0].missing === false && results[1].status === 'found', 'kept (file present) / found');
 
@@ -105,7 +105,7 @@ const tick = () => new Promise(r => setTimeout(r, 0));
     reset('   ', '');
     detected = { '4024': { path: 'C:\\x86\\TcXaeShell.exe', source: 'default' }, '4026': null };
     results = await xae.autoFill();
-    assert(calls.updates.length === 1 && calls.updates[0].key === 'twincat.xaeShell.path4024' && results[1].status === 'notFound',
+    assert(calls.updates.length === 1 && calls.updates[0].key === 'tcToolkit.xaeShell.path4024' && results[1].status === 'notFound',
         'a whitespace-only setting counts as empty; the version that was not found is left alone');
 
     // Never rejects: a broken detection or an unwritable settings file must not reach activation.
@@ -130,7 +130,7 @@ const tick = () => new Promise(r => setTimeout(r, 0));
     infoAnswer = undefined;
     results = await vscodeStub.commands.executeCommand('twincat.detectXaeShell');
     await tick();
-    assert(detectCalls === before + 1 && calls.updates.length === 1 && settings['twincat.xaeShell.path4026'] === 'C:\\x64\\TcXaeShell.exe', 'the command re-runs detection and fills the empty setting');
+    assert(detectCalls === before + 1 && calls.updates.length === 1 && settings['tcToolkit.xaeShell.path4026'] === 'C:\\x64\\TcXaeShell.exe', 'the command re-runs detection and fills the empty setting');
     assert(calls.infos.length === 1 && /3\.1\.4024: not found/.test(calls.infos[0].m) && /3\.1\.4026: found C:\\x64\\TcXaeShell\.exe/.test(calls.infos[0].m),
         `one message says, per version, what happened (${calls.infos[0] && calls.infos[0].m})`);
     assert(JSON.stringify(calls.infos[0].buttons) === '["Open Settings"]' && !calls.executed.some(c => c.id === 'twincat.openSettings'), 'it offers Open Settings; dismissed, nothing opens');
@@ -141,11 +141,11 @@ const tick = () => new Promise(r => setTimeout(r, 0));
     infoAnswer = 'Open Settings';
     await vscodeStub.commands.executeCommand('twincat.detectXaeShell');
     await tick();
-    assert(settings['twincat.xaeShell.path4024'] === 'Z:\\custom\\TcXaeShell.exe' && calls.updates.length === 0, 'the command does not overwrite a configured value either');
+    assert(settings['tcToolkit.xaeShell.path4024'] === 'Z:\\custom\\TcXaeShell.exe' && calls.updates.length === 0, 'the command does not overwrite a configured value either');
     assert(/3\.1\.4024: kept your value Z:\\custom\\TcXaeShell\.exe \(that file does not exist\)/.test(calls.infos[0].m) && /3\.1\.4026: not found/.test(calls.infos[0].m),
         `kept your value / not found (${calls.infos[0].m})`);
     const opened = calls.executed.find(c => c.id === 'twincat.openSettings');
-    assert(!!opened && opened.args[0] === 'twincat.xaeShell', 'the Open Settings button opens the settings filtered to twincat.xaeShell');
+    assert(!!opened && opened.args[0] === 'tcToolkit.xaeShell', 'the Open Settings button opens the settings filtered to tcToolkit.xaeShell');
 
     detectThrows = true;
     reset('', '');

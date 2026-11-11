@@ -1,7 +1,7 @@
 /**
  * @file xaeShellDetect.js
  * @description Finds where the TwinCAT XAE Shell of each supported TwinCAT version is installed, for
- * the `twincat.xaeShell.path4024` / `twincat.xaeShell.path4026` settings.
+ * the `tcToolkit.xaeShell.path4024` / `tcToolkit.xaeShell.path4026` settings.
  *
  * Pure: no `vscode`, no `fs` and no `child_process` at module level — the platform, the environment,
  * the file-existence check and the registry query are all passed in, so the whole module is
@@ -16,7 +16,7 @@
 'use strict';
 
 /** The configuration section both path settings live in. */
-const XAE_SHELL_SECTION = 'twincat.xaeShell';
+const XAE_SHELL_SECTION = 'tcToolkit.xaeShell';
 
 /** Milliseconds one `reg.exe query` may take before it counts as "not found". */
 const REG_TIMEOUT_MS = 3000;
@@ -199,7 +199,7 @@ function createRegQuery(execFile) {
 
 /**
  * The two settings as the start page shows them.
- * @param {(key: string) => unknown} get Reads one key of the `twincat.xaeShell` section.
+ * @param {(key: string) => unknown} get Reads one key of the `tcToolkit.xaeShell` section.
  * @param {(p: string) => boolean} exists
  * @returns {Array<{id: string, version: string, path: string, exists: boolean}>} `path` is '' when the
  *   setting is empty; `exists` is whether a non-empty path is a file on disk.
@@ -220,7 +220,7 @@ function describeConfiguredShells(get, exists) {
  * Which .exe to use for one shell: the configured path when it is set and exists, otherwise exactly
  * what discovery did before the settings existed (the default location, then the registry).
  * @param {object} o
- * @param {unknown} o.configured The matching `twincat.xaeShell.path*` setting ('' or absent = not set).
+ * @param {unknown} o.configured The matching `tcToolkit.xaeShell.path*` setting ('' or absent = not set).
  * @param {string} o.defaultPath The shell's default install location.
  * @param {(p: string) => boolean} o.exists
  * @param {() => string|null} o.fromRegistry Registry lookup; called only when it is needed.

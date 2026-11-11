@@ -10,7 +10,7 @@
  *     extension's, and it needs Node 22+, which the extension host may not be. It is started with
  *     a Node.js 22+ executable that is found (see nodeCandidates) or named by the user,
  *     version-checked first. The compiler itself ships with the extension (resources/compiler/,
- *     written by scripts/vendor-compiler.js); the `twincat.compiler.path` setting overrides it.
+ *     written by scripts/vendor-compiler.js); the `tcToolkit.compiler.path` setting overrides it.
  *   - Check only. The units are written to a temporary directory that is deleted when the run ends,
  *     however it ends; nothing is written into the project.
  *   - It cannot hang: every child process has a timeout and the run can be cancelled.
@@ -43,9 +43,9 @@ const NODE_PROBE_TIMEOUT_MS = 10000;
 const DEFAULT_CHECK_TIMEOUT_MS = 120000;
 
 /** The settings section and keys (package.json `contributes.configuration`). */
-const COMPILER_SECTION = 'twincat.compiler';
-const SETTING_COMPILER_PATH = 'twincat.compiler.path';
-const SETTING_NODE_PATH = 'twincat.compiler.nodePath';
+const COMPILER_SECTION = 'tcToolkit.compiler';
+const SETTING_COMPILER_PATH = 'tcToolkit.compiler.path';
+const SETTING_NODE_PATH = 'tcToolkit.compiler.nodePath';
 
 /**
  * Warnings the compiler prints for every pragma it skips (`{attribute '…'}`, `{region}` …). A
@@ -146,7 +146,7 @@ function bundledCompilerPath(extensionRoot = EXTENSION_ROOT) {
 }
 
 /**
- * The compiler a run uses: the `twincat.compiler.path` setting when it is set (an override), else
+ * The compiler a run uses: the `tcToolkit.compiler.path` setting when it is set (an override), else
  * the bundled one.
  * @param {string|undefined|null} settingValue
  * @param {string} [extensionRoot]
@@ -161,7 +161,7 @@ function resolveCompilerPath(settingValue, extensionRoot) {
  * Whether the compiler a run would use exists — the cheap, synchronous part of the setup check,
  * which is all the start page's tile needs. With the setting empty that is the bundled compiler, so
  * this is false only for an override that points at a missing file (or a damaged installation).
- * @param {string|undefined|null} compilerSetting The `twincat.compiler.path` setting.
+ * @param {string|undefined|null} compilerSetting The `tcToolkit.compiler.path` setting.
  * @param {{exists?: (p: string) => boolean, extensionRoot?: string}} [deps]
  * @returns {boolean}
  */
@@ -175,7 +175,7 @@ function isCompilerAvailable(compilerSetting, deps = {}) {
  * @property {string} command What is started.
  * @property {string} label How messages name it.
  * @property {boolean} mustExist It is a file path, checked before it is run (`node` on PATH is not).
- * @property {boolean} explicit It is the `twincat.compiler.nodePath` setting.
+ * @property {boolean} explicit It is the `tcToolkit.compiler.nodePath` setting.
  * @property {Object<string, string>} [env] Variables added to the inherited environment.
  */
 
@@ -188,7 +188,7 @@ function isCompilerAvailable(compilerSetting, deps = {}) {
  */
 
 /**
- * Where to look for Node.js, in order. The `twincat.compiler.nodePath` setting, when set, is the
+ * Where to look for Node.js, in order. The `tcToolkit.compiler.nodePath` setting, when set, is the
  * ONLY candidate: a configured path that does not work is reported, never silently replaced.
  * Otherwise: `node` on PATH; on Windows the usual install locations (the Node.js installer,
  * nvm-windows, Volta, fnm), which an editor started from the Start menu may not have on its PATH;
@@ -245,7 +245,7 @@ function nodeCandidates(configuredNode, discovery) {
 /**
  * Finds a Node.js new enough to run the compiler: tries each candidate in order and takes the
  * first whose `--version` is Node 22 or newer.
- * @param {string} configuredNode The `twincat.compiler.nodePath` setting, trimmed.
+ * @param {string} configuredNode The `tcToolkit.compiler.nodePath` setting, trimmed.
  * @param {{spawn: SpawnLike, exists: (p: string) => boolean, timeoutMs?: number} & NodeDiscovery} deps
  * @returns {Promise<{ok: true, command: string, env: Object<string, string>|undefined, version: string, label: string}
  *   | {ok: false, problem: SetupProblem}>}

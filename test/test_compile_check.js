@@ -82,7 +82,7 @@ const FILES = [
     assert(setup.ok && setup.compilerPath === '/c/bundle.cjs' && !setup.compilerBundled, 'SETUP: an override compiler file that exists is used');
 
     setup = await cc.checkSetup({}, { ...plain, spawn: nodeSays('v22.3.0').spawn, exists: () => false, extensionRoot: '/ext' });
-    assert(!setup.ok && setup.problems.length === 1 && setup.problems[0].setting === 'twincat.compiler.path' &&
+    assert(!setup.ok && setup.problems.length === 1 && setup.problems[0].setting === 'tcToolkit.compiler.path' &&
         /ships with the extension is missing/.test(setup.problems[0].message) && /Reinstall the extension/.test(setup.problems[0].message),
         'SETUP: a missing bundled compiler says so and how to fix it');
 
@@ -91,7 +91,7 @@ const FILES = [
         /clear the setting/.test(setup.problems[0].message), 'SETUP: an override compiler path that is not a file is named, with the way back to the bundled one');
 
     setup = await cc.checkSetup({ compilerPath: '/c/bundle.cjs', nodePath: '' }, { ...plain, spawn: nodeSays('v18.20.4').spawn, exists: existsOnly('/c/bundle.cjs') });
-    assert(!setup.ok && setup.problems.length === 1 && setup.problems[0].setting === 'twincat.compiler.nodePath' &&
+    assert(!setup.ok && setup.problems.length === 1 && setup.problems[0].setting === 'tcToolkit.compiler.nodePath' &&
         /Node\.js 18\.20\.4 was found/.test(setup.problems[0].message) && /needs Node\.js 22 or newer/.test(setup.problems[0].message) &&
         /"node" on PATH/.test(setup.problems[0].message),
         'SETUP: a Node that is too old is reported with its version, where it was found and what is needed');
@@ -99,12 +99,12 @@ const FILES = [
     fake = createFakeSpawn(() => ({ error: 'spawn node ENOENT' }));
     setup = await cc.checkSetup({ compilerPath: '/c/bundle.cjs' }, { ...plain, spawn: fake.spawn, exists: existsOnly('/c/bundle.cjs') });
     assert(!setup.ok && /could not be started/.test(setup.problems[0].message) && /ENOENT/.test(setup.problems[0].message) &&
-        /Install Node\.js 22 or newer, or set "twincat\.compiler\.nodePath"/.test(setup.problems[0].message),
+        /Install Node\.js 22 or newer, or set "tcToolkit\.compiler\.nodePath"/.test(setup.problems[0].message),
         'SETUP: no Node on PATH says so and says how to fix it');
 
     fake = nodeSays('v22.0.0');
     setup = await cc.checkSetup({ compilerPath: '/c/bundle.cjs', nodePath: '/opt/node' }, { ...plain, spawn: fake.spawn, exists: existsOnly('/c/bundle.cjs') });
-    assert(!setup.ok && fake.calls.length === 0 && /"\/opt\/node" \(setting "twincat\.compiler\.nodePath"\) does not exist/.test(setup.problems[0].message),
+    assert(!setup.ok && fake.calls.length === 0 && /"\/opt\/node" \(setting "tcToolkit\.compiler\.nodePath"\) does not exist/.test(setup.problems[0].message),
         'SETUP: a configured Node path that does not exist is reported without trying to run it');
 
     fake = nodeSays('v22.0.0');
@@ -119,7 +119,7 @@ const FILES = [
     assert(!setup.ok && /did not answer/.test(setup.problems[0].message) && fake.calls[0].killed, 'SETUP: a Node probe that hangs is stopped and reported');
 
     setup = await cc.checkSetup({ compilerPath: '/gone.cjs' }, { ...plain, spawn: nodeSays('v16.0.0').spawn, exists: () => false });
-    assert(setup.problems.length === 2 && setup.problems.map(p => p.setting).join() === 'twincat.compiler.path,twincat.compiler.nodePath',
+    assert(setup.problems.length === 2 && setup.problems.map(p => p.setting).join() === 'tcToolkit.compiler.path,tcToolkit.compiler.nodePath',
         'SETUP: every problem is reported at once');
 
     // ── Node discovery: order, version gate, Windows locations, the editor's runtime ─────────────
@@ -180,7 +180,7 @@ const FILES = [
     assert(!setup.ok && setup.problems.length === 1 && /^No Node\.js 22 or newer was found to run the compiler\./.test(setup.problems[0].message) &&
         /Node\.js 18\.20\.4 was found at "node" on PATH/.test(setup.problems[0].message) &&
         /usual install locations \(Node\.js installer, nvm-windows, Volta, fnm\) hold no Node\.js/.test(setup.problems[0].message) &&
-        /Install Node\.js 22 or newer, or set "twincat\.compiler\.nodePath"/.test(setup.problems[0].message),
+        /Install Node\.js 22 or newer, or set "tcToolkit\.compiler\.nodePath"/.test(setup.problems[0].message),
         `DISCOVER: when none is found, the message says what was tried, what is missing and how to fix it (${setup.problems[0] && setup.problems[0].message})`);
 
     // The tile's cheap check.

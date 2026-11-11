@@ -523,77 +523,173 @@
         "path": "./syntaxes/twincat-st.tmLanguage.json"
       }
     ],
-    "configuration": {
-      "title": "TC Toolkit",
-      "properties": {
-        "twincat.diagnostics.memberAccess": {
-          "type": "boolean",
-          "default": true,
-          "description": "Flag access to members that do not exist on a resolved type (e.g. fb.NoSuchField)."
-        },
-        "twincat.diagnostics.callArguments": {
-          "type": "boolean",
-          "default": true,
-          "description": "Flag named call arguments that are not parameters of the resolved function/FB/method."
-        },
-        "twincat.diagnostics.declarationTypes": {
-          "type": "boolean",
-          "default": false,
-          "description": "Flag declarations whose type is unknown. Off by default: types from library archives that cannot be read (the opaque .compiled-library-v3 format) are invisible to the indexer, so this may report false positives in projects that use them."
-        },
-        "twincat.diagnostics.typeCompatibility": {
-          "type": "boolean",
-          "default": true,
-          "description": "Flag assignments whose value type is clearly incompatible with the target (e.g. assigning a struct to an INT)."
-        },
-        "twincat.libraryDefinitions.shell": {
-          "type": "string",
-          "enum": [
-            "ask",
-            "x64",
-            "x86"
-          ],
-          "enumDescriptions": [
-            "Ask every time which XAE Shell to use.",
-            "Always use the 64-bit TcXaeShell (TcXaeShell.DTE.17.0).",
-            "Always use the 32-bit TcXaeShell (TcXaeShell.DTE.15.0)."
-          ],
-          "default": "ask",
-          "markdownDescription": "Which TwinCAT XAE Shell **Update Library Definitions** should drive. A library's signatures can differ between the 32-bit and 64-bit shell — visualisation libraries especially — so this defaults to asking. Set it if you always build with the same one. If the chosen shell is not installed, you are asked anyway rather than given the wrong signatures."
-        },
-        "twincat.startPage.recentProjectsShown": {
-          "type": "integer",
-          "default": 2,
-          "minimum": 1,
-          "maximum": 10,
-          "markdownDescription": "How many recent TwinCAT solutions the start page lists under **Open existing project**. When more are remembered (up to 10), a **Show all** tile expands the list."
-        },
-        "twincat.xaeShell.path4024": {
-          "type": "string",
-          "default": "",
-          "scope": "machine",
-          "markdownDescription": "Full path to `TcXaeShell.exe` of the XAE Shell for **TwinCAT 3.1.4024** (the 32-bit shell). Filled automatically with the installation found on this machine; change it if yours is elsewhere. Empty = not found. Run **TC Toolkit: Detect XAE Shell Installations** to look again."
-        },
-        "twincat.xaeShell.path4026": {
-          "type": "string",
-          "default": "",
-          "scope": "machine",
-          "markdownDescription": "Full path to `TcXaeShell.exe` of the XAE Shell for **TwinCAT 3.1.4026** (the 64-bit shell). Filled automatically with the installation found on this machine; change it if yours is elsewhere. Empty = not found. Run **TC Toolkit: Detect XAE Shell Installations** to look again."
-        },
-        "twincat.compiler.path": {
-          "type": "string",
-          "default": "",
-          "scope": "machine",
-          "markdownDescription": "Full path to the command-line file (`.cjs`) of an external IEC 61131-3 compiler for **TC Toolkit: Compile Project** to run instead of the one that ships with the extension. Empty = the bundled compiler (the usual choice)."
-        },
-        "twincat.compiler.nodePath": {
-          "type": "string",
-          "default": "",
-          "scope": "machine",
-          "markdownDescription": "Full path to a Node.js executable, version 22 or newer, that runs the compiler for **TC Toolkit: Compile Project**. Empty = found automatically: `node` on `PATH`, then on Windows the usual install locations (Node.js installer, nvm-windows, Volta, fnm), then VS Code's own runtime when it is Node.js 22 or newer. The version is checked before each run."
+    "configuration": [
+      {
+        "id": "tcToolkit.diagnostics",
+        "title": "Diagnostics",
+        "order": 1,
+        "properties": {
+          "tcToolkit.diagnostics.memberAccess": {
+            "type": "boolean",
+            "default": true,
+            "description": "Flag access to members that do not exist on a resolved type (e.g. fb.NoSuchField)."
+          },
+          "tcToolkit.diagnostics.callArguments": {
+            "type": "boolean",
+            "default": true,
+            "description": "Flag named call arguments that are not parameters of the resolved function/FB/method."
+          },
+          "tcToolkit.diagnostics.declarationTypes": {
+            "type": "boolean",
+            "default": false,
+            "description": "Flag declarations whose type is unknown. Off by default: types from library archives that cannot be read (the opaque .compiled-library-v3 format) are invisible to the indexer, so this may report false positives in projects that use them."
+          },
+          "tcToolkit.diagnostics.typeCompatibility": {
+            "type": "boolean",
+            "default": true,
+            "description": "Flag assignments whose value type is clearly incompatible with the target (e.g. assigning a struct to an INT)."
+          },
+          "twincat.diagnostics.memberAccess": {
+            "type": "boolean",
+            "default": true,
+            "deprecationMessage": "Renamed to tcToolkit.diagnostics.memberAccess. A value set here moves there automatically when the extension starts.",
+            "markdownDeprecationMessage": "Renamed to `#tcToolkit.diagnostics.memberAccess#`. A value set here moves there automatically when the extension starts."
+          },
+          "twincat.diagnostics.callArguments": {
+            "type": "boolean",
+            "default": true,
+            "deprecationMessage": "Renamed to tcToolkit.diagnostics.callArguments. A value set here moves there automatically when the extension starts.",
+            "markdownDeprecationMessage": "Renamed to `#tcToolkit.diagnostics.callArguments#`. A value set here moves there automatically when the extension starts."
+          },
+          "twincat.diagnostics.declarationTypes": {
+            "type": "boolean",
+            "default": false,
+            "deprecationMessage": "Renamed to tcToolkit.diagnostics.declarationTypes. A value set here moves there automatically when the extension starts.",
+            "markdownDeprecationMessage": "Renamed to `#tcToolkit.diagnostics.declarationTypes#`. A value set here moves there automatically when the extension starts."
+          },
+          "twincat.diagnostics.typeCompatibility": {
+            "type": "boolean",
+            "default": true,
+            "deprecationMessage": "Renamed to tcToolkit.diagnostics.typeCompatibility. A value set here moves there automatically when the extension starts.",
+            "markdownDeprecationMessage": "Renamed to `#tcToolkit.diagnostics.typeCompatibility#`. A value set here moves there automatically when the extension starts."
+          }
+        }
+      },
+      {
+        "id": "tcToolkit.compiler",
+        "title": "Compiler",
+        "order": 2,
+        "properties": {
+          "tcToolkit.compiler.path": {
+            "type": "string",
+            "default": "",
+            "scope": "machine",
+            "markdownDescription": "Full path to the command-line file (`.cjs`) of an external IEC 61131-3 compiler for **TC Toolkit: Compile Project** to run instead of the one that ships with the extension. Empty = the bundled compiler (the usual choice)."
+          },
+          "tcToolkit.compiler.nodePath": {
+            "type": "string",
+            "default": "",
+            "scope": "machine",
+            "markdownDescription": "Full path to a Node.js executable, version 22 or newer, that runs the compiler for **TC Toolkit: Compile Project**. Empty = found automatically: `node` on `PATH`, then on Windows the usual install locations (Node.js installer, nvm-windows, Volta, fnm), then VS Code's own runtime when it is Node.js 22 or newer. The version is checked before each run."
+          },
+          "twincat.compiler.path": {
+            "type": "string",
+            "default": "",
+            "scope": "machine",
+            "deprecationMessage": "Renamed to tcToolkit.compiler.path. A value set here moves there automatically when the extension starts.",
+            "markdownDeprecationMessage": "Renamed to `#tcToolkit.compiler.path#`. A value set here moves there automatically when the extension starts."
+          },
+          "twincat.compiler.nodePath": {
+            "type": "string",
+            "default": "",
+            "scope": "machine",
+            "deprecationMessage": "Renamed to tcToolkit.compiler.nodePath. A value set here moves there automatically when the extension starts.",
+            "markdownDeprecationMessage": "Renamed to `#tcToolkit.compiler.nodePath#`. A value set here moves there automatically when the extension starts."
+          }
+        }
+      },
+      {
+        "id": "tcToolkit.xaeShell",
+        "title": "XAE Shell",
+        "order": 3,
+        "properties": {
+          "tcToolkit.xaeShell.path4024": {
+            "type": "string",
+            "default": "",
+            "scope": "machine",
+            "markdownDescription": "Full path to `TcXaeShell.exe` of the XAE Shell for **TwinCAT 3.1.4024** (the 32-bit shell). Filled automatically with the installation found on this machine; change it if yours is elsewhere. Empty = not found. Run **TC Toolkit: Detect XAE Shell Installations** to look again."
+          },
+          "tcToolkit.xaeShell.path4026": {
+            "type": "string",
+            "default": "",
+            "scope": "machine",
+            "markdownDescription": "Full path to `TcXaeShell.exe` of the XAE Shell for **TwinCAT 3.1.4026** (the 64-bit shell). Filled automatically with the installation found on this machine; change it if yours is elsewhere. Empty = not found. Run **TC Toolkit: Detect XAE Shell Installations** to look again."
+          },
+          "twincat.xaeShell.path4024": {
+            "type": "string",
+            "default": "",
+            "scope": "machine",
+            "deprecationMessage": "Renamed to tcToolkit.xaeShell.path4024. A value set here moves there automatically when the extension starts.",
+            "markdownDeprecationMessage": "Renamed to `#tcToolkit.xaeShell.path4024#`. A value set here moves there automatically when the extension starts."
+          },
+          "twincat.xaeShell.path4026": {
+            "type": "string",
+            "default": "",
+            "scope": "machine",
+            "deprecationMessage": "Renamed to tcToolkit.xaeShell.path4026. A value set here moves there automatically when the extension starts.",
+            "markdownDeprecationMessage": "Renamed to `#tcToolkit.xaeShell.path4026#`. A value set here moves there automatically when the extension starts."
+          }
+        }
+      },
+      {
+        "id": "tcToolkit.libraryDefinitions",
+        "title": "Library Definitions",
+        "order": 4,
+        "properties": {
+          "tcToolkit.libraryDefinitions.shell": {
+            "type": "string",
+            "enum": [
+              "ask",
+              "x64",
+              "x86"
+            ],
+            "enumDescriptions": [
+              "Ask every time which XAE Shell to use.",
+              "Always use the 64-bit TcXaeShell (TcXaeShell.DTE.17.0).",
+              "Always use the 32-bit TcXaeShell (TcXaeShell.DTE.15.0)."
+            ],
+            "default": "ask",
+            "markdownDescription": "Which TwinCAT XAE Shell **Update Library Definitions** should drive. A library's signatures can differ between the 32-bit and 64-bit shell — visualisation libraries especially — so this defaults to asking. Set it if you always build with the same one. If the chosen shell is not installed, you are asked anyway rather than given the wrong signatures."
+          },
+          "twincat.libraryDefinitions.shell": {
+            "type": "string",
+            "default": "ask",
+            "deprecationMessage": "Renamed to tcToolkit.libraryDefinitions.shell. A value set here moves there automatically when the extension starts.",
+            "markdownDeprecationMessage": "Renamed to `#tcToolkit.libraryDefinitions.shell#`. A value set here moves there automatically when the extension starts."
+          }
+        }
+      },
+      {
+        "id": "tcToolkit.startPage",
+        "title": "Start Page",
+        "order": 5,
+        "properties": {
+          "tcToolkit.startPage.recentProjectsShown": {
+            "type": "integer",
+            "default": 2,
+            "minimum": 1,
+            "maximum": 10,
+            "markdownDescription": "How many recent TwinCAT solutions the start page lists under **Open existing project**. When more are remembered (up to 10), a **Show all** tile expands the list."
+          },
+          "twincat.startPage.recentProjectsShown": {
+            "type": "integer",
+            "default": 2,
+            "deprecationMessage": "Renamed to tcToolkit.startPage.recentProjectsShown. A value set here moves there automatically when the extension starts.",
+            "markdownDeprecationMessage": "Renamed to `#tcToolkit.startPage.recentProjectsShown#`. A value set here moves there automatically when the extension starts."
+          }
         }
       }
-    }
+    ]
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

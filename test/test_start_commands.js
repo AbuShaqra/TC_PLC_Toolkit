@@ -202,11 +202,11 @@ const recents = () => (state.get('twincat.recentSolutions') || []).map(e => e.sl
     await run('twincat.openSettings');
     assert(calls.executed.some(c => c.id === 'workbench.action.openSettings' && c.args[0] === '@ext:a-abushaqra.twincat-plc-toolkit'), 'Settings opens the extension’s settings');
     calls.executed.length = 0;
-    await run('twincat.openSettings', 'twincat.xaeShell');
+    await run('twincat.openSettings', 'tcToolkit.xaeShell');
     await run('twincat.openSettings', '@ext:someone.else');
     await run('twincat.openSettings', { not: 'a string' });
     assert(JSON.stringify(calls.executed.filter(c => c.id === 'workbench.action.openSettings').map(c => c.args[0]))
-        === JSON.stringify(['twincat.xaeShell', '@ext:a-abushaqra.twincat-plc-toolkit', '@ext:a-abushaqra.twincat-plc-toolkit']),
+        === JSON.stringify(['tcToolkit.xaeShell', '@ext:a-abushaqra.twincat-plc-toolkit', '@ext:a-abushaqra.twincat-plc-toolkit']),
         'Open Settings takes a twincat.* section as its query and ignores anything else');
 
     // ── The start page ──────────────────────────────────────────────────────────────────────────
@@ -231,32 +231,32 @@ const recents = () => (state.get('twincat.recentSolutions') || []).map(e => e.sl
 
     // A settings change reaches the open page; unrelated settings do not.
     const statesBefore = panel.posted.filter(m => m.type === 'state').length;
-    changeConfig('twincat.diagnostics.memberAccess');
+    changeConfig('tcToolkit.diagnostics.memberAccess');
     assert(panel.posted.filter(m => m.type === 'state').length === statesBefore, 'an unrelated setting does not refresh the page');
-    settings['twincat.startPage.recentProjectsShown'] = 3;
-    changeConfig('twincat.startPage.recentProjectsShown');
+    settings['tcToolkit.startPage.recentProjectsShown'] = 3;
+    changeConfig('tcToolkit.startPage.recentProjectsShown');
     assert(panel.posted.filter(m => m.type === 'state').pop().recentsShown === 3 && panel.posted.filter(m => m.type === 'state').length === statesBefore + 1,
-        'changing twincat.startPage.recentProjectsShown updates the open page');
+        'changing tcToolkit.startPage.recentProjectsShown updates the open page');
     for (const [raw, want] of [[0, 1], [99, 10], [3.9, 3], ['7', 2], [null, 2]]) {
-        settings['twincat.startPage.recentProjectsShown'] = raw;
-        changeConfig('twincat.startPage');
+        settings['tcToolkit.startPage.recentProjectsShown'] = raw;
+        changeConfig('tcToolkit.startPage');
         const got = panel.posted.filter(m => m.type === 'state').pop().recentsShown;
         assert(got === want, `a hand-edited value ${JSON.stringify(raw)} is shown as ${want} (${got})`);
     }
-    delete settings['twincat.startPage.recentProjectsShown'];
-    settings['twincat.xaeShell.path4024'] = sln; // any file that exists
-    settings['twincat.xaeShell.path4026'] = path.join(ROOT, 'nowhere', 'TcXaeShell.exe');
-    changeConfig('twincat.xaeShell.path4026');
+    delete settings['tcToolkit.startPage.recentProjectsShown'];
+    settings['tcToolkit.xaeShell.path4024'] = sln; // any file that exists
+    settings['tcToolkit.xaeShell.path4026'] = path.join(ROOT, 'nowhere', 'TcXaeShell.exe');
+    changeConfig('tcToolkit.xaeShell.path4026');
     const shells = panel.posted.filter(m => m.type === 'state').pop().xaeShells;
     assert(shells[0].path === sln && shells[0].exists === true && shells[1].path.endsWith('TcXaeShell.exe') && shells[1].exists === false,
-        'changing twincat.xaeShell.* updates the open page: an existing path, and one that is not on disk');
+        'changing tcToolkit.xaeShell.* updates the open page: an existing path, and one that is not on disk');
 
     calls.executed.length = 0;
     await panel.send({ type: 'openSettings', section: 'xaeShell' });
     await panel.send({ type: 'openSettings', section: 'constructor' });
     await panel.send({ type: 'openSettings', section: '@ext:someone.else' });
     const settingsOpens = calls.executed.filter(c => c.id === 'workbench.action.openSettings');
-    assert(settingsOpens.length === 1 && settingsOpens[0].args[0] === 'twincat.xaeShell', 'Change… opens the Settings UI filtered to twincat.xaeShell; unknown sections do nothing');
+    assert(settingsOpens.length === 1 && settingsOpens[0].args[0] === 'tcToolkit.xaeShell', 'Change… opens the Settings UI filtered to tcToolkit.xaeShell; unknown sections do nothing');
     calls.executed.length = 0;
     handlers.set('twincat.detectXaeShell', async () => { calls.detected = (calls.detected || 0) + 1; });
     await panel.send({ type: 'command', command: 'twincat.detectXaeShell' });
