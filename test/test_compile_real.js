@@ -38,7 +38,10 @@
  *     Debug-conditioned property group's define selects its branch, a Release-only one does not;
  *   - per-object compiler defines (`<CompilerDefines>` in a `<Compile>` item), passed with `--file-define`
  *     on that object's unit: they select a branch in that POU only, never in another POU using the same
- *     `{IF}`, and a per-object value wins over the project's for `hasvalue`.
+ *     `{IF}`, and a per-object value wins over the project's for `hasvalue`;
+ *   - R12 parity of the built-in LSP: each conditional-pragma fixture is compiled with no define, each
+ *     define it names, and all of them; if the compiler accepts it under at least one set, the LSP must
+ *     give 0 diagnostics. A fixture rejected under every set is only printed (advisory).
  */
 
 const fs = require('fs');
@@ -312,6 +315,63 @@ function assert(cond, msg) {
                 `FILE DEFINES: a per-object TkLevel satisfies hasvalue in FB_Valve but project_defined() does not see it (${d.fileArgs.args.join(' ')}; ${d.names.join(', ')})`);
         } finally {
             fs.rmSync(tmp, { recursive: true, force: true });
+        }
+    }
+
+    // ── R12: conditional pragmas — compiler parity of the built-in LSP ───────────────────────────
+    // Each fixture is compiled under several define sets. If the compiler accepts it under at least one,
+    // the LSP (which never evaluates a condition) must give 0 diagnostics on it. A fixture the compiler
+    // rejects under every set is only reported (advisory), never gated.
+    {
+        const { clearWorkspaceIndex, getWorkspaceSymbolIndex } = require('../src/lsp/parser');
+        const { indexXmlObject } = require('../src/lsp/xmlIndexer');
+        const { provideDiagnostics } = require('../src/lsp/features');
+        const { assembleSt } = require('../src/livePath');
+        const { syncDocument } = require('./_baseline');
+        const cr = (s) => s.replace(/\r?\n/g, '\r\n');
+        const xmlOf = (decl, impl) => `<?xml version="1.0" encoding="utf-8"?>\r\n<TcPlcObject Version="1.1.0.1">\r\n` +
+            `  <POU Name="P_Cond" Id="{00000000-0000-0000-0000-000000001212}" SpecialFunc="None">\r\n` +
+            `    <Declaration><![CDATA[${cr(decl)}]]></Declaration>\r\n    <Implementation><ST><![CDATA[${cr(impl)}]]></ST></Implementation>\r\n  </POU>\r\n</TcPlcObject>`;
+        const VARS = 'PROGRAM P_Cond\nVAR\n\tx : INT;\n\ty : INT;\n\tc : BOOL;\nEND_VAR';
+        const fixtures = {
+            'E split IF head': [VARS, '{IF defined(SIM)}\nIF c THEN\n{ELSE}\nIF NOT c THEN\n{END_IF}\n\tx := 1;\nEND_IF'],
+            'E with ELSIF': [VARS, '{IF defined(SIM)}\nIF c THEN\n{ELSIF defined(MODE)}\nIF NOT c THEN\n{ELSE}\nIF x > 0 THEN\n{END_IF}\n\tx := 1;\nEND_IF'],
+            'nested groups': [VARS, '{IF defined(SIM)}\n{IF defined(MODE)}\nIF c THEN\n{ELSE}\nIF NOT c THEN\n{END_IF}\n{ELSE}\nIF x > 1 THEN\n{END_IF}\n\tx := 1;\nEND_IF'],
+            'WHILE/FOR split': [VARS, '{IF defined(SIM)}\nWHILE c DO\n{ELSE}\nFOR x := 1 TO 2 DO\n{END_IF}\n\ty := 1;\n{IF defined(SIM)}\nEND_WHILE\n{ELSE}\nEND_FOR\n{END_IF}'],
+            'IF/END_IF in two groups': [VARS, '{IF defined(SIM)}\nIF c THEN\n{END_IF}\n\tx := 1;\n{IF defined(SIM)}\nEND_IF\n{END_IF}'],
+            'CASE split': [VARS, '{IF defined(SIM)}\nCASE x OF\n{ELSE}\nCASE y OF\n{END_IF}\n1: c := TRUE;\nEND_CASE'],
+            'types differ per branch': ['PROGRAM P_Cond\nVAR\n{IF defined(SIM)}\n\ts : STRING;\n{ELSE}\n\ts : INT;\n{END_IF}\nEND_VAR', "{IF defined(SIM)}\ns := 'abc';\n{ELSE}\ns := 5;\n{END_IF}"],
+            'name only in a branch': ['PROGRAM P_Cond\nVAR\n{IF defined(SIM)}\n\tsimOnly : INT;\n{END_IF}\nEND_VAR', '{IF defined(SIM)}\nsimOnly := 1;\n{END_IF}'],
+            '{define}/{undefine}': [VARS, '{define LOCAL}\n{IF defined(LOCAL)}\nx := 1;\n{ELSE}\nnLocalOff := 1;\n{END_IF}\n{undefine LOCAL}'],
+            // Negative control: invalid under every define set (each branch opens an IF nothing closes).
+            'both branches open an unclosed IF': [VARS, '{IF defined(SIM)}\nIF c THEN\n{ELSE}\nIF NOT c THEN\n{END_IF}\n\tx := 1;']
+        };
+        for (const [title, [decl, impl]] of Object.entries(fixtures)) {
+            const xml = xmlOf(decl, impl);
+            // Define sets: none, each name the fixture tests on its own, and all of them together.
+            const named = [...new Set([...(decl + impl).matchAll(/\bdefined\((\w+)\)/g)].map(m => m[1]).filter(n => n !== 'LOCAL'))];
+            const defineSets = [[], ...named.map(n => [n]), ...(named.length > 1 ? [named] : [])];
+            const inputs = cc.buildCheckInputs([{ filePath: path.join(sampleDir, 'P_Cond.TcPOU'), text: xml }], parseTwinCatXml).inputs;
+            const accepted = [];
+            for (const set of defineSets) {
+                const r = await cc.runCheck({ nodeCommand: setup.nodeCommand, nodeEnv: setup.nodeEnv, compilerPath: setup.compilerPath, dialectFile,
+                    inputs, defineArgs: set.flatMap(n => ['--pragma-define', n]) });
+                if (r.status === 'done' && r.errors === 0) accepted.push(set.join('+') || 'none');
+            }
+            clearWorkspaceIndex();
+            const index = getWorkspaceSymbolIndex();
+            const uri = 'file:///tmp/r12/P_Cond.TcPOU';
+            indexXmlObject(index, xml, uri);
+            const { stText } = assembleSt(xml, null);
+            syncDocument(index, stText, uri);
+            const lsp = provideDiagnostics(stText, index, uri);
+            if (accepted.length) {
+                assert(lsp.length === 0, `R12 PARITY: "${title}" compiles under {${accepted.join(', ')}}, and the LSP gives 0 diagnostics` +
+                    `${lsp.length ? ` (got ${lsp.map(d => d.message).join('; ')})` : ''}`);
+            } else {
+                console.log(`    [ADVISORY] R12: "${title}" is rejected by the compiler under every define set; LSP: ${lsp.length} diagnostic(s)` +
+                    `${lsp.length ? ` (${lsp.map(d => `L${d.range.start.line + 1} ${d.message}`).join('; ')})` : ''}`);
+            }
         }
     }
 
