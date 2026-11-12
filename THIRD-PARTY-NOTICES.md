@@ -35,14 +35,18 @@ Monaco bundles further components under `media/monaco-editor/vs/`:
 ## STruC++ (the compiler behind *TC Toolkit: Compile Project*)
 
 - Location: `resources/compiler/` (`compiler.cjs`, `libs/`), run as a separate Node.js process —
-  never loaded into the extension
+  never loaded into the extension; and its C++ runtime headers, `resources/compiler/include/`, which
+  only the optional g++ build of generated C++ reads (they are passed to g++, never loaded either)
 - Version: 0.7.0, built from commit `eb52d2cab39ffd2eeaf69ea06c5c1454eae8d95c` of
   https://github.com/AbuShaqra/STruCpp (a fork of https://github.com/Autonomy-Logic/STruCpp)
 - Copyright © 2025 Autonomy® and contributors (see `resources/compiler/COPYING.RUNTIME`)
 - License: GNU General Public License version 3 (GPL-3.0-only) — full text at
   [`resources/compiler/LICENSE`](resources/compiler/LICENSE); licensing overview
   [`resources/compiler/COPYING`](resources/compiler/COPYING) and runtime library exception
-  [`resources/compiler/COPYING.RUNTIME`](resources/compiler/COPYING.RUNTIME)
+  [`resources/compiler/COPYING.RUNTIME`](resources/compiler/COPYING.RUNTIME). The runtime headers
+  (`include/*.hpp`) and the two libraries are GPL-3.0-only WITH the STruC++ Runtime Library
+  Exception, as `COPYING` lists them: C++ generated from your program may include them without
+  your program becoming GPL-licensed
 - Corresponding source: the commit above —
   https://github.com/AbuShaqra/STruCpp/tree/eb52d2cab39ffd2eeaf69ea06c5c1454eae8d95c — with the
   build command and a checksum of every file in
