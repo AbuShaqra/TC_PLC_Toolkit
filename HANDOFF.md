@@ -14,8 +14,8 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   `REQUIRE_FULL_SUITE=1 npm test` green (**111/111, Coverage: FULL**, compile-real ran), `npm run typecheck` and
   `npm run lint` exit 0; Linux dev-host (`xvfb-run -a node test/devhost/run.js`) 103 pass / 1 fail, the fail being the
   known P8 line-ending one; `test/browser/run_pragmas.js` green (the webview is unchanged by R12).
-- **R12 `{IF}`-aware LSP diagnostics: BUILT 2026-11-12**, pushed on `claude/focused-ptolemy-m6acaz` (from `3bdfd29`,
-  dev + roadmap commit; review fixes in the last commit) — needs the user's F5 check, then a squash PR into `dev`.
+- **R12 `{IF}`-aware LSP diagnostics: MERGED** into `dev` as PR #36 (squash `02f2b96`, 2026-11-12 10:56 UTC) after the
+  user's Windows checks (split IF head, both-branch completion/references, END_FOR outside the group, multi-line fbRS, SIM define).
   Review fixes (do not regress): a segment boundary is never a named argument on its own line (`fbRS(\n SET := c,`
   split a method → Unterminated/Unmatched outside any group); enum members inside a group are kept (xmlIndexer
   `extractEnumMembers` took the `)` of `{IF defined(X)}` as the list end); a statement-level nested group no longer
@@ -29,8 +29,6 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   server (R12)". Tests: `test/test_conditional_pragmas.js` (new), R12 cases in `test_live_path.js`, R12 compiler
   parity in `test_compile_real.js` (each fixture compiled per define set: accepted somewhere ⇒ LSP 0). The probe
   case (split `IF` head per branch) and probe2 cases A–I give 0.
-  **Owed by the user (F5 dev host):** the split IF head in both panes of a POU shows no squiggle; completion and
-  references work in both branches; an unrelated missing END_FOR still shows.
   **Proposed, needs the user's XAE build check first:** add a conditional POU and `<CompilerDefines>` to
   TcToolkitSample2 so the ground-truth sample covers R12 (not done: the sample must stay XAE-built).
   **Follow-ups (not R12):** R12b informational branch state (Backlog; never feeds diagnostics; open decision:
@@ -40,7 +38,7 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
 - **R3.3–R9 MERGED** into `dev` as PR #33 (`6424968`, 2026-11-11 09:30 UTC) after the user's Windows checks
   (dev-host green after `npm ci`; manual checks all passed). Details per item are in git history and ROADMAP "Done".
   After a branch switch that changes package-lock.json, run `npm ci` — the dev-host test now says so itself.
-  Toolkit lane is done except R12 (built, above), R10 (trigger-only) and R11 (publishing, last, after the fork lane).
+  Toolkit lane is done except R10 (trigger-only) and R11 (publishing, last, after the fork lane).
 - **Settings keys renamed `twincat.*` → `tcToolkit.*`** (user report 2026-11-11; `c6145b6`, `765b5e1`, 109 suites):
   one-time migration at activation (`src/settingsMigration.js`), old keys stay contributed as deprecated stand-ins.
   Search results read "Tc Toolkit › Compiler: Path" (VS Code cannot show an uppercase "TC" from a key). **Merged** as
@@ -49,7 +47,7 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   `eb52d2c`, `conditional_pragmas` on, `<CompilerDefines>` read from the `.plcproj` (`src/compilerDefines.js`;
   `Condition`s evaluated for Debug | `TwinCAT RT (x64)`), project defines → `--pragma-define`, per-object defines →
   `--file-define` on that object's unit. Details: ROADMAP "Done", DEVELOPMENT.md "Compile Project".
-- **Fork lane (2026-11-12):** S3b done, release K at `c1faca7`. **S4 in progress** (lane agent `a182a76c41bf282e2`, notes in scratchpad `S3B-HANDOVER.md`): LTIME merged as fork #131 (`5e2120b`), LDATE/LTOD/LDT as #132 (`5f4dc19`; #132 was stacked on #131 and conflicted after its squash — fixed by merging development into the branch, branch side wins, merge commit `bb6f0cb`). Gates on the combined head: 5811 passed / 7 skipped, vsext 345, lint 531 warnings, existing outputs byte-identical. Next: items 3–5, then **user decisions 2026-11-12**: IEC Table 36 CONCAT_/SPLIT_/DAY_OF_WEEK (same-name user/library POU wins), DT_TO_DATE/DT_TO_TOD/DATE-arithmetic fix on its own PR (changes OSCAT results, release note), debug map keeps short type names, `T#1_500ms` = 1500 ms stays. Item 5 adds the Table 46 typed timer names. Later branches start from development, not stacked. The IEC text is in scratchpad `iecpdf/` (never committed; cite table numbers only).
+- **Fork lane (2026-11-12):** S3b done, release K at `c1faca7`. **S4 in progress** (lane agent `a182a76c41bf282e2`, notes in scratchpad `S3B-HANDOVER.md`): LTIME merged as fork #131 (`5e2120b`), LDATE/LTOD/LDT as #132 (`5f4dc19`; #132 was stacked on #131 and conflicted after its squash — fixed by merging development into the branch, branch side wins, merge commit `bb6f0cb`). Gates on the combined head: 5811 passed / 7 skipped, vsext 345, lint 531 warnings, existing outputs byte-identical. Items 3–5, Table 36 and the DT fix built on five branches; an adversarial review found 21 reproduced defects (one blocker: a library FB/TYPE named like a Table 36 function no longer resolves), sent back to the lane agent; merge after fixes, then **release L** (user). Earlier **user decisions 2026-11-12**: IEC Table 36 CONCAT_/SPLIT_/DAY_OF_WEEK (same-name user/library POU wins), DT_TO_DATE/DT_TO_TOD/DATE-arithmetic fix on its own PR (changes OSCAT results, release note), debug map keeps short type names, `T#1_500ms` = 1500 ms stays. Item 5 adds the Table 46 typed timer names. Later branches start from development, not stacked. The IEC text is in scratchpad `iecpdf/` (never committed; cite table numbers only).
 - **R11 publishing:** last — after the toolkit lane AND the fork lane are done (user, 2026-11-10).
 - **Sample diagnostics: 0 against a baseline of 0** — verified with the Beckhoff archives present AND moved aside.
 
