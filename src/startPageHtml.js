@@ -176,17 +176,17 @@ function renderStartPageHtml(o) {
                     <button type="button" id="xae-change" class="secondary">Change…</button>
                     <button type="button" class="secondary" data-command="twincat.detectXaeShell">Detect again</button>
                 </div>
-                <h3 id="xae-build-title">XAE build</h3>
-                <p id="xae-build-mode" class="hint" aria-labelledby="xae-build-title">headless</p>
-                <div class="row wrap">
-                    <button type="button" id="xae-build-change" class="secondary" aria-describedby="xae-build-title">Change…</button>
-                </div>
                 <h3 id="gpp-title">g++</h3>
                 <p id="gpp-hint" class="hint">Optional: used only by Build with g++ in the Compile options.</p>
                 <ul id="gpp-list" class="xae-paths" aria-labelledby="gpp-title" aria-describedby="gpp-hint"></ul>
                 <div class="row wrap">
                     <button type="button" id="gpp-change" class="secondary" aria-describedby="gpp-title">Change…</button>
                     <button type="button" class="secondary" data-command="twincat.detectGpp" aria-describedby="gpp-title">Detect again</button>
+                </div>
+                <h3 id="xae-build-title">XAE build</h3>
+                <p id="xae-build-mode" class="hint" aria-labelledby="xae-build-title">headless</p>
+                <div class="row wrap">
+                    <button type="button" id="xae-build-change" class="secondary" aria-describedby="xae-build-title">Change…</button>
                 </div>
             </section>
         </div>

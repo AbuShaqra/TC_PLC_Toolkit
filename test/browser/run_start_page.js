@@ -247,7 +247,39 @@ const { TEMPLATE_VERSIONS } = require(path.join(REPO, 'src', 'projectTemplate.js
                 labels: [...opt.querySelectorAll('.option-label')].map(e => e.textContent) };
         });
         assert(toggleLabel.label === 'Compile options' && toggleLabel.controls === 'compile-options' && toggleLabel.role === 'group'
-            && JSON.stringify(toggleLabel.labels) === '["Generate C++","Build with g++"]', `the chevron is labelled and controls a group of two labelled boxes (${JSON.stringify(toggleLabel)})`);
+            && JSON.stringify(toggleLabel.labels.slice(0, 2)) === '["Generate C++","Build with g++"]', `the chevron is labelled and controls a group, two labelled boxes first (${JSON.stringify(toggleLabel)})`);
+        // Build through XAE (R14): hidden until the host says it is available; then two actions and the window switch.
+        const xaeState = () => page.evaluate(() => ({
+            hidden: document.getElementById('xae-options').hidden,
+            labels: [...document.querySelectorAll('#xae-options .option-label')].map(e => e.textContent),
+            window: document.getElementById('opt-xae-window').checked,
+            mode: document.getElementById('xae-build-mode').textContent,
+            disabled: document.getElementById('xae-build-run').disabled
+        }));
+        let xs = await xaeState();
+        assert(xs.hidden, `R14: without xaeOptions (or off Windows) the XAE entries are hidden (${JSON.stringify(xs)})`);
+        await send({ type: 'state', location: 'C:\\Projects', sep: '\\', hasProject: true, compilerReady: true, recents: [], compileOptions: { generateCpp: true, buildWithGpp: false },
+            xaeOptions: { available: true, showWindow: false, running: false, configuration: 'Debug', platform: 'TwinCAT OS (x64)' } });
+        xs = await xaeState();
+        assert(!xs.hidden && JSON.stringify(xs.labels) === '["Build through XAE","Build and Activate through XAE…","Show the XAE window"]' && !xs.window,
+            `R14: available → Build through XAE, Build and Activate through XAE…, Show the XAE window (unticked = headless) (${JSON.stringify(xs)})`);
+        assert(xs.mode === 'headless; Debug | TwinCAT OS (x64)', `R14: the Settings card's XAE build row says headless and the configuration (${xs.mode})`);
+        await clearPosted();
+        await page.evaluate(() => { document.getElementById('compile-options').hidden = false; });
+        await page.click('#opt-xae-window');
+        await page.click('#xae-build-run');
+        await page.click('#xae-activate-run');
+        await page.click('#xae-build-change');
+        let xm = await posted();
+        assert(xm.length === 4 && xm[0].type === 'setXaeOption' && xm[0].key === 'showWindow' && xm[0].value === true
+            && xm[1].type === 'command' && xm[1].command === 'twincat.xaeBuild' && xm[2].command === 'twincat.xaeBuildAndActivate'
+            && xm[3].type === 'openSettings' && xm[3].section === 'xaeBuild',
+            `R14: the checkbox posts setXaeOption showWindow; the actions run their commands; Change… opens the xaeBuild settings (${JSON.stringify(xm)})`);
+        await send({ type: 'state', location: 'C:\\Projects', sep: '\\', hasProject: true, compilerReady: true, recents: [], compileOptions: { generateCpp: true, buildWithGpp: false },
+            xaeOptions: { available: true, showWindow: true, running: true, configuration: 'Release', platform: 'TwinCAT RT (x64)' } });
+        xs = await xaeState();
+        assert(xs.window && xs.disabled && xs.mode === 'window shown; Release | TwinCAT RT (x64)', `R14: a state with showWindow and a run in progress (${JSON.stringify(xs)})`);
+        await page.evaluate(() => { document.getElementById('compile-options').hidden = true; });
         await page.click('#compile-options-toggle');
         if (process.env.HARNESS_START_SHOT) {
             await page.mouse.move(0, 0);

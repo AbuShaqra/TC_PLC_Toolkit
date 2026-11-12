@@ -547,8 +547,11 @@ function assert(cond, msg) {
                 labels: [...document.querySelectorAll('#compile-menu label')].map(l => l.textContent.trim()) };
         });
         assert(caretInfo.label === 'Compile options' && caretInfo.popup === null && caretInfo.controls === 'compile-menu'
-            && JSON.stringify(caretInfo.labels) === '["Generate C++","Build with g++"]',
-        `the caret is a disclosure (aria-expanded/aria-controls, no aria-haspopup: its popup is checkboxes, not a menu) with two labelled boxes (${JSON.stringify(caretInfo)})`);
+            && JSON.stringify(caretInfo.labels) === '["Generate C++","Build with g++","Show the XAE window"]',
+        `the caret is a disclosure (aria-expanded/aria-controls, no aria-haspopup: its popup is checkboxes, not a menu) with labelled boxes (${JSON.stringify(caretInfo)})`);
+        // Build through XAE (R14): its section stays hidden until the host says it is available.
+        const xaeHidden = await page.evaluate(() => document.getElementById('xae-menu-section').hidden);
+        assert(xaeHidden, 'R14: the XAE entries are hidden by default (the init message carried no xaeOptions)');
         const btnTitle = () => page.evaluate(() => document.getElementById('compile-btn').title);
         assert(/^Compile Project: check this PLC project with the IEC 61131-3 compiler$/.test(await btnTitle()), `with both options off the button's tooltip says it checks (${await btnTitle()})`);
         await page.evaluate(() => { window.__harness.sent.length = 0; });
@@ -592,6 +595,40 @@ function assert(cond, msg) {
         const both = await page.evaluate(() => ({ gen: !document.getElementById('generate-st-menu').hidden, comp: !document.getElementById('compile-menu').hidden }));
         assert(!both.gen && both.comp, `opening one split menu closes the other (${JSON.stringify(both)})`);
         await page.keyboard.press('Escape');
+        // Build through XAE (R14): the host's xaeOptions shows the section; its controls post runXae / setXaeOption.
+        await page.evaluate(() => window.postMessage({ type: 'xaeOptions', options: { available: true, showWindow: false, running: false } }, '*'));
+        await settle(30);
+        await page.evaluate(() => { window.__harness.sent.length = 0; });
+        await page.click('#compile-caret');
+        const xaeShown = await page.evaluate(() => {
+            const sec = document.getElementById('xae-menu-section');
+            const r = document.getElementById('compile-menu').getBoundingClientRect();
+            return { shown: !sec.hidden && getComputedStyle(sec).display !== 'none', window: document.getElementById('xae-opt-window').checked,
+                buttons: [...sec.querySelectorAll('button')].map(b => b.textContent), inside: r.left >= 0 && r.right <= window.innerWidth };
+        });
+        assert(xaeShown.shown && !xaeShown.window && JSON.stringify(xaeShown.buttons) === '["Build through XAE","Build and Activate through XAE…"]' && xaeShown.inside,
+            `R14: available → the menu shows Build through XAE, Build and Activate through XAE… and an unticked Show the XAE window, inside the webview (${JSON.stringify(xaeShown)})`);
+        for (let i = 0; i < 2; i++) await page.keyboard.press('ArrowDown');
+        await page.keyboard.press('ArrowDown');
+        const xaeFocus = await page.evaluate(() => document.activeElement && document.activeElement.id);
+        assert(xaeFocus === 'xae-activate', `R14: ArrowDown walks through the XAE entries too (${xaeFocus})`);
+        await page.click('#xae-opt-window');
+        await page.click('#xae-build');
+        let xm = await page.evaluate(() => window.__harness.sent.filter(m => m.type === 'setXaeOption' || m.type === 'runXae'));
+        assert(xm.length === 2 && xm[0].type === 'setXaeOption' && xm[0].key === 'showWindow' && xm[0].value === true && xm[1].type === 'runXae' && xm[1].activate === false,
+            `R14: the checkbox posts setXaeOption showWindow; Build through XAE posts runXae {activate: false} (${JSON.stringify(xm)})`);
+        assert((await opts()).open === false, 'R14: an XAE action closes the menu');
+        await page.click('#compile-caret');
+        await page.click('#xae-activate');
+        xm = await page.evaluate(() => window.__harness.sent.filter(m => m.type === 'runXae'));
+        assert(xm.length === 2 && xm[1].activate === true, 'R14: Build and Activate through XAE… posts runXae {activate: true}');
+        await page.evaluate(() => window.postMessage({ type: 'xaeOptions', options: { available: true, showWindow: true, running: true } }, '*'));
+        await settle(30);
+        const xaeBusy = await page.evaluate(() => ({ b: document.getElementById('xae-build').disabled, a: document.getElementById('xae-activate').disabled, w: document.getElementById('xae-opt-window').checked }));
+        assert(xaeBusy.b && xaeBusy.a && xaeBusy.w, `R14: while a run is going both actions are disabled; the box follows the setting (${JSON.stringify(xaeBusy)})`);
+        await page.evaluate(() => window.postMessage({ type: 'xaeOptions', options: { available: false, showWindow: false, running: false } }, '*'));
+        await settle(30);
+        assert(await page.evaluate(() => document.getElementById('xae-menu-section').hidden), 'R14: not available → hidden again');
         await page.evaluate(() => { window.__harness.sent.length = 0; document.getElementById('compile-btn').click(); });
         compileMsgs = await page.evaluate(() => window.__harness.sent.filter(m => m.type === 'compile-project'));
         assert(compileMsgs.length === 1, 'the Compile button itself still runs Compile Project');
