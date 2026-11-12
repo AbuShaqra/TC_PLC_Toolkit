@@ -522,10 +522,11 @@ function parseCheckOutput(stdout, exitCode, stderr = '') {
  * @param {CheckInput[]} inputs The inputs of the same run.
  * @param {{extraFiles?: ExtraInput[], libraryFilter?: {select: (d: RawDiagnostic[]) => Set<any>}}} [options]
  * @returns {{diagnostics: CompileDiagnostic[], general: RawDiagnostic[], filteredPragmaWarnings: number,
- *   filteredLibraryDiagnostics: number, libraryMessages: RawDiagnostic[]}}
+ *   filteredLibraryDiagnostics: number, filteredLibrary: RawDiagnostic[], libraryMessages: RawDiagnostic[]}}
  *   `general` holds diagnostics that name no input file (they cannot be placed, and are still
  *   reported); `filteredPragmaWarnings` counts the pragma-skipped warnings that were dropped;
- *   `filteredLibraryDiagnostics` the errors the library filter dropped; `libraryMessages` are the
+ *   `filteredLibraryDiagnostics` the errors the library filter dropped (`filteredLibrary`: those
+ *   errors themselves); `libraryMessages` are the
  *   compiler's messages about the generated library declarations themselves.
  */
 function mapCheckDiagnostics(diagnostics, inputs, options = {}) {
@@ -540,13 +541,15 @@ function mapCheckDiagnostics(diagnostics, inputs, options = {}) {
     const libraryMessages = [];
     let filteredPragmaWarnings = 0;
     let filteredLibraryDiagnostics = 0;
+    /** @type {RawDiagnostic[]} */
+    const filteredLibrary = [];
     // The library filter looks at the user's diagnostics only, all together (see libraryDecls.js).
     const onUserCode = (diagnostics || []).filter(d => d.file && (byName.has(d.file) || byName.has(fileOf(d))));
     const dropped = options.libraryFilter ? options.libraryFilter.select(onUserCode) : new Set();
     for (const d of diagnostics || []) {
         if (d.severity === 'warning' && PRAGMA_SKIPPED_RE.test(d.message)) { filteredPragmaWarnings++; continue; }
         if (d.file && extraNames.has(fileOf(d))) { libraryMessages.push(d); continue; }
-        if (dropped.has(d)) { filteredLibraryDiagnostics++; continue; }
+        if (dropped.has(d)) { filteredLibraryDiagnostics++; filteredLibrary.push(d); continue; }
         // The compiler echoes the path it was given; accept a `./` or directory prefix on it.
         const input = d.file ? (byName.get(d.file) || byName.get(fileOf(d))) : null;
         if (!input) { general.push(d); continue; }
@@ -556,7 +559,7 @@ function mapCheckDiagnostics(diagnostics, inputs, options = {}) {
             endLine: at.endLine, endColumn: at.endColumn, severity: d.severity, message: d.message, exact: at.exact
         });
     }
-    return { diagnostics: mapped, general, filteredPragmaWarnings, filteredLibraryDiagnostics, libraryMessages };
+    return { diagnostics: mapped, general, filteredPragmaWarnings, filteredLibraryDiagnostics, filteredLibrary, libraryMessages };
 }
 
 /**
@@ -567,6 +570,7 @@ function mapCheckDiagnostics(diagnostics, inputs, options = {}) {
  * @property {RawDiagnostic[]} general
  * @property {number} filteredPragmaWarnings
  * @property {number} filteredLibraryDiagnostics Errors on library symbols the filter dropped.
+ * @property {RawDiagnostic[]} filteredLibrary Those errors.
  * @property {RawDiagnostic[]} libraryMessages The compiler's messages about the generated library
  *   declarations (not the user's code; not counted as errors or warnings).
  * @property {number} errors Errors after mapping (placed + general).
@@ -617,7 +621,7 @@ async function runCheck(o) {
     /** @type {(status: CheckResult['status'], message?: string) => CheckResult} */
     const ended = (status, message = '') => ({
         status, message, diagnostics: [], general: [], filteredPragmaWarnings: 0, filteredLibraryDiagnostics: 0,
-        libraryMessages: [], errors: 0, warnings: 0,
+        filteredLibrary: [], libraryMessages: [], errors: 0, warnings: 0,
         durationMs: Date.now() - started
     });
     let dir = '';
@@ -640,6 +644,7 @@ async function runCheck(o) {
             status: 'done', message: '', diagnostics: mapped.diagnostics, general: mapped.general,
             filteredPragmaWarnings: mapped.filteredPragmaWarnings,
             filteredLibraryDiagnostics: mapped.filteredLibraryDiagnostics,
+            filteredLibrary: mapped.filteredLibrary,
             libraryMessages: mapped.libraryMessages,
             errors: all.filter(d => d.severity === 'error').length,
             warnings: all.filter(d => d.severity === 'warning').length,

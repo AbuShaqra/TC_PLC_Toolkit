@@ -20,10 +20,13 @@
  * still its own and are cleaned up. The hash ignores line endings (a Git checkout with
  * `core.autocrlf` is not an edit), and on Windows and macOS file names compare case-insensitively.
  *
- * Library symbols: C++ is generated only for a project that needs no library declaration
- * (`libraryBlocksCpp`). The compiler would turn the interface-only declarations of src/libraryDecls.js
- * into empty-bodied C++ — library blocks that silently do nothing — and those declarations must never
- * be written into the project.
+ * Library symbols (user decision 2026-11-12): a project that uses vendor-library blocks is still
+ * generated. The compile mode gets the same interface-only declarations as the check
+ * (src/libraryDecls.js), so the library's function blocks and functions become C++ with empty bodies.
+ * `libraryCoverage` collects what the C++ therefore does not cover, per library as the `.plcproj`
+ * names it; Compile Project says so in its summary and output channel, and `withCoverageHeader` puts
+ * the same list at the top of the generated files (part of the text whose hash is recorded, so the
+ * ownership record is unaffected).
  */
 
 'use strict';
@@ -125,18 +128,128 @@ function cppOwnerId(plcprojText, fallback) {
 }
 
 /**
- * Why C++ must not be generated for a project that uses library symbols — or '' when it may.
- * The compiler has no implementation of a library's blocks and functions: given the interface-only
- * declarations the check uses, it would generate empty bodies that compile and silently do nothing.
- * @param {{extraFiles?: Array<unknown>, qualifiers?: number, filteredLibraryDiagnostics?: number}} o
- *   `extraFiles`: the library declarations the check needed; `qualifiers`: library namespace
- *   qualifiers stripped from the project's code; `filteredLibraryDiagnostics`: check errors on
- *   library names that were not shown.
+ * @typedef {Object} LibraryCoverage One library whose code the generated C++ does not contain.
+ * @property {string} library As the project's `.plcproj` references it; '' when it is not known.
+ * @property {string[]} blocks Function blocks and functions: declarations with empty bodies.
+ * @property {string[]} types Types declared from the library's interface.
+ * @property {string[]} globalLists Global variable lists declared from the library's interface.
+ * @property {string[]} substitutes Blocks the compiler provides itself, in place of the library's.
+ * @property {string[]} undeclared Symbols no usable declaration was found for.
+ */
+
+/** How an unattributed library is named to the user. */
+const UNKNOWN_LIBRARY = 'library not identified';
+
+/**
+ * What of a project's library use the generated C++ does not cover, per library.
+ * @param {{declaredSymbols?: Array<{name: string, kind: string, library: string}>,
+ *   compilerSubstitutes?: Array<{name: string, library: string}>, undeclared?: Array<{name: string, library: string}>}} o
+ *   `declaredSymbols` / `compilerSubstitutes`: src/libraryDecls.js prepareLibraryCheck;
+ *   `undeclared`: the library names of the errors the check's library filter dropped.
+ * @returns {LibraryCoverage[]} Sorted by library name, an unknown library last; empty when the
+ *   project uses no library symbol.
+ */
+function libraryCoverage(o) {
+    /** @type {Map<string, LibraryCoverage>} */
+    const byLibrary = new Map();
+    /** @type {(library: string) => LibraryCoverage} */
+    const entry = (library) => {
+        const name = String(library || '');
+        const key = name.toLowerCase();
+        if (!byLibrary.has(key)) byLibrary.set(key, { library: name, blocks: [], types: [], globalLists: [], substitutes: [], undeclared: [] });
+        return /** @type {LibraryCoverage} */ (byLibrary.get(key));
+    };
+    /** @type {(list: string[], name: string) => void} */
+    const add = (list, name) => { if (name && !list.some(n => n.toLowerCase() === name.toLowerCase())) list.push(name); };
+    for (const d of o.declaredSymbols || []) {
+        const e = entry(d.library);
+        if (d.kind === 'fb' || d.kind === 'function') add(e.blocks, d.name);
+        else if (d.kind === 'gvl') add(e.globalLists, d.name);
+        else add(e.types, d.name);
+    }
+    for (const d of o.compilerSubstitutes || []) add(entry(d.library).substitutes, d.name);
+    for (const d of o.undeclared || []) add(entry(d.library).undeclared, d.name);
+    const byName = (/** @type {string} */ a, /** @type {string} */ b) => a.toLowerCase().localeCompare(b.toLowerCase());
+    const list = [...byLibrary.values()];
+    for (const e of list) for (const k of /** @type {const} */ (['blocks', 'types', 'globalLists', 'substitutes', 'undeclared'])) e[k].sort(byName);
+    return list.sort((a, b) => (!a.library !== !b.library ? (a.library ? -1 : 1) : byName(a.library, b.library)));
+}
+
+/** @param {LibraryCoverage} e */
+const libraryLabel = (e) => e.library || UNKNOWN_LIBRARY;
+
+/**
+ * The summary's sentence on library code the C++ does not cover, naming the libraries; '' when none.
+ * @param {LibraryCoverage[]} coverage
+ * @param {{built: boolean, channel: string}} o `built`: g++ checked the C++; `channel`: the output
+ *   channel that lists the blocks.
  * @returns {string}
  */
-function libraryBlocksCpp(o) {
-    const uses = (o.extraFiles || []).length > 0 || (o.qualifiers || 0) > 0 || (o.filteredLibraryDiagnostics || 0) > 0;
-    return uses ? 'C++ was not generated: the project uses library symbols, and the compiler has no implementation of them (the C++ would contain empty library blocks).' : '';
+function libraryCoverageText(coverage, o) {
+    if (!coverage || coverage.length === 0) return '';
+    const names = coverage.map(libraryLabel).join(', ');
+    const what = o.built ? 'The generated C++ and the g++ check do not cover' : 'The generated C++ does not cover';
+    const has = (/** @type {'blocks'|'types'|'globalLists'|'substitutes'|'undeclared'} */ k) => coverage.some(e => e[k].length > 0);
+    const how = has('blocks')
+        ? 'their code is not available, so their function blocks and functions are declarations with empty bodies there'
+        : has('substitutes') ? 'the compiler\'s own implementation of their blocks is used instead'
+            : has('types') || has('globalLists') ? 'their types and global lists are declared from the libraries\' interfaces only'
+                : 'some of their symbols have no declaration here';
+    return `${what} the library code of ${names}: ${how}. The library blocks used are listed in the "${o.channel}" output.`;
+}
+
+/**
+ * The output channel's list of library code the C++ does not cover, by library.
+ * @param {LibraryCoverage[]} coverage
+ * @returns {string[]} Indented lines (none when nothing is uncovered).
+ */
+function libraryCoverageLines(coverage) {
+    /** @type {string[]} */
+    const lines = [];
+    for (const e of coverage || []) {
+        lines.push(`  ${libraryLabel(e)}:`);
+        if (e.blocks.length) lines.push(`    declarations with empty bodies (the library's code is not available): ${e.blocks.join(', ')}`);
+        if (e.substitutes.length) lines.push(`    the compiler's own implementation used instead of the library's: ${e.substitutes.join(', ')}`);
+        if (e.types.length) lines.push(`    types declared from the library's interface: ${e.types.join(', ')}`);
+        if (e.globalLists.length) lines.push(`    global lists declared from the library's interface (a value that is not known starts at 0): ${e.globalLists.join(', ')}`);
+        if (e.undeclared.length) lines.push(`    no usable declaration (the compiler cannot compile a use of these): ${e.undeclared.join(', ')}`);
+    }
+    return lines;
+}
+
+/**
+ * The comment put at the top of a generated `.cpp` / `.hpp` that holds library blocks with empty
+ * bodies, naming them; '' when there are none.
+ * @param {LibraryCoverage[]} coverage
+ * @returns {string} Line comments, each line ending in a newline.
+ */
+function libraryCoverageHeader(coverage) {
+    // Control characters (a line break would end the comment) become spaces.
+    const clean = (/** @type {string} */ t) => Array.from(String(t), c => (c.charCodeAt(0) < 32 || c.charCodeAt(0) === 127 ? ' ' : c)).join('').replace(/ {2,}/g, ' ').trim();
+    const rows = [];
+    for (const e of coverage || []) {
+        if (e.blocks.length) rows.push(`//   ${clean(libraryLabel(e))}: ${e.blocks.map(clean).join(', ')}`);
+        if (e.substitutes.length) rows.push(`//   ${clean(libraryLabel(e))} (the compiler's own implementation is used): ${e.substitutes.map(clean).join(', ')}`);
+    }
+    if (rows.length === 0) return '';
+    return [
+        '// TC Toolkit: this C++ does not contain the code of the library blocks below. Their code is',
+        '// not available, so they are declarations with empty bodies here, and a g++ check of this',
+        '// file does not cover them.',
+        ...rows, ''
+    ].join('\n') + '\n';
+}
+
+/**
+ * A generated file's text with the coverage comment on top (unchanged when there is none). Keeps the
+ * file's own line endings.
+ * @param {string} text
+ * @param {string} header libraryCoverageHeader's comment.
+ * @returns {string}
+ */
+function withCoverageHeader(text, header) {
+    if (!header) return text;
+    return (/\r\n/.test(text) ? header.replace(/\n/g, '\r\n') : header) + text;
 }
 
 /**
@@ -371,7 +484,8 @@ async function runGenerate(o) {
 
 module.exports = {
     CPP_FILES_DIR, MANIFEST_NAME, MANIFEST_GENERATOR, DEFAULT_GENERATE_TIMEOUT_MS,
-    cppFileStem, cppOutputPaths, isUnderCppFiles, cppOwnerId, libraryBlocksCpp,
+    cppFileStem, cppOutputPaths, isUnderCppFiles, cppOwnerId,
+    libraryCoverage, libraryCoverageText, libraryCoverageLines, libraryCoverageHeader, withCoverageHeader, UNKNOWN_LIBRARY,
     readManifest, ownership, writeOwnedOutputs, recordOwnedFile, claimOutput,
     runGenerate
 };

@@ -43,10 +43,13 @@ const pendingEditsCore = require('../../media/pendingEdits');
 const {
     COMPILER_SECTION, isCompilerAvailable, checkSetup, buildCheckInputs, runCheck, summarize, describeLocation, paneRange
 } = require('../compileCheck');
-const { prepareLibraryCheck } = require('../libraryDecls');
+const { prepareLibraryCheck, classifyMessage } = require('../libraryDecls');
 const { projectDefineArgs, fileDefineArgs } = require('../compilerDefines');
 const { CPP_SECTION, effectiveOptions, couplingWrites, checkboxWrites, readOptionState } = require('../cppSettings');
-const { cppOutputPaths, cppOwnerId, libraryBlocksCpp, writeOwnedOutputs, recordOwnedFile, claimOutput, runGenerate } = require('../cppGenerate');
+const {
+    cppOutputPaths, cppOwnerId, writeOwnedOutputs, recordOwnedFile, claimOutput, runGenerate,
+    libraryCoverage, libraryCoverageText, libraryCoverageLines, libraryCoverageHeader, withCoverageHeader, UNKNOWN_LIBRARY
+} = require('../cppGenerate');
 const { SETTING_GPP_PATH, resolveGpp, describeGppProblem, buildGppArgs, placeGppMessages, runGpp, summarizeGpp } = require('../gpp');
 
 /** The `source` of every diagnostic this command publishes. */
@@ -90,6 +93,8 @@ const OUTPUT_CHANNEL_NAME = 'TC Toolkit Compile';
  * @property {GppOutcome} [gpp]
  * @property {string} [log] Compiler or g++ output for the output channel.
  * @property {string} [logTitle]
+ * @property {import('../cppGenerate').LibraryCoverage[]} [libraries] Library code the C++ does not
+ *   cover (empty bodies, declarations only), per library.
  */
 
 /**
@@ -128,6 +133,13 @@ function describeCpp(cpp) {
     const names = (/** @type {string[]} */ list) => list.map(p => path.basename(p)).join(', ');
     if (cpp.status === 'skipped') { notes.push(cpp.message); warn = true; return { notes, failed, warn }; }
     if (cpp.status === 'cancelled') { notes.push('The C++ generation was cancelled.'); warn = true; return { notes, failed, warn }; }
+    const libraries = cpp.libraries || [];
+    if (cpp.status !== 'done' && libraries.some(e => e.undeclared.length > 0)) {
+        const missing = libraries.flatMap(e => e.undeclared.map(n => `${n} (${e.library || UNKNOWN_LIBRARY})`));
+        notes.push(`C++ could not be generated: there is no declaration the compiler can use for ${missing.length === 1 ? 'the library symbol' : 'these library symbols'} ${missing.join(', ')}` +
+            ` (run "TC Toolkit: Update Library Definitions" if the library signatures are missing).${cpp.log ? ` See the "${OUTPUT_CHANNEL_NAME}" output.` : ''}`);
+        return { notes, failed: true, warn };
+    }
     if (cpp.status !== 'done') {
         notes.push(`C++ generation failed: ${cpp.message}${cpp.log ? ` See the "${OUTPUT_CHANNEL_NAME}" output.` : ''}`);
         return { notes, failed: true, warn };
@@ -141,6 +153,10 @@ function describeCpp(cpp) {
     }
     if (written.removed.length > 0) notes.push(`Removed earlier output: ${names(written.removed)}.`);
     const gpp = cpp.gpp;
+    if (libraries.length > 0) {
+        warn = true;
+        notes.push(libraryCoverageText(libraries, { built: !!gpp && gpp.status === 'done', channel: OUTPUT_CHANNEL_NAME }));
+    }
     if (!gpp) return { notes, failed, warn };
     if (gpp.status === 'missing') { warn = true; notes.push(gppMissingText(gpp)); }
     else if (gpp.status === 'skipped') { warn = true; notes.push(gpp.message || 'g++ was not run.'); }
@@ -464,7 +480,8 @@ function registerCompileCommands(context, { provider, getProjectMap, onSettingsC
      * Generates one project's C++ into its CPP_Files folder and, when asked, compiles it with g++.
      * Called only after a check with no errors.
      * @param {{project: any, compilerRun: any, build: boolean, progress: {report: (v: {message?: string}) => void},
-     *   onCancel: (cancel: () => void) => void}} o
+     *   onCancel: (cancel: () => void) => void, libraries: import('../cppGenerate').LibraryCoverage[]}} o
+     *   `libraries`: library code the C++ will not cover (named at the top of the generated files).
      * @returns {Promise<CppOutcome>}
      */
     async function generateAndBuild(o) {
@@ -476,22 +493,26 @@ function registerCompileCommands(context, { provider, getProjectMap, onSettingsC
         // The <ProjectGuid> survives a rename, so a renamed project's earlier files are still its own.
         const owner = cppOwnerId(plcprojText, paths.stem);
         o.progress.report({ message: 'Generating C++…' });
-        // Never the library declarations: generation runs only for a project that needs none (libraryBlocksCpp).
-        const gen = await runGenerate({ ...o.compilerRun, extraFiles: [], stem: paths.stem });
+        // The same library declarations as the check (user decision 2026-11-12): library blocks
+        // become declarations with empty bodies, which the run's summary names.
+        const libraries = o.libraries;
+        const gen = await runGenerate({ ...o.compilerRun, stem: paths.stem });
         if (gen.status !== 'done') {
-            return { status: gen.status, message: gen.message, paths, log: gen.status === 'failed' ? gen.log : '', logTitle: 'C++ generation failed' };
+            return { status: gen.status, message: gen.message, paths, libraries, log: gen.status === 'failed' ? gen.log : '', logTitle: 'C++ generation failed' };
         }
+        const header = libraryCoverageHeader(libraries);
         /** @type {import('../cppGenerate').WriteResult} */
         let written;
         try {
             written = writeOwnedOutputs({ dir: paths.dir, project: owner, files: [
-                { name: path.basename(paths.cpp), text: gen.cppText }, { name: path.basename(paths.hpp), text: gen.hppText }] });
+                { name: path.basename(paths.cpp), text: withCoverageHeader(gen.cppText, header) },
+                { name: path.basename(paths.hpp), text: withCoverageHeader(gen.hppText, header) }] });
         } catch (err) {
-            return { status: 'failed', paths, message: `The C++ files could not be written: ${err && /** @type {any} */ (err).message ? /** @type {any} */ (err).message : err}` };
+            return { status: 'failed', paths, libraries, message: `The C++ files could not be written: ${err && /** @type {any} */ (err).message ? /** @type {any} */ (err).message : err}` };
         }
-        if (!written.ok) return { status: 'failed', paths, message: written.message };
+        if (!written.ok) return { status: 'failed', paths, libraries, message: written.message };
         /** @type {CppOutcome} */
-        const cpp = { status: 'done', paths, written, message: '' };
+        const cpp = { status: 'done', paths, written, message: '', libraries };
         if (!o.build) return cpp;
         if (written.refused.length > 0) {
             cpp.gpp = { status: 'skipped', message: 'g++ was not run: the generated files could not all be written.' };
@@ -639,12 +660,16 @@ function registerCompileCommands(context, { provider, getProjectMap, onSettingsC
                         /** @type {CppOutcome|null} */
                         let cpp = null;
                         if (result.status === 'done' && options.generateCpp && !token.isCancellationRequested) {
-                            const libraryBlock = libraryBlocksCpp({ extraFiles: library.extraFiles, qualifiers: library.stats.qualifiers,
-                                filteredLibraryDiagnostics: result.filteredLibraryDiagnostics });
+                            // Library code the C++ cannot contain: declared blocks, the compiler's own
+                            // stand-ins, and names the check's library filter hid (no declaration).
+                            const libraries = libraryCoverage({
+                                declaredSymbols: library.declaredSymbols, compilerSubstitutes: library.compilerSubstitutes,
+                                undeclared: result.filteredLibrary.map(d => classifyMessage(d.message)).filter(c => !!c && c.kind !== 'cascade')
+                                    .map(c => ({ name: library.spellingOf(/** @type {any} */ (c).name), library: library.libraryOf(/** @type {any} */ (c).name) }))
+                            });
                             cpp = result.errors > 0
                                 ? { status: 'skipped', message: 'C++ was not generated: the project has errors.' }
-                                : (libraryBlock ? { status: 'skipped', message: libraryBlock }
-                                    : await generateAndBuild({ project, compilerRun, build: options.buildWithGpp, progress, onCancel }));
+                                : await generateAndBuild({ project, compilerRun, build: options.buildWithGpp, progress, onCancel, libraries });
                         }
                         return { result, built, unreadable, library, defines, cpp };
                     });
@@ -680,17 +705,17 @@ function registerCompileCommands(context, { provider, getProjectMap, onSettingsC
                 const notes = [];
                 if (result.general.length > 0) {
                     notes.push(`${result.general.length} message(s) not tied to an object: ` +
-                        result.general.slice(0, 3).map(g => g.message).join('; ') + (result.general.length > 3 ? '; …' : ''));
+                        result.general.slice(0, 3).map(g => g.message).join('; ') + (result.general.length > 3 ? '; …' : '') + '.');
                 }
                 const left = unreadable.length + built.unparsed.length;
-                if (left > 0) notes.push(`${left} file(s) could not be read as TwinCAT objects and were not compiled`);
-                if (built.skipped.length > 0) notes.push(`${built.skipped.length} SFC transition(s) were not compiled`);
+                if (left > 0) notes.push(`${left} file(s) could not be read as TwinCAT objects and were not compiled.`);
+                if (built.skipped.length > 0) notes.push(`${built.skipped.length} SFC transition(s) were not compiled.`);
                 if (result.filteredLibraryDiagnostics > 0) {
-                    notes.push(`${result.filteredLibraryDiagnostics} error(s) on library symbols with no declaration available were not shown`);
+                    notes.push(`${result.filteredLibraryDiagnostics} error(s) on library symbols with no declaration available were not shown.`);
                 }
                 if (result.libraryMessages.length > 0) {
                     notes.push(`${result.libraryMessages.length} message(s) about the generated library declarations (not your code) were not shown: ` +
-                        result.libraryMessages.slice(0, 2).map(m => m.message).join('; ') + (result.libraryMessages.length > 2 ? '; …' : ''));
+                        result.libraryMessages.slice(0, 2).map(m => m.message).join('; ') + (result.libraryMessages.length > 2 ? '; …' : '') + '.');
                 }
                 if (defines && defines.notes.length > 0) {
                     notes.push(`${defines.notes.length} note(s) on the project's compiler defines: see the "${OUTPUT_CHANNEL_NAME}" output.`);
@@ -700,6 +725,11 @@ function registerCompileCommands(context, { provider, getProjectMap, onSettingsC
                     notes.push('Run "TC Toolkit: Update Library Definitions" to check calls into libraries too.');
                 }
                 const cppNotes = describeCpp(cpp);
+                if (cpp && cpp.libraries && cpp.libraries.length > 0) {
+                    const channel = outputChannel();
+                    channel.appendLine(`[${new Date().toISOString()}] ${projectName}: library code the generated C++${cpp.gpp && cpp.gpp.status === 'done' ? ' and the g++ check do' : ' does'} not cover`);
+                    for (const line of libraryCoverageLines(cpp.libraries)) channel.appendLine(line);
+                }
                 if (cpp && cpp.log) {
                     const channel = outputChannel();
                     channel.appendLine(`[${new Date().toISOString()}] ${projectName}: ${cpp.logTitle || 'C++'}`);
@@ -728,6 +758,7 @@ function registerCompileCommands(context, { provider, getProjectMap, onSettingsC
                     defineArgs: defines ? defines.args.slice() : [], defineNotes: defines ? defines.notes.slice() : [],
                     cpp: cpp ? {
                         status: cpp.status, message: cpp.message || '',
+                        libraries: (cpp.libraries || []).map(e => ({ ...e })),
                         written: cpp.written ? cpp.written.written.slice() : [], removed: cpp.written ? cpp.written.removed.slice() : [],
                         refused: cpp.written ? cpp.written.refused.map(r => ({ ...r })) : [],
                         gpp: cpp.gpp ? { status: cpp.gpp.status, exitCode: cpp.gpp.exitCode === undefined ? null : cpp.gpp.exitCode,

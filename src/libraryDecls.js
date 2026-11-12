@@ -25,6 +25,8 @@
  * Local-only (Beckhoff licence §4(3), user decision 2026-11-10): the declarations are strings in
  * memory, handed to compileCheck.runCheck, which writes them into its per-run temporary directory
  * and deletes that directory when the run ends. This module writes no file and keeps nothing.
+ * (R13, user decision 2026-11-12: the optional C++ generation compiles with the same declarations,
+ * so the library blocks appear in the generated C++ as declarations with empty bodies, named as such.)
  *
  * Conservative by construction: a declaration whose types cannot all be resolved is not written
  * (its uses stay undeclared and the filter takes them), never written with a guessed type; a name
@@ -219,6 +221,8 @@ function literalValue(raw) {
  * @property {RawMember[]} [members] Struct fields / global-list variables.
  * @property {Array<{name: string, value: string}>} [values] Enumeration values.
  * @property {string} [baseType] Alias target / enumeration base.
+ * @property {string} [namespace] The library namespace the source attributes it to ('' unknown).
+ * @property {string} [library] The library title the signatures dump files it under ('' unknown).
  */
 
 const TMC_ANY_SUBITEM = /<SubItem>\s*<Name([^>]*)>([^<]+)<\/Name>\s*<Type([^>]*)>([^<]*)<\/Type>((?:\s*<ArrayInfo>[\s\S]*?<\/ArrayInfo>)*)([\s\S]*?)<\/SubItem>/g;
@@ -249,7 +253,9 @@ function parseTmcDeclarations(xml) {
         if (!head) continue;
         const name = head[2].trim();
         if (!IDENT.test(name)) continue;
-        if (!/\bNamespace\s*=\s*"[^"]+"/.test(head[1]) && !/\bTcBaseType\s*=\s*"true"/i.test(head[1])) continue;
+        const nsAttr = /\bNamespace\s*=\s*"([^"]+)"/.exec(head[1]);
+        if (!nsAttr && !/\bTcBaseType\s*=\s*"true"/i.test(head[1])) continue;
+        const namespace = nsAttr ? nsAttr[1].trim() : '';
         names.push(name);
         const props = new Set([...block.matchAll(/<Property>\s*<Name>([^<]+)<\/Name>/g)].map(m => m[1].trim()));
         if (props.has('TcPlcInterfaceType') || props.has('TcComInterface')) continue;
@@ -287,9 +293,9 @@ function parseTmcDeclarations(xml) {
         const isFb = props.has('PouType') || parsed.kind === 'fb' || actions.length > 0 || /<Implements>/.test(block);
         if (statics.length > 0) {
             // A global variable list (a PROGRAM has the same shape but carries methods or a PouType).
-            if (plain.length === 0 && !isFb) decls.push({ kind: 'gvl', name, origin: 'tmc', topLevel: true, members: statics });
+            if (plain.length === 0 && !isFb) decls.push({ kind: 'gvl', name, origin: 'tmc', topLevel: true, namespace, members: statics });
         } else if (enumValues.length > 0) {
-            decls.push({ kind: 'enum', name, origin: 'tmc', topLevel: true, values: enumValues, baseType });
+            decls.push({ kind: 'enum', name, origin: 'tmc', topLevel: true, namespace, values: enumValues, baseType });
         } else if (isFb) {
             /** @type {Array<{name: string, returnType: string, params: RawMember[]}>} */
             const methods = [];
@@ -313,14 +319,14 @@ function parseTmcDeclarations(xml) {
                 }
             }
             decls.push({
-                kind: 'fb', name, origin: 'tmc', topLevel: true, ioComplete: false,
+                kind: 'fb', name, origin: 'tmc', topLevel: true, namespace, ioComplete: false,
                 io: (parsed.members || []).filter(m => m.scope).map(m => ({ name: m.name, type: m.type, scope: m.scope })),
                 methods, properties: [...properties.values()], actions, extendsType
             });
         } else if (plain.length > 0) {
-            decls.push({ kind: 'struct', name, origin: 'tmc', topLevel: true, members: plain.map(m => ({ name: m.name, type: m.type })), extendsType });
+            decls.push({ kind: 'struct', name, origin: 'tmc', topLevel: true, namespace, members: plain.map(m => ({ name: m.name, type: m.type })), extendsType });
         } else if (baseType) {
-            decls.push({ kind: 'alias', name, origin: 'tmc', topLevel: true, baseType });
+            decls.push({ kind: 'alias', name, origin: 'tmc', topLevel: true, namespace, baseType });
         }
     }
     return { decls, names };
@@ -334,6 +340,9 @@ function parseTmcDeclarations(xml) {
  * @property {Set<string>} knownNames Lower-cased library names (archives, dump, `.tmc`, namespaces).
  * @property {Set<string>} namespaces Lower-cased library namespaces of the project's `.plcproj`.
  * @property {boolean} hasSignatures A `library-signatures.xml` dump was found.
+ * @property {(name: string) => string} libraryOf The library a name belongs to, as the `.plcproj`
+ *   references it (`Tc2_Standard`), else the dump's library title or the namespace; '' when unknown.
+ * @property {(name: string) => string} spellingOf The library's own spelling of a name.
  * @property {{archives: number, archiveNames: number, signatureFiles: number, tmcFiles: number, ms: number}} stats
  */
 
@@ -392,13 +401,61 @@ function gatherLibraryKnowledge(o) {
     for (const file of sigFiles) {
         const parsed = signatureLibrariesFor(file);
         if (!parsed) continue;
-        for (const lib of parsed.libraries) mergeSignatureLibrary(lib, decls, knownNames, libsymbols.namespaceForLibraryTitle(lib.name, index) !== '');
+        for (const lib of parsed.libraries) mergeSignatureLibrary(lib, decls, knownNames, libsymbols.namespaceForLibraryTitle(lib.name, index));
     }
 
     return {
         decls, knownNames, namespaces, hasSignatures: sigFiles.length > 0,
+        ...libraryAttribution(index, decls),
         stats: { archives: archiveStats.archives, archiveNames, signatureFiles: sigFiles.length, tmcFiles: tmcFiles.length, ms: Date.now() - started }
     };
+}
+
+/**
+ * Which library each library name belongs to, named as the project's `.plcproj` references it (the
+ * Include's title: `Tc2_Standard`), for what Compile Project tells the user about library code the
+ * generated C++ does not cover. Sources: the declaration's own namespace (`.tmc`) or dump library,
+ * then the archives filed under a namespace, then a namespace named directly.
+ * @param {any} index The fresh symbol index gatherLibraryKnowledge filled.
+ * @param {Map<string, RawDecl>} decls
+ * @returns {{libraryOf: (name: string) => string, spellingOf: (name: string) => string}} `libraryOf`:
+ *   '' when the name cannot be attributed; `spellingOf`: the library's own spelling of a name (the
+ *   compiler reports names upper-cased), else the name as given.
+ */
+function libraryAttribution(index, decls) {
+    /** @type {Map<string, string>} lower-cased namespace → the .plcproj's library name */
+    const referenceName = new Map();
+    for (const entry of libsymbols.getLibraryCatalog(index)) {
+        const ns = String(entry.namespace || '').toLowerCase();
+        const name = String(entry.include || '').split(',')[0].trim() || entry.title || entry.namespace;
+        if (ns && name && !referenceName.has(ns)) referenceName.set(ns, name);
+    }
+    /** @type {Map<string, string>} lower-cased symbol → namespace */
+    const archiveNs = new Map();
+    /** @type {Map<string, string>} lower-cased symbol → the library's spelling */
+    const spelled = new Map();
+    for (const ns of libsymbols.getLibraryNamespaceNames(index)) {
+        spelled.set(ns.toLowerCase(), ns);
+        for (const n of libsymbols.getNamespaceSymbols(ns, index)) {
+            const key = n.toLowerCase();
+            if (!archiveNs.has(key)) { archiveNs.set(key, ns); spelled.set(key, n); }
+        }
+    }
+    for (const [key, d] of decls) spelled.set(key, d.name);
+    const ofNamespace = (/** @type {string} */ ns) => (ns ? (referenceName.get(ns.toLowerCase()) || ns) : '');
+    const spellingOf = (/** @type {string} */ name) => spelled.get(String(name || '').toLowerCase()) || String(name || '');
+    /** @type {(name: string) => string} */
+    const libraryOf = (name) => {
+        const key = String(name || '').toLowerCase();
+        if (!key) return '';
+        const d = decls.get(key);
+        if (d && d.namespace) return ofNamespace(d.namespace);
+        if (d && d.library) return d.library;
+        if (archiveNs.has(key)) return ofNamespace(/** @type {string} */ (archiveNs.get(key)));
+        if (referenceName.has(key)) return /** @type {string} */ (referenceName.get(key));
+        return '';
+    };
+    return { libraryOf, spellingOf };
 }
 
 /**
@@ -409,14 +466,20 @@ function gatherLibraryKnowledge(o) {
  * @param {any} lib One library of parseLibrarySignaturesXml.
  * @param {Map<string, RawDecl>} decls
  * @param {Set<string>} knownNames
- * @param {boolean} referenced The project's `.plcproj` references this library.
+ * @param {string} namespace The namespace the project's `.plcproj` references this library under;
+ *   '' when it does not reference it.
  */
-function mergeSignatureLibrary(lib, decls, knownNames, referenced) {
+function mergeSignatureLibrary(lib, decls, knownNames, namespace) {
+    const referenced = namespace !== '';
     const add = (/** @type {RawDecl} */ d) => {
         knownNames.add(d.name.toLowerCase());
+        d.library = String(lib.name || '');
+        d.namespace = namespace;
         const key = d.name.toLowerCase();
         const existing = decls.get(key);
         if (!existing) { decls.set(key, d); return; }
+        if (!existing.library) existing.library = d.library;
+        if (!existing.namespace) existing.namespace = namespace;
         if (referenced && existing.origin === 'sig') existing.topLevel = true;
         if (existing.kind === 'fb' && d.kind === 'fb') { existing.io = d.io; existing.ioComplete = true; }
         if (existing.kind === 'gvl' && d.kind === 'gvl') {
@@ -538,10 +601,13 @@ function blankCommentsAndStrings(text) {
  * @param {string} text
  * @param {Set<string>} namespaces Lower-cased.
  * @param {Set<string>} userNames Lower-cased.
- * @returns {{text: string, count: number}}
+ * @returns {{text: string, count: number, uses: Array<{namespace: string, name: string}>}} `uses`: each
+ *   qualifier stripped, with the name it qualified (as written).
  */
 function stripQualifiers(text, namespaces, userNames) {
-    if (!namespaces || namespaces.size === 0) return { text, count: 0 };
+    /** @type {Array<{namespace: string, name: string}>} */
+    const uses = [];
+    if (!namespaces || namespaces.size === 0) return { text, count: 0, uses };
     const code = blankCommentsAndStrings(text);
     const chars = text.split('');
     let count = 0;
@@ -561,8 +627,9 @@ function stripQualifiers(text, namespaces, userNames) {
         if (!/[A-Za-z_]/.test(code[after] || '')) continue;
         for (let p = m.index; p <= j; p++) chars[p] = ' ';
         count++;
+        uses.push({ namespace: m[0], name: (/^[A-Za-z_]\w*/.exec(code.slice(after)) || [''])[0] });
     }
-    return { text: chars.join(''), count };
+    return { text: chars.join(''), count, uses };
 }
 
 // ── Selection and writing ──────────────────────────────────────────────────────────────────────
@@ -878,6 +945,12 @@ function createLibraryFilter(o) {
  * @property {LibraryFilter} filter
  * @property {boolean} hasSignatures
  * @property {boolean} referencesLibraries The project's `.plcproj` references at least one library.
+ * @property {Array<{name: string, kind: RawDecl['kind'], library: string}>} declaredSymbols What the
+ *   declarations hold, with the library each belongs to (sorted by name).
+ * @property {Array<{name: string, library: string}>} compilerSubstitutes Library-qualified names the
+ *   compiler provides itself (`Tc2_Standard.TON`): its own implementation stands in for the library's.
+ * @property {(name: string) => string} libraryOf See LibraryKnowledge.
+ * @property {(name: string) => string} spellingOf See LibraryKnowledge.
  * @property {{declared: number, skippedCompiler: number, skippedUser: number, unresolved: number,
  *   qualifiers: number, knownNames: number, gatherMs: number, ms: number}} stats
  */
@@ -893,20 +966,38 @@ function prepareLibraryCheck(o) {
     const knowledge = o.knowledge || gatherLibraryKnowledge({ projectDir: o.projectDir, roots: o.roots });
     const userNames = collectUserNames(o.inputs);
     let qualifiers = 0;
+    /** @type {Array<{namespace: string, name: string}>} */
+    const qualified = [];
     const inputs = (o.inputs || []).map((input) => {
         const stripped = stripQualifiers(input.unit.stText, knowledge.namespaces, userNames);
         if (stripped.count === 0) return input;
         qualifiers += stripped.count;
+        qualified.push(...stripped.uses);
         const lines = stripped.text.split('\n');
         return { ...input, unit: { ...input.unit, stText: stripped.text, lines } };
     });
+    const compilerNames = compilerProvidedNames(o.compilerPath);
     const set = buildDeclarations(knowledge, {
-        texts: inputs.map(i => i.unit.stText), userNames, compilerNames: compilerProvidedNames(o.compilerPath)
+        texts: inputs.map(i => i.unit.stText), userNames, compilerNames
     });
+    const libraryOf = knowledge.libraryOf || (() => '');
+    const spellingOf = knowledge.spellingOf || ((/** @type {string} */ n) => n);
+    const declaredSymbols = [...set.declared].map(key => /** @type {RawDecl} */ (knowledge.decls.get(key)))
+        .map(d => ({ name: d.name, kind: d.kind, library: libraryOf(d.name) }))
+        .sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
+    /** @type {Map<string, {name: string, library: string}>} */
+    const substitutes = new Map();
+    for (const q of qualified) {
+        const upper = q.name.toUpperCase();
+        if (!q.name || userNames.has(q.name.toLowerCase()) || set.declared.has(q.name.toLowerCase())) continue;
+        if (!compilerNames.has(upper) && !isConversionName(upper)) continue;
+        if (!substitutes.has(upper)) substitutes.set(upper, { name: q.name, library: libraryOf(q.namespace) });
+    }
     const filter = createLibraryFilter({ knownNames: knowledge.knownNames, userNames, owners: set.owners, globalLists: set.globalLists, partialIo: set.partialIo });
     return {
         inputs, extraFiles: set.files, filter, hasSignatures: knowledge.hasSignatures,
         referencesLibraries: knowledge.namespaces.size > 0,
+        declaredSymbols, compilerSubstitutes: [...substitutes.values()], libraryOf, spellingOf,
         stats: { declared: set.declared.size, ...set.counts, qualifiers, knownNames: knowledge.knownNames.size,
             gatherMs: knowledge.stats.ms, ms: Date.now() - started }
     };

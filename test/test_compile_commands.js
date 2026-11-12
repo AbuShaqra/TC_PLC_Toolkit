@@ -602,6 +602,7 @@ const settle = () => new Promise(r => setTimeout(r, 10));
         const cleanCheck = { stdout: JSON.stringify({ dialect: 'twincat3', files: [], diagnostics: [], summary: {} }), code: 0 };
         let checkAnswer = () => cleanCheck;
         let gppAnswer = () => ({ code: 0 });
+        let generationFails = false;
         compilerAnswer = (call) => {
             if (call.command === gppExe) {
                 const r = gppAnswer(call);
@@ -609,6 +610,7 @@ const settle = () => new Promise(r => setTimeout(r, 10));
                 return r;
             }
             if (call.args.includes('-o')) {
+                if (generationFails) return { stderr: "1.st:1:6: error: Undeclared function 'F_SYNLONG'", code: 1 };
                 const out = call.args[call.args.indexOf('-o') + 1];
                 fs.writeFileSync(path.join(call.options.cwd, out), '#include "PLC.hpp"\n// generated\n');
                 fs.writeFileSync(path.join(call.options.cwd, out.replace(/\.cpp$/, '.hpp')), '#pragma once\n');
@@ -666,7 +668,7 @@ const settle = () => new Promise(r => setTimeout(r, 10));
             && /C\+\+ was not generated: the project has errors\./.test(lastNote()), 'R13 GEN: a check with errors generates nothing and says so; earlier output is left');
         checkAnswer = () => cleanCheck;
 
-        // Library symbols: the compiler has no implementation of them, so no C++ (it would hold empty library blocks).
+        // Library symbols (user decision 2026-11-12): the C++ is still generated, and the summary names the library.
         {
             const plcproj = path.join(ROOT, 'PLC', 'PLC.plcproj');
             fs.writeFileSync(plcproj, '<Project><ItemGroup><PlaceholderReference Include="Synthetic Lib"><Namespace>SynLib</Namespace></PlaceholderReference></ItemGroup></Project>');
@@ -678,10 +680,15 @@ const settle = () => new Promise(r => setTimeout(r, 10));
             answers.message.push(undefined);
             r13Result = await run('twincat.compileProject');
             await settle();
-            assert(r13Result.errors === 0 && r13Result.filteredLibraryDiagnostics === 1 && r13Result.cpp.status === 'skipped'
-                && generationCalls().length === genBeforeLib && fs.readFileSync(cppFile, 'utf8') === cppBefore
-                && /C\+\+ was not generated: the project uses library symbols/.test(lastNote()),
-            `R13 LIB: a project that uses library symbols gets no C++ and is told why (${r13Result.cpp.status}; ${lastNote()})`);
+            const libLog = (calls.outputs || []).find(c => c.name === OUTPUT_CHANNEL_NAME);
+            assert(r13Result.errors === 0 && r13Result.filteredLibraryDiagnostics === 1 && r13Result.cpp.status === 'done'
+                && generationCalls().length === genBeforeLib + 1 && fs.readFileSync(cppFile, 'utf8') === cppBefore
+                && r13Result.cpp.libraries.length === 1 && r13Result.cpp.libraries[0].library === 'Synthetic Lib'
+                && r13Result.cpp.libraries[0].undeclared.join() === 'SynLib'
+                && /The generated C\+\+ does not cover the library code of Synthetic Lib: some of their symbols have no declaration here\. The library blocks used are listed in the "TC Toolkit Compile" output\./.test(lastNote())
+                && !!libLog && libLog.lines.some(l => /PLC: library code the generated C\+\+ does not cover$/.test(l))
+                && libLog.lines.some(l => /^ {4}no usable declaration .*: SynLib$/.test(l)),
+            `R13 LIB: a project that uses library symbols is still generated; the summary and the output channel name the library (${r13Result.cpp.status}; ${lastNote()})`);
             fs.rmSync(plcproj);
             checkAnswer = () => cleanCheck;
         }
@@ -783,6 +790,79 @@ const settle = () => new Promise(r => setTimeout(r, 10));
         assert(r13Result.cpp.gpp.status === 'done' && r13Result.cpp.gpp.exitCode === 0 && fs.existsSync(objFile) && !!rec.files['PLC.o'] && gppCollection.map.size === 0
             && /g\+\+ compiled it without errors\./.test(lastNote()) && calls.status.text.endsWith('· g++ $(check)'),
         'R13 GPP: a clean build writes PLC.o (recorded as the toolkit\'s), clears the g++ problems and says so');
+        assert(!/library code/.test(lastNote()) && !fs.readFileSync(cppFile, 'utf8').startsWith('// TC Toolkit'),
+            'R13 LIB: a project that uses no library symbol gets no library note and no header comment');
+
+        // A project that calls library blocks: the compile mode gets the check's library declarations,
+        // the C++ is written with the uncovered blocks named on top, g++ runs, the summary names the library.
+        {
+            const plcproj = path.join(ROOT, 'PLC', 'PLC.plcproj');
+            const dump = path.join(ROOT, 'PLC', 'library-signatures.xml');
+            const fbBefore = fs.readFileSync(fbPath, 'utf8');
+            fs.writeFileSync(plcproj, '<Project><ItemGroup><PlaceholderReference Include="Synthetic Lib"><DefaultResolution>Synthetic Lib, * (Synthetic Co)</DefaultResolution><Namespace>SynLib</Namespace></PlaceholderReference></ItemGroup></Project>');
+            fs.writeFileSync(dump, ['<?xml version="1.0"?>', '<LibrarySignatures><Library><LibraryName>Synthetic Lib</LibraryName><Version>1.0.0.0</Version><TypeSignatures>',
+                '<TypeSignature type="Function"><Name>F_SynCalc</Name><Inputs><Input><Name>nIn</Name><DataType>INT</DataType></Input></Inputs><Outputs><Output><Name>F_SynCalc</Name><DataType>INT</DataType></Output></Outputs></TypeSignature>',
+                '<TypeSignature type="Function"><Name>F_SynLong</Name><Inputs><Input><Name>tSpan</Name><DataType>LTIME</DataType></Input></Inputs><Outputs><Output><Name>F_SynLong</Name><DataType>BOOL</DataType></Output></Outputs></TypeSignature>',
+                '<TypeSignature type="FunctionBlock"><Name>FB_SynThing</Name><Inputs><Input><Name>bGo</Name><DataType>BOOL</DataType></Input></Inputs><Outputs><Output><Name>bDone</Name><DataType>BOOL</DataType></Output></Outputs></TypeSignature>',
+                '</TypeSignatures></Library></LibrarySignatures>'].join('\n'));
+            fs.writeFileSync(fbPath, fbXml(`fbThing(bGo := TRUE);${CRLF}n := F_SynCalc(nIn := n);${CRLF}tTimer(IN := fbThing.bDone, PT := T#1S);`)
+                .replace('METHOD Run : BOOL', `METHOD Run : BOOL${CRLF}VAR${CRLF}\tfbThing : FB_SynThing;${CRLF}\ttTimer : SynLib.TON;${CRLF}END_VAR`));
+            const genBeforeDecl = generationCalls().length;
+            const gppBeforeDecl = gppCalls().length;
+            reset();
+            answers.message.push(undefined);
+            r13Result = await run('twincat.compileProject');
+            await settle();
+            const declGen = generationCalls()[generationCalls().length - 1];
+            const declCheck = fake.calls[fake.calls.indexOf(declGen) - 1];
+            const libFiles = declCheck.args.filter(a => /^lib-\d+\.st$/.test(a));
+            const genUnits = seenUnits[fake.calls.slice(0, fake.calls.indexOf(declGen)).filter(c => c.args[0] !== '--version').length] || {};
+            assert(generationCalls().length === genBeforeDecl + 1 && libFiles.length === 2
+                && JSON.stringify(declGen.args.slice(0, -2)) === JSON.stringify(declCheck.args.filter(a => a !== '--check' && a !== '--json'))
+                && Object.values(genUnits).some(t => /^FUNCTION_BLOCK FB_SynThing/m.test(t)) && Object.values(genUnits).some(t => /^FUNCTION F_SynCalc : INT/m.test(t)),
+            `R13 LIB: the compile mode gets the same library declarations as the check (${libFiles.join(', ')})`);
+            const cppText = fs.readFileSync(cppFile, 'utf8');
+            const lib = (r13Result.cpp.libraries || [])[0] || {};
+            assert(r13Result.cpp.status === 'done' && lib.library === 'Synthetic Lib' && lib.blocks.join() === 'F_SynCalc,FB_SynThing' && lib.substitutes.join() === 'TON'
+                && cppText.startsWith('// TC Toolkit: this C++ does not contain the code of the library blocks below.')
+                && cppText.includes('//   Synthetic Lib: F_SynCalc, FB_SynThing\n') && cppText.includes("//   Synthetic Lib (the compiler's own implementation is used): TON\n")
+                && cppText.endsWith('#include "PLC.hpp"\n// generated\n') && fs.readFileSync(hppFile, 'utf8').startsWith('// TC Toolkit: this C++'),
+            `R13 LIB: the .cpp and .hpp name the library blocks with empty bodies at the top (${JSON.stringify(lib)})`);
+            const { readManifest, ownership } = require('../src/cppGenerate');
+            const record = readManifest(cppDir);
+            assert(record.ok && ownership(cppDir, record.manifest, 'PLC.cpp') === 'owned' && ownership(cppDir, record.manifest, 'PLC.hpp') === 'owned',
+                'R13 LIB: the files with the header are recorded as the toolkit\'s own (the hash covers the header)');
+            const declLog = (calls.outputs || []).find(c => c.name === OUTPUT_CHANNEL_NAME);
+            assert(gppCalls().length === gppBeforeDecl + 1 && r13Result.cpp.gpp.status === 'done' && r13Result.cpp.gpp.exitCode === 0
+                && /The generated C\+\+ and the g\+\+ check do not cover the library code of Synthetic Lib: their code is not available, so their function blocks and functions are declarations with empty bodies there\./.test(lastNote())
+                && calls.warnings.some(m => /^Compile Project/.test(m.m))
+                && !!declLog && declLog.lines.some(l => /PLC: library code the generated C\+\+ and the g\+\+ check do not cover$/.test(l))
+                && declLog.lines.some(l => l === '  Synthetic Lib:')
+                && declLog.lines.some(l => /^ {4}declarations with empty bodies .*: F_SynCalc, FB_SynThing$/.test(l))
+                && declLog.lines.some(l => /^ {4}the compiler's own implementation .*: TON$/.test(l)),
+            `R13 LIB: g++ still runs; the summary (a warning) says the C++ and the g++ check do not cover the library, the output channel lists the blocks (${lastNote()})`);
+
+            // A library symbol with no usable declaration (an LTIME parameter): the compile mode cannot compile it.
+            fs.writeFileSync(fbPath, fbXml('n := 0;').replace('METHOD Run : BOOL', `METHOD Run : BOOL${CRLF}VAR${CRLF}\tb : BOOL;${CRLF}END_VAR`).replace('n := 0;', 'b := F_SynLong(tSpan := LTIME#1S);'));
+            checkAnswer = () => ({ stdout: JSON.stringify({ dialect: 'twincat3', files: [], summary: {}, diagnostics: [
+                { file: '1.st', line: 1, column: 1, severity: 'error', message: "Undeclared function 'F_SYNLONG'" }] }), code: 1 });
+            generationFails = true;
+            const gppBeforeMissing = gppCalls().length;
+            const cppKept = fs.readFileSync(cppFile, 'utf8');
+            reset();
+            answers.message.push(undefined);
+            r13Result = await run('twincat.compileProject');
+            await settle();
+            assert(r13Result.errors === 0 && r13Result.cpp.status === 'failed' && gppCalls().length === gppBeforeMissing && fs.readFileSync(cppFile, 'utf8') === cppKept
+                && r13Result.cpp.libraries[0].undeclared.join() === 'F_SynLong'
+                && calls.errors.some(m => /C\+\+ could not be generated: there is no declaration the compiler can use for the library symbol F_SynLong \(Synthetic Lib\)/.test(m.m)),
+            `R13 LIB: a library symbol with no usable declaration: no C++, no g++, and the summary names the symbol and its library (${lastNote()})`);
+            generationFails = false;
+            checkAnswer = () => cleanCheck;
+            fs.writeFileSync(fbPath, fbBefore);
+            fs.rmSync(plcproj);
+            fs.rmSync(dump);
+        }
 
         // A file the toolkit did not write is never overwritten, and g++ is then not run.
         fs.writeFileSync(hppFile, '// my own header');

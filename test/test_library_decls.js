@@ -118,7 +118,18 @@ function inputsOf(project) {
     assert(knowledge.decls.get('fb_synaxis').ioComplete === true && knowledge.decls.get('fb_synaxis').methods.length === 1,
         'GATHER: a function block merges the dump\'s parameters (complete) with the .tmc\'s methods');
 
+    // Attribution (R13: what the generated C++ does not cover is named by library, as the .plcproj references it).
+    assert(knowledge.libraryOf('FB_SynAxis') === 'Synthetic Motion Library' && knowledge.libraryOf('f_synadd') === 'Synthetic Motion Library'
+        && knowledge.libraryOf('F_SynArchiveOnly') === 'Synthetic Motion Library' && knowledge.libraryOf('SynMotion') === 'Synthetic Motion Library'
+        && knowledge.libraryOf('F_SynOtherOnly') === 'Synthetic Other Library' && knowledge.libraryOf('F_Nowhere') === '',
+    'ATTRIB: a .tmc type, a dump function, an archive-only name and the namespace map to the .plcproj\'s library name; an unreferenced dump library keeps its title; an unknown name has none');
+    assert(knowledge.spellingOf('F_SYNARCHIVEONLY') === 'F_SynArchiveOnly' && knowledge.spellingOf('FB_SYNAXIS') === 'FB_SynAxis' && knowledge.spellingOf('NOPE') === 'NOPE',
+        'ATTRIB: the library\'s own spelling of an upper-cased compiler name');
     const prep = ld.prepareLibraryCheck({ projectDir: project.projectDir, roots: [project.ws], inputs, compilerPath: BUNDLED });
+    assert(prep.declaredSymbols.some(d => d.name === 'FB_SynAxis' && d.kind === 'fb' && d.library === 'Synthetic Motion Library')
+        && prep.declaredSymbols.some(d => d.name === 'GVL_SynConst' && d.kind === 'gvl') && prep.declaredSymbols.length === prep.extraFiles.length
+        && JSON.stringify(prep.compilerSubstitutes) === JSON.stringify([{ name: 'TON', library: 'Synthetic Motion Library' }]),
+    `ATTRIB: the check lists what it declared and the qualified names the compiler provides (${JSON.stringify(prep.compilerSubstitutes)})`);
     const text = prep.extraFiles.map(f => f.text).join('\n');
     const fileOf = (head) => prep.extraFiles.find(f => f.text.startsWith(head));
     assert(!!fileOf('FUNCTION F_SynAdd : DINT\nVAR_INPUT\n\tnA : DINT;\n\tnB : DINT;\nEND_VAR\nEND_FUNCTION'), 'DECL: a function with its inputs and return type, no body');
@@ -186,6 +197,8 @@ function inputsOf(project) {
         assert(out.text.includes('s.SynMotion.z') && out.text.includes('(* SynMotion.T *)') && out.text.includes("'SynMotion.Q'") && out.text.includes('SynMotion..x'),
             'QUAL: a member access, a comment, a string and a range are left alone');
         assert(ld.stripQualifiers(src, ns, new Set(['synmotion'])).text.includes('a : SynMotion.FB_X'), 'QUAL: a head the project declares itself is not a qualifier');
+        assert(JSON.stringify(out.uses) === JSON.stringify([{ namespace: 'SynMotion', name: 'FB_X' }, { namespace: 'SynMotion', name: 'F_Y' }, { namespace: 'Tc2_Standard', name: 'TON' }]),
+            `QUAL: each stripped qualifier is reported with the name it qualified (${JSON.stringify(out.uses)})`);
         const main = prep.inputs.find(i => /MAIN/.test(i.filePath));
         const orig = inputs.find(i => /MAIN/.test(i.filePath));
         assert(main.unit !== orig.unit && orig.unit.stText.includes('SynMotion.FB_SynAxis') && !main.unit.stText.includes('SynMotion.') &&

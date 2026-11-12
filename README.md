@@ -310,9 +310,13 @@ with the small arrow next to the **Compile** button (in the editor's toolbar, or
 - **Generate C++** (`tcToolkit.compiler.generateCpp`) — when the check finds **no errors**, the project
   is written as C++ into a `CPP_Files` folder next to its `.plcproj` (beside `ST_Files`):
   `<project>.cpp` and `<project>.hpp`, one pair per PLC project. A check with errors writes nothing.
-  A project that uses **library** blocks or functions (for example from the Beckhoff libraries) is not
-  generated either: the compiler has no implementation of them, so the C++ would contain library blocks
-  that do nothing. The summary says so.
+  A project that uses **library** blocks or functions (for example from the Beckhoff libraries) is
+  generated too, but the library's own code is not available: its function blocks and functions are in
+  the C++ as declarations with **empty bodies**, so neither the C++ nor the g++ check covers them. The
+  summary says so and names the libraries (as the `.plcproj` references them, e.g. `Tc2_Standard`), the
+  *TC Toolkit Compile* output lists the library blocks used, and a comment at the top of the generated
+  files names them. A library symbol with no usable declaration at all (see *Update Library Definitions*
+  above) stops the generation, and the summary names it.
   The summary and the status bar say what was written; **Open C++** opens the file.
 - **Build with g++** (`tcToolkit.compiler.buildWithGpp`) — also compiles that `.cpp` with g++, as a
   check that the generated code builds (`CPP_Files/<project>.o`; nothing is linked or run). g++'s errors

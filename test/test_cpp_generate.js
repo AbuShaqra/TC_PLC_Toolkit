@@ -150,13 +150,46 @@ const sha = (t) => crypto.createHash('sha256').update(t).digest('hex');
         assert(w.refused.length === 0 && w.written.length === 2 && fs.readFileSync(path.join(halfDir, 'P.cpp'), 'utf8') === 'c2',
             `HALF: the next run replaces it (not refused as foreign) (${JSON.stringify(w.refused)})`);
 
-        // ── Library symbols: no C++ for a project that needs library declarations ────────────
-        assert(cg.libraryBlocksCpp({ extraFiles: [], qualifiers: 0, filteredLibraryDiagnostics: 0 }) === '' && cg.libraryBlocksCpp({}) === '',
-            'LIBRARY: a project with no library symbols may be generated');
-        for (const [name, o] of [['declarations', { extraFiles: [{ name: 'lib_1.st', text: 'FUNCTION_BLOCK FB_VendorThing END_FUNCTION_BLOCK' }] }],
-            ['stripped qualifiers', { extraFiles: [], qualifiers: 2 }], ['filtered library errors', { extraFiles: [], filteredLibraryDiagnostics: 1 }]]) {
-            assert(/^C\+\+ was not generated: the project uses library symbols/.test(cg.libraryBlocksCpp(o)), `LIBRARY: ${name} → no generation, with the reason`);
-        }
+        // ── Library symbols: what the C++ does not cover, per library (user decision 2026-11-12) ──
+        assert(cg.libraryCoverage({}).length === 0 && cg.libraryCoverageText([], { built: true, channel: 'X' }) === ''
+            && cg.libraryCoverageLines([]).length === 0 && cg.libraryCoverageHeader([]) === '' && cg.withCoverageHeader('a\n', '') === 'a\n',
+        'LIBRARY: a project with no library symbols gets no note, no lines and no header');
+        const cov = cg.libraryCoverage({
+            declaredSymbols: [{ name: 'FB_VendorThing', kind: 'fb', library: 'Vendor_Lib' }, { name: 'F_Calc', kind: 'function', library: 'Vendor_Lib' },
+                { name: 'ST_Pos', kind: 'struct', library: 'Vendor_Lib' }, { name: 'GVL_Consts', kind: 'gvl', library: 'Alpha_Lib' },
+                { name: 'F_Loose', kind: 'function', library: '' }, { name: 'f_calc', kind: 'function', library: 'vendor_lib' }],
+            compilerSubstitutes: [{ name: 'TON', library: 'Alpha_Lib' }],
+            undeclared: [{ name: 'F_Missing', library: 'Vendor_Lib' }]
+        });
+        assert(JSON.stringify(cov.map(e => e.library)) === '["Alpha_Lib","Vendor_Lib",""]'
+            && cov[1].blocks.join() === 'F_Calc,FB_VendorThing' && cov[1].types.join() === 'ST_Pos' && cov[1].undeclared.join() === 'F_Missing'
+            && cov[0].globalLists.join() === 'GVL_Consts' && cov[0].substitutes.join() === 'TON' && cov[2].blocks.join() === 'F_Loose',
+        `LIBRARY: grouped by library (case-insensitive, duplicates once), sorted, an unidentified library last (${JSON.stringify(cov)})`);
+        const covText = cg.libraryCoverageText(cov, { built: true, channel: 'TC Toolkit Compile' });
+        assert(covText === 'The generated C++ and the g++ check do not cover the library code of Alpha_Lib, Vendor_Lib, library not identified: their code is not available, so their function blocks and functions are declarations with empty bodies there. The library blocks used are listed in the "TC Toolkit Compile" output.',
+            `LIBRARY: the summary sentence names every library (${covText})`);
+        assert(/^The generated C\+\+ does not cover the library code of Alpha_Lib: the compiler's own implementation of their blocks is used instead\./.test(cg.libraryCoverageText([cov[0]], { built: false, channel: 'C' })),
+            'LIBRARY: without g++ the sentence speaks of the C++ only; compiler stand-ins only → said so');
+        const covLines = cg.libraryCoverageLines(cov);
+        assert(covLines.includes('  Vendor_Lib:') && covLines.includes("    declarations with empty bodies (the library's code is not available): F_Calc, FB_VendorThing")
+            && covLines.includes('    no usable declaration (the compiler cannot compile a use of these): F_Missing')
+            && covLines.some(l => /global lists .*a value that is not known starts at 0.*: GVL_Consts$/.test(l)) && covLines.includes('  library not identified:'),
+        `LIBRARY: the output channel lists the blocks per library (${covLines.join(' | ')})`);
+        const header = cg.libraryCoverageHeader(cg.libraryCoverage({ declaredSymbols: [{ name: 'FB_X', kind: 'fb', library: 'Bad\nName' }] }));
+        assert(header.startsWith('// TC Toolkit: this C++ does not contain the code of the library blocks below.') && header.includes('//   Bad Name: FB_X\n')
+            && header.split('\n').every(l => l === '' || l.startsWith('//')),
+        'LIBRARY: the header is line comments only, naming the blocks (a line break in a library name cannot end the comment)');
+        assert(cg.libraryCoverageHeader(cg.libraryCoverage({ declaredSymbols: [{ name: 'ST_X', kind: 'struct', library: 'L' }] })) === '',
+            'LIBRARY: types alone put no header on the files');
+        assert(cg.withCoverageHeader('a\r\nb\r\n', '// h\n') === '// h\r\na\r\nb\r\n' && cg.withCoverageHeader('a\n', '// h\n') === '// h\na\n',
+            'LIBRARY: the header follows the file\'s line endings');
+        // The header is part of the recorded text: a second run with the same header replaces its own file.
+        const hdrDir = path.join(ROOT, 'hdr', 'CPP_Files');
+        const withHdr = cg.withCoverageHeader('int x;\n', header);
+        cg.writeOwnedOutputs({ dir: hdrDir, project: 'P', files: [{ name: 'P.cpp', text: withHdr }] });
+        assert(cg.ownership(hdrDir, cg.readManifest(hdrDir).manifest, 'P.cpp') === 'owned'
+            && cg.writeOwnedOutputs({ dir: hdrDir, project: 'P', files: [{ name: 'P.cpp', text: 'int x;\n' }] }).written.length === 1,
+        'LIBRARY: a file written with the header is owned, and is replaced when the header goes away');
 
         // A record that is not ours.
         const foreignDir = path.join(ROOT, 'foreign', 'CPP_Files');
