@@ -851,8 +851,8 @@ const settle = () => new Promise(r => setTimeout(r, 10));
         r13Result = await run('twincat.compileProject');
         await settle();
         const gcall = gppCalls()[gppCalls().length - 1];
-        assert(!!gcall && gcall.args.join(' ') === `-std=c++14 -fno-strict-aliasing -Wno-c++17-extensions -fdiagnostics-color=never -fmessage-length=0 -c ${cppFile} -I ${path.join(REPO, 'resources', 'compiler', 'include')} -I ${cppDir} -o ${objFile}`
-            && gcall.options.cwd === cppDir, `R13 GPP: g++ -std=c++14 -c PLC.cpp against the vendored runtime headers, -o CPP_Files/PLC.o (${gcall && gcall.args.join(' ')})`);
+        assert(!!gcall && gcall.args.join(' ') === `-std=c++17 -fno-strict-aliasing -fdiagnostics-color=never -fmessage-length=0 -c ${cppFile} -I ${path.join(REPO, 'resources', 'compiler', 'include')} -I ${cppDir} -o ${objFile}`
+            && gcall.options.cwd === cppDir, `R13 GPP: g++ -std=c++17 -c PLC.cpp against the vendored runtime headers, -o CPP_Files/PLC.o (${gcall && gcall.args.join(' ')})`);
         const onCpp = gppCollection.map.get(vscodeStub.Uri.file(cppFile).toString()) || [];
         const onHpp = gppCollection.map.get(vscodeStub.Uri.file(hppFile).toString()) || [];
         assert(onCpp.length === 2 && onHpp.length === 1 && onCpp.every(d => d.source === 'TC Toolkit g++'), `R13 GPP: two problems on the .cpp, one on the .hpp, source "TC Toolkit g++" (${onCpp.length}/${onHpp.length})`);

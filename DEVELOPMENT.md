@@ -528,9 +528,8 @@ src/
                         elsewhere, the writes a dropdown checkbox makes. Pure
   gpp                   R13 g++ build, vscode-free: detection (PATH, then MSYS2 ucrt64/mingw64/clang64,
                         C:\MinGW, mingw64 under Program Files / WinLibs / w64devkit, Chocolatey mingw),
-                        tcToolkit.compiler.gppPath resolution, `-std=c++14 -fno-strict-aliasing
-                        -Wno-c++17-extensions -c <cpp> -I <resources/compiler/include> -I <CPP_Files>
-                        -o <obj>`, reading g++ messages and placing them on the generated files, runGpp
+                        tcToolkit.compiler.gppPath resolution, `-std=c++17 -fno-strict-aliasing
+                        -c <cpp> -I <resources/compiler/include> -I <CPP_Files> -o <obj>`, reading g++ messages and placing them on the generated files, runGpp
                         (no shell, timeout, cancel, g++'s folder first on PATH); describeGppSetting
                         (what the start page shows) and thisMachine (the real fs/env checks)
   compilerDefines       Compile Project's compiler defines: `<CompilerDefines>` of the project's
@@ -1556,15 +1555,16 @@ the key (they go through `readManifest`/`writeManifest`). `test_cpp_real.js` che
 git (`git check-ignore -v`, `git status`, an edited `.cpp` not ignored and ignored again once restored, a
 user's own `.o` not ignored) when git is on PATH.
 
-**The g++ build**: `-std=c++14 -fno-strict-aliasing -Wno-c++17-extensions -fdiagnostics-color=never
+**The g++ build**: `-std=c++17 -fno-strict-aliasing -fdiagnostics-color=never
 -fmessage-length=0 -c <cpp> -I resources/compiler/include -I CPP_Files -o <obj>`, cwd `CPP_Files`, no
 shell, 2-minute timeout, cancellable with the progress notification. A timeout or cancel stops the whole
 process tree (`runChild`'s `killTree` → `compileCheck.killProcessTree`: POSIX spawns g++ `detached` and
 SIGTERMs the group; Windows runs `taskkill /PID <pid> /T /F`) — a plain kill stops only the driver and
 leaves `cc1plus` running. `-fno-strict-aliasing`: the fork's
-docs/RUNTIME.md asks host builds of generated code for it. `-Wno-c++17-extensions`: the generated
-VAR_GLOBALs are `inline` variables, which g++ accepts at C++14 with one warning each (the fork's own
-tests pass the same flag). Messages: `parseGppOutput` (one line per message, notes kept with the message
+docs/RUNTIME.md asks host builds of generated code for it. `-std=c++17`: the generated VAR_GLOBALs are
+`inline` variables — g++ 7+ accepts them at C++14 only with one warning each, and g++ < 7 cannot compile
+them at all (`'strucpp::X' declared as an 'inline' variable`). The earlier `-Wno-c++17-extensions` is a
+GCC 12+ flag that older g++ reports as unrecognized; it is gone. Messages: `parseGppOutput` (one line per message, notes kept with the message
 before them; the `required from here`/`required from '…'` chain and the `In file included from` chain —
 remembered per header, since g++ prints it once — kept as `context`, `In instantiation of` as
 `instantiation`) → `placeGppMessages` (in the `.cpp`/`.hpp`: at their line/column; anywhere else — a

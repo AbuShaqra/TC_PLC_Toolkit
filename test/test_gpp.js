@@ -92,7 +92,7 @@ const existsIn = (list) => (p) => list.some(x => x.toLowerCase() === p.toLowerCa
 
     // ── Command line ──────────────────────────────────────────────────────────────────────────
     const args = g.buildGppArgs({ cppFile: '/p/CPP_Files/P.cpp', objFile: '/p/CPP_Files/P.o', includeDir: '/ext/resources/compiler/include', outDir: '/p/CPP_Files' });
-    assert(eq(args, ['-std=c++14', '-fno-strict-aliasing', '-Wno-c++17-extensions', '-fdiagnostics-color=never', '-fmessage-length=0',
+    assert(eq(args, ['-std=c++17', '-fno-strict-aliasing', '-fdiagnostics-color=never', '-fmessage-length=0',
         '-c', '/p/CPP_Files/P.cpp', '-I', '/ext/resources/compiler/include', '-I', '/p/CPP_Files', '-o', '/p/CPP_Files/P.o']),
     `ARGS: C++14, compile only (-c), the runtime headers and the output folder on the include path, the object file named (${args.join(' ')})`);
     assert(!args.some(a => /^-l|^-L|\.exe$/.test(a)) && !args.includes('-shared'), 'ARGS: nothing is linked');

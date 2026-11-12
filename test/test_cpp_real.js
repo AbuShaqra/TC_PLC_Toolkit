@@ -259,7 +259,7 @@ async function libraryScenario(tmp, setup, gppPath) {
                 const placed = gpp.placeGppMessages(r.messages, { cwd: paths.dir, cppFile: paths.cpp, hppFile: paths.hpp });
                 const errs = placed.filter(m => m.severity === 'error');
                 const warns = placed.filter(m => m.severity === 'warning');
-                assert(warns.length === 0, `${name}: no g++ warnings with the build's flags (-Wno-c++17-extensions silences the inline globals) (${warns.map(w => w.message).join(' | ')})`);
+                assert(warns.length === 0, `${name}: no g++ warnings with the build's flags (-std=c++17: the inline globals are standard) (${warns.map(w => w.message).join(' | ')})`);
                 const known = KNOWN_GPP_GAPS[name] || [];
                 if (r.exitCode === 0) {
                     assert(fs.existsSync(paths.obj) && fs.statSync(paths.obj).size > 0 && cg.recordOwnedFile(paths.dir, name, path.basename(paths.obj)),

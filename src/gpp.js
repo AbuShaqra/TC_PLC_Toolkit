@@ -26,13 +26,13 @@ const SETTING_GPP_PATH = 'tcToolkit.compiler.gppPath';
 const DEFAULT_GPP_TIMEOUT_MS = 120000;
 
 /**
- * The flags of the build, after `-std=c++14`. The fork's own builds of generated code pass
- * `-fno-strict-aliasing` (its docs/RUNTIME.md: pointer punning is valid IEC), and its tests pass
- * `-Wno-c++17-extensions` because the generated VAR_GLOBALs are `inline` variables, a C++17
- * extension g++ accepts at C++14 with a warning on every one of them. The last two keep each message
- * on one plain line, so it can be read back.
+ * The flags of the build. `-std=c++17`: the generated VAR_GLOBALs are `inline` variables, which g++
+ * older than 7 cannot compile at all and newer ones accept at C++14 only with a warning on each (the
+ * build therefore needs g++ 7 or later, GPP_MIN_MAJOR). `-fno-strict-aliasing`: the fork's own builds
+ * of generated code pass it (its docs/RUNTIME.md: pointer punning is valid IEC). The last two keep
+ * each message on one plain line, so it can be read back.
  */
-const GPP_FLAGS = Object.freeze(['-std=c++14', '-fno-strict-aliasing', '-Wno-c++17-extensions', '-fdiagnostics-color=never', '-fmessage-length=0']);
+const GPP_FLAGS = Object.freeze(['-std=c++17', '-fno-strict-aliasing', '-fdiagnostics-color=never', '-fmessage-length=0']);
 
 /**
  * The places g++ is looked for on Windows after `PATH`, as absolute paths. Environment variables
