@@ -4,7 +4,7 @@ The order of planned work for the extension. **This file is the source of truth*
 (<https://claude.ai/artifact/8RG7TZtBV2cuupsrwWtknv>) is rendered from it by hand out of `docs/roadmap.html`.
 Keep both current in the same change — rules in [CLAUDE.md](CLAUDE.md) ("Keep the roadmap current").
 
-**Last updated:** 2026-11-11 (R3.5 merged as PR #35 (`791fc3a`), R12 started; fork F3 #127 and the standard-function argument check #128 merged, release J cut at `ba4d2c2`; S3b next: F4 STRING as Windows-1252, then OSCAT `ROUND(IN, N)`, then release K; R3.5 merged as PR #35, with the compiler at fork `eb52d2c` and S11b's toolkit follow-up folded in: project defines as `--pragma-define`, per-object defines as `--file-define`; fork D5 #118 and S11b #119 merged; decided: fork item S11b after D5, and R12, {IF}-aware diagnostics in the language server, right after PR #35 merges; setting keys renamed, PR #34; R3.3–R9 merged, PR #33; fork #82–#128 merged, releases H `a5da588`, I `fe4d492` and J `ba4d2c2`) · **Current release:** v0.10.1
+**Last updated:** 2026-11-12 (R12 built on `claude/r12-conditional-pragmas`, awaiting the user's check; R3.5 merged as PR #35 (`791fc3a`), R12 started; fork F3 #127 and the standard-function argument check #128 merged, release J cut at `ba4d2c2`; S3b next: F4 STRING as Windows-1252, then OSCAT `ROUND(IN, N)`, then release K; R3.5 merged as PR #35, with the compiler at fork `eb52d2c` and S11b's toolkit follow-up folded in: project defines as `--pragma-define`, per-object defines as `--file-define`; fork D5 #118 and S11b #119 merged; decided: fork item S11b after D5, and R12, {IF}-aware diagnostics in the language server, right after PR #35 merges; setting keys renamed, PR #34; R3.3–R9 merged, PR #33; fork #82–#128 merged, releases H `a5da588`, I `fe4d492` and J `ba4d2c2`) · **Current release:** v0.10.1
 
 How to read it: items run top to bottom in the **Order** column. IDs are stable names and do not change
 when the order does. Estimates are working days for one developer; start and end dates are **forecasts**
@@ -28,7 +28,7 @@ table, marked **Done**, until the next prune.
 | 9 | R8 | Language: nested block comments; hover help for pragmas | 1.5 d | ~1 h | 2026-11-11 | 2026-11-11 | **Done** 2026-11-11 — PR #33, see Done |
 | 10 | R9 | Tooling: ESLint 10 (re-triage, Node floor); the dev-only `brace-expansion` advisory | 0.75 d | ~30 min | 2026-11-11 | 2026-11-11 | **Done** 2026-11-11 — PR #33, see Done |
 | 11 | R3.5 | Compile Project: compiler at release I, conditional pragmas, `.plcproj` compiler defines | — | ~6.8 h actual | 2026-11-11 | 2026-11-11 | **Done** 2026-11-11 23:55 UTC — [PR #35](https://github.com/AbuShaqra/TC_PLC_Toolkit/pull/35), squash `791fc3a` into `dev` (user: merge, 2026-11-11), see Done. Bundled compiler at `eb52d2c` (release I plus fork #118–#119); `conditional_pragmas` on in `resources/dialects/twincat3.json`; `<CompilerDefines>` read from each `.plcproj` (case kept; MSBuild last-wins, `$(CompilerDefines)` and `$(Prop)` expanded); conditions evaluated for `Debug\|TwinCAT RT (x64)` (user, 2026-11-11); project defines passed with `--pragma-define` (values exact, no global constant) and per-object defines with `--file-define` on that object's check unit — S11b's toolkit follow-up, folded in; notes in a "TC Toolkit Compile" output channel |
-| 12 | R12 | Language server: `{IF}`-aware diagnostics — block matching follows one branch, so valid code that opens a different block head per branch gets no false "Unterminated block" | 1 d | ~45 min | 2026-11-12 | 2026-11-12 | **In progress** (since 2026-11-11 23:57 UTC, user: start R12); estimates are my sizing, not measured |
+| 12 | R12 | Language server: `{IF}`-aware diagnostics — every branch combination is considered, so valid conditional code (a different block head per branch, per-branch declarations, branch-only names) gets no false diagnostic, while code outside `{IF}` groups keeps every check | 1 d | ~45 min | 2026-11-12 | 2026-11-12 | **In progress** (since 2026-11-11 23:57 UTC, user: start R12). **Built 2026-11-12 00:25 UTC** on `claude/r12-conditional-pragmas` (not pushed): 111/111 FULL, lint/typecheck 0, dev-host 103/1 (known P8). Awaiting the user's F5 check, then a PR into `dev`; estimates are my sizing, not measured |
 | 13 | R11 | Publish to the VS Code Marketplace (and Open VSX) | 0.5 d | ~1 h + your account step | 2026-11-20 | 2026-11-20 | Planned — **last, after the toolkit lane AND the fork lane are finished (user, 2026-11-10: "release to marketplace once the fork is also ready")**. Our part (changelog, package metadata, licence in the package, a publish step that runs only when the token secrets exist), then your step: add `VSCE_PAT` / `OVSX_PAT` and run *Release* on `main`. Accounts and publisher `a-abushaqra` done (user, 2026-11-09) |
 | — | R10 | L1 reverse index for Find References | 2 d | ~1.5 h | — | — | **On trigger only:** past ~1000 files or > 200 ms per search (today 29 ms cold) |
 
@@ -183,9 +183,23 @@ gone.
 
 ### R12 — `{IF}`-aware diagnostics in the language server (decided 2026-11-11)
 
-**Goal.** The language server's own diagnostics follow one branch of each `{IF}` / `{ELSIF}` / `{ELSE}` / `{END_IF}`
-when matching blocks, so valid code that opens a different block head in each branch gets no false "Unterminated
-block". Scheduled by the user right after PR #35 merges; started 2026-11-11 23:57 UTC. Must hold the `sample/` diagnostics gate at zero.
+**Goal.** The language server's own diagnostics stop flagging valid code inside `{IF}` / `{ELSIF}` / `{ELSE}` /
+`{END_IF}` groups — a different block head per branch, a declaration whose type differs per branch, a name declared
+only in a branch — without losing diagnostics on code outside groups. Scheduled by the user right after PR #35
+merges; started 2026-11-11 23:57 UTC. Must hold the `sample/` diagnostics gate at zero.
+
+**Design (decided 2026-11-11, from two reviewed designs).** The LSP never evaluates a define: every branch
+combination counts as possible. Block errors are kept only when every branch selection has them (cap 64 per
+segment; an unbalanced segment reports nothing); semantic diagnostics inside a group's statement are dropped; a
+name whose type differs per branch resolves to unknown; a conditional VAR header or POU head makes the parameter set
+or the inheritance chain unknown. A unit with no directive keeps the old output byte for byte. Details:
+DEVELOPMENT.md "Conditional pragmas in the language server (R12)".
+
+**Built 2026-11-12** on `claude/r12-conditional-pragmas` (commits `3b4c854`, `09b07b4`, `3d2806e` + docs): new
+`src/lsp/conditionals.js`; `test/test_conditional_pragmas.js`; R12 cases in `test_live_path.js` and compiler parity
+in `test_compile_real.js`. **Owed:** the user's F5 check (no squiggle on a split IF head in either pane; completion
+and references in both branches; an unrelated missing END_FOR still shows). **Proposed:** add a conditional POU and
+`<CompilerDefines>` to TcToolkitSample2 once the user has built it in XAE.
 
 ### R11 — Publish to the VS Code Marketplace (user's ask 2026-11-09)
 
@@ -296,6 +310,13 @@ The former backlog was scheduled as R6–R10 on 2026-11-09 (the user asked). R6�
   once; squiggle rendering; peek dismissal over the real bridge.
 - **Showcase screenshots:** the scripts exist only on the user's machine (`scratch/showcase/`); moving them to
   `scripts/showcase/` takes ~30 min once they are in the repo.
+- **R12b informational branch state** (follow-up from R12): evaluate the `.plcproj` defines in the language server
+  (a cached reader over `src/compilerDefines.js`, three-valued) for a hover on `{IF}` and greying of inactive
+  branches. Must never feed diagnostics or the index. **Open decision (user):** Debug configuration only, or only
+  where all configurations agree.
+- **Go to Definition on a name declared in several `{IF}` branches** returns only the first declaration today;
+  returning all of them needs `mapDefinition` to accept arrays. Optional: merge same-name completion items with a
+  `BOOL | INT (conditional)` detail. Follow-ups from R12.
 - **Indexing progress "3 of 8 projects"** in the status bar (possible since R6's per-project scan; needs a server → host
   progress notification). Raised 2026-11-11.
 - **Measure indexing speed on Windows, on a real multi-project workspace** (cold and warm startup, time until the first

@@ -145,7 +145,7 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
       <div class="eyebrow">VS Code extension · twincat-plc-toolkit</div>
       <h1>TC Toolkit Roadmap</h1>
       <div class="meta">
-        <span>Updated <b>2026-11-11</b> · R3.5 merged (PR #35), R12 started; fork #118–#129 merged; releases H, I and J (<code>ba4d2c2</code>)</span>
+        <span>Updated <b>2026-11-12</b> · R12 built, awaiting your check; R3.5 merged (PR #35); fork #118–#129 merged; releases H, I and J (<code>ba4d2c2</code>)</span>
         <span>Release <b>v0.10.1</b></span>
         <span>Re-measured <b>Nov 11</b></span>
         <span>Toolkit now <b>R12</b></span>
@@ -363,14 +363,16 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
 
     <details class="card" id="r12">
       <summary>
-        <div class="card-top"><span>#12</span><span class="id">R12</span><span class="pill progress">In progress · since Nov 11</span><span class="chev" aria-hidden="true">›</span></div>
+        <div class="card-top"><span>#12</span><span class="id">R12</span><span class="pill progress">Built · awaiting your check</span><span class="chev" aria-hidden="true">›</span></div>
         <div class="card-title">Language server: {IF}-aware diagnostics</div>
         <div class="bar" aria-hidden="true"><span style="left:29.17%;width:4.17%"></span></div>
         <div class="card-foot"><span>1 d → ~45 min</span><span>Nov 12</span></div>
       </summary>
       <div class="body">
-        <div class="block wide"><h4>Goal</h4><p>The language server's diagnostics follow one branch of each <code>{IF}</code> / <code>{ELSIF}</code> / <code>{ELSE}</code> / <code>{END_IF}</code> when matching blocks, so valid code that opens a different block head in each branch gets no false "Unterminated block". The <code>sample/</code> diagnostics gate stays at zero.</p></div>
+        <div class="block wide"><h4>Goal</h4><p>The language server's diagnostics stop flagging valid code inside <code>{IF}</code> / <code>{ELSIF}</code> / <code>{ELSE}</code> / <code>{END_IF}</code> groups (a different block head per branch, a type that differs per branch, a name declared only in a branch) without losing diagnostics on code outside groups. The <code>sample/</code> diagnostics gate stays at zero.</p></div>
         <div class="block"><h4>Decided Nov 11 (your call)</h4><p>Scheduled right after PR #35 merges; started Nov 11 23:57 UTC.</p></div>
+        <div class="block wide"><h4>Design</h4><p>The language server never evaluates a define: every branch combination counts. A block error is kept only when every branch selection has it (at most 64 selections per method or body; a segment with broken directives reports nothing). Other diagnostics inside a group's statement are dropped. A name whose type differs per branch resolves to unknown. Code with no <code>{IF}</code> gets exactly the old output.</p></div>
+        <div class="block wide"><h4>Built Nov 12</h4><p>On <code>claude/r12-conditional-pragmas</code>, not pushed: new <code>src/lsp/conditionals.js</code> and <code>test/test_conditional_pragmas.js</code>, live-path cases, and a compiler-parity check (a fixture the compiler accepts under some define set must get 0 diagnostics). 111/111 suites FULL, lint and typecheck clean, dev host 103/1 (the known P8 line-ending failure). <b>Your check (F5):</b> no squiggle on a split IF head in either pane; completion and references in both branches; an unrelated missing END_FOR still shows.</p></div>
         <div class="block"><h4>How it was estimated</h4><p>My sizing, not measured.</p></div>
       </div>
     </details>
@@ -595,13 +597,15 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
     <details class="card" id="backlog">
       <summary>
         <div class="card-top"><span>Backlog</span><span class="chev" aria-hidden="true">›</span></div>
-        <div class="card-title">Not scheduled · 14 items</div>
+        <div class="card-title">Not scheduled · 17 items</div>
       </summary>
       <div class="body">
         <div class="block wide"><p>The former backlog was scheduled as R6 to R10 on Nov 9. R6 to R9 merged in PR #33 on Nov 11, and R10 runs only on a trigger. What remains has no estimate on purpose:</p>
           <ul>
             <li><b>On your Windows machine, about 1 hour of your time:</b> Libraries-view scoping, library member expansion, squiggle rendering, and closing the peek over the real bridge.</li>
             <li><b>Showcase screenshots:</b> the scripts live only on your machine; moving them into the repo takes about 30 minutes once they are here.</li>
+            <li><b>R12b informational branch state:</b> evaluate the <code>.plcproj</code> defines in the language server for a hover on <code>{IF}</code> and greying of inactive branches. It must never feed diagnostics. <b>Open question for you:</b> Debug configuration only, or only where all configurations agree. Follow-up from R12.</li>
+            <li><b>Go to Definition on a name declared in several <code>{IF}</code> branches</b> returns only the first today; returning all needs array results from the definition mapping. Optional: one merged completion item per such name. Follow-up from R12.</li>
             <li><b>Indexing progress "3 of 8 projects"</b> in the status bar: possible since R6's per-project scan; needs a progress notification from the server to the host. Raised Nov 11.</li>
             <li><b>Measure indexing speed on Windows</b>, on a real multi-project workspace (cold and warm startup, time until the first project is ready) with <code>scripts/measure-indexing.js</code>. Cold startup (about 20 s for 8 projects) is still projected, not measured. Needs your machine. Raised Nov 11.</li>
             <li><b>Find References across a shared interface's sibling implementors.</b> R7's rename family covers rename only; Find References still uses the pairwise relation. Follow-up from PR #33.</li>
