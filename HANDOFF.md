@@ -11,7 +11,8 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
 - **Version history:** 0.10.1 struct EXTENDS from own DUTs (PR #22); 0.10.0 Libraries scoping (PR #18); 0.9.0
   improvement-plan phases; 0.8.x project-aware Generate ST, ResizeObserver fix, solution→project Objects tree.
 - **Last verified:** 2026-11-12 (Linux container, `claude/focused-ptolemy-m6acaz` = R13 round 5 (the user's Windows g++ test:
-  `-std=c++17`, the g++ 7 gate, the C/C++ extension provider; MSYS2 detection from the registry) on top of `dev` + roadmap) — `REQUIRE_FULL_SUITE=1 npm test` green (**118/118, Coverage: FULL**; optional gates compile-real, cpp-real
+  `-std=c++17`, the g++ 7 gate, the C/C++ extension provider; MSYS2 detection from the registry; round 6: selecting the
+  provider) on top of `dev` + roadmap) — `REQUIRE_FULL_SUITE=1 npm test` green (**119/119, Coverage: FULL**; optional gates compile-real, cpp-real
   and gpp-real all ran), `npm run typecheck` and `npm run lint` exit 0; Linux dev-host (`TCDEV_CODE=<scratch>/VSCode-linux-x64/code
   TCDEV_CODE_ARGS=--no-sandbox xvfb-run -a node test/devhost/run.js`) 103 pass / 1 fail, the fail being
   the known P8 line-ending one; browser harnesses `run.js` (83), `run_start_page.js` (110, with the g++ row and its MSYS2 note), `run_pragmas.js` (47; round 2) green;
@@ -116,9 +117,27 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   `C:\MinGW\bin\g++.exe`, the summary offers only *Open Setting* and says to clear it or set a newer path); with MSYS2 UCRT64 g++ 13
   installed (`pacman -S mingw-w64-ucrt-x86_64-gcc`) *Detect g++* (setting cleared) picks it over `C:\MinGW`, and
   **TcToolkitSample2 builds clean** (TcToolkitSample: only the known STATE gap); with the C/C++ extension installed,
-  the generated `.hpp`/`.cpp` show **no "cannot open source file"** (allow the C/C++ extension's one-time "configure
-  IntelliSense" prompt if it appears), and without it nothing changes. Untested here: the real C/C++ extension
-  (the container has none; the provider is unit-tested against a fake API) and a real g++ 6.
+  the generated `.hpp`/`.cpp` show **no "cannot open source file"**, and without it nothing changes. Untested here: a real g++ 6.
+  **Provider not selected (user report 2026-11-12, round 6, on this branch):** after generating, C/C++(1696)
+  still said "cannot open source file iec_types.hpp (dependency of TcToolkitSample_PLC.hpp)". Root cause
+  (read in the C/C++ extension 1.22.11's own code, reproduced with it on Linux): it consults only the provider
+  a configuration selects — `configurationProvider` in `.vscode/c_cpp_properties.json` (config `Win32`, else
+  the last), else `C_Cpp.default.configurationProvider`; it auto-selects only with no properties file, no
+  `C_Cpp.default.*` value and exactly one registered provider. Fix: `src/cppToolsSelection.js` +
+  `createProviderPrompt` — one message per workspace folder ("IntelliSense for the generated C++ needs TC Toolkit
+  as the C/C++ configuration provider.", *Use TC Toolkit* / *Not now* / *Don't ask again*; *Use* writes the
+  folder-scope setting and re-announces); a properties file naming another provider wins and is never edited
+  (*Open c_cpp_properties.json*); every request logged to the **TC Toolkit C/C++** output channel.
+  Real C/C++ extension 1.22.11 (Linux, scratch harness, not in the suite): with a provider-less
+  `c_cpp_properties.json` the exact symptom; after the setting, only a planted undefined-identifier error;
+  with no file and no settings it auto-selected TC Toolkit and the provider was asked.
+  **For the Windows check (round 6):** Compile Project with C++ generation on → the message appears once for
+  the workspace folder; *Use TC Toolkit* → `.vscode/settings.json` gains `C_Cpp.default.configurationProvider`
+  and the `.hpp`/`.cpp` lose "cannot open source file" (else run *C/C++: Reset IntelliSense Database*); the
+  **TC Toolkit C/C++** output channel shows `canProvideConfiguration … -> true` / `provideConfigurations … -> 1
+  item(s)` with the Windows include paths. If nothing is logged at all, the provider is still not selected —
+  check `.vscode/c_cpp_properties.json` (a `configurationProvider` there wins; the message then offers to open
+  it). Regenerating or reopening does not ask again after *Use* / *Don't ask again*; *Not now* asks next session.
   **MSYS2 detection (user report 2026-11-12: MSYS2 installed, but only `C:\MinGW` 6.3 was found):** built on this
   branch — `src/msys2Detect.js` reads MSYS2's folder from the uninstall registry (reg.exe, async, once per session,
   never blocks activation) and adds `D:\msys64`, `C:\tools\msys64`, `%USERPROFILE%\msys64`, Scoop; `usr\bin` g++

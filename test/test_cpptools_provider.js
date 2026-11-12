@@ -35,6 +35,8 @@ const shown = [];
 /** @type {Array<{glob: string, listeners: Array<() => void>}>} */
 const watchers = [];
 const writes = [];
+/** @type {Array<{name: string, lines: string[]}>} */
+const channels = [];
 const vscodeStub = {
     extensions: {
         getExtension: (id) => (id === 'ms-vscode.cpptools' ? installedCpptools : undefined),
@@ -53,6 +55,7 @@ const vscodeStub = {
         }
     },
     window: {
+        createOutputChannel: (name) => { const ch = { name, lines: [], appendLine: (l) => ch.lines.push(l), dispose() {} }; channels.push(ch); return ch; },
         showInformationMessage: async (m) => { shown.push(m); },
         showWarningMessage: async (m) => { shown.push(m); },
         showErrorMessage: async (m) => { shown.push(m); }
@@ -86,8 +89,9 @@ const uri = (fsPath) => ({ fsPath, scheme: 'file' });
     // ── The provider (Windows paths) ─────────────────────────────────────────────────────────────
     const INC = 'C:\\ext\\resources\\compiler\\include';
     let gpp = 'C:\\msys64\\ucrt64\\bin\\g++.exe';
+    const logged = [];
     const provider = createCppConfigurationProvider({
-        extensionId: 'pub.ext', includeDir: INC, gppPath: () => gpp,
+        extensionId: 'pub.ext', includeDir: INC, gppPath: () => gpp, log: (l) => logged.push(l),
         projectDirs: () => ['D:\\Sol\\PLC1\\PLC1'],
         hasPlcproj: (dir) => dir.toLowerCase() === 'd:\\other\\plc2',
         isDir: (dir) => dir.toLowerCase() === 'd:\\sol\\plc1\\plc1\\cpp_files',
@@ -107,6 +111,15 @@ const uri = (fsPath) => ({ fsPath, scheme: 'file' });
         && eq(items[0].configuration, { includePath: [INC, 'D:\\Sol\\PLC1\\PLC1\\CPP_Files'], defines: [], standard: 'c++17',
             intelliSenseMode: 'windows-gcc-x64', compilerPath: gpp }),
     `PROVIDER: the runtime headers and the CPP_Files folder on the include path, C++17, the g++ and its mode (${JSON.stringify(items)})`);
+    const askedUri = uri('D:\\Sol\\PLC1\\PLC1\\CPP_Files\\PLC1.cpp');
+    assert((await provider.provideConfigurations([askedUri]))[0].uri === askedUri,
+        'PROVIDER: each item carries the very URI object asked for (the C/C++ extension matches by uri.toString() and accepts only its own Uri or a string)');
+    assert(logged.some(l => /^canProvideConfiguration D:\\Sol\\PLC1\\PLC1\\CPP_Files\\PLC1\.cpp -> true$/.test(l))
+        && logged.some(l => /^provideConfigurations .*PLC1\.hpp, D:\\x\\y\.cpp -> 1 item\(s\): \{"includePath"/.test(l)),
+    `PROVIDER: each request is logged (${JSON.stringify(logged.slice(0, 3))})`);
+    const loggingFails = createCppConfigurationProvider({ extensionId: 'x', includeDir: INC, gppPath: () => gpp, projectDirs: () => ['D:\\Sol\\PLC1\\PLC1'],
+        log: () => { throw new Error('channel gone'); }, platform: 'win32', arch: 'x64' });
+    assert(await loggingFails.canProvideConfiguration(askedUri) === true, 'PROVIDER: a failing log never fails a request');
     gpp = null;
     const noGpp = await provider.provideConfigurations([uri('D:\\Sol\\PLC1\\PLC1\\CPP_Files\\PLC1.cpp')]);
     assert(eq(noGpp[0].configuration, { includePath: [INC, 'D:\\Sol\\PLC1\\PLC1\\CPP_Files'], defines: [], standard: 'c++17' }),
@@ -188,10 +201,12 @@ const uri = (fsPath) => ({ fsPath, scheme: 'file' });
     assert(api.calls.length === registered, 'WIRING: another setting changing does not re-ask');
     for (const fn of configListeners) fn({ affectsConfiguration: (s) => s === 'tcToolkit.compiler.gppPath' || s === 'tcToolkit.compiler' });
     assert(eq(api.calls.slice(registered), [['changed', 'TC Toolkit'], ['browseChanged', 'TC Toolkit']]), 'WIRING: a g++ path change tells the C/C++ extension');
-    assert(writes.length === 0 && shown.length === 0, 'WIRING: nothing is written, nothing is shown');
+    assert(writes.length === 0 && shown.length === 0 && channels.length === 0, 'WIRING: nothing is written, nothing is shown, no output channel yet');
     const hpp = uri(path.join(PROJ, 'CPP_Files', 'PLC.hpp'));
     let cfg = (await api.provider.provideConfigurations([hpp]))[0].configuration;
     assert(cfg.compilerPath === fakeGpp && /gcc/.test(cfg.intelliSenseMode), 'WIRING: a g++ 13 is handed over as the compiler');
+    assert(channels.length === 1 && channels[0].name === 'TC Toolkit C/C++' && channels[0].lines.some(l => /provideConfigurations .*PLC\.hpp -> 1 item/.test(l)),
+        'WIRING: the request is logged to the "TC Toolkit C/C++" output channel, created when first asked');
 
     // A g++ older than 7 (the build refuses it): not handed over, the C/C++ extension keeps its default.
     const oldGpp = path.join(BIN, 'g++-6');

@@ -352,9 +352,23 @@ folder, or a command on your `PATH`; a path pasted with quotes is fine. The comp
 how to read the files in `CPP_Files`: the compiler's runtime headers that ship with the extension and the
 `CPP_Files` folder are on the include path, the language is C++17, and the g++ above is the compiler (not one
 older than 7: then the C/C++ extension keeps its own default compiler) — so the
-generated `.hpp` no longer shows "cannot open source file iec_types.hpp". The C/C++ extension may ask once
-whether TC Toolkit may configure IntelliSense for the folder; allow it. Nothing is written into your
-project (no `c_cpp_properties.json`). Without the C/C++ extension nothing changes.
+generated `.hpp` no longer shows "cannot open source file iec_types.hpp". The C/C++ extension only uses
+a provider that is **selected** for the folder; it picks TC Toolkit by itself only when the folder has no
+`.vscode/c_cpp_properties.json`, no `C_Cpp.default.*` setting is set, and no other provider (CMake Tools,
+Makefile Tools, …) is installed. Otherwise, after C++ is generated or a `CPP_Files` file is opened, TC
+Toolkit asks once per workspace folder: *IntelliSense for the generated C++ needs TC Toolkit as the C/C++
+configuration provider.* **Use TC Toolkit** sets `C_Cpp.default.configurationProvider` for that folder
+(in its `.vscode/settings.json`); **Not now** asks again in a later session; **Don't ask again** stops it.
+A `c_cpp_properties.json` that names another provider wins over that setting, so TC Toolkit then does not
+touch the file and offers to open it instead.
+
+To select it by hand: run **C/C++: Change Configuration Provider…** and pick *TC Toolkit*, or set
+`"C_Cpp.default.configurationProvider": "a-abushaqra.twincat-plc-toolkit"` in the workspace settings —
+or, if the folder has a `.vscode/c_cpp_properties.json`, put `"configurationProvider":
+"a-abushaqra.twincat-plc-toolkit"` into its configuration (the one named `Win32` on Windows). Then run
+**C/C++: Reset IntelliSense Database** if the old errors stay. Each time the C/C++ extension asks TC
+Toolkit for a file, a line is written to the **TC Toolkit C/C++** output channel — no line there means the
+provider is not selected. Without the C/C++ extension nothing changes.
 
 `CPP_Files` is output, like `ST_Files`: it is shown read-only in the PLC Objects tree and is never read
 back as a source. The extension only ever replaces or deletes files there that **it** wrote and that

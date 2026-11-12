@@ -7,9 +7,10 @@
  * and that folder on the include path, C++17, and the g++ the build uses as the compiler. Without
  * it, the C/C++ extension reports "cannot open source file iec_types.hpp" on every generated file.
  *
- * Nothing is written: no `.vscode/c_cpp_properties.json`, no setting. When the C/C++ extension is
- * not installed nothing happens at all (no error, no notification); when it is installed later in
- * the session, the provider is registered then.
+ * Nothing is written here: the C/C++ extension only consults a provider a configuration selects, and
+ * offering that selection is src/cppToolsSelection.js + src/commands/cppToolsCommands.js. When the C/C++
+ * extension is not installed nothing happens at all (no error, no notification); when it is installed
+ * later in the session, the provider is registered then.
  *
  * `createCppConfigurationProvider` is vscode-free (test/test_cpptools_provider.js drives it with
  * plain objects); `connectCppTools` takes `vscode` and the API getter as arguments.
@@ -54,6 +55,8 @@ function gccIntelliSenseMode(platform, arch) {
  * @property {(dir: string) => boolean} [hasPlcproj] Whether a folder holds a `.plcproj` (projects the
  *   map does not know yet); a real directory listing by default.
  * @property {(dir: string) => boolean} [isDir] Whether a folder exists; the real check by default.
+ * @property {(line: string) => void} [log] Told each time the C/C++ extension asks (the
+ *   "TC Toolkit C/C++" output channel), for diagnosing on the user's machine.
  * @property {string} [platform]
  * @property {string} [arch]
  */
@@ -74,6 +77,11 @@ function createCppConfigurationProvider(deps) {
         try { return fs.readdirSync(dir).some(n => /\.plcproj$/i.test(n)); } catch (e) { return false; }
     });
     const isDir = deps.isDir || ((/** @type {string} */ dir) => { try { return fs.statSync(dir).isDirectory(); } catch (e) { return false; } });
+    const log = (/** @type {string} */ line) => { try { if (deps.log) deps.log(line); } catch (e) { /* logging never fails a request */ } };
+    const show = (/** @type {any} */ uri) => {
+        if (!uri) return String(uri);
+        try { return typeof uri === 'string' ? uri : (uri.fsPath || String(uri)); } catch (e) { return '?'; }
+    };
 
     /**
      * The CPP_Files folder a generated file is in, or null when the file is not one.
@@ -123,11 +131,19 @@ function createCppConfigurationProvider(deps) {
     return {
         name: PROVIDER_NAME,
         extensionId: deps.extensionId,
+        /** The CPP_Files folder of a generated file, or null (not asked by the C/C++ extension). */
+        generatedFolderOf: cppFolderOf,
         /** @param {{fsPath: string}} uri */
         canProvideConfiguration(uri) {
-            return Promise.resolve(!!(uri && cppFolderOf(uri.fsPath)));
+            const yes = !!(uri && cppFolderOf(uri.fsPath));
+            log(`canProvideConfiguration ${show(uri)} -> ${yes}`);
+            return Promise.resolve(yes);
         },
-        /** @param {Array<{fsPath: string}>} uris */
+        /**
+         * Each item carries the very URI object it was asked for: the C/C++ extension matches the answer
+         * to its request by `uri.toString()` and accepts only a string or its own `vscode.Uri`.
+         * @param {Array<{fsPath: string}>} uris
+         */
         provideConfigurations(uris) {
             /** @type {any[]} */
             const items = [];
@@ -135,17 +151,22 @@ function createCppConfigurationProvider(deps) {
                 const dir = uri ? cppFolderOf(uri.fsPath) : null;
                 if (dir) items.push({ uri, configuration: configurationFor(dir) });
             }
+            log(`provideConfigurations ${(uris || []).map(show).join(', ')} -> ${items.length} item(s)`
+                + (items.length ? `: ${JSON.stringify(items[0].configuration)}` : ''));
             return Promise.resolve(items);
         },
         // Only with a CPP_Files folder: otherwise the C/C++ extension keeps its own browse path.
         canProvideBrowseConfiguration() {
-            return Promise.resolve(cppFolders().length > 0);
+            const yes = cppFolders().length > 0;
+            log(`canProvideBrowseConfiguration -> ${yes}`);
+            return Promise.resolve(yes);
         },
         provideBrowseConfiguration() {
             const gpp = compilerPath();
             /** @type {{browsePath: string[], standard: string, compilerPath?: string}} */
             const browse = { browsePath: [deps.includeDir, ...cppFolders()], standard: CPP_STANDARD };
             if (gpp) browse.compilerPath = gpp;
+            log(`provideBrowseConfiguration -> ${JSON.stringify(browse)}`);
             return Promise.resolve(browse);
         },
         canProvideBrowseConfigurationsPerFolder() {
