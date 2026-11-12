@@ -49,7 +49,10 @@ class StartPageController {
     /**
      * @param {vscode.ExtensionContext} context
      * @param {{recents: {list: () => any[], remove: (p: string) => Thenable<void>}, hasProject: () => boolean,
-     *   compilerReady?: () => boolean}} deps `compilerReady`: the compiler file exists (the bundled one, or the override).
+     *   compilerReady?: () => boolean, compileOptions?: () => {generateCpp: boolean, buildWithGpp: boolean},
+     *   setCompileOption?: (key: string, value: boolean) => Promise<boolean>}} deps `compilerReady`: the
+     *   compiler file exists (the bundled one, or the override); `compileOptions` / `setCompileOption`:
+     *   the Compile dropdown's two switches (R13).
      */
     constructor(context, deps) {
         this.context = context;
@@ -125,6 +128,7 @@ class StartPageController {
             recentsShown: recentsShownLimit(vscode.workspace.getConfiguration('tcToolkit.startPage').get('recentProjectsShown')),
             hasProject: this.deps.hasProject(),
             compilerReady: !!(this.deps.compilerReady && this.deps.compilerReady()),
+            compileOptions: this.deps.compileOptions ? this.deps.compileOptions() : { generateCpp: false, buildWithGpp: false },
             xaeShells: describeConfiguredShells((key) => xaeConfig.get(key), (p) => fs.existsSync(p))
         });
     }
@@ -172,6 +176,13 @@ class StartPageController {
                 break;
             case 'command':
                 if (ALLOWED_COMMANDS.has(msg.command)) await vscode.commands.executeCommand(msg.command);
+                break;
+            case 'setCompileOption':
+                // Only the two switches, only booleans; the host applies the coupling and posts the result.
+                if ((msg.key === 'generateCpp' || msg.key === 'buildWithGpp') && typeof msg.value === 'boolean' && this.deps.setCompileOption) {
+                    await this.deps.setCompileOption(msg.key, msg.value);
+                }
+                this.postState();
                 break;
             case 'openSettings':
                 if (Object.prototype.hasOwnProperty.call(SETTINGS_SECTIONS, msg.section)) {

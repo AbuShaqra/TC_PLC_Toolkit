@@ -80,8 +80,18 @@ assert((c.views['twincat-references-panel'] || []).find(v => v.id === 'twincatRe
     const { SETTING_RENAMES } = require(path.join(REPO, 'src', 'settingsMigration.js'));
     const live = Object.keys(allProps).filter(k => !allProps[k].deprecationMessage);
     const deprecated = Object.keys(allProps).filter(k => allProps[k].deprecationMessage);
-    assert(live.length === 10 && live.every(k => k.startsWith('tcToolkit.')),
-        `all 10 live settings are tcToolkit.* (got ${JSON.stringify(live)})`);
+    assert(live.length === 13 && live.every(k => k.startsWith('tcToolkit.')),
+        `all 13 live settings are tcToolkit.* (got ${JSON.stringify(live)})`);
+    // R13: the C++ switches (both off by default) and the g++ path (machine-scoped, like the XAE Shell paths).
+    const gen = allProps['tcToolkit.compiler.generateCpp'];
+    const build = allProps['tcToolkit.compiler.buildWithGpp'];
+    const gpp = allProps['tcToolkit.compiler.gppPath'];
+    assert(!!gen && gen.type === 'boolean' && gen.default === false && /^\*\*Generate C\+\+\.\*\*/.test(gen.markdownDescription),
+        'R13: tcToolkit.compiler.generateCpp is a boolean, off by default, described as "Generate C++"');
+    assert(!!build && build.type === 'boolean' && build.default === false && /^\*\*Build with g\+\+\.\*\*/.test(build.markdownDescription),
+        'R13: tcToolkit.compiler.buildWithGpp is a boolean, off by default, described as "Build with g++"');
+    assert(!!gpp && gpp.type === 'string' && gpp.default === '' && gpp.scope === 'machine', 'R13: tcToolkit.compiler.gppPath is a machine-scoped string, empty by default');
+    assert([gen, build, gpp].every(p => p && !/STruC|strucpp/i.test(JSON.stringify(p))), 'R13: no setting text names the compiler product');
     assert(!live.some(k => k.startsWith('twincat.')), 'no live (non-deprecated) setting key starts with twincat.');
     assert(SETTING_RENAMES.length === 10 && SETTING_RENAMES.every(r => live.includes(r.to) && deprecated.includes(r.from)
             && r.from === r.to.replace(/^tcToolkit\./, 'twincat.')),

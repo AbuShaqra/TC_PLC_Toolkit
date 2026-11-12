@@ -52,14 +52,18 @@ function isTwinCatSolution(slnPath) {
  * @param {() => any} deps.getSolutionMap The host's current solution model.
  * @param {() => boolean} [deps.isCompilerAvailable] Whether Compile Project's compiler file exists (the
  *   bundled one, or the override the setting names).
+ * @param {() => {generateCpp: boolean, buildWithGpp: boolean}} [deps.compileOptions] The Compile
+ *   dropdown's two switches (src/commands/compileCommands.js).
+ * @param {(key: string, value: boolean) => Promise<boolean>} [deps.setCompileOption] Writes one of them.
  * @returns {{startPage: InstanceType<typeof StartPageController>, recordOpenSolutions: () => void}}
  */
-function registerStartCommands(context, { provider, getProjectMap, getSolutionMap, isCompilerAvailable }) {
+function registerStartCommands(context, { provider, getProjectMap, getSolutionMap, isCompilerAvailable, compileOptions, setCompileOption }) {
     const recents = createRecentStore(context.globalState, (p) => fs.existsSync(p));
     const startPage = new StartPageController(context, {
         recents,
         hasProject: () => { const m = getProjectMap(); return !!(m && m.projects && m.projects.size > 0); },
-        compilerReady: () => !!(isCompilerAvailable && isCompilerAvailable())
+        compilerReady: () => !!(isCompilerAvailable && isCompilerAvailable()),
+        compileOptions, setCompileOption
     });
     const templatesRoot = path.join(context.extensionPath, 'resources', 'templates');
 

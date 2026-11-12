@@ -285,3 +285,42 @@ a:hover { color: var(--vscode-textLink-activeForeground); text-decoration: under
 
 /* Compile project: an ordinary action while its compiler file exists; without it, no chevron. */
 #compile-project:not(.ready) .compile-chevron { display: none; }
+
+/* The Compile dropdown (R13): the tile and a chevron toggle fused into one row; the toggle opens two
+   checkboxes under it. Theme colours only, like every other tile. */
+.split-tile { display: flex; align-items: stretch; min-width: 0; }
+.split-tile #compile-project { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.options-toggle {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    padding: 0;
+    color: var(--vscode-descriptionForeground);
+    background: var(--vscode-editor-background);
+    border: 1px solid var(--tc-border);
+    border-left: none;
+    border-radius: 0 8px 8px 0;
+    cursor: pointer;
+}
+.options-toggle:hover { background: var(--vscode-list-hoverBackground); color: var(--tc-accent); }
+.options-toggle .icon { transition: transform 0.15s ease; }
+.options-toggle.open .icon { transform: rotate(180deg); }
+.compile-options {
+    display: grid;
+    gap: 6px;
+    margin-top: 6px;
+    padding: 8px 10px;
+    border: 1px solid var(--tc-border);
+    border-radius: 8px;
+    background: var(--vscode-dropdown-background, var(--vscode-editor-background));
+    color: var(--vscode-dropdown-foreground, var(--vscode-foreground));
+}
+.compile-options[hidden] { display: none; }
+.compile-options .option { display: flex; align-items: flex-start; gap: 8px; margin: 0; font-weight: normal; cursor: pointer; }
+.compile-options .option input { margin: 2px 0 0; flex: none; accent-color: var(--vscode-focusBorder); }
+.option-text { min-width: 0; }
+.option-label { display: block; font-weight: 600; }
+.option-detail { display: block; color: var(--vscode-descriptionForeground); font-size: 0.92em; }
+@media (prefers-reduced-motion: reduce) { .options-toggle .icon { transition: none; } }

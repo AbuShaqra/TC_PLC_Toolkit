@@ -86,6 +86,31 @@ class TwinCatCustomEditorProvider {
         this.compileSource = null;
         /** Whether a Compile Project run is in progress (the toolbar button is disabled meanwhile). */
         this.compileRunning = false;
+        /** The Compile dropdown's two switches as the settings have them (R13). */
+        this.compileOptions = { generateCpp: false, buildWithGpp: false };
+        /** @type {{options: () => {generateCpp: boolean, buildWithGpp: boolean}, set: (key: string, value: boolean) => Promise<boolean>}|null} */
+        this.compileOptionsSource = null;
+    }
+
+    /**
+     * The Compile dropdown's two switches changed (or were written by a dropdown): every open editor's
+     * checkboxes follow.
+     * @param {{generateCpp: boolean, buildWithGpp: boolean}} options
+     */
+    setCompileOptions(options) {
+        this.compileOptions = { generateCpp: !!(options && options.generateCpp), buildWithGpp: !!(options && options.buildWithGpp) };
+        for (const panel of this.activePanels.values()) {
+            panel.webview.postMessage({ type: 'compileOptions', options: this.compileOptions });
+        }
+    }
+
+    /**
+     * Where the Compile dropdown's checkboxes are written (src/commands/compileCommands.js).
+     * @param {{options: () => {generateCpp: boolean, buildWithGpp: boolean}, set: (key: string, value: boolean) => Promise<boolean>}} source
+     */
+    setCompileOptionsSource(source) {
+        this.compileOptionsSource = source;
+        this.compileOptions = source.options();
     }
 
     /**
@@ -284,7 +309,8 @@ class TwinCatCustomEditorProvider {
                             splitterRatio: splitterRatio,
                             fileUri: uriStr,
                             compileDiagnostics: this.compileSource ? this.compileSource.paneDiagnostics(uriStr) : [],
-                            compileRunning: this.compileRunning
+                            compileRunning: this.compileRunning,
+                            compileOptions: this.compileOptions
                         });
                         // Cleared by the webview's `selectionApplied` ack, not here: if the highlight
                         // never lands (the panes were not populated yet), dropping it now would leave
@@ -579,6 +605,14 @@ class TwinCatCustomEditorProvider {
                     // `projectKeys` narrows to a chosen subset; absent/empty means every project.
                     await this.generateAllStFiles(message.projectKeys);
                     break;
+                case 'setCompileOption':
+                    // A Compile dropdown checkbox: only the two switches, only booleans.
+                    if (this.compileOptionsSource && (message.key === 'generateCpp' || message.key === 'buildWithGpp') && typeof message.value === 'boolean') {
+                        await this.compileOptionsSource.set(message.key, message.value);
+                    } else {
+                        webviewPanel.webview.postMessage({ type: 'compileOptions', options: this.compileOptions });
+                    }
+                    break;
                 case 'compile-project':
                     // The toolbar's Compile button: the project that owns THIS file.
                     await this.compileProjectFor(document.uri.fsPath);
@@ -697,12 +731,20 @@ class TwinCatCustomEditorProvider {
                         <button id="generate-st-run" class="action-btn split-menu-run">Generate selected</button>
                     </div>
                 </div>
-                <!-- Compile Project for the PLC project that owns this file (check only). The glyph is
-                     inline SVG in the codicon style (16px grid, currentColor): the webview is offline. -->
+                <!-- Compile Project for the PLC project that owns this file. The glyph is inline SVG in
+                     the codicon style (16px grid, currentColor): the webview is offline. The caret opens
+                     the two C++ switches (R13), which the host writes to the settings. -->
+                <div id="compile-group" class="split-btn has-caret">
                 <button id="compile-btn" class="action-btn icon-btn" title="Compile Project: check this PLC project with the IEC 61131-3 compiler" aria-label="Compile Project">` +
         `<svg class="btn-icon" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">` +
         `<path fill="currentColor" d="M3 2.5v11l1.5.8 8-5.5v-1.6l-8-5.5L3 2.5zm1.5 1.4L11.2 8l-6.7 4.6V3.9z"/></svg>` +
-        `<span class="btn-label">Compile</span></button>
+        `<span class="btn-label">Compile</span></button>` +
+        `<button id="compile-caret" class="action-btn split-caret" title="Compile options: C++ generation and the g++ build" aria-label="Compile options" aria-haspopup="true" aria-expanded="false" aria-controls="compile-menu">▾</button>` +
+        `<div id="compile-menu" class="split-menu" role="group" aria-labelledby="compile-menu-title" hidden>` +
+        `<div class="split-menu-title" id="compile-menu-title">After a check with no errors</div>` +
+        `<label class="split-menu-item" title="Write the project as C++ into its CPP_Files folder"><input type="checkbox" id="compile-opt-cpp"><span>Generate C++</span></label>` +
+        `<label class="split-menu-item" title="Also compile that C++ with g++ (optional; turns Generate C++ on)"><input type="checkbox" id="compile-opt-gpp"><span>Build with g++</span></label>` +
+        `</div></div>
                 <div class="sync-toggle-container active" id="sync-toggle-wrapper">
                     <span class="sync-toggle-label" id="sync-mode-text">Auto Sync</span>
                     <label class="switch">

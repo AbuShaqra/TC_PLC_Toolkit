@@ -16,6 +16,7 @@ const { registerRenameCommands } = require('./src/commands/renameCommands');
 const { registerStartCommands } = require('./src/commands/startCommands');
 const { registerCompileCommands } = require('./src/commands/compileCommands');
 const { registerXaeShellCommands } = require('./src/commands/xaeShellCommands');
+const { registerGppCommands } = require('./src/commands/gppCommands');
 const { migrateSettings } = require('./src/settingsMigration');
 const { TwinCatDragAndDropController } = require('./src/treeDragAndDrop');
 const { TwinCatCustomEditorProvider } = require('./src/customEditorProvider');
@@ -580,14 +581,18 @@ function activate(context) {
     // process). Registered before the start page so the page can ask whether the compiler is there.
     /** @type {{startPage: {postState: () => void}}|null} */
     let start = null;
+    // `twincat.detectGpp`; its silent fill of an EMPTY g++ path runs when the g++ build is turned on.
+    const gpp = registerGppCommands(context);
     const compile = registerCompileCommands(context, {
         provider, getProjectMap: () => hostProjectMap,
-        onSettingsChanged: () => { if (start) start.startPage.postState(); }
+        onSettingsChanged: () => { if (start) start.startPage.postState(); },
+        fillGppPath: gpp.autoFill
     });
 
     start = registerStartCommands(context, {
         provider, getProjectMap: () => hostProjectMap, getSolutionMap: () => hostSolutionMap,
-        isCompilerAvailable: compile.isAvailable
+        isCompilerAvailable: compile.isAvailable,
+        compileOptions: compile.compileOptions, setCompileOption: compile.setCompileOption
     });
     /** @type {any} */ (start).recordOpenSolutions();
 

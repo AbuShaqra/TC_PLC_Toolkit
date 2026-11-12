@@ -11,6 +11,11 @@
  * `twincat.openComponent` with the exact pane and line, a component edit dropping its results, the
  * next run replacing everything, a failed run keeping the previous results, cancellation, and a
  * file opened fresh starting on its first problem.
+ * R13: C++ generation and the g++ build — off by default; the dropdown's checkboxes and changes made
+ * elsewhere keep the two switches coupled per scope; a clean check is followed by the compile mode,
+ * whose files land in CPP_Files (and only there, never over a file the toolkit did not write); a
+ * check with errors generates nothing; g++ runs with the vendored headers and its messages reach the
+ * Problems panel on the generated files; a missing g++ is explained with a button to its setting.
  */
 
 'use strict';
@@ -57,14 +62,19 @@ const bundlePath = path.join(ROOT, 'bundle.cjs');
 fs.writeFileSync(bundlePath, '// stand-in');
 
 // ── A recording `vscode` stub ───────────────────────────────────────────────────────────────────
-const calls = { executed: [], errors: [], infos: [], warnings: [], progress: [], status: null };
+const calls = { executed: [], errors: [], infos: [], warnings: [], progress: [], status: null, updates: [] };
 const handlers = new Map();
 const answers = { quickPick: [], message: [] };
 const settings = {};
+const workspaceSettings = {};
+/** Tells every configuration listener that `full` changed. */
+const fireConfig = (full) => listeners.config.slice().forEach(fn => fn({ affectsConfiguration: (sec) => full === sec || full.startsWith(sec + '.') }));
 const listeners = { config: [], docChange: [] };
 const uri = (p) => ({ fsPath: p, scheme: 'file', path: p, query: '', toString: () => 'file://' + p.split(path.sep).join('/') });
 class Range { constructor(sl, sc, el, ec) { this.start = { line: sl, character: sc }; this.end = { line: el, character: ec }; } }
 class Diagnostic { constructor(range, message, severity) { this.range = range; this.message = message; this.severity = severity; } }
+class Location { constructor(at, range) { this.uri = at; this.range = range; } }
+class DiagnosticRelatedInformation { constructor(location, message) { this.location = location; this.message = message; } }
 const collections = [];
 let uriHandler = null;
 let cancelNextRun = false;
@@ -75,7 +85,8 @@ const vscodeStub = {
         joinPath: (base, ...parts) => uri(path.join(base.fsPath, ...parts)),
         parse: (s) => { const m = /^([a-z-]+):\/\/([^/]*)([^?]*)\??(.*)$/.exec(s) || []; return { scheme: m[1], authority: m[2], path: m[3], query: m[4] || '', fsPath: s, toString: () => s }; }
     },
-    Range, Diagnostic,
+    Range, Diagnostic, Location, DiagnosticRelatedInformation,
+    ConfigurationTarget: { Global: 1, Workspace: 2, WorkspaceFolder: 3 },
     DiagnosticSeverity: { Error: 0, Warning: 1, Information: 2 },
     StatusBarAlignment: { Left: 1 },
     ProgressLocation: { Notification: 15 },
@@ -90,8 +101,21 @@ const vscodeStub = {
     },
     workspace: {
         textDocuments: [],
+        // `settings` is the user (global) scope; `workspaceSettings` the workspace scope, which wins.
         getConfiguration: (section) => ({
-            get: (key, fallback) => (Object.prototype.hasOwnProperty.call(settings, `${section}.${key}`) ? settings[`${section}.${key}`] : fallback)
+            get: (key, fallback) => {
+                const full = `${section}.${key}`;
+                if (Object.prototype.hasOwnProperty.call(workspaceSettings, full)) return workspaceSettings[full];
+                return Object.prototype.hasOwnProperty.call(settings, full) ? settings[full] : fallback;
+            },
+            inspect: (key) => ({ globalValue: settings[`${section}.${key}`], workspaceValue: workspaceSettings[`${section}.${key}`] }),
+            update: async (key, value, target) => {
+                const full = `${section}.${key}`;
+                const bucket = target === 2 ? workspaceSettings : settings;
+                if (value === undefined) delete bucket[full]; else bucket[full] = value;
+                calls.updates.push({ key: full, value, target });
+                fireConfig(full);
+            }
         }),
         onDidChangeConfiguration: (fn) => { listeners.config.push(fn); return { dispose() {} }; },
         onDidChangeTextDocument: (fn) => { listeners.docChange.push(fn); return { dispose() {} }; }
@@ -175,7 +199,11 @@ const fake = createFakeSpawn((call) => {
     return compilerAnswer(call, units);
 });
 let settingsChanged = 0;
+let gppFills = 0;
 const compile = registerCompileCommands(context, { provider, getProjectMap: projectMap, onSettingsChanged: () => { settingsChanged++; }, spawn: fake.spawn,
+    fillGppPath: () => { gppFills++; return Promise.resolve(null); },
+    // g++ is looked for only where the test says (the R13 block sets the path setting).
+    gppDiscovery: { platform: 'linux', env: { PATH: path.join(ROOT, 'no-gpp-here') }, exists: (p) => fs.existsSync(p) },
     // Only `node` on PATH (the fake): the editor's own runtime would otherwise rescue a too-old Node.
     nodeDiscovery: { platform: 'linux', env: {}, runtime: null } });
 const run = (id, ...args) => vscodeStub.commands.executeCommand(id, ...args);
@@ -559,6 +587,195 @@ const settle = () => new Promise(r => setTimeout(r, 10));
             /compiler defines not read/.test(result.defineNotes[0]),
             `DEFINES: a .plcproj that cannot be read passes no define and says so, without failing the run (${result.defineNotes[0]})`);
         projectList = [project('a', 'PLC', [fbPath, gvlPath])];
+    }
+
+    // ── R13: C++ generation and the optional g++ build ──────────────────────────────────────────
+    {
+        const gppCollection = collections.find(c => c.name === 'twincat-gpp');
+        const cppDir = path.join(ROOT, 'PLC', 'CPP_Files');
+        const cppFile = path.join(cppDir, 'PLC.cpp');
+        const hppFile = path.join(cppDir, 'PLC.hpp');
+        const objFile = path.join(cppDir, 'PLC.o');
+        const gppExe = path.join(ROOT, 'bin', 'g++');
+        fs.mkdirSync(path.dirname(gppExe), { recursive: true });
+        fs.writeFileSync(gppExe, '');
+        const cleanCheck = { stdout: JSON.stringify({ dialect: 'twincat3', files: [], diagnostics: [], summary: {} }), code: 0 };
+        let checkAnswer = () => cleanCheck;
+        let gppAnswer = () => ({ code: 0 });
+        compilerAnswer = (call) => {
+            if (call.command === gppExe) {
+                const r = gppAnswer(call);
+                if (!r.code) fs.writeFileSync(call.args[call.args.indexOf('-o') + 1], 'object code');
+                return r;
+            }
+            if (call.args.includes('-o')) {
+                const out = call.args[call.args.indexOf('-o') + 1];
+                fs.writeFileSync(path.join(call.options.cwd, out), '#include "PLC.hpp"\n// generated\n');
+                fs.writeFileSync(path.join(call.options.cwd, out.replace(/\.cpp$/, '.hpp')), '#pragma once\n');
+                return { stdout: 'Compilation successful!\n', code: 0 };
+            }
+            return checkAnswer(call);
+        };
+        const reset = () => { for (const k of ['errors', 'infos', 'warnings']) calls[k].length = 0; panelPosts.length = 0; };
+        const generationCalls = () => fake.calls.filter(c => c.args.includes('-o') && c.command !== gppExe);
+        const gppCalls = () => fake.calls.filter(c => c.command === gppExe);
+        const lastNote = () => [...calls.errors, ...calls.warnings, ...calls.infos].map(m => m.m).find(m => /^Compile Project/.test(m)) || '';
+
+        // Off by default: a clean run generates nothing.
+        reset();
+        answers.message.push(undefined);
+        let r13Result = await run('twincat.compileProject');
+        await settle();
+        assert(r13Result.ok === true && r13Result.cpp === null && generationCalls().length === 0 && !fs.existsSync(cppDir),
+            'R13 OFF: with both switches off (the default) nothing is generated and no CPP_Files folder appears');
+        assert(JSON.stringify(compile.compileOptions()) === '{"generateCpp":false,"buildWithGpp":false}' && JSON.stringify(provider.compileOptions) === '{"generateCpp":false,"buildWithGpp":false}',
+            'R13 OFF: the editors are told both switches are off');
+
+        // The dropdown ticks "Generate C++": the setting is written, every editor and the start page follow.
+        const changedBefore = settingsChanged;
+        await provider.compileOptionsSource.set('generateCpp', true);
+        assert(settings['tcToolkit.compiler.generateCpp'] === true && !('tcToolkit.compiler.buildWithGpp' in settings),
+            'R13 BOX: ticking Generate C++ writes tcToolkit.compiler.generateCpp to the user settings, nothing else');
+        assert(panelPosts.some(m => m.type === 'compileOptions' && m.options.generateCpp === true && m.options.buildWithGpp === false) && settingsChanged > changedBefore,
+            'R13 BOX: open editors get the new checkboxes, and the start page is refreshed');
+
+        reset();
+        answers.message.push(undefined);
+        r13Result = await run('twincat.compileProject');
+        await settle();
+        const genCall = generationCalls()[0];
+        const checkCall = fake.calls[fake.calls.indexOf(genCall) - 1];
+        assert(!!genCall && genCall.args.slice(-2).join(' ') === '-o PLC.cpp' && !genCall.args.includes('--check')
+            && JSON.stringify(genCall.args.slice(0, -2).filter(a => a !== '--check' && a !== '--json')) === JSON.stringify(checkCall.args.filter(a => a !== '--check' && a !== '--json')),
+        'R13 GEN: after a clean check the compiler runs once more in compile mode, with the same inputs and defines, writing PLC.cpp');
+        assert(r13Result.cpp && r13Result.cpp.status === 'done' && r13Result.cpp.written.join('|') === [cppFile, hppFile].join('|')
+            && fs.readFileSync(cppFile, 'utf8').startsWith('#include "PLC.hpp"') && fs.existsSync(path.join(cppDir, '.tc-toolkit-generated.json')),
+        'R13 GEN: <project dir>/CPP_Files/PLC.cpp and PLC.hpp are written, with the ownership record');
+        assert(/C\+\+ written to PLC\/CPP_Files: PLC\.cpp, PLC\.hpp\./.test(lastNote()) && calls.status.text.includes('· C++ written')
+            && calls.infos.some(m => m.buttons.includes('Open C++')), `R13 GEN: the notification and status bar say what was written (${lastNote()} / ${calls.status.text})`);
+        assert(gppCalls().length === 0 && (r13Result.cpp.gpp === undefined || r13Result.cpp.gpp === null), 'R13 GEN: no g++ while the build is off');
+
+        // A check with errors: nothing is generated; the earlier files stay.
+        checkAnswer = () => errorReport(unitLineOf(fs.readFileSync(fbPath, 'utf8'), 'nNope := 5;'));
+        const genBefore = generationCalls().length;
+        reset();
+        answers.message.push(undefined);
+        r13Result = await run('twincat.compileProject');
+        await settle();
+        assert(r13Result.cpp.status === 'skipped' && generationCalls().length === genBefore && fs.existsSync(cppFile)
+            && /C\+\+ was not generated: the project has errors\./.test(lastNote()), 'R13 GEN: a check with errors generates nothing and says so; earlier output is left');
+        checkAnswer = () => cleanCheck;
+
+        // The build turned on elsewhere (workspace settings.json): generation follows IN THAT SCOPE; the g++ path is filled.
+        delete settings['tcToolkit.compiler.generateCpp'];
+        fireConfig('tcToolkit.compiler.generateCpp');
+        calls.updates.length = 0;
+        const fillsBefore = gppFills;
+        workspaceSettings['tcToolkit.compiler.buildWithGpp'] = true;
+        fireConfig('tcToolkit.compiler.buildWithGpp');
+        await settle();
+        assert(calls.updates.length === 1 && calls.updates[0].key === 'tcToolkit.compiler.generateCpp' && calls.updates[0].value === true && calls.updates[0].target === 2,
+            `R13 COUPLE: the build turned on in the workspace turns generation on in the workspace (${JSON.stringify(calls.updates)})`);
+        assert(gppFills === fillsBefore + 1, 'R13 COUPLE: turning the build on fills an empty g++ path setting');
+        // Generation turned off there: the build follows.
+        calls.updates.length = 0;
+        workspaceSettings['tcToolkit.compiler.generateCpp'] = false;
+        fireConfig('tcToolkit.compiler.generateCpp');
+        await settle();
+        assert(calls.updates.length === 1 && calls.updates[0].key === 'tcToolkit.compiler.buildWithGpp' && calls.updates[0].value === false && calls.updates[0].target === 2
+            && JSON.stringify(compile.compileOptions()) === '{"generateCpp":false,"buildWithGpp":false}',
+        `R13 COUPLE: generation turned off in the workspace turns the build off there (${JSON.stringify(calls.updates)})`);
+        delete workspaceSettings['tcToolkit.compiler.generateCpp'];
+        delete workspaceSettings['tcToolkit.compiler.buildWithGpp'];
+        fireConfig('tcToolkit.compiler.buildWithGpp');
+
+        // The dropdown ticks "Build with g++": both settings on; g++ missing → C++ still written, a clear message with the setting.
+        await compile.setCompileOption('buildWithGpp', true);
+        assert(settings['tcToolkit.compiler.buildWithGpp'] === true && settings['tcToolkit.compiler.generateCpp'] === true,
+            'R13 BOX: ticking Build with g++ turns both settings on');
+        settings['tcToolkit.compiler.gppPath'] = path.join(ROOT, 'bin', 'missing-g++');
+        reset();
+        answers.message.push(undefined, undefined);
+        r13Result = await run('twincat.compileProject');
+        await settle();
+        const missing = calls.warnings.find(m => /Build with g\+\+ is on, but the g\+\+ path setting names something that does not exist/.test(m.m));
+        assert(r13Result.cpp.status === 'done' && r13Result.cpp.gpp.status === 'missing' && gppCalls().length === 0 && fs.existsSync(cppFile)
+            && !!missing && missing.buttons.join('|') === 'Open Setting|Detect g++' && calls.status.text.includes('g++ not found'),
+        'R13 GPP: a missing g++ still writes the C++, and says so with buttons to the g++ path setting and to detection');
+        const executedBefore = calls.executed.length;
+        answers.message.length = 0;
+        answers.message.push(undefined, 'Open Setting');
+        await run('twincat.compileProject');
+        await settle();
+        assert(calls.executed.slice(executedBefore).some(e => e.id === 'twincat.openSettings' && e.args[0] === 'tcToolkit.compiler.gppPath'),
+            'R13 GPP: "Open Setting" opens tcToolkit.compiler.gppPath');
+
+        // g++ found (the path setting): its errors go to the Problems panel on the generated .cpp.
+        settings['tcToolkit.compiler.gppPath'] = gppExe;
+        gppAnswer = () => ({ code: 1, stderr: [
+            `In file included from ${cppFile}:1:`,
+            `${hppFile}:3:2: warning: odd thing`,
+            `${cppFile}: In member function 'void f()':`,
+            `${cppFile}:2:5: error: 'class X' has no member named 'Y'`,
+            `${hppFile}:1:1: note: declared here`,
+            `${path.join(REPO, 'resources', 'compiler', 'include', 'iec_var.hpp')}:40:3: error: deep inside`
+        ].join('\n') });
+        reset();
+        answers.message.push(undefined);
+        r13Result = await run('twincat.compileProject');
+        await settle();
+        const gcall = gppCalls()[gppCalls().length - 1];
+        assert(!!gcall && gcall.args.join(' ') === `-std=c++14 -fno-strict-aliasing -Wno-c++17-extensions -fdiagnostics-color=never -fmessage-length=0 -c ${cppFile} -I ${path.join(REPO, 'resources', 'compiler', 'include')} -I ${cppDir} -o ${objFile}`
+            && gcall.options.cwd === cppDir, `R13 GPP: g++ -std=c++14 -c PLC.cpp against the vendored runtime headers, -o CPP_Files/PLC.o (${gcall && gcall.args.join(' ')})`);
+        const onCpp = gppCollection.map.get(vscodeStub.Uri.file(cppFile).toString()) || [];
+        const onHpp = gppCollection.map.get(vscodeStub.Uri.file(hppFile).toString()) || [];
+        assert(onCpp.length === 2 && onHpp.length === 1 && onCpp.every(d => d.source === 'TC Toolkit g++'), `R13 GPP: two problems on the .cpp, one on the .hpp, source "TC Toolkit g++" (${onCpp.length}/${onHpp.length})`);
+        const memberErr = onCpp.find(d => /no member named/.test(d.message));
+        assert(!!memberErr && memberErr.range.start.line === 1 && memberErr.range.start.character === 4 && memberErr.severity === 0
+            && memberErr.relatedInformation && memberErr.relatedInformation[0].message === 'declared here', 'R13 GPP: an error at its line and column, with its note as related information');
+        const deep = onCpp.find(d => /deep inside/.test(d.message));
+        assert(!!deep && deep.range.start.line === 0 && /\(in iec_var\.hpp:40\)$/.test(deep.message), 'R13 GPP: an error in a runtime header goes on the .cpp\'s first line and names the header');
+        assert(onHpp[0].severity === 1 && r13Result.cpp.gpp.errors === 2 && r13Result.cpp.gpp.warnings === 1 && calls.errors.some(m => /g\+\+: 2 errors, 1 warning\./.test(m.m))
+            && calls.status.text.endsWith('· g++ $(error) 2') && !fs.existsSync(objFile), `R13 GPP: the summary, the status bar and no object file after a failed build (${calls.status.text})`);
+        const gppLog = (calls.outputs || []).find(c => c.name === OUTPUT_CHANNEL_NAME);
+        assert(!!gppLog && gppLog.lines.some(l => /deep inside/.test(l)), "R13 GPP: g++'s output goes to the output channel");
+
+        // A clean build: the object file is written and recorded; the g++ problems are gone.
+        gppAnswer = () => ({ code: 0 });
+        reset();
+        answers.message.push(undefined);
+        r13Result = await run('twincat.compileProject');
+        await settle();
+        const rec = JSON.parse(fs.readFileSync(path.join(cppDir, '.tc-toolkit-generated.json'), 'utf8'));
+        assert(r13Result.cpp.gpp.status === 'done' && r13Result.cpp.gpp.exitCode === 0 && fs.existsSync(objFile) && !!rec.files['PLC.o'] && gppCollection.map.size === 0
+            && /g\+\+ compiled it without errors\./.test(lastNote()) && calls.status.text.endsWith('· g++ $(check)'),
+        'R13 GPP: a clean build writes PLC.o (recorded as the toolkit\'s), clears the g++ problems and says so');
+
+        // A file the toolkit did not write is never overwritten, and g++ is then not run.
+        fs.writeFileSync(hppFile, '// my own header');
+        const gppBefore = gppCalls().length;
+        reset();
+        answers.message.push(undefined);
+        r13Result = await run('twincat.compileProject');
+        await settle();
+        assert(fs.readFileSync(hppFile, 'utf8') === '// my own header' && r13Result.cpp.refused.length === 1 && r13Result.cpp.refused[0].reason === 'changed'
+            && gppCalls().length === gppBefore && r13Result.cpp.gpp.status === 'skipped' && /Left alone in PLC\/CPP_Files .*PLC\.hpp/.test(lastNote()),
+        `R13 OWN: an edited generated file is left alone and reported, and g++ is not run on a half-written pair (${lastNote()})`);
+        fs.rmSync(cppDir, { recursive: true, force: true });
+
+        // Switches off again (the dropdown): nothing more is written.
+        await compile.setCompileOption('generateCpp', false);
+        assert(settings['tcToolkit.compiler.generateCpp'] === false && settings['tcToolkit.compiler.buildWithGpp'] === false,
+            'R13 BOX: unticking Generate C++ turns the build off too');
+        reset();
+        answers.message.push(undefined);
+        r13Result = await run('twincat.compileProject');
+        await settle();
+        assert(r13Result.cpp === null && !fs.existsSync(cppDir), 'R13 OFF: switched off, nothing is generated');
+        const uiR13 = JSON.stringify([calls.errors, calls.infos, calls.warnings]);
+        assert(!/STruC/i.test(uiR13), 'R13 UI: no message names the compiler product');
+        delete settings['tcToolkit.compiler.gppPath'];
+        compilerAnswer = () => cleanCheck;
     }
 
     // ── The product name of the compiler stays out of the UI strings ────────────────────────────

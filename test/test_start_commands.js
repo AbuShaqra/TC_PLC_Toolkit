@@ -118,11 +118,20 @@ const generated = [];
 const provider = { listProjects: () => projects, generateAllStFiles: async (keys) => { generated.push(keys); } };
 /** What the stubbed Compile Project answers to "is the compiler file there?" (the bundled one: yes). */
 let compilerAvailable = true;
+/** The Compile dropdown's switches as the stubbed Compile Project has them, and what the page wrote. */
+let compileOpts = { generateCpp: false, buildWithGpp: false };
+const optionWrites = [];
 const { startPage } = registerStartCommands(context, {
     provider,
     getProjectMap: () => ({ projects: new Map() }),
     getSolutionMap: () => ({ solutions: [] }),
-    isCompilerAvailable: () => compilerAvailable
+    isCompilerAvailable: () => compilerAvailable,
+    compileOptions: () => compileOpts,
+    setCompileOption: async (key, value) => {
+        optionWrites.push([key, value]);
+        compileOpts = key === 'buildWithGpp' ? { generateCpp: compileOpts.generateCpp || value, buildWithGpp: value } : { generateCpp: value, buildWithGpp: value && compileOpts.buildWithGpp };
+        return true;
+    }
 });
 const run = (id, ...args) => vscodeStub.commands.executeCommand(id, ...args);
 const executedIds = () => calls.executed.map(c => c.id);
@@ -228,6 +237,22 @@ const recents = () => (state.get('twincat.recentSolutions') || []).map(e => e.sl
     assert(panel.posted.filter(m => m.type === 'state').pop().compilerReady === false, 'state says the compiler is not ready when its file is missing');
     compilerAvailable = true;
     startPage.postState();
+
+    // R13: the Compile dropdown. The state carries the two switches; a checkbox writes through Compile Project.
+    assert(JSON.stringify(st.compileOptions) === '{"generateCpp":false,"buildWithGpp":false}', 'R13: state carries the Compile dropdown\'s two switches (off by default)');
+    await panel.send({ type: 'setCompileOption', key: 'buildWithGpp', value: true });
+    let lastState = panel.posted.filter(m => m.type === 'state').pop();
+    assert(JSON.stringify(optionWrites) === '[["buildWithGpp",true]]' && lastState.compileOptions.generateCpp === true && lastState.compileOptions.buildWithGpp === true,
+        'R13: a checkbox is written through Compile Project, and the page gets the result (the build turned generation on)');
+    await panel.send({ type: 'setCompileOption', key: 'tcToolkit.compiler.path', value: true });
+    await panel.send({ type: 'setCompileOption', key: 'generateCpp', value: 'yes' });
+    assert(optionWrites.length === 1, 'R13: anything but the two switches with a boolean is ignored');
+    await panel.send({ type: 'setCompileOption', key: 'generateCpp', value: false });
+    lastState = panel.posted.filter(m => m.type === 'state').pop();
+    assert(lastState.compileOptions.generateCpp === false && lastState.compileOptions.buildWithGpp === false, 'R13: unticking Generate C++ is shown with the build off too');
+    assert(/id="compile-options-toggle"[^>]*aria-expanded="false"[^>]*aria-controls="compile-options"/.test(panel.webview.html)
+        && /id="opt-generate-cpp"/.test(panel.webview.html) && /id="opt-build-gpp"/.test(panel.webview.html) && />Generate C\+\+</.test(panel.webview.html)
+        && />Build with g\+\+</.test(panel.webview.html), 'R13: the page has the dropdown toggle and its two labelled checkboxes');
 
     // A settings change reaches the open page; unrelated settings do not.
     const statesBefore = panel.posted.filter(m => m.type === 'state').length;

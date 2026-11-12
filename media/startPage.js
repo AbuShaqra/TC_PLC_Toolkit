@@ -7,8 +7,9 @@
  *
  * Messages to the host:  ready · browseLocation · create {version, name, location} · openProject ·
  *                        openRecent {slnPath} · removeRecent {slnPath} · command {command} · link {id} ·
- *                        openSettings {section}
- * Messages from the host: state {location, sep, recents, recentsShown, hasProject, compilerReady, xaeShells} ·
+ *                        openSettings {section} · setCompileOption {key, value}
+ * Messages from the host: state {location, sep, recents, recentsShown, hasProject, compilerReady, compileOptions,
+ *                         xaeShells} ·
  *                         location {location} · createResult {ok, error?}
  */
 
@@ -211,6 +212,41 @@
     }
     $('compile-project').addEventListener('click', () => vscode.postMessage({ type: 'command', command: 'twincat.compileProject' }));
 
+    // The Compile dropdown (R13): two checkboxes that show and write the C++ settings. The host writes
+    // them (with their coupling: the g++ build needs the C++) and sends the result back in `state`.
+    const optionsToggle = $('compile-options-toggle');
+    const optionsPanel = $('compile-options');
+    const optGenerate = $('opt-generate-cpp');
+    const optBuild = $('opt-build-gpp');
+    function setOptionsOpen(open, focusToggle) {
+        optionsPanel.hidden = !open;
+        optionsToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+        optionsToggle.classList.toggle('open', open);
+        if (open) optGenerate.focus();
+        else if (focusToggle) optionsToggle.focus();
+    }
+    optionsToggle.addEventListener('click', () => setOptionsOpen(optionsPanel.hidden, false));
+    optionsPanel.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') { e.preventDefault(); setOptionsOpen(false, true); return; }
+        if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+            e.preventDefault();
+            (document.activeElement === optGenerate ? optBuild : optGenerate).focus();
+        }
+    });
+    /** @param {{generateCpp?: boolean, buildWithGpp?: boolean}} o */
+    function renderCompileOptions(o) {
+        optGenerate.checked = !!(o && (o.generateCpp || o.buildWithGpp));
+        optBuild.checked = !!(o && o.buildWithGpp);
+    }
+    for (const [box, key] of [[optGenerate, 'generateCpp'], [optBuild, 'buildWithGpp']]) {
+        box.addEventListener('change', () => {
+            // Shown at once; the host's `state` confirms (or corrects) it.
+            if (key === 'buildWithGpp' && box.checked) optGenerate.checked = true;
+            if (key === 'generateCpp' && !box.checked) optBuild.checked = false;
+            vscode.postMessage({ type: 'setCompileOption', key, value: box.checked });
+        });
+    }
+
     window.addEventListener('message', (event) => {
         const msg = event.data || {};
         switch (msg.type) {
@@ -224,6 +260,7 @@
                 $('no-project').hidden = !!msg.hasProject;
                 for (const b of document.querySelectorAll('[data-needs-project]')) b.disabled = !msg.hasProject;
                 renderCompileTile(!!msg.compilerReady, !!msg.hasProject);
+                renderCompileOptions(msg.compileOptions);
                 refresh();
                 break;
             case 'location':

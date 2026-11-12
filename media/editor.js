@@ -212,14 +212,21 @@
      * editor clipped its left half when it was right-aligned to the caret).
      */
     function placeGenerateMenu() {
-        if (!generateMenu) return;
+        if (generateMenu) placeSplitMenu(generateMenu);
+    }
+
+    /**
+     * Places a split button's open menu (Generate ST's, Compile's) inside the webview, as above.
+     * @param {HTMLElement} menu
+     */
+    function placeSplitMenu(menu) {
         const margin = 8;
-        generateMenu.style.left = '0px';
-        const rect = generateMenu.getBoundingClientRect();
+        menu.style.left = '0px';
+        const rect = menu.getBoundingClientRect();
         const overflowRight = rect.right - (window.innerWidth - margin);
         let shift = overflowRight > 0 ? -overflowRight : 0;
         if (rect.left + shift < margin) shift = margin - rect.left;
-        generateMenu.style.left = `${shift}px`;
+        menu.style.left = `${shift}px`;
     }
 
     function closeGenerateMenu() {
@@ -237,6 +244,7 @@
     if (generateCaret && generateMenu) {
         generateCaret.addEventListener('click', (e) => {
             e.stopPropagation();
+            closeCompileMenu(false);
             const opening = generateMenu.hidden;
             generateMenu.hidden = !opening;
             generateCaret.setAttribute('aria-expanded', String(opening));
@@ -264,9 +272,68 @@
     if (compileBtn) {
         compileBtn.addEventListener('click', () => {
             closeGenerateMenu();
+            closeCompileMenu(false);
             if (!compileBtn.disabled) vscode.postMessage({ type: 'compile-project' });
         });
     }
+    // Compile options (R13): the caret opens two checkboxes that show and write the C++ settings.
+    // The host writes them (with their coupling: the g++ build needs the C++) and answers with
+    // `compileOptions`, which also arrives when the settings change anywhere else.
+    const compileCaret = document.getElementById('compile-caret');
+    const compileMenu = document.getElementById('compile-menu');
+    const compileOptCpp = document.getElementById('compile-opt-cpp');
+    const compileOptGpp = document.getElementById('compile-opt-gpp');
+    function closeCompileMenu(focusCaret) {
+        if (!compileMenu || compileMenu.hidden) return;
+        compileMenu.hidden = true;
+        if (compileCaret) {
+            compileCaret.setAttribute('aria-expanded', 'false');
+            if (focusCaret) compileCaret.focus();
+        }
+    }
+    /** @param {{generateCpp?: boolean, buildWithGpp?: boolean}} options */
+    function renderCompileOptions(options) {
+        if (!compileOptCpp || !compileOptGpp) return;
+        compileOptCpp.checked = !!(options && (options.generateCpp || options.buildWithGpp));
+        compileOptGpp.checked = !!(options && options.buildWithGpp);
+    }
+    if (compileCaret && compileMenu && compileOptCpp && compileOptGpp) {
+        compileCaret.addEventListener('click', (e) => {
+            e.stopPropagation();
+            closeGenerateMenu();
+            const opening = compileMenu.hidden;
+            compileMenu.hidden = !opening;
+            compileCaret.setAttribute('aria-expanded', String(opening));
+            if (opening) {
+                placeSplitMenu(compileMenu);
+                compileOptCpp.focus();
+            }
+        });
+        compileMenu.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') { e.preventDefault(); closeCompileMenu(true); return; }
+            if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                e.preventDefault();
+                (document.activeElement === compileOptCpp ? compileOptGpp : compileOptCpp).focus();
+            }
+        });
+        // Tabbing out of the menu closes it.
+        compileMenu.addEventListener('focusout', (e) => {
+            if (e.relatedTarget && !compileMenu.contains(e.relatedTarget) && e.relatedTarget !== compileCaret) closeCompileMenu(false);
+        });
+        for (const [box, key] of [[compileOptCpp, 'generateCpp'], [compileOptGpp, 'buildWithGpp']]) {
+            box.addEventListener('change', () => {
+                // Shown at once; the host's `compileOptions` answer confirms (or corrects) it.
+                if (key === 'buildWithGpp' && box.checked) compileOptCpp.checked = true;
+                if (key === 'generateCpp' && !box.checked) compileOptGpp.checked = false;
+                vscode.postMessage({ type: 'setCompileOption', key: key, value: box.checked });
+            });
+        }
+        window.addEventListener('resize', () => { if (!compileMenu.hidden) placeSplitMenu(compileMenu); });
+        document.addEventListener('click', (e) => {
+            if (!compileMenu.hidden && !compileMenu.contains(e.target) && e.target !== compileCaret) closeCompileMenu(false);
+        });
+    }
+
     /** @param {boolean} running */
     function setCompileRunning(running) {
         if (!compileBtn) return;
@@ -1518,6 +1585,9 @@
             case 'compileRunning':
                 setCompileRunning(message.running);
                 break;
+            case 'compileOptions':
+                renderCompileOptions(message.options);
+                break;
             case 'custom/completionsResponse': {
                 const resolve = pendingRequests.get(message.requestId);
                 if (resolve) {
@@ -1585,6 +1655,7 @@
 
                 compileDiagnostics = Array.isArray(message.compileDiagnostics) ? message.compileDiagnostics : [];
                 setCompileRunning(message.compileRunning === true);
+                renderCompileOptions(message.compileOptions);
                 editsStore = pendingEditsCore.createStore(message.cachedEdits);
                 pendingEditsCore.applyCachedEdits(components, message.cachedEdits);
 

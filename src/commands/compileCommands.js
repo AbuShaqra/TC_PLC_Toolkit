@@ -20,6 +20,15 @@
  *
  * A component's results are dropped when that component is edited, and all of them when the next
  * run starts. They are never persisted: a compile result describes one moment.
+ *
+ * C++ generation and the g++ build (roadmap R13), both off by default: with
+ * `tcToolkit.compiler.generateCpp` on, a check with no errors is followed by the compiler's compile
+ * mode, whose `.cpp` / `.hpp` go into `<project dir>/CPP_Files/` (src/cppGenerate.js, which never
+ * touches a file the toolkit did not write); with `tcToolkit.compiler.buildWithGpp` on, g++ then
+ * compiles that `.cpp` (src/gpp.js) and its messages go to the Problems panel on the generated files,
+ * under their own collection and source. The two switches stay consistent (src/cppSettings.js), and
+ * the editor toolbar's and the start page's Compile dropdowns show and write them through
+ * `setCompileOption`.
  */
 
 'use strict';
@@ -36,9 +45,15 @@ const {
 } = require('../compileCheck');
 const { prepareLibraryCheck } = require('../libraryDecls');
 const { projectDefineArgs, fileDefineArgs } = require('../compilerDefines');
+const { CPP_SECTION, effectiveOptions, couplingWrites, checkboxWrites, readOptionState } = require('../cppSettings');
+const { cppOutputPaths, writeOwnedOutputs, recordOwnedFile, claimOutput, runGenerate } = require('../cppGenerate');
+const { SETTING_GPP_PATH, resolveGpp, buildGppArgs, placeGppMessages, runGpp, summarizeGpp } = require('../gpp');
 
 /** The `source` of every diagnostic this command publishes. */
 const DIAGNOSTIC_SOURCE = 'TC Toolkit compile';
+
+/** The `source` of the g++ build's diagnostics (on the generated C++ files). */
+const GPP_DIAGNOSTIC_SOURCE = 'TC Toolkit g++';
 
 /** The path of the links the Problems entries carry (`<scheme>://<extension id>/compileProblem?id=N`). */
 const PROBLEM_LINK_PATH = '/compileProblem';
@@ -53,6 +68,96 @@ const OUTPUT_CHANNEL_NAME = 'TC Toolkit Compile';
  */
 
 /**
+ * @typedef {Object} GppOutcome The g++ part of a run.
+ * @property {'done'|'failed'|'cancelled'|'timeout'|'missing'|'skipped'} status `done`: g++ ran to its
+ *   end (`exitCode` says whether it compiled); `missing`: no g++; `skipped`: not run, `message` says why.
+ * @property {number|null} [exitCode]
+ * @property {string} [gppPath]
+ * @property {string} [message]
+ * @property {'not-found'|'setting-missing'} [reason] For `missing`.
+ * @property {string} [configured] For `missing`: the setting's value.
+ * @property {import('../gpp').PlacedGppMessage[]} [placed]
+ * @property {string} [summary] summarizeGpp's line, for `done`.
+ */
+
+/**
+ * @typedef {Object} CppOutcome The C++ part of a run (R13).
+ * @property {'done'|'failed'|'cancelled'|'timeout'|'skipped'} status `skipped`: the check had errors.
+ * @property {string} message Why not done.
+ * @property {ReturnType<typeof cppOutputPaths>} [paths]
+ * @property {import('../cppGenerate').WriteResult} [written]
+ * @property {GppOutcome} [gpp]
+ * @property {string} [log] Compiler or g++ output for the output channel.
+ * @property {string} [logTitle]
+ */
+
+/**
+ * What a run's C++ part adds to the summary notification.
+ * @param {CppOutcome|null} cpp
+ * @returns {{notes: string[], failed: boolean, warn: boolean}} `failed`: the notification is an
+ *   error; `warn`: at least a warning.
+ */
+function describeCpp(cpp) {
+    /** @type {string[]} */
+    const notes = [];
+    let failed = false;
+    let warn = false;
+    if (!cpp) return { notes, failed, warn };
+    const names = (/** @type {string[]} */ list) => list.map(p => path.basename(p)).join(', ');
+    if (cpp.status === 'skipped') { notes.push(cpp.message); warn = true; return { notes, failed, warn }; }
+    if (cpp.status === 'cancelled') { notes.push('The C++ generation was cancelled.'); warn = true; return { notes, failed, warn }; }
+    if (cpp.status !== 'done') {
+        notes.push(`C++ generation failed: ${cpp.message}${cpp.log ? ` See the "${OUTPUT_CHANNEL_NAME}" output.` : ''}`);
+        return { notes, failed: true, warn };
+    }
+    const written = cpp.written || { written: [], removed: [], refused: [] };
+    const where = cpp.paths ? `${path.basename(path.dirname(cpp.paths.dir))}/${path.basename(cpp.paths.dir)}` : 'CPP_Files';
+    if (written.written.length > 0) notes.push(`C++ written to ${where}: ${names(written.written)}.`);
+    if (written.refused.length > 0) {
+        warn = true;
+        notes.push(`Left alone in ${where} (not written by TC Toolkit, or changed since): ${names(written.refused.map(r => r.path))}. Delete or rename ${written.refused.length === 1 ? 'it' : 'them'} to let the C++ be written.`);
+    }
+    if (written.removed.length > 0) notes.push(`Removed earlier output: ${names(written.removed)}.`);
+    const gpp = cpp.gpp;
+    if (!gpp) return { notes, failed, warn };
+    if (gpp.status === 'missing') { warn = true; notes.push('Not built: g++ was not found.'); }
+    else if (gpp.status === 'skipped') { warn = true; notes.push(gpp.message || 'g++ was not run.'); }
+    else if (gpp.status === 'cancelled') { warn = true; notes.push('The g++ build was cancelled.'); }
+    else if (gpp.status === 'done') {
+        notes.push(gpp.summary || '');
+        if (gpp.exitCode !== 0) {
+            failed = true;
+            if (!(gpp.placed && gpp.placed.length)) notes.push(`See the "${OUTPUT_CHANNEL_NAME}" output.`);
+        }
+    } else { failed = true; notes.push(gpp.message || 'g++ did not finish.'); }
+    return { notes: notes.filter(Boolean), failed, warn };
+}
+
+/**
+ * The status-bar text of a run: the check's counts, then what the C++ part did.
+ * @param {{errors: number, warnings: number}} counts
+ * @param {CppOutcome|null} cpp
+ * @param {{errors: number, warnings: number}} gpp The g++ messages placed in the Problems panel.
+ * @returns {string}
+ */
+function compileStatusText(counts, cpp, gpp) {
+    let text = counts.errors === 0 && counts.warnings === 0
+        ? '$(check) Compile: no errors'
+        : `$(error) ${counts.errors} $(warning) ${counts.warnings} Compile`;
+    if (!cpp) return text;
+    if (cpp.status === 'done' && cpp.written && cpp.written.written.length > 0) text += ' · C++ written';
+    else if (cpp.status !== 'skipped') text += ' · C++ not written';
+    const g = cpp.gpp;
+    if (g) {
+        if (g.status === 'done' && g.exitCode === 0) text += ' · g++ $(check)';
+        else if (g.status === 'done') text += ` · g++ $(error) ${gpp.errors}`;
+        else if (g.status === 'missing') text += ' · g++ not found';
+        else text += ' · g++ not run';
+    }
+    return text;
+}
+
+/**
  * Registers Compile Project.
  * @param {vscode.ExtensionContext} context
  * @param {object} deps
@@ -61,13 +166,20 @@ const OUTPUT_CHANNEL_NAME = 'TC Toolkit Compile';
  * @param {() => void} [deps.onSettingsChanged] Called when a `tcToolkit.compiler.*` setting changes.
  * @param {Function} [deps.spawn] Child-process factory, for tests.
  * @param {import('../compileCheck').NodeDiscovery} [deps.nodeDiscovery] Where Node is looked for, for tests.
- * @returns {{isAvailable: () => boolean, problemsFor: (uriStr: string) => StoredProblem[]}}
+ * @param {{platform: string, env: Record<string, string|undefined>, exists: (p: string) => boolean}} [deps.gppDiscovery]
+ *   Where g++ is looked for, for tests (default: this machine).
+ * @param {() => Promise<any>} [deps.fillGppPath] Fills an empty g++ path setting (src/commands/gppCommands.js);
+ *   called when the g++ build is turned on.
+ * @returns {{isAvailable: () => boolean, problemsFor: (uriStr: string) => StoredProblem[],
+ *   compileOptions: () => {generateCpp: boolean, buildWithGpp: boolean},
+ *   setCompileOption: (key: string, value: boolean) => Promise<boolean>}}
  */
-function registerCompileCommands(context, { provider, getProjectMap, onSettingsChanged, spawn, nodeDiscovery }) {
+function registerCompileCommands(context, { provider, getProjectMap, onSettingsChanged, spawn, nodeDiscovery, gppDiscovery, fillGppPath }) {
     const collection = vscode.languages.createDiagnosticCollection('twincat-compile');
+    const gppCollection = vscode.languages.createDiagnosticCollection('twincat-gpp');
     const statusItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 98);
     statusItem.command = 'workbench.actions.view.problems';
-    context.subscriptions.push(collection, statusItem);
+    context.subscriptions.push(collection, gppCollection, statusItem);
 
     /** Normalized file URI → that file's problems of the last run. */
     /** @type {Map<string, {uri: vscode.Uri, problems: StoredProblem[]}>} */
@@ -92,6 +204,65 @@ function registerCompileCommands(context, { provider, getProjectMap, onSettingsC
         const config = vscode.workspace.getConfiguration(COMPILER_SECTION);
         return { compilerPath: String(config.get('path', '') || ''), nodePath: String(config.get('nodePath', '') || '') };
     };
+    // ── C++ generation and the g++ build: the two switches (src/cppSettings.js) ────────────────
+    const optionState = () => {
+        const config = vscode.workspace.getConfiguration(CPP_SECTION);
+        if (typeof config.inspect === 'function') return readOptionState(/** @type {any} */ (config));
+        return { generateCpp: { global: config.get('generateCpp') }, buildWithGpp: { global: config.get('buildWithGpp') } };
+    };
+    const compileOptions = () => effectiveOptions(optionState());
+    const TARGETS = /** @type {const} */ ({ global: 1, workspace: 2, workspaceFolder: 3 });
+    /** True while this module writes the switches itself: the change listener then fixes nothing. */
+    let writingOptions = false;
+    /**
+     * @param {import('../cppSettings').OptionWrite[]} writes
+     */
+    async function applyOptionWrites(writes) {
+        const config = vscode.workspace.getConfiguration(CPP_SECTION);
+        const targets = /** @type {any} */ (vscode).ConfigurationTarget || {};
+        writingOptions = true;
+        try {
+            for (const w of writes) {
+                const target = w.scope === 'global' ? (targets.Global || TARGETS.global)
+                    : (w.scope === 'workspace' ? (targets.Workspace || TARGETS.workspace) : (targets.WorkspaceFolder || TARGETS.workspaceFolder));
+                await config.update(w.key, w.value, target);
+            }
+        } finally {
+            writingOptions = false;
+        }
+    }
+    let lastOptionState = optionState();
+    let lastOptions = effectiveOptions(lastOptionState);
+    /** Tells the editors and the start page what the switches are now; fills the g++ path once the build is turned on. */
+    function optionsChanged() {
+        const now = compileOptions();
+        if (now.buildWithGpp && !lastOptions.buildWithGpp && fillGppPath) fillGppPath();
+        lastOptions = now;
+        if (provider && typeof provider.setCompileOptions === 'function') provider.setCompileOptions(now);
+        if (onSettingsChanged) onSettingsChanged();
+    }
+    /**
+     * A Compile dropdown checkbox was clicked: writes it, with the coupled switch.
+     * @param {string} key
+     * @param {boolean} value
+     * @returns {Promise<boolean>} False for a key that is not one of the two switches.
+     */
+    async function setCompileOption(key, value) {
+        if (key !== 'generateCpp' && key !== 'buildWithGpp') return false;
+        const writes = checkboxWrites(key, !!value, optionState());
+        try {
+            await applyOptionWrites(writes);
+        } catch (err) {
+            vscode.window.showErrorMessage(`Could not change the setting: ${err && /** @type {any} */ (err).message ? /** @type {any} */ (err).message : err}`);
+        }
+        lastOptionState = optionState();
+        optionsChanged();
+        return true;
+    }
+    if (provider && typeof provider.setCompileOptionsSource === 'function') {
+        provider.setCompileOptionsSource({ options: compileOptions, set: setCompileOption });
+    }
+
     // The compiler ships in the extension; the setting only overrides it.
     const isAvailable = () => isCompilerAvailable(readSettings().compilerPath, { extensionRoot: context.extensionPath });
     const keyOf = (/** @type {string} */ uriStr) => normalizeFileUri(uriStr);
@@ -158,6 +329,7 @@ function registerCompileCommands(context, { provider, getProjectMap, onSettingsC
 
     function clearAll() {
         collection.clear();
+        gppCollection.clear();
         byFile.clear();
         openTargetUsed.clear();
         statusItem.hide();
@@ -219,15 +391,129 @@ function registerCompileCommands(context, { provider, getProjectMap, onSettingsC
         });
     }
 
-    /** @param {{errors: number, warnings: number}} counts */
-    function showStatus(counts) {
-        if (counts.errors === 0 && counts.warnings === 0) {
-            statusItem.text = '$(check) Compile: no errors';
-        } else {
-            statusItem.text = `$(error) ${counts.errors} $(warning) ${counts.warnings} Compile`;
-        }
+    /** The C++ part of the last run, kept for the status text when a component edit redraws it. */
+    /** @type {{cpp: CppOutcome|null, gpp: {errors: number, warnings: number}}} */
+    let lastCppStatus = { cpp: null, gpp: { errors: 0, warnings: 0 } };
+
+    /**
+     * @param {{errors: number, warnings: number}} counts
+     * @param {CppOutcome|null} [cpp] The C++ part of a new run (omitted: keep the last one's).
+     * @param {{errors: number, warnings: number}} [gpp]
+     */
+    function showStatus(counts, cpp, gpp) {
+        if (cpp !== undefined) lastCppStatus = { cpp, gpp: gpp || { errors: 0, warnings: 0 } };
+        statusItem.text = compileStatusText(counts, lastCppStatus.cpp, lastCppStatus.gpp);
         statusItem.tooltip = 'Result of the last TC Toolkit: Compile Project run. Click to open the Problems panel.';
         statusItem.show();
+    }
+
+    /**
+     * Publishes the g++ build's messages on the generated files (or clears them).
+     * @param {CppOutcome|null} cpp
+     * @returns {{errors: number, warnings: number}}
+     */
+    function publishGpp(cpp) {
+        gppCollection.clear();
+        const placed = cpp && cpp.gpp && cpp.gpp.placed ? cpp.gpp.placed : [];
+        /** @type {Map<string, {uri: vscode.Uri, list: vscode.Diagnostic[]}>} */
+        const byPath = new Map();
+        for (const m of placed) {
+            if (!byPath.has(m.filePath)) byPath.set(m.filePath, { uri: vscode.Uri.file(m.filePath), list: [] });
+            const range = new vscode.Range(m.line - 1, m.column - 1, m.line - 1, m.column - 1);
+            const d = new vscode.Diagnostic(range, m.message, m.severity === 'error' ? vscode.DiagnosticSeverity.Error : vscode.DiagnosticSeverity.Warning);
+            d.source = GPP_DIAGNOSTIC_SOURCE;
+            const Related = /** @type {any} */ (vscode).DiagnosticRelatedInformation;
+            const Location = /** @type {any} */ (vscode).Location;
+            if (Related && Location && m.notes.length > 0) {
+                d.relatedInformation = m.notes.map(n => new Related(
+                    new Location(vscode.Uri.file(n.filePath || m.filePath), new vscode.Range(Math.max(n.line, 1) - 1, Math.max(n.column, 1) - 1, Math.max(n.line, 1) - 1, Math.max(n.column, 1) - 1)),
+                    n.message));
+            }
+            /** @type {any} */ (byPath.get(m.filePath)).list.push(d);
+        }
+        for (const entry of byPath.values()) gppCollection.set(entry.uri, entry.list);
+        return {
+            errors: placed.filter(m => m.severity === 'error').length,
+            warnings: placed.filter(m => m.severity === 'warning').length
+        };
+    }
+
+    /**
+     * Build with g++ is on and no g++ was found: says so, and offers the setting. The C++ is there.
+     * @param {{reason?: string, configured?: string}} gpp
+     */
+    function reportGppMissing(gpp) {
+        const text = gpp.reason === 'setting-missing'
+            ? `Build with g++ is on, but the g++ path setting names something that does not exist (${gpp.configured}). The C++ was generated; fix the path to build it.`
+            : 'Build with g++ is on, but g++ was not found on PATH or in the usual install folders. The C++ was generated; set the g++ path to build it.';
+        Promise.resolve(vscode.window.showWarningMessage(text, 'Open Setting', 'Detect g++')).then((choice) => {
+            if (choice === 'Open Setting') vscode.commands.executeCommand('twincat.openSettings', SETTING_GPP_PATH);
+            else if (choice === 'Detect g++') vscode.commands.executeCommand('twincat.detectGpp');
+        });
+    }
+
+    /**
+     * Generates one project's C++ into its CPP_Files folder and, when asked, compiles it with g++.
+     * Called only after a check with no errors.
+     * @param {{project: any, compilerRun: any, build: boolean, progress: {report: (v: {message?: string}) => void},
+     *   onCancel: (cancel: () => void) => void}} o
+     * @returns {Promise<CppOutcome>}
+     */
+    async function generateAndBuild(o) {
+        const stemSource = o.project.plcprojPath ? path.basename(o.project.plcprojPath, path.extname(o.project.plcprojPath)) : (o.project.name || 'project');
+        const paths = cppOutputPaths(o.project.dir, stemSource);
+        o.progress.report({ message: 'Generating C++…' });
+        const gen = await runGenerate({ ...o.compilerRun, stem: paths.stem });
+        if (gen.status !== 'done') {
+            return { status: gen.status, message: gen.message, paths, log: gen.status === 'failed' ? gen.log : '', logTitle: 'C++ generation failed' };
+        }
+        /** @type {import('../cppGenerate').WriteResult} */
+        let written;
+        try {
+            written = writeOwnedOutputs({ dir: paths.dir, project: paths.stem, files: [
+                { name: path.basename(paths.cpp), text: gen.cppText }, { name: path.basename(paths.hpp), text: gen.hppText }] });
+        } catch (err) {
+            return { status: 'failed', paths, message: `The C++ files could not be written: ${err && /** @type {any} */ (err).message ? /** @type {any} */ (err).message : err}` };
+        }
+        if (!written.ok) return { status: 'failed', paths, message: written.message };
+        /** @type {CppOutcome} */
+        const cpp = { status: 'done', paths, written, message: '' };
+        if (!o.build) return cpp;
+        if (written.refused.length > 0) {
+            cpp.gpp = { status: 'skipped', message: 'g++ was not run: the generated files could not all be written.' };
+            return cpp;
+        }
+        const config = vscode.workspace.getConfiguration(CPP_SECTION);
+        const found = resolveGpp({ configured: config.get('gppPath', ''), ...(gppDiscovery || {
+            platform: process.platform, env: process.env,
+            exists: (/** @type {string} */ p) => { try { return fs.statSync(p).isFile(); } catch (e) { return false; } }
+        }) });
+        if (found.ok === false) {
+            cpp.gpp = { status: 'missing', reason: found.reason, configured: found.configured, message: '' };
+            return cpp;
+        }
+        const objName = path.basename(paths.obj);
+        const claim = claimOutput(paths.dir, objName);
+        if (claim !== 'absent' && claim !== 'owned') {
+            cpp.gpp = { status: 'skipped', gppPath: found.path, message: `g++ was not run: ${objName} in CPP_Files was not written by TC Toolkit (or was changed since), and is left alone.` };
+            return cpp;
+        }
+        o.progress.report({ message: 'Building with g++…' });
+        const run = await runGpp({
+            gppPath: found.path, cwd: paths.dir, onCancel: o.onCancel, spawn: /** @type {any} */ (spawn),
+            args: buildGppArgs({ cppFile: paths.cpp, objFile: paths.obj, includeDir: path.join(context.extensionPath, 'resources', 'compiler', 'include'), outDir: paths.dir })
+        });
+        if (run.status === 'done' && run.exitCode === 0) recordOwnedFile(paths.dir, paths.stem, objName);
+        cpp.gpp = {
+            status: run.status, exitCode: run.exitCode, gppPath: found.path, message: run.message,
+            placed: run.status === 'done' ? placeGppMessages(run.messages, { cwd: paths.dir, cppFile: paths.cpp, hppFile: paths.hpp }) : [],
+            summary: run.status === 'done' ? summarizeGpp(run) : ''
+        };
+        if (run.output && (run.status !== 'done' || run.exitCode !== 0 || run.messages.length > 0)) {
+            cpp.log = run.output;
+            cpp.logTitle = `g++ (${found.path})`;
+        }
+        return cpp;
     }
 
     /**
@@ -282,7 +568,7 @@ function registerCompileCommands(context, { provider, getProjectMap, onSettingsC
 
                 const outcome = await vscode.window.withProgress(
                     { location: vscode.ProgressLocation.Notification, title: `Compiling ${projectName}…`, cancellable: true },
-                    async (_progress, token) => {
+                    async (progress, token) => {
                         /** @type {Array<{filePath: string, text: string}>} */
                         const files = [];
                         /** @type {string[]} */
@@ -320,7 +606,8 @@ function registerCompileCommands(context, { provider, getProjectMap, onSettingsC
                                 (defines.args.length > 0 ? defines.args.join(' ') : '(none used)'));
                             for (const note of defines.notes) channel.appendLine(`  ${note}`);
                         }
-                        const result = await runCheck({
+                        const onCancel = (/** @type {() => void} */ cancel) => { token.onCancellationRequested(cancel); if (token.isCancellationRequested) cancel(); };
+                        const compilerRun = {
                             nodeCommand: setup.nodeCommand,
                             defineArgs: defines.args,
                             nodeEnv: setup.nodeEnv,
@@ -328,11 +615,20 @@ function registerCompileCommands(context, { provider, getProjectMap, onSettingsC
                             dialectFile: path.join(context.extensionPath, 'resources', 'dialects', 'twincat3.json'),
                             inputs: library.inputs,
                             extraFiles: library.extraFiles,
-                            libraryFilter: library.filter,
                             spawn: /** @type {any} */ (spawn),
-                            onCancel: (cancel) => { token.onCancellationRequested(cancel); if (token.isCancellationRequested) cancel(); }
-                        });
-                        return { result, built, unreadable, library, defines };
+                            onCancel
+                        };
+                        const result = await runCheck({ ...compilerRun, libraryFilter: library.filter });
+                        // C++ (R13): only after a finished check with no errors, and only when switched on.
+                        const options = compileOptions();
+                        /** @type {CppOutcome|null} */
+                        let cpp = null;
+                        if (result.status === 'done' && options.generateCpp && !token.isCancellationRequested) {
+                            cpp = result.errors > 0
+                                ? { status: 'skipped', message: 'C++ was not generated: the project has errors.' }
+                                : await generateAndBuild({ project, compilerRun, build: options.buildWithGpp, progress, onCancel });
+                        }
+                        return { result, built, unreadable, library, defines, cpp };
                     });
 
                 if (!outcome || (outcome.result && outcome.result.status === 'cancelled')) {
@@ -342,7 +638,7 @@ function registerCompileCommands(context, { provider, getProjectMap, onSettingsC
                     vscode.window.showWarningMessage(`Compile Project: ${projectName} has no TwinCAT objects to compile.`);
                     return { ok: false, reason: 'empty' };
                 }
-                const { result, built, unreadable, library, defines } = outcome;
+                const { result, built, unreadable, library, defines, cpp } = outcome;
                 if (result.status !== 'done') {
                     // The previous results stay: a run that did not finish says nothing about the code.
                     vscode.window.showErrorMessage(`Compile Project did not finish. ${result.message}`);
@@ -359,7 +655,8 @@ function registerCompileCommands(context, { provider, getProjectMap, onSettingsC
                 }
                 for (const fileKey of [...byFile.keys()]) publishFile(fileKey);
                 refreshPanes();
-                showStatus({ errors: result.errors, warnings: result.warnings });
+                const gppCounts = publishGpp(cpp);
+                showStatus({ errors: result.errors, warnings: result.warnings }, cpp, gppCounts);
 
                 // Diagnostics that name no object cannot be placed; they are shown, never dropped.
                 const notes = [];
@@ -384,20 +681,37 @@ function registerCompileCommands(context, { provider, getProjectMap, onSettingsC
                     dumpHintGiven = true;
                     notes.push('Run "TC Toolkit: Update Library Definitions" to check calls into libraries too.');
                 }
-                const summary = [summarize(result, projectName), ...notes].join(' ');
-                const hasProblems = byFile.size > 0;
-                const show = result.errors > 0 ? vscode.window.showErrorMessage
-                    : (result.warnings > 0 || notes.length > 0 ? vscode.window.showWarningMessage : vscode.window.showInformationMessage);
+                const cppNotes = describeCpp(cpp);
+                if (cpp && cpp.log) {
+                    const channel = outputChannel();
+                    channel.appendLine(`[${new Date().toISOString()}] ${projectName}: ${cpp.logTitle || 'C++'}`);
+                    for (const line of cpp.log.split(/\r?\n/)) channel.appendLine(`  ${line}`);
+                }
+                const summary = [summarize(result, projectName), ...notes, ...cppNotes.notes].join(' ');
+                const hasProblems = byFile.size > 0 || gppCounts.errors + gppCounts.warnings > 0;
+                const show = result.errors > 0 || gppCounts.errors > 0 || cppNotes.failed ? vscode.window.showErrorMessage
+                    : (result.warnings > 0 || notes.length > 0 || cppNotes.warn || gppCounts.warnings > 0 ? vscode.window.showWarningMessage : vscode.window.showInformationMessage);
                 const buttons = hasProblems ? ['Go to Problem…', 'Open Problems'] : [];
+                if (byFile.size === 0 && hasProblems) buttons.shift();
+                if (cpp && cpp.status === 'done' && cpp.written && cpp.written.written.length > 0) buttons.push('Open C++');
                 Promise.resolve(show(`Compile Project — ${summary}`, ...buttons)).then((choice) => {
                     if (choice === 'Go to Problem…') vscode.commands.executeCommand(GO_TO_PROBLEM_COMMAND);
                     else if (choice === 'Open Problems') vscode.commands.executeCommand('workbench.actions.view.problems');
+                    else if (choice === 'Open C++' && cpp && cpp.paths) vscode.commands.executeCommand('vscode.open', vscode.Uri.file(cpp.paths.cpp));
                 });
+                if (cpp && cpp.gpp && cpp.gpp.status === 'missing') reportGppMissing(cpp.gpp);
                 return {
                     ok: true, projectKey: key, errors: result.errors, warnings: result.warnings,
                     filteredPragmaWarnings: result.filteredPragmaWarnings, filteredLibraryDiagnostics: result.filteredLibraryDiagnostics,
                     libraryDeclarations: library ? library.extraFiles.length : 0, durationMs: result.durationMs, summary,
-                    defineArgs: defines ? defines.args.slice() : [], defineNotes: defines ? defines.notes.slice() : []
+                    defineArgs: defines ? defines.args.slice() : [], defineNotes: defines ? defines.notes.slice() : [],
+                    cpp: cpp ? {
+                        status: cpp.status, message: cpp.message || '',
+                        written: cpp.written ? cpp.written.written.slice() : [], removed: cpp.written ? cpp.written.removed.slice() : [],
+                        refused: cpp.written ? cpp.written.refused.map(r => ({ ...r })) : [],
+                        gpp: cpp.gpp ? { status: cpp.gpp.status, exitCode: cpp.gpp.exitCode === undefined ? null : cpp.gpp.exitCode,
+                            gppPath: cpp.gpp.gppPath || '', errors: gppCounts.errors, warnings: gppCounts.warnings, message: cpp.gpp.message || '' } : null
+                    } : null
                 };
             } finally {
                 running = false;
@@ -438,11 +752,29 @@ function registerCompileCommands(context, { provider, getProjectMap, onSettingsC
 
     context.subscriptions.push(
         vscode.workspace.onDidChangeConfiguration((e) => {
-            if (e.affectsConfiguration(COMPILER_SECTION) && onSettingsChanged) onSettingsChanged();
+            if (!e.affectsConfiguration(COMPILER_SECTION)) return;
+            // The two C++ switches stay consistent in the scope the user changed (src/cppSettings.js).
+            const now = optionState();
+            const writes = writingOptions ? [] : couplingWrites(lastOptionState, now);
+            lastOptionState = now;
+            if (writes.length > 0) {
+                applyOptionWrites(writes).then(() => { lastOptionState = optionState(); optionsChanged(); }, (err) => {
+                    console.error('TC Toolkit: could not keep the C++ settings consistent:', err);
+                });
+            }
+            optionsChanged();
         })
     );
+    // Build with g++ already on at startup: an empty g++ path setting shows what a run will use.
+    if (lastOptions.buildWithGpp && fillGppPath) fillGppPath();
 
-    return { isAvailable, problemsFor: (uriStr) => { const e = byFile.get(keyOf(uriStr)); return e ? e.problems.slice() : []; } };
+    return {
+        isAvailable, compileOptions, setCompileOption,
+        problemsFor: (uriStr) => { const e = byFile.get(keyOf(uriStr)); return e ? e.problems.slice() : []; }
+    };
 }
 
-module.exports = { registerCompileCommands, DIAGNOSTIC_SOURCE, PROBLEM_LINK_PATH, GO_TO_PROBLEM_COMMAND, OUTPUT_CHANNEL_NAME };
+module.exports = {
+    registerCompileCommands, describeCpp, compileStatusText,
+    DIAGNOSTIC_SOURCE, GPP_DIAGNOSTIC_SOURCE, PROBLEM_LINK_PATH, GO_TO_PROBLEM_COMMAND, OUTPUT_CHANNEL_NAME
+};

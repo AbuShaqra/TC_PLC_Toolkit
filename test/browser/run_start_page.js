@@ -6,7 +6,8 @@
  * posts the right message for every control, shows results the host sends back, limits the recent
  * list to the configured number of rows behind a keyboard-operable "Show all (K)" / "Show fewer" tile,
  * shows the XAE Shell paths (with a warning for a path that is not on disk), enables Compile project
- * only while the compiler file exists (by default the bundled one) and a project is open, and has no horizontal
+ * only while the compiler file exists (by default the bundled one) and a project is open, shows and
+ * posts the Compile dropdown's two C++ switches (R13, keyboard-operable), and has no horizontal
  * scroll at 360 px.
  *
  * Only `acquireVsCodeApi()` is stubbed (through Playwright's init script, which the CSP does not
@@ -198,6 +199,59 @@ const { TEMPLATE_VERSIONS } = require(path.join(REPO, 'src', 'projectTemplate.js
         assert(msgs.length === 1 && msgs[0].type === 'command' && msgs[0].command === 'twincat.compileProject', 'clicking it runs twincat.compileProject');
         await send({ type: 'state', location: 'C:\\Projects', sep: '\\', hasProject: true, compilerReady: false, recents: [] });
         assert(await disabled('#compile-project') && await visible('#compile-missing'), 'an override path to a missing file disables it again');
+
+        // ── R13: the Compile dropdown (two checkboxes over the C++ settings) ──────────────────────
+        const optState = () => page.evaluate(() => ({
+            open: !document.getElementById('compile-options').hidden,
+            expanded: document.getElementById('compile-options-toggle').getAttribute('aria-expanded'),
+            cpp: document.getElementById('opt-generate-cpp').checked, gpp: document.getElementById('opt-build-gpp').checked,
+            focus: document.activeElement ? document.activeElement.id : ''
+        }));
+        let os1 = await optState();
+        assert(!os1.open && os1.expanded === 'false' && !os1.cpp && !os1.gpp, `the Compile options start closed and off (${JSON.stringify(os1)})`);
+        await send({ type: 'state', location: 'C:\\Projects', sep: '\\', hasProject: true, compilerReady: true, recents: [], compileOptions: { generateCpp: false, buildWithGpp: true } });
+        os1 = await optState();
+        assert(os1.cpp && os1.gpp, 'the state\'s compileOptions show in the boxes (the build shows generation on)');
+        await clearPosted();
+        await page.focus('#compile-options-toggle');
+        await page.keyboard.press('Enter');
+        os1 = await optState();
+        assert(os1.open && os1.expanded === 'true' && os1.focus === 'opt-generate-cpp', `Enter on the chevron opens the options and focuses Generate C++ (${JSON.stringify(os1)})`);
+        await page.keyboard.press('Space');
+        os1 = await optState();
+        msgs = await posted();
+        assert(!os1.cpp && !os1.gpp && msgs.length === 1 && msgs[0].type === 'setCompileOption' && msgs[0].key === 'generateCpp' && msgs[0].value === false,
+            `Space unticks Generate C++, which unticks Build with g++, and posts setCompileOption (${JSON.stringify(msgs)})`);
+        await page.keyboard.press('ArrowDown');
+        await page.keyboard.press('Space');
+        os1 = await optState();
+        msgs = await posted();
+        assert(os1.cpp && os1.gpp && msgs.length === 2 && msgs[1].key === 'buildWithGpp' && msgs[1].value === true,
+            `ArrowDown + Space ticks Build with g++, which ticks Generate C++ (${JSON.stringify(msgs)})`);
+        assert(!msgs.some(m => m.type === 'command'), 'changing an option does not start a compile');
+        await page.keyboard.press('Escape');
+        os1 = await optState();
+        assert(!os1.open && os1.expanded === 'false' && os1.focus === 'compile-options-toggle', `Escape closes the options and returns focus to the chevron (${JSON.stringify(os1)})`);
+        await send({ type: 'state', location: 'C:\\Projects', sep: '\\', hasProject: true, compilerReady: true, recents: [], compileOptions: { generateCpp: true, buildWithGpp: false } });
+        os1 = await optState();
+        assert(os1.cpp && !os1.gpp, 'a later state (a setting changed elsewhere) updates the boxes live');
+        const toggleLabel = await page.evaluate(() => {
+            const t = document.getElementById('compile-options-toggle');
+            const opt = document.getElementById('compile-options');
+            return { label: t.getAttribute('aria-label'), controls: t.getAttribute('aria-controls'), role: opt.getAttribute('role'),
+                labels: [...opt.querySelectorAll('.option-label')].map(e => e.textContent) };
+        });
+        assert(toggleLabel.label === 'Compile options' && toggleLabel.controls === 'compile-options' && toggleLabel.role === 'group'
+            && JSON.stringify(toggleLabel.labels) === '["Generate C++","Build with g++"]', `the chevron is labelled and controls a group of two labelled boxes (${JSON.stringify(toggleLabel)})`);
+        await page.click('#compile-options-toggle');
+        if (process.env.HARNESS_START_SHOT) {
+            await page.mouse.move(0, 0);
+            await page.waitForTimeout(300);
+            const card = await page.$('#actions');
+            await card.screenshot({ path: process.env.HARNESS_START_SHOT });
+            console.log('start page actions screenshot written to ' + process.env.HARNESS_START_SHOT);
+        }
+        await page.click('#compile-options-toggle');
 
         // ── Recent list: at most `recentsShown` rows, then "Show all (K)" ──────────────────────────
         const eight = Array.from({ length: 8 }, (_, i) => ({ slnPath: `C:\\Projects\\Line_${i + 1}\\Line_${i + 1}.sln`, name: `Line_${i + 1}` }));
