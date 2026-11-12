@@ -759,7 +759,7 @@ function registerCompileCommands(context, { provider, getProjectMap, onSettingsC
                     if (choice === 'Go to Problem…') vscode.commands.executeCommand(GO_TO_PROBLEM_COMMAND);
                     else if (choice === 'Open Problems') vscode.commands.executeCommand('workbench.actions.view.problems');
                     else if (choice === 'Open C++' && cpp && cpp.paths) vscode.commands.executeCommand('vscode.open', vscode.Uri.file(cpp.paths.cpp));
-                    else if (choice === 'Open Setting') vscode.commands.executeCommand('twincat.openSettings', SETTING_GPP_PATH);
+                    else if (choice === 'Open Setting') vscode.commands.executeCommand('twincat.openSettings', SETTING_GPP_PATH, { target: 'user' });
                     else if (choice === 'Detect g++') vscode.commands.executeCommand('twincat.detectGpp');
                 });
                 return {

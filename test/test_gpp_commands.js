@@ -89,6 +89,15 @@ const settle = () => new Promise(r => setTimeout(r, 5));
     settings[KEY] = `"${path.join(BIN, 'g++')}"`;
     r = await gpp.autoFill();
     assert(r.status === 'kept' && r.missing === false, 'FILL: a quoted path (Explorer\'s "Copy as path") is checked without its quotes, as the build does');
+    // A value of only quotes (or quoted blanks) is unset for the build and the start page's g++ row
+    // (src/gpp.js normalizeGppSetting), so the fill treats it as empty too and fills it.
+    for (const blank of ['""', '" "', '  ""  ']) {
+        settings[KEY] = blank;
+        const before = calls.updates.length;
+        r = await gpp.autoFill();
+        assert(r.status === 'found' && r.path === hit.path && settings[KEY] === hit.path && calls.updates.length === before + 1,
+            `FILL: a setting of only quotes (${JSON.stringify(blank)}) counts as empty and is filled, as the build and the start page see it (${JSON.stringify(r)})`);
+    }
     settings[KEY] = BIN;
     r = await gpp.autoFill();
     assert(r.status === 'kept' && r.missing === false, 'FILL: a folder that holds g++ works, as it does for the build');
@@ -103,8 +112,9 @@ const settle = () => new Promise(r => setTimeout(r, 5));
     assert(r.status === 'kept' && r.missing === false, 'FILL: an existing path is kept');
     settings[KEY] = '';
     hit = null;
+    const updatesBefore = calls.updates.length;
     r = await gpp.autoFill();
-    assert(r.status === 'notFound' && settings[KEY] === '' && calls.updates.length === 1, 'FILL: nothing found writes nothing');
+    assert(r.status === 'notFound' && settings[KEY] === '' && calls.updates.length === updatesBefore, 'FILL: nothing found writes nothing');
     failUpdates = true;
     hit = { path: '/x/g++' };
     const quiet = console.error;
@@ -121,7 +131,8 @@ const settle = () => new Promise(r => setTimeout(r, 5));
     await settle();
     assert(r.status === 'found' && calls.infos.length === 1 && calls.infos[0].m === 'g++ found: /opt/gcc/bin/g++' && calls.infos[0].buttons.join() === 'Open Setting',
         'COMMAND: "g++ found: <path>", with Open Setting');
-    assert(calls.executed.some(e => e.id === 'twincat.openSettings' && e.args[0] === KEY), 'COMMAND: Open Setting opens tcToolkit.compiler.gppPath');
+    assert(calls.executed.some(e => e.id === 'twincat.openSettings' && e.args[0] === KEY && e.args[1] && e.args[1].target === 'user'),
+        'COMMAND: Open Setting opens tcToolkit.compiler.gppPath in the User settings (machine scope; like the start page\'s Change…)');
     settings[KEY] = '';
     hit = null;
     answer = undefined;

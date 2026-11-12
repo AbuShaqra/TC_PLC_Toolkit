@@ -11,7 +11,7 @@
 'use strict';
 
 const vscode = require('vscode');
-const { SETTING_GPP_PATH, detectGpp, checkConfiguredGpp, describeGppProblem, thisMachine } = require('../gpp');
+const { SETTING_GPP_PATH, detectGpp, checkConfiguredGpp, describeGppProblem, normalizeGppSetting, thisMachine } = require('../gpp');
 const { CPP_SECTION } = require('../cppSettings');
 
 /** The key of the path setting inside its section. */
@@ -47,7 +47,9 @@ function detectOnThisMachine() {
 async function fillGppSetting(detect, env = machine()) {
     const config = vscode.workspace.getConfiguration(CPP_SECTION);
     const current = config.get(GPP_PATH_KEY);
-    const value = typeof current === 'string' ? current.trim() : '';
+    // The build's own emptiness rule (quotes and blanks only count as unset), so the start page's
+    // g++ row, the build and this fill agree on whether the setting is set.
+    const value = normalizeGppSetting(current);
     if (value) {
         const checked = checkConfiguredGpp(value, env);
         return checked.ok === true ? { status: 'kept', path: value, missing: false }
@@ -93,7 +95,7 @@ function registerGppCommands(context, { detect = detectOnThisMachine, machine: e
             }
             const show = result.status === 'notFound' ? vscode.window.showWarningMessage : vscode.window.showInformationMessage;
             Promise.resolve(show(describeGppFill(result), 'Open Setting')).then((choice) => {
-                if (choice === 'Open Setting') return vscode.commands.executeCommand('twincat.openSettings', SETTING_GPP_PATH);
+                if (choice === 'Open Setting') return vscode.commands.executeCommand('twincat.openSettings', SETTING_GPP_PATH, { target: 'user' });
                 return undefined;
             }).then(undefined, () => undefined);
             return result;

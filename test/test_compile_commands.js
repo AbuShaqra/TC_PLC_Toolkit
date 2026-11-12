@@ -833,8 +833,8 @@ const settle = () => new Promise(r => setTimeout(r, 10));
         answers.message.push('Open Setting');
         await run('twincat.compileProject');
         await settle();
-        assert(calls.executed.slice(executedBefore).some(e => e.id === 'twincat.openSettings' && e.args[0] === 'tcToolkit.compiler.gppPath'),
-            'R13 GPP: "Open Setting" opens tcToolkit.compiler.gppPath');
+        assert(calls.executed.slice(executedBefore).some(e => e.id === 'twincat.openSettings' && e.args[0] === 'tcToolkit.compiler.gppPath' && e.args[1] && e.args[1].target === 'user'),
+            'R13 GPP: "Open Setting" opens tcToolkit.compiler.gppPath in the User settings (machine scope)');
 
         // g++ found (the path setting): its errors go to the Problems panel on the generated .cpp.
         settings['tcToolkit.compiler.gppPath'] = gppExe;

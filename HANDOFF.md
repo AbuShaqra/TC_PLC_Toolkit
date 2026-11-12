@@ -93,7 +93,8 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   **g++ row** (Settings card, under XAE Shell; user request 2026-11-12): an MSYS2/MinGW g++ shown as "Not set: a
   build uses this one" with the setting empty (and the setting NOT written by showing it), a set path shown,
   a wrong path with the warning, *Change…* landing on `tcToolkit.compiler.gppPath` in the **User** tab,
-  *Detect again* filling it, and the row updating live after each.
+  *Detect again* filling it, and the row updating live after each; *Detect g++*'s toast button *Open Setting*
+  (and the build's missing-g++ *Open Setting*) also landing in the **User** tab.
 - **R3.2 Compile Project: MERGED** into `dev` as PR #32 (`28f24f1`, 2026-11-10 22:22 UTC).
 - **R3.3–R9 MERGED** into `dev` as PR #33 (`6424968`, 2026-11-11 09:30 UTC) after the user's Windows checks
   (dev-host green after `npm ci`; manual checks all passed). Details per item are in git history and ROADMAP "Done".
