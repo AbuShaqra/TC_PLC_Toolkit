@@ -47,7 +47,8 @@ function walkExtendsChain(pou, index) {
     const ancestors = [];
     const seen = new Set();
     if (pou && pou.name) seen.add(pou.name.toLowerCase());
-    let fullyResolved = true;
+    // A head whose EXTENDS sits in a conditional pragma group depends on a define: uncertain.
+    let fullyResolved = !(pou && pou.inheritanceUncertain);
     const queue = [...parentNames(pou)];
     while (queue.length) {
         const name = queue.shift();
@@ -56,6 +57,7 @@ function walkExtendsChain(pou, index) {
         const key = node.name.toLowerCase();
         if (seen.has(key)) continue; // already visited (diamond) or cycle — stop
         seen.add(key);
+        if (node.inheritanceUncertain) fullyResolved = false;
         ancestors.push(node);
         for (const pn of parentNames(node)) queue.push(pn);
     }
