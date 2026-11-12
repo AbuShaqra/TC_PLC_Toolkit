@@ -722,6 +722,7 @@
     "typescript": "^7.0.2"
   },
   "dependencies": {
+    "vscode-cpptools": "^7.1.1",
     "vscode-languageclient": "^9.0.1",
     "vscode-languageserver": "^9.0.1",
     "vscode-languageserver-textdocument": "^1.0.12"

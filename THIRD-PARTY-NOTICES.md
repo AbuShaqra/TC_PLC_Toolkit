@@ -69,6 +69,7 @@ Each package retains its own `LICENSE` file inside `node_modules/`:
 | vscode-languageserver | MIT |
 | vscode-languageserver-protocol | MIT |
 | vscode-languageserver-textdocument | MIT |
+| vscode-cpptools (the C/C++ extension's public API; `out/api.js` only) | MIT |
 | vscode-languageserver-types | MIT |
 | vscode-jsonrpc | MIT |
 | brace-expansion | MIT |

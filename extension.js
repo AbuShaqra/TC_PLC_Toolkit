@@ -17,6 +17,7 @@ const { registerStartCommands } = require('./src/commands/startCommands');
 const { registerCompileCommands } = require('./src/commands/compileCommands');
 const { registerXaeShellCommands } = require('./src/commands/xaeShellCommands');
 const { registerGppCommands } = require('./src/commands/gppCommands');
+const { registerCppToolsProvider } = require('./src/commands/cppToolsCommands');
 const { migrateSettings } = require('./src/settingsMigration');
 const { TwinCatDragAndDropController } = require('./src/treeDragAndDrop');
 const { TwinCatCustomEditorProvider } = require('./src/customEditorProvider');
@@ -588,6 +589,8 @@ function activate(context) {
         onSettingsChanged: () => { if (start) start.startPage.postState(); },
         fillGppPath: gpp.autoFill
     });
+    // IntelliSense for the generated C++ in Microsoft's C/C++ extension, when it is installed (not awaited).
+    registerCppToolsProvider(context, { getProjectMap: () => hostProjectMap });
 
     start = registerStartCommands(context, {
         provider, getProjectMap: () => hostProjectMap, getSolutionMap: () => hostSolutionMap,

@@ -226,6 +226,7 @@ per-suite without aborting on the first failure. The main ones:
 | `test/test_cpp_settings.js` | `src/cppSettings.js`: defaults off; effective values (the build implies generation); `couplingWrites` per scope (build on → generation on in that scope; generation off → build off there; inherited values; a hand edit setting both; no ping-pong); `checkboxWrites` for the dropdown (coupled writes, target = the most specific scope that sets the switch). |
 | `test/test_gpp.js` | `src/gpp.js` without g++: detection over a mocked PATH and file system (Windows order, quoted PATH entries, MSYS2/MinGW/WinLibs/w64devkit/Chocolatey roots from the environment or defaults; Linux PATH only), the path setting via `checkConfiguredGpp` (full path, quotes, bare command name on PATH or not, a folder with or without g++, missing → reported not replaced), the command line, parsing g++ output (Windows drive letters, notes kept with their message, the include and instantiation chains kept as context, positionless `cc1plus:` errors), placing messages on the `.cpp`/`.hpp` (a header error from a captured real g++ 13.3 instantiation lands on the `required from here` line; a later one in the same header on the generated `#include`; no context → the `.cpp`'s first line naming the header), the summary, `runGpp` over a fake child (no shell, g++'s folder first on PATH, exit codes, spawn failure, timeout, cancel), and `killProcessTree` (POSIX group SIGTERM, Windows `taskkill /T /F`, fallbacks; on POSIX a real timed-out `sh` must leave no grandchild running). |
 | `test/test_gpp_commands.js` | `src/commands/gppCommands.js` under a stub: an empty `tcToolkit.compiler.gppPath` is filled (Global), a set value is never overwritten and is checked like the build checks it (`checkConfiguredGpp` on a faked machine: a bare name on PATH or not, a quoted path, a folder with or without g++), a value of only quotes (`""`, `" "`) counts as empty and is filled, nothing found writes nothing, the silent fill never rejects, `twincat.detectGpp` reports with an "Open Setting" button that opens the setting in the User settings. |
+| `test/test_cpptools_provider.js` | `src/cppToolsProvider.js` and `src/commands/cppToolsCommands.js` with a fake C/C++ API and a `vscode` stub (the dev host has no C/C++ extension): which files the provider answers for (the `.cpp`/`.hpp` in a known project's `CPP_Files`, or beside a `.plcproj`; not the `.o`, sub-folders, other folders; case per platform), the configuration (headers + CPP_Files on the include path, c++17, compiler path and gcc mode only with a g++), the browse configuration, `connectCppTools` (absent → the API is not even asked; installed later → register + notifyReady once; an API without notifyReady; a getter that fails → no throw, no message; dispose), and the wiring (a g++ path change re-announces; another setting does not; nothing written or shown). |
 | `test/test_library_decls.js` | `src/libraryDecls.js` without a compiler, on the SYNTHETIC library project (`test/_synthLibProject.js`: dump, `.tmc`, a generated archive — every name invented): the `.tmc` model (library-owned types only; interfaces and the project's own types skipped; no comment/string text read), gathering, each declaration kind's exact text (a function block's own `VAR` members, an LTIME one left out; an array bound that is a library constant written as its value), `readType` with library constants (plain, qualified; an unknown one, an expression, another list refused), conflicts (compiler names, user names, a dependency the user redefines), dependency-only declarations, nothing guessed for unreadable types, qualifier blanking (same lengths; members/comments/strings/user names untouched; each stripped qualifier reported with its name), library attribution (`libraryOf` → the `.plcproj`'s library name for a `.tmc` type, a dump function, an archive-only name and the namespace; `spellingOf`; `declaredSymbols` and `compilerSubstitutes`; `undeclaredUses`: a member named through its owner, an inherited one found by its name, deduplicated, cascades left out), the filter case by case (a user typo kept; an internal variable of a library block read from outside dropped, of a user block kept), **temp-dir lifetime** (the declarations exist only in runCheck's temp dir during the run; gone after, also on a failed run; project, workspace and `sample/` unchanged), the no-dump case. |
 | `test/test_vendored_compiler.js` | `resources/compiler/`: exactly the files `SOURCE.md` lists (the runtime headers in `include/` included), each matching its recorded size and SHA-256; the headers the generated C++ includes are there, `COPYING` puts them under the runtime library exception and `SOURCE.md` states that licence with the right count of headers carrying a per-file notice; a full 40-hex commit and the source link at it; the GPL-3.0, Apache-2.0 and MIT texts; `THIRD-PARTY-NOTICES.md` naming the commit; `.vscodeignore` shipping the directory and dropping `scripts/vendor-compiler.js`; the bundle requiring Node built-ins only; `resources/dialects/` holding exactly `twincat3.json` and no profile anywhere else (user rule). |
 | `test/test_settings_migration.js` | `src/settingsMigration.js` over a fake VS Code configuration store: the rename table, User / Workspace / per-folder values each moved within their own scope, a value already under the new key never overwritten (old one still removed), a second run a no-op, a failed copy logged with the old value left for the next run, a synchronous throw / failing removal / throwing `getConfiguration` / unreadable folder list all logged and never thrown. |
@@ -499,6 +500,11 @@ src/
     gppCommands         `twincat.detectGpp` + the silent fill of an EMPTY tcToolkit.compiler.gppPath
                         (Global; never overwrites), run when the g++ build is turned on. The VS Code
                         half of gpp
+    cppToolsCommands    R13: registers cppToolsProvider with Microsoft's C/C++ extension when it is
+                        installed (now or later: extensions.onDidChange), via `vscode-cpptools`
+                        getCppToolsApi(Version.v7); the g++ it names is resolveGpp's, re-resolved and
+                        re-announced (didChangeCustomConfiguration + …BrowseConfiguration) when
+                        tcToolkit.compiler.gppPath changes or a CPP_Files .cpp/.hpp is created
     xaeShellCommands    `twincat.detectXaeShell` + the silent activation-time fill of the two
                         `tcToolkit.xaeShell.path*` settings (EMPTY ones only, ConfigurationTarget.Global;
                         never overwrites). The VS Code half of xaeShellDetect
@@ -534,6 +540,13 @@ src/
                         (what the start page shows) and thisMachine (the real fs/env checks and the
                         version reader); the g++ version gate (GPP_MIN_MAJOR 7, gppVersionOf cached
                         per path+size+mtime, detection prefers a g++ 7+)
+  cppToolsProvider      R13 C/C++ extension custom configuration provider, vscode-free: answers only for
+                        `.cpp`/`.hpp` directly in `<PLC project>/CPP_Files/` (a project the map knows,
+                        or a folder beside a `.plcproj`; name case-insensitive on Windows only) with
+                        includePath [resources/compiler/include, that CPP_Files], c++17, and — when a
+                        g++ is in use — compilerPath + `<os>-gcc-<arch>` intelliSenseMode; browse
+                        config = the headers + existing CPP_Files folders. connectCppTools: nothing
+                        at all when ms-vscode.cpptools is absent; writes no file
   compilerDefines       Compile Project's compiler defines: `<CompilerDefines>` of the project's
                         `.plcproj` → `--pragma-define` arguments (values exact), per-object ones
                         in `<Compile>` items → `--file-define <unit>=…` for that object's check
@@ -1599,6 +1612,19 @@ version fields. With it: `detectGpp` returns the first candidate that is 7+ or u
 Windows), buttons *Open Setting* (User tab) and *Detect g++*, status bar `· g++ too old`. *Detect g++*
 fills an empty setting with a too-old g++ only when it is all there is, and says so as a warning; the
 start page's row gets the warning style with "g++ 6.3.0 is too old: needs 7 or later."
+
+**IntelliSense for the generated C++** (user decision 2026-11-12: a configuration provider, not a written
+`c_cpp_properties.json`). The generated `.hpp` includes `iec_types.hpp` & co. from
+`resources/compiler/include/`, which Microsoft's C/C++ extension cannot find on its own ("cannot open
+source file"). `cppToolsCommands` registers `cppToolsProvider` through the extension's public API — the
+npm package `vscode-cpptools` (MIT, a runtime dependency: it ships in the VSIX like
+`vscode-languageclient`; `.vscodeignore` drops its `out/testApi.*`). Only `out/api.js` is loaded, lazily,
+and only once `vscode.extensions.getExtension('ms-vscode.cpptools')` exists — so without the C/C++
+extension there is no `console.warn` from the package either. The C/C++ extension may ask the user once
+whether to let *TC Toolkit* configure IntelliSense for the folder (its own prompt; if allowed, it records
+`C_Cpp.default.configurationProvider` itself) — the toolkit writes nothing. The extension is activated by
+the toolkit's usual activation events, so a generated file opened before the toolkit activates gets the
+C/C++ extension's default configuration until it does.
 
 **Switch coupling** (`cppSettings`): a run uses `generate = generateCpp || buildWithGpp`. On every
 `tcToolkit.compiler` change, `couplingWrites(before, after)` fixes the scope that changed (build on →

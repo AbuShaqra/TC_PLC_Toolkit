@@ -340,6 +340,13 @@ If *Build with g++* is on and no g++ is found, the C++ is still written and the 
 setting (and, while the setting is empty, *Detect g++*). The setting may name `g++.exe` itself, its
 folder, or a command on your `PATH`; a path pasted with quotes is fine. The compiler's C++ runtime headers that the build needs ship with the extension.
 
+**IntelliSense on the generated C++.** With Microsoft's **C/C++** extension installed, TC Toolkit tells it
+how to read the files in `CPP_Files`: the compiler's runtime headers that ship with the extension and the
+`CPP_Files` folder are on the include path, the language is C++17, and the g++ above is the compiler — so the
+generated `.hpp` no longer shows "cannot open source file iec_types.hpp". The C/C++ extension may ask once
+whether TC Toolkit may configure IntelliSense for the folder; allow it. Nothing is written into your
+project (no `c_cpp_properties.json`). Without the C/C++ extension nothing changes.
+
 `CPP_Files` is output, like `ST_Files`: it is shown read-only in the PLC Objects tree and is never read
 back as a source. The extension only ever replaces or deletes files there that **it** wrote and that
 nobody changed since (it keeps a small record, `.tc-toolkit-generated.json`, in the folder); a file of
@@ -367,7 +374,11 @@ for the version logic. There is no unit-test framework for Structured Text, so a
 
 ## Requirements
 
-**VS Code** `^1.66.0`. Nothing else.
+**VS Code** `^1.66.0`. Nothing else for editing.
+
+Optional, only for the C++ options of *Compile project*: **g++ 7 or later** for *Build with g++* (on
+Windows, MinGW-w64 — for example MSYS2's UCRT64; see [Compile project](#compile-project)), and Microsoft's
+**C/C++** extension if you want IntelliSense on the generated C++.
 
 ## Install
 
