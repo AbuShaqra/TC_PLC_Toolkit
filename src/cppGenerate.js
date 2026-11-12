@@ -15,7 +15,15 @@
  * Ownership: `CPP_Files/.tc-toolkit-generated.json` records every file the toolkit wrote there, with
  * the project it belongs to and its SHA-256. A file is overwritten or deleted only when it is
  * recorded AND unchanged since (same hash); anything else — a file of the same name the user made,
- * or a generated file the user edited — is left alone and reported.
+ * or a generated file the user edited — is left alone and reported. The owner is the project's
+ * `<ProjectGuid>` (`cppOwnerId`), which a rename keeps, so a renamed project's earlier files are
+ * still its own and are cleaned up. The hash ignores line endings (a Git checkout with
+ * `core.autocrlf` is not an edit), and on Windows and macOS file names compare case-insensitively.
+ *
+ * Library symbols: C++ is generated only for a project that needs no library declaration
+ * (`libraryBlocksCpp`). The compiler would turn the interface-only declarations of src/libraryDecls.js
+ * into empty-bodied C++ — library blocks that silently do nothing — and those declarations must never
+ * be written into the project.
  */
 
 'use strict';
@@ -74,8 +82,62 @@ function isUnderCppFiles(filePath) {
     return String(filePath || '').split(/[\\/]+/).slice(0, -1).some(seg => seg.toLowerCase() === 'cpp_files');
 }
 
-/** @param {string|Buffer} data */
-const sha256 = (data) => crypto.createHash('sha256').update(data).digest('hex');
+/**
+ * The recorded hash of a file: SHA-256 over its bytes with every CRLF read as LF, so a line-ending
+ * conversion alone (Git's `core.autocrlf`) does not make the toolkit's own file look edited.
+ * @param {string|Buffer} data Text is taken as UTF-8.
+ */
+const sha256 = (data) => {
+    const bytes = typeof data === 'string' ? Buffer.from(data, 'utf8') : data;
+    // latin1 maps each byte to one character and back, so this is a byte-level CRLF → LF.
+    const lf = Buffer.from(bytes.toString('latin1').replace(/\r\n/g, '\n'), 'latin1');
+    return crypto.createHash('sha256').update(lf).digest('hex');
+};
+
+/** Whether this platform's file systems usually ignore the case of file names. */
+const CASE_INSENSITIVE_FS = process.platform === 'win32' || process.platform === 'darwin';
+
+/**
+ * The record's key for a file name: the exact key, or on a case-insensitive file system one that
+ * differs only in case.
+ * @param {Manifest} manifest
+ * @param {string} name
+ * @param {boolean} caseInsensitive
+ * @returns {string|null}
+ */
+function recordKey(manifest, name, caseInsensitive) {
+    if (Object.prototype.hasOwnProperty.call(manifest.files, name)) return name;
+    if (!caseInsensitive) return null;
+    const lower = name.toLowerCase();
+    return Object.keys(manifest.files).find(k => k.toLowerCase() === lower) || null;
+}
+
+/**
+ * Who owns a project's generated files: its `<ProjectGuid>` (a rename keeps it), else the
+ * `.plcproj`'s file stem.
+ * @param {string} plcprojText The `.plcproj`'s XML ('' when it could not be read).
+ * @param {string} fallback
+ * @returns {string}
+ */
+function cppOwnerId(plcprojText, fallback) {
+    const m = /<ProjectGuid>\s*\{?([0-9A-Fa-f-]{36})\}?\s*<\/ProjectGuid>/.exec(String(plcprojText || ''));
+    return m ? `guid:${m[1].toLowerCase()}` : String(fallback);
+}
+
+/**
+ * Why C++ must not be generated for a project that uses library symbols — or '' when it may.
+ * The compiler has no implementation of a library's blocks and functions: given the interface-only
+ * declarations the check uses, it would generate empty bodies that compile and silently do nothing.
+ * @param {{extraFiles?: Array<unknown>, qualifiers?: number, filteredLibraryDiagnostics?: number}} o
+ *   `extraFiles`: the library declarations the check needed; `qualifiers`: library namespace
+ *   qualifiers stripped from the project's code; `filteredLibraryDiagnostics`: check errors on
+ *   library names that were not shown.
+ * @returns {string}
+ */
+function libraryBlocksCpp(o) {
+    const uses = (o.extraFiles || []).length > 0 || (o.qualifiers || 0) > 0 || (o.filteredLibraryDiagnostics || 0) > 0;
+    return uses ? 'C++ was not generated: the project uses library symbols, and the compiler has no implementation of them (the C++ would contain empty library blocks).' : '';
+}
 
 /**
  * @typedef {Object} Manifest
@@ -127,15 +189,16 @@ function writeManifest(dir, manifest) {
  * @param {string} dir
  * @param {Manifest} manifest
  * @param {string} name
+ * @param {boolean} [caseInsensitive] Match the record's names regardless of case (Windows, macOS).
  * @returns {'absent'|'owned'|'foreign'|'changed'} `foreign`: not recorded (the user's own file);
  *   `changed`: recorded, but edited since it was written.
  */
-function ownership(dir, manifest, name) {
+function ownership(dir, manifest, name, caseInsensitive = CASE_INSENSITIVE_FS) {
     let data;
     try { data = fs.readFileSync(path.join(dir, name)); } catch (e) { return 'absent'; }
-    const entry = manifest.files[name];
-    if (!entry) return 'foreign';
-    return entry.sha256 === sha256(data) ? 'owned' : 'changed';
+    const key = recordKey(manifest, name, caseInsensitive);
+    if (!key) return 'foreign';
+    return manifest.files[key].sha256 === sha256(data) ? 'owned' : 'changed';
 }
 
 /**
@@ -150,40 +213,53 @@ function ownership(dir, manifest, name) {
 /**
  * Writes one project's generated files into its `CPP_Files` folder and deletes this project's
  * earlier outputs that this run did not produce (a renamed project, or an object file the new
- * `.cpp` no longer matches). Only absent or owned files are replaced; see `ownership`.
- * @param {{dir: string, project: string, files: Array<{name: string, text: string}>}} o
- *   `project`: the owner recorded with each file (the file stem).
+ * `.cpp` no longer matches). Only absent or owned files are replaced; see `ownership`. The record is
+ * saved however the run ends, so a file written before a later write failed stays the toolkit's.
+ * @param {{dir: string, project: string, files: Array<{name: string, text: string}>, caseInsensitive?: boolean}} o
+ *   `project`: the owner recorded with each file (`cppOwnerId`); `caseInsensitive`: defaults to
+ *   this platform's usual file system.
  * @returns {WriteResult}
  */
 function writeOwnedOutputs(o) {
     /** @type {WriteResult} */
     const result = { ok: true, message: '', written: [], removed: [], refused: [] };
+    const ci = o.caseInsensitive === undefined ? CASE_INSENSITIVE_FS : !!o.caseInsensitive;
     fs.mkdirSync(o.dir, { recursive: true });
     const read = readManifest(o.dir);
     if (read.ok === false) return { ...result, ok: false, message: read.message };
     const manifest = read.manifest;
-    const names = new Set(o.files.map(f => f.name));
-    for (const file of o.files) {
-        const target = path.join(o.dir, file.name);
-        const state = ownership(o.dir, manifest, file.name);
-        if (state === 'foreign' || state === 'changed') {
-            result.refused.push({ path: target, reason: state });
-            continue;
+    const fold = (/** @type {string} */ n) => (ci ? n.toLowerCase() : n);
+    const names = new Set(o.files.map(f => fold(f.name)));
+    let dirty = false;
+    try {
+        for (const file of o.files) {
+            const target = path.join(o.dir, file.name);
+            const state = ownership(o.dir, manifest, file.name, ci);
+            if (state === 'foreign' || state === 'changed') {
+                result.refused.push({ path: target, reason: state });
+                continue;
+            }
+            fs.writeFileSync(target, file.text, 'utf8');
+            // Recorded under the name as written now (a case-only rename drops the old spelling).
+            const oldKey = recordKey(manifest, file.name, ci);
+            if (oldKey && oldKey !== file.name) delete manifest.files[oldKey];
+            manifest.files[file.name] = { project: o.project, sha256: sha256(file.text) };
+            dirty = true;
+            result.written.push(target);
         }
-        fs.writeFileSync(target, file.text, 'utf8');
-        manifest.files[file.name] = { project: o.project, sha256: sha256(Buffer.from(file.text, 'utf8')) };
-        result.written.push(target);
-    }
-    for (const [name, entry] of Object.entries(manifest.files)) {
-        if (entry.project !== o.project || names.has(name)) continue;
-        const state = ownership(o.dir, manifest, name);
-        if (state === 'owned') {
-            try { fs.unlinkSync(path.join(o.dir, name)); result.removed.push(path.join(o.dir, name)); } catch (e) { continue; }
+        for (const [name, entry] of Object.entries(manifest.files)) {
+            if (entry.project !== o.project || names.has(fold(name))) continue;
+            const state = ownership(o.dir, manifest, name, false);
+            if (state === 'owned') {
+                try { fs.unlinkSync(path.join(o.dir, name)); result.removed.push(path.join(o.dir, name)); } catch (e) { continue; }
+            }
+            // Gone, removed, or edited by the user (then it is theirs now): no longer recorded.
+            delete manifest.files[name];
+            dirty = true;
         }
-        // Gone, removed, or edited by the user (then it is theirs now): no longer recorded.
-        delete manifest.files[name];
+    } finally {
+        if (dirty) writeManifest(o.dir, manifest);
     }
-    writeManifest(o.dir, manifest);
     return result;
 }
 
@@ -199,6 +275,8 @@ function recordOwnedFile(dir, project, name) {
     if (read.ok === false) return false;
     let data;
     try { data = fs.readFileSync(path.join(dir, name)); } catch (e) { return false; }
+    const oldKey = recordKey(read.manifest, name, CASE_INSENSITIVE_FS);
+    if (oldKey && oldKey !== name) delete read.manifest.files[oldKey];
     read.manifest.files[name] = { project, sha256: sha256(data) };
     writeManifest(dir, read.manifest);
     return true;
@@ -217,7 +295,7 @@ function claimOutput(dir, name) {
     const state = ownership(dir, read.manifest, name);
     if (state === 'owned') {
         try { fs.unlinkSync(path.join(dir, name)); } catch (e) { return 'changed'; }
-        delete read.manifest.files[name];
+        delete read.manifest.files[/** @type {string} */ (recordKey(read.manifest, name, CASE_INSENSITIVE_FS))];
         writeManifest(dir, read.manifest);
     }
     return state;
@@ -293,7 +371,7 @@ async function runGenerate(o) {
 
 module.exports = {
     CPP_FILES_DIR, MANIFEST_NAME, MANIFEST_GENERATOR, DEFAULT_GENERATE_TIMEOUT_MS,
-    cppFileStem, cppOutputPaths, isUnderCppFiles,
+    cppFileStem, cppOutputPaths, isUnderCppFiles, cppOwnerId, libraryBlocksCpp,
     readManifest, ownership, writeOwnedOutputs, recordOwnedFile, claimOutput,
     runGenerate
 };

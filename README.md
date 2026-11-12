@@ -310,6 +310,9 @@ with the small arrow next to the **Compile** button (in the editor's toolbar, or
 - **Generate C++** (`tcToolkit.compiler.generateCpp`) — when the check finds **no errors**, the project
   is written as C++ into a `CPP_Files` folder next to its `.plcproj` (beside `ST_Files`):
   `<project>.cpp` and `<project>.hpp`, one pair per PLC project. A check with errors writes nothing.
+  A project that uses **library** blocks or functions (for example from the Beckhoff libraries) is not
+  generated either: the compiler has no implementation of them, so the C++ would contain library blocks
+  that do nothing. The summary says so.
   The summary and the status bar say what was written; **Open C++** opens the file.
 - **Build with g++** (`tcToolkit.compiler.buildWithGpp`) — also compiles that `.cpp` with g++, as a
   check that the generated code builds (`CPP_Files/<project>.o`; nothing is linked or run). g++'s errors
@@ -321,13 +324,15 @@ with the small arrow next to the **Compile** button (in the editor's toolbar, or
 example MSYS2's `ucrt64`/`mingw64` or a WinLibs/w64devkit build). It is found by itself: `g++` on your
 `PATH`, then on Windows the usual install folders (MSYS2, `C:\MinGW`, WinLibs, w64devkit, Chocolatey's
 mingw). Set `tcToolkit.compiler.gppPath` to use another one; **TC Toolkit: Detect g++** looks again.
-If *Build with g++* is on and no g++ is found, the C++ is still written and a message offers the
-setting. The compiler's C++ runtime headers that the build needs ship with the extension.
+If *Build with g++* is on and no g++ is found, the C++ is still written and the summary offers the
+setting (and, while the setting is empty, *Detect g++*). The setting may name `g++.exe` itself, its
+folder, or a command on your `PATH`; a path pasted with quotes is fine. The compiler's C++ runtime headers that the build needs ship with the extension.
 
 `CPP_Files` is output, like `ST_Files`: it is shown read-only in the PLC Objects tree and is never read
 back as a source. The extension only ever replaces or deletes files there that **it** wrote and that
 nobody changed since (it keeps a small record, `.tc-toolkit-generated.json`, in the folder); a file of
-the same name you made or edited is left alone, and the summary says so.
+the same name you made or edited is left alone, and the summary says so. Renaming the `.plcproj` removes
+the old project's files; a Git checkout that only changes their line endings does not count as an edit.
 
 ### For AI coding assistants
 

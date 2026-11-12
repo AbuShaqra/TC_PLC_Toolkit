@@ -666,6 +666,26 @@ const settle = () => new Promise(r => setTimeout(r, 10));
             && /C\+\+ was not generated: the project has errors\./.test(lastNote()), 'R13 GEN: a check with errors generates nothing and says so; earlier output is left');
         checkAnswer = () => cleanCheck;
 
+        // Library symbols: the compiler has no implementation of them, so no C++ (it would hold empty library blocks).
+        {
+            const plcproj = path.join(ROOT, 'PLC', 'PLC.plcproj');
+            fs.writeFileSync(plcproj, '<Project><ItemGroup><PlaceholderReference Include="Synthetic Lib"><Namespace>SynLib</Namespace></PlaceholderReference></ItemGroup></Project>');
+            checkAnswer = () => ({ stdout: JSON.stringify({ dialect: 'twincat3', files: [], summary: {}, diagnostics: [
+                { file: '1.st', line: 1, column: 1, severity: 'error', message: "Undeclared variable 'SYNLIB'" }] }), code: 1 });
+            const genBeforeLib = generationCalls().length;
+            const cppBefore = fs.readFileSync(cppFile, 'utf8');
+            reset();
+            answers.message.push(undefined);
+            r13Result = await run('twincat.compileProject');
+            await settle();
+            assert(r13Result.errors === 0 && r13Result.filteredLibraryDiagnostics === 1 && r13Result.cpp.status === 'skipped'
+                && generationCalls().length === genBeforeLib && fs.readFileSync(cppFile, 'utf8') === cppBefore
+                && /C\+\+ was not generated: the project uses library symbols/.test(lastNote()),
+            `R13 LIB: a project that uses library symbols gets no C++ and is told why (${r13Result.cpp.status}; ${lastNote()})`);
+            fs.rmSync(plcproj);
+            checkAnswer = () => cleanCheck;
+        }
+
         // The build turned on elsewhere (workspace settings.json): generation follows IN THAT SCOPE; the g++ path is filled.
         delete settings['tcToolkit.compiler.generateCpp'];
         fireConfig('tcToolkit.compiler.generateCpp');
@@ -698,13 +718,26 @@ const settle = () => new Promise(r => setTimeout(r, 10));
         answers.message.push(undefined, undefined);
         r13Result = await run('twincat.compileProject');
         await settle();
-        const missing = calls.warnings.find(m => /Build with g\+\+ is on, but the g\+\+ path setting names something that does not exist/.test(m.m));
+        const missing = calls.warnings.find(m => /Not built with g\+\+: the g\+\+ path setting does not work \(.*missing-g\+\+: that file does not exist\)/.test(m.m));
         assert(r13Result.cpp.status === 'done' && r13Result.cpp.gpp.status === 'missing' && gppCalls().length === 0 && fs.existsSync(cppFile)
-            && !!missing && missing.buttons.join('|') === 'Open Setting|Detect g++' && calls.status.text.includes('g++ not found'),
-        'R13 GPP: a missing g++ still writes the C++, and says so with buttons to the g++ path setting and to detection');
+            && !!missing && missing.buttons.join('|') === 'Open C++|Open Setting' && calls.status.text.includes('g++ not found'),
+        `R13 GPP: a missing g++ still writes the C++, and says so with a button to the g++ path setting — not to detection, which never replaces a set value (${missing && missing.buttons.join('|')})`);
+        assert([...calls.warnings, ...calls.errors, ...calls.infos].length === 1,
+            `R13 GPP: one notification for a missing g++, not two (${[...calls.warnings, ...calls.errors, ...calls.infos].map(m => m.m).join(' || ')})`);
+        // Empty setting and nothing detected: detection is offered too.
+        delete settings['tcToolkit.compiler.gppPath'];
+        reset();
+        answers.message.length = 0;
+        answers.message.push(undefined);
+        r13Result = await run('twincat.compileProject');
+        await settle();
+        const notFound = calls.warnings.find(m => /Not built with g\+\+: g\+\+ was not found on PATH or in the usual install folders/.test(m.m));
+        assert(r13Result.cpp.gpp.status === 'missing' && !!notFound && notFound.buttons.join('|') === 'Open C++|Open Setting|Detect g++' && calls.warnings.length === 1,
+            `R13 GPP: an empty setting and no g++ found: one warning, with Open Setting and Detect g++ (${notFound && notFound.buttons.join('|')})`);
+        settings['tcToolkit.compiler.gppPath'] = path.join(ROOT, 'bin', 'missing-g++');
         const executedBefore = calls.executed.length;
         answers.message.length = 0;
-        answers.message.push(undefined, 'Open Setting');
+        answers.message.push('Open Setting');
         await run('twincat.compileProject');
         await settle();
         assert(calls.executed.slice(executedBefore).some(e => e.id === 'twincat.openSettings' && e.args[0] === 'tcToolkit.compiler.gppPath'),

@@ -546,8 +546,11 @@ function assert(cond, msg) {
             return { label: c.getAttribute('aria-label'), popup: c.getAttribute('aria-haspopup'), controls: c.getAttribute('aria-controls'),
                 labels: [...document.querySelectorAll('#compile-menu label')].map(l => l.textContent.trim()) };
         });
-        assert(caretInfo.label === 'Compile options' && caretInfo.popup === 'true' && caretInfo.controls === 'compile-menu'
-            && JSON.stringify(caretInfo.labels) === '["Generate C++","Build with g++"]', `the caret is labelled and owns the menu with two labelled boxes (${JSON.stringify(caretInfo)})`);
+        assert(caretInfo.label === 'Compile options' && caretInfo.popup === null && caretInfo.controls === 'compile-menu'
+            && JSON.stringify(caretInfo.labels) === '["Generate C++","Build with g++"]',
+        `the caret is a disclosure (aria-expanded/aria-controls, no aria-haspopup: its popup is checkboxes, not a menu) with two labelled boxes (${JSON.stringify(caretInfo)})`);
+        const btnTitle = () => page.evaluate(() => document.getElementById('compile-btn').title);
+        assert(/^Compile Project: check this PLC project with the IEC 61131-3 compiler$/.test(await btnTitle()), `with both options off the button's tooltip says it checks (${await btnTitle()})`);
         await page.evaluate(() => { window.__harness.sent.length = 0; });
         await page.click('#compile-caret');
         o = await opts();
@@ -561,6 +564,7 @@ function assert(cond, msg) {
         let om = await optionMsgs();
         assert(o.gpp && o.cpp && om.length === 1 && om[0].key === 'buildWithGpp' && om[0].value === true,
             `Space ticks Build with g++, which ticks Generate C++ too, and posts setCompileOption (${JSON.stringify(om)})`);
+        assert(/write it as C\+\+ into its CPP_Files folder, and build that with g\+\+/.test(await btnTitle()), `the tooltip follows: check, write C++, build with g++ (${await btnTitle()})`);
         await page.keyboard.press('ArrowUp');
         await page.keyboard.press('Space');
         o = await opts();
@@ -579,6 +583,7 @@ function assert(cond, msg) {
         await settle(30);
         o = await opts();
         assert(o.cpp && !o.gpp, 'and back: generation only');
+        assert(/then write it as C\+\+ into its CPP_Files folder$/.test(await btnTitle()), `the tooltip follows a host update too: check, then write C++ (${await btnTitle()})`);
         await page.click('#compile-caret');
         await page.mouse.click(5, viewport.height - 5);
         assert(!(await opts()).open, 'a click elsewhere closes the menu');

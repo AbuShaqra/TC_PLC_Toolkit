@@ -76,13 +76,45 @@ function parseNodeVersion(text) {
 }
 
 /**
+ * Stops a child process and every process it started. On Windows `taskkill /T /F` ends the tree
+ * (a plain kill is TerminateProcess on the child alone); on POSIX the child leads its own process
+ * group (`detached` in runChild) and the group gets SIGTERM. Falls back to killing the child alone.
+ * Never throws.
+ * @param {{pid?: number, kill: (signal?: any) => any}} child
+ * @param {{platform?: string, execFile?: (file: string, args: string[], options: Object, cb: (err: any) => void) => any,
+ *   processKill?: (pid: number, signal: string) => any}} [deps] For the tests.
+ * @returns {'tree'|'child'} What was signalled.
+ */
+function killProcessTree(child, deps = {}) {
+    const platform = deps.platform || process.platform;
+    const pid = child && typeof child.pid === 'number' ? child.pid : 0;
+    const killChild = () => { try { child.kill(); } catch (e) { /* already gone */ } };
+    if (pid > 0) {
+        try {
+            if (platform === 'win32') {
+                const execFile = deps.execFile || childProcess.execFile;
+                execFile('taskkill', ['/PID', String(pid), '/T', '/F'], { windowsHide: true }, (err) => { if (err) killChild(); });
+                return 'tree';
+            }
+            (deps.processKill || process.kill)(-pid, 'SIGTERM');
+            return 'tree';
+        } catch (e) { /* no such group: the child alone */ }
+    }
+    killChild();
+    return 'child';
+}
+
+/**
  * Runs a child process to its end, collecting its output. Never rejects and never hangs: a spawn
  * failure, a timeout and a cancellation each resolve with their own `outcome`.
  * @param {SpawnLike} spawn
  * @param {string} command
  * @param {string[]} args
- * @param {{cwd?: string, env?: Object<string, string|undefined>, timeoutMs: number, onCancel?: (cancel: () => void) => void}} options
+ * @param {{cwd?: string, env?: Object<string, string|undefined>, timeoutMs: number, onCancel?: (cancel: () => void) => void,
+ *   killTree?: boolean}} options
  *   `env` replaces the inherited environment; omitted, the child inherits this process's.
+ *   `killTree`: a timeout or cancellation stops the child's own children too (g++ runs `cc1plus`
+ *   and `as`, which a plain kill of the driver leaves running); see `killProcessTree`.
  * @returns {Promise<{outcome: 'exit'|'spawn-error'|'timeout'|'cancelled', code: number|null,
  *   stdout: string, stderr: string, error: string}>}
  */
@@ -103,12 +135,17 @@ function runChild(spawn, command, args, options) {
         };
         const stop = (/** @type {'timeout'|'cancelled'} */ outcome) => {
             if (settled) return;
-            try { if (child) child.kill(); } catch (e) { /* already gone */ }
+            if (child) {
+                if (options.killTree) killProcessTree(child);
+                else { try { child.kill(); } catch (e) { /* already gone */ } }
+            }
             finish(outcome, null);
         };
         try {
             /** @type {Object} */
             const spawnOptions = { cwd: options.cwd, shell: false, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] };
+            // Its own process group on POSIX, so the whole group can be signalled (killProcessTree).
+            if (options.killTree && process.platform !== 'win32') /** @type {any} */ (spawnOptions).detached = true;
             if (options.env) /** @type {any} */ (spawnOptions).env = options.env;
             child = spawn(command, args, spawnOptions);
         } catch (err) {
@@ -666,6 +703,7 @@ module.exports = {
     PANE_LABELS,
     parseNodeVersion,
     runChild,
+    killProcessTree,
     BUNDLED_COMPILER,
     bundledCompilerPath,
     resolveCompilerPath,

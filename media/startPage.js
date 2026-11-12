@@ -200,15 +200,25 @@
      * @param {boolean} ready The compiler file exists.
      * @param {boolean} hasProject A PLC project is open.
      */
+    let compileReady = true;
     function renderCompileTile(ready, hasProject) {
         const tile = $('compile-project');
+        compileReady = ready;
         tile.disabled = !(ready && hasProject);
         tile.classList.toggle('ready', ready);
         tile.title = ready ? '' : 'The compiler file named in the Compile Project settings does not exist';
-        $('compile-detail').textContent = ready
-            ? 'Check the project with an external IEC 61131-3 compiler'
-            : 'Compiler file not found — check the compiler setting';
+        describeCompileTile();
         $('compile-missing').hidden = ready;
+    }
+    /** The tile's detail says what a click does with the current options (the checkboxes). */
+    function describeCompileTile() {
+        const cpp = $('opt-generate-cpp').checked;
+        const gpp = $('opt-build-gpp').checked;
+        $('compile-detail').textContent = !compileReady
+            ? 'Compiler file not found — check the compiler setting'
+            : (gpp ? 'Check the project, write it as C++ into CPP_Files and build that with g++'
+                : (cpp ? 'Check the project, then write it as C++ into CPP_Files'
+                    : 'Check the project with the IEC 61131-3 compiler'));
     }
     $('compile-project').addEventListener('click', () => vscode.postMessage({ type: 'command', command: 'twincat.compileProject' }));
 
@@ -237,12 +247,14 @@
     function renderCompileOptions(o) {
         optGenerate.checked = !!(o && (o.generateCpp || o.buildWithGpp));
         optBuild.checked = !!(o && o.buildWithGpp);
+        describeCompileTile();
     }
     for (const [box, key] of [[optGenerate, 'generateCpp'], [optBuild, 'buildWithGpp']]) {
         box.addEventListener('change', () => {
             // Shown at once; the host's `state` confirms (or corrects) it.
             if (key === 'buildWithGpp' && box.checked) optGenerate.checked = true;
             if (key === 'generateCpp' && !box.checked) optBuild.checked = false;
+            describeCompileTile();
             vscode.postMessage({ type: 'setCompileOption', key, value: box.checked });
         });
     }

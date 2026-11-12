@@ -61,7 +61,16 @@ const settle = () => new Promise(r => setTimeout(r, 5));
 (async () => {
     let hit = { path: 'C:\\msys64\\ucrt64\\bin\\g++.exe', source: 'default' };
     const context = { subscriptions: [] };
-    const gpp = registerGppCommands(context, { detect: () => hit });
+    // The set value is checked the way the build checks it (src/gpp.js checkConfiguredGpp), on a faked machine.
+    const BIN = path.join(ROOT, 'bin');
+    const machine = {
+        platform: 'linux', env: { PATH: BIN },
+        exists: (p) => { try { return fs.statSync(p).isFile(); } catch (e) { return false; } },
+        isDir: (p) => { try { return fs.statSync(p).isDirectory(); } catch (e) { return false; } }
+    };
+    fs.mkdirSync(BIN, { recursive: true });
+    fs.writeFileSync(path.join(BIN, 'g++'), '');
+    const gpp = registerGppCommands(context, { detect: () => hit, machine });
     assert(handlers.has('twincat.detectGpp'), 'REGISTER: twincat.detectGpp');
 
     let r = await gpp.autoFill();
@@ -73,7 +82,20 @@ const settle = () => new Promise(r => setTimeout(r, 5));
         'FILL: a value already set is never overwritten (and is reported missing when it is not a file here)');
     settings[KEY] = 'g++';
     r = await gpp.autoFill();
-    assert(r.status === 'kept' && r.missing === false, 'FILL: a bare command name is kept and not called missing (it is looked up on PATH)');
+    assert(r.status === 'kept' && r.missing === false, 'FILL: a bare command name on PATH is kept and not called missing');
+    settings[KEY] = 'x86_64-w64-mingw32-g++';
+    r = await gpp.autoFill();
+    assert(r.status === 'kept' && r.missing === true && r.problem === 'not-on-path', 'FILL: a bare command name PATH does not have is kept, and called missing');
+    settings[KEY] = `"${path.join(BIN, 'g++')}"`;
+    r = await gpp.autoFill();
+    assert(r.status === 'kept' && r.missing === false, 'FILL: a quoted path (Explorer\'s "Copy as path") is checked without its quotes, as the build does');
+    settings[KEY] = BIN;
+    r = await gpp.autoFill();
+    assert(r.status === 'kept' && r.missing === false, 'FILL: a folder that holds g++ works, as it does for the build');
+    settings[KEY] = ROOT;
+    r = await gpp.autoFill();
+    assert(r.status === 'kept' && r.missing === true && r.problem === 'folder' && /that folder has no g\+\+ in it/.test(describeGppFill(r)),
+        `FILL: a folder with no g++ is called out as such (${describeGppFill(r)})`);
     const real = path.join(ROOT, 'g++');
     fs.writeFileSync(real, '');
     settings[KEY] = real;
@@ -106,7 +128,9 @@ const settle = () => new Promise(r => setTimeout(r, 5));
     r = await handlers.get('twincat.detectGpp')();
     assert(r.status === 'notFound' && calls.warnings.length === 1 && /not found on PATH or in the usual install folders/.test(calls.warnings[0].m),
         'COMMAND: nothing found is a warning that says where it looked');
-    assert(describeGppFill({ status: 'kept', path: 'D:\\g++.exe', missing: true }) === 'g++: kept your value D:\\g++.exe (that file does not exist).', 'COMMAND: the kept message');
+    assert(describeGppFill({ status: 'kept', path: 'D:\\g++.exe', missing: true, problem: 'missing' }) === 'g++: kept your value D:\\g++.exe (that file does not exist). Clear the setting to let it be detected, or correct it.',
+        'COMMAND: the kept message for a value that does not work says how to get it detected');
+    assert(describeGppFill({ status: 'kept', path: '/usr/bin/g++', missing: false }) === 'g++: kept your value /usr/bin/g++.', 'COMMAND: the kept message for a working value');
 
     fs.rmSync(ROOT, { recursive: true, force: true });
     if (errors > 0) {

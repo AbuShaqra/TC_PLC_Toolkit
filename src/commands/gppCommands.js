@@ -12,7 +12,7 @@
 
 const vscode = require('vscode');
 const fs = require('fs');
-const { SETTING_GPP_PATH, detectGpp } = require('../gpp');
+const { SETTING_GPP_PATH, detectGpp, checkConfiguredGpp, describeGppProblem } = require('../gpp');
 const { CPP_SECTION } = require('../cppSettings');
 
 /** The key of the path setting inside its section. */
@@ -23,30 +23,42 @@ const GPP_PATH_KEY = 'gppPath';
  * @property {'found'|'kept'|'notFound'} status `found`: the empty setting was filled; `kept`: it
  *   already had a value and was left alone; `notFound`: empty, and nothing was detected.
  * @property {string} path The setting's value after the fill ('' when not found).
- * @property {boolean} [missing] For `kept`: the kept path is not a file on this machine.
+ * @property {boolean} [missing] For `kept`: the kept value does not work on this machine.
+ * @property {string} [problem] For a `missing` value: why (src/gpp.js checkConfiguredGpp).
  */
+
+/** The real platform, environment and file checks, as src/gpp.js takes them. */
+function machine() {
+    return {
+        platform: process.platform, env: process.env,
+        exists: (/** @type {string} */ p) => { try { return fs.statSync(p).isFile(); } catch (e) { return false; } },
+        isDir: (/** @type {string} */ p) => { try { return fs.statSync(p).isDirectory(); } catch (e) { return false; } }
+    };
+}
 
 /**
  * Detection with the real platform, environment and file system.
  * @returns {{path: string, source: string}|null}
  */
 function detectOnThisMachine() {
-    return detectGpp({ platform: process.platform, env: process.env, exists: (p) => { try { return fs.statSync(p).isFile(); } catch (e) { return false; } } });
+    return detectGpp(machine());
 }
 
 /**
  * Detects g++ and writes it into the setting, only when the setting is empty.
  * @param {() => ({path: string}|null)} detect
+ * @param {Parameters<typeof checkConfiguredGpp>[1]} [env] How a set value is checked (the build's own
+ *   check, so both say the same about it); the real machine by default.
  * @returns {Promise<GppFillResult>}
  */
-async function fillGppSetting(detect) {
+async function fillGppSetting(detect, env = machine()) {
     const config = vscode.workspace.getConfiguration(CPP_SECTION);
     const current = config.get(GPP_PATH_KEY);
     const value = typeof current === 'string' ? current.trim() : '';
     if (value) {
-        // A bare command name (`g++`) is looked up on PATH at run time, so it is not "missing".
-        const missing = /[\\/]/.test(value) && !fs.existsSync(value);
-        return { status: 'kept', path: value, missing };
+        const checked = checkConfiguredGpp(value, env);
+        return checked.ok === true ? { status: 'kept', path: value, missing: false }
+            : { status: 'kept', path: value, missing: true, problem: checked.reason };
     }
     const hit = detect();
     if (!hit || !hit.path) return { status: 'notFound', path: '' };
@@ -61,23 +73,27 @@ async function fillGppSetting(detect) {
  */
 function describeGppFill(r) {
     if (r.status === 'found') return `g++ found: ${r.path}`;
-    if (r.status === 'kept') return `g++: kept your value ${r.path}${r.missing ? ' (that file does not exist)' : ''}.`;
+    if (r.status === 'kept') {
+        return r.missing
+            ? `g++: kept your value ${r.path} (${describeGppProblem(r.problem || 'missing')}). Clear the setting to let it be detected, or correct it.`
+            : `g++: kept your value ${r.path}.`;
+    }
     return 'g++ was not found on PATH or in the usual install folders. Install it (for example MSYS2 or WinLibs) or set its path.';
 }
 
 /**
  * Registers `twincat.detectGpp`.
  * @param {vscode.ExtensionContext} context
- * @param {{detect?: () => ({path: string}|null)}} [deps]
+ * @param {{detect?: () => ({path: string}|null), machine?: Parameters<typeof checkConfiguredGpp>[1]}} [deps] For the tests.
  * @returns {{autoFill: () => Promise<GppFillResult|null>}} The silent fill; it never rejects.
  */
-function registerGppCommands(context, { detect = detectOnThisMachine } = {}) {
+function registerGppCommands(context, { detect = detectOnThisMachine, machine: env = machine() } = {}) {
     context.subscriptions.push(
         vscode.commands.registerCommand('twincat.detectGpp', async () => {
             /** @type {GppFillResult} */
             let result;
             try {
-                result = await fillGppSetting(detect);
+                result = await fillGppSetting(detect, env);
             } catch (err) {
                 vscode.window.showErrorMessage(`Could not update the g++ path setting: ${err && err.message ? err.message : err}`);
                 return undefined;
@@ -91,7 +107,7 @@ function registerGppCommands(context, { detect = detectOnThisMachine } = {}) {
         })
     );
     return {
-        autoFill: () => fillGppSetting(detect).catch((err) => {
+        autoFill: () => fillGppSetting(detect, env).catch((err) => {
             console.error('TC Toolkit: could not fill the g++ path setting:', err);
             return null;
         })

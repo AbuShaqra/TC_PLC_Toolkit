@@ -48,8 +48,16 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   **Fork gap found** (`gpp-real`): sample 1's `GVL_System.fbStation.State` (PROPERTY read through a global FB
   instance) is emitted as `FBSTATION.STATE` (no getter) → g++ error on correct code; pinned in
   `test/test_cpp_real.js` `KNOWN_GPP_GAPS` — report to the fork lane. Sample 2 builds cleanly.
+  **Review round 1 fixed** (11 findings, commit after `f2e06f2`): no C++ for a project that needs library declarations
+  (`libraryBlocksCpp`; they made empty-bodied library FBs and would have put declaration-derived C++ in the project);
+  owner = `<ProjectGuid>` so a `.plcproj` rename cleans up the old pair and `.o`; case-insensitive record names on
+  win32/darwin; CRLF-insensitive hash; the record is saved even when a later write fails; header errors placed on the
+  `required from here` / generated `#include` line; g++ timeout/cancel kills the process tree; one notification for a
+  missing g++, *Detect g++* only with an empty setting; one `checkConfiguredGpp` for build and Detect (quotes, folders);
+  the compile caret is a disclosure (no `aria-haspopup`); button tooltip and start-page detail follow the options.
   **For the Windows check:** the dropdown in both places, a MinGW/MSYS2 g++ found by detection, a g++ error landing on
-  `CPP_Files/<project>.cpp` in Problems, the missing-g++ message, an edited `.hpp` left alone.
+  `CPP_Files/<project>.cpp` in Problems, the missing-g++ message, an edited `.hpp` left alone, a cancelled g++ build
+  leaving no `cc1plus.exe` (taskkill path, only traced here), a case-only `.plcproj` rename.
 - **R3.2 Compile Project: MERGED** into `dev` as PR #32 (`28f24f1`, 2026-11-10 22:22 UTC).
 - **R3.3–R9 MERGED** into `dev` as PR #33 (`6424968`, 2026-11-11 09:30 UTC) after the user's Windows checks
   (dev-host green after `npm ci`; manual checks all passed). Details per item are in git history and ROADMAP "Done".

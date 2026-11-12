@@ -51,8 +51,19 @@ const existsIn = (list) => (p) => list.some(x => x.toLowerCase() === p.toLowerCa
         'SETTING: a configured existing path is used as is');
     assert(eq(g.resolveGpp({ configured: ' "D:\\gcc\\bin\\g++.exe" ', platform: 'win32', env: winEnv, exists }), { ok: true, path: 'D:\\gcc\\bin\\g++.exe', source: 'setting' }),
         'SETTING: surrounding quotes and spaces are tolerated');
-    assert(eq(g.resolveGpp({ configured: 'D:\\nope\\g++.exe', platform: 'win32', env: winEnv, exists }), { ok: false, reason: 'setting-missing', configured: 'D:\\nope\\g++.exe' }),
+    assert(eq(g.resolveGpp({ configured: 'D:\\nope\\g++.exe', platform: 'win32', env: winEnv, exists }), { ok: false, reason: 'setting-missing', configured: 'D:\\nope\\g++.exe', problem: 'missing' }),
         'SETTING: a configured path that does not exist is reported, NOT replaced by detection');
+    const isDir = existsIn(['D:\\gcc\\bin', 'D:\\empty']);
+    assert(eq(g.resolveGpp({ configured: 'D:\\gcc\\bin', platform: 'win32', env: winEnv, exists, isDir }), { ok: true, path: 'D:\\gcc\\bin\\g++.exe', source: 'setting' }),
+        'SETTING: a folder that holds g++.exe is accepted (its g++.exe is used)');
+    assert(eq(g.resolveGpp({ configured: 'D:\\empty', platform: 'win32', env: winEnv, exists, isDir }), { ok: false, reason: 'setting-missing', configured: 'D:\\empty', problem: 'folder' })
+        && g.describeGppProblem('folder') === 'that folder has no g++ in it', 'SETTING: a folder without g++ is reported as a folder, not as "does not exist"');
+    assert(eq(g.resolveGpp({ configured: 'nope-g++', platform: 'win32', env: winEnv, exists }), { ok: false, reason: 'setting-missing', configured: 'nope-g++', problem: 'not-on-path' })
+        && g.describeGppProblem('not-on-path') === 'no such command on PATH', 'SETTING: a bare name PATH does not have says so');
+    // One check for the build and for "Detect g++" (src/commands/gppCommands.js): they cannot disagree.
+    assert(eq(g.checkConfiguredGpp(' "D:\\gcc\\bin\\g++.exe" ', { platform: 'win32', env: winEnv, exists }), { ok: true, path: 'D:\\gcc\\bin\\g++.exe' })
+        && eq(g.checkConfiguredGpp('', { platform: 'win32', env: winEnv, exists }), { ok: false, reason: 'empty', configured: '' }),
+    'CHECK: quotes are dropped; empty is its own answer');
     assert(eq(g.resolveGpp({ configured: 'x86_64-w64-mingw32-g++', platform: 'win32', env: winEnv, exists }),
         { ok: true, path: 'C:\\Tools\\bin\\x86_64-w64-mingw32-g++.exe', source: 'setting' }), 'SETTING: a bare command name is looked up on PATH (.exe added on Windows)');
     assert(eq(g.resolveGpp({ configured: '', platform: 'win32', env: winEnv, exists }), { ok: true, path: 'C:\\msys64\\ucrt64\\bin\\g++.exe', source: 'default' }),
@@ -83,8 +94,9 @@ const existsIn = (list) => (p) => list.some(x => x.toLowerCase() === p.toLowerCa
     ].join('\r\n');
     const msgs = g.parseGppOutput(out);
     assert(msgs.length === 4, `PARSE: two errors, one warning, one positionless fatal error (context, excerpts and carets skipped) (${msgs.length})`);
-    assert(eq(msgs[0], { file: 'C:\\p\\CPP_Files\\P.hpp', line: 175, column: 1, severity: 'warning', message: 'something odd [-Wfoo]', notes: [] }),
-        'PARSE: a Windows path with its drive letter, line, column and severity');
+    assert(eq(msgs[0], { file: 'C:\\p\\CPP_Files\\P.hpp', line: 175, column: 1, severity: 'warning', message: 'something odd [-Wfoo]', notes: [],
+        context: [{ file: 'C:\\p\\CPP_Files\\P.cpp', line: 4, column: 0, kind: 'include' }] }),
+    'PARSE: a Windows path with its drive letter, line, column and severity; the include chain before it is its context');
     assert(msgs[1].file === 'C:\\p\\CPP_Files\\P.cpp' && msgs[1].line === 49 && msgs[1].column === 26 && msgs[1].severity === 'error'
         && /has no member named 'STATE'/.test(msgs[1].message) && msgs[1].notes.length === 1 && msgs[1].notes[0].line === 80,
     'PARSE: the note after an error stays with it');
@@ -104,6 +116,34 @@ const existsIn = (list) => (p) => list.some(x => x.toLowerCase() === p.toLowerCa
     assert(rel[0].filePath === 'C:\\p\\CPP_Files\\P.cpp' && rel[0].line === 2, 'PLACE: a relative path resolves against where g++ ran (case-insensitively on Windows)');
     const posix = g.placeGppMessages(g.parseGppOutput('/p/CPP_Files/P.cpp:9:1: error: z'), { cwd: '/p/CPP_Files', cppFile: '/p/CPP_Files/P.cpp', hppFile: '/p/CPP_Files/P.hpp', platform: 'linux' });
     assert(posix[0].filePath === '/p/CPP_Files/P.cpp' && posix[0].line === 9, 'PLACE: POSIX paths');
+
+    // A real g++ 13.3 run: an error raised inside a runtime header while instantiating a template for
+    // the generated .cpp, with the include chain printed first (captured; paths shortened).
+    const inst = [
+        'In file included from /ext/include/w.hpp:1,',
+        '                 from /p/CPP_Files/P.hpp:2,',
+        '                 from /p/CPP_Files/P.cpp:1:',
+        "/ext/include/h.hpp: In instantiation of 'void f(T) [with T = A]':",
+        "/ext/include/h.hpp:2:38:   required from 'void g(T) [with T = A]'",
+        '/p/CPP_Files/P.cpp:4:4:   required from here',
+        "/ext/include/h.hpp:1:39: error: 'struct A' has no member named 'nope'",
+        '    1 | template <typename T> void f(T t) { t.nope(); }',
+        '      |                                     ~~^~~~',
+        "/ext/include/h.hpp:1:41: error: second error in the same header, no chain repeated",
+        "/ext/include/other.hpp:7:1: error: a header with no chain at all"
+    ].join('\n');
+    const instMsgs = g.parseGppOutput(inst);
+    assert(instMsgs.length === 3 && instMsgs[0].instantiation === "'void f(T) [with T = A]'"
+        && eq(instMsgs[0].context.map(c => `${c.kind}:${path.basename(c.file)}:${c.line}`), ['required:h.hpp:2', 'required:P.cpp:4', 'include:w.hpp:1', 'include:P.hpp:2', 'include:P.cpp:1']),
+    `PARSE: the instantiation chain (required from) and the include chain are kept as context (${JSON.stringify(instMsgs[0].context)})`);
+    const instPlaced = g.placeGppMessages(instMsgs, { cwd: '/p/CPP_Files', cppFile: '/p/CPP_Files/P.cpp', hppFile: '/p/CPP_Files/P.hpp', platform: 'linux' });
+    assert(instPlaced[0].filePath === '/p/CPP_Files/P.cpp' && instPlaced[0].line === 4 && instPlaced[0].column === 4
+        && instPlaced[0].message === "'struct A' has no member named 'nope' (in h.hpp:1, in instantiation of 'void f(T) [with T = A]')",
+    `PLACE: an error in a runtime header goes on the generated line g++ names as "required from here", and keeps the header and the instantiation (${JSON.stringify(instPlaced[0])})`);
+    assert(instPlaced[1].filePath === '/p/CPP_Files/P.hpp' && instPlaced[1].line === 2,
+        `PLACE: a later error in the same header, with no instantiation chain, goes on the generated #include of it (${instPlaced[1].filePath}:${instPlaced[1].line})`);
+    assert(instPlaced[2].filePath === '/p/CPP_Files/P.cpp' && instPlaced[2].line === 1 && /\(in other\.hpp:7\)$/.test(instPlaced[2].message),
+        'PLACE: with no context into the generated files, the .cpp\'s first line');
 
     // ── Summary ───────────────────────────────────────────────────────────────────────────────
     assert(g.summarizeGpp({ exitCode: 0, messages: [] }) === 'g++ compiled it without errors.', 'SUMMARY: clean');
@@ -133,6 +173,41 @@ const existsIn = (list) => (p) => list.some(x => x.toLowerCase() === p.toLowerCa
     setTimeout(() => cancel(), 10);
     r = await pending;
     assert(r.status === 'cancelled' && fake.calls[fake.calls.length - 1].killed, 'RUN: cancelling stops g++');
+
+    // ── Stopping the whole process tree (g++ runs cc1plus and as) ─────────────────────────────
+    const { killProcessTree, runChild } = require('../src/compileCheck');
+    const sig = [];
+    let killedChild = false;
+    const child = { pid: 4242, kill: () => { killedChild = true; } };
+    assert(killProcessTree(child, { platform: 'linux', processKill: (pid, s) => sig.push([pid, s]) }) === 'tree' && eq(sig, [[-4242, 'SIGTERM']]) && !killedChild,
+        'TREE: on POSIX the child\'s process group gets SIGTERM');
+    const execs = [];
+    assert(killProcessTree(child, { platform: 'win32', execFile: (f, a, o, cb) => { execs.push([f, ...a]); cb(null); } }) === 'tree'
+        && eq(execs, [['taskkill', '/PID', '4242', '/T', '/F']]), 'TREE: on Windows taskkill /T /F ends the tree');
+    killedChild = false;
+    killProcessTree(child, { platform: 'win32', execFile: (f, a, o, cb) => cb(new Error('no taskkill')) });
+    assert(killedChild, 'TREE: when taskkill fails, the child alone is killed');
+    killedChild = false;
+    assert(killProcessTree(child, { platform: 'linux', processKill: () => { throw new Error('ESRCH'); } }) === 'child' && killedChild,
+        'TREE: no such group → the child alone');
+    killedChild = false;
+    assert(killProcessTree({ kill: () => { killedChild = true; } }, { platform: 'linux' }) === 'child' && killedChild, 'TREE: no pid → the child alone');
+    if (process.platform !== 'win32') {
+        // Real processes: a shell that starts a grandchild, stopped at the timeout — the grandchild must go too.
+        const os = require('os');
+        const fsx = require('fs');
+        const marker = path.join(fsx.mkdtempSync(path.join(os.tmpdir(), 'tc_tree_')), 'grandchild.pid');
+        const t = await runChild(require('child_process').spawn, 'sh', ['-c', `sleep 30 & echo $! > "${marker}"; wait`], { timeoutMs: 400, killTree: true });
+        await new Promise(res => setTimeout(res, 200));
+        const gpid = Number(fsx.readFileSync(marker, 'utf8').trim());
+        let alive = true;
+        try { process.kill(gpid, 0); } catch (e) { alive = false; }
+        // A killed process the container's init does not reap stays a zombie: it is not running.
+        try { if (alive && /^\d+ \(.*\) Z/.test(fsx.readFileSync(`/proc/${gpid}/stat`, 'utf8'))) alive = false; } catch (e) { /* no /proc */ }
+        if (alive) { try { process.kill(gpid, 'SIGKILL'); } catch (e) { /* gone */ } }
+        assert(t.outcome === 'timeout' && gpid > 0 && !alive, `TREE: a real timed-out run leaves no grandchild running (pid ${gpid}, alive ${alive})`);
+        fsx.rmSync(path.dirname(marker), { recursive: true, force: true });
+    }
 
     if (errors > 0) {
         console.error(`\n${errors} g++ assertion(s) failed.`);

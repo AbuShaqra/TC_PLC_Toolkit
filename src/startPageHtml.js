@@ -140,7 +140,7 @@ function renderStartPageHtml(o) {
                 <p id="no-project" class="hint" hidden>Open a folder with a TwinCAT project to use these.</p>
                 <ul class="actions">${actions}
                     <li class="compile-row"><div class="split-tile"><button type="button" class="action ready" id="compile-project" disabled>` +
-        `<span class="action-text"><span class="action-label">Compile project</span><span class="action-detail" id="compile-detail">Check the project with an external IEC 61131-3 compiler</span></span>` +
+        `<span class="action-text"><span class="action-label">Compile project</span><span class="action-detail" id="compile-detail">Check the project with the IEC 61131-3 compiler</span></span>` +
         `<span class="soon" id="compile-missing" hidden>Not found</span>${icon('chevron', 'icon chevron compile-chevron')}</button>` +
         `<button type="button" class="options-toggle" id="compile-options-toggle" aria-expanded="false" aria-controls="compile-options" ` +
         `title="Compile options: C++ generation and the g++ build" aria-label="Compile options">${icon('chevronDown', 'icon')}</button></div>` +

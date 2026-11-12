@@ -190,7 +190,7 @@ const { TEMPLATE_VERSIONS } = require(path.join(REPO, 'src', 'projectTemplate.js
         assert(await disabled('#compile-project') && !(await visible('#compile-missing')),
             'with the compiler but no project, Compile project is disabled (and not marked missing)');
         await send({ type: 'state', location: 'C:\\Projects', sep: '\\', hasProject: true, compilerReady: true, recents: [] });
-        assert(!(await disabled('#compile-project')) && /external IEC 61131-3 compiler/.test(await text('#compile-detail')),
+        assert(!(await disabled('#compile-project')) && /^Check the project with the IEC 61131-3 compiler$/.test(await text('#compile-detail')),
             `with the compiler and a project, Compile project is enabled (${await text('#compile-detail')})`);
         assert(!/STruC\+\+/i.test(await page.content()), 'the page names no compiler product');
         await clearPosted();
@@ -212,6 +212,8 @@ const { TEMPLATE_VERSIONS } = require(path.join(REPO, 'src', 'projectTemplate.js
         await send({ type: 'state', location: 'C:\\Projects', sep: '\\', hasProject: true, compilerReady: true, recents: [], compileOptions: { generateCpp: false, buildWithGpp: true } });
         os1 = await optState();
         assert(os1.cpp && os1.gpp, 'the state\'s compileOptions show in the boxes (the build shows generation on)');
+        assert(/write it as C\+\+ into CPP_Files and build that with g\+\+/.test(await text('#compile-detail')),
+            `the tile's detail says a click also writes C++ and builds it (${await text('#compile-detail')})`);
         await clearPosted();
         await page.focus('#compile-options-toggle');
         await page.keyboard.press('Enter');
@@ -222,6 +224,7 @@ const { TEMPLATE_VERSIONS } = require(path.join(REPO, 'src', 'projectTemplate.js
         msgs = await posted();
         assert(!os1.cpp && !os1.gpp && msgs.length === 1 && msgs[0].type === 'setCompileOption' && msgs[0].key === 'generateCpp' && msgs[0].value === false,
             `Space unticks Generate C++, which unticks Build with g++, and posts setCompileOption (${JSON.stringify(msgs)})`);
+        assert(/^Check the project with the IEC 61131-3 compiler$/.test(await text('#compile-detail')), `unticked, the detail is back to the check alone (${await text('#compile-detail')})`);
         await page.keyboard.press('ArrowDown');
         await page.keyboard.press('Space');
         os1 = await optState();
@@ -235,6 +238,7 @@ const { TEMPLATE_VERSIONS } = require(path.join(REPO, 'src', 'projectTemplate.js
         await send({ type: 'state', location: 'C:\\Projects', sep: '\\', hasProject: true, compilerReady: true, recents: [], compileOptions: { generateCpp: true, buildWithGpp: false } });
         os1 = await optState();
         assert(os1.cpp && !os1.gpp, 'a later state (a setting changed elsewhere) updates the boxes live');
+        assert(/^Check the project, then write it as C\+\+ into CPP_Files$/.test(await text('#compile-detail')), `and the detail with them (${await text('#compile-detail')})`);
         const toggleLabel = await page.evaluate(() => {
             const t = document.getElementById('compile-options-toggle');
             const opt = document.getElementById('compile-options');

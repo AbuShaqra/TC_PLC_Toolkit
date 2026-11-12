@@ -46,8 +46,8 @@ const {
 const { prepareLibraryCheck } = require('../libraryDecls');
 const { projectDefineArgs, fileDefineArgs } = require('../compilerDefines');
 const { CPP_SECTION, effectiveOptions, couplingWrites, checkboxWrites, readOptionState } = require('../cppSettings');
-const { cppOutputPaths, writeOwnedOutputs, recordOwnedFile, claimOutput, runGenerate } = require('../cppGenerate');
-const { SETTING_GPP_PATH, resolveGpp, buildGppArgs, placeGppMessages, runGpp, summarizeGpp } = require('../gpp');
+const { cppOutputPaths, cppOwnerId, libraryBlocksCpp, writeOwnedOutputs, recordOwnedFile, claimOutput, runGenerate } = require('../cppGenerate');
+const { SETTING_GPP_PATH, resolveGpp, describeGppProblem, buildGppArgs, placeGppMessages, runGpp, summarizeGpp } = require('../gpp');
 
 /** The `source` of every diagnostic this command publishes. */
 const DIAGNOSTIC_SOURCE = 'TC Toolkit compile';
@@ -76,6 +76,7 @@ const OUTPUT_CHANNEL_NAME = 'TC Toolkit Compile';
  * @property {string} [message]
  * @property {'not-found'|'setting-missing'} [reason] For `missing`.
  * @property {string} [configured] For `missing`: the setting's value.
+ * @property {string} [problem] For `missing` with `setting-missing`: why the value does not work (src/gpp.js checkConfiguredGpp).
  * @property {import('../gpp').PlacedGppMessage[]} [placed]
  * @property {string} [summary] summarizeGpp's line, for `done`.
  */
@@ -90,6 +91,27 @@ const OUTPUT_CHANNEL_NAME = 'TC Toolkit Compile';
  * @property {string} [log] Compiler or g++ output for the output channel.
  * @property {string} [logTitle]
  */
+
+/**
+ * Why the g++ build did not run for want of a g++ (shown once, in the run's summary).
+ * @param {{reason?: string, configured?: string, problem?: string}} gpp
+ * @returns {string}
+ */
+function gppMissingText(gpp) {
+    return gpp.reason === 'setting-missing'
+        ? `Not built with g++: the g++ path setting does not work (${gpp.configured}: ${describeGppProblem(gpp.problem || 'missing')}). Fix the path to build it.`
+        : 'Not built with g++: g++ was not found on PATH or in the usual install folders. Set the g++ path, or let "Detect g++" find it.';
+}
+
+/**
+ * The buttons a missing g++ adds to the run's summary: the setting, and detection only where it can
+ * help (detection fills an EMPTY setting, and never replaces a value the user set).
+ * @param {{reason?: string}} gpp
+ * @returns {string[]}
+ */
+function gppMissingButtons(gpp) {
+    return gpp.reason === 'setting-missing' ? ['Open Setting'] : ['Open Setting', 'Detect g++'];
+}
 
 /**
  * What a run's C++ part adds to the summary notification.
@@ -120,7 +142,7 @@ function describeCpp(cpp) {
     if (written.removed.length > 0) notes.push(`Removed earlier output: ${names(written.removed)}.`);
     const gpp = cpp.gpp;
     if (!gpp) return { notes, failed, warn };
-    if (gpp.status === 'missing') { warn = true; notes.push('Not built: g++ was not found.'); }
+    if (gpp.status === 'missing') { warn = true; notes.push(gppMissingText(gpp)); }
     else if (gpp.status === 'skipped') { warn = true; notes.push(gpp.message || 'g++ was not run.'); }
     else if (gpp.status === 'cancelled') { warn = true; notes.push('The g++ build was cancelled.'); }
     else if (gpp.status === 'done') {
@@ -439,20 +461,6 @@ function registerCompileCommands(context, { provider, getProjectMap, onSettingsC
     }
 
     /**
-     * Build with g++ is on and no g++ was found: says so, and offers the setting. The C++ is there.
-     * @param {{reason?: string, configured?: string}} gpp
-     */
-    function reportGppMissing(gpp) {
-        const text = gpp.reason === 'setting-missing'
-            ? `Build with g++ is on, but the g++ path setting names something that does not exist (${gpp.configured}). The C++ was generated; fix the path to build it.`
-            : 'Build with g++ is on, but g++ was not found on PATH or in the usual install folders. The C++ was generated; set the g++ path to build it.';
-        Promise.resolve(vscode.window.showWarningMessage(text, 'Open Setting', 'Detect g++')).then((choice) => {
-            if (choice === 'Open Setting') vscode.commands.executeCommand('twincat.openSettings', SETTING_GPP_PATH);
-            else if (choice === 'Detect g++') vscode.commands.executeCommand('twincat.detectGpp');
-        });
-    }
-
-    /**
      * Generates one project's C++ into its CPP_Files folder and, when asked, compiles it with g++.
      * Called only after a check with no errors.
      * @param {{project: any, compilerRun: any, build: boolean, progress: {report: (v: {message?: string}) => void},
@@ -462,15 +470,21 @@ function registerCompileCommands(context, { provider, getProjectMap, onSettingsC
     async function generateAndBuild(o) {
         const stemSource = o.project.plcprojPath ? path.basename(o.project.plcprojPath, path.extname(o.project.plcprojPath)) : (o.project.name || 'project');
         const paths = cppOutputPaths(o.project.dir, stemSource);
+        /** @type {string} */
+        let plcprojText;
+        try { plcprojText = o.project.plcprojPath ? fs.readFileSync(o.project.plcprojPath, 'utf8') : ''; } catch (e) { plcprojText = ''; }
+        // The <ProjectGuid> survives a rename, so a renamed project's earlier files are still its own.
+        const owner = cppOwnerId(plcprojText, paths.stem);
         o.progress.report({ message: 'Generating C++…' });
-        const gen = await runGenerate({ ...o.compilerRun, stem: paths.stem });
+        // Never the library declarations: generation runs only for a project that needs none (libraryBlocksCpp).
+        const gen = await runGenerate({ ...o.compilerRun, extraFiles: [], stem: paths.stem });
         if (gen.status !== 'done') {
             return { status: gen.status, message: gen.message, paths, log: gen.status === 'failed' ? gen.log : '', logTitle: 'C++ generation failed' };
         }
         /** @type {import('../cppGenerate').WriteResult} */
         let written;
         try {
-            written = writeOwnedOutputs({ dir: paths.dir, project: paths.stem, files: [
+            written = writeOwnedOutputs({ dir: paths.dir, project: owner, files: [
                 { name: path.basename(paths.cpp), text: gen.cppText }, { name: path.basename(paths.hpp), text: gen.hppText }] });
         } catch (err) {
             return { status: 'failed', paths, message: `The C++ files could not be written: ${err && /** @type {any} */ (err).message ? /** @type {any} */ (err).message : err}` };
@@ -486,10 +500,11 @@ function registerCompileCommands(context, { provider, getProjectMap, onSettingsC
         const config = vscode.workspace.getConfiguration(CPP_SECTION);
         const found = resolveGpp({ configured: config.get('gppPath', ''), ...(gppDiscovery || {
             platform: process.platform, env: process.env,
-            exists: (/** @type {string} */ p) => { try { return fs.statSync(p).isFile(); } catch (e) { return false; } }
+            exists: (/** @type {string} */ p) => { try { return fs.statSync(p).isFile(); } catch (e) { return false; } },
+            isDir: (/** @type {string} */ p) => { try { return fs.statSync(p).isDirectory(); } catch (e) { return false; } }
         }) });
         if (found.ok === false) {
-            cpp.gpp = { status: 'missing', reason: found.reason, configured: found.configured, message: '' };
+            cpp.gpp = { status: 'missing', reason: found.reason, configured: found.configured, problem: found.problem, message: '' };
             return cpp;
         }
         const objName = path.basename(paths.obj);
@@ -503,7 +518,7 @@ function registerCompileCommands(context, { provider, getProjectMap, onSettingsC
             gppPath: found.path, cwd: paths.dir, onCancel: o.onCancel, spawn: /** @type {any} */ (spawn),
             args: buildGppArgs({ cppFile: paths.cpp, objFile: paths.obj, includeDir: path.join(context.extensionPath, 'resources', 'compiler', 'include'), outDir: paths.dir })
         });
-        if (run.status === 'done' && run.exitCode === 0) recordOwnedFile(paths.dir, paths.stem, objName);
+        if (run.status === 'done' && run.exitCode === 0) recordOwnedFile(paths.dir, owner, objName);
         cpp.gpp = {
             status: run.status, exitCode: run.exitCode, gppPath: found.path, message: run.message,
             placed: run.status === 'done' ? placeGppMessages(run.messages, { cwd: paths.dir, cppFile: paths.cpp, hppFile: paths.hpp }) : [],
@@ -624,9 +639,12 @@ function registerCompileCommands(context, { provider, getProjectMap, onSettingsC
                         /** @type {CppOutcome|null} */
                         let cpp = null;
                         if (result.status === 'done' && options.generateCpp && !token.isCancellationRequested) {
+                            const libraryBlock = libraryBlocksCpp({ extraFiles: library.extraFiles, qualifiers: library.stats.qualifiers,
+                                filteredLibraryDiagnostics: result.filteredLibraryDiagnostics });
                             cpp = result.errors > 0
                                 ? { status: 'skipped', message: 'C++ was not generated: the project has errors.' }
-                                : await generateAndBuild({ project, compilerRun, build: options.buildWithGpp, progress, onCancel });
+                                : (libraryBlock ? { status: 'skipped', message: libraryBlock }
+                                    : await generateAndBuild({ project, compilerRun, build: options.buildWithGpp, progress, onCancel }));
                         }
                         return { result, built, unreadable, library, defines, cpp };
                     });
@@ -694,12 +712,15 @@ function registerCompileCommands(context, { provider, getProjectMap, onSettingsC
                 const buttons = hasProblems ? ['Go to Problem…', 'Open Problems'] : [];
                 if (byFile.size === 0 && hasProblems) buttons.shift();
                 if (cpp && cpp.status === 'done' && cpp.written && cpp.written.written.length > 0) buttons.push('Open C++');
+                // A missing g++ is said once, in this summary, with the buttons that fix it.
+                if (cpp && cpp.gpp && cpp.gpp.status === 'missing') buttons.push(...gppMissingButtons(cpp.gpp));
                 Promise.resolve(show(`Compile Project — ${summary}`, ...buttons)).then((choice) => {
                     if (choice === 'Go to Problem…') vscode.commands.executeCommand(GO_TO_PROBLEM_COMMAND);
                     else if (choice === 'Open Problems') vscode.commands.executeCommand('workbench.actions.view.problems');
                     else if (choice === 'Open C++' && cpp && cpp.paths) vscode.commands.executeCommand('vscode.open', vscode.Uri.file(cpp.paths.cpp));
+                    else if (choice === 'Open Setting') vscode.commands.executeCommand('twincat.openSettings', SETTING_GPP_PATH);
+                    else if (choice === 'Detect g++') vscode.commands.executeCommand('twincat.detectGpp');
                 });
-                if (cpp && cpp.gpp && cpp.gpp.status === 'missing') reportGppMissing(cpp.gpp);
                 return {
                     ok: true, projectKey: key, errors: result.errors, warnings: result.warnings,
                     filteredPragmaWarnings: result.filteredPragmaWarnings, filteredLibraryDiagnostics: result.filteredLibraryDiagnostics,
@@ -775,6 +796,6 @@ function registerCompileCommands(context, { provider, getProjectMap, onSettingsC
 }
 
 module.exports = {
-    registerCompileCommands, describeCpp, compileStatusText,
+    registerCompileCommands, describeCpp, compileStatusText, gppMissingText, gppMissingButtons,
     DIAGNOSTIC_SOURCE, GPP_DIAGNOSTIC_SOURCE, PROBLEM_LINK_PATH, GO_TO_PROBLEM_COMMAND, OUTPUT_CHANNEL_NAME
 };

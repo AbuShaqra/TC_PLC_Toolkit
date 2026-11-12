@@ -103,29 +103,66 @@ function detectGpp(o) {
 }
 
 /**
- * Which g++ a run uses: the `tcToolkit.compiler.gppPath` setting when it is set, else detection.
- * A setting that is a bare command name (`g++`, `x86_64-w64-mingw32-g++`) is looked up on `PATH`.
- * @param {{configured: unknown, platform: string, env: Record<string, string|undefined>, exists: (p: string) => boolean}} o
- * @returns {{ok: true, path: string, source: 'setting'|'path'|'default'} | {ok: false, reason: 'not-found'|'setting-missing', configured: string}}
+ * Checks a value of the g++ path setting — the one check both the build and "Detect g++" use.
+ * Surrounding quotes (Explorer's "Copy as path") and spaces are dropped. A bare command name
+ * (`g++`, `x86_64-w64-mingw32-g++`) is looked up on `PATH`; a folder is accepted when it holds g++.
+ * @param {unknown} value
+ * @param {{platform: string, env: Record<string, string|undefined>, exists: (p: string) => boolean,
+ *   isDir?: (p: string) => boolean}} o `exists`: is a FILE there.
+ * @returns {{ok: true, path: string} | {ok: false, reason: 'empty'|'not-on-path'|'missing'|'folder', configured: string}}
+ *   `not-on-path`: a bare name PATH does not have; `missing`: nothing at that path; `folder`: a
+ *   folder with no g++ in it.
+ */
+function checkConfiguredGpp(value, o) {
+    const configured = typeof value === 'string' ? value.trim().replace(/^"(.*)"$/, '$1').trim() : '';
+    if (!configured) return { ok: false, reason: 'empty', configured: '' };
+    const win = o.platform === 'win32';
+    const p = win ? path.win32 : path.posix;
+    const has = (/** @type {string} */ f) => { try { return !!o.exists(f); } catch (e) { return false; } };
+    if (!/[\\/]/.test(configured)) {
+        const names = win && !/\.exe$/i.test(configured) ? [configured + '.exe', configured] : [configured];
+        for (const dir of pathDirs(o.platform, o.env)) {
+            for (const name of names) {
+                const candidate = p.join(dir, name);
+                if (has(candidate)) return { ok: true, path: candidate };
+            }
+        }
+        return { ok: false, reason: 'not-on-path', configured };
+    }
+    if (has(configured)) return { ok: true, path: configured };
+    let dir;
+    try { dir = !!(o.isDir && o.isDir(configured)); } catch (e) { dir = false; }
+    if (dir) {
+        const inside = p.join(configured, win ? 'g++.exe' : 'g++');
+        return has(inside) ? { ok: true, path: inside } : { ok: false, reason: 'folder', configured };
+    }
+    return { ok: false, reason: 'missing', configured };
+}
+
+/**
+ * Why a configured g++ path cannot be used, in a few words for a message.
+ * @param {'not-on-path'|'missing'|'folder'|string} reason
+ * @returns {string}
+ */
+function describeGppProblem(reason) {
+    if (reason === 'not-on-path') return 'no such command on PATH';
+    if (reason === 'folder') return 'that folder has no g++ in it';
+    return 'that file does not exist';
+}
+
+/**
+ * Which g++ a run uses: the `tcToolkit.compiler.gppPath` setting when it is set (see
+ * `checkConfiguredGpp`), else detection. A set value that does not work is reported, never replaced.
+ * @param {{configured: unknown, platform: string, env: Record<string, string|undefined>, exists: (p: string) => boolean,
+ *   isDir?: (p: string) => boolean}} o
+ * @returns {{ok: true, path: string, source: 'setting'|'path'|'default'} |
+ *   {ok: false, reason: 'not-found'|'setting-missing', configured: string, problem?: string}}
+ *   `problem`: for `setting-missing`, checkConfiguredGpp's reason.
  */
 function resolveGpp(o) {
-    const configured = typeof o.configured === 'string' ? o.configured.trim().replace(/^"(.*)"$/, '$1') : '';
-    if (configured) {
-        if (!/[\\/]/.test(configured)) {
-            const win = o.platform === 'win32';
-            const names = win && !/\.exe$/i.test(configured) ? [configured + '.exe', configured] : [configured];
-            for (const dir of pathDirs(o.platform, o.env)) {
-                for (const name of names) {
-                    const p = win ? path.win32.join(dir, name) : path.posix.join(dir, name);
-                    try { if (o.exists(p)) return { ok: true, path: p, source: 'setting' }; } catch (e) { /* next */ }
-                }
-            }
-            return { ok: false, reason: 'setting-missing', configured };
-        }
-        let there;
-        try { there = !!o.exists(configured); } catch (e) { there = false; }
-        return there ? { ok: true, path: configured, source: 'setting' } : { ok: false, reason: 'setting-missing', configured };
-    }
+    const checked = checkConfiguredGpp(o.configured, o);
+    if (checked.ok === true) return { ok: true, path: checked.path, source: 'setting' };
+    if (checked.reason !== 'empty') return { ok: false, reason: 'setting-missing', configured: checked.configured, problem: checked.reason };
     const hit = detectGpp(o);
     return hit ? { ok: true, path: hit.path, source: hit.source } : { ok: false, reason: 'not-found', configured: '' };
 }
@@ -141,6 +178,15 @@ function buildGppArgs(o) {
 }
 
 /**
+ * @typedef {Object} GppPosition A place g++ names as context of a message.
+ * @property {string} file As g++ printed it.
+ * @property {number} line
+ * @property {number} column 0 when not given.
+ * @property {'required'|'include'} kind `required`: an instantiation point (`required from here`,
+ *   `required from '…'`); `include`: a line of the `In file included from` chain.
+ */
+
+/**
  * @typedef {Object} GppMessage One message of g++'s output.
  * @property {string|null} file As g++ printed it (null for a message that names no file).
  * @property {number} line 1-based; 0 when unknown.
@@ -149,25 +195,64 @@ function buildGppArgs(o) {
  * @property {string} message
  * @property {Array<{file: string|null, line: number, column: number, message: string}>} notes The
  *   `note:` lines that follow it.
+ * @property {GppPosition[]} context The instantiation and include chain g++ printed before it,
+ *   innermost first.
+ * @property {string} [instantiation] `In instantiation of '…'`, when g++ said so.
  */
 
 /** `file:line:col: severity: message` (column optional; a Windows drive letter is part of `file`). */
 const GPP_LINE_RE = /^(.+?):(\d+):(?:(\d+):)?\s*(fatal error|error|warning|note):\s*(.*)$/;
 /** `g++: error: …`, `cc1plus: fatal error: …`: a message with no position. */
 const GPP_GENERAL_RE = /^([^:\s][^:]*?):\s*(fatal error|error|warning|note):\s*(.*)$/;
+/** `file:line:col:   required from here` / `required from '…'` / `required by substitution of '…'`. */
+const GPP_REQUIRED_RE = /^(.+?):(\d+):(?:(\d+):)?\s+required (?:from|by substitution of) /;
+/** The first line of an include chain, and its continuation lines. */
+const GPP_INCLUDED_RE = /^In file included from (.+?):(\d+)(?::(\d+))?[:,]$/;
+const GPP_FROM_RE = /^\s+from (.+?):(\d+)(?::(\d+))?[:,]$/;
+/** `file: In instantiation of '…':` (and `In function`, `In member function`, …). */
+const GPP_IN_RE = /^(.+?): In (instantiation of|[a-z ]*function|constructor|destructor|substitution of) (.*):$/;
 
 /**
- * Reads g++'s messages. Context lines (`In file included from`, `required from here`, source
- * excerpts and carets) are skipped; each `note:` is kept with the message before it.
+ * Reads g++'s messages. Source excerpts and carets are skipped; each `note:` is kept with the
+ * message before it; the include chain (`In file included from`) and the instantiation chain
+ * (`required from here`) are kept as the message's `context`, so a message g++ raises inside a
+ * runtime header can still be placed on the generated line that caused it.
  * @param {string} text g++'s stderr.
  * @returns {GppMessage[]}
  */
 function parseGppOutput(text) {
     /** @type {GppMessage[]} */
     const out = [];
+    /** @type {GppPosition[]} The instantiation context of the next message. */
+    let required = [];
+    /** @type {string} */
+    let instantiation = '';
+    /** @type {GppPosition[]|null} An include chain whose header is not known yet. */
+    let pendingInclude = null;
+    /** @type {Map<string, GppPosition[]>} Each header's include chain (g++ prints it once per header). */
+    const includes = new Map();
+    const pos = (/** @type {RegExpExecArray} */ m, /** @type {'required'|'include'} */ kind) =>
+        ({ file: m[1], line: Number(m[2]), column: m[3] ? Number(m[3]) : 0, kind });
+    const settleInclude = (/** @type {string} */ file) => {
+        if (pendingInclude) { includes.set(file, pendingInclude); pendingInclude = null; }
+    };
     for (const raw of String(text || '').split(/\r?\n/)) {
         const line = raw.replace(/\s+$/, '');
-        if (!line || /^\s/.test(line)) continue;
+        if (!line) continue;
+        let c = GPP_INCLUDED_RE.exec(line);
+        if (c) { pendingInclude = [pos(c, 'include')]; continue; }
+        c = GPP_FROM_RE.exec(line);
+        if (c) { if (pendingInclude) pendingInclude.push(pos(c, 'include')); continue; }
+        if (/^\s/.test(line)) continue;
+        c = GPP_IN_RE.exec(line);
+        if (c) {
+            settleInclude(c[1]);
+            required = [];
+            instantiation = c[2] === 'instantiation of' ? c[3] : '';
+            continue;
+        }
+        c = GPP_REQUIRED_RE.exec(line);
+        if (c) { required.push(pos(c, 'required')); continue; }
         /** @type {string|null} */
         let file;
         let ln = 0;
@@ -177,6 +262,7 @@ function parseGppOutput(text) {
         const m = GPP_LINE_RE.exec(line);
         if (m) {
             file = m[1]; ln = Number(m[2]); col = m[3] ? Number(m[3]) : 0; kind = m[4]; message = m[5];
+            settleInclude(file);
         } else {
             const g = GPP_GENERAL_RE.exec(line);
             if (!g) continue;
@@ -188,7 +274,13 @@ function parseGppOutput(text) {
             if (last) last.notes.push({ file, line: ln, column: col, message });
             continue;
         }
-        out.push({ file, line: ln, column: col, severity: kind === 'warning' ? 'warning' : 'error', message, notes: [] });
+        /** @type {GppMessage} */
+        const msg = { file, line: ln, column: col, severity: kind === 'warning' ? 'warning' : 'error', message, notes: [],
+            context: [...required, ...((file && includes.get(file)) || [])] };
+        if (instantiation) msg.instantiation = instantiation;
+        out.push(msg);
+        required = [];
+        instantiation = '';
     }
     return out;
 }
@@ -205,8 +297,10 @@ function parseGppOutput(text) {
 
 /**
  * Places g++'s messages on the generated files: a message in the `.cpp` or the `.hpp` stays where
- * g++ put it; one anywhere else (a runtime header, a system header) or in no file goes on the
- * `.cpp`'s first line and names where g++ saw it.
+ * g++ put it. One anywhere else (a runtime header) goes where its context points into the generated
+ * files — the innermost instantiation point (`required from here`) first, then the innermost
+ * `#include` — and names the header it was seen in; with no such context, or no file at all, it
+ * goes on the `.cpp`'s first line.
  * @param {GppMessage[]} messages
  * @param {{cwd: string, cppFile: string, hppFile: string, platform?: string}} o `cwd`: where g++ ran
  *   (relative paths in its output are relative to it).
@@ -224,7 +318,16 @@ function placeGppMessages(messages, o) {
         if (target) {
             return { filePath: target, line: Math.max(m.line, 1), column: Math.max(m.column, 1), severity: m.severity, message: m.message, notes };
         }
-        const where = m.file ? ` (in ${p.basename(m.file)}${m.line ? `:${m.line}` : ''})` : '';
+        const context = m.context || [];
+        const at = context.find(c => c.kind === 'required' && resolveFile(c.file))
+            || context.find(c => c.kind === 'include' && resolveFile(c.file));
+        const where = m.file
+            ? ` (in ${p.basename(m.file)}${m.line ? `:${m.line}` : ''}${m.instantiation ? `, in instantiation of ${m.instantiation}` : ''})`
+            : '';
+        if (at) {
+            return { filePath: /** @type {string} */ (resolveFile(at.file)), line: Math.max(at.line, 1), column: Math.max(at.column, 1),
+                severity: m.severity, message: m.message + where, notes };
+        }
         return { filePath: o.cppFile, line: 1, column: 1, severity: m.severity, message: m.message + where, notes };
     });
 }
@@ -256,7 +359,7 @@ async function runGpp(o) {
     const pathKey = Object.keys(baseEnv).find(k => k.toLowerCase() === 'path') || 'PATH';
     const dir = path.dirname(o.gppPath);
     const env = dir && dir !== '.' ? { ...baseEnv, [pathKey]: [dir, baseEnv[pathKey]].filter(Boolean).join(path.delimiter) } : { ...baseEnv };
-    const run = await runChild(spawn, o.gppPath, o.args, { cwd: o.cwd, timeoutMs, onCancel: o.onCancel, env });
+    const run = await runChild(spawn, o.gppPath, o.args, { cwd: o.cwd, timeoutMs, onCancel: o.onCancel, env, killTree: true });
     const output = [run.stderr, run.stdout].filter(Boolean).join('\n').trim();
     const base = { exitCode: run.code, messages: parseGppOutput(run.stderr), output, durationMs: Date.now() - started };
     if (run.outcome === 'cancelled') return { ...base, status: 'cancelled', message: '' };
@@ -281,6 +384,6 @@ function summarizeGpp(r) {
 
 module.exports = {
     SETTING_GPP_PATH, DEFAULT_GPP_TIMEOUT_MS, GPP_FLAGS,
-    windowsGppLocations, gppCandidates, detectGpp, resolveGpp,
+    windowsGppLocations, gppCandidates, detectGpp, checkConfiguredGpp, describeGppProblem, resolveGpp,
     buildGppArgs, parseGppOutput, placeGppMessages, runGpp, summarizeGpp
 };

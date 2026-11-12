@@ -291,11 +291,26 @@
             if (focusCaret) compileCaret.focus();
         }
     }
+    /**
+     * The Compile button's tooltip says what a click does with the current options.
+     * @param {boolean} cpp
+     * @param {boolean} gpp
+     */
+    function describeCompileButton(cpp, gpp) {
+        if (!compileBtn) return;
+        compileBtn.title = gpp
+            ? 'Compile Project: check this PLC project, write it as C++ into its CPP_Files folder, and build that with g++'
+            : (cpp ? 'Compile Project: check this PLC project, then write it as C++ into its CPP_Files folder'
+                : 'Compile Project: check this PLC project with the IEC 61131-3 compiler');
+    }
     /** @param {{generateCpp?: boolean, buildWithGpp?: boolean}} options */
     function renderCompileOptions(options) {
+        const gpp = !!(options && options.buildWithGpp);
+        const cpp = !!(options && (options.generateCpp || gpp));
+        describeCompileButton(cpp, gpp);
         if (!compileOptCpp || !compileOptGpp) return;
-        compileOptCpp.checked = !!(options && (options.generateCpp || options.buildWithGpp));
-        compileOptGpp.checked = !!(options && options.buildWithGpp);
+        compileOptCpp.checked = cpp;
+        compileOptGpp.checked = gpp;
     }
     if (compileCaret && compileMenu && compileOptCpp && compileOptGpp) {
         compileCaret.addEventListener('click', (e) => {
@@ -325,6 +340,7 @@
                 // Shown at once; the host's `compileOptions` answer confirms (or corrects) it.
                 if (key === 'buildWithGpp' && box.checked) compileOptCpp.checked = true;
                 if (key === 'generateCpp' && !box.checked) compileOptGpp.checked = false;
+                describeCompileButton(compileOptCpp.checked, compileOptGpp.checked);
                 vscode.postMessage({ type: 'setCompileOption', key: key, value: box.checked });
             });
         }
