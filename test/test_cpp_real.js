@@ -7,6 +7,8 @@
  * and, when a g++ is found, g++ compiles each generated `.cpp` against the vendored runtime headers
  * (`resources/compiler/include/`), its messages placed on the generated files as the command does.
  * sample/ itself is never written: the gate asserts it has no CPP_Files afterwards.
+ * With git on PATH, a temporary repository over the copy proves CPP_Files/.gitignore makes git ignore
+ * exactly the toolkit's files (`git check-ignore`, `git status`), and that once deleted it stays gone.
  *
  * Two optional gates, reported apart by test/run.js (neither makes a run REDUCED):
  *   - `cpp-real` needs the compiler's Node >= 22 (as test_compile_real.js finds one);
@@ -29,6 +31,7 @@
 
 'use strict';
 
+const childProcess = require('child_process');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -227,8 +230,9 @@ async function libraryScenario(tmp, setup, gppPath) {
             `${project.name}: ${stem}.cpp and ${stem}.hpp are written to CPP_Files beside the .plcproj`);
             assert(gen.cppText.includes(`#include "${stem}.hpp"`) && gen.cppText.length > 200 && gen.hppText.length > 200,
                 `${project.name}: the .cpp includes its .hpp by the project's name (${gen.cppText.length} + ${gen.hppText.length} bytes)`);
-            assert(!/\.st\b/.test(path.basename(paths.cpp)) && fs.readdirSync(paths.dir).sort().join(',') === ['.tc-toolkit-generated.json', `${stem}.cpp`, `${stem}.hpp`].sort().join(','),
-                `${project.name}: CPP_Files holds the two files and the ownership record, nothing from the compiler's temporary directory`);
+            assert(!/\.st\b/.test(path.basename(paths.cpp)) && fs.readdirSync(paths.dir).sort().join(',') === ['.gitignore', '.tc-toolkit-generated.json', `${stem}.cpp`, `${stem}.hpp`].sort().join(','),
+                `${project.name}: CPP_Files holds the two files, the ownership record and the .gitignore, nothing from the compiler's temporary directory`);
+            assert(w.gitignore && w.gitignore.status === 'created', `${project.name}: the first generation writes CPP_Files/.gitignore`);
             // A second run replaces the toolkit's own files.
             const again = cg.writeOwnedOutputs({ dir: paths.dir, project: paths.stem, files: [
                 { name: path.basename(paths.cpp), text: gen.cppText }, { name: path.basename(paths.hpp), text: gen.hppText }] });
@@ -293,6 +297,42 @@ async function libraryScenario(tmp, setup, gppPath) {
             assert(bad.exitCode !== 0 && badPlaced.some(m => m.severity === 'error' && m.filePath === first.paths.cpp && m.line === plantedLine && /undeclaredName/.test(m.message)),
                 `PLANTED: an error planted in ${first.name}.cpp is placed on its line ${plantedLine}`);
             gates.gpp.status = 'ran';
+        }
+
+        // ── CPP_Files/.gitignore against a real git (user decision 2026-11-12) ────────────────
+        const gitEnv = { ...process.env, GIT_CONFIG_GLOBAL: os.devNull, GIT_CONFIG_NOSYSTEM: '1' };
+        const git = (args) => childProcess.spawnSync('git', ['-c', `core.excludesFile=${os.devNull}`, ...args], { cwd: copy, env: gitEnv, encoding: 'utf8' });
+        const gitVersion = git(['--version']);
+        if (gitVersion.error || gitVersion.status !== 0) {
+            console.log('[SKIP] .gitignore check: git is not available');
+        } else {
+            assert(git(['init', '-q']).status === 0, 'GIT: a temporary git repository over the sample copy');
+            for (const { name, paths } of generated) {
+                const rel = (f) => path.relative(copy, f).split(path.sep).join('/');
+                const ignored = [paths.cpp, paths.hpp, paths.obj, paths.manifest].map(rel);
+                const r = git(['check-ignore', '-v', '--no-index', ...ignored]);
+                const sources = r.stdout.trim().split(/\r?\n/).filter(Boolean);
+                assert(r.status === 0 && sources.length === 4 && sources.every(l => l.startsWith(`${rel(path.join(paths.dir, '.gitignore'))}:`)),
+                    `GIT: ${name}: git check-ignore ignores the .cpp, .hpp, .o and the record through CPP_Files/.gitignore (${sources.join(' | ')})`);
+                const own = path.join(paths.dir, 'notes.txt');
+                fs.writeFileSync(own, 'the user\'s own');
+                const notIgnored = git(['check-ignore', '--no-index', rel(own), rel(path.join(paths.dir, '.gitignore'))]);
+                assert(notIgnored.status === 1 && notIgnored.stdout.trim() === '',
+                    `GIT: ${name}: a file of the user's in CPP_Files, and the .gitignore itself, are not ignored`);
+                const status = git(['status', '--porcelain', '--untracked-files=all', '--', rel(paths.dir)]);
+                const listed = status.stdout.trim().split(/\r?\n/).filter(Boolean).map(l => l.slice(3)).sort();
+                assert(status.status === 0 && JSON.stringify(listed) === JSON.stringify([rel(path.join(paths.dir, '.gitignore')), rel(own)].sort()),
+                    `GIT: ${name}: git status shows only the .gitignore and the user's file in CPP_Files (${listed.join(', ')})`);
+                fs.unlinkSync(own);
+            }
+            // Deleted by the user: the next generation does not bring it back, and git then sees the files.
+            const last = generated[generated.length - 1];
+            fs.unlinkSync(path.join(last.paths.dir, '.gitignore'));
+            const w2 = cg.writeOwnedOutputs({ dir: last.paths.dir, project: last.name, files: [
+                { name: path.basename(last.paths.cpp), text: fs.readFileSync(last.paths.cpp, 'utf8') }, { name: path.basename(last.paths.hpp), text: 'regenerated\n' }] });
+            const after = git(['check-ignore', '--no-index', path.relative(copy, last.paths.cpp).split(path.sep).join('/')]);
+            assert(w2.gitignore.status === 'not-recreated' && !fs.existsSync(path.join(last.paths.dir, '.gitignore')) && after.status === 1,
+                `GIT: ${last.name}: a deleted .gitignore is not recreated, so git no longer ignores the .cpp (${w2.gitignore.status})`);
         }
 
         // ── A project that uses library blocks (synthetic library on a sample copy) ───────────

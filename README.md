@@ -337,7 +337,7 @@ folder, or a command on your `PATH`; a path pasted with quotes is fine. The comp
 back as a source. The extension only ever replaces or deletes files there that **it** wrote and that
 nobody changed since (it keeps a small record, `.tc-toolkit-generated.json`, in the folder); a file of
 the same name you made or edited is left alone, and the summary says so. Renaming the `.plcproj` removes
-the old project's files; a Git checkout that only changes their line endings does not count as an edit.
+the old project's files; a Git checkout that only changes their line endings does not count as an edit. It also writes a `.gitignore` there listing its own files so they are not committed by accident; you may delete it (it is then not written again), and a `.gitignore` of your own there is never touched.
 
 ### For AI coding assistants
 

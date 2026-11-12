@@ -27,6 +27,13 @@
  * names it; Compile Project says so in its summary and output channel, and `withCoverageHeader` puts
  * the same list at the top of the generated files (part of the text whose hash is recorded, so the
  * ownership record is unaffected).
+ *
+ * `.gitignore` (user decision 2026-11-12): the folder also gets a `.gitignore` listing the files the
+ * toolkit writes there (each recorded project's `.cpp` / `.hpp` / `.o` and the ownership record), so
+ * they are not committed by accident. It is the toolkit's like the other outputs (hash in the record,
+ * key `gitignore`): kept up to date while unchanged, left alone when edited or when a `.gitignore`
+ * the toolkit did not write is there, and never recreated once the user deleted it (the record then
+ * says `removed`). See `maintainGitignore`.
  */
 
 'use strict';
@@ -42,6 +49,12 @@ const CPP_FILES_DIR = 'CPP_Files';
 
 /** The ownership record in that folder. */
 const MANIFEST_NAME = '.tc-toolkit-generated.json';
+
+/** The ignore file the toolkit keeps in that folder. */
+const GITIGNORE_NAME = '.gitignore';
+
+/** The comment line at the top of that file. */
+const GITIGNORE_COMMENT = '# Written by TC Toolkit so its generated files are not committed; you may delete this file.';
 
 /** Marks the record as this extension's (a foreign file of the same name is never overwritten). */
 const MANIFEST_GENERATOR = 'TC Toolkit';
@@ -267,6 +280,8 @@ function withCoverageHeader(text, header) {
  * @property {string} generator Always MANIFEST_GENERATOR.
  * @property {number} version
  * @property {Object<string, {project: string, sha256: string}>} files By file name (no directory).
+ * @property {{sha256: string}|{removed: true}} [gitignore] The `.gitignore` the toolkit wrote (its
+ *   hash), or `removed`: it was deleted after the toolkit wrote it, and is not written again.
  */
 
 /**
@@ -291,10 +306,15 @@ function readManifest(dir) {
     const manifest = { generator: MANIFEST_GENERATOR, version: 1, files: {} };
     for (const [name, entry] of Object.entries(data.files)) {
         // A plain file name only: the record must never point outside its folder.
-        if (!entry || typeof entry !== 'object' || path.basename(name) !== name || name === MANIFEST_NAME) continue;
+        if (!entry || typeof entry !== 'object' || path.basename(name) !== name || name === MANIFEST_NAME || name.toLowerCase() === GITIGNORE_NAME) continue;
         if (typeof entry.sha256 === 'string' && typeof entry.project === 'string') {
             manifest.files[name] = { project: entry.project, sha256: entry.sha256 };
         }
+    }
+    const g = data.gitignore;
+    if (g && typeof g === 'object') {
+        if (g.removed === true) manifest.gitignore = { removed: true };
+        else if (typeof g.sha256 === 'string') manifest.gitignore = { sha256: g.sha256 };
     }
     return { ok: true, manifest };
 }
@@ -303,8 +323,97 @@ function readManifest(dir) {
 function writeManifest(dir, manifest) {
     const files = {};
     for (const name of Object.keys(manifest.files).sort()) files[name] = manifest.files[name];
-    fs.writeFileSync(path.join(dir, MANIFEST_NAME),
-        JSON.stringify({ generator: MANIFEST_GENERATOR, version: 1, files }, null, 2) + '\n', 'utf8');
+    /** @type {Object<string, any>} */
+    const data = { generator: MANIFEST_GENERATOR, version: 1, files };
+    if (manifest.gitignore) data.gitignore = manifest.gitignore;
+    fs.writeFileSync(path.join(dir, MANIFEST_NAME), JSON.stringify(data, null, 2) + '\n', 'utf8');
+}
+
+/**
+ * The `.gitignore` text for a record: the comment line, then every recorded file, the object file of
+ * every recorded `.cpp` (so a later g++ build needs no rewrite) and the record itself, each anchored
+ * to the folder (`/name`). '' when nothing is recorded.
+ * @param {Manifest} manifest
+ * @returns {string}
+ */
+function gitignoreText(manifest) {
+    const names = new Set(Object.keys(manifest.files));
+    if (names.size === 0) return '';
+    for (const name of Object.keys(manifest.files)) {
+        if (/\.cpp$/i.test(name)) names.add(name.replace(/\.cpp$/i, '.o'));
+    }
+    names.add(MANIFEST_NAME);
+    // Glob characters are escaped (the stems are [A-Za-z0-9_.-]; `/` in front makes `!`/`#` literal).
+    const escape = (/** @type {string} */ n) => n.replace(/[\\*?[]/g, c => `\\${c}`);
+    return [GITIGNORE_COMMENT, ...[...names].sort().map(n => `/${escape(n)}`)].join('\n') + '\n';
+}
+
+/**
+ * @typedef {Object} GitignoreResult What happened to the folder's `.gitignore` on one write.
+ * @property {'created'|'updated'|'unchanged'|'changed'|'foreign'|'not-recreated'|'none'|'failed'} status
+ *   `changed`: the toolkit's own file, edited since (left alone); `foreign`: a `.gitignore` the
+ *   toolkit did not write (left alone); `not-recreated`: the toolkit wrote one before and it was
+ *   deleted since; `none`: nothing recorded to list.
+ * @property {string} path
+ * @property {string} [message] For `failed`.
+ */
+
+/**
+ * Brings the folder's `.gitignore` in line with the record (user decision 2026-11-12). Changes
+ * `manifest.gitignore`; the caller saves the record.
+ * @param {string} dir
+ * @param {Manifest} manifest
+ * @returns {GitignoreResult}
+ */
+function maintainGitignore(dir, manifest) {
+    const file = path.join(dir, GITIGNORE_NAME);
+    const want = gitignoreText(manifest);
+    /** @type {Buffer|null} */
+    let current;
+    try { current = fs.readFileSync(file); } catch (e) { current = null; }
+    const recorded = manifest.gitignore;
+    if (recorded && !('sha256' in recorded)) return { status: current ? 'foreign' : 'not-recreated', path: file };
+    if (!current && recorded) {
+        // Deleted after the toolkit wrote it: the user's choice, remembered.
+        manifest.gitignore = { removed: true };
+        return { status: 'not-recreated', path: file };
+    }
+    if (!want) return { status: 'none', path: file };
+    if (current) {
+        const have = sha256(current);
+        if (have === sha256(want)) {
+            // Already what it should be (also a user's edit that happens to match): the toolkit's.
+            manifest.gitignore = { sha256: have };
+            return { status: 'unchanged', path: file };
+        }
+        if (!recorded) return { status: 'foreign', path: file };
+        if (!('sha256' in recorded) || recorded.sha256 !== have) return { status: 'changed', path: file };
+    }
+    try {
+        fs.writeFileSync(file, want, 'utf8');
+    } catch (e) {
+        return { status: 'failed', path: file, message: e && /** @type {any} */ (e).message ? /** @type {any} */ (e).message : String(e) };
+    }
+    manifest.gitignore = { sha256: sha256(want) };
+    return { status: current ? 'updated' : 'created', path: file };
+}
+
+/**
+ * The output channel's line on the `.gitignore`, '' when there is nothing to say.
+ * @param {GitignoreResult|undefined} g
+ * @returns {string}
+ */
+function gitignoreNote(g) {
+    if (!g) return '';
+    const where = `${path.basename(path.dirname(path.dirname(g.path)))}/${path.basename(path.dirname(g.path))}/${GITIGNORE_NAME}`;
+    switch (g.status) {
+        case 'created': return `${where} written so the generated files are not committed; delete it to commit them (it is not written again).`;
+        case 'changed': return `${where} was changed since TC Toolkit wrote it and is left alone; it may not list every generated file.`;
+        case 'foreign': return `${where} was not written by TC Toolkit and is left alone; the generated files may not be ignored by git.`;
+        case 'not-recreated': return `${where} was deleted after TC Toolkit wrote it, so it was not written again.`;
+        case 'failed': return `${where} could not be written: ${g.message || 'unknown error'}.`;
+        default: return '';
+    }
 }
 
 /**
@@ -331,6 +440,7 @@ function ownership(dir, manifest, name, caseInsensitive = CASE_INSENSITIVE_FS) {
  * @property {string[]} written Absolute paths written.
  * @property {string[]} removed Absolute paths of this project's earlier outputs that were deleted.
  * @property {Array<{path: string, reason: 'foreign'|'changed'}>} refused Files left alone.
+ * @property {GitignoreResult} [gitignore] The folder's `.gitignore` (maintainGitignore).
  */
 
 /**
@@ -380,6 +490,9 @@ function writeOwnedOutputs(o) {
             delete manifest.files[name];
             dirty = true;
         }
+        const before = JSON.stringify(manifest.gitignore || null);
+        result.gitignore = maintainGitignore(o.dir, manifest);
+        if (JSON.stringify(manifest.gitignore || null) !== before) dirty = true;
     } finally {
         if (dirty) writeManifest(o.dir, manifest);
     }
@@ -493,9 +606,9 @@ async function runGenerate(o) {
 }
 
 module.exports = {
-    CPP_FILES_DIR, MANIFEST_NAME, MANIFEST_GENERATOR, DEFAULT_GENERATE_TIMEOUT_MS,
+    CPP_FILES_DIR, MANIFEST_NAME, MANIFEST_GENERATOR, GITIGNORE_NAME, GITIGNORE_COMMENT, DEFAULT_GENERATE_TIMEOUT_MS,
     cppFileStem, cppOutputPaths, isUnderCppFiles, cppOwnerId,
     libraryCoverage, libraryCoverageText, libraryCoverageLines, libraryUndeclaredLines, libraryCoverageHeader, withCoverageHeader, UNKNOWN_LIBRARY,
-    readManifest, ownership, writeOwnedOutputs, recordOwnedFile, claimOutput,
+    readManifest, ownership, writeOwnedOutputs, gitignoreText, maintainGitignore, gitignoreNote, recordOwnedFile, claimOutput,
     runGenerate
 };

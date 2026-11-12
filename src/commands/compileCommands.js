@@ -47,7 +47,7 @@ const { prepareLibraryCheck } = require('../libraryDecls');
 const { projectDefineArgs, fileDefineArgs } = require('../compilerDefines');
 const { CPP_SECTION, effectiveOptions, couplingWrites, checkboxWrites, readOptionState } = require('../cppSettings');
 const {
-    cppOutputPaths, cppOwnerId, writeOwnedOutputs, recordOwnedFile, claimOutput, runGenerate,
+    cppOutputPaths, cppOwnerId, writeOwnedOutputs, recordOwnedFile, claimOutput, runGenerate, gitignoreNote,
     libraryCoverage, libraryCoverageText, libraryCoverageLines, libraryUndeclaredLines, libraryCoverageHeader, withCoverageHeader, UNKNOWN_LIBRARY
 } = require('../cppGenerate');
 const { SETTING_GPP_PATH, resolveGpp, describeGppProblem, buildGppArgs, placeGppMessages, runGpp, summarizeGpp } = require('../gpp');
@@ -734,6 +734,9 @@ function registerCompileCommands(context, { provider, getProjectMap, onSettingsC
                     channel.appendLine(`[${new Date().toISOString()}] ${projectName}: C++ could not be generated: no declaration the compiler can use for these library symbols`);
                     for (const line of libraryUndeclaredLines(cpp.libraries)) channel.appendLine(line);
                 }
+                // The CPP_Files/.gitignore is reported in the channel only (it never makes the run a warning).
+                const gitNote = cpp && cpp.written ? gitignoreNote(cpp.written.gitignore) : '';
+                if (gitNote) outputChannel().appendLine(`[${new Date().toISOString()}] ${projectName}: ${gitNote}`);
                 if (cpp && cpp.log) {
                     const channel = outputChannel();
                     channel.appendLine(`[${new Date().toISOString()}] ${projectName}: ${cpp.logTitle || 'C++'}`);
@@ -765,6 +768,7 @@ function registerCompileCommands(context, { provider, getProjectMap, onSettingsC
                         libraries: (cpp.libraries || []).map(e => ({ ...e })),
                         written: cpp.written ? cpp.written.written.slice() : [], removed: cpp.written ? cpp.written.removed.slice() : [],
                         refused: cpp.written ? cpp.written.refused.map(r => ({ ...r })) : [],
+                        gitignore: cpp.written && cpp.written.gitignore ? { ...cpp.written.gitignore } : null,
                         gpp: cpp.gpp ? { status: cpp.gpp.status, exitCode: cpp.gpp.exitCode === undefined ? null : cpp.gpp.exitCode,
                             gppPath: cpp.gpp.gppPath || '', errors: gppCounts.errors, warnings: gppCounts.warnings, message: cpp.gpp.message || '' } : null
                     } : null

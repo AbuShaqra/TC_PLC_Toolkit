@@ -13,7 +13,8 @@
  * file opened fresh starting on its first problem.
  * R13: C++ generation and the g++ build — off by default; the dropdown's checkboxes and changes made
  * elsewhere keep the two switches coupled per scope; a clean check is followed by the compile mode,
- * whose files land in CPP_Files (and only there, never over a file the toolkit did not write); a
+ * whose files land in CPP_Files (and only there, never over a file the toolkit did not write, with a
+ * CPP_Files/.gitignore kept for them and never recreated once deleted); a
  * check with errors generates nothing; g++ runs with the vendored headers and its messages reach the
  * Problems panel on the generated files; a missing g++ is explained with a button to its setting.
  */
@@ -656,6 +657,62 @@ const settle = () => new Promise(r => setTimeout(r, 10));
         assert(/C\+\+ written to PLC\/CPP_Files: PLC\.cpp, PLC\.hpp\./.test(lastNote()) && calls.status.text.includes('· C++ written')
             && calls.infos.some(m => m.buttons.includes('Open C++')), `R13 GEN: the notification and status bar say what was written (${lastNote()} / ${calls.status.text})`);
         assert(gppCalls().length === 0 && (r13Result.cpp.gpp === undefined || r13Result.cpp.gpp === null), 'R13 GEN: no g++ while the build is off');
+
+        // CPP_Files/.gitignore (user decision 2026-11-12): written with the files, reported in the channel only.
+        const giFile = path.join(cppDir, '.gitignore');
+        const channelLines = () => { const c = (calls.outputs || []).find(o => o.name === OUTPUT_CHANNEL_NAME); return c ? c.lines : []; };
+        assert(fs.existsSync(giFile) && fs.readFileSync(giFile, 'utf8').split('\n').slice(1).join('|') === '/.tc-toolkit-generated.json|/PLC.cpp|/PLC.hpp|/PLC.o|'
+            && /^# Written by TC Toolkit/.test(fs.readFileSync(giFile, 'utf8')) && r13Result.cpp.gitignore.status === 'created',
+        `R13 GITIGNORE: the run writes CPP_Files/.gitignore listing PLC.cpp, .hpp, .o and the record (${JSON.stringify(r13Result.cpp.gitignore)})`);
+        assert(channelLines().some(l => /PLC: PLC\/CPP_Files\/\.gitignore written so the generated files are not committed; delete it/.test(l)) && !/gitignore/.test(lastNote())
+            && calls.warnings.length === 0, 'R13 GITIGNORE: the output channel says it was written; the summary does not, and the run is no warning for it');
+        const giOwned = fs.readFileSync(giFile, 'utf8');
+        const linesBefore = channelLines().length;
+        reset();
+        answers.message.push(undefined);
+        r13Result = await run('twincat.compileProject');
+        await settle();
+        assert(r13Result.cpp.gitignore.status === 'unchanged' && fs.readFileSync(giFile, 'utf8') === giOwned && !channelLines().slice(linesBefore).some(l => /gitignore/.test(l)),
+            'R13 GITIGNORE: a second run keeps it as it is and says nothing about it');
+        // Edited by the user: left alone, noted.
+        fs.appendFileSync(giFile, '/mine\n');
+        reset();
+        answers.message.push(undefined);
+        r13Result = await run('twincat.compileProject');
+        await settle();
+        assert(r13Result.cpp.gitignore.status === 'changed' && fs.readFileSync(giFile, 'utf8') === `${giOwned}/mine\n`
+            && channelLines().some(l => /PLC\/CPP_Files\/\.gitignore was changed since TC Toolkit wrote it and is left alone/.test(l)) && calls.warnings.length === 0,
+        'R13 GITIGNORE: an edited .gitignore is left alone, with a note in the output channel');
+        // Deleted by the user: not recreated, on this run or the next.
+        fs.unlinkSync(giFile);
+        for (let i = 0; i < 2; i++) {
+            const linesAtRun = channelLines().length;
+            reset();
+            answers.message.push(undefined);
+            r13Result = await run('twincat.compileProject');
+            await settle();
+            assert(r13Result.cpp.status === 'done' && r13Result.cpp.gitignore.status === 'not-recreated' && !fs.existsSync(giFile)
+                && channelLines().slice(linesAtRun).some(l => /PLC\/CPP_Files\/\.gitignore was deleted after TC Toolkit wrote it, so it was not written again/.test(l))
+                && JSON.parse(fs.readFileSync(path.join(cppDir, '.tc-toolkit-generated.json'), 'utf8')).gitignore.removed === true,
+            `R13 GITIGNORE: deleted by the user, it is not recreated (run ${i + 1}), the channel says so and the record remembers it`);
+        }
+        // A .gitignore the toolkit did not write, already in the folder: never overwritten.
+        fs.rmSync(cppDir, { recursive: true, force: true });
+        fs.mkdirSync(cppDir, { recursive: true });
+        fs.writeFileSync(giFile, '*.o\n');
+        reset();
+        answers.message.push(undefined);
+        r13Result = await run('twincat.compileProject');
+        await settle();
+        assert(r13Result.cpp.status === 'done' && r13Result.cpp.gitignore.status === 'foreign' && fs.readFileSync(giFile, 'utf8') === '*.o\n' && fs.existsSync(cppFile)
+            && channelLines().some(l => /PLC\/CPP_Files\/\.gitignore was not written by TC Toolkit and is left alone/.test(l)),
+        'R13 GITIGNORE: a foreign .gitignore is left untouched and noted in the channel; the C++ is still written');
+        fs.rmSync(cppDir, { recursive: true, force: true });
+        reset();
+        answers.message.push(undefined);
+        r13Result = await run('twincat.compileProject');
+        await settle();
+        assert(r13Result.cpp.gitignore.status === 'created' && fs.readFileSync(giFile, 'utf8') === giOwned, 'R13 GITIGNORE: a fresh folder gets the toolkit\'s .gitignore again');
 
         // A check with errors: nothing is generated; the earlier files stay.
         checkAnswer = () => errorReport(unitLineOf(fs.readFileSync(fbPath, 'utf8'), 'nNope := 5;'));

@@ -5,7 +5,9 @@
  * (the check's inputs and defines, `-o`, no `--check`/`--json`), ownership — only files the toolkit
  * wrote and nobody changed since are replaced or deleted, per project, with a foreign record
  * refused — and running the compile mode through a fake child process (the temporary directory is
- * deleted, a failure keeps the compiler's output). The real compiler run is test/test_cpp_real.js.
+ * deleted, a failure keeps the compiler's output), and the folder's `.gitignore` (written, kept
+ * current, left alone when edited or foreign, never recreated once deleted). The real compiler run
+ * is test/test_cpp_real.js.
  */
 
 'use strict';
@@ -110,7 +112,7 @@ const sha = (t) => crypto.createHash('sha256').update(t).digest('hex');
         fs.writeFileSync(before.ps.obj, 'old obj');
         cg.recordOwnedFile(before.ps.dir, cg.cppOwnerId(guidProj, before.ps.stem), path.basename(before.ps.obj));
         const after = generate('New');
-        assert(eq(after.res.removed.map(f => path.basename(f)).sort(), ['Old.cpp', 'Old.hpp', 'Old.o']) && eq(fs.readdirSync(after.ps.dir).sort(), [cg.MANIFEST_NAME, 'New.cpp', 'New.hpp'])
+        assert(eq(after.res.removed.map(f => path.basename(f)).sort(), ['Old.cpp', 'Old.hpp', 'Old.o']) && eq(fs.readdirSync(after.ps.dir).sort(), ['.gitignore', cg.MANIFEST_NAME, 'New.cpp', 'New.hpp'])
             && eq(Object.keys(JSON.parse(fs.readFileSync(after.ps.manifest, 'utf8')).files).sort(), ['New.cpp', 'New.hpp']),
         `RENAME: after Old.plcproj → New.plcproj, the old .cpp, .hpp and .o are deleted and unrecorded (${fs.readdirSync(after.ps.dir).join(', ')})`);
         // A case-only rename (Plc.plcproj → PLC.plcproj) on a case-insensitive file system (Windows, macOS):
@@ -149,6 +151,86 @@ const sha = (t) => crypto.createHash('sha256').update(t).digest('hex');
         w = cg.writeOwnedOutputs({ dir: halfDir, project: 'P', files: [{ name: 'P.cpp', text: 'c2' }, { name: 'P.hpp', text: 'h2' }] });
         assert(w.refused.length === 0 && w.written.length === 2 && fs.readFileSync(path.join(halfDir, 'P.cpp'), 'utf8') === 'c2',
             `HALF: the next run replaces it (not refused as foreign) (${JSON.stringify(w.refused)})`);
+
+        // ── CPP_Files/.gitignore (user decision 2026-11-12) ───────────────────────────────────
+        const giDir = path.join(ROOT, 'gi', 'CPP_Files');
+        const giFile = path.join(giDir, '.gitignore');
+        const giText = () => fs.readFileSync(giFile, 'utf8');
+        const giRecord = () => JSON.parse(fs.readFileSync(path.join(giDir, cg.MANIFEST_NAME), 'utf8')).gitignore;
+        const pair = (stem, t = 'x') => [{ name: `${stem}.cpp`, text: `${t} cpp` }, { name: `${stem}.hpp`, text: `${t} hpp` }];
+        w = cg.writeOwnedOutputs({ dir: giDir, project: 'P', files: pair('P') });
+        assert(w.gitignore.status === 'created' && w.gitignore.path === giFile
+            && giText() === `${cg.GITIGNORE_COMMENT}\n/.tc-toolkit-generated.json\n/P.cpp\n/P.hpp\n/P.o\n`,
+        `GITIGNORE: the first write creates it: a comment line, then the .cpp, .hpp, the .o g++ will write and the record (${JSON.stringify(w.gitignore)})`);
+        assert(/TC Toolkit/.test(cg.GITIGNORE_COMMENT) && /may delete/.test(cg.GITIGNORE_COMMENT) && cg.GITIGNORE_COMMENT.startsWith('#'),
+            'GITIGNORE: its comment line says TC Toolkit wrote it and that it may be deleted');
+        assert(!!giRecord() && giRecord().sha256 === sha(giText()) && !cg.readManifest(giDir).manifest.files['.gitignore'],
+            'GITIGNORE: the record keeps its hash under its own key (it is never one of a project\'s outputs)');
+        w = cg.writeOwnedOutputs({ dir: giDir, project: 'P', files: pair('P', 'y') });
+        assert(w.gitignore.status === 'unchanged', 'GITIGNORE: a run that changes no name leaves it as it is');
+        w = cg.writeOwnedOutputs({ dir: giDir, project: 'Q', files: pair('Q') });
+        assert(w.gitignore.status === 'updated' && /\n\/Q\.cpp\n\/Q\.hpp\n\/Q\.o\n$/.test(giText()) && /\n\/P\.cpp\n/.test(giText()) && giRecord().sha256 === sha(giText()),
+            'GITIGNORE: a second project in the folder is added to it (both projects listed), and the record follows');
+        w = cg.writeOwnedOutputs({ dir: giDir, project: 'Q', files: pair('Q2') });
+        assert(w.gitignore.status === 'updated' && !/\/Q\./.test(giText()) && /\/Q2\.cpp\n/.test(giText()),
+            'GITIGNORE: a renamed project\'s old names leave the list with its old files');
+        // A CRLF checkout of it is still the toolkit's own.
+        fs.writeFileSync(giFile, giText().replace(/\n/g, '\r\n'));
+        w = cg.writeOwnedOutputs({ dir: giDir, project: 'R', files: pair('R') });
+        assert(w.gitignore.status === 'updated' && /\/R\.cpp\n/.test(giText()), 'GITIGNORE: converted to CRLF it is still owned and kept current');
+        // Edited by the user: left alone from then on.
+        fs.appendFileSync(giFile, '/my-extra\n');
+        const edited = giText();
+        w = cg.writeOwnedOutputs({ dir: giDir, project: 'S', files: pair('S') });
+        assert(w.gitignore.status === 'changed' && giText() === edited && !/\/S\.cpp/.test(giText()),
+            'GITIGNORE: a .gitignore the user edited is left alone, even when a new project would be added');
+        assert(/was changed since TC Toolkit wrote it and is left alone/.test(cg.gitignoreNote(w.gitignore)) && cg.gitignoreNote(w.gitignore).startsWith('gi/CPP_Files/.gitignore'),
+            `GITIGNORE: the note names it and says it is left alone (${cg.gitignoreNote(w.gitignore)})`);
+        // Deleted by the user: never written again.
+        fs.unlinkSync(giFile);
+        w = cg.writeOwnedOutputs({ dir: giDir, project: 'S', files: pair('S', 'z') });
+        assert(w.gitignore.status === 'not-recreated' && !fs.existsSync(giFile) && eq(giRecord(), { removed: true }),
+            'GITIGNORE: deleted after the toolkit wrote it, it is not recreated, and the record remembers that');
+        w = cg.writeOwnedOutputs({ dir: giDir, project: 'T', files: pair('T') });
+        assert(w.gitignore.status === 'not-recreated' && !fs.existsSync(giFile) && /was deleted after TC Toolkit wrote it, so it was not written again/.test(cg.gitignoreNote(w.gitignore)),
+            'GITIGNORE: a later run (another project) still does not recreate it, and says so');
+        // The record survives the object-file steps.
+        fs.writeFileSync(path.join(giDir, 'T.o'), 'obj');
+        cg.recordOwnedFile(giDir, 'T', 'T.o');
+        cg.claimOutput(giDir, 'T.o');
+        assert(eq(giRecord(), { removed: true }), 'GITIGNORE: recording and claiming the object file keep the record\'s .gitignore state');
+        fs.writeFileSync(giFile, '# the user\'s own\n');
+        w = cg.writeOwnedOutputs({ dir: giDir, project: 'T', files: pair('T', 'w') });
+        assert(w.gitignore.status === 'foreign' && giText() === '# the user\'s own\n', 'GITIGNORE: a .gitignore the user makes after deleting the toolkit\'s is theirs, untouched');
+        // A .gitignore already there before the first run is never overwritten, and not adopted.
+        const fgDir = path.join(ROOT, 'gi-foreign', 'CPP_Files');
+        fs.mkdirSync(fgDir, { recursive: true });
+        fs.writeFileSync(path.join(fgDir, '.gitignore'), '*.o\n');
+        w = cg.writeOwnedOutputs({ dir: fgDir, project: 'P', files: pair('P') });
+        assert(w.gitignore.status === 'foreign' && fs.readFileSync(path.join(fgDir, '.gitignore'), 'utf8') === '*.o\n'
+            && JSON.parse(fs.readFileSync(path.join(fgDir, cg.MANIFEST_NAME), 'utf8')).gitignore === undefined
+            && /was not written by TC Toolkit and is left alone/.test(cg.gitignoreNote(w.gitignore)),
+        'GITIGNORE: a foreign .gitignore already in the folder is never overwritten (noted), and stays unrecorded');
+        w = cg.writeOwnedOutputs({ dir: fgDir, project: 'P', files: pair('P', 'v') });
+        assert(w.gitignore.status === 'foreign', 'GITIGNORE: ... on every later run too');
+        // A user's edit that happens to equal the wanted text makes it the toolkit's again.
+        const adDir = path.join(ROOT, 'gi-adopt', 'CPP_Files');
+        fs.mkdirSync(adDir, { recursive: true });
+        fs.writeFileSync(path.join(adDir, '.gitignore'), `${cg.GITIGNORE_COMMENT}\n/.tc-toolkit-generated.json\n/P.cpp\n/P.hpp\n/P.o\n`);
+        w = cg.writeOwnedOutputs({ dir: adDir, project: 'P', files: pair('P') });
+        assert(w.gitignore.status === 'unchanged' && !!cg.readManifest(adDir).manifest.gitignore, 'GITIGNORE: a file already holding exactly the wanted text is taken as the toolkit\'s');
+        assert(cg.gitignoreNote({ status: 'unchanged', path: giFile }) === '' && cg.gitignoreNote({ status: 'updated', path: giFile }) === ''
+            && /written so the generated files are not committed; delete it/.test(cg.gitignoreNote({ status: 'created', path: giFile })) && cg.gitignoreNote(undefined) === '',
+        'GITIGNORE: notes only for created, changed, foreign, not recreated and failed');
+        assert(cg.gitignoreText({ files: { 'A[1].cpp': { project: 'p', sha256: '' } } }).includes('/A\\[1].cpp\n'), 'GITIGNORE: glob characters in a name are escaped');
+        assert(cg.gitignoreText({ files: {} }) === '', 'GITIGNORE: nothing recorded, nothing to list');
+        // A record entry named .gitignore is never taken as a project output (so cleanup never deletes it as one).
+        const ngDir = path.join(ROOT, 'gi-entry', 'CPP_Files');
+        fs.mkdirSync(ngDir, { recursive: true });
+        fs.writeFileSync(path.join(ngDir, '.gitignore'), 'x');
+        fs.writeFileSync(path.join(ngDir, cg.MANIFEST_NAME), JSON.stringify({ generator: 'TC Toolkit', version: 1, files: { '.gitignore': { project: 'P', sha256: sha('x') } } }));
+        cg.writeOwnedOutputs({ dir: ngDir, project: 'P', files: pair('P') });
+        assert(fs.readFileSync(path.join(ngDir, '.gitignore'), 'utf8') === 'x', 'GITIGNORE: a files entry named .gitignore is ignored, never cleaned up as an output');
 
         // ── Library symbols: what the C++ does not cover, per library (user decision 2026-11-12) ──
         assert(cg.libraryCoverage({}).length === 0 && cg.libraryCoverageText([], { built: true, channel: 'X' }) === ''
