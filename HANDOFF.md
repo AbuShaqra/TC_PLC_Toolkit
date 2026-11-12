@@ -154,6 +154,47 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   activation is not slowed (registry read in the background); a Compile Project started right after activation
   (setting empty, MSYS2 only in the registry) builds with the MSYS2 g++, not "too old" — the build waits (bounded,
   7.5 s) for the registry search; *Detect g++* never writes a g++ < 7 before that search has finished.
+- **R14 Build (and Activate) through XAE: IMPLEMENTED on `claude/r14-xae`** (2026-11-12; based on the R13 branch,
+  PR #37 not yet merged; needs the user's Windows check — nothing here ever ran PowerShell or COM). Driver
+  `resources/xae/build-plc-project.ps1` = the builder `scripts/Build PLC project/build_plc_project.ps1` (b578199) +
+  opt-in `-Json` / `-ShowWindow` / `-ListTargets` / `-CancelFile` (exit 4); third hand-synced copy beside the builder
+  and `templates/`. **Headless by default** (user, 2026-11-12): `tcToolkit.xaeBuild.showWindow` (false) ⇒
+  `-ShowWindow` (SuppressUI off + window visible for the whole run, never `UserControl`); kept exceptions: activation
+  ALWAYS shows the window (invisible licence/download dialog hang), and a real version switch keeps it visible —
+  that one never fires from the extension (it never passes `-TcVersion`). The channel *TC Toolkit XAE Build*
+  prints the requested mode and, after the run, the mode read back from DTE at the end of `Build($true)`
+  (`describeUiMode`). Settings section `tcToolkit.xaeBuild` (showWindow, configuration, platform, timeoutMinutes,
+  stallMinutes; live settings 13→18); commands `twincat.xaeBuild`, `twincat.xaeBuildAndActivate`,
+  `twincat.xaeShowTargets`; Compile dropdown entries + "Show the XAE window" in the editor and on the start page
+  (Windows only); Problems in `twincat-xae`. Design and rules: DEVELOPMENT.md "XAE build (R14)". Phase 1 is local
+  targets only; boot project, remote targets, single-project build, routes and a "show the hidden shell" rescue
+  are phase 2 (each needs a Windows probe first).
+  **Verified (Linux, 2026-11-12):** `REQUIRE_FULL_SUITE=1 npm test` 123/123 FULL (new: test_xae_build,
+  test_xae_build_commands, test_xae_error_placement, test_xae_driver_contract); lint and typecheck 0; browser
+  `run.js` 91, `run_start_page.js` 115, `run_pragmas.js` green; `vsce ls` ships `resources/xae/build-plc-project.ps1`.
+  **Not verified here (no PowerShell on this box; downloading pwsh was refused by the permission classifier):**
+  the ps1 was never parsed — `test_xae_driver_contract.js` checks it as text only; the first Windows run is its
+  parse check. Unknowns only Windows settles: ErrorItem line semantics (pane vs whole-object line;
+  `xaeErrorPlacement` ships `lineBase: 'pane'` + "(location approximate)"), whether the ErrorList is empty
+  headless, whether `$dte.MainWindow.Visible` reads back truthfully under SuppressUI, whether a hidden shell
+  ever hangs on a dialog during the build, ConvertTo-Json shapes on PS 5.1 (one-element arrays, nulls), nested
+  `BuildProject`, the routes path.
+  **For the Windows check** (point the existing `test-*.ps1` at the driver with `-ScriptPath
+  ..\..\resources\xae\build-plc-project.ps1`; run the new `scripts\Build PLC project\test-emit-event.ps1`):
+  1. headless build of the sample succeeds with **no visible window**; channel line says `hidden
+     (SuppressUI=True, MainWindow.Visible=False) - headless`; no `TcXaeShell` left afterwards;
+  2. `showWindow=true` (dropdown checkbox) shows the shell for the whole run; readback says visible (requested);
+  3. driver by hand with `-TcVersion` forcing a switch: `ui` reason `version-switch`, the build passes;
+  4. a planted error, headless vs visible: compare `errorItem` counts (settles the empty-ErrorList question) and
+     where the Problems entries land; capture `-Json` output as fixtures **from the sample only**;
+  5. `probe-sysmanager.ps1` with and without `-Pump`;
+  6. *Build and Activate through XAE…* on a user-mode runtime: target pick, modal, window shown, then RUN;
+  7. cancel during the build: exit 4, the shell closed; cancel during activation is refused;
+  8. *Show Activation Targets* lists the runtimes; off Windows the commands refuse and the entries are hidden.
+  **Open questions (defaults in place):** key `tcToolkit.xaeBuild.showWindow` vs `tcToolkit.xae.showWindow`
+  (default: xaeBuild, one section); hide the window during activation too (default no, no switch); hide after a
+  version switch (default keep visible; readback reports `versionSwitchKeptVisible`); boot project / remote
+  targets now or phase 2 (default phase 2); approximate placement before fixtures (default ship it, marked).
 - **R3.2 Compile Project: MERGED** into `dev` as PR #32 (`28f24f1`, 2026-11-10 22:22 UTC).
 - **R3.3–R9 MERGED** into `dev` as PR #33 (`6424968`, 2026-11-11 09:30 UTC) after the user's Windows checks
   (dev-host green after `npm ci`; manual checks all passed). Details per item are in git history and ROADMAP "Done".

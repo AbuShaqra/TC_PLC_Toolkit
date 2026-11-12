@@ -216,7 +216,7 @@ per-suite without aborting on the first failure. The main ones:
 | `test/test_start_contributions.js` | package.json for R2: the branding guard (no contributed name — display name, settings section titles, custom editor, view containers, views, command categories — contains "TwinCAT"; the extension id is unchanged); the setting keys (all ten live keys under `tcToolkit.`, none under `twincat.`, each old key contributed deprecated with its successor's type/scope/default, sections one per key group, the migration table in step); the `twincat` Activity Bar container (titled `TC Toolkit`) holding Start, PLC Objects, PLC Libraries in that order with ids unchanged, none left in the Explorer, References still in its panel, no dangling view id in a when-clause; each start command contributed under the `TC Toolkit` category, in the palette, registered, with an `onCommand` activation event (needed on 1.66); Start view welcome links; a monochrome offline icon; the start page's strict CSP and no remote load; `.vscodeignore` shipping the derived templates but not the raw XAE source; the `tcToolkit.startPage.recentProjectsShown` and machine-scoped `tcToolkit.xaeShell.path*` settings, and the page's command / settings-section allow-lists. |
 | `test/test_start_commands.js` | `src/commands/startCommands.js` + `src/startPage.js` under a recording `vscode` stub: create with args and with prompts (files, recents, last location, open here/new/add/none), refusals inline vs as a notification, a deleted recent solution pruned, Generate ST's project pick, help links and settings, the singleton panel, its `state` message (including the recent-list length, clamped, and the XAE Shell paths; the g++ path in each state, read-only), a settings change (incl. `tcToolkit.compiler.gppPath`) re-posting state to an open page, g++ *Change…* opening the User settings, `openSettings {section}` and Open Settings' query argument, and the command allow-list. |
 | `test/test_check_unit.js` | `src/checkUnit.js`: one origin per emitted line, every pane line exactly once and verbatim in pane order (so a reported line/column IS the pane's), generated lines anchored on their component, members before the body, no rewriting (`REFERENCE TO`, `REF=`, pragmas survive), every sample file round-trips. |
-| `test/test_compile_check.js` | `src/compileCheck.js` with a fake child process: the bundled compiler as default and the setting as override, Node discovery (order on Windows, the version gate, the editor runtime as last resort with `ELECTRON_RUN_AS_NODE=1`, a configured Node path as the only candidate), setup messages (compiler missing, Node missing/too old, each naming its setting), the command line, the JSON report (clean, errors, malformed, exit 2, crash), mapping to file/component/pane/line, the pragma-warning filter and its count, temp-dir lifetime, timeout, cancellation, `paneRange`. |
+| `test/test_compile_check.js` | `src/compileCheck.js` with a fake child process: the bundled compiler as default and the setting as override, Node discovery (order on Windows, the version gate, the editor runtime as last resort with `ELECTRON_RUN_AS_NODE=1`, a configured Node path as the only candidate), setup messages (compiler missing, Node missing/too old, each naming its setting), the command line, the JSON report (clean, errors, malformed, exit 2, crash), mapping to file/component/pane/line, the pragma-warning filter and its count, temp-dir lifetime, timeout, cancellation, `paneRange`, runChild's `onStdout`/`onStderr` chunk callbacks. |
 | `test/test_compiler_defines.js` | `src/compilerDefines.js`: define lists (names, `NAME := 'value'`, spacing, a comma inside quotes, case kept, duplicates, empty and malformed entries with notes, an unclosed quote), `.plcproj` reading (`<CompilerDefines />`, whitespace-only, per-object defines read per item (conditions on the item group, the item and the element, `%(CompilerDefines)`, malformed entries noted), MSBuild last-wins and `$(CompilerDefines)`, XML entities, comments), `Condition`s on groups and elements (`evaluateCondition` case by case over the spellings real `.plcproj` files use; Debug applied, Release and platform mismatches skipped without a note, undecidable ones left out with a note and what they set made unreadable for later conditions, self-closing groups, empty conditions, `Condition=` inside another attribute, MSBuild-set properties, `$(Prop)` in a define value, other properties from earlier groups, the project's own `<Configuration>` default not overriding the check configuration), the `--pragma-define` arguments (numeric values exact), `fileDefineArgs` mapping each item's `Include` to its unit (case-insensitive, a `..\` link, an object with no unit noted), an unreadable file. |
 | `test/test_compile_commands.js` | `src/commands/compileCommands.js` + the provider hooks under a recording `vscode` stub: the bundled compiler run when nothing is configured, the toolbar button's host side (`compile-project` from a real `resolveCustomTextEditor` runs the command with the owning project's key, or asks when no single project owns the file; `compileRunning` posted at start and end and carried in `init`; the command's own setup messages), project pick, setup refusal (a missing override), clean run, a run with errors (Problems entries, pane markers, status text, summary), unsaved edits reaching the compiler, Go to Problem and the entry links, an edit dropping its component's results, a failed run keeping the previous results, cancellation, a fresh open landing on the first problem, and the project's compiler defines reaching the compiler as `--pragma-define` (numeric value exact) and an object's own as `--file-define` on its unit (malformed entries and an object with no unit left out, notes in the `TC Toolkit Compile` output channel and the summary, an empty element and an unreadable `.plcproj` passing none, a Debug-conditioned group applied and a Release one skipped with no note). R13: off by default, the dropdown and scope coupling, generation after a clean check only, a project that uses library symbols still generated (only a stripped prefix on a compiler-provided block, `SynLib.TON`, with a clean check: the summary and the channel name the library and the compiler's TON; dump-declared blocks: the compile mode gets the check's declaration files, the `.cpp`/`.hpp` start with the coverage comment and stay owned, g++ runs, the warning names the library and the channel lists the blocks and the compiler's TON; a symbol with no usable declaration: generation fails, the summary names it with its library, and the channel lists only that symbol under "C++ could not be generated", with no coverage lines), the g++ run and its Problems entries, ONE notification for a missing g++ (*Open Setting*; *Detect g++* only with an empty setting), an edited generated file left alone, and `CPP_Files/.gitignore` (written on the first run and noted in the channel only, no warning; unchanged on the next; an edit left alone and noted; deleted → not recreated on two runs, noted, `removed` in the record; a foreign one untouched and noted while the C++ is still written; an edited `PLC.cpp` dropped from it with the summary saying git sees it; a user's `PLC.o` in a fresh folder neither touched nor listed); the build waits for the MSYS2 registry search (`gppReady`) before it resolves g++, and a failing wait does not stop it. |
 | `test/test_conditional_pragmas.js` | R12, `src/lsp/conditionals.js` and the diagnostics built on it, through the server's path (`assembleSt` → `indexXmlObject` → `syncDocument` → `provideDiagnostics`). Unit: nesting, segments, `fbRS.SET := TRUE;` and a line-leading named argument (`SET := c,` in a multi-line call) are not boundaries while real GET/SET accessor lines are, a statement-level nested group does not widen the span past its `{END_IF}`, a group wrapping the first VAR block is not an uncertain head, directives in comments/strings ignored, each kind of unbalanced segment marks only itself, selections, the 64 cap, neutral groups, suppression spans, `pickVar`/`AMBIGUOUS`, `scopeUncertain`, `inheritanceUncertain` from both indexers. Zero diagnostics (and every segment balanced, so a zero is never the unbalanced rule by accident) on valid conditional code: the reported split IF head, ELSIF chains, nested groups, WHILE/FOR, REPEAT and CASE split across branches and groups, per-branch declarations (also used outside the group), names only in a branch, `defined(variable:…)`/`defined(pou:…)` guards, a mid-expression group, a directive inside a type, a conditional EXTENDS head, a conditional VAR/VAR_INPUT header with a named call, a multi-line RS call (`SET :=` at line start) next to, after and inside a group, enum members inside and after a group (both indexers). Still reported outside groups: an unterminated FOR, a stray END_WHILE, an undeclared name, a type mismatch, an IF every branch opens and nothing closes (on the group's `{IF}`), a method after an unclosed `{IF}`, the statement after a nested statement-level group, an undeclared name in a POU whose first VAR block is wrapped; the cap silences only its own segment. Byte-identical structural output to the old matcher on every sample unit, per-segment = whole-unit there, and a neutral group appended to every unit (sample and synthetic, including multi-line named-argument calls and a property) leaves its structural output unchanged. Completion and references over both branches. |
@@ -235,6 +235,10 @@ per-suite without aborting on the first failure. The main ones:
 | `test/test_msys2_detect.js` | `src/msys2Detect.js` with a fake reg.exe and file system (runs off Windows): reg.exe output parsed by `HKEY_` and `REG_SZ` (English and German output, a DWORD ignored), the uninstall search over all four keys (HKCU/HKLM, WOW6432Node), only `DisplayName` starting with MSYS2, `InstallLocation` / the `UninstallString` folder / an expanded `REG_EXPAND_SZ`, an entry found twice read once, a failing reg.exe; `createRegRunner` (argument array, timeout, no shell, errors → null); the usual roots (profile, Scoop, `SCOOP`, `ChocolateyToolsLocation`); the candidate order in `src/gpp.js` (PATH, registry root's environments, usual roots, `C:\MinGW`, `usr\bin` last; PATH/MSYS2 repeats tried once, case-blind); the user report (a PATH MinGW 6.3 loses to a registry-only MSYS2 g++ 14); an MSYS2 without gcc named in `describeGppSetting` / `resolveGpp` (`msys2Root`), not when any environment has g++; the cache (never runs off Windows, once per session, `settled()`, bounded wait longer than both reg.exe phases, never rejects). |
 | `test/test_xae_shell_detect.js` | `src/xaeShellDetect.js` with every dependency faked (runs off Windows): the COM registration for both shells (quoted and argument-suffixed `LocalServer32`, the 32-bit view for 4024, a localized value name), the default locations with and without the environment variables, a registered file that is missing, a non-GUID ProgID value, rejecting / throwing registry and existence probes, non-Windows (nothing found, registry never queried), `createRegQuery` over a fake `execFile` (argument array, timeout, errors → null), `describeConfiguredShells`, and `resolveShellExe` (configured-and-existing wins, else default location, else registry). |
 | `test/test_xae_shell_commands.js` | `src/commands/xaeShellCommands.js` under a recording `vscode` stub with detection faked: an empty setting is filled (Global target), a non-empty one is kept even when its file is missing, nothing found writes nothing, `autoFill` never rejects, `twincat.detectXaeShell` reports found / kept / not found in one message whose button opens the filtered settings. Also `findTwinCatShells` in `src/xaeShell.js`: `path4026` ↔ the 64-bit shell, `path4024` ↔ the 32-bit one, a missing configured path ignored (those checks are skipped on Windows, where a real shell may be installed). |
+| `test/test_xae_build.js` | `src/xaeBuild.js` + `src/xaeBuildSettings.js` over the synthetic fixtures `test/fixtures/xae/*.jsonl` (read through `test/_fakeXaeDriver.js`): **showWindow false/undefined → no `-ShowWindow`, true → exactly one**; `-STA`/`-NonInteractive`/`-ExecutionPolicy Bypass`, never `-TcVersion`; activation only with a valid NetId; the line splitter (CRLF, split prefix, split UTF-8, no final newline); parseLine; the reducer over every fixture; describeExit (0-4, timeout, spawn error, killed, missing `done`); describeUiMode (headless, visible, version switch, mismatch, unreadable); canCancel; isStalled; target pick; confirmation text; settings defaults and clamps. |
+| `test/test_xae_build_commands.js` | `src/commands/xaeBuildCommands.js` + the provider hooks under a `vscode` stub with the fake driver: the setting and the dropdown's `setXaeOption` decide `-ShowWindow` on the next spawn; the channel's requested and actual UI mode lines; Problems only in `twincat-xae` (Compile Project's collections untouched, both marker sources in the panes); a dismissed modal spawns nothing, the confirmed NetId reaches the argv, `twincat.xaeBuild` never activates, a target readback mismatch is an error; cancel via the cancel file (exit 4, nothing killed); the force stop (PowerShell tree + only an `ours` shell); no cancel during activation; one run at a time + `twincat.xaeRunning`; timeout; the stall re-run with `-ShowWindow`; config-not-declared pick; the shell-version warning; Show Activation Targets; the non-Windows refusal. |
+| `test/test_xae_error_placement.js` | `src/xaeErrorPlacement.js` against `sample/` objects: `.sln`-relative Windows paths, both line bases, the section marker (exact) vs "(location approximate)", a named method, file-known-line-unknown, general, the summary sentence. |
+| `test/test_xae_driver_contract.js` | `resources/xae/build-plc-project.ps1` read as text against `src/xaeBuild.js`: ASCII, every flag buildDriverArgs emits is in `param()`, every event type emitted ⇔ handled, phases, fatal codes, prefix/`v`, exit 4, `Exit-Run` for every exit, the builder's safety markers (`$ownShellPid`, `Close($false)`, `Resolve-ActivationTarget`, ADS state 5, readback, the activation show), `UserControl` never set, the hide step guarded by `-not $ShowWindow`, cancel disarmed before activation, every builder line kept (additive), and `.vscodeignore` not excluding the driver. Windows-only counterpart: `scripts/Build PLC project/test-emit-event.ps1`. |
 | `test/test_multi_project_scope.js` | End-to-end: two copies of `sample/` under one workspace root (`test/_multiproject.js` builds the fixture, one copy deliberately diverged), driven through the real `scanWorkspace`. Asserts the partition (one index per project, nothing lost to a name collision), 0 diagnostics on the correct copy while the diverged copy's own real error still reports, references and the rename config scan never crossing the project boundary, and the library namespace/symbol registries staying per-project — including the Libraries-view union fallback when no project is specified. Needs `sample/`; skips cleanly when absent. |
 
 | `test/test_object_insert.js` | The Objects-tree insert commands' text, built by driving the **real** `buildNodeFromXml` over real `sample/` objects: the bare name for each kind, and the call template — instance name for an FB (`FB_Gripper` → `fbGripper`, since ST calls an instance, not the type), own name for a FUNCTION/PROGRAM, bare for a method/action, `Name();` when there are no parameters. Also pins that the extracted `callTemplate` is byte-identical to what `libraryTreeProvider` produced before the move, and that every `contextValue` named in the two new `when` clauses is one the Objects tree actually emits (read out of `objectsTreeModel.js`, not hard-coded, so a rename cannot silently orphan the menu items). **One case is synthetic on purpose:** no FB in `sample/` declares root `VAR_INPUT`/`VAR_OUTPUT`, so the mixed `:=`/`=>` ordering case is driven from one clearly-marked XML string through the real parser. |
@@ -513,6 +517,17 @@ src/
     xaeShellCommands    `twincat.detectXaeShell` + the silent activation-time fill of the two
                         `tcToolkit.xaeShell.path*` settings (EMPTY ones only, ConfigurationTarget.Global;
                         never overwrites). The VS Code half of xaeShellDetect
+    xaeBuildCommands    R14 Build through XAE: `twincat.xaeBuild`, `twincat.xaeBuildAndActivate`,
+                        `twincat.xaeShowTargets`, internal `twincat.xaeBuild.goToProblem`. Spawns
+                        resources/xae/build-plc-project.ps1 through runChild (onStdout → xaeBuild's
+                        splitter/reducer), the output channel `TC Toolkit XAE Build` (requested UI mode,
+                        then the mode read back from DTE), DiagnosticCollection `twincat-xae` (source
+                        "TC Toolkit XAE build"), pane markers via provider.setCompileSource(…, 'xae'),
+                        status bar, context key `twincat.xaeRunning`, one run at a time; the target pick +
+                        modal for activation; cancel file → grace → force stop (PowerShell tree + only an
+                        `ours` shell PID), never in activate/restart/verify; timeout; the headless stall
+                        offer; `setXaeOption` for the dropdowns. Reuses compileCommands' exported
+                        problemDiagnostic / openProblem / pickProjectKey
   checkUnit             Compile Project's check unit: one ST unit per TwinCAT object with a per-LINE
                         origin map back to component/pane/line. Pane text verbatim (never the export's
                         rewrites), members BEFORE the POU body. NOT the live path's unit. vscode-free
@@ -525,7 +540,8 @@ src/
                         `require()`d, never `--strict`) in
                         a temp dir deleted afterwards, timeout + cancel, JSON report → file/component/
                         pane/line, the pragma-warning filter (counted), the library filter (counted;
-                        messages on the generated declarations kept apart), paneRange. Spawn injected
+                        messages on the generated declarations kept apart), paneRange. Spawn injected.
+                        runChild takes optional onStdout/onStderr chunk callbacks (R14 streams events)
   cppGenerate           R13 C++ generation, vscode-free: the compiler's COMPILE mode (`-o <stem>.cpp`, a
                         second run after the check — `--json` exists only with `--check`) in a temp dir;
                         `<project dir>/CPP_Files/<stem>.cpp|.hpp` written under an ownership record
@@ -614,6 +630,16 @@ src/
                         (cache.settled()); the C/C++ provider resolves g++ again when it settles with a
                         root. findMsys2WithoutGpp: an MSYS2 root with no g++ in any environment.
                         Reuses xaeShellDetect's reg.exe runner (createRegRunner: no shell, 3 s timeout)
+  xaeBuild              R14 Build through XAE, vscode-free: the driver argv (`-ShowWindow` only for
+                        showWindow === true, never `-TcVersion`, activation only with a valid NetId),
+                        the JSON-lines splitter/parser (`@@TCTK ` prefix, v 1), the run-state reducer,
+                        describeExit (the exit code decides) / describeUiMode (the DTE readback),
+                        canCancel / isStalled, the target pick and the confirmation text
+  xaeBuildSettings      R14 `tcToolkit.xaeBuild.*` with defaults and clamps (showWindow false,
+                        Release, TwinCAT RT (x64), timeout 5-240 min, stall 2-60 min). Pure
+  xaeErrorPlacement     R14 where an XAE ErrorItem goes: the object file (absolute or .sln-relative),
+                        its line as pane line (default) or whole-unit line (raw lineMap), exact only with
+                        a section marker, else "(location approximate)"; unplaceable → general. Pure
   xaeShellDetect        Where the XAE Shell of 3.1.4024 / 3.1.4026 is installed, for the
                         tcToolkit.xaeShell.path* settings: COM registration (ProgID → CLSID →
                         LocalServer32 via `reg.exe query`, 3 s timeout), then the default Program Files
@@ -840,6 +866,9 @@ resources/
                         size + SHA-256 per file), include/*.hpp (the fork's src/runtime/include, R13:
                         what the g++ build compiles against; GPL-3.0-only WITH the runtime library
                         exception per the fork's COPYING). Ships in the VSIX
+  xae/build-plc-project.ps1  R14's driver: an ADDITIVE copy of scripts/Build PLC project/
+                        build_plc_project.ps1 (-Json, -ShowWindow, -ListTargets, -CancelFile; exit 4).
+                        Ships in the VSIX; hand-synced with the builder (see "XAE build (R14)")
 scripts/
   vendor-compiler.js    Copies a BUILT, clean fork checkout into resources/compiler/ and records its
                         commit. Dev-only, .vscodeignored
@@ -1736,6 +1765,89 @@ as `generatedCppFile` rows that open as text (`twincat.openComponent` treats `.c
 `GVL_System.fbStation.State` (a PROPERTY read through a global FB instance) is emitted as
 `FBSTATION.STATE` instead of the getter, so g++ fails on correct code that the check accepts.
 `test_cpp_real.js` lists it in `KNOWN_GPP_GAPS`; remove the entry when the fork fixes it.
+
+### XAE build (roadmap R14)
+
+"Build through XAE" builds the real solution with TwinCAT XAE's own compiler and libraries, and
+"Build and Activate through XAE…" also activates the configuration on a runtime of THIS machine and
+restarts it. Windows with XAE only; elsewhere the commands refuse and the dropdown entries are hidden.
+
+**Process chain.** `xaeBuildCommands` → `runChild` → `powershell.exe -NoProfile -NonInteractive
+-ExecutionPolicy Bypass -STA -File resources/xae/build-plc-project.ps1 -SlnPath … -Json …` → DCOM →
+`TcXaeShell.exe`. The shell is launched by COM activation, so it is **not** in PowerShell's process
+tree: killing PowerShell does not end it. The script censuses the shells before `New-Object` and quits
+only the one that appeared (`$ownShellPid`); a shell it cannot prove is its own is never closed.
+
+**The driver is a copy, kept additive.** `resources/xae/build-plc-project.ps1` is
+`scripts/Build PLC project/build_plc_project.ps1` (the proven headless builder) plus opt-in switches;
+without them it behaves exactly like the builder. Three copies exist and are synced **by hand**: the
+builder, `templates/build_plc_project.ps1`, and this driver (header line names the builder commit it was
+adapted from). `test/test_xae_driver_contract.js` fails if a builder line is lost without a listed
+reason. Keep the driver ASCII (Windows PowerShell 5.1 reads BOM-less scripts in the ANSI code page).
+
+**Protocol** (`-Json`): stdout lines starting `@@TCTK ` are compact JSON (`v: 1`, `t: <type>`, non-ASCII
+escaped `\uXXXX`, flushed per line); every other line is a human log line (UTF-8). `src/xaeBuild.js`
+reads both; a garbled event becomes a log line and a counted protocol warning, never an exception.
+
+| Event | Fields |
+|---|---|
+| `hello` | `mode` build/activate/listTargets, `showWindow` |
+| `plan` | `solution, tsproj, projectVersion, progId, pinned, configuration, platform, targetNetId` |
+| `shell` | `pid` (null when unproven), `ours`, `preexisting[]` |
+| `phase` | `name`: resolve, launch, pin, open, configure, build, errors, target, activate, restart, verify, close |
+| `ui` | `requested`, `suppressUI`, `mainWindowVisible` (read back from DTE; null when unreadable), `reason`: headless / requested / version-switch / build / activation / after-activation |
+| `warning`, `fatal` | `text`; fatal `code` (no-sln, ambiguous-sln, config-not-declared `data.declared`, no-tsproj, version-mismatch, progid-not-registered, target-refused `data.gate`, com-failure, shell-closed) |
+| `buildResult` | `failedProjects` (LastBuildInfo: the authority on pass/fail) |
+| `errorItem` | raw ErrorList fields `file, line, column, description, project, level` |
+| `outputPane` | `name, text, truncated` (failed builds; 256 KB cap) |
+| `target`, `activation` | readback after SetTargetNetId; `adsState`, `stateName`, `outcome` run/incomplete/failed/refused |
+| `targets` | ListTargets: `local[{netId, name, kind, platform, provenance}]`, `projectNetId` |
+| `done` | last, always (every exit goes through `Exit-Run`): `exitCode`, `ui{requested, buildPhase, versionSwitchKeptVisible, activationShown}` |
+
+**Exit codes decide the result**: 0 built (and activated, when asked), 1 compile errors, 2 harness/COM
+error (nothing built), 3 built but activation failed or was refused, 4 cancelled. Events only explain.
+
+**Headless and the switch.** By default the build is headless: `SuppressUI = true` and, after the pin
+step, `MainWindow.Visible = false`. `tcToolkit.xaeBuild.showWindow` (false by default) passes
+`-ShowWindow`: `SuppressUI = false` and the window visible for the whole run, the hide step skipped, and
+the activation `finally` does not re-suppress. `UserControl` is never set (it would keep the shell alive
+after release and break the census/Quit rule). Two exceptions hold in headless mode, both inherited from
+the builder:
+- **after a real TwinCAT version switch the window stays visible** — the switch reloads the shell
+  environment and a hidden window during that reload is what made the switch fragile. The extension
+  never passes `-TcVersion`, so this exception does not occur from the extension; it is kept so the
+  copy stays in step with the builder;
+- **activation always shows the window** and turns SuppressUI off — a licence or full-download dialog
+  under SuppressUI is an invisible hang, not a question. There is no setting or parameter to hide it.
+`describeUiMode` turns the `build` readback into the channel line ("hidden (SuppressUI=True,
+MainWindow.Visible=False) - headless"), which is how a user checks on Windows that headless worked.
+
+**Cancel and kill rule.** Before activation, cancel writes the `-CancelFile`; the driver checks it at
+every phase boundary and in its polling loops and stops with exit 4 (solution closed without saving,
+only its own shell quit). After a 60 s grace, a force stop kills PowerShell's tree (`taskkill /T /F`)
+and the shell PID **only if `shell.ours`**. The driver disarms the cancel file before the target/activate
+phases, and the extension refuses cancel and force stop in activate/restart/verify ("could leave the
+runtime in CONFIG"). The timeout (default 30 min) uses the same sequence; inside activation it extends
+once by 5 min and then only reports. The stall watchdog (headless only, outside the build call and
+activation) offers to cancel and re-run once with the window shown.
+
+**Activation** lists the local runtimes (`-ListTargets`, no COM), asks for one (the project's NetId
+marked, the last pick preselected from workspaceState — there is no target setting), and shows a
+**modal on every run** naming the target; nothing is spawned before it is confirmed. The driver's four
+pre-IDE gates (`Resolve-ActivationTarget`) and the post-set readback still refuse any non-local target;
+a readback that differs from the confirmed pick is reported as an error. RUN means ADS state 5.
+
+**Why placement lives in JS.** The ErrorList's file/line semantics are unknown until real Windows
+captures exist, and placing needs the XML parse and the raw lineMap the rest of the extension uses;
+`src/xaeErrorPlacement.js` is testable here, the ps1 reports raw fields only. Until fixtures exist, a
+line is read as a pane line (`lineBase: 'pane'`), exact only with a section marker, otherwise marked
+"(location approximate)"; the output-pane parser returns nothing.
+
+**Not done (phase 2, each waits for a Windows probe):** boot project + autostart and PLC RUN on port 851;
+remote targets (machine-scope setting, off by default, modal every run); building one nested PLC project
+(`BuildProject`); route listing; attaching to a running hidden shell to show it. Never: writing routes,
+saving the solution or `.tsproj`, activating without the modal, closing a shell this run did not start,
+automating the trial-licence dialog.
 
 ### Writes
 
