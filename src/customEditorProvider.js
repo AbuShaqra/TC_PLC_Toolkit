@@ -84,6 +84,18 @@ class TwinCatCustomEditorProvider {
          *   openTarget: (uriStr: string) => ({componentId: string, range: Object, targetWord: string|null}|null)}|null}
          */
         this.compileSource = null;
+        /**
+         * Every source of compile markers, by key: `compile` (Compile Project and its g++ build) and
+         * `xae` (Build through XAE, R14). `compileSource` above is their union, so one source's new
+         * results never erase another's markers.
+         * @type {Map<string, NonNullable<TwinCatCustomEditorProvider['compileSource']>>}
+         */
+        this.compileSources = new Map();
+        /** Build through XAE (R14): whether the dropdown offers it, and its window switch. */
+        this.xaeOptions = { available: false, showWindow: false, running: false };
+        /** @type {{options: () => {available: boolean, showWindow: boolean, running: boolean},
+         *   set: (key: string, value: boolean) => Promise<boolean>, run: (activate: boolean, fsPath: string) => Promise<any>}|null} */
+        this.xaeSource = null;
         /** Whether a Compile Project run is in progress (the toolbar button is disabled meanwhile). */
         this.compileRunning = false;
         /** The Compile dropdown's two switches as the settings have them (R13). */
@@ -139,11 +151,46 @@ class TwinCatCustomEditorProvider {
     }
 
     /**
-     * Connects Compile Project's results to the editors.
-     * @param {TwinCatCustomEditorProvider['compileSource']} source
+     * Connects one source of compile results to the editors. Each source is kept under its own key
+     * (Compile Project: `compile`, the default; Build through XAE: `xae`); the editors see the union.
+     * @param {TwinCatCustomEditorProvider['compileSource']} source Null removes the key.
+     * @param {string} [key]
      */
-    setCompileSource(source) {
-        this.compileSource = source;
+    setCompileSource(source, key = 'compile') {
+        if (source) this.compileSources.set(key, source);
+        else this.compileSources.delete(key);
+        const sources = () => [...this.compileSources.values()];
+        this.compileSource = this.compileSources.size === 0 ? null : {
+            paneDiagnostics: (uriStr) => sources().flatMap(s => s.paneDiagnostics(uriStr)),
+            onComponentEdited: (uriStr, componentId) => { for (const s of sources()) s.onComponentEdited(uriStr, componentId); },
+            openTarget: (uriStr) => {
+                for (const s of sources()) {
+                    const t = s.openTarget(uriStr);
+                    if (t) return t;
+                }
+                return null;
+            }
+        };
+    }
+
+    /**
+     * Connects Build through XAE (R14) to the Compile dropdown.
+     * @param {NonNullable<TwinCatCustomEditorProvider['xaeSource']>} source
+     */
+    setXaeSource(source) {
+        this.xaeSource = source;
+        this.xaeOptions = source.options();
+    }
+
+    /**
+     * Build through XAE's dropdown state changed: every open editor follows.
+     * @param {{available: boolean, showWindow: boolean, running: boolean}} options
+     */
+    setXaeOptions(options) {
+        this.xaeOptions = { available: !!(options && options.available), showWindow: !!(options && options.showWindow), running: !!(options && options.running) };
+        for (const panel of this.activePanels.values()) {
+            panel.webview.postMessage({ type: 'xaeOptions', options: this.xaeOptions });
+        }
     }
 
     /**
@@ -310,7 +357,8 @@ class TwinCatCustomEditorProvider {
                             fileUri: uriStr,
                             compileDiagnostics: this.compileSource ? this.compileSource.paneDiagnostics(uriStr) : [],
                             compileRunning: this.compileRunning,
-                            compileOptions: this.compileOptions
+                            compileOptions: this.compileOptions,
+                            xaeOptions: this.xaeOptions
                         });
                         // Cleared by the webview's `selectionApplied` ack, not here: if the highlight
                         // never lands (the panes were not populated yet), dropping it now would leave
@@ -613,6 +661,20 @@ class TwinCatCustomEditorProvider {
                         webviewPanel.webview.postMessage({ type: 'compileOptions', options: this.compileOptions });
                     }
                     break;
+                case 'setXaeOption':
+                    // Build through XAE's checkbox (R14): only the window switch, only a boolean.
+                    if (this.xaeSource && message.key === 'showWindow' && typeof message.value === 'boolean') {
+                        await this.xaeSource.set('showWindow', message.value);
+                    } else {
+                        webviewPanel.webview.postMessage({ type: 'xaeOptions', options: this.xaeOptions });
+                    }
+                    break;
+                case 'runXae':
+                    // "Build through XAE" / "Build and Activate through XAE…": for the solution of THIS file's project.
+                    if (this.xaeSource && typeof message.activate === 'boolean') {
+                        await this.xaeSource.run(message.activate, document.uri.fsPath);
+                    }
+                    break;
                 case 'compile-project':
                     // The toolbar's Compile button: the project that owns THIS file.
                     await this.compileProjectFor(document.uri.fsPath);
@@ -744,7 +806,13 @@ class TwinCatCustomEditorProvider {
         `<div class="split-menu-title" id="compile-menu-title">After a check with no errors</div>` +
         `<label class="split-menu-item" title="Write the project as C++ into its CPP_Files folder"><input type="checkbox" id="compile-opt-cpp"><span>Generate C++</span></label>` +
         `<label class="split-menu-item" title="Also compile that C++ with g++ (optional; turns Generate C++ on)"><input type="checkbox" id="compile-opt-gpp"><span>Build with g++</span></label>` +
-        `</div></div>
+        // Build through XAE (R14): Windows with TwinCAT XAE only; hidden until the host says it is available.
+        `<div id="xae-menu-section" hidden><div class="split-menu-separator" role="separator"></div>` +
+        `<div class="split-menu-title" id="xae-menu-title">Through TwinCAT XAE</div>` +
+        `<button type="button" class="split-menu-item split-menu-action" id="xae-build" title="Build the solution with XAE's own compiler and libraries (requires TwinCAT XAE)">Build through XAE</button>` +
+        `<button type="button" class="split-menu-item split-menu-action" id="xae-activate" title="Build, then activate the configuration on a runtime of this machine you pick and confirm (requires TwinCAT XAE)">Build and Activate through XAE…</button>` +
+        `<label class="split-menu-item" title="Show the XAE Shell window for the whole build instead of building headless (it is always shown during activation)"><input type="checkbox" id="xae-opt-window"><span>Show the XAE window</span></label>` +
+        `</div></div></div>
                 <div class="sync-toggle-container active" id="sync-toggle-wrapper">
                     <span class="sync-toggle-label" id="sync-mode-text">Auto Sync</span>
                     <label class="switch">

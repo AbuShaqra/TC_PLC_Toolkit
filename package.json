@@ -34,6 +34,9 @@
     "onCommand:twincat.openProject",
     "onCommand:twincat.generateSt",
     "onCommand:twincat.compileProject",
+    "onCommand:twincat.xaeBuild",
+    "onCommand:twincat.xaeBuildAndActivate",
+    "onCommand:twincat.xaeShowTargets",
     "onCommand:twincat.openSettings",
     "onCommand:twincat.detectXaeShell",
     "onCommand:twincat.detectGpp",
@@ -148,6 +151,21 @@
       {
         "command": "twincat.compileProject",
         "title": "Compile Project",
+        "category": "TC Toolkit"
+      },
+      {
+        "command": "twincat.xaeBuild",
+        "title": "Build through XAE (requires TwinCAT)",
+        "category": "TC Toolkit"
+      },
+      {
+        "command": "twincat.xaeBuildAndActivate",
+        "title": "Build and Activate through XAE… (requires TwinCAT)",
+        "category": "TC Toolkit"
+      },
+      {
+        "command": "twincat.xaeShowTargets",
+        "title": "Show Activation Targets (requires TwinCAT)",
         "category": "TC Toolkit"
       },
       {
@@ -664,9 +682,45 @@
         }
       },
       {
+        "id": "tcToolkit.xaeBuild",
+        "title": "XAE Build",
+        "order": 4,
+        "properties": {
+          "tcToolkit.xaeBuild.showWindow": {
+            "type": "boolean",
+            "default": false,
+            "markdownDescription": "**Show the XAE window.** Show the XAE Shell window for the whole build instead of building headless. The window is always shown during activation, so a licence or download dialog can be answered, and it stays visible after an XAE version switch. Used by *TC Toolkit: Build through XAE* and *Build and Activate through XAE…* (Windows with TwinCAT XAE only)."
+          },
+          "tcToolkit.xaeBuild.configuration": {
+            "type": "string",
+            "default": "Release",
+            "markdownDescription": "The solution configuration *Build through XAE* builds (with the platform below, one of the pairs the solution declares)."
+          },
+          "tcToolkit.xaeBuild.platform": {
+            "type": "string",
+            "default": "TwinCAT RT (x64)",
+            "markdownDescription": "The solution platform *Build through XAE* builds, as the TwinCAT solution names it (for example `TwinCAT RT (x64)` or `TwinCAT OS (x64)`). Activating onto a user-mode runtime needs its `TwinCAT OS (...)` platform."
+          },
+          "tcToolkit.xaeBuild.timeoutMinutes": {
+            "type": "number",
+            "default": 30,
+            "minimum": 5,
+            "maximum": 240,
+            "markdownDescription": "How many minutes a build through XAE may take before it is stopped (5 to 240). During activation it is extended once by 5 minutes and then only reported, never stopped."
+          },
+          "tcToolkit.xaeBuild.stallMinutes": {
+            "type": "number",
+            "default": 10,
+            "minimum": 2,
+            "maximum": 60,
+            "markdownDescription": "Headless watchdog: after this many minutes without any output outside the build itself, offer to cancel and re-run with the window shown (2 to 60). A hidden XAE Shell can wait on a dialog nobody sees."
+          }
+        }
+      },
+      {
         "id": "tcToolkit.libraryDefinitions",
         "title": "Library Definitions",
-        "order": 4,
+        "order": 5,
         "properties": {
           "tcToolkit.libraryDefinitions.shell": {
             "type": "string",
@@ -694,7 +748,7 @@
       {
         "id": "tcToolkit.startPage",
         "title": "Start Page",
-        "order": 5,
+        "order": 6,
         "properties": {
           "tcToolkit.startPage.recentProjectsShown": {
             "type": "integer",

@@ -341,8 +341,8 @@ const FILES = [
         assert(seenOut.join('') === 'line one\nline two\n' && seenErr.join('') === 'warn\n', 'runChild hands every chunk to onStdout / onStderr');
         assert(r.outcome === 'exit' && r.code === 3 && r.stdout === 'line one\nline two\n' && r.stderr === 'warn\n',
             'runChild still collects and returns the output with the callbacks set');
-        const plain = await cc.runChild(createFakeSpawn(() => ({ stdout: 'x', code: 0 })).spawn, 'x', [], { timeoutMs: 5000 });
-        assert(plain.stdout === 'x' && plain.code === 0, 'runChild without callbacks is unchanged');
+        const bare = await cc.runChild(createFakeSpawn(() => ({ stdout: 'x', code: 0 })).spawn, 'x', [], { timeoutMs: 5000 });
+        assert(bare.stdout === 'x' && bare.code === 0, 'runChild without callbacks is unchanged');
     }
 
     if (errors > 0) {

@@ -103,6 +103,61 @@ const OUTPUT_CHANNEL_NAME = 'TC Toolkit Compile';
  */
 
 /**
+ * The `twincat.openComponent` selection of a problem (0-based line and characters).
+ * @param {{pane: string, line: number, column: number, endLine: number, endColumn: number}} p
+ */
+function selectionOf(p) {
+    return {
+        pane: p.pane, localLine: p.line - 1,
+        start: { character: p.column - 1 },
+        end: { character: p.endLine === p.line ? p.endColumn - 1 : p.column - 1 }
+    };
+}
+
+/**
+ * Opens the editor on one problem: its component, pane and line. Shared with Build through XAE (R14).
+ * @param {{filePath: string, componentId: string, pane: string, line: number, column: number, endLine: number, endColumn: number}} p
+ */
+async function openProblem(p) {
+    await vscode.commands.executeCommand('twincat.openComponent', vscode.Uri.file(p.filePath), p.componentId, selectionOf(p), null);
+}
+
+/**
+ * The Problems-panel entry of a placed problem: pane coordinates (so Ln/Col match the pane the user
+ * reads), the component, pane and line in the message. Shared with Build through XAE (R14).
+ * @param {{componentId: string, pane: 'decl'|'impl', line: number, column: number, endLine?: number, endColumn?: number,
+ *   severity: string, message: string}} p
+ * @param {string} source
+ * @param {any} [link] The code's link target; without one the code is the location text alone.
+ * @returns {vscode.Diagnostic}
+ */
+function problemDiagnostic(p, source, link) {
+    const at = paneRange(p);
+    const range = new vscode.Range(at.start.line, at.start.character, at.end.line, at.end.character);
+    const where = describeLocation(p, memberName);
+    const d = new vscode.Diagnostic(range, `${p.message} [${where}]`,
+        p.severity === 'error' ? vscode.DiagnosticSeverity.Error
+            : (p.severity === 'warning' ? vscode.DiagnosticSeverity.Warning : vscode.DiagnosticSeverity.Information));
+    d.source = source;
+    d.code = link ? { value: where, target: link } : where;
+    return d;
+}
+
+/**
+ * One PLC project of the workspace: the only one, or the user's pick. Shared with Build through XAE.
+ * @param {{keys: () => Iterable<string>, displayName: (key: string) => string}} projectMap
+ * @param {{title: string, placeHolder: string}} labels
+ * @returns {Promise<string>} '' when the user dismissed the pick.
+ */
+async function pickProjectKey(projectMap, labels) {
+    const keys = [...projectMap.keys()];
+    if (keys.length === 1) return keys[0];
+    const items = keys.map(k => ({ label: projectMap.displayName(k), key: k })).sort((x, y) => x.label.localeCompare(y.label));
+    const picked = await vscode.window.showQuickPick(items, labels);
+    return picked ? picked.key : '';
+}
+
+/**
  * Why the g++ build did not run for want of a g++ (shown once, in the run's summary).
  * @param {{reason?: string, configured?: string, problem?: string, msys2Root?: string}} gpp `msys2Root`:
  *   MSYS2 is installed there without g++ (src/msys2Detect.js).
@@ -370,23 +425,10 @@ function registerCompileCommands(context, { provider, getProjectMap, onSettingsC
             byFile.delete(key);
             return;
         }
-        const diagnostics = entry.problems.map((p) => {
-            // Pane coordinates, so Ln/Col in the panel match the pane the user reads.
-            const at = paneRange(p);
-            const range = new vscode.Range(at.start.line, at.start.character, at.end.line, at.end.character);
-            const where = describeLocation(p, memberName);
-            const d = new vscode.Diagnostic(range, `${p.message} [${where}]`,
-                p.severity === 'error' ? vscode.DiagnosticSeverity.Error
-                    : (p.severity === 'warning' ? vscode.DiagnosticSeverity.Warning : vscode.DiagnosticSeverity.Information));
-            d.source = DIAGNOSTIC_SOURCE;
-            // The entry's code is a link back into this extension: it opens the component, pane and
-            // line, which a plain click cannot do for a custom editor.
-            d.code = {
-                value: where,
-                target: vscode.Uri.parse(`${vscode.env.uriScheme}://${context.extension.id}${PROBLEM_LINK_PATH}?id=${p.id}`)
-            };
-            return d;
-        });
+        // The entry's code is a link back into this extension: it opens the component, pane and
+        // line, which a plain click cannot do for a custom editor.
+        const diagnostics = entry.problems.map((p) => problemDiagnostic(p, DIAGNOSTIC_SOURCE,
+            vscode.Uri.parse(`${vscode.env.uriScheme}://${context.extension.id}${PROBLEM_LINK_PATH}?id=${p.id}`)));
         collection.set(entry.uri, diagnostics);
     }
 
@@ -418,19 +460,7 @@ function registerCompileCommands(context, { provider, getProjectMap, onSettingsC
      * @param {StoredProblem} p
      */
     async function goToProblem(p) {
-        await vscode.commands.executeCommand('twincat.openComponent', vscode.Uri.file(p.filePath), p.componentId, selectionOf(p), null);
-    }
-
-    /**
-     * The `twincat.openComponent` selection of a problem (0-based line and characters).
-     * @param {StoredProblem} p
-     */
-    function selectionOf(p) {
-        return {
-            pane: p.pane, localLine: p.line - 1,
-            start: { character: p.column - 1 },
-            end: { character: p.endLine === p.line ? p.endColumn - 1 : p.column - 1 }
-        };
+        await openProblem(p);
     }
 
     const allProblems = () => [...byFile.values()].flatMap(e => e.problems);
@@ -623,19 +653,9 @@ function registerCompileCommands(context, { provider, getProjectMap, onSettingsC
             }
 
             // One PLC project per run: each is its own compilation unit.
-            let key = typeof a.projectKey === 'string' ? a.projectKey : '';
-            if (!key) {
-                const keys = [...projectMap.keys()];
-                if (keys.length === 1) {
-                    key = keys[0];
-                } else {
-                    const items = keys.map(k => ({ label: projectMap.displayName(k), key: k }))
-                        .sort((x, y) => x.label.localeCompare(y.label));
-                    const picked = await vscode.window.showQuickPick(items, { title: 'Compile Project', placeHolder: 'PLC project to compile' });
-                    if (!picked) return { ok: false, reason: 'cancelled' };
-                    key = picked.key;
-                }
-            }
+            const key = typeof a.projectKey === 'string' && a.projectKey
+                ? a.projectKey : await pickProjectKey(projectMap, { title: 'Compile Project', placeHolder: 'PLC project to compile' });
+            if (!key) return { ok: false, reason: 'cancelled' };
             const project = projectMap.get(key);
             if (!project) return { ok: false, reason: 'no-project' };
             const projectName = projectMap.displayName(key);
@@ -882,6 +902,6 @@ function registerCompileCommands(context, { provider, getProjectMap, onSettingsC
 }
 
 module.exports = {
-    registerCompileCommands, describeCpp, compileStatusText, gppMissingText, gppMissingButtons, gppTooOldNote, gppTooOldButtons,
+    registerCompileCommands, problemDiagnostic, openProblem, selectionOf, pickProjectKey, describeCpp, compileStatusText, gppMissingText, gppMissingButtons, gppTooOldNote, gppTooOldButtons,
     DIAGNOSTIC_SOURCE, GPP_DIAGNOSTIC_SOURCE, PROBLEM_LINK_PATH, GO_TO_PROBLEM_COMMAND, OUTPUT_CHANNEL_NAME
 };

@@ -16,6 +16,7 @@ const { registerRenameCommands } = require('./src/commands/renameCommands');
 const { registerStartCommands } = require('./src/commands/startCommands');
 const { registerCompileCommands } = require('./src/commands/compileCommands');
 const { registerXaeShellCommands } = require('./src/commands/xaeShellCommands');
+const { registerXaeBuildCommands } = require('./src/commands/xaeBuildCommands');
 const { registerGppCommands } = require('./src/commands/gppCommands');
 const { defaultMsys2RootCache } = require('./src/msys2Detect');
 const { registerCppToolsProvider } = require('./src/commands/cppToolsCommands');
@@ -590,13 +591,20 @@ function activate(context) {
         onSettingsChanged: () => { if (start) start.startPage.postState(); },
         fillGppPath: gpp.autoFill
     });
+    // Build (and activate) through TwinCAT XAE (R14): the PowerShell driver in resources/xae/, headless
+    // unless tcToolkit.xaeBuild.showWindow is on. Windows only; elsewhere its commands refuse.
+    const xaeBuild = registerXaeBuildCommands(context, {
+        provider, getProjectMap: () => hostProjectMap, getSolutionMap: () => hostSolutionMap,
+        onSettingsChanged: () => { if (start) start.startPage.postState(); }
+    });
     // IntelliSense for the generated C++ in Microsoft's C/C++ extension, when it is installed (not awaited).
     registerCppToolsProvider(context, { getProjectMap: () => hostProjectMap });
 
     start = registerStartCommands(context, {
         provider, getProjectMap: () => hostProjectMap, getSolutionMap: () => hostSolutionMap,
         isCompilerAvailable: compile.isAvailable,
-        compileOptions: compile.compileOptions, setCompileOption: compile.setCompileOption
+        compileOptions: compile.compileOptions, setCompileOption: compile.setCompileOption,
+        xaeOptions: xaeBuild.xaeOptions, setXaeOption: xaeBuild.setXaeOption
     });
     /** @type {any} */ (start).recordOpenSolutions();
 

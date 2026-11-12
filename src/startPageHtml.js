@@ -149,7 +149,16 @@ function renderStartPageHtml(o) {
         `<span class="option-detail">Write the project as C++ into its CPP_Files folder when the check finds no errors</span></span></label>` +
         `<label class="option"><input type="checkbox" id="opt-build-gpp"><span class="option-text"><span class="option-label">Build with g++</span>` +
         `<span class="option-detail">Also compile that C++ with g++ (optional; needs g++, turns Generate C++ on)</span></span></label>` +
-        `</div></li>
+        // Build through XAE (R14): shown only on Windows (the host's xaeOptions.available).
+        `<div id="xae-options" class="xae-options" role="group" aria-label="Through TwinCAT XAE" hidden>` +
+        `<div class="option-separator" role="separator"></div>` +
+        `<button type="button" class="option-action" id="xae-build-run" data-command="twincat.xaeBuild"><span class="option-label">Build through XAE</span>` +
+        `<span class="option-detail">Build the solution with XAE's own compiler and libraries (requires TwinCAT XAE)</span></button>` +
+        `<button type="button" class="option-action" id="xae-activate-run" data-command="twincat.xaeBuildAndActivate"><span class="option-label">Build and Activate through XAE…</span>` +
+        `<span class="option-detail">Then activate on a runtime of this machine you pick and confirm</span></button>` +
+        `<label class="option"><input type="checkbox" id="opt-xae-window"><span class="option-text"><span class="option-label">Show the XAE window</span>` +
+        `<span class="option-detail">Build with the XAE Shell window visible instead of headless (it is always shown during activation)</span></span></label>` +
+        `</div></div></li>
                 </ul>
             </section>
             <section class="card" id="help" aria-labelledby="help-title">
@@ -166,6 +175,11 @@ function renderStartPageHtml(o) {
                 <div class="row wrap">
                     <button type="button" id="xae-change" class="secondary">Change…</button>
                     <button type="button" class="secondary" data-command="twincat.detectXaeShell">Detect again</button>
+                </div>
+                <h3 id="xae-build-title">XAE build</h3>
+                <p id="xae-build-mode" class="hint" aria-labelledby="xae-build-title">headless</p>
+                <div class="row wrap">
+                    <button type="button" id="xae-build-change" class="secondary" aria-describedby="xae-build-title">Change…</button>
                 </div>
                 <h3 id="gpp-title">g++</h3>
                 <p id="gpp-hint" class="hint">Optional: used only by Build with g++ in the Compile options.</p>
