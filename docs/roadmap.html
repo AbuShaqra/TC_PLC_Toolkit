@@ -145,7 +145,7 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
       <div class="eyebrow">VS Code extension · twincat-plc-toolkit</div>
       <h1>TC Toolkit Roadmap</h1>
       <div class="meta">
-        <span>Updated <b>2026-11-12</b> · R13 C++ generation + g++ check started, R14 simulation program next (your calls); R12 merged (PR #36) after your Windows checks; release L after S4 (your call); S4: LTIME (#131) and LDATE/LTOD/LDT (#132) merged; Table 36 date functions and the DT_TO_DATE fix added (your calls); S4 started; outside reads of VAR/VAR_INPUT stay refused (your call); S3b done (fork F4 #130); release K (<code>c1faca7</code>); releases H, I, J and K</span>
+        <span>Updated <b>2026-11-12</b> · R13 C++ generation + g++ check started; R14 build and run through XAE, R15 ADS monitoring next; g++ simulation to the Backlog (your calls); R12 merged (PR #36) after your Windows checks; release L after S4 (your call); S4: LTIME (#131) and LDATE/LTOD/LDT (#132) merged; Table 36 date functions and the DT_TO_DATE fix added (your calls); S4 started; outside reads of VAR/VAR_INPUT stay refused (your call); S3b done (fork F4 #130); release K (<code>c1faca7</code>); releases H, I, J and K</span>
         <span>Release <b>v0.10.1</b></span>
         <span>Re-measured <b>Nov 11</b></span>
         <span>Toolkit next <b>PR #36 Windows check</b></span>
@@ -386,7 +386,7 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
       </summary>
       <div class="body">
         <div class="block wide"><h4>Goal</h4><p>Compile Project can also write each PLC project's C++ to <code>&lt;project&gt;/CPP_Files/</code> and, optionally, compile it with g++ to prove it builds. Each has its own setting, off by default; turning the g++ build on turns generation on. g++ gets a path setting with detection, like the XAE Shell paths.</p></div>
-        <div class="block wide settled"><h4>Decided Nov 12 (your calls)</h4><p>The compile button gets a dropdown with <b>Generate C++</b> and <b>Build with g++</b> checkboxes, and the button does what they say. Files go to <code>CPP_Files</code> next to <code>ST_Files</code>. The g++ build is a compile check (an object file) for now; the simulation program is R14; ADS coupling with a running TwinCAT PLC is in the Backlog. Started now, in parallel with S4.</p></div>
+        <div class="block wide settled"><h4>Decided Nov 12 (your calls)</h4><p>The compile button gets a dropdown with <b>Generate C++</b> and <b>Build with g++</b> checkboxes, and the button does what they say. Files go to <code>CPP_Files</code> next to <code>ST_Files</code>. The g++ build is a compile check (an object file). When the project calls vendor-library blocks whose code isn't available, the check still runs and its summary says it does not cover them, naming the libraries. Next: R14 build and run through XAE, R15 ADS monitoring; the g++ simulation program is in the Backlog. Started now, in parallel with S4.</p></div>
         <div class="block wide"><h4>How it was estimated</h4><p>My sizing, not measured: settings and detection, the dropdown in the editor toolbar and on the start page, generation and the g++ check per project, runtime headers vendored next to the compiler, tests.</p></div>
       </div>
     </details>
@@ -394,18 +394,31 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
     <details class="card" id="r14">
       <summary>
         <div class="card-top"><span>#14</span><span class="id">R14</span><span class="pill planned">Planned · after R13</span><span class="chev" aria-hidden="true">›</span></div>
-        <div class="card-title">Simulation program</div>
+        <div class="card-title">Build and run through XAE</div>
         <div class="bar" aria-hidden="true"><span style="left:41.67%;width:8.33%"></span></div>
-        <div class="card-foot"><span>2 d → ~1.5 h</span><span>Nov 14</span></div>
+        <div class="card-foot"><span>3 d → ~2 h</span><span>Nov 14</span></div>
       </summary>
       <div class="body">
-        <div class="block wide"><h4>Goal</h4><p>Build the generated C++ with g++ into a standalone Windows program that runs your PLC code cyclically on the PC, outside TwinCAT. The project's tasks (cycle time, which programs run) are read from the solution into a CONFIGURATION; the compiler's debug interface lets you watch and force variables. Coupling it to a running TwinCAT PLC over ADS is a later Backlog item.</p></div>
+        <div class="block wide"><h4>Goal</h4><p>Run your real project, with its real libraries, on the real TwinCAT runtime from the toolkit. The toolkit drives XAE's Automation Interface (COM: <code>ITcSysManager</code>, <code>ITcPlcProject</code>, from PowerShell as Update Library Definitions already does) to build the PLC project with XAE's own compiler, pick the target, activate the configuration, restart TwinCAT and create or start the boot project. Local runtime, a remote target, or a trial licence.</p></div>
+        <div class="block wide settled"><h4>Decided Nov 12 (your call)</h4><p>The XAE route comes before any g++ simulation: vendor libraries (Tc2_*, Tc3_*) ship compiled, and only their signatures are available, so a g++ program cannot run them. The simulation program moved to the Backlog.</p></div>
+      </div>
+    </details>
+
+    <details class="card" id="r15">
+      <summary>
+        <div class="card-top"><span>#15</span><span class="id">R15</span><span class="pill planned">Planned · after R14</span><span class="chev" aria-hidden="true">›</span></div>
+        <div class="card-title">ADS online monitoring</div>
+        <div class="bar" aria-hidden="true"><span style="left:58.33%;width:8.33%"></span></div>
+        <div class="card-foot"><span>3 d → ~2 h</span><span>Nov 16</span></div>
+      </summary>
+      <div class="body">
+        <div class="block wide"><h4>Goal</h4><p>Watch and force variables of the running PLC from the editor over ADS (TCP 48898, AMS Net ID, a route on the target). Which ADS client the extension uses is open; an MIT-licensed one fits the project's licence.</p></div>
       </div>
     </details>
 
     <details class="card" id="r11">
       <summary>
-        <div class="card-top"><span>#15</span><span class="id">R11</span><span class="pill planned">Planned · last</span><span class="chev" aria-hidden="true">›</span></div>
+        <div class="card-top"><span>#16</span><span class="id">R11</span><span class="pill planned">Planned · last</span><span class="chev" aria-hidden="true">›</span></div>
         <div class="card-title">Publish to the VS Code Marketplace and Open VSX</div>
         <div class="bar" aria-hidden="true"><span style="left:91.67%;width:2.50%"></span></div>
         <div class="card-foot"><span>0.5 d → ~1 h</span><span>Nov 20</span></div>
@@ -625,12 +638,13 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
     <details class="card" id="backlog">
       <summary>
         <div class="card-top"><span>Backlog</span><span class="chev" aria-hidden="true">›</span></div>
-        <div class="card-title">Not scheduled · 18 items</div>
+        <div class="card-title">Not scheduled · 19 items</div>
       </summary>
       <div class="body">
         <div class="block wide"><p>The former backlog was scheduled as R6 to R10 on Nov 9. R6 to R9 merged in PR #33 on Nov 11, and R10 runs only on a trigger. What remains has no estimate on purpose:</p>
           <ul>
-            <li><b>ADS coupling of the simulation program</b> (your call, Nov 12; after R14): exchange variables between the R14 simulation program and a running TwinCAT PLC over ADS (TCP 48898, AMS Net ID, a route on the target), for example to feed simulated I/O. Code cannot be loaded into the TwinCAT runtime itself; only XAE builds and activates what it runs.</li>
+            <li><b>Simulation program</b> (moved from R14, your call, Nov 12): the generated C++ built with g++ into a standalone program that runs your PLC code cyclically on the PC. Good for your own logic and unit tests; it cannot run vendor-library blocks, whose code isn't available.</li>
+            <li><b>ADS coupling of the simulation program</b> (your call, Nov 12; after the simulation program): exchange variables between the R14 simulation program and a running TwinCAT PLC over ADS (TCP 48898, AMS Net ID, a route on the target), for example to feed simulated I/O. Code cannot be loaded into the TwinCAT runtime itself; only XAE builds and activates what it runs.</li>
             <li><b>On your Windows machine, about 1 hour of your time:</b> Libraries-view scoping, library member expansion, squiggle rendering, and closing the peek over the real bridge.</li>
             <li><b>Showcase screenshots:</b> the scripts live only on your machine; moving them into the repo takes about 30 minutes once they are here.</li>
             <li><b>R12b informational branch state:</b> evaluate the <code>.plcproj</code> defines in the language server for a hover on <code>{IF}</code> and greying of inactive branches. It must never feed diagnostics. <b>Open question for you:</b> Debug configuration only, or only where all configurations agree. Follow-up from R12.</li>
@@ -711,8 +725,9 @@ var PLAN = [
   { lane: 'TC Toolkit', num: 11, id: 'R3.5', card: 'r3-5', name: 'Compiler at release I, defines', est: '— → ~6.8 h actual', start: '2026-11-11', end: '2026-11-11', machine: true, status: 'done', actualStart: '2026-11-11T17:05:00Z', actualEnd: '2026-11-11T23:55:00Z' },
   { lane: 'TC Toolkit', num: 12, id: 'R12', card: 'r12', name: '{IF}-aware diagnostics', est: '1 d → ~45 min', start: '2026-11-12', end: '2026-11-12', days: 0.5, offset: 0.5, status: 'done', actualStart: '2026-11-11T23:57:00Z', actualEnd: '2026-11-12T10:56:00Z' },
   { lane: 'TC Toolkit', num: 13, id: 'R13', card: 'r13', name: 'C++ generation + g++ check', est: '3 d → ~2.5 h', start: '2026-11-12', end: '2026-11-13', status: 'progress', actualStart: '2026-11-12T11:30:00Z' },
-  { lane: 'TC Toolkit', num: 14, id: 'R14', card: 'r14', name: 'Simulation program', est: '2 d → ~1.5 h', start: '2026-11-14', end: '2026-11-14', days: 0.5, offset: 0 },
-  { lane: 'TC Toolkit', num: 15, id: 'R11', card: 'r11', name: 'Marketplace publishing', est: '0.5 d → ~1 h', start: '2026-11-20', end: '2026-11-20', days: 0.3, offset: 0, machine: true },
+  { lane: 'TC Toolkit', num: 14, id: 'R14', card: 'r14', name: 'Build + run through XAE', est: '3 d → ~2 h', start: '2026-11-14', end: '2026-11-14', days: 0.6, offset: 0 },
+  { lane: 'TC Toolkit', num: 15, id: 'R15', card: 'r15', name: 'ADS online monitoring', est: '3 d → ~2 h', start: '2026-11-16', end: '2026-11-16', days: 0.6, offset: 0 },
+  { lane: 'TC Toolkit', num: 16, id: 'R11', card: 'r11', name: 'Marketplace publishing', est: '0.5 d → ~1 h', start: '2026-11-20', end: '2026-11-20', days: 0.3, offset: 0, machine: true },
   { lane: 'STruC++ fork',   num: 1, id: 'S2',   card: 's2',   name: 'Fork compiler gaps',     est: '27.5 d → ~11.2 h', start: '2026-11-09', end: '2026-11-09', status: 'done', actualStart: '2026-11-09T12:04:17Z', actualEnd: '2026-11-09T23:16:55Z' },
   { lane: 'STruC++ fork',   num: 2, id: 'S3a',  card: 's3a',  name: 'False positives',        est: '3 d → ~1 h',  start: '2026-11-09', end: '2026-11-10', days: 0.3, status: 'done', actualStart: '2026-11-09T23:18:00Z', actualEnd: '2026-11-10T00:12:35Z' },
   { lane: 'STruC++ fork',   num: 3, id: 'S3b',  card: 's3b',  name: 'S2 follow-ups',          est: '7 d → ~3.5 h', start: '2026-11-10', end: '2026-11-12', days: 1.2, offset: 0.3, status: 'done', actualStart: '2026-11-10T00:14:00Z', actualEnd: '2026-11-12T00:20:00Z' },
