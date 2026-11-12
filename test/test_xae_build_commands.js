@@ -10,8 +10,12 @@
  * sources' pane markers shown together); activation lists targets, asks a modal every time, spawns
  * nothing when it is dismissed and passes exactly the confirmed NetId; cancel goes through the cancel
  * file (exit 4, nothing killed), then the force stop kills PowerShell's tree and only a shell the run
- * started; no cancel during activation; the timeout; the stall offer re-runs with the window shown;
- * the non-Windows refusal; one run at a time; a configuration the solution does not declare.
+ * started (and only while it is an XAE Shell); no cancel during target/activation, also when activation
+ * begins inside the grace period; the timeout, and its extension when it falls in activation; the
+ * stall offer re-runs with the window shown, but not after a run that finished or refused the stop;
+ * a run that stopped before a build result (or an unconfirmed exit 1) keeps the previous Problems;
+ * a Problems entry links back to its component; the non-Windows refusal; one run at a time; a
+ * configuration the solution does not declare.
  */
 
 'use strict';
@@ -52,6 +56,7 @@ const uri = (p) => ({ fsPath: p, scheme: 'file', path: p, query: '', toString: (
 class Range { constructor(sl, sc, el, ec) { this.start = { line: sl, character: sc }; this.end = { line: el, character: ec }; } }
 class Diagnostic { constructor(range, message, severity) { this.range = range; this.message = message; this.severity = severity; } }
 const collections = [];
+const uriHandlers = [];
 /** The progress token of the run in progress; `cancel()` fires its cancellation. */
 let currentToken = null;
 const message = (bucket) => async (m, ...rest) => {
@@ -64,7 +69,7 @@ const channels = [];
 const vscodeStub = {
     Uri: {
         file: uri,
-        parse: (s) => ({ scheme: 'vscode', path: s, query: '', fsPath: s, toString: () => s })
+        parse: (s) => { const u = new URL(s); return { scheme: u.protocol.slice(0, -1), authority: u.host, path: u.pathname, query: u.search.slice(1), fsPath: s, toString: () => s }; }
     },
     Range, Diagnostic,
     ConfigurationTarget: { Global: 1, Workspace: 2, WorkspaceFolder: 3 },
@@ -123,7 +128,7 @@ const vscodeStub = {
             currentToken = token;
             return task({ report: (v) => reports.push(v) }, token);
         },
-        registerUriHandler: () => ({ dispose() {} }),
+        registerUriHandler: (h) => { uriHandlers.push(h); return { dispose() {} }; },
         createOutputChannel: (name) => {
             const ch = { name, lines: [], appendLine(l) { this.lines.push(l); }, show() {}, dispose() {} };
             channels.push(ch);
@@ -144,7 +149,7 @@ Module._load = function (request) {
     return realLoad.apply(this, arguments);
 };
 
-const { registerXaeBuildCommands, OUTPUT_CHANNEL_NAME, DIAGNOSTIC_SOURCE, LAST_TARGET_KEY, CANCEL_REFUSED_TEXT, PLATFORM_TEXT, STALL_RERUN, projectTcBuild } =
+const { registerXaeBuildCommands, OUTPUT_CHANNEL_NAME, DIAGNOSTIC_SOURCE, LAST_TARGET_KEY, CANCEL_REFUSED_TEXT, LAUNCH_STOP_TEXT, PLATFORM_TEXT, STALL_RERUN, projectTcBuild } =
     require('../src/commands/xaeBuildCommands');
 const { registerCompileCommands } = require('../src/commands/compileCommands');
 const { TwinCatCustomEditorProvider } = require('../src/customEditorProvider');
@@ -241,7 +246,39 @@ const rows = (name) => readFixture(name).lines;
     assert(api.problems().length === 2 && provider.compileSource.paneDiagnostics(fbUri.toString()).length === 2, 'the XAE problems reach the editor panes');
     assert(channel().lines.some(l => /error \(not placed\): Build aborted/.test(l)), 'an unplaced error is listed in the channel');
     assert(calls.errors.some(e => /3 errors \(2 placed in Problems\)/.test(e.m) && e.buttons.includes('Go to Problem…')), 'the summary counts placed errors and offers Go to Problem');
-    provider.compileSource.onComponentEdited(fbUri.toString(), 'root');
+    // The entry's code links back into the extension: the URI handler opens the component and pane.
+    const link = diags[0].code && diags[0].code.target;
+    assert(link && link.path === '/xaeProblem' && /^id=\d+$/.test(link.query) && link.authority === 'pub.twincat-plc-toolkit',
+        'an XAE Problems entry links to /xaeProblem?id=');
+    const opensBefore = calls.executed.filter(e => e.id === 'twincat.openComponent').length;
+    for (const h of uriHandlers) await h.handleUri(link);
+    const open = calls.executed.filter(e => e.id === 'twincat.openComponent');
+    assert(open.length === opensBefore + 1 && open[open.length - 1].args[0].fsPath === FB && open[open.length - 1].args[1] === 'root'
+        && open[open.length - 1].args[2].pane === 'impl' && open[open.length - 1].args[2].localLine === 2,
+        'clicking it opens the component on its pane and line (through the one URI handler)');
+    const target = provider.compileSource.openTarget(fbUri.toString());
+    assert(target && target.componentId === 'root' && target.range.pane === 'impl' && provider.compileSource.openTarget(fbUri.toString()) === null,
+        'a freshly opened editor goes to the first XAE problem, once per run');
+    // Both sources merge: Compile Project's markers stay with the XAE ones, and edits reach both.
+    {
+        const realCompile = provider.compileSources.get('compile');
+        const xaeSource = provider.compileSources.get('xae');
+        const edited = [];
+        provider.setCompileSource({
+            paneDiagnostics: () => [{ componentId: 'root', pane: 'decl', severity: 1, message: 'compile marker', range: { startLineNumber: 1, startColumn: 1, endLineNumber: 1, endColumn: 2 } }],
+            onComponentEdited: (u, c) => edited.push(c),
+            openTarget: () => null
+        }, 'compile');
+        const both = provider.compileSource.paneDiagnostics(fbUri.toString());
+        assert(both.length === 3 && both.some(m => m.message === 'compile marker'), 'Compile Project\'s pane markers and the XAE ones are shown together');
+        provider.setCompileSource(null, 'xae');
+        const onlyCompile = provider.compileSource.paneDiagnostics(fbUri.toString());
+        assert(onlyCompile.length === 1 && onlyCompile[0].message === 'compile marker', 'removing the XAE source leaves Compile Project\'s markers');
+        provider.setCompileSource(xaeSource, 'xae');
+        provider.compileSource.onComponentEdited(fbUri.toString(), 'root');
+        assert(edited.includes('root'), 'an edit reaches Compile Project\'s source too');
+        provider.setCompileSource(realCompile, 'compile');
+    }
     assert(api.problems().length === 0 && !xaeCollection.map.has(fbUri.toString()), 'editing the component drops its XAE problems');
     driver = () => ({ fixture: 'errors-panes-only' });
     await run('twincat.xaeBuild', {});
@@ -284,6 +321,13 @@ const rows = (name) => readFixture(name).lines;
     r = await run('twincat.xaeBuildAndActivate', {});
     assert(!r.ok && r.targetMismatch && calls.errors.some(e => /not the confirmed 198\.51\.100\.1\.1\.1/.test(e.m)), 'a target readback that differs from the pick is an error');
 
+    // Problems that a stopped run must not clear.
+    const errorRun = () => ({ lines: rows('errors-errorlist').map(l => (l.t === 'errorItem' && l.file ? { ...l, file: 'TcToolkitSample_PLC\\POUs\\Machine\\FB_Station.TcPOU' } : l)), exit: 1 });
+    driver = errorRun;
+    await run('twincat.xaeBuild', {});
+    const keptProblems = api.problems().length;
+    assert(keptProblems === 2 && xaeCollection.map.has(fbUri.toString()), 'an exit-1 run published 2 problems');
+
     // ── Cancel: the cancel file first ───────────────────────────────────────────────────────────
     const hangRows = [{ v: 1, t: 'hello', mode: 'build', showWindow: false }, { v: 1, t: 'shell', pid: 4242, ours: true, preexisting: [] }, { v: 1, t: 'phase', name: 'open' }];
     driver = () => ({ lines: hangRows, onCancelFile: { lines: rows('cancelled').slice(-2), exit: 4 } });
@@ -317,6 +361,34 @@ const rows = (name) => readFixture(name).lines;
     assert(fake.killedPids.length === 1 && fake.killedPids[0] === lastSpawn().pid && !fake.killedPids.includes(77),
         'a shell this run did not start is never killed (only PowerShell is)');
     assert(channel().lines.some(l => /left running/.test(l)), 'the channel says the shell was left running');
+    const shellKill = fake.taskkills.find(a => a.includes('4242'));
+    assert(shellKill && shellKill[shellKill.indexOf('/FI') + 1] === 'IMAGENAME eq TcXaeShell*',
+        'the shell is killed only while its PID is still an XAE Shell (image filter)');
+    assert(api.problems().length === keptProblems && (xaeCollection.map.get(fbUri.toString()) || []).length === keptProblems,
+        'a cancelled or force-stopped run keeps the previous Problems');
+
+    // A force stop during launch: the shell may exist but is not identified yet.
+    driver = () => ({ lines: [{ v: 1, t: 'hello', mode: 'build', showWindow: false }, { v: 1, t: 'phase', name: 'launch' }], onCancelFile: { ignore: true } });
+    p = run('twincat.xaeBuild', {});
+    await waitFor(() => lastSpawn().args.includes('-CancelFile') && lastSpawn() !== call && currentToken);
+    await new Promise(res => setTimeout(res, 10));
+    currentToken.cancel();
+    await p;
+    assert(channel().lines.some(l => l.endsWith(LAUNCH_STOP_TEXT)), 'a force stop during launch says an XAE Shell may have been left running');
+
+    // Exit 1 that the driver did not confirm (script never ran, killed from outside): not a build result.
+    {
+        // A UTF-8 character and a line split across stderr chunks stay whole.
+        const text = Buffer.from('WARNUNG: Ger\u00e4t nicht gefunden\r\nFile x.ps1 cannot be loaded because running scripts is disabled.\r\n', 'utf8');
+        const cut = text.indexOf(Buffer.from('\u00e4', 'utf8')) + 1;
+        driver = () => ({ lines: [{ log: '#< CLIXML' }], exit: 1, stderrChunks: [text.subarray(0, cut), text.subarray(cut, cut + 30), text.subarray(cut + 30)] });
+    }
+    r = await run('twincat.xaeBuild', {});
+    assert(!r.ok && /interrupted before it finished \(exit code 1\)/.test(r.title) && calls.errors.some(e => /interrupted before it finished/.test(e.m)),
+        'an unconfirmed exit 1 is reported as interrupted, not as compile errors');
+    assert(channel().lines.includes('WARNUNG: Ger\u00e4t nicht gefunden') && channel().lines.includes('File x.ps1 cannot be loaded because running scripts is disabled.'),
+        'stderr is decoded and split across chunks');
+    assert(api.problems().length === keptProblems, 'and it keeps the previous Problems');
 
     // ── No cancel during activation ─────────────────────────────────────────────────────────────
     fake.killedPids.length = 0;
@@ -336,6 +408,22 @@ const rows = (name) => readFixture(name).lines;
     call.child.emit('close', 0);
     await p;
 
+    // Activation begins inside the grace period: the re-check refuses the force stop.
+    fake.killedPids.length = 0;
+    driver = () => ({ lines: hangRows, onCancelFile: { lines: [{ v: 1, t: 'phase', name: 'target' }, { v: 1, t: 'phase', name: 'activate' }], stay: true } });
+    p = run('twincat.xaeBuild', {});
+    await waitFor(() => lastSpawn() !== call && lastSpawn().args.includes('-CancelFile') && currentToken);
+    call = lastSpawn();
+    await new Promise(res => setTimeout(res, 10));
+    const warnsBefore = calls.warnings.length;
+    currentToken.cancel();
+    await new Promise(res => setTimeout(res, 120)); // > graceMs (40)
+    assert(call.cancelFileSeen && fake.killedPids.length === 0 && !call.killed, 'activation began during the grace period: nothing is killed');
+    assert(channel().lines.some(l => l.endsWith(CANCEL_REFUSED_TEXT)) && calls.warnings.slice(warnsBefore).some(w => w.m === CANCEL_REFUSED_TEXT),
+        'and the user is told the run will finish on its own');
+    call.child.emit('close', 0);
+    await p;
+
     // ── One run at a time ───────────────────────────────────────────────────────────────────────
     driver = () => ({ lines: hangRows, onCancelFile: { lines: rows('cancelled').slice(-2), exit: 4 } });
     p = run('twincat.xaeBuild', {});
@@ -352,7 +440,37 @@ const rows = (name) => readFixture(name).lines;
     driver = () => ({ lines: hangRows, onCancelFile: { lines: rows('cancelled').slice(-2), exit: 4 } });
     r = await run('twincat.xaeBuild', {});
     assert(r.outcome === 'timeout' && lastSpawn().cancelFileSeen && /timed out/.test(r.title), 'a timeout writes the cancel file and is reported as a timeout');
+    // The timeout falls during activation: no stop, 5 more minutes, then only a warning.
+    fake.killedPids.length = 0;
+    driver = () => ({ lines: activating, hang: true });
+    p = run('twincat.xaeBuild', {});
+    await waitFor(() => channel().lines.some(l => /Timed out during activation; check the target/.test(l)), 1500);
+    call = lastSpawn();
+    assert(channel().lines.some(l => /timeout fell during activation; waiting 5 more minutes/.test(l)) && fake.killedPids.length === 0 && !call.cancelFileSeen,
+        'a timeout during activation waits 5 more minutes and stops nothing');
+    call.child.emit('close', 0);
+    r = await p;
+    assert(/^Timed out during activation; check the target\./.test(r.title), 'then the result says to check the target');
+    // The timeout's stop is refused (activation began in the grace period): still watched, not a timeout.
+    driver = () => ({ lines: hangRows, onCancelFile: { lines: [{ v: 1, t: 'phase', name: 'target' }], stay: true } });
+    const linesBefore = channel().lines.length;
+    p = run('twincat.xaeBuild', {});
+    await waitFor(() => channel().lines.slice(linesBefore).some(l => /Timed out during activation; check the target/.test(l)), 1500);
+    call = lastSpawn();
+    assert(call.cancelFileSeen && fake.killedPids.length === 0 && channel().lines.slice(linesBefore).some(l => /waiting 5 more minutes/.test(l)),
+        'a refused timeout stop is re-armed: 5 more minutes, then the warning, nothing killed');
+    call.child.emit('close', 0);
+    r = await p;
+    assert(r.outcome === 'exit' && /^Timed out during activation/.test(r.title), 'and the run is not reported as stopped by the timeout');
     settings['tcToolkit.xaeBuild.timeoutMinutes'] = 240;
+    // The timeout's runs kept the Problems of the last build that reached a result.
+    driver = errorRun;
+    await run('twincat.xaeBuild', {});
+    settings['tcToolkit.xaeBuild.timeoutMinutes'] = 5;
+    driver = () => ({ lines: hangRows, onCancelFile: { lines: rows('cancelled').slice(-2), exit: 4 } });
+    r = await run('twincat.xaeBuild', {});
+    settings['tcToolkit.xaeBuild.timeoutMinutes'] = 240;
+    assert(r.outcome === 'timeout' && api.problems().length === 2 && xaeCollection.map.has(fbUri.toString()), 'a timed-out run keeps the previous Problems');
 
     // ── Stall: headless only; the offer re-runs with the window shown ───────────────────────────
     const stallRows = [{ v: 1, t: 'hello', mode: 'build', showWindow: false }, { v: 1, t: 'phase', name: 'open' }];
@@ -366,6 +484,43 @@ const rows = (name) => readFixture(name).lines;
     assert(rerun.length === 2 && !rerun[0].args.includes('-ShowWindow') && rerun[1].args.includes('-ShowWindow') && r.ok,
         'a stalled headless run, cancelled from the offer, re-runs once with -ShowWindow');
     assert(settings['tcToolkit.xaeBuild.showWindow'] === false, 'the re-run does not change the setting');
+
+    // The stopped run reports one channel line, no notification; the shell check is not asked twice.
+    settings['tcToolkit.xaeShell.path4026'] = '';
+    n = 0;
+    driver = () => (n++ === 0 ? { lines: stallRows, onCancelFile: { lines: rows('cancelled').slice(-2), exit: 4 } } : { fixture: 'build-ok-visible' });
+    answers.stall = STALL_RERUN;
+    answers.message.push('Run anyway');
+    const warnCount = calls.warnings.length;
+    r = await run('twincat.xaeBuild', {});
+    answers.stall = undefined;
+    settings['tcToolkit.xaeShell.path4026'] = __filename;
+    const newWarnings = calls.warnings.slice(warnCount);
+    assert(r.ok && newWarnings.filter(w => /No XAE Shell for TwinCAT/.test(w.m)).length === 1, 'the re-run does not ask the shell check again');
+    assert(!newWarnings.some(w => /cancelled|stopped/.test(w.m)) && channel().lines.some(l => /Stopped; re-running with the XAE window shown\./.test(l)),
+        'the stopped run shows no cancelled notification, one channel line');
+
+    // The run finished on its own while the offer was answered: no re-run.
+    n = 0;
+    driver = () => (n++ === 0 ? { lines: stallRows, onCancelFile: { lines: rows('build-ok-headless').slice(-1), exit: 0 } } : { fixture: 'build-ok-visible' });
+    answers.stall = STALL_RERUN;
+    let stallSpawns = builds().length;
+    r = await run('twincat.xaeBuild', {});
+    answers.stall = undefined;
+    assert(builds().length === stallSpawns + 1 && r.ok && r.exitCode === 0, 'a run that exits 0 after the cancel file is not re-run');
+
+    // The stop is refused (activation began meanwhile): no re-run.
+    n = 0;
+    driver = () => (n++ === 0 ? { lines: stallRows, onCancelFile: { lines: [{ v: 1, t: 'phase', name: 'activate' }], stay: true } } : { fixture: 'build-ok-visible' });
+    answers.stall = STALL_RERUN;
+    stallSpawns = builds().length;
+    p = run('twincat.xaeBuild', {});
+    await waitFor(() => builds().length === stallSpawns + 1 && lastSpawn().cancelFileSeen);
+    await new Promise(res => setTimeout(res, 120));
+    answers.stall = undefined;
+    lastSpawn().child.emit('close', 0);
+    r = await p;
+    assert(builds().length === stallSpawns + 1 && r.exitCode === 0, 'a refused stop is not followed by a re-run');
 
     // ── A configuration the solution does not declare ───────────────────────────────────────────
     n = 0;

@@ -612,6 +612,16 @@ function assert(cond, msg) {
         await page.keyboard.press('ArrowDown');
         const xaeFocus = await page.evaluate(() => document.activeElement && document.activeElement.id);
         assert(xaeFocus === 'xae-activate', `R14: ArrowDown walks through the XAE entries too (${xaeFocus})`);
+        const xaeMenu = await page.evaluate(() => {
+            const menu = document.getElementById('compile-menu');
+            document.activeElement.blur();
+            menu.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true }));
+            return { focus: document.activeElement ? document.activeElement.id : '', title: document.getElementById('compile-caret').title,
+                heading: document.getElementById('xae-menu-title').textContent };
+        });
+        assert(xaeMenu.focus === 'xae-opt-window', `R14: ArrowUp with no item focused goes to the last entry, Show the XAE window (${xaeMenu.focus})`);
+        assert(xaeMenu.title === 'Compile options: C++ generation, the g++ build and the XAE build' && xaeMenu.heading === 'Through XAE' && !/TwinCAT/.test(xaeMenu.heading),
+            `R14: the caret's tooltip names the XAE build; the section heading does not name TwinCAT (${JSON.stringify(xaeMenu)})`);
         await page.click('#xae-opt-window');
         await page.click('#xae-build');
         let xm = await page.evaluate(() => window.__harness.sent.filter(m => m.type === 'setXaeOption' || m.type === 'runXae'));

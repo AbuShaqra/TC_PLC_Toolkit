@@ -110,6 +110,14 @@ assert(disarm > 0, 'cancellation is disarmed before the target/activate phases')
 const afterDisarm = ps1.slice(disarm, ps1.indexOf("Enter-Phase 'close'"));
 assert(!/\$script:CancelArmed\s*=\s*(?![\s$]false|\s)/.test(afterDisarm), 'nothing re-arms cancellation between activation and close');
 assert((ps1.match(/\$script:CancelArmed\s*=\s*(?![\s$]false|\s)/g) || []).length === 1, 'cancellation is armed in exactly one place (from -CancelFile, at the top)');
+// Every phase the driver enters right after disarming (except the finally's 'close') is one the JS
+// side never cancels: a cancel there would be ignored and could only end in a force stop.
+const disarmedPhases = [...ps1.matchAll(/\$script:CancelArmed = \$false\r?\n\s*Enter-Phase '([a-z]+)'/g)].map(m => m[1]).filter(p => p !== 'close');
+assert(disarmedPhases.includes('target') && disarmedPhases.every(p => x.UNINTERRUPTIBLE_PHASES.includes(p)),
+    `every phase entered after the disarm is uninterruptible in JS (${disarmedPhases.join(', ')})`);
+const phaseOrder = [...ps1.matchAll(/Enter-Phase '([a-z]+)'/g)].map(m => m[1]);
+const fromTarget = phaseOrder.slice(phaseOrder.indexOf('target'), phaseOrder.lastIndexOf('close'));
+assert(fromTarget.every(p => x.UNINTERRUPTIBLE_PHASES.includes(p)), `no cancellable phase between the disarm and close (${fromTarget.join(', ')})`);
 assert(/if \("\$_" -eq \$script:CancelSentinel\) \{ throw \}/.test(ps1), 'the pin step does not forgive a cancel as a COM failure');
 
 // ── Additive only: every builder line that is not an `exit` survived ───────────────────────────
@@ -121,10 +129,42 @@ if (fs.existsSync(BUILDER)) {
     // The four allowed rewrites: the provenance comment (privacy scrub), three guarded lines.
     const allowed = [/^# This script is copied between/, /^# `<repo>/, /^# resolves to the wrong directory/, /^# sits one level further up/,
         /^\[string\]\$TargetNetId$/, /^if \(-not \$SlnPath\) \{$/, /^try \{$/, /^\} catch \{ \}$/, /^foreach \(\$w in /, /^if \(-not \$didSwitchVersion\) \{$/,
-        /^catch \{ \$activationFault = "\$_" \}$/, /^if \(-not \$uiWasSuppressed\) /];
+        /^catch \{ \$activationFault = "\$_" \}$/, /^if \(-not \$uiWasSuppressed\) /,
+        // Real paths go to -LiteralPath (a folder named 'Line [2]' is not a wildcard); a UNC solution
+        // needs ProviderPath, not the provider-qualified Path.
+        /^return \(Resolve-Path -LiteralPath \$candidate\)\.Path$/, /(Get-ChildItem|Select-String) -Path \$/, /^if \(-not \(Test-Path \$SlnPath\)\)/,
+        // The error list and the output panes are read with Invoke-ComRetry, one item at a time.
+        /^\$items = \$dte\.ToolWindows/, /^for \(\$N = 1; \$N -le \$items\.Count/, /^\$it = \$items\.Item/, /^foreach \(\$pane in \$ow\.OutputWindowPanes\)/,
+        /^\$doc = \$pane\.TextDocument$/, /^\$sel = \$doc\.Selection$/, /^\$sel\.(StartOfDocument|EndOfDocument)\(/, /^\$txt = \$sel\.Text$/];
     const unexplained = lost.filter(l => !allowed.some(re => re.test(l)));
     assert(unexplained.length === 0, `the adaptation is additive: no builder line lost without a reason (${unexplained.slice(0, 3).join(' | ') || 'none'})`);
     assert(fs.readFileSync(BUILDER, 'utf8').includes('# This script is copied between projects'), 'the builder itself is untouched');
+}
+
+// ── Real paths are literal; the shell census gates every DTE call ──────────────────────────────
+{
+    const code = ps1.replace(/<#[\s\S]*?#>/g, '').split(/\r?\n/).filter(l => !/^\s*#/.test(l)).join('\n');
+    const wildcard = [...code.matchAll(/(Get-ChildItem|Select-String|Test-Path|Get-Content|Resolve-Path)\s+(?:-Path\s+)?(\$[A-Za-z]+|\(Split-Path)/g)]
+        .filter(m => !/^\$(ProgId)$/.test(m[2]))
+        .map(m => m[0]);
+    assert(wildcard.length === 0, `no real path goes to a wildcard -Path parameter (${wildcard.join(' | ') || 'none'})`);
+    assert(!/Test-Path \$SlnPath/.test(code) && /Test-Path -LiteralPath \$SlnPath -PathType Leaf/.test(code), 'the solution is checked with Test-Path -LiteralPath');
+    assert(/\(Resolve-Path -LiteralPath \$candidate\)\.ProviderPath/.test(code) && !/\(Resolve-Path [^)]*\)\.Path\b/.test(code),
+        'Resolve-Path output is used as ProviderPath (UNC solutions)');
+    const census = code.indexOf("Emit-Event 'shell'");
+    const refuse = code.indexOf("Emit-Fatal 'shell-not-ours'");
+    const firstDteWrite = code.indexOf('$dte.SuppressUI = ');
+    assert(census > 0 && refuse > census && refuse < firstDteWrite && /if \(-not \$ownShellPid -and \$shellsBefore\.Count -gt 0\)/.test(code),
+        'a shell that is not provably ours while others run is refused before SuppressUI, Open or Close');
+    assert(/if \(\$dte -and \$script:ForeignShell\) \{[\s\S]*?ReleaseComObject[\s\S]*?\}\s*elseif \(\$dte\) \{\s*try \{ \$dte\.Solution\.Close\(\$false\) \}/.test(code),
+        'the finally neither closes the solution nor quits a foreign shell');
+    assert(/leaving the XAE Shell open[\s\S]{0,300}SuppressUI = \$false[\s\S]{0,120}MainWindow\.Visible = \$true/.test(code),
+        'an unidentified shell that is left running is made visible again');
+    const errorList = code.slice(code.indexOf("Enter-Phase 'errors'"), code.indexOf('BUILD SUCCEEDED'));
+    assert(/Invoke-ComRetry -MaxTries 10 \{ \$dte\.ToolWindows\.ErrorList\.ErrorItems \}/.test(errorList)
+        && /Invoke-ComRetry -MaxTries 10 \{ \$items\.Count \}/.test(errorList) && /Invoke-ComRetry -MaxTries 10 \{ \$items\.Item\(\$N\) \}/.test(errorList)
+        && /Invoke-ComRetry -MaxTries 10 \{ @\(\$ow\.OutputWindowPanes\) \}/.test(errorList),
+        'the error list and output panes are read with retries');
 }
 
 // ── Packaging ───────────────────────────────────────────────────────────────────────────────────

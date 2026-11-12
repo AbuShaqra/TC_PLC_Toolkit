@@ -30,6 +30,7 @@
 'use strict';
 
 const { StringDecoder } = require('string_decoder');
+const { countBySeverity } = require('./xaeErrorPlacement');
 
 /** The prefix of every machine line the driver writes (`-Json`). */
 const PREFIX = '@@TCTK ';
@@ -46,8 +47,12 @@ const EVENT_TYPES = Object.freeze([
     'outputPane', 'target', 'activation', 'targets', 'done'
 ]);
 
-/** Phases in which a cancel or a kill could leave the runtime in CONFIG: never interrupted. */
-const UNINTERRUPTIBLE_PHASES = Object.freeze(['activate', 'restart', 'verify']);
+/**
+ * Phases that are never interrupted. `activate`/`restart`/`verify` could leave the runtime in CONFIG;
+ * `target` is where the driver disarms its cancel file (right before activation), so a cancel there
+ * would be ignored by the driver and could only end in a force stop at the edge of `activate`.
+ */
+const UNINTERRUPTIBLE_PHASES = Object.freeze(['target', 'activate', 'restart', 'verify']);
 
 /** An AmsNetId: six dot-separated octets. */
 const NETID_RE = /^\d{1,3}(\.\d{1,3}){5}$/;
@@ -305,11 +310,39 @@ function reduce(state, item, now = Date.now()) {
  */
 
 /**
- * What a finished run means. The exit code decides; the state only explains.
- * @param {number|null} code The driver's exit code (null when it did not exit by itself).
- * @param {'exit'|'timeout'|'spawn-error'|'killed'|'cancelled'} outcome How the child ended.
+ * Whether exit code 1 really is the driver's "compile errors". `powershell.exe -File` also exits 1
+ * when the script never ran (an execution policy set by Group Policy, a parameter-binding error), on a
+ * throw outside the driver's own handler, or when PowerShell was killed from outside. Only the
+ * driver's own report makes it a build result: its `done` with exit code 1, or a failed build count.
  * @param {RunState} state
- * @param {{error?: string}} [extra] `error`: the spawn error text.
+ * @returns {boolean}
+ */
+function compileFailureConfirmed(state) {
+    return (state.done !== null && state.done.exitCode === EXIT.COMPILE)
+        || (typeof state.failedProjects === 'number' && state.failedProjects > 0);
+}
+
+/**
+ * Whether a finished run reached a build result, so its error list replaces the previous one.
+ * A run that stopped earlier says nothing about the code, and the previous problems stay.
+ * @param {number|null} code
+ * @param {'exit'|'timeout'|'spawn-error'|'killed'} outcome
+ * @param {RunState} state
+ * @returns {boolean}
+ */
+function reachedBuildResult(code, outcome, state) {
+    if (outcome !== 'exit') return false;
+    if (code === EXIT.COMPILE) return compileFailureConfirmed(state);
+    return code === EXIT.OK || code === EXIT.ACTIVATION;
+}
+
+/**
+ * What a finished run means. The exit code decides; the state only explains (and, for exit code 1,
+ * confirms: see `compileFailureConfirmed`).
+ * @param {number|null} code The driver's exit code (null when it did not exit by itself).
+ * @param {'exit'|'timeout'|'spawn-error'|'killed'} outcome How the child ended.
+ * @param {RunState} state
+ * @param {{error?: string, stderr?: string[]}} [extra] `error`: the spawn error text; `stderr`: PowerShell's error lines.
  * @returns {ExitDescription}
  */
 function describeExit(code, outcome, state, extra = {}) {
@@ -319,7 +352,7 @@ function describeExit(code, outcome, state, extra = {}) {
     if (outcome === 'timeout') {
         return { ok: false, severity: 'error', title: 'The XAE build timed out and was stopped.', detail: phaseNote(state) };
     }
-    if (outcome === 'killed' || outcome === 'cancelled') {
+    if (outcome === 'killed') {
         return { ok: false, severity: 'warning', title: 'The XAE build was stopped.', detail: phaseNote(state) };
     }
     const known = typeof code === 'number' && code >= 0 && code <= 4;
@@ -331,7 +364,17 @@ function describeExit(code, outcome, state, extra = {}) {
         };
     }
     const missing = state.done ? '' : ' The driver\'s final report is missing; the exit code alone decided this result.';
-    const errorCount = state.errorItems.filter(i => !/medium|warn|low|info|message/i.test(i.level || '')).length;
+    if (code === EXIT.COMPILE && !compileFailureConfirmed(state)) {
+        const stderr = (extra.stderr || []).filter(l => l.trim());
+        const lastLog = state.log.filter(l => l.trim()).pop();
+        const why = stderr.length ? stderr[stderr.length - 1].trim() : (lastLog ? lastLog.trim() : '');
+        return {
+            ok: false, severity: 'error',
+            title: 'The XAE build was interrupted before it finished (exit code 1).',
+            detail: [why, phaseNote(state)].filter(Boolean).join(' ')
+        };
+    }
+    const errorCount = countBySeverity(state.errorItems).errors;
     switch (code) {
         case EXIT.OK: {
             const a = state.activation;
@@ -493,5 +536,5 @@ function confirmationText(target, solutionName) {
 module.exports = {
     PREFIX, PROTOCOL, EXIT, EVENT_TYPES, UNINTERRUPTIBLE_PHASES,
     isValidNetId, buildDriverArgs, createLineSplitter, parseLine, createRunState, reduce,
-    describeExit, describeUiMode, buildPhaseUi, canCancel, isStalled, targetPickItems, confirmationText
+    compileFailureConfirmed, reachedBuildResult, describeExit, describeUiMode, buildPhaseUi, canCancel, isStalled, targetPickItems, confirmationText
 };

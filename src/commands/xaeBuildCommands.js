@@ -26,7 +26,11 @@
  *     and, only when the driver reported `ours: true`, the XAE Shell's PID (it is DCOM-launched, so it
  *     is NOT in PowerShell's tree). Never during activate/restart/verify: a stop there could leave the
  *     runtime in CONFIG. A shell this run did not start is never killed.
- *   - One run at a time; the context key `twincat.xaeRunning` says when one is in progress.
+ *   - One run at a time; the context key `twincat.xaeRunning` says when one is in progress, and
+ *     package.json disables the two build commands while it is set (`enablement`).
+ *   - A Problems entry's code links back into the extension (`/xaeProblem?id=`, through Compile
+ *     Project's URI handler), which opens the component, pane and line: a plain click cannot do that
+ *     for a custom editor.
  */
 
 'use strict';
@@ -39,14 +43,14 @@ const path = require('path');
 const { runChild, killProcessTree, describeLocation } = require('../compileCheck');
 const {
     EXIT, buildDriverArgs, createLineSplitter, parseLine, createRunState, reduce, describeExit, describeUiMode,
-    canCancel, isStalled, targetPickItems, confirmationText
+    canCancel, isStalled, targetPickItems, confirmationText, reachedBuildResult
 } = require('../xaeBuild');
 const { placeXaeErrors, placementSummary } = require('../xaeErrorPlacement');
 const { XAE_BUILD_SECTION, readXaeBuildSettings } = require('../xaeBuildSettings');
 const { XAE_SHELL_SECTION, XAE_SHELL_VERSIONS, describeConfiguredShells } = require('../xaeShellDetect');
 const { normalizeFileUri } = require('../fileUri');
 const { memberName } = require('../componentId');
-const { problemDiagnostic, openProblem, pickProjectKey } = require('./compileCommands');
+const { problemDiagnostic, openProblem, selectionOf, pickProjectKey, registerProblemLinkResolver } = require('./compileCommands');
 
 /** The output channel of every XAE build run. */
 const OUTPUT_CHANNEL_NAME = 'TC Toolkit XAE Build';
@@ -56,10 +60,14 @@ const DIAGNOSTIC_SOURCE = 'TC Toolkit XAE build';
 const COLLECTION_NAME = 'twincat-xae';
 /** Internal command: pick one of the current XAE build problems and go to it. */
 const GO_TO_PROBLEM_COMMAND = 'twincat.xaeBuild.goToProblem';
+/** The URI path of a Problems entry's link (handled by Compile Project's URI handler). */
+const PROBLEM_LINK_PATH = '/xaeProblem';
 /** The context key that is true while a run is in progress. */
 const RUNNING_CONTEXT_KEY = 'twincat.xaeRunning';
 /** workspaceState key of the last activation target picked (a preselection only, never a setting). */
 const LAST_TARGET_KEY = 'twincat.xaeBuild.lastTargetNetId';
+/** What a force stop during launch says: a DCOM-launched shell is not in PowerShell's tree. */
+const LAUNCH_STOP_TEXT = 'An XAE Shell may have been started and left running (the run was stopped before it was identified); close TcXaeShell in Task Manager.';
 /** What a cancel during activation says. */
 const CANCEL_REFUSED_TEXT = 'The XAE build is activating the target; cancelling now could leave the runtime in CONFIG. It will finish on its own.';
 /** The refusal off Windows. */
@@ -75,10 +83,12 @@ const STALL_WAIT = 'Keep waiting';
 /**
  * @typedef {Object} DriverRun What one driver run ended with.
  * @property {number|null} code
- * @property {'exit'|'timeout'|'spawn-error'|'killed'|'cancelled'} outcome
+ * @property {'exit'|'timeout'|'spawn-error'|'killed'} outcome
  * @property {import('../xaeBuild').RunState} state
  * @property {string} error
- * @property {boolean} rerunVisible The user asked (stall offer) to re-run with the window shown.
+ * @property {string[]} stderr PowerShell's error lines.
+ * @property {boolean} rerunVisible The user asked (stall offer) to re-run with the window shown, and
+ *   the stop was not refused.
  * @property {boolean} shellKilled The XAE Shell this run started was force-stopped.
  * @property {boolean} activationTimedOut The timeout fired during activation (nothing was killed).
  */
@@ -156,6 +166,8 @@ function registerXaeBuildCommands(context, deps) {
     const byFile = new Map();
     const keyOf = (/** @type {string} */ uriStr) => normalizeFileUri(uriStr);
     const allProblems = () => [...byFile.values()].flatMap(e => e.problems);
+    /** Files whose freshly opened editor already went to their first problem (once per run). */
+    const openTargetUsed = new Set();
 
     // ── Settings and the dropdown ──────────────────────────────────────────────────────────────
     const config = () => vscode.workspace.getConfiguration(XAE_BUILD_SECTION);
@@ -200,7 +212,19 @@ function registerXaeBuildCommands(context, deps) {
     function clearProblems() {
         collection.clear();
         byFile.clear();
+        openTargetUsed.clear();
     }
+    /**
+     * A problem's Problems entry; its code links back here (see PROBLEM_LINK_PATH).
+     * @param {StoredXaeProblem} p
+     */
+    const diagnosticOf = (p) => problemDiagnostic(p, DIAGNOSTIC_SOURCE,
+        vscode.Uri.parse(`${vscode.env.uriScheme}://${context.extension.id}${PROBLEM_LINK_PATH}?id=${p.id}`));
+    registerProblemLinkResolver(PROBLEM_LINK_PATH, async (/** @type {number} */ id) => {
+        // Only a problem of the current results is opened: the link carries an id, never a path.
+        const problem = allProblems().find(p => p.id === id);
+        if (problem) await openProblem(problem);
+    });
     /**
      * @param {Map<string, import('../xaeErrorPlacement').XaeProblem[]>} placed
      */
@@ -210,7 +234,7 @@ function registerXaeBuildCommands(context, deps) {
             const uri = vscode.Uri.file(filePath);
             const stored = problems.map(p => ({ ...p, id: nextProblemId++ }));
             byFile.set(keyOf(uri.toString()), { uri, problems: stored });
-            collection.set(uri, stored.map(p => problemDiagnostic(p, DIAGNOSTIC_SOURCE)));
+            collection.set(uri, stored.map(diagnosticOf));
         }
         if (deps.provider && typeof deps.provider.refreshCompileDiagnostics === 'function') deps.provider.refreshCompileDiagnostics();
     }
@@ -230,9 +254,17 @@ function registerXaeBuildCommands(context, deps) {
                 if (!entry || !entry.problems.some(p => p.componentId === componentId)) return;
                 entry.problems = entry.problems.filter(p => p.componentId !== componentId);
                 if (entry.problems.length === 0) { collection.delete(entry.uri); byFile.delete(keyOf(uriStr)); }
-                else collection.set(entry.uri, entry.problems.map(p => problemDiagnostic(p, DIAGNOSTIC_SOURCE)));
+                else collection.set(entry.uri, entry.problems.map(diagnosticOf));
             },
-            openTarget: () => null
+            /** Where a freshly opened editor of this file should start: its first problem, once per run. */
+            openTarget: (/** @type {string} */ uriStr) => {
+                const key = keyOf(uriStr);
+                const entry = byFile.get(key);
+                if (!entry || entry.problems.length === 0 || openTargetUsed.has(key)) return null;
+                openTargetUsed.add(key);
+                const first = entry.problems.find(p => p.severity === 'error') || entry.problems[0];
+                return { componentId: first.componentId, range: selectionOf(first), targetWord: null };
+            }
         }, 'xae');
     }
 
@@ -277,13 +309,22 @@ function registerXaeBuildCommands(context, deps) {
         let rerunVisible = false;
         let activationTimedOut = false;
         let extended = false;
+        /** @type {string[]} */
+        const stderrLines = [];
+        // Decoded across chunk boundaries like stdout: a UTF-8 character or a line split between two
+        // chunks stays whole.
+        const stderrSplitter = createLineSplitter((line) => {
+            if (!line.trim()) return;
+            stderrLines.push(line);
+            ch.appendLine(line);
+        });
         /** @type {any[]} */
         const timers = [];
         const finished = runChild(/** @type {any} */ (spawnCapture), 'powershell.exe', args, {
             // The real timeout is handled below (graceful first); this is only a backstop.
             timeoutMs: 2147483647,
             onStdout: (chunk) => splitter.push(chunk),
-            onStderr: (chunk) => { for (const l of String(chunk).split(/\r?\n/)) if (l.trim()) ch.appendLine(l); },
+            onStderr: (chunk) => stderrSplitter.push(chunk),
             onCancel: (cancel) => { forceResolve = cancel; }
         }).then((r) => { exited = true; return r; });
 
@@ -293,10 +334,15 @@ function registerXaeBuildCommands(context, deps) {
             const sh = state.shell;
             if (sh && sh.ours && sh.pid) {
                 shellKilled = true;
-                execFile('taskkill', ['/PID', String(sh.pid), '/T', '/F'], { windowsHide: true }, () => { /* gone or already gone */ });
+                // The PID was reported long ago and may have been reused: the image filter makes
+                // taskkill touch it only while it is still an XAE Shell.
+                execFile('taskkill', ['/PID', String(sh.pid), '/FI', 'IMAGENAME eq TcXaeShell*', '/T', '/F'], { windowsHide: true },
+                    () => { /* gone or already gone */ });
                 ch.appendLine(`${stamp()} Force-stopped the XAE Shell this run started (PID ${sh.pid}).`);
             } else if (sh && sh.pid === null) {
                 ch.appendLine(`${stamp()} The XAE Shell could not be identified as this run's, so it was left running; close it yourself.`);
+            } else if (!sh && state.phase === 'launch') {
+                ch.appendLine(`${stamp()} ${LAUNCH_STOP_TEXT}`);
             }
             if (forceResolve) forceResolve();
         }
@@ -313,6 +359,9 @@ function registerXaeBuildCommands(context, deps) {
                 ch.appendLine(`${stamp()} Cancel requested; waiting up to ${Math.round(graceMs / 1000)} s for the driver to close the XAE Shell.`);
                 await Promise.race([finished, delay(graceMs)]);
             }
+            // The grace timer fires before pending output is read: let the driver's last lines (an
+            // 'activate' phase, say) reach the state before deciding on a force stop.
+            await new Promise((resolve) => setImmediate(resolve));
             if (exited) return 'stopped';
             if (!canCancel(state)) {
                 // It entered activation during the grace period: let it finish.
@@ -330,13 +379,10 @@ function registerXaeBuildCommands(context, deps) {
                 });
             });
         }
-        const onTimeout = () => {
+        /** The timeout fell in a phase that is never stopped: wait 5 more minutes once, then only warn. */
+        const onActivationTimeout = () => {
             if (exited) return;
-            if (canCancel(state)) {
-                timedOut = true;
-                ch.appendLine(`${stamp()} The run timed out; stopping it.`);
-                requestStop();
-            } else if (!extended) {
+            if (!extended) {
                 extended = true;
                 ch.appendLine(`${stamp()} The timeout fell during activation; waiting 5 more minutes.`);
                 timers.push(setTimeout(onTimeout, 5 * minuteMs));
@@ -346,6 +392,19 @@ function registerXaeBuildCommands(context, deps) {
                 vscode.window.showWarningMessage('The XAE build timed out during activation; check the target. It was not stopped.');
             }
         };
+        function onTimeout() {
+            if (exited) return;
+            if (!canCancel(state)) { onActivationTimeout(); return; }
+            // Set before the stop so a run that honours the cancel file (exit 4) is judged a timeout.
+            timedOut = true;
+            ch.appendLine(`${stamp()} The run timed out; stopping it.`);
+            requestStop().then((r) => {
+                if (r !== 'refused') return;
+                // It entered activation during the grace period: not a timeout (yet), and still watched.
+                timedOut = false;
+                onActivationTimeout();
+            });
+        }
         timers.push(setTimeout(onTimeout, o.timeoutMs));
         if (o.stallMs && o.mode !== 'listTargets') {
             let offered = false;
@@ -358,8 +417,9 @@ function registerXaeBuildCommands(context, deps) {
                     `The headless XAE build has shown no progress for ${minutes} minute(s); it may be waiting on a dialog nobody can see.`,
                     STALL_RERUN, STALL_WAIT)).then((choice) => {
                     if (choice === STALL_RERUN) {
+                        // Tentative: withdrawn when the stop is refused (activation began meanwhile).
                         rerunVisible = true;
-                        requestStop();
+                        requestStop().then((r) => { if (r === 'refused') rerunVisible = false; });
                     } else {
                         state.lastEventAt = Date.now();
                         offered = false;
@@ -371,14 +431,17 @@ function registerXaeBuildCommands(context, deps) {
 
         const r = await finished;
         splitter.end();
+        stderrSplitter.end();
         for (const t of timers) { if (t && t.interval) clearInterval(t.interval); else clearTimeout(t); }
         if (cancelFile) { try { fs.unlinkSync(cancelFile); } catch (e) { /* never written */ } }
+        // runChild's 'cancelled' is this module's force stop: a timeout's, or a user's.
         /** @type {DriverRun['outcome']} */
-        let outcome = r.outcome;
-        if (r.outcome === 'cancelled') outcome = timedOut ? 'timeout' : 'killed';
+        let outcome = r.outcome === 'cancelled' ? (timedOut ? 'timeout' : 'killed') : r.outcome;
         // A timeout that the driver honoured through the cancel file (exit 4) is still a timeout.
         if (timedOut && r.outcome === 'exit' && r.code === EXIT.CANCELLED) outcome = 'timeout';
-        return { code: r.code, outcome, state, error: r.error, rerunVisible, shellKilled, activationTimedOut };
+        // A re-run only follows a run that really stopped (not one that finished on its own meanwhile).
+        const stopped = outcome !== 'exit' || r.code === EXIT.CANCELLED;
+        return { code: r.code, outcome, state, error: r.error, stderr: stderrLines, rerunVisible: rerunVisible && stopped, shellKilled, activationTimedOut };
     }
 
     // ── Shared steps of a command ──────────────────────────────────────────────────────────────
@@ -449,18 +512,18 @@ function registerXaeBuildCommands(context, deps) {
     function report(run, slnPath) {
         const ch = channel();
         const { state } = run;
-        const d = describeExit(run.code, run.outcome, state, { error: run.error });
+        const d = describeExit(run.code, run.outcome, state, { error: run.error, stderr: run.stderr });
         const uiMode = describeUiMode(state);
         if (state.mode) ch.appendLine(`${stamp()} ${uiMode}`);
         if (state.protocolWarnings > 0) ch.appendLine(`${stamp()} ${state.protocolWarnings} driver line(s) were not readable events of this version.`);
         // A run that did not get to a build result says nothing about the code: the previous problems stay.
-        const built = run.outcome === 'exit' && (run.code === EXIT.OK || run.code === EXIT.COMPILE || run.code === EXIT.ACTIVATION);
+        const built = reachedBuildResult(run.code, run.outcome, state);
         const placement = placeXaeErrors(state.errorItems, state.panes, {
             readFile: (p) => fs.readFileSync(p, 'utf8'), exists: (p) => fs.existsSync(p), slnDir: path.dirname(slnPath)
         });
         if (built) publishProblems(placement.byFile);
         for (const g of placement.general) ch.appendLine(`  error (not placed): ${g.description}${g.file ? ` [${g.file}${g.line ? `:${g.line}` : ''}]` : ''}`);
-        const errorsLine = run.outcome === 'exit' ? placementSummary(placement, run.code === null ? -1 : run.code, OUTPUT_CHANNEL_NAME) : '';
+        const errorsLine = built ? placementSummary(placement, run.code === null ? -1 : run.code, OUTPUT_CHANNEL_NAME) : '';
         let title = d.title;
         let severity = d.severity;
         if (state.targetMismatch) {
@@ -473,7 +536,18 @@ function registerXaeBuildCommands(context, deps) {
         if (state.shell && !state.shell.ours && run.outcome !== 'exit') {
             ch.appendLine('  The XAE Shell was not started by this run (or could not be identified), so it was left running.');
         }
-        statusItem.text = d.ok ? '$(check) XAE build' : (run.code === EXIT.COMPILE ? `$(error) XAE build: ${placement.total || 'failed'}` : '$(warning) XAE build');
+        const result = {
+            ok: d.ok && !state.targetMismatch, exitCode: run.code, outcome: run.outcome, title, uiMode,
+            placed: placement.placed, total: placement.total, targetMismatch: state.targetMismatch
+        };
+        if (run.rerunVisible) {
+            // Stopped to re-run with the window shown: one line here, no notification, and the
+            // status bar is left to the re-run.
+            ch.appendLine(`${stamp()} Stopped; re-running with the XAE window shown.`);
+            return result;
+        }
+        statusItem.text = d.ok ? '$(check) XAE build'
+            : (built && run.code === EXIT.COMPILE ? `$(error) XAE build: ${placement.errors || 'failed'}` : '$(warning) XAE build');
         statusItem.tooltip = 'Result of the last Build through XAE run. Click to open the Problems panel.';
         statusItem.show();
         const show = severity === 'error' ? vscode.window.showErrorMessage
@@ -484,10 +558,7 @@ function registerXaeBuildCommands(context, deps) {
             if (choice === 'Show Output') ch.show(true);
             else if (choice === 'Go to Problem…') vscode.commands.executeCommand(GO_TO_PROBLEM_COMMAND);
         });
-        return {
-            ok: d.ok && !state.targetMismatch, exitCode: run.code, outcome: run.outcome, title, uiMode,
-            placed: placement.placed, total: placement.total, targetMismatch: state.targetMismatch
-        };
+        return result;
     }
 
     /**
@@ -513,7 +584,8 @@ function registerXaeBuildCommands(context, deps) {
             if (!('slnPath' in resolved)) return { ok: false, reason: resolved.reason };
             const { slnPath } = resolved;
             const solutionName = path.basename(slnPath, path.extname(slnPath));
-            if (!(await shellCheck(slnPath))) return { ok: false, reason: 'cancelled' };
+            // A re-run (stall offer, configuration pick) was already checked.
+            if (a.shellChecked !== true && !(await shellCheck(slnPath))) return { ok: false, reason: 'cancelled' };
             const settings = readSettings();
             const configuration = typeof a.configuration === 'string' ? a.configuration : settings.configuration;
             const pform = typeof a.platform === 'string' ? a.platform : settings.platform;
@@ -558,7 +630,7 @@ function registerXaeBuildCommands(context, deps) {
             if (run.rerunVisible) {
                 running = false;
                 setRunning(false);
-                return buildCommand({ ...a, projectKey: resolved.key, showWindow: true, configuration, platform: pform }, activate);
+                return buildCommand({ ...a, projectKey: resolved.key, showWindow: true, configuration, platform: pform, shellChecked: true }, activate);
             }
             // A configuration the solution does not declare: pick one of its own.
             if (run.code === EXIT.HARNESS && run.state.fatal && run.state.fatal.code === 'config-not-declared'
@@ -581,7 +653,7 @@ function registerXaeBuildCommands(context, deps) {
                         }
                         running = false;
                         setRunning(false);
-                        return buildCommand({ ...a, projectKey: resolved.key, configuration: cfg, platform: plat }, activate);
+                        return buildCommand({ ...a, projectKey: resolved.key, configuration: cfg, platform: plat, shellChecked: true }, activate);
                     }
                 }
             }
@@ -655,5 +727,5 @@ function registerXaeBuildCommands(context, deps) {
 module.exports = {
     registerXaeBuildCommands, projectTcBuild,
     OUTPUT_CHANNEL_NAME, DIAGNOSTIC_SOURCE, COLLECTION_NAME, GO_TO_PROBLEM_COMMAND, RUNNING_CONTEXT_KEY, LAST_TARGET_KEY,
-    CANCEL_REFUSED_TEXT, PLATFORM_TEXT, STALL_RERUN, STALL_WAIT
+    PROBLEM_LINK_PATH, CANCEL_REFUSED_TEXT, LAUNCH_STOP_TEXT, PLATFORM_TEXT, STALL_RERUN, STALL_WAIT
 };

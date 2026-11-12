@@ -332,7 +332,9 @@
                 const items = Array.from(compileMenu.querySelectorAll('input, button'))
                     .filter(el => !el.disabled && !el.closest('[hidden]'));
                 const at = items.indexOf(document.activeElement);
-                const next = (at + (e.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length;
+                // Focus outside the items (on the menu itself): Down goes to the first, Up to the last.
+                const next = at < 0 ? (e.key === 'ArrowDown' ? 0 : items.length - 1)
+                    : (at + (e.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length;
                 if (items[next]) items[next].focus();
             }
         });
@@ -365,6 +367,12 @@
     function renderXaeOptions(options) {
         if (!xaeSection) return;
         xaeSection.hidden = !(options && options.available);
+        // The caret's tooltip names the XAE build only where the section is shown.
+        if (compileCaret) {
+            compileCaret.title = options && options.available
+                ? 'Compile options: C++ generation, the g++ build and the XAE build'
+                : 'Compile options: C++ generation and the g++ build';
+        }
         if (xaeOptWindow) xaeOptWindow.checked = !!(options && options.showWindow);
         for (const b of [xaeBuildBtn, xaeActivateBtn]) if (b) b.disabled = !!(options && options.running);
     }

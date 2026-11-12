@@ -309,19 +309,27 @@
             e.preventDefault();
             const items = Array.from(optionsPanel.querySelectorAll('input, button')).filter(el => !el.disabled && !el.closest('[hidden]'));
             const at = items.indexOf(document.activeElement);
-            const next = items[(at + (e.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length];
+            // Focus outside the items (on the panel itself): Down goes to the first, Up to the last.
+            const next = at < 0 ? items[e.key === 'ArrowDown' ? 0 : items.length - 1]
+                : items[(at + (e.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length];
             if (next) next.focus();
         }
     });
     // Build through XAE (R14): the two actions run their commands (data-command); the checkbox writes
     // tcToolkit.xaeBuild.showWindow through the host, which answers with `state`.
     const optXaeWindow = $('opt-xae-window');
-    /** @param {{available?: boolean, showWindow?: boolean, running?: boolean, configuration?: string, platform?: string}} o */
-    function renderXaeOptions(o) {
+    /**
+     * @param {{available?: boolean, showWindow?: boolean, running?: boolean, configuration?: string, platform?: string}} o
+     * @param {boolean} hasProject The two actions also need an open PLC project (like data-needs-project).
+     */
+    function renderXaeOptions(o, hasProject) {
         $('xae-options').hidden = !(o && o.available);
         optXaeWindow.checked = !!(o && o.showWindow);
-        $('xae-build-run').disabled = !!(o && o.running);
-        $('xae-activate-run').disabled = !!(o && o.running);
+        $('xae-build-run').disabled = !!(o && o.running) || !hasProject;
+        $('xae-activate-run').disabled = !!(o && o.running) || !hasProject;
+        optionsToggle.title = o && o.available
+            ? 'Compile options: C++ generation, the g++ build and the XAE build'
+            : 'Compile options: C++ generation and the g++ build';
         $('xae-build-mode').textContent = `${o && o.showWindow ? 'window shown' : 'headless'}; ` +
             `${(o && o.configuration) || 'Release'} | ${(o && o.platform) || 'TwinCAT RT (x64)'}` +
             (o && o.available === false ? ' (needs Windows with TwinCAT XAE)' : '');
@@ -358,7 +366,7 @@
                 for (const b of document.querySelectorAll('[data-needs-project]')) b.disabled = !msg.hasProject;
                 renderCompileTile(!!msg.compilerReady, !!msg.hasProject);
                 renderCompileOptions(msg.compileOptions);
-                renderXaeOptions(msg.xaeOptions);
+                renderXaeOptions(msg.xaeOptions, !!msg.hasProject);
                 refresh();
                 break;
             case 'location':

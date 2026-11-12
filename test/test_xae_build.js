@@ -15,6 +15,7 @@
 
 const x = require('../src/xaeBuild');
 const { readXaeBuildSettings, XAE_BUILD_DEFAULTS } = require('../src/xaeBuildSettings');
+const { placeXaeErrors, placementSummary } = require('../src/xaeErrorPlacement');
 const { readFixture, renderStdout } = require('./_fakeXaeDriver');
 
 let errors = 0;
@@ -182,12 +183,50 @@ function run(name, o) {
     assert(all.every(d => !/TC Toolkit|^TwinCAT/.test(d.title)) && all.filter(d => d.ok).length === 1, 'only exit 0 is ok; no title starts with TwinCAT');
 }
 
+// ── Exit code 1 is a compile failure only when the driver said so ───────────────────────────────
+{
+    const bare = x.createRunState();
+    x.reduce(bare, x.parseLine('#< CLIXML'));
+    const d = x.describeExit(1, 'exit', bare, { stderr: ['File C:\\x\\build-plc-project.ps1 cannot be loaded because running scripts is disabled on this system.'] });
+    assert(!d.ok && /interrupted before it finished \(exit code 1\)/.test(d.title) && /running scripts is disabled/.test(d.detail),
+        'exit 1 with no driver report (execution policy, binding error, outside kill): interrupted, with the stderr line');
+    assert(!x.compileFailureConfirmed(bare) && !x.reachedBuildResult(1, 'exit', bare), 'and it is not a build result (Problems are kept)');
+    const noStderr = x.describeExit(1, 'exit', bare);
+    assert(/CLIXML/.test(noStderr.detail), 'without stderr the last log line explains it');
+    const viaDone = x.createRunState();
+    x.reduce(viaDone, x.parseLine('@@TCTK {"v":1,"t":"done","exitCode":1,"ui":null}'));
+    const viaCount = x.createRunState();
+    x.reduce(viaCount, x.parseLine('@@TCTK {"v":1,"t":"buildResult","failedProjects":1}'));
+    const zero = x.createRunState();
+    x.reduce(zero, x.parseLine('@@TCTK {"v":1,"t":"buildResult","failedProjects":0}'));
+    assert(x.reachedBuildResult(1, 'exit', viaDone) && x.reachedBuildResult(1, 'exit', viaCount) && !x.reachedBuildResult(1, 'exit', zero),
+        'confirmed by done.exitCode 1 or failedProjects > 0, not by failedProjects 0');
+    assert(/^Build through XAE failed/.test(x.describeExit(1, 'exit', viaCount).title), 'a confirmed exit 1 is a failed build');
+    assert(x.reachedBuildResult(0, 'exit', bare) && x.reachedBuildResult(3, 'exit', bare) && !x.reachedBuildResult(4, 'exit', bare)
+        && !x.reachedBuildResult(2, 'exit', bare) && !x.reachedBuildResult(0, 'killed', bare), 'exit 0 and 3 are build results; 2, 4 and a stop are not');
+}
+
+// ── Counting by severity: one place, the same numbers everywhere ────────────────────────────────
+{
+    const s = x.createRunState();
+    x.reduce(s, x.parseLine('@@TCTK {"v":1,"t":"buildResult","failedProjects":1}'));
+    for (const level of ['vsBuildErrorLevelHigh', 'vsBuildErrorLevelHigh', 'vsBuildErrorLevelMedium']) {
+        x.reduce(s, x.parseLine(`@@TCTK {"v":1,"t":"errorItem","file":null,"line":null,"column":null,"description":"d","project":null,"level":"${level}"}`));
+    }
+    assert(x.describeExit(1, 'exit', s).title === 'Build through XAE failed: 2 errors.', 'describeExit counts errors only (a Medium item is a warning)');
+    const p = placeXaeErrors(s.errorItems, [], { readFile: () => '', exists: () => false });
+    assert(p.errors === 2 && p.warnings === 1 && p.total === 3, 'placeXaeErrors counts errors and warnings separately');
+    assert(placementSummary(p, 1, 'ch') === '2 errors, 1 warning (0 placed in Problems).', `the summary counts by severity (${placementSummary(p, 1, 'ch')})`);
+    const onlyWarn = placeXaeErrors([{ file: null, line: null, column: null, description: 'w', project: null, level: 'vsBuildErrorLevelMedium' }], [], { readFile: () => '', exists: () => false });
+    assert(placementSummary(onlyWarn, 0, 'ch') === '1 warning (0 placed in Problems).', 'a passed build with a warning is not summarised as an error');
+}
+
 // ── canCancel / isStalled ───────────────────────────────────────────────────────────────────────
 {
     const s = x.createRunState();
     const phase = (n) => x.reduce(s, x.parseLine(`@@TCTK {"v":1,"t":"phase","name":"${n}"}`), 0);
-    for (const p of ['resolve', 'launch', 'open', 'build', 'errors', 'target']) { phase(p); assert(x.canCancel(s), `canCancel in ${p}`); }
-    for (const p of ['activate', 'restart', 'verify']) { phase(p); assert(!x.canCancel(s), `no cancel in ${p}`); }
+    for (const p of ['resolve', 'launch', 'open', 'build', 'errors']) { phase(p); assert(x.canCancel(s), `canCancel in ${p}`); }
+    for (const p of ['target', 'activate', 'restart', 'verify']) { phase(p); assert(!x.canCancel(s), `no cancel in ${p}`); }
     const t = x.createRunState();
     assert(!x.isStalled(t, 10 ** 9, { stallMs: 1 }), 'nothing heard yet → not stalled');
     x.reduce(t, x.parseLine('@@TCTK {"v":1,"t":"phase","name":"open"}'), 0);
@@ -197,6 +236,8 @@ function run(name, o) {
     assert(!x.isStalled(t, 10 ** 9, { stallMs: 1 }), 'never stalled during the build itself');
     x.reduce(t, x.parseLine('@@TCTK {"v":1,"t":"phase","name":"activate"}'), 0);
     assert(!x.isStalled(t, 10 ** 9, { stallMs: 1 }), 'never stalled during activation (the window is shown)');
+    x.reduce(t, x.parseLine('@@TCTK {"v":1,"t":"phase","name":"target"}'), 0);
+    assert(!x.isStalled(t, 10 ** 9, { stallMs: 1 }), 'never stalled in target (cancellation is disarmed there)');
 }
 
 // ── confirmationText ────────────────────────────────────────────────────────────────────────────

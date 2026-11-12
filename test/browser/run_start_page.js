@@ -279,6 +279,24 @@ const { TEMPLATE_VERSIONS } = require(path.join(REPO, 'src', 'projectTemplate.js
             xaeOptions: { available: true, showWindow: true, running: true, configuration: 'Release', platform: 'TwinCAT RT (x64)' } });
         xs = await xaeState();
         assert(xs.window && xs.disabled && xs.mode === 'window shown; Release | TwinCAT RT (x64)', `R14: a state with showWindow and a run in progress (${JSON.stringify(xs)})`);
+        await send({ type: 'state', location: 'C:\\Projects', sep: '\\', hasProject: false, compilerReady: true, recents: [],
+            xaeOptions: { available: true, showWindow: false, running: false } });
+        const noProject = await page.evaluate(() => ({ build: document.getElementById('xae-build-run').disabled, activate: document.getElementById('xae-activate-run').disabled,
+            title: document.getElementById('compile-options-toggle').title }));
+        assert(noProject.build && noProject.activate, `R14: with no project open the two XAE actions are disabled, also after a state that is not running (${JSON.stringify(noProject)})`);
+        assert(noProject.title === 'Compile options: C++ generation, the g++ build and the XAE build', `R14: the chevron's tooltip names the XAE build where it is shown (${noProject.title})`);
+        await send({ type: 'state', location: 'C:\\Projects', sep: '\\', hasProject: true, compilerReady: true, recents: [],
+            xaeOptions: { available: true, showWindow: false, running: false } });
+        const lastFocus = await page.evaluate(() => {
+            const panel = document.getElementById('compile-options');
+            panel.hidden = false;
+            if (document.activeElement && document.activeElement !== document.body) document.activeElement.blur();
+            panel.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true }));
+            const id = document.activeElement ? document.activeElement.id : '';
+            panel.hidden = true;
+            return id;
+        });
+        assert(lastFocus === 'opt-xae-window', `R14: ArrowUp with no item focused goes to the last entry, Show the XAE window (${lastFocus})`);
         await page.evaluate(() => { document.getElementById('compile-options').hidden = true; });
         await page.click('#compile-options-toggle');
         if (process.env.HARNESS_START_SHOT) {

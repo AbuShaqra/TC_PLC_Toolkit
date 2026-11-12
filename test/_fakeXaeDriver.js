@@ -13,9 +13,12 @@
  *   `chunkSize`                     split stdout into chunks of this many BYTES (tests the splitter)
  *   `hang: true`                    print, then never exit until killed
  *   `onCancelFile: {lines?, exit?}` while hanging, poll the `-CancelFile` path; once it exists,
- *                                   print these lines and exit (default exit 4)
+ *                                   print these lines and exit (default exit 4); with `stay: true`
+ *                                   print them and keep hanging (a driver that entered activation)
+ *   `stderr` / `stderrChunks`       write this to stderr (a string, or Buffers chunk by chunk)
  *   `error`                         emit a spawn error
- * Every call is recorded: argv, whether the cancel file appeared, kills; `execFile` records taskkill PIDs.
+ * Every call is recorded: argv, whether the cancel file appeared, kills; `execFile` records taskkill
+ * PIDs (`killedPids`) and argv (`taskkills`).
  */
 
 'use strict';
@@ -91,6 +94,7 @@ function createFakeXaeSpawn(script) {
             const fx = b.fixture ? readFixture(b.fixture) : { lines: b.lines || [], exit: b.exit === undefined ? 0 : b.exit };
             write(fx.lines);
             if (b.stderr) child.stderr.emit('data', Buffer.from(b.stderr));
+            for (const c of b.stderrChunks || []) child.stderr.emit('data', c);
             if (b.onCancelFile) {
                 const i = call.args.indexOf('-CancelFile');
                 const file = i >= 0 ? call.args[i + 1] : null;
@@ -98,6 +102,11 @@ function createFakeXaeSpawn(script) {
                     if (file && fs.existsSync(file)) {
                         call.cancelFileSeen = true;
                         if (b.onCancelFile.ignore) return;
+                        if (b.onCancelFile.stay) {
+                            clearInterval(poll);
+                            write(b.onCancelFile.lines || []);
+                            return;
+                        }
                         write(b.onCancelFile.lines || [{ v: 1, t: 'done', exitCode: 4, ui: null }]);
                         exit(b.onCancelFile.exit === undefined ? 4 : b.onCancelFile.exit);
                     }
@@ -111,8 +120,11 @@ function createFakeXaeSpawn(script) {
     };
     /** @type {number[]} */
     const killedPids = [];
+    /** @type {string[][]} */
+    const taskkills = [];
     const execFile = (file, args, options, cb) => {
         if (/taskkill/i.test(file)) {
+            taskkills.push(args.slice());
             const i = args.indexOf('/PID');
             const pid = Number(args[i + 1]);
             killedPids.push(pid);
@@ -122,7 +134,7 @@ function createFakeXaeSpawn(script) {
         if (cb) setImmediate(() => cb(null, '', ''));
         return new EventEmitter();
     };
-    return { spawn, calls, execFile, killedPids };
+    return { spawn, calls, execFile, killedPids, taskkills };
 }
 
 module.exports = { createFakeXaeSpawn, readFixture, renderStdout, renderRow, FIXTURES };

@@ -169,9 +169,18 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   (Windows only); Problems in `twincat-xae`. Design and rules: DEVELOPMENT.md "XAE build (R14)". Phase 1 is local
   targets only; boot project, remote targets, single-project build, routes and a "show the hidden shell" rescue
   are phase 2 (each needs a Windows probe first).
+  **Review fixes (2026-11-12, 28 findings):** `target` is uninterruptible (the driver disarms cancel right before
+  it); the post-grace decision first drains pending stdout; exit 1 is a compile failure only when the driver
+  confirmed it (else "interrupted", Problems kept); refused timeout/stall stops re-arm the timeout / withdraw the
+  re-run; the shell kill is image-filtered; ps1: `-LiteralPath`/`ProviderPath` for real paths, `shell-not-ours`
+  refusal (exit 2) before any DTE write when a shell is not provably ours while others run, an unidentified shell
+  is made visible before release (NOT `UserControl` — kept never-set by design), error list / panes read with
+  retries; XAE Problems entries link back (`/xaeProblem?id=` via Compile Project's URI handler); counts by
+  severity; UI: "Through XAE" (no TwinCAT label), tooltip, ArrowUp, start-page actions need a project; palette
+  `when: isWindows`, `enablement: !twincat.xaeRunning`.
   **Verified (Linux, 2026-11-12):** `REQUIRE_FULL_SUITE=1 npm test` 123/123 FULL (new: test_xae_build,
   test_xae_build_commands, test_xae_error_placement, test_xae_driver_contract); lint and typecheck 0; browser
-  `run.js` 91, `run_start_page.js` 115, `run_pragmas.js` green; `vsce ls` ships `resources/xae/build-plc-project.ps1`.
+  `run.js` 93, `run_start_page.js` 118 green; `vsce ls` ships `resources/xae/build-plc-project.ps1`.
   **Not verified here (no PowerShell on this box; downloading pwsh was refused by the permission classifier):**
   the ps1 was never parsed — `test_xae_driver_contract.js` checks it as text only; the first Windows run is its
   parse check. Unknowns only Windows settles: ErrorItem line semantics (pane vs whole-object line;
@@ -190,7 +199,10 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   5. `probe-sysmanager.ps1` with and without `-Pump`;
   6. *Build and Activate through XAE…* on a user-mode runtime: target pick, modal, window shown, then RUN;
   7. cancel during the build: exit 4, the shell closed; cancel during activation is refused;
-  8. *Show Activation Targets* lists the runtimes; off Windows the commands refuse and the entries are hidden.
+  8. *Show Activation Targets* lists the runtimes; off Windows the commands refuse and the entries are hidden;
+  9. with a developer XAE Shell already open: a build either drives a NEW shell (census finds it) or refuses with
+     `shell-not-ours` and leaves the open IDE untouched; a solution under a folder with `[ ]` in its name, and one on
+     a UNC share, both build.
   **Open questions (defaults in place):** key `tcToolkit.xaeBuild.showWindow` vs `tcToolkit.xae.showWindow`
   (default: xaeBuild, one section); hide the window during activation too (default no, no switch); hide after a
   version switch (default keep visible; readback reports `versionSwitchKeptVisible`); boot project / remote

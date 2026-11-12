@@ -480,12 +480,12 @@ old entry is removed from your `settings.json`.
 | `tcToolkit.compiler.nodePath` | *(empty)* | Full path to a Node.js 22+ executable that runs the compiler. Empty = found automatically (`node` on `PATH`, the usual Windows install locations, then VS Code's own runtime when it is Node.js 22+). Per machine. |
 | `tcToolkit.compiler.generateCpp` | `false` | **Generate C++**: after a check with no errors, write the project as C++ into `CPP_Files/` next to its `.plcproj`. Turning it off also turns off the g++ build. Also in the Compile button's dropdown. |
 | `tcToolkit.compiler.buildWithGpp` | `false` | **Build with g++**: also compile that C++ with g++ (a compile check; errors in the Problems panel). Turning it on also turns on *Generate C++*. Also in the Compile button's dropdown. |
+| `tcToolkit.compiler.gppPath` | *(detected)* | Full path to `g++` (`g++.exe` on Windows). Empty = `g++` on `PATH`, then the usual Windows install folders; filled with the one found when the build is turned on, never overwritten. Per machine. |
 | `tcToolkit.xaeBuild.showWindow` | `false` | **Show the XAE window**: show the XAE Shell window for the whole *Build through XAE* instead of building headless. The window is always shown during activation, so a licence or download dialog can be answered, and it stays visible after an XAE version switch. Also in the Compile button's dropdown. |
 | `tcToolkit.xaeBuild.configuration` | `Release` | The solution configuration *Build through XAE* builds. |
 | `tcToolkit.xaeBuild.platform` | `TwinCAT RT (x64)` | The solution platform it builds (activating onto a user-mode runtime needs its `TwinCAT OS (...)` platform). |
 | `tcToolkit.xaeBuild.timeoutMinutes` | `30` | Minutes before a build through XAE is stopped (5 to 240; during activation only reported). |
 | `tcToolkit.xaeBuild.stallMinutes` | `10` | Headless watchdog: minutes without output before offering a re-run with the window shown (2 to 60). |
-| `tcToolkit.compiler.gppPath` | *(detected)* | Full path to `g++` (`g++.exe` on Windows). Empty = `g++` on `PATH`, then the usual Windows install folders; filled with the one found when the build is turned on, never overwritten. Per machine. |
 
 **XAE Shell paths.** On Windows the two `tcToolkit.xaeShell.*` settings are filled automatically with the
 installation found on your machine: first from the shell's COM registration, then from the default

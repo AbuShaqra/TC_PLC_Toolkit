@@ -486,7 +486,9 @@ function Resolve-SolutionPath {
     foreach ($candidate in @($Value, (Join-Path $Root $Value))) {
         if ((Test-Path -LiteralPath $candidate -PathType Leaf) -and
             ([System.IO.Path]::GetExtension($candidate) -eq '.sln')) {
-            return (Resolve-Path -LiteralPath $candidate).Path
+            # ProviderPath, not Path: for a UNC share .Path is provider-qualified
+            # ('Microsoft.PowerShell.Core\FileSystem::\\server\...'), which DTE cannot open.
+            return (Resolve-Path -LiteralPath $candidate).ProviderPath
         }
     }
 
@@ -505,7 +507,7 @@ function Resolve-SolutionPath {
     # 3. A bare solution name, matched anywhere under the repo root. Accepts it with or without the
     #    .sln suffix, so `-Solution MyProject` and `-Solution MyProject.sln` behave the same.
     $leaf = [System.IO.Path]::GetFileNameWithoutExtension($Value)
-    $hits = @(Get-ChildItem -Path $Root -Recurse -Filter "$leaf.sln" -File -ErrorAction SilentlyContinue |
+    $hits = @(Get-ChildItem -LiteralPath $Root -Recurse -Filter "$leaf.sln" -File -ErrorAction SilentlyContinue |
               Sort-Object FullName)
     if ($hits.Count -eq 1) { return $hits[0].FullName }
     if ($hits.Count -gt 1) {
@@ -624,7 +626,7 @@ if (-not $SlnPath -and -not $ListTargets) {
     # broken repo: it is still refused, because picking one for you is how you end up building
     # something other than what you meant, but the message lists the candidates so -SlnPath is a
     # copy-paste away.
-    $slns = @(Get-ChildItem -Path $RepoRoot -Recurse -Filter *.sln -File -ErrorAction SilentlyContinue |
+    $slns = @(Get-ChildItem -LiteralPath $RepoRoot -Recurse -Filter *.sln -File -ErrorAction SilentlyContinue |
               Sort-Object FullName)
     if ($slns.Count -eq 0) {
         Write-Host "FATAL: no .sln found anywhere under repo root: $RepoRoot" -ForegroundColor Red
@@ -1286,10 +1288,11 @@ $TcAdsStateNames = @{ 0='INVALID'; 1='IDLE'; 2='RESET'; 3='INIT'; 4='START'; 5='
 if ($ListTargets) {
     $projectNetId = $null
     if ($SlnPath) {
-        $tsprojForList = Get-ChildItem -Path (Split-Path -Parent $SlnPath) -Recurse -Filter *.tsproj -File -ErrorAction SilentlyContinue |
+        # -LiteralPath wherever a real path goes: a folder named 'Line [2]' is not a wildcard.
+        $tsprojForList = Get-ChildItem -LiteralPath (Split-Path -Parent $SlnPath) -Recurse -Filter *.tsproj -File -ErrorAction SilentlyContinue |
                          Sort-Object FullName | Select-Object -First 1
         if ($tsprojForList) {
-            $mT = Select-String -Path $tsprojForList.FullName -Pattern 'TargetNetId="([0-9.]+)"' -ErrorAction SilentlyContinue | Select-Object -First 1
+            $mT = Select-String -LiteralPath $tsprojForList.FullName -Pattern 'TargetNetId="([0-9.]+)"' -ErrorAction SilentlyContinue | Select-Object -First 1
             if ($mT) { $projectNetId = $mT.Matches[0].Groups[1].Value }
         }
     }
@@ -1316,7 +1319,7 @@ if ($ListTargets) {
 # repo-wide search sorted by name would happily read the version out of a different project and
 # then build this one with it.
 $slnDir = Split-Path -Parent $SlnPath
-$tsproj = Get-ChildItem -Path $slnDir -Recurse -Filter *.tsproj -File -ErrorAction SilentlyContinue |
+$tsproj = Get-ChildItem -LiteralPath $slnDir -Recurse -Filter *.tsproj -File -ErrorAction SilentlyContinue |
           Sort-Object FullName | Select-Object -First 1
 if (-not $tsproj) {
     Write-Host "FATAL: no .tsproj found under $slnDir to read TcVersion from." -ForegroundColor Red
@@ -1324,7 +1327,7 @@ if (-not $tsproj) {
     Emit-Fatal 'no-tsproj' "no .tsproj found under $slnDir to read TcVersion from."
     Exit-Run 2
 }
-$match = Select-String -Path $tsproj.FullName -Pattern 'TcVersion="(3\.1\.(\d+)\.\d+)"' | Select-Object -First 1
+$match = Select-String -LiteralPath $tsproj.FullName -Pattern 'TcVersion="(3\.1\.(\d+)\.\d+)"' | Select-Object -First 1
 if (-not $match) {
     Write-Host "FATAL: could not read TcVersion from $($tsproj.Name)." -ForegroundColor Red
     Write-Host "It is the only thing -TcVersion can be checked against, so it cannot be substituted." -ForegroundColor Red
@@ -1405,7 +1408,7 @@ if ($ActivateConfiguration) {
     # Catch it statically - the alternative is discovering it with the IDE open and a rig connected.
     $projTarget = $null
     try {
-        $m2 = Select-String -Path $tsproj.FullName -Pattern 'TargetNetId="([0-9.]+)"' -ErrorAction SilentlyContinue |
+        $m2 = Select-String -LiteralPath $tsproj.FullName -Pattern 'TargetNetId="([0-9.]+)"' -ErrorAction SilentlyContinue |
               Select-Object -First 1
         if ($m2) { $projTarget = $m2.Matches[0].Groups[1].Value }
     } catch { }
@@ -1533,8 +1536,11 @@ Enter-Phase 'launch'
 # PID of the shell WE started. Stays $null unless we can prove exactly which process that is, and
 # Quit() is gated on it - see the census below.
 $ownShellPid = $null
+# Set when COM may have handed us a shell somebody else is using: then nothing here touches it.
+$script:ForeignShell = $false
+$script:ForeignShellSentinel = 'TCTK-SHELL-NOT-OURS'
 try {
-    if (-not (Test-Path $SlnPath)) { throw "Solution file not found: $SlnPath" }
+    if (-not (Test-Path -LiteralPath $SlnPath -PathType Leaf)) { throw "Solution file not found: $SlnPath" }
 
     # Census the shells running BEFORE we ask COM for one. They are somebody's - very likely a
     # developer's, with unsaved work - and nothing here may ever reach them.
@@ -1578,6 +1584,14 @@ try {
         Write-Host "WARNING: no new XAE Shell process appeared - COM may have bound an already-running instance. It will NOT be closed; quit it yourself if this build left it open." -ForegroundColor Yellow
     }
     Emit-Event 'shell' ([ordered]@{ pid = $ownShellPid; ours = [bool]$ownShellPid; preexisting = @($shellsBefore) })
+    if (-not $ownShellPid -and $shellsBefore.Count -gt 0) {
+        # Not provably ours while other shells run: it may be a developer's IDE. Refuse BEFORE any
+        # SuppressUI, hide, Open or Close - those would hide their window and close their solution.
+        $script:ForeignShell = $true
+        Write-Host "FATAL: the XAE Shell COM returned could not be identified as one this run started, and other XAE Shells are running; it is left untouched. Close the other XAE Shells and re-run." -ForegroundColor Red
+        Emit-Fatal 'shell-not-ours' "The XAE Shell could not be identified as one this run started while other XAE Shells are running (PID $($shellsBefore -join ', ')); nothing was done to it. Close the other XAE Shells and re-run."
+        throw $script:ForeignShellSentinel
+    }
 
     if ($ShowWindow) {
         # -ShowWindow: the whole run with the window visible and the UI not suppressed. UserControl is
@@ -1801,11 +1815,16 @@ try {
 
     # Dump error list (best effort - often empty over late-bound COM even on failure;
     # LastBuildInfo above is the authoritative pass/fail signal)
+    # Every COM call retried: right after Build the shell commonly rejects calls while it refreshes the
+    # list, and no message filter is registered for an unpinned run. One item failing loses only itself.
     try {
-        $items = $dte.ToolWindows.ErrorList.ErrorItems
-        for ($N = 1; $N -le $items.Count; $N++) {
-            $it = $items.Item($N)
+        $items = Invoke-ComRetry -MaxTries 10 { $dte.ToolWindows.ErrorList.ErrorItems }
+        $itemCount = Invoke-ComRetry -MaxTries 10 { $items.Count }
+        for ($N = 1; $N -le $itemCount; $N++) {
+            try { $it = Invoke-ComRetry -MaxTries 10 { $items.Item($N) } } catch { continue }
+            try {
             Write-Host ("[{0}] {1}({2}): {3}" -f $N, $it.FileName, $it.Line, $it.Description)
+            } catch { Write-Host "[$N] (unreadable)" }
             if ($Json) {
                 # Raw fields, null when absent: placement is the reader's job (src/xaeErrorPlacement.js).
                 $f = $null; $l = $null; $c = $null; $d = $null; $pr = $null; $lv = $null
@@ -1826,12 +1845,15 @@ try {
         Write-Host "----- Output window panes -----" -ForegroundColor Magenta
         try {
             $ow = (Invoke-ComRetry { $dte.Windows.Item("{34E76E81-EE4A-11D0-AE2E-00A0C90FFFC3}") }).Object
-            foreach ($pane in $ow.OutputWindowPanes) {
-                $doc = $pane.TextDocument
-                $sel = $doc.Selection
-                $sel.StartOfDocument($false)
-                $sel.EndOfDocument($true)
-                $txt = $sel.Text
+            $owPanes = @(Invoke-ComRetry -MaxTries 10 { @($ow.OutputWindowPanes) })
+            foreach ($pane in $owPanes) {
+                $txt = $null
+                try {
+                    $sel = Invoke-ComRetry -MaxTries 10 { $pane.TextDocument.Selection }
+                    Invoke-ComRetry -MaxTries 10 { $sel.StartOfDocument($false) }
+                    Invoke-ComRetry -MaxTries 10 { $sel.EndOfDocument($true) }
+                    $txt = Invoke-ComRetry -MaxTries 10 { $sel.Text }
+                } catch { Write-Host "output pane read failed: $_" -ForegroundColor Yellow; continue }
                 if ($txt -and $txt.Trim().Length -gt 0) {
                     Write-Host "--- pane: $($pane.Name) ---" -ForegroundColor DarkMagenta
                     Write-Host $txt
@@ -2010,6 +2032,9 @@ catch {
     if ("$_" -eq $script:CancelSentinel) {
         # -CancelFile: not an error. The finally below closes the solution and quits only our shell.
         $exitCode = 4
+    } elseif ("$_" -eq $script:ForeignShellSentinel) {
+        # Already reported (shell-not-ours); the finally below leaves that shell alone.
+        $exitCode = 2
     } else {
     Write-Host "FATAL: $_" -ForegroundColor Red
     Write-Host "AT: $($_.InvocationInfo.PositionMessage)"
@@ -2021,7 +2046,11 @@ catch {
 finally {
     $script:CancelArmed = $false
     Enter-Phase 'close'
-    if ($dte) {
+    if ($dte -and $script:ForeignShell) {
+        Write-Host "NOTE: the XAE Shell was not touched (not provably ours)." -ForegroundColor DarkGray
+        [System.Runtime.Interopservices.Marshal]::ReleaseComObject($dte) | Out-Null
+    }
+    elseif ($dte) {
         try { $dte.Solution.Close($false) } catch { }
 
         # Quit ONLY the shell we can prove we started, and only if that PID is still the process we
@@ -2047,6 +2076,9 @@ finally {
             }
         } elseif (-not $ownShellPid) {
             Write-Host "NOTE: leaving the XAE Shell open - could not prove which process it is." -ForegroundColor DarkGray
+            # Left running, so leave it usable: a headless shell nobody can see cannot be closed by hand.
+            try { Invoke-ComRetry -MaxTries 5 { $dte.SuppressUI = $false } } catch { }
+            try { Invoke-ComRetry -MaxTries 5 { $dte.MainWindow.Visible = $true } } catch { }
         }
 
         [System.Runtime.Interopservices.Marshal]::ReleaseComObject($dte) | Out-Null

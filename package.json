@@ -156,12 +156,14 @@
       {
         "command": "twincat.xaeBuild",
         "title": "Build through XAE (requires TwinCAT)",
-        "category": "TC Toolkit"
+        "category": "TC Toolkit",
+        "enablement": "!twincat.xaeRunning"
       },
       {
         "command": "twincat.xaeBuildAndActivate",
         "title": "Build and Activate through XAE… (requires TwinCAT)",
-        "category": "TC Toolkit"
+        "category": "TC Toolkit",
+        "enablement": "!twincat.xaeRunning"
       },
       {
         "command": "twincat.xaeShowTargets",
@@ -401,6 +403,18 @@
         {
           "command": "twincat.addSetAccessor",
           "when": "false"
+        },
+        {
+          "command": "twincat.xaeBuild",
+          "when": "isWindows"
+        },
+        {
+          "command": "twincat.xaeBuildAndActivate",
+          "when": "isWindows"
+        },
+        {
+          "command": "twincat.xaeShowTargets",
+          "when": "isWindows"
         }
       ],
       "view/item/context": [

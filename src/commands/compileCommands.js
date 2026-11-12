@@ -62,6 +62,23 @@ const GPP_DIAGNOSTIC_SOURCE = 'TC Toolkit g++';
 /** The path of the links the Problems entries carry (`<scheme>://<extension id>/compileProblem?id=N`). */
 const PROBLEM_LINK_PATH = '/compileProblem';
 
+/**
+ * Other problem links this extension's one URI handler answers (VS Code allows one per extension):
+ * URI path → opener of the problem with that id. Build through XAE registers `/xaeProblem` here.
+ * @type {Map<string, (id: number) => Promise<void>|void>}
+ */
+const problemLinkResolvers = new Map();
+
+/**
+ * Lets another module's Problems entries link back into the extension through the URI handler
+ * registered here. The link carries an id only, never a path; the resolver opens the problem.
+ * @param {string} linkPath e.g. `/xaeProblem`.
+ * @param {(id: number) => Promise<void>|void} resolver
+ */
+function registerProblemLinkResolver(linkPath, resolver) {
+    problemLinkResolvers.set(linkPath, resolver);
+}
+
 /** Internal command: pick one of the current compile problems and go to it. */
 const GO_TO_PROBLEM_COMMAND = 'twincat.compile.goToProblem';
 /** The output channel for what a run did not show elsewhere (the project's compiler defines). */
@@ -868,8 +885,10 @@ function registerCompileCommands(context, { provider, getProjectMap, onSettingsC
     if (typeof vscode.window.registerUriHandler === 'function') {
         context.subscriptions.push(vscode.window.registerUriHandler({
             handleUri: async (uri) => {
-                if (uri.path !== PROBLEM_LINK_PATH) return;
                 const id = Number((/(?:^|&)id=(\d+)(?:&|$)/.exec(uri.query || '') || [])[1]);
+                const other = problemLinkResolvers.get(uri.path);
+                if (other) { await other(id); return; }
+                if (uri.path !== PROBLEM_LINK_PATH) return;
                 // Only a problem of the current results is opened: the link carries an id, never a path.
                 const problem = allProblems().find(p => p.id === id);
                 if (problem) await goToProblem(problem);
@@ -902,6 +921,6 @@ function registerCompileCommands(context, { provider, getProjectMap, onSettingsC
 }
 
 module.exports = {
-    registerCompileCommands, problemDiagnostic, openProblem, selectionOf, pickProjectKey, describeCpp, compileStatusText, gppMissingText, gppMissingButtons, gppTooOldNote, gppTooOldButtons,
+    registerCompileCommands, registerProblemLinkResolver, problemDiagnostic, openProblem, selectionOf, pickProjectKey, describeCpp, compileStatusText, gppMissingText, gppMissingButtons, gppTooOldNote, gppTooOldButtons,
     DIAGNOSTIC_SOURCE, GPP_DIAGNOSTIC_SOURCE, PROBLEM_LINK_PATH, GO_TO_PROBLEM_COMMAND, OUTPUT_CHANNEL_NAME
 };

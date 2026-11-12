@@ -808,7 +808,7 @@ class TwinCatCustomEditorProvider {
         `<label class="split-menu-item" title="Also compile that C++ with g++ (optional; turns Generate C++ on)"><input type="checkbox" id="compile-opt-gpp"><span>Build with g++</span></label>` +
         // Build through XAE (R14): Windows with TwinCAT XAE only; hidden until the host says it is available.
         `<div id="xae-menu-section" hidden><div class="split-menu-separator" role="separator"></div>` +
-        `<div class="split-menu-title" id="xae-menu-title">Through TwinCAT XAE</div>` +
+        `<div class="split-menu-title" id="xae-menu-title">Through XAE</div>` +
         `<button type="button" class="split-menu-item split-menu-action" id="xae-build" title="Build the solution with XAE's own compiler and libraries (requires TwinCAT XAE)">Build through XAE</button>` +
         `<button type="button" class="split-menu-item split-menu-action" id="xae-activate" title="Build, then activate the configuration on a runtime of this machine you pick and confirm (requires TwinCAT XAE)">Build and Activate through XAE…</button>` +
         `<label class="split-menu-item" title="Show the XAE Shell window for the whole build instead of building headless (it is always shown during activation)"><input type="checkbox" id="xae-opt-window"><span>Show the XAE window</span></label>` +

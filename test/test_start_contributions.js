@@ -213,6 +213,13 @@ assert(/^\^1\.66\./.test(pkg.engines.vscode), `engine stays ^1.66 (${pkg.engines
         assert(pkg.activationEvents.includes(`onCommand:${id}`), `${id} activates the extension (onCommand)`);
         assert(/^Build|^Show/.test(title) && !/^TwinCAT/.test(title), `${id}'s title names no product with TwinCAT (only "requires TwinCAT")`);
     }
+    const palette = (c.menus.commandPalette || []);
+    for (const id of Object.keys(XAE_COMMANDS)) {
+        assert(palette.some(m => m.command === id && m.when === 'isWindows'), `${id} is in the Command Palette on Windows only (when: isWindows)`);
+    }
+    for (const id of ['twincat.xaeBuild', 'twincat.xaeBuildAndActivate']) {
+        assert(contributed.get(id).enablement === '!twincat.xaeRunning', `${id} is disabled while a run is in progress (enablement: !twincat.xaeRunning)`);
+    }
     assert(registered.has('twincat.xaeBuild.goToProblem') && !contributed.has('twincat.xaeBuild.goToProblem'), 'the XAE Go to Problem command is internal (registered, not contributed)');
     assert(ALLOWED_COMMANDS.has('twincat.xaeBuild') && ALLOWED_COMMANDS.has('twincat.xaeBuildAndActivate') && !ALLOWED_COMMANDS.has('twincat.xaeShowTargets'),
         'the start page may run the two XAE build commands');

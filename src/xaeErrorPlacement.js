@@ -82,6 +82,23 @@ function severityOf(level) {
 }
 
 /**
+ * How many items are errors, warnings and messages (by `severityOf`). The one place XAE error-list
+ * items are counted: the summary, the status bar and the exit description all use it.
+ * @param {Array<{level: string|null}>} items
+ * @returns {{errors: number, warnings: number, infos: number}}
+ */
+function countBySeverity(items) {
+    const n = { errors: 0, warnings: 0, infos: 0 };
+    for (const it of items) {
+        const s = severityOf(it.level);
+        if (s === 'error') n.errors++;
+        else if (s === 'warning') n.warnings++;
+        else n.infos++;
+    }
+    return n;
+}
+
+/**
  * Lines of an output pane that name a file and line. Deliberately empty until real XAE output has
  * been captured on Windows: guessing a format would place errors on the wrong line with confidence.
  * @param {string} text
@@ -146,7 +163,8 @@ function escapeRe(s) {
  * @param {XaeErrorItem[]} errorItems
  * @param {Array<{name: string, text: string}>} panes
  * @param {PlacementDeps} deps
- * @returns {{byFile: Map<string, XaeProblem[]>, general: XaeErrorItem[], placed: number, total: number}}
+ * @returns {{byFile: Map<string, XaeProblem[]>, general: XaeErrorItem[], placed: number, total: number,
+ *   errors: number, warnings: number, infos: number}}
  */
 function placeXaeErrors(errorItems, panes, deps) {
     const parseXml = deps.parseXml || parseTwinCatXml;
@@ -208,12 +226,13 @@ function placeXaeErrors(errorItems, panes, deps) {
             severity, message: item.description + (exact ? '' : APPROXIMATE_NOTE), exact
         });
     }
-    return { byFile, general, placed, total: items.length };
+    return { byFile, general, placed, total: items.length, ...countBySeverity(items) };
 }
 
 /**
- * The run summary's sentence about errors.
- * @param {{placed: number, total: number}} placement
+ * The run summary's sentence about the error list, counted by severity (warnings and messages are
+ * not called errors).
+ * @param {{placed: number, total: number, errors?: number, warnings?: number, infos?: number}} placement
  * @param {number} exitCode
  * @param {string} channelName
  * @returns {string}
@@ -221,9 +240,17 @@ function placeXaeErrors(errorItems, panes, deps) {
 function placementSummary(placement, exitCode, channelName) {
     if (exitCode === 1 && placement.total === 0) return `XAE reported no error list; see '${channelName}'.`;
     if (placement.total === 0) return '';
-    return `${placement.total} error${placement.total === 1 ? '' : 's'} (${placement.placed} placed in Problems).`;
+    const plural = (/** @type {number} */ n, /** @type {string} */ word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+    const errors = placement.errors === undefined ? placement.total : placement.errors;
+    const warnings = placement.warnings || 0;
+    const infos = placement.infos || 0;
+    const parts = [];
+    if (errors > 0 || (warnings === 0 && infos === 0)) parts.push(plural(errors, 'error'));
+    if (warnings > 0) parts.push(plural(warnings, 'warning'));
+    if (infos > 0) parts.push(plural(infos, 'message'));
+    return `${parts.join(', ')} (${placement.placed} placed in Problems).`;
 }
 
 module.exports = {
-    OBJECT_FILE_RE, APPROXIMATE_NOTE, severityOf, parseOutputPaneLines, sectionMarker, placeXaeErrors, placementSummary
+    OBJECT_FILE_RE, APPROXIMATE_NOTE, severityOf, countBySeverity, parseOutputPaneLines, sectionMarker, placeXaeErrors, placementSummary
 };

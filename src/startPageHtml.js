@@ -150,11 +150,11 @@ function renderStartPageHtml(o) {
         `<label class="option"><input type="checkbox" id="opt-build-gpp"><span class="option-text"><span class="option-label">Build with g++</span>` +
         `<span class="option-detail">Also compile that C++ with g++ (optional; needs g++, turns Generate C++ on)</span></span></label>` +
         // Build through XAE (R14): shown only on Windows (the host's xaeOptions.available).
-        `<div id="xae-options" class="xae-options" role="group" aria-label="Through TwinCAT XAE" hidden>` +
+        `<div id="xae-options" class="xae-options" role="group" aria-label="Through XAE" hidden>` +
         `<div class="option-separator" role="separator"></div>` +
-        `<button type="button" class="option-action" id="xae-build-run" data-command="twincat.xaeBuild"><span class="option-label">Build through XAE</span>` +
+        `<button type="button" class="option-action" id="xae-build-run" data-command="twincat.xaeBuild" data-needs-project disabled><span class="option-label">Build through XAE</span>` +
         `<span class="option-detail">Build the solution with XAE's own compiler and libraries (requires TwinCAT XAE)</span></button>` +
-        `<button type="button" class="option-action" id="xae-activate-run" data-command="twincat.xaeBuildAndActivate"><span class="option-label">Build and Activate through XAE…</span>` +
+        `<button type="button" class="option-action" id="xae-activate-run" data-command="twincat.xaeBuildAndActivate" data-needs-project disabled><span class="option-label">Build and Activate through XAE…</span>` +
         `<span class="option-detail">Then activate on a runtime of this machine you pick and confirm</span></button>` +
         `<label class="option"><input type="checkbox" id="opt-xae-window"><span class="option-text"><span class="option-label">Show the XAE window</span>` +
         `<span class="option-detail">Build with the XAE Shell window visible instead of headless (it is always shown during activation)</span></span></label>` +
