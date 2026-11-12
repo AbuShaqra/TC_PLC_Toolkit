@@ -1,0 +1,15 @@
+{"v":1,"t":"hello","mode":"activate","showWindow":false}
+{"v":1,"t":"shell","pid":4242,"ours":true,"preexisting":[]}
+{"v":1,"t":"phase","name":"build"}
+{"v":1,"t":"ui","requested":"headless","suppressUI":true,"mainWindowVisible":false,"reason":"build"}
+{"v":1,"t":"buildResult","failedProjects":0}
+{"v":1,"t":"phase","name":"target"}
+{"v":1,"t":"target","netId":"198.51.100.4.1.1","local":true,"platform":"TwinCAT OS (x64)"}
+{"v":1,"t":"phase","name":"activate"}
+{"v":1,"t":"ui","requested":"headless","suppressUI":false,"mainWindowVisible":true,"reason":"activation"}
+{"v":1,"t":"phase","name":"restart"}
+{"v":1,"t":"phase","name":"verify"}
+{"v":1,"t":"activation","netId":"198.51.100.4.1.1","adsState":15,"stateName":"CONFIG","outcome":"failed"}
+{"v":1,"t":"warning","text":"configuration was activated, but 198.51.100.4.1.1 is in CONFIG (ADS state 15), not RUN."}
+{"v":1,"t":"done","exitCode":3,"ui":{"requested":"headless","buildPhase":{"suppressUI":true,"mainWindowVisible":false},"versionSwitchKeptVisible":false,"activationShown":true}}
+{"exit":3}

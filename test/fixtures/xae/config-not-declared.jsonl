@@ -1,0 +1,6 @@
+{"v":1,"t":"hello","mode":"build","showWindow":false}
+{"v":1,"t":"phase","name":"resolve"}
+{"log":"FATAL: 'Release|TwinCAT RT (x64)' is not declared by this solution."}
+{"v":1,"t":"fatal","code":"config-not-declared","text":"'Release|TwinCAT RT (x64)' is not declared by this solution.","data":{"declared":["Debug|TwinCAT OS (x64)","Release|TwinCAT OS (x64)"]}}
+{"v":1,"t":"done","exitCode":2,"ui":null}
+{"exit":2}
