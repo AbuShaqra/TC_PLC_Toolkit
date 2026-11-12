@@ -48,7 +48,7 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   **Fork gap found** (`gpp-real`): sample 1's `GVL_System.fbStation.State` (PROPERTY read through a global FB
   instance) is emitted as `FBSTATION.STATE` (no getter) → g++ error on correct code; pinned in
   `test/test_cpp_real.js` `KNOWN_GPP_GAPS` — report to the fork lane. Sample 2 builds cleanly.
-  **Review round 1 fixed** (11 findings, commit after `f2e06f2`): no C++ for a project that needs library declarations
+  **Review round 1 fixed** (11 findings, `c00eaee`; gates re-run green: 116/116 FULL, dev-host 103/1 P8): no C++ for a project that needs library declarations
   (`libraryBlocksCpp`; they made empty-bodied library FBs and would have put declaration-derived C++ in the project);
   owner = `<ProjectGuid>` so a `.plcproj` rename cleans up the old pair and `.o`; case-insensitive record names on
   win32/darwin; CRLF-insensitive hash; the record is saved even when a later write fails; header errors placed on the
