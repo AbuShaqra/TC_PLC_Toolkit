@@ -218,6 +218,16 @@ function libraryCoverageLines(coverage) {
 }
 
 /**
+ * The output channel's list of the library symbols that stopped the C++ generation (no declaration
+ * the compiler can use), by library.
+ * @param {LibraryCoverage[]} coverage
+ * @returns {string[]} Indented lines (none when there are none).
+ */
+function libraryUndeclaredLines(coverage) {
+    return (coverage || []).filter(e => e.undeclared.length > 0).map(e => `  ${libraryLabel(e)}: ${e.undeclared.join(', ')}`);
+}
+
+/**
  * The comment put at the top of a generated `.cpp` / `.hpp` that holds library blocks with empty
  * bodies, naming them; '' when there are none.
  * @param {LibraryCoverage[]} coverage
@@ -485,7 +495,7 @@ async function runGenerate(o) {
 module.exports = {
     CPP_FILES_DIR, MANIFEST_NAME, MANIFEST_GENERATOR, DEFAULT_GENERATE_TIMEOUT_MS,
     cppFileStem, cppOutputPaths, isUnderCppFiles, cppOwnerId,
-    libraryCoverage, libraryCoverageText, libraryCoverageLines, libraryCoverageHeader, withCoverageHeader, UNKNOWN_LIBRARY,
+    libraryCoverage, libraryCoverageText, libraryCoverageLines, libraryUndeclaredLines, libraryCoverageHeader, withCoverageHeader, UNKNOWN_LIBRARY,
     readManifest, ownership, writeOwnedOutputs, recordOwnedFile, claimOutput,
     runGenerate
 };

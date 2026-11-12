@@ -316,7 +316,8 @@ with the small arrow next to the **Compile** button (in the editor's toolbar, or
   summary says so and names the libraries (as the `.plcproj` references them, e.g. `Tc2_Standard`), the
   *TC Toolkit Compile* output lists the library blocks used, and a comment at the top of the generated
   files names them. A library symbol with no usable declaration at all (see *Update Library Definitions*
-  above) stops the generation, and the summary names it.
+  above; or one that needs a type the compiler does not support, such as `LTIME`) stops the generation:
+  the summary and the *TC Toolkit Compile* output name it and its library.
   The summary and the status bar say what was written; **Open C++** opens the file.
 - **Build with g++** (`tcToolkit.compiler.buildWithGpp`) — also compiles that `.cpp` with g++, as a
   check that the generated code builds (`CPP_Files/<project>.o`; nothing is linked or run). g++'s errors

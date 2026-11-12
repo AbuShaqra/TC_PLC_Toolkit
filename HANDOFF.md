@@ -10,11 +10,12 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   merged at `3210d33`, Release run 41671593015 green, VSIX `twincat-plc-toolkit-0.10.1.vsix` attached).
 - **Version history:** 0.10.1 struct EXTENDS from own DUTs (PR #22); 0.10.0 Libraries scoping (PR #18); 0.9.0
   improvement-plan phases; 0.8.x project-aware Generate ST, ResizeObserver fix, solution→project Objects tree.
-- **Last verified:** 2026-11-12 (Linux container, `claude/focused-ptolemy-m6acaz` = R13 on top of `dev` + roadmap) —
-  `REQUIRE_FULL_SUITE=1 npm test` green (**116/116, Coverage: FULL**; optional gates compile-real, cpp-real and gpp-real
-  all ran), `npm run typecheck` and `npm run lint` exit 0; Linux dev-host (`xvfb-run -a node test/devhost/run.js`) 103
-  pass / 1 fail, the fail being the known P8 line-ending one; browser harnesses `run.js` (83 pass) and `run_start_page.js`
-  (84 pass) green after the library-coverage change (`run_pragmas.js` last run before it, green) (Playwright from `/opt/node-tools/node_modules`, browsers in `/opt/pw-browsers`).
+- **Last verified:** 2026-11-12 (Linux container, `claude/focused-ptolemy-m6acaz` = R13 review round 2 on top of `dev` +
+  roadmap) — `REQUIRE_FULL_SUITE=1 npm test` green (**116/116, Coverage: FULL**; optional gates compile-real, cpp-real
+  and gpp-real all ran), `npm run typecheck` and `npm run lint` exit 0; Linux dev-host (`TCDEV_CODE=<scratch>/VSCode-linux-x64/code
+  TCDEV_CODE_ARGS="--no-sandbox --disable-gpu" xvfb-run -a node test/devhost/run.js`) 103 pass / 1 fail, the fail being
+  the known P8 line-ending one; browser harnesses `run.js` (83), `run_start_page.js` (84), `run_pragmas.js` (47) green
+  (Playwright from `/opt/node-tools/node_modules`, browsers in `/opt/pw-browsers`).
 - **R12 `{IF}`-aware LSP diagnostics: MERGED** into `dev` as PR #36 (squash `02f2b96`, 2026-11-12 10:56 UTC) after the
   user's Windows checks (split IF head, both-branch completion/references, END_FOR outside the group, multi-line fbRS, SIM define).
   Review fixes (do not regress): a segment boundary is never a named argument on its own line (`fbRS(\n SET := c,`
@@ -52,13 +53,25 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   the compile mode now gets the check's library declarations, so a project that uses vendor-library symbols is
   generated and g++-checked; library FBs/functions are empty-bodied C++ (g++ accepts it with no warning —
   `test_cpp_real.js` LIB on a sample copy with the synthetic library). `cppGenerate.libraryCoverage` (from
-  `prepareLibraryCheck`'s `declaredSymbols`/`compilerSubstitutes` and `CheckResult.filteredLibrary`) is shown as a summary
+  `prepareLibraryCheck`'s `declaredSymbols`/`compilerSubstitutes`/`undeclaredUses(CheckResult.filteredLibrary)`) is shown as a summary
   sentence naming the libraries as the `.plcproj` references them (a warning), the blocks per library in the *TC Toolkit
   Compile* channel, and a line-comment header on the `.cpp`/`.hpp` (inside the hashed text: ownership unaffected; none
-  when no block is used). A filtered name (no usable declaration) makes the compile mode fail; the summary names it and
-  its library. Consequence the user accepted with the decision: declaration-derived C++ (class/function names, member
-  layout of library types) now lands in the project's `CPP_Files` — the 2026-11-10 "declarations stay in memory" rule
-  still holds for the ST declarations themselves (`libraryDecls.js` writes nothing). Rules: DEVELOPMENT.md R13 "Library symbols".
+  when no block is used). Review round 2 (2026-11-12) closed most of the filtered-error cases so they generate
+  too: a library constant as an array bound/string length is written as its `.tmc` value (`F_SynBounded`), and a
+  library FB's own `.tmc` members are declared as a `VAR` block, so a derived project block reading an inherited
+  variable compiles (`FB_LibChild EXTENDS FB_SynAxis` reading `nInternal`: C++ + g++ clean, `test_cpp_real.js`).
+  A filtered use is named through its owner and library (`FB_SynAxis.tSynSpan`, Synthetic Motion Library);
+  the channel lists coverage only when C++ was written, else only the blocking symbols.
+  **OPEN QUESTION for the user (not decided):** what still has no usable declaration — a library symbol whose
+  interface needs a type this compiler lacks (LTIME, PVOID, XINT …), an opaque/interface type, a `VAR` member of
+  an unresolved type, a library FB's `VAR` read from outside (now filtered as before; the check cannot tell
+  whether TwinCAT allows it) — still STOPS the generation and g++ (summary + channel name each with its
+  library). No stub can be typed from what the sources give; the alternatives are a guessed stand-in type or
+  skipping the user code that uses it. Ask before changing.
+  **OPEN QUESTION for the user (licence, not decided):** declaration-derived C++ (class/function names, member
+  layout of library types) now lands in the project's `CPP_Files`, while the 2026-11-10 rule says library
+  declarations stay local and in memory (`libraryDecls.js` still writes no ST file). The 2026-11-12 decision did
+  not address this; record the user's answer here. Rules: DEVELOPMENT.md R13 "Library symbols".
   **Review round 1 fixed** (11 findings, `c00eaee`; gates re-run green: 116/116 FULL, dev-host 103/1 P8):
   owner = `<ProjectGuid>` so a `.plcproj` rename cleans up the old pair and `.o`; case-insensitive record names on
   win32/darwin; CRLF-insensitive hash; the record is saved even when a later write fails; header errors placed on the

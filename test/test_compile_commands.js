@@ -668,29 +668,32 @@ const settle = () => new Promise(r => setTimeout(r, 10));
             && /C\+\+ was not generated: the project has errors\./.test(lastNote()), 'R13 GEN: a check with errors generates nothing and says so; earlier output is left');
         checkAnswer = () => cleanCheck;
 
-        // Library symbols (user decision 2026-11-12): the C++ is still generated, and the summary names the library.
+        // Only a stripped namespace prefix (user decision 2026-11-12): `SynLib.TON` is the compiler's own TON,
+        // the check is clean, the C++ is generated, and the summary names the library whose block it stands in for.
         {
             const plcproj = path.join(ROOT, 'PLC', 'PLC.plcproj');
+            const fbBeforeNs = fs.readFileSync(fbPath, 'utf8');
             fs.writeFileSync(plcproj, '<Project><ItemGroup><PlaceholderReference Include="Synthetic Lib"><Namespace>SynLib</Namespace></PlaceholderReference></ItemGroup></Project>');
-            checkAnswer = () => ({ stdout: JSON.stringify({ dialect: 'twincat3', files: [], summary: {}, diagnostics: [
-                { file: '1.st', line: 1, column: 1, severity: 'error', message: "Undeclared variable 'SYNLIB'" }] }), code: 1 });
+            fs.writeFileSync(fbPath, fbXml(`tTimer(IN := TRUE, PT := T#1S);`)
+                .replace('METHOD Run : BOOL', `METHOD Run : BOOL${CRLF}VAR${CRLF}\ttTimer : SynLib.TON;${CRLF}END_VAR`));
+            checkAnswer = () => cleanCheck;
             const genBeforeLib = generationCalls().length;
-            const cppBefore = fs.readFileSync(cppFile, 'utf8');
             reset();
             answers.message.push(undefined);
             r13Result = await run('twincat.compileProject');
             await settle();
             const libLog = (calls.outputs || []).find(c => c.name === OUTPUT_CHANNEL_NAME);
-            assert(r13Result.errors === 0 && r13Result.filteredLibraryDiagnostics === 1 && r13Result.cpp.status === 'done'
-                && generationCalls().length === genBeforeLib + 1 && fs.readFileSync(cppFile, 'utf8') === cppBefore
-                && r13Result.cpp.libraries.length === 1 && r13Result.cpp.libraries[0].library === 'Synthetic Lib'
-                && r13Result.cpp.libraries[0].undeclared.join() === 'SynLib'
-                && /The generated C\+\+ does not cover the library code of Synthetic Lib: some of their symbols have no declaration here\. The library blocks used are listed in the "TC Toolkit Compile" output\./.test(lastNote())
+            const entry = r13Result.cpp.libraries[0] || {};
+            assert(r13Result.errors === 0 && r13Result.filteredLibraryDiagnostics === 0 && r13Result.cpp.status === 'done'
+                && generationCalls().length === genBeforeLib + 1
+                && r13Result.cpp.libraries.length === 1 && entry.library === 'Synthetic Lib' && entry.substitutes.join() === 'TON'
+                && entry.blocks.length === 0 && entry.undeclared.length === 0
+                && /The generated C\+\+ does not cover the library code of Synthetic Lib: the compiler's own implementation of their blocks is used instead\. The library blocks used are listed in the "TC Toolkit Compile" output\./.test(lastNote())
                 && !!libLog && libLog.lines.some(l => /PLC: library code the generated C\+\+ does not cover$/.test(l))
-                && libLog.lines.some(l => /^ {4}no usable declaration .*: SynLib$/.test(l)),
-            `R13 LIB: a project that uses library symbols is still generated; the summary and the output channel name the library (${r13Result.cpp.status}; ${lastNote()})`);
+                && libLog.lines.some(l => /^ {4}the compiler's own implementation used instead of the library's: TON$/.test(l)),
+            `R13 LIB: a project whose only library use is a stripped prefix on a compiler-provided block is generated; the summary and the output channel name the library (${r13Result.cpp.status}; ${lastNote()})`);
             fs.rmSync(plcproj);
-            checkAnswer = () => cleanCheck;
+            fs.writeFileSync(fbPath, fbBeforeNs);
         }
 
         // The build turned on elsewhere (workspace settings.json): generation follows IN THAT SCOPE; the g++ path is filled.
@@ -849,14 +852,20 @@ const settle = () => new Promise(r => setTimeout(r, 10));
             generationFails = true;
             const gppBeforeMissing = gppCalls().length;
             const cppKept = fs.readFileSync(cppFile, 'utf8');
+            const logBefore = ((calls.outputs || []).find(c => c.name === OUTPUT_CHANNEL_NAME) || { lines: [] }).lines.length;
             reset();
             answers.message.push(undefined);
             r13Result = await run('twincat.compileProject');
             await settle();
+            const missLog = { lines: ((calls.outputs || []).find(c => c.name === OUTPUT_CHANNEL_NAME) || { lines: [] }).lines.slice(logBefore) };
             assert(r13Result.errors === 0 && r13Result.cpp.status === 'failed' && gppCalls().length === gppBeforeMissing && fs.readFileSync(cppFile, 'utf8') === cppKept
                 && r13Result.cpp.libraries[0].undeclared.join() === 'F_SynLong'
                 && calls.errors.some(m => /C\+\+ could not be generated: there is no declaration the compiler can use for the library symbol F_SynLong \(Synthetic Lib\)/.test(m.m)),
             `R13 LIB: a library symbol with no usable declaration: no C++, no g++, and the summary names the symbol and its library (${lastNote()})`);
+            assert(!!missLog && !missLog.lines.some(l => /does not cover|do not cover|declarations with empty bodies/.test(l))
+                && missLog.lines.some(l => /PLC: C\+\+ could not be generated: no declaration the compiler can use for these library symbols$/.test(l))
+                && missLog.lines.some(l => l === '  Synthetic Lib: F_SynLong'),
+            `R13 LIB: with no C++ generated, the output channel lists only the symbols that stopped it, under a heading that says so (${missLog ? missLog.lines.slice(-4).join(' | ') : 'no channel'})`);
             generationFails = false;
             checkAnswer = () => cleanCheck;
             fs.writeFileSync(fbPath, fbBefore);

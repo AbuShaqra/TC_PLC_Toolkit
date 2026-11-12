@@ -17,7 +17,10 @@
  * (test/_synthLibProject.js: a `.plcproj` reference, the signatures dump, a `.tmc`) and a POU that
  * calls it. Its C++ is generated with the check's library declarations (empty-bodied library blocks,
  * named at the top of the files), g++ must compile it, and the summary sentence must name the
- * library; a library symbol with no usable declaration must make the generation fail and be named.
+ * library. That includes a library parameter whose array bound is a library constant, and a derived
+ * block of the project reading a variable it inherits from a library block. A library symbol with no
+ * usable declaration (a type this compiler lacks) must make the generation fail and be named,
+ * through its owner block, with its library.
  *
  * g++ ratchet: a project builds cleanly, or every g++ error is a KNOWN compiler gap listed below
  * (matched by message) — a new g++ error fails the gate, and a gap that no longer occurs is printed
@@ -35,7 +38,7 @@ const { createProjectMap } = require('../src/lsp/projectMap');
 const cc = require('../src/compileCheck');
 const cg = require('../src/cppGenerate');
 const gpp = require('../src/gpp');
-const { prepareLibraryCheck, classifyMessage } = require('../src/libraryDecls');
+const { prepareLibraryCheck } = require('../src/libraryDecls');
 const { SIGNATURES, TMC, pouXml } = require('./_synthLibProject');
 const { projectDefineArgs, fileDefineArgs } = require('../src/compilerDefines');
 
@@ -105,9 +108,10 @@ async function libraryScenario(tmp, setup, gppPath) {
     const projectDir = path.join(ws, 'TcToolkitSample2', 'TcToolkitSample2', 'TcToolkitSample2_PLC');
     const plcprojPath = path.join(projectDir, 'TcToolkitSample2_PLC.plcproj');
     const plcproj = fs.readFileSync(plcprojPath, 'utf8')
-        .replace('<Compile Include="POUs\\MAIN.TcPOU">', '<Compile Include="POUs\\P_LibUse.TcPOU">\r\n      <SubType>Code</SubType>\r\n    </Compile>\r\n    <Compile Include="POUs\\MAIN.TcPOU">')
+        .replace('<Compile Include="POUs\\MAIN.TcPOU">', '<Compile Include="POUs\\P_LibUse.TcPOU">\r\n      <SubType>Code</SubType>\r\n    </Compile>\r\n' +
+            '    <Compile Include="POUs\\FB_LibChild.TcPOU">\r\n      <SubType>Code</SubType>\r\n    </Compile>\r\n    <Compile Include="POUs\\MAIN.TcPOU">')
         .replace('<PlaceholderReference Include="Tc2_Standard">', '<PlaceholderReference Include="Synthetic Motion Library">\r\n      <DefaultResolution>Synthetic Motion Library, * (Synthetic Co)</DefaultResolution>\r\n      <Namespace>SynMotion</Namespace>\r\n    </PlaceholderReference>\r\n    <PlaceholderReference Include="Tc2_Standard">');
-    assert(plcproj.includes('P_LibUse.TcPOU') && plcproj.includes('<Namespace>SynMotion</Namespace>'), 'LIB: the sample copy references the synthetic library and compiles P_LibUse');
+    assert(plcproj.includes('P_LibUse.TcPOU') && plcproj.includes('FB_LibChild.TcPOU') && plcproj.includes('<Namespace>SynMotion</Namespace>'), 'LIB: the sample copy references the synthetic library and compiles P_LibUse');
     fs.writeFileSync(plcprojPath, plcproj);
     fs.writeFileSync(path.join(ws, 'library-signatures.xml'), SIGNATURES);
     fs.writeFileSync(path.join(projectDir, 'SynLib.tmc'), TMC);
@@ -115,12 +119,17 @@ async function libraryScenario(tmp, setup, gppPath) {
         '\tstPos : ST_SynPos;', '\tsName : T_SynName;', '\tnSum : DINT;', '\tfDist : LREAL;', '\tbOk : BOOL;', '\taBuf : ARRAY [0..15] OF INT;', 'END_VAR'].join('\r\n');
     const impl = (extra) => ['nSum := F_SynAdd(nA := 1, nB := 2);', 'fDist := SynMotion.F_SynDistance(stFrom := stPos, stTo := stPos, bValid => bOk);',
         'fbAxis(bExecute := TRUE, fTarget := 10.0, sAxisName := sName, stPos := stPos);', 'bOk := fbAxis.MSynReset(bHard := FALSE);',
-        'nSum := fbAxis.nSynCount;', "fbLog(sMessage := 'synthetic');", 'fbTimer(IN := bOk, PT := T#1S);', 'stPos.fX := cSynGain;', ...extra].join('\r\n');
+        'nSum := fbAxis.nSynCount;', "fbLog(sMessage := 'synthetic');", 'fbTimer(IN := bOk, PT := T#1S);', 'stPos.fX := cSynGain;',
+        'bOk := F_SynBounded(aData := aBuf);', ...extra].join('\r\n');
     const pouPath = path.join(projectDir, 'POUs', 'P_LibUse.TcPOU');
+    // A block of the project derived from a library block, reading a variable it inherits.
+    const childPath = path.join(projectDir, 'POUs', 'FB_LibChild.TcPOU');
+    const childDecl = ['FUNCTION_BLOCK FB_LibChild EXTENDS FB_SynAxis', 'VAR', '\tnCopy : DINT;', 'END_VAR'].join('\r\n');
 
-    /** The command's steps for this project, with P_LibUse's body given. */
-    const runProject = async (extra) => {
+    /** The command's steps for this project, with P_LibUse's and FB_LibChild's bodies given. */
+    const runProject = async (extra, childImpl = ['nCopy := nInternal;']) => {
         fs.writeFileSync(pouPath, pouXml('P_LibUse', decl, impl(extra)));
+        fs.writeFileSync(childPath, pouXml('FB_LibChild', childDecl, childImpl.join('\r\n')));
         const project = [...createProjectMap([ws]).projects.values()].find(p => p.dir === projectDir);
         const files = [...project.objectFiles.values()].sort().map(filePath => ({ filePath, text: fs.readFileSync(filePath, 'utf8') }));
         const built = cc.buildCheckInputs(files, parseTwinCatXml);
@@ -129,8 +138,7 @@ async function libraryScenario(tmp, setup, gppPath) {
             inputs: library.inputs, extraFiles: library.extraFiles, defineArgs: [] };
         const check = await cc.runCheck({ ...run, libraryFilter: library.filter });
         const coverage = cg.libraryCoverage({ declaredSymbols: library.declaredSymbols, compilerSubstitutes: library.compilerSubstitutes,
-            undeclared: check.filteredLibrary.map(d => classifyMessage(d.message)).filter(c => c && c.kind !== 'cascade')
-                .map(c => ({ name: library.spellingOf(c.name), library: library.libraryOf(c.name) })) });
+            undeclared: library.undeclaredUses(check.filteredLibrary) });
         const gen = await cg.runGenerate({ ...run, stem: 'TcToolkitSample2_PLC' });
         return { project, library, check, coverage, gen };
     };
@@ -139,13 +147,14 @@ async function libraryScenario(tmp, setup, gppPath) {
     assert(ok.project.objectFiles.size > 0 && ok.library.extraFiles.length > 0 && ok.check.status === 'done' && ok.check.errors === 0 && ok.check.filteredLibraryDiagnostics === 0,
         `LIB: the check of a project that calls library blocks has no errors (${ok.check.status} ${ok.check.errors} errors, ${ok.library.extraFiles.length} declaration files)`);
     const syn = ok.coverage.find(e => e.library === 'Synthetic Motion Library') || { blocks: [], substitutes: [], types: [], globalLists: [], undeclared: [] };
-    assert(ok.coverage.length === 1 && ['FB_SynAxis', 'FB_SynLogger', 'F_SynAdd', 'F_SynDistance'].every(n => syn.blocks.includes(n))
+    assert(ok.coverage.length === 1 && ['FB_SynAxis', 'FB_SynLogger', 'F_SynAdd', 'F_SynBounded', 'F_SynDistance'].every(n => syn.blocks.includes(n))
         && syn.substitutes.join() === 'TON' && syn.types.includes('ST_SynPos') && syn.globalLists.join() === 'GVL_SynConst' && syn.undeclared.length === 0,
     `LIB: the coverage names the library as the .plcproj references it, with its blocks (${JSON.stringify(ok.coverage)})`);
     const summary = cg.libraryCoverageText(ok.coverage, { built: !!gppPath, channel: 'TC Toolkit Compile' });
     assert(/do(es)? not cover the library code of Synthetic Motion Library: their code is not available, so their function blocks and functions are declarations with empty bodies there\./.test(summary),
         `LIB: the summary sentence names the library (${summary})`);
-    assert(ok.gen.status === 'done' && /FB_SYNAXIS::MSYNRESET/.test(ok.gen.cppText) && /F_SYNADD\(/.test(ok.gen.cppText),
+    assert(ok.gen.status === 'done' && /FB_SYNAXIS::MSYNRESET/.test(ok.gen.cppText) && /F_SYNADD\(/.test(ok.gen.cppText)
+        && /F_SYNBOUNDED\(/.test(ok.gen.cppText) && /class FB_LIBCHILD\s*:\s*public FB_SYNAXIS/.test(ok.gen.hppText) && /NINTERNAL/.test(ok.gen.hppText),
         `LIB: the compile mode, given the same declarations, generates C++ with the library blocks (${ok.gen.status} ${ok.gen.message})`);
     if (ok.gen.status !== 'done') { console.log(ok.gen.log); return; }
     const paths = cg.cppOutputPaths(projectDir, 'TcToolkitSample2_PLC');
@@ -155,7 +164,7 @@ async function libraryScenario(tmp, setup, gppPath) {
         { name: path.basename(paths.hpp), text: cg.withCoverageHeader(ok.gen.hppText, header) }] });
     const cppText = fs.readFileSync(paths.cpp, 'utf8');
     assert(w.ok && w.written.length === 2 && cppText.startsWith('// TC Toolkit: this C++ does not contain the code of the library blocks below.')
-        && /^\/\/ {3}Synthetic Motion Library: F_SynAdd, F_SynDistance, FB_SynAxis, FB_SynLogger$/m.test(cppText)
+        && /^\/\/ {3}Synthetic Motion Library: F_SynAdd, F_SynBounded, F_SynDistance, FB_SynAxis, FB_SynLogger$/m.test(cppText)
         && fs.readFileSync(paths.hpp, 'utf8').startsWith('// TC Toolkit:'), 'LIB: the generated files name the empty-bodied library blocks at the top');
     if (!gppPath) {
         console.log('[SKIP] LIB: g++ build of the library project (no g++ found)');
@@ -167,11 +176,15 @@ async function libraryScenario(tmp, setup, gppPath) {
         if (r.exitCode !== 0) console.log(r.output);
     }
 
-    // A library symbol with no usable declaration (its parameter needs a constant the compiler cannot evaluate here).
-    const bad = await runProject(['bOk := F_SynBounded(aData := aBuf);']);
+    // Library symbols with no usable declaration: their types (LTIME) are not ones this compiler has.
+    const bad = await runProject([], ['tSynSpan := tSynSpan;']);
+    const badSyn = bad.coverage.find(e => e.library === 'Synthetic Motion Library') || { undeclared: [] };
     assert(bad.check.status === 'done' && bad.check.errors === 0 && bad.check.filteredLibraryDiagnostics >= 1 && bad.gen.status === 'failed'
-        && bad.coverage.some(e => e.library === 'Synthetic Motion Library' && e.undeclared.includes('F_SynBounded')),
-    `LIB: a library symbol with no usable declaration: the check hides it, the compile mode fails, and the coverage names it with its library (${bad.gen.status}; ${JSON.stringify(bad.coverage.map(e => e.undeclared))})`);
+        && badSyn.undeclared.join() === 'FB_SynAxis.tSynSpan' && !bad.coverage.some(e => !e.library),
+    `LIB: an inherited library variable with no usable declaration: the check hides it, the compile mode fails, and it is named through its owner with its library (${bad.gen.status}; ${JSON.stringify(bad.coverage.map(e => [e.library, e.undeclared]))})`);
+    const badFn = await runProject(['bOk := F_SynLongTime(tSpan := T#1S);']);
+    assert(badFn.gen.status === 'failed' && badFn.coverage.some(e => e.library === 'Synthetic Motion Library' && e.undeclared.join() === 'F_SynLongTime'),
+        `LIB: a library function with no usable declaration is named in the library's spelling with its library (${badFn.gen.status}; ${JSON.stringify(badFn.coverage.map(e => [e.library, e.undeclared]))})`);
 }
 
 (async () => {

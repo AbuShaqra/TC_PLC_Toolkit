@@ -43,12 +43,12 @@ const pendingEditsCore = require('../../media/pendingEdits');
 const {
     COMPILER_SECTION, isCompilerAvailable, checkSetup, buildCheckInputs, runCheck, summarize, describeLocation, paneRange
 } = require('../compileCheck');
-const { prepareLibraryCheck, classifyMessage } = require('../libraryDecls');
+const { prepareLibraryCheck } = require('../libraryDecls');
 const { projectDefineArgs, fileDefineArgs } = require('../compilerDefines');
 const { CPP_SECTION, effectiveOptions, couplingWrites, checkboxWrites, readOptionState } = require('../cppSettings');
 const {
     cppOutputPaths, cppOwnerId, writeOwnedOutputs, recordOwnedFile, claimOutput, runGenerate,
-    libraryCoverage, libraryCoverageText, libraryCoverageLines, libraryCoverageHeader, withCoverageHeader, UNKNOWN_LIBRARY
+    libraryCoverage, libraryCoverageText, libraryCoverageLines, libraryUndeclaredLines, libraryCoverageHeader, withCoverageHeader, UNKNOWN_LIBRARY
 } = require('../cppGenerate');
 const { SETTING_GPP_PATH, resolveGpp, describeGppProblem, buildGppArgs, placeGppMessages, runGpp, summarizeGpp } = require('../gpp');
 
@@ -664,8 +664,7 @@ function registerCompileCommands(context, { provider, getProjectMap, onSettingsC
                             // stand-ins, and names the check's library filter hid (no declaration).
                             const libraries = libraryCoverage({
                                 declaredSymbols: library.declaredSymbols, compilerSubstitutes: library.compilerSubstitutes,
-                                undeclared: result.filteredLibrary.map(d => classifyMessage(d.message)).filter(c => !!c && c.kind !== 'cascade')
-                                    .map(c => ({ name: library.spellingOf(/** @type {any} */ (c).name), library: library.libraryOf(/** @type {any} */ (c).name) }))
+                                undeclared: library.undeclaredUses(result.filteredLibrary)
                             });
                             cpp = result.errors > 0
                                 ? { status: 'skipped', message: 'C++ was not generated: the project has errors.' }
@@ -725,10 +724,15 @@ function registerCompileCommands(context, { provider, getProjectMap, onSettingsC
                     notes.push('Run "TC Toolkit: Update Library Definitions" to check calls into libraries too.');
                 }
                 const cppNotes = describeCpp(cpp);
-                if (cpp && cpp.libraries && cpp.libraries.length > 0) {
+                if (cpp && cpp.status === 'done' && cpp.libraries && cpp.libraries.length > 0) {
                     const channel = outputChannel();
                     channel.appendLine(`[${new Date().toISOString()}] ${projectName}: library code the generated C++${cpp.gpp && cpp.gpp.status === 'done' ? ' and the g++ check do' : ' does'} not cover`);
                     for (const line of libraryCoverageLines(cpp.libraries)) channel.appendLine(line);
+                } else if (cpp && cpp.status === 'failed' && cpp.libraries && cpp.libraries.some(e => e.undeclared.length > 0)) {
+                    // No C++ was written: only the library symbols that stopped it are listed.
+                    const channel = outputChannel();
+                    channel.appendLine(`[${new Date().toISOString()}] ${projectName}: C++ could not be generated: no declaration the compiler can use for these library symbols`);
+                    for (const line of libraryUndeclaredLines(cpp.libraries)) channel.appendLine(line);
                 }
                 if (cpp && cpp.log) {
                     const channel = outputChannel();
