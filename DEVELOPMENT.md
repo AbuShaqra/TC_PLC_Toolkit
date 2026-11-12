@@ -67,14 +67,15 @@ same version: both directories end up under `~/.vscode/extensions/` and the old 
 cycle chasing a "feature does nothing" report that was really old code still running.
 
 **What the VSIX must carry for Compile Project.** `resources/compiler/` ships whole (the bundle, its two
-libraries, the GPL-3.0 licence files, `third-party/`, `SOURCE.md`). **The only dialect profile shipped is
+libraries, the C++ runtime headers in `include/` that the optional g++ build compiles against (R13), the
+GPL-3.0 licence files, `third-party/`, `SOURCE.md`). **The only dialect profile shipped is
 `resources/dialects/twincat3.json`** (user rule, 2026-11-10): no CODESYS or other profile, and none copied
 from the fork — `test_vendored_compiler.js` pins `resources/dialects/` to exactly that file. (The bundle's
 built-in CODESYS *library importer* is compiler code, not a profile, and stays.) After packaging, check:
 
 ```bash
 unzip -l twincat-plc-toolkit-<version>.vsix | grep -E 'resources/(compiler|dialects)/'
-# expect resources/compiler/{compiler.cjs,libs/*.stlib,LICENSE,COPYING,COPYING.RUNTIME,SOURCE.md,third-party/*}
+# expect resources/compiler/{compiler.cjs,libs/*.stlib,include/*.hpp,LICENSE,COPYING,COPYING.RUNTIME,SOURCE.md,third-party/*}
 # and exactly one profile: resources/dialects/twincat3.json
 ```
 
@@ -133,17 +134,22 @@ found running 2 of its 10 tests. Hence the classification below: a run states wh
   whole-suite FULL coverage.
 
 **Optional gates** are listed in the summary as *ran* or *skipped* but never make a run REDUCED:
-today only `compile-real` (`test/test_compile_real.js`, Compile Project against the REAL compiler —
-the bundled `resources/compiler/compiler.cjs`). It needs a Node >= 22, found the way the command finds
-one; without it (CI's Node 16/20 legs) it skips. It runs in every `npm test` on Node 22+ (CI's lint/test
-leg uses Node 24). To try another compiler build instead of the bundled one:
+`compile-real` (`test/test_compile_real.js`, Compile Project against the REAL compiler —
+the bundled `resources/compiler/compiler.cjs`), and `cpp-real` / `gpp-real` (`test/test_cpp_real.js`,
+R13: C++ generated for both sample projects in a temp copy, then compiled with g++ against the vendored
+headers). `compile-real` and `cpp-real` need a Node >= 22, found the way the command finds
+one; without it (CI's Node 16/20 legs) they skip. `gpp-real` also needs a g++ (`TC_TEST_GPP`, else the
+command's own detection) and skips without one. One harness reports both of its gates
+(`test/_coverage.js` `reportCoverages`; `test/run.js` accepts an array). They run in every `npm test` on
+Node 22+ (CI's lint/test leg uses Node 24). To try another compiler build instead of the bundled one:
 
 ```bash
 TWINCAT_COMPILER_BUNDLE=/path/to/strucpp-bundle.cjs node test/test_compile_real.js
 # optional: TWINCAT_COMPILER_NODE=/path/to/node (>= 22)
 ```
 
-Never make `compile-real` required in `test/run.js` — a Node < 22 machine must still run a FULL suite.
+Never make `compile-real`, `cpp-real` or `gpp-real` required in `test/run.js` — a Node < 22 machine,
+or one without g++, must still run a FULL suite.
 
 `REQUIRE_FULL_SUITE=1` turns a reduced or filtered run into a hard failure after the harness reports
 are collected. Use it before packaging a release, so a silently skipped gate can never be mistaken
@@ -215,8 +221,13 @@ per-suite without aborting on the first failure. The main ones:
 | `test/test_compile_commands.js` | `src/commands/compileCommands.js` + the provider hooks under a recording `vscode` stub: the bundled compiler run when nothing is configured, the toolbar button's host side (`compile-project` from a real `resolveCustomTextEditor` runs the command with the owning project's key, or asks when no single project owns the file; `compileRunning` posted at start and end and carried in `init`; the command's own setup messages), project pick, setup refusal (a missing override), clean run, a run with errors (Problems entries, pane markers, status text, summary), unsaved edits reaching the compiler, Go to Problem and the entry links, an edit dropping its component's results, a failed run keeping the previous results, cancellation, a fresh open landing on the first problem, and the project's compiler defines reaching the compiler as `--pragma-define` (numeric value exact) and an object's own as `--file-define` on its unit (malformed entries and an object with no unit left out, notes in the `TC Toolkit Compile` output channel and the summary, an empty element and an unreadable `.plcproj` passing none, a Debug-conditioned group applied and a Release one skipped with no note). |
 | `test/test_conditional_pragmas.js` | R12, `src/lsp/conditionals.js` and the diagnostics built on it, through the server's path (`assembleSt` → `indexXmlObject` → `syncDocument` → `provideDiagnostics`). Unit: nesting, segments, `fbRS.SET := TRUE;` and a line-leading named argument (`SET := c,` in a multi-line call) are not boundaries while real GET/SET accessor lines are, a statement-level nested group does not widen the span past its `{END_IF}`, a group wrapping the first VAR block is not an uncertain head, directives in comments/strings ignored, each kind of unbalanced segment marks only itself, selections, the 64 cap, neutral groups, suppression spans, `pickVar`/`AMBIGUOUS`, `scopeUncertain`, `inheritanceUncertain` from both indexers. Zero diagnostics (and every segment balanced, so a zero is never the unbalanced rule by accident) on valid conditional code: the reported split IF head, ELSIF chains, nested groups, WHILE/FOR, REPEAT and CASE split across branches and groups, per-branch declarations (also used outside the group), names only in a branch, `defined(variable:…)`/`defined(pou:…)` guards, a mid-expression group, a directive inside a type, a conditional EXTENDS head, a conditional VAR/VAR_INPUT header with a named call, a multi-line RS call (`SET :=` at line start) next to, after and inside a group, enum members inside and after a group (both indexers). Still reported outside groups: an unterminated FOR, a stray END_WHILE, an undeclared name, a type mismatch, an IF every branch opens and nothing closes (on the group's `{IF}`), a method after an unclosed `{IF}`, the statement after a nested statement-level group, an undeclared name in a POU whose first VAR block is wrapped; the cap silences only its own segment. Byte-identical structural output to the old matcher on every sample unit, per-segment = whole-unit there, and a neutral group appended to every unit (sample and synthetic, including multi-line named-argument calls and a property) leaves its structural output unchanged. Completion and references over both branches. |
 | `test/test_compile_real.js` | **Optional gate `compile-real`**: the REAL compiler — the bundled one, or `TWINCAT_COMPILER_BUNDLE` — first proving the bundled IEC libraries load (`TON`, `R_TRIG`, `CTU`, `LIMIT` resolve; `PID`, from a library NOT shipped, does not), then over every PLC project in `sample/`, through the same code the command uses (library preparation included): ZERO errors and zero warnings after the pragma filter (a ratchet, like the diagnostics baseline), nothing library-filtered, plus planted errors in a method body, a method declaration and a GVL landing on the right file/component/pane/line, and — in the second sample — a call to a method only the FIRST sample's same-named `FB_Cylinder` has, reported in the second sample's MAIN (the projects are never compiled together). Then R3.4 on the synthetic library project (`test/_synthLibProject.js`): errors without the declarations, 0 with them; a wrong argument type and an unknown parameter on a library call reported; an archive-only library name filtered; a user typo, a typo on a library FB member and an unknown name behind a qualifier reported (the last at its pane column); 0 errors without the dump. Then compiler defines on a temp copy of the second sample (`{IF defined(X)}` / `{IF hasvalue(X, 'v')}` in MAIN, `<CompilerDefines>` in its `.plcproj`): the defines select the branches; wrong case or value select ELSE; a numeric value is passed exactly and declares no global constant; a Debug-conditioned group's define selects its branch, a Release-only one does not. Then, on another copy: `hasvalue(TkLevel, '4')` holds from a `.plcproj` value `'4'` next to a `VAR_GLOBAL CONSTANT TkLevel`; a per-object define on FB_Valve selects its branch there but not in FB_Cylinder's same `{IF}`; a per-object value wins over the project's for `hasvalue` in that object only. Then R12 parity: each conditional-pragma fixture is compiled with no define, each define it names and all of them; one the compiler accepts under at least one set must get 0 LSP diagnostics (one rejected under every set is printed as advisory). Prints the sample's timing. Skips (and says so) without a Node >= 22. |
+| `test/test_cpp_real.js` | **Optional gates `cpp-real` and `gpp-real`** (R13): on a TEMP COPY of `sample/` (the sample is asserted untouched), every PLC project goes through the command's steps — units, library preparation, compiler defines, the check (0 errors), the compile mode, the write into `<project dir>/CPP_Files/` under the ownership record (the folder holds exactly `<project>.cpp`, `.hpp` and the record; a second run replaces its own files). With a g++ (`TC_TEST_GPP`, else detection): `-c` against `resources/compiler/include/`, no warnings with the build's flags, a clean build records its `.o`; a failing build must fail ONLY on a `KNOWN_GPP_GAPS` entry (today TcToolkitSample_PLC: a PROPERTY read through a global FB instance emitted as a field access), each error placed on a real line of the generated file; an error planted in a `.cpp` is placed on its line. |
+| `test/test_cpp_generate.js` | `src/cppGenerate.js` without the compiler: file stem and `CPP_Files` paths, the compile-mode command line (the check's inputs/defines/list names plus `-o`, no `--check`/`--json`; the check's own line unchanged), ownership in real temp folders (fresh write, replace an unchanged own file, refuse an edited one and a foreign one, per-project record, a renamed project's leftovers deleted, the `.o` claimed/recorded/deleted, a foreign record stops everything, a record entry with a path ignored), and `runGenerate` over a fake child (files returned, temp dir gone, failure keeps the log, no files = failure, timeout). |
+| `test/test_cpp_settings.js` | `src/cppSettings.js`: defaults off; effective values (the build implies generation); `couplingWrites` per scope (build on → generation on in that scope; generation off → build off there; inherited values; a hand edit setting both; no ping-pong); `checkboxWrites` for the dropdown (coupled writes, target = the most specific scope that sets the switch). |
+| `test/test_gpp.js` | `src/gpp.js` without g++: detection over a mocked PATH and file system (Windows order, quoted PATH entries, MSYS2/MinGW/WinLibs/w64devkit/Chocolatey roots from the environment or defaults; Linux PATH only), the path setting (full path, quotes, bare command name on PATH, missing → reported not replaced), the command line, parsing g++ output (Windows drive letters, notes kept with their message, context lines skipped, positionless `cc1plus:` errors), placing messages on the `.cpp`/`.hpp` (others on the `.cpp`'s first line naming the header), the summary, and `runGpp` over a fake child (no shell, g++'s folder first on PATH, exit codes, spawn failure, timeout, cancel). |
+| `test/test_gpp_commands.js` | `src/commands/gppCommands.js` under a stub: an empty `tcToolkit.compiler.gppPath` is filled (Global), a set value is never overwritten (a bare command name is not "missing"), nothing found writes nothing, the silent fill never rejects, `twincat.detectGpp` reports with an "Open Setting" button. |
 | `test/test_library_decls.js` | `src/libraryDecls.js` without a compiler, on the SYNTHETIC library project (`test/_synthLibProject.js`: dump, `.tmc`, a generated archive — every name invented): the `.tmc` model (library-owned types only; interfaces and the project's own types skipped; no comment/string text read), gathering, each declaration kind's exact text, conflicts (compiler names, user names, a dependency the user redefines), dependency-only declarations, nothing guessed for unreadable types, qualifier blanking (same lengths; members/comments/strings/user names untouched), the filter case by case (a user typo kept), **temp-dir lifetime** (the declarations exist only in runCheck's temp dir during the run; gone after, also on a failed run; project, workspace and `sample/` unchanged), the no-dump case. |
-| `test/test_vendored_compiler.js` | `resources/compiler/`: exactly the files `SOURCE.md` lists, each matching its recorded size and SHA-256; a full 40-hex commit and the source link at it; the GPL-3.0, Apache-2.0 and MIT texts; `THIRD-PARTY-NOTICES.md` naming the commit; `.vscodeignore` shipping the directory and dropping `scripts/vendor-compiler.js`; the bundle requiring Node built-ins only; `resources/dialects/` holding exactly `twincat3.json` and no profile anywhere else (user rule). |
+| `test/test_vendored_compiler.js` | `resources/compiler/`: exactly the files `SOURCE.md` lists (the runtime headers in `include/` included), each matching its recorded size and SHA-256; the headers the generated C++ includes are there, `COPYING` puts them under the runtime library exception and `SOURCE.md` states that licence with the right count of headers carrying a per-file notice; a full 40-hex commit and the source link at it; the GPL-3.0, Apache-2.0 and MIT texts; `THIRD-PARTY-NOTICES.md` naming the commit; `.vscodeignore` shipping the directory and dropping `scripts/vendor-compiler.js`; the bundle requiring Node built-ins only; `resources/dialects/` holding exactly `twincat3.json` and no profile anywhere else (user rule). |
 | `test/test_settings_migration.js` | `src/settingsMigration.js` over a fake VS Code configuration store: the rename table, User / Workspace / per-folder values each moved within their own scope, a value already under the new key never overwritten (old one still removed), a second run a no-op, a failed copy logged with the old value left for the next run, a synchronous throw / failing removal / throwing `getConfiguration` / unreadable folder list all logged and never thrown. |
 | `test/test_recent_projects.js` | `src/recentProjects.js`: newest first, de-duplicated (Windows paths case-insensitive, either separator), capped at 10, missing solutions pruned, malformed stored data ignored, the globalState adapter, and `recentsShownLimit` (the start page's row limit: default 2, clamped to 1..10). |
 | `test/test_xae_shell_detect.js` | `src/xaeShellDetect.js` with every dependency faked (runs off Windows): the COM registration for both shells (quoted and argument-suffixed `LocalServer32`, the 32-bit view for 4024, a localized value name), the default locations with and without the environment variables, a registered file that is missing, a non-GUID ProgID value, rejecting / throwing registry and existence probes, non-Windows (nothing found, registry never queried), `createRegQuery` over a fake `execFile` (argument array, timeout, errors → null), `describeConfiguredShells`, and `resolveShellExe` (configured-and-existing wins, else default location, else registry). |
@@ -274,8 +285,8 @@ perfectly good Chromium already.
 |---|---|
 | `build.js` | Generates the page by calling the **real** `getHtmlForWebview()` with a stubbed `vscode` module — a hand-copied page would quietly stop matching what ships. Substitutes only `acquireVsCodeApi()` (records outgoing messages, answers bridge requests from a fixture built off the real sample) and drops the webview CSP, which names `vscode-webview:` sources that do not exist over http. |
 | `serve.js` | Serves it. Monaco's AMD loader and its worker Blob both need a real origin. `require()` it for `start(port)`, or run it standalone to poke at the page by hand. |
-| `run.js` | The references peek: builds for the port it will serve on, drives Find References, asserts. Also pins the page's global error overlay: opening the peek must leave it hidden, Chrome's benign "ResizeObserver loop completed" notice (dispatched by hand, because whether the real loop fires is layout-timing dependent) must not raise it or post `error`, and a genuine error still must. `HARNESS_PORT` moves it off 8123; `HARNESS_SHOT=x.png` saves a screenshot. Also pins the Generate ST split button (roadmap R1): with one project the caret is hidden and the main button keeps its rounded right end; with two or more the inner corners square off to fuse with the caret (`has-caret` on `#generate-st-group`, set by `editor.js` with the caret's `hidden` flag — no `:has()`, which VS Code 1.66's Chromium lacks). Transitions are disabled for that check so it reads the end state, not a frame mid-animation. Step 7e pins Compile Project's pane markers: `compileDiagnostics` → owner `twincat-compile` on the active component's panes, `st-validator` markers surviving both ways and across a diagnostics refresh, a component switch showing only that component's markers, an edit dropping the edited component's markers and posting `compileDiagnosticsStale`; it writes a pane-marker screenshot (`HARNESS_COMPILE_SHOT`, default `test/browser/out/compile-markers.png`; empty = none). Step 7f pins the toolbar's Compile button: right after Generate ST, with its glyph, name and tooltip; a click posts `compile-project`; `compileRunning` disables it (a click then posts nothing) and re-enables it; at 320–1200 px Generate ST, its caret and Compile all stay inside the editor with no sideways scroll, and the Compile label drops to the glyph at <= 1100 px. `HARNESS_TOOLBAR_SHOTS=<dir>` writes toolbar screenshots (dark and light; 1200, 960, 820, 400 px). |
-| `run_start_page.js` | The start page (roadmap R2): renders the real `renderStartPageHtml()` output WITH its CSP (only `acquireVsCodeApi()` is stubbed, through Playwright's init script), and asserts no request leaves the page's origin, the project name is validated while typing (shared `media/projectName.js` rules, `aria-invalid`), Create posts `{version, name, location}` and shows a host refusal, every other control posts its message, project actions are disabled while no project is open, Compile project is enabled only with `compilerReady` (the compiler file exists — by default the bundled one) AND a project, shows "Compiler file not found" otherwise (and names no compiler product), the form survives in webview state, the recent list shows at most `recentsShown` rows behind a keyboard-operable "Show all (K)" / "Show fewer" tile (local to the page, follows a changed limit), the Settings card shows the two XAE Shell paths with a warning row for a path that is not on disk and posts `openSettings {section}` / the detect command, and there is no horizontal scroll at 360/560/1200 px (one column at 360). Defaults to port 8125. |
+| `run.js` | The references peek: builds for the port it will serve on, drives Find References, asserts. Also pins the page's global error overlay: opening the peek must leave it hidden, Chrome's benign "ResizeObserver loop completed" notice (dispatched by hand, because whether the real loop fires is layout-timing dependent) must not raise it or post `error`, and a genuine error still must. `HARNESS_PORT` moves it off 8123; `HARNESS_SHOT=x.png` saves a screenshot. Also pins the Generate ST split button (roadmap R1): with one project the caret is hidden and the main button keeps its rounded right end; with two or more the inner corners square off to fuse with the caret (`has-caret` on `#generate-st-group`, set by `editor.js` with the caret's `hidden` flag — no `:has()`, which VS Code 1.66's Chromium lacks). Transitions are disabled for that check so it reads the end state, not a frame mid-animation. Step 7e pins Compile Project's pane markers: `compileDiagnostics` → owner `twincat-compile` on the active component's panes, `st-validator` markers surviving both ways and across a diagnostics refresh, a component switch showing only that component's markers, an edit dropping the edited component's markers and posting `compileDiagnosticsStale`; it writes a pane-marker screenshot (`HARNESS_COMPILE_SHOT`, default `test/browser/out/compile-markers.png`; empty = none). Step 7f pins the toolbar's Compile button: right after Generate ST, with its glyph, name and tooltip; a click posts `compile-project`; `compileRunning` disables it (a click then posts nothing) and re-enables it; at 320–1200 px Generate ST, its caret and Compile all stay inside the editor with no sideways scroll, and the Compile label drops to the glyph at <= 1100 px. Then the Compile dropdown (R13, `#compile-caret` / `#compile-menu`): closed and off at start, labelled, opens with focus on *Generate C++*, ArrowUp/Down and Space operate it, ticking *Build with g++* ticks *Generate C++* and unticking *Generate C++* unticks the build (each posting `setCompileOption {key, value}`), Escape closes and refocuses the caret, a host `compileOptions` message updates the boxes live, an outside click closes it, opening one split menu closes the other, and the caret stays inside the editor at every width. `HARNESS_TOOLBAR_SHOTS=<dir>` writes toolbar screenshots (dark and light; 1200, 960, 820, 400 px) and `compile-menu-open.png`. |
+| `run_start_page.js` | The start page (roadmap R2): renders the real `renderStartPageHtml()` output WITH its CSP (only `acquireVsCodeApi()` is stubbed, through Playwright's init script), and asserts no request leaves the page's origin, the project name is validated while typing (shared `media/projectName.js` rules, `aria-invalid`), Create posts `{version, name, location}` and shows a host refusal, every other control posts its message, project actions are disabled while no project is open, Compile project is enabled only with `compilerReady` (the compiler file exists — by default the bundled one) AND a project, shows "Compiler file not found" otherwise (and names no compiler product), the form survives in webview state, the recent list shows at most `recentsShown` rows behind a keyboard-operable "Show all (K)" / "Show fewer" tile (local to the page, follows a changed limit), the Settings card shows the two XAE Shell paths with a warning row for a path that is not on disk and posts `openSettings {section}` / the detect command, the Compile dropdown (R13: a chevron beside the tile, `aria-expanded`/`aria-controls`, a group of two labelled boxes showing `state.compileOptions`, keyboard-operable, posting `setCompileOption` with the coupling shown at once, never starting a compile), and there is no horizontal scroll at 360/560/1200 px (one column at 360). `HARNESS_START_SHOT=x.png` saves the Project actions card with the options open. Defaults to port 8125. |
 | `run_pragmas.js` | Folding and pragma highlighting. Folds real blocks and reads back the rendered lines, then tokenizes through Monaco's **own** tokenizer. Both fail silently if they regress, which is the point of driving a browser: a unit test on `stFolding.js` cannot prove Monaco actually *used* it rather than its own indentation provider. Carries the two reported bugs as regressions, and asserts implementation-pane blocks still fold — registering a provider replaces indentation folding, so that is the thing most likely to disappear unnoticed. Also runs nested `(* (* *) *)` comments through Monaco's own tokenizer (the inner `*)` must not return to code), and the pragma hover end to end in the webview: the stub answers with the real `provideHover` + `mapHoverToLocal` computed in Node, and the harness checks the request's pane position, the rendered widget, that a line with no `{` costs no round trip, and that a clicked documentation link goes to the host (`openDocumentationLink`) rather than navigating the webview. Verified: removing the provider turns 6 assertions red, and the failure text reproduces both original bug reports verbatim. Defaults to port 8124. |
 
 `run.js` asserts what only a browser can show: that the peek lists cross-file hits at all, that exactly
@@ -479,7 +490,15 @@ src/
                         notification with "Go to Problem…" (`twincat.compile.goToProblem`), and a URI
                         handler for each entry's code link (`/compileProblem?id=N`), and the output
                         channel `TC Toolkit Compile` (compiler-define notes). The VS Code half of
-                        compileCheck
+                        compileCheck. R13: after a clean check, with the switches on, C++ generation
+                        (cppGenerate) and the g++ build (gpp) — g++ messages in their own collection
+                        `twincat-gpp` (source "TC Toolkit g++") on the generated files; the two switches'
+                        coupling on every config change (cppSettings), `setCompileOption` for the
+                        dropdowns (provider.setCompileOptionsSource / setCompileOptions → `compileOptions`
+                        to every editor; the start page through onSettingsChanged)
+    gppCommands         `twincat.detectGpp` + the silent fill of an EMPTY tcToolkit.compiler.gppPath
+                        (Global; never overwrites), run when the g++ build is turned on. The VS Code
+                        half of gpp
     xaeShellCommands    `twincat.detectXaeShell` + the silent activation-time fill of the two
                         `tcToolkit.xaeShell.path*` settings (EMPTY ones only, ConfigurationTarget.Global;
                         never overwrites). The VS Code half of xaeShellDetect
@@ -496,6 +515,21 @@ src/
                         a temp dir deleted afterwards, timeout + cancel, JSON report → file/component/
                         pane/line, the pragma-warning filter (counted), the library filter (counted;
                         messages on the generated declarations kept apart), paneRange. Spawn injected
+  cppGenerate           R13 C++ generation, vscode-free: the compiler's COMPILE mode (`-o <stem>.cpp`, a
+                        second run after the check — `--json` exists only with `--check`) in a temp dir;
+                        `<project dir>/CPP_Files/<stem>.cpp|.hpp` written under an ownership record
+                        (`.tc-toolkit-generated.json`: file → project + SHA-256). Only an owned file
+                        that is unchanged is replaced or deleted; a project's leftovers (renamed
+                        project, stale .o) are deleted; foreign/edited files are refused and reported
+  cppSettings           R13 switches `tcToolkit.compiler.generateCpp` / `buildWithGpp` (default off):
+                        effective values (build ⇒ generate), per-scope coupling after a change made
+                        elsewhere, the writes a dropdown checkbox makes. Pure
+  gpp                   R13 g++ build, vscode-free: detection (PATH, then MSYS2 ucrt64/mingw64/clang64,
+                        C:\MinGW, mingw64 under Program Files / WinLibs / w64devkit, Chocolatey mingw),
+                        tcToolkit.compiler.gppPath resolution, `-std=c++14 -fno-strict-aliasing
+                        -Wno-c++17-extensions -c <cpp> -I <resources/compiler/include> -I <CPP_Files>
+                        -o <obj>`, reading g++ messages and placing them on the generated files, runGpp
+                        (no shell, timeout, cancel, g++'s folder first on PATH)
   compilerDefines       Compile Project's compiler defines: `<CompilerDefines>` of the project's
                         `.plcproj` → `--pragma-define` arguments (values exact), per-object ones
                         in `<Compile>` items → `--file-define <unit>=…` for that object's check
@@ -756,7 +790,9 @@ resources/
                         no product name reaches the UI), libs/iec-standard-fb.stlib +
                         iec-std-functions.stlib, the GPL-3.0 LICENSE/COPYING/COPYING.RUNTIME,
                         third-party/ (chevrotain Apache-2.0, lodash-es MIT), SOURCE.md (repo, commit,
-                        size + SHA-256 per file). Ships in the VSIX
+                        size + SHA-256 per file), include/*.hpp (the fork's src/runtime/include, R13:
+                        what the g++ build compiles against; GPL-3.0-only WITH the runtime library
+                        exception per the fork's COPYING). Ships in the VSIX
 scripts/
   vendor-compiler.js    Copies a BUILT, clean fork checkout into resources/compiler/ and records its
                         commit. Dev-only, .vscodeignored
@@ -1403,6 +1439,75 @@ The script refuses a dirty checkout or a bundle older than HEAD, replaces `resou
 and warns when the commit is on no remote branch. Then update the version/commit in
 `THIRD-PARTY-NOTICES.md` (`test_vendored_compiler.js` fails until it names the new commit), run
 `compile-real` and the suite, and package a VSIX to check `resources/compiler/` is in it.
+The script also copies every `src/runtime/include/*.hpp` to `resources/compiler/include/` and writes
+their licence into `SOURCE.md` (it refuses to vendor when the fork's `COPYING` no longer lists
+`src/runtime/include/*.hpp` under the runtime library exception). Re-vendoring at the same commit is
+byte-identical for the bundle and the libraries (checked for `eb52d2c`: the build is reproducible).
+
+### C++ generation and the g++ build (roadmap R13)
+
+Two switches, both **off by default**: `tcToolkit.compiler.generateCpp` and
+`tcToolkit.compiler.buildWithGpp`; plus `tcToolkit.compiler.gppPath` (machine scope, like the XAE Shell
+paths). User decisions 2026-11-12: output in the project directory, g++ optional with its own path
+setting, separate switches, the build turning generation on.
+
+**Run order** (`compileCommands` → `generateAndBuild`): the check runs as before; only when it finished
+with **0 errors** and generation is on does the compiler run a **second time in compile mode**. Verified
+against the vendored CLI (eb52d2c): `--json` is refused without `--check` ("--json is only valid with
+--check") and `--check` refuses `-o`, and compile mode prints its diagnostics as text only — so one run
+cannot both place JSON diagnostics and emit C++. The compile mode gets exactly the check's arguments
+(dialect file, `--pragma-define`/`--file-define`, inputs incl. the library declarations, `--global-list`)
+plus `-o <stem>.cpp`, in its own temp dir; the compiler derives `#include "<stem>.hpp"` from the output
+name. `<stem>` = the `.plcproj` file stem (`cppFileStem` replaces anything outside `[A-Za-z0-9_.-]`).
+A failed generation (e.g. an error the library filter hid in the check) shows the compiler's first error
+line and puts its whole output in the *TC Toolkit Compile* channel.
+
+**Ownership** (`cppGenerate.writeOwnedOutputs`): `CPP_Files/.tc-toolkit-generated.json`
+(`{generator: "TC Toolkit", version: 1, files: {name: {project, sha256}}}`). A target that exists is
+replaced only when it is recorded AND its hash matches (`owned`); otherwise it is left and reported
+(`foreign` / `changed`). This project's recorded files that the run did not produce are deleted when
+unchanged (a renamed project's pair, an object file from an earlier build) and dropped from the record
+either way. A foreign file in the record's place stops the write. Entries with a path are ignored, so
+the record can never delete outside its folder. g++ writes the `.o` itself: `claimOutput` deletes an
+owned `.o` first (a failed build then leaves none) and refuses to run g++ over a foreign/changed one;
+`recordOwnedFile` records it after a clean build. When any of the pair was refused, g++ is not run.
+
+**The g++ build**: `-std=c++14 -fno-strict-aliasing -Wno-c++17-extensions -fdiagnostics-color=never
+-fmessage-length=0 -c <cpp> -I resources/compiler/include -I CPP_Files -o <obj>`, cwd `CPP_Files`, no
+shell, 2-minute timeout, cancellable with the progress notification. `-fno-strict-aliasing`: the fork's
+docs/RUNTIME.md asks host builds of generated code for it. `-Wno-c++17-extensions`: the generated
+VAR_GLOBALs are `inline` variables, which g++ accepts at C++14 with one warning each (the fork's own
+tests pass the same flag). Messages: `parseGppOutput` (one line per message, notes kept with the message
+before them) → `placeGppMessages` (in the `.cpp`/`.hpp`: at their line/column; anywhere else — a runtime
+header — on the `.cpp`'s line 1, naming the header) → DiagnosticCollection `twincat-gpp`, source
+"TC Toolkit g++", notes as `relatedInformation`. g++'s folder is prepended to PATH for the child (MinGW
+DLLs). A missing g++ (setting empty and nothing detected, or a setting naming nothing) still writes the
+C++ and shows a warning with *Open Setting* (→ `tcToolkit.compiler.gppPath`) and *Detect g++*.
+
+**Switch coupling** (`cppSettings`): a run uses `generate = generateCpp || buildWithGpp`. On every
+`tcToolkit.compiler` change, `couplingWrites(before, after)` fixes the scope that changed (build on →
+generation on there if not on at that scope; generation off → build off there); writes made by this
+module itself are not re-coupled (`writingOptions`). The dropdowns write through `checkboxWrites`, which
+targets the most specific scope that already sets the switch (else User) and writes the coupled switch
+in the same call. The g++ path is filled (`gppCommands.autoFill`, empty only) when the build turns on.
+
+**Dropdowns.** Editor toolbar: `#compile-group` (a `.split-btn` like Generate ST's) = `#compile-btn` +
+`#compile-caret` + `#compile-menu` (`role=group`, two native checkboxes). Messages: `init.compileOptions`,
+`compileOptions {options}` (host → webview, on any change), `setCompileOption {key, value}` (webview →
+host, allow-listed keys and booleans only). Start page: `#compile-options-toggle` (chevron beside the
+tile, `aria-expanded`/`aria-controls`) over `#compile-options`; `state.compileOptions` and the same
+`setCompileOption` message. Both show the coupling at once and let the host's answer correct it.
+
+**Generated output.** `CPP_Files` joins `ST_Files` as generated output (`GENERATED_OUTPUT_DIRS` in
+`twincatWorkspace.js`): in `PROJECT_WALK_SKIP_DIRS`, `ARCHIVE_SKIP_DIRS` (so `PROJECT_SKIP_DIRS`) and
+`ST_INDEX_SKIP_DIRS`; watcher events under it are not "relevant" and only feed the debounced tree
+refresh; the Objects tree shows a project's `CPP_Files` as `generatedDirectory` with its `.cpp`/`.hpp`
+as `generatedCppFile` rows that open as text (`twincat.openComponent` treats `.cpp`/`.hpp` like `.st`).
+
+**Known compiler gap (found by `gpp-real`, compiler eb52d2c):** in TcToolkitSample_PLC,
+`GVL_System.fbStation.State` (a PROPERTY read through a global FB instance) is emitted as
+`FBSTATION.STATE` instead of the getter, so g++ fails on correct code that the check accepts.
+`test_cpp_real.js` lists it in `KNOWN_GPP_GAPS`; remove the entry when the fork fixes it.
 
 ### Writes
 

@@ -34,6 +34,21 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   **Follow-ups (not R12):** R12b informational branch state (Backlog; never feeds diagnostics; open decision:
   Debug only or "all configurations agree"); definition returning every same-name declaration once
   `mapDefinition` accepts arrays; optional merged completion items (`BOOL | INT (conditional)`).
+- **R13 C++ generation + g++ build: IMPLEMENTED on `claude/focused-ptolemy-m6acaz`, not yet merged** (2026-11-12;
+  needs the user's Windows check). Settings `tcToolkit.compiler.generateCpp` / `buildWithGpp` (both off; build on ⇒
+  generation on, generation off ⇒ build off, per scope) and `tcToolkit.compiler.gppPath` (machine; filled when the build
+  turns on, never overwritten; command *TC Toolkit: Detect g++*). After a check with 0 errors the compiler runs a SECOND
+  time in compile mode (verified: `--json` only with `--check`, `--check` refuses `-o`), output
+  `<project dir>/CPP_Files/<plcproj stem>.cpp|.hpp` under `.tc-toolkit-generated.json` (only unchanged own files are
+  replaced/deleted). g++ `-std=c++14 -c` against `resources/compiler/include/` (headers vendored at the SAME commit
+  `eb52d2c`, bundle byte-identical; GPL-3.0-only WITH the runtime exception per the fork's COPYING — `iec_fault.hpp`
+  and `iec_global.hpp` carry no per-file SPDX line, covered by COPYING's list only). Compile dropdowns in the editor
+  toolbar and on the start page. Design and rules: DEVELOPMENT.md "C++ generation and the g++ build (roadmap R13)".
+  **Fork gap found** (`gpp-real`): sample 1's `GVL_System.fbStation.State` (PROPERTY read through a global FB
+  instance) is emitted as `FBSTATION.STATE` (no getter) → g++ error on correct code; pinned in
+  `test/test_cpp_real.js` `KNOWN_GPP_GAPS` — report to the fork lane. Sample 2 builds cleanly.
+  **For the Windows check:** the dropdown in both places, a MinGW/MSYS2 g++ found by detection, a g++ error landing on
+  `CPP_Files/<project>.cpp` in Problems, the missing-g++ message, an edited `.hpp` left alone.
 - **R3.2 Compile Project: MERGED** into `dev` as PR #32 (`28f24f1`, 2026-11-10 22:22 UTC).
 - **R3.3–R9 MERGED** into `dev` as PR #33 (`6424968`, 2026-11-11 09:30 UTC) after the user's Windows checks
   (dev-host green after `npm ci`; manual checks all passed). Details per item are in git history and ROADMAP "Done".

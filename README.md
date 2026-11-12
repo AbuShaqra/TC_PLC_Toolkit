@@ -259,8 +259,10 @@ never read back as sources.
 *TC Toolkit: Compile Project* (also on the start page, and as the **Compile** button next to *Generate ST*
 in the editor's toolbar, which compiles the project the open file belongs to) checks a PLC project with **an external IEC 61131-3
 compiler** — a full compiler front end, so it catches what the built-in diagnostics deliberately leave
-alone. With several PLC projects you pick which one. It only checks: nothing is generated, and nothing is
-written into your project (the compiler reads temporary copies, deleted when the run ends).
+alone. With several PLC projects you pick which one. By default it only checks: nothing is generated, and
+nothing is written into your project (the compiler reads temporary copies, deleted when the run ends).
+It can also write the project as C++ and compile that with g++ — both off by default, see
+[C++ output](#c-output-optional) below.
 
 - What is checked is what you see: unsaved edits, and Manual Sync edits not yet written, are included.
 - Errors and warnings appear in the **Problems** panel on the object's file, with the component, pane and
@@ -298,6 +300,34 @@ Definitions*. The built-in diagnostics remain the conservative check. To use a d
 `tcToolkit.compiler.path` at its command-line file (`.cjs`). The compiler is free software under the GNU
 GPL v3; its licence, source link and third-party notices are in `resources/compiler/` and
 [`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md).
+
+#### C++ output (optional)
+
+Compile Project can also turn the PLC project into C++. Both steps are **off by default**; turn them on
+with the small arrow next to the **Compile** button (in the editor's toolbar, or on the start page's
+*Compile project* tile), or in the settings:
+
+- **Generate C++** (`tcToolkit.compiler.generateCpp`) — when the check finds **no errors**, the project
+  is written as C++ into a `CPP_Files` folder next to its `.plcproj` (beside `ST_Files`):
+  `<project>.cpp` and `<project>.hpp`, one pair per PLC project. A check with errors writes nothing.
+  The summary and the status bar say what was written; **Open C++** opens the file.
+- **Build with g++** (`tcToolkit.compiler.buildWithGpp`) — also compiles that `.cpp` with g++, as a
+  check that the generated code builds (`CPP_Files/<project>.o`; nothing is linked or run). g++'s errors
+  appear in the **Problems** panel on the generated files (source *TC Toolkit g++*), and its full output
+  in the *TC Toolkit Compile* output. Turning this on turns *Generate C++* on too; turning *Generate C++*
+  off turns it off.
+
+**g++ is optional** — nothing else needs it. Any g++ that compiles C++14 will do (on Windows, for
+example MSYS2's `ucrt64`/`mingw64` or a WinLibs/w64devkit build). It is found by itself: `g++` on your
+`PATH`, then on Windows the usual install folders (MSYS2, `C:\MinGW`, WinLibs, w64devkit, Chocolatey's
+mingw). Set `tcToolkit.compiler.gppPath` to use another one; **TC Toolkit: Detect g++** looks again.
+If *Build with g++* is on and no g++ is found, the C++ is still written and a message offers the
+setting. The compiler's C++ runtime headers that the build needs ship with the extension.
+
+`CPP_Files` is output, like `ST_Files`: it is shown read-only in the PLC Objects tree and is never read
+back as a source. The extension only ever replaces or deletes files there that **it** wrote and that
+nobody changed since (it keeps a small record, `.tc-toolkit-generated.json`, in the folder); a file of
+the same name you made or edited is left alone, and the summary says so.
 
 ### For AI coding assistants
 
@@ -359,6 +389,9 @@ old entry is removed from your `settings.json`.
 | `tcToolkit.xaeShell.path4026` | *(detected)* | Full path to `TcXaeShell.exe` of the XAE Shell for TwinCAT 3.1.4026 (the 64-bit shell). Empty = not found. |
 | `tcToolkit.compiler.path` | *(empty)* | Full path to the command-line file (`.cjs`) of an external IEC 61131-3 compiler for **Compile Project** to run instead of the bundled one. Empty = the bundled compiler. Per machine. |
 | `tcToolkit.compiler.nodePath` | *(empty)* | Full path to a Node.js 22+ executable that runs the compiler. Empty = found automatically (`node` on `PATH`, the usual Windows install locations, then VS Code's own runtime when it is Node.js 22+). Per machine. |
+| `tcToolkit.compiler.generateCpp` | `false` | **Generate C++**: after a check with no errors, write the project as C++ into `CPP_Files/` next to its `.plcproj`. Turning it off also turns off the g++ build. Also in the Compile button's dropdown. |
+| `tcToolkit.compiler.buildWithGpp` | `false` | **Build with g++**: also compile that C++ with g++ (a compile check; errors in the Problems panel). Turning it on also turns on *Generate C++*. Also in the Compile button's dropdown. |
+| `tcToolkit.compiler.gppPath` | *(detected)* | Full path to `g++` (`g++.exe` on Windows). Empty = `g++` on `PATH`, then the usual Windows install folders; filled with the one found when the build is turned on, never overwritten. Per machine. |
 
 **XAE Shell paths.** On Windows the two `tcToolkit.xaeShell.*` settings are filled automatically with the
 installation found on your machine: first from the shell's COM registration, then from the default
