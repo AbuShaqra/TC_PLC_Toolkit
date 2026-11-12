@@ -145,7 +145,7 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
       <div class="eyebrow">VS Code extension · twincat-plc-toolkit</div>
       <h1>TC Toolkit Roadmap</h1>
       <div class="meta">
-        <span>Updated <b>2026-11-12</b> · S10 started as fork lane 2; S4 done, release L at <code>3acc3f6</code>; R13 open as PR #37, awaiting your check; fork CLA check only on PRs into main; R13 C++ generation + g++ check started; R14 build and run through XAE, R15 ADS monitoring next; g++ simulation to the Backlog (your calls); R12 merged (PR #36) after your Windows checks; release L after S4 (your call); S4: LTIME (#131) and LDATE/LTOD/LDT (#132) merged; Table 36 date functions and the DT_TO_DATE fix added (your calls); S4 started; outside reads of VAR/VAR_INPUT stay refused (your call); S3b done (fork F4 #130); release K (<code>c1faca7</code>); releases H, I, J and K</span>
+        <span>Updated <b>2026-11-12</b> · fork #140–#143 merged, S5 started (lane 1), release M after S10 and S5; S10 started as fork lane 2; S4 done, release L at <code>3acc3f6</code>; R13 open as PR #37, awaiting your check; fork CLA check only on PRs into main; R13 C++ generation + g++ check started; R14 build and run through XAE, R15 ADS monitoring next; g++ simulation to the Backlog (your calls); R12 merged (PR #36) after your Windows checks; release L after S4 (your call); S4: LTIME (#131) and LDATE/LTOD/LDT (#132) merged; Table 36 date functions and the DT_TO_DATE fix added (your calls); S4 started; outside reads of VAR/VAR_INPUT stay refused (your call); S3b done (fork F4 #130); release K (<code>c1faca7</code>); releases H, I, J and K</span>
         <span>Release <b>v0.10.1</b></span>
         <span>Re-measured <b>Nov 11</b></span>
         <span>Toolkit next <b>PR #36 Windows check</b></span>
@@ -533,7 +533,7 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
 
     <details class="card" id="s5">
       <summary>
-        <div class="card-top"><span>#6</span><span class="id">S5</span><span class="pill planned">Planned</span><span class="chev" aria-hidden="true">›</span></div>
+        <div class="card-top"><span>#6</span><span class="id">S5</span><span class="pill progress">In progress · lane 1 · since Nov 12</span><span class="chev" aria-hidden="true">›</span></div>
         <div class="card-title">Profile-handling defects</div>
         <div class="bar" aria-hidden="true"><span style="left:59.17%;width:1.67%"></span></div>
         <div class="card-foot"><span>1 d → ~30 min</span><span>Nov 16</span></div>
@@ -647,7 +647,7 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
       <div class="body">
         <div class="block wide"><p>The former backlog was scheduled as R6 to R10 on Nov 9. R6 to R9 merged in PR #33 on Nov 11, and R10 runs only on a trigger. What remains has no estimate on purpose:</p>
           <ul>
-            <li><b>Fork after S4, in progress:</b> <code>--strict</code> follows Figure 12 for bit strings (your call), a property read through a global FB instance, licence lines on two runtime headers, one-pass diagnostics and the threaded-warning scope (coordination doc row 35).</li>
+            <li><b>Fork follow-ups after S4, merged Nov 12</b> (#140–#143, for release M): property reads through a global FB instance (fixes the first sample's g++ error), <code>--strict</code> per Figure 12 for bit strings (your call; a narrowed bitwise result now warns, you kept it), one-pass literal diagnostics, the threaded-warning scope. Next on lane 1 after S5: the remaining <code>--strict</code> follow-ups. Release M waits for S10 and S5 (your call).</li>
             <li><b>Re-vendor the compiler at release L</b> into the toolkit once R13 merges, so LTIME and CHAR no longer block C++ generation for library uses.</li>
             <li><b>Simulation program</b> (moved from R14, your call, Nov 12): the generated C++ built with g++ into a standalone program that runs your PLC code cyclically on the PC. Good for your own logic and unit tests; it cannot run vendor-library blocks, whose code isn't available.</li>
             <li><b>ADS coupling of the simulation program</b> (your call, Nov 12; after the simulation program): exchange variables between the R14 simulation program and a running TwinCAT PLC over ADS (TCP 48898, AMS Net ID, a route on the target), for example to feed simulated I/O. Code cannot be loaded into the TwinCAT runtime itself; only XAE builds and activates what it runs.</li>
@@ -740,7 +740,7 @@ var PLAN = [
   { lane: 'STruC++ fork',   num: 3, id: 'S3b',  card: 's3b',  name: 'S2 follow-ups',          est: '7 d → ~3.5 h', start: '2026-11-10', end: '2026-11-12', days: 1.2, offset: 0.3, status: 'done', actualStart: '2026-11-10T00:14:00Z', actualEnd: '2026-11-12T00:20:00Z' },
   { lane: 'STruC++ fork',   num: 4, id: 'S11',  card: 's11',  name: 'Conditional pragmas',    est: '2 d → ~3 h actual',  start: '2026-11-11', end: '2026-11-11', days: 0.4, offset: 0.2, status: 'done', actualStart: '2026-11-11T13:10:00Z', actualEnd: '2026-11-11T16:05:00Z' },
   { lane: 'STruC++ fork',   num: 5, id: 'S4',   card: 's4',   name: 'Ed. 3 refusals',         est: '8.5 d → ~11 h actual', start: '2026-11-12', end: '2026-11-12', status: 'done', actualStart: '2026-11-12T05:45:00Z', actualEnd: '2026-11-12T16:53:00Z' },
-  { lane: 'STruC++ fork',   num: 6, id: 'S5',   card: 's5',   name: 'Profile handling',       est: '1 d → ~30 min', start: '2026-11-16', end: '2026-11-16', days: 0.2, offset: 0.1 },
+  { lane: 'STruC++ fork',   num: 6, id: 'S5',   card: 's5',   name: 'Profile handling',       est: '1 d → ~30 min', start: '2026-11-12', end: '2026-11-13', status: 'progress', actualStart: '2026-11-12T20:10:00Z' },
   { lane: 'STruC++ fork',   num: 7, id: 'S6',   card: 's6',   name: 'Runtime safety',         est: '7 d → ~3.5 h', start: '2026-11-16', end: '2026-11-17', days: 1.5, offset: 0.3 },
   { lane: 'STruC++ fork',   num: 8, id: 'S7',   card: 's7',   name: 'iec-3 audit (decision)', est: '6 d → ~3 h',  start: '2026-11-17', end: '2026-11-18', days: 1.3, offset: 0.8 },
   { lane: 'STruC++ fork',   num: 9, id: 'S8',   card: 's8',   name: 'Default → iec-3',        est: '0.5 d → ~20 min', start: '2026-11-18', end: '2026-11-18', days: 0.2, offset: 0.8 },
