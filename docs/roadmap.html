@@ -145,7 +145,7 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
       <div class="eyebrow">VS Code extension · twincat-plc-toolkit</div>
       <h1>TC Toolkit Roadmap</h1>
       <div class="meta">
-        <span>Updated <b>2026-11-12</b> · fork #140–#143 merged, S5 started (lane 1), release M after S10 and S5; S10 started as fork lane 2; S4 done, release L at <code>3acc3f6</code>; R13 open as PR #37, awaiting your check; fork CLA check only on PRs into main; R13 C++ generation + g++ check started; R14 build and run through XAE, R15 ADS monitoring next; g++ simulation to the Backlog (your calls); R12 merged (PR #36) after your Windows checks; release L after S4 (your call); S4: LTIME (#131) and LDATE/LTOD/LDT (#132) merged; Table 36 date functions and the DT_TO_DATE fix added (your calls); S4 started; outside reads of VAR/VAR_INPUT stay refused (your call); S3b done (fork F4 #130); release K (<code>c1faca7</code>); releases H, I, J and K</span>
+        <span>Updated <b>2026-11-12</b> · R14 started (branch claude/r14-xae, on top of R13; overnight, your instruction to keep going); lane 2 fixes combined and in review; S5 built, strict follow-ups decided (your calls); fork #140–#143 merged, S5 started (lane 1), release M after S10 and S5; S10 started as fork lane 2; S4 done, release L at <code>3acc3f6</code>; R13 open as PR #37, awaiting your check; fork CLA check only on PRs into main; R13 C++ generation + g++ check started; R14 build and run through XAE, R15 ADS monitoring next; g++ simulation to the Backlog (your calls); R12 merged (PR #36) after your Windows checks; release L after S4 (your call); S4: LTIME (#131) and LDATE/LTOD/LDT (#132) merged; Table 36 date functions and the DT_TO_DATE fix added (your calls); S4 started; outside reads of VAR/VAR_INPUT stay refused (your call); S3b done (fork F4 #130); release K (<code>c1faca7</code>); releases H, I, J and K</span>
         <span>Release <b>v0.10.1</b></span>
         <span>Re-measured <b>Nov 11</b></span>
         <span>Toolkit next <b>PR #36 Windows check</b></span>
@@ -395,7 +395,7 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
 
     <details class="card" id="r14">
       <summary>
-        <div class="card-top"><span>#14</span><span class="id">R14</span><span class="pill planned">Planned · after R13</span><span class="chev" aria-hidden="true">›</span></div>
+        <div class="card-top"><span>#14</span><span class="id">R14</span><span class="pill progress">In progress · since Nov 12</span><span class="chev" aria-hidden="true">›</span></div>
         <div class="card-title">Build and run through XAE</div>
         <div class="bar" aria-hidden="true"><span style="left:41.67%;width:8.33%"></span></div>
         <div class="card-foot"><span>3 d → ~2 h</span><span>Nov 14</span></div>
@@ -403,6 +403,7 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
       <div class="body">
         <div class="block wide"><h4>Goal</h4><p>Run your real project, with its real libraries, on the real TwinCAT runtime from the toolkit. The toolkit drives XAE's Automation Interface (COM: <code>ITcSysManager</code>, <code>ITcPlcProject</code>, from PowerShell as Update Library Definitions already does) to build the PLC project with XAE's own compiler, pick the target, activate the configuration, restart TwinCAT and create or start the boot project. Local runtime, a remote target, or a trial licence.</p></div>
         <div class="block wide settled"><h4>Decided Nov 12 (your call)</h4><p>The XAE route comes before any g++ simulation: vendor libraries (Tc2_*, Tc3_*) ship compiled, and only their signatures are available, so a g++ program cannot run them. The simulation program moved to the Backlog.</p></div>
+        <div class="block wide"><h4>Started Nov 12, 22:30 UTC</h4><p>Begun overnight on its own branch, <code>claude/r14-xae</code>, on top of R13 (your instruction: keep going down the roadmap). The Automation Interface side cannot run on the build machine, so it is built against a stand-in and needs your Windows check with XAE before it merges. Activating a configuration or restarting TwinCAT always asks you first, naming the target.</p></div>
       </div>
     </details>
 
@@ -732,7 +733,7 @@ var PLAN = [
   { lane: 'TC Toolkit', num: 11, id: 'R3.5', card: 'r3-5', name: 'Compiler at release I, defines', est: '— → ~6.8 h actual', start: '2026-11-11', end: '2026-11-11', machine: true, status: 'done', actualStart: '2026-11-11T17:05:00Z', actualEnd: '2026-11-11T23:55:00Z' },
   { lane: 'TC Toolkit', num: 12, id: 'R12', card: 'r12', name: '{IF}-aware diagnostics', est: '1 d → ~45 min', start: '2026-11-12', end: '2026-11-12', days: 0.5, offset: 0.5, status: 'done', actualStart: '2026-11-11T23:57:00Z', actualEnd: '2026-11-12T10:56:00Z' },
   { lane: 'TC Toolkit', num: 13, id: 'R13', card: 'r13', name: 'C++ generation + g++ check', est: '3 d → ~2.5 h', start: '2026-11-12', end: '2026-11-13', status: 'progress', actualStart: '2026-11-12T11:30:00Z' },
-  { lane: 'TC Toolkit', num: 14, id: 'R14', card: 'r14', name: 'Build + run through XAE', est: '3 d → ~2 h', start: '2026-11-14', end: '2026-11-14', days: 0.6, offset: 0 },
+  { lane: 'TC Toolkit', num: 14, id: 'R14', card: 'r14', name: 'Build + run through XAE', est: '3 d → ~2 h', start: '2026-11-12', end: '2026-11-14', status: 'progress', actualStart: '2026-11-12T22:30:00Z' },
   { lane: 'TC Toolkit', num: 15, id: 'R15', card: 'r15', name: 'ADS online monitoring', est: '3 d → ~2 h', start: '2026-11-16', end: '2026-11-16', days: 0.6, offset: 0 },
   { lane: 'TC Toolkit', num: 16, id: 'R11', card: 'r11', name: 'Marketplace publishing', est: '0.5 d → ~1 h', start: '2026-11-20', end: '2026-11-20', days: 0.3, offset: 0, machine: true },
   { lane: 'STruC++ fork',   num: 1, id: 'S2',   card: 's2',   name: 'Fork compiler gaps',     est: '27.5 d → ~11.2 h', start: '2026-11-09', end: '2026-11-09', status: 'done', actualStart: '2026-11-09T12:04:17Z', actualEnd: '2026-11-09T23:16:55Z' },
