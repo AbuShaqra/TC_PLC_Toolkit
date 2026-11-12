@@ -554,6 +554,52 @@ plainTest('peek: the synthetic URI path puts the FILE in Monaco\'s prominent slo
     assert(peekPath('', 'root', 'impl').startsWith('/'), 'an empty file uri still yields a rooted path');
 });
 
+// ============================================================
+// R12: conditional pragmas on the live path. The lineMap is unchanged (no token is ever removed);
+// a split IF head in one method's pane is silent there, while a real error in another method still
+// lands on its own pane and line; an unsaved overlay adding {IF} goes through assembleSt.
+// ============================================================
+plainTest('R12: conditional pragmas per pane (split IF head, unrelated FOR, unsaved overlay)', () => {
+    const cr = (s) => s.replace(/\r?\n/g, '\r\n');
+    const method = (name, decl, impl) =>
+        `    <Method Name="${name}" Id="{00000000-0000-0000-0000-0000000012${name.length}${name.charCodeAt(0)}}">\r\n` +
+        `      <Declaration><![CDATA[${cr(decl)}]]></Declaration>\r\n      <Implementation>\r\n        <ST><![CDATA[${cr(impl)}]]></ST>\r\n` +
+        '      </Implementation>\r\n    </Method>\r\n';
+    const splitIf = '{IF defined(SIM)}\nIF bGo THEN\n{ELSE}\nIF NOT bGo THEN\n{END_IF}\n\tn := 1;\nEND_IF';
+    const xml = '<?xml version="1.0" encoding="utf-8"?>\r\n<TcPlcObject Version="1.1.0.1">\r\n' +
+        '  <POU Name="FB_R12" Id="{00000000-0000-0000-0000-000000001200}" SpecialFunc="None">\r\n' +
+        `    <Declaration><![CDATA[${cr('FUNCTION_BLOCK FB_R12\nVAR\n\tbGo : BOOL;\n\tn : INT;\nEND_VAR')}]]></Declaration>\r\n` +
+        '    <Implementation>\r\n      <ST><![CDATA[Run();]]></ST>\r\n    </Implementation>\r\n' +
+        method('Run', 'METHOD Run : BOOL\nVAR\nEND_VAR', splitIf) +
+        method('Loop', 'METHOD Loop : BOOL\nVAR\n\ti : INT;\nEND_VAR', 'n := 0;\nFOR i := 1 TO 3 DO\n\tn := n + i;') +
+        '  </POU>\r\n</TcPlcObject>';
+    const uriR = 'file:///tmp/FB_R12.TcPOU';
+    clearWorkspaceIndex();
+    const idxR = getWorkspaceSymbolIndex();
+    indexXmlObject(idxR, xml, uriR);
+    const parsedR = parseTwinCatXml(xml);
+    const idOf = (name) => (parsedR.components.find(c => c.name === name) || {}).id;
+    const runId = idOf('Run'), loopId = idOf('Loop');
+
+    let { stText, lineMap } = assembleSt(xml, null);
+    parseAndIndexDocument(stText, uriR);
+    let mapped = mapDiagnosticsToLocal(provideDiagnostics(stText, idxR, uriR), lineMap);
+    assert(!!lineMap[runId] && lineMap[runId].impl.end > lineMap[runId].impl.start, 'the lineMap carries the Run implementation block');
+    assert(mapped.filter(m => m.componentId === runId).length === 0,
+        `a split IF head ({IF}/{ELSE} picking the IF) in Run's implementation pane: 0 diagnostics there (got ${JSON.stringify(mapped)})`);
+    const loopMarks = mapped.filter(m => m.componentId === loopId);
+    assert(loopMarks.length === 1 && loopMarks[0].pane === 'impl' && loopMarks[0].range.startLineNumber === 2 && /END_FOR/.test(loopMarks[0].message),
+        `the unterminated FOR in Loop maps to Loop's implementation pane, local line 2 (got ${JSON.stringify(loopMarks)})`);
+    assert(mapped.length === 1, `nothing else is reported in the unit (${mapped.length})`);
+
+    // Unsaved overlay on Loop: close the FOR inside a group whose other branch also closes it.
+    ({ stText, lineMap } = assembleSt(xml, { componentId: loopId, impl: cr('n := 0;\nFOR i := 1 TO 3 DO\n{IF defined(FAST)}\n\tn := n + i;\nEND_FOR\n{ELSE}\n\tn := n + 2 * i;\nEND_FOR\n{END_IF}') }));
+    parseAndIndexDocument(stText, uriR);
+    mapped = mapDiagnosticsToLocal(provideDiagnostics(stText, idxR, uriR), lineMap);
+    assert(mapped.length === 0, `an unsaved overlay adding {IF} … END_FOR {ELSE} … END_FOR {END_IF} clears the error (got ${JSON.stringify(mapped)})`);
+    index = reindexSample(); // restore the sample index
+});
+
 console.log(`\n--- LIVE PATH TESTS COMPLETE with ${errors} errors, ${ran} run, ${skipped} skipped ---`);
 reportCoverage('live-path-sample', skipped === 0 ? 'ran' : 'skipped',
     skipped === 0 ? `${ran} cases ran` : `${skipped} sample-driven case(s) skipped`);

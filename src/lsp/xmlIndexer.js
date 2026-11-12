@@ -13,6 +13,7 @@ const { fsPathToFileUri } = require('../fileUri');
 const { parseTwinCatXml } = require('../xmlParser');
 const { blankComments } = require('../stComments');
 const { tokenize, parseVariablesBlock, TokenType } = require('./parser');
+const { headHasDirective } = require('./conditionals');
 const { createSymbolNode } = require('./symbolNode');
 const { TWINCAT_XML_EXTS, XML_INDEX_SKIP_DIRS } = require('../twincatWorkspace');
 const log = require('./log');
@@ -97,8 +98,9 @@ function extractVars(declText) {
 function extractEnumMembers(declText) {
     const members = [];
     if (!declText) return members;
-    // Blank comments (nested ones included) to avoid false parens.
-    const clean = blankComments(declText);
+    // Blank comments (nested ones included) and pragmas (`{IF defined(X)}`, attributes) to avoid
+    // false parens and commas. Members in every conditional branch are kept: any of them may exist.
+    const clean = blankComments(declText).replace(/\{[^}]*\}/g, m => m.replace(/[^\r\n]/g, ' '));
     const colonIdx = clean.indexOf(':');
     if (colonIdx === -1) return members;
     const parenStart = clean.indexOf('(', colonIdx);
@@ -202,6 +204,21 @@ function parseInheritance(decl) {
 }
 
 /**
+ * True when the declaration head (between the POU/INTERFACE/TYPE keyword and the first declaration
+ * block) holds a conditional pragma, so EXTENDS/IMPLEMENTS depend on a define (conditionals.js).
+ * @param {string} decl Declaration text.
+ * @returns {boolean}
+ */
+function inheritanceDependsOnDefine(decl) {
+    if (!decl || decl.indexOf('{') === -1) return false;
+    const tokens = tokenize(decl);
+    if (!tokens.conditionals) return false;
+    const heads = new Set(['FUNCTION_BLOCK', 'PROGRAM', 'FUNCTION', 'INTERFACE', 'TYPE']);
+    const i = tokens.findIndex(t => t.type === TokenType.Keyword && heads.has(t.value.toUpperCase()));
+    return i !== -1 && headHasDirective(tokens, i + 1);
+}
+
+/**
  * Builds a workspace symbol node from a TwinCAT XML object.
  * @param {string} xmlText The raw .TcPOU/.TcGVL/.TcDUT/.TcIO content.
  * @param {string} fileUri The file URI to associate with the node.
@@ -234,6 +251,7 @@ function buildNodeFromXml(xmlText, fileUri) {
     node.extends = inh.extends;
     node.extendsAll = inh.extendsAll;
     node.implements = inh.implements;
+    if (inheritanceDependsOnDefine(rootDecl)) node.inheritanceUncertain = true;
 
     // Root variables: VAR blocks (POU/GVL), struct/union fields (DUT struct or union), or enum
     // members (DUT enum). A union declares its members like a struct, so it takes the same path —

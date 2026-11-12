@@ -33,6 +33,9 @@
  * @property {string} [dutKind]   Source-specific extra, added by xmlIndexer.js for DUT nodes:
  *                                'struct' | 'union' | 'enum' | 'alias' (a subrange classifies as 'alias'). Not set by the
  *                                factory — an example of a field layered on top of the core shape.
+ * @property {boolean} [inheritanceUncertain] Set (only when true) by both indexers when the head's
+ *                                EXTENDS/IMPLEMENTS sit in a conditional pragma group (conditionals.js):
+ *                                the inheritance chain then counts as unresolved.
  */
 
 /**

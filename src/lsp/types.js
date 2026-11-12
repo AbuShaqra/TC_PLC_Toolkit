@@ -28,6 +28,41 @@ const { STANDARD_TYPES, isBuiltin } = require('./builtins');
 const UNKNOWN = { kind: 'unknown', name: '' };
 
 /**
+ * Returned by pickVar when a name's declaration depends on a conditional pragma and the branches
+ * disagree on its type. Callers map it to UNKNOWN / undefined: no check may flag it.
+ */
+const AMBIGUOUS = Object.freeze({ ambiguous: true });
+
+/** Type string without its initialiser, whitespace or case — for comparing branch declarations. */
+function normalizeDeclType(typeStr) {
+    const s = String(typeStr || '');
+    const at = s.indexOf(':=');
+    return (at === -1 ? s : s.slice(0, at)).replace(/\s+/g, '').toUpperCase();
+}
+
+/**
+ * Finds a variable by lower-cased name, like `vars.find`, but aware of conditional pragmas
+ * (conditionals.js): when the first match is declared inside an {IF} group and a same-name
+ * declaration in another branch has a different type — or its own type holds a directive — the
+ * type depends on a define, and AMBIGUOUS is returned.
+ * @param {Array<Object>} vars Variable list.
+ * @param {string} lower Lower-cased name.
+ * @returns {Object|undefined} The variable, AMBIGUOUS, or undefined when absent.
+ */
+function pickVar(vars, lower) {
+    if (!vars) return undefined;
+    const first = vars.find(x => x.name.toLowerCase() === lower);
+    if (!first || !first.conditional) return first;
+    if (first.typeConditional) return AMBIGUOUS;
+    const norm = normalizeDeclType(first.type);
+    for (const v of vars) {
+        if (v === first || v.name.toLowerCase() !== lower) continue;
+        if (v.typeConditional || normalizeDeclType(v.type) !== norm) return AMBIGUOUS;
+    }
+    return first;
+}
+
+/**
  * Tags a Type as coming from an external library, so that no check can flag it.
  *
  * The `.tmc` gives library types real members (libsymbols.js), which lets `stAxis.Position` resolve
@@ -293,7 +328,8 @@ function lookupMember(type, member, index) {
             const node = findNode(index, t.name);
             if (!node) return undefined;
             const uncertain = membersUncertain(t, node);
-            const m = node.variables.find(v => v.name.toLowerCase() === member.toLowerCase());
+            const m = pickVar(node.variables, member.toLowerCase());
+            if (m === AMBIGUOUS) return undefined;
             if (m) return uncertain ? markExternal(elementary('INT')) : elementary('INT');
             return uncertain ? undefined : null;
         }
@@ -307,7 +343,8 @@ function lookupMember(type, member, index) {
     const mark = (resolved) => (uncertain ? markExternal(resolved) : resolved);
     const lower = member.toLowerCase();
 
-    const v = node.variables.find(x => x.name.toLowerCase() === lower);
+    const v = pickVar(node.variables, lower);
+    if (v === AMBIGUOUS) return undefined;
     if (v) return mark(parseTypeString(v.type, index));
 
     const p = (node.properties || []).find(x => x.name.toLowerCase() === lower);
@@ -324,6 +361,7 @@ function lookupMember(type, member, index) {
     // resolve the interface yet miss a second-parent member and return `null` (definitely absent),
     // a false "not a member" diagnostic on correct code.
     let sawUncertainParent = false;
+    if (node.inheritanceUncertain) sawUncertainParent = true; // EXTENDS depends on a define
     for (const parentName of parentNames(node)) {
         const parentType = parseTypeString(parentName, index);
         if (parentType.kind === 'unknown') { sawUncertainParent = true; continue; }
@@ -354,7 +392,8 @@ function resolveSymbolType(name, scope, index) {
     const lower = name.toLowerCase();
 
     if (scope && scope.method) {
-        const v = scope.method.variables.find(x => x.name.toLowerCase() === lower);
+        const v = pickVar(scope.method.variables, lower);
+        if (v === AMBIGUOUS) return UNKNOWN;
         if (v) return parseTypeString(v.type, index);
     }
     if (scope && scope.pou) {
@@ -366,7 +405,8 @@ function resolveSymbolType(name, scope, index) {
             return parseTypeString(scope.pou.returnType, index);
         }
 
-        const v = scope.pou.variables.find(x => x.name.toLowerCase() === lower);
+        const v = pickVar(scope.pou.variables, lower);
+        if (v === AMBIGUOUS) return UNKNOWN;
         if (v) return parseTypeString(v.type, index);
         const p = (scope.pou.properties || []).find(x => x.name.toLowerCase() === lower);
         if (p) return parseTypeString(p.type, index);
@@ -378,7 +418,8 @@ function resolveSymbolType(name, scope, index) {
     for (const key of Object.keys(index)) {
         const node = index[key];
         if (node.type === 'GVL') {
-            const v = node.variables.find(x => x.name.toLowerCase() === lower);
+            const v = pickVar(node.variables, lower);
+            if (v === AMBIGUOUS) return UNKNOWN;
             if (v) return parseTypeString(v.type, index);
         }
     }
@@ -500,19 +541,27 @@ function isRelatedAssignable(target, source, index) {
         seen.add(node.name.toLowerCase());
         if (node.name.toLowerCase() === targetName) return true;
         if ((node.implements || []).some(i => i.toLowerCase() === targetName)) return true;
+        if (node.inheritanceUncertain) return true; // EXTENDS/IMPLEMENTS depend on a define: never flag
         for (const pn of parentNames(node)) { const p = findNode(index, pn); if (p) queue.push(p); }
         for (const impl of (node.implements || [])) { const p = findNode(index, impl); if (p) queue.push(p); }
     }
     return false;
 }
 
-/** Builds the set of nameable call-parameter names (VAR_INPUT/OUTPUT/IN_OUT) from a variable list. */
+/**
+ * Builds the set of nameable call-parameter names (VAR_INPUT/OUTPUT/IN_OUT) from a variable list.
+ * Returns null when a variable's section header sits inside a conditional pragma group
+ * (`scopeUncertain`): which names are parameters then depends on a define.
+ * @param {Array<Object>} vars
+ * @returns {Set<string>|null}
+ */
 function paramSetFromVars(vars) {
     const s = new Set();
-    (vars || []).forEach(v => {
+    for (const v of (vars || [])) {
+        if (v.scopeUncertain) return null;
         const sc = (v.scope || '').toUpperCase();
         if (sc === 'VAR_INPUT' || sc === 'VAR_OUTPUT' || sc === 'VAR_IN_OUT') s.add(v.name.toLowerCase());
-    });
+    }
     return s;
 }
 
@@ -523,7 +572,10 @@ function collectParams(node, index) {
     let cur = node;
     while (cur && !seen.has(cur.name)) {
         seen.add(cur.name);
-        for (const n of paramSetFromVars(cur.variables)) set.add(n);
+        const own = paramSetFromVars(cur.variables);
+        if (!own) return null; // a section header depends on a define
+        for (const n of own) set.add(n);
+        if (cur.inheritanceUncertain) return null; // EXTENDS depends on a define
         if (cur.extends) {
             const p = findNode(index, cur.extends);
             if (!p) return null; // unknown ancestor — can't be sure of the full parameter set
@@ -556,6 +608,7 @@ function findMethodOwnerInChain(node, name, index) {
         seen.add(cur.name.toLowerCase());
         const m = (cur.methods || []).find(x => x.name.toLowerCase() === lower);
         if (m) return { method: m, owner: cur };
+        if (cur.inheritanceUncertain) sawUnknownAncestor = true; // EXTENDS depends on a define
         for (const pn of parentNames(cur)) {
             const p = findNode(index, pn);
             if (!p) { sawUnknownAncestor = true; continue; } // unknown ancestor — chain uncertain
@@ -648,7 +701,9 @@ function getInitParams(fbName, index) {
     set.add('binitretains');
     set.add('bincopycode');
     if (fbInit) {
-        for (const p of paramSetFromVars(fbInit.variables)) set.add(p);
+        const initParams = paramSetFromVars(fbInit.variables);
+        if (!initParams) return null;
+        for (const p of initParams) set.add(p);
     }
     return set;
 }
@@ -670,6 +725,8 @@ module.exports = {
     parentNames,
     findNode,
     findMethodOwnerInChain,
+    pickVar,
+    AMBIGUOUS,
     getCallParams,
     getInitParams
 };

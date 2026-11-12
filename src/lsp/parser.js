@@ -10,6 +10,7 @@ const { STANDARD_KEYWORDS } = require('./builtins');
 const { createSymbolNode } = require('./symbolNode');
 const { ST_INDEX_SKIP_DIRS } = require('../twincatWorkspace');
 const log = require('./log');
+const { CONDITIONAL_RE, annotateConditionals, headHasDirective } = require('./conditionals');
 
 /**
  * Token types for Lexer
@@ -80,7 +81,8 @@ function skipPouModifiers(tokens, idx) {
 /**
  * Tokenizes Structured Text code.
  * @param {string} code 
- * @returns {Array<Object>} List of tokens
+ * @returns {import('./conditionals').TokenStream} List of tokens; `conditionals` is set when the
+ *          code holds a conditional pragma directive (conditionals.js).
  */
 function tokenize(code) {
     const tokens = [];
@@ -92,6 +94,9 @@ function tokenize(code) {
     // Note: elementary type names are intentionally NOT keywords here so that type-name
     // parsing (return types, variable types) treats them as identifiers.
     const keywords = STANDARD_KEYWORDS;
+    // Set when a conditional directive ({IF}/{ELSIF}/{ELSE}/{END_IF}) is lexed; only then does
+    // annotateConditionals() run, so a unit without one costs nothing extra (conditionals.js).
+    let sawConditional = false;
 
     while (i < code.length) {
         const char = code[i];
@@ -119,6 +124,7 @@ function tokenize(code) {
                 i++;
             }
             if (i < code.length && code[i] === '}') { value += '}'; i++; col++; }
+            if (!sawConditional && CONDITIONAL_RE.test(value)) sawConditional = true;
             tokens.push({ type: TokenType.Pragma, value, start, end: i, line: startLine, col: startCol });
             continue;
         }
@@ -496,6 +502,7 @@ function tokenize(code) {
         });
     }
 
+    if (sawConditional) annotateConditionals(tokens);
     return tokens;
 }
 
@@ -546,6 +553,10 @@ function isBlockEnd(tok) {
 function parseVariablesBlock(tokens, startIndex, scopeName) {
     const vars = [];
     let idx = startIndex;
+    // Conditional pragmas (conditionals.js): a section header inside a {IF} group makes the scope
+    // of every variable below it depend on a define.
+    const header = tokens[startIndex - 1];
+    const headerConditional = !!(header && header.cond && header.type === TokenType.Keyword);
 
     while (idx < tokens.length) {
         const tok = tokens[idx];
@@ -558,6 +569,7 @@ function parseVariablesBlock(tokens, startIndex, scopeName) {
         if (tok.type === TokenType.Identifier) {
             const names = [tok.value];
             const nameRanges = [{ start: tok.start, end: tok.end, line: tok.line, col: tok.col }];
+            let nameConditional = !!tok.cond;
             idx++;
 
             // Check for commas (multi-variable declarations)
@@ -571,6 +583,7 @@ function parseVariablesBlock(tokens, startIndex, scopeName) {
                     const identTok = tokens[idx];
                     names.push(identTok.value);
                     nameRanges.push({ start: identTok.start, end: identTok.end, line: identTok.line, col: identTok.col });
+                    if (identTok.cond) nameConditional = true;
                     idx++;
                 }
             }
@@ -602,6 +615,7 @@ function parseVariablesBlock(tokens, startIndex, scopeName) {
                 const typeStart = idx < tokens.length ? tokens[idx].start : 0;
                 let typeEnd = typeStart;
                 const typeTokens = [];
+                let typeConditional = false;
 
                 while (idx < tokens.length) {
                     const t = tokens[idx];
@@ -618,6 +632,7 @@ function parseVariablesBlock(tokens, startIndex, scopeName) {
                     // type" the day it is switched on. The initializer (`INT := 7`) deliberately
                     // STAYS: decl-site init lists are load-bearing (getInitParams reads them).
                     if (t.type === TokenType.Pragma) {
+                        if (t.condDirective) typeConditional = true;
                         idx++;
                         continue;
                     }
@@ -628,9 +643,11 @@ function parseVariablesBlock(tokens, startIndex, scopeName) {
                 }
 
                 const trimmedTypeStr = typeStr.trim();
+                const conditional = nameConditional || typeConditional || headerConditional;
                 names.forEach((name, nIdx) => {
                     const r = nameRanges[nIdx];
-                    vars.push({
+                    /** @type {Object} */
+                    const v = {
                         name: name,
                         type: trimmedTypeStr,
                         scope: scopeName,
@@ -646,7 +663,13 @@ function parseVariablesBlock(tokens, startIndex, scopeName) {
                             endLine: tokens.find(t => t.end === typeEnd)?.line || r.line,
                             endCol: tokens.find(t => t.end === typeEnd)?.col || r.col
                         }
-                    });
+                    };
+                    // Only set when true, so a unit without conditional pragmas keeps its exact shape.
+                    // types.js pickVar / paramSetFromVars read these.
+                    if (conditional) v.conditional = true;
+                    if (typeConditional) v.typeConditional = true;
+                    if (headerConditional) v.scopeUncertain = true;
+                    vars.push(v);
                 });
 
                 // Parse implicit enum values to register them as valid identifiers in
@@ -654,7 +677,7 @@ function parseVariablesBlock(tokens, startIndex, scopeName) {
                 // type token span). Rule: an identifier immediately after '(' or ',' is a
                 // member NAME; an identifier after ':=' is a value and is skipped.
                 if (/^\s*\(/.test(trimmedTypeStr)) {
-                    const meaningful = typeTokens.filter(t => t.type !== TokenType.Whitespace && t.type !== TokenType.Comment);
+                    const meaningful = typeTokens.filter(t => t.type !== TokenType.Whitespace && t.type !== TokenType.Comment && t.type !== TokenType.Pragma);
                     let inParen = false;
                     let expectName = false;
                     for (const t of meaningful) {
@@ -813,10 +836,17 @@ function parseAndIndexDocument(code, fileUri, index = workspaceSymbolIndex) {
                     }
                 }
 
+                // A conditional directive in the head makes EXTENDS/IMPLEMENTS depend on a define:
+                // the inheritance chain then counts as unresolved (core.walkExtendsChain).
+                if (tokens.conditionals && headHasDirective(tokens, idx)) {
+                    pouNode.inheritanceUncertain = true;
+                }
+
                 // Parse EXTENDS / IMPLEMENTS
                 while (idx < tokens.length) {
-                    // Skip whitespace/comments first
-                    while (idx < tokens.length && (tokens[idx].type === TokenType.Whitespace || tokens[idx].type === TokenType.Comment)) {
+                    // Skip whitespace/comments (and conditional directives) first
+                    while (idx < tokens.length && (tokens[idx].type === TokenType.Whitespace || tokens[idx].type === TokenType.Comment ||
+                        tokens[idx].condDirective)) {
                         idx++;
                     }
                     if (idx >= tokens.length) break;

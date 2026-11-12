@@ -10,44 +10,46 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   merged at `3210d33`, Release run 41671593015 green, VSIX `twincat-plc-toolkit-0.10.1.vsix` attached).
 - **Version history:** 0.10.1 struct EXTENDS from own DUTs (PR #22); 0.10.0 Libraries scoping (PR #18); 0.9.0
   improvement-plan phases; 0.8.x project-aware Generate ST, ResizeObserver fix, solution→project Objects tree.
-- **Last verified:** 2026-11-11 (Linux container, `claude/focused-ptolemy-m6acaz` with R3.5 at compiler `eb52d2c`) —
-  `REQUIRE_FULL_SUITE=1 npm test` green (**110/110, Coverage: FULL**, compile-real ran), `npm run typecheck` and
+- **Last verified:** 2026-11-12 (Linux container, `claude/focused-ptolemy-m6acaz` = R12 + review fixes on top of `dev`) —
+  `REQUIRE_FULL_SUITE=1 npm test` green (**111/111, Coverage: FULL**, compile-real ran), `npm run typecheck` and
   `npm run lint` exit 0; Linux dev-host (`xvfb-run -a node test/devhost/run.js`) 103 pass / 1 fail, the fail being the
-  known P8 line-ending one. Browser harnesses last run 2026-11-09 (all green); the webview has not changed since.
+  known P8 line-ending one; `test/browser/run_pragmas.js` green (the webview is unchanged by R12).
+- **R12 `{IF}`-aware LSP diagnostics: BUILT 2026-11-12**, pushed on `claude/focused-ptolemy-m6acaz` (from `3bdfd29`,
+  dev + roadmap commit; review fixes in the last commit) — needs the user's F5 check, then a squash PR into `dev`.
+  Review fixes (do not regress): a segment boundary is never a named argument on its own line (`fbRS(\n SET := c,`
+  split a method → Unterminated/Unmatched outside any group); enum members inside a group are kept (xmlIndexer
+  `extractEnumMembers` took the `)` of `{IF defined(X)}` as the list end); a statement-level nested group no longer
+  widens its span over the next statement; a group wrapping the first VAR block no longer sets `inheritanceUncertain`.
+  Design (merged from two reviewed designs, B winning): the LSP **never evaluates a define**; every branch
+  combination counts. `src/lsp/conditionals.js` groups directives per segment; block matching keeps an error only
+  if every branch selection has it (cap 64/segment, unbalanced segments silent); semantic diagnostics inside a
+  group's statement span are dropped; `pickVar` makes a per-branch type conflict UNKNOWN; a conditional section
+  header / POU head makes the parameter set / inheritance chain unknown. No group → byte-identical old output
+  (pinned over every sample unit). Rules and trade-offs: DEVELOPMENT.md "Conditional pragmas in the language
+  server (R12)". Tests: `test/test_conditional_pragmas.js` (new), R12 cases in `test_live_path.js`, R12 compiler
+  parity in `test_compile_real.js` (each fixture compiled per define set: accepted somewhere ⇒ LSP 0). The probe
+  case (split `IF` head per branch) and probe2 cases A–I give 0.
+  **Owed by the user (F5 dev host):** the split IF head in both panes of a POU shows no squiggle; completion and
+  references work in both branches; an unrelated missing END_FOR still shows.
+  **Proposed, needs the user's XAE build check first:** add a conditional POU and `<CompilerDefines>` to
+  TcToolkitSample2 so the ground-truth sample covers R12 (not done: the sample must stay XAE-built).
+  **Follow-ups (not R12):** R12b informational branch state (Backlog; never feeds diagnostics; open decision:
+  Debug only or "all configurations agree"); definition returning every same-name declaration once
+  `mapDefinition` accepts arrays; optional merged completion items (`BOOL | INT (conditional)`).
 - **R3.2 Compile Project: MERGED** into `dev` as PR #32 (`28f24f1`, 2026-11-10 22:22 UTC).
 - **R3.3–R9 MERGED** into `dev` as PR #33 (`6424968`, 2026-11-11 09:30 UTC) after the user's Windows checks
   (dev-host green after `npm ci`; manual checks all passed). Details per item are in git history and ROADMAP "Done".
   After a branch switch that changes package-lock.json, run `npm ci` — the dev-host test now says so itself.
-  Toolkit lane is done except R10 (trigger-only) and R11 (publishing, last, after the fork lane).
+  Toolkit lane is done except R12 (built, above), R10 (trigger-only) and R11 (publishing, last, after the fork lane).
 - **Settings keys renamed `twincat.*` → `tcToolkit.*`** (user report 2026-11-11; `c6145b6`, `765b5e1`, 109 suites):
   one-time migration at activation (`src/settingsMigration.js`), old keys stay contributed as deprecated stand-ins.
   Search results read "Tc Toolkit › Compiler: Path" (VS Code cannot show an uppercase "TC" from a key). **Merged** as
   PR #34 (`cd52afc`, 2026-11-11) after the user's Windows check (old values moved; custom XAE path kept).
-- **Compiler release I + compiler defines: BUILT 2026-11-11** on `claude/focused-ptolemy-m6acaz`, open as PR #35
-  into `dev`; awaiting the user's Windows check. **Compiler now vendored at fork `eb52d2c`** (development after
-  #119, S11b: `--pragma-define`, `--file-define`) from a clean worktree; `twincat3.json` gains `conditional_pragmas`.
-  Compile Project reads `<CompilerDefines>` from the project's `.plcproj` (`src/compilerDefines.js`; format checked
-  against public `.plcproj` files on GitHub — XAE writes `<CompilerDefines />` or a whitespace-only element when
-  empty, entries like `InclSerialCom := 'true'`). **Project defines → `--pragma-define NAME[=VALUE]`**: values exact
-  (numbers too), never a global constant, seen by `project_defined()` (fork DIALECTS.md + `src/node/cli.ts`; the
-  compile-real gate checks it, and that a per-object define is not seen). **Per-object defines** (`<CompilerDefines>` in a `<Compile Include>` item) **→ `--file-define
-  <N.st>=NAME[=VALUE]`** for the check unit built from that object (one unit per object, `buildCheckInputs`;
-  Include resolved against the `.plcproj` folder, matched with `normalizeProjectPath`); an item with no unit (a
-  task, a missing file) gets a note. **`Condition`s evaluated** (user decision 2026-11-11) on property groups,
-  item groups, items and `<CompilerDefines>` elements, for Debug | `TwinCAT RT (x64)` (`CHECK_CONFIGURATION`);
-  true applies, false skips silently, undecidable (`Exists`, property functions, `<`, `MSBuild*`/`Solution*`
-  properties) is left out with a note. Notes go to the `TC Toolkit Compile` output. Public `.plcproj` files only
-  show XAE's `" '$(Configuration)' == 'Debug' "` / `'Release'` groups, none holding `<CompilerDefines>`.
-  Gates on `eb52d2c` (2026-11-11, Linux): `REQUIRE_FULL_SUITE=1 npm test` 110/110 FULL (compile-real ran: numeric
-  `hasvalue` next to a same-named `VAR_GLOBAL CONSTANT`, a per-object define selecting its branch in FB_Valve and
-  not in FB_Cylinder, a per-object value winning over the project's, `project_defined()` true for a project define and false for a
-  per-object one), lint/typecheck 0, Linux dev-host 103 pass /
-  1 fail — only the known P8 line-ending failure.
-  **LSP finding (not fixed, user decides):** the built-in diagnostics ignore `{IF}` pragmas; valid code that picks
-  one of two block heads per branch gives a false ERROR "Unterminated block: missing matching "END_IF"" —
-  repro: body `{IF defined(SIM)}` / `IF c THEN` / `{ELSE}` / `IF NOT c THEN` / `{END_IF}` / `x := 1;` / `END_IF`
-  (the compiler accepts it with and without `-D SIM`). Duplicate declarations in alternative branches, names
-  declared only in a branch, `{define}`/`{undefine}`, `hasvalue`/`project_defined` gave 0 diagnostics.
+- **R3.5 MERGED** into `dev` as PR #35 (squash `791fc3a`, 2026-11-11 23:55 UTC): compiler vendored at fork
+  `eb52d2c`, `conditional_pragmas` on, `<CompilerDefines>` read from the `.plcproj` (`src/compilerDefines.js`;
+  `Condition`s evaluated for Debug | `TwinCAT RT (x64)`), project defines → `--pragma-define`, per-object defines →
+  `--file-define` on that object's unit. Details: ROADMAP "Done", DEVELOPMENT.md "Compile Project".
+- **Fork lane (2026-11-12):** S3b done, release K at `c1faca7`. **S4 in progress** (lane agent `a182a76c41bf282e2`, notes in scratchpad `S3B-HANDOVER.md`): LTIME merged as fork #131 (`5e2120b`), LDATE/LTOD/LDT as #132 (`5f4dc19`; #132 was stacked on #131 and conflicted after its squash — fixed by merging development into the branch, branch side wins, merge commit `bb6f0cb`). Gates on the combined head: 5811 passed / 7 skipped, vsext 345, lint 531 warnings, existing outputs byte-identical. Next: items 3–5, then **user decisions 2026-11-12**: IEC Table 36 CONCAT_/SPLIT_/DAY_OF_WEEK (same-name user/library POU wins), DT_TO_DATE/DT_TO_TOD/DATE-arithmetic fix on its own PR (changes OSCAT results, release note), debug map keeps short type names, `T#1_500ms` = 1500 ms stays. Item 5 adds the Table 46 typed timer names. Later branches start from development, not stacked. The IEC text is in scratchpad `iecpdf/` (never committed; cite table numbers only).
 - **R11 publishing:** last — after the toolkit lane AND the fork lane are done (user, 2026-11-10).
 - **Sample diagnostics: 0 against a baseline of 0** — verified with the Beckhoff archives present AND moved aside.
 
@@ -261,6 +263,9 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
 - `templates/` ships in the VSIX and must stay generic; `scripts/Build PLC project/` is the fuller, unshipped
   copy. The user syncs the two BY HAND — never promote one into the other automatically.
 - Internal ids (`twincat.*`, `twincat.xmlViewer`) are deliberately not renamed.
+- Conditional pragmas (R12): the LSP never evaluates a define for diagnostics or the index, and never re-exposes a
+  branch of an unbalanced segment; a unit with no directive must keep the old whole-unit block matcher
+  (`test_conditional_pragmas.js` pins it byte-identical over the sample).
 
 ## Working agreement
 Implementation is delegated to the **`implementer`** agent; the main conversation owns architecture/planning/review/
