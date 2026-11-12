@@ -677,7 +677,7 @@ function parseVariablesBlock(tokens, startIndex, scopeName) {
                 // type token span). Rule: an identifier immediately after '(' or ',' is a
                 // member NAME; an identifier after ':=' is a value and is skipped.
                 if (/^\s*\(/.test(trimmedTypeStr)) {
-                    const meaningful = typeTokens.filter(t => t.type !== TokenType.Whitespace && t.type !== TokenType.Comment);
+                    const meaningful = typeTokens.filter(t => t.type !== TokenType.Whitespace && t.type !== TokenType.Comment && t.type !== TokenType.Pragma);
                     let inParen = false;
                     let expectName = false;
                     for (const t of meaningful) {

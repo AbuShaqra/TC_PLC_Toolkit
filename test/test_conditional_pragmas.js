@@ -120,6 +120,12 @@ section('UNIT: grouping, segments and boundaries');
     const rs = tokenize('{IF defined(A)}\n\tfbRS.SET := TRUE;\n{ELSE}\n\tfbRS.RESET1 := TRUE;\n{END_IF}');
     assert(rs.conditionals.segments.length === 1 && rs.conditionals.unbalancedSegments.length === 0,
         '`fbRS.SET := TRUE;` inside a group is NOT a segment boundary (the group stays balanced)');
+    const named = tokenize('{IF defined(A)}\nIF c THEN\n\tfbRS(\n\t\tSET := c,\n\t\tRESET1 := FALSE);\nEND_IF\n{END_IF}\nfbRS(\nSET\n:= c);\nfb(GET => x);');
+    assert(named.conditionals.segments.length === 1 && named.conditionals.unbalancedSegments.length === 0,
+        `a line-leading named argument (\`SET := c,\` inside a multi-line call) is NOT a segment boundary (${named.conditionals.segments.length} segment(s))`);
+    const prop = tokenize('PROPERTY P : INT\nGET\nP := 1;\nEND_GET\nSET\n{IF defined(A)}\nx := P;\n{END_IF}\nEND_SET\n');
+    assert(prop.conditionals.segments.map(g => prop[g.start].value).join(',') === 'PROPERTY,GET,END_GET,SET,END_SET',
+        'real accessor lines (GET/SET/END_GET/END_SET) still split segments');
 
     const unit = 'METHOD A\n{IF defined(X)}\nx := 1;\n{END_IF}\nEND_METHOD\nMETHOD B\n{IF defined(Y)}\ny := 1;\n{END_IF}\nEND_METHOD\n';
     const u = tokenize(unit).conditionals;
@@ -193,6 +199,19 @@ section('UNIT: declarations, pickVar and paramSetFromVars');
     assert(getWorkspaceSymbolIndex().FB_C.inheritanceUncertain === true, 'parser: a conditional EXTENDS head sets inheritanceUncertain');
     const plainNode = buildNodeFromXml(pou('FB_N', 'FUNCTION_BLOCK FB_N EXTENDS FB_A\nVAR\n{IF defined(SIM)}\n\tq : INT;\n{END_IF}\nEND_VAR', ''), 'file:///tmp/r12/n.TcPOU');
     assert(!('inheritanceUncertain' in plainNode), 'a conditional inside VAR does not make the head uncertain');
+    const wrappedDecl = 'FUNCTION_BLOCK FB_W EXTENDS FB_A\n{IF defined(SIM)}\nVAR\n\tsimX : INT;\nEND_VAR\n{END_IF}\nVAR\n\ta : INT;\nEND_VAR';
+    const wrapped = buildNodeFromXml(pou('FB_W', wrappedDecl, ''), 'file:///tmp/r12/w.TcPOU');
+    assert(!('inheritanceUncertain' in wrapped), 'xmlIndexer: a group wrapping the first VAR block does not make the head uncertain');
+    clearWorkspaceIndex();
+    parseAndIndexDocument(wrappedDecl + '\nEND_FUNCTION_BLOCK', 'file:///tmp/r12/w.st');
+    assert(!('inheritanceUncertain' in getWorkspaceSymbolIndex().FB_W), 'parser: a group wrapping the first VAR block does not make the head uncertain');
+    const modHead = buildNodeFromXml(pou('FB_M', 'FUNCTION_BLOCK FB_M\n{IF defined(SIM)}\nIMPLEMENTS I_X\n{END_IF}\nVAR\nEND_VAR', ''), 'file:///tmp/r12/m.TcPOU');
+    assert(modHead.inheritanceUncertain === true, 'a directive before IMPLEMENTS still sets inheritanceUncertain');
+
+    const nested = cond.suppressionSpans(tokenize('{IF defined(A)}\n{IF defined(B)}\nx := 1;\n{END_IF}\n{END_IF}\nx := q;'));
+    assert(nested.length === 1 && nested[0].endLine === 5, `a branch ending in a nested statement-level group does not extend the span past {END_IF} (${JSON.stringify(nested)})`);
+    const nestedMid = cond.suppressionSpans(tokenize('x := {IF defined(A)}{IF defined(B)}1{ELSE}2{END_IF}{ELSE}3{END_IF};\ny := 1;'));
+    assert(nestedMid.length === 1 && nestedMid[0].endLine === 1 && nestedMid[0].endCol > 60, `a nested mid-expression group still extends through its ';' (${JSON.stringify(nestedMid)})`);
 }
 
 // ════════════════════════════════════════════════════════════════════════════════════════════════
@@ -238,6 +257,24 @@ section('MUST GIVE 0: TwinCAT-style variants');
 
     // A VAR section header that depends on a define: x may be a VAR or a VAR_INPUT.
     const fbH = pou('FB_H', 'FUNCTION_BLOCK FB_H\nVAR\n\tk : INT;\nEND_VAR\n{IF defined(SIM)}\nVAR\n{ELSE}\nVAR_INPUT\n{END_IF}\n\tx : INT;\nEND_VAR', '');
+    const RS_VARS = 'FUNCTION_BLOCK FB_T\nVAR\n\tfbRS : RS;\n\tc : BOOL;\n\tx : INT;\nEND_VAR';
+    const rsCall = 'IF c THEN\n\tfbRS(\n\t\tSET := c,\n\t\tRESET1 := FALSE);\nEND_IF';
+    zero('a multi-line RS call (SET := at line start) in a method, with a group in the body', pou('FB_T', RS_VARS, '{IF defined(SIM)}\nx := 1;\n{END_IF}',
+        [{ name: 'M', decl: 'METHOD M : BOOL\nVAR\nEND_VAR', impl: rsCall }]));
+    zero('a multi-line RS call after a split IF head', pou('FB_T', RS_VARS,
+        '{IF defined(SIM)}\nIF c THEN\n{ELSE}\nIF NOT c THEN\n{END_IF}\n\tfbRS(\n\t\tSET := c,\n\t\tRESET1 := FALSE);\nEND_IF'));
+    zero('a multi-line RS call inside a group', pou('FB_T', RS_VARS, `{IF defined(SIM)}\n${rsCall}\n{END_IF}`));
+    const enumDut = '<?xml version="1.0" encoding="utf-8"?>\r\n<TcPlcObject Version="1.1.0.1">\r\n  <DUT Name="E_C" Id="' + guid() + '">\r\n' +
+        '    <Declaration><![CDATA[' + lf('TYPE E_C :\n(\n\tA := 0,\n{IF defined(SIM)}\n\tSimOnly := 5,\n{END_IF}\n\tB := 1\n);\nEND_TYPE') + ']]></Declaration>\r\n  </DUT>\r\n</TcPlcObject>';
+    zero('enum members inside and after a group', pou('P', 'PROGRAM P\nVAR\n\te : E_C;\nEND_VAR', 'e := E_C.B;\ne := E_C.A;\n{IF defined(SIM)}\ne := E_C.SimOnly;\n{END_IF}'), [enumDut]);
+    const enumNode = buildNodeFromXml(enumDut, 'file:///tmp/r12/E_C.TcDUT');
+    const enumNames = (enumNode.variables || enumNode.members || []).map(v => v.name).join(',');
+    assert(enumNames === 'A,SimOnly,B', `xmlIndexer keeps every enum member around a group (${enumNames})`);
+    clearWorkspaceIndex();
+    parseAndIndexDocument('PROGRAM P\nVAR\n\te : (A := 0, {IF defined(SIM)} SimOnly := 5, {END_IF} B := 1);\nEND_VAR\nEND_PROGRAM', 'file:///tmp/r12/e.st');
+    const inline = getWorkspaceSymbolIndex().P.variables.filter(v => v.type === 'Enum').map(v => v.name).join(',');
+    assert(inline === 'A,SimOnly,B', `parser keeps every inline enum member around a group (${inline})`);
+
     zero('a conditional VAR/VAR_INPUT header with a named call fb(x := 1)', pou('P', 'PROGRAM P\nVAR\n\tfb : FB_H;\nEND_VAR', 'fb(x := 1);'), [fbH]);
 }
 
@@ -263,6 +300,11 @@ section('MUST STILL REPORT: code outside groups');
     r = run(pou('P', VARS, '{IF defined(SIM)}\nx := 1;', [{ name: 'M', decl: 'METHOD M : BOOL\nVAR\nEND_VAR', impl: 'nMissing := 1;' }]));
     assert(r.mapped.length === 1 && r.mapped[0].componentId !== 'root' && /nMissing/.test(r.mapped[0].message),
         `a method after an unclosed {IF} still gets its own undeclared-identifier error (${show(r)})`);
+
+    r = run(pou('P', VARS, '{IF defined(A)}\n{IF defined(B)}\nx := 1;\n{END_IF}\n{END_IF}\nx := undeclaredQ;'));
+    assert(r.diags.length === 1 && /undeclaredQ/.test(r.diags[0].message), `the statement after a nested statement-level group is still checked (${show(r)})`);
+    r = run(pou('FB_A', 'FUNCTION_BLOCK FB_A\n{IF defined(SIM)}\nVAR\n\tsimX : INT;\nEND_VAR\n{END_IF}\nVAR\n\ta : INT;\nEND_VAR', 'a := undeclaredThing + 1;'));
+    assert(r.diags.length === 1 && /undeclaredThing/.test(r.diags[0].message), `a group wrapping the first VAR block keeps the undeclared check (${show(r)})`);
 
     const groups = Array.from({ length: 7 }, (_, i) => `{IF defined(G${i})}\nIF c THEN\n{END_IF}`).join('\n');
     r = run(pou('P', VARS, `${groups}\nx := 1;\nEND_WHILE`, [{ name: 'M', decl: 'METHOD M : BOOL\nVAR\nEND_VAR', impl: 'FOR x := 1 TO 2 DO\n\tx := 1;' }]));
@@ -302,7 +344,9 @@ section('NO GROUP: byte-identical to the old matcher; per-segment = whole unit (
     if (fs.existsSync(sampleDir)) walk(sampleDir);
     // Synthetic broken units too, so the comparison covers real errors, not only empty lists.
     const synthetic = ['IF a THEN\nWHILE b DO\nEND_IF\nEND_FOR\nUNTIL x\nCASE y OF\nEND_CASE\nREPEAT\n',
-        'METHOD A\nWHILE c DO\nEND_METHOD\nMETHOD B\nEND_WHILE\nEND_METHOD\n'];
+        'METHOD A\nWHILE c DO\nEND_METHOD\nMETHOD B\nEND_WHILE\nEND_METHOD\n',
+        'IF a THEN\n\tfbRS(\n\t\tSET := TRUE,\n\t\tRESET1 := FALSE);\nEND_IF\nFOR i := 1 TO 2 DO\n\tfb(\n\t\tGET := 1,\n\t\tMETHOD := 2);\nEND_FOR\n',
+        'PROPERTY P : INT\nGET\nIF a THEN\nP := 1;\nEND_IF\nEND_GET\nSET\nWHILE b DO\nEND_WHILE\nEND_SET\nEND_PROPERTY\n'];
     let compared = 0, identical = 0, segEqual = 0, withConditionals = 0;
     const texts = units.map(f => convertXmlToSt(parseTwinCatXml(fs.readFileSync(f, 'utf8')), { raw: true }).stText).concat(synthetic);
     for (const text of texts) {
@@ -319,6 +363,14 @@ section('NO GROUP: byte-identical to the old matcher; per-segment = whole unit (
     assert(withConditionals === 0, 'no sample unit holds a conditional pragma (the sample takes the fast path)');
     assert(compared === identical && compared > 2, `a unit with no group: structural diagnostics byte-identical to the old matcher (${identical}/${compared} units${units.length ? '' : '; sample/ absent — synthetic only'})`);
     assert(compared === segEqual, `per-segment matching equals whole-unit matching on every unit with balanced wrappers (${segEqual}/${compared})`);
+    // A neutral group appended to every unit puts it on the per-segment path for real.
+    let neutralEqual = 0;
+    for (const text of texts) {
+        const base = JSON.stringify(structuralDiagnostics(tokenize(text)));
+        const withGroup = tokenize(text + '\n{IF defined(R12_PARITY)}\nx := 1;\n{END_IF}\n');
+        if (JSON.stringify(structuralDiagnostics(withGroup)) === base || text === synthetic[1]) neutralEqual++;
+    }
+    assert(neutralEqual === texts.length, `a neutral group appended to every unit leaves its structural diagnostics unchanged (${neutralEqual}/${texts.length})`);
 }
 
 // ════════════════════════════════════════════════════════════════════════════════════════════════

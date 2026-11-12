@@ -82,8 +82,14 @@ function tokenEnd(t) {
     return { line: t.line + lines, col: v.length - nl };
 }
 
+/** Code tokens after a boundary keyword that make it a call argument or member, not a wrapper line. */
+const NOT_A_BOUNDARY_AFTER = new Set([':=', '=>', ',', ')', '.', '(', ';']);
+
 /**
  * Splits the token stream into segments at boundary keywords that start their line.
+ *
+ * A keyword only counts outside parentheses, when the previous code token is not `.` and the next
+ * one is not `:=`/`=>`/`,`/`)`/`.`/`(`/`;`: `fbRS(\n\tSET := c,` is a named argument, not an accessor.
  * @param {Array<Object>} tokens
  * @returns {Array<{start: number, end: number}>} Half-open token index ranges.
  */
@@ -91,6 +97,16 @@ function findSegments(tokens) {
     const segments = [];
     let segStart = 0;
     let lineStart = true;
+    let depth = 0;
+    let prevCode = null;
+    const nextCode = (i) => {
+        for (let j = i + 1; j < tokens.length; j++) {
+            const t = tokens[j];
+            if (isTrivia(t) || (t.type === 'pragma' && !directiveKind(t.value))) continue;
+            return t;
+        }
+        return null;
+    };
     for (let i = 0; i < tokens.length; i++) {
         const t = tokens[i];
         if (t.type === 'whitespace') {
@@ -101,10 +117,19 @@ function findSegments(tokens) {
             if (t.value.includes('\n')) lineStart = true;
             continue;
         }
-        if (lineStart && t.type === 'keyword' && BOUNDARY.has(t.value.toUpperCase()) && i > segStart) {
-            segments.push({ start: segStart, end: i });
-            segStart = i;
+        if (lineStart && depth === 0 && t.type === 'keyword' && BOUNDARY.has(t.value.toUpperCase()) && i > segStart
+            && !(prevCode && prevCode.value === '.')) {
+            const n = nextCode(i);
+            if (!n || !NOT_A_BOUNDARY_AFTER.has(n.value)) {
+                segments.push({ start: segStart, end: i });
+                segStart = i;
+            }
         }
+        if (t.type === 'punctuation' || t.type === 'operator') {
+            if (t.value === '(') depth++;
+            else if (t.value === ')' && depth > 0) depth--;
+        }
+        if (t.type !== 'pragma') prevCode = t;
         lineStart = false;
     }
     segments.push({ start: segStart, end: tokens.length });
@@ -315,6 +340,38 @@ function suppressionSpans(tokens) {
     };
     const skippable = (t) => isTrivia(t) || (t.type === 'pragma' && !t.condDirective);
 
+    const byEnd = new Map();
+    for (const g of cond.groups) if (g.endIndex >= 0) byEnd.set(g.endIndex, g);
+    /**
+     * How the code in (lo, j] ends: true mid-statement, false at a statement end, 'empty' when there
+     * is no code (the state is then whatever precedes lo). A nested group is resolved through its branches.
+     * @returns {boolean|'empty'}
+     */
+    const lastState = (j, lo) => {
+        while (j > lo && skippable(tokens[j])) j--;
+        if (j <= lo) return 'empty';
+        const t = tokens[j];
+        const nested = t.condDirective === 'end_if' ? byEnd.get(j) : null;
+        if (nested) {
+            const r = groupMid(nested);
+            return r === 'empty' ? lastState(nested.ifIndex - 1, lo) : r;
+        }
+        if (t.condDirective) return true;
+        return !isTerminatorToken(t);
+    };
+    /** True when any branch ends mid-statement; 'empty' when none does but one may be empty. */
+    const groupMid = (g) => {
+        let prev = g.ifIndex;
+        let mayBeEmpty = !g.hasElse;
+        for (const di of g.directiveIndexes) {
+            const r = lastState(di - 1, prev);
+            prev = di;
+            if (r === true) return true;
+            if (r === 'empty') mayBeEmpty = true;
+        }
+        return mayBeEmpty ? 'empty' : false;
+    };
+
     for (const seg of cond.segments) {
         if (seg.unbalanced) {
             let last = seg.end - 1;
@@ -338,18 +395,7 @@ function suppressionSpans(tokens) {
             }
 
             // Forwards: through the next ';' when any branch ends mid-statement.
-            let midStatement = false;
-            let prevDirective = g.ifIndex;
-            for (const di of g.directiveIndexes) {
-                let j = di - 1;
-                while (j > prevDirective && skippable(tokens[j])) j--;
-                const t = tokens[j];
-                const empty = j === prevDirective;
-                prevDirective = di;
-                if (empty) continue;
-                // A branch ending in a nested group's {END_IF}, or in an expression token.
-                if (t.condDirective || !isTerminatorToken(t)) { midStatement = true; break; }
-            }
+            const midStatement = groupMid(g) === true;
             let last = g.endIndex;
             if (midStatement) {
                 for (let i = g.endIndex + 1; i < seg.end; i++) {
@@ -385,19 +431,24 @@ function isSuppressed(spans, line, col) {
 }
 
 /**
- * True when a POU/DUT head (the tokens after its keyword, up to the first declaration block or body
- * code) holds a conditional directive — its EXTENDS/IMPLEMENTS then depend on a define.
+ * True when a conditional directive in a POU/DUT head (the tokens after its keyword, up to the first
+ * declaration block or body code) precedes head content — a name, EXTENDS/IMPLEMENTS or a modifier —
+ * so its inheritance depends on a define. A directive right before the first VAR block (a wrapped
+ * declaration block) does not count.
  * @param {Array<Object>} tokens Token stream.
  * @param {number} from Index just after the POU/TYPE keyword.
  * @returns {boolean}
  */
 function headHasDirective(tokens, from) {
+    let seen = false;
     for (let i = from; i < tokens.length; i++) {
         const t = tokens[i];
-        if (t.condDirective || (t.type === 'pragma' && directiveKind(t.value))) return true;
+        if (t.condDirective || (t.type === 'pragma' && directiveKind(t.value))) { seen = true; continue; }
+        if (isTrivia(t) || t.type === 'pragma') continue;
         if (t.type === 'keyword' && !HEAD_KEYWORDS.has(t.value.toUpperCase())) return false;
         if (t.type === 'operator') return false;
         if (t.type === 'punctuation' && t.value === ';') return false;
+        if (seen) return true;
     }
     return false;
 }

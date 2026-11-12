@@ -10,12 +10,16 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   merged at `3210d33`, Release run 41671593015 green, VSIX `twincat-plc-toolkit-0.10.1.vsix` attached).
 - **Version history:** 0.10.1 struct EXTENDS from own DUTs (PR #22); 0.10.0 Libraries scoping (PR #18); 0.9.0
   improvement-plan phases; 0.8.x project-aware Generate ST, ResizeObserver fix, solution→project Objects tree.
-- **Last verified:** 2026-11-12 (Linux container, `claude/r12-conditional-pragmas` = R12 on top of `dev`) —
+- **Last verified:** 2026-11-12 (Linux container, `claude/focused-ptolemy-m6acaz` = R12 + review fixes on top of `dev`) —
   `REQUIRE_FULL_SUITE=1 npm test` green (**111/111, Coverage: FULL**, compile-real ran), `npm run typecheck` and
   `npm run lint` exit 0; Linux dev-host (`xvfb-run -a node test/devhost/run.js`) 103 pass / 1 fail, the fail being the
   known P8 line-ending one; `test/browser/run_pragmas.js` green (the webview is unchanged by R12).
-- **R12 `{IF}`-aware LSP diagnostics: BUILT 2026-11-12**, on local branch `claude/r12-conditional-pragmas` from
-  `3bdfd29` (dev + roadmap commit), **not pushed** — needs the user's F5 check, then a push/PR into `dev` (squash).
+- **R12 `{IF}`-aware LSP diagnostics: BUILT 2026-11-12**, pushed on `claude/focused-ptolemy-m6acaz` (from `3bdfd29`,
+  dev + roadmap commit; review fixes in the last commit) — needs the user's F5 check, then a squash PR into `dev`.
+  Review fixes (do not regress): a segment boundary is never a named argument on its own line (`fbRS(\n SET := c,`
+  split a method → Unterminated/Unmatched outside any group); enum members inside a group are kept (xmlIndexer
+  `extractEnumMembers` took the `)` of `{IF defined(X)}` as the list end); a statement-level nested group no longer
+  widens its span over the next statement; a group wrapping the first VAR block no longer sets `inheritanceUncertain`.
   Design (merged from two reviewed designs, B winning): the LSP **never evaluates a define**; every branch
   combination counts. `src/lsp/conditionals.js` groups directives per segment; block matching keeps an error only
   if every branch selection has it (cap 64/segment, unbalanced segments silent); semantic diagnostics inside a

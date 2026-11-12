@@ -98,8 +98,9 @@ function extractVars(declText) {
 function extractEnumMembers(declText) {
     const members = [];
     if (!declText) return members;
-    // Blank comments (nested ones included) to avoid false parens.
-    const clean = blankComments(declText);
+    // Blank comments (nested ones included) and pragmas (`{IF defined(X)}`, attributes) to avoid
+    // false parens and commas. Members in every conditional branch are kept: any of them may exist.
+    const clean = blankComments(declText).replace(/\{[^}]*\}/g, m => m.replace(/[^\r\n]/g, ' '));
     const colonIdx = clean.indexOf(':');
     if (colonIdx === -1) return members;
     const parenStart = clean.indexOf('(', colonIdx);
