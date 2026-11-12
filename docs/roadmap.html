@@ -145,7 +145,7 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
       <div class="eyebrow">VS Code extension · twincat-plc-toolkit</div>
       <h1>TC Toolkit Roadmap</h1>
       <div class="meta">
-        <span>Updated <b>2026-11-12</b> · R13 C++ generation + g++ check started; R14 build and run through XAE, R15 ADS monitoring next; g++ simulation to the Backlog (your calls); R12 merged (PR #36) after your Windows checks; release L after S4 (your call); S4: LTIME (#131) and LDATE/LTOD/LDT (#132) merged; Table 36 date functions and the DT_TO_DATE fix added (your calls); S4 started; outside reads of VAR/VAR_INPUT stay refused (your call); S3b done (fork F4 #130); release K (<code>c1faca7</code>); releases H, I, J and K</span>
+        <span>Updated <b>2026-11-12</b> · R13 open as PR #37, awaiting your check; fork CLA check only on PRs into main; R13 C++ generation + g++ check started; R14 build and run through XAE, R15 ADS monitoring next; g++ simulation to the Backlog (your calls); R12 merged (PR #36) after your Windows checks; release L after S4 (your call); S4: LTIME (#131) and LDATE/LTOD/LDT (#132) merged; Table 36 date functions and the DT_TO_DATE fix added (your calls); S4 started; outside reads of VAR/VAR_INPUT stay refused (your call); S3b done (fork F4 #130); release K (<code>c1faca7</code>); releases H, I, J and K</span>
         <span>Release <b>v0.10.1</b></span>
         <span>Re-measured <b>Nov 11</b></span>
         <span>Toolkit next <b>PR #36 Windows check</b></span>
@@ -379,7 +379,7 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
 
     <details class="card" id="r13">
       <summary>
-        <div class="card-top"><span>#13</span><span class="id">R13</span><span class="pill progress">In progress · since Nov 12</span><span class="chev" aria-hidden="true">›</span></div>
+        <div class="card-top"><span>#13</span><span class="id">R13</span><span class="pill progress">PR #37 · awaiting your check</span><span class="chev" aria-hidden="true">›</span></div>
         <div class="card-title">Compile button: C++ generation and a g++ check</div>
         <div class="bar" aria-hidden="true"><span style="left:29.17%;width:12.50%"></span></div>
         <div class="card-foot"><span>3 d → ~2.5 h</span><span>Nov 12 – 13</span></div>
@@ -387,6 +387,8 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
       <div class="body">
         <div class="block wide"><h4>Goal</h4><p>Compile Project can also write each PLC project's C++ to <code>&lt;project&gt;/CPP_Files/</code> and, optionally, compile it with g++ to prove it builds. Each has its own setting, off by default; turning the g++ build on turns generation on. g++ gets a path setting with detection, like the XAE Shell paths.</p></div>
         <div class="block wide settled"><h4>Decided Nov 12 (your calls)</h4><p>The compile button gets a dropdown with <b>Generate C++</b> and <b>Build with g++</b> checkboxes, and the button does what they say. Files go to <code>CPP_Files</code> next to <code>ST_Files</code>. The g++ build is a compile check (an object file). When the project calls vendor-library blocks whose code isn't available, the check still runs and its summary says it does not cover them, naming the libraries. Next: R14 build and run through XAE, R15 ADS monitoring; the g++ simulation program is in the Backlog. Started now, in parallel with S4.</p></div>
+        <div class="block wide settled"><h4>Also decided Nov 12</h4><p>Library uses the toolkit cannot declare keep blocking, each named, with no stand-in types. <code>CPP_Files/.gitignore</code> lists the toolkit's own files; once you delete it, it is not recreated.</p></div>
+        <div class="block wide"><h4>Built Nov 12, PR #37</h4><p>Open as <a href="https://github.com/AbuShaqra/TC_PLC_Toolkit/pull/37">PR #37</a> into <code>dev</code> after three review rounds: settings with g++ detection, the Compile dropdown in the editor toolbar and on the start page, <code>CPP_Files</code> with an ownership record, g++ errors in Problems, runtime headers vendored. 116/116 suites FULL, lint and typecheck clean, dev host 103/1 (the known P8). <b>Your check:</b> the checklist at the bottom of the PR. Found: the compiler writes a property read through a global FB instance as a member access, so g++ fails on the first sample; queued for the fork.</p></div>
         <div class="block wide"><h4>How it was estimated</h4><p>My sizing, not measured: settings and detection, the dropdown in the editor toolbar and on the start page, generation and the g++ check per project, runtime headers vendored next to the compiler, tests.</p></div>
       </div>
     </details>
@@ -638,11 +640,14 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
     <details class="card" id="backlog">
       <summary>
         <div class="card-top"><span>Backlog</span><span class="chev" aria-hidden="true">›</span></div>
-        <div class="card-title">Not scheduled · 19 items</div>
+        <div class="card-title">Not scheduled · 22 items</div>
       </summary>
       <div class="body">
         <div class="block wide"><p>The former backlog was scheduled as R6 to R10 on Nov 9. R6 to R9 merged in PR #33 on Nov 11, and R10 runs only on a trigger. What remains has no estimate on purpose:</p>
           <ul>
+            <li><b>Fork: property read through a global FB instance</b> (found by R13): <code>GVL_System.fbStation.State</code> is written as a member access instead of the getter call, so g++ fails on code the check accepts. After S4.</li>
+            <li><b>Fork: licence lines</b> on two runtime headers (<code>iec_fault.hpp</code>, <code>iec_global.hpp</code>); covered by COPYING's file list today.</li>
+            <li><b>Fork test isolation:</b> one CLI test uses a fixed temporary folder and collides with a parallel run; being fixed with S4.</li>
             <li><b>Simulation program</b> (moved from R14, your call, Nov 12): the generated C++ built with g++ into a standalone program that runs your PLC code cyclically on the PC. Good for your own logic and unit tests; it cannot run vendor-library blocks, whose code isn't available.</li>
             <li><b>ADS coupling of the simulation program</b> (your call, Nov 12; after the simulation program): exchange variables between the R14 simulation program and a running TwinCAT PLC over ADS (TCP 48898, AMS Net ID, a route on the target), for example to feed simulated I/O. Code cannot be loaded into the TwinCAT runtime itself; only XAE builds and activates what it runs.</li>
             <li><b>On your Windows machine, about 1 hour of your time:</b> Libraries-view scoping, library member expansion, squiggle rendering, and closing the peek over the real bridge.</li>
