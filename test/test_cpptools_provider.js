@@ -203,6 +203,29 @@ const uri = (fsPath) => ({ fsPath, scheme: 'file' });
     assert(!cfg.compilerPath && !cfg.intelliSenseMode && !browse.compilerPath && cfg.standard === 'c++17',
         `WIRING: a g++ 6 is not handed over as the compiler (${JSON.stringify(cfg)})`);
 
+    // The MSYS2 registry search settling: the g++ is resolved again and the C/C++ extension told,
+    // only when it found MSYS2 roots (none: nothing to change, nothing sent).
+    for (const roots of [[], ['E:\\Dev\\msys64']]) {
+        let releaseMsys;
+        const msysGate = new Promise(r => { releaseMsys = r; });
+        const msysApi = fakeApi();
+        api = msysApi;
+        const ctx = { subscriptions: [], extensionPath: '/ext', extension: { id: 'a-abushaqra.twincat-plc-toolkit' } };
+        const msysLink = registerCppToolsProvider(ctx, { getProjectMap: () => projectMap, getApi: async () => msysApi, msys2Ready: () => msysGate });
+        await msysLink.ready;
+        const before = msysApi.calls.length;
+        releaseMsys(roots);
+        await new Promise(r => setTimeout(r, 10));
+        const sent = msysApi.calls.slice(before);
+        assert(roots.length ? eq(sent, [['changed', 'TC Toolkit'], ['browseChanged', 'TC Toolkit']]) : sent.length === 0,
+            `MSYS2: registry roots ${JSON.stringify(roots)}: ${roots.length ? 'the C/C++ extension is told' : 'nothing is sent'} (${JSON.stringify(sent)})`);
+    }
+    const failingMsys = registerCppToolsProvider({ subscriptions: [], extensionPath: '/ext' },
+        { getProjectMap: () => projectMap, getApi: async () => fakeApi(), msys2Ready: () => Promise.reject(new Error('reg')) });
+    await failingMsys.ready;
+    await new Promise(r => setTimeout(r, 10));
+    assert(true, 'MSYS2: a failing registry search is ignored (no unhandled rejection)');
+
     // Without the C/C++ extension (the dev host): nothing at all.
     installedCpptools = null;
     api = fakeApi();

@@ -16,7 +16,7 @@
 const path = require('path');
 const vscode = require('vscode');
 const { SETTING_GPP_PATH, detectGpp, checkConfiguredGpp, describeGppProblem, normalizeGppSetting, thisMachine, isGppTooOld, gppTooOldText, gppInstallHint, msys2NoGppText } = require('../gpp');
-const { findMsys2WithoutGpp, msys2RootsWithin } = require('../msys2Detect');
+const { findMsys2WithoutGpp, msys2RootsWithin, defaultMsys2RootCache } = require('../msys2Detect');
 const { CPP_SECTION } = require('../cppSettings');
 
 /** The key of the path setting inside its section. */
@@ -26,8 +26,9 @@ const GPP_PATH_KEY = 'gppPath';
  * @typedef {Object} GppFillResult
  * @property {'found'|'kept'|'notFound'|'tooOldNotFilled'} status `found`: the empty setting was filled;
  *   `kept`: it already had a value and was left alone; `notFound`: empty, and nothing was detected;
- *   `tooOldNotFilled`: the silent fill found only a g++ older than 7 and left the setting empty, so
- *   a newer g++ installed later is detected without the user clearing anything.
+ *   `tooOldNotFilled`: the silent fill (or "Detect g++" before the MSYS2 registry search finished)
+ *   found only a g++ older than 7 and left the setting empty, so a newer g++ installed or found later
+ *   is detected without the user clearing anything.
  * @property {string} path The setting's value after the fill ('' when not found).
  * @property {boolean} [missing] For `kept`: the kept value does not work on this machine.
  * @property {string} [problem] For a `missing` value: why (src/gpp.js checkConfiguredGpp).
@@ -136,11 +137,12 @@ function versionOf(gppPath, env) {
  */
 function describeGppFill(r) {
     // Both `found` and `kept` leave the old g++ in the setting, where detection never replaces it.
-    // MSYS2 without g++ (src/msys2Detect.js): the package to install, then detection finds it.
+    // MSYS2 without g++ (src/msys2Detect.js): the package to install, then detection finds it; with
+    // an old g++ in the setting, "Detect g++" would keep it, so the setting is cleared instead.
     const msys = r.msys2Root ? `${msys2NoGppText(r.msys2Root)}, then run "Detect g++" again.` : '';
     const fix = r.newer
         ? `A newer g++${r.newer.version ? ' ' + r.newer.version : ''} is at ${r.newer.path}: clear the g++ path setting, or set it to that path.`
-        : (msys ? `${msys} Then clear the g++ path setting so the newer g++ is detected.` : gppInstallHint(process.platform, { fromSetting: true }));
+        : (r.msys2Root ? `${msys2NoGppText(r.msys2Root)}, then clear the g++ path setting so the newer g++ is detected.` : gppInstallHint(process.platform, { fromSetting: true }));
     const old = r.tooOld ? ` But ${gppTooOldText(r.version || '?')} ${fix}` : '';
     if (r.status === 'found') return `g++ found: ${r.path}${old ? '.' + old : ''}`;
     if (r.status === 'tooOldNotFilled') return `${gppTooOldText(r.version || '?')} ${msys || gppInstallHint()}`;
@@ -158,13 +160,15 @@ function describeGppFill(r) {
  * Registers `twincat.detectGpp`.
  * @param {vscode.ExtensionContext} context
  * @param {{detect?: () => ({path: string, version?: string, tooOld?: boolean}|null), machine?: Parameters<typeof checkConfiguredGpp>[1],
- *   msys2Root?: () => (string|null), ready?: () => Promise<unknown>}} [deps] For the tests. `msys2Root`:
- *   an MSYS2 installation without g++; `ready`: waits for the registry search for MSYS2 (bounded).
+ *   msys2Root?: () => (string|null), ready?: () => Promise<unknown>, registrySettled?: () => boolean}} [deps] For the tests.
+ *   `msys2Root`: an MSYS2 installation without g++; `ready`: waits for the registry search for MSYS2
+ *   (bounded); `registrySettled`: whether that search has finished.
  * @returns {{autoFill: () => Promise<GppFillResult|null>}} The silent fill; it never rejects.
  */
 function registerGppCommands(context, {
     detect = detectOnThisMachine, machine: env = machine(),
-    msys2Root = () => findMsys2WithoutGpp(machine()), ready = () => msys2RootsWithin()
+    msys2Root = () => findMsys2WithoutGpp(machine()), ready = () => msys2RootsWithin(),
+    registrySettled = () => defaultMsys2RootCache().settled()
 } = {}) {
     const settled = () => Promise.resolve().then(ready).then(undefined, () => undefined);
     context.subscriptions.push(
@@ -173,7 +177,11 @@ function registerGppCommands(context, {
             let result;
             try {
                 await settled();
-                result = await fillGppSetting(detect, env, { msys2Root });
+                // A g++ < 7 is written only once the registry search is over: a written value is
+                // never replaced, and an MSYS2 g++ the search has not reported yet would lose to it.
+                let fillTooOld = true;
+                try { fillTooOld = registrySettled() !== false; } catch (e) { fillTooOld = true; }
+                result = await fillGppSetting(detect, env, { msys2Root, fillTooOld });
             } catch (err) {
                 vscode.window.showErrorMessage(`Could not update the g++ path setting: ${err && err.message ? err.message : err}`);
                 return undefined;

@@ -228,9 +228,32 @@ const settle = () => new Promise(r => setTimeout(r, 5));
     calls.warnings.length = 0;
     r = await handlers.get('twincat.detectGpp')();
     await settle();
-    assert(r.status === 'found' && r.tooOld && r.msys2Root === 'D:\\msys64' && calls.warnings[0].m.includes(msysText)
-        && /Then clear the g\+\+ path setting so the newer g\+\+ is detected\.$/.test(calls.warnings[0].m),
-    `MSYS2: a g++ 6 written by the command: the message names the package, then says to clear the setting (${calls.warnings[0] && calls.warnings[0].m})`);
+    // The old g++ is in the setting now, where "Detect g++" would keep it: install, then clear the setting.
+    assert(r.status === 'found' && r.tooOld && r.msys2Root === 'D:\\msys64'
+        && calls.warnings[0].m.endsWith(` But g++ 6.3.0 is too old: the generated C++ needs g++ 7 or later. ${msysText}, then clear the g++ path setting so the newer g++ is detected.`)
+        && !/Detect g\+\+/.test(calls.warnings[0].m),
+    `MSYS2: a g++ 6 written by the command: install the package, then clear the setting; no "Detect g++" step (${calls.warnings[0] && calls.warnings[0].m})`);
+    const keptOld = describeGppFill({ status: 'kept', path: 'C:\\MinGW\\bin\\g++.exe', missing: false, version: '6.3.0', tooOld: true, msys2Root: 'D:\\msys64' });
+    assert(keptOld.endsWith(`${msysText}, then clear the g++ path setting so the newer g++ is detected.`) && !/Detect g\+\+/.test(keptOld),
+        `MSYS2: a kept g++ 6: the same order (${keptOld})`);
+    // Detect g++ before the MSYS2 registry search finished (its wait ran out): a g++ 6 is not written,
+    // because a written value is never replaced and the search may still name an MSYS2 g++.
+    let regDone = false;
+    settings[KEY] = '';
+    registerGppCommands(context, { detect: () => hit2, machine, msys2Root: () => null, ready: async () => {}, registrySettled: () => regDone });
+    calls.warnings.length = 0;
+    r = await handlers.get('twincat.detectGpp')();
+    await settle();
+    assert(r.status === 'tooOldNotFilled' && settings[KEY] === '' && calls.warnings.length === 1 && /too old/.test(calls.warnings[0].m),
+        `PENDING: registry search unfinished: a g++ 6 is reported, not written (${JSON.stringify(r)}; ${settings[KEY]})`);
+    regDone = true;
+    r = await handlers.get('twincat.detectGpp')();
+    assert(r.status === 'found' && r.tooOld && settings[KEY] === hit2.path, 'PENDING: once it has finished, the command writes the g++ 6 as before');
+    settings[KEY] = '';
+    registerGppCommands(context, { detect: () => hit2, machine, msys2Root: () => null, ready: async () => {}, registrySettled: () => { throw new Error('x'); } });
+    r = await handlers.get('twincat.detectGpp')();
+    assert(r.status === 'found' && settings[KEY] === hit2.path, 'PENDING: a failing settled check counts as finished');
+    registerGppCommands(context, { detect: () => hit2, machine, msys2Root: () => msysRoot, ready: async () => {} });
     hit2 = { path: '/opt/gcc/bin/g++', source: 'path', version: '13.2.0' };
     settings[KEY] = '';
     r = await handlers.get('twincat.detectGpp')();

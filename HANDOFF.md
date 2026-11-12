@@ -127,7 +127,9 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   **For the Windows check (MSYS2):** with the setting empty, *Detect g++* finds the user's MSYS2 g++ over
   `C:\MinGW` (wherever MSYS2 is installed); with gcc removed from MSYS2 (or before `pacman -S
   mingw-w64-ucrt-x86_64-gcc`) the toast and the start-page g++ row name the MSYS2 folder and the pacman command;
-  activation is not slowed (registry read in the background).
+  activation is not slowed (registry read in the background); a Compile Project started right after activation
+  (setting empty, MSYS2 only in the registry) builds with the MSYS2 g++, not "too old" — the build waits (bounded,
+  7.5 s) for the registry search; *Detect g++* never writes a g++ < 7 before that search has finished.
 - **R3.2 Compile Project: MERGED** into `dev` as PR #32 (`28f24f1`, 2026-11-10 22:22 UTC).
 - **R3.3–R9 MERGED** into `dev` as PR #33 (`6424968`, 2026-11-11 09:30 UTC) after the user's Windows checks
   (dev-host green after `npm ci`; manual checks all passed). Details per item are in git history and ROADMAP "Done".

@@ -174,6 +174,7 @@ function fakeReg({ searches = {}, keys = {} }) {
     let built = 0;
     const linuxCache = m.createMsys2RootCache({ platform: 'linux', env: {}, run: () => { built++; return async () => 'x'; } });
     assert(eq(await linuxCache.load(), []) && built === 0 && eq(linuxCache.current(), []), 'CACHE: off Windows, nothing is run and no runner is built');
+    assert(m.createMsys2RootCache({ platform: 'linux', env: {}, run: () => { throw new Error('never'); } }).settled() === true, 'CACHE: off Windows it counts as settled before it is loaded');
     let regCalls = 0;
     let release;
     const gate = new Promise(r => { release = r; });
@@ -186,12 +187,18 @@ function fakeReg({ searches = {}, keys = {} }) {
             return keyOut(`${HKCU}\\{a1}`, { DisplayName: ['REG_SZ', 'MSYS2'], InstallLocation: ['REG_SZ', 'E:\\Dev\\msys64'] });
         }
     });
+    assert(winCache.settled() === false, 'CACHE: not settled before it starts');
     const first = winCache.load();
-    assert(eq(winCache.current(), []) && winCache.load() === first, 'CACHE: nothing known until it settles; one search per session');
+    assert(eq(winCache.current(), []) && winCache.load() === first && winCache.settled() === false, 'CACHE: nothing known until it settles; one search per session');
     const early = await m.msys2RootsWithin(20, winCache);
     assert(eq(early, []), 'CACHE: a bounded wait returns what is known when it runs out');
     release();
     assert(eq(await first, ['E:\\Dev\\msys64']) && eq(winCache.current(), ['E:\\Dev\\msys64']), 'CACHE: then it holds the registry roots');
+    await new Promise(r => setImmediate(r));
+    assert(winCache.settled() === true, 'CACHE: settled once the search is over');
+    const { REG_TIMEOUT_MS } = require('../src/xaeShellDetect');
+    assert(m.MSYS2_REGISTRY_WAIT_MS > 2 * REG_TIMEOUT_MS,
+        `CACHE: the default wait outlasts both reg.exe phases, each up to ${REG_TIMEOUT_MS} ms (${m.MSYS2_REGISTRY_WAIT_MS})`);
     const callsAfter = regCalls;
     assert(eq(await m.msys2RootsWithin(1000, winCache), ['E:\\Dev\\msys64']) && regCalls === callsAfter, 'CACHE: a later wait does not query again');
     const failing = m.createMsys2RootCache({ platform: 'win32', env: {}, run: () => { throw new Error('no reg.exe'); } });

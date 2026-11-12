@@ -19,7 +19,13 @@
 'use strict';
 
 const path = require('path');
-const { createRegRunner, exeFromLocalServer } = require('./xaeShellDetect');
+const { createRegRunner, exeFromLocalServer, REG_TIMEOUT_MS } = require('./xaeShellDetect');
+
+/**
+ * How long a caller waits for the registry search: longer than its two reg.exe phases (the key
+ * searches, then the entry reads), each bounded by REG_TIMEOUT_MS, so a slow search still settles.
+ */
+const MSYS2_REGISTRY_WAIT_MS = 2 * REG_TIMEOUT_MS + 1500;
 
 /** The uninstall keys searched, current user first. */
 const UNINSTALL_KEYS = Object.freeze([
@@ -247,6 +253,7 @@ async function findMsys2RootsInRegistry(run, env = {}) {
  * @property {() => Promise<string[]>} load Starts the search on first call; the same promise after.
  *   Never rejects. Resolves at once with [] off Windows, where nothing is spawned.
  * @property {() => string[]} current What the search found, [] until it settles.
+ * @property {() => boolean} settled Whether the search has finished (always true off Windows).
  */
 
 /**
@@ -260,6 +267,7 @@ function createMsys2RootCache(deps) {
     let pending = null;
     /** @type {string[]} */
     let found = [];
+    let done = false;
     return {
         load() {
             if (!pending) {
@@ -267,9 +275,11 @@ function createMsys2RootCache(deps) {
                     ? Promise.resolve([])
                     : Promise.resolve().then(() => findMsys2RootsInRegistry(deps.run(), deps.env))
                         .then((roots) => { found = roots; return roots; }, () => []);
+                pending.then(() => { done = true; });
             }
             return pending;
         },
+        settled: () => done || deps.platform !== 'win32',
         current: () => found.slice()
     };
 }
@@ -297,7 +307,7 @@ function defaultMsys2RootCache() {
  * @param {Msys2RootCache} [cache]
  * @returns {Promise<string[]>}
  */
-function msys2RootsWithin(ms = 5000, cache = defaultMsys2RootCache()) {
+function msys2RootsWithin(ms = MSYS2_REGISTRY_WAIT_MS, cache = defaultMsys2RootCache()) {
     /** @type {NodeJS.Timeout|undefined} */
     let timer;
     const late = new Promise((resolve) => { timer = setTimeout(() => resolve(cache.current()), ms); });
@@ -305,7 +315,7 @@ function msys2RootsWithin(ms = 5000, cache = defaultMsys2RootCache()) {
 }
 
 module.exports = {
-    UNINSTALL_KEYS, MSYS2_ENVIRONMENTS, MSYS2_GCC_INSTALL,
+    UNINSTALL_KEYS, MSYS2_ENVIRONMENTS, MSYS2_REGISTRY_WAIT_MS, MSYS2_GCC_INSTALL,
     msys2CommonRoots, msys2Roots, msys2EnvironmentGpps, msys2UsrGpp, isMsys2Root, findMsys2WithoutGpp, msys2NoGppText,
     parseRegKeys, findMsys2RootsInRegistry, createMsys2RootCache, defaultMsys2RootCache, msys2RootsWithin
 };

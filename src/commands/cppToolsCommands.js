@@ -13,6 +13,7 @@ const path = require('path');
 const vscode = require('vscode');
 const { SETTING_GPP_PATH, resolveGpp, thisMachine } = require('../gpp');
 const { CPP_SECTION } = require('../cppSettings');
+const { defaultMsys2RootCache } = require('../msys2Detect');
 const { createCppConfigurationProvider, connectCppTools } = require('../cppToolsProvider');
 
 /**
@@ -28,7 +29,8 @@ async function getApi() {
 /**
  * Registers the configuration provider for the generated C++.
  * @param {vscode.ExtensionContext} context
- * @param {{getProjectMap: () => any, getApi?: () => Promise<any>}} deps `getApi`: for the tests.
+ * @param {{getProjectMap: () => any, getApi?: () => Promise<any>, msys2Ready?: () => Promise<string[]>}} deps
+ *   `getApi`, `msys2Ready` (the MSYS2 registry search, src/msys2Detect.js): for the tests.
  * @returns {{changed: () => void, connected: () => boolean, ready: Promise<boolean>}}
  */
 function registerCppToolsProvider(context, deps) {
@@ -54,6 +56,12 @@ function registerCppToolsProvider(context, deps) {
         }
     });
     const link = connectCppTools({ vscode, provider, getApi: deps.getApi || getApi, subscriptions: context.subscriptions });
+    // A g++ resolved before the MSYS2 registry search settled may miss an MSYS2 g++: resolve again then.
+    Promise.resolve().then(deps.msys2Ready || (() => defaultMsys2RootCache().load()))
+        .then((roots) => {
+            gppCache = undefined;
+            if (Array.isArray(roots) && roots.length > 0) link.changed();
+        }).then(undefined, () => undefined);
     context.subscriptions.push(vscode.workspace.onDidChangeConfiguration((e) => {
         if (e.affectsConfiguration(SETTING_GPP_PATH)) { gppCache = undefined; link.changed(); }
     }));

@@ -203,8 +203,12 @@ let settingsChanged = 0;
 let gppFills = 0;
 /** The g++ version the discovery reports (null: unknown, so the build runs). */
 let gppVersionAnswer = (_p) => null;
+/** The MSYS2 registry wait the build makes before resolving g++ (src/msys2Detect.js msys2RootsWithin). */
+let gppReadyGate = Promise.resolve();
+let gppReadyCalls = 0;
 const compile = registerCompileCommands(context, { provider, getProjectMap: projectMap, onSettingsChanged: () => { settingsChanged++; }, spawn: fake.spawn,
     fillGppPath: () => { gppFills++; return Promise.resolve(null); },
+    gppReady: () => { gppReadyCalls++; return gppReadyGate; },
     // g++ is looked for only where the test says (the R13 block sets the path setting).
     gppDiscovery: { platform: 'linux', env: { PATH: path.join(ROOT, 'no-gpp-here') }, exists: (p) => fs.existsSync(p), version: (p) => gppVersionAnswer(p) },
     // Only `node` on PATH (the fake): the editor's own runtime would otherwise rescue a too-old Node.
@@ -918,6 +922,31 @@ const settle = () => new Promise(r => setTimeout(r, 10));
             await settle();
             assert(r13Result.cpp.gpp.status === 'done' && r13Result.cpp.gpp.version === '' && gppCalls().length === gppBeforeOld + 1,
                 'R13 GPP: g++ 13 runs the build');
+            // g++ is resolved only after the MSYS2 registry search (bounded), so an MSYS2 only the
+            // registry names is not passed over for an older g++ by a build started early.
+            let releaseRegistry;
+            gppReadyGate = new Promise(r => { releaseRegistry = r; });
+            const readyBefore = gppReadyCalls;
+            reset();
+            answers.message.length = 0;
+            answers.message.push(undefined);
+            const waiting = run('twincat.compileProject');
+            await new Promise(r => setTimeout(r, 100));
+            assert(gppReadyCalls === readyBefore + 1 && gppCalls().length === gppBeforeOld + 1,
+                `R13 GPP: the build waits for the MSYS2 registry search before it resolves and runs g++ (${gppReadyCalls - readyBefore}, ${gppCalls().length - gppBeforeOld})`);
+            releaseRegistry();
+            r13Result = await waiting;
+            await settle();
+            assert(r13Result.cpp.gpp.status === 'done' && gppCalls().length === gppBeforeOld + 2, 'R13 GPP: once it settles, g++ runs');
+            gppReadyGate = Promise.reject(new Error('registry'));
+            gppReadyGate.catch(() => {});
+            reset();
+            answers.message.length = 0;
+            answers.message.push(undefined);
+            r13Result = await run('twincat.compileProject');
+            await settle();
+            assert(r13Result.cpp.gpp.status === 'done' && gppCalls().length === gppBeforeOld + 3, 'R13 GPP: a failing registry wait never stops the build');
+            gppReadyGate = Promise.resolve();
             gppVersionAnswer = () => null;
         }
 

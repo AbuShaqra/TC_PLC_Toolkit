@@ -50,6 +50,7 @@ const {
     cppOutputPaths, cppOwnerId, writeOwnedOutputs, recordOwnedFile, claimOutput, runGenerate, gitignoreNote,
     libraryCoverage, libraryCoverageText, libraryCoverageLines, libraryUndeclaredLines, libraryCoverageHeader, withCoverageHeader, UNKNOWN_LIBRARY
 } = require('../cppGenerate');
+const { msys2RootsWithin } = require('../msys2Detect');
 const { SETTING_GPP_PATH, resolveGpp, describeGppProblem, buildGppArgs, placeGppMessages, runGpp, summarizeGpp, gppTooOldText, gppInstallHint, msys2NoGppText, thisMachine } = require('../gpp');
 
 /** The `source` of every diagnostic this command publishes. */
@@ -245,11 +246,13 @@ function compileStatusText(counts, cpp, gpp) {
  *   Where g++ is looked for, for tests (default: this machine).
  * @param {() => Promise<any>} [deps.fillGppPath] Fills an empty g++ path setting (src/commands/gppCommands.js);
  *   called when the g++ build is turned on.
+ * @param {() => Promise<unknown>} [deps.gppReady] Waits (bounded) for the MSYS2 registry search before
+ *   g++ is resolved (default src/msys2Detect.js msys2RootsWithin); for tests.
  * @returns {{isAvailable: () => boolean, problemsFor: (uriStr: string) => StoredProblem[],
  *   compileOptions: () => {generateCpp: boolean, buildWithGpp: boolean},
  *   setCompileOption: (key: string, value: boolean) => Promise<boolean>}}
  */
-function registerCompileCommands(context, { provider, getProjectMap, onSettingsChanged, spawn, nodeDiscovery, gppDiscovery, fillGppPath }) {
+function registerCompileCommands(context, { provider, getProjectMap, onSettingsChanged, spawn, nodeDiscovery, gppDiscovery, fillGppPath, gppReady = () => msys2RootsWithin() }) {
     const collection = vscode.languages.createDiagnosticCollection('twincat-compile');
     const gppCollection = vscode.languages.createDiagnosticCollection('twincat-gpp');
     const statusItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 98);
@@ -555,6 +558,8 @@ function registerCompileCommands(context, { provider, getProjectMap, onSettingsC
             cpp.gpp = { status: 'skipped', message: 'g++ was not run: the generated files could not all be written.' };
             return cpp;
         }
+        // An MSYS2 known only to the registry is found once its search is over (src/msys2Detect.js).
+        try { await gppReady(); } catch (e) { /* what is known so far */ }
         const config = vscode.workspace.getConfiguration(CPP_SECTION);
         const found = resolveGpp({ configured: config.get('gppPath', ''), ...(gppDiscovery || thisMachine()) });
         if (found.ok === false) {
