@@ -98,7 +98,9 @@ const existsIn = (list) => (p) => list.some(x => x.toLowerCase() === p.toLowerCa
     assert(g.GPP_MIN_MAJOR === 7 && g.isGppTooOld({ version: '6.3.0', major: 6 }) && !g.isGppTooOld({ version: '7.1.0', major: 7 }) && !g.isGppTooOld(null),
         'VERSION: below 7 is too old; unknown is not');
     assert(g.gppTooOldText('6.3.0') === 'g++ 6.3.0 is too old: the generated C++ needs g++ 7 or later.'
-        && /MinGW-w64/.test(g.gppInstallHint('win32')) && /MSYS2's UCRT64/.test(g.gppInstallHint('win32')) && !/MSYS2/.test(g.gppInstallHint('linux')),
+        && /MinGW-w64/.test(g.gppInstallHint('win32')) && /MSYS2's UCRT64/.test(g.gppInstallHint('win32')) && !/MSYS2/.test(g.gppInstallHint('linux'))
+        && /run "Detect g\+\+"/.test(g.gppInstallHint('win32')) && !/Detect g\+\+/.test(g.gppInstallHint('win32', { fromSetting: true }))
+        && /clear that setting/.test(g.gppInstallHint('linux', { fromSetting: true })) && /tcToolkit\.compiler\.gppPath/.test(g.gppInstallHint('win32', { fromSetting: true })),
     'VERSION: the warning text, and the MSYS2 UCRT64 hint on Windows');
     // A fake g++: answers per flag, records what it was asked.
     const fakeRun = (answers) => { const asked = []; return { asked, run: (file, a) => { asked.push(a[0]); const r = answers[a[0]]; if (r instanceof Error) throw r; return r || { status: 1, stdout: '' }; } }; };

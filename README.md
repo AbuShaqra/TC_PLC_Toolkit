@@ -334,7 +334,11 @@ with the small arrow next to the **Compile** button (in the editor's toolbar, or
 g++ 6.3) is too old. It is found by itself: `g++` on your `PATH`, then on Windows the usual install
 folders (MSYS2, `C:\MinGW`, WinLibs, w64devkit, Chocolatey's mingw); when several are found, the first
 one that is 7 or later is used. A g++ older than 7 is not run: the summary says
-"g++ 6.3.0 is too old: the generated C++ needs g++ 7 or later." and offers the setting and *Detect g++*. Set `tcToolkit.compiler.gppPath` to use another one; **TC Toolkit: Detect g++** looks again.
+"g++ 6.3.0 is too old: the generated C++ needs g++ 7 or later." and offers the setting (and, while the
+setting is empty, *Detect g++*). Set `tcToolkit.compiler.gppPath` to use another one; **TC Toolkit: Detect g++**
+looks again, but never replaces a value you set: if the setting names an old g++, clear it (or set the new path)
+after installing a newer one — *Detect g++* then names the newer g++ it finds. Turning *Build with g++* on fills
+an empty setting only with a g++ 7 or later, so a newer g++ installed later is found by itself.
 The start page's Settings card shows which g++ that is.
 If *Build with g++* is on and no g++ is found, the C++ is still written and the summary offers the
 setting (and, while the setting is empty, *Detect g++*). The setting may name `g++.exe` itself, its
@@ -342,7 +346,8 @@ folder, or a command on your `PATH`; a path pasted with quotes is fine. The comp
 
 **IntelliSense on the generated C++.** With Microsoft's **C/C++** extension installed, TC Toolkit tells it
 how to read the files in `CPP_Files`: the compiler's runtime headers that ship with the extension and the
-`CPP_Files` folder are on the include path, the language is C++17, and the g++ above is the compiler — so the
+`CPP_Files` folder are on the include path, the language is C++17, and the g++ above is the compiler (not one
+older than 7: then the C/C++ extension keeps its own default compiler) — so the
 generated `.hpp` no longer shows "cannot open source file iec_types.hpp". The C/C++ extension may ask once
 whether TC Toolkit may configure IntelliSense for the folder; allow it. Nothing is written into your
 project (no `c_cpp_properties.json`). Without the C/C++ extension nothing changes.

@@ -32,6 +32,8 @@ const extensionListeners = [];
 /** @type {any} */
 let installedCpptools = null;
 const shown = [];
+/** @type {Array<{glob: string, listeners: Array<() => void>}>} */
+const watchers = [];
 const writes = [];
 const vscodeStub = {
     extensions: {
@@ -44,7 +46,11 @@ const vscodeStub = {
             update: async (key, value) => { writes.push({ key, value }); }
         }),
         onDidChangeConfiguration: (fn) => { configListeners.push(fn); return { dispose() {} }; },
-        createFileSystemWatcher: () => ({ onDidCreate: () => ({ dispose() {} }), dispose() {} })
+        createFileSystemWatcher: (glob) => {
+            const w = { glob, listeners: [], onDidCreate: (fn) => { w.listeners.push(fn); return { dispose() {} }; }, dispose() {} };
+            watchers.push(w);
+            return w;
+        }
     },
     window: {
         showInformationMessage: async (m) => { shown.push(m); },
@@ -66,7 +72,8 @@ function fakeApi() {
     const calls = [];
     return {
         calls,
-        registerCustomConfigurationProvider: (p) => calls.push(['register', p.name]),
+        provider: null,
+        registerCustomConfigurationProvider(p) { this.provider = p; calls.push(['register', p.name]); },
         notifyReady: (p) => calls.push(['ready', p.name]),
         didChangeCustomConfiguration: (p) => calls.push(['changed', p.name]),
         didChangeCustomBrowseConfiguration: (p) => calls.push(['browseChanged', p.name]),
@@ -109,6 +116,9 @@ const uri = (fsPath) => ({ fsPath, scheme: 'file' });
     'PROVIDER: the browse configuration lists the runtime headers and the existing CPP_Files folders');
     gpp = 'C:\\msys64\\ucrt64\\bin\\g++.exe';
     assert((await provider.provideBrowseConfiguration()).compilerPath === gpp, 'PROVIDER: the browse configuration names the g++ too');
+    const noFolders = createCppConfigurationProvider({ extensionId: 'x', includeDir: INC, gppPath: () => gpp, projectDirs: () => ['D:\\Sol\\PLC1\\PLC1'], isDir: () => false, platform: 'win32', arch: 'x64' });
+    assert(await noFolders.canProvideBrowseConfiguration() === false,
+        'PROVIDER: no CPP_Files folder yet: no browse configuration (the C/C++ extension keeps its own browse path)');
     const throwing = createCppConfigurationProvider({ extensionId: 'x', includeDir: '/inc', gppPath: () => { throw new Error('boom'); }, projectDirs: () => ['/w/P'], platform: 'linux', arch: 'x64' });
     const lin = await throwing.provideConfigurations([uri('/w/P/CPP_Files/P.cpp'), uri('/w/P/cpp_files/P.cpp')]);
     assert(lin.length === 1 && eq(lin[0].configuration.includePath, ['/inc', '/w/P/CPP_Files']) && !lin[0].configuration.compilerPath,
@@ -179,12 +189,38 @@ const uri = (fsPath) => ({ fsPath, scheme: 'file' });
     for (const fn of configListeners) fn({ affectsConfiguration: (s) => s === 'tcToolkit.compiler.gppPath' || s === 'tcToolkit.compiler' });
     assert(eq(api.calls.slice(registered), [['changed', 'TC Toolkit'], ['browseChanged', 'TC Toolkit']]), 'WIRING: a g++ path change tells the C/C++ extension');
     assert(writes.length === 0 && shown.length === 0, 'WIRING: nothing is written, nothing is shown');
+    const hpp = uri(path.join(PROJ, 'CPP_Files', 'PLC.hpp'));
+    let cfg = (await api.provider.provideConfigurations([hpp]))[0].configuration;
+    assert(cfg.compilerPath === fakeGpp && /gcc/.test(cfg.intelliSenseMode), 'WIRING: a g++ 13 is handed over as the compiler');
+
+    // A g++ older than 7 (the build refuses it): not handed over, the C/C++ extension keeps its default.
+    const oldGpp = path.join(BIN, 'g++-6');
+    fs.writeFileSync(oldGpp, '#!/bin/sh\necho 6.3.0\n', { mode: 0o755 });
+    settings['tcToolkit.compiler.gppPath'] = oldGpp;
+    for (const fn of configListeners) fn({ affectsConfiguration: (s) => s === 'tcToolkit.compiler.gppPath' });
+    cfg = (await api.provider.provideConfigurations([hpp]))[0].configuration;
+    const browse = await api.provider.provideBrowseConfiguration();
+    assert(!cfg.compilerPath && !cfg.intelliSenseMode && !browse.compilerPath && cfg.standard === 'c++17',
+        `WIRING: a g++ 6 is not handed over as the compiler (${JSON.stringify(cfg)})`);
 
     // Without the C/C++ extension (the dev host): nothing at all.
     installedCpptools = null;
     api = fakeApi();
+    extensionListeners.length = 0;
+    watchers.length = 0;
     const absent = registerCppToolsProvider({ subscriptions: [], extensionPath: '/ext' }, { getProjectMap: () => null, getApi: async () => api });
     assert(await absent.ready === false && api.calls.length === 0 && shown.length === 0, 'WIRING: without the C/C++ extension nothing is registered and nothing is shown');
+    assert(watchers.length === 1 && watchers[0].glob === '**/CPP_Files/*.{cpp,hpp}', 'WIRING: the CPP_Files watcher exists even without the C/C++ extension');
+    for (const fn of watchers[0].listeners) fn();
+    assert(api.calls.length === 0, 'WIRING: a generated file before the C/C++ extension is there tells nobody');
+    // Installed mid-session: registered then, and a first generation refreshes the browse configuration.
+    installedCpptools = { id: CPPTOOLS_EXTENSION_ID };
+    for (const fn of extensionListeners) fn();
+    await new Promise(r => setTimeout(r, 10));
+    assert(absent.connected() && eq(api.calls, [['register', 'TC Toolkit'], ['ready', 'TC Toolkit']]), 'WIRING: the C/C++ extension installed later: registered');
+    for (const fn of watchers[0].listeners) fn();
+    assert(eq(api.calls.slice(2), [['changed', 'TC Toolkit'], ['browseChanged', 'TC Toolkit']]),
+        `WIRING: installed later, a first generated file tells the C/C++ extension (${JSON.stringify(api.calls)})`);
 
     fs.rmSync(ROOT, { recursive: true, force: true });
     if (errors > 0) {

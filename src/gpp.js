@@ -139,14 +139,20 @@ function gppTooOldText(version) {
 }
 
 /**
- * Where to get a newer g++, in one sentence.
+ * Where to get a newer g++, in one sentence. With `fromSetting` (the old g++ is the one the g++ path
+ * setting names) it says to change or clear that setting: detection never replaces a set value, so
+ * "Detect g++" cannot help then.
  * @param {string} [platform]
+ * @param {{fromSetting?: boolean}} [o]
  * @returns {string}
  */
-function gppInstallHint(platform = process.platform) {
-    return platform === 'win32'
-        ? 'Install a current MinGW-w64 g++ (for example MSYS2\'s UCRT64: pacman -S mingw-w64-ucrt-x86_64-gcc), then set its path or run "Detect g++".'
-        : `Install g++ ${GPP_MIN_MAJOR} or later, then set its path or run "Detect g++".`;
+function gppInstallHint(platform = process.platform, o = {}) {
+    const get = platform === 'win32'
+        ? 'Install a current MinGW-w64 g++ (for example MSYS2\'s UCRT64: pacman -S mingw-w64-ucrt-x86_64-gcc), '
+        : `Install g++ ${GPP_MIN_MAJOR} or later, `;
+    return get + (o.fromSetting
+        ? `then set its path in the g++ path setting (${SETTING_GPP_PATH}), or clear that setting so the newer g++ is detected.`
+        : 'then set its path or run "Detect g++".');
 }
 
 /**

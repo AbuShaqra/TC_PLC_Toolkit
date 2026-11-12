@@ -38,7 +38,8 @@ function registerCppToolsProvider(context, deps) {
         if (gppCache === undefined) {
             try {
                 const found = resolveGpp({ configured: vscode.workspace.getConfiguration(CPP_SECTION).get('gppPath', ''), ...thisMachine() });
-                gppCache = found.ok === true ? found.path : null;
+                // A g++ the build refuses (older than 7) is not handed over: the C/C++ extension keeps its own default.
+                gppCache = found.ok === true && !found.tooOld ? found.path : null;
             } catch (e) { gppCache = null; }
         }
         return gppCache;
@@ -56,12 +57,13 @@ function registerCppToolsProvider(context, deps) {
     context.subscriptions.push(vscode.workspace.onDidChangeConfiguration((e) => {
         if (e.affectsConfiguration(SETTING_GPP_PATH)) { gppCache = undefined; link.changed(); }
     }));
-    // A first generation creates a CPP_Files folder the browse configuration does not list yet.
-    link.ready.then((ok) => {
-        if (!ok || !vscode.workspace.createFileSystemWatcher) return;
+    // A first generation creates a CPP_Files folder the browse configuration does not list yet. Made
+    // whether or not the C/C++ extension is there now: it may be installed later, and `changed` does
+    // nothing while it is not connected.
+    if (vscode.workspace.createFileSystemWatcher) {
         const watcher = vscode.workspace.createFileSystemWatcher('**/CPP_Files/*.{cpp,hpp}', false, true, true);
         context.subscriptions.push(watcher, watcher.onDidCreate(() => link.changed()));
-    }, () => undefined);
+    }
     return link;
 }
 

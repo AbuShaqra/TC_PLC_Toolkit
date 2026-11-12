@@ -891,16 +891,17 @@ const settle = () => new Promise(r => setTimeout(r, 10));
             r13Result = await run('twincat.compileProject');
             await settle();
             const old = calls.warnings.find(m => /Not built with g\+\+: g\+\+ 6\.3\.0 is too old: the generated C\+\+ needs g\+\+ 7 or later\./.test(m.m));
-            assert(r13Result.cpp.gpp.status === 'too-old' && r13Result.cpp.gpp.version === '6.3.0' && gppCalls().length === gppBeforeOld
-                && !!old && old.buttons.join('|') === 'Open C++|Open Setting|Detect g++' && calls.warnings.length === 1 && calls.errors.length === 0
+            // The setting names it, and detection never replaces a set value: no "Detect g++" button or hint.
+            assert(r13Result.cpp.gpp.status === 'too-old' && r13Result.cpp.gpp.version === '6.3.0' && r13Result.cpp.gpp.source === 'setting' && gppCalls().length === gppBeforeOld
+                && !!old && old.buttons.join('|') === 'Open C++|Open Setting' && !/Detect g\+\+/.test(old.m) && /clear that setting/.test(old.m)
+                && calls.warnings.length === 1 && calls.errors.length === 0
                 && calls.status.text.endsWith('· g++ too old') && gppCollection.map.size === 0,
-            `R13 GPP: g++ 6.3.0 is not run; one warning with Open Setting and Detect g++ (${old && old.buttons.join('|')}; ${calls.status.text})`);
-            const executedBeforeOld = calls.executed.length;
-            answers.message.length = 0;
-            answers.message.push('Detect g++');
-            await run('twincat.compileProject');
-            await settle();
-            assert(calls.executed.slice(executedBeforeOld).some(e => e.id === 'twincat.detectGpp'), 'R13 GPP: the too-old warning\'s "Detect g++" runs detection');
+            `R13 GPP: a set g++ 6.3.0 is not run; one warning with Open Setting only, saying to change or clear the setting (${old && old.buttons.join('|')}; ${JSON.stringify(r13Result.cpp.gpp)}; ${calls.warnings.length}; ${calls.status.text})`);
+            const { gppTooOldButtons, gppTooOldNote } = require('../src/commands/compileCommands');
+            assert(gppTooOldButtons({ source: 'path' }).join('|') === 'Open Setting|Detect g++' && gppTooOldButtons({ source: 'default' }).join('|') === 'Open Setting|Detect g++'
+                && gppTooOldButtons({ source: 'setting' }).join('|') === 'Open Setting'
+                && /run "Detect g\+\+"\.$/.test(gppTooOldNote({ version: '6.3.0', gppPath: 'C:\\MinGW\\bin\\g++.exe', source: 'path' }, 'win32')),
+            'R13 GPP: a detected (unset) g++ 6 keeps "Detect g++", which can then find a newer one');
             gppVersionAnswer = () => ({ version: '13.3.0', major: 13 });
             gppAnswer = () => ({ code: 0 });
             reset();

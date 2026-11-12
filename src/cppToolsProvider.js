@@ -137,8 +137,9 @@ function createCppConfigurationProvider(deps) {
             }
             return Promise.resolve(items);
         },
+        // Only with a CPP_Files folder: otherwise the C/C++ extension keeps its own browse path.
         canProvideBrowseConfiguration() {
-            return Promise.resolve(true);
+            return Promise.resolve(cppFolders().length > 0);
         },
         provideBrowseConfiguration() {
             const gpp = compilerPath();

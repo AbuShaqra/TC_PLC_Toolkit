@@ -370,8 +370,11 @@ const { TEMPLATE_VERSIONS } = require(path.join(REPO, 'src', 'projectTemplate.js
                 (r) => /missing/.test(r.cls) && r.text.includes('C:\\MinGW\\bin\\g++.exe') && r.warning === 'g++ 6.3.0 is too old: needs 7 or later.',
                 'a set g++ 6: the XAE warning style, "too old"'],
             [{ state: 'detected', configured: '', path: 'C:\\MinGW\\bin\\g++.exe', source: 'path', version: '6.3.0', tooOld: true },
-                (r) => /missing/.test(r.cls) && /detected/.test(r.cls) && r.note === 'Not set: a build uses this one, found on PATH.' && r.warning === 'g++ 6.3.0 is too old: needs 7 or later.',
-                'only a g++ 6 detected: shown, with the "too old" warning']
+                (r) => /missing/.test(r.cls) && /detected/.test(r.cls) && r.note === 'Not set: found on PATH, but a build will not use it.' && r.warning === 'g++ 6.3.0 is too old: needs 7 or later.',
+                'only a g++ 6 detected: shown, with the "too old" warning, and a note that a build will not use it'],
+            [{ state: 'detected', configured: '', path: 'C:\\MinGW\\bin\\g++.exe', source: 'default', version: '6.3.0', tooOld: true },
+                (r) => r.note === 'Not set: found in a usual install folder, but a build will not use it.',
+                'a g++ 6 in a usual install folder: the note says a build will not use it']
         ];
         for (const [gpp, ok, label] of gppCases) {
             await send(stateWith({ gpp }));

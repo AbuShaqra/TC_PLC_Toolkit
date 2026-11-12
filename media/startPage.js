@@ -227,7 +227,9 @@
         li.append(label, where);
         let note = '';
         if (g.state === 'detected') {
-            note = 'Not set: a build uses this one, found ' + (g.source === 'default' ? 'in a usual install folder.' : 'on PATH.');
+            const foundAt = g.source === 'default' ? 'in a usual install folder' : 'on PATH';
+            // A too-old g++ is found but never run (compileCommands.js status 'too-old').
+            note = tooOld ? 'Not set: found ' + foundAt + ', but a build will not use it.' : 'Not set: a build uses this one, found ' + foundAt + '.';
         } else if (g.state === 'set' && g.path && g.path !== g.configured) {
             note = 'Runs ' + g.path;
         }

@@ -155,9 +155,32 @@ const settle = () => new Promise(r => setTimeout(r, 5));
     assert(r.status === 'kept' && r.missing === false && r.tooOld === true && r.version === '6.3.0' && settings[KEY] === path.join(BIN, 'g++')
         && /^g\+\+: kept your value .*\. But g\+\+ 6\.3\.0 is too old: the generated C\+\+ needs g\+\+ 7 or later\./.test(describeGppFill(r)),
     `FILL: a set g++ 6 is kept, and called too old (${describeGppFill(r)})`);
+    assert(!/Detect g\+\+/.test(describeGppFill(r)) && /clear that setting so the newer g\+\+ is detected/.test(describeGppFill(r)),
+        `FILL: a set g++ 6 with nothing newer: the message says to change or clear the setting, not to run "Detect g++" (${describeGppFill(r)})`);
+    // A newer g++ is installed while the setting still names the old one: named, never written.
+    hit = { path: 'C:\\msys64\\ucrt64\\bin\\g++.exe', source: 'default', version: '13.2.0' };
+    calls.warnings.length = 0;
+    const updatesBeforeNewer = calls.updates.length;
+    r = await handlers.get('twincat.detectGpp')();
+    await settle();
+    assert(r.status === 'kept' && r.tooOld === true && settings[KEY] === path.join(BIN, 'g++') && calls.updates.length === updatesBeforeNewer
+        && r.newer && r.newer.path === hit.path && calls.warnings.length === 1
+        && calls.warnings[0].m.endsWith('A newer g++ 13.2.0 is at C:\\msys64\\ucrt64\\bin\\g++.exe: clear the g++ path setting, or set it to that path.')
+        && !/Detect g\+\+/.test(calls.warnings[0].m),
+    `COMMAND: a set g++ 6 and a g++ 13 detected: the value is kept, the newer g++ is named (${calls.warnings[0] && calls.warnings[0].m})`);
+    hit = { path: path.join(BIN, 'g++'), source: 'path', version: '6.3.0', tooOld: true };
+    r = await gpp.autoFill();
+    assert(r.status === 'kept' && r.tooOld === true && !r.newer, 'FILL: detection finding only the same old g++ names no newer one');
     machineVersion = () => ({ version: '13.3.0', major: 13 });
     r = await gpp.autoFill();
     assert(r.status === 'kept' && !r.tooOld && r.version === '13.3.0', 'FILL: a set g++ 13 is kept, with its version');
+    // The silent fill does not write a g++ 6 (a later install is then detected without clearing anything).
+    settings[KEY] = '';
+    hit = { path: 'C:\\MinGW\\bin\\g++.exe', source: 'default', version: '6.3.0', tooOld: true };
+    const updatesBeforeSilent = calls.updates.length;
+    r = await gpp.autoFill();
+    assert(r.status === 'tooOldNotFilled' && r.tooOld === true && r.version === '6.3.0' && settings[KEY] === '' && calls.updates.length === updatesBeforeSilent,
+        `FILL: the silent fill leaves the setting empty when only a g++ 6 is found (${JSON.stringify(r)})`);
     settings[KEY] = '';
     hit = { path: 'C:\\MinGW\\bin\\g++.exe', source: 'default', version: '6.3.0', tooOld: true };
     calls.warnings.length = 0;
@@ -167,6 +190,8 @@ const settle = () => new Promise(r => setTimeout(r, 5));
     assert(r.status === 'found' && r.tooOld === true && settings[KEY] === hit.path && calls.infos.length === 0 && calls.warnings.length === 1
         && /^g\+\+ found: C:\\MinGW\\bin\\g\+\+\.exe\. But g\+\+ 6\.3\.0 is too old: the generated C\+\+ needs g\+\+ 7 or later\./.test(calls.warnings[0].m),
     `COMMAND: only a g++ 6 found: it is filled in, and the message is a warning saying it is too old (${calls.warnings[0] && calls.warnings[0].m})`);
+    assert(!/Detect g\+\+/.test(calls.warnings[0].m) && /clear that setting/.test(calls.warnings[0].m),
+        'COMMAND: after writing a g++ 6 the message does not send the user back to "Detect g++"');
 
     fs.rmSync(ROOT, { recursive: true, force: true });
     if (errors > 0) {

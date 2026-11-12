@@ -81,6 +81,7 @@ const OUTPUT_CHANNEL_NAME = 'TC Toolkit Compile';
  * @property {'not-found'|'setting-missing'} [reason] For `missing`.
  * @property {string} [configured] For `missing`: the setting's value.
  * @property {string} [version] For `too-old`: the version g++ reported.
+ * @property {'setting'|'path'|'default'} [source] For `too-old`: where that g++ came from.
  * @property {string} [problem] For `missing` with `setting-missing`: why the value does not work (src/gpp.js checkConfiguredGpp).
  * @property {import('../gpp').PlacedGppMessage[]} [placed]
  * @property {string} [summary] summarizeGpp's line, for `done`.
@@ -121,13 +122,24 @@ function gppMissingButtons(gpp) {
 }
 
 /**
- * Why the g++ build did not run for a g++ that is too old (shown once, in the run's summary).
- * @param {{version?: string, gppPath?: string}} gpp
+ * Why the g++ build did not run for a g++ that is too old (shown once, in the run's summary). When the
+ * setting names it, the hint says to change or clear the setting (detection never replaces it).
+ * @param {{version?: string, gppPath?: string, source?: string}} gpp
  * @param {string} [platform]
  * @returns {string}
  */
 function gppTooOldNote(gpp, platform = process.platform) {
-    return `Not built with g++: ${gppTooOldText(gpp.version || '?')} (${gpp.gppPath || 'g++'}) ${gppInstallHint(platform)}`;
+    return `Not built with g++: ${gppTooOldText(gpp.version || '?')} (${gpp.gppPath || 'g++'}) ${gppInstallHint(platform, { fromSetting: gpp.source === 'setting' })}`;
+}
+
+/**
+ * The buttons a too-old g++ adds to the run's summary: "Detect g++" only when the setting is empty,
+ * since detection never replaces a set value.
+ * @param {{source?: string}} gpp
+ * @returns {string[]}
+ */
+function gppTooOldButtons(gpp) {
+    return gpp.source === 'setting' ? ['Open Setting'] : ['Open Setting', 'Detect g++'];
 }
 
 /**
@@ -544,7 +556,7 @@ function registerCompileCommands(context, { provider, getProjectMap, onSettingsC
         }
         // g++ < 7 cannot compile the generated C++ (C++17 inline variables): said once, not run.
         if (found.tooOld) {
-            cpp.gpp = { status: 'too-old', gppPath: found.path, version: found.version || '', message: '' };
+            cpp.gpp = { status: 'too-old', gppPath: found.path, version: found.version || '', source: found.source, message: '' };
             return cpp;
         }
         const objName = path.basename(paths.obj);
@@ -770,7 +782,7 @@ function registerCompileCommands(context, { provider, getProjectMap, onSettingsC
                 if (cpp && cpp.status === 'done' && cpp.written && cpp.written.written.length > 0) buttons.push('Open C++');
                 // A missing g++ is said once, in this summary, with the buttons that fix it.
                 if (cpp && cpp.gpp && cpp.gpp.status === 'missing') buttons.push(...gppMissingButtons(cpp.gpp));
-                if (cpp && cpp.gpp && cpp.gpp.status === 'too-old') buttons.push('Open Setting', 'Detect g++');
+                if (cpp && cpp.gpp && cpp.gpp.status === 'too-old') buttons.push(...gppTooOldButtons(cpp.gpp));
                 Promise.resolve(show(`Compile Project — ${summary}`, ...buttons)).then((choice) => {
                     if (choice === 'Go to Problem…') vscode.commands.executeCommand(GO_TO_PROBLEM_COMMAND);
                     else if (choice === 'Open Problems') vscode.commands.executeCommand('workbench.actions.view.problems');
@@ -790,7 +802,8 @@ function registerCompileCommands(context, { provider, getProjectMap, onSettingsC
                         refused: cpp.written ? cpp.written.refused.map(r => ({ ...r })) : [],
                         gitignore: cpp.written && cpp.written.gitignore ? { ...cpp.written.gitignore } : null,
                         gpp: cpp.gpp ? { status: cpp.gpp.status, exitCode: cpp.gpp.exitCode === undefined ? null : cpp.gpp.exitCode,
-                            gppPath: cpp.gpp.gppPath || '', version: cpp.gpp.version || '', errors: gppCounts.errors, warnings: gppCounts.warnings, message: cpp.gpp.message || '' } : null
+                            gppPath: cpp.gpp.gppPath || '', version: cpp.gpp.version || '', source: cpp.gpp.source || '',
+                            errors: gppCounts.errors, warnings: gppCounts.warnings, message: cpp.gpp.message || '' } : null
                     } : null
                 };
             } finally {
@@ -855,6 +868,6 @@ function registerCompileCommands(context, { provider, getProjectMap, onSettingsC
 }
 
 module.exports = {
-    registerCompileCommands, describeCpp, compileStatusText, gppMissingText, gppMissingButtons, gppTooOldNote,
+    registerCompileCommands, describeCpp, compileStatusText, gppMissingText, gppMissingButtons, gppTooOldNote, gppTooOldButtons,
     DIAGNOSTIC_SOURCE, GPP_DIAGNOSTIC_SOURCE, PROBLEM_LINK_PATH, GO_TO_PROBLEM_COMMAND, OUTPUT_CHANNEL_NAME
 };

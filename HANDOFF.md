@@ -104,12 +104,16 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   `-std=c++17`, flag dropped (both samples + the LIB scenario: 0 warnings on g++ 13); (2) a g++ < 7 is not run
   (`-dumpfullversion`, else `-dumpversion`; < 7 confirmed by `--version`, clang = unknown = runs; cached per
   path+size+mtime) — one warning "g++ 6.3.0 is too old: the generated C++ needs g++ 7 or later." + MSYS2 UCRT64
-  hint, *Open Setting* / *Detect g++*; (3) detection takes the first g++ 7+, an older one only when nothing newer
+  hint, *Open Setting* (+ *Detect g++* only while the setting is empty: detection never replaces a set value, so a
+  set old g++ gets "set a newer path or clear the setting" instead, and *Detect g++* names a newer one it finds);
+  the silent fill never writes a g++ < 7; (3) detection takes the first g++ 7+, an older one only when nothing newer
   exists; start-page row and *Detect g++* say "too old"; a set value is never overwritten; (4) a C/C++ extension
   custom configuration provider (`src/cppToolsProvider.js`, `vscode-cpptools` 7.1.1 MIT, API v7) for the `.cpp`/`.hpp`
-  in `<project>/CPP_Files/` — writes no file. The known `has no member named 'STATE'` gap stays.
+  in `<project>/CPP_Files/` — writes no file, never hands over a g++ < 7, offers a browse configuration only once
+  a CPP_Files folder exists, and its CPP_Files watcher also works after a mid-session install. The known `has no member named 'STATE'` gap stays.
   **For the Windows check (round 5):** with the MinGW g++ 6.3 the build is NOT run and the summary shows the
-  too-old warning (start-page g++ row: "g++ 6.3.0 is too old: needs 7 or later."); with MSYS2 UCRT64 g++ 13
+  too-old warning (start-page g++ row: "g++ 6.3.0 is too old: needs 7 or later."; if the setting holds
+  `C:\MinGW\bin\g++.exe`, the summary offers only *Open Setting* and says to clear it or set a newer path); with MSYS2 UCRT64 g++ 13
   installed (`pacman -S mingw-w64-ucrt-x86_64-gcc`) *Detect g++* (setting cleared) picks it over `C:\MinGW`, and
   **TcToolkitSample2 builds clean** (TcToolkitSample: only the known STATE gap); with the C/C++ extension installed,
   the generated `.hpp`/`.cpp` show **no "cannot open source file"** (allow the C/C++ extension's one-time "configure
