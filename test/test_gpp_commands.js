@@ -56,6 +56,7 @@ Module._load = function (request) {
 
 const { registerGppCommands, describeGppFill } = require('../src/commands/gppCommands');
 const KEY = 'tcToolkit.compiler.gppPath';
+const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 const settle = () => new Promise(r => setTimeout(r, 5));
 
 (async () => {
@@ -192,6 +193,58 @@ const settle = () => new Promise(r => setTimeout(r, 5));
     `COMMAND: only a g++ 6 found: it is filled in, and the message is a warning saying it is too old (${calls.warnings[0] && calls.warnings[0].m})`);
     assert(!/Detect g\+\+/.test(calls.warnings[0].m) && /clear that setting/.test(calls.warnings[0].m),
         'COMMAND: after writing a g++ 6 the message does not send the user back to "Detect g++"');
+
+    // MSYS2 installed without g++ (src/msys2Detect.js): the command waits for the registry search, then
+    // its messages name the root and the pacman command.
+    const order = [];
+    let msysRoot = 'D:\\msys64';
+    let hit2 = null;
+    let releaseReady;
+    const readyGate = new Promise(res => { releaseReady = res; });
+    registerGppCommands(context, {
+        detect: () => { order.push('detect'); return hit2; }, machine,
+        msys2Root: () => { order.push('msys2'); return msysRoot; },
+        ready: () => { order.push('ready'); return readyGate; }
+    });
+    settings[KEY] = '';
+    calls.warnings.length = 0;
+    calls.infos.length = 0;
+    const pending = handlers.get('twincat.detectGpp')();
+    await settle();
+    assert(eq(order, ['ready']), `MSYS2: the command waits for the registry search before it detects (${order.join(',')})`);
+    releaseReady();
+    r = await pending;
+    await settle();
+    const msysText = 'MSYS2 is installed at D:\\msys64 but has no g++: in the MSYS2 UCRT64 shell run pacman -S mingw-w64-ucrt-x86_64-gcc';
+    assert(r.status === 'notFound' && r.msys2Root === 'D:\\msys64' && eq(order, ['ready', 'detect', 'msys2']) && calls.warnings.length === 1
+        && calls.warnings[0].m === `g++ was not found. ${msysText}, then run "Detect g++" again.`,
+    `MSYS2: nothing found and MSYS2 without g++: the warning says so (${calls.warnings[0] && calls.warnings[0].m})`);
+    hit2 = { path: 'C:\\MinGW\\bin\\g++.exe', source: 'path', version: '6.3.0', tooOld: true };
+    order.length = 0;
+    r = await registerGppCommands(context, { detect: () => hit2, machine, msys2Root: () => msysRoot, ready: async () => {} }).autoFill();
+    assert(r.status === 'tooOldNotFilled' && r.msys2Root === 'D:\\msys64'
+        && describeGppFill(r) === `g++ 6.3.0 is too old: the generated C++ needs g++ 7 or later. ${msysText}, then run "Detect g++" again.`,
+    `MSYS2: only a g++ 6 and MSYS2 without g++: the silent fill names the package (${describeGppFill(r)})`);
+    calls.warnings.length = 0;
+    r = await handlers.get('twincat.detectGpp')();
+    await settle();
+    assert(r.status === 'found' && r.tooOld && r.msys2Root === 'D:\\msys64' && calls.warnings[0].m.includes(msysText)
+        && /Then clear the g\+\+ path setting so the newer g\+\+ is detected\.$/.test(calls.warnings[0].m),
+    `MSYS2: a g++ 6 written by the command: the message names the package, then says to clear the setting (${calls.warnings[0] && calls.warnings[0].m})`);
+    hit2 = { path: '/opt/gcc/bin/g++', source: 'path', version: '13.2.0' };
+    settings[KEY] = '';
+    r = await handlers.get('twincat.detectGpp')();
+    assert(r.status === 'found' && !r.msys2Root, 'MSYS2: a usable g++ found: no MSYS2 note');
+    settings[KEY] = '';
+    hit2 = null;
+    msysRoot = null;
+    calls.warnings.length = 0;
+    r = await handlers.get('twincat.detectGpp')();
+    await settle();
+    assert(r.status === 'notFound' && !('msys2Root' in r) && /not found on PATH or in the usual install folders/.test(calls.warnings[0].m), 'MSYS2: no MSYS2: the plain "not found"');
+    registerGppCommands(context, { detect: () => null, machine, msys2Root: () => { throw new Error('boom'); }, ready: () => Promise.reject(new Error('reg')) });
+    r = await handlers.get('twincat.detectGpp')();
+    assert(r && r.status === 'notFound', 'MSYS2: a failing registry wait or MSYS2 check never breaks the command');
 
     fs.rmSync(ROOT, { recursive: true, force: true });
     if (errors > 0) {

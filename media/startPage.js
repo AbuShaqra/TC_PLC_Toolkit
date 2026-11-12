@@ -204,8 +204,10 @@
     /**
      * Renders the g++ path setting like an XAE Shell row: the configured path; when it is empty, the
      * g++ a build would use (detected, not written) or "not found"; a warning when a set value is unusable
-     * or the g++ is older than 7.
-     * @param {{state: string, configured: string, path: string, source?: string, problem?: string, version?: string, tooOld?: boolean}|undefined} g
+     * or the g++ is older than 7; and, when no usable g++ was found but MSYS2 is installed without one
+     * (`msys2Root`, src/msys2Detect.js), the package to install there.
+     * @param {{state: string, configured: string, path: string, source?: string, problem?: string, version?: string, tooOld?: boolean,
+     *   msys2Root?: string}|undefined} g
      */
     function renderGpp(g) {
         const list = $('gpp-list');
@@ -246,6 +248,12 @@
                 ? 'g++ ' + (typeof g.version === 'string' && g.version ? g.version : '') + ' is too old: needs 7 or later.'
                 : (GPP_PROBLEMS[g.problem] || GPP_PROBLEMS.missing);
             li.append(warning);
+        }
+        if ((unset || (tooOld && g.state === 'detected')) && typeof g.msys2Root === 'string' && g.msys2Root) {
+            const msys = document.createElement('span');
+            msys.className = 'xae-note gpp-msys2';
+            msys.textContent = 'MSYS2 is installed at ' + g.msys2Root + ' but has no g++: in the MSYS2 UCRT64 shell run pacman -S mingw-w64-ucrt-x86_64-gcc';
+            li.append(msys);
         }
         list.append(li);
     }

@@ -902,6 +902,13 @@ const settle = () => new Promise(r => setTimeout(r, 10));
                 && gppTooOldButtons({ source: 'setting' }).join('|') === 'Open Setting'
                 && /run "Detect g\+\+"\.$/.test(gppTooOldNote({ version: '6.3.0', gppPath: 'C:\\MinGW\\bin\\g++.exe', source: 'path' }, 'win32')),
             'R13 GPP: a detected (unset) g++ 6 keeps "Detect g++", which can then find a newer one');
+            const { gppMissingText } = require('../src/commands/compileCommands');
+            const msysNote = 'MSYS2 is installed at D:\\msys64 but has no g++: in the MSYS2 UCRT64 shell run pacman -S mingw-w64-ucrt-x86_64-gcc, then run "Detect g++".';
+            assert(gppMissingText({ reason: 'not-found', msys2Root: 'D:\\msys64' }) === 'Not built with g++: ' + msysNote
+                && gppTooOldNote({ version: '6.3.0', gppPath: 'C:\\MinGW\\bin\\g++.exe', source: 'path', msys2Root: 'D:\\msys64' }, 'win32').endsWith(') ' + msysNote)
+                && !/MSYS2 is installed/.test(gppTooOldNote({ version: '6.3.0', gppPath: 'C:\\g.exe', source: 'setting', msys2Root: 'D:\\msys64' }, 'win32'))
+                && /not found on PATH/.test(gppMissingText({ reason: 'not-found' })),
+            'R13 GPP: no usable g++ and MSYS2 without g++: the run\'s note names the pacman command (not for a g++ the setting names)');
             gppVersionAnswer = () => ({ version: '13.3.0', major: 13 });
             gppAnswer = () => ({ code: 0 });
             reset();

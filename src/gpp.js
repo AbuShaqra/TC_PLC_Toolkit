@@ -9,7 +9,9 @@
  *
  * Detection is pure — the platform, the environment and the file-existence check are passed in —
  * so test/test_gpp.js covers the Windows locations off Windows. The order: `PATH`, then (Windows
- * only) the usual install folders of MSYS2, MinGW, WinLibs, w64devkit and Chocolatey's mingw.
+ * only) the UCRT64/MINGW64/CLANG64 environments of every MSYS2 root (the ones the uninstall registry
+ * names, passed in as `msys2Roots`, then the usual ones: src/msys2Detect.js), the usual install
+ * folders of MinGW, WinLibs, w64devkit and Chocolatey's mingw, and last each MSYS2 root's `usr\bin`.
  *
  * The generated C++ needs g++ 7 or later (GPP_MIN_MAJOR: C++17 inline variables). When the checks
  * passed in carry a `version` reader (thisMachine's runs `g++ -dumpfullversion`, cached per path,
@@ -23,6 +25,7 @@ const childProcess = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const { runChild } = require('./compileCheck');
+const msys2 = require('./msys2Detect');
 
 /** The g++ path setting (package.json `contributes.configuration`). */
 const SETTING_GPP_PATH = 'tcToolkit.compiler.gppPath';
@@ -43,26 +46,31 @@ const DEFAULT_GPP_TIMEOUT_MS = 120000;
 const GPP_FLAGS = Object.freeze(['-std=c++17', '-fno-strict-aliasing', '-fdiagnostics-color=never', '-fmessage-length=0']);
 
 /**
- * The places g++ is looked for on Windows after `PATH`, as absolute paths. Environment variables
- * give the roots where they exist; the usual defaults otherwise.
+ * The places g++ is looked for on Windows after `PATH`, as absolute paths, in order. Environment
+ * variables give the roots where they exist; the usual defaults otherwise.
  * @param {Record<string, string|undefined>} env
+ * @param {string[]} [msys2Roots] MSYS2 roots from the uninstall registry, looked in first.
  * @returns {string[]}
  */
-function windowsGppLocations(env) {
+function windowsGppLocations(env, msys2Roots = []) {
     const get = (/** @type {string} */ name, /** @type {string} */ fallback) => {
         const key = Object.keys(env || {}).find(k => k.toLowerCase() === name.toLowerCase());
         return String((key && env[key]) || fallback).replace(/[\\/]+$/, '');
     };
     const programFiles = get('ProgramFiles', 'C:\\Program Files');
     const choco = get('ChocolateyInstall', 'C:\\ProgramData\\chocolatey');
+    const msysRoots = msys2.msys2Roots({ env, msys2Roots });
     const roots = [
-        'C:\\msys64\\ucrt64\\bin', 'C:\\msys64\\mingw64\\bin', 'C:\\msys64\\clang64\\bin',
         'C:\\MinGW\\bin', 'C:\\mingw64\\bin',
         `${programFiles}\\mingw64\\bin`, `${programFiles}\\WinLibs\\mingw64\\bin`, 'C:\\WinLibs\\mingw64\\bin',
         `${programFiles}\\w64devkit\\bin`, 'C:\\w64devkit\\bin',
         `${choco}\\lib\\mingw\\tools\\install\\mingw64\\bin`
     ];
-    return roots.map(r => `${r}\\g++.exe`);
+    return [
+        ...msysRoots.flatMap(msys2.msys2EnvironmentGpps),
+        ...roots.map(r => `${r}\\g++.exe`),
+        ...msysRoots.map(msys2.msys2UsrGpp)
+    ];
 }
 
 /**
@@ -79,17 +87,19 @@ function pathDirs(platform, env) {
 }
 
 /**
- * Every place g++ is looked for, in order, with where each comes from.
- * @param {{platform: string, env: Record<string, string|undefined>}} o
+ * Every place g++ is looked for, in order, with where each comes from. Repeats are dropped
+ * (case-blind on Windows), the first one kept.
+ * @param {{platform: string, env: Record<string, string|undefined>, msys2Roots?: string[]}} o
+ *   `msys2Roots`: MSYS2 roots from the uninstall registry (Windows).
  * @returns {Array<{path: string, source: 'path'|'default'}>}
  */
-function gppCandidates({ platform, env }) {
+function gppCandidates({ platform, env, msys2Roots }) {
     const win = platform === 'win32';
     const exe = win ? 'g++.exe' : 'g++';
     const join = (/** @type {string} */ dir) => (win ? path.win32.join(dir, exe) : path.posix.join(dir, exe));
     /** @type {Array<{path: string, source: 'path'|'default'}>} */
     const out = pathDirs(platform, env).map(d => ({ path: join(d), source: /** @type {'path'} */ ('path') }));
-    if (win) out.push(...windowsGppLocations(env).map(p => ({ path: p, source: /** @type {'default'} */ ('default') })));
+    if (win) out.push(...windowsGppLocations(env, msys2Roots).map(p => ({ path: p, source: /** @type {'default'} */ ('default') })));
     const seen = new Set();
     return out.filter(c => {
         const k = win ? c.path.toLowerCase() : c.path;
@@ -249,11 +259,32 @@ function versionFields(v) {
 }
 
 /**
+ * @typedef {{platform: string, env: Record<string, string|undefined>, exists: (p: string) => boolean,
+ *   isDir?: (p: string) => boolean, version?: GppVersionReader, msys2Roots?: string[]}} GppMachine
+ *   How g++ is looked for: `exists` is whether a FILE is there; `version` reads a g++'s version;
+ *   `msys2Roots` are the MSYS2 roots the uninstall registry names (src/msys2Detect.js).
+ */
+
+/**
+ * The MSYS2 root that has no g++, when detection found no g++ a build can use (none, or only one
+ * older than GPP_MIN_MAJOR); else nothing. Windows only.
+ * @param {GppMachine} o
+ * @param {{tooOld?: boolean}|null} hit What detection found.
+ * @returns {{msys2Root?: string}}
+ */
+function msys2Fields(o, hit) {
+    if (hit && !hit.tooOld) return {};
+    /** @type {string|null} */
+    let root;
+    try { root = msys2.findMsys2WithoutGpp(o); } catch (e) { root = null; }
+    return root ? { msys2Root: root } : {};
+}
+
+/**
  * Finds g++ on this machine. Never throws. With a version reader, the first candidate that is new
  * enough (or of unknown version) wins; an older one is returned, marked `tooOld`, only when no newer
  * one exists.
- * @param {{platform: string, env: Record<string, string|undefined>, exists: (p: string) => boolean,
- *   version?: GppVersionReader}} o
+ * @param {GppMachine} o
  * @returns {{path: string, source: 'path'|'default', version?: string, tooOld?: boolean}|null}
  */
 function detectGpp(o) {
@@ -335,16 +366,17 @@ function describeGppProblem(reason) {
  * GPP_MIN_MAJOR (the build is then not run).
  * @param {{configured: unknown, platform: string, env: Record<string, string|undefined>, exists: (p: string) => boolean,
  *   isDir?: (p: string) => boolean, version?: GppVersionReader}} o
- * @returns {{ok: true, path: string, source: 'setting'|'path'|'default', version?: string, tooOld?: boolean} |
- *   {ok: false, reason: 'not-found'|'setting-missing', configured: string, problem?: string}}
- *   `problem`: for `setting-missing`, checkConfiguredGpp's reason.
+ * @returns {{ok: true, path: string, source: 'setting'|'path'|'default', version?: string, tooOld?: boolean, msys2Root?: string} |
+ *   {ok: false, reason: 'not-found'|'setting-missing', configured: string, problem?: string, msys2Root?: string}}
+ *   `problem`: for `setting-missing`, checkConfiguredGpp's reason. `msys2Root`: detection found no
+ *   usable g++ and MSYS2 is installed there without one (src/msys2Detect.js).
  */
 function resolveGpp(o) {
     const checked = checkConfiguredGpp(o.configured, o);
     if (checked.ok === true) return { ok: true, path: checked.path, source: 'setting', ...versionFields(versionVia(o, checked.path)) };
     if (checked.reason !== 'empty') return { ok: false, reason: 'setting-missing', configured: checked.configured, problem: checked.reason };
     const hit = detectGpp(o);
-    return hit ? { ok: true, ...hit } : { ok: false, reason: 'not-found', configured: '' };
+    return hit ? { ok: true, ...hit, ...msys2Fields(o, hit) } : { ok: false, reason: 'not-found', configured: '', ...msys2Fields(o, null) };
 }
 
 /**
@@ -354,11 +386,12 @@ function resolveGpp(o) {
  * @param {{platform: string, env: Record<string, string|undefined>, exists: (p: string) => boolean,
  *   isDir?: (p: string) => boolean, version?: GppVersionReader}} o
  * @returns {{state: 'set'|'invalid'|'detected'|'notFound', configured: string, path: string,
- *   source?: 'path'|'default', problem?: 'not-on-path'|'missing'|'folder', version?: string, tooOld?: boolean}}
+ *   source?: 'path'|'default', problem?: 'not-on-path'|'missing'|'folder', version?: string, tooOld?: boolean, msys2Root?: string}}
  *   `set`: the value works (`path`: the g++ it runs, which differs for a bare name or a folder);
  *   `invalid`: set but unusable (`problem`); `detected`: empty, and a build would use `path`
  *   (found on `PATH` or in a usual install folder: `source`); `notFound`: empty, and nothing found.
  *   `set` and `detected` carry `version` when it was read, and `tooOld` below GPP_MIN_MAJOR.
+ *   `notFound` and a `tooOld` `detected` carry `msys2Root` when MSYS2 is installed there without g++.
  */
 function describeGppSetting(value, o) {
     const checked = checkConfiguredGpp(value, o);
@@ -367,17 +400,20 @@ function describeGppSetting(value, o) {
         return { state: 'invalid', configured: checked.configured, path: '', problem: /** @type {'not-on-path'|'missing'|'folder'} */ (checked.reason) };
     }
     const hit = detectGpp(o);
-    return hit ? { state: 'detected', configured: '', ...hit } : { state: 'notFound', configured: '', path: '' };
+    return hit ? { state: 'detected', configured: '', ...hit, ...msys2Fields(o, hit) } : { state: 'notFound', configured: '', path: '', ...msys2Fields(o, null) };
 }
 
 /**
- * The real platform, environment, file checks and g++ version reader, as the functions above take them.
+ * The real platform, environment, file checks and g++ version reader, as the functions above take
+ * them, with the MSYS2 roots the session's registry search has found so far (none until it settles:
+ * src/msys2Detect.js; `msys2RootsWithin` waits for it).
  * @returns {{platform: string, env: Record<string, string|undefined>, exists: (p: string) => boolean, isDir: (p: string) => boolean,
- *   version: GppVersionReader}}
+ *   version: GppVersionReader, msys2Roots: string[]}}
  */
 function thisMachine() {
     return {
         platform: process.platform, env: process.env,
+        msys2Roots: msys2.defaultMsys2RootCache().current(),
         version: (/** @type {string} */ p) => gppVersionOf(p),
         exists: (/** @type {string} */ p) => { try { return fs.statSync(p).isFile(); } catch (e) { return false; } },
         isDir: (/** @type {string} */ p) => { try { return fs.statSync(p).isDirectory(); } catch (e) { return false; } }
@@ -599,6 +635,7 @@ function summarizeGpp(r) {
 module.exports = {
     SETTING_GPP_PATH, DEFAULT_GPP_TIMEOUT_MS, GPP_FLAGS, GPP_MIN_MAJOR,
     parseGppVersion, queryGppVersion, gppVersionOf, isGppTooOld, gppTooOldText, gppInstallHint,
+    msys2NoGppText: msys2.msys2NoGppText,
     windowsGppLocations, gppCandidates, detectGpp, checkConfiguredGpp, describeGppProblem, resolveGpp,
     normalizeGppSetting, describeGppSetting, thisMachine,
     buildGppArgs, parseGppOutput, placeGppMessages, runGpp, summarizeGpp

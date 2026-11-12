@@ -17,6 +17,7 @@ const { registerStartCommands } = require('./src/commands/startCommands');
 const { registerCompileCommands } = require('./src/commands/compileCommands');
 const { registerXaeShellCommands } = require('./src/commands/xaeShellCommands');
 const { registerGppCommands } = require('./src/commands/gppCommands');
+const { defaultMsys2RootCache } = require('./src/msys2Detect');
 const { registerCppToolsProvider } = require('./src/commands/cppToolsCommands');
 const { migrateSettings } = require('./src/settingsMigration');
 const { TwinCatDragAndDropController } = require('./src/treeDragAndDrop');
@@ -605,6 +606,10 @@ function activate(context) {
     // migration, so a path the user set under the old key is moved, not shadowed by a detected one.
     const xaeShell = registerXaeShellCommands(context);
     settingsMigrated.then(() => { xaeShell.autoFill(); });
+
+    // MSYS2's install folders from the uninstall registry, for g++ detection (Windows only; nothing is
+    // spawned elsewhere). Not awaited and never rejects; once found, the start page's g++ row is redrawn.
+    defaultMsys2RootCache().load().then((roots) => { if (roots.length && start) start.startPage.postState(); });
 }
 
 function deactivate() {

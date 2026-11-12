@@ -6,14 +6,17 @@
  * silent fill runs when the g++ build is turned on, so the setting shows what a run will use; it
  * leaves out a g++ older than 7, which only the explicit command writes.
  *
- * Detection itself is src/gpp.js (pure, unit-tested); here it only gets its real dependencies.
+ * Detection itself is src/gpp.js (pure, unit-tested); here it only gets its real dependencies. Both
+ * the command and the silent fill first wait (briefly) for the session's search of the uninstall
+ * registry for MSYS2 (src/msys2Detect.js), so an MSYS2 installed outside the usual roots is found.
  */
 
 'use strict';
 
 const path = require('path');
 const vscode = require('vscode');
-const { SETTING_GPP_PATH, detectGpp, checkConfiguredGpp, describeGppProblem, normalizeGppSetting, thisMachine, isGppTooOld, gppTooOldText, gppInstallHint } = require('../gpp');
+const { SETTING_GPP_PATH, detectGpp, checkConfiguredGpp, describeGppProblem, normalizeGppSetting, thisMachine, isGppTooOld, gppTooOldText, gppInstallHint, msys2NoGppText } = require('../gpp');
+const { findMsys2WithoutGpp, msys2RootsWithin } = require('../msys2Detect');
 const { CPP_SECTION } = require('../cppSettings');
 
 /** The key of the path setting inside its section. */
@@ -32,6 +35,8 @@ const GPP_PATH_KEY = 'gppPath';
  * @property {boolean} [tooOld] That g++ is older than 7: the build will not run it.
  * @property {{path: string, version?: string}} [newer] For a kept value that is too old: a g++ 7+
  *   detection finds, which the user can switch to by clearing the setting or setting that path.
+ * @property {string} [msys2Root] For `notFound` and a detected g++ that is too old: MSYS2 is
+ *   installed there but has no g++, so the message names the package to install.
  */
 
 /** The real platform, environment and file checks (src/gpp.js thisMachine). */
@@ -50,11 +55,16 @@ function detectOnThisMachine() {
  * @param {() => ({path: string, version?: string, tooOld?: boolean}|null)} detect
  * @param {Parameters<typeof checkConfiguredGpp>[1]} [env] How a set value is checked (the build's own
  *   check, so both say the same about it); the real machine by default.
- * @param {{fillTooOld?: boolean}} [o] `fillTooOld: false` (the silent fill): a g++ older than 7 is not
- *   written, because a written value is never replaced by a later detection.
+ * @param {{fillTooOld?: boolean, msys2Root?: () => (string|null)}} [o] `fillTooOld: false` (the silent
+ *   fill): a g++ older than 7 is not written, because a written value is never replaced by a later
+ *   detection. `msys2Root`: an MSYS2 installation without g++ (asked only when detection found no
+ *   g++ a build can use).
  * @returns {Promise<GppFillResult>}
  */
 async function fillGppSetting(detect, env = machine(), o = {}) {
+    const msys2Root = () => {
+        try { return (o.msys2Root && o.msys2Root()) || ''; } catch (e) { return ''; }
+    };
     const config = vscode.workspace.getConfiguration(CPP_SECTION);
     const current = config.get(GPP_PATH_KEY);
     // The build's own emptiness rule (quotes and blanks only count as unset), so the start page's
@@ -74,11 +84,16 @@ async function fillGppSetting(detect, env = machine(), o = {}) {
         return kept;
     }
     const hit = detect();
-    if (!hit || !hit.path) return { status: 'notFound', path: '' };
+    if (!hit || !hit.path) {
+        const root = msys2Root();
+        return root ? { status: 'notFound', path: '', msys2Root: root } : { status: 'notFound', path: '' };
+    }
+    const tooOldRoot = hit.tooOld ? msys2Root() : '';
     if (hit.tooOld && o.fillTooOld === false) {
         /** @type {GppFillResult} */
         const left = { status: 'tooOldNotFilled', path: '', tooOld: true };
         if (hit.version) left.version = hit.version;
+        if (tooOldRoot) left.msys2Root = tooOldRoot;
         return left;
     }
     await config.update(GPP_PATH_KEY, hit.path, vscode.ConfigurationTarget.Global);
@@ -86,6 +101,7 @@ async function fillGppSetting(detect, env = machine(), o = {}) {
     const found = { status: 'found', path: hit.path };
     if (hit.version) found.version = hit.version;
     if (hit.tooOld) found.tooOld = true;
+    if (tooOldRoot) found.msys2Root = tooOldRoot;
     return found;
 }
 
@@ -120,34 +136,44 @@ function versionOf(gppPath, env) {
  */
 function describeGppFill(r) {
     // Both `found` and `kept` leave the old g++ in the setting, where detection never replaces it.
+    // MSYS2 without g++ (src/msys2Detect.js): the package to install, then detection finds it.
+    const msys = r.msys2Root ? `${msys2NoGppText(r.msys2Root)}, then run "Detect g++" again.` : '';
     const fix = r.newer
         ? `A newer g++${r.newer.version ? ' ' + r.newer.version : ''} is at ${r.newer.path}: clear the g++ path setting, or set it to that path.`
-        : gppInstallHint(process.platform, { fromSetting: true });
+        : (msys ? `${msys} Then clear the g++ path setting so the newer g++ is detected.` : gppInstallHint(process.platform, { fromSetting: true }));
     const old = r.tooOld ? ` But ${gppTooOldText(r.version || '?')} ${fix}` : '';
     if (r.status === 'found') return `g++ found: ${r.path}${old ? '.' + old : ''}`;
-    if (r.status === 'tooOldNotFilled') return `${gppTooOldText(r.version || '?')} ${gppInstallHint()}`;
+    if (r.status === 'tooOldNotFilled') return `${gppTooOldText(r.version || '?')} ${msys || gppInstallHint()}`;
     if (r.status === 'kept') {
         if (old) return `g++: kept your value ${r.path}.${old}`;
         return r.missing
             ? `g++: kept your value ${r.path} (${describeGppProblem(r.problem || 'missing')}). Clear the setting to let it be detected, or correct it.`
             : `g++: kept your value ${r.path}.`;
     }
+    if (msys) return `g++ was not found. ${msys}`;
     return 'g++ was not found on PATH or in the usual install folders. Install it (for example MSYS2 or WinLibs) or set its path.';
 }
 
 /**
  * Registers `twincat.detectGpp`.
  * @param {vscode.ExtensionContext} context
- * @param {{detect?: () => ({path: string, version?: string, tooOld?: boolean}|null), machine?: Parameters<typeof checkConfiguredGpp>[1]}} [deps] For the tests.
+ * @param {{detect?: () => ({path: string, version?: string, tooOld?: boolean}|null), machine?: Parameters<typeof checkConfiguredGpp>[1],
+ *   msys2Root?: () => (string|null), ready?: () => Promise<unknown>}} [deps] For the tests. `msys2Root`:
+ *   an MSYS2 installation without g++; `ready`: waits for the registry search for MSYS2 (bounded).
  * @returns {{autoFill: () => Promise<GppFillResult|null>}} The silent fill; it never rejects.
  */
-function registerGppCommands(context, { detect = detectOnThisMachine, machine: env = machine() } = {}) {
+function registerGppCommands(context, {
+    detect = detectOnThisMachine, machine: env = machine(),
+    msys2Root = () => findMsys2WithoutGpp(machine()), ready = () => msys2RootsWithin()
+} = {}) {
+    const settled = () => Promise.resolve().then(ready).then(undefined, () => undefined);
     context.subscriptions.push(
         vscode.commands.registerCommand('twincat.detectGpp', async () => {
             /** @type {GppFillResult} */
             let result;
             try {
-                result = await fillGppSetting(detect, env);
+                await settled();
+                result = await fillGppSetting(detect, env, { msys2Root });
             } catch (err) {
                 vscode.window.showErrorMessage(`Could not update the g++ path setting: ${err && err.message ? err.message : err}`);
                 return undefined;
@@ -161,7 +187,7 @@ function registerGppCommands(context, { detect = detectOnThisMachine, machine: e
         })
     );
     return {
-        autoFill: () => fillGppSetting(detect, env, { fillTooOld: false }).catch((err) => {
+        autoFill: () => settled().then(() => fillGppSetting(detect, env, { fillTooOld: false, msys2Root })).catch((err) => {
             console.error('TC Toolkit: could not fill the g++ path setting:', err);
             return null;
         })

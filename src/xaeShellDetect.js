@@ -179,22 +179,32 @@ async function detectXaeShells({ platform, env, exists, regQuery }) {
 }
 
 /**
- * The real registry query: `reg.exe query <key> /ve`, arguments passed as an array (no shell, no
- * string concatenation), with a short timeout. Resolves with reg.exe's output, or null on any error
- * (key absent, reg.exe missing, timeout) — it never rejects.
+ * Runs reg.exe with an argument array (no shell, no string concatenation) and a short timeout.
+ * Resolves with its output, or null on any error (key absent, no match, reg.exe missing, timeout);
+ * it never rejects. src/msys2Detect.js reuses it for the uninstall-key search.
  * @param {(file: string, args: string[], options: object, cb: (err: any, stdout: any) => void) => any} execFile
  *   `child_process.execFile`.
- * @returns {(key: string) => Promise<string|null>}
+ * @returns {(args: string[]) => Promise<string|null>}
  */
-function createRegQuery(execFile) {
-    return (key) => new Promise((resolve) => {
+function createRegRunner(execFile) {
+    return (args) => new Promise((resolve) => {
         try {
-            execFile('reg.exe', ['query', key, '/ve'], { timeout: REG_TIMEOUT_MS, windowsHide: true, encoding: 'utf8' },
+            execFile('reg.exe', args, { timeout: REG_TIMEOUT_MS, windowsHide: true, encoding: 'utf8' },
                 (err, stdout) => resolve(err || typeof stdout !== 'string' ? null : stdout));
         } catch (e) {
             resolve(null);
         }
     });
+}
+
+/**
+ * The real registry query: `reg.exe query <key> /ve` through `createRegRunner`.
+ * @param {Parameters<typeof createRegRunner>[0]} execFile `child_process.execFile`.
+ * @returns {(key: string) => Promise<string|null>}
+ */
+function createRegQuery(execFile) {
+    const run = createRegRunner(execFile);
+    return (key) => run(['query', key, '/ve']);
 }
 
 /**
@@ -235,6 +245,6 @@ function resolveShellExe({ configured, defaultPath, exists, fromRegistry }) {
 
 module.exports = {
     XAE_SHELL_SECTION, XAE_SHELL_VERSIONS, REG_TIMEOUT_MS,
-    parseRegDefaultValue, exeFromLocalServer, defaultShellPath, detectXaeShells, createRegQuery,
+    parseRegDefaultValue, exeFromLocalServer, defaultShellPath, detectXaeShells, createRegRunner, createRegQuery,
     describeConfiguredShells, resolveShellExe
 };

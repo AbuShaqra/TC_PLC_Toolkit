@@ -331,9 +331,13 @@ with the small arrow next to the **Compile** button (in the editor's toolbar, or
 **g++ is optional** — nothing else needs it. It must be **g++ 7 or later**: the generated C++ is C++17
 (it is built with `-std=c++17`). On Windows, install MinGW-w64 — for example MSYS2's UCRT64
 (`pacman -S mingw-w64-ucrt-x86_64-gcc`), or a WinLibs/w64devkit build; the old `C:\MinGW` (mingw.org,
-g++ 6.3) is too old. It is found by itself: `g++` on your `PATH`, then on Windows the usual install
-folders (MSYS2, `C:\MinGW`, WinLibs, w64devkit, Chocolatey's mingw); when several are found, the first
-one that is 7 or later is used. A g++ older than 7 is not run: the summary says
+g++ 6.3) is too old. It is found by itself: `g++` on your `PATH`, then on Windows MSYS2 — wherever its installer put it
+(read from the Windows list of installed programs), or in `C:\msys64`, `D:\msys64`, `C:\tools\msys64`
+(Chocolatey), `%USERPROFILE%\msys64` or Scoop's folder; its UCRT64, MINGW64 and CLANG64 environments
+first — then the usual install folders (`C:\MinGW`, WinLibs, w64devkit, Chocolatey's mingw), and last
+MSYS2's own `usr\bin` g++; when several are found, the first one that is 7 or later is used. If MSYS2 is
+installed but none of its environments has g++, *Detect g++* and the start page say so: "MSYS2 is installed
+at C:\msys64 but has no g++: in the MSYS2 UCRT64 shell run pacman -S mingw-w64-ucrt-x86_64-gcc". A g++ older than 7 is not run: the summary says
 "g++ 6.3.0 is too old: the generated C++ needs g++ 7 or later." and offers the setting (and, while the
 setting is empty, *Detect g++*). Set `tcToolkit.compiler.gppPath` to use another one; **TC Toolkit: Detect g++**
 looks again, but never replaces a value you set: if the setting names an old g++, clear it (or set the new path)

@@ -50,7 +50,7 @@ const {
     cppOutputPaths, cppOwnerId, writeOwnedOutputs, recordOwnedFile, claimOutput, runGenerate, gitignoreNote,
     libraryCoverage, libraryCoverageText, libraryCoverageLines, libraryUndeclaredLines, libraryCoverageHeader, withCoverageHeader, UNKNOWN_LIBRARY
 } = require('../cppGenerate');
-const { SETTING_GPP_PATH, resolveGpp, describeGppProblem, buildGppArgs, placeGppMessages, runGpp, summarizeGpp, gppTooOldText, gppInstallHint, thisMachine } = require('../gpp');
+const { SETTING_GPP_PATH, resolveGpp, describeGppProblem, buildGppArgs, placeGppMessages, runGpp, summarizeGpp, gppTooOldText, gppInstallHint, msys2NoGppText, thisMachine } = require('../gpp');
 
 /** The `source` of every diagnostic this command publishes. */
 const DIAGNOSTIC_SOURCE = 'TC Toolkit compile';
@@ -83,6 +83,7 @@ const OUTPUT_CHANNEL_NAME = 'TC Toolkit Compile';
  * @property {string} [version] For `too-old`: the version g++ reported.
  * @property {'setting'|'path'|'default'} [source] For `too-old`: where that g++ came from.
  * @property {string} [problem] For `missing` with `setting-missing`: why the value does not work (src/gpp.js checkConfiguredGpp).
+ * @property {string} [msys2Root] For `missing` and a detected `too-old`: MSYS2 is installed there without g++.
  * @property {import('../gpp').PlacedGppMessage[]} [placed]
  * @property {string} [summary] summarizeGpp's line, for `done`.
  */
@@ -102,13 +103,16 @@ const OUTPUT_CHANNEL_NAME = 'TC Toolkit Compile';
 
 /**
  * Why the g++ build did not run for want of a g++ (shown once, in the run's summary).
- * @param {{reason?: string, configured?: string, problem?: string}} gpp
+ * @param {{reason?: string, configured?: string, problem?: string, msys2Root?: string}} gpp `msys2Root`:
+ *   MSYS2 is installed there without g++ (src/msys2Detect.js).
  * @returns {string}
  */
 function gppMissingText(gpp) {
     return gpp.reason === 'setting-missing'
         ? `Not built with g++: the g++ path setting does not work (${gpp.configured}: ${describeGppProblem(gpp.problem || 'missing')}). Fix the path to build it.`
-        : 'Not built with g++: g++ was not found on PATH or in the usual install folders. Set the g++ path, or let "Detect g++" find it.';
+        : (gpp.msys2Root
+            ? `Not built with g++: ${msys2NoGppText(gpp.msys2Root)}, then run "Detect g++".`
+            : 'Not built with g++: g++ was not found on PATH or in the usual install folders. Set the g++ path, or let "Detect g++" find it.');
 }
 
 /**
@@ -124,12 +128,15 @@ function gppMissingButtons(gpp) {
 /**
  * Why the g++ build did not run for a g++ that is too old (shown once, in the run's summary). When the
  * setting names it, the hint says to change or clear the setting (detection never replaces it).
- * @param {{version?: string, gppPath?: string, source?: string}} gpp
+ * @param {{version?: string, gppPath?: string, source?: string, msys2Root?: string}} gpp
  * @param {string} [platform]
  * @returns {string}
  */
 function gppTooOldNote(gpp, platform = process.platform) {
-    return `Not built with g++: ${gppTooOldText(gpp.version || '?')} (${gpp.gppPath || 'g++'}) ${gppInstallHint(platform, { fromSetting: gpp.source === 'setting' })}`;
+    const hint = gpp.msys2Root && gpp.source !== 'setting'
+        ? `${msys2NoGppText(gpp.msys2Root)}, then run "Detect g++".`
+        : gppInstallHint(platform, { fromSetting: gpp.source === 'setting' });
+    return `Not built with g++: ${gppTooOldText(gpp.version || '?')} (${gpp.gppPath || 'g++'}) ${hint}`;
 }
 
 /**
@@ -552,11 +559,13 @@ function registerCompileCommands(context, { provider, getProjectMap, onSettingsC
         const found = resolveGpp({ configured: config.get('gppPath', ''), ...(gppDiscovery || thisMachine()) });
         if (found.ok === false) {
             cpp.gpp = { status: 'missing', reason: found.reason, configured: found.configured, problem: found.problem, message: '' };
+            if (found.msys2Root) cpp.gpp.msys2Root = found.msys2Root;
             return cpp;
         }
         // g++ < 7 cannot compile the generated C++ (C++17 inline variables): said once, not run.
         if (found.tooOld) {
             cpp.gpp = { status: 'too-old', gppPath: found.path, version: found.version || '', source: found.source, message: '' };
+            if (found.msys2Root) cpp.gpp.msys2Root = found.msys2Root;
             return cpp;
         }
         const objName = path.basename(paths.obj);

@@ -344,7 +344,8 @@ const { TEMPLATE_VERSIONS } = require(path.join(REPO, 'src', 'projectTemplate.js
 
         // ── Settings card: the g++ path (R13), shown like an XAE Shell row ─────────────────────────
         const gppRow = () => page.$eval('#gpp-list li', el => ({ text: el.textContent, cls: el.className, state: el.getAttribute('data-gpp'),
-            note: (el.querySelector('.xae-note') || {}).textContent || null, warning: (el.querySelector('.xae-warning') || {}).textContent || null }));
+            note: (el.querySelector('.xae-note') || {}).textContent || null, warning: (el.querySelector('.xae-warning') || {}).textContent || null,
+            msys: (el.querySelector('.gpp-msys2') || {}).textContent || null }));
         const MSYS = 'C:\\msys64\\ucrt64\\bin\\g++.exe';
         const gppCases = [
             [{ state: 'set', configured: MSYS, path: MSYS },
@@ -374,7 +375,18 @@ const { TEMPLATE_VERSIONS } = require(path.join(REPO, 'src', 'projectTemplate.js
                 'only a g++ 6 detected: shown, with the "too old" warning, and a note that a build will not use it'],
             [{ state: 'detected', configured: '', path: 'C:\\MinGW\\bin\\g++.exe', source: 'default', version: '6.3.0', tooOld: true },
                 (r) => r.note === 'Not set: found in a usual install folder, but a build will not use it.',
-                'a g++ 6 in a usual install folder: the note says a build will not use it']
+                'a g++ 6 in a usual install folder: the note says a build will not use it'],
+            [{ state: 'notFound', configured: '', path: '', msys2Root: 'D:\\msys64' },
+                (r) => r.text.startsWith('g++:not found') && /unset/.test(r.cls) && !r.warning
+                    && r.msys === 'MSYS2 is installed at D:\\msys64 but has no g++: in the MSYS2 UCRT64 shell run pacman -S mingw-w64-ucrt-x86_64-gcc',
+                'not found, MSYS2 installed without g++: the row names the root and the pacman command'],
+            [{ state: 'detected', configured: '', path: 'C:\\MinGW\\bin\\g++.exe', source: 'path', version: '6.3.0', tooOld: true, msys2Root: 'C:\\msys64' },
+                (r) => r.warning === 'g++ 6.3.0 is too old: needs 7 or later.' && /^MSYS2 is installed at C:\\msys64 but has no g\+\+/.test(r.msys || ''),
+                'only a g++ 6, MSYS2 without g++: the too-old warning and the MSYS2 note'],
+            [{ state: 'detected', configured: '', path: MSYS, source: 'default', msys2Root: 'C:\\msys64' },
+                (r) => !r.msys, 'a usable g++ detected: no MSYS2 note even if the state carried one'],
+            [{ state: 'set', configured: 'C:\\MinGW\\bin\\g++.exe', path: 'C:\\MinGW\\bin\\g++.exe', version: '6.3.0', tooOld: true, msys2Root: 'C:\\msys64' },
+                (r) => !r.msys, 'a set g++ 6: no MSYS2 note (detection does not replace a set value)']
         ];
         for (const [gpp, ok, label] of gppCases) {
             await send(stateWith({ gpp }));
