@@ -29,8 +29,8 @@
  * ownership record is unaffected).
  *
  * `.gitignore` (user decision 2026-11-12): the folder also gets a `.gitignore` listing the files the
- * toolkit writes there (each recorded project's `.cpp` / `.hpp` / `.o` and the ownership record), so
- * they are not committed by accident. It is the toolkit's like the other outputs (hash in the record,
+ * toolkit writes there and still holds as its own (each recorded project's `.cpp` / `.hpp` / `.o` and
+ * the ownership record; see `gitignoreText`), so they are not committed by accident. It is the toolkit's like the other outputs (hash in the record,
  * key `gitignore`): kept up to date while unchanged, left alone when edited or when a `.gitignore`
  * the toolkit did not write is there, and never recreated once the user deleted it (the record then
  * says `removed`). See `maintainGitignore`.
@@ -333,14 +333,26 @@ function writeManifest(dir, manifest) {
  * The `.gitignore` text for a record: the comment line, then every recorded file, the object file of
  * every recorded `.cpp` (so a later g++ build needs no rewrite) and the record itself, each anchored
  * to the folder (`/name`). '' when nothing is recorded.
+ *
+ * With `dir`, only files the toolkit holds as its own are listed: a recorded file the user edited
+ * since (`ownership` 'changed') is theirs now and is left out, and so is an object-file name taken by
+ * a file the toolkit did not write ('foreign'). A name with no file yet is listed.
  * @param {Manifest} manifest
+ * @param {string} [dir] The `CPP_Files` folder; without it every name is listed.
+ * @param {boolean} [caseInsensitive] As for `ownership`.
  * @returns {string}
  */
-function gitignoreText(manifest) {
+function gitignoreText(manifest, dir, caseInsensitive = CASE_INSENSITIVE_FS) {
     const names = new Set(Object.keys(manifest.files));
     if (names.size === 0) return '';
     for (const name of Object.keys(manifest.files)) {
         if (/\.cpp$/i.test(name)) names.add(name.replace(/\.cpp$/i, '.o'));
+    }
+    if (dir) {
+        for (const name of [...names]) {
+            const state = ownership(dir, manifest, name, caseInsensitive);
+            if (state === 'changed' || state === 'foreign') names.delete(name);
+        }
     }
     names.add(MANIFEST_NAME);
     // Glob characters are escaped (the stems are [A-Za-z0-9_.-]; `/` in front makes `!`/`#` literal).
@@ -363,11 +375,12 @@ function gitignoreText(manifest) {
  * `manifest.gitignore`; the caller saves the record.
  * @param {string} dir
  * @param {Manifest} manifest
+ * @param {boolean} [caseInsensitive] As for `ownership`.
  * @returns {GitignoreResult}
  */
-function maintainGitignore(dir, manifest) {
+function maintainGitignore(dir, manifest, caseInsensitive = CASE_INSENSITIVE_FS) {
     const file = path.join(dir, GITIGNORE_NAME);
-    const want = gitignoreText(manifest);
+    const want = gitignoreText(manifest, dir, caseInsensitive);
     /** @type {Buffer|null} */
     let current;
     try { current = fs.readFileSync(file); } catch (e) { current = null; }
@@ -491,7 +504,7 @@ function writeOwnedOutputs(o) {
             dirty = true;
         }
         const before = JSON.stringify(manifest.gitignore || null);
-        result.gitignore = maintainGitignore(o.dir, manifest);
+        result.gitignore = maintainGitignore(o.dir, manifest, ci);
         if (JSON.stringify(manifest.gitignore || null) !== before) dirty = true;
     } finally {
         if (dirty) writeManifest(o.dir, manifest);

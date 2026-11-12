@@ -144,12 +144,16 @@ function describeCpp(cpp) {
         notes.push(`C++ generation failed: ${cpp.message}${cpp.log ? ` See the "${OUTPUT_CHANNEL_NAME}" output.` : ''}`);
         return { notes, failed: true, warn };
     }
-    const written = cpp.written || { written: [], removed: [], refused: [] };
+    const written = cpp.written || { written: [], removed: [], refused: [], gitignore: undefined };
     const where = cpp.paths ? `${path.basename(path.dirname(cpp.paths.dir))}/${path.basename(cpp.paths.dir)}` : 'CPP_Files';
     if (written.written.length > 0) notes.push(`C++ written to ${where}: ${names(written.written)}.`);
     if (written.refused.length > 0) {
         warn = true;
-        notes.push(`Left alone in ${where} (not written by TC Toolkit, or changed since): ${names(written.refused.map(r => r.path))}. Delete or rename ${written.refused.length === 1 ? 'it' : 'them'} to let the C++ be written.`);
+        const one = written.refused.length === 1;
+        // The toolkit's .gitignore lists only its own files, so these are not ignored by git (cppGenerate gitignoreText).
+        const gi = written.gitignore && ['created', 'updated', 'unchanged'].includes(written.gitignore.status)
+            ? ` ${where}/.gitignore does not list ${one ? 'it' : 'them'}, so git sees ${one ? 'it' : 'them'}.` : '';
+        notes.push(`Left alone in ${where} (not written by TC Toolkit, or changed since): ${names(written.refused.map(r => r.path))}. Delete or rename ${one ? 'it' : 'them'} to let the C++ be written.${gi}`);
     }
     if (written.removed.length > 0) notes.push(`Removed earlier output: ${names(written.removed)}.`);
     const gpp = cpp.gpp;

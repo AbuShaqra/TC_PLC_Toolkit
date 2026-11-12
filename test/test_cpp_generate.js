@@ -224,6 +224,32 @@ const sha = (t) => crypto.createHash('sha256').update(t).digest('hex');
         'GITIGNORE: notes only for created, changed, foreign, not recreated and failed');
         assert(cg.gitignoreText({ files: { 'A[1].cpp': { project: 'p', sha256: '' } } }).includes('/A\\[1].cpp\n'), 'GITIGNORE: glob characters in a name are escaped');
         assert(cg.gitignoreText({ files: {} }) === '', 'GITIGNORE: nothing recorded, nothing to list');
+        // Only the toolkit's own files are listed: a user's <stem>.o there before the first write is not.
+        const foDir = path.join(ROOT, 'gi-userobj', 'CPP_Files');
+        fs.mkdirSync(foDir, { recursive: true });
+        fs.writeFileSync(path.join(foDir, 'A.o'), 'the user\'s object');
+        w = cg.writeOwnedOutputs({ dir: foDir, project: 'A', files: pair('A') });
+        const foText = fs.readFileSync(path.join(foDir, '.gitignore'), 'utf8');
+        assert(w.gitignore.status === 'created' && cg.claimOutput(foDir, 'A.o') === 'foreign' && !/\/A\.o\n/.test(foText) && /\/A\.cpp\n\/A\.hpp\n/.test(foText),
+            `GITIGNORE: a foreign <stem>.o already in the folder is not listed (the toolkit does not claim it) (${JSON.stringify(foText)})`);
+        fs.unlinkSync(path.join(foDir, 'A.o'));
+        w = cg.writeOwnedOutputs({ dir: foDir, project: 'A', files: pair('A') });
+        assert(w.gitignore.status === 'updated' && /\/A\.o\n/.test(fs.readFileSync(path.join(foDir, '.gitignore'), 'utf8')),
+            'GITIGNORE: once that file is gone the name is free again, and the .o g++ will write is listed');
+        // A generated file the user edited is theirs now (ownership 'changed'): it leaves the list, so git sees it.
+        const edDir = path.join(ROOT, 'gi-edited', 'CPP_Files');
+        w = cg.writeOwnedOutputs({ dir: edDir, project: 'E', files: pair('E') });
+        fs.appendFileSync(path.join(edDir, 'E.cpp'), '// mine\n');
+        w = cg.writeOwnedOutputs({ dir: edDir, project: 'E', files: pair('E', 'y') });
+        const edText = fs.readFileSync(path.join(edDir, '.gitignore'), 'utf8');
+        assert(w.refused.length === 1 && w.refused[0].reason === 'changed' && w.gitignore.status === 'updated'
+            && !/\/E\.cpp\n/.test(edText) && /\/E\.hpp\n/.test(edText) && /\/E\.o\n/.test(edText),
+        `GITIGNORE: an edited generated file is refused and no longer listed; the others stay (${JSON.stringify(edText)})`);
+        fs.writeFileSync(path.join(edDir, 'E.o'), 'obj');
+        cg.recordOwnedFile(edDir, 'E', 'E.o');
+        fs.appendFileSync(path.join(edDir, 'E.o'), 'patched');
+        assert(!/\/E\.o\n/.test(cg.gitignoreText(cg.readManifest(edDir).manifest, edDir)) && /\/E\.o\n/.test(cg.gitignoreText(cg.readManifest(edDir).manifest)),
+            'GITIGNORE: a recorded object file changed since is left out too; without the folder every name is listed');
         // A record entry named .gitignore is never taken as a project output (so cleanup never deletes it as one).
         const ngDir = path.join(ROOT, 'gi-entry', 'CPP_Files');
         fs.mkdirSync(ngDir, { recursive: true });

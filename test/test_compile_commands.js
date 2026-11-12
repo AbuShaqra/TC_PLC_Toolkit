@@ -713,6 +713,32 @@ const settle = () => new Promise(r => setTimeout(r, 10));
         r13Result = await run('twincat.compileProject');
         await settle();
         assert(r13Result.cpp.gitignore.status === 'created' && fs.readFileSync(giFile, 'utf8') === giOwned, 'R13 GITIGNORE: a fresh folder gets the toolkit\'s .gitignore again');
+        // It lists only the toolkit's own files: a generated file the user edited is theirs, and leaves the list.
+        fs.appendFileSync(cppFile, '// mine\n');
+        reset();
+        answers.message.push(undefined);
+        r13Result = await run('twincat.compileProject');
+        await settle();
+        assert(r13Result.cpp.refused.length === 1 && r13Result.cpp.refused[0].reason === 'changed' && r13Result.cpp.gitignore.status === 'updated'
+            && fs.readFileSync(giFile, 'utf8') === giOwned.replace('/PLC.cpp\n', '')
+            && /Left alone in PLC\/CPP_Files .*PLC\.cpp.* PLC\/CPP_Files\/\.gitignore does not list it, so git sees it\./.test(lastNote()),
+        `R13 GITIGNORE: an edited PLC.cpp is left alone and dropped from the .gitignore, and the summary says git sees it (${lastNote()})`);
+        // A user's own PLC.o in a fresh folder is not listed (the toolkit does not claim it).
+        fs.rmSync(cppDir, { recursive: true, force: true });
+        fs.mkdirSync(cppDir, { recursive: true });
+        fs.writeFileSync(path.join(cppDir, 'PLC.o'), 'the user\'s object');
+        reset();
+        answers.message.push(undefined);
+        r13Result = await run('twincat.compileProject');
+        await settle();
+        assert(r13Result.cpp.status === 'done' && r13Result.cpp.gitignore.status === 'created' && fs.readFileSync(giFile, 'utf8') === giOwned.replace('/PLC.o\n', '')
+            && fs.readFileSync(path.join(cppDir, 'PLC.o'), 'utf8') === 'the user\'s object',
+        'R13 GITIGNORE: a PLC.o of the user\'s, there before the first run, is neither touched nor listed in the .gitignore');
+        fs.rmSync(cppDir, { recursive: true, force: true });
+        reset();
+        answers.message.push(undefined);
+        await run('twincat.compileProject'); // a fresh folder again, for the steps below
+        await settle();
 
         // A check with errors: nothing is generated; the earlier files stay.
         checkAnswer = () => errorReport(unitLineOf(fs.readFileSync(fbPath, 'utf8'), 'nNope := 5;'));

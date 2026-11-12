@@ -10,7 +10,7 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   merged at `3210d33`, Release run 41671593015 green, VSIX `twincat-plc-toolkit-0.10.1.vsix` attached).
 - **Version history:** 0.10.1 struct EXTENDS from own DUTs (PR #22); 0.10.0 Libraries scoping (PR #18); 0.9.0
   improvement-plan phases; 0.8.x project-aware Generate ST, ResizeObserver fix, solution→project Objects tree.
-- **Last verified:** 2026-11-12 (Linux container, `claude/focused-ptolemy-m6acaz` = R13 round 3 (`CPP_Files/.gitignore`) on top of `dev` +
+- **Last verified:** 2026-11-12 (Linux container, `claude/focused-ptolemy-m6acaz` = R13 round 4 (`.gitignore` lists only owned files) on top of `dev` +
   roadmap) — `REQUIRE_FULL_SUITE=1 npm test` green (**116/116, Coverage: FULL**; optional gates compile-real, cpp-real
   and gpp-real all ran), `npm run typecheck` and `npm run lint` exit 0; Linux dev-host (`TCDEV_CODE=<scratch>/VSCode-linux-x64/code
   TCDEV_CODE_ARGS=--no-sandbox xvfb-run -a node test/devhost/run.js`) 103 pass / 1 fail, the fail being
@@ -69,11 +69,16 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   and the record; owned via the record's top-level `gitignore` key (`{sha256}`, CRLF-insensitive); updated while
   unchanged, left alone when edited, a foreign one never overwritten, and once deleted never recreated (`{removed: true}`);
   each case except updated/unchanged noted in the *TC Toolkit Compile* channel only (no summary text, no warning).
+  It lists ONLY the toolkit's own files (review round 4): a generated file the user edited (`changed`) is dropped
+  (git sees it; the "Left alone" summary note says so), and a user's own `<project>.o` there before the first write
+  (`foreign`) is never listed — `gitignoreText(manifest, dir)` filters by `ownership`.
   (2) Library uses with no usable declaration (LTIME/PVOID/XINT interfaces, opaque/interface types, `VAR` of an
   unresolved type, a library FB's `VAR` read from outside) KEEP blocking generation and g++, each named with its
   library in the summary — **no stand-in types**. Rules: DEVELOPMENT.md R13 "Library symbols" and "`CPP_Files/.gitignore`".
   Tests: `test_cpp_generate.js` GITIGNORE, `test_compile_commands.js` R13 GITIGNORE, `test_cpp_real.js` GIT
-  (`git check-ignore -v` / `git status` on a temp repo over the sample copy; skips without git).
+  (`git check-ignore -v` / `git status` on a temp repo over the sample copy, incl. the edited `.cpp` and the
+  user's `.o`; skips without git). Note: the copy carries `sample/.gitignore` (`*`), so a test folder outside
+  `TcToolkitSample*/` is ignored by that file, not by ours — keep git probes inside the re-admitted tree.
   **Review round 1 fixed** (11 findings, `c00eaee`; gates re-run green: 116/116 FULL, dev-host 103/1 P8):
   owner = `<ProjectGuid>` so a `.plcproj` rename cleans up the old pair and `.o`; case-insensitive record names on
   win32/darwin; CRLF-insensitive hash; the record is saved even when a later write fails; header errors placed on the

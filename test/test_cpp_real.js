@@ -325,6 +325,31 @@ async function libraryScenario(tmp, setup, gppPath) {
                     `GIT: ${name}: git status shows only the .gitignore and the user's file in CPP_Files (${listed.join(', ')})`);
                 fs.unlinkSync(own);
             }
+            // Only the toolkit's own files are ignored: a generated file the user edited is theirs, and git sees it.
+            const relOf = (f) => path.relative(copy, f).split(path.sep).join('/');
+            const ed = generated[0];
+            const cppOriginal = fs.readFileSync(ed.paths.cpp, 'utf8');
+            const regen = () => cg.writeOwnedOutputs({ dir: ed.paths.dir, project: ed.name, files: [
+                { name: path.basename(ed.paths.cpp), text: cppOriginal }, { name: path.basename(ed.paths.hpp), text: fs.readFileSync(ed.paths.hpp, 'utf8') }] });
+            fs.appendFileSync(ed.paths.cpp, '// my own change\n');
+            const we = regen();
+            const edCheck = git(['check-ignore', '--no-index', relOf(ed.paths.cpp)]);
+            const hppCheck = git(['check-ignore', '--no-index', relOf(ed.paths.hpp)]);
+            assert(we.refused.length === 1 && we.refused[0].reason === 'changed' && we.gitignore.status === 'updated' && edCheck.status === 1 && hppCheck.status === 0,
+                `GIT: ${ed.name}: an edited .cpp is left alone and no longer ignored; the .hpp still is (${we.gitignore.status}, ${edCheck.status}/${hppCheck.status})`);
+            fs.writeFileSync(ed.paths.cpp, cppOriginal);
+            const wr = regen();
+            assert(wr.refused.length === 0 && wr.gitignore.status === 'updated' && git(['check-ignore', '--no-index', relOf(ed.paths.cpp)]).status === 0,
+                `GIT: ${ed.name}: with the edit undone the .cpp is the toolkit's again and ignored again (${wr.gitignore.status})`);
+            // A user's own <stem>.o, there before the first write, is not claimed and not ignored.
+            const uoDir = path.join(path.dirname(path.dirname(ed.paths.dir)), 'UserObj_PLC', cg.CPP_FILES_DIR); // under the copy's re-admitted sample tree
+            fs.mkdirSync(uoDir, { recursive: true });
+            fs.writeFileSync(path.join(uoDir, 'U.o'), 'the user\'s object');
+            const wu = cg.writeOwnedOutputs({ dir: uoDir, project: 'U', files: [{ name: 'U.cpp', text: cppOriginal }, { name: 'U.hpp', text: 'h\n' }] });
+            const uoCheck = git(['check-ignore', '--no-index', relOf(path.join(uoDir, 'U.o'))]);
+            const ucCheck = git(['check-ignore', '--no-index', relOf(path.join(uoDir, 'U.cpp'))]);
+            assert(wu.gitignore.status === 'created' && cg.claimOutput(uoDir, 'U.o') === 'foreign' && uoCheck.status === 1 && ucCheck.status === 0,
+                `GIT: a user's U.o already in CPP_Files is not ignored, while the generated U.cpp is (${uoCheck.status}/${ucCheck.status})`);
             // Deleted by the user: the next generation does not bring it back, and git then sees the files.
             const last = generated[generated.length - 1];
             fs.unlinkSync(path.join(last.paths.dir, '.gitignore'));
