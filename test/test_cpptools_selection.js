@@ -91,9 +91,33 @@ const ID = 'a-abushaqra.twincat-plc-toolkit';
         'PROPERTIES: unreadable or without configurations');
 
     // ── providerSelection ─────────────────────────────────────────────────────────────────────────
-    const sel = (settingValue, propertiesText) => providerSelection({ extensionId: ID, settingValue, propertiesText, platform: 'win32' });
+    const sel = (settingValue, propertiesText) => providerSelection({ extensionId: ID, providerName: 'TC Toolkit', settingValue, propertiesText, platform: 'win32' });
     assert(sel(undefined, null).action === 'setting' && sel('', null).action === 'setting', 'SELECTION: no file, no setting → offer the setting');
-    assert(sel(ID, null).action === 'none' && sel(ID.toUpperCase(), null).action === 'none', 'SELECTION: the setting already names TC Toolkit (any case) → nothing');
+    assert(sel(ID, null).action === 'none', 'SELECTION: the setting already names TC Toolkit → nothing');
+    // The C/C++ extension looks provider ids up exactly (providers.has(id), no trim, no case folding).
+    const upper = sel('A-AbuShaqra.twincat-plc-toolkit', null);
+    assert(upper.action === 'setting' && upper.nearMiss === 'A-AbuShaqra.twincat-plc-toolkit',
+        `SELECTION: the setting names the id in another case → not ours, offer the setting, flagged as a near miss (${JSON.stringify(upper)})`);
+    const padded = sel(' ' + ID + ' ', null);
+    assert(padded.action === 'setting' && padded.nearMiss === ' ' + ID + ' ', 'SELECTION: the setting names the id with blanks around it → not ours');
+    const fileUpper = sel(undefined, props([{ name: 'a', configurationProvider: 'A-AbuShaqra.twincat-plc-toolkit' }]));
+    assert(fileUpper.action === 'file' && fileUpper.named === 'A-AbuShaqra.twincat-plc-toolkit' && fileUpper.nearMiss !== undefined,
+        `SELECTION: the file names the id in another case → the file decides, flagged (${JSON.stringify(fileUpper)})`);
+    assert(sel(undefined, props([{ name: 'Win32', configurationProvider: 'TC Toolkit' }])).action === 'none',
+        'SELECTION: the file names the provider by its display name → ours (the C/C++ extension\'s checkId rewrites it to the id)');
+    assert(sel('TC Toolkit', null).action === 'setting', 'SELECTION: the display name in the SETTING is not rewritten by the C/C++ extension → not ours');
+    assert(sel(undefined, props([{ name: 'Win32', configurationProvider: 'tc toolkit' }])).action === 'file', 'SELECTION: the display name matches exactly');
+    // Another configuration (perhaps the active one, picked in the status bar) names another provider:
+    // setting the setting may change nothing, so the file is pointed at instead.
+    const otherCfg = sel(undefined, props([{ name: 'Win32' }, { name: 'Custom', configurationProvider: 'ms-vscode.cmake-tools' }]));
+    assert(otherCfg.action === 'file' && otherCfg.named === 'ms-vscode.cmake-tools' && otherCfg.configuration === 'Custom',
+        `SELECTION: another configuration names another provider → the file, naming that configuration (${JSON.stringify(otherCfg)})`);
+    assert(sel(ID, props([{ name: 'Win32' }, { name: 'Custom', configurationProvider: 'ms-vscode.cmake-tools' }])).action === 'none',
+        'SELECTION: the setting already names TC Toolkit → nothing, whatever other configurations say');
+    assert(sel(undefined, props([{ name: 'Win32' }, { name: 'Custom', configurationProvider: ID }, { name: 'D', configurationProvider: '${default}' }])).action === 'setting',
+        'SELECTION: other configurations naming TC Toolkit or ${default} → the setting is still offered');
+    assert(sel(undefined, props([{ name: 'Win32', configurationProvider: ID }, { name: 'Custom', configurationProvider: 'x.other' }])).action === 'none',
+        'SELECTION: the platform configuration names TC Toolkit → nothing');
     const other = sel('ms-vscode.cmake-tools', null);
     assert(other.action === 'setting' && other.current === 'ms-vscode.cmake-tools', 'SELECTION: the setting names another provider → offer the setting');
     assert(sel(undefined, props([{ name: 'Win32' }])).action === 'setting' && sel(ID, props([{ name: 'Win32' }])).action === 'none',
@@ -114,7 +138,7 @@ const ID = 'a-abushaqra.twincat-plc-toolkit';
     const link = { ready: Promise.resolve(true), connected: () => connected, changed: () => changed.push(1) };
     const provider = { generatedFolderOf: (p) => (/[\\/]CPP_Files[\\/][^\\/]+\.(cpp|hpp)$/.test(p) ? path.dirname(p) : null) };
     const logs = [];
-    const make = () => createProviderPrompt({ extensionId: ID, provider, link, workspaceState, log: (l) => logs.push(l), platform: 'win32',
+    const make = (log = (l) => logs.push(l)) => createProviderPrompt({ extensionId: ID, provider, link, workspaceState, log, platform: 'win32',
         readFile: (f) => (files.has(f) ? files.get(f) : null) });
     const cppA = mkUri(path.join(FOLDER_A.uri.fsPath, 'PLC', 'CPP_Files', 'PLC.cpp'));
     const cppB = mkUri(path.join(FOLDER_B.uri.fsPath, 'PLC', 'CPP_Files', 'PLC.hpp'));
@@ -194,7 +218,36 @@ const ID = 'a-abushaqra.twincat-plc-toolkit';
     answer = 'Use TC Toolkit';
     assert(await prompt.check(cppA) === 'Use TC Toolkit' && updates.length === 1 && updates[0].target === ConfigurationTarget.WorkspaceFolder,
         'PROMPT: a file naming no provider → the setting is offered and set');
-    assert(logs.some(l => /not the configuration provider/.test(l)) && logs.some(l => /set to "a-abushaqra/.test(l)), 'PROMPT: logged to the output channel');
+    assert(logs.some(l => /not the configuration provider/.test(l)) && logs.some(l => /set to "a-abushaqra/.test(l)), 'PROMPT: the check is logged');
+
+    // Another configuration in the file names another provider: the file is pointed at, naming it.
+    files.set(propsA, '{ "configurations": [ { "name": "Win32" }, { "name": "Custom", "configurationProvider": "ms-vscode.cmake-tools" } ] }');
+    folderSetting.delete(FOLDER_A.uri.toString());
+    state.clear();
+    messages.length = 0;
+    updates.length = 0;
+    opened.length = 0;
+    prompt = make();
+    answer = undefined;
+    assert(await prompt.check(cppA) === 'dismissed' && updates.length === 0 && /configuration "Custom" that names "ms-vscode\.cmake-tools"/.test(messages[0].m)
+        && /active configuration/.test(messages[0].m) && JSON.stringify(messages[0].buttons) === JSON.stringify(['Open c_cpp_properties.json', "Don't ask again"]),
+    `PROMPT: another configuration names another provider → the file is offered, the setting is not promised (${JSON.stringify(messages[0])})`);
+    // A near miss is logged; without a log function the check logs to the console.
+    files.delete(propsA);
+    folderSetting.set(FOLDER_A.uri.toString(), ID.toUpperCase());
+    state.clear();
+    messages.length = 0;
+    const consoleLines = [];
+    const realLog = console.log;
+    console.log = (l) => consoleLines.push(String(l));
+    try {
+        prompt = make(null);
+        answer = 'Not now';
+        await prompt.check(cppA);
+    } finally { console.log = realLog; }
+    assert(messages.length === 1 && consoleLines.some(l => /is not exactly "a-abushaqra\.twincat-plc-toolkit"/.test(l)),
+        `PROMPT: a near-miss id is offered the setting and logged (to the console by default) (${JSON.stringify(consoleLines)})`);
+    folderSetting.delete(FOLDER_A.uri.toString());
 
     if (errors > 0) {
         console.error(`\n${errors} C/C++ provider selection assertion(s) failed.`);

@@ -360,15 +360,20 @@ Toolkit asks once per workspace folder: *IntelliSense for the generated C++ need
 configuration provider.* **Use TC Toolkit** sets `C_Cpp.default.configurationProvider` for that folder
 (in its `.vscode/settings.json`); **Not now** asks again in a later session; **Don't ask again** stops it.
 A `c_cpp_properties.json` that names another provider wins over that setting, so TC Toolkit then does not
-touch the file and offers to open it instead.
+touch the file and offers to open it instead — also when only one of its other configurations names another
+provider, because the configuration picked in the C/C++ status bar is the one that counts and TC Toolkit
+cannot see which one that is.
 
 To select it by hand: run **C/C++: Change Configuration Provider…** and pick *TC Toolkit*, or set
 `"C_Cpp.default.configurationProvider": "a-abushaqra.twincat-plc-toolkit"` in the workspace settings —
 or, if the folder has a `.vscode/c_cpp_properties.json`, put `"configurationProvider":
-"a-abushaqra.twincat-plc-toolkit"` into its configuration (the one named `Win32` on Windows). Then run
+"a-abushaqra.twincat-plc-toolkit"` (or `"TC Toolkit"`) into the configuration that is active in the C/C++
+status bar (by default the one named `Win32` on Windows, else the last). The id must match exactly — the
+C/C++ extension finds no provider for a value in another case or with spaces around it. Then run
 **C/C++: Reset IntelliSense Database** if the old errors stay. Each time the C/C++ extension asks TC
-Toolkit for a file, a line is written to the **TC Toolkit C/C++** output channel — no line there means the
-provider is not selected. Without the C/C++ extension nothing changes.
+Toolkit for a file, a line is written to the **TC Toolkit C/C++** output channel (and nothing else is: the
+channel appears only once the C/C++ extension has asked) — no channel or no line there means the provider is
+not selected. Without the C/C++ extension nothing changes.
 
 `CPP_Files` is output, like `ST_Files`: it is shown read-only in the PLC Objects tree and is never read
 back as a source. The extension only ever replaces or deletes files there that **it** wrote and that

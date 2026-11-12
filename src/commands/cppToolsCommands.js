@@ -11,7 +11,7 @@
  * folder (src/cppToolsSelection.js), one message per folder offers to set
  * `C_Cpp.default.configurationProvider` there — or, when `.vscode/c_cpp_properties.json` names another
  * provider (the file wins over the setting), to open that file; nothing else is ever written. The
- * C/C++ extension's requests are logged to the "TC Toolkit C/C++" output channel.
+ * C/C++ extension's requests (and only those) are logged to the "TC Toolkit C/C++" output channel.
  */
 
 'use strict';
@@ -21,7 +21,7 @@ const vscode = require('vscode');
 const { SETTING_GPP_PATH, resolveGpp, thisMachine } = require('../gpp');
 const { CPP_SECTION } = require('../cppSettings');
 const { defaultMsys2RootCache } = require('../msys2Detect');
-const { createCppConfigurationProvider, connectCppTools, CPPTOOLS_EXTENSION_ID } = require('../cppToolsProvider');
+const { createCppConfigurationProvider, connectCppTools, CPPTOOLS_EXTENSION_ID, PROVIDER_NAME } = require('../cppToolsProvider');
 const { CPP_SECTION_NAME, PROVIDER_SETTING_KEY, PROPERTIES_RELATIVE, providerSelection } = require('../cppToolsSelection');
 
 /** The output channel the C/C++ extension's requests are logged to. */
@@ -52,7 +52,7 @@ async function getApi() {
  * @param {{extensionId: string, provider: {generatedFolderOf: (fsPath: string) => (string|null)},
  *   link: {changed: () => void, connected: () => boolean, ready: Promise<boolean>},
  *   workspaceState: {get: (key: string) => any, update: (key: string, value: any) => Thenable<void>},
- *   log: (line: string) => void, platform?: string, readFile?: (file: string) => (string|null)}} o
+ *   log?: (line: string) => void, platform?: string, readFile?: (file: string) => (string|null)}} o
  * @returns {{check: (uri: any) => Promise<string>}} `check` resolves to what happened (for the tests):
  *   `skip`, `asked-before`, `none`, or the button chosen (`dismissed` when none).
  */
@@ -61,6 +61,7 @@ function createProviderPrompt(o) {
     const readFile = o.readFile || ((/** @type {string} */ file) => {
         try { return require('fs').readFileSync(file, 'utf8'); } catch (e) { return null; }
     });
+    const log = o.log || ((/** @type {string} */ line) => console.log(`TC Toolkit: ${line}`));
     /** Folders asked in this session (also while a message is still open). */
     const asked = new Set();
 
@@ -79,18 +80,23 @@ function createProviderPrompt(o) {
             const propsPath = path.join(folder.uri.fsPath, ...PROPERTIES_RELATIVE);
             const settings = vscode.workspace.getConfiguration(CPP_SECTION_NAME, folder.uri);
             const decision = providerSelection({
-                extensionId: o.extensionId, platform,
+                extensionId: o.extensionId, providerName: PROVIDER_NAME, platform,
                 settingValue: settings.get(PROVIDER_SETTING_KEY),
                 propertiesText: readFile(propsPath)
             });
             if (decision.action === 'none') return 'none';
             asked.add(key);
-            o.log(`${folder.name}: TC Toolkit is not the configuration provider (${decision.action === 'file'
-                ? `c_cpp_properties.json names ${decision.named ? `"${decision.named}"` : 'no provider, or cannot be read'}`
+            log(`${folder.name}: TC Toolkit is not the configuration provider (${decision.action === 'file'
+                ? `c_cpp_properties.json${decision.configuration !== undefined ? ` configuration "${decision.configuration}"` : ''} names ${decision.named ? `"${decision.named}"` : 'no provider, or cannot be read'}`
                 : `C_Cpp.default.configurationProvider is ${decision.current ? `"${decision.current}"` : 'not set'}`})`);
+            if (decision.nearMiss !== undefined) {
+                log(`${folder.name}: "${decision.nearMiss}" is not exactly "${o.extensionId}" — the C/C++ extension matches provider ids exactly`);
+            }
             if (decision.action === 'file') {
                 const what = decision.named ? `names "${decision.named}"` : 'names no provider (or cannot be read)';
-                const why = ` .vscode/c_cpp_properties.json in "${folder.name}" ${what}, and that file wins over the settings: set "configurationProvider": "${o.extensionId}" in it.`;
+                const why = decision.configuration !== undefined
+                    ? ` .vscode/c_cpp_properties.json in "${folder.name}" has a configuration "${decision.configuration}" that ${what}; when it is the active configuration (C/C++ status bar), that file wins over the settings: set "configurationProvider": "${o.extensionId}" in it.`
+                    : ` .vscode/c_cpp_properties.json in "${folder.name}" ${what}, and that file wins over the settings: set "configurationProvider": "${o.extensionId}" in it.`;
                 const choice = await vscode.window.showInformationMessage(SELECT_MESSAGE + why, OPEN_FILE_BUTTON, NEVER_BUTTON);
                 if (choice === OPEN_FILE_BUTTON) {
                     await o.workspaceState.update(key, 'opened');
@@ -112,7 +118,7 @@ function createProviderPrompt(o) {
                     return 'failed';
                 }
                 await o.workspaceState.update(key, 'selected');
-                o.log(`${folder.name}: C_Cpp.default.configurationProvider set to "${o.extensionId}" (workspace folder)`);
+                log(`${folder.name}: C_Cpp.default.configurationProvider set to "${o.extensionId}" (workspace folder)`);
                 o.link.changed();
             } else if (choice === NEVER_BUTTON) {
                 await o.workspaceState.update(key, 'never');
@@ -179,7 +185,9 @@ function registerCppToolsProvider(context, deps) {
     // A first generation creates a CPP_Files folder the browse configuration does not list yet. Made
     // whether or not the C/C++ extension is there now: it may be installed later, and `changed` does
     // nothing while it is not connected.
-    const prompt = createProviderPrompt({ extensionId, provider, link, workspaceState: context.workspaceState, log });
+    // The selection check logs to the console, not the output channel: the channel records only what
+    // the C/C++ extension asked, so an empty channel means the provider is not selected.
+    const prompt = createProviderPrompt({ extensionId, provider, link, workspaceState: context.workspaceState });
     if (vscode.workspace.createFileSystemWatcher) {
         const watcher = vscode.workspace.createFileSystemWatcher('**/CPP_Files/*.{cpp,hpp}', false, false, true);
         context.subscriptions.push(watcher, watcher.onDidCreate((uri) => { link.changed(); prompt.check(uri); }));

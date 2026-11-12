@@ -190,7 +190,7 @@ const uri = (fsPath) => ({ fsPath, scheme: 'file' });
     settings['tcToolkit.compiler.gppPath'] = fakeGpp;
     api = fakeApi();
     installedCpptools = { id: CPPTOOLS_EXTENSION_ID };
-    const context = { subscriptions: [], extensionPath: '/ext', extension: { id: 'a-abushaqra.twincat-plc-toolkit' } };
+    const context = { subscriptions: [], extensionPath: '/ext', extension: { id: 'a-abushaqra.twincat-plc-toolkit' }, workspaceState: { get: () => undefined, update: async () => {} } };
     const projectMap = { projects: new Map([['k', { dir: PROJ }]]) };
     configListeners.length = 0;
     const wired = registerCppToolsProvider(context, { getProjectMap: () => projectMap, getApi: async () => api });
@@ -203,6 +203,16 @@ const uri = (fsPath) => ({ fsPath, scheme: 'file' });
     assert(eq(api.calls.slice(registered), [['changed', 'TC Toolkit'], ['browseChanged', 'TC Toolkit']]), 'WIRING: a g++ path change tells the C/C++ extension');
     assert(writes.length === 0 && shown.length === 0 && channels.length === 0, 'WIRING: nothing is written, nothing is shown, no output channel yet');
     const hpp = uri(path.join(PROJ, 'CPP_Files', 'PLC.hpp'));
+    // The selection check (src/cppToolsSelection.js) runs and asks, but writes nothing to the channel:
+    // the channel records only what the C/C++ extension asked.
+    vscodeStub.workspace.getWorkspaceFolder = () => ({ name: 'ROOT', uri: { fsPath: ROOT, toString: () => 'file:///root' } });
+    const quiet = console.log;
+    console.log = () => {};
+    let checked;
+    try { checked = await wired.check(hpp); } finally { console.log = quiet; delete vscodeStub.workspace.getWorkspaceFolder; }
+    assert(checked === 'dismissed' && shown.length === 1 && channels.length === 0,
+        `WIRING: the selection check asks, but creates no output channel (${checked}, ${channels.length})`);
+    shown.length = 0;
     let cfg = (await api.provider.provideConfigurations([hpp]))[0].configuration;
     assert(cfg.compilerPath === fakeGpp && /gcc/.test(cfg.intelliSenseMode), 'WIRING: a g++ 13 is handed over as the compiler');
     assert(channels.length === 1 && channels[0].name === 'TC Toolkit C/C++' && channels[0].lines.some(l => /provideConfigurations .*PLC\.hpp -> 1 item/.test(l)),
