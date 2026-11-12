@@ -15,6 +15,7 @@
 'use strict';
 
 const childProcess = require('child_process');
+const fs = require('fs');
 const path = require('path');
 const { runChild } = require('./compileCheck');
 
@@ -103,6 +104,15 @@ function detectGpp(o) {
 }
 
 /**
+ * A value of the g++ path setting as it is checked: surrounding spaces and quotes dropped.
+ * @param {unknown} value
+ * @returns {string} '' when not set.
+ */
+function normalizeGppSetting(value) {
+    return typeof value === 'string' ? value.trim().replace(/^"(.*)"$/, '$1').trim() : '';
+}
+
+/**
  * Checks a value of the g++ path setting — the one check both the build and "Detect g++" use.
  * Surrounding quotes (Explorer's "Copy as path") and spaces are dropped. A bare command name
  * (`g++`, `x86_64-w64-mingw32-g++`) is looked up on `PATH`; a folder is accepted when it holds g++.
@@ -114,7 +124,7 @@ function detectGpp(o) {
  *   folder with no g++ in it.
  */
 function checkConfiguredGpp(value, o) {
-    const configured = typeof value === 'string' ? value.trim().replace(/^"(.*)"$/, '$1').trim() : '';
+    const configured = normalizeGppSetting(value);
     if (!configured) return { ok: false, reason: 'empty', configured: '' };
     const win = o.platform === 'win32';
     const p = win ? path.win32 : path.posix;
@@ -165,6 +175,40 @@ function resolveGpp(o) {
     if (checked.reason !== 'empty') return { ok: false, reason: 'setting-missing', configured: checked.configured, problem: checked.reason };
     const hit = detectGpp(o);
     return hit ? { ok: true, path: hit.path, source: hit.source } : { ok: false, reason: 'not-found', configured: '' };
+}
+
+/**
+ * What the start page shows for the g++ path setting. Reads only: detection here never writes the
+ * setting (that is `twincat.detectGpp`), and a set value is checked exactly as a build checks it.
+ * @param {unknown} value The `tcToolkit.compiler.gppPath` setting.
+ * @param {{platform: string, env: Record<string, string|undefined>, exists: (p: string) => boolean,
+ *   isDir?: (p: string) => boolean}} o
+ * @returns {{state: 'set'|'invalid'|'detected'|'notFound', configured: string, path: string,
+ *   source?: 'path'|'default', problem?: 'not-on-path'|'missing'|'folder'}}
+ *   `set`: the value works (`path`: the g++ it runs, which differs for a bare name or a folder);
+ *   `invalid`: set but unusable (`problem`); `detected`: empty, and a build would use `path`
+ *   (found on `PATH` or in a usual install folder: `source`); `notFound`: empty, and nothing found.
+ */
+function describeGppSetting(value, o) {
+    const checked = checkConfiguredGpp(value, o);
+    if (checked.ok === true) return { state: 'set', configured: normalizeGppSetting(value), path: checked.path };
+    if (checked.reason !== 'empty') {
+        return { state: 'invalid', configured: checked.configured, path: '', problem: /** @type {'not-on-path'|'missing'|'folder'} */ (checked.reason) };
+    }
+    const hit = detectGpp(o);
+    return hit ? { state: 'detected', configured: '', path: hit.path, source: hit.source } : { state: 'notFound', configured: '', path: '' };
+}
+
+/**
+ * The real platform, environment and file checks, as the functions above take them.
+ * @returns {{platform: string, env: Record<string, string|undefined>, exists: (p: string) => boolean, isDir: (p: string) => boolean}}
+ */
+function thisMachine() {
+    return {
+        platform: process.platform, env: process.env,
+        exists: (/** @type {string} */ p) => { try { return fs.statSync(p).isFile(); } catch (e) { return false; } },
+        isDir: (/** @type {string} */ p) => { try { return fs.statSync(p).isDirectory(); } catch (e) { return false; } }
+    };
 }
 
 /**
@@ -385,5 +429,6 @@ function summarizeGpp(r) {
 module.exports = {
     SETTING_GPP_PATH, DEFAULT_GPP_TIMEOUT_MS, GPP_FLAGS,
     windowsGppLocations, gppCandidates, detectGpp, checkConfiguredGpp, describeGppProblem, resolveGpp,
+    normalizeGppSetting, describeGppSetting, thisMachine,
     buildGppArgs, parseGppOutput, placeGppMessages, runGpp, summarizeGpp
 };

@@ -45,7 +45,10 @@ page in an editor tab with:
 - **Project actions** — *Generate ST*, *Update Library Definitions* and *Compile project* (see
   [Compile project](#compile-project)).
 - **Help and links**, and **Settings** — which also shows where the XAE Shell of each TwinCAT version
-  was found (see [Settings](#settings)), with *Change…* and *Detect again*.
+  was found (see [Settings](#settings)), with *Change…* and *Detect again*, and the same for **g++**
+  (optional, used only by *Build with g++*): the path set in `tcToolkit.compiler.gppPath`, or — while it
+  is empty — the g++ a build would use, or *not found*; a set path that does not work is marked with a
+  warning. Its *Change…* opens the setting in your User settings; *Detect again* runs *Detect g++*.
 
 Every one of these is also a Command Palette command under **TC Toolkit:** (*TC Toolkit: Create New
 Project…*, *TC Toolkit: Open Start Page*, *TC Toolkit: Generate ST*, …). The page works offline and follows
@@ -329,6 +332,7 @@ with the small arrow next to the **Compile** button (in the editor's toolbar, or
 example MSYS2's `ucrt64`/`mingw64` or a WinLibs/w64devkit build). It is found by itself: `g++` on your
 `PATH`, then on Windows the usual install folders (MSYS2, `C:\MinGW`, WinLibs, w64devkit, Chocolatey's
 mingw). Set `tcToolkit.compiler.gppPath` to use another one; **TC Toolkit: Detect g++** looks again.
+The start page's Settings card shows which g++ that is.
 If *Build with g++* is on and no g++ is found, the C++ is still written and the summary offers the
 setting (and, while the setting is empty, *Detect g++*). The setting may name `g++.exe` itself, its
 folder, or a command on your `PATH`; a path pasted with quotes is fine. The compiler's C++ runtime headers that the build needs ship with the extension.

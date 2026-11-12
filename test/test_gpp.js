@@ -71,6 +71,25 @@ const existsIn = (list) => (p) => list.some(x => x.toLowerCase() === p.toLowerCa
     assert(eq(g.resolveGpp({ configured: undefined, platform: 'linux', env: { PATH: '/usr/bin' }, exists: () => false }), { ok: false, reason: 'not-found', configured: '' }),
         'SETTING: empty and nothing detected → not-found');
 
+    // ── What the start page shows (describeGppSetting): never writes, same check as the build ─────
+    const d = (v, more) => g.describeGppSetting(v, Object.assign({ platform: 'win32', env: winEnv, exists, isDir }, more));
+    assert(eq(d(' "D:\\gcc\\bin\\g++.exe" '), { state: 'set', configured: 'D:\\gcc\\bin\\g++.exe', path: 'D:\\gcc\\bin\\g++.exe' }),
+        'START: a set, existing path is shown as set (quotes dropped)');
+    assert(eq(d('x86_64-w64-mingw32-g++'), { state: 'set', configured: 'x86_64-w64-mingw32-g++', path: 'C:\\Tools\\bin\\x86_64-w64-mingw32-g++.exe' }),
+        'START: a bare name is shown as set, with the g++ it runs');
+    assert(eq(d('D:\\nope\\g++.exe'), { state: 'invalid', configured: 'D:\\nope\\g++.exe', path: '', problem: 'missing' })
+        && eq(d('D:\\empty'), { state: 'invalid', configured: 'D:\\empty', path: '', problem: 'folder' })
+        && eq(d('nope-g++'), { state: 'invalid', configured: 'nope-g++', path: '', problem: 'not-on-path' }),
+    'START: an unusable set value is invalid with checkConfiguredGpp\'s reason, and is NOT replaced by detection');
+    assert(eq(d(''), { state: 'detected', configured: '', path: 'C:\\msys64\\ucrt64\\bin\\g++.exe', source: 'default' })
+        && eq(d(undefined, { exists: existsIn(['C:\\Tools\\bin\\g++.exe']) }), { state: 'detected', configured: '', path: 'C:\\Tools\\bin\\g++.exe', source: 'path' }),
+    'START: empty → what detection would use, and where it was found');
+    assert(eq(d('', { platform: 'linux', env: { PATH: '/usr/bin' }, exists: () => false }), { state: 'notFound', configured: '', path: '' }),
+        'START: empty and nothing found → notFound');
+    const real = g.thisMachine();
+    assert(real.platform === process.platform && real.exists(__filename) === true && real.exists(__dirname) === false && real.isDir(__dirname) === true
+        && real.exists(path.join(__dirname, 'no-such-file')) === false, 'MACHINE: thisMachine checks files and folders on disk');
+
     // ── Command line ──────────────────────────────────────────────────────────────────────────
     const args = g.buildGppArgs({ cppFile: '/p/CPP_Files/P.cpp', objFile: '/p/CPP_Files/P.o', includeDir: '/ext/resources/compiler/include', outDir: '/p/CPP_Files' });
     assert(eq(args, ['-std=c++14', '-fno-strict-aliasing', '-Wno-c++17-extensions', '-fdiagnostics-color=never', '-fmessage-length=0',

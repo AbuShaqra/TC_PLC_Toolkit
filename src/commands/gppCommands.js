@@ -11,8 +11,7 @@
 'use strict';
 
 const vscode = require('vscode');
-const fs = require('fs');
-const { SETTING_GPP_PATH, detectGpp, checkConfiguredGpp, describeGppProblem } = require('../gpp');
+const { SETTING_GPP_PATH, detectGpp, checkConfiguredGpp, describeGppProblem, thisMachine } = require('../gpp');
 const { CPP_SECTION } = require('../cppSettings');
 
 /** The key of the path setting inside its section. */
@@ -27,14 +26,8 @@ const GPP_PATH_KEY = 'gppPath';
  * @property {string} [problem] For a `missing` value: why (src/gpp.js checkConfiguredGpp).
  */
 
-/** The real platform, environment and file checks, as src/gpp.js takes them. */
-function machine() {
-    return {
-        platform: process.platform, env: process.env,
-        exists: (/** @type {string} */ p) => { try { return fs.statSync(p).isFile(); } catch (e) { return false; } },
-        isDir: (/** @type {string} */ p) => { try { return fs.statSync(p).isDirectory(); } catch (e) { return false; } }
-    };
-}
+/** The real platform, environment and file checks (src/gpp.js thisMachine). */
+const machine = thisMachine;
 
 /**
  * Detection with the real platform, environment and file system.

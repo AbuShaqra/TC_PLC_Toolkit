@@ -9,7 +9,7 @@
  *                        openRecent {slnPath} · removeRecent {slnPath} · command {command} · link {id} ·
  *                        openSettings {section} · setCompileOption {key, value}
  * Messages from the host: state {location, sep, recents, recentsShown, hasProject, compilerReady, compileOptions,
- *                         xaeShells} ·
+ *                         xaeShells, gpp} ·
  *                         location {location} · createResult {ok, error?}
  */
 
@@ -96,6 +96,7 @@
     }
 
     $('xae-change').addEventListener('click', () => vscode.postMessage({ type: 'openSettings', section: 'xaeShell' }));
+    $('gpp-change').addEventListener('click', () => vscode.postMessage({ type: 'openSettings', section: 'gpp' }));
 
     /** The last recent list and row limit the host sent; kept so the toggle can re-render without it. */
     let lastRecents = [];
@@ -193,6 +194,55 @@
         }
     }
 
+    /** Why a set g++ path cannot be used (src/gpp.js checkConfiguredGpp's reasons). */
+    const GPP_PROBLEMS = {
+        missing: 'This file does not exist.',
+        'not-on-path': 'No such command on PATH.',
+        folder: 'This folder has no g++ in it.'
+    };
+
+    /**
+     * Renders the g++ path setting like an XAE Shell row: the configured path; when it is empty, the
+     * g++ a build would use (detected, not written) or "not found"; a warning when a set value is unusable.
+     * @param {{state: string, configured: string, path: string, source?: string, problem?: string}|undefined} g
+     */
+    function renderGpp(g) {
+        const list = $('gpp-list');
+        list.textContent = '';
+        if (!g || typeof g.state !== 'string') return;
+        const li = document.createElement('li');
+        const invalid = g.state === 'invalid';
+        const unset = g.state === 'notFound';
+        li.className = 'xae-row' + (invalid ? ' missing' : '') + (unset ? ' unset' : '') + (g.state === 'detected' ? ' detected' : '');
+        li.setAttribute('data-gpp', g.state);
+        const label = document.createElement('span');
+        label.className = 'xae-version';
+        label.textContent = 'g++:';
+        const where = document.createElement('span');
+        where.className = 'xae-path';
+        where.textContent = g.state === 'detected' ? g.path : (g.configured || 'not found');
+        li.append(label, where);
+        let note = '';
+        if (g.state === 'detected') {
+            note = 'Not set: a build uses this one, found ' + (g.source === 'default' ? 'in a usual install folder.' : 'on PATH.');
+        } else if (g.state === 'set' && g.path && g.path !== g.configured) {
+            note = 'Runs ' + g.path;
+        }
+        if (note) {
+            const n = document.createElement('span');
+            n.className = 'xae-note';
+            n.textContent = note;
+            li.append(n);
+        }
+        if (invalid) {
+            const warning = document.createElement('span');
+            warning.className = 'xae-warning';
+            warning.textContent = GPP_PROBLEMS[g.problem] || GPP_PROBLEMS.missing;
+            li.append(warning);
+        }
+        list.append(li);
+    }
+
     /**
      * The Compile project tile. The compiler ships with the extension, so it is an ordinary project
      * action; only a compiler setting that names a missing file disables it, and the tile says so.
@@ -269,6 +319,7 @@
                 if (typeof msg.recentsShown === 'number' && msg.recentsShown >= 1) recentsShown = Math.floor(msg.recentsShown);
                 renderRecents();
                 renderXaeShells(Array.isArray(msg.xaeShells) ? msg.xaeShells : []);
+                renderGpp(msg.gpp);
                 $('no-project').hidden = !!msg.hasProject;
                 for (const b of document.querySelectorAll('[data-needs-project]')) b.disabled = !msg.hasProject;
                 renderCompileTile(!!msg.compilerReady, !!msg.hasProject);

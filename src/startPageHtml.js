@@ -9,7 +9,7 @@
  * fonts come from VS Code's theme variables in media/startPage.css, so it follows the user's theme.
  *
  * Dynamic content (the default location, recent solutions, whether a project is open, whether a
- * compiler is configured, the Compile dropdown's two switches, the XAE Shell paths) is not rendered
+ * compiler is configured, the Compile dropdown's two switches, the XAE Shell and g++ paths) is not rendered
  * here: media/startPage.js asks the host for it with a `ready` message, so a refresh never rebuilds
  * the page and loses what the user typed.
  */
@@ -159,13 +159,20 @@ function renderStartPageHtml(o) {
             <section class="card" id="settings" aria-labelledby="settings-title">
                 <h2 id="settings-title"><span class="badge">${icon('settings')}</span>Settings</h2>
                 <button type="button" class="tile" data-command="twincat.openSettings">` +
-        `<span class="action-text"><span class="action-label">Open Settings</span><span class="action-detail">Diagnostics, library definitions and the XAE shell</span></span>` +
+        `<span class="action-text"><span class="action-label">Open Settings</span><span class="action-detail">Diagnostics, library definitions, the XAE shell and g++</span></span>` +
         `${icon('chevron', 'icon chevron')}</button>
                 <h3 id="xae-title">XAE Shell</h3>
                 <ul id="xae-list" class="xae-paths" aria-labelledby="xae-title"></ul>
                 <div class="row wrap">
                     <button type="button" id="xae-change" class="secondary">Change…</button>
                     <button type="button" class="secondary" data-command="twincat.detectXaeShell">Detect again</button>
+                </div>
+                <h3 id="gpp-title">g++</h3>
+                <p id="gpp-hint" class="hint">Optional: used only by Build with g++ in the Compile options.</p>
+                <ul id="gpp-list" class="xae-paths" aria-labelledby="gpp-title" aria-describedby="gpp-hint"></ul>
+                <div class="row wrap">
+                    <button type="button" id="gpp-change" class="secondary" aria-describedby="gpp-title">Change…</button>
+                    <button type="button" class="secondary" data-command="twincat.detectGpp" aria-describedby="gpp-title">Detect again</button>
                 </div>
             </section>
         </div>

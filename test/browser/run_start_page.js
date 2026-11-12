@@ -5,7 +5,8 @@
  * intact, and checks that it loads nothing remote, validates the project name as the user types,
  * posts the right message for every control, shows results the host sends back, limits the recent
  * list to the configured number of rows behind a keyboard-operable "Show all (K)" / "Show fewer" tile,
- * shows the XAE Shell paths (with a warning for a path that is not on disk), enables Compile project
+ * shows the XAE Shell paths (with a warning for a path that is not on disk) and the g++ path (R13: set,
+ * detected, not found, or unusable with the same warning; Change… and Detect again, keyboard-operable), enables Compile project
  * only while the compiler file exists (by default the bundled one) and a project is open, shows and
  * posts the Compile dropdown's two C++ switches (R13, keyboard-operable), and has no horizontal
  * scroll at 360 px.
@@ -340,8 +341,79 @@ const { TEMPLATE_VERSIONS } = require(path.join(REPO, 'src', 'projectTemplate.js
         msgs = await posted();
         assert(msgs.length === 2 && msgs[0].type === 'openSettings' && msgs[0].section === 'xaeShell' && msgs[1].type === 'command' && msgs[1].command === 'twincat.detectXaeShell',
             `Change… posts openSettings {section: xaeShell}; Detect again posts the detect command (${JSON.stringify(msgs)})`);
+
+        // ── Settings card: the g++ path (R13), shown like an XAE Shell row ─────────────────────────
+        const gppRow = () => page.$eval('#gpp-list li', el => ({ text: el.textContent, cls: el.className, state: el.getAttribute('data-gpp'),
+            note: (el.querySelector('.xae-note') || {}).textContent || null, warning: (el.querySelector('.xae-warning') || {}).textContent || null }));
+        const MSYS = 'C:\\msys64\\ucrt64\\bin\\g++.exe';
+        const gppCases = [
+            [{ state: 'set', configured: MSYS, path: MSYS },
+                (r) => r.text === 'g++:' + MSYS && !/missing|unset|detected/.test(r.cls) && !r.note && !r.warning, 'a set, working path: "g++: <path>", no note, no warning'],
+            [{ state: 'set', configured: 'g++', path: MSYS },
+                (r) => r.text.startsWith('g++:g++') && r.note === 'Runs ' + MSYS && !r.warning, 'a bare command name: shown as set, with the g++ it runs'],
+            [{ state: 'detected', configured: '', path: MSYS, source: 'default' },
+                (r) => /detected/.test(r.cls) && r.text.startsWith('g++:' + MSYS) && r.note === 'Not set: a build uses this one, found in a usual install folder.' && !r.warning,
+                'empty, detected in an install folder: the g++ a build would use, marked as not set'],
+            [{ state: 'detected', configured: '', path: '/usr/bin/g++', source: 'path' },
+                (r) => r.note === 'Not set: a build uses this one, found on PATH.', 'empty, detected on PATH: says so'],
+            [{ state: 'notFound', configured: '', path: '' },
+                (r) => r.text === 'g++:not found' && /unset/.test(r.cls) && !/missing/.test(r.cls), 'empty and nothing detected: "g++: not found"'],
+            [{ state: 'invalid', configured: 'D:\\Old\\g++.exe', path: '', problem: 'missing' },
+                (r) => /missing/.test(r.cls) && r.text.includes('D:\\Old\\g++.exe') && r.warning === 'This file does not exist.', 'a set path that is not on disk: the XAE warning'],
+            [{ state: 'invalid', configured: 'mingw-g++', path: '', problem: 'not-on-path' },
+                (r) => /missing/.test(r.cls) && r.warning === 'No such command on PATH.', 'a bare name PATH does not have: its own warning'],
+            [{ state: 'invalid', configured: 'D:\\Tools', path: '', problem: 'folder' },
+                (r) => /missing/.test(r.cls) && r.warning === 'This folder has no g++ in it.', 'a folder without g++: its own warning']
+        ];
+        for (const [gpp, ok, label] of gppCases) {
+            await send(stateWith({ gpp }));
+            const r = await gppRow();
+            assert(r.state === gpp.state && ok(r), `g++ row, ${label} (${JSON.stringify(r)})`);
+        }
+        assert(await page.$eval('#gpp-title', el => getComputedStyle(el).textTransform) === 'none', 'the g++ heading keeps the command name lower-case');
+        assert(/Optional/.test(await text('#gpp-hint')) && /Build with g\+\+/.test(await text('#gpp-hint')), `the g++ section says it is optional, for Build with g++ only (${await text('#gpp-hint')})`);
+        const gppThemed = await page.evaluate(() => [document.querySelector('#xae-list li:not(.missing)'), document.querySelector('#gpp-list li')]
+            .map(el => getComputedStyle(el).borderTopColor));
+        assert(gppThemed[1] === 'rgb(184, 149, 0)' && gppThemed[0] !== gppThemed[1], `an unusable g++ path is styled as the XAE warning row (${gppThemed.join(' vs ')})`);
+        const sameRow = await page.evaluate(() => {
+            const pick = (el) => { const c = getComputedStyle(el); return [c.display, c.padding, c.borderRadius, c.borderTopWidth].join('|'); };
+            return [pick(document.querySelector('#xae-list li')), pick(document.querySelector('#gpp-list li'))];
+        });
+        assert(sameRow[0] === sameRow[1], `the g++ row is drawn like an XAE row (${sameRow[1]})`);
+        await clearPosted();
+        await page.click('#gpp-change');
+        await page.click('#settings [data-command="twincat.detectGpp"]');
+        msgs = await posted();
+        assert(msgs.length === 2 && msgs[0].type === 'openSettings' && msgs[0].section === 'gpp' && msgs[1].type === 'command' && msgs[1].command === 'twincat.detectGpp',
+            `g++ Change… posts openSettings {section: gpp}; Detect again posts twincat.detectGpp (${JSON.stringify(msgs)})`);
+        // Keyboard: Tab from the XAE Detect again reaches the g++ Change…, then its Detect again; Enter and Space activate them.
+        await clearPosted();
+        await page.focus('#settings [data-command="twincat.detectXaeShell"]');
+        await page.keyboard.press('Tab');
+        assert(await page.evaluate(() => document.activeElement && document.activeElement.id === 'gpp-change'), 'Tab from the XAE buttons reaches the g++ Change…');
+        await page.keyboard.press('Enter');
+        await page.keyboard.press('Tab');
+        assert(await page.evaluate(() => document.activeElement && document.activeElement.getAttribute('data-command') === 'twincat.detectGpp'), 'then the g++ Detect again');
+        await page.keyboard.press('Space');
+        msgs = await posted();
+        assert(msgs.length === 2 && msgs[0].section === 'gpp' && msgs[1].command === 'twincat.detectGpp', `both work from the keyboard (${JSON.stringify(msgs)})`);
+        const gppDescribed = await page.evaluate(() => [document.getElementById('gpp-change'), document.querySelector('[data-command="twincat.detectGpp"]')]
+            .map(el => el.getAttribute('aria-describedby')));
+        assert(gppDescribed.every(d => d === 'gpp-title'), 'the g++ buttons are described by the g++ heading (the two Change… buttons are told apart)');
+        if (process.env.HARNESS_SETTINGS_SHOT) {
+            await send(stateWith({ gpp: { state: 'detected', configured: '', path: MSYS, source: 'default' } }));
+            await page.mouse.move(0, 0);
+            await page.waitForTimeout(300);
+            await (await page.$('#settings')).screenshot({ path: process.env.HARNESS_SETTINGS_SHOT });
+            await send(stateWith({ gpp: { state: 'invalid', configured: 'D:\\Old\\g++.exe', path: '', problem: 'missing' } }));
+            await page.waitForTimeout(100);
+            await (await page.$('#settings')).screenshot({ path: process.env.HARNESS_SETTINGS_SHOT.replace(/\.png$/, '-invalid.png') });
+            console.log('start page settings screenshots written to ' + process.env.HARNESS_SETTINGS_SHOT);
+        }
+
         await send({ type: 'state', location: 'C:\\Projects', sep: '\\', hasProject: true, recents: [] });
         assert((await page.$$('#xae-list li')).length === 0 && await visible('#recent-empty'), 'a state without XAE paths renders no rows and breaks nothing');
+        assert((await page.$$('#gpp-list li')).length === 0, 'a state without the g++ path renders no g++ row');
         // Leave long content in place for the width checks below: an expanded list and a long, missing path.
         await send(stateWith({
             recents: eight.concat([{ slnPath: 'D:\\Very\\Long\\Path\\That\\Keeps\\Going\\And\\Going\\For\\A\\While\\Plant_42\\Plant_42.sln', name: 'Plant_42' }]),

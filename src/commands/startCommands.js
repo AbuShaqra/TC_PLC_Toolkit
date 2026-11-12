@@ -18,6 +18,7 @@ const { TEMPLATE_VERSIONS, validateProjectName, checkTarget, createProject, temp
 const { createRecentStore } = require('../recentProjects');
 const { findSolutionFiles, solutionReferences } = require('../solutionMap');
 const { StartPageController, START_PAGE_VIEW_TYPE, LAST_LOCATION_KEY } = require('../startPage');
+const { SETTING_GPP_PATH } = require('../gpp');
 
 /** Public pages the help links open. The repository's releases and issues; the roadmap page. */
 const LINKS = Object.freeze({
@@ -55,15 +56,16 @@ function isTwinCatSolution(slnPath) {
  * @param {() => {generateCpp: boolean, buildWithGpp: boolean}} [deps.compileOptions] The Compile
  *   dropdown's two switches (src/commands/compileCommands.js).
  * @param {(key: string, value: boolean) => Promise<boolean>} [deps.setCompileOption] Writes one of them.
+ * @param {() => any} [deps.gppMachine] How the start page checks and detects g++ (tests only; the real machine by default).
  * @returns {{startPage: InstanceType<typeof StartPageController>, recordOpenSolutions: () => void}}
  */
-function registerStartCommands(context, { provider, getProjectMap, getSolutionMap, isCompilerAvailable, compileOptions, setCompileOption }) {
+function registerStartCommands(context, { provider, getProjectMap, getSolutionMap, isCompilerAvailable, compileOptions, setCompileOption, gppMachine }) {
     const recents = createRecentStore(context.globalState, (p) => fs.existsSync(p));
     const startPage = new StartPageController(context, {
         recents,
         hasProject: () => { const m = getProjectMap(); return !!(m && m.projects && m.projects.size > 0); },
         compilerReady: () => !!(isCompilerAvailable && isCompilerAvailable()),
-        compileOptions, setCompileOption
+        compileOptions, setCompileOption, gppMachine
     });
     const templatesRoot = path.join(context.extensionPath, 'resources', 'templates');
 
@@ -250,9 +252,13 @@ function registerStartCommands(context, { provider, getProjectMap, getSolutionMa
 
         // `query` narrows the Settings UI to one of the extension's own sections (the start page's
         // "Change…" passes `tcToolkit.xaeShell`); anything else opens all of the extension's settings.
-        vscode.commands.registerCommand('twincat.openSettings', (query) =>
-            vscode.commands.executeCommand('workbench.action.openSettings',
-                typeof query === 'string' && /^tcToolkit\.[A-Za-z0-9.]+$/.test(query) ? query : `@ext:${context.extension.id}`)),
+        // `{target: 'user'}` opens the User settings, where a machine-scoped setting is shown.
+        vscode.commands.registerCommand('twincat.openSettings', (query, options) => {
+            const q = typeof query === 'string' && /^tcToolkit\.[A-Za-z0-9.]+$/.test(query) ? query : `@ext:${context.extension.id}`;
+            return options && options.target === 'user'
+                ? vscode.commands.executeCommand('workbench.action.openGlobalSettings', { query: q })
+                : vscode.commands.executeCommand('workbench.action.openSettings', q);
+        }),
         vscode.commands.registerCommand('twincat.openGettingStarted', () =>
             vscode.commands.executeCommand('markdown.showPreview', vscode.Uri.file(path.join(context.extensionPath, 'README.md')))),
         vscode.commands.registerCommand('twincat.openRoadmap', () => vscode.env.openExternal(vscode.Uri.parse(LINKS.roadmap))),
@@ -260,10 +266,11 @@ function registerStartCommands(context, { provider, getProjectMap, getSolutionMa
         vscode.commands.registerCommand('twincat.reportIssue', () => vscode.env.openExternal(vscode.Uri.parse(LINKS.reportIssue)))
     );
 
-    // A change to what the page shows from the settings (the recent-list length, the XAE Shell paths)
-    // reaches an open start page at once.
+    // A change to what the page shows from the settings (the recent-list length, the XAE Shell paths,
+    // the g++ path) reaches an open start page at once.
     context.subscriptions.push(vscode.workspace.onDidChangeConfiguration((e) => {
-        if (e.affectsConfiguration('tcToolkit.startPage') || e.affectsConfiguration('tcToolkit.xaeShell')) startPage.postState();
+        if (e.affectsConfiguration('tcToolkit.startPage') || e.affectsConfiguration('tcToolkit.xaeShell')
+            || e.affectsConfiguration(SETTING_GPP_PATH)) startPage.postState();
     }));
 
     /** Records the TwinCAT solutions open in this workspace as recently opened. */
