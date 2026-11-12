@@ -10,10 +10,11 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   merged at `3210d33`, Release run 41671593015 green, VSIX `twincat-plc-toolkit-0.10.1.vsix` attached).
 - **Version history:** 0.10.1 struct EXTENDS from own DUTs (PR #22); 0.10.0 Libraries scoping (PR #18); 0.9.0
   improvement-plan phases; 0.8.x project-aware Generate ST, ResizeObserver fix, solution→project Objects tree.
-- **Last verified:** 2026-11-12 (Linux container, `claude/focused-ptolemy-m6acaz` = R12 + review fixes on top of `dev`) —
-  `REQUIRE_FULL_SUITE=1 npm test` green (**111/111, Coverage: FULL**, compile-real ran), `npm run typecheck` and
-  `npm run lint` exit 0; Linux dev-host (`xvfb-run -a node test/devhost/run.js`) 103 pass / 1 fail, the fail being the
-  known P8 line-ending one; `test/browser/run_pragmas.js` green (the webview is unchanged by R12).
+- **Last verified:** 2026-11-12 (Linux container, `claude/focused-ptolemy-m6acaz` = R13 on top of `dev` + roadmap) —
+  `REQUIRE_FULL_SUITE=1 npm test` green (**116/116, Coverage: FULL**; optional gates compile-real, cpp-real and gpp-real
+  all ran), `npm run typecheck` and `npm run lint` exit 0; Linux dev-host (`xvfb-run -a node test/devhost/run.js`) 103
+  pass / 1 fail, the fail being the known P8 line-ending one; browser harnesses `run.js`, `run_start_page.js` and
+  `run_pragmas.js` green (Playwright from `/opt/node-tools/node_modules`, browsers in `/opt/pw-browsers`).
 - **R12 `{IF}`-aware LSP diagnostics: MERGED** into `dev` as PR #36 (squash `02f2b96`, 2026-11-12 10:56 UTC) after the
   user's Windows checks (split IF head, both-branch completion/references, END_FOR outside the group, multi-line fbRS, SIM define).
   Review fixes (do not regress): a segment boundary is never a named argument on its own line (`fbRS(\n SET := c,`
