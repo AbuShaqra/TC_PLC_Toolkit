@@ -10,6 +10,11 @@
  * Detection is pure — the platform, the environment and the file-existence check are passed in —
  * so test/test_gpp.js covers the Windows locations off Windows. The order: `PATH`, then (Windows
  * only) the usual install folders of MSYS2, MinGW, WinLibs, w64devkit and Chocolatey's mingw.
+ *
+ * The generated C++ needs g++ 7 or later (GPP_MIN_MAJOR: C++17 inline variables). When the checks
+ * passed in carry a `version` reader (thisMachine's runs `g++ -dumpfullversion`, cached per path,
+ * size and mtime), detection prefers the first candidate that is new enough, and a set or detected
+ * g++ that is older is marked `tooOld`; a version that cannot be read counts as new enough.
  */
 
 'use strict';
@@ -21,6 +26,9 @@ const { runChild } = require('./compileCheck');
 
 /** The g++ path setting (package.json `contributes.configuration`). */
 const SETTING_GPP_PATH = 'tcToolkit.compiler.gppPath';
+
+/** The oldest g++ major version that compiles the generated C++ (C++17 inline variables). */
+const GPP_MIN_MAJOR = 7;
 
 /** How long one g++ run may take before it is stopped. */
 const DEFAULT_GPP_TIMEOUT_MS = 120000;
@@ -92,15 +100,169 @@ function gppCandidates({ platform, env }) {
 }
 
 /**
- * Finds g++ on this machine. Never throws.
- * @param {{platform: string, env: Record<string, string|undefined>, exists: (p: string) => boolean}} o
- * @returns {{path: string, source: 'path'|'default'}|null}
+ * @typedef {{version: string, major: number}} GppVersion A g++ version as `-dumpfullversion` prints it.
+ */
+
+/**
+ * @typedef {(gppPath: string) => (GppVersion|null)} GppVersionReader The version of the g++ at a
+ *   path, or null when it cannot be read (then it counts as new enough).
+ */
+
+/**
+ * Reads the version g++ prints for `-dumpfullversion` / `-dumpversion` (`13.3.0`, `6.3.0`, `7`).
+ * @param {unknown} text
+ * @returns {GppVersion|null}
+ */
+function parseGppVersion(text) {
+    const first = String(text || '').trim().split(/\r?\n/)[0].trim();
+    const m = /^(\d+)(?:\.\d+){0,3}(?:[-+~][\w.+~-]*)?$/.exec(first);
+    if (!m) return null;
+    return { version: first.replace(/[-+~].*$/, ''), major: Number(m[1]) };
+}
+
+/**
+ * Whether a g++ version is too old for the generated C++. An unknown version is not.
+ * @param {GppVersion|null|undefined} v
+ * @returns {boolean}
+ */
+function isGppTooOld(v) {
+    return !!v && Number.isFinite(v.major) && v.major < GPP_MIN_MAJOR;
+}
+
+/**
+ * The warning for a g++ that is too old.
+ * @param {string} version
+ * @returns {string}
+ */
+function gppTooOldText(version) {
+    return `g++ ${version} is too old: the generated C++ needs g++ ${GPP_MIN_MAJOR} or later.`;
+}
+
+/**
+ * Where to get a newer g++, in one sentence.
+ * @param {string} [platform]
+ * @returns {string}
+ */
+function gppInstallHint(platform = process.platform) {
+    return platform === 'win32'
+        ? 'Install a current MinGW-w64 g++ (for example MSYS2\'s UCRT64: pacman -S mingw-w64-ucrt-x86_64-gcc), then set its path or run "Detect g++".'
+        : `Install g++ ${GPP_MIN_MAJOR} or later, then set its path or run "Detect g++".`;
+}
+
+/**
+ * Asks a g++ for its version: `-dumpfullversion` (g++ 7+), else `-dumpversion` (older g++ prints the
+ * full version there). A version below GPP_MIN_MAJOR is confirmed with `--version`, because clang
+ * answers `-dumpversion` with an old GCC version it imitates (4.2.1): clang counts as unknown.
+ * @param {string} gppPath
+ * @param {(file: string, args: string[]) => {status: number|null, stdout: string}} run
+ * @returns {GppVersion|null}
+ */
+function queryGppVersion(gppPath, run) {
+    const ask = (/** @type {string} */ flag) => {
+        try {
+            const r = run(gppPath, [flag]);
+            return r && r.status === 0 ? parseGppVersion(r.stdout) : null;
+        } catch (e) { return null; }
+    };
+    const v = ask('-dumpfullversion') || ask('-dumpversion');
+    if (!v || !isGppTooOld(v)) return v;
+    try {
+        const r = run(gppPath, ['--version']);
+        if (r && /clang/i.test(String(r.stdout || ''))) return null;
+    } catch (e) { /* keep the version read */ }
+    return v;
+}
+
+/** @type {Map<string, {size: number, mtimeMs: number, value: GppVersion|null}>} */
+const versionCache = new Map();
+
+/**
+ * The version of the g++ at a path on this machine, cached per path, size and mtime (a g++ replaced
+ * in place is asked again). Null when it cannot be read.
+ * @param {string} gppPath
+ * @param {{run?: (file: string, args: string[]) => {status: number|null, stdout: string},
+ *   stat?: (p: string) => {size: number, mtimeMs: number}}} [deps] For the tests.
+ * @returns {GppVersion|null}
+ */
+function gppVersionOf(gppPath, deps = {}) {
+    const stat = deps.stat || ((/** @type {string} */ p) => fs.statSync(p));
+    const run = deps.run || runForVersion;
+    /** @type {{size: number, mtimeMs: number}} */
+    let st;
+    try { st = stat(gppPath); } catch (e) { return null; }
+    const hit = versionCache.get(gppPath);
+    if (hit && hit.size === st.size && hit.mtimeMs === st.mtimeMs) return hit.value;
+    const value = queryGppVersion(gppPath, run);
+    versionCache.set(gppPath, { size: st.size, mtimeMs: st.mtimeMs, value });
+    return value;
+}
+
+/**
+ * Runs g++ for its version: no shell, a short timeout, g++'s folder first on PATH (MinGW DLLs).
+ * @param {string} file
+ * @param {string[]} args
+ * @returns {{status: number|null, stdout: string}}
+ */
+function runForVersion(file, args) {
+    const r = childProcess.spawnSync(file, args, { encoding: 'utf8', timeout: 10000, windowsHide: true, env: envWithGppFirst(file, process.env) });
+    return { status: r.error ? null : r.status, stdout: String(r.stdout || '') };
+}
+
+/**
+ * The environment with g++'s folder first on PATH (a MinGW g++ finds its DLLs only on PATH).
+ * @param {string} gppPath
+ * @param {Record<string, string|undefined>} baseEnv
+ * @returns {Record<string, string|undefined>}
+ */
+function envWithGppFirst(gppPath, baseEnv) {
+    const pathKey = Object.keys(baseEnv).find(k => k.toLowerCase() === 'path') || 'PATH';
+    const dir = path.dirname(gppPath);
+    return dir && dir !== '.' ? { ...baseEnv, [pathKey]: [dir, baseEnv[pathKey]].filter(Boolean).join(path.delimiter) } : { ...baseEnv };
+}
+
+/**
+ * The version of a g++, through the reader the checks carry; never throws.
+ * @param {{version?: GppVersionReader}} o
+ * @param {string} gppPath
+ * @returns {GppVersion|null}
+ */
+function versionVia(o, gppPath) {
+    if (!o || typeof o.version !== 'function') return null;
+    try { return o.version(gppPath) || null; } catch (e) { return null; }
+}
+
+/**
+ * The version fields a result carries: none without a version reader (or an unreadable version),
+ * `version`, and `tooOld: true` below GPP_MIN_MAJOR.
+ * @param {GppVersion|null} v
+ * @returns {{version?: string, tooOld?: boolean}}
+ */
+function versionFields(v) {
+    if (!v) return {};
+    return isGppTooOld(v) ? { version: v.version, tooOld: true } : { version: v.version };
+}
+
+/**
+ * Finds g++ on this machine. Never throws. With a version reader, the first candidate that is new
+ * enough (or of unknown version) wins; an older one is returned, marked `tooOld`, only when no newer
+ * one exists.
+ * @param {{platform: string, env: Record<string, string|undefined>, exists: (p: string) => boolean,
+ *   version?: GppVersionReader}} o
+ * @returns {{path: string, source: 'path'|'default', version?: string, tooOld?: boolean}|null}
  */
 function detectGpp(o) {
+    /** @type {{path: string, source: 'path'|'default', version?: string, tooOld?: boolean}|null} */
+    let tooOld = null;
     for (const c of gppCandidates(o)) {
-        try { if (o.exists(c.path)) return c; } catch (e) { /* not there */ }
+        let there = false;
+        try { there = !!o.exists(c.path); } catch (e) { /* not there */ }
+        if (!there) continue;
+        if (typeof o.version !== 'function') return c;
+        const fields = versionFields(versionVia(o, c.path));
+        if (!fields.tooOld) return { ...c, ...fields };
+        if (!tooOld) tooOld = { ...c, ...fields };
     }
-    return null;
+    return tooOld;
 }
 
 /**
@@ -163,18 +325,20 @@ function describeGppProblem(reason) {
 /**
  * Which g++ a run uses: the `tcToolkit.compiler.gppPath` setting when it is set (see
  * `checkConfiguredGpp`), else detection. A set value that does not work is reported, never replaced.
+ * With a version reader, the g++ it names carries `version`, and `tooOld` when it is older than
+ * GPP_MIN_MAJOR (the build is then not run).
  * @param {{configured: unknown, platform: string, env: Record<string, string|undefined>, exists: (p: string) => boolean,
- *   isDir?: (p: string) => boolean}} o
- * @returns {{ok: true, path: string, source: 'setting'|'path'|'default'} |
+ *   isDir?: (p: string) => boolean, version?: GppVersionReader}} o
+ * @returns {{ok: true, path: string, source: 'setting'|'path'|'default', version?: string, tooOld?: boolean} |
  *   {ok: false, reason: 'not-found'|'setting-missing', configured: string, problem?: string}}
  *   `problem`: for `setting-missing`, checkConfiguredGpp's reason.
  */
 function resolveGpp(o) {
     const checked = checkConfiguredGpp(o.configured, o);
-    if (checked.ok === true) return { ok: true, path: checked.path, source: 'setting' };
+    if (checked.ok === true) return { ok: true, path: checked.path, source: 'setting', ...versionFields(versionVia(o, checked.path)) };
     if (checked.reason !== 'empty') return { ok: false, reason: 'setting-missing', configured: checked.configured, problem: checked.reason };
     const hit = detectGpp(o);
-    return hit ? { ok: true, path: hit.path, source: hit.source } : { ok: false, reason: 'not-found', configured: '' };
+    return hit ? { ok: true, ...hit } : { ok: false, reason: 'not-found', configured: '' };
 }
 
 /**
@@ -182,30 +346,33 @@ function resolveGpp(o) {
  * setting (that is `twincat.detectGpp`), and a set value is checked exactly as a build checks it.
  * @param {unknown} value The `tcToolkit.compiler.gppPath` setting.
  * @param {{platform: string, env: Record<string, string|undefined>, exists: (p: string) => boolean,
- *   isDir?: (p: string) => boolean}} o
+ *   isDir?: (p: string) => boolean, version?: GppVersionReader}} o
  * @returns {{state: 'set'|'invalid'|'detected'|'notFound', configured: string, path: string,
- *   source?: 'path'|'default', problem?: 'not-on-path'|'missing'|'folder'}}
+ *   source?: 'path'|'default', problem?: 'not-on-path'|'missing'|'folder', version?: string, tooOld?: boolean}}
  *   `set`: the value works (`path`: the g++ it runs, which differs for a bare name or a folder);
  *   `invalid`: set but unusable (`problem`); `detected`: empty, and a build would use `path`
  *   (found on `PATH` or in a usual install folder: `source`); `notFound`: empty, and nothing found.
+ *   `set` and `detected` carry `version` when it was read, and `tooOld` below GPP_MIN_MAJOR.
  */
 function describeGppSetting(value, o) {
     const checked = checkConfiguredGpp(value, o);
-    if (checked.ok === true) return { state: 'set', configured: normalizeGppSetting(value), path: checked.path };
+    if (checked.ok === true) return { state: 'set', configured: normalizeGppSetting(value), path: checked.path, ...versionFields(versionVia(o, checked.path)) };
     if (checked.reason !== 'empty') {
         return { state: 'invalid', configured: checked.configured, path: '', problem: /** @type {'not-on-path'|'missing'|'folder'} */ (checked.reason) };
     }
     const hit = detectGpp(o);
-    return hit ? { state: 'detected', configured: '', path: hit.path, source: hit.source } : { state: 'notFound', configured: '', path: '' };
+    return hit ? { state: 'detected', configured: '', ...hit } : { state: 'notFound', configured: '', path: '' };
 }
 
 /**
- * The real platform, environment and file checks, as the functions above take them.
- * @returns {{platform: string, env: Record<string, string|undefined>, exists: (p: string) => boolean, isDir: (p: string) => boolean}}
+ * The real platform, environment, file checks and g++ version reader, as the functions above take them.
+ * @returns {{platform: string, env: Record<string, string|undefined>, exists: (p: string) => boolean, isDir: (p: string) => boolean,
+ *   version: GppVersionReader}}
  */
 function thisMachine() {
     return {
         platform: process.platform, env: process.env,
+        version: (/** @type {string} */ p) => gppVersionOf(p),
         exists: (/** @type {string} */ p) => { try { return fs.statSync(p).isFile(); } catch (e) { return false; } },
         isDir: (/** @type {string} */ p) => { try { return fs.statSync(p).isDirectory(); } catch (e) { return false; } }
     };
@@ -399,10 +566,7 @@ async function runGpp(o) {
     const started = Date.now();
     const timeoutMs = o.timeoutMs || DEFAULT_GPP_TIMEOUT_MS;
     // A MinGW g++ finds its helpers relative to itself, but its DLLs only on PATH: put its folder first.
-    const baseEnv = o.env || process.env;
-    const pathKey = Object.keys(baseEnv).find(k => k.toLowerCase() === 'path') || 'PATH';
-    const dir = path.dirname(o.gppPath);
-    const env = dir && dir !== '.' ? { ...baseEnv, [pathKey]: [dir, baseEnv[pathKey]].filter(Boolean).join(path.delimiter) } : { ...baseEnv };
+    const env = envWithGppFirst(o.gppPath, o.env || process.env);
     const run = await runChild(spawn, o.gppPath, o.args, { cwd: o.cwd, timeoutMs, onCancel: o.onCancel, env, killTree: true });
     const output = [run.stderr, run.stdout].filter(Boolean).join('\n').trim();
     const base = { exitCode: run.code, messages: parseGppOutput(run.stderr), output, durationMs: Date.now() - started };
@@ -427,7 +591,8 @@ function summarizeGpp(r) {
 }
 
 module.exports = {
-    SETTING_GPP_PATH, DEFAULT_GPP_TIMEOUT_MS, GPP_FLAGS,
+    SETTING_GPP_PATH, DEFAULT_GPP_TIMEOUT_MS, GPP_FLAGS, GPP_MIN_MAJOR,
+    parseGppVersion, queryGppVersion, gppVersionOf, isGppTooOld, gppTooOldText, gppInstallHint,
     windowsGppLocations, gppCandidates, detectGpp, checkConfiguredGpp, describeGppProblem, resolveGpp,
     normalizeGppSetting, describeGppSetting, thisMachine,
     buildGppArgs, parseGppOutput, placeGppMessages, runGpp, summarizeGpp

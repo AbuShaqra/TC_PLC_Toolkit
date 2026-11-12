@@ -201,10 +201,12 @@ const fake = createFakeSpawn((call) => {
 });
 let settingsChanged = 0;
 let gppFills = 0;
+/** The g++ version the discovery reports (null: unknown, so the build runs). */
+let gppVersionAnswer = (_p) => null;
 const compile = registerCompileCommands(context, { provider, getProjectMap: projectMap, onSettingsChanged: () => { settingsChanged++; }, spawn: fake.spawn,
     fillGppPath: () => { gppFills++; return Promise.resolve(null); },
     // g++ is looked for only where the test says (the R13 block sets the path setting).
-    gppDiscovery: { platform: 'linux', env: { PATH: path.join(ROOT, 'no-gpp-here') }, exists: (p) => fs.existsSync(p) },
+    gppDiscovery: { platform: 'linux', env: { PATH: path.join(ROOT, 'no-gpp-here') }, exists: (p) => fs.existsSync(p), version: (p) => gppVersionAnswer(p) },
     // Only `node` on PATH (the fake): the editor's own runtime would otherwise rescue a too-old Node.
     nodeDiscovery: { platform: 'linux', env: {}, runtime: null } });
 const run = (id, ...args) => vscodeStub.commands.executeCommand(id, ...args);
@@ -878,6 +880,38 @@ const settle = () => new Promise(r => setTimeout(r, 10));
         'R13 GPP: a clean build writes PLC.o (recorded as the toolkit\'s), clears the g++ problems and says so');
         assert(!/library code/.test(lastNote()) && !fs.readFileSync(cppFile, 'utf8').startsWith('// TC Toolkit'),
             'R13 LIB: a project that uses no library symbol gets no library note and no header comment');
+
+        // A g++ older than 7 cannot compile the generated C++: it is not run, and one warning says why.
+        {
+            gppVersionAnswer = () => ({ version: '6.3.0', major: 6 });
+            const gppBeforeOld = gppCalls().length;
+            reset();
+            answers.message.length = 0;
+            answers.message.push(undefined);
+            r13Result = await run('twincat.compileProject');
+            await settle();
+            const old = calls.warnings.find(m => /Not built with g\+\+: g\+\+ 6\.3\.0 is too old: the generated C\+\+ needs g\+\+ 7 or later\./.test(m.m));
+            assert(r13Result.cpp.gpp.status === 'too-old' && r13Result.cpp.gpp.version === '6.3.0' && gppCalls().length === gppBeforeOld
+                && !!old && old.buttons.join('|') === 'Open C++|Open Setting|Detect g++' && calls.warnings.length === 1 && calls.errors.length === 0
+                && calls.status.text.endsWith('· g++ too old') && gppCollection.map.size === 0,
+            `R13 GPP: g++ 6.3.0 is not run; one warning with Open Setting and Detect g++ (${old && old.buttons.join('|')}; ${calls.status.text})`);
+            const executedBeforeOld = calls.executed.length;
+            answers.message.length = 0;
+            answers.message.push('Detect g++');
+            await run('twincat.compileProject');
+            await settle();
+            assert(calls.executed.slice(executedBeforeOld).some(e => e.id === 'twincat.detectGpp'), 'R13 GPP: the too-old warning\'s "Detect g++" runs detection');
+            gppVersionAnswer = () => ({ version: '13.3.0', major: 13 });
+            gppAnswer = () => ({ code: 0 });
+            reset();
+            answers.message.length = 0;
+            answers.message.push(undefined);
+            r13Result = await run('twincat.compileProject');
+            await settle();
+            assert(r13Result.cpp.gpp.status === 'done' && r13Result.cpp.gpp.version === '' && gppCalls().length === gppBeforeOld + 1,
+                'R13 GPP: g++ 13 runs the build');
+            gppVersionAnswer = () => null;
+        }
 
         // A project that calls library blocks: the compile mode gets the check's library declarations,
         // the C++ is written with the uncovered blocks named on top, g++ runs, the summary names the library.

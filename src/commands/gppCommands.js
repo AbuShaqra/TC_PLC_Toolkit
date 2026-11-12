@@ -11,7 +11,7 @@
 'use strict';
 
 const vscode = require('vscode');
-const { SETTING_GPP_PATH, detectGpp, checkConfiguredGpp, describeGppProblem, normalizeGppSetting, thisMachine } = require('../gpp');
+const { SETTING_GPP_PATH, detectGpp, checkConfiguredGpp, describeGppProblem, normalizeGppSetting, thisMachine, isGppTooOld, gppTooOldText, gppInstallHint } = require('../gpp');
 const { CPP_SECTION } = require('../cppSettings');
 
 /** The key of the path setting inside its section. */
@@ -24,14 +24,16 @@ const GPP_PATH_KEY = 'gppPath';
  * @property {string} path The setting's value after the fill ('' when not found).
  * @property {boolean} [missing] For `kept`: the kept value does not work on this machine.
  * @property {string} [problem] For a `missing` value: why (src/gpp.js checkConfiguredGpp).
+ * @property {string} [version] The g++ version, when it was read.
+ * @property {boolean} [tooOld] That g++ is older than 7: the build will not run it.
  */
 
 /** The real platform, environment and file checks (src/gpp.js thisMachine). */
 const machine = thisMachine;
 
 /**
- * Detection with the real platform, environment and file system.
- * @returns {{path: string, source: string}|null}
+ * Detection with the real platform, environment and file system (a g++ 7+ preferred).
+ * @returns {{path: string, source: string, version?: string, tooOld?: boolean}|null}
  */
 function detectOnThisMachine() {
     return detectGpp(machine());
@@ -39,7 +41,7 @@ function detectOnThisMachine() {
 
 /**
  * Detects g++ and writes it into the setting, only when the setting is empty.
- * @param {() => ({path: string}|null)} detect
+ * @param {() => ({path: string, version?: string, tooOld?: boolean}|null)} detect
  * @param {Parameters<typeof checkConfiguredGpp>[1]} [env] How a set value is checked (the build's own
  *   check, so both say the same about it); the real machine by default.
  * @returns {Promise<GppFillResult>}
@@ -52,13 +54,30 @@ async function fillGppSetting(detect, env = machine()) {
     const value = normalizeGppSetting(current);
     if (value) {
         const checked = checkConfiguredGpp(value, env);
-        return checked.ok === true ? { status: 'kept', path: value, missing: false }
-            : { status: 'kept', path: value, missing: true, problem: checked.reason };
+        if (checked.ok !== true) return { status: 'kept', path: value, missing: true, problem: checked.reason };
+        return { status: 'kept', path: value, missing: false, ...versionOf(checked.path, env) };
     }
     const hit = detect();
     if (!hit || !hit.path) return { status: 'notFound', path: '' };
     await config.update(GPP_PATH_KEY, hit.path, vscode.ConfigurationTarget.Global);
-    return { status: 'found', path: hit.path };
+    /** @type {GppFillResult} */
+    const found = { status: 'found', path: hit.path };
+    if (hit.version) found.version = hit.version;
+    if (hit.tooOld) found.tooOld = true;
+    return found;
+}
+
+/**
+ * The version fields of a fill result for a kept value: none when the version cannot be read.
+ * @param {string} gppPath
+ * @param {Parameters<typeof checkConfiguredGpp>[1] & {version?: (p: string) => ({version: string, major: number}|null)}} env
+ * @returns {{version?: string, tooOld?: boolean}}
+ */
+function versionOf(gppPath, env) {
+    let v;
+    try { v = env && typeof env.version === 'function' ? env.version(gppPath) : null; } catch (e) { v = null; }
+    if (!v) return {};
+    return isGppTooOld(v) ? { version: v.version, tooOld: true } : { version: v.version };
 }
 
 /**
@@ -67,8 +86,10 @@ async function fillGppSetting(detect, env = machine()) {
  * @returns {string}
  */
 function describeGppFill(r) {
-    if (r.status === 'found') return `g++ found: ${r.path}`;
+    const old = r.tooOld ? ` But ${gppTooOldText(r.version || '?')} ${gppInstallHint()}` : '';
+    if (r.status === 'found') return `g++ found: ${r.path}${old ? '.' + old : ''}`;
     if (r.status === 'kept') {
+        if (old) return `g++: kept your value ${r.path}.${old}`;
         return r.missing
             ? `g++: kept your value ${r.path} (${describeGppProblem(r.problem || 'missing')}). Clear the setting to let it be detected, or correct it.`
             : `g++: kept your value ${r.path}.`;
@@ -79,7 +100,7 @@ function describeGppFill(r) {
 /**
  * Registers `twincat.detectGpp`.
  * @param {vscode.ExtensionContext} context
- * @param {{detect?: () => ({path: string}|null), machine?: Parameters<typeof checkConfiguredGpp>[1]}} [deps] For the tests.
+ * @param {{detect?: () => ({path: string, version?: string, tooOld?: boolean}|null), machine?: Parameters<typeof checkConfiguredGpp>[1]}} [deps] For the tests.
  * @returns {{autoFill: () => Promise<GppFillResult|null>}} The silent fill; it never rejects.
  */
 function registerGppCommands(context, { detect = detectOnThisMachine, machine: env = machine() } = {}) {
@@ -93,7 +114,7 @@ function registerGppCommands(context, { detect = detectOnThisMachine, machine: e
                 vscode.window.showErrorMessage(`Could not update the g++ path setting: ${err && err.message ? err.message : err}`);
                 return undefined;
             }
-            const show = result.status === 'notFound' ? vscode.window.showWarningMessage : vscode.window.showInformationMessage;
+            const show = result.status === 'notFound' || result.tooOld ? vscode.window.showWarningMessage : vscode.window.showInformationMessage;
             Promise.resolve(show(describeGppFill(result), 'Open Setting')).then((choice) => {
                 if (choice === 'Open Setting') return vscode.commands.executeCommand('twincat.openSettings', SETTING_GPP_PATH, { target: 'user' });
                 return undefined;

@@ -531,7 +531,9 @@ src/
                         tcToolkit.compiler.gppPath resolution, `-std=c++17 -fno-strict-aliasing
                         -c <cpp> -I <resources/compiler/include> -I <CPP_Files> -o <obj>`, reading g++ messages and placing them on the generated files, runGpp
                         (no shell, timeout, cancel, g++'s folder first on PATH); describeGppSetting
-                        (what the start page shows) and thisMachine (the real fs/env checks)
+                        (what the start page shows) and thisMachine (the real fs/env checks and the
+                        version reader); the g++ version gate (GPP_MIN_MAJOR 7, gppVersionOf cached
+                        per path+size+mtime, detection prefers a g++ 7+)
   compilerDefines       Compile Project's compiler defines: `<CompilerDefines>` of the project's
                         `.plcproj` → `--pragma-define` arguments (values exact), per-object ones
                         in `<Compile>` items → `--file-define <unit>=…` for that object's check
@@ -1582,6 +1584,21 @@ replaces a set value, so offering it for a bad value promised a fix it cannot ma
 *Detect g++* fills it): quotes stripped, a bare name looked
 up on PATH, a folder accepted when it holds `g++(.exe)`; its reason (`missing` / `not-on-path` /
 `folder`) is what both messages name.
+
+**The g++ version gate.** The generated C++ needs g++ 7+ (`GPP_MIN_MAJOR`): g++ 6 rejects the C++17
+`inline` VAR_GLOBALs outright (and `[[maybe_unused]]` in the runtime headers). `queryGppVersion` asks
+`-dumpfullversion` (g++ 7+), then `-dumpversion` (g++ 6 prints `6.3.0` there); a major below 7 is
+confirmed with `--version`, because clang answers `-dumpversion` with the GCC 4.2.1 it imitates — clang
+and anything unparseable are *unknown*, and unknown runs. `gppVersionOf` (spawnSync, 10 s timeout, g++'s
+folder first on PATH) caches per path and re-asks when the file's size or mtime changes. The reader rides
+on the machine object (`thisMachine().version`); without one (the older unit tests), results carry no
+version fields. With it: `detectGpp` returns the first candidate that is 7+ or unknown, and a too-old one
+(marked `tooOld`) only when nothing newer exists; `resolveGpp`/`describeGppSetting` add `version` and
+`tooOld` for a set value too (never replaced). Compile Project does not run a `tooOld` g++: `cpp.gpp.status
+= 'too-old'`, one note in the summary (`gppTooOldNote`: the text plus `gppInstallHint`, MSYS2 UCRT64 on
+Windows), buttons *Open Setting* (User tab) and *Detect g++*, status bar `· g++ too old`. *Detect g++*
+fills an empty setting with a too-old g++ only when it is all there is, and says so as a warning; the
+start page's row gets the warning style with "g++ 6.3.0 is too old: needs 7 or later."
 
 **Switch coupling** (`cppSettings`): a run uses `generate = generateCpp || buildWithGpp`. On every
 `tcToolkit.compiler` change, `couplingWrites(before, after)` fixes the scope that changed (build on →

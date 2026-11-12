@@ -66,8 +66,11 @@ const settle = () => new Promise(r => setTimeout(r, 5));
     const machine = {
         platform: 'linux', env: { PATH: BIN },
         exists: (p) => { try { return fs.statSync(p).isFile(); } catch (e) { return false; } },
-        isDir: (p) => { try { return fs.statSync(p).isDirectory(); } catch (e) { return false; } }
+        isDir: (p) => { try { return fs.statSync(p).isDirectory(); } catch (e) { return false; } },
+        version: (p) => machineVersion(p)
     };
+    /** The version the faked machine reports for a set g++ (null: unknown). */
+    let machineVersion = (_p) => null;
     fs.mkdirSync(BIN, { recursive: true });
     fs.writeFileSync(path.join(BIN, 'g++'), '');
     const gpp = registerGppCommands(context, { detect: () => hit, machine });
@@ -142,6 +145,28 @@ const settle = () => new Promise(r => setTimeout(r, 5));
     assert(describeGppFill({ status: 'kept', path: 'D:\\g++.exe', missing: true, problem: 'missing' }) === 'g++: kept your value D:\\g++.exe (that file does not exist). Clear the setting to let it be detected, or correct it.',
         'COMMAND: the kept message for a value that does not work says how to get it detected');
     assert(describeGppFill({ status: 'kept', path: '/usr/bin/g++', missing: false }) === 'g++: kept your value /usr/bin/g++.', 'COMMAND: the kept message for a working value');
+
+
+    // g++ older than 7: a set value is kept (never overwritten) but said to be too old; a detected
+    // one is written only because nothing newer exists, and the message says so.
+    settings[KEY] = path.join(BIN, 'g++');
+    machineVersion = () => ({ version: '6.3.0', major: 6 });
+    r = await gpp.autoFill();
+    assert(r.status === 'kept' && r.missing === false && r.tooOld === true && r.version === '6.3.0' && settings[KEY] === path.join(BIN, 'g++')
+        && /^g\+\+: kept your value .*\. But g\+\+ 6\.3\.0 is too old: the generated C\+\+ needs g\+\+ 7 or later\./.test(describeGppFill(r)),
+    `FILL: a set g++ 6 is kept, and called too old (${describeGppFill(r)})`);
+    machineVersion = () => ({ version: '13.3.0', major: 13 });
+    r = await gpp.autoFill();
+    assert(r.status === 'kept' && !r.tooOld && r.version === '13.3.0', 'FILL: a set g++ 13 is kept, with its version');
+    settings[KEY] = '';
+    hit = { path: 'C:\\MinGW\\bin\\g++.exe', source: 'default', version: '6.3.0', tooOld: true };
+    calls.warnings.length = 0;
+    calls.infos.length = 0;
+    r = await handlers.get('twincat.detectGpp')();
+    await settle();
+    assert(r.status === 'found' && r.tooOld === true && settings[KEY] === hit.path && calls.infos.length === 0 && calls.warnings.length === 1
+        && /^g\+\+ found: C:\\MinGW\\bin\\g\+\+\.exe\. But g\+\+ 6\.3\.0 is too old: the generated C\+\+ needs g\+\+ 7 or later\./.test(calls.warnings[0].m),
+    `COMMAND: only a g++ 6 found: it is filled in, and the message is a warning saying it is too old (${calls.warnings[0] && calls.warnings[0].m})`);
 
     fs.rmSync(ROOT, { recursive: true, force: true });
     if (errors > 0) {

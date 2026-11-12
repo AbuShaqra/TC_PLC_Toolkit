@@ -90,11 +90,66 @@ const existsIn = (list) => (p) => list.some(x => x.toLowerCase() === p.toLowerCa
     assert(real.platform === process.platform && real.exists(__filename) === true && real.exists(__dirname) === false && real.isDir(__dirname) === true
         && real.exists(path.join(__dirname, 'no-such-file')) === false, 'MACHINE: thisMachine checks files and folders on disk');
 
+    // ── The g++ version (g++ 7+: the generated C++ uses C++17 inline variables) ───────────────
+    assert(eq(g.parseGppVersion('13.3.0\n'), { version: '13.3.0', major: 13 }) && eq(g.parseGppVersion('6.3.0'), { version: '6.3.0', major: 6 })
+        && eq(g.parseGppVersion('7'), { version: '7', major: 7 }) && eq(g.parseGppVersion('12.2.0-win32'), { version: '12.2.0', major: 12 })
+        && g.parseGppVersion('') === null && g.parseGppVersion('gcc version x') === null && g.parseGppVersion(undefined) === null,
+    'VERSION: -dumpfullversion/-dumpversion output is read; anything else is unknown');
+    assert(g.GPP_MIN_MAJOR === 7 && g.isGppTooOld({ version: '6.3.0', major: 6 }) && !g.isGppTooOld({ version: '7.1.0', major: 7 }) && !g.isGppTooOld(null),
+        'VERSION: below 7 is too old; unknown is not');
+    assert(g.gppTooOldText('6.3.0') === 'g++ 6.3.0 is too old: the generated C++ needs g++ 7 or later.'
+        && /MinGW-w64/.test(g.gppInstallHint('win32')) && /MSYS2's UCRT64/.test(g.gppInstallHint('win32')) && !/MSYS2/.test(g.gppInstallHint('linux')),
+    'VERSION: the warning text, and the MSYS2 UCRT64 hint on Windows');
+    // A fake g++: answers per flag, records what it was asked.
+    const fakeRun = (answers) => { const asked = []; return { asked, run: (file, a) => { asked.push(a[0]); const r = answers[a[0]]; if (r instanceof Error) throw r; return r || { status: 1, stdout: '' }; } }; };
+    let fr = fakeRun({ '-dumpfullversion': { status: 0, stdout: '13.3.0\n' } });
+    assert(eq(g.queryGppVersion('g++', fr.run), { version: '13.3.0', major: 13 }) && eq(fr.asked, ['-dumpfullversion']), 'VERSION: g++ 7+ answers -dumpfullversion');
+    fr = fakeRun({ '-dumpfullversion': { status: 1, stdout: '' }, '-dumpversion': { status: 0, stdout: '6.3.0\n' }, '--version': { status: 0, stdout: 'g++.exe (MinGW.org GCC-6.3.0-1) 6.3.0\n' } });
+    assert(eq(g.queryGppVersion('g++', fr.run), { version: '6.3.0', major: 6 }) && eq(fr.asked, ['-dumpfullversion', '-dumpversion', '--version']),
+        'VERSION: g++ 6 rejects -dumpfullversion; -dumpversion gives 6.3.0, confirmed by --version');
+    fr = fakeRun({ '-dumpversion': { status: 0, stdout: '4.2.1\n' }, '--version': { status: 0, stdout: 'Apple clang version 15.0.0\n' } });
+    assert(g.queryGppVersion('g++', fr.run) === null, 'VERSION: clang pretending to be GCC 4.2.1 is unknown (the build runs)');
+    assert(g.queryGppVersion('g++', fakeRun({ '-dumpfullversion': new Error('ENOENT'), '-dumpversion': new Error('ENOENT') }).run) === null
+        && g.queryGppVersion('g++', fakeRun({ '-dumpfullversion': { status: 0, stdout: 'garbage' } }).run) === null, 'VERSION: a g++ that cannot be asked, or answers nonsense, is unknown');
+    let stat = { size: 10, mtimeMs: 1 };
+    fr = fakeRun({ '-dumpfullversion': { status: 0, stdout: '13.3.0' } });
+    const cacheDeps = { run: fr.run, stat: () => stat };
+    const cachedPath = path.join(__dirname, 'fake-gpp-for-cache');
+    g.gppVersionOf(cachedPath, cacheDeps); g.gppVersionOf(cachedPath, cacheDeps);
+    assert(fr.asked.length === 1, 'VERSION: cached per path, size and mtime (asked once for two reads)');
+    stat = { size: 10, mtimeMs: 2 };
+    g.gppVersionOf(cachedPath, cacheDeps);
+    assert(fr.asked.length === 2, 'VERSION: a g++ replaced in place (new mtime) is asked again');
+    assert(g.gppVersionOf(cachedPath, { run: fr.run, stat: () => { throw new Error('ENOENT'); } }) === null && fr.asked.length === 2,
+        'VERSION: a path that cannot be read is unknown, and g++ is not run');
+    assert(typeof g.thisMachine().version === 'function', 'VERSION: thisMachine carries the real version reader');
+
+    // Detection prefers a g++ 7+; an older one only when nothing newer exists.
+    const versions = { 'C:\\MinGW\\bin\\g++.exe': { version: '6.3.0', major: 6 }, 'C:\\msys64\\ucrt64\\bin\\g++.exe': { version: '13.2.0', major: 13 } };
+    const verOf = (p) => versions[p] || null;
+    const both = existsIn(['C:\\MinGW\\bin\\g++.exe', 'C:\\msys64\\ucrt64\\bin\\g++.exe']);
+    const oldOnPath = { Path: 'C:\\MinGW\\bin' };
+    assert(eq(g.detectGpp({ platform: 'win32', env: oldOnPath, exists: both, version: verOf }), { path: 'C:\\msys64\\ucrt64\\bin\\g++.exe', source: 'default', version: '13.2.0' }),
+        'DETECT: an old MinGW g++ 6 first on PATH loses to MSYS2 g++ 13 in its install folder');
+    assert(eq(g.detectGpp({ platform: 'win32', env: oldOnPath, exists: existsIn(['C:\\MinGW\\bin\\g++.exe']), version: verOf }), { path: 'C:\\MinGW\\bin\\g++.exe', source: 'path', version: '6.3.0', tooOld: true }),
+        'DETECT: only a g++ 6 exists → it is used, marked tooOld');
+    assert(eq(g.detectGpp({ platform: 'win32', env: oldOnPath, exists: existsIn(['C:\\MinGW\\bin\\g++.exe', 'C:\\Tools\\x\\g++.exe']), version: () => { throw new Error('x'); } }),
+        { path: 'C:\\MinGW\\bin\\g++.exe', source: 'path' }), 'DETECT: a version reader that throws counts as unknown (first candidate, no version)');
+    assert(eq(g.resolveGpp({ configured: 'C:\\MinGW\\bin\\g++.exe', platform: 'win32', env: oldOnPath, exists: both, version: verOf }),
+        { ok: true, path: 'C:\\MinGW\\bin\\g++.exe', source: 'setting', version: '6.3.0', tooOld: true }), 'SETTING: a set g++ 6 is kept, and marked tooOld (never replaced)');
+    assert(eq(g.resolveGpp({ configured: '', platform: 'win32', env: oldOnPath, exists: both, version: verOf }),
+        { ok: true, path: 'C:\\msys64\\ucrt64\\bin\\g++.exe', source: 'default', version: '13.2.0' }), 'SETTING: empty → the newer detected g++');
+    const dv = (v, ex) => g.describeGppSetting(v, { platform: 'win32', env: oldOnPath, exists: ex || both, version: verOf });
+    assert(eq(dv('C:\\MinGW\\bin\\g++.exe'), { state: 'set', configured: 'C:\\MinGW\\bin\\g++.exe', path: 'C:\\MinGW\\bin\\g++.exe', version: '6.3.0', tooOld: true })
+        && eq(dv(''), { state: 'detected', configured: '', path: 'C:\\msys64\\ucrt64\\bin\\g++.exe', source: 'default', version: '13.2.0' })
+        && eq(dv('', existsIn(['C:\\MinGW\\bin\\g++.exe'])), { state: 'detected', configured: '', path: 'C:\\MinGW\\bin\\g++.exe', source: 'path', version: '6.3.0', tooOld: true }),
+    'START: a set or detected g++ 6 is tooOld; with a newer one present, detection shows the newer one');
+
     // ── Command line ──────────────────────────────────────────────────────────────────────────
     const args = g.buildGppArgs({ cppFile: '/p/CPP_Files/P.cpp', objFile: '/p/CPP_Files/P.o', includeDir: '/ext/resources/compiler/include', outDir: '/p/CPP_Files' });
     assert(eq(args, ['-std=c++17', '-fno-strict-aliasing', '-fdiagnostics-color=never', '-fmessage-length=0',
         '-c', '/p/CPP_Files/P.cpp', '-I', '/ext/resources/compiler/include', '-I', '/p/CPP_Files', '-o', '/p/CPP_Files/P.o']),
-    `ARGS: C++14, compile only (-c), the runtime headers and the output folder on the include path, the object file named (${args.join(' ')})`);
+    `ARGS: C++17 (inline variables), no -Wno-c++17-extensions (GCC 12+ only), compile only (-c), the runtime headers and the output folder on the include path, the object file named (${args.join(' ')})`);
     assert(!args.some(a => /^-l|^-L|\.exe$/.test(a)) && !args.includes('-shared'), 'ARGS: nothing is linked');
 
     // ── Reading g++'s messages ────────────────────────────────────────────────────────────────

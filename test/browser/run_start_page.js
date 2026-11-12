@@ -363,7 +363,15 @@ const { TEMPLATE_VERSIONS } = require(path.join(REPO, 'src', 'projectTemplate.js
             [{ state: 'invalid', configured: 'mingw-g++', path: '', problem: 'not-on-path' },
                 (r) => /missing/.test(r.cls) && r.warning === 'No such command on PATH.', 'a bare name PATH does not have: its own warning'],
             [{ state: 'invalid', configured: 'D:\\Tools', path: '', problem: 'folder' },
-                (r) => /missing/.test(r.cls) && r.warning === 'This folder has no g++ in it.', 'a folder without g++: its own warning']
+                (r) => /missing/.test(r.cls) && r.warning === 'This folder has no g++ in it.', 'a folder without g++: its own warning'],
+            [{ state: 'set', configured: MSYS, path: MSYS, version: '13.2.0' },
+                (r) => !/missing/.test(r.cls) && !r.warning, 'a set g++ 13: no warning'],
+            [{ state: 'set', configured: 'C:\\MinGW\\bin\\g++.exe', path: 'C:\\MinGW\\bin\\g++.exe', version: '6.3.0', tooOld: true },
+                (r) => /missing/.test(r.cls) && r.text.includes('C:\\MinGW\\bin\\g++.exe') && r.warning === 'g++ 6.3.0 is too old: needs 7 or later.',
+                'a set g++ 6: the XAE warning style, "too old"'],
+            [{ state: 'detected', configured: '', path: 'C:\\MinGW\\bin\\g++.exe', source: 'path', version: '6.3.0', tooOld: true },
+                (r) => /missing/.test(r.cls) && /detected/.test(r.cls) && r.note === 'Not set: a build uses this one, found on PATH.' && r.warning === 'g++ 6.3.0 is too old: needs 7 or later.',
+                'only a g++ 6 detected: shown, with the "too old" warning']
         ];
         for (const [gpp, ok, label] of gppCases) {
             await send(stateWith({ gpp }));

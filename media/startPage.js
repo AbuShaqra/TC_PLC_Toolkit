@@ -203,15 +203,18 @@
 
     /**
      * Renders the g++ path setting like an XAE Shell row: the configured path; when it is empty, the
-     * g++ a build would use (detected, not written) or "not found"; a warning when a set value is unusable.
-     * @param {{state: string, configured: string, path: string, source?: string, problem?: string}|undefined} g
+     * g++ a build would use (detected, not written) or "not found"; a warning when a set value is unusable
+     * or the g++ is older than 7.
+     * @param {{state: string, configured: string, path: string, source?: string, problem?: string, version?: string, tooOld?: boolean}|undefined} g
      */
     function renderGpp(g) {
         const list = $('gpp-list');
         list.textContent = '';
         if (!g || typeof g.state !== 'string') return;
         const li = document.createElement('li');
-        const invalid = g.state === 'invalid';
+        // A g++ older than 7 (src/gpp.js GPP_MIN_MAJOR) is shown like a missing file: the build will not run it.
+        const tooOld = (g.state === 'set' || g.state === 'detected') && g.tooOld === true;
+        const invalid = g.state === 'invalid' || tooOld;
         const unset = g.state === 'notFound';
         li.className = 'xae-row' + (invalid ? ' missing' : '') + (unset ? ' unset' : '') + (g.state === 'detected' ? ' detected' : '');
         li.setAttribute('data-gpp', g.state);
@@ -237,7 +240,9 @@
         if (invalid) {
             const warning = document.createElement('span');
             warning.className = 'xae-warning';
-            warning.textContent = GPP_PROBLEMS[g.problem] || GPP_PROBLEMS.missing;
+            warning.textContent = tooOld
+                ? 'g++ ' + (typeof g.version === 'string' && g.version ? g.version : '') + ' is too old: needs 7 or later.'
+                : (GPP_PROBLEMS[g.problem] || GPP_PROBLEMS.missing);
             li.append(warning);
         }
         list.append(li);
