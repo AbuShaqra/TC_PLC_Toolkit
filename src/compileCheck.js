@@ -370,14 +370,19 @@ function buildCheckInputs(files, parse) {
  */
 
 /**
- * The compiler's command line for one check (everything after the Node executable).
+ * The compiler's command line for one run (everything after the Node executable). The check mode
+ * (`--check --json`) is the default; with `output` it is the compile mode instead, which writes
+ * `<output>` (`.cpp`) and the `.hpp` beside it into the run's directory (C++ generation, R13). The
+ * compiler cannot do both at once: `--json` is refused without `--check`, and `--check` with `-o`.
  * @param {{compilerPath: string, dialectFile: string, inputs: Array<{name: string, unit: {globalListName: string|null}}>,
- *   extraFiles?: ExtraInput[], defineArgs?: string[]}} o `defineArgs`: the compiler defines as
+ *   extraFiles?: ExtraInput[], defineArgs?: string[], output?: string}} o `defineArgs`: the compiler defines as
  *   `--pragma-define` and `--file-define` arguments (src/compilerDefines.js `defineArgs`, `fileDefineArgs`).
+ *   `output`: the `.cpp` file name for the compile mode (a plain name: it is written in the run's directory).
  * @returns {string[]}
  */
-function buildCheckArgs(o) {
-    const args = [o.compilerPath, '--check', '--json', '--dialect-file', o.dialectFile, ...(o.defineArgs || [])];
+function buildCompilerArgs(o) {
+    const mode = o.output ? [] : ['--check', '--json'];
+    const args = [o.compilerPath, ...mode, '--dialect-file', o.dialectFile, ...(o.defineArgs || [])];
     const extra = o.extraFiles || [];
     for (const file of extra) args.push(file.name);
     for (const input of o.inputs) args.push(input.name);
@@ -388,7 +393,17 @@ function buildCheckArgs(o) {
     for (const input of o.inputs) {
         if (input.unit.globalListName) args.push('--global-list', `${input.name}=${input.unit.globalListName}`);
     }
+    if (o.output) args.push('-o', o.output);
     return args;
+}
+
+/**
+ * The compiler's command line for one check (`--check --json`).
+ * @param {Parameters<typeof buildCompilerArgs>[0]} o Without `output`.
+ * @returns {string[]}
+ */
+function buildCheckArgs(o) {
+    return buildCompilerArgs({ ...o, output: undefined });
 }
 
 /**
@@ -523,6 +538,24 @@ function mapCheckDiagnostics(diagnostics, inputs, options = {}) {
  */
 
 /**
+ * Creates a run's temporary directory and writes the units and the generated library declarations
+ * into it. The caller deletes it.
+ * @param {{inputs: CheckInput[], extraFiles?: ExtraInput[], tmpRoot?: string}} o
+ * @returns {string} The directory.
+ */
+function writeRunDirectory(o) {
+    const dir = fs.mkdtempSync(path.join(o.tmpRoot || os.tmpdir(), 'twincat-compile-'));
+    try {
+        for (const file of o.extraFiles || []) fs.writeFileSync(path.join(dir, file.name), file.text, 'utf8');
+        for (const input of o.inputs) fs.writeFileSync(path.join(dir, input.name), input.unit.stText + '\n', 'utf8');
+    } catch (err) {
+        try { fs.rmSync(dir, { recursive: true, force: true }); } catch (e) { /* best effort */ }
+        throw err;
+    }
+    return dir;
+}
+
+/**
  * Runs one check: writes the units to a fresh temporary directory, starts the compiler there, reads
  * its report and deletes the directory again — also when the run fails, times out or is cancelled.
  * @param {Object} o
@@ -553,9 +586,7 @@ async function runCheck(o) {
     let dir = '';
     try {
         try {
-            dir = fs.mkdtempSync(path.join(o.tmpRoot || os.tmpdir(), 'twincat-compile-'));
-            for (const file of o.extraFiles || []) fs.writeFileSync(path.join(dir, file.name), file.text, 'utf8');
-            for (const input of o.inputs) fs.writeFileSync(path.join(dir, input.name), input.unit.stText + '\n', 'utf8');
+            dir = writeRunDirectory(o);
         } catch (err) {
             return ended('failed', `The temporary files for the check could not be written: ${err && /** @type {any} */ (err).message ? /** @type {any} */ (err).message : err}`);
         }
@@ -643,7 +674,9 @@ module.exports = {
     findNode,
     checkSetup,
     buildCheckInputs,
+    buildCompilerArgs,
     buildCheckArgs,
+    writeRunDirectory,
     parseCheckOutput,
     mapCheckDiagnostics,
     runCheck,
