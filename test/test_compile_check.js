@@ -330,6 +330,21 @@ const FILES = [
         cc.summarize({ errors: 1, warnings: 1 }, 'PLC') === 'PLC: 1 error, 1 warning.' && cc.summarize({ errors: 3, warnings: 0 }, 'PLC') === 'PLC: 3 errors, 0 warnings.',
         'SUMMARY: "no errors", or N errors and M warnings');
 
+    // ── runChild streams chunks to onStdout / onStderr (Build through XAE, R14) ───────────────
+    {
+        const seenOut = [];
+        const seenErr = [];
+        const streaming = createFakeSpawn(() => ({ stdout: 'line one\nline two\n', stderr: 'warn\n', code: 3 }));
+        const r = await cc.runChild(streaming.spawn, 'x', [], {
+            timeoutMs: 5000, onStdout: (c) => seenOut.push(String(c)), onStderr: (c) => seenErr.push(String(c))
+        });
+        assert(seenOut.join('') === 'line one\nline two\n' && seenErr.join('') === 'warn\n', 'runChild hands every chunk to onStdout / onStderr');
+        assert(r.outcome === 'exit' && r.code === 3 && r.stdout === 'line one\nline two\n' && r.stderr === 'warn\n',
+            'runChild still collects and returns the output with the callbacks set');
+        const plain = await cc.runChild(createFakeSpawn(() => ({ stdout: 'x', code: 0 })).spawn, 'x', [], { timeoutMs: 5000 });
+        assert(plain.stdout === 'x' && plain.code === 0, 'runChild without callbacks is unchanged');
+    }
+
     if (errors > 0) {
         console.error(`\n${errors} compile-check assertion(s) failed.`);
         process.exit(1);
