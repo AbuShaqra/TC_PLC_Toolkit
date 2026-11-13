@@ -528,7 +528,7 @@ function registerCompileCommands(context, { provider, getProjectMap, onSettingsC
     function showStatus(counts, cpp, gpp) {
         if (cpp !== undefined) lastCppStatus = { cpp, gpp: gpp || { errors: 0, warnings: 0 } };
         statusItem.text = compileStatusText(counts, lastCppStatus.cpp, lastCppStatus.gpp);
-        statusItem.tooltip = 'Result of the last TC Toolkit: Compile Project run. Click to open the Problems panel.';
+        statusItem.tooltip = 'Result of the last TC Toolkit: Build Project run. Click to open the Problems panel.';
         statusItem.show();
     }
 
@@ -649,7 +649,7 @@ function registerCompileCommands(context, { provider, getProjectMap, onSettingsC
      * @param {Array<{setting: string, message: string}>} problems
      */
     function reportSetupProblems(problems) {
-        const text = 'Compile Project cannot run. ' + problems.map(p => p.message).join(' ');
+        const text = 'Build Project cannot run. ' + problems.map(p => p.message).join(' ');
         vscode.window.showErrorMessage(text, 'Open Settings').then((choice) => {
             if (choice === 'Open Settings') vscode.commands.executeCommand('twincat.openSettings', COMPILER_SECTION);
         });
@@ -665,18 +665,18 @@ function registerCompileCommands(context, { provider, getProjectMap, onSettingsC
             const a = args && typeof args === 'object' ? args : {};
             const fromXae = a.fromXae === true;
             if (running) {
-                if (!fromXae) vscode.window.showInformationMessage('Compile Project is already running.');
+                if (!fromXae) vscode.window.showInformationMessage('Build Project is already running.');
                 return { ok: false, reason: 'running' };
             }
             const projectMap = getProjectMap();
             if (!projectMap || !projectMap.projects || projectMap.projects.size === 0) {
-                if (!fromXae) vscode.window.showWarningMessage('Compile Project needs a TwinCAT PLC project (.plcproj) in the workspace.');
+                if (!fromXae) vscode.window.showWarningMessage('Build Project needs a TwinCAT PLC project (.plcproj) in the workspace.');
                 return { ok: false, reason: 'no-project' };
             }
 
             // One PLC project per run: each is its own compilation unit.
             const key = typeof a.projectKey === 'string' && a.projectKey
-                ? a.projectKey : await pickProjectKey(projectMap, { title: 'Compile Project', placeHolder: 'PLC project to compile' });
+                ? a.projectKey : await pickProjectKey(projectMap, { title: 'Build Project', placeHolder: 'PLC project to build' });
             if (!key) return { ok: false, reason: 'cancelled' };
             const project = projectMap.get(key);
             if (!project) return { ok: false, reason: 'no-project' };
@@ -766,13 +766,13 @@ function registerCompileCommands(context, { provider, getProjectMap, onSettingsC
                     return { ok: false, reason: 'cancelled' };
                 }
                 if (!outcome.result) {
-                    if (!fromXae) vscode.window.showWarningMessage(`Compile Project: ${projectName} has no TwinCAT objects to compile.`);
+                    if (!fromXae) vscode.window.showWarningMessage(`Build Project: ${projectName} has no TwinCAT objects to compile.`);
                     return { ok: false, reason: 'empty' };
                 }
                 const { result, built, unreadable, library, defines, cpp } = outcome;
                 if (result.status !== 'done') {
                     // The previous results stay: a run that did not finish says nothing about the code.
-                    if (!fromXae) vscode.window.showErrorMessage(`Compile Project did not finish. ${result.message}`);
+                    if (!fromXae) vscode.window.showErrorMessage(`Build Project did not finish. ${result.message}`);
                     return { ok: false, reason: result.status, message: result.message };
                 }
 
@@ -845,7 +845,7 @@ function registerCompileCommands(context, { provider, getProjectMap, onSettingsC
                 // A missing g++ is said once, in this summary, with the buttons that fix it.
                 if (cpp && cpp.gpp && cpp.gpp.status === 'missing') buttons.push(...gppMissingButtons(cpp.gpp));
                 if (cpp && cpp.gpp && cpp.gpp.status === 'too-old') buttons.push(...gppTooOldButtons(cpp.gpp));
-                Promise.resolve(show(`Compile Project — ${summary}`, ...buttons)).then((choice) => {
+                Promise.resolve(show(`Build Project — ${summary}`, ...buttons)).then((choice) => {
                     if (choice === 'Go to Problem…') vscode.commands.executeCommand(GO_TO_PROBLEM_COMMAND);
                     else if (choice === 'Open Problems') vscode.commands.executeCommand('workbench.actions.view.problems');
                     else if (choice === 'Open C++' && cpp && cpp.paths) vscode.commands.executeCommand('vscode.open', vscode.Uri.file(cpp.paths.cpp));
@@ -878,7 +878,7 @@ function registerCompileCommands(context, { provider, getProjectMap, onSettingsC
         vscode.commands.registerCommand(GO_TO_PROBLEM_COMMAND, async () => {
             const problems = allProblems().sort((x, y) => (x.severity === y.severity ? 0 : (x.severity === 'error' ? -1 : 1)));
             if (problems.length === 0) {
-                vscode.window.showInformationMessage('There are no compile problems. Run TC Toolkit: Compile Project first.');
+                vscode.window.showInformationMessage('There are no compile problems. Run TC Toolkit: Build Project first.');
                 return;
             }
             const items = problems.map(p => ({

@@ -178,15 +178,15 @@ assert(/^\^1\.66\./.test(pkg.engines.vscode), `engine stays ^1.66 (${pkg.engines
 // ── Compile Project (R3.2): command, settings, and no compiler product name anywhere a user sees ──
 {
     const cmd = contributed.get('twincat.compileProject');
-    assert(!!cmd && cmd.category === 'TC Toolkit' && cmd.title === 'Compile Project', 'twincat.compileProject is contributed as "TC Toolkit: Compile Project"');
-    assert(!hidden.has('twincat.compileProject') && registered.has('twincat.compileProject'), 'Compile Project is in the Command Palette and registered');
-    assert(pkg.activationEvents.includes('onCommand:twincat.compileProject'), 'Compile Project activates the extension (onCommand)');
-    assert(ALLOWED_COMMANDS.has('twincat.compileProject'), 'the start page may run Compile Project');
+    assert(!!cmd && cmd.category === 'TC Toolkit' && cmd.title === 'Build Project', 'twincat.compileProject is contributed as "TC Toolkit: Build Project" (user, 2026-11-13)');
+    assert(!hidden.has('twincat.compileProject') && registered.has('twincat.compileProject'), 'Build Project is in the Command Palette and registered');
+    assert(pkg.activationEvents.includes('onCommand:twincat.compileProject'), 'Build Project activates the extension (onCommand)');
+    assert(ALLOWED_COMMANDS.has('twincat.compileProject'), 'the start page may run Build Project');
     const props = allProps;
     for (const key of ['tcToolkit.compiler.path', 'tcToolkit.compiler.nodePath']) {
         const p = props[key];
-        assert(!!p && p.type === 'string' && p.default === '' && p.scope === 'machine' && /TC Toolkit: Compile Project/.test(p.markdownDescription),
-            `${key} is a machine-scoped string, empty by default, describing Compile Project`);
+        assert(!!p && p.type === 'string' && p.default === '' && p.scope === 'machine' && /TC Toolkit: Build Project/.test(p.markdownDescription),
+            `${key} is a machine-scoped string, empty by default, describing Build Project`);
     }
     assert(/an external IEC 61131-3 compiler|the external IEC 61131-3 compiler/.test(props['tcToolkit.compiler.path'].markdownDescription),
         'the compiler setting calls it an external IEC 61131-3 compiler');
@@ -291,9 +291,9 @@ assert(/^\^1\.66\./.test(pkg.engines.vscode), `engine stays ^1.66 (${pkg.engines
     for (const v of TEMPLATE_VERSIONS) assert(html.includes(`value="${v.id}"`), `version ${v.id} is offered`);
     for (const l of HELP_LINKS) assert(html.includes(`data-link="${l.id}"`), `help link ${l.id} is on the page`);
     assert(/<span class="action-label">Build project<\/span>/.test(html) && /aria-label="Build options"/.test(html),
-        'the project tile and its dropdown are named Build (user, 2026-11-13); the command stays Compile Project');
+        'the project tile and its dropdown are named Build, like the command Build Project (user, 2026-11-13)');
     assert(/id="compile-project" disabled/.test(html) && /Check the project with the IEC 61131-3 compiler/.test(html) && !/later release/.test(html) && !/STruC\+\+/i.test(html),
-        'Compile project is disabled until the host says a project is open, is no longer "coming later", and names no compiler product');
+        'Build project is disabled until the host says a project is open, is no longer "coming later", and names no compiler product');
     const settingsCard = /<section class="card" id="settings"[\s\S]*?<\/section>/.exec(html);
     assert(!!settingsCard && /<ul id="xae-list"/.test(settingsCard[0]) && /<button type="button" id="xae-change"[^>]*>Change…<\/button>/.test(settingsCard[0])
         && /data-command="twincat\.detectXaeShell">Detect again<\/button>/.test(settingsCard[0]),

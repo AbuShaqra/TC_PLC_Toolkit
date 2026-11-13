@@ -277,7 +277,7 @@ const rows = (name) => readFixture(name).lines;
     assert(diags.length === 2 && diags.every(d => d.source === DIAGNOSTIC_SOURCE) && /\[implementation line 3\]$/.test(diags[0].message) && /location approximate/.test(diags[1].message),
         'the placed errors are in twincat-xae with source "TC Toolkit XAE build" and the pane location');
     assert(compileCollection.map.get('file:///compile-marker')[0] === 'kept' && gppCollection.map.get('file:///gpp-marker')[0] === 'kept',
-        'Compile Project\'s twincat-compile and twincat-gpp collections are untouched');
+        'Build Project\'s twincat-compile and twincat-gpp collections are untouched');
     assert(api.problems().length === 2 && provider.compileSource.paneDiagnostics(fbUri.toString()).length === 2, 'the XAE problems reach the editor panes');
     assert(channel().lines.some(l => /error \(not placed\): Build aborted/.test(l)), 'an unplaced error is listed in the channel');
     assert(calls.errors.some(e => /3 errors \(2 placed in Problems\)/.test(e.m) && e.buttons.includes('Go to Problem…')), 'the summary counts placed errors and offers Go to Problem');
@@ -305,13 +305,13 @@ const rows = (name) => readFixture(name).lines;
             openTarget: () => null
         }, 'compile');
         const both = provider.compileSource.paneDiagnostics(fbUri.toString());
-        assert(both.length === 3 && both.some(m => m.message === 'compile marker'), 'Compile Project\'s pane markers and the XAE ones are shown together');
+        assert(both.length === 3 && both.some(m => m.message === 'compile marker'), 'Build Project\'s pane markers and the XAE ones are shown together');
         provider.setCompileSource(null, 'xae');
         const onlyCompile = provider.compileSource.paneDiagnostics(fbUri.toString());
-        assert(onlyCompile.length === 1 && onlyCompile[0].message === 'compile marker', 'removing the XAE source leaves Compile Project\'s markers');
+        assert(onlyCompile.length === 1 && onlyCompile[0].message === 'compile marker', 'removing the XAE source leaves Build Project\'s markers');
         provider.setCompileSource(xaeSource, 'xae');
         provider.compileSource.onComponentEdited(fbUri.toString(), 'root');
-        assert(edited.includes('root'), 'an edit reaches Compile Project\'s source too');
+        assert(edited.includes('root'), 'an edit reaches Build Project\'s source too');
         provider.setCompileSource(realCompile, 'compile');
     }
     assert(api.problems().length === 0 && !xaeCollection.map.has(fbUri.toString()), 'editing the component drops its XAE problems');

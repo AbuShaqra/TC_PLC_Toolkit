@@ -42,8 +42,8 @@ page in an editor tab with:
 - **Open existing project** — a solution (`.sln`) or a folder, and the most recent TwinCAT solutions
   you opened or created here. Two are listed; when more are remembered (up to ten), a **Show all** tile
   expands the list. `tcToolkit.startPage.recentProjectsShown` changes how many are listed.
-- **Project actions** — *Generate ST*, *Update Library Definitions* and *Build project* (it runs
-  Compile Project; see [Compile project](#compile-project)).
+- **Project actions** — *Generate ST*, *Update Library Definitions* and *Build project* (see
+  [Build project](#build-project)).
 - **Help and links**, and **Settings** — which also shows where the XAE Shell of each TwinCAT version
   was found (see [Settings](#settings)), with *Change…* and *Detect again*, and the same for **g++**
   (optional, used only by *Build with g++*): the path set in `tcToolkit.compiler.gppPath`, or — while it
@@ -257,9 +257,9 @@ of the workspace. The generated files show up in the **PLC Objects** tree under 
 content: the create, delete, rename and paste commands of the PLC Objects view do not apply there, and its `.st` files are
 never read back as sources.
 
-### Compile project
+### Build project
 
-*TC Toolkit: Compile Project* (also on the start page as the *Build project* tile, and as the **Build** button next to *Generate ST*
+*TC Toolkit: Build Project* (also on the start page as the *Build project* tile, and as the **Build** button next to *Generate ST*
 in the editor's toolbar, which compiles the project the open file belongs to) checks a PLC project with **an external IEC 61131-3
 compiler** — a full compiler front end, so it catches what the built-in diagnostics deliberately leave
 alone. With several PLC projects you pick which one. By default it only checks: nothing is generated, and
@@ -306,7 +306,7 @@ GPL v3; its licence, source link and third-party notices are in `resources/compi
 
 #### C++ output (optional)
 
-Compile Project can also turn the PLC project into C++. Both steps are **off by default**; turn them on
+Build Project can also turn the PLC project into C++. Both steps are **off by default**; turn them on
 with the small arrow next to the **Build** button (in the editor's toolbar, or on the start page's
 *Build project* tile), or in the settings:
 
@@ -437,8 +437,8 @@ for the version logic. There is no unit-test framework for Structured Text, so a
 Optional, only for *Build through XAE*: Windows with **TwinCAT XAE** (the XAE Shell of the project's
 TwinCAT version) and Windows PowerShell.
 
-Optional, only for the C++ options of *Compile project*: **g++ 7 or later** for *Build with g++* (on
-Windows, MinGW-w64 — for example MSYS2's UCRT64; see [Compile project](#compile-project)), and Microsoft's
+Optional, only for the C++ options of *Build project*: **g++ 7 or later** for *Build with g++* (on
+Windows, MinGW-w64 — for example MSYS2's UCRT64; see [Build project](#build-project)), and Microsoft's
 **C/C++** extension if you want IntelliSense on the generated C++.
 
 ## Install
@@ -476,7 +476,7 @@ old entry is removed from your `settings.json`.
 | `tcToolkit.startPage.recentProjectsShown` | `2` | How many recent TwinCAT solutions the start page lists (1 to 10). When more are remembered, a **Show all** tile expands the list. |
 | `tcToolkit.xaeShell.path4024` | *(detected)* | Full path to `TcXaeShell.exe` of the XAE Shell for TwinCAT 3.1.4024 (the 32-bit shell). Empty = not found. |
 | `tcToolkit.xaeShell.path4026` | *(detected)* | Full path to `TcXaeShell.exe` of the XAE Shell for TwinCAT 3.1.4026 (the 64-bit shell). Empty = not found. |
-| `tcToolkit.compiler.path` | *(empty)* | Full path to the command-line file (`.cjs`) of an external IEC 61131-3 compiler for **Compile Project** to run instead of the bundled one. Empty = the bundled compiler. Per machine. |
+| `tcToolkit.compiler.path` | *(empty)* | Full path to the command-line file (`.cjs`) of an external IEC 61131-3 compiler for **Build Project** to run instead of the bundled one. Empty = the bundled compiler. Per machine. |
 | `tcToolkit.compiler.nodePath` | *(empty)* | Full path to a Node.js 22+ executable that runs the compiler. Empty = found automatically (`node` on `PATH`, the usual Windows install locations, then VS Code's own runtime when it is Node.js 22+). Per machine. |
 | `tcToolkit.compiler.generateCpp` | `false` | **Generate C++**: after a check with no errors, write the project as C++ into `CPP_Files/` next to its `.plcproj`. Turning it off also turns off the g++ build. Also in the Build button's dropdown. |
 | `tcToolkit.compiler.buildWithGpp` | `false` | **Build with g++**: also compile that C++ with g++ (a compile check; errors in the Problems panel). Turning it on also turns on *Generate C++*. Also in the Build button's dropdown. |

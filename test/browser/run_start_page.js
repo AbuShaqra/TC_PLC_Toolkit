@@ -128,7 +128,7 @@ const { TEMPLATE_VERSIONS } = require(path.join(REPO, 'src', 'projectTemplate.js
         assert((await page.$$('#recent-list li')).length === 2 && !(await visible('#recent-empty')), 'state renders the recent solutions');
         assert(await page.$eval('[data-command="twincat.generateSt"]', el => /** @type {any} */ (el).disabled) && await visible('#no-project'),
             'project actions are disabled while no project is open');
-        assert(await disabled('#compile-project'), 'Compile project is disabled');
+        assert(await disabled('#compile-project'), 'Build project is disabled');
 
         // Validation as the user types.
         for (const [bad, why] of [['1abc', /Start with a letter/], ['My Project', /letters, digits/], ['a__b', /two underscores/], ['Line_', /end the name/], ['CON', /reserved/]]) {
@@ -183,16 +183,19 @@ const { TEMPLATE_VERSIONS } = require(path.join(REPO, 'src', 'projectTemplate.js
             'with a project open the actions run Generate ST and Update Library Definitions');
         assert(await visible('#recent-empty'), 'an empty recent list says so');
 
-        // ── Compile project: enabled while the compiler file exists (by default the bundled one) AND a project is open ──
+        // ── Build project: enabled while the compiler file exists (by default the bundled one) AND a project is open ──
         assert(await disabled('#compile-project') && /Compiler file not found/.test(await text('#compile-detail')) && await visible('#compile-missing'),
-            `with a project but the compiler file missing (compilerReady false), Compile project is disabled and says so (${await text('#compile-detail')})`);
-        assert(!/later release/i.test(await page.content()), 'Compile project is no longer "coming in a later release"');
+            `with a project but the compiler file missing (compilerReady false), Build project is disabled and says so (${await text('#compile-detail')})`);
+        const missingTip = await page.$eval('#compile-project', el => /** @type {any} */ (el).title);
+        assert(missingTip === 'The compiler file named in the Build Project settings does not exist',
+            `its tooltip names the Build Project settings (user, 2026-11-13) (${missingTip})`);
+        assert(!/later release/i.test(await page.content()), 'Build project is no longer "coming in a later release"');
         await send({ type: 'state', location: 'C:\\Projects', sep: '\\', hasProject: false, compilerReady: true, recents: [] });
         assert(await disabled('#compile-project') && !(await visible('#compile-missing')),
-            'with the compiler but no project, Compile project is disabled (and not marked missing)');
+            'with the compiler but no project, Build project is disabled (and not marked missing)');
         await send({ type: 'state', location: 'C:\\Projects', sep: '\\', hasProject: true, compilerReady: true, recents: [] });
         assert(!(await disabled('#compile-project')) && /^Check the project with the IEC 61131-3 compiler$/.test(await text('#compile-detail')),
-            `with the compiler and a project, Compile project is enabled (${await text('#compile-detail')})`);
+            `with the compiler and a project, Build project is enabled (${await text('#compile-detail')})`);
         assert(!/STruC\+\+/i.test(await page.content()), 'the page names no compiler product');
         await clearPosted();
         await page.click('#compile-project');

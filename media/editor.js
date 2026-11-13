@@ -299,9 +299,9 @@
     function describeCompileButton(cpp, gpp) {
         if (!compileBtn) return;
         compileBtn.title = gpp
-            ? 'Compile Project: check this PLC project, write it as C++ into its CPP_Files folder, and build that with g++'
-            : (cpp ? 'Compile Project: check this PLC project, then write it as C++ into its CPP_Files folder'
-                : 'Compile Project: check this PLC project with the IEC 61131-3 compiler');
+            ? 'Build Project: check this PLC project, write it as C++ into its CPP_Files folder, and build that with g++'
+            : (cpp ? 'Build Project: check this PLC project, then write it as C++ into its CPP_Files folder'
+                : 'Build Project: check this PLC project with the IEC 61131-3 compiler');
     }
     /** @param {{generateCpp?: boolean, buildWithGpp?: boolean}} options */
     function renderCompileOptions(options) {

@@ -511,9 +511,9 @@ function assert(cond, msg) {
                 genTooltip: document.getElementById('generate-st-btn').title
             };
         });
-        assert(compileInfo.present && compileInfo.glyph && compileInfo.label === 'Build' && compileInfo.text === 'Build' && /Compile Project/.test(compileInfo.tooltip) &&
+        assert(compileInfo.present && compileInfo.glyph && compileInfo.label === 'Build' && compileInfo.text === 'Build' && /^Build Project: /.test(compileInfo.tooltip) &&
             compileInfo.afterGenerate && /Generate ST/.test(compileInfo.genTooltip),
-            `the Build button (it runs Compile Project) sits right after Generate ST, with a glyph, the name Build and a tooltip (${JSON.stringify(compileInfo)})`);
+            `the Build button (it runs Build Project) sits right after Generate ST, with a glyph, the name Build and a tooltip (${JSON.stringify(compileInfo)})`);
         await page.evaluate(() => { window.__harness.sent.length = 0; });
         await page.click('#compile-btn');
         let compileMsgs = await page.evaluate(() => window.__harness.sent.filter(m => m.type === 'compile-project'));
@@ -553,7 +553,7 @@ function assert(cond, msg) {
         const xaeHidden = await page.evaluate(() => document.getElementById('xae-menu-section').hidden);
         assert(xaeHidden, 'R14: the XAE entries are hidden by default (the init message carried no xaeOptions)');
         const btnTitle = () => page.evaluate(() => document.getElementById('compile-btn').title);
-        assert(/^Compile Project: check this PLC project with the IEC 61131-3 compiler$/.test(await btnTitle()), `with both options off the button's tooltip says it checks (${await btnTitle()})`);
+        assert(/^Build Project: check this PLC project with the IEC 61131-3 compiler$/.test(await btnTitle()), `with both options off the button's tooltip says it checks (${await btnTitle()})`);
         await page.evaluate(() => { window.__harness.sent.length = 0; });
         await page.click('#compile-caret');
         o = await opts();
@@ -567,7 +567,7 @@ function assert(cond, msg) {
         let om = await optionMsgs();
         assert(o.gpp && o.cpp && om.length === 1 && om[0].key === 'buildWithGpp' && om[0].value === true,
             `Space ticks Build with g++, which ticks Generate C++ too, and posts setCompileOption (${JSON.stringify(om)})`);
-        assert(/write it as C\+\+ into its CPP_Files folder, and build that with g\+\+/.test(await btnTitle()), `the tooltip follows: check, write C++, build with g++ (${await btnTitle()})`);
+        assert(/^Build Project: check this PLC project, write it as C\+\+ into its CPP_Files folder, and build that with g\+\+/.test(await btnTitle()), `the tooltip follows: check, write C++, build with g++ (${await btnTitle()})`);
         await page.keyboard.press('ArrowUp');
         await page.keyboard.press('Space');
         o = await opts();
@@ -586,7 +586,7 @@ function assert(cond, msg) {
         await settle(30);
         o = await opts();
         assert(o.cpp && !o.gpp, 'and back: generation only');
-        assert(/then write it as C\+\+ into its CPP_Files folder$/.test(await btnTitle()), `the tooltip follows a host update too: check, then write C++ (${await btnTitle()})`);
+        assert(/^Build Project: check this PLC project, then write it as C\+\+ into its CPP_Files folder$/.test(await btnTitle()), `the tooltip follows a host update too: check, then write C++ (${await btnTitle()})`);
         await page.click('#compile-caret');
         await page.mouse.click(5, viewport.height - 5);
         assert(!(await opts()).open, 'a click elsewhere closes the menu');
@@ -641,7 +641,7 @@ function assert(cond, msg) {
         assert(await page.evaluate(() => document.getElementById('xae-menu-section').hidden), 'R14: not available → hidden again');
         await page.evaluate(() => { window.__harness.sent.length = 0; document.getElementById('compile-btn').click(); });
         compileMsgs = await page.evaluate(() => window.__harness.sent.filter(m => m.type === 'compile-project'));
-        assert(compileMsgs.length === 1, 'the Compile button itself still runs Compile Project');
+        assert(compileMsgs.length === 1, 'the Build button itself still runs Build Project');
         const caretStyle = await page.evaluate(() => {
             const cs = (id) => getComputedStyle(document.getElementById(id));
             return { btnRight: cs('compile-btn').borderTopRightRadius, caretLeft: cs('compile-caret').borderTopLeftRadius, bg: cs('compile-caret').backgroundImage !== 'none' };

@@ -844,7 +844,7 @@ function compileFallbackText(results, compileSource) {
     const setup = results.find(r => !r.ok && r.reason === 'setup');
     if (setup) {
         return {
-            text: `TC Toolkit's own compile check was skipped: no compiler is configured for it (${String(setup.message || '').trim() || 'see the Compile Project settings'}).`,
+            text: `TC Toolkit's own compile check was skipped: no compiler is configured for it (${String(setup.message || '').trim() || 'see the Build Project settings'}).`,
             ran: 0, skipped: true
         };
     }
@@ -855,7 +855,7 @@ function compileFallbackText(results, compileSource) {
             const w = r.warnings || 0;
             return `${r.name}: ${e === 0 && w === 0 ? 'no errors' : [e ? plural(e, 'error') : '', w ? plural(w, 'warning') : ''].filter(Boolean).join(', ')}`;
         }
-        if (r.reason === 'running') return `${r.name}: not checked (Compile Project is already running)`;
+        if (r.reason === 'running') return `${r.name}: not checked (Build Project is already running)`;
         if (r.reason === 'cancelled') return `${r.name}: cancelled`;
         return `${r.name}: not checked${r.message ? ` (${r.message})` : ''}`;
     });

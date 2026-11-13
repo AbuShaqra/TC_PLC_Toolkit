@@ -143,7 +143,7 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   Real C/C++ extension 1.22.11 (Linux, scratch harness, not in the suite): with a provider-less
   `c_cpp_properties.json` the exact symptom; after the setting, only a planted undefined-identifier error;
   with no file and no settings it auto-selected TC Toolkit and the provider was asked.
-  **For the Windows check (round 6):** Compile Project with C++ generation on → the message appears once for
+  **For the Windows check (round 6):** Build Project with C++ generation on → the message appears once for
   the workspace folder; *Use TC Toolkit* → `.vscode/settings.json` gains `C_Cpp.default.configurationProvider`
   and the `.hpp`/`.cpp` lose "cannot open source file" (else run *C/C++: Reset IntelliSense Database*); the
   **TC Toolkit C/C++** output channel shows `canProvideConfiguration … -> true` / `provideConfigurations … -> 1
@@ -158,7 +158,7 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   **For the Windows check (MSYS2):** with the setting empty, *Detect g++* finds the user's MSYS2 g++ over
   `C:\MinGW` (wherever MSYS2 is installed); with gcc removed from MSYS2 (or before `pacman -S
   mingw-w64-ucrt-x86_64-gcc`) the toast and the start-page g++ row name the MSYS2 folder and the pacman command;
-  activation is not slowed (registry read in the background); a Compile Project started right after activation
+  activation is not slowed (registry read in the background); a Build Project started right after activation
   (setting empty, MSYS2 only in the registry) builds with the MSYS2 g++, not "too old" — the build waits (bounded,
   7.5 s) for the registry search; *Detect g++* never writes a g++ < 7 before that search has finished.
 - **R14 Build (and Activate) through XAE: IMPLEMENTED on `claude/r14-xae`** (2026-11-12; based on the R13 branch,
@@ -225,10 +225,10 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   **Settled on 4026.28:** the C# compiles under PS 5.1 Add-Type, the DTE2 cast works, ErrorItems is filled
   (window shown) after `Build($true)`. **Unverified:** the 4024 (32-bit) shell's assemblies in 64-bit
   PowerShell, a localized pane name (only "Build" is looked for).
-  **Also in this commit:** the editor toolbar's Compile split button and the start page's tile are labelled
-  **Build** / *Build project* (label, `aria-label`, the caret's "Build options" tooltip/label; user
-  request); command ids and the palette title *TC Toolkit: Compile Project* unchanged, and so is the main
-  button's tooltip "Compile Project: check this PLC project …" (it names the command; user's call).
+  **Also on this branch:** the toolbar's Compile split button and the start page's tile are labelled
+  **Build** / *Build project* (user request), and (user, 2026-11-13) every user-read "Compile Project" is
+  now "Build Project" (palette title, tooltips, notifications, quick pick, settings text, README); command
+  ids, context/setting keys, the `TC Toolkit compile` source and the output channel are unchanged.
   **Verified (Linux, 2026-11-13):** see the commit's gate run (FULL suite, lint, typecheck); browser
   harnesses `test/browser/run.js` and `run_start_page.js` pass.
   **For the Windows check** (point the `test-*.ps1` at the driver with `-ScriptPath
@@ -434,7 +434,7 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   Marketplace and Open VSX 2026-11-09; publisher ID confirmed as `a-abushaqra` (= `package.json`); per release the user either uploads the VSIX or adds `VSCE_PAT`/`OVSX_PAT` secrets; our part is
   ~1 h of metadata/CHANGELOG/README disclaimer + a secret-gated publish step in `release.yml`.
 - **Compiler name in the UI (user ruling 2026-11-09):** the extension's UI and user-facing README name no compiler
-  ("Compile project", not "Check with STruC++"); `test_start_contributions.js` pins that the start page never says
+  ("Build project", not "Check with STruC++"); `test_start_contributions.js` pins that the start page never says
   STruC++. Developer docs, ROADMAP.md and the published roadmap page may keep the name.
 - **Backlog scheduled 2026-11-09 (user's ask):** toolkit R6–R10 (R10 on trigger only) and fork S3a–S8 are now rows in
   ROADMAP.md with my own sizing (not measured) at the Nov 9 velocity, ~4 h of session per working day. **S3a (three

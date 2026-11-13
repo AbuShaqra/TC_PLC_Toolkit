@@ -448,7 +448,7 @@ function run(name, o) {
     assert(setup.skipped && setup.ran === 0 && /was skipped: no compiler is configured for it \(No Node\.js was found\.\)\.$/.test(setup.text),
         'no usable compiler: skipped, and said');
     const other = x.compileFallbackText([{ name: 'A', ok: false, reason: 'running' }, { name: 'B', ok: false, reason: 'cancelled' }], src);
-    assert(other.ran === 0 && /A: not checked \(Compile Project is already running\); B: cancelled\.$/.test(other.text) && !/Problems as/.test(other.text),
+    assert(other.ran === 0 && /A: not checked \(Build Project is already running\); B: cancelled\.$/.test(other.text) && !/Problems as/.test(other.text),
         'a project that was not checked is named, and Problems is not pointed at');
     assert(/not from XAE, and can differ from XAE's/.test(x.FALLBACK_INTRO), 'the intro says the errors come from TC Toolkit\'s check, not XAE');
 }

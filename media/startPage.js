@@ -272,7 +272,7 @@
         compileReady = ready;
         tile.disabled = !(ready && hasProject);
         tile.classList.toggle('ready', ready);
-        tile.title = ready ? '' : 'The compiler file named in the Compile Project settings does not exist';
+        tile.title = ready ? '' : 'The compiler file named in the Build Project settings does not exist';
         describeCompileTile();
         $('compile-missing').hidden = ready;
     }
