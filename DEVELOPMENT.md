@@ -4,7 +4,7 @@ Building, testing and hacking on TC Toolkit. For what the extension *does*, see
 [README.md](README.md); for the current state of the work, see [HANDOFF.md](HANDOFF.md).
 
 **Naming.** The user-facing name is **TC Toolkit**: the display name, the Activity Bar container, the
-command category (`TC Toolkit: Compile Project`), the settings sections, the custom editor, status-bar texts,
+command category (`TC Toolkit: Build Project`), the settings sections, the custom editor, status-bar texts,
 notifications, quick-pick titles, output channels (`TC Toolkit Language Server`, `TC Toolkit Library
 Definitions`) and diagnostic sources (`TC Toolkit compile`, `TC Toolkit ST Validator`). The views are
 **PLC Objects**, **PLC Libraries** and **PLC References**, and the start page's tab is `TC Toolkit Start`.
@@ -213,12 +213,12 @@ per-suite without aborting on the first failure. The main ones:
 | `test/test_solution_map.js` | `src/solutionMap.js`: the real `.sln` → `.tsproj` → `_Config/PLC/*.xti` → `.plcproj` chain, multiple PLC projects under one solution, multiple same-named solutions, project labels scoped within their solution, unrelated Visual Studio solutions ignored, and unreferenced PLC projects retained as top-level fallbacks. |
 | `test/test_project_template.js` | `src/projectTemplate.js` on both shipped templates: the committed templates match `scripts/build-project-templates.js --check`; every GUID classified; every identity GUID re-issued with every reference following it and each occurrence's case kept (`.sln` upper, `.plcproj` lower); every type GUID kept; no template name left in a path or a byte; BOM, CRLF/LF, tabs and trailing newline preserved and nothing but names and GUIDs changed; starter objects exactly MAIN, PlcTask (calling MAIN) and an empty GVL_Main; the `.tspproj` (4024) and `.tsproj` + `_Config/` (4026) shapes; the created project read back by `projectMap` and `solutionMap`; refusal of a target holding a solution or a file it would write (nothing touched); name validation. |
 | `test/test_template_diagnostics.js` | A project created from each template, indexed like `test_sample_diagnostics.js` with every check on: ZERO diagnostics, again after the first edit a user makes (a variable in the `qualified_only` `GVL_Main` used from MAIN as `GVL_Main.x`), and a deliberate undeclared name IS reported (the gate is live). |
-| `test/test_start_contributions.js` | package.json for R2: the branding guard (no contributed name — display name, settings section titles, custom editor, view containers, views, command categories — contains "TwinCAT"; the extension id is unchanged); the setting keys (all ten live keys under `tcToolkit.`, none under `twincat.`, each old key contributed deprecated with its successor's type/scope/default, sections one per key group, the migration table in step); the `twincat` Activity Bar container (titled `TC Toolkit`) holding Start, PLC Objects, PLC Libraries in that order with ids unchanged, none left in the Explorer, References still in its panel, no dangling view id in a when-clause; each start command contributed under the `TC Toolkit` category, in the palette, registered, with an `onCommand` activation event (needed on 1.66); Start view welcome links; a monochrome offline icon; the start page's strict CSP and no remote load; `.vscodeignore` shipping the derived templates but not the raw XAE source; the `tcToolkit.startPage.recentProjectsShown` and machine-scoped `tcToolkit.xaeShell.path*` settings, and the page's command / settings-section allow-lists. |
+| `test/test_start_contributions.js` | package.json for R2: the branding guard (no contributed name — display name, settings section titles, custom editor, view containers, views, command categories — contains "TwinCAT"; the extension id is unchanged); the setting keys (all 18 live keys under `tcToolkit.`, none under `twincat.`, each old key contributed deprecated with its successor's type/scope/default, sections one per key group, the migration table in step); the `twincat` Activity Bar container (titled `TC Toolkit`) holding Start, PLC Objects, PLC Libraries in that order with ids unchanged, none left in the Explorer, References still in its panel, no dangling view id in a when-clause; each start command contributed under the `TC Toolkit` category, in the palette, registered, with an `onCommand` activation event (needed on 1.66); Start view welcome links; a monochrome offline icon; the start page's strict CSP and no remote load; `.vscodeignore` shipping the derived templates but not the raw XAE source; the `tcToolkit.startPage.recentProjectsShown` and machine-scoped `tcToolkit.xaeShell.path*` settings, and the page's command / settings-section allow-lists. R14: the three XAE command titles ("… (requires TwinCAT)", no TwinCAT-led name), each in the palette on Windows only (`when: isWindows`) with an `onCommand` activation event, the two build commands' `enablement: !twincat.xaeRunning`, the internal `twincat.xaeBuild.goToProblem` registered but not contributed, the start page allow-list holding `twincat.xaeBuild`/`xaeBuildAndActivate` (not `xaeShowTargets`), the settings section `XAE Build` with its five keys and their defaults equal to `xaeBuildSettings`, and no target-NetId setting. `tcToolkit.xaeBuild.platform` is a dropdown equal to `XAE_PLATFORMS` and offers every platform both samples' `.sln` declare; `configuration` stays free text. |
 | `test/test_start_commands.js` | `src/commands/startCommands.js` + `src/startPage.js` under a recording `vscode` stub: create with args and with prompts (files, recents, last location, open here/new/add/none), refusals inline vs as a notification, a deleted recent solution pruned, Generate ST's project pick, help links and settings, the singleton panel, its `state` message (including the recent-list length, clamped, and the XAE Shell paths; the g++ path in each state, read-only), a settings change (incl. `tcToolkit.compiler.gppPath`) re-posting state to an open page, g++ *Change…* opening the User settings, `openSettings {section}` and Open Settings' query argument, and the command allow-list. |
 | `test/test_check_unit.js` | `src/checkUnit.js`: one origin per emitted line, every pane line exactly once and verbatim in pane order (so a reported line/column IS the pane's), generated lines anchored on their component, members before the body, no rewriting (`REFERENCE TO`, `REF=`, pragmas survive), every sample file round-trips. |
-| `test/test_compile_check.js` | `src/compileCheck.js` with a fake child process: the bundled compiler as default and the setting as override, Node discovery (order on Windows, the version gate, the editor runtime as last resort with `ELECTRON_RUN_AS_NODE=1`, a configured Node path as the only candidate), setup messages (compiler missing, Node missing/too old, each naming its setting), the command line, the JSON report (clean, errors, malformed, exit 2, crash), mapping to file/component/pane/line, the pragma-warning filter and its count, temp-dir lifetime, timeout, cancellation, `paneRange`. |
+| `test/test_compile_check.js` | `src/compileCheck.js` with a fake child process: the bundled compiler as default and the setting as override, Node discovery (order on Windows, the version gate, the editor runtime as last resort with `ELECTRON_RUN_AS_NODE=1`, a configured Node path as the only candidate), setup messages (compiler missing, Node missing/too old, each naming its setting), the command line, the JSON report (clean, errors, malformed, exit 2, crash), mapping to file/component/pane/line, the pragma-warning filter and its count, temp-dir lifetime, timeout, cancellation, `paneRange`, runChild's `onStdout`/`onStderr` chunk callbacks. |
 | `test/test_compiler_defines.js` | `src/compilerDefines.js`: define lists (names, `NAME := 'value'`, spacing, a comma inside quotes, case kept, duplicates, empty and malformed entries with notes, an unclosed quote), `.plcproj` reading (`<CompilerDefines />`, whitespace-only, per-object defines read per item (conditions on the item group, the item and the element, `%(CompilerDefines)`, malformed entries noted), MSBuild last-wins and `$(CompilerDefines)`, XML entities, comments), `Condition`s on groups and elements (`evaluateCondition` case by case over the spellings real `.plcproj` files use; Debug applied, Release and platform mismatches skipped without a note, undecidable ones left out with a note and what they set made unreadable for later conditions, self-closing groups, empty conditions, `Condition=` inside another attribute, MSBuild-set properties, `$(Prop)` in a define value, other properties from earlier groups, the project's own `<Configuration>` default not overriding the check configuration), the `--pragma-define` arguments (numeric values exact), `fileDefineArgs` mapping each item's `Include` to its unit (case-insensitive, a `..\` link, an object with no unit noted), an unreadable file. |
-| `test/test_compile_commands.js` | `src/commands/compileCommands.js` + the provider hooks under a recording `vscode` stub: the bundled compiler run when nothing is configured, the toolbar button's host side (`compile-project` from a real `resolveCustomTextEditor` runs the command with the owning project's key, or asks when no single project owns the file; `compileRunning` posted at start and end and carried in `init`; the command's own setup messages), project pick, setup refusal (a missing override), clean run, a run with errors (Problems entries, pane markers, status text, summary), unsaved edits reaching the compiler, Go to Problem and the entry links, an edit dropping its component's results, a failed run keeping the previous results, cancellation, a fresh open landing on the first problem, and the project's compiler defines reaching the compiler as `--pragma-define` (numeric value exact) and an object's own as `--file-define` on its unit (malformed entries and an object with no unit left out, notes in the `TC Toolkit Compile` output channel and the summary, an empty element and an unreadable `.plcproj` passing none, a Debug-conditioned group applied and a Release one skipped with no note). R13: off by default, the dropdown and scope coupling, generation after a clean check only, a project that uses library symbols still generated (only a stripped prefix on a compiler-provided block, `SynLib.TON`, with a clean check: the summary and the channel name the library and the compiler's TON; dump-declared blocks: the compile mode gets the check's declaration files, the `.cpp`/`.hpp` start with the coverage comment and stay owned, g++ runs, the warning names the library and the channel lists the blocks and the compiler's TON; a symbol with no usable declaration: generation fails, the summary names it with its library, and the channel lists only that symbol under "C++ could not be generated", with no coverage lines), the g++ run and its Problems entries, ONE notification for a missing g++ (*Open Setting*; *Detect g++* only with an empty setting), an edited generated file left alone, and `CPP_Files/.gitignore` (written on the first run and noted in the channel only, no warning; unchanged on the next; an edit left alone and noted; deleted → not recreated on two runs, noted, `removed` in the record; a foreign one untouched and noted while the C++ is still written; an edited `PLC.cpp` dropped from it with the summary saying git sees it; a user's `PLC.o` in a fresh folder neither touched nor listed); the build waits for the MSYS2 registry search (`gppReady`) before it resolves g++, and a failing wait does not stop it. |
+| `test/test_compile_commands.js` | `src/commands/compileCommands.js` + the provider hooks under a recording `vscode` stub: the bundled compiler run when nothing is configured, the toolbar button's host side (`compile-project` from a real `resolveCustomTextEditor` runs the command with the owning project's key, or asks when no single project owns the file; `compileRunning` posted at start and end and carried in `init`; the command's own setup messages), project pick, setup refusal (a missing override), clean run, a run with errors (Problems entries, pane markers, status text, summary), unsaved edits reaching the compiler, Go to Problem and the entry links, an edit dropping its component's results, a failed run keeping the previous results, cancellation, a fresh open landing on the first problem, Build through XAE's fallback (`fromXae`: no notification, a missing compiler returned as a message instead of a popup; `append` keeps the previous project's problems, without it they are replaced), and the project's compiler defines reaching the compiler as `--pragma-define` (numeric value exact) and an object's own as `--file-define` on its unit (malformed entries and an object with no unit left out, notes in the `TC Toolkit Compile` output channel and the summary, an empty element and an unreadable `.plcproj` passing none, a Debug-conditioned group applied and a Release one skipped with no note). R13: off by default, the dropdown and scope coupling, generation after a clean check only, a project that uses library symbols still generated (only a stripped prefix on a compiler-provided block, `SynLib.TON`, with a clean check: the summary and the channel name the library and the compiler's TON; dump-declared blocks: the compile mode gets the check's declaration files, the `.cpp`/`.hpp` start with the coverage comment and stay owned, g++ runs, the warning names the library and the channel lists the blocks and the compiler's TON; a symbol with no usable declaration: generation fails, the summary names it with its library, and the channel lists only that symbol under "C++ could not be generated", with no coverage lines), the g++ run and its Problems entries, ONE notification for a missing g++ (*Open Setting*; *Detect g++* only with an empty setting), an edited generated file left alone, and `CPP_Files/.gitignore` (written on the first run and noted in the channel only, no warning; unchanged on the next; an edit left alone and noted; deleted → not recreated on two runs, noted, `removed` in the record; a foreign one untouched and noted while the C++ is still written; an edited `PLC.cpp` dropped from it with the summary saying git sees it; a user's `PLC.o` in a fresh folder neither touched nor listed); the build waits for the MSYS2 registry search (`gppReady`) before it resolves g++, and a failing wait does not stop it. |
 | `test/test_conditional_pragmas.js` | R12, `src/lsp/conditionals.js` and the diagnostics built on it, through the server's path (`assembleSt` → `indexXmlObject` → `syncDocument` → `provideDiagnostics`). Unit: nesting, segments, `fbRS.SET := TRUE;` and a line-leading named argument (`SET := c,` in a multi-line call) are not boundaries while real GET/SET accessor lines are, a statement-level nested group does not widen the span past its `{END_IF}`, a group wrapping the first VAR block is not an uncertain head, directives in comments/strings ignored, each kind of unbalanced segment marks only itself, selections, the 64 cap, neutral groups, suppression spans, `pickVar`/`AMBIGUOUS`, `scopeUncertain`, `inheritanceUncertain` from both indexers. Zero diagnostics (and every segment balanced, so a zero is never the unbalanced rule by accident) on valid conditional code: the reported split IF head, ELSIF chains, nested groups, WHILE/FOR, REPEAT and CASE split across branches and groups, per-branch declarations (also used outside the group), names only in a branch, `defined(variable:…)`/`defined(pou:…)` guards, a mid-expression group, a directive inside a type, a conditional EXTENDS head, a conditional VAR/VAR_INPUT header with a named call, a multi-line RS call (`SET :=` at line start) next to, after and inside a group, enum members inside and after a group (both indexers). Still reported outside groups: an unterminated FOR, a stray END_WHILE, an undeclared name, a type mismatch, an IF every branch opens and nothing closes (on the group's `{IF}`), a method after an unclosed `{IF}`, the statement after a nested statement-level group, an undeclared name in a POU whose first VAR block is wrapped; the cap silences only its own segment. Byte-identical structural output to the old matcher on every sample unit, per-segment = whole-unit there, and a neutral group appended to every unit (sample and synthetic, including multi-line named-argument calls and a property) leaves its structural output unchanged. Completion and references over both branches. |
 | `test/test_compile_real.js` | **Optional gate `compile-real`**: the REAL compiler — the bundled one, or `TWINCAT_COMPILER_BUNDLE` — first proving the bundled IEC libraries load (`TON`, `R_TRIG`, `CTU`, `LIMIT` resolve; `PID`, from a library NOT shipped, does not), then over every PLC project in `sample/`, through the same code the command uses (library preparation included): ZERO errors and zero warnings after the pragma filter (a ratchet, like the diagnostics baseline), nothing library-filtered, plus planted errors in a method body, a method declaration and a GVL landing on the right file/component/pane/line, and — in the second sample — a call to a method only the FIRST sample's same-named `FB_Cylinder` has, reported in the second sample's MAIN (the projects are never compiled together). Then R3.4 on the synthetic library project (`test/_synthLibProject.js`): errors without the declarations, 0 with them; a wrong argument type and an unknown parameter on a library call reported; an archive-only library name filtered; a user typo, a typo on a library FB member and an unknown name behind a qualifier reported (the last at its pane column); 0 errors without the dump. Then compiler defines on a temp copy of the second sample (`{IF defined(X)}` / `{IF hasvalue(X, 'v')}` in MAIN, `<CompilerDefines>` in its `.plcproj`): the defines select the branches; wrong case or value select ELSE; a numeric value is passed exactly and declares no global constant; a Debug-conditioned group's define selects its branch, a Release-only one does not. Then, on another copy: `hasvalue(TkLevel, '4')` holds from a `.plcproj` value `'4'` next to a `VAR_GLOBAL CONSTANT TkLevel`; a per-object define on FB_Valve selects its branch there but not in FB_Cylinder's same `{IF}`; a per-object value wins over the project's for `hasvalue` in that object only. Then R12 parity: each conditional-pragma fixture is compiled with no define, each define it names and all of them; one the compiler accepts under at least one set must get 0 LSP diagnostics (one rejected under every set is printed as advisory). Prints the sample's timing. Skips (and says so) without a Node >= 22. |
 | `test/test_cpp_real.js` | **Optional gates `cpp-real` and `gpp-real`** (R13): on a TEMP COPY of `sample/` (the sample is asserted untouched), every PLC project goes through the command's steps — units, library preparation, compiler defines, the check (0 errors), the compile mode, the write into `<project dir>/CPP_Files/` under the ownership record (the folder holds exactly `<project>.cpp`, `.hpp`, the record and the `.gitignore`; a second run replaces its own files). With git on PATH: `git init` over the copy, `git check-ignore -v` ignores each project's `.cpp`/`.hpp`/`.o`/record through `CPP_Files/.gitignore`, a user file there and the `.gitignore` itself are not ignored, `git status` lists only those two, an edited `.cpp` is not ignored (ignored again once restored), a user's own `<stem>.o` there before the first write is not ignored, and a deleted `.gitignore` is not recreated (the `.cpp` is then no longer ignored). With a g++ (`TC_TEST_GPP`, else detection): `-c` against `resources/compiler/include/`, no warnings with the build's flags, a clean build records its `.o`; a failing build must fail ONLY on a `KNOWN_GPP_GAPS` entry (today TcToolkitSample_PLC: a PROPERTY read through a global FB instance emitted as a field access), each error placed on a real line of the generated file; an error planted in a `.cpp` is placed on its line. Library use: a second copy of the sample, with TcToolkitSample2 given the SYNTHETIC library of `_synthLibProject.js` (a `.plcproj` reference, the dump, a `.tmc`) and a POU that calls it (including a function whose array parameter's bound is a library constant) plus a block of the project derived from a library block that reads an inherited variable, is checked (0 errors, nothing filtered), generated with the declarations, the coverage names "Synthetic Motion Library" with its blocks, the files start with the coverage comment, and g++ compiles it with no warning. An inherited variable of a type this compiler lacks (LTIME) and an LTIME-parameter function make the generation fail and are named with the library (the variable through its owner, `FB_SynAxis.tSynSpan`). |
@@ -235,6 +235,10 @@ per-suite without aborting on the first failure. The main ones:
 | `test/test_msys2_detect.js` | `src/msys2Detect.js` with a fake reg.exe and file system (runs off Windows): reg.exe output parsed by `HKEY_` and `REG_SZ` (English and German output, a DWORD ignored), the uninstall search over all four keys (HKCU/HKLM, WOW6432Node), only `DisplayName` starting with MSYS2, `InstallLocation` / the `UninstallString` folder / an expanded `REG_EXPAND_SZ`, an entry found twice read once, a failing reg.exe; `createRegRunner` (argument array, timeout, no shell, errors → null); the usual roots (profile, Scoop, `SCOOP`, `ChocolateyToolsLocation`); the candidate order in `src/gpp.js` (PATH, registry root's environments, usual roots, `C:\MinGW`, `usr\bin` last; PATH/MSYS2 repeats tried once, case-blind); the user report (a PATH MinGW 6.3 loses to a registry-only MSYS2 g++ 14); an MSYS2 without gcc named in `describeGppSetting` / `resolveGpp` (`msys2Root`), not when any environment has g++; the cache (never runs off Windows, once per session, `settled()`, bounded wait longer than both reg.exe phases, never rejects). |
 | `test/test_xae_shell_detect.js` | `src/xaeShellDetect.js` with every dependency faked (runs off Windows): the COM registration for both shells (quoted and argument-suffixed `LocalServer32`, the 32-bit view for 4024, a localized value name), the default locations with and without the environment variables, a registered file that is missing, a non-GUID ProgID value, rejecting / throwing registry and existence probes, non-Windows (nothing found, registry never queried), `createRegQuery` over a fake `execFile` (argument array, timeout, errors → null), `describeConfiguredShells`, and `resolveShellExe` (configured-and-existing wins, else default location, else registry). |
 | `test/test_xae_shell_commands.js` | `src/commands/xaeShellCommands.js` under a recording `vscode` stub with detection faked: an empty setting is filled (Global target), a non-empty one is kept even when its file is missing, nothing found writes nothing, `autoFill` never rejects, `twincat.detectXaeShell` reports found / kept / not found in one message whose button opens the filtered settings. Also `findTwinCatShells` in `src/xaeShell.js`: `path4026` ↔ the 64-bit shell, `path4024` ↔ the 32-bit one, a missing configured path ignored (those checks are skipped on Windows, where a real shell may be installed). |
+| `test/test_xae_build.js` | `src/xaeBuild.js` + `src/xaeBuildSettings.js` over the synthetic fixtures `test/fixtures/xae/*.jsonl` (read through `test/_fakeXaeDriver.js`): **showWindow false/undefined → no `-ShowWindow`, true → exactly one**; `-STA`/`-NonInteractive`/`-ExecutionPolicy Bypass`, no `-TcVersion` unless `shellOverride` (then exactly `-TcVersion <ProgId> -AllowVersionMismatch`, build only, known ProgId only); `missingShell` (the offer, the newest installed NEWER shell, never an older one — the downgrade direction gets the install text naming the older shell —, a confirmed substitute that is itself unregistered, a bare-string `installed`, none for activation, the install text); activation only with a valid NetId; the line splitter (CRLF, split prefix, split UTF-8, no final newline); parseLine; the reducer over every fixture; describeExit (0-4, timeout, spawn error, killed, missing `done`, an unconfirmed exit 1 → interrupted with the stderr line, errors counted by severity); `reachedBuildResult`; the summary counting errors/warnings separately; describeUiMode (headless, visible, version switch, mismatch, unreadable, `MainWindow.Visible` unreadable with the window shown or hidden); canCancel (never in target/activate/restart/verify); isStalled; target pick; confirmation text; settings defaults and clamps. Change B/C (2026-11-13): `declaredPairs` on both samples' `.sln`, `activationPlatform` (same / switch / not-declared / pair-not-declared / unknown, case-insensitive, the solution's spelling) and `pairNotDeclaredText`, the switch modal's text and buttons, provenance kept on targets, gate 4's multi-line refusal summarised on one line (`oneLine`) and not repeated as the detail, a blank fatal text, `errorDetails` (bare-string reasons too) and `noErrorDetails` (re-run offered only headless, never a claim about the visible run; empty items are no details), `needsCompileFallback` (exit 1 with 0 placed), describeExit not counting empty/summary items and taking the placed count, a free-text platform reaching `-Platform`. |
+| `test/test_xae_build_commands.js` | `src/commands/xaeBuildCommands.js` + the provider hooks under a `vscode` stub with the fake driver: the setting and the dropdown's `setXaeOption` decide `-ShowWindow` on the next spawn; the channel's requested and actual UI mode lines; Problems only in `twincat-xae` (Compile Project's collections untouched; a stub `compile` source proves the two sources' pane markers merge, edits reach both, removing `xae` keeps Compile Project's); the entry's `/xaeProblem?id=` link opens the component and pane through the URI handler, `openTarget` once per run; a dismissed modal spawns nothing, the confirmed NetId reaches the argv, `twincat.xaeBuild` never activates, a target readback mismatch is an error; cancel via the cancel file (exit 4, nothing killed); the force stop (PowerShell tree + only an `ours` shell, image-filtered; the launch-phase note); a cancelled, force-stopped, timed-out or unconfirmed-exit-1 run keeps the previous Problems; stderr decoded across chunks; no cancel during activation, nor when activation begins inside the grace period; one run at a time + `twincat.xaeRunning`; timeout, its extension during activation and after a refused stop; the stall re-run with `-ShowWindow` (one channel line, no second shell check; none after a run that exits 0 or refuses the stop); config-not-declared pick; the missing-shell flow on sample 2 (a `.tspproj`, 4024; `projectTcBuild` reads it): the pre-check modal when it can tell (exactly one prompt, the first run already `-TcVersion TcXaeShell.DTE.17.0 -AllowVersionMismatch`, the channel logs the choice), the driver's `progid-not-registered` + `installed` fallback when it cannot (one prompt, one re-run with exactly those args), Cancel keeps the original error, no installed alternative → no prompt and the shell to install, only an OLDER shell installed (a 4026 project, 4024 found) → no offer before or after the run and the shell to install named, a confirmed substitute that is itself unregistered → one prompt and the substitution named, the configuration re-run keeps a confirmed shell, activation never offered another shell (its Run-anyway warning, no override), a shell found only in the registry passes silently; Show Activation Targets; the non-Windows refusal. Target platform: Cancel / Switch for this run (argv `-Platform`, setting never written, the next build back on the setting) / Switch and remember (written once: user, else workspace; the stub reads the setting's real scope from package.json, keeps no folder value for a window-scoped key and refuses a folder write, as VS Code does), the plain modal when platforms match, the not-declared refusal before any spawn (sample 2), an undeclared configured pair refused before the modal, gate 4 on an unreadable `.sln` (kind `unknown`: plain modal, the confirmed target in the argv, the refusal summarised on one line and written once); an activation's re-runs (*Build again with the window shown* after a switch, the stall offer) reuse the confirmation (one list, one pick, one modal; the switched platform kept), a forged `confirmedActivation` argument ignored; the user's Cancel beats the stall re-run in both orders; a failed headless build without details: the reasons in the notification, *Build again with the window shown* re-runs once with `-ShowWindow` and every other argument equal, and writes no setting, no offer after a visible run (whose reason says "XAE window shown"); route `none` runs TC Toolkit's own check exactly once through `twincat.compileProject` (`fromXae`, not appending; stubbed here), the message says it is not XAE's and can differ, a missing compiler is said and skipped; route `typed` places its item in Problems with no fallback; a successful build's typed warning is listed; no fallback after a cancel or exit 2; the user's planted-error runs (`errors-pane-planted-headless`/`-visible` on a temp copy of sample 1 with `h;` planted): both messages placed with their compiler code as the Problems code, "failed: 1 error. 1 error, 1 warning (2 placed …)", no blank "not placed" line, the project-failed item one `XAE:` line, no fallback; the same pane naming a missing file: 0 placed → the fallback runs once, unplaced messages listed with their own severity. |
+| `test/test_xae_error_placement.js` | `src/xaeErrorPlacement.js` against `sample/` objects: `.sln`-relative Windows paths, the 'pane'/'file'/'object' line bases, the section marker (exact) vs "(location approximate)", a named method, file-known-line-unknown, general, the summary sentence; the user's two Windows runs (`errors-pane-planted-headless`/`-visible`, MAIN with `h;` planted): C0189 on implementation line 15, C0139 on 14, each once, 1 error + 1 warning, the project-failed item a note, empty items dropped; the pane parser (German level words, spacing, column, a wrapped message, stop lines, the E_FAIL line not a message); `(Impl)`/component suffixes; an 'object' line in a POU with methods approximate; the canonical path. |
+| `test/test_xae_driver_contract.js` | `resources/xae/build-plc-project.ps1` read as text against `src/xaeBuild.js`: ASCII, every flag buildDriverArgs emits is in `param()`, every event type emitted ⇔ handled, phases, fatal codes, prefix/`v`, exit 4, `Exit-Run` for every exit, the builder's safety markers (`$ownShellPid`, `Close($false)`, `Resolve-ActivationTarget`, ADS state 5, readback, the activation show), `UserControl` never set, the hide step guarded by `-not $ShowWindow`, cancel disarmed before activation and every phase entered after the disarm uninterruptible in JS, no real path to a wildcard `-Path` (and `ProviderPath` from Resolve-Path), the `shell-not-ours` refusal before any DTE write and a finally that leaves a foreign shell alone, the unidentified shell made visible again, the error list and output panes read with retries, every builder line kept (additive, with each rewrite listed), the `progid-not-registered` fatal's `installed` census (every `$ProgIdByBuild` ProgId tested in HKCR with `-LiteralPath`, newest first, `progId`/`build`/`projectVersion`/`installed` in the event, the builder and `templates/` copies running the same census: newest first, `-LiteralPath`, the same `$ProgIdByBuild`), `$ProgIdByBuild` equal to `XAE_SHELL_VERSIONS`, and `.vscodeignore` not excluding the driver. Windows-only counterpart: `scripts/Build PLC project/test-emit-event.ps1`. `Get-OutputPaneTexts`: OutputWindow before the Windows.Item route, each null guarded with a reason, every catch around `Invoke-ComRetry` rethrowing a cancel, identical in the builder and `templates/` (ASCII, CRLF); ErrorItems by plain assignment, its retry checking for a cancel and reporting exhausted rejections as such; the error-list catches rethrowing a cancel and a cancel check closing the phase; `errorDetails` emitted with its reasons and route. The typed reader (`Get-XaeShellInstallDir`, `Initialize-TypedDteReader`, `Read-TypedErrorList`, `Read-TypedBuildPane`): identical in all three copies; registry `LocalServer32` then the default folders; one Add-Type per run, a loaded type reused; EnvDTE/EnvDTE80/Interop from PublicAssemblies via LoadFrom; the DTE2 cast, `ErrorItems.Item(i)` 1..Count, the "Build" pane read; every reason (assembly path, Add-Type message, cast, empty); cancel rethrown; typed first, late-bound only when it gave nothing, in every copy; the window note per mode (no hard-coded "XAE window hidden"). The system-project lookup (`.tsproj` / `.tspproj`) as two provider-side `-Filter` calls merged before `Sort-Object`, in the driver (both lookups), the builder, `templates/` and `probe-sysmanager.ps1`. |
 | `test/test_multi_project_scope.js` | End-to-end: two copies of `sample/` under one workspace root (`test/_multiproject.js` builds the fixture, one copy deliberately diverged), driven through the real `scanWorkspace`. Asserts the partition (one index per project, nothing lost to a name collision), 0 diagnostics on the correct copy while the diverged copy's own real error still reports, references and the rename config scan never crossing the project boundary, and the library namespace/symbol registries staying per-project — including the Libraries-view union fallback when no project is specified. Needs `sample/`; skips cleanly when absent. |
 
 | `test/test_object_insert.js` | The Objects-tree insert commands' text, built by driving the **real** `buildNodeFromXml` over real `sample/` objects: the bare name for each kind, and the call template — instance name for an FB (`FB_Gripper` → `fbGripper`, since ST calls an instance, not the type), own name for a FUNCTION/PROGRAM, bare for a method/action, `Name();` when there are no parameters. Also pins that the extracted `callTemplate` is byte-identical to what `libraryTreeProvider` produced before the move, and that every `contextValue` named in the two new `when` clauses is one the Objects tree actually emits (read out of `objectsTreeModel.js`, not hard-coded, so a rename cannot silently orphan the menu items). **One case is synthetic on purpose:** no FB in `sample/` declares root `VAR_INPUT`/`VAR_OUTPUT`, so the mixed `:=`/`=>` ordering case is driven from one clearly-marked XML string through the real parser. |
@@ -288,8 +292,8 @@ perfectly good Chromium already.
 |---|---|
 | `build.js` | Generates the page by calling the **real** `getHtmlForWebview()` with a stubbed `vscode` module — a hand-copied page would quietly stop matching what ships. Substitutes only `acquireVsCodeApi()` (records outgoing messages, answers bridge requests from a fixture built off the real sample) and drops the webview CSP, which names `vscode-webview:` sources that do not exist over http. |
 | `serve.js` | Serves it. Monaco's AMD loader and its worker Blob both need a real origin. `require()` it for `start(port)`, or run it standalone to poke at the page by hand. |
-| `run.js` | The references peek: builds for the port it will serve on, drives Find References, asserts. Also pins the page's global error overlay: opening the peek must leave it hidden, Chrome's benign "ResizeObserver loop completed" notice (dispatched by hand, because whether the real loop fires is layout-timing dependent) must not raise it or post `error`, and a genuine error still must. `HARNESS_PORT` moves it off 8123; `HARNESS_SHOT=x.png` saves a screenshot. Also pins the Generate ST split button (roadmap R1): with one project the caret is hidden and the main button keeps its rounded right end; with two or more the inner corners square off to fuse with the caret (`has-caret` on `#generate-st-group`, set by `editor.js` with the caret's `hidden` flag — no `:has()`, which VS Code 1.66's Chromium lacks). Transitions are disabled for that check so it reads the end state, not a frame mid-animation. Step 7e pins Compile Project's pane markers: `compileDiagnostics` → owner `twincat-compile` on the active component's panes, `st-validator` markers surviving both ways and across a diagnostics refresh, a component switch showing only that component's markers, an edit dropping the edited component's markers and posting `compileDiagnosticsStale`; it writes a pane-marker screenshot (`HARNESS_COMPILE_SHOT`, default `test/browser/out/compile-markers.png`; empty = none). Step 7f pins the toolbar's Compile button: right after Generate ST, with its glyph, name and tooltip; a click posts `compile-project`; `compileRunning` disables it (a click then posts nothing) and re-enables it; at 320–1200 px Generate ST, its caret and Compile all stay inside the editor with no sideways scroll, and the Compile label drops to the glyph at <= 1100 px. Then the Compile dropdown (R13, `#compile-caret` / `#compile-menu`): closed and off at start, labelled, opens with focus on *Generate C++*, ArrowUp/Down and Space operate it, ticking *Build with g++* ticks *Generate C++* and unticking *Generate C++* unticks the build (each posting `setCompileOption {key, value}`), Escape closes and refocuses the caret, a host `compileOptions` message updates the boxes live, an outside click closes it, opening one split menu closes the other, and the caret stays inside the editor at every width. `HARNESS_TOOLBAR_SHOTS=<dir>` writes toolbar screenshots (dark and light; 1200, 960, 820, 400 px) and `compile-menu-open.png`. |
-| `run_start_page.js` | The start page (roadmap R2): renders the real `renderStartPageHtml()` output WITH its CSP (only `acquireVsCodeApi()` is stubbed, through Playwright's init script), and asserts no request leaves the page's origin, the project name is validated while typing (shared `media/projectName.js` rules, `aria-invalid`), Create posts `{version, name, location}` and shows a host refusal, every other control posts its message, project actions are disabled while no project is open, Compile project is enabled only with `compilerReady` (the compiler file exists — by default the bundled one) AND a project, shows "Compiler file not found" otherwise (and names no compiler product), the form survives in webview state, the recent list shows at most `recentsShown` rows behind a keyboard-operable "Show all (K)" / "Show fewer" tile (local to the page, follows a changed limit), the Settings card shows the two XAE Shell paths with a warning row for a path that is not on disk and posts `openSettings {section}` / the detect command, the g++ row in all four states (set, set via a bare name, detected on PATH / in an install folder, not found, and the three unusable-value warnings styled as the XAE warning row), its Change… / Detect again by click and keyboard, the Compile dropdown (R13: a chevron beside the tile, `aria-expanded`/`aria-controls`, a group of two labelled boxes showing `state.compileOptions`, keyboard-operable, posting `setCompileOption` with the coupling shown at once, never starting a compile), and there is no horizontal scroll at 360/560/1200 px (one column at 360). `HARNESS_START_SHOT=x.png` saves the Project actions card with the options open. Defaults to port 8125. |
+| `run.js` | The references peek: builds for the port it will serve on, drives Find References, asserts. Also pins the page's global error overlay: opening the peek must leave it hidden, Chrome's benign "ResizeObserver loop completed" notice (dispatched by hand, because whether the real loop fires is layout-timing dependent) must not raise it or post `error`, and a genuine error still must. `HARNESS_PORT` moves it off 8123; `HARNESS_SHOT=x.png` saves a screenshot. Also pins the Generate ST split button (roadmap R1): with one project the caret is hidden and the main button keeps its rounded right end; with two or more the inner corners square off to fuse with the caret (`has-caret` on `#generate-st-group`, set by `editor.js` with the caret's `hidden` flag — no `:has()`, which VS Code 1.66's Chromium lacks). Transitions are disabled for that check so it reads the end state, not a frame mid-animation. Step 7e pins Compile Project's pane markers: `compileDiagnostics` → owner `twincat-compile` on the active component's panes, `st-validator` markers surviving both ways and across a diagnostics refresh, a component switch showing only that component's markers, an edit dropping the edited component's markers and posting `compileDiagnosticsStale`; it writes a pane-marker screenshot (`HARNESS_COMPILE_SHOT`, default `test/browser/out/compile-markers.png`; empty = none). Step 7f pins the toolbar's Build button (`#compile-btn`, it runs Build Project): right after Generate ST, with its glyph, the name and `aria-label` "Build" and a tooltip; a click posts `compile-project`; `compileRunning` disables it (a click then posts nothing) and re-enables it; at 320–1200 px Generate ST, its caret and Compile all stay inside the editor with no sideways scroll, and the Compile label drops to the glyph at <= 1100 px. Then the Build dropdown (R13, `#compile-caret` / `#compile-menu`, labelled "Build options"): closed and off at start, labelled, opens with focus on *Generate C++*, ArrowUp/Down and Space operate it, ticking *Build with g++* ticks *Generate C++* and unticking *Generate C++* unticks the build (each posting `setCompileOption {key, value}`), Escape closes and refocuses the caret, a host `compileOptions` message updates the boxes live, an outside click closes it, opening one split menu closes the other, and the caret stays inside the editor at every width. `HARNESS_TOOLBAR_SHOTS=<dir>` writes toolbar screenshots (dark and light; 1200, 960, 820, 400 px) and `compile-menu-open.png`. |
+| `run_start_page.js` | The start page (roadmap R2): renders the real `renderStartPageHtml()` output WITH its CSP (only `acquireVsCodeApi()` is stubbed, through Playwright's init script), and asserts no request leaves the page's origin, the project name is validated while typing (shared `media/projectName.js` rules, `aria-invalid`), Create posts `{version, name, location}` and shows a host refusal, every other control posts its message, project actions are disabled while no project is open, the *Build project* tile (Compile Project) is enabled only with `compilerReady` (the compiler file exists — by default the bundled one) AND a project, shows "Compiler file not found" otherwise (and names no compiler product), the form survives in webview state, the recent list shows at most `recentsShown` rows behind a keyboard-operable "Show all (K)" / "Show fewer" tile (local to the page, follows a changed limit), the Settings card shows the two XAE Shell paths with a warning row for a path that is not on disk and posts `openSettings {section}` / the detect command, the g++ row in all four states (set, set via a bare name, detected on PATH / in an install folder, not found, and the three unusable-value warnings styled as the XAE warning row), its Change… / Detect again by click and keyboard, the Build dropdown (R13: a chevron beside the tile labelled "Build options", `aria-expanded`/`aria-controls`, a group of two labelled boxes showing `state.compileOptions`, keyboard-operable, posting `setCompileOption` with the coupling shown at once, never starting a compile), and there is no horizontal scroll at 360/560/1200 px (one column at 360). `HARNESS_START_SHOT=x.png` saves the Project actions card with the options open. Defaults to port 8125. |
 | `run_pragmas.js` | Folding and pragma highlighting. Folds real blocks and reads back the rendered lines, then tokenizes through Monaco's **own** tokenizer. Both fail silently if they regress, which is the point of driving a browser: a unit test on `stFolding.js` cannot prove Monaco actually *used* it rather than its own indentation provider. Carries the two reported bugs as regressions, and asserts implementation-pane blocks still fold — registering a provider replaces indentation folding, so that is the thing most likely to disappear unnoticed. Also runs nested `(* (* *) *)` comments through Monaco's own tokenizer (the inner `*)` must not return to code), and the pragma hover end to end in the webview: the stub answers with the real `provideHover` + `mapHoverToLocal` computed in Node, and the harness checks the request's pane position, the rendered widget, that a line with no `{` costs no round trip, and that a clicked documentation link goes to the host (`openDocumentationLink`) rather than navigating the webview. Verified: removing the provider turns 6 assertions red, and the failure text reproduces both original bug reports verbatim. Defaults to port 8124. |
 
 `run.js` asserts what only a browser can show: that the peek lists cross-file hits at all, that exactly
@@ -348,11 +352,11 @@ old values, and that the extension reads the moved value. The **start-page phase
 Bar container and its Start / Objects / Libraries views open (`workbench.view.extension.twincat`,
 `<view>.focus`), *TC Toolkit: Open Start Page* opens the `TC Toolkit Start` tab, and *Create New Project* (with
 its arguments, so no dialog) writes a 3.1.4026 and a 3.1.4024 solution and refuses a second create. The
-**compile phase** (R3.2/R3.3) runs *TC Toolkit: Compile Project* on every PLC project of the fixture
+**compile phase** (R3.2/R3.3) runs *TC Toolkit: Build Project* on every PLC project of the fixture
 through the real command, with the **bundled** compiler (asserted) — `TWINCAT_COMPILER_BUNDLE` (and
 `TWINCAT_COMPILER_NODE`) override it, written by `run.js` into the fresh profile's `tcToolkit.compiler.*`
 settings. Only when the host's `checkSetup` finds no Node >= 22 does the phase print `[SKIP]` and assert
-nothing. It also clicks the toolbar's Compile button in the station editor for real (hook message `test:clickCompile`) and asserts the host resolved the file's one owning project and the run started and ended (`compile-button` step). It asserts every run finishes, that no
+nothing. It also clicks the toolbar's Build button (Compile Project) in the station editor for real (hook message `test:clickCompile`) and asserts the host resolved the file's one owning project and the run started and ended (`compile-button` step). It asserts every run finishes, that no
 error is reported on the sample's own code (only the identifiers the P8 phases typed on purpose, which
 reach the compiler as unsaved edits, plus the object-insert phase's snippet in its file), and that each
 project's files in the Problems panel hold exactly that project's results. The **rename-undo phase**
@@ -513,6 +517,19 @@ src/
     xaeShellCommands    `twincat.detectXaeShell` + the silent activation-time fill of the two
                         `tcToolkit.xaeShell.path*` settings (EMPTY ones only, ConfigurationTarget.Global;
                         never overwrites). The VS Code half of xaeShellDetect
+    xaeBuildCommands    R14 Build through XAE: `twincat.xaeBuild`, `twincat.xaeBuildAndActivate`,
+                        `twincat.xaeShowTargets`, internal `twincat.xaeBuild.goToProblem`. Spawns
+                        resources/xae/build-plc-project.ps1 through runChild (onStdout → xaeBuild's
+                        splitter/reducer), the output channel `TC Toolkit XAE Build` (requested UI mode,
+                        then the mode read back from DTE), DiagnosticCollection `twincat-xae` (source
+                        "TC Toolkit XAE build"), pane markers via provider.setCompileSource(…, 'xae'),
+                        status bar, context key `twincat.xaeRunning`, one run at a time; the shell check
+                        (one question at most: the other-shell modal for a build, else the driver's
+                        progid-not-registered fatal is the fallback); the target pick +
+                        modal for activation; cancel file → grace → force stop (PowerShell tree + only an
+                        `ours` shell PID), never in activate/restart/verify; timeout; the headless stall
+                        offer; `setXaeOption` for the dropdowns. Reuses compileCommands' exported
+                        problemDiagnostic / openProblem / pickProjectKey
   checkUnit             Compile Project's check unit: one ST unit per TwinCAT object with a per-LINE
                         origin map back to component/pane/line. Pane text verbatim (never the export's
                         rewrites), members BEFORE the POU body. NOT the live path's unit. vscode-free
@@ -525,7 +542,8 @@ src/
                         `require()`d, never `--strict`) in
                         a temp dir deleted afterwards, timeout + cancel, JSON report → file/component/
                         pane/line, the pragma-warning filter (counted), the library filter (counted;
-                        messages on the generated declarations kept apart), paneRange. Spawn injected
+                        messages on the generated declarations kept apart), paneRange. Spawn injected.
+                        runChild takes optional onStdout/onStderr chunk callbacks (R14 streams events)
   cppGenerate           R13 C++ generation, vscode-free: the compiler's COMPILE mode (`-o <stem>.cpp`, a
                         second run after the check — `--json` exists only with `--check`) in a temp dir;
                         `<project dir>/CPP_Files/<stem>.cpp|.hpp` written under an ownership record
@@ -614,6 +632,20 @@ src/
                         (cache.settled()); the C/C++ provider resolves g++ again when it settles with a
                         root. findMsys2WithoutGpp: an MSYS2 root with no g++ in any environment.
                         Reuses xaeShellDetect's reg.exe runner (createRegRunner: no shell, 3 s timeout)
+  xaeBuild              R14 Build through XAE, vscode-free: the driver argv (`-ShowWindow` only for
+                        showWindow === true, `-TcVersion <ProgId> -AllowVersionMismatch` only for a
+                        confirmed `shellOverride` on a build, activation only with a valid NetId),
+                        missingShell (the other-shell offer and the install text),
+                        the JSON-lines splitter/parser (`@@TCTK ` prefix, v 1), the run-state reducer,
+                        describeExit (the exit code decides) / describeUiMode (the DTE readback),
+                        canCancel / isStalled, the target pick and the confirmation text
+  xaeBuildSettings      R14 `tcToolkit.xaeBuild.*` with defaults and clamps (showWindow false,
+                        Release, TwinCAT RT (x64), timeout 5-240 min, stall 2-60 min). Pure
+  xaeErrorPlacement     R14 where XAE's errors go: parses the "Build" pane (`<path>(<line>) : error: C…`,
+                        English/German level words, wrapped messages) and the list items' `<path> (Impl)`
+                        suffix; places pane lines on the 'object' base (PANE_LINE_BASE), list lines as
+                        pane lines; de-duplicates the two sources; drops empty items; a file-less
+                        "build … failed" item is a note, not a count. Pure
   xaeShellDetect        Where the XAE Shell of 3.1.4024 / 3.1.4026 is installed, for the
                         tcToolkit.xaeShell.path* settings: COM registration (ProgID → CLSID →
                         LocalServer32 via `reg.exe query`, 3 s timeout), then the default Program Files
@@ -840,6 +872,9 @@ resources/
                         size + SHA-256 per file), include/*.hpp (the fork's src/runtime/include, R13:
                         what the g++ build compiles against; GPL-3.0-only WITH the runtime library
                         exception per the fork's COPYING). Ships in the VSIX
+  xae/build-plc-project.ps1  R14's driver: an ADDITIVE copy of scripts/Build PLC project/
+                        build_plc_project.ps1 (-Json, -ShowWindow, -ListTargets, -CancelFile; exit 4).
+                        Ships in the VSIX; hand-synced with the builder (see "XAE build (R14)")
 scripts/
   vendor-compiler.js    Copies a BUILT, clean fork checkout into resources/compiler/ and records its
                         commit. Dev-only, .vscodeignored
@@ -1331,7 +1366,11 @@ in three places: the lexer (`parser.js`), the Monarch tokenizer, and the TextMat
 
 ### Compile Project (roadmap R3.2, bundled in R3.3)
 
-`twincat.compileProject` checks one PLC project with an external IEC 61131-3 compiler. The user-facing
+`twincat.compileProject` checks one PLC project with an external IEC 61131-3 compiler. Its palette title is
+*TC Toolkit: Build Project* (user, 2026-11-13: renamed from "Compile Project" to match the Build button, in
+every string a user reads — tooltips, notifications, the quick pick, the status-bar tooltip, settings
+descriptions, README; ids, context keys, setting keys, the `TC Toolkit compile` source and the
+`TC Toolkit Compile` channel kept). This guide still calls the feature Compile Project. The user-facing
 surfaces (UI, README) never name the compiler product — a user ruling, pinned by
 `test_start_contributions.js`. The pipeline:
 
@@ -1357,7 +1396,7 @@ surfaces (UI, README) never name the compiler product — a user ruling, pinned 
    to a component drops its compile markers and posts **`compileDiagnosticsStale {componentId}`**, so
    the host drops the matching Problems entries.
 
-The start page's *Compile project* tile is enabled when the compiler file exists — the bundled one, or
+The start page's *Build project* tile (it runs Build Project; labelled "Compile project" before 2026-11-13) is enabled when the compiler file exists — the bundled one, or
 the override `tcToolkit.compiler.path` names — and a project is open (`state.compilerReady` +
 `hasProject`); only a missing override (or a damaged install) disables it, with "Compiler file not
 found". A missing Node is not known to the tile: the command explains it on click. A change to
@@ -1451,14 +1490,14 @@ libraries. Decided by the user 2026-11-10: declarations plus a filter, **local-o
   include member and local names, so an undeclared variable that happens to share a name with anything
   in a referenced archive is filtered too.
 
-**The editor toolbar's Compile button** (`#compile-btn`, after the Generate ST split button; an
+**The editor toolbar's Build button** (`#compile-btn`, labelled "Build" since 2026-11-13, tooltip "Build Project: …", after the Generate ST split button; an
 inline-SVG glyph in the codicon style, since the webview is offline). A click posts **`compile-project`**;
 the provider's `compileProjectFor(file)` runs `twincat.compileProject` with `{projectKey}` when exactly
 one project `ownersOf` the file, else with no key (the command's own pick). Setup problems come from
 the command, so the messages are the palette's. `compileCommands` calls `provider.setCompileRunning`
 around each run; the provider posts **`compileRunning {running}`** to every open editor (and puts
 `compileRunning` in `init`), and the button is disabled meanwhile. Layout: at <= 1100 px the action
-buttons go compact and Compile drops to its glyph (name in the tooltip / `aria-label`); at <= 900 px the
+buttons go compact and Build drops to its glyph (name in the tooltip / `aria-label`); at <= 900 px the
 header wraps into rows (it was 680 px, where the status pill already ran off the edge at 700 px).
 
 **The bundled compiler (R3.3).** The compiler ships in `resources/compiler/`, so an empty
@@ -1736,6 +1775,272 @@ as `generatedCppFile` rows that open as text (`twincat.openComponent` treats `.c
 `GVL_System.fbStation.State` (a PROPERTY read through a global FB instance) is emitted as
 `FBSTATION.STATE` instead of the getter, so g++ fails on correct code that the check accepts.
 `test_cpp_real.js` lists it in `KNOWN_GPP_GAPS`; remove the entry when the fork fixes it.
+
+### XAE build (roadmap R14)
+
+"Build through XAE" builds the real solution with TwinCAT XAE's own compiler and libraries, and
+"Build and Activate through XAE…" also activates the configuration on a runtime of THIS machine and
+restarts it. Windows with XAE only; elsewhere the commands refuse and the dropdown entries are hidden.
+
+**Process chain.** `xaeBuildCommands` → `runChild` → `powershell.exe -NoProfile -NonInteractive
+-ExecutionPolicy Bypass -STA -File resources/xae/build-plc-project.ps1 -SlnPath … -Json …` → DCOM →
+`TcXaeShell.exe`. The shell is launched by COM activation, so it is **not** in PowerShell's process
+tree: killing PowerShell does not end it. The script censuses the shells before `New-Object` and quits
+only the one that appeared (`$ownShellPid`); a shell it cannot prove is its own is never closed. When no
+single new shell appeared **and other shells were already running**, COM may have handed it a developer's
+IDE: the driver refuses before any SuppressUI, hide, `Open` or `Close` (fatal `shell-not-ours`, exit 2).
+When none was running before, it builds, and before releasing the unidentified shell it turns SuppressUI
+off and shows the window, so a shell left running can be closed by hand. Every real path goes to
+`-LiteralPath` (a folder named `Line [2]` is not a wildcard), and `Resolve-Path` output is read as
+`.ProviderPath` (a UNC `.Path` is provider-qualified and DTE cannot open it).
+
+**The driver is a copy, kept additive.** `resources/xae/build-plc-project.ps1` is
+`scripts/Build PLC project/build_plc_project.ps1` (the proven headless builder) plus opt-in switches;
+without them it behaves exactly like the builder. Three copies exist and are synced **by hand**: the
+builder, `templates/build_plc_project.ps1`, and this driver (header line names the builder commit it was
+adapted from). `test/test_xae_driver_contract.js` fails if a builder line is lost without a listed
+reason. Keep the driver ASCII (Windows PowerShell 5.1 reads BOM-less scripts in the ANSI code page).
+The system project is a `.tsproj` (4026) or a `.tspproj` (4024); every copy, and `probe-sysmanager.ps1`,
+finds it with two provider-side lookups (`-Filter *.tsproj`, `-Filter *.tspproj`) merged before
+`Sort-Object FullName -Unique`: a `Where-Object` over every file under the solution folder builds an
+object per file (`_Libraries`, `.git`, …), and one `*.tsp*proj` filter would also match 8.3 short names.
+
+**Protocol** (`-Json`): stdout lines starting `@@TCTK ` are compact JSON (`v: 1`, `t: <type>`, non-ASCII
+escaped `\uXXXX`, flushed per line); every other line is a human log line (UTF-8). `src/xaeBuild.js`
+reads both; a garbled event becomes a log line and a counted protocol warning, never an exception.
+
+| Event | Fields |
+|---|---|
+| `hello` | `mode` build/activate/listTargets, `showWindow` |
+| `plan` | `solution, tsproj, projectVersion, progId, pinned, configuration, platform, targetNetId` |
+| `shell` | `pid` (null when unproven), `ours`, `preexisting[]` |
+| `phase` | `name`: resolve, launch, pin, open, configure, build, errors, target, activate, restart, verify, close |
+| `ui` | `requested`, `suppressUI`, `mainWindowVisible` (read back from DTE; null when unreadable), `reason`: headless / requested / version-switch / build / activation / after-activation |
+| `warning`, `fatal` | `text`; fatal `code` (no-sln, ambiguous-sln, config-not-declared `data.declared`, no-tsproj, version-mismatch, progid-not-registered, target-refused `data.gate`, com-failure, shell-closed, shell-not-ours) |
+| `buildResult` | `failedProjects` (LastBuildInfo: the authority on pass/fail) |
+| `errorItem` | raw ErrorList fields `file, line, column, description, project, level` (every build: a successful one can carry warnings) |
+| `outputPane` | `name, text, truncated` (failed builds; 256 KB cap) |
+| `errorDetails` | failed builds: `errorItems` (items read), `outputPanes` (panes with text), `reasons[]` (one line per step that gave nothing), `route` `typed`/`late-bound`/`none` (plus `errorListRoute`, `outputRoute`) |
+| `target`, `activation` | readback after SetTargetNetId; `adsState`, `stateName`, `outcome` run/incomplete/failed/refused |
+| `targets` | ListTargets: `local[{netId, name, kind, platform, provenance}]`, `projectNetId` (the platform is gate 4's: both read `Get-LocalRuntimeRecords`) |
+| `done` | last, always (every exit goes through `Exit-Run`): `exitCode`, `ui{requested, buildPhase, versionSwitchKeptVisible, activationShown}` |
+
+**Exit codes decide the result**: 0 built (and activated, when asked), 1 compile errors, 2 harness/COM
+error (nothing built), 3 built but activation failed or was refused, 4 cancelled. Events only explain —
+with one exception: `powershell.exe -File` also exits 1 when the script never ran (an execution policy set
+by Group Policy, a binding error), on a throw outside the driver's handler, or when PowerShell was killed
+from outside. So 1 is a compile failure only when the driver confirmed it (`done.exitCode === 1` or
+`buildResult.failedProjects > 0`, `compileFailureConfirmed`); otherwise it is "interrupted before it
+finished (exit code 1)" with the last stderr or log line. Only a run that reached a build result
+(`reachedBuildResult`: 0, 3, a confirmed 1) replaces the Problems; a cancelled, stopped, timed-out or
+unconfirmed run keeps the previous ones. Counts go through `countBySeverity` (xaeErrorPlacement) in the
+summary, the exit text and the status bar alike: a Medium item is a warning, not an error.
+
+**Problems entries link back.** Like Compile Project's, each XAE entry's code is a link
+(`vscode://<extension id>/xaeProblem?id=N`) answered by Compile Project's URI handler (VS Code allows one
+per extension; `registerProblemLinkResolver` adds the path), which opens the component, pane and line —
+a plain click cannot do that for a custom editor. A freshly opened editor goes to its first XAE problem
+once per run (`openTarget`).
+
+**The project's XAE Shell is missing** (user decision, 2026-11-13). The driver maps the project's
+build (`TcVersion` in the `.tsproj` / `.tspproj`) to a DTE ProgId (`$ProgIdByBuild`: 4024 →
+`TcXaeShell.DTE.15.0`, 4026 → `TcXaeShell.DTE.17.0`; the same pairs as `XAE_SHELL_VERSIONS`, pinned by
+the contract test). When that ProgId is not registered it stops with fatal `progid-not-registered`, whose
+`data` carries `progId`, `build`, `projectVersion` and `installed` (the mapped ProgIds that ARE
+registered, newest build first, a plain `string[]`). For a **build**, the extension then asks ONE modal
+— "<solution> was saved with TwinCAT 3.1.4024 and its XAE Shell (4024) is not installed. Build with XAE
+Shell 64 (4026) instead? XAE will upgrade the project files (it rewrites the .tspproj/.tsproj and .plcproj)." — and on yes runs with exactly `-TcVersion
+<ProgId> -AllowVersionMismatch`. The question is asked **before** the run when the pre-run shell check
+can already tell (the project's shell is neither in its `tcToolkit.xaeShell.path*` setting nor found by
+`detectXaeShells`, and another one is): then the first run already carries the override. When the check
+cannot tell (nothing found at all, a registry that cannot be read), it asks nothing and the driver's fatal
+is the fallback. Never two questions per build: a run after the pre-check asked never asks again, and the
+stall/configuration re-runs keep the confirmed shell. Cancel leaves the original error, which (like the
+no-alternative case) names the shell to install. **Only a newer shell is ever offered** (user ruling,
+2026-11-13): a 4024 project on a machine with XAE Shell 64 (4026) is offered 4026, but a 4026 project on a
+machine with only XAE Shell (4024) gets no offer — an older shell cannot open a project saved with a newer
+TwinCAT — and the error names the shell to install and says the older one is installed but not used. When
+the confirmed substitute is itself not registered with COM (its exe on disk, which is all the pre-check
+can see), the driver's fatal carries the substitute's `build` with the project's own `projectVersion`;
+`missingShell` reads that pair as "saved with 3.1.<project's build>, and <substitute>, chosen in its place,
+is not registered either" and offers nothing. **Activation never runs on another shell**: its pre-check
+keeps the "Run anyway" warning and its fatal only explains. What the override means in the driver: a
+ProgId names a build family, so the pinned version is `3.1.<that build>.<project revision>`, and the pin
+step falls back to the newest installed version of that build; `-AllowVersionMismatch` downgrades the
+build mismatch (and an unsatisfiable pin) to a warning. A real pin switch keeps the window visible (`ui`
+reason `version-switch`; the driver's rule). XAE will upgrade the project files (it rewrites the .tspproj/.tsproj and .plcproj).
+
+**Headless and the switch.** By default the build is headless: `SuppressUI = true` and, after the pin
+step, `MainWindow.Visible = false`. `tcToolkit.xaeBuild.showWindow` (false by default) passes
+`-ShowWindow`: `SuppressUI = false` and the window visible for the whole run, the hide step skipped, and
+the activation `finally` does not re-suppress. `UserControl` is never set (it would keep the shell alive
+after release and break the census/Quit rule). Two exceptions hold in headless mode, both inherited from
+the builder:
+- **after a real TwinCAT version switch the window stays visible** — the switch reloads the shell
+  environment and a hidden window during that reload is what made the switch fragile. From the
+  extension it occurs only after the user confirmed another XAE Shell (above), the one time it passes
+  `-TcVersion`;
+- **activation always shows the window** and turns SuppressUI off — a licence or full-download dialog
+  under SuppressUI is an invisible hang, not a question. There is no setting or parameter to hide it.
+`describeUiMode` turns the `build` readback into the channel line ("hidden (SuppressUI=True,
+MainWindow.Visible=False) - headless"), which is how a user checks on Windows that headless worked.
+On the 4026 shell `MainWindow.Visible` reads back as unreadable whether the window is shown or not
+(measured 2026-11-13), so the line then reports the requested mode and SuppressUI ("headless
+(SuppressUI=True; window visibility not readable)", "visible as requested (SuppressUI=False; …)").
+
+**Cancel and kill rule.** Before activation, cancel writes the `-CancelFile`; the driver checks it at
+every phase boundary and in its polling loops and stops with exit 4 (solution closed without saving,
+only its own shell quit). After a 60 s grace, a force stop kills PowerShell's tree (`taskkill /T /F`)
+and the shell PID **only if `shell.ours`**, and then with an image filter (`/FI "IMAGENAME eq
+TcXaeShell*"`) so a PID reused since it was reported is never hit. A force stop during `launch` (before
+the shell is identified) says in the channel that a shell may have been left running. The driver disarms
+the cancel file right before `target`, so the extension never cancels or force-stops in
+target/activate/restart/verify (`UNINTERRUPTIBLE_PHASES`; the contract test checks that every phase the
+driver enters after the disarm is in it) — a cancel there would be ignored and could only end in a force
+stop at the edge of `activate`. After the grace period the extension yields once (`setImmediate`) so
+pending output — an `activate` phase line — is read before it decides. The timeout (default 30 min) uses
+the same sequence; inside activation, or when its stop is refused because activation began during the
+grace period, it extends once by 5 min and then only reports. The stall watchdog (headless only, outside
+the build call and activation) offers to cancel and re-run once with the window shown; the re-run
+follows only a run that really stopped (not one that was refused or finished on its own meanwhile), the
+stopped run gets one channel line and no notification, and the shell check is not asked again. **The
+user's Cancel wins**, in either order: once a stop is under way the watchdog offers nothing, a Cancel
+withdraws a re-run chosen before it, and an offer answered after a Cancel is ignored. Inside the driver,
+a cancel thrown by `Invoke-ComRetry` during the error-list and Output reads (phase `errors`) is rethrown by
+every catch there (`Get-OutputPaneTexts` too — in the builder and `templates/` copies, which have no
+cancel, `$script:CancelSentinel` is `$null` and never matches), the hand-written `ErrorItems` retry checks
+the cancel file between rejected calls, and the phase ends with one more check, so a cancel there is exit
+4, never a failed build with a made-up "Output window not available" reason.
+`twincat.xaeBuild` / `twincat.xaeBuildAndActivate` are disabled while `twincat.xaeRunning` is set
+(`enablement`), and all three XAE commands are in the palette on Windows only (`when: isWindows`).
+
+**Activation** lists the local runtimes (`-ListTargets`, no COM), asks for one (the project's NetId
+marked, the last pick preselected from workspaceState — there is no target setting), and shows a
+**modal on every run** naming the target; nothing is spawned before it is confirmed. One activation asks
+it once: its re-runs (the stall offer, *Build again with the window shown*) reuse the confirmed target,
+platform and switch without listing or asking again. The confirmation travels as an object held in a
+`WeakSet` inside the command module and is used once, never as a command argument, so no caller of
+`twincat.xaeBuildAndActivate` can skip the modal (a forged `confirmedActivation` argument is ignored).
+A configuration pick after `config-not-declared` changes what is built, so that re-run asks again. The driver's four
+pre-IDE gates (`Resolve-ActivationTarget`) and the post-set readback still refuse any non-local target;
+a readback that differs from the confirmed pick is reported as an error. RUN means ADS state 5.
+
+**The target's platform** (user run 2026-11-13; XAE itself asks the same on download). Gate 4 refuses
+to activate a platform that is not the target's; the extension decides first, from the platform
+`-ListTargets` reported for the pick (the same records gate 4 reads, compared case-insensitively like
+PowerShell's `-ne`), with `activationPlatform` (src/xaeBuild.js) over the `.sln`'s declared pairs
+(`declaredPairs`, the driver's own regex):
+- same platform, or the target's unknown: the plain modal ("Activate on <target>"); unknown is the
+  driver's warning and XAE's own check — **unless the configured `<configuration>|<platform>` itself is
+  not one the solution declares** (`pair-not-declared`): then it is refused before the modal, listing the
+  declared pairs and the two settings, because the driver would stop with `config-not-declared` right
+  after the confirmation;
+- another platform the solution declares as `<configuration>|<it>`: the SAME one modal asks
+  "<target> (<NetId>) runs <P>, but <configured> is set. Switch to <P>?" (an inferred platform says
+  so) with **Switch for this run** (this run's `-Platform` only; the setting is never written) and
+  **Switch and remember** (also writes `tcToolkit.xaeBuild.platform` once, in the scope its value
+  comes from: the workspace, else the user settings — the setting is contributed without a `scope`, so
+  it is window-scoped: VS Code keeps no workspace-folder value for it and refuses a folder write, and
+  every run reads it with no resource), or Cancel; the channel names the switch;
+- another platform the solution does not declare: refused before XAE starts, naming the platform to
+  add in XAE's Configuration Manager;
+- the `.sln`'s pairs unreadable: nothing is switched, and gate 4's refusal is the answer.
+A driver refusal's summary is the whole message on one line (`oneLine`), never its first line: gate 4
+wraps after "activation target <NetId>," and the summary used to end ",.". The detail no longer repeats
+the multi-line text (the channel showed the refusal twice), and a blank fatal text gives "could not
+run." with no dangling colon.
+
+**Settings.** `tcToolkit.xaeBuild.platform` is a dropdown (`enum` + `enumDescriptions` = `XAE_PLATFORMS`
+in src/xaeBuildSettings.js: the seven platforms a 4026 solution declares plus `TwinCAT CE7 (ARMV7)` and
+`TwinCAT OS (ARMT2)` from the 4024 sample); a value typed into settings.json outside the list is passed
+on unchanged and the driver's `config-not-declared` (with its pick of the declared pairs) reports it.
+`configuration` stays free text: VS Code has no enum that also accepts free text, and solutions can
+declare their own configuration names. The start page shows `configuration | platform` as text only:
+a picker there would need the solution's own list, and the page is not tied to one solution.
+
+**Error details of a build.** Late binding does not resolve `ErrorList.ErrorItems` in PowerShell
+(Beckhoff Infosys, "Reading the VS output and the error list"; on 4026 the late-bound reads gave
+nothing with the window shown or hidden, user run 2026-11-13), so the driver reads them through a
+**typed reader** first, then the late-bound paths only when it gave nothing:
+- `Get-XaeShellInstallDir` finds the shell's folder from the ProgId's COM registration
+  (`LocalServer32`, 64-bit view, then the 32-bit one for 4024), else `Program Files\Beckhoff\TcXaeShell`
+  (4026+) / `Program Files (x86)\Beckhoff\TcXaeShell` (4024). vswhere is not used: the assemblies must
+  be the shell's own.
+- `Initialize-TypedDteReader` loads `EnvDTE.dll` and `EnvDTE80.dll` from `Common7\IDE\PublicAssemblies`
+  (plus `Microsoft.VisualStudio.Interop.dll`, which holds the EnvDTE types since VS 2022, and
+  `stdole.dll` when present) with `Assembly.LoadFrom` and compiles a C# class with `Add-Type
+  -ReferencedAssemblies`. Once per run, a failure included; the class name carries a version
+  (`TcTkTypedDteReader1`) and a type of that name already loaded in the session is reused, so **bump
+  the suffix whenever the C# changes**.
+- `Read-TypedErrorList` casts the DTE (passed as object, unwrapped from PowerShell's wrapper) to `DTE2`
+  and reads `ErrorItems.Item(i)`, i = 1..Count, as strings; `Read-TypedBuildPane` reads the Output
+  pane named exactly "Build" (`TextDocument.Selection`, `StartOfDocument(false)`, `EndOfDocument(true)`,
+  `Text`). Both go through `Invoke-ComRetry` (the C# rethrows a busy shell), rethrow the cancel
+  sentinel, and turn every other failure into a one-line reason: shell folder not found, "assembly not
+  found: <path>", "Add-Type failed (<message>)", "the cast to DTE2 failed", "the error list is empty".
+The error list is read after **every** build (typed, then late-bound), so a successful build lists its
+warnings; the Output window only after a failed one (typed "Build" pane, then `Get-OutputPaneTexts`).
+The late-bound reads are unchanged: `ErrorItems` by plain assignment, retried by hand (10 tries; when
+every one is rejected the reason is "the error list was still rejected after 10 tries (XAE busy)"):
+`Invoke-ComRetry`'s `return` writes to the pipeline, which can enumerate a COM collection, so a one-item
+list would come back as the bare item. `Get-OutputPaneTexts` tries `ToolWindows.OutputWindow`, then
+`Windows.Item("{34E76E81-…}").Object`, turning every null into a reason; its "not available" reason
+names the run's real window mode (`-WindowNote`: "XAE window hidden", "XAE window shown", "XAE window
+kept visible after a version switch") — it used to say "hidden" even with `-ShowWindow`. All four
+typed functions and `Get-OutputPaneTexts` are the same text in the builder and `templates/` (the
+contract test compares them), so the user's own script prints the errors too.
+
+The reasons and the route arrive as `errorDetails`. When a confirmed compile failure brought back no
+error item and no pane text (route `none`), `noErrorDetails` says "XAE returned no error details:
+<reasons>." and:
+- for a headless run, the notification offers **Build again with the window shown**: one re-run with
+  `-ShowWindow` (and the same configuration, platform and shell), never a settings write, started only
+  once the reporting run has ended;
+- **TC Toolkit's own check runs once** (user decision 2026-11-13): `twincat.compileProject` on each PLC
+  project of the solution, with `fromXae: true` (no setup popup, no notification of its own, no C++)
+  and `append: true` after the first project that ran (Compile Project otherwise replaces all its
+  problems per run). Its problems are Compile Project's (`TC Toolkit compile`); the channel and the
+  failure message say "Running TC Toolkit's own compile check instead: its errors come from TC
+  Toolkit's check, not from XAE, and can differ from XAE's." and list each project's counts
+  (`compileFallbackText`). No usable compiler → "skipped: no compiler is configured for it (<why>)".
+  Never after a cancel (exit 4) or a harness error (exit 2): `noErrorDetails` requires a confirmed
+  exit 1.
+- **The fallback runs whenever a confirmed compile failure placed nothing in Problems**
+  (`needsCompileFallback`, user 2026-11-13): with no details at all, and also when XAE's messages name
+  no file and line that resolve. Once anything is placed, no fallback.
+
+**Why placement lives in JS.** Placing needs the XML parse and the raw lineMap the rest of the
+extension uses; `src/xaeErrorPlacement.js` is testable here, the ps1 reports raw fields and pane text
+only. What the two sources carry (user's runs on 4026.28, 2026-11-13; fixtures
+`errors-pane-planted-headless` / `-visible`, sample 1's MAIN with `h;` planted at implementation line 14):
+- **Headless**, the error list's items are empty (no description, no file) except a file-less
+  "Project '…' build for platform '…' failed." item; the **"Build" pane** has
+  `<path>\MAIN.TcPOU(22) : error: C0189: ';' expected instead of 'END_FOR'` and
+  `…(21) : warning: C0139: The code 'h;` + a continuation line `' has no effect. Is this the intent?`.
+- **Window shown**, the items are filled: `file` = `<path> (Impl)` (expect `(Decl)`), `line` = a line of
+  that pane (14 / 15), `level` `vsBuildErrorLevelHigh` / `…Medium` (`ErrorLevel.ToString()` in the typed
+  reader; High = error, Medium = warning, Low = info). The project-failed item came as a warning-level item.
+- **The pane's line base is `'object'`** (`PANE_LINE_BASE` in `src/xaeErrorPlacement.js`): the
+  declaration's lines (MAIN: 7, counting the empty line after the final CRLF), then the implementation's
+  — 21 = 7 + 14, 22 = 7 + 15. Confirmed for an object's own body only: a pane line in an object with
+  child components (methods, actions, properties, transitions) is placed on the root but marked
+  "(location approximate)" until a capture shows how children are numbered there. A list item whose
+  suffix names a component (`(M_Foo Impl)`, `(FB.State Get Impl)`, parsed tolerantly) goes on that
+  component; an unknown name → root, approximate.
+- The same message from both sources (same file, component, pane, line; text compared without the
+  code and whitespace) is kept once, with the code carried over; within one source every message counts.
+  Counts (summary, status bar, "failed: N errors") come from that de-duplicated set. The compiler code
+  is the Problems entry's code (its link target unchanged).
+- Paths: as given; else the longest tail (2+ segments) that exists under the `.sln` directory (a
+  fixture's generic root); `fs.realpathSync.native` gives the workspace's own casing on Windows.
+- Not messages: summary lines, separators, and the solution-level `Fehler: Unbekannter Fehler (Ausnahme
+  von HRESULT: 0x80004005 (E_FAIL))` that follows a failed PLC project — they stay in the channel only.
+
+**Not done (phase 2, each waits for a Windows probe):** boot project + autostart and PLC RUN on port 851;
+remote targets (machine-scope setting, off by default, modal every run); building one nested PLC project
+(`BuildProject`); route listing; attaching to a running hidden shell to show it. Never: writing routes,
+saving the solution or `.tsproj`, activating without the modal, closing a shell this run did not start,
+automating the trial-licence dialog.
 
 ### Writes
 

@@ -42,8 +42,8 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   `fbCylinder(refExtendOut := GVL_Io.bExtendOut, refRetractOut := GVL_Io.bRetractOut)`: "reference to uninitialized
   variable") and C0195 (FB_Station.Cyclic line 28, INT into WORD). **User: fix the sample.** Done in the generator
   and the committed sample: `GVL_Io` BOOLs get `:= FALSE` (my guess for C0564 — unverified), line 28 uses
-  `INT_TO_WORD(...)`. 119/119 FULL. **Awaiting the user's XAE re-build** to confirm 0 warnings; if C0564 stays,
-  the next candidate is binding the references in code instead of the FB_init arguments (changes what the sample
+  `INT_TO_WORD(...)`. **Awaiting the user's XAE re-build** to confirm 0 warnings; if C0564 stays, the next
+  candidate is binding the references in code instead of the FB_init arguments (changes what the sample
   exercises, so ask first).
 - **R13 C++ generation + g++ build: MERGED** into `dev` as PR #37 (squash `02236c8`, 2026-11-13 08:40 UTC,
   user). Design and rules: DEVELOPMENT.md "C++ generation and the g++ build (roadmap R13)"; the full Windows
@@ -57,6 +57,103 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   runner's real MSYS2 at `C:\msys64` and its unsettled registry cache); fixed in `aa202b0`/`ee02e90`, CI green.
   Rule for new g++ tests: never let a test reach the host's g++, PATH, MSYS2 or registry: inject `machine`/`gppMachine`,
   `msys2Root`, `ready` and `registrySettled`.
+- **R14 Build (and Activate) through XAE: MERGED** into `dev` as PR #38 (squash `64ff7d9`, 2026-11-13 12:50 UTC) after the user's Windows check passed in full (below). Was on `claude/r14-xae` (2026-11-12; based on the R13 branch,
+  PR #37 not yet merged; nothing here ever ran PowerShell or COM — every ps1 change is checked as text only, the
+  user's Windows run is its parse check). Driver `resources/xae/build-plc-project.ps1` = the builder
+  `scripts/Build PLC project/build_plc_project.ps1` (b578199) + opt-in `-Json`/`-ShowWindow`/`-ListTargets`/
+  `-CancelFile`; hand-synced with the builder and `templates/`. Headless by default (`tcToolkit.xaeBuild.showWindow`
+  false); activation ALWAYS shows the window; a version switch keeps it visible. Commands `twincat.xaeBuild`,
+  `twincat.xaeBuildAndActivate`, `twincat.xaeShowTargets`; channel *TC Toolkit XAE Build*; Problems in `twincat-xae`.
+  Design, protocol, cancel/kill rules: DEVELOPMENT.md "XAE build (R14)" (the 28 review fixes of 2026-11-12 are in
+  git history). Phase 2 (each needs a Windows probe first): boot project, remote targets, single-project build,
+  routes, attaching to a hidden shell.
+  **Windows runs (user, 2026-11-13, XAE Shell 64 on 4026.28):** the driver parses and runs under Windows PowerShell.
+  Step 1 PASSED (sample 1 headless: BUILD SUCCEEDED, no window, no `TcXaeShell.exe` left); step 2 PASSED (window
+  shown throughout). Settled: `$dte.MainWindow.Visible` is UNREADABLE on 4026 shown or hidden (`describeUiMode`
+  reports the requested mode + SuppressUI). Sample 2's system project is a `.tspproj` (lookups fixed, 706dfde).
+  Sample 2 (3.1.4024.62) on a 4026-only machine → `progid-not-registered` → one modal offering XAE Shell 64, then
+  `-TcVersion <ProgId> -AllowVersionMismatch` (b6d831d; DEVELOPMENT "The project's XAE Shell is missing").
+  **Done earlier on 2026-11-13 (Linux-verified; details in DEVELOPMENT "XAE build (R14)" and git history):**
+  platform dropdown (`XAE_PLATFORMS` enum), activation switching to the target's platform (one modal,
+  *Switch for this run* / *Switch and remember*), per-step error-detail reasons + *Build again with the
+  window shown*, and the 16 second-review fixes (cancel in the error reads = exit 4, newer-only shell
+  offer, one activation modal, `.tsproj`/`.tspproj` lookup). Build and Activate onto UmRT_Default with the
+  switch question PASSED on Windows (9ed8b7a).
+  **Pane parsing + placement (this commit, Linux-verified; from the user's runs on c24dc06, sample 1 with
+  `h;` planted at MAIN implementation line 14, 4026.28, OS (x64)):** the typed reader WORKS. Headless:
+  the error list gave 2 EMPTY items + a file-less "Project 'TcToolkitSample_PLC' build for platform
+  'TwinCAT OS (x64)' failed." item (all warning level, so "3 warnings (0 placed)"), the Build pane had
+  `MAIN.TcPOU(22) : error: C0189: …` and `(21) : warning: C0139: The code 'h;` + a wrapped line; Problems
+  empty, no fallback. Window shown: the items were FILLED, `file` = `<path> (Impl)` and `line` = pane line
+  (14/15), but the suffix broke the path match → "0 placed". **Settled: the Build pane's line base is
+  'object'** (declaration lines then implementation lines: 21 = 7 + 14, 22 = 7 + 15) —
+  `PANE_LINE_BASE`, src/xaeErrorPlacement.js. Now: the pane is parsed in JS (`parseOutputPaneLines`;
+  English + German level words, wrapped messages, stop lines), list suffixes `(Impl)`/`(Decl)`/component
+  are parsed, both sources de-duplicated, empty items dropped, the project-failed item is one `XAE:`
+  channel line (not counted), counts come from the de-duplicated set, unplaced messages print their own
+  severity, the compiler code is the Problems code, and **the fallback runs whenever a confirmed exit 1
+  placed nothing** (`needsCompileFallback`). The pane's trailing `Fehler: Unbekannter Fehler (Ausnahme von
+  HRESULT: 0x80004005 (E_FAIL))` comes from the solution-level build after the PLC project failed: not a
+  message, kept in the channel only. No ps1 change. Fixtures `errors-pane-planted-headless`/`-visible`.
+  **Unverified:** how the pane numbers a method/action/property/transition of a POU (an 'object' line in
+  an object with child components is placed on the root, "(location approximate)"; a capture with an
+  error planted in a method confirms it), what the list suffix looks like for a child component (parsed
+  tolerantly: `(M_Foo Impl)`, `(FB.M_Foo Decl)`, `(State Get Impl)`), `(Decl)` itself, GVL/DUT pane
+  lines (declaration only, assumed), other UI languages' level words (English + German only).
+  **Typed error reader + compile-check fallback (c24dc06; the reader is now Windows-verified):**
+  user run on 6abbb52 (sample 1 + planted error, 4026.28, OS (x64)), headless AND `-ShowWindow`: "Projects
+  failed: 2", the late-bound error list null, the Output window null → Problems empty. **Cause (Beckhoff
+  Infosys "Reading the VS output and the error list"): late binding does not resolve
+  `ToolWindows.ErrorList.ErrorItems` in PowerShell; C# through EnvDTE does.** Now:
+  - A. all three ps1 copies carry `Get-XaeShellInstallDir` (ProgId `LocalServer32`, then
+    `Program Files[ (x86)]\Beckhoff\TcXaeShell`; vswhere NOT used — my call, the assemblies must be the
+    shell's own), `Initialize-TypedDteReader` (LoadFrom EnvDTE/EnvDTE80 [+ Microsoft.VisualStudio.Interop,
+    stdole] from `Common7\IDE\PublicAssemblies`, one `Add-Type` per run, class `TcTkTypedDteReader1` —
+    bump the suffix when the C# changes), `Read-TypedErrorList`, `Read-TypedBuildPane` ("Build" pane).
+    Typed first, late-bound only when it gave nothing; the error list after every build (warnings on
+    success); `errorDetails.route` typed/late-bound/none (+ `errorListRoute`, `outputRoute`).
+  - B. `Get-OutputPaneTexts -WindowNote` names the real window mode (it was hard-coded "hidden").
+  - C. route none on a confirmed exit 1 → `twincat.compileProject` once per solution project with
+    `{fromXae, append}` (no popup/notification/C++ of its own; append keeps the earlier project's
+    problems), one combined notification saying the errors are TC Toolkit's check, not XAE's, and can
+    differ; no compiler → "skipped: no compiler is configured for it (…)". Not on exit 4 / exit 2.
+    *Build again with the window shown* now starts only after the reporting run ends (`whenIdle`).
+  **Settled on 4026.28:** the C# compiles under PS 5.1 Add-Type, the DTE2 cast works, ErrorItems is filled
+  (window shown) after `Build($true)`. **Unverified:** the 4024 (32-bit) shell's assemblies in 64-bit
+  PowerShell, a localized pane name (only "Build" is looked for).
+  **Also on this branch:** the toolbar's Compile split button and the start page's tile are labelled
+  **Build** / *Build project* (user request), and (user, 2026-11-13) every user-read "Compile Project" is
+  now "Build Project" (palette title, tooltips, notifications, quick pick, settings text, README); command
+  ids, context/setting keys, the `TC Toolkit compile` source and the output channel are unchanged.
+  **Verified (Linux, 2026-11-13):** see the commit's gate run (FULL suite, lint, typecheck); browser
+  harnesses `test/browser/run.js` and `run_start_page.js` pass.
+  **Windows results later on 2026-11-13 (user):** errors placed and jump by the code link (MAIN body; a method via
+  `<file>@<Component> (Impl):N`, fixed b3b7a17); *Switch and remember* writes the setting; the platform dropdown;
+  cancel during a build; *Show Activation Targets*; sample 2 onto UmRT_Default refused before XAE (wording now
+  names Configuration Manager, 7f4e560) — all PASSED. Open: sample 2 *Build through XAE* on XAE Shell 64 + git status.
+  **For the Windows check** (point the `test-*.ps1` at the driver with `-ScriptPath
+  ..\..\resources\xae\build-plc-project.ps1`):
+  1. sample 1 + `h;` planted (as before), headless AND shown: C0189 on MAIN impl line 15, C0139 on 14,
+     each ONCE, not approximate, "1 error, 1 warning (2 placed)", no fallback; then an error planted in a
+     METHOD of FB_Station (pane line numbering of a child; the list suffix's form) — capture `-Json`
+     **from the sample only**; a clean build with a warning lists it;
+  2. (PASSED on 9ed8b7a) *Build and Activate* onto UmRT_Default with the switch question; still to see after the
+     review fixes: *Switch and remember* lands in the user (or workspace) settings, and a stalled/failed headless
+     activation re-run asks no second target pick or modal; with `tcToolkit.xaeBuild.configuration` set to a name
+     the solution lacks, the activation is refused before the modal;
+  3. sample 2 (no OS (x64) declared) onto UmRT_Default: refused before XAE starts, naming the platform to add;
+  4. Settings UI: the platform shows as a dropdown with descriptions; a custom string in settings.json still runs;
+  5. re-run sample 2 on 4026: one shell modal, then a build (does XAE upgrade the `.tspproj`?); the reverse (a
+     4026 project where only the 4024 shell is installed, if such a machine exists) must offer nothing;
+  6. `-TcVersion` forcing a switch: `ui` reason `version-switch`; 7. `probe-sysmanager.ps1` with/without `-Pump`;
+  8. cancel during build (exit 4, shell closed), during the error reads of a failed headless build (exit 4, no
+     "Build again" offer) and during activation (refused); 9. *Show Activation Targets*;
+  off Windows the commands refuse; 10. with a developer XAE Shell open: a new shell or `shell-not-ours`; a
+  solution under `Line [2]` and one on a UNC share build.
+  **Open questions (defaults in place):** settings key section `tcToolkit.xaeBuild` (one section); hide the window
+  during activation (no); hide after a version switch (keep visible); boot project / remote targets (phase 2);
+  child-component numbering in the Build pane (approximate until a capture); PS 5.1
+  ConvertTo-Json shapes (one-element arrays), nested `BuildProject`, whether a hidden shell ever hangs on a dialog.
 - **R3.2 Compile Project: MERGED** into `dev` as PR #32 (`28f24f1`, 2026-11-10 22:22 UTC).
 - **R3.3–R9 MERGED** into `dev` as PR #33 (`6424968`, 2026-11-11 09:30 UTC) after the user's Windows checks
   (dev-host green after `npm ci`; manual checks all passed). Details per item are in git history and ROADMAP "Done".
@@ -237,7 +334,7 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   Marketplace and Open VSX 2026-11-09; publisher ID confirmed as `a-abushaqra` (= `package.json`); per release the user either uploads the VSIX or adds `VSCE_PAT`/`OVSX_PAT` secrets; our part is
   ~1 h of metadata/CHANGELOG/README disclaimer + a secret-gated publish step in `release.yml`.
 - **Compiler name in the UI (user ruling 2026-11-09):** the extension's UI and user-facing README name no compiler
-  ("Compile project", not "Check with STruC++"); `test_start_contributions.js` pins that the start page never says
+  ("Build project", not "Check with STruC++"); `test_start_contributions.js` pins that the start page never says
   STruC++. Developer docs, ROADMAP.md and the published roadmap page may keep the name.
 - **Backlog scheduled 2026-11-09 (user's ask):** toolkit R6–R10 (R10 on trigger only) and fork S3a–S8 are now rows in
   ROADMAP.md with my own sizing (not measured) at the Nov 9 velocity, ~4 h of session per working day. **S3a (three

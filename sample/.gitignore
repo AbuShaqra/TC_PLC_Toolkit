@@ -56,3 +56,11 @@ TcToolkitSample2/.vs/
 TcToolkitSample2/**/*.tmc
 TcToolkitSample2/**/*.bak
 TcToolkitSample2/**/*.~u
+
+# What building and activating leave in either sample: per-folder IDE settings and the trial licence an
+# activation adds. CPP_Files/ is NOT ignored here: its own .gitignore (R13) decides, and
+# test/test_cpp_real.js checks that.
+TcToolkitSample/.vscode/
+TcToolkitSample2/.vscode/
+TcToolkitSample/**/*.tclrs
+TcToolkitSample2/**/*.tclrs

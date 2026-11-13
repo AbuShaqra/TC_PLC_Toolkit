@@ -1,0 +1,16 @@
+{"v":1,"t":"hello","mode":"build","showWindow":false}
+{"v":1,"t":"shell","pid":4245,"ours":true,"preexisting":[]}
+{"v":1,"t":"phase","name":"build"}
+{"v":1,"t":"ui","requested":"headless","suppressUI":true,"mainWindowVisible":null,"reason":"build"}
+{"log":"Projects failed: 1"}
+{"v":1,"t":"buildResult","failedProjects":1}
+{"v":1,"t":"phase","name":"errors"}
+{"log":"[1] TcToolkitSample_PLC\\POUs\\Machine\\FB_Station.TcPOU(2): C0046: Identifier 'nNope' not defined"}
+{"v":1,"t":"errorItem","file":"TcToolkitSample_PLC\\POUs\\Machine\\FB_Station.TcPOU","line":2,"column":5,"description":"C0046: Identifier 'nNope' not defined","project":"TcToolkitSample_PLC","level":"vsBuildErrorLevelHigh"}
+{"log":"----- Output window panes -----"}
+{"log":"--- pane: Build ---"}
+{"v":1,"t":"outputPane","name":"Build","text":"------ Build started: Project: TcToolkitSample_PLC ------\r\nC0046: Identifier 'nNope' not defined\r\nCompile complete -- 1 errors, 0 warnings","truncated":false}
+{"v":1,"t":"errorDetails","errorItems":1,"outputPanes":1,"reasons":[],"route":"typed","errorListRoute":"typed","outputRoute":"typed"}
+{"log":"BUILD FAILED."}
+{"v":1,"t":"done","exitCode":1,"ui":{"requested":"headless","buildPhase":{"suppressUI":true,"mainWindowVisible":null},"versionSwitchKeptVisible":false,"activationShown":false}}
+{"exit":1}

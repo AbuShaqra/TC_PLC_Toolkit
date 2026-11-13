@@ -80,8 +80,8 @@ assert((c.views['twincat-references-panel'] || []).find(v => v.id === 'twincatRe
     const { SETTING_RENAMES } = require(path.join(REPO, 'src', 'settingsMigration.js'));
     const live = Object.keys(allProps).filter(k => !allProps[k].deprecationMessage);
     const deprecated = Object.keys(allProps).filter(k => allProps[k].deprecationMessage);
-    assert(live.length === 13 && live.every(k => k.startsWith('tcToolkit.')),
-        `all 13 live settings are tcToolkit.* (got ${JSON.stringify(live)})`);
+    assert(live.length === 18 && live.every(k => k.startsWith('tcToolkit.')),
+        `all 18 live settings are tcToolkit.* (got ${JSON.stringify(live)})`);
     // R13: the C++ switches (both off by default) and the g++ path (machine-scoped, like the XAE Shell paths).
     const gen = allProps['tcToolkit.compiler.generateCpp'];
     const build = allProps['tcToolkit.compiler.buildWithGpp'];
@@ -166,8 +166,8 @@ assert(/^\^1\.66\./.test(pkg.engines.vscode), `engine stays ^1.66 (${pkg.engines
         'the descriptions say which shell is 32-bit and which is 64-bit');
     assert(ALLOWED_COMMANDS.has('twincat.detectXaeShell') && [...ALLOWED_COMMANDS].every(id => id.startsWith('twincat.') && registered.has(id)),
         'every command the start page may run is a registered twincat.* command');
-    assert(JSON.stringify(SETTINGS_SECTIONS) === JSON.stringify({ xaeShell: 'tcToolkit.xaeShell', gpp: 'tcToolkit.compiler.gppPath' }),
-        'the page may open the Settings UI filtered to tcToolkit.xaeShell or tcToolkit.compiler.gppPath only');
+    assert(JSON.stringify(SETTINGS_SECTIONS) === JSON.stringify({ xaeShell: 'tcToolkit.xaeShell', gpp: 'tcToolkit.compiler.gppPath', xaeBuild: 'tcToolkit.xaeBuild' }),
+        'the page may open the Settings UI filtered to tcToolkit.xaeShell, tcToolkit.compiler.gppPath or tcToolkit.xaeBuild only');
     assert(ALLOWED_COMMANDS.has('twincat.detectGpp') && contributed.has('twincat.detectGpp'), 'the g++ Detect again runs the contributed twincat.detectGpp');
     assert([...USER_SETTINGS_SECTIONS].every(k => Object.prototype.hasOwnProperty.call(SETTINGS_SECTIONS, k))
         && props['tcToolkit.compiler.gppPath'].scope === 'machine' && USER_SETTINGS_SECTIONS.has('gpp'),
@@ -178,15 +178,15 @@ assert(/^\^1\.66\./.test(pkg.engines.vscode), `engine stays ^1.66 (${pkg.engines
 // ── Compile Project (R3.2): command, settings, and no compiler product name anywhere a user sees ──
 {
     const cmd = contributed.get('twincat.compileProject');
-    assert(!!cmd && cmd.category === 'TC Toolkit' && cmd.title === 'Compile Project', 'twincat.compileProject is contributed as "TC Toolkit: Compile Project"');
-    assert(!hidden.has('twincat.compileProject') && registered.has('twincat.compileProject'), 'Compile Project is in the Command Palette and registered');
-    assert(pkg.activationEvents.includes('onCommand:twincat.compileProject'), 'Compile Project activates the extension (onCommand)');
-    assert(ALLOWED_COMMANDS.has('twincat.compileProject'), 'the start page may run Compile Project');
+    assert(!!cmd && cmd.category === 'TC Toolkit' && cmd.title === 'Build Project', 'twincat.compileProject is contributed as "TC Toolkit: Build Project" (user, 2026-11-13)');
+    assert(!hidden.has('twincat.compileProject') && registered.has('twincat.compileProject'), 'Build Project is in the Command Palette and registered');
+    assert(pkg.activationEvents.includes('onCommand:twincat.compileProject'), 'Build Project activates the extension (onCommand)');
+    assert(ALLOWED_COMMANDS.has('twincat.compileProject'), 'the start page may run Build Project');
     const props = allProps;
     for (const key of ['tcToolkit.compiler.path', 'tcToolkit.compiler.nodePath']) {
         const p = props[key];
-        assert(!!p && p.type === 'string' && p.default === '' && p.scope === 'machine' && /TC Toolkit: Compile Project/.test(p.markdownDescription),
-            `${key} is a machine-scoped string, empty by default, describing Compile Project`);
+        assert(!!p && p.type === 'string' && p.default === '' && p.scope === 'machine' && /TC Toolkit: Build Project/.test(p.markdownDescription),
+            `${key} is a machine-scoped string, empty by default, describing Build Project`);
     }
     assert(/an external IEC 61131-3 compiler|the external IEC 61131-3 compiler/.test(props['tcToolkit.compiler.path'].markdownDescription),
         'the compiler setting calls it an external IEC 61131-3 compiler');
@@ -197,6 +197,63 @@ assert(/^\^1\.66\./.test(pkg.engines.vscode), `engine stays ^1.66 (${pkg.engines
             fs.readdirSync(path.join(REPO, d)).filter(f => f.endsWith('.js')).map(f => path.join(d, f)))];
     const naming = userFacing.filter(f => /STruC\+\+|strucpp/i.test(fs.readFileSync(path.join(REPO, f), 'utf8')));
     assert(naming.length === 0, `no shipped source, package.json or README names the compiler product (${naming.join(', ') || 'none'})`);
+}
+
+// ── Build through XAE (R14): commands, settings, the start page's allow-list ────────────────────
+{
+    const XAE_COMMANDS = {
+        'twincat.xaeBuild': 'Build through XAE (requires TwinCAT)',
+        'twincat.xaeBuildAndActivate': 'Build and Activate through XAE… (requires TwinCAT)',
+        'twincat.xaeShowTargets': 'Show Activation Targets (requires TwinCAT)'
+    };
+    for (const [id, title] of Object.entries(XAE_COMMANDS)) {
+        const cmd = contributed.get(id);
+        assert(!!cmd && cmd.category === 'TC Toolkit' && cmd.title === title, `${id} is contributed as "TC Toolkit: ${title}"`);
+        assert(registered.has(id) && !hidden.has(id), `${id} is registered and in the Command Palette`);
+        assert(pkg.activationEvents.includes(`onCommand:${id}`), `${id} activates the extension (onCommand)`);
+        assert(/^Build|^Show/.test(title) && !/^TwinCAT/.test(title), `${id}'s title names no product with TwinCAT (only "requires TwinCAT")`);
+    }
+    const palette = (c.menus.commandPalette || []);
+    for (const id of Object.keys(XAE_COMMANDS)) {
+        assert(palette.some(m => m.command === id && m.when === 'isWindows'), `${id} is in the Command Palette on Windows only (when: isWindows)`);
+    }
+    for (const id of ['twincat.xaeBuild', 'twincat.xaeBuildAndActivate']) {
+        assert(contributed.get(id).enablement === '!twincat.xaeRunning', `${id} is disabled while a run is in progress (enablement: !twincat.xaeRunning)`);
+    }
+    assert(registered.has('twincat.xaeBuild.goToProblem') && !contributed.has('twincat.xaeBuild.goToProblem'), 'the XAE Go to Problem command is internal (registered, not contributed)');
+    assert(ALLOWED_COMMANDS.has('twincat.xaeBuild') && ALLOWED_COMMANDS.has('twincat.xaeBuildAndActivate') && !ALLOWED_COMMANDS.has('twincat.xaeShowTargets'),
+        'the start page may run the two XAE build commands');
+    const sec = sections.find(s => s.id === 'tcToolkit.xaeBuild');
+    assert(!!sec && sec.title === 'XAE Build' && !/TwinCAT/i.test(sec.title), 'the settings section tcToolkit.xaeBuild is titled "XAE Build"');
+    const p = (k) => allProps[`tcToolkit.xaeBuild.${k}`];
+    assert(p('showWindow') && p('showWindow').type === 'boolean' && p('showWindow').default === false, 'showWindow: boolean, false (headless by default)');
+    assert(p('showWindow') && /always shown during activation/.test(p('showWindow').markdownDescription) && /version switch/.test(p('showWindow').markdownDescription),
+        'showWindow says the window is always shown during activation and after a version switch');
+    assert(p('configuration') && p('configuration').default === 'Release' && p('platform') && p('platform').default === 'TwinCAT RT (x64)', 'configuration Release, platform TwinCAT RT (x64)');
+    assert(p('timeoutMinutes') && p('timeoutMinutes').default === 30 && p('timeoutMinutes').minimum === 5 && p('timeoutMinutes').maximum === 240, 'timeoutMinutes 30 (5-240)');
+    assert(p('stallMinutes') && p('stallMinutes').default === 10 && p('stallMinutes').minimum === 2 && p('stallMinutes').maximum === 60, 'stallMinutes 10 (2-60)');
+    assert(!Object.keys(allProps).some(k => /targetNetId/i.test(k)), 'there is no activation-target setting');
+    // The platform is a dropdown (user, 2026-11-13): every platform both samples' solutions declare,
+    // the default among them; the configuration stays free text (solutions can name their own).
+    const { XAE_BUILD_DEFAULTS, XAE_PLATFORMS } = require('../src/xaeBuildSettings');
+    const plat = p('platform');
+    assert(plat && JSON.stringify(plat.enum) === JSON.stringify(XAE_PLATFORMS.map(x => x.name))
+        && JSON.stringify(plat.enumDescriptions) === JSON.stringify(XAE_PLATFORMS.map(x => x.description)),
+        'platform: enum and enumDescriptions equal XAE_PLATFORMS');
+    assert(plat && plat.enum.includes(plat.default), 'the platform default is one of the enum values');
+    {
+        const slnPlatforms = new Set();
+        for (const sln of ['TcToolkitSample/TcToolkitSample.sln', 'TcToolkitSample2/TcToolkitSample2.sln']) {
+            const f = path.join(__dirname, '..', 'sample', ...sln.split('/'));
+            if (!fs.existsSync(f)) continue;
+            const section = (/GlobalSection\(SolutionConfigurationPlatforms\)[\s\S]*?EndGlobalSection/.exec(fs.readFileSync(f, 'utf8')) || [''])[0];
+            for (const m of section.matchAll(/^\s*[^|\r\n=]+\|([^=\r\n]+?)\s*=/gm)) slnPlatforms.add(m[1]);
+        }
+        const missing = [...slnPlatforms].filter(x => !plat.enum.includes(x));
+        assert(slnPlatforms.size >= 9 && missing.length === 0, `every platform the samples' solutions declare is offered (${slnPlatforms.size}; missing: ${missing.join(', ') || 'none'})`);
+    }
+    assert(p('configuration') && p('configuration').type === 'string' && !p('configuration').enum, 'configuration stays free text (custom solution configurations)');
+    assert(Object.keys(XAE_BUILD_DEFAULTS).every(k => JSON.stringify(p(k).default) === JSON.stringify(XAE_BUILD_DEFAULTS[k])), 'package.json defaults equal xaeBuildSettings defaults');
 }
 
 // ── Welcome content ─────────────────────────────────────────────────────────────────────────────
@@ -233,8 +290,10 @@ assert(/^\^1\.66\./.test(pkg.engines.vscode), `engine stays ^1.66 (${pkg.engines
         'the page shows the extension icon (marketplace-icon.png), allowed by img-src');
     for (const v of TEMPLATE_VERSIONS) assert(html.includes(`value="${v.id}"`), `version ${v.id} is offered`);
     for (const l of HELP_LINKS) assert(html.includes(`data-link="${l.id}"`), `help link ${l.id} is on the page`);
+    assert(/<span class="action-label">Build project<\/span>/.test(html) && /aria-label="Build options"/.test(html),
+        'the project tile and its dropdown are named Build, like the command Build Project (user, 2026-11-13)');
     assert(/id="compile-project" disabled/.test(html) && /Check the project with the IEC 61131-3 compiler/.test(html) && !/later release/.test(html) && !/STruC\+\+/i.test(html),
-        'Compile project is disabled until the host says a project is open, is no longer "coming later", and names no compiler product');
+        'Build project is disabled until the host says a project is open, is no longer "coming later", and names no compiler product');
     const settingsCard = /<section class="card" id="settings"[\s\S]*?<\/section>/.exec(html);
     assert(!!settingsCard && /<ul id="xae-list"/.test(settingsCard[0]) && /<button type="button" id="xae-change"[^>]*>Change…<\/button>/.test(settingsCard[0])
         && /data-command="twincat\.detectXaeShell">Detect again<\/button>/.test(settingsCard[0]),

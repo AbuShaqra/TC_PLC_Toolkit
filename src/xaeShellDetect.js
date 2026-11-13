@@ -30,7 +30,7 @@ const REG_TIMEOUT_MS = 3000;
  * `programFilesFallback` give the default install root. The same pairs as
  * scripts/Create sample PLC project/build-sample-solution.ps1.
  * @type {ReadonlyArray<Readonly<{id: string, version: string, key: string, setting: string, label: string,
- *   progId: string, progIdKeys: ReadonlyArray<string>, clsidRoots: ReadonlyArray<string>,
+ *   name: string, progId: string, progIdKeys: ReadonlyArray<string>, clsidRoots: ReadonlyArray<string>,
  *   programFilesVar: string, programFilesFallback: string}>>}
  */
 const XAE_SHELL_VERSIONS = Object.freeze([
@@ -40,6 +40,7 @@ const XAE_SHELL_VERSIONS = Object.freeze([
         key: 'path4024',
         setting: `${XAE_SHELL_SECTION}.path4024`,
         label: 'XAE Shell for TwinCAT 3.1.4024 (32-bit)',
+        name: 'XAE Shell',
         progId: 'TcXaeShell.DTE.15.0',
         progIdKeys: Object.freeze(['HKCR\\TcXaeShell.DTE.15.0\\CLSID', 'HKCR\\WOW6432Node\\TcXaeShell.DTE.15.0\\CLSID']),
         clsidRoots: Object.freeze(['HKCR\\WOW6432Node\\CLSID', 'HKCR\\CLSID']),
@@ -52,6 +53,7 @@ const XAE_SHELL_VERSIONS = Object.freeze([
         key: 'path4026',
         setting: `${XAE_SHELL_SECTION}.path4026`,
         label: 'XAE Shell for TwinCAT 3.1.4026 (64-bit)',
+        name: 'XAE Shell 64',
         progId: 'TcXaeShell.DTE.17.0',
         progIdKeys: Object.freeze(['HKCR\\TcXaeShell.DTE.17.0\\CLSID']),
         clsidRoots: Object.freeze(['HKCR\\CLSID']),

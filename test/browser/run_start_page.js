@@ -128,7 +128,7 @@ const { TEMPLATE_VERSIONS } = require(path.join(REPO, 'src', 'projectTemplate.js
         assert((await page.$$('#recent-list li')).length === 2 && !(await visible('#recent-empty')), 'state renders the recent solutions');
         assert(await page.$eval('[data-command="twincat.generateSt"]', el => /** @type {any} */ (el).disabled) && await visible('#no-project'),
             'project actions are disabled while no project is open');
-        assert(await disabled('#compile-project'), 'Compile project is disabled');
+        assert(await disabled('#compile-project'), 'Build project is disabled');
 
         // Validation as the user types.
         for (const [bad, why] of [['1abc', /Start with a letter/], ['My Project', /letters, digits/], ['a__b', /two underscores/], ['Line_', /end the name/], ['CON', /reserved/]]) {
@@ -183,16 +183,19 @@ const { TEMPLATE_VERSIONS } = require(path.join(REPO, 'src', 'projectTemplate.js
             'with a project open the actions run Generate ST and Update Library Definitions');
         assert(await visible('#recent-empty'), 'an empty recent list says so');
 
-        // ── Compile project: enabled while the compiler file exists (by default the bundled one) AND a project is open ──
+        // ── Build project: enabled while the compiler file exists (by default the bundled one) AND a project is open ──
         assert(await disabled('#compile-project') && /Compiler file not found/.test(await text('#compile-detail')) && await visible('#compile-missing'),
-            `with a project but the compiler file missing (compilerReady false), Compile project is disabled and says so (${await text('#compile-detail')})`);
-        assert(!/later release/i.test(await page.content()), 'Compile project is no longer "coming in a later release"');
+            `with a project but the compiler file missing (compilerReady false), Build project is disabled and says so (${await text('#compile-detail')})`);
+        const missingTip = await page.$eval('#compile-project', el => /** @type {any} */ (el).title);
+        assert(missingTip === 'The compiler file named in the Build Project settings does not exist',
+            `its tooltip names the Build Project settings (user, 2026-11-13) (${missingTip})`);
+        assert(!/later release/i.test(await page.content()), 'Build project is no longer "coming in a later release"');
         await send({ type: 'state', location: 'C:\\Projects', sep: '\\', hasProject: false, compilerReady: true, recents: [] });
         assert(await disabled('#compile-project') && !(await visible('#compile-missing')),
-            'with the compiler but no project, Compile project is disabled (and not marked missing)');
+            'with the compiler but no project, Build project is disabled (and not marked missing)');
         await send({ type: 'state', location: 'C:\\Projects', sep: '\\', hasProject: true, compilerReady: true, recents: [] });
         assert(!(await disabled('#compile-project')) && /^Check the project with the IEC 61131-3 compiler$/.test(await text('#compile-detail')),
-            `with the compiler and a project, Compile project is enabled (${await text('#compile-detail')})`);
+            `with the compiler and a project, Build project is enabled (${await text('#compile-detail')})`);
         assert(!/STruC\+\+/i.test(await page.content()), 'the page names no compiler product');
         await clearPosted();
         await page.click('#compile-project');
@@ -246,8 +249,58 @@ const { TEMPLATE_VERSIONS } = require(path.join(REPO, 'src', 'projectTemplate.js
             return { label: t.getAttribute('aria-label'), controls: t.getAttribute('aria-controls'), role: opt.getAttribute('role'),
                 labels: [...opt.querySelectorAll('.option-label')].map(e => e.textContent) };
         });
-        assert(toggleLabel.label === 'Compile options' && toggleLabel.controls === 'compile-options' && toggleLabel.role === 'group'
-            && JSON.stringify(toggleLabel.labels) === '["Generate C++","Build with g++"]', `the chevron is labelled and controls a group of two labelled boxes (${JSON.stringify(toggleLabel)})`);
+        assert(toggleLabel.label === 'Build options' && toggleLabel.controls === 'compile-options' && toggleLabel.role === 'group'
+            && JSON.stringify(toggleLabel.labels.slice(0, 2)) === '["Generate C++","Build with g++"]', `the chevron is labelled and controls a group, two labelled boxes first (${JSON.stringify(toggleLabel)})`);
+        // Build through XAE (R14): hidden until the host says it is available; then two actions and the window switch.
+        const xaeState = () => page.evaluate(() => ({
+            hidden: document.getElementById('xae-options').hidden,
+            labels: [...document.querySelectorAll('#xae-options .option-label')].map(e => e.textContent),
+            window: document.getElementById('opt-xae-window').checked,
+            mode: document.getElementById('xae-build-mode').textContent,
+            disabled: document.getElementById('xae-build-run').disabled
+        }));
+        let xs = await xaeState();
+        assert(xs.hidden, `R14: without xaeOptions (or off Windows) the XAE entries are hidden (${JSON.stringify(xs)})`);
+        await send({ type: 'state', location: 'C:\\Projects', sep: '\\', hasProject: true, compilerReady: true, recents: [], compileOptions: { generateCpp: true, buildWithGpp: false },
+            xaeOptions: { available: true, showWindow: false, running: false, configuration: 'Debug', platform: 'TwinCAT OS (x64)' } });
+        xs = await xaeState();
+        assert(!xs.hidden && JSON.stringify(xs.labels) === '["Build through XAE","Build and Activate through XAE…","Show the XAE window"]' && !xs.window,
+            `R14: available → Build through XAE, Build and Activate through XAE…, Show the XAE window (unticked = headless) (${JSON.stringify(xs)})`);
+        assert(xs.mode === 'headless; Debug | TwinCAT OS (x64)', `R14: the Settings card's XAE build row says headless and the configuration (${xs.mode})`);
+        await clearPosted();
+        await page.evaluate(() => { document.getElementById('compile-options').hidden = false; });
+        await page.click('#opt-xae-window');
+        await page.click('#xae-build-run');
+        await page.click('#xae-activate-run');
+        await page.click('#xae-build-change');
+        let xm = await posted();
+        assert(xm.length === 4 && xm[0].type === 'setXaeOption' && xm[0].key === 'showWindow' && xm[0].value === true
+            && xm[1].type === 'command' && xm[1].command === 'twincat.xaeBuild' && xm[2].command === 'twincat.xaeBuildAndActivate'
+            && xm[3].type === 'openSettings' && xm[3].section === 'xaeBuild',
+            `R14: the checkbox posts setXaeOption showWindow; the actions run their commands; Change… opens the xaeBuild settings (${JSON.stringify(xm)})`);
+        await send({ type: 'state', location: 'C:\\Projects', sep: '\\', hasProject: true, compilerReady: true, recents: [], compileOptions: { generateCpp: true, buildWithGpp: false },
+            xaeOptions: { available: true, showWindow: true, running: true, configuration: 'Release', platform: 'TwinCAT RT (x64)' } });
+        xs = await xaeState();
+        assert(xs.window && xs.disabled && xs.mode === 'window shown; Release | TwinCAT RT (x64)', `R14: a state with showWindow and a run in progress (${JSON.stringify(xs)})`);
+        await send({ type: 'state', location: 'C:\\Projects', sep: '\\', hasProject: false, compilerReady: true, recents: [],
+            xaeOptions: { available: true, showWindow: false, running: false } });
+        const noProject = await page.evaluate(() => ({ build: document.getElementById('xae-build-run').disabled, activate: document.getElementById('xae-activate-run').disabled,
+            title: document.getElementById('compile-options-toggle').title }));
+        assert(noProject.build && noProject.activate, `R14: with no project open the two XAE actions are disabled, also after a state that is not running (${JSON.stringify(noProject)})`);
+        assert(noProject.title === 'Build options: C++ generation, the g++ build and the XAE build', `R14: the chevron's tooltip names the XAE build where it is shown (${noProject.title})`);
+        await send({ type: 'state', location: 'C:\\Projects', sep: '\\', hasProject: true, compilerReady: true, recents: [],
+            xaeOptions: { available: true, showWindow: false, running: false } });
+        const lastFocus = await page.evaluate(() => {
+            const panel = document.getElementById('compile-options');
+            panel.hidden = false;
+            if (document.activeElement && document.activeElement !== document.body) document.activeElement.blur();
+            panel.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true }));
+            const id = document.activeElement ? document.activeElement.id : '';
+            panel.hidden = true;
+            return id;
+        });
+        assert(lastFocus === 'opt-xae-window', `R14: ArrowUp with no item focused goes to the last entry, Show the XAE window (${lastFocus})`);
+        await page.evaluate(() => { document.getElementById('compile-options').hidden = true; });
         await page.click('#compile-options-toggle');
         if (process.env.HARNESS_START_SHOT) {
             await page.mouse.move(0, 0);

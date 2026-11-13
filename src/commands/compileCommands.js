@@ -62,6 +62,23 @@ const GPP_DIAGNOSTIC_SOURCE = 'TC Toolkit g++';
 /** The path of the links the Problems entries carry (`<scheme>://<extension id>/compileProblem?id=N`). */
 const PROBLEM_LINK_PATH = '/compileProblem';
 
+/**
+ * Other problem links this extension's one URI handler answers (VS Code allows one per extension):
+ * URI path → opener of the problem with that id. Build through XAE registers `/xaeProblem` here.
+ * @type {Map<string, (id: number) => Promise<void>|void>}
+ */
+const problemLinkResolvers = new Map();
+
+/**
+ * Lets another module's Problems entries link back into the extension through the URI handler
+ * registered here. The link carries an id only, never a path; the resolver opens the problem.
+ * @param {string} linkPath e.g. `/xaeProblem`.
+ * @param {(id: number) => Promise<void>|void} resolver
+ */
+function registerProblemLinkResolver(linkPath, resolver) {
+    problemLinkResolvers.set(linkPath, resolver);
+}
+
 /** Internal command: pick one of the current compile problems and go to it. */
 const GO_TO_PROBLEM_COMMAND = 'twincat.compile.goToProblem';
 /** The output channel for what a run did not show elsewhere (the project's compiler defines). */
@@ -101,6 +118,61 @@ const OUTPUT_CHANNEL_NAME = 'TC Toolkit Compile';
  * @property {import('../cppGenerate').LibraryCoverage[]} [libraries] Library code the C++ does not
  *   cover (empty bodies, declarations only), per library.
  */
+
+/**
+ * The `twincat.openComponent` selection of a problem (0-based line and characters).
+ * @param {{pane: string, line: number, column: number, endLine: number, endColumn: number}} p
+ */
+function selectionOf(p) {
+    return {
+        pane: p.pane, localLine: p.line - 1,
+        start: { character: p.column - 1 },
+        end: { character: p.endLine === p.line ? p.endColumn - 1 : p.column - 1 }
+    };
+}
+
+/**
+ * Opens the editor on one problem: its component, pane and line. Shared with Build through XAE (R14).
+ * @param {{filePath: string, componentId: string, pane: string, line: number, column: number, endLine: number, endColumn: number}} p
+ */
+async function openProblem(p) {
+    await vscode.commands.executeCommand('twincat.openComponent', vscode.Uri.file(p.filePath), p.componentId, selectionOf(p), null);
+}
+
+/**
+ * The Problems-panel entry of a placed problem: pane coordinates (so Ln/Col match the pane the user
+ * reads), the component, pane and line in the message. Shared with Build through XAE (R14).
+ * @param {{componentId: string, pane: 'decl'|'impl', line: number, column: number, endLine?: number, endColumn?: number,
+ *   severity: string, message: string}} p
+ * @param {string} source
+ * @param {any} [link] The code's link target; without one the code is the location text alone.
+ * @returns {vscode.Diagnostic}
+ */
+function problemDiagnostic(p, source, link) {
+    const at = paneRange(p);
+    const range = new vscode.Range(at.start.line, at.start.character, at.end.line, at.end.character);
+    const where = describeLocation(p, memberName);
+    const d = new vscode.Diagnostic(range, `${p.message} [${where}]`,
+        p.severity === 'error' ? vscode.DiagnosticSeverity.Error
+            : (p.severity === 'warning' ? vscode.DiagnosticSeverity.Warning : vscode.DiagnosticSeverity.Information));
+    d.source = source;
+    d.code = link ? { value: where, target: link } : where;
+    return d;
+}
+
+/**
+ * One PLC project of the workspace: the only one, or the user's pick. Shared with Build through XAE.
+ * @param {{keys: () => Iterable<string>, displayName: (key: string) => string}} projectMap
+ * @param {{title: string, placeHolder: string}} labels
+ * @returns {Promise<string>} '' when the user dismissed the pick.
+ */
+async function pickProjectKey(projectMap, labels) {
+    const keys = [...projectMap.keys()];
+    if (keys.length === 1) return keys[0];
+    const items = keys.map(k => ({ label: projectMap.displayName(k), key: k })).sort((x, y) => x.label.localeCompare(y.label));
+    const picked = await vscode.window.showQuickPick(items, labels);
+    return picked ? picked.key : '';
+}
 
 /**
  * Why the g++ build did not run for want of a g++ (shown once, in the run's summary).
@@ -217,8 +289,8 @@ function describeCpp(cpp) {
  */
 function compileStatusText(counts, cpp, gpp) {
     let text = counts.errors === 0 && counts.warnings === 0
-        ? '$(check) Compile: no errors'
-        : `$(error) ${counts.errors} $(warning) ${counts.warnings} Compile`;
+        ? '$(check) Build: no errors'
+        : `$(error) ${counts.errors} $(warning) ${counts.warnings} Build`;
     if (!cpp) return text;
     if (cpp.status === 'done' && cpp.written && cpp.written.written.length > 0) text += ' · C++ written';
     else if (cpp.status !== 'skipped') text += ' · C++ not written';
@@ -370,23 +442,10 @@ function registerCompileCommands(context, { provider, getProjectMap, onSettingsC
             byFile.delete(key);
             return;
         }
-        const diagnostics = entry.problems.map((p) => {
-            // Pane coordinates, so Ln/Col in the panel match the pane the user reads.
-            const at = paneRange(p);
-            const range = new vscode.Range(at.start.line, at.start.character, at.end.line, at.end.character);
-            const where = describeLocation(p, memberName);
-            const d = new vscode.Diagnostic(range, `${p.message} [${where}]`,
-                p.severity === 'error' ? vscode.DiagnosticSeverity.Error
-                    : (p.severity === 'warning' ? vscode.DiagnosticSeverity.Warning : vscode.DiagnosticSeverity.Information));
-            d.source = DIAGNOSTIC_SOURCE;
-            // The entry's code is a link back into this extension: it opens the component, pane and
-            // line, which a plain click cannot do for a custom editor.
-            d.code = {
-                value: where,
-                target: vscode.Uri.parse(`${vscode.env.uriScheme}://${context.extension.id}${PROBLEM_LINK_PATH}?id=${p.id}`)
-            };
-            return d;
-        });
+        // The entry's code is a link back into this extension: it opens the component, pane and
+        // line, which a plain click cannot do for a custom editor.
+        const diagnostics = entry.problems.map((p) => problemDiagnostic(p, DIAGNOSTIC_SOURCE,
+            vscode.Uri.parse(`${vscode.env.uriScheme}://${context.extension.id}${PROBLEM_LINK_PATH}?id=${p.id}`)));
         collection.set(entry.uri, diagnostics);
     }
 
@@ -418,19 +477,7 @@ function registerCompileCommands(context, { provider, getProjectMap, onSettingsC
      * @param {StoredProblem} p
      */
     async function goToProblem(p) {
-        await vscode.commands.executeCommand('twincat.openComponent', vscode.Uri.file(p.filePath), p.componentId, selectionOf(p), null);
-    }
-
-    /**
-     * The `twincat.openComponent` selection of a problem (0-based line and characters).
-     * @param {StoredProblem} p
-     */
-    function selectionOf(p) {
-        return {
-            pane: p.pane, localLine: p.line - 1,
-            start: { character: p.column - 1 },
-            end: { character: p.endLine === p.line ? p.endColumn - 1 : p.column - 1 }
-        };
+        await openProblem(p);
     }
 
     const allProblems = () => [...byFile.values()].flatMap(e => e.problems);
@@ -481,7 +528,7 @@ function registerCompileCommands(context, { provider, getProjectMap, onSettingsC
     function showStatus(counts, cpp, gpp) {
         if (cpp !== undefined) lastCppStatus = { cpp, gpp: gpp || { errors: 0, warnings: 0 } };
         statusItem.text = compileStatusText(counts, lastCppStatus.cpp, lastCppStatus.gpp);
-        statusItem.tooltip = 'Result of the last TC Toolkit: Compile Project run. Click to open the Problems panel.';
+        statusItem.tooltip = 'Result of the last TC Toolkit: Build Project run. Click to open the Problems panel.';
         statusItem.show();
     }
 
@@ -602,7 +649,7 @@ function registerCompileCommands(context, { provider, getProjectMap, onSettingsC
      * @param {Array<{setting: string, message: string}>} problems
      */
     function reportSetupProblems(problems) {
-        const text = 'Compile Project cannot run. ' + problems.map(p => p.message).join(' ');
+        const text = 'Build Project cannot run. ' + problems.map(p => p.message).join(' ');
         vscode.window.showErrorMessage(text, 'Open Settings').then((choice) => {
             if (choice === 'Open Settings') vscode.commands.executeCommand('twincat.openSettings', COMPILER_SECTION);
         });
@@ -610,32 +657,27 @@ function registerCompileCommands(context, { provider, getProjectMap, onSettingsC
     }
 
     context.subscriptions.push(
+        // `fromXae: true` (Build through XAE's fallback, src/commands/xaeBuildCommands.js): no setup
+        // popup and no summary notification (the caller reports both, saying the results are TC
+        // Toolkit's, not XAE's), no C++. `append: true` keeps the problems of the projects already
+        // checked in the same fallback instead of replacing them.
         vscode.commands.registerCommand('twincat.compileProject', async (args) => {
             const a = args && typeof args === 'object' ? args : {};
+            const fromXae = a.fromXae === true;
             if (running) {
-                vscode.window.showInformationMessage('Compile Project is already running.');
+                if (!fromXae) vscode.window.showInformationMessage('Build Project is already running.');
                 return { ok: false, reason: 'running' };
             }
             const projectMap = getProjectMap();
             if (!projectMap || !projectMap.projects || projectMap.projects.size === 0) {
-                vscode.window.showWarningMessage('Compile Project needs a TwinCAT PLC project (.plcproj) in the workspace.');
+                if (!fromXae) vscode.window.showWarningMessage('Build Project needs a TwinCAT PLC project (.plcproj) in the workspace.');
                 return { ok: false, reason: 'no-project' };
             }
 
             // One PLC project per run: each is its own compilation unit.
-            let key = typeof a.projectKey === 'string' ? a.projectKey : '';
-            if (!key) {
-                const keys = [...projectMap.keys()];
-                if (keys.length === 1) {
-                    key = keys[0];
-                } else {
-                    const items = keys.map(k => ({ label: projectMap.displayName(k), key: k }))
-                        .sort((x, y) => x.label.localeCompare(y.label));
-                    const picked = await vscode.window.showQuickPick(items, { title: 'Compile Project', placeHolder: 'PLC project to compile' });
-                    if (!picked) return { ok: false, reason: 'cancelled' };
-                    key = picked.key;
-                }
-            }
+            const key = typeof a.projectKey === 'string' && a.projectKey
+                ? a.projectKey : await pickProjectKey(projectMap, { title: 'Build Project', placeHolder: 'PLC project to build' });
+            if (!key) return { ok: false, reason: 'cancelled' };
             const project = projectMap.get(key);
             if (!project) return { ok: false, reason: 'no-project' };
             const projectName = projectMap.displayName(key);
@@ -645,10 +687,12 @@ function registerCompileCommands(context, { provider, getProjectMap, onSettingsC
             tellEditors(true);
             try {
                 const setup = await checkSetup(readSettings(), { ...(nodeDiscovery || {}), spawn: /** @type {any} */ (spawn), extensionRoot: context.extensionPath });
-                if (!setup.ok) return { ok: false, reason: 'setup', message: reportSetupProblems(setup.problems) };
+                if (!setup.ok) {
+                    return { ok: false, reason: 'setup', message: fromXae ? setup.problems.map(p => p.message).join(' ') : reportSetupProblems(setup.problems) };
+                }
 
                 const outcome = await vscode.window.withProgress(
-                    { location: vscode.ProgressLocation.Notification, title: `Compiling ${projectName}…`, cancellable: true },
+                    { location: vscode.ProgressLocation.Notification, title: `Building ${projectName}…`, cancellable: true },
                     async (progress, token) => {
                         /** @type {Array<{filePath: string, text: string}>} */
                         const files = [];
@@ -704,7 +748,7 @@ function registerCompileCommands(context, { provider, getProjectMap, onSettingsC
                         const options = compileOptions();
                         /** @type {CppOutcome|null} */
                         let cpp = null;
-                        if (result.status === 'done' && options.generateCpp && !token.isCancellationRequested) {
+                        if (result.status === 'done' && options.generateCpp && !fromXae && !token.isCancellationRequested) {
                             // Library code the C++ cannot contain: declared blocks, the compiler's own
                             // stand-ins, and names the check's library filter hid (no declaration).
                             const libraries = libraryCoverage({
@@ -722,18 +766,19 @@ function registerCompileCommands(context, { provider, getProjectMap, onSettingsC
                     return { ok: false, reason: 'cancelled' };
                 }
                 if (!outcome.result) {
-                    vscode.window.showWarningMessage(`Compile Project: ${projectName} has no TwinCAT objects to compile.`);
+                    if (!fromXae) vscode.window.showWarningMessage(`Build Project: ${projectName} has no TwinCAT objects to compile.`);
                     return { ok: false, reason: 'empty' };
                 }
                 const { result, built, unreadable, library, defines, cpp } = outcome;
                 if (result.status !== 'done') {
                     // The previous results stay: a run that did not finish says nothing about the code.
-                    vscode.window.showErrorMessage(`Compile Project did not finish. ${result.message}`);
+                    if (!fromXae) vscode.window.showErrorMessage(`Build Project did not finish. ${result.message}`);
                     return { ok: false, reason: result.status, message: result.message };
                 }
 
-                // A finished run replaces everything the previous run reported.
-                clearAll();
+                // A finished run replaces everything the previous run reported (an XAE fallback's
+                // second and later projects add to the first's).
+                if (!(fromXae && a.append === true)) clearAll();
                 for (const d of result.diagnostics) {
                     const uri = vscode.Uri.file(d.filePath);
                     const fileKey = keyOf(uri.toString());
@@ -743,7 +788,7 @@ function registerCompileCommands(context, { provider, getProjectMap, onSettingsC
                 for (const fileKey of [...byFile.keys()]) publishFile(fileKey);
                 refreshPanes();
                 const gppCounts = publishGpp(cpp);
-                showStatus({ errors: result.errors, warnings: result.warnings }, cpp, gppCounts);
+                showStatus(fromXae && a.append === true ? refreshStatus() : { errors: result.errors, warnings: result.warnings }, cpp, gppCounts);
 
                 // Diagnostics that name no object cannot be placed; they are shown, never dropped.
                 const notes = [];
@@ -788,6 +833,9 @@ function registerCompileCommands(context, { provider, getProjectMap, onSettingsC
                     for (const line of cpp.log.split(/\r?\n/)) channel.appendLine(`  ${line}`);
                 }
                 const summary = [summarize(result, projectName), ...notes, ...cppNotes.notes].join(' ');
+                if (fromXae) {
+                    return { ok: true, projectKey: key, projectName, errors: result.errors, warnings: result.warnings, summary, placed: byFile.size > 0 };
+                }
                 const hasProblems = byFile.size > 0 || gppCounts.errors + gppCounts.warnings > 0;
                 const show = result.errors > 0 || gppCounts.errors > 0 || cppNotes.failed ? vscode.window.showErrorMessage
                     : (result.warnings > 0 || notes.length > 0 || cppNotes.warn || gppCounts.warnings > 0 ? vscode.window.showWarningMessage : vscode.window.showInformationMessage);
@@ -797,7 +845,7 @@ function registerCompileCommands(context, { provider, getProjectMap, onSettingsC
                 // A missing g++ is said once, in this summary, with the buttons that fix it.
                 if (cpp && cpp.gpp && cpp.gpp.status === 'missing') buttons.push(...gppMissingButtons(cpp.gpp));
                 if (cpp && cpp.gpp && cpp.gpp.status === 'too-old') buttons.push(...gppTooOldButtons(cpp.gpp));
-                Promise.resolve(show(`Compile Project — ${summary}`, ...buttons)).then((choice) => {
+                Promise.resolve(show(`Build Project — ${summary}`, ...buttons)).then((choice) => {
                     if (choice === 'Go to Problem…') vscode.commands.executeCommand(GO_TO_PROBLEM_COMMAND);
                     else if (choice === 'Open Problems') vscode.commands.executeCommand('workbench.actions.view.problems');
                     else if (choice === 'Open C++' && cpp && cpp.paths) vscode.commands.executeCommand('vscode.open', vscode.Uri.file(cpp.paths.cpp));
@@ -830,7 +878,7 @@ function registerCompileCommands(context, { provider, getProjectMap, onSettingsC
         vscode.commands.registerCommand(GO_TO_PROBLEM_COMMAND, async () => {
             const problems = allProblems().sort((x, y) => (x.severity === y.severity ? 0 : (x.severity === 'error' ? -1 : 1)));
             if (problems.length === 0) {
-                vscode.window.showInformationMessage('There are no compile problems. Run TC Toolkit: Compile Project first.');
+                vscode.window.showInformationMessage('There are no build problems. Run TC Toolkit: Build Project first.');
                 return;
             }
             const items = problems.map(p => ({
@@ -839,7 +887,7 @@ function registerCompileCommands(context, { provider, getProjectMap, onSettingsC
                 detail: describeLocation(p, memberName),
                 problem: p
             }));
-            const picked = await vscode.window.showQuickPick(items, { title: 'Compile problems', placeHolder: 'Go to a problem', matchOnDescription: true, matchOnDetail: true });
+            const picked = await vscode.window.showQuickPick(items, { title: 'Build problems', placeHolder: 'Go to a problem', matchOnDescription: true, matchOnDetail: true });
             if (picked) await goToProblem(picked.problem);
         })
     );
@@ -848,8 +896,10 @@ function registerCompileCommands(context, { provider, getProjectMap, onSettingsC
     if (typeof vscode.window.registerUriHandler === 'function') {
         context.subscriptions.push(vscode.window.registerUriHandler({
             handleUri: async (uri) => {
-                if (uri.path !== PROBLEM_LINK_PATH) return;
                 const id = Number((/(?:^|&)id=(\d+)(?:&|$)/.exec(uri.query || '') || [])[1]);
+                const other = problemLinkResolvers.get(uri.path);
+                if (other) { await other(id); return; }
+                if (uri.path !== PROBLEM_LINK_PATH) return;
                 // Only a problem of the current results is opened: the link carries an id, never a path.
                 const problem = allProblems().find(p => p.id === id);
                 if (problem) await goToProblem(problem);
@@ -882,6 +932,6 @@ function registerCompileCommands(context, { provider, getProjectMap, onSettingsC
 }
 
 module.exports = {
-    registerCompileCommands, describeCpp, compileStatusText, gppMissingText, gppMissingButtons, gppTooOldNote, gppTooOldButtons,
+    registerCompileCommands, registerProblemLinkResolver, problemDiagnostic, openProblem, selectionOf, pickProjectKey, describeCpp, compileStatusText, gppMissingText, gppMissingButtons, gppTooOldNote, gppTooOldButtons,
     DIAGNOSTIC_SOURCE, GPP_DIAGNOSTIC_SOURCE, PROBLEM_LINK_PATH, GO_TO_PROBLEM_COMMAND, OUTPUT_CHANNEL_NAME
 };

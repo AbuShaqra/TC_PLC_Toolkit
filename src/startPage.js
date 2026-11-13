@@ -22,6 +22,7 @@ const { TEMPLATE_VERSIONS } = require('./projectTemplate');
 const { recentsShownLimit } = require('./recentProjects');
 const { XAE_SHELL_SECTION, describeConfiguredShells } = require('./xaeShellDetect');
 const { SETTING_GPP_PATH, describeGppSetting, thisMachine } = require('./gpp');
+const { XAE_BUILD_SECTION } = require('./xaeBuildSettings');
 
 /** The panel's view type (also the `onWebviewPanel:` activation event and the serializer key). */
 const START_PAGE_VIEW_TYPE = 'twincat.startPage';
@@ -30,10 +31,11 @@ const START_PAGE_VIEW_TYPE = 'twincat.startPage';
 const LAST_LOCATION_KEY = 'twincat.lastProjectLocation';
 
 /** Commands the page may run. Anything else a (compromised) page posts is ignored. */
-const ALLOWED_COMMANDS = new Set([...PROJECT_ACTIONS.map(a => a.command), 'twincat.compileProject', 'twincat.openSettings', 'twincat.detectXaeShell', 'twincat.detectGpp']);
+const ALLOWED_COMMANDS = new Set([...PROJECT_ACTIONS.map(a => a.command), 'twincat.compileProject', 'twincat.openSettings', 'twincat.detectXaeShell', 'twincat.detectGpp',
+    'twincat.xaeBuild', 'twincat.xaeBuildAndActivate']);
 
 /** Settings sections the page may open filtered (`openSettings {section}`) → the Settings UI query. */
-const SETTINGS_SECTIONS = Object.freeze({ xaeShell: XAE_SHELL_SECTION, gpp: SETTING_GPP_PATH });
+const SETTINGS_SECTIONS = Object.freeze({ xaeShell: XAE_SHELL_SECTION, gpp: SETTING_GPP_PATH, xaeBuild: XAE_BUILD_SECTION });
 
 /**
  * Sections opened in the User settings: a machine-scoped setting is not shown in the Workspace tab,
@@ -58,10 +60,13 @@ class StartPageController {
      * @param {{recents: {list: () => any[], remove: (p: string) => Thenable<void>}, hasProject: () => boolean,
      *   compilerReady?: () => boolean, compileOptions?: () => {generateCpp: boolean, buildWithGpp: boolean},
      *   setCompileOption?: (key: string, value: boolean) => Promise<boolean>,
-     *   gppMachine?: () => Parameters<typeof describeGppSetting>[1]}} deps `compilerReady`: the
+     *   gppMachine?: () => Parameters<typeof describeGppSetting>[1],
+ *   xaeOptions?: () => {available: boolean, showWindow: boolean, running: boolean, configuration: string, platform: string},
+ *   setXaeOption?: (key: string, value: boolean) => Promise<boolean>}} deps `compilerReady`: the
      *   compiler file exists (the bundled one, or the override); `compileOptions` / `setCompileOption`:
      *   the Compile dropdown's two switches (R13); `gppMachine`: how the g++ path is checked and
-     *   detected (the real machine by default; the tests pass their own).
+     *   detected (the real machine by default; the tests pass their own); `xaeOptions` / `setXaeOption`:
+ *   Build through XAE's dropdown entries and its window switch (R14).
      */
     constructor(context, deps) {
         this.context = context;
@@ -139,7 +144,9 @@ class StartPageController {
             compilerReady: !!(this.deps.compilerReady && this.deps.compilerReady()),
             compileOptions: this.deps.compileOptions ? this.deps.compileOptions() : { generateCpp: false, buildWithGpp: false },
             xaeShells: describeConfiguredShells((key) => xaeConfig.get(key), (p) => fs.existsSync(p)),
-            gpp: this.describeGpp()
+            gpp: this.describeGpp(),
+            xaeOptions: this.deps.xaeOptions ? this.deps.xaeOptions()
+                : { available: false, showWindow: false, running: false, configuration: 'Release', platform: 'TwinCAT RT (x64)' }
         });
     }
 
@@ -202,6 +209,13 @@ class StartPageController {
                 // Only the two switches, only booleans; the host applies the coupling and posts the result.
                 if ((msg.key === 'generateCpp' || msg.key === 'buildWithGpp') && typeof msg.value === 'boolean' && this.deps.setCompileOption) {
                     await this.deps.setCompileOption(msg.key, msg.value);
+                }
+                this.postState();
+                break;
+            case 'setXaeOption':
+                // Build through XAE's window switch (R14): only that key, only a boolean.
+                if (msg.key === 'showWindow' && typeof msg.value === 'boolean' && this.deps.setXaeOption) {
+                    await this.deps.setXaeOption(msg.key, msg.value);
                 }
                 this.postState();
                 break;
