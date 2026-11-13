@@ -126,9 +126,10 @@ function defKey(def) {
 /**
  * Resolves the declaration scope carried by a definition result.
  *
- * Both indexers now emit unit lines (xmlIndexer.js `unitLineMap`), but an XML-indexed method's
- * `declRange` covers only its name line, so a line alone cannot place a definition inside a method of
- * a file that has not been re-indexed from its ST. `componentId` is therefore authoritative when present.
+ * Both indexers emit unit lines in the same shapes (xmlIndexer.js `unitLineMap`; an XML-indexed
+ * method's `declRange` spans METHOD..END_METHOD since R15 review round 4), but an XML-indexed action
+ * has no `implRange`, so a line alone cannot place a definition inside an action of a file that has not
+ * been re-indexed from its ST. `componentId` is therefore authoritative when present.
  * @param {Object} def A definition from definitionAt().
  * @param {Object} symbolIndex Workspace symbol index.
  * @returns {{pou: Object|null, method: Object|null}}
@@ -661,12 +662,12 @@ function collectWorkspaceReferences(targetWord, target, targetDef, code, tokens,
         //
         // The index holds two different kinds of node. The ACTIVE document is parsed from the ST unit
         // (server.js does this on every edit), so its methods carry full declaration/body ranges and a
-        // scope lookup works. Every OTHER document comes from xmlIndexer: its ranges are unit lines too
-        // (since R15 review round 3), but a method's `declRange` covers only its name line and it has
-        // no body range, so findActiveScope found NO enclosing method for any line in any other file,
-        // every method variable there resolved to nothing, and `sameSymbol` keeps what it cannot
-        // resolve. That gap produced the overwhelming majority of the wrong references: 1,885 of the
-        // 1,893 unresolved occurrences measured on the sample were plain identifiers failing exactly here.
+        // scope lookup works. Every OTHER document comes from xmlIndexer. Its ranges are unit lines too
+        // (since R15 review round 3), and a method's `declRange` spans the method (round 4), but an
+        // action has no body range. Before both, findActiveScope found NO enclosing method for any line
+        // in any other file, every method variable there resolved to nothing, and `sameSymbol` keeps
+        // what it cannot resolve: 1,885 of the 1,893 unresolved occurrences measured on the sample were
+        // plain identifiers failing exactly here. The transient parse stays the one source of scopes.
         //
         // The node is restored afterwards: the index keeps what the indexer that owns this file built
         // (the XML on disk), not a transient parse of it.
@@ -726,8 +727,8 @@ function provideReferencesForSymbol(spec, symbolIndex) {
     // property/action ranges are in ST-UNIT coordinates — the very coordinates every occurrence of the
     // symbol resolves to. defKey equality in the scan hinges on the target holding those same
     // coordinates, so this re-index is mandatory, not an optimization. It mutates the index, so the
-    // node is snapshotted and restored: the on-disk (per-component) ranges are what cross-file Go to
-    // Definition navigates with, and must survive this call untouched.
+    // node is snapshotted and restored: the index keeps the node the XML indexer built from the file
+    // on disk (unit lines too, the frame cross-file Go to Definition maps), untouched by this call.
     const restore = snapshotNodesFor(symbolIndex, node.uri);
     try {
         parseAndIndexDocument(stText, node.uri, symbolIndex);

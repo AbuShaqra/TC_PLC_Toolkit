@@ -944,7 +944,7 @@ function parseAndIndexDocument(code, fileUri, index = workspaceSymbolIndex) {
         // VAR-block variables (`AT %I*` direct addresses included), so the shared block parser
         // handles them; a UNION is indexed exactly like a STRUCT. This pass is *attach-only*: the
         // members are merged into the node the XML indexer already built for this file, keeping
-        // that node's XML-relative ranges intact, and names already known are skipped. It can
+        // that node's ranges (unit lines, as here) intact, and names already known are skipped. It can
         // therefore only ever add a missing declaration — never move, replace, or duplicate one.
         // It is what makes an unsaved edit to a DUT visible to live diagnostics.
         if (tok.type === TokenType.Keyword && (valUpper === 'STRUCT' || valUpper === 'UNION')) {

@@ -188,8 +188,21 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   range by the component's line in the raw unit, so both indexers share one frame (new `test_definition_frames.js`,
   both samples + a 12-variable GVL; `test_fb_init_def.js` / `test_parser_constructs.js` now assert pane lines via
   the unit). Consumers audited: definition/peek/references tree (unit-frame refs), `references.js` (componentId
-  stays authoritative: XML method `declRange` is the name line only), `onlinePaths.js` (name-at-range check kept),
-  hover/completions/diagnostics (active node only). Actions keep the (1,1) stub name range (unchanged).
+  stays authoritative: an XML action has no `implRange`), `onlinePaths.js` (name-at-range check kept),
+  hover/completions/diagnostics (active node only).
+  **Indexing cost of `639d2b9`** (`buildNodeFromXml` over the 26 sample files x200, coordinator's measurement):
+  264 ms before -> 404 ms after, about +27 us per file (the raw `convertXmlToSt` per file in `unitLineMap`).
+  **Review round 4 (frame check of `639d2b9`, 2026-11-13): findings #0-#4 fixed** (committed on `r15-ads` after
+  `639d2b9`, not pushed; every new check failed with `639d2b9`'s `xmlIndexer.js`). #2 (medium, pre-existing): `locate()`
+  took the first textual match, so a `//`/`(* *)`/`{attribute}` line or doc comment naming the object, method,
+  property or enum member became its range; now searched on comment/pragma/string-blanked text (`codeOnly`, same
+  offsets; skipped when nothing before the match can open one), enum members in order inside their list. #3:
+  case-insensitive. #0: an action's nameRange is the unit's `ACTION <name>` line, col 8. #4: method `declRange`
+  METHOD..END_METHOD (checked against the unit text), property `declRange` collapsed on PROPERTY, both as parser.js.
+  #1: stale "CDATA-relative" comments in `references.js`, `parser.js`, two tests. Result: every range of every POU/
+  ITF/GVL identical from both indexers (both samples + synthetic shapes; `test_definition_frames.js` checks 4-5).
+  Cost after round 4 (`idxperf.js`, median of 9 interleaved runs on the same box: `31fc35b` 269 ms, `639d2b9`
+  361 ms, round 4 380 ms): about +4 us per file over `639d2b9`.
   #1: after the dialogs `writeGuard` also compares base type and enumerators and re-parses the typed text for the
   new `dataType` (block `R3#1`). #2: a closed editor's stash refusal names the file ("open it to restore or
   discard the stashed edits"); a stash whose file is gone is dropped with a log line (block `R3#2`). Not changed:
