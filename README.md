@@ -411,6 +411,82 @@ built with XAE's compiler and the project's real libraries.
 Not done: remote targets, creating the boot project, building a single PLC project of a multi-project
 solution, and writing routes. The solution and `.tsproj` are never saved by these commands.
 
+### Online monitoring (live values, write, PLC Watch)
+
+Connect to a running PLC over ADS and see its variables' values in the editor, watch chosen variables,
+and, when you allow it, write a value. It uses the ADS router of the TwinCAT installation on this PC, so
+the PLC is reached exactly as XAE reaches it.
+
+**Going online.** *TC Toolkit: Go Online…* (Command Palette, or the plug button on the **PLC Watch**
+view) asks for the target: **Local runtime** (the PLC on this PC), a target used before, or an AMS Net ID
+you type (`5.12.34.56.1.1`, optionally `:851`). The ADS port defaults to 851, the first PLC runtime
+(`tcToolkit.online.adsPort`). Going online can be cancelled from its notification; *Go Offline* (or
+the status-bar item's menu) closes the connection. The status bar shows the target, the PLC state, the
+code check and whether forces are active.
+
+**Routes are set up in XAE, never here.** To reach a PLC on another machine, add the route in XAE as you
+would for XAE itself: *SYSTEM → Routes → Add Route* (or *Choose Target System → Search (Ethernet)*),
+find the PLC, and add the route (it is created on both sides). Then pick *Enter AMS Net ID…* and type
+the PLC's AMS Net ID. TC Toolkit never creates routes and stores no credentials.
+
+**Live values.** While online, the panes show each variable's value next to it: at the end of the line
+in the declaration pane, right after the variable in the implementation pane. They refresh every 500 ms
+(`tcToolkit.online.inlinePollInterval`) while the editor is visible. Dimmed values mean the PLC is not in
+Run, or the connection is being restored. What can be shown:
+- PROGRAM variables, global variables (`GVL.x`), members reached through them (`GVL.fbStation.nState`),
+  and array elements with a constant index (`aValues[3]`). Structures, FB instances and whole arrays
+  show no inline value; add them to the Watch view instead.
+- A FUNCTION_BLOCK's variables through one of its instances on the PLC. If it has several, the first is
+  used and you are told; *TC Toolkit: Select FB Instance for Online Values…* changes it.
+- Not: method and function locals, `VAR_TEMP` and `VAR_IN_OUT` variables (they have no ADS symbol; XAE
+  needs a breakpoint for them too), and properties. Every name is checked against the PLC's own symbol
+  table first; a variable the PLC does not know shows nothing. A variable whose type on the PLC differs
+  from its declaration shows *type differs* instead of a value.
+
+**PLC Watch.** Right-click a variable in the editor → **Add to PLC Watch**, or use the **+** on the view
+and type an ADS path (`MAIN.fbStation.nState`). Each watched variable is one ADS notification on change
+(`tcToolkit.online.watchCycleTime`, 200 ms); structures and FB instances expand into their members
+without costing more. At most `tcToolkit.online.maxNotifications` (100) are active; past that, entries
+show *notification limit reached* and you are told once (Beckhoff recommends at most 550 per device).
+The list is kept per workspace.
+
+**Writing values — off by default.** A write sets a value once; the PLC program may overwrite it in its
+next cycle. It is **not a force**: TC Toolkit cannot force (forces are set in XAE). To write:
+1. turn on `tcToolkit.online.allowWrites`;
+2. after going online, enable writes for that online session (asked the first time, or *TC Toolkit:
+   Enable Writes for This Online Session*); going offline turns them off again;
+3. right-click the variable → **Write Value…** (or the pencil in the Watch view), type the value, and
+   confirm the dialog, which names the target, the variable, the current and the new value and the PLC
+   state.
+
+Every write, and every refused or cancelled one, is logged to the **TC Toolkit Online** output channel.
+Writes are refused while any TwinCAT editor has unsaved edits, while the code check below does not
+pass, when the variable's type differs, and for anything but a single value.
+
+**The code check — what it can and cannot see.** Before showing values and allowing writes, TC Toolkit
+compares (1) the project name the PLC reports with your PLC projects (a different name hides the values),
+(2) the variables of your project's last build (its `.tmc`, written by every XAE build) with the
+variables on the PLC, and (3) whether a source file changed after that build. Writes need all three.
+It **cannot** tell that only code inside a POU changed and was built but not downloaded — XAE compares
+an internal compile id that is not available over ADS. Download from XAE before writing.
+
+**Forces indicator.** If forces are active on the target (set from XAE), the status bar says *Forces
+active*. Runtimes before TwinCAT 3.1.4026.21 do not report forces; the tooltip then says so.
+
+**Connection modes.** By default TC Toolkit connects through the AMS router on this PC (TwinCAT XAE or
+XAR installed). On a PC **without** TwinCAT, set `tcToolkit.online.connectionMode` to `direct` and fill
+in the three `tcToolkit.online.direct.*` settings; the PLC then needs a static route to this PC's AMS Net
+ID (created in XAE or on the PLC). Direct mode is never used unless you choose it. Do not use it from a
+PC that also runs XAE against the same PLC: the PLC accepts one ADS connection per client address, so it
+can drop XAE's connection. Reaching a router other than this PC's (`tcToolkit.online.routerAddress`,
+for example from Remote-SSH or WSL) is untested.
+
+**TwinCAT 3.1.4026 user-mode runtime.** The ADS library TC Toolkit uses is reported not to reach the
+router of a 4026 **user-mode** runtime (the default on Windows 11 with Hyper-V or virtualization-based
+security on). Going online then fails with a message that says so. Workarounds: run the PLC in a
+kernel-mode runtime (the library documents `tcpkg config set -n xarMode -v KM`, with Hyper-V and Memory
+Integrity off; not confirmed by Beckhoff), or monitor a PLC on another machine.
+
 ### For AI coding assistants
 
 [`templates/twincat-project-CLAUDE.md`](templates/twincat-project-CLAUDE.md) is a portable field guide
@@ -436,6 +512,10 @@ for the version logic. There is no unit-test framework for Structured Text, so a
 
 Optional, only for *Build through XAE*: Windows with **TwinCAT XAE** (the XAE Shell of the project's
 TwinCAT version) and Windows PowerShell.
+
+Optional, only for online monitoring: TwinCAT XAE or XAR on this PC (its AMS router), with routes to
+remote PLCs set up in XAE — or, without TwinCAT, direct mode (see
+[Online monitoring](#online-monitoring-live-values-write-plc-watch)).
 
 Optional, only for the C++ options of *Build project*: **g++ 7 or later** for *Build with g++* (on
 Windows, MinGW-w64 — for example MSYS2's UCRT64; see [Build project](#build-project)), and Microsoft's
@@ -486,6 +566,16 @@ old entry is removed from your `settings.json`.
 | `tcToolkit.xaeBuild.platform` | `TwinCAT RT (x64)` | The solution platform it builds (activating onto a user-mode runtime needs its `TwinCAT OS (...)` platform). |
 | `tcToolkit.xaeBuild.timeoutMinutes` | `30` | Minutes before a build through XAE is stopped (5 to 240; during activation only reported). |
 | `tcToolkit.xaeBuild.stallMinutes` | `10` | Headless watchdog: minutes without output before offering a re-run with the window shown (2 to 60). |
+| `tcToolkit.online.connectionMode` | `router` | How *Go Online* reaches the PLC: `router` (the AMS router on this PC) or `direct` (a PC without TwinCAT). Never a fallback. |
+| `tcToolkit.online.adsPort` | `851` | ADS port of the PLC runtime (851 = first runtime, 852 = second). |
+| `tcToolkit.online.routerAddress` | `127.0.0.1` | AMS router address in router mode. Anything but this PC is untested. Per machine. |
+| `tcToolkit.online.direct.plcAddress` | *(empty)* | Direct mode: the PLC's IP address or host name. Per machine. |
+| `tcToolkit.online.direct.localAmsNetId` | *(empty)* | Direct mode: this PC's AMS Net ID, as the PLC's static route names it. Per machine. |
+| `tcToolkit.online.direct.localAdsPort` | `32750` | Direct mode: the local ADS port to use. Per machine. |
+| `tcToolkit.online.allowWrites` | `false` | Allow *Write Value…*. Even when on, writes are enabled once per online session and every write is confirmed and logged. |
+| `tcToolkit.online.inlinePollInterval` | `500` | Inline values: refresh interval in ms (100 to 10000). |
+| `tcToolkit.online.watchCycleTime` | `200` | PLC Watch: notification cycle time in ms (50 to 10000). |
+| `tcToolkit.online.maxNotifications` | `100` | PLC Watch: the most ADS notifications at once (1 to 400). |
 
 **XAE Shell paths.** On Windows the two `tcToolkit.xaeShell.*` settings are filled automatically with the
 installation found on your machine: first from the shell's COM registration, then from the default

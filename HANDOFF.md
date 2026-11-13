@@ -154,6 +154,46 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   during activation (no); hide after a version switch (keep visible); boot project / remote targets (phase 2);
   child-component numbering in the Build pane (approximate until a capture); PS 5.1
   ConvertTo-Json shapes (one-element arrays), nested `BuildProject`, whether a hidden shell ever hangs on a dialog.
+- **R15 ADS online monitoring: IMPLEMENTED on local branch `r15-ads`** (worktree `/home/user/tc-r15`, 2026-11-13, not
+  pushed, no PR yet; based on `claude/focused-ptolemy-m6acaz` `c9ace3f`). Decisions D1-D9: `docs/r15-ads-decision.md` §5.
+  Design and file map: DEVELOPMENT.md "Online monitoring (roadmap R15)". `ads-client` **2.2.0 pinned** (pure JS; loads on
+  Node 16.13 and 22; licences of it and its 5 deps in THIRD-PARTY-NOTICES, all six licence files listed by `vsce ls`).
+  Linux-verified: `REQUIRE_FULL_SUITE=1 npm test` FULL, lint, typecheck, browser harnesses `run.js`, `run_pragmas.js`,
+  `run_start_page.js`, new `run_online.js`. Harnesses `test_ads_{paths,session,inline,write,code,watch}.js` run against
+  an in-memory PLC (`test/_fakeAds.js`); **nothing has touched a real PLC or router.**
+  **Mismatch guard (coordinator review, 2026-11-13):** a name match alone does not prove the same code, so
+  `src/online/codeIdentity.js` checks name + variable layout (last build's `.tmc` symbols vs the PLC's symbol upload,
+  name and size) + sources edited after the `.tmc`. It cannot see a body-only change built but not downloaded (XAE's
+  compile id has no documented ADS read); UI and README say so.
+  **Decisions taken by the implementer (confirm or overturn):** writes need the setting AND a per-session enable
+  modal (D5's "per session"); the status-bar item is hidden while offline; no toolbar/start-page Go Online button
+  (palette, Watch view title, status-bar menu); target picker = local runtime + recent + typed NetId (no route listing:
+  the router's route table has no documented ADS read, R14's listing needs XAE and only lists local runtimes); with
+  several FB instances the first is shown and the user is told once; property accessor bodies and arrays of FB
+  instances are not monitored; a name-matching project with layout/edit differences still shows values (read by
+  name) but blocks writes; per-symbol type mismatch shows "type differs".
+  **Windows check list for the user (needs a real PLC; record results here):**
+  1. Note the TwinCAT build, kernel vs user mode, Hyper-V/VBS on or off.
+  2. Local runtime in RUN with the sample (or any project) downloaded: *Go Online…* → *Local runtime*. Expect the status
+     bar `Online: Local runtime · Run`; if it fails, copy the notification and the *TC Toolkit Online* channel text
+     (the 4026 user-mode case should show the user-mode message — that is D4's expected outcome).
+  3. A remote PLC with a route made in XAE: *Enter AMS Net ID…*. While XAE is logged in to the same PLC, confirm XAE
+     stays connected.
+  4. Open MAIN and a GVL: values at line ends (declarations) and after variables (implementation), refreshing; open an
+     FB: the "Instance: …" note and values; an FB with several instances: the note and *Select FB Instance…*.
+  5. **Code check probes:** (a) is `_AppInfo.ProjectName` exactly the `.plcproj` name (case)? (b) after a fresh XAE
+     build + download, does the channel say "Code check: passed" with N symbols matching? If it reports layout
+     differences, copy the first lines (the `.tmc` vs upload name/size mapping is the unverified part, e.g. I/O-mapped
+     or `{attribute 'hide'}` symbols). (c) edit a POU, save → "edited since its last build", writes blocked;
+     (d) copy the logged `_AppInfo.AppTimestamp` and the `.tmc`'s modified time after a build+download — do they relate?
+     (e) is there a `_CompileInfo` folder, and does its newest `.compileinfo` name change on every build?
+  6. Forces: force a variable in XAE → status bar "Forces active" (4026.21+); on 4024 the tooltip says "not reported".
+  7. Writes: with `tcToolkit.online.allowWrites` off → refused with *Open Setting*; on → enable modal, write modal
+     (target, path, old/new, PLC state), value changes in XAE, line in the channel; unsaved edit → refused.
+  8. PLC Watch: add from the editor and by typing a path; a struct/FB expands; a LINT/ULINT entry updates (library
+     issue #189 path) without an error; set `maxNotifications` to 2 and add 3 → message once.
+  9. Is a symbol path found when typed in another case (`main.ncyclecount`)?
+  10. Go Offline, and close VS Code while online: no lingering ADS port registration (XAE's ADS monitor or `netstat -ano | findstr 48898`).
 - **R3.2 Compile Project: MERGED** into `dev` as PR #32 (`28f24f1`, 2026-11-10 22:22 UTC).
 - **R3.3–R9 MERGED** into `dev` as PR #33 (`6424968`, 2026-11-11 09:30 UTC) after the user's Windows checks
   (dev-host green after `npm ci`; manual checks all passed). Details per item are in git history and ROADMAP "Done".
