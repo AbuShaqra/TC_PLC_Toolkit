@@ -276,7 +276,7 @@ const settle = () => new Promise(r => setTimeout(r, 10));
     assert(result.ok && result.errors === 0 && result.warnings === 0 && calls.infos.length === 1 && calls.infos[0].m === 'Build Project — PLC: no errors.' &&
         calls.infos[0].buttons.length === 0, `CLEAN: "no errors" (${calls.infos[0] && calls.infos[0].m})`);
     assert(calls.status.shown && /no errors/.test(calls.status.text) && problems.map.size === 0, 'CLEAN: the status bar says so; the Problems panel is empty');
-    assert(calls.progress.length === 1 && calls.progress[0].cancellable === true && /Compiling PLC/.test(calls.progress[0].title), 'RUN: progress is shown and can be cancelled');
+    assert(calls.progress.length === 1 && calls.progress[0].cancellable === true && /Building PLC/.test(calls.progress[0].title), 'RUN: progress is shown and can be cancelled');
     assert(calls.lastPick === undefined, 'PICK: one project runs without asking');
     const compilerCall = fake.calls[fake.calls.length - 1];
     assert(compilerCall.command === 'node' && compilerCall.args[0] === bundlePath && compilerCall.args.includes('--check') && compilerCall.args.includes('--json') &&
@@ -297,7 +297,7 @@ const settle = () => new Promise(r => setTimeout(r, 10));
         calls.errors.length === 1 && calls.errors[0].m === 'Build Project — PLC: 1 error, 1 warning.' &&
         calls.errors[0].buttons.join() === 'Go to Problem…,Open Problems',
         `ERRORS: the summary counts errors and warnings, without the filtered pragma warning (${calls.errors[0] && calls.errors[0].m})`);
-    assert(calls.status.text === '$(error) 1 $(warning) 1 Compile', `ERRORS: the status bar shows the counts (${calls.status.text})`);
+    assert(calls.status.text === '$(error) 1 $(warning) 1 Build', `ERRORS: the status bar shows the counts (${calls.status.text})`);
     const entries = problems.map.get(fbUri.toString()) || [];
     assert(problems.map.size === 1 && entries.length === 2, 'PROBLEMS: both diagnostics are published on the object\'s file; the GVL has none');
     const err = entries.find(d => d.severity === 0);
@@ -347,7 +347,7 @@ const settle = () => new Promise(r => setTimeout(r, 10));
     provider.compileSource.onComponentEdited(fbUri.toString(), 'method_Run');
     let left = problems.map.get(fbUri.toString()) || [];
     assert(left.length === 1 && left[0].severity === 1 && provider.compileSource.paneDiagnostics(fbUri.toString()).length === 1 &&
-        calls.status.text === '$(error) 0 $(warning) 1 Compile', 'EDIT: editing the method removes its problem everywhere; the other component keeps its own');
+        calls.status.text === '$(error) 0 $(warning) 1 Build', 'EDIT: editing the method removes its problem everywhere; the other component keeps its own');
     provider.compileSource.onComponentEdited(fbUri.toString(), 'root');
     assert(problems.map.size === 0 && /no errors/.test(calls.status.text), 'EDIT: the last problem gone, the file leaves the Problems panel');
 

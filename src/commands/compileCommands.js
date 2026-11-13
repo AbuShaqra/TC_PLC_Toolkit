@@ -289,8 +289,8 @@ function describeCpp(cpp) {
  */
 function compileStatusText(counts, cpp, gpp) {
     let text = counts.errors === 0 && counts.warnings === 0
-        ? '$(check) Compile: no errors'
-        : `$(error) ${counts.errors} $(warning) ${counts.warnings} Compile`;
+        ? '$(check) Build: no errors'
+        : `$(error) ${counts.errors} $(warning) ${counts.warnings} Build`;
     if (!cpp) return text;
     if (cpp.status === 'done' && cpp.written && cpp.written.written.length > 0) text += ' · C++ written';
     else if (cpp.status !== 'skipped') text += ' · C++ not written';
@@ -692,7 +692,7 @@ function registerCompileCommands(context, { provider, getProjectMap, onSettingsC
                 }
 
                 const outcome = await vscode.window.withProgress(
-                    { location: vscode.ProgressLocation.Notification, title: `Compiling ${projectName}…`, cancellable: true },
+                    { location: vscode.ProgressLocation.Notification, title: `Building ${projectName}…`, cancellable: true },
                     async (progress, token) => {
                         /** @type {Array<{filePath: string, text: string}>} */
                         const files = [];
@@ -878,7 +878,7 @@ function registerCompileCommands(context, { provider, getProjectMap, onSettingsC
         vscode.commands.registerCommand(GO_TO_PROBLEM_COMMAND, async () => {
             const problems = allProblems().sort((x, y) => (x.severity === y.severity ? 0 : (x.severity === 'error' ? -1 : 1)));
             if (problems.length === 0) {
-                vscode.window.showInformationMessage('There are no compile problems. Run TC Toolkit: Build Project first.');
+                vscode.window.showInformationMessage('There are no build problems. Run TC Toolkit: Build Project first.');
                 return;
             }
             const items = problems.map(p => ({
@@ -887,7 +887,7 @@ function registerCompileCommands(context, { provider, getProjectMap, onSettingsC
                 detail: describeLocation(p, memberName),
                 problem: p
             }));
-            const picked = await vscode.window.showQuickPick(items, { title: 'Compile problems', placeHolder: 'Go to a problem', matchOnDescription: true, matchOnDetail: true });
+            const picked = await vscode.window.showQuickPick(items, { title: 'Build problems', placeHolder: 'Go to a problem', matchOnDescription: true, matchOnDetail: true });
             if (picked) await goToProblem(picked.problem);
         })
     );
