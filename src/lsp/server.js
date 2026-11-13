@@ -159,6 +159,7 @@ const {
     provideHover,
     provideDiagnostics,
     setDiagnosticsConfig,
+    provideOnlinePaths,
     clearStFileCache
 } = require('./features');
 
@@ -333,6 +334,14 @@ connection.onRequest('custom/definition', whenIndexed(paramsFileUri, router.with
     null,
     (p, index) => provideDefinition(p.code, p.position, index, p.fileUri),
     'definition'
+)));
+
+// Online monitoring (R15): the ADS path template of every variable occurrence on the given lines.
+// Synced like every live-code request, so the paths follow the pane's unsaved text.
+connection.onRequest('custom/onlinePaths', whenIndexed(paramsFileUri, router.withDocument(
+    { occurrences: [], owner: null },
+    (p, index) => provideOnlinePaths(p.code, p.ranges, index, p.fileUri),
+    'online-paths'
 )));
 
 connection.onRequest('custom/references', whenIndexed(paramsFileUri, router.withDocument(
