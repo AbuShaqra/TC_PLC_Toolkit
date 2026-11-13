@@ -498,6 +498,7 @@
         dropCompileDiagnostics(activeComponentId);
 
         if (isAutoSync) {
+            autoSyncPending = true;
             statusEl.textContent = 'Saving...';
             statusEl.className = 'status-indicator modified';
 
@@ -518,6 +519,123 @@
                 pendingEdits: editsStore.snapshot()
             });
         }
+    }
+
+    // ── Online monitoring (R15) ─────────────────────────────────────────────────────────────────
+    // The webview never talks ADS: it tells the host which lines its panes show (`online/visible`),
+    // draws the values the host posts (`online/values`) as injected text after each variable (the
+    // document is never changed, so a save stays byte-identical), and asks for a write or a watch at
+    // the caret. Values are cleared on every edit until the host answers for the new text.
+    let onlineActive = false;
+    // An Auto Sync edit typed but not yet written back (the host's 'update' acknowledges it).
+    let autoSyncPending = false;
+    let onlineItems = [];
+    let onlineVisibleTimer = null;
+    const onlineDecorations = new Map(); // editor -> decoration ids
+    const onlineNoteEl = document.getElementById('online-note');
+    const onlineContextKeys = [];
+
+    /** True while the panes hold text the document does not (Manual Sync stash, or an edit not yet sent). */
+    function hasUnsavedPaneEdits() {
+        return (!isAutoSync && editsStore.count() > 0) || autoSyncPending;
+    }
+
+    /** The 1-based line ranges a pane shows, or null when the pane is hidden. */
+    function visibleLinesOf(editor, paneEl) {
+        if (!editor || !paneEl || paneEl.style.display === 'none') return null;
+        return editor.getVisibleRanges().map(r => ({ start: r.startLineNumber, end: r.endLineNumber }));
+    }
+
+    /** Tells the host what the panes show, debounced (scrolling fires many events). */
+    function sendOnlineVisible() {
+        if (!onlineActive) return;
+        clearTimeout(onlineVisibleTimer);
+        onlineVisibleTimer = setTimeout(() => {
+            onlineVisibleTimer = null;
+            if (!onlineActive || !activeComponentId || !declEditor) return;
+            const ctx = buildBridgeContext(declEditor.getModel(), { lineNumber: 1, column: 1 });
+            vscode.postMessage({
+                type: 'online/visible',
+                fileUri: activeFileUri,
+                componentId: activeComponentId,
+                decl: ctx.decl,
+                impl: ctx.impl,
+                dirty: hasUnsavedPaneEdits(),
+                visible: { decl: visibleLinesOf(declEditor, paneDeclEl), impl: visibleLinesOf(implEditor, paneImplEl) }
+            });
+        }, 150);
+    }
+
+    /**
+     * Draws the online values of the active component (or clears them). The ranges are empty (a point
+     * after the variable), so `showIfCollapsed` is required: Monaco drops collapsed injected text
+     * without it, silently.
+     */
+    function applyOnlineDecorations() {
+        for (const [editor, pane] of [[declEditor, 'decl'], [implEditor, 'impl']]) {
+            if (!editor) continue;
+            const model = editor.getModel();
+            const items = onlineActive ? onlineItems.filter(i => i.componentId === activeComponentId && i.pane === pane) : [];
+            const byLine = new Map();
+            const decorations = [];
+            for (const it of items) {
+                if (it.line < 1 || it.line > model.getLineCount()) continue;
+                if (it.eol) {
+                    if (!byLine.has(it.line)) byLine.set(it.line, []);
+                    byLine.get(it.line).push(it);
+                    continue;
+                }
+                const col = Math.min(it.endColumn, model.getLineMaxColumn(it.line));
+                decorations.push({
+                    range: new monaco.Range(it.line, col, it.line, col),
+                    options: { after: { content: it.text, inlineClassName: 'tc-online-value tc-online-' + it.state }, showIfCollapsed: true, stickiness: 1 }
+                });
+            }
+            for (const [line, list] of byLine) {
+                const col = model.getLineMaxColumn(line);
+                const state = list.some(i => i.state === 'differs') ? 'differs' : list[0].state;
+                const text = list.length === 1 ? list[0].text : list.map(i => i.path.split('.').pop() + ' = ' + i.text).join('  ');
+                decorations.push({
+                    range: new monaco.Range(line, col, line, col),
+                    options: { after: { content: text, inlineClassName: 'tc-online-value tc-online-eol tc-online-' + state }, showIfCollapsed: true, stickiness: 1 }
+                });
+            }
+            onlineDecorations.set(editor, editor.deltaDecorations(onlineDecorations.get(editor) || [], decorations));
+        }
+    }
+
+    /** Clears the drawn values (an edit made them stale) and asks for fresh ones. */
+    function invalidateOnlineValues() {
+        if (!onlineActive) return;
+        if (onlineItems.length) { onlineItems = []; applyOnlineDecorations(); }
+        sendOnlineVisible();
+    }
+
+    /** Online on/off from the host, with an optional note for the toolbar. */
+    function setOnlineState(online, note) {
+        onlineActive = !!online;
+        onlineContextKeys.forEach(k => k.set(onlineActive));
+        if (onlineNoteEl) {
+            onlineNoteEl.textContent = onlineActive ? (note ? 'Online · ' + note : 'Online') : '';
+            onlineNoteEl.hidden = !onlineActive;
+        }
+        if (!onlineActive) { onlineItems = []; applyOnlineDecorations(); return; }
+        sendOnlineVisible();
+    }
+
+    /** Adds the two editor actions (Write Value…, Add to PLC Watch) to a pane's context menu. */
+    function addOnlineActions(editor) {
+        onlineContextKeys.push(editor.createContextKey('tcOnline', false));
+        const ask = (type) => function (ed) {
+            const position = ed.getPosition();
+            if (!position || !activeComponentId) return;
+            const ctx = buildBridgeContext(ed.getModel(), position);
+            vscode.postMessage(Object.assign({ type: type, fileUri: activeFileUri, dirty: hasUnsavedPaneEdits() }, ctx));
+        };
+        editor.addAction({ id: 'tc.online.write', label: 'Write Value…', precondition: 'tcOnline',
+            contextMenuGroupId: '9_online', contextMenuOrder: 1, run: ask('online/write') });
+        editor.addAction({ id: 'tc.online.addWatch', label: 'Add to PLC Watch',
+            contextMenuGroupId: '9_online', contextMenuOrder: 2, run: ask('online/addWatch') });
     }
 
     // Build the LSP bridge payload describing the active component and cursor position.
@@ -1108,6 +1226,14 @@
         declEditor.onDidChangeModelContent(() => onEditorChange(declEditor, 'Declaration'));
         implEditor.onDidChangeModelContent(() => onEditorChange(implEditor, 'ST'));
 
+        // Online monitoring: the context-menu actions, and a fresh visible-lines report on scroll and edit.
+        addOnlineActions(declEditor);
+        addOnlineActions(implEditor);
+        declEditor.onDidScrollChange(() => sendOnlineVisible());
+        implEditor.onDidScrollChange(() => sendOnlineVisible());
+        declEditor.onDidChangeModelContent(() => invalidateOnlineValues());
+        implEditor.onDidChangeModelContent(() => invalidateOnlineValues());
+
         // Remember the pane the caret is in (see lastFocusedEditor). Both events are hooked: the
         // text one covers typing, the widget one covers a click that lands on the pane's gutter or
         // scrollbar without focusing the text area.
@@ -1561,6 +1687,11 @@
 
         isUpdatingFromExtension = false;
 
+        // Online values belong to a component: drop the old one's and ask for this one's.
+        onlineItems = [];
+        applyOnlineDecorations();
+        sendOnlineVisible();
+
         // Force refreshes
         setTimeout(resizeEditors, 10);
     }
@@ -1729,6 +1860,15 @@
                 updateStatusText();
                 break;
             }
+            case 'online/state': {
+                setOnlineState(message.online, message.note);
+                break;
+            }
+            case 'online/values': {
+                onlineItems = Array.isArray(message.items) ? message.items : [];
+                applyOnlineDecorations();
+                break;
+            }
             case 'compileDiagnostics': {
                 // A Compile Project run finished (or its results were cleared): replace the markers.
                 compileDiagnostics = Array.isArray(message.diagnostics) ? message.diagnostics : [];
@@ -1793,6 +1933,7 @@
 
                 statusEl.textContent = 'Synced';
                 statusEl.className = 'status-indicator';
+                autoSyncPending = false;
                 break;
             }
         }
