@@ -703,6 +703,35 @@ inline IEC_BOOL NE(A a, B b, C c, Rest... rest) noexcept {
 // Bit Shift Functions (ANY_BIT -> ANY_BIT)
 // =============================================================================
 
+/** Width in bits of the value a shift operates on (1 for BOOL). */
+template<typename T>
+constexpr int iec_bit_width() noexcept {
+    return std::is_same<iec_underlying_type_t<T>, bool>::value
+        ? 1
+        : static_cast<int>(sizeof(iec_underlying_type_t<T>) * 8);
+}
+
+namespace detail {
+template<typename V>
+constexpr bool iec_is_negative(V v, std::true_type /*signed*/) noexcept { return v < 0; }
+template<typename V>
+constexpr bool iec_is_negative(V, std::false_type) noexcept { return false; }
+}  // namespace detail
+
+/**
+ * A shift count as an int: -1 when negative, at most 1024, so a count wider
+ * than int is not truncated (2^32 stays at or above every width).
+ */
+template<typename N>
+constexpr int iec_shift_count(N n) noexcept {
+    return detail::iec_is_negative(iec_unwrap(n),
+               std::is_signed<decltype(iec_unwrap(n))>{})
+        ? -1
+        : (static_cast<unsigned long long>(iec_unwrap(n)) > 1024ULL
+               ? 1024
+               : static_cast<int>(iec_unwrap(n)));
+}
+
 /**
  * SHL - Shift left
  * Input: ANY_BIT, ANY_INT (shift count), Output: ANY_BIT
@@ -711,6 +740,7 @@ template<typename T, enable_if_any_bit<T> = 0>
 inline T SHL(T in, IEC_INT n) noexcept {
     auto shift = iec_unwrap(n);
     if (shift <= 0) return shift == 0 ? in : T(0);
+    if (shift >= iec_bit_width<T>()) return T(0);
     return T(iec_unwrap(in) << shift);
 }
 
@@ -719,8 +749,9 @@ template<typename T, typename N,
     enable_if_any_bit<T> = 0,
     std::enable_if_t<!std::is_same<std::decay_t<N>, IEC_INT>::value, int> = 0>
 inline T SHL(T in, N n) noexcept {
-    auto shift = static_cast<int>(iec_unwrap(n));
+    auto shift = iec_shift_count(n);
     if (shift <= 0) return shift == 0 ? in : T(0);
+    if (shift >= iec_bit_width<T>()) return T(0);
     return T(iec_unwrap(in) << shift);
 }
 
@@ -732,6 +763,7 @@ template<typename T, enable_if_any_bit<T> = 0>
 inline T SHR(T in, IEC_INT n) noexcept {
     auto shift = iec_unwrap(n);
     if (shift <= 0) return shift == 0 ? in : T(0);
+    if (shift >= iec_bit_width<T>()) return T(0);
     return T(iec_unwrap(in) >> shift);
 }
 
@@ -740,8 +772,9 @@ template<typename T, typename N,
     enable_if_any_bit<T> = 0,
     std::enable_if_t<!std::is_same<std::decay_t<N>, IEC_INT>::value, int> = 0>
 inline T SHR(T in, N n) noexcept {
-    auto shift = static_cast<int>(iec_unwrap(n));
+    auto shift = iec_shift_count(n);
     if (shift <= 0) return shift == 0 ? in : T(0);
+    if (shift >= iec_bit_width<T>()) return T(0);
     return T(iec_unwrap(in) >> shift);
 }
 
@@ -750,8 +783,9 @@ inline T SHR(T in, N n) noexcept {
 template<typename T, typename N,
     std::enable_if_t<is_any_int_v<T> && !is_any_bit_v<T>, int> = 0>
 inline T SHL(T in, N n) noexcept {
-    auto shift = static_cast<int>(iec_unwrap(n));
+    auto shift = iec_shift_count(n);
     if (shift <= 0) return shift == 0 ? in : T(0);
+    if (shift >= iec_bit_width<T>()) return T(0);
     using UT = std::make_unsigned_t<iec_underlying_type_t<T>>;
     return T(static_cast<iec_underlying_type_t<T>>(
         static_cast<UT>(iec_unwrap(in)) << shift));
@@ -760,8 +794,9 @@ inline T SHL(T in, N n) noexcept {
 template<typename T, typename N,
     std::enable_if_t<is_any_int_v<T> && !is_any_bit_v<T>, int> = 0>
 inline T SHR(T in, N n) noexcept {
-    auto shift = static_cast<int>(iec_unwrap(n));
+    auto shift = iec_shift_count(n);
     if (shift <= 0) return shift == 0 ? in : T(0);
+    if (shift >= iec_bit_width<T>()) shift = iec_bit_width<T>() - 1;
     return T(iec_unwrap(in) >> shift);
 }
 
@@ -930,6 +965,54 @@ template<typename T> inline IEC_TOD TO_TOD(T v) noexcept {
     return IEC_TOD(static_cast<TOD_t>(iec_unwrap(v)));
 }
 
+// LTIME has the representation of TIME (signed 64-bit nanoseconds).
+template<typename T> inline IEC_LTIME TO_LTIME(T v) noexcept {
+    return IEC_LTIME(static_cast<LTIME_t>(iec_unwrap(v)));
+}
+
+// LDATE, LTOD and LDT have the representations of DATE (days), TOD and DT
+// (nanoseconds).
+template<typename T> inline IEC_LDATE TO_LDATE(T v) noexcept {
+    return IEC_LDATE(static_cast<LDATE_t>(iec_unwrap(v)));
+}
+
+template<typename T> inline IEC_LTOD TO_LTOD(T v) noexcept {
+    return IEC_LTOD(static_cast<LTOD_t>(iec_unwrap(v)));
+}
+
+template<typename T> inline IEC_LDT TO_LDT(T v) noexcept {
+    return IEC_LDT(static_cast<LDT_t>(iec_unwrap(v)));
+}
+
+// CHAR is one Windows-1252 byte, WCHAR one UTF-16 code unit. A bit string or
+// integer converts by its value (codegen passes a CHAR source as its code);
+// CHAR and WCHAR convert through the Windows-1252 table, a WCHAR it lacks
+// becoming '?'; a STRING or WSTRING gives its first character (0 when empty).
+template<typename T> inline IEC_CHAR TO_CHAR(T v) noexcept {
+    return IEC_CHAR(static_cast<CHAR_t>(iec_unwrap(v)));
+}
+inline IEC_CHAR TO_CHAR(WCHAR_t c) noexcept {
+    const int byte = cp1252::from_unicode(c);
+    return IEC_CHAR(static_cast<CHAR_t>(byte < 0 ? '?' : byte));
+}
+inline IEC_CHAR TO_CHAR(const IEC_WCHAR& c) noexcept { return TO_CHAR(c.get()); }
+template<size_t N> inline IEC_CHAR TO_CHAR(const IECString<N>& s) noexcept {
+    return IEC_CHAR(s.length() > 0 ? s.c_str()[0] : '\0');
+}
+template<size_t N> inline IEC_CHAR TO_CHAR(const IECStringVar<N>& s) noexcept { return TO_CHAR(s.get()); }
+
+template<typename T> inline IEC_WCHAR TO_WCHAR(T v) noexcept {
+    return IEC_WCHAR(static_cast<WCHAR_t>(iec_unwrap(v)));
+}
+inline IEC_WCHAR TO_WCHAR(CHAR_t c) noexcept {
+    return IEC_WCHAR(static_cast<WCHAR_t>(cp1252::to_unicode(static_cast<unsigned char>(c))));
+}
+inline IEC_WCHAR TO_WCHAR(const IEC_CHAR& c) noexcept { return TO_WCHAR(c.get()); }
+template<size_t N> inline IEC_WCHAR TO_WCHAR(const IECWString<N>& s) noexcept {
+    return IEC_WCHAR(s.length() > 0 ? s[0] : u'\0');
+}
+template<size_t N> inline IEC_WCHAR TO_WCHAR(const IECWStringVar<N>& s) noexcept { return TO_WCHAR(s.get()); }
+
 // ---------------------------------------------------------------------------
 // STRING -> TIME / TOD / DATE / DT parsing
 //
@@ -1037,6 +1120,14 @@ inline int64_t parse_dt_ns(const char* s) noexcept {
 // win overload resolution for STRING arguments).
 template<size_t N> inline IEC_TIME TO_TIME(const IECString<N>& s) noexcept { return IEC_TIME(iec_strparse::parse_time_ns(s.c_str())); }
 template<size_t N> inline IEC_TIME TO_TIME(const IECStringVar<N>& s) noexcept { return IEC_TIME(iec_strparse::parse_time_ns(s.get().c_str())); }
+template<size_t N> inline IEC_LTIME TO_LTIME(const IECString<N>& s) noexcept { return IEC_LTIME(iec_strparse::parse_time_ns(s.c_str())); }
+template<size_t N> inline IEC_LTIME TO_LTIME(const IECStringVar<N>& s) noexcept { return IEC_LTIME(iec_strparse::parse_time_ns(s.get().c_str())); }
+template<size_t N> inline IEC_LTOD TO_LTOD(const IECString<N>& s) noexcept { return IEC_LTOD(iec_strparse::parse_tod_ns(s.c_str())); }
+template<size_t N> inline IEC_LTOD TO_LTOD(const IECStringVar<N>& s) noexcept { return IEC_LTOD(iec_strparse::parse_tod_ns(s.get().c_str())); }
+template<size_t N> inline IEC_LDATE TO_LDATE(const IECString<N>& s) noexcept { return IEC_LDATE(iec_strparse::parse_date_days(s.c_str())); }
+template<size_t N> inline IEC_LDATE TO_LDATE(const IECStringVar<N>& s) noexcept { return IEC_LDATE(iec_strparse::parse_date_days(s.get().c_str())); }
+template<size_t N> inline IEC_LDT TO_LDT(const IECString<N>& s) noexcept { return IEC_LDT(iec_strparse::parse_dt_ns(s.c_str())); }
+template<size_t N> inline IEC_LDT TO_LDT(const IECStringVar<N>& s) noexcept { return IEC_LDT(iec_strparse::parse_dt_ns(s.get().c_str())); }
 template<size_t N> inline IEC_TOD TO_TOD(const IECString<N>& s) noexcept { return IEC_TOD(iec_strparse::parse_tod_ns(s.c_str())); }
 template<size_t N> inline IEC_TOD TO_TOD(const IECStringVar<N>& s) noexcept { return IEC_TOD(iec_strparse::parse_tod_ns(s.get().c_str())); }
 template<size_t N> inline IEC_DATE TO_DATE(const IECString<N>& s) noexcept { return IEC_DATE(iec_strparse::parse_date_days(s.c_str())); }
@@ -1048,32 +1139,27 @@ template<size_t N> inline IEC_DT TO_DT(const IECStringVar<N>& s) noexcept { retu
 // String / Wide String Conversion
 // =============================================================================
 //
-// STRING ↔ WSTRING per IEC 61131-3 §6.5.4.6: codepoint-by-codepoint
-// transcoding. Anything outside the BMP would require surrogate
-// handling that the runtime does not implement; OpenPLC programs in
-// practice deal in 7-bit ASCII or simple Latin-1, so a lossy narrow
-// (truncate the high byte) is documented behaviour rather than a
-// surprise. Callers that need full Unicode round-tripping should keep
-// data in WSTRING throughout.
+// STRING <-> WSTRING per IEC 61131-3: character by character. A STRING
+// holds Windows-1252 bytes, so each byte widens to its CP1252 code point
+// (0x80 is U+20AC). Narrowing writes a WSTRING character CP1252 lacks as '?'
+// (a surrogate pair counts as one character), as Windows' WideCharToMultiByte
+// does with its default character.
 
 template<size_t SrcLen>
 inline IECWString<SrcLen> STRING_TO_WSTRING(const IECString<SrcLen>& src) noexcept {
     IECWString<SrcLen> result;
     const size_t n = src.length();
     for (size_t i = 0; i < n; ++i) {
-        // Treat each STRING byte as a codepoint in the U+0000–U+00FF
-        // range. Multi-byte UTF-8 sequences pass through byte-for-byte
-        // and end up as Latin-1 — wrong for non-ASCII, but the IEC
-        // standard doesn't define UTF-8/UTF-16 transcoding either.
-        result.append(static_cast<char16_t>(static_cast<unsigned char>(src[i])));
+        result.append(static_cast<char16_t>(
+            cp1252::to_unicode(static_cast<unsigned char>(src[i]))));
     }
     return result;
 }
 
-// Overload for the per-variable wrapper (handles auto-unwrap).
+// Overload for the per-variable wrapper.
 template<size_t SrcLen>
 inline IECWString<SrcLen> STRING_TO_WSTRING(const IECStringVar<SrcLen>& src) noexcept {
-    return STRING_TO_WSTRING(iec_unwrap(src));
+    return STRING_TO_WSTRING(src.get());
 }
 
 template<size_t SrcLen>
@@ -1081,17 +1167,22 @@ inline IECString<SrcLen> WSTRING_TO_STRING(const IECWString<SrcLen>& src) noexce
     IECString<SrcLen> result;
     const size_t n = src.length();
     for (size_t i = 0; i < n; ++i) {
-        // Truncate to the low byte. Codepoints > U+00FF lose
-        // information; surrogate pairs (rare in IEC programs) collapse
-        // to garbage. Document as "ASCII / Latin-1 only" round-trip.
-        result.append(static_cast<char>(src[i] & 0xFF));
+        const char16_t unit = src[i];
+        if (unit >= 0xD800u && unit <= 0xDBFFu && i + 1 < n
+            && src[i + 1] >= 0xDC00u && src[i + 1] <= 0xDFFFu) {
+            ++i;  // a surrogate pair is one character, outside CP1252
+            result.append('?');
+            continue;
+        }
+        const int byte = cp1252::from_unicode(unit);
+        result.append(byte < 0 ? '?' : static_cast<char>(byte));
     }
     return result;
 }
 
 template<size_t SrcLen>
 inline IECString<SrcLen> WSTRING_TO_STRING(const IECWStringVar<SrcLen>& src) noexcept {
-    return WSTRING_TO_STRING(iec_unwrap(src));
+    return WSTRING_TO_STRING(src.get());
 }
 
 // `*_TO_*` resolution in the frontend collapses STRING_TO_WSTRING /
@@ -1109,6 +1200,41 @@ template<typename T>
 inline auto TO_STRING(const T& src) noexcept -> decltype(WSTRING_TO_STRING(src)) {
     return WSTRING_TO_STRING(src);
 }
+
+// A CHAR is the one-character STRING of it, a WCHAR the one-unit WSTRING.
+inline IECString<254> TO_STRING(CHAR_t c) noexcept {
+    IECString<254> r;
+    r.append(c);
+    return r;
+}
+inline IECString<254> TO_STRING(const IEC_CHAR& c) noexcept { return TO_STRING(c.get()); }
+inline IECWString<254> TO_WSTRING(WCHAR_t c) noexcept {
+    IECWString<254> r;
+    r.append(c);
+    return r;
+}
+inline IECWString<254> TO_WSTRING(const IEC_WCHAR& c) noexcept { return TO_WSTRING(c.get()); }
+
+// Across the two widths, through Windows-1252: a CHAR is the one-unit WSTRING
+// of its code point, a WCHAR the one-character STRING ('?' when CP1252 lacks it),
+// a STRING's first character the WCHAR and a WSTRING's first unit the CHAR.
+inline IECWString<254> TO_WSTRING(CHAR_t c) noexcept { return TO_WSTRING(TO_WCHAR(c).get()); }
+inline IECWString<254> TO_WSTRING(const IEC_CHAR& c) noexcept { return TO_WSTRING(c.get()); }
+inline IECString<254> TO_STRING(WCHAR_t c) noexcept { return TO_STRING(TO_CHAR(c).get()); }
+inline IECString<254> TO_STRING(const IEC_WCHAR& c) noexcept { return TO_STRING(c.get()); }
+template<size_t N> inline IEC_WCHAR TO_WCHAR(const IECString<N>& s) noexcept {
+    return TO_WCHAR(s.length() > 0 ? s.c_str()[0] : '\0');
+}
+template<size_t N> inline IEC_WCHAR TO_WCHAR(const IECStringVar<N>& s) noexcept { return TO_WCHAR(s.get()); }
+template<size_t N> inline IEC_CHAR TO_CHAR(const IECWString<N>& s) noexcept {
+    return TO_CHAR(static_cast<WCHAR_t>(s.length() > 0 ? s[0] : u'\0'));
+}
+template<size_t N> inline IEC_CHAR TO_CHAR(const IECWStringVar<N>& s) noexcept { return TO_CHAR(s.get()); }
+// A STRING or WSTRING literal argument: its first character (0 when empty).
+inline IEC_CHAR TO_CHAR(const char* s) noexcept { return IEC_CHAR(s[0]); }
+inline IEC_CHAR TO_CHAR(const char16_t* s) noexcept { return TO_CHAR(static_cast<WCHAR_t>(s[0])); }
+inline IEC_WCHAR TO_WCHAR(const char* s) noexcept { return TO_WCHAR(static_cast<CHAR_t>(s[0])); }
+inline IEC_WCHAR TO_WCHAR(const char16_t* s) noexcept { return IEC_WCHAR(static_cast<WCHAR_t>(s[0])); }
 
 // =============================================================================
 // WSTRING → Numeric Conversions
@@ -1365,7 +1491,9 @@ inline T iec_mod_impl(T a, T b, std::true_type /*floating*/) noexcept {
 }
 template<typename T>
 inline T iec_mod_impl(T a, T b, std::false_type) noexcept {
-    return T(iec_unwrap(a) % iec_unwrap(b));
+    return iec_unwrap(b) == 0 || ::strucpp::iec_mod_minus_one(iec_unwrap(b))
+        ? T(0)
+        : T(iec_unwrap(a) % iec_unwrap(b));
 }
 }  // namespace detail
 
@@ -1375,6 +1503,15 @@ inline T MOD(T a, T b) noexcept {
         a, b,
         std::integral_constant<bool,
             std::is_floating_point<iec_underlying_type_t<T>>::value>{});
+}
+
+/**
+ * Binary MOD operator: OUT is 0 when IN2 is 0 (IEC 61131-3 Table 29, note e).
+ * The result type is the one the C++ % operator gives for the operands.
+ */
+template<typename A, typename B>
+constexpr auto iec_mod(const A& a, const B& b) -> decltype(a % b) {
+    return b == 0 || ::strucpp::iec_mod_minus_one(b + 0) ? decltype(a % b)(0) : a % b;
 }
 
 // =============================================================================

@@ -102,6 +102,14 @@ inline IEC_TIME DIV_TIME(IEC_TIME t, S scalar) noexcept {
     return IEC_TIME(static_cast<TIME_t>(iec_unwrap(t) / scalar));
 }
 
+// Ed. 3 LTIME forms: LTIME has the representation of TIME.
+inline IEC_LTIME ADD_LTIME(IEC_LTIME a, IEC_LTIME b) noexcept { return ADD_TIME(a, b); }
+inline IEC_LTIME SUB_LTIME(IEC_LTIME a, IEC_LTIME b) noexcept { return SUB_TIME(a, b); }
+template<typename S>
+inline IEC_LTIME MUL_LTIME(IEC_LTIME t, S scalar) noexcept { return MUL_TIME(t, scalar); }
+template<typename S>
+inline IEC_LTIME DIV_LTIME(IEC_LTIME t, S scalar) noexcept { return DIV_TIME(t, scalar); }
+
 // DIVTIME(a, b) returns the integer count of `b`-durations that fit in `a`
 // (i.e. `floor(a / b)`).  Different return type from `DIV_TIME(t, scalar)`
 // because the operands carry units that cancel — the result is unitless.

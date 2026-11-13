@@ -49,8 +49,38 @@
 
 namespace strucpp {
 
+namespace detail {
+template<typename V>
+constexpr bool iec_mod_minus_one(V v, std::true_type /*signed*/) noexcept { return v == static_cast<V>(-1); }
+template<typename V>
+constexpr bool iec_mod_minus_one(V, std::false_type) noexcept { return false; }
+}  // namespace detail
+
+/**
+ * A signed divisor of -1: x MOD -1 is 0, and computing it with % traps on
+ * the type's minimum, so MOD returns 0 without dividing.
+ */
+template<typename V>
+constexpr bool iec_mod_minus_one(V v) noexcept {
+    return detail::iec_mod_minus_one(v, std::is_signed<V>{});
+}
+
+
 // Forward declaration for pointer-to-integer assignment
 template<typename T> class IEC_Ptr;
+
+namespace detail {
+/** A character type: a pointer to one may be a string literal. */
+template<typename C> struct is_char_like : std::integral_constant<bool,
+    std::is_same<C, char>::value || std::is_same<C, signed char>::value ||
+    std::is_same<C, unsigned char>::value || std::is_same<C, wchar_t>::value ||
+    std::is_same<C, char16_t>::value || std::is_same<C, char32_t>::value> {};
+
+/** The pointee whose address an integer may take: an object, not a character or function. */
+template<typename U> struct is_addressable_object : std::integral_constant<bool,
+    std::is_object<U>::value &&
+    !is_char_like<typename std::remove_cv<U>::type>::value> {};
+}  // namespace detail
 
 // =============================================================================
 // IEC Variable Wrapper
@@ -94,6 +124,16 @@ public:
         std::is_convertible<U, T>::value && !std::is_same<U, T>::value, int> = 0>
     IECVar(const IECVar<U>& other) noexcept
         : value_{static_cast<T>(other.get())} {}
+
+    /** Construct from a raw pointer, storing the address as an integer: the
+     *  initial value `w : __XWORD := ADR(x)`. Only an integer as wide as an
+     *  address (no truncation), and only from a pointer to an object that is
+     *  not a character, so no string literal or function converts. */
+    template<typename U, typename V = T, std::enable_if_t<
+        std::is_integral<V>::value && sizeof(V) == sizeof(void*) &&
+        detail::is_addressable_object<U>::value, int> = 0>
+    IECVar(U* p) noexcept
+        : value_{static_cast<T>(reinterpret_cast<std::uintptr_t>(p))} {}
 
     /** Copies are plain value copies: a force is keyed by address, so a copy
      *  neither carries one nor clears one. */
@@ -239,7 +279,7 @@ public:
     }
 
     IECVar& operator%=(T v) noexcept {
-        set(get() % v);
+        set(v == T(0) || iec_mod_minus_one(v) ? T(0) : T(get() % v));
         return *this;
     }
 
@@ -318,7 +358,7 @@ inline IECVar<T> operator/(const IECVar<T>& a, const IECVar<T>& b) noexcept {
 
 template<typename T, typename = std::enable_if_t<std::is_integral<T>::value>>
 inline IECVar<T> operator%(const IECVar<T>& a, const IECVar<T>& b) noexcept {
-    return IECVar<T>(a.get() % b.get());
+    return IECVar<T>(b.get() == T(0) || iec_mod_minus_one(b.get()) ? T(0) : T(a.get() % b.get()));
 }
 
 // Mixed-type arithmetic operators (IECVar<T> op T) and (T op IECVar<T>)
@@ -330,8 +370,8 @@ template<typename T> inline IECVar<T> operator*(const IECVar<T>& a, T b) noexcep
 template<typename T> inline IECVar<T> operator*(T a, const IECVar<T>& b) noexcept { return IECVar<T>(a * b.get()); }
 template<typename T> inline IECVar<T> operator/(const IECVar<T>& a, T b) noexcept { return IECVar<T>(a.get() / b); }
 template<typename T> inline IECVar<T> operator/(T a, const IECVar<T>& b) noexcept { return IECVar<T>(a / b.get()); }
-template<typename T, typename = std::enable_if_t<std::is_integral<T>::value>> inline IECVar<T> operator%(const IECVar<T>& a, T b) noexcept { return IECVar<T>(a.get() % b); }
-template<typename T, typename = std::enable_if_t<std::is_integral<T>::value>> inline IECVar<T> operator%(T a, const IECVar<T>& b) noexcept { return IECVar<T>(a % b.get()); }
+template<typename T, typename = std::enable_if_t<std::is_integral<T>::value>> inline IECVar<T> operator%(const IECVar<T>& a, T b) noexcept { return IECVar<T>(b == T(0) || iec_mod_minus_one(b) ? T(0) : T(a.get() % b)); }
+template<typename T, typename = std::enable_if_t<std::is_integral<T>::value>> inline IECVar<T> operator%(T a, const IECVar<T>& b) noexcept { return IECVar<T>(b.get() == T(0) || iec_mod_minus_one(b.get()) ? T(0) : T(a % b.get())); }
 
 // =============================================================================
 // Comparison Operators

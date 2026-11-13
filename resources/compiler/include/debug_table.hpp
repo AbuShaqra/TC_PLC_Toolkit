@@ -86,6 +86,7 @@ enum TypeTag : uint8_t {
     TAG_DT      = 18,
     TAG_STRING  = 19,
     TAG_WSTRING = 20,
+    TAG_BIT     = 21,  // a BIT member (feature bit_type): ptr is its byte, bit in flags
     TAG__COUNT
 };
 
@@ -114,6 +115,11 @@ constexpr uint8_t LEAF_FLAG_READONLY = 1 << 0;
 // generated table self-describing: a reviewer or a diagnostic dump can see
 // which leaves are retained without cross-referencing a second array.
 constexpr uint8_t LEAF_FLAG_RETAIN = 1 << 1;
+
+// A TAG_BIT leaf carries its bit number (0..7, 0 the least significant bit of
+// the byte `ptr` addresses) in the three high bits of `flags`.
+constexpr uint8_t LEAF_BIT_SHIFT = 5;
+constexpr uint8_t leaf_bit(uint8_t flags) { return static_cast<uint8_t>(flags >> LEAF_BIT_SHIFT); }
 
 // ---------------------------------------------------------------------------
 // Debug entry: one per leaf variable.  Layout is ABI; see notes in
@@ -165,6 +171,13 @@ extern const uint8_t      debug_array_count;
 constexpr uint8_t DEBUG_ARRAY_PROGRAM = 0;
 constexpr uint8_t DEBUG_ARRAY_GLOBAL  = 1;
 extern const uint8_t      debug_array_kind[]   STRUCPP_DEBUG_FLASH;
+
+#ifdef STRUCPP_THREADED
+// The lock (a std::mutex) of the shared global leaf (arr, elem) of a
+// DEBUG_ARRAY_GLOBAL array lives in; null for any other leaf. Generated beside
+// the tables: the debugger and the force table write a global under its lock.
+void* debug_leaf_lock(uint8_t arr, uint16_t elem) noexcept;
+#endif
 
 // ---------------------------------------------------------------------------
 // Retain table.
