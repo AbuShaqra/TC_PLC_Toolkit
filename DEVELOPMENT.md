@@ -1771,10 +1771,9 @@ runs the allow-listed `twincat.detectGpp`.
 refresh; the Objects tree shows a project's `CPP_Files` as `generatedDirectory` with its `.cpp`/`.hpp`
 as `generatedCppFile` rows that open as text (`twincat.openComponent` treats `.cpp`/`.hpp` like `.st`).
 
-**Known compiler gap (found by `gpp-real`, compiler eb52d2c):** in TcToolkitSample_PLC,
-`GVL_System.fbStation.State` (a PROPERTY read through a global FB instance) is emitted as
-`FBSTATION.STATE` instead of the getter, so g++ fails on correct code that the check accepts.
-`test_cpp_real.js` lists it in `KNOWN_GPP_GAPS`; remove the entry when the fork fixes it.
+**Known compiler gaps:** none since release M (`75a55de`). The one found by `gpp-real` at `eb52d2c` (a
+PROPERTY read through a global FB instance emitted as a field access) is fixed there; `test_cpp_real.js`
+keeps `KNOWN_GPP_GAPS` (empty) for the next one, and both samples now build with g++ cleanly.
 
 ### XAE build (roadmap R14)
 

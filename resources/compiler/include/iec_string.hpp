@@ -48,6 +48,8 @@
 #include "iec_types.hpp"
 #include "iec_var.hpp"
 #include "iec_traits.hpp"
+#include "iec_cp1252.hpp"
+#include "iec_fault.hpp"
 
 namespace strucpp {
 
@@ -444,6 +446,20 @@ public:
     }
     char operator[](size_t index) const noexcept {
         return value_[index];
+    }
+
+    /** Ed. 3 `s[i]`: the i-th character, from 1 to the current length. */
+    char& at(int64_t index) {
+        if (index < 1 || static_cast<size_t>(index) > value_.length()) {
+            iec_string_index_fault();
+        }
+        return value_.data()[index - 1];
+    }
+    char at(int64_t index) const {
+        if (index < 1 || static_cast<size_t>(index) > value_.length()) {
+            iec_string_index_fault();
+        }
+        return value_.data()[index - 1];
     }
 
 private:

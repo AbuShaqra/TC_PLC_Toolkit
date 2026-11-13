@@ -983,6 +983,18 @@
         "category": "TypeConversion"
       },
       {
+        "name": "TO_CHAR",
+        "returnType": "CHAR",
+        "parameters": [
+          {
+            "name": "IN",
+            "type": "ANY",
+            "direction": "input"
+          }
+        ],
+        "category": "TypeConversion"
+      },
+      {
         "name": "TO_DATE",
         "returnType": "DATE",
         "parameters": [
@@ -1043,6 +1055,30 @@
         "category": "TypeConversion"
       },
       {
+        "name": "TO_LDATE",
+        "returnType": "LDATE",
+        "parameters": [
+          {
+            "name": "IN",
+            "type": "ANY",
+            "direction": "input"
+          }
+        ],
+        "category": "TypeConversion"
+      },
+      {
+        "name": "TO_LDT",
+        "returnType": "LDT",
+        "parameters": [
+          {
+            "name": "IN",
+            "type": "ANY",
+            "direction": "input"
+          }
+        ],
+        "category": "TypeConversion"
+      },
+      {
         "name": "TO_LINT",
         "returnType": "LINT",
         "parameters": [
@@ -1057,6 +1093,30 @@
       {
         "name": "TO_LREAL",
         "returnType": "LREAL",
+        "parameters": [
+          {
+            "name": "IN",
+            "type": "ANY",
+            "direction": "input"
+          }
+        ],
+        "category": "TypeConversion"
+      },
+      {
+        "name": "TO_LTIME",
+        "returnType": "LTIME",
+        "parameters": [
+          {
+            "name": "IN",
+            "type": "ANY",
+            "direction": "input"
+          }
+        ],
+        "category": "TypeConversion"
+      },
+      {
+        "name": "TO_LTOD",
+        "returnType": "LTOD",
         "parameters": [
           {
             "name": "IN",
@@ -1177,6 +1237,18 @@
       {
         "name": "TO_USINT",
         "returnType": "USINT",
+        "parameters": [
+          {
+            "name": "IN",
+            "type": "ANY",
+            "direction": "input"
+          }
+        ],
+        "category": "TypeConversion"
+      },
+      {
+        "name": "TO_WCHAR",
+        "returnType": "WCHAR",
         "parameters": [
           {
             "name": "IN",

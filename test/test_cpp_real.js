@@ -54,11 +54,9 @@ const INCLUDE = path.join(REPO, 'resources', 'compiler', 'include');
  * g++ errors on correct sample code that are gaps of the compiler's C++ output (its check accepts
  * the code). Each must still be placed on the generated files. Remove an entry once it is fixed.
  */
-const KNOWN_GPP_GAPS = {
-    // `GVL_System.fbStation.State` (a PROPERTY read through a global FB instance) is emitted as a
-    // field access instead of the getter call `get_STATE()` (found 2026-11-12, compiler eb52d2c).
-    TcToolkitSample_PLC: [/has no member named 'STATE'/]
-};
+/** @type {Record<string, RegExp[]>} None left: the property read through a global FB instance (found
+ *  2026-11-12 at eb52d2c) was fixed by the fork and arrived with release M (75a55de). */
+const KNOWN_GPP_GAPS = {};
 
 let errors = 0;
 function assert(cond, msg) {

@@ -33,6 +33,12 @@
  * instance plus the slots marked FLAG_GLOBAL, so a task never writes another
  * task's variables. set() writes the variable once from the caller's thread,
  * as forcing always has.
+ *
+ * A slot may carry the lock of the shared global its variable lives in
+ * (set()'s `lock`). Such a slot is written with both locks held, the global's
+ * taken first: a global's lock may be held while the table lock is taken,
+ * never the reverse. Holding both keeps a write from using a value the slot
+ * no longer has (cleared, re-forced or reused meanwhile).
  */
 
 #pragma once
@@ -105,6 +111,10 @@ template <std::size_t N>
 struct Slot {
     void* ptr;
     ApplyFn apply;
+#ifdef STRUCPP_THREADED
+    /** The lock of the shared global the variable lives in, or null. */
+    std::mutex* lock;
+#endif
     uint16_t size;
     uint8_t flags;
     bool used;
@@ -189,9 +199,14 @@ inline Slot<N>* free_in(Slot<N> (&pool)[M]) noexcept {
 
 template <std::size_t N>
 inline void fill(Slot<N>& s, void* ptr, const void* bytes, uint16_t size,
-                 uint8_t flags, ApplyFn apply) noexcept {
+                 uint8_t flags, ApplyFn apply, void* lock) noexcept {
     s.ptr = ptr;
     s.apply = apply;
+#ifdef STRUCPP_THREADED
+    s.lock = static_cast<std::mutex*>(lock);
+#else
+    (void)lock;
+#endif
     s.size = size;
     s.flags = flags;
     s.used = true;
@@ -201,7 +216,8 @@ inline void fill(Slot<N>& s, void* ptr, const void* bytes, uint16_t size,
 /** Puts a force into pool `into`, dropping any slot the variable holds in pool `other`. */
 template <std::size_t N, std::size_t M, std::size_t N2, std::size_t M2>
 inline Status put(Table& t, Slot<N> (&into)[M], Slot<N2> (&other)[M2], void* ptr,
-                  const void* bytes, uint16_t size, uint8_t flags, ApplyFn apply) noexcept {
+                  const void* bytes, uint16_t size, uint8_t flags, ApplyFn apply,
+                  void* lock) noexcept {
     Slot<N>* s = find_in(into, ptr);
     if (s == nullptr) {
         s = free_in(into);
@@ -213,9 +229,21 @@ inline Status put(Table& t, Slot<N> (&into)[M], Slot<N2> (&other)[M2], void* ptr
             add_count(t, 1);
         }
     }
-    fill(*s, ptr, bytes, size, flags, apply);
+    fill(*s, ptr, bytes, size, flags, apply, lock);
+    // With a global's lock, set() holds it here too (taken before the table lock).
     apply_slot(*s);
     return Status::Ok;
+}
+
+/** True when slot `s` carries a global's lock (only under STRUCPP_THREADED). */
+template <std::size_t N>
+inline bool has_lock(const Slot<N>& s) noexcept {
+#ifdef STRUCPP_THREADED
+    return s.lock != nullptr;
+#else
+    (void)s;
+    return false;
+#endif
 }
 
 inline bool owned(const void* ptr, uint8_t flags, std::uintptr_t lo, std::uintptr_t hi) noexcept {
@@ -229,14 +257,51 @@ namespace detail {
 
 /** set() with the table lock already held. */
 inline Status set_locked(Table& t, void* ptr, const void* bytes, uint16_t size,
-                         uint8_t flags, ApplyFn apply) noexcept {
+                         uint8_t flags, ApplyFn apply, void* lock = nullptr) noexcept {
     if (ptr == nullptr || bytes == nullptr || size == 0) return Status::BadArgument;
     if (size > STRUCPP_FORCE_STRING_BYTES) return Status::TooLarge;
     if (size <= SCALAR_BYTES) {
-        return put(t, t.scalars, t.strings, ptr, bytes, size, flags, apply);
+        return put(t, t.scalars, t.strings, ptr, bytes, size, flags, apply, lock);
     }
-    return put(t, t.strings, t.scalars, ptr, bytes, size, flags, apply);
+    return put(t, t.strings, t.scalars, ptr, bytes, size, flags, apply, lock);
 }
+
+#ifdef STRUCPP_THREADED
+/**
+ * Write slot `i` of `pool` under its global's lock and the table lock, taken
+ * in that order: the slot's lock is read under the table lock, which is then
+ * released, the global's lock taken and the table lock retaken; the slot is
+ * written only if it still holds the same variable and lock.
+ */
+template <std::size_t N, std::size_t M>
+inline void apply_unlocked(Table& t, Slot<N> (&pool)[M], std::size_t i,
+                           std::uintptr_t lo, std::uintptr_t hi, bool all) noexcept {
+    std::mutex* gl;
+    void* ptr;
+    {
+        Lock lock(t);
+        const Slot<N>& s = pool[i];
+        if (!s.used || s.lock == nullptr) return;
+        if (!all && !owned(s.ptr, s.flags, lo, hi)) return;
+        gl = s.lock; ptr = s.ptr;
+    }
+    std::lock_guard<std::mutex> guard(*gl);
+    Lock lock(t);
+    const Slot<N>& s = pool[i];
+    if (s.used && s.ptr == ptr && s.lock == gl) apply_slot(s);
+}
+
+/** Write every slot carrying a global's lock (owned ones unless `all`). */
+inline void apply_global_slots(Table& t, std::uintptr_t lo, std::uintptr_t hi,
+                               bool all) noexcept {
+    for (std::size_t i = 0; i < STRUCPP_FORCE_SLOTS; ++i) {
+        apply_unlocked(t, t.scalars, i, lo, hi, all);
+    }
+    for (std::size_t i = 0; i < STRUCPP_FORCE_STRING_SLOTS; ++i) {
+        apply_unlocked(t, t.strings, i, lo, hi, all);
+    }
+}
+#endif
 
 /** clear() with the table lock already held. */
 inline bool clear_locked(Table& t, const void* ptr) noexcept {
@@ -259,13 +324,102 @@ inline bool clear_locked(Table& t, const void* ptr) noexcept {
 
 /**
  * Force the variable at `ptr` to the `size` bytes at `bytes` and write them
- * into it now. Forcing a forced variable again replaces its value.
+ * into it now. Forcing a forced variable again replaces its value. `lock` is
+ * the std::mutex of the shared global the variable lives in: under
+ * STRUCPP_THREADED the write (now and at every apply) holds it; otherwise it
+ * is ignored.
  */
 inline Status set(void* ptr, const void* bytes, uint16_t size, uint8_t flags = 0,
-                  ApplyFn apply = nullptr) noexcept {
+                  ApplyFn apply = nullptr, void* lock = nullptr) noexcept {
+    detail::Table& t = detail::table();
+#ifdef STRUCPP_THREADED
+    if (lock != nullptr) {
+        std::lock_guard<std::mutex> guard(*static_cast<std::mutex*>(lock));
+        detail::Lock table_lock(t);
+        return detail::set_locked(t, ptr, bytes, size, flags, apply, lock);
+    }
+#endif
+    detail::Lock table_lock(t);
+    return detail::set_locked(t, ptr, bytes, size, flags, apply, lock);
+}
+
+namespace detail {
+/**
+ * Apply of a byte holding forced BIT members (feature bit_type): `bytes[0]`
+ * holds the forced values, `bytes[1]` the mask of forced bits; other bits of
+ * the byte keep the program's values.
+ */
+inline void apply_bits(void* dst, const uint8_t* bytes, uint16_t) noexcept {
+    uint8_t* p = static_cast<uint8_t*>(dst);
+    *p = static_cast<uint8_t>((*p & ~bytes[1]) | (bytes[0] & bytes[1]));
+}
+
+/** set_bit() with the table lock (and the global's, if any) held. */
+inline Status set_bit_locked(Table& t, void* ptr, uint8_t bit, bool value,
+                             uint8_t flags, void* lock) noexcept {
+    if (ptr == nullptr || bit > 7) return Status::BadArgument;
+    const uint8_t mask = static_cast<uint8_t>(1u << bit);
+    uint8_t bytes[2] = {0, 0};
+    ScalarSlot* s = find_in(t.scalars, ptr);
+    if (s != nullptr && s->apply == &apply_bits) {
+        bytes[0] = s->bytes[0];
+        bytes[1] = s->bytes[1];
+    }
+    bytes[0] = static_cast<uint8_t>(value ? (bytes[0] | mask) : (bytes[0] & ~mask));
+    bytes[1] = static_cast<uint8_t>(bytes[1] | mask);
+    return put(t, t.scalars, t.strings, ptr, bytes, 2, flags, &apply_bits, lock);
+}
+}  // namespace detail
+
+/**
+ * Force bit `bit` (0 the least significant) of the byte at `ptr` to `value`
+ * and write it now: a BIT member of a STRUCT, under the feature bit_type. The other
+ * bits of the byte keep their values; forced bits of one byte share a slot.
+ * `lock` is as for set().
+ */
+inline Status set_bit(void* ptr, uint8_t bit, bool value, uint8_t flags = 0,
+                      void* lock = nullptr) noexcept {
+    detail::Table& t = detail::table();
+#ifdef STRUCPP_THREADED
+    if (lock != nullptr) {
+        std::lock_guard<std::mutex> guard(*static_cast<std::mutex*>(lock));
+        detail::Lock table_lock(t);
+        return detail::set_bit_locked(t, ptr, bit, value, flags, lock);
+    }
+#endif
+    detail::Lock table_lock(t);
+    return detail::set_bit_locked(t, ptr, bit, value, flags, lock);
+}
+
+/** Stop forcing bit `bit` of the byte at `ptr`. False if it was not forced. */
+inline bool clear_bit(const void* ptr, uint8_t bit) noexcept {
     detail::Table& t = detail::table();
     detail::Lock lock(t);
-    return detail::set_locked(t, ptr, bytes, size, flags, apply);
+    detail::ScalarSlot* s = detail::find_in(t.scalars, ptr);
+    const uint8_t mask = static_cast<uint8_t>(1u << (bit & 7u));
+    if (s == nullptr || s->apply != &detail::apply_bits || (s->bytes[1] & mask) == 0) {
+        return false;
+    }
+    s->bytes[1] = static_cast<uint8_t>(s->bytes[1] & ~mask);
+    if (s->bytes[1] == 0) {
+        s->used = false;
+        detail::add_count(t, -1);
+    }
+    return true;
+}
+
+/** True, with the forced value in `*value`, while bit `bit` of the byte at `ptr` is forced. */
+inline bool read_bit(const void* ptr, uint8_t bit, bool* value) noexcept {
+    detail::Table& t = detail::table();
+    if (detail::load_count(t) == 0) return false;
+    detail::Lock lock(t);
+    const detail::ScalarSlot* s = detail::find_in(t.scalars, ptr);
+    const uint8_t mask = static_cast<uint8_t>(1u << (bit & 7u));
+    if (s == nullptr || s->apply != &detail::apply_bits || (s->bytes[1] & mask) == 0) {
+        return false;
+    }
+    *value = (s->bytes[0] & mask) != 0;
+    return true;
 }
 
 /** Stop forcing the variable at `ptr`; it keeps its current value. False if it was not forced. */
@@ -349,13 +503,18 @@ inline const void* value_ptr(const void* ptr, uint16_t* size) noexcept {
 inline void apply_all() noexcept {
     detail::Table& t = detail::table();
     if (detail::load_count(t) == 0) return;
-    detail::Lock lock(t);
-    for (const auto& s : t.scalars) {
-        if (s.used) detail::apply_slot(s);
+    {
+        detail::Lock lock(t);
+        for (const auto& s : t.scalars) {
+            if (s.used && !detail::has_lock(s)) detail::apply_slot(s);
+        }
+        for (const auto& s : t.strings) {
+            if (s.used && !detail::has_lock(s)) detail::apply_slot(s);
+        }
     }
-    for (const auto& s : t.strings) {
-        if (s.used) detail::apply_slot(s);
-    }
+#ifdef STRUCPP_THREADED
+    detail::apply_global_slots(t, 0, 0, true);
+#endif
 }
 
 /**
@@ -367,13 +526,22 @@ inline void apply_owned(const void* base, std::size_t len) noexcept {
     if (detail::load_count(t) == 0) return;
     const std::uintptr_t lo = reinterpret_cast<std::uintptr_t>(base);
     const std::uintptr_t hi = lo + len;
-    detail::Lock lock(t);
-    for (const auto& s : t.scalars) {
-        if (s.used && detail::owned(s.ptr, s.flags, lo, hi)) detail::apply_slot(s);
+    {
+        detail::Lock lock(t);
+        for (const auto& s : t.scalars) {
+            if (s.used && !detail::has_lock(s) && detail::owned(s.ptr, s.flags, lo, hi)) {
+                detail::apply_slot(s);
+            }
+        }
+        for (const auto& s : t.strings) {
+            if (s.used && !detail::has_lock(s) && detail::owned(s.ptr, s.flags, lo, hi)) {
+                detail::apply_slot(s);
+            }
+        }
     }
-    for (const auto& s : t.strings) {
-        if (s.used && detail::owned(s.ptr, s.flags, lo, hi)) detail::apply_slot(s);
-    }
+#ifdef STRUCPP_THREADED
+    detail::apply_global_slots(t, lo, hi, false);
+#endif
 }
 
 /**

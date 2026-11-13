@@ -51,8 +51,9 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   errors; TcToolkitSample shows only the known `has no member named 'STATE'` g++ error (+ the same error from the
   C/C++ extension). **Not reported back yet:** PR checklist items 1–3 and 5–8 (dropdown sync, g++ row, too-old g++,
   IntelliSense provider, Tc2_* library summary, edited `.hpp` / deleted `.gitignore`, cancel leaves no `cc1plus.exe`).
-  **Known gap:** a PROPERTY read through a global FB instance is emitted as a field access; fixed in fork #140, arrives
-  with the compiler re-vendor at release M; `test/test_cpp_real.js` `KNOWN_GPP_GAPS` pins it (remove the entry then).
+  **Compiler pinned at release M** (`75a55de`, 2026-11-13, user): the property-read gap is gone, both samples build
+  with g++ cleanly (`KNOWN_GPP_GAPS` empty); `resources/dialects/twincat3.json` gains `vendor_operators`,
+  `type_colon_optional`, `platform_types`, `bit_type` (S10).
   **Windows CI** was red since R13's g++ tests landed (tests assumed Linux: shebang fake g++, `:`-split PATH, the
   runner's real MSYS2 at `C:\msys64` and its unsettled registry cache); fixed in `aa202b0`/`ee02e90`, CI green.
   Rule for new g++ tests: never let a test reach the host's g++, PATH, MSYS2 or registry: inject `machine`/`gppMachine`,

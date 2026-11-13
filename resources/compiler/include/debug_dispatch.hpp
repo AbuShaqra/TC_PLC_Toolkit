@@ -71,6 +71,11 @@ constexpr uint8_t STATUS_READ_ONLY       = 0x87;
 // need is taken (iec_force.hpp: STRUCPP_FORCE_SLOTS / _STRING_SLOTS). The
 // leaf is left as it was; unforcing another leaf frees a slot.
 constexpr uint8_t STATUS_FORCE_TABLE_FULL = 0x88;
+// Returned when a STRING write or force carries a payload that is not
+// well-formed UTF-8, holds a character Windows-1252 lacks (a STRING stores one
+// CP1252 byte per character), or holds a NUL: a STRING ends at its first NUL,
+// so the stored value would be cut there. The leaf is left as it was.
+constexpr uint8_t STATUS_NOT_ENCODABLE   = 0x89;
 
 // ---------------------------------------------------------------------------
 // Templated per-type helpers. One instantiation per IEC elementary type;
@@ -108,9 +113,10 @@ inline bool decode_scalar<bool>(const uint8_t* bytes) noexcept {
 }
 
 template <typename T>
-inline uint8_t force_impl(void* p, const uint8_t* bytes, uint8_t flags) noexcept {
+inline uint8_t force_impl(void* p, const uint8_t* bytes, uint8_t flags,
+                          void* lock = nullptr) noexcept {
     const T v = decode_scalar<T>(bytes);
-    return force_status(force::set(p, &v, sizeof(T), flags));
+    return force_status(force::set(p, &v, sizeof(T), flags, nullptr, lock));
 }
 
 inline void unforce_impl(void* p) noexcept {
@@ -168,6 +174,12 @@ inline const void* ptr_impl(const void* p, uint16_t* len) noexcept {
 // `src/frontend/utils/variable-sizes.ts` — `len8-utf8` / `len8-utf16le`):
 //
 //   STRING:  [ uint8 length ][ DEBUG_STRING_CAP bytes UTF-8 payload ]
+//            A STRING is stored as Windows-1252 bytes (iec_cp1252.hpp): a read
+//            transcodes them to UTF-8, the length is the UTF-8 byte count, and
+//            a value whose UTF-8 form passes DEBUG_STRING_CAP is cut before the
+//            first character that does not fit whole. A write or force decodes
+//            the UTF-8 payload to CP1252; a payload that is not UTF-8, or holds
+//            a character CP1252 lacks, is refused with STATUS_NOT_ENCODABLE.
 //            ^ 1 byte         ^ 126 bytes (always — content past the
 //                               declared length is unused but the
 //                               wire width is fixed)
@@ -218,34 +230,43 @@ inline void read_string(const void* p, uint8_t* dest) noexcept {
     std::size_t actual_len = 0;
     const char* src = string_view_of(p, &actual_len);
     const uint8_t wire_len = static_cast<uint8_t>(
-        actual_len < DEBUG_STRING_CAP ? actual_len : DEBUG_STRING_CAP);
+        cp1252::to_utf8(src, actual_len, dest + 1, DEBUG_STRING_CAP));
     dest[0] = wire_len;
-    if (wire_len > 0) {
-        std::memcpy(dest + 1, src, wire_len);
-    }
     if (wire_len < DEBUG_STRING_CAP) {
         std::memset(dest + 1 + wire_len, 0, DEBUG_STRING_CAP - wire_len);
     }
 }
 
-inline void write_string(void* p, const uint8_t* bytes) noexcept {
-    if (force::is_forced(p)) return;
-    auto* var = static_cast<IECStringVar<254>*>(p);
+/** Decode a STRING wire payload to CP1252 in `out`; false when it cannot be. */
+inline bool decode_string(const uint8_t* bytes, char* out, std::size_t* out_len) noexcept {
     const uint8_t wire_len = bytes[0] < DEBUG_STRING_CAP ? bytes[0] : DEBUG_STRING_CAP;
-    var->set(IECString<254>(reinterpret_cast<const char*>(bytes + 1), wire_len));
+    return cp1252::from_utf8(bytes + 1, wire_len, out, out_len);
 }
 
-inline uint8_t force_string(void* p, const uint8_t* bytes, uint8_t flags) noexcept {
-    const uint8_t wire_len = bytes[0] < DEBUG_STRING_CAP ? bytes[0] : DEBUG_STRING_CAP;
+inline void write_string(void* p, const uint8_t* bytes) noexcept {
+    if (force::is_forced(p)) return;
+    char value[DEBUG_STRING_CAP];
+    std::size_t n = 0;
+    if (!decode_string(bytes, value, &n)) return;  // validate_payload refused it
+    auto* var = static_cast<IECStringVar<254>*>(p);
+    var->set(IECString<254>(value, n));
+}
+
+inline uint8_t force_string(void* p, const uint8_t* bytes, uint8_t flags,
+                            void* lock = nullptr) noexcept {
     char value[DEBUG_STRING_CAP + 1];
-    std::memcpy(value, bytes + 1, wire_len);
-    value[wire_len] = '\0';
-    return force_status(force::set(p, value, static_cast<uint16_t>(wire_len + 1u),
-                                   flags, &apply_string));
+    std::size_t n = 0;
+    if (!decode_string(bytes, value, &n)) return STATUS_NOT_ENCODABLE;
+    value[n] = '\0';
+    return force_status(force::set(p, value, static_cast<uint16_t>(n + 1u),
+                                   flags, &apply_string, lock));
 }
 
 // The payload only — NOT the [len][payload] wire form read_string() builds.
-// `len` is the character count; a forced leaf is served from its slot.
+// `len` is the byte count; a forced leaf is served from its slot. The bytes are
+// the stored Windows-1252 characters, one byte each, NOT UTF-8: a caller that
+// needs Unicode (an OPC-UA String is UTF-8) transcodes them, e.g. with
+// cp1252::to_utf8.
 //
 // Deliberately NOT capped at DEBUG_STRING_CAP. That cap is the Modbus debug
 // FRAME budget: the wire form spends one byte on the length prefix and the
@@ -324,14 +345,15 @@ inline void write_wstring(void* p, const uint8_t* bytes) noexcept {
     var->set(IECWString<254>(buf, wire_len));
 }
 
-inline uint8_t force_wstring(void* p, const uint8_t* bytes, uint8_t flags) noexcept {
+inline uint8_t force_wstring(void* p, const uint8_t* bytes, uint8_t flags,
+                             void* lock = nullptr) noexcept {
     const uint8_t wire_len = bytes[0] < DEBUG_STRING_CAP ? bytes[0] : DEBUG_STRING_CAP;
     char16_t value[DEBUG_STRING_CAP + 1];
     decode_wstring(bytes, wire_len, value);
     value[wire_len] = u'\0';
     return force_status(force::set(p, value,
                                    static_cast<uint16_t>((wire_len + 1u) * sizeof(char16_t)),
-                                   flags, &apply_wstring));
+                                   flags, &apply_wstring, lock));
 }
 
 // The code-unit buffer as it sits in memory, so `len` is BYTES (2 per code
@@ -365,12 +387,48 @@ inline const void* ptr_wstring(const void* p, uint16_t* len) noexcept {
 }
 #endif
 
+// BIT member (feature bit_type): bit `bit` of the byte at `p`, one byte 0/1
+// on the wire. A forced bit reads its forced value; a soft write to it is
+// ignored, as for any forced leaf.
+inline uint8_t force_bit(void* p, uint8_t bit, const uint8_t* bytes, uint8_t flags,
+                         void* lock) noexcept {
+    return force_status(force::set_bit(p, bit, bytes[0] != 0, flags, lock));
+}
+inline void read_bit(const void* p, uint8_t bit, uint8_t* dest) noexcept {
+    bool forced = false;
+    if (force::read_bit(p, bit, &forced)) {
+        dest[0] = forced ? 1 : 0;
+        return;
+    }
+    dest[0] = static_cast<uint8_t>((*static_cast<const uint8_t*>(p) >> bit) & 1u);
+}
+inline void write_bit(void* p, uint8_t bit, const uint8_t* bytes) noexcept {
+    bool forced = false;
+    if (force::read_bit(p, bit, &forced)) return;
+    uint8_t* b = static_cast<uint8_t*>(p);
+    const uint8_t mask = static_cast<uint8_t>(1u << bit);
+    *b = static_cast<uint8_t>(bytes[0] != 0 ? (*b | mask) : (*b & ~mask));
+}
+inline uint8_t force_bit0(void* p, const uint8_t* bytes, uint8_t flags, void* lock) noexcept {
+    return force_bit(p, 0, bytes, flags, lock);
+}
+inline void unforce_bit0(void* p) noexcept { force::clear_bit(p, 0); }
+inline void read_bit0(const void* p, uint8_t* dest) noexcept { read_bit(p, 0, dest); }
+inline void write_bit0(void* p, const uint8_t* bytes) noexcept { write_bit(p, 0, bytes); }
+
+/** Pointer op of a leaf with no address of its own (a BIT member). */
+inline const void* ptr_none(const void*, uint16_t* len) noexcept {
+    *len = 0;
+    return nullptr;
+}
+
 // ---------------------------------------------------------------------------
 // Dispatch table entry. The `size` field is the byte width consumed/produced
 // by force/read (for strings: reserved, handled specially).
 // ---------------------------------------------------------------------------
 struct TypeOps {
-    uint8_t (*force)(void*, const uint8_t*, uint8_t);
+    /** Force: variable, value, force::FLAG_*, the lock of its shared global or null. */
+    uint8_t (*force)(void*, const uint8_t*, uint8_t, void*);
     void (*unforce)(void*);
     void (*read)   (const void*, uint8_t*);
     void (*write)  (void*, const uint8_t*);
@@ -424,6 +482,8 @@ constexpr TypeOps type_ops[TAG__COUNT] = {
     /*DT      */ { &force_impl<DT_t>,    &unforce_impl, &read_impl<DT_t>,    &write_impl<DT_t>,    sizeof(DT_t)        },
     /*STRING  */ { &force_string,        &unforce_impl, &read_string,        &write_string,        DEBUG_STRING_WIDTH  },
     /*WSTRING */ { &force_wstring,       &unforce_impl, &read_wstring,       &write_wstring,       DEBUG_WSTRING_WIDTH },
+    // BIT: the handlers below take the bit number from the entry; this row gives its width.
+    /*BIT     */ { &force_bit0,          &unforce_bit0, &read_bit0,          &write_bit0,          1                   },
 };
 
 // ---------------------------------------------------------------------------
@@ -468,6 +528,7 @@ constexpr PtrOps ptr_ops[TAG__COUNT] = {
     /*DT      */ { &ptr_impl<DT_t> },
     /*STRING  */ { &ptr_string },
     /*WSTRING */ { &ptr_wstring },
+    /*BIT     */ { &ptr_none },  // never called: handle_ptr refuses a BIT leaf first
 };
 
 // ---------------------------------------------------------------------------
@@ -572,13 +633,48 @@ inline uint8_t read_array_kind(uint8_t arr) noexcept {
 // ---------------------------------------------------------------------------
 
 /**
+ * The lock of the shared global leaf (arr, elem) lives in, or null: only a
+ * STRUCPP_THREADED build has one (the generated debug_leaf_lock()).
+ */
+inline void* leaf_lock(uint8_t arr, uint16_t elem) noexcept {
+#ifdef STRUCPP_THREADED
+    return read_array_kind(arr) == DEBUG_ARRAY_GLOBAL ? debug_leaf_lock(arr, elem)
+                                                      : nullptr;
+#else
+    (void)arr;
+    (void)elem;
+    return nullptr;
+#endif
+}
+
+/** Holds a shared global's lock for one debugger access; a no-op for null. */
+class LeafGuard {
+public:
+    explicit LeafGuard(void* lock) noexcept : lock_(lock) {
+#ifdef STRUCPP_THREADED
+        if (lock_ != nullptr) static_cast<std::mutex*>(lock_)->lock();
+#endif
+    }
+    ~LeafGuard() {
+#ifdef STRUCPP_THREADED
+        if (lock_ != nullptr) static_cast<std::mutex*>(lock_)->unlock();
+#endif
+    }
+    LeafGuard(const LeafGuard&) = delete;
+    LeafGuard& operator=(const LeafGuard&) = delete;
+
+private:
+    void* lock_;
+};
+
+/**
  * Validate a value payload against a leaf's type. Returns STATUS_OK, or the
  * STATUS_* refusal to hand straight back to the caller. Shared by handle_set()
  * and handle_write() so the rule cannot drift between them.
  *
  * Scalars are fixed-width: `len` must cover the type's size.
  *
- * Strings are length-prefixed: `bytes[0]` is the character (STRING) or
+ * Strings are length-prefixed: `bytes[0]` is the UTF-8 byte (STRING) or
  * code-unit (WSTRING) count, and force_string / write_string read exactly that
  * many, so `len` must cover `1 + count` -- `1 + 2 * count` for WSTRING -- and
  * NOT `type_ops[tag].size`, which is the padded width the READ path emits. A
@@ -599,6 +695,11 @@ inline uint8_t validate_payload(uint8_t tag, const uint8_t* bytes, uint16_t len)
             1u + (tag == TAG_WSTRING ? static_cast<uint16_t>(count) * 2u
                                      : static_cast<uint16_t>(count)));
         if (len < need) return STATUS_DATA_TOO_LARGE;
+        if (tag == TAG_STRING) {
+            char value[DEBUG_STRING_CAP];
+            std::size_t n = 0;
+            if (!decode_string(bytes, value, &n)) return STATUS_NOT_ENCODABLE;
+        }
         return STATUS_OK;
     }
 
@@ -608,7 +709,8 @@ inline uint8_t validate_payload(uint8_t tag, const uint8_t* bytes, uint16_t len)
 
 /** Set (force or unforce) a variable. Returns STATUS_OK, or the refusal:
  *  STATUS_OUT_OF_BOUNDS, STATUS_READ_ONLY, STATUS_DATA_TOO_LARGE, or
- *  STATUS_FORCE_TABLE_FULL when every force-table slot the value needs is taken. */
+ *  STATUS_FORCE_TABLE_FULL when every force-table slot the value needs is taken,
+ *  or STATUS_NOT_ENCODABLE for a STRING payload CP1252 cannot hold. */
 inline uint8_t handle_set(uint8_t arr, uint16_t elem, bool forcing,
                           const uint8_t* bytes, uint16_t len) noexcept {
     Entry e = read_entry(arr, elem);
@@ -624,7 +726,14 @@ inline uint8_t handle_set(uint8_t arr, uint16_t elem, bool forcing,
         if (bad != STATUS_OK) return bad;
         const uint8_t flags =
             read_array_kind(arr) == DEBUG_ARRAY_GLOBAL ? force::FLAG_GLOBAL : 0;
-        return type_ops[e.tag].force(e.ptr, bytes, flags);
+        if (e.tag == TAG_BIT) {
+            return force_bit(e.ptr, leaf_bit(e.flags), bytes, flags, leaf_lock(arr, elem));
+        }
+        return type_ops[e.tag].force(e.ptr, bytes, flags, leaf_lock(arr, elem));
+    }
+    if (e.tag == TAG_BIT) {
+        force::clear_bit(e.ptr, leaf_bit(e.flags));
+        return STATUS_OK;
     }
     type_ops[e.tag].unforce(e.ptr);
     return STATUS_OK;
@@ -637,6 +746,11 @@ inline uint16_t handle_read(uint8_t arr, uint16_t elem, uint8_t* dest) noexcept 
     if (!e.ptr || e.tag >= TAG__COUNT) return 0;
     uint8_t n = type_ops[e.tag].size;
     if (n == 0) return 0;  // string stub
+    LeafGuard guard(leaf_lock(arr, elem));
+    if (e.tag == TAG_BIT) {
+        read_bit(e.ptr, leaf_bit(e.flags), dest);
+        return n;
+    }
     type_ops[e.tag].read(e.ptr, dest);
     return n;
 }
@@ -658,6 +772,11 @@ inline uint8_t handle_write(uint8_t arr, uint16_t elem,
     if (e.flags & LEAF_FLAG_READONLY) return STATUS_READ_ONLY;
     const uint8_t bad = validate_payload(e.tag, bytes, len);
     if (bad != STATUS_OK) return bad;
+    LeafGuard guard(leaf_lock(arr, elem));
+    if (e.tag == TAG_BIT) {
+        write_bit(e.ptr, leaf_bit(e.flags), bytes);
+        return STATUS_OK;
+    }
     type_ops[e.tag].write(e.ptr, bytes);
     return STATUS_OK;
 }
@@ -683,6 +802,11 @@ inline uint16_t handle_size(uint8_t arr, uint16_t elem) noexcept {
 inline const void* handle_ptr(uint8_t arr, uint16_t elem, uint16_t* out_len) noexcept {
     Entry e = read_entry(arr, elem);
     if (!e.ptr || e.tag >= TAG__COUNT) {
+        if (out_len) *out_len = 0;
+        return nullptr;
+    }
+    // A BIT member has no address of its own.
+    if (e.tag == TAG_BIT) {
         if (out_len) *out_len = 0;
         return nullptr;
     }
