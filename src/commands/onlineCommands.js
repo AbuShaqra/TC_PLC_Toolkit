@@ -218,10 +218,18 @@ function registerOnlineCommands(context, deps) {
         if (!bound || !map || typeof map.ownersOf !== 'function') return false;
         return (map.ownersOf(fsPath) || []).includes(bound.key);
     };
+    /** @param {string} fsPath @returns {string} How a refusal names a file: workspace-relative when it can. */
+    const fileLabel = (fsPath) => {
+        try { return vscode.workspace.asRelativePath ? vscode.workspace.asRelativePath(fsPath, false) : fsPath; } catch (e) { return fsPath; }
+    };
     /**
      * Any TwinCAT document with unsaved edits: dirty in VS Code, stashed by Manual Sync (whether its
      * editor is open or closed: the stash outlives the tab), or reported dirty by an open editor.
-     * @returns {boolean}
+     * A stash of a closed editor is answered with a refusal that names its file and the way out
+     * (opening it restores the edits, or drops them when the file changed since). A stash whose file
+     * no longer exists (renamed or deleted while its editor was closed) can never be opened again: it
+     * is dropped and logged, and blocks nothing. Any other unreadable file still blocks (fail closed).
+     * @returns {boolean|string} false, true, or the refusal text naming the file.
      */
     const anyUnsaved = () => {
         const docs = vscode.workspace.textDocuments || [];
@@ -236,13 +244,24 @@ function registerOnlineCommands(context, deps) {
             let text;
             const open = editors.get(uriStr);
             const doc = open && open.document ? open.document : docs.find(d => d.uri && d.uri.toString() === uriStr);
+            const fsPath = doc ? doc.uri.fsPath : vscode.Uri.parse(uriStr).fsPath;
+            const name = fileLabel(fsPath || uriStr);
+            const wayOut = `${name} has unsaved edits stashed by Manual Sync while its editor was closed: open it to restore or discard the stashed edits.`;
             if (doc) text = doc.getText();
             else {
-                try { text = fs.readFileSync(vscode.Uri.parse(uriStr).fsPath, 'utf8'); } catch (e) { return true; } // unreadable: assume unsaved
+                try { text = fs.readFileSync(fsPath, 'utf8'); } catch (e) {
+                    const errCode = e && /** @type {any} */ (e).code;
+                    if (errCode === 'ENOENT' || errCode === 'ENOTDIR') {
+                        if (typeof store.delete === 'function') Promise.resolve(store.delete(uriStr)).catch(() => { /* best effort */ });
+                        log(`Manual Sync stash dropped: ${name} no longer exists, so its stashed edits can never be restored.`);
+                        continue;
+                    }
+                    return wayOut;   // unreadable for another reason: assume unsaved
+                }
             }
             if (typeof store.peek !== 'function') return true;
             const seen = store.peek(uriStr, text);
-            if (seen.stale || Object.keys(seen.edits || {}).length > 0) return true;
+            if (seen.stale || Object.keys(seen.edits || {}).length > 0) return open ? true : wayOut;
         }
         return false;
     };

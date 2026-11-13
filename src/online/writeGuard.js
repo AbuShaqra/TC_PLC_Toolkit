@@ -22,7 +22,8 @@
  *      the project the PLC runs and, for an editor, that the file belongs to it). The connection can
  *      stay the same while XAE downloads another project, or a rebuilt one, to the runtime, so this is
  *      re-checked with every guard, the last one included; and the symbol is resolved and type-checked
- *      AGAIN after the dialogs: a value parsed for a type the symbol no longer has is not written.
+ *      AGAIN after the dialogs (type name, size, base type and enumerators, and the typed text parsed
+ *      again for the type it has now): a value parsed for a type the symbol no longer has is not written.
  * Text from the PLC (a STRING's current value) is shown escaped and shortened (values.boundedText),
  * so it cannot add lines to the modal or the log.
  * vscode-free: the dialogs and the channel are injected, so test/test_ads_write.js drives this exact
@@ -31,7 +32,7 @@
 
 'use strict';
 
-const { parseInput, editText, isScalar, typesMatch, boundedText, oneLine } = require('./values');
+const { parseInput, editText, isScalar, typesMatch, boundedText, oneLine, baseTypeName } = require('./values');
 const { REASON_TEXT } = require('./editorPaths');
 const { sameIdentity } = require('./session');
 
@@ -59,7 +60,8 @@ const ENABLE_BUTTON = 'Enable writes';
  *   session: enabled for the connection in `identity` only. The command layer resets it on Go Offline.
  * @property {() => 'match'|'differs'|'unknown'} projectState The code check (src/online/codeIdentity.js).
  * @property {() => string} [projectReason] Its one-sentence explanation, used in a refusal.
- * @property {() => boolean} hasUnsavedEdits
+ * @property {() => boolean|string} hasUnsavedEdits True, or the refusal text itself when it can name the
+ *   file (a Manual Sync stash of a closed editor), while anything is unsaved.
  * @property {(o: {prompt: string, value: string, validate: (s: string) => string|null}) => Promise<string|undefined>} input
  * @property {(o: {message: string, detail: string, button: string}) => Promise<boolean>} confirm
  * @property {(line: string) => void} log
@@ -98,6 +100,17 @@ function targetName(id) {
 }
 
 /**
+ * The enumerators of a data type as one comparable string (name and value of each, in order), or ''
+ * when it has none.
+ * @param {any} dataType An ads-client `AdsDataType`.
+ * @returns {string}
+ */
+function enumSignature(dataType) {
+    const infos = dataType && Array.isArray(dataType.enumInfos) ? dataType.enumInfos : [];
+    return infos.map((/** @type {any} */ e) => `${String(e && e.name).toLowerCase()}=${String(e && e.value)}`).join(',');
+}
+
+/**
  * The reason a write may not happen now, or null. Checked before the dialogs and again after them.
  * @param {WriteDeps} d
  * @param {import('./session').SessionIdentity|null} [id] The connection the write belongs to; when
@@ -112,7 +125,8 @@ function blockedReason(d, id) {
     const why = d.projectReason ? d.projectReason() : '';
     if (project === 'differs') return `${why || 'The PLC runs a different project than this workspace.'} Writes are blocked while the code differs.`;
     if (project === 'unknown') return `${why || 'The PLC\'s project could not be checked against this workspace.'} Writes are blocked until it can be.`;
-    if (d.hasUnsavedEdits()) return 'An editor has unsaved edits: the code on screen may not be the code running. Save first.';
+    const unsaved = d.hasUnsavedEdits();
+    if (unsaved) return typeof unsaved === 'string' ? unsaved : 'An editor has unsaved edits: the code on screen may not be the code running. Save first.';
     if (d.session.info.lost) return 'The connection is being re-established.';
     return null;
 }
@@ -205,6 +219,16 @@ async function performWrite(req, d) {
     }
     if (typesMatch(req.localType || null, now.type) === false) {
         return refuse(`${req.path} is ${now.type} on the PLC but ${req.localType} in the project.`);
+    }
+    // The type NAME and size can stay while what they stand for changes (an alias of REAL rebuilt as
+    // an alias of DINT, an enum whose members moved): compare the base type and the enumerators, and
+    // parse the typed text again for the type the symbol has now. Any difference refuses.
+    const reparsed = /** @type {any} */ (parseInput(typed, again.dataType));
+    if (baseTypeName(again.dataType) !== baseTypeName(resolved.dataType) ||
+        enumSignature(again.dataType) !== enumSignature(resolved.dataType) ||
+        !reparsed.ok || reparsed.text !== parsed.text || String(reparsed.value) !== String(parsed.value) ||
+        typeof reparsed.value !== typeof parsed.value) {
+        return refuse(`${req.path} changed on the PLC while the dialogs were open (${now.type} is now defined differently). Start the write again.`);
     }
     // Immediately before the write, with no await in between: the same connection, writes still
     // enabled for it, and every guard (the caller's included) still passing.

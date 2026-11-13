@@ -740,10 +740,9 @@ function parseAndIndexDocument(code, fileUri, index = workspaceSymbolIndex) {
     }
     // A GVL's unit (stConverter raw) has no `GVL` header, so no keyword branch below replaces its
     // node the way a POU's is replaced: the VAR_GLOBAL blocks are pushed onto the node found by uri.
-    // That node's variables carry the XML indexer's ranges (relative to the Declaration CDATA, not
-    // to this unit), so appending kept two copies per variable on different lines, one more per
-    // sync. This text is the whole GVL: its variables replace the old ones (a NEW array — a snapshot
-    // taken by references.js keeps the old one), in this unit's coordinates as a POU's are.
+    // That node already holds the XML indexer's copy of every variable (saved text), so appending
+    // kept two copies per variable, one more per sync. This text is the whole GVL: its variables
+    // replace the old ones (a NEW array — a snapshot taken by references.js keeps the old one).
     // `qualifiedOnly` follows this text too (an unsaved pragma edit), tested exactly as xmlIndexer
     // tests the declaration on disk (a pragma anywhere counts: the restrictive answer is the safe one).
     if (pouNode && String(pouNode.type).toUpperCase() === 'GVL') {

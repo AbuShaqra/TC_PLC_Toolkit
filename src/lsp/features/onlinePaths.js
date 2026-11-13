@@ -349,8 +349,8 @@ function provideOnlinePaths(code, ranges, symbolIndex, fileUri) {
 
     let ownerNode = null;
     // A variable's range is trusted only where the unit has its name, once: a range in another
-    // coordinate system (an XML indexer range, relative to its CDATA) would put one variable's
-    // value on another's line. parser.js keeps a synced node in unit coordinates; this is the check.
+    // coordinate system would put one variable's value on another's line. Both indexers emit unit
+    // lines (parser.js, and xmlIndexer.js `unitLineMap`); this is the check that keeps it so.
     /** @type {Set<string>} */
     const placed = new Set();
     const isNameAt = (/** @type {number} */ line0, /** @type {any} */ v) => {

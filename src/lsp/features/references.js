@@ -126,9 +126,9 @@ function defKey(def) {
 /**
  * Resolves the declaration scope carried by a definition result.
  *
- * Cross-file XML definitions use component-local ranges, whereas live/transient ST nodes use whole-
- * unit ranges. `componentId` is therefore authoritative when present; interpreting its local line as
- * a whole-unit line can select an unrelated root variable at the same coordinates.
+ * Both indexers now emit unit lines (xmlIndexer.js `unitLineMap`), but an XML-indexed method's
+ * `declRange` covers only its name line, so a line alone cannot place a definition inside a method of
+ * a file that has not been re-indexed from its ST. `componentId` is therefore authoritative when present.
  * @param {Object} def A definition from definitionAt().
  * @param {Object} symbolIndex Workspace symbol index.
  * @returns {{pou: Object|null, method: Object|null}}
@@ -147,7 +147,7 @@ function definitionScope(def, symbolIndex) {
     return findActiveScope(symbolIndex, def.uri, def.range.start.line + 1);
 }
 
-/** The method variable named by a definition, respecting component-local XML coordinates. */
+/** The method variable named by a definition: by name when `componentId` names the method, else by range. */
 function methodVariableForDefinition(def, scope) {
     if (!def || !scope || !scope.method) return null;
     const variables = scope.method.variables || [];
@@ -660,16 +660,16 @@ function collectWorkspaceReferences(targetWord, target, targetDef, code, tokens,
         // Re-index this document from its ST, transiently.
         //
         // The index holds two different kinds of node. The ACTIVE document is parsed from the ST unit
-        // (server.js does this on every edit), so its method ranges are in ST-unit coordinates and a
-        // scope lookup works. Every OTHER document comes from xmlIndexer, whose ranges are *per
-        // component* — right for jumping to a definition, meaningless as ST-unit line numbers. So
-        // findActiveScope found NO enclosing method for any line in any other file, every method
-        // variable there resolved to nothing, and `sameSymbol` keeps what it cannot resolve. That one
-        // mismatch produced the overwhelming majority of the wrong references: 1,885 of the 1,893
-        // unresolved occurrences measured on the sample were plain identifiers failing exactly here.
+        // (server.js does this on every edit), so its methods carry full declaration/body ranges and a
+        // scope lookup works. Every OTHER document comes from xmlIndexer: its ranges are unit lines too
+        // (since R15 review round 3), but a method's `declRange` covers only its name line and it has
+        // no body range, so findActiveScope found NO enclosing method for any line in any other file,
+        // every method variable there resolved to nothing, and `sameSymbol` keeps what it cannot
+        // resolve. That gap produced the overwhelming majority of the wrong references: 1,885 of the
+        // 1,893 unresolved occurrences measured on the sample were plain identifiers failing exactly here.
         //
-        // The node is restored afterwards, because those per-component ranges are what cross-file Go to
-        // Definition navigates with — overwriting them for good would fix references and break jumps.
+        // The node is restored afterwards: the index keeps what the indexer that owns this file built
+        // (the XML on disk), not a transient parse of it.
         const restore = snapshotNodesFor(symbolIndex, node.uri);
         try {
             // Re-index into the ACTIVE index (symbolIndex), not the parser's default global — otherwise

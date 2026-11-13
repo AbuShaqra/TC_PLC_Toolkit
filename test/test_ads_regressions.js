@@ -688,6 +688,42 @@ function round2Paths() {
     clearWorkspaceIndex();
 }
 
+// ── R3#1: a symbol rebuilt under the same type name and size, but another base type ──────────────
+async function round3Guard() {
+    /** Runs one write while `rebuild` replaces MAIN.v during the value box; returns the result and the PLC. */
+    const writeAcross = async (before, after, typed) => {
+        const plc = createFakePlc({ symbols: { 'MAIN.v': { type: before.name, value: 0, dataType: before } } });
+        const session = createOnlineSession({ createClient: plc.createClient, statusIntervalMs: 100000 });
+        await session.connect(ROUTER);
+        const cl = plc.clients[plc.clients.length - 1];
+        const g = guardDeps(session, { input: async () => {
+            plc.removeSymbol('MAIN.v');
+            plc.addSymbol('MAIN.v', { type: after.name, value: 0, dataType: after });
+            cl.fire('symbolVersion');
+            return typed;
+        } });
+        g.sessionWrites.enabled = true;
+        g.sessionWrites.identity = session.identity;
+        const r = await performWrite({ path: 'MAIN.v', localType: before.name, source: 'watch', stillValid: () => null }, g.deps);
+        await session.disconnect();
+        return { r, plc, log: g.log };
+    };
+    // An alias of REAL rebuilt as an alias of DINT: same name, same 4 bytes, so the layout check passes.
+    let x = await writeAcross(dataType('T_Ratio', { type: 'REAL', size: 4 }), dataType('T_Ratio', { type: 'DINT', size: 4 }), '1.5');
+    assert(x.r.status === 'refused' && x.plc.writes.length === 0,
+        `R3#1 a value parsed for REAL is not written once the same-named alias is DINT (${x.r.status}: ${x.r.message}; writes ${JSON.stringify(x.plc.writes)})`);
+    assert(x.log.some(l => /Write refused/.test(l)), 'R3#1 and the refusal is logged');
+    // Same name, same size, an enum whose members changed: 'Running' no longer means what was typed.
+    x = await writeAcross(dataType('E_Mode', { size: 2, enumInfos: [{ name: 'Idle', value: 0 }, { name: 'Running', value: 1 }] }),
+        dataType('E_Mode', { size: 2, enumInfos: [{ name: 'Idle', value: 0 }, { name: 'Running', value: 2 }] }), 'Running');
+    assert(x.r.status === 'refused' && x.plc.writes.length === 0,
+        `R3#1 an enum value is not written once the same-named enum's members changed (${x.r.status}: ${x.r.message})`);
+    // Nothing changed but a download happened: the write still goes through.
+    x = await writeAcross(dataType('T_Ratio', { type: 'REAL', size: 4 }), dataType('T_Ratio', { type: 'REAL', size: 4 }), '1.5');
+    assert(x.r.status === 'written' && x.plc.writes.length === 1 && x.plc.get('MAIN.v') === 1.5,
+        `R3#1 an unchanged symbol is still written after a download (${x.r.status}: ${x.r.message})`);
+}
+
 // ── The command layer: #1, #2, #3, #4, #19 ─────────────────────────────────────────────────────────
 async function commandLevel() {
     if (!fs.existsSync(MAIN)) { console.log('SKIP: sample/ is missing: the command-level regressions did not run.'); return false; }
@@ -835,8 +871,25 @@ async function commandLevel() {
     await tick(5);
     assert(r.status === 'refused' && /unsaved edits/.test(r.message) && store.uris().includes(mainUri),
         `R2#1 a stash that no longer matches the file blocks (fail closed) and is not deleted by the check (${r.status})`);
+    // R3#2: the refusal says which file holds the stash and how to clear it.
+    assert(/MAIN\.TcPOU/.test(r.message) && /open it to restore or discard the stashed edits/.test(r.message),
+        `R3#2 the refusal for a stale stash names the file and the way out (${r.message})`);
     answers.message.length = 0; answers.input.length = 0;
     await store.delete(mainUri);
+
+    // R3#2: a stash whose file is gone (renamed or deleted while its editor was closed) can never be
+    // opened again: it is dropped, logged, and blocks nothing.
+    const goneUri = fileUri(path.join(SAMPLE, 'POUs', 'P_Renamed_Away.TcPOU'));
+    await store.set(goneUri, { root_impl: { content: 'x := 1;' } }, 'text of a file that no longer exists');
+    const linesBeforeGone = lines().length;
+    answers.message.push('Write'); answers.input.push('51');
+    r = await run('twincat.watch.write', watchRow());
+    await tick(5);
+    assert(r.status === 'written' && !store.uris().includes(goneUri),
+        `R3#2 a stash whose file no longer exists is dropped and does not block (${r.status}: ${r.message}; kept ${store.uris().includes(goneUri)})`);
+    assert(lines().slice(linesBeforeGone).some(l => /P_Renamed_Away\.TcPOU/.test(l) && /no longer exists/.test(l)),
+        `R3#2 and the drop is logged with the file (${lines().slice(linesBeforeGone).join(' | ')})`);
+    answers.message.length = 0; answers.input.length = 0;
 
     // R2#0: XAE downloads another workspace project to the same runtime while the value box is open.
     const mainMsg2 = { componentId: 'root', fileUri: mainUri, visible: { decl: [{ start: 1, end: 20 }], impl: [{ start: 1, end: 30 }] } };
@@ -926,6 +979,7 @@ async function commandLevel() {
     paths();
     await round2Lifecycle();
     round2Paths();
+    await round3Guard();
     const full = await commandLevel();
     reportCoverage('ads-regressions', full ? 'ran' : 'skipped', full ? undefined : 'sample/ not present');
     if (errors) { console.error(`\n${errors} R15 regression assertion(s) failed`); process.exit(1); }

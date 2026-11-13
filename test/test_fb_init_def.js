@@ -29,6 +29,7 @@ const { indexXmlObject } = require('../src/lsp/xmlIndexer');
 const { provideDefinition } = require('../src/lsp/features');
 const { parseTwinCatXml } = require('../src/xmlParser');
 const { convertXmlToSt } = require('../src/stConverter');
+const { absoluteToLocal } = require('../src/livePath');
 
 let errors = 0;
 function assert(cond, msg) {
@@ -143,6 +144,8 @@ const OWN_INPUT_LINE = lineOf(FB_AXIS_DECL, /^\tbOwnInput\b/);
 const BASE_NID_LINE = lineOf(FB_BASE_INIT_DECL, /^\tnId\b/);
 const BASE_STORED_LINE = lineOf(FB_BASE_DECL, /^\tnIdStored\b/);
 const CHILD_VALUE_LINE = 3;
+/** The XML each defineAt call indexed as its active document, by file name (paneLine reads it). */
+const ACTIVE_XML = new Map();
 
 /**
  * Runs go-to-definition on a word inside a synthetic document, exactly the way the LSP server does:
@@ -159,6 +162,7 @@ function defineAt(fileName, xml, lineRe, word, occurrence = 0) {
     const index = getWorkspaceSymbolIndex();
     for (const f of Object.keys(FILES)) indexXmlObject(index, FILES[f], uriOf(f));
     indexXmlObject(index, xml, uriOf(fileName));
+    ACTIVE_XML.set(fileName, xml);
 
     // raw:true is what the live editor path uses — the "clean" conversion strips init lists.
     const { stText } = convertXmlToSt(parseTwinCatXml(xml), { raw: true });
@@ -177,11 +181,25 @@ function defineAt(fileName, xml, lineRe, word, occurrence = 0) {
     return provideDefinition(stText, { line: lineIdx, character }, getWorkspaceSymbolIndex(), uriOf(fileName));
 }
 
+/**
+ * The 1-based line a definition lands on in its component's declaration pane: its unit line (both
+ * indexers emit unit lines) mapped through the target file's own unit, as livePath.js does.
+ * @param {Object|null} def A definition from defineAt.
+ * @returns {number|null}
+ */
+function paneLine(def) {
+    if (!def) return null;
+    const xml = ACTIVE_XML.get(path.basename(def.uri)) || FILES[path.basename(def.uri)];
+    if (!xml) return null;
+    const loc = absoluteToLocal(convertXmlToSt(parseTwinCatXml(xml), { raw: true }).lineMap, def.range.start.line);
+    return loc && loc.componentId === def.componentId && loc.pane === 'decl' ? loc.localLine0 + 1 : null;
+}
+
 /** Prints a definition result, for failure triage. */
 function dump(label, def) {
     if (!def) { console.log(`       (${label}) -> null`); return; }
     const f = path.basename(def.uri);
-    console.log(`       (${label}) -> ${f} [${def.componentId}] L${def.range.start.line + 1}`);
+    console.log(`       (${label}) -> ${f} [${def.componentId}] L${paneLine(def)}`);
 }
 
 try {
@@ -193,8 +211,8 @@ try {
     dump('FB_init arg', d1);
     assert(!!d1 && d1.componentId === 'method_FB_init',
         `FB_Type(ipAxis := x) opens the FB_init component (got ${d1 && d1.componentId})`);
-    assert(!!d1 && d1.range.start.line + 1 === INIT_IPAXIS_LINE,
-        `…at FB_init's parameter, decl line ${INIT_IPAXIS_LINE} (got ${d1 && d1.range.start.line + 1}); ` +
+    assert(!!d1 && paneLine(d1) === INIT_IPAXIS_LINE,
+        `…at FB_init's parameter, decl line ${INIT_IPAXIS_LINE} (got ${d1 && paneLine(d1)}); ` +
         `the FB's own ipAxis is at line ${OWN_IPAXIS_LINE}`);
     assert(!!d1 && path.basename(d1.uri) === 'FB_Axis.TcPOU',
         `…in FB_Axis.TcPOU (got ${d1 && path.basename(d1.uri)})`);
@@ -204,9 +222,9 @@ try {
         'PROGRAM MAIN2\nVAR\n\tfbS : FB_Axis := (bOwnInput := TRUE);\nEND_VAR', ''),
         /:= \(bOwnInput/, 'bOwnInput');
     dump('structured init', d2);
-    assert(!!d2 && d2.componentId === 'root' && d2.range.start.line + 1 === OWN_INPUT_LINE,
+    assert(!!d2 && d2.componentId === 'root' && paneLine(d2) === OWN_INPUT_LINE,
         `FB_Type := (bOwnInput := TRUE) still resolves to the FB's own VAR_INPUT ` +
-        `(root, line ${OWN_INPUT_LINE}; got ${d2 && d2.componentId}, line ${d2 && d2.range.start.line + 1})`);
+        `(root, line ${OWN_INPUT_LINE}; got ${d2 && d2.componentId}, line ${d2 && paneLine(d2)})`);
 
     // ---- 3. An ordinary statement call on an instance → the FB's OWN VAR_INPUT ------------------
     const d3 = defineAt('FB_Caller.TcPOU', tcpou('FB_Caller',
@@ -214,9 +232,9 @@ try {
         'fbInst(bOwnInput := TRUE);'),
         /^fbInst\(bOwnInput/, 'bOwnInput');
     dump('statement call', d3);
-    assert(!!d3 && d3.componentId === 'root' && d3.range.start.line + 1 === OWN_INPUT_LINE,
+    assert(!!d3 && d3.componentId === 'root' && paneLine(d3) === OWN_INPUT_LINE,
         `a statement call fbInst(bOwnInput := TRUE) still resolves to the FB's own VAR_INPUT ` +
-        `(got ${d3 && d3.componentId}, line ${d3 && d3.range.start.line + 1})`);
+        `(got ${d3 && d3.componentId}, line ${d3 && paneLine(d3)})`);
 
     // The same call behind a CASE label: the ':' before the callee must NOT be mistaken for a
     // declaration `inst : FB_Type(`. The callee there is an *instance*, not a type name.
@@ -225,9 +243,9 @@ try {
         'CASE nStep OF\n1: fbInst(bOwnInput := TRUE);\nEND_CASE'),
         /^1: fbInst\(bOwnInput/, 'bOwnInput');
     dump('CASE label call', d4);
-    assert(!!d4 && d4.componentId === 'root' && d4.range.start.line + 1 === OWN_INPUT_LINE,
+    assert(!!d4 && d4.componentId === 'root' && paneLine(d4) === OWN_INPUT_LINE,
         `a CASE-label call "1: fbInst(bOwnInput := TRUE)" is still an instance call ` +
-        `(got ${d4 && d4.componentId}, line ${d4 && d4.range.start.line + 1})`);
+        `(got ${d4 && d4.componentId}, line ${d4 && paneLine(d4)})`);
 
     // ---- 4. FB_init inherited from a base FB → jump into the BASE ------------------------------
     const d5 = defineAt('MAIN3.TcPOU', tcpou('MAIN3',
@@ -236,9 +254,9 @@ try {
     dump('inherited FB_init', d5);
     assert(!!d5 && path.basename(d5.uri) === 'FB_Base.TcPOU',
         `an inherited FB_init resolves into the base FB's file (got ${d5 && path.basename(d5.uri)})`);
-    assert(!!d5 && d5.componentId === 'method_FB_init' && d5.range.start.line + 1 === BASE_NID_LINE,
+    assert(!!d5 && d5.componentId === 'method_FB_init' && paneLine(d5) === BASE_NID_LINE,
         `…at FB_Base's FB_init parameter, decl line ${BASE_NID_LINE} ` +
-        `(got ${d5 && d5.componentId}, line ${d5 && d5.range.start.line + 1})`);
+        `(got ${d5 && d5.componentId}, line ${d5 && paneLine(d5)})`);
 
     // ---- 5. Unresolvable FBs: never invent a target, never crash --------------------------------
     // An FB whose base is not indexed: FB_init may exist but be invisible ⇒ no bogus target.
@@ -292,10 +310,10 @@ try {
     dump('THIS^ local', thisLocal);
     assert(!!thisMember && thisMember.componentId === 'root',
         `THIS^.ipAxis resolves to FB_Axis's root member, not FB_init's parameter ` +
-        `(got ${thisMember && thisMember.componentId}, line ${thisMember && thisMember.range.start.line + 1})`);
+        `(got ${thisMember && thisMember.componentId}, line ${thisMember && paneLine(thisMember)})`);
     assert(!!thisLocal && thisLocal.componentId === 'method_FB_init',
         `the unqualified RHS ipAxis still resolves to FB_init's parameter ` +
-        `(got ${thisLocal && thisLocal.componentId}, line ${thisLocal && thisLocal.range.start.line + 1})`);
+        `(got ${thisLocal && thisLocal.componentId}, line ${thisLocal && paneLine(thisLocal)})`);
 
     // SUPER^ starts at the immediate base FB, while the unqualified RHS remains the method local.
     const superMember = defineAt('FB_Derived.TcPOU', FILES['FB_Derived.TcPOU'],
@@ -306,14 +324,14 @@ try {
     dump('SUPER^ local', superLocal);
     assert(!!superMember && superMember.componentId === 'root'
         && path.basename(superMember.uri) === 'FB_Base.TcPOU'
-        && superMember.range.start.line + 1 === BASE_STORED_LINE,
+        && paneLine(superMember) === BASE_STORED_LINE,
         `SUPER^.nIdStored resolves to FB_Base's root member ` +
         `(got ${superMember && superMember.componentId} in ${superMember && path.basename(superMember.uri)}, ` +
-        `line ${superMember && superMember.range.start.line + 1})`);
+        `line ${superMember && paneLine(superMember)})`);
     assert(!!superLocal && superLocal.componentId === 'method_Assign'
         && path.basename(superLocal.uri) === 'FB_Derived.TcPOU',
         `the unqualified RHS nIdStored still resolves to Assign's local ` +
-        `(got ${superLocal && superLocal.componentId}, line ${superLocal && superLocal.range.start.line + 1})`);
+        `(got ${superLocal && superLocal.componentId}, line ${superLocal && paneLine(superLocal)})`);
 
     // ---- 8. Explicit instance qualifiers remain semantic path heads through nested members -----
     const thisNested = defineAt('FB_Axis.TcPOU', FILES['FB_Axis.TcPOU'],
@@ -324,10 +342,10 @@ try {
     dump('THIS^ nested local', thisNestedLocal);
     assert(!!thisNested && thisNested.componentId === 'root'
         && path.basename(thisNested.uri) === 'FB_Child.TcPOU'
-        && thisNested.range.start.line + 1 === CHILD_VALUE_LINE,
+        && paneLine(thisNested) === CHILD_VALUE_LINE,
         `THIS^.stChild.nValue resolves through the current FB to FB_Child.nValue ` +
         `(got ${thisNested && thisNested.componentId} in ${thisNested && path.basename(thisNested.uri)}, ` +
-        `line ${thisNested && thisNested.range.start.line + 1})`);
+        `line ${thisNested && paneLine(thisNested)})`);
     assert(!!thisNestedLocal && thisNestedLocal.componentId === 'method_FB_init',
         `THIS^ nested chain does not steal the unqualified FB_init local on its RHS ` +
         `(got ${thisNestedLocal && thisNestedLocal.componentId})`);
@@ -340,10 +358,10 @@ try {
     dump('SUPER^ nested local', superNestedLocal);
     assert(!!superNested && superNested.componentId === 'root'
         && path.basename(superNested.uri) === 'FB_Child.TcPOU'
-        && superNested.range.start.line + 1 === CHILD_VALUE_LINE,
+        && paneLine(superNested) === CHILD_VALUE_LINE,
         `SUPER^.stChild.nValue resolves through the base FB to FB_Child.nValue ` +
         `(got ${superNested && superNested.componentId} in ${superNested && path.basename(superNested.uri)}, ` +
-        `line ${superNested && superNested.range.start.line + 1})`);
+        `line ${superNested && paneLine(superNested)})`);
     assert(!!superNestedLocal && superNestedLocal.componentId === 'method_Assign',
         `SUPER^ nested chain does not steal Assign's unqualified local on its RHS ` +
         `(got ${superNestedLocal && superNestedLocal.componentId})`);

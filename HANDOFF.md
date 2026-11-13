@@ -158,7 +158,7 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   pushed, no PR yet; based on `claude/focused-ptolemy-m6acaz` `c9ace3f`). Decisions D1-D9: `docs/r15-ads-decision.md` §5.
   Design and file map: DEVELOPMENT.md "Online monitoring (roadmap R15)". `ads-client` **2.2.0 pinned** (pure JS; loads on
   Node 16.13 and 22; licences of it and its 5 deps in THIRD-PARTY-NOTICES, all six licence files listed by `vsce ls`).
-  Linux-verified: `REQUIRE_FULL_SUITE=1 npm test` FULL (130 suites), lint, typecheck, browser harnesses `run.js`,
+  Linux-verified: `REQUIRE_FULL_SUITE=1 npm test` FULL (131 suites), lint, typecheck, browser harnesses `run.js`,
   `run_pragmas.js`, `run_start_page.js`, `run_online.js`. Harnesses `test_ads_{paths,session,inline,write,code,watch,
   regressions}.js` run against an in-memory PLC (`test/_fakeAds.js`); **nothing has touched a real PLC or router.**
   **Review round 1 (2026-11-13): all 20 confirmed findings fixed**, each pinned by a block of
@@ -181,10 +181,19 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   leaks addresses). Watch `attach()` releases a held handle. No inline poll restart after Go Offline. `parser.js`
   gives a re-synced GVL node a new `variables` array in unit coordinates and re-reads `qualifiedOnly` (root cause of
   the shifted GVL declaration-pane values); `onlinePaths.js` also checks the name at each declaration range.
-  Side effect to watch: a GVL's node now holds unit-coordinate ranges after its editor syncs, exactly as a POU's
-  node already did (not separately verified: a cross-file Go to Definition into a GVL whose editor has synced;
-  the suite, incl. `test_live_path.js`, passes). Not changed: a stale
-  stash's refusal still says "unsaved edits: Save first" (it means "open that file").
+  **Review round 3 (2026-11-13): R3#0-#2 fixed** (committed on `r15-ads` after `31fc35b`, not pushed; each new test failed on `31fc35b`).
+  #0 (pre-existing, also on `c9ace3f`): `xmlIndexer.js` emitted CDATA-relative ranges, `parser.js` unit lines, and
+  `livePath.mapDefinition` read both as unit lines, so cross-file Go to Definition into an unsynced file (and after
+  every save's `custom/indexXmlDocument`) hit the wrong line. Fixed at the indexer: `unitLineMap` offsets every
+  range by the component's line in the raw unit, so both indexers share one frame (new `test_definition_frames.js`,
+  both samples + a 12-variable GVL; `test_fb_init_def.js` / `test_parser_constructs.js` now assert pane lines via
+  the unit). Consumers audited: definition/peek/references tree (unit-frame refs), `references.js` (componentId
+  stays authoritative: XML method `declRange` is the name line only), `onlinePaths.js` (name-at-range check kept),
+  hover/completions/diagnostics (active node only). Actions keep the (1,1) stub name range (unchanged).
+  #1: after the dialogs `writeGuard` also compares base type and enumerators and re-parses the typed text for the
+  new `dataType` (block `R3#1`). #2: a closed editor's stash refusal names the file ("open it to restore or
+  discard the stashed edits"); a stash whose file is gone is dropped with a log line (block `R3#2`). Not changed:
+  `compileCommands.currentText` (compile pre-check) ignores a stale stash and never drops one, gone file or not.
   Behaviour changes to note for the Windows check: the modal/log target now reads `Local runtime (localhost:851)`;
   an unqualified name inside an FB that extends a library FB shows no inline value (cannot tell member from global).
   **Mismatch guard (coordinator review, 2026-11-13):** a name match alone does not prove the same code, so

@@ -3,6 +3,9 @@
  * @description Builds LSP workspace symbol nodes directly from TwinCAT XML objects
  * (.TcPOU/.TcGVL/.TcDUT/.TcIO) with real declaration ranges. This is the single source of
  * truth for cross-file symbols (function blocks, programs, GVLs, DUT structs/enums, interfaces).
+ * Ranges are lines of the file's assembled Structured Text unit (stConverter raw mode), the frame
+ * parser.js uses for a synced editor and livePath.js maps back to panes (`unitLineMap`). Actions keep
+ * the (1,1) stub name range, as a name `locate` cannot find does.
  * Has no dependency on the `vscode` module so it can run inside the LSP server process and in
  * test harnesses.
  */
@@ -11,6 +14,7 @@ const fs = require('fs');
 const path = require('path');
 const { fsPathToFileUri } = require('../fileUri');
 const { parseTwinCatXml } = require('../xmlParser');
+const { convertXmlToSt } = require('../stConverter');
 const { blankComments } = require('../stComments');
 const { tokenize, parseVariablesBlock, TokenType } = require('./parser');
 const { headHasDirective } = require('./conditionals');
@@ -32,16 +36,18 @@ function escapeRegExp(s) {
  * Locates the 1-based position of a whole-word identifier within a text block.
  * @param {string} text Source text.
  * @param {string} word Identifier to locate.
- * @returns {Object} A range { startLine, startCol, endLine, endCol } (1-based), or a default at 1:1.
+ * @param {number} [firstLine] The unit line `text` starts on (see `unitLineMap`); 1 by default.
+ * @returns {Object} A range { startLine, startCol, endLine, endCol } (1-based), or a default at 1:1
+ *   (not found: the default is not moved by `firstLine`).
  */
-function locate(text, word) {
+function locate(text, word, firstLine = 1) {
     const def = { startLine: 1, startCol: 1, endLine: 1, endCol: 1 };
     if (!text || !word) return def;
     const re = new RegExp(`\\b${escapeRegExp(word)}\\b`);
     const idx = text.search(re);
     if (idx === -1) return def;
     const before = text.substring(0, idx);
-    const line = (before.match(/\n/g) || []).length + 1;
+    const line = (before.match(/\n/g) || []).length + firstLine;
     const lastNl = before.lastIndexOf('\n');
     const col = idx - lastNl; // 1-based column
     return { startLine: line, startCol: col, endLine: line, endCol: col + word.length };
@@ -65,9 +71,10 @@ function padReplace(text, re, replacement) {
  * the same syntax as struct fields, so a union is indexed exactly like a struct.
  * (`\bUNION\b` cannot match inside `END_UNION`: the preceding '_' is a word character.)
  * @param {string} declText Declaration text.
- * @returns {Array<Object>} Parsed variables with ranges relative to declText.
+ * @param {number} [firstLine] The unit line `declText` starts on; 1 by default.
+ * @returns {Array<Object>} Parsed variables, every range (name, type, …) in unit lines.
  */
-function extractVars(declText) {
+function extractVars(declText, firstLine = 1) {
     if (!declText) return [];
     let normalized = padReplace(declText, /\bSTRUCT\b/gi, 'VAR');
     normalized = padReplace(normalized, /\bEND_STRUCT\b/gi, 'END_VAR');
@@ -86,16 +93,53 @@ function extractVars(declText) {
             idx++;
         }
     }
+    if (firstLine !== 1) for (const v of vars) shiftRanges(v, firstLine - 1);
     return vars;
+}
+
+/**
+ * Moves every range of a parsed variable (`range`, `typeRange`, …: any own object property with a
+ * numeric `startLine`) down by `offset` lines. The ranges are the variable's own objects.
+ * @param {Object} v A variable from parseVariablesBlock.
+ * @param {number} offset Lines to add.
+ */
+function shiftRanges(v, offset) {
+    for (const key of Object.keys(v)) {
+        const r = v[key];
+        if (r && typeof r === 'object' && typeof r.startLine === 'number') {
+            r.startLine += offset;
+            if (typeof r.endLine === 'number') r.endLine += offset;
+        }
+    }
+}
+
+/**
+ * The unit line each component's declaration starts on: the line map of the file's assembled
+ * Structured Text unit (stConverter raw mode), the same unit the live path assembles and a synced
+ * editor's node (parser.js) is indexed from. Every range this indexer emits is in that frame, so a
+ * consumer never has to know which indexer built a node (R15 review round 3, #0: livePath.js
+ * `mapDefinition` read CDATA-relative lines as unit lines and jumped to the wrong line).
+ * @param {Object} parsed parseTwinCatXml's result.
+ * @returns {(componentId: string) => number} The 1-based start line, or 1 when the component has
+ *   no declaration block in the unit.
+ */
+function unitLineMap(parsed) {
+    let lineMap = {};
+    try { lineMap = convertXmlToSt(parsed, { raw: true }).lineMap || {}; } catch (e) { /* keep {} */ }
+    return (componentId) => {
+        const b = lineMap[componentId];
+        return b && b.decl && b.decl.start ? b.decl.start : 1;
+    };
 }
 
 /**
  * Extracts enum members from a DUT enum declaration of the form
  * `TYPE Name : ( A := 0, B, C ); END_TYPE`.
  * @param {string} declText Declaration text.
+ * @param {number} [firstLine] The unit line `declText` starts on; 1 by default.
  * @returns {Array<Object>} Members as variable-shaped entries ({ name, type: 'Enum', range }).
  */
-function extractEnumMembers(declText) {
+function extractEnumMembers(declText, firstLine = 1) {
     const members = [];
     if (!declText) return members;
     // Blank comments (nested ones included) and pragmas (`{IF defined(X)}`, attributes) to avoid
@@ -113,7 +157,7 @@ function extractEnumMembers(declText) {
         const eq = part.indexOf(':=');
         const name = (eq !== -1 ? part.substring(0, eq) : part).trim();
         if (/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(name)) {
-            members.push({ name, type: 'Enum', scope: 'ENUM', range: locate(declText, name) });
+            members.push({ name, type: 'Enum', scope: 'ENUM', range: locate(declText, name, firstLine) });
         }
     }
     return members;
@@ -230,6 +274,9 @@ function buildNodeFromXml(xmlText, fileUri) {
 
     const root = parsed.components.find(c => c.id === 'root');
     const rootDecl = root ? (root.declaration || '') : '';
+    // Every range below is a line of the assembled unit, not of a CDATA block (see unitLineMap).
+    const declStart = unitLineMap(parsed);
+    const rootStart = declStart('root');
 
     let type;
     if (parsed.rootType === 'POU') type = specificPouType(rootDecl);
@@ -242,7 +289,7 @@ function buildNodeFromXml(xmlText, fileUri) {
         name: parsed.rootName,
         type,
         uri: fileUri,
-        nameRange: locate(rootDecl, parsed.rootName)
+        nameRange: locate(rootDecl, parsed.rootName, rootStart)
         // extends / extendsAll / implements are filled in from parseInheritance just below;
         // range defaults to (1,1,1,1) as before. DUT-specific fields (dutKind) are added later.
     });
@@ -265,14 +312,14 @@ function buildNodeFromXml(xmlText, fileUri) {
     if (type === 'DUT') {
         node.dutKind = dutKindFromDecl(rootDecl);
         if (node.dutKind === 'struct' || node.dutKind === 'union') {
-            node.variables = extractVars(rootDecl);
+            node.variables = extractVars(rootDecl, rootStart);
         } else if (node.dutKind === 'enum') {
-            node.variables = extractEnumMembers(rootDecl);
+            node.variables = extractEnumMembers(rootDecl, rootStart);
         } else {
             node.variables = []; // alias / subrange
         }
     } else {
-        node.variables = extractVars(rootDecl);
+        node.variables = extractVars(rootDecl, rootStart);
     }
 
     // Sub-components (methods, properties, actions).
@@ -283,10 +330,10 @@ function buildNodeFromXml(xmlText, fileUri) {
             const retMatch = decl.match(/\bMETHOD\b\s+[a-zA-Z_][a-zA-Z0-9_]*\s*:\s*([a-zA-Z_][a-zA-Z0-9_.]*)/i);
             node.methods.push({
                 name: comp.name,
-                variables: extractVars(decl),
+                variables: extractVars(decl, declStart(comp.id)),
                 returnType: retMatch ? retMatch[1] : 'BOOL',
-                declRange: locate(decl, comp.name),
-                nameRange: locate(decl, comp.name),
+                declRange: locate(decl, comp.name, declStart(comp.id)),
+                nameRange: locate(decl, comp.name, declStart(comp.id)),
                 implRange: null
             });
         } else if (comp.type === 'Property') {
@@ -296,8 +343,8 @@ function buildNodeFromXml(xmlText, fileUri) {
             node.properties.push({
                 name: subName,
                 type: typeMatch ? typeMatch[1].trim() : 'BOOL',
-                declRange: locate(decl, subName),
-                nameRange: locate(decl, subName),
+                declRange: locate(decl, subName, declStart(comp.id)),
+                nameRange: locate(decl, subName, declStart(comp.id)),
                 getAccessor: null,
                 setAccessor: null
             });

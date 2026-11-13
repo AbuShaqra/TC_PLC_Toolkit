@@ -99,8 +99,10 @@ assert(unionMembers.length === 2 && unionMembers.includes('nCANState') && unionM
 const nCanVar = (unionNode ? unionNode.variables : []).find(v => v.name === 'nCANState');
 assert(nCanVar && nCanVar.type === 'UINT',
     `union member type survives the "AT %I*" direct address: ${nCanVar && nCanVar.type}`);
-assert(nCanVar && nCanVar.range.startLine === 3,
-    `union member range points at its own declaration line (3), got ${nCanVar && nCanVar.range.startLine}`);
+// Ranges are unit lines (xmlIndexer.js `unitLineMap`): line 3 of the declaration pane, below the
+// unit's 5-line header, is unit line 8.
+assert(nCanVar && nCanVar.range.startLine === 5 + 3,
+    `union member range points at its own declaration line (pane line 3 = unit line 8), got ${nCanVar && nCanVar.range.startLine}`);
 
 // A union must behave like a struct for member lookup (never like an enum).
 const unionType = typeFromNode(unionNode);
