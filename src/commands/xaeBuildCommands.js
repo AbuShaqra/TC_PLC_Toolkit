@@ -26,6 +26,10 @@
  *     XAE starts if it does not (`activationPlatform`).
  *   - A failed headless build that brought back no error details offers "Build again with the window
  *     shown": one re-run with `-ShowWindow`; the setting is never changed.
+ *   - A failed build (exit 1, confirmed) that brought back no error details by any route runs TC
+ *     Toolkit's own check (`twincat.compileProject`) once on the solution's PLC projects; its problems
+ *     are Compile Project's, and the message says they are TC Toolkit's, not XAE's. Not after a cancel
+ *     or a harness error (exit 2), and skipped with a note when no compiler is configured.
  *   - Cancel and timeout: the cancel file first (the driver closes the solution and quits only the
  *     shell it started, exit 4), then after a grace period a force stop — PowerShell's process tree
  *     and, only when the driver reported `ours: true`, the XAE Shell's PID (it is DCOM-launched, so it
@@ -49,14 +53,15 @@ const { runChild, killProcessTree, describeLocation } = require('../compileCheck
 const {
     EXIT, buildDriverArgs, createLineSplitter, parseLine, createRunState, reduce, describeExit, describeUiMode,
     canCancel, isStalled, targetPickItems, confirmationText, reachedBuildResult, missingShell,
-    declaredPairs, activationPlatform, platformNotDeclaredText, pairNotDeclaredText, noErrorDetails, RERUN_WINDOW_SHOWN, SWITCH_AND_REMEMBER
+    declaredPairs, activationPlatform, platformNotDeclaredText, pairNotDeclaredText, noErrorDetails, RERUN_WINDOW_SHOWN, SWITCH_AND_REMEMBER,
+    FALLBACK_INTRO, compileFallbackText
 } = require('../xaeBuild');
 const { placeXaeErrors, placementSummary } = require('../xaeErrorPlacement');
 const { XAE_BUILD_SECTION, readXaeBuildSettings } = require('../xaeBuildSettings');
 const { XAE_SHELL_SECTION, XAE_SHELL_VERSIONS, describeConfiguredShells, detectXaeShells, createRegQuery } = require('../xaeShellDetect');
 const { normalizeFileUri } = require('../fileUri');
 const { memberName } = require('../componentId');
-const { problemDiagnostic, openProblem, selectionOf, pickProjectKey, registerProblemLinkResolver } = require('./compileCommands');
+const { problemDiagnostic, openProblem, selectionOf, pickProjectKey, registerProblemLinkResolver, DIAGNOSTIC_SOURCE: COMPILE_DIAGNOSTIC_SOURCE } = require('./compileCommands');
 
 /** The output channel of every XAE build run. */
 const OUTPUT_CHANNEL_NAME = 'TC Toolkit XAE Build';
@@ -171,6 +176,11 @@ function registerXaeBuildCommands(context, deps) {
     const stamp = () => `[${new Date().toISOString()}]`;
 
     let running = false;
+    /** Started once the current run has ended (a notification button answered while it still reports). */
+    /** @type {Array<() => void>} */
+    const afterRun = [];
+    /** @param {() => void} fn */
+    const whenIdle = (fn) => { if (running) afterRun.push(fn); else fn(); };
     let cancelSeq = 0;
     /**
      * The activations the user confirmed in this session's modal. A re-run of one (the stall offer,
@@ -480,7 +490,7 @@ function registerXaeBuildCommands(context, deps) {
      * The project and its solution, or null with the reason already shown.
      * @param {any} a The command's arguments ({projectKey?, fsPath?}).
      * @param {string} title
-     * @returns {Promise<{key: string, projectName: string, slnPath: string}|{reason: string}>}
+     * @returns {Promise<{key: string, projectName: string, slnPath: string, projectKeys: string[]}|{reason: string}>}
      */
     async function resolveSolution(a, title) {
         const projectMap = deps.getProjectMap();
@@ -502,7 +512,11 @@ function registerXaeBuildCommands(context, deps) {
             vscode.window.showErrorMessage(`No solution found for ${projectName}.`);
             return { reason: 'no-solution' };
         }
-        return { key, projectName, slnPath: solution.slnPath };
+        // The solution's PLC projects (TC Toolkit's own check runs on them when XAE returns no details).
+        const projectKeys = Array.isArray(solution.projects) && solution.projects.length > 0
+            ? solution.projects.map((/** @type {{key: string}} */ p) => p.key).filter((/** @type {string} */ k) => projectMap.projects.has(k))
+            : [];
+        return { key, projectName, slnPath: solution.slnPath, projectKeys: projectKeys.length > 0 ? projectKeys : [key] };
     }
 
     /**
@@ -596,10 +610,14 @@ function registerXaeBuildCommands(context, deps) {
      * @param {string} slnPath
      * @param {() => any} [rerunWindowShown] Re-runs this build once with the window shown; offered when
      *   a failed headless build brought back no error details.
-     * @returns {{ok: boolean, exitCode: number|null, outcome: string, title: string, uiMode: string, placed: number, total: number,
-     *   targetMismatch: boolean, noErrorDetails: boolean}}
+     * @param {() => Promise<import('../xaeBuild').FallbackResult[]>} [compileFallback] Runs TC Toolkit's own
+     *   check on the solution's projects; called once, when a confirmed compile failure brought back no
+     *   error details by any route.
+     * @returns {Promise<{ok: boolean, exitCode: number|null, outcome: string, title: string, uiMode: string, placed: number, total: number,
+     *   targetMismatch: boolean, noErrorDetails: boolean, errorRoute: string|null,
+     *   compileFallback: {ran: number, skipped: boolean, results: import('../xaeBuild').FallbackResult[]}|null}>}
      */
-    function report(run, slnPath, rerunWindowShown) {
+    async function report(run, slnPath, rerunWindowShown, compileFallback) {
         const ch = channel();
         const { state } = run;
         const d = describeExit(run.code, run.outcome, state, {
@@ -631,9 +649,27 @@ function registerXaeBuildCommands(context, deps) {
         if (state.shell && !state.shell.ours && run.outcome !== 'exit') {
             ch.appendLine('  The XAE Shell was not started by this run (or could not be identified), so it was left running.');
         }
+        const errorRoute = state.errorDetails ? state.errorDetails.route : null;
+        if (built && errorRoute) {
+            ch.appendLine(`  Error details read: ${errorRoute === 'typed' ? 'through the typed EnvDTE reader'
+                : (errorRoute === 'late-bound' ? 'through the late-bound COM reads' : 'by no route')}.`);
+        }
+        /** @type {{ran: number, skipped: boolean, results: import('../xaeBuild').FallbackResult[]}|null} */
+        let fallback = null;
+        let fallbackText = '';
+        if (missingDetails && !run.rerunVisible && compileFallback) {
+            // No error details by any route: TC Toolkit's own check stands in, said as such.
+            ch.appendLine(`${stamp()} ${FALLBACK_INTRO}`);
+            const results = await compileFallback();
+            const t = compileFallbackText(results, COMPILE_DIAGNOSTIC_SOURCE);
+            fallback = { ran: t.ran, skipped: t.skipped, results };
+            fallbackText = t.text;
+            ch.appendLine(`${stamp()} ${t.text}`);
+        }
         const result = {
             ok: d.ok && !state.targetMismatch, exitCode: run.code, outcome: run.outcome, title, uiMode,
-            placed: placement.placed, total: placement.total, targetMismatch: state.targetMismatch, noErrorDetails: !!missingDetails
+            placed: placement.placed, total: placement.total, targetMismatch: state.targetMismatch, noErrorDetails: !!missingDetails,
+            errorRoute, compileFallback: fallback
         };
         if (run.rerunVisible) {
             // Stopped to re-run with the window shown: one line here, no notification, and the
@@ -649,13 +685,16 @@ function registerXaeBuildCommands(context, deps) {
             : (severity === 'warning' ? vscode.window.showWarningMessage : vscode.window.showInformationMessage);
         const buttons = ['Show Output'];
         if (byFile.size > 0 && built) buttons.unshift('Go to Problem…');
+        if (fallback && fallback.ran > 0) buttons.unshift('Open Problems');
         if (missingDetails && missingDetails.offerRerun && rerunWindowShown) buttons.unshift(RERUN_WINDOW_SHOWN);
-        Promise.resolve(show(`${title}${errorsLine ? ' ' + errorsLine : ''}`, ...buttons)).then((choice) => {
+        Promise.resolve(show(`${title}${errorsLine ? ' ' + errorsLine : ''}${fallbackText ? ' ' + fallbackText : ''}`, ...buttons)).then((choice) => {
             if (choice === 'Show Output') ch.show(true);
+            else if (choice === 'Open Problems') vscode.commands.executeCommand('workbench.actions.view.problems');
             else if (choice === 'Go to Problem…') vscode.commands.executeCommand(GO_TO_PROBLEM_COMMAND);
             else if (choice === RERUN_WINDOW_SHOWN && rerunWindowShown) {
                 ch.appendLine(`${stamp()} Building again with the XAE window shown (this run only; the setting is unchanged).`);
-                rerunWindowShown();
+                // The run that offered it may still be reporting (its fallback check): start after it.
+                whenIdle(() => { rerunWindowShown(); });
             }
         });
         return result;
@@ -807,7 +846,29 @@ function registerXaeBuildCommands(context, deps) {
                 ...a, projectKey: resolved.key, showWindow: true, configuration, platform: pform, shellChecked: true, shellAsked: true, shellOverride,
                 confirmedActivation: carryConfirmation()
             }, activate);
-            const result = report(run, slnPath, rerunWindowShown);
+            // TC Toolkit's own check on the solution's PLC projects, when XAE returned no error details.
+            const compileFallback = async () => {
+                const projectMap = deps.getProjectMap();
+                /** @type {import('../xaeBuild').FallbackResult[]} */
+                const results = [];
+                for (const projectKey of resolved.projectKeys) {
+                    const name = projectMap && typeof projectMap.displayName === 'function' ? projectMap.displayName(projectKey) : projectKey;
+                    /** @type {any} */
+                    let r;
+                    try {
+                        r = await vscode.commands.executeCommand('twincat.compileProject', { projectKey, fromXae: true, append: results.some(x => x.ok) });
+                    } catch (err) {
+                        r = { ok: false, reason: 'failed', message: err && /** @type {any} */ (err).message ? /** @type {any} */ (err).message : String(err) };
+                    }
+                    const one = r && typeof r === 'object' ? r : { ok: false, reason: 'failed' };
+                    results.push({ name, ok: one.ok === true, reason: one.reason, message: one.message, errors: one.errors, warnings: one.warnings });
+                    // No compiler, a run already in progress, or the user's cancel: the same for every
+                    // project after this one, so it is said once.
+                    if (one.reason === 'setup' || one.reason === 'running' || one.reason === 'cancelled') break;
+                }
+                return results;
+            };
+            const result = await report(run, slnPath, rerunWindowShown, compileFallback);
 
             // The stall offer: the same run again with the window shown (this run only).
             if (run.rerunVisible) {
@@ -850,6 +911,7 @@ function registerXaeBuildCommands(context, deps) {
         } finally {
             if (running) setRunning(false);
             running = false;
+            for (const fn of afterRun.splice(0)) fn();
         }
     }
 

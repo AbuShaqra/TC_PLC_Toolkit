@@ -210,6 +210,12 @@ const api = registerXaeBuildCommands(context, {
     provider, getProjectMap: projectMap, getSolutionMap: solutionMap, spawn: fake.spawn, execFile: fake.execFile,
     platform: 'win32', minuteMs: 10, graceMs: 40, stallCheckMs: 5, tmpDir: TMP, detectShells: async () => detected
 });
+// TC Toolkit's own check, as the XAE fallback calls it: recorded, answered by the test (the real
+// command is covered by test_compile_commands.js, its fromXae/append arguments included).
+/** @type {Array<any>} */
+const compileCalls = [];
+let compileAnswer = (/** @type {any} */ a) => ({ ok: true, projectKey: a.projectKey, errors: 2, warnings: 0 });
+handlers.set('twincat.compileProject', async (a) => { compileCalls.push(a); return compileAnswer(a); });
 const xaeCollection = collections.find(c => c.name === 'twincat-xae');
 const compileCollection = collections.find(c => c.name === 'twincat-compile');
 const gppCollection = collections.find(c => c.name === 'twincat-gpp');
@@ -320,12 +326,22 @@ const rows = (name) => readFixture(name).lines;
         driver = (c) => ({ fixture: c.args.includes('-ShowWindow') ? 'errors-errorlist' : 'errors-no-details-headless' });
         answers.message.push('Build again with the window shown');
         const e0 = calls.errors.length;
+        const c0 = compileCalls.length;
         r = await run('twincat.xaeBuild', {});
         const note = calls.errors[e0];
         assert(!r.ok && r.exitCode === 1 && r.noErrorDetails && note
-            && /^Build through XAE failed\. XAE returned no error details: the error list is empty; the Output window is not available \(XAE window hidden\)\. See 'TC Toolkit XAE Build'\.$/.test(note.m),
-            'the failure says no error details came back, and why');
-        assert(note.buttons[0] === 'Build again with the window shown' && note.buttons.includes('Show Output'), 'it offers "Build again with the window shown"');
+            && /^Build through XAE failed\. XAE returned no error details: typed error list: the error list is empty; the error list is empty; typed Output 'Build' pane: the Output window has no pane named 'Build'; the Output window is not available \(XAE window hidden\)\. See 'TC Toolkit XAE Build'\. /.test(note.m),
+            'the failure says no error details came back by any route, and why (typed and late-bound reasons)');
+        // C (user decision 2026-11-13): TC Toolkit's own check stands in, exactly once, said as such.
+        assert(compileCalls.length === c0 + 1 && compileCalls[c0].projectKey === 'a' && compileCalls[c0].fromXae === true && compileCalls[c0].append === false,
+            'route none: TC Toolkit\'s own check runs once on the solution\'s project (fromXae, not appending)');
+        assert(/TC Toolkit's own compile check \(not XAE's; it can differ from XAE's\): TcToolkitSample_PLC: 2 errors\. Its problems are in Problems as 'TC Toolkit compile'\.$/.test(note.m)
+            && r.errorRoute === 'none' && r.compileFallback && r.compileFallback.ran === 1,
+            'the failure message says the errors are TC Toolkit\'s check, not XAE\'s, and can differ');
+        assert(channel().lines.some(l => /Running TC Toolkit's own compile check instead: its errors come from TC Toolkit's check, not from XAE, and can differ from XAE's\./.test(l))
+            && channel().lines.some(l => /Error details read: by no route\./.test(l)), 'the channel says so, and names the route');
+        assert(note.buttons[0] === 'Build again with the window shown' && note.buttons.includes('Open Problems') && note.buttons.includes('Show Output'),
+            'it still offers "Build again with the window shown" (headless), and Open Problems');
         assert(!/will show|shows the errors/i.test(note.m), 'it does not claim the visible run will show the errors');
         await waitFor(() => builds().length === n0 + 2);
         await waitFor(() => !api.isRunning());
@@ -338,13 +354,41 @@ const rows = (name) => readFixture(name).lines;
             'the button re-runs once, with -ShowWindow and the same configuration, platform and shell (every other argument equal)');
         assert(showWindowWrites() === w0 && settings['tcToolkit.xaeBuild.showWindow'] === false, 'the re-run never changes tcToolkit.xaeBuild.showWindow');
         assert(channel().lines.some(l => /Building again with the XAE window shown \(this run only; the setting is unchanged\)/.test(l)), 'the channel says so');
-        // Not offered when the window was already shown.
+        assert(compileCalls.length === c0 + 1, 'the re-run brought error details back: no second fallback');
+        // Not offered when the window was already shown; the reason names the real mode (B).
         settings['tcToolkit.xaeBuild.showWindow'] = true;
-        driver = () => ({ lines: rows('errors-no-details-headless').map(l => (l.t === 'done' ? { ...l, ui: { ...l.ui, requested: 'visible' } } : (l.t === 'hello' ? { ...l, showWindow: true } : l))), exit: 1 });
+        driver = () => ({ fixture: 'errors-no-details-visible' });
         const e1 = calls.errors.length;
+        compileAnswer = () => ({ ok: false, reason: 'setup', message: 'The compiler file "C:\\gone.cjs" (setting "tcToolkit.compiler.path") does not exist.' });
+        r = await run('twincat.xaeBuild', {});
+        assert(calls.errors[e1] && /XAE returned no error details: .*the Output window is not available \(XAE window shown\)\./.test(calls.errors[e1].m)
+            && !/XAE window hidden/.test(calls.errors[e1].m) && !calls.errors[e1].buttons.includes('Build again with the window shown'),
+            'a visible build with no details: the reason says the window was shown, and no re-run is offered');
+        assert(/TC Toolkit's own compile check was skipped: no compiler is configured for it \(The compiler file .*gone\.cjs.*does not exist\.\)\.$/.test(calls.errors[e1].m)
+            && r.compileFallback && r.compileFallback.skipped && r.compileFallback.ran === 0 && !calls.errors[e1].buttons.includes('Open Problems'),
+            'no compiler configured: the fallback says so and is skipped');
+        compileAnswer = (a) => ({ ok: true, projectKey: a.projectKey, errors: 2, warnings: 0 });
+        settings['tcToolkit.xaeBuild.showWindow'] = false;
+        // The typed route (Beckhoff's documented reader): errors reach Problems, nothing falls back.
+        const c1 = compileCalls.length;
+        driver = () => ({ fixture: 'errors-typed' });
+        r = await run('twincat.xaeBuild', {});
+        assert(!r.ok && r.exitCode === 1 && !r.noErrorDetails && r.errorRoute === 'typed' && r.placed === 1
+            && (xaeCollection.map.get(fbUri.toString()) || []).some(d => /C0046/.test(d.message) && d.severity === 0),
+            'route typed: the error-list item reaches Problems as an error');
+        assert(compileCalls.length === c1 && channel().lines.some(l => /Error details read: through the typed EnvDTE reader\./.test(l)),
+            'route typed: no fallback, and the channel names the route');
+        // A successful build: the typed list is read too, so its warnings are listed.
+        driver = () => ({ fixture: 'build-ok-typed-warnings' });
+        r = await run('twincat.xaeBuild', {});
+        assert(r.ok && r.exitCode === 0 && r.total === 1 && (xaeCollection.map.get(fbUri.toString()) || []).some(d => /C0373/.test(d.message) && d.severity === 1)
+            && compileCalls.length === c1, 'a successful build with a compiler warning: listed in Problems as a warning, no fallback');
+        // No fallback after a cancel (exit 4) or a harness error (exit 2).
+        driver = () => ({ fixture: 'cancelled' });
         await run('twincat.xaeBuild', {});
-        assert(calls.errors[e1] && /XAE returned no error details/.test(calls.errors[e1].m) && !calls.errors[e1].buttons.includes('Build again with the window shown'),
-            'a visible build with no details: said, but no re-run offered');
+        driver = () => ({ fixture: 'version-mismatch' });
+        await run('twincat.xaeBuild', {});
+        assert(compileCalls.length === c1, 'no fallback when the run was cancelled or the harness failed (exit 2)');
         settings['tcToolkit.xaeBuild.showWindow'] = false;
         driver = () => ({ fixture: 'build-ok-headless' });
     }

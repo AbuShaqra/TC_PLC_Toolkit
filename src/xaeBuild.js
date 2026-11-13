@@ -287,9 +287,11 @@ function parseLine(line) {
  * @property {Array<{file: string|null, line: number|null, column: number|null, description: string,
  *   project: string|null, level: string|null}>} errorItems
  * @property {Array<{name: string, text: string, truncated: boolean}>} panes
- * @property {{errorItems: number|null, outputPanes: number|null, reasons: string[]}|null} errorDetails What the
- *   driver could read of a failed build's error details, and a one-line reason for each step that gave
- *   nothing (`errorDetails`; headless on 4026 the error list was empty and the Output window null).
+ * @property {{errorItems: number|null, outputPanes: number|null, reasons: string[], route: 'typed'|'late-bound'|'none'|null}|null} errorDetails
+ *   What the driver could read of a failed build's error details, a one-line reason for each step that
+ *   gave nothing (`errorDetails`; on 4026 the late-bound error list and Output window gave nothing,
+ *   shown or hidden), and which route worked: the typed EnvDTE reader, the late-bound reads, or none
+ *   (null from a driver older than the field).
  * @property {number|null} failedProjects
  * @property {{netId: string, local: boolean, platform: string|null}|null} target
  * @property {boolean} targetMismatch The driver's target readback differs from the confirmed pick.
@@ -387,7 +389,8 @@ function reduce(state, item, now = Date.now()) {
             const reasons = Array.isArray(e.reasons) ? e.reasons : (typeof e.reasons === 'string' ? [e.reasons] : []);
             state.errorDetails = {
                 errorItems: numOrNull(e.errorItems), outputPanes: numOrNull(e.outputPanes),
-                reasons: reasons.filter(r => typeof r === 'string' && r.trim()).map(r => r.trim())
+                reasons: reasons.filter(r => typeof r === 'string' && r.trim()).map(r => r.trim()),
+                route: e.route === 'typed' || e.route === 'late-bound' || e.route === 'none' ? e.route : null
             };
             break;
         }
@@ -797,8 +800,58 @@ function noErrorDetails(code, outcome, state) {
     };
 }
 
+/**
+ * What the failure message and the channel say before TC Toolkit's own check stands in for the error
+ * details XAE did not return (user decision 2026-11-13).
+ */
+const FALLBACK_INTRO = "Running TC Toolkit's own compile check instead: its errors come from TC Toolkit's check, not from XAE, and can differ from XAE's.";
+
+/**
+ * @typedef {Object} FallbackResult One project of the fallback, as `twincat.compileProject` returned it.
+ * @property {string} name The project's display name.
+ * @property {boolean} ok The check finished.
+ * @property {string} [reason] Why not: 'setup' (no usable compiler), 'running', 'cancelled', ...
+ * @property {string} [message]
+ * @property {number} [errors]
+ * @property {number} [warnings]
+ */
+
+/**
+ * The one sentence that reports the fallback: per project, its counts or why it did not run; a
+ * missing compiler is said once, as such ("skipped").
+ * @param {FallbackResult[]} results
+ * @param {string} compileSource The Problems source of TC Toolkit's check ('TC Toolkit compile').
+ * @returns {{text: string, ran: number, skipped: boolean}}
+ */
+function compileFallbackText(results, compileSource) {
+    const setup = results.find(r => !r.ok && r.reason === 'setup');
+    if (setup) {
+        return {
+            text: `TC Toolkit's own compile check was skipped: no compiler is configured for it (${String(setup.message || '').trim() || 'see the Compile Project settings'}).`,
+            ran: 0, skipped: true
+        };
+    }
+    const plural = (/** @type {number} */ n, /** @type {string} */ w) => `${n} ${w}${n === 1 ? '' : 's'}`;
+    const parts = results.map((r) => {
+        if (r.ok) {
+            const e = r.errors || 0;
+            const w = r.warnings || 0;
+            return `${r.name}: ${e === 0 && w === 0 ? 'no errors' : [e ? plural(e, 'error') : '', w ? plural(w, 'warning') : ''].filter(Boolean).join(', ')}`;
+        }
+        if (r.reason === 'running') return `${r.name}: not checked (Compile Project is already running)`;
+        if (r.reason === 'cancelled') return `${r.name}: cancelled`;
+        return `${r.name}: not checked${r.message ? ` (${r.message})` : ''}`;
+    });
+    const ran = results.filter(r => r.ok).length;
+    return {
+        text: `TC Toolkit's own compile check (not XAE's; it can differ from XAE's): ${parts.join('; ') || 'no PLC project to check'}.` +
+            (ran > 0 ? ` Its problems are in Problems as '${compileSource}'.` : ''),
+        ran, skipped: false
+    };
+}
+
 module.exports = {
-    PREFIX, PROTOCOL, EXIT, EVENT_TYPES, UNINTERRUPTIBLE_PHASES, SWITCH_FOR_RUN, SWITCH_AND_REMEMBER, RERUN_WINDOW_SHOWN,
+    PREFIX, PROTOCOL, EXIT, EVENT_TYPES, UNINTERRUPTIBLE_PHASES, SWITCH_FOR_RUN, SWITCH_AND_REMEMBER, RERUN_WINDOW_SHOWN, FALLBACK_INTRO, compileFallbackText,
     isValidNetId, buildDriverArgs, shellByProgId, missingShell, createLineSplitter, parseLine, createRunState, reduce,
     compileFailureConfirmed, reachedBuildResult, describeExit, describeUiMode, buildPhaseUi, canCancel, isStalled, targetPickItems, confirmationText,
     declaredPairs, activationPlatform, platformNotDeclaredText, pairNotDeclaredText, noErrorDetails, oneLine

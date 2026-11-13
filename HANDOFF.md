@@ -177,59 +177,47 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   reports the requested mode + SuppressUI). Sample 2's system project is a `.tspproj` (lookups fixed, 706dfde).
   Sample 2 (3.1.4024.62) on a 4026-only machine → `progid-not-registered` → one modal offering XAE Shell 64, then
   `-TcVersion <ProgId> -AllowVersionMismatch` (b6d831d; DEVELOPMENT "The project's XAE Shell is missing").
-  **Three changes from that day's check (2026-11-13, this commit; Linux-verified only):**
-  - **A. Platform dropdown:** `tcToolkit.xaeBuild.platform` has an `enum` = `XAE_PLATFORMS` (src/xaeBuildSettings.js:
-    the 4026 sample's seven + `TwinCAT CE7 (ARMV7)`, `TwinCAT OS (ARMT2)` from the 4024 sample); a settings.json value
-    outside it still runs (driver `config-not-declared` + pick). `configuration` left free text (VS Code has no
-    enum that accepts free text; solutions name their own). Start page shows `cfg | platform` as text only; a picker
-    there was NOT built (needs the solution's own list; the page is not tied to one solution).
-  - **B. Activation picks the target's platform** (user run: RT (x64) set, UmRT_Default runs OS (x64) → gate 4
-    refused, and the summary ended "…1.1,." — `firstLine` cut gate 4's wrapped message; now `oneLine` joins it).
-    `-ListTargets` and gate 4 read the same `Get-LocalRuntimeRecords`; `activationPlatform` compares
-    case-insensitively against the `.sln` pairs (`declaredPairs`). Declared → the ONE activation modal asks "<target>
-    (<NetId>) runs <P>, but <set> is set. Switch to <P>?" with *Switch for this run* / *Switch and remember*
-    (user refinement: XAE asks the same on download; remember writes `tcToolkit.xaeBuild.platform` once, scope =
-    workspace > user, where the value comes from — the setting is window-scoped, so no folder scope) / Cancel. Not declared → refused before XAE
-    starts, naming the platform to add in XAE's Configuration Manager. `.sln` pairs unreadable → nothing switched
-    (my call; gate 4's refusal stands). An inferred target platform is switched too (gate 4 refuses on it as well);
-    the modal says it is inferred.
-  - **C. Headless errors** (user run: sample 1 + planted error, headless: "Projects failed: 2", no `errorItem`,
-    "output pane read failed: … NULL …" (PS: method on a null-valued expression), extension "XAE reported no error
-    list"). **Answered for 4026 headless: the error list as the driver read it was empty AND the Output window
-    route gave $null.** Caveat found: the driver read `ErrorItems` as `Invoke-ComRetry`'s result, whose `return`
-    can enumerate a COM collection (a 1-item list → the bare item → `.Item(1)` fails silently, no event); the builder
-    assigns it directly. Now read by plain assignment, retried by hand — so "empty headless" is NOT yet proven
-    independent of that read path. New `Get-OutputPaneTexts` (same text in driver, builder, `templates/`):
-    `ToolWindows.OutputWindow` first, then `Windows.Item(...).Object`, every null → one-line reason. New event
-    `errorDetails {errorItems, outputPanes, reasons[]}`. No items + no pane text after a confirmed compile failure →
-    "XAE returned no error details: <reasons>." and, headless only, the button *Build again with the window shown*
-    (one re-run with `-ShowWindow`, setting never written, no claim the visible run shows errors).
-  **Windows runs on 9ed8b7a (user, 2026-11-13):** Build and Activate onto the user-mode runtime with the
-  platform-switch question PASSED. **OPEN:** a planted compile error in sample 1 still put nothing in Problems,
-  only the error notification appeared — waiting on the user's *TC Toolkit XAE Build* channel text (the
-  `errorDetails` reasons and any `errorItem`/`outputPane` lines) before diagnosing; no code changed for it.
-  **Second review, 16 confirmed findings, fixed (2026-11-13, this commit; Linux-verified only):** ps1 — a cancel
-  during the `errors` phase is exit 4 (every catch around `Invoke-ComRetry` there, `Get-OutputPaneTexts` in all
-  three copies included, rethrows the sentinel; the hand-written `ErrorItems` retry checks the cancel file and,
-  when all 10 tries are rejected, says "still rejected after 10 tries (XAE busy)", not "no item collection"; a
-  last cancel check closes the phase); the `.tsproj`/`.tspproj` lookup is two `-Filter` calls merged before
-  `Sort-Object` again (driver ×2, builder, `templates/`, `probe-sysmanager.ps1`). JS — the shell offer is NEWER
-  shells only (older-only → no offer, the error names the shell to install and why); a confirmed substitute
-  that is itself unregistered is named as such (`projectVersion` ≠ `build`); an undeclared configured pair is
-  refused before the activation modal (`pair-not-declared`); an activation's re-runs (stall, *Build again with
-  the window shown*) reuse its confirmation (internal `WeakSet`, used once, never a command argument); the
-  user's Cancel beats the stall re-run in both orders; a HARNESS refusal is no longer written twice; *Switch and
-  remember* writes workspace or user only (the test stub now reads each setting's real scope from package.json
-  and refuses a folder write, as VS Code does). Tests added for each (the 10 new command assertions fail on
-  9ed8b7a), plus the census and lookup contract on every copy.
-  **Verified (Linux, 2026-11-13, after the review fixes):** `REQUIRE_FULL_SUITE=1 npm test` 123/123 FULL; lint 0;
-  typecheck 0. Webview and start page unchanged (browser harnesses not re-run).
+  **Done earlier on 2026-11-13 (Linux-verified; details in DEVELOPMENT "XAE build (R14)" and git history):**
+  platform dropdown (`XAE_PLATFORMS` enum), activation switching to the target's platform (one modal,
+  *Switch for this run* / *Switch and remember*), per-step error-detail reasons + *Build again with the
+  window shown*, and the 16 second-review fixes (cancel in the error reads = exit 4, newer-only shell
+  offer, one activation modal, `.tsproj`/`.tspproj` lookup). Build and Activate onto UmRT_Default with the
+  switch question PASSED on Windows (9ed8b7a).
+  **Typed error reader + compile-check fallback (this commit; Linux-verified only, never compiled):**
+  user run on 6abbb52 (sample 1 + planted error, 4026.28, OS (x64)), headless AND `-ShowWindow`: "Projects
+  failed: 2", the late-bound error list null, the Output window null → Problems empty. **Cause (Beckhoff
+  Infosys "Reading the VS output and the error list"): late binding does not resolve
+  `ToolWindows.ErrorList.ErrorItems` in PowerShell; C# through EnvDTE does.** Now:
+  - A. all three ps1 copies carry `Get-XaeShellInstallDir` (ProgId `LocalServer32`, then
+    `Program Files[ (x86)]\Beckhoff\TcXaeShell`; vswhere NOT used — my call, the assemblies must be the
+    shell's own), `Initialize-TypedDteReader` (LoadFrom EnvDTE/EnvDTE80 [+ Microsoft.VisualStudio.Interop,
+    stdole] from `Common7\IDE\PublicAssemblies`, one `Add-Type` per run, class `TcTkTypedDteReader1` —
+    bump the suffix when the C# changes), `Read-TypedErrorList`, `Read-TypedBuildPane` ("Build" pane).
+    Typed first, late-bound only when it gave nothing; the error list after every build (warnings on
+    success); `errorDetails.route` typed/late-bound/none (+ `errorListRoute`, `outputRoute`).
+  - B. `Get-OutputPaneTexts -WindowNote`: "(XAE window hidden)" / "(XAE window shown)" / "(… kept visible
+    after a version switch)" from the real mode (it was hard-coded "hidden").
+  - C. route none on a confirmed exit 1 → `twincat.compileProject` once per solution project with
+    `{fromXae, append}` (no popup/notification/C++ of its own; append keeps the earlier project's
+    problems), one combined notification saying the errors are TC Toolkit's check, not XAE's, and can
+    differ; no compiler → "skipped: no compiler is configured for it (…)". Not on exit 4 / exit 2.
+    *Build again with the window shown* now starts only after the reporting run ends (`whenIdle`).
+  **Unverified (needs Windows):** whether the C# compiles under PS 5.1 Add-Type against the 4026
+  PublicAssemblies (EnvDTE.dll there may be a facade needing Microsoft.VisualStudio.Interop.dll — found
+  by a recursive search if not in PublicAssemblies/IDE), whether PowerShell hands the COM object through
+  `psobject.BaseObject` so the DTE2 cast succeeds, whether the 4024 (32-bit) shell's assemblies load in
+  64-bit PowerShell, the localized pane name (only "Build" is looked for), and whether ErrorItems is
+  populated right after `Build($true)` returns. Known gap: pane text with no error item counts as
+  "details" (no fallback) though the pane parser places nothing.
+  **Verified (Linux, 2026-11-13, after the typed reader + fallback):** `REQUIRE_FULL_SUITE=1 npm test` 123/123
+  FULL; lint 0; typecheck 0. PowerShell/C# checked as text only (contract test). Webview untouched.
   **For the Windows check** (point the `test-*.ps1` at the driver with `-ScriptPath
   ..\..\resources\xae\build-plc-project.ps1`):
-  1. sample 1 + planted error, **window shown** (the user's next run): `errorItem` count, `outputPane` text, the
-     `errorDetails` reasons; then the same headless again with this commit (does plain assignment change the item
-     count? are the reasons one line each, no raw PS null message?) and the *Build again with the window shown*
-     button; capture `-Json` output as fixtures **from the sample only**; where the Problems entries land;
+  1. sample 1 + planted error, headless and with the window shown: the channel's "Error details read:"
+     line (route), the `errorItem`s in Problems; if route none, the reasons (typed: assembly path / Add-Type
+     message / cast) and the TC Toolkit check fallback's notification; a clean build with a warning lists it;
+     the user's own `build_plc_project.ps1` prints the errors; capture `-Json` output as fixtures **from the
+     sample only**;
   2. (PASSED on 9ed8b7a) *Build and Activate* onto UmRT_Default with the switch question; still to see after the
      review fixes: *Switch and remember* lands in the user (or workspace) settings, and a stalled/failed headless
      activation re-run asks no second target pick or modal; with `tcToolkit.xaeBuild.configuration` set to a name

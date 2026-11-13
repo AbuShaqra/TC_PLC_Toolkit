@@ -380,9 +380,9 @@ function run(name, o) {
 {
     const nd = run('errors-no-details-headless');
     assert(nd.state.errorDetails && nd.state.errorDetails.errorItems === 0 && nd.state.errorDetails.outputPanes === 0
-        && nd.state.errorDetails.reasons.length === 2, 'errorDetails is read: counts and reasons');
+        && nd.state.errorDetails.reasons.length === 4 && nd.state.errorDetails.route === 'none', 'errorDetails is read: counts, reasons and the route');
     const m = x.noErrorDetails(1, 'exit', nd.state);
-    assert(m && m.offerRerun && m.text === 'XAE returned no error details: the error list is empty; the Output window is not available (XAE window hidden).',
+    assert(m && m.offerRerun && m.text === "XAE returned no error details: typed error list: the error list is empty; the error list is empty; typed Output 'Build' pane: the Output window has no pane named 'Build'; the Output window is not available (XAE window hidden).",
         'noErrorDetails: the reasons, and a re-run offered for a headless build');
     assert(!/will show|shows the errors/i.test(m.text), 'it never claims the visible run will show the errors');
     assert(x.noErrorDetails(1, 'exit', run('errors-panes-only').state) === null, 'output pane text is a detail: nothing to say');
@@ -414,6 +414,30 @@ function run(name, o) {
     assert(x.buildDriverArgs({ scriptPath: 's', slnPath: 'a.sln', platform: custom.platform }).includes('TwinCAT OS (Custom)'), 'and reach -Platform');
     const bad = readXaeBuildSettings(k => ({ showWindow: 'yes', timeoutMinutes: 'x', stallMinutes: NaN })[k]);
     assert(bad.showWindow === false && bad.timeoutMinutes === 30 && bad.stallMinutes === 10, 'wrong types fall back to the defaults');
+}
+
+// ── errorDetails.route and TC Toolkit's own check as the fallback (2026-11-13) ─────────────────
+{
+    const routeOf = (route) => {
+        const st = x.createRunState();
+        x.reduce(st, x.parseLine('@@TCTK ' + JSON.stringify({ v: 1, t: 'errorDetails', errorItems: 0, outputPanes: 0, reasons: 'one reason', route })));
+        return st.errorDetails;
+    };
+    assert(routeOf('typed').route === 'typed' && routeOf('late-bound').route === 'late-bound' && routeOf('none').route === 'none',
+        "errorDetails.route is read: 'typed' | 'late-bound' | 'none'");
+    assert(routeOf(undefined).route === null && routeOf('other').route === null && routeOf('typed').reasons.join() === 'one reason',
+        'an absent or unknown route is null (an older driver); a one-element reasons array as a bare string still reads');
+    const src = 'TC Toolkit compile';
+    const two = x.compileFallbackText([{ name: 'A', ok: true, errors: 2, warnings: 1 }, { name: 'B', ok: true, errors: 0, warnings: 0 }], src);
+    assert(two.ran === 2 && !two.skipped && two.text === "TC Toolkit's own compile check (not XAE's; it can differ from XAE's): A: 2 errors, 1 warning; B: no errors. Its problems are in Problems as 'TC Toolkit compile'.",
+        `the fallback text names each project and says it is not XAE's (${two.text})`);
+    const setup = x.compileFallbackText([{ name: 'A', ok: false, reason: 'setup', message: 'No Node.js was found.' }], src);
+    assert(setup.skipped && setup.ran === 0 && /was skipped: no compiler is configured for it \(No Node\.js was found\.\)\.$/.test(setup.text),
+        'no usable compiler: skipped, and said');
+    const other = x.compileFallbackText([{ name: 'A', ok: false, reason: 'running' }, { name: 'B', ok: false, reason: 'cancelled' }], src);
+    assert(other.ran === 0 && /A: not checked \(Compile Project is already running\); B: cancelled\.$/.test(other.text) && !/Problems as/.test(other.text),
+        'a project that was not checked is named, and Problems is not pointed at');
+    assert(/not from XAE, and can differ from XAE's/.test(x.FALLBACK_INTRO), 'the intro says the errors come from TC Toolkit\'s check, not XAE');
 }
 
 console.log(errors === 0 ? '\nAll XAE build tests passed.' : `\n${errors} XAE build test(s) FAILED.`);

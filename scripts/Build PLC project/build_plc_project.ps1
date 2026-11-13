@@ -1306,13 +1306,15 @@ function Invoke-ComRetry {
     null-valued expression". Every step is checked instead, so a null becomes a reason:
     ToolWindows.OutputWindow first, then the Windows.Item route; the pane list; each pane, its
     TextDocument and Selection. Returns Panes (Name, Text) and Reasons (string[]).
+    -WindowNote names the run's real window mode in the "not available" reason ('XAE window hidden',
+    'XAE window shown', ...); it used to say "XAE window hidden" even with the window shown.
     A cancel (the driver's $script:CancelSentinel, thrown by Invoke-ComRetry on a rejected call) is
     rethrown, never turned into a reason; where no cancel exists the sentinel is $null and never matches.
     The same function is in scripts/Build PLC project/build_plc_project.ps1, templates/ and
     resources/xae/build-plc-project.ps1; keep the three in step by hand.
 #>
 function Get-OutputPaneTexts {
-    param([Parameter(Mandatory)]$Dte)
+    param([Parameter(Mandatory)]$Dte, [string]$WindowNote)
     $found   = New-Object System.Collections.ArrayList
     $reasons = New-Object System.Collections.ArrayList
     $panes   = @()
@@ -1331,7 +1333,8 @@ function Get-OutputPaneTexts {
         }
         if ($panes.Count -eq 0) {
             if ($null -eq $ow -and $null -eq $wo) {
-                [void]$reasons.Add('the Output window is not available (XAE window hidden)')
+                if ($WindowNote) { [void]$reasons.Add("the Output window is not available ($WindowNote)") }
+                else { [void]$reasons.Add('the Output window is not available') }
             } else {
                 [void]$reasons.Add('the Output window has no readable panes')
             }
@@ -1363,6 +1366,304 @@ function Get-OutputPaneTexts {
         [void]$reasons.Add('every Output window pane was empty')
     }
     return [pscustomobject]@{ Panes = $found.ToArray(); Reasons = [string[]]$reasons.ToArray() }
+}
+
+<#
+.SYNOPSIS
+    The install folder of the XAE Shell behind a DTE ProgId (the folder that holds Common7\IDE), or $null.
+.DESCRIPTION
+    First the shell's COM registration: the ProgId's CLSID, then its LocalServer32 in the 64-bit view
+    (4026, XAE Shell 64) or the 32-bit one (4024, XAE Shell); TcXaeShell.exe sits in
+    <folder>\Common7\IDE. Then the default folders: Program Files\Beckhoff\TcXaeShell for 4026 and
+    later (the folder Beckhoff's Infosys page names), Program Files (x86)\Beckhoff\TcXaeShell for 4024.
+    The same function is in scripts/Build PLC project/build_plc_project.ps1, templates/ and
+    resources/xae/build-plc-project.ps1; keep the three in step by hand.
+#>
+function Get-XaeShellInstallDir {
+    param([Parameter(Mandatory)][string]$ProgId)
+    try {
+        $clsidKey = "Registry::HKEY_CLASSES_ROOT\$ProgId\CLSID"
+        $clsid = $null
+        if (Test-Path -LiteralPath $clsidKey) { $clsid = [string](Get-Item -LiteralPath $clsidKey).GetValue('') }
+        if ($clsid -match '^\{[0-9A-Fa-f-]{36}\}$') {
+            foreach ($root in @('HKEY_CLASSES_ROOT\CLSID', 'HKEY_CLASSES_ROOT\WOW6432Node\CLSID')) {
+                $serverKey = "Registry::$root\$clsid\LocalServer32"
+                if (-not (Test-Path -LiteralPath $serverKey)) { continue }
+                $raw = [string](Get-Item -LiteralPath $serverKey).GetValue('')
+                $exe = $null
+                if ($raw -match '^\s*"([^"]+)"') { $exe = $Matches[1] }
+                elseif ($raw -match '^\s*(.+?\.exe)(?=\s|$)') { $exe = $Matches[1] }
+                if ($exe -and (Test-Path -LiteralPath $exe -PathType Leaf)) {
+                    $ideDir = Split-Path -Parent $exe
+                    $folder = Split-Path -Parent (Split-Path -Parent $ideDir)
+                    if ($folder) { return $folder }
+                }
+            }
+        }
+    } catch { }
+    $pf = $env:ProgramFiles
+    if (-not $pf) { $pf = 'C:\Program Files' }
+    $pf86 = ${env:ProgramFiles(x86)}
+    if (-not $pf86) { $pf86 = 'C:\Program Files (x86)' }
+    $candidates = @("$pf\Beckhoff\TcXaeShell", "$pf86\Beckhoff\TcXaeShell")
+    if ($ProgId -eq 'TcXaeShell.DTE.15.0') { $candidates = @("$pf86\Beckhoff\TcXaeShell") }
+    foreach ($c in $candidates) {
+        if (Test-Path -LiteralPath (Join-Path $c 'Common7\IDE') -PathType Container) { return $c }
+    }
+    return $null
+}
+
+<#
+.SYNOPSIS
+    Compiles the typed DTE reader once per run and returns its type, or $null (the reason is in
+    $script:TypedDteReason).
+.DESCRIPTION
+    Late binding does not resolve DTE2.ToolWindows.ErrorList.ErrorItems in PowerShell; C# through the
+    EnvDTE interop types does (Beckhoff Infosys, "Reading the VS output and the error list"). With the
+    window shown and hidden alike, the late-bound reads gave nothing on 4026 (user run, 2026-11-13).
+    So: EnvDTE.dll and EnvDTE80.dll from the shell's Common7\IDE\PublicAssemblies (plus
+    Microsoft.VisualStudio.Interop.dll, which holds the EnvDTE types since VS 2022, and stdole.dll when
+    present) are loaded with Assembly.LoadFrom, and a small C# class is compiled against them with
+    Add-Type. One attempt per run, failure included. The class name carries a version: a type of that
+    name already loaded in this PowerShell session (a second run in the same console) is reused, so
+    change the suffix whenever the C# changes.
+    The same function is in scripts/Build PLC project/build_plc_project.ps1, templates/ and
+    resources/xae/build-plc-project.ps1; keep the three in step by hand.
+#>
+function Initialize-TypedDteReader {
+    param([Parameter(Mandatory)][string]$ProgId)
+    if ($script:TypedDteTried) { return $script:TypedDteType }
+    $script:TypedDteTried = $true
+    $script:TypedDteType = $null
+    $script:TypedDteReason = $null
+    $typeName = 'TcTkTypedDteReader1'
+    $loaded = $typeName -as [type]
+    if ($loaded) { $script:TypedDteType = $loaded; return $loaded }
+    $folder = Get-XaeShellInstallDir -ProgId $ProgId
+    if (-not $folder) {
+        $script:TypedDteReason = "the XAE Shell folder of $ProgId was not found (registry LocalServer32, Program Files\Beckhoff\TcXaeShell)"
+        return $null
+    }
+    $publicDir = Join-Path $folder 'Common7\IDE\PublicAssemblies'
+    $refs = New-Object System.Collections.ArrayList
+    foreach ($dll in @('EnvDTE.dll', 'EnvDTE80.dll')) {
+        $p = Join-Path $publicDir $dll
+        if (-not (Test-Path -LiteralPath $p -PathType Leaf)) {
+            $script:TypedDteReason = "assembly not found: $p"
+            return $null
+        }
+        [void]$refs.Add($p)
+    }
+    $interop = $null
+    foreach ($c in @((Join-Path $publicDir 'Microsoft.VisualStudio.Interop.dll'), (Join-Path $folder 'Common7\IDE\Microsoft.VisualStudio.Interop.dll'))) {
+        if (Test-Path -LiteralPath $c -PathType Leaf) { $interop = $c; break }
+    }
+    if (-not $interop) {
+        $hit = Get-ChildItem -LiteralPath $folder -Recurse -Filter 'Microsoft.VisualStudio.Interop.dll' -File -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($hit) { $interop = $hit.FullName }
+    }
+    if ($interop) { [void]$refs.Add($interop) }
+    $stdole = Join-Path $publicDir 'stdole.dll'
+    if (Test-Path -LiteralPath $stdole -PathType Leaf) { [void]$refs.Add($stdole) }
+    foreach ($p in $refs) {
+        try { [void][System.Reflection.Assembly]::LoadFrom($p) }
+        catch {
+            $why = ("$($_.Exception.Message)" -split '\r?\n')[0]
+            $script:TypedDteReason = "assembly not loadable: $p ($why)"
+            return $null
+        }
+    }
+    $source = @'
+using System;
+using System.Collections.Generic;
+using System.Runtime.InteropServices;
+
+public class TcTkTypedDteReader1
+{
+    public class Row
+    {
+        public string ErrorLevel;
+        public string Description;
+        public string FileName;
+        public string Line;
+        public string Column;
+        public string Project;
+    }
+
+    public class ErrorRead
+    {
+        public List<Row> Items = new List<Row>();
+        public int Count = -1;
+        public string Reason;
+    }
+
+    public class PaneRead
+    {
+        public string Text;
+        public string Reason;
+    }
+
+    // A PowerShell object may arrive wrapped; the COM object is its BaseObject.
+    static object Unwrap(object o)
+    {
+        if (o == null) return null;
+        Type t = o.GetType();
+        if (t.FullName == "System.Management.Automation.PSObject")
+        {
+            System.Reflection.PropertyInfo p = t.GetProperty("BaseObject");
+            if (p != null) return p.GetValue(o, null);
+        }
+        return o;
+    }
+
+    // RPC_E_CALL_REJECTED / RPC_E_SERVERCALL_RETRYLATER: the caller retries the whole read.
+    static bool IsBusy(Exception e)
+    {
+        COMException c = e as COMException;
+        if (c == null) return false;
+        uint hr = unchecked((uint)c.ErrorCode);
+        return hr == 0x80010001 || hr == 0x8001010A;
+    }
+
+    public static ErrorRead ReadErrors(object dte)
+    {
+        ErrorRead r = new ErrorRead();
+        EnvDTE80.DTE2 d2 = Unwrap(dte) as EnvDTE80.DTE2;
+        if (d2 == null) { r.Reason = "the cast to DTE2 failed"; return r; }
+        EnvDTE80.ToolWindows tw = d2.ToolWindows;
+        if (tw == null) { r.Reason = "DTE2.ToolWindows is not available"; return r; }
+        EnvDTE80.ErrorList list = tw.ErrorList;
+        if (list == null) { r.Reason = "the error list window is not available"; return r; }
+        EnvDTE80.ErrorItems items = list.ErrorItems;
+        if (items == null) { r.Reason = "the error list has no item collection"; return r; }
+        r.Count = items.Count;
+        for (int i = 1; i <= r.Count; i++)
+        {
+            EnvDTE80.ErrorItem it = null;
+            try { it = items.Item(i); }
+            catch (Exception e) { if (IsBusy(e)) throw; continue; }
+            if (it == null) continue;
+            Row row = new Row();
+            try { row.ErrorLevel = it.ErrorLevel.ToString(); } catch (Exception e) { if (IsBusy(e)) throw; }
+            try { row.Description = it.Description; } catch (Exception e) { if (IsBusy(e)) throw; }
+            try { row.FileName = it.FileName; } catch (Exception e) { if (IsBusy(e)) throw; }
+            try { row.Line = it.Line.ToString(); } catch (Exception e) { if (IsBusy(e)) throw; }
+            try { row.Column = it.Column.ToString(); } catch (Exception e) { if (IsBusy(e)) throw; }
+            try { row.Project = it.Project; } catch (Exception e) { if (IsBusy(e)) throw; }
+            r.Items.Add(row);
+        }
+        if (r.Count == 0) r.Reason = "the error list is empty";
+        else if (r.Items.Count == 0) r.Reason = "none of the error list's " + r.Count + " item(s) could be read";
+        return r;
+    }
+
+    public static PaneRead ReadBuildPane(object dte)
+    {
+        PaneRead r = new PaneRead();
+        EnvDTE80.DTE2 d2 = Unwrap(dte) as EnvDTE80.DTE2;
+        if (d2 == null) { r.Reason = "the cast to DTE2 failed"; return r; }
+        EnvDTE80.ToolWindows tw = d2.ToolWindows;
+        if (tw == null) { r.Reason = "DTE2.ToolWindows is not available"; return r; }
+        EnvDTE.OutputWindow ow = tw.OutputWindow;
+        if (ow == null) { r.Reason = "the Output window is not available"; return r; }
+        EnvDTE.OutputWindowPanes panes = ow.OutputWindowPanes;
+        if (panes == null) { r.Reason = "the Output window has no pane list"; return r; }
+        EnvDTE.OutputWindowPane build = null;
+        foreach (EnvDTE.OutputWindowPane p in panes)
+        {
+            if (p != null && p.Name == "Build") { build = p; break; }
+        }
+        if (build == null) { r.Reason = "the Output window has no pane named 'Build'"; return r; }
+        EnvDTE.TextDocument doc = build.TextDocument;
+        if (doc == null) { r.Reason = "the 'Build' pane has no text document"; return r; }
+        EnvDTE.TextSelection sel = doc.Selection;
+        if (sel == null) { r.Reason = "the 'Build' pane has no selection to read its text with"; return r; }
+        sel.StartOfDocument(false);
+        sel.EndOfDocument(true);
+        string text = sel.Text;
+        if (text == null || text.Trim().Length == 0) { r.Reason = "the 'Build' pane is empty"; return r; }
+        r.Text = text;
+        return r;
+    }
+}
+'@
+    try {
+        Add-Type -ReferencedAssemblies ([string[]]$refs.ToArray()) -TypeDefinition $source -ErrorAction Stop
+    } catch {
+        $why = ("$($_.Exception.Message)" -split '\r?\n')[0]
+        $script:TypedDteReason = "Add-Type failed ($why)"
+        return $null
+    }
+    $script:TypedDteType = $typeName -as [type]
+    if (-not $script:TypedDteType) { $script:TypedDteReason = "Add-Type gave no type $typeName" }
+    return $script:TypedDteType
+}
+
+<#
+.SYNOPSIS
+    The error list through the typed reader: Items (file, line, column, description, project, level;
+    null when absent) and a one-line Reason when it gave none.
+.DESCRIPTION
+    Every failure is soft: the reader not compiled (its reason), the cast to DTE2, a COM error, an
+    empty list. A busy shell is retried by Invoke-ComRetry; a cancel (the driver's
+    $script:CancelSentinel) is rethrown, never turned into a reason. The result is an object, not a
+    collection, so Invoke-ComRetry's pipeline cannot unroll it.
+    The same function is in scripts/Build PLC project/build_plc_project.ps1, templates/ and
+    resources/xae/build-plc-project.ps1; keep the three in step by hand.
+#>
+function Read-TypedErrorList {
+    param([Parameter(Mandatory)]$Dte, [Parameter(Mandatory)][string]$ProgId)
+    $rows = New-Object System.Collections.ArrayList
+    $type = Initialize-TypedDteReader -ProgId $ProgId
+    if (-not $type) {
+        return [pscustomobject]@{ Items = @(); Reason = "typed error list: $($script:TypedDteReason)" }
+    }
+    $read = $null
+    try { $read = Invoke-ComRetry -MaxTries 10 { $type::ReadErrors($Dte.psobject.BaseObject) } }
+    catch {
+        if ("$_" -eq $script:CancelSentinel) { throw }
+        $why = ("$($_.Exception.Message)" -split '\r?\n')[0]
+        return [pscustomobject]@{ Items = @(); Reason = "typed error list: the read failed ($why)" }
+    }
+    if ($null -eq $read) { return [pscustomobject]@{ Items = @(); Reason = 'typed error list: the reader returned nothing' } }
+    foreach ($row in $read.Items) {
+        $line = $null; $column = $null
+        if ("$($row.Line)" -match '^-?\d+$') { $line = [int]$row.Line }
+        if ("$($row.Column)" -match '^-?\d+$') { $column = [int]$row.Column }
+        [void]$rows.Add([pscustomobject]@{
+            file = $(if ($row.FileName) { [string]$row.FileName } else { $null }); line = $line; column = $column
+            description = [string]$row.Description; project = $(if ($row.Project) { [string]$row.Project } else { $null })
+            level = $(if ($row.ErrorLevel) { [string]$row.ErrorLevel } else { $null }) })
+    }
+    $reason = $null
+    if ($read.Reason) { $reason = "typed error list: $($read.Reason)" }
+    return [pscustomobject]@{ Items = $rows.ToArray(); Reason = $reason }
+}
+
+<#
+.SYNOPSIS
+    The text of the Output window's "Build" pane through the typed reader: Text, or a one-line Reason.
+.DESCRIPTION
+    DTE2.ToolWindows.OutputWindow.OutputWindowPanes, the pane named exactly "Build", then its
+    TextDocument.Selection: StartOfDocument, EndOfDocument(extend), Text (Beckhoff Infosys, "Reading the
+    VS output and the error list"). Soft failures and the cancel rule as in Read-TypedErrorList.
+    The same function is in scripts/Build PLC project/build_plc_project.ps1, templates/ and
+    resources/xae/build-plc-project.ps1; keep the three in step by hand.
+#>
+function Read-TypedBuildPane {
+    param([Parameter(Mandatory)]$Dte, [Parameter(Mandatory)][string]$ProgId)
+    $type = Initialize-TypedDteReader -ProgId $ProgId
+    if (-not $type) { return [pscustomobject]@{ Text = $null; Reason = "typed Output 'Build' pane: the typed reader is not available" } }
+    $read = $null
+    try { $read = Invoke-ComRetry -MaxTries 10 { $type::ReadBuildPane($Dte.psobject.BaseObject) } }
+    catch {
+        if ("$_" -eq $script:CancelSentinel) { throw }
+        $why = ("$($_.Exception.Message)" -split '\r?\n')[0]
+        return [pscustomobject]@{ Text = $null; Reason = "typed Output 'Build' pane: the read failed ($why)" }
+    }
+    if ($null -eq $read) { return [pscustomobject]@{ Text = $null; Reason = "typed Output 'Build' pane: the reader returned nothing" } }
+    if ($read.Text) { return [pscustomobject]@{ Text = [string]$read.Text; Reason = $null } }
+    return [pscustomobject]@{ Text = $null; Reason = "typed Output 'Build' pane: $($read.Reason)" }
 }
 
 # ----------------------------------------------------------------------------
@@ -1655,26 +1956,48 @@ try {
     $failed = Invoke-ComRetry { $sb.LastBuildInfo }
     Write-Host "Projects failed: $failed"
 
-    # Dump error list (best effort - often empty over late-bound COM even on failure;
-    # LastBuildInfo above is the authoritative pass/fail signal)
-    try {
-        $items = $dte.ToolWindows.ErrorList.ErrorItems
-        for ($N = 1; $N -le $items.Count; $N++) {
-            $it = $items.Item($N)
-            Write-Host ("[{0}] {1}({2}): {3}" -f $N, $it.FileName, $it.Line, $it.Description)
-        }
-    } catch { }
+    # The run's real window mode, for the reasons below (it used to say "XAE window hidden" always).
+    $windowNote = 'XAE window hidden'
+    if ($didSwitchVersion) { $windowNote = 'XAE window kept visible after a version switch' }
 
-    # On failure the ErrorList is usually empty over COM, so also dump the output
-    # window panes (the Build/TwinCAT pane carries the real compiler messages).
+    # Error list, read after every build (a successful one can carry warnings). The typed reader
+    # first: late binding does not resolve ErrorList.ErrorItems in PowerShell (Beckhoff Infosys,
+    # "Reading the VS output and the error list"), and on 4026 the late-bound reads gave nothing with
+    # the window shown or hidden (user run, 2026-11-13). The late-bound read runs only when the typed
+    # one gave no item. LastBuildInfo above stays the authoritative pass/fail signal.
+    $typedErrors = Read-TypedErrorList -Dte $dte -ProgId $ProgId
+    $N = 0
+    foreach ($row in @($typedErrors.Items)) {
+        $N++
+        Write-Host ("[{0}] {1}({2}): {3}" -f $N, $row.file, $row.line, $row.description)
+    }
+    if ($N -eq 0) {
+        if ($typedErrors.Reason) { Write-Host "error list read: $($typedErrors.Reason)" -ForegroundColor Yellow }
+        try {
+            $items = $dte.ToolWindows.ErrorList.ErrorItems
+            for ($N = 1; $N -le $items.Count; $N++) {
+                $it = $items.Item($N)
+                Write-Host ("[{0}] {1}({2}): {3}" -f $N, $it.FileName, $it.Line, $it.Description)
+            }
+        } catch { }
+    }
+
+    # On failure also read the Output window: the typed "Build" pane first, then every pane late-bound.
     if ($failed -ne 0) {
         Write-Host "----- Output window panes -----" -ForegroundColor Magenta
-        # Every step checked: headless, the Output window itself can be $null (Get-OutputPaneTexts).
-        $paneRead = Get-OutputPaneTexts -Dte $dte
-        foreach ($why in $paneRead.Reasons) { Write-Host "output pane read: $why" -ForegroundColor Yellow }
-        foreach ($paneText in $paneRead.Panes) {
-            Write-Host "--- pane: $($paneText.Name) ---" -ForegroundColor DarkMagenta
-            Write-Host $paneText.Text
+        $typedPane = Read-TypedBuildPane -Dte $dte -ProgId $ProgId
+        if ($typedPane.Text) {
+            Write-Host "--- pane: Build ---" -ForegroundColor DarkMagenta
+            Write-Host $typedPane.Text
+        } else {
+            Write-Host "output pane read: $($typedPane.Reason)" -ForegroundColor Yellow
+            # Every step checked: the late-bound Output window itself can be $null (Get-OutputPaneTexts).
+            $paneRead = Get-OutputPaneTexts -Dte $dte -WindowNote $windowNote
+            foreach ($why in $paneRead.Reasons) { Write-Host "output pane read: $why" -ForegroundColor Yellow }
+            foreach ($paneText in $paneRead.Panes) {
+                Write-Host "--- pane: $($paneText.Name) ---" -ForegroundColor DarkMagenta
+                Write-Host $paneText.Text
+            }
         }
     }
 

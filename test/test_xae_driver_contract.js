@@ -136,7 +136,12 @@ if (fs.existsSync(BUILDER)) {
         /^return \(Resolve-Path -LiteralPath \$candidate\)\.Path$/, /(Get-ChildItem|Select-String) -Path \$/, /^if \(-not \(Test-Path \$SlnPath\)\)/,
         // The error list and the output panes are read with Invoke-ComRetry, one item at a time.
         // (The output panes are read by Get-OutputPaneTexts, the same function in both.)
-        /^\$items = \$dte\.ToolWindows/, /^for \(\$N = 1; \$N -le \$items\.Count/, /^\$it = \$items\.Item/];
+        /^\$items = \$dte\.ToolWindows/, /^for \(\$N = 1; \$N -le \$items\.Count/, /^\$it = \$items\.Item/,
+        // The builder prints the typed reader's results directly and runs its late-bound reads only
+        // when the typed list gave nothing; the driver collects both for its events. The builder has
+        // no -ShowWindow, so its window note knows only the version switch.
+        /^if \(\$N -eq 0\) \{$/, /^if \(\$didSwitchVersion\) \{ \$windowNote = /, /^Write-Host "--- pane: Build ---"/, /^Write-Host \$typedPane\.Text$/,
+        /^Write-Host "output pane read: \$\(\$typedPane\.Reason\)"/, /^foreach \(\$why in \$paneRead\.Reasons\)/, /^foreach \(\$paneText in \$paneRead\.Panes\)/];
     const unexplained = lost.filter(l => !allowed.some(re => re.test(l)));
     assert(unexplained.length === 0, `the adaptation is additive: no builder line lost without a reason (${unexplained.slice(0, 3).join(' | ') || 'none'})`);
     assert(fs.readFileSync(BUILDER, 'utf8').includes('# This script is copied between projects'), 'the builder itself is untouched');
@@ -171,7 +176,7 @@ if (fs.existsSync(BUILDER)) {
         'ErrorItems is read by plain assignment, never as an Invoke-ComRetry result');
     // The hand-written retry behaves like Invoke-ComRetry: a cancel between rejected calls, and a run of
     // rejections reported as such, never as "no item collection".
-    const itemsLoop = (/for \(\$t = 1; \$t -le \$itemTries; \$t\+\+\) \{[\s\S]*?\n {8}\}/.exec(errorList) || [''])[0];
+    const itemsLoop = (/for \(\$t = 1; \$t -le \$itemTries; \$t\+\+\) \{[\s\S]*?\n {12}\}/.exec(errorList) || [''])[0];
     assert(/80010001\|RPC_E_CALL_REJECTED[\s\S]*?Test-CancelRequested\s+Start-Sleep -Seconds 2/.test(itemsLoop), 'the ErrorItems retry checks for a cancel before each wait');
     assert(/elseif \(-not \$itemsAnswered\) \{ \$errorListReason = "the error list was still rejected after \$itemTries tries \(XAE busy\)" \}\s+elseif \(\$null -eq \$items\)/.test(errorList),
         'ErrorItems rejected on every try is reported as rejected, ahead of "no item collection"');
@@ -182,12 +187,32 @@ if (fs.existsSync(BUILDER)) {
         'the error-list reads rethrow a cancel (item read, outer catch)');
     assert(/Emit-Event 'errorDetails'[\s\S]*?\}\)\s+\}\s+Test-CancelRequested/.test(errorList),
         'a cancel during the error and Output reads ends the run as cancelled (checked before the result)');
-    assert(/\$paneRead = Get-OutputPaneTexts -Dte \$dte/.test(errorList) && !/\.OutputWindowPanes/.test(errorList),
-        'the output panes are read only through Get-OutputPaneTexts');
+    assert(/\$paneRead = Get-OutputPaneTexts -Dte \$dte -WindowNote \$windowNote/.test(errorList) && !/\.OutputWindowPanes/.test(errorList),
+        'the late-bound output panes are read only through Get-OutputPaneTexts, with the run\'s window note');
     // C (user run 2026-11-13, headless on 4026): no error items, the Output window $null. Each step
-    // gives a reason, and the reasons reach the extension as one event.
-    assert(/Emit-Event 'errorDetails' \(\[ordered\]@\{ errorItems = \$errorItemsRead; outputPanes = @\(\$paneRead\.Panes\)\.Count\s+reasons = \[string\[\]\]\$detailReasons \}\)/.test(errorList),
-        'a failed build emits errorDetails (items read, panes read, reasons)');
+    // gives a reason, and the reasons reach the extension as one event, with the route that worked.
+    assert(/Emit-Event 'errorDetails' \(\[ordered\]@\{ errorItems = \$errorItemsRead; outputPanes = \$paneTexts\.Count\s+reasons = \[string\[\]\]\$detailReasons; route = \$route; errorListRoute = \$errorListRoute; outputRoute = \$outputRoute \}\)/.test(errorList),
+        'a failed build emits errorDetails (items read, panes read, reasons, route)');
+    // The typed reader first (Beckhoff Infosys: late binding does not resolve ErrorItems), then the
+    // late-bound reads only when it gave nothing; the route says which worked.
+    const typedAt = errorList.indexOf('$typedErrors = Read-TypedErrorList -Dte $dte -ProgId $ProgId');
+    const lateAt = errorList.indexOf('$dte.ToolWindows.ErrorList }');
+    assert(typedAt > 0 && lateAt > typedAt && /if \(\$errorItemsRead -gt 0\) \{ \$errorListRoute = 'typed' \}\s+else \{/.test(errorList),
+        'the typed error list is read first; the late-bound one only when it gave no item');
+    assert(/if \(\$errorItemsRead -gt 0\) \{ \$errorListRoute = 'late-bound' \}/.test(errorList), 'the late-bound route is named when it gave items');
+    assert(errorList.indexOf('Read-TypedErrorList') < errorList.indexOf('if ($failed -ne 0)'),
+        'the typed error list is read after every build, a successful one included (warnings)');
+    const typedPaneAt = errorList.indexOf('$typedPane = Read-TypedBuildPane -Dte $dte -ProgId $ProgId');
+    assert(typedPaneAt > errorList.indexOf('if ($failed -ne 0)') && typedPaneAt < errorList.indexOf('Get-OutputPaneTexts -Dte'),
+        'on failure the typed Build pane is read before the late-bound panes');
+    assert(/if \(\$errorListRoute -eq 'typed' -or \$outputRoute -eq 'typed'\) \{ \$route = 'typed' \}\s+elseif \(\$errorListRoute -eq 'late-bound' -or \$outputRoute -eq 'late-bound'\) \{ \$route = 'late-bound' \}/.test(errorList)
+        && /\$route = 'none'/.test(errorList), "route: 'typed' | 'late-bound' | 'none'");
+    // The typed items keep the errorItem shape, so placement is unchanged.
+    assert(/Emit-Event 'errorItem' \(\[ordered\]@\{ file = \$row\.file; line = \$row\.line; column = \$row\.column; description = \$row\.description; project = \$row\.project; level = \$row\.level \}\)/.test(errorList),
+        'a typed item is emitted with the errorItem fields');
+    // B: the "not available" reason names the run's real window mode, never "hidden" for a shown window.
+    assert(/\$windowNote = 'XAE window hidden'\s+if \(\$ShowWindow\) \{ \$windowNote = 'XAE window shown' \}\s+elseif \(\$didSwitchVersion\) \{ \$windowNote = 'XAE window kept visible after a version switch' \}/.test(errorList),
+        'the window note follows -ShowWindow and the version switch');
     for (const reason of ['the error list window is not available', 'the error list was still rejected after', 'the error list has no item collection', 'the error list is empty', 'the error list could not be read']) {
         assert(errorList.includes(reason), `error-list reason: ${reason}`);
     }
@@ -207,7 +232,10 @@ if (fs.existsSync(BUILDER)) {
     for (const guard of ['if ($null -ne $ow)', 'if ($null -ne $win)', 'if ($null -ne $wo)', 'if ($null -eq $doc)', 'if ($null -eq $sel)', 'Where-Object { $null -ne $_ }']) {
         assert(fn.includes(guard), `Get-OutputPaneTexts guards a null: ${guard}`);
     }
-    for (const reason of ['the Output window is not available (XAE window hidden)', 'has no text document', 'has no selection', 'text not readable', 'every Output window pane was empty']) {
+    assert(!fn.includes('(XAE window hidden)') && /param\(\[Parameter\(Mandatory\)\]\$Dte, \[string\]\$WindowNote\)/.test(fn)
+        && fn.includes('[void]$reasons.Add("the Output window is not available ($WindowNote)")'),
+        'Get-OutputPaneTexts takes the window mode from its caller (no hard-coded "XAE window hidden")');
+    for (const reason of ['the Output window is not available', 'has no text document', 'has no selection', 'text not readable', 'every Output window pane was empty']) {
         assert(fn.includes(reason), `Get-OutputPaneTexts reason: ${reason}`);
     }
     // No method is called on anything that was not null-checked first: the raw PowerShell error
@@ -227,6 +255,88 @@ if (fs.existsSync(BUILDER)) {
         assert(![...text].some(ch => ch.charCodeAt(0) > 127) && /\r\n/.test(text) && !/[^\r]\n/.test(text), `${path.relative(REPO, copy)} stays ASCII and CRLF`);
     }
     assert(/\r\n/.test(ps1) && !/[^\r]\n/.test(ps1), 'the driver stays CRLF');
+}
+
+// ── The typed DTE reader (Beckhoff Infosys "Reading the VS output and the error list") ─────────
+// Late binding does not resolve ErrorList.ErrorItems in PowerShell; C# through EnvDTE does. The four
+// functions are the same text in all three copies, and every step fails softly with a one-line reason.
+{
+    const fnOf = (text, name) => {
+        const t = text.replace(/\r\n/g, '\n');
+        const at = t.indexOf(`function ${name} {`);
+        if (at < 0) return '';
+        // A function ends at the first `}` in column 0 after it, past its C# here-string (whose class
+        // brace is in column 0 too) when it has one.
+        const next = t.indexOf('\n<#', at + 1);
+        const hereEnd = t.indexOf("\n'@", at);
+        const from = hereEnd > 0 && (next < 0 || hereEnd < next) ? hereEnd : at;
+        return t.slice(at, t.indexOf('\n}\n', from) + 2);
+    };
+    const names = ['Get-XaeShellInstallDir', 'Initialize-TypedDteReader', 'Read-TypedErrorList', 'Read-TypedBuildPane'];
+    const fns = Object.fromEntries(names.map(n => [n, fnOf(ps1, n)]));
+    for (const n of names) assert(fns[n].length > 0, `the driver defines ${n}`);
+    for (const copy of [BUILDER, path.join(REPO, 'templates', 'build_plc_project.ps1')]) {
+        const text = fs.readFileSync(copy, 'utf8');
+        for (const n of names) assert(fnOf(text, n) === fns[n], `${path.relative(REPO, copy)} has the same ${n}`);
+        const code = text.replace(/\r\n/g, '\n');
+        const typed = code.indexOf('$typedErrors = Read-TypedErrorList -Dte $dte -ProgId $ProgId');
+        assert(typed > 0 && typed < code.indexOf('$items = $dte.ToolWindows.ErrorList.ErrorItems') && /if \(\$N -eq 0\) \{/.test(code),
+            `${path.relative(REPO, copy)} reads the typed error list first, the late-bound one only when it gave nothing`);
+        const pane = code.indexOf('$typedPane = Read-TypedBuildPane -Dte $dte -ProgId $ProgId');
+        assert(pane > 0 && pane < code.indexOf('$paneRead = Get-OutputPaneTexts -Dte $dte -WindowNote $windowNote'),
+            `${path.relative(REPO, copy)} reads the typed Build pane before the late-bound panes, with its window note`);
+        assert(!code.includes('(XAE window hidden)') && /\$windowNote = 'XAE window hidden'\n\s+if \(\$didSwitchVersion\) \{ \$windowNote = 'XAE window kept visible after a version switch' \}/.test(code),
+            `${path.relative(REPO, copy)}: the window note follows the version switch`);
+    }
+    const shellDir = fns['Get-XaeShellInstallDir'];
+    assert(/Registry::HKEY_CLASSES_ROOT\\\$ProgId\\CLSID/.test(shellDir) && /'HKEY_CLASSES_ROOT\\CLSID', 'HKEY_CLASSES_ROOT\\WOW6432Node\\CLSID'/.test(shellDir)
+        && /\\LocalServer32"/.test(shellDir), 'the shell folder comes from the ProgId\'s LocalServer32 (64-bit view, then the 32-bit one for 4024)');
+    assert(/"\$pf\\Beckhoff\\TcXaeShell"/.test(shellDir) && /if \(\$ProgId -eq 'TcXaeShell\.DTE\.15\.0'\) \{ \$candidates = @\("\$pf86\\Beckhoff\\TcXaeShell"\) \}/.test(shellDir),
+        'then Program Files\\Beckhoff\\TcXaeShell (4026+), Program Files (x86) for the 32-bit 4024 shell');
+    assert(!/Test-Path (?!-LiteralPath)/.test(shellDir), 'every registry and file test is -LiteralPath');
+
+    const init = fns['Initialize-TypedDteReader'];
+    assert(/if \(\$script:TypedDteTried\) \{ return \$script:TypedDteType \}\s+\$script:TypedDteTried = \$true/.test(init),
+        'Add-Type is attempted once per run (a failure included)');
+    const typeName = (/\$typeName = '([A-Za-z0-9]+)'/.exec(init) || [])[1];
+    assert(typeName && new RegExp(`public class ${typeName}\\b`).test(init)
+        && init.indexOf('$loaded = $typeName -as [type]') > 0 && init.indexOf('$loaded = $typeName -as [type]') < init.indexOf('Add-Type '),
+        `a type ${typeName} already loaded in the session is reused, never compiled again under the same name`);
+    assert(/Join-Path \$folder 'Common7\\IDE\\PublicAssemblies'/.test(init) && /@\('EnvDTE\.dll', 'EnvDTE80\.dll'\)/.test(init)
+        && /Microsoft\.VisualStudio\.Interop\.dll/.test(init) && /\[System\.Reflection\.Assembly\]::LoadFrom\(\$p\)/.test(init),
+        'EnvDTE, EnvDTE80 (and Microsoft.VisualStudio.Interop when found) from PublicAssemblies, loaded with LoadFrom');
+    assert(/Add-Type -ReferencedAssemblies \(\[string\[\]\]\$refs\.ToArray\(\)\) -TypeDefinition \$source -ErrorAction Stop/.test(init),
+        'the helper is compiled with Add-Type -ReferencedAssemblies -TypeDefinition');
+    for (const [reason, what] of [
+        ['"assembly not found: $p"', 'assembly not found (names the path)'],
+        ['"Add-Type failed ($why)"', 'Add-Type failed (its message)'],
+        ['"the XAE Shell folder of $ProgId was not found', 'no shell folder'],
+        ['"the cast to DTE2 failed"', 'cast failed'],
+        ['"the error list is empty"', 'no items'],
+        ['"the Output window has no pane named \'Build\'"', 'no Build pane']
+    ]) assert(init.includes(reason), `typed reader reason: ${what}`);
+    assert(/EnvDTE80\.DTE2 d2 = Unwrap\(dte\) as EnvDTE80\.DTE2;/.test(init) && /public static ErrorRead ReadErrors\(object dte\)/.test(init),
+        'the DTE arrives as object and is cast to DTE2');
+    assert(/EnvDTE80\.ErrorItems items = list\.ErrorItems;/.test(init) && /for \(int i = 1; i <= r\.Count; i\+\+\)/.test(init) && /it = items\.Item\(i\);/.test(init),
+        'ErrorItems.Item(i) for i = 1..Count');
+    for (const f of ['ErrorLevel', 'Description', 'FileName', 'Line', 'Column', 'Project']) {
+        assert(new RegExp(`public string ${f};`).test(init), `a row carries ${f} as a string`);
+    }
+    assert(/tw\.OutputWindow;/.test(init) && /ow\.OutputWindowPanes;/.test(init) && /p\.Name == "Build"/.test(init)
+        && /build\.TextDocument;/.test(init) && /doc\.Selection;/.test(init)
+        && /sel\.StartOfDocument\(false\);\s+sel\.EndOfDocument\(true\);\s+string text = sel\.Text;/.test(init),
+        'the Output window\'s pane named exactly "Build": TextDocument.Selection, StartOfDocument(false), EndOfDocument(true), Text');
+    assert(/return hr == 0x80010001 \|\| hr == 0x8001010A;/.test(init) && /catch \(Exception e\) \{ if \(IsBusy\(e\)\) throw; continue; \}/.test(init),
+        'a busy shell inside the C# loop is rethrown for Invoke-ComRetry, any other item error loses only that item');
+    for (const n of ['Read-TypedErrorList', 'Read-TypedBuildPane']) {
+        const fn = fns[n];
+        assert(/Initialize-TypedDteReader -ProgId \$ProgId/.test(fn) && /Invoke-ComRetry -MaxTries 10 \{ \$type::Read[A-Za-z]+\(\$Dte\.psobject\.BaseObject\) \}/.test(fn),
+            `${n}: compiled once, called through Invoke-ComRetry with the unwrapped DTE`);
+        assert(/catch \{\s+if \("\$_" -eq \$script:CancelSentinel\) \{ throw \}\s+\$why = /.test(fn), `${n}: a cancel is rethrown, any other failure is a reason`);
+    }
+    // The errorItem shape is kept: Line and Column become ints (or null), empty strings null.
+    assert(/\[pscustomobject\]@\{\s+file = [^\n]+line = \$line; column = \$column\s+description = [^\n]+project = [^\n]+\s+level = /.test(fns['Read-TypedErrorList']),
+        'Read-TypedErrorList returns the errorItem fields');
 }
 
 // ── The system project: .tsproj, or .tspproj (a TwinCAT project saved as separate files) ─────────

@@ -657,15 +657,20 @@ function registerCompileCommands(context, { provider, getProjectMap, onSettingsC
     }
 
     context.subscriptions.push(
+        // `fromXae: true` (Build through XAE's fallback, src/commands/xaeBuildCommands.js): no setup
+        // popup and no summary notification (the caller reports both, saying the results are TC
+        // Toolkit's, not XAE's), no C++. `append: true` keeps the problems of the projects already
+        // checked in the same fallback instead of replacing them.
         vscode.commands.registerCommand('twincat.compileProject', async (args) => {
             const a = args && typeof args === 'object' ? args : {};
+            const fromXae = a.fromXae === true;
             if (running) {
-                vscode.window.showInformationMessage('Compile Project is already running.');
+                if (!fromXae) vscode.window.showInformationMessage('Compile Project is already running.');
                 return { ok: false, reason: 'running' };
             }
             const projectMap = getProjectMap();
             if (!projectMap || !projectMap.projects || projectMap.projects.size === 0) {
-                vscode.window.showWarningMessage('Compile Project needs a TwinCAT PLC project (.plcproj) in the workspace.');
+                if (!fromXae) vscode.window.showWarningMessage('Compile Project needs a TwinCAT PLC project (.plcproj) in the workspace.');
                 return { ok: false, reason: 'no-project' };
             }
 
@@ -682,7 +687,9 @@ function registerCompileCommands(context, { provider, getProjectMap, onSettingsC
             tellEditors(true);
             try {
                 const setup = await checkSetup(readSettings(), { ...(nodeDiscovery || {}), spawn: /** @type {any} */ (spawn), extensionRoot: context.extensionPath });
-                if (!setup.ok) return { ok: false, reason: 'setup', message: reportSetupProblems(setup.problems) };
+                if (!setup.ok) {
+                    return { ok: false, reason: 'setup', message: fromXae ? setup.problems.map(p => p.message).join(' ') : reportSetupProblems(setup.problems) };
+                }
 
                 const outcome = await vscode.window.withProgress(
                     { location: vscode.ProgressLocation.Notification, title: `Compiling ${projectName}…`, cancellable: true },
@@ -741,7 +748,7 @@ function registerCompileCommands(context, { provider, getProjectMap, onSettingsC
                         const options = compileOptions();
                         /** @type {CppOutcome|null} */
                         let cpp = null;
-                        if (result.status === 'done' && options.generateCpp && !token.isCancellationRequested) {
+                        if (result.status === 'done' && options.generateCpp && !fromXae && !token.isCancellationRequested) {
                             // Library code the C++ cannot contain: declared blocks, the compiler's own
                             // stand-ins, and names the check's library filter hid (no declaration).
                             const libraries = libraryCoverage({
@@ -759,18 +766,19 @@ function registerCompileCommands(context, { provider, getProjectMap, onSettingsC
                     return { ok: false, reason: 'cancelled' };
                 }
                 if (!outcome.result) {
-                    vscode.window.showWarningMessage(`Compile Project: ${projectName} has no TwinCAT objects to compile.`);
+                    if (!fromXae) vscode.window.showWarningMessage(`Compile Project: ${projectName} has no TwinCAT objects to compile.`);
                     return { ok: false, reason: 'empty' };
                 }
                 const { result, built, unreadable, library, defines, cpp } = outcome;
                 if (result.status !== 'done') {
                     // The previous results stay: a run that did not finish says nothing about the code.
-                    vscode.window.showErrorMessage(`Compile Project did not finish. ${result.message}`);
+                    if (!fromXae) vscode.window.showErrorMessage(`Compile Project did not finish. ${result.message}`);
                     return { ok: false, reason: result.status, message: result.message };
                 }
 
-                // A finished run replaces everything the previous run reported.
-                clearAll();
+                // A finished run replaces everything the previous run reported (an XAE fallback's
+                // second and later projects add to the first's).
+                if (!(fromXae && a.append === true)) clearAll();
                 for (const d of result.diagnostics) {
                     const uri = vscode.Uri.file(d.filePath);
                     const fileKey = keyOf(uri.toString());
@@ -780,7 +788,7 @@ function registerCompileCommands(context, { provider, getProjectMap, onSettingsC
                 for (const fileKey of [...byFile.keys()]) publishFile(fileKey);
                 refreshPanes();
                 const gppCounts = publishGpp(cpp);
-                showStatus({ errors: result.errors, warnings: result.warnings }, cpp, gppCounts);
+                showStatus(fromXae && a.append === true ? refreshStatus() : { errors: result.errors, warnings: result.warnings }, cpp, gppCounts);
 
                 // Diagnostics that name no object cannot be placed; they are shown, never dropped.
                 const notes = [];
@@ -825,6 +833,9 @@ function registerCompileCommands(context, { provider, getProjectMap, onSettingsC
                     for (const line of cpp.log.split(/\r?\n/)) channel.appendLine(`  ${line}`);
                 }
                 const summary = [summarize(result, projectName), ...notes, ...cppNotes.notes].join(' ');
+                if (fromXae) {
+                    return { ok: true, projectKey: key, projectName, errors: result.errors, warnings: result.warnings, summary, placed: byFile.size > 0 };
+                }
                 const hasProblems = byFile.size > 0 || gppCounts.errors + gppCounts.warnings > 0;
                 const show = result.errors > 0 || gppCounts.errors > 0 || cppNotes.failed ? vscode.window.showErrorMessage
                     : (result.warnings > 0 || notes.length > 0 || cppNotes.warn || gppCounts.warnings > 0 ? vscode.window.showWarningMessage : vscode.window.showInformationMessage);

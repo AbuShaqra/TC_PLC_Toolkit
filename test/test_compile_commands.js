@@ -418,6 +418,27 @@ const settle = () => new Promise(r => setTimeout(r, 10));
     result = await run('twincat.compileProject', { projectKey: 'a' });
     assert(result.ok && result.projectKey === 'a' && Object.keys(seenUnits[seenUnits.length - 1]).length === 2, 'PICK: a caller can name the project');
 
+    // ── Build through XAE's fallback (fromXae): no notification, no setup popup, append ─────────
+    {
+        compilerAnswer = () => errorReport(unitLineOf(onDiskXml, 'nNope := 5;'));
+        for (const k of ['errors', 'infos', 'warnings']) calls[k].length = 0;
+        result = await run('twincat.compileProject', { projectKey: 'a', fromXae: true, append: false });
+        await settle();
+        assert(result.ok && result.errors === 1 && result.projectName === 'Alpha' && calls.errors.length + calls.infos.length + calls.warnings.length === 0,
+            'FROM XAE: the check runs and returns its counts, with no notification of its own');
+        const afterFirst = problems.map.size;
+        compilerAnswer = () => ({ stdout: JSON.stringify({ dialect: 'twincat3', files: [], diagnostics: [], summary: {} }), code: 0 });
+        result = await run('twincat.compileProject', { projectKey: 'b', fromXae: true, append: true });
+        assert(result.ok && afterFirst > 0 && problems.map.size === afterFirst, 'FROM XAE: append keeps the problems of the project checked before it');
+        result = await run('twincat.compileProject', { projectKey: 'b', fromXae: true, append: false });
+        assert(result.ok && problems.map.size === 0, 'FROM XAE: the first project of a fallback replaces the previous problems');
+        settings['tcToolkit.compiler.path'] = path.join(ROOT, 'gone.cjs');
+        result = await run('twincat.compileProject', { projectKey: 'a', fromXae: true });
+        assert(result.reason === 'setup' && /gone\.cjs/.test(result.message) && calls.errors.length === 0,
+            'FROM XAE: a missing compiler is returned as a message, not shown as a popup');
+        settings['tcToolkit.compiler.path'] = bundlePath;
+    }
+
     projectList = [];
     calls.warnings.length = 0;
     result = await run('twincat.compileProject');
