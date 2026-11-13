@@ -21,6 +21,7 @@ const { renderStartPageHtml, PROJECT_ACTIONS } = require('./startPageHtml');
 const { TEMPLATE_VERSIONS } = require('./projectTemplate');
 const { recentsShownLimit } = require('./recentProjects');
 const { XAE_SHELL_SECTION, describeConfiguredShells } = require('./xaeShellDetect');
+const { SETTING_GPP_PATH, describeGppSetting, thisMachine } = require('./gpp');
 
 /** The panel's view type (also the `onWebviewPanel:` activation event and the serializer key). */
 const START_PAGE_VIEW_TYPE = 'twincat.startPage';
@@ -29,10 +30,16 @@ const START_PAGE_VIEW_TYPE = 'twincat.startPage';
 const LAST_LOCATION_KEY = 'twincat.lastProjectLocation';
 
 /** Commands the page may run. Anything else a (compromised) page posts is ignored. */
-const ALLOWED_COMMANDS = new Set([...PROJECT_ACTIONS.map(a => a.command), 'twincat.compileProject', 'twincat.openSettings', 'twincat.detectXaeShell']);
+const ALLOWED_COMMANDS = new Set([...PROJECT_ACTIONS.map(a => a.command), 'twincat.compileProject', 'twincat.openSettings', 'twincat.detectXaeShell', 'twincat.detectGpp']);
 
 /** Settings sections the page may open filtered (`openSettings {section}`) → the Settings UI query. */
-const SETTINGS_SECTIONS = Object.freeze({ xaeShell: XAE_SHELL_SECTION });
+const SETTINGS_SECTIONS = Object.freeze({ xaeShell: XAE_SHELL_SECTION, gpp: SETTING_GPP_PATH });
+
+/**
+ * Sections opened in the User settings: a machine-scoped setting is not shown in the Workspace tab,
+ * where the Settings UI may otherwise open.
+ */
+const USER_SETTINGS_SECTIONS = Object.freeze(new Set(['gpp']));
 
 /** Help link ids → the command that opens each. */
 const LINK_COMMANDS = Object.freeze({
@@ -49,7 +56,12 @@ class StartPageController {
     /**
      * @param {vscode.ExtensionContext} context
      * @param {{recents: {list: () => any[], remove: (p: string) => Thenable<void>}, hasProject: () => boolean,
-     *   compilerReady?: () => boolean}} deps `compilerReady`: the compiler file exists (the bundled one, or the override).
+     *   compilerReady?: () => boolean, compileOptions?: () => {generateCpp: boolean, buildWithGpp: boolean},
+     *   setCompileOption?: (key: string, value: boolean) => Promise<boolean>,
+     *   gppMachine?: () => Parameters<typeof describeGppSetting>[1]}} deps `compilerReady`: the
+     *   compiler file exists (the bundled one, or the override); `compileOptions` / `setCompileOption`:
+     *   the Compile dropdown's two switches (R13); `gppMachine`: how the g++ path is checked and
+     *   detected (the real machine by default; the tests pass their own).
      */
     constructor(context, deps) {
         this.context = context;
@@ -125,8 +137,21 @@ class StartPageController {
             recentsShown: recentsShownLimit(vscode.workspace.getConfiguration('tcToolkit.startPage').get('recentProjectsShown')),
             hasProject: this.deps.hasProject(),
             compilerReady: !!(this.deps.compilerReady && this.deps.compilerReady()),
-            xaeShells: describeConfiguredShells((key) => xaeConfig.get(key), (p) => fs.existsSync(p))
+            compileOptions: this.deps.compileOptions ? this.deps.compileOptions() : { generateCpp: false, buildWithGpp: false },
+            xaeShells: describeConfiguredShells((key) => xaeConfig.get(key), (p) => fs.existsSync(p)),
+            gpp: this.describeGpp()
         });
+    }
+
+    /** The g++ path for the page: the setting, checked as a build checks it, or what detection finds. Never writes. */
+    describeGpp() {
+        const dot = SETTING_GPP_PATH.lastIndexOf('.');
+        const value = vscode.workspace.getConfiguration(SETTING_GPP_PATH.slice(0, dot)).get(SETTING_GPP_PATH.slice(dot + 1));
+        try {
+            return describeGppSetting(value, (this.deps.gppMachine || thisMachine)());
+        } catch (err) {
+            return { state: 'notFound', configured: '', path: '' };
+        }
     }
 
     /**
@@ -173,9 +198,18 @@ class StartPageController {
             case 'command':
                 if (ALLOWED_COMMANDS.has(msg.command)) await vscode.commands.executeCommand(msg.command);
                 break;
+            case 'setCompileOption':
+                // Only the two switches, only booleans; the host applies the coupling and posts the result.
+                if ((msg.key === 'generateCpp' || msg.key === 'buildWithGpp') && typeof msg.value === 'boolean' && this.deps.setCompileOption) {
+                    await this.deps.setCompileOption(msg.key, msg.value);
+                }
+                this.postState();
+                break;
             case 'openSettings':
                 if (Object.prototype.hasOwnProperty.call(SETTINGS_SECTIONS, msg.section)) {
-                    await vscode.commands.executeCommand('twincat.openSettings', SETTINGS_SECTIONS[msg.section]);
+                    await (USER_SETTINGS_SECTIONS.has(msg.section)
+                        ? vscode.commands.executeCommand('twincat.openSettings', SETTINGS_SECTIONS[msg.section], { target: 'user' })
+                        : vscode.commands.executeCommand('twincat.openSettings', SETTINGS_SECTIONS[msg.section]));
                 }
                 break;
             case 'link':
@@ -187,4 +221,4 @@ class StartPageController {
     }
 }
 
-module.exports = { StartPageController, START_PAGE_VIEW_TYPE, LAST_LOCATION_KEY, ALLOWED_COMMANDS, LINK_COMMANDS, SETTINGS_SECTIONS };
+module.exports = { StartPageController, START_PAGE_VIEW_TYPE, LAST_LOCATION_KEY, ALLOWED_COMMANDS, LINK_COMMANDS, SETTINGS_SECTIONS, USER_SETTINGS_SECTIONS };

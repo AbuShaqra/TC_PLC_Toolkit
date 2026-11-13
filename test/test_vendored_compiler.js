@@ -3,8 +3,10 @@
  * @description The compiler that ships with the extension (`resources/compiler/`, written by
  * scripts/vendor-compiler.js): it is all there, it is exactly what SOURCE.md records (the
  * corresponding-source link of the GPL-3.0 compiler names a full commit), its licence files and
- * third-party notices are present and ship, the bundle needs no npm package at run time, and the
- * only dialect profile shipped is resources/dialects/twincat3.json.
+ * third-party notices are present and ship, the bundle needs no npm package at run time, the C++
+ * runtime headers the optional g++ build compiles against are there (`include/`, recorded like every
+ * other file, under the runtime library exception), and the only dialect profile shipped is
+ * resources/dialects/twincat3.json.
  * The REAL run of it is test/test_compile_real.js.
  */
 
@@ -35,8 +37,9 @@ assert(source.includes(`/tree/${commit}`) && /^- Repository: https:\/\/github\.c
 
 // Every file is listed with its size and SHA-256, and the directory holds nothing else.
 const rows = [...source.matchAll(/^\| `([^`]+)` \| (\d+) \| `([0-9a-f]{64})` \|$/gm)].map(m => ({ file: m[1], size: Number(m[2]), sha: m[3] }));
+const headers = fs.existsSync(path.join(DIR, 'include')) ? fs.readdirSync(path.join(DIR, 'include')).sort() : [];
 const expected = ['compiler.cjs', 'libs/iec-standard-fb.stlib', 'libs/iec-std-functions.stlib', 'LICENSE', 'COPYING', 'COPYING.RUNTIME',
-    'third-party/chevrotain-LICENSE.txt', 'third-party/lodash-es-LICENSE.txt'];
+    'third-party/chevrotain-LICENSE.txt', 'third-party/lodash-es-LICENSE.txt', ...headers.map(h => `include/${h}`)];
 assert(JSON.stringify(rows.map(r => r.file).sort()) === JSON.stringify(expected.slice().sort()), `SOURCE.md lists exactly the vendored files (${rows.map(r => r.file).join(', ')})`);
 for (const r of rows) {
     const file = path.join(DIR, r.file);
@@ -46,6 +49,20 @@ for (const r of rows) {
 }
 const onDisk = walk(DIR).map(rel).sort();
 assert(JSON.stringify(onDisk) === JSON.stringify([...expected, 'SOURCE.md'].sort()), `resources/compiler/ holds nothing unrecorded (${onDisk.join(', ')})`);
+
+// The C++ runtime headers (R13 g++ build): the ones the generated code includes are there, they are
+// .hpp only, and SOURCE.md states their licence, as COPYING lists them.
+for (const h of ['iec_types.hpp', 'iec_var.hpp', 'iec_std_lib.hpp', 'iec_global.hpp', 'iec_located.hpp']) {
+    assert(headers.includes(h), `include/${h} is vendored (the generated C++ includes it)`);
+}
+assert(headers.length >= 20 && headers.every(h => /\.hpp$/.test(h)), `include/ holds the runtime headers and nothing else (${headers.length})`);
+assert(/src\/runtime\/include\/\*\.hpp/.test(fs.readFileSync(path.join(DIR, 'COPYING'), 'utf8')) && /STruCpp-runtime-exception/.test(fs.readFileSync(path.join(DIR, 'COPYING'), 'utf8')),
+    'COPYING puts src/runtime/include/*.hpp under the runtime library exception');
+assert(/## Licence of the runtime headers/.test(source) && /GPL-3\.0-only WITH\s+STruCpp-runtime-exception/.test(source),
+    'SOURCE.md records the runtime headers\' licence');
+const noticed = headers.filter(h => fs.readFileSync(path.join(DIR, 'include', h), 'utf8').slice(0, 400).includes('SPDX-License-Identifier: GPL-3.0-only WITH STruCpp-runtime-exception'));
+assert(source.includes(`${noticed.length} of the ${headers.length} headers carry that SPDX line`), `SOURCE.md counts the headers with a per-file notice right (${noticed.length}/${headers.length})`);
+assert(/resources\/compiler\/include\//.test(fs.readFileSync(path.join(REPO, 'THIRD-PARTY-NOTICES.md'), 'utf8')), 'THIRD-PARTY-NOTICES.md names the vendored runtime headers');
 
 // Licences.
 assert(/GNU GENERAL PUBLIC LICENSE\s+Version 3/.test(fs.readFileSync(path.join(DIR, 'LICENSE'), 'utf8')), 'LICENSE is the GPL-3.0 text');
@@ -57,7 +74,7 @@ assert(/resources\/compiler\//.test(notices) && /GPL-3\.0/.test(notices) && /che
 
 // It ships, and the dev script does not.
 const ignore = fs.readFileSync(path.join(REPO, '.vscodeignore'), 'utf8').split(/\r?\n/).map(l => l.trim()).filter(l => l && !l.startsWith('#'));
-assert(!ignore.some(l => /^(resources|resources\/compiler)(\/\*\*)?$/.test(l) || /\.cjs$|\.stlib$/.test(l)), '.vscodeignore keeps resources/compiler/ in the VSIX');
+assert(!ignore.some(l => /^(resources|resources\/compiler|resources\/compiler\/include)(\/\*\*)?$/.test(l) || /\.cjs$|\.stlib$|\.hpp$/.test(l)), '.vscodeignore keeps resources/compiler/ (headers included) in the VSIX');
 assert(ignore.includes('scripts/vendor-compiler.js'), '.vscodeignore drops the vendoring script');
 
 // Dialect profiles (user rule): the extension ships the TwinCAT profile and no other — none from the

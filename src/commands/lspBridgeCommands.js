@@ -22,7 +22,8 @@ function registerLspBridgeCommands(context, { provider, getClient }) {
     context.subscriptions.push(
         vscode.commands.registerCommand('twincat.openComponent', async (fileUri, componentId, selectionRange, targetWord) => {
             const ext = path.extname(fileUri.fsPath).toLowerCase();
-            if (ext === '.st') {
+            // Plain text files: Generate ST's .st output, and Compile Project's generated C++.
+            if (ext === '.st' || ext === '.cpp' || ext === '.hpp') {
                 const doc = await vscode.workspace.openTextDocument(fileUri);
                 let selection = undefined;
                 if (selectionRange) {

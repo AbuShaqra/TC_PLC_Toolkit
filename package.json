@@ -36,6 +36,7 @@
     "onCommand:twincat.compileProject",
     "onCommand:twincat.openSettings",
     "onCommand:twincat.detectXaeShell",
+    "onCommand:twincat.detectGpp",
     "onCommand:twincat.openGettingStarted",
     "onCommand:twincat.openRoadmap",
     "onCommand:twincat.openReleaseNotes",
@@ -157,6 +158,11 @@
       {
         "command": "twincat.detectXaeShell",
         "title": "Detect XAE Shell Installations",
+        "category": "TC Toolkit"
+      },
+      {
+        "command": "twincat.detectGpp",
+        "title": "Detect g++",
         "category": "TC Toolkit"
       },
       {
@@ -592,6 +598,22 @@
             "scope": "machine",
             "markdownDescription": "Full path to a Node.js executable, version 22 or newer, that runs the compiler for **TC Toolkit: Compile Project**. Empty = found automatically: `node` on `PATH`, then on Windows the usual install locations (Node.js installer, nvm-windows, Volta, fnm), then VS Code's own runtime when it is Node.js 22 or newer. The version is checked before each run."
           },
+          "tcToolkit.compiler.generateCpp": {
+            "type": "boolean",
+            "default": false,
+            "markdownDescription": "**Generate C++.** After **TC Toolkit: Compile Project** finds no errors, write the PLC project as C++ into a `CPP_Files` folder next to its `.plcproj` (beside `ST_Files`): `<project>.cpp` and `<project>.hpp`. Off by default. Turning off this setting also turns off `#tcToolkit.compiler.buildWithGpp#`. Only files TC Toolkit wrote there are ever replaced or deleted. Also in the Compile button's dropdown."
+          },
+          "tcToolkit.compiler.buildWithGpp": {
+            "type": "boolean",
+            "default": false,
+            "markdownDescription": "**Build with g++.** After the C++ is written, compile it with g++ (a compile check: `CPP_Files/<project>.o`, nothing is linked or run); g++'s errors appear in the Problems panel on the generated files. Optional: g++ is not needed for anything else. Turning this on also turns on `#tcToolkit.compiler.generateCpp#`. Off by default. Also in the Compile button's dropdown."
+          },
+          "tcToolkit.compiler.gppPath": {
+            "type": "string",
+            "default": "",
+            "scope": "machine",
+            "markdownDescription": "Full path to the `g++` executable (`g++.exe` on Windows) that **Build with g++** runs. Empty = found automatically: `g++` on `PATH`, then on Windows the usual install folders (MSYS2 `ucrt64`/`mingw64`/`clang64`, `C:\\MinGW`, WinLibs, w64devkit, Chocolatey's mingw). Filled with the g++ found when the build is turned on, if empty; a value you set is never overwritten. Run **TC Toolkit: Detect g++** to look again."
+          },
           "twincat.compiler.path": {
             "type": "string",
             "default": "",
@@ -700,6 +722,7 @@
     "typescript": "^7.0.2"
   },
   "dependencies": {
+    "vscode-cpptools": "^7.1.1",
     "vscode-languageclient": "^9.0.1",
     "vscode-languageserver": "^9.0.1",
     "vscode-languageserver-textdocument": "^1.0.12"

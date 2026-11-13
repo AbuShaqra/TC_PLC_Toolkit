@@ -45,7 +45,10 @@ page in an editor tab with:
 - **Project actions** — *Generate ST*, *Update Library Definitions* and *Compile project* (see
   [Compile project](#compile-project)).
 - **Help and links**, and **Settings** — which also shows where the XAE Shell of each TwinCAT version
-  was found (see [Settings](#settings)), with *Change…* and *Detect again*.
+  was found (see [Settings](#settings)), with *Change…* and *Detect again*, and the same for **g++**
+  (optional, used only by *Build with g++*): the path set in `tcToolkit.compiler.gppPath`, or — while it
+  is empty — the g++ a build would use, or *not found*; a set path that does not work, or a g++ older
+  than 7, is marked with a warning. Its *Change…* opens the setting in your User settings; *Detect again* runs *Detect g++*.
 
 Every one of these is also a Command Palette command under **TC Toolkit:** (*TC Toolkit: Create New
 Project…*, *TC Toolkit: Open Start Page*, *TC Toolkit: Generate ST*, …). The page works offline and follows
@@ -259,8 +262,10 @@ never read back as sources.
 *TC Toolkit: Compile Project* (also on the start page, and as the **Compile** button next to *Generate ST*
 in the editor's toolbar, which compiles the project the open file belongs to) checks a PLC project with **an external IEC 61131-3
 compiler** — a full compiler front end, so it catches what the built-in diagnostics deliberately leave
-alone. With several PLC projects you pick which one. It only checks: nothing is generated, and nothing is
-written into your project (the compiler reads temporary copies, deleted when the run ends).
+alone. With several PLC projects you pick which one. By default it only checks: nothing is generated, and
+nothing is written into your project (the compiler reads temporary copies, deleted when the run ends).
+It can also write the project as C++ and compile that with g++ — both off by default, see
+[C++ output](#c-output-optional) below.
 
 - What is checked is what you see: unsaved edits, and Manual Sync edits not yet written, are included.
 - Errors and warnings appear in the **Problems** panel on the object's file, with the component, pane and
@@ -299,6 +304,83 @@ Definitions*. The built-in diagnostics remain the conservative check. To use a d
 GPL v3; its licence, source link and third-party notices are in `resources/compiler/` and
 [`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md).
 
+#### C++ output (optional)
+
+Compile Project can also turn the PLC project into C++. Both steps are **off by default**; turn them on
+with the small arrow next to the **Compile** button (in the editor's toolbar, or on the start page's
+*Compile project* tile), or in the settings:
+
+- **Generate C++** (`tcToolkit.compiler.generateCpp`) — when the check finds **no errors**, the project
+  is written as C++ into a `CPP_Files` folder next to its `.plcproj` (beside `ST_Files`):
+  `<project>.cpp` and `<project>.hpp`, one pair per PLC project. A check with errors writes nothing.
+  A project that uses **library** blocks or functions (for example from the Beckhoff libraries) is
+  generated too, but the library's own code is not available: its function blocks and functions are in
+  the C++ as declarations with **empty bodies**, so neither the C++ nor the g++ check covers them. The
+  summary says so and names the libraries (as the `.plcproj` references them, e.g. `Tc2_Standard`), the
+  *TC Toolkit Compile* output lists the library blocks used, and a comment at the top of the generated
+  files names them. A library symbol with no usable declaration at all (see *Update Library Definitions*
+  above; or one that needs a type the compiler does not support, such as `LTIME`) stops the generation:
+  the summary and the *TC Toolkit Compile* output name it and its library.
+  The summary and the status bar say what was written; **Open C++** opens the file.
+- **Build with g++** (`tcToolkit.compiler.buildWithGpp`) — also compiles that `.cpp` with g++, as a
+  check that the generated code builds (`CPP_Files/<project>.o`; nothing is linked or run). g++'s errors
+  appear in the **Problems** panel on the generated files (source *TC Toolkit g++*), and its full output
+  in the *TC Toolkit Compile* output. Turning this on turns *Generate C++* on too; turning *Generate C++*
+  off turns it off.
+
+**g++ is optional** — nothing else needs it. It must be **g++ 7 or later**: the generated C++ is C++17
+(it is built with `-std=c++17`). On Windows, install MinGW-w64 — for example MSYS2's UCRT64
+(`pacman -S mingw-w64-ucrt-x86_64-gcc`), or a WinLibs/w64devkit build; the old `C:\MinGW` (mingw.org,
+g++ 6.3) is too old. It is found by itself: `g++` on your `PATH`, then on Windows MSYS2 — wherever its installer put it
+(read from the Windows list of installed programs), or in `C:\msys64`, `D:\msys64`, `C:\tools\msys64`
+(Chocolatey), `%USERPROFILE%\msys64` or Scoop's folder; its UCRT64, MINGW64 and CLANG64 environments
+first — then the usual install folders (`C:\MinGW`, WinLibs, w64devkit, Chocolatey's mingw), and last
+MSYS2's own `usr\bin` g++; when several are found, the first one that is 7 or later is used. If MSYS2 is
+installed but none of its environments has g++, *Detect g++* and the start page say so: "MSYS2 is installed
+at C:\msys64 but has no g++: in the MSYS2 UCRT64 shell run pacman -S mingw-w64-ucrt-x86_64-gcc". A g++ older than 7 is not run: the summary says
+"g++ 6.3.0 is too old: the generated C++ needs g++ 7 or later." and offers the setting (and, while the
+setting is empty, *Detect g++*). Set `tcToolkit.compiler.gppPath` to use another one; **TC Toolkit: Detect g++**
+looks again, but never replaces a value you set: if the setting names an old g++, clear it (or set the new path)
+after installing a newer one — *Detect g++* then names the newer g++ it finds. Turning *Build with g++* on fills
+an empty setting only with a g++ 7 or later, so a newer g++ installed later is found by itself.
+The start page's Settings card shows which g++ that is.
+If *Build with g++* is on and no g++ is found, the C++ is still written and the summary offers the
+setting (and, while the setting is empty, *Detect g++*). The setting may name `g++.exe` itself, its
+folder, or a command on your `PATH`; a path pasted with quotes is fine. The compiler's C++ runtime headers that the build needs ship with the extension.
+
+**IntelliSense on the generated C++.** With Microsoft's **C/C++** extension installed, TC Toolkit tells it
+how to read the files in `CPP_Files`: the compiler's runtime headers that ship with the extension and the
+`CPP_Files` folder are on the include path, the language is C++17, and the g++ above is the compiler (not one
+older than 7: then the C/C++ extension keeps its own default compiler) — so the
+generated `.hpp` no longer shows "cannot open source file iec_types.hpp". The C/C++ extension only uses
+a provider that is **selected** for the folder; it picks TC Toolkit by itself only when the folder has no
+`.vscode/c_cpp_properties.json`, no `C_Cpp.default.*` setting is set, and no other provider (CMake Tools,
+Makefile Tools, …) is installed. Otherwise, after C++ is generated or a `CPP_Files` file is opened, TC
+Toolkit asks once per workspace folder: *IntelliSense for the generated C++ needs TC Toolkit as the C/C++
+configuration provider.* **Use TC Toolkit** sets `C_Cpp.default.configurationProvider` for that folder
+(in its `.vscode/settings.json`); **Not now** asks again in a later session; **Don't ask again** stops it.
+A `c_cpp_properties.json` that names another provider wins over that setting, so TC Toolkit then does not
+touch the file and offers to open it instead — also when only one of its other configurations names another
+provider, because the configuration picked in the C/C++ status bar is the one that counts and TC Toolkit
+cannot see which one that is.
+
+To select it by hand: run **C/C++: Change Configuration Provider…** and pick *TC Toolkit*, or set
+`"C_Cpp.default.configurationProvider": "a-abushaqra.twincat-plc-toolkit"` in the workspace settings —
+or, if the folder has a `.vscode/c_cpp_properties.json`, put `"configurationProvider":
+"a-abushaqra.twincat-plc-toolkit"` (or `"TC Toolkit"`) into the configuration that is active in the C/C++
+status bar (by default the one named `Win32` on Windows, else the last). The id must match exactly — the
+C/C++ extension finds no provider for a value in another case or with spaces around it. Then run
+**C/C++: Reset IntelliSense Database** if the old errors stay. Each time the C/C++ extension asks TC
+Toolkit for a file, a line is written to the **TC Toolkit C/C++** output channel (and nothing else is: the
+channel appears only once the C/C++ extension has asked) — no channel or no line there means the provider is
+not selected. Without the C/C++ extension nothing changes.
+
+`CPP_Files` is output, like `ST_Files`: it is shown read-only in the PLC Objects tree and is never read
+back as a source. The extension only ever replaces or deletes files there that **it** wrote and that
+nobody changed since (it keeps a small record, `.tc-toolkit-generated.json`, in the folder); a file of
+the same name you made or edited is left alone, and the summary says so. Renaming the `.plcproj` removes
+the old project's files; a Git checkout that only changes their line endings does not count as an edit. It also writes a `.gitignore` there listing its own files so they are not committed by accident; you may delete it (it is then not written again), and a `.gitignore` of your own there is never touched.
+
 ### For AI coding assistants
 
 [`templates/twincat-project-CLAUDE.md`](templates/twincat-project-CLAUDE.md) is a portable field guide
@@ -320,7 +402,11 @@ for the version logic. There is no unit-test framework for Structured Text, so a
 
 ## Requirements
 
-**VS Code** `^1.66.0`. Nothing else.
+**VS Code** `^1.66.0`. Nothing else for editing.
+
+Optional, only for the C++ options of *Compile project*: **g++ 7 or later** for *Build with g++* (on
+Windows, MinGW-w64 — for example MSYS2's UCRT64; see [Compile project](#compile-project)), and Microsoft's
+**C/C++** extension if you want IntelliSense on the generated C++.
 
 ## Install
 
@@ -359,6 +445,9 @@ old entry is removed from your `settings.json`.
 | `tcToolkit.xaeShell.path4026` | *(detected)* | Full path to `TcXaeShell.exe` of the XAE Shell for TwinCAT 3.1.4026 (the 64-bit shell). Empty = not found. |
 | `tcToolkit.compiler.path` | *(empty)* | Full path to the command-line file (`.cjs`) of an external IEC 61131-3 compiler for **Compile Project** to run instead of the bundled one. Empty = the bundled compiler. Per machine. |
 | `tcToolkit.compiler.nodePath` | *(empty)* | Full path to a Node.js 22+ executable that runs the compiler. Empty = found automatically (`node` on `PATH`, the usual Windows install locations, then VS Code's own runtime when it is Node.js 22+). Per machine. |
+| `tcToolkit.compiler.generateCpp` | `false` | **Generate C++**: after a check with no errors, write the project as C++ into `CPP_Files/` next to its `.plcproj`. Turning it off also turns off the g++ build. Also in the Compile button's dropdown. |
+| `tcToolkit.compiler.buildWithGpp` | `false` | **Build with g++**: also compile that C++ with g++ (a compile check; errors in the Problems panel). Turning it on also turns on *Generate C++*. Also in the Compile button's dropdown. |
+| `tcToolkit.compiler.gppPath` | *(detected)* | Full path to `g++` (`g++.exe` on Windows). Empty = `g++` on `PATH`, then the usual Windows install folders; filled with the one found when the build is turned on, never overwritten. Per machine. |
 
 **XAE Shell paths.** On Windows the two `tcToolkit.xaeShell.*` settings are filled automatically with the
 installation found on your machine: first from the shell's COM registration, then from the default

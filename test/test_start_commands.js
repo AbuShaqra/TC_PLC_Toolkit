@@ -5,7 +5,7 @@
  * and last location recorded, refusal reported inline for the start page and as a notification from
  * the palette, the chosen open mode honoured), opening a recent solution that is gone, Generate ST's
  * project pick, and the start page's message handling (singleton panel, state — including the
- * recent-list length and the XAE Shell paths from the settings — the command allow-list, help links,
+ * recent-list length, the XAE Shell paths and the g++ path from the settings — the command allow-list, help links,
  * the filtered Settings view, a settings change refreshing an open page, and whether the compiler file
  * is there for the Compile project tile).
  */
@@ -118,11 +118,26 @@ const generated = [];
 const provider = { listProjects: () => projects, generateAllStFiles: async (keys) => { generated.push(keys); } };
 /** What the stubbed Compile Project answers to "is the compiler file there?" (the bundled one: yes). */
 let compilerAvailable = true;
+/** The Compile dropdown's switches as the stubbed Compile Project has them, and what the page wrote. */
+let compileOpts = { generateCpp: false, buildWithGpp: false };
+const optionWrites = [];
+/** The machine the start page checks and detects g++ on: one g++ on a fake PATH (R13). */
+// POSIX literals: the faked machine is linux and never touches the disk, on any host.
+const GPP_DIR = '/opt/gcc/bin';
+const GPP_EXE = path.posix.join(GPP_DIR, 'g++');
+let gppMachine = { platform: 'linux', env: { PATH: GPP_DIR }, exists: (p) => p === GPP_EXE, isDir: (p) => p === GPP_DIR };
 const { startPage } = registerStartCommands(context, {
     provider,
     getProjectMap: () => ({ projects: new Map() }),
     getSolutionMap: () => ({ solutions: [] }),
-    isCompilerAvailable: () => compilerAvailable
+    isCompilerAvailable: () => compilerAvailable,
+    compileOptions: () => compileOpts,
+    gppMachine: () => gppMachine,
+    setCompileOption: async (key, value) => {
+        optionWrites.push([key, value]);
+        compileOpts = key === 'buildWithGpp' ? { generateCpp: compileOpts.generateCpp || value, buildWithGpp: value } : { generateCpp: value, buildWithGpp: value && compileOpts.buildWithGpp };
+        return true;
+    }
 });
 const run = (id, ...args) => vscodeStub.commands.executeCommand(id, ...args);
 const executedIds = () => calls.executed.map(c => c.id);
@@ -229,6 +244,22 @@ const recents = () => (state.get('twincat.recentSolutions') || []).map(e => e.sl
     compilerAvailable = true;
     startPage.postState();
 
+    // R13: the Compile dropdown. The state carries the two switches; a checkbox writes through Compile Project.
+    assert(JSON.stringify(st.compileOptions) === '{"generateCpp":false,"buildWithGpp":false}', 'R13: state carries the Compile dropdown\'s two switches (off by default)');
+    await panel.send({ type: 'setCompileOption', key: 'buildWithGpp', value: true });
+    let lastState = panel.posted.filter(m => m.type === 'state').pop();
+    assert(JSON.stringify(optionWrites) === '[["buildWithGpp",true]]' && lastState.compileOptions.generateCpp === true && lastState.compileOptions.buildWithGpp === true,
+        'R13: a checkbox is written through Compile Project, and the page gets the result (the build turned generation on)');
+    await panel.send({ type: 'setCompileOption', key: 'tcToolkit.compiler.path', value: true });
+    await panel.send({ type: 'setCompileOption', key: 'generateCpp', value: 'yes' });
+    assert(optionWrites.length === 1, 'R13: anything but the two switches with a boolean is ignored');
+    await panel.send({ type: 'setCompileOption', key: 'generateCpp', value: false });
+    lastState = panel.posted.filter(m => m.type === 'state').pop();
+    assert(lastState.compileOptions.generateCpp === false && lastState.compileOptions.buildWithGpp === false, 'R13: unticking Generate C++ is shown with the build off too');
+    assert(/id="compile-options-toggle"[^>]*aria-expanded="false"[^>]*aria-controls="compile-options"/.test(panel.webview.html)
+        && /id="opt-generate-cpp"/.test(panel.webview.html) && /id="opt-build-gpp"/.test(panel.webview.html) && />Generate C\+\+</.test(panel.webview.html)
+        && />Build with g\+\+</.test(panel.webview.html), 'R13: the page has the dropdown toggle and its two labelled checkboxes');
+
     // A settings change reaches the open page; unrelated settings do not.
     const statesBefore = panel.posted.filter(m => m.type === 'state').length;
     changeConfig('tcToolkit.diagnostics.memberAccess');
@@ -250,6 +281,39 @@ const recents = () => (state.get('twincat.recentSolutions') || []).map(e => e.sl
     const shells = panel.posted.filter(m => m.type === 'state').pop().xaeShells;
     assert(shells[0].path === sln && shells[0].exists === true && shells[1].path.endsWith('TcXaeShell.exe') && shells[1].exists === false,
         'changing tcToolkit.xaeShell.* updates the open page: an existing path, and one that is not on disk');
+
+    // R13: the g++ path, shown like the XAE Shell paths. Detection is only read: nothing is written.
+    const gppNow = () => panel.posted.filter(m => m.type === 'state').pop().gpp;
+    assert(JSON.stringify(st.gpp) === JSON.stringify({ state: 'detected', configured: '', path: GPP_EXE, source: 'path' }),
+        `state carries the g++ path: empty setting → the g++ detection would use (${JSON.stringify(st.gpp)})`);
+    const before = panel.posted.filter(m => m.type === 'state').length;
+    settings['tcToolkit.compiler.gppPath'] = path.join(ROOT, 'nowhere', 'g++');
+    changeConfig('tcToolkit.compiler.gppPath');
+    assert(panel.posted.filter(m => m.type === 'state').length === before + 1 && gppNow().state === 'invalid' && gppNow().problem === 'missing'
+        && gppNow().configured === path.join(ROOT, 'nowhere', 'g++'), 'changing tcToolkit.compiler.gppPath updates the open page: a set path that is not there is invalid');
+    settings['tcToolkit.compiler.gppPath'] = GPP_DIR;
+    changeConfig('tcToolkit.compiler.gppPath');
+    assert(gppNow().state === 'set' && gppNow().configured === GPP_DIR && gppNow().path === GPP_EXE, 'a folder holding g++ is shown as set, with the g++ it runs');
+    settings['tcToolkit.compiler.gppPath'] = '';
+    gppMachine = { platform: 'linux', env: { PATH: '' }, exists: () => false, isDir: () => false };
+    changeConfig('tcToolkit.compiler.gppPath');
+    assert(gppNow().state === 'notFound', 'empty, and no g++ anywhere: not found');
+    gppMachine = { platform: 'linux', env: {}, exists: () => { throw new Error('EACCES'); }, isDir: () => false };
+    startPage.postState();
+    assert(gppNow().state === 'notFound', 'a failing file check reads as not found and breaks nothing');
+    delete settings['tcToolkit.compiler.gppPath'];
+    assert(!calls.executed.some(c => c.id === 'twincat.detectGpp'), 'showing the g++ path runs no detection command (nothing is written)');
+    calls.executed.length = 0;
+    await panel.send({ type: 'openSettings', section: 'gpp' });
+    assert(calls.executed.some(c => c.id === 'workbench.action.openGlobalSettings' && JSON.stringify(c.args) === '[{"query":"tcToolkit.compiler.gppPath"}]')
+        && !calls.executed.some(c => c.id === 'workbench.action.openSettings'), 'g++ Change… opens the User settings (machine scope) filtered to tcToolkit.compiler.gppPath');
+    calls.executed.length = 0;
+    handlers.set('twincat.detectGpp', async () => { calls.gppDetected = (calls.gppDetected || 0) + 1; });
+    await panel.send({ type: 'command', command: 'twincat.detectGpp' });
+    assert(calls.gppDetected === 1, 'g++ Detect again runs twincat.detectGpp (allow-listed)');
+    await run('twincat.openSettings', '@ext:someone.else', { target: 'user' });
+    assert(calls.executed.some(c => c.id === 'workbench.action.openGlobalSettings' && c.args[0].query === '@ext:a-abushaqra.twincat-plc-toolkit'),
+        'openSettings with {target: user} still accepts only the extension\'s own sections');
 
     calls.executed.length = 0;
     await panel.send({ type: 'openSettings', section: 'xaeShell' });

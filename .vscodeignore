@@ -57,3 +57,6 @@ scripts/build-project-templates.js
 # licence files and SOURCE.md — the GPL-3.0 notices must reach every recipient). The script that
 # writes it from a fork checkout is developer tooling.
 scripts/vendor-compiler.js
+
+# vscode-cpptools ships the C/C++ extension's test hooks beside its API; only out/api.js is used.
+node_modules/vscode-cpptools/out/testApi.*

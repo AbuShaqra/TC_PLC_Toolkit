@@ -396,6 +396,11 @@ input:checked + .slider:before {
     outline: none;
 }
 
+.action-btn:focus-visible {
+    outline: 2px solid var(--vscode-focusBorder, #007fd4);
+    outline-offset: 2px;
+}
+
 .action-btn:hover {
     transform: translateY(-1px);
     box-shadow: 0 6px 20px rgba(255, 71, 87, 0.4);
@@ -434,6 +439,16 @@ input:checked + .slider:before {
     line-height: 1;
 }
 .split-caret[hidden] { display: none; }
+/* The Compile split button (R13): its caret is always there. */
+#compile-group #compile-btn {
+    border-top-right-radius: 0;
+    border-bottom-right-radius: 0;
+}
+#compile-menu .split-menu-title { white-space: nowrap; }
+.split-menu-item:focus-within {
+    outline: 1px solid var(--vscode-focusBorder, #007fd4);
+    outline-offset: -1px;
+}
 
 /* Compile button: a codicon-style glyph (inline SVG, currentColor) plus its label. */
 .icon-btn {

@@ -9,7 +9,7 @@
  * fonts come from VS Code's theme variables in media/startPage.css, so it follows the user's theme.
  *
  * Dynamic content (the default location, recent solutions, whether a project is open, whether a
- * compiler is configured, the XAE Shell paths) is not rendered
+ * compiler is configured, the Compile dropdown's two switches, the XAE Shell and g++ paths) is not rendered
  * here: media/startPage.js asks the host for it with a `ready` message, so a refresh never rebuilds
  * the page and loses what the user typed.
  */
@@ -41,6 +41,7 @@ const ICON_PATHS = Object.freeze({
     help: '<path d="M2.5 3h4A1.5 1.5 0 0 1 8 4.5V13a1.5 1.5 0 0 0-1.5-1.5h-4zM13.5 3h-4A1.5 1.5 0 0 0 8 4.5V13a1.5 1.5 0 0 1 1.5-1.5h4z"/>',
     settings: '<path d="M3 4h10M3 8h10M3 12h10"/><circle cx="6" cy="4" r="1.4"/><circle cx="10.5" cy="8" r="1.4"/><circle cx="5" cy="12" r="1.4"/>',
     chevron: '<path d="m6 3.5 4.5 4.5L6 12.5"/>',
+    chevronDown: '<path d="m3.5 6 4.5 4.5L12.5 6"/>',
     gettingStarted: '<path d="M4 2.5h6.5L12 4v9.5H4z"/><path d="M6 6.5h4M6 9h4M6 11.5h2.5"/>',
     roadmap: '<path d="M2 12.5 6 3.5l4 6 4-4"/><circle cx="14" cy="5.5" r=".6"/>',
     releaseNotes: '<path d="M8 2v8M5 7l3 3 3-3M3 13.5h10"/>',
@@ -138,9 +139,17 @@ function renderStartPageHtml(o) {
                 <h2 id="actions-title"><span class="badge">${icon('actions')}</span>Project actions</h2>
                 <p id="no-project" class="hint" hidden>Open a folder with a TwinCAT project to use these.</p>
                 <ul class="actions">${actions}
-                    <li><button type="button" class="action ready" id="compile-project" disabled>` +
-        `<span class="action-text"><span class="action-label">Compile project</span><span class="action-detail" id="compile-detail">Check the project with an external IEC 61131-3 compiler</span></span>` +
-        `<span class="soon" id="compile-missing" hidden>Not found</span>${icon('chevron', 'icon chevron compile-chevron')}</button></li>
+                    <li class="compile-row"><div class="split-tile"><button type="button" class="action ready" id="compile-project" disabled>` +
+        `<span class="action-text"><span class="action-label">Compile project</span><span class="action-detail" id="compile-detail">Check the project with the IEC 61131-3 compiler</span></span>` +
+        `<span class="soon" id="compile-missing" hidden>Not found</span>${icon('chevron', 'icon chevron compile-chevron')}</button>` +
+        `<button type="button" class="options-toggle" id="compile-options-toggle" aria-expanded="false" aria-controls="compile-options" ` +
+        `title="Compile options: C++ generation and the g++ build" aria-label="Compile options">${icon('chevronDown', 'icon')}</button></div>` +
+        `<div id="compile-options" class="compile-options" role="group" aria-label="Compile options" hidden>` +
+        `<label class="option"><input type="checkbox" id="opt-generate-cpp"><span class="option-text"><span class="option-label">Generate C++</span>` +
+        `<span class="option-detail">Write the project as C++ into its CPP_Files folder when the check finds no errors</span></span></label>` +
+        `<label class="option"><input type="checkbox" id="opt-build-gpp"><span class="option-text"><span class="option-label">Build with g++</span>` +
+        `<span class="option-detail">Also compile that C++ with g++ (optional; needs g++, turns Generate C++ on)</span></span></label>` +
+        `</div></li>
                 </ul>
             </section>
             <section class="card" id="help" aria-labelledby="help-title">
@@ -150,13 +159,20 @@ function renderStartPageHtml(o) {
             <section class="card" id="settings" aria-labelledby="settings-title">
                 <h2 id="settings-title"><span class="badge">${icon('settings')}</span>Settings</h2>
                 <button type="button" class="tile" data-command="twincat.openSettings">` +
-        `<span class="action-text"><span class="action-label">Open Settings</span><span class="action-detail">Diagnostics, library definitions and the XAE shell</span></span>` +
+        `<span class="action-text"><span class="action-label">Open Settings</span><span class="action-detail">Diagnostics, library definitions, the XAE shell and g++</span></span>` +
         `${icon('chevron', 'icon chevron')}</button>
                 <h3 id="xae-title">XAE Shell</h3>
                 <ul id="xae-list" class="xae-paths" aria-labelledby="xae-title"></ul>
                 <div class="row wrap">
                     <button type="button" id="xae-change" class="secondary">Change…</button>
                     <button type="button" class="secondary" data-command="twincat.detectXaeShell">Detect again</button>
+                </div>
+                <h3 id="gpp-title">g++</h3>
+                <p id="gpp-hint" class="hint">Optional: used only by Build with g++ in the Compile options.</p>
+                <ul id="gpp-list" class="xae-paths" aria-labelledby="gpp-title" aria-describedby="gpp-hint"></ul>
+                <div class="row wrap">
+                    <button type="button" id="gpp-change" class="secondary" aria-describedby="gpp-title">Change…</button>
+                    <button type="button" class="secondary" data-command="twincat.detectGpp" aria-describedby="gpp-title">Detect again</button>
                 </div>
             </section>
         </div>

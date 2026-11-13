@@ -92,6 +92,15 @@ function inputsOf(project) {
         assert(t('ARRAY [0..cMax] OF INT') === null && t('STRING(MAX_LEN)') === null && t('Other.T_X') === null && t('') === null,
             'TYPE: a constant bound or length, a foreign qualifier, nothing — refused, never guessed');
         assert(t('LTIME') === 'LTIME|ltime', 'TYPE: a type the compiler lacks stays a dependency, which then resolves to nothing');
+        // A library integer constant whose value the sources give is written as that value.
+        const k = new Map([['csynmax', '15'], ['gvl_synconst.csynmax', '15'], ['clen', '40']]);
+        const tk = (s) => { const r = ld.readType(s, ns, k); return r ? r.text : null; };
+        assert(tk('ARRAY [0..cSynMax] OF INT') === 'ARRAY [0..15] OF INT' && tk('ARRAY [0..SynMotion.cSynMax, 1..2] OF INT') === 'ARRAY [0..15, 1..2] OF INT'
+            && tk('ARRAY [0..GVL_SynConst.cSynMax] OF INT') === 'ARRAY [0..15] OF INT' && tk('STRING(cLen)') === 'STRING(40)',
+        'TYPE: a bound or length that names a library constant with a known value is written as the value');
+        assert(tk('ARRAY [0..cOther] OF INT') === null && tk('ARRAY [0..cSynMax-1] OF INT') === null && tk('ARRAY [0..Other.cSynMax] OF INT') === null
+            && tk('ARRAY [0..GVL_Other.cSynMax] OF INT') === null,
+        'TYPE: an unknown constant, an expression, a foreign qualifier or another list — still refused');
     }
 
     // ── The compiler's own names ───────────────────────────────────────────────────────────────
@@ -118,7 +127,18 @@ function inputsOf(project) {
     assert(knowledge.decls.get('fb_synaxis').ioComplete === true && knowledge.decls.get('fb_synaxis').methods.length === 1,
         'GATHER: a function block merges the dump\'s parameters (complete) with the .tmc\'s methods');
 
+    // Attribution (R13: what the generated C++ does not cover is named by library, as the .plcproj references it).
+    assert(knowledge.libraryOf('FB_SynAxis') === 'Synthetic Motion Library' && knowledge.libraryOf('f_synadd') === 'Synthetic Motion Library'
+        && knowledge.libraryOf('F_SynArchiveOnly') === 'Synthetic Motion Library' && knowledge.libraryOf('SynMotion') === 'Synthetic Motion Library'
+        && knowledge.libraryOf('F_SynOtherOnly') === 'Synthetic Other Library' && knowledge.libraryOf('F_Nowhere') === '',
+    'ATTRIB: a .tmc type, a dump function, an archive-only name and the namespace map to the .plcproj\'s library name; an unreferenced dump library keeps its title; an unknown name has none');
+    assert(knowledge.spellingOf('F_SYNARCHIVEONLY') === 'F_SynArchiveOnly' && knowledge.spellingOf('FB_SYNAXIS') === 'FB_SynAxis' && knowledge.spellingOf('NOPE') === 'NOPE',
+        'ATTRIB: the library\'s own spelling of an upper-cased compiler name');
     const prep = ld.prepareLibraryCheck({ projectDir: project.projectDir, roots: [project.ws], inputs, compilerPath: BUNDLED });
+    assert(prep.declaredSymbols.some(d => d.name === 'FB_SynAxis' && d.kind === 'fb' && d.library === 'Synthetic Motion Library')
+        && prep.declaredSymbols.some(d => d.name === 'GVL_SynConst' && d.kind === 'gvl') && prep.declaredSymbols.length === prep.extraFiles.length
+        && JSON.stringify(prep.compilerSubstitutes) === JSON.stringify([{ name: 'TON', library: 'Synthetic Motion Library' }]),
+    `ATTRIB: the check lists what it declared and the qualified names the compiler provides (${JSON.stringify(prep.compilerSubstitutes)})`);
     const text = prep.extraFiles.map(f => f.text).join('\n');
     const fileOf = (head) => prep.extraFiles.find(f => f.text.startsWith(head));
     assert(!!fileOf('FUNCTION F_SynAdd : DINT\nVAR_INPUT\n\tnA : DINT;\n\tnB : DINT;\nEND_VAR\nEND_FUNCTION'), 'DECL: a function with its inputs and return type, no body');
@@ -127,8 +147,8 @@ function inputsOf(project) {
     const axis = fileOf('FUNCTION_BLOCK FB_SynAxis') || { text: '' };
     assert(/VAR_INPUT\n\tbExecute : BOOL;\n\tfTarget : LREAL;\n\tsAxisName : T_SynName;\nEND_VAR\nVAR_OUTPUT\n\tbDone : BOOL;\n\teState : E_SynState;\nEND_VAR\nVAR_IN_OUT\n\tstPos : ST_SynPos;\nEND_VAR/.test(axis.text) &&
         /METHOD MSynReset : BOOL\nVAR_INPUT\n\tbHard : BOOL;\nEND_VAR\nEND_METHOD/.test(axis.text) && /PROPERTY nSynCount : DINT\nGET\nEND_GET\nEND_PROPERTY/.test(axis.text) &&
-        /ACTION ActSynHome\nEND_ACTION/.test(axis.text) && !/nInternal/.test(axis.text),
-        'DECL: a function block with its parameters, a method, a property and an action — interface only, no local');
+        /ACTION ActSynHome\nEND_ACTION/.test(axis.text) && /END_VAR\nVAR\n\tnInternal : DINT;\nEND_VAR\nMETHOD/.test(axis.text) && !/tSynSpan/.test(axis.text),
+        'DECL: a function block with its parameters, its own variables (a derived block may use them; an LTIME one is left out), a method, a property and an action — no body');
     assert(!!fileOf('TYPE ST_SynPose EXTENDS ST_SynPos :\nSTRUCT\n\tfAngle : LREAL;\nEND_STRUCT\nEND_TYPE'), 'DECL: a struct with EXTENDS');
     assert(!!fileOf('TYPE E_SynState :\n(eSynIdle := 0, eSynMoving := 1, eSynFault := 9) INT;\nEND_TYPE'), 'DECL: an enumeration with values and base type');
     assert(!!fileOf('TYPE E_SynDir :\n(eSynForward, eSynBackward);\nEND_TYPE'), 'DECL: the dump\'s enumeration (a self-typed global list)');
@@ -139,8 +159,22 @@ function inputsOf(project) {
     assert(!text.includes(LEAK_MARKER) && !/\(\*|\/\/|'/.test(text), 'DECL: no library comment, documentation or string text in any declaration');
     assert(!/FUNCTION_BLOCK TON|FUNCTION CONCAT/.test(text) && prep.stats.skippedCompiler >= 1, 'CONFLICT: TON and CONCAT are the compiler\'s own — not redeclared');
     assert(!/FB_UserOwnName/.test(text) && prep.stats.skippedUser >= 1, 'CONFLICT: a name the project declares is not redeclared — the user\'s own wins');
-    assert(!/F_SynLongTime|F_SynBounded|T_SynOpaque|I_SynItf|F_SynOtherOnly/.test(text) && prep.stats.unresolved >= 2,
-        'DECL: an LTIME parameter, a constant array bound, an opaque type, an interface, an unreferenced library — nothing is guessed');
+    assert(!/F_SynLongTime|T_SynOpaque|I_SynItf|F_SynOtherOnly/.test(text) && prep.stats.unresolved >= 1,
+        'DECL: an LTIME parameter, an opaque type, an interface, an unreferenced library — nothing is guessed');
+    assert(!!fileOf('FUNCTION F_SynBounded : BOOL\nVAR_INPUT\n\taData : ARRAY [0..15] OF INT;\nEND_VAR\nEND_FUNCTION'),
+        'DECL: an array bound that is a library constant is written as the constant\'s value (.tmc), so the function is declared');
+    {
+        // Undeclared uses, named and attributed through their owner (R13: the run's summary names them).
+        const uses = prep.undeclaredUses([
+            { message: "Undeclared variable 'TSYNSPAN'" }, { message: "Undeclared function 'F_SYNLONGTIME'" },
+            { message: "Function block 'FB_SYNAXIS' has no member 'NSYNCOUNT'" }, { message: "'NINTERNAL' is an internal variable of FUNCTION_BLOCK 'FB_SYNAXIS' and cannot be accessed from outside" },
+            { message: "Undeclared variable 'TSYNSPAN'" }, { message: 'CASE selector must be an integer, bit, or enum type, got T_SYNOPAQUE' },
+            { message: "Undeclared variable 'F_NOWHERE'" }]);
+        const lib = 'Synthetic Motion Library';
+        assert(JSON.stringify(uses) === JSON.stringify([{ name: 'FB_SynAxis.tSynSpan', library: lib }, { name: 'F_SynLongTime', library: lib },
+            { name: 'FB_SynAxis.nSynCount', library: lib }, { name: 'FB_SynAxis.nInternal', library: lib }, { name: 'F_NOWHERE', library: '' }]),
+        `ATTRIB: an undeclared use is named in the library's spelling, a member through its owner (an inherited one found by its name), once, cascades left out (${JSON.stringify(uses)})`);
+    }
     assert(prep.extraFiles.every(f => /^lib-\d+\.st$/.test(f.name)) && new Set(prep.extraFiles.map(f => f.name)).size === prep.extraFiles.length,
         'DECL: one file per declaration, named so no stem can be a project identifier');
 
@@ -186,6 +220,8 @@ function inputsOf(project) {
         assert(out.text.includes('s.SynMotion.z') && out.text.includes('(* SynMotion.T *)') && out.text.includes("'SynMotion.Q'") && out.text.includes('SynMotion..x'),
             'QUAL: a member access, a comment, a string and a range are left alone');
         assert(ld.stripQualifiers(src, ns, new Set(['synmotion'])).text.includes('a : SynMotion.FB_X'), 'QUAL: a head the project declares itself is not a qualifier');
+        assert(JSON.stringify(out.uses) === JSON.stringify([{ namespace: 'SynMotion', name: 'FB_X' }, { namespace: 'SynMotion', name: 'F_Y' }, { namespace: 'Tc2_Standard', name: 'TON' }]),
+            `QUAL: each stripped qualifier is reported with the name it qualified (${JSON.stringify(out.uses)})`);
         const main = prep.inputs.find(i => /MAIN/.test(i.filePath));
         const orig = inputs.find(i => /MAIN/.test(i.filePath));
         assert(main.unit !== orig.unit && orig.unit.stText.includes('SynMotion.FB_SynAxis') && !main.unit.stText.includes('SynMotion.') &&
@@ -209,6 +245,8 @@ function inputsOf(project) {
             [e("Function block 'FB_SYNAXIS' has no method 'NSYNCOUNT'"), true, 'a known method missing likewise'],
             [e('FB_SYNAXIS has no input or output named FTARGET'), true, 'a known parameter missing from a .tmc-only parameter list'],
             [e("'CSYNMAX' is not a variable of global variable list 'GVL_SynConst'"), true, 'a known global missing from a library list'],
+            [e("'NSYNCOUNT' is an internal variable of FUNCTION_BLOCK 'FB_SYNAXIS' and cannot be accessed from outside"), true, 'a library FB\'s own variable read from outside'],
+            [e("'NSYNCOUNT' is an internal variable of FUNCTION_BLOCK 'FB_USER' and cannot be accessed from outside"), false, 'a user FB\'s own variable read from outside'],
             [e("Undeclared variable 'NSUMM'"), false, 'a user typo (no library knows the name)'],
             [e("Undeclared function 'F_SYNADDD'"), false, 'a typo of a library function'],
             [e("Undefined type 'FB_USEROWNNAME' in PROGRAM 'P'"), false, 'a name the project declares, even if a library knows it'],

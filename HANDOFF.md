@@ -10,12 +10,16 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   merged at `3210d33`, Release run 41671593015 green, VSIX `twincat-plc-toolkit-0.10.1.vsix` attached).
 - **Version history:** 0.10.1 struct EXTENDS from own DUTs (PR #22); 0.10.0 Libraries scoping (PR #18); 0.9.0
   improvement-plan phases; 0.8.x project-aware Generate ST, ResizeObserver fix, solution→project Objects tree.
-- **Last verified:** 2026-11-12 (Linux container, `claude/focused-ptolemy-m6acaz` = R12 + review fixes on top of `dev`) —
-  `REQUIRE_FULL_SUITE=1 npm test` green (**111/111, Coverage: FULL**, compile-real ran), `npm run typecheck` and
-  `npm run lint` exit 0; Linux dev-host (`xvfb-run -a node test/devhost/run.js`) 103 pass / 1 fail, the fail being the
-  known P8 line-ending one; `test/browser/run_pragmas.js` green (the webview is unchanged by R12).
-- **R12 `{IF}`-aware LSP diagnostics: BUILT 2026-11-12**, pushed on `claude/focused-ptolemy-m6acaz` (from `3bdfd29`,
-  dev + roadmap commit; review fixes in the last commit) — needs the user's F5 check, then a squash PR into `dev`.
+- **Last verified:** 2026-11-12 (Linux container, `claude/focused-ptolemy-m6acaz` = R13 round 5 (the user's Windows g++ test:
+  `-std=c++17`, the g++ 7 gate, the C/C++ extension provider; MSYS2 detection from the registry; round 6: selecting the
+  provider) on top of `dev` + roadmap) — `REQUIRE_FULL_SUITE=1 npm test` green (**119/119, Coverage: FULL**; optional gates compile-real, cpp-real
+  and gpp-real all ran), `npm run typecheck` and `npm run lint` exit 0; Linux dev-host (`TCDEV_CODE=<scratch>/VSCode-linux-x64/code
+  TCDEV_CODE_ARGS=--no-sandbox xvfb-run -a node test/devhost/run.js`) 103 pass / 1 fail, the fail being
+  the known P8 line-ending one; browser harnesses `run.js` (83), `run_start_page.js` (110, with the g++ row and its MSYS2 note), `run_pragmas.js` (47; round 2) green;
+  `npx @vscode/vsce ls` lists `node_modules/vscode-cpptools/` (api.js, LICENSE; `out/testApi.*` excluded) and no test file
+  (Playwright from `/opt/node-tools/node_modules`, browsers in `/opt/pw-browsers`).
+- **R12 `{IF}`-aware LSP diagnostics: MERGED** into `dev` as PR #36 (squash `02f2b96`, 2026-11-12 10:56 UTC) after the
+  user's Windows checks (split IF head, both-branch completion/references, END_FOR outside the group, multi-line fbRS, SIM define).
   Review fixes (do not regress): a segment boundary is never a named argument on its own line (`fbRS(\n SET := c,`
   split a method → Unterminated/Unmatched outside any group); enum members inside a group are kept (xmlIndexer
   `extractEnumMembers` took the `)` of `{IF defined(X)}` as the list end); a statement-level nested group no longer
@@ -29,18 +33,132 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   server (R12)". Tests: `test/test_conditional_pragmas.js` (new), R12 cases in `test_live_path.js`, R12 compiler
   parity in `test_compile_real.js` (each fixture compiled per define set: accepted somewhere ⇒ LSP 0). The probe
   case (split `IF` head per branch) and probe2 cases A–I give 0.
-  **Owed by the user (F5 dev host):** the split IF head in both panes of a POU shows no squiggle; completion and
-  references work in both branches; an unrelated missing END_FOR still shows.
   **Proposed, needs the user's XAE build check first:** add a conditional POU and `<CompilerDefines>` to
   TcToolkitSample2 so the ground-truth sample covers R12 (not done: the sample must stay XAE-built).
   **Follow-ups (not R12):** R12b informational branch state (Backlog; never feeds diagnostics; open decision:
   Debug only or "all configurations agree"); definition returning every same-name declaration once
   `mapDefinition` accepts arrays; optional merged completion items (`BOOL | INT (conditional)`).
+- **R13 C++ generation + g++ build: IMPLEMENTED on `claude/focused-ptolemy-m6acaz`, not yet merged** (2026-11-12;
+  needs the user's Windows check). Settings `tcToolkit.compiler.generateCpp` / `buildWithGpp` (both off; build on ⇒
+  generation on, generation off ⇒ build off, per scope) and `tcToolkit.compiler.gppPath` (machine; filled when the build
+  turns on, never overwritten; command *TC Toolkit: Detect g++*). After a check with 0 errors the compiler runs a SECOND
+  time in compile mode (verified: `--json` only with `--check`, `--check` refuses `-o`), output
+  `<project dir>/CPP_Files/<plcproj stem>.cpp|.hpp` under `.tc-toolkit-generated.json` (only unchanged own files are
+  replaced/deleted). g++ `-std=c++17 -c` (g++ 7+ only) against `resources/compiler/include/` (headers vendored at the SAME commit
+  `eb52d2c`, bundle byte-identical; GPL-3.0-only WITH the runtime exception per the fork's COPYING — `iec_fault.hpp`
+  and `iec_global.hpp` carry no per-file SPDX line, covered by COPYING's list only). Compile dropdowns in the editor
+  toolbar and on the start page. Design and rules: DEVELOPMENT.md "C++ generation and the g++ build (roadmap R13)".
+  **Fork gap found** (`gpp-real`): sample 1's `GVL_System.fbStation.State` (PROPERTY read through a global FB
+  instance) is emitted as `FBSTATION.STATE` (no getter) → g++ error on correct code; pinned in
+  `test/test_cpp_real.js` `KNOWN_GPP_GAPS` — report to the fork lane. Sample 2 builds cleanly.
+  **Library use (user decision 2026-11-12, replaces round 1's "no C++ for a project that needs library declarations"):**
+  the compile mode now gets the check's library declarations, so a project that uses vendor-library symbols is
+  generated and g++-checked; library FBs/functions are empty-bodied C++ (g++ accepts it with no warning —
+  `test_cpp_real.js` LIB on a sample copy with the synthetic library). `cppGenerate.libraryCoverage` (from
+  `prepareLibraryCheck`'s `declaredSymbols`/`compilerSubstitutes`/`undeclaredUses(CheckResult.filteredLibrary)`) is shown as a summary
+  sentence naming the libraries as the `.plcproj` references them (a warning), the blocks per library in the *TC Toolkit
+  Compile* channel, and a line-comment header on the `.cpp`/`.hpp` (inside the hashed text: ownership unaffected; none
+  when no block is used). Review round 2 (2026-11-12) closed most of the filtered-error cases so they generate
+  too: a library constant as an array bound/string length is written as its `.tmc` value (`F_SynBounded`), and a
+  library FB's own `.tmc` members are declared as a `VAR` block, so a derived project block reading an inherited
+  variable compiles (`FB_LibChild EXTENDS FB_SynAxis` reading `nInternal`: C++ + g++ clean, `test_cpp_real.js`).
+  A filtered use is named through its owner and library (`FB_SynAxis.tSynSpan`, Synthetic Motion Library);
+  the channel lists coverage only when C++ was written, else only the blocking symbols.
+  **User decisions 2026-11-12 (round 3):** (1) library declarations MAY appear in the generated C++ in `CPP_Files`
+  (accepted; `libraryDecls.js` still writes no ST file), AND the toolkit writes `CPP_Files/.gitignore` so the
+  generated files are not committed by accident — the user may delete it. Built: `cppGenerate.maintainGitignore`
+  (end of every `writeOwnedOutputs`): comment line, then `/` + each recorded file, the `.o` of each recorded `.cpp`,
+  and the record; owned via the record's top-level `gitignore` key (`{sha256}`, CRLF-insensitive); updated while
+  unchanged, left alone when edited, a foreign one never overwritten, and once deleted never recreated (`{removed: true}`);
+  each case except updated/unchanged noted in the *TC Toolkit Compile* channel only (no summary text, no warning).
+  It lists ONLY the toolkit's own files (review round 4): a generated file the user edited (`changed`) is dropped
+  (git sees it; the "Left alone" summary note says so), and a user's own `<project>.o` there before the first write
+  (`foreign`) is never listed — `gitignoreText(manifest, dir)` filters by `ownership`.
+  (2) Library uses with no usable declaration (LTIME/PVOID/XINT interfaces, opaque/interface types, `VAR` of an
+  unresolved type, a library FB's `VAR` read from outside) KEEP blocking generation and g++, each named with its
+  library in the summary — **no stand-in types**. Rules: DEVELOPMENT.md R13 "Library symbols" and "`CPP_Files/.gitignore`".
+  Tests: `test_cpp_generate.js` GITIGNORE, `test_compile_commands.js` R13 GITIGNORE, `test_cpp_real.js` GIT
+  (`git check-ignore -v` / `git status` on a temp repo over the sample copy, incl. the edited `.cpp` and the
+  user's `.o`; skips without git). Note: the copy carries `sample/.gitignore` (`*`), so a test folder outside
+  `TcToolkitSample*/` is ignored by that file, not by ours — keep git probes inside the re-admitted tree.
+  **Review round 1 fixed** (11 findings, `c00eaee`; gates re-run green: 116/116 FULL, dev-host 103/1 P8):
+  owner = `<ProjectGuid>` so a `.plcproj` rename cleans up the old pair and `.o`; case-insensitive record names on
+  win32/darwin; CRLF-insensitive hash; the record is saved even when a later write fails; header errors placed on the
+  `required from here` / generated `#include` line; g++ timeout/cancel kills the process tree; one notification for a
+  missing g++, *Detect g++* only with an empty setting; one `checkConfiguredGpp` for build and Detect (quotes, folders);
+  the compile caret is a disclosure (no `aria-haspopup`); button tooltip and start-page detail follow the options.
+  **For the Windows check:** `CPP_Files/.gitignore` written and honoured by Git for Windows (and not recreated after
+  deleting it), a project using Tc2_* blocks (with the dump) generating C++ whose header and summary name
+  the libraries and g++ accepting it, the dropdown in both places, a MinGW/MSYS2 g++ found by detection, a g++ error landing on
+  `CPP_Files/<project>.cpp` in Problems, the missing-g++ message, an edited `.hpp` left alone, a cancelled g++ build
+  leaving no `cc1plus.exe` (taskkill path, only traced here), a case-only `.plcproj` rename; the start page's
+  **g++ row** (Settings card, under XAE Shell; user request 2026-11-12): an MSYS2/MinGW g++ shown as "Not set: a
+  build uses this one" with the setting empty (and the setting NOT written by showing it), a set path shown,
+  a wrong path with the warning, *Change…* landing on `tcToolkit.compiler.gppPath` in the **User** tab,
+  *Detect again* filling it, and the row updating live after each; *Detect g++*'s toast button *Open Setting*
+  (and the build's missing-g++ *Open Setting*) also landing in the **User** tab.
+  **Round 5 — the user's Windows g++ test (2026-11-12), fixed on this branch:** the user's g++ (very likely MinGW
+  GCC 6.3.0) reported `unrecognized command line option '-Wno-c++17-extensions'` (a GCC 12+ flag), 11 ×
+  `'strucpp::X' declared as an 'inline' variable` (g++ < 7 cannot compile C++17 inline variables at all) and
+  `'maybe_unused' attribute directive ignored` (iec_std_lib.hpp:535); the C/C++ extension (C/C++(1696)) said
+  "cannot open source file iec_types.hpp" on the generated `.hpp`. User decisions, all built: (1) build with
+  `-std=c++17`, flag dropped (both samples + the LIB scenario: 0 warnings on g++ 13); (2) a g++ < 7 is not run
+  (`-dumpfullversion`, else `-dumpversion`; < 7 confirmed by `--version`, clang = unknown = runs; cached per
+  path+size+mtime) — one warning "g++ 6.3.0 is too old: the generated C++ needs g++ 7 or later." + MSYS2 UCRT64
+  hint, *Open Setting* (+ *Detect g++* only while the setting is empty: detection never replaces a set value, so a
+  set old g++ gets "set a newer path or clear the setting" instead, and *Detect g++* names a newer one it finds);
+  the silent fill never writes a g++ < 7; (3) detection takes the first g++ 7+, an older one only when nothing newer
+  exists; start-page row and *Detect g++* say "too old"; a set value is never overwritten; (4) a C/C++ extension
+  custom configuration provider (`src/cppToolsProvider.js`, `vscode-cpptools` 7.1.1 MIT, API v7) for the `.cpp`/`.hpp`
+  in `<project>/CPP_Files/` — writes no file, never hands over a g++ < 7, offers a browse configuration only once
+  a CPP_Files folder exists, and its CPP_Files watcher also works after a mid-session install. The known `has no member named 'STATE'` gap stays.
+  **For the Windows check (round 5):** with the MinGW g++ 6.3 the build is NOT run and the summary shows the
+  too-old warning (start-page g++ row: "g++ 6.3.0 is too old: needs 7 or later."; if the setting holds
+  `C:\MinGW\bin\g++.exe`, the summary offers only *Open Setting* and says to clear it or set a newer path); with MSYS2 UCRT64 g++ 13
+  installed (`pacman -S mingw-w64-ucrt-x86_64-gcc`) *Detect g++* (setting cleared) picks it over `C:\MinGW`, and
+  **TcToolkitSample2 builds clean** (TcToolkitSample: only the known STATE gap); with the C/C++ extension installed,
+  the generated `.hpp`/`.cpp` show **no "cannot open source file"**, and without it nothing changes. Untested here: a real g++ 6.
+  **Provider not selected (user report 2026-11-12, round 6, on this branch):** after generating, C/C++(1696)
+  still said "cannot open source file iec_types.hpp (dependency of TcToolkitSample_PLC.hpp)". Root cause
+  (read in the C/C++ extension 1.22.11's own code, reproduced with it on Linux): it consults only the provider
+  a configuration selects — `configurationProvider` in the ACTIVE configuration of `.vscode/c_cpp_properties.json`
+  (a persisted per-folder index the toolkit cannot read; when unset, config `Win32`, else the last), else
+  `C_Cpp.default.configurationProvider`, matched exactly (`providers.has(id)`; a file value equal to a
+  provider's display name is rewritten to its id by `checkId`, the setting is not); it auto-selects only with no properties file, no
+  `C_Cpp.default.*` value and exactly one registered provider. Fix: `src/cppToolsSelection.js` +
+  `createProviderPrompt` — one message per workspace folder ("IntelliSense for the generated C++ needs TC Toolkit
+  as the C/C++ configuration provider.", *Use TC Toolkit* / *Not now* / *Don't ask again*; *Use* writes the
+  folder-scope setting and re-announces); a properties file naming another provider wins and is never edited
+  (*Open c_cpp_properties.json*) — also when only ANOTHER configuration names another provider (it may be the
+  active one, so the setting is not promised); ids compared exactly as the C/C++ extension does ('TC Toolkit'
+  accepted in the file only), a case/blank near miss is logged to the console. Only the C/C++ extension's
+  requests go to the **TC Toolkit C/C++** output channel; the selection check logs to the console.
+  Real C/C++ extension 1.22.11 (Linux, scratch harness, not in the suite): with a provider-less
+  `c_cpp_properties.json` the exact symptom; after the setting, only a planted undefined-identifier error;
+  with no file and no settings it auto-selected TC Toolkit and the provider was asked.
+  **For the Windows check (round 6):** Compile Project with C++ generation on → the message appears once for
+  the workspace folder; *Use TC Toolkit* → `.vscode/settings.json` gains `C_Cpp.default.configurationProvider`
+  and the `.hpp`/`.cpp` lose "cannot open source file" (else run *C/C++: Reset IntelliSense Database*); the
+  **TC Toolkit C/C++** output channel shows `canProvideConfiguration … -> true` / `provideConfigurations … -> 1
+  item(s)` with the Windows include paths. If the channel does not exist or is empty, the provider is still not
+  selected — check `.vscode/c_cpp_properties.json` (a `configurationProvider` in the configuration active in the
+  C/C++ status bar wins; the message then offers to open it) and that the id is spelled exactly. Regenerating or reopening does not ask again after *Use* / *Don't ask again*; *Not now* asks next session.
+  **MSYS2 detection (user report 2026-11-12: MSYS2 installed, but only `C:\MinGW` 6.3 was found):** built on this
+  branch — `src/msys2Detect.js` reads MSYS2's folder from the uninstall registry (reg.exe, async, once per session,
+  never blocks activation) and adds `D:\msys64`, `C:\tools\msys64`, `%USERPROFILE%\msys64`, Scoop; `usr\bin` g++
+  last. MSYS2 without g++ → *Detect g++* / start-page "not found" row say "MSYS2 is installed at <root> but has no
+  g++: in the MSYS2 UCRT64 shell run pacman -S …". Only faked here (no Windows registry).
+  **For the Windows check (MSYS2):** with the setting empty, *Detect g++* finds the user's MSYS2 g++ over
+  `C:\MinGW` (wherever MSYS2 is installed); with gcc removed from MSYS2 (or before `pacman -S
+  mingw-w64-ucrt-x86_64-gcc`) the toast and the start-page g++ row name the MSYS2 folder and the pacman command;
+  activation is not slowed (registry read in the background); a Compile Project started right after activation
+  (setting empty, MSYS2 only in the registry) builds with the MSYS2 g++, not "too old" — the build waits (bounded,
+  7.5 s) for the registry search; *Detect g++* never writes a g++ < 7 before that search has finished.
 - **R3.2 Compile Project: MERGED** into `dev` as PR #32 (`28f24f1`, 2026-11-10 22:22 UTC).
 - **R3.3–R9 MERGED** into `dev` as PR #33 (`6424968`, 2026-11-11 09:30 UTC) after the user's Windows checks
   (dev-host green after `npm ci`; manual checks all passed). Details per item are in git history and ROADMAP "Done".
   After a branch switch that changes package-lock.json, run `npm ci` — the dev-host test now says so itself.
-  Toolkit lane is done except R12 (built, above), R10 (trigger-only) and R11 (publishing, last, after the fork lane).
+  Toolkit lane is done except R10 (trigger-only) and R11 (publishing, last, after the fork lane).
 - **Settings keys renamed `twincat.*` → `tcToolkit.*`** (user report 2026-11-11; `c6145b6`, `765b5e1`, 109 suites):
   one-time migration at activation (`src/settingsMigration.js`), old keys stay contributed as deprecated stand-ins.
   Search results read "Tc Toolkit › Compiler: Path" (VS Code cannot show an uppercase "TC" from a key). **Merged** as
@@ -49,7 +167,7 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   `eb52d2c`, `conditional_pragmas` on, `<CompilerDefines>` read from the `.plcproj` (`src/compilerDefines.js`;
   `Condition`s evaluated for Debug | `TwinCAT RT (x64)`), project defines → `--pragma-define`, per-object defines →
   `--file-define` on that object's unit. Details: ROADMAP "Done", DEVELOPMENT.md "Compile Project".
-- **Fork lane (2026-11-12):** S3b done, release K at `c1faca7`. **S4 in progress** (lane agent `a182a76c41bf282e2`, notes in scratchpad `S3B-HANDOVER.md`): LTIME merged as fork #131 (`5e2120b`), LDATE/LTOD/LDT as #132 (`5f4dc19`; #132 was stacked on #131 and conflicted after its squash — fixed by merging development into the branch, branch side wins, merge commit `bb6f0cb`). Gates on the combined head: 5811 passed / 7 skipped, vsext 345, lint 531 warnings, existing outputs byte-identical. Next: items 3–5, then **user decisions 2026-11-12**: IEC Table 36 CONCAT_/SPLIT_/DAY_OF_WEEK (same-name user/library POU wins), DT_TO_DATE/DT_TO_TOD/DATE-arithmetic fix on its own PR (changes OSCAT results, release note), debug map keeps short type names, `T#1_500ms` = 1500 ms stays. Item 5 adds the Table 46 typed timer names. Later branches start from development, not stacked. The IEC text is in scratchpad `iecpdf/` (never committed; cite table numbers only).
+- **Fork lane (2026-11-12):** **S4 done** (fork #131–#132, #134–#139; release L at `3acc3f6`, note in the coordination doc; development equals the gated combined tree, 5972 tests). Lane agent `a182a76c41bf282e2` now on: `--strict` per Figure 12 for bit strings (user), property read through a global FB instance (the R13 g++ gap on TcToolkitSample), SPDX lines on two runtime headers, then coordination row 35 (one-pass diagnostics, threaded-warning scope). Merging stacked fork branches: merge development into the branch with `-X ours` only when the branch contains the squashed content, then check `git diff <branch> HEAD` shows only development's own changes; for independent branches resolve by hand, and verify the final development tree against the gated combined tree. Next fork item after these: S10.
 - **R11 publishing:** last — after the toolkit lane AND the fork lane are done (user, 2026-11-10).
 - **Sample diagnostics: 0 against a baseline of 0** — verified with the Beckhoff archives present AND moved aside.
 

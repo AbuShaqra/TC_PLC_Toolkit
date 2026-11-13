@@ -25,6 +25,8 @@
  * Local-only (Beckhoff licence §4(3), user decision 2026-11-10): the declarations are strings in
  * memory, handed to compileCheck.runCheck, which writes them into its per-run temporary directory
  * and deletes that directory when the run ends. This module writes no file and keeps nothing.
+ * (R13, user decision 2026-11-12: the optional C++ generation compiles with the same declarations,
+ * so the library blocks appear in the generated C++ as declarations with empty bodies, named as such.)
  *
  * Conservative by construction: a declaration whose types cannot all be resolved is not written
  * (its uses stay undeclared and the filter takes them), never written with a guessed type; a name
@@ -128,32 +130,59 @@ function isConversionName(upper) {
 
 /**
  * Reads a type the way a declaration may write it, or refuses it. Accepted: an identifier (a
- * namespace qualifier is stripped), `STRING`/`WSTRING` with an optional literal length,
- * `ARRAY [l..u, …] OF T` with integer-literal bounds or `*`, `POINTER TO T`, `REFERENCE TO T`.
- * Anything else — a bound or length that names a constant, a qualifier that is not a library
- * namespace — is null, and the declaration that needs it is not written.
+ * namespace qualifier is stripped), `STRING`/`WSTRING` with an optional length,
+ * `ARRAY [l..u, …] OF T` with integer bounds or `*`, `POINTER TO T`, `REFERENCE TO T`. A bound or
+ * length is an integer literal, or a library integer CONSTANT whose value the sources give
+ * (`constants`), written as that value. Anything else — a bound that names any other constant or an
+ * expression, a qualifier that is not a library namespace — is null, and the declaration that needs
+ * it is not written.
  * @param {string} raw
  * @param {Set<string>} namespaces Lower-cased library namespaces.
+ * @param {Map<string, string>} [constants] Lower-cased library integer constant → its value.
  * @returns {TypeRef|null}
  */
-function readType(raw, namespaces) {
+function readType(raw, namespaces, constants) {
     const t = String(raw || '').trim().replace(/\s+/g, ' ');
     if (!t) return null;
+    /** An integer literal, or a known library constant's value; null otherwise. */
+    const bound = (/** @type {string} */ b) => {
+        const v = b.trim();
+        if (/^[+-]?\d+$/.test(v)) return v;
+        if (!constants || constants.size === 0) return null;
+        const parts = v.split('.').map(p => p.trim());
+        if (!parts.every(p => IDENT.test(p))) return null;
+        // `Ns.cMax` and `GVL.cMax` name the same constant as `cMax` (a list name is the only other head allowed).
+        const name = parts[parts.length - 1].toLowerCase();
+        const heads = parts.slice(0, -1);
+        if (heads.length > 2 || !heads.every((h, i) => namespaces.has(h.toLowerCase()) || (i === heads.length - 1 && constants.has(`${h.toLowerCase()}.${name}`)))) return null;
+        return constants.get(name) || null;
+    };
     let m = /^(POINTER|REFERENCE) TO (.+)$/i.exec(t);
     if (m) {
-        const inner = readType(m[2], namespaces);
+        const inner = readType(m[2], namespaces, constants);
         return inner && { text: `${m[1].toUpperCase()} TO ${inner.text}`, deps: inner.deps };
     }
     m = /^ARRAY ?\[([^\]]+)\] ?OF (.+)$/i.exec(t);
     if (m) {
-        const dims = m[1].split(',').map(d => d.trim());
-        const okDims = dims.every(d => d === '*' || /^[+-]?\d+ ?\.\. ?[+-]?\d+$/.test(d));
-        if (!okDims) return null;
-        const inner = readType(m[2], namespaces);
-        return inner && { text: `ARRAY [${dims.map(d => d.replace(/ /g, '')).join(', ')}] OF ${inner.text}`, deps: inner.deps };
+        /** @type {string[]} */
+        const dims = [];
+        for (const d of m[1].split(',').map(x => x.trim())) {
+            if (d === '*') { dims.push(d); continue; }
+            const range = /^(.+?) ?\.\. ?(.+)$/.exec(d);
+            const lo = range ? bound(range[1]) : null;
+            const hi = range ? bound(range[2]) : null;
+            if (lo === null || hi === null) return null;
+            dims.push(`${lo}..${hi}`);
+        }
+        const inner = readType(m[2], namespaces, constants);
+        return inner && { text: `ARRAY [${dims.join(', ')}] OF ${inner.text}`, deps: inner.deps };
     }
-    m = /^(STRING|WSTRING) ?(?:[([] ?(\d+) ?[)\]])?$/i.exec(t);
-    if (m) return { text: m[2] ? `${m[1].toUpperCase()}(${m[2]})` : m[1].toUpperCase(), deps: [] };
+    m = /^(STRING|WSTRING) ?(?:[([] ?([^)\]]+?) ?[)\]])?$/i.exec(t);
+    if (m) {
+        if (!m[2]) return { text: m[1].toUpperCase(), deps: [] };
+        const length = bound(m[2]);
+        return length !== null && /^\d+$/.test(length) ? { text: `${m[1].toUpperCase()}(${length})`, deps: [] } : null;
+    }
     const name = stripNamespaces(t, namespaces);
     if (!name || !IDENT.test(name)) return null;
     const upper = name.toUpperCase();
@@ -209,6 +238,8 @@ function literalValue(raw) {
  *   or a dump symbol of a library the project's `.plcproj` references). False for a dump symbol of
  *   another library: it is declared only when a declaration that IS declared needs it.
  * @property {RawMember[]} [io] Function block / function parameters.
+ * @property {RawMember[]} [locals] A function block's own variables (`VAR`), from the `.tmc`: a
+ *   derived block of the project may use them.
  * @property {boolean} [ioComplete] The parameter list is known to be complete (the dump's is; a
  *   `.tmc`'s may not be — a call naming a parameter it lacks is then filtered like a missing member).
  * @property {Array<{name: string, returnType: string, params: RawMember[]}>} [methods]
@@ -219,6 +250,8 @@ function literalValue(raw) {
  * @property {RawMember[]} [members] Struct fields / global-list variables.
  * @property {Array<{name: string, value: string}>} [values] Enumeration values.
  * @property {string} [baseType] Alias target / enumeration base.
+ * @property {string} [namespace] The library namespace the source attributes it to ('' unknown).
+ * @property {string} [library] The library title the signatures dump files it under ('' unknown).
  */
 
 const TMC_ANY_SUBITEM = /<SubItem>\s*<Name([^>]*)>([^<]+)<\/Name>\s*<Type([^>]*)>([^<]*)<\/Type>((?:\s*<ArrayInfo>[\s\S]*?<\/ArrayInfo>)*)([\s\S]*?)<\/SubItem>/g;
@@ -249,7 +282,9 @@ function parseTmcDeclarations(xml) {
         if (!head) continue;
         const name = head[2].trim();
         if (!IDENT.test(name)) continue;
-        if (!/\bNamespace\s*=\s*"[^"]+"/.test(head[1]) && !/\bTcBaseType\s*=\s*"true"/i.test(head[1])) continue;
+        const nsAttr = /\bNamespace\s*=\s*"([^"]+)"/.exec(head[1]);
+        if (!nsAttr && !/\bTcBaseType\s*=\s*"true"/i.test(head[1])) continue;
+        const namespace = nsAttr ? nsAttr[1].trim() : '';
         names.push(name);
         const props = new Set([...block.matchAll(/<Property>\s*<Name>([^<]+)<\/Name>/g)].map(m => m[1].trim()));
         if (props.has('TcPlcInterfaceType') || props.has('TcComInterface')) continue;
@@ -287,9 +322,9 @@ function parseTmcDeclarations(xml) {
         const isFb = props.has('PouType') || parsed.kind === 'fb' || actions.length > 0 || /<Implements>/.test(block);
         if (statics.length > 0) {
             // A global variable list (a PROGRAM has the same shape but carries methods or a PouType).
-            if (plain.length === 0 && !isFb) decls.push({ kind: 'gvl', name, origin: 'tmc', topLevel: true, members: statics });
+            if (plain.length === 0 && !isFb) decls.push({ kind: 'gvl', name, origin: 'tmc', topLevel: true, namespace, members: statics });
         } else if (enumValues.length > 0) {
-            decls.push({ kind: 'enum', name, origin: 'tmc', topLevel: true, values: enumValues, baseType });
+            decls.push({ kind: 'enum', name, origin: 'tmc', topLevel: true, namespace, values: enumValues, baseType });
         } else if (isFb) {
             /** @type {Array<{name: string, returnType: string, params: RawMember[]}>} */
             const methods = [];
@@ -313,14 +348,15 @@ function parseTmcDeclarations(xml) {
                 }
             }
             decls.push({
-                kind: 'fb', name, origin: 'tmc', topLevel: true, ioComplete: false,
+                kind: 'fb', name, origin: 'tmc', topLevel: true, namespace, ioComplete: false,
                 io: (parsed.members || []).filter(m => m.scope).map(m => ({ name: m.name, type: m.type, scope: m.scope })),
+                locals: (parsed.members || []).filter(m => !m.scope).map(m => ({ name: m.name, type: m.type, scope: '' })),
                 methods, properties: [...properties.values()], actions, extendsType
             });
         } else if (plain.length > 0) {
-            decls.push({ kind: 'struct', name, origin: 'tmc', topLevel: true, members: plain.map(m => ({ name: m.name, type: m.type })), extendsType });
+            decls.push({ kind: 'struct', name, origin: 'tmc', topLevel: true, namespace, members: plain.map(m => ({ name: m.name, type: m.type })), extendsType });
         } else if (baseType) {
-            decls.push({ kind: 'alias', name, origin: 'tmc', topLevel: true, baseType });
+            decls.push({ kind: 'alias', name, origin: 'tmc', topLevel: true, namespace, baseType });
         }
     }
     return { decls, names };
@@ -334,6 +370,9 @@ function parseTmcDeclarations(xml) {
  * @property {Set<string>} knownNames Lower-cased library names (archives, dump, `.tmc`, namespaces).
  * @property {Set<string>} namespaces Lower-cased library namespaces of the project's `.plcproj`.
  * @property {boolean} hasSignatures A `library-signatures.xml` dump was found.
+ * @property {(name: string) => string} libraryOf The library a name belongs to, as the `.plcproj`
+ *   references it (`Tc2_Standard`), else the dump's library title or the namespace; '' when unknown.
+ * @property {(name: string) => string} spellingOf The library's own spelling of a name.
  * @property {{archives: number, archiveNames: number, signatureFiles: number, tmcFiles: number, ms: number}} stats
  */
 
@@ -392,13 +431,61 @@ function gatherLibraryKnowledge(o) {
     for (const file of sigFiles) {
         const parsed = signatureLibrariesFor(file);
         if (!parsed) continue;
-        for (const lib of parsed.libraries) mergeSignatureLibrary(lib, decls, knownNames, libsymbols.namespaceForLibraryTitle(lib.name, index) !== '');
+        for (const lib of parsed.libraries) mergeSignatureLibrary(lib, decls, knownNames, libsymbols.namespaceForLibraryTitle(lib.name, index));
     }
 
     return {
         decls, knownNames, namespaces, hasSignatures: sigFiles.length > 0,
+        ...libraryAttribution(index, decls),
         stats: { archives: archiveStats.archives, archiveNames, signatureFiles: sigFiles.length, tmcFiles: tmcFiles.length, ms: Date.now() - started }
     };
+}
+
+/**
+ * Which library each library name belongs to, named as the project's `.plcproj` references it (the
+ * Include's title: `Tc2_Standard`), for what Compile Project tells the user about library code the
+ * generated C++ does not cover. Sources: the declaration's own namespace (`.tmc`) or dump library,
+ * then the archives filed under a namespace, then a namespace named directly.
+ * @param {any} index The fresh symbol index gatherLibraryKnowledge filled.
+ * @param {Map<string, RawDecl>} decls
+ * @returns {{libraryOf: (name: string) => string, spellingOf: (name: string) => string}} `libraryOf`:
+ *   '' when the name cannot be attributed; `spellingOf`: the library's own spelling of a name (the
+ *   compiler reports names upper-cased), else the name as given.
+ */
+function libraryAttribution(index, decls) {
+    /** @type {Map<string, string>} lower-cased namespace → the .plcproj's library name */
+    const referenceName = new Map();
+    for (const entry of libsymbols.getLibraryCatalog(index)) {
+        const ns = String(entry.namespace || '').toLowerCase();
+        const name = String(entry.include || '').split(',')[0].trim() || entry.title || entry.namespace;
+        if (ns && name && !referenceName.has(ns)) referenceName.set(ns, name);
+    }
+    /** @type {Map<string, string>} lower-cased symbol → namespace */
+    const archiveNs = new Map();
+    /** @type {Map<string, string>} lower-cased symbol → the library's spelling */
+    const spelled = new Map();
+    for (const ns of libsymbols.getLibraryNamespaceNames(index)) {
+        spelled.set(ns.toLowerCase(), ns);
+        for (const n of libsymbols.getNamespaceSymbols(ns, index)) {
+            const key = n.toLowerCase();
+            if (!archiveNs.has(key)) { archiveNs.set(key, ns); spelled.set(key, n); }
+        }
+    }
+    for (const [key, d] of decls) spelled.set(key, d.name);
+    const ofNamespace = (/** @type {string} */ ns) => (ns ? (referenceName.get(ns.toLowerCase()) || ns) : '');
+    const spellingOf = (/** @type {string} */ name) => spelled.get(String(name || '').toLowerCase()) || String(name || '');
+    /** @type {(name: string) => string} */
+    const libraryOf = (name) => {
+        const key = String(name || '').toLowerCase();
+        if (!key) return '';
+        const d = decls.get(key);
+        if (d && d.namespace) return ofNamespace(d.namespace);
+        if (d && d.library) return d.library;
+        if (archiveNs.has(key)) return ofNamespace(/** @type {string} */ (archiveNs.get(key)));
+        if (referenceName.has(key)) return /** @type {string} */ (referenceName.get(key));
+        return '';
+    };
+    return { libraryOf, spellingOf };
 }
 
 /**
@@ -409,14 +496,20 @@ function gatherLibraryKnowledge(o) {
  * @param {any} lib One library of parseLibrarySignaturesXml.
  * @param {Map<string, RawDecl>} decls
  * @param {Set<string>} knownNames
- * @param {boolean} referenced The project's `.plcproj` references this library.
+ * @param {string} namespace The namespace the project's `.plcproj` references this library under;
+ *   '' when it does not reference it.
  */
-function mergeSignatureLibrary(lib, decls, knownNames, referenced) {
+function mergeSignatureLibrary(lib, decls, knownNames, namespace) {
+    const referenced = namespace !== '';
     const add = (/** @type {RawDecl} */ d) => {
         knownNames.add(d.name.toLowerCase());
+        d.library = String(lib.name || '');
+        d.namespace = namespace;
         const key = d.name.toLowerCase();
         const existing = decls.get(key);
         if (!existing) { decls.set(key, d); return; }
+        if (!existing.library) existing.library = d.library;
+        if (!existing.namespace) existing.namespace = namespace;
         if (referenced && existing.origin === 'sig') existing.topLevel = true;
         if (existing.kind === 'fb' && d.kind === 'fb') { existing.io = d.io; existing.ioComplete = true; }
         if (existing.kind === 'gvl' && d.kind === 'gvl') {
@@ -538,10 +631,13 @@ function blankCommentsAndStrings(text) {
  * @param {string} text
  * @param {Set<string>} namespaces Lower-cased.
  * @param {Set<string>} userNames Lower-cased.
- * @returns {{text: string, count: number}}
+ * @returns {{text: string, count: number, uses: Array<{namespace: string, name: string}>}} `uses`: each
+ *   qualifier stripped, with the name it qualified (as written).
  */
 function stripQualifiers(text, namespaces, userNames) {
-    if (!namespaces || namespaces.size === 0) return { text, count: 0 };
+    /** @type {Array<{namespace: string, name: string}>} */
+    const uses = [];
+    if (!namespaces || namespaces.size === 0) return { text, count: 0, uses };
     const code = blankCommentsAndStrings(text);
     const chars = text.split('');
     let count = 0;
@@ -561,8 +657,9 @@ function stripQualifiers(text, namespaces, userNames) {
         if (!/[A-Za-z_]/.test(code[after] || '')) continue;
         for (let p = m.index; p <= j; p++) chars[p] = ' ';
         count++;
+        uses.push({ namespace: m[0], name: (/^[A-Za-z_]\w*/.exec(code.slice(after)) || [''])[0] });
     }
-    return { text: chars.join(''), count };
+    return { text: chars.join(''), count, uses };
 }
 
 // ── Selection and writing ──────────────────────────────────────────────────────────────────────
@@ -588,6 +685,33 @@ function stripQualifiers(text, namespaces, userNames) {
  */
 
 /**
+ * The library integer constants whose value the sources give, for array bounds and string lengths
+ * in library declarations: a global-list variable the dump marks CONSTANT with an integer initial
+ * value from the `.tmc`. A name the project declares itself, or that two lists give different
+ * values, is left out. Keys: `name` and `list.name`, lower-cased.
+ * @param {LibraryKnowledge} knowledge
+ * @param {Set<string>} userNames
+ * @returns {Map<string, string>}
+ */
+function libraryConstants(knowledge, userNames) {
+    /** @type {Map<string, string>} */
+    const out = new Map();
+    const conflicting = new Set();
+    for (const d of knowledge.decls.values()) {
+        if (d.kind !== 'gvl') continue;
+        for (const m of d.members || []) {
+            const key = m.name.toLowerCase();
+            if (!m.constant || !m.value || !/^[+-]?\d+$/.test(m.value) || userNames.has(key) || !IDENT.test(m.name)) continue;
+            out.set(`${d.name.toLowerCase()}.${key}`, m.value);
+            if (out.has(key) && out.get(key) !== m.value) conflicting.add(key);
+            out.set(key, m.value);
+        }
+    }
+    for (const key of conflicting) out.delete(key);
+    return out;
+}
+
+/**
  * Chooses and writes the declarations for one check: the library symbols the units reference
  * (by name, or a global list / enumeration through one of its members), plus — transitively — the
  * library types those need. A declaration with a type that resolves to nothing declared is
@@ -599,6 +723,8 @@ function stripQualifiers(text, namespaces, userNames) {
  */
 function buildDeclarations(knowledge, o) {
     const ns = knowledge.namespaces;
+    const constants = libraryConstants(knowledge, o.userNames);
+    const rt = (/** @type {string} */ t) => readType(t, ns, constants);
     const referenced = new Set();
     for (const text of o.texts) for (const m of String(text).matchAll(/[A-Za-z_]\w*/g)) referenced.add(m[0].toLowerCase());
     const counts = { skippedCompiler: 0, skippedUser: 0, unresolved: 0 };
@@ -613,7 +739,7 @@ function buildDeclarations(knowledge, o) {
     const requiredDeps = (/** @type {RawDecl} */ d) => {
         /** @type {string[]} */
         const deps = [];
-        const need = (/** @type {string} */ t) => { const r = readType(t, ns); if (!r) return false; deps.push(...r.deps); return true; };
+        const need = (/** @type {string} */ t) => { const r = rt(t); if (!r) return false; deps.push(...r.deps); return true; };
         if (d.kind === 'fb' || d.kind === 'function') {
             for (const p of d.io || []) if (!need(p.type)) return null;
         }
@@ -630,7 +756,7 @@ function buildDeclarations(knowledge, o) {
     const optionalDeps = (/** @type {RawDecl} */ d) => {
         /** @type {string[]} */
         const deps = [];
-        const add = (/** @type {string} */ t) => { const r = readType(t, ns); if (r) deps.push(...r.deps); };
+        const add = (/** @type {string} */ t) => { const r = rt(t); if (r) deps.push(...r.deps); };
         for (const m of d.members || []) add(m.type);
         for (const m of d.methods || []) { if (m.returnType) add(m.returnType); for (const p of m.params) add(p.type); }
         for (const p of d.properties || []) add(p.type);
@@ -679,8 +805,8 @@ function buildDeclarations(knowledge, o) {
         }
     }
 
-    const typeOk = (/** @type {string} */ t) => { const r = readType(t, ns); return !!r && r.deps.every(resolves); };
-    const typeText = (/** @type {string} */ t) => /** @type {TypeRef} */ (readType(t, ns)).text;
+    const typeOk = (/** @type {string} */ t) => { const r = rt(t); return !!r && r.deps.every(resolves); };
+    const typeText = (/** @type {string} */ t) => /** @type {TypeRef} */ (rt(t)).text;
     /** @type {ExtraFile[]} */
     const files = [];
     const owners = new Set();
@@ -736,6 +862,7 @@ function renderDeclaration(d, c) {
             const parent = c.decls.get(cursor);
             if (!parent || !c.included.has(cursor)) break;
             for (const m of parent.io || []) inherited.add(m.name.toLowerCase());
+            for (const m of parent.locals || []) inherited.add(m.name.toLowerCase());
             for (const m of parent.methods || []) inherited.add(m.name.toLowerCase());
             for (const p of parent.properties || []) inherited.add(p.name.toLowerCase());
             cursor = parent.extendsType ? String(stripNamespaces(parent.extendsType, c.ns) || '').toLowerCase() : '';
@@ -745,6 +872,12 @@ function renderDeclaration(d, c) {
             ...vars('VAR_INPUT', byScope(io, 'VAR_INPUT')), ...vars('VAR_OUTPUT', byScope(io, 'VAR_OUTPUT')),
             ...vars('VAR_IN_OUT', byScope(io, 'VAR_IN_OUT')));
         const taken = new Set(io.map(m => m.name.toLowerCase()));
+        // The block's own variables, so a derived block of the project can use them. One whose type
+        // does not resolve is left out (a use of it stays undeclared and is filtered).
+        const locals = (d.locals || []).filter(m => IDENT.test(m.name) && !inherited.has(m.name.toLowerCase())
+            && !taken.has(m.name.toLowerCase()) && c.typeOk(m.type));
+        for (const m of locals) taken.add(m.name.toLowerCase());
+        lines.push(...vars('VAR', locals));
         for (const m of d.methods || []) {
             const key = m.name.toLowerCase();
             if (!IDENT.test(m.name) || taken.has(key)) continue;
@@ -796,9 +929,11 @@ function renderDeclaration(d, c) {
 /**
  * What a compiler message says about a name, when it is one of the "this symbol is not declared"
  * messages: an undeclared variable or function, an undefined type, a constant that is not one, a
- * missing member of a library type this run declared partially, a missing global of a library list.
+ * missing member of a library type this run declared partially, an internal variable of a library
+ * function block read from outside (the `.tmc` lists them; whether TwinCAT allows the access is not
+ * decided here), a missing global of a library list.
  * @param {string} message
- * @returns {{kind: 'undeclared'|'undefined-type'|'member'|'io'|'global'|'cascade', name: string, owner?: string}|null}
+ * @returns {{kind: 'undeclared'|'undefined-type'|'member'|'internal'|'io'|'global'|'cascade', name: string, owner?: string}|null}
  */
 function classifyMessage(message) {
     const s = String(message || '');
@@ -810,6 +945,8 @@ function classifyMessage(message) {
     if (m) return { kind: 'undeclared', name: m[1] };
     m = /^'([^']+)' is not a variable of global variable list '([^']+)'/.exec(s);
     if (m) return { kind: 'global', name: m[1], owner: m[2] };
+    m = /^'([^']+)' is an internal variable of FUNCTION_BLOCK '([^']+)'/.exec(s);
+    if (m) return { kind: 'internal', name: m[1], owner: m[2] };
     m = /'([^']+)' has no (?:member|method) '([^']+)'/.exec(s);
     if (m) return { kind: 'member', name: m[2], owner: m[1] };
     m = /^([A-Za-z_]\w*) has no input or output named ([A-Za-z_]\w*)$/.exec(s);
@@ -828,9 +965,9 @@ function classifyMessage(message) {
 
 /**
  * The filter: an ERROR is dropped only when it says a symbol is not declared AND that symbol is a
- * known library name the project does not declare itself. A missing member is dropped only on a
- * library type this run declared (the `.tmc` and dump member lists can be partial) and only when the
- * member's name is a known library name; a missing call parameter only on a function block whose
+ * known library name the project does not declare itself. A missing member, or an internal variable
+ * read from outside, is dropped only on a library type this run declared (the `.tmc` and dump member
+ * lists can be partial) and only when the member's name is a known library name; a missing call parameter only on a function block whose
  * parameter list came from the `.tmc` alone; a "got X" cascade only when X's own "undefined type"
  * error was dropped. Everything else — every warning, every user symbol, every unknown name — stays.
  * @param {{knownNames: Set<string>, userNames: Set<string>, owners: Set<string>, globalLists: Set<string>,
@@ -854,7 +991,7 @@ function createLibraryFilter(o) {
                 if (c.kind === 'cascade') { later.push({ d, c }); continue; }
                 let drop = false;
                 if (c.kind === 'undeclared' || c.kind === 'undefined-type') drop = library(c.name);
-                else if (c.kind === 'member') drop = o.owners.has(String(c.owner).toLowerCase()) && library(c.name);
+                else if (c.kind === 'member' || c.kind === 'internal') drop = o.owners.has(String(c.owner).toLowerCase()) && library(c.name);
                 else if (c.kind === 'io') drop = !!o.partialIo && o.partialIo.has(String(c.owner).toLowerCase()) && library(c.name);
                 else if (c.kind === 'global') drop = o.globalLists.has(String(c.owner).toLowerCase()) && library(c.name);
                 if (drop) {
@@ -868,6 +1005,42 @@ function createLibraryFilter(o) {
     };
 }
 
+/**
+ * One dropped error's library symbol, named and attributed: a member through its owner. A member the
+ * compiler reports with no owner (a derived block reading an inherited variable: "Undeclared
+ * variable 'NVAR'") and that is not a library symbol itself is looked up in the library function
+ * blocks (parameters, variables, methods, properties, actions) and global lists, the declared ones
+ * first; it is named through an owner only when exactly one owner has it.
+ * @param {LibraryKnowledge} knowledge
+ * @param {{kind: string, name: string, owner?: string}} c classifyMessage's reading.
+ * @param {{libraryOf: (n: string) => string, spellingOf: (n: string) => string, declared: Set<string>}} o
+ * @returns {{name: string, library: string}}
+ */
+function attributeUse(knowledge, c, o) {
+    const key = c.name.toLowerCase();
+    /** The owner's own spelling of one of its members, or ''. */
+    const memberOf = (/** @type {RawDecl|undefined} */ d) => {
+        if (!d) return '';
+        const lists = [d.io, d.locals, d.members, d.methods, d.properties].map(l => (l || []).map(x => x.name));
+        for (const n of [...lists.flat(), ...(d.actions || []), ...(d.values || []).map(v => v.name)]) if (n.toLowerCase() === key) return n;
+        return '';
+    };
+    if (c.owner) {
+        const owner = knowledge.decls.get(c.owner.toLowerCase());
+        const ownerName = owner ? owner.name : o.spellingOf(c.owner);
+        return { name: `${ownerName}.${memberOf(owner) || o.spellingOf(c.name)}`, library: o.libraryOf(ownerName) || o.libraryOf(c.name) };
+    }
+    if (knowledge.decls.has(key)) return { name: o.spellingOf(c.name), library: o.libraryOf(c.name) };
+    const owners = [...knowledge.decls.values()].filter(d => (d.kind === 'fb' || d.kind === 'gvl') && memberOf(d));
+    const declaredOwners = owners.filter(d => o.declared.has(d.name.toLowerCase()));
+    const pick = declaredOwners.length === 1 ? declaredOwners[0] : (declaredOwners.length === 0 && owners.length === 1 ? owners[0] : null);
+    if (pick) return { name: `${pick.name}.${memberOf(pick)}`, library: o.libraryOf(pick.name) };
+    // Several owners: no owner is named, but their common library is.
+    const libraries = new Set(owners.map(d => o.libraryOf(d.name)));
+    const common = libraries.size === 1 ? /** @type {string} */ ([...libraries][0]) : '';
+    return { name: o.spellingOf(c.name), library: o.libraryOf(c.name) || common };
+}
+
 // ── The one entry point ────────────────────────────────────────────────────────────────────────
 
 /**
@@ -878,6 +1051,17 @@ function createLibraryFilter(o) {
  * @property {LibraryFilter} filter
  * @property {boolean} hasSignatures
  * @property {boolean} referencesLibraries The project's `.plcproj` references at least one library.
+ * @property {Array<{name: string, kind: RawDecl['kind'], library: string}>} declaredSymbols What the
+ *   declarations hold, with the library each belongs to (sorted by name).
+ * @property {Array<{name: string, library: string}>} compilerSubstitutes Library-qualified names the
+ *   compiler provides itself (`Tc2_Standard.TON`): its own implementation stands in for the library's.
+ * @property {(name: string) => string} libraryOf See LibraryKnowledge.
+ * @property {(name: string) => string} spellingOf See LibraryKnowledge.
+ * @property {(diagnostics: Array<{message: string}>) => Array<{name: string, library: string}>} undeclaredUses
+ *   The library symbols behind the errors the filter dropped (cascades left out), in the library's
+ *   own spelling, with their library. A member is named through its owner (`FB_X.nVar`), and
+ *   attributed through it: a member reported without an owner (a derived block using an inherited
+ *   variable) is looked up among the library function blocks and lists.
  * @property {{declared: number, skippedCompiler: number, skippedUser: number, unresolved: number,
  *   qualifiers: number, knownNames: number, gatherMs: number, ms: number}} stats
  */
@@ -893,20 +1077,50 @@ function prepareLibraryCheck(o) {
     const knowledge = o.knowledge || gatherLibraryKnowledge({ projectDir: o.projectDir, roots: o.roots });
     const userNames = collectUserNames(o.inputs);
     let qualifiers = 0;
+    /** @type {Array<{namespace: string, name: string}>} */
+    const qualified = [];
     const inputs = (o.inputs || []).map((input) => {
         const stripped = stripQualifiers(input.unit.stText, knowledge.namespaces, userNames);
         if (stripped.count === 0) return input;
         qualifiers += stripped.count;
+        qualified.push(...stripped.uses);
         const lines = stripped.text.split('\n');
         return { ...input, unit: { ...input.unit, stText: stripped.text, lines } };
     });
+    const compilerNames = compilerProvidedNames(o.compilerPath);
     const set = buildDeclarations(knowledge, {
-        texts: inputs.map(i => i.unit.stText), userNames, compilerNames: compilerProvidedNames(o.compilerPath)
+        texts: inputs.map(i => i.unit.stText), userNames, compilerNames
     });
+    const libraryOf = knowledge.libraryOf || (() => '');
+    const spellingOf = knowledge.spellingOf || ((/** @type {string} */ n) => n);
+    const declaredSymbols = [...set.declared].map(key => /** @type {RawDecl} */ (knowledge.decls.get(key)))
+        .map(d => ({ name: d.name, kind: d.kind, library: libraryOf(d.name) }))
+        .sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
+    /** @type {Map<string, {name: string, library: string}>} */
+    const substitutes = new Map();
+    for (const q of qualified) {
+        const upper = q.name.toUpperCase();
+        if (!q.name || userNames.has(q.name.toLowerCase()) || set.declared.has(q.name.toLowerCase())) continue;
+        if (!compilerNames.has(upper) && !isConversionName(upper)) continue;
+        if (!substitutes.has(upper)) substitutes.set(upper, { name: q.name, library: libraryOf(q.namespace) });
+    }
     const filter = createLibraryFilter({ knownNames: knowledge.knownNames, userNames, owners: set.owners, globalLists: set.globalLists, partialIo: set.partialIo });
+    const undeclaredUses = (/** @type {Array<{message: string}>} */ diagnostics) => {
+        /** @type {Map<string, {name: string, library: string}>} */
+        const out = new Map();
+        for (const d of diagnostics || []) {
+            const c = classifyMessage(d && d.message);
+            if (!c || c.kind === 'cascade') continue;
+            const use = attributeUse(knowledge, c, { libraryOf, spellingOf, declared: set.declared });
+            const key = use.name.toLowerCase();
+            if (!out.has(key)) out.set(key, use);
+        }
+        return [...out.values()];
+    };
     return {
         inputs, extraFiles: set.files, filter, hasSignatures: knowledge.hasSignatures,
         referencesLibraries: knowledge.namespaces.size > 0,
+        declaredSymbols, compilerSubstitutes: [...substitutes.values()], libraryOf, spellingOf, undeclaredUses,
         stats: { declared: set.declared.size, ...set.counts, qualifiers, knownNames: knowledge.knownNames.size,
             gatherMs: knowledge.stats.ms, ms: Date.now() - started }
     };

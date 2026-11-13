@@ -16,6 +16,9 @@ const { registerRenameCommands } = require('./src/commands/renameCommands');
 const { registerStartCommands } = require('./src/commands/startCommands');
 const { registerCompileCommands } = require('./src/commands/compileCommands');
 const { registerXaeShellCommands } = require('./src/commands/xaeShellCommands');
+const { registerGppCommands } = require('./src/commands/gppCommands');
+const { defaultMsys2RootCache } = require('./src/msys2Detect');
+const { registerCppToolsProvider } = require('./src/commands/cppToolsCommands');
 const { migrateSettings } = require('./src/settingsMigration');
 const { TwinCatDragAndDropController } = require('./src/treeDragAndDrop');
 const { TwinCatCustomEditorProvider } = require('./src/customEditorProvider');
@@ -580,14 +583,20 @@ function activate(context) {
     // process). Registered before the start page so the page can ask whether the compiler is there.
     /** @type {{startPage: {postState: () => void}}|null} */
     let start = null;
+    // `twincat.detectGpp`; its silent fill of an EMPTY g++ path runs when the g++ build is turned on.
+    const gpp = registerGppCommands(context);
     const compile = registerCompileCommands(context, {
         provider, getProjectMap: () => hostProjectMap,
-        onSettingsChanged: () => { if (start) start.startPage.postState(); }
+        onSettingsChanged: () => { if (start) start.startPage.postState(); },
+        fillGppPath: gpp.autoFill
     });
+    // IntelliSense for the generated C++ in Microsoft's C/C++ extension, when it is installed (not awaited).
+    registerCppToolsProvider(context, { getProjectMap: () => hostProjectMap });
 
     start = registerStartCommands(context, {
         provider, getProjectMap: () => hostProjectMap, getSolutionMap: () => hostSolutionMap,
-        isCompilerAvailable: compile.isAvailable
+        isCompilerAvailable: compile.isAvailable,
+        compileOptions: compile.compileOptions, setCompileOption: compile.setCompileOption
     });
     /** @type {any} */ (start).recordOpenSolutions();
 
@@ -597,6 +606,10 @@ function activate(context) {
     // migration, so a path the user set under the old key is moved, not shadowed by a detected one.
     const xaeShell = registerXaeShellCommands(context);
     settingsMigrated.then(() => { xaeShell.autoFill(); });
+
+    // MSYS2's install folders from the uninstall registry, for g++ detection (Windows only; nothing is
+    // spawned elsewhere). Not awaited and never rejects; once found, the start page's g++ row is redrawn.
+    defaultMsys2RootCache().load().then((roots) => { if (roots.length && start) start.startPage.postState(); });
 }
 
 function deactivate() {

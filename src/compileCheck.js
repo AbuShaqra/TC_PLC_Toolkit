@@ -76,13 +76,45 @@ function parseNodeVersion(text) {
 }
 
 /**
+ * Stops a child process and every process it started. On Windows `taskkill /T /F` ends the tree
+ * (a plain kill is TerminateProcess on the child alone); on POSIX the child leads its own process
+ * group (`detached` in runChild) and the group gets SIGTERM. Falls back to killing the child alone.
+ * Never throws.
+ * @param {{pid?: number, kill: (signal?: any) => any}} child
+ * @param {{platform?: string, execFile?: (file: string, args: string[], options: Object, cb: (err: any) => void) => any,
+ *   processKill?: (pid: number, signal: string) => any}} [deps] For the tests.
+ * @returns {'tree'|'child'} What was signalled.
+ */
+function killProcessTree(child, deps = {}) {
+    const platform = deps.platform || process.platform;
+    const pid = child && typeof child.pid === 'number' ? child.pid : 0;
+    const killChild = () => { try { child.kill(); } catch (e) { /* already gone */ } };
+    if (pid > 0) {
+        try {
+            if (platform === 'win32') {
+                const execFile = deps.execFile || childProcess.execFile;
+                execFile('taskkill', ['/PID', String(pid), '/T', '/F'], { windowsHide: true }, (err) => { if (err) killChild(); });
+                return 'tree';
+            }
+            (deps.processKill || process.kill)(-pid, 'SIGTERM');
+            return 'tree';
+        } catch (e) { /* no such group: the child alone */ }
+    }
+    killChild();
+    return 'child';
+}
+
+/**
  * Runs a child process to its end, collecting its output. Never rejects and never hangs: a spawn
  * failure, a timeout and a cancellation each resolve with their own `outcome`.
  * @param {SpawnLike} spawn
  * @param {string} command
  * @param {string[]} args
- * @param {{cwd?: string, env?: Object<string, string|undefined>, timeoutMs: number, onCancel?: (cancel: () => void) => void}} options
+ * @param {{cwd?: string, env?: Object<string, string|undefined>, timeoutMs: number, onCancel?: (cancel: () => void) => void,
+ *   killTree?: boolean}} options
  *   `env` replaces the inherited environment; omitted, the child inherits this process's.
+ *   `killTree`: a timeout or cancellation stops the child's own children too (g++ runs `cc1plus`
+ *   and `as`, which a plain kill of the driver leaves running); see `killProcessTree`.
  * @returns {Promise<{outcome: 'exit'|'spawn-error'|'timeout'|'cancelled', code: number|null,
  *   stdout: string, stderr: string, error: string}>}
  */
@@ -103,12 +135,17 @@ function runChild(spawn, command, args, options) {
         };
         const stop = (/** @type {'timeout'|'cancelled'} */ outcome) => {
             if (settled) return;
-            try { if (child) child.kill(); } catch (e) { /* already gone */ }
+            if (child) {
+                if (options.killTree) killProcessTree(child);
+                else { try { child.kill(); } catch (e) { /* already gone */ } }
+            }
             finish(outcome, null);
         };
         try {
             /** @type {Object} */
             const spawnOptions = { cwd: options.cwd, shell: false, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] };
+            // Its own process group on POSIX, so the whole group can be signalled (killProcessTree).
+            if (options.killTree && process.platform !== 'win32') /** @type {any} */ (spawnOptions).detached = true;
             if (options.env) /** @type {any} */ (spawnOptions).env = options.env;
             child = spawn(command, args, spawnOptions);
         } catch (err) {
@@ -370,14 +407,19 @@ function buildCheckInputs(files, parse) {
  */
 
 /**
- * The compiler's command line for one check (everything after the Node executable).
+ * The compiler's command line for one run (everything after the Node executable). The check mode
+ * (`--check --json`) is the default; with `output` it is the compile mode instead, which writes
+ * `<output>` (`.cpp`) and the `.hpp` beside it into the run's directory (C++ generation, R13). The
+ * compiler cannot do both at once: `--json` is refused without `--check`, and `--check` with `-o`.
  * @param {{compilerPath: string, dialectFile: string, inputs: Array<{name: string, unit: {globalListName: string|null}}>,
- *   extraFiles?: ExtraInput[], defineArgs?: string[]}} o `defineArgs`: the compiler defines as
+ *   extraFiles?: ExtraInput[], defineArgs?: string[], output?: string}} o `defineArgs`: the compiler defines as
  *   `--pragma-define` and `--file-define` arguments (src/compilerDefines.js `defineArgs`, `fileDefineArgs`).
+ *   `output`: the `.cpp` file name for the compile mode (a plain name: it is written in the run's directory).
  * @returns {string[]}
  */
-function buildCheckArgs(o) {
-    const args = [o.compilerPath, '--check', '--json', '--dialect-file', o.dialectFile, ...(o.defineArgs || [])];
+function buildCompilerArgs(o) {
+    const mode = o.output ? [] : ['--check', '--json'];
+    const args = [o.compilerPath, ...mode, '--dialect-file', o.dialectFile, ...(o.defineArgs || [])];
     const extra = o.extraFiles || [];
     for (const file of extra) args.push(file.name);
     for (const input of o.inputs) args.push(input.name);
@@ -388,7 +430,17 @@ function buildCheckArgs(o) {
     for (const input of o.inputs) {
         if (input.unit.globalListName) args.push('--global-list', `${input.name}=${input.unit.globalListName}`);
     }
+    if (o.output) args.push('-o', o.output);
     return args;
+}
+
+/**
+ * The compiler's command line for one check (`--check --json`).
+ * @param {Parameters<typeof buildCompilerArgs>[0]} o Without `output`.
+ * @returns {string[]}
+ */
+function buildCheckArgs(o) {
+    return buildCompilerArgs({ ...o, output: undefined });
 }
 
 /**
@@ -470,10 +522,11 @@ function parseCheckOutput(stdout, exitCode, stderr = '') {
  * @param {CheckInput[]} inputs The inputs of the same run.
  * @param {{extraFiles?: ExtraInput[], libraryFilter?: {select: (d: RawDiagnostic[]) => Set<any>}}} [options]
  * @returns {{diagnostics: CompileDiagnostic[], general: RawDiagnostic[], filteredPragmaWarnings: number,
- *   filteredLibraryDiagnostics: number, libraryMessages: RawDiagnostic[]}}
+ *   filteredLibraryDiagnostics: number, filteredLibrary: RawDiagnostic[], libraryMessages: RawDiagnostic[]}}
  *   `general` holds diagnostics that name no input file (they cannot be placed, and are still
  *   reported); `filteredPragmaWarnings` counts the pragma-skipped warnings that were dropped;
- *   `filteredLibraryDiagnostics` the errors the library filter dropped; `libraryMessages` are the
+ *   `filteredLibraryDiagnostics` the errors the library filter dropped (`filteredLibrary`: those
+ *   errors themselves); `libraryMessages` are the
  *   compiler's messages about the generated library declarations themselves.
  */
 function mapCheckDiagnostics(diagnostics, inputs, options = {}) {
@@ -488,13 +541,15 @@ function mapCheckDiagnostics(diagnostics, inputs, options = {}) {
     const libraryMessages = [];
     let filteredPragmaWarnings = 0;
     let filteredLibraryDiagnostics = 0;
+    /** @type {RawDiagnostic[]} */
+    const filteredLibrary = [];
     // The library filter looks at the user's diagnostics only, all together (see libraryDecls.js).
     const onUserCode = (diagnostics || []).filter(d => d.file && (byName.has(d.file) || byName.has(fileOf(d))));
     const dropped = options.libraryFilter ? options.libraryFilter.select(onUserCode) : new Set();
     for (const d of diagnostics || []) {
         if (d.severity === 'warning' && PRAGMA_SKIPPED_RE.test(d.message)) { filteredPragmaWarnings++; continue; }
         if (d.file && extraNames.has(fileOf(d))) { libraryMessages.push(d); continue; }
-        if (dropped.has(d)) { filteredLibraryDiagnostics++; continue; }
+        if (dropped.has(d)) { filteredLibraryDiagnostics++; filteredLibrary.push(d); continue; }
         // The compiler echoes the path it was given; accept a `./` or directory prefix on it.
         const input = d.file ? (byName.get(d.file) || byName.get(fileOf(d))) : null;
         if (!input) { general.push(d); continue; }
@@ -504,7 +559,7 @@ function mapCheckDiagnostics(diagnostics, inputs, options = {}) {
             endLine: at.endLine, endColumn: at.endColumn, severity: d.severity, message: d.message, exact: at.exact
         });
     }
-    return { diagnostics: mapped, general, filteredPragmaWarnings, filteredLibraryDiagnostics, libraryMessages };
+    return { diagnostics: mapped, general, filteredPragmaWarnings, filteredLibraryDiagnostics, filteredLibrary, libraryMessages };
 }
 
 /**
@@ -515,12 +570,31 @@ function mapCheckDiagnostics(diagnostics, inputs, options = {}) {
  * @property {RawDiagnostic[]} general
  * @property {number} filteredPragmaWarnings
  * @property {number} filteredLibraryDiagnostics Errors on library symbols the filter dropped.
+ * @property {RawDiagnostic[]} filteredLibrary Those errors.
  * @property {RawDiagnostic[]} libraryMessages The compiler's messages about the generated library
  *   declarations (not the user's code; not counted as errors or warnings).
  * @property {number} errors Errors after mapping (placed + general).
  * @property {number} warnings Warnings after filtering (placed + general).
  * @property {number} durationMs
  */
+
+/**
+ * Creates a run's temporary directory and writes the units and the generated library declarations
+ * into it. The caller deletes it.
+ * @param {{inputs: CheckInput[], extraFiles?: ExtraInput[], tmpRoot?: string}} o
+ * @returns {string} The directory.
+ */
+function writeRunDirectory(o) {
+    const dir = fs.mkdtempSync(path.join(o.tmpRoot || os.tmpdir(), 'twincat-compile-'));
+    try {
+        for (const file of o.extraFiles || []) fs.writeFileSync(path.join(dir, file.name), file.text, 'utf8');
+        for (const input of o.inputs) fs.writeFileSync(path.join(dir, input.name), input.unit.stText + '\n', 'utf8');
+    } catch (err) {
+        try { fs.rmSync(dir, { recursive: true, force: true }); } catch (e) { /* best effort */ }
+        throw err;
+    }
+    return dir;
+}
 
 /**
  * Runs one check: writes the units to a fresh temporary directory, starts the compiler there, reads
@@ -547,15 +621,13 @@ async function runCheck(o) {
     /** @type {(status: CheckResult['status'], message?: string) => CheckResult} */
     const ended = (status, message = '') => ({
         status, message, diagnostics: [], general: [], filteredPragmaWarnings: 0, filteredLibraryDiagnostics: 0,
-        libraryMessages: [], errors: 0, warnings: 0,
+        filteredLibrary: [], libraryMessages: [], errors: 0, warnings: 0,
         durationMs: Date.now() - started
     });
     let dir = '';
     try {
         try {
-            dir = fs.mkdtempSync(path.join(o.tmpRoot || os.tmpdir(), 'twincat-compile-'));
-            for (const file of o.extraFiles || []) fs.writeFileSync(path.join(dir, file.name), file.text, 'utf8');
-            for (const input of o.inputs) fs.writeFileSync(path.join(dir, input.name), input.unit.stText + '\n', 'utf8');
+            dir = writeRunDirectory(o);
         } catch (err) {
             return ended('failed', `The temporary files for the check could not be written: ${err && /** @type {any} */ (err).message ? /** @type {any} */ (err).message : err}`);
         }
@@ -572,6 +644,7 @@ async function runCheck(o) {
             status: 'done', message: '', diagnostics: mapped.diagnostics, general: mapped.general,
             filteredPragmaWarnings: mapped.filteredPragmaWarnings,
             filteredLibraryDiagnostics: mapped.filteredLibraryDiagnostics,
+            filteredLibrary: mapped.filteredLibrary,
             libraryMessages: mapped.libraryMessages,
             errors: all.filter(d => d.severity === 'error').length,
             warnings: all.filter(d => d.severity === 'warning').length,
@@ -635,6 +708,7 @@ module.exports = {
     PANE_LABELS,
     parseNodeVersion,
     runChild,
+    killProcessTree,
     BUNDLED_COMPILER,
     bundledCompilerPath,
     resolveCompilerPath,
@@ -643,7 +717,9 @@ module.exports = {
     findNode,
     checkSetup,
     buildCheckInputs,
+    buildCompilerArgs,
     buildCheckArgs,
+    writeRunDirectory,
     parseCheckOutput,
     mapCheckDiagnostics,
     runCheck,

@@ -2,7 +2,8 @@
  * @file test/browser/run.js
  * @description The automated pass over media/editor.js — builds the harness, serves it, drives a
  * real Chromium through Find References, and asserts what the references peek does — plus the
- * Generate ST menu and Compile Project's pane markers (owner 'twincat-compile').
+ * Generate ST menu and Compile Project's pane markers (owner 'twincat-compile'), and the Compile
+ * dropdown's two C++ switches (R13).
  *
  * This exists because media/editor.js is the one part of the codebase no Node test can reach, and
  * it is where the peek actually lives. Everything asserted here was found by hand first; encoding
@@ -505,7 +506,8 @@ function assert(cond, msg) {
             return {
                 present: !!btn, glyph: !!(btn && btn.querySelector('svg.btn-icon path')),
                 label: btn ? btn.getAttribute('aria-label') : '', tooltip: btn ? btn.title : '',
-                afterGenerate: !!(btn && gen && gen.nextElementSibling === btn),
+                // The Compile split button (R13: the button and its options caret) follows the Generate ST one.
+                afterGenerate: !!(btn && gen && gen.nextElementSibling === document.getElementById('compile-group') && btn.parentElement.id === 'compile-group'),
                 genTooltip: document.getElementById('generate-st-btn').title
             };
         });
@@ -527,6 +529,87 @@ function assert(cond, msg) {
         await settle(50);
         assert(!(await page.evaluate(() => document.getElementById('compile-btn').disabled)), 'when the run ends the button is enabled again');
 
+        // 7f. The Compile dropdown (R13): the caret opens two checkboxes that show the host's settings and
+        //     post every change; the coupling (the g++ build needs the C++) shows at once; settings changed
+        //     elsewhere arrive as `compileOptions`; it is keyboard-operable and closes on Escape / outside click.
+        const opts = () => page.evaluate(() => ({
+            open: !document.getElementById('compile-menu').hidden,
+            expanded: document.getElementById('compile-caret').getAttribute('aria-expanded'),
+            cpp: document.getElementById('compile-opt-cpp').checked, gpp: document.getElementById('compile-opt-gpp').checked,
+            focus: document.activeElement ? document.activeElement.id : ''
+        }));
+        const optionMsgs = () => page.evaluate(() => window.__harness.sent.filter(m => m.type === 'setCompileOption'));
+        let o = await opts();
+        assert(!o.open && o.expanded === 'false' && !o.cpp && !o.gpp, `the Compile dropdown starts closed, both boxes off (the init message's options) (${JSON.stringify(o)})`);
+        const caretInfo = await page.evaluate(() => {
+            const c = document.getElementById('compile-caret');
+            return { label: c.getAttribute('aria-label'), popup: c.getAttribute('aria-haspopup'), controls: c.getAttribute('aria-controls'),
+                labels: [...document.querySelectorAll('#compile-menu label')].map(l => l.textContent.trim()) };
+        });
+        assert(caretInfo.label === 'Compile options' && caretInfo.popup === null && caretInfo.controls === 'compile-menu'
+            && JSON.stringify(caretInfo.labels) === '["Generate C++","Build with g++"]',
+        `the caret is a disclosure (aria-expanded/aria-controls, no aria-haspopup: its popup is checkboxes, not a menu) with two labelled boxes (${JSON.stringify(caretInfo)})`);
+        const btnTitle = () => page.evaluate(() => document.getElementById('compile-btn').title);
+        assert(/^Compile Project: check this PLC project with the IEC 61131-3 compiler$/.test(await btnTitle()), `with both options off the button's tooltip says it checks (${await btnTitle()})`);
+        await page.evaluate(() => { window.__harness.sent.length = 0; });
+        await page.click('#compile-caret');
+        o = await opts();
+        assert(o.open && o.expanded === 'true' && o.focus === 'compile-opt-cpp', `clicking the caret opens the menu and focuses Generate C++ (${JSON.stringify(o)})`);
+        const menuBox = await page.evaluate(() => { const r = document.getElementById('compile-menu').getBoundingClientRect(); return { left: r.left, right: r.right, w: window.innerWidth }; });
+        assert(menuBox.left >= 0 && menuBox.right <= menuBox.w, `the open menu stays inside the webview (${JSON.stringify(menuBox)})`);
+        await page.keyboard.press('ArrowDown');
+        assert((await opts()).focus === 'compile-opt-gpp', 'ArrowDown moves to Build with g++');
+        await page.keyboard.press('Space');
+        o = await opts();
+        let om = await optionMsgs();
+        assert(o.gpp && o.cpp && om.length === 1 && om[0].key === 'buildWithGpp' && om[0].value === true,
+            `Space ticks Build with g++, which ticks Generate C++ too, and posts setCompileOption (${JSON.stringify(om)})`);
+        assert(/write it as C\+\+ into its CPP_Files folder, and build that with g\+\+/.test(await btnTitle()), `the tooltip follows: check, write C++, build with g++ (${await btnTitle()})`);
+        await page.keyboard.press('ArrowUp');
+        await page.keyboard.press('Space');
+        o = await opts();
+        om = await optionMsgs();
+        assert(!o.cpp && !o.gpp && om.length === 2 && om[1].key === 'generateCpp' && om[1].value === false,
+            `unticking Generate C++ unticks Build with g++ and posts it (${JSON.stringify(om)})`);
+        await page.keyboard.press('Escape');
+        o = await opts();
+        assert(!o.open && o.expanded === 'false' && o.focus === 'compile-caret', `Escape closes the menu and returns focus to the caret (${JSON.stringify(o)})`);
+        // The host's answer (or a change made in the Settings editor) is what the boxes show.
+        await page.evaluate(() => window.postMessage({ type: 'compileOptions', options: { generateCpp: false, buildWithGpp: true } }, '*'));
+        await settle(30);
+        o = await opts();
+        assert(o.cpp && o.gpp, 'a compileOptions message from the host updates the boxes live (the build shows generation on)');
+        await page.evaluate(() => window.postMessage({ type: 'compileOptions', options: { generateCpp: true, buildWithGpp: false } }, '*'));
+        await settle(30);
+        o = await opts();
+        assert(o.cpp && !o.gpp, 'and back: generation only');
+        assert(/then write it as C\+\+ into its CPP_Files folder$/.test(await btnTitle()), `the tooltip follows a host update too: check, then write C++ (${await btnTitle()})`);
+        await page.click('#compile-caret');
+        await page.mouse.click(5, viewport.height - 5);
+        assert(!(await opts()).open, 'a click elsewhere closes the menu');
+        await page.click('#generate-st-caret');
+        await page.click('#compile-caret');
+        const both = await page.evaluate(() => ({ gen: !document.getElementById('generate-st-menu').hidden, comp: !document.getElementById('compile-menu').hidden }));
+        assert(!both.gen && both.comp, `opening one split menu closes the other (${JSON.stringify(both)})`);
+        await page.keyboard.press('Escape');
+        await page.evaluate(() => { window.__harness.sent.length = 0; document.getElementById('compile-btn').click(); });
+        compileMsgs = await page.evaluate(() => window.__harness.sent.filter(m => m.type === 'compile-project'));
+        assert(compileMsgs.length === 1, 'the Compile button itself still runs Compile Project');
+        const caretStyle = await page.evaluate(() => {
+            const cs = (id) => getComputedStyle(document.getElementById(id));
+            return { btnRight: cs('compile-btn').borderTopRightRadius, caretLeft: cs('compile-caret').borderTopLeftRadius, bg: cs('compile-caret').backgroundImage !== 'none' };
+        });
+        assert(caretStyle.btnRight === '0px' && caretStyle.caretLeft === '0px' && caretStyle.bg,
+            `the button and its caret are fused into one themed split button, like Generate ST (${JSON.stringify(caretStyle)})`);
+        if (process.env.HARNESS_TOOLBAR_SHOTS) {
+            await page.click('#compile-caret');
+            await settle(80);
+            const shot = path.join(process.env.HARNESS_TOOLBAR_SHOTS, 'compile-menu-open.png');
+            await page.screenshot({ path: shot, clip: { x: 0, y: 0, width: viewport.width, height: 200 } });
+            console.log('compile menu screenshot written to ' + shot);
+            await page.keyboard.press('Escape');
+        }
+
         // Narrow editors: both buttons stay whole and inside the webview; the page never scrolls sideways.
         await page.evaluate(() => window.postMessage({ type: 'projectList', projects: [{ key: 'a', label: 'PLC_A' }, { key: 'b', label: 'PLC_B' }] }, '*'));
         const toolbarAt = async (width) => {
@@ -537,7 +620,7 @@ function assert(cond, msg) {
                 const gen = document.getElementById('generate-st-btn');
                 const label = document.querySelector('#compile-btn .btn-label');
                 return {
-                    width: window.innerWidth, gen: box('generate-st-btn'), caret: box('generate-st-caret'), compile: box('compile-btn'),
+                    width: window.innerWidth, gen: box('generate-st-btn'), caret: box('generate-st-caret'), compile: box('compile-btn'), compileCaret: box('compile-caret'),
                     genCut: gen.scrollWidth > gen.clientWidth, labelShown: getComputedStyle(label).display !== 'none',
                     sideScroll: document.documentElement.scrollWidth > window.innerWidth || document.body.scrollWidth > window.innerWidth
                 };
@@ -546,8 +629,8 @@ function assert(cond, msg) {
         for (const width of [320, 360, 560, 700, 820, 900, 960, 1100, 1200]) {
             const t = await toolbarAt(width);
             const inside = (b) => b.width > 0 && b.left >= 0 && b.right <= t.width;
-            assert(inside(t.gen) && inside(t.caret) && inside(t.compile) && t.compile.width >= 28 && t.gen.width >= 40 && !t.sideScroll,
-                `at ${width}px Generate ST, its caret and Compile are all visible inside the editor, with no sideways scroll (${JSON.stringify(t)})`);
+            assert(inside(t.gen) && inside(t.caret) && inside(t.compile) && inside(t.compileCaret) && t.compile.width >= 28 && t.gen.width >= 40 && !t.sideScroll,
+                `at ${width}px Generate ST, its caret, Compile and its caret are all visible inside the editor, with no sideways scroll (${JSON.stringify(t)})`);
             assert(width > 1100 ? t.labelShown : !t.labelShown,
                 `at ${width}px the Compile label is ${width > 1100 ? 'shown' : 'dropped to the glyph (name kept in the tooltip)'}`);
         }

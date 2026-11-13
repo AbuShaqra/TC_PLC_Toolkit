@@ -1,0 +1,644 @@
+// SPDX-License-Identifier: GPL-3.0-only WITH STruCpp-runtime-exception
+// Copyright (c) 2025 Autonomy®
+// This file is part of the STruC++ Runtime Library and is covered by the
+// STruC++ Runtime Library Exception. See COPYING.RUNTIME for details.
+/**
+ * STruC++ Runtime - IEC Array Types
+ *
+ * This header provides IEC 61131-3 array types as C++ templates.
+ * Arrays use 1-based indexing (IEC convention) and support element-level forcing.
+ * Unlike MatIEC, individual array elements can be forced for debugging.
+ */
+
+#pragma once
+
+#include <array>
+#include <cstdint>
+#include <initializer_list>
+#include <type_traits>
+#include "iec_fault.hpp"
+#if STRUCPP_HAS_EXCEPTIONS
+#include <stdexcept>
+#endif
+#include "iec_var.hpp"
+#include "iec_pointer.hpp"
+
+namespace strucpp {
+
+// Array bounds specification
+template<int64_t Lower, int64_t Upper>
+struct ArrayBounds {
+    static constexpr int64_t lower = Lower;
+    static constexpr int64_t upper = Upper;
+    static constexpr size_t size = static_cast<size_t>(Upper - Lower + 1);
+    
+    static constexpr bool in_bounds(int64_t index) noexcept {
+        return index >= Lower && index <= Upper;
+    }
+};
+
+// Single-dimensional array
+// T is stored directly — caller controls wrapping (IECVar<INT_t> for elementary,
+// bare StructName for composites whose fields already contain IECVar leaves).
+template<typename T, typename Bounds>
+class IEC_ARRAY_1D {
+public:
+    using element_type = T;
+    using bounds_type = Bounds;
+    using var_type = T;
+    static constexpr size_t size = Bounds::size;
+
+private:
+    std::array<T, size> data_;
+    
+    // Convert IEC 1-based index to 0-based internal index
+    static constexpr size_t to_internal_index(int64_t index) noexcept {
+        return static_cast<size_t>(index - Bounds::lower);
+    }
+    
+public:
+    // Default constructor - initializes all elements to default
+    IEC_ARRAY_1D() noexcept : data_{} {}
+
+    // The same bounds with another element type (ARRAY OF STRING(3) from
+    // ARRAY OF STRING): converted element by element.
+    template<typename U, typename = typename std::enable_if<
+        !std::is_same<U, T>::value &&
+        std::is_assignable<T&, const U&>::value>::type>
+    IEC_ARRAY_1D(const IEC_ARRAY_1D<U, Bounds>& other) noexcept : data_{} {
+        for (size_t i = 0; i < size; ++i) data_[i] = other.data()[i];
+    }
+
+    template<typename U, typename = typename std::enable_if<
+        !std::is_same<U, T>::value &&
+        std::is_assignable<T&, const U&>::value>::type>
+    IEC_ARRAY_1D& operator=(const IEC_ARRAY_1D<U, Bounds>& other) noexcept {
+        for (size_t i = 0; i < size; ++i) data_[i] = other.data()[i];
+        return *this;
+    }
+    
+    // Initializer list constructor
+    template<typename U>
+    IEC_ARRAY_1D(std::initializer_list<U> init) noexcept : data_{} {
+        size_t i = 0;
+        for (const auto& val : init) {
+            if (i >= size) break;
+            data_[i] = val;
+            ++i;
+        }
+    }
+
+    // Element-typed initializer list, for an array whose element is itself a
+    // composite: `ARRAY[0..1] OF Row := [[1,2,3],[4,5,6]]`, and the nested
+    // Array1D chain a 4+-dimensional array lowers to. The template above can't
+    // serve these — `U` has nothing to deduce from a braced element — while
+    // this overload lets each element convert through its own constructor.
+    //
+    // Not ambiguous with the template for a scalar list: `{1, 2, 3}` deduces
+    // `U = int` exactly, whereas this overload would need a user-defined
+    // conversion per element, so the template wins.
+    IEC_ARRAY_1D(std::initializer_list<T> init) noexcept : data_{} {
+        size_t i = 0;
+        for (const auto& val : init) {
+            if (i >= size) break;
+            data_[i] = val;
+            ++i;
+        }
+    }
+    
+    // Element access (1-based IEC indexing) - no bounds checking.
+    // constexpr so &arr[i] is a constant expression — required by AVR
+    // PROGMEM placement of the generated debug-pointer table.
+    // generated_debug.cpp emits entries like
+    //   { (void*)&g_config.foo.MY_ARRAY[i], TAG_DINT, 0 }
+    // which would otherwise need dynamic initialization and avr-gcc
+    // rejects `dynamic initialization put into program memory area`.
+    constexpr var_type& operator[](int64_t index) noexcept {
+        return data_[to_internal_index(index)];
+    }
+
+    constexpr const var_type& operator[](int64_t index) const noexcept {
+        return data_[to_internal_index(index)];
+    }
+    
+    // Bounds-checked access - throws std::out_of_range on invalid index
+    var_type& at(int64_t index) {
+        if (!Bounds::in_bounds(index)) {
+#if STRUCPP_HAS_EXCEPTIONS
+            throw std::out_of_range("Array index out of bounds");
+#else
+            iec_runtime_fault(IecFault::ArrayBounds);
+#endif
+        }
+        return data_[to_internal_index(index)];
+    }
+    
+    const var_type& at(int64_t index) const {
+        if (!Bounds::in_bounds(index)) {
+#if STRUCPP_HAS_EXCEPTIONS
+            throw std::out_of_range("Array index out of bounds");
+#else
+            iec_runtime_fault(IecFault::ArrayBounds);
+#endif
+        }
+        return data_[to_internal_index(index)];
+    }
+    
+    // Iterators for range-based for loops
+    auto begin() noexcept { return data_.begin(); }
+    auto end() noexcept { return data_.end(); }
+    auto begin() const noexcept { return data_.begin(); }
+    auto end() const noexcept { return data_.end(); }
+    auto cbegin() const noexcept { return data_.cbegin(); }
+    auto cend() const noexcept { return data_.cend(); }
+    
+    // Size information
+    static constexpr size_t length() noexcept { return size; }
+    static constexpr int64_t lower_bound(int = 1) noexcept { return Bounds::lower; }
+    static constexpr int64_t upper_bound(int = 1) noexcept { return Bounds::upper; }
+    
+    // Raw data access (for interop)
+    var_type* data() noexcept { return data_.data(); }
+    const var_type* data() const noexcept { return data_.data(); }
+};
+
+// Multi-dimensional array (2D)
+template<typename T, typename Bounds1, typename Bounds2>
+class IEC_ARRAY_2D {
+public:
+    using element_type = T;
+    using var_type = T;
+    static constexpr size_t rows = Bounds1::size;
+    static constexpr size_t cols = Bounds2::size;
+    static constexpr size_t total_size = rows * cols;
+
+private:
+    std::array<T, total_size> data_;
+    
+    // Convert 2D IEC indices to linear internal index
+    static constexpr size_t to_linear_index(int64_t i, int64_t j) noexcept {
+        return static_cast<size_t>((i - Bounds1::lower) * cols + (j - Bounds2::lower));
+    }
+    
+public:
+    IEC_ARRAY_2D() noexcept : data_{} {}
+
+    // The same bounds with another element type (ARRAY OF STRING(3) from
+    // ARRAY OF STRING): converted element by element.
+    template<typename U, typename = typename std::enable_if<
+        !std::is_same<U, T>::value &&
+        std::is_assignable<T&, const U&>::value>::type>
+    IEC_ARRAY_2D(const IEC_ARRAY_2D<U, Bounds1, Bounds2>& other) noexcept : data_{} {
+        for (size_t i = 0; i < total_size; ++i) data_[i] = other.data()[i];
+    }
+
+    template<typename U, typename = typename std::enable_if<
+        !std::is_same<U, T>::value &&
+        std::is_assignable<T&, const U&>::value>::type>
+    IEC_ARRAY_2D& operator=(const IEC_ARRAY_2D<U, Bounds1, Bounds2>& other) noexcept {
+        for (size_t i = 0; i < total_size; ++i) data_[i] = other.data()[i];
+        return *this;
+    }
+
+    // Flat (row-major) initializer-list constructor — mirrors IEC_ARRAY_1D.
+    // ST aggregate inits for a 2D array (e.g. `ARRAY[1..20,0..1] OF REAL := [..]`)
+    // codegen to a flat brace list; fill row-major, ignoring any overflow.
+    template<typename U>
+    IEC_ARRAY_2D(std::initializer_list<U> init) noexcept : data_{} {
+        size_t i = 0;
+        for (const auto& val : init) {
+            if (i >= total_size) break;
+            data_[i] = val;
+            ++i;
+        }
+    }
+
+    // Row-nested initializer list — IEC 61131-3 Annex B.1.4.3 allows an
+    // `array_initialization` as an element, which is the natural way to write a
+    // 2D initializer: `ARRAY[0..1,0..2] OF INT := [[1,2,3],[4,5,6]]`.
+    //
+    // Each inner list fills one row from its own lower bound, so a short row
+    // leaves the rest of that row at its default instead of shifting the next
+    // row up — which is the difference from writing the same values flat.
+    template<typename U>
+    IEC_ARRAY_2D(std::initializer_list<std::initializer_list<U>> init) noexcept : data_{} {
+        size_t row = 0;
+        for (const auto& rowInit : init) {
+            if (row >= rows) break;
+            size_t col = 0;
+            for (const auto& val : rowInit) {
+                if (col >= cols) break;
+                data_[row * cols + col] = val;
+                ++col;
+            }
+            ++row;
+        }
+    }
+
+    // Element access (1-based IEC indexing) - no bounds checking.
+    // constexpr so &arr(i, j) is a constant expression — see the
+    // matching note on IEC_ARRAY_1D::operator[] above.
+    constexpr var_type& operator()(int64_t i, int64_t j) noexcept {
+        return data_[to_linear_index(i, j)];
+    }
+
+    constexpr const var_type& operator()(int64_t i, int64_t j) const noexcept {
+        return data_[to_linear_index(i, j)];
+    }
+    
+    // Bounds-checked access - throws std::out_of_range on invalid index
+    var_type& at(int64_t i, int64_t j) {
+        if (!Bounds1::in_bounds(i) || !Bounds2::in_bounds(j)) {
+#if STRUCPP_HAS_EXCEPTIONS
+            throw std::out_of_range("Array index out of bounds");
+#else
+            iec_runtime_fault(IecFault::ArrayBounds);
+#endif
+        }
+        return data_[to_linear_index(i, j)];
+    }
+    
+    const var_type& at(int64_t i, int64_t j) const {
+        if (!Bounds1::in_bounds(i) || !Bounds2::in_bounds(j)) {
+#if STRUCPP_HAS_EXCEPTIONS
+            throw std::out_of_range("Array index out of bounds");
+#else
+            iec_runtime_fault(IecFault::ArrayBounds);
+#endif
+        }
+        return data_[to_linear_index(i, j)];
+    }
+    
+    // Size information
+    static constexpr size_t dim1_size() noexcept { return rows; }
+    static constexpr size_t dim2_size() noexcept { return cols; }
+    static constexpr int64_t dim1_lower() noexcept { return Bounds1::lower; }
+    static constexpr int64_t dim1_upper() noexcept { return Bounds1::upper; }
+    static constexpr int64_t dim2_lower() noexcept { return Bounds2::lower; }
+    static constexpr int64_t dim2_upper() noexcept { return Bounds2::upper; }
+    // LOWER_BOUND / UPPER_BOUND (arr, dim), as the ARRAY[*] views answer them.
+    static constexpr int64_t lower_bound(int dim) noexcept {
+        return dim == 1 ? Bounds1::lower : Bounds2::lower;
+    }
+    static constexpr int64_t upper_bound(int dim) noexcept {
+        return dim == 1 ? Bounds1::upper : Bounds2::upper;
+    }
+    
+    // Raw data access
+    var_type* data() noexcept { return data_.data(); }
+    const var_type* data() const noexcept { return data_.data(); }
+    
+    // Iterators (linear traversal)
+    auto begin() noexcept { return data_.begin(); }
+    auto end() noexcept { return data_.end(); }
+    auto begin() const noexcept { return data_.begin(); }
+    auto end() const noexcept { return data_.end(); }
+};
+
+// Multi-dimensional array (3D)
+template<typename T, typename Bounds1, typename Bounds2, typename Bounds3>
+class IEC_ARRAY_3D {
+public:
+    using element_type = T;
+    using var_type = T;
+    static constexpr size_t dim1 = Bounds1::size;
+    static constexpr size_t dim2 = Bounds2::size;
+    static constexpr size_t dim3 = Bounds3::size;
+    static constexpr size_t total_size = dim1 * dim2 * dim3;
+
+private:
+    std::array<T, total_size> data_;
+    
+    static constexpr size_t to_linear_index(int64_t i, int64_t j, int64_t k) noexcept {
+        return static_cast<size_t>(
+            (i - Bounds1::lower) * dim2 * dim3 +
+            (j - Bounds2::lower) * dim3 +
+            (k - Bounds3::lower)
+        );
+    }
+    
+public:
+    IEC_ARRAY_3D() noexcept : data_{} {}
+
+    // The same bounds with another element type (ARRAY OF STRING(3) from
+    // ARRAY OF STRING): converted element by element.
+    template<typename U, typename = typename std::enable_if<
+        !std::is_same<U, T>::value &&
+        std::is_assignable<T&, const U&>::value>::type>
+    IEC_ARRAY_3D(const IEC_ARRAY_3D<U, Bounds1, Bounds2, Bounds3>& other) noexcept : data_{} {
+        for (size_t i = 0; i < total_size; ++i) data_[i] = other.data()[i];
+    }
+
+    template<typename U, typename = typename std::enable_if<
+        !std::is_same<U, T>::value &&
+        std::is_assignable<T&, const U&>::value>::type>
+    IEC_ARRAY_3D& operator=(const IEC_ARRAY_3D<U, Bounds1, Bounds2, Bounds3>& other) noexcept {
+        for (size_t i = 0; i < total_size; ++i) data_[i] = other.data()[i];
+        return *this;
+    }
+
+    // Flat (row-major) initializer-list constructor — mirrors IEC_ARRAY_1D/2D.
+    // ST aggregate inits for a 3D array codegen to a flat brace list; fill
+    // row-major, ignoring any overflow.
+    template<typename U>
+    IEC_ARRAY_3D(std::initializer_list<U> init) noexcept : data_{} {
+        size_t i = 0;
+        for (const auto& val : init) {
+            if (i >= total_size) break;
+            data_[i] = val;
+            ++i;
+        }
+    }
+
+    // Plane/row-nested initializer list — the 3D form of the nested
+    // `array_initialization` IEC allows as an element:
+    // `ARRAY[0..1,0..1,0..1] OF INT := [[[1,2],[3,4]],[[5,6],[7,8]]]`.
+    // Each level fills from its own lower bound, so a short inner list leaves
+    // the remainder of that row at its default.
+    template<typename U>
+    IEC_ARRAY_3D(
+        std::initializer_list<std::initializer_list<std::initializer_list<U>>> init) noexcept
+        : data_{} {
+        size_t i = 0;
+        for (const auto& planeInit : init) {
+            if (i >= dim1) break;
+            size_t j = 0;
+            for (const auto& rowInit : planeInit) {
+                if (j >= dim2) break;
+                size_t k = 0;
+                for (const auto& val : rowInit) {
+                    if (k >= dim3) break;
+                    data_[i * dim2 * dim3 + j * dim3 + k] = val;
+                    ++k;
+                }
+                ++j;
+            }
+            ++i;
+        }
+    }
+
+    // Element access (IEC indexing) - no bounds checking.
+    // constexpr so &arr(i, j, k) is a constant expression — see the
+    // matching note on IEC_ARRAY_1D::operator[] above.
+    constexpr var_type& operator()(int64_t i, int64_t j, int64_t k) noexcept {
+        return data_[to_linear_index(i, j, k)];
+    }
+
+    constexpr const var_type& operator()(int64_t i, int64_t j, int64_t k) const noexcept {
+        return data_[to_linear_index(i, j, k)];
+    }
+
+    // Bounds-checked access - throws std::out_of_range on invalid index.
+    // This is what codegen emits for a subscript in a body, so it has to exist
+    // at every rank, not just 1D/2D.
+    var_type& at(int64_t i, int64_t j, int64_t k) {
+        if (!Bounds1::in_bounds(i) || !Bounds2::in_bounds(j) || !Bounds3::in_bounds(k)) {
+#if STRUCPP_HAS_EXCEPTIONS
+            throw std::out_of_range("Array index out of bounds");
+#else
+            iec_runtime_fault(IecFault::ArrayBounds);
+#endif
+        }
+        return data_[to_linear_index(i, j, k)];
+    }
+
+    const var_type& at(int64_t i, int64_t j, int64_t k) const {
+        if (!Bounds1::in_bounds(i) || !Bounds2::in_bounds(j) || !Bounds3::in_bounds(k)) {
+#if STRUCPP_HAS_EXCEPTIONS
+            throw std::out_of_range("Array index out of bounds");
+#else
+            iec_runtime_fault(IecFault::ArrayBounds);
+#endif
+        }
+        return data_[to_linear_index(i, j, k)];
+    }
+
+    // Size information
+    static constexpr size_t size1() noexcept { return dim1; }
+    static constexpr size_t size2() noexcept { return dim2; }
+    static constexpr size_t size3() noexcept { return dim3; }
+    static constexpr size_t dim1_size() noexcept { return dim1; }
+    static constexpr size_t dim2_size() noexcept { return dim2; }
+    static constexpr size_t dim3_size() noexcept { return dim3; }
+    static constexpr int64_t dim1_lower() noexcept { return Bounds1::lower; }
+    static constexpr int64_t dim1_upper() noexcept { return Bounds1::upper; }
+    static constexpr int64_t dim2_lower() noexcept { return Bounds2::lower; }
+    static constexpr int64_t dim2_upper() noexcept { return Bounds2::upper; }
+    static constexpr int64_t dim3_lower() noexcept { return Bounds3::lower; }
+    static constexpr int64_t dim3_upper() noexcept { return Bounds3::upper; }
+    // LOWER_BOUND / UPPER_BOUND (arr, dim), as the ARRAY[*] views answer them.
+    static constexpr int64_t lower_bound(int dim) noexcept {
+        return dim == 1 ? Bounds1::lower
+             : dim == 2 ? Bounds2::lower : Bounds3::lower;
+    }
+    static constexpr int64_t upper_bound(int dim) noexcept {
+        return dim == 1 ? Bounds1::upper
+             : dim == 2 ? Bounds2::upper : Bounds3::upper;
+    }
+
+    // Raw data access
+    var_type* data() noexcept { return data_.data(); }
+    const var_type* data() const noexcept { return data_.data(); }
+
+    // Iterators (linear traversal)
+    auto begin() noexcept { return data_.begin(); }
+    auto end() noexcept { return data_.end(); }
+    auto begin() const noexcept { return data_.begin(); }
+    auto end() const noexcept { return data_.end(); }
+};
+
+// Convenience type aliases
+// Array1D<T, Lower, Upper> - e.g., Array1D<INT_t, 1, 10> for ARRAY[1..10] OF INT
+template<typename T, int64_t Lower, int64_t Upper>
+using Array1D = IEC_ARRAY_1D<T, ArrayBounds<Lower, Upper>>;
+
+// The array type A with element type E and the same bounds: the copy an
+// ARRAY[*] OF STRING(n) parameter takes of an array of another string length.
+template<typename A, typename E> struct array_rebind;
+template<typename T, typename B, typename E>
+struct array_rebind<IEC_ARRAY_1D<T, B>, E> { using type = IEC_ARRAY_1D<E, B>; };
+template<typename T, typename B1, typename B2, typename E>
+struct array_rebind<IEC_ARRAY_2D<T, B1, B2>, E> { using type = IEC_ARRAY_2D<E, B1, B2>; };
+template<typename T, typename B1, typename B2, typename B3, typename E>
+struct array_rebind<IEC_ARRAY_3D<T, B1, B2, B3>, E> {
+    using type = IEC_ARRAY_3D<E, B1, B2, B3>;
+};
+template<typename A, typename E>
+using array_rebind_t = typename array_rebind<A, E>::type;
+
+// Array2D<T, L1, U1, L2, U2> - e.g., Array2D<REAL_t, 1, 3, 1, 4> for ARRAY[1..3, 1..4] OF REAL
+template<typename T, int64_t L1, int64_t U1, int64_t L2, int64_t U2>
+using Array2D = IEC_ARRAY_2D<T, ArrayBounds<L1, U1>, ArrayBounds<L2, U2>>;
+
+// Array3D<T, L1, U1, L2, U2, L3, U3>
+template<typename T, int64_t L1, int64_t U1, int64_t L2, int64_t U2, int64_t L3, int64_t U3>
+using Array3D = IEC_ARRAY_3D<T, ArrayBounds<L1, U1>, ArrayBounds<L2, U2>, ArrayBounds<L3, U3>>;
+
+// =============================================================================
+// Variable-Length Array Views (Phase 3.4)
+// Type-erased array views for ARRAY[*] parameters in VAR_IN_OUT
+// =============================================================================
+
+namespace detail {
+/** An access through an unbound view raises the NullReference fault. */
+template<typename T>
+inline void view_unbound_check(const T* data) {
+    if (data == nullptr) {
+#if STRUCPP_HAS_EXCEPTIONS
+        throw NullReferenceException("VAR_IN_OUT");
+#else
+        iec_runtime_fault(IecFault::NullReference, "VAR_IN_OUT");
+#endif
+    }
+}
+}  // namespace detail
+
+// 1D ArrayView - type-erased wrapper for ARRAY[*] OF T
+template<typename T>
+class ArrayView1D {
+    T* data_;
+    int64_t lower_;
+    int64_t upper_;
+
+public:
+    // Unbound: a function-block VAR_IN_OUT before its first call. Empty range;
+    // an element access raises the NullReference fault (see at()).
+    ArrayView1D() noexcept : data_(nullptr), lower_(0), upper_(-1) {}
+
+    // Construct from any IEC_ARRAY_1D with matching element type
+    template<typename Bounds>
+    ArrayView1D(IEC_ARRAY_1D<T, Bounds>& arr)
+        : data_(&arr[Bounds::lower])
+        , lower_(Bounds::lower)
+        , upper_(Bounds::upper) {}
+
+    T& operator[](int64_t index) noexcept {
+        return data_[index - lower_];
+    }
+
+    const T& operator[](int64_t index) const noexcept {
+        return data_[index - lower_];
+    }
+
+    // Bounds-checked access — the codegen emits .at() for all subscripts so an
+    // out-of-range index raises a clean fault instead of corrupting memory.
+    T& at(int64_t index) {
+        if (index < lower_ || index > upper_) {
+            detail::view_unbound_check(data_);
+#if STRUCPP_HAS_EXCEPTIONS
+            throw std::out_of_range("Array index out of bounds");
+#else
+            iec_runtime_fault(IecFault::ArrayBounds);
+#endif
+        }
+        return data_[index - lower_];
+    }
+
+    const T& at(int64_t index) const {
+        if (index < lower_ || index > upper_) {
+            detail::view_unbound_check(data_);
+#if STRUCPP_HAS_EXCEPTIONS
+            throw std::out_of_range("Array index out of bounds");
+#else
+            iec_runtime_fault(IecFault::ArrayBounds);
+#endif
+        }
+        return data_[index - lower_];
+    }
+
+    int64_t lower_bound(int = 1) const noexcept { return lower_; }
+    int64_t upper_bound(int = 1) const noexcept { return upper_; }
+    int64_t length() const noexcept { return upper_ - lower_ + 1; }
+};
+
+// 2D ArrayView - type-erased wrapper for ARRAY[*, *] OF T
+template<typename T>
+class ArrayView2D {
+    T* data_;
+    int64_t lower1_, upper1_;
+    int64_t lower2_, upper2_;
+    int64_t dim2_;
+
+public:
+    // Unbound (see ArrayView1D's default constructor).
+    ArrayView2D() noexcept
+        : data_(nullptr), lower1_(0), upper1_(-1), lower2_(0), upper2_(-1), dim2_(0) {}
+
+    template<typename Bounds1, typename Bounds2>
+    ArrayView2D(IEC_ARRAY_2D<T, Bounds1, Bounds2>& arr)
+        : data_(arr.data())
+        , lower1_(Bounds1::lower), upper1_(Bounds1::upper)
+        , lower2_(Bounds2::lower), upper2_(Bounds2::upper)
+        , dim2_(Bounds2::upper - Bounds2::lower + 1) {}
+
+    T& operator()(int64_t i, int64_t j) noexcept {
+        return data_[(i - lower1_) * dim2_ + (j - lower2_)];
+    }
+
+    const T& operator()(int64_t i, int64_t j) const noexcept {
+        return data_[(i - lower1_) * dim2_ + (j - lower2_)];
+    }
+
+    // Bounds-checked access — codegen emits .at(i, j) for 2D subscripts.
+    T& at(int64_t i, int64_t j) {
+        if (i < lower1_ || i > upper1_ || j < lower2_ || j > upper2_) {
+            detail::view_unbound_check(data_);
+#if STRUCPP_HAS_EXCEPTIONS
+            throw std::out_of_range("Array index out of bounds");
+#else
+            iec_runtime_fault(IecFault::ArrayBounds);
+#endif
+        }
+        return data_[(i - lower1_) * dim2_ + (j - lower2_)];
+    }
+
+    const T& at(int64_t i, int64_t j) const {
+        if (i < lower1_ || i > upper1_ || j < lower2_ || j > upper2_) {
+            detail::view_unbound_check(data_);
+#if STRUCPP_HAS_EXCEPTIONS
+            throw std::out_of_range("Array index out of bounds");
+#else
+            iec_runtime_fault(IecFault::ArrayBounds);
+#endif
+        }
+        return data_[(i - lower1_) * dim2_ + (j - lower2_)];
+    }
+
+    int64_t lower_bound(int dim) const noexcept { return dim == 1 ? lower1_ : lower2_; }
+    int64_t upper_bound(int dim) const noexcept { return dim == 1 ? upper1_ : upper2_; }
+};
+
+/**
+ * Element-by-element equality of two arrays of the same shape (a STRUCT
+ * `=` / `<>` comparing an ARRAY member): `eq(x, y)` for each element pair.
+ */
+template<typename A, typename F>
+inline bool iec_equal_each(const A& a, const A& b, F&& eq) {
+    auto j = b.begin();
+    for (auto i = a.begin(); i != a.end(); ++i, ++j) {
+        if (!eq(*i, *j)) return false;
+    }
+    return true;
+}
+
+/**
+ * Call f on every element of a (possibly nested) array, row-major, or on x
+ * itself when it is not an array. Used for start-up FB_init calls (feature
+ * fb_init): an element is an FB instance, which has no begin().
+ */
+template<typename T, typename F>
+void for_each_element(T& x, F&& f, long) {
+    f(x);
+}
+
+template<typename T, typename F>
+auto for_each_element(T& x, F&& f, int) -> decltype(x.begin(), void()) {
+    for (auto& e : x) for_each_element(e, f, 0);
+}
+
+template<typename T, typename F>
+void for_each_element(T& x, F&& f) {
+    for_each_element(x, f, 0);
+}
+
+}  // namespace strucpp

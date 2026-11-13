@@ -25,7 +25,7 @@ Module._load = function (request) {
     if (request === 'vscode') return {};
     return realLoad.apply(this, arguments);
 };
-const { ALLOWED_COMMANDS, SETTINGS_SECTIONS } = require('../src/startPage');
+const { ALLOWED_COMMANDS, SETTINGS_SECTIONS, USER_SETTINGS_SECTIONS } = require('../src/startPage');
 
 let errors = 0;
 function assert(cond, msg) {
@@ -80,8 +80,18 @@ assert((c.views['twincat-references-panel'] || []).find(v => v.id === 'twincatRe
     const { SETTING_RENAMES } = require(path.join(REPO, 'src', 'settingsMigration.js'));
     const live = Object.keys(allProps).filter(k => !allProps[k].deprecationMessage);
     const deprecated = Object.keys(allProps).filter(k => allProps[k].deprecationMessage);
-    assert(live.length === 10 && live.every(k => k.startsWith('tcToolkit.')),
-        `all 10 live settings are tcToolkit.* (got ${JSON.stringify(live)})`);
+    assert(live.length === 13 && live.every(k => k.startsWith('tcToolkit.')),
+        `all 13 live settings are tcToolkit.* (got ${JSON.stringify(live)})`);
+    // R13: the C++ switches (both off by default) and the g++ path (machine-scoped, like the XAE Shell paths).
+    const gen = allProps['tcToolkit.compiler.generateCpp'];
+    const build = allProps['tcToolkit.compiler.buildWithGpp'];
+    const gpp = allProps['tcToolkit.compiler.gppPath'];
+    assert(!!gen && gen.type === 'boolean' && gen.default === false && /^\*\*Generate C\+\+\.\*\*/.test(gen.markdownDescription),
+        'R13: tcToolkit.compiler.generateCpp is a boolean, off by default, described as "Generate C++"');
+    assert(!!build && build.type === 'boolean' && build.default === false && /^\*\*Build with g\+\+\.\*\*/.test(build.markdownDescription),
+        'R13: tcToolkit.compiler.buildWithGpp is a boolean, off by default, described as "Build with g++"');
+    assert(!!gpp && gpp.type === 'string' && gpp.default === '' && gpp.scope === 'machine', 'R13: tcToolkit.compiler.gppPath is a machine-scoped string, empty by default');
+    assert([gen, build, gpp].every(p => p && !/STruC|strucpp/i.test(JSON.stringify(p))), 'R13: no setting text names the compiler product');
     assert(!live.some(k => k.startsWith('twincat.')), 'no live (non-deprecated) setting key starts with twincat.');
     assert(SETTING_RENAMES.length === 10 && SETTING_RENAMES.every(r => live.includes(r.to) && deprecated.includes(r.from)
             && r.from === r.to.replace(/^tcToolkit\./, 'twincat.')),
@@ -156,7 +166,12 @@ assert(/^\^1\.66\./.test(pkg.engines.vscode), `engine stays ^1.66 (${pkg.engines
         'the descriptions say which shell is 32-bit and which is 64-bit');
     assert(ALLOWED_COMMANDS.has('twincat.detectXaeShell') && [...ALLOWED_COMMANDS].every(id => id.startsWith('twincat.') && registered.has(id)),
         'every command the start page may run is a registered twincat.* command');
-    assert(JSON.stringify(SETTINGS_SECTIONS) === JSON.stringify({ xaeShell: 'tcToolkit.xaeShell' }), 'the page may open the Settings UI filtered to tcToolkit.xaeShell only');
+    assert(JSON.stringify(SETTINGS_SECTIONS) === JSON.stringify({ xaeShell: 'tcToolkit.xaeShell', gpp: 'tcToolkit.compiler.gppPath' }),
+        'the page may open the Settings UI filtered to tcToolkit.xaeShell or tcToolkit.compiler.gppPath only');
+    assert(ALLOWED_COMMANDS.has('twincat.detectGpp') && contributed.has('twincat.detectGpp'), 'the g++ Detect again runs the contributed twincat.detectGpp');
+    assert([...USER_SETTINGS_SECTIONS].every(k => Object.prototype.hasOwnProperty.call(SETTINGS_SECTIONS, k))
+        && props['tcToolkit.compiler.gppPath'].scope === 'machine' && USER_SETTINGS_SECTIONS.has('gpp'),
+    'the machine-scoped g++ path opens in the User settings');
     assert(!/STruC\+\+/i.test(JSON.stringify(sections)), 'no setting names the compiler');
 }
 
@@ -218,12 +233,16 @@ assert(/^\^1\.66\./.test(pkg.engines.vscode), `engine stays ^1.66 (${pkg.engines
         'the page shows the extension icon (marketplace-icon.png), allowed by img-src');
     for (const v of TEMPLATE_VERSIONS) assert(html.includes(`value="${v.id}"`), `version ${v.id} is offered`);
     for (const l of HELP_LINKS) assert(html.includes(`data-link="${l.id}"`), `help link ${l.id} is on the page`);
-    assert(/id="compile-project" disabled/.test(html) && /external IEC 61131-3 compiler/.test(html) && !/later release/.test(html) && !/STruC\+\+/i.test(html),
+    assert(/id="compile-project" disabled/.test(html) && /Check the project with the IEC 61131-3 compiler/.test(html) && !/later release/.test(html) && !/STruC\+\+/i.test(html),
         'Compile project is disabled until the host says a project is open, is no longer "coming later", and names no compiler product');
     const settingsCard = /<section class="card" id="settings"[\s\S]*?<\/section>/.exec(html);
     assert(!!settingsCard && /<ul id="xae-list"/.test(settingsCard[0]) && /<button type="button" id="xae-change"[^>]*>Change…<\/button>/.test(settingsCard[0])
         && /data-command="twincat\.detectXaeShell">Detect again<\/button>/.test(settingsCard[0]),
         'the Settings card has the XAE Shell rows, Change… and Detect again');
+    assert(!!settingsCard && /<h3 id="gpp-title">g\+\+<\/h3>/.test(settingsCard[0]) && /<ul id="gpp-list"/.test(settingsCard[0])
+        && /<button type="button" id="gpp-change"[^>]*>Change…<\/button>/.test(settingsCard[0])
+        && /data-command="twincat\.detectGpp"[^>]*>Detect again<\/button>/.test(settingsCard[0]) && /id="gpp-hint"[^>]*>Optional[^<]*Build with g\+\+/.test(settingsCard[0]),
+    'the Settings card has the g++ row, says it is optional (Build with g++ only), with Change… and Detect again');
     assert(!/style="/.test(html) && !/ on[a-z]+="/.test(html), 'no inline style or event handler (the CSP would block them)');
     const css = fs.readFileSync(path.join(REPO, 'media', 'startPage.css'), 'utf8');
     assert(!/https?:|@import|url\(/.test(css), 'the stylesheet loads nothing');

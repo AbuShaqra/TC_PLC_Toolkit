@@ -96,6 +96,11 @@ const FILES = {
     [P('LineA', 'PLC', 'ST_Files', 'POUs', 'MAIN.st')]: 'PROGRAM MAIN END_PROGRAM',
     [P('LineA', 'PLC', 'ST_Files', 'Stray.TcPOU')]: pou('PROGRAM Stray'),
     [P('LineA', 'PLC', 'POUs', 'ST_Files', 'Nested.st')]: 'PROGRAM N END_PROGRAM',
+    // Compile Project's C++ output (R13): CPP_Files is listed read-only; the .cpp/.hpp open as text.
+    [P('LineA', 'PLC', 'CPP_Files', 'PLC.cpp')]: '#include "PLC.hpp"',
+    [P('LineA', 'PLC', 'CPP_Files', 'PLC.hpp')]: '#pragma once',
+    [P('LineA', 'PLC', 'CPP_Files', 'PLC.o')]: 'obj',
+    [P('LineA', 'PLC', 'CPP_Files', 'Stray.TcPOU')]: pou('PROGRAM Stray2'),
     [P('LineB', 'PLC', 'POUs', 'MAIN.TcPOU')]: pou('PROGRAM MAIN')
 };
 
@@ -220,9 +225,11 @@ const labels = (nodes) => nodes.map(n => n.label).join(',');
     assert(emptySln.roots[0].collapsible === 'none', 'SHAPE: a solution with no projects does not expand');
 
     // ── 5. directory listing ─────────────────────────────────────────────────────────────────────
+    const pkg0 = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
+    const { describeDragged: describeDragged0, describeCopied: describeCopied0 } = require('../src/dndRules');
     const projectRow = groupRoots[0];
     const plcRows = await grouped.childrenOf(projectRow);
-    assert(labels(plcRows) === 'DUTs,GVLs,POUs,ST_Files,Text.st',
+    assert(labels(plcRows) === 'CPP_Files,DUTs,GVLs,POUs,ST_Files,Text.st',
         `DIR: directories first, then shown files; .git, symlinked dirs and other files are skipped (${labels(plcRows)})`);
     assert(plcRows.every(n => n.parent === projectRow) && projectRow.children === plcRows,
         'DIR: listed rows point at the row that listed them');
@@ -254,6 +261,15 @@ const labels = (nodes) => nodes.map(n => n.label).join(',');
     assert(outFiles.length === 1 && outFiles[0].label === 'MAIN.st' && outFiles[0].contextValue === 'generatedStFile'
         && outFiles[0].opens === 'root' && outFiles[0].collapsible === 'none' && /^Generated Structured Text/.test(outFiles[0].tooltip),
         `DIR: a generated .st is a read-only row that opens as text (${outFiles[0] && outFiles[0].contextValue})`);
+    const cppDir = plcRows.find(n => n.label === 'CPP_Files');
+    assert(!!cppDir && cppDir.contextValue === 'generatedDirectory' && /^Generated output/.test(cppDir.tooltip),
+        `DIR: a project's own CPP_Files is listed as generated output (${cppDir && cppDir.contextValue})`);
+    const cppRows = await grouped.childrenOf(cppDir);
+    assert(labels(cppRows) === 'PLC.cpp,PLC.hpp' && cppRows.every(n => n.contextValue === 'generatedCppFile' && n.opens === 'root'
+        && n.collapsible === 'none' && n.icon.id === 'file-code' && /^Generated C\+\+/.test(n.tooltip)),
+        `DIR: inside CPP_Files the .cpp and .hpp are read-only rows that open as text; the object file and stray TwinCAT files are not listed (${labels(cppRows)})`);
+    assert(!/generatedCppFile/.test(JSON.stringify(pkg0.contributes.menus)) && describeDragged0(cppRows[0]) === null && describeCopied0(cppRows[0]) === null,
+        'DIR: no menu, drag or copy rule takes a generated C++ row');
     const plain = plcRows.find(n => n.label === 'Text.st');
     assert(!!plain && plain.contextValue === 'stFile', 'DIR: a .st outside ST_Files keeps the ordinary stFile row');
     const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));

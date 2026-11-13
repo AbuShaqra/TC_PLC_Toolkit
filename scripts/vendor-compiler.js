@@ -15,6 +15,9 @@
  *   compiler.cjs                 dist/strucpp-bundle.cjs, renamed so no product name reaches the UI
  *   libs/<name>.stlib            the libraries a `--check` needs (the bundle loads every .stlib in
  *                                the `libs/` directory next to itself)
+ *   include/<name>.hpp           the C++ runtime headers (src/runtime/include/), which the optional
+ *                                g++ build of generated C++ compiles against (GPL-3.0-only WITH
+ *                                the runtime library exception, per the fork's COPYING)
  *   LICENSE, COPYING, COPYING.RUNTIME              the fork's licence files, verbatim
  *   third-party/chevrotain-LICENSE.txt             Apache-2.0 (chevrotain and @chevrotain/*)
  *   third-party/lodash-es-LICENSE.txt              MIT
@@ -55,6 +58,12 @@ function git(cwd, ...args) {
     return execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8' }).trim();
 }
 
+/** Where the fork keeps its C++ runtime headers; every `*.hpp` in it is copied to `include/`. */
+const RUNTIME_INCLUDE = path.join('src', 'runtime', 'include');
+
+/** The licence line a runtime header carries when it has a per-file notice. */
+const RUNTIME_SPDX = 'SPDX-License-Identifier: GPL-3.0-only WITH STruCpp-runtime-exception';
+
 const sha256 = (file) => crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
 
 function main() {
@@ -71,10 +80,22 @@ function main() {
     const pkg = JSON.parse(fs.readFileSync(path.join(fork, 'package.json'), 'utf8'));
     const versionOf = (name) => JSON.parse(fs.readFileSync(path.join(fork, 'node_modules', name, 'package.json'), 'utf8')).version;
 
+    const includeDir = path.join(fork, RUNTIME_INCLUDE);
+    if (!fs.existsSync(includeDir)) fail(`${includeDir} not found: is this a checkout of the compiler?`);
+    const headers = fs.readdirSync(includeDir).filter(f => /\.hpp$/.test(f)).sort();
+    if (headers.length === 0) fail(`${includeDir} holds no .hpp file`);
+    // The fork's COPYING covers every src/runtime/include/*.hpp; most also carry the notice themselves.
+    const copying = fs.readFileSync(path.join(fork, 'COPYING'), 'utf8');
+    if (!copying.includes('src/runtime/include/*.hpp') || !copying.includes('STruCpp-runtime-exception')) {
+        fail('COPYING no longer lists src/runtime/include/*.hpp under the runtime library exception; check the licence before vendoring');
+    }
+    const noNotice = headers.filter(h => !fs.readFileSync(path.join(includeDir, h), 'utf8').slice(0, 400).includes(RUNTIME_SPDX));
+
     /** @type {Array<{from: string, to: string}>} */
     const copies = [
         { from: path.join(fork, 'dist', 'strucpp-bundle.cjs'), to: 'compiler.cjs' },
         ...LIBS.map(lib => ({ from: path.join(fork, 'libs', lib), to: `libs/${lib}` })),
+        ...headers.map(h => ({ from: path.join(fork, RUNTIME_INCLUDE, h), to: `include/${h}` })),
         ...['LICENSE', 'COPYING', 'COPYING.RUNTIME'].map(f => ({ from: path.join(fork, f), to: f })),
         ...THIRD_PARTY.map(t => ({ from: path.join(fork, 'node_modules', t.pkg, t.file), to: `third-party/${t.as}` }))
     ];
@@ -120,6 +141,16 @@ function main() {
         '- `compiler.cjs` is that build\'s `dist/strucpp-bundle.cjs`, renamed; `libs/` holds two of the',
         '  libraries the same build writes to `libs/` (their sources are under `libs/sources/` in the',
         '  repository).',
+        '- `include/` holds the C++ runtime headers of the same commit (`src/runtime/include/`, every',
+        '  `.hpp`). Compile Project\'s optional g++ build compiles the generated C++ against them.',
+        '',
+        '## Licence of the runtime headers',
+        '',
+        'The fork\'s `COPYING` lists `src/runtime/include/*.hpp` as **GPL-3.0-only WITH',
+        'STruCpp-runtime-exception** (`LICENSE` and `COPYING.RUNTIME`): the exception lets C++ generated',
+        'from a user\'s program include them without the program becoming GPL-licensed.',
+        `${headers.length - noNotice.length} of the ${headers.length} headers carry that SPDX line themselves` +
+            (noNotice.length ? `; ${noNotice.map(h => `\`${h}\``).join(' and ')} carry no per-file notice and are covered by \`COPYING\`'s file list only.` : '.'),
         '',
         '## Files',
         '',

@@ -178,10 +178,17 @@ function createDirectoryListingMemo() {
 const BASE_SKIP_DIRS = new Set(['.git', 'node_modules', '.vscode']);
 
 /**
- * lsp/projectMap.js's `.plcproj` walk: vendor archives, ST_Files (derived .st mirrors that would
- * shadow the XML objects), TwinCAT's compile-info cache, and boot-project output.
+ * The generated-output folders, lower-cased: Generate ST's `ST_Files` (derived `.st` mirrors) and
+ * Compile Project's `CPP_Files` (generated C++ and g++'s object file, R13). Never indexed, never an
+ * input, and their watcher events never trigger a per-event refresh.
  */
-const PROJECT_WALK_SKIP_DIRS = new Set([...BASE_SKIP_DIRS, '_libraries', 'st_files', '_compileinfo', '_boot']);
+const GENERATED_OUTPUT_DIRS = new Set(['st_files', 'cpp_files']);
+
+/**
+ * lsp/projectMap.js's `.plcproj` walk: vendor archives, ST_Files (derived .st mirrors that would
+ * shadow the XML objects), CPP_Files (generated C++), TwinCAT's compile-info cache, and boot-project output.
+ */
+const PROJECT_WALK_SKIP_DIRS = new Set([...BASE_SKIP_DIRS, '_libraries', 'st_files', 'cpp_files', '_compileinfo', '_boot']);
 
 /** solutionMap.js's `.sln` walk — the same idea as PROJECT_WALK_SKIP_DIRS, minus `st_files` (a
  *  `.sln` never sits under a derived ST mirror, so excluding it bought nothing there). */
@@ -196,7 +203,7 @@ const CONFIG_OBJECT_SKIP_DIRS = new Set([...BASE_SKIP_DIRS, '_libraries']);
  * See DEVELOPMENT.md "Indexing cost" rule 4: adding `_libraries` here would blind the scan and
  * reintroduce the ~171 false positives that made the ARCHIVE/PROJECT split necessary.
  */
-const ARCHIVE_SKIP_DIRS = new Set([...BASE_SKIP_DIRS, '_compileinfo', 'st_files']);
+const ARCHIVE_SKIP_DIRS = new Set([...BASE_SKIP_DIRS, '_compileinfo', 'st_files', 'cpp_files']);
 
 /**
  * lsp/libsymbols.js's `PROJECT_SKIP_DIRS` (mirrored by plcprojRefs.js's `PLCPROJ_SKIP_DIRS`, pinned
@@ -209,8 +216,8 @@ const PROJECT_SKIP_DIRS = new Set([...ARCHIVE_SKIP_DIRS, '_libraries']);
  *  expressed as a set — still case-insensitive per the walker's own R1 lower-casing). */
 const XML_INDEX_SKIP_DIRS = new Set([...BASE_SKIP_DIRS, '_libraries']);
 
-/** lsp/parser.js's `.st` directory-skip chain (its own inline checks against `ST_Files`). */
-const ST_INDEX_SKIP_DIRS = new Set([...BASE_SKIP_DIRS, 'st_files']);
+/** lsp/parser.js's `.st` directory-skip chain (its own inline checks against `ST_Files`; `CPP_Files` holds no `.st`). */
+const ST_INDEX_SKIP_DIRS = new Set([...BASE_SKIP_DIRS, 'st_files', 'cpp_files']);
 
 // --- Extension vocabularies --------------------------------------------------------------------
 
@@ -311,19 +318,20 @@ function suffixDisplayNames(records, nameOf, dirOf, options) {
 /**
  * Whether a file-system watcher event is worth reacting to (tree refresh, project-structure
  * rebuild, re-index). Not for VCS/package/editor metadata, and not for anything under an `ST_Files`
- * folder at any depth: that is Generate ST's own output, written in bursts of hundreds of files,
- * and reacting to each one refreshed the whole Objects tree once per generated file.
+ * or `CPP_Files` folder at any depth: that is generated output (Generate ST's, written in bursts of
+ * hundreds of files, and reacting to each one refreshed the whole Objects tree once per generated
+ * file; Compile Project's C++).
  * @param {string} fsPath The event's path, with either separator.
  * @returns {boolean}
  */
 function isWatchEventRelevant(fsPath) {
     const parts = String(fsPath || '').split(/[\\/]+/);
     // The last part is the entry itself: a created FOLDER named ST_Files is output too.
-    return !parts.some(part => BASE_SKIP_DIRS.has(part.toLowerCase()) || part.toLowerCase() === 'st_files');
+    return !parts.some(part => BASE_SKIP_DIRS.has(part.toLowerCase()) || GENERATED_OUTPUT_DIRS.has(part.toLowerCase()));
 }
 
 /**
- * Whether a watcher event is inside generated output (an `ST_Files` folder, or that folder itself) and
+ * Whether a watcher event is inside generated output (an `ST_Files` or `CPP_Files` folder, or that folder itself) and
  * outside VCS/editor metadata. Such events never re-index or refresh per event (see
  * isWatchEventRelevant); the host collects them into ONE debounced Objects-tree refresh, so files the
  * user adds or deletes there by hand still show.
@@ -332,10 +340,11 @@ function isWatchEventRelevant(fsPath) {
  */
 function isGeneratedOutputEvent(fsPath) {
     const parts = String(fsPath || '').split(/[\\/]+/).map(p => p.toLowerCase());
-    return parts.includes('st_files') && !parts.some(part => BASE_SKIP_DIRS.has(part));
+    return parts.some(part => GENERATED_OUTPUT_DIRS.has(part)) && !parts.some(part => BASE_SKIP_DIRS.has(part));
 }
 
 module.exports = {
+    GENERATED_OUTPUT_DIRS,
     isWatchEventRelevant,
     isGeneratedOutputEvent,
     decodeXmlAttribute,

@@ -119,6 +119,7 @@ const TMC = `<?xml version="1.0" encoding="utf-8"?><TcModuleClass><DataTypes>` +
     io('bExecute', 'BOOL', 'Input') + io('fTarget', 'LREAL', 'Input') + io('sAxisName', 'T_SynName', 'Input', ' Namespace="SynMotion"') +
     io('bDone', 'BOOL', 'Output') + io('eState', 'E_SynState', 'Output', ' Namespace="SynMotion"') + io('stPos', 'ST_SynPos', 'InOut', ' Namespace="SynMotion"') +
     `<SubItem><Name>nInternal</Name><Type>DINT</Type><BitSize>32</BitSize></SubItem>` +
+    `<SubItem><Name>tSynSpan</Name><Type>LTIME</Type><BitSize>64</BitSize></SubItem>` +
     `<Action><Name>ActSynHome</Name></Action>` +
     `<Method><Name>MSynReset</Name><ReturnType>BOOL</ReturnType><Parameter><Name>bHard</Name><Type>BOOL</Type><BitSize>8</BitSize></Parameter></Method>` +
     `<Method><Name>__getnSynCount</Name><ReturnType>DINT</ReturnType><Properties><Property><Name>property</Name></Property></Properties></Method>` +

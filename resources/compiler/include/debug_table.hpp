@@ -1,0 +1,195 @@
+// SPDX-License-Identifier: GPL-3.0-only WITH STruCpp-runtime-exception
+// Copyright (c) 2025 Autonomy®
+// This file is part of the STruC++ Runtime Library and is covered by the
+// STruC++ Runtime Library Exception. See COPYING.RUNTIME for details.
+/**
+ * STruC++ Runtime - Debug Table Types
+ *
+ * Minimal header included by the per-project `generated_debug.cpp` to declare
+ * the debug Entry table.  Carries exactly three things:
+ *
+ *   1. `STRUCPP_DEBUG_FLASH` — placement attribute applied to the table
+ *      arrays (`PROGMEM` on AVR, no-op elsewhere).
+ *   2. `TypeTag` enum — the ABI between strucpp's code generator and the
+ *      runtime's per-type dispatch.
+ *   3. `Entry` struct — the per-leaf record shape.
+ *
+ * Crucially, this header does NOT include `<avr/pgmspace.h>` — and that's the
+ * entire reason it exists.  On AVR targets, `<pgmspace.h>` transitively pulls
+ * `<avr/io.h>` which defines `SP`, `SREG`, `OCR0A`, `TCNT0`, `DDRA`, etc. as
+ * preprocessor macros expanding to register-pointer casts.  IEC 61131-3
+ * function blocks routinely use those identifiers as field names (PID's
+ * `SP` setpoint, for example), so the moment a TU that names a user variable
+ * sees `<avr/io.h>` the preprocessor mangles `g_config.INSTANCE0.SP` into
+ * `g_config.INSTANCE0.(*(volatile uint16_t *)(0x3D))` and the C++ parser
+ * dies at the `(`.
+ *
+ * The dispatch helpers (`read_entry`, `handle_set`, …) genuinely need the
+ * AVR-specific accessors `pgm_read_word_far` / `pgm_read_byte` / etc., so
+ * they stay in `debug_dispatch.hpp`.  But the runtime translation unit
+ * that #includes that header doesn't name user variables — `generated_debug.cpp`
+ * is the only TU that does, and it doesn't need the dispatch helpers.  By
+ * having `generated_debug.cpp` include THIS file instead of
+ * `debug_dispatch.hpp`, AVR's register macros never enter the user-variable
+ * TU and identifier collisions become structurally impossible.
+ *
+ * `debug_dispatch.hpp` includes this file too, so the `TypeTag` enum and
+ * `Entry` struct stay defined exactly once — the dispatch side and the
+ * table-emit side cannot drift.
+ */
+
+#pragma once
+
+#include <cstdint>
+
+// ---------------------------------------------------------------------------
+// Flash-placement attribute for per-project pointer tables.
+//
+// `PROGMEM` (avr-libc) ultimately expands to `__attribute__((__progmem__))`,
+// which is a plain GCC section attribute that the avr-gcc driver understands
+// natively — `<avr/pgmspace.h>` is not required to USE the attribute, only
+// to call the `pgm_read_*` accessors.  Defining it directly here keeps this
+// header AVR-clean.
+// ---------------------------------------------------------------------------
+#ifdef __AVR__
+#define STRUCPP_DEBUG_FLASH __attribute__((__progmem__))
+#else
+#define STRUCPP_DEBUG_FLASH
+#endif
+
+namespace strucpp { namespace debug {
+
+// ---------------------------------------------------------------------------
+// Type tags.  Order is ABI — matches the indices generated into
+// `generated_debug.cpp`'s `Entry{.tag}` fields, and must match `type_ops[]`
+// in `debug_dispatch.hpp`.  When extending: append only, never reorder.
+// ---------------------------------------------------------------------------
+enum TypeTag : uint8_t {
+    TAG_BOOL    = 0,
+    TAG_SINT    = 1,
+    TAG_USINT   = 2,
+    TAG_INT     = 3,
+    TAG_UINT    = 4,
+    TAG_DINT    = 5,
+    TAG_UDINT   = 6,
+    TAG_LINT    = 7,
+    TAG_ULINT   = 8,
+    TAG_REAL    = 9,
+    TAG_LREAL   = 10,
+    TAG_BYTE    = 11,
+    TAG_WORD    = 12,
+    TAG_DWORD   = 13,
+    TAG_LWORD   = 14,
+    TAG_TIME    = 15,
+    TAG_DATE    = 16,
+    TAG_TOD     = 17,
+    TAG_DT      = 18,
+    TAG_STRING  = 19,
+    TAG_WSTRING = 20,
+    TAG__COUNT
+};
+
+// ---------------------------------------------------------------------------
+// Per-leaf flag bits, carried in `Entry.flags`.  ABI — append only, never
+// renumber.  Mirrored by LEAF_FLAG_* in backend/debug-table-gen.ts, which
+// carries the same bits down its leaf walk.
+//
+// READONLY marks a leaf the debugger must not modify.  Set for IEC CONSTANT
+// variables: codegen declares them `const`, but the table's `(void*)` cast
+// strips that qualifier, so without this bit `handle_set` / `handle_write`
+// write straight through to a genuinely const object — undefined behaviour,
+// and a flat contradiction of what CONSTANT means.  Reads are unaffected:
+// watching a constant is useful, changing it is not.
+// ---------------------------------------------------------------------------
+constexpr uint8_t LEAF_FLAG_READONLY = 1 << 0;
+
+// RETAIN marks a leaf whose value must survive a power cycle. Set for a
+// variable declared under `VAR RETAIN` (or PERSISTENT), and inherited by every
+// leaf beneath a retained function-block instance unless that member spells
+// NON_RETAIN.
+//
+// The retain walk does not read this bit — `retainVars[]` already lists exactly
+// the retained leaves, which is cheaper than scanning the whole table. It is
+// emitted because it costs nothing (the byte exists either way) and it makes a
+// generated table self-describing: a reviewer or a diagnostic dump can see
+// which leaves are retained without cross-referencing a second array.
+constexpr uint8_t LEAF_FLAG_RETAIN = 1 << 1;
+
+// ---------------------------------------------------------------------------
+// Debug entry: one per leaf variable.  Layout is ABI; see notes in
+// debug_dispatch.hpp's runtime dispatch for the per-platform size:
+// 4 bytes on 16-bit-pointer AVR, 16 bytes on 64-bit platforms (flags absorbs
+// alignment).
+//
+// `flags` occupies the byte that used to be `_pad`, so sizeof(Entry) is
+// unchanged on every target — the read-only gate costs no flash and no RAM,
+// which is why it is a whole byte rather than a bit stolen from `tag`.
+// ---------------------------------------------------------------------------
+struct Entry {
+    void* ptr;
+    uint8_t tag;
+    uint8_t flags;
+};
+
+// ---------------------------------------------------------------------------
+// Per-project tables — DECLARED here, DEFINED by generated_debug.cpp.
+//
+// These MUST be declared `extern` here even though generated_debug.cpp's
+// definitions are themselves `const`.  C++ rule: a namespace-scope `const`
+// variable gets INTERNAL linkage by default — which would hide the
+// definitions from every other translation unit (debug_dispatch.hpp's
+// `read_entry` / `handle_*` accessors, the runtime entry, the simulator's
+// ModbusSlave) and the linker would fail with `undefined reference to
+// strucpp::debug::debug_arrays`.  Putting the `extern` declaration
+// FIRST in the TU forces external linkage for the subsequent `const`
+// definitions.
+//
+// The decls live here (not in debug_dispatch.hpp) because
+// `generated_debug.cpp` includes only this header — pulling in
+// `debug_dispatch.hpp` from the table-emit TU drags `<avr/pgmspace.h>`
+// → `<avr/io.h>` into user-variable land, which is the whole reason
+// this header exists.  Consumers that need the accessors (read_entry,
+// handle_set, …) include `debug_dispatch.hpp` separately and get the
+// extern declarations transitively through this header.
+//
+// `STRUCPP_DEBUG_FLASH` placement is part of the declared signature so
+// the linker sees matching `__attribute__((__progmem__))` on both sides.
+// ---------------------------------------------------------------------------
+extern const Entry* const debug_arrays[]       STRUCPP_DEBUG_FLASH;
+extern const uint16_t     debug_array_counts[] STRUCPP_DEBUG_FLASH;
+extern const uint8_t      debug_array_count;
+
+// What each debug array holds, by index: the variables of one program
+// instance, or configuration globals. Lets the force table tell a global's
+// force (applied by every task) from one a single program instance owns.
+constexpr uint8_t DEBUG_ARRAY_PROGRAM = 0;
+constexpr uint8_t DEBUG_ARRAY_GLOBAL  = 1;
+extern const uint8_t      debug_array_kind[]   STRUCPP_DEBUG_FLASH;
+
+// ---------------------------------------------------------------------------
+// Retain table.
+//
+// A retained leaf is addressed the same way the debugger addresses everything
+// else: by (arr, elem) into the tables above. No offsets and no sizeof, which
+// is what keeps the retain path correct where an offset-based descriptor was
+// not — the host moves the VALUE through `handle_read` / `handle_write` rather
+// than a memory region, so the force table's state is never
+// persisted, and a nested function-block member or a configuration global
+// needs no special case.
+//
+// Order is the codegen's leaf-walk order, and it IS the order the retain blob
+// packs values in. Never reorder without changing the layout hash.
+// ---------------------------------------------------------------------------
+struct RetainVar {
+    uint8_t  arr;
+    uint16_t elem;
+};
+
+extern const RetainVar retain_vars[]      STRUCPP_DEBUG_FLASH;
+extern const uint16_t  retain_var_count;
+
+// Identity of the retain LAYOUT (ordered path|typeTag), not of the program: a
+// body edit keeps retained values, a declaration change invalidates them.
+extern const uint32_t  retain_layout_hash;
+
+} } // namespace strucpp::debug

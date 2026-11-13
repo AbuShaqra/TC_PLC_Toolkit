@@ -207,9 +207,9 @@ check('BASE_SKIP_DIRS = {.git, node_modules, .vscode}', () => {
     setEquals(BASE_SKIP_DIRS, ['.git', 'node_modules', '.vscode'], 'BASE_SKIP_DIRS');
 });
 
-check('PROJECT_WALK_SKIP_DIRS = BASE + _libraries, st_files, _compileinfo, _boot (7)', () => {
+check('PROJECT_WALK_SKIP_DIRS = BASE + _libraries, st_files, cpp_files, _compileinfo, _boot (8)', () => {
     setEquals(PROJECT_WALK_SKIP_DIRS,
-        ['.git', 'node_modules', '.vscode', '_libraries', 'st_files', '_compileinfo', '_boot'],
+        ['.git', 'node_modules', '.vscode', '_libraries', 'st_files', 'cpp_files', '_compileinfo', '_boot'],
         'PROJECT_WALK_SKIP_DIRS');
 });
 
@@ -224,14 +224,14 @@ check('CONFIG_OBJECT_SKIP_DIRS = BASE + _libraries (4)', () => {
         'CONFIG_OBJECT_SKIP_DIRS');
 });
 
-check('ARCHIVE_SKIP_DIRS = BASE + _compileinfo, st_files (5, no _libraries)', () => {
-    setEquals(ARCHIVE_SKIP_DIRS, ['.git', 'node_modules', '.vscode', '_compileinfo', 'st_files'],
+check('ARCHIVE_SKIP_DIRS = BASE + _compileinfo, st_files, cpp_files (6, no _libraries)', () => {
+    setEquals(ARCHIVE_SKIP_DIRS, ['.git', 'node_modules', '.vscode', '_compileinfo', 'st_files', 'cpp_files'],
         'ARCHIVE_SKIP_DIRS');
 });
 
-check('PROJECT_SKIP_DIRS = ARCHIVE_SKIP_DIRS + _libraries (6)', () => {
+check('PROJECT_SKIP_DIRS = ARCHIVE_SKIP_DIRS + _libraries (7)', () => {
     setEquals(PROJECT_SKIP_DIRS,
-        ['.git', 'node_modules', '.vscode', '_compileinfo', 'st_files', '_libraries'],
+        ['.git', 'node_modules', '.vscode', '_compileinfo', 'st_files', 'cpp_files', '_libraries'],
         'PROJECT_SKIP_DIRS');
 });
 
@@ -240,8 +240,8 @@ check('XML_INDEX_SKIP_DIRS = BASE + _libraries', () => {
         'XML_INDEX_SKIP_DIRS');
 });
 
-check('ST_INDEX_SKIP_DIRS = BASE + st_files', () => {
-    setEquals(ST_INDEX_SKIP_DIRS, ['.git', 'node_modules', '.vscode', 'st_files'], 'ST_INDEX_SKIP_DIRS');
+check('ST_INDEX_SKIP_DIRS = BASE + st_files, cpp_files', () => {
+    setEquals(ST_INDEX_SKIP_DIRS, ['.git', 'node_modules', '.vscode', 'st_files', 'cpp_files'], 'ST_INDEX_SKIP_DIRS');
 });
 
 // Load-bearing relations, called out explicitly in the brief and in DEVELOPMENT.md's Indexing
@@ -262,21 +262,24 @@ check('PROJECT_SKIP_DIRS is ARCHIVE_SKIP_DIRS + _libraries and nothing else', ()
 check('isWatchEventRelevant ignores ST_Files output and VCS/editor metadata, keeps everything else', () => {
     const { isWatchEventRelevant } = twincatWorkspace;
     for (const p of ['C:\\ws\\LineA\\PLC\\ST_Files\\POUs\\MAIN.st', '/ws/LineA/PLC/ST_Files/POUs/MAIN.st', '/ws/ST_Files/MAIN.st',
-        '/ws/PLC/st_files/a/b/X.st', '/ws/PLC/ST_Files', '/ws/PLC/ST_Files/POUs', '/ws/.git/HEAD', '/ws/node_modules/x/y.js', 'C:\\ws\\.vscode\\settings.json']) {
+        '/ws/PLC/st_files/a/b/X.st', '/ws/PLC/ST_Files', '/ws/PLC/ST_Files/POUs', '/ws/.git/HEAD', '/ws/node_modules/x/y.js', 'C:\\ws\\.vscode\\settings.json',
+        // R13: Compile Project's generated C++ is output too.
+        'C:\\ws\\PLC\\CPP_Files\\PLC.cpp', '/ws/PLC/CPP_Files', '/ws/PLC/cpp_files/PLC.o', '/ws/PLC/CPP_Files/.tc-toolkit-generated.json']) {
         assert.strictEqual(isWatchEventRelevant(p), false, `${p} must be ignored`);
     }
     for (const p of ['/ws/LineA/PLC/POUs/MAIN.TcPOU', 'C:\\ws\\PLC\\PLC.plcproj', '/ws/Sol.sln', '/ws/PLC/POUs', '/ws/PLC/Loose.st',
-        '/ws/PLC/POUs/ST_Files.TcPOU', '/ws/PLC/My_ST_Files_Backup/X.TcPOU']) {
+        '/ws/PLC/POUs/ST_Files.TcPOU', '/ws/PLC/My_ST_Files_Backup/X.TcPOU', '/ws/PLC/POUs/CPP_Files.TcPOU']) {
         assert.strictEqual(isWatchEventRelevant(p), true, `${p} must be reacted to`);
     }
 });
 
 check('isGeneratedOutputEvent picks out ST_Files events (for one debounced tree refresh), never metadata', () => {
     const { isGeneratedOutputEvent } = twincatWorkspace;
-    for (const p of ['C:\\ws\\LineA\\PLC\\ST_Files\\POUs\\MAIN.st', '/ws/ST_Files/MAIN.st', '/ws/PLC/st_files', '/ws/PLC/ST_Files/POUs']) {
+    for (const p of ['C:\\ws\\LineA\\PLC\\ST_Files\\POUs\\MAIN.st', '/ws/ST_Files/MAIN.st', '/ws/PLC/st_files', '/ws/PLC/ST_Files/POUs',
+        '/ws/PLC/CPP_Files', 'C:\\ws\\PLC\\CPP_Files\\PLC.hpp']) {
         assert.strictEqual(isGeneratedOutputEvent(p), true, `${p} is generated output`);
     }
-    for (const p of ['/ws/PLC/POUs/MAIN.TcPOU', '/ws/PLC/Loose.st', '/ws/PLC/POUs/ST_Files.TcPOU', '/ws/.git/ST_Files/x', '/ws/node_modules/ST_Files/a.st']) {
+    for (const p of ['/ws/PLC/POUs/MAIN.TcPOU', '/ws/PLC/Loose.st', '/ws/PLC/POUs/ST_Files.TcPOU', '/ws/.git/ST_Files/x', '/ws/node_modules/ST_Files/a.st', '/ws/.git/CPP_Files/x']) {
         assert.strictEqual(isGeneratedOutputEvent(p), false, `${p} is not`);
     }
 });

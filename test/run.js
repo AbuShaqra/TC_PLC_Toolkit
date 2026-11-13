@@ -100,7 +100,10 @@ for (const file of files) {
     if (fs.existsSync(reportPath)) {
         try {
             const report = JSON.parse(fs.readFileSync(reportPath, 'utf8'));
-            if (report && report.gate) reports.set(report.gate, report);
+            // One gate, or several from one harness (test/_coverage.js reportCoverages).
+            for (const r of Array.isArray(report) ? report : [report]) {
+                if (r && r.gate) reports.set(r.gate, r);
+            }
         } catch (e) {
             reports.set(file, { gate: file, status: 'skipped', detail: 'invalid coverage report' });
         }
@@ -125,10 +128,13 @@ const missedGates = requiredGates
     .filter(report => report.status !== 'ran');
 const coverageFull = !filter && fixtures.full && missedGates.length === 0;
 
-// Gates that need something CI does not have (an external compiler). They never decide FULL vs
+// Gates that need something CI does not have (an external compiler, g++). They never decide FULL vs
 // REDUCED and never fail REQUIRE_FULL_SUITE — but whether each ran is printed, so a skip is seen.
 const optionalGates = [
-    'compile-real'
+    'compile-real',
+    // R13 (test_cpp_real.js): C++ generation needs the compiler's Node >= 22; the g++ build also a g++.
+    'cpp-real',
+    'gpp-real'
 ];
 
 // State the coverage the run actually achieved. Fixture presence is only a preflight hint; FULL

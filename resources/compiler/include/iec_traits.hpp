@@ -1,0 +1,622 @@
+// SPDX-License-Identifier: GPL-3.0-only WITH STruCpp-runtime-exception
+// Copyright (c) 2025 Autonomy®
+// This file is part of the STruC++ Runtime Library and is covered by the
+// STruC++ Runtime Library Exception. See COPYING.RUNTIME for details.
+//
+// ============================================================================
+// WARNING: KEEP THIS HEADER C++14-CLEAN.
+// ----------------------------------------------------------------------------
+// strucpp targets C++17 and its EMITTED code is compiled as C++17 — but this
+// header is part of the C/C++ Function Block include chain, which is NOT.
+// OpenPLC Editor's Arduino flow emits `c_blocks_code.cpp`, including
+// `iec_var.hpp` + `iec_string.hpp` (which transitively pull in `iec_traits.hpp`
+// and `iec_types.hpp`). That translation unit is compiled under whatever
+// `-std=` the Arduino core picks, and every mbed-based core — Nano RP2040
+// Connect, Nano 33 BLE, Opta, GIGA, Portenta, Edge — hard-codes `-std=gnu++14`.
+// So any C++17/20 construct reachable from here breaks the user's C/C++ POU
+// build, even though the rest of strucpp is happily on C++17.
+//
+// In this header (and anything it includes) do NOT use C++17/20 features
+// unguarded. In particular:
+//   * `std::trait_v<T>`                -> `std::trait<T>::value`
+//   * `if constexpr`                  -> SFINAE / tag dispatch
+//   * inline variables / `inline constexpr`
+//   * `auto` non-type template params -> typed NTTPs
+//   * C++17/20 library headers (<optional>, <variant>, <string_view>,
+//     <concepts>, ...) -> include ONLY behind `#if __cplusplus >= ...`
+//     (see the guarded <concepts> block in iec_types.hpp for the pattern).
+//
+// Boundary introduced in commit be85d8a. If you change which headers
+// `c_blocks_code.cpp` pulls in, update this set of warnings accordingly.
+// ============================================================================
+/**
+ * STruC++ Runtime - IEC Type Traits
+ *
+ * This header provides C++ type traits and concepts for IEC 61131-3 type categories.
+ * These traits enable compile-time type checking and generic programming for
+ * standard library functions.
+ */
+
+#pragma once
+
+#include <type_traits>
+#include <cstdint>
+#include <cstddef>
+#include "iec_types.hpp"
+
+// <concepts> must be included at file scope: the concept declarations that use
+// it live inside `namespace strucpp`, and including a standard header from
+// there would nest the whole of `std` under it. Guarded because the runtime
+// targets C++14 and only some cores compile the sketch at C++20 or above.
+#if __cplusplus >= 202002L
+#include <concepts>
+#endif
+
+namespace strucpp {
+
+// Forward declarations
+template<typename T> class IECVar;
+
+// Forward declarations for composite types
+template<int64_t Lower, int64_t Upper> struct ArrayBounds;
+template<typename T, typename Bounds> class IEC_ARRAY_1D;
+template<typename T, typename Bounds1, typename Bounds2> class IEC_ARRAY_2D;
+template<typename T, typename Bounds1, typename Bounds2, typename Bounds3> class IEC_ARRAY_3D;
+class IEC_STRUCT_Base;
+template<typename EnumType> class IEC_ENUM_Value;
+template<typename EnumType> class IEC_ENUM_Var;
+// Forward declarations.  `auto` template parameters are C++17; we declare
+// these subrange templates with `BaseType`-typed bounds so they remain
+// compilable under the platform's gnu++14 default (mbed Arduino cores).
+// Numeric bounds in IEC subrange types are always the same type as the
+// base, so requiring `Lower`/`Upper` to be `BaseType` is no semantic loss.
+template<typename BaseType, BaseType Lower, BaseType Upper> class IEC_SUBRANGE_Value;
+template<typename BaseType, BaseType Lower, BaseType Upper> class IEC_SUBRANGE_Var;
+template<typename T> class IEC_REF_TO;
+
+// =============================================================================
+// Primary Type Traits (default to false)
+// =============================================================================
+
+/** Check if T is an IEC type */
+template<typename T> struct is_iec_type : std::false_type {};
+
+/** Check if T is ANY_BOOL (just BOOL) */
+template<typename T> struct is_any_bool : std::false_type {};
+
+/** Check if T is ANY_SINT (signed integers) */
+template<typename T> struct is_any_sint : std::false_type {};
+
+/** Check if T is ANY_UINT (unsigned integers) */
+template<typename T> struct is_any_uint : std::false_type {};
+
+/** Check if T is ANY_INT (all integers) */
+template<typename T> struct is_any_int : std::false_type {};
+
+/** Check if T is ANY_REAL (floating point) */
+template<typename T> struct is_any_real : std::false_type {};
+
+/** Check if T is ANY_NUM (numeric: integers + reals) */
+template<typename T> struct is_any_num : std::false_type {};
+
+/** Check if T is ANY_BIT (bit strings including BOOL) */
+template<typename T> struct is_any_bit : std::false_type {};
+
+/** Check if T is ANY_STRING (strings and characters) */
+template<typename T> struct is_any_string : std::false_type {};
+
+/** Check if T is ANY_DATE (date/time types) */
+template<typename T> struct is_any_date : std::false_type {};
+
+/** Check if T is ANY_TIME (duration types: TIME, LTIME) */
+template<typename T> struct is_any_time : std::false_type {};
+
+/** Check if T is ANY_MAGNITUDE (numeric + time) */
+template<typename T> struct is_any_magnitude : std::false_type {};
+
+/** Check if T is ANY_ELEMENTARY (all elementary types) */
+template<typename T> struct is_any_elementary : std::false_type {};
+
+// =============================================================================
+// Specializations for Raw C++ Types
+// =============================================================================
+// Note: IEC types share underlying C++ types, so we specialize on the actual
+// C++ types. The categorization reflects the primary IEC use case.
+
+// Boolean (BOOL_t = bool)
+template<> struct is_iec_type<bool> : std::true_type {};
+template<> struct is_any_bool<bool> : std::true_type {};
+template<> struct is_any_bit<bool> : std::true_type {};
+template<> struct is_any_elementary<bool> : std::true_type {};
+
+// 8-bit unsigned (BYTE_t/USINT_t = uint8_t) - categorized as bit string
+template<> struct is_iec_type<uint8_t> : std::true_type {};
+template<> struct is_any_bit<uint8_t> : std::true_type {};
+template<> struct is_any_uint<uint8_t> : std::true_type {};
+template<> struct is_any_int<uint8_t> : std::true_type {};
+template<> struct is_any_num<uint8_t> : std::true_type {};
+template<> struct is_any_magnitude<uint8_t> : std::true_type {};
+template<> struct is_any_elementary<uint8_t> : std::true_type {};
+
+// 8-bit signed (SINT_t = int8_t)
+template<> struct is_iec_type<int8_t> : std::true_type {};
+template<> struct is_any_sint<int8_t> : std::true_type {};
+template<> struct is_any_int<int8_t> : std::true_type {};
+template<> struct is_any_num<int8_t> : std::true_type {};
+template<> struct is_any_magnitude<int8_t> : std::true_type {};
+template<> struct is_any_elementary<int8_t> : std::true_type {};
+
+// 16-bit unsigned (WORD_t/UINT_t = uint16_t) - categorized as bit string
+template<> struct is_iec_type<uint16_t> : std::true_type {};
+template<> struct is_any_bit<uint16_t> : std::true_type {};
+template<> struct is_any_uint<uint16_t> : std::true_type {};
+template<> struct is_any_int<uint16_t> : std::true_type {};
+template<> struct is_any_num<uint16_t> : std::true_type {};
+template<> struct is_any_magnitude<uint16_t> : std::true_type {};
+template<> struct is_any_elementary<uint16_t> : std::true_type {};
+
+// 16-bit signed (INT_t = int16_t)
+template<> struct is_iec_type<int16_t> : std::true_type {};
+template<> struct is_any_sint<int16_t> : std::true_type {};
+template<> struct is_any_int<int16_t> : std::true_type {};
+template<> struct is_any_num<int16_t> : std::true_type {};
+template<> struct is_any_magnitude<int16_t> : std::true_type {};
+template<> struct is_any_elementary<int16_t> : std::true_type {};
+
+// 32-bit unsigned (DWORD_t/UDINT_t = uint32_t) - categorized as bit string
+template<> struct is_iec_type<uint32_t> : std::true_type {};
+template<> struct is_any_bit<uint32_t> : std::true_type {};
+template<> struct is_any_uint<uint32_t> : std::true_type {};
+template<> struct is_any_int<uint32_t> : std::true_type {};
+template<> struct is_any_num<uint32_t> : std::true_type {};
+template<> struct is_any_magnitude<uint32_t> : std::true_type {};
+template<> struct is_any_elementary<uint32_t> : std::true_type {};
+
+// 32-bit signed (DINT_t = int32_t)
+template<> struct is_iec_type<int32_t> : std::true_type {};
+template<> struct is_any_sint<int32_t> : std::true_type {};
+template<> struct is_any_int<int32_t> : std::true_type {};
+template<> struct is_any_num<int32_t> : std::true_type {};
+template<> struct is_any_magnitude<int32_t> : std::true_type {};
+template<> struct is_any_elementary<int32_t> : std::true_type {};
+
+// 64-bit unsigned (LWORD_t/ULINT_t = uint64_t) - categorized as bit string
+template<> struct is_iec_type<uint64_t> : std::true_type {};
+template<> struct is_any_bit<uint64_t> : std::true_type {};
+template<> struct is_any_uint<uint64_t> : std::true_type {};
+template<> struct is_any_int<uint64_t> : std::true_type {};
+template<> struct is_any_num<uint64_t> : std::true_type {};
+template<> struct is_any_magnitude<uint64_t> : std::true_type {};
+template<> struct is_any_elementary<uint64_t> : std::true_type {};
+
+// 64-bit signed (LINT_t/TIME_t/DATE_t/TOD_t/DT_t/etc = int64_t)
+// Note: This type is used for both integers and date/time types
+template<> struct is_iec_type<int64_t> : std::true_type {};
+template<> struct is_any_sint<int64_t> : std::true_type {};
+template<> struct is_any_int<int64_t> : std::true_type {};
+template<> struct is_any_num<int64_t> : std::true_type {};
+template<> struct is_any_time<int64_t> : std::true_type {};
+template<> struct is_any_date<int64_t> : std::true_type {};
+template<> struct is_any_magnitude<int64_t> : std::true_type {};
+template<> struct is_any_elementary<int64_t> : std::true_type {};
+
+// Single precision float (REAL_t = float)
+template<> struct is_iec_type<float> : std::true_type {};
+template<> struct is_any_real<float> : std::true_type {};
+template<> struct is_any_num<float> : std::true_type {};
+template<> struct is_any_magnitude<float> : std::true_type {};
+template<> struct is_any_elementary<float> : std::true_type {};
+
+// Double precision float (LREAL_t = double)
+template<> struct is_iec_type<double> : std::true_type {};
+template<> struct is_any_real<double> : std::true_type {};
+template<> struct is_any_num<double> : std::true_type {};
+template<> struct is_any_magnitude<double> : std::true_type {};
+template<> struct is_any_elementary<double> : std::true_type {};
+
+// Character (CHAR_t = char)
+template<> struct is_iec_type<char> : std::true_type {};
+template<> struct is_any_string<char> : std::true_type {};
+template<> struct is_any_elementary<char> : std::true_type {};
+
+// Wide character (WCHAR_t = char16_t)
+template<> struct is_iec_type<char16_t> : std::true_type {};
+template<> struct is_any_string<char16_t> : std::true_type {};
+template<> struct is_any_elementary<char16_t> : std::true_type {};
+
+// =============================================================================
+// Specializations for IECVar<T> Wrapped Types
+// =============================================================================
+
+template<typename T>
+struct is_iec_type<IECVar<T>> : is_iec_type<T> {};
+
+template<typename T>
+struct is_any_bool<IECVar<T>> : is_any_bool<T> {};
+
+template<typename T>
+struct is_any_sint<IECVar<T>> : is_any_sint<T> {};
+
+template<typename T>
+struct is_any_uint<IECVar<T>> : is_any_uint<T> {};
+
+template<typename T>
+struct is_any_int<IECVar<T>> : is_any_int<T> {};
+
+template<typename T>
+struct is_any_real<IECVar<T>> : is_any_real<T> {};
+
+template<typename T>
+struct is_any_num<IECVar<T>> : is_any_num<T> {};
+
+template<typename T>
+struct is_any_bit<IECVar<T>> : is_any_bit<T> {};
+
+template<typename T>
+struct is_any_string<IECVar<T>> : is_any_string<T> {};
+
+template<typename T>
+struct is_any_date<IECVar<T>> : is_any_date<T> {};
+
+template<typename T>
+struct is_any_time<IECVar<T>> : is_any_time<T> {};
+
+template<typename T>
+struct is_any_magnitude<IECVar<T>> : is_any_magnitude<T> {};
+
+template<typename T>
+struct is_any_elementary<IECVar<T>> : is_any_elementary<T> {};
+
+// =============================================================================
+// Helper Variable Templates (C++17)
+// =============================================================================
+
+template<typename T>
+constexpr bool is_iec_type_v = is_iec_type<T>::value;
+
+template<typename T>
+constexpr bool is_any_bool_v = is_any_bool<T>::value;
+
+template<typename T>
+constexpr bool is_any_sint_v = is_any_sint<T>::value;
+
+template<typename T>
+constexpr bool is_any_uint_v = is_any_uint<T>::value;
+
+template<typename T>
+constexpr bool is_any_int_v = is_any_int<T>::value;
+
+template<typename T>
+constexpr bool is_any_real_v = is_any_real<T>::value;
+
+template<typename T>
+constexpr bool is_any_num_v = is_any_num<T>::value;
+
+template<typename T>
+constexpr bool is_any_bit_v = is_any_bit<T>::value;
+
+template<typename T>
+constexpr bool is_any_string_v = is_any_string<T>::value;
+
+template<typename T>
+constexpr bool is_any_date_v = is_any_date<T>::value;
+
+template<typename T>
+constexpr bool is_any_time_v = is_any_time<T>::value;
+
+template<typename T>
+constexpr bool is_any_magnitude_v = is_any_magnitude<T>::value;
+
+template<typename T>
+constexpr bool is_any_elementary_v = is_any_elementary<T>::value;
+
+// =============================================================================
+// Type Size Traits
+// =============================================================================
+
+/** Get the size in bits for an IEC type */
+template<typename T> struct iec_bit_size;
+
+// Note: Using actual C++ types to avoid duplicate specializations
+template<> struct iec_bit_size<bool> : std::integral_constant<size_t, 1> {};
+template<> struct iec_bit_size<uint8_t> : std::integral_constant<size_t, 8> {};
+template<> struct iec_bit_size<int8_t> : std::integral_constant<size_t, 8> {};
+template<> struct iec_bit_size<uint16_t> : std::integral_constant<size_t, 16> {};
+template<> struct iec_bit_size<int16_t> : std::integral_constant<size_t, 16> {};
+template<> struct iec_bit_size<uint32_t> : std::integral_constant<size_t, 32> {};
+template<> struct iec_bit_size<int32_t> : std::integral_constant<size_t, 32> {};
+template<> struct iec_bit_size<uint64_t> : std::integral_constant<size_t, 64> {};
+template<> struct iec_bit_size<int64_t> : std::integral_constant<size_t, 64> {};
+template<> struct iec_bit_size<float> : std::integral_constant<size_t, 32> {};
+template<> struct iec_bit_size<double> : std::integral_constant<size_t, 64> {};
+template<> struct iec_bit_size<char> : std::integral_constant<size_t, 8> {};
+template<> struct iec_bit_size<char16_t> : std::integral_constant<size_t, 16> {};
+
+// IECVar wrapper
+template<typename T>
+struct iec_bit_size<IECVar<T>> : iec_bit_size<T> {};
+
+template<typename T>
+constexpr size_t iec_bit_size_v = iec_bit_size<T>::value;
+
+// =============================================================================
+// Underlying Type Traits
+// =============================================================================
+
+/** Get the underlying C++ type for an IEC type */
+template<typename T> struct iec_underlying_type { using type = T; };
+
+// IECVar wrapper - extract the underlying type
+template<typename T>
+struct iec_underlying_type<IECVar<T>> { using type = T; };
+
+template<typename T>
+using iec_underlying_type_t = typename iec_underlying_type<T>::type;
+
+/** Extract the raw value from an IECVar or pass through a raw value unchanged */
+template<typename T>
+constexpr T iec_unwrap(T v) noexcept { return v; }
+
+template<typename T>
+constexpr T iec_unwrap(const IECVar<T>& v) noexcept { return v.get(); }
+
+// =============================================================================
+// Type Limits
+// =============================================================================
+
+/** Get the minimum and maximum values for an IEC type */
+template<typename T> struct iec_limits;
+
+// Note: Using actual C++ types to avoid duplicate specializations
+template<> struct iec_limits<int8_t> {
+    static constexpr int8_t min() { return -128; }
+    static constexpr int8_t max() { return 127; }
+};
+
+template<> struct iec_limits<int16_t> {
+    static constexpr int16_t min() { return -32768; }
+    static constexpr int16_t max() { return 32767; }
+};
+
+template<> struct iec_limits<int32_t> {
+    static constexpr int32_t min() { return -2147483648; }
+    static constexpr int32_t max() { return 2147483647; }
+};
+
+template<> struct iec_limits<int64_t> {
+    static constexpr int64_t min() { return INT64_MIN; }
+    static constexpr int64_t max() { return INT64_MAX; }
+};
+
+template<> struct iec_limits<uint8_t> {
+    static constexpr uint8_t min() { return 0; }
+    static constexpr uint8_t max() { return 255; }
+};
+
+template<> struct iec_limits<uint16_t> {
+    static constexpr uint16_t min() { return 0; }
+    static constexpr uint16_t max() { return 65535; }
+};
+
+template<> struct iec_limits<uint32_t> {
+    static constexpr uint32_t min() { return 0; }
+    static constexpr uint32_t max() { return 4294967295U; }
+};
+
+template<> struct iec_limits<uint64_t> {
+    static constexpr uint64_t min() { return 0; }
+    static constexpr uint64_t max() { return UINT64_MAX; }
+};
+
+// IECVar wrapper
+template<typename T>
+struct iec_limits<IECVar<T>> : iec_limits<T> {};
+
+// =============================================================================
+// Composite Type Traits
+// =============================================================================
+
+/** Check if T is an IEC array type */
+template<typename T> struct is_iec_array : std::false_type {};
+
+template<typename T, typename B>
+struct is_iec_array<IEC_ARRAY_1D<T, B>> : std::true_type {};
+
+template<typename T, typename Bnd1, typename Bnd2>
+struct is_iec_array<IEC_ARRAY_2D<T, Bnd1, Bnd2>> : std::true_type {};
+
+template<typename T, typename Bnd1, typename Bnd2, typename Bnd3>
+struct is_iec_array<IEC_ARRAY_3D<T, Bnd1, Bnd2, Bnd3>> : std::true_type {};
+
+template<typename T>
+constexpr bool is_iec_array_v = is_iec_array<T>::value;
+
+/** Check if T is an IEC struct type */
+// Uses std::is_base_of to detect types derived from IEC_STRUCT_Base
+// Note: Generated structs inherit from IEC_STRUCT_Base
+template<typename T>
+struct is_iec_struct : std::integral_constant<bool,std::is_base_of<IEC_STRUCT_Base, T>::value> {};
+
+template<typename T>
+constexpr bool is_iec_struct_v = is_iec_struct<T>::value;
+
+/** Check if T is an IEC enumeration type */
+template<typename T> struct is_iec_enum : std::false_type {};
+
+template<typename E>
+struct is_iec_enum<IEC_ENUM_Value<E>> : std::true_type {};
+
+template<typename E>
+struct is_iec_enum<IEC_ENUM_Var<E>> : std::true_type {};
+
+template<typename T>
+constexpr bool is_iec_enum_v = is_iec_enum<T>::value;
+
+/** Check if T is an IEC subrange type */
+template<typename T> struct is_iec_subrange : std::false_type {};
+
+template<typename B, B L, B U>
+struct is_iec_subrange<IEC_SUBRANGE_Value<B, L, U>> : std::true_type {};
+
+template<typename B, B L, B U>
+struct is_iec_subrange<IEC_SUBRANGE_Var<B, L, U>> : std::true_type {};
+
+template<typename T>
+constexpr bool is_iec_subrange_v = is_iec_subrange<T>::value;
+
+/** Check if T is an IEC pointer type (REF_TO) */
+template<typename T> struct is_iec_pointer : std::false_type {};
+
+template<typename T>
+struct is_iec_pointer<IEC_REF_TO<T>> : std::true_type {};
+
+template<typename T>
+constexpr bool is_iec_pointer_v = is_iec_pointer<T>::value;
+
+/** Check if T is ANY_DERIVED (composite types: arrays, structs, enums, subranges, pointers) */
+template<typename T>
+struct is_any_derived : std::integral_constant<bool,
+    is_iec_array<T>::value ||
+    is_iec_struct<T>::value ||
+    is_iec_enum<T>::value ||
+    is_iec_subrange<T>::value ||
+    is_iec_pointer<T>::value
+> {};
+
+template<typename T>
+constexpr bool is_any_derived_v = is_any_derived<T>::value;
+
+// =============================================================================
+// C++17 SFINAE Helpers
+// =============================================================================
+
+template<typename T>
+using enable_if_any_int = std::enable_if_t<is_any_int_v<T>, int>;
+
+template<typename T>
+using enable_if_any_real = std::enable_if_t<is_any_real_v<T>, int>;
+
+template<typename T>
+using enable_if_any_num = std::enable_if_t<is_any_num_v<T>, int>;
+
+template<typename T>
+using enable_if_any_bit = std::enable_if_t<is_any_bit_v<T>, int>;
+
+template<typename T>
+using enable_if_any_string = std::enable_if_t<is_any_string_v<T>, int>;
+
+template<typename T>
+using enable_if_any_date = std::enable_if_t<is_any_date_v<T>, int>;
+
+template<typename T>
+using enable_if_any_time = std::enable_if_t<is_any_time_v<T>, int>;
+
+template<typename T>
+using enable_if_any_magnitude = std::enable_if_t<is_any_magnitude_v<T>, int>;
+
+template<typename T>
+using enable_if_any_elementary = std::enable_if_t<is_any_elementary_v<T>, int>;
+
+template<typename T>
+using enable_if_iec_array = std::enable_if_t<is_iec_array_v<T>, int>;
+
+template<typename T>
+using enable_if_iec_struct = std::enable_if_t<is_iec_struct_v<T>, int>;
+
+template<typename T>
+using enable_if_iec_enum = std::enable_if_t<is_iec_enum_v<T>, int>;
+
+template<typename T>
+using enable_if_iec_subrange = std::enable_if_t<is_iec_subrange_v<T>, int>;
+
+template<typename T>
+using enable_if_any_derived = std::enable_if_t<is_any_derived_v<T>, int>;
+
+template<typename T>
+using enable_if_iec_pointer = std::enable_if_t<is_iec_pointer_v<T>, int>;
+
+// =============================================================================
+// C++20 Concepts (when available)
+// =============================================================================
+
+#if __cplusplus >= 202002L
+
+/** Concept for IEC types */
+template<typename T>
+concept IECType = is_iec_type_v<T>;
+
+/** Concept for ANY_BOOL types */
+template<typename T>
+concept AnyBool = is_any_bool_v<T>;
+
+/** Concept for ANY_SINT types (signed integers) */
+template<typename T>
+concept AnySInt = is_any_sint_v<T>;
+
+/** Concept for ANY_UINT types (unsigned integers) */
+template<typename T>
+concept AnyUInt = is_any_uint_v<T>;
+
+/** Concept for ANY_INT types (all integers) */
+template<typename T>
+concept AnyInt = is_any_int_v<T>;
+
+/** Concept for ANY_REAL types */
+template<typename T>
+concept AnyReal = is_any_real_v<T>;
+
+/** Concept for ANY_NUM types */
+template<typename T>
+concept AnyNum = is_any_num_v<T>;
+
+/** Concept for ANY_BIT types */
+template<typename T>
+concept AnyBit = is_any_bit_v<T>;
+
+/** Concept for ANY_STRING types */
+template<typename T>
+concept AnyString = is_any_string_v<T>;
+
+/** Concept for ANY_DATE types */
+template<typename T>
+concept AnyDate = is_any_date_v<T>;
+
+/** Concept for ANY_TIME types (durations) */
+template<typename T>
+concept AnyTime = is_any_time_v<T>;
+
+/** Concept for ANY_MAGNITUDE types */
+template<typename T>
+concept AnyMagnitude = is_any_magnitude_v<T>;
+
+/** Concept for ANY_ELEMENTARY types */
+template<typename T>
+concept AnyElementary = is_any_elementary_v<T>;
+
+/** Concept for IEC array types */
+template<typename T>
+concept IECArray = is_iec_array_v<T>;
+
+/** Concept for IEC struct types */
+template<typename T>
+concept IECStruct = is_iec_struct_v<T>;
+
+/** Concept for IEC enum types */
+template<typename T>
+concept IECEnum = is_iec_enum_v<T>;
+
+/** Concept for IEC subrange types */
+template<typename T>
+concept IECSubrange = is_iec_subrange_v<T>;
+
+/** Concept for ANY_DERIVED types (composite types) */
+template<typename T>
+concept AnyDerived = is_any_derived_v<T>;
+
+/** Concept for IEC pointer types (REF_TO) */
+template<typename T>
+concept IECPointer = is_iec_pointer_v<T>;
+
+#endif // C++20
+
+} // namespace strucpp
