@@ -38,6 +38,13 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   **Follow-ups (not R12):** R12b informational branch state (Backlog; never feeds diagnostics; open decision:
   Debug only or "all configurations agree"); definition returning every same-name declaration once
   `mapDefinition` accepts arrays; optional merged completion items (`BOOL | INT (conditional)`).
+- **Sample 1 XAE warnings (user, 2026-11-13; XAE Shell 64):** 0 errors, 3 warnings: C0564 x2 (GVL_System's
+  `fbCylinder(refExtendOut := GVL_Io.bExtendOut, refRetractOut := GVL_Io.bRetractOut)`: "reference to uninitialized
+  variable") and C0195 (FB_Station.Cyclic line 28, INT into WORD). **User: fix the sample.** Done in the generator
+  and the committed sample: `GVL_Io` BOOLs get `:= FALSE` (my guess for C0564 — unverified), line 28 uses
+  `INT_TO_WORD(...)`. 119/119 FULL. **Awaiting the user's XAE re-build** to confirm 0 warnings; if C0564 stays,
+  the next candidate is binding the references in code instead of the FB_init arguments (changes what the sample
+  exercises, so ask first).
 - **R13 C++ generation + g++ build: MERGED** into `dev` as PR #37 (squash `02236c8`, 2026-11-13 08:40 UTC,
   user). Design and rules: DEVELOPMENT.md "C++ generation and the g++ build (roadmap R13)"; the full Windows
   checklist is in the PR body. **Verified on Windows by the user (2026-11-13):** TcToolkitSample2 builds with no
