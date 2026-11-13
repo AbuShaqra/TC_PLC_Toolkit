@@ -812,6 +812,7 @@
     "typescript": "^7.0.2"
   },
   "dependencies": {
+    "ads-client": "2.2.0",
     "vscode-cpptools": "^7.1.1",
     "vscode-languageclient": "^9.0.1",
     "vscode-languageserver": "^9.0.1",
