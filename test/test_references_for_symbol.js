@@ -242,7 +242,7 @@ assert(missingMember.resolved === false,
 
 // ------------------------------------------------------------------------------------------------
 // 8. Index-restored discipline: a by-symbol call must leave previously-indexed nodes' uri/nameRange
-//    untouched (the on-disk per-component ranges are what cross-file Go to Definition navigates with).
+//    untouched (the XML-indexed unit-line ranges are what cross-file Go to Definition navigates with).
 // ------------------------------------------------------------------------------------------------
 console.log('\n--- Index restored after a call ---');
 const before = {};

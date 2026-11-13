@@ -102,6 +102,25 @@ class TwinCatCustomEditorProvider {
         this.compileOptions = { generateCpp: false, buildWithGpp: false };
         /** @type {{options: () => {generateCpp: boolean, buildWithGpp: boolean}, set: (key: string, value: boolean) => Promise<boolean>}|null} */
         this.compileOptionsSource = null;
+        /**
+         * Online monitoring (R15, src/commands/onlineCommands.js sets this): the webview reports what
+         * its panes show and asks for writes and watches at a pane position; the host answers. Null
+         * until that command module is registered; every use tolerates null.
+         * @type {{isOnline: () => boolean, visible: (uriStr: string, document: any, msg: any) => Promise<void>,
+         *   panelVisible: (uriStr: string, visible: boolean) => void, panelClosed: (uriStr: string) => void,
+         *   write: (uriStr: string, document: any, msg: any) => Promise<any>, addWatch: (uriStr: string, document: any, msg: any) => Promise<any>}|null}
+         */
+        this.onlineSource = null;
+    }
+
+    /**
+     * Online monitoring went on or off: every open editor shows or drops its online actions and values.
+     * @param {boolean} online
+     */
+    broadcastOnlineState(online) {
+        for (const panel of this.activePanels.values()) {
+            panel.webview.postMessage({ type: 'online/state', online, note: '' });
+        }
     }
 
     /**
@@ -283,6 +302,7 @@ class TwinCatCustomEditorProvider {
         }
 
         const changeViewStateSubscription = webviewPanel.onDidChangeViewState(e => {
+            if (this.onlineSource) this.onlineSource.panelVisible(uriStr, webviewPanel.visible);
             if (webviewPanel.active) {
                 this.lastActivePanelUri = uriStr;
                 if (this.options && typeof this.options.onActiveFileChange === 'function') {
@@ -326,6 +346,7 @@ class TwinCatCustomEditorProvider {
             if (this.lastActivePanelUri === uriStr) this.lastActivePanelUri = null;
             changeDocumentSubscription.dispose();
             changeViewStateSubscription.dispose();
+            if (this.onlineSource) this.onlineSource.panelClosed(uriStr);
         });
 
         // Handle messages from the webview
@@ -360,6 +381,9 @@ class TwinCatCustomEditorProvider {
                             compileOptions: this.compileOptions,
                             xaeOptions: this.xaeOptions
                         });
+                        if (this.onlineSource && this.onlineSource.isOnline()) {
+                            webviewPanel.webview.postMessage({ type: 'online/state', online: true, note: '' });
+                        }
                         // Cleared by the webview's `selectionApplied` ack, not here: if the highlight
                         // never lands (the panes were not populated yet), dropping it now would leave
                         // nothing to retry with.
@@ -589,6 +613,17 @@ class TwinCatCustomEditorProvider {
                     } catch (err) {
                         console.error(err);
                     }
+                    break;
+                // Online monitoring (R15): see src/commands/onlineCommands.js. The webview never talks
+                // ADS; it only reports its panes and asks.
+                case 'online/visible':
+                    if (this.onlineSource) await this.onlineSource.visible(uriStr, document, message).catch(err => console.error(err));
+                    break;
+                case 'online/write':
+                    if (this.onlineSource) await this.onlineSource.write(uriStr, document, message).catch(err => console.error(err));
+                    break;
+                case 'online/addWatch':
+                    if (this.onlineSource) await this.onlineSource.addWatch(uriStr, document, message).catch(err => console.error(err));
                     break;
                 case 'openDocumentationLink':
                     // Only the pragma catalogue's own documentation pages: the hover's links. Anything
@@ -820,6 +855,7 @@ class TwinCatCustomEditorProvider {
                         <span class="slider round"></span>
                     </label>
                 </div>
+                <span id="online-note" class="online-note" title="Online monitoring (TC Toolkit: Go Online)" hidden></span>
                 <span id="save-status" class="status-indicator">Synced</span>
             </div>
         </header>

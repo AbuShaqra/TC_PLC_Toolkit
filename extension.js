@@ -18,6 +18,7 @@ const { registerCompileCommands } = require('./src/commands/compileCommands');
 const { registerXaeShellCommands } = require('./src/commands/xaeShellCommands');
 const { registerXaeBuildCommands } = require('./src/commands/xaeBuildCommands');
 const { registerGppCommands } = require('./src/commands/gppCommands');
+const { registerOnlineCommands } = require('./src/commands/onlineCommands');
 const { defaultMsys2RootCache } = require('./src/msys2Detect');
 const { registerCppToolsProvider } = require('./src/commands/cppToolsCommands');
 const { migrateSettings } = require('./src/settingsMigration');
@@ -35,6 +36,8 @@ const { TWINCAT_EDITOR_EXTS, TWINCAT_WATCH_EXTS, isWatchEventRelevant, isGenerat
 const { LanguageClient, TransportKind, State } = require('vscode-languageclient/node');
 
 let client;
+/** Online monitoring (R15); closed by deactivate(). @type {{dispose: () => Promise<void>}|null} */
+let online = null;
 
 /**
  * Quiet period for the `.plcproj` watcher, in milliseconds. src/plcProjHelper.js rewrites the
@@ -597,6 +600,9 @@ function activate(context) {
         provider, getProjectMap: () => hostProjectMap, getSolutionMap: () => hostSolutionMap,
         onSettingsChanged: () => { if (start) start.startPage.postState(); }
     });
+    // Online monitoring over ADS (R15): Go Online/Offline, inline values, Write value…, PLC Watch.
+    // Nothing connects until the user goes online; deactivate() closes whatever is open.
+    online = registerOnlineCommands(context, { provider, getProjectMap: () => hostProjectMap });
     // IntelliSense for the generated C++ in Microsoft's C/C++ extension, when it is installed (not awaited).
     registerCppToolsProvider(context, { getProjectMap: () => hostProjectMap });
 
@@ -621,10 +627,14 @@ function activate(context) {
 }
 
 function deactivate() {
+    // The ADS connection, its notifications and every poll close first and independently of the
+    // language client: no connection may outlive the extension.
+    const closing = online ? online.dispose().catch(() => {}) : Promise.resolve();
+    online = null;
     if (!client) {
-        return undefined;
+        return closing;
     }
-    return client.stop();
+    return Promise.all([closing, client.stop()]);
 }
 
 module.exports = {

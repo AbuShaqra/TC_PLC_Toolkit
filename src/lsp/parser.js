@@ -738,6 +738,17 @@ function parseAndIndexDocument(code, fileUri, index = workspaceSymbolIndex) {
     if (fileUri) {
         pouNode = Object.values(index).find(node => node.uri === fileUri);
     }
+    // A GVL's unit (stConverter raw) has no `GVL` header, so no keyword branch below replaces its
+    // node the way a POU's is replaced: the VAR_GLOBAL blocks are pushed onto the node found by uri.
+    // That node already holds the XML indexer's copy of every variable (saved text), so appending
+    // kept two copies per variable, one more per sync. This text is the whole GVL: its variables
+    // replace the old ones (a NEW array — a snapshot taken by references.js keeps the old one).
+    // `qualifiedOnly` follows this text too (an unsaved pragma edit), tested exactly as xmlIndexer
+    // tests the declaration on disk (a pragma anywhere counts: the restrictive answer is the safe one).
+    if (pouNode && String(pouNode.type).toUpperCase() === 'GVL') {
+        pouNode.variables = [];
+        pouNode.qualifiedOnly = /\{\s*attribute\s+'qualified_only'\s*\}/i.test(code);
+    }
     let currentMethod = null;
     let currentProperty = null;
 
@@ -933,7 +944,7 @@ function parseAndIndexDocument(code, fileUri, index = workspaceSymbolIndex) {
         // VAR-block variables (`AT %I*` direct addresses included), so the shared block parser
         // handles them; a UNION is indexed exactly like a STRUCT. This pass is *attach-only*: the
         // members are merged into the node the XML indexer already built for this file, keeping
-        // that node's XML-relative ranges intact, and names already known are skipped. It can
+        // that node's ranges (unit lines, as here) intact, and names already known are skipped. It can
         // therefore only ever add a missing declaration — never move, replace, or duplicate one.
         // It is what makes an unsaved edit to a DUT visible to live diagnostics.
         if (tok.type === TokenType.Keyword && (valUpper === 'STRUCT' || valUpper === 'UNION')) {

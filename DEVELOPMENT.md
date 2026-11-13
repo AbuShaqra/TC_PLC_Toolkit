@@ -127,7 +127,8 @@ found running 2 of its 10 tests. Hence the classification below: a run states wh
 - **FULL** — required fixtures are present **and each load-bearing harness reports that its gate
   actually ran**. Fixture presence alone is not evidence: `test/_coverage.js` writes a per-child
   report that `test/run.js` consumes for the live path, diagnostics/typecheck ratchets, committed
-  archive reader, multi-project fixture, Objects-tree id pin and the two-sample workspace.
+  archive reader, multi-project fixture, Objects-tree id pin, the two-sample workspace and R15's
+  online gates (`ads-paths-sample`, `ads-watch`, `ads-code`).
 - **REDUCED** — lists missing fixtures plus every gate that skipped or failed to report execution,
   and labels the final line `(reduced coverage)`.
 - **FILTERED** — `node test/run.js <substring>` intentionally ran only a subset and can never claim
@@ -201,7 +202,7 @@ per-suite without aborting on the first failure. The main ones:
 | `test/test_method_diagnostics.js` | Diagnostics for a method body analysed on its own, as the webview does — a valid method must produce none once its POU is indexed. |
 | `test/test_memory_bank.js` | The shared memory bank in `.claude/memory/` and the `SessionStart` hook that delivers it. The bank fails silently by nature — a malformed note is skipped, a renamed file breaks the `[[links]]` at it, a dropped hook stops the digest — and sessions just stop being told what the project already learned, which looks exactly like having nothing to tell. Pins the hook contract too (JSON carrying `hookSpecificOutput.additionalContext`, exit 0 whatever happens), since that is what the mechanism depends on and nothing else in the repo enforces it. |
 | `test/test_pending_edits.js` | `media/pendingEdits.js`, the edit-sync state machine: store keying (`${componentId}_${blockType}`), stash-overwrite semantics, `takeAll` clearing, `snapshot` shape, the EXACT status strings/classNames, `applyCachedEdits` matching on the full xmlContext triple (an accessorType mismatch must NOT match — the Get/Set disambiguation), `foldEdits` argument order and text threading, and the pinned ALIASING of `createStore(initial)` (`snapshot() === seed` — editor.js's 'init' path relies on it). |
-| `test/test_pending_edits_persistence.js` | `src/pendingEditsStore.js`, the workspaceState-backed persistence behind Manual Sync's unsaved edits — the half that makes them survive a window reload. Runs the store over a fake in-memory Memento: a NEW store instance over the SAME memento still returns the edits (that IS the reload — the object dies, the memento does not), a fingerprint mismatch returns `{}` **and** removes the stale entry from the memento, deletes are per-URI, an empty edits object is a delete, an absent entry reads without writing, and the stored value survives the `JSON.parse(JSON.stringify(...))` round trip workspaceState puts it through. |
+| `test/test_pending_edits_persistence.js` | `src/pendingEditsStore.js`, the workspaceState-backed persistence behind Manual Sync's unsaved edits — the half that makes them survive a window reload. Runs the store over a fake in-memory Memento: a NEW store instance over the SAME memento still returns the edits (that IS the reload — the object dies, the memento does not), a fingerprint mismatch returns `{}` **and** removes the stale entry from the memento (`get`; the non-destructive `peek` the online write guard and the compile pre-check use is pinned in `test_ads_regressions.js`), deletes are per-URI, an empty edits object is a delete, an absent entry reads without writing, and the stored value survives the `JSON.parse(JSON.stringify(...))` round trip workspaceState puts it through. |
 | `test/test_peek_uri.js` | `media/peekUri.js`, the synthetic peek/goto URI vocabulary: `parseQuery` against independent %-encoded literals, both encoders' defaults and their exact joined query strings (byte-pinned), `decodeGotoTarget` inverting `encodeGotoParts` incl. the null defaults and `Number()` conversions, and `peekOpenMessage`'s full 'openFile' body incl. the zero-length/null-range fallback to `targetWord.length`. |
 | `test/test_diagnostic_markers.js` | `media/diagnosticMarkers.js`: severity mapping (1→error, 2→warning, else info) through caller-injected sentinel values, other-component diagnostics dropped, `pane === 'decl'` vs everything-else routing (non-'decl' lands in impl — today's contract), and the marker field shape key-for-key. |
 | `test/test_folding.js` | Folding ranges (`media/stFolding.js`). Pins the two reported bugs by name — an unmatched `{endregion}` truncating the enclosing `VAR` fold, and an unindented `{attribute …}` growing a fold arrow of its own — plus the case designed for rather than discovered: `{IF defined(X)}` is a conditional *pragma*, not an `IF` block, and reading it as one leaves an unclosed block that eats every fold below. Also covers keywords inside comments/strings (`$`-escapes included), members named like keywords (`axis.Case`), the separate region/block stacks, every `VAR_*` variant, and a sweep over every pane of every `sample/` object asserting no range is ever out of bounds. |
@@ -239,6 +240,14 @@ per-suite without aborting on the first failure. The main ones:
 | `test/test_xae_build_commands.js` | `src/commands/xaeBuildCommands.js` + the provider hooks under a `vscode` stub with the fake driver: the setting and the dropdown's `setXaeOption` decide `-ShowWindow` on the next spawn; the channel's requested and actual UI mode lines; Problems only in `twincat-xae` (Compile Project's collections untouched; a stub `compile` source proves the two sources' pane markers merge, edits reach both, removing `xae` keeps Compile Project's); the entry's `/xaeProblem?id=` link opens the component and pane through the URI handler, `openTarget` once per run; a dismissed modal spawns nothing, the confirmed NetId reaches the argv, `twincat.xaeBuild` never activates, a target readback mismatch is an error; cancel via the cancel file (exit 4, nothing killed); the force stop (PowerShell tree + only an `ours` shell, image-filtered; the launch-phase note); a cancelled, force-stopped, timed-out or unconfirmed-exit-1 run keeps the previous Problems; stderr decoded across chunks; no cancel during activation, nor when activation begins inside the grace period; one run at a time + `twincat.xaeRunning`; timeout, its extension during activation and after a refused stop; the stall re-run with `-ShowWindow` (one channel line, no second shell check; none after a run that exits 0 or refuses the stop); config-not-declared pick; the missing-shell flow on sample 2 (a `.tspproj`, 4024; `projectTcBuild` reads it): the pre-check modal when it can tell (exactly one prompt, the first run already `-TcVersion TcXaeShell.DTE.17.0 -AllowVersionMismatch`, the channel logs the choice), the driver's `progid-not-registered` + `installed` fallback when it cannot (one prompt, one re-run with exactly those args), Cancel keeps the original error, no installed alternative → no prompt and the shell to install, only an OLDER shell installed (a 4026 project, 4024 found) → no offer before or after the run and the shell to install named, a confirmed substitute that is itself unregistered → one prompt and the substitution named, the configuration re-run keeps a confirmed shell, activation never offered another shell (its Run-anyway warning, no override), a shell found only in the registry passes silently; Show Activation Targets; the non-Windows refusal. Target platform: Cancel / Switch for this run (argv `-Platform`, setting never written, the next build back on the setting) / Switch and remember (written once: user, else workspace; the stub reads the setting's real scope from package.json, keeps no folder value for a window-scoped key and refuses a folder write, as VS Code does), the plain modal when platforms match, the not-declared refusal before any spawn (sample 2), an undeclared configured pair refused before the modal, gate 4 on an unreadable `.sln` (kind `unknown`: plain modal, the confirmed target in the argv, the refusal summarised on one line and written once); an activation's re-runs (*Build again with the window shown* after a switch, the stall offer) reuse the confirmation (one list, one pick, one modal; the switched platform kept), a forged `confirmedActivation` argument ignored; the user's Cancel beats the stall re-run in both orders; a failed headless build without details: the reasons in the notification, *Build again with the window shown* re-runs once with `-ShowWindow` and every other argument equal, and writes no setting, no offer after a visible run (whose reason says "XAE window shown"); route `none` runs TC Toolkit's own check exactly once through `twincat.compileProject` (`fromXae`, not appending; stubbed here), the message says it is not XAE's and can differ, a missing compiler is said and skipped; route `typed` places its item in Problems with no fallback; a successful build's typed warning is listed; no fallback after a cancel or exit 2; the user's planted-error runs (`errors-pane-planted-headless`/`-visible` on a temp copy of sample 1 with `h;` planted): both messages placed with their compiler code as the Problems code, "failed: 1 error. 1 error, 1 warning (2 placed …)", no blank "not placed" line, the project-failed item one `XAE:` line, no fallback; the same pane naming a missing file: 0 placed → the fallback runs once, unplaced messages listed with their own severity. |
 | `test/test_xae_error_placement.js` | `src/xaeErrorPlacement.js` against `sample/` objects: `.sln`-relative Windows paths, the 'pane'/'file'/'object' line bases, the section marker (exact) vs "(location approximate)", a named method, file-known-line-unknown, general, the summary sentence; the user's two Windows runs (`errors-pane-planted-headless`/`-visible`, MAIN with `h;` planted): C0189 on implementation line 15, C0139 on 14, each once, 1 error + 1 warning, the project-failed item a note, empty items dropped; the pane parser (German level words, spacing, column, a wrapped message, stop lines, the E_FAIL line not a message); `(Impl)`/component suffixes; an 'object' line in a POU with methods approximate; the canonical path. |
 | `test/test_xae_driver_contract.js` | `resources/xae/build-plc-project.ps1` read as text against `src/xaeBuild.js`: ASCII, every flag buildDriverArgs emits is in `param()`, every event type emitted ⇔ handled, phases, fatal codes, prefix/`v`, exit 4, `Exit-Run` for every exit, the builder's safety markers (`$ownShellPid`, `Close($false)`, `Resolve-ActivationTarget`, ADS state 5, readback, the activation show), `UserControl` never set, the hide step guarded by `-not $ShowWindow`, cancel disarmed before activation and every phase entered after the disarm uninterruptible in JS, no real path to a wildcard `-Path` (and `ProviderPath` from Resolve-Path), the `shell-not-ours` refusal before any DTE write and a finally that leaves a foreign shell alone, the unidentified shell made visible again, the error list and output panes read with retries, every builder line kept (additive, with each rewrite listed), the `progid-not-registered` fatal's `installed` census (every `$ProgIdByBuild` ProgId tested in HKCR with `-LiteralPath`, newest first, `progId`/`build`/`projectVersion`/`installed` in the event, the builder and `templates/` copies running the same census: newest first, `-LiteralPath`, the same `$ProgIdByBuild`), `$ProgIdByBuild` equal to `XAE_SHELL_VERSIONS`, and `.vscodeignore` not excluding the driver. Windows-only counterpart: `scripts/Build PLC project/test-emit-event.ps1`. `Get-OutputPaneTexts`: OutputWindow before the Windows.Item route, each null guarded with a reason, every catch around `Invoke-ComRetry` rethrowing a cancel, identical in the builder and `templates/` (ASCII, CRLF); ErrorItems by plain assignment, its retry checking for a cancel and reporting exhausted rejections as such; the error-list catches rethrowing a cancel and a cancel check closing the phase; `errorDetails` emitted with its reasons and route. The typed reader (`Get-XaeShellInstallDir`, `Initialize-TypedDteReader`, `Read-TypedErrorList`, `Read-TypedBuildPane`): identical in all three copies; registry `LocalServer32` then the default folders; one Add-Type per run, a loaded type reused; EnvDTE/EnvDTE80/Interop from PublicAssemblies via LoadFrom; the DTE2 cast, `ErrorItems.Item(i)` 1..Count, the "Build" pane read; every reason (assembly path, Add-Type message, cast, empty); cancel rethrown; typed first, late-bound only when it gave nothing, in every copy; the window note per mode (no hard-coded "XAE window hidden"). The system-project lookup (`.tsproj` / `.tspproj`) as two provider-side `-Filter` calls merged before `Sort-Object`, in the driver (both lookups), the builder, `templates/` and `probe-sysmanager.ps1`. |
+| `test/test_ads_paths.js` | R15: which ADS path each pane occurrence stands for — the LSP's `provideOnlinePaths` over the sample's assembled units (exactly what the host sends) and synthetic units, then `src/online/editorPaths.js` back to pane positions: a PROGRAM's declaration lines (`MAIN.x`, shown at end of line), qualified globals, chains through FB instances, `{instance}.member` in an FB's methods and actions, constant array indexes (one and two dimensions, the element type followed), `THIS^.x`; no occurrence for calls, named-argument NAMES, enum literals, pointer dereferences, non-literal indexes, property accessors, ambiguous unqualified globals; `path: null` with a reason for method locals (return variable included), VAR_TEMP, VAR_IN_OUT, a FUNCTION's variables; visible-line ranges restrict the answer; FB_init arguments and initializers are not part of a declared type. Gate `ads-paths-sample`. |
+| `test/test_ads_session.js` | R15: `src/online/session.js` + `adsClient.js` + `connectErrors.js` against `test/_fakeAds.js` (an in-memory PLC that counts connections, reads, notifications, writes) and a stand-in of ads-client's `Client`: router mode never sets a local AmsNetId (never direct by accident), direct mode refuses without its settings; the adapter's disconnect waits for an in-flight connect and closes it; subscriptions go through `subscribeRaw` (#189); connect/disconnect counts; cancel and supersede leave no connection, even when the connect settles late; disconnect waits for background closes; every connect-error class (no router, port registration = the 4026 user-mode text, no route = XAE + "never creates routes", no PLC, CONFIG, direct refused) and no retry in direct mode; `_AppInfo` status (project name, forces on/off/not reported); resolve against the PLC, data-type fallback, one sum read, 64-bit exact; an online change drops resolved symbols; the notification cap (read per subscribe); instance discovery (nested in structs, derived FBs, arrays skipped). |
+| `test/test_ads_inline.js` | R15: `src/online/values.js` (formatting and parsing every scalar kind, ranges, enums, strings, type comparison) and `inlineMonitor.js`: only known scalars, "type differs" never shows a value, one sum read per tick at the interval, posting only on change, paused while hidden, the per-editor path cap and its callback, "stopped" while the PLC is not in Run, nothing while blocked, stop() clears. |
+| `test/test_ads_write.js` | R15: `src/online/writeGuard.js` against the fake PLC with recorded dialogs: offline, off by default (no dialog, no write), the per-session enable modal (declined/accepted, asked once), the write modal (target, path, old/new value, PLC state, "not a force", button `Write`), input validation, a cancelled modal writes nothing, written once and logged, enums by name; refused on code differs / not checkable / unsaved edits / type mismatch / struct / unknown path / method local, the guards re-checked after the dialog, a PLC-side failure reported and logged. |
+| `test/test_ads_code.js` | R15: `src/online/codeIdentity.js` on the sample's committed `.tmc` (a real XAE output): its symbol table parsed; `PlcAppSystemInfo` really has ProjectName, OnlineChangeCnt, AppTimestamp, ActivePlcForces, ActiveIoForces; layout comparison (added, missing, resized; foreign namespaces ignored); sources edited since the build (`_Libraries` excluded); the check's outcomes (no name / other name: values hidden; no `.tmc`: unknown; layout or edits: differs; all three: match, still saying what it cannot detect; a failed upload is not a match). Gate `ads-code`. |
+| `test/test_ads_regressions.js` | R15 review findings (2026-11-13), one labelled block per finding #0-#19, each run against the code before its fix (where it failed): a write bound to the enabled and confirmed connection (a Go Online elsewhere during the value box refuses it; the modal and log name label + AMS address), writes only from editors of the bound project, a superseded code check never leaves a stale match, unsaved-edits detection (an empty stash is not an edit; a closed editor's Manual Sync stash blocks), `allowWrites` ignored from a workspace, PLC strings escaped and bounded; no notification leak across downloads/reconnects (real ads-client 2.2.0 `Client` with ADS commands answered in memory), one poll loop, a stale status poll, watch slot races and capped retries, Cancel/Go Offline in the status phase, router-rejection hints, no orphan reconnect after Go Offline (a local TCP listener as the router); no unqualified fallback over an uncertain chain, a `qualified_only` GVL or an enumerator; inline values re-posted on request; truncation by code point. Review round 2 (blocks `R2#0`-`R2#6`, each failing on `e6a3842`): a download of another project, or a type change, while the value box is open refuses the write; the bound-project switch is logged and the editors updated; a click while connecting is refused before any dialog; a closed editor's stash blocks across the BOM and a guard read never deletes one; no symbol cache crosses a Cancel; no watch slot overwrites a live handle (three races); no inline poll after Go Offline; a long GVL's declaration pane maps every name to itself, once, and `qualifiedOnly` follows an unsaved pragma edit. Review round 3 (blocks `R3#1`, `R3#2`, failing on `31fc35b`): a same-name, same-size alias whose base type changed (REAL→DINT) or an enum whose members changed during the dialogs refuses the write, an unchanged one still writes; a stale stash's refusal names its file and the way out, and a stash whose file is gone is dropped with a log line and blocks nothing. Gate `ads-regressions`. |
+| `test/test_definition_frames.js` | R15 review round 3, #0: every symbol range is a line of the file's assembled ST unit, whichever indexer built it. Over both samples (each in its own index) plus a synthetic 12-variable GVL: every XML-indexed declaration (root variables and enumerators, method variables, method and property names) maps through `livePath.mapDefinition` to its own component, the declaration pane and the name's own line; the XML indexer and a sync (`parser.js` over `assembleSt`) give each root variable the same range; Go to Definition on `GVL_X.var` from another POU lands on the declaration before a sync, after one and after the re-index a save triggers. Failed on `31fc35b`. Round 4: every range of every POU, interface and GVL (root/method/property/action names, method and property `declRange`, variables and type ranges) is identical from both indexers, over both samples and synthetic objects (declarations headed by `//`, `(* *)` and `{attribute}` lines, doc comments naming the member, an enum whose members are named in comments, names whose case differs from the XML `Name`, actions, CRLF); check 1 also covers actions and accepts only a name that is code; Go to Definition before a sync lands on each synthetic declaration (10 probes). Failed on `639d2b9`. Gate `definition-frames`. |
+| `test/test_ads_watch.js` | R15 end to end in the extension host: `src/commands/onlineCommands.js` + `watchTree.js` under a recording `vscode` stub, the real live path and LSP (`provideOnlinePaths`) over the sample, the fake PLC built from the sample's `.tmc` so the layout check passes: contributions (commands, view, settings defaults, nothing called Force, router address marked untested); a connect error with the user-mode text and no direct retry; cancel; Go Online, status bar, recent targets; inline values for MAIN and, through an instance found on the PLC, for FB_Station's method; Write value… (off, then enable + modal, logged; blocked on unsaved edits; a method local refused); PLC Watch (add from the editor, notification at 200 ms, members from one value, cap + message, persistence, copy, remove, write); the code check (another project: values hidden, "Code differs", writes blocked; same name with a different layout; a source edited after the `.tmc`; back to match); forces in the status bar; Go Offline and dispose leave no connection, notification or poll; writes re-enabled per session. Gate `ads-watch`. |
 | `test/test_multi_project_scope.js` | End-to-end: two copies of `sample/` under one workspace root (`test/_multiproject.js` builds the fixture, one copy deliberately diverged), driven through the real `scanWorkspace`. Asserts the partition (one index per project, nothing lost to a name collision), 0 diagnostics on the correct copy while the diverged copy's own real error still reports, references and the rename config scan never crossing the project boundary, and the library namespace/symbol registries staying per-project — including the Libraries-view union fallback when no project is specified. Needs `sample/`; skips cleanly when absent. |
 
 | `test/test_object_insert.js` | The Objects-tree insert commands' text, built by driving the **real** `buildNodeFromXml` over real `sample/` objects: the bare name for each kind, and the call template — instance name for an FB (`FB_Gripper` → `fbGripper`, since ST calls an instance, not the type), own name for a FUNCTION/PROGRAM, bare for a method/action, `Name();` when there are no parameters. Also pins that the extracted `callTemplate` is byte-identical to what `libraryTreeProvider` produced before the move, and that every `contextValue` named in the two new `when` clauses is one the Objects tree actually emits (read out of `objectsTreeModel.js`, not hard-coded, so a rename cannot silently orphan the menu items). **One case is synthetic on purpose:** no FB in `sample/` declares root `VAR_INPUT`/`VAR_OUTPUT`, so the mixed `:=`/`=>` ordering case is driven from one clearly-marked XML string through the real parser. |
@@ -278,6 +287,7 @@ npm i --no-save playwright               # optional dep, deliberately NOT in pac
 node test/browser/run.js                 # the references peek
 node test/browser/run_pragmas.js         # ST folding + the Monarch pragma rules
 node test/browser/run_start_page.js      # the TwinCAT start page (R2)
+node test/browser/run_online.js          # online monitoring's inline values and editor actions (R15)
 
 # On a runner that already has a browser and cannot download one (offline, image-based CI):
 HARNESS_CHROMIUM=/opt/pw-browsers/chromium node test/browser/run.js
@@ -295,6 +305,7 @@ perfectly good Chromium already.
 | `run.js` | The references peek: builds for the port it will serve on, drives Find References, asserts. Also pins the page's global error overlay: opening the peek must leave it hidden, Chrome's benign "ResizeObserver loop completed" notice (dispatched by hand, because whether the real loop fires is layout-timing dependent) must not raise it or post `error`, and a genuine error still must. `HARNESS_PORT` moves it off 8123; `HARNESS_SHOT=x.png` saves a screenshot. Also pins the Generate ST split button (roadmap R1): with one project the caret is hidden and the main button keeps its rounded right end; with two or more the inner corners square off to fuse with the caret (`has-caret` on `#generate-st-group`, set by `editor.js` with the caret's `hidden` flag — no `:has()`, which VS Code 1.66's Chromium lacks). Transitions are disabled for that check so it reads the end state, not a frame mid-animation. Step 7e pins Compile Project's pane markers: `compileDiagnostics` → owner `twincat-compile` on the active component's panes, `st-validator` markers surviving both ways and across a diagnostics refresh, a component switch showing only that component's markers, an edit dropping the edited component's markers and posting `compileDiagnosticsStale`; it writes a pane-marker screenshot (`HARNESS_COMPILE_SHOT`, default `test/browser/out/compile-markers.png`; empty = none). Step 7f pins the toolbar's Build button (`#compile-btn`, it runs Build Project): right after Generate ST, with its glyph, the name and `aria-label` "Build" and a tooltip; a click posts `compile-project`; `compileRunning` disables it (a click then posts nothing) and re-enables it; at 320–1200 px Generate ST, its caret and Compile all stay inside the editor with no sideways scroll, and the Compile label drops to the glyph at <= 1100 px. Then the Build dropdown (R13, `#compile-caret` / `#compile-menu`, labelled "Build options"): closed and off at start, labelled, opens with focus on *Generate C++*, ArrowUp/Down and Space operate it, ticking *Build with g++* ticks *Generate C++* and unticking *Generate C++* unticks the build (each posting `setCompileOption {key, value}`), Escape closes and refocuses the caret, a host `compileOptions` message updates the boxes live, an outside click closes it, opening one split menu closes the other, and the caret stays inside the editor at every width. `HARNESS_TOOLBAR_SHOTS=<dir>` writes toolbar screenshots (dark and light; 1200, 960, 820, 400 px) and `compile-menu-open.png`. |
 | `run_start_page.js` | The start page (roadmap R2): renders the real `renderStartPageHtml()` output WITH its CSP (only `acquireVsCodeApi()` is stubbed, through Playwright's init script), and asserts no request leaves the page's origin, the project name is validated while typing (shared `media/projectName.js` rules, `aria-invalid`), Create posts `{version, name, location}` and shows a host refusal, every other control posts its message, project actions are disabled while no project is open, the *Build project* tile (Compile Project) is enabled only with `compilerReady` (the compiler file exists — by default the bundled one) AND a project, shows "Compiler file not found" otherwise (and names no compiler product), the form survives in webview state, the recent list shows at most `recentsShown` rows behind a keyboard-operable "Show all (K)" / "Show fewer" tile (local to the page, follows a changed limit), the Settings card shows the two XAE Shell paths with a warning row for a path that is not on disk and posts `openSettings {section}` / the detect command, the g++ row in all four states (set, set via a bare name, detected on PATH / in an install folder, not found, and the three unusable-value warnings styled as the XAE warning row), its Change… / Detect again by click and keyboard, the Build dropdown (R13: a chevron beside the tile labelled "Build options", `aria-expanded`/`aria-controls`, a group of two labelled boxes showing `state.compileOptions`, keyboard-operable, posting `setCompileOption` with the coupling shown at once, never starting a compile), and there is no horizontal scroll at 360/560/1200 px (one column at 360). `HARNESS_START_SHOT=x.png` saves the Project actions card with the options open. Defaults to port 8125. |
 | `run_pragmas.js` | Folding and pragma highlighting. Folds real blocks and reads back the rendered lines, then tokenizes through Monaco's **own** tokenizer. Both fail silently if they regress, which is the point of driving a browser: a unit test on `stFolding.js` cannot prove Monaco actually *used* it rather than its own indentation provider. Carries the two reported bugs as regressions, and asserts implementation-pane blocks still fold — registering a provider replaces indentation folding, so that is the thing most likely to disappear unnoticed. Also runs nested `(* (* *) *)` comments through Monaco's own tokenizer (the inner `*)` must not return to code), and the pragma hover end to end in the webview: the stub answers with the real `provideHover` + `mapHoverToLocal` computed in Node, and the harness checks the request's pane position, the rendered widget, that a line with no `{` costs no round trip, and that a clicked documentation link goes to the host (`openDocumentationLink`) rather than navigating the webview. Verified: removing the provider turns 6 assertions red, and the failure text reproduces both original bug reports verbatim. Defaults to port 8124. |
+| `run_online.js` | Online monitoring (R15): going online makes the webview post `online/visible` (component, both panes' texts, their visible line ranges), shows the toolbar note and enables *Write Value…*; `online/values` items are drawn as injected text — a declaration value at the end of its line, an implementation value right after its variable, `tc-online-<state>` classes (`differs`, `stopped`), nothing for another component or a vanished line — and neither pane's text changes; the two context-menu actions post the caret's pane position, the pane texts and the unsaved flag; an edit clears the values and asks again (flagged dirty) and an unchanged answer draws them again; *Write Value…* only with `writable: true` from the host (hidden for `false` or absent); a host that answers every `online/visible` with `online/state` gets exactly one report (no message loop); going offline removes everything and disables the write. Pins that collapsed injected text needs `showIfCollapsed` (Monaco 0.39 drops it silently otherwise). `HARNESS_ONLINE_SHOT=x.png` saves a screenshot. Defaults to port 8125 (set `HARNESS_PORT` when running it beside `run_start_page.js`). |
 
 `run.js` asserts what only a browser can show: that the peek lists cross-file hits at all, that exactly
 the **non-live** panes get hidden models (a hit in the active component must use the live pane), that a
@@ -530,6 +541,26 @@ src/
                         `ours` shell PID), never in activate/restart/verify; timeout; the headless stall
                         offer; `setXaeOption` for the dropdowns. Reuses compileCommands' exported
                         problemDiagnostic / openProblem / pickProjectKey
+    onlineCommands      R15 online monitoring: `twincat.goOnline` / `goOffline`, `twincat.online.*`
+                        (enableWrites, selectInstance, showLog, statusMenu), `twincat.watch.*`, the
+                        status-bar item, the "TC Toolkit Online" output channel, the "PLC Watch" view,
+                        the provider's `onlineSource` (online/visible, online/write, online/addWatch);
+                        `dispose()` is called by deactivate()
+  online/               R15 online monitoring over ADS (vscode-free except watchTree; see "Online monitoring (R15)"):
+    adsClient           The ONE user of the `ads-client` package (2.2.0, pinned): adapts it to the small
+                        `AdsPort` interface everything else uses; router vs direct settings
+    session             One connection: cancellable connect, `_AppInfo` status poll, resolve paths
+                        against the PLC, sum reads, notifications under the cap, FB instance discovery
+    editorPaths         Pane lines → `custom/onlinePaths` ranges, its answer → pane positions,
+                        `{instance}` substitution, the "no symbol" reasons
+    inlineMonitor       One editor's inline values: resolve, poll (500 ms), post on change
+    watchList           The PLC Watch model: watched paths, one on-change notification each
+    watchTree           The PLC Watch view (TreeDataProvider over watchList)
+    writeGuard          The only path to a write: setting, per-session enable, guards, modal, log
+    codeIdentity        The code-mismatch guard: name, variable layout vs the last build's `.tmc`,
+                        source edits since that build
+    values              Value ↔ text for scalars (formatting, input parsing, type comparison)
+    connectErrors       Go Online failures → user messages (incl. the 4026 user-mode runtime)
   checkUnit             Compile Project's check unit: one ST unit per TwinCAT object with a per-LINE
                         origin map back to component/pane/line. Pane text verbatim (never the export's
                         rewrites), members BEFORE the POU body. NOT the live path's unit. vscode-free
@@ -661,8 +692,10 @@ src/
                         retainContextWhenHidden — carries the edits across a window reload; they
                         used to live in an in-memory Map and were lost on Ctrl+R. Each entry is
                         fingerprinted (`length:sha1`) against the document text it was captured
-                        from, and a read whose fingerprint no longer matches DISCARDS the entry
-                        rather than splicing stale edits into a changed file. vscode-free (it takes
+                        from (a leading BOM ignored), and a `get` whose fingerprint no longer
+                        matches DISCARDS the entry rather than splicing stale edits into a changed
+                        file; `peek` only reports it (`stale`), for readers that merely check
+                        (online writes, the compile pre-check). vscode-free (it takes
                         any Memento-shaped `{get, update}`), which is what makes it harness-testable.
   livePath              The live language-feature path, vscode-free: ST assembly (assembleSt),
                         pane↔unit coordinate + pane-slice + peek-model helpers, the injected-read
@@ -796,7 +829,9 @@ src/
                         explicable. Routine healthy-project conditions belong at debug, never warn
     parser.js           Structured Text lexer + symbol parser
     symbolNode.js       Single factory for a symbol node's core shape (parser + xmlIndexer build through it)
-    features.js         Facade re-exporting features/{core,completions,definition,references,configReferences,highlights,hover,diagnostics}
+    features.js         Facade re-exporting features/{core,completions,definition,references,configReferences,highlights,hover,diagnostics,onlinePaths}
+    features/onlinePaths.js  R15: the ADS path template of each variable occurrence on the given unit lines
+                        (`custom/onlinePaths`); conservative like every feature — unresolvable answers nothing
     features/hover.js   Pragma hover: category summary (this project's own words), syntax form, Infosys
                         link. Reads the document only — no index, so it never waits for a scan
     features/completions.js  Autocompletion ORCHESTRATOR + façade (public surface unchanged): walks
@@ -813,7 +848,7 @@ src/
     builtins.js         Standard IEC/TwinCAT types, keywords, functions/FBs
     types.js            Type model, resolver, member lookup, assignability
     exprParser.js       Expression type inference (for assignment checks)
-    xmlIndexer.js       Indexes TwinCAT XML objects into real-range symbol nodes
+    xmlIndexer.js       Indexes TwinCAT XML objects into real-range symbol nodes (ranges in unit lines, `unitLineMap`)
     libraries.js        Library namespaces, read from the .plcproj
     libsymbols.js       Library symbols: ZIP reader over the library archives + the project's .tmc
     pragmas.js          Classifies `{ ... }` pragma spans (shape first, catalog second) — see below
@@ -1162,7 +1197,7 @@ indexing…", no `3 of 8`): the server does not report per-project progress to t
 Three processes cooperate, with the extension host as the hub — **the webview never talks to the
 language server directly**. The extension bridges them over custom JSON-RPC requests
 (`custom/completions`, `custom/definition`, `custom/references`, `custom/referencesForSymbol`,
-`custom/configReferencesForSymbol`, `custom/diagnostics`, `custom/hover`, …) layered on the standard LSP transport
+`custom/configReferencesForSymbol`, `custom/diagnostics`, `custom/hover`, `custom/onlinePaths`, …) layered on the standard LSP transport
 (Node IPC).
 
 **Generate ST** is project-aware and lives entirely in the extension host (`customEditorProvider.js`):
@@ -1198,6 +1233,25 @@ unit, queries the LSP, and maps the results back to the right component and pane
 
 Changing `stConverter.js` output or `xmlParser.js` component extraction can silently break that
 mapping; `test/test_live_path.js` guards it.
+
+**One frame for every symbol range.** A node in the index comes from `parser.js` (an editor that has
+synced its unit) or from `xmlIndexer.js` (every other file, and again after each save, when
+`custom/indexXmlDocument` re-indexes it from the XML). Both emit lines of the file's assembled unit:
+`xmlIndexer`'s `unitLineMap` runs the same raw conversion and offsets each component's declaration
+by its `lineMap` start, so `mapDefinition` and every other consumer read a range the same way
+whichever indexer built the node. Until R15 review round 3 the XML indexer emitted lines relative to
+each Declaration CDATA, and a cross-file Go to Definition into an unsynced file landed on another
+variable's line or fell back to the first word match. The ranges also have parser.js's *shapes*
+(round 4): a name range is the name token — `locate` searches the declaration with comments, pragmas
+and strings blanked (`codeOnly`, same offsets) and case-insensitively, so a doc comment or an
+`{attribute}` line that mentions the name, or `fb_x` against `Name="FB_X"`, cannot move it; enum
+members are searched in order inside their own list; a method's `declRange` runs from METHOD to the
+`END_METHOD` the unit carries, a property's is collapsed onto its PROPERTY keyword (what parser.js
+gives it: it never extends one); an action's name is on the `ACTION <name>` line the unit synthesises,
+column 8. The blanking runs only when a comment, pragma or string opener precedes the name. What still
+differs: an XML-indexed action has no `implRange`, so a scope lookup *inside an action body* still needs
+the transient re-index `references.js` does. A name that cannot be found keeps
+the (1,1) stub. `test_definition_frames.js` pins all of it over both samples and synthetic objects.
 
 **References peek across components and files.** Monaco throws "Model not found" for a Location whose
 URI has no loaded model, so the peek could only ever show hits in the two live panes. `custom/references`
@@ -2040,6 +2094,122 @@ remote targets (machine-scope setting, off by default, modal every run); buildin
 (`BuildProject`); route listing; attaching to a running hidden shell to show it. Never: writing routes,
 saving the solution or `.tsproj`, activating without the modal, closing a shell this run did not start,
 automating the trial-licence dialog.
+
+### Online monitoring (roadmap R15)
+
+Decisions D1-D9 (user, 2026-11-13) are recorded in `docs/r15-ads-decision.md` section 5. The shape:
+
+```
+webview (media/editor.js)                    extension host                                 PLC
+  online/visible {componentId, texts,  ──▶  onlineCommands → livePath.assembleSt
+    visible line ranges}                     → LSP custom/onlinePaths (ADS path templates)
+                                             → editorPaths (pane positions, {instance})
+                                             → inlineMonitor → session.resolve ─────────────▶ getSymbol (InfoByNameEx)
+  ◀── online/values {items}                  ← every 500 ms session.readMany ───────────────▶ one ADS sum read
+  Write Value… / Add to PLC Watch      ──▶  writeGuard (modal, log) / watchList ────────────▶ writeValue / subscribeRaw
+```
+
+- **The webview never talks ADS** (as with the LSP). It reports which lines its panes show; the host
+  resolves each identifier through the live path and the LSP's symbol index (`src/lsp/features/onlinePaths.js`:
+  `MAIN.x`, `GVL.x`, `{instance}.chain`, constant array indexes; method locals, VAR_TEMP, VAR_IN_OUT
+  and FUNCTION variables answer a reason instead of a path), then checks every path against the PLC's
+  own symbol information before reading it. A path the PLC does not know is never shown — paths are
+  checked, not guessed. Values are Monaco injected text (`after` + `showIfCollapsed`), so the document
+  never changes.
+- **FB instances** come from the PLC's symbol upload (`session.findInstances`: top-level symbols and
+  FB/struct members up to 4 levels, derived FBs included, arrays of instances not listed). With several,
+  the first is used, the user is told once, and *Select FB Instance for Online Values…* changes it.
+- **Connection** (`adsClient.js`): router mode (default) registers a port at the local AMS router
+  (127.0.0.1:48898, or the untested `tcToolkit.online.routerAddress`), no local AmsNetId ever set;
+  direct mode only from `tcToolkit.online.connectionMode = direct` with its three settings. No fallback,
+  no routes created, nothing stored but recent target NetIds (workspaceState).
+- **Cancel and cleanup**: Go Online runs under a cancellable progress notification; a cancelled or
+  superseded attempt is closed in the background, and `session.disconnect()` (Go Offline, deactivate)
+  waits for those closes. ads-client ignores `disconnect()` while a connect is in flight, so the adapter
+  waits for the connect to settle and closes it then.
+- **Load**: inline values are polled (one sum read of the visible scalars, chunks of 100, every
+  `tcToolkit.online.inlinePollInterval` ms, paused while the editor is hidden, at most 200 paths per
+  editor); the Watch view uses one on-change notification per entry at `watchCycleTime` ms, capped by
+  `maxNotifications` (default 100, at most 400; Beckhoff recommends at most 550 per device). Members of
+  a watched struct/FB come from that entry's decoded value — expanding costs no notification.
+- **Library defect #189** (a 64-bit value's notification parse throws inside the library's error
+  handler): every subscription is `subscribeRaw` and decoded by us inside a try/catch.
+- **Writes** (`writeGuard.js`): `tcToolkit.online.allowWrites` (off; `"scope": "application"` and
+  read from `inspect().globalValue`, so only the user's own settings count, never a workspace's) AND
+  enabled once per online session (modal) AND, per write, a modal naming the target (label and AMS
+  address), path, old/new value and PLC state, logged to "TC Toolkit Online". Every write is bound to
+  one connection: `session.identity` (a connection id unique per successful connect, plus the target)
+  is recorded at enable (`sessionWrites.identity`) and when the write starts, and is re-checked with
+  `sessionWrites.enabled` and every guard immediately before `session.write`, which itself refuses
+  another connection — a Go Online elsewhere while the value box or a modal is open refuses the
+  write. The connection can stay the same while XAE downloads another workspace project (or a rebuilt
+  one) to the runtime, so each write also pins what its caller checked (`WriteRequest.stillValid`,
+  re-checked with every guard, the last synchronous one included): `runWrite` pins the bound project
+  (`code.project.key`) once the newest code check settles, and an editor's write additionally needs
+  its file in that project; a click delivered while not `online` (a Go Online still connecting) is
+  refused before any dialog. After the dialogs the symbol is resolved and type-checked again: a type
+  name, size, base type or enumerator list that changed while they were open refuses the write, and
+  the typed text is parsed again for the type the symbol has now and must give the same value (an
+  alias of REAL rebuilt as an alias of DINT keeps its name and size; the value was parsed for REAL). The code check's `changed` includes the bound project, so a switch is logged and the
+  editors are told (`writable`, values) at once. Refused while the code check does not pass or is still running (`writeProjectState`: a
+  check in flight, or one from another connection, counts as "not checked"; the confirm waits for the
+  NEWEST check, `codeCheckSettled`), while any TwinCAT editor has unsaved edits (VS Code dirty, a
+  Manual Sync stash — `pendingEditsStore.uris()`, open editor or closed, an empty `{}` is not an edit
+  — or an Auto Sync edit not yet written back; the guard reads stashes with the non-destructive
+  `peek`, and a stash whose fingerprint no longer matches the text counts as unsaved (fail closed);
+  a closed editor's stash is refused with a message naming its file ("open it to restore or discard
+  the stashed edits": opening runs `get`, which restores it or drops a stale one), and a stash whose
+  file no longer exists (renamed or deleted while closed) can never be opened, so the guard drops it
+  with a log line instead of blocking for good — any other unreadable file still blocks;
+  fingerprints ignore a leading U+FEFF, which the file on disk has and VS Code's document text has not), from an editor of a project the PLC does not run
+  (the webview gets `writable: false` and hides *Write Value…*; the host refuses before any dialog),
+  for a type mismatch, and for anything but a scalar. PLC strings are shown as ST literals with
+  control characters escaped (`$N`, `$T`, `$hh`) and shortened (`values.boundedText`, 200 code
+  points), so they cannot forge lines in the modal or the log. Nothing is ever called "Force"; the
+  forces indicator only reads `_AppInfo.ActivePlcForces` / `ActiveIoForces`.
+- **Lifecycle rules** (R15 review, 2026-11-13): ads-client restores subscriptions by itself after
+  an auto-reconnect and a download, so the adapter retires every handle it gave out and calls
+  `unsubscribeAll()` before announcing either event (the watch list then subscribes again; a retired
+  handle never sends a DeleteNotification); a reconnect that lands after Go Offline is closed again.
+  A status poll writes only into its own connection's `info`; Cancel and Go Offline are raced against
+  the status reads of Go Online too. The symbol caches (resolves, data types, the symbol upload) belong
+  to ONE client (`session.js` `cacheFor`): a read finishing on a client that is gone lands in a
+  throwaway, and every connect and every Cancel starts empty, so a later PLC never reads at an earlier
+  one's addresses. After a refresh's `setOccurrences`, the editor's poll is restarted only if it is
+  still online and still open (a Go Offline during that wait left it stopped). One poll loop per editor (a loop token in `inlineMonitor`), and
+  every `setOccurrences` is answered even with unchanged values (the webview cleared them). The watch
+  list owns each slot by a token (a remove/re-add race leaks nothing), releases the handle a slot
+  still holds before `attach()` takes it over (an Add during the status phase, two quick symbol
+  drops), and retries capped entries when one is removed or `maxNotifications` changes. The webview asks for values only when it goes online,
+  scrolls, edits or switches component — never in answer to `online/state`, which would loop.
+- **Unqualified names** in `onlinePaths.js` map to a GVL variable only when the POU's EXTENDS chain
+  is fully resolved with no library ancestor, exactly one project GVL declares the name and is known
+  not to be `qualified_only` (`xmlIndexer` records `qualifiedOnly` on GVL nodes; a node without it
+  counts as "may be"), no library GVL declares it, and no enum has a member of that name.
+- **A GVL's node in the editor** (R15 review round 2): a GVL's raw unit has no `GVL` header, so
+  `parser.js` does not replace its node as it does a POU's; it finds the node by uri and, since the
+  unit is the whole GVL, gives it a NEW `variables` array (appending used to keep the XML indexer's
+  copies too, and grew by a copy per sync). It also re-reads
+  `qualifiedOnly` from the unit text, with the regex `xmlIndexer` uses on disk. **When `qualifiedOnly`
+  can still be stale:** for a GVL never synced since its last save, the flag is the disk's — an
+  unsaved pragma edit in a GVL editor counts from that editor's next sync (any request from it), and
+  an unsaved edit in a closed editor's Manual Sync stash never does (the safe direction when the
+  pragma was removed; when it was added, the PLC still runs the code without it). A `.st`-only GVL
+  (`GVL` keyword path) never gets the flag, so it never maps unqualified names. The declaration loop
+  in `onlinePaths.js` also emits a variable only where the unit text at its range is its name, once
+  per position — a range from another coordinate system can no longer place a value.
+- **The code check** (`codeIdentity.js`) is what can be compared without an undocumented service:
+  (1) `_AppInfo.ProjectName` against the `.plcproj` names — a different or unreadable name hides the
+  inline values; (2) the variable layout of the last build (`<project>.tmc` symbols: name, BitSize)
+  against the PLC's symbol upload (name, size), in the namespaces the `.tmc` has; (3) the project's
+  sources edited after the `.tmc` was written. Writes need all three. It re-runs on going online, a new
+  project name, an online change or download, a saved TwinCAT file, a changed `.tmc`, and around every
+  write. **It cannot detect a change to code bodies alone that was built but not downloaded** — XAE's
+  login compares its compile id, which no documented ADS service exposes; the UI says "name, variable
+  layout and edits since the last build", never "same code". `_AppInfo.AppTimestamp` is only logged.
+- **Status bar**: hidden offline; `Online: <target> · Run|Stop|Reconnecting [· Code differs|Code not
+  checked] [· Forces active]`, the tooltip listing each check, forces (or "not reported" before
+  4026.21), writes and notifications.
 
 ### Writes
 

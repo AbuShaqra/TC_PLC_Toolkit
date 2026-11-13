@@ -155,6 +155,94 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   during activation (no); hide after a version switch (keep visible); boot project / remote targets (phase 2);
   child-component numbering in the Build pane (approximate until a capture); PS 5.1
   ConvertTo-Json shapes (one-element arrays), nested `BuildProject`, whether a hidden shell ever hangs on a dialog.
+- **R15 ADS online monitoring: IMPLEMENTED on local branch `r15-ads`** (worktree `/home/user/tc-r15`, 2026-11-13, not
+  pushed, no PR yet; based on `claude/focused-ptolemy-m6acaz` `c9ace3f`). Decisions D1-D9: `docs/r15-ads-decision.md` §5.
+  Design and file map: DEVELOPMENT.md "Online monitoring (roadmap R15)". `ads-client` **2.2.0 pinned** (pure JS; loads on
+  Node 16.13 and 22; licences of it and its 5 deps in THIRD-PARTY-NOTICES, all six licence files listed by `vsce ls`).
+  Linux-verified: `REQUIRE_FULL_SUITE=1 npm test` FULL (131 suites), lint, typecheck, browser harnesses `run.js`,
+  `run_pragmas.js`, `run_start_page.js`, `run_online.js`. Harnesses `test_ads_{paths,session,inline,write,code,watch,
+  regressions}.js` run against an in-memory PLC (`test/_fakeAds.js`); **nothing has touched a real PLC or router.**
+  **Review round 1 (2026-11-13): all 20 confirmed findings fixed**, each pinned by a block of
+  `test/test_ads_regressions.js` (or `run_online.js` for the webview) that failed before its fix. Write safety: writes
+  bound to the connection enabled/confirmed (`session.identity`, checked right before `session.write`), only from
+  editors of the bound project (`writable` flag; Write Value… hidden elsewhere), the newest code check awaited (a
+  check in flight blocks), `pendingEditsStore.get()`'s `{}` no longer counts as unsaved and closed editors' Manual
+  Sync stashes block, `allowWrites` is `application`-scoped and read from user settings only, PLC strings escaped and
+  bounded. Lifecycle: adapter drops ads-client's self-restored subscriptions on reconnect/download, orphan reconnect
+  after Go Offline closed, per-connection status poll, Cancel/Go Offline honoured during status reads, one inline poll
+  loop, watch slot token + capped retry, router-rejection user-mode hint. Paths: no unqualified GVL fallback over an
+  uncertain EXTENDS chain, a `qualified_only` GVL (`xmlIndexer` now records `qualifiedOnly`) or an enumerator. Webview:
+  no `online/state` -> `online/visible` loop; host re-posts values on every request; inline cut by code point.
+  **Review round 2 (2026-11-13): findings R2#0-#6 fixed** (blocks `R2#n` of `test_ads_regressions.js`, each failing
+  on `e6a3842`): writes pin the bound project and, from an editor, its file's membership (`WriteRequest.stillValid`,
+  re-checked in the final synchronous guard), re-resolve + re-type-check after the dialogs, refuse a click while not
+  `online`; the code check's `changed` includes the project. `pendingEditsStore`: fingerprints ignore a leading BOM;
+  the write guard and `compileCommands.currentText` use the non-destructive `peek` (a stale stash blocks writes —
+  fail closed — until its editor is opened, where `get` drops it). `session.js` caches are per client (a Cancel never
+  leaks addresses). Watch `attach()` releases a held handle. No inline poll restart after Go Offline. `parser.js`
+  gives a re-synced GVL node a new `variables` array in unit coordinates and re-reads `qualifiedOnly` (root cause of
+  the shifted GVL declaration-pane values); `onlinePaths.js` also checks the name at each declaration range.
+  **Review round 3 (2026-11-13): R3#0-#2 fixed** (committed on `r15-ads` after `31fc35b`, not pushed; each new test failed on `31fc35b`).
+  #0 (pre-existing, also on `c9ace3f`): `xmlIndexer.js` emitted CDATA-relative ranges, `parser.js` unit lines, and
+  `livePath.mapDefinition` read both as unit lines, so cross-file Go to Definition into an unsynced file (and after
+  every save's `custom/indexXmlDocument`) hit the wrong line. Fixed at the indexer: `unitLineMap` offsets every
+  range by the component's line in the raw unit, so both indexers share one frame (new `test_definition_frames.js`,
+  both samples + a 12-variable GVL; `test_fb_init_def.js` / `test_parser_constructs.js` now assert pane lines via
+  the unit). Consumers audited: definition/peek/references tree (unit-frame refs), `references.js` (componentId
+  stays authoritative: an XML action has no `implRange`), `onlinePaths.js` (name-at-range check kept),
+  hover/completions/diagnostics (active node only).
+  **Indexing cost of `639d2b9`** (`buildNodeFromXml` over the 26 sample files x200, coordinator's measurement):
+  264 ms before -> 404 ms after, about +27 us per file (the raw `convertXmlToSt` per file in `unitLineMap`).
+  **Review round 4 (frame check of `639d2b9`, 2026-11-13): findings #0-#4 fixed** (committed on `r15-ads` after
+  `639d2b9`, not pushed; every new check failed with `639d2b9`'s `xmlIndexer.js`). #2 (medium, pre-existing): `locate()`
+  took the first textual match, so a `//`/`(* *)`/`{attribute}` line or doc comment naming the object, method,
+  property or enum member became its range; now searched on comment/pragma/string-blanked text (`codeOnly`, same
+  offsets; skipped when nothing before the match can open one), enum members in order inside their list. #3:
+  case-insensitive. #0: an action's nameRange is the unit's `ACTION <name>` line, col 8. #4: method `declRange`
+  METHOD..END_METHOD (checked against the unit text), property `declRange` collapsed on PROPERTY, both as parser.js.
+  #1: stale "CDATA-relative" comments in `references.js`, `parser.js`, two tests. Result: every range of every POU/
+  ITF/GVL identical from both indexers (both samples + synthetic shapes; `test_definition_frames.js` checks 4-5).
+  Cost after round 4 (`idxperf.js`, median of 9 interleaved runs on the same box: `31fc35b` 269 ms, `639d2b9`
+  361 ms, round 4 380 ms): about +4 us per file over `639d2b9`.
+  #1: after the dialogs `writeGuard` also compares base type and enumerators and re-parses the typed text for the
+  new `dataType` (block `R3#1`). #2: a closed editor's stash refusal names the file ("open it to restore or
+  discard the stashed edits"); a stash whose file is gone is dropped with a log line (block `R3#2`). Not changed:
+  `compileCommands.currentText` (compile pre-check) ignores a stale stash and never drops one, gone file or not.
+  Behaviour changes to note for the Windows check: the modal/log target now reads `Local runtime (localhost:851)`;
+  an unqualified name inside an FB that extends a library FB shows no inline value (cannot tell member from global).
+  **Mismatch guard (coordinator review, 2026-11-13):** a name match alone does not prove the same code, so
+  `src/online/codeIdentity.js` checks name + variable layout (last build's `.tmc` symbols vs the PLC's symbol upload,
+  name and size) + sources edited after the `.tmc`. It cannot see a body-only change built but not downloaded (XAE's
+  compile id has no documented ADS read); UI and README say so.
+  **Decisions taken by the implementer (confirm or overturn):** writes need the setting AND a per-session enable
+  modal (D5's "per session"); the status-bar item is hidden while offline; no toolbar/start-page Go Online button
+  (palette, Watch view title, status-bar menu); target picker = local runtime + recent + typed NetId (no route listing:
+  the router's route table has no documented ADS read, R14's listing needs XAE and only lists local runtimes); with
+  several FB instances the first is shown and the user is told once; property accessor bodies and arrays of FB
+  instances are not monitored; a name-matching project with layout/edit differences still shows values (read by
+  name) but blocks writes; per-symbol type mismatch shows "type differs".
+  **Windows check list for the user (needs a real PLC; record results here):**
+  1. Note the TwinCAT build, kernel vs user mode, Hyper-V/VBS on or off.
+  2. Local runtime in RUN with the sample (or any project) downloaded: *Go Online…* → *Local runtime*. Expect the status
+     bar `Online: Local runtime · Run`; if it fails, copy the notification and the *TC Toolkit Online* channel text
+     (the 4026 user-mode case should show the user-mode message — that is D4's expected outcome).
+  3. A remote PLC with a route made in XAE: *Enter AMS Net ID…*. While XAE is logged in to the same PLC, confirm XAE
+     stays connected.
+  4. Open MAIN and a GVL: values at line ends (declarations) and after variables (implementation), refreshing; open an
+     FB: the "Instance: …" note and values; an FB with several instances: the note and *Select FB Instance…*.
+  5. **Code check probes:** (a) is `_AppInfo.ProjectName` exactly the `.plcproj` name (case)? (b) after a fresh XAE
+     build + download, does the channel say "Code check: passed" with N symbols matching? If it reports layout
+     differences, copy the first lines (the `.tmc` vs upload name/size mapping is the unverified part, e.g. I/O-mapped
+     or `{attribute 'hide'}` symbols). (c) edit a POU, save → "edited since its last build", writes blocked;
+     (d) copy the logged `_AppInfo.AppTimestamp` and the `.tmc`'s modified time after a build+download — do they relate?
+     (e) is there a `_CompileInfo` folder, and does its newest `.compileinfo` name change on every build?
+  6. Forces: force a variable in XAE → status bar "Forces active" (4026.21+); on 4024 the tooltip says "not reported".
+  7. Writes: with `tcToolkit.online.allowWrites` off → refused with *Open Setting*; on → enable modal, write modal
+     (target, path, old/new, PLC state), value changes in XAE, line in the channel; unsaved edit → refused.
+  8. PLC Watch: add from the editor and by typing a path; a struct/FB expands; a LINT/ULINT entry updates (library
+     issue #189 path) without an error; set `maxNotifications` to 2 and add 3 → message once.
+  9. Is a symbol path found when typed in another case (`main.ncyclecount`)?
+  10. Go Offline, and close VS Code while online: no lingering ADS port registration (XAE's ADS monitor or `netstat -ano | findstr 48898`).
 - **R3.2 Compile Project: MERGED** into `dev` as PR #32 (`28f24f1`, 2026-11-10 22:22 UTC).
 - **R3.3–R9 MERGED** into `dev` as PR #33 (`6424968`, 2026-11-11 09:30 UTC) after the user's Windows checks
   (dev-host green after `npm ci`; manual checks all passed). Details per item are in git history and ROADMAP "Done".

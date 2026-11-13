@@ -61,6 +61,11 @@ function registerLspBridgeCommands(context, { provider, getClient }) {
             if (!client) return null;
             return client.sendRequest('custom/hover', params);
         }),
+        vscode.commands.registerCommand('twincat.lsp.queryOnlinePaths', async (params) => {
+            const client = getClient();
+            if (!client) return { occurrences: [], owner: null };
+            return client.sendRequest('custom/onlinePaths', params);
+        }),
         vscode.commands.registerCommand('twincat.lsp.queryDiagnostics', async (params) => {
             const client = getClient();
             if (!client) return [];

@@ -44,7 +44,19 @@
     "onCommand:twincat.openRoadmap",
     "onCommand:twincat.openReleaseNotes",
     "onCommand:twincat.reportIssue",
-    "onCommand:twincat.updateLibraryDefinitions"
+    "onCommand:twincat.updateLibraryDefinitions",
+    "onCommand:twincat.goOnline",
+    "onCommand:twincat.goOffline",
+    "onCommand:twincat.online.enableWrites",
+    "onCommand:twincat.online.selectInstance",
+    "onCommand:twincat.online.showLog",
+    "onCommand:twincat.online.statusMenu",
+    "onCommand:twincat.watch.add",
+    "onCommand:twincat.watch.remove",
+    "onCommand:twincat.watch.clear",
+    "onCommand:twincat.watch.copyPath",
+    "onCommand:twincat.watch.write",
+    "onView:twincatWatch"
   ],
   "contributes": {
     "customEditors": [
@@ -97,6 +109,10 @@
         {
           "id": "twincatLibraries",
           "name": "PLC Libraries"
+        },
+        {
+          "id": "twincatWatch",
+          "name": "PLC Watch"
         }
       ],
       "twincat-references-panel": [
@@ -122,6 +138,10 @@
       {
         "view": "twincatLibraries",
         "contents": "No TwinCAT libraries found. Open a folder containing a .plcproj file."
+      },
+      {
+        "view": "twincatWatch",
+        "contents": "No watched variables. Right-click a variable in the editor and choose \"Add to PLC Watch\", or add an ADS path.\n[Add to PLC Watch…](command:twincat.watch.add)\n[Go Online…](command:twincat.goOnline)"
       }
     ],
     "commands": [
@@ -351,6 +371,71 @@
         "command": "twincat.undoLastRename",
         "title": "Undo Last Rename",
         "category": "TC Toolkit"
+      },
+      {
+        "command": "twincat.goOnline",
+        "title": "Go Online…",
+        "category": "TC Toolkit",
+        "icon": "$(plug)",
+        "enablement": "!twincat.onlineConnecting"
+      },
+      {
+        "command": "twincat.goOffline",
+        "title": "Go Offline",
+        "category": "TC Toolkit",
+        "icon": "$(debug-disconnect)",
+        "enablement": "twincat.online"
+      },
+      {
+        "command": "twincat.online.enableWrites",
+        "title": "Enable Writes for This Online Session",
+        "category": "TC Toolkit",
+        "enablement": "twincat.online"
+      },
+      {
+        "command": "twincat.online.selectInstance",
+        "title": "Select FB Instance for Online Values…",
+        "category": "TC Toolkit",
+        "enablement": "twincat.online"
+      },
+      {
+        "command": "twincat.online.showLog",
+        "title": "Show Online Log",
+        "category": "TC Toolkit"
+      },
+      {
+        "command": "twincat.online.statusMenu",
+        "title": "Online Actions…",
+        "category": "TC Toolkit"
+      },
+      {
+        "command": "twincat.watch.add",
+        "title": "Add to PLC Watch…",
+        "category": "TC Toolkit",
+        "icon": "$(add)"
+      },
+      {
+        "command": "twincat.watch.remove",
+        "title": "Remove from PLC Watch",
+        "category": "TC Toolkit",
+        "icon": "$(close)"
+      },
+      {
+        "command": "twincat.watch.clear",
+        "title": "Clear PLC Watch",
+        "category": "TC Toolkit",
+        "icon": "$(clear-all)"
+      },
+      {
+        "command": "twincat.watch.copyPath",
+        "title": "Copy ADS Path",
+        "category": "TC Toolkit"
+      },
+      {
+        "command": "twincat.watch.write",
+        "title": "Write Value…",
+        "category": "TC Toolkit",
+        "icon": "$(edit)"
       }
     ],
     "keybindings": [
@@ -393,6 +478,31 @@
           "command": "twincat.refreshLibraries",
           "when": "view == twincatLibraries",
           "group": "navigation@2"
+        },
+        {
+          "command": "twincat.goOnline",
+          "when": "view == twincatWatch && !twincat.online",
+          "group": "navigation@1"
+        },
+        {
+          "command": "twincat.goOffline",
+          "when": "view == twincatWatch && twincat.online",
+          "group": "navigation@1"
+        },
+        {
+          "command": "twincat.watch.add",
+          "when": "view == twincatWatch",
+          "group": "navigation@2"
+        },
+        {
+          "command": "twincat.watch.clear",
+          "when": "view == twincatWatch",
+          "group": "navigation@3"
+        },
+        {
+          "command": "twincat.online.showLog",
+          "when": "view == twincatWatch",
+          "group": "more@1"
         }
       ],
       "commandPalette": [
@@ -415,6 +525,22 @@
         {
           "command": "twincat.xaeShowTargets",
           "when": "isWindows"
+        },
+        {
+          "command": "twincat.watch.remove",
+          "when": "false"
+        },
+        {
+          "command": "twincat.watch.copyPath",
+          "when": "false"
+        },
+        {
+          "command": "twincat.watch.write",
+          "when": "false"
+        },
+        {
+          "command": "twincat.online.statusMenu",
+          "when": "false"
         }
       ],
       "view/item/context": [
@@ -537,6 +663,31 @@
           "command": "twincat.renameObject",
           "when": "view == twincatExplorer && (viewItem == 'directory' || viewItem == 'pouFile' || viewItem == 'pouFileProgram' || viewItem == 'pouFileFunction' || viewItem == 'itfFile' || viewItem == 'gvlFile' || viewItem == 'dutFile' || viewItem == 'stFile' || viewItem == 'component' || viewItem =~ /^propertyNode\\b/ || viewItem == 'pouVirtualFolder' || viewItem == 'pouVirtualFolderProgram' || viewItem == 'pouVirtualFolderInterface')",
           "group": "twincat_0_clipboard@3"
+        },
+        {
+          "command": "twincat.watch.write",
+          "when": "view == twincatWatch && twincat.online && viewItem =~ /\\bscalar\\b/",
+          "group": "inline@1"
+        },
+        {
+          "command": "twincat.watch.remove",
+          "when": "view == twincatWatch && viewItem =~ /^watchEntry/",
+          "group": "inline@2"
+        },
+        {
+          "command": "twincat.watch.write",
+          "when": "view == twincatWatch && twincat.online && viewItem =~ /\\bscalar\\b/",
+          "group": "1_edit@1"
+        },
+        {
+          "command": "twincat.watch.copyPath",
+          "when": "view == twincatWatch",
+          "group": "2_copy@1"
+        },
+        {
+          "command": "twincat.watch.remove",
+          "when": "view == twincatWatch && viewItem =~ /^watchEntry/",
+          "group": "3_remove@1"
         }
       ]
     },
@@ -800,6 +951,86 @@
             "markdownDeprecationMessage": "Renamed to `#tcToolkit.startPage.recentProjectsShown#`. A value set here moves there automatically when the extension starts."
           }
         }
+      },
+      {
+        "id": "tcToolkit.online",
+        "title": "Online Monitoring",
+        "order": 7,
+        "properties": {
+          "tcToolkit.online.connectionMode": {
+            "type": "string",
+            "default": "router",
+            "enum": [
+              "router",
+              "direct"
+            ],
+            "enumDescriptions": [
+              "Through the TwinCAT AMS router on this PC (XAE or XAR installed; routes set up in XAE). The default.",
+              "Directly to the PLC over TCP, for a PC without TwinCAT. Needs the three direct settings below and a static route on the PLC to this PC. Never used unless chosen here."
+            ],
+            "markdownDescription": "**How Go Online reaches the PLC.** `router` (default) goes through the AMS router of the TwinCAT installation on this PC, using the routes you set up in XAE. `direct` connects to the PLC itself and is only for a PC without TwinCAT; it is never used as a fallback. Direct mode from a PC that also runs XAE can drop XAE's own connection to that PLC (one ADS connection per client address)."
+          },
+          "tcToolkit.online.adsPort": {
+            "type": "integer",
+            "default": 851,
+            "minimum": 1,
+            "maximum": 65535,
+            "markdownDescription": "**ADS port of the PLC runtime.** 851 is the first PLC runtime, 852 the second (850 + runtime number)."
+          },
+          "tcToolkit.online.routerAddress": {
+            "type": "string",
+            "default": "127.0.0.1",
+            "scope": "machine",
+            "markdownDescription": "**AMS router address** (router mode). `127.0.0.1` is the router on this PC. Another address (for example, for Remote-SSH or WSL) is **untested**."
+          },
+          "tcToolkit.online.direct.plcAddress": {
+            "type": "string",
+            "default": "",
+            "scope": "machine",
+            "markdownDescription": "**Direct mode: the PLC's IP address or host name.** Used only when `#tcToolkit.online.connectionMode#` is `direct`."
+          },
+          "tcToolkit.online.direct.localAmsNetId": {
+            "type": "string",
+            "default": "",
+            "scope": "machine",
+            "markdownDescription": "**Direct mode: this PC's AMS Net ID**, as the PLC's static route to this PC names it (for example `192.168.1.20.1.1`). The route itself is created on the PLC or in XAE, never by this extension."
+          },
+          "tcToolkit.online.direct.localAdsPort": {
+            "type": "integer",
+            "default": 32750,
+            "minimum": 1,
+            "maximum": 65535,
+            "scope": "machine",
+            "markdownDescription": "**Direct mode: the local ADS port** this PC uses (any free port; 32750 by default)."
+          },
+          "tcToolkit.online.allowWrites": {
+            "type": "boolean",
+            "default": false,
+            "scope": "application",
+            "markdownDescription": "**Allow writing values.** Off by default, and only in your user settings: a workspace's settings cannot turn it on. When on, writes still have to be enabled once per online session, every write asks for a confirmation that names the target, the variable and the old and new values, and every write is logged to the *TC Toolkit Online* output channel. Writes are refused while the PLC runs a different project or an editor has unsaved edits, and from editors of a project the PLC does not run. A write sets the value once; it is not a force."
+          },
+          "tcToolkit.online.inlinePollInterval": {
+            "type": "integer",
+            "default": 500,
+            "minimum": 100,
+            "maximum": 10000,
+            "markdownDescription": "**Inline values: refresh interval in milliseconds.** The visible variables are read with one batched read per interval."
+          },
+          "tcToolkit.online.watchCycleTime": {
+            "type": "integer",
+            "default": 200,
+            "minimum": 50,
+            "maximum": 10000,
+            "markdownDescription": "**PLC Watch: notification cycle time in milliseconds.** Each watched variable is one on-change ADS notification checked at this cycle."
+          },
+          "tcToolkit.online.maxNotifications": {
+            "type": "integer",
+            "default": 100,
+            "minimum": 1,
+            "maximum": 400,
+            "markdownDescription": "**PLC Watch: the most ADS notifications at once.** Beckhoff recommends at most 550 per device; watched variables past this limit show no value until others are removed."
+          }
+        }
       }
     ]
   },
@@ -812,6 +1043,7 @@
     "typescript": "^7.0.2"
   },
   "dependencies": {
+    "ads-client": "2.2.0",
     "vscode-cpptools": "^7.1.1",
     "vscode-languageclient": "^9.0.1",
     "vscode-languageserver": "^9.0.1",

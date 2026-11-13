@@ -1,6 +1,7 @@
 /**
  * @file features.js
- * @description LSP language feature implementations: completions, definitions, references, highlights, hover, diagnostics.
+ * @description LSP language feature implementations: completions, definitions, references, highlights, hover, diagnostics,
+ * online-monitoring paths.
  *
  * Thin facade over the focused modules in features/. Re-exports the public API unchanged so
  * server.js (and the test harnesses) can keep requiring './features'.
@@ -16,6 +17,7 @@ const { findConfigReferencesForSymbol } = require('./features/configReferences')
 const { provideDocumentHighlights } = require('./features/highlights');
 const { provideHover } = require('./features/hover');
 const { provideDiagnostics, setDiagnosticsConfig } = require('./features/diagnostics');
+const { provideOnlinePaths } = require('./features/onlinePaths');
 
 module.exports = {
     provideCompletions,
@@ -27,5 +29,6 @@ module.exports = {
     provideHover,
     provideDiagnostics,
     setDiagnosticsConfig,
+    provideOnlinePaths,
     clearStFileCache
 };
