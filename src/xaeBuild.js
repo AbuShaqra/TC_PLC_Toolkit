@@ -771,7 +771,9 @@ function platformNotDeclaredText(target, targetPlatform, configuration, solution
 function pairNotDeclaredText(configuration, platform, solutionName, declared) {
     return `${solutionName} does not declare '${configuration}|${platform}', so it cannot be built and activated. ` +
         `It declares ${declared.map(d => `'${d}'`).join(', ')}. Set tcToolkit.xaeBuild.configuration and ` +
-        `tcToolkit.xaeBuild.platform to one of them (Build through XAE also offers the pick), then run again.`;
+        `tcToolkit.xaeBuild.platform to one of them (Build through XAE also offers the pick), or add '${platform}' ` +
+        `to the solution in XAE's Configuration Manager (a target that runs '${platform}', such as a user-mode ` +
+        `runtime for 'TwinCAT OS (x64)', needs it), then run again.`;
 }
 
 /** The button that re-runs a failed headless build with the window shown (this run only). */
