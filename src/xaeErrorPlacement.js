@@ -56,7 +56,7 @@ const PANE_LINE_BASE = 'object';
  * A "Build" pane message: `<path>(<line>[,<col>]) : <level>: [<code>:] <text>`. Level words in
  * English and German (`Fehler`, `Warnung`, `Meldung`, `Hinweis`); spacing is free.
  */
-const PANE_MESSAGE_RE = /^\s*(.+?\.\w+)\s*\(\s*(\d+)\s*(?:,\s*(\d+)\s*)?\)\s*:\s*(information|error|warning|info|message|fehler|warnung|meldung|hinweis)\b\s*:?\s*(?:([A-Z]{1,3}\d{3,5})\s*:\s*)?(.*)$/i;
+const PANE_MESSAGE_RE = /^\s*(.+?\.\w+(?:@[^()]*?)?)\s*\(\s*(\d+)\s*(?:,\s*(\d+)\s*)?\)\s*:\s*(information|error|warning|info|message|fehler|warnung|meldung|hinweis)\b\s*:?\s*(?:([A-Z]{1,3}\d{3,5})\s*:\s*)?(.*)$/i;
 
 /**
  * A pane line that ends a message's continuation: blank, a separator, a build/compile summary
@@ -237,15 +237,19 @@ function parseOutputPaneLines(text) {
  * @returns {{file: string|null, pane: 'decl'|'impl'|null, component: string|null}}
  */
 function splitFileSuffix(file) {
-    const m = file ? /^(.*?\.(?:TcPOU|TcGVL|TcDUT|TcIO))\s*\(([^()]*)\)\s*$/i.exec(file) : null;
+    // `<path>.TcPOU@<Component>` names a child (method, action, property accessor): seen on Windows
+    // 2026-11-13 as `...\FB_StationDerived.TcPOU@Cyclic (Impl)`; the pane suffix may follow.
+    const m = file ? /^(.*?\.(?:TcPOU|TcGVL|TcDUT|TcIO))(?:@([^()]*?))?\s*(?:\(([^()]*)\))?\s*$/i.exec(file) : null;
     if (!m) return { file, pane: null, component: null };
-    const inner = m[2];
+    const inner = m[3] || '';
     /** @type {'decl'|'impl'|null} */
     let pane = null;
     if (/\b(?:Impl|Implementation|Implementierung)\b/i.test(inner)) pane = 'impl';
     else if (/\b(?:Decl|Declaration|Deklaration)\b/i.test(inner)) pane = 'decl';
-    const component = inner.replace(/\b(?:Impl|Implementation|Implementierung|Decl|Declaration|Deklaration)\b/ig, ' ')
+    const fromParens = inner.replace(/\b(?:Impl|Implementation|Implementierung|Decl|Declaration|Deklaration)\b/ig, ' ')
         .replace(/[\s,;:]+/g, ' ').trim().replace(/^\.+|\.+$/g, '');
+    const fromAt = (m[2] || '').trim().replace(/^\.+|\.+$/g, '');
+    const component = fromAt || fromParens;
     return { file: m[1].trim(), pane, component: component || null };
 }
 
@@ -400,6 +404,16 @@ function placeXaeErrors(errorItems, panes, deps) {
         if (!prev || prev.origin === origin) { seen.set(seen.has(key) ? `${key}|${seen.size}` : key, rec); continue; }
         if (!prev.exact && rec.exact) { rec.code = rec.code || prev.code; seen.set(key, rec); }
         else prev.code = prev.code || rec.code;
+    }
+    // An approximate copy (a child's pane line, whose numbering is unconfirmed) of a message another
+    // source placed exactly in the same component is the same message: keep the exact one only.
+    const loose = (/** @type {Rec} */ r) => r.at ? [String(r.filePath).toLowerCase(), r.at.componentId, normMessage(r.item.description)].join('|') : null;
+    const exactBy = new Map();
+    for (const r of seen.values()) { const k = loose(r); if (k && r.exact) exactBy.set(k, r); }
+    for (const [k, r] of [...seen.entries()]) {
+        const lk = loose(r);
+        const twin = lk && !r.exact ? exactBy.get(lk) : null;
+        if (twin && twin.origin !== r.origin) { twin.code = twin.code || r.code; seen.delete(k); }
     }
 
     /** @type {Map<string, XaeProblem[]>} */

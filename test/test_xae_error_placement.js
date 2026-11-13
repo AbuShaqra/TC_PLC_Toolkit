@@ -29,6 +29,30 @@ if (!fs.existsSync(FB)) {
 const deps = (lineBase) => ({ readFile: (p) => fs.readFileSync(p, 'utf8'), exists: (p) => fs.existsSync(p), slnDir: SLN_DIR, lineBase });
 const item = (o) => ({ file: null, line: null, column: null, description: '', project: null, level: 'vsBuildErrorLevelHigh', ...o });
 
+// ── A child named with `@` (Windows run 2026-11-13: an error planted in FB_StationDerived.Cyclic) ──
+{
+    const DER = path.join(SLN_DIR, 'TcToolkitSample_PLC', 'POUs', 'Machine', 'FB_StationDerived.TcPOU');
+    const s1 = splitFileSuffix(DER + '@Cyclic (Impl)');
+    assert(s1.file === DER && s1.pane === 'impl' && s1.component === 'Cyclic', `SUFFIX @: <path>@Cyclic (Impl) -> the file, impl, component Cyclic (${JSON.stringify(s1)})`);
+    const s2 = splitFileSuffix(DER + '@Cyclic');
+    assert(s2.file === DER && s2.pane === null && s2.component === 'Cyclic', 'SUFFIX @: <path>@Cyclic without a pane suffix');
+    const r = placeXaeErrors([item({ file: DER + '@Cyclic (Impl)', line: 3, description: "';' expected instead of end of POU" })], [], deps(undefined));
+    const placed = [...r.byFile.values()].flat();
+    assert(r.placed === 1 && placed.length === 1 && placed[0].pane === 'impl' && placed[0].line === 3 && placed[0].exact === true
+        && placed[0].componentId !== 'root', `LIST @: the method's implementation line 3, exact (${JSON.stringify(placed[0])})`);
+    const pane = parseOutputPaneLines(DER + "@Cyclic(5) : error: C0189: ';' expected instead of end of POU\n");
+    assert(pane.length === 1 && pane[0].line === 5 && pane[0].code === 'C0189' && /@Cyclic$/.test(String(pane[0].file)),
+        `PANE @: a pane line naming <path>@Cyclic is parsed (${JSON.stringify(pane[0])})`);
+    const r2 = placeXaeErrors([], [{ name: 'Build', text: DER + "@Cyclic(5) : error: C0189: ';' expected instead of end of POU\n" }], deps(undefined));
+    const p2 = [...r2.byFile.values()].flat();
+    assert(r2.placed === 1 && p2.length === 1 && p2[0].componentId !== 'root', `PANE @: placed on the method, not the root (${JSON.stringify(p2[0])})`);
+    const both = placeXaeErrors([item({ file: DER + '@Cyclic (Impl)', line: 3, description: "';' expected instead of end of POU" })],
+        [{ name: 'Build', text: DER + "@Cyclic(5) : error: C0189: ';' expected instead of end of POU\n" }], deps(undefined));
+    const pb = [...both.byFile.values()].flat();
+    assert(both.placed === 1 && pb.length === 1 && pb[0].exact && pb[0].line === 3 && pb[0].code === 'C0189',
+        `DEDUP @: the list's exact entry wins over the pane's approximate copy, keeping the code (${JSON.stringify(pb)})`);
+}
+
 // ── The fixture's error list, line base 'pane' (the default) ────────────────────────────────────
 {
     const fx = readFixture('errors-errorlist');
