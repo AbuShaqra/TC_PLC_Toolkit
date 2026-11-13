@@ -63,6 +63,8 @@ const count = (arr, v) => arr.filter(a => a === v).length;
     const i = ov.indexOf('-TcVersion');
     assert(i > 0 && ov[i + 1] === 'TcXaeShell.DTE.17.0' && ov[i + 2] === '-AllowVersionMismatch' && count(ov, '-TcVersion') === 1 && count(ov, '-AllowVersionMismatch') === 1,
         'shellOverride → exactly -TcVersion <ProgId> -AllowVersionMismatch');
+    assert(count(ov, '-ShowWindow') === 1 && count(x.buildDriverArgs({ ...base, showWindow: false, shellOverride: 'TcXaeShell.DTE.17.0' }), '-ShowWindow') === 1,
+        'shellOverride → -ShowWindow once, even with showWindow off (XAE upgrades the project and shows dialogs; user 2026-11-13)');
     for (const bad of [{ mode: 'activate', targetNetId: '198.51.100.4.1.1', shellOverride: 'TcXaeShell.DTE.17.0' }, { shellOverride: 'TcXaeShell.DTE.99.0' }, { shellOverride: '3.1.4026.22' }]) {
         let refused = false;
         try { x.buildDriverArgs({ ...base, .../** @type {any} */ (bad) }); } catch (e) { refused = true; }
@@ -75,7 +77,7 @@ const count = (arr, v) => arr.filter(a => a === v).length;
     const facts = { progId: 'TcXaeShell.DTE.15.0', build: '4024', projectVersion: '3.1.4024.62', installed: ['TcXaeShell.DTE.17.0'] };
     const m = x.missingShell(facts, { mode: 'build', solutionName: 'TcToolkitSample2' });
     assert(m.offer && m.offer.progId === 'TcXaeShell.DTE.17.0' && m.confirmLabel === 'Build with XAE Shell 64'
-        && m.question === 'TcToolkitSample2 was saved with TwinCAT 3.1.4024 and its XAE Shell (4024) is not installed. Build with XAE Shell 64 (4026) instead? XAE will upgrade the project files (it rewrites the .tspproj/.tsproj and .plcproj).',
+        && m.question === 'TcToolkitSample2 was saved with TwinCAT 3.1.4024 and its XAE Shell (4024) is not installed. Build with XAE Shell 64 (4026) instead? XAE will upgrade the project files (it rewrites the .tspproj/.tsproj and .plcproj). The XAE window stays open for this build so you can answer its dialogs.',
         'build, another shell installed: the offer names both shells');
     assert(!/TwinCAT (XAE )?Build|TwinCAT PLC Toolkit/.test(m.question + m.text), 'TwinCAT is used only descriptively');
     const bare = x.missingShell({ ...facts, installed: 'TcXaeShell.DTE.17.0' }, { mode: 'build', solutionName: 'S' });

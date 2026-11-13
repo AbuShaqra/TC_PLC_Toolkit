@@ -813,23 +813,22 @@ const rows = (name) => readFixture(name).lines;
         'a stalled headless run, cancelled from the offer, re-runs once with -ShowWindow');
     assert(settings['tcToolkit.xaeBuild.showWindow'] === false, 'the re-run does not change the setting');
 
-    // The stopped run reports one channel line, no notification; the shell check is not asked twice,
-    // and a confirmed shell substitution is kept for the re-run.
+    // A confirmed shell substitution always runs with the window shown (user, 2026-11-13: XAE upgrades the
+    // project and usually asks questions), so it is never offered the headless stall re-run; one question.
     slnPath = SLN2;
-    n = 0;
-    driver = () => (n++ === 0 ? { lines: stallRows, onCancelFile: { lines: rows('cancelled').slice(-2), exit: 4 } } : { fixture: 'build-ok-visible' });
-    answers.stall = STALL_RERUN;
+    driver = () => ({ fixture: 'build-ok-visible' });
     answers.message.push('Build with XAE Shell 64');
     const warnCount = calls.warnings.length;
     const modalCount = calls.modals.length;
     stallSpawns = builds().length;
     r = await run('twincat.xaeBuild', {});
-    answers.stall = undefined;
     slnPath = SLN;
     const newWarnings = calls.warnings.slice(warnCount);
-    const stallReruns = builds().slice(stallSpawns);
-    assert(r.ok && calls.modals.length === modalCount + 1 && !newWarnings.some(w => /XAE Shell/.test(w.m)), 'the re-run does not ask the shell check again');
-    assert(stallReruns.length === 2 && stallReruns.every(c => c.args[c.args.indexOf('-TcVersion') + 1] === 'TcXaeShell.DTE.17.0'), 'the re-run keeps the confirmed shell');
+    const subRuns = builds().slice(stallSpawns);
+    assert(r.ok && calls.modals.length === modalCount + 1 && !newWarnings.some(w => /XAE Shell/.test(w.m)), 'the substituted shell is asked once');
+    assert(subRuns.length === 1 && subRuns[0].args[subRuns[0].args.indexOf('-TcVersion') + 1] === 'TcXaeShell.DTE.17.0'
+        && subRuns[0].args.includes('-ShowWindow') && settings['tcToolkit.xaeBuild.showWindow'] === false,
+        'the substituted shell runs once, with -ShowWindow although the setting is off, and the setting is not written');
     assert(!newWarnings.some(w => /cancelled|stopped/.test(w.m)) && channel().lines.some(l => /Stopped; re-running with the XAE window shown\./.test(l)),
         'the stopped run shows no cancelled notification, one channel line');
 
@@ -946,7 +945,7 @@ const rows = (name) => readFixture(name).lines;
                 data: { progId: 'TcXaeShell.DTE.15.0', build: '4024', projectVersion: '3.1.4024.62', installed } },
             { v: 1, t: 'done', exitCode: 2, ui: null }
         ];
-        const QUESTION = 'TcToolkitSample2 was saved with TwinCAT 3.1.4024 and its XAE Shell (4024) is not installed. Build with XAE Shell 64 (4026) instead? XAE will upgrade the project files (it rewrites the .tspproj/.tsproj and .plcproj).';
+        const QUESTION = 'TcToolkitSample2 was saved with TwinCAT 3.1.4024 and its XAE Shell (4024) is not installed. Build with XAE Shell 64 (4026) instead? XAE will upgrade the project files (it rewrites the .tspproj/.tsproj and .plcproj). The XAE window stays open for this build so you can answer its dialogs.';
         const prompts = () => calls.modals.length + calls.warnings.length;
         const overrideOk = (args) => { const i = args.indexOf('-TcVersion'); return i > 0 && args[i + 1] === 'TcXaeShell.DTE.17.0' && args[i + 2] === '-AllowVersionMismatch'
             && args.filter(x => x === '-TcVersion').length === 1 && args.filter(x => x === '-AllowVersionMismatch').length === 1; };

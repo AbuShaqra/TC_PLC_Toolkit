@@ -102,7 +102,8 @@ function buildDriverArgs(o) {
         args.push('-ListTargets');
         return args;
     }
-    if (o.showWindow === true) args.push('-ShowWindow');
+    // Another XAE Shell than the project's upgrades the project and usually asks questions: always shown.
+    if (o.showWindow === true || o.shellOverride) args.push('-ShowWindow');
     if (o.configuration) args.push('-Configuration', o.configuration);
     if (o.platform) args.push('-Platform', o.platform);
     if (o.shellOverride) {
@@ -207,7 +208,7 @@ function missingShell(facts, o) {
     const name = shellName(newest);
     return {
         offer: { progId: newest.progId, build: newest.id, name },
-        question: `${saved} and its ${missingName} is not installed. Build with ${name} instead? XAE will upgrade the project files (it rewrites the .tspproj/.tsproj and .plcproj).`,
+        question: `${saved} and its ${missingName} is not installed. Build with ${name} instead? XAE will upgrade the project files (it rewrites the .tspproj/.tsproj and .plcproj). The XAE window stays open for this build so you can answer its dialogs.`,
         confirmLabel: `Build with ${newest.name}`,
         text: `${saved} and its ${missingName} is not installed. ${install}`
     };

@@ -747,7 +747,9 @@ function registerXaeBuildCommands(context, deps) {
             const settings = readSettings();
             const configuration = typeof a.configuration === 'string' ? a.configuration : settings.configuration;
             let pform = typeof a.platform === 'string' ? a.platform : settings.platform;
-            const showWindow = a.showWindow === true ? true : settings.showWindow;
+            // Building on another XAE Shell than the project's (user, 2026-11-13): XAE upgrades the project
+            // and usually shows dialogs, so the window is shown for that run whatever the setting says.
+            const showWindow = a.showWindow === true || !!shellOverride ? true : settings.showWindow;
 
             /** @type {{netId: string, name: string}|null} */
             let target = null;
@@ -823,7 +825,7 @@ function registerXaeBuildCommands(context, deps) {
             if (carried && confirmation) ch.appendLine('  Re-run of the activation confirmed above: same target and platform, not asked again.');
             if (switchedFrom) ch.appendLine(`  Platform: ${pform}, the platform of the activation target (confirmed in place of ${switchedFrom}).`);
             if (shellOverride) ch.appendLine(`  XAE Shell: ${shellOverride} (confirmed in place of the project's own; the project may be upgraded).`);
-            ch.appendLine(`  Requested: ${showWindow ? 'XAE window shown for the whole run (tcToolkit.xaeBuild.showWindow)' : 'headless (XAE window hidden, UI suppressed)'}` +
+            ch.appendLine(`  Requested: ${shellOverride && !settings.showWindow ? 'XAE window shown for the whole run (another XAE Shell than the project\'s: XAE may show dialogs to answer)' : showWindow ? 'XAE window shown for the whole run (tcToolkit.xaeBuild.showWindow)' : 'headless (XAE window hidden, UI suppressed)'}` +
                 (activate ? '; the window is shown during activation in either case.' : '.'));
             setRunning(true);
             const run = await vscode.window.withProgress(
