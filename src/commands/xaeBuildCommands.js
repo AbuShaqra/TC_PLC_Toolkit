@@ -20,7 +20,12 @@
  *     (the driver's rule, not this module's).
  *   - Activation: the targets are listed (`-ListTargets`), one is picked, and a MODAL confirmation
  *     naming it is answered on every run; nothing is spawned before that. No target is stored as a
- *     setting — the last pick is only preselected (workspaceState).
+ *     setting — the last pick is only preselected (workspaceState). When the target runs another
+ *     platform than the configured one, that same modal asks to switch (this run only, or remembered
+ *     in `tcToolkit.xaeBuild.platform`) if the solution declares it, and the run is refused before
+ *     XAE starts if it does not (`activationPlatform`).
+ *   - A failed headless build that brought back no error details offers "Build again with the window
+ *     shown": one re-run with `-ShowWindow`; the setting is never changed.
  *   - Cancel and timeout: the cancel file first (the driver closes the solution and quits only the
  *     shell it started, exit 4), then after a grace period a force stop — PowerShell's process tree
  *     and, only when the driver reported `ours: true`, the XAE Shell's PID (it is DCOM-launched, so it
@@ -43,7 +48,8 @@ const path = require('path');
 const { runChild, killProcessTree, describeLocation } = require('../compileCheck');
 const {
     EXIT, buildDriverArgs, createLineSplitter, parseLine, createRunState, reduce, describeExit, describeUiMode,
-    canCancel, isStalled, targetPickItems, confirmationText, reachedBuildResult, missingShell
+    canCancel, isStalled, targetPickItems, confirmationText, reachedBuildResult, missingShell,
+    declaredPairs, activationPlatform, platformNotDeclaredText, noErrorDetails, RERUN_WINDOW_SHOWN, SWITCH_AND_REMEMBER
 } = require('../xaeBuild');
 const { placeXaeErrors, placementSummary } = require('../xaeErrorPlacement');
 const { XAE_BUILD_SECTION, readXaeBuildSettings } = require('../xaeBuildSettings');
@@ -537,6 +543,26 @@ function registerXaeBuildCommands(context, deps) {
     }
 
     /**
+     * "Switch and remember": writes `tcToolkit.xaeBuild.platform` once, in the scope its current value
+     * comes from (the workspace folder or the workspace when it is set there, else the user settings).
+     * @param {string} slnPath The solution, the resource a folder-scoped value is read for.
+     * @param {string} value
+     */
+    async function rememberPlatform(slnPath, value) {
+        const c = vscode.workspace.getConfiguration(XAE_BUILD_SECTION, vscode.Uri.file(slnPath));
+        const inspected = typeof c.inspect === 'function' ? c.inspect('platform') : null;
+        const targets = /** @type {any} */ (vscode).ConfigurationTarget || {};
+        const target = inspected && inspected.workspaceFolderValue !== undefined ? (targets.WorkspaceFolder || 3)
+            : (inspected && inspected.workspaceValue !== undefined ? (targets.Workspace || 2) : (targets.Global || 1));
+        try {
+            await c.update('platform', value, target);
+            channel().appendLine(`${stamp()} Remembered the platform ${value} (tcToolkit.xaeBuild.platform).`);
+        } catch (err) {
+            vscode.window.showErrorMessage(`Could not change the setting: ${err && /** @type {any} */ (err).message ? /** @type {any} */ (err).message : err}`);
+        }
+    }
+
+    /**
      * Lists the targets (`-ListTargets`, no COM).
      * @param {string} [slnPath]
      * @returns {Promise<DriverRun>}
@@ -549,10 +575,12 @@ function registerXaeBuildCommands(context, deps) {
      * A finished build or activation run: the channel, Problems, the status bar and the summary.
      * @param {DriverRun} run
      * @param {string} slnPath
+     * @param {() => any} [rerunWindowShown] Re-runs this build once with the window shown; offered when
+     *   a failed headless build brought back no error details.
      * @returns {{ok: boolean, exitCode: number|null, outcome: string, title: string, uiMode: string, placed: number, total: number,
-     *   targetMismatch: boolean}}
+     *   targetMismatch: boolean, noErrorDetails: boolean}}
      */
-    function report(run, slnPath) {
+    function report(run, slnPath, rerunWindowShown) {
         const ch = channel();
         const { state } = run;
         const d = describeExit(run.code, run.outcome, state, {
@@ -568,7 +596,10 @@ function registerXaeBuildCommands(context, deps) {
         });
         if (built) publishProblems(placement.byFile);
         for (const g of placement.general) ch.appendLine(`  error (not placed): ${g.description}${g.file ? ` [${g.file}${g.line ? `:${g.line}` : ''}]` : ''}`);
-        const errorsLine = built ? placementSummary(placement, run.code === null ? -1 : run.code, OUTPUT_CHANNEL_NAME) : '';
+        // Nothing to place and nothing to read: say why (the driver's per-step reasons), never guess.
+        const missingDetails = built ? noErrorDetails(run.code, run.outcome, state) : null;
+        const errorsLine = missingDetails ? `${missingDetails.text} See '${OUTPUT_CHANNEL_NAME}'.`
+            : (built ? placementSummary(placement, run.code === null ? -1 : run.code, OUTPUT_CHANNEL_NAME) : '');
         let title = d.title;
         let severity = d.severity;
         if (state.targetMismatch) {
@@ -583,7 +614,7 @@ function registerXaeBuildCommands(context, deps) {
         }
         const result = {
             ok: d.ok && !state.targetMismatch, exitCode: run.code, outcome: run.outcome, title, uiMode,
-            placed: placement.placed, total: placement.total, targetMismatch: state.targetMismatch
+            placed: placement.placed, total: placement.total, targetMismatch: state.targetMismatch, noErrorDetails: !!missingDetails
         };
         if (run.rerunVisible) {
             // Stopped to re-run with the window shown: one line here, no notification, and the
@@ -599,9 +630,14 @@ function registerXaeBuildCommands(context, deps) {
             : (severity === 'warning' ? vscode.window.showWarningMessage : vscode.window.showInformationMessage);
         const buttons = ['Show Output'];
         if (byFile.size > 0 && built) buttons.unshift('Go to Problem…');
+        if (missingDetails && missingDetails.offerRerun && rerunWindowShown) buttons.unshift(RERUN_WINDOW_SHOWN);
         Promise.resolve(show(`${title}${errorsLine ? ' ' + errorsLine : ''}`, ...buttons)).then((choice) => {
             if (choice === 'Show Output') ch.show(true);
             else if (choice === 'Go to Problem…') vscode.commands.executeCommand(GO_TO_PROBLEM_COMMAND);
+            else if (choice === RERUN_WINDOW_SHOWN && rerunWindowShown) {
+                ch.appendLine(`${stamp()} Building again with the XAE window shown (this run only; the setting is unchanged).`);
+                rerunWindowShown();
+            }
         });
         return result;
     }
@@ -641,11 +677,13 @@ function registerXaeBuildCommands(context, deps) {
             }
             const settings = readSettings();
             const configuration = typeof a.configuration === 'string' ? a.configuration : settings.configuration;
-            const pform = typeof a.platform === 'string' ? a.platform : settings.platform;
+            let pform = typeof a.platform === 'string' ? a.platform : settings.platform;
             const showWindow = a.showWindow === true ? true : settings.showWindow;
 
             /** @type {{netId: string, name: string}|null} */
             let target = null;
+            /** The configured platform when the activation target's replaced it (this run, or remembered). */
+            let switchedFrom = '';
             if (activate) {
                 setRunning(true);
                 const listed = await listTargets(slnPath);
@@ -657,9 +695,30 @@ function registerXaeBuildCommands(context, deps) {
                 }
                 const picked = await vscode.window.showQuickPick(items, { title: `${title}: activation target`, placeHolder: 'Runtime of this machine to activate on' });
                 if (!picked) return { ok: false, reason: 'cancelled' };
-                const c = confirmationText(picked, solutionName);
-                const answer = await vscode.window.showWarningMessage(c.message, { modal: true }, c.confirmLabel);
-                if (answer !== c.confirmLabel) return { ok: false, reason: 'cancelled' };
+                // The driver refuses to activate a platform that is not the target's (gate 4): decide
+                // here, before anything starts, from the same platform -ListTargets reported.
+                const listedTarget = listed.state.targets ? listed.state.targets.local.find(t => t.netId === picked.netId) : null;
+                let slnText = '';
+                try { slnText = fs.readFileSync(slnPath, 'utf8'); } catch (e) { slnText = ''; }
+                const choice = activationPlatform({
+                    configuration, platform: pform, targetPlatform: listedTarget ? listedTarget.platform : null, declared: declaredPairs(slnText)
+                });
+                if (choice.kind === 'not-declared') {
+                    const text = platformNotDeclaredText(picked, choice.platform, configuration, solutionName);
+                    channel().appendLine(`${stamp()} ${title}: ${text}`);
+                    vscode.window.showErrorMessage(text);
+                    return { ok: false, reason: 'platform-not-declared', targetPlatform: choice.platform };
+                }
+                const platformSwitch = choice.kind === 'switch'
+                    ? { from: pform, to: choice.platform, configuration, provenance: listedTarget ? listedTarget.provenance : null } : undefined;
+                const c = confirmationText(picked, solutionName, platformSwitch);
+                const answer = await vscode.window.showWarningMessage(c.message, { modal: true }, ...(c.rememberLabel ? [c.confirmLabel, c.rememberLabel] : [c.confirmLabel]));
+                if (answer !== c.confirmLabel && !(c.rememberLabel && answer === c.rememberLabel)) return { ok: false, reason: 'cancelled' };
+                if (platformSwitch) {
+                    switchedFrom = pform;
+                    pform = platformSwitch.to;
+                    if (answer === SWITCH_AND_REMEMBER) await rememberPlatform(slnPath, pform);
+                }
                 target = { netId: picked.netId, name: picked.name };
                 await context.workspaceState.update(LAST_TARGET_KEY, picked.netId);
             }
@@ -667,6 +726,7 @@ function registerXaeBuildCommands(context, deps) {
             const ch = channel();
             ch.appendLine(`${stamp()} ${title}: ${slnPath} - ${configuration} | ${pform}` +
                 (target ? ` - target ${target.name} (${target.netId})` : ''));
+            if (switchedFrom) ch.appendLine(`  Platform: ${pform}, the platform of the activation target (confirmed in place of ${switchedFrom}).`);
             if (shellOverride) ch.appendLine(`  XAE Shell: ${shellOverride} (confirmed in place of the project's own; the project may be upgraded).`);
             ch.appendLine(`  Requested: ${showWindow ? 'XAE window shown for the whole run (tcToolkit.xaeBuild.showWindow)' : 'headless (XAE window hidden, UI suppressed)'}` +
                 (activate ? '; the window is shown during activation in either case.' : '.'));
@@ -695,7 +755,11 @@ function registerXaeBuildCommands(context, deps) {
                     shellAsked = true;
                 }
             }
-            const result = report(run, slnPath);
+            // Offered by report() when a failed headless build brought back no error details: once more
+            // with the window shown, this run only (the setting is never written).
+            const rerunWindowShown = () => vscode.commands.executeCommand(activate ? 'twincat.xaeBuildAndActivate' : 'twincat.xaeBuild',
+                { ...a, projectKey: resolved.key, showWindow: true, configuration, platform: pform, shellChecked: true, shellAsked: true, shellOverride });
+            const result = report(run, slnPath, rerunWindowShown);
 
             // The stall offer: the same run again with the window shown (this run only).
             if (run.rerunVisible) {
@@ -728,7 +792,10 @@ function registerXaeBuildCommands(context, deps) {
                     }
                 }
             }
-            return { ...result, projectKey: resolved.key, slnPath, targetNetId: target ? target.netId : null, shellOverride: shellOverride || null };
+            return {
+                ...result, projectKey: resolved.key, slnPath, targetNetId: target ? target.netId : null, shellOverride: shellOverride || null,
+                platform: pform, platformSwitchedFrom: switchedFrom || null
+            };
         } finally {
             if (running) setRunning(false);
             running = false;

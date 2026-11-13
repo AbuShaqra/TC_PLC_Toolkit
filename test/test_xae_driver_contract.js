@@ -135,8 +135,8 @@ if (fs.existsSync(BUILDER)) {
         // needs ProviderPath, not the provider-qualified Path.
         /^return \(Resolve-Path -LiteralPath \$candidate\)\.Path$/, /(Get-ChildItem|Select-String) -Path \$/, /^if \(-not \(Test-Path \$SlnPath\)\)/,
         // The error list and the output panes are read with Invoke-ComRetry, one item at a time.
-        /^\$items = \$dte\.ToolWindows/, /^for \(\$N = 1; \$N -le \$items\.Count/, /^\$it = \$items\.Item/, /^foreach \(\$pane in \$ow\.OutputWindowPanes\)/,
-        /^\$doc = \$pane\.TextDocument$/, /^\$sel = \$doc\.Selection$/, /^\$sel\.(StartOfDocument|EndOfDocument)\(/, /^\$txt = \$sel\.Text$/];
+        // (The output panes are read by Get-OutputPaneTexts, the same function in both.)
+        /^\$items = \$dte\.ToolWindows/, /^for \(\$N = 1; \$N -le \$items\.Count/, /^\$it = \$items\.Item/];
     const unexplained = lost.filter(l => !allowed.some(re => re.test(l)));
     assert(unexplained.length === 0, `the adaptation is additive: no builder line lost without a reason (${unexplained.slice(0, 3).join(' | ') || 'none'})`);
     assert(fs.readFileSync(BUILDER, 'utf8').includes('# This script is copied between projects'), 'the builder itself is untouched');
@@ -162,10 +162,52 @@ if (fs.existsSync(BUILDER)) {
     assert(/leaving the XAE Shell open[\s\S]{0,300}SuppressUI = \$false[\s\S]{0,120}MainWindow\.Visible = \$true/.test(code),
         'an unidentified shell that is left running is made visible again');
     const errorList = code.slice(code.indexOf("Enter-Phase 'errors'"), code.indexOf('BUILD SUCCEEDED'));
-    assert(/Invoke-ComRetry -MaxTries 10 \{ \$dte\.ToolWindows\.ErrorList\.ErrorItems \}/.test(errorList)
-        && /Invoke-ComRetry -MaxTries 10 \{ \$items\.Count \}/.test(errorList) && /Invoke-ComRetry -MaxTries 10 \{ \$items\.Item\(\$N\) \}/.test(errorList)
-        && /Invoke-ComRetry -MaxTries 10 \{ @\(\$ow\.OutputWindowPanes\) \}/.test(errorList),
-        'the error list and output panes are read with retries');
+    assert(/Invoke-ComRetry -MaxTries 10 \{ \$dte\.ToolWindows\.ErrorList \}/.test(errorList)
+        && /Invoke-ComRetry -MaxTries 10 \{ \$items\.Count \}/.test(errorList) && /Invoke-ComRetry -MaxTries 10 \{ \$items\.Item\(\$N\) \}/.test(errorList),
+        'the error list is read with retries');
+    // Invoke-ComRetry's `return` writes to the pipeline, which can enumerate a COM collection: a
+    // one-item ErrorItems would come back as the bare item. It is assigned directly instead.
+    assert(/try \{ \$items = \$errorList\.ErrorItems; break \}/.test(errorList) && !/Invoke-ComRetry[^\n]*\{ [^}\n]*\.ErrorItems \}/.test(errorList),
+        'ErrorItems is read by plain assignment, never as an Invoke-ComRetry result');
+    assert(/\$paneRead = Get-OutputPaneTexts -Dte \$dte/.test(errorList) && !/\.OutputWindowPanes/.test(errorList),
+        'the output panes are read only through Get-OutputPaneTexts');
+    // C (user run 2026-11-13, headless on 4026): no error items, the Output window $null. Each step
+    // gives a reason, and the reasons reach the extension as one event.
+    assert(/Emit-Event 'errorDetails' \(\[ordered\]@\{ errorItems = \$errorItemsRead; outputPanes = @\(\$paneRead\.Panes\)\.Count\s+reasons = \[string\[\]\]\$detailReasons \}\)/.test(errorList),
+        'a failed build emits errorDetails (items read, panes read, reasons)');
+    for (const reason of ['the error list window is not available', 'the error list has no item collection', 'the error list is empty', 'the error list could not be read']) {
+        assert(errorList.includes(reason), `error-list reason: ${reason}`);
+    }
+}
+
+// ── Get-OutputPaneTexts: every null guarded, the same function in all three copies ──────────────
+{
+    const fnOf = (text) => {
+        const t = text.replace(/\r\n/g, '\n');
+        const at = t.indexOf('function Get-OutputPaneTexts {');
+        return at < 0 ? '' : t.slice(at, t.indexOf('\n}\n', at) + 2);
+    };
+    const fn = fnOf(ps1);
+    assert(fn.length > 0, 'the driver defines Get-OutputPaneTexts');
+    assert(fn.indexOf('$Dte.ToolWindows.OutputWindow') > 0 && fn.indexOf('$Dte.ToolWindows.OutputWindow') < fn.indexOf("$Dte.Windows.Item('{34E76E81-EE4A-11D0-AE2E-00A0C90FFFC3}')"),
+        'ToolWindows.OutputWindow first, the Windows.Item route as the fallback');
+    for (const guard of ['if ($null -ne $ow)', 'if ($null -ne $win)', 'if ($null -ne $wo)', 'if ($null -eq $doc)', 'if ($null -eq $sel)', 'Where-Object { $null -ne $_ }']) {
+        assert(fn.includes(guard), `Get-OutputPaneTexts guards a null: ${guard}`);
+    }
+    for (const reason of ['the Output window is not available (XAE window hidden)', 'has no text document', 'has no selection', 'text not readable', 'every Output window pane was empty']) {
+        assert(fn.includes(reason), `Get-OutputPaneTexts reason: ${reason}`);
+    }
+    // No method is called on anything that was not null-checked first: the raw PowerShell error
+    // ("cannot call a method on a null-valued expression") is what the user saw.
+    assert(!/\$pane\.TextDocument\.Selection/.test(fn) && !/\.Object\)?\.OutputWindowPanes/.test(fn), 'no unguarded chain through TextDocument or Window.Object');
+    for (const copy of [BUILDER, path.join(REPO, 'templates', 'build_plc_project.ps1')]) {
+        const text = fs.readFileSync(copy, 'utf8');
+        assert(fnOf(text) === fn, `${path.relative(REPO, copy)} has the same Get-OutputPaneTexts`);
+        assert(/\$paneRead = Get-OutputPaneTexts -Dte \$dte/.test(text) && !/foreach \(\$pane in \$ow\.OutputWindowPanes\)/.test(text),
+            `${path.relative(REPO, copy)} reads the panes through it`);
+        assert(![...text].some(ch => ch.charCodeAt(0) > 127) && /\r\n/.test(text) && !/[^\r]\n/.test(text), `${path.relative(REPO, copy)} stays ASCII and CRLF`);
+    }
+    assert(/\r\n/.test(ps1) && !/[^\r]\n/.test(ps1), 'the driver stays CRLF');
 }
 
 // ── The system project: .tsproj, or .tspproj (a TwinCAT project saved as separate files) ─────────

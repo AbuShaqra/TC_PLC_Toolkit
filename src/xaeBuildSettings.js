@@ -8,7 +8,9 @@
  *                           Either way the driver shows the window during activation, and keeps it
  *                           visible after an XAE version switch (see DEVELOPMENT.md "XAE build (R14)").
  *   configuration   'Release'
- *   platform        'TwinCAT RT (x64)'  a solution-platform value
+ *   platform        'TwinCAT RT (x64)'  a solution-platform value: a dropdown of XAE_PLATFORMS in the
+ *                           Settings UI, but any other string (typed into settings.json) is passed
+ *                           on as it is; the solution decides whether it declares it
  *   timeoutMinutes  30      5-240
  *   stallMinutes    10      2-60, the headless watchdog
  *
@@ -31,6 +33,24 @@ const XAE_BUILD_DEFAULTS = Object.freeze({
     timeoutMinutes: 30,
     stallMinutes: 10
 });
+
+/**
+ * The solution platforms the Settings UI offers for `platform` (package.json `enum` and
+ * `enumDescriptions`; test/test_start_contributions.js keeps them equal). The first seven are what a
+ * 3.1.4026 solution declares, the last two what a 3.1.4024 one adds (both samples' .sln). Each name
+ * is a runtime kind ('TwinCAT RT' real-time, 'TwinCAT OS' user-mode) and an architecture.
+ */
+const XAE_PLATFORMS = Object.freeze([
+    { name: 'TwinCAT RT (x64)', description: 'Real-time runtime, x64.' },
+    { name: 'TwinCAT RT (x86)', description: 'Real-time runtime, 32-bit x86.' },
+    { name: 'TwinCAT OS (x64)', description: 'User-mode runtime, x64 (for example UmRT_Default).' },
+    { name: 'TwinCAT OS (x64-E)', description: 'User-mode runtime, x64-E.' },
+    { name: 'TwinCAT OS (ARMV7-A)', description: 'User-mode runtime, ARMv7-A.' },
+    { name: 'TwinCAT OS (ARMV7-M)', description: 'User-mode runtime, ARMv7-M.' },
+    { name: 'TwinCAT OS (ARMV8-A)', description: 'User-mode runtime, ARMv8-A.' },
+    { name: 'TwinCAT CE7 (ARMV7)', description: 'Windows CE 7, ARMv7 (declared by 3.1.4024 solutions).' },
+    { name: 'TwinCAT OS (ARMT2)', description: 'ARM Thumb-2 (declared by 3.1.4024 solutions).' }
+]);
 
 /** Limits of the two numbers, inclusive. */
 const LIMITS = Object.freeze({ timeoutMinutes: [5, 240], stallMinutes: [2, 60] });
@@ -75,4 +95,4 @@ function readXaeBuildSettings(get) {
     };
 }
 
-module.exports = { XAE_BUILD_SECTION, XAE_BUILD_DEFAULTS, LIMITS, readXaeBuildSettings };
+module.exports = { XAE_BUILD_SECTION, XAE_BUILD_DEFAULTS, XAE_PLATFORMS, LIMITS, readXaeBuildSettings };

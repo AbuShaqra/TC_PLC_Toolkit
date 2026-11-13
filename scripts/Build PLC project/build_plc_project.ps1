@@ -1294,6 +1294,71 @@ function Invoke-ComRetry {
     throw "COM call still rejected after $MaxTries tries."
 }
 
+<#
+.SYNOPSIS
+    The text of every Output window pane, and a one-line reason for each step that gave nothing.
+.DESCRIPTION
+    Headless (SuppressUI) on the 4026 XAE Shell the Output window came back as $null (user run,
+    2026-11-13), and reading through it died with PowerShell's own "cannot call a method on a
+    null-valued expression". Every step is checked instead, so a null becomes a reason:
+    ToolWindows.OutputWindow first, then the Windows.Item route; the pane list; each pane, its
+    TextDocument and Selection. Returns Panes (Name, Text) and Reasons (string[]).
+    The same function is in scripts/Build PLC project/build_plc_project.ps1, templates/ and
+    resources/xae/build-plc-project.ps1; keep the three in step by hand.
+#>
+function Get-OutputPaneTexts {
+    param([Parameter(Mandatory)]$Dte)
+    $found   = New-Object System.Collections.ArrayList
+    $reasons = New-Object System.Collections.ArrayList
+    $panes   = @()
+    $ow = $null
+    $wo = $null
+    try { $ow = Invoke-ComRetry -MaxTries 10 { $Dte.ToolWindows.OutputWindow } } catch { $ow = $null }
+    if ($null -ne $ow) {
+        try { $panes = @(@(Invoke-ComRetry -MaxTries 10 { @($ow.OutputWindowPanes) }) | Where-Object { $null -ne $_ }) } catch { $panes = @() }
+    }
+    if ($panes.Count -eq 0) {
+        $win = $null
+        try { $win = Invoke-ComRetry -MaxTries 10 { $Dte.Windows.Item('{34E76E81-EE4A-11D0-AE2E-00A0C90FFFC3}') } } catch { $win = $null }
+        if ($null -ne $win) { try { $wo = Invoke-ComRetry -MaxTries 10 { $win.Object } } catch { $wo = $null } }
+        if ($null -ne $wo) {
+            try { $panes = @(@(Invoke-ComRetry -MaxTries 10 { @($wo.OutputWindowPanes) }) | Where-Object { $null -ne $_ }) } catch { $panes = @() }
+        }
+        if ($panes.Count -eq 0) {
+            if ($null -eq $ow -and $null -eq $wo) {
+                [void]$reasons.Add('the Output window is not available (XAE window hidden)')
+            } else {
+                [void]$reasons.Add('the Output window has no readable panes')
+            }
+        }
+    }
+    foreach ($pane in $panes) {
+        $name = '(unnamed)'
+        try { $n = [string]$pane.Name; if ($n) { $name = $n } } catch { }
+        $doc = $null
+        $sel = $null
+        try { $doc = Invoke-ComRetry -MaxTries 10 { $pane.TextDocument } } catch { $doc = $null }
+        if ($null -eq $doc) { [void]$reasons.Add("pane '$name' has no text document"); continue }
+        try { $sel = Invoke-ComRetry -MaxTries 10 { $doc.Selection } } catch { $sel = $null }
+        if ($null -eq $sel) { [void]$reasons.Add("pane '$name' has no selection to read its text with"); continue }
+        $txt = $null
+        try {
+            [void](Invoke-ComRetry -MaxTries 10 { $sel.StartOfDocument($false) })
+            [void](Invoke-ComRetry -MaxTries 10 { $sel.EndOfDocument($true) })
+            $txt = [string](Invoke-ComRetry -MaxTries 10 { $sel.Text })
+        } catch {
+            $why = ("$($_.Exception.Message)" -split '\r?\n')[0]
+            [void]$reasons.Add("pane '$name' text not readable ($why)")
+            continue
+        }
+        if ($txt -and $txt.Trim().Length -gt 0) { [void]$found.Add([pscustomobject]@{ Name = $name; Text = $txt }) }
+    }
+    if ($panes.Count -gt 0 -and $found.Count -eq 0 -and $reasons.Count -eq 0) {
+        [void]$reasons.Add('every Output window pane was empty')
+    }
+    return [pscustomobject]@{ Panes = $found.ToArray(); Reasons = [string[]]$reasons.ToArray() }
+}
+
 # ----------------------------------------------------------------------------
 # IOleMessageFilter - REQUIRED for version pinning, not an optimisation.
 #
@@ -1598,20 +1663,13 @@ try {
     # window panes (the Build/TwinCAT pane carries the real compiler messages).
     if ($failed -ne 0) {
         Write-Host "----- Output window panes -----" -ForegroundColor Magenta
-        try {
-            $ow = (Invoke-ComRetry { $dte.Windows.Item("{34E76E81-EE4A-11D0-AE2E-00A0C90FFFC3}") }).Object
-            foreach ($pane in $ow.OutputWindowPanes) {
-                $doc = $pane.TextDocument
-                $sel = $doc.Selection
-                $sel.StartOfDocument($false)
-                $sel.EndOfDocument($true)
-                $txt = $sel.Text
-                if ($txt -and $txt.Trim().Length -gt 0) {
-                    Write-Host "--- pane: $($pane.Name) ---" -ForegroundColor DarkMagenta
-                    Write-Host $txt
-                }
-            }
-        } catch { Write-Host "output pane read failed: $_" -ForegroundColor Yellow }
+        # Every step checked: headless, the Output window itself can be $null (Get-OutputPaneTexts).
+        $paneRead = Get-OutputPaneTexts -Dte $dte
+        foreach ($why in $paneRead.Reasons) { Write-Host "output pane read: $why" -ForegroundColor Yellow }
+        foreach ($paneText in $paneRead.Panes) {
+            Write-Host "--- pane: $($paneText.Name) ---" -ForegroundColor DarkMagenta
+            Write-Host $paneText.Text
+        }
     }
 
     if ($failed -eq 0) {

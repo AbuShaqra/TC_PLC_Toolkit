@@ -48,7 +48,7 @@ const EXIT = Object.freeze({ OK: 0, COMPILE: 1, HARNESS: 2, ACTIVATION: 3, CANCE
 /** Every event type the driver emits and `reduce` handles (test_xae_driver_contract.js checks both ways). */
 const EVENT_TYPES = Object.freeze([
     'hello', 'plan', 'shell', 'phase', 'ui', 'warning', 'fatal', 'buildResult', 'errorItem',
-    'outputPane', 'target', 'activation', 'targets', 'done'
+    'outputPane', 'errorDetails', 'target', 'activation', 'targets', 'done'
 ]);
 
 /**
@@ -263,12 +263,15 @@ function parseLine(line) {
  * @property {Array<{file: string|null, line: number|null, column: number|null, description: string,
  *   project: string|null, level: string|null}>} errorItems
  * @property {Array<{name: string, text: string, truncated: boolean}>} panes
+ * @property {{errorItems: number|null, outputPanes: number|null, reasons: string[]}|null} errorDetails What the
+ *   driver could read of a failed build's error details, and a one-line reason for each step that gave
+ *   nothing (`errorDetails`; headless on 4026 the error list was empty and the Output window null).
  * @property {number|null} failedProjects
  * @property {{netId: string, local: boolean, platform: string|null}|null} target
  * @property {boolean} targetMismatch The driver's target readback differs from the confirmed pick.
  * @property {string|null} expectedNetId The NetId the user confirmed (activation only).
  * @property {{netId: string, adsState: number|null, stateName: string|null, outcome: string}|null} activation
- * @property {{local: Array<{netId: string, name: string, kind: string, platform: string|null}>, projectNetId: string|null}|null} targets
+ * @property {{local: Array<{netId: string, name: string, kind: string, platform: string|null, provenance: string|null}>, projectNetId: string|null}|null} targets
  * @property {{code: string, text: string, data?: any}|null} fatal
  * @property {{exitCode: number, ui: any}|null} done
  * @property {string[]} log Plain lines, in order.
@@ -283,7 +286,7 @@ function parseLine(line) {
 function createRunState(o = {}) {
     return {
         mode: null, showWindow: null, phase: null, plan: null, shell: null, ui: [], warnings: [], protocolWarnings: 0,
-        errorItems: [], panes: [], failedProjects: null, target: null, targetMismatch: false,
+        errorItems: [], panes: [], errorDetails: null, failedProjects: null, target: null, targetMismatch: false,
         expectedNetId: o.expectedNetId || null, activation: null, targets: null, fatal: null, done: null, log: [],
         lastEventAt: null
     };
@@ -355,6 +358,15 @@ function reduce(state, item, now = Date.now()) {
         case 'outputPane':
             state.panes.push({ name: String(e.name || ''), text: String(e.text || ''), truncated: e.truncated === true });
             break;
+        case 'errorDetails': {
+            // PS 5.1 may hand a one-element array over as a bare string.
+            const reasons = Array.isArray(e.reasons) ? e.reasons : (typeof e.reasons === 'string' ? [e.reasons] : []);
+            state.errorDetails = {
+                errorItems: numOrNull(e.errorItems), outputPanes: numOrNull(e.outputPanes),
+                reasons: reasons.filter(r => typeof r === 'string' && r.trim()).map(r => r.trim())
+            };
+            break;
+        }
         case 'target':
             state.target = { netId: String(e.netId || ''), local: e.local === true, platform: strOrNull(e.platform) };
             if (state.expectedNetId && state.target.netId !== state.expectedNetId) state.targetMismatch = true;
@@ -368,7 +380,8 @@ function reduce(state, item, now = Date.now()) {
         case 'targets':
             state.targets = {
                 local: (Array.isArray(e.local) ? e.local : []).filter(t => t && isValidNetId(t.netId)).map(t => ({
-                    netId: t.netId, name: String(t.name || t.netId), kind: String(t.kind || ''), platform: strOrNull(t.platform)
+                    netId: t.netId, name: String(t.name || t.netId), kind: String(t.kind || ''), platform: strOrNull(t.platform),
+                    provenance: strOrNull(t.provenance)
                 })),
                 projectNetId: strOrNull(e.projectNetId)
             };
@@ -486,7 +499,7 @@ function describeExit(code, outcome, state, extra = {}) {
             }
             return {
                 ok: false, severity: 'error',
-                title: `The XAE build could not run${state.fatal && state.fatal.text ? `: ${firstLine(state.fatal.text)}` : '.'}`,
+                title: `The XAE build could not run${state.fatal && state.fatal.text ? `: ${oneLine(state.fatal.text)}` : '.'}`,
                 detail: ((state.fatal && state.fatal.text.includes('\n') ? state.fatal.text : '') + missing).trim()
             };
         case EXIT.ACTIVATION: {
@@ -504,10 +517,17 @@ function describeExit(code, outcome, state, extra = {}) {
     }
 }
 
-/** @param {string} s @returns {string} */
-function firstLine(s) {
-    const line = String(s).split(/\r?\n/)[0].trim();
-    return /[.!?]$/.test(line) ? line : line + '.';
+/**
+ * A driver message as one sentence-ended line for a notification. The driver's refusals wrap and
+ * indent their own continuation lines (gate 4: "... activation target <NetId>," / "which runs ..."),
+ * so they are joined, never cut at the first line break.
+ * @param {string} s
+ * @returns {string}
+ */
+function oneLine(s) {
+    const line = String(s).replace(/\s*\r?\n\s*/g, ' ').replace(/\s{2,}/g, ' ').trim();
+    if (!line) return '';
+    return /[.!?]$/.test(line) ? line : line.replace(/[,;:]$/, '') + '.';
 }
 
 /** @param {RunState} state @returns {string} */
@@ -614,23 +634,120 @@ function targetPickItems(targets, o = {}) {
     return items;
 }
 
+/** The buttons of the platform-switch confirmation (user, 2026-11-13; XAE asks the same on download). */
+const SWITCH_FOR_RUN = 'Switch for this run';
+const SWITCH_AND_REMEMBER = 'Switch and remember';
+
 /**
  * The modal confirmation before an activation, and its confirm button (which names the target).
+ * With `platformSwitch` (the target runs another platform the solution declares, see
+ * `activationPlatform`) it is still ONE modal: it first asks to switch, and its buttons are
+ * `Switch for this run` / `Switch and remember` (the confirmation itself is either of them).
  * @param {{netId: string, name: string}} target
  * @param {string} solutionName
- * @returns {{message: string, confirmLabel: string}}
+ * @param {{from: string, to: string, configuration: string, provenance?: string|null}} [platformSwitch]
+ * @returns {{message: string, confirmLabel: string, rememberLabel?: string}}
  */
-function confirmationText(target, solutionName) {
+function confirmationText(target, solutionName, platformSwitch) {
     const where = `${target.name} (${target.netId})`;
+    const tail = 'The running PLC on that target stops. The XAE window opens during activation - answer any dialog there.';
+    if (!platformSwitch) {
+        return {
+            message: `Build ${solutionName}, activate the configuration on ${where} and restart TwinCAT there? ${tail}`,
+            confirmLabel: `Activate on ${where}`
+        };
+    }
+    const inferred = platformSwitch.provenance && platformSwitch.provenance !== 'read'
+        ? ' (inferred, not read from that runtime, so it can be wrong)' : '';
     return {
-        message: `Build ${solutionName}, activate the configuration on ${where} and restart TwinCAT there? ` +
-            'The running PLC on that target stops. The XAE window opens during activation - answer any dialog there.',
-        confirmLabel: `Activate on ${where}`
+        message: `${where} runs ${platformSwitch.to}${inferred}, but ${platformSwitch.from} is set. Switch to ${platformSwitch.to}? ` +
+            `Then ${solutionName} is built as ${platformSwitch.configuration}|${platformSwitch.to}, activated on ${where} and TwinCAT there restarted. ${tail}`,
+        confirmLabel: SWITCH_FOR_RUN,
+        rememberLabel: SWITCH_AND_REMEMBER
+    };
+}
+
+/**
+ * The configuration|platform pairs a solution declares (its `SolutionConfigurationPlatforms`
+ * section), read exactly as the driver reads them; empty when the section is absent or unreadable.
+ * @param {string} slnText
+ * @returns {string[]}
+ */
+function declaredPairs(slnText) {
+    const section = /^\s*GlobalSection\(SolutionConfigurationPlatforms\)[\s\S]*?^\s*EndGlobalSection/m.exec(String(slnText || ''));
+    if (!section) return [];
+    return [...section[0].matchAll(/^\s*([^=\r\n]+?)\s*=/gm)].map(m => m[1]).filter(p => !/^GlobalSection/.test(p) && p.includes('|'));
+}
+
+/**
+ * Which platform an activation onto `target` builds. The driver refuses to activate a platform that
+ * is not the target's (gate 4 of Resolve-ActivationTarget, which reads the platform from the same
+ * runtime records `-ListTargets` reports; PowerShell compares case-insensitively, so this does too):
+ *   - `same`         the target's platform is the configured one, or unknown (the driver warns and
+ *                    the XAE Shell checks it during activation);
+ *   - `switch`       another platform, and the solution declares `<configuration>|<it>`: offer it
+ *                    (`platform` is the solution's spelling);
+ *   - `not-declared` another platform the solution does not declare: refuse before XAE starts;
+ *   - `unknown`      another platform, but the solution's pairs could not be read: nothing is
+ *                    switched, and the driver's refusal explains.
+ * @param {{configuration: string, platform: string, targetPlatform: string|null|undefined, declared: string[]}} o
+ * @returns {{kind: 'same'|'switch'|'not-declared'|'unknown', platform: string}}
+ */
+function activationPlatform(o) {
+    const tp = typeof o.targetPlatform === 'string' ? o.targetPlatform.trim() : '';
+    if (!tp || tp.toLowerCase() === String(o.platform).toLowerCase()) return { kind: 'same', platform: o.platform };
+    if (!o.declared || o.declared.length === 0) return { kind: 'unknown', platform: o.platform };
+    const want = `${o.configuration}|${tp}`.toLowerCase();
+    const pair = o.declared.find(d => d.toLowerCase() === want);
+    if (!pair) return { kind: 'not-declared', platform: tp };
+    return { kind: 'switch', platform: pair.slice(pair.indexOf('|') + 1) };
+}
+
+/**
+ * The refusal when the target runs a platform the solution does not declare (nothing is started).
+ * @param {{netId: string, name: string}} target
+ * @param {string} targetPlatform
+ * @param {string} configuration
+ * @param {string} solutionName
+ * @returns {string}
+ */
+function platformNotDeclaredText(target, targetPlatform, configuration, solutionName) {
+    return `${target.name} (${target.netId}) runs ${targetPlatform}, but ${solutionName} does not declare ` +
+        `'${configuration}|${targetPlatform}', so it cannot be built and activated there. Add the solution platform ` +
+        `'${targetPlatform}' in XAE's Configuration Manager, save the solution and run again.`;
+}
+
+/** The button that re-runs a failed headless build with the window shown (this run only). */
+const RERUN_WINDOW_SHOWN = 'Build again with the window shown';
+
+/**
+ * A failed build that brought back no error details at all: no error-list item and no Output pane
+ * text. Measured headless on 4026 (2026-11-13): the error list was empty and the Output window null.
+ * Whether the same build with the window shown brings them back is NOT known yet, so the text never
+ * claims it; it only offers the re-run.
+ * @param {number|null} code
+ * @param {'exit'|'timeout'|'spawn-error'|'killed'} outcome
+ * @param {RunState} state
+ * @returns {{text: string, reasons: string[], offerRerun: boolean}|null} Null when there are details,
+ *   or the run was not a confirmed compile failure.
+ */
+function noErrorDetails(code, outcome, state) {
+    if (outcome !== 'exit' || code !== EXIT.COMPILE || !compileFailureConfirmed(state)) return null;
+    if (state.errorItems.length > 0 || state.panes.some(p => p.text.trim())) return null;
+    const reasons = state.errorDetails && state.errorDetails.reasons.length
+        ? state.errorDetails.reasons : ['the driver reported none'];
+    const requested = state.done && state.done.ui && state.done.ui.requested;
+    const headless = requested ? requested !== 'visible' : state.showWindow !== true;
+    return {
+        text: `XAE returned no error details: ${reasons.join('; ')}.`,
+        reasons,
+        offerRerun: headless
     };
 }
 
 module.exports = {
-    PREFIX, PROTOCOL, EXIT, EVENT_TYPES, UNINTERRUPTIBLE_PHASES,
+    PREFIX, PROTOCOL, EXIT, EVENT_TYPES, UNINTERRUPTIBLE_PHASES, SWITCH_FOR_RUN, SWITCH_AND_REMEMBER, RERUN_WINDOW_SHOWN,
     isValidNetId, buildDriverArgs, shellByProgId, missingShell, createLineSplitter, parseLine, createRunState, reduce,
-    compileFailureConfirmed, reachedBuildResult, describeExit, describeUiMode, buildPhaseUi, canCancel, isStalled, targetPickItems, confirmationText
+    compileFailureConfirmed, reachedBuildResult, describeExit, describeUiMode, buildPhaseUi, canCancel, isStalled, targetPickItems, confirmationText,
+    declaredPairs, activationPlatform, platformNotDeclaredText, noErrorDetails, oneLine
 };

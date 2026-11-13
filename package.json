@@ -708,12 +708,34 @@
           "tcToolkit.xaeBuild.configuration": {
             "type": "string",
             "default": "Release",
-            "markdownDescription": "The solution configuration *Build through XAE* builds (with the platform below, one of the pairs the solution declares)."
+            "markdownDescription": "The solution configuration *Build through XAE* builds, normally `Release` or `Debug` (with the platform below, one of the pairs the solution declares). Free text, because a solution can declare its own configuration names."
           },
           "tcToolkit.xaeBuild.platform": {
             "type": "string",
             "default": "TwinCAT RT (x64)",
-            "markdownDescription": "The solution platform *Build through XAE* builds, as the TwinCAT solution names it (for example `TwinCAT RT (x64)` or `TwinCAT OS (x64)`). Activating onto a user-mode runtime needs its `TwinCAT OS (...)` platform."
+            "enum": [
+              "TwinCAT RT (x64)",
+              "TwinCAT RT (x86)",
+              "TwinCAT OS (x64)",
+              "TwinCAT OS (x64-E)",
+              "TwinCAT OS (ARMV7-A)",
+              "TwinCAT OS (ARMV7-M)",
+              "TwinCAT OS (ARMV8-A)",
+              "TwinCAT CE7 (ARMV7)",
+              "TwinCAT OS (ARMT2)"
+            ],
+            "enumDescriptions": [
+              "Real-time runtime, x64.",
+              "Real-time runtime, 32-bit x86.",
+              "User-mode runtime, x64 (for example UmRT_Default).",
+              "User-mode runtime, x64-E.",
+              "User-mode runtime, ARMv7-A.",
+              "User-mode runtime, ARMv7-M.",
+              "User-mode runtime, ARMv8-A.",
+              "Windows CE 7, ARMv7 (declared by 3.1.4024 solutions).",
+              "ARM Thumb-2 (declared by 3.1.4024 solutions)."
+            ],
+            "markdownDescription": "The solution platform *Build through XAE* builds. Activating onto a runtime builds that runtime's platform: when the target runs another platform and the solution declares it, *Build and Activate through XAE…* offers to switch. A platform not in this list can still be typed into `settings.json`; the solution must declare it."
           },
           "tcToolkit.xaeBuild.timeoutMinutes": {
             "type": "number",

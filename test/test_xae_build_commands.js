@@ -52,6 +52,7 @@ const settings = {
     'tcToolkit.xaeBuild.timeoutMinutes': 240
 };
 const workspaceSettings = {};
+const folderSettings = {};
 const listeners = { config: [] };
 const fireConfig = (full) => listeners.config.slice().forEach(fn => fn({ affectsConfiguration: (sec) => full === sec || full.startsWith(sec + '.') }));
 const uri = (p) => ({ fsPath: p, scheme: 'file', path: p, query: '', toString: () => 'file://' + p.split(path.sep).join('/') });
@@ -92,13 +93,14 @@ const vscodeStub = {
         getConfiguration: (section) => ({
             get: (key, fallback) => {
                 const full = `${section}.${key}`;
+                if (Object.prototype.hasOwnProperty.call(folderSettings, full)) return folderSettings[full];
                 if (Object.prototype.hasOwnProperty.call(workspaceSettings, full)) return workspaceSettings[full];
                 return Object.prototype.hasOwnProperty.call(settings, full) ? settings[full] : fallback;
             },
-            inspect: (key) => ({ globalValue: settings[`${section}.${key}`], workspaceValue: workspaceSettings[`${section}.${key}`] }),
+            inspect: (key) => ({ globalValue: settings[`${section}.${key}`], workspaceValue: workspaceSettings[`${section}.${key}`], workspaceFolderValue: folderSettings[`${section}.${key}`] }),
             update: async (key, value, target) => {
                 const full = `${section}.${key}`;
-                const bucket = target === 2 ? workspaceSettings : settings;
+                const bucket = target === 3 ? folderSettings : (target === 2 ? workspaceSettings : settings);
                 if (value === undefined) delete bucket[full]; else bucket[full] = value;
                 calls.updates.push({ key: full, value, target });
                 fireConfig(full);
@@ -290,28 +292,150 @@ const rows = (name) => readFixture(name).lines;
     driver = () => ({ fixture: 'errors-panes-only' });
     await run('twincat.xaeBuild', {});
     assert(calls.errors.some(e => /XAE reported no error list; see 'TC Toolkit XAE Build'/.test(e.m)), 'exit 1 with no error list points at the channel');
+    // ── C: a failed headless build with no error details (user run 2026-11-13, 4026) ───────────
+    {
+        const showWindowWrites = () => calls.updates.filter(u => u.key === 'tcToolkit.xaeBuild.showWindow').length;
+        const w0 = showWindowWrites();
+        const n0 = builds().length;
+        driver = (c) => ({ fixture: c.args.includes('-ShowWindow') ? 'errors-errorlist' : 'errors-no-details-headless' });
+        answers.message.push('Build again with the window shown');
+        const e0 = calls.errors.length;
+        r = await run('twincat.xaeBuild', {});
+        const note = calls.errors[e0];
+        assert(!r.ok && r.exitCode === 1 && r.noErrorDetails && note
+            && /^Build through XAE failed\. XAE returned no error details: the error list is empty; the Output window is not available \(XAE window hidden\)\. See 'TC Toolkit XAE Build'\.$/.test(note.m),
+            'the failure says no error details came back, and why');
+        assert(note.buttons[0] === 'Build again with the window shown' && note.buttons.includes('Show Output'), 'it offers "Build again with the window shown"');
+        assert(!/will show|shows the errors/i.test(note.m), 'it does not claim the visible run will show the errors');
+        await waitFor(() => builds().length === n0 + 2);
+        await waitFor(() => !api.isRunning());
+        const again = builds()[n0 + 1];
+        assert(again && again.args.includes('-ShowWindow') && !builds()[n0].args.includes('-ShowWindow')
+            && again.args[again.args.indexOf('-Platform') + 1] === builds()[n0].args[builds()[n0].args.indexOf('-Platform') + 1],
+            'the button re-runs once, with -ShowWindow and the same configuration');
+        assert(showWindowWrites() === w0 && settings['tcToolkit.xaeBuild.showWindow'] === false, 'the re-run never changes tcToolkit.xaeBuild.showWindow');
+        assert(channel().lines.some(l => /Building again with the XAE window shown \(this run only; the setting is unchanged\)/.test(l)), 'the channel says so');
+        // Not offered when the window was already shown.
+        settings['tcToolkit.xaeBuild.showWindow'] = true;
+        driver = () => ({ lines: rows('errors-no-details-headless').map(l => (l.t === 'done' ? { ...l, ui: { ...l.ui, requested: 'visible' } } : (l.t === 'hello' ? { ...l, showWindow: true } : l))), exit: 1 });
+        const e1 = calls.errors.length;
+        await run('twincat.xaeBuild', {});
+        assert(calls.errors[e1] && /XAE returned no error details/.test(calls.errors[e1].m) && !calls.errors[e1].buttons.includes('Build again with the window shown'),
+            'a visible build with no details: said, but no re-run offered');
+        settings['tcToolkit.xaeBuild.showWindow'] = false;
+        driver = () => ({ fixture: 'build-ok-headless' });
+    }
     driver = () => ({ fixture: 'version-mismatch' });
     await run('twincat.xaeBuild', {});
     assert(calls.errors.some(e => /could not run: no XAE Shell mapping/.test(e.m)), 'exit 2 names the fatal');
 
     // ── Activation: list, pick, modal; nothing spawned before the confirmation ──────────────────
     let before = builds().length;
-    answers.quickPick.push('198.51.100.4.1.1');
+    answers.quickPick.push('198.51.100.1.1.1');
     answers.message.push(undefined); // the modal is dismissed
     r = await run('twincat.xaeBuildAndActivate', {});
     assert(r.reason === 'cancelled' && builds().length === before, 'a dismissed modal spawns no build at all');
     assert(fake.calls.some(c => c.args.includes('-ListTargets')), 'the targets were listed (-ListTargets)');
     const modal = calls.modals[calls.modals.length - 1];
-    assert(modal && modal.opts.modal === true && modal.buttons[0] === 'Activate on UmRT_Default (198.51.100.4.1.1)' && /running PLC on that target stops/.test(modal.m),
-        'the modal names the target on its confirm button');
+    assert(modal && modal.opts.modal === true && modal.buttons.length === 1 && modal.buttons[0] === 'Activate on Real-time runtime (198.51.100.1.1.1)'
+        && /running PLC on that target stops/.test(modal.m) && !/Switch/.test(modal.m),
+        'the modal names the target on its confirm button (the target runs the configured platform: no switch asked)');
     const pick = calls.picks[calls.picks.length - 1];
     assert(pick.items[0].netId === '198.51.100.1.1.1' && /\(project\)/.test(pick.items[1].description), 'the pick lists this machine\'s runtimes, the project NetId marked');
     assert(!fake.calls.some(c => c.args.includes('-ActivateConfiguration')), 'no -ActivateConfiguration run so far');
     assert(fake.calls.filter(c => !c.args.includes('-ListTargets')).every(c => !c.args.includes('-ActivateConfiguration')), 'twincat.xaeBuild never passed -ActivateConfiguration');
 
+    // ── B: the target runs another platform (user run 2026-11-13: RT (x64) set, UmRT_Default runs OS (x64)) ──
+    // XAE asks on download whether to switch to the target's platform; so does the one modal here.
+    const platformWrites = () => calls.updates.filter(u => u.key === 'tcToolkit.xaeBuild.platform');
+    answers.quickPick.push('198.51.100.4.1.1');
+    answers.message.push(undefined); // Cancel
+    const sw0 = calls.modals.length;
+    r = await run('twincat.xaeBuildAndActivate', {});
+    const sm = calls.modals.slice(sw0);
+    assert(sm.length === 1 && /^UmRT_Default \(198\.51\.100\.4\.1\.1\) runs TwinCAT OS \(x64\), but TwinCAT RT \(x64\) is set\. Switch to TwinCAT OS \(x64\)\?/.test(sm[0].m)
+        && JSON.stringify(sm[0].buttons) === JSON.stringify(['Switch for this run', 'Switch and remember']) && /running PLC on that target stops/.test(sm[0].m),
+        'one modal asks to switch, names the target, and offers Switch for this run / Switch and remember');
+    assert(r.reason === 'cancelled' && builds().length === before && platformWrites().length === 0, 'Cancel: nothing spawned, nothing written');
+
     driver = () => ({ fixture: 'activation-run' });
     answers.quickPick.push('198.51.100.4.1.1');
-    answers.message.push('Activate on UmRT_Default (198.51.100.4.1.1)');
+    answers.message.push('Switch for this run');
+    r = await run('twincat.xaeBuildAndActivate', {});
+    argv = lastSpawn().args;
+    assert(argv.includes('-ActivateConfiguration') && argv[argv.indexOf('-Platform') + 1] === 'TwinCAT OS (x64)' && argv[argv.indexOf('-Configuration') + 1] === 'Release',
+        'Switch for this run: the run builds Release|TwinCAT OS (x64)');
+    assert(r.ok && r.platform === 'TwinCAT OS (x64)' && r.platformSwitchedFrom === 'TwinCAT RT (x64)', 'and reports the switch');
+    assert(platformWrites().length === 0 && settings['tcToolkit.xaeBuild.platform'] === undefined && workspaceSettings['tcToolkit.xaeBuild.platform'] === undefined,
+        'Switch for this run never writes the setting');
+    assert(channel().lines.some(l => /Platform: TwinCAT OS \(x64\), the platform of the activation target \(confirmed in place of TwinCAT RT \(x64\)\)/.test(l)),
+        'the channel says the platform was switched for the target');
+    // The next build (no activation) is back on the setting.
+    driver = () => ({ fixture: 'build-ok-headless' });
+    await run('twincat.xaeBuild', {});
+    assert(lastSpawn().args[lastSpawn().args.indexOf('-Platform') + 1] === 'TwinCAT RT (x64)', 'the next plain build uses the setting again');
+
+    // Switch and remember: written once, at the scope the value comes from.
+    driver = () => ({ fixture: 'activation-run' });
+    answers.quickPick.push('198.51.100.4.1.1');
+    answers.message.push('Switch and remember');
+    let pw0 = platformWrites().length;
+    r = await run('twincat.xaeBuildAndActivate', {});
+    assert(lastSpawn().args[lastSpawn().args.indexOf('-Platform') + 1] === 'TwinCAT OS (x64)' && r.ok, 'Switch and remember: the run builds TwinCAT OS (x64)');
+    assert(platformWrites().length === pw0 + 1 && platformWrites()[pw0].value === 'TwinCAT OS (x64)' && platformWrites()[pw0].target === 1,
+        'Switch and remember writes tcToolkit.xaeBuild.platform once, in the user settings when nothing narrower sets it');
+    delete settings['tcToolkit.xaeBuild.platform'];
+    workspaceSettings['tcToolkit.xaeBuild.platform'] = 'TwinCAT RT (x64)';
+    answers.quickPick.push('198.51.100.4.1.1');
+    answers.message.push('Switch and remember');
+    pw0 = platformWrites().length;
+    await run('twincat.xaeBuildAndActivate', {});
+    assert(platformWrites().length === pw0 + 1 && platformWrites()[pw0].target === 2 && workspaceSettings['tcToolkit.xaeBuild.platform'] === 'TwinCAT OS (x64)'
+        && settings['tcToolkit.xaeBuild.platform'] === undefined, 'a workspace value is replaced in the workspace');
+    workspaceSettings['tcToolkit.xaeBuild.platform'] = 'TwinCAT RT (x64)';
+    folderSettings['tcToolkit.xaeBuild.platform'] = 'TwinCAT RT (x64)';
+    answers.quickPick.push('198.51.100.4.1.1');
+    answers.message.push('Switch and remember');
+    pw0 = platformWrites().length;
+    await run('twincat.xaeBuildAndActivate', {});
+    assert(platformWrites().length === pw0 + 1 && platformWrites()[pw0].target === 3 && folderSettings['tcToolkit.xaeBuild.platform'] === 'TwinCAT OS (x64)'
+        && workspaceSettings['tcToolkit.xaeBuild.platform'] === 'TwinCAT RT (x64)', 'a workspace-folder value is replaced in the workspace folder');
+    delete folderSettings['tcToolkit.xaeBuild.platform'];
+    delete workspaceSettings['tcToolkit.xaeBuild.platform'];
+    // Once the setting is the target's platform, the modal is the plain one again.
+    settings['tcToolkit.xaeBuild.platform'] = 'TwinCAT OS (x64)';
+    answers.quickPick.push('198.51.100.4.1.1');
+    answers.message.push(undefined);
+    await run('twincat.xaeBuildAndActivate', {});
+    assert(calls.modals[calls.modals.length - 1].buttons[0] === 'Activate on UmRT_Default (198.51.100.4.1.1)', 'platforms that match: the plain confirmation');
+    delete settings['tcToolkit.xaeBuild.platform'];
+
+    // A platform the solution does not declare: refused before XAE starts, naming what to add.
+    slnPath = SLN2;
+    before = builds().length;
+    const errs0 = calls.errors.length;
+    const mm0 = calls.modals.length;
+    answers.message.push('Run anyway'); // sample 2's shell pre-check (only XAE Shell 64 here)
+    answers.quickPick.push('198.51.100.4.1.1');
+    r = await run('twincat.xaeBuildAndActivate', {});
+    assert(r.reason === 'platform-not-declared' && r.targetPlatform === 'TwinCAT OS (x64)' && builds().length === before
+        && calls.modals.slice(mm0).length === 0, 'not declared: refused before anything is spawned, no confirmation asked');
+    assert(calls.errors.slice(errs0).some(e => /UmRT_Default \(198\.51\.100\.4\.1\.1\) runs TwinCAT OS \(x64\), but TcToolkitSample2 does not declare 'Release\|TwinCAT OS \(x64\)'/.test(e.m)
+        && /Add the solution platform 'TwinCAT OS \(x64\)' in XAE's Configuration Manager/.test(e.m)), 'the refusal names the platform to add in XAE\'s Configuration Manager');
+    slnPath = SLN;
+    // Gate 4's own refusal (the driver's, e.g. an unreadable .sln): its summary is one clean line.
+    driver = () => ({ fixture: 'target-refused-platform' });
+    answers.quickPick.push('198.51.100.1.1.1');
+    answers.message.push('Activate on Real-time runtime (198.51.100.1.1.1)');
+    const e1 = calls.errors.length;
+    await run('twincat.xaeBuildAndActivate', {});
+    const g4 = calls.errors.slice(e1).map(e => e.m).find(m => /activation target/.test(m)) || '';
+    assert(g4 && !/,\./.test(g4) && /198\.51\.100\.4\.1\.1, which runs 'TwinCAT OS \(x64\)'/.test(g4), `the driver's gate-4 refusal reads as one line (${g4.slice(0, 90)}…)`);
+
+
+    driver = () => ({ fixture: 'activation-run' });
+    answers.quickPick.push('198.51.100.4.1.1');
+    answers.message.push('Switch for this run');
     r = await run('twincat.xaeBuildAndActivate', {});
     argv = lastSpawn().args;
     assert(argv.includes('-ActivateConfiguration') && argv[argv.indexOf('-TargetNetId') + 1] === '198.51.100.4.1.1', 'the confirmed NetId reaches the argv');
@@ -401,8 +525,8 @@ const rows = (name) => readFixture(name).lines;
     fake.killedPids.length = 0;
     const activating = [{ v: 1, t: 'hello', mode: 'activate', showWindow: false }, { v: 1, t: 'shell', pid: 4242, ours: true, preexisting: [] }, { v: 1, t: 'phase', name: 'activate' }];
     driver = () => ({ lines: activating, hang: true });
-    answers.quickPick.push('198.51.100.4.1.1');
-    answers.message.push('Activate on UmRT_Default (198.51.100.4.1.1)');
+    answers.quickPick.push('198.51.100.1.1.1');
+    answers.message.push('Activate on Real-time runtime (198.51.100.1.1.1)');
     p = run('twincat.xaeBuildAndActivate', {});
     await waitFor(() => lastSpawn().args.includes('-ActivateConfiguration'));
     await new Promise(res => setTimeout(res, 20));
@@ -642,8 +766,8 @@ const rows = (name) => readFixture(name).lines;
         const m0 = calls.modals.length;
         e0 = calls.errors.length;
         answers.message.push('Run anyway');
-        answers.quickPick.push('198.51.100.4.1.1');
-        answers.message.push('Activate on UmRT_Default (198.51.100.4.1.1)');
+        answers.quickPick.push('198.51.100.1.1.1');
+        answers.message.push('Activate on Real-time runtime (198.51.100.1.1.1)');
         r = await run('twincat.xaeBuildAndActivate', {});
         const shellModals = calls.modals.slice(m0).filter(mm => /XAE Shell/.test(mm.m));
         assert(shellModals.length === 0 && calls.warnings.some(w => /No XAE Shell for TwinCAT 3\.1\.4024/.test(w.m) && w.buttons.includes('Run anyway')),

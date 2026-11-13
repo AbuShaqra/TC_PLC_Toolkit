@@ -1,0 +1,14 @@
+{"v":1,"t":"hello","mode":"build","showWindow":false}
+{"v":1,"t":"shell","pid":4243,"ours":true,"preexisting":[]}
+{"v":1,"t":"phase","name":"build"}
+{"v":1,"t":"ui","requested":"headless","suppressUI":true,"mainWindowVisible":null,"reason":"build"}
+{"log":"Projects failed: 2"}
+{"v":1,"t":"buildResult","failedProjects":2}
+{"v":1,"t":"phase","name":"errors"}
+{"log":"----- Output window panes -----"}
+{"log":"output pane read: the Output window is not available (XAE window hidden)"}
+{"log":"No error details could be read: the error list is empty; the Output window is not available (XAE window hidden)"}
+{"v":1,"t":"errorDetails","errorItems":0,"outputPanes":0,"reasons":["the error list is empty","the Output window is not available (XAE window hidden)"]}
+{"log":"BUILD FAILED."}
+{"v":1,"t":"done","exitCode":1,"ui":{"requested":"headless","buildPhase":{"suppressUI":true,"mainWindowVisible":null},"versionSwitchKeptVisible":false,"activationShown":false}}
+{"exit":1}

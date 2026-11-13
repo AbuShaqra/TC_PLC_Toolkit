@@ -1502,6 +1502,71 @@ function Invoke-ComRetry {
     throw "COM call still rejected after $MaxTries tries."
 }
 
+<#
+.SYNOPSIS
+    The text of every Output window pane, and a one-line reason for each step that gave nothing.
+.DESCRIPTION
+    Headless (SuppressUI) on the 4026 XAE Shell the Output window came back as $null (user run,
+    2026-11-13), and reading through it died with PowerShell's own "cannot call a method on a
+    null-valued expression". Every step is checked instead, so a null becomes a reason:
+    ToolWindows.OutputWindow first, then the Windows.Item route; the pane list; each pane, its
+    TextDocument and Selection. Returns Panes (Name, Text) and Reasons (string[]).
+    The same function is in scripts/Build PLC project/build_plc_project.ps1, templates/ and
+    resources/xae/build-plc-project.ps1; keep the three in step by hand.
+#>
+function Get-OutputPaneTexts {
+    param([Parameter(Mandatory)]$Dte)
+    $found   = New-Object System.Collections.ArrayList
+    $reasons = New-Object System.Collections.ArrayList
+    $panes   = @()
+    $ow = $null
+    $wo = $null
+    try { $ow = Invoke-ComRetry -MaxTries 10 { $Dte.ToolWindows.OutputWindow } } catch { $ow = $null }
+    if ($null -ne $ow) {
+        try { $panes = @(@(Invoke-ComRetry -MaxTries 10 { @($ow.OutputWindowPanes) }) | Where-Object { $null -ne $_ }) } catch { $panes = @() }
+    }
+    if ($panes.Count -eq 0) {
+        $win = $null
+        try { $win = Invoke-ComRetry -MaxTries 10 { $Dte.Windows.Item('{34E76E81-EE4A-11D0-AE2E-00A0C90FFFC3}') } } catch { $win = $null }
+        if ($null -ne $win) { try { $wo = Invoke-ComRetry -MaxTries 10 { $win.Object } } catch { $wo = $null } }
+        if ($null -ne $wo) {
+            try { $panes = @(@(Invoke-ComRetry -MaxTries 10 { @($wo.OutputWindowPanes) }) | Where-Object { $null -ne $_ }) } catch { $panes = @() }
+        }
+        if ($panes.Count -eq 0) {
+            if ($null -eq $ow -and $null -eq $wo) {
+                [void]$reasons.Add('the Output window is not available (XAE window hidden)')
+            } else {
+                [void]$reasons.Add('the Output window has no readable panes')
+            }
+        }
+    }
+    foreach ($pane in $panes) {
+        $name = '(unnamed)'
+        try { $n = [string]$pane.Name; if ($n) { $name = $n } } catch { }
+        $doc = $null
+        $sel = $null
+        try { $doc = Invoke-ComRetry -MaxTries 10 { $pane.TextDocument } } catch { $doc = $null }
+        if ($null -eq $doc) { [void]$reasons.Add("pane '$name' has no text document"); continue }
+        try { $sel = Invoke-ComRetry -MaxTries 10 { $doc.Selection } } catch { $sel = $null }
+        if ($null -eq $sel) { [void]$reasons.Add("pane '$name' has no selection to read its text with"); continue }
+        $txt = $null
+        try {
+            [void](Invoke-ComRetry -MaxTries 10 { $sel.StartOfDocument($false) })
+            [void](Invoke-ComRetry -MaxTries 10 { $sel.EndOfDocument($true) })
+            $txt = [string](Invoke-ComRetry -MaxTries 10 { $sel.Text })
+        } catch {
+            $why = ("$($_.Exception.Message)" -split '\r?\n')[0]
+            [void]$reasons.Add("pane '$name' text not readable ($why)")
+            continue
+        }
+        if ($txt -and $txt.Trim().Length -gt 0) { [void]$found.Add([pscustomobject]@{ Name = $name; Text = $txt }) }
+    }
+    if ($panes.Count -gt 0 -and $found.Count -eq 0 -and $reasons.Count -eq 0) {
+        [void]$reasons.Add('every Output window pane was empty')
+    }
+    return [pscustomobject]@{ Panes = $found.ToArray(); Reasons = [string[]]$reasons.ToArray() }
+}
+
 # ----------------------------------------------------------------------------
 # IOleMessageFilter - REQUIRED for version pinning, not an optimisation.
 #
@@ -1838,11 +1903,29 @@ try {
     # LastBuildInfo above is the authoritative pass/fail signal)
     # Every COM call retried: right after Build the shell commonly rejects calls while it refreshes the
     # list, and no message filter is registered for an unpinned run. One item failing loses only itself.
+    #
+    # ErrorItems is read by plain assignment, never as Invoke-ComRetry's result: that function's
+    # `return` writes to the pipeline, which can enumerate a COM collection, and a one-item list
+    # would then come back as the bare item (with no Item() to call). Retried by hand instead.
+    $errorItemsRead  = 0
+    $errorListReason = $null
     try {
-        $items = Invoke-ComRetry -MaxTries 10 { $dte.ToolWindows.ErrorList.ErrorItems }
-        $itemCount = Invoke-ComRetry -MaxTries 10 { $items.Count }
+        $errorList = Invoke-ComRetry -MaxTries 10 { $dte.ToolWindows.ErrorList }
+        $items = $null
+        for ($t = 1; $t -le 10; $t++) {
+            try { $items = $errorList.ErrorItems; break }
+            catch {
+                if ($_.Exception.ToString() -match '80010001|RPC_E_CALL_REJECTED|80010100|RPC_E_SERVERCALL') { Start-Sleep -Seconds 2 }
+                else { throw }
+            }
+        }
+        $itemCount = 0
+        if ($null -eq $errorList) { $errorListReason = 'the error list window is not available' }
+        elseif ($null -eq $items) { $errorListReason = 'the error list has no item collection' }
+        else { $itemCount = [int](Invoke-ComRetry -MaxTries 10 { $items.Count }) }
         for ($N = 1; $N -le $itemCount; $N++) {
             try { $it = Invoke-ComRetry -MaxTries 10 { $items.Item($N) } } catch { continue }
+            $errorItemsRead++
             try {
             Write-Host ("[{0}] {1}({2}): {3}" -f $N, $it.FileName, $it.Line, $it.Description)
             } catch { Write-Host "[$N] (unreadable)" }
@@ -1858,34 +1941,40 @@ try {
                 Emit-Event 'errorItem' ([ordered]@{ file = $f; line = $l; column = $c; description = $d; project = $pr; level = $lv })
             }
         }
-    } catch { }
+        if (-not $errorListReason -and $itemCount -eq 0) { $errorListReason = 'the error list is empty' }
+        elseif (-not $errorListReason -and $errorItemsRead -eq 0) { $errorListReason = "none of the error list's $itemCount item(s) could be read" }
+    } catch {
+        $why = ("$($_.Exception.Message)" -split '\r?\n')[0]
+        $errorListReason = "the error list could not be read ($why)"
+    }
 
     # On failure the ErrorList is usually empty over COM, so also dump the output
     # window panes (the Build/TwinCAT pane carries the real compiler messages).
     if ($failed -ne 0) {
         Write-Host "----- Output window panes -----" -ForegroundColor Magenta
-        try {
-            $ow = (Invoke-ComRetry { $dte.Windows.Item("{34E76E81-EE4A-11D0-AE2E-00A0C90FFFC3}") }).Object
-            $owPanes = @(Invoke-ComRetry -MaxTries 10 { @($ow.OutputWindowPanes) })
-            foreach ($pane in $owPanes) {
-                $txt = $null
-                try {
-                    $sel = Invoke-ComRetry -MaxTries 10 { $pane.TextDocument.Selection }
-                    Invoke-ComRetry -MaxTries 10 { $sel.StartOfDocument($false) }
-                    Invoke-ComRetry -MaxTries 10 { $sel.EndOfDocument($true) }
-                    $txt = Invoke-ComRetry -MaxTries 10 { $sel.Text }
-                } catch { Write-Host "output pane read failed: $_" -ForegroundColor Yellow; continue }
-                if ($txt -and $txt.Trim().Length -gt 0) {
-                    Write-Host "--- pane: $($pane.Name) ---" -ForegroundColor DarkMagenta
-                    Write-Host $txt
-                    # 256 KB of text per pane at most in the event; the human line above is complete.
-                    $cap = 262144
-                    Emit-Event 'outputPane' ([ordered]@{ name = [string]$pane.Name
-                        text = $(if ($txt.Length -gt $cap) { $txt.Substring(0, $cap) } else { $txt })
-                        truncated = ($txt.Length -gt $cap) })
-                }
-            }
-        } catch { Write-Host "output pane read failed: $_" -ForegroundColor Yellow }
+        # Every step checked: headless, the Output window itself can be $null (Get-OutputPaneTexts).
+        $paneRead = Get-OutputPaneTexts -Dte $dte
+        foreach ($why in $paneRead.Reasons) { Write-Host "output pane read: $why" -ForegroundColor Yellow }
+        foreach ($paneText in $paneRead.Panes) {
+            Write-Host "--- pane: $($paneText.Name) ---" -ForegroundColor DarkMagenta
+            Write-Host $paneText.Text
+            # 256 KB of text per pane at most in the event; the human line above is complete.
+            $cap = 262144
+            $txt = [string]$paneText.Text
+            Emit-Event 'outputPane' ([ordered]@{ name = [string]$paneText.Name
+                text = $(if ($txt.Length -gt $cap) { $txt.Substring(0, $cap) } else { $txt })
+                truncated = ($txt.Length -gt $cap) })
+        }
+        # What could be read of the error details, and why not: the extension says so instead of
+        # "no error list", and offers a re-run with the window shown.
+        $detailReasons = @()
+        if ($errorListReason) { $detailReasons += $errorListReason }
+        $detailReasons += @($paneRead.Reasons)
+        if ($errorItemsRead -eq 0 -and @($paneRead.Panes).Count -eq 0) {
+            Write-Host ("No error details could be read: {0}" -f ($detailReasons -join '; ')) -ForegroundColor Yellow
+        }
+        Emit-Event 'errorDetails' ([ordered]@{ errorItems = $errorItemsRead; outputPanes = @($paneRead.Panes).Count
+            reasons = [string[]]$detailReasons })
     }
 
     if ($failed -eq 0) {

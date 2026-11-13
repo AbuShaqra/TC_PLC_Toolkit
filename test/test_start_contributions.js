@@ -233,7 +233,26 @@ assert(/^\^1\.66\./.test(pkg.engines.vscode), `engine stays ^1.66 (${pkg.engines
     assert(p('timeoutMinutes') && p('timeoutMinutes').default === 30 && p('timeoutMinutes').minimum === 5 && p('timeoutMinutes').maximum === 240, 'timeoutMinutes 30 (5-240)');
     assert(p('stallMinutes') && p('stallMinutes').default === 10 && p('stallMinutes').minimum === 2 && p('stallMinutes').maximum === 60, 'stallMinutes 10 (2-60)');
     assert(!Object.keys(allProps).some(k => /targetNetId/i.test(k)), 'there is no activation-target setting');
-    const { XAE_BUILD_DEFAULTS } = require('../src/xaeBuildSettings');
+    // The platform is a dropdown (user, 2026-11-13): every platform both samples' solutions declare,
+    // the default among them; the configuration stays free text (solutions can name their own).
+    const { XAE_BUILD_DEFAULTS, XAE_PLATFORMS } = require('../src/xaeBuildSettings');
+    const plat = p('platform');
+    assert(plat && JSON.stringify(plat.enum) === JSON.stringify(XAE_PLATFORMS.map(x => x.name))
+        && JSON.stringify(plat.enumDescriptions) === JSON.stringify(XAE_PLATFORMS.map(x => x.description)),
+        'platform: enum and enumDescriptions equal XAE_PLATFORMS');
+    assert(plat && plat.enum.includes(plat.default), 'the platform default is one of the enum values');
+    {
+        const slnPlatforms = new Set();
+        for (const sln of ['TcToolkitSample/TcToolkitSample.sln', 'TcToolkitSample2/TcToolkitSample2.sln']) {
+            const f = path.join(__dirname, '..', 'sample', ...sln.split('/'));
+            if (!fs.existsSync(f)) continue;
+            const section = (/GlobalSection\(SolutionConfigurationPlatforms\)[\s\S]*?EndGlobalSection/.exec(fs.readFileSync(f, 'utf8')) || [''])[0];
+            for (const m of section.matchAll(/^\s*[^|\r\n=]+\|([^=\r\n]+?)\s*=/gm)) slnPlatforms.add(m[1]);
+        }
+        const missing = [...slnPlatforms].filter(x => !plat.enum.includes(x));
+        assert(slnPlatforms.size >= 9 && missing.length === 0, `every platform the samples' solutions declare is offered (${slnPlatforms.size}; missing: ${missing.join(', ') || 'none'})`);
+    }
+    assert(p('configuration') && p('configuration').type === 'string' && !p('configuration').enum, 'configuration stays free text (custom solution configurations)');
     assert(Object.keys(XAE_BUILD_DEFAULTS).every(k => JSON.stringify(p(k).default) === JSON.stringify(XAE_BUILD_DEFAULTS[k])), 'package.json defaults equal xaeBuildSettings defaults');
 }
 

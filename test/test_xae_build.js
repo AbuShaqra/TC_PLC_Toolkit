@@ -299,6 +299,74 @@ function run(name, o) {
         && /running PLC on that target stops/.test(c.message) && /XAE window opens during activation/.test(c.message), 'the modal text');
 }
 
+// ── B: activation onto a target that runs another platform (user run 2026-11-13) ────────────────
+{
+    const fs = require('fs');
+    const pathm = require('path');
+    const sln1 = fs.readFileSync(pathm.join(__dirname, '..', 'sample', 'TcToolkitSample', 'TcToolkitSample.sln'), 'utf8');
+    const sln2 = fs.readFileSync(pathm.join(__dirname, '..', 'sample', 'TcToolkitSample2', 'TcToolkitSample2.sln'), 'utf8');
+    const d1 = x.declaredPairs(sln1);
+    const d2 = x.declaredPairs(sln2);
+    assert(d1.length === 14 && d1.includes('Release|TwinCAT OS (x64)') && d1.includes('Debug|TwinCAT RT (x86)'), 'declaredPairs: sample 1 declares 14 pairs');
+    assert(d2.length === 8 && d2.includes('Release|TwinCAT CE7 (ARMV7)') && !d2.includes('Release|TwinCAT OS (x64)'), 'declaredPairs: sample 2 (4024) declares 8, no TwinCAT OS (x64)');
+    assert(x.declaredPairs('no section').length === 0 && x.declaredPairs('').length === 0, 'declaredPairs: no section → none');
+    const base = { configuration: 'Release', platform: 'TwinCAT RT (x64)' };
+    assert(x.activationPlatform({ ...base, targetPlatform: 'TwinCAT RT (x64)', declared: d1 }).kind === 'same', 'same platform → same');
+    assert(x.activationPlatform({ ...base, targetPlatform: 'twincat rt (X64)', declared: d1 }).kind === 'same', 'compared case-insensitively, as PowerShell -ne does');
+    assert(x.activationPlatform({ ...base, targetPlatform: null, declared: d1 }).kind === 'same', 'unknown target platform → same (the driver warns, XAE checks)');
+    const sw = x.activationPlatform({ ...base, targetPlatform: 'TwinCAT OS (x64)', declared: d1 });
+    assert(sw.kind === 'switch' && sw.platform === 'TwinCAT OS (x64)', 'another declared platform → switch');
+    const nd = x.activationPlatform({ ...base, targetPlatform: 'TwinCAT OS (x64)', declared: d2 });
+    assert(nd.kind === 'not-declared' && nd.platform === 'TwinCAT OS (x64)', 'a platform the solution does not declare → not-declared');
+    assert(x.activationPlatform({ ...base, targetPlatform: 'TwinCAT OS (x64)', declared: [] }).kind === 'unknown', 'unreadable pairs → unknown (nothing switched)');
+    assert(x.activationPlatform({ configuration: 'Debug', platform: 'X', targetPlatform: 'twincat os (x64)', declared: d1 }).platform === 'TwinCAT OS (x64)', 'the switch uses the solution\'s spelling');
+    const nt = x.platformNotDeclaredText({ netId: '198.51.100.4.1.1', name: 'UmRT_Default' }, 'TwinCAT OS (x64)', 'Release', 'Sample2');
+    assert(/^UmRT_Default \(198\.51\.100\.4\.1\.1\) runs TwinCAT OS \(x64\), but Sample2 does not declare 'Release\|TwinCAT OS \(x64\)'/.test(nt)
+        && /Add the solution platform 'TwinCAT OS \(x64\)' in XAE's Configuration Manager/.test(nt), 'the refusal names the platform to add in the Configuration Manager');
+    const c = x.confirmationText({ netId: '198.51.100.4.1.1', name: 'UmRT_Default' }, 'Sample',
+        { from: 'TwinCAT RT (x64)', to: 'TwinCAT OS (x64)', configuration: 'Release', provenance: 'read' });
+    assert(/^UmRT_Default \(198\.51\.100\.4\.1\.1\) runs TwinCAT OS \(x64\), but TwinCAT RT \(x64\) is set\. Switch to TwinCAT OS \(x64\)\?/.test(c.message)
+        && /built as Release\|TwinCAT OS \(x64\)/.test(c.message) && /running PLC on that target stops/.test(c.message) && !/inferred/.test(c.message),
+        'the switch modal asks as XAE does, and still names the target and the consequences');
+    assert(c.confirmLabel === x.SWITCH_FOR_RUN && c.rememberLabel === x.SWITCH_AND_REMEMBER && c.confirmLabel === 'Switch for this run' && c.rememberLabel === 'Switch and remember',
+        'its buttons: Switch for this run, Switch and remember');
+    assert(/inferred, not read from that runtime/.test(x.confirmationText({ netId: '1.2.3.4.1.1', name: 'RT' }, 'S', { from: 'a', to: 'b', configuration: 'Release', provenance: 'kind-inferred' }).message),
+        'an inferred target platform says so');
+    const lt = run('list-targets');
+    assert(lt.state.targets.local[1].provenance === 'read' && lt.state.targets.local[0].provenance === 'kind-inferred', 'targets keep each platform\'s provenance');
+    // The summary of gate 4's multi-line refusal is one line, with no stray punctuation.
+    const g4 = run('target-refused-platform');
+    const t = x.describeExit(2, 'exit', g4.state).title;
+    assert(g4.state.fatal.data.gate === 4 && !/,\./.test(t) && !/\s{2}/.test(t)
+        && /activation target 198\.51\.100\.4\.1\.1, which runs 'TwinCAT OS \(x64\)' \(read from that runtime's boot configuration\)\. Build it/.test(t)
+        && /to build and activate here\.$/.test(t), `gate 4's refusal reads as one line (${t})`);
+    assert(x.oneLine('a,\r\n   b') === 'a, b.' && x.oneLine('ends with comma,') === 'ends with comma.' && x.oneLine('done.') === 'done.' && x.oneLine('') === '', 'oneLine');
+}
+
+// ── C: a failed headless build with no error details (user run 2026-11-13, 4026) ────────────────
+{
+    const nd = run('errors-no-details-headless');
+    assert(nd.state.errorDetails && nd.state.errorDetails.errorItems === 0 && nd.state.errorDetails.outputPanes === 0
+        && nd.state.errorDetails.reasons.length === 2, 'errorDetails is read: counts and reasons');
+    const m = x.noErrorDetails(1, 'exit', nd.state);
+    assert(m && m.offerRerun && m.text === 'XAE returned no error details: the error list is empty; the Output window is not available (XAE window hidden).',
+        'noErrorDetails: the reasons, and a re-run offered for a headless build');
+    assert(!/will show|shows the errors/i.test(m.text), 'it never claims the visible run will show the errors');
+    assert(x.noErrorDetails(1, 'exit', run('errors-panes-only').state) === null, 'output pane text is a detail: nothing to say');
+    assert(x.noErrorDetails(1, 'exit', run('errors-errorlist').state) === null, 'error items are details: nothing to say');
+    assert(x.noErrorDetails(0, 'exit', run('build-ok-headless').state) === null && x.noErrorDetails(1, 'killed', nd.state) === null, 'only a confirmed compile failure');
+    const visible = run('errors-no-details-headless');
+    visible.state.done.ui.requested = 'visible';
+    assert(x.noErrorDetails(1, 'exit', visible.state).offerRerun === false, 'no re-run offer when the window was already shown');
+    const bare = x.createRunState();
+    x.reduce(bare, x.parseLine('@@TCTK {"v":1,"t":"buildResult","failedProjects":1}'));
+    x.reduce(bare, x.parseLine('@@TCTK {"v":1,"t":"errorDetails","errorItems":0,"outputPanes":0,"reasons":"only one"}'));
+    assert(bare.errorDetails.reasons.length === 1 && bare.errorDetails.reasons[0] === 'only one', 'a one-reason list sent as a bare string (PS 5.1) is read');
+    const none = x.createRunState();
+    x.reduce(none, x.parseLine('@@TCTK {"v":1,"t":"buildResult","failedProjects":1}'));
+    assert(x.noErrorDetails(1, 'exit', none).text === 'XAE returned no error details: the driver reported none.', 'no errorDetails event (an older driver): it says so');
+}
+
 // ── readXaeBuildSettings ────────────────────────────────────────────────────────────────────────
 {
     const d = readXaeBuildSettings(() => undefined);
@@ -307,6 +375,10 @@ function run(name, o) {
     const r = readXaeBuildSettings(k => vals[k]);
     assert(r.showWindow === true && r.configuration === 'Debug' && r.platform === 'TwinCAT RT (x64)' && r.timeoutMinutes === 240 && r.stallMinutes === 2,
         'values are trimmed, an empty platform falls back, numbers are clamped');
+    const custom = readXaeBuildSettings(k => ({ platform: 'TwinCAT OS (Custom)', configuration: 'Release_Line2' })[k]);
+    assert(custom.platform === 'TwinCAT OS (Custom)' && custom.configuration === 'Release_Line2',
+        'a platform outside the Settings dropdown (typed into settings.json) and a custom configuration are passed on as they are');
+    assert(x.buildDriverArgs({ scriptPath: 's', slnPath: 'a.sln', platform: custom.platform }).includes('TwinCAT OS (Custom)'), 'and reach -Platform');
     const bad = readXaeBuildSettings(k => ({ showWindow: 'yes', timeoutMinutes: 'x', stallMinutes: NaN })[k]);
     assert(bad.showWindow === false && bad.timeoutMinutes === 30 && bad.stallMinutes === 10, 'wrong types fall back to the defaults');
 }

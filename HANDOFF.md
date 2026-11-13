@@ -162,74 +162,69 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   (setting empty, MSYS2 only in the registry) builds with the MSYS2 g++, not "too old" — the build waits (bounded,
   7.5 s) for the registry search; *Detect g++* never writes a g++ < 7 before that search has finished.
 - **R14 Build (and Activate) through XAE: IMPLEMENTED on `claude/r14-xae`** (2026-11-12; based on the R13 branch,
-  PR #37 not yet merged; needs the user's Windows check — nothing here ever ran PowerShell or COM). Driver
-  `resources/xae/build-plc-project.ps1` = the builder `scripts/Build PLC project/build_plc_project.ps1` (b578199) +
-  opt-in `-Json` / `-ShowWindow` / `-ListTargets` / `-CancelFile` (exit 4); third hand-synced copy beside the builder
-  and `templates/`. **Headless by default** (user, 2026-11-12): `tcToolkit.xaeBuild.showWindow` (false) ⇒
-  `-ShowWindow` (SuppressUI off + window visible for the whole run, never `UserControl`); kept exceptions: activation
-  ALWAYS shows the window (invisible licence/download dialog hang), and a real version switch keeps it visible —
-  from the extension only after the user confirmed another XAE Shell (below). The channel *TC Toolkit XAE Build*
-  prints the requested mode and, after the run, the mode read back from DTE at the end of `Build($true)`
-  (`describeUiMode`). Settings section `tcToolkit.xaeBuild` (showWindow, configuration, platform, timeoutMinutes,
-  stallMinutes; live settings 13→18); commands `twincat.xaeBuild`, `twincat.xaeBuildAndActivate`,
-  `twincat.xaeShowTargets`; Compile dropdown entries + "Show the XAE window" in the editor and on the start page
-  (Windows only); Problems in `twincat-xae`. Design and rules: DEVELOPMENT.md "XAE build (R14)". Phase 1 is local
-  targets only; boot project, remote targets, single-project build, routes and a "show the hidden shell" rescue
-  are phase 2 (each needs a Windows probe first).
-  **Review fixes (2026-11-12, 28 findings):** `target` is uninterruptible (the driver disarms cancel right before
-  it); the post-grace decision first drains pending stdout; exit 1 is a compile failure only when the driver
-  confirmed it (else "interrupted", Problems kept); refused timeout/stall stops re-arm the timeout / withdraw the
-  re-run; the shell kill is image-filtered; ps1: `-LiteralPath`/`ProviderPath` for real paths, `shell-not-ours`
-  refusal (exit 2) before any DTE write when a shell is not provably ours while others run, an unidentified shell
-  is made visible before release (NOT `UserControl` — kept never-set by design), error list / panes read with
-  retries; XAE Problems entries link back (`/xaeProblem?id=` via Compile Project's URI handler); counts by
-  severity; UI: "Through XAE" (no TwinCAT label), tooltip, ArrowUp, start-page actions need a project; palette
-  `when: isWindows`, `enablement: !twincat.xaeRunning`.
-  **Verified (Linux, 2026-11-12):** `REQUIRE_FULL_SUITE=1 npm test` 123/123 FULL (new: test_xae_build,
-  test_xae_build_commands, test_xae_error_placement, test_xae_driver_contract); lint and typecheck 0; browser
-  `run.js` 93, `run_start_page.js` 118 green; `vsce ls` ships `resources/xae/build-plc-project.ps1`.
-  **Not verified here (no PowerShell on this box; downloading pwsh was refused by the permission classifier):**
-  the ps1 was never parsed — `test_xae_driver_contract.js` checks it as text only; the first Windows run is its
-  parse check. Unknowns only Windows settles: ErrorItem line semantics (pane vs whole-object line;
-  `xaeErrorPlacement` ships `lineBase: 'pane'` + "(location approximate)"), whether the ErrorList is empty
-  headless, whether a hidden shell
-  ever hangs on a dialog during the build, ConvertTo-Json shapes on PS 5.1 (one-element arrays, nulls), nested
-  `BuildProject`, the routes path.
-  **Windows runs (user, 2026-11-13):** the driver PARSES and runs under Windows PowerShell. TcToolkitSample2's
-  system project is a `.tspproj` (saved as separate files): the ps1 lookups (driver, builder, `templates/`,
-  `probe-sysmanager.ps1`; 706dfde) and `projectTcBuild` in xaeBuildCommands now accept `.tsproj` and `.tspproj`.
-  **Step 1 PASSED** (sample 1, headless, XAE Shell 64 on 4026.28): BUILD SUCCEEDED, no window, no `TcXaeShell.exe`
-  left in Task Manager. **Step 2 PASSED** (showWindow on): window visible throughout, BUILD SUCCEEDED.
-  **Settled: `$dte.MainWindow.Visible` is UNREADABLE on 4026 under SuppressUI AND with the window shown** — never
-  rely on it; `describeUiMode` now reports the requested mode + SuppressUI ("headless (SuppressUI=True; window
-  visibility not readable)", "visible as requested (SuppressUI=False; …)"); steps 1/2's expected lines below are
-  read that way. Sample 2 (saved with 3.1.4024.62) failed `progid-not-registered`: only XAE Shell 64 is installed.
-  **Missing-shell offer (user decision 2026-11-13, implemented):** the fatal carries `installed` (registered
-  `$ProgIdByBuild` ProgIds, newest first) + `build`/`projectVersion`; for a BUILD one modal ("… Build with XAE
-  Shell 64 (4026) instead? XAE may upgrade the project files.") then `-TcVersion <ProgId> -AllowVersionMismatch`
-  (pins 3.1.<build>.<project rev>, falling back to the newest installed of that build; a pin switch keeps the
-  window visible). Asked by the pre-run shell check when it can tell (setting or `detectXaeShells`), else after
-  the driver's fatal — never twice; never for activation (Run-anyway warning, fatal only explains). Builder and
-  `templates/` print the same census. DEVELOPMENT.md "XAE build (R14)". **Re-run sample 2 on Windows:** one modal,
-  then a 4026 build (does XAE upgrade the `.tspproj`? does the pin find a 4026 version?).
-  **For the Windows check** (point the existing `test-*.ps1` at the driver with `-ScriptPath
-  ..\..\resources\xae\build-plc-project.ps1`; run the new `scripts\Build PLC project\test-emit-event.ps1`):
-  1. PASSED (above);
-  2. PASSED (above);
-  3. driver by hand with `-TcVersion` forcing a switch: `ui` reason `version-switch`, the build passes;
-  4. a planted error, headless vs visible: compare `errorItem` counts (settles the empty-ErrorList question) and
-     where the Problems entries land; capture `-Json` output as fixtures **from the sample only**;
-  5. `probe-sysmanager.ps1` with and without `-Pump`;
-  6. *Build and Activate through XAE…* on a user-mode runtime: target pick, modal, window shown, then RUN;
-  7. cancel during the build: exit 4, the shell closed; cancel during activation is refused;
-  8. *Show Activation Targets* lists the runtimes; off Windows the commands refuse and the entries are hidden;
-  9. with a developer XAE Shell already open: a build either drives a NEW shell (census finds it) or refuses with
-     `shell-not-ours` and leaves the open IDE untouched; a solution under a folder with `[ ]` in its name, and one on
-     a UNC share, both build.
-  **Open questions (defaults in place):** key `tcToolkit.xaeBuild.showWindow` vs `tcToolkit.xae.showWindow`
-  (default: xaeBuild, one section); hide the window during activation too (default no, no switch); hide after a
-  version switch (default keep visible; readback reports `versionSwitchKeptVisible`); boot project / remote
-  targets now or phase 2 (default phase 2); approximate placement before fixtures (default ship it, marked).
+  PR #37 not yet merged; nothing here ever ran PowerShell or COM — every ps1 change is checked as text only, the
+  user's Windows run is its parse check). Driver `resources/xae/build-plc-project.ps1` = the builder
+  `scripts/Build PLC project/build_plc_project.ps1` (b578199) + opt-in `-Json`/`-ShowWindow`/`-ListTargets`/
+  `-CancelFile`; hand-synced with the builder and `templates/`. Headless by default (`tcToolkit.xaeBuild.showWindow`
+  false); activation ALWAYS shows the window; a version switch keeps it visible. Commands `twincat.xaeBuild`,
+  `twincat.xaeBuildAndActivate`, `twincat.xaeShowTargets`; channel *TC Toolkit XAE Build*; Problems in `twincat-xae`.
+  Design, protocol, cancel/kill rules: DEVELOPMENT.md "XAE build (R14)" (the 28 review fixes of 2026-11-12 are in
+  git history). Phase 2 (each needs a Windows probe first): boot project, remote targets, single-project build,
+  routes, attaching to a hidden shell.
+  **Windows runs (user, 2026-11-13, XAE Shell 64 on 4026.28):** the driver parses and runs under Windows PowerShell.
+  Step 1 PASSED (sample 1 headless: BUILD SUCCEEDED, no window, no `TcXaeShell.exe` left); step 2 PASSED (window
+  shown throughout). Settled: `$dte.MainWindow.Visible` is UNREADABLE on 4026 shown or hidden (`describeUiMode`
+  reports the requested mode + SuppressUI). Sample 2's system project is a `.tspproj` (lookups fixed, 706dfde).
+  Sample 2 (3.1.4024.62) on a 4026-only machine → `progid-not-registered` → one modal offering XAE Shell 64, then
+  `-TcVersion <ProgId> -AllowVersionMismatch` (b6d831d; DEVELOPMENT "The project's XAE Shell is missing").
+  **Three changes from that day's check (2026-11-13, this commit; Linux-verified only):**
+  - **A. Platform dropdown:** `tcToolkit.xaeBuild.platform` has an `enum` = `XAE_PLATFORMS` (src/xaeBuildSettings.js:
+    the 4026 sample's seven + `TwinCAT CE7 (ARMV7)`, `TwinCAT OS (ARMT2)` from the 4024 sample); a settings.json value
+    outside it still runs (driver `config-not-declared` + pick). `configuration` left free text (VS Code has no
+    enum that accepts free text; solutions name their own). Start page shows `cfg | platform` as text only; a picker
+    there was NOT built (needs the solution's own list; the page is not tied to one solution).
+  - **B. Activation picks the target's platform** (user run: RT (x64) set, UmRT_Default runs OS (x64) → gate 4
+    refused, and the summary ended "…1.1,." — `firstLine` cut gate 4's wrapped message; now `oneLine` joins it).
+    `-ListTargets` and gate 4 read the same `Get-LocalRuntimeRecords`; `activationPlatform` compares
+    case-insensitively against the `.sln` pairs (`declaredPairs`). Declared → the ONE activation modal asks "<target>
+    (<NetId>) runs <P>, but <set> is set. Switch to <P>?" with *Switch for this run* / *Switch and remember*
+    (user refinement: XAE asks the same on download; remember writes `tcToolkit.xaeBuild.platform` once, scope =
+    workspace folder > workspace > user, where the value comes from) / Cancel. Not declared → refused before XAE
+    starts, naming the platform to add in XAE's Configuration Manager. `.sln` pairs unreadable → nothing switched
+    (my call; gate 4's refusal stands). An inferred target platform is switched too (gate 4 refuses on it as well);
+    the modal says it is inferred.
+  - **C. Headless errors** (user run: sample 1 + planted error, headless: "Projects failed: 2", no `errorItem`,
+    "output pane read failed: … NULL …" (PS: method on a null-valued expression), extension "XAE reported no error
+    list"). **Answered for 4026 headless: the error list as the driver read it was empty AND the Output window
+    route gave $null.** Caveat found: the driver read `ErrorItems` as `Invoke-ComRetry`'s result, whose `return`
+    can enumerate a COM collection (a 1-item list → the bare item → `.Item(1)` fails silently, no event); the builder
+    assigns it directly. Now read by plain assignment, retried by hand — so "empty headless" is NOT yet proven
+    independent of that read path. New `Get-OutputPaneTexts` (same text in driver, builder, `templates/`):
+    `ToolWindows.OutputWindow` first, then `Windows.Item(...).Object`, every null → one-line reason. New event
+    `errorDetails {errorItems, outputPanes, reasons[]}`. No items + no pane text after a confirmed compile failure →
+    "XAE returned no error details: <reasons>." and, headless only, the button *Build again with the window shown*
+    (one re-run with `-ShowWindow`, setting never written, no claim the visible run shows errors).
+  **Verified (Linux, 2026-11-13):** `REQUIRE_FULL_SUITE=1 npm test` 123/123 FULL; lint 0; typecheck 0. Webview and
+  start page unchanged (browser harnesses not re-run).
+  **For the Windows check** (point the `test-*.ps1` at the driver with `-ScriptPath
+  ..\..\resources\xae\build-plc-project.ps1`):
+  1. sample 1 + planted error, **window shown** (the user's next run): `errorItem` count, `outputPane` text, the
+     `errorDetails` reasons; then the same headless again with this commit (does plain assignment change the item
+     count? are the reasons one line each, no raw PS null message?) and the *Build again with the window shown*
+     button; capture `-Json` output as fixtures **from the sample only**; where the Problems entries land;
+  2. *Build and Activate* onto UmRT_Default with platform RT (x64) set: one modal asking to switch; *Switch for this
+     run* builds OS (x64) and leaves the setting; *Switch and remember* writes it; RUN reached;
+  3. sample 2 (no OS (x64) declared) onto UmRT_Default: refused before XAE starts, naming the platform to add;
+  4. Settings UI: the platform shows as a dropdown with descriptions; a custom string in settings.json still runs;
+  5. re-run sample 2 on 4026: one shell modal, then a build (does XAE upgrade the `.tspproj`?);
+  6. `-TcVersion` forcing a switch: `ui` reason `version-switch`; 7. `probe-sysmanager.ps1` with/without `-Pump`;
+  8. cancel during build (exit 4, shell closed) and during activation (refused); 9. *Show Activation Targets*;
+  off Windows the commands refuse; 10. with a developer XAE Shell open: a new shell or `shell-not-ours`; a
+  solution under `Line [2]` and one on a UNC share build.
+  **Open questions (defaults in place):** settings key section `tcToolkit.xaeBuild` (one section); hide the window
+  during activation (no); hide after a version switch (keep visible); boot project / remote targets (phase 2);
+  approximate placement before fixtures (ship it, marked `lineBase: 'pane'`); ErrorItem line semantics, PS 5.1
+  ConvertTo-Json shapes (one-element arrays), nested `BuildProject`, whether a hidden shell ever hangs on a dialog.
 - **R3.2 Compile Project: MERGED** into `dev` as PR #32 (`28f24f1`, 2026-11-10 22:22 UTC).
 - **R3.3–R9 MERGED** into `dev` as PR #33 (`6424968`, 2026-11-11 09:30 UTC) after the user's Windows checks
   (dev-host green after `npm ci`; manual checks all passed). Details per item are in git history and ROADMAP "Done".
