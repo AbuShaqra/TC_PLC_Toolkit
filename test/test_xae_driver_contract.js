@@ -167,6 +167,19 @@ if (fs.existsSync(BUILDER)) {
         'the error list and output panes are read with retries');
 }
 
+// ── The system project: .tsproj, or .tspproj (a TwinCAT project saved as separate files) ─────────
+// User report 2026-11-13: TcToolkitSample2 has only a .tspproj, and the driver stopped with "no .tsproj".
+{
+    const lookups = ps1.match(/Get-ChildItem -LiteralPath [^\n]*-Recurse[^\n]*\r?\n[^\n]*/g) || [];
+    const sysLookups = lookups.filter(l => /tsproj/.test(l));
+    assert(sysLookups.length === 2 && sysLookups.every(l => /'\.tsproj'/.test(l) && /'\.tspproj'/.test(l)),
+        `both system-project lookups accept .tsproj and .tspproj (${sysLookups.length})`);
+    assert(!/-Filter \*\.tsproj\b/.test(ps1), 'no lookup filters on *.tsproj alone');
+    const tsp = fs.readdirSync(path.join(REPO, 'sample', 'TcToolkitSample2', 'TcToolkitSample2')).filter(f => f.endsWith('.tspproj'));
+    const tspText = fs.readFileSync(path.join(REPO, 'sample', 'TcToolkitSample2', 'TcToolkitSample2', tsp[0]), 'utf8');
+    assert(tsp.length === 1 && /TcVersion="(3\.1\.(\d+)\.\d+)"/.test(tspText), 'sample 2 has a .tspproj the driver\'s TcVersion pattern reads');
+}
+
 // ── Packaging ───────────────────────────────────────────────────────────────────────────────────
 {
     const ignore = fs.readFileSync(path.join(REPO, '.vscodeignore'), 'utf8').split(/\r?\n/).map(l => l.trim()).filter(l => l && !l.startsWith('#'));

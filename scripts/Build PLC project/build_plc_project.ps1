@@ -1144,10 +1144,11 @@ $TcAdsStateNames = @{ 0='INVALID'; 1='IDLE'; 2='RESET'; 3='INIT'; 4='START'; 5='
 # repo-wide search sorted by name would happily read the version out of a different project and
 # then build this one with it.
 $slnDir = Split-Path -Parent $SlnPath
-$tsproj = Get-ChildItem -Path $slnDir -Recurse -Filter *.tsproj -File -ErrorAction SilentlyContinue |
+$tsproj = Get-ChildItem -Path $slnDir -Recurse -File -ErrorAction SilentlyContinue |
+          Where-Object { $_.Extension -eq '.tsproj' -or $_.Extension -eq '.tspproj' } |
           Sort-Object FullName | Select-Object -First 1
 if (-not $tsproj) {
-    Write-Host "FATAL: no .tsproj found under $slnDir to read TcVersion from." -ForegroundColor Red
+    Write-Host "FATAL: no .tsproj or .tspproj found under $slnDir to read TcVersion from." -ForegroundColor Red
     Write-Host "It is the only thing -TcVersion can be checked against, so it cannot be substituted." -ForegroundColor Red
     exit 2
 }

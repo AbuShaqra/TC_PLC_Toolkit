@@ -1289,7 +1289,8 @@ if ($ListTargets) {
     $projectNetId = $null
     if ($SlnPath) {
         # -LiteralPath wherever a real path goes: a folder named 'Line [2]' is not a wildcard.
-        $tsprojForList = Get-ChildItem -LiteralPath (Split-Path -Parent $SlnPath) -Recurse -Filter *.tsproj -File -ErrorAction SilentlyContinue |
+        $tsprojForList = Get-ChildItem -LiteralPath (Split-Path -Parent $SlnPath) -Recurse -File -ErrorAction SilentlyContinue |
+          Where-Object { $_.Extension -eq '.tsproj' -or $_.Extension -eq '.tspproj' } |
                          Sort-Object FullName | Select-Object -First 1
         if ($tsprojForList) {
             $mT = Select-String -LiteralPath $tsprojForList.FullName -Pattern 'TargetNetId="([0-9.]+)"' -ErrorAction SilentlyContinue | Select-Object -First 1
@@ -1319,12 +1320,13 @@ if ($ListTargets) {
 # repo-wide search sorted by name would happily read the version out of a different project and
 # then build this one with it.
 $slnDir = Split-Path -Parent $SlnPath
-$tsproj = Get-ChildItem -LiteralPath $slnDir -Recurse -Filter *.tsproj -File -ErrorAction SilentlyContinue |
+$tsproj = Get-ChildItem -LiteralPath $slnDir -Recurse -File -ErrorAction SilentlyContinue |
+          Where-Object { $_.Extension -eq '.tsproj' -or $_.Extension -eq '.tspproj' } |
           Sort-Object FullName | Select-Object -First 1
 if (-not $tsproj) {
-    Write-Host "FATAL: no .tsproj found under $slnDir to read TcVersion from." -ForegroundColor Red
+    Write-Host "FATAL: no .tsproj or .tspproj found under $slnDir to read TcVersion from." -ForegroundColor Red
     Write-Host "It is the only thing -TcVersion can be checked against, so it cannot be substituted." -ForegroundColor Red
-    Emit-Fatal 'no-tsproj' "no .tsproj found under $slnDir to read TcVersion from."
+    Emit-Fatal 'no-tsproj' "no .tsproj or .tspproj found under $slnDir to read TcVersion from."
     Exit-Run 2
 }
 $match = Select-String -LiteralPath $tsproj.FullName -Pattern 'TcVersion="(3\.1\.(\d+)\.\d+)"' | Select-Object -First 1

@@ -195,6 +195,11 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   headless, whether `$dte.MainWindow.Visible` reads back truthfully under SuppressUI, whether a hidden shell
   ever hangs on a dialog during the build, ConvertTo-Json shapes on PS 5.1 (one-element arrays, nulls), nested
   `BuildProject`, the routes path.
+  **First Windows run (user, 2026-11-13):** the driver PARSES and runs under Windows PowerShell (headless requested,
+  readback "UI state unreadable" because it stopped before DTE). It stopped on TcToolkitSample2 with "no .tsproj found":
+  that solution's system project is a `.tspproj` (TwinCAT project saved as separate files). Fixed in the driver, the
+  builder, `templates/` and `probe-sysmanager.ps1`: the lookup accepts `.tsproj` and `.tspproj`; pinned by
+  `test_xae_driver_contract.js`. Awaiting the re-run.
   **For the Windows check** (point the existing `test-*.ps1` at the driver with `-ScriptPath
   ..\..\resources\xae\build-plc-project.ps1`; run the new `scripts\Build PLC project\test-emit-event.ps1`):
   1. headless build of the sample succeeds with **no visible window**; channel line says `hidden

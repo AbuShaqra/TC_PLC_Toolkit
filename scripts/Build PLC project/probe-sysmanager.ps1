@@ -93,7 +93,8 @@ if (-not $Solution) {
 }
 
 $slnDir = Split-Path -Parent $SlnPath
-$tsproj = Get-ChildItem -Path $slnDir -Recurse -Filter *.tsproj -File -ErrorAction SilentlyContinue |
+$tsproj = Get-ChildItem -Path $slnDir -Recurse -File -ErrorAction SilentlyContinue |
+          Where-Object { $_.Extension -eq '.tsproj' -or $_.Extension -eq '.tspproj' } |
           Sort-Object FullName | Select-Object -First 1
 if (-not $tsproj) { Write-Host "FATAL: no .tsproj under $slnDir" -ForegroundColor Red; exit 2 }
 $m = Select-String -Path $tsproj.FullName -Pattern 'TcVersion="(3\.1\.(\d+)\.\d+)"' | Select-Object -First 1
