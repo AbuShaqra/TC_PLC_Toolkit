@@ -145,7 +145,7 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
       <div class="eyebrow">VS Code extension · twincat-plc-toolkit</div>
       <h1>TC Toolkit Roadmap</h1>
       <div class="meta">
-        <span>Updated <b>2026-11-12</b> · fork #140–#143 merged, S5 started (lane 1), release M after S10 and S5; S10 started as fork lane 2; S4 done, release L at <code>3acc3f6</code>; R13 open as PR #37, awaiting your check; fork CLA check only on PRs into main; R13 C++ generation + g++ check started; R14 build and run through XAE, R15 ADS monitoring next; g++ simulation to the Backlog (your calls); R12 merged (PR #36) after your Windows checks; release L after S4 (your call); S4: LTIME (#131) and LDATE/LTOD/LDT (#132) merged; Table 36 date functions and the DT_TO_DATE fix added (your calls); S4 started; outside reads of VAR/VAR_INPUT stay refused (your call); S3b done (fork F4 #130); release K (<code>c1faca7</code>); releases H, I, J and K</span>
+        <span>Updated <b>2026-11-13</b> · fork #150 merged (RETURN nested in test files); S5 done (fork #149, <code>45d4949</code>); S10 operators and BIT and lane 1's strict follow-ups and S6 fixes back with the lanes for review findings; S10: fork #144–#148 merged (<code>1f96d7d</code>); S6 started (lane 1); lane 1 S5 + strict follow-ups fixed, in recheck; R15 decision brief ready; R14 built on claude/r14-xae, headless by default (your script as the base), awaiting your Windows check; lane 1 and lane 2 fixing review findings; R14 started (branch claude/r14-xae, on top of R13; overnight, your instruction to keep going); lane 2 fixes combined and in review; S5 built, strict follow-ups decided (your calls); fork #140–#143 merged, S5 started (lane 1), release M after S10 and S5; S10 started as fork lane 2; S4 done, release L at <code>3acc3f6</code>; R13 open as PR #37, awaiting your check; fork CLA check only on PRs into main; R13 C++ generation + g++ check started; R14 build and run through XAE, R15 ADS monitoring next; g++ simulation to the Backlog (your calls); R12 merged (PR #36) after your Windows checks; release L after S4 (your call); S4: LTIME (#131) and LDATE/LTOD/LDT (#132) merged; Table 36 date functions and the DT_TO_DATE fix added (your calls); S4 started; outside reads of VAR/VAR_INPUT stay refused (your call); S3b done (fork F4 #130); release K (<code>c1faca7</code>); releases H, I, J and K</span>
         <span>Release <b>v0.10.1</b></span>
         <span>Re-measured <b>Nov 11</b></span>
         <span>Toolkit next <b>PR #36 Windows check</b></span>
@@ -395,7 +395,7 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
 
     <details class="card" id="r14">
       <summary>
-        <div class="card-top"><span>#14</span><span class="id">R14</span><span class="pill planned">Planned · after R13</span><span class="chev" aria-hidden="true">›</span></div>
+        <div class="card-top"><span>#14</span><span class="id">R14</span><span class="pill progress">In progress · since Nov 12</span><span class="chev" aria-hidden="true">›</span></div>
         <div class="card-title">Build and run through XAE</div>
         <div class="bar" aria-hidden="true"><span style="left:41.67%;width:8.33%"></span></div>
         <div class="card-foot"><span>3 d → ~2 h</span><span>Nov 14</span></div>
@@ -403,18 +403,21 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
       <div class="body">
         <div class="block wide"><h4>Goal</h4><p>Run your real project, with its real libraries, on the real TwinCAT runtime from the toolkit. The toolkit drives XAE's Automation Interface (COM: <code>ITcSysManager</code>, <code>ITcPlcProject</code>, from PowerShell as Update Library Definitions already does) to build the PLC project with XAE's own compiler, pick the target, activate the configuration, restart TwinCAT and create or start the boot project. Local runtime, a remote target, or a trial licence.</p></div>
         <div class="block wide settled"><h4>Decided Nov 12 (your call)</h4><p>The XAE route comes before any g++ simulation: vendor libraries (Tc2_*, Tc3_*) ship compiled, and only their signatures are available, so a g++ program cannot run them. The simulation program moved to the Backlog.</p></div>
+        <div class="block wide"><h4>Started Nov 12, 22:30 UTC</h4><p>Begun overnight on its own branch, <code>claude/r14-xae</code>, on top of R13 (your instruction: keep going down the roadmap). The Automation Interface side cannot run on the build machine, so it is built against a stand-in and needs your Windows check with XAE before it merges. Activating a configuration or restarting TwinCAT always asks you first, naming the target.</p></div>
+        <div class="block wide"><h4>Built, awaiting your Windows check (Nov 12, 23:40 UTC)</h4><p>On <code>claude/r14-xae</code> (<code>e7951d3</code>, pushed; no PR yet). Built from your <code>build_plc_project.ps1</code>: an adapted copy ships in the extension with machine-readable output, a cancel file, a target list and a <b>headless default</b>. Setting <code>tcToolkit.xaeBuild.showWindow</code> (off) keeps the XAE window visible; activation always shows it, because a licence dialog under a hidden UI hangs. Each run reports which mode actually ran. Commands <i>Build through XAE</i> and <i>Build and Activate through XAE…</i> (local targets; remote targets and the boot project are phase 2), in the Compile dropdown and on the start page; XAE errors land in Problems. Three designs judged, 28 review findings fixed; 123/123 suites FULL, lint and typecheck clean, browser harnesses green. Not testable here (no XAE, no PowerShell): the script's first parse is your run. A shell you already have open is refused rather than reused.</p></div>
       </div>
     </details>
 
     <details class="card" id="r15">
       <summary>
-        <div class="card-top"><span>#15</span><span class="id">R15</span><span class="pill planned">Planned · after R14</span><span class="chev" aria-hidden="true">›</span></div>
+        <div class="card-top"><span>#15</span><span class="id">R15</span><span class="pill planned">Planned · decision brief ready</span><span class="chev" aria-hidden="true">›</span></div>
         <div class="card-title">ADS online monitoring</div>
         <div class="bar" aria-hidden="true"><span style="left:58.33%;width:8.33%"></span></div>
         <div class="card-foot"><span>3 d → ~2 h</span><span>Nov 16</span></div>
       </summary>
       <div class="body">
         <div class="block wide"><h4>Goal</h4><p>Watch and force variables of the running PLC from the editor over ADS (TCP 48898, AMS Net ID, a route on the target). Which ADS client the extension uses is open; an MIT-licensed one fits the project's licence.</p></div>
+        <div class="block wide"><h4>Decision brief ready (Nov 12)</h4><p>Researched overnight: <code>docs/r15-ads-decision.md</code>. It recommends the npm library <code>ads-client</code> 2.2.0 (MIT, pure JavaScript), pinned; <b>write only</b> plus a "forces active" indicator, because documented ADS has no force service; values shown inline in the panes; the local TwinCAT router first. Needs your decisions D1–D9 and a Windows check: on 3.1.4026 with the user-mode runtime the library may not reach the local router.</p></div>
       </div>
     </details>
 
@@ -533,20 +536,21 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
 
     <details class="card" id="s5">
       <summary>
-        <div class="card-top"><span>#6</span><span class="id">S5</span><span class="pill progress">In progress · lane 1 · since Nov 12</span><span class="chev" aria-hidden="true">›</span></div>
+        <div class="card-top"><span>#6</span><span class="id">S5</span><span class="pill done">Done · fork #149 · Nov 13</span><span class="chev" aria-hidden="true">›</span></div>
         <div class="card-title">Profile-handling defects</div>
         <div class="bar" aria-hidden="true"><span style="left:59.17%;width:1.67%"></span></div>
         <div class="card-foot"><span>1 d → ~30 min</span><span>Nov 16</span></div>
       </summary>
       <div class="body">
         <div class="block wide"><h4>Scope</h4><p>The profile defects listed in the S2 plan's section 1d.</p></div>
+        <div class="block wide"><h4>Result</h4><p>Merged Nov 13, 05:30 UTC, as fork #149 (<code>45d4949</code>). A profile may not take the id <code>iec-3</code>; an id in two files is an error naming both; an unselected broken profile is skipped with a warning; one file reached twice loads once; several files and no <code>--dialect</code> warn (your call). Generated output is unchanged.</p></div>
         <div class="block wide"><h4>How it was estimated</h4><p>My sizing from the item list, not measured. Session time uses the Nov 9 velocity (about 30 min per planned day for fork work, about 45 min for toolkit work); dates assume about 4 hours of session per working day.</p></div>
       </div>
     </details>
 
     <details class="card" id="s6">
       <summary>
-        <div class="card-top"><span>#7</span><span class="id">S6</span><span class="pill planned">Planned</span><span class="chev" aria-hidden="true">›</span></div>
+        <div class="card-top"><span>#7</span><span class="id">S6</span><span class="pill progress">In progress · lane 1 · since Nov 13</span><span class="chev" aria-hidden="true">›</span></div>
         <div class="card-title">Runtime safety defects</div>
         <div class="bar" aria-hidden="true"><span style="left:60.83%;width:12.50%"></span></div>
         <div class="card-foot"><span>7 d → ~3.5 h</span><span>Nov 16 – 17</span></div>
@@ -554,6 +558,7 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
       <div class="body">
         <div class="block wide"><h4>Scope</h4><p>Fourteen runtime defects from the S2 plan's section 1d: division and MOD by zero, out-of-range indexes, SEL evaluating both inputs, VAR_TEMP keeping its value, FB_exit never called, a WSTRING conversion crash, wrong to-string forms, inflated SIZEOF and pointer stride, no subrange check, 32-bit intermediates, and silent truncation.</p></div>
         <div class="block wide"><h4>How it was estimated</h4><p>My sizing from the item list, not measured. Session time uses the Nov 9 velocity (about 30 min per planned day for fork work, about 45 min for toolkit work); dates assume about 4 hours of session per working day.</p></div>
+        <div class="block wide"><h4>Started Nov 13, 00:10 UTC</h4><p>Lane 1, overnight (your instruction to keep going). Each item is reproduced with a g++-built program first. Plain bugs with one IEC answer are fixed; policy choices (what a division by zero or an out-of-range index does at run time, and whether checks cost time in every build) come to you as cards with a recommended default, and are not built until you answer.</p></div>
       </div>
     </details>
 
@@ -613,6 +618,7 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
         <div class="block"><h4>Not planned yet</h4><p>Multicore operators, the vector type, quoted identifiers, persistent instance paths, a few implicit names. They stay refused until real code needs them.</p></div>
         <div class="block"><h4>Library types</h4><p>HRESULT, OTCID and VERSION come from a vendor library, not the compiler.</p></div>
         <div class="block wide"><h4>Decided Nov 11 (your call)</h4><p><code>TYPE name STRUCT</code> without the colon (<code>type_colon_optional</code>) is also on under <code>twincat3</code>. <code>RETURN (cond);</code> (<code>conditional_return</code>) stays CODESYS-only until a real TwinCAT export shows it.</p></div>
+        <div class="block wide settled"><h4>First five merged (Nov 13, 03:10 UTC)</h4><p>Fork #144–#148, <code>1f96d7d</code>: <code>__ISVALIDREF</code>/<code>XSIZEOF</code>, <code>type_colon_optional</code>/<code>conditional_return</code>, <code>platform_types</code>, the implicit-parameter hint, <code>ADR(x)</code> initial values. Development equals the gated tree (6074 tests). Left in S10: the other vendor operators and BIT as packed bitfields. Open for you: should a body <code>udint := ADR(x)</code>, which truncates the address today, be refused too?</p></div>
       </div>
     </details>
 
@@ -648,6 +654,9 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
         <div class="block wide"><p>The former backlog was scheduled as R6 to R10 on Nov 9. R6 to R9 merged in PR #33 on Nov 11, and R10 runs only on a trigger. What remains has no estimate on purpose:</p>
           <ul>
             <li><b>Fork follow-ups after S4, merged Nov 12</b> (#140–#143, for release M): property reads through a global FB instance (fixes the first sample's g++ error), <code>--strict</code> per Figure 12 for bit strings (your call; a narrowed bitwise result now warns, you kept it), one-pass literal diagnostics, the threaded-warning scope. Next on lane 1 after S5: the remaining <code>--strict</code> follow-ups. Release M waits for S10 and S5 (your call).</li>
+            <li><b>Test files: nested RETURN, merged Nov 13</b> (#150, <code>43ff7a9</code>): a RETURN nested in a TEST, SETUP or TEARDOWN now builds and ends the right block. Its review found two older test-runner bugs, now with lane 1: an ASSERT nested in an IF or loop is dropped, so a failing test passes, and a TEARDOWN without SETUP never runs.</li>
+            <li><b>S5 profile handling, merged Nov 13</b> (#149, <code>45d4949</code>, for release M): a profile may not pose as <code>iec-3</code>, duplicate ids are an error, a broken unselected profile is skipped with a warning, one file reached twice loads once.</li>
+            <li><b>S10, first five branches, merged Nov 13</b> (#144–#148, <code>1f96d7d</code>, for release M): <code>__ISVALIDREF</code> and <code>XSIZEOF</code>, <code>TYPE … STRUCT</code> without the colon and <code>RETURN (cond);</code>, the platform types (XINT, UXINT, XWORD, PVOID), the implicit-parameter hint, and <code>ADR(x)</code> initial values of address-width integers. Still to come in S10: the other vendor operators and BIT as packed bitfields.</li>
             <li><b>Re-vendor the compiler at release L</b> into the toolkit once R13 merges, so LTIME and CHAR no longer block C++ generation for library uses.</li>
             <li><b>Simulation program</b> (moved from R14, your call, Nov 12): the generated C++ built with g++ into a standalone program that runs your PLC code cyclically on the PC. Good for your own logic and unit tests; it cannot run vendor-library blocks, whose code isn't available.</li>
             <li><b>ADS coupling of the simulation program</b> (your call, Nov 12; after the simulation program): exchange variables between the R14 simulation program and a running TwinCAT PLC over ADS (TCP 48898, AMS Net ID, a route on the target), for example to feed simulated I/O. Code cannot be loaded into the TwinCAT runtime itself; only XAE builds and activates what it runs.</li>
@@ -732,7 +741,7 @@ var PLAN = [
   { lane: 'TC Toolkit', num: 11, id: 'R3.5', card: 'r3-5', name: 'Compiler at release I, defines', est: '— → ~6.8 h actual', start: '2026-11-11', end: '2026-11-11', machine: true, status: 'done', actualStart: '2026-11-11T17:05:00Z', actualEnd: '2026-11-11T23:55:00Z' },
   { lane: 'TC Toolkit', num: 12, id: 'R12', card: 'r12', name: '{IF}-aware diagnostics', est: '1 d → ~45 min', start: '2026-11-12', end: '2026-11-12', days: 0.5, offset: 0.5, status: 'done', actualStart: '2026-11-11T23:57:00Z', actualEnd: '2026-11-12T10:56:00Z' },
   { lane: 'TC Toolkit', num: 13, id: 'R13', card: 'r13', name: 'C++ generation + g++ check', est: '3 d → ~2.5 h', start: '2026-11-12', end: '2026-11-13', status: 'progress', actualStart: '2026-11-12T11:30:00Z' },
-  { lane: 'TC Toolkit', num: 14, id: 'R14', card: 'r14', name: 'Build + run through XAE', est: '3 d → ~2 h', start: '2026-11-14', end: '2026-11-14', days: 0.6, offset: 0 },
+  { lane: 'TC Toolkit', num: 14, id: 'R14', card: 'r14', name: 'Build + run through XAE', est: '3 d → ~2 h', start: '2026-11-12', end: '2026-11-14', status: 'progress', actualStart: '2026-11-12T22:30:00Z' },
   { lane: 'TC Toolkit', num: 15, id: 'R15', card: 'r15', name: 'ADS online monitoring', est: '3 d → ~2 h', start: '2026-11-16', end: '2026-11-16', days: 0.6, offset: 0 },
   { lane: 'TC Toolkit', num: 16, id: 'R11', card: 'r11', name: 'Marketplace publishing', est: '0.5 d → ~1 h', start: '2026-11-20', end: '2026-11-20', days: 0.3, offset: 0, machine: true },
   { lane: 'STruC++ fork',   num: 1, id: 'S2',   card: 's2',   name: 'Fork compiler gaps',     est: '27.5 d → ~11.2 h', start: '2026-11-09', end: '2026-11-09', status: 'done', actualStart: '2026-11-09T12:04:17Z', actualEnd: '2026-11-09T23:16:55Z' },
@@ -740,8 +749,8 @@ var PLAN = [
   { lane: 'STruC++ fork',   num: 3, id: 'S3b',  card: 's3b',  name: 'S2 follow-ups',          est: '7 d → ~3.5 h', start: '2026-11-10', end: '2026-11-12', days: 1.2, offset: 0.3, status: 'done', actualStart: '2026-11-10T00:14:00Z', actualEnd: '2026-11-12T00:20:00Z' },
   { lane: 'STruC++ fork',   num: 4, id: 'S11',  card: 's11',  name: 'Conditional pragmas',    est: '2 d → ~3 h actual',  start: '2026-11-11', end: '2026-11-11', days: 0.4, offset: 0.2, status: 'done', actualStart: '2026-11-11T13:10:00Z', actualEnd: '2026-11-11T16:05:00Z' },
   { lane: 'STruC++ fork',   num: 5, id: 'S4',   card: 's4',   name: 'Ed. 3 refusals',         est: '8.5 d → ~11 h actual', start: '2026-11-12', end: '2026-11-12', status: 'done', actualStart: '2026-11-12T05:45:00Z', actualEnd: '2026-11-12T16:53:00Z' },
-  { lane: 'STruC++ fork',   num: 6, id: 'S5',   card: 's5',   name: 'Profile handling',       est: '1 d → ~30 min', start: '2026-11-12', end: '2026-11-13', status: 'progress', actualStart: '2026-11-12T20:10:00Z' },
-  { lane: 'STruC++ fork',   num: 7, id: 'S6',   card: 's6',   name: 'Runtime safety',         est: '7 d → ~3.5 h', start: '2026-11-16', end: '2026-11-17', days: 1.5, offset: 0.3 },
+  { lane: 'STruC++ fork',   num: 6, id: 'S5',   card: 's5',   name: 'Profile handling',       est: '1 d → ~30 min', start: '2026-11-12', end: '2026-11-13', status: 'done', actualStart: '2026-11-12T20:10:00Z', actualEnd: '2026-11-13T05:30:00Z' },
+  { lane: 'STruC++ fork',   num: 7, id: 'S6',   card: 's6',   name: 'Runtime safety',         est: '7 d → ~3.5 h', start: '2026-11-13', end: '2026-11-14', status: 'progress', actualStart: '2026-11-13T00:10:00Z' },
   { lane: 'STruC++ fork',   num: 8, id: 'S7',   card: 's7',   name: 'iec-3 audit (decision)', est: '6 d → ~3 h',  start: '2026-11-17', end: '2026-11-18', days: 1.3, offset: 0.8 },
   { lane: 'STruC++ fork',   num: 9, id: 'S8',   card: 's8',   name: 'Default → iec-3',        est: '0.5 d → ~20 min', start: '2026-11-18', end: '2026-11-18', days: 0.2, offset: 0.8 },
   { lane: 'STruC++ fork',   num: 10, id: 'S9',   card: 's9',   name: 'Raw memory layout',      est: '4 d → ~2.5 h',  start: '2026-11-10', end: '2026-11-10', days: 1.0, offset: 0, status: 'done', actualStart: '2026-11-10T09:40:00Z', actualEnd: '2026-11-10T12:07:39Z' },

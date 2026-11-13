@@ -65,7 +65,7 @@ const settle = () => new Promise(r => setTimeout(r, 5));
     // The set value is checked the way the build checks it (src/gpp.js checkConfiguredGpp), on a faked machine.
     const BIN = path.join(ROOT, 'bin');
     const machine = {
-        platform: 'linux', env: { PATH: BIN },
+        platform: process.platform, env: { PATH: BIN },
         exists: (p) => { try { return fs.statSync(p).isFile(); } catch (e) { return false; } },
         isDir: (p) => { try { return fs.statSync(p).isDirectory(); } catch (e) { return false; } },
         version: (p) => machineVersion(p)
@@ -74,7 +74,8 @@ const settle = () => new Promise(r => setTimeout(r, 5));
     let machineVersion = (_p) => null;
     fs.mkdirSync(BIN, { recursive: true });
     fs.writeFileSync(path.join(BIN, 'g++'), '');
-    const gpp = registerGppCommands(context, { detect: () => hit, machine });
+    if (process.platform === 'win32') fs.writeFileSync(path.join(BIN, 'g++.exe'), '');
+    const gpp = registerGppCommands(context, { detect: () => hit, machine, msys2Root: () => null, ready: async () => {}, registrySettled: () => true });
     assert(handlers.has('twincat.detectGpp'), 'REGISTER: twincat.detectGpp');
 
     let r = await gpp.autoFill();
@@ -204,7 +205,9 @@ const settle = () => new Promise(r => setTimeout(r, 5));
     registerGppCommands(context, {
         detect: () => { order.push('detect'); return hit2; }, machine,
         msys2Root: () => { order.push('msys2'); return msysRoot; },
-        ready: () => { order.push('ready'); return readyGate; }
+        ready: () => { order.push('ready'); return readyGate; },
+        // Never the host's registry cache: on Windows it stays unsettled while `ready` is stubbed.
+        registrySettled: () => true
     });
     settings[KEY] = '';
     calls.warnings.length = 0;
@@ -221,7 +224,7 @@ const settle = () => new Promise(r => setTimeout(r, 5));
     `MSYS2: nothing found and MSYS2 without g++: the warning says so (${calls.warnings[0] && calls.warnings[0].m})`);
     hit2 = { path: 'C:\\MinGW\\bin\\g++.exe', source: 'path', version: '6.3.0', tooOld: true };
     order.length = 0;
-    r = await registerGppCommands(context, { detect: () => hit2, machine, msys2Root: () => msysRoot, ready: async () => {} }).autoFill();
+    r = await registerGppCommands(context, { detect: () => hit2, machine, msys2Root: () => msysRoot, ready: async () => {}, registrySettled: () => true }).autoFill();
     assert(r.status === 'tooOldNotFilled' && r.msys2Root === 'D:\\msys64'
         && describeGppFill(r) === `g++ 6.3.0 is too old: the generated C++ needs g++ 7 or later. ${msysText}, then run "Detect g++" again.`,
     `MSYS2: only a g++ 6 and MSYS2 without g++: the silent fill names the package (${describeGppFill(r)})`);
@@ -253,7 +256,7 @@ const settle = () => new Promise(r => setTimeout(r, 5));
     registerGppCommands(context, { detect: () => hit2, machine, msys2Root: () => null, ready: async () => {}, registrySettled: () => { throw new Error('x'); } });
     r = await handlers.get('twincat.detectGpp')();
     assert(r.status === 'found' && settings[KEY] === hit2.path, 'PENDING: a failing settled check counts as finished');
-    registerGppCommands(context, { detect: () => hit2, machine, msys2Root: () => msysRoot, ready: async () => {} });
+    registerGppCommands(context, { detect: () => hit2, machine, msys2Root: () => msysRoot, ready: async () => {}, registrySettled: () => true });
     hit2 = { path: '/opt/gcc/bin/g++', source: 'path', version: '13.2.0' };
     settings[KEY] = '';
     r = await handlers.get('twincat.detectGpp')();
@@ -265,7 +268,7 @@ const settle = () => new Promise(r => setTimeout(r, 5));
     r = await handlers.get('twincat.detectGpp')();
     await settle();
     assert(r.status === 'notFound' && !('msys2Root' in r) && /not found on PATH or in the usual install folders/.test(calls.warnings[0].m), 'MSYS2: no MSYS2: the plain "not found"');
-    registerGppCommands(context, { detect: () => null, machine, msys2Root: () => { throw new Error('boom'); }, ready: () => Promise.reject(new Error('reg')) });
+    registerGppCommands(context, { detect: () => null, machine, msys2Root: () => { throw new Error('boom'); }, ready: () => Promise.reject(new Error('reg')), registrySettled: () => true });
     r = await handlers.get('twincat.detectGpp')();
     assert(r && r.status === 'notFound', 'MSYS2: a failing registry wait or MSYS2 check never breaks the command');
 

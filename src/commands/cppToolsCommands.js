@@ -135,8 +135,10 @@ function createProviderPrompt(o) {
 /**
  * Registers the configuration provider for the generated C++.
  * @param {vscode.ExtensionContext} context
- * @param {{getProjectMap: () => any, getApi?: () => Promise<any>, msys2Ready?: () => Promise<string[]>}} deps
- *   `getApi`, `msys2Ready` (the MSYS2 registry search, src/msys2Detect.js): for the tests.
+ * @param {{getProjectMap: () => any, getApi?: () => Promise<any>, msys2Ready?: () => Promise<string[]>,
+ *   gppMachine?: typeof thisMachine}} deps
+ *   `getApi`, `msys2Ready` (the MSYS2 registry search, src/msys2Detect.js), `gppMachine` (the machine the
+ *   g++ is resolved on): for the tests.
  * @returns {{changed: () => void, connected: () => boolean, ready: Promise<boolean>, check: (uri: any) => Promise<string>}}
  */
 function registerCppToolsProvider(context, deps) {
@@ -154,7 +156,7 @@ function registerCppToolsProvider(context, deps) {
     const gppPath = () => {
         if (gppCache === undefined) {
             try {
-                const found = resolveGpp({ configured: vscode.workspace.getConfiguration(CPP_SECTION).get('gppPath', ''), ...thisMachine() });
+                const found = resolveGpp({ configured: vscode.workspace.getConfiguration(CPP_SECTION).get('gppPath', ''), ...(deps.gppMachine || thisMachine)() });
                 // A g++ the build refuses (older than 7) is not handed over: the C/C++ extension keeps its own default.
                 gppCache = found.ok === true && !found.tooOld ? found.path : null;
             } catch (e) { gppCache = null; }
