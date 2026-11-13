@@ -7,8 +7,14 @@
  * their entry, so expanding a node costs no further notifications.
  *
  * The notification cap (`session.subscribe` refuses past `tcToolkit.online.maxNotifications`) shows
- * here as entries in the `capped` state and one `onCapped` call per online session. vscode-free; the
- * tree provider (src/online/watchTree.js) only renders `list()`.
+ * here as entries in the `capped` state and one `onCapped` call per online session. A capped entry is
+ * tried again, in list order, whenever a slot may have freed: an entry removed, or the limit raised
+ * (`retryCapped`, which the command layer calls on a settings change). vscode-free; the tree provider
+ * (src/online/watchTree.js) only renders `list()`.
+ *
+ * Every subscribe in flight owns its slot by a token: when it resolves and the slot is no longer its
+ * own (the entry was removed, or removed and added again, or the epoch moved on), it unsubscribes
+ * what it got instead of storing it, so no notification is ever held without an owner.
  */
 
 'use strict';
@@ -43,7 +49,7 @@ const { formatValue } = require('./values');
 function createWatchList(deps) {
     /** @type {Array<WatchEntry>} */
     let entries = (deps.load() || []).filter(e => e && typeof e.path === 'string');
-    /** @type {Map<string, {state: WatchRow['state'], value?: any, type?: string, dataType?: Object|null, handle?: {unsubscribe: () => Promise<void>}}>} */
+    /** @type {Map<string, {state: WatchRow['state'], token?: object, value?: any, type?: string, dataType?: Object|null, handle?: {unsubscribe: () => Promise<void>}}>} */
     const live = new Map();
     let cappedNoticeShown = false;
     let epoch = 0;
@@ -57,21 +63,26 @@ function createWatchList(deps) {
      */
     async function attach(entry, mine) {
         const k = key(entry.path);
-        live.set(k, { state: 'pending' });
+        const token = {};
+        live.set(k, { state: 'pending', token });
         changed();
         const res = await deps.session.subscribe(entry.path, (deps.cycleMs && deps.cycleMs()) || 200, (value) => {
             const cur = live.get(k);
-            if (!cur || mine !== epoch) return;
+            if (!cur || cur.token !== token || mine !== epoch) return;
             cur.state = 'ok';
             cur.value = value;
             changed();
         });
-        if (mine !== epoch || !entries.some(e => key(e.path) === k)) {
-            if (res.ok) await res.handle.unsubscribe();
+        const slot = live.get(k);
+        if (mine !== epoch || !slot || slot.token !== token || !entries.some(e => key(e.path) === k)) {
+            // The slot is no longer this call's: removed, re-added (a newer call owns it), or detached.
+            if (res.ok) await res.handle.unsubscribe().catch(() => {});
             return;
         }
         if (res.ok) {
-            live.set(k, { state: 'pending', handle: res.handle, type: /** @type {any} */ (res.resolved.symbol).type, dataType: res.resolved.dataType });
+            // A value may already have arrived (state 'ok'); keep it.
+            live.set(k, { ...slot, state: slot.state === 'ok' ? 'ok' : 'pending', handle: res.handle,
+                type: /** @type {any} */ (res.resolved.symbol).type, dataType: res.resolved.dataType });
         } else if (/** @type {any} */ (res).capped) {
             live.set(k, { state: 'capped' });
             if (!cappedNoticeShown && deps.onCapped) {
@@ -90,6 +101,23 @@ function createWatchList(deps) {
         for (const e of entries.slice()) {
             if (mine !== epoch) return;
             await attach(e, mine);
+        }
+    }
+
+    /**
+     * Subscribes the entries the cap refused, in list order, now that a slot may be free. Stops at the
+     * first one still refused, so the order of the list decides who gets a slot.
+     */
+    async function retryCapped() {
+        if (deps.session.state !== 'online') return;
+        const mine = epoch;
+        for (const e of entries.slice()) {
+            if (mine !== epoch) return;
+            const cur = live.get(key(e.path));
+            if (!cur || cur.state !== 'capped') continue;
+            await attach(e, mine);
+            const after = live.get(key(e.path));
+            if (after && after.state === 'capped') return;
         }
     }
 
@@ -140,8 +168,10 @@ function createWatchList(deps) {
             live.delete(k);
             changed();
             if (cur && cur.handle) await cur.handle.unsubscribe().catch(() => {});
+            await retryCapped();
             return true;
         },
+        retryCapped,
         async clear() {
             entries = [];
             deps.save([]);

@@ -22,6 +22,17 @@
  *     try/catch.
  *   - ads-client emits `client-error` and `warning` events; both are always listened to, and its
  *     console warnings are switched off (`hideConsoleWarnings`).
+ *   - ads-client RESTORES subscriptions by itself after an auto-reconnect and after a symbol-version
+ *     change (a download): it subscribes them again as new objects with new notification handles,
+ *     while the handles this adapter gave out still wrap the old objects. The session answers both
+ *     events by subscribing everything again itself, so the library's copies would leak one PLC
+ *     notification each per event, uncounted against the cap. So on either event this adapter first
+ *     retires every handle it gave out (its `unsubscribe` and its data become no-ops: a stale
+ *     DeleteNotification could hit a handle number the PLC has reused) and deletes the library's
+ *     restored copies (`unsubscribeAll`, which leaves the library's internal subscriptions alone),
+ *     and only then tells the session.
+ *   - After `disconnect`, a reconnect attempt the library had already started can still land (its
+ *     timer is cleared, the attempt in flight is not). A reconnect on a closed adapter is closed again.
  */
 
 'use strict';
@@ -119,10 +130,27 @@ function createAdsClient(options, deps = {}) {
     client.on('client-error', (/** @type {any} */ err) => emit('error', err));
     client.on('warning', (/** @type {string} */ msg) => emit('warning', msg));
     client.on('connectionLost', () => emit('connectionLost'));
-    client.on('reconnect', () => emit('reconnect'));
-    client.on('plcRuntimeStateChange', (/** @type {any} */ s) => emit('plcState', stateOf(s)));
-    client.on('plcSymbolVersionChange', () => emit('symbolVersion'));
     let closed = false;
+    /** Bumped when the library replaces our subscriptions; a handle of an older generation is retired. */
+    let generation = 0;
+    /**
+     * Retires every handle given out and drops the subscriptions the library restored on its own,
+     * then announces the event (see the file header).
+     * @param {string} event
+     */
+    const afterRestore = async (event) => {
+        generation++;
+        if (closed) {
+            // Go Offline already ran: whatever reconnected here has no owner. Close it.
+            try { await client.disconnect(true); } catch (e) { /* already closed */ }
+            return;
+        }
+        try { await client.unsubscribeAll(); } catch (e) { /* the connection may be gone again */ }
+        if (!closed) emit(event);
+    };
+    client.on('reconnect', () => { afterRestore('reconnect'); });
+    client.on('plcRuntimeStateChange', (/** @type {any} */ s) => emit('plcState', stateOf(s)));
+    client.on('plcSymbolVersionChange', () => { afterRestore('symbolVersion'); });
     /** @type {Promise<any>|null} */
     let pending = null;
 
@@ -173,11 +201,20 @@ function createAdsClient(options, deps = {}) {
         },
         async writeValue(path, value) { await client.writeValue(path, value); },
         async subscribeRaw(symbol, cycleMs, onData) {
+            const mine = generation;
+            const live = () => mine === generation && !closed;
             const sub = await client.subscribeRaw(symbol.indexGroup, symbol.indexOffset, symbol.size,
                 (/** @type {any} */ data) => {
+                    if (!live()) return;
                     try { onData(data.value); } catch (e) { emit('error', e); }
                 }, cycleMs, true);
-            return { unsubscribe: () => sub.unsubscribe() };
+            if (!live()) {
+                // The library replaced its subscriptions while this one was being made: it is a stray.
+                try { await sub.unsubscribe(); } catch (e) { /* gone with the old connection */ }
+                throw new Error('The PLC connection was re-established while subscribing.');
+            }
+            // A retired handle never sends a DeleteNotification: its number may belong to someone else now.
+            return { unsubscribe: async () => { if (mine === generation) await sub.unsubscribe(); } };
         },
         async readPlcState() { return stateOf(await client.readPlcRuntimeState()); },
         on(event, fn) {

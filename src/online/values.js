@@ -20,6 +20,8 @@ const BIG = new Set(['LINT', 'ULINT', 'LWORD']);
 
 /** The longest value text an inline box shows before it is shortened. */
 const INLINE_MAX = 40;
+/** The longest value text the write modal and the log show before it is shortened. */
+const TEXT_MAX = 200;
 
 /**
  * The base type name a data type stands for: an alias resolves to what it aliases when ads-client has
@@ -71,10 +73,7 @@ function formatValue(value, dataType) {
         if (Number.isInteger(value)) return String(value);
         return String(Number(value.toPrecision(7)));
     }
-    if (typeof value === 'string') {
-        const wide = /^WSTRING/i.test(baseTypeName(dataType));
-        return (wide ? '"' : "'") + value + (wide ? '"' : "'");
-    }
+    if (typeof value === 'string') return quoteString(value, /^WSTRING/i.test(baseTypeName(dataType)));
     if (value instanceof Date) return isNaN(value.getTime()) ? '?' : value.toISOString().replace('.000Z', 'Z');
     if (typeof value === 'object' && 'name' in value && 'value' in value && Object.keys(value).length === 2) {
         return `${value.name} (${formatValue(value.value)})`;
@@ -85,14 +84,92 @@ function formatValue(value, dataType) {
 }
 
 /**
+ * A PLC string as an ST literal on one line. The value comes from the PLC, so it is never trusted to
+ * be printable: `$`, the quote, line breaks, tabs and every other control character are written as ST
+ * escapes (`$$`, `$'`, `$N`, `$R`, `$T`, `$hh`), so it cannot add lines to a dialog or a log entry.
+ * @param {string} value
+ * @param {boolean} wide WSTRING (double quotes, `$hhhh` escapes).
+ * @returns {string}
+ */
+function quoteString(value, wide) {
+    const q = wide ? '"' : "'";
+    let body = '';
+    for (const ch of String(value)) {
+        if (ch === '$') body += '$$';
+        else if (ch === q) body += '$' + q;
+        else if (isControl(ch)) body += controlEscape(ch, wide ? 4 : 2);
+        else body += ch;
+    }
+    return q + body + q;
+}
+
+/**
+ * Whether a character is a control character or a line/paragraph separator (anything that could
+ * break a line or hide text in a dialog or a log).
+ * @param {string} ch One character.
+ * @returns {boolean}
+ */
+function isControl(ch) {
+    const n = ch.charCodeAt(0);
+    return n < 0x20 || (n >= 0x7f && n <= 0x9f) || n === 0x2028 || n === 0x2029;
+}
+
+/**
+ * The ST escape of a control character: `$N`, `$R`, `$T`, or `$` and its code in hex.
+ * @param {string} ch
+ * @param {number} digits Hex digits (2 for STRING, 4 for WSTRING).
+ * @returns {string}
+ */
+function controlEscape(ch, digits) {
+    if (ch === '\n') return '$N';
+    if (ch === '\r') return '$R';
+    if (ch === '\t') return '$T';
+    return '$' + ch.charCodeAt(0).toString(16).toUpperCase().padStart(digits, '0');
+}
+
+/**
+ * Shortens a text to at most `max` characters, counted in code points so a surrogate pair is never
+ * split, ending in `…` when it was cut.
+ * @param {string} s
+ * @param {number} max
+ * @returns {string}
+ */
+function shorten(s, max) {
+    if (s.length <= max) return s;
+    const points = Array.from(s);
+    return points.length > max ? points.slice(0, max - 1).join('') + '…' : s;
+}
+
+/**
  * The text of an inline box: the value, shortened.
  * @param {any} value
  * @param {any} [dataType]
  * @returns {string}
  */
 function inlineText(value, dataType) {
-    const s = formatValue(value, dataType);
-    return s.length > INLINE_MAX ? s.slice(0, INLINE_MAX - 1) + '…' : s;
+    return shorten(formatValue(value, dataType), INLINE_MAX);
+}
+
+/**
+ * A value as the write modal and the log show it: one line, at most `TEXT_MAX` characters.
+ * @param {any} value
+ * @param {any} [dataType]
+ * @returns {string}
+ */
+function boundedText(value, dataType) {
+    return shorten(oneLine(formatValue(value, dataType)), TEXT_MAX);
+}
+
+/**
+ * A text with every control character (line breaks included) replaced by a visible escape, for a log
+ * entry or a dialog line built from text that came from the PLC or the user.
+ * @param {string} s
+ * @returns {string}
+ */
+function oneLine(s) {
+    let out = '';
+    for (const ch of String(s)) out += isControl(ch) ? controlEscape(ch, 2) : ch;
+    return out;
 }
 
 /**
@@ -158,7 +235,7 @@ function parseInput(text, dataType) {
         const max = /\((\d+)\)/.exec(String(dataType.name || dataType.type || ''));
         const limit = max ? Number(max[1]) : (dataType.size ? (base === 'WSTRING' ? dataType.size / 2 : dataType.size) - 1 : 80);
         if (v.length > limit) return { ok: false, error: `Too long: this string holds ${limit} characters.` };
-        return { ok: true, value: v, text: q + v + q };
+        return { ok: true, value: v, text: shorten(quoteString(v, base === 'WSTRING'), TEXT_MAX) };
     }
     return { ok: false, error: `Writing a ${dataType.name || base} is not supported; write it from XAE.` };
 }
@@ -177,4 +254,4 @@ function typesMatch(localType, onlineType) {
     return norm(localType) === norm(onlineType);
 }
 
-module.exports = { formatValue, inlineText, editText, parseInput, isScalar, isEnum, typesMatch, baseTypeName, INLINE_MAX };
+module.exports = { formatValue, inlineText, boundedText, oneLine, shorten, editText, parseInput, isScalar, isEnum, typesMatch, baseTypeName, INLINE_MAX, TEXT_MAX };

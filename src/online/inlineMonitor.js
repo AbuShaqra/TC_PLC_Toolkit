@@ -13,6 +13,12 @@
  *   - Paused while the editor is hidden; a hidden webview cannot take messages anyway.
  *   - At most `maxPaths` distinct paths per editor; past that the rest are left out and `onCapped`
  *     says so once per set.
+ *   - Exactly one poll loop: every start() begins a new loop token and a timer callback whose token is
+ *     not the current one ends, so a poll still waiting on a read across stop()/start() cannot keep
+ *     a second loop alive.
+ *   - Every `setOccurrences` is answered with a post, even when the values did not change: the webview
+ *     clears its values on every edit and asks again, and an unchanged answer must still restore them.
+ *     Only the timer's polls are deduplicated.
  */
 
 'use strict';
@@ -55,6 +61,8 @@ function createInlineMonitor(deps) {
     let timer = null;
     let lastPosted = '';
     let blocked = false;
+    /** The current poll loop; a timer callback of an older loop does not schedule again. */
+    let loop = 0;
 
     /**
      * Replaces what is monitored. Occurrences without a path are ignored.
@@ -82,6 +90,7 @@ function createInlineMonitor(deps) {
             next.push({ occ: /** @type {any} */ (occ), resolved, differs });
         }
         entries = next;
+        lastPosted = ''; // the webview asked: answer even if nothing changed
         await tick();
     }
 
@@ -119,12 +128,14 @@ function createInlineMonitor(deps) {
         deps.post({ type: 'online/values', items });
     }
 
-    function schedule() {
-        if (!running || disposed) return;
+    /** @param {number} mine The loop this timer belongs to. */
+    function schedule(mine) {
+        if (!running || disposed || mine !== loop) return;
         timer = timers.setTimeout(async () => {
             timer = null;
+            if (mine !== loop) return;
             try { await tick(); } catch (e) { /* the next tick tries again */ }
-            schedule();
+            schedule(mine);
         }, intervalMs());
     }
 
@@ -132,10 +143,11 @@ function createInlineMonitor(deps) {
         setOccurrences,
         tick,
         /** Starts polling. */
-        start() { if (running || disposed) return; running = true; schedule(); },
+        start() { if (running || disposed) return; running = true; schedule(++loop); },
         /** Stops polling and clears the values in the webview. */
         stop() {
             running = false;
+            loop++;
             if (timer) { timers.clearTimeout(timer); timer = null; }
             entries = [];
             generation++;
@@ -146,6 +158,7 @@ function createInlineMonitor(deps) {
         dispose() {
             disposed = true;
             running = false;
+            loop++;
             if (timer) { timers.clearTimeout(timer); timer = null; }
         },
         /** Entries for the write/watch commands: what sits at a pane position. */

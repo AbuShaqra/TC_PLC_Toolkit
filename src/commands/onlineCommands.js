@@ -13,7 +13,15 @@
  *     never as a fallback. Routes are never created here, and no credential is stored.
  *   - Go Online is cancellable (the progress notification's Cancel), and `dispose()` (extension
  *     deactivation) closes the connection, every notification and every poll.
- *   - Writes: src/online/writeGuard.js; enabled per online session, reset on Go Offline.
+ *   - Writes: src/online/writeGuard.js; enabled per online connection (its identity), reset on Go
+ *     Offline. `tcToolkit.online.allowWrites` is read from the USER settings only (the setting is
+ *     application-scoped), so a workspace's `.vscode/settings.json` cannot turn writes on. Only an
+ *     editor of the project the PLC runs may write: the others are told (`writable: false`, the
+ *     webview then hides Write Value…) and a write from them is refused before any dialog.
+ *   - The write path never acts on a code check that is still running or was superseded: it waits
+ *     for the newest one, and a check in flight counts as "not checked" (blocks).
+ *   - Unsaved edits: any dirty TwinCAT document, any Manual Sync stash (open editor or not), and an
+ *     Auto Sync edit an open editor has not written back yet.
  *   - The code-mismatch guard (src/online/codeIdentity.js) checks the project NAME the runtime
  *     reports (`_AppInfo.ProjectName`), the variable LAYOUT against the last build's `.tmc`, and
  *     source EDITS since that build. A different or unreadable name hides the inline values; any
@@ -31,7 +39,9 @@ const { createAdsClient } = require('../online/adsClient');
 const { describeConnectError } = require('../online/connectErrors');
 const { createInlineMonitor } = require('../online/inlineMonitor');
 const { createWatchList } = require('../online/watchList');
-const { performWrite } = require('../online/writeGuard');
+const { performWrite, enableWritesFor, targetName } = require('../online/writeGuard');
+const { sameIdentity } = require('../online/session');
+const fs = require('fs');
 const { paneRanges, mapOccurrences, substituteInstance, REASON_TEXT } = require('../online/editorPaths');
 const { assembleSt } = require('../livePath');
 const { isValidNetId } = require('../xaeBuild');
@@ -68,7 +78,23 @@ function registerOnlineCommands(context, deps) {
         log,
         maxNotifications: () => clampInt(cfg().get('maxNotifications', 100), 1, 400, 100)
     });
-    const sessionWrites = { enabled: false };
+    /** @type {{enabled: boolean, identity: import('../online/session').SessionIdentity|null}} */
+    const sessionWrites = { enabled: false, identity: null };
+    const resetWrites = () => { sessionWrites.enabled = false; sessionWrites.identity = null; };
+    /**
+     * `tcToolkit.online.allowWrites` from the user's own settings only. The setting is
+     * application-scoped (VS Code ignores a workspace value); reading `globalValue` keeps that true
+     * even where a host would not.
+     * @returns {boolean}
+     */
+    const allowWrites = () => {
+        const c = cfg();
+        if (typeof c.inspect === 'function') {
+            const i = c.inspect('allowWrites');
+            return !!(i && i.globalValue === true);
+        }
+        return false;
+    };
     /** @type {Map<string, string>} FB name (lower case) -> chosen instance path, per online session. */
     const instances = new Map();
     /** @type {Set<string>} FBs whose "several instances" note was shown this session. */
@@ -110,7 +136,7 @@ function registerOnlineCommands(context, deps) {
                 `a change to code bodies alone is not detected): ${project === 'match' ? 'passed' : (project === 'differs' ? 'DIFFERS' : 'not possible')}` +
                 (c && project !== 'match' ? ` - ${c.reason}${c.showValues ? '' : ' Values hidden.'} Writes blocked.` : ''),
             `Forces: ${info.forces ? (forces ? `active (${[info.forces.plc ? 'PLC' : '', info.forces.io ? 'I/O' : ''].filter(Boolean).join(' and ')}), set from XAE` : 'none') : 'not reported by this runtime (TwinCAT 3.1.4026.21 or later reports them)'}`,
-            `Writes: ${!cfg().get('allowWrites', false) ? 'off (tcToolkit.online.allowWrites)' : (sessionWrites.enabled ? 'enabled for this session' : 'not yet enabled for this session')}`,
+            `Writes: ${!allowWrites() ? 'off (tcToolkit.online.allowWrites)' : (sessionWrites.enabled && sameIdentity(sessionWrites.identity, session.identity) ? 'enabled for this session' : 'not yet enabled for this session')}`,
             `Notifications: ${session.subscriptionCount} of ${clampInt(cfg().get('maxNotifications', 100), 1, 400, 100)}`
         ].join('\n');
         status.backgroundColor = forces || project !== 'match' ? new vscode.ThemeColor('statusBarItem.warningBackground') : undefined;
@@ -127,20 +153,37 @@ function registerOnlineCommands(context, deps) {
     };
     /**
      * The last code check (src/online/codeIdentity.js); null until the first one after going online.
-     * @type {(import('../online/codeIdentity').CodeCheck & {project: any})|null}
+     * @type {(import('../online/codeIdentity').CodeCheck & {project: any, identity?: any})|null}
      */
     let code = null;
     let codeRun = 0;
+    /** @type {Promise<void>|null} The newest code check while it runs; null when none is running. */
+    let codeChecking = null;
     /** Runs the code check again; logs it when its outcome changes. */
-    async function refreshCodeCheck() {
-        if (session.state !== 'online') { code = null; return; }
-        const mine = ++codeRun;
+    function refreshCodeCheck() {
+        if (session.state !== 'online') { code = null; return Promise.resolve(); }
+        const p = runCodeCheck(++codeRun);
+        codeChecking = p;
+        const clear = () => { if (codeChecking === p) codeChecking = null; };
+        p.then(clear, clear);
+        return p;
+    }
+    /**
+     * Waits until no code check is running: the newest one, and any started while waiting.
+     * @returns {Promise<void>}
+     */
+    async function codeCheckSettled() {
+        while (codeChecking) await codeChecking.catch(() => {});
+    }
+    /** @param {number} mine */
+    async function runCodeCheck(mine) {
+        const id = session.identity;
         const next = await checkCode({ projectName: session.info.projectName, projects: localProjects(), onlineSymbols: () => session.onlineSymbols() })
             .catch(e => ({ state: /** @type {'unknown'} */ ('unknown'), name: /** @type {'unknown'} */ ('unknown'), layout: /** @type {'unknown'} */ ('unknown'),
                 edits: /** @type {'unknown'} */ ('unknown'), showValues: false, project: null, reason: `The code check failed: ${e && e.message}`, details: [] }));
-        if (mine !== codeRun || session.state !== 'online') return;
+        if (mine !== codeRun || session.state !== 'online' || !sameIdentity(id, session.identity)) return;
         const changed = !code || code.state !== next.state || code.reason !== next.reason || code.showValues !== next.showValues;
-        code = next;
+        code = { ...next, identity: id };
         if (changed) {
             log(`Code check: ${next.state === 'match' ? 'passed' : next.state} - ${next.reason}`);
             for (const d of next.details) log(`  ${d}`);
@@ -154,6 +197,15 @@ function registerOnlineCommands(context, deps) {
         if (session.state !== 'online' || !code) return 'unknown';
         return code.state;
     }
+    /**
+     * The code check as the write guard sees it: 'unknown' (blocks) while a check runs, or when the
+     * last result belongs to another connection.
+     * @returns {'match'|'differs'|'unknown'}
+     */
+    function writeProjectState() {
+        if (codeChecking || !code || !sameIdentity(code.identity, session.identity)) return 'unknown';
+        return projectState();
+    }
     /** @param {string} fsPath @returns {boolean} Whether a file belongs to the project the PLC runs. */
     const inBoundProject = (fsPath) => {
         const bound = code && code.project;
@@ -161,13 +213,30 @@ function registerOnlineCommands(context, deps) {
         if (!bound || !map || typeof map.ownersOf !== 'function') return false;
         return (map.ownersOf(fsPath) || []).includes(bound.key);
     };
-    /** @returns {boolean} Any TwinCAT document with unsaved edits, in VS Code or in a Manual Sync store. */
+    /**
+     * Any TwinCAT document with unsaved edits: dirty in VS Code, stashed by Manual Sync (whether its
+     * editor is open or closed: the stash outlives the tab), or reported dirty by an open editor.
+     * @returns {boolean}
+     */
     const anyUnsaved = () => {
         const docs = vscode.workspace.textDocuments || [];
         if (docs.some(d => d.isDirty && /\.Tc(POU|GVL|DUT|IO)$/i.test(d.uri.fsPath || ''))) return true;
-        for (const [uriStr, e] of editors) {
-            if (e.document && provider.pendingEditsStore && provider.pendingEditsStore.get(uriStr, e.document.getText())) return true;
-            if (e.last && e.last.dirty) return true;
+        for (const e of editors.values()) if (e.last && e.last.dirty) return true;
+        const store = provider.pendingEditsStore;
+        if (!store) return false;
+        const uris = typeof store.uris === 'function' ? store.uris() : [...editors.keys()];
+        for (const uriStr of uris) {
+            // get() checks the stash against the document's current text (a stale one is dropped), and
+            // returns {} when nothing is pending: an empty object is not an edit.
+            let text;
+            const open = editors.get(uriStr);
+            const doc = open && open.document ? open.document : docs.find(d => d.uri && d.uri.toString() === uriStr);
+            if (doc) text = doc.getText();
+            else {
+                try { text = fs.readFileSync(vscode.Uri.parse(uriStr).fsPath, 'utf8'); } catch (e) { return true; } // unreadable: assume unsaved
+            }
+            const edits = store.get(uriStr, text);
+            if (edits && typeof edits === 'object' && Object.keys(edits).length > 0) return true;
         }
         return false;
     };
@@ -243,7 +312,8 @@ function registerOnlineCommands(context, deps) {
         const { occurrences, owner, instance } = await occurrencesFor(e.document, e.last);
         if (!editors.has(uriStr) || session.state !== 'online') return;
         e.owner = owner;
-        const blocked = !code || !code.showValues || !inBoundProject(e.document.uri.fsPath);
+        const bound = inBoundProject(e.document.uri.fsPath);
+        const blocked = !code || !code.showValues || !bound;
         let note = '';
         if (!code) note = 'Checking the code on the PLC…';
         else if (!code.showValues) note = code.name === 'differs' ? `The PLC runs ${session.info.projectName}: no values for this project.` : 'The PLC\'s project cannot be checked: no values.';
@@ -252,7 +322,8 @@ function registerOnlineCommands(context, deps) {
             if (owner && owner.kind === 'FUNCTION_BLOCK') note = instance ? `Instance: ${instance}` : `No instance of ${owner.name} on the PLC.`;
             if (code.state !== 'match') note = (note ? note + ' · ' : '') + (code.state === 'differs' ? 'Code differs: writes blocked' : 'Code not checked: writes blocked');
         }
-        post(uriStr, { type: 'online/state', online: true, note });
+        // `writable`: the webview offers Write Value… only in an editor of the project the PLC runs.
+        post(uriStr, { type: 'online/state', online: true, note, writable: !!code && bound });
         await e.monitor.setOccurrences(occurrences, { blocked });
         e.monitor.start();
     }
@@ -293,23 +364,26 @@ function registerOnlineCommands(context, deps) {
     /** @type {import('../online/writeGuard').WriteDeps} */
     const writeDeps = {
         session, sessionWrites,
-        allowWrites: () => !!cfg().get('allowWrites', false),
-        projectState,
+        allowWrites,
+        projectState: writeProjectState,
         projectReason: () => (code ? code.reason : 'The code on the PLC has not been checked yet.'),
         hasUnsavedEdits: anyUnsaved,
         input: async (o) => vscode.window.showInputBox({ prompt: o.prompt, value: o.value, ignoreFocusOut: true,
             validateInput: (s) => o.validate(s) || undefined }),
-        // The code check runs again after every dialog, so the guard that follows it sees the files as they are now.
+        // The code check runs again after every dialog, so the guard that follows it sees the files as
+        // they are now; it waits for the NEWEST check, not only its own (a newer one may supersede it).
         confirm: async (o) => {
             const ok = (await vscode.window.showWarningMessage(o.message, { modal: true, detail: o.detail }, o.button)) === o.button;
-            await refreshCodeCheck();
+            refreshCodeCheck();
+            await codeCheckSettled();
             return ok;
         },
         log
     };
     /** @param {import('../online/writeGuard').WriteRequest} req */
     async function runWrite(req) {
-        await refreshCodeCheck();
+        refreshCodeCheck();
+        await codeCheckSettled();
         const r = await performWrite(req, writeDeps);
         if (r.status === 'refused') {
             const actions = /tcToolkit\.online\.allowWrites/.test(r.message) ? ['Open Setting'] : [];
@@ -352,6 +426,12 @@ function registerOnlineCommands(context, deps) {
         panelClosed: (uriStr) => { const e = editors.get(uriStr); if (e) { e.monitor.dispose(); editors.delete(uriStr); } },
         /** @param {string} uriStr @param {any} document @param {any} msg */
         write: async (uriStr, document, msg) => {
+            if (session.state === 'online' && !inBoundProject(document.uri.fsPath)) {
+                const message = 'This file is not part of the project the PLC runs: values cannot be written from it.';
+                log(`Write refused: ${message}`);
+                vscode.window.showWarningMessage(message);
+                return { status: 'refused', message };
+            }
             const occ = await occurrenceAt(document, msg);
             if (!occ) { vscode.window.showWarningMessage('No PLC variable at the cursor.'); return null; }
             const dirty = !!msg.dirty || document.isDirty;
@@ -413,7 +493,7 @@ function registerOnlineCommands(context, deps) {
             ? { mode, targetAmsNetId: t.netId, targetAdsPort: t.port, label: t.label, routerAddress: String(cfg().get('direct.plcAddress', '') || ''),
                 localAmsNetId: String(cfg().get('direct.localAmsNetId', '') || ''), localAdsPort: clampInt(cfg().get('direct.localAdsPort', 32750), 1, 65535, 32750) }
             : { mode, targetAmsNetId: t.netId, targetAdsPort: t.port, label: t.label, routerAddress: String(cfg().get('routerAddress', '127.0.0.1') || '127.0.0.1') };
-        sessionWrites.enabled = false;
+        resetWrites();
         log(`Going online: ${t.label} (${t.netId}:${t.port}, ${mode === 'direct' ? `direct to ${options.routerAddress}` : `router at ${options.routerAddress}`}).`);
         try {
             await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: `Going online: ${t.label}`, cancellable: true },
@@ -450,7 +530,7 @@ function registerOnlineCommands(context, deps) {
                 code = null;
                 codeRun++;
                 lastProjectName = null;
-                sessionWrites.enabled = false;
+                resetWrites();
                 instances.clear();
                 instanceNoted.clear();
                 stopEditors();
@@ -475,16 +555,20 @@ function registerOnlineCommands(context, deps) {
         vscode.commands.registerCommand('twincat.online.showLog', () => channel.show(true)),
         vscode.commands.registerCommand('twincat.online.enableWrites', async () => {
             if (session.state !== 'online') { vscode.window.showWarningMessage('Not online. Use "Go Online" first.'); return false; }
-            if (!cfg().get('allowWrites', false)) {
+            if (!allowWrites()) {
                 const pick = await vscode.window.showWarningMessage('Writing values is off. Turn on the setting tcToolkit.online.allowWrites to allow it.', 'Open Setting');
                 if (pick) vscode.commands.executeCommand('workbench.action.openSettings', 'tcToolkit.online.allowWrites');
                 return false;
             }
-            const ok = await writeDeps.confirm({ message: `Enable writes to ${session.target ? session.target.label : 'the target'} for this online session?`,
+            const id = session.identity;
+            if (!id) return false;
+            const ok = await writeDeps.confirm({ message: `Enable writes to ${targetName(id)} for this online session?`,
                 detail: 'Each write still asks for confirmation. Writes turn off again when you go offline.', button: 'Enable writes' });
-            if (ok) { sessionWrites.enabled = true; log('Writes enabled for this online session.'); }
+            // Only for the connection the user was asked about: a Go Online elsewhere meanwhile enables nothing.
+            const enabled = ok && sameIdentity(id, session.identity);
+            if (enabled) { enableWritesFor(sessionWrites, id); log(`Writes enabled for this online session (${targetName(id)}).`); }
             renderStatus();
-            return ok;
+            return enabled;
         }),
         vscode.commands.registerCommand('twincat.online.selectInstance', async (args) => {
             if (session.state !== 'online') { vscode.window.showWarningMessage('Not online. Use "Go Online" first.'); return undefined; }
@@ -538,7 +622,10 @@ function registerOnlineCommands(context, deps) {
             return w;
         })()] : []),
         vscode.workspace.onDidChangeConfiguration((e) => {
-            if (e.affectsConfiguration(SECTION)) renderStatus();
+            if (!e.affectsConfiguration(SECTION)) return;
+            renderStatus();
+            // A raised notification limit gives the capped watch entries their slots.
+            if (e.affectsConfiguration(`${SECTION}.maxNotifications`)) watch.retryCapped().catch(() => {});
         })
     );
 

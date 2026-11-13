@@ -15,6 +15,11 @@
  *     `OnlineChangeCnt` (an online change drops every resolved symbol, so offsets are re-read).
  *   - Notifications (the Watch view) are counted against `maxNotifications`, far below the 550 per
  *     device Beckhoff recommends (D8); a subscription past the cap is refused, not queued.
+ *   - Every connection has an `identity` (a connection id unique per successful connect, plus the
+ *     target). The write path records it when writes are enabled and when a write is confirmed, and
+ *     `write` refuses when the connection it would write through is not that one (D5).
+ *   - A status poll belongs to the client it started on: its reads land in that connection's own
+ *     `info`, so a poll still in flight after Go Offline/Online cannot blank the new session.
  */
 
 'use strict';
@@ -48,6 +53,25 @@ const SUM_CHUNK = 100;
  */
 
 /**
+ * @typedef {Object} SessionIdentity One online connection: unique per successful connect.
+ * @property {number} connectionId
+ * @property {string} netId
+ * @property {number} port
+ * @property {string} mode
+ * @property {string} label
+ */
+
+/**
+ * Whether two identities name the same online connection.
+ * @param {SessionIdentity|null|undefined} a
+ * @param {SessionIdentity|null|undefined} b
+ * @returns {boolean}
+ */
+function sameIdentity(a, b) {
+    return !!a && !!b && a.connectionId === b.connectionId && a.netId === b.netId && a.port === b.port && a.mode === b.mode;
+}
+
+/**
  * @param {Object} deps
  * @param {(options: import('./adsClient').ConnectOptions) => import('./adsClient').AdsPort} deps.createClient
  * @param {(line: string) => void} [deps.log]
@@ -68,7 +92,10 @@ function createOnlineSession(deps) {
     let attempt = 0;
     /** @type {any} */
     let statusTimer = null;
-    let statusBusy = false;
+    /** @type {import('./adsClient').AdsPort|null} The client a status poll is running on. */
+    let statusClient = null;
+    /** @type {number|null} The attempt number of the current online connection. */
+    let connectionId = null;
     /** @type {SessionInfo} */
     let info = emptyInfo();
     /** @type {Map<string, Promise<Resolved>>} */
@@ -149,18 +176,21 @@ function createOnlineSession(deps) {
             state = 'online';
             info = emptyInfo();
             log(`Online: ${target.label} (${options.mode === 'direct' ? 'direct' : 'through the local router'}), local AmsNetId ${res.localAmsNetId}`);
-            await refreshStatus();
-            if (mine === attempt) {
-                statusTimer = timers.setInterval(() => { refreshStatus().catch(() => {}); }, statusIntervalMs);
-                emit('state');
-            }
+            // The status reads can each wait out the ADS timeout: Cancel and Go Offline hold here too.
+            await Promise.race([refreshStatus(), cancelled]);
+            if (mine !== attempt) throw Object.assign(new Error('superseded'), { cancelled: true });
+            connectionId = mine;
+            statusTimer = timers.setInterval(() => { refreshStatus().catch(() => {}); }, statusIntervalMs);
+            emit('state');
             return res;
         } catch (e) {
             if (mine === attempt) {
                 attempt++;
                 client = null;
+                connectionId = null;
                 state = 'offline';
                 target = null;
+                info = emptyInfo();
                 emit('state');
             }
             closeInBackground(c);
@@ -196,6 +226,7 @@ function createOnlineSession(deps) {
         const c = client;
         const was = state;
         client = null;
+        connectionId = null;
         state = 'offline';
         subscriptions.clear();
         dropSymbols();
@@ -210,35 +241,37 @@ function createOnlineSession(deps) {
     /** Reads the runtime state and `_AppInfo`; never throws. */
     async function refreshStatus() {
         const c = client;
-        if (!c || state === 'offline' || statusBusy) return;
-        statusBusy = true;
+        if (!c || state === 'offline' || statusClient === c) return;
+        statusClient = c;
+        // The reads land in this connection's own info object, never in a later connection's.
+        const own = info;
         try {
-            const before = JSON.stringify(info);
-            try { info.plcState = (await c.readPlcState()).state; } catch (e) { info.plcState = null; }
-            try { info.projectName = String((await c.readValue(`${APP_INFO}.ProjectName`)).value); } catch (e) { info.projectName = null; }
+            const before = JSON.stringify(own);
+            try { own.plcState = (await c.readPlcState()).state; } catch (e) { own.plcState = null; }
+            try { own.projectName = String((await c.readValue(`${APP_INFO}.ProjectName`)).value); } catch (e) { own.projectName = null; }
             try {
                 const ts = (await c.readValue(`${APP_INFO}.AppTimestamp`)).value;
-                info.appTimestamp = ts instanceof Date ? ts.toISOString() : (ts === undefined || ts === null ? null : String(ts));
-            } catch (e) { info.appTimestamp = null; }
+                own.appTimestamp = ts instanceof Date ? ts.toISOString() : (ts === undefined || ts === null ? null : String(ts));
+            } catch (e) { own.appTimestamp = null; }
             try {
                 const plc = (await c.readValue(`${APP_INFO}.ActivePlcForces`)).value;
                 const io = (await c.readValue(`${APP_INFO}.ActiveIoForces`)).value;
-                info.forces = { plc: !!plc, io: !!io };
+                own.forces = { plc: !!plc, io: !!io };
             } catch (e) {
-                info.forces = null;
+                own.forces = null;
             }
             try {
                 const cnt = Number((await c.readValue(`${APP_INFO}.OnlineChangeCnt`)).value);
-                if (info.onlineChangeCnt !== null && cnt !== info.onlineChangeCnt) {
+                if (c === client && own.onlineChangeCnt !== null && cnt !== own.onlineChangeCnt) {
                     dropSymbols();
-                    log(`Online change detected (OnlineChangeCnt ${info.onlineChangeCnt} -> ${cnt}): symbols re-read.`);
+                    log(`Online change detected (OnlineChangeCnt ${own.onlineChangeCnt} -> ${cnt}): symbols re-read.`);
                     emit('symbols');
                 }
-                info.onlineChangeCnt = cnt;
+                own.onlineChangeCnt = cnt;
             } catch (e) { /* not reported */ }
-            if (c === client && JSON.stringify(info) !== before) emit('info');
+            if (c === client && own === info && JSON.stringify(own) !== before) emit('info');
         } finally {
-            statusBusy = false;
+            if (statusClient === c) statusClient = null;
         }
     }
 
@@ -352,11 +385,20 @@ function createOnlineSession(deps) {
      * One write. The caller (writeGuard.performWrite) has already checked and confirmed it.
      * @param {string} path
      * @param {any} value
+     * @param {SessionIdentity} [expected] The connection the write was confirmed for. Checked
+     *   synchronously, before anything is sent: a write never goes through another connection.
      */
-    async function write(path, value) {
+    async function write(path, value, expected) {
         const c = client;
         if (!c || state !== 'online') throw new Error('Not online.');
+        if (expected && !sameIdentity(expected, identity())) throw new Error('The connection changed since the write was confirmed.');
         await c.writeValue(path, value);
+    }
+
+    /** @returns {SessionIdentity|null} The current online connection, or null while not online. */
+    function identity() {
+        if (state !== 'online' || connectionId === null || !target) return null;
+        return { connectionId, netId: target.netId, port: target.port, mode: target.mode, label: target.label };
     }
 
     /**
@@ -427,6 +469,7 @@ function createOnlineSession(deps) {
         get state() { return state; },
         get target() { return target; },
         get info() { return info; },
+        get identity() { return identity(); },
         get subscriptionCount() { return subscriptions.size; },
         get closingCount() { return closing.size; },
         /** @param {(what: string) => void} fn @returns {{dispose: () => void}} */
@@ -434,4 +477,4 @@ function createOnlineSession(deps) {
     };
 }
 
-module.exports = { createOnlineSession, APP_INFO };
+module.exports = { createOnlineSession, sameIdentity, APP_INFO };

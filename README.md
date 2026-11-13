@@ -452,12 +452,13 @@ The list is kept per workspace.
 
 **Writing values — off by default.** A write sets a value once; the PLC program may overwrite it in its
 next cycle. It is **not a force**: TC Toolkit cannot force (forces are set in XAE). To write:
-1. turn on `tcToolkit.online.allowWrites`;
+1. turn on `tcToolkit.online.allowWrites` in your **user** settings (a workspace's settings cannot turn it on);
 2. after going online, enable writes for that online session (asked the first time, or *TC Toolkit:
    Enable Writes for This Online Session*); going offline turns them off again;
 3. right-click the variable → **Write Value…** (or the pencil in the Watch view), type the value, and
-   confirm the dialog, which names the target, the variable, the current and the new value and the PLC
-   state.
+   confirm the dialog, which names the target (with its AMS address), the variable, the current and the
+   new value and the PLC state. *Write Value…* is offered only in editors of the PLC project the PLC
+   runs. If you go online to another target while a write's dialogs are open, that write is refused.
 
 Every write, and every refused or cancelled one, is logged to the **TC Toolkit Online** output channel.
 Writes are refused while any TwinCAT editor has unsaved edits, while the code check below does not
@@ -572,7 +573,7 @@ old entry is removed from your `settings.json`.
 | `tcToolkit.online.direct.plcAddress` | *(empty)* | Direct mode: the PLC's IP address or host name. Per machine. |
 | `tcToolkit.online.direct.localAmsNetId` | *(empty)* | Direct mode: this PC's AMS Net ID, as the PLC's static route names it. Per machine. |
 | `tcToolkit.online.direct.localAdsPort` | `32750` | Direct mode: the local ADS port to use. Per machine. |
-| `tcToolkit.online.allowWrites` | `false` | Allow *Write Value…*. Even when on, writes are enabled once per online session and every write is confirmed and logged. |
+| `tcToolkit.online.allowWrites` | `false` | Allow *Write Value…* (user settings only). Even when on, writes are enabled once per online session and every write is confirmed and logged. |
 | `tcToolkit.online.inlinePollInterval` | `500` | Inline values: refresh interval in ms (100 to 10000). |
 | `tcToolkit.online.watchCycleTime` | `200` | PLC Watch: notification cycle time in ms (50 to 10000). |
 | `tcToolkit.online.maxNotifications` | `100` | PLC Watch: the most ADS notifications at once (1 to 400). |

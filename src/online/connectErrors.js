@@ -27,7 +27,7 @@ const ROUTE_HINT = 'Add a route to the target in XAE (SYSTEM > Routes > Add Rout
 
 /**
  * @typedef {Object} ConnectFailure
- * @property {'no-router'|'port-registration'|'no-route'|'no-plc'|'timeout'|'config'|'cancelled'|'other'} kind
+ * @property {'no-router'|'router-rejected'|'port-registration'|'no-route'|'no-plc'|'timeout'|'config'|'cancelled'|'other'} kind
  * @property {string} message One sentence for the notification.
  * @property {string} [hint] What to do, when there is something to do.
  * @property {string} raw The library's own text, for the output channel.
@@ -79,6 +79,13 @@ function describeConnectError(err, o) {
         return { kind: 'port-registration', message: `The ADS router at ${router} did not register a port for this client.`,
             hint: USER_MODE_HINT, raw };
     }
+    // Any other failure of the connect step to the LOCAL router (it closed or ended the socket, or did
+    // not answer): section 6 of docs/r15-ads-decision.md does not record which of these the 4026
+    // user-mode runtime produces, so every one of them carries the user-mode explanation.
+    if (o.mode !== 'direct' && isLoopback(o.routerAddress) && /Connecting to .* failed/i.test(raw)) {
+        return { kind: 'router-rejected', message: `The ADS router at ${router} closed the connection or did not answer.`,
+            hint: 'Online monitoring goes through the TwinCAT router on this PC: check that TwinCAT (XAE or XAR) is running. ' + USER_MODE_HINT, raw };
+    }
     if (code === 7 || /target machine not found/i.test(raw)) {
         return { kind: 'no-route', message: `The router has no route to ${o.targetAmsNetId}.`, hint: ROUTE_HINT, raw };
     }
@@ -95,6 +102,16 @@ function describeConnectError(err, o) {
             hint: 'The target may be in CONFIG mode or have no PLC program downloaded.', raw };
     }
     return { kind: 'other', message: `Go Online to ${where} failed.`, raw };
+}
+
+/**
+ * Whether a router address is this PC (the default when unset).
+ * @param {string|undefined} address
+ * @returns {boolean}
+ */
+function isLoopback(address) {
+    const a = String(address || '127.0.0.1').trim().toLowerCase();
+    return a === 'localhost' || a === '::1' || /^127\./.test(a);
 }
 
 module.exports = { describeConnectError, rawText, USER_MODE_HINT, ROUTE_HINT };

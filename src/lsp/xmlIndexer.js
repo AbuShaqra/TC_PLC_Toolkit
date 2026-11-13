@@ -252,6 +252,10 @@ function buildNodeFromXml(xmlText, fileUri) {
     node.extendsAll = inh.extendsAll;
     node.implements = inh.implements;
     if (inheritanceDependsOnDefine(rootDecl)) node.inheritanceUncertain = true;
+    // A GVL records whether it is `{attribute 'qualified_only'}` (online monitoring may map an
+    // unqualified name to a GVL variable only when it is not). A pragma anywhere in the declaration
+    // counts, even one in a comment: the safe answer is the restrictive one.
+    if (type === 'GVL') node.qualifiedOnly = /\{\s*attribute\s+'qualified_only'\s*\}/i.test(rootDecl);
 
     // Root variables: VAR blocks (POU/GVL), struct/union fields (DUT struct or union), or enum
     // members (DUT enum). A union declares its members like a struct, so it takes the same path —

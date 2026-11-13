@@ -77,7 +77,7 @@ function assert(cond, msg) {
     assert(sessionWrites.enabled, 'accepting enables writes for the session');
     const modal = dialogs[dialogs.length - 1];
     assert(r.status === 'cancelled' && modal.button === WRITE_BUTTON, 'every write then needs the modal confirmation; cancelling it cancels the write');
-    assert(/Write 12 to MAIN\.nCount on Local runtime\?/.test(modal.message) && /Current value: 7/.test(modal.detail)
+    assert(/Write 12 to MAIN\.nCount on Local runtime \(localhost:851\)\?/.test(modal.message) && /Current value: 7/.test(modal.detail)
         && /New value: 12/.test(modal.detail) && /PLC state: Run/.test(modal.detail), `the modal names target, path, old and new values and the PLC state (${modal.message} / ${modal.detail})`);
     assert(!/force/i.test(modal.button) && /It is not a force/.test(modal.detail), 'nothing is called "Force"; the modal says a write is not one');
     assert(plc.writes.length === 0, 'a cancelled write never reaches the PLC');
@@ -89,8 +89,8 @@ function assert(cond, msg) {
     r = await write('MAIN.nCount');
     assert(r.status === 'written' && plc.get('MAIN.nCount') === 12 && plc.writes.length === 1, 'a confirmed write is written once');
     assert(dialogs.filter(d => d.button === ENABLE_BUTTON).length === 2, 'the session enable is not asked again once given');
-    assert(log.some(l => /Write requested: MAIN\.nCount = 12 on Local runtime \(current 7, from the editor\)/.test(l))
-        && log.some(l => /Written: MAIN\.nCount = 12 on Local runtime \(was 7\)/.test(l)), 'request and result are logged');
+    assert(log.some(l => /Write requested: MAIN\.nCount = 12 on Local runtime \(localhost:851\) \(current 7, from the editor\)/.test(l))
+        && log.some(l => /Written: MAIN\.nCount = 12 on Local runtime \(localhost:851\) \(was 7\)/.test(l)), 'request and result are logged');
 
     world.confirmAnswers = [true];
     world.inputAnswers = ['Running'];

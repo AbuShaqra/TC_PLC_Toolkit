@@ -534,6 +534,8 @@
     const onlineDecorations = new Map(); // editor -> decoration ids
     const onlineNoteEl = document.getElementById('online-note');
     const onlineContextKeys = [];
+    // Write Value… is offered only where the host says so: an editor of the project the PLC runs.
+    const onlineWritableKeys = [];
 
     /** True while the panes hold text the document does not (Manual Sync stash, or an edit not yet sent). */
     function hasUnsavedPaneEdits() {
@@ -611,28 +613,36 @@
         sendOnlineVisible();
     }
 
-    /** Online on/off from the host, with an optional note for the toolbar. */
-    function setOnlineState(online, note) {
+    /**
+     * Online on/off from the host, with an optional note for the toolbar and whether this editor may
+     * write (absent counts as no). Only going online asks the host for values: the host answers every
+     * `online/visible` with an `online/state`, so asking again here on every state would make the two
+     * message each other in a loop and the poll interval would stop holding.
+     */
+    function setOnlineState(online, note, writable) {
+        const was = onlineActive;
         onlineActive = !!online;
         onlineContextKeys.forEach(k => k.set(onlineActive));
+        onlineWritableKeys.forEach(k => k.set(onlineActive && writable === true));
         if (onlineNoteEl) {
             onlineNoteEl.textContent = onlineActive ? (note ? 'Online · ' + note : 'Online') : '';
             onlineNoteEl.hidden = !onlineActive;
         }
         if (!onlineActive) { onlineItems = []; applyOnlineDecorations(); return; }
-        sendOnlineVisible();
+        if (!was) sendOnlineVisible();
     }
 
     /** Adds the two editor actions (Write Value…, Add to PLC Watch) to a pane's context menu. */
     function addOnlineActions(editor) {
         onlineContextKeys.push(editor.createContextKey('tcOnline', false));
+        onlineWritableKeys.push(editor.createContextKey('tcOnlineWritable', false));
         const ask = (type) => function (ed) {
             const position = ed.getPosition();
             if (!position || !activeComponentId) return;
             const ctx = buildBridgeContext(ed.getModel(), position);
             vscode.postMessage(Object.assign({ type: type, fileUri: activeFileUri, dirty: hasUnsavedPaneEdits() }, ctx));
         };
-        editor.addAction({ id: 'tc.online.write', label: 'Write Value…', precondition: 'tcOnline',
+        editor.addAction({ id: 'tc.online.write', label: 'Write Value…', precondition: 'tcOnlineWritable',
             contextMenuGroupId: '9_online', contextMenuOrder: 1, run: ask('online/write') });
         editor.addAction({ id: 'tc.online.addWatch', label: 'Add to PLC Watch',
             contextMenuGroupId: '9_online', contextMenuOrder: 2, run: ask('online/addWatch') });
@@ -1861,7 +1871,7 @@
                 break;
             }
             case 'online/state': {
-                setOnlineState(message.online, message.note);
+                setOnlineState(message.online, message.note, message.writable);
                 break;
             }
             case 'online/values': {

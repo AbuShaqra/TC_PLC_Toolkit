@@ -158,9 +158,22 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   pushed, no PR yet; based on `claude/focused-ptolemy-m6acaz` `c9ace3f`). Decisions D1-D9: `docs/r15-ads-decision.md` §5.
   Design and file map: DEVELOPMENT.md "Online monitoring (roadmap R15)". `ads-client` **2.2.0 pinned** (pure JS; loads on
   Node 16.13 and 22; licences of it and its 5 deps in THIRD-PARTY-NOTICES, all six licence files listed by `vsce ls`).
-  Linux-verified: `REQUIRE_FULL_SUITE=1 npm test` FULL, lint, typecheck, browser harnesses `run.js`, `run_pragmas.js`,
-  `run_start_page.js`, new `run_online.js`. Harnesses `test_ads_{paths,session,inline,write,code,watch}.js` run against
-  an in-memory PLC (`test/_fakeAds.js`); **nothing has touched a real PLC or router.**
+  Linux-verified: `REQUIRE_FULL_SUITE=1 npm test` FULL (130 suites), lint, typecheck, browser harnesses `run.js`,
+  `run_pragmas.js`, `run_start_page.js`, `run_online.js`. Harnesses `test_ads_{paths,session,inline,write,code,watch,
+  regressions}.js` run against an in-memory PLC (`test/_fakeAds.js`); **nothing has touched a real PLC or router.**
+  **Review round 1 (2026-11-13): all 20 confirmed findings fixed**, each pinned by a block of
+  `test/test_ads_regressions.js` (or `run_online.js` for the webview) that failed before its fix. Write safety: writes
+  bound to the connection enabled/confirmed (`session.identity`, checked right before `session.write`), only from
+  editors of the bound project (`writable` flag; Write Value… hidden elsewhere), the newest code check awaited (a
+  check in flight blocks), `pendingEditsStore.get()`'s `{}` no longer counts as unsaved and closed editors' Manual
+  Sync stashes block, `allowWrites` is `application`-scoped and read from user settings only, PLC strings escaped and
+  bounded. Lifecycle: adapter drops ads-client's self-restored subscriptions on reconnect/download, orphan reconnect
+  after Go Offline closed, per-connection status poll, Cancel/Go Offline honoured during status reads, one inline poll
+  loop, watch slot token + capped retry, router-rejection user-mode hint. Paths: no unqualified GVL fallback over an
+  uncertain EXTENDS chain, a `qualified_only` GVL (`xmlIndexer` now records `qualifiedOnly`) or an enumerator. Webview:
+  no `online/state` -> `online/visible` loop; host re-posts values on every request; inline cut by code point.
+  Behaviour changes to note for the Windows check: the modal/log target now reads `Local runtime (localhost:851)`;
+  an unqualified name inside an FB that extends a library FB shows no inline value (cannot tell member from global).
   **Mismatch guard (coordinator review, 2026-11-13):** a name match alone does not prove the same code, so
   `src/online/codeIdentity.js` checks name + variable layout (last build's `.tmc` symbols vs the PLC's symbol upload,
   name and size) + sources edited after the `.tmc`. It cannot see a body-only change built but not downloaded (XAE's

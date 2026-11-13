@@ -53,7 +53,7 @@ function fingerprintOf(text) {
  * @param {Object} memento Anything with `get(key, defaultValue)` and `update(key, value)` —
  *   in production `context.workspaceState`.
  * @returns {Object} The store: `get(uriStr, docText)`, `set(uriStr, edits, docText)`,
- *   `delete(uriStr)`.
+ *   `delete(uriStr)`, `uris()`.
  */
 function createPendingEditsStore(memento) {
     /**
@@ -143,6 +143,16 @@ function createPendingEditsStore(memento) {
          */
         delete(uriStr) {
             return remove(uriStr);
+        },
+
+        /**
+         * The URIs that have an entry, open in an editor or not (online monitoring's unsaved-edits
+         * guard asks `get` for each, which checks the entry against the document's current text).
+         * @returns {string[]}
+         */
+        uris() {
+            const all = readAll();
+            return Object.keys(all).filter(k => all[k] && all[k].edits && Object.keys(all[k].edits).length > 0);
         }
     };
 }

@@ -18,7 +18,12 @@
  *     host can say why a write or a watch is refused instead of failing silently.
  *   - Property accessor bodies answer nothing: the parser does not record an accessor's own locals,
  *     so a local shadowing a member could not be told apart from the member.
- *   - An unqualified global resolves only when exactly one GVL declares it.
+ *   - An unqualified global resolves only when everything that could shadow or claim the name is
+ *     known: the POU's EXTENDS chain is fully resolved with no library ancestor (an inherited member
+ *     the index cannot see would otherwise be shown as the GVL variable's value), exactly one project
+ *     GVL declares it and that GVL is known NOT to be `{attribute 'qualified_only'}` (the code cannot
+ *     name its variables unqualified), no library GVL declares it, and it is not an enumerator.
+ *     Wrong values are the worst failure here: when unsure, nothing is shown.
  */
 
 const { tokenize, TokenType } = require('../parser');
@@ -285,14 +290,38 @@ function resolveRoot(name, isThis, scope, symbolIndex, hasMember) {
         return null;
     }
     if (node) return null; // a type, a function, an FB name: not a variable
-    // An unqualified global: only when exactly one GVL declares it.
+    return unqualifiedGlobal(name, pou, symbolIndex);
+}
+
+/**
+ * An unqualified name as a GVL variable, only when nothing else can be what the name means (see the
+ * file header). Any doubt answers null.
+ * @param {string} name
+ * @param {Object|null} pou The POU the name is used in.
+ * @param {Object} symbolIndex
+ * @returns {{path: string, reason: null, type: string|null, consumed: 0}|null}
+ */
+function unqualifiedGlobal(name, pou, symbolIndex) {
+    const lower = name.toLowerCase();
+    if (pou) {
+        // An ancestor the index cannot read (unknown, a library FB, or behind a define) may declare it.
+        const chain = walkExtendsChain(pou, symbolIndex);
+        if (!chain.fullyResolved || pou.external || chain.ancestors.some(a => a.external)) return null;
+    }
     const owners = [];
     for (const key of Object.keys(symbolIndex)) {
         const n = symbolIndex[key];
-        if (n && String(n.type).toUpperCase() === 'GVL' && !n.external) {
-            const v = (n.variables || []).find(x => x.name.toLowerCase() === lower);
-            if (v) owners.push({ n, v });
-        }
+        if (!n) continue;
+        const kind = String(n.type).toUpperCase();
+        const vars = n.variables || [];
+        const hit = vars.find(x => x && String(x.name).toLowerCase() === lower);
+        if (!hit) continue;
+        // An enumerator of the same name: the code may mean the enum value.
+        if ((kind === 'DUT' && n.dutKind === 'enum') || hit.type === 'Enum' || String(hit.scope).toUpperCase() === 'ENUM') return null;
+        if (kind !== 'GVL') continue;
+        if (n.external) return null;                 // a library global of that name: ambiguous
+        if (n.qualifiedOnly !== false) continue;     // qualified_only, or not known not to be: never unqualified
+        owners.push({ n, v: hit });
     }
     if (owners.length !== 1) return null;
     return { path: `${owners[0].n.name}.${owners[0].v.name}`, reason: null, type: owners[0].v.type || null, consumed: 0 };

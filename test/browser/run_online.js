@@ -3,8 +3,11 @@
  * @description The browser pass over online monitoring (R15) in media/editor.js: the inline values
  * the host posts are drawn as Monaco injected text in the right pane, at the right place, styled by
  * state, without touching the document; the webview reports what its panes show; an edit clears the
- * values (they belong to the old text) and asks again; the editor actions post a write or a watch
- * request with the caret's pane position; going offline removes everything.
+ * values (they belong to the old text) and asks again, and an unchanged answer draws them again; the
+ * editor actions post a write or a watch request with the caret's pane position; Write Value… is
+ * offered only where the host says the editor may write; the host's answer to `online/visible` (an
+ * `online/state`) does not make the webview ask again, so the two never message each other in a
+ * loop (R15 review findings #1, #15, #16); going offline removes everything.
  *
  * Shares build.js / serve.js with run.js. NOT part of `npm test`: it needs a browser.
  *
@@ -79,7 +82,7 @@ function assert(cond, msg) {
         assert(offlineAction.watch && offlineAction.watchSupported, 'Add to PLC Watch is available (a GVL or PROGRAM path needs no connection)');
 
         // ── going online: the webview reports its panes ──────────────────────────────────────────
-        await page.evaluate(() => { window.__harness.sent.length = 0; window.postMessage({ type: 'online/state', online: true, note: 'Instance: GVL_System.fbCylinder' }, '*'); });
+        await page.evaluate(() => { window.__harness.sent.length = 0; window.postMessage({ type: 'online/state', online: true, note: 'Instance: GVL_System.fbCylinder', writable: true }, '*'); });
         await settle(400);
         const visible = await page.evaluate(() => window.__harness.sent.filter(m => m.type === 'online/visible'));
         const v = visible[visible.length - 1];
@@ -89,7 +92,19 @@ function assert(cond, msg) {
         const note = await page.evaluate(() => { const n = document.getElementById('online-note'); return { hidden: n.hidden, text: n.textContent }; });
         assert(!note.hidden && note.text === 'Online · Instance: GVL_System.fbCylinder', `the toolbar note shows online and the host's note (${note.text})`);
         const onlineAction = await page.evaluate(() => window.__panes.impl.getAction('tc.online.write').isSupported());
-        assert(onlineAction, 'Write Value… is enabled while online');
+        assert(onlineAction, 'Write Value… is enabled while online, in an editor the host says may write');
+
+        // ── #1: an editor of a project the PLC does not run is not offered Write Value… ─────────────
+        await page.evaluate(() => window.postMessage({ type: 'online/state', online: true, note: 'This file is not part of the project on the PLC.', writable: false }, '*'));
+        await settle(100);
+        const notWritable = await page.evaluate(() => ({ write: window.__panes.impl.getAction('tc.online.write').isSupported(),
+            watch: window.__panes.impl.getAction('tc.online.addWatch').isSupported() }));
+        assert(!notWritable.write && notWritable.watch, `#1 writable:false hides Write Value… (Add to PLC Watch stays) (${JSON.stringify(notWritable)})`);
+        await page.evaluate(() => window.postMessage({ type: 'online/state', online: true, note: 'x' }, '*'));
+        await settle(100);
+        assert(!(await page.evaluate(() => window.__panes.impl.getAction('tc.online.write').isSupported())), '#1 a state without `writable` does not offer it either');
+        await page.evaluate(() => window.postMessage({ type: 'online/state', online: true, note: 'Instance: GVL_System.fbCylinder', writable: true }, '*'));
+        await settle(100);
 
         // ── values ───────────────────────────────────────────────────────────────────────────────
         const lines = await page.evaluate(() => ({
@@ -160,8 +175,37 @@ function assert(cond, msg) {
         assert(afterEdit.impl === 0, 'an edit clears the drawn values at once');
         assert(afterEdit.visible.length >= 1 && afterEdit.visible[afterEdit.visible.length - 1].dirty === true,
             'and asks the host again for the new text, flagged as not yet written back (writes stay blocked)');
+        // #16: the host answers the new request with the same values (the PLC did not change): drawn again.
+        await page.evaluate((a) => window.postMessage({ type: 'online/values', items: [
+            { componentId: 'root', pane: 'impl', line: a.implLine, startColumn: a.implStart, endColumn: a.implEnd + 1, eol: false, text: 'TRUE', state: 'ok', path: 'X.c' }] }, '*'),
+        { implLine, implStart: word.index + 2, implEnd });
+        await settle(200);
+        const redrawn = await page.evaluate(() => window.__panes.impl.getModel().getAllDecorations()
+            .filter(d => d.options.after && /tc-online-value/.test(d.options.after.inlineClassName || '')).map(d => d.options.after.content));
+        assert(redrawn.includes('TRUE'), `#16 after an edit, the host's answer draws the values again (${JSON.stringify(redrawn)})`);
         await page.evaluate(() => { window.__panes.impl.trigger('harness', 'undo'); });
         await settle(400);
+
+        // ── #15: the host's answer to online/visible does not trigger another online/visible ──────────
+        const loop = await page.evaluate(async () => {
+            const sent = window.__harness.sent;
+            sent.length = 0;
+            let seen = 0;
+            // A host that answers every online/visible with an online/state, as refreshEditor does.
+            const echo = setInterval(() => {
+                const n = sent.filter(m => m.type === 'online/visible').length;
+                if (n > seen) { seen = n; window.postMessage({ type: 'online/state', online: true, note: 'Instance: GVL_System.fbCylinder', writable: true }, '*'); }
+            }, 5);
+            // One reason to report: an edit (it clears the values and asks once).
+            window.__panes.impl.executeEdits('harness', [{ range: new monaco.Range(1, 1, 1, 1), text: ' ' }]);
+            await new Promise(r => setTimeout(r, 1500));
+            clearInterval(echo);
+            window.__panes.impl.trigger('harness', 'undo');
+            return sent.filter(m => m.type === 'online/visible').length;
+        });
+        assert(loop === 1, `#15 one report, answered, stays one report: no host<->webview loop (${loop} online/visible in 1.5 s)`);
+        await page.evaluate(() => window.postMessage({ type: 'online/state', online: true, note: 'Instance: GVL_System.fbCylinder', writable: true }, '*'));
+        await settle(100);
 
         // ── component switch and going offline ───────────────────────────────────────────────────
         await page.evaluate((a) => window.postMessage({ type: 'online/values', items: [
@@ -181,7 +225,7 @@ function assert(cond, msg) {
         assert(consoleErrors.length === 0, `the browser reported no errors (${consoleErrors.length ? JSON.stringify(consoleErrors.slice(0, 3)) : 'none'})`);
         if (process.env.HARNESS_ONLINE_SHOT) {
             await page.evaluate((a) => {
-                window.postMessage({ type: 'online/state', online: true, note: 'Instance: GVL_System.fbCylinder' }, '*');
+                window.postMessage({ type: 'online/state', online: true, note: 'Instance: GVL_System.fbCylinder', writable: true }, '*');
                 window.postMessage({ type: 'online/values', items: [
                     { componentId: 'root', pane: 'decl', line: a.declLine, startColumn: 2, endColumn: 5, eol: true, text: '42', state: 'ok', path: 'X.a' },
                     { componentId: 'root', pane: 'impl', line: a.implLine, startColumn: 1, endColumn: a.implEnd, eol: false, text: 'TRUE', state: 'ok', path: 'X.c' }] }, '*');

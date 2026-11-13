@@ -1006,7 +1006,8 @@
           "tcToolkit.online.allowWrites": {
             "type": "boolean",
             "default": false,
-            "markdownDescription": "**Allow writing values.** Off by default. When on, writes still have to be enabled once per online session, every write asks for a confirmation that names the target, the variable and the old and new values, and every write is logged to the *TC Toolkit Online* output channel. Writes are refused while the PLC runs a different project or an editor has unsaved edits. A write sets the value once; it is not a force."
+            "scope": "application",
+            "markdownDescription": "**Allow writing values.** Off by default, and only in your user settings: a workspace's settings cannot turn it on. When on, writes still have to be enabled once per online session, every write asks for a confirmation that names the target, the variable and the old and new values, and every write is logged to the *TC Toolkit Online* output channel. Writes are refused while the PLC runs a different project or an editor has unsaved edits, and from editors of a project the PLC does not run. A write sets the value once; it is not a force."
           },
           "tcToolkit.online.inlinePollInterval": {
             "type": "integer",

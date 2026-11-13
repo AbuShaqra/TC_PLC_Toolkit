@@ -66,7 +66,11 @@ const vscodeStub = {
     env: { clipboard: { writeText: async (t) => { calls.clipboard = t; } } },
     workspace: {
         textDocuments: [],
-        getConfiguration: (section) => ({ get: (key, fallback) => (Object.prototype.hasOwnProperty.call(settings, `${section}.${key}`) ? settings[`${section}.${key}`] : fallback) }),
+        getConfiguration: (section) => ({
+            get: (key, fallback) => (Object.prototype.hasOwnProperty.call(settings, `${section}.${key}`) ? settings[`${section}.${key}`] : fallback),
+            // The settings here are the user's own (globalValue); allowWrites is read from them only.
+            inspect: (key) => ({ key: `${section}.${key}`, globalValue: settings[`${section}.${key}`] })
+        }),
         onDidChangeConfiguration: () => ({ dispose() {} })
     },
     window: {
@@ -259,9 +263,9 @@ const watchTree = trees.get('twincatWatch');
     r = await provider.onlineSource.write(mainDoc.uri.toString(), mainDoc, writeMsg(10, 3));
     const modals = calls.modals.slice(-2);
     assert(r.status === 'written' && plc.get('GVL_Hmi.nSpeed') === 77, 'with the setting on, the session enabled and the modal confirmed, the value is written');
-    assert(modals[0].buttons[0] === 'Enable writes' && modals[1].buttons[0] === 'Write' && /Write 77 to GVL_Hmi\.nSpeed on Local runtime\?/.test(modals[1].m)
+    assert(modals[0].buttons[0] === 'Enable writes' && modals[1].buttons[0] === 'Write' && /Write 77 to GVL_Hmi\.nSpeed on Local runtime \(localhost:851\)\?/.test(modals[1].m)
         && /Current value: 50/.test(modals[1].opts.detail), 'both dialogs are modal; the write one names target, path and values');
-    assert(channel().lines.some(l => /Written: GVL_Hmi\.nSpeed = 77 on Local runtime \(was 50\)/.test(l)), 'the write is logged');
+    assert(channel().lines.some(l => /Written: GVL_Hmi\.nSpeed = 77 on Local runtime \(localhost:851\) \(was 50\)/.test(l)), 'the write is logged');
     mainDoc.isDirty = true;
     vscodeStub.workspace.textDocuments = [mainDoc];
     answers.message.push(undefined);
@@ -305,7 +309,10 @@ const watchTree = trees.get('twincatWatch');
     await run('twincat.watch.copyPath', rows[0]);
     assert(calls.clipboard === 'MAIN.nCycleCount', 'Copy ADS Path');
     await run('twincat.watch.remove', rows[1]);
-    assert(api.watch.size === 2 && plc.notifications.size === 1, 'Remove drops the entry and its notification');
+    await waitFor(() => api.watch.list()[1] && api.watch.list()[1].state === 'ok');
+    assert(api.watch.size === 2 && plc.notifications.size === 2 && ![...plc.notifications].some(n => n.path === 'gvl_system.fbstation'),
+        'Remove drops the entry and its notification');
+    assert(api.watch.list()[1].path === 'GVL_Hmi.bEnable' && api.watch.list()[1].state === 'ok', 'and the freed slot goes to the entry the limit had refused');
     answers.message.push('Write');
     answers.input.push('5');
     r = await run('twincat.watch.write', watchTree.getChildren()[0]);
