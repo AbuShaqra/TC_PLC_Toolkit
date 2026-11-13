@@ -98,7 +98,12 @@ Every built path is checked against the PLC's uploaded symbol table before use.
 
 The **watch view** follows in phase 2. It reuses the same connection module.
 
-## 5. Decisions you need to make
+## 5. Decisions (user, 2026-11-13)
+
+Decided by the user as cards on 2026-11-13: **D1** `ads-client` 2.2.0 pinned; **D2** write + a "forces active" indicator, nothing called Force; **D3** local router first, direct mode only as an explicit setting; **D4** ship with a clear error if the 4026 user-mode runtime fails; **D5** writes off by default, enabled per session, each write confirmed and logged, blocked on a code mismatch or unsaved edits; **D6** phase 1 = inline values, Go Online, write, forces indicator, mismatch guard **and a Watch view** (not deferred); **D7/D9** routes stay in XAE, remote development later; **D8** inline 500 ms, watch 200 ms on change, well under 550 notifications.
+
+The table below is the brief as proposed.
+
 
 | # | Decision | Recommended default |
 |---|---|---|
