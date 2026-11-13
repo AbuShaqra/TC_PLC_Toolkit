@@ -299,9 +299,9 @@
     function describeCompileButton(cpp, gpp) {
         if (!compileBtn) return;
         compileBtn.title = gpp
-            ? 'Compile Project: check this PLC project, write it as C++ into its CPP_Files folder, and build that with g++'
-            : (cpp ? 'Compile Project: check this PLC project, then write it as C++ into its CPP_Files folder'
-                : 'Compile Project: check this PLC project with the IEC 61131-3 compiler');
+            ? 'Build Project: check this PLC project, write it as C++ into its CPP_Files folder, and build that with g++'
+            : (cpp ? 'Build Project: check this PLC project, then write it as C++ into its CPP_Files folder'
+                : 'Build Project: check this PLC project with the IEC 61131-3 compiler');
     }
     /** @param {{generateCpp?: boolean, buildWithGpp?: boolean}} options */
     function renderCompileOptions(options) {
@@ -327,8 +327,15 @@
         compileMenu.addEventListener('keydown', (e) => {
             if (e.key === 'Escape') { e.preventDefault(); closeCompileMenu(true); return; }
             if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                // Every visible, enabled control of the menu, in order (the XAE section only when shown).
                 e.preventDefault();
-                (document.activeElement === compileOptCpp ? compileOptGpp : compileOptCpp).focus();
+                const items = Array.from(compileMenu.querySelectorAll('input, button'))
+                    .filter(el => !el.disabled && !el.closest('[hidden]'));
+                const at = items.indexOf(document.activeElement);
+                // Focus outside the items (on the menu itself): Down goes to the first, Up to the last.
+                const next = at < 0 ? (e.key === 'ArrowDown' ? 0 : items.length - 1)
+                    : (at + (e.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length;
+                if (items[next]) items[next].focus();
             }
         });
         // Tabbing out of the menu closes it.
@@ -347,6 +354,38 @@
         window.addEventListener('resize', () => { if (!compileMenu.hidden) placeSplitMenu(compileMenu); });
         document.addEventListener('click', (e) => {
             if (!compileMenu.hidden && !compileMenu.contains(e.target) && e.target !== compileCaret) closeCompileMenu(false);
+        });
+    }
+
+    // Build through XAE (R14): two actions and the window switch below a separator in the same menu.
+    // Shown only when the host says it is available (Windows); the host validates every message.
+    const xaeSection = document.getElementById('xae-menu-section');
+    const xaeBuildBtn = document.getElementById('xae-build');
+    const xaeActivateBtn = document.getElementById('xae-activate');
+    const xaeOptWindow = document.getElementById('xae-opt-window');
+    /** @param {{available?: boolean, showWindow?: boolean, running?: boolean}} options */
+    function renderXaeOptions(options) {
+        if (!xaeSection) return;
+        xaeSection.hidden = !(options && options.available);
+        // The caret's tooltip names the XAE build only where the section is shown.
+        if (compileCaret) {
+            compileCaret.title = options && options.available
+                ? 'Build options: C++ generation, the g++ build and the XAE build'
+                : 'Build options: C++ generation and the g++ build';
+        }
+        if (xaeOptWindow) xaeOptWindow.checked = !!(options && options.showWindow);
+        for (const b of [xaeBuildBtn, xaeActivateBtn]) if (b) b.disabled = !!(options && options.running);
+    }
+    for (const [btn, activate] of [[xaeBuildBtn, false], [xaeActivateBtn, true]]) {
+        if (!btn) continue;
+        btn.addEventListener('click', () => {
+            closeCompileMenu(false);
+            if (!btn.disabled) vscode.postMessage({ type: 'runXae', activate: activate });
+        });
+    }
+    if (xaeOptWindow) {
+        xaeOptWindow.addEventListener('change', () => {
+            vscode.postMessage({ type: 'setXaeOption', key: 'showWindow', value: xaeOptWindow.checked });
         });
     }
 
@@ -1604,6 +1643,9 @@
             case 'compileOptions':
                 renderCompileOptions(message.options);
                 break;
+            case 'xaeOptions':
+                renderXaeOptions(message.options);
+                break;
             case 'custom/completionsResponse': {
                 const resolve = pendingRequests.get(message.requestId);
                 if (resolve) {
@@ -1672,6 +1714,7 @@
                 compileDiagnostics = Array.isArray(message.compileDiagnostics) ? message.compileDiagnostics : [];
                 setCompileRunning(message.compileRunning === true);
                 renderCompileOptions(message.compileOptions);
+                renderXaeOptions(message.xaeOptions);
                 editsStore = pendingEditsCore.createStore(message.cachedEdits);
                 pendingEditsCore.applyCachedEdits(components, message.cachedEdits);
 

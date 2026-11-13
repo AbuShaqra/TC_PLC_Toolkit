@@ -326,4 +326,22 @@ a:hover { color: var(--vscode-textLink-activeForeground); text-decoration: under
 .option-text { min-width: 0; }
 .option-label { display: block; font-weight: 600; }
 .option-detail { display: block; color: var(--vscode-descriptionForeground); font-size: 0.92em; }
+/* Build through XAE (R14): two actions and a checkbox below the C++ options. */
+.xae-options { display: grid; gap: 6px; }
+.xae-options[hidden] { display: none; }
+.option-separator { border-top: 1px solid var(--tc-border); margin: 2px 0; }
+.option-action {
+    display: block;
+    width: 100%;
+    text-align: left;
+    padding: 4px 6px;
+    background: none;
+    border: none;
+    border-radius: 4px;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+}
+.option-action:hover { background: var(--vscode-list-hoverBackground); }
+.option-action:disabled { opacity: 0.55; cursor: default; }
 @media (prefers-reduced-motion: reduce) { .options-toggle .icon { transition: none; } }

@@ -111,10 +111,12 @@ function killProcessTree(child, deps = {}) {
  * @param {string} command
  * @param {string[]} args
  * @param {{cwd?: string, env?: Object<string, string|undefined>, timeoutMs: number, onCancel?: (cancel: () => void) => void,
- *   killTree?: boolean}} options
+ *   killTree?: boolean, onStdout?: (chunk: any) => void, onStderr?: (chunk: any) => void}} options
  *   `env` replaces the inherited environment; omitted, the child inherits this process's.
  *   `killTree`: a timeout or cancellation stops the child's own children too (g++ runs `cc1plus`
  *   and `as`, which a plain kill of the driver leaves running); see `killProcessTree`.
+ *   `onStdout` / `onStderr`: called with every raw chunk as it arrives (Build through XAE streams
+ *   its progress); the output is still collected and returned as before.
  * @returns {Promise<{outcome: 'exit'|'spawn-error'|'timeout'|'cancelled', code: number|null,
  *   stdout: string, stderr: string, error: string}>}
  */
@@ -152,8 +154,8 @@ function runChild(spawn, command, args, options) {
             finish('spawn-error', null, err && /** @type {any} */ (err).message ? /** @type {any} */ (err).message : String(err));
             return;
         }
-        if (child.stdout) child.stdout.on('data', (chunk) => { stdout += String(chunk); });
-        if (child.stderr) child.stderr.on('data', (chunk) => { stderr += String(chunk); });
+        if (child.stdout) child.stdout.on('data', (chunk) => { stdout += String(chunk); if (options.onStdout) options.onStdout(chunk); });
+        if (child.stderr) child.stderr.on('data', (chunk) => { stderr += String(chunk); if (options.onStderr) options.onStderr(chunk); });
         child.on('error', (err) => finish('spawn-error', null, err && err.message ? err.message : String(err)));
         child.on('close', (code) => finish('exit', typeof code === 'number' ? code : null));
         timer = setTimeout(() => stop('timeout'), options.timeoutMs);

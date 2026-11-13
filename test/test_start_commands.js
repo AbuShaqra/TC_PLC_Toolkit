@@ -249,7 +249,7 @@ const recents = () => (state.get('twincat.recentSolutions') || []).map(e => e.sl
     await panel.send({ type: 'setCompileOption', key: 'buildWithGpp', value: true });
     let lastState = panel.posted.filter(m => m.type === 'state').pop();
     assert(JSON.stringify(optionWrites) === '[["buildWithGpp",true]]' && lastState.compileOptions.generateCpp === true && lastState.compileOptions.buildWithGpp === true,
-        'R13: a checkbox is written through Compile Project, and the page gets the result (the build turned generation on)');
+        'R13: a checkbox is written through Build Project, and the page gets the result (the build turned generation on)');
     await panel.send({ type: 'setCompileOption', key: 'tcToolkit.compiler.path', value: true });
     await panel.send({ type: 'setCompileOption', key: 'generateCpp', value: 'yes' });
     assert(optionWrites.length === 1, 'R13: anything but the two switches with a boolean is ignored');
@@ -333,7 +333,7 @@ const recents = () => (state.get('twincat.recentSolutions') || []).map(e => e.sl
     await panel.send({ type: 'link', id: 'constructor' });
     await panel.send({ type: 'link', id: 'reportIssue' });
     assert(!executedIds().includes('workbench.action.terminal.new'), 'a command outside the allow-list is ignored');
-    assert(executedIds().includes('twincat.compileProject'), 'the Compile project tile’s command is allow-listed');
+    assert(executedIds().includes('twincat.compileProject'), 'the Build project tile’s command is allow-listed');
     assert(executedIds().includes('twincat.generateSt') && executedIds().includes('twincat.reportIssue') && executedIds().length === 3,
         'allowed actions and known links run their command; unknown ids do nothing');
     await panel.send({ type: 'create', version: '3.1.4026', name: 'Cell_1', location: loc });

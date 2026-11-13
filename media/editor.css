@@ -529,6 +529,20 @@ input:checked + .slider:before {
     background: var(--vscode-list-hoverBackground, rgba(255, 255, 255, 0.06));
 }
 .split-menu-item input { cursor: pointer; flex-shrink: 0; }
+/* Build through XAE (R14): the two actions in the Compile menu, below a separator. */
+.split-menu-separator { border-top: 1px solid var(--border-color); margin: 6px 0 2px; }
+#xae-menu-section[hidden] { display: none; }
+.split-menu-action {
+    width: 100%;
+    background: none;
+    border: none;
+    color: inherit;
+    font: inherit;
+    font-size: 0.8rem;
+    text-align: left;
+}
+.split-menu-action:disabled { opacity: 0.5; cursor: default; }
+.split-menu-action:focus-visible { outline: 1px solid var(--vscode-focusBorder, #007fd4); outline-offset: -1px; }
 /* The Select all row: separated from the project list it controls. */
 .split-menu-all {
     border-bottom: 1px solid var(--border-color);

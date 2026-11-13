@@ -56,16 +56,19 @@ function isTwinCatSolution(slnPath) {
  * @param {() => {generateCpp: boolean, buildWithGpp: boolean}} [deps.compileOptions] The Compile
  *   dropdown's two switches (src/commands/compileCommands.js).
  * @param {(key: string, value: boolean) => Promise<boolean>} [deps.setCompileOption] Writes one of them.
+ * @param {() => {available: boolean, showWindow: boolean, running: boolean, configuration: string, platform: string}} [deps.xaeOptions]
+ *   Build through XAE's dropdown state (R14).
+ * @param {(key: string, value: boolean) => Promise<boolean>} [deps.setXaeOption] Writes its window switch.
  * @param {() => any} [deps.gppMachine] How the start page checks and detects g++ (tests only; the real machine by default).
  * @returns {{startPage: InstanceType<typeof StartPageController>, recordOpenSolutions: () => void}}
  */
-function registerStartCommands(context, { provider, getProjectMap, getSolutionMap, isCompilerAvailable, compileOptions, setCompileOption, gppMachine }) {
+function registerStartCommands(context, { provider, getProjectMap, getSolutionMap, isCompilerAvailable, compileOptions, setCompileOption, gppMachine, xaeOptions, setXaeOption }) {
     const recents = createRecentStore(context.globalState, (p) => fs.existsSync(p));
     const startPage = new StartPageController(context, {
         recents,
         hasProject: () => { const m = getProjectMap(); return !!(m && m.projects && m.projects.size > 0); },
         compilerReady: () => !!(isCompilerAvailable && isCompilerAvailable()),
-        compileOptions, setCompileOption, gppMachine
+        compileOptions, setCompileOption, gppMachine, xaeOptions, setXaeOption
     });
     const templatesRoot = path.join(context.extensionPath, 'resources', 'templates');
 

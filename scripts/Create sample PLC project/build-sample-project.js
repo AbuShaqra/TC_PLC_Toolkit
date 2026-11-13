@@ -212,7 +212,7 @@ const OBJECTS = [
         declaration: [
             "{attribute 'qualified_only'}",
             'VAR_GLOBAL',
-            '\tbExtendOut, bRetractOut, bSensorExtended, bSensorRetracted : BOOL;',
+            '\tbExtendOut, bRetractOut, bSensorExtended, bSensorRetracted : BOOL := FALSE;',
             'END_VAR',
             ''
         ].join('\n')
@@ -408,7 +408,7 @@ const OBJECTS = [
                     '',
                     '_stStatus.eState := _eState;',
                     '_stStatus.nErrorId := _nErrorId;',
-                    '_uWord.nWord := _stRecipe.aSteps[1];'
+                    '_uWord.nWord := INT_TO_WORD(_stRecipe.aSteps[1]);'
                 ].join('\n')
             },
             {

@@ -7,9 +7,9 @@
  *
  * Messages to the host:  ready · browseLocation · create {version, name, location} · openProject ·
  *                        openRecent {slnPath} · removeRecent {slnPath} · command {command} · link {id} ·
- *                        openSettings {section} · setCompileOption {key, value}
+ *                        openSettings {section} · setCompileOption {key, value} · setXaeOption {key, value}
  * Messages from the host: state {location, sep, recents, recentsShown, hasProject, compilerReady, compileOptions,
- *                         xaeShells, gpp} ·
+ *                         xaeShells, gpp, xaeOptions} ·
  *                         location {location} · createResult {ok, error?}
  */
 
@@ -97,6 +97,7 @@
 
     $('xae-change').addEventListener('click', () => vscode.postMessage({ type: 'openSettings', section: 'xaeShell' }));
     $('gpp-change').addEventListener('click', () => vscode.postMessage({ type: 'openSettings', section: 'gpp' }));
+    $('xae-build-change').addEventListener('click', () => vscode.postMessage({ type: 'openSettings', section: 'xaeBuild' }));
 
     /** The last recent list and row limit the host sent; kept so the toggle can re-render without it. */
     let lastRecents = [];
@@ -271,7 +272,7 @@
         compileReady = ready;
         tile.disabled = !(ready && hasProject);
         tile.classList.toggle('ready', ready);
-        tile.title = ready ? '' : 'The compiler file named in the Compile Project settings does not exist';
+        tile.title = ready ? '' : 'The compiler file named in the Build Project settings does not exist';
         describeCompileTile();
         $('compile-missing').hidden = ready;
     }
@@ -304,10 +305,36 @@
     optionsPanel.addEventListener('keydown', (e) => {
         if (e.key === 'Escape') { e.preventDefault(); setOptionsOpen(false, true); return; }
         if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+            // Every visible, enabled control of the panel, in order (the XAE part only when shown).
             e.preventDefault();
-            (document.activeElement === optGenerate ? optBuild : optGenerate).focus();
+            const items = Array.from(optionsPanel.querySelectorAll('input, button')).filter(el => !el.disabled && !el.closest('[hidden]'));
+            const at = items.indexOf(document.activeElement);
+            // Focus outside the items (on the panel itself): Down goes to the first, Up to the last.
+            const next = at < 0 ? items[e.key === 'ArrowDown' ? 0 : items.length - 1]
+                : items[(at + (e.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length];
+            if (next) next.focus();
         }
     });
+    // Build through XAE (R14): the two actions run their commands (data-command); the checkbox writes
+    // tcToolkit.xaeBuild.showWindow through the host, which answers with `state`.
+    const optXaeWindow = $('opt-xae-window');
+    /**
+     * @param {{available?: boolean, showWindow?: boolean, running?: boolean, configuration?: string, platform?: string}} o
+     * @param {boolean} hasProject The two actions also need an open PLC project (like data-needs-project).
+     */
+    function renderXaeOptions(o, hasProject) {
+        $('xae-options').hidden = !(o && o.available);
+        optXaeWindow.checked = !!(o && o.showWindow);
+        $('xae-build-run').disabled = !!(o && o.running) || !hasProject;
+        $('xae-activate-run').disabled = !!(o && o.running) || !hasProject;
+        optionsToggle.title = o && o.available
+            ? 'Build options: C++ generation, the g++ build and the XAE build'
+            : 'Build options: C++ generation and the g++ build';
+        $('xae-build-mode').textContent = `${o && o.showWindow ? 'window shown' : 'headless'}; ` +
+            `${(o && o.configuration) || 'Release'} | ${(o && o.platform) || 'TwinCAT RT (x64)'}` +
+            (o && o.available === false ? ' (needs Windows with TwinCAT XAE)' : '');
+    }
+    optXaeWindow.addEventListener('change', () => vscode.postMessage({ type: 'setXaeOption', key: 'showWindow', value: optXaeWindow.checked }));
     /** @param {{generateCpp?: boolean, buildWithGpp?: boolean}} o */
     function renderCompileOptions(o) {
         optGenerate.checked = !!(o && (o.generateCpp || o.buildWithGpp));
@@ -339,6 +366,7 @@
                 for (const b of document.querySelectorAll('[data-needs-project]')) b.disabled = !msg.hasProject;
                 renderCompileTile(!!msg.compilerReady, !!msg.hasProject);
                 renderCompileOptions(msg.compileOptions);
+                renderXaeOptions(msg.xaeOptions, !!msg.hasProject);
                 refresh();
                 break;
             case 'location':

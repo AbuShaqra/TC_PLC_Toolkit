@@ -246,7 +246,7 @@ const settle = () => new Promise(r => setTimeout(r, 10));
     result = await run('twincat.compileProject');
     await settle();
     assert(result.ok === false && result.reason === 'setup' && calls.errors.length === 1 &&
-        /Compile Project cannot run\. The compiler file ".*gone\.cjs" \(setting "tcToolkit\.compiler\.path"\) does not exist/.test(calls.errors[0].m) &&
+        /Build Project cannot run\. The compiler file ".*gone\.cjs" \(setting "tcToolkit\.compiler\.path"\) does not exist/.test(calls.errors[0].m) &&
         calls.errors[0].buttons.join() === 'Open Settings',
         `SETUP: a missing override compiler is explained and the settings are offered (${calls.errors[0] && calls.errors[0].m})`);
     assert(calls.executed.some(c => c.id === 'twincat.openSettings' && c.args[0] === 'tcToolkit.compiler'),
@@ -273,10 +273,10 @@ const settle = () => new Promise(r => setTimeout(r, 10));
     calls.errors.length = 0;
     result = await run('twincat.compileProject');
     await settle();
-    assert(result.ok && result.errors === 0 && result.warnings === 0 && calls.infos.length === 1 && calls.infos[0].m === 'Compile Project — PLC: no errors.' &&
+    assert(result.ok && result.errors === 0 && result.warnings === 0 && calls.infos.length === 1 && calls.infos[0].m === 'Build Project — PLC: no errors.' &&
         calls.infos[0].buttons.length === 0, `CLEAN: "no errors" (${calls.infos[0] && calls.infos[0].m})`);
     assert(calls.status.shown && /no errors/.test(calls.status.text) && problems.map.size === 0, 'CLEAN: the status bar says so; the Problems panel is empty');
-    assert(calls.progress.length === 1 && calls.progress[0].cancellable === true && /Compiling PLC/.test(calls.progress[0].title), 'RUN: progress is shown and can be cancelled');
+    assert(calls.progress.length === 1 && calls.progress[0].cancellable === true && /Building PLC/.test(calls.progress[0].title), 'RUN: progress is shown and can be cancelled');
     assert(calls.lastPick === undefined, 'PICK: one project runs without asking');
     const compilerCall = fake.calls[fake.calls.length - 1];
     assert(compilerCall.command === 'node' && compilerCall.args[0] === bundlePath && compilerCall.args.includes('--check') && compilerCall.args.includes('--json') &&
@@ -294,10 +294,10 @@ const settle = () => new Promise(r => setTimeout(r, 10));
     result = await run('twincat.compileProject');
     await settle();
     assert(result.ok && result.errors === 1 && result.warnings === 1 && result.filteredPragmaWarnings === 1 &&
-        calls.errors.length === 1 && calls.errors[0].m === 'Compile Project — PLC: 1 error, 1 warning.' &&
+        calls.errors.length === 1 && calls.errors[0].m === 'Build Project — PLC: 1 error, 1 warning.' &&
         calls.errors[0].buttons.join() === 'Go to Problem…,Open Problems',
         `ERRORS: the summary counts errors and warnings, without the filtered pragma warning (${calls.errors[0] && calls.errors[0].m})`);
-    assert(calls.status.text === '$(error) 1 $(warning) 1 Compile', `ERRORS: the status bar shows the counts (${calls.status.text})`);
+    assert(calls.status.text === '$(error) 1 $(warning) 1 Build', `ERRORS: the status bar shows the counts (${calls.status.text})`);
     const entries = problems.map.get(fbUri.toString()) || [];
     assert(problems.map.size === 1 && entries.length === 2, 'PROBLEMS: both diagnostics are published on the object\'s file; the GVL has none');
     const err = entries.find(d => d.severity === 0);
@@ -347,7 +347,7 @@ const settle = () => new Promise(r => setTimeout(r, 10));
     provider.compileSource.onComponentEdited(fbUri.toString(), 'method_Run');
     let left = problems.map.get(fbUri.toString()) || [];
     assert(left.length === 1 && left[0].severity === 1 && provider.compileSource.paneDiagnostics(fbUri.toString()).length === 1 &&
-        calls.status.text === '$(error) 0 $(warning) 1 Compile', 'EDIT: editing the method removes its problem everywhere; the other component keeps its own');
+        calls.status.text === '$(error) 0 $(warning) 1 Build', 'EDIT: editing the method removes its problem everywhere; the other component keeps its own');
     provider.compileSource.onComponentEdited(fbUri.toString(), 'root');
     assert(problems.map.size === 0 && /no errors/.test(calls.status.text), 'EDIT: the last problem gone, the file leaves the Problems panel');
 
@@ -376,7 +376,7 @@ const settle = () => new Promise(r => setTimeout(r, 10));
     compilerAnswer = () => ({ stdout: 'not json', stderr: 'TypeError: boom', code: 1 });
     calls.errors.length = 0;
     result = await run('twincat.compileProject');
-    assert(result.ok === false && result.reason === 'failed' && /Compile Project did not finish\. The compiler's output could not be read/.test(calls.errors[0].m) &&
+    assert(result.ok === false && result.reason === 'failed' && /Build Project did not finish\. The compiler's output could not be read/.test(calls.errors[0].m) &&
         (problems.map.get(fbUri.toString()) || []).length === 2, 'FAILED: malformed compiler output is reported; it is not "no errors", and the earlier results stay');
     compilerAnswer = () => ({ stdout: JSON.stringify({ dialect: null, files: [], diagnostics: [{ file: null, line: 0, column: 0, severity: 'error', message: 'dialect file x: ENOENT' }], summary: {} }), code: 2 });
     calls.errors.length = 0;
@@ -418,6 +418,27 @@ const settle = () => new Promise(r => setTimeout(r, 10));
     result = await run('twincat.compileProject', { projectKey: 'a' });
     assert(result.ok && result.projectKey === 'a' && Object.keys(seenUnits[seenUnits.length - 1]).length === 2, 'PICK: a caller can name the project');
 
+    // ── Build through XAE's fallback (fromXae): no notification, no setup popup, append ─────────
+    {
+        compilerAnswer = () => errorReport(unitLineOf(onDiskXml, 'nNope := 5;'));
+        for (const k of ['errors', 'infos', 'warnings']) calls[k].length = 0;
+        result = await run('twincat.compileProject', { projectKey: 'a', fromXae: true, append: false });
+        await settle();
+        assert(result.ok && result.errors === 1 && result.projectName === 'Alpha' && calls.errors.length + calls.infos.length + calls.warnings.length === 0,
+            'FROM XAE: the check runs and returns its counts, with no notification of its own');
+        const afterFirst = problems.map.size;
+        compilerAnswer = () => ({ stdout: JSON.stringify({ dialect: 'twincat3', files: [], diagnostics: [], summary: {} }), code: 0 });
+        result = await run('twincat.compileProject', { projectKey: 'b', fromXae: true, append: true });
+        assert(result.ok && afterFirst > 0 && problems.map.size === afterFirst, 'FROM XAE: append keeps the problems of the project checked before it');
+        result = await run('twincat.compileProject', { projectKey: 'b', fromXae: true, append: false });
+        assert(result.ok && problems.map.size === 0, 'FROM XAE: the first project of a fallback replaces the previous problems');
+        settings['tcToolkit.compiler.path'] = path.join(ROOT, 'gone.cjs');
+        result = await run('twincat.compileProject', { projectKey: 'a', fromXae: true });
+        assert(result.reason === 'setup' && /gone\.cjs/.test(result.message) && calls.errors.length === 0,
+            'FROM XAE: a missing compiler is returned as a message, not shown as a popup');
+        settings['tcToolkit.compiler.path'] = bundlePath;
+    }
+
     projectList = [];
     calls.warnings.length = 0;
     result = await run('twincat.compileProject');
@@ -458,7 +479,7 @@ const settle = () => new Promise(r => setTimeout(r, 10));
         await settle();
         const ran = calls.executed.filter(c => c.id === 'twincat.compileProject');
         assert(ran.length === 1 && ran[0].args[0] && ran[0].args[0].projectKey === 'b' && calls.lastPick === pickBefore,
-            `TOOLBAR: compile-project runs Compile Project for the project that owns the file, without asking (${JSON.stringify(ran.map(r => r.args))})`);
+            `TOOLBAR: compile-project runs Build Project for the project that owns the file, without asking (${JSON.stringify(ran.map(r => r.args))})`);
         assert(calls.infos.some(i => /PLC_Two: no errors/.test(i.m)), `TOOLBAR: the run's summary names that project (${JSON.stringify(calls.infos.map(i => i.m))})`);
         const running = toPanel.filter(m => m.type === 'compileRunning').map(m => m.running);
         assert(JSON.stringify(running) === '[true,false]', `TOOLBAR: every open editor is told the run started and ended (${JSON.stringify(running)})`);
@@ -478,7 +499,7 @@ const settle = () => new Promise(r => setTimeout(r, 10));
         answers.message.push(undefined);
         await onMessage({ type: 'compile-project' });
         await settle();
-        assert(calls.errors.length === 1 && /^Compile Project cannot run\. The compiler file/.test(calls.errors[0].m),
+        assert(calls.errors.length === 1 && /^Build Project cannot run\. The compiler file/.test(calls.errors[0].m),
             `TOOLBAR: with the compiler missing the button gives the command's own message (${calls.errors[0] && calls.errors[0].m})`);
         settings['tcToolkit.compiler.path'] = bundlePath;
         nodeVersion = 'v18.19.0';
@@ -628,7 +649,7 @@ const settle = () => new Promise(r => setTimeout(r, 10));
         const reset = () => { for (const k of ['errors', 'infos', 'warnings']) calls[k].length = 0; panelPosts.length = 0; };
         const generationCalls = () => fake.calls.filter(c => c.args.includes('-o') && c.command !== gppExe);
         const gppCalls = () => fake.calls.filter(c => c.command === gppExe);
-        const lastNote = () => [...calls.errors, ...calls.warnings, ...calls.infos].map(m => m.m).find(m => /^Compile Project/.test(m)) || '';
+        const lastNote = () => [...calls.errors, ...calls.warnings, ...calls.infos].map(m => m.m).find(m => /^Build Project/.test(m)) || '';
 
         // Off by default: a clean run generates nothing.
         reset();
@@ -992,7 +1013,7 @@ const settle = () => new Promise(r => setTimeout(r, 10));
             const declLog = (calls.outputs || []).find(c => c.name === OUTPUT_CHANNEL_NAME);
             assert(gppCalls().length === gppBeforeDecl + 1 && r13Result.cpp.gpp.status === 'done' && r13Result.cpp.gpp.exitCode === 0
                 && /The generated C\+\+ and the g\+\+ check do not cover the library code of Synthetic Lib: their code is not available, so their function blocks and functions are declarations with empty bodies there\./.test(lastNote())
-                && calls.warnings.some(m => /^Compile Project/.test(m.m))
+                && calls.warnings.some(m => /^Build Project/.test(m.m))
                 && !!declLog && declLog.lines.some(l => /PLC: library code the generated C\+\+ and the g\+\+ check do not cover$/.test(l))
                 && declLog.lines.some(l => l === '  Synthetic Lib:')
                 && declLog.lines.some(l => /^ {4}declarations with empty bodies .*: F_SynCalc, FB_SynThing$/.test(l))

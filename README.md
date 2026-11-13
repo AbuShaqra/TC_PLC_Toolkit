@@ -42,8 +42,8 @@ page in an editor tab with:
 - **Open existing project** — a solution (`.sln`) or a folder, and the most recent TwinCAT solutions
   you opened or created here. Two are listed; when more are remembered (up to ten), a **Show all** tile
   expands the list. `tcToolkit.startPage.recentProjectsShown` changes how many are listed.
-- **Project actions** — *Generate ST*, *Update Library Definitions* and *Compile project* (see
-  [Compile project](#compile-project)).
+- **Project actions** — *Generate ST*, *Update Library Definitions* and *Build project* (see
+  [Build project](#build-project)).
 - **Help and links**, and **Settings** — which also shows where the XAE Shell of each TwinCAT version
   was found (see [Settings](#settings)), with *Change…* and *Detect again*, and the same for **g++**
   (optional, used only by *Build with g++*): the path set in `tcToolkit.compiler.gppPath`, or — while it
@@ -257,9 +257,9 @@ of the workspace. The generated files show up in the **PLC Objects** tree under 
 content: the create, delete, rename and paste commands of the PLC Objects view do not apply there, and its `.st` files are
 never read back as sources.
 
-### Compile project
+### Build project
 
-*TC Toolkit: Compile Project* (also on the start page, and as the **Compile** button next to *Generate ST*
+*TC Toolkit: Build Project* (also on the start page as the *Build project* tile, and as the **Build** button next to *Generate ST*
 in the editor's toolbar, which compiles the project the open file belongs to) checks a PLC project with **an external IEC 61131-3
 compiler** — a full compiler front end, so it catches what the built-in diagnostics deliberately leave
 alone. With several PLC projects you pick which one. By default it only checks: nothing is generated, and
@@ -306,9 +306,9 @@ GPL v3; its licence, source link and third-party notices are in `resources/compi
 
 #### C++ output (optional)
 
-Compile Project can also turn the PLC project into C++. Both steps are **off by default**; turn them on
-with the small arrow next to the **Compile** button (in the editor's toolbar, or on the start page's
-*Compile project* tile), or in the settings:
+Build Project can also turn the PLC project into C++. Both steps are **off by default**; turn them on
+with the small arrow next to the **Build** button (in the editor's toolbar, or on the start page's
+*Build project* tile), or in the settings:
 
 - **Generate C++** (`tcToolkit.compiler.generateCpp`) — when the check finds **no errors**, the project
   is written as C++ into a `CPP_Files` folder next to its `.plcproj` (beside `ST_Files`):
@@ -381,6 +381,36 @@ nobody changed since (it keeps a small record, `.tc-toolkit-generated.json`, in 
 the same name you made or edited is left alone, and the summary says so. Renaming the `.plcproj` removes
 the old project's files; a Git checkout that only changes their line endings does not count as an edit. It also writes a `.gitignore` there listing its own files so they are not committed by accident; you may delete it (it is then not written again), and a `.gitignore` of your own there is never touched.
 
+### Build and activate through XAE
+
+On Windows with **TwinCAT XAE** installed, the Build button's dropdown (in the editor and on the start
+page) also offers **Build through XAE** and **Build and Activate through XAE…** (also in the Command
+Palette as *TC Toolkit: Build through XAE (requires TwinCAT)* and *Build and Activate through XAE…
+(requires TwinCAT)*). They drive XAE's own Automation Interface from PowerShell, so the real solution is
+built with XAE's compiler and the project's real libraries.
+
+- **Headless by default.** The XAE Shell runs hidden with its UI suppressed. Tick **Show the XAE window**
+  in the dropdown (setting `tcToolkit.xaeBuild.showWindow`) to watch the shell for the whole build. The
+  **TC Toolkit XAE Build** output channel says which mode was asked for and which actually ran (read back
+  from the shell: `SuppressUI` and `MainWindow.Visible`).
+- **Errors** go to the Problems panel (source *TC Toolkit XAE build*) and the editor panes. Where XAE's
+  error list does not say exactly where an error is, the entry ends with *(location approximate)*; the
+  full output is in the channel.
+- **Activation always asks.** *Build and Activate through XAE…* lists this machine's runtimes (the
+  real-time one and any user-mode runtimes; *TC Toolkit: Show Activation Targets* prints the same list),
+  you pick one, and a confirmation names it every time — the running PLC on that target stops and
+  TwinCAT restarts there. Nothing runs before you confirm. Only runtimes of this machine can be chosen.
+- **The XAE window is always shown during activation**, even in headless mode: activation can raise a
+  licence (for example a trial licence) or full-download dialog, and that must be answered in the
+  window. TC Toolkit never answers it for you.
+- **Cancel** closes the solution without saving and quits only the XAE Shell this build started; it is
+  refused while the target is being activated (stopping then could leave the runtime in CONFIG). A
+  build stops after `tcToolkit.xaeBuild.timeoutMinutes`; a headless build that shows no progress for
+  `tcToolkit.xaeBuild.stallMinutes` offers to re-run with the window shown.
+
+Not done: remote targets, creating the boot project, building a single PLC project of a multi-project
+solution, and writing routes. The solution and `.tsproj` are never saved by these commands.
+
 ### For AI coding assistants
 
 [`templates/twincat-project-CLAUDE.md`](templates/twincat-project-CLAUDE.md) is a portable field guide
@@ -404,8 +434,11 @@ for the version logic. There is no unit-test framework for Structured Text, so a
 
 **VS Code** `^1.66.0`. Nothing else for editing.
 
-Optional, only for the C++ options of *Compile project*: **g++ 7 or later** for *Build with g++* (on
-Windows, MinGW-w64 — for example MSYS2's UCRT64; see [Compile project](#compile-project)), and Microsoft's
+Optional, only for *Build through XAE*: Windows with **TwinCAT XAE** (the XAE Shell of the project's
+TwinCAT version) and Windows PowerShell.
+
+Optional, only for the C++ options of *Build project*: **g++ 7 or later** for *Build with g++* (on
+Windows, MinGW-w64 — for example MSYS2's UCRT64; see [Build project](#build-project)), and Microsoft's
 **C/C++** extension if you want IntelliSense on the generated C++.
 
 ## Install
@@ -443,11 +476,16 @@ old entry is removed from your `settings.json`.
 | `tcToolkit.startPage.recentProjectsShown` | `2` | How many recent TwinCAT solutions the start page lists (1 to 10). When more are remembered, a **Show all** tile expands the list. |
 | `tcToolkit.xaeShell.path4024` | *(detected)* | Full path to `TcXaeShell.exe` of the XAE Shell for TwinCAT 3.1.4024 (the 32-bit shell). Empty = not found. |
 | `tcToolkit.xaeShell.path4026` | *(detected)* | Full path to `TcXaeShell.exe` of the XAE Shell for TwinCAT 3.1.4026 (the 64-bit shell). Empty = not found. |
-| `tcToolkit.compiler.path` | *(empty)* | Full path to the command-line file (`.cjs`) of an external IEC 61131-3 compiler for **Compile Project** to run instead of the bundled one. Empty = the bundled compiler. Per machine. |
+| `tcToolkit.compiler.path` | *(empty)* | Full path to the command-line file (`.cjs`) of an external IEC 61131-3 compiler for **Build Project** to run instead of the bundled one. Empty = the bundled compiler. Per machine. |
 | `tcToolkit.compiler.nodePath` | *(empty)* | Full path to a Node.js 22+ executable that runs the compiler. Empty = found automatically (`node` on `PATH`, the usual Windows install locations, then VS Code's own runtime when it is Node.js 22+). Per machine. |
-| `tcToolkit.compiler.generateCpp` | `false` | **Generate C++**: after a check with no errors, write the project as C++ into `CPP_Files/` next to its `.plcproj`. Turning it off also turns off the g++ build. Also in the Compile button's dropdown. |
-| `tcToolkit.compiler.buildWithGpp` | `false` | **Build with g++**: also compile that C++ with g++ (a compile check; errors in the Problems panel). Turning it on also turns on *Generate C++*. Also in the Compile button's dropdown. |
+| `tcToolkit.compiler.generateCpp` | `false` | **Generate C++**: after a check with no errors, write the project as C++ into `CPP_Files/` next to its `.plcproj`. Turning it off also turns off the g++ build. Also in the Build button's dropdown. |
+| `tcToolkit.compiler.buildWithGpp` | `false` | **Build with g++**: also compile that C++ with g++ (a compile check; errors in the Problems panel). Turning it on also turns on *Generate C++*. Also in the Build button's dropdown. |
 | `tcToolkit.compiler.gppPath` | *(detected)* | Full path to `g++` (`g++.exe` on Windows). Empty = `g++` on `PATH`, then the usual Windows install folders; filled with the one found when the build is turned on, never overwritten. Per machine. |
+| `tcToolkit.xaeBuild.showWindow` | `false` | **Show the XAE window**: show the XAE Shell window for the whole *Build through XAE* instead of building headless. The window is always shown during activation, so a licence or download dialog can be answered, and it stays visible after an XAE version switch. Also in the Build button's dropdown. |
+| `tcToolkit.xaeBuild.configuration` | `Release` | The solution configuration *Build through XAE* builds. |
+| `tcToolkit.xaeBuild.platform` | `TwinCAT RT (x64)` | The solution platform it builds (activating onto a user-mode runtime needs its `TwinCAT OS (...)` platform). |
+| `tcToolkit.xaeBuild.timeoutMinutes` | `30` | Minutes before a build through XAE is stopped (5 to 240; during activation only reported). |
+| `tcToolkit.xaeBuild.stallMinutes` | `10` | Headless watchdog: minutes without output before offering a re-run with the window shown (2 to 60). |
 
 **XAE Shell paths.** On Windows the two `tcToolkit.xaeShell.*` settings are filled automatically with the
 installation found on your machine: first from the shell's COM registration, then from the default

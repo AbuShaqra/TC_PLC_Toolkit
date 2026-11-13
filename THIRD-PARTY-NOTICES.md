@@ -32,7 +32,7 @@ Monaco bundles further components under `media/monaco-editor/vs/`:
 - https://github.com/microsoft/vscode-codicons
 - License text: https://creativecommons.org/licenses/by/4.0/
 
-## STruC++ (the compiler behind *TC Toolkit: Compile Project*)
+## STruC++ (the compiler behind *TC Toolkit: Build Project*)
 
 - Location: `resources/compiler/` (`compiler.cjs`, `libs/`), run as a separate Node.js process —
   never loaded into the extension; and its C++ runtime headers, `resources/compiler/include/`, which

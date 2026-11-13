@@ -1,0 +1,7 @@
+{"v":1,"t":"hello","mode":"activate","showWindow":false}
+{"v":1,"t":"phase","name":"resolve"}
+{"log":"FATAL: platform 'TwinCAT RT (x64)' is not the platform of activation target 198.51.100.4.1.1,"}
+{"log":"       which runs 'TwinCAT OS (x64)' (read from that runtime's boot configuration)."}
+{"v":1,"t":"fatal","code":"target-refused","text":"platform 'TwinCAT RT (x64)' is not the platform of activation target 198.51.100.4.1.1,\r\n       which runs 'TwinCAT OS (x64)' (read from that runtime's boot configuration).\r\n       Build it without -ActivateConfiguration to cross-compile, or select\r\n       'Release|TwinCAT OS (x64)' to build and activate here.","data":{"gate":4}}
+{"v":1,"t":"done","exitCode":2,"ui":{"requested":"headless","buildPhase":null,"versionSwitchKeptVisible":false,"activationShown":false}}
+{"exit":2}

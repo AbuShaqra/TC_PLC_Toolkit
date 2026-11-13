@@ -38,122 +38,122 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   **Follow-ups (not R12):** R12b informational branch state (Backlog; never feeds diagnostics; open decision:
   Debug only or "all configurations agree"); definition returning every same-name declaration once
   `mapDefinition` accepts arrays; optional merged completion items (`BOOL | INT (conditional)`).
-- **R13 C++ generation + g++ build: IMPLEMENTED on `claude/focused-ptolemy-m6acaz`, not yet merged** (2026-11-12;
-  needs the user's Windows check). Settings `tcToolkit.compiler.generateCpp` / `buildWithGpp` (both off; build on ⇒
-  generation on, generation off ⇒ build off, per scope) and `tcToolkit.compiler.gppPath` (machine; filled when the build
-  turns on, never overwritten; command *TC Toolkit: Detect g++*). After a check with 0 errors the compiler runs a SECOND
-  time in compile mode (verified: `--json` only with `--check`, `--check` refuses `-o`), output
-  `<project dir>/CPP_Files/<plcproj stem>.cpp|.hpp` under `.tc-toolkit-generated.json` (only unchanged own files are
-  replaced/deleted). g++ `-std=c++17 -c` (g++ 7+ only) against `resources/compiler/include/` (headers vendored at the SAME commit
-  `eb52d2c`, bundle byte-identical; GPL-3.0-only WITH the runtime exception per the fork's COPYING — `iec_fault.hpp`
-  and `iec_global.hpp` carry no per-file SPDX line, covered by COPYING's list only). Compile dropdowns in the editor
-  toolbar and on the start page. Design and rules: DEVELOPMENT.md "C++ generation and the g++ build (roadmap R13)".
-  **Fork gap found** (`gpp-real`): sample 1's `GVL_System.fbStation.State` (PROPERTY read through a global FB
-  instance) is emitted as `FBSTATION.STATE` (no getter) → g++ error on correct code; pinned in
-  `test/test_cpp_real.js` `KNOWN_GPP_GAPS` — report to the fork lane. Sample 2 builds cleanly.
-  **Library use (user decision 2026-11-12, replaces round 1's "no C++ for a project that needs library declarations"):**
-  the compile mode now gets the check's library declarations, so a project that uses vendor-library symbols is
-  generated and g++-checked; library FBs/functions are empty-bodied C++ (g++ accepts it with no warning —
-  `test_cpp_real.js` LIB on a sample copy with the synthetic library). `cppGenerate.libraryCoverage` (from
-  `prepareLibraryCheck`'s `declaredSymbols`/`compilerSubstitutes`/`undeclaredUses(CheckResult.filteredLibrary)`) is shown as a summary
-  sentence naming the libraries as the `.plcproj` references them (a warning), the blocks per library in the *TC Toolkit
-  Compile* channel, and a line-comment header on the `.cpp`/`.hpp` (inside the hashed text: ownership unaffected; none
-  when no block is used). Review round 2 (2026-11-12) closed most of the filtered-error cases so they generate
-  too: a library constant as an array bound/string length is written as its `.tmc` value (`F_SynBounded`), and a
-  library FB's own `.tmc` members are declared as a `VAR` block, so a derived project block reading an inherited
-  variable compiles (`FB_LibChild EXTENDS FB_SynAxis` reading `nInternal`: C++ + g++ clean, `test_cpp_real.js`).
-  A filtered use is named through its owner and library (`FB_SynAxis.tSynSpan`, Synthetic Motion Library);
-  the channel lists coverage only when C++ was written, else only the blocking symbols.
-  **User decisions 2026-11-12 (round 3):** (1) library declarations MAY appear in the generated C++ in `CPP_Files`
-  (accepted; `libraryDecls.js` still writes no ST file), AND the toolkit writes `CPP_Files/.gitignore` so the
-  generated files are not committed by accident — the user may delete it. Built: `cppGenerate.maintainGitignore`
-  (end of every `writeOwnedOutputs`): comment line, then `/` + each recorded file, the `.o` of each recorded `.cpp`,
-  and the record; owned via the record's top-level `gitignore` key (`{sha256}`, CRLF-insensitive); updated while
-  unchanged, left alone when edited, a foreign one never overwritten, and once deleted never recreated (`{removed: true}`);
-  each case except updated/unchanged noted in the *TC Toolkit Compile* channel only (no summary text, no warning).
-  It lists ONLY the toolkit's own files (review round 4): a generated file the user edited (`changed`) is dropped
-  (git sees it; the "Left alone" summary note says so), and a user's own `<project>.o` there before the first write
-  (`foreign`) is never listed — `gitignoreText(manifest, dir)` filters by `ownership`.
-  (2) Library uses with no usable declaration (LTIME/PVOID/XINT interfaces, opaque/interface types, `VAR` of an
-  unresolved type, a library FB's `VAR` read from outside) KEEP blocking generation and g++, each named with its
-  library in the summary — **no stand-in types**. Rules: DEVELOPMENT.md R13 "Library symbols" and "`CPP_Files/.gitignore`".
-  Tests: `test_cpp_generate.js` GITIGNORE, `test_compile_commands.js` R13 GITIGNORE, `test_cpp_real.js` GIT
-  (`git check-ignore -v` / `git status` on a temp repo over the sample copy, incl. the edited `.cpp` and the
-  user's `.o`; skips without git). Note: the copy carries `sample/.gitignore` (`*`), so a test folder outside
-  `TcToolkitSample*/` is ignored by that file, not by ours — keep git probes inside the re-admitted tree.
-  **Review round 1 fixed** (11 findings, `c00eaee`; gates re-run green: 116/116 FULL, dev-host 103/1 P8):
-  owner = `<ProjectGuid>` so a `.plcproj` rename cleans up the old pair and `.o`; case-insensitive record names on
-  win32/darwin; CRLF-insensitive hash; the record is saved even when a later write fails; header errors placed on the
-  `required from here` / generated `#include` line; g++ timeout/cancel kills the process tree; one notification for a
-  missing g++, *Detect g++* only with an empty setting; one `checkConfiguredGpp` for build and Detect (quotes, folders);
-  the compile caret is a disclosure (no `aria-haspopup`); button tooltip and start-page detail follow the options.
-  **For the Windows check:** `CPP_Files/.gitignore` written and honoured by Git for Windows (and not recreated after
-  deleting it), a project using Tc2_* blocks (with the dump) generating C++ whose header and summary name
-  the libraries and g++ accepting it, the dropdown in both places, a MinGW/MSYS2 g++ found by detection, a g++ error landing on
-  `CPP_Files/<project>.cpp` in Problems, the missing-g++ message, an edited `.hpp` left alone, a cancelled g++ build
-  leaving no `cc1plus.exe` (taskkill path, only traced here), a case-only `.plcproj` rename; the start page's
-  **g++ row** (Settings card, under XAE Shell; user request 2026-11-12): an MSYS2/MinGW g++ shown as "Not set: a
-  build uses this one" with the setting empty (and the setting NOT written by showing it), a set path shown,
-  a wrong path with the warning, *Change…* landing on `tcToolkit.compiler.gppPath` in the **User** tab,
-  *Detect again* filling it, and the row updating live after each; *Detect g++*'s toast button *Open Setting*
-  (and the build's missing-g++ *Open Setting*) also landing in the **User** tab.
-  **Round 5 — the user's Windows g++ test (2026-11-12), fixed on this branch:** the user's g++ (very likely MinGW
-  GCC 6.3.0) reported `unrecognized command line option '-Wno-c++17-extensions'` (a GCC 12+ flag), 11 ×
-  `'strucpp::X' declared as an 'inline' variable` (g++ < 7 cannot compile C++17 inline variables at all) and
-  `'maybe_unused' attribute directive ignored` (iec_std_lib.hpp:535); the C/C++ extension (C/C++(1696)) said
-  "cannot open source file iec_types.hpp" on the generated `.hpp`. User decisions, all built: (1) build with
-  `-std=c++17`, flag dropped (both samples + the LIB scenario: 0 warnings on g++ 13); (2) a g++ < 7 is not run
-  (`-dumpfullversion`, else `-dumpversion`; < 7 confirmed by `--version`, clang = unknown = runs; cached per
-  path+size+mtime) — one warning "g++ 6.3.0 is too old: the generated C++ needs g++ 7 or later." + MSYS2 UCRT64
-  hint, *Open Setting* (+ *Detect g++* only while the setting is empty: detection never replaces a set value, so a
-  set old g++ gets "set a newer path or clear the setting" instead, and *Detect g++* names a newer one it finds);
-  the silent fill never writes a g++ < 7; (3) detection takes the first g++ 7+, an older one only when nothing newer
-  exists; start-page row and *Detect g++* say "too old"; a set value is never overwritten; (4) a C/C++ extension
-  custom configuration provider (`src/cppToolsProvider.js`, `vscode-cpptools` 7.1.1 MIT, API v7) for the `.cpp`/`.hpp`
-  in `<project>/CPP_Files/` — writes no file, never hands over a g++ < 7, offers a browse configuration only once
-  a CPP_Files folder exists, and its CPP_Files watcher also works after a mid-session install. The known `has no member named 'STATE'` gap stays.
-  **For the Windows check (round 5):** with the MinGW g++ 6.3 the build is NOT run and the summary shows the
-  too-old warning (start-page g++ row: "g++ 6.3.0 is too old: needs 7 or later."; if the setting holds
-  `C:\MinGW\bin\g++.exe`, the summary offers only *Open Setting* and says to clear it or set a newer path); with MSYS2 UCRT64 g++ 13
-  installed (`pacman -S mingw-w64-ucrt-x86_64-gcc`) *Detect g++* (setting cleared) picks it over `C:\MinGW`, and
-  **TcToolkitSample2 builds clean** (TcToolkitSample: only the known STATE gap); with the C/C++ extension installed,
-  the generated `.hpp`/`.cpp` show **no "cannot open source file"**, and without it nothing changes. Untested here: a real g++ 6.
-  **Provider not selected (user report 2026-11-12, round 6, on this branch):** after generating, C/C++(1696)
-  still said "cannot open source file iec_types.hpp (dependency of TcToolkitSample_PLC.hpp)". Root cause
-  (read in the C/C++ extension 1.22.11's own code, reproduced with it on Linux): it consults only the provider
-  a configuration selects — `configurationProvider` in the ACTIVE configuration of `.vscode/c_cpp_properties.json`
-  (a persisted per-folder index the toolkit cannot read; when unset, config `Win32`, else the last), else
-  `C_Cpp.default.configurationProvider`, matched exactly (`providers.has(id)`; a file value equal to a
-  provider's display name is rewritten to its id by `checkId`, the setting is not); it auto-selects only with no properties file, no
-  `C_Cpp.default.*` value and exactly one registered provider. Fix: `src/cppToolsSelection.js` +
-  `createProviderPrompt` — one message per workspace folder ("IntelliSense for the generated C++ needs TC Toolkit
-  as the C/C++ configuration provider.", *Use TC Toolkit* / *Not now* / *Don't ask again*; *Use* writes the
-  folder-scope setting and re-announces); a properties file naming another provider wins and is never edited
-  (*Open c_cpp_properties.json*) — also when only ANOTHER configuration names another provider (it may be the
-  active one, so the setting is not promised); ids compared exactly as the C/C++ extension does ('TC Toolkit'
-  accepted in the file only), a case/blank near miss is logged to the console. Only the C/C++ extension's
-  requests go to the **TC Toolkit C/C++** output channel; the selection check logs to the console.
-  Real C/C++ extension 1.22.11 (Linux, scratch harness, not in the suite): with a provider-less
-  `c_cpp_properties.json` the exact symptom; after the setting, only a planted undefined-identifier error;
-  with no file and no settings it auto-selected TC Toolkit and the provider was asked.
-  **For the Windows check (round 6):** Compile Project with C++ generation on → the message appears once for
-  the workspace folder; *Use TC Toolkit* → `.vscode/settings.json` gains `C_Cpp.default.configurationProvider`
-  and the `.hpp`/`.cpp` lose "cannot open source file" (else run *C/C++: Reset IntelliSense Database*); the
-  **TC Toolkit C/C++** output channel shows `canProvideConfiguration … -> true` / `provideConfigurations … -> 1
-  item(s)` with the Windows include paths. If the channel does not exist or is empty, the provider is still not
-  selected — check `.vscode/c_cpp_properties.json` (a `configurationProvider` in the configuration active in the
-  C/C++ status bar wins; the message then offers to open it) and that the id is spelled exactly. Regenerating or reopening does not ask again after *Use* / *Don't ask again*; *Not now* asks next session.
-  **MSYS2 detection (user report 2026-11-12: MSYS2 installed, but only `C:\MinGW` 6.3 was found):** built on this
-  branch — `src/msys2Detect.js` reads MSYS2's folder from the uninstall registry (reg.exe, async, once per session,
-  never blocks activation) and adds `D:\msys64`, `C:\tools\msys64`, `%USERPROFILE%\msys64`, Scoop; `usr\bin` g++
-  last. MSYS2 without g++ → *Detect g++* / start-page "not found" row say "MSYS2 is installed at <root> but has no
-  g++: in the MSYS2 UCRT64 shell run pacman -S …". Only faked here (no Windows registry).
-  **For the Windows check (MSYS2):** with the setting empty, *Detect g++* finds the user's MSYS2 g++ over
-  `C:\MinGW` (wherever MSYS2 is installed); with gcc removed from MSYS2 (or before `pacman -S
-  mingw-w64-ucrt-x86_64-gcc`) the toast and the start-page g++ row name the MSYS2 folder and the pacman command;
-  activation is not slowed (registry read in the background); a Compile Project started right after activation
-  (setting empty, MSYS2 only in the registry) builds with the MSYS2 g++, not "too old" — the build waits (bounded,
-  7.5 s) for the registry search; *Detect g++* never writes a g++ < 7 before that search has finished.
+- **Sample 1 XAE warnings (user, 2026-11-13; XAE Shell 64):** 0 errors, 3 warnings: C0564 x2 (GVL_System's
+  `fbCylinder(refExtendOut := GVL_Io.bExtendOut, refRetractOut := GVL_Io.bRetractOut)`: "reference to uninitialized
+  variable") and C0195 (FB_Station.Cyclic line 28, INT into WORD). **User: fix the sample.** Done in the generator
+  and the committed sample: `GVL_Io` BOOLs get `:= FALSE` (my guess for C0564 — unverified), line 28 uses
+  `INT_TO_WORD(...)`. **Awaiting the user's XAE re-build** to confirm 0 warnings; if C0564 stays, the next
+  candidate is binding the references in code instead of the FB_init arguments (changes what the sample
+  exercises, so ask first).
+- **R13 C++ generation + g++ build: MERGED** into `dev` as PR #37 (squash `02236c8`, 2026-11-13 08:40 UTC,
+  user). Design and rules: DEVELOPMENT.md "C++ generation and the g++ build (roadmap R13)"; the full Windows
+  checklist is in the PR body. **Verified on Windows by the user (2026-11-13):** TcToolkitSample2 builds with no
+  errors; TcToolkitSample shows only the known `has no member named 'STATE'` g++ error (+ the same error from the
+  C/C++ extension). **Not reported back yet:** PR checklist items 1–3 and 5–8 (dropdown sync, g++ row, too-old g++,
+  IntelliSense provider, Tc2_* library summary, edited `.hpp` / deleted `.gitignore`, cancel leaves no `cc1plus.exe`).
+  **Known gap:** a PROPERTY read through a global FB instance is emitted as a field access; fixed in fork #140, arrives
+  with the compiler re-vendor at release M; `test/test_cpp_real.js` `KNOWN_GPP_GAPS` pins it (remove the entry then).
+  **Windows CI** was red since R13's g++ tests landed (tests assumed Linux: shebang fake g++, `:`-split PATH, the
+  runner's real MSYS2 at `C:\msys64` and its unsettled registry cache); fixed in `aa202b0`/`ee02e90`, CI green.
+  Rule for new g++ tests: never let a test reach the host's g++, PATH, MSYS2 or registry: inject `machine`/`gppMachine`,
+  `msys2Root`, `ready` and `registrySettled`.
+- **R14 Build (and Activate) through XAE: IMPLEMENTED on `claude/r14-xae`** (2026-11-12; based on the R13 branch,
+  PR #37 not yet merged; nothing here ever ran PowerShell or COM — every ps1 change is checked as text only, the
+  user's Windows run is its parse check). Driver `resources/xae/build-plc-project.ps1` = the builder
+  `scripts/Build PLC project/build_plc_project.ps1` (b578199) + opt-in `-Json`/`-ShowWindow`/`-ListTargets`/
+  `-CancelFile`; hand-synced with the builder and `templates/`. Headless by default (`tcToolkit.xaeBuild.showWindow`
+  false); activation ALWAYS shows the window; a version switch keeps it visible. Commands `twincat.xaeBuild`,
+  `twincat.xaeBuildAndActivate`, `twincat.xaeShowTargets`; channel *TC Toolkit XAE Build*; Problems in `twincat-xae`.
+  Design, protocol, cancel/kill rules: DEVELOPMENT.md "XAE build (R14)" (the 28 review fixes of 2026-11-12 are in
+  git history). Phase 2 (each needs a Windows probe first): boot project, remote targets, single-project build,
+  routes, attaching to a hidden shell.
+  **Windows runs (user, 2026-11-13, XAE Shell 64 on 4026.28):** the driver parses and runs under Windows PowerShell.
+  Step 1 PASSED (sample 1 headless: BUILD SUCCEEDED, no window, no `TcXaeShell.exe` left); step 2 PASSED (window
+  shown throughout). Settled: `$dte.MainWindow.Visible` is UNREADABLE on 4026 shown or hidden (`describeUiMode`
+  reports the requested mode + SuppressUI). Sample 2's system project is a `.tspproj` (lookups fixed, 706dfde).
+  Sample 2 (3.1.4024.62) on a 4026-only machine → `progid-not-registered` → one modal offering XAE Shell 64, then
+  `-TcVersion <ProgId> -AllowVersionMismatch` (b6d831d; DEVELOPMENT "The project's XAE Shell is missing").
+  **Done earlier on 2026-11-13 (Linux-verified; details in DEVELOPMENT "XAE build (R14)" and git history):**
+  platform dropdown (`XAE_PLATFORMS` enum), activation switching to the target's platform (one modal,
+  *Switch for this run* / *Switch and remember*), per-step error-detail reasons + *Build again with the
+  window shown*, and the 16 second-review fixes (cancel in the error reads = exit 4, newer-only shell
+  offer, one activation modal, `.tsproj`/`.tspproj` lookup). Build and Activate onto UmRT_Default with the
+  switch question PASSED on Windows (9ed8b7a).
+  **Pane parsing + placement (this commit, Linux-verified; from the user's runs on c24dc06, sample 1 with
+  `h;` planted at MAIN implementation line 14, 4026.28, OS (x64)):** the typed reader WORKS. Headless:
+  the error list gave 2 EMPTY items + a file-less "Project 'TcToolkitSample_PLC' build for platform
+  'TwinCAT OS (x64)' failed." item (all warning level, so "3 warnings (0 placed)"), the Build pane had
+  `MAIN.TcPOU(22) : error: C0189: …` and `(21) : warning: C0139: The code 'h;` + a wrapped line; Problems
+  empty, no fallback. Window shown: the items were FILLED, `file` = `<path> (Impl)` and `line` = pane line
+  (14/15), but the suffix broke the path match → "0 placed". **Settled: the Build pane's line base is
+  'object'** (declaration lines then implementation lines: 21 = 7 + 14, 22 = 7 + 15) —
+  `PANE_LINE_BASE`, src/xaeErrorPlacement.js. Now: the pane is parsed in JS (`parseOutputPaneLines`;
+  English + German level words, wrapped messages, stop lines), list suffixes `(Impl)`/`(Decl)`/component
+  are parsed, both sources de-duplicated, empty items dropped, the project-failed item is one `XAE:`
+  channel line (not counted), counts come from the de-duplicated set, unplaced messages print their own
+  severity, the compiler code is the Problems code, and **the fallback runs whenever a confirmed exit 1
+  placed nothing** (`needsCompileFallback`). The pane's trailing `Fehler: Unbekannter Fehler (Ausnahme von
+  HRESULT: 0x80004005 (E_FAIL))` comes from the solution-level build after the PLC project failed: not a
+  message, kept in the channel only. No ps1 change. Fixtures `errors-pane-planted-headless`/`-visible`.
+  **Unverified:** how the pane numbers a method/action/property/transition of a POU (an 'object' line in
+  an object with child components is placed on the root, "(location approximate)"; a capture with an
+  error planted in a method confirms it), what the list suffix looks like for a child component (parsed
+  tolerantly: `(M_Foo Impl)`, `(FB.M_Foo Decl)`, `(State Get Impl)`), `(Decl)` itself, GVL/DUT pane
+  lines (declaration only, assumed), other UI languages' level words (English + German only).
+  **Typed error reader + compile-check fallback (c24dc06; the reader is now Windows-verified):**
+  user run on 6abbb52 (sample 1 + planted error, 4026.28, OS (x64)), headless AND `-ShowWindow`: "Projects
+  failed: 2", the late-bound error list null, the Output window null → Problems empty. **Cause (Beckhoff
+  Infosys "Reading the VS output and the error list"): late binding does not resolve
+  `ToolWindows.ErrorList.ErrorItems` in PowerShell; C# through EnvDTE does.** Now:
+  - A. all three ps1 copies carry `Get-XaeShellInstallDir` (ProgId `LocalServer32`, then
+    `Program Files[ (x86)]\Beckhoff\TcXaeShell`; vswhere NOT used — my call, the assemblies must be the
+    shell's own), `Initialize-TypedDteReader` (LoadFrom EnvDTE/EnvDTE80 [+ Microsoft.VisualStudio.Interop,
+    stdole] from `Common7\IDE\PublicAssemblies`, one `Add-Type` per run, class `TcTkTypedDteReader1` —
+    bump the suffix when the C# changes), `Read-TypedErrorList`, `Read-TypedBuildPane` ("Build" pane).
+    Typed first, late-bound only when it gave nothing; the error list after every build (warnings on
+    success); `errorDetails.route` typed/late-bound/none (+ `errorListRoute`, `outputRoute`).
+  - B. `Get-OutputPaneTexts -WindowNote` names the real window mode (it was hard-coded "hidden").
+  - C. route none on a confirmed exit 1 → `twincat.compileProject` once per solution project with
+    `{fromXae, append}` (no popup/notification/C++ of its own; append keeps the earlier project's
+    problems), one combined notification saying the errors are TC Toolkit's check, not XAE's, and can
+    differ; no compiler → "skipped: no compiler is configured for it (…)". Not on exit 4 / exit 2.
+    *Build again with the window shown* now starts only after the reporting run ends (`whenIdle`).
+  **Settled on 4026.28:** the C# compiles under PS 5.1 Add-Type, the DTE2 cast works, ErrorItems is filled
+  (window shown) after `Build($true)`. **Unverified:** the 4024 (32-bit) shell's assemblies in 64-bit
+  PowerShell, a localized pane name (only "Build" is looked for).
+  **Also on this branch:** the toolbar's Compile split button and the start page's tile are labelled
+  **Build** / *Build project* (user request), and (user, 2026-11-13) every user-read "Compile Project" is
+  now "Build Project" (palette title, tooltips, notifications, quick pick, settings text, README); command
+  ids, context/setting keys, the `TC Toolkit compile` source and the output channel are unchanged.
+  **Verified (Linux, 2026-11-13):** see the commit's gate run (FULL suite, lint, typecheck); browser
+  harnesses `test/browser/run.js` and `run_start_page.js` pass.
+  **Windows results later on 2026-11-13 (user):** errors placed and jump by the code link (MAIN body; a method via
+  `<file>@<Component> (Impl):N`, fixed b3b7a17); *Switch and remember* writes the setting; the platform dropdown;
+  cancel during a build; *Show Activation Targets*; sample 2 onto UmRT_Default refused before XAE (wording now
+  names Configuration Manager, 7f4e560) — all PASSED. Open: sample 2 *Build through XAE* on XAE Shell 64 + git status.
+  **For the Windows check** (point the `test-*.ps1` at the driver with `-ScriptPath
+  ..\..\resources\xae\build-plc-project.ps1`):
+  1. sample 1 + `h;` planted (as before), headless AND shown: C0189 on MAIN impl line 15, C0139 on 14,
+     each ONCE, not approximate, "1 error, 1 warning (2 placed)", no fallback; then an error planted in a
+     METHOD of FB_Station (pane line numbering of a child; the list suffix's form) — capture `-Json`
+     **from the sample only**; a clean build with a warning lists it;
+  2. (PASSED on 9ed8b7a) *Build and Activate* onto UmRT_Default with the switch question; still to see after the
+     review fixes: *Switch and remember* lands in the user (or workspace) settings, and a stalled/failed headless
+     activation re-run asks no second target pick or modal; with `tcToolkit.xaeBuild.configuration` set to a name
+     the solution lacks, the activation is refused before the modal;
+  3. sample 2 (no OS (x64) declared) onto UmRT_Default: refused before XAE starts, naming the platform to add;
+  4. Settings UI: the platform shows as a dropdown with descriptions; a custom string in settings.json still runs;
+  5. re-run sample 2 on 4026: one shell modal, then a build (does XAE upgrade the `.tspproj`?); the reverse (a
+     4026 project where only the 4024 shell is installed, if such a machine exists) must offer nothing;
+  6. `-TcVersion` forcing a switch: `ui` reason `version-switch`; 7. `probe-sysmanager.ps1` with/without `-Pump`;
+  8. cancel during build (exit 4, shell closed), during the error reads of a failed headless build (exit 4, no
+     "Build again" offer) and during activation (refused); 9. *Show Activation Targets*;
+  off Windows the commands refuse; 10. with a developer XAE Shell open: a new shell or `shell-not-ours`; a
+  solution under `Line [2]` and one on a UNC share build.
+  **Open questions (defaults in place):** settings key section `tcToolkit.xaeBuild` (one section); hide the window
+  during activation (no); hide after a version switch (keep visible); boot project / remote targets (phase 2);
+  child-component numbering in the Build pane (approximate until a capture); PS 5.1
+  ConvertTo-Json shapes (one-element arrays), nested `BuildProject`, whether a hidden shell ever hangs on a dialog.
 - **R3.2 Compile Project: MERGED** into `dev` as PR #32 (`28f24f1`, 2026-11-10 22:22 UTC).
 - **R3.3–R9 MERGED** into `dev` as PR #33 (`6424968`, 2026-11-11 09:30 UTC) after the user's Windows checks
   (dev-host green after `npm ci`; manual checks all passed). Details per item are in git history and ROADMAP "Done".
@@ -334,7 +334,7 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   Marketplace and Open VSX 2026-11-09; publisher ID confirmed as `a-abushaqra` (= `package.json`); per release the user either uploads the VSIX or adds `VSCE_PAT`/`OVSX_PAT` secrets; our part is
   ~1 h of metadata/CHANGELOG/README disclaimer + a secret-gated publish step in `release.yml`.
 - **Compiler name in the UI (user ruling 2026-11-09):** the extension's UI and user-facing README name no compiler
-  ("Compile project", not "Check with STruC++"); `test_start_contributions.js` pins that the start page never says
+  ("Build project", not "Check with STruC++"); `test_start_contributions.js` pins that the start page never says
   STruC++. Developer docs, ROADMAP.md and the published roadmap page may keep the name.
 - **Backlog scheduled 2026-11-09 (user's ask):** toolkit R6–R10 (R10 on trigger only) and fork S3a–S8 are now rows in
   ROADMAP.md with my own sizing (not measured) at the Nov 9 velocity, ~4 h of session per working day. **S3a (three

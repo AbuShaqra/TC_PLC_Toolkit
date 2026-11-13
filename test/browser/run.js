@@ -505,15 +505,15 @@ function assert(cond, msg) {
             const gen = document.getElementById('generate-st-group');
             return {
                 present: !!btn, glyph: !!(btn && btn.querySelector('svg.btn-icon path')),
-                label: btn ? btn.getAttribute('aria-label') : '', tooltip: btn ? btn.title : '',
+                label: btn ? btn.getAttribute('aria-label') : '', text: btn ? btn.querySelector('.btn-label').textContent : '', tooltip: btn ? btn.title : '',
                 // The Compile split button (R13: the button and its options caret) follows the Generate ST one.
                 afterGenerate: !!(btn && gen && gen.nextElementSibling === document.getElementById('compile-group') && btn.parentElement.id === 'compile-group'),
                 genTooltip: document.getElementById('generate-st-btn').title
             };
         });
-        assert(compileInfo.present && compileInfo.glyph && compileInfo.label === 'Compile Project' && /Compile Project/.test(compileInfo.tooltip) &&
+        assert(compileInfo.present && compileInfo.glyph && compileInfo.label === 'Build' && compileInfo.text === 'Build' && /^Build Project: /.test(compileInfo.tooltip) &&
             compileInfo.afterGenerate && /Generate ST/.test(compileInfo.genTooltip),
-            `the Compile button sits right after Generate ST, with a glyph, a name and a tooltip (${JSON.stringify(compileInfo)})`);
+            `the Build button (it runs Build Project) sits right after Generate ST, with a glyph, the name Build and a tooltip (${JSON.stringify(compileInfo)})`);
         await page.evaluate(() => { window.__harness.sent.length = 0; });
         await page.click('#compile-btn');
         let compileMsgs = await page.evaluate(() => window.__harness.sent.filter(m => m.type === 'compile-project'));
@@ -546,11 +546,14 @@ function assert(cond, msg) {
             return { label: c.getAttribute('aria-label'), popup: c.getAttribute('aria-haspopup'), controls: c.getAttribute('aria-controls'),
                 labels: [...document.querySelectorAll('#compile-menu label')].map(l => l.textContent.trim()) };
         });
-        assert(caretInfo.label === 'Compile options' && caretInfo.popup === null && caretInfo.controls === 'compile-menu'
-            && JSON.stringify(caretInfo.labels) === '["Generate C++","Build with g++"]',
-        `the caret is a disclosure (aria-expanded/aria-controls, no aria-haspopup: its popup is checkboxes, not a menu) with two labelled boxes (${JSON.stringify(caretInfo)})`);
+        assert(caretInfo.label === 'Build options' && caretInfo.popup === null && caretInfo.controls === 'compile-menu'
+            && JSON.stringify(caretInfo.labels) === '["Generate C++","Build with g++","Show the XAE window"]',
+        `the caret is a disclosure (aria-expanded/aria-controls, no aria-haspopup: its popup is checkboxes, not a menu) with labelled boxes (${JSON.stringify(caretInfo)})`);
+        // Build through XAE (R14): its section stays hidden until the host says it is available.
+        const xaeHidden = await page.evaluate(() => document.getElementById('xae-menu-section').hidden);
+        assert(xaeHidden, 'R14: the XAE entries are hidden by default (the init message carried no xaeOptions)');
         const btnTitle = () => page.evaluate(() => document.getElementById('compile-btn').title);
-        assert(/^Compile Project: check this PLC project with the IEC 61131-3 compiler$/.test(await btnTitle()), `with both options off the button's tooltip says it checks (${await btnTitle()})`);
+        assert(/^Build Project: check this PLC project with the IEC 61131-3 compiler$/.test(await btnTitle()), `with both options off the button's tooltip says it checks (${await btnTitle()})`);
         await page.evaluate(() => { window.__harness.sent.length = 0; });
         await page.click('#compile-caret');
         o = await opts();
@@ -564,7 +567,7 @@ function assert(cond, msg) {
         let om = await optionMsgs();
         assert(o.gpp && o.cpp && om.length === 1 && om[0].key === 'buildWithGpp' && om[0].value === true,
             `Space ticks Build with g++, which ticks Generate C++ too, and posts setCompileOption (${JSON.stringify(om)})`);
-        assert(/write it as C\+\+ into its CPP_Files folder, and build that with g\+\+/.test(await btnTitle()), `the tooltip follows: check, write C++, build with g++ (${await btnTitle()})`);
+        assert(/^Build Project: check this PLC project, write it as C\+\+ into its CPP_Files folder, and build that with g\+\+/.test(await btnTitle()), `the tooltip follows: check, write C++, build with g++ (${await btnTitle()})`);
         await page.keyboard.press('ArrowUp');
         await page.keyboard.press('Space');
         o = await opts();
@@ -583,7 +586,7 @@ function assert(cond, msg) {
         await settle(30);
         o = await opts();
         assert(o.cpp && !o.gpp, 'and back: generation only');
-        assert(/then write it as C\+\+ into its CPP_Files folder$/.test(await btnTitle()), `the tooltip follows a host update too: check, then write C++ (${await btnTitle()})`);
+        assert(/^Build Project: check this PLC project, then write it as C\+\+ into its CPP_Files folder$/.test(await btnTitle()), `the tooltip follows a host update too: check, then write C++ (${await btnTitle()})`);
         await page.click('#compile-caret');
         await page.mouse.click(5, viewport.height - 5);
         assert(!(await opts()).open, 'a click elsewhere closes the menu');
@@ -592,9 +595,53 @@ function assert(cond, msg) {
         const both = await page.evaluate(() => ({ gen: !document.getElementById('generate-st-menu').hidden, comp: !document.getElementById('compile-menu').hidden }));
         assert(!both.gen && both.comp, `opening one split menu closes the other (${JSON.stringify(both)})`);
         await page.keyboard.press('Escape');
+        // Build through XAE (R14): the host's xaeOptions shows the section; its controls post runXae / setXaeOption.
+        await page.evaluate(() => window.postMessage({ type: 'xaeOptions', options: { available: true, showWindow: false, running: false } }, '*'));
+        await settle(30);
+        await page.evaluate(() => { window.__harness.sent.length = 0; });
+        await page.click('#compile-caret');
+        const xaeShown = await page.evaluate(() => {
+            const sec = document.getElementById('xae-menu-section');
+            const r = document.getElementById('compile-menu').getBoundingClientRect();
+            return { shown: !sec.hidden && getComputedStyle(sec).display !== 'none', window: document.getElementById('xae-opt-window').checked,
+                buttons: [...sec.querySelectorAll('button')].map(b => b.textContent), inside: r.left >= 0 && r.right <= window.innerWidth };
+        });
+        assert(xaeShown.shown && !xaeShown.window && JSON.stringify(xaeShown.buttons) === '["Build through XAE","Build and Activate through XAE…"]' && xaeShown.inside,
+            `R14: available → the menu shows Build through XAE, Build and Activate through XAE… and an unticked Show the XAE window, inside the webview (${JSON.stringify(xaeShown)})`);
+        for (let i = 0; i < 2; i++) await page.keyboard.press('ArrowDown');
+        await page.keyboard.press('ArrowDown');
+        const xaeFocus = await page.evaluate(() => document.activeElement && document.activeElement.id);
+        assert(xaeFocus === 'xae-activate', `R14: ArrowDown walks through the XAE entries too (${xaeFocus})`);
+        const xaeMenu = await page.evaluate(() => {
+            const menu = document.getElementById('compile-menu');
+            document.activeElement.blur();
+            menu.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true }));
+            return { focus: document.activeElement ? document.activeElement.id : '', title: document.getElementById('compile-caret').title,
+                heading: document.getElementById('xae-menu-title').textContent };
+        });
+        assert(xaeMenu.focus === 'xae-opt-window', `R14: ArrowUp with no item focused goes to the last entry, Show the XAE window (${xaeMenu.focus})`);
+        assert(xaeMenu.title === 'Build options: C++ generation, the g++ build and the XAE build' && xaeMenu.heading === 'Through XAE' && !/TwinCAT/.test(xaeMenu.heading),
+            `R14: the caret's tooltip names the XAE build; the section heading does not name TwinCAT (${JSON.stringify(xaeMenu)})`);
+        await page.click('#xae-opt-window');
+        await page.click('#xae-build');
+        let xm = await page.evaluate(() => window.__harness.sent.filter(m => m.type === 'setXaeOption' || m.type === 'runXae'));
+        assert(xm.length === 2 && xm[0].type === 'setXaeOption' && xm[0].key === 'showWindow' && xm[0].value === true && xm[1].type === 'runXae' && xm[1].activate === false,
+            `R14: the checkbox posts setXaeOption showWindow; Build through XAE posts runXae {activate: false} (${JSON.stringify(xm)})`);
+        assert((await opts()).open === false, 'R14: an XAE action closes the menu');
+        await page.click('#compile-caret');
+        await page.click('#xae-activate');
+        xm = await page.evaluate(() => window.__harness.sent.filter(m => m.type === 'runXae'));
+        assert(xm.length === 2 && xm[1].activate === true, 'R14: Build and Activate through XAE… posts runXae {activate: true}');
+        await page.evaluate(() => window.postMessage({ type: 'xaeOptions', options: { available: true, showWindow: true, running: true } }, '*'));
+        await settle(30);
+        const xaeBusy = await page.evaluate(() => ({ b: document.getElementById('xae-build').disabled, a: document.getElementById('xae-activate').disabled, w: document.getElementById('xae-opt-window').checked }));
+        assert(xaeBusy.b && xaeBusy.a && xaeBusy.w, `R14: while a run is going both actions are disabled; the box follows the setting (${JSON.stringify(xaeBusy)})`);
+        await page.evaluate(() => window.postMessage({ type: 'xaeOptions', options: { available: false, showWindow: false, running: false } }, '*'));
+        await settle(30);
+        assert(await page.evaluate(() => document.getElementById('xae-menu-section').hidden), 'R14: not available → hidden again');
         await page.evaluate(() => { window.__harness.sent.length = 0; document.getElementById('compile-btn').click(); });
         compileMsgs = await page.evaluate(() => window.__harness.sent.filter(m => m.type === 'compile-project'));
-        assert(compileMsgs.length === 1, 'the Compile button itself still runs Compile Project');
+        assert(compileMsgs.length === 1, 'the Build button itself still runs Build Project');
         const caretStyle = await page.evaluate(() => {
             const cs = (id) => getComputedStyle(document.getElementById(id));
             return { btnRight: cs('compile-btn').borderTopRightRadius, caretLeft: cs('compile-caret').borderTopLeftRadius, bg: cs('compile-caret').backgroundImage !== 'none' };

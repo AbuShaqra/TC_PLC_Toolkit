@@ -2,7 +2,7 @@
 /**
  * @file vendor-compiler.js
  * @description Developer script (not shipped): copies the external IEC 61131-3 compiler that
- * *TC Toolkit: Compile Project* runs into `resources/compiler/`, from a BUILT checkout of the STruC++
+ * *TC Toolkit: Build Project* runs into `resources/compiler/`, from a BUILT checkout of the STruC++
  * fork, and records the exact commit it was built from (the GPL-3.0 corresponding-source link).
  *
  * Usage:
@@ -126,7 +126,7 @@ function main() {
     const source = [
         '# Bundled compiler: source and licences',
         '',
-        'This directory holds the external IEC 61131-3 compiler that *TC Toolkit: Compile Project* runs, as',
+        'This directory holds the external IEC 61131-3 compiler that *TC Toolkit: Build Project* runs, as',
         'a separate Node.js process. It is **STruC++**, distributed under the **GNU General Public',
         'License version 3** (`LICENSE`; the licensing overview is `COPYING`, the runtime library',
         'exception `COPYING.RUNTIME`). The extension\'s own licence does not cover these files.',
@@ -142,7 +142,7 @@ function main() {
         '  libraries the same build writes to `libs/` (their sources are under `libs/sources/` in the',
         '  repository).',
         '- `include/` holds the C++ runtime headers of the same commit (`src/runtime/include/`, every',
-        '  `.hpp`). Compile Project\'s optional g++ build compiles the generated C++ against them.',
+        '  `.hpp`). Build Project\'s optional g++ build compiles the generated C++ against them.',
         '',
         '## Licence of the runtime headers',
         '',
