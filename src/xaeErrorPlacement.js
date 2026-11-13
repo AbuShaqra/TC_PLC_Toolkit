@@ -175,6 +175,21 @@ function joinContinuation(text, more) {
 }
 
 /**
+ * A Problems entry's text: one line (an XAE description can break inside quoted code, as in
+ * `The code 'h;<newline>' has no effect`), without the leading `Cnnnn:`, which Problems shows as
+ * the entry's code.
+ * @param {string} text
+ * @param {string|undefined} code
+ * @returns {string}
+ */
+function problemText(text, code) {
+    const lines = String(text || '').split(/\r?\n/);
+    let one = lines.shift() || '';
+    for (const more of lines) one = joinContinuation(one, more);
+    return code ? one.replace(CODE_RE, '') : one;
+}
+
+/**
  * The located messages of an output pane ("Build"): see `PANE_MESSAGE_RE` / `PANE_STOP_RE`. Each
  * carries `lineBase: PANE_LINE_BASE`. Lines without a location (summaries, "Fehler: Unbekannter
  * Fehler" from the solution-level build) are not messages; they stay in the channel only.
@@ -404,7 +419,7 @@ function placeXaeErrors(errorItems, panes, deps) {
         /** @type {XaeProblem[]} */ (byFile.get(rec.filePath)).push({
             filePath: rec.filePath, componentId: rec.at.componentId, pane: rec.at.pane, line: rec.at.line, column,
             endLine: rec.at.line, endColumn: column, severity: rec.severity,
-            message: description + (rec.exact ? '' : APPROXIMATE_NOTE), exact: rec.exact, code: rec.code
+            message: problemText(description, rec.code) + (rec.exact ? '' : APPROXIMATE_NOTE), exact: rec.exact, code: rec.code
         });
         placed++;
     }
@@ -475,5 +490,5 @@ function placementSummary(placement, exitCode, channelName) {
 
 module.exports = {
     OBJECT_FILE_RE, APPROXIMATE_NOTE, PANE_LINE_BASE, severityOf, countBySeverity, isEmptyItem, isSummaryItem,
-    parseOutputPaneLines, splitFileSuffix, sectionMarker, placeXaeErrors, placementSummary
+    parseOutputPaneLines, splitFileSuffix, sectionMarker, placeXaeErrors, placementSummary, problemText
 };

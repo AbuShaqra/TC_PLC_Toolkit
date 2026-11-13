@@ -374,14 +374,14 @@ const rows = (name) => readFixture(name).lines;
         driver = () => ({ fixture: 'errors-typed' });
         r = await run('twincat.xaeBuild', {});
         assert(!r.ok && r.exitCode === 1 && !r.noErrorDetails && r.errorRoute === 'typed' && r.placed === 1
-            && (xaeCollection.map.get(fbUri.toString()) || []).some(d => /C0046/.test(d.message) && d.severity === 0),
+            && (xaeCollection.map.get(fbUri.toString()) || []).some(d => ((d.code && d.code.value) || d.code) === 'C0046' && !/^C0046/.test(d.message) && d.severity === 0),
             'route typed: the error-list item reaches Problems as an error');
         assert(compileCalls.length === c1 && channel().lines.some(l => /Error details read: through the typed EnvDTE reader\./.test(l)),
             'route typed: no fallback, and the channel names the route');
         // A successful build: the typed list is read too, so its warnings are listed.
         driver = () => ({ fixture: 'build-ok-typed-warnings' });
         r = await run('twincat.xaeBuild', {});
-        assert(r.ok && r.exitCode === 0 && r.total === 1 && (xaeCollection.map.get(fbUri.toString()) || []).some(d => /C0373/.test(d.message) && d.severity === 1)
+        assert(r.ok && r.exitCode === 0 && r.total === 1 && (xaeCollection.map.get(fbUri.toString()) || []).some(d => ((d.code && d.code.value) || d.code) === 'C0373' && !/^C0373/.test(d.message) && d.severity === 1)
             && compileCalls.length === c1, 'a successful build with a compiler warning: listed in Problems as a warning, no fallback');
         // No fallback after a cancel (exit 4) or a harness error (exit 2).
         driver = () => ({ fixture: 'cancelled' });

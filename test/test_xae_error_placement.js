@@ -100,10 +100,10 @@ for (const name of ['errors-pane-planted-headless', 'errors-pane-planted-visible
     assert(r.byFile.size === 1 && list.length === 2 && r.placed === 2 && r.total === 2 && r.general.length === 0,
         `${name}: two problems on MAIN (a generic Windows root mapped onto the workspace), each once`);
     assert(err && err.componentId === 'root' && err.pane === 'impl' && err.line === 15 && err.exact && err.severity === 'error'
-        && err.code === 'C0189' && err.message === "C0189: ';' expected instead of 'END_FOR'",
+        && err.code === 'C0189' && err.message === "';' expected instead of 'END_FOR'",
         `${name}: C0189 on MAIN's implementation line 15 (END_FOR), exact, an error with its code`);
     assert(warn && warn.componentId === 'root' && warn.pane === 'impl' && warn.line === 14 && warn.exact && warn.severity === 'warning'
-        && warn.code === 'C0139' && /^C0139: The code 'h; ?' has no effect\. Is this the intent\?$/.test(warn.message.replace(/\r?\n/g, '')),
+        && warn.code === 'C0139' && warn.message === "The code 'h;' has no effect. Is this the intent?",
         `${name}: C0139 on the h; line (14), a warning, the wrapped message joined (${warn && warn.message})`);
     assert(r.errors === 1 && r.warnings === 1 && r.infos === 0 && placementSummary(r, 1, 'ch') === '1 error, 1 warning (2 placed in Problems).',
         `${name}: counted from the de-duplicated set: 1 error, 1 warning (${placementSummary(r, 1, 'ch')})`);
