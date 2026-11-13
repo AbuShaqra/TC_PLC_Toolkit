@@ -122,8 +122,9 @@ let compilerAvailable = true;
 let compileOpts = { generateCpp: false, buildWithGpp: false };
 const optionWrites = [];
 /** The machine the start page checks and detects g++ on: one g++ on a fake PATH (R13). */
-const GPP_DIR = path.join(ROOT, 'gcc', 'bin');
-const GPP_EXE = path.join(GPP_DIR, 'g++');
+// POSIX literals: the faked machine is linux and never touches the disk, on any host.
+const GPP_DIR = '/opt/gcc/bin';
+const GPP_EXE = path.posix.join(GPP_DIR, 'g++');
 let gppMachine = { platform: 'linux', env: { PATH: GPP_DIR }, exists: (p) => p === GPP_EXE, isDir: (p) => p === GPP_DIR };
 const { startPage } = registerStartCommands(context, {
     provider,

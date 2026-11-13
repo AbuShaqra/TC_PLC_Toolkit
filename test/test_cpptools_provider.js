@@ -193,7 +193,10 @@ const uri = (fsPath) => ({ fsPath, scheme: 'file' });
     const context = { subscriptions: [], extensionPath: '/ext', extension: { id: 'a-abushaqra.twincat-plc-toolkit' }, workspaceState: { get: () => undefined, update: async () => {} } };
     const projectMap = { projects: new Map([['k', { dir: PROJ }]]) };
     configListeners.length = 0;
-    const wired = registerCppToolsProvider(context, { getProjectMap: () => projectMap, getApi: async () => api });
+    // The version query runs the set g++: the fakes answer it here, since Windows cannot run a shell script.
+    const { thisMachine } = require('../src/gpp');
+    const gppMachine = () => ({ ...thisMachine(), version: (p) => /g\+\+-6$/.test(p) ? { version: '6.3.0', major: 6 } : { version: '13.3.0', major: 13 } });
+    const wired = registerCppToolsProvider(context, { getProjectMap: () => projectMap, getApi: async () => api, gppMachine });
     assert(await wired.ready === true, 'WIRING: registered with the installed C/C++ extension');
     const registered = api.calls.length;
     assert(registered === 2, `WIRING: register + ready (${JSON.stringify(api.calls)})`);

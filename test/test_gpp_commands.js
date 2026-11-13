@@ -65,7 +65,7 @@ const settle = () => new Promise(r => setTimeout(r, 5));
     // The set value is checked the way the build checks it (src/gpp.js checkConfiguredGpp), on a faked machine.
     const BIN = path.join(ROOT, 'bin');
     const machine = {
-        platform: 'linux', env: { PATH: BIN },
+        platform: process.platform, env: { PATH: BIN },
         exists: (p) => { try { return fs.statSync(p).isFile(); } catch (e) { return false; } },
         isDir: (p) => { try { return fs.statSync(p).isDirectory(); } catch (e) { return false; } },
         version: (p) => machineVersion(p)
@@ -74,7 +74,8 @@ const settle = () => new Promise(r => setTimeout(r, 5));
     let machineVersion = (_p) => null;
     fs.mkdirSync(BIN, { recursive: true });
     fs.writeFileSync(path.join(BIN, 'g++'), '');
-    const gpp = registerGppCommands(context, { detect: () => hit, machine });
+    if (process.platform === 'win32') fs.writeFileSync(path.join(BIN, 'g++.exe'), '');
+    const gpp = registerGppCommands(context, { detect: () => hit, machine, msys2Root: () => null, ready: async () => {}, registrySettled: () => true });
     assert(handlers.has('twincat.detectGpp'), 'REGISTER: twincat.detectGpp');
 
     let r = await gpp.autoFill();
