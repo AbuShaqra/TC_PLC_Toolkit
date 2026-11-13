@@ -91,6 +91,25 @@ const count = (arr, v) => arr.filter(a => a === v).length;
     x.reduce(st, x.parseLine('@@TCTK ' + JSON.stringify({ v: 1, t: 'fatal', code: 'progid-not-registered', text: "DTE ProgId 'TcXaeShell.DTE.15.0' is not registered", data: { ...facts, installed: [] } })));
     assert(/^The XAE build could not run: S was saved with TwinCAT 3\.1\.4024 and its XAE Shell \(4024\) is not installed\. Install/.test(x.describeExit(2, 'exit', st, { solutionName: 'S' }).title),
         'describeExit: the missing-shell fatal says which shell to install');
+    // Never an older shell (user decision 2026-11-13): a 4026 project with only the 4024 shell gets no
+    // offer, and the text names the shell to install and why the older one is not used.
+    const newer = { progId: 'TcXaeShell.DTE.17.0', build: '4026', projectVersion: '3.1.4026.28', installed: ['TcXaeShell.DTE.15.0'] };
+    const down = x.missingShell(newer, { mode: 'build', solutionName: 'S' });
+    assert(down.offer === null && down.question === '' && !/upgrade/.test(down.text)
+        && down.text === 'S was saved with TwinCAT 3.1.4026 and its XAE Shell 64 (4026) is not installed. XAE Shell (4024) is installed, but an older XAE Shell cannot open a project saved with a newer TwinCAT. Install XAE Shell 64 (4026) (TcXaeShell.DTE.17.0) to build it on this machine.',
+        `an older shell is never offered: no offer, the shell to install named (${down.text})`);
+    const up = x.missingShell(facts, { mode: 'build', solutionName: 'S' });
+    assert(up.offer && Number(up.offer.build) > Number(facts.build), 'a newer shell is offered (4024 project, 4026 installed)');
+    // The run was already on a confirmed substitute (-TcVersion 17.0) and THAT shell is not registered:
+    // the driver's fatal carries the substitute's build with the project's own version.
+    const sub = x.missingShell({ progId: 'TcXaeShell.DTE.17.0', build: '4026', projectVersion: '3.1.4024.62', installed: [] }, { mode: 'build', solutionName: 'S' });
+    assert(sub.offer === null && /^S was saved with TwinCAT 3\.1\.4024, and XAE Shell 64 \(4026\) \(TcXaeShell\.DTE\.17\.0\), chosen in place of its XAE Shell \(4024\), is not registered with COM either/.test(sub.text)
+        && /Repair XAE Shell 64 \(4026\), or install XAE Shell \(4024\) \(TcXaeShell\.DTE\.15\.0\)/.test(sub.text) && !/saved with TwinCAT 3\.1\.4026/.test(sub.text),
+        `the substitute itself unregistered: the project's own version, and the substitution, named (${sub.text})`);
+    const st2 = x.createRunState();
+    x.reduce(st2, x.parseLine('@@TCTK ' + JSON.stringify({ v: 1, t: 'fatal', code: 'progid-not-registered', text: 'x', data: { progId: 'TcXaeShell.DTE.17.0', build: '4026', projectVersion: '3.1.4024.62', installed: [] } })));
+    assert(/could not run: S was saved with TwinCAT 3\.1\.4024, and XAE Shell 64 \(4026\)/.test(x.describeExit(2, 'exit', st2, { solutionName: 'S' }).title),
+        'describeExit reports the substitute that is not registered');
 }
 
 // ── createLineSplitter ──────────────────────────────────────────────────────────────────────────
@@ -319,6 +338,16 @@ function run(name, o) {
     const nd = x.activationPlatform({ ...base, targetPlatform: 'TwinCAT OS (x64)', declared: d2 });
     assert(nd.kind === 'not-declared' && nd.platform === 'TwinCAT OS (x64)', 'a platform the solution does not declare → not-declared');
     assert(x.activationPlatform({ ...base, targetPlatform: 'TwinCAT OS (x64)', declared: [] }).kind === 'unknown', 'unreadable pairs → unknown (nothing switched)');
+    // The configured pair itself must be declared, or the driver stops after the confirmation.
+    const custom = { configuration: 'Custom', platform: 'TwinCAT RT (x64)' };
+    assert(x.activationPlatform({ ...custom, targetPlatform: 'TwinCAT RT (x64)', declared: d1 }).kind === 'pair-not-declared'
+        && x.activationPlatform({ ...custom, targetPlatform: null, declared: d1 }).kind === 'pair-not-declared',
+        'same (or unknown) target platform but an undeclared configuration|platform → pair-not-declared');
+    assert(x.activationPlatform({ configuration: 'release', platform: 'twincat rt (x64)', targetPlatform: null, declared: d1 }).kind === 'same'
+        && x.activationPlatform({ ...custom, targetPlatform: null, declared: [] }).kind === 'same', 'the pair compares case-insensitively; unreadable pairs refuse nothing');
+    assert(x.activationPlatform({ ...custom, targetPlatform: 'TwinCAT OS (x64)', declared: d1 }).kind === 'not-declared', 'a switch still needs its own pair declared');
+    const pnd = x.pairNotDeclaredText('Custom', 'TwinCAT RT (x64)', 'Sample', ['Debug|A', 'Release|B']);
+    assert(/^Sample does not declare 'Custom\|TwinCAT RT \(x64\)', so it cannot be built and activated\. It declares 'Debug\|A', 'Release\|B'\./.test(pnd), 'the pair refusal lists the declared pairs');
     assert(x.activationPlatform({ configuration: 'Debug', platform: 'X', targetPlatform: 'twincat os (x64)', declared: d1 }).platform === 'TwinCAT OS (x64)', 'the switch uses the solution\'s spelling');
     const nt = x.platformNotDeclaredText({ netId: '198.51.100.4.1.1', name: 'UmRT_Default' }, 'TwinCAT OS (x64)', 'Release', 'Sample2');
     assert(/^UmRT_Default \(198\.51\.100\.4\.1\.1\) runs TwinCAT OS \(x64\), but Sample2 does not declare 'Release\|TwinCAT OS \(x64\)'/.test(nt)
@@ -340,6 +369,10 @@ function run(name, o) {
     assert(g4.state.fatal.data.gate === 4 && !/,\./.test(t) && !/\s{2}/.test(t)
         && /activation target 198\.51\.100\.4\.1\.1, which runs 'TwinCAT OS \(x64\)' \(read from that runtime's boot configuration\)\. Build it/.test(t)
         && /to build and activate here\.$/.test(t), `gate 4's refusal reads as one line (${t})`);
+    assert(x.describeExit(2, 'exit', g4.state).detail === '', 'the refusal is in the title only: the detail does not repeat it');
+    const blank = x.createRunState();
+    x.reduce(blank, x.parseLine('@@TCTK ' + JSON.stringify({ v: 1, t: 'fatal', code: 'com-failure', text: '   \r\n  ' })));
+    assert(x.describeExit(2, 'exit', blank).title === 'The XAE build could not run.', 'a blank fatal text: no dangling colon');
     assert(x.oneLine('a,\r\n   b') === 'a, b.' && x.oneLine('ends with comma,') === 'ends with comma.' && x.oneLine('done.') === 'done.' && x.oneLine('') === '', 'oneLine');
 }
 

@@ -53,6 +53,17 @@ const settings = {
 };
 const workspaceSettings = {};
 const folderSettings = {};
+// The scopes package.json really contributes: VS Code applies a workspace-folder value, and accepts a
+// folder write, only for a resource-like scope and only when a resource is given. Everything else
+// (no `scope` = window) has no folder value and a folder write is refused.
+const PACKAGE = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
+const scopeOf = (full) => {
+    for (const c of [].concat(PACKAGE.contributes.configuration)) {
+        if (c.properties && c.properties[full]) return c.properties[full].scope || 'window';
+    }
+    return 'window';
+};
+const folderScoped = (full) => ['resource', 'language-overridable', 'machine-overridable'].includes(scopeOf(full));
 const listeners = { config: [] };
 const fireConfig = (full) => listeners.config.slice().forEach(fn => fn({ affectsConfiguration: (sec) => full === sec || full.startsWith(sec + '.') }));
 const uri = (p) => ({ fsPath: p, scheme: 'file', path: p, query: '', toString: () => 'file://' + p.split(path.sep).join('/') });
@@ -90,16 +101,25 @@ const vscodeStub = {
     },
     workspace: {
         textDocuments: [],
-        getConfiguration: (section) => ({
+        getConfiguration: (section, resource) => ({
             get: (key, fallback) => {
                 const full = `${section}.${key}`;
-                if (Object.prototype.hasOwnProperty.call(folderSettings, full)) return folderSettings[full];
+                if (resource && folderScoped(full) && Object.prototype.hasOwnProperty.call(folderSettings, full)) return folderSettings[full];
                 if (Object.prototype.hasOwnProperty.call(workspaceSettings, full)) return workspaceSettings[full];
                 return Object.prototype.hasOwnProperty.call(settings, full) ? settings[full] : fallback;
             },
-            inspect: (key) => ({ globalValue: settings[`${section}.${key}`], workspaceValue: workspaceSettings[`${section}.${key}`], workspaceFolderValue: folderSettings[`${section}.${key}`] }),
+            inspect: (key) => {
+                const full = `${section}.${key}`;
+                return {
+                    globalValue: settings[full], workspaceValue: workspaceSettings[full],
+                    workspaceFolderValue: resource && folderScoped(full) ? folderSettings[full] : undefined
+                };
+            },
             update: async (key, value, target) => {
                 const full = `${section}.${key}`;
+                if (target === 3 && (!resource || !folderScoped(full))) {
+                    throw new Error(`Unable to write to Folder Settings because ${full} does not support the folder resource scope.`);
+                }
                 const bucket = target === 3 ? folderSettings : (target === 2 ? workspaceSettings : settings);
                 if (value === undefined) delete bucket[full]; else bucket[full] = value;
                 calls.updates.push({ key: full, value, target });
@@ -310,9 +330,12 @@ const rows = (name) => readFixture(name).lines;
         await waitFor(() => builds().length === n0 + 2);
         await waitFor(() => !api.isRunning());
         const again = builds()[n0 + 1];
+        // Everything but -ShowWindow and the per-run cancel file is the same: configuration, platform, shell.
+        const same = (args) => args.filter((x, i, all) => x !== '-ShowWindow' && x !== '-CancelFile' && all[i - 1] !== '-CancelFile');
         assert(again && again.args.includes('-ShowWindow') && !builds()[n0].args.includes('-ShowWindow')
-            && again.args[again.args.indexOf('-Platform') + 1] === builds()[n0].args[builds()[n0].args.indexOf('-Platform') + 1],
-            'the button re-runs once, with -ShowWindow and the same configuration');
+            && JSON.stringify(same(again.args)) === JSON.stringify(same(builds()[n0].args))
+            && again.args[again.args.indexOf('-Configuration') + 1] === 'Release' && !again.args.includes('-TcVersion'),
+            'the button re-runs once, with -ShowWindow and the same configuration, platform and shell (every other argument equal)');
         assert(showWindowWrites() === w0 && settings['tcToolkit.xaeBuild.showWindow'] === false, 'the re-run never changes tcToolkit.xaeBuild.showWindow');
         assert(channel().lines.some(l => /Building again with the XAE window shown \(this run only; the setting is unchanged\)/.test(l)), 'the channel says so');
         // Not offered when the window was already shown.
@@ -392,14 +415,24 @@ const rows = (name) => readFixture(name).lines;
     await run('twincat.xaeBuildAndActivate', {});
     assert(platformWrites().length === pw0 + 1 && platformWrites()[pw0].target === 2 && workspaceSettings['tcToolkit.xaeBuild.platform'] === 'TwinCAT OS (x64)'
         && settings['tcToolkit.xaeBuild.platform'] === undefined, 'a workspace value is replaced in the workspace');
+    // The setting is contributed without a scope (window): VS Code keeps no workspace-folder value for
+    // it and refuses a folder write, so a value in a folder's settings file is neither read nor written.
+    assert(scopeOf('tcToolkit.xaeBuild.platform') === 'window', 'tcToolkit.xaeBuild.platform is window-scoped as contributed');
+    {
+        let refused = false;
+        try { await vscodeStub.workspace.getConfiguration('tcToolkit.xaeBuild', uri(SLN)).update('platform', 'x', 3); } catch (e) { refused = true; }
+        assert(refused && folderSettings['tcToolkit.xaeBuild.platform'] === undefined, 'the stub refuses a folder write for it, as VS Code does');
+    }
     workspaceSettings['tcToolkit.xaeBuild.platform'] = 'TwinCAT RT (x64)';
     folderSettings['tcToolkit.xaeBuild.platform'] = 'TwinCAT RT (x64)';
     answers.quickPick.push('198.51.100.4.1.1');
     answers.message.push('Switch and remember');
     pw0 = platformWrites().length;
+    const er0 = calls.errors.length;
     await run('twincat.xaeBuildAndActivate', {});
-    assert(platformWrites().length === pw0 + 1 && platformWrites()[pw0].target === 3 && folderSettings['tcToolkit.xaeBuild.platform'] === 'TwinCAT OS (x64)'
-        && workspaceSettings['tcToolkit.xaeBuild.platform'] === 'TwinCAT RT (x64)', 'a workspace-folder value is replaced in the workspace folder');
+    assert(platformWrites().length === pw0 + 1 && platformWrites()[pw0].target === 2 && workspaceSettings['tcToolkit.xaeBuild.platform'] === 'TwinCAT OS (x64)'
+        && folderSettings['tcToolkit.xaeBuild.platform'] === 'TwinCAT RT (x64)' && !calls.errors.slice(er0).some(e => /Could not change the setting/.test(e.m)),
+        'a folder-file value is ignored (the setting has no folder scope): the workspace value is replaced, no folder write is tried');
     delete folderSettings['tcToolkit.xaeBuild.platform'];
     delete workspaceSettings['tcToolkit.xaeBuild.platform'];
     // Once the setting is the target's platform, the modal is the plain one again.
@@ -423,14 +456,48 @@ const rows = (name) => readFixture(name).lines;
     assert(calls.errors.slice(errs0).some(e => /UmRT_Default \(198\.51\.100\.4\.1\.1\) runs TwinCAT OS \(x64\), but TcToolkitSample2 does not declare 'Release\|TwinCAT OS \(x64\)'/.test(e.m)
         && /Add the solution platform 'TwinCAT OS \(x64\)' in XAE's Configuration Manager/.test(e.m)), 'the refusal names the platform to add in XAE\'s Configuration Manager');
     slnPath = SLN;
-    // Gate 4's own refusal (the driver's, e.g. an unreadable .sln): its summary is one clean line.
-    driver = () => ({ fixture: 'target-refused-platform' });
-    answers.quickPick.push('198.51.100.1.1.1');
-    answers.message.push('Activate on Real-time runtime (198.51.100.1.1.1)');
-    const e1 = calls.errors.length;
-    await run('twincat.xaeBuildAndActivate', {});
-    const g4 = calls.errors.slice(e1).map(e => e.m).find(m => /activation target/.test(m)) || '';
-    assert(g4 && !/,\./.test(g4) && /198\.51\.100\.4\.1\.1, which runs 'TwinCAT OS \(x64\)'/.test(g4), `the driver's gate-4 refusal reads as one line (${g4.slice(0, 90)}…)`);
+    // The configured pair itself is not declared (the target runs that platform): refused before the
+    // modal; the driver would stop with config-not-declared after it.
+    {
+        settings['tcToolkit.xaeBuild.configuration'] = 'Custom';
+        const b0 = builds().length;
+        const m0 = calls.modals.length;
+        const pe0 = calls.errors.length;
+        answers.quickPick.push('198.51.100.1.1.1');
+        r = await run('twincat.xaeBuildAndActivate', {});
+        const refusal = calls.errors.slice(pe0).map(e => e.m).find(m => /does not declare 'Custom\|TwinCAT RT \(x64\)'/.test(m)) || '';
+        assert(r.reason === 'pair-not-declared' && builds().length === b0 && calls.modals.length === m0,
+            'an undeclared configuration|platform: refused before the confirmation modal, nothing spawned');
+        assert(/It declares 'Debug\|TwinCAT OS \(ARMV7-A\)'/.test(refusal) && /tcToolkit\.xaeBuild\.configuration/.test(refusal) && !/TwinCAT XAE|TwinCAT Toolkit/.test(refusal),
+            'the refusal lists the declared pairs and the settings to change');
+        delete settings['tcToolkit.xaeBuild.configuration'];
+    }
+    // Gate 4's own refusal when the extension could not decide: the .sln is unreadable, so its pairs
+    // are unknown and nothing is switched (kind 'unknown'); the plain modal, then the driver refuses
+    // for the target confirmed. Its summary is one clean line, written once.
+    {
+        slnPath = path.join(TMP, 'Unreadable', 'Missing.sln');
+        driver = () => ({ fixture: 'target-refused-platform' });
+        answers.quickPick.push('198.51.100.4.1.1');
+        answers.message.push('Activate on UmRT_Default (198.51.100.4.1.1)');
+        const e1 = calls.errors.length;
+        const m0 = calls.modals.length;
+        const l0 = channel().lines.length;
+        await run('twincat.xaeBuildAndActivate', {});
+        slnPath = SLN;
+        const gm = calls.modals.slice(m0);
+        argv = lastSpawn().args;
+        assert(gm.length === 1 && JSON.stringify(gm[0].buttons) === JSON.stringify(['Activate on UmRT_Default (198.51.100.4.1.1)']) && !/Switch/.test(gm[0].m),
+            'an unreadable .sln: nothing is switched, the plain modal is asked');
+        assert(argv[argv.indexOf('-TargetNetId') + 1] === '198.51.100.4.1.1' && argv[argv.indexOf('-Platform') + 1] === 'TwinCAT RT (x64)',
+            'the confirmed target and the configured platform reach the driver');
+        const g4 = calls.errors.slice(e1).map(e => e.m).find(m => /activation target/.test(m)) || '';
+        assert(g4 && !/,\./.test(g4) && /198\.51\.100\.4\.1\.1, which runs 'TwinCAT OS \(x64\)'/.test(g4), `the driver's gate-4 refusal reads as one line (${g4.slice(0, 90)}…)`);
+        const told = channel().lines.slice(l0).filter(l => /which runs 'TwinCAT OS \(x64\)'/.test(l));
+        // The driver's own human log line is one; the summary is the other. The fatal text is not repeated as a detail.
+        assert(told.length === 2 && told.filter(l => /could not run/.test(l)).length === 1 && !channel().lines.slice(l0).some(l => /^\s+'Release\|TwinCAT OS \(x64\)' to build and activate here\.$/.test(l)),
+            'the refusal is written to the channel once (the summary), not again as a multi-line detail');
+    }
 
 
     driver = () => ({ fixture: 'activation-run' });
@@ -451,6 +518,54 @@ const rows = (name) => readFixture(name).lines;
     answers.message.push('Activate on Real-time runtime (198.51.100.1.1.1)');
     r = await run('twincat.xaeBuildAndActivate', {});
     assert(!r.ok && r.targetMismatch && calls.errors.some(e => /not the confirmed 198\.51\.100\.1\.1\.1/.test(e.m)), 'a target readback that differs from the pick is an error');
+
+    // ── An activation's re-runs keep its confirmation: no second list, pick or modal ─────────────
+    const listings = () => fake.calls.filter(c => c.args.includes('-ListTargets')).length;
+    {
+        // Build again with the window shown, after a switched platform.
+        const lt0 = listings(), m0 = calls.modals.length, pk0 = calls.picks.length, n0 = builds().length;
+        driver = (c) => ({ fixture: c.args.includes('-ShowWindow') ? 'activation-run' : 'errors-no-details-headless' });
+        answers.quickPick.push('198.51.100.4.1.1');
+        answers.message.push('Switch for this run', 'Build again with the window shown');
+        await run('twincat.xaeBuildAndActivate', {});
+        await waitFor(() => builds().length === n0 + 2);
+        await waitFor(() => !api.isRunning());
+        const [first, again] = builds().slice(n0);
+        assert(again && again.args.includes('-ShowWindow') && again.args.includes('-ActivateConfiguration')
+            && again.args[again.args.indexOf('-TargetNetId') + 1] === '198.51.100.4.1.1' && again.args[again.args.indexOf('-Platform') + 1] === 'TwinCAT OS (x64)'
+            && first.args[first.args.indexOf('-Platform') + 1] === 'TwinCAT OS (x64)',
+            'Build again with the window shown (activation): the confirmed target and the switched platform');
+        assert(listings() === lt0 + 1 && calls.modals.length === m0 + 1 && calls.picks.length === pk0 + 1,
+            'one target list, one pick and ONE modal for the activation and its re-run');
+        assert(channel().lines.some(l => /Re-run of the activation confirmed above/.test(l))
+            && channel().lines.filter(l => /confirmed in place of TwinCAT RT \(x64\)/.test(l)).length >= 2, 'the re-run says so and still names the switch');
+    }
+    {
+        // The stall offer during an activation.
+        const actStall = [{ v: 1, t: 'hello', mode: 'activate', showWindow: false }, { v: 1, t: 'phase', name: 'open' }];
+        let k = 0;
+        driver = () => (k++ === 0 ? { lines: actStall, onCancelFile: { lines: rows('cancelled').slice(-2), exit: 4 } } : { fixture: 'activation-run' });
+        const lt0 = listings(), m0 = calls.modals.length, n0 = builds().length;
+        answers.quickPick.push('198.51.100.4.1.1');
+        answers.message.push('Switch for this run');
+        answers.stall = STALL_RERUN;
+        r = await run('twincat.xaeBuildAndActivate', {});
+        answers.stall = undefined;
+        const two = builds().slice(n0);
+        assert(r.ok && two.length === 2 && two[1].args.includes('-ShowWindow')
+            && two.every(c => c.args[c.args.indexOf('-TargetNetId') + 1] === '198.51.100.4.1.1' && c.args[c.args.indexOf('-Platform') + 1] === 'TwinCAT OS (x64)'),
+            'the stall re-run of an activation keeps the confirmed target and platform');
+        assert(listings() === lt0 + 1 && calls.modals.length === m0 + 1, 'and asks no second list or modal');
+    }
+    {
+        // A confirmation cannot be passed in from outside: the command's own arguments never skip the modal.
+        const m0 = calls.modals.length, pk0 = calls.picks.length, n0 = builds().length;
+        r = await run('twincat.xaeBuildAndActivate', {
+            confirmedActivation: { slnPath: SLN, configuration: 'Release', platform: 'TwinCAT RT (x64)', switchedFrom: '', target: { netId: '198.51.100.1.1.1', name: 'x' } }
+        });
+        assert(r.reason === 'cancelled' && calls.picks.length === pk0 + 1 && calls.modals.length === m0 && builds().length === n0,
+            'a forged confirmedActivation argument is ignored: the target is asked again');
+    }
 
     // Problems that a stopped run must not clear.
     const errorRun = () => ({ lines: rows('errors-errorlist').map(l => (l.t === 'errorItem' && l.file ? { ...l, file: 'TcToolkitSample_PLC\\POUs\\Machine\\FB_Station.TcPOU' } : l)), exit: 1 });
@@ -659,6 +774,41 @@ const rows = (name) => readFixture(name).lines;
     r = await p;
     assert(builds().length === stallSpawns + 1 && r.exitCode === 0, 'a refused stop is not followed by a re-run');
 
+    // The user's Cancel wins over the stall re-run, in either order.
+    {
+        // Re-run chosen, then Cancel during the grace period: no re-run.
+        n = 0;
+        driver = () => (n++ === 0 ? { lines: stallRows, onCancelFile: { lines: [], stay: true } } : { fixture: 'build-ok-visible' });
+        answers.stall = STALL_RERUN;
+        stallSpawns = builds().length;
+        p = run('twincat.xaeBuild', {});
+        await waitFor(() => builds().length === stallSpawns + 1 && lastSpawn().cancelFileSeen);
+        answers.stall = undefined;
+        currentToken.cancel();
+        lastSpawn().child.emit('close', 4);
+        r = await p;
+        await new Promise(res => setTimeout(res, 30));
+        assert(builds().length === stallSpawns + 1 && !r.ok, 'Cancel after choosing the stall re-run: the run stops and nothing is re-run');
+        // The offer stays on screen, the user presses Cancel, then answers the offer with re-run: no re-run.
+        n = 0;
+        driver = () => (n++ === 0 ? { lines: stallRows, onCancelFile: { lines: [], stay: true } } : { fixture: 'build-ok-visible' });
+        let answerStall = () => {};
+        answers.stall = new Promise(res => { answerStall = () => res(STALL_RERUN); });
+        const w0 = calls.warnings.filter(w => w.stall).length;
+        stallSpawns = builds().length;
+        p = run('twincat.xaeBuild', {});
+        await waitFor(() => calls.warnings.filter(w => w.stall).length === w0 + 1);
+        currentToken.cancel();
+        await waitFor(() => lastSpawn().cancelFileSeen);
+        answerStall();
+        await new Promise(res => setTimeout(res, 5));
+        lastSpawn().child.emit('close', 4);
+        r = await p;
+        answers.stall = undefined;
+        await new Promise(res => setTimeout(res, 30));
+        assert(builds().length === stallSpawns + 1 && !r.ok, 'the stall offer answered after Cancel: nothing is re-run');
+    }
+
     // ── A configuration the solution does not declare ───────────────────────────────────────────
     n = 0;
     driver = () => (n++ === 0 ? { fixture: 'config-not-declared' } : { fixture: 'build-ok-headless' });
@@ -667,6 +817,21 @@ const rows = (name) => readFixture(name).lines;
     argv = lastSpawn().args;
     assert(argv[argv.indexOf('-Configuration') + 1] === 'Release' && argv[argv.indexOf('-Platform') + 1] === 'TwinCAT OS (x64)', 'the picked pair is used for the re-run');
     assert(!workspaceSettings['tcToolkit.xaeBuild.platform'], '"Run once" writes no setting');
+    {
+        // The configuration re-run keeps a confirmed shell substitution (sample 2, 4024, only 4026 here).
+        slnPath = SLN2;
+        n = 0;
+        driver = () => (n++ === 0 ? { fixture: 'config-not-declared' } : { fixture: 'build-ok-headless' });
+        answers.message.push('Build with XAE Shell 64');
+        answers.quickPick.push('Release|TwinCAT OS (x64)', 'Run once');
+        const m0 = calls.modals.length, n0 = builds().length;
+        await run('twincat.xaeBuild', {});
+        slnPath = SLN;
+        const both = builds().slice(n0);
+        assert(both.length === 2 && both.every(c => c.args[c.args.indexOf('-TcVersion') + 1] === 'TcXaeShell.DTE.17.0' && c.args.includes('-AllowVersionMismatch'))
+            && both[1].args[both[1].args.indexOf('-Platform') + 1] === 'TwinCAT OS (x64)' && calls.modals.length === m0 + 1,
+            'the configuration re-run keeps the confirmed shell, and the shell is asked once');
+    }
 
     // ── The shell check, Show Activation Targets ────────────────────────────────────────────────
     settings['tcToolkit.xaeShell.path4026'] = '';
@@ -759,6 +924,43 @@ const rows = (name) => readFixture(name).lines;
         assert(!r.ok && prompts() === p0 && /Install XAE Shell \(4024\) \(TcXaeShell\.DTE\.15\.0\) to build it on this machine\./.test(calls.errors[e0].m),
             'no installed alternative: no prompt, the error names the shell to install');
         settings['tcToolkit.xaeShell.path4026'] = __filename;
+
+        // The other direction: a 4026 project (sample 1) where only the OLDER 4024 shell is installed.
+        // Never offered, neither by the pre-check nor after the driver's fatal; the error names the shell.
+        {
+            slnPath = SLN;
+            settings['tcToolkit.xaeShell.path4026'] = '';
+            detected = { 4024: { path: 'C:\\x\\TcXaeShell.exe', source: 'registry' } };
+            const olderRows = fatalRows(['TcXaeShell.DTE.15.0']).map(l => (l.t === 'fatal'
+                ? { ...l, text: "DTE ProgId 'TcXaeShell.DTE.17.0' is not registered.", data: { progId: 'TcXaeShell.DTE.17.0', build: '4026', projectVersion: '3.1.4026.28', installed: ['TcXaeShell.DTE.15.0'] } }
+                : l));
+            driver = () => ({ lines: olderRows, exit: 2 });
+            p0 = prompts();
+            b0 = builds().length;
+            e0 = calls.errors.length;
+            r = await run('twincat.xaeBuild', {});
+            assert(!r.ok && prompts() === p0 && builds().length === b0 + 1 && !lastSpawn().args.includes('-TcVersion'),
+                'only an older shell installed: no offer before or after the run, one run without -TcVersion');
+            assert(/saved with TwinCAT 3\.1\.4026 and its XAE Shell 64 \(4026\) is not installed\. XAE Shell \(4024\) is installed, but an older XAE Shell cannot open a project saved with a newer TwinCAT\. Install XAE Shell 64 \(4026\)/.test(calls.errors[e0].m),
+                'and the error names the shell to install and why the older one is not used');
+            detected = {};
+            settings['tcToolkit.xaeShell.path4026'] = __filename;
+            slnPath = SLN2;
+        }
+        // The confirmed substitute is itself not registered (its exe is on disk, COM does not know it).
+        {
+            const subRows = fatalRows([]).map(l => (l.t === 'fatal'
+                ? { ...l, text: "DTE ProgId 'TcXaeShell.DTE.17.0' is not registered.", data: { progId: 'TcXaeShell.DTE.17.0', build: '4026', projectVersion: '3.1.4024.62', installed: [] } }
+                : l));
+            driver = () => ({ lines: subRows, exit: 2 });
+            answers.message.push('Build with XAE Shell 64');
+            p0 = prompts();
+            e0 = calls.errors.length;
+            r = await run('twincat.xaeBuild', {});
+            assert(!r.ok && prompts() === p0 + 1 && overrideOk(lastSpawn().args)
+                && /TcToolkitSample2 was saved with TwinCAT 3\.1\.4024, and XAE Shell 64 \(4026\) \(TcXaeShell\.DTE\.17\.0\), chosen in place of its XAE Shell \(4024\), is not registered with COM either/.test(calls.errors[e0].m),
+                'the substitute unregistered: one prompt only, and the error names the project\'s version and the substitution');
+        }
 
         // 3. Activation is never offered another shell: the pre-check warns (Run anyway), the driver's fatal asks nothing.
         driver = () => ({ lines: fatalRows(['TcXaeShell.DTE.17.0']).map(l => (l.t === 'hello' ? { ...l, mode: 'activate' } : l)), exit: 2 });

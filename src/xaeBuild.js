@@ -143,8 +143,9 @@ function shellName(shell) {
 
 /**
  * @typedef {Object} MissingShell What to do when the project's XAE Shell is not installed.
- * @property {{progId: string, build: string, name: string}|null} offer The newest installed other
- *   shell to offer (a build only); null when there is nothing to offer.
+ * @property {{progId: string, build: string, name: string}|null} offer The newest installed shell of a
+ *   NEWER build than the project's, to offer (a build only); null when there is nothing to offer. An
+ *   older shell is never offered: it would open a project saved with a newer TwinCAT.
  * @property {string} question The modal's text (only with `offer`).
  * @property {string} confirmLabel The modal's confirm button (only with `offer`).
  * @property {string} text The error to show when nothing is offered or the offer is declined: which
@@ -155,6 +156,11 @@ function shellName(shell) {
  * The project's XAE Shell is not installed: whether another installed one can be offered, and the
  * texts. Fed either by the driver's `progid-not-registered` fatal (`{progId, build, projectVersion,
  * installed}`) or by the command layer's pre-check, which knows the same facts.
+ *
+ * Only a NEWER shell is offered (XAE may then upgrade the project files); when only older ones are
+ * installed there is no offer, and the text names the shell to install and why the older one is not
+ * used. When `projectVersion` names another build than `progId`/`build`, the run was already on a
+ * confirmed substitute and THAT shell is not registered: the text says so, and offers nothing.
  * @param {{build?: unknown, progId?: unknown, projectVersion?: unknown, installed?: unknown}} facts
  * @param {{mode: 'build'|'activate', solutionName: string}} o
  * @returns {MissingShell}
@@ -164,15 +170,33 @@ function missingShell(facts, o) {
     const missing = shellByProgId(f.progId) || XAE_SHELL_VERSIONS.find(v => v.id === String(f.build || '')) || null;
     const build = missing ? missing.id : String(f.build || '?');
     const missingName = missing ? shellName(missing) : `XAE Shell (${build})`;
+    const savedBuild = (/^3\.1\.(\d+)/.exec(typeof f.projectVersion === 'string' ? f.projectVersion : '') || [])[1] || '';
+    if (savedBuild && savedBuild !== build) {
+        // A run with -TcVersion <a substitute>: the substitute is what is not registered.
+        const own = XAE_SHELL_VERSIONS.find(v => v.id === savedBuild);
+        const ownName = own ? shellName(own) : `XAE Shell (${savedBuild})`;
+        return {
+            offer: null, question: '', confirmLabel: '',
+            text: `${o.solutionName} was saved with TwinCAT 3.1.${savedBuild}, and ${missingName}${missing ? ` (${missing.progId})` : ''}, ` +
+                `chosen in place of its ${ownName}, is not registered with COM either (a broken or partial install). ` +
+                `Repair ${missingName}, or install ${ownName}${own ? ` (${own.progId})` : ''}, to build it on this machine.`
+        };
+    }
     // PS 5.1 may hand a one-element array over as a bare string.
     const listed = Array.isArray(f.installed) ? f.installed : (typeof f.installed === 'string' ? [f.installed] : []);
-    const others = XAE_SHELL_VERSIONS.filter(v => v !== missing && listed.some(p => shellByProgId(p) === v))
+    const installedOthers = XAE_SHELL_VERSIONS.filter(v => v !== missing && listed.some(p => shellByProgId(p) === v))
         .slice().sort((a, b) => Number(b.id) - Number(a.id));
+    // Never an older shell: it would open a project saved with a newer TwinCAT.
+    const others = missing ? installedOthers.filter(v => Number(v.id) > Number(missing.id)) : [];
+    const older = missing ? installedOthers.filter(v => Number(v.id) < Number(missing.id)) : [];
     const newest = others[0];
     const saved = `${o.solutionName} was saved with TwinCAT 3.1.${build}`;
     const install = `Install ${missingName}${missing ? ` (${missing.progId})` : ''} to build it on this machine.`;
     if (!newest) {
-        return { offer: null, question: '', confirmLabel: '', text: `${saved} and its ${missingName} is not installed. ${install}` };
+        const olderNote = older.length
+            ? ` ${older.map(shellName).join(' and ')} ${older.length === 1 ? 'is' : 'are'} installed, but an older XAE Shell cannot open a project saved with a newer TwinCAT.`
+            : '';
+        return { offer: null, question: '', confirmLabel: '', text: `${saved} and its ${missingName} is not installed.${olderNote} ${install}` };
     }
     if (o.mode !== 'build') {
         return {
@@ -491,17 +515,20 @@ function describeExit(code, outcome, state, extra = {}) {
                 title: errorCount > 0 ? `Build through XAE failed: ${errorCount} error${errorCount === 1 ? '' : 's'}.` : 'Build through XAE failed.',
                 detail: missing.trim()
             };
-        case EXIT.HARNESS:
+        case EXIT.HARNESS: {
             if (state.fatal && state.fatal.code === 'progid-not-registered' && extra.solutionName) {
                 // Says which shell to install (and, for activation, that another shell cannot stand in).
                 const m = missingShell(state.fatal.data, { mode: state.mode === 'activate' ? 'activate' : 'build', solutionName: extra.solutionName });
                 return { ok: false, severity: 'error', title: `The XAE build could not run: ${m.text}`, detail: missing.trim() };
             }
+            // The whole refusal is in the title (joined onto one line), so the detail never repeats it.
+            const why = state.fatal ? oneLine(state.fatal.text) : '';
             return {
                 ok: false, severity: 'error',
-                title: `The XAE build could not run${state.fatal && state.fatal.text ? `: ${oneLine(state.fatal.text)}` : '.'}`,
-                detail: ((state.fatal && state.fatal.text.includes('\n') ? state.fatal.text : '') + missing).trim()
+                title: `The XAE build could not run${why ? `: ${why}` : '.'}`,
+                detail: missing.trim()
             };
+        }
         case EXIT.ACTIVATION: {
             const a = state.activation;
             const why = a && a.outcome === 'refused' ? 'the target was refused' : (a && a.stateName ? `the target is in ${a.stateName}, not RUN` : 'activation failed');
@@ -683,6 +710,10 @@ function declaredPairs(slnText) {
  * Which platform an activation onto `target` builds. The driver refuses to activate a platform that
  * is not the target's (gate 4 of Resolve-ActivationTarget, which reads the platform from the same
  * runtime records `-ListTargets` reports; PowerShell compares case-insensitively, so this does too):
+ *   - `pair-not-declared` the platform it would build (the configured one) is the target's or the
+ *                    target's is unknown, but the solution declares pairs and not
+ *                    `<configuration>|<platform>`: the driver would stop with `config-not-declared`
+ *                    after the confirmation, so refuse before it;
  *   - `same`         the target's platform is the configured one, or unknown (the driver warns and
  *                    the XAE Shell checks it during activation);
  *   - `switch`       another platform, and the solution declares `<configuration>|<it>`: offer it
@@ -691,11 +722,17 @@ function declaredPairs(slnText) {
  *   - `unknown`      another platform, but the solution's pairs could not be read: nothing is
  *                    switched, and the driver's refusal explains.
  * @param {{configuration: string, platform: string, targetPlatform: string|null|undefined, declared: string[]}} o
- * @returns {{kind: 'same'|'switch'|'not-declared'|'unknown', platform: string}}
+ * @returns {{kind: 'same'|'switch'|'not-declared'|'pair-not-declared'|'unknown', platform: string}}
  */
 function activationPlatform(o) {
     const tp = typeof o.targetPlatform === 'string' ? o.targetPlatform.trim() : '';
-    if (!tp || tp.toLowerCase() === String(o.platform).toLowerCase()) return { kind: 'same', platform: o.platform };
+    if (!tp || tp.toLowerCase() === String(o.platform).toLowerCase()) {
+        const own = `${o.configuration}|${o.platform}`.toLowerCase();
+        if (o.declared && o.declared.length > 0 && !o.declared.some(d => d.toLowerCase() === own)) {
+            return { kind: 'pair-not-declared', platform: o.platform };
+        }
+        return { kind: 'same', platform: o.platform };
+    }
     if (!o.declared || o.declared.length === 0) return { kind: 'unknown', platform: o.platform };
     const want = `${o.configuration}|${tp}`.toLowerCase();
     const pair = o.declared.find(d => d.toLowerCase() === want);
@@ -715,6 +752,21 @@ function platformNotDeclaredText(target, targetPlatform, configuration, solution
     return `${target.name} (${target.netId}) runs ${targetPlatform}, but ${solutionName} does not declare ` +
         `'${configuration}|${targetPlatform}', so it cannot be built and activated there. Add the solution platform ` +
         `'${targetPlatform}' in XAE's Configuration Manager, save the solution and run again.`;
+}
+
+/**
+ * The refusal when the configured configuration|platform pair is not one the solution declares (an
+ * activation; nothing is started, and the confirmation is not asked).
+ * @param {string} configuration
+ * @param {string} platform
+ * @param {string} solutionName
+ * @param {string[]} declared
+ * @returns {string}
+ */
+function pairNotDeclaredText(configuration, platform, solutionName, declared) {
+    return `${solutionName} does not declare '${configuration}|${platform}', so it cannot be built and activated. ` +
+        `It declares ${declared.map(d => `'${d}'`).join(', ')}. Set tcToolkit.xaeBuild.configuration and ` +
+        `tcToolkit.xaeBuild.platform to one of them (Build through XAE also offers the pick), then run again.`;
 }
 
 /** The button that re-runs a failed headless build with the window shown (this run only). */
@@ -749,5 +801,5 @@ module.exports = {
     PREFIX, PROTOCOL, EXIT, EVENT_TYPES, UNINTERRUPTIBLE_PHASES, SWITCH_FOR_RUN, SWITCH_AND_REMEMBER, RERUN_WINDOW_SHOWN,
     isValidNetId, buildDriverArgs, shellByProgId, missingShell, createLineSplitter, parseLine, createRunState, reduce,
     compileFailureConfirmed, reachedBuildResult, describeExit, describeUiMode, buildPhaseUi, canCancel, isStalled, targetPickItems, confirmationText,
-    declaredPairs, activationPlatform, platformNotDeclaredText, noErrorDetails, oneLine
+    declaredPairs, activationPlatform, platformNotDeclaredText, pairNotDeclaredText, noErrorDetails, oneLine
 };

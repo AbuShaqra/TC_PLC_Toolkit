@@ -1144,9 +1144,12 @@ $TcAdsStateNames = @{ 0='INVALID'; 1='IDLE'; 2='RESET'; 3='INIT'; 4='START'; 5='
 # repo-wide search sorted by name would happily read the version out of a different project and
 # then build this one with it.
 $slnDir = Split-Path -Parent $SlnPath
-$tsproj = Get-ChildItem -Path $slnDir -Recurse -File -ErrorAction SilentlyContinue |
-          Where-Object { $_.Extension -eq '.tsproj' -or $_.Extension -eq '.tspproj' } |
-          Sort-Object FullName | Select-Object -First 1
+# Two provider-side filters, merged: a Where-Object over every file under the solution folder would
+# build an object for each one (_Libraries, _Boot, .git, ...). Not one '*.tsp*proj' filter: on
+# Windows a -Filter also matches 8.3 short names.
+$tsproj = (@(Get-ChildItem -Path $slnDir -Recurse -Filter *.tsproj -File -ErrorAction SilentlyContinue) +
+           @(Get-ChildItem -Path $slnDir -Recurse -Filter *.tspproj -File -ErrorAction SilentlyContinue)) |
+          Sort-Object FullName -Unique | Select-Object -First 1
 if (-not $tsproj) {
     Write-Host "FATAL: no .tsproj or .tspproj found under $slnDir to read TcVersion from." -ForegroundColor Red
     Write-Host "It is the only thing -TcVersion can be checked against, so it cannot be substituted." -ForegroundColor Red
@@ -1303,6 +1306,8 @@ function Invoke-ComRetry {
     null-valued expression". Every step is checked instead, so a null becomes a reason:
     ToolWindows.OutputWindow first, then the Windows.Item route; the pane list; each pane, its
     TextDocument and Selection. Returns Panes (Name, Text) and Reasons (string[]).
+    A cancel (the driver's $script:CancelSentinel, thrown by Invoke-ComRetry on a rejected call) is
+    rethrown, never turned into a reason; where no cancel exists the sentinel is $null and never matches.
     The same function is in scripts/Build PLC project/build_plc_project.ps1, templates/ and
     resources/xae/build-plc-project.ps1; keep the three in step by hand.
 #>
@@ -1313,16 +1318,16 @@ function Get-OutputPaneTexts {
     $panes   = @()
     $ow = $null
     $wo = $null
-    try { $ow = Invoke-ComRetry -MaxTries 10 { $Dte.ToolWindows.OutputWindow } } catch { $ow = $null }
+    try { $ow = Invoke-ComRetry -MaxTries 10 { $Dte.ToolWindows.OutputWindow } } catch { if ("$_" -eq $script:CancelSentinel) { throw }; $ow = $null }
     if ($null -ne $ow) {
-        try { $panes = @(@(Invoke-ComRetry -MaxTries 10 { @($ow.OutputWindowPanes) }) | Where-Object { $null -ne $_ }) } catch { $panes = @() }
+        try { $panes = @(@(Invoke-ComRetry -MaxTries 10 { @($ow.OutputWindowPanes) }) | Where-Object { $null -ne $_ }) } catch { if ("$_" -eq $script:CancelSentinel) { throw }; $panes = @() }
     }
     if ($panes.Count -eq 0) {
         $win = $null
-        try { $win = Invoke-ComRetry -MaxTries 10 { $Dte.Windows.Item('{34E76E81-EE4A-11D0-AE2E-00A0C90FFFC3}') } } catch { $win = $null }
-        if ($null -ne $win) { try { $wo = Invoke-ComRetry -MaxTries 10 { $win.Object } } catch { $wo = $null } }
+        try { $win = Invoke-ComRetry -MaxTries 10 { $Dte.Windows.Item('{34E76E81-EE4A-11D0-AE2E-00A0C90FFFC3}') } } catch { if ("$_" -eq $script:CancelSentinel) { throw }; $win = $null }
+        if ($null -ne $win) { try { $wo = Invoke-ComRetry -MaxTries 10 { $win.Object } } catch { if ("$_" -eq $script:CancelSentinel) { throw }; $wo = $null } }
         if ($null -ne $wo) {
-            try { $panes = @(@(Invoke-ComRetry -MaxTries 10 { @($wo.OutputWindowPanes) }) | Where-Object { $null -ne $_ }) } catch { $panes = @() }
+            try { $panes = @(@(Invoke-ComRetry -MaxTries 10 { @($wo.OutputWindowPanes) }) | Where-Object { $null -ne $_ }) } catch { if ("$_" -eq $script:CancelSentinel) { throw }; $panes = @() }
         }
         if ($panes.Count -eq 0) {
             if ($null -eq $ow -and $null -eq $wo) {
@@ -1337,9 +1342,9 @@ function Get-OutputPaneTexts {
         try { $n = [string]$pane.Name; if ($n) { $name = $n } } catch { }
         $doc = $null
         $sel = $null
-        try { $doc = Invoke-ComRetry -MaxTries 10 { $pane.TextDocument } } catch { $doc = $null }
+        try { $doc = Invoke-ComRetry -MaxTries 10 { $pane.TextDocument } } catch { if ("$_" -eq $script:CancelSentinel) { throw }; $doc = $null }
         if ($null -eq $doc) { [void]$reasons.Add("pane '$name' has no text document"); continue }
-        try { $sel = Invoke-ComRetry -MaxTries 10 { $doc.Selection } } catch { $sel = $null }
+        try { $sel = Invoke-ComRetry -MaxTries 10 { $doc.Selection } } catch { if ("$_" -eq $script:CancelSentinel) { throw }; $sel = $null }
         if ($null -eq $sel) { [void]$reasons.Add("pane '$name' has no selection to read its text with"); continue }
         $txt = $null
         try {
@@ -1347,6 +1352,7 @@ function Get-OutputPaneTexts {
             [void](Invoke-ComRetry -MaxTries 10 { $sel.EndOfDocument($true) })
             $txt = [string](Invoke-ComRetry -MaxTries 10 { $sel.Text })
         } catch {
+            if ("$_" -eq $script:CancelSentinel) { throw }
             $why = ("$($_.Exception.Message)" -split '\r?\n')[0]
             [void]$reasons.Add("pane '$name' text not readable ($why)")
             continue

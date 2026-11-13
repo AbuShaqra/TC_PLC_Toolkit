@@ -49,7 +49,7 @@ const { runChild, killProcessTree, describeLocation } = require('../compileCheck
 const {
     EXIT, buildDriverArgs, createLineSplitter, parseLine, createRunState, reduce, describeExit, describeUiMode,
     canCancel, isStalled, targetPickItems, confirmationText, reachedBuildResult, missingShell,
-    declaredPairs, activationPlatform, platformNotDeclaredText, noErrorDetails, RERUN_WINDOW_SHOWN, SWITCH_AND_REMEMBER
+    declaredPairs, activationPlatform, platformNotDeclaredText, pairNotDeclaredText, noErrorDetails, RERUN_WINDOW_SHOWN, SWITCH_AND_REMEMBER
 } = require('../xaeBuild');
 const { placeXaeErrors, placementSummary } = require('../xaeErrorPlacement');
 const { XAE_BUILD_SECTION, readXaeBuildSettings } = require('../xaeBuildSettings');
@@ -172,6 +172,13 @@ function registerXaeBuildCommands(context, deps) {
 
     let running = false;
     let cancelSeq = 0;
+    /**
+     * The activations the user confirmed in this session's modal. A re-run of one (the stall offer,
+     * Build again with the window shown) passes it back and is not asked again; it is held here, never
+     * in the command's arguments, so no caller can forge a confirmation, and it is used once.
+     * @type {WeakSet<object>}
+     */
+    const confirmedActivations = new WeakSet();
     let nextProblemId = 1;
     /** Normalized file URI → that file's problems of the last finished run. */
     /** @type {Map<string, {uri: vscode.Uri, problems: StoredXaeProblem[]}>} */
@@ -319,6 +326,8 @@ function registerXaeBuildCommands(context, deps) {
         let timedOut = false;
         let shellKilled = false;
         let rerunVisible = false;
+        /** The user pressed Cancel: no stall re-run follows, whichever came first. */
+        let userCancelled = false;
         let activationTimedOut = false;
         let extended = false;
         /** @type {string[]} */
@@ -386,6 +395,9 @@ function registerXaeBuildCommands(context, deps) {
         }
         if (o.token) {
             o.token.onCancellationRequested(() => {
+                // A Cancel withdraws a stall re-run chosen before it, and blocks one chosen after it.
+                userCancelled = true;
+                rerunVisible = false;
                 requestStop().then((r) => {
                     if (r === 'refused') vscode.window.showWarningMessage(CANCEL_REFUSED_TEXT);
                 });
@@ -421,7 +433,9 @@ function registerXaeBuildCommands(context, deps) {
         if (o.stallMs && o.mode !== 'listTargets') {
             let offered = false;
             const watch = setInterval(() => {
-                if (offered || exited || !isStalled(state, Date.now(), { showWindow: o.showWindow, stallMs: /** @type {number} */ (o.stallMs) })) return;
+                // Not while a stop is under way (a Cancel, a timeout, an earlier re-run): it is ending anyway.
+                if (offered || exited || stopping || userCancelled
+                    || !isStalled(state, Date.now(), { showWindow: o.showWindow, stallMs: /** @type {number} */ (o.stallMs) })) return;
                 offered = true;
                 const minutes = Math.round(/** @type {number} */ (o.stallMs) / minuteMs);
                 ch.appendLine(`${stamp()} No output from the headless XAE build for ${minutes} minute(s) (phase: ${state.phase || 'starting'}).`);
@@ -429,6 +443,8 @@ function registerXaeBuildCommands(context, deps) {
                     `The headless XAE build has shown no progress for ${minutes} minute(s); it may be waiting on a dialog nobody can see.`,
                     STALL_RERUN, STALL_WAIT)).then((choice) => {
                     if (choice === STALL_RERUN) {
+                        // The offer stayed on screen while the user pressed Cancel: that Cancel wins.
+                        if (userCancelled || (o.token && o.token.isCancellationRequested)) return;
                         // Tentative: withdrawn when the stop is refused (activation began meanwhile).
                         rerunVisible = true;
                         requestStop().then((r) => { if (r === 'refused') rerunVisible = false; });
@@ -453,7 +469,10 @@ function registerXaeBuildCommands(context, deps) {
         if (timedOut && r.outcome === 'exit' && r.code === EXIT.CANCELLED) outcome = 'timeout';
         // A re-run only follows a run that really stopped (not one that finished on its own meanwhile).
         const stopped = outcome !== 'exit' || r.code === EXIT.CANCELLED;
-        return { code: r.code, outcome, state, error: r.error, stderr: stderrLines, rerunVisible: rerunVisible && stopped, shellKilled, activationTimedOut };
+        return {
+            code: r.code, outcome, state, error: r.error, stderr: stderrLines,
+            rerunVisible: rerunVisible && stopped && !userCancelled, shellKilled, activationTimedOut
+        };
     }
 
     // ── Shared steps of a command ──────────────────────────────────────────────────────────────
@@ -544,16 +563,16 @@ function registerXaeBuildCommands(context, deps) {
 
     /**
      * "Switch and remember": writes `tcToolkit.xaeBuild.platform` once, in the scope its current value
-     * comes from (the workspace folder or the workspace when it is set there, else the user settings).
-     * @param {string} slnPath The solution, the resource a folder-scoped value is read for.
+     * comes from: the workspace when it is set there, else the user settings. The setting is contributed
+     * without a `scope` (window-scoped), so VS Code has no workspace-folder value for it and refuses a
+     * folder write; it is read, like every run reads it, with no resource.
      * @param {string} value
      */
-    async function rememberPlatform(slnPath, value) {
-        const c = vscode.workspace.getConfiguration(XAE_BUILD_SECTION, vscode.Uri.file(slnPath));
+    async function rememberPlatform(value) {
+        const c = config();
         const inspected = typeof c.inspect === 'function' ? c.inspect('platform') : null;
         const targets = /** @type {any} */ (vscode).ConfigurationTarget || {};
-        const target = inspected && inspected.workspaceFolderValue !== undefined ? (targets.WorkspaceFolder || 3)
-            : (inspected && inspected.workspaceValue !== undefined ? (targets.Workspace || 2) : (targets.Global || 1));
+        const target = inspected && inspected.workspaceValue !== undefined ? (targets.Workspace || 2) : (targets.Global || 1);
         try {
             await c.update('platform', value, target);
             channel().appendLine(`${stamp()} Remembered the platform ${value} (tcToolkit.xaeBuild.platform).`);
@@ -684,7 +703,17 @@ function registerXaeBuildCommands(context, deps) {
             let target = null;
             /** The configured platform when the activation target's replaced it (this run, or remembered). */
             let switchedFrom = '';
-            if (activate) {
+            /** This activation's confirmation, handed to its re-runs. */
+            /** @type {{slnPath: string, configuration: string, platform: string, switchedFrom: string, target: {netId: string, name: string}}|null} */
+            let confirmation = null;
+            const carried = activate && a.confirmedActivation && confirmedActivations.has(a.confirmedActivation) ? a.confirmedActivation : null;
+            if (carried) confirmedActivations.delete(carried);
+            if (carried && carried.slnPath === slnPath && carried.configuration === configuration && carried.platform === pform) {
+                // A re-run of an activation the user confirmed: the same target and platform, no list, no modal.
+                confirmation = carried;
+                target = carried.target;
+                switchedFrom = carried.switchedFrom;
+            } else if (activate) {
                 setRunning(true);
                 const listed = await listTargets(slnPath);
                 const items = targetPickItems(listed.state.targets, { preselect: context.workspaceState.get(LAST_TARGET_KEY) });
@@ -700,9 +729,17 @@ function registerXaeBuildCommands(context, deps) {
                 const listedTarget = listed.state.targets ? listed.state.targets.local.find(t => t.netId === picked.netId) : null;
                 let slnText = '';
                 try { slnText = fs.readFileSync(slnPath, 'utf8'); } catch (e) { slnText = ''; }
+                const declared = declaredPairs(slnText);
                 const choice = activationPlatform({
-                    configuration, platform: pform, targetPlatform: listedTarget ? listedTarget.platform : null, declared: declaredPairs(slnText)
+                    configuration, platform: pform, targetPlatform: listedTarget ? listedTarget.platform : null, declared
                 });
+                if (choice.kind === 'pair-not-declared') {
+                    // The driver would stop with config-not-declared after the confirmation: refuse first.
+                    const text = pairNotDeclaredText(configuration, pform, solutionName, declared);
+                    channel().appendLine(`${stamp()} ${title}: ${text}`);
+                    vscode.window.showErrorMessage(text);
+                    return { ok: false, reason: 'pair-not-declared' };
+                }
                 if (choice.kind === 'not-declared') {
                     const text = platformNotDeclaredText(picked, choice.platform, configuration, solutionName);
                     channel().appendLine(`${stamp()} ${title}: ${text}`);
@@ -717,15 +754,23 @@ function registerXaeBuildCommands(context, deps) {
                 if (platformSwitch) {
                     switchedFrom = pform;
                     pform = platformSwitch.to;
-                    if (answer === SWITCH_AND_REMEMBER) await rememberPlatform(slnPath, pform);
+                    if (answer === SWITCH_AND_REMEMBER) await rememberPlatform(pform);
                 }
                 target = { netId: picked.netId, name: picked.name };
                 await context.workspaceState.update(LAST_TARGET_KEY, picked.netId);
+                confirmation = { slnPath, configuration, platform: pform, switchedFrom, target };
             }
+            /** Hands this activation's confirmation to one re-run (nothing for a build). */
+            const carryConfirmation = () => {
+                if (!confirmation) return undefined;
+                confirmedActivations.add(confirmation);
+                return confirmation;
+            };
 
             const ch = channel();
             ch.appendLine(`${stamp()} ${title}: ${slnPath} - ${configuration} | ${pform}` +
                 (target ? ` - target ${target.name} (${target.netId})` : ''));
+            if (carried && confirmation) ch.appendLine('  Re-run of the activation confirmed above: same target and platform, not asked again.');
             if (switchedFrom) ch.appendLine(`  Platform: ${pform}, the platform of the activation target (confirmed in place of ${switchedFrom}).`);
             if (shellOverride) ch.appendLine(`  XAE Shell: ${shellOverride} (confirmed in place of the project's own; the project may be upgraded).`);
             ch.appendLine(`  Requested: ${showWindow ? 'XAE window shown for the whole run (tcToolkit.xaeBuild.showWindow)' : 'headless (XAE window hidden, UI suppressed)'}` +
@@ -756,16 +801,22 @@ function registerXaeBuildCommands(context, deps) {
                 }
             }
             // Offered by report() when a failed headless build brought back no error details: once more
-            // with the window shown, this run only (the setting is never written).
-            const rerunWindowShown = () => vscode.commands.executeCommand(activate ? 'twincat.xaeBuildAndActivate' : 'twincat.xaeBuild',
-                { ...a, projectKey: resolved.key, showWindow: true, configuration, platform: pform, shellChecked: true, shellAsked: true, shellOverride });
+            // with the window shown, this run only (the setting is never written). Called directly, not
+            // through the command, so an activation's confirmation object reaches it unchanged.
+            const rerunWindowShown = () => buildCommand({
+                ...a, projectKey: resolved.key, showWindow: true, configuration, platform: pform, shellChecked: true, shellAsked: true, shellOverride,
+                confirmedActivation: carryConfirmation()
+            }, activate);
             const result = report(run, slnPath, rerunWindowShown);
 
             // The stall offer: the same run again with the window shown (this run only).
             if (run.rerunVisible) {
                 running = false;
                 setRunning(false);
-                return buildCommand({ ...a, projectKey: resolved.key, showWindow: true, configuration, platform: pform, shellChecked: true, shellAsked, shellOverride }, activate);
+                return buildCommand({
+                    ...a, projectKey: resolved.key, showWindow: true, configuration, platform: pform, shellChecked: true, shellAsked, shellOverride,
+                    confirmedActivation: carryConfirmation()
+                }, activate);
             }
             // A configuration the solution does not declare: pick one of its own.
             if (run.code === EXIT.HARNESS && run.state.fatal && run.state.fatal.code === 'config-not-declared'

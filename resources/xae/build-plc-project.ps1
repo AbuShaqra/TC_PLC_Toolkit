@@ -1289,9 +1289,10 @@ if ($ListTargets) {
     $projectNetId = $null
     if ($SlnPath) {
         # -LiteralPath wherever a real path goes: a folder named 'Line [2]' is not a wildcard.
-        $tsprojForList = Get-ChildItem -LiteralPath (Split-Path -Parent $SlnPath) -Recurse -File -ErrorAction SilentlyContinue |
-          Where-Object { $_.Extension -eq '.tsproj' -or $_.Extension -eq '.tspproj' } |
-                         Sort-Object FullName | Select-Object -First 1
+        # The same two -Filter lookups as the version read below.
+        $tsprojForList = (@(Get-ChildItem -LiteralPath (Split-Path -Parent $SlnPath) -Recurse -Filter *.tsproj -File -ErrorAction SilentlyContinue) +
+                          @(Get-ChildItem -LiteralPath (Split-Path -Parent $SlnPath) -Recurse -Filter *.tspproj -File -ErrorAction SilentlyContinue)) |
+                         Sort-Object FullName -Unique | Select-Object -First 1
         if ($tsprojForList) {
             $mT = Select-String -LiteralPath $tsprojForList.FullName -Pattern 'TargetNetId="([0-9.]+)"' -ErrorAction SilentlyContinue | Select-Object -First 1
             if ($mT) { $projectNetId = $mT.Matches[0].Groups[1].Value }
@@ -1320,9 +1321,12 @@ if ($ListTargets) {
 # repo-wide search sorted by name would happily read the version out of a different project and
 # then build this one with it.
 $slnDir = Split-Path -Parent $SlnPath
-$tsproj = Get-ChildItem -LiteralPath $slnDir -Recurse -File -ErrorAction SilentlyContinue |
-          Where-Object { $_.Extension -eq '.tsproj' -or $_.Extension -eq '.tspproj' } |
-          Sort-Object FullName | Select-Object -First 1
+# Two provider-side filters, merged: a Where-Object over every file under the solution folder would
+# build an object for each one (_Libraries, _Boot, .git, ...). Not one '*.tsp*proj' filter: on
+# Windows a -Filter also matches 8.3 short names.
+$tsproj = (@(Get-ChildItem -LiteralPath $slnDir -Recurse -Filter *.tsproj -File -ErrorAction SilentlyContinue) +
+           @(Get-ChildItem -LiteralPath $slnDir -Recurse -Filter *.tspproj -File -ErrorAction SilentlyContinue)) |
+          Sort-Object FullName -Unique | Select-Object -First 1
 if (-not $tsproj) {
     Write-Host "FATAL: no .tsproj or .tspproj found under $slnDir to read TcVersion from." -ForegroundColor Red
     Write-Host "It is the only thing -TcVersion can be checked against, so it cannot be substituted." -ForegroundColor Red
@@ -1511,6 +1515,8 @@ function Invoke-ComRetry {
     null-valued expression". Every step is checked instead, so a null becomes a reason:
     ToolWindows.OutputWindow first, then the Windows.Item route; the pane list; each pane, its
     TextDocument and Selection. Returns Panes (Name, Text) and Reasons (string[]).
+    A cancel (the driver's $script:CancelSentinel, thrown by Invoke-ComRetry on a rejected call) is
+    rethrown, never turned into a reason; where no cancel exists the sentinel is $null and never matches.
     The same function is in scripts/Build PLC project/build_plc_project.ps1, templates/ and
     resources/xae/build-plc-project.ps1; keep the three in step by hand.
 #>
@@ -1521,16 +1527,16 @@ function Get-OutputPaneTexts {
     $panes   = @()
     $ow = $null
     $wo = $null
-    try { $ow = Invoke-ComRetry -MaxTries 10 { $Dte.ToolWindows.OutputWindow } } catch { $ow = $null }
+    try { $ow = Invoke-ComRetry -MaxTries 10 { $Dte.ToolWindows.OutputWindow } } catch { if ("$_" -eq $script:CancelSentinel) { throw }; $ow = $null }
     if ($null -ne $ow) {
-        try { $panes = @(@(Invoke-ComRetry -MaxTries 10 { @($ow.OutputWindowPanes) }) | Where-Object { $null -ne $_ }) } catch { $panes = @() }
+        try { $panes = @(@(Invoke-ComRetry -MaxTries 10 { @($ow.OutputWindowPanes) }) | Where-Object { $null -ne $_ }) } catch { if ("$_" -eq $script:CancelSentinel) { throw }; $panes = @() }
     }
     if ($panes.Count -eq 0) {
         $win = $null
-        try { $win = Invoke-ComRetry -MaxTries 10 { $Dte.Windows.Item('{34E76E81-EE4A-11D0-AE2E-00A0C90FFFC3}') } } catch { $win = $null }
-        if ($null -ne $win) { try { $wo = Invoke-ComRetry -MaxTries 10 { $win.Object } } catch { $wo = $null } }
+        try { $win = Invoke-ComRetry -MaxTries 10 { $Dte.Windows.Item('{34E76E81-EE4A-11D0-AE2E-00A0C90FFFC3}') } } catch { if ("$_" -eq $script:CancelSentinel) { throw }; $win = $null }
+        if ($null -ne $win) { try { $wo = Invoke-ComRetry -MaxTries 10 { $win.Object } } catch { if ("$_" -eq $script:CancelSentinel) { throw }; $wo = $null } }
         if ($null -ne $wo) {
-            try { $panes = @(@(Invoke-ComRetry -MaxTries 10 { @($wo.OutputWindowPanes) }) | Where-Object { $null -ne $_ }) } catch { $panes = @() }
+            try { $panes = @(@(Invoke-ComRetry -MaxTries 10 { @($wo.OutputWindowPanes) }) | Where-Object { $null -ne $_ }) } catch { if ("$_" -eq $script:CancelSentinel) { throw }; $panes = @() }
         }
         if ($panes.Count -eq 0) {
             if ($null -eq $ow -and $null -eq $wo) {
@@ -1545,9 +1551,9 @@ function Get-OutputPaneTexts {
         try { $n = [string]$pane.Name; if ($n) { $name = $n } } catch { }
         $doc = $null
         $sel = $null
-        try { $doc = Invoke-ComRetry -MaxTries 10 { $pane.TextDocument } } catch { $doc = $null }
+        try { $doc = Invoke-ComRetry -MaxTries 10 { $pane.TextDocument } } catch { if ("$_" -eq $script:CancelSentinel) { throw }; $doc = $null }
         if ($null -eq $doc) { [void]$reasons.Add("pane '$name' has no text document"); continue }
-        try { $sel = Invoke-ComRetry -MaxTries 10 { $doc.Selection } } catch { $sel = $null }
+        try { $sel = Invoke-ComRetry -MaxTries 10 { $doc.Selection } } catch { if ("$_" -eq $script:CancelSentinel) { throw }; $sel = $null }
         if ($null -eq $sel) { [void]$reasons.Add("pane '$name' has no selection to read its text with"); continue }
         $txt = $null
         try {
@@ -1555,6 +1561,7 @@ function Get-OutputPaneTexts {
             [void](Invoke-ComRetry -MaxTries 10 { $sel.EndOfDocument($true) })
             $txt = [string](Invoke-ComRetry -MaxTries 10 { $sel.Text })
         } catch {
+            if ("$_" -eq $script:CancelSentinel) { throw }
             $why = ("$($_.Exception.Message)" -split '\r?\n')[0]
             [void]$reasons.Add("pane '$name' text not readable ($why)")
             continue
@@ -1912,19 +1919,26 @@ try {
     try {
         $errorList = Invoke-ComRetry -MaxTries 10 { $dte.ToolWindows.ErrorList }
         $items = $null
-        for ($t = 1; $t -le 10; $t++) {
-            try { $items = $errorList.ErrorItems; break }
+        $itemsAnswered = $false
+        $itemTries = 10
+        for ($t = 1; $t -le $itemTries; $t++) {
+            try { $items = $errorList.ErrorItems; $itemsAnswered = $true; break }
             catch {
-                if ($_.Exception.ToString() -match '80010001|RPC_E_CALL_REJECTED|80010100|RPC_E_SERVERCALL') { Start-Sleep -Seconds 2 }
+                if ($_.Exception.ToString() -match '80010001|RPC_E_CALL_REJECTED|80010100|RPC_E_SERVERCALL') {
+                    # As Invoke-ComRetry does: a cancel is honoured between rejected calls.
+                    Test-CancelRequested
+                    Start-Sleep -Seconds 2
+                }
                 else { throw }
             }
         }
         $itemCount = 0
         if ($null -eq $errorList) { $errorListReason = 'the error list window is not available' }
+        elseif (-not $itemsAnswered) { $errorListReason = "the error list was still rejected after $itemTries tries (XAE busy)" }
         elseif ($null -eq $items) { $errorListReason = 'the error list has no item collection' }
         else { $itemCount = [int](Invoke-ComRetry -MaxTries 10 { $items.Count }) }
         for ($N = 1; $N -le $itemCount; $N++) {
-            try { $it = Invoke-ComRetry -MaxTries 10 { $items.Item($N) } } catch { continue }
+            try { $it = Invoke-ComRetry -MaxTries 10 { $items.Item($N) } } catch { if ("$_" -eq $script:CancelSentinel) { throw }; continue }
             $errorItemsRead++
             try {
             Write-Host ("[{0}] {1}({2}): {3}" -f $N, $it.FileName, $it.Line, $it.Description)
@@ -1944,6 +1958,8 @@ try {
         if (-not $errorListReason -and $itemCount -eq 0) { $errorListReason = 'the error list is empty' }
         elseif (-not $errorListReason -and $errorItemsRead -eq 0) { $errorListReason = "none of the error list's $itemCount item(s) could be read" }
     } catch {
+        # A cancel is not a fact about the error list: it reaches the outer handler (exit 4).
+        if ("$_" -eq $script:CancelSentinel) { throw }
         $why = ("$($_.Exception.Message)" -split '\r?\n')[0]
         $errorListReason = "the error list could not be read ($why)"
     }
@@ -1976,6 +1992,8 @@ try {
         Emit-Event 'errorDetails' ([ordered]@{ errorItems = $errorItemsRead; outputPanes = @($paneRead.Panes).Count
             reasons = [string[]]$detailReasons })
     }
+    # A cancel during the error and Output reads ends the run as cancelled (exit 4), not as a result.
+    Test-CancelRequested
 
     if ($failed -eq 0) {
         Write-Host "BUILD SUCCEEDED." -ForegroundColor Green

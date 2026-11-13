@@ -167,15 +167,28 @@ if (fs.existsSync(BUILDER)) {
         'the error list is read with retries');
     // Invoke-ComRetry's `return` writes to the pipeline, which can enumerate a COM collection: a
     // one-item ErrorItems would come back as the bare item. It is assigned directly instead.
-    assert(/try \{ \$items = \$errorList\.ErrorItems; break \}/.test(errorList) && !/Invoke-ComRetry[^\n]*\{ [^}\n]*\.ErrorItems \}/.test(errorList),
+    assert(/try \{ \$items = \$errorList\.ErrorItems; \$itemsAnswered = \$true; break \}/.test(errorList) && !/Invoke-ComRetry[^\n]*\{ [^}\n]*\.ErrorItems \}/.test(errorList),
         'ErrorItems is read by plain assignment, never as an Invoke-ComRetry result');
+    // The hand-written retry behaves like Invoke-ComRetry: a cancel between rejected calls, and a run of
+    // rejections reported as such, never as "no item collection".
+    const itemsLoop = (/for \(\$t = 1; \$t -le \$itemTries; \$t\+\+\) \{[\s\S]*?\n {8}\}/.exec(errorList) || [''])[0];
+    assert(/80010001\|RPC_E_CALL_REJECTED[\s\S]*?Test-CancelRequested\s+Start-Sleep -Seconds 2/.test(itemsLoop), 'the ErrorItems retry checks for a cancel before each wait');
+    assert(/elseif \(-not \$itemsAnswered\) \{ \$errorListReason = "the error list was still rejected after \$itemTries tries \(XAE busy\)" \}\s+elseif \(\$null -eq \$items\)/.test(errorList),
+        'ErrorItems rejected on every try is reported as rejected, ahead of "no item collection"');
+    // A cancel inside the error and Output reads is not a reason: every catch there that can see it
+    // rethrows (`code` has its comment lines removed).
+    assert(/\$items\.Item\(\$N\) \} \} catch \{ if \("\$_" -eq \$script:CancelSentinel\) \{ throw \}; continue \}/.test(errorList)
+        && /\} catch \{\s+if \("\$_" -eq \$script:CancelSentinel\) \{ throw \}\s+\$why = /.test(errorList),
+        'the error-list reads rethrow a cancel (item read, outer catch)');
+    assert(/Emit-Event 'errorDetails'[\s\S]*?\}\)\s+\}\s+Test-CancelRequested/.test(errorList),
+        'a cancel during the error and Output reads ends the run as cancelled (checked before the result)');
     assert(/\$paneRead = Get-OutputPaneTexts -Dte \$dte/.test(errorList) && !/\.OutputWindowPanes/.test(errorList),
         'the output panes are read only through Get-OutputPaneTexts');
     // C (user run 2026-11-13, headless on 4026): no error items, the Output window $null. Each step
     // gives a reason, and the reasons reach the extension as one event.
     assert(/Emit-Event 'errorDetails' \(\[ordered\]@\{ errorItems = \$errorItemsRead; outputPanes = @\(\$paneRead\.Panes\)\.Count\s+reasons = \[string\[\]\]\$detailReasons \}\)/.test(errorList),
         'a failed build emits errorDetails (items read, panes read, reasons)');
-    for (const reason of ['the error list window is not available', 'the error list has no item collection', 'the error list is empty', 'the error list could not be read']) {
+    for (const reason of ['the error list window is not available', 'the error list was still rejected after', 'the error list has no item collection', 'the error list is empty', 'the error list could not be read']) {
         assert(errorList.includes(reason), `error-list reason: ${reason}`);
     }
 }
@@ -200,6 +213,12 @@ if (fs.existsSync(BUILDER)) {
     // No method is called on anything that was not null-checked first: the raw PowerShell error
     // ("cannot call a method on a null-valued expression") is what the user saw.
     assert(!/\$pane\.TextDocument\.Selection/.test(fn) && !/\.Object\)?\.OutputWindowPanes/.test(fn), 'no unguarded chain through TextDocument or Window.Object');
+    // A cancel thrown by Invoke-ComRetry is not a null: every catch around one rethrows it first.
+    const comCatches = [...fn.matchAll(/Invoke-ComRetry[^\n]*\} catch \{([^\n]*)\}/g)].map(m => m[1]);
+    assert(comCatches.length === 7 && comCatches.every(c => /^ if \("\$_" -eq \$script:CancelSentinel\) \{ throw \}; /.test(c)),
+        `every one-line catch around Invoke-ComRetry in Get-OutputPaneTexts rethrows a cancel (${comCatches.length})`);
+    assert(/\} catch \{\s+if \("\$_" -eq \$script:CancelSentinel\) \{ throw \}\s+\$why = [^\n]*\s+\[void\]\$reasons\.Add\("pane '\$name' text not readable/.test(fn),
+        'the pane-text catch rethrows a cancel too');
     for (const copy of [BUILDER, path.join(REPO, 'templates', 'build_plc_project.ps1')]) {
         const text = fs.readFileSync(copy, 'utf8');
         assert(fnOf(text) === fn, `${path.relative(REPO, copy)} has the same Get-OutputPaneTexts`);
@@ -212,12 +231,22 @@ if (fs.existsSync(BUILDER)) {
 
 // ── The system project: .tsproj, or .tspproj (a TwinCAT project saved as separate files) ─────────
 // User report 2026-11-13: TcToolkitSample2 has only a .tspproj, and the driver stopped with "no .tsproj".
+// Two provider-side -Filter lookups merged before the sort (a Where-Object over every file under the
+// solution folder builds an object per file), in the driver (both) and every copy.
 {
-    const lookups = ps1.match(/Get-ChildItem -LiteralPath [^\n]*-Recurse[^\n]*\r?\n[^\n]*/g) || [];
-    const sysLookups = lookups.filter(l => /tsproj/.test(l));
-    assert(sysLookups.length === 2 && sysLookups.every(l => /'\.tsproj'/.test(l) && /'\.tspproj'/.test(l)),
-        `both system-project lookups accept .tsproj and .tspproj (${sysLookups.length})`);
-    assert(!/-Filter \*\.tsproj\b/.test(ps1), 'no lookup filters on *.tsproj alone');
+    const copies = [
+        ['the driver', ps1, 2, 'LiteralPath'],
+        ['the builder', fs.readFileSync(BUILDER, 'utf8'), 1, 'Path'],
+        ['templates/', fs.readFileSync(path.join(REPO, 'templates', 'build_plc_project.ps1'), 'utf8'), 1, 'Path'],
+        ['probe-sysmanager.ps1', fs.readFileSync(path.join(REPO, 'scripts', 'Build PLC project', 'probe-sysmanager.ps1'), 'utf8'), 1, 'Path']
+    ];
+    for (const [name, text, count, param] of copies) {
+        const pairs = [...text.matchAll(/= \(@\(Get-ChildItem -(\w+) ([^\n]+?) -Recurse -Filter \*\.tsproj -File -ErrorAction SilentlyContinue\) \+\r?\n\s+@\(Get-ChildItem -(\w+) ([^\n]+?) -Recurse -Filter \*\.tspproj -File -ErrorAction SilentlyContinue\)\) \|\r?\n\s+Sort-Object FullName -Unique \| Select-Object -First 1/g)];
+        assert(pairs.length === count && pairs.every(m => m[1] === param && m[3] === param && m[2] === m[4]),
+            `${name}: ${count} system-project lookup(s), -Filter *.tsproj and *.tspproj merged before Sort-Object (-${param})`);
+        assert(!/Where-Object \{ \$_\.Extension -eq '\.tsproj'/.test(text) && !/-Filter \*\.tsp\*proj/.test(text),
+            `${name}: no Where-Object over every file, no 8.3-prone *.tsp*proj filter`);
+    }
     const tsp = fs.readdirSync(path.join(REPO, 'sample', 'TcToolkitSample2', 'TcToolkitSample2')).filter(f => f.endsWith('.tspproj'));
     const tspText = fs.readFileSync(path.join(REPO, 'sample', 'TcToolkitSample2', 'TcToolkitSample2', tsp[0]), 'utf8');
     assert(tsp.length === 1 && /TcVersion="(3\.1\.(\d+)\.\d+)"/.test(tspText), 'sample 2 has a .tspproj the driver\'s TcVersion pattern reads');
@@ -249,6 +278,11 @@ if (fs.existsSync(BUILDER)) {
         const b = block(fs.readFileSync(copy, 'utf8'));
         assert(/\$installedShells\.Add\(\$p\)/.test(b) && /Installed XAE Shells: /.test(b) && /No XAE Shell is installed/.test(b),
             `${path.relative(REPO, copy)} prints the installed shells on the same fatal`);
+        // The same census as the driver's: every mapped ProgId, newest first, tested literally in HKCR.
+        assert(/foreach \(\$b in @\(\$ProgIdByBuild\.Keys \| Sort-Object \{ \[int\]\$_ \} -Descending\)\)/.test(b)
+            && /Test-Path -LiteralPath "Registry::HKEY_CLASSES_ROOT\\\$p"/.test(b),
+            `${path.relative(REPO, copy)} runs the same census (newest first, -LiteralPath)`);
+        assert(JSON.stringify(table(fs.readFileSync(copy, 'utf8'))) === JSON.stringify(driverTable), `${path.relative(REPO, copy)} has the driver's $ProgIdByBuild`);
     }
     assert(/Installed XAE Shells: /.test(fatal) && /No XAE Shell is installed/.test(fatal), 'the driver prints them for a human too');
 }

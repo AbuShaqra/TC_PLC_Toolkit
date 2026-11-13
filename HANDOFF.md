@@ -189,7 +189,7 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
     case-insensitively against the `.sln` pairs (`declaredPairs`). Declared → the ONE activation modal asks "<target>
     (<NetId>) runs <P>, but <set> is set. Switch to <P>?" with *Switch for this run* / *Switch and remember*
     (user refinement: XAE asks the same on download; remember writes `tcToolkit.xaeBuild.platform` once, scope =
-    workspace folder > workspace > user, where the value comes from) / Cancel. Not declared → refused before XAE
+    workspace > user, where the value comes from — the setting is window-scoped, so no folder scope) / Cancel. Not declared → refused before XAE
     starts, naming the platform to add in XAE's Configuration Manager. `.sln` pairs unreadable → nothing switched
     (my call; gate 4's refusal stands). An inferred target platform is switched too (gate 4 refuses on it as well);
     the modal says it is inferred.
@@ -204,21 +204,43 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
     `errorDetails {errorItems, outputPanes, reasons[]}`. No items + no pane text after a confirmed compile failure →
     "XAE returned no error details: <reasons>." and, headless only, the button *Build again with the window shown*
     (one re-run with `-ShowWindow`, setting never written, no claim the visible run shows errors).
-  **Verified (Linux, 2026-11-13):** `REQUIRE_FULL_SUITE=1 npm test` 123/123 FULL; lint 0; typecheck 0. Webview and
-  start page unchanged (browser harnesses not re-run).
+  **Windows runs on 9ed8b7a (user, 2026-11-13):** Build and Activate onto the user-mode runtime with the
+  platform-switch question PASSED. **OPEN:** a planted compile error in sample 1 still put nothing in Problems,
+  only the error notification appeared — waiting on the user's *TC Toolkit XAE Build* channel text (the
+  `errorDetails` reasons and any `errorItem`/`outputPane` lines) before diagnosing; no code changed for it.
+  **Second review, 16 confirmed findings, fixed (2026-11-13, this commit; Linux-verified only):** ps1 — a cancel
+  during the `errors` phase is exit 4 (every catch around `Invoke-ComRetry` there, `Get-OutputPaneTexts` in all
+  three copies included, rethrows the sentinel; the hand-written `ErrorItems` retry checks the cancel file and,
+  when all 10 tries are rejected, says "still rejected after 10 tries (XAE busy)", not "no item collection"; a
+  last cancel check closes the phase); the `.tsproj`/`.tspproj` lookup is two `-Filter` calls merged before
+  `Sort-Object` again (driver ×2, builder, `templates/`, `probe-sysmanager.ps1`). JS — the shell offer is NEWER
+  shells only (older-only → no offer, the error names the shell to install and why); a confirmed substitute
+  that is itself unregistered is named as such (`projectVersion` ≠ `build`); an undeclared configured pair is
+  refused before the activation modal (`pair-not-declared`); an activation's re-runs (stall, *Build again with
+  the window shown*) reuse its confirmation (internal `WeakSet`, used once, never a command argument); the
+  user's Cancel beats the stall re-run in both orders; a HARNESS refusal is no longer written twice; *Switch and
+  remember* writes workspace or user only (the test stub now reads each setting's real scope from package.json
+  and refuses a folder write, as VS Code does). Tests added for each (the 10 new command assertions fail on
+  9ed8b7a), plus the census and lookup contract on every copy.
+  **Verified (Linux, 2026-11-13, after the review fixes):** `REQUIRE_FULL_SUITE=1 npm test` 123/123 FULL; lint 0;
+  typecheck 0. Webview and start page unchanged (browser harnesses not re-run).
   **For the Windows check** (point the `test-*.ps1` at the driver with `-ScriptPath
   ..\..\resources\xae\build-plc-project.ps1`):
   1. sample 1 + planted error, **window shown** (the user's next run): `errorItem` count, `outputPane` text, the
      `errorDetails` reasons; then the same headless again with this commit (does plain assignment change the item
      count? are the reasons one line each, no raw PS null message?) and the *Build again with the window shown*
      button; capture `-Json` output as fixtures **from the sample only**; where the Problems entries land;
-  2. *Build and Activate* onto UmRT_Default with platform RT (x64) set: one modal asking to switch; *Switch for this
-     run* builds OS (x64) and leaves the setting; *Switch and remember* writes it; RUN reached;
+  2. (PASSED on 9ed8b7a) *Build and Activate* onto UmRT_Default with the switch question; still to see after the
+     review fixes: *Switch and remember* lands in the user (or workspace) settings, and a stalled/failed headless
+     activation re-run asks no second target pick or modal; with `tcToolkit.xaeBuild.configuration` set to a name
+     the solution lacks, the activation is refused before the modal;
   3. sample 2 (no OS (x64) declared) onto UmRT_Default: refused before XAE starts, naming the platform to add;
   4. Settings UI: the platform shows as a dropdown with descriptions; a custom string in settings.json still runs;
-  5. re-run sample 2 on 4026: one shell modal, then a build (does XAE upgrade the `.tspproj`?);
+  5. re-run sample 2 on 4026: one shell modal, then a build (does XAE upgrade the `.tspproj`?); the reverse (a
+     4026 project where only the 4024 shell is installed, if such a machine exists) must offer nothing;
   6. `-TcVersion` forcing a switch: `ui` reason `version-switch`; 7. `probe-sysmanager.ps1` with/without `-Pump`;
-  8. cancel during build (exit 4, shell closed) and during activation (refused); 9. *Show Activation Targets*;
+  8. cancel during build (exit 4, shell closed), during the error reads of a failed headless build (exit 4, no
+     "Build again" offer) and during activation (refused); 9. *Show Activation Targets*;
   off Windows the commands refuse; 10. with a developer XAE Shell open: a new shell or `shell-not-ours`; a
   solution under `Line [2]` and one on a UNC share build.
   **Open questions (defaults in place):** settings key section `tcToolkit.xaeBuild` (one section); hide the window
