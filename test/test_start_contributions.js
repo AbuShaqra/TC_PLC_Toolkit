@@ -45,14 +45,14 @@ const bar = (c.viewsContainers.activitybar || []).find(v => v.id === 'twincat');
 assert(!!bar && bar.title === 'TC Toolkit', 'an Activity Bar container "twincat" titled TC Toolkit');
 assert(!!bar && fs.existsSync(path.join(REPO, bar.icon)), `its icon exists (${bar && bar.icon})`);
 const views = (c.views.twincat || []).map(v => v.id);
-assert(JSON.stringify(views) === JSON.stringify(['twincatStart', 'twincatExplorer', 'twincatLibraries']),
-    `the container holds Start, Objects, Libraries in that order (${views.join(', ')})`);
+assert(JSON.stringify(views) === JSON.stringify(['twincatStart', 'twincatExplorer', 'twincatLibraries', 'twincatWatch']),
+    `the container holds Start, Objects, Libraries, Watch in that order (${views.join(', ')})`);
 assert(!c.views.explorer || !c.views.explorer.some(v => ['twincatExplorer', 'twincatLibraries'].includes(v.id)),
     'Objects and Libraries are no longer contributed to the Explorer');
 assert((c.views['twincat-references-panel'] || []).some(v => v.id === 'twincatReferences'), 'References stays in its panel');
 const names = Object.fromEntries((c.views.twincat || []).map(v => [v.id, v.name]));
-assert(names.twincatExplorer === 'PLC Objects' && names.twincatLibraries === 'PLC Libraries' && names.twincatStart === 'Start',
-    'view names: PLC Objects, PLC Libraries, plus Start');
+assert(names.twincatExplorer === 'PLC Objects' && names.twincatLibraries === 'PLC Libraries' && names.twincatStart === 'Start'
+    && names.twincatWatch === 'PLC Watch', 'view names: PLC Objects, PLC Libraries, PLC Watch (R15), plus Start');
 assert((c.views['twincat-references-panel'] || []).find(v => v.id === 'twincatReferences').name === 'PLC References',
     'the references view is named PLC References');
 // ── Branding: "TwinCAT" is Beckhoff's trademark, so it never NAMES the product or its UI ────────
@@ -80,8 +80,8 @@ assert((c.views['twincat-references-panel'] || []).find(v => v.id === 'twincatRe
     const { SETTING_RENAMES } = require(path.join(REPO, 'src', 'settingsMigration.js'));
     const live = Object.keys(allProps).filter(k => !allProps[k].deprecationMessage);
     const deprecated = Object.keys(allProps).filter(k => allProps[k].deprecationMessage);
-    assert(live.length === 18 && live.every(k => k.startsWith('tcToolkit.')),
-        `all 18 live settings are tcToolkit.* (got ${JSON.stringify(live)})`);
+    assert(live.length === 28 && live.every(k => k.startsWith('tcToolkit.')),
+        `all 28 live settings are tcToolkit.* (got ${JSON.stringify(live)})`);
     // R13: the C++ switches (both off by default) and the g++ path (machine-scoped, like the XAE Shell paths).
     const gen = allProps['tcToolkit.compiler.generateCpp'];
     const build = allProps['tcToolkit.compiler.buildWithGpp'];
