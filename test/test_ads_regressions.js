@@ -19,6 +19,12 @@
  *   Inline values: they come back after an edit with unchanged PLC values (#16); truncation keeps
  *   surrogate pairs whole (#18). The webview half (#15, #16) is test/browser/run_online.js.
  *
+ *   Review round 2 (blocks R2#0-R2#6, each failing on e6a3842): a download of another project or a
+ *   type change while the dialogs are open refuses the write, and a click while connecting is refused
+ *   (R2#0); a Manual Sync stash survives the BOM and the guard's read (R2#1); no symbol cache crosses a
+ *   Cancel (R2#2); no watch slot overwrites a live handle (R2#3); no poll after Go Offline (R2#4); a
+ *   GVL's declaration pane maps each name to itself (R2#5) and `qualifiedOnly` follows the editor (R2#6).
+ *
  * Runs against the in-memory PLC of test/_fakeAds.js, the real ads-client 2.2.0 `Client` with its
  * ADS commands answered in memory (#5), and a local TCP listener standing in for a router (#12).
  */
@@ -148,7 +154,7 @@ function guardDeps(session, world) {
 function slowable(plc, delays) {
     return (o) => {
         const c = plc.createClient(o);
-        for (const name of ['readValue', 'readRawMulti', 'subscribeRaw', 'getSymbols', 'readPlcState']) {
+        for (const name of ['readValue', 'readRawMulti', 'subscribeRaw', 'getSymbols', 'readPlcState', 'getSymbol']) {
             const real = c[name];
             c[name] = async function (...a) { if (delays[name]) await tick(delays[name]); return real.apply(this, a); };
         }
@@ -509,6 +515,179 @@ function paths() {
     clearWorkspaceIndex();
 }
 
+// ── Review round 2 (2026-11-13), session and watch level: R2#2, R2#3 ────────────────────────────────
+async function round2Lifecycle() {
+    // ── R2#2: a Cancel during Go Online's status phase leaves nothing a later connection reads ─────
+    {
+        // PLC A: MAIN.x at offset 16. PLC B: MAIN.pad at 16 (999), MAIN.x at 32 (222).
+        const A = createFakePlc({ symbols: { 'MAIN.x': { type: 'INT', value: 111 } } });
+        const B = createFakePlc({ symbols: { 'MAIN.pad': { type: 'INT', value: 999 }, 'MAIN.x': { type: 'INT', value: 222 } } });
+        let which = A;
+        const session = createOnlineSession({ createClient: (o) => (which === A ? slowable(A, { readValue: 50, readPlcState: 50 }) : B.createClient)(o), statusIntervalMs: 100000 });
+        const w = createWatchList({ session, load: () => [], save: () => {} });
+        let fire = () => {};
+        const tok = { isCancellationRequested: false, onCancellationRequested: (f) => { fire = f; return { dispose() {} }; } };
+        const p = session.connect({ ...ROUTER, targetAmsNetId: '1.1.1.1.1.1' }, tok).catch(e => e);
+        await tick(10);
+        await w.add('MAIN.x', 'INT');           // PLC Watch "Add" while "Going online" is still reading the status
+        await session.resolve('MAIN.x');
+        tok.isCancellationRequested = true;
+        fire();
+        await p;
+        which = B;
+        await session.connect({ ...ROUTER, targetAmsNetId: '2.2.2.2.1.1' });
+        const r = await session.resolve('MAIN.x');
+        const v = (await session.readMany([r])).get('MAIN.x');
+        assert(r.ok && r.symbol.indexOffset === B.symbols.get('main.x').indexOffset && v && v.value === 222,
+            `R2#2 after a Cancel in the status phase, the next PLC's MAIN.x is resolved on that PLC (offset ${r.symbol && r.symbol.indexOffset}, value ${v && v.value})`);
+        await w.dispose();
+        await session.disconnect();
+    }
+    {
+        // A resolve still in flight on the cancelled client must not land in the next connection's cache.
+        const A = createFakePlc({ symbols: { 'MAIN.x': { type: 'INT', value: 111 } } });
+        const B = createFakePlc({ symbols: { 'MAIN.pad': { type: 'INT', value: 999 }, 'MAIN.x': { type: 'INT', value: 222 } } });
+        let which = A;
+        const session = createOnlineSession({ createClient: (o) => (which === A ? slowable(A, { readValue: 50, readPlcState: 50, getSymbol: 30 }) : B.createClient)(o), statusIntervalMs: 100000 });
+        let fire = () => {};
+        const tok = { isCancellationRequested: false, onCancellationRequested: (f) => { fire = f; return { dispose() {} }; } };
+        const p = session.connect({ ...ROUTER, targetAmsNetId: '1.1.1.1.1.1' }, tok).catch(e => e);
+        await tick(10);
+        const late = session.resolve('MAIN.x');
+        tok.isCancellationRequested = true;
+        fire();
+        await p;
+        which = B;
+        await session.connect({ ...ROUTER, targetAmsNetId: '2.2.2.2.1.1' });
+        await late;
+        const r = await session.resolve('MAIN.x');
+        assert(r.ok && r.symbol.indexOffset === B.symbols.get('main.x').indexOffset,
+            `R2#2 a resolve that finishes on the cancelled client is not served to the next one (offset ${r.symbol && r.symbol.indexOffset})`);
+        await session.disconnect();
+    }
+
+    // ── R2#3: watch attach() never overwrites a slot that holds a live handle ─────────────────────
+    {
+        // (1) "Add" during the status phase, then the 'state' event attaches every entry again.
+        const A = createFakePlc({ symbols: { 'MAIN.x': { type: 'INT', value: 1 }, 'MAIN.y': { type: 'INT', value: 2 } } });
+        const session = createOnlineSession({ createClient: slowable(A, { readValue: 30 }), statusIntervalMs: 100000, maxNotifications: () => 2 });
+        const w = createWatchList({ session, load: () => [{ path: 'MAIN.y', localType: 'INT' }], save: () => {} });
+        const p = session.connect(ROUTER);
+        await tick(5);
+        await w.add('MAIN.x', 'INT');
+        await p;
+        await waitFor(() => w.list().every(r => r.state !== 'pending'), 500);
+        await tick(50);
+        assert(w.list().every(r => r.state === 'ok') && session.subscriptionCount === 2 && A.notifications.size === 2,
+            `R2#3 an Add during the status phase leaves one notification per entry (${w.list().map(r => r.path + ':' + r.state)}, subs ${session.subscriptionCount}, plc ${A.notifications.size})`);
+        await w.remove('MAIN.x'); await w.remove('MAIN.y'); await tick(20);
+        assert(session.subscriptionCount === 0 && A.notifications.size === 0, `R2#3 and removing every entry frees every notification (${session.subscriptionCount}, ${A.notifications.size})`);
+        await w.dispose();
+        await session.disconnect();
+    }
+    {
+        // (2) Remove and re-add an entry while attachAll still waits on an earlier one.
+        const A = createFakePlc({ symbols: { 'MAIN.a': { type: 'INT', value: 1 }, 'MAIN.x': { type: 'INT', value: 2 } } });
+        const mk = (o) => { const c = A.createClient(o); const gs = c.getSymbol; c.getSymbol = async (pth) => { if (/main\.a/i.test(pth)) await tick(80); return gs(pth); }; return c; };
+        const session = createOnlineSession({ createClient: mk, statusIntervalMs: 100000 });
+        const w = createWatchList({ session, load: () => [{ path: 'MAIN.a', localType: 'INT' }, { path: 'MAIN.x', localType: 'INT' }], save: () => {} });
+        await session.connect(ROUTER);
+        await tick(5);
+        await w.remove('MAIN.x');
+        await w.add('MAIN.x', 'INT');
+        await tick(300);
+        assert(w.size === 2 && session.subscriptionCount === 2 && A.notifications.size === 2,
+            `R2#3 re-adding during attachAll keeps one notification per entry (subs ${session.subscriptionCount}, plc ${A.notifications.size})`);
+        await w.remove('MAIN.a'); await w.remove('MAIN.x'); await tick(50);
+        assert(session.subscriptionCount === 0 && A.notifications.size === 0, `R2#3 and removing both frees both (${session.subscriptionCount}, ${A.notifications.size})`);
+        await w.dispose();
+        await session.disconnect();
+    }
+    {
+        // (3) Two 'symbols' events while the first detach waits on slow DeleteNotifications.
+        const A = createFakePlc({ symbols: { 'MAIN.a': { type: 'INT', value: 1 }, 'MAIN.b': { type: 'INT', value: 2 } } });
+        let cl;
+        const mk = (o) => { const c = A.createClient(o); cl = c; const sr = c.subscribeRaw;
+            c.subscribeRaw = async (...a) => { const s = await sr(...a); return { unsubscribe: async () => { await tick(100); return s.unsubscribe(); } }; }; return c; };
+        const session = createOnlineSession({ createClient: mk, statusIntervalMs: 100000 });
+        const w = createWatchList({ session, load: () => [{ path: 'MAIN.a', localType: 'INT' }, { path: 'MAIN.b', localType: 'INT' }], save: () => {} });
+        await session.connect(ROUTER);
+        await tick(50);
+        A.appInfo.OnlineChangeCnt++;
+        session.refreshStatus();
+        await tick(20);
+        cl.fire('symbolVersion');
+        await tick(600);
+        assert(w.size === 2 && session.subscriptionCount === 2 && A.notifications.size === 2,
+            `R2#3 two quick symbol drops leave one notification per entry (subs ${session.subscriptionCount}, plc ${A.notifications.size})`);
+        await w.remove('MAIN.a'); await w.remove('MAIN.b'); await tick(300);
+        assert(session.subscriptionCount === 0 && A.notifications.size === 0, `R2#3 and removing both frees both (${session.subscriptionCount}, ${A.notifications.size})`);
+        await w.dispose();
+        await session.disconnect();
+    }
+
+    // ── R2#1 (store level): a BOM does not change the fingerprint; a guard read never deletes ─────
+    {
+        const { createPendingEditsStore, fingerprintOf } = require('../src/pendingEditsStore');
+        const m = new Map();
+        const store = createPendingEditsStore({ get: (k, d) => (m.has(k) ? m.get(k) : d), update: (k, v) => { if (v === undefined) m.delete(k); else m.set(k, v); return Promise.resolve(); } });
+        const disk = '\uFEFF<?xml version="1.0"?>\n<TcPlcObject/>\n';
+        assert(fingerprintOf(disk) === fingerprintOf(disk.slice(1)), 'R2#1 a leading BOM does not change the fingerprint (the disk text and VS Code\'s document text agree)');
+        await store.set('file:///a.TcPOU', { root_impl: { content: 'x := 1;' } }, disk.slice(1));
+        const seen = typeof store.peek === 'function' ? store.peek('file:///a.TcPOU', 'something else') : null;
+        await tick(5);
+        assert(seen && seen.stale === true && store.uris().includes('file:///a.TcPOU'),
+            `R2#1 a non-destructive read reports a stale stash and keeps it (${JSON.stringify(seen)}, ${store.uris()})`);
+    }
+}
+
+// ── R2#5 / R2#6: a GVL's declaration pane maps every name to its own variable ─────────────────────────
+function round2Paths() {
+    const { parseAndIndexDocument, clearWorkspaceIndex, getWorkspaceSymbolIndex } = require('../src/lsp/parser');
+    const { indexXmlObject } = require('../src/lsp/xmlIndexer');
+    const { provideOnlinePaths } = require('../src/lsp/features');
+    const { parseTwinCatXml } = require('../src/xmlParser');
+    const { convertXmlToSt } = require('../src/stConverter');
+    const xml = (name, decl) => `<?xml version="1.0" encoding="utf-8"?>\n<TcPlcObject Version="1.1.0.1">\n<GVL Name="${name}" Id="{00000000-0000-0000-0000-000000000001}">\n` +
+        `<Declaration><![CDATA[${decl}]]></Declaration>\n</GVL>\n</TcPlcObject>`;
+    const declOccurrences = (x, uri) => {
+        const { stText, lineMap } = convertXmlToSt(parseTwinCatXml(x), { raw: true });
+        const ranges = [];
+        for (const id of Object.keys(lineMap)) { const lm = lineMap[id]; if (lm.decl) ranges.push({ pane: 'decl', start: lm.decl.start - 1, end: lm.decl.end - 1 }); }
+        parseAndIndexDocument(stText, uri);
+        return { stText, occ: provideOnlinePaths(stText, ranges, getWorkspaceSymbolIndex(), uri).occurrences };
+    };
+    clearWorkspaceIndex();
+    const vars = Array.from({ length: 10 }, (_, i) => `v${String(i + 1).padStart(2, '0')}`);
+    const decl = "{attribute 'qualified_only'}\nVAR_GLOBAL\n" + vars.map(v => `\t${v} : INT;\n`).join('') + 'END_VAR\n';
+    const uri = 'file:///syn/GVL_Ten.TcGVL';
+    const x = xml('GVL_Ten', decl);
+    indexXmlObject(getWorkspaceSymbolIndex(), x, uri);
+    declOccurrences(x, uri);                       // the editor syncs on open...
+    declOccurrences(x, uri);                       // ...and on every request after it
+    const { stText, occ } = declOccurrences(x, uri);
+    const lines = stText.split('\n');
+    const wrong = occ.filter(o => lines[o.line].slice(o.start, o.end).toLowerCase() !== String(o.path).split('.').pop().toLowerCase());
+    const keys = occ.map(o => `${o.line}:${o.start}`);
+    assert(occ.length === 10 && wrong.length === 0 && new Set(keys).size === keys.length,
+        `R2#5 every declaration-pane occurrence of a long GVL sits on its own name, once (${occ.length} occurrences, ${wrong.length} misplaced: ${wrong.slice(0, 3).map(o => `${JSON.stringify(lines[o.line].trim())}->${o.path}`)})`);
+    const vcount = getWorkspaceSymbolIndex().GVL_Ten.variables.length;
+    assert(vcount === 10, `R2#5 re-syncing the GVL does not grow its variable list (${vcount})`);
+
+    // R2#6: qualifiedOnly follows the editor's text (an unsaved pragma edit), not only the file on disk.
+    clearWorkspaceIndex();
+    const qDisk = xml('GVL_Q', "{attribute 'qualified_only'}\nVAR_GLOBAL\n\tnQ : INT;\nEND_VAR\n");
+    indexXmlObject(getWorkspaceSymbolIndex(), qDisk, 'file:///syn/GVL_Q.TcGVL');
+    declOccurrences(xml('GVL_Q', 'VAR_GLOBAL\n\tnQ : INT;\nEND_VAR\n'), 'file:///syn/GVL_Q.TcGVL');
+    const afterRemove = getWorkspaceSymbolIndex().GVL_Q.qualifiedOnly;
+    const oDisk = xml('GVL_O', 'VAR_GLOBAL\n\tnO : INT;\nEND_VAR\n');
+    indexXmlObject(getWorkspaceSymbolIndex(), oDisk, 'file:///syn/GVL_O.TcGVL');
+    declOccurrences(xml('GVL_O', "{attribute 'qualified_only'}\nVAR_GLOBAL\n\tnO : INT;\nEND_VAR\n"), 'file:///syn/GVL_O.TcGVL');
+    const afterAdd = getWorkspaceSymbolIndex().GVL_O.qualifiedOnly;
+    assert(afterRemove === false && afterAdd === true, `R2#6 qualifiedOnly follows an unsaved pragma edit (removed: ${afterRemove}, added: ${afterAdd})`);
+    clearWorkspaceIndex();
+}
+
 // ── The command layer: #1, #2, #3, #4, #19 ─────────────────────────────────────────────────────────
 async function commandLevel() {
     if (!fs.existsSync(MAIN)) { console.log('SKIP: sample/ is missing: the command-level regressions did not run.'); return false; }
@@ -534,6 +713,7 @@ async function commandLevel() {
     const plc = createFakePlc({ symbols });
     const BUILD_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'tc_online_regr_'));
     fs.copyFileSync(TMC, path.join(BUILD_DIR, 'TcToolkitSample_PLC.tmc'));
+    fs.copyFileSync(TMC, path.join(BUILD_DIR, 'OtherProject_PLC.tmc'));   // a second project, same layout (R2#0)
     const memento = () => { const m = new Map(); return { get: (k, d) => (m.has(k) ? m.get(k) : d), update: (k, v) => { if (v === undefined) m.delete(k); else m.set(k, v); return Promise.resolve(); } }; };
     const context = { subscriptions: [], workspaceState: memento(), globalState: memento(), extensionUri: { fsPath: REPO } };
     const project = { name: 'TcToolkitSample_PLC', dir: BUILD_DIR, objectFiles: new Map(sampleFiles.map(f => [f.toLowerCase(), f])) };
@@ -552,7 +732,9 @@ async function commandLevel() {
     const lastState = (d) => { const list = posts.get(d.uri.toString()).filter(m => m.type === 'online/state'); return list[list.length - 1]; };
     const delays = {};
     const { registerOnlineCommands } = require('../src/commands/onlineCommands');
-    const api = registerOnlineCommands(context, { provider, getProjectMap: () => projectMap, createClient: slowable(plc, delays) });
+    // The inline monitors' timers, counted (R2#4).
+    const monitorTimers = { fired: 0, setTimeout: (fn, ms) => setTimeout(() => { monitorTimers.fired++; fn(); }, ms), clearTimeout };
+    const api = registerOnlineCommands(context, { provider, getProjectMap: () => projectMap, createClient: slowable(plc, delays), timers: monitorTimers });
     const run = (id, ...a) => vscodeStub.commands.executeCommand(id, ...a);
 
     // ── #19: a workspace's settings cannot turn writes on ─────────────────────────────────────────
@@ -629,6 +811,109 @@ async function commandLevel() {
     delays.getSymbols = 0;
     plc.removeSymbol('MAIN.nAddedByDownload');
 
+    // ── Review round 2 (2026-11-13), command level: R2#1, R2#0, R2#4 ─────────────────────────────
+    const lines = () => channels[0].lines;
+    const settle = async () => { await api.session.refreshStatus(); await tick(30); await api.refreshCodeCheck(); };
+    plc.clients[plc.clients.length - 1].fire('symbolVersion');   // the #2 block's download, undone: symbols re-read
+    await settle();
+    assert(api.codeCheck() && api.codeCheck().state === 'match', `R2 (setup) the code check passes again (${api.codeCheck() && api.codeCheck().reason})`);
+
+    // R2#1: a Manual Sync stash of a closed editor, fingerprinted against VS Code's text (no BOM),
+    // still blocks against the file on disk (with its BOM), and the guard's read does not delete it.
+    assert(fs.readFileSync(MAIN, 'utf8').charCodeAt(0) === 0xFEFF, 'R2#1 (premise) the sample MAIN.TcPOU starts with a BOM');
+    const mainUri = mainDoc.uri.toString();
+    await store.set(mainUri, { root_impl: { content: 'x := 1;' } }, fs.readFileSync(MAIN, 'utf8').replace(/^\uFEFF/, ''));
+    answers.message.push('Write'); answers.input.push('54');
+    r = await run('twincat.watch.write', watchRow());
+    await tick(5);
+    assert(r.status === 'refused' && /unsaved edits/.test(r.message) && plc.get('GVL_Hmi.nSpeed') === 51 && store.uris().includes(mainUri),
+        `R2#1 a stash of a closed editor blocks across the BOM, and survives the check (${r.status}: ${r.message}; kept ${store.uris().includes(mainUri)})`);
+    answers.message.length = 0; answers.input.length = 0;
+    await store.set(mainUri, { root_impl: { content: 'x := 1;' } }, 'text the file no longer has');
+    answers.message.push('Write'); answers.input.push('54');
+    r = await run('twincat.watch.write', watchRow());
+    await tick(5);
+    assert(r.status === 'refused' && /unsaved edits/.test(r.message) && store.uris().includes(mainUri),
+        `R2#1 a stash that no longer matches the file blocks (fail closed) and is not deleted by the check (${r.status})`);
+    answers.message.length = 0; answers.input.length = 0;
+    await store.delete(mainUri);
+
+    // R2#0: XAE downloads another workspace project to the same runtime while the value box is open.
+    const mainMsg2 = { componentId: 'root', fileUri: mainUri, visible: { decl: [{ start: 1, end: 20 }], impl: [{ start: 1, end: 30 }] } };
+    await provider.onlineSource.visible(mainUri, mainDoc, mainMsg2);
+    const clickAt = { componentId: 'root', pane: 'impl', position: { lineNumber: 1, column: 3 }, fileUri: mainUri };
+    const writesR2 = plc.writes.length;
+    const checkLines = lines().filter(l => /Code check/.test(l)).length;
+    answers.message.push('Write', 'Write');
+    answers.input.push(async () => {
+        plc.appInfo.ProjectName = 'OtherProject_PLC';
+        plc.clients[plc.clients.length - 1].fire('symbolVersion');
+        await settle();
+        return '77';
+    });
+    r = await provider.onlineSource.write(mainUri, mainDoc, clickAt);
+    assert(api.codeCheck() && api.codeCheck().project && api.codeCheck().project.name === 'OtherProject_PLC',
+        `R2#0 (premise) the code check is now bound to the other project (${api.codeCheck() && api.codeCheck().project && api.codeCheck().project.name})`);
+    assert(r && r.status === 'refused' && plc.writes.length === writesR2,
+        `R2#0 a write from an editor of the old project is refused once the PLC runs another one (${r && r.status}: ${r && r.message})`);
+    await tick(20);
+    assert(lines().filter(l => /Code check/.test(l)).length > checkLines && lastState(mainDoc) && lastState(mainDoc).writable === false,
+        `R2#0 the switch of the bound project is logged and the editor is told it may no longer write (${JSON.stringify(lastState(mainDoc))})`);
+    answers.message.length = 0; answers.input.length = 0;
+    plc.appInfo.ProjectName = 'TcToolkitSample_PLC';
+    plc.clients[plc.clients.length - 1].fire('symbolVersion');
+    await settle();
+
+    // R2#0: a download that changes the symbol's type (same size, so the layout still matches) while the
+    // value box is open: the value was parsed for the old type, so the write is refused.
+    answers.message.push('Write');
+    answers.input.push(async () => {
+        plc.removeSymbol('GVL_Hmi.nSpeed');
+        plc.addSymbol('GVL_Hmi.nSpeed', { type: 'UINT', value: 51 });
+        plc.clients[plc.clients.length - 1].fire('symbolVersion');
+        await settle();
+        return '55';
+    });
+    r = await run('twincat.watch.write', watchRow());
+    assert(r.status === 'refused' && plc.get('GVL_Hmi.nSpeed') === 51,
+        `R2#0 a symbol whose type changed while the dialogs were open is not written (${r.status}: ${r.message})`);
+    answers.message.length = 0; answers.input.length = 0;
+    plc.removeSymbol('GVL_Hmi.nSpeed');
+    plc.addSymbol('GVL_Hmi.nSpeed', { type: 'INT', value: 51 });
+    plc.clients[plc.clients.length - 1].fire('symbolVersion');
+    await settle();
+
+    // R2#0: a click delivered while a Go Online is still connecting is refused, with no dialog.
+    await run('twincat.goOffline');
+    plc.connectBehavior.delayMs = 60;
+    const going = run('twincat.goOnline', { netId: 'localhost', label: 'Local runtime' });
+    await waitFor(() => api.session.state === 'connecting', 500);
+    const modalsR2 = calls.modals.length;
+    const inputsR2 = calls.inputs.length;
+    answers.message.push('Enable writes', 'Write'); answers.input.push('78');
+    r = await provider.onlineSource.write(mainUri, mainDoc, clickAt);
+    await going;
+    plc.connectBehavior.delayMs = 0;
+    assert(r && r.status === 'refused' && calls.modals.length === modalsR2 && calls.inputs.length === inputsR2 && plc.writes.length === writesR2,
+        `R2#0 a Write Value… click delivered while connecting is refused before any dialog (${r && r.status})`);
+    answers.message.length = 0; answers.input.length = 0;
+    await api.refreshCodeCheck();
+
+    // R2#4: Go Offline while an editor's refresh waits on the PLC leaves no poll loop running.
+    await provider.onlineSource.visible(mainUri, mainDoc, mainMsg2);
+    delays.getSymbol = 40;
+    plc.clients[plc.clients.length - 1].fire('symbolVersion');
+    await tick(5);
+    const refreshing = provider.onlineSource.visible(mainUri, mainDoc, mainMsg2);
+    await tick(15);
+    await run('twincat.goOffline');
+    await refreshing;
+    delays.getSymbol = 0;
+    await tick(20);
+    monitorTimers.fired = 0;
+    await tick(600);
+    assert(monitorTimers.fired === 0, `R2#4 no inline poll timer fires after Go Offline (${monitorTimers.fired} in 600 ms)`);
+
     await api.dispose();
     fs.rmSync(BUILD_DIR, { recursive: true, force: true });
     return true;
@@ -639,6 +924,8 @@ async function commandLevel() {
     await adapterRestore();
     await orphanReconnect();
     paths();
+    await round2Lifecycle();
+    round2Paths();
     const full = await commandLevel();
     reportCoverage('ads-regressions', full ? 'ran' : 'skipped', full ? undefined : 'sample/ not present');
     if (errors) { console.error(`\n${errors} R15 regression assertion(s) failed`); process.exit(1); }

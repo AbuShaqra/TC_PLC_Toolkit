@@ -202,7 +202,7 @@ per-suite without aborting on the first failure. The main ones:
 | `test/test_method_diagnostics.js` | Diagnostics for a method body analysed on its own, as the webview does — a valid method must produce none once its POU is indexed. |
 | `test/test_memory_bank.js` | The shared memory bank in `.claude/memory/` and the `SessionStart` hook that delivers it. The bank fails silently by nature — a malformed note is skipped, a renamed file breaks the `[[links]]` at it, a dropped hook stops the digest — and sessions just stop being told what the project already learned, which looks exactly like having nothing to tell. Pins the hook contract too (JSON carrying `hookSpecificOutput.additionalContext`, exit 0 whatever happens), since that is what the mechanism depends on and nothing else in the repo enforces it. |
 | `test/test_pending_edits.js` | `media/pendingEdits.js`, the edit-sync state machine: store keying (`${componentId}_${blockType}`), stash-overwrite semantics, `takeAll` clearing, `snapshot` shape, the EXACT status strings/classNames, `applyCachedEdits` matching on the full xmlContext triple (an accessorType mismatch must NOT match — the Get/Set disambiguation), `foldEdits` argument order and text threading, and the pinned ALIASING of `createStore(initial)` (`snapshot() === seed` — editor.js's 'init' path relies on it). |
-| `test/test_pending_edits_persistence.js` | `src/pendingEditsStore.js`, the workspaceState-backed persistence behind Manual Sync's unsaved edits — the half that makes them survive a window reload. Runs the store over a fake in-memory Memento: a NEW store instance over the SAME memento still returns the edits (that IS the reload — the object dies, the memento does not), a fingerprint mismatch returns `{}` **and** removes the stale entry from the memento, deletes are per-URI, an empty edits object is a delete, an absent entry reads without writing, and the stored value survives the `JSON.parse(JSON.stringify(...))` round trip workspaceState puts it through. |
+| `test/test_pending_edits_persistence.js` | `src/pendingEditsStore.js`, the workspaceState-backed persistence behind Manual Sync's unsaved edits — the half that makes them survive a window reload. Runs the store over a fake in-memory Memento: a NEW store instance over the SAME memento still returns the edits (that IS the reload — the object dies, the memento does not), a fingerprint mismatch returns `{}` **and** removes the stale entry from the memento (`get`; the non-destructive `peek` the online write guard and the compile pre-check use is pinned in `test_ads_regressions.js`), deletes are per-URI, an empty edits object is a delete, an absent entry reads without writing, and the stored value survives the `JSON.parse(JSON.stringify(...))` round trip workspaceState puts it through. |
 | `test/test_peek_uri.js` | `media/peekUri.js`, the synthetic peek/goto URI vocabulary: `parseQuery` against independent %-encoded literals, both encoders' defaults and their exact joined query strings (byte-pinned), `decodeGotoTarget` inverting `encodeGotoParts` incl. the null defaults and `Number()` conversions, and `peekOpenMessage`'s full 'openFile' body incl. the zero-length/null-range fallback to `targetWord.length`. |
 | `test/test_diagnostic_markers.js` | `media/diagnosticMarkers.js`: severity mapping (1→error, 2→warning, else info) through caller-injected sentinel values, other-component diagnostics dropped, `pane === 'decl'` vs everything-else routing (non-'decl' lands in impl — today's contract), and the marker field shape key-for-key. |
 | `test/test_folding.js` | Folding ranges (`media/stFolding.js`). Pins the two reported bugs by name — an unmatched `{endregion}` truncating the enclosing `VAR` fold, and an unindented `{attribute …}` growing a fold arrow of its own — plus the case designed for rather than discovered: `{IF defined(X)}` is a conditional *pragma*, not an `IF` block, and reading it as one leaves an unclosed block that eats every fold below. Also covers keywords inside comments/strings (`$`-escapes included), members named like keywords (`axis.Case`), the separate region/block stacks, every `VAR_*` variant, and a sweep over every pane of every `sample/` object asserting no range is ever out of bounds. |
@@ -245,7 +245,7 @@ per-suite without aborting on the first failure. The main ones:
 | `test/test_ads_inline.js` | R15: `src/online/values.js` (formatting and parsing every scalar kind, ranges, enums, strings, type comparison) and `inlineMonitor.js`: only known scalars, "type differs" never shows a value, one sum read per tick at the interval, posting only on change, paused while hidden, the per-editor path cap and its callback, "stopped" while the PLC is not in Run, nothing while blocked, stop() clears. |
 | `test/test_ads_write.js` | R15: `src/online/writeGuard.js` against the fake PLC with recorded dialogs: offline, off by default (no dialog, no write), the per-session enable modal (declined/accepted, asked once), the write modal (target, path, old/new value, PLC state, "not a force", button `Write`), input validation, a cancelled modal writes nothing, written once and logged, enums by name; refused on code differs / not checkable / unsaved edits / type mismatch / struct / unknown path / method local, the guards re-checked after the dialog, a PLC-side failure reported and logged. |
 | `test/test_ads_code.js` | R15: `src/online/codeIdentity.js` on the sample's committed `.tmc` (a real XAE output): its symbol table parsed; `PlcAppSystemInfo` really has ProjectName, OnlineChangeCnt, AppTimestamp, ActivePlcForces, ActiveIoForces; layout comparison (added, missing, resized; foreign namespaces ignored); sources edited since the build (`_Libraries` excluded); the check's outcomes (no name / other name: values hidden; no `.tmc`: unknown; layout or edits: differs; all three: match, still saying what it cannot detect; a failed upload is not a match). Gate `ads-code`. |
-| `test/test_ads_regressions.js` | R15 review findings (2026-11-13), one labelled block per finding #0-#19, each run against the code before its fix (where it failed): a write bound to the enabled and confirmed connection (a Go Online elsewhere during the value box refuses it; the modal and log name label + AMS address), writes only from editors of the bound project, a superseded code check never leaves a stale match, unsaved-edits detection (an empty stash is not an edit; a closed editor's Manual Sync stash blocks), `allowWrites` ignored from a workspace, PLC strings escaped and bounded; no notification leak across downloads/reconnects (real ads-client 2.2.0 `Client` with ADS commands answered in memory), one poll loop, a stale status poll, watch slot races and capped retries, Cancel/Go Offline in the status phase, router-rejection hints, no orphan reconnect after Go Offline (a local TCP listener as the router); no unqualified fallback over an uncertain chain, a `qualified_only` GVL or an enumerator; inline values re-posted on request; truncation by code point. Gate `ads-regressions`. |
+| `test/test_ads_regressions.js` | R15 review findings (2026-11-13), one labelled block per finding #0-#19, each run against the code before its fix (where it failed): a write bound to the enabled and confirmed connection (a Go Online elsewhere during the value box refuses it; the modal and log name label + AMS address), writes only from editors of the bound project, a superseded code check never leaves a stale match, unsaved-edits detection (an empty stash is not an edit; a closed editor's Manual Sync stash blocks), `allowWrites` ignored from a workspace, PLC strings escaped and bounded; no notification leak across downloads/reconnects (real ads-client 2.2.0 `Client` with ADS commands answered in memory), one poll loop, a stale status poll, watch slot races and capped retries, Cancel/Go Offline in the status phase, router-rejection hints, no orphan reconnect after Go Offline (a local TCP listener as the router); no unqualified fallback over an uncertain chain, a `qualified_only` GVL or an enumerator; inline values re-posted on request; truncation by code point. Review round 2 (blocks `R2#0`-`R2#6`, each failing on `e6a3842`): a download of another project, or a type change, while the value box is open refuses the write; the bound-project switch is logged and the editors updated; a click while connecting is refused before any dialog; a closed editor's stash blocks across the BOM and a guard read never deletes one; no symbol cache crosses a Cancel; no watch slot overwrites a live handle (three races); no inline poll after Go Offline; a long GVL's declaration pane maps every name to itself, once, and `qualifiedOnly` follows an unsaved pragma edit. Gate `ads-regressions`. |
 | `test/test_ads_watch.js` | R15 end to end in the extension host: `src/commands/onlineCommands.js` + `watchTree.js` under a recording `vscode` stub, the real live path and LSP (`provideOnlinePaths`) over the sample, the fake PLC built from the sample's `.tmc` so the layout check passes: contributions (commands, view, settings defaults, nothing called Force, router address marked untested); a connect error with the user-mode text and no direct retry; cancel; Go Online, status bar, recent targets; inline values for MAIN and, through an instance found on the PLC, for FB_Station's method; Write value… (off, then enable + modal, logged; blocked on unsaved edits; a method local refused); PLC Watch (add from the editor, notification at 200 ms, members from one value, cap + message, persistence, copy, remove, write); the code check (another project: values hidden, "Code differs", writes blocked; same name with a different layout; a source edited after the `.tmc`; back to match); forces in the status bar; Go Offline and dispose leave no connection, notification or poll; writes re-enabled per session. Gate `ads-watch`. |
 | `test/test_multi_project_scope.js` | End-to-end: two copies of `sample/` under one workspace root (`test/_multiproject.js` builds the fixture, one copy deliberately diverged), driven through the real `scanWorkspace`. Asserts the partition (one index per project, nothing lost to a name collision), 0 diagnostics on the correct copy while the diverged copy's own real error still reports, references and the rename config scan never crossing the project boundary, and the library namespace/symbol registries staying per-project — including the Libraries-view union fallback when no project is specified. Needs `sample/`; skips cleanly when absent. |
 
@@ -691,8 +691,10 @@ src/
                         retainContextWhenHidden — carries the edits across a window reload; they
                         used to live in an in-memory Map and were lost on Ctrl+R. Each entry is
                         fingerprinted (`length:sha1`) against the document text it was captured
-                        from, and a read whose fingerprint no longer matches DISCARDS the entry
-                        rather than splicing stale edits into a changed file. vscode-free (it takes
+                        from (a leading BOM ignored), and a `get` whose fingerprint no longer
+                        matches DISCARDS the entry rather than splicing stale edits into a changed
+                        file; `peek` only reports it (`stale`), for readers that merely check
+                        (online writes, the compile pre-check). vscode-free (it takes
                         any Memento-shaped `{get, update}`), which is what makes it harness-testable.
   livePath              The live language-feature path, vscode-free: ST assembly (assembleSt),
                         pane↔unit coordinate + pane-slice + peek-model helpers, the injected-read
@@ -2121,11 +2123,21 @@ webview (media/editor.js)                    extension host                     
   is recorded at enable (`sessionWrites.identity`) and when the write starts, and is re-checked with
   `sessionWrites.enabled` and every guard immediately before `session.write`, which itself refuses
   another connection — a Go Online elsewhere while the value box or a modal is open refuses the
-  write. Refused while the code check does not pass or is still running (`writeProjectState`: a
+  write. The connection can stay the same while XAE downloads another workspace project (or a rebuilt
+  one) to the runtime, so each write also pins what its caller checked (`WriteRequest.stillValid`,
+  re-checked with every guard, the last synchronous one included): `runWrite` pins the bound project
+  (`code.project.key`) once the newest code check settles, and an editor's write additionally needs
+  its file in that project; a click delivered while not `online` (a Go Online still connecting) is
+  refused before any dialog. After the dialogs the symbol is resolved and type-checked again: a type
+  or size that changed while they were open refuses the write (the value was parsed for the old
+  type). The code check's `changed` includes the bound project, so a switch is logged and the
+  editors are told (`writable`, values) at once. Refused while the code check does not pass or is still running (`writeProjectState`: a
   check in flight, or one from another connection, counts as "not checked"; the confirm waits for the
   NEWEST check, `codeCheckSettled`), while any TwinCAT editor has unsaved edits (VS Code dirty, a
   Manual Sync stash — `pendingEditsStore.uris()`, open editor or closed, an empty `{}` is not an edit
-  — or an Auto Sync edit not yet written back), from an editor of a project the PLC does not run
+  — or an Auto Sync edit not yet written back; the guard reads stashes with the non-destructive
+  `peek`, and a stash whose fingerprint no longer matches the text counts as unsaved (fail closed);
+  fingerprints ignore a leading U+FEFF, which the file on disk has and VS Code's document text has not), from an editor of a project the PLC does not run
   (the webview gets `writable: false` and hides *Write Value…*; the host refuses before any dialog),
   for a type mismatch, and for anything but a scalar. PLC strings are shown as ST literals with
   control characters escaped (`$N`, `$T`, `$hh`) and shortened (`values.boundedText`, 200 code
@@ -2136,15 +2148,33 @@ webview (media/editor.js)                    extension host                     
   `unsubscribeAll()` before announcing either event (the watch list then subscribes again; a retired
   handle never sends a DeleteNotification); a reconnect that lands after Go Offline is closed again.
   A status poll writes only into its own connection's `info`; Cancel and Go Offline are raced against
-  the status reads of Go Online too. One poll loop per editor (a loop token in `inlineMonitor`), and
+  the status reads of Go Online too. The symbol caches (resolves, data types, the symbol upload) belong
+  to ONE client (`session.js` `cacheFor`): a read finishing on a client that is gone lands in a
+  throwaway, and every connect and every Cancel starts empty, so a later PLC never reads at an earlier
+  one's addresses. After a refresh's `setOccurrences`, the editor's poll is restarted only if it is
+  still online and still open (a Go Offline during that wait left it stopped). One poll loop per editor (a loop token in `inlineMonitor`), and
   every `setOccurrences` is answered even with unchanged values (the webview cleared them). The watch
-  list owns each slot by a token (a remove/re-add race leaks nothing) and retries capped entries when
-  one is removed or `maxNotifications` changes. The webview asks for values only when it goes online,
+  list owns each slot by a token (a remove/re-add race leaks nothing), releases the handle a slot
+  still holds before `attach()` takes it over (an Add during the status phase, two quick symbol
+  drops), and retries capped entries when one is removed or `maxNotifications` changes. The webview asks for values only when it goes online,
   scrolls, edits or switches component — never in answer to `online/state`, which would loop.
 - **Unqualified names** in `onlinePaths.js` map to a GVL variable only when the POU's EXTENDS chain
   is fully resolved with no library ancestor, exactly one project GVL declares the name and is known
   not to be `qualified_only` (`xmlIndexer` records `qualifiedOnly` on GVL nodes; a node without it
   counts as "may be"), no library GVL declares it, and no enum has a member of that name.
+- **A GVL's node in the editor** (R15 review round 2): a GVL's raw unit has no `GVL` header, so
+  `parser.js` does not replace its node as it does a POU's; it finds the node by uri and, since the
+  unit is the whole GVL, gives it a NEW `variables` array in unit coordinates (appending used to keep
+  the XML indexer's CDATA-relative copies too, which put one variable's value on another's line, and
+  grew by a copy per sync). It also re-reads
+  `qualifiedOnly` from the unit text, with the regex `xmlIndexer` uses on disk. **When `qualifiedOnly`
+  can still be stale:** for a GVL never synced since its last save, the flag is the disk's — an
+  unsaved pragma edit in a GVL editor counts from that editor's next sync (any request from it), and
+  an unsaved edit in a closed editor's Manual Sync stash never does (the safe direction when the
+  pragma was removed; when it was added, the PLC still runs the code without it). A `.st`-only GVL
+  (`GVL` keyword path) never gets the flag, so it never maps unqualified names. The declaration loop
+  in `onlinePaths.js` also emits a variable only where the unit text at its range is its name, once
+  per position — a range from another coordinate system can no longer place a value.
 - **The code check** (`codeIdentity.js`) is what can be compared without an undocumented service:
   (1) `_AppInfo.ProjectName` against the `.plcproj` names — a different or unreadable name hides the
   inline values; (2) the variable layout of the last build (`<project>.tmc` symbols: name, BitSize)

@@ -172,6 +172,19 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   loop, watch slot token + capped retry, router-rejection user-mode hint. Paths: no unqualified GVL fallback over an
   uncertain EXTENDS chain, a `qualified_only` GVL (`xmlIndexer` now records `qualifiedOnly`) or an enumerator. Webview:
   no `online/state` -> `online/visible` loop; host re-posts values on every request; inline cut by code point.
+  **Review round 2 (2026-11-13): findings R2#0-#6 fixed** (blocks `R2#n` of `test_ads_regressions.js`, each failing
+  on `e6a3842`): writes pin the bound project and, from an editor, its file's membership (`WriteRequest.stillValid`,
+  re-checked in the final synchronous guard), re-resolve + re-type-check after the dialogs, refuse a click while not
+  `online`; the code check's `changed` includes the project. `pendingEditsStore`: fingerprints ignore a leading BOM;
+  the write guard and `compileCommands.currentText` use the non-destructive `peek` (a stale stash blocks writes —
+  fail closed — until its editor is opened, where `get` drops it). `session.js` caches are per client (a Cancel never
+  leaks addresses). Watch `attach()` releases a held handle. No inline poll restart after Go Offline. `parser.js`
+  gives a re-synced GVL node a new `variables` array in unit coordinates and re-reads `qualifiedOnly` (root cause of
+  the shifted GVL declaration-pane values); `onlinePaths.js` also checks the name at each declaration range.
+  Side effect to watch: a GVL's node now holds unit-coordinate ranges after its editor syncs, exactly as a POU's
+  node already did (not separately verified: a cross-file Go to Definition into a GVL whose editor has synced;
+  the suite, incl. `test_live_path.js`, passes). Not changed: a stale
+  stash's refusal still says "unsaved edits: Save first" (it means "open that file").
   Behaviour changes to note for the Windows check: the modal/log target now reads `Local runtime (localhost:851)`;
   an unqualified name inside an FB that extends a library FB shows no inline value (cannot tell member from global).
   **Mismatch guard (coordinator review, 2026-11-13):** a name match alone does not prove the same code, so

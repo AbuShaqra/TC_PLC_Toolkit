@@ -348,6 +348,19 @@ function provideOnlinePaths(code, ranges, symbolIndex, fileUri) {
     };
 
     let ownerNode = null;
+    // A variable's range is trusted only where the unit has its name, once: a range in another
+    // coordinate system (an XML indexer range, relative to its CDATA) would put one variable's
+    // value on another's line. parser.js keeps a synced node in unit coordinates; this is the check.
+    /** @type {Set<string>} */
+    const placed = new Set();
+    const isNameAt = (/** @type {number} */ line0, /** @type {any} */ v) => {
+        const text = lines[line0];
+        const key = `${line0}:${v.range.startCol}`;
+        if (text === undefined || placed.has(key)) return false;
+        if (text.slice(v.range.startCol - 1, v.range.endCol - 1).toLowerCase() !== String(v.name).toLowerCase()) return false;
+        placed.add(key);
+        return true;
+    };
     // Declaration panes: one occurrence per declared NAME, never the initializers.
     for (const key of Object.keys(symbolIndex)) {
         const n = symbolIndex[key];
@@ -357,7 +370,7 @@ function provideOnlinePaths(code, ranges, symbolIndex, fileUri) {
         for (const v of n.variables || []) {
             if (!v.range || v.type === 'Enum' || String(v.scope).toUpperCase() === 'ENUM') continue;
             const line0 = v.range.startLine - 1;
-            if (!inRange(line0, 'decl')) continue;
+            if (!inRange(line0, 'decl') || !isNameAt(line0, v)) continue;
             const refused = owner.reason || scopeRefusal(v.scope);
             occurrences.push({
                 line: line0, start: v.range.startCol - 1, end: v.range.endCol - 1, pane: 'decl',
@@ -369,7 +382,7 @@ function provideOnlinePaths(code, ranges, symbolIndex, fileUri) {
             for (const v of m.variables || []) {
                 if (!v.range) continue;
                 const line0 = v.range.startLine - 1;
-                if (!inRange(line0, 'decl')) continue;
+                if (!inRange(line0, 'decl') || !isNameAt(line0, v)) continue;
                 occurrences.push({ line: line0, start: v.range.startCol - 1, end: v.range.endCol - 1, pane: 'decl',
                     path: null, reason: 'method-local', localType: v.type || null, text: v.name });
             }

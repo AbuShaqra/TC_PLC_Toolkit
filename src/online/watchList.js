@@ -14,7 +14,9 @@
  *
  * Every subscribe in flight owns its slot by a token: when it resolves and the slot is no longer its
  * own (the entry was removed, or removed and added again, or the epoch moved on), it unsubscribes
- * what it got instead of storing it, so no notification is ever held without an owner.
+ * what it got instead of storing it, so no notification is ever held without an owner. A slot that
+ * already holds a handle (an Add during Go Online's status phase, then the 'state' event's attachAll;
+ * two quick symbol drops) has that handle released before it is taken over, never overwritten.
  */
 
 'use strict';
@@ -64,8 +66,12 @@ function createWatchList(deps) {
     async function attach(entry, mine) {
         const k = key(entry.path);
         const token = {};
+        const prev = live.get(k);
         live.set(k, { state: 'pending', token });
         changed();
+        // The slot is taken over: release the notification it held first (it would have no owner).
+        if (prev && prev.handle) await prev.handle.unsubscribe().catch(() => {});
+        if (live.get(k) === undefined || /** @type {any} */ (live.get(k)).token !== token) return;
         const res = await deps.session.subscribe(entry.path, (deps.cycleMs && deps.cycleMs()) || 200, (value) => {
             const cur = live.get(k);
             if (!cur || cur.token !== token || mine !== epoch) return;

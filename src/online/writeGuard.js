@@ -17,7 +17,12 @@
  *      when writes are enabled and when the write starts, and it, the session enable and every guard
  *      are re-checked immediately before `session.write`, which itself refuses another connection. A
  *      Go Online to another PLC while a dialog is open therefore refuses the write; the modal and the
- *      log name the target (label and AMS address) the write would actually go to.
+ *      log name the target (label and AMS address) the write would actually go to;
+ *   7. is bound to what the caller checked when it started (`req.stillValid`: the command layer pins
+ *      the project the PLC runs and, for an editor, that the file belongs to it). The connection can
+ *      stay the same while XAE downloads another project, or a rebuilt one, to the runtime, so this is
+ *      re-checked with every guard, the last one included; and the symbol is resolved and type-checked
+ *      AGAIN after the dialogs: a value parsed for a type the symbol no longer has is not written.
  * Text from the PLC (a STRING's current value) is shown escaped and shortened (values.boundedText),
  * so it cannot add lines to the modal or the log.
  * vscode-free: the dialogs and the channel are injected, so test/test_ads_write.js drives this exact
@@ -41,6 +46,9 @@ const ENABLE_BUTTON = 'Enable writes';
  * @property {string|null} [reason] Why `path` is null (onlinePaths reasons).
  * @property {string|null} [localType] The declared type, when known.
  * @property {'editor'|'watch'} source
+ * @property {() => string|null} [stillValid] The caller's own condition, re-checked synchronously with
+ *   every guard (the last one immediately before the write): the reason the write may no longer
+ *   happen, or null.
  */
 
 /**
@@ -141,7 +149,10 @@ async function performWrite(req, d) {
         return { status: /** @type {'refused'} */ ('refused'), message };
     };
     if (!req.path) return refuse(REASON_TEXT[/** @type {keyof typeof REASON_TEXT} */ (req.reason || 'unsupported')] || REASON_TEXT.unsupported);
-    let blocked = blockedReason(d);
+    /** Every guard: the session's, then the caller's own (`req.stillValid`). Synchronous. */
+    const guard = (/** @type {import('./session').SessionIdentity|null|undefined} */ forId) =>
+        blockedReason(d, forId) || (req.stillValid ? req.stillValid() : null);
+    let blocked = guard(undefined);
     if (blocked && blocked.startsWith('Writing values is off')) return refuse(blocked);
     if (id && !writesEnabledFor(d, id) && !blocked) {
         const ok = await d.confirm({
@@ -150,12 +161,12 @@ async function performWrite(req, d) {
             button: ENABLE_BUTTON
         });
         if (!ok) { log('Writes for this session: not enabled.'); return { status: 'cancelled', message: 'Writes were not enabled.' }; }
-        blocked = blockedReason(d, id);
+        blocked = guard(id);
         if (blocked) return refuse(blocked);
         enableWritesFor(d.sessionWrites, /** @type {import('./session').SessionIdentity} */ (id));
         log(`Writes enabled for this online session (${target}).`);
     }
-    blocked = blockedReason(d, id);
+    blocked = guard(id);
     if (blocked) return refuse(blocked);
 
     const resolved = await d.session.resolve(req.path);
@@ -176,19 +187,31 @@ async function performWrite(req, d) {
     const parsed = /** @type {any} */ (parseInput(typed, resolved.dataType));
     if (!parsed.ok) return refuse(parsed.error);
     // The value box may have stayed open across a Go Online elsewhere: never name a target that is gone.
-    blocked = blockedReason(d, id);
+    blocked = guard(id);
     if (blocked) return refuse(blocked);
     const text = confirmationText({ target, path: req.path, oldText, newText: parsed.text,
         plcState: d.session.info.plcState, forces: d.session.info.forces });
     log(`Write requested: ${req.path} = ${parsed.text} on ${target} (current ${oldText}, from the ${req.source}).`);
     const confirmed = await d.confirm(text);
     if (!confirmed) { log(`Write cancelled: ${req.path}.`); return { status: 'cancelled', message: 'Write cancelled.' }; }
+    // A download while the dialogs were open can change the symbol (its type, so the parsed value, or
+    // its declaration): resolve and check it again.
+    const again = await d.session.resolve(req.path);
+    if (!again.ok) return refuse(`The PLC has no symbol ${req.path} any more.`);
+    const was = /** @type {any} */ (resolved.symbol);
+    const now = /** @type {any} */ (again.symbol);
+    if (String(now.type).toLowerCase() !== String(was.type).toLowerCase() || now.size !== was.size || !again.scalar) {
+        return refuse(`${req.path} changed on the PLC while the dialogs were open (now ${now.type}). Start the write again.`);
+    }
+    if (typesMatch(req.localType || null, now.type) === false) {
+        return refuse(`${req.path} is ${now.type} on the PLC but ${req.localType} in the project.`);
+    }
     // Immediately before the write, with no await in between: the same connection, writes still
-    // enabled for it, and every guard still passing.
-    blocked = blockedReason(d, id) || (writesEnabledFor(d, id) ? null : 'Writes are no longer enabled for this online session.');
+    // enabled for it, and every guard (the caller's included) still passing.
+    blocked = guard(id) || (writesEnabledFor(d, id) ? null : 'Writes are no longer enabled for this online session.');
     if (blocked) return refuse(blocked);
     try {
-        await d.session.write(resolved.path, parsed.value, /** @type {import('./session').SessionIdentity} */ (id));
+        await d.session.write(again.path, parsed.value, /** @type {import('./session').SessionIdentity} */ (id));
     } catch (e) {
         const msg = e && /** @type {any} */ (e).message ? /** @type {any} */ (e).message : String(e);
         log(`Write FAILED: ${req.path} = ${parsed.text} on ${target}: ${msg}`);

@@ -98,16 +98,20 @@ function createOnlineSession(deps) {
     let connectionId = null;
     /** @type {SessionInfo} */
     let info = emptyInfo();
-    /** @type {Map<string, Promise<Resolved>>} */
-    const symbols = new Map();
-    /** @type {Map<string, Promise<Object>>} */
-    const dataTypes = new Map();
+    /**
+     * What was read about the PLC's symbols, for ONE client: a resolve, a data type or the symbol
+     * upload is cached only in the cache of the client it was read through, and a read finishing on an
+     * older client lands in that client's (dropped) cache, never in the current one. `dropSymbols`
+     * starts a new one; so do Go Online and a Cancel.
+     * @typedef {{client: any, symbols: Map<string, Promise<Resolved>>, dataTypes: Map<string, Promise<Object>>,
+     *   list: Promise<Array<{name: string, type: string, size?: number}>>|null}} SymbolCache
+     */
+    /** @type {SymbolCache} */
+    let cache = newCache(null);
     /** @type {Set<{unsubscribe: () => Promise<void>}>} */
     const subscriptions = new Set();
     /** @type {Set<(what: string) => void>} */
     const listeners = new Set();
-    /** @type {Promise<Array<{name: string, type: string, size?: number}>>|null} */
-    let symbolList = null;
     /** Clients being closed in the background (a cancelled connect); `disconnect` waits for them. */
     /** @type {Set<Promise<void>>} */
     const closing = new Set();
@@ -131,10 +135,27 @@ function createOnlineSession(deps) {
         return { plcState: null, projectName: null, appTimestamp: null, forces: null, onlineChangeCnt: null, lost: false };
     }
 
+    /** @param {any} c @returns {SymbolCache} */
+    function newCache(c) {
+        return { client: c, symbols: new Map(), dataTypes: new Map(), list: null };
+    }
+
+    /** Forgets every symbol read so far (a download, an online change, a reconnect, a new connection). */
     function dropSymbols() {
-        symbols.clear();
-        dataTypes.clear();
-        symbolList = null;
+        cache = newCache(client);
+    }
+
+    /**
+     * The cache of a client. For the current client: the current cache (a fresh one when it belongs
+     * to an earlier client). For any other client: a throwaway, so a read finishing on a client that
+     * is gone neither lands in nor replaces the current client's cache.
+     * @param {any} c
+     * @returns {SymbolCache}
+     */
+    function cacheFor(c) {
+        if (c !== client) return newCache(c);
+        if (cache.client !== c) cache = newCache(c);
+        return cache;
     }
 
     /**
@@ -162,6 +183,7 @@ function createOnlineSession(deps) {
             throw err;
         }
         client = c;
+        dropSymbols();
         wire(c, mine);
         /** @type {Promise<never>} */
         const cancelled = new Promise((_, reject) => {
@@ -191,6 +213,10 @@ function createOnlineSession(deps) {
                 state = 'offline';
                 target = null;
                 info = emptyInfo();
+                // What was read through the cancelled client (a watch Add, a code check during the
+                // status phase) must not reach the next connection; nor its notifications' count.
+                subscriptions.clear();
+                dropSymbols();
                 emit('state');
             }
             closeInBackground(c);
@@ -283,10 +309,11 @@ function createOnlineSession(deps) {
      * @returns {Promise<Object>}
      */
     function dataTypeOf(c, symbol, path) {
+        const dataTypes = cacheFor(c).dataTypes;
         const key = String(symbol.type).toLowerCase();
         if (!dataTypes.has(key)) {
             const p = c.getDataType(symbol.type).catch(async () => (await c.readValue(path)).dataType);
-            p.catch(() => dataTypes.delete(key));
+            p.catch(() => { if (dataTypes.get(key) === p) dataTypes.delete(key); });
             dataTypes.set(key, p);
         }
         return /** @type {Promise<Object>} */ (dataTypes.get(key));
@@ -300,6 +327,7 @@ function createOnlineSession(deps) {
     function resolve(path) {
         const c = client;
         if (!c || state !== 'online') return Promise.resolve({ ok: false, path, error: 'offline' });
+        const symbols = cacheFor(c).symbols;
         const key = path.toLowerCase();
         if (!symbols.has(key)) {
             const p = (async () => {
@@ -408,12 +436,13 @@ function createOnlineSession(deps) {
     function onlineSymbols() {
         const c = client;
         if (!c || state !== 'online') return Promise.reject(new Error('Not online.'));
-        if (!symbolList) {
+        const own = cacheFor(c);
+        if (!own.list) {
             const p = c.getSymbols();
-            p.catch(() => { if (symbolList === p) symbolList = null; });
-            symbolList = p;
+            p.catch(() => { if (own.list === p) own.list = null; });
+            own.list = p;
         }
-        return symbolList;
+        return own.list;
     }
 
     /**

@@ -64,6 +64,7 @@ const LOCAL_TARGET = { label: 'Local runtime', netId: 'localhost' };
  * @param {any} deps.provider The custom editor provider (src/customEditorProvider.js).
  * @param {() => any} [deps.getProjectMap] The host's project map (names and file ownership).
  * @param {(o: import('../online/adsClient').ConnectOptions) => import('../online/adsClient').AdsPort} [deps.createClient]
+ * @param {{setTimeout: Function, clearTimeout: Function}} [deps.timers] The inline monitors' timers (the harnesses count them).
  * @returns {{session: ReturnType<typeof createOnlineSession>, watch: ReturnType<typeof createWatchList>,
  *   dispose: () => Promise<void>, refreshEditors: () => Promise<void>, refreshCodeCheck: () => Promise<void>,
  *   codeCheck: () => any}}
@@ -182,10 +183,14 @@ function registerOnlineCommands(context, deps) {
             .catch(e => ({ state: /** @type {'unknown'} */ ('unknown'), name: /** @type {'unknown'} */ ('unknown'), layout: /** @type {'unknown'} */ ('unknown'),
                 edits: /** @type {'unknown'} */ ('unknown'), showValues: false, project: null, reason: `The code check failed: ${e && e.message}`, details: [] }));
         if (mine !== codeRun || session.state !== 'online' || !sameIdentity(id, session.identity)) return;
-        const changed = !code || code.state !== next.state || code.reason !== next.reason || code.showValues !== next.showValues;
+        // The bound project counts: a download of another workspace project to the same runtime keeps
+        // the state and the reason text, but changes which editors may write and show values.
+        const keyOf = (/** @type {any} */ c) => (c && c.project ? c.project.key : null);
+        const changed = !code || code.state !== next.state || code.reason !== next.reason || code.showValues !== next.showValues
+            || keyOf(code) !== keyOf(next);
         code = { ...next, identity: id };
         if (changed) {
-            log(`Code check: ${next.state === 'match' ? 'passed' : next.state} - ${next.reason}`);
+            log(`Code check: ${next.state === 'match' ? 'passed' : next.state}${next.project ? ` (project ${next.project.name})` : ''} - ${next.reason}`);
             for (const d of next.details) log(`  ${d}`);
             if (session.info.appTimestamp) log(`  _AppInfo.AppTimestamp on the PLC: ${session.info.appTimestamp} (logged for comparison only; not checked)`);
             renderStatus();
@@ -226,8 +231,8 @@ function registerOnlineCommands(context, deps) {
         if (!store) return false;
         const uris = typeof store.uris === 'function' ? store.uris() : [...editors.keys()];
         for (const uriStr of uris) {
-            // get() checks the stash against the document's current text (a stale one is dropped), and
-            // returns {} when nothing is pending: an empty object is not an edit.
+            // peek() checks the stash against the document's current text and never deletes it: a
+            // stash that no longer matches is still the user's unsaved work, so it blocks (fail closed).
             let text;
             const open = editors.get(uriStr);
             const doc = open && open.document ? open.document : docs.find(d => d.uri && d.uri.toString() === uriStr);
@@ -235,8 +240,9 @@ function registerOnlineCommands(context, deps) {
             else {
                 try { text = fs.readFileSync(vscode.Uri.parse(uriStr).fsPath, 'utf8'); } catch (e) { return true; } // unreadable: assume unsaved
             }
-            const edits = store.get(uriStr, text);
-            if (edits && typeof edits === 'object' && Object.keys(edits).length > 0) return true;
+            if (typeof store.peek !== 'function') return true;
+            const seen = store.peek(uriStr, text);
+            if (seen.stale || Object.keys(seen.edits || {}).length > 0) return true;
         }
         return false;
     };
@@ -325,6 +331,8 @@ function registerOnlineCommands(context, deps) {
         // `writable`: the webview offers Write Value… only in an editor of the project the PLC runs.
         post(uriStr, { type: 'online/state', online: true, note, writable: !!code && bound });
         await e.monitor.setOccurrences(occurrences, { blocked });
+        // A Go Offline (or the panel closing) during that wait stopped the monitor: do not restart it.
+        if (editors.get(uriStr) !== e || session.state !== 'online') return;
         e.monitor.start();
     }
 
@@ -380,10 +388,22 @@ function registerOnlineCommands(context, deps) {
         },
         log
     };
-    /** @param {import('../online/writeGuard').WriteRequest} req */
+    /** @returns {string|null} The key of the project the PLC runs, as the last code check found it. */
+    const boundKey = () => (code && code.project ? code.project.key : null);
+    /**
+     * Runs one write. The project the PLC runs is pinned once the newest code check has settled: a
+     * download of another project (same connection) before the write lands refuses it (writeGuard
+     * re-checks `stillValid` with every guard, the last one included).
+     * @param {import('../online/writeGuard').WriteRequest} req
+     */
     async function runWrite(req) {
         refreshCodeCheck();
         await codeCheckSettled();
+        const pinned = boundKey();
+        const own = req.stillValid;
+        req = { ...req, stillValid: () => (boundKey() !== pinned
+            ? 'The PLC now runs another project than when this write started (a download). Start the write again.'
+            : (own ? own() : null)) };
         const r = await performWrite(req, writeDeps);
         if (r.status === 'refused') {
             const actions = /tcToolkit\.online\.allowWrites/.test(r.message) ? ['Open Setting'] : [];
@@ -410,7 +430,7 @@ function registerOnlineCommands(context, deps) {
             let e = editors.get(uriStr);
             if (!e) {
                 e = { document, last: null, owner: null, monitor: createInlineMonitor({
-                    session, post: (m) => post(uriStr, m),
+                    session, post: (m) => post(uriStr, m), timers: deps.timers,
                     intervalMs: () => clampInt(cfg().get('inlinePollInterval', 500), 100, 10000, 500),
                     onCapped: (n, max) => log(`Inline values: ${n} variables are visible; only the first ${max} are monitored.`)
                 }) };
@@ -426,17 +446,25 @@ function registerOnlineCommands(context, deps) {
         panelClosed: (uriStr) => { const e = editors.get(uriStr); if (e) { e.monitor.dispose(); editors.delete(uriStr); } },
         /** @param {string} uriStr @param {any} document @param {any} msg */
         write: async (uriStr, document, msg) => {
-            if (session.state === 'online' && !inBoundProject(document.uri.fsPath)) {
-                const message = 'This file is not part of the project the PLC runs: values cannot be written from it.';
+            const refuseClick = (/** @type {string} */ message) => {
                 log(`Write refused: ${message}`);
                 vscode.window.showWarningMessage(message);
                 return { status: 'refused', message };
-            }
+            };
+            // A click delivered while not online (a Go Online still connecting, or already offline) is
+            // refused: the editor's Write Value… belonged to a connection that is not the current one.
+            if (session.state !== 'online') return refuseClick('Not online. Use "Go Online" first.');
+            const fsPath = document.uri.fsPath;
+            if (!inBoundProject(fsPath)) return refuseClick('This file is not part of the project the PLC runs: values cannot be written from it.');
+            // The project this editor was checked against; re-checked with every guard of the write.
+            const pinned = boundKey();
+            const stillValid = () => (session.state === 'online' && boundKey() === pinned && inBoundProject(fsPath)
+                ? null : 'This file is no longer part of the project the PLC runs (a download?): values cannot be written from it.');
             const occ = await occurrenceAt(document, msg);
             if (!occ) { vscode.window.showWarningMessage('No PLC variable at the cursor.'); return null; }
             const dirty = !!msg.dirty || document.isDirty;
             return runWrite({ path: occ.adsPath, reason: occ.path ? (occ.adsPath ? null : 'unsupported') : occ.reason,
-                localType: occ.localType, source: 'editor' }).then(r => { if (dirty) log('(the editor reported unsaved edits)'); return r; });
+                localType: occ.localType, source: 'editor', stillValid }).then(r => { if (dirty) log('(the editor reported unsaved edits)'); return r; });
         },
         /** @param {string} uriStr @param {any} document @param {any} msg */
         addWatch: async (uriStr, document, msg) => {

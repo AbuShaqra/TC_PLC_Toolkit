@@ -152,7 +152,7 @@ const context = { subscriptions: [], workspaceState: memento(), globalState: mem
 const project = { name: 'TcToolkitSample_PLC', dir: BUILD_DIR, objectFiles: new Map(sampleFiles.map(f => [f.toLowerCase(), f])) };
 const projectMap = { projects: new Map([['a', project]]), ownersOf: (p) => (sampleFiles.includes(p) ? ['a'] : []) };
 const posts = new Map();
-const provider = { activePanels: new Map(), pendingEditsStore: { get: () => null }, broadcasts: [], broadcastOnlineState(o) { this.broadcasts.push(o); } };
+const provider = { activePanels: new Map(), pendingEditsStore: { get: () => null, peek: () => ({ edits: {}, stale: false }) }, broadcasts: [], broadcastOnlineState(o) { this.broadcasts.push(o); } };
 const doc = (file) => {
     const uri = { fsPath: file, toString: () => fileUri(file) };
     posts.set(uri.toString(), []);

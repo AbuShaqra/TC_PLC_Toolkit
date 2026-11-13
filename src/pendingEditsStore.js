@@ -19,7 +19,13 @@
  * The fingerprint is `text.length + ':' + sha1(text)`: `crypto`'s SHA-1 is sub-millisecond on
  * files this size (TwinCAT objects are tens of KB), which matters because `updatePendingEdits`
  * fires on every content change. It is a change detector, not a security boundary — the length
- * prefix is there so that a length change alone decides without trusting the digest.
+ * prefix is there so that a length change alone decides without trusting the digest. A leading
+ * U+FEFF is not part of it: TwinCAT writes its objects as UTF-8 with a BOM, VS Code's document text
+ * has none, and a file read from disk with `'utf8'` keeps it, so both must fingerprint the same.
+ *
+ * `get` drops a stale entry (right when an editor opens: the entry cannot be applied any more);
+ * `peek` never does, for the readers that only ask whether something is pending (the online write
+ * guard, the compile pre-check), where deleting the user's edits on a mere check would lose them.
  *
  * Deliberately vscode-free: the only thing it needs is a `Memento`-shaped object (a synchronous
  * `get(key, default)` and a promise-returning `update(key, value)`), which is what makes
@@ -44,7 +50,7 @@ const STORAGE_KEY = 'twincat.pendingEdits';
  * @returns {string} `<length>:<sha1 hex>`.
  */
 function fingerprintOf(text) {
-    const str = typeof text === 'string' ? text : '';
+    const str = typeof text === 'string' ? text.replace(/^\uFEFF/, '') : '';
     return `${str.length}:${crypto.createHash('sha1').update(str, 'utf8').digest('hex')}`;
 }
 
@@ -52,8 +58,8 @@ function fingerprintOf(text) {
  * Creates the persisted pending-edit store over a `Memento`.
  * @param {Object} memento Anything with `get(key, defaultValue)` and `update(key, value)` —
  *   in production `context.workspaceState`.
- * @returns {Object} The store: `get(uriStr, docText)`, `set(uriStr, edits, docText)`,
- *   `delete(uriStr)`, `uris()`.
+ * @returns {Object} The store: `get(uriStr, docText)`, `peek(uriStr, docText)`,
+ *   `set(uriStr, edits, docText)`, `delete(uriStr)`, `uris()`.
  */
 function createPendingEditsStore(memento) {
     /**
@@ -117,6 +123,21 @@ function createPendingEditsStore(memento) {
         },
 
         /**
+         * The edits stored for a document, WITHOUT touching the store: `stale` is true when an entry
+         * exists but was captured against other text. A reader that only checks (online writes, the
+         * compile pre-check) uses this; a stale entry is still somebody's unsaved work.
+         * @param {string} uriStr Document URI string.
+         * @param {string} docText The document's current text.
+         * @returns {{edits: Object, stale: boolean}} `edits` is `{}` when nothing is stored or it is stale.
+         */
+        peek(uriStr, docText) {
+            const entry = readAll()[uriStr];
+            if (!entry || !entry.edits || Object.keys(entry.edits).length === 0) return { edits: {}, stale: false };
+            if (entry.fingerprint !== fingerprintOf(docText)) return { edits: {}, stale: true };
+            return { edits: entry.edits, stale: false };
+        },
+
+        /**
          * Stores a document's pending edits, fingerprinted against its current text. An empty edits
          * object is a delete — nothing pending is the absence of an entry, not an empty one.
          * @param {string} uriStr Document URI string.
@@ -147,7 +168,7 @@ function createPendingEditsStore(memento) {
 
         /**
          * The URIs that have an entry, open in an editor or not (online monitoring's unsaved-edits
-         * guard asks `get` for each, which checks the entry against the document's current text).
+         * guard asks `peek` for each, which checks the entry against the document's current text).
          * @returns {string[]}
          */
         uris() {

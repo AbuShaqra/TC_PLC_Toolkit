@@ -430,7 +430,8 @@ function registerCompileCommands(context, { provider, getProjectMap, onSettingsC
         const text = open ? open.getText() : await fs.promises.readFile(filePath, 'utf8');
         const store = provider && provider.pendingEditsStore;
         if (!store) return text;
-        const edits = Object.values(store.get(open ? open.uri.toString() : uri.toString(), text) || {});
+        // peek, not get: a check must never delete a stash (get drops one that does not match).
+        const edits = Object.values(store.peek(open ? open.uri.toString() : uri.toString(), text).edits || {});
         return edits.length ? pendingEditsCore.foldEdits(text, edits, replaceComponentCdata) : text;
     }
 
