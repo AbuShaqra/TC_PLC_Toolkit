@@ -140,11 +140,11 @@ function renderStartPageHtml(o) {
                 <p id="no-project" class="hint" hidden>Open a folder with a TwinCAT project to use these.</p>
                 <ul class="actions">${actions}
                     <li class="compile-row"><div class="split-tile"><button type="button" class="action ready" id="compile-project" disabled>` +
-        `<span class="action-text"><span class="action-label">Compile project</span><span class="action-detail" id="compile-detail">Check the project with the IEC 61131-3 compiler</span></span>` +
+        `<span class="action-text"><span class="action-label">Build project</span><span class="action-detail" id="compile-detail">Check the project with the IEC 61131-3 compiler</span></span>` +
         `<span class="soon" id="compile-missing" hidden>Not found</span>${icon('chevron', 'icon chevron compile-chevron')}</button>` +
         `<button type="button" class="options-toggle" id="compile-options-toggle" aria-expanded="false" aria-controls="compile-options" ` +
-        `title="Compile options: C++ generation and the g++ build" aria-label="Compile options">${icon('chevronDown', 'icon')}</button></div>` +
-        `<div id="compile-options" class="compile-options" role="group" aria-label="Compile options" hidden>` +
+        `title="Build options: C++ generation and the g++ build" aria-label="Build options">${icon('chevronDown', 'icon')}</button></div>` +
+        `<div id="compile-options" class="compile-options" role="group" aria-label="Build options" hidden>` +
         `<label class="option"><input type="checkbox" id="opt-generate-cpp"><span class="option-text"><span class="option-label">Generate C++</span>` +
         `<span class="option-detail">Write the project as C++ into its CPP_Files folder when the check finds no errors</span></span></label>` +
         `<label class="option"><input type="checkbox" id="opt-build-gpp"><span class="option-text"><span class="option-label">Build with g++</span>` +
@@ -177,7 +177,7 @@ function renderStartPageHtml(o) {
                     <button type="button" class="secondary" data-command="twincat.detectXaeShell">Detect again</button>
                 </div>
                 <h3 id="gpp-title">g++</h3>
-                <p id="gpp-hint" class="hint">Optional: used only by Build with g++ in the Compile options.</p>
+                <p id="gpp-hint" class="hint">Optional: used only by Build with g++ in the Build options.</p>
                 <ul id="gpp-list" class="xae-paths" aria-labelledby="gpp-title" aria-describedby="gpp-hint"></ul>
                 <div class="row wrap">
                     <button type="button" id="gpp-change" class="secondary" aria-describedby="gpp-title">Change…</button>

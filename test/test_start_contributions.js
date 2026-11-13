@@ -290,6 +290,8 @@ assert(/^\^1\.66\./.test(pkg.engines.vscode), `engine stays ^1.66 (${pkg.engines
         'the page shows the extension icon (marketplace-icon.png), allowed by img-src');
     for (const v of TEMPLATE_VERSIONS) assert(html.includes(`value="${v.id}"`), `version ${v.id} is offered`);
     for (const l of HELP_LINKS) assert(html.includes(`data-link="${l.id}"`), `help link ${l.id} is on the page`);
+    assert(/<span class="action-label">Build project<\/span>/.test(html) && /aria-label="Build options"/.test(html),
+        'the project tile and its dropdown are named Build (user, 2026-11-13); the command stays Compile Project');
     assert(/id="compile-project" disabled/.test(html) && /Check the project with the IEC 61131-3 compiler/.test(html) && !/later release/.test(html) && !/STruC\+\+/i.test(html),
         'Compile project is disabled until the host says a project is open, is no longer "coming later", and names no compiler product');
     const settingsCard = /<section class="card" id="settings"[\s\S]*?<\/section>/.exec(html);

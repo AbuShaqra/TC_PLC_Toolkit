@@ -53,7 +53,7 @@ const { runChild, killProcessTree, describeLocation } = require('../compileCheck
 const {
     EXIT, buildDriverArgs, createLineSplitter, parseLine, createRunState, reduce, describeExit, describeUiMode,
     canCancel, isStalled, targetPickItems, confirmationText, reachedBuildResult, missingShell,
-    declaredPairs, activationPlatform, platformNotDeclaredText, pairNotDeclaredText, noErrorDetails, RERUN_WINDOW_SHOWN, SWITCH_AND_REMEMBER,
+    declaredPairs, activationPlatform, platformNotDeclaredText, pairNotDeclaredText, noErrorDetails, needsCompileFallback, RERUN_WINDOW_SHOWN, SWITCH_AND_REMEMBER,
     FALLBACK_INTRO, compileFallbackText
 } = require('../xaeBuild');
 const { placeXaeErrors, placementSummary } = require('../xaeErrorPlacement');
@@ -247,8 +247,13 @@ function registerXaeBuildCommands(context, deps) {
      * A problem's Problems entry; its code links back here (see PROBLEM_LINK_PATH).
      * @param {StoredXaeProblem} p
      */
-    const diagnosticOf = (p) => problemDiagnostic(p, DIAGNOSTIC_SOURCE,
-        vscode.Uri.parse(`${vscode.env.uriScheme}://${context.extension.id}${PROBLEM_LINK_PATH}?id=${p.id}`));
+    const diagnosticOf = (p) => {
+        const d = problemDiagnostic(p, DIAGNOSTIC_SOURCE,
+            vscode.Uri.parse(`${vscode.env.uriScheme}://${context.extension.id}${PROBLEM_LINK_PATH}?id=${p.id}`));
+        // The compiler's code (C0189) names the entry; the location is in the message already.
+        if (p.code && d.code && typeof d.code === 'object') d.code = { value: p.code, target: d.code.target };
+        return d;
+    };
     registerProblemLinkResolver(PROBLEM_LINK_PATH, async (/** @type {number} */ id) => {
         // Only a problem of the current results is opened: the link carries an id, never a path.
         const problem = allProblems().find(p => p.id === id);
@@ -620,21 +625,27 @@ function registerXaeBuildCommands(context, deps) {
     async function report(run, slnPath, rerunWindowShown, compileFallback) {
         const ch = channel();
         const { state } = run;
-        const d = describeExit(run.code, run.outcome, state, {
-            error: run.error, stderr: run.stderr, solutionName: path.basename(slnPath, path.extname(slnPath))
-        });
         const uiMode = describeUiMode(state);
         if (state.mode) ch.appendLine(`${stamp()} ${uiMode}`);
         if (state.protocolWarnings > 0) ch.appendLine(`${stamp()} ${state.protocolWarnings} driver line(s) were not readable events of this version.`);
         // A run that did not get to a build result says nothing about the code: the previous problems stay.
         const built = reachedBuildResult(run.code, run.outcome, state);
         const placement = placeXaeErrors(state.errorItems, state.panes, {
-            readFile: (p) => fs.readFileSync(p, 'utf8'), exists: (p) => fs.existsSync(p), slnDir: path.dirname(slnPath)
+            readFile: (p) => fs.readFileSync(p, 'utf8'), exists: (p) => fs.existsSync(p), slnDir: path.dirname(slnPath),
+            canonical: (p) => fs.realpathSync.native(p)
+        });
+        const d = describeExit(run.code, run.outcome, state, {
+            error: run.error, stderr: run.stderr, solutionName: path.basename(slnPath, path.extname(slnPath)),
+            errorCount: placement.errors
         });
         if (built) publishProblems(placement.byFile);
-        for (const g of placement.general) ch.appendLine(`  error (not placed): ${g.description}${g.file ? ` [${g.file}${g.line ? `:${g.line}` : ''}]` : ''}`);
+        for (const g of placement.general) ch.appendLine(`  ${g.severity} (not placed): ${g.description}${g.file ? ` [${g.file}${g.line ? `:${g.line}` : ''}]` : ''}`);
+        // A file-less "build ... failed" item is XAE's summary: one line, never a problem or a count.
+        for (const n of placement.notes) ch.appendLine(`  XAE: ${n.description}`);
         // Nothing to place and nothing to read: say why (the driver's per-step reasons), never guess.
         const missingDetails = built ? noErrorDetails(run.code, run.outcome, state) : null;
+        // A confirmed compile failure with nothing placed in Problems: TC Toolkit's own check stands in.
+        const runFallback = built && needsCompileFallback(run.code, run.outcome, state, placement.placed);
         const errorsLine = missingDetails ? `${missingDetails.text} See '${OUTPUT_CHANNEL_NAME}'.`
             : (built ? placementSummary(placement, run.code === null ? -1 : run.code, OUTPUT_CHANNEL_NAME) : '');
         let title = d.title;
@@ -657,8 +668,8 @@ function registerXaeBuildCommands(context, deps) {
         /** @type {{ran: number, skipped: boolean, results: import('../xaeBuild').FallbackResult[]}|null} */
         let fallback = null;
         let fallbackText = '';
-        if (missingDetails && !run.rerunVisible && compileFallback) {
-            // No error details by any route: TC Toolkit's own check stands in, said as such.
+        if (runFallback && !run.rerunVisible && compileFallback) {
+            // Nothing placed in Problems (no details, or none XAE located): TC Toolkit's own check stands in, said as such.
             ch.appendLine(`${stamp()} ${FALLBACK_INTRO}`);
             const results = await compileFallback();
             const t = compileFallbackText(results, COMPILE_DIAGNOSTIC_SOURCE);

@@ -246,7 +246,7 @@ const { TEMPLATE_VERSIONS } = require(path.join(REPO, 'src', 'projectTemplate.js
             return { label: t.getAttribute('aria-label'), controls: t.getAttribute('aria-controls'), role: opt.getAttribute('role'),
                 labels: [...opt.querySelectorAll('.option-label')].map(e => e.textContent) };
         });
-        assert(toggleLabel.label === 'Compile options' && toggleLabel.controls === 'compile-options' && toggleLabel.role === 'group'
+        assert(toggleLabel.label === 'Build options' && toggleLabel.controls === 'compile-options' && toggleLabel.role === 'group'
             && JSON.stringify(toggleLabel.labels.slice(0, 2)) === '["Generate C++","Build with g++"]', `the chevron is labelled and controls a group, two labelled boxes first (${JSON.stringify(toggleLabel)})`);
         // Build through XAE (R14): hidden until the host says it is available; then two actions and the window switch.
         const xaeState = () => page.evaluate(() => ({
@@ -284,7 +284,7 @@ const { TEMPLATE_VERSIONS } = require(path.join(REPO, 'src', 'projectTemplate.js
         const noProject = await page.evaluate(() => ({ build: document.getElementById('xae-build-run').disabled, activate: document.getElementById('xae-activate-run').disabled,
             title: document.getElementById('compile-options-toggle').title }));
         assert(noProject.build && noProject.activate, `R14: with no project open the two XAE actions are disabled, also after a state that is not running (${JSON.stringify(noProject)})`);
-        assert(noProject.title === 'Compile options: C++ generation, the g++ build and the XAE build', `R14: the chevron's tooltip names the XAE build where it is shown (${noProject.title})`);
+        assert(noProject.title === 'Build options: C++ generation, the g++ build and the XAE build', `R14: the chevron's tooltip names the XAE build where it is shown (${noProject.title})`);
         await send({ type: 'state', location: 'C:\\Projects', sep: '\\', hasProject: true, compilerReady: true, recents: [],
             xaeOptions: { available: true, showWindow: false, running: false } });
         const lastFocus = await page.evaluate(() => {

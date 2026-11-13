@@ -797,11 +797,11 @@ class TwinCatCustomEditorProvider {
                      the codicon style (16px grid, currentColor): the webview is offline. The caret opens
                      the two C++ switches (R13), which the host writes to the settings. -->
                 <div id="compile-group" class="split-btn has-caret">
-                <button id="compile-btn" class="action-btn icon-btn" title="Compile Project: check this PLC project with the IEC 61131-3 compiler" aria-label="Compile Project">` +
+                <button id="compile-btn" class="action-btn icon-btn" title="Compile Project: check this PLC project with the IEC 61131-3 compiler" aria-label="Build">` +
         `<svg class="btn-icon" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">` +
         `<path fill="currentColor" d="M3 2.5v11l1.5.8 8-5.5v-1.6l-8-5.5L3 2.5zm1.5 1.4L11.2 8l-6.7 4.6V3.9z"/></svg>` +
-        `<span class="btn-label">Compile</span></button>` +
-        `<button id="compile-caret" class="action-btn split-caret" title="Compile options: C++ generation and the g++ build" aria-label="Compile options" aria-expanded="false" aria-controls="compile-menu">▾</button>` +
+        `<span class="btn-label">Build</span></button>` +
+        `<button id="compile-caret" class="action-btn split-caret" title="Build options: C++ generation and the g++ build" aria-label="Build options" aria-expanded="false" aria-controls="compile-menu">▾</button>` +
         `<div id="compile-menu" class="split-menu" role="group" aria-labelledby="compile-menu-title" hidden>` +
         `<div class="split-menu-title" id="compile-menu-title">After a check with no errors</div>` +
         `<label class="split-menu-item" title="Write the project as C++ into its CPP_Files folder"><input type="checkbox" id="compile-opt-cpp"><span>Generate C++</span></label>` +

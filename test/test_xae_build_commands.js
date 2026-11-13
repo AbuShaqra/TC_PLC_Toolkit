@@ -317,7 +317,7 @@ const rows = (name) => readFixture(name).lines;
     assert(api.problems().length === 0 && !xaeCollection.map.has(fbUri.toString()), 'editing the component drops its XAE problems');
     driver = () => ({ fixture: 'errors-panes-only' });
     await run('twincat.xaeBuild', {});
-    assert(calls.errors.some(e => /XAE reported no error list; see 'TC Toolkit XAE Build'/.test(e.m)), 'exit 1 with no error list points at the channel');
+    assert(calls.errors.some(e => /XAE named no error with a file and line; see 'TC Toolkit XAE Build'/.test(e.m)), 'exit 1 with nothing located points at the channel');
     // ── C: a failed headless build with no error details (user run 2026-11-13, 4026) ───────────
     {
         const showWindowWrites = () => calls.updates.filter(u => u.key === 'tcToolkit.xaeBuild.showWindow').length;
@@ -389,6 +389,43 @@ const rows = (name) => readFixture(name).lines;
         driver = () => ({ fixture: 'version-mismatch' });
         await run('twincat.xaeBuild', {});
         assert(compileCalls.length === c1, 'no fallback when the run was cancelled or the harness failed (exit 2)');
+        // The user's runs (4026.28): headless, the list items are empty and the Build pane names the
+        // errors; it places them, so nothing falls back, and no blank "not placed" line is printed.
+        // A copy of sample 1 with `h;` planted at MAIN's implementation line 14, as in the user's runs.
+        const plantedDir = path.join(TMP, 'Planted');
+        fs.cpSync(path.dirname(SLN), plantedDir, { recursive: true });
+        const plantedMain = path.join(plantedDir, 'TcToolkitSample_PLC', 'POUs', 'MAIN.TcPOU');
+        fs.writeFileSync(plantedMain, fs.readFileSync(plantedMain, 'utf8').replace(/END_FOR\]\]>/, 'h;\r\nEND_FOR]]>'));
+        const mainUri = uri(fs.realpathSync.native(plantedMain));
+        slnPath = path.join(plantedDir, path.basename(SLN));
+        for (const name of ['errors-pane-planted-headless', 'errors-pane-planted-visible']) {
+            const c2 = compileCalls.length;
+            const e2 = calls.errors.length;
+            const l2 = channel().lines.length;
+            driver = () => ({ fixture: name });
+            r = await run('twincat.xaeBuild', {});
+            const runLines = channel().lines.slice(l2);
+            const mainDiags = xaeCollection.map.get(mainUri.toString()) || [];
+            assert(!r.ok && r.exitCode === 1 && r.placed === 2 && r.total === 2 && compileCalls.length === c2,
+                `${name}: both messages placed, no fallback`);
+            assert(mainDiags.length === 2 && mainDiags.some(d => d.code && d.code.value === 'C0189' && d.severity === 0)
+                && mainDiags.some(d => d.code && d.code.value === 'C0139' && d.severity === 1), `${name}: the compiler code is the Problems code`);
+            assert(calls.errors[e2] && /^Build through XAE failed: 1 error\. 1 error, 1 warning \(2 placed in Problems\)\./.test(calls.errors[e2].m),
+                `${name}: the counts come from the de-duplicated messages (${calls.errors[e2] && calls.errors[e2].m})`);
+            assert(!runLines.some(l => /\(not placed\):\s*$/.test(l)) && runLines.filter(l => /^ {2}XAE: .*build for platform 'TwinCAT OS \(x64\)' failed\.$/.test(l)).length === 1,
+                `${name}: no blank "not placed" line; the project-failed item is one summary line`);
+        }
+        // Details came back but none could be placed: TC Toolkit's own check stands in all the same.
+        {
+            const c3 = compileCalls.length;
+            driver = () => ({ lines: rows('errors-pane-planted-headless').map(l => (l.t === 'outputPane' ? { ...l, text: l.text.replace(/MAIN\.TcPOU/g, 'Gone.TcPOU') } : l)), exit: 1 });
+            r = await run('twincat.xaeBuild', {});
+            assert(r.placed === 0 && r.total === 2 && !r.noErrorDetails && compileCalls.length === c3 + 1 && r.compileFallback && r.compileFallback.ran === 1,
+                'a failed build with details but 0 placed runs the fallback once');
+            assert(channel().lines.some(l => /^ {2}error \(not placed\): C0189: /.test(l)) && channel().lines.some(l => /^ {2}warning \(not placed\): C0139: /.test(l)),
+                'an unplaced message is listed with its own severity');
+        }
+        slnPath = SLN;
         settings['tcToolkit.xaeBuild.showWindow'] = false;
         driver = () => ({ fixture: 'build-ok-headless' });
     }

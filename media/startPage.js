@@ -328,8 +328,8 @@
         $('xae-build-run').disabled = !!(o && o.running) || !hasProject;
         $('xae-activate-run').disabled = !!(o && o.running) || !hasProject;
         optionsToggle.title = o && o.available
-            ? 'Compile options: C++ generation, the g++ build and the XAE build'
-            : 'Compile options: C++ generation and the g++ build';
+            ? 'Build options: C++ generation, the g++ build and the XAE build'
+            : 'Build options: C++ generation and the g++ build';
         $('xae-build-mode').textContent = `${o && o.showWindow ? 'window shown' : 'headless'}; ` +
             `${(o && o.configuration) || 'Release'} | ${(o && o.platform) || 'TwinCAT RT (x64)'}` +
             (o && o.available === false ? ' (needs Windows with TwinCAT XAE)' : '');

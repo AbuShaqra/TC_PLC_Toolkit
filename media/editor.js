@@ -370,8 +370,8 @@
         // The caret's tooltip names the XAE build only where the section is shown.
         if (compileCaret) {
             compileCaret.title = options && options.available
-                ? 'Compile options: C++ generation, the g++ build and the XAE build'
-                : 'Compile options: C++ generation and the g++ build';
+                ? 'Build options: C++ generation, the g++ build and the XAE build'
+                : 'Build options: C++ generation and the g++ build';
         }
         if (xaeOptWindow) xaeOptWindow.checked = !!(options && options.showWindow);
         for (const b of [xaeBuildBtn, xaeActivateBtn]) if (b) b.disabled = !!(options && options.running);

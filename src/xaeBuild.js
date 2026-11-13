@@ -33,7 +33,7 @@
 'use strict';
 
 const { StringDecoder } = require('string_decoder');
-const { countBySeverity } = require('./xaeErrorPlacement');
+const { countBySeverity, isEmptyItem } = require('./xaeErrorPlacement');
 const { XAE_SHELL_VERSIONS } = require('./xaeShellDetect');
 
 /** The prefix of every machine line the driver writes (`-Json`). */
@@ -463,7 +463,7 @@ function reachedBuildResult(code, outcome, state) {
  * @param {number|null} code The driver's exit code (null when it did not exit by itself).
  * @param {'exit'|'timeout'|'spawn-error'|'killed'} outcome How the child ended.
  * @param {RunState} state
- * @param {{error?: string, stderr?: string[], solutionName?: string}} [extra] `error`: the spawn error text; `stderr`:
+ * @param {{error?: string, stderr?: string[], solutionName?: string, errorCount?: number}} [extra] `error`: the spawn error text; `stderr`:
  *   PowerShell's error lines; `solutionName`: names the solution when the project's XAE Shell is missing.
  * @returns {ExitDescription}
  */
@@ -496,7 +496,9 @@ function describeExit(code, outcome, state, extra = {}) {
             detail: [why, phaseNote(state)].filter(Boolean).join(' ')
         };
     }
-    const errorCount = countBySeverity(state.errorItems).errors;
+    // The placed, de-duplicated count when the caller has one; else the raw list's (empty items and
+    // build-failed summaries are not counted either way).
+    const errorCount = typeof extra.errorCount === 'number' ? extra.errorCount : countBySeverity(state.errorItems).errors;
     switch (code) {
         case EXIT.OK: {
             const a = state.activation;
@@ -788,7 +790,8 @@ const RERUN_WINDOW_SHOWN = 'Build again with the window shown';
  */
 function noErrorDetails(code, outcome, state) {
     if (outcome !== 'exit' || code !== EXIT.COMPILE || !compileFailureConfirmed(state)) return null;
-    if (state.errorItems.length > 0 || state.panes.some(p => p.text.trim())) return null;
+    // Empty items (headless 4026 returns them) are no details.
+    if (state.errorItems.some(it => !isEmptyItem(it)) || state.panes.some(p => p.text.trim())) return null;
     const reasons = state.errorDetails && state.errorDetails.reasons.length
         ? state.errorDetails.reasons : ['the driver reported none'];
     const requested = state.done && state.done.ui && state.done.ui.requested;
@@ -798,6 +801,20 @@ function noErrorDetails(code, outcome, state) {
         reasons,
         offerRerun: headless
     };
+}
+
+/**
+ * Whether TC Toolkit's own compile check stands in for XAE's error details: a confirmed compile
+ * failure (exit 1) that ended with nothing placed in Problems, whether XAE returned no details at all
+ * or only details that name no placeable file and line (user decision 2026-11-13).
+ * @param {number|null} code
+ * @param {'exit'|'timeout'|'spawn-error'|'killed'} outcome
+ * @param {RunState} state
+ * @param {number} placed How many problems the placement put in Problems.
+ * @returns {boolean}
+ */
+function needsCompileFallback(code, outcome, state, placed) {
+    return outcome === 'exit' && code === EXIT.COMPILE && compileFailureConfirmed(state) && placed === 0;
 }
 
 /**
@@ -854,5 +871,5 @@ module.exports = {
     PREFIX, PROTOCOL, EXIT, EVENT_TYPES, UNINTERRUPTIBLE_PHASES, SWITCH_FOR_RUN, SWITCH_AND_REMEMBER, RERUN_WINDOW_SHOWN, FALLBACK_INTRO, compileFallbackText,
     isValidNetId, buildDriverArgs, shellByProgId, missingShell, createLineSplitter, parseLine, createRunState, reduce,
     compileFailureConfirmed, reachedBuildResult, describeExit, describeUiMode, buildPhaseUi, canCancel, isStalled, targetPickItems, confirmationText,
-    declaredPairs, activationPlatform, platformNotDeclaredText, pairNotDeclaredText, noErrorDetails, oneLine
+    declaredPairs, activationPlatform, platformNotDeclaredText, pairNotDeclaredText, noErrorDetails, needsCompileFallback, oneLine
 };

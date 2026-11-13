@@ -505,15 +505,15 @@ function assert(cond, msg) {
             const gen = document.getElementById('generate-st-group');
             return {
                 present: !!btn, glyph: !!(btn && btn.querySelector('svg.btn-icon path')),
-                label: btn ? btn.getAttribute('aria-label') : '', tooltip: btn ? btn.title : '',
+                label: btn ? btn.getAttribute('aria-label') : '', text: btn ? btn.querySelector('.btn-label').textContent : '', tooltip: btn ? btn.title : '',
                 // The Compile split button (R13: the button and its options caret) follows the Generate ST one.
                 afterGenerate: !!(btn && gen && gen.nextElementSibling === document.getElementById('compile-group') && btn.parentElement.id === 'compile-group'),
                 genTooltip: document.getElementById('generate-st-btn').title
             };
         });
-        assert(compileInfo.present && compileInfo.glyph && compileInfo.label === 'Compile Project' && /Compile Project/.test(compileInfo.tooltip) &&
+        assert(compileInfo.present && compileInfo.glyph && compileInfo.label === 'Build' && compileInfo.text === 'Build' && /Compile Project/.test(compileInfo.tooltip) &&
             compileInfo.afterGenerate && /Generate ST/.test(compileInfo.genTooltip),
-            `the Compile button sits right after Generate ST, with a glyph, a name and a tooltip (${JSON.stringify(compileInfo)})`);
+            `the Build button (it runs Compile Project) sits right after Generate ST, with a glyph, the name Build and a tooltip (${JSON.stringify(compileInfo)})`);
         await page.evaluate(() => { window.__harness.sent.length = 0; });
         await page.click('#compile-btn');
         let compileMsgs = await page.evaluate(() => window.__harness.sent.filter(m => m.type === 'compile-project'));
@@ -546,7 +546,7 @@ function assert(cond, msg) {
             return { label: c.getAttribute('aria-label'), popup: c.getAttribute('aria-haspopup'), controls: c.getAttribute('aria-controls'),
                 labels: [...document.querySelectorAll('#compile-menu label')].map(l => l.textContent.trim()) };
         });
-        assert(caretInfo.label === 'Compile options' && caretInfo.popup === null && caretInfo.controls === 'compile-menu'
+        assert(caretInfo.label === 'Build options' && caretInfo.popup === null && caretInfo.controls === 'compile-menu'
             && JSON.stringify(caretInfo.labels) === '["Generate C++","Build with g++","Show the XAE window"]',
         `the caret is a disclosure (aria-expanded/aria-controls, no aria-haspopup: its popup is checkboxes, not a menu) with labelled boxes (${JSON.stringify(caretInfo)})`);
         // Build through XAE (R14): its section stays hidden until the host says it is available.
@@ -620,7 +620,7 @@ function assert(cond, msg) {
                 heading: document.getElementById('xae-menu-title').textContent };
         });
         assert(xaeMenu.focus === 'xae-opt-window', `R14: ArrowUp with no item focused goes to the last entry, Show the XAE window (${xaeMenu.focus})`);
-        assert(xaeMenu.title === 'Compile options: C++ generation, the g++ build and the XAE build' && xaeMenu.heading === 'Through XAE' && !/TwinCAT/.test(xaeMenu.heading),
+        assert(xaeMenu.title === 'Build options: C++ generation, the g++ build and the XAE build' && xaeMenu.heading === 'Through XAE' && !/TwinCAT/.test(xaeMenu.heading),
             `R14: the caret's tooltip names the XAE build; the section heading does not name TwinCAT (${JSON.stringify(xaeMenu)})`);
         await page.click('#xae-opt-window');
         await page.click('#xae-build');

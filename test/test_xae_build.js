@@ -398,6 +398,19 @@ function run(name, o) {
     const none = x.createRunState();
     x.reduce(none, x.parseLine('@@TCTK {"v":1,"t":"buildResult","failedProjects":1}'));
     assert(x.noErrorDetails(1, 'exit', none).text === 'XAE returned no error details: the driver reported none.', 'no errorDetails event (an older driver): it says so');
+    const emptyOnly = x.createRunState();
+    x.reduce(emptyOnly, x.parseLine('@@TCTK {"v":1,"t":"buildResult","failedProjects":1}'));
+    x.reduce(emptyOnly, x.parseLine('@@TCTK {"v":1,"t":"errorItem","file":null,"line":null,"column":null,"description":"","project":null,"level":"vsBuildErrorLevelMedium"}'));
+    assert(x.noErrorDetails(1, 'exit', emptyOnly) !== null, 'empty error-list items (headless 4026) are no details');
+    // The fallback runs whenever a confirmed compile failure placed nothing (user, 2026-11-13).
+    assert(x.needsCompileFallback(1, 'exit', nd.state, 0) && x.needsCompileFallback(1, 'exit', run('errors-panes-only').state, 0),
+        'needsCompileFallback: no details, or details that placed nothing');
+    assert(!x.needsCompileFallback(1, 'exit', nd.state, 1) && !x.needsCompileFallback(2, 'exit', nd.state, 0) && !x.needsCompileFallback(4, 'exit', nd.state, 0)
+        && !x.needsCompileFallback(1, 'killed', nd.state, 0) && !x.needsCompileFallback(0, 'exit', run('build-ok-headless').state, 0),
+        'not once something is placed, not on exit 2/4/0, not on a stop');
+    const planted = run('errors-pane-planted-headless');
+    assert(x.describeExit(1, 'exit', planted.state).title === 'Build through XAE failed.' && x.describeExit(1, 'exit', planted.state, { errorCount: 1 }).title === 'Build through XAE failed: 1 error.',
+        'describeExit: empty and summary items are not errors; the placed count is used when given');
 }
 
 // ── readXaeBuildSettings ────────────────────────────────────────────────────────────────────────

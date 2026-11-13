@@ -183,7 +183,28 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   window shown*, and the 16 second-review fixes (cancel in the error reads = exit 4, newer-only shell
   offer, one activation modal, `.tsproj`/`.tspproj` lookup). Build and Activate onto UmRT_Default with the
   switch question PASSED on Windows (9ed8b7a).
-  **Typed error reader + compile-check fallback (this commit; Linux-verified only, never compiled):**
+  **Pane parsing + placement (this commit, Linux-verified; from the user's runs on c24dc06, sample 1 with
+  `h;` planted at MAIN implementation line 14, 4026.28, OS (x64)):** the typed reader WORKS. Headless:
+  the error list gave 2 EMPTY items + a file-less "Project 'TcToolkitSample_PLC' build for platform
+  'TwinCAT OS (x64)' failed." item (all warning level, so "3 warnings (0 placed)"), the Build pane had
+  `MAIN.TcPOU(22) : error: C0189: …` and `(21) : warning: C0139: The code 'h;` + a wrapped line; Problems
+  empty, no fallback. Window shown: the items were FILLED, `file` = `<path> (Impl)` and `line` = pane line
+  (14/15), but the suffix broke the path match → "0 placed". **Settled: the Build pane's line base is
+  'object'** (declaration lines then implementation lines: 21 = 7 + 14, 22 = 7 + 15) —
+  `PANE_LINE_BASE`, src/xaeErrorPlacement.js. Now: the pane is parsed in JS (`parseOutputPaneLines`;
+  English + German level words, wrapped messages, stop lines), list suffixes `(Impl)`/`(Decl)`/component
+  are parsed, both sources de-duplicated, empty items dropped, the project-failed item is one `XAE:`
+  channel line (not counted), counts come from the de-duplicated set, unplaced messages print their own
+  severity, the compiler code is the Problems code, and **the fallback runs whenever a confirmed exit 1
+  placed nothing** (`needsCompileFallback`). The pane's trailing `Fehler: Unbekannter Fehler (Ausnahme von
+  HRESULT: 0x80004005 (E_FAIL))` comes from the solution-level build after the PLC project failed: not a
+  message, kept in the channel only. No ps1 change. Fixtures `errors-pane-planted-headless`/`-visible`.
+  **Unverified:** how the pane numbers a method/action/property/transition of a POU (an 'object' line in
+  an object with child components is placed on the root, "(location approximate)"; a capture with an
+  error planted in a method confirms it), what the list suffix looks like for a child component (parsed
+  tolerantly: `(M_Foo Impl)`, `(FB.M_Foo Decl)`, `(State Get Impl)`), `(Decl)` itself, GVL/DUT pane
+  lines (declaration only, assumed), other UI languages' level words (English + German only).
+  **Typed error reader + compile-check fallback (c24dc06; the reader is now Windows-verified):**
   user run on 6abbb52 (sample 1 + planted error, 4026.28, OS (x64)), headless AND `-ShowWindow`: "Projects
   failed: 2", the late-bound error list null, the Output window null → Problems empty. **Cause (Beckhoff
   Infosys "Reading the VS output and the error list"): late binding does not resolve
@@ -195,29 +216,27 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
     bump the suffix when the C# changes), `Read-TypedErrorList`, `Read-TypedBuildPane` ("Build" pane).
     Typed first, late-bound only when it gave nothing; the error list after every build (warnings on
     success); `errorDetails.route` typed/late-bound/none (+ `errorListRoute`, `outputRoute`).
-  - B. `Get-OutputPaneTexts -WindowNote`: "(XAE window hidden)" / "(XAE window shown)" / "(… kept visible
-    after a version switch)" from the real mode (it was hard-coded "hidden").
+  - B. `Get-OutputPaneTexts -WindowNote` names the real window mode (it was hard-coded "hidden").
   - C. route none on a confirmed exit 1 → `twincat.compileProject` once per solution project with
     `{fromXae, append}` (no popup/notification/C++ of its own; append keeps the earlier project's
     problems), one combined notification saying the errors are TC Toolkit's check, not XAE's, and can
     differ; no compiler → "skipped: no compiler is configured for it (…)". Not on exit 4 / exit 2.
     *Build again with the window shown* now starts only after the reporting run ends (`whenIdle`).
-  **Unverified (needs Windows):** whether the C# compiles under PS 5.1 Add-Type against the 4026
-  PublicAssemblies (EnvDTE.dll there may be a facade needing Microsoft.VisualStudio.Interop.dll — found
-  by a recursive search if not in PublicAssemblies/IDE), whether PowerShell hands the COM object through
-  `psobject.BaseObject` so the DTE2 cast succeeds, whether the 4024 (32-bit) shell's assemblies load in
-  64-bit PowerShell, the localized pane name (only "Build" is looked for), and whether ErrorItems is
-  populated right after `Build($true)` returns. Known gap: pane text with no error item counts as
-  "details" (no fallback) though the pane parser places nothing.
-  **Verified (Linux, 2026-11-13, after the typed reader + fallback):** `REQUIRE_FULL_SUITE=1 npm test` 123/123
-  FULL; lint 0; typecheck 0. PowerShell/C# checked as text only (contract test). Webview untouched.
+  **Settled on 4026.28:** the C# compiles under PS 5.1 Add-Type, the DTE2 cast works, ErrorItems is filled
+  (window shown) after `Build($true)`. **Unverified:** the 4024 (32-bit) shell's assemblies in 64-bit
+  PowerShell, a localized pane name (only "Build" is looked for).
+  **Also in this commit:** the editor toolbar's Compile split button and the start page's tile are labelled
+  **Build** / *Build project* (label, `aria-label`, the caret's "Build options" tooltip/label; user
+  request); command ids and the palette title *TC Toolkit: Compile Project* unchanged, and so is the main
+  button's tooltip "Compile Project: check this PLC project …" (it names the command; user's call).
+  **Verified (Linux, 2026-11-13):** see the commit's gate run (FULL suite, lint, typecheck); browser
+  harnesses `test/browser/run.js` and `run_start_page.js` pass.
   **For the Windows check** (point the `test-*.ps1` at the driver with `-ScriptPath
   ..\..\resources\xae\build-plc-project.ps1`):
-  1. sample 1 + planted error, headless and with the window shown: the channel's "Error details read:"
-     line (route), the `errorItem`s in Problems; if route none, the reasons (typed: assembly path / Add-Type
-     message / cast) and the TC Toolkit check fallback's notification; a clean build with a warning lists it;
-     the user's own `build_plc_project.ps1` prints the errors; capture `-Json` output as fixtures **from the
-     sample only**;
+  1. sample 1 + `h;` planted (as before), headless AND shown: C0189 on MAIN impl line 15, C0139 on 14,
+     each ONCE, not approximate, "1 error, 1 warning (2 placed)", no fallback; then an error planted in a
+     METHOD of FB_Station (pane line numbering of a child; the list suffix's form) — capture `-Json`
+     **from the sample only**; a clean build with a warning lists it;
   2. (PASSED on 9ed8b7a) *Build and Activate* onto UmRT_Default with the switch question; still to see after the
      review fixes: *Switch and remember* lands in the user (or workspace) settings, and a stalled/failed headless
      activation re-run asks no second target pick or modal; with `tcToolkit.xaeBuild.configuration` set to a name
@@ -233,7 +252,7 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   solution under `Line [2]` and one on a UNC share build.
   **Open questions (defaults in place):** settings key section `tcToolkit.xaeBuild` (one section); hide the window
   during activation (no); hide after a version switch (keep visible); boot project / remote targets (phase 2);
-  approximate placement before fixtures (ship it, marked `lineBase: 'pane'`); ErrorItem line semantics, PS 5.1
+  child-component numbering in the Build pane (approximate until a capture); PS 5.1
   ConvertTo-Json shapes (one-element arrays), nested `BuildProject`, whether a hidden shell ever hangs on a dialog.
 - **R3.2 Compile Project: MERGED** into `dev` as PR #32 (`28f24f1`, 2026-11-10 22:22 UTC).
 - **R3.3–R9 MERGED** into `dev` as PR #33 (`6424968`, 2026-11-11 09:30 UTC) after the user's Windows checks
