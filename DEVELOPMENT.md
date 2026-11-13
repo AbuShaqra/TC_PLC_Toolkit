@@ -1849,7 +1849,7 @@ the contract test). When that ProgId is not registered it stops with fatal `prog
 `data` carries `progId`, `build`, `projectVersion` and `installed` (the mapped ProgIds that ARE
 registered, newest build first, a plain `string[]`). For a **build**, the extension then asks ONE modal
 — "<solution> was saved with TwinCAT 3.1.4024 and its XAE Shell (4024) is not installed. Build with XAE
-Shell 64 (4026) instead? XAE may upgrade the project files." — and on yes runs with exactly `-TcVersion
+Shell 64 (4026) instead? XAE will upgrade the project files (it rewrites the .tspproj/.tsproj and .plcproj)." — and on yes runs with exactly `-TcVersion
 <ProgId> -AllowVersionMismatch`. The question is asked **before** the run when the pre-run shell check
 can already tell (the project's shell is neither in its `tcToolkit.xaeShell.path*` setting nor found by
 `detectXaeShells`, and another one is): then the first run already carries the override. When the check
@@ -1868,7 +1868,7 @@ keeps the "Run anyway" warning and its fatal only explains. What the override me
 ProgId names a build family, so the pinned version is `3.1.<that build>.<project revision>`, and the pin
 step falls back to the newest installed version of that build; `-AllowVersionMismatch` downgrades the
 build mismatch (and an unsatisfiable pin) to a warning. A real pin switch keeps the window visible (`ui`
-reason `version-switch`; the driver's rule). XAE may upgrade the project files.
+reason `version-switch`; the driver's rule). XAE will upgrade the project files (it rewrites the .tspproj/.tsproj and .plcproj).
 
 **Headless and the switch.** By default the build is headless: `SuppressUI = true` and, after the pin
 step, `MainWindow.Visible = false`. `tcToolkit.xaeBuild.showWindow` (false by default) passes

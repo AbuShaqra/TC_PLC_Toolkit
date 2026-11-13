@@ -75,7 +75,7 @@ const count = (arr, v) => arr.filter(a => a === v).length;
     const facts = { progId: 'TcXaeShell.DTE.15.0', build: '4024', projectVersion: '3.1.4024.62', installed: ['TcXaeShell.DTE.17.0'] };
     const m = x.missingShell(facts, { mode: 'build', solutionName: 'TcToolkitSample2' });
     assert(m.offer && m.offer.progId === 'TcXaeShell.DTE.17.0' && m.confirmLabel === 'Build with XAE Shell 64'
-        && m.question === 'TcToolkitSample2 was saved with TwinCAT 3.1.4024 and its XAE Shell (4024) is not installed. Build with XAE Shell 64 (4026) instead? XAE may upgrade the project files.',
+        && m.question === 'TcToolkitSample2 was saved with TwinCAT 3.1.4024 and its XAE Shell (4024) is not installed. Build with XAE Shell 64 (4026) instead? XAE will upgrade the project files (it rewrites the .tspproj/.tsproj and .plcproj).',
         'build, another shell installed: the offer names both shells');
     assert(!/TwinCAT (XAE )?Build|TwinCAT PLC Toolkit/.test(m.question + m.text), 'TwinCAT is used only descriptively');
     const bare = x.missingShell({ ...facts, installed: 'TcXaeShell.DTE.17.0' }, { mode: 'build', solutionName: 'S' });

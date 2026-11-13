@@ -207,7 +207,7 @@ function missingShell(facts, o) {
     const name = shellName(newest);
     return {
         offer: { progId: newest.progId, build: newest.id, name },
-        question: `${saved} and its ${missingName} is not installed. Build with ${name} instead? XAE may upgrade the project files.`,
+        question: `${saved} and its ${missingName} is not installed. Build with ${name} instead? XAE will upgrade the project files (it rewrites the .tspproj/.tsproj and .plcproj).`,
         confirmLabel: `Build with ${newest.name}`,
         text: `${saved} and its ${missingName} is not installed. ${install}`
     };

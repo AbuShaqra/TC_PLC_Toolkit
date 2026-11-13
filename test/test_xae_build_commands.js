@@ -946,7 +946,7 @@ const rows = (name) => readFixture(name).lines;
                 data: { progId: 'TcXaeShell.DTE.15.0', build: '4024', projectVersion: '3.1.4024.62', installed } },
             { v: 1, t: 'done', exitCode: 2, ui: null }
         ];
-        const QUESTION = 'TcToolkitSample2 was saved with TwinCAT 3.1.4024 and its XAE Shell (4024) is not installed. Build with XAE Shell 64 (4026) instead? XAE may upgrade the project files.';
+        const QUESTION = 'TcToolkitSample2 was saved with TwinCAT 3.1.4024 and its XAE Shell (4024) is not installed. Build with XAE Shell 64 (4026) instead? XAE will upgrade the project files (it rewrites the .tspproj/.tsproj and .plcproj).';
         const prompts = () => calls.modals.length + calls.warnings.length;
         const overrideOk = (args) => { const i = args.indexOf('-TcVersion'); return i > 0 && args[i + 1] === 'TcXaeShell.DTE.17.0' && args[i + 2] === '-AllowVersionMismatch'
             && args.filter(x => x === '-TcVersion').length === 1 && args.filter(x => x === '-AllowVersionMismatch').length === 1; };
