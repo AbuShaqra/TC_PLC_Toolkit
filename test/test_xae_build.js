@@ -4,7 +4,7 @@
  * src/xaeBuildSettings.js, against the synthetic driver fixtures in test/fixtures/xae/.
  *
  * Pinned: the driver argv (headless unless `showWindow === true`, exactly one `-ShowWindow` when it
- * is; `-STA`, `-NonInteractive`, `-ExecutionPolicy Bypass` always; never `-TcVersion`; activation only
+ * is; `-STA`, `-NonInteractive`, `-ExecutionPolicy Bypass` always; no `-TcVersion` unless a confirmed shellOverride (then exactly `-TcVersion <ProgId> -AllowVersionMismatch`, build only); activation only
  * with a valid NetId), the line splitter (CRLF, a split inside the prefix and inside a UTF-8
  * character, a last line with no newline), parseLine, the reducer over every fixture, describeExit
  * for every exit code and outcome, describeUiMode for every mode, canCancel, isStalled, the target
@@ -39,7 +39,7 @@ const count = (arr, v) => arr.filter(a => a === v).length;
         assert(a.includes('-STA') && a.includes('-NonInteractive') && a.includes('-NoProfile') && a[a.indexOf('-ExecutionPolicy') + 1] === 'Bypass',
             '-STA, -NonInteractive, -NoProfile and -ExecutionPolicy Bypass are present');
         assert(a[a.indexOf('-File') + 1] === base.scriptPath && a[a.indexOf('-SlnPath') + 1] === base.slnPath && a.includes('-Json'), 'the script, the solution and -Json');
-        assert(!a.includes('-TcVersion') && !a.includes('-AllowVersionMismatch'), 'never -TcVersion or -AllowVersionMismatch');
+        assert(!a.includes('-TcVersion') && !a.includes('-AllowVersionMismatch'), 'no -TcVersion or -AllowVersionMismatch without a shellOverride');
         assert(!a.includes('-ActivateConfiguration') && !a.includes('-TargetNetId'), 'a build never activates');
     }
     const cfg = x.buildDriverArgs({ ...base, configuration: 'Debug', platform: 'TwinCAT OS (x64)', cancelFile: 'C:\\t\\c' });
@@ -57,6 +57,40 @@ const count = (arr, v) => arr.filter(a => a === v).length;
     let threw = false;
     try { x.buildDriverArgs({ scriptPath: base.scriptPath }); } catch (e) { threw = true; }
     assert(threw, 'a build without a solution is refused');
+
+    // The shell override: only after the user confirmed it, only for a build, only a known ProgId.
+    const ov = x.buildDriverArgs({ ...base, shellOverride: 'TcXaeShell.DTE.17.0' });
+    const i = ov.indexOf('-TcVersion');
+    assert(i > 0 && ov[i + 1] === 'TcXaeShell.DTE.17.0' && ov[i + 2] === '-AllowVersionMismatch' && count(ov, '-TcVersion') === 1 && count(ov, '-AllowVersionMismatch') === 1,
+        'shellOverride → exactly -TcVersion <ProgId> -AllowVersionMismatch');
+    for (const bad of [{ mode: 'activate', targetNetId: '198.51.100.4.1.1', shellOverride: 'TcXaeShell.DTE.17.0' }, { shellOverride: 'TcXaeShell.DTE.99.0' }, { shellOverride: '3.1.4026.22' }]) {
+        let refused = false;
+        try { x.buildDriverArgs({ ...base, .../** @type {any} */ (bad) }); } catch (e) { refused = true; }
+        assert(refused, `shellOverride refused: ${JSON.stringify(bad)}`);
+    }
+}
+
+// ── missingShell: the offer when the project's XAE Shell is not installed ───────────────────────
+{
+    const facts = { progId: 'TcXaeShell.DTE.15.0', build: '4024', projectVersion: '3.1.4024.62', installed: ['TcXaeShell.DTE.17.0'] };
+    const m = x.missingShell(facts, { mode: 'build', solutionName: 'TcToolkitSample2' });
+    assert(m.offer && m.offer.progId === 'TcXaeShell.DTE.17.0' && m.confirmLabel === 'Build with XAE Shell 64'
+        && m.question === 'TcToolkitSample2 was saved with TwinCAT 3.1.4024 and its XAE Shell (4024) is not installed. Build with XAE Shell 64 (4026) instead? XAE may upgrade the project files.',
+        'build, another shell installed: the offer names both shells');
+    assert(!/TwinCAT (XAE )?Build|TwinCAT PLC Toolkit/.test(m.question + m.text), 'TwinCAT is used only descriptively');
+    const bare = x.missingShell({ ...facts, installed: 'TcXaeShell.DTE.17.0' }, { mode: 'build', solutionName: 'S' });
+    assert(bare.offer && bare.offer.progId === 'TcXaeShell.DTE.17.0', 'a one-element list serialized as a bare string still counts');
+    const act = x.missingShell(facts, { mode: 'activate', solutionName: 'S' });
+    assert(act.offer === null && /Activation needs the project's own XAE Shell: Install XAE Shell \(4024\) \(TcXaeShell\.DTE\.15\.0\)/.test(act.text), 'activation: no offer, says which shell to install');
+    const none = x.missingShell({ ...facts, installed: [] }, { mode: 'build', solutionName: 'S' });
+    assert(none.offer === null && /Install XAE Shell \(4024\) \(TcXaeShell\.DTE\.15\.0\) to build it/.test(none.text), 'nothing installed: no offer, names the shell to install');
+    const self = x.missingShell({ ...facts, installed: ['TcXaeShell.DTE.15.0', 'Other.DTE.1'] }, { mode: 'build', solutionName: 'S' });
+    assert(self.offer === null, 'the missing shell itself and unknown ProgIds are never offered');
+    const st = x.createRunState();
+    x.reduce(st, x.parseLine('@@TCTK ' + JSON.stringify({ v: 1, t: 'hello', mode: 'build', showWindow: false })));
+    x.reduce(st, x.parseLine('@@TCTK ' + JSON.stringify({ v: 1, t: 'fatal', code: 'progid-not-registered', text: "DTE ProgId 'TcXaeShell.DTE.15.0' is not registered", data: { ...facts, installed: [] } })));
+    assert(/^The XAE build could not run: S was saved with TwinCAT 3\.1\.4024 and its XAE Shell \(4024\) is not installed\. Install/.test(x.describeExit(2, 'exit', st, { solutionName: 'S' }).title),
+        'describeExit: the missing-shell fatal says which shell to install');
 }
 
 // ── createLineSplitter ──────────────────────────────────────────────────────────────────────────
@@ -122,6 +156,23 @@ function run(name, o) {
     const unread = x.createRunState();
     x.reduce(unread, x.parseLine('@@TCTK {"v":1,"t":"ui","requested":"headless","suppressUI":null,"mainWindowVisible":null,"reason":"build"}'));
     assert(/UI state unreadable/.test(x.describeUiMode(unread)) && /unreadable/.test(x.describeUiMode(x.createRunState())), 'describeUiMode: unreadable');
+    // The 4026 shell under SuppressUI: Visible is not readable (first Windows run, 2026-11-13).
+    const visUnread = x.createRunState();
+    x.reduce(visUnread, x.parseLine('@@TCTK {"v":1,"t":"ui","requested":"headless","suppressUI":true,"mainWindowVisible":null,"reason":"build"}'));
+    assert(x.describeUiMode(visUnread) === 'XAE window during the build: headless (SuppressUI=True; window visibility not readable).',
+        'describeUiMode: SuppressUI=True with Visible unreadable still names the mode');
+    const visUnread2 = x.createRunState();
+    x.reduce(visUnread2, x.parseLine('@@TCTK {"v":1,"t":"ui","requested":"headless","suppressUI":false,"mainWindowVisible":null,"reason":"build"}'));
+    assert(/: unknown \(SuppressUI=False; window visibility not readable\)\.$/.test(x.describeUiMode(visUnread2)), 'describeUiMode: SuppressUI=False with Visible unreadable says unknown');
+    // ...and on the 4026 shell with the window shown (Windows check step 2): the requested mode is reported.
+    const visUnread3 = x.createRunState();
+    x.reduce(visUnread3, x.parseLine('@@TCTK {"v":1,"t":"ui","requested":"visible","suppressUI":false,"mainWindowVisible":null,"reason":"build"}'));
+    assert(x.describeUiMode(visUnread3) === 'XAE window during the build: visible as requested (SuppressUI=False; window visibility not readable).',
+        'describeUiMode: visible requested with Visible unreadable says "visible as requested"');
+    const visUnread4 = x.createRunState();
+    x.reduce(visUnread4, x.parseLine('@@TCTK {"v":1,"t":"ui","requested":"headless","suppressUI":false,"mainWindowVisible":null,"reason":"version-switch"}'));
+    x.reduce(visUnread4, x.parseLine('@@TCTK {"v":1,"t":"ui","requested":"headless","suppressUI":false,"mainWindowVisible":null,"reason":"build"}'));
+    assert(/: kept visible after a version switch \(SuppressUI=False; window visibility not readable\)\.$/.test(x.describeUiMode(visUnread4)), 'describeUiMode: a version switch with Visible unreadable');
 
     const err = run('errors-errorlist');
     assert(err.state.errorItems.length === 3 && err.state.errorItems[0].line === 3 && err.state.errorItems[1].column === null

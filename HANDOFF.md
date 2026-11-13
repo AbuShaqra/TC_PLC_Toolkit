@@ -168,7 +168,7 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   and `templates/`. **Headless by default** (user, 2026-11-12): `tcToolkit.xaeBuild.showWindow` (false) ⇒
   `-ShowWindow` (SuppressUI off + window visible for the whole run, never `UserControl`); kept exceptions: activation
   ALWAYS shows the window (invisible licence/download dialog hang), and a real version switch keeps it visible —
-  that one never fires from the extension (it never passes `-TcVersion`). The channel *TC Toolkit XAE Build*
+  from the extension only after the user confirmed another XAE Shell (below). The channel *TC Toolkit XAE Build*
   prints the requested mode and, after the run, the mode read back from DTE at the end of `Build($true)`
   (`describeUiMode`). Settings section `tcToolkit.xaeBuild` (showWindow, configuration, platform, timeoutMinutes,
   stallMinutes; live settings 13→18); commands `twincat.xaeBuild`, `twincat.xaeBuildAndActivate`,
@@ -192,19 +192,30 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   the ps1 was never parsed — `test_xae_driver_contract.js` checks it as text only; the first Windows run is its
   parse check. Unknowns only Windows settles: ErrorItem line semantics (pane vs whole-object line;
   `xaeErrorPlacement` ships `lineBase: 'pane'` + "(location approximate)"), whether the ErrorList is empty
-  headless, whether `$dte.MainWindow.Visible` reads back truthfully under SuppressUI, whether a hidden shell
+  headless, whether a hidden shell
   ever hangs on a dialog during the build, ConvertTo-Json shapes on PS 5.1 (one-element arrays, nulls), nested
   `BuildProject`, the routes path.
-  **First Windows run (user, 2026-11-13):** the driver PARSES and runs under Windows PowerShell (headless requested,
-  readback "UI state unreadable" because it stopped before DTE). It stopped on TcToolkitSample2 with "no .tsproj found":
-  that solution's system project is a `.tspproj` (TwinCAT project saved as separate files). Fixed in the driver, the
-  builder, `templates/` and `probe-sysmanager.ps1`: the lookup accepts `.tsproj` and `.tspproj`; pinned by
-  `test_xae_driver_contract.js`. Awaiting the re-run.
+  **Windows runs (user, 2026-11-13):** the driver PARSES and runs under Windows PowerShell. TcToolkitSample2's
+  system project is a `.tspproj` (saved as separate files): the ps1 lookups (driver, builder, `templates/`,
+  `probe-sysmanager.ps1`; 706dfde) and `projectTcBuild` in xaeBuildCommands now accept `.tsproj` and `.tspproj`.
+  **Step 1 PASSED** (sample 1, headless, XAE Shell 64 on 4026.28): BUILD SUCCEEDED, no window, no `TcXaeShell.exe`
+  left in Task Manager. **Step 2 PASSED** (showWindow on): window visible throughout, BUILD SUCCEEDED.
+  **Settled: `$dte.MainWindow.Visible` is UNREADABLE on 4026 under SuppressUI AND with the window shown** — never
+  rely on it; `describeUiMode` now reports the requested mode + SuppressUI ("headless (SuppressUI=True; window
+  visibility not readable)", "visible as requested (SuppressUI=False; …)"); steps 1/2's expected lines below are
+  read that way. Sample 2 (saved with 3.1.4024.62) failed `progid-not-registered`: only XAE Shell 64 is installed.
+  **Missing-shell offer (user decision 2026-11-13, implemented):** the fatal carries `installed` (registered
+  `$ProgIdByBuild` ProgIds, newest first) + `build`/`projectVersion`; for a BUILD one modal ("… Build with XAE
+  Shell 64 (4026) instead? XAE may upgrade the project files.") then `-TcVersion <ProgId> -AllowVersionMismatch`
+  (pins 3.1.<build>.<project rev>, falling back to the newest installed of that build; a pin switch keeps the
+  window visible). Asked by the pre-run shell check when it can tell (setting or `detectXaeShells`), else after
+  the driver's fatal — never twice; never for activation (Run-anyway warning, fatal only explains). Builder and
+  `templates/` print the same census. DEVELOPMENT.md "XAE build (R14)". **Re-run sample 2 on Windows:** one modal,
+  then a 4026 build (does XAE upgrade the `.tspproj`? does the pin find a 4026 version?).
   **For the Windows check** (point the existing `test-*.ps1` at the driver with `-ScriptPath
   ..\..\resources\xae\build-plc-project.ps1`; run the new `scripts\Build PLC project\test-emit-event.ps1`):
-  1. headless build of the sample succeeds with **no visible window**; channel line says `hidden
-     (SuppressUI=True, MainWindow.Visible=False) - headless`; no `TcXaeShell` left afterwards;
-  2. `showWindow=true` (dropdown checkbox) shows the shell for the whole run; readback says visible (requested);
+  1. PASSED (above);
+  2. PASSED (above);
   3. driver by hand with `-TcVersion` forcing a switch: `ui` reason `version-switch`, the build passes;
   4. a planted error, headless vs visible: compare `errorItem` counts (settles the empty-ErrorList question) and
      where the Problems entries land; capture `-Json` output as fixtures **from the sample only**;

@@ -43,11 +43,11 @@ const path = require('path');
 const { runChild, killProcessTree, describeLocation } = require('../compileCheck');
 const {
     EXIT, buildDriverArgs, createLineSplitter, parseLine, createRunState, reduce, describeExit, describeUiMode,
-    canCancel, isStalled, targetPickItems, confirmationText, reachedBuildResult
+    canCancel, isStalled, targetPickItems, confirmationText, reachedBuildResult, missingShell
 } = require('../xaeBuild');
 const { placeXaeErrors, placementSummary } = require('../xaeErrorPlacement');
 const { XAE_BUILD_SECTION, readXaeBuildSettings } = require('../xaeBuildSettings');
-const { XAE_SHELL_SECTION, XAE_SHELL_VERSIONS, describeConfiguredShells } = require('../xaeShellDetect');
+const { XAE_SHELL_SECTION, XAE_SHELL_VERSIONS, describeConfiguredShells, detectXaeShells, createRegQuery } = require('../xaeShellDetect');
 const { normalizeFileUri } = require('../fileUri');
 const { memberName } = require('../componentId');
 const { problemDiagnostic, openProblem, selectionOf, pickProjectKey, registerProblemLinkResolver } = require('./compileCommands');
@@ -94,7 +94,8 @@ const STALL_WAIT = 'Keep waiting';
  */
 
 /**
- * The project's TwinCAT build number, from the `.tsproj` the solution references.
+ * The project's TwinCAT build number, from the system project the solution references: a `.tsproj`,
+ * or a `.tspproj` (a TwinCAT project saved as separate files).
  * @param {string} slnPath
  * @param {{readFileSync: (p: string, enc: 'utf8') => string}} fsx
  * @returns {string|null} e.g. '4026'.
@@ -102,7 +103,7 @@ const STALL_WAIT = 'Keep waiting';
 function projectTcBuild(slnPath, fsx) {
     try {
         const sln = fsx.readFileSync(slnPath, 'utf8');
-        const m = /"([^"]+\.tsproj)"/i.exec(sln);
+        const m = /"([^"]+\.tsp?proj)"/i.exec(sln);
         if (!m) return null;
         const tsproj = path.join(path.dirname(slnPath), ...m[1].split(/[\\/]/));
         const v = /TcVersion="3\.1\.(\d+)\.\d+"/.exec(fsx.readFileSync(tsproj, 'utf8'));
@@ -129,6 +130,8 @@ function projectTcBuild(slnPath, fsx) {
  * @param {number} [deps.stallCheckMs] How often the stall watchdog looks (30 s).
  * @param {number} [deps.listTimeoutMs] The `-ListTargets` run's timeout (60 s).
  * @param {string} [deps.tmpDir] Where cancel files are created.
+ * @param {() => Promise<Record<string, any>|null>} [deps.detectShells] Which XAE Shells this machine has
+ *   (registry and default paths; `detectXaeShells`), for the pre-run shell check.
  * @returns {{xaeOptions: () => {available: boolean, showWindow: boolean, running: boolean, configuration: string, platform: string},
  *   setXaeOption: (key: string, value: boolean) => Promise<boolean>, problems: () => StoredXaeProblem[], isRunning: () => boolean}}
  */
@@ -142,6 +145,9 @@ function registerXaeBuildCommands(context, deps) {
     const stallCheckMs = deps.stallCheckMs || 30000;
     const listTimeoutMs = deps.listTimeoutMs || 60000;
     const tmpDir = deps.tmpDir || os.tmpdir();
+    const detectShells = deps.detectShells || (() => detectXaeShells({
+        platform, env: process.env, exists: (p) => fs.existsSync(p), regQuery: createRegQuery(/** @type {any} */ (execFile))
+    }));
 
     const collection = vscode.languages.createDiagnosticCollection(COLLECTION_NAME);
     const statusItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 97);
@@ -272,7 +278,7 @@ function registerXaeBuildCommands(context, deps) {
     /**
      * Spawns the driver and follows it to its end: progress, cancel, timeout, stall.
      * @param {{mode: 'build'|'activate'|'listTargets', slnPath?: string, showWindow?: boolean, configuration?: string,
-     *   platform?: string, targetNetId?: string, timeoutMs: number, stallMs?: number,
+     *   platform?: string, targetNetId?: string, shellOverride?: string, timeoutMs: number, stallMs?: number,
      *   token?: {isCancellationRequested: boolean, onCancellationRequested: (fn: () => void) => any},
      *   progress?: {report: (v: {message?: string}) => void}}} o
      * @returns {Promise<DriverRun>}
@@ -283,7 +289,7 @@ function registerXaeBuildCommands(context, deps) {
         if (cancelFile) { try { fs.unlinkSync(cancelFile); } catch (e) { /* not there: good */ } }
         const args = buildDriverArgs({
             scriptPath, slnPath: o.slnPath, mode: o.mode, showWindow: o.showWindow, configuration: o.configuration,
-            platform: o.platform, targetNetId: o.targetNetId, cancelFile
+            platform: o.platform, targetNetId: o.targetNetId, shellOverride: o.shellOverride, cancelFile
         });
         const ch = channel();
         /** @type {any} */
@@ -475,22 +481,59 @@ function registerXaeBuildCommands(context, deps) {
     }
 
     /**
-     * Warns when no XAE Shell of the project's TwinCAT build is configured; true to go on.
+     * The pre-run shell check: is the XAE Shell of the project's TwinCAT build on this machine? It asks
+     * at most ONE question, and when it asks, the run after it never asks again (`shellAsked`):
+     *   - present (setting, registry or default path): go on, nothing asked;
+     *   - build, missing, another shell present: the modal offer (the newest); yes runs once with that
+     *     shell (`shellOverride`), no stops;
+     *   - build, missing, nothing else found: the check cannot tell (the registry may be unreadable), so
+     *     it asks nothing and the driver decides; its `progid-not-registered` fatal is the fallback;
+     *   - activation, missing: the warning with "Run anyway" (activation never runs on another shell).
      * @param {string} slnPath
-     * @returns {Promise<boolean>}
+     * @param {boolean} activate
+     * @returns {Promise<{go: boolean, asked: boolean, shellOverride?: string}>}
      */
-    async function shellCheck(slnPath) {
+    async function shellCheck(slnPath, activate) {
         const build = projectTcBuild(slnPath, fs);
-        if (!build) return true;
+        if (!build) return { go: true, asked: false };
         const shell = XAE_SHELL_VERSIONS.find(v => v.id === build);
+        if (!shell) {
+            const choice = await vscode.window.showWarningMessage(
+                `The solution was saved with TwinCAT 3.1.${build}, for which no XAE Shell is known here.`, 'Run anyway');
+            return { go: choice === 'Run anyway', asked: true };
+        }
         const xaeConfig = vscode.workspace.getConfiguration(XAE_SHELL_SECTION);
-        const configured = shell ? describeConfiguredShells((k) => xaeConfig.get(k), (p) => fs.existsSync(p)).find(s => s.id === build) : null;
-        if (configured && configured.path && configured.exists) return true;
-        const text = shell
-            ? `No XAE Shell for TwinCAT ${shell.version} was found on this machine (setting ${shell.setting}); the solution was saved with it.`
-            : `The solution was saved with TwinCAT 3.1.${build}, for which no XAE Shell is known here.`;
-        const choice = await vscode.window.showWarningMessage(text, 'Run anyway');
-        return choice === 'Run anyway';
+        const configured = describeConfiguredShells((k) => xaeConfig.get(k), (p) => fs.existsSync(p));
+        // The setting first: the registry is only asked (reg.exe, up to seconds) when it does not settle it.
+        if (configured.some(c => c.id === build && c.path && c.exists)) return { go: true, asked: false };
+        /** @type {Record<string, any>|null} */
+        let detected = null;
+        try { detected = await detectShells(); } catch (e) { detected = null; }
+        const present = (/** @type {string} */ id) => configured.some(c => c.id === id && c.path && c.exists) || !!(detected && detected[id]);
+        if (present(build)) return { go: true, asked: false };
+        if (!activate) {
+            const installed = XAE_SHELL_VERSIONS.filter(v => v.id !== build && present(v.id)).map(v => v.progId);
+            const m = missingShell({ build, progId: shell.progId, installed }, { mode: 'build', solutionName: path.basename(slnPath, path.extname(slnPath)) });
+            if (!m.offer) return { go: true, asked: false };
+            const answer = await vscode.window.showWarningMessage(m.question, { modal: true }, m.confirmLabel);
+            if (answer !== m.confirmLabel) return { go: false, asked: true };
+            logShellChoice(m.offer, shell);
+            return { go: true, asked: true, shellOverride: m.offer.progId };
+        }
+        const choice = await vscode.window.showWarningMessage(
+            `No XAE Shell for TwinCAT ${shell.version} was found on this machine (setting ${shell.setting}); the solution was saved with it.`, 'Run anyway');
+        return { go: choice === 'Run anyway', asked: true };
+    }
+
+    /**
+     * The channel line for a confirmed shell substitution.
+     * @param {{progId: string, name: string}} offer
+     * @param {{progId: string, id: string, name: string}} [missing]
+     */
+    function logShellChoice(offer, missing) {
+        channel().appendLine(`${stamp()} The user chose to build with ${offer.name} (${offer.progId})` +
+            (missing ? ` instead of the project's ${missing.name} (${missing.id}), which is not installed` : '') +
+            `; the driver gets -TcVersion ${offer.progId} -AllowVersionMismatch.`);
     }
 
     /**
@@ -512,7 +555,9 @@ function registerXaeBuildCommands(context, deps) {
     function report(run, slnPath) {
         const ch = channel();
         const { state } = run;
-        const d = describeExit(run.code, run.outcome, state, { error: run.error, stderr: run.stderr });
+        const d = describeExit(run.code, run.outcome, state, {
+            error: run.error, stderr: run.stderr, solutionName: path.basename(slnPath, path.extname(slnPath))
+        });
         const uiMode = describeUiMode(state);
         if (state.mode) ch.appendLine(`${stamp()} ${uiMode}`);
         if (state.protocolWarnings > 0) ch.appendLine(`${stamp()} ${state.protocolWarnings} driver line(s) were not readable events of this version.`);
@@ -584,8 +629,16 @@ function registerXaeBuildCommands(context, deps) {
             if (!('slnPath' in resolved)) return { ok: false, reason: resolved.reason };
             const { slnPath } = resolved;
             const solutionName = path.basename(slnPath, path.extname(slnPath));
-            // A re-run (stall offer, configuration pick) was already checked.
-            if (a.shellChecked !== true && !(await shellCheck(slnPath))) return { ok: false, reason: 'cancelled' };
+            // A re-run (stall offer, configuration pick, shell offer) was already checked.
+            /** @type {string|undefined} */
+            let shellOverride = !activate && typeof a.shellOverride === 'string' ? a.shellOverride : undefined;
+            let shellAsked = a.shellAsked === true;
+            if (a.shellChecked !== true) {
+                const checked = await shellCheck(slnPath, activate);
+                if (!checked.go) return { ok: false, reason: 'cancelled' };
+                shellAsked = checked.asked;
+                if (checked.shellOverride) shellOverride = checked.shellOverride;
+            }
             const settings = readSettings();
             const configuration = typeof a.configuration === 'string' ? a.configuration : settings.configuration;
             const pform = typeof a.platform === 'string' ? a.platform : settings.platform;
@@ -614,6 +667,7 @@ function registerXaeBuildCommands(context, deps) {
             const ch = channel();
             ch.appendLine(`${stamp()} ${title}: ${slnPath} - ${configuration} | ${pform}` +
                 (target ? ` - target ${target.name} (${target.netId})` : ''));
+            if (shellOverride) ch.appendLine(`  XAE Shell: ${shellOverride} (confirmed in place of the project's own; the project may be upgraded).`);
             ch.appendLine(`  Requested: ${showWindow ? 'XAE window shown for the whole run (tcToolkit.xaeBuild.showWindow)' : 'headless (XAE window hidden, UI suppressed)'}` +
                 (activate ? '; the window is shown during activation in either case.' : '.'));
             setRunning(true);
@@ -621,16 +675,33 @@ function registerXaeBuildCommands(context, deps) {
                 { location: vscode.ProgressLocation.Notification, title: `${title}: ${solutionName}`, cancellable: true },
                 (progress, token) => runDriver({
                     mode: activate ? 'activate' : 'build', slnPath, showWindow, configuration, platform: pform,
-                    targetNetId: target ? target.netId : undefined, timeoutMs: settings.timeoutMinutes * minuteMs,
+                    targetNetId: target ? target.netId : undefined, shellOverride, timeoutMs: settings.timeoutMinutes * minuteMs,
                     stallMs: settings.stallMinutes * minuteMs, token, progress
                 }));
+            // The project's XAE Shell is missing and the pre-check could not tell: the driver names the
+            // installed ones. One question per build: never after the pre-check asked, never for activation.
+            const fatal = run.state.fatal;
+            if (!activate && !shellOverride && !shellAsked && run.code === EXIT.HARNESS && fatal && fatal.code === 'progid-not-registered') {
+                const m = missingShell(fatal.data, { mode: 'build', solutionName });
+                if (m.offer) {
+                    const answer = await vscode.window.showWarningMessage(m.question, { modal: true }, m.confirmLabel);
+                    if (answer === m.confirmLabel) {
+                        const missingShellInfo = XAE_SHELL_VERSIONS.find(v => fatal.data && v.progId === fatal.data.progId);
+                        logShellChoice(m.offer, missingShellInfo);
+                        running = false;
+                        setRunning(false);
+                        return buildCommand({ ...a, projectKey: resolved.key, configuration, platform: pform, shellChecked: true, shellAsked: true, shellOverride: m.offer.progId }, activate);
+                    }
+                    shellAsked = true;
+                }
+            }
             const result = report(run, slnPath);
 
             // The stall offer: the same run again with the window shown (this run only).
             if (run.rerunVisible) {
                 running = false;
                 setRunning(false);
-                return buildCommand({ ...a, projectKey: resolved.key, showWindow: true, configuration, platform: pform, shellChecked: true }, activate);
+                return buildCommand({ ...a, projectKey: resolved.key, showWindow: true, configuration, platform: pform, shellChecked: true, shellAsked, shellOverride }, activate);
             }
             // A configuration the solution does not declare: pick one of its own.
             if (run.code === EXIT.HARNESS && run.state.fatal && run.state.fatal.code === 'config-not-declared'
@@ -653,11 +724,11 @@ function registerXaeBuildCommands(context, deps) {
                         }
                         running = false;
                         setRunning(false);
-                        return buildCommand({ ...a, projectKey: resolved.key, configuration: cfg, platform: plat, shellChecked: true }, activate);
+                        return buildCommand({ ...a, projectKey: resolved.key, configuration: cfg, platform: plat, shellChecked: true, shellAsked, shellOverride }, activate);
                     }
                 }
             }
-            return { ...result, projectKey: resolved.key, slnPath, targetNetId: target ? target.netId : null };
+            return { ...result, projectKey: resolved.key, slnPath, targetNetId: target ? target.netId : null, shellOverride: shellOverride || null };
         } finally {
             if (running) setRunning(false);
             running = false;

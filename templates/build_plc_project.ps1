@@ -450,7 +450,20 @@ foreach ($w in $target.Warnings) { Write-Host "WARNING: $w" -ForegroundColor Yel
 # Guard against a mismatched/missing shell: building a project with the wrong
 # XAE Shell version is exactly the failure this detection exists to prevent.
 if (-not (Test-Path "Registry::HKEY_CLASSES_ROOT\$ProgId")) {
+    # Which OTHER shells are installed, newest build first, so the caller can offer one (the
+    # extension asks the user before it re-runs with -TcVersion <ProgId> -AllowVersionMismatch).
+    # Same HKCR test as above; only ProgIds this script can map are listed.
+    $installedShells = New-Object System.Collections.Generic.List[string]
+    foreach ($b in @($ProgIdByBuild.Keys | Sort-Object { [int]$_ } -Descending)) {
+        $p = [string]$ProgIdByBuild[$b]
+        if (Test-Path -LiteralPath "Registry::HKEY_CLASSES_ROOT\$p") { $installedShells.Add($p) }
+    }
     Write-Host "FATAL: DTE ProgId '$ProgId' is not registered - the matching XAE Shell is not installed." -ForegroundColor Red
+    if ($installedShells.Count -gt 0) {
+        Write-Host ("Installed XAE Shells: {0}. -TcVersion <ProgId> -AllowVersionMismatch builds with one (expect the project to be upgraded)." -f ($installedShells -join ', ')) -ForegroundColor Yellow
+    } else {
+        Write-Host "No XAE Shell is installed. Install the one for TwinCAT 3.1.$($target.Build) ($ProgId)." -ForegroundColor Yellow
+    }
     exit 2
 }
 

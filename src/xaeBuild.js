@@ -18,8 +18,11 @@
  *   - **Headless unless asked**: `-ShowWindow` is passed only for `showWindow === true`. The driver
  *     always shows the window during activation, whatever this says (a licence or full-download
  *     dialog under SuppressUI is an invisible hang).
- *   - **Never a version override**: no `-TcVersion` / `-AllowVersionMismatch`; the driver picks the
- *     shell from the project's own `.tsproj`.
+ *   - **A version override only after the user said so, and only for a build**: by default no
+ *     `-TcVersion` / `-AllowVersionMismatch`, and the driver picks the shell from the project's own
+ *     `.tsproj` / `.tspproj`. The one exception is `shellOverride`: when the project's XAE Shell is not
+ *     installed but another is, the command layer asks (one modal, build only) and, on yes, passes
+ *     exactly `-TcVersion <that ProgId> -AllowVersionMismatch`. Activation never gets an override.
  *   - **Activation names its target**: `-ActivateConfiguration` only with a well-formed AmsNetId the
  *     user confirmed; the driver still refuses anything that is not a runtime of this machine.
  *   - Parsing never throws: a line that is not a well-formed event of this protocol is a log line.
@@ -31,6 +34,7 @@
 
 const { StringDecoder } = require('string_decoder');
 const { countBySeverity } = require('./xaeErrorPlacement');
+const { XAE_SHELL_VERSIONS } = require('./xaeShellDetect');
 
 /** The prefix of every machine line the driver writes (`-Json`). */
 const PREFIX = '@@TCTK ';
@@ -77,13 +81,16 @@ function isValidNetId(s) {
  * @property {string} [platform]
  * @property {string} [targetNetId] Required for `activate`.
  * @property {string} [cancelFile] The file whose existence asks the driver to stop (exit 4).
+ * @property {string} [shellOverride] A known XAE Shell ProgId the user confirmed building with instead
+ *   of the project's own (see `missingShell`); `build` mode only.
  */
 
 /**
  * The `powershell.exe` arguments for one run.
  * @param {DriverArgsOptions} o
  * @returns {string[]}
- * @throws {Error} For `activate` without a well-formed NetId, or a build without a solution.
+ * @throws {Error} For `activate` without a well-formed NetId, a build without a solution, or a
+ *   `shellOverride` that is not a known ProgId or not on a build.
  */
 function buildDriverArgs(o) {
     const mode = o.mode || 'build';
@@ -98,6 +105,13 @@ function buildDriverArgs(o) {
     if (o.showWindow === true) args.push('-ShowWindow');
     if (o.configuration) args.push('-Configuration', o.configuration);
     if (o.platform) args.push('-Platform', o.platform);
+    if (o.shellOverride) {
+        if (mode !== 'build') throw new Error('Only a build may run on another XAE Shell than the project\'s.');
+        if (!shellByProgId(o.shellOverride)) throw new Error(`Unknown XAE Shell ProgId ${JSON.stringify(o.shellOverride)}.`);
+        // A ProgId names a build family: the driver keeps the project's revision and pins the newest
+        // installed version of that build. -AllowVersionMismatch is what lets the build differ.
+        args.push('-TcVersion', o.shellOverride, '-AllowVersionMismatch');
+    }
     if (mode === 'activate') {
         if (!isValidNetId(o.targetNetId)) {
             throw new Error(`Activation needs a valid AmsNetId (got ${JSON.stringify(o.targetNetId || '')}).`);
@@ -106,6 +120,73 @@ function buildDriverArgs(o) {
     }
     if (o.cancelFile) args.push('-CancelFile', o.cancelFile);
     return args;
+}
+
+/**
+ * The shell a ProgId names, from the same table the settings use (test_xae_driver_contract.js pins it
+ * to the driver's `$ProgIdByBuild`).
+ * @param {unknown} progId
+ * @returns {typeof XAE_SHELL_VERSIONS[number]|null}
+ */
+function shellByProgId(progId) {
+    return XAE_SHELL_VERSIONS.find(v => typeof progId === 'string' && v.progId.toLowerCase() === progId.toLowerCase()) || null;
+}
+
+/**
+ * How a shell is named to the user: 'XAE Shell (4024)', 'XAE Shell 64 (4026)'.
+ * @param {typeof XAE_SHELL_VERSIONS[number]} shell
+ * @returns {string}
+ */
+function shellName(shell) {
+    return `${shell.name} (${shell.id})`;
+}
+
+/**
+ * @typedef {Object} MissingShell What to do when the project's XAE Shell is not installed.
+ * @property {{progId: string, build: string, name: string}|null} offer The newest installed other
+ *   shell to offer (a build only); null when there is nothing to offer.
+ * @property {string} question The modal's text (only with `offer`).
+ * @property {string} confirmLabel The modal's confirm button (only with `offer`).
+ * @property {string} text The error to show when nothing is offered or the offer is declined: which
+ *   shell to install.
+ */
+
+/**
+ * The project's XAE Shell is not installed: whether another installed one can be offered, and the
+ * texts. Fed either by the driver's `progid-not-registered` fatal (`{progId, build, projectVersion,
+ * installed}`) or by the command layer's pre-check, which knows the same facts.
+ * @param {{build?: unknown, progId?: unknown, projectVersion?: unknown, installed?: unknown}} facts
+ * @param {{mode: 'build'|'activate', solutionName: string}} o
+ * @returns {MissingShell}
+ */
+function missingShell(facts, o) {
+    const f = facts && typeof facts === 'object' ? facts : {};
+    const missing = shellByProgId(f.progId) || XAE_SHELL_VERSIONS.find(v => v.id === String(f.build || '')) || null;
+    const build = missing ? missing.id : String(f.build || '?');
+    const missingName = missing ? shellName(missing) : `XAE Shell (${build})`;
+    // PS 5.1 may hand a one-element array over as a bare string.
+    const listed = Array.isArray(f.installed) ? f.installed : (typeof f.installed === 'string' ? [f.installed] : []);
+    const others = XAE_SHELL_VERSIONS.filter(v => v !== missing && listed.some(p => shellByProgId(p) === v))
+        .slice().sort((a, b) => Number(b.id) - Number(a.id));
+    const newest = others[0];
+    const saved = `${o.solutionName} was saved with TwinCAT 3.1.${build}`;
+    const install = `Install ${missingName}${missing ? ` (${missing.progId})` : ''} to build it on this machine.`;
+    if (!newest) {
+        return { offer: null, question: '', confirmLabel: '', text: `${saved} and its ${missingName} is not installed. ${install}` };
+    }
+    if (o.mode !== 'build') {
+        return {
+            offer: null, question: '', confirmLabel: '',
+            text: `${saved} and its ${missingName} is not installed. Activation needs the project's own XAE Shell: ${install}`
+        };
+    }
+    const name = shellName(newest);
+    return {
+        offer: { progId: newest.progId, build: newest.id, name },
+        question: `${saved} and its ${missingName} is not installed. Build with ${name} instead? XAE may upgrade the project files.`,
+        confirmLabel: `Build with ${newest.name}`,
+        text: `${saved} and its ${missingName} is not installed. ${install}`
+    };
 }
 
 /**
@@ -342,7 +423,8 @@ function reachedBuildResult(code, outcome, state) {
  * @param {number|null} code The driver's exit code (null when it did not exit by itself).
  * @param {'exit'|'timeout'|'spawn-error'|'killed'} outcome How the child ended.
  * @param {RunState} state
- * @param {{error?: string, stderr?: string[]}} [extra] `error`: the spawn error text; `stderr`: PowerShell's error lines.
+ * @param {{error?: string, stderr?: string[], solutionName?: string}} [extra] `error`: the spawn error text; `stderr`:
+ *   PowerShell's error lines; `solutionName`: names the solution when the project's XAE Shell is missing.
  * @returns {ExitDescription}
  */
 function describeExit(code, outcome, state, extra = {}) {
@@ -397,6 +479,11 @@ function describeExit(code, outcome, state, extra = {}) {
                 detail: missing.trim()
             };
         case EXIT.HARNESS:
+            if (state.fatal && state.fatal.code === 'progid-not-registered' && extra.solutionName) {
+                // Says which shell to install (and, for activation, that another shell cannot stand in).
+                const m = missingShell(state.fatal.data, { mode: state.mode === 'activate' ? 'activate' : 'build', solutionName: extra.solutionName });
+                return { ok: false, severity: 'error', title: `The XAE build could not run: ${m.text}`, detail: missing.trim() };
+            }
             return {
                 ok: false, severity: 'error',
                 title: `The XAE build could not run${state.fatal && state.fatal.text ? `: ${firstLine(state.fatal.text)}` : '.'}`,
@@ -463,6 +550,15 @@ function describeUiMode(state) {
         || state.ui.some(u => u.reason === 'version-switch');
     const activation = state.done && state.done.ui && state.done.ui.activationShown
         ? ' The window was shown for activation, as it always is.' : '';
+    if (sample.mainWindowVisible === null) {
+        // MainWindow.Visible is unreadable on the 4026 shell whether the window is shown or not
+        // (measured 2026-11-13): report the requested mode and what SuppressUI says, never a guess.
+        const unread = `(SuppressUI=${psBool(sample.suppressUI)}; window visibility not readable)`;
+        if (requested === 'visible') return `${lead}: visible as requested ${unread}.${activation}`;
+        if (keptVisible) return `${lead}: kept visible after a version switch ${unread}.${activation}`;
+        if (sample.suppressUI === true) return `${lead}: headless ${unread}.${activation}`;
+        return `${lead}: unknown ${unread}.${activation}`;
+    }
     if (requested === 'visible') {
         return `${lead}: ${sample.mainWindowVisible === false ? 'hidden although visible was requested' : 'visible (requested)'} ${values}.${activation}`;
     }
@@ -535,6 +631,6 @@ function confirmationText(target, solutionName) {
 
 module.exports = {
     PREFIX, PROTOCOL, EXIT, EVENT_TYPES, UNINTERRUPTIBLE_PHASES,
-    isValidNetId, buildDriverArgs, createLineSplitter, parseLine, createRunState, reduce,
+    isValidNetId, buildDriverArgs, shellByProgId, missingShell, createLineSplitter, parseLine, createRunState, reduce,
     compileFailureConfirmed, reachedBuildResult, describeExit, describeUiMode, buildPhaseUi, canCancel, isStalled, targetPickItems, confirmationText
 };

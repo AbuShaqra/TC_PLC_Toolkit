@@ -15,7 +15,9 @@
  * stall offer re-runs with the window shown, but not after a run that finished or refused the stop;
  * a run that stopped before a build result (or an unconfirmed exit 1) keeps the previous Problems;
  * a Problems entry links back to its component; the non-Windows refusal; one run at a time; a
- * configuration the solution does not declare.
+ * configuration the solution does not declare; the project's XAE Shell missing (sample 2, a
+ * `.tspproj`): one question per build, before the run or after the driver's fatal, then exactly
+ * `-TcVersion <ProgId> -AllowVersionMismatch`; never for activation.
  */
 
 'use strict';
@@ -165,7 +167,12 @@ const projectMap = () => ({
     projects: new Map([['a', project]]), keys: () => ['a'], get: () => project, displayName: () => project.name,
     ownersOf: (p) => (p === FB ? ['a'] : [])
 });
-const solutionMap = () => ({ solutionForProject: (k) => (k === 'a' ? { slnPath: SLN } : null) });
+/** The solution the project resolves to (sample 2 for the shell-offer tests). */
+let slnPath = SLN;
+const solutionMap = () => ({ solutionForProject: (k) => (k === 'a' ? { slnPath } : null) });
+const SLN2 = path.join(REPO, 'sample', 'TcToolkitSample2', 'TcToolkitSample2.sln');
+/** What the pre-run shell check's registry detection finds (id → hit). */
+let detected = {};
 const provider = new TwinCatCustomEditorProvider(context, { getProjectMap: projectMap });
 const fbUri = uri(FB);
 const panelPosts = [];
@@ -179,7 +186,7 @@ const compileFake = { spawn: () => { throw new Error('the compiler is not run he
 registerCompileCommands(context, { provider, getProjectMap: projectMap, spawn: compileFake.spawn });
 const api = registerXaeBuildCommands(context, {
     provider, getProjectMap: projectMap, getSolutionMap: solutionMap, spawn: fake.spawn, execFile: fake.execFile,
-    platform: 'win32', minuteMs: 10, graceMs: 40, stallCheckMs: 5, tmpDir: TMP
+    platform: 'win32', minuteMs: 10, graceMs: 40, stallCheckMs: 5, tmpDir: TMP, detectShells: async () => detected
 });
 const xaeCollection = collections.find(c => c.name === 'twincat-xae');
 const compileCollection = collections.find(c => c.name === 'twincat-compile');
@@ -475,6 +482,7 @@ const rows = (name) => readFixture(name).lines;
     // ── Stall: headless only; the offer re-runs with the window shown ───────────────────────────
     const stallRows = [{ v: 1, t: 'hello', mode: 'build', showWindow: false }, { v: 1, t: 'phase', name: 'open' }];
     let n = 0;
+    let stallSpawns = 0;
     driver = () => (n++ === 0 ? { lines: stallRows, onCancelFile: { lines: rows('cancelled').slice(-2), exit: 4 } } : { fixture: 'build-ok-visible' });
     answers.stall = STALL_RERUN;
     const spawnsBefore = builds().length;
@@ -485,18 +493,23 @@ const rows = (name) => readFixture(name).lines;
         'a stalled headless run, cancelled from the offer, re-runs once with -ShowWindow');
     assert(settings['tcToolkit.xaeBuild.showWindow'] === false, 'the re-run does not change the setting');
 
-    // The stopped run reports one channel line, no notification; the shell check is not asked twice.
-    settings['tcToolkit.xaeShell.path4026'] = '';
+    // The stopped run reports one channel line, no notification; the shell check is not asked twice,
+    // and a confirmed shell substitution is kept for the re-run.
+    slnPath = SLN2;
     n = 0;
     driver = () => (n++ === 0 ? { lines: stallRows, onCancelFile: { lines: rows('cancelled').slice(-2), exit: 4 } } : { fixture: 'build-ok-visible' });
     answers.stall = STALL_RERUN;
-    answers.message.push('Run anyway');
+    answers.message.push('Build with XAE Shell 64');
     const warnCount = calls.warnings.length;
+    const modalCount = calls.modals.length;
+    stallSpawns = builds().length;
     r = await run('twincat.xaeBuild', {});
     answers.stall = undefined;
-    settings['tcToolkit.xaeShell.path4026'] = __filename;
+    slnPath = SLN;
     const newWarnings = calls.warnings.slice(warnCount);
-    assert(r.ok && newWarnings.filter(w => /No XAE Shell for TwinCAT/.test(w.m)).length === 1, 'the re-run does not ask the shell check again');
+    const stallReruns = builds().slice(stallSpawns);
+    assert(r.ok && calls.modals.length === modalCount + 1 && !newWarnings.some(w => /XAE Shell/.test(w.m)), 'the re-run does not ask the shell check again');
+    assert(stallReruns.length === 2 && stallReruns.every(c => c.args[c.args.indexOf('-TcVersion') + 1] === 'TcXaeShell.DTE.17.0'), 'the re-run keeps the confirmed shell');
     assert(!newWarnings.some(w => /cancelled|stopped/.test(w.m)) && channel().lines.some(l => /Stopped; re-running with the XAE window shown\./.test(l)),
         'the stopped run shows no cancelled notification, one channel line');
 
@@ -504,7 +517,7 @@ const rows = (name) => readFixture(name).lines;
     n = 0;
     driver = () => (n++ === 0 ? { lines: stallRows, onCancelFile: { lines: rows('build-ok-headless').slice(-1), exit: 0 } } : { fixture: 'build-ok-visible' });
     answers.stall = STALL_RERUN;
-    let stallSpawns = builds().length;
+    stallSpawns = builds().length;
     r = await run('twincat.xaeBuild', {});
     answers.stall = undefined;
     assert(builds().length === stallSpawns + 1 && r.ok && r.exitCode === 0, 'a run that exits 0 after the cancel file is not re-run');
@@ -533,12 +546,114 @@ const rows = (name) => readFixture(name).lines;
 
     // ── The shell check, Show Activation Targets ────────────────────────────────────────────────
     settings['tcToolkit.xaeShell.path4026'] = '';
-    before = builds().length;
+    before = fake.calls.length;
     answers.message.push(undefined);
+    r = await run('twincat.xaeBuildAndActivate', {});
+    assert(r.reason === 'cancelled' && fake.calls.length === before && calls.warnings.some(w => /No XAE Shell for TwinCAT 3\.1\.4026/.test(w.m) && w.buttons.includes('Run anyway')),
+        'activation, no XAE Shell for the project\'s version: a warning with Run anyway, nothing spawned when dismissed');
+    detected = { 4026: { path: 'C:\\x\\TcXaeShell.exe', source: 'registry' } };
+    const warnBefore = calls.warnings.length;
+    driver = () => ({ fixture: 'build-ok-headless' });
     r = await run('twincat.xaeBuild', {});
-    assert(r.reason === 'cancelled' && builds().length === before && calls.warnings.some(w => /No XAE Shell for TwinCAT 3\.1\.4026/.test(w.m) && w.buttons.includes('Run anyway')),
-        'no XAE Shell for the project\'s version: a warning with Run anyway, nothing spawned when dismissed');
+    assert(r.ok && calls.warnings.length === warnBefore && !lastSpawn().args.includes('-TcVersion'), 'a shell found in the registry (setting empty) passes the check without a question');
+    detected = {};
+    {
+        // Nothing found anywhere: the check cannot tell, so it asks nothing and the driver decides.
+        const w0 = calls.warnings.length;
+        const m0 = calls.modals.length;
+        r = await run('twincat.xaeBuild', {});
+        assert(r.ok && calls.warnings.length === w0 && calls.modals.length === m0, 'build, nothing detected: no pre-run question, the driver runs');
+    }
     settings['tcToolkit.xaeShell.path4026'] = __filename;
+
+    // ── The project's XAE Shell is missing, another is installed (sample 2: 4024, a .tspproj) ───
+    assert(projectTcBuild(SLN2, fs) === '4024', 'projectTcBuild reads the .tspproj the .sln references');
+    {
+        const fatalRows = (installed) => [
+            { v: 1, t: 'hello', mode: 'build', showWindow: false },
+            { log: "FATAL: DTE ProgId 'TcXaeShell.DTE.15.0' is not registered - the matching XAE Shell is not installed." },
+            { v: 1, t: 'fatal', code: 'progid-not-registered', text: "DTE ProgId 'TcXaeShell.DTE.15.0' is not registered - the matching XAE Shell is not installed.",
+                data: { progId: 'TcXaeShell.DTE.15.0', build: '4024', projectVersion: '3.1.4024.62', installed } },
+            { v: 1, t: 'done', exitCode: 2, ui: null }
+        ];
+        const QUESTION = 'TcToolkitSample2 was saved with TwinCAT 3.1.4024 and its XAE Shell (4024) is not installed. Build with XAE Shell 64 (4026) instead? XAE may upgrade the project files.';
+        const prompts = () => calls.modals.length + calls.warnings.length;
+        const overrideOk = (args) => { const i = args.indexOf('-TcVersion'); return i > 0 && args[i + 1] === 'TcXaeShell.DTE.17.0' && args[i + 2] === '-AllowVersionMismatch'
+            && args.filter(x => x === '-TcVersion').length === 1 && args.filter(x => x === '-AllowVersionMismatch').length === 1; };
+        slnPath = SLN2;
+
+        // 1. The pre-check can tell (XAE Shell 64 is configured, 4024 is nowhere): ONE modal, then one run on 4026.
+        driver = () => ({ fixture: 'build-ok-headless' });
+        let p0 = prompts();
+        let b0 = builds().length;
+        answers.message.push('Build with XAE Shell 64');
+        r = await run('twincat.xaeBuild', {});
+        const offer = calls.modals[calls.modals.length - 1];
+        assert(prompts() === p0 + 1 && offer.m === QUESTION && offer.opts.modal === true && offer.buttons.length === 1 && offer.buttons[0] === 'Build with XAE Shell 64',
+            'pre-check: exactly one prompt, the modal naming both shells');
+        assert(builds().length === b0 + 1 && overrideOk(lastSpawn().args) && r.ok && r.shellOverride === 'TcXaeShell.DTE.17.0',
+            'pre-check yes: one run, from the start with exactly -TcVersion TcXaeShell.DTE.17.0 -AllowVersionMismatch');
+        assert(channel().lines.some(l => /The user chose to build with XAE Shell 64 \(4026\) \(TcXaeShell\.DTE\.17\.0\) instead of the project's XAE Shell \(4024\)/.test(l)),
+            'the channel logs that the user chose the other shell');
+        p0 = prompts();
+        b0 = builds().length;
+        answers.message.push(undefined);
+        r = await run('twincat.xaeBuild', {});
+        assert(r.reason === 'cancelled' && builds().length === b0 && prompts() === p0 + 1, 'pre-check Cancel: nothing spawned');
+
+        // 2. The pre-check cannot tell (nothing configured, nothing detected): the driver's fatal is the fallback.
+        settings['tcToolkit.xaeShell.path4026'] = '';
+        let k = 0;
+        driver = () => (k++ === 0 ? { lines: fatalRows(['TcXaeShell.DTE.17.0']), exit: 2 } : { fixture: 'build-ok-headless' });
+        p0 = prompts();
+        b0 = builds().length;
+        const errBefore = calls.errors.length;
+        answers.message.push('Build with XAE Shell 64');
+        r = await run('twincat.xaeBuild', {});
+        const two = builds().slice(b0);
+        assert(prompts() === p0 + 1 && calls.modals[calls.modals.length - 1].m === QUESTION, 'driver fallback: exactly one prompt, the same modal');
+        assert(two.length === 2 && !two[0].args.includes('-TcVersion') && !two[0].args.includes('-AllowVersionMismatch') && overrideOk(two[1].args) && r.ok,
+            'driver fallback yes: re-run once with exactly -TcVersion <ProgId> -AllowVersionMismatch');
+        assert(!calls.errors.slice(errBefore).some(e => /could not run/.test(e.m)), 'the first run\'s error is not shown when the user takes the offer');
+
+        // Cancel: the original error stays.
+        k = 0;
+        p0 = prompts();
+        b0 = builds().length;
+        let e0 = calls.errors.length;
+        answers.message.push(undefined);
+        r = await run('twincat.xaeBuild', {});
+        assert(builds().length === b0 + 1 && !r.ok && r.exitCode === 2 && prompts() === p0 + 1, 'driver fallback Cancel: no re-run');
+        assert(calls.errors.length === e0 + 1 && /^The XAE build could not run: TcToolkitSample2 was saved with TwinCAT 3\.1\.4024 and its XAE Shell \(4024\) is not installed\. Install XAE Shell \(4024\)/.test(calls.errors[e0].m),
+            'driver fallback Cancel: the original error, saying which shell to install');
+
+        // No installed alternative: no prompt, the error says which shell to install.
+        driver = () => ({ lines: fatalRows([]), exit: 2 });
+        p0 = prompts();
+        e0 = calls.errors.length;
+        r = await run('twincat.xaeBuild', {});
+        assert(!r.ok && prompts() === p0 && /Install XAE Shell \(4024\) \(TcXaeShell\.DTE\.15\.0\) to build it on this machine\./.test(calls.errors[e0].m),
+            'no installed alternative: no prompt, the error names the shell to install');
+        settings['tcToolkit.xaeShell.path4026'] = __filename;
+
+        // 3. Activation is never offered another shell: the pre-check warns (Run anyway), the driver's fatal asks nothing.
+        driver = () => ({ lines: fatalRows(['TcXaeShell.DTE.17.0']).map(l => (l.t === 'hello' ? { ...l, mode: 'activate' } : l)), exit: 2 });
+        p0 = prompts();
+        const m0 = calls.modals.length;
+        e0 = calls.errors.length;
+        answers.message.push('Run anyway');
+        answers.quickPick.push('198.51.100.4.1.1');
+        answers.message.push('Activate on UmRT_Default (198.51.100.4.1.1)');
+        r = await run('twincat.xaeBuildAndActivate', {});
+        const shellModals = calls.modals.slice(m0).filter(mm => /XAE Shell/.test(mm.m));
+        assert(shellModals.length === 0 && calls.warnings.some(w => /No XAE Shell for TwinCAT 3\.1\.4024/.test(w.m) && w.buttons.includes('Run anyway')),
+            'activation: the pre-check warns with Run anyway, never the shell offer');
+        assert(!lastSpawn().args.includes('-TcVersion') && !lastSpawn().args.includes('-AllowVersionMismatch') && !r.ok
+            && /Activation needs the project's own XAE Shell/.test(calls.errors[e0].m), 'activation: no override, the fatal refuses with a clear message');
+        assert(prompts() === p0 + 2, 'activation: the shell warning and the target confirmation, nothing more');
+        slnPath = SLN;
+        driver = () => ({ fixture: 'build-ok-headless' });
+    }
     r = await run('twincat.xaeShowTargets', {});
     assert(r.ok && r.targets.length === 2 && channel().lines.some(l => /198\.51\.100\.4\.1\.1\s+user-mode\s+UmRT_Default.*\(project\)/.test(l)), 'Show Activation Targets prints the table');
 

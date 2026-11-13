@@ -36,7 +36,8 @@ const emitted = new Set();
 for (const o of [
     { scriptPath: 's', slnPath: 'a.sln', showWindow: true, configuration: 'Debug', platform: 'P', cancelFile: 'c' },
     { scriptPath: 's', slnPath: 'a.sln', mode: /** @type {'activate'} */ ('activate'), targetNetId: '1.2.3.4.1.1' },
-    { scriptPath: 's', mode: /** @type {'listTargets'} */ ('listTargets') }
+    { scriptPath: 's', mode: /** @type {'listTargets'} */ ('listTargets') },
+    { scriptPath: 's', slnPath: 'a.sln', shellOverride: 'TcXaeShell.DTE.17.0' }
 ]) {
     const args = x.buildDriverArgs(o);
     const afterFile = args.slice(args.indexOf('-File') + 2);
@@ -178,6 +179,36 @@ if (fs.existsSync(BUILDER)) {
     const tsp = fs.readdirSync(path.join(REPO, 'sample', 'TcToolkitSample2', 'TcToolkitSample2')).filter(f => f.endsWith('.tspproj'));
     const tspText = fs.readFileSync(path.join(REPO, 'sample', 'TcToolkitSample2', 'TcToolkitSample2', tsp[0]), 'utf8');
     assert(tsp.length === 1 && /TcVersion="(3\.1\.(\d+)\.\d+)"/.test(tspText), 'sample 2 has a .tspproj the driver\'s TcVersion pattern reads');
+}
+
+// ── The missing-shell fatal names the installed shells (user decision 2026-11-13) ───────────────
+// The extension offers the newest of `installed` for a build and re-runs with -TcVersion <ProgId>
+// -AllowVersionMismatch; the ProgId table it names them from must be the driver's own.
+{
+    const { XAE_SHELL_VERSIONS } = require('../src/xaeShellDetect');
+    const table = (text) => {
+        const body = (/\$ProgIdByBuild = @\{([\s\S]*?)\}/.exec(text) || [])[1] || '';
+        return Object.fromEntries([...body.matchAll(/'(\d+)'\s*=\s*'([^']+)'/g)].map(m => [m[1], m[2]]));
+    };
+    const driverTable = table(ps1);
+    assert(JSON.stringify(driverTable) === JSON.stringify(Object.fromEntries(XAE_SHELL_VERSIONS.map(v => [v.id, v.progId]))),
+        `the driver's $ProgIdByBuild is XAE_SHELL_VERSIONS' id → progId (${JSON.stringify(driverTable)})`);
+    const block = (text) => {
+        const at = text.indexOf('if (-not (Test-Path "Registry::HKEY_CLASSES_ROOT\\$ProgId")) {');
+        return at < 0 ? '' : text.slice(at, text.indexOf('\n}', at));
+    };
+    const fatal = block(ps1);
+    assert(/foreach \(\$b in @\(\$ProgIdByBuild\.Keys \| Sort-Object \{ \[int\]\$_ \} -Descending\)\)/.test(fatal)
+        && /Test-Path -LiteralPath "Registry::HKEY_CLASSES_ROOT\\\$p"/.test(fatal) && /\$installedShells\.Add\(\$p\)/.test(fatal),
+        'the fatal lists every mapped ProgId registered in HKCR, newest build first (-LiteralPath)');
+    assert(/Emit-Fatal 'progid-not-registered'[\s\S]*progId\s+= \$ProgId[\s\S]*build\s+= \$target\.Build[\s\S]*projectVersion = \$target\.ProjectVersion[\s\S]*installed\s+= \[string\[\]\]\$installedShells\.ToArray\(\)/.test(fatal),
+        'the progid-not-registered event carries progId, build, projectVersion and installed (a plain string[])');
+    for (const copy of [BUILDER, path.join(REPO, 'templates', 'build_plc_project.ps1')]) {
+        const b = block(fs.readFileSync(copy, 'utf8'));
+        assert(/\$installedShells\.Add\(\$p\)/.test(b) && /Installed XAE Shells: /.test(b) && /No XAE Shell is installed/.test(b),
+            `${path.relative(REPO, copy)} prints the installed shells on the same fatal`);
+    }
+    assert(/Installed XAE Shells: /.test(fatal) && /No XAE Shell is installed/.test(fatal), 'the driver prints them for a human too');
 }
 
 // ── Packaging ───────────────────────────────────────────────────────────────────────────────────
