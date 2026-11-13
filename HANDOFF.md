@@ -231,6 +231,10 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   ids, context/setting keys, the `TC Toolkit compile` source and the output channel are unchanged.
   **Verified (Linux, 2026-11-13):** see the commit's gate run (FULL suite, lint, typecheck); browser
   harnesses `test/browser/run.js` and `run_start_page.js` pass.
+  **Windows results later on 2026-11-13 (user):** errors placed and jump by the code link (MAIN body; a method via
+  `<file>@<Component> (Impl):N`, fixed b3b7a17); *Switch and remember* writes the setting; the platform dropdown;
+  cancel during a build; *Show Activation Targets*; sample 2 onto UmRT_Default refused before XAE (wording now
+  names Configuration Manager, 7f4e560) — all PASSED. Open: sample 2 *Build through XAE* on XAE Shell 64 + git status.
   **For the Windows check** (point the `test-*.ps1` at the driver with `-ScriptPath
   ..\..\resources\xae\build-plc-project.ps1`):
   1. sample 1 + `h;` planted (as before), headless AND shown: C0189 on MAIN impl line 15, C0139 on 14,
