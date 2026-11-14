@@ -149,7 +149,7 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
         <span>Release <b>v0.10.1</b></span>
         <span>Re-measured <b>Nov 11</b></span>
         <span>Toolkit next <b>R15 Windows check</b></span>
-        <span>Publish forecast <b>2026-11-20</b></span>
+        <span>Publish forecast <b>2026-11-21</b></span>
         <span>Lanes <b>2</b> (toolkit · STruC++ fork)</span>
       </div>
     </div>
@@ -427,7 +427,7 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
         <div class="card-top"><span>#16</span><span class="id">R11</span><span class="pill planned">Planned · last</span><span class="chev" aria-hidden="true">›</span></div>
         <div class="card-title">Publish to the VS Code Marketplace and Open VSX</div>
         <div class="bar" aria-hidden="true"><span style="left:91.67%;width:2.50%"></span></div>
-        <div class="card-foot"><span>0.5 d → ~1 h</span><span>Nov 20</span></div>
+        <div class="card-foot"><span>0.5 d → ~1 h</span><span>Nov 21</span></div>
       </summary>
       <div class="body">
         <div class="block wide"><h4>Moved to the end, Nov 10</h4><p>Your call: no Marketplace release until the toolkit's items <b>and the compiler fork's lane</b> are finished, so publishing comes last.</p></div>
@@ -554,13 +554,14 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
         <div class="card-top"><span>#7</span><span class="id">S6</span><span class="pill progress">In progress · lane 1 · since Nov 13</span><span class="chev" aria-hidden="true">›</span></div>
         <div class="card-title">Runtime safety defects</div>
         <div class="bar" aria-hidden="true"><span style="left:60.83%;width:12.50%"></span></div>
-        <div class="card-foot"><span>7 d → ~3.5 h</span><span>Nov 16 – 17</span></div>
+        <div class="card-foot"><span>7 d → ~3.5 h</span><span>Nov 18</span></div>
       </summary>
       <div class="body">
         <div class="block wide"><h4>Scope</h4><p>Fourteen runtime defects from the S2 plan's section 1d: division and MOD by zero, out-of-range indexes, SEL evaluating both inputs, VAR_TEMP keeping its value, FB_exit never called, a WSTRING conversion crash, wrong to-string forms, inflated SIZEOF and pointer stride, no subrange check, 32-bit intermediates, and silent truncation.</p></div>
         <div class="block wide"><h4>How it was estimated</h4><p>My sizing from the item list, not measured. Session time uses the Nov 9 velocity (about 30 min per planned day for fork work, about 45 min for toolkit work); dates assume about 4 hours of session per working day.</p></div>
         <div class="block wide"><h4>Started Nov 13, 00:10 UTC</h4><p>Lane 1, overnight (your instruction to keep going). Each item is reproduced with a g++-built program first. Plain bugs with one IEC answer are fixed; policy choices (what a division by zero or an out-of-range index does at run time, and whether checks cost time in every build) come to you as cards with a recommended default, and are not built until you answer.</p></div>
         <div class="block wide settled"><h4>Decided Nov 13 (your calls)</h4><p>Division by zero and a bad index or unbound reference fault at run time (task, POU and index named; <code>STRUCPP_NO_BOUNDS_CHECK</code> opts out); SEL evaluates both inputs, documented; FB_exit never called warns; to-string gives IEC literal forms; a subrange store faults; overflow wraps, with a <code>--strict</code> warning on constant overflow; dependent global initialisers refused under iec-3 and <code>--strict</code>; a too-long string literal warns; pointer arithmetic counts bytes; NOT types from context, refused on INT under iec-3 and <code>--strict</code>; INT into a BOOL input warns; <code>ADR</code> into a narrower integer is refused.</p></div>
+        <div class="block wide"><h4>Forecast moved to Nov 18 (Nov 14)</h4><p>Most branches need two to four review rounds, so about two fork merges a day so far; about 17 lane 1 branches remain. Reviews now run in parallel. The 4-byte TIME change (lane 2) follows, about Nov 19, and release N after it.</p></div>
         <div class="block wide settled"><h4>Decided Nov 14 (your calls)</h4><p>TIME, DATE, TOD and DT become 4 bytes as on TwinCAT (they were 8), in every profile: SIZEOF, layout and wrap-around match the PLC. A plain STRING or WSTRING is 80 characters under the <code>twincat3</code> profile (IEC default stays 254). Both are run-time changes, for release N's note.</p></div>
       </div>
     </details>
@@ -755,14 +756,14 @@ var PLAN = [
   { lane: 'TC Toolkit', num: 13, id: 'R13', card: 'r13', name: 'C++ generation + g++ check', est: '3 d → ~2.5 h', start: '2026-11-12', end: '2026-11-13', status: 'done', actualStart: '2026-11-12T11:30:00Z', actualEnd: '2026-11-13T08:40:00Z' },
   { lane: 'TC Toolkit', num: 14, id: 'R14', card: 'r14', name: 'Build + run through XAE', est: '3 d → ~2 h', start: '2026-11-12', end: '2026-11-14', status: 'done', actualStart: '2026-11-12T22:30:00Z', actualEnd: '2026-11-13T12:50:00Z' },
   { lane: 'TC Toolkit', num: 15, id: 'R15', card: 'r15', name: 'ADS online monitoring', est: '3 d → ~2 h', start: '2026-11-16', end: '2026-11-16', days: 0.6, offset: 0, status: 'progress', actualStart: '2026-11-13T13:20:00Z' },
-  { lane: 'TC Toolkit', num: 16, id: 'R11', card: 'r11', name: 'Marketplace publishing', est: '0.5 d → ~1 h', start: '2026-11-20', end: '2026-11-20', days: 0.3, offset: 0, machine: true },
+  { lane: 'TC Toolkit', num: 16, id: 'R11', card: 'r11', name: 'Marketplace publishing', est: '0.5 d → ~1 h', start: '2026-11-21', end: '2026-11-21', days: 0.3, offset: 0, machine: true },
   { lane: 'STruC++ fork',   num: 1, id: 'S2',   card: 's2',   name: 'Fork compiler gaps',     est: '27.5 d → ~11.2 h', start: '2026-11-09', end: '2026-11-09', status: 'done', actualStart: '2026-11-09T12:04:17Z', actualEnd: '2026-11-09T23:16:55Z' },
   { lane: 'STruC++ fork',   num: 2, id: 'S3a',  card: 's3a',  name: 'False positives',        est: '3 d → ~1 h',  start: '2026-11-09', end: '2026-11-10', days: 0.3, status: 'done', actualStart: '2026-11-09T23:18:00Z', actualEnd: '2026-11-10T00:12:35Z' },
   { lane: 'STruC++ fork',   num: 3, id: 'S3b',  card: 's3b',  name: 'S2 follow-ups',          est: '7 d → ~3.5 h', start: '2026-11-10', end: '2026-11-12', days: 1.2, offset: 0.3, status: 'done', actualStart: '2026-11-10T00:14:00Z', actualEnd: '2026-11-12T00:20:00Z' },
   { lane: 'STruC++ fork',   num: 4, id: 'S11',  card: 's11',  name: 'Conditional pragmas',    est: '2 d → ~3 h actual',  start: '2026-11-11', end: '2026-11-11', days: 0.4, offset: 0.2, status: 'done', actualStart: '2026-11-11T13:10:00Z', actualEnd: '2026-11-11T16:05:00Z' },
   { lane: 'STruC++ fork',   num: 5, id: 'S4',   card: 's4',   name: 'Ed. 3 refusals',         est: '8.5 d → ~11 h actual', start: '2026-11-12', end: '2026-11-12', status: 'done', actualStart: '2026-11-12T05:45:00Z', actualEnd: '2026-11-12T16:53:00Z' },
   { lane: 'STruC++ fork',   num: 6, id: 'S5',   card: 's5',   name: 'Profile handling',       est: '1 d → ~30 min', start: '2026-11-12', end: '2026-11-13', status: 'done', actualStart: '2026-11-12T20:10:00Z', actualEnd: '2026-11-13T05:30:00Z' },
-  { lane: 'STruC++ fork',   num: 7, id: 'S6',   card: 's6',   name: 'Runtime safety',         est: '7 d → ~3.5 h', start: '2026-11-13', end: '2026-11-14', status: 'progress', actualStart: '2026-11-13T00:10:00Z' },
+  { lane: 'STruC++ fork',   num: 7, id: 'S6',   card: 's6',   name: 'Runtime safety',         est: '7 d → ~3.5 h', start: '2026-11-13', end: '2026-11-18', status: 'progress', actualStart: '2026-11-13T00:10:00Z' },
   { lane: 'STruC++ fork',   num: 8, id: 'S7',   card: 's7',   name: 'iec-3 audit (decision)', est: '6 d → ~3 h',  start: '2026-11-17', end: '2026-11-18', days: 1.3, offset: 0.8 },
   { lane: 'STruC++ fork',   num: 9, id: 'S8',   card: 's8',   name: 'Default → iec-3',        est: '0.5 d → ~20 min', start: '2026-11-18', end: '2026-11-18', days: 0.2, offset: 0.8 },
   { lane: 'STruC++ fork',   num: 10, id: 'S9',   card: 's9',   name: 'Raw memory layout',      est: '4 d → ~2.5 h',  start: '2026-11-10', end: '2026-11-10', days: 1.0, offset: 0, status: 'done', actualStart: '2026-11-10T09:40:00Z', actualEnd: '2026-11-10T12:07:39Z' },
