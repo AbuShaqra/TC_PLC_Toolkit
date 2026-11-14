@@ -1,6 +1,6 @@
 ---
 name: symlinked-node-modules-test-another-tree
-description: A worktree whose node_modules is a symlink resolves self-referencing packages (`strucpp -> ../..`) to the ORIGINAL clone, so its tests silently test someone else's code. Copy with `cp -al`, then check `readlink -f`.
+description: A symlinked node_modules in a worktree resolves `strucpp -> ../..` to the original clone, so tests silently run other code. Use `cp -al`, then check `readlink -f`.
 metadata:
   type: feedback
 ---
