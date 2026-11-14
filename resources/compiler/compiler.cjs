@@ -3,9 +3,59 @@
 
 // dist/node/cli.js
 var import_fs2 = require("fs");
-var import_path = require("path");
+var import_path2 = require("path");
 var import_os = require("os");
 var import_child_process = require("child_process");
+
+// dist/library/library-manifest.js
+var STD_FUNCTIONS_LIBRARY = "iec-std-functions";
+var YIELDING_FUNCTIONS_LIBRARY = "iec-standard-fb";
+
+// dist/library/yield-library.js
+function withYieldedFunctions(archives) {
+  const yielding = archives.find((a) => a.manifest.name === YIELDING_FUNCTIONS_LIBRARY);
+  if (yielding === void 0)
+    return [...archives];
+  const taken = /* @__PURE__ */ new Set();
+  for (const archive of archives) {
+    if (archive === yielding)
+      continue;
+    const m = archive.manifest;
+    for (const entry of [...m.functions, ...m.functionBlocks, ...m.types]) {
+      taken.add(entry.name.toUpperCase());
+    }
+    for (const g of m.globals ?? [])
+      taken.add(g.name.toUpperCase());
+    for (const c of archive.chunks ?? [])
+      taken.add(c.name.toUpperCase());
+  }
+  const own = new Set(yielding.manifest.functions.map((f) => f.name.toUpperCase()));
+  const dropped = new Set([...own].filter((n) => taken.has(n)));
+  if (dropped.size === 0)
+    return [...archives];
+  for (let grew = true; grew; ) {
+    grew = false;
+    for (const chunk of yielding.chunks ?? []) {
+      const name = chunk.name.toUpperCase();
+      if (!own.has(name) || dropped.has(name))
+        continue;
+      const callsDropped = chunk.deps.some((d) => d.library === YIELDING_FUNCTIONS_LIBRARY && dropped.has(d.name.toUpperCase()));
+      if (callsDropped) {
+        dropped.add(name);
+        grew = true;
+      }
+    }
+  }
+  const filtered = {
+    ...yielding,
+    manifest: {
+      ...yielding.manifest,
+      functions: yielding.manifest.functions.filter((f) => !dropped.has(f.name.toUpperCase()))
+    },
+    chunks: (yielding.chunks ?? []).filter((c) => !(c.kind === "function" && dropped.has(c.name.toUpperCase())))
+  };
+  return archives.map((a) => a === yielding ? filtered : a);
+}
 
 // node_modules/lodash-es/_freeGlobal.js
 var freeGlobal = typeof global == "object" && global && global.Object === Object && global;
@@ -5271,8 +5321,8 @@ var Lexer = class {
       });
       this.defaultMode = actualDefinition.defaultMode;
       if (!isEmpty_default(this.lexerDefinitionErrors) && !this.config.deferDefinitionErrorsHandling) {
-        const allErrMessages = map_default(this.lexerDefinitionErrors, (error3) => {
-          return error3.message;
+        const allErrMessages = map_default(this.lexerDefinitionErrors, (error4) => {
+          return error4.message;
         });
         const allErrMessagesString = allErrMessages.join("-----------------------\n");
         throw new Error("Errors detected in definition of Lexer:\n" + allErrMessagesString);
@@ -5337,8 +5387,8 @@ var Lexer = class {
   }
   tokenize(text, initialMode = this.defaultMode) {
     if (!isEmpty_default(this.lexerDefinitionErrors)) {
-      const allErrMessages = map_default(this.lexerDefinitionErrors, (error3) => {
-        return error3.message;
+      const allErrMessages = map_default(this.lexerDefinitionErrors, (error4) => {
+        return error4.message;
       });
       const allErrMessagesString = allErrMessages.join("-----------------------\n");
       throw new Error("Unable to Tokenize because Errors detected in definition of Lexer:\n" + allErrMessagesString);
@@ -7127,8 +7177,8 @@ var RECOGNITION_EXCEPTION_NAMES = [
   NOT_ALL_INPUT_PARSED_EXCEPTION
 ];
 Object.freeze(RECOGNITION_EXCEPTION_NAMES);
-function isRecognitionException(error3) {
-  return includes_default(RECOGNITION_EXCEPTION_NAMES, error3.name);
+function isRecognitionException(error4) {
+  return includes_default(RECOGNITION_EXCEPTION_NAMES, error4.name);
 }
 var RecognitionException = class extends Error {
   constructor(message, token) {
@@ -7213,9 +7263,9 @@ var Recoverable = class {
         previous: previousToken,
         ruleName: this.getCurrRuleFullName()
       });
-      const error3 = new MismatchedTokenException(msg, nextTokenWithoutResync, this.LA(0));
-      error3.resyncedTokens = dropRight_default(resyncedTokens);
-      this.SAVE_ERROR(error3);
+      const error4 = new MismatchedTokenException(msg, nextTokenWithoutResync, this.LA(0));
+      error4.resyncedTokens = dropRight_default(resyncedTokens);
+      this.SAVE_ERROR(error4);
     };
     while (!passedResyncPoint) {
       if (this.tokenMatcher(currToken, expectedTokType)) {
@@ -8203,12 +8253,12 @@ var RecognizerApi = class {
         topLevelRule: name,
         grammarName: this.className
       });
-      const error3 = {
+      const error4 = {
         message: errMsg,
         type: ParserDefinitionErrorType.DUPLICATE_RULE_NAME,
         ruleName: name
       };
-      this.definitionErrors.push(error3);
+      this.definitionErrors.push(error4);
     }
     this.definedRulesNames.push(name);
     const ruleImplementation = this.defineRule(name, implementation, config);
@@ -8680,14 +8730,14 @@ var ErrorHandler = class {
     this._errors = [];
     this.errorMessageProvider = has_default(config, "errorMessageProvider") ? config.errorMessageProvider : DEFAULT_PARSER_CONFIG.errorMessageProvider;
   }
-  SAVE_ERROR(error3) {
-    if (isRecognitionException(error3)) {
-      error3.context = {
+  SAVE_ERROR(error4) {
+    if (isRecognitionException(error4)) {
+      error4.context = {
         ruleStack: this.getHumanReadableRuleStack(),
         ruleOccurrenceStack: clone_default(this.RULE_OCCURRENCE_STACK)
       };
-      this._errors.push(error3);
-      return error3;
+      this._errors.push(error4);
+      return error4;
     } else {
       throw Error("Trying to save an Error which is not a RecognitionException");
     }
@@ -8925,10 +8975,10 @@ var GastRecorder = class {
   subruleInternalRecord(ruleToCall, occurrence, options) {
     assertMethodIdxIsValid(occurrence);
     if (!ruleToCall || has_default(ruleToCall, "ruleName") === false) {
-      const error3 = new Error(`<SUBRULE${getIdxSuffix(occurrence)}> argument is invalid expecting a Parser method reference but got: <${JSON.stringify(ruleToCall)}>
+      const error4 = new Error(`<SUBRULE${getIdxSuffix(occurrence)}> argument is invalid expecting a Parser method reference but got: <${JSON.stringify(ruleToCall)}>
  inside top level rule: <${this.recordingProdStack[0].name}>`);
-      error3.KNOWN_RECORDER_ERROR = true;
-      throw error3;
+      error4.KNOWN_RECORDER_ERROR = true;
+      throw error4;
     }
     const prevProd = last_default(this.recordingProdStack);
     const ruleName = ruleToCall.ruleName;
@@ -8945,10 +8995,10 @@ var GastRecorder = class {
   consumeInternalRecord(tokType, occurrence, options) {
     assertMethodIdxIsValid(occurrence);
     if (!hasShortKeyProperty(tokType)) {
-      const error3 = new Error(`<CONSUME${getIdxSuffix(occurrence)}> argument is invalid expecting a TokenType reference but got: <${JSON.stringify(tokType)}>
+      const error4 = new Error(`<CONSUME${getIdxSuffix(occurrence)}> argument is invalid expecting a TokenType reference but got: <${JSON.stringify(tokType)}>
  inside top level rule: <${this.recordingProdStack[0].name}>`);
-      error3.KNOWN_RECORDER_ERROR = true;
-      throw error3;
+      error4.KNOWN_RECORDER_ERROR = true;
+      throw error4;
     }
     const prevProd = last_default(this.recordingProdStack);
     const newNoneTerminal = new Terminal({
@@ -9012,13 +9062,13 @@ function getIdxSuffix(idx) {
 }
 function assertMethodIdxIsValid(idx) {
   if (idx < 0 || idx > MAX_METHOD_IDX) {
-    const error3 = new Error(
+    const error4 = new Error(
       // The stack trace will contain all the needed details
       `Invalid DSL Method idx value: <${idx}>
 	Idx value must be a none negative value smaller than ${MAX_METHOD_IDX + 1}`
     );
-    error3.KNOWN_RECORDER_ERROR = true;
-    throw error3;
+    error4.KNOWN_RECORDER_ERROR = true;
+    throw error4;
   }
 }
 
@@ -9612,19 +9662,23 @@ var VAR_INST = createToken({
 });
 var TimeLiteral = createToken({
   name: "TimeLiteral",
-  pattern: /(?:T|TIME)#[+-]?(?:[0-9_]+(?:\.[0-9_]+)?(?:ms|us|ns|d|h|m|s))+/i
+  pattern: /(?:LTIME|LT|TIME|T)#[+-]?(?:[0-9_]+(?:\.[0-9_]+)?(?:ms|us|ns|d|h|m|s))+/i
 });
 var DateLiteral = createToken({
   name: "DateLiteral",
-  pattern: /(?:D|DATE)#[0-9]{4}-[0-9]{1,2}-[0-9]{1,2}/i
+  pattern: /(?:LDATE|LD|DATE|D)#[0-9]{4}-[0-9]{1,2}-[0-9]{1,2}/i
 });
 var TimeOfDayLiteral = createToken({
   name: "TimeOfDayLiteral",
-  pattern: /(?:TOD|TIME_OF_DAY)#[0-9]{1,2}:[0-9]{1,2}(?::[0-9]{1,2}(?:\.[0-9]+)?)?/i
+  pattern: /(?:LTIME_OF_DAY|LTOD|TIME_OF_DAY|TOD)#[0-9]{1,2}:[0-9]{1,2}(?::[0-9]{1,2}(?:\.[0-9]+)?)?/i
 });
 var DateTimeLiteral = createToken({
   name: "DateTimeLiteral",
-  pattern: /(?:DT|DATE_AND_TIME)#[0-9]{4}-[0-9]{1,2}-[0-9]{1,2}-[0-9]{1,2}:[0-9]{1,2}(?::[0-9]{1,2}(?:\.[0-9]+)?)?/i
+  pattern: /(?:LDATE_AND_TIME|LDT|DATE_AND_TIME|DT)#[0-9]{4}-[0-9]{1,2}-[0-9]{1,2}-[0-9]{1,2}:[0-9]{1,2}(?::[0-9]{1,2}(?:\.[0-9]+)?)?/i
+});
+var CharLiteral = createToken({
+  name: "CharLiteral",
+  pattern: /W?CHAR#(?:16#[0-9A-Fa-f_]+|8#[0-7_]+|2#[01_]+|[0-9][0-9_]*)|CHAR#'(?:[^'$]|\$\$|\$'|\$[LNPRTlnprt]|\$[0-9A-Fa-f]{2}|'')*'|WCHAR#'(?:[^'$]|\$\$|\$'|\$[LNPRTlnprt]|\$[0-9A-Fa-f]{4}|'')*'|WCHAR#"(?:[^"$]|\$\$|\$"|\$[LNPRTlnprt]|\$[0-9A-Fa-f]{4})*"/i
 });
 var TypedLiteral = createToken({
   name: "TypedLiteral",
@@ -9829,6 +9883,7 @@ var allTokens = [
   DateTimeLiteral,
   DateLiteral,
   TimeOfDayLiteral,
+  CharLiteral,
   TypedLiteral,
   EnumLiteral,
   // Keywords (before Identifier)
@@ -11111,7 +11166,9 @@ var STParser = class _STParser extends CstParser {
       this.CONSUME(EXTENDS);
       this.CONSUME2(Identifier);
     });
-    this.CONSUME(Colon);
+    if (this.RECORDING_PHASE || this.LA(1).tokenType !== STRUCT) {
+      this.CONSUME(Colon);
+    }
     this.OR({
       DEF: [
         { ALT: () => this.SUBRULE(this.structType) },
@@ -11151,6 +11208,10 @@ var STParser = class _STParser extends CstParser {
    */
   structType = this.RULE("structType", () => {
     this.CONSUME(STRUCT);
+    this.OPTION({
+      GATE: () => this.isWord(this.LA(1), "OVERLAP") && (this.isIdentifierOrKeywordToken(this.LA(2).tokenType) || this.LA(2).tokenType === END_STRUCT),
+      DEF: () => this.CONSUME(Identifier)
+    });
     this.MANY(() => {
       this.SUBRULE(this.varDeclaration);
     });
@@ -11351,6 +11412,23 @@ var STParser = class _STParser extends CstParser {
           IGNORE_AMBIGUITIES: true
         });
         this.CONSUME(RParen);
+      }
+    });
+    this.OPTION3({
+      GATE: () => {
+        const name = typeNameTok.image.toUpperCase();
+        return (name === "STRING" || name === "WSTRING") && this.LA(0).tokenType !== RParen && this.LA(1).tokenType === LBracket && (this.LA(2).tokenType === IntegerLiteral && !this.LA(2).image.includes("#") || this.LA(2).tokenType === Identifier) && this.LA(3).tokenType === RBracket;
+      },
+      DEF: () => {
+        this.CONSUME(LBracket);
+        this.OR5({
+          DEF: [
+            { ALT: () => this.CONSUME2(IntegerLiteral) },
+            { ALT: () => this.CONSUME5(Identifier) }
+          ],
+          IGNORE_AMBIGUITIES: true
+        });
+        this.CONSUME(RBracket);
       }
     });
   });
@@ -11675,7 +11753,7 @@ var STParser = class _STParser extends CstParser {
    */
   isCaseLabelStart() {
     const la1Type = this.LA(1).tokenType;
-    if (la1Type !== IntegerLiteral && la1Type !== TypedLiteral && la1Type !== Minus && la1Type !== EnumLiteral && !this.isIdentifierOrKeywordToken(la1Type)) {
+    if (la1Type !== IntegerLiteral && la1Type !== TypedLiteral && la1Type !== Minus && la1Type !== EnumLiteral && la1Type !== CharLiteral && la1Type !== StringLiteral && la1Type !== WideStringLiteral && !this.isIdentifierOrKeywordToken(la1Type)) {
       return false;
     }
     for (let i = 2; i <= 8; i++) {
@@ -12188,6 +12266,14 @@ var STParser = class _STParser extends CstParser {
    */
   returnStatement = this.RULE("returnStatement", () => {
     this.CONSUME(RETURN);
+    this.OPTION({
+      GATE: () => this.LA(1).tokenType === LParen,
+      DEF: () => {
+        this.CONSUME(LParen);
+        this.SUBRULE(this.expression);
+        this.CONSUME(RParen);
+      }
+    });
     this.CONSUME(Semicolon);
   });
   /**
@@ -12621,6 +12707,7 @@ var STParser = class _STParser extends CstParser {
       { ALT: () => this.CONSUME(RealLiteral) },
       { ALT: () => this.CONSUME(StringLiteral) },
       { ALT: () => this.CONSUME(WideStringLiteral) },
+      { ALT: () => this.CONSUME(CharLiteral) },
       { ALT: () => this.CONSUME(TimeLiteral) },
       { ALT: () => this.CONSUME(DateLiteral) },
       { ALT: () => this.CONSUME(TimeOfDayLiteral) },
@@ -12925,6 +13012,204 @@ function pragmaWarnings(pragmas, source, file) {
   return out;
 }
 
+// dist/byte-utils.js
+var utf8Decoder = new TextDecoder("utf-8");
+var latin1Decoder = new TextDecoder("latin1");
+var utf8Encoder = new TextEncoder();
+function bytesEqual(a, b) {
+  if (a.length !== b.length)
+    return false;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== b[i])
+      return false;
+  }
+  return true;
+}
+function bytesToHex(bytes) {
+  let out = "";
+  for (let i = 0; i < bytes.length; i++) {
+    out += bytes[i].toString(16).padStart(2, "0");
+  }
+  return out;
+}
+function bytesToUtf8(bytes) {
+  return utf8Decoder.decode(bytes);
+}
+function bytesToLatin1(bytes) {
+  return latin1Decoder.decode(bytes);
+}
+function findSubArray(haystack, needle, offset = 0) {
+  if (needle.length === 0)
+    return offset;
+  const limit = haystack.length - needle.length;
+  outer: for (let i = offset; i <= limit; i++) {
+    for (let j = 0; j < needle.length; j++) {
+      if (haystack[i + j] !== needle[j])
+        continue outer;
+    }
+    return i;
+  }
+  return -1;
+}
+function utf8ToBytes(text) {
+  return utf8Encoder.encode(text);
+}
+function readUInt32LE(bytes, offset) {
+  return new DataView(bytes.buffer, bytes.byteOffset + offset, 4).getUint32(0, true);
+}
+function readUInt16LE(bytes, offset) {
+  return new DataView(bytes.buffer, bytes.byteOffset + offset, 2).getUint16(0, true);
+}
+async function inflateRaw(bytes) {
+  const decompressionStream = new DecompressionStream("deflate-raw");
+  const decompressedStream = new Blob([bytes]).stream().pipeThrough(decompressionStream);
+  const buffer = await new Response(decompressedStream).arrayBuffer();
+  return new Uint8Array(buffer);
+}
+var CP1252_HIGH = [
+  8364,
+  129,
+  8218,
+  402,
+  8222,
+  8230,
+  8224,
+  8225,
+  710,
+  8240,
+  352,
+  8249,
+  338,
+  141,
+  381,
+  143,
+  144,
+  8216,
+  8217,
+  8220,
+  8221,
+  8226,
+  8211,
+  8212,
+  732,
+  8482,
+  353,
+  8250,
+  339,
+  157,
+  382,
+  376
+];
+var CP1252_FROM_CODE_POINT = new Map(CP1252_HIGH.map((cp, i) => [cp, 128 + i]));
+function cp1252Byte(codePoint) {
+  if (codePoint < 128 || codePoint >= 160 && codePoint <= 255) {
+    return codePoint;
+  }
+  return CP1252_FROM_CODE_POINT.get(codePoint);
+}
+
+// dist/literal-utils.js
+var IEC_INTEGER_MAX = 18446744073709551615n;
+var IEC_INTEGER_MIN = -9223372036854775808n;
+function exactIntegerLiteralValue(raw) {
+  const upper = raw.trim().toUpperCase().replace(/_/g, "");
+  const sign = upper.startsWith("-") ? -1n : 1n;
+  const digits = /^[+-]/.test(upper) ? upper.slice(1) : upper;
+  let normalized;
+  if (/^16#[0-9A-F]+$/.test(digits))
+    normalized = "0x" + digits.slice(3);
+  else if (/^8#[0-7]+$/.test(digits))
+    normalized = "0o" + digits.slice(2);
+  else if (/^2#[01]+$/.test(digits))
+    normalized = "0b" + digits.slice(2);
+  else if (/^[0-9]+$/.test(digits))
+    normalized = digits;
+  else
+    return void 0;
+  try {
+    return sign * BigInt(normalized);
+  } catch {
+    return void 0;
+  }
+}
+var INTEGER_TYPE_BITS = {
+  SINT: 8,
+  INT: 16,
+  DINT: 32,
+  LINT: 64,
+  USINT: 8,
+  UINT: 16,
+  UDINT: 32,
+  ULINT: 64
+};
+function integerTypeRange(typeName2) {
+  const name = typeName2.toUpperCase();
+  const bits = INTEGER_TYPE_BITS[name];
+  if (bits === void 0)
+    return void 0;
+  if (name.startsWith("U"))
+    return { min: 0n, max: (1n << BigInt(bits)) - 1n };
+  const half = 1n << BigInt(bits - 1);
+  return { min: -half, max: half - 1n };
+}
+function charLiteralUnits(raw) {
+  const wide = /^W/i.test(raw);
+  const payload = raw.slice(raw.indexOf("#") + 1);
+  if (!payload.startsWith("'") && !payload.startsWith('"')) {
+    const code = exactIntegerLiteralValue(payload);
+    const max = wide ? 0xffffn : 0xffn;
+    return {
+      wide,
+      units: [code !== void 0 && code <= max ? Number(code) : -1]
+    };
+  }
+  const quote = payload[0];
+  const inner = payload.slice(1, payload.lastIndexOf(quote));
+  const units = [];
+  const escapes = {
+    N: 10,
+    L: 10,
+    R: 13,
+    T: 9,
+    P: 12,
+    $: 36,
+    "'": 39,
+    '"': 34
+  };
+  for (let i = 0; i < inner.length; i++) {
+    const ch = inner[i];
+    if (ch === "$" && i + 1 < inner.length) {
+      const hexLen = wide ? 4 : 2;
+      const hex = inner.substring(i + 1, i + 1 + hexLen);
+      if (new RegExp(`^[0-9A-Fa-f]{${hexLen}}$`).test(hex)) {
+        units.push(parseInt(hex, 16));
+        i += hexLen;
+        continue;
+      }
+      const code = escapes[inner[i + 1].toUpperCase()];
+      if (code !== void 0) {
+        units.push(code);
+        i++;
+        continue;
+      }
+    }
+    if (ch === quote && inner[i + 1] === quote) {
+      units.push(quote.charCodeAt(0));
+      i++;
+      continue;
+    }
+    if (wide) {
+      units.push(ch.charCodeAt(0));
+    } else {
+      const cp = inner.codePointAt(i);
+      if (cp > 65535)
+        i++;
+      units.push(cp1252Byte(cp) ?? -1);
+    }
+  }
+  return { wide, units };
+}
+
 // dist/ast-utils.js
 function isEnArgument(arg) {
   return !arg.isOutput && arg.name?.toUpperCase() === "EN";
@@ -13217,6 +13502,8 @@ function getChildren(node) {
     case "AssertCall": {
       const ac = node;
       children.push(...ac.args);
+      if (ac.messageLiteral)
+        children.push(ac.messageLiteral);
       break;
     }
     case "MockFunctionStatement": {
@@ -13965,6 +14252,7 @@ var ASTBuilder = class {
     const [nameToken, baseToken] = getAllTokens(children.Identifier);
     const name = nameToken?.image ?? "";
     const extendsToken = getFirstToken(children.EXTENDS);
+    const colonlessStruct = children.Colon ? void 0 : getFirstToken(getFirstNode(children.structType)?.children?.STRUCT);
     const definition = this.buildTypeDefinition(node);
     const defaultValue = this.buildInitializerExpression(getFirstNode(children.initializerExpression)) ?? this.buildSimpleEnumDefault(getFirstNode(children.simpleEnumType));
     return {
@@ -13973,6 +14261,7 @@ var ASTBuilder = class {
       name,
       definition,
       ...defaultValue !== void 0 ? { defaultValue } : {},
+      ...colonlessStruct ? { colonOmittedSpan: tokenToSourceSpan(colonlessStruct) } : {},
       ...extendsToken && baseToken ? {
         extends: {
           kind: "TypeReference",
@@ -14036,7 +14325,8 @@ var ASTBuilder = class {
     const children = node.children;
     const structNode = getFirstNode(children.structType);
     if (structNode) {
-      return this.buildStructDefinition(structNode);
+      const def = this.buildStructDefinition(structNode);
+      return getFirstToken(structNode.children.Identifier) ? { ...def, isUnion: true, overlap: true } : def;
     }
     const unionNode = getFirstNode(children.unionType);
     if (unionNode) {
@@ -14660,7 +14950,8 @@ var ASTBuilder = class {
     let maxLength;
     const lengthToken = getFirstToken(children.IntegerLiteral);
     if (lengthToken) {
-      maxLength = parseInt(lengthToken.image, 10);
+      const exact = exactIntegerLiteralValue(lengthToken.image);
+      maxLength = exact !== void 0 ? Number(exact) : parseInt(lengthToken.image, 10);
     } else {
       const allIdents = getAllTokens(children.Identifier);
       if (allIdents.length > 1) {
@@ -15083,9 +15374,31 @@ var ASTBuilder = class {
    * Build a ReturnStatement from a CST node.
    */
   buildReturnStatement(node) {
-    return {
+    const ret = {
       kind: "ReturnStatement",
       sourceSpan: nodeToSourceSpan(node)
+    };
+    const children = node.children;
+    const conditionNode = getFirstNode(children.expression);
+    const inner = conditionNode && this.buildExpression(conditionNode);
+    const open = getFirstToken(children.LParen);
+    const close = getFirstToken(children.RParen);
+    if (!inner || !open || !close)
+      return ret;
+    const start = tokenToSourceSpan(open);
+    const end = tokenToSourceSpan(close);
+    return {
+      kind: "IfStatement",
+      sourceSpan: ret.sourceSpan,
+      condition: {
+        kind: "ParenthesizedExpression",
+        sourceSpan: { ...start, endLine: end.endLine, endCol: end.endCol },
+        expression: inner
+      },
+      thenStatements: [ret],
+      elsifClauses: [],
+      elseStatements: [],
+      conditionalReturn: ret.sourceSpan
     };
   }
   /**
@@ -15653,7 +15966,7 @@ var ASTBuilder = class {
       return {
         kind: "LiteralExpression",
         sourceSpan: tokenToSourceSpan(token),
-        literalType: "TIME",
+        literalType: /^L/i.test(token.image) ? "LTIME" : "TIME",
         value: token.image,
         rawValue: token.image
       };
@@ -15753,12 +16066,22 @@ var ASTBuilder = class {
         rawValue: token.image
       };
     }
+    if (children.CharLiteral) {
+      const token = getFirstToken(children.CharLiteral);
+      return {
+        kind: "LiteralExpression",
+        sourceSpan: tokenToSourceSpan(token),
+        literalType: /^W/i.test(token.image) ? "WCHAR" : "CHAR",
+        value: token.image,
+        rawValue: token.image
+      };
+    }
     if (children.TimeLiteral) {
       const token = getFirstToken(children.TimeLiteral);
       return {
         kind: "LiteralExpression",
         sourceSpan: tokenToSourceSpan(token),
-        literalType: "TIME",
+        literalType: /^L/i.test(token.image) ? "LTIME" : "TIME",
         value: token.image,
         rawValue: token.image
       };
@@ -15768,7 +16091,7 @@ var ASTBuilder = class {
       return {
         kind: "LiteralExpression",
         sourceSpan: tokenToSourceSpan(token),
-        literalType: "DATE",
+        literalType: /^L/i.test(token.image) ? "LDATE" : "DATE",
         value: token.image,
         rawValue: token.image
       };
@@ -15778,7 +16101,7 @@ var ASTBuilder = class {
       return {
         kind: "LiteralExpression",
         sourceSpan: tokenToSourceSpan(token),
-        literalType: "TIME_OF_DAY",
+        literalType: /^L/i.test(token.image) ? "LTIME_OF_DAY" : "TIME_OF_DAY",
         value: token.image,
         rawValue: token.image
       };
@@ -15788,7 +16111,7 @@ var ASTBuilder = class {
       return {
         kind: "LiteralExpression",
         sourceSpan: tokenToSourceSpan(token),
-        literalType: "DATE_AND_TIME",
+        literalType: /^L/i.test(token.image) ? "LDATE_AND_TIME" : "DATE_AND_TIME",
         value: token.image,
         rawValue: token.image
       };
@@ -16725,10 +17048,12 @@ var ASTBuilder = class {
     }
     const allArgs = getAllNodes(children.expression).map((e) => this.buildExpression(e)).filter((e) => e !== void 0);
     let message;
+    let messageLiteral;
     const lastArg = allArgs[allArgs.length - 1];
     const minArgs = this.getMinAssertArgs(assertType);
     if (lastArg && allArgs.length > minArgs && lastArg.kind === "LiteralExpression" && lastArg.literalType === "STRING") {
       message = lastArg.rawValue.replace(/^'|'$/g, "");
+      messageLiteral = lastArg;
       allArgs.pop();
     }
     const result = {
@@ -16739,6 +17064,9 @@ var ASTBuilder = class {
     };
     if (message !== void 0) {
       result.message = message;
+    }
+    if (messageLiteral !== void 0) {
+      result.messageLiteral = messageLiteral;
     }
     return result;
   }
@@ -17704,7 +18032,7 @@ function collectFileScopeGlobals(ast) {
   return globals;
 }
 function parseDateLiteralToDays(literal) {
-  const stripped = literal.replace(/^(D|DATE)#/i, "");
+  const stripped = literal.replace(/^(LDATE|LD|DATE|D)#/i, "");
   const m = stripped.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
   if (!m)
     return 0n;
@@ -17713,7 +18041,7 @@ function parseDateLiteralToDays(literal) {
   return BigInt(ms) / MS_PER_DAY;
 }
 function parseTodLiteralToNs(literal) {
-  const stripped = literal.replace(/^(TOD|TIME_OF_DAY)#/i, "");
+  const stripped = literal.replace(/^(LTIME_OF_DAY|LTOD|TIME_OF_DAY|TOD)#/i, "");
   const m = stripped.match(/^(\d{1,2}):(\d{1,2})(?::(\d{1,2})(?:\.(\d+))?)?$/);
   if (!m)
     return 0n;
@@ -17728,7 +18056,7 @@ function parseTodLiteralToNs(literal) {
   return BigInt(hh) * NS_PER_HOUR + BigInt(mm) * NS_PER_MIN + BigInt(ss) * NS_PER_SEC + BigInt(fracPadded || "0");
 }
 function parseDtLiteralToNs(literal) {
-  const stripped = literal.replace(/^(DT|DATE_AND_TIME)#/i, "");
+  const stripped = literal.replace(/^(LDATE_AND_TIME|LDT|DATE_AND_TIME|DT)#/i, "");
   const m = stripped.match(/^(\d{4})-(\d{1,2})-(\d{1,2})-(\d{1,2}):(\d{1,2})(?::(\d{1,2})(?:\.(\d+))?)?$/);
   if (!m)
     return 0n;
@@ -17744,30 +18072,31 @@ function parseDtLiteralToNs(literal) {
   return BigInt(ms) * 1000000n + BigInt(fracPadded || "0");
 }
 function parseTimeLiteral(literal) {
-  const rawValue = literal;
-  let nanoseconds = 0;
-  let value = literal.replace(/^(T|TIME)#/i, "");
+  const exact = exactTimeLiteralNanoseconds(literal);
+  return { nanoseconds: Number(exact), exact, rawValue: literal };
+}
+var TIME_UNIT_NS = {
+  d: 86400000000000n,
+  h: 3600000000000n,
+  m: 60000000000n,
+  s: 1000000000n,
+  ms: 1000000n,
+  us: 1000n,
+  ns: 1n
+};
+function exactTimeLiteralNanoseconds(literal) {
+  let value = literal.replace(/^(?:LTIME|LT|TIME|T)#/i, "").replace(/_/g, "");
   const negative = value.startsWith("-");
   value = value.replace(/^[+-]/, "");
-  const patterns = [
-    { regex: /(\d+(?:\.\d+)?)d/i, multiplier: 24 * 60 * 60 * 1e9 },
-    { regex: /(\d+(?:\.\d+)?)h/i, multiplier: 60 * 60 * 1e9 },
-    { regex: /(\d+(?:\.\d+)?)m(?!s)/i, multiplier: 60 * 1e9 },
-    { regex: /(\d+(?:\.\d+)?)s(?!$)/i, multiplier: 1e9 },
-    { regex: /(\d+(?:\.\d+)?)ms/i, multiplier: 1e6 },
-    { regex: /(\d+(?:\.\d+)?)us/i, multiplier: 1e3 },
-    { regex: /(\d+(?:\.\d+)?)ns/i, multiplier: 1 },
-    // Handle bare seconds at the end (e.g., T#1s)
-    { regex: /(\d+(?:\.\d+)?)s$/i, multiplier: 1e9 }
-  ];
-  for (const { regex, multiplier } of patterns) {
-    const match = value.match(regex);
-    if (match && match[1] !== void 0) {
-      nanoseconds += parseFloat(match[1]) * multiplier;
-      value = value.replace(regex, "");
+  let total = 0n;
+  for (const m of value.matchAll(/(\d+)(?:\.(\d+))?(ms|us|ns|d|h|m|s)/gi)) {
+    const unit = TIME_UNIT_NS[m[3].toLowerCase()];
+    total += BigInt(m[1]) * unit;
+    if (m[2] !== void 0) {
+      total += BigInt(m[2]) * unit / 10n ** BigInt(m[2].length);
     }
   }
-  return { nanoseconds: negative ? -nanoseconds : nanoseconds, rawValue };
+  return negative ? -total : total;
 }
 var ProjectModelBuilder = class {
   errors = [];
@@ -17789,6 +18118,7 @@ var ProjectModelBuilder = class {
     this.functionBlocks = /* @__PURE__ */ new Map();
     this.configurations = [];
     this.fileScopeGlobals = collectFileScopeGlobals(ast);
+    this.unit = ast;
     for (const prog of ast.programs) {
       this.processProgram(prog);
     }
@@ -17936,6 +18266,66 @@ var ProjectModelBuilder = class {
       resources
     });
   }
+  /** The unit being built, for the function blocks an instance reaches. */
+  unit;
+  /**
+   * The VAR_EXTERNAL names of the function blocks a POU's `varBlocks` hold
+   * (members, ARRAY elements, STRUCT fields, nested blocks, bases, methods),
+   * each with the block that declares it.
+   */
+  externalsReachedBy(varBlocks) {
+    const ast = this.unit;
+    if (ast === void 0)
+      return [];
+    const out = [];
+    const seen = /* @__PURE__ */ new Set();
+    const visitType = (typeName2) => {
+      if (typeName2 === void 0)
+        return;
+      const upper = typeName2.toUpperCase();
+      if (seen.has(upper))
+        return;
+      seen.add(upper);
+      const fb = ast.functionBlocks.find((f) => f.name.toUpperCase() === upper);
+      if (fb !== void 0) {
+        const blocks = [
+          ...fb.varBlocks,
+          ...fb.methods.flatMap((m) => m.varBlocks)
+        ];
+        for (const block of blocks) {
+          for (const decl of block.declarations) {
+            if (block.blockType === "VAR_EXTERNAL") {
+              for (const name of decl.names)
+                out.push({ name, fb: fb.name });
+            } else {
+              visitType(decl.type.elementTypeName ?? decl.type.name);
+            }
+          }
+        }
+        visitType(fb.extends);
+        return;
+      }
+      const type = ast.types.find((t) => t.name.toUpperCase() === upper);
+      const def = type?.definition;
+      if (def?.kind === "StructDefinition") {
+        for (const field of def.fields) {
+          visitType(field.type.elementTypeName ?? field.type.name);
+        }
+      } else if (def?.kind === "ArrayDefinition") {
+        visitType(def.elementType.name);
+      } else if (def?.kind === "TypeReference") {
+        visitType(def.name);
+      }
+    };
+    for (const block of varBlocks) {
+      if (block.blockType === "VAR_EXTERNAL")
+        continue;
+      for (const decl of block.declarations) {
+        visitType(decl.type.elementTypeName ?? decl.type.name);
+      }
+    }
+    return out;
+  }
   /**
    * A RESOURCE declares only VAR_GLOBAL blocks, under names no other block of
    * the configuration declares, and its globals are reached only by the
@@ -17954,8 +18344,13 @@ var ProjectModelBuilder = class {
       for (const decl of block.declarations) {
         for (const name of decl.names) {
           const key = name.toUpperCase();
-          if (declaredBy.has(key) && (block.resourceName !== void 0 || declaredBy.get(key) !== void 0)) {
+          if (declaredBy.has(key)) {
             const other = declaredBy.get(key);
+            if (other?.toUpperCase() === block.resourceName?.toUpperCase()) {
+              const scope = other === void 0 ? config.name : `${config.name}.${other}`;
+              this.addError(`Symbol '${name}' already defined in scope '${scope}'`, decl.sourceSpan.startLine, decl.sourceSpan.startCol, decl.sourceSpan.file);
+              continue;
+            }
             this.addError(`Global '${name}' of ${block.resourceName !== void 0 ? `RESOURCE '${block.resourceName}'` : `CONFIGURATION '${config.name}'`} is also declared by ${other !== void 0 ? `RESOURCE '${other}'` : `CONFIGURATION '${config.name}'`}; the globals of a configuration and its resources need distinct names`, decl.sourceSpan.startLine, decl.sourceSpan.startCol, decl.sourceSpan.file);
             continue;
           }
@@ -17991,6 +18386,17 @@ var ProjectModelBuilder = class {
             continue;
           }
           this.addError(`Program instance '${instance.instanceName}' of RESOURCE '${resource.name}' reaches '${ext.name}', a global of RESOURCE '${owner}'`, instance.sourceSpan.startLine, instance.sourceSpan.startCol, instance.sourceSpan.file);
+        }
+        const progAst = this.unit?.programs.find((p) => p.name.toUpperCase() === instance.programType.toUpperCase());
+        const reported = /* @__PURE__ */ new Set();
+        for (const ext of this.externalsReachedBy(progAst?.varBlocks ?? [])) {
+          const owner = declaredBy.get(ext.name.toUpperCase());
+          const key = `${ext.fb}.${ext.name}`.toUpperCase();
+          if (owner === void 0 || owner.toUpperCase() === resource.name.toUpperCase() || reported.has(key)) {
+            continue;
+          }
+          reported.add(key);
+          this.addError(`Program instance '${instance.instanceName}' of RESOURCE '${resource.name}' reaches '${ext.name}', a global of RESOURCE '${owner}', through FUNCTION_BLOCK '${ext.fb}'`, instance.sourceSpan.startLine, instance.sourceSpan.startCol, instance.sourceSpan.file);
         }
       }
     }
@@ -18393,6 +18799,17 @@ var IEC_BASE_TYPES = [
     literalDisplay: "T#1d2h3m"
   },
   {
+    name: "LTIME",
+    aliases: [],
+    byteSize: 8,
+    bits: 64,
+    signed: true,
+    cppType: "LTIME_t",
+    wireFormat: "duration-ns-i64",
+    xml: { elementName: "LTIME", plcopenStandard: false },
+    literalDisplay: "LTIME#1d2h3m"
+  },
+  {
     name: "DATE",
     aliases: [],
     byteSize: 8,
@@ -18424,6 +18841,62 @@ var IEC_BASE_TYPES = [
     wireFormat: "datetime-ns-i64",
     xml: { elementName: "DT", plcopenStandard: true },
     literalDisplay: "DT#YYYY-MM-DD-HH:MM:SS"
+  },
+  {
+    name: "LDATE",
+    aliases: [],
+    byteSize: 8,
+    bits: 64,
+    signed: true,
+    cppType: "LDATE_t",
+    wireFormat: "date-ns-i64",
+    xml: { elementName: "LDATE", plcopenStandard: false },
+    literalDisplay: "LDATE#YYYY-MM-DD"
+  },
+  {
+    name: "LTOD",
+    aliases: ["LTIME_OF_DAY"],
+    byteSize: 8,
+    bits: 64,
+    signed: true,
+    cppType: "LTOD_t",
+    wireFormat: "tod-ns-i64",
+    xml: { elementName: "LTOD", plcopenStandard: false },
+    literalDisplay: "LTOD#HH:MM:SS"
+  },
+  {
+    name: "LDT",
+    aliases: ["LDATE_AND_TIME"],
+    byteSize: 8,
+    bits: 64,
+    signed: true,
+    cppType: "LDT_t",
+    wireFormat: "datetime-ns-i64",
+    xml: { elementName: "LDT", plcopenStandard: false },
+    literalDisplay: "LDT#YYYY-MM-DD-HH:MM:SS"
+  },
+  // ── Characters ───────────────────────────────────────────────────
+  {
+    name: "CHAR",
+    aliases: [],
+    byteSize: 1,
+    bits: 8,
+    signed: false,
+    cppType: "CHAR_t",
+    wireFormat: "uint8",
+    xml: { elementName: "CHAR", plcopenStandard: false },
+    literalDisplay: "CHAR#'A'"
+  },
+  {
+    name: "WCHAR",
+    aliases: [],
+    byteSize: 2,
+    bits: 16,
+    signed: false,
+    cppType: "WCHAR_t",
+    wireFormat: "uint16",
+    xml: { elementName: "WCHAR", plcopenStandard: false },
+    literalDisplay: 'WCHAR#"A"'
   },
   // ── Character strings ────────────────────────────────────────────
   // byteSize 0 ⇒ variable-width on the wire (the per-declaration cap
@@ -18507,11 +18980,25 @@ var TYPE_CATEGORIES = {
   REAL: ["ANY", "ANY_ELEMENTARY", "ANY_MAGNITUDE", "ANY_NUM", "ANY_REAL"],
   LREAL: ["ANY", "ANY_ELEMENTARY", "ANY_MAGNITUDE", "ANY_NUM", "ANY_REAL"],
   TIME: ["ANY", "ANY_ELEMENTARY", "ANY_MAGNITUDE", "ANY_DATE"],
+  LTIME: ["ANY", "ANY_ELEMENTARY", "ANY_MAGNITUDE", "ANY_DATE"],
   DATE: ["ANY", "ANY_ELEMENTARY", "ANY_DATE"],
   TIME_OF_DAY: ["ANY", "ANY_ELEMENTARY", "ANY_DATE"],
   DATE_AND_TIME: ["ANY", "ANY_ELEMENTARY", "ANY_DATE"],
+  LDATE: ["ANY", "ANY_ELEMENTARY", "ANY_DATE"],
+  LTOD: ["ANY", "ANY_ELEMENTARY", "ANY_DATE"],
+  LTIME_OF_DAY: ["ANY", "ANY_ELEMENTARY", "ANY_DATE"],
+  LDT: ["ANY", "ANY_ELEMENTARY", "ANY_DATE"],
+  LDATE_AND_TIME: ["ANY", "ANY_ELEMENTARY", "ANY_DATE"],
+  CHAR: ["ANY", "ANY_ELEMENTARY"],
+  WCHAR: ["ANY", "ANY_ELEMENTARY"],
   STRING: ["ANY", "ANY_ELEMENTARY", "ANY_STRING"],
   WSTRING: ["ANY", "ANY_ELEMENTARY", "ANY_STRING"]
+};
+var LONG_TEMPORAL = {
+  TIME: "LTIME",
+  DATE: "LDATE",
+  TOD: "LTOD",
+  DT: "LDT"
 };
 var WIDENING_CATEGORY = {
   BOOL: "BIT",
@@ -18610,7 +19097,7 @@ function isAssignable(target, source) {
     const sCanon = canonicalElementaryName(s.name);
     if (tCanon === sCanon)
       return true;
-    return isImplicitlyConvertible(sCanon, tCanon);
+    return isImplicitlyConvertible(sCanon, tCanon) || isUnsignedToWiderSigned(sCanon, tCanon);
   }
   if (target.typeKind === "reference" && source.typeKind === "reference") {
     const tRef = target;
@@ -18619,10 +19106,19 @@ function isAssignable(target, source) {
   }
   return JSON.stringify(target) === JSON.stringify(source);
 }
+function isUnsignedToWiderSigned(source, target) {
+  const s = source.toUpperCase();
+  const t = target.toUpperCase();
+  const sBits = ELEMENTARY_TYPES[s]?.sizeBits;
+  const tBits = ELEMENTARY_TYPES[t]?.sizeBits;
+  return WIDENING_CATEGORY[s] === "UINT" && WIDENING_CATEGORY[t] === "SINT" && sBits !== void 0 && tBits !== void 0 && tBits > sBits;
+}
 function isImplicitlyConvertible(source, target) {
   const s = source.toUpperCase();
   const t = target.toUpperCase();
   if (s === t)
+    return true;
+  if (LONG_TEMPORAL[s] === t)
     return true;
   if (s === "__XWORD" || t === "__XWORD") {
     const other = s === "__XWORD" ? t : s;
@@ -18678,6 +19174,12 @@ function getCommonType(a, b) {
   const aElem = a;
   const bElem = b;
   if (aElem.name === bElem.name)
+    return a;
+  const aName = canonicalElementaryName(aElem.name);
+  const bName = canonicalElementaryName(bElem.name);
+  if (LONG_TEMPORAL[aName] === bName)
+    return b;
+  if (LONG_TEMPORAL[bName] === aName)
     return a;
   const aCat = WIDENING_CATEGORY[aElem.name];
   const bCat = WIDENING_CATEGORY[bElem.name];
@@ -19163,6 +19665,19 @@ var SymbolTables = class {
   programScopes = /* @__PURE__ */ new Map();
   /** Map of "FBNAME.METHODNAME" to their local scopes (parent = FB scope) */
   methodScopes = /* @__PURE__ */ new Map();
+  /** Every library FUNCTION by upper-case name, also those another library's of the name shadows. */
+  libraryFunctions = /* @__PURE__ */ new Map();
+  /** Record a FUNCTION a library declares, whether or not its name was free. */
+  addLibraryFunction(symbol) {
+    const key = symbol.name.toUpperCase();
+    const list = this.libraryFunctions.get(key) ?? [];
+    list.push(symbol);
+    this.libraryFunctions.set(key, list);
+  }
+  /** The library FUNCTIONs of a name, in registration order. */
+  libraryFunctionsNamed(name) {
+    return this.libraryFunctions.get(name.toUpperCase()) ?? [];
+  }
   constructor() {
     this.globalScope = new Scope("global");
     this.initializeBuiltinTypes();
@@ -19714,13 +20229,21 @@ var ELEMENTARY_TYPE_NAMES = /* @__PURE__ */ new Set([
   "REAL",
   "LREAL",
   "TIME",
+  "LTIME",
   "DATE",
   "TIME_OF_DAY",
   "DATE_AND_TIME",
   "STRING",
   "WSTRING",
   "TOD",
-  "DT"
+  "DT",
+  "LDATE",
+  "LTOD",
+  "LTIME_OF_DAY",
+  "LDT",
+  "LDATE_AND_TIME",
+  "CHAR",
+  "WCHAR"
 ]);
 var StdFunctionRegistry = class {
   functions = /* @__PURE__ */ new Map();
@@ -20115,9 +20638,15 @@ var StdFunctionRegistry = class {
       "REAL",
       "LREAL",
       "TIME",
+      "LTIME",
       "DATE",
       "TOD",
       "DT",
+      "LDATE",
+      "LTOD",
+      "LDT",
+      "CHAR",
+      "WCHAR",
       "STRING",
       "BYTE",
       "WORD",
@@ -20497,6 +21026,7 @@ var RUNTIME_CALLABLE_NAMES = /* @__PURE__ */ new Set([
   "ABS_TIME",
   "ADD_DATE",
   "ADD_DT",
+  "ADD_LTIME",
   "ADD_TIME",
   "ADD_TOD",
   "ANY",
@@ -20539,6 +21069,7 @@ var RUNTIME_CALLABLE_NAMES = /* @__PURE__ */ new Set([
   "DIFF_DT",
   "DIFF_TOD",
   "DIVTIME",
+  "DIV_LTIME",
   "DIV_TIME",
   "DREF",
   "DT_FROM_COMPONENTS",
@@ -20577,6 +21108,7 @@ var RUNTIME_CALLABLE_NAMES = /* @__PURE__ */ new Set([
   "IEC_ARRAY_3D",
   "IEC_BOOL",
   "IEC_BYTE",
+  "IEC_CHAR",
   "IEC_DATE",
   "IEC_DINT",
   "IEC_DT",
@@ -20584,8 +21116,12 @@ var RUNTIME_CALLABLE_NAMES = /* @__PURE__ */ new Set([
   "IEC_INOUT",
   "IEC_INT",
   "IEC_ITF",
+  "IEC_LDATE",
+  "IEC_LDT",
   "IEC_LINT",
   "IEC_LREAL",
+  "IEC_LTIME",
+  "IEC_LTOD",
   "IEC_LWORD",
   "IEC_REAL",
   "IEC_REFERENCE_TO",
@@ -20598,6 +21134,7 @@ var RUNTIME_CALLABLE_NAMES = /* @__PURE__ */ new Set([
   "IEC_UINT",
   "IEC_ULINT",
   "IEC_USINT",
+  "IEC_WCHAR",
   "IEC_WORD",
   "INT",
   "IS_ALNUM",
@@ -20633,6 +21170,7 @@ var RUNTIME_CALLABLE_NAMES = /* @__PURE__ */ new Set([
   "LT_TOD",
   "LT_WCHAR",
   "LT_WSTRING",
+  "MUL_LTIME",
   "MUL_TIME",
   "NE_CHAR",
   "NE_DATE",
@@ -20653,6 +21191,7 @@ var RUNTIME_CALLABLE_NAMES = /* @__PURE__ */ new Set([
   "STRUCPP_TYPED_TRUNC",
   "SUB_DATE",
   "SUB_DT",
+  "SUB_LTIME",
   "SUB_TIME",
   "SUB_TOD",
   "T",
@@ -20780,7 +21319,12 @@ var KNOWN_FEATURES = [
   "trunc_dint",
   "interface_zero",
   "end_semicolon_optional",
-  "conditional_pragmas"
+  "conditional_pragmas",
+  "vendor_operators",
+  "type_colon_optional",
+  "conditional_return",
+  "platform_types",
+  "bit_type"
 ];
 var DEFAULT_FEATURES = /* @__PURE__ */ new Set([
   "pointer_to",
@@ -20837,6 +21381,12 @@ function validateProfile(raw, where) {
   if (id === RETIRED_IEC_ID) {
     throw new DialectError(`${where}: the id '${id}' is reserved${retiredIdHint(id)}`);
   }
+  if (id === IEC_PROFILE.id) {
+    const same = (name === void 0 || name === IEC_PROFILE.name) && raw["extends"] === void 0 && (features === void 0 || Array.isArray(features) && features.length === 0) && (semantics === void 0 || isRecord(semantics) && Object.keys(semantics).length === 0);
+    if (same)
+      return IEC_PROFILE;
+    throw new DialectError(`${where}: the id '${id}' is the built-in profile's; a profile that differs from it needs its own id and "extends": "${IEC_PROFILE.id}"`);
+  }
   if (name !== void 0 && typeof name !== "string") {
     throw new DialectError(`${where}: 'name' must be a string`);
   }
@@ -20867,6 +21417,29 @@ function validateProfile(raw, where) {
     profile.extends = parent;
   return profile;
 }
+function normalisePath(p) {
+  const parts = [];
+  for (const part of p.replace(/\\/g, "/").split("/")) {
+    if (part === "." || part === "" && parts.length > 0)
+      continue;
+    if (part === ".." && parts.length > 0 && parts[parts.length - 1] !== "..") {
+      parts.pop();
+      continue;
+    }
+    parts.push(part);
+  }
+  return parts.join("/") || ".";
+}
+function uniqueBy(list, key) {
+  const seen = /* @__PURE__ */ new Set();
+  return list.filter((t) => {
+    const k = key(t);
+    if (seen.has(k))
+      return false;
+    seen.add(k);
+    return true;
+  });
+}
 function joinPath(dir, name) {
   return dir.endsWith("/") || dir.endsWith("\\") ? `${dir}${name}` : `${dir}/${name}`;
 }
@@ -20895,7 +21468,7 @@ function findProfile(id, loaded) {
     return IEC_PROFILE;
   return loaded.find((p) => p.id === id);
 }
-function effectiveFeatures(profile, loaded) {
+function effectiveFeatures(profile, loaded, skipped) {
   const chain = [];
   const features = /* @__PURE__ */ new Set();
   let current = profile;
@@ -20913,7 +21486,8 @@ function effectiveFeatures(profile, loaded) {
       break;
     const parent = findProfile(parentId, loaded);
     if (!parent) {
-      throw new DialectError(`dialect '${current.id}': extends '${parentId}', which is not loaded${retiredIdHint(parentId)}`);
+      const why = skipped?.get(parentId);
+      throw new DialectError(why === void 0 ? `dialect '${current.id}': extends '${parentId}', which is not loaded${retiredIdHint(parentId)}` : `dialect '${current.id}': extends '${parentId}', which is skipped (${why})`);
     }
     current = parent;
   }
@@ -20923,6 +21497,9 @@ function applyFeatureOverrides(features, overrides) {
   for (const spec of overrides) {
     const remove = spec.startsWith("-");
     const id = spec.startsWith("+") || remove ? spec.slice(1) : spec;
+    if (id === "") {
+      throw new DialectError(`--feature '${spec}' names no feature: write +id, -id or id (known: ${KNOWN_FEATURES.join(", ")})`);
+    }
     if (!KNOWN_FEATURE_SET.has(id))
       throw unknownFeature(id, "--feature");
     if (remove)
@@ -20931,9 +21508,18 @@ function applyFeatureOverrides(features, overrides) {
       features.add(id);
   }
 }
-function resolveDialect(req, readFile, listDir) {
-  const files = req.dialectFiles ?? [];
-  const dirs = req.dialectPath ?? [];
+function resolveDialect(req, readFile, listDir, realPath, foldCase) {
+  const spelling = (p) => {
+    try {
+      if (realPath)
+        return realPath(p);
+    } catch {
+    }
+    return normalisePath(p);
+  };
+  const key = (p) => foldCase === true ? spelling(p).toLowerCase() : spelling(p);
+  const files = uniqueBy(req.dialectFiles ?? [], key);
+  const dirs = uniqueBy(req.dialectPath ?? [], key);
   if ((files.length > 0 || dirs.length > 0) && !readFile) {
     throw new DialectError("dialect files need a file reader");
   }
@@ -20941,15 +21527,44 @@ function resolveDialect(req, readFile, listDir) {
     throw new DialectError("dialect folders need a folder reader");
   }
   const loaded = [];
+  const warnings = [];
+  const source = /* @__PURE__ */ new Map();
+  const sourceKey = /* @__PURE__ */ new Map();
+  const add = (profile, where, fileKey) => {
+    if (profile === IEC_PROFILE)
+      return false;
+    const first2 = source.get(profile.id);
+    if (first2 !== void 0) {
+      if (fileKey !== void 0 && sourceKey.get(profile.id) === fileKey) {
+        return false;
+      }
+      throw new DialectError(`dialect '${profile.id}' is defined twice: by ${first2} and by ${where}`);
+    }
+    source.set(profile.id, where);
+    if (fileKey !== void 0)
+      sourceKey.set(profile.id, fileKey);
+    loaded.push(profile);
+    return true;
+  };
   let selected;
+  let selectedId = typeof req.dialect === "string" ? req.dialect : void 0;
   if (typeof req.dialect === "object") {
     const where = `dialect '${String(req.dialect.id)}'`;
     selected = validateProfile(req.dialect, where);
-    loaded.push(selected);
+    add(selected, "the dialect option");
+    selectedId = selected.id;
   }
+  const fromFiles = [];
   for (const path of files) {
-    loaded.push(readProfile(path, readFile));
+    const profile = readProfile(path, readFile);
+    add(profile, `dialect file ${path}`, key(path));
+    fromFiles.push({ path, profile });
   }
+  if (req.dialect === void 0 && fromFiles.length === 1) {
+    selectedId = fromFiles[0].profile.id;
+  }
+  const fromPath = /* @__PURE__ */ new Set();
+  const skipped = /* @__PURE__ */ new Map();
   for (const dir of dirs) {
     let names;
     try {
@@ -20961,26 +21576,49 @@ function resolveDialect(req, readFile, listDir) {
       if (!name.toLowerCase().endsWith(".json"))
         continue;
       const id = name.slice(0, -".json".length);
-      loaded.push(readProfile(joinPath(dir, name), readFile, id));
+      const path = joinPath(dir, name);
+      let profile;
+      try {
+        profile = readProfile(path, readFile, id);
+      } catch (e) {
+        if (!(e instanceof DialectError) || id === selectedId)
+          throw e;
+        skipped.set(id, e.message);
+        warnings.push(`${e.message}; it is not selected, so it is skipped`);
+        continue;
+      }
+      if (add(profile, `dialect file ${path}`, key(path))) {
+        fromPath.add(profile);
+      }
     }
   }
-  for (const profile of loaded)
-    effectiveFeatures(profile, loaded);
-  if (typeof req.dialect === "string") {
-    selected = findProfile(req.dialect, loaded);
+  for (const profile of [...loaded]) {
+    try {
+      effectiveFeatures(profile, loaded, skipped);
+    } catch (e) {
+      if (!(e instanceof DialectError) || !fromPath.has(profile) || profile.id === selectedId) {
+        throw e;
+      }
+      skipped.set(profile.id, e.message);
+      warnings.push(`${source.get(profile.id)}: ${e.message}; it is not selected, so it is skipped`);
+      loaded.splice(loaded.indexOf(profile), 1);
+    }
+  }
+  if (selectedId !== void 0) {
+    selected = findProfile(selectedId, loaded);
     if (!selected) {
       const known = [
         IEC_PROFILE.id,
         ...[...new Set(loaded.map((p) => p.id))].filter((id) => id !== IEC_PROFILE.id).sort()
       ];
-      throw new DialectError(`unknown dialect '${req.dialect}' (known: ${known.join(", ")})${retiredIdHint(req.dialect)}`);
+      throw new DialectError(`unknown dialect '${selectedId}' (known: ${known.join(", ")})${retiredIdHint(selectedId)}`);
     }
-  } else if (req.dialect === void 0 && files.length === 1) {
-    selected = loaded[0];
+  } else if (req.dialect === void 0 && fromFiles.length > 1) {
+    warnings.push(`${fromFiles.length} dialect files and no --dialect: none is selected, so the default features apply; select one with --dialect (${fromFiles.map(({ path, profile }) => `${profile.id} from ${path}`).join(", ")})`);
   }
   const features = selected ? effectiveFeatures(selected, loaded) : new Set(DEFAULT_FEATURES);
   applyFeatureOverrides(features, req.features ?? []);
-  return { id: selected ? selected.id : null, features, loaded };
+  return { id: selected ? selected.id : null, features, loaded, warnings };
 }
 function profilesWithFeature(d, f) {
   const ids = /* @__PURE__ */ new Set();
@@ -21054,7 +21692,7 @@ function flattenStructExtends(ast, describeExternal, report) {
     }
     origins.set(decl, names);
   };
-  const resolve5 = (decl) => {
+  const resolve6 = (decl) => {
     if (origins.has(decl))
       return true;
     if (failed.has(decl))
@@ -21092,7 +21730,7 @@ function flattenStructExtends(ast, describeExternal, report) {
       return false;
     }
     resolving.push(decl);
-    const baseOk = resolve5(baseDecl);
+    const baseOk = resolve6(baseDecl);
     resolving.pop();
     if (!baseOk || failed.has(decl)) {
       failed.add(decl);
@@ -21131,7 +21769,7 @@ function flattenStructExtends(ast, describeExternal, report) {
       report(`EXTENDS on TYPE '${decl.name}' needs a STRUCT definition`, decl.extendsKeywordSpan ?? decl.sourceSpan);
       continue;
     }
-    resolve5(decl);
+    resolve6(decl);
   }
 }
 function structExtends(ast, derived, base) {
@@ -21247,6 +21885,74 @@ function bindStdFunctionArguments(functionName, params, variadic, args) {
   }
   ordered.push(...args.filter((a) => isEnEnoArgument(a)));
   return { ordered, issues, failed };
+}
+
+// dist/semantic/library-overload.js
+function fits(paramNames, required, positional, names) {
+  const known = new Set(paramNames.map((n) => n.toUpperCase()));
+  if (names.some((n) => !known.has(n)))
+    return false;
+  const total = positional + names.length;
+  return total <= paramNames.length && total >= required;
+}
+function libraryOverloadFor(expr, symbolTables, stdRegistry) {
+  if (!stdRegistry || expr.instance || expr.functionName.includes(".")) {
+    return void 0;
+  }
+  const upper = expr.functionName.toUpperCase();
+  const desc = stdRegistry.lookup(upper);
+  if (!desc)
+    return void 0;
+  if (symbolTables.lookupFunction(upper) !== void 0 && !symbolTables.globalScope.definedByLibrary(upper)) {
+    return void 0;
+  }
+  const candidates = symbolTables.libraryFunctionsNamed(upper).filter((fn) => fn.libraryName !== STD_FUNCTIONS_LIBRARY);
+  if (candidates.length === 0)
+    return void 0;
+  const args = stripEnEno(expr.arguments);
+  const names = args.filter((a) => a.name !== void 0).map((a) => a.name.toUpperCase());
+  const positional = args.length - names.length;
+  const stdNames = desc.params.map((p) => p.name.toUpperCase());
+  const stdFits = desc.isVariadic ? args.length >= (desc.minArgs ?? desc.params.length) && names.every((n) => /^IN\d+$/.test(n) || stdNames.includes(n)) : fits(stdNames, stdNames.length, positional, names);
+  if (stdFits)
+    return void 0;
+  return candidates.find((fn) => {
+    const required = fn.parameters.filter((p) => p.isInOut || p.isInput && p.initialValue === void 0).length;
+    return fits(fn.parameters.map((p) => p.name), required, positional, names);
+  });
+}
+
+// dist/semantic/vendor-operators.js
+var OPERATOR_FEATURES = /* @__PURE__ */ new Map([
+  ["__ISVALIDREF", "reference_to"],
+  ["XSIZEOF", "vendor_operators"]
+]);
+function vendorOperatorNamed(nameUpper) {
+  return OPERATOR_FEATURES.has(nameUpper) ? nameUpper : void 0;
+}
+function vendorOperatorFeature(op) {
+  return OPERATOR_FEATURES.get(op);
+}
+function vendorOperatorResultType(op) {
+  return op === "XSIZEOF" ? "ULINT" : "BOOL";
+}
+function vendorOperatorArgumentError(expr, op, isReferenceTo2) {
+  const args = expr.arguments;
+  if (args.length !== 1) {
+    return `${op} takes one argument, got ${args.length}`;
+  }
+  if (args[0].name !== void 0 || args[0].isOutput) {
+    return `${op} takes its argument without a name`;
+  }
+  if (op === "__ISVALIDREF") {
+    const found = isReferenceTo2(args[0]);
+    if (found !== true)
+      return `${op} needs a REFERENCE TO variable; ${found}`;
+  }
+  return void 0;
+}
+function vendorOperatorCpp(op, arg) {
+  return op === "XSIZEOF" ? `static_cast<IEC_ULINT>(IEC_SIZEOF(${arg}))` : `(!(${arg}).is_null())`;
 }
 
 // dist/semantic/fb-init.js
@@ -21476,14 +22182,14 @@ function prepareFbInit(ast, enabled, report) {
     });
   }
 }
-function checkSignature(method, error3) {
+function checkSignature(method, error4) {
   const ret = method.returnType;
   if (ret && ret.name.toUpperCase() !== "BOOL") {
-    error3(`FB_init must return BOOL or nothing, not ${ret.name}`, ret.sourceSpan);
+    error4(`FB_init must return BOOL or nothing, not ${ret.name}`, ret.sourceSpan);
   }
   for (const block of method.varBlocks) {
     if (block.blockType === "VAR_OUTPUT" || block.blockType === "VAR_IN_OUT") {
-      error3(`FB_init cannot declare ${block.blockType}: nothing is passed to it or read from it at start-up`, block.sourceSpan);
+      error4(`FB_init cannot declare ${block.blockType}: nothing is passed to it or read from it at start-up`, block.sourceSpan);
     }
     for (const decl of block.declarations) {
       for (const name of decl.names) {
@@ -21492,13 +22198,13 @@ function checkSignature(method, error3) {
           continue;
         const ok = block.blockType === "VAR_INPUT" && decl.type.name.toUpperCase() === "BOOL" && (decl.type.referenceKind ?? "none") === "none" && !decl.type.arrayDimensions;
         if (!ok) {
-          error3(`'${upper}' of FB_init must be a BOOL VAR_INPUT`, decl.sourceSpan);
+          error4(`'${upper}' of FB_init must be a BOOL VAR_INPUT`, decl.sourceSpan);
         }
       }
     }
   }
 }
-function validateFbInitArguments(ast, isLibraryFB, error3) {
+function validateFbInitArguments(ast, isLibraryFB, error4) {
   const fbs = fbIndex(ast);
   const check = (decl, blockType) => {
     const args = decl.fbInitArguments;
@@ -21506,7 +22212,7 @@ function validateFbInitArguments(ast, isLibraryFB, error3) {
       return;
     const at = decl.fbInitSpan ?? decl.sourceSpan;
     if (blockType === "VAR_IN_OUT" || blockType === "VAR_EXTERNAL") {
-      error3(`Init arguments are not allowed in ${blockType}`, at);
+      error4(`Init arguments are not allowed in ${blockType}`, at);
       return;
     }
     const stored = storedInstance(ast, decl.type);
@@ -21514,36 +22220,36 @@ function validateFbInitArguments(ast, isLibraryFB, error3) {
     if (upper !== void 0 && !fbs.has(upper) && isLibraryFB(upper))
       return;
     if (upper === void 0 || !fbs.has(upper)) {
-      error3(`Init arguments need a FUNCTION_BLOCK instance, but '${decl.names[0] ?? ""}' is of type '${stored?.name ?? decl.type.name}'`, at);
+      error4(`Init arguments need a FUNCTION_BLOCK instance, but '${decl.names[0] ?? ""}' is of type '${stored?.name ?? decl.type.name}'`, at);
       return;
     }
     const inits = fbInitChain(fbs, upper);
     if (inits.length === 0) {
-      error3(`'${fbs.get(upper).name}' has no FB_init method to take init arguments`, at);
+      error4(`'${fbs.get(upper).name}' has no FB_init method to take init arguments`, at);
       return;
     }
     const seen = /* @__PURE__ */ new Set();
     for (const arg of args) {
       if (arg.name === void 0) {
-        error3("Init arguments must be named: write 'input := value'", arg.sourceSpan);
+        error4("Init arguments must be named: write 'input := value'", arg.sourceSpan);
         continue;
       }
       const name = arg.name.toUpperCase();
       if (arg.isOutput) {
-        error3(`Init argument '${name}' must use ':=': init arguments set FB_init inputs`, arg.sourceSpan);
+        error4(`Init argument '${name}' must use ':=': init arguments set FB_init inputs`, arg.sourceSpan);
         continue;
       }
       if (FB_INIT_FLAGS.includes(name)) {
-        error3(`'${name}' is set by the compiler and cannot be an init argument`, arg.sourceSpan);
+        error4(`'${name}' is set by the compiler and cannot be an init argument`, arg.sourceSpan);
         continue;
       }
       if (seen.has(name)) {
-        error3(`Duplicate init argument '${name}'`, arg.sourceSpan);
+        error4(`Duplicate init argument '${name}'`, arg.sourceSpan);
         continue;
       }
       seen.add(name);
       if (!inits.some((i) => fbInitInput(i.method, name))) {
-        error3(`'${fbs.get(upper).name}' has no FB_init input '${name}'`, arg.sourceSpan);
+        error4(`'${fbs.get(upper).name}' has no FB_init input '${name}'`, arg.sourceSpan);
       }
     }
   };
@@ -21674,16 +22380,49 @@ function fbInitLoweringErrors(ast, isLibraryFB, report) {
 }
 
 // dist/semantic/type-checker.js
+var ED3_ELEMENTARY_NAMES = /* @__PURE__ */ new Set([
+  "LTIME",
+  "LDATE",
+  "LTOD",
+  "LTIME_OF_DAY",
+  "LDT",
+  "LDATE_AND_TIME",
+  "CHAR",
+  "WCHAR"
+]);
+function temporalName(t) {
+  return t.typeKind === "elementary" ? canonicalElementaryName(t.name) : void 0;
+}
+var LONG_FORM = {
+  DT: "LDT",
+  DATE: "LDATE",
+  TOD: "LTOD",
+  TIME: "LTIME",
+  LDT: "LDT",
+  LDATE: "LDATE",
+  LTOD: "LTOD",
+  LTIME: "LTIME"
+};
+var LONG_TYPES = /* @__PURE__ */ new Set(["LDT", "LDATE", "LTOD", "LTIME"]);
+var INSTANT_NAMES = /* @__PURE__ */ new Set([
+  "DT",
+  "DATE",
+  "TOD",
+  "LDT",
+  "LDATE_AND_TIME",
+  "LDATE",
+  "LTOD",
+  "LTIME_OF_DAY"
+]);
 function isInstantType(t) {
-  if (t.typeKind !== "elementary")
-    return false;
-  const name = t.name;
-  return name === "DT" || name === "DATE" || name === "TOD";
+  return t.typeKind === "elementary" && INSTANT_NAMES.has(t.name.toUpperCase());
 }
 function isDurationType(t) {
-  if (t.typeKind !== "elementary")
-    return false;
-  return t.name === "TIME";
+  const name = temporalName(t);
+  return name === "TIME" || name === "LTIME";
+}
+function anyLong(left, right) {
+  return LONG_TYPES.has(temporalName(left) ?? "") || LONG_TYPES.has(temporalName(right) ?? "");
 }
 function isDateTimeArithmetic(left, right, op) {
   const leftIsInstant = isInstantType(left);
@@ -21691,7 +22430,7 @@ function isDateTimeArithmetic(left, right, op) {
   const leftIsTime = isDurationType(left);
   const rightIsTime = isDurationType(right);
   if (op === "-" && leftIsInstant && rightIsInstant) {
-    return left.name === right.name;
+    return LONG_FORM[temporalName(left)] === LONG_FORM[temporalName(right)];
   }
   if (leftIsInstant && rightIsTime)
     return true;
@@ -21702,14 +22441,14 @@ function isDateTimeArithmetic(left, right, op) {
 function resolveDateTimeArithmetic(left, right, op) {
   const leftIsInstant = isInstantType(left);
   const rightIsInstant = isInstantType(right);
+  const long = anyLong(left, right);
   if (op === "-" && leftIsInstant && rightIsInstant) {
-    return ELEMENTARY_TYPES["TIME"];
+    return ELEMENTARY_TYPES[long ? "LTIME" : "TIME"];
   }
-  if (leftIsInstant)
-    return left;
-  if (rightIsInstant)
-    return right;
-  return void 0;
+  const instant = leftIsInstant ? left : rightIsInstant ? right : void 0;
+  if (instant === void 0)
+    return void 0;
+  return long ? ELEMENTARY_TYPES[LONG_FORM[temporalName(instant)]] : instant;
 }
 var REFERENCE_LEVEL_TEXT = {
   ref_to: "REF_TO",
@@ -21743,6 +22482,9 @@ function isNullInitializer(expr) {
 function isAddressOf(expr) {
   return expr.kind === "FunctionCallExpression" && expr.functionName.toUpperCase() === "ADR" && expr.instance === void 0;
 }
+function isIntegerOrBitStringName(name) {
+  return /^(U?S?INT|U?DINT|U?LINT|BYTE|WORD|DWORD|LWORD)$/i.test(name);
+}
 function isUntypedZero(expr) {
   return expr.kind === "LiteralExpression" && expr.literalType === "INT" && expr.typePrefix === void 0 && expr.value === 0;
 }
@@ -21757,6 +22499,54 @@ function referenceShapeOf(type) {
     ...length !== void 0 ? { length } : {}
   };
 }
+var CHAR_COMPARE_FUNCTIONS = /* @__PURE__ */ new Map([
+  ["MAX", 0],
+  ["MIN", 0],
+  ["LIMIT", 0],
+  ["GT", 0],
+  ["GE", 0],
+  ["LT", 0],
+  ["LE", 0],
+  ["EQ", 0],
+  ["NE", 0],
+  ["SEL", 1],
+  ["MUX", 1]
+]);
+var CHAR_SELECTION_FUNCTIONS = /* @__PURE__ */ new Set([
+  "MAX",
+  "MIN",
+  "LIMIT",
+  "SEL",
+  "MUX"
+]);
+var INTEGER_STORAGE = {
+  SINT: "i8",
+  INT: "i16",
+  DINT: "i32",
+  LINT: "i64",
+  USINT: "u8",
+  BYTE: "u8",
+  UINT: "u16",
+  WORD: "u16",
+  UDINT: "u32",
+  DWORD: "u32",
+  ULINT: "u64",
+  LWORD: "u64"
+};
+var TEMPORAL_STORAGE = {
+  TIME: "time",
+  LTIME: "time",
+  DATE: "date",
+  LDATE: "date",
+  TIME_OF_DAY: "tod",
+  TOD: "tod",
+  LTIME_OF_DAY: "tod",
+  LTOD: "tod",
+  DATE_AND_TIME: "dt",
+  DT: "dt",
+  LDATE_AND_TIME: "dt",
+  LDT: "dt"
+};
 var COMPARISON_OPS = /* @__PURE__ */ new Set([
   "=",
   "<>",
@@ -21797,6 +22587,8 @@ function strictKind(name) {
     return "real";
   if (/^U?(SINT|INT|DINT|LINT)$/.test(n))
     return "int";
+  if (STRICT_BIT_STRINGS.has(n))
+    return "bit";
   return void 0;
 }
 function strictConversionMessage(from, to) {
@@ -21823,6 +22615,9 @@ function strictIsExactWidening(from, to) {
   }
   if (fromKind === "real" && toKind === "real") {
     return from === "REAL" && to === "LREAL";
+  }
+  if ((fromKind === "bit" || fromKind === "bool") && toKind === "bit") {
+    return toBits > fromBits;
   }
   return false;
 }
@@ -21853,6 +22648,23 @@ var TypeChecker = class _TypeChecker {
     this.inOutErrors = inOutErrors;
   }
   /**
+   * The output bindings of the calls in TEST, SETUP and TEARDOWN bodies (see
+   * checkOutputBindings), which are not otherwise type-checked.
+   */
+  checkTestOutputBindings(roots, scope, ast) {
+    this.errors = [];
+    this.warnings = [];
+    this.ast = ast;
+    for (const root2 of roots) {
+      walkAST(root2, (node) => {
+        if (node.kind === "FunctionCallExpression") {
+          this.checkOutputBindings(node, scope);
+        }
+      });
+    }
+    return { errors: [...this.errors], warnings: [...this.warnings] };
+  }
+  /**
    * Check types for a complete compilation unit.
    * Walks all POUs, resolves expression types, and validates type rules.
    */
@@ -21874,6 +22686,7 @@ var TypeChecker = class _TypeChecker {
     this.checkAllInitializerElements(ast);
     this.checkGlobalInitialCycles(ast);
     this.checkStructReferenceDefaults(ast);
+    this.markGlobalVendorOperators(ast);
     if (this.features.has("fb_init")) {
       this.checkVarBlocks(ast.globalVarBlocks.map((b) => ({
         ...b,
@@ -21933,6 +22746,7 @@ var TypeChecker = class _TypeChecker {
         }
         for (const prop of fb.properties) {
           this.currentPropertyName = prop.name.toUpperCase();
+          this.currentPropertyType = prop.type;
           if (prop.getter)
             this.checkStatements(prop.getter, scope);
           if (prop.setter)
@@ -22115,6 +22929,38 @@ var TypeChecker = class _TypeChecker {
     return out;
   }
   /**
+   * Refuse `inst.P` where P is a PRIVATE property of another block, or a
+   * PROTECTED one outside its block and the blocks derived from it, as for
+   * methods (`context`: the current block).
+   */
+  refuseHiddenProperty(typeName2, member, expr, context) {
+    const upper = member.toUpperCase();
+    const seen = /* @__PURE__ */ new Set();
+    let current = typeName2.toUpperCase();
+    while (current !== void 0 && !seen.has(current)) {
+      seen.add(current);
+      const name = current;
+      const fb = this.ast?.functionBlocks.find((f) => f.name.toUpperCase() === name);
+      if (fb === void 0)
+        return;
+      const prop = fb.properties.find((p) => p.name.toUpperCase() === upper);
+      if (prop !== void 0) {
+        const owner = fb.name.toUpperCase();
+        const inside = context !== void 0 && (prop.visibility === "PRIVATE" ? context.toUpperCase() === owner : this.fbLineage(context).has(owner));
+        if (prop.visibility === "PUBLIC" || inside)
+          return;
+        const span = expr.sourceSpan;
+        const key = `${span.file ?? ""}:${span.startLine}:${span.startCol}:property:${upper}`;
+        if (this.unknownMemberReported.has(key))
+          return;
+        this.unknownMemberReported.add(key);
+        this.addError(prop.visibility === "PRIVATE" ? `Cannot access PRIVATE property '${member}' of '${fb.name}' from outside '${fb.name}'.` : `Cannot access PROTECTED property '${member}' of '${fb.name}' from '${context ?? "PROGRAM"}'.`, span.startLine, span.startCol, span.file);
+        return;
+      }
+      current = fb.extends?.toUpperCase();
+    }
+  }
+  /**
    * Refuse `inst.x` (or `x := ...` in an instance initializer) where x is an
    * internal variable or VAR_EXTERNAL of the instance's block, outside that
    * block and the blocks derived from it (`context`, the current block).
@@ -22124,8 +22970,10 @@ var TypeChecker = class _TypeChecker {
     if (upper === "EN" || upper === "ENO")
       return;
     const owner = this.internalMemberOwner(this.aliasBase(typeName2), member);
-    if (owner === void 0)
+    if (owner === void 0) {
+      this.refuseHiddenProperty(this.aliasBase(typeName2), member, expr, context);
       return;
+    }
     const write = initializer || this.writeTargets.has(expr);
     if (owner.kind === "input" && write || owner.kind === "output" && !write) {
       return;
@@ -22150,6 +22998,28 @@ var TypeChecker = class _TypeChecker {
       inout: `'${member}' is a VAR_IN_OUT of ${fb}; from outside it is bound in the call, not accessed through the instance`
     }[owner.kind];
     this.addError(message, span.startLine, span.startCol, span.file);
+  }
+  /**
+   * A bare name in a derived block naming a base's PRIVATE property (a name
+   * the block itself or the body's scope declares is no such property).
+   */
+  refuseInheritedPrivateProperty(expr, scope) {
+    if (this.currentFBName === void 0 || expr.fieldAccess.length > 0 || (expr.accessChain?.length ?? 0) > 0) {
+      return;
+    }
+    const upper = expr.name.toUpperCase();
+    const own = this.ast?.functionBlocks.find((f) => f.name.toUpperCase() === this.currentFBName?.toUpperCase());
+    if (own?.extends === void 0)
+      return;
+    if (own.properties.some((p) => p.name.toUpperCase() === upper))
+      return;
+    const local = scope.lookup(expr.name);
+    if (local !== void 0 && local.kind !== "functionBlock") {
+      const declaredHere = own.varBlocks.some((b) => b.declarations.some((d) => d.names.some((n) => n.toUpperCase() === upper)));
+      if (declaredHere || scope.lookupLocal(expr.name) !== void 0)
+        return;
+    }
+    this.refuseHiddenProperty(own.extends, expr.name, expr, this.currentFBName);
   }
   /** `THIS.x` / `SUPER.x` in a block: x may be a base's PRIVATE variable. */
   refuseSelfMember(expr) {
@@ -22238,6 +23108,11 @@ var TypeChecker = class _TypeChecker {
     for (const fb of ast.functionBlocks)
       visit(fb, fb.name);
     visit(ast, void 0);
+    for (const t of ast.types) {
+      if (t.defaultValue && t.definition.kind === "TypeReference") {
+        this.checkCharInitialValue(t.name, t.defaultValue);
+      }
+    }
   }
   /**
    * Report an element a structure initializer names that its STRUCT or
@@ -22256,6 +23131,7 @@ var TypeChecker = class _TypeChecker {
       return;
     }
     if (value.kind !== "StructInitializerExpression" && type.arrayDimensions === void 0) {
+      this.checkCharInitialValue(type.name, value);
       this.checkEnumInitialValue(type.name, value);
     }
     if (value.kind !== "StructInitializerExpression" || type.arrayDimensions !== void 0) {
@@ -22403,6 +23279,12 @@ var TypeChecker = class _TypeChecker {
       }
       case "RefExpression": {
         const operandType = this.resolveExprType(expr.operand, scope);
+        if (this.refuseStringElement(expr.operand, "REF() cannot take")) {
+          return void 0;
+        }
+        if (this.refuseBitMember(expr.operand, "REF() cannot take", scope)) {
+          return void 0;
+        }
         if (operandType) {
           const refType = {
             typeKind: "reference",
@@ -22474,6 +23356,9 @@ var TypeChecker = class _TypeChecker {
       case "TIME":
         type = ELEMENTARY_TYPES["TIME"];
         break;
+      case "LTIME":
+        type = ELEMENTARY_TYPES["LTIME"];
+        break;
       case "DATE":
         type = ELEMENTARY_TYPES["DATE"];
         break;
@@ -22482,6 +23367,21 @@ var TypeChecker = class _TypeChecker {
         break;
       case "DATE_AND_TIME":
         type = ELEMENTARY_TYPES["DATE_AND_TIME"];
+        break;
+      case "LDATE":
+        type = ELEMENTARY_TYPES["LDATE"];
+        break;
+      case "LTIME_OF_DAY":
+        type = ELEMENTARY_TYPES["LTOD"];
+        break;
+      case "LDATE_AND_TIME":
+        type = ELEMENTARY_TYPES["LDT"];
+        break;
+      case "CHAR":
+        type = ELEMENTARY_TYPES["CHAR"];
+        break;
+      case "WCHAR":
+        type = ELEMENTARY_TYPES["WCHAR"];
         break;
       case "NULL":
         return void 0;
@@ -22523,6 +23423,7 @@ var TypeChecker = class _TypeChecker {
    * Infer type of a variable expression, including access chain resolution.
    */
   inferVariableType(expr, scope) {
+    this.refuseInheritedPrivateProperty(expr, scope);
     const symbol = scope.lookup(expr.name);
     if (symbol === void 0) {
       this.refuseSelfMember(expr);
@@ -22552,8 +23453,8 @@ var TypeChecker = class _TypeChecker {
           if (this.isUnionStorageType(currentTypeName))
             inUnion = true;
           const fieldType = this.resolveFieldTypeAnywhere(currentTypeName, step.name);
+          this.refuseInternalMember(currentTypeName, step.name, expr);
           if (fieldType) {
-            this.refuseInternalMember(currentTypeName, step.name, expr);
             currentTypeName = fieldType;
             currentType = this.resolveNamedType(fieldType);
           } else {
@@ -22569,7 +23470,12 @@ var TypeChecker = class _TypeChecker {
             }
           }
         } else if (step.kind === "subscript") {
-          const elemType = resolveArrayElementType(currentTypeName, this.ast);
+          this.refuseStringIndexCount(currentTypeName, step.indices.length, expr);
+          const arrayElem = resolveArrayElementType(currentTypeName, this.ast);
+          const stringElem = arrayElem === void 0 ? this.stringElementType(currentTypeName, step.indices.length) : void 0;
+          if (stringElem !== void 0)
+            expr.stringElement = true;
+          const elemType = arrayElem ?? stringElem;
           if (elemType) {
             currentTypeName = elemType;
             currentType = this.resolveNamedType(elemType);
@@ -22600,7 +23506,11 @@ var TypeChecker = class _TypeChecker {
           this.resolveExprType(sub, scope);
           this.refuseEnumIndex(sub);
         }
-        const elemType = resolveArrayElementType(currentTypeName, this.ast);
+        const arrayElem = resolveArrayElementType(currentTypeName, this.ast);
+        const stringElem = arrayElem === void 0 ? this.stringElementType(currentTypeName, expr.subscripts.length) : void 0;
+        if (stringElem !== void 0)
+          expr.stringElement = true;
+        const elemType = arrayElem ?? stringElem;
         if (elemType) {
           currentTypeName = elemType;
           currentType = this.resolveNamedType(elemType);
@@ -22617,8 +23527,8 @@ var TypeChecker = class _TypeChecker {
             if (this.isUnionStorageType(currentTypeName))
               inUnion = true;
             const fieldType = this.resolveFieldTypeAnywhere(currentTypeName, field);
+            this.refuseInternalMember(currentTypeName, field, expr);
             if (fieldType) {
-              this.refuseInternalMember(currentTypeName, field, expr);
               currentTypeName = fieldType;
               currentType = this.resolveNamedType(fieldType);
             } else {
@@ -22672,8 +23582,8 @@ var TypeChecker = class _TypeChecker {
    * Infer type of a binary expression.
    */
   inferBinaryType(expr, scope) {
-    const leftType = this.resolveExprType(expr.left, scope);
-    const rightType = this.resolveExprType(expr.right, scope);
+    let leftType = this.resolveExprType(expr.left, scope);
+    let rightType = this.resolveExprType(expr.right, scope);
     delete expr.comparesReferences;
     if ((expr.operator === "=" || expr.operator === "<>") && (this.isReferenceItself(expr.left, scope) || this.isReferenceItself(expr.right, scope))) {
       expr.comparesReferences = true;
@@ -22681,16 +23591,28 @@ var TypeChecker = class _TypeChecker {
     if (leftType === void 0 || rightType === void 0) {
       return void 0;
     }
+    const leftChar = this.charTypeOf(leftType);
+    const rightChar = this.charTypeOf(rightType);
+    if (leftChar !== void 0 || rightChar !== void 0) {
+      if (this.adaptCharLiteral(expr.right, leftChar)) {
+        rightType = expr.right.resolvedType;
+      } else if (this.adaptCharLiteral(expr.left, rightChar)) {
+        leftType = expr.left.resolvedType;
+      }
+      return this.inferCharBinaryType(expr, leftType, rightType);
+    }
     if (this.strict && STRICT_ARITHMETIC_OPS.has(expr.operator)) {
       this.checkStrictArithmetic(expr, leftType, rightType);
     }
     if (this.checkEnumOperands(expr, leftType, rightType))
       return void 0;
+    if (expr.operator === "MOD")
+      this.refuseRealMod(expr, leftType, rightType);
     let type;
     if (["=", "<>", "<", ">", "<=", ">="].includes(expr.operator)) {
       type = ELEMENTARY_TYPES["BOOL"];
     } else if (["AND", "OR", "XOR"].includes(expr.operator)) {
-      type = ELEMENTARY_TYPES["BOOL"];
+      type = this.bitwiseResultType(leftType, rightType) ?? ELEMENTARY_TYPES["BOOL"];
     } else if (["+", "-"].includes(expr.operator) && isDateTimeArithmetic(leftType, rightType, expr.operator)) {
       type = resolveDateTimeArithmetic(leftType, rightType, expr.operator);
     } else if (["+", "-", "*", "/", "MOD", "**"].includes(expr.operator)) {
@@ -22701,6 +23623,85 @@ var TypeChecker = class _TypeChecker {
     if (type)
       expr.resolvedType = type;
     return type;
+  }
+  /**
+   * MAX, MIN, LIMIT, the comparison functions, SEL and MUX on CHAR or WCHAR:
+   * a one-character literal is that character, and every compared argument
+   * is the same character type (no implicit conversion to a number).
+   */
+  checkCharStdArguments(expr) {
+    const name = expr.functionName.toUpperCase();
+    const skip = CHAR_COMPARE_FUNCTIONS.get(name);
+    if (skip === void 0 || this.findUserFunction(name))
+      return;
+    if (this.symbolTables.lookupFunction(name) !== void 0 && this.symbolTables.lookupFunction(name)?.libraryName !== STD_FUNCTIONS_LIBRARY) {
+      return;
+    }
+    const args = stripEnEno(expr.arguments).slice(skip);
+    const charType = args.map((a) => this.charTypeOf(a.value.resolvedType)).find((t) => t !== void 0);
+    if (charType === void 0)
+      return;
+    for (const arg of args) {
+      this.adaptCharLiteral(arg.value, charType);
+      const t = arg.value.resolvedType;
+      if (t !== void 0 && this.charTypeOf(t) !== charType && !this.reportedCharValues.has(arg.value)) {
+        this.reportedCharValues.add(arg.value);
+        this.addError(`Argument of '${name}' is ${typeName(t)} where the others are ${charType}; ${charType} does not convert implicitly`, arg.value.sourceSpan.startLine, arg.value.sourceSpan.startCol, arg.value.sourceSpan.file);
+      }
+    }
+  }
+  /**
+   * A CHAR or WCHAR operand: comparison with the same character type only, and
+   * no arithmetic or logic, as neither converts implicitly to a number.
+   */
+  inferCharBinaryType(expr, leftType, rightType) {
+    const fail = (message) => {
+      this.addError(message, expr.sourceSpan.startLine, expr.sourceSpan.startCol, expr.sourceSpan.file);
+      return void 0;
+    };
+    const charType = this.charTypeOf(leftType) ?? this.charTypeOf(rightType);
+    if (!COMPARISON_OPS.has(expr.operator)) {
+      return fail(`Operator '${expr.operator}' does not apply to ${charType}`);
+    }
+    if (this.charTypeOf(leftType) !== this.charTypeOf(rightType)) {
+      fail(`Cannot compare ${typeName(leftType)} with ${typeName(rightType)}`);
+    }
+    const type = ELEMENTARY_TYPES["BOOL"];
+    expr.resolvedType = type;
+    return type;
+  }
+  /**
+   * AND, OR or XOR with a bit-string operand (BYTE to LWORD): the wider
+   * bit string of the two. Undefined otherwise (BOOL operands give BOOL).
+   */
+  bitwiseResultType(leftType, rightType) {
+    const bits = [leftType, rightType].flatMap((t) => {
+      if (t.typeKind !== "elementary")
+        return [];
+      const name = this.aliasBase(t.name);
+      return STRICT_BIT_STRINGS.has(name) ? [ELEMENTARY_TYPES[name]] : [];
+    });
+    if (bits.length === 0)
+      return void 0;
+    return bits.reduce((a, b) => b.sizeBits > a.sizeBits ? b : a);
+  }
+  /**
+   * MOD takes integers (ANY_INT, IEC 61131-3 Table 29): a REAL or LREAL
+   * operand is refused, in every mode, as the C++ build would fail.
+   */
+  refuseRealMod(expr, leftType, rightType) {
+    for (const [operand, type] of [
+      [expr.left, leftType],
+      [expr.right, rightType]
+    ]) {
+      if (type.typeKind !== "elementary")
+        continue;
+      const name = this.aliasBase(type.name);
+      if (name !== "REAL" && name !== "LREAL")
+        continue;
+      this.addError(`MOD takes integers (ANY_INT, IEC 61131-3 Table 29), not ${name}`, operand.sourceSpan.startLine, operand.sourceSpan.startCol, operand.sourceSpan.file);
+      return;
+    }
   }
   /**
    * An enumeration is not a number: it has no arithmetic or logic, and it
@@ -22748,18 +23749,33 @@ var TypeChecker = class _TypeChecker {
     return type;
   }
   /**
-   * Infer type of a function call expression.
+   * Infer type of a function call expression. SEL, MUX, LIMIT, MAX and MIN
+   * of CHAR (or WCHAR) arguments yield that type, not their generic result.
    */
   inferFunctionCallType(expr, scope) {
+    const type = this.inferCallType(expr, scope);
+    const charType = this.charSelectionType(expr);
+    if (charType === void 0)
+      return type;
+    expr.resolvedType = ELEMENTARY_TYPES[charType];
+    return expr.resolvedType;
+  }
+  inferCallType(expr, scope) {
     this.bindStdFunctionCallArguments(expr, scope);
     for (const arg of expr.arguments) {
       this.resolveExprType(arg.value, scope);
     }
+    this.refuseNarrowAddressArguments(expr, scope);
+    this.refuseBitMemberArguments(expr, scope);
+    this.checkCharStdArguments(expr);
+    this.adaptCharConversionArgument(expr);
     this.validateReferenceArguments(expr, scope);
+    this.checkOutputBindings(expr, scope);
     this.checkDottedMethodCall(expr, scope);
     this.checkMethodCallArgumentNames(expr, scope);
     this.checkFunctionCallArgumentNames(expr, scope);
     const inputs = this.callInputs(expr, scope) ?? this.dottedMethodInputs(expr.functionName, scope);
+    this.adaptCharArguments(inputs ?? this.anyCallInputs(expr, scope), expr.arguments);
     this.validateInterfaceArguments(inputs, expr.arguments);
     this.markPointerZeroArguments(inputs, expr.arguments);
     this.validateStructArguments(inputs, expr.arguments);
@@ -22795,8 +23811,16 @@ var TypeChecker = class _TypeChecker {
         expr.resolvedType = selected;
       return selected === "refused" ? void 0 : selected;
     }
+    const overload = this.libraryOverload(expr);
+    if (overload) {
+      expr.resolvedType = overload.returnType;
+      return overload.returnType;
+    }
     const funcSymbol = this.symbolTables.lookupFunction(expr.functionName);
     if (funcSymbol !== void 0) {
+      if (funcSymbol.libraryName === STD_FUNCTIONS_LIBRARY) {
+        this.validateFunctionCallArgs(expr, scope);
+      }
       let returnType = funcSymbol.returnType;
       if (returnType && isGenericGroupType(returnType) && this.stdRegistry) {
         const desc = this.unboundStdFunctionCalls.has(expr) ? void 0 : this.stdRegistry.lookup(nameUpper);
@@ -22816,6 +23840,9 @@ var TypeChecker = class _TypeChecker {
       expr.resolvedType = returnType;
       return returnType;
     }
+    const vendorType = this.vendorOperatorCallType(expr, nameUpper, scope);
+    if (vendorType !== void 0)
+      return vendorType;
     this.validateFunctionCallArgs(expr, scope);
     if (this.stdRegistry) {
       const conv = this.stdRegistry.resolveConversion(nameUpper);
@@ -22879,6 +23906,7 @@ var TypeChecker = class _TypeChecker {
       const owner = this.memberChainOwner(expr.object, scope);
       const method2 = this.checkMemberChainCall(expr, expr.object, owner);
       const chainInputs = this.methodInputsOf(owner?.name, expr.methodName);
+      this.adaptCharArguments(chainInputs, expr.arguments);
       this.validateInterfaceArguments(chainInputs, expr.arguments);
       this.validateStructArguments(chainInputs, expr.arguments);
       this.validateEnumArguments(chainInputs, expr.arguments);
@@ -22893,6 +23921,7 @@ var TypeChecker = class _TypeChecker {
       return chainRet;
     }
     const methodInputs = this.methodInputs(objType, expr, scope);
+    this.adaptCharArguments(methodInputs ?? (objType?.typeKind === "elementary" ? this.interfaceMethodInputs(objType.name, expr.methodName) : void 0), expr.arguments);
     this.validateInterfaceArguments(methodInputs, expr.arguments);
     this.validateStructArguments(methodInputs, expr.arguments);
     this.validateEnumArguments(methodInputs, expr.arguments);
@@ -23134,10 +24163,26 @@ var TypeChecker = class _TypeChecker {
       this.addError(`Method '${found.name}' of '${ownerName}' has no parameter named '${arg.name ?? ""}'`, arg.sourceSpan.startLine, arg.sourceSpan.startCol, arg.sourceSpan.file);
     }
   }
+  /** Calls of a standard function's name resolved to a library FUNCTION of it. */
+  libraryOverloads = /* @__PURE__ */ new WeakMap();
+  /** The library FUNCTION this call resolves to instead of the standard one. */
+  libraryOverload(expr) {
+    let found = this.libraryOverloads.get(expr);
+    if (found === void 0) {
+      found = (this.findUserFunction(expr.functionName) ? void 0 : libraryOverloadFor(expr, this.symbolTables, this.stdRegistry)) ?? null;
+      this.libraryOverloads.set(expr, found);
+      if (found?.libraryName !== void 0) {
+        expr.libraryFunction = found.libraryName;
+      }
+    }
+    return found ?? void 0;
+  }
   /** Standard function calls whose arguments were already bound. */
   boundStdFunctionCalls = /* @__PURE__ */ new WeakSet();
   /** Standard function calls whose named arguments could not be bound. */
   unboundStdFunctionCalls = /* @__PURE__ */ new WeakSet();
+  /** Calls whose enumeration ordering arguments were checked, and whether one was refused. */
+  enumOrderingChecked = /* @__PURE__ */ new WeakMap();
   /**
    * A standard function call with named arguments: put its arguments in the
    * IEC parameter order every later pass and the C++ call rely on, and refuse
@@ -23158,6 +24203,8 @@ var TypeChecker = class _TypeChecker {
     if (this.calledInstance(name, scope))
       return;
     if (this.ownMethod(name))
+      return;
+    if (this.libraryOverload(expr))
       return;
     const upper = name.toUpperCase();
     const desc = this.stdRegistry.lookup(upper);
@@ -23217,10 +24264,11 @@ var TypeChecker = class _TypeChecker {
       params = userFn.varBlocks.filter((b) => b.blockType === "VAR_INPUT" || b.blockType === "VAR_IN_OUT" || b.blockType === "VAR_OUTPUT").flatMap((b) => b.declarations.flatMap((d) => d.names));
     } else {
       const upper = name.toUpperCase();
-      if (this.stdRegistry?.lookup(upper) !== void 0 || this.stdRegistry?.resolveConversion(upper) !== void 0) {
+      const overload = this.libraryOverload(expr);
+      if (overload === void 0 && (this.stdRegistry?.lookup(upper) !== void 0 || this.stdRegistry?.resolveConversion(upper) !== void 0)) {
         return;
       }
-      const libFn = this.symbolTables.lookupFunction(name);
+      const libFn = overload ?? this.symbolTables.lookupFunction(name);
       if (libFn === void 0)
         return;
       declaredName = libFn.name;
@@ -23246,7 +24294,7 @@ var TypeChecker = class _TypeChecker {
       return void 0;
     const report = !this.checkedChainCalls.has(expr);
     this.checkedChainCalls.add(expr);
-    const error3 = (message, span) => {
+    const error4 = (message, span) => {
       if (report) {
         this.addError(message, span.startLine, span.startCol, span.file);
       }
@@ -23260,7 +24308,7 @@ var TypeChecker = class _TypeChecker {
       return void 0;
     }
     if (member !== void 0) {
-      error3(`'${this.chainText(object)}.${expr.methodName}' is a member that is not a function block instance, not a method`, expr.methodNameSpan ?? expr.sourceSpan);
+      error4(`'${this.chainText(object)}.${expr.methodName}' is a member that is not a function block instance, not a method`, expr.methodNameSpan ?? expr.sourceSpan);
       return void 0;
     }
     const isFb = this.ast.functionBlocks.some((f) => f.name.toUpperCase() === upper);
@@ -23268,27 +24316,27 @@ var TypeChecker = class _TypeChecker {
     const isPlainValue = owner.referenceKind !== "none" || owner.arrayDimensions !== void 0 || ELEMENTARY_TYPES[upper] !== void 0 || this.ast.types.some((t) => t.name.toUpperCase() === upper);
     if (!isFb && !isInterface || isPlainValue) {
       if (isPlainValue) {
-        error3(`Cannot call method '${expr.methodName}' on '${this.chainText(object)}': it is not a function block instance`, object.sourceSpan);
+        error4(`Cannot call method '${expr.methodName}' on '${this.chainText(object)}': it is not a function block instance`, object.sourceSpan);
       }
       return void 0;
     }
     const found = this.lookupChainMethod(upper, expr.methodName);
     if (found === "missing") {
-      error3(`${isFb ? "Function block" : "Interface"} '${owner.name}' has no method '${expr.methodName}'`, expr.methodNameSpan ?? expr.sourceSpan);
+      error4(`${isFb ? "Function block" : "Interface"} '${owner.name}' has no method '${expr.methodName}'`, expr.methodNameSpan ?? expr.sourceSpan);
       return void 0;
     }
     if (found === void 0 || found === "action")
       return void 0;
-    this.checkChainMethodAccess(found, expr.sourceSpan, error3);
+    this.checkChainMethodAccess(found, expr.sourceSpan, error4);
     const params = found.varBlocks.filter((b) => b.blockType === "VAR_INPUT" || b.blockType === "VAR_IN_OUT" || b.blockType === "VAR_OUTPUT").flatMap((b) => b.declarations).flatMap((d) => d.names.map((n) => n.toUpperCase()));
     const args = stripEnEno(expr.arguments);
     for (const arg of this.unknownMethodArguments(found, args)) {
-      error3(`Method '${found.name}' of '${owner.name}' has no parameter named '${arg.name ?? ""}'`, arg.sourceSpan);
+      error4(`Method '${found.name}' of '${owner.name}' has no parameter named '${arg.name ?? ""}'`, arg.sourceSpan);
     }
     const positional = args.filter((a) => a.name === void 0);
     const extra = positional[params.length];
     if (extra) {
-      error3(`Method '${found.name}' of '${owner.name}' takes ${params.length} argument${params.length === 1 ? "" : "s"}, got ${positional.length}`, extra.sourceSpan);
+      error4(`Method '${found.name}' of '${owner.name}' takes ${params.length} argument${params.length === 1 ? "" : "s"}, got ${positional.length}`, extra.sourceSpan);
     }
     return found;
   }
@@ -23297,7 +24345,7 @@ var TypeChecker = class _TypeChecker {
    * another instance, which only the declaring function block may do (a
    * derived block may not; the C++ would not build). Same messages as `inst.M()`.
    */
-  checkChainMethodAccess(method, span, error3) {
+  checkChainMethodAccess(method, span, error4) {
     if (method.visibility === "PUBLIC" || !this.ast)
       return;
     const declaring = this.ast.functionBlocks.find((f) => f.methods.includes(method));
@@ -23306,7 +24354,7 @@ var TypeChecker = class _TypeChecker {
     if (this.currentFBName?.toUpperCase() === declaring.name.toUpperCase()) {
       return;
     }
-    error3(method.visibility === "PRIVATE" ? `Cannot call PRIVATE method '${method.name}' of '${declaring.name}' from outside '${declaring.name}'.` : `Cannot call PROTECTED method '${method.name}' of '${declaring.name}' from '${this.currentFBName ?? "PROGRAM"}'.`, span);
+    error4(method.visibility === "PRIVATE" ? `Cannot call PRIVATE method '${method.name}' of '${declaring.name}' from outside '${declaring.name}'.` : `Cannot call PROTECTED method '${method.name}' of '${declaring.name}' from '${this.currentFBName ?? "PROGRAM"}'.`, span);
   }
   /**
    * A method or action of a function block or interface this compile
@@ -23368,6 +24416,109 @@ var TypeChecker = class _TypeChecker {
       return void 0;
     const upper = parts[1].toUpperCase();
     return this.methodsOfType(sym.name)?.find((m) => m.name.toUpperCase() === upper);
+  }
+  /**
+   * `__ISVALIDREF` and `XSIZEOF` in a top-level or CONFIGURATION global's
+   * initial value; an initial value that is such a call is checked as an
+   * assignment to the global.
+   */
+  markGlobalVendorOperators(ast) {
+    const scopes = [
+      { blocks: ast.globalVarBlocks, scope: this.symbolTables.globalScope },
+      ...ast.configurations.map((c) => ({
+        blocks: c.varBlocks,
+        scope: this.configurationGlobalScope(c.varBlocks)
+      }))
+    ];
+    for (const { blocks, scope } of scopes) {
+      for (const block of blocks) {
+        for (const decl of block.declarations) {
+          const value = decl.initialValue;
+          if (!value)
+            continue;
+          walkAST(value, (node) => {
+            if (node.kind !== "FunctionCallExpression")
+              return;
+            const call = node;
+            this.vendorOperatorCallType(call, call.functionName.toUpperCase(), scope);
+          });
+          const targetType = ELEMENTARY_TYPES[decl.type.name.toUpperCase()];
+          if (value.kind === "FunctionCallExpression" && value.vendorOperator !== void 0 && value.resolvedType !== void 0 && targetType !== void 0 && (decl.type.referenceKind ?? "none") === "none") {
+            this.validateAssignment(targetType, value.resolvedType, {
+              kind: "VariableExpression",
+              sourceSpan: decl.sourceSpan,
+              name: decl.names[0] ?? "<unnamed>",
+              fieldAccess: [],
+              subscripts: [],
+              isDereference: false
+            }, value);
+          }
+        }
+      }
+    }
+  }
+  /** A scope holding a CONFIGURATION's globals, over the global scope. */
+  configurationGlobalScope(blocks) {
+    const scope = new Scope("configuration", this.symbolTables.globalScope);
+    for (const block of blocks) {
+      for (const decl of block.declarations) {
+        for (const name of decl.names) {
+          try {
+            scope.define({
+              name,
+              kind: "variable",
+              declaration: decl,
+              isInput: false,
+              isOutput: false,
+              isInOut: false,
+              isExternal: false,
+              isGlobal: true,
+              isRetain: block.isRetain
+            });
+          } catch {
+          }
+        }
+      }
+    }
+    return scope;
+  }
+  /**
+   * The result type of a call of a built-in operator whose feature is on and
+   * whose name nothing in scope declares; marks the call for codegen.
+   */
+  vendorOperatorCallType(expr, nameUpper, scope) {
+    const op = vendorOperatorNamed(nameUpper);
+    if (op === void 0 || !this.features.has(vendorOperatorFeature(op))) {
+      return void 0;
+    }
+    if (expr.instance || scope.lookup(nameUpper) !== void 0) {
+      return void 0;
+    }
+    expr.vendorOperator = op;
+    const error4 = vendorOperatorArgumentError(expr, op, (arg) => {
+      const value = arg.value;
+      if (value.kind !== "VariableExpression")
+        return "an expression is not one";
+      const name = [value.name, ...value.fieldAccess].join(".").toUpperCase();
+      if (this.isSelfMember(value)) {
+        const type2 = resolveAccessType({ name: this.currentFBName, referenceKind: "none" }, value, this.accessLookup);
+        if (type2?.referenceKind === "reference_to" && (type2.referenceChain?.length ?? 1) === 1) {
+          return true;
+        }
+        return type2 === void 0 ? `'${name}' is not a variable here` : `'${name}' is declared ${describeReferenceShape(referenceShapeOf(type2) ?? { chain: [], base: type2.name })}`;
+      }
+      const shape = this.declaredReferenceShape(value, scope);
+      if (shape?.chain.length === 1 && shape.chain[0] === "reference_to") {
+        return true;
+      }
+      return shape === void 0 ? `'${name}' is not a variable here` : `'${name}' is declared ${describeReferenceShape(shape)}`;
+    });
+    if (error4 !== void 0) {
+      this.addError(error4, expr.sourceSpan.startLine, expr.sourceSpan.startCol, expr.sourceSpan.file);
+    }
+    const type = ELEMENTARY_TYPES[vendorOperatorResultType(op)];
+    expr.resolvedType = type;
+    return type;
   }
   /**
    * A bare `Name(...)` inside a PROGRAM or FUNCTION_BLOCK that names one of
@@ -23480,15 +24631,15 @@ var TypeChecker = class _TypeChecker {
       for (const field of type.definition.fields) {
         const value = field.initialValue;
         const kind = field.type.referenceChain?.[0] ?? field.type.referenceKind;
-        const spelled = {
+        const spelled2 = {
           pointer_to: "POINTER TO",
           ref_to: "REF_TO",
           reference_to: "REFERENCE TO"
         }[kind];
-        if (value === void 0 || spelled === void 0 || kind !== "reference_to" && isNullInitializer(value)) {
+        if (value === void 0 || spelled2 === void 0 || kind !== "reference_to" && isNullInitializer(value)) {
           continue;
         }
-        this.addError(`${spelled} initializers are not supported in a STRUCT; assign '${type.name.toUpperCase()}.${(field.names[0] ?? "").toUpperCase()}' in the body instead`, value.sourceSpan.startLine, value.sourceSpan.startCol, value.sourceSpan.file);
+        this.addError(`${spelled2} initializers are not supported in a STRUCT; assign '${type.name.toUpperCase()}.${(field.names[0] ?? "").toUpperCase()}' in the body instead`, value.sourceSpan.startLine, value.sourceSpan.startCol, value.sourceSpan.file);
       }
     }
   }
@@ -23540,6 +24691,9 @@ var TypeChecker = class _TypeChecker {
           this.addError(`${kindText} initializers are not supported; assign '${decl.names[0] ?? ""}' in the body instead`, decl.initialValue.sourceSpan.startLine, decl.initialValue.sourceSpan.startCol, decl.initialValue.sourceSpan.file);
           continue;
         }
+        if ((outerKind ?? "none") === "none" && isAddressOf(decl.initialValue) && this.refuseNarrowAddress(decl.type.name, decl.initialValue)) {
+          continue;
+        }
         if (outerKind === "pointer_to" && isAddressOf(decl.initialValue)) {
           this.resolveExprType(decl.initialValue, scope);
           continue;
@@ -23554,6 +24708,8 @@ var TypeChecker = class _TypeChecker {
         }
         const targetType = ELEMENTARY_TYPES[decl.type.name.toUpperCase()];
         if (!targetType)
+          continue;
+        if (this.reportedCharValues.has(decl.initialValue))
           continue;
         const valueType = this.resolveExprType(decl.initialValue, scope);
         if (!valueType)
@@ -23575,6 +24731,36 @@ var TypeChecker = class _TypeChecker {
         );
       }
     }
+  }
+  /**
+   * `ADR(x)` stored in an integer narrower than the 64-bit address width (an
+   * initial value, a FUNCTION or METHOD argument) would lose the address's
+   * high bits. True when it was refused.
+   */
+  refuseNarrowAddress(typeName2, value) {
+    const type = ELEMENTARY_TYPES[typeName2.toUpperCase()];
+    if (type === void 0 || !("sizeBits" in type) || typeof type.sizeBits !== "number" || type.sizeBits >= 64 || !isIntegerOrBitStringName(typeName2)) {
+      return false;
+    }
+    this.addError(`ADR gives a 64-bit address, which ${typeName2.toUpperCase()} cannot hold; use __XWORD, LWORD or ULINT`, value.sourceSpan.startLine, value.sourceSpan.startCol, value.sourceSpan.file);
+    return true;
+  }
+  /** `F(ADR(x))` and `fb.M(ADR(x))` into an input narrower than an address. */
+  refuseNarrowAddressArguments(expr, scope) {
+    if (this.isFBInstanceCall(expr, scope))
+      return;
+    const inputs = this.callInputs(expr, scope) ?? this.dottedMethodInputs(expr.functionName, scope);
+    if (!inputs)
+      return;
+    stripEnEno(expr.arguments).forEach((arg, i) => {
+      if (arg.isOutput || !isAddressOf(arg.value))
+        return;
+      const argName = arg.name?.toUpperCase();
+      const input = argName === void 0 ? inputs[i] : inputs.find((p) => p.name.toUpperCase() === argName);
+      if (input === void 0 || input.type.referenceKind !== "none")
+        return;
+      this.refuseNarrowAddress(input.type.name, arg.value);
+    });
   }
   /**
    * Resolve each named init argument of an FB instance (feature fb_init) and
@@ -23633,12 +24819,18 @@ var TypeChecker = class _TypeChecker {
         if (this.strict && targetType === void 0 && this.currentReturn !== void 0 && stmt.target.kind === "VariableExpression" && stmt.target.fieldAccess.length === 0 && stmt.target.subscripts.length === 0 && stmt.target.name.toUpperCase() === this.currentReturn.name.toUpperCase()) {
           targetType = ELEMENTARY_TYPES[this.currentReturn.type.name.toUpperCase()];
         }
+        if (targetType === void 0 && this.currentReturn !== void 0 && stmt.target.kind === "VariableExpression" && stmt.target.name.toUpperCase() === this.currentReturn.name.toUpperCase()) {
+          this.adaptCharLiteral(stmt.value, this.charTypeOf(this.resolveNamedType(this.currentReturn.type.name)));
+        }
         this.validateInOutMemberWrite(stmt.target, scope);
         if (this.isAddressIntoPointer(stmt.target, valueType, scope))
           break;
         if (this.isZeroIntoPointer(stmt.target, stmt.value, scope))
           break;
         if (this.checkArrayScalarAssignment(stmt.target, stmt.value, scope)) {
+          break;
+        }
+        if (this.isTimerPresetTakingLtime(stmt.target, valueType, scope)) {
           break;
         }
         const errorsBefore = this.errors.length;
@@ -23651,6 +24843,7 @@ var TypeChecker = class _TypeChecker {
       case "RefAssignStatement": {
         this.resolveExprType(stmt.target, scope);
         this.resolveExprType(stmt.source, scope);
+        this.refuseBitMember(stmt.source, "REF= cannot bind to", scope);
         if (stmt.target.kind === "VariableExpression") {
           const sym = scope.lookup(stmt.target.name);
           const base = sym?.kind === "variable" ? sym.declaration?.type : void 0;
@@ -23698,10 +24891,20 @@ var TypeChecker = class _TypeChecker {
           this.validateCaseSelector(selectorType, stmt.selector);
         }
         for (const c of stmt.cases) {
+          const selectorChar = this.charTypeOf(selectorType);
           for (const label of c.labels) {
             this.resolveExprType(label.start, scope);
             if (label.end)
               this.resolveExprType(label.end, scope);
+            if (selectorChar !== void 0) {
+              for (const bound of label.end ? [label.start, label.end] : [label.start]) {
+                this.adaptCharLiteral(bound, selectorChar);
+                if (this.charTypeOf(bound.resolvedType) !== selectorChar) {
+                  this.addError(`CASE label of type ${bound.resolvedType ? typeName(bound.resolvedType) : "?"} does not match the selector of type ${selectorChar}`, bound.sourceSpan.startLine, bound.sourceSpan.startCol, bound.sourceSpan.file);
+                }
+              }
+              continue;
+            }
             this.validateCaseLabelType(selectorType, label.start);
             if (label.end)
               this.validateCaseLabelType(selectorType, label.end);
@@ -23803,6 +25006,9 @@ var TypeChecker = class _TypeChecker {
   // Validation Helpers
   // ===========================================================================
   validateAssignment(targetType, valueType, target, value) {
+    if (this.adaptCharLiteral(value, this.charTypeOf(targetType))) {
+      valueType = value.resolvedType;
+    }
     const targetInterface = this.interfaceTypeOf(targetType);
     if (targetInterface !== void 0) {
       this.checkInterfaceValue(targetInterface, valueType, value);
@@ -23841,7 +25047,7 @@ var TypeChecker = class _TypeChecker {
         const tIsFbOrStruct = this.isKnownCompositeType(tName);
         const vIsFbOrStruct = this.isKnownCompositeType(vName);
         if (!tIsFbOrStruct && !vIsFbOrStruct) {
-          if (!ELEMENTARY_TYPES[tName] || !ELEMENTARY_TYPES[vName]) {
+          if (!ELEMENTARY_TYPES[tName] || !ELEMENTARY_TYPES[vName] || this.isUserTypeOfEd3Name(tName) || this.isUserTypeOfEd3Name(vName)) {
             return;
           }
         }
@@ -23969,7 +25175,9 @@ var TypeChecker = class _TypeChecker {
    * Why a value of STRUCT `source` cannot be stored in STRUCT `target` when one
    * extends the other (IEC 61131-3 6.4.4.6: only the same type); else undefined.
    */
-  structRelation(target, source) {
+  structRelation(targetName, sourceName) {
+    const target = this.aliasTarget(targetName);
+    const source = this.aliasTarget(sourceName);
     if (!this.ast || target.toUpperCase() === source.toUpperCase()) {
       return void 0;
     }
@@ -24264,6 +25472,12 @@ var TypeChecker = class _TypeChecker {
       bound.add(input.name.toUpperCase());
       if (!input.inOut || arg.isOutput)
         return;
+      if (this.refuseStringElement(arg.value, `VAR_IN_OUT '${input.name}' cannot be bound to`)) {
+        return;
+      }
+      if (this.refuseBitMember(arg.value, `VAR_IN_OUT '${input.name}' cannot be bound to`, scope)) {
+        return;
+      }
       this.validateInOutArgument(input, arg, scope);
     });
     for (const input of inputs) {
@@ -24457,6 +25671,453 @@ var TypeChecker = class _TypeChecker {
    * The type an alias chain (`TYPE A : B; END_TYPE`, plain, no reference or
    * array) ends at, upper case; `name` itself when it is not an alias.
    */
+  /**
+   * A user TYPE named like an elementary type Ed. 3 added (`LTIME_OF_DAY`),
+   * which programs declared before the type existed: the user's type stays.
+   */
+  isUserTypeOfEd3Name(name) {
+    const upper = name.toUpperCase();
+    return ED3_ELEMENTARY_NAMES.has(upper) && this.ast?.types.some((t) => t.name.toUpperCase() === upper) === true;
+  }
+  /**
+   * `x.PT := ltimeValue` on a TP, TON or TOF of the standard library, held in
+   * a variable, an array element or a member: Table 46 overloads those timers
+   * on TIME and LTIME, and both have one representation.
+   */
+  isTimerPresetTakingLtime(target, valueType, scope) {
+    if (valueType === void 0 || target.kind !== "VariableExpression" || valueType.typeKind !== "elementary" || valueType.name.toUpperCase() !== "LTIME") {
+      return false;
+    }
+    const v = target;
+    const chain = v.accessChain ?? [];
+    const last2 = chain[chain.length - 1];
+    const lastField = last2 !== void 0 ? last2.kind === "field" ? last2.name : void 0 : v.subscripts.length === 0 ? v.fieldAccess[v.fieldAccess.length - 1] : void 0;
+    if (lastField?.toUpperCase() !== "PT")
+      return false;
+    const owner = {
+      ...v,
+      fieldAccess: v.fieldAccess.slice(0, -1)
+    };
+    if (chain.length > 0)
+      owner.accessChain = chain.slice(0, -1);
+    else
+      delete owner.accessChain;
+    const errors = this.errors.length;
+    const warnings = this.warnings.length;
+    const ownerType = this.inferType(owner, scope);
+    this.errors.length = errors;
+    this.warnings.length = warnings;
+    const typeName2 = ownerType !== void 0 ? typeName(ownerType).toUpperCase() : void 0;
+    if (typeName2 !== "TP" && typeName2 !== "TON" && typeName2 !== "TOF") {
+      return false;
+    }
+    return this.symbolTables.lookupFunctionBlock(typeName2)?.libraryName === "iec-standard-fb";
+  }
+  /**
+   * A BIT member of a STRUCT (feature bit_type) has no address of its own: it
+   * cannot be referenced or bound to an in/out. True when it was refused.
+   */
+  refuseBitMember(expr, what, scope) {
+    let e = expr;
+    while (e.kind === "ParenthesizedExpression")
+      e = e.expression;
+    if (e.kind !== "VariableExpression" || !this.hasMemberAccess(e)) {
+      return false;
+    }
+    let base;
+    if (this.isSelfMember(e)) {
+      base = { name: this.currentFBName, referenceKind: "none" };
+    } else {
+      const sym = scope.lookup(e.name);
+      base = sym?.kind === "variable" ? sym.declaration?.type : void 0;
+      base ??= this.resultVariableType(e.name);
+    }
+    const type = base === void 0 ? void 0 : resolveAccessType(this.bitAliasTarget(base), e, this.bitAccessLookup);
+    if (type?.bit !== true)
+      return false;
+    const path = bitAccessPath(e);
+    this.addError(`${what} the BIT member ${path}: a BIT has no address of its own; copy it to a BOOL variable first`, e.sourceSpan.startLine, e.sourceSpan.startCol, e.sourceSpan.file);
+    return true;
+  }
+  /** The type of the FUNCTION or METHOD result, or the PROPERTY value, `name` is here. */
+  resultVariableType(name) {
+    const upper = name.toUpperCase();
+    if (this.currentReturn?.name.toUpperCase() === upper) {
+      return this.currentReturn.type;
+    }
+    return this.currentPropertyName === upper ? this.currentPropertyType : void 0;
+  }
+  /** A type with its TYPE aliases (`T : ST_B`, `T : POINTER TO ST_B`) expanded. */
+  bitAliasTarget(type) {
+    let current = type;
+    for (let depth = 0; depth < 16 && this.ast; depth++) {
+      if ((current.referenceKind ?? "none") !== "none" || current.arrayDimensions !== void 0) {
+        return current;
+      }
+      const upper = current.name.toUpperCase();
+      const def = this.ast.types.find((t) => t.name.toUpperCase() === upper)?.definition;
+      if (def?.kind !== "TypeReference")
+        return current;
+      current = def;
+    }
+    return current;
+  }
+  /** Member lookup through TYPE aliases, to find a BIT member behind one. */
+  bitAccessLookup = {
+    field: (typeName2, fieldName) => {
+      const owner = this.bitAliasTarget({
+        name: typeName2,
+        referenceKind: "none"
+      }).name;
+      const decl = this.accessLookup.field(owner, fieldName);
+      return decl && { ...decl, type: this.bitAliasTarget(decl.type) };
+    },
+    arrayElement: (typeName2) => {
+      const element = this.accessLookup.arrayElement(this.bitAliasTarget({ name: typeName2, referenceKind: "none" }).name);
+      return element && this.bitAliasTarget(element);
+    }
+  };
+  /** `ADR(s.bit)`, `REF_LINK(s.bit)` and a BIT member bound to a REFERENCE TO input. */
+  refuseBitMemberArguments(expr, scope) {
+    const name = expr.functionName.toUpperCase();
+    const args = stripEnEno(expr.arguments);
+    if ((name === "ADR" || name === "REF_LINK") && !this.findUserFunction(name) && args.length > 0) {
+      this.refuseBitMember(args[0].value, `${name}() cannot take`, scope);
+      return;
+    }
+    const inputs = this.callInputs(expr, scope) ?? this.dottedMethodInputs(expr.functionName, scope);
+    if (!this.isFBInstanceCall(expr, scope)) {
+      for (const arg of args) {
+        if (!arg.isOutput)
+          continue;
+        this.refuseBitMember(arg.value, `VAR_OUTPUT '${(arg.name ?? "").toUpperCase()}' cannot be bound to`, scope);
+      }
+    }
+    if (!inputs)
+      return;
+    args.forEach((arg, i) => {
+      if (arg.isOutput)
+        return;
+      const argName = arg.name?.toUpperCase();
+      const input = argName === void 0 ? inputs[i] : inputs.find((p) => p.name.toUpperCase() === argName);
+      if (input?.type.referenceKind !== "reference_to")
+        return;
+      this.refuseBitMember(arg.value, `REFERENCE TO input '${input.name}' cannot be bound to`, scope);
+    });
+  }
+  /**
+   * `s[i]` is a character of a string, not a variable: it cannot be bound to
+   * an in/out or referenced. True when it was refused.
+   */
+  refuseStringElement(expr, what) {
+    let e = expr;
+    while (e.kind === "ParenthesizedExpression")
+      e = e.expression;
+    if (e.kind !== "VariableExpression" || e.stringElement !== true) {
+      return false;
+    }
+    this.addError(`${what} a character of a string (${e.name}[...]); assign it to a CHAR or WCHAR variable first`, e.sourceSpan.startLine, e.sourceSpan.startCol, e.sourceSpan.file);
+    return true;
+  }
+  /** `CHAR_TO_INT('A')`: the literal source of a CHAR or WCHAR conversion is that character. */
+  adaptCharConversionArgument(expr) {
+    const name = expr.functionName.toUpperCase();
+    const from = /^(W?CHAR)_TO_/.exec(name)?.[1];
+    if (from === void 0 || this.findUserFunction(name))
+      return;
+    const arg = stripEnEno(expr.arguments)[0];
+    if (arg !== void 0)
+      this.adaptCharLiteral(arg.value, from);
+  }
+  /** CHAR or WCHAR when the named type is one of them, through aliases. */
+  charTypeOfName(name) {
+    const base = this.aliasBase(name);
+    return base === "CHAR" || base === "WCHAR" ? base : void 0;
+  }
+  /**
+   * The initial value of a CHAR or WCHAR (through aliases, as an array element
+   * or STRUCT field too): a one-character literal is that character, and a
+   * literal of any other type is refused, as its assignment is.
+   */
+  checkCharInitialValue(typeName2, value) {
+    const charType = this.charTypeOfName(typeName2);
+    if (charType === void 0 || this.adaptCharLiteral(value, charType)) {
+      return;
+    }
+    if (value.kind !== "LiteralExpression")
+      return;
+    const literalType = this.charLiteralSourceType(value);
+    if (literalType === charType || this.reportedCharValues.has(value))
+      return;
+    this.reportedCharValues.add(value);
+    this.addError(`Cannot assign ${literalType} to ${typeName2.toUpperCase()}`, value.sourceSpan.startLine, value.sourceSpan.startCol, value.sourceSpan.file);
+  }
+  /** The type a literal names: its prefix when typed, else its literal type. */
+  charLiteralSourceType(lit) {
+    return lit.typePrefix !== void 0 && lit.typePrefix !== "" ? lit.typePrefix.toUpperCase() : lit.literalType;
+  }
+  /** A one-character literal passed to a CHAR or WCHAR input is that character. */
+  adaptCharArguments(inputs, args) {
+    if (!inputs)
+      return;
+    stripEnEno([...args]).forEach((arg, i) => {
+      if (arg.isOutput)
+        return;
+      const argName = arg.name?.toUpperCase();
+      const input = argName === void 0 ? inputs[i] : inputs.find((p) => p.name.toUpperCase() === argName);
+      if (!input || input.inOut || input.type.arrayDimensions !== void 0) {
+        return;
+      }
+      const refKind = input.type.referenceKind;
+      if (refKind !== void 0 && refKind !== "none")
+        return;
+      const charType = this.charTypeOfName(input.type.name);
+      if (charType === void 0)
+        return;
+      this.adaptCharLiteral(arg.value, charType);
+      const value = arg.value;
+      const inherited = value.resolvedType === void 0 && value.kind === "VariableExpression" && !this.hasMemberAccess(value) ? this.inheritedMemberType(value.name) : void 0;
+      const valueType = inherited !== void 0 && inherited.arrayDimensions === void 0 && (inherited.referenceKind ?? "none") === "none" ? this.resolveNamedType(inherited.name) : value.resolvedType;
+      if (valueType === void 0 || isGenericGroupType(valueType) || this.charTypeOf(valueType) === charType) {
+        return;
+      }
+      this.addError(`Cannot assign ${typeName(valueType)} to parameter '${input.name}' of type ${input.type.name.toUpperCase()}`, arg.value.sourceSpan.startLine, arg.value.sourceSpan.startCol, arg.value.sourceSpan.file);
+    });
+  }
+  /**
+   * The CHAR or WCHAR a standard SEL, MUX, LIMIT, MAX or MIN call yields when
+   * its compared or selected arguments are all of that type.
+   */
+  charSelectionType(expr) {
+    const name = expr.functionName.toUpperCase();
+    if (!CHAR_SELECTION_FUNCTIONS.has(name) || !this.isStdCharFunction(name)) {
+      return void 0;
+    }
+    const args = stripEnEno(expr.arguments).slice(CHAR_COMPARE_FUNCTIONS.get(name) ?? 0);
+    const first2 = this.charTypeOf(args[0]?.value.resolvedType);
+    if (first2 === void 0)
+      return void 0;
+    return args.every((a) => this.charTypeOf(a.value.resolvedType) === first2) ? first2 : void 0;
+  }
+  /** True when `name` is the standard function, not a user or library one. */
+  isStdCharFunction(name) {
+    if (this.findUserFunction(name))
+      return false;
+    const fn = this.symbolTables.lookupFunction(name);
+    return fn === void 0 || fn.libraryName === STD_FUNCTIONS_LIBRARY;
+  }
+  /** CHAR or WCHAR when the type is one of them, through aliases. */
+  charTypeOf(type) {
+    if (type?.typeKind !== "elementary")
+      return void 0;
+    const base = this.aliasBase(type.name);
+    return base === "CHAR" || base === "WCHAR" ? base : void 0;
+  }
+  /**
+   * A one-character string literal where a CHAR (`'A'`) or WCHAR (`"A"`) is
+   * expected is that character (Ed. 3 Table 6). True when it was adapted.
+   */
+  adaptCharLiteral(expr, charType) {
+    if (charType === void 0)
+      return false;
+    if (expr.kind === "ParenthesizedExpression") {
+      if (!this.adaptCharLiteral(expr.expression, charType))
+        return false;
+      expr.resolvedType = ELEMENTARY_TYPES[charType];
+      return true;
+    }
+    if (expr.kind === "FunctionCallExpression") {
+      const name = expr.functionName.toUpperCase();
+      if (!CHAR_SELECTION_FUNCTIONS.has(name))
+        return false;
+      if (!this.isStdCharFunction(name))
+        return false;
+      const args = stripEnEno(expr.arguments).slice(CHAR_COMPARE_FUNCTIONS.get(name) ?? 0);
+      for (const a of args)
+        this.adaptCharLiteral(a.value, charType);
+      if (this.charSelectionType(expr) !== charType) {
+        this.checkCharStdArguments(expr);
+        return false;
+      }
+      expr.resolvedType = ELEMENTARY_TYPES[charType];
+      return true;
+    }
+    if (expr.kind !== "LiteralExpression")
+      return false;
+    const lit = expr;
+    const want = charType === "CHAR" ? "STRING" : "WSTRING";
+    if (lit.literalType !== want || (lit.typePrefix ?? "") !== "")
+      return false;
+    const raw = `${charType}#${lit.rawValue}`;
+    if (charLiteralUnits(raw).units.length !== 1)
+      return false;
+    lit.literalType = charType;
+    lit.rawValue = raw;
+    lit.value = raw;
+    lit.resolvedType = ELEMENTARY_TYPES[charType];
+    return true;
+  }
+  /** A STRING or WSTRING (not an ARRAY of them) takes exactly one index. */
+  refuseStringIndexCount(typeName2, indexCount, expr) {
+    if (indexCount === 1 || !this.ast)
+      return;
+    if (resolveArrayElementType(typeName2, this.ast) !== void 0)
+      return;
+    const base = this.aliasBase(typeName2);
+    if (base !== "STRING" && base !== "WSTRING")
+      return;
+    this.addError(`A ${base} takes one index (a character position), not ${indexCount}`, expr.sourceSpan.startLine, expr.sourceSpan.startCol, expr.sourceSpan.file);
+  }
+  /** CHAR or WCHAR for one index into a STRING or WSTRING (Ed. 3 `s[i]`). */
+  stringElementType(typeName2, indexCount) {
+    if (indexCount !== 1)
+      return void 0;
+    const base = this.aliasBase(typeName2);
+    return base === "STRING" ? "CHAR" : base === "WSTRING" ? "WCHAR" : void 0;
+  }
+  /**
+   * `F(o => v)` or `F(a, v)` binding F's VAR_OUTPUT `o` to the variable `v`:
+   * checked as the assignment `v := o`, and copied out through a temporary of
+   * the output's type where the two C++ types differ (USINT into INT, or an
+   * alias variable, which is not stored as its base type).
+   */
+  checkOutputBindings(expr, scope) {
+    if (this.strict)
+      this.checkStrictFbOutputs(expr, scope);
+    if (expr.instance || expr.functionName.includes("."))
+      return;
+    if (this.calledInstance(expr.functionName, scope))
+      return;
+    const params = this.calledFunctionParameters(expr.functionName);
+    if (params === void 0 || !params.some((p) => p.output))
+      return;
+    const claimed = new Set(expr.arguments.flatMap((a) => a.name === void 0 ? [] : [a.name.toUpperCase()]));
+    const free = params.filter((p) => !claimed.has(p.name.toUpperCase()));
+    let positional = 0;
+    for (const arg of expr.arguments) {
+      const param = arg.name === void 0 ? free[positional++] : params.find((p) => p.name.toUpperCase() === arg.name.toUpperCase());
+      if (param?.output !== true)
+        continue;
+      if (arg.name !== void 0 && !arg.isOutput)
+        continue;
+      this.checkOutputBinding(param.type, arg, scope);
+    }
+  }
+  /** VAR_INPUT, VAR_IN_OUT and VAR_OUTPUT of a user or library FUNCTION, in order. */
+  calledFunctionParameters(name) {
+    const userFn = this.ownMethod(name) ?? this.findUserFunction(name);
+    if (userFn) {
+      return userFn.varBlocks.filter((b) => b.blockType === "VAR_INPUT" || b.blockType === "VAR_IN_OUT" || b.blockType === "VAR_OUTPUT").flatMap((b) => b.declarations.flatMap((d) => d.names.map((n) => ({
+        name: n,
+        type: d.type,
+        output: b.blockType === "VAR_OUTPUT"
+      }))));
+    }
+    const fn = this.symbolTables.lookupFunction(name);
+    if (fn === void 0 || fn.libraryName === STD_FUNCTIONS_LIBRARY) {
+      return void 0;
+    }
+    const params = [];
+    for (const p of fn.parameters) {
+      const type = p.declaration?.type;
+      if (type === void 0)
+        return void 0;
+      params.push({
+        name: p.name,
+        type,
+        output: p.isOutput && !p.isInput && !p.isInOut
+      });
+    }
+    return params;
+  }
+  /** One output binding (see checkOutputBindings). */
+  checkOutputBinding(param, arg, scope) {
+    const value = arg.value;
+    if (value.kind !== "VariableExpression")
+      return;
+    if (param.arrayDimensions !== void 0 || param.referenceKind !== void 0 && param.referenceKind !== "none") {
+      return;
+    }
+    const sym = scope.lookup(value.name);
+    if (sym?.kind === "constant") {
+      this.addError(`Cannot assign to CONSTANT variable '${value.name}'`, value.sourceSpan.startLine, value.sourceSpan.startCol, value.sourceSpan.file);
+      return;
+    }
+    const steps = value.accessChain?.map((st) => st.kind === "field" ? st.name : "") ?? value.fieldAccess;
+    const indirect = /^\d+$/.test(steps[steps.length - 1] ?? "") || value.isDereference || value.accessChain?.some((st) => st.kind === "dereference") === true || sym?.kind === "variable" && !this.hasMemberAccess(value) && sym.declaration?.type.referenceKind === "reference_to";
+    const bound = indirect ? void 0 : this.boundAccessType(value, scope);
+    const boundName = bound?.name;
+    const paramType = this.resolveNamedType(param.name);
+    const boundType = boundName === void 0 ? value.resolvedType : this.resolveNamedType(boundName);
+    if (indirect)
+      arg.inOutCopy = true;
+    if (boundType === void 0)
+      return;
+    this.validateAssignment(boundType, paramType, value, {
+      kind: "VariableExpression",
+      sourceSpan: value.sourceSpan,
+      name: param.name,
+      fieldAccess: [],
+      subscripts: [],
+      isDereference: false,
+      resolvedType: paramType
+    });
+    if (bound === void 0 || boundName === void 0)
+      return;
+    const paramKey = this.storageKey(param.name);
+    const boundKey = this.storageKey(boundName);
+    if (paramKey !== void 0 && boundKey !== void 0 && paramKey !== boundKey || this.defaultStringIntoSized(param, bound)) {
+      arg.inOutCopy = true;
+    }
+  }
+  /** A STRING or WSTRING output of the default length bound to one declared with a length. */
+  defaultStringIntoSized(param, bound) {
+    const p = this.aliasBase(param.name);
+    if (p !== "STRING" && p !== "WSTRING" || param.maxLength !== void 0) {
+      return false;
+    }
+    return this.aliasBase(bound.name) === p && bound.maxLength !== void 0 && String(bound.maxLength) !== "254";
+  }
+  /** The declared type of a bound variable, a member or THIS.x one. */
+  boundAccessType(value, scope) {
+    const root2 = value.name.toUpperCase();
+    if (root2 === "THIS" || root2 === "SUPER") {
+      const field = value.fieldAccess[0];
+      if (this.currentFBName === void 0 || value.fieldAccess.length !== 1 || field === void 0 || value.subscripts.length > 0 || value.accessChain?.some((s) => s.kind !== "field") === true) {
+        return void 0;
+      }
+      const owner = root2 === "THIS" ? this.currentFBName : this.ast?.functionBlocks.find((f) => f.name.toUpperCase() === this.currentFBName.toUpperCase())?.extends;
+      const name = owner === void 0 ? void 0 : this.resolveFieldTypeAnywhere(this.aliasBase(owner), field);
+      return name === void 0 ? void 0 : { name, referenceKind: "none" };
+    }
+    const sym = scope.lookup(value.name);
+    if (sym?.kind !== "variable")
+      return void 0;
+    const declared = sym.declaration;
+    if (!declared)
+      return void 0;
+    const type = this.hasMemberAccess(value) ? resolveAccessType(declared.type, value, this.accessLookup) : declared.type;
+    if (type === void 0 || type.arrayDimensions !== void 0 || type.referenceKind !== void 0 && type.referenceKind !== "none") {
+      return void 0;
+    }
+    return type;
+  }
+  /**
+   * The C++ storage of an elementary type, or undefined for any other (a
+   * STRING keeps its own copy rule): an alias is stored as its base's raw
+   * value, not as the base's IEC variable type.
+   */
+  storageKey(name) {
+    const base = this.aliasBase(name);
+    if (ELEMENTARY_TYPES[base] === void 0) {
+      const resolved = this.symbolTables.lookupType(base)?.resolvedType;
+      return resolved?.typeKind === "elementary" ? `lib:${base}` : void 0;
+    }
+    if (base === "STRING" || base === "WSTRING")
+      return void 0;
+    const storage = INTEGER_STORAGE[base] ?? TEMPORAL_STORAGE[base] ?? base;
+    return `${base === name.toUpperCase() ? "iec" : "raw"}:${storage}`;
+  }
   aliasBase(name) {
     let upper = name.toUpperCase();
     for (let i = 0; i < 32; i++) {
@@ -24687,7 +26348,112 @@ var TypeChecker = class _TypeChecker {
     const declared = sym.declaration;
     if (!declared)
       return void 0;
-    const typeName2 = declared.type.name.toUpperCase();
+    return this.fbInputsOf(declared.type.name);
+  }
+  /**
+   * `--strict`: an FB call's `o => v` follows the strict conversion rules of
+   * `v := o`, as a FUNCTION's output does (checkOutputBindings).
+   */
+  checkStrictFbOutputs(expr, scope) {
+    if (!expr.arguments.some((a) => a.isOutput))
+      return;
+    const fbType = this.calledFbType(expr, scope);
+    if (fbType === void 0)
+      return;
+    const outputs = this.fbOutputsOf(fbType);
+    for (const arg of expr.arguments) {
+      if (!arg.isOutput || arg.name === void 0)
+        continue;
+      if (arg.value.kind !== "VariableExpression")
+        continue;
+      const upper = arg.name.toUpperCase();
+      if (upper === "ENO")
+        continue;
+      const out = outputs.find((o) => o.name.toUpperCase() === upper);
+      if (out === void 0 || out.arrayDimensions !== void 0 || (out.referenceKind ?? "none") !== "none") {
+        continue;
+      }
+      const bound = this.boundAccessType(arg.value, scope);
+      const boundType = bound === void 0 ? arg.value.resolvedType : this.resolveNamedType(bound.name);
+      if (boundType === void 0)
+        continue;
+      const outType = this.resolveNamedType(out.typeName);
+      this.checkStrictConversion(boundType, {
+        kind: "VariableExpression",
+        sourceSpan: arg.value.sourceSpan,
+        name: out.name,
+        fieldAccess: [],
+        subscripts: [],
+        isDereference: false,
+        resolvedType: outType
+      });
+    }
+  }
+  /** The FB type an instance call invokes: `fb(...)`, `arr[i](...)`, `s.f(...)`. */
+  calledFbType(expr, scope) {
+    if (expr.instance !== void 0) {
+      const t = this.resolveExprType(expr.instance, scope);
+      return t?.typeKind === "elementary" ? t.name : void 0;
+    }
+    const parts = expr.functionName.split(".");
+    if (parts.length === 1) {
+      if (!this.calledInstance(expr.functionName, scope))
+        return void 0;
+      const sym = scope.lookup(expr.functionName);
+      return sym?.kind === "variable" ? sym.declaration?.type.name : this.inheritedMemberType(expr.functionName)?.name;
+    }
+    if (parts.length !== 2)
+      return void 0;
+    const owner = this.callOwnerType(parts[0], scope);
+    return owner === void 0 ? void 0 : this.resolveFieldTypeAnywhere(this.aliasBase(owner), parts[1]);
+  }
+  /** The VAR_OUTPUTs of a function block type and its bases, a library's too. */
+  fbOutputsOf(fbTypeName) {
+    const upper = this.aliasBase(fbTypeName).toUpperCase();
+    const out = [];
+    let current = upper;
+    for (let depth = 0; current !== void 0 && depth < 32; depth++) {
+      const name = current;
+      const fb = this.ast?.functionBlocks.find((f) => f.name.toUpperCase() === name);
+      if (!fb) {
+        const lib = this.symbolTables.lookupFunctionBlock(name);
+        for (const m of lib?.outputs ?? []) {
+          const t = m.declaration.type;
+          out.push({
+            name: m.name,
+            typeName: t.name,
+            arrayDimensions: t.arrayDimensions,
+            referenceKind: t.referenceKind
+          });
+        }
+        break;
+      }
+      for (const b of fb.varBlocks) {
+        if (b.blockType !== "VAR_OUTPUT")
+          continue;
+        for (const d of b.declarations) {
+          for (const n of d.names) {
+            out.push({
+              name: n,
+              typeName: d.type.name,
+              arrayDimensions: d.type.arrayDimensions,
+              referenceKind: d.type.referenceKind
+            });
+          }
+        }
+      }
+      current = fb.extends?.toUpperCase();
+    }
+    return out;
+  }
+  /** The VAR_INPUT and VAR_IN_OUT of a function block type, its bases' first; a library's too. */
+  fbInputsOf(fbTypeName) {
+    const fromBlocks = (blocks) => blocks.filter((b) => b.blockType === "VAR_INPUT" || b.blockType === "VAR_IN_OUT").flatMap((b) => b.declarations.flatMap((d) => d.names.map((name) => ({
+      name,
+      type: d.type,
+      inOut: b.blockType === "VAR_IN_OUT"
+    }))));
+    const typeName2 = this.aliasBase(fbTypeName).toUpperCase();
     const chain = [];
     let current = typeName2;
     while (current !== void 0 && chain.length < 32) {
@@ -24940,7 +26706,7 @@ var TypeChecker = class _TypeChecker {
     this.addError(`CASE label of type ${typeName(labelType)} does not match the selector of type ${typeName(selectorType)}`, label.sourceSpan.startLine, label.sourceSpan.startCol, label.sourceSpan.file);
   }
   validateCaseSelector(selectorType, selectorExpr) {
-    if (!isTypeInCategory(selectorType, "ANY_INT") && !isTypeInCategory(selectorType, "ANY_BIT") && selectorType.typeKind !== "enum") {
+    if (!isTypeInCategory(selectorType, "ANY_INT") && !isTypeInCategory(selectorType, "ANY_BIT") && selectorType.typeKind !== "enum" && this.charTypeOf(selectorType) === void 0) {
       this.addError(`CASE selector must be an integer, bit, or enum type, got ${typeName(selectorType)}`, selectorExpr.sourceSpan.startLine, selectorExpr.sourceSpan.startCol, selectorExpr.sourceSpan.file);
     }
   }
@@ -24949,6 +26715,9 @@ var TypeChecker = class _TypeChecker {
    * True when an enumeration argument was refused.
    */
   refuseEnumOrderingArguments(expr, params) {
+    const known = this.enumOrderingChecked.get(expr);
+    if (known !== void 0)
+      return known;
     let refused = false;
     stripEnEno(expr.arguments).forEach((arg, i) => {
       const param = params[i];
@@ -24959,6 +26728,7 @@ var TypeChecker = class _TypeChecker {
       refused = true;
       this.addError(`Argument '${param.name}' of '${expr.functionName.toUpperCase()}' expects ${param.constraint}, got ${typeName(argType)}`, arg.value.sourceSpan.startLine, arg.value.sourceSpan.startCol, arg.value.sourceSpan.file);
     });
+    this.enumOrderingChecked.set(expr, refused);
     return refused;
   }
   validateFunctionCallArgs(expr, _scope) {
@@ -24976,8 +26746,9 @@ var TypeChecker = class _TypeChecker {
       const arg = userArgs[i];
       const param = desc.params[i];
       const argType = arg.value.resolvedType;
-      if (!argType || argType.typeKind !== "elementary")
+      if (!argType || argType.typeKind !== "elementary" || isGenericGroupType(argType)) {
         continue;
+      }
       const argDisplay = argType.name;
       const argTypeName = this.aliasBase(argDisplay);
       if (param.constraint === "specific" && param.specificType) {
@@ -25043,10 +26814,14 @@ var TypeChecker = class _TypeChecker {
   currentReturn;
   /** The FUNCTION_BLOCK whose body, method or property is being checked (`THIS.member`). */
   currentFBName;
+  /** CHAR initial values already refused (a declaration is visited more than once). */
+  reportedCharValues = /* @__PURE__ */ new Set();
   /** The default values declared on types (`TYPE T : ... := value`). */
   typeDefaults = /* @__PURE__ */ new Set();
   /** The property whose GET or SET body is being checked, upper-cased. */
   currentPropertyName;
+  /** The declared type of that property. */
+  currentPropertyType;
   /** The PROGRAM whose body or method is being checked (bare method calls). */
   currentProgram;
   /**
@@ -25349,7 +27124,7 @@ var TypeChecker = class _TypeChecker {
   }
   /** Whether an untyped constant of kind `k` takes the type of kind `kind`. */
   static constantAdapts(k, kind) {
-    return k === "INT" ? kind === "int" || kind === "real" : k === "REAL" ? kind === "real" : kind === "bool";
+    return k === "INT" ? kind === "int" || kind === "real" || kind === "bit" : k === "REAL" ? kind === "real" : kind === "bool" || kind === "bit";
   }
   /**
    * The type an expression has for strict conversion checks. An untyped
@@ -25418,7 +27193,7 @@ var TypeChecker = class _TypeChecker {
     const tKind = strictKind(t);
     const vKind = strictKind(v);
     if ((t === "TIME" || t === "LTIME") && vKind === "int") {
-      this.addStrictError(`An integer cannot be used as ${t}; write a TIME literal such as T#100ms`, value);
+      this.addStrictError(t === "LTIME" ? "An integer cannot be used as LTIME; write an LTIME literal such as LTIME#100ms" : `An integer cannot be used as ${t}; write a TIME literal such as T#100ms`, value);
       return true;
     }
     if (tKind === void 0 || vKind === void 0)
@@ -25484,6 +27259,72 @@ var TypeChecker = class _TypeChecker {
       }
     }
     return this.methodInputsOf(typeName2, expr.methodName);
+  }
+  /**
+   * The inputs of any FB or method call form the other resolvers leave out:
+   * `arr[i](...)`, `p^(...)`, `s.f(...)`, `THIS.M(...)`, `SUPER.M(...)` and an
+   * interface's `i.M(...)`. Only the CHAR literal rule uses it.
+   */
+  anyCallInputs(expr, scope) {
+    if (expr.instance !== void 0) {
+      let t = this.resolveExprType(expr.instance, scope);
+      if (t?.typeKind === "reference") {
+        t = t.referencedType;
+      }
+      if (t?.typeKind === "elementary") {
+        return this.fbInputsOf(t.name);
+      }
+      const inst = expr.instance;
+      const sym = inst.kind === "VariableExpression" ? scope.lookup(inst.name) : void 0;
+      const declared = sym?.kind === "variable" ? sym.declaration?.type : void 0;
+      return inst.kind === "VariableExpression" && inst.isDereference && inst.fieldAccess.length === 0 && inst.subscripts.length === 0 && declared !== void 0 ? this.fbInputsOf(declared.name) : void 0;
+    }
+    const parts = expr.functionName.split(".");
+    if (parts.length !== 2)
+      return void 0;
+    const [owner, member] = [parts[0], parts[1]];
+    const ownerType = this.callOwnerType(owner, scope);
+    if (ownerType === void 0)
+      return void 0;
+    return this.methodInputsOf(ownerType, member) ?? this.interfaceMethodInputs(ownerType, member) ?? this.memberFbInputs(ownerType, member);
+  }
+  /** The type `owner` names in `owner.member(...)`: THIS, SUPER or a variable's type. */
+  callOwnerType(owner, scope) {
+    const upper = owner.toUpperCase();
+    if (upper === "THIS")
+      return this.currentFBName;
+    if (upper === "SUPER") {
+      return this.ast?.functionBlocks.find((f) => f.name.toUpperCase() === this.currentFBName?.toUpperCase())?.extends;
+    }
+    const sym = scope.lookup(owner);
+    if (sym?.kind !== "variable")
+      return this.inheritedMemberType(owner)?.name;
+    return sym.declaration?.type.name;
+  }
+  /** The inputs of method `methodName` of an INTERFACE or one it extends. */
+  interfaceMethodInputs(typeName2, methodName, depth = 0) {
+    const itf = this.interfaceNamed(typeName2);
+    if (!itf || depth > 32)
+      return void 0;
+    const method = itf.methods.find((m) => m.name.toUpperCase() === methodName.toUpperCase());
+    if (method) {
+      return method.varBlocks.filter((b) => b.blockType === "VAR_INPUT" || b.blockType === "VAR_IN_OUT").flatMap((b) => b.declarations.flatMap((d) => d.names.map((n) => ({
+        name: n,
+        type: d.type,
+        inOut: b.blockType === "VAR_IN_OUT"
+      }))));
+    }
+    for (const base of itf.extends ?? []) {
+      const found = this.interfaceMethodInputs(base, methodName, depth + 1);
+      if (found)
+        return found;
+    }
+    return void 0;
+  }
+  /** The inputs of an FB instance `member` of a STRUCT or FB type (`s.f(...)`). */
+  memberFbInputs(typeName2, member) {
+    const fieldType = this.resolveFieldTypeAnywhere(this.aliasBase(typeName2), member);
+    return fieldType === void 0 ? void 0 : this.fbInputsOf(fieldType);
   }
   /** Inputs of `instance.Method(...)`, written as one dotted call name. */
   dottedMethodInputs(functionName, scope) {
@@ -25568,6 +27409,24 @@ var TypeChecker = class _TypeChecker {
     });
   }
 };
+function bitAccessPath(e) {
+  const steps = e.accessChain ?? [
+    ...e.subscripts.length > 0 ? [{ kind: "subscript", indices: e.subscripts }] : [],
+    ...e.fieldAccess.map((name) => ({ kind: "field", name })),
+    ...e.isDereference ? [{ kind: "dereference" }] : []
+  ];
+  const index = (x) => x.kind === "LiteralExpression" ? x.rawValue : x.kind === "VariableExpression" && x.fieldAccess.length === 0 && x.subscripts.length === 0 && !x.isDereference ? x.name : "...";
+  let path = e.globalList === void 0 ? e.name : `${e.globalList}.${e.name}`;
+  for (const step of steps) {
+    if (step.kind === "field")
+      path += `.${step.name}`;
+    else if (step.kind === "dereference")
+      path += "^";
+    else
+      path += `[${step.indices.map(index).join(", ")}]`;
+  }
+  return path.toUpperCase();
+}
 
 // dist/semantic/program-access.js
 function declaredNames(blocks) {
@@ -26307,6 +28166,10 @@ var GlobalListResolver = class {
 };
 
 // dist/semantic/union.js
+function unionWord(decl) {
+  const def = decl.definition;
+  return def.kind === "StructDefinition" && def.overlap === true ? "STRUCT OVERLAP" : "UNION";
+}
 function isUnionDefinition(def) {
   return def.kind === "StructDefinition" && def.isUnion === true;
 }
@@ -26425,10 +28288,10 @@ function validateUnionTypes(ast, external, report) {
   for (const decl of unions) {
     const def = decl.definition;
     if (decl.extends) {
-      report(`UNION '${decl.name}' cannot use EXTENDS: only a STRUCT may extend another type`, decl.extendsKeywordSpan ?? decl.sourceSpan);
+      report(`${unionWord(decl)} '${decl.name}' cannot use EXTENDS: only a STRUCT may extend another type`, decl.extendsKeywordSpan ?? decl.sourceSpan);
     }
     if (def.fields.length === 0) {
-      report(`UNION '${decl.name}' declares no members: a UNION needs at least one`, def.sourceSpan);
+      report(`${unionWord(decl)} '${decl.name}' declares no members: a UNION needs at least one`, def.sourceSpan);
       continue;
     }
     const names = /* @__PURE__ */ new Set();
@@ -26436,13 +28299,13 @@ function validateUnionTypes(ast, external, report) {
       for (const name of field.names) {
         const upper = name.toUpperCase();
         if (names.has(upper)) {
-          report(`Duplicate member '${name}' in UNION '${decl.name}'`, field.sourceSpan);
+          report(`Duplicate member '${name}' in ${unionWord(decl)} '${decl.name}'`, field.sourceSpan);
         }
         names.add(upper);
       }
       const member = field.names[0] ?? "";
       if (field.initialValue) {
-        report(`Member '${member}' of UNION '${decl.name}' has an initial value: initial values in a UNION are not supported yet`, field.initialValue.sourceSpan);
+        report(`Member '${member}' of ${unionWord(decl)} '${decl.name}' has an initial value: ${unionWord(decl) === "UNION" ? "initial values in a UNION are not supported yet" : "an overlapped structure cannot be initialized explicitly"}`, field.initialValue.sourceSpan);
       }
       const typeError = memberTypeError(field, member, decl.name, index, external);
       if (typeError !== void 0)
@@ -26486,17 +28349,24 @@ function collectNamedProblems(name, value, index, depth, out) {
   const decl = index.resolve(name);
   const def = decl?.definition;
   if (decl && def && isUnionDefinition(def)) {
+    if (def.overlap === true) {
+      out.push({
+        value,
+        message: `STRUCT OVERLAP '${decl.name}' cannot be initialized explicitly`
+      });
+      return;
+    }
     if (value.kind !== "StructInitializerExpression") {
       out.push({
         value,
-        message: `An initial value for UNION '${decl.name}' is not supported yet: name one member, as in (${def.fields[0]?.names[0] ?? "member"} := value)`
+        message: `An initial value for ${unionWord(decl)} '${decl.name}' is not supported yet: name one member, as in (${def.fields[0]?.names[0] ?? "member"} := value)`
       });
       return;
     }
     if (value.elements.length !== 1) {
       out.push({
         value,
-        message: `The initial value for UNION '${decl.name}' names ${value.elements.length} members: a UNION initial value sets one member`
+        message: `The initial value for ${unionWord(decl)} '${decl.name}' names ${value.elements.length} members: a UNION initial value sets one member`
       });
       return;
     }
@@ -26505,7 +28375,7 @@ function collectNamedProblems(name, value, index, depth, out) {
     if (!def.fields.some((f) => f.names.some((n) => n.toUpperCase() === upper))) {
       out.push({
         value,
-        message: `UNION '${decl.name}' has no member '${named}'`
+        message: `${unionWord(decl)} '${decl.name}' has no member '${named}'`
       });
       return;
     }
@@ -26710,49 +28580,532 @@ function isUnionMemberAccess(expr) {
   return expr.kind === "VariableExpression" && expr.unionMember === true;
 }
 
-// dist/literal-utils.js
-var IEC_INTEGER_MAX = 18446744073709551615n;
-var IEC_INTEGER_MIN = -9223372036854775808n;
-function exactIntegerLiteralValue(raw) {
-  const upper = raw.trim().toUpperCase().replace(/_/g, "");
-  const sign = upper.startsWith("-") ? -1n : 1n;
-  const digits = /^[+-]/.test(upper) ? upper.slice(1) : upper;
-  let normalized;
-  if (/^16#[0-9A-F]+$/.test(digits))
-    normalized = "0x" + digits.slice(3);
-  else if (/^8#[0-7]+$/.test(digits))
-    normalized = "0o" + digits.slice(2);
-  else if (/^2#[01]+$/.test(digits))
-    normalized = "0b" + digits.slice(2);
-  else if (/^[0-9]+$/.test(digits))
-    normalized = digits;
-  else
-    return void 0;
-  try {
-    return sign * BigInt(normalized);
-  } catch {
-    return void 0;
+// dist/semantic/platform-types.js
+var PLATFORM_TYPES = /* @__PURE__ */ new Map([
+  ["__XINT", "LINT"],
+  ["XINT", "LINT"],
+  ["__UXINT", "ULINT"],
+  ["UXINT", "ULINT"],
+  ["XWORD", "__XWORD"],
+  ["PVOID", "__XWORD"]
+]);
+function platformTypeTarget(name) {
+  return PLATFORM_TYPES.get(name.toUpperCase());
+}
+function declaredTypeNames(ast) {
+  const names = /* @__PURE__ */ new Set();
+  for (const list of [
+    ast.types,
+    ast.functionBlocks,
+    ast.programs,
+    ast.interfaces
+  ]) {
+    for (const decl of list)
+      names.add(decl.name.toUpperCase());
+  }
+  return names;
+}
+function isTypeReference(node) {
+  return node.kind === "TypeReference";
+}
+function forEachTypeReference(root2, fn) {
+  const seen = /* @__PURE__ */ new Set();
+  const visit = (node) => {
+    if (typeof node !== "object" || node === null || seen.has(node))
+      return;
+    seen.add(node);
+    if (Array.isArray(node)) {
+      for (const item of node)
+        visit(item);
+      return;
+    }
+    if (isTypeReference(node))
+      fn(node);
+    for (const value of Object.values(node))
+      visit(value);
+  };
+  visit(root2);
+}
+function lowerPlatformTypes(ast, declaredElsewhere) {
+  const declared = declaredTypeNames(ast);
+  const target = (name) => {
+    if (name === void 0)
+      return void 0;
+    const upper = name.toUpperCase();
+    const to = PLATFORM_TYPES.get(upper);
+    if (to === void 0 || declared.has(upper) || declaredElsewhere(upper)) {
+      return void 0;
+    }
+    return to;
+  };
+  forEachTypeReference(ast, (node) => {
+    const name = target(node.name);
+    if (name !== void 0)
+      node.name = name;
+    const element = target(node.elementTypeName);
+    if (element !== void 0)
+      node.elementTypeName = element;
+  });
+}
+function lowerTestPlatformTypes(testFile) {
+  forEachTypeReference(testFile, (node) => {
+    const to = PLATFORM_TYPES.get(node.name.toUpperCase());
+    if (to !== void 0) {
+      node.platformTypeName = node.name;
+      node.name = to;
+    }
+    const written = node.elementTypeName;
+    const element = written === void 0 ? void 0 : PLATFORM_TYPES.get(written.toUpperCase());
+    if (written !== void 0 && element !== void 0) {
+      node.platformElementTypeName = written;
+      node.elementTypeName = element;
+    }
+  });
+}
+function restoreDeclaredPlatformTypes(testFile, isDeclaredType) {
+  forEachTypeReference(testFile, (node) => {
+    if (node.platformTypeName !== void 0 && isDeclaredType(node.platformTypeName.toUpperCase())) {
+      node.name = node.platformTypeName;
+    }
+    if (node.platformElementTypeName !== void 0 && isDeclaredType(node.platformElementTypeName.toUpperCase())) {
+      node.elementTypeName = node.platformElementTypeName;
+    }
+  });
+}
+
+// dist/semantic/implicit-parameters.js
+var ATTRIBUTE = /^\{\s*attribute\s+'implicit-parameter'\s*:=\s*'([^']*)'\s*\}$/i;
+function implicitParameterPragmas(pragmas, source, file) {
+  const out = [];
+  for (const tok of pragmas) {
+    const match = ATTRIBUTE.exec(pragmaSourceText(tok, source));
+    if (!match)
+      continue;
+    out.push({
+      file,
+      startLine: tok.startLine ?? 1,
+      startColumn: tok.startColumn ?? 1,
+      endLine: tok.endLine ?? tok.startLine ?? 1,
+      endColumn: tok.endColumn ?? tok.startColumn ?? 1,
+      value: match[1]
+    });
+  }
+  return out;
+}
+function before(a, b) {
+  return a.line < b.line || a.line === b.line && a.col < b.col;
+}
+function markImplicitParameters(ast, pragmas) {
+  if (pragmas.length === 0)
+    return;
+  for (const fn of ast.functions) {
+    for (const block of fn.varBlocks) {
+      if (block.blockType !== "VAR_INPUT")
+        continue;
+      let from = {
+        line: block.sourceSpan.startLine,
+        col: block.sourceSpan.startCol
+      };
+      let trailingLine;
+      for (const decl of block.declarations) {
+        const span = decl.sourceSpan;
+        const start = { line: span.startLine, col: span.startCol };
+        const pragma = pragmas.find((p) => p.file === span.file && p.startLine !== trailingLine && before(from, { line: p.startLine, col: p.startColumn }) && before({ line: p.endLine, col: p.endColumn }, start));
+        if (pragma)
+          decl.implicitParameter = pragma.value;
+        from = { line: span.endLine, col: span.endCol };
+        trailingLine = span.endLine;
+      }
+    }
   }
 }
-var INTEGER_TYPE_BITS = {
-  SINT: 8,
-  INT: 16,
-  DINT: 32,
-  LINT: 64,
-  USINT: 8,
-  UINT: 16,
-  UDINT: 32,
-  ULINT: 64
+function implicitParameterHint(names) {
+  if (names.length === 0)
+    return "";
+  const them = names.length > 1 ? "them" : "it";
+  return `; this compiler does not fill {attribute 'implicit-parameter'} inputs (${names.join(", ")}): pass ${them} or give ${them} an initial value`;
+}
+
+// dist/semantic/vendor-pou-operators.js
+var POU_OPERATORS = /* @__PURE__ */ new Set([
+  "__POUNAME",
+  "__POSITION",
+  "BITADR"
+]);
+var AREA_FLAGS = {
+  M: 4,
+  I: 8,
+  Q: 12
 };
-function integerTypeRange(typeName2) {
-  const name = typeName2.toUpperCase();
-  const bits = INTEGER_TYPE_BITS[name];
-  if (bits === void 0)
-    return void 0;
-  if (name.startsWith("U"))
-    return { min: 0n, max: (1n << BigInt(bits)) - 1n };
-  const half = 1n << BigInt(bits - 1);
-  return { min: -half, max: half - 1n };
+var MAX_BIT_ADDRESS = 268435455;
+var refusedOperatorCalls = /* @__PURE__ */ new WeakSet();
+function globalNames(ast) {
+  const names = /* @__PURE__ */ new Set();
+  for (const list of [
+    ast.functions,
+    ast.functionBlocks,
+    ast.programs,
+    ast.interfaces,
+    ast.types
+  ]) {
+    for (const d of list)
+      names.add(d.name.toUpperCase());
+  }
+  for (const block of [
+    ...ast.globalVarBlocks,
+    ...ast.configurations.flatMap((c) => c.varBlocks)
+  ]) {
+    for (const decl of block.declarations) {
+      for (const n of decl.names)
+        names.add(n.toUpperCase());
+    }
+  }
+  return names;
+}
+function spellingsOf(text) {
+  const upper = uppercaseSource(text);
+  const raw = rawOffsets(text, upper);
+  return tokenize(text).tokens.map((t) => ({
+    line: t.startLine ?? 0,
+    col: t.startColumn ?? 0,
+    upper: t.image.toUpperCase(),
+    text: text.slice(raw[t.startOffset], raw[t.endOffset + 1])
+  }));
+}
+function rawOffsets(text, upper) {
+  const map2 = [];
+  let pos2 = 0;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text.charAt(i);
+    const up = ch.toUpperCase();
+    const piece = up !== ch && upper.startsWith(up, pos2) ? up : ch;
+    for (let k = 0; k < piece.length; k++)
+      map2.push(i);
+    pos2 += piece.length;
+  }
+  map2.push(text.length);
+  return map2;
+}
+function spelled(nameUpper, span, sources, cache) {
+  const raw = sources.get(span.file);
+  if (raw === void 0)
+    return nameUpper;
+  let tokens = cache.get(span.file);
+  if (tokens === void 0) {
+    tokens = spellingsOf(raw);
+    cache.set(span.file, tokens);
+  }
+  const hit = tokens.find((t) => t.upper === nameUpper && (t.line > span.startLine || t.line === span.startLine && t.col >= span.startCol));
+  return hit ? hit.text : nameUpper;
+}
+function varMap(blocks) {
+  const map2 = /* @__PURE__ */ new Map();
+  for (const list of blocks) {
+    for (const block of list) {
+      for (const decl of block.declarations) {
+        for (const name of decl.names) {
+          const upper = name.toUpperCase();
+          if (!map2.has(upper))
+            map2.set(upper, decl);
+        }
+      }
+    }
+  }
+  return map2;
+}
+function stringLiteral(text, span) {
+  const raw = `'${text.replace(/\$/g, "$$$$").replace(/'/g, "$$'")}'`;
+  return {
+    kind: "LiteralExpression",
+    sourceSpan: span,
+    literalType: "STRING",
+    value: raw,
+    rawValue: raw
+  };
+}
+function dwordLiteral(value, span) {
+  const hex = value.toString(16).toUpperCase();
+  return {
+    kind: "LiteralExpression",
+    sourceSpan: span,
+    literalType: "INT",
+    value,
+    rawValue: `DWORD#16#${hex}`,
+    typePrefix: "DWORD"
+  };
+}
+function bitAddressOf(address) {
+  const match = /^%([IQM])([XBWDL]?)(\d+)(?:\.(\d+))?$/i.exec(address);
+  if (!match) {
+    return `BITADR needs a complete address of the form %IX2.3, %QB4 or %MW8, not ${address}`;
+  }
+  const area = AREA_FLAGS[match[1].toUpperCase()];
+  const size = (match[2] ?? "").toUpperCase() || "X";
+  const byte = Number(match[3]);
+  const bit = match[4] === void 0 ? 0 : Number(match[4]);
+  if (size !== "X" && match[4] !== void 0) {
+    return `BITADR needs a complete address of the form %IX2.3, %QB4 or %MW8, not ${address}`;
+  }
+  if (bit > 7)
+    return `BITADR: bit ${bit} of ${address} is not in 0..7`;
+  const bitAddress = byte * 8 + bit;
+  if (bitAddress > MAX_BIT_ADDRESS) {
+    return `BITADR: ${address} is beyond the bit addresses a DWORD holds`;
+  }
+  return area * 268435456 + bitAddress;
+}
+function lowerPouOperators(ast, opts) {
+  const errors = [];
+  const declared = globalNames(ast);
+  const active = new Set([...POU_OPERATORS].filter((op) => !declared.has(op) && !opts.declaredByLibrary(op)));
+  if (active.size === 0)
+    return errors;
+  const reaches = (op, ctx) => active.has(op) && !ctx.variables.has(op) && !ctx.methods.has(op);
+  const globals = varMap([
+    ast.globalVarBlocks,
+    ...ast.configurations.map((c) => c.varBlocks)
+  ]);
+  const scope = (...blocks) => {
+    const map2 = varMap(blocks);
+    for (const [name2, decl] of map2) {
+      const external = blocks.some((list) => list.some((b) => b.blockType === "VAR_EXTERNAL" && b.declarations.includes(decl))) && globals.get(name2);
+      if (external !== false && external !== void 0) {
+        map2.set(name2, external);
+      }
+    }
+    for (const [name2, decl] of globals)
+      if (!map2.has(name2))
+        map2.set(name2, decl);
+    return map2;
+  };
+  const spellingCache = /* @__PURE__ */ new Map();
+  const name = (upper, span) => spelled(upper, span, opts.sources, spellingCache);
+  const fail = (message, span) => {
+    errors.push({
+      message,
+      line: span.startLine,
+      column: span.startCol,
+      severity: "error",
+      ...span.file ? { file: span.file } : {}
+    });
+  };
+  const lowerCall = (call, ctx) => {
+    const op = call.functionName.toUpperCase();
+    const span = call.sourceSpan;
+    if (op === "BITADR") {
+      const arg = call.arguments[0];
+      if (call.arguments.length !== 1) {
+        fail(`BITADR takes one argument, got ${call.arguments.length}`, span);
+        return dwordLiteral(0, span);
+      }
+      if (arg.name !== void 0 || arg.isOutput) {
+        fail("BITADR takes its argument without a name", span);
+        return dwordLiteral(0, span);
+      }
+      const value = arg.value;
+      const decl = value.kind === "VariableExpression" && value.fieldAccess.length === 0 && value.subscripts.length === 0 && !value.isDereference && (value.accessChain?.length ?? 0) === 0 ? ctx.variables.get(value.name.toUpperCase()) : void 0;
+      if (decl?.address === void 0 || decl.address === "" || decl.addressKind === "alias") {
+        const byName = value.kind === "VariableExpression" && value.fieldAccess.length === 0 && value.subscripts.length === 0;
+        const what = byName ? `'${value.name.toUpperCase()}' is not one` : "write it by name";
+        fail(`BITADR needs a located variable (declared AT %I, %Q or %M); ${what}`, value.sourceSpan);
+        return dwordLiteral(0, span);
+      }
+      const bitAddress = bitAddressOf(decl.address);
+      if (typeof bitAddress === "string") {
+        fail(bitAddress, value.sourceSpan);
+        return dwordLiteral(0, span);
+      }
+      return dwordLiteral(bitAddress, span);
+    }
+    if (call.arguments.length > 0) {
+      fail(`${op} takes no argument`, span);
+    }
+    if (op === "__POSITION") {
+      const text = ctx.section === "Impl" ? `Line ${span.startLine}, Column ${span.startCol} (Impl)` : `Line ${span.startLine} (Decl)`;
+      return stringLiteral(text, span);
+    }
+    if (ctx.pouName === void 0)
+      return void 0;
+    return stringLiteral(ctx.pouName, span);
+  };
+  const rewrite = (node, ctx) => {
+    if (typeof node !== "object" || node === null)
+      return;
+    if (Array.isArray(node)) {
+      for (const item of node)
+        rewrite(item, ctx);
+      return;
+    }
+    const statement = node;
+    if (statement.kind === "FunctionCallStatement" && statement.call?.kind === "FunctionCallExpression" && statement.call.instance === void 0 && reaches(statement.call.functionName.toUpperCase(), ctx)) {
+      const op = statement.call.functionName.toUpperCase();
+      fail(`${op} gives a value: use it in an expression, not as a statement`, statement.call.sourceSpan);
+      refusedOperatorCalls.add(statement.call);
+      return;
+    }
+    const call = node;
+    if (call.kind === "FunctionCallExpression" && call.instance === void 0 && reaches(call.functionName.toUpperCase(), ctx)) {
+      const literal = lowerCall(call, ctx);
+      if (literal) {
+        const target = node;
+        for (const key of Object.keys(target))
+          delete target[key];
+        Object.assign(target, literal);
+        return;
+      }
+    }
+    for (const value of Object.values(node))
+      rewrite(value, ctx);
+  };
+  const noMethods = /* @__PURE__ */ new Set();
+  const pou = (pouName, variables, decls, body, methods = noMethods) => {
+    rewrite(decls, { pouName, section: "Decl", variables, methods });
+    rewrite(body, { pouName, section: "Impl", variables, methods });
+  };
+  const fbByName = new Map(ast.functionBlocks.map((fb) => [fb.name.toUpperCase(), fb]));
+  const blockNames = (blocks) => blocks.flatMap((b) => b.declarations.flatMap((d) => d.names.map((n) => n.toUpperCase())));
+  const callables = (owner) => {
+    const out = /* @__PURE__ */ new Set();
+    const seen = /* @__PURE__ */ new Set();
+    let next = owner.name;
+    while (next !== void 0 && !seen.has(next.toUpperCase())) {
+      const upper = next.toUpperCase();
+      seen.add(upper);
+      for (const a of ast.actions) {
+        if (a.owner?.toUpperCase() === upper)
+          out.add(a.name.toUpperCase());
+      }
+      const current = upper === owner.name.toUpperCase() ? owner : fbByName.get(upper);
+      if (current !== void 0) {
+        for (const n of blockNames(current.varBlocks))
+          out.add(n);
+        for (const m of current.methods)
+          out.add(m.name.toUpperCase());
+        for (const a of current.actions)
+          out.add(a.name.toUpperCase());
+        next = current.kind === "FunctionBlockDeclaration" ? current.extends : void 0;
+        continue;
+      }
+      const lib = opts.libraryFB?.(upper);
+      for (const n of lib?.members ?? [])
+        out.add(n.toUpperCase());
+      next = lib?.extends;
+    }
+    return out;
+  };
+  const owners = [...ast.programs, ...ast.functionBlocks];
+  for (const fn of ast.functions) {
+    pou(name(fn.name, fn.sourceSpan), scope(fn.varBlocks), fn.varBlocks, [
+      fn.body
+    ]);
+  }
+  for (const owner of owners) {
+    const ownerName = name(owner.name, owner.sourceSpan);
+    const ownerScope = scope(owner.varBlocks);
+    const methods = callables(owner);
+    pou(ownerName, ownerScope, owner.varBlocks, owner.body, methods);
+    for (const m of owner.methods) {
+      pou(`${ownerName}.${name(m.name, m.nameSpan ?? m.sourceSpan)}`, scope(m.varBlocks, owner.varBlocks), [m.varBlocks, m.returnType], m.body, methods);
+    }
+    for (const a of owner.actions) {
+      pou(`${ownerName}.${name(a.name, a.sourceSpan)}`, ownerScope, [], a.body, methods);
+    }
+    if (owner.kind === "FunctionBlockDeclaration") {
+      for (const p of owner.properties) {
+        const propName = `${ownerName}.${name(p.name, p.sourceSpan)}`;
+        for (const [blocks, body] of [
+          [p.getterVarBlocks ?? [], p.getter],
+          [p.setterVarBlocks ?? [], p.setter]
+        ]) {
+          pou(propName, scope(blocks, owner.varBlocks), blocks, body, methods);
+        }
+      }
+    }
+  }
+  for (const a of ast.actions) {
+    const owner = owners.find((o) => o.name.toUpperCase() === a.owner?.toUpperCase());
+    const ownerName = owner ? name(owner.name, owner.sourceSpan) : a.owner;
+    pou(ownerName === void 0 ? void 0 : `${ownerName}.${name(a.name, a.sourceSpan)}`, owner ? scope(owner.varBlocks) : globals, [], a.body, owner ? callables(owner) : noMethods);
+  }
+  for (const t of ast.types) {
+    pou(name(t.name, t.sourceSpan), globals, [t.definition, t.defaultValue], []);
+  }
+  for (const block of ast.globalVarBlocks) {
+    pou(block.globalListName, globals, [block], []);
+  }
+  for (const c of ast.configurations) {
+    pou(name(c.name, c.sourceSpan), globals, c.varBlocks, []);
+  }
+  return errors;
+}
+function lowerTestPouOperators(testFile, fileName, declared) {
+  const errors = [];
+  const localNames = (blocks) => new Set((blocks ?? []).flatMap((b) => b.declarations.flatMap((d) => d.names.map((n) => n.toUpperCase()))));
+  const setupNames = localNames(testFile.setup?.varBlocks);
+  let locals = setupNames;
+  const rewrite = (node, section) => {
+    if (typeof node !== "object" || node === null)
+      return;
+    if (Array.isArray(node)) {
+      for (const item of node)
+        rewrite(item, section);
+      return;
+    }
+    const statement = node;
+    const reaches = (op2) => POU_OPERATORS.has(op2) && !declared(op2) && !locals.has(op2);
+    if (statement.kind === "FunctionCallStatement" && statement.call?.kind === "FunctionCallExpression" && statement.call.instance === void 0 && reaches(statement.call.functionName.toUpperCase())) {
+      const span = statement.call.sourceSpan;
+      errors.push({
+        message: `${statement.call.functionName.toUpperCase()} gives a value: use it in an expression, not as a statement`,
+        line: span.startLine,
+        column: span.startCol,
+        severity: "error",
+        file: fileName
+      });
+      refusedOperatorCalls.add(statement.call);
+      return;
+    }
+    const call = node;
+    const op = call.kind === "FunctionCallExpression" && call.instance === void 0 ? call.functionName.toUpperCase() : void 0;
+    if (op !== void 0 && reaches(op)) {
+      const span = call.sourceSpan;
+      if (op !== "__POSITION") {
+        errors.push({
+          message: `${op} is not supported in a test file`,
+          line: span.startLine,
+          column: span.startCol,
+          severity: "error",
+          file: fileName
+        });
+        refusedOperatorCalls.add(call);
+        return;
+      }
+      const text = section === "Impl" ? `Line ${span.startLine}, Column ${span.startCol} (Impl)` : `Line ${span.startLine} (Decl)`;
+      const target = node;
+      for (const key of Object.keys(target))
+        delete target[key];
+      Object.assign(target, stringLiteral(text, span));
+      return;
+    }
+    for (const value of Object.values(node))
+      rewrite(value, section);
+  };
+  for (const block of [
+    testFile.setup,
+    testFile.teardown,
+    ...testFile.testCases
+  ]) {
+    if (!block)
+      continue;
+    locals = block !== testFile.setup && "varBlocks" in block ? /* @__PURE__ */ new Set([
+      ...setupNames,
+      ...localNames(block.varBlocks)
+    ]) : setupNames;
+    if ("varBlocks" in block)
+      rewrite(block.varBlocks, "Decl");
+    rewrite(block.body, "Impl");
+  }
+  return errors;
 }
 
 // dist/semantic/analyzer.js
@@ -26836,6 +29189,12 @@ function unusableAddressMessage(decl) {
   }
   return `Invalid address format: ${decl.address}`;
 }
+var BIT_STRING_BITS = {
+  BYTE: 8,
+  WORD: 16,
+  DWORD: 32,
+  LWORD: 64
+};
 var SemanticAnalyzer = class {
   options;
   symbolTables;
@@ -26881,6 +29240,7 @@ var SemanticAnalyzer = class {
     }
     const errorsBeforeStructFeature = this.errors.length;
     this.validateStructExtendsFeature(ast);
+    this.validateTypeColonFeature(ast);
     this.flattenStructTypes(ast);
     this.validateUnions(ast);
     this.applyFbInitFeature(ast);
@@ -26916,6 +29276,10 @@ var SemanticAnalyzer = class {
     }
     if (this.errors.length - typeReferenceErrors === 0) {
       this.validateSemantics(ast);
+    } else {
+      this.prepareLiteralFallback(ast);
+      this.validateLiteralRanges(ast);
+      this.literalsReported.clear();
     }
     this.displayGlobalListNames(this.errors);
     this.displayGlobalListNames(this.warnings);
@@ -27100,6 +29464,14 @@ var SemanticAnalyzer = class {
       needFeature: (construct, span) => this.requireFeature("fb_init", construct, span)
     });
   }
+  /** `TYPE X STRUCT` without the colon needs the feature type_colon_optional. Reported at STRUCT. */
+  validateTypeColonFeature(ast) {
+    for (const typeDecl of ast.types) {
+      if (!typeDecl.colonOmittedSpan)
+        continue;
+      this.requireFeature("type_colon_optional", `TYPE ${typeDecl.name.toUpperCase()} without ':' before STRUCT`, typeDecl.colonOmittedSpan);
+    }
+  }
   /** `TYPE X EXTENDS Base : STRUCT` needs the feature struct_extends. Reported at EXTENDS. */
   validateStructExtendsFeature(ast) {
     for (const typeDecl of ast.types) {
@@ -27120,6 +29492,8 @@ var SemanticAnalyzer = class {
     };
     for (const typeDecl of ast.types) {
       if (!isUnionDefinition(typeDecl.definition))
+        continue;
+      if (typeDecl.definition.overlap === true)
         continue;
       this.requireFeature("union", `UNION type '${typeDecl.name}'`, typeDecl.definition.sourceSpan);
     }
@@ -27388,7 +29762,7 @@ var SemanticAnalyzer = class {
     }
     const on = this.features.has("program_methods");
     const programs = new Map(ast.programs.map((p) => [p.name.toUpperCase(), p]));
-    const error3 = (message, span) => this.addError(message, span.startLine, span.startCol, span.file);
+    const error4 = (message, span) => this.addError(message, span.startLine, span.startCol, span.file);
     const member = (prog, name) => {
       const upper = name.toUpperCase();
       for (const block of prog.varBlocks) {
@@ -27414,28 +29788,28 @@ var SemanticAnalyzer = class {
       if (reach.kind === "member") {
         const found = member(prog, reach.member);
         if (!found) {
-          error3(`PROGRAM ${P} has no variable '${reach.member}'`, reach.span);
+          error4(`PROGRAM ${P} has no variable '${reach.member}'`, reach.span);
           continue;
         }
         const bt = found.block.blockType;
         if (bt !== "VAR" && bt !== "VAR_INPUT" && bt !== "VAR_OUTPUT") {
-          error3(`${bt} '${reach.member}' of PROGRAM ${P} cannot be reached from another POU`, reach.span);
+          error4(`${bt} '${reach.member}' of PROGRAM ${P} cannot be reached from another POU`, reach.span);
         } else if (reach.write && found.block.isConstant) {
-          error3(`Cannot assign to CONSTANT variable '${P}.${reach.member}'`, reach.span);
+          error4(`Cannot assign to CONSTANT variable '${P}.${reach.member}'`, reach.span);
         } else if (reach.write && bt === "VAR_OUTPUT") {
-          error3(`VAR_OUTPUT '${reach.member}' of PROGRAM ${P} is read-only outside ${P}`, reach.span);
+          error4(`VAR_OUTPUT '${reach.member}' of PROGRAM ${P} is read-only outside ${P}`, reach.span);
         }
       } else if (reach.kind === "method") {
         const upper = reach.method.toUpperCase();
         const method = prog.methods.find((m) => m.name.toUpperCase() === upper);
         if (!method) {
-          error3(`PROGRAM ${P} has no method or action '${reach.method}'`, reach.span);
+          error4(`PROGRAM ${P} has no method or action '${reach.method}'`, reach.span);
         } else if (method.visibility === "PRIVATE" || method.visibility === "PROTECTED") {
-          error3(`Cannot call ${method.visibility} method '${reach.method}' of '${P}' from outside '${P}'.`, reach.span);
+          error4(`Cannot call ${method.visibility} method '${reach.method}' of '${P}' from outside '${P}'.`, reach.span);
         }
       } else {
         if (!reach.statement) {
-          error3(`PROGRAM ${P} has no result: call it as a statement`, reach.span);
+          error4(`PROGRAM ${P} has no result: call it as a statement`, reach.span);
           continue;
         }
         const inputs = prog.varBlocks.filter((b) => b.blockType === "VAR_INPUT").flatMap((b) => b.declarations.flatMap((d) => d.names));
@@ -27450,11 +29824,11 @@ var SemanticAnalyzer = class {
           }
           const wanted = arg.isOutput ? "VAR_OUTPUT" : "VAR_INPUT";
           if (member(prog, name)?.block.blockType !== wanted) {
-            error3(`PROGRAM ${P} has no ${wanted} '${arg.name}'`, reach.span);
+            error4(`PROGRAM ${P} has no ${wanted} '${arg.name}'`, reach.span);
           }
         }
         if (positional > inputs.length) {
-          error3(`too many arguments in the call of PROGRAM ${P}`, reach.span);
+          error4(`too many arguments in the call of PROGRAM ${P}`, reach.span);
         }
       }
     }
@@ -27471,7 +29845,7 @@ var SemanticAnalyzer = class {
           if (!prog || !reached.has(prog.name.toUpperCase()))
             continue;
           for (const name of decl.names) {
-            error3(`${oneInstance(prog.name)}; ${name} cannot declare another`, decl.sourceSpan);
+            error4(`${oneInstance(prog.name)}; ${name} cannot declare another`, decl.sourceSpan);
           }
         }
       }
@@ -27503,7 +29877,7 @@ var SemanticAnalyzer = class {
             first2.set(prog.name.toUpperCase(), inst.instanceName);
             continue;
           }
-          error3(`${oneInstance(prog.name)}; the CONFIGURATION cannot run it as both ${seen} and ${inst.instanceName}`, inst.sourceSpan);
+          error4(`${oneInstance(prog.name)}; the CONFIGURATION cannot run it as both ${seen} and ${inst.instanceName}`, inst.sourceSpan);
         }
       }
     }
@@ -27861,7 +30235,99 @@ var SemanticAnalyzer = class {
     this.validateArrayShapes(ast);
     this.validateStructInitializerPlacement(ast);
     this.validateEnumTypeDefaults(ast);
+    this.validateLiteralRanges(ast);
+  }
+  /**
+   * Literals a type cannot hold (integer, typed, LTIME, REAL) and STRING
+   * characters outside Windows-1252. Needs no resolved type, so it also runs
+   * when an earlier error stops the type checks.
+   */
+  /** Literals an earlier error already reports, left out of the literal checks. */
+  literalsReported = /* @__PURE__ */ new Set();
+  /**
+   * Before the literal checks run without the type checks: leave out a literal
+   * an earlier error starts at (`n := '☃'` refused as STRING into INT), and
+   * take a one-character literal assigned to a CHAR or WCHAR as that
+   * character, as the type checks would.
+   */
+  prepareLiteralFallback(ast) {
+    const at = new Set(this.errors.map((e) => `${e.file ?? ""}:${e.line}:${e.column}`));
+    walkAST(ast, (node) => {
+      if (node.kind !== "LiteralExpression")
+        return;
+      const literal = node;
+      const span = literal.sourceSpan;
+      if (at.has(`${span.file ?? ""}:${span.startLine}:${span.startCol}`)) {
+        this.literalsReported.add(literal);
+      }
+    });
+    const charKind = (typeName2) => {
+      let upper = typeName2.toUpperCase();
+      for (let i = 0; i < 32; i++) {
+        if (upper === "CHAR" || upper === "WCHAR")
+          return upper;
+        const current = upper;
+        const def = ast.types.find((t) => t.name.toUpperCase() === current)?.definition;
+        if (def?.kind !== "TypeReference")
+          return void 0;
+        upper = def.name.toUpperCase();
+      }
+      return void 0;
+    };
+    const adapt = (value, typeName2) => {
+      const kind = typeName2 === void 0 ? void 0 : charKind(typeName2);
+      if (kind === void 0 || value.kind !== "LiteralExpression")
+        return;
+      const want = kind === "CHAR" ? "STRING" : "WSTRING";
+      if (value.literalType !== want || (value.typePrefix ?? "") !== "")
+        return;
+      const raw = `${kind}#${value.rawValue}`;
+      if (charLiteralUnits(raw).units.length !== 1)
+        return;
+      value.literalType = kind;
+      value.rawValue = raw;
+      value.value = raw;
+    };
+    const visitPou = (blocks, bodies) => {
+      const types = /* @__PURE__ */ new Map();
+      for (const b of [...ast.globalVarBlocks, ...blocks]) {
+        for (const d of b.declarations) {
+          for (const n of d.names)
+            types.set(n.toUpperCase(), d.type.name);
+          if (d.initialValue && d.type.arrayDimensions === void 0) {
+            adapt(d.initialValue, d.type.name);
+          }
+        }
+      }
+      for (const body of bodies) {
+        for (const stmt of body) {
+          walkAST(stmt, (n) => {
+            if (n.kind !== "AssignmentStatement")
+              return;
+            const a = n;
+            if (a.target.kind === "VariableExpression" && a.target.fieldAccess.length === 0 && a.target.subscripts.length === 0 && !a.target.isDereference) {
+              adapt(a.value, types.get(a.target.name.toUpperCase()));
+            }
+          });
+        }
+      }
+    };
+    for (const p of ast.programs)
+      visitPou(p.varBlocks, [p.body]);
+    for (const f of ast.functions)
+      visitPou(f.varBlocks, [f.body]);
+    for (const fb of ast.functionBlocks) {
+      visitPou(fb.varBlocks, [fb.body]);
+      for (const m of fb.methods) {
+        visitPou([...fb.varBlocks, ...m.varBlocks], [m.body]);
+      }
+    }
+  }
+  validateLiteralRanges(ast) {
     this.validateIntegerLiteralRange(ast);
+    this.validateStringLiteralCharset(ast);
+    this.validateLtimeLiteralRange(ast);
+    this.validateRealLiteralRange(ast);
   }
   /**
    * Validate array declarations and array accesses against the declared shape:
@@ -28149,10 +30615,12 @@ var SemanticAnalyzer = class {
       if (node.kind !== "LiteralExpression")
         return;
       const literal = node;
+      if (this.literalsReported.has(literal))
+        return;
       if (literal.literalType !== "INT")
         return;
       if ((literal.typePrefix ?? "") !== "") {
-        this.validateSignedTypedLiteralRange(literal);
+        this.validateTypedLiteralRange(literal);
         return;
       }
       const exact = exactIntegerLiteralValue(literal.rawValue);
@@ -28165,23 +30633,123 @@ var SemanticAnalyzer = class {
     });
   }
   /**
-   * Reject a signed typed integer literal (`SINT#-129`, `USINT#-1`) whose value
-   * its prefix type cannot hold. Only the signed form is checked: an unsigned
-   * payload (`SINT#200`) keeps its existing, unchecked lowering.
+   * Reject a character Windows-1252 cannot hold in a STRING literal: a STRING
+   * stores one CP1252 byte per character. A WSTRING literal holds any.
    */
-  validateSignedTypedLiteralRange(literal) {
+  validateStringLiteralCharset(roots) {
+    const visit = (node) => {
+      if (node.kind !== "LiteralExpression")
+        return;
+      const literal = node;
+      if (this.literalsReported.has(literal))
+        return;
+      if (literal.literalType === "CHAR" || literal.literalType === "WCHAR") {
+        this.validateCharLiteral(literal);
+        return;
+      }
+      if (literal.literalType !== "STRING")
+        return;
+      const raw = literal.rawValue;
+      for (let i = raw.indexOf("'") + 1; i < raw.length; i++) {
+        const codePoint = raw.codePointAt(i);
+        if (codePoint <= 127 || cp1252Byte(codePoint) !== void 0)
+          continue;
+        const span = literal.sourceSpan;
+        const before2 = raw.substring(0, i);
+        const breaks = before2.split("\n").length - 1;
+        const line = span.startLine + breaks;
+        const column = breaks === 0 ? span.startCol + i : i - before2.lastIndexOf("\n");
+        const hex = codePoint.toString(16).toUpperCase().padStart(4, "0");
+        this.addError(codePoint === 65533 ? "A STRING literal holds U+FFFD, a byte the source could not decode: the file is probably not UTF-8 (saved as Windows-1252?); save it as UTF-8" : `Character '${String.fromCodePoint(codePoint)}' (U+${hex}) cannot be stored in a STRING, which holds Windows-1252 characters; use a WSTRING literal ("...") for it`, line, column, span.file);
+        return;
+      }
+    };
+    for (const root2 of Array.isArray(roots) ? roots : [roots]) {
+      walkAST(root2, (n) => visit(n));
+    }
+  }
+  /**
+   * A CHAR or WCHAR literal holds exactly one character, and a CHAR one that
+   * Windows-1252 has.
+   */
+  validateCharLiteral(literal) {
+    const { wide, units } = charLiteralUnits(literal.rawValue);
+    const type = wide ? "WCHAR" : "CHAR";
+    const span = literal.sourceSpan;
+    const fail = (message) => this.addError(message, span.startLine, span.startCol, span.file);
+    if (units.length !== 1) {
+      fail(`A ${type} literal holds exactly one character; ${literal.rawValue} holds ${units.length}`);
+      return;
+    }
+    if (units[0] === -1 && !/#['"]/.test(literal.rawValue)) {
+      fail(`${literal.rawValue} is past the ${type} range`);
+      return;
+    }
+    if (units[0] === -1) {
+      fail(`${literal.rawValue} holds a character Windows-1252 lacks, which a CHAR cannot store; use a WCHAR literal (WCHAR#"...") for it`);
+    }
+  }
+  /**
+   * Reject an untyped real literal no LREAL can hold (`1E400`): its value would
+   * be infinite, which the C++ compiler refuses.
+   */
+  validateRealLiteralRange(ast) {
+    walkAST(ast, (node) => {
+      if (node.kind !== "LiteralExpression")
+        return;
+      const literal = node;
+      if (this.literalsReported.has(literal))
+        return;
+      if (literal.literalType !== "REAL" || (literal.typePrefix ?? "") !== "") {
+        return;
+      }
+      if (Number.isFinite(Number(literal.value)))
+        return;
+      const span = literal.sourceSpan;
+      this.addError(`Real literal '${literal.rawValue}' is outside the LREAL range`, span.startLine, span.startCol, span.file);
+    });
+  }
+  /**
+   * Reject an LTIME literal outside the signed 64-bit nanosecond range LTIME
+   * holds (about 106751 days either way).
+   */
+  validateLtimeLiteralRange(ast) {
+    walkAST(ast, (node) => {
+      if (node.kind !== "LiteralExpression")
+        return;
+      const literal = node;
+      if (this.literalsReported.has(literal))
+        return;
+      if (literal.literalType !== "LTIME")
+        return;
+      const ns = exactTimeLiteralNanoseconds(literal.rawValue);
+      if (ns >= -(2n ** 63n) && ns < 2n ** 63n)
+        return;
+      const span = literal.sourceSpan;
+      this.addError(`LTIME literal '${literal.rawValue}' is outside the LTIME range (${-(2n ** 63n)} to ${2n ** 63n - 1n} nanoseconds)`, span.startLine, span.startCol, span.file);
+    });
+  }
+  /**
+   * Reject a typed integer literal whose value its prefix type cannot hold
+   * (`SINT#200`, `USINT#-1`, `BYTE#256`). A based payload (`2#`, `8#`, `16#`)
+   * on a signed type is a bit pattern: it is accepted when it fits the type's
+   * width (`INT#16#FFFF`).
+   */
+  validateTypedLiteralRange(literal) {
     const raw = literal.rawValue;
     const payload = raw.substring(raw.indexOf("#") + 1);
-    if (!/^[+-]/.test(payload))
-      return;
-    const range = integerTypeRange(literal.typePrefix ?? "");
+    const prefix = (literal.typePrefix ?? "").toUpperCase();
+    const range = integerTypeRange(prefix) ?? (BIT_STRING_BITS[prefix] !== void 0 ? { min: 0n, max: (1n << BigInt(BIT_STRING_BITS[prefix])) - 1n } : void 0);
     const exact = exactIntegerLiteralValue(payload);
     if (range === void 0 || exact === void 0)
       return;
     if (exact >= range.min && exact <= range.max)
       return;
+    const bitPattern = range.min < 0n && /^(2|8|16)#/.test(payload.replace(/_/g, ""));
+    if (bitPattern && exact >= 0n && exact <= range.max - range.min)
+      return;
     const span = literal.sourceSpan;
-    this.addError(`Typed literal '${raw}' is outside the range of ${literal.typePrefix} (${range.min} to ${range.max}).`, span.startLine, span.startCol, span.file);
+    this.addError(`Typed literal '${raw}' is outside the range of ${literal.typePrefix} (${range.min} to ${range.max}` + (bitPattern ? `, or 0 to ${range.max - range.min} as a 2#, 8# or 16# bit pattern)` : ")") + ".", span.startLine, span.startCol, span.file);
   }
   /**
    * Validate that no assignments target CONSTANT variables.
@@ -28451,7 +31019,7 @@ var SemanticAnalyzer = class {
   /** `<construct> needs the feature <id>`, plus the loaded profiles that have it. */
   featureMessage(feature, construct) {
     const message = `${construct} needs the feature ${feature}`;
-    const dialect = this.options.dialect;
+    const dialect = this.options.dialect ?? this.testFileDialect;
     const profiles = dialect ? profilesWithFeature(dialect, feature) : [];
     return profiles.length > 0 ? `${message} (profiles: ${profiles.join(", ")})` : message;
   }
@@ -29054,6 +31622,8 @@ var SemanticAnalyzer = class {
       if (stmt.kind === "AssignmentStatement") {
         this.validateExpression(stmt.target, varTypeMap, ast);
         this.validateExpression(stmt.value, varTypeMap, ast);
+      } else if (stmt.kind === "IfStatement" && stmt.conditionalReturn) {
+        this.requireFeature("conditional_return", "RETURN (condition)", stmt.conditionalReturn);
       } else if (stmt.kind === "RefAssignStatement") {
         this.requireFeature("ref_assign", "REF=", stmt.sourceSpan);
         this.validateExpression(stmt.target, varTypeMap, ast);
@@ -29155,6 +31725,9 @@ var SemanticAnalyzer = class {
       return;
     const userFunction = sym?.kind === "function" && !this.symbolTables.globalScope.definedByLibrary(nameUpper);
     const desc = userFunction ? void 0 : this.stdRegistry.lookup(nameUpper) ?? (sym?.kind === "function" ? void 0 : this.stdRegistry.resolveTypedTrunc(nameUpper));
+    if (desc && libraryOverloadFor(expr, this.symbolTables, this.stdRegistry) !== void 0) {
+      return;
+    }
     if (desc) {
       if (desc.isVariadic) {
         const minArgs = desc.minArgs ?? desc.params.length;
@@ -29228,6 +31801,19 @@ var SemanticAnalyzer = class {
     }
     return params;
   }
+  /** Upper-case names of a user FUNCTION's inputs that carry an implicit-parameter attribute. */
+  implicitParameterNames(sym) {
+    const names = /* @__PURE__ */ new Set();
+    for (const block of sym.declaration?.varBlocks ?? []) {
+      for (const decl of block.declarations) {
+        if (decl.implicitParameter === void 0)
+          continue;
+        for (const n of decl.names)
+          names.add(n.toUpperCase());
+      }
+    }
+    return names;
+  }
   /**
    * Option A: every input without an initial value is mandatory. Resolve the
    * call's named/positional arguments to parameter slots (mirroring the
@@ -29260,7 +31846,8 @@ var SemanticAnalyzer = class {
     }
     const missing = required.filter((p) => !satisfied.has(p.name)).map((p) => p.name);
     if (missing.length > 0) {
-      this.addError(`'${expr.functionName.toUpperCase()}' is missing required input${missing.length > 1 ? "s" : ""}: ${missing.join(", ")}`, expr.sourceSpan.startLine, expr.sourceSpan.startCol, expr.sourceSpan.file);
+      const implicit = this.implicitParameterNames(sym);
+      this.addError(`'${expr.functionName.toUpperCase()}' is missing required input${missing.length > 1 ? "s" : ""}: ${missing.join(", ")}${implicitParameterHint(missing.filter((n) => implicit.has(n)))}`, expr.sourceSpan.startLine, expr.sourceSpan.startCol, expr.sourceSpan.file);
     }
   }
   /**
@@ -29534,6 +32121,9 @@ var SemanticAnalyzer = class {
     if (this.testTypeNames.has(upper))
       return true;
     const sym = this.symbolTables.globalScope.lookup(upper);
+    if ((sym === void 0 || sym.kind === "variable") && ELEMENTARY_TYPES[upper] !== void 0) {
+      return true;
+    }
     if (!sym)
       return false;
     return sym.kind === "type" || sym.kind === "functionBlock" || sym.kind === "program";
@@ -29614,6 +32204,10 @@ var SemanticAnalyzer = class {
     if (!typeRef.name || typeRef.name.toUpperCase() === "VOID")
       return;
     const nameToCheck = typeRef.elementTypeName ?? typeRef.name;
+    if (!this.isKnownType(nameToCheck) && platformTypeTarget(nameToCheck) !== void 0) {
+      this.requireFeature("platform_types", nameToCheck.toUpperCase(), typeRef.sourceSpan);
+      return;
+    }
     if (!this.isKnownType(nameToCheck)) {
       this.addError(`Undefined type '${nameToCheck}'${context ? " in " + context : ""}`, typeRef.sourceSpan.startLine, typeRef.sourceSpan.startCol, typeRef.sourceSpan.file);
     }
@@ -30230,7 +32824,8 @@ var SemanticAnalyzer = class {
   }
   /**
    * A bare name in a derived block reaching a base's `VAR PRIVATE` variable
-   * (Ed. 3 6.6.5.10: PRIVATE is not accessible to derived blocks).
+   * or PRIVATE property (Ed. 3 6.6.5.10: PRIVATE is not accessible to derived
+   * blocks).
    */
   refuseInheritedPrivate(upper, ctx, span) {
     if (ctx.fbName === void 0)
@@ -30240,6 +32835,9 @@ var SemanticAnalyzer = class {
       return;
     if (this.symbolTables.getFBScope(ctx.fbName)?.lookupLocal(upper))
       return;
+    if (own.declaration.properties.some((p) => p.name.toUpperCase() === upper)) {
+      return;
+    }
     const visited = /* @__PURE__ */ new Set();
     let base = own.declaration.extends;
     while (base !== void 0 && !visited.has(base.toUpperCase())) {
@@ -30257,7 +32855,11 @@ var SemanticAnalyzer = class {
         }
         return;
       }
-      if (sym.declaration.properties.some((p) => p.name.toUpperCase() === upper)) {
+      const prop = sym.declaration.properties.find((p) => p.name.toUpperCase() === upper);
+      if (prop !== void 0) {
+        if (prop.visibility === "PRIVATE") {
+          this.addError(`Cannot access PRIVATE property '${upper}' of '${sym.name}' from outside '${sym.name}'.`, span.startLine, span.startCol, span.file);
+        }
         return;
       }
       base = sym.declaration.extends;
@@ -30361,6 +32963,8 @@ var SemanticAnalyzer = class {
    * would see an undeclared name).
    */
   checkCalleeDeclared(name, scope, ctx, call) {
+    if (refusedOperatorCalls.has(call))
+      return;
     const upper = name.toUpperCase();
     const hit = scope.lookup(upper);
     if (hit && hit.kind !== "enumValue")
@@ -30377,8 +32981,34 @@ var SemanticAnalyzer = class {
       return;
     if (this.hasExternalCode)
       return;
+    if (this.refusePouOperator(upper, call.sourceSpan))
+      return;
     const span = call.sourceSpan;
+    const op = vendorOperatorNamed(upper);
+    if (op !== void 0) {
+      this.requireFeature(vendorOperatorFeature(op), op, span);
+      return;
+    }
     this.addError(`Undeclared function '${upper}'`, span.startLine, span.startCol, span.file);
+  }
+  /**
+   * INDEXOF, and `__POUNAME`, `__POSITION` or `BITADR` left as a call: off,
+   * they need the feature vendor_operators; on, a call that was not lowered
+   * stands where the operator has no value.
+   */
+  refusePouOperator(upper, span) {
+    if (upper === "INDEXOF") {
+      this.addError("INDEXOF is not supported: use ADR(x) for the address of a variable or instance", span.startLine, span.startCol, span.file);
+      return true;
+    }
+    if (!POU_OPERATORS.has(upper))
+      return false;
+    if (this.features.has("vendor_operators")) {
+      this.addError(`${upper} has no value here`, span.startLine, span.startCol, span.file);
+    } else {
+      this.requireFeature("vendor_operators", upper, span);
+    }
+    return true;
   }
   /**
    * Check whether a name is declared in the current scope chain or context.
@@ -30412,9 +33042,12 @@ var SemanticAnalyzer = class {
    * Validates type references in var blocks and undeclared variable usage
    * in SETUP, TEARDOWN, and TEST bodies.
    */
-  analyzeTestFile(testFile, sourceSymbolTables) {
+  /** The dialect a test file was parsed under, for the profiles a refusal names. */
+  testFileDialect;
+  analyzeTestFile(testFile, sourceSymbolTables, sourceAst) {
     this.errors = [];
     this.warnings = [];
+    this.testFileDialect = testFile.dialect;
     this.symbolTables = sourceSymbolTables;
     const enumDescriptors = [];
     for (const sym of sourceSymbolTables.globalScope.getAllSymbols()) {
@@ -30424,6 +33057,21 @@ var SemanticAnalyzer = class {
       }
     }
     this.enumMemberMap = buildEnumMemberMap(enumDescriptors);
+    restoreDeclaredPlatformTypes(testFile, (name) => {
+      const kind = sourceSymbolTables.globalScope.lookup(name)?.kind;
+      return kind === "type" || kind === "functionBlock" || kind === "program";
+    });
+    if (testFile.dialect?.features.has("vendor_operators") === true) {
+      this.errors.push(...lowerTestPouOperators(
+        testFile,
+        testFile.fileName,
+        // An enum member is no declaration a call reaches.
+        (name) => {
+          const kind = sourceSymbolTables.globalScope.lookup(name)?.kind;
+          return kind !== void 0 && kind !== "enumValue";
+        }
+      ));
+    }
     const typeScope = this.buildTestTypeScope(testFile);
     if (testFile.setup) {
       this.validateTestVarBlocks(testFile.setup.varBlocks, "SETUP");
@@ -30440,13 +33088,30 @@ var SemanticAnalyzer = class {
       this.walkTestStatementsForUndeclaredVars(testFile.teardown.body, setupScope);
       this.checkTestMemberAccess(testFile.teardown.body, setupScope);
     }
+    this.validateStringLiteralCharset([
+      ...testFile.setup?.varBlocks ?? [],
+      ...testFile.setup?.body ?? [],
+      ...testFile.teardown?.body ?? [],
+      ...testFile.testCases.flatMap((tc) => [...tc.varBlocks, ...tc.body])
+    ]);
     for (const tc of testFile.testCases) {
       const testScope = this.buildTestScope(tc.varBlocks, setupScope);
       this.walkTestStatementsForUndeclaredVars(tc.body, testScope);
       this.checkTestMemberAccess(tc.body, testScope, testFile.setup?.body ?? []);
+      this.checkTestOutputBindings(tc.body, testScope, sourceAst);
+    }
+    if (testFile.setup) {
+      this.checkTestOutputBindings([...testFile.setup.body, ...testFile.teardown?.body ?? []], setupScope, sourceAst);
     }
     this.testTypeNames.clear();
     return { errors: [...this.errors], warnings: [...this.warnings] };
+  }
+  /** Output bindings in test bodies: checked as assignments, copied out where needed. */
+  checkTestOutputBindings(stmts, scope, sourceAst) {
+    const checker = new TypeChecker(this.symbolTables, this.stdRegistry);
+    const found = checker.checkTestOutputBindings(stmts, scope, sourceAst);
+    this.errors.push(...found.errors);
+    this.warnings.push(...found.warnings);
   }
   /**
    * A test body is outside every function block: `inst.x` follows the same
@@ -30684,9 +33349,9 @@ var SemanticAnalyzer = class {
     });
   }
 };
-function analyzeTestFile(testFile, sourceSymbolTables) {
+function analyzeTestFile(testFile, sourceSymbolTables, sourceAst) {
   const analyzer = new SemanticAnalyzer();
-  return analyzer.analyzeTestFile(testFile, sourceSymbolTables);
+  return analyzer.analyzeTestFile(testFile, sourceSymbolTables, sourceAst);
 }
 function signatureParams(method) {
   const out = [];
@@ -31145,6 +33810,9 @@ function isComparison(operator) {
 function isComparisonExpr(expr) {
   return expr.kind === "BinaryExpression" && isComparison(expr.operator);
 }
+function isNonZeroIntegerLiteral(expr) {
+  return expr.kind === "LiteralExpression" && expr.literalType === "INT" && typeof expr.value === "number" && Number.isInteger(expr.value) && expr.value !== 0 && expr.value !== -1;
+}
 function iecBaseToCppLiteral(raw) {
   const upper = raw.toUpperCase().replace(/_/g, "");
   if (upper.startsWith("16#"))
@@ -31264,11 +33932,48 @@ function translateIECString(inner, wide = false) {
       result += "\\?";
     } else if (ch < " " || ch === "\x7F") {
       result += octalEscape(ch.charCodeAt(0));
+    } else if (!wide && ch > "\x7F") {
+      const codePoint = inner.codePointAt(i);
+      const byte = cp1252Byte(codePoint);
+      if (codePoint > 65535)
+        i++;
+      result += byte !== void 0 ? octalEscape(byte) : "?";
     } else {
       result += ch;
     }
   }
   return result;
+}
+var NS_PER_DAY = "86400000000000LL";
+function dateArithmeticCpp(operator, l, r, left, right) {
+  if (operator !== "+" && operator !== "-")
+    return void 0;
+  const isDate = (k) => k === "DATE" || k === "LDATE";
+  const isDuration = (k) => k === "TIME" || k === "LTIME";
+  const raw = (code) => `static_cast<int64_t>(${code})`;
+  if (operator === "-" && isDate(l) && isDate(r)) {
+    return `((${raw(left)} - ${raw(right)}) * ${NS_PER_DAY})`;
+  }
+  if (isDate(l) && isDuration(r)) {
+    const signed = operator === "-" ? `-${raw(right)}` : raw(right);
+    return `DATE_FROM_DAYS(${raw(left)} + iec_floor_div(${signed}, ${NS_PER_DAY}))`;
+  }
+  if (operator === "+" && isDuration(l) && isDate(r)) {
+    return `DATE_FROM_DAYS(iec_floor_div(${raw(left)}, ${NS_PER_DAY}) + ${raw(right)})`;
+  }
+  return void 0;
+}
+function literalTemporalType(expr) {
+  if (expr.kind === "ParenthesizedExpression") {
+    return literalTemporalType(expr.expression);
+  }
+  if (expr.kind === "UnaryExpression" && expr.operator === "-") {
+    return literalTemporalType(expr.operand);
+  }
+  if (expr.kind !== "LiteralExpression")
+    return void 0;
+  const t = expr.literalType;
+  return t === "DATE" || t === "LDATE" || t === "TIME" || t === "LTIME" ? t : void 0;
 }
 
 // dist/backend/member-mangling.js
@@ -31352,6 +34057,45 @@ function needsMemberMangling(memberName, memberTypeName, ctx) {
 }
 function mangledMemberName(memberName, memberTypeName, ctx) {
   return needsMemberMangling(memberName, memberTypeName, ctx) ? `${memberName}_` : memberName;
+}
+
+// dist/backend/bit-runs.js
+function bitRuns(fields) {
+  const runs = [];
+  let current;
+  for (const field of fields) {
+    if (!field.type.bit) {
+      current = void 0;
+      continue;
+    }
+    for (const name of field.names) {
+      if (!current || current.members.length === 8) {
+        current = {
+          index: runs.length,
+          first: field,
+          firstName: name,
+          members: []
+        };
+        runs.push(current);
+      }
+      current.members.push({ field, name });
+    }
+  }
+  return runs;
+}
+function bitRunTypeName(owner, index) {
+  return `${owner}_bits${index}`;
+}
+function bitRunMemberName(index) {
+  return `bits_${index}_`;
+}
+function bitPlaceOf(fields, fieldUpper) {
+  for (const run of bitRuns(fields)) {
+    const bit = run.members.findIndex((m) => m.name.toUpperCase() === fieldUpper);
+    if (bit >= 0)
+      return { run: run.index, bit };
+  }
+  return void 0;
 }
 
 // dist/backend/struct-init-codegen.js
@@ -31461,6 +34205,65 @@ function members(def, spell) {
     cpp: spell.fieldCppType(f.type)
   })));
 }
+function membersWithBitRuns(owner, def, spell) {
+  const out = [];
+  const runs = bitRuns(def.fields);
+  for (const f of def.fields) {
+    if (f.type.bit) {
+      for (const run of runs.filter((r) => r.first === f)) {
+        out.push({
+          name: bitRunMemberName(run.index),
+          cpp: bitRunTypeName(owner, run.index)
+        });
+      }
+      continue;
+    }
+    for (const n of f.names) {
+      out.push({
+        name: spell.memberName(n, f.type),
+        cpp: spell.fieldCppType(f.type)
+      });
+    }
+  }
+  return out;
+}
+function bitRunHelperLines(owner, def, spell, indent) {
+  const lines = [];
+  const i1 = indent;
+  const i2 = indent + indent;
+  for (const run of bitRuns(def.fields)) {
+    const type = bitRunTypeName(owner, run.index);
+    const bits = run.members.map((m) => spell.memberName(m.name, m.field.type));
+    const bytes = 1;
+    lines.push(`struct ${type}_uref;`);
+    lines.push(`template<std::size_t Off, std::size_t Size> struct ${type}_uview;`);
+    lines.push(`template<> struct union_traits<${type}, void> {`);
+    lines.push(`${i1}using plain = detail::union_plain_array<unsigned char, ${bytes}>;`);
+    lines.push(`${i1}using ref = ${type}_uref;`);
+    lines.push(`${i1}template<std::size_t Off, std::size_t Size> using view = ${type}_uview<Off, Size>;`);
+    lines.push(`${i1}static ${type} load(const unsigned char* p) noexcept { ${type} v; std::memcpy(static_cast<void*>(&v), p, ${bytes}); return v; }`);
+    lines.push(`${i1}static void store(unsigned char* p, const ${type}& v) noexcept { std::memcpy(p, static_cast<const void*>(&v), ${bytes}); }`);
+    lines.push("};");
+    lines.push(`struct ${type}_uref {`);
+    for (const [bit, name] of bits.entries()) {
+      lines.push(`${i1}union_bit<${bit}, union_at> ${name};`);
+    }
+    lines.push(`${i1}explicit ${type}_uref(unsigned char* p) noexcept : ${bits.map((n) => `${n}(p)`).join(", ")} {}`);
+    lines.push("};");
+    lines.push(`template<std::size_t Off, std::size_t Size> struct ${type}_uview {`);
+    lines.push(`${i1}union {`);
+    lines.push(`${i2}unsigned char union_bytes_[Size];`);
+    for (const [bit, name] of bits.entries()) {
+      lines.push(`${i2}union_bit<${bit}, union_inplace<Off, Size>> ${name};`);
+    }
+    lines.push(`${i1}};`);
+    lines.push(`${i1}${type}_uview() = default;`);
+    lines.push(`${i1}${type}_uview(const ${type}_uview&) = default;`);
+    lines.push("};");
+    lines.push("");
+  }
+  return lines;
+}
 function unionTypeLines(name, def, spell, indent) {
   const ms = members(def, spell);
   const plain = `${name}_uplain`;
@@ -31485,7 +34288,7 @@ function unionTypeLines(name, def, spell, indent) {
   return lines;
 }
 function unionHelperLines(name, def, spell, indent) {
-  const ms = members(def, spell);
+  const ms = membersWithBitRuns(name, def, spell);
   const union = def.isUnion === true;
   const plain = `${name}_uplain`;
   const ref = `${name}_uref`;
@@ -31493,7 +34296,7 @@ function unionHelperLines(name, def, spell, indent) {
   const i1 = indent;
   const i2 = indent + indent;
   const at = (m) => union ? "" : ` + offsetof(${plain}, ${m.name})`;
-  const lines = [];
+  const lines = bitRunHelperLines(name, def, spell, indent);
   if (!union) {
     lines.push(`struct ${plain} {`);
     for (const m of ms)
@@ -31601,7 +34404,9 @@ var IEC_TO_CPP_TYPE = {
   LTIME: "LTIME_t",
   LDATE: "LDATE_t",
   LTOD: "LTOD_t",
+  LTIME_OF_DAY: "LTOD_t",
   LDT: "LDT_t",
+  LDATE_AND_TIME: "LDT_t",
   CHAR: "CHAR_t",
   WCHAR: "WCHAR_t",
   STRING: "IECString<254>",
@@ -31633,7 +34438,9 @@ var IEC_TO_CPP_VAR_TYPE = {
   LTIME: "IEC_LTIME",
   LDATE: "IEC_LDATE",
   LTOD: "IEC_LTOD",
+  LTIME_OF_DAY: "IEC_LTOD",
   LDT: "IEC_LDT",
+  LDATE_AND_TIME: "IEC_LDT",
   CHAR: "IEC_CHAR",
   WCHAR: "IEC_WCHAR"
 };
@@ -31654,6 +34461,10 @@ function typedDecimalPayload(expr) {
   const payload = expr.rawValue.substring(expr.rawValue.indexOf("#") + 1);
   return /^[+-]?[0-9][0-9_]*$/.test(payload) ? payload : void 0;
 }
+function isBitStringName(name) {
+  const upper = name.toUpperCase();
+  return getTypeCategory(upper) === "BIT" && upper !== "BOOL";
+}
 var TypeCodeGenerator = class {
   options;
   output = [];
@@ -31672,12 +34483,16 @@ var TypeCodeGenerator = class {
    * member-name collision mangle. Nested levels take their type from
    * `decltype(...)` of the member being assigned, which needs no metadata.
    */
+  /** Each alias of the unit (upper case) to the type it names, for NOT. */
+  aliasTargets = /* @__PURE__ */ new Map();
   structInitEmitter = {
     emitValue: (value) => this.expressionToCpp(value),
-    memberName: (fieldName) => fieldName,
-    fieldTypeName: () => void 0,
-    arrayElementTypeName: () => void 0
+    memberName: (fieldName, owner) => this.bitInitMember(fieldName, owner) ?? fieldName,
+    fieldTypeName: (fieldName, owner) => this.bitInitFieldType(fieldName, owner),
+    arrayElementTypeName: (typeName2) => this.bitInitElementType(typeName2)
   };
+  /** Every type of the unit by upper-case name, for BIT members in initializers. */
+  typesByName = /* @__PURE__ */ new Map();
   constructor(options = {}) {
     this.options = { ...defaultTypeCodeGenOptions, ...options };
   }
@@ -31712,6 +34527,69 @@ var TypeCodeGenerator = class {
       members: t.definition.members.map((m) => m.name)
     })));
     this.unionStored = unionStoredTypes(types);
+    this.typesByName = new Map(types.map((t) => [t.name.toUpperCase(), t]));
+    this.aliasTargets = new Map(types.flatMap((t) => t.definition.kind === "TypeReference" && t.definition.arrayDimensions === void 0 ? [[t.name.toUpperCase(), t.definition.name.toUpperCase()]] : []));
+  }
+  /** The STRUCT a type name stands for, through aliases. */
+  bitInitStruct(typeName2) {
+    let name = typeName2;
+    for (let depth = 0; depth < 16 && name !== void 0; depth++) {
+      const def = this.typesByName.get(name.toUpperCase())?.definition;
+      if (def?.kind === "StructDefinition") {
+        return def.isUnion === true ? void 0 : def;
+      }
+      if (def?.kind !== "TypeReference")
+        return void 0;
+      name = def.name;
+    }
+    return void 0;
+  }
+  /** `bits_<n>_.NAME` for a BIT member of `owner` in an initializer. */
+  bitInitMember(fieldName, owner) {
+    const def = this.bitInitStruct(owner);
+    if (def === void 0)
+      return void 0;
+    const place = bitPlaceOf(def.fields, fieldName.toUpperCase());
+    if (place === void 0)
+      return void 0;
+    const decl = def.fields.find((f) => f.names.some((n) => n.toUpperCase() === fieldName.toUpperCase()));
+    return `${bitRunMemberName(place.run)}.${this.structFieldEmitName(fieldName, decl.type)}`;
+  }
+  /** The type of member `fieldName` of `owner`, to find BIT members below it. */
+  bitInitFieldType(fieldName, owner) {
+    const decl = this.bitInitStruct(owner)?.fields.find((f) => f.names.some((n) => n.toUpperCase() === fieldName.toUpperCase()));
+    if (decl === void 0)
+      return void 0;
+    return decl.type.arrayDimensions && decl.type.elementTypeName !== void 0 ? `__INLINE_ARRAY_${decl.type.elementTypeName}` : decl.type.name;
+  }
+  /** The element type of an ARRAY type name, through aliases. */
+  bitInitElementType(typeName2) {
+    let name = typeName2;
+    for (let depth = 0; depth < 16 && name !== void 0; depth++) {
+      if (name.toUpperCase().startsWith("__INLINE_ARRAY_")) {
+        return name.slice("__INLINE_ARRAY_".length);
+      }
+      const def = this.typesByName.get(name.toUpperCase())?.definition;
+      if (def?.kind === "ArrayDefinition")
+        return def.elementType.name;
+      if (def?.kind !== "TypeReference")
+        return void 0;
+      name = def.name;
+    }
+    return void 0;
+  }
+  /** BYTE, WORD, DWORD or LWORD a type name is, through aliases. */
+  bitStringBase(name) {
+    let upper = name.toUpperCase();
+    for (let i = 0; i < 32; i++) {
+      if (isBitStringName(upper))
+        return upper;
+      const next = this.aliasTargets.get(upper);
+      if (next === void 0)
+        return void 0;
+      upper = next;
+    }
+    return void 0;
   }
   /**
    * Emit the given types, in the order given, with the lookups set by
@@ -31856,8 +34734,17 @@ var TypeCodeGenerator = class {
    * struct's bytes without alias analysis reordering the accesses.
    */
   generateStructType(name, def) {
+    const runs = bitRuns(def.fields);
+    for (const run of runs)
+      this.emitBitRun(name, run);
     this.emit(`struct STRUCPP_MAY_ALIAS ${name} {`);
     for (const field of def.fields) {
+      if (field.type.bit) {
+        for (const run of runs.filter((r) => r.first === field)) {
+          this.emit(`${this.options.indent}${bitRunTypeName(name, run.index)} ${bitRunMemberName(run.index)}{};`);
+        }
+        continue;
+      }
       const cppType = this.structFieldCppType(field.type);
       for (const fieldName of field.names) {
         const emitName = this.structFieldEmitName(fieldName, field.type);
@@ -31878,6 +34765,25 @@ var TypeCodeGenerator = class {
         }
       }
     }
+    this.emit("};");
+    this.emit("");
+  }
+  /**
+   * The struct holding one byte of BIT members as `bool` bitfields, packed
+   * from the least significant bit; its constructor zeroes the byte and sets
+   * their initial values.
+   */
+  emitBitRun(owner, run) {
+    const type = bitRunTypeName(owner, run.index);
+    const inits = [];
+    this.emit(`struct STRUCPP_MAY_ALIAS ${type} {`);
+    for (const { field, name: fieldName } of run.members) {
+      const value = field.initialValue ? `static_cast<bool>(${this.expressionToCpp(field.initialValue)})` : "false";
+      const member = this.structFieldEmitName(fieldName, field.type);
+      this.emit(`${this.options.indent}bool ${member} : 1;`);
+      inits.push(`${member} = ${value};`);
+    }
+    this.emit(`${this.options.indent}${type}() noexcept { std::memset(static_cast<void*>(this), 0, sizeof(*this)); ${inits.join(" ")} }`);
     this.emit("};");
     this.emit("");
   }
@@ -32073,6 +34979,10 @@ var TypeCodeGenerator = class {
       case "ParenthesizedExpression":
         return `(${this.expressionToCpp(expr.expression)})`;
       case "FunctionCallExpression":
+        if (expr.functionName.toUpperCase() === "NOT" && expr.arguments.length === 1 && expr.arguments[0].name === void 0) {
+          const arg = expr.arguments[0].value;
+          return this.notToCpp(arg, `(${this.expressionToCpp(arg)})`);
+        }
         return `${expr.functionName}()`;
       default:
         return "0";
@@ -32096,15 +35006,24 @@ var TypeCodeGenerator = class {
         const str = String(expr.value);
         return str.includes(".") || /[eE]/.test(str) ? str : `${str}.0`;
       }
-      case "TIME": {
+      case "TIME":
+      case "LTIME": {
         const timeVal = parseTimeLiteral(String(expr.value));
-        return `${timeVal.nanoseconds}LL`;
+        return `${timeVal.exact}LL`;
+      }
+      case "CHAR":
+      case "WCHAR": {
+        const { wide, units } = charLiteralUnits(expr.rawValue);
+        return `static_cast<${wide ? "WCHAR_t" : "CHAR_t"}>(${Math.max(units[0] ?? 0, 0)})`;
       }
       case "DATE":
+      case "LDATE":
         return `${parseDateLiteralToDays(String(expr.value))}LL`;
       case "TIME_OF_DAY":
+      case "LTIME_OF_DAY":
         return `${parseTodLiteralToNs(String(expr.value))}LL`;
       case "DATE_AND_TIME":
+      case "LDATE_AND_TIME":
         return `${parseDtLiteralToNs(String(expr.value))}LL`;
       default:
         return String(expr.value);
@@ -32136,6 +35055,13 @@ var TypeCodeGenerator = class {
   binaryExprToCpp(expr) {
     const left = this.expressionToCpp(expr.left);
     const right = this.expressionToCpp(expr.right);
+    const temporal = (e) => {
+      const t = e.resolvedType;
+      return t?.typeKind === "elementary" ? t.name.toUpperCase() : literalTemporalType(e);
+    };
+    const dated = dateArithmeticCpp(expr.operator, temporal(expr.left), temporal(expr.right), left, right);
+    if (dated !== void 0)
+      return dated;
     const opMap = {
       "+": "+",
       "-": "-",
@@ -32143,8 +35069,8 @@ var TypeCodeGenerator = class {
       "/": "/",
       MOD: "%",
       "**": "/* pow */",
-      AND: "&&",
-      OR: "||",
+      AND: "&",
+      OR: "|",
       XOR: "^",
       "=": "==",
       "<>": "!=",
@@ -32154,15 +35080,45 @@ var TypeCodeGenerator = class {
       ">=": ">="
     };
     const cppOp = opMap[expr.operator] ?? expr.operator;
+    if (["AND", "OR", "XOR"].includes(expr.operator)) {
+      return `(${left}) ${cppOp} (${right})`;
+    }
     if (isComparison(expr.operator)) {
       const l = isComparisonExpr(expr.left) ? `(${left})` : left;
       const r = isComparisonExpr(expr.right) ? `(${right})` : right;
       return `${l} ${cppOp} ${r}`;
     }
+    if (expr.operator === "MOD" && !isNonZeroIntegerLiteral(expr.right)) {
+      return `iec_mod(${left}, ${right})`;
+    }
     return `${left} ${cppOp} ${right}`;
+  }
+  /**
+   * NOT of a typed bit string other than BOOL (an alias included) is its
+   * complement in that width, as in a body; any other operand keeps `!`.
+   */
+  notToCpp(operandExpr, operand) {
+    const base = this.operandBitString(operandExpr);
+    return base === void 0 ? `!${operand}` : `static_cast<${base}_t>(~${operand})`;
+  }
+  /** The bit string type an operand is known to have: its type, or a typed literal's prefix. */
+  operandBitString(expr) {
+    if (expr.kind === "ParenthesizedExpression") {
+      return this.operandBitString(expr.expression);
+    }
+    const t = expr.resolvedType;
+    if (t?.typeKind === "elementary") {
+      return this.bitStringBase(t.name);
+    }
+    if (expr.kind === "LiteralExpression" && (expr.typePrefix ?? "") !== "") {
+      return this.bitStringBase(expr.typePrefix);
+    }
+    return void 0;
   }
   unaryExprToCpp(expr) {
     const operand = this.expressionToCpp(expr.operand);
+    if (expr.operator === "NOT")
+      return this.notToCpp(expr.operand, operand);
     const opMap = {
       NOT: "!",
       "-": "-",
@@ -32200,7 +35156,7 @@ var TypeCodeGenerator = class {
           case "/":
             return Math.floor(left / right);
           case "MOD":
-            return left % right;
+            return right === 0 ? 0 : left % right;
           default:
             return 0;
         }
@@ -32225,6 +35181,7 @@ var RUNTIME_NAMESPACE_NAMES = /* @__PURE__ */ new Set([
   "ADD",
   "ADD_DATE",
   "ADD_DT",
+  "ADD_LTIME",
   "ADD_TIME",
   "ADD_TOD",
   "ADR",
@@ -32253,6 +35210,7 @@ var RUNTIME_NAMESPACE_NAMES = /* @__PURE__ */ new Set([
   "DIFF_TOD",
   "DIV",
   "DIVTIME",
+  "DIV_LTIME",
   "DIV_TIME",
   "DT_FROM_COMPONENTS",
   "DT_FROM_NS",
@@ -32289,6 +35247,7 @@ var RUNTIME_NAMESPACE_NAMES = /* @__PURE__ */ new Set([
   "IEC_ARRAY_3D",
   "IEC_BOOL",
   "IEC_BYTE",
+  "IEC_CHAR",
   "IEC_DATE",
   "IEC_DINT",
   "IEC_DT",
@@ -32296,8 +35255,12 @@ var RUNTIME_NAMESPACE_NAMES = /* @__PURE__ */ new Set([
   "IEC_INOUT",
   "IEC_INT",
   "IEC_ITF",
+  "IEC_LDATE",
+  "IEC_LDT",
   "IEC_LINT",
   "IEC_LREAL",
+  "IEC_LTIME",
+  "IEC_LTOD",
   "IEC_LWORD",
   "IEC_REAL",
   "IEC_REFERENCE_TO",
@@ -32310,6 +35273,7 @@ var RUNTIME_NAMESPACE_NAMES = /* @__PURE__ */ new Set([
   "IEC_UINT",
   "IEC_ULINT",
   "IEC_USINT",
+  "IEC_WCHAR",
   "IEC_WORD",
   "INSERT",
   "LE",
@@ -32347,6 +35311,7 @@ var RUNTIME_NAMESPACE_NAMES = /* @__PURE__ */ new Set([
   "MOD",
   "MOVE",
   "MUL",
+  "MUL_LTIME",
   "MUL_TIME",
   "MUX",
   "NE",
@@ -32384,6 +35349,7 @@ var RUNTIME_NAMESPACE_NAMES = /* @__PURE__ */ new Set([
   "SUB",
   "SUB_DATE",
   "SUB_DT",
+  "SUB_LTIME",
   "SUB_TIME",
   "SUB_TOD",
   "TAN",
@@ -32406,13 +35372,18 @@ var RUNTIME_NAMESPACE_NAMES = /* @__PURE__ */ new Set([
   "TOD_TO_NS",
   "TO_BOOL",
   "TO_BYTE",
+  "TO_CHAR",
   "TO_DATE",
   "TO_DINT",
   "TO_DT",
   "TO_DWORD",
   "TO_INT",
+  "TO_LDATE",
+  "TO_LDT",
   "TO_LINT",
   "TO_LREAL",
+  "TO_LTIME",
+  "TO_LTOD",
   "TO_LWORD",
   "TO_REAL",
   "TO_SINT",
@@ -32423,6 +35394,7 @@ var RUNTIME_NAMESPACE_NAMES = /* @__PURE__ */ new Set([
   "TO_UINT",
   "TO_ULINT",
   "TO_USINT",
+  "TO_WCHAR",
   "TO_WORD",
   "TO_WSTRING",
   "TRIM",
@@ -32505,6 +35477,14 @@ function parseLocatedAddress(address) {
     bitIndex
   };
 }
+var BIT_SELECTOR_SKIP = /* @__PURE__ */ new Map([
+  ["SEL", 1],
+  ["MUX", 1],
+  ["MAX", 0],
+  ["MIN", 0],
+  ["LIMIT", 0],
+  ["MOVE", 0]
+]);
 var TEMPORAL_CONVERSION_UNITS = /* @__PURE__ */ new Map([
   // milliseconds
   ["TIME", { toUnit: "TIME_TO_MS", fromUnit: "TIME_FROM_MS" }],
@@ -32525,6 +35505,60 @@ var TEMPORAL_CONVERSION_UNITS = /* @__PURE__ */ new Map([
   ["LDATE_AND_TIME", { toUnit: void 0, fromUnit: void 0 }],
   ["LDATE", { toUnit: "DATE_TO_NS", fromUnit: "DATE_FROM_NS" }]
 ]);
+var CHAR_ORDERED_FUNCTIONS = /* @__PURE__ */ new Set([
+  "MAX",
+  "MIN",
+  "LIMIT",
+  "GT",
+  "GE",
+  "LT",
+  "LE"
+]);
+var TEMPORAL_KIND = {
+  DATE: "date",
+  D: "date",
+  LDATE: "date",
+  TOD: "tod",
+  TIME_OF_DAY: "tod",
+  LTOD: "tod",
+  LTIME_OF_DAY: "tod",
+  DT: "dt",
+  DATE_AND_TIME: "dt",
+  LDT: "dt",
+  LDATE_AND_TIME: "dt",
+  TIME: "duration",
+  LTIME: "duration"
+};
+var LONG_TEMPORAL_NAMES = /* @__PURE__ */ new Set([
+  "LDATE",
+  "LTOD",
+  "LTIME_OF_DAY",
+  "LDT",
+  "LDATE_AND_TIME",
+  "LTIME"
+]);
+function longTemporalConversion(argExpr, from, to) {
+  const f = TEMPORAL_KIND[from];
+  const t = TEMPORAL_KIND[to];
+  if (f === void 0 || t === void 0)
+    return void 0;
+  if (f === "dt" && t === "date") {
+    return `DATE_OF_DT(IEC_DT(static_cast<int64_t>(${argExpr})))`;
+  }
+  if (f === "dt" && t === "tod") {
+    return `TOD_OF_DT(IEC_DT(static_cast<int64_t>(${argExpr})))`;
+  }
+  if (!LONG_TEMPORAL_NAMES.has(from) && !LONG_TEMPORAL_NAMES.has(to)) {
+    return void 0;
+  }
+  if (f === t)
+    return argExpr;
+  if (f === "date" && t === "dt")
+    return `DATE_TO_NS(${argExpr})`;
+  if (f === "tod" && t === "dt")
+    return argExpr;
+  return void 0;
+}
 var NUMERIC_OR_BIT_CONVERSION_TARGETS = /* @__PURE__ */ new Set([
   "BOOL",
   "SINT",
@@ -32609,6 +35643,10 @@ var CodeGenerator = class _CodeGenerator {
   ast;
   /** Current function name (for redirecting function name := to result variable) */
   currentFunctionName;
+  /** The declared result type of the current FUNCTION, METHOD or PROPERTY. */
+  currentFunctionResultType;
+  /** The declared type of the property whose SET accessor is being generated. */
+  currentSetterPropertyType;
   /** Standard function registry for name mapping and conversion resolution */
   stdRegistry;
   /** Warnings collected during code generation */
@@ -32653,6 +35691,8 @@ var CodeGenerator = class _CodeGenerator {
   libraryFBExtends = /* @__PURE__ */ new Map();
   /** Library functions by upper-cased name, and their parsed declarations. */
   libraryFunctions = /* @__PURE__ */ new Map();
+  /** Every library FUNCTION, keyed `LIBRARY:NAME` (upper case), shadowed ones included. */
+  libraryFunctionsByLibrary = /* @__PURE__ */ new Map();
   libraryFunctionDecls = /* @__PURE__ */ new Map();
   /** Library FB field type map: "FBNAME.FIELDNAME" → type name (for field mangling in test codegen) */
   libraryFBFieldTypes = /* @__PURE__ */ new Map();
@@ -32971,6 +36011,7 @@ var CodeGenerator = class _CodeGenerator {
         if (!this.libraryFunctions.has(upper)) {
           this.libraryFunctions.set(upper, fn);
         }
+        this.libraryFunctionsByLibrary.set(`${archive.manifest.name.toUpperCase()}:${upper}`, fn);
       }
       for (const fb of archive.manifest.functionBlocks) {
         const methods = libraryMethodDeclarations(fb);
@@ -34081,6 +37122,7 @@ var CodeGenerator = class _CodeGenerator {
         this.emit(`    ${this.mapTypeRefToCpp(method.returnType)} ${method.name}_result;`);
       }
       this.currentFunctionName = method.name;
+      this.currentFunctionResultType = method.returnType?.name;
     }
     this.varInstMangledNames.clear();
     for (const block of method.varBlocks) {
@@ -34133,6 +37175,7 @@ var CodeGenerator = class _CodeGenerator {
       this.emit(`${type} ${className}::get_${prop.name}() const {`);
       this.emit(`    ${type} ${prop.name}_result;`);
       this.currentFunctionName = prop.name;
+      this.currentFunctionResultType = prop.type.name;
       if (prop.getterMethod !== void 0) {
         this.emit(`    const_cast<${className}*>(this)->${prop.getterMethod}(${prop.name}_result);`);
       }
@@ -34149,6 +37192,7 @@ var CodeGenerator = class _CodeGenerator {
       const setterLine = this.currentLine;
       this.emit(`void ${className}::set_${prop.name}(${type} ${prop.name}) {`);
       this.currentSetterProperty = prop.name.toUpperCase();
+      this.currentSetterPropertyType = prop.type.name;
       if (prop.setterMethod !== void 0) {
         this.emit(`    ${prop.setterMethod}(${prop.name});`);
       }
@@ -34335,6 +37379,7 @@ var CodeGenerator = class _CodeGenerator {
     const emitFunctionBody = (funcName) => {
       this.emit(`    ${retType} ${funcName}_result;`);
       this.currentFunctionName = func.name;
+      this.currentFunctionResultType = func.returnType.name;
       this.enterScope(func.varBlocks, func.varBlocks);
       for (const block of func.varBlocks) {
         if (block.blockType === "VAR" || block.blockType === "VAR_TEMP") {
@@ -34389,7 +37434,7 @@ var CodeGenerator = class _CodeGenerator {
   generateFunctionParamNames(func) {
     const names = [];
     for (const block of func.varBlocks) {
-      if (block.blockType === "VAR_INPUT" || block.blockType === "VAR_IN_OUT") {
+      if (block.blockType === "VAR_INPUT" || block.blockType === "VAR_IN_OUT" || block.blockType === "VAR_OUTPUT") {
         for (const decl of block.declarations) {
           for (const name of decl.names) {
             names.push(name);
@@ -35246,13 +38291,40 @@ var CodeGenerator = class _CodeGenerator {
    * global under its lock, a UNION member through its proxy (its value as the
    * member's field type, so it binds the callee's `T&`).
    */
-  inOutCopy({ value: arg, cppType }, tmp) {
+  inOutCopy({ value: arg, cppType, once }, tmp) {
     const read = this.generateVariableExpression(arg);
     const copyIn = arg.unionMember === true ? `union_value(${read})` : read;
     const upper = arg.name.toUpperCase();
-    const copyOut = this.compositeExternals.has(upper) ? this.compositeGlobalStore(arg, tmp) : this.programExternals.has(upper) && arg.fieldAccess.length === 0 && !arg.isDereference ? `${arg.name}->write(${tmp});` : `${read} = ${tmp};`;
+    const bitStore = this.bitStore(arg, tmp);
+    const plainLvalue = bitStore === void 0 && !arg.isDereference && arg.accessChain?.some((s) => s.kind === "dereference") !== true && this.currentScopeVarRefKinds.get(upper) !== "reference_to";
+    const copyOut = bitStore !== void 0 ? bitStore : this.compositeExternals.has(upper) ? this.compositeGlobalStore(arg, tmp) : this.programExternals.has(upper) && arg.fieldAccess.length === 0 && !arg.isDereference ? `${arg.name}->write(${tmp});` : `${read} = ${tmp};`;
     const declaration = cppType !== void 0 ? `${cppType} ${tmp}; ${tmp} = ${copyIn};` : `auto ${tmp} = ${copyIn};`;
+    if (once === true && plainLvalue && cppType !== void 0 && copyOut === `${read} = ${tmp};`) {
+      return {
+        declaration: `auto& ${tmp}_ref = ${read}; ${cppType} ${tmp}; ${tmp} = ${tmp}_ref;`,
+        copyOut: `${tmp}_ref = ${tmp};`
+      };
+    }
     return { declaration, copyOut };
+  }
+  /** `v.N := value` for a bit access `v.N` (see generateAssignmentStatement); undefined otherwise. */
+  bitStore(target, value) {
+    const bitIdx = this.lastFieldBitIndex(target);
+    if (bitIdx === void 0)
+      return void 0;
+    const baseVar = {
+      ...target,
+      fieldAccess: target.fieldAccess.slice(0, -1)
+    };
+    if (target.accessChain) {
+      const trimmed = this.trimLastFieldFromAccessChain(target.accessChain);
+      if (trimmed)
+        baseVar.accessChain = trimmed;
+      else
+        delete baseVar.accessChain;
+    }
+    const baseCode = this.generateLvalue(baseVar);
+    return `${baseCode} = (${baseCode} & ~(1ULL << ${bitIdx})) | ((${value} ? 1ULL : 0ULL) << ${bitIdx});`;
   }
   /** Write the queued copy-outs of the current statement. */
   flushGlobalCopyOuts(indent) {
@@ -35334,7 +38406,7 @@ var CodeGenerator = class _CodeGenerator {
     const isCompositeGlobal = (e) => e.kind === "VariableExpression" && !e.isDereference && this.compositeExternals.has(e.name.toUpperCase()) && this.lastFieldBitIndex(e) === void 0;
     const isUnionMember = (e) => e.kind === "VariableExpression" && e.unionMember === true;
     const rendersBound = (e) => e.kind === "VariableExpression" && !e.isDereference && (this.programExternals.has(e.name.toUpperCase()) || this.currentScopeVarRefKinds.get(e.name.toUpperCase()) === "reference_to");
-    const varBlocks = this.calleeVarBlocks(call) ?? this.librarySizedStringBlocks(call);
+    const varBlocks = this.calleeVarBlocks(call) ?? this.librarySizedStringBlocks(call) ?? (call.arguments.some((a) => a.inOutCopy === true) && call.kind === "FunctionCallExpression" ? this.libraryFunctionDeclaration(call.functionName)?.varBlocks : void 0);
     const hasSizedStringParam = varBlocks?.some((b) => (b.blockType === "VAR_OUTPUT" || b.blockType === "VAR_IN_OUT") && b.declarations.some((d) => this.sizedStringLength(d.type) !== void 0 || this.arrayStringElementLength(d.type) !== void 0 || this.vlaStringElementCpp(d.type) !== void 0)) === true;
     if (!hasSizedStringParam && !call.arguments.some((a) => isCompositeGlobal(a.value) || isUnionMember(a.value) || rendersBound(a.value) || a.inOutCopy === true)) {
       return [];
@@ -35388,8 +38460,12 @@ var CodeGenerator = class _CodeGenerator {
             this.warnSharedGlobalInOut(value.name, param.name, call);
           }
         }
-      } else if (param.blockType === "VAR_OUTPUT" && !isCompositeGlobal(value) && !isUnionMember(value) && (this.sizedStringLength(param.type) !== void 0 && !this.hasStringLength(value, this.sizedStringLength(param.type)) || this.stringElementLengthDiffers(param.type, value))) {
-        result.push({ value, cppType: this.inOutParamType(param.type) });
+      } else if (param.blockType === "VAR_OUTPUT" && !isCompositeGlobal(value) && !isUnionMember(value) && (arg.inOutCopy === true || this.sizedStringLength(param.type) !== void 0 && !this.hasStringLength(value, this.sizedStringLength(param.type)) || this.stringElementLengthDiffers(param.type, value))) {
+        result.push({
+          value,
+          cppType: this.inOutParamType(param.type),
+          once: true
+        });
       } else if ((arg.isOutput || param.blockType === "VAR_OUTPUT") && (isCompositeGlobal(value) || isUnionMember(value))) {
         result.push({ value });
       }
@@ -35672,7 +38748,12 @@ var CodeGenerator = class _CodeGenerator {
         if (label.end) {
           const startVal = this.evaluateLiteralInt(label.start);
           const endVal = this.evaluateLiteralInt(label.end);
-          if (startVal !== void 0 && endVal !== void 0) {
+          const chars = this.charLabelRange(label.start, label.end);
+          if (chars !== void 0) {
+            for (let i = chars.from; i <= chars.to; i++) {
+              this.emit(`${innerIndent}case static_cast<${chars.type}>(${i}):`);
+            }
+          } else if (startVal !== void 0 && endVal !== void 0) {
             for (let i = startVal; i <= endVal; i++) {
               this.emit(`${innerIndent}case ${i}:`);
             }
@@ -35696,6 +38777,27 @@ var CodeGenerator = class _CodeGenerator {
     const closingLine = this.currentLine;
     this.emit(`${indent}}`);
     this.recordLineMapping(stmt.sourceSpan.endLine, closingLine);
+  }
+  /** The codes of a CHAR or WCHAR literal range label, `'a'..'c'`. */
+  charLabelRange(start, end) {
+    const code = (e) => {
+      if (e.kind !== "LiteralExpression" || e.literalType !== "CHAR" && e.literalType !== "WCHAR") {
+        return void 0;
+      }
+      const { wide, units } = charLiteralUnits(e.rawValue);
+      const unit = units[0];
+      return units.length === 1 && unit !== void 0 && unit >= 0 ? { wide, unit } : void 0;
+    };
+    const from = code(start);
+    const to = code(end);
+    if (from === void 0 || to === void 0 || from.wide !== to.wide) {
+      return void 0;
+    }
+    return {
+      type: from.wide ? "WCHAR_t" : "CHAR_t",
+      from: from.unit,
+      to: to.unit
+    };
   }
   /**
    * Generate code for a FOR statement.
@@ -35784,7 +38886,13 @@ var CodeGenerator = class _CodeGenerator {
    * In functions: return functionName_result;
    * In programs/FBs: return;
    */
+  /** When set, a RETURN returns this C++ value: `true` in a TEST body, which passes. */
+  returnValueOverride;
   generateReturnStatement(indent) {
+    if (this.returnValueOverride !== void 0) {
+      this.emit(`${indent}return ${this.returnValueOverride};`);
+      return;
+    }
     if (this.interfaceReturnMethod) {
       this.emit(`${indent}return *this;`);
     } else if (this.currentFunctionName) {
@@ -35905,15 +39013,24 @@ var CodeGenerator = class _CodeGenerator {
         const wEscaped = translateIECString(wInner, true);
         return `u"${wEscaped}"`;
       }
-      case "TIME": {
+      case "TIME":
+      case "LTIME": {
         const timeVal = parseTimeLiteral(String(expr.value));
-        return `${timeVal.nanoseconds}LL`;
+        return `${timeVal.exact}LL`;
+      }
+      case "CHAR":
+      case "WCHAR": {
+        const { wide, units } = charLiteralUnits(expr.rawValue);
+        return `static_cast<${wide ? "WCHAR_t" : "CHAR_t"}>(${Math.max(units[0] ?? 0, 0)})`;
       }
       case "DATE":
+      case "LDATE":
         return `${parseDateLiteralToDays(String(expr.value))}LL`;
       case "TIME_OF_DAY":
+      case "LTIME_OF_DAY":
         return `${parseTodLiteralToNs(String(expr.value))}LL`;
       case "DATE_AND_TIME":
+      case "LDATE_AND_TIME":
         return `${parseDtLiteralToNs(String(expr.value))}LL`;
       case "NULL":
         return "IEC_NULL";
@@ -35951,6 +39068,9 @@ var CodeGenerator = class _CodeGenerator {
     if (this.programExternals.has(nameUpper) && !this.compositeExternals.has(nameUpper) && expr.fieldAccess.length === 0 && !expr.isDereference) {
       return `${expr.name}->read()`;
     }
+    if (this.programExternals.has(nameUpper) && expr.isDereference) {
+      return this.renderAccessTail(`${expr.name}->read()`, expr, nameUpper);
+    }
     if (this.compositeExternals.has(nameUpper) && !expr.isDereference) {
       const ptr = this.resolveVariableBaseName(expr.name);
       const inner = this.renderAccessTail("(*__glk)", expr, nameUpper);
@@ -35977,7 +39097,7 @@ var CodeGenerator = class _CodeGenerator {
             }
           }
           const fieldType = this.resolveMemberType(currentType, field);
-          const fieldCppName = this.needsFieldMangling(field, fieldType, currentType) ? `${field}_` : field;
+          const fieldCppName = this.bitMemberPath(currentType, field) ?? (this.needsFieldMangling(field, fieldType, currentType) ? `${field}_` : field);
           if (i > 0)
             result2 += ".";
           result2 += fieldCppName;
@@ -36006,7 +39126,7 @@ var CodeGenerator = class _CodeGenerator {
             }
           }
           const fieldType = this.resolveMemberType(currentType, field);
-          const fieldCppName = this.needsFieldMangling(field, fieldType, currentType) ? `${field}_` : field;
+          const fieldCppName = this.bitMemberPath(currentType, field) ?? (this.needsFieldMangling(field, fieldType, currentType) ? `${field}_` : field);
           if (i > 0)
             result2 += ".";
           result2 += fieldCppName;
@@ -36068,12 +39188,14 @@ var CodeGenerator = class _CodeGenerator {
    */
   addressedOperand(operand, what, at) {
     if (operand.kind === "VariableExpression" && !operand.isDereference && this.programExternals.has(operand.name.toUpperCase())) {
-      this.codegenWarnings.push({
-        message: `${what} of the shared global '${operand.name}': in a build with STRUCPP_THREADED, accesses through the result are not serialized by the global's lock, so another task using '${operand.name}' at the same time races with them`,
-        line: at.sourceSpan.startLine,
-        column: at.sourceSpan.startCol,
-        file: at.sourceSpan.file
-      });
+      if (this.tasksMayRace()) {
+        this.codegenWarnings.push({
+          message: `${what} of the shared global '${operand.name}': in a build with STRUCPP_THREADED, accesses through the result are not serialized by the global's lock, so another task using '${operand.name}' at the same time races with them`,
+          line: at.sourceSpan.startLine,
+          column: at.sourceSpan.startCol,
+          file: at.sourceSpan.file
+        });
+      }
       return this.renderInOutBound(operand);
     }
     return what === "ADR" ? this.generateLvalue(operand) : this.generateExpression(operand);
@@ -36169,7 +39291,8 @@ var CodeGenerator = class _CodeGenerator {
       }
     }
     if (expr.fieldAccess.length > 0) {
-      let currentType = baseType ?? this.currentScopeVarTypes.get(nameUpper);
+      let currentType = baseType ?? this.rootVariableType(nameUpper);
+      let bitOwner = currentType ?? this.bitRootType(nameUpper);
       for (let i = 0; i < expr.fieldAccess.length; i++) {
         const field = expr.fieldAccess[i];
         const isLast = i === expr.fieldAccess.length - 1;
@@ -36186,7 +39309,8 @@ var CodeGenerator = class _CodeGenerator {
           }
         }
         const fieldType = this.resolveMemberType(currentType, field);
-        const fieldCppName = this.needsFieldMangling(field, fieldType, currentType) ? `${field}_` : field;
+        const fieldCppName = this.bitMemberPath(bitOwner, field) ?? (this.needsFieldMangling(field, fieldType, currentType) ? `${field}_` : field);
+        bitOwner = this.bitFieldType(bitOwner, field);
         result += `.${fieldCppName}`;
         if (this.isRefInOutMember(currentType, field)) {
           result = `(*${result})`;
@@ -36245,7 +39369,8 @@ var CodeGenerator = class _CodeGenerator {
    */
   generateAccessChain(base, chain, baseNameUpper, baseType, namedBit = false) {
     let result = base;
-    let currentType = baseType ?? this.currentScopeVarTypes.get(baseNameUpper);
+    let currentType = baseType ?? this.rootVariableType(baseNameUpper);
+    let bitOwner = currentType ?? this.bitRootType(baseNameUpper);
     for (let i = 0; i < chain.length; i++) {
       const step = chain[i];
       const isLast = i === chain.length - 1;
@@ -36263,7 +39388,8 @@ var CodeGenerator = class _CodeGenerator {
             }
           }
           const fieldType = this.resolveMemberType(currentType, step.name);
-          const fieldCppName = this.needsFieldMangling(step.name, fieldType, currentType) ? `${step.name}_` : step.name;
+          const fieldCppName = this.bitMemberPath(bitOwner, step.name) ?? (this.needsFieldMangling(step.name, fieldType, currentType) ? `${step.name}_` : step.name);
+          bitOwner = this.bitFieldType(bitOwner, step.name);
           result += `.${fieldCppName}`;
           if (this.isRefInOutMember(currentType, step.name)) {
             result = `(*${result})`;
@@ -36326,6 +39452,14 @@ var CodeGenerator = class _CodeGenerator {
       return `std::pow(static_cast<double>(${left}), static_cast<double>(${right}))`;
     }
     const cppOp = _CodeGenerator.BINARY_OP_MAP[expr.operator] ?? expr.operator;
+    const ldate = this.dateArithmetic(expr, left, right);
+    if (ldate !== void 0)
+      return ldate;
+    if (["<", ">", "<=", ">="].includes(expr.operator)) {
+      if (this.isCharExpr(expr.left) || this.isCharExpr(expr.right)) {
+        return `${this.charCode(expr.left, left)} ${cppOp} ${this.charCode(expr.right, right)}`;
+      }
+    }
     if (expr.operator === "AND" || expr.operator === "OR" || expr.operator === "XOR") {
       return `(${left}) ${cppOp} (${right})`;
     }
@@ -36334,7 +39468,147 @@ var CodeGenerator = class _CodeGenerator {
       const r = isComparisonExpr(expr.right) ? `(${right})` : right;
       return `${l} ${cppOp} ${r}`;
     }
+    if (expr.operator === "MOD" && !isNonZeroIntegerLiteral(expr.right)) {
+      return `iec_mod(${left}, ${right})`;
+    }
     return `${left} ${cppOp} ${right}`;
+  }
+  /**
+   * `a - b` of two dates (DATE or LDATE) gives a duration in nanoseconds
+   * (Table 35: DATE - DATE is a TIME), and a date plus or minus a duration
+   * moves it by whole days; undefined for any other operation.
+   */
+  dateArithmetic(expr, left, right) {
+    return dateArithmeticCpp(expr.operator, this.temporalBase(expr.left), this.temporalBase(expr.right), left, right);
+  }
+  /**
+   * The canonical elementary type of a temporal operand, through aliases, a
+   * dereference, parentheses and the untyped CONCAT_DATE_TOD (a DT).
+   */
+  temporalBase(e) {
+    if (e.kind === "ParenthesizedExpression")
+      return this.temporalBase(e.expression);
+    const selected = this.selectionOperands(e);
+    if (selected !== void 0) {
+      const kinds = selected.map((a) => this.temporalBase(a));
+      return kinds.length > 0 && kinds.every((k) => k === kinds[0]) ? kinds[0] : void 0;
+    }
+    const literal = literalTemporalType(e);
+    if (literal !== void 0 && e.resolvedType === void 0)
+      return literal;
+    let t = e.resolvedType;
+    if (t?.typeKind === "reference")
+      t = t.referencedType;
+    let name = t?.typeKind === "elementary" ? t.name.toUpperCase() : t === void 0 ? this.inferExprType(e) : void 0;
+    if (name === void 0 && e.kind === "FunctionCallExpression" && e.functionName.toUpperCase() === "CONCAT_DATE_TOD") {
+      name = "DT";
+    }
+    for (let i = 0; i < 32 && name !== void 0; i++) {
+      const upper = name;
+      const def = this.ast?.types.find((d) => d.name.toUpperCase() === upper)?.definition;
+      if (def?.kind !== "TypeReference" || def.arrayDimensions !== void 0) {
+        break;
+      }
+      name = def.name.toUpperCase();
+    }
+    return name === void 0 ? void 0 : canonicalElementaryName(name);
+  }
+  /** The selected or compared operands of a standard SEL, MUX, LIMIT, MAX or MIN call. */
+  selectionOperands(e) {
+    if (e.kind !== "FunctionCallExpression" || e.instance !== void 0) {
+      return void 0;
+    }
+    const name = e.functionName.toUpperCase();
+    const skip = {
+      SEL: 1,
+      MUX: 1,
+      LIMIT: 0,
+      MAX: 0,
+      MIN: 0
+    };
+    if (skip[name] === void 0)
+      return void 0;
+    if (this.ast?.functions.some((f) => f.name.toUpperCase() === name) === true) {
+      return void 0;
+    }
+    if (e.libraryFunction !== void 0)
+      return void 0;
+    return e.arguments.filter((a) => !isEnEnoArgument(a)).slice(skip[name]).map((a) => a.value);
+  }
+  /**
+   * A standard MAX/MIN/LIMIT/comparison/SEL/MUX call with CHAR or WCHAR
+   * operands; undefined for any other call. A nested EN/ENO runs the call
+   * only when EN is TRUE and writes ENO, as the statement form does.
+   */
+  charStdCall(stdFunc, expr, args) {
+    const name = stdFunc.name.toUpperCase();
+    const ordered = CHAR_ORDERED_FUNCTIONS.has(name);
+    if (!ordered && name !== "SEL" && name !== "MUX" && name !== "EQ" && name !== "NE") {
+      return void 0;
+    }
+    const all = expr.arguments;
+    const operands = all.filter((a) => !isEnEnoArgument(a));
+    const isChar = operands.some((a) => this.isCharExpr(a.value));
+    if (!isChar && !operands.some((a) => this.isWcharExpr(a.value))) {
+      return void 0;
+    }
+    let en = null;
+    let eno = null;
+    const coded = [];
+    for (const [i, a] of all.entries()) {
+      const code = args[i] ?? "";
+      if (!isEnEnoArgument(a)) {
+        coded.push(ordered ? this.charCode(a.value, code) : code);
+      } else if (a.isOutput) {
+        eno = code;
+      } else {
+        en = code;
+      }
+    }
+    let call = `${stdFunc.cppName}(${coded.join(", ")})`;
+    if (isChar && ["MAX", "MIN", "LIMIT"].includes(name)) {
+      call = `static_cast<CHAR_t>(${call})`;
+    }
+    if (en === null && eno === null)
+      return call;
+    const setEno = (v) => eno === null ? "" : `${eno} = ${v}; `;
+    if (en === null)
+      return `[&]() { ${setEno("true")}return ${call}; }()`;
+    return `[&]() { const bool en_ = ${en}; ${setEno("en_")}return en_ ? ${call} : decltype(${call}){}; }()`;
+  }
+  /** True when the expression is a WCHAR, through aliases of it. */
+  isWcharExpr(e) {
+    const t = e.resolvedType;
+    if (t?.typeKind !== "elementary")
+      return false;
+    let name = t.name.toUpperCase();
+    for (let i = 0; i < 32 && name !== "WCHAR"; i++) {
+      const upper = name;
+      const def = this.ast?.types.find((d) => d.name.toUpperCase() === upper)?.definition;
+      if (def?.kind !== "TypeReference")
+        return false;
+      name = def.name.toUpperCase();
+    }
+    return name === "WCHAR";
+  }
+  /** True when the expression is a CHAR, through aliases of it. */
+  isCharExpr(e) {
+    const t = e.resolvedType;
+    if (t?.typeKind !== "elementary")
+      return false;
+    let name = t.name.toUpperCase();
+    for (let i = 0; i < 32 && name !== "CHAR"; i++) {
+      const upper = name;
+      const def = this.ast?.types.find((d) => d.name.toUpperCase() === upper)?.definition;
+      if (def?.kind !== "TypeReference")
+        return false;
+      name = def.name.toUpperCase();
+    }
+    return name === "CHAR";
+  }
+  /** A CHAR operand as its unsigned Windows-1252 code; anything else unchanged. */
+  charCode(e, code) {
+    return this.isCharExpr(e) ? `static_cast<uint8_t>(iec_unwrap(${code}))` : code;
   }
   /** The fields of STRUCT `typeName` (through aliases), or undefined for any other type. */
   structFieldsOf(typeName2) {
@@ -36425,7 +39699,7 @@ var CodeGenerator = class _CodeGenerator {
     const parts = [];
     for (const field of fields) {
       for (const name of field.names) {
-        const member = this.needsFieldMangling(name, field.type.name, typeName2) ? `${name}_` : name;
+        const member = this.bitMemberPath(typeName2, name) ?? (this.needsFieldMangling(name, field.type.name, typeName2) ? `${name}_` : name);
         const fl = `${l}.${member}`;
         const fr = `${r}.${member}`;
         const element = this.arrayElementTypeOf(field.type);
@@ -36744,6 +40018,12 @@ var CodeGenerator = class _CodeGenerator {
    * question directly instead of relying on it.
    */
   scaleConversionArg(argExpr, fromTypeUpper, toTypeUpper) {
+    const between = longTemporalConversion(argExpr, fromTypeUpper, toTypeUpper);
+    if (between !== void 0)
+      return between;
+    if (fromTypeUpper === "CHAR" && NUMERIC_OR_BIT_CONVERSION_TARGETS.has(toTypeUpper)) {
+      return `static_cast<uint8_t>(iec_unwrap(${argExpr}))`;
+    }
     if (TEMPORAL_CONVERSION_UNITS.has(fromTypeUpper)) {
       return this.wrapTemporalArgForNumericConversion(argExpr, fromTypeUpper, toTypeUpper);
     }
@@ -36937,7 +40217,18 @@ var CodeGenerator = class _CodeGenerator {
       return `${expr.functionName}(${bound.join(", ")})`;
     }
     const userFunction = this.ast?.functions.some((f) => f.name.toUpperCase() === nameUpper) === true;
-    if (!userFunction) {
+    if (!userFunction && expr.libraryFunction === void 0) {
+      if (expr.vendorOperator !== void 0 && expr.arguments.length === 1) {
+        const kept = this.keepReferenceWrapper;
+        this.keepReferenceWrapper = expr.vendorOperator === "__ISVALIDREF";
+        let arg;
+        try {
+          arg = this.generateExpression(expr.arguments[0].value);
+        } finally {
+          this.keepReferenceWrapper = kept;
+        }
+        return vendorOperatorCpp(expr.vendorOperator, arg);
+      }
       if (nameUpper === "ADR") {
         const args2 = expr.arguments.map((arg) => this.addressedOperand(arg.value, "ADR", expr));
         return `&(${args2[0] ?? ""})`;
@@ -36958,7 +40249,7 @@ var CodeGenerator = class _CodeGenerator {
       const conversion = this.stdRegistry.resolveConversion(nameUpper);
       if (conversion) {
         const args2 = expr.arguments.map((arg, idx) => {
-          const generated = this.generateExpression(arg.value);
+          const generated = this.bitConversionArg(arg.value, this.generateExpression(arg.value));
           if (idx !== 0)
             return generated;
           return this.scaleConversionArg(generated, conversion.fromType.toUpperCase(), conversion.toType.toUpperCase());
@@ -36969,14 +40260,20 @@ var CodeGenerator = class _CodeGenerator {
       if (stdFunc) {
         const args2 = expr.arguments.map((arg, idx) => {
           let generated = this.generateExpression(arg.value);
+          if (stdFunc.isConversion) {
+            generated = this.bitConversionArg(arg.value, generated);
+          }
           if (idx === 0 && stdFunc.isConversion && stdFunc.specificReturnType) {
-            const fromType = this.inferExprType(arg.value);
+            const fromType = this.temporalBase(arg.value) ?? this.inferExprType(arg.value);
             if (fromType) {
               generated = this.scaleConversionArg(generated, fromType.toUpperCase(), stdFunc.specificReturnType.toUpperCase());
             }
           }
           return generated;
         });
+        const charCall = this.charStdCall(stdFunc, expr, args2);
+        if (charCall !== void 0)
+          return charCall;
         this.harmonizeStdFuncArgs(args2, expr.arguments, stdFunc);
         if (stdFunc.returnTypeFor && args2.length > 0) {
           args2[0] = this.atRealType(args2[0], expr.arguments[0]?.value);
@@ -37021,7 +40318,7 @@ var CodeGenerator = class _CodeGenerator {
       return generated;
     });
     const funcDecl = this.ast?.functions.find((f) => f.name.toUpperCase() === nameUpper);
-    const calleeBlocks = funcDecl?.varBlocks ?? this.libraryFunctionDeclaration(nameUpper)?.varBlocks ?? this.findMethodDeclaration(this.currentFBName ?? this.currentProgramName, nameUpper)?.varBlocks;
+    const calleeBlocks = funcDecl?.varBlocks ?? this.libraryFunctionDeclaration(nameUpper, expr.libraryFunction)?.varBlocks ?? this.findMethodDeclaration(this.currentFBName ?? this.currentProgramName, nameUpper)?.varBlocks;
     const suppliedArgs = args.length;
     if (calleeBlocks)
       this.padOmittedArguments(args, calleeBlocks);
@@ -37070,21 +40367,22 @@ var CodeGenerator = class _CodeGenerator {
   reorderNamedArguments(expr) {
     if (!this.ast)
       return null;
-    const funcDecl = this.ast.functions.find((f) => f.name.toUpperCase() === expr.functionName.toUpperCase()) ?? this.libraryFunctionDeclaration(expr.functionName);
+    const funcDecl = this.ast.functions.find((f) => f.name.toUpperCase() === expr.functionName.toUpperCase()) ?? this.libraryFunctionDeclaration(expr.functionName, expr.libraryFunction);
     if (!funcDecl)
       return null;
     return this.bindArgumentsByName(funcDecl.varBlocks, expr.arguments, `function '${expr.functionName}'`, expr.sourceSpan);
   }
-  /** The declaration of a library function, from its manifest entry. */
-  libraryFunctionDeclaration(name) {
+  /** The declaration of a library function, from its manifest entry; `library` picks a shadowed one. */
+  libraryFunctionDeclaration(name, library) {
     const upper = name.toUpperCase();
-    const entry = this.libraryFunctions.get(upper);
+    const key = library !== void 0 ? `${library.toUpperCase()}:${upper}` : upper;
+    const entry = library !== void 0 ? this.libraryFunctionsByLibrary.get(key) : this.libraryFunctions.get(upper);
     if (!entry)
       return void 0;
-    if (!this.libraryFunctionDecls.has(upper)) {
-      this.libraryFunctionDecls.set(upper, libraryFunctionDeclaration(entry));
+    if (!this.libraryFunctionDecls.has(key)) {
+      this.libraryFunctionDecls.set(key, libraryFunctionDeclaration(entry));
     }
-    return this.libraryFunctionDecls.get(upper);
+    return this.libraryFunctionDecls.get(key);
   }
   /**
    * Find a method's declaration on a function block, a program or an
@@ -37599,7 +40897,7 @@ var CodeGenerator = class _CodeGenerator {
     else if (nameUpper === "SUPER")
       currentType = this.currentFBExtends;
     else
-      currentType = this.currentScopeVarTypes.get(nameUpper);
+      currentType = this.rootVariableType(nameUpper);
     for (let i = 0; i < expr.fieldAccess.length - 1; i++) {
       if (!currentType)
         break;
@@ -37772,7 +41070,7 @@ var CodeGenerator = class _CodeGenerator {
     const nodeMap = /* @__PURE__ */ new Map();
     for (const n of nodes)
       nodeMap.set(keyOf(n), n);
-    const resolve5 = (typeName2) => {
+    const resolve6 = (typeName2) => {
       const upper = typeName2.toUpperCase();
       if (nodeMap.has(`functionBlock:${upper}`))
         return `functionBlock:${upper}`;
@@ -37791,7 +41089,7 @@ var CodeGenerator = class _CodeGenerator {
       const addDep = (typeName2) => {
         if (typeName2 === void 0)
           return;
-        const dep = resolve5(typeName2);
+        const dep = resolve6(typeName2);
         if (dep !== void 0) {
           if (dep !== self2)
             nodeDeps.add(dep);
@@ -37960,6 +41258,34 @@ var CodeGenerator = class _CodeGenerator {
       return void 0;
     const sym = this._symbolTables?.globalScope.lookup(upper);
     return sym?.kind === "variable" ? sym.declaration.type : void 0;
+  }
+  /** The type of the variable an access path starts at: a local or member, else a file-level or library global. */
+  rootVariableType(upper) {
+    const own = this.currentScopeVarTypes.get(upper);
+    if (own !== void 0)
+      return own;
+    if (this.currentFBExtends !== void 0) {
+      const inherited = this.inheritedMemberTypeName(upper);
+      if (inherited !== void 0)
+        return inherited;
+      if (!this.baseChainDeclared())
+        return void 0;
+    }
+    return this.namespaceGlobalType(upper);
+  }
+  /** Every base of the current FB is declared in this unit. */
+  baseChainDeclared() {
+    const seen = /* @__PURE__ */ new Set();
+    let current = this.currentFBExtends;
+    while (current !== void 0 && !seen.has(current.toUpperCase())) {
+      const base = current.toUpperCase();
+      seen.add(base);
+      const fb = this.ast?.functionBlocks.find((f) => f.name.toUpperCase() === base);
+      if (!fb)
+        return false;
+      current = fb.extends;
+    }
+    return true;
   }
   /** Declared type name of a file-level or library VAR_GLOBAL not shadowed here. */
   namespaceGlobalType(upper) {
@@ -38239,6 +41565,8 @@ var CodeGenerator = class _CodeGenerator {
    * storage for the call, outside the global's lock.
    */
   warnSharedGlobalInOut(global2, param, call) {
+    if (!this.tasksMayRace())
+      return;
     this.codegenWarnings.push({
       message: `VAR_IN_OUT '${param}' refers to the shared global '${global2}' during the call: in a build with STRUCPP_THREADED, accesses through it are not serialized by the global's lock, so another task using '${global2}' at the same time races with them`,
       line: call.sourceSpan.startLine,
@@ -38347,6 +41675,137 @@ var CodeGenerator = class _CodeGenerator {
     return this.needsFieldMangling(paramName, this.resolveMemberType(fbTypeName, paramName), fbTypeName) ? `${paramName}_` : paramName;
   }
   /**
+   * `bits_<n>_.NAME` for a BIT member of a STRUCT (feature bit_type): the
+   * member lives in the bitfield struct of its run. Undefined otherwise.
+   */
+  bitMemberPath(ownerType, field) {
+    const def = this.bitStructDefinition(ownerType);
+    if (def === void 0)
+      return void 0;
+    const upper = field.toUpperCase();
+    const place = bitPlaceOf(def.fields, upper);
+    if (place === void 0)
+      return void 0;
+    const decl = def.fields.find((f) => f.names.some((n) => n.toUpperCase() === upper));
+    const name = decl?.names.find((n) => n.toUpperCase() === upper) ?? field;
+    const member = this.needsFieldMangling(name, decl?.type.name) ? `${name}_` : name;
+    return `${bitRunMemberName(place.run)}.${member}`;
+  }
+  /** The STRUCT a type name stands for, through aliases and array element types. */
+  bitStructDefinition(typeName2) {
+    let name = typeName2;
+    for (let depth = 0; depth < 16 && name !== void 0 && this.ast; depth++) {
+      const upper = name.toUpperCase();
+      if (upper.startsWith("__INLINE_ARRAY_")) {
+        name = name.slice("__INLINE_ARRAY_".length);
+        continue;
+      }
+      const decl = this.ast.types.find((t) => t.name.toUpperCase() === upper);
+      const def = decl?.definition;
+      if (def?.kind === "StructDefinition")
+        return def;
+      if (def?.kind === "ArrayDefinition")
+        name = def.elementType.name;
+      else if (def?.kind === "TypeReference")
+        name = def.name;
+      else
+        return void 0;
+    }
+    return void 0;
+  }
+  /** A type name with its ARRAY element types and ARRAY aliases unwrapped. */
+  bitElementType(typeName2) {
+    let name = typeName2;
+    for (let depth = 0; depth < 16 && name !== void 0 && this.ast; depth++) {
+      const upper = name.toUpperCase();
+      if (upper.startsWith("__INLINE_ARRAY_")) {
+        name = name.slice("__INLINE_ARRAY_".length);
+        continue;
+      }
+      const def = this.ast.types.find((t) => t.name.toUpperCase() === upper)?.definition;
+      if (def?.kind !== "ArrayDefinition")
+        return name;
+      name = def.elementType.name;
+    }
+    return name;
+  }
+  /** The type of member `field` of `ownerType`, for following BIT members. */
+  bitFieldType(ownerType, field) {
+    const def = this.bitStructDefinition(ownerType);
+    const upper = field.toUpperCase();
+    const decl = def?.fields.find((f) => f.names.some((n) => n.toUpperCase() === upper));
+    if (decl === void 0) {
+      return this.resolveMemberType(this.bitElementType(ownerType), field);
+    }
+    return decl.type.arrayDimensions && decl.type.elementTypeName !== void 0 ? `__INLINE_ARRAY_${decl.type.elementTypeName}` : decl.type.name;
+  }
+  /**
+   * A BIT member read passed to a conversion, as a BOOL: a raw bitfield
+   * would pick the integer overload (`TO_STRING` gives '1', not 'TRUE').
+   */
+  bitConversionArg(value, generated) {
+    const hasBits = this.ast?.types.some((t) => t.definition.kind === "StructDefinition" && t.definition.fields.some((f) => f.type.bit === true));
+    if (hasBits !== true || !/\.bits_\d+_\./.test(generated)) {
+      return generated;
+    }
+    return this.bitBoolValue(value) === "bit" || value.kind === "FunctionCallExpression" && this.inferExprType(value)?.toUpperCase() === "BOOL" ? `IEC_BOOL(${generated})` : generated;
+  }
+  /**
+   * "bit" for a BIT member read or a selection over BOOL values with one among
+   * them, "bool" for another BOOL value, undefined otherwise.
+   */
+  bitBoolValue(value) {
+    if (value.kind === "ParenthesizedExpression") {
+      return this.bitBoolValue(value.expression);
+    }
+    if (value.kind === "LiteralExpression") {
+      return value.literalType === "BOOL" ? "bool" : void 0;
+    }
+    if (value.kind === "VariableExpression") {
+      if (/\.bits_\d+_\.[A-Za-z_]\w*\)?$/.test(this.generateExpression(value))) {
+        return "bit";
+      }
+      return this.inferExprType(value)?.toUpperCase() === "BOOL" ? "bool" : void 0;
+    }
+    if (value.kind !== "FunctionCallExpression" || value.instance !== void 0) {
+      return void 0;
+    }
+    const skip = BIT_SELECTOR_SKIP.get(value.functionName.toUpperCase());
+    if (skip === void 0)
+      return void 0;
+    const kinds = value.arguments.slice(skip).map((a) => this.bitBoolValue(a.value));
+    if (kinds.length === 0 || kinds.some((k) => k === void 0)) {
+      return void 0;
+    }
+    return kinds.includes("bit") ? "bit" : "bool";
+  }
+  /** The type of a function result or global an access starts at, for BIT members. */
+  bitRootType(nameUpper) {
+    if (this.isCurrentFunctionResult(nameUpper)) {
+      return this.currentFunctionResultType;
+    }
+    if (this.currentSetterProperty === nameUpper) {
+      return this.currentSetterPropertyType;
+    }
+    return this.bitGlobalType(nameUpper);
+  }
+  /** The declared type of a top-level or CONFIGURATION global, for BIT members. */
+  bitGlobalType(nameUpper) {
+    if (!this.ast)
+      return void 0;
+    for (const block of [
+      ...this.ast.globalVarBlocks,
+      ...this.ast.configurations.flatMap((c) => c.varBlocks)
+    ]) {
+      for (const decl of block.declarations) {
+        if (decl.names.some((n) => n.toUpperCase() === nameUpper)) {
+          return decl.type.arrayDimensions && decl.type.elementTypeName !== void 0 ? `__INLINE_ARRAY_${decl.type.elementTypeName}` : decl.type.name;
+        }
+      }
+    }
+    return void 0;
+  }
+  /**
    * Check if a field access needs mangling — true when the field name collides
    * with its type name (GCC -Wchanges-meaning) or with an interface method name.
    *
@@ -38397,7 +41856,8 @@ var CodeGenerator = class _CodeGenerator {
   projectVarInitializer(decl) {
     if (decl.referenceKind === "ref_to" || decl.referenceKind === "reference_to" || decl.referenceKind === "pointer_to") {
       const value = decl.initialValue;
-      return decl.referenceKind === "pointer_to" && value?.kind === "FunctionCallExpression" && value.functionName.toUpperCase() === "ADR" ? this.generateExpression(value) : void 0;
+      const binds = decl.referenceKind === "pointer_to" && value?.kind === "FunctionCallExpression" && value.functionName.toUpperCase() === "ADR" || decl.referenceKind === "ref_to" && value?.kind === "RefExpression";
+      return binds && value !== void 0 ? this.generateExpression(value) : void 0;
     }
     if (decl.initialValue) {
       return this.generateInitializer(decl.initialValue, this.mapTypeRefToCpp(this.projectVarToTypeRef(decl)), decl.typeName);
@@ -38428,7 +41888,7 @@ var CodeGenerator = class _CodeGenerator {
   getStructInitEmitter() {
     this.structInitEmitter ??= {
       emitValue: (value) => this.generateExpression(value),
-      memberName: (fieldName, ownerTypeName) => this.needsFieldMangling(fieldName, this.resolveMemberType(ownerTypeName, fieldName), ownerTypeName) ? `${fieldName}_` : fieldName,
+      memberName: (fieldName, ownerTypeName) => this.bitMemberPath(ownerTypeName, fieldName) ?? (this.needsFieldMangling(fieldName, this.resolveMemberType(ownerTypeName, fieldName), ownerTypeName) ? `${fieldName}_` : fieldName),
       fieldTypeName: (fieldName, ownerTypeName) => this.resolveMemberType(ownerTypeName, fieldName),
       arrayElementTypeName: (typeName2) => typeName2 !== void 0 && typeName2 !== "" && this.ast ? resolveArrayElementType(typeName2, this.ast) : void 0
     };
@@ -38494,6 +41954,15 @@ var CodeGenerator = class _CodeGenerator {
       }
     }
     return instances;
+  }
+  /**
+   * Another task can run at the same time as this code: the build is threaded
+   * (STRUCPP_THREADED), or a CONFIGURATION runs more than one task.
+   */
+  tasksMayRace() {
+    if (this.options.threaded === true)
+      return true;
+    return this.projectModel?.configurations.some((c) => this.countTasks(c) > 1) === true;
   }
   /**
    * Count total tasks in a configuration.
@@ -38927,6 +42396,8 @@ var TAG = {
   STRING: 19,
   WSTRING: 20
 };
+var TAG_BIT = 21;
+var LEAF_BIT_SHIFT = 5;
 var LEAF_FLAG_READONLY = 1 << 0;
 var LEAF_FLAG_RETAIN = 1 << 1;
 var REFERENCE_KIND_TEXT = {
@@ -38965,6 +42436,9 @@ function flagsLiteral(flags) {
     names.push("LEAF_FLAG_READONLY");
   if (flags & LEAF_FLAG_RETAIN)
     names.push("LEAF_FLAG_RETAIN");
+  const bit = flags >> LEAF_BIT_SHIFT;
+  if (bit !== 0)
+    names.push(`(${bit} << LEAF_BIT_SHIFT)`);
   return names.length > 0 ? names.join(" | ") : "0";
 }
 var TAG_NAME_BY_VALUE = Object.fromEntries(Object.entries(TAG).map(([k, v]) => [v, k]));
@@ -38994,9 +42468,14 @@ var IEC_NAME_TO_TAG = {
   TOD: "TOD",
   TIME_OF_DAY: "TOD",
   LTOD: "TOD",
+  LTIME_OF_DAY: "TOD",
   DT: "DT",
   DATE_AND_TIME: "DT",
   LDT: "DT",
+  LDATE_AND_TIME: "DT",
+  // A CHAR is one Windows-1252 byte, a WCHAR one UTF-16 code unit.
+  CHAR: "BYTE",
+  WCHAR: "WORD",
   STRING: "STRING",
   WSTRING: "WSTRING"
 };
@@ -39025,9 +42504,13 @@ var IEC_NAME_TO_SIZE = {
   TOD: 8,
   TIME_OF_DAY: 8,
   LTOD: 8,
+  LTIME_OF_DAY: 8,
   DT: 8,
   DATE_AND_TIME: 8,
   LDT: 8,
+  LDATE_AND_TIME: 8,
+  CHAR: 1,
+  WCHAR: 2,
   // STRING / WSTRING wire widths match `DEBUG_STRING_WIDTH` /
   // `DEBUG_WSTRING_WIDTH` in `runtime/include/debug_dispatch.hpp`.
   // The runtime always writes a full fixed-width window
@@ -39112,6 +42595,40 @@ function generateDebugTable(ast, projectModel, symbolTables, opts = {}) {
     });
     if (flags & LEAF_FLAG_RETAIN) {
       retainVars.push({ arrayIdx: arrIdx, elemIdx, path, size, tagName });
+    }
+  };
+  const addBitLeaf = (path, cppExpr, bit, flags) => {
+    ensureRoom();
+    const bucket = tail();
+    const arrIdx = arrays.length - 1;
+    const elemIdx = bucket.length;
+    const entryFlags = flags | bit << LEAF_BIT_SHIFT;
+    bucket.push({
+      cppExpr,
+      tagName: "BIT",
+      path,
+      type: "BIT",
+      size: 1,
+      flags: entryFlags
+    });
+    leaves.push({
+      arrayIdx: arrIdx,
+      elemIdx,
+      path,
+      type: "BIT",
+      size: 1,
+      ...flags & LEAF_FLAG_READONLY ? { readOnly: true } : {},
+      ...flags & LEAF_FLAG_RETAIN ? { retain: true } : {},
+      bit
+    });
+    if (flags & LEAF_FLAG_RETAIN) {
+      retainVars.push({
+        arrayIdx: arrIdx,
+        elemIdx,
+        path,
+        size: 1,
+        tagName: "BIT"
+      });
     }
   };
   const aliasReferenceKind = (typeName2) => {
@@ -39266,6 +42783,11 @@ function generateDebugTable(ast, projectModel, symbolTables, opts = {}) {
   const visitStructFields = (path, cppExpr, def, flags) => {
     for (const fieldDecl of def.fields) {
       for (const fieldName of fieldDecl.names) {
+        const place = fieldDecl.type.bit ? bitPlaceOf(def.fields, fieldName.toUpperCase()) : void 0;
+        if (place !== void 0) {
+          addBitLeaf(`${path}.${fieldName.toUpperCase()}`, `${cppExpr}.${bitRunMemberName(place.run)}`, place.bit, flags);
+          continue;
+        }
         visitTypeRef(
           `${path}.${fieldName.toUpperCase()}`,
           // No owner: a STRUCT implements no interfaces, so only the
@@ -39356,7 +42878,10 @@ function generateDebugTable(ast, projectModel, symbolTables, opts = {}) {
   const debugMap = {
     version: 2,
     md5,
-    typeTags: { ...TAG },
+    typeTags: {
+      ...TAG,
+      ...leaves.some((l) => l.type === "BIT") ? { BIT: TAG_BIT } : {}
+    },
     arrays: arrays.map((a, i) => ({ index: i, count: a.length })),
     leaves,
     // Omitted entirely when nothing is retained, so a project that uses no
@@ -39428,6 +42953,28 @@ function renderCpp(arrays, globalArrays, configGlobal, configName, retainVars, r
   lines.push("};");
   lines.push("");
   lines.push(`const uint8_t debug_array_count = ${arrays.length};`);
+  lines.push("");
+  lines.push("#ifdef STRUCPP_THREADED");
+  lines.push("void* debug_leaf_lock(uint8_t arr, uint16_t elem) noexcept {");
+  lines.push("    switch (arr) {");
+  arrays.forEach((bucket, ai) => {
+    if (globalArrays[ai] !== true || bucket.length === 0)
+      return;
+    lines.push(`        case ${ai}: {`);
+    lines.push(`            static void* const locks[${bucket.length}] = {`);
+    for (const e of bucket) {
+      const root2 = e.cppExpr.substring(0, e.cppExpr.indexOf(".value"));
+      lines.push(`                &${root2}.mutex(),  // ${e.path}`);
+    }
+    lines.push("            };");
+    lines.push(`            return elem < ${bucket.length} ? locks[elem] : nullptr;`);
+    lines.push("        }");
+  });
+  lines.push("        default:");
+  lines.push("            return nullptr;");
+  lines.push("    }");
+  lines.push("}");
+  lines.push("#endif");
   lines.push("");
   lines.push(`const uint8_t debug_array_kind[${arrays.length}] STRUCPP_DEBUG_FLASH = {`);
   for (const isGlobal of globalArrays) {
@@ -39627,7 +43174,7 @@ var BoundResolver = class {
           case "/":
             return r === 0 ? { unknown: "/ 0" } : { value: Math.trunc(l / r) };
           case "MOD":
-            return r === 0 ? { unknown: "MOD 0" } : { value: l % r };
+            return { value: r === 0 ? 0 : l % r };
           default:
             return { unknown: expr.operator };
         }
@@ -40153,6 +43700,83 @@ function getterChangesInstance(unit, fb, prop) {
   return changes;
 }
 
+// dist/semantic/bit-type.js
+function isBitName(name) {
+  return name?.toUpperCase() === "BIT";
+}
+function isPlainBit(ref) {
+  return isBitName(ref.name) && ref.arrayDimensions === void 0 && ref.elementTypeName === void 0 && (ref.referenceKind ?? "none") === "none" && ref.referenceChain === void 0;
+}
+function error3(ref, message) {
+  const span = ref.sourceSpan;
+  return {
+    message,
+    line: span.startLine,
+    column: span.startCol,
+    severity: "error",
+    ...span.file ? { file: span.file } : {}
+  };
+}
+function structs(ast) {
+  const out = [];
+  for (const t of ast.types) {
+    const def = t.definition;
+    if (def.kind === "StructDefinition" && def.isUnion !== true)
+      out.push(def);
+  }
+  return out;
+}
+function lowerBitType(ast, enabled, declaredElsewhere, profiles = []) {
+  const hint = profiles.length > 0 ? ` (profiles: ${profiles.join(", ")})` : "";
+  const declared = [
+    ...ast.types,
+    ...ast.functionBlocks,
+    ...ast.programs,
+    ...ast.interfaces
+  ].some((d) => isBitName(d.name));
+  if (declared || declaredElsewhere("BIT"))
+    return [];
+  const errors = [];
+  const members2 = /* @__PURE__ */ new Set();
+  for (const def of structs(ast)) {
+    for (const field of def.fields) {
+      if (!isPlainBit(field.type) || members2.has(field.type))
+        continue;
+      members2.add(field.type);
+      if (!enabled) {
+        errors.push(error3(field.type, `BIT as a STRUCT member needs the feature bit_type${hint}`));
+      }
+      field.type.name = "BOOL";
+      field.type.bit = true;
+    }
+  }
+  if (!enabled)
+    return errors;
+  const seen = /* @__PURE__ */ new Set();
+  const visit = (node) => {
+    if (typeof node !== "object" || node === null || seen.has(node))
+      return;
+    seen.add(node);
+    if (Array.isArray(node)) {
+      for (const item of node)
+        visit(item);
+      return;
+    }
+    const ref = node;
+    if (ref.kind === "TypeReference" && !members2.has(ref) && (isBitName(ref.name) || isBitName(ref.elementTypeName))) {
+      errors.push(error3(ref, "BIT is allowed only as the type of a STRUCT member"));
+      if (isBitName(ref.name))
+        ref.name = "BOOL";
+      if (isBitName(ref.elementTypeName))
+        ref.elementTypeName = "BOOL";
+    }
+    for (const value of Object.values(node))
+      visit(value);
+  };
+  visit(ast);
+  return errors;
+}
+
 // dist/frontend/conditional-pragmas.js
 var PRAGMA_DEFINE_NAME_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
 function isPragmaDefineName(name) {
@@ -40636,12 +44260,12 @@ function applyConditionalPragmas(source, defines, lex, fileDefines = /* @__PURE_
   const text = parts.join("");
   return { text, errors, blankedLines: newlyBlankLines(source, text, starts) };
 }
-function newlyBlankLines(before, after, starts) {
+function newlyBlankLines(before2, after, starts) {
   const out = [];
   for (let i = 0; i < starts.length; i++) {
     const from = starts[i];
-    const to = i + 1 < starts.length ? starts[i + 1] : before.length;
-    if (/\S/.test(before.substring(from, to)) && !/\S/.test(after.substring(from, to))) {
+    const to = i + 1 < starts.length ? starts[i + 1] : before2.length;
+    if (/\S/.test(before2.substring(from, to)) && !/\S/.test(after.substring(from, to))) {
       out.push(i + 1);
     }
   }
@@ -40848,36 +44472,39 @@ function registerLibrarySymbols(manifest, symbolTables) {
       name: fn.returnType,
       sizeBits: 0
     };
-    try {
-      symbolTables.globalScope.defineFromLibrary({
+    const symbol = {
+      name: fn.name,
+      kind: "function",
+      libraryName: manifest.name,
+      declaration: {
+        kind: "FunctionDeclaration",
+        sourceSpan: createDefaultSourceSpan(),
         name: fn.name,
-        kind: "function",
-        declaration: {
-          kind: "FunctionDeclaration",
+        returnType: {
+          kind: "TypeReference",
           sourceSpan: createDefaultSourceSpan(),
-          name: fn.name,
-          returnType: {
-            kind: "TypeReference",
-            sourceSpan: createDefaultSourceSpan(),
-            name: fn.returnType,
-            isReference: false,
-            referenceKind: "none"
-          },
-          varBlocks: [],
-          body: []
+          name: fn.returnType,
+          isReference: false,
+          referenceKind: "none"
         },
-        returnType,
-        parameters: fn.parameters.map((p) => {
-          const sym = makeVarSymbol({
-            name: p.name,
-            type: p.type,
-            ...p.referenceKind ? { referenceKind: p.referenceKind } : {}
-          }, p.direction);
-          if (p.initialValue !== void 0)
-            sym.initialValue = p.initialValue;
-          return sym;
-        })
-      });
+        varBlocks: [],
+        body: []
+      },
+      returnType,
+      parameters: fn.parameters.map((p) => {
+        const sym = makeVarSymbol({
+          name: p.name,
+          type: p.type,
+          ...p.referenceKind ? { referenceKind: p.referenceKind } : {}
+        }, p.direction);
+        if (p.initialValue !== void 0)
+          sym.initialValue = p.initialValue;
+        return sym;
+      })
+    };
+    symbolTables.addLibraryFunction(symbol);
+    try {
+      symbolTables.globalScope.defineFromLibrary(symbol);
     } catch (e) {
       if (!(e instanceof DuplicateSymbolError))
         throw e;
@@ -41470,14 +45097,14 @@ function getSourceLine(source, line) {
   const lines = source.split(/\r\n|\r|\n/);
   return lines[line - 1];
 }
-function formatDiagnostic(error3, sourceMap, options) {
+function formatDiagnostic(error4, sourceMap, options) {
   const palette = getPalette(options?.enableColor === true);
-  const sevColor = severityColor(error3.severity, palette);
-  const fileLabel = error3.file ?? "<input>";
-  const displayLine = options?.preferBodyLine === true && error3.section === "body" && error3.bodyLine !== void 0 ? error3.bodyLine : error3.line;
-  const header = `${palette.bold}${fileLabel}:${displayLine}:${error3.column}:${palette.reset} ${sevColor}${palette.bold}${error3.severity}:${palette.reset} ${error3.message}` + (error3.code ? ` [${error3.code}]` : "");
-  const source = error3.file ? sourceMap.get(error3.file) : void 0;
-  const sourceLine = source !== void 0 ? getSourceLine(source, error3.line) : void 0;
+  const sevColor = severityColor(error4.severity, palette);
+  const fileLabel = error4.file ?? "<input>";
+  const displayLine = options?.preferBodyLine === true && error4.section === "body" && error4.bodyLine !== void 0 ? error4.bodyLine : error4.line;
+  const header = `${palette.bold}${fileLabel}:${displayLine}:${error4.column}:${palette.reset} ${sevColor}${palette.bold}${error4.severity}:${palette.reset} ${error4.message}` + (error4.code ? ` [${error4.code}]` : "");
+  const source = error4.file ? sourceMap.get(error4.file) : void 0;
+  const sourceLine = source !== void 0 ? getSourceLine(source, error4.line) : void 0;
   if (sourceLine === void 0) {
     return header;
   }
@@ -41485,8 +45112,8 @@ function formatDiagnostic(error3, sourceMap, options) {
   const gutterWidth = Math.max(lineNumStr.length, 4);
   const lineGutter = `${palette.cyan}${lineNumStr.padStart(gutterWidth)} | ${palette.reset}`;
   const blankGutter = `${palette.cyan}${" ".repeat(gutterWidth)} | ${palette.reset}`;
-  const col = Math.max(1, error3.column);
-  const sameLineEnd = error3.endLine !== void 0 && error3.endLine !== error3.line ? sourceLine.length + 1 : error3.endColumn ?? col + 1;
+  const col = Math.max(1, error4.column);
+  const sameLineEnd = error4.endLine !== void 0 && error4.endLine !== error4.line ? sourceLine.length + 1 : error4.endColumn ?? col + 1;
   const endCol = Math.max(col + 1, Math.min(sameLineEnd, sourceLine.length + 1));
   const underlineLen = endCol - col;
   const padding = sourceLine.substring(0, col - 1).replace(/[^\t]/g, " ");
@@ -41494,9 +45121,9 @@ function formatDiagnostic(error3, sourceMap, options) {
   let out = `${header}
 ${lineGutter}${sourceLine}
 ${blankGutter}${padding}${caret}`;
-  if (error3.suggestion) {
+  if (error4.suggestion) {
     out += `
-${blankGutter}${palette.green}note:${palette.reset} ${error3.suggestion}`;
+${blankGutter}${palette.green}note:${palette.reset} ${error4.suggestion}`;
   }
   return out;
 }
@@ -41553,6 +45180,15 @@ function extractChunkSlices(code, lineEnding) {
 }
 function buildSymbolOwnership(ast, ownLibraryName, dependencies) {
   const ownership = /* @__PURE__ */ new Map();
+  for (const dep of dependencies) {
+    const depName = dep.manifest.name;
+    populateManifestSymbols(dep.manifest, depName, ownership);
+    if (dep.chunks) {
+      for (const chunk of dep.chunks) {
+        ownership.set(chunk.name.toUpperCase(), depName);
+      }
+    }
+  }
   for (const t of ast.types)
     ownership.set(t.name.toUpperCase(), ownLibraryName);
   for (const i of ast.interfaces)
@@ -41570,15 +45206,6 @@ function buildSymbolOwnership(ast, ownLibraryName, dependencies) {
   }
   for (const p of ast.programs) {
     ownership.set(`PROGRAM_${p.name.toUpperCase()}`, ownLibraryName);
-  }
-  for (const dep of dependencies) {
-    const depName = dep.manifest.name;
-    populateManifestSymbols(dep.manifest, depName, ownership);
-    if (dep.chunks) {
-      for (const chunk of dep.chunks) {
-        ownership.set(chunk.name.toUpperCase(), depName);
-      }
-    }
   }
   return ownership;
 }
@@ -42177,6 +45804,22 @@ function compileLibrary(sources, options) {
     compileOpts.globalConstants = options.globalConstants;
   }
   const result = compile(primarySource.source, compileOpts);
+  if (result.success) {
+    for (const t of result.ast?.types ?? []) {
+      const def = t.definition;
+      const bit = def.kind === "StructDefinition" ? def.fields.find((f) => f.type.bit) : void 0;
+      if (bit === void 0)
+        continue;
+      result.success = false;
+      result.errors.push({
+        message: `STRUCT '${t.name.toUpperCase()}' has BIT members: a library cannot export BIT members yet`,
+        line: bit.sourceSpan.startLine,
+        column: bit.sourceSpan.startCol,
+        severity: "error",
+        ...bit.sourceSpan.file ? { file: bit.sourceSpan.file } : {}
+      });
+    }
+  }
   if (!result.success) {
     return {
       success: false,
@@ -42365,7 +46008,7 @@ function compileStlib(sources, options) {
     ...options.dialectFiles ? { dialectFiles: options.dialectFiles } : {},
     ...options.dialectPath ? { dialectPath: options.dialectPath } : {},
     ...options.features ? { features: options.features } : {}
-  }, options.dialectIO?.readFile, options.dialectIO?.listDir);
+  }, options.dialectIO?.readFile, options.dialectIO?.listDir, options.dialectIO?.realPath, options.dialectIO?.foldCase);
   if (dialect.features.has("conditional_pragmas")) {
     archive.pragmaDefines = { ...options.pragmaDefines ?? {} };
   }
@@ -42374,61 +46017,6 @@ function compileStlib(sources, options) {
     archive,
     errors: []
   };
-}
-
-// dist/byte-utils.js
-var utf8Decoder = new TextDecoder("utf-8");
-var latin1Decoder = new TextDecoder("latin1");
-var utf8Encoder = new TextEncoder();
-function bytesEqual(a, b) {
-  if (a.length !== b.length)
-    return false;
-  for (let i = 0; i < a.length; i++) {
-    if (a[i] !== b[i])
-      return false;
-  }
-  return true;
-}
-function bytesToHex(bytes) {
-  let out = "";
-  for (let i = 0; i < bytes.length; i++) {
-    out += bytes[i].toString(16).padStart(2, "0");
-  }
-  return out;
-}
-function bytesToUtf8(bytes) {
-  return utf8Decoder.decode(bytes);
-}
-function bytesToLatin1(bytes) {
-  return latin1Decoder.decode(bytes);
-}
-function findSubArray(haystack, needle, offset = 0) {
-  if (needle.length === 0)
-    return offset;
-  const limit = haystack.length - needle.length;
-  outer: for (let i = offset; i <= limit; i++) {
-    for (let j = 0; j < needle.length; j++) {
-      if (haystack[i + j] !== needle[j])
-        continue outer;
-    }
-    return i;
-  }
-  return -1;
-}
-function utf8ToBytes(text) {
-  return utf8Encoder.encode(text);
-}
-function readUInt32LE(bytes, offset) {
-  return new DataView(bytes.buffer, bytes.byteOffset + offset, 4).getUint32(0, true);
-}
-function readUInt16LE(bytes, offset) {
-  return new DataView(bytes.buffer, bytes.byteOffset + offset, 2).getUint16(0, true);
-}
-async function inflateRaw(bytes) {
-  const decompressionStream = new DecompressionStream("deflate-raw");
-  const decompressedStream = new Blob([bytes]).stream().pipeThrough(decompressionStream);
-  const buffer = await new Response(decompressedStream).arrayBuffer();
-  return new Uint8Array(buffer);
 }
 
 // dist/library/codesys-import/v23-parser.js
@@ -43252,6 +46840,7 @@ var TYPE_TAG_MAP = {
   DWORD: "DWORD",
   LWORD: "LWORD",
   TIME: "TIME",
+  LTIME: "TIME",
   STRING: "STRING"
 };
 function getTypeTag(typeName2) {
@@ -43476,7 +47065,7 @@ function parseTestFile(source, fileName, options) {
       ...opts.dialectFiles ? { dialectFiles: opts.dialectFiles } : {},
       ...opts.dialectPath ? { dialectPath: opts.dialectPath } : {},
       ...opts.features ? { features: opts.features } : {}
-    }, opts.dialectIO?.readFile, opts.dialectIO?.listDir);
+    }, opts.dialectIO?.readFile, opts.dialectIO?.listDir, opts.dialectIO?.realPath, opts.dialectIO?.foldCase);
   } catch (e) {
     if (!(e instanceof DialectError))
       throw e;
@@ -43518,6 +47107,11 @@ function parseTestFile(source, fileName, options) {
   try {
     const testFile = buildTestAST(parseResult.cst, fileName);
     errors.push(...lowerTestInlineTypes(testFile));
+    errors.push(...conditionalReturnErrors(testFile, dialect, fileName));
+    if (dialect.features.has("platform_types")) {
+      lowerTestPlatformTypes(testFile);
+    }
+    testFile.dialect = dialect;
     return { testFile, errors };
   } catch (e) {
     errors.push({
@@ -43529,6 +47123,33 @@ function parseTestFile(source, fileName, options) {
     });
     return { errors };
   }
+}
+function conditionalReturnErrors(testFile, dialect, fileName) {
+  if (dialect.features.has("conditional_return"))
+    return [];
+  const profiles = profilesWithFeature(dialect, "conditional_return");
+  const hint = profiles.length > 0 ? ` (profiles: ${profiles.join(", ")})` : "";
+  const errors = [];
+  const seen = /* @__PURE__ */ new Set();
+  const visit = (node) => {
+    if (typeof node !== "object" || node === null || seen.has(node))
+      return;
+    seen.add(node);
+    const stmt = node;
+    if (stmt.kind === "IfStatement" && stmt.conditionalReturn) {
+      errors.push({
+        message: `RETURN (condition) needs the feature conditional_return${hint}`,
+        line: stmt.conditionalReturn.startLine,
+        column: stmt.conditionalReturn.startCol,
+        severity: "error",
+        file: fileName
+      });
+    }
+    for (const value of Object.values(node))
+      visit(value);
+  };
+  visit(testFile);
+  return errors;
 }
 
 // dist/backend/test-codegen.js
@@ -43669,6 +47290,10 @@ var TestCodeGenerator = class extends CodeGenerator {
   emitStatement(stmt, indent) {
     this.generateStatement(stmt, indent);
   }
+  /** Make a RETURN in the statements emitted next return `value` (undefined: as in a POU). */
+  setReturnValue(value) {
+    this.returnValueOverride = value;
+  }
   /** Get the accumulated output lines. */
   getOutput() {
     return this.output;
@@ -43707,7 +47332,7 @@ var TestCodeGenerator = class extends CodeGenerator {
    * library ADD() because the std library templates expect IECVar-wrapped arguments.
    */
   generateFunctionCallExpression(expr) {
-    if (this.userFunctionNames.has(expr.functionName.toUpperCase())) {
+    if (this.ast === void 0 && this.userFunctionNames.has(expr.functionName.toUpperCase())) {
       const args = expr.arguments.map((arg) => this.generateExpression(arg.value)).join(", ");
       return `${expr.functionName}(${args})`;
     }
@@ -43796,7 +47421,7 @@ function generateTestMain(testFiles, options) {
     });
   }
   if (options.libraryArchives) {
-    testCodegen.registerLibraryArchives(options.libraryArchives);
+    testCodegen.registerLibraryArchives(withYieldedFunctions(options.libraryArchives));
   }
   lines.push(`#include "${options.headerFileName}"`);
   lines.push('#include "iec_test.hpp"');
@@ -43927,6 +47552,8 @@ var TestFunctionGenerator = class {
   astFunctionMap;
   fileName;
   indent = "    ";
+  /** What a top-level RETURN returns: `" true"` in a TEST body, nothing in SETUP or TEARDOWN. */
+  returnValueCpp = " true";
   /** Names of variables from SETUP block (need s. prefix for mock paths) */
   setupVarNames;
   constructor(testCodegen, fileName, astFunctionMap) {
@@ -43960,6 +47587,7 @@ var TestFunctionGenerator = class {
       }
     }
     lines.push("");
+    this.returnValueCpp = "";
     lines.push("    void setup() {");
     const savedIndent = this.indent;
     this.indent = "        ";
@@ -43978,6 +47606,7 @@ var TestFunctionGenerator = class {
       this.indent = savedIndent;
     }
     lines.push("    }");
+    this.returnValueCpp = " true";
     lines.push("};");
     return lines.join("\n");
   }
@@ -44029,6 +47658,7 @@ var TestFunctionGenerator = class {
     for (const varBlock of tc.varBlocks) {
       this.generateVarBlock(lines, varBlock);
     }
+    this.testCodegen.setReturnValue("true");
     if (setupStructName) {
       lines.push(`${this.indent}bool __passed = [&]() -> bool {`);
       const savedIndent = this.indent;
@@ -44047,6 +47677,7 @@ var TestFunctionGenerator = class {
       }
       lines.push(`${this.indent}return true;`);
     }
+    this.testCodegen.setReturnValue(void 0);
     lines.push("}");
     return lines.join("\n");
   }
@@ -44089,7 +47720,20 @@ var TestFunctionGenerator = class {
         this.generateMockVerifyCallCount(lines, stmt);
         break;
       case "ReturnStatement":
-        lines.push(`${this.indent}return true;`);
+        lines.push(`${this.indent}return${this.returnValueCpp};`);
+        break;
+      // `RETURN (cond);` (feature conditional_return) ends the test when cond holds.
+      case "IfStatement":
+        if (stmt.conditionalReturn) {
+          const cond = this.testCodegen.emitExpression(stmt.condition);
+          lines.push(`${this.indent}if (${cond}) {`);
+          lines.push(`${this.indent}    return${this.returnValueCpp};`);
+          lines.push(`${this.indent}}`);
+          break;
+        }
+        this.testCodegen.clearOutput();
+        this.testCodegen.emitStatement(stmt, this.indent);
+        lines.push(...this.testCodegen.getOutput());
         break;
       default:
         this.testCodegen.clearOutput();
@@ -44151,7 +47795,7 @@ var TestFunctionGenerator = class {
   // ===========================================================================
   generateAssertCall(lines, assert) {
     const line = assert.sourceSpan.startLine;
-    const msgArg = assert.message ? `, "${escapeString(assert.message)}"` : "";
+    const msgArg = assert.message ? `, "${translateIECString(assert.message)}"` : "";
     switch (assert.assertType) {
       case "ASSERT_EQ":
       case "ASSERT_NEQ": {
@@ -44581,7 +48225,7 @@ function runPipeline(source, options, continueOnError) {
   let dialect;
   let fbInit = false;
   try {
-    dialect = resolveDialect(dialectRequestFromOptions(mergedOptions), mergedOptions.dialectIO?.readFile, mergedOptions.dialectIO?.listDir);
+    dialect = resolveDialect(dialectRequestFromOptions(mergedOptions), mergedOptions.dialectIO?.readFile, mergedOptions.dialectIO?.listDir, mergedOptions.dialectIO?.realPath, mergedOptions.dialectIO?.foldCase);
   } catch (e) {
     if (!(e instanceof DialectError))
       throw e;
@@ -44596,6 +48240,15 @@ function runPipeline(source, options, continueOnError) {
       mergedOptions,
       fbInit
     };
+  }
+  for (const message of dialect.warnings) {
+    warnings.push({
+      message,
+      line: 0,
+      column: 0,
+      severity: "warning",
+      code: "dialect"
+    });
   }
   fbInit = dialect.features.has("fb_init");
   const prep = sourcePrepFor(dialect, mergedOptions.pragmaDefines);
@@ -44623,6 +48276,10 @@ function runPipeline(source, options, continueOnError) {
     }
   }
   const parseResult = parse(effectiveSource);
+  const implicitPragmas = implicitParameterPragmas(parseResult.pragmas, effectiveSource, mergedOptions.fileName ?? "main.st");
+  const sourcesByFile = /* @__PURE__ */ new Map([
+    [mergedOptions.fileName ?? "main.st", effectiveSource]
+  ]);
   warnings.push(...pragmaWarnings(parseResult.pragmas, effectiveSource, mergedOptions.fileName));
   if (parseResult.errors.length > 0) {
     errors.push(...withPragmaHint(toCompileErrors(parseResult.errors, mergedOptions.fileName), pragmaHint));
@@ -44675,6 +48332,8 @@ function runPipeline(source, options, continueOnError) {
           continue;
         }
         const addlParseResult = parse(effectiveAddlSource);
+        implicitPragmas.push(...implicitParameterPragmas(addlParseResult.pragmas, effectiveAddlSource, addlSource.fileName));
+        sourcesByFile.set(addlSource.fileName, effectiveAddlSource);
         warnings.push(...pragmaWarnings(addlParseResult.pragmas, effectiveAddlSource, addlSource.fileName));
         if (addlParseResult.errors.length > 0) {
           errors.push(...withPragmaHint(toCompileErrors(addlParseResult.errors, addlSource.fileName), pragmaHint));
@@ -44712,7 +48371,34 @@ function runPipeline(source, options, continueOnError) {
       };
     }
     ast = mergeCompilationUnits(units);
+    markImplicitParameters(ast, implicitPragmas);
     const loweringErrors = [
+      ...dialect.features.has("vendor_operators") ? lowerPouOperators(ast, {
+        sources: sourcesByFile,
+        declaredByLibrary: (name) => (mergedOptions.libraries ?? []).some((a) => [
+          ...a.manifest.functions,
+          ...a.manifest.functionBlocks,
+          ...a.manifest.types,
+          ...a.manifest.globals ?? []
+        ].some((d) => d.name.toUpperCase() === name)),
+        libraryFB: (name) => {
+          for (const a of mergedOptions.libraries ?? []) {
+            const fb = a.manifest.functionBlocks.find((f) => f.name.toUpperCase() === name);
+            if (fb === void 0)
+              continue;
+            const members2 = [
+              ...fb.inputs,
+              ...fb.outputs,
+              ...fb.inouts,
+              ...fb.locals ?? [],
+              ...fb.temps ?? [],
+              ...fb.methods ?? []
+            ].map((m) => m.name.toUpperCase());
+            return fb.extends === void 0 ? { members: members2 } : { members: members2, extends: fb.extends };
+          }
+          return void 0;
+        }
+      }) : [],
       ...resolveArrayBounds(ast, mergedOptions.globalConstants ?? {}),
       ...foldStructFieldDefaults(ast, mergedOptions.globalConstants ?? {}),
       ...lowerActions(ast),
@@ -44721,6 +48407,19 @@ function runPipeline(source, options, continueOnError) {
     ];
     if (dialect.features.has("program_methods"))
       lowerProgramSelfMembers(ast);
+    if (dialect.features.has("platform_types")) {
+      const libraryTypes = /* @__PURE__ */ new Set();
+      for (const archive of mergedOptions.libraries ?? []) {
+        for (const t of archive.manifest.types) {
+          libraryTypes.add(t.name.toUpperCase());
+        }
+        for (const fb of archive.manifest.functionBlocks) {
+          libraryTypes.add(fb.name.toUpperCase());
+        }
+      }
+      lowerPlatformTypes(ast, (name) => libraryTypes.has(name));
+    }
+    loweringErrors.push(...lowerBitType(ast, dialect.features.has("bit_type"), (name) => (mergedOptions.libraries ?? []).some((a) => [...a.manifest.types, ...a.manifest.functionBlocks].some((d) => d.name.toUpperCase() === name)), profilesWithFeature(dialect, "bit_type")));
     errors.push(...loweringErrors);
     if (!continueOnError && loweringErrors.length > 0) {
       return {
@@ -44819,7 +48518,7 @@ function runPipeline(source, options, continueOnError) {
       fbInit
     };
   }
-  allArchives.push(...mergedOptions.libraries ?? []);
+  allArchives.push(...withYieldedFunctions(mergedOptions.libraries ?? []));
   if (!continueOnError && errors.length > 0) {
     return {
       ast,
@@ -44975,7 +48674,8 @@ function compile(source, options = {}) {
     isTestBuild: pipeline.mergedOptions.isTestBuild ?? false,
     globalConstants: pipeline.mergedOptions.globalConstants ?? {},
     ...pipeline.mergedOptions.emitChunkMarkers ? { emitChunkMarkers: true } : {},
-    ...pipeline.fbInit ? { fbInit: true } : {}
+    ...pipeline.fbInit ? { fbInit: true } : {},
+    ...pipeline.mergedOptions.threaded === true ? { threaded: true } : {}
   });
   codegen.setProjectModel(pipeline.projectModel);
   codegen.registerLibraryArchives(pipeline.allArchives);
@@ -45104,9 +48804,12 @@ function getVersion() {
 
 // dist/node/dialect-io.js
 var import_fs = require("fs");
+var import_path = require("path");
 var nodeDialectIO = {
   readFile: (path) => (0, import_fs.readFileSync)(path, "utf-8"),
-  listDir: (dir) => (0, import_fs.readdirSync)(dir)
+  listDir: (dir) => (0, import_fs.readdirSync)(dir),
+  realPath: (path) => import_fs.realpathSync.native((0, import_path.resolve)(path)),
+  foldCase: process.platform === "win32"
 };
 
 // dist/node/library-loader.js
@@ -45269,6 +48972,9 @@ function findBundledLibsDir() {
 
 // dist/node/cli.js
 var enableColor = process.env.NO_COLOR === void 0 && process.stderr.isTTY === true;
+function definesThreaded(cxxFlags) {
+  return splitCxxFlags(cxxFlags).some((f) => /^-DSTRUCPP_THREADED(=|$)/.test(f));
+}
 function printDiagnostics(errors, sources, stream = "error") {
   const map2 = buildSourceMap(sources);
   const out = stream === "warn" ? console.warn : console.error;
@@ -45496,8 +49202,8 @@ function parseArgs(args) {
     i++;
   }
   for (const { file } of options.fileDefines) {
-    const path = (0, import_path.resolve)(file);
-    const problem = options.compileLib ? "cannot be used with --compile-lib" : !options.inputs.some((input) => (0, import_path.resolve)(input) === path) ? "is not an input file" : void 0;
+    const path = (0, import_path2.resolve)(file);
+    const problem = options.compileLib ? "cannot be used with --compile-lib" : !options.inputs.some((input) => (0, import_path2.resolve)(input) === path) ? "is not an input file" : void 0;
     if (problem !== void 0) {
       console.error(`error: --file-define file '${file}' ${problem}`);
       process.exit(usageExit);
@@ -45505,11 +49211,11 @@ function parseArgs(args) {
   }
   const listFiles = /* @__PURE__ */ new Set();
   for (const { file } of options.globalLists) {
-    const path = (0, import_path.resolve)(file);
+    const path = (0, import_path2.resolve)(file);
     let problem;
     if (listFiles.has(path))
       problem = "is given twice";
-    else if (!options.inputs.some((input) => (0, import_path.resolve)(input) === path)) {
+    else if (!options.inputs.some((input) => (0, import_path2.resolve)(input) === path)) {
       problem = "is not an input file";
     }
     if (problem !== void 0) {
@@ -45521,12 +49227,12 @@ function parseArgs(args) {
   return options;
 }
 function globalListNameFor(options, input) {
-  const path = (0, import_path.resolve)(input);
-  return options.globalLists.find((g) => (0, import_path.resolve)(g.file) === path)?.name;
+  const path = (0, import_path2.resolve)(input);
+  return options.globalLists.find((g) => (0, import_path2.resolve)(g.file) === path)?.name;
 }
 function fileDefinesFor(options, input) {
-  const path = (0, import_path.resolve)(input);
-  const hits = options.fileDefines.filter((d) => (0, import_path.resolve)(d.file) === path);
+  const path = (0, import_path2.resolve)(input);
+  const hits = options.fileDefines.filter((d) => (0, import_path2.resolve)(d.file) === path);
   if (hits.length === 0)
     return void 0;
   return Object.fromEntries(hits.map((d) => [d.name, d.value]));
@@ -45669,7 +49375,11 @@ function checkDialect(options) {
   if (Object.keys(req).length === 0 && !options.printDialect)
     return;
   try {
-    const d = resolveDialect(req, nodeDialectIO.readFile, nodeDialectIO.listDir);
+    const d = resolveDialect(req, nodeDialectIO.readFile, nodeDialectIO.listDir, nodeDialectIO.realPath, nodeDialectIO.foldCase);
+    if (options.printDialect || options.compileLib || options.importLib !== void 0) {
+      for (const w of d.warnings)
+        console.error(`warning: ${w}`);
+    }
     if (options.printDialect) {
       console.log(JSON.stringify({ id: d.id, features: [...d.features].sort() }));
       process.exit(0);
@@ -45758,13 +49468,13 @@ function getEffectiveLibraryPaths(options) {
   if (!options.noDefaultLibs) {
     const bundledDir = findBundledLibsDir();
     if (bundledDir) {
-      const resolved = (0, import_path.resolve)(bundledDir);
+      const resolved = (0, import_path2.resolve)(bundledDir);
       seen.add(resolved);
       paths.push(resolved);
     }
   }
   for (const p of options.libraryPaths) {
-    const resolved = (0, import_path.resolve)(p);
+    const resolved = (0, import_path2.resolve)(p);
     if (!seen.has(resolved)) {
       seen.add(resolved);
       paths.push(resolved);
@@ -45781,14 +49491,14 @@ function compileLibraryMode(options) {
     console.error("Error: No input files specified");
     process.exit(1);
   }
-  const outputDir = options.output ? (0, import_path.resolve)(options.output) : process.cwd();
+  const outputDir = options.output ? (0, import_path2.resolve)(options.output) : process.cwd();
   if (!(0, import_fs2.existsSync)(outputDir)) {
     (0, import_fs2.mkdirSync)(outputDir, { recursive: true });
   }
   const libNamespace = options.libNamespace ?? options.libName.replace(/[^a-zA-Z0-9_]/g, "_");
   const filePaths = [];
   for (const input of options.inputs) {
-    const inputPath = (0, import_path.resolve)(input);
+    const inputPath = (0, import_path2.resolve)(input);
     try {
       const stat = (0, import_fs2.statSync)(inputPath);
       if (stat.isDirectory()) {
@@ -45812,11 +49522,11 @@ function compileLibraryMode(options) {
     try {
       const entry = {
         source: (0, import_fs2.readFileSync)(filePath, "utf-8"),
-        fileName: (0, import_path.basename)(filePath)
+        fileName: (0, import_path2.basename)(filePath)
       };
       if (rootDir) {
-        const rel = (0, import_path.relative)(rootDir, filePath);
-        const parts = rel.split(import_path.sep);
+        const rel = (0, import_path2.relative)(rootDir, filePath);
+        const parts = rel.split(import_path2.sep);
         if (parts.length > 1) {
           entry.category = parts.slice(0, -1).join("/");
         }
@@ -45861,7 +49571,7 @@ function compileLibraryMode(options) {
     printDiagnostics(result.errors.map(toDiagnostic), sources);
     process.exit(1);
   }
-  const stlibPath = (0, import_path.resolve)(outputDir, `${options.libName}.stlib`);
+  const stlibPath = (0, import_path2.resolve)(outputDir, `${options.libName}.stlib`);
   (0, import_fs2.writeFileSync)(stlibPath, JSON.stringify(result.archive, null, 2), "utf-8");
   console.log(`Library archive written to ${stlibPath}`);
   console.log("Library compilation successful!");
@@ -45874,7 +49584,7 @@ function runTestMode(options) {
     process.exit(1);
   }
   const primaryInput = options.inputs[0];
-  const inputPath = (0, import_path.resolve)(primaryInput);
+  const inputPath = (0, import_path2.resolve)(primaryInput);
   let source;
   try {
     source = (0, import_fs2.readFileSync)(inputPath, "utf-8");
@@ -45884,11 +49594,11 @@ function runTestMode(options) {
   }
   const additionalSources = [];
   for (const extra of options.inputs.slice(1)) {
-    const extraPath = (0, import_path.resolve)(extra);
+    const extraPath = (0, import_path2.resolve)(extra);
     try {
       additionalSources.push(withGlobalListName(options, extra, {
         source: (0, import_fs2.readFileSync)(extraPath, "utf-8"),
-        fileName: (0, import_path.basename)(extraPath)
+        fileName: (0, import_path2.basename)(extraPath)
       }));
     } catch {
       console.error(`Error: Cannot read source file: ${extraPath}`);
@@ -45898,8 +49608,9 @@ function runTestMode(options) {
   const effectiveLibPaths = getEffectiveLibraryPaths(options);
   const compileOptions = {
     headerFileName: "generated.hpp",
-    fileName: (0, import_path.basename)(inputPath),
+    fileName: (0, import_path2.basename)(inputPath),
     isTestBuild: true,
+    ...definesThreaded(options.cxxFlags) ? { threaded: true } : {},
     strict: options.strict,
     ...dialectCompileOptions(options),
     ...withGlobalListName(options, primaryInput, {}, true)
@@ -45917,18 +49628,22 @@ function runTestMode(options) {
   if (!result.success) {
     console.error("Error compiling source files:\n");
     const sourceDiagSources = [
-      { fileName: (0, import_path.basename)(inputPath), source },
+      { fileName: (0, import_path2.basename)(inputPath), source },
       ...additionalSources
     ];
     printDiagnostics(result.errors, sourceDiagSources);
     printDiagnostics(result.warnings, sourceDiagSources, "warn");
     process.exit(1);
   }
+  for (const w of result.warnings) {
+    if (w.code === "dialect")
+      console.error(`warning: ${w.message}`);
+  }
   const { pous } = result.ast ? buildPOUInfoFromAST(result.ast) : { pous: [] };
   const testFiles = [];
   const testSources = [];
   for (const testPath of options.test) {
-    const resolvedPath = (0, import_path.resolve)(testPath);
+    const resolvedPath = (0, import_path2.resolve)(testPath);
     let testSource;
     try {
       testSource = (0, import_fs2.readFileSync)(resolvedPath, "utf-8");
@@ -45936,10 +49651,10 @@ function runTestMode(options) {
       console.error(`Error: Cannot read test file: ${resolvedPath}`);
       process.exit(1);
     }
-    testSources.push({ fileName: (0, import_path.basename)(testPath), source: testSource });
-    const parseResult = parseTestFile(testSource, (0, import_path.basename)(testPath), dialectCompileOptions(options));
+    testSources.push({ fileName: (0, import_path2.basename)(testPath), source: testSource });
+    const parseResult = parseTestFile(testSource, (0, import_path2.basename)(testPath), dialectCompileOptions(options));
     if (parseResult.errors.length > 0) {
-      console.error(`Error parsing ${(0, import_path.basename)(testPath)}:
+      console.error(`Error parsing ${(0, import_path2.basename)(testPath)}:
 `);
       printDiagnostics(parseResult.errors, testSources);
       process.exit(1);
@@ -45955,7 +49670,7 @@ function runTestMode(options) {
   if (result.symbolTables) {
     let hasTestErrors = false;
     for (const tf of testFiles) {
-      const analysisResult = analyzeTestFile(tf, result.symbolTables);
+      const analysisResult = analyzeTestFile(tf, result.symbolTables, result.ast);
       if (analysisResult.errors.length > 0) {
         hasTestErrors = true;
         console.error(`Error in test file '${tf.fileName}':
@@ -45979,18 +49694,18 @@ function runTestMode(options) {
     testMainOpts.libraryArchives = result.resolvedLibraries;
   }
   const testMainCpp = generateTestMain(testFiles, testMainOpts);
-  const tempDir = (0, import_fs2.mkdtempSync)((0, import_path.join)((0, import_os.tmpdir)(), "strucpp-test-"));
+  const tempDir = (0, import_fs2.mkdtempSync)((0, import_path2.join)((0, import_os.tmpdir)(), "strucpp-test-"));
   try {
-    (0, import_fs2.writeFileSync)((0, import_path.join)(tempDir, "generated.hpp"), result.headerCode, "utf-8");
-    (0, import_fs2.writeFileSync)((0, import_path.join)(tempDir, "generated.cpp"), result.cppCode, "utf-8");
-    (0, import_fs2.writeFileSync)((0, import_path.join)(tempDir, "test_main.cpp"), testMainCpp, "utf-8");
+    (0, import_fs2.writeFileSync)((0, import_path2.join)(tempDir, "generated.hpp"), result.headerCode, "utf-8");
+    (0, import_fs2.writeFileSync)((0, import_path2.join)(tempDir, "generated.cpp"), result.cppCode, "utf-8");
+    (0, import_fs2.writeFileSync)((0, import_path2.join)(tempDir, "test_main.cpp"), testMainCpp, "utf-8");
     const runtimeIncludeDir = findRuntimeIncludeDir(options.cxxFlags);
     if (!runtimeIncludeDir) {
       console.error('Error: Could not locate runtime include directory.\n  Use --cxx-flags "-I/path/to/runtime/include" to specify it.');
       process.exit(1);
     }
-    const testRuntimeDir = (0, import_path.resolve)((0, import_path.dirname)(runtimeIncludeDir), "test");
-    const binaryPath = (0, import_path.join)(tempDir, process.platform === "win32" ? "test_runner.exe" : "test_runner");
+    const testRuntimeDir = (0, import_path2.resolve)((0, import_path2.dirname)(runtimeIncludeDir), "test");
+    const binaryPath = (0, import_path2.join)(tempDir, process.platform === "win32" ? "test_runner.exe" : "test_runner");
     try {
       (0, import_child_process.execFileSync)(options.gpp, [
         "-std=c++14",
@@ -46001,8 +49716,8 @@ function runTestMode(options) {
         `-I${testRuntimeDir}`,
         `-I${tempDir}`,
         ...splitCxxFlags(options.cxxFlags),
-        (0, import_path.join)(tempDir, "test_main.cpp"),
-        (0, import_path.join)(tempDir, "generated.cpp"),
+        (0, import_path2.join)(tempDir, "test_main.cpp"),
+        (0, import_path2.join)(tempDir, "generated.cpp"),
         "-o",
         binaryPath
       ], { stdio: ["pipe", "pipe", "pipe"], env: getCxxEnv() });
@@ -46042,7 +49757,7 @@ function runTestMode(options) {
 function decompileLibMode(options) {
   let archive;
   try {
-    archive = loadStlibFromFile((0, import_path.resolve)(options.decompileLib));
+    archive = loadStlibFromFile((0, import_path2.resolve)(options.decompileLib));
   } catch (e) {
     console.error(`Error: ${e instanceof Error ? e.message : String(e)}`);
     process.exit(1);
@@ -46051,12 +49766,12 @@ function decompileLibMode(options) {
     console.error("Error: This .stlib archive has no embedded sources (compiled with --no-source).");
     process.exit(1);
   }
-  const outputDir = options.output ? (0, import_path.resolve)(options.output) : process.cwd();
+  const outputDir = options.output ? (0, import_path2.resolve)(options.output) : process.cwd();
   (0, import_fs2.mkdirSync)(outputDir, { recursive: true });
   for (const src of archive.sources) {
-    const subdir = src.category ? (0, import_path.join)(outputDir, ...src.category.split("/")) : outputDir;
+    const subdir = src.category ? (0, import_path2.join)(outputDir, ...src.category.split("/")) : outputDir;
     (0, import_fs2.mkdirSync)(subdir, { recursive: true });
-    const outPath = (0, import_path.join)(subdir, src.fileName);
+    const outPath = (0, import_path2.join)(subdir, src.fileName);
     (0, import_fs2.writeFileSync)(outPath, src.source, "utf-8");
     console.log(`  ${outPath}`);
   }
@@ -46071,12 +49786,12 @@ async function importLibMode(options) {
     console.error("Error: --lib-name is required with --import-lib");
     process.exit(1);
   }
-  const outputDir = options.output ? (0, import_path.resolve)(options.output) : process.cwd();
+  const outputDir = options.output ? (0, import_path2.resolve)(options.output) : process.cwd();
   if (!(0, import_fs2.existsSync)(outputDir)) {
     (0, import_fs2.mkdirSync)(outputDir, { recursive: true });
   }
   console.log(`Importing CODESYS library: ${options.importLib}`);
-  const libPath = (0, import_path.resolve)(options.importLib);
+  const libPath = (0, import_path2.resolve)(options.importLib);
   const libBytes = (0, import_fs2.readFileSync)(libPath);
   const importResult = await importCodesysLibraryFromBytes(libBytes);
   if (!importResult.success) {
@@ -46133,7 +49848,7 @@ Compiling library "${options.libName}" from ${importResult.sources.length} extra
     console.error("Note: Extracted ST sources may need manual adjustments for compilation.");
     process.exit(1);
   }
-  const stlibPath = (0, import_path.resolve)(outputDir, `${options.libName}.stlib`);
+  const stlibPath = (0, import_path2.resolve)(outputDir, `${options.libName}.stlib`);
   (0, import_fs2.writeFileSync)(stlibPath, JSON.stringify(result.archive, null, 2), "utf-8");
   console.log(`
 Library archive written to ${stlibPath}`);
@@ -46193,7 +49908,7 @@ function checkMode(options) {
     cannotRun("--check needs at least one input file");
   const dialectOptions = dialectCompileOptions(options);
   try {
-    dialectId = resolveDialect(dialectOptions, nodeDialectIO.readFile, nodeDialectIO.listDir).id;
+    dialectId = resolveDialect(dialectOptions, nodeDialectIO.readFile, nodeDialectIO.listDir, nodeDialectIO.realPath, nodeDialectIO.foldCase).id;
   } catch (e) {
     if (!(e instanceof DialectError))
       throw e;
@@ -46204,7 +49919,7 @@ function checkMode(options) {
     try {
       sources.push({
         fileName: file,
-        source: (0, import_fs2.readFileSync)((0, import_path.resolve)(file), "utf-8")
+        source: (0, import_fs2.readFileSync)((0, import_path2.resolve)(file), "utf-8")
       });
     } catch {
       cannotRun(`Cannot read input file: ${file}`, file);
@@ -46283,9 +49998,9 @@ async function main() {
     process.exit(1);
   }
   const primaryInput = options.inputs[0];
-  const inputPath = (0, import_path.resolve)(primaryInput);
-  const outputPath = options.output ? (0, import_path.resolve)(options.output) : inputPath.replace(/\.(st|il)$/i, ".cpp");
-  const headerFileName = (0, import_path.basename)(outputPath).replace(/\.cpp$/i, ".hpp");
+  const inputPath = (0, import_path2.resolve)(primaryInput);
+  const outputPath = options.output ? (0, import_path2.resolve)(options.output) : inputPath.replace(/\.(st|il)$/i, ".cpp");
+  const headerFileName = (0, import_path2.basename)(outputPath).replace(/\.cpp$/i, ".hpp");
   let source;
   try {
     source = (0, import_fs2.readFileSync)(inputPath, "utf-8");
@@ -46295,11 +50010,11 @@ async function main() {
   }
   const additionalSources = [];
   for (const extra of options.inputs.slice(1)) {
-    const extraPath = (0, import_path.resolve)(extra);
+    const extraPath = (0, import_path2.resolve)(extra);
     try {
       additionalSources.push(withGlobalListName(options, extra, {
         source: (0, import_fs2.readFileSync)(extraPath, "utf-8"),
-        fileName: (0, import_path.basename)(extraPath)
+        fileName: (0, import_path2.basename)(extraPath)
       }));
     } catch {
       console.error(`Error: Cannot read input file: ${extraPath}`);
@@ -46316,8 +50031,9 @@ async function main() {
     sourceComments: options.sourceComments,
     optimizationLevel: options.optimizationLevel,
     headerFileName,
-    cppFileName: (0, import_path.basename)(outputPath),
-    fileName: (0, import_path.basename)(inputPath),
+    cppFileName: (0, import_path2.basename)(outputPath),
+    fileName: (0, import_path2.basename)(inputPath),
+    ...options.build && definesThreaded(options.cxxFlags) ? { threaded: true } : {},
     ...withGlobalListName(options, primaryInput, {}, true)
   };
   if (additionalSources.length > 0) {
@@ -46329,11 +50045,11 @@ async function main() {
   if (Object.keys(options.defines).length > 0) {
     compileOptions.globalConstants = options.defines;
   }
-  const fileLabel = options.inputs.length > 1 ? `${options.inputs.length} files` : (0, import_path.basename)(inputPath);
+  const fileLabel = options.inputs.length > 1 ? `${options.inputs.length} files` : (0, import_path2.basename)(inputPath);
   console.log(`Compiling ${fileLabel}...`);
   const result = compile(source, compileOptions);
   const diagSources = [
-    { fileName: (0, import_path.basename)(inputPath), source },
+    { fileName: (0, import_path2.basename)(inputPath), source },
     ...additionalSources
   ];
   if (!result.success) {
@@ -46362,15 +50078,15 @@ async function main() {
       console.error("Error: AST/ProjectModel not available for --build");
       process.exit(1);
     }
-    const outputDir = (0, import_path.dirname)(outputPath);
-    const mainCppPath = (0, import_path.resolve)(outputDir, "main.cpp");
+    const outputDir = (0, import_path2.dirname)(outputPath);
+    const mainCppPath = (0, import_path2.resolve)(outputDir, "main.cpp");
     const runtimeIncludeDir = findRuntimeIncludeDir(options.cxxFlags);
     if (!runtimeIncludeDir) {
       console.error('Error: Could not locate runtime include directory.\n  Use --cxx-flags "-I/path/to/runtime/include" to specify it.');
       process.exit(1);
     }
-    const replDir = (0, import_path.resolve)((0, import_path.dirname)(runtimeIncludeDir), "repl");
-    if (!(0, import_fs2.existsSync)((0, import_path.resolve)(replDir, "isocline.h"))) {
+    const replDir = (0, import_path2.resolve)((0, import_path2.dirname)(runtimeIncludeDir), "repl");
+    if (!(0, import_fs2.existsSync)((0, import_path2.resolve)(replDir, "isocline.h"))) {
       console.error(`Error: REPL runtime not found at ${replDir}
   Expected runtime/repl/ as sibling of runtime/include/.`);
       process.exit(1);
@@ -46389,14 +50105,14 @@ async function main() {
     let binaryPath = outputPath.replace(/\.cpp$/i, "");
     if (process.platform === "win32")
       binaryPath += ".exe";
-    const isoclineObjPath = (0, import_path.resolve)(outputDir, "isocline.o");
+    const isoclineObjPath = (0, import_path2.resolve)(outputDir, "isocline.o");
     console.log("Compiling isocline...");
     try {
       (0, import_child_process.execFileSync)(options.cc, [
         "-c",
         "-std=c11",
         `-I${replDir}`,
-        (0, import_path.resolve)(replDir, "isocline.c"),
+        (0, import_path2.resolve)(replDir, "isocline.c"),
         "-o",
         isoclineObjPath
       ], { stdio: "inherit" });
@@ -46421,7 +50137,7 @@ async function main() {
       "-o",
       binaryPath
     ];
-    console.log(`Building binary: ${(0, import_path.basename)(binaryPath)}`);
+    console.log(`Building binary: ${(0, import_path2.basename)(binaryPath)}`);
     try {
       (0, import_child_process.execFileSync)(options.gpp, gppArgs, {
         stdio: "inherit",

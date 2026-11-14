@@ -18,6 +18,7 @@
 #include <algorithm>
 #include <type_traits>
 #include "iec_types.hpp"
+#include "iec_fault.hpp"
 
 namespace strucpp {
 
@@ -446,6 +447,20 @@ public:
     }
     char16_t operator[](size_t index) const noexcept {
         return value_[index];
+    }
+
+    /** Ed. 3 `w[i]`: the i-th code unit, from 1 to the current length. */
+    char16_t& at(int64_t index) {
+        if (index < 1 || static_cast<size_t>(index) > value_.length()) {
+            iec_string_index_fault();
+        }
+        return value_.data()[index - 1];
+    }
+    char16_t at(int64_t index) const {
+        if (index < 1 || static_cast<size_t>(index) > value_.length()) {
+            iec_string_index_fault();
+        }
+        return value_.data()[index - 1];
     }
 
 private:

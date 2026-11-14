@@ -200,6 +200,39 @@ public:
     }
 };
 
+/**
+ * One BIT member of a STRUCT in a UNION's storage (feature bit_type): bit
+ * `Bit` of the run whose bytes start at the location, least significant first.
+ */
+template<std::size_t Bit, typename Loc>
+class union_bit : public Loc {
+public:
+    using union_proxy_tag = void;
+    using union_value_type = bool;
+    using union_plain_type = unsigned char;
+
+    union_bit() = default;
+    union_bit(const union_bit&) = default;
+    explicit union_bit(unsigned char* p) noexcept {
+        detail::union_loc_init<Loc>::set(*this, p);
+    }
+
+    bool get() const noexcept {
+        return ((this->union_addr()[Bit / 8] >> (Bit % 8)) & 1u) != 0;
+    }
+    operator bool() const noexcept { return get(); }
+
+    /** Writes this bit only; the other bits of the byte keep their values. */
+    union_bit& operator=(bool v) noexcept {
+        unsigned char* p = const_cast<unsigned char*>(this->union_addr()) + Bit / 8;
+        const unsigned char mask = static_cast<unsigned char>(1u << (Bit % 8));
+        *p = v ? static_cast<unsigned char>(*p | mask)
+               : static_cast<unsigned char>(*p & ~mask);
+        return *this;
+    }
+    union_bit& operator=(const union_bit& o) noexcept { return *this = o.get(); }
+};
+
 namespace detail {
 /** Scalar traits shared by the specialisations: plain P, field type W. */
 template<typename W, typename P>

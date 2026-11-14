@@ -4,7 +4,382 @@
     "name": "iec-standard-fb",
     "version": "1.0.0",
     "namespace": "strucpp",
-    "functions": [],
+    "functions": [
+      {
+        "name": "CONCAT_DATE",
+        "returnType": "DATE",
+        "parameters": [
+          {
+            "name": "YEAR",
+            "type": "LINT",
+            "direction": "input"
+          },
+          {
+            "name": "MONTH",
+            "type": "LINT",
+            "direction": "input"
+          },
+          {
+            "name": "DAY",
+            "type": "LINT",
+            "direction": "input"
+          }
+        ],
+        "documentation": "The DATE of a year, month and day."
+      },
+      {
+        "name": "CONCAT_TOD",
+        "returnType": "TOD",
+        "parameters": [
+          {
+            "name": "HOUR",
+            "type": "LINT",
+            "direction": "input"
+          },
+          {
+            "name": "MINUTE",
+            "type": "LINT",
+            "direction": "input"
+          },
+          {
+            "name": "SECOND",
+            "type": "LINT",
+            "direction": "input"
+          },
+          {
+            "name": "MILLISECOND",
+            "type": "LINT",
+            "direction": "input"
+          }
+        ],
+        "documentation": "The TOD of an hour, minute, second and millisecond."
+      },
+      {
+        "name": "CONCAT_LTOD",
+        "returnType": "LTOD",
+        "parameters": [
+          {
+            "name": "HOUR",
+            "type": "LINT",
+            "direction": "input"
+          },
+          {
+            "name": "MINUTE",
+            "type": "LINT",
+            "direction": "input"
+          },
+          {
+            "name": "SECOND",
+            "type": "LINT",
+            "direction": "input"
+          },
+          {
+            "name": "MILLISECOND",
+            "type": "LINT",
+            "direction": "input"
+          }
+        ],
+        "documentation": "The LTOD of an hour, minute, second and millisecond."
+      },
+      {
+        "name": "CONCAT_LDT",
+        "returnType": "LDT",
+        "parameters": [
+          {
+            "name": "YEAR",
+            "type": "LINT",
+            "direction": "input"
+          },
+          {
+            "name": "MONTH",
+            "type": "LINT",
+            "direction": "input"
+          },
+          {
+            "name": "DAY",
+            "type": "LINT",
+            "direction": "input"
+          },
+          {
+            "name": "HOUR",
+            "type": "LINT",
+            "direction": "input"
+          },
+          {
+            "name": "MINUTE",
+            "type": "LINT",
+            "direction": "input"
+          },
+          {
+            "name": "SECOND",
+            "type": "LINT",
+            "direction": "input"
+          },
+          {
+            "name": "MILLISECOND",
+            "type": "LINT",
+            "direction": "input"
+          }
+        ],
+        "documentation": "The LDT of a year, month, day, hour, minute, second and millisecond."
+      },
+      {
+        "name": "CONCAT_DT",
+        "returnType": "DT",
+        "parameters": [
+          {
+            "name": "YEAR",
+            "type": "LINT",
+            "direction": "input"
+          },
+          {
+            "name": "MONTH",
+            "type": "LINT",
+            "direction": "input"
+          },
+          {
+            "name": "DAY",
+            "type": "LINT",
+            "direction": "input"
+          },
+          {
+            "name": "HOUR",
+            "type": "LINT",
+            "direction": "input"
+          },
+          {
+            "name": "MINUTE",
+            "type": "LINT",
+            "direction": "input"
+          },
+          {
+            "name": "SECOND",
+            "type": "LINT",
+            "direction": "input"
+          },
+          {
+            "name": "MILLISECOND",
+            "type": "LINT",
+            "direction": "input"
+          }
+        ],
+        "documentation": "The DT of a year, month, day, hour, minute, second and millisecond."
+      },
+      {
+        "name": "CONCAT_DATE_LTOD",
+        "returnType": "LDT",
+        "parameters": [
+          {
+            "name": "DATE_IN",
+            "type": "DATE",
+            "direction": "input"
+          },
+          {
+            "name": "TOD_IN",
+            "type": "LTOD",
+            "direction": "input"
+          }
+        ],
+        "documentation": "The LDT of a DATE and an LTOD."
+      },
+      {
+        "name": "SPLIT_DATE",
+        "returnType": "BOOL",
+        "parameters": [
+          {
+            "name": "IN",
+            "type": "DATE",
+            "direction": "input"
+          },
+          {
+            "name": "YEAR",
+            "type": "UINT",
+            "direction": "output"
+          },
+          {
+            "name": "MONTH",
+            "type": "USINT",
+            "direction": "output"
+          },
+          {
+            "name": "DAY",
+            "type": "USINT",
+            "direction": "output"
+          }
+        ],
+        "documentation": "The year, month and day of a DATE."
+      },
+      {
+        "name": "SPLIT_TOD",
+        "returnType": "BOOL",
+        "parameters": [
+          {
+            "name": "IN",
+            "type": "TOD",
+            "direction": "input"
+          },
+          {
+            "name": "HOUR",
+            "type": "USINT",
+            "direction": "output"
+          },
+          {
+            "name": "MINUTE",
+            "type": "USINT",
+            "direction": "output"
+          },
+          {
+            "name": "SECOND",
+            "type": "USINT",
+            "direction": "output"
+          },
+          {
+            "name": "MILLISECOND",
+            "type": "UINT",
+            "direction": "output"
+          }
+        ],
+        "documentation": "The hour, minute, second and millisecond of a TOD."
+      },
+      {
+        "name": "SPLIT_LTOD",
+        "returnType": "BOOL",
+        "parameters": [
+          {
+            "name": "IN",
+            "type": "LTOD",
+            "direction": "input"
+          },
+          {
+            "name": "HOUR",
+            "type": "USINT",
+            "direction": "output"
+          },
+          {
+            "name": "MINUTE",
+            "type": "USINT",
+            "direction": "output"
+          },
+          {
+            "name": "SECOND",
+            "type": "USINT",
+            "direction": "output"
+          },
+          {
+            "name": "MILLISECOND",
+            "type": "UINT",
+            "direction": "output"
+          }
+        ],
+        "documentation": "The hour, minute, second and millisecond of an LTOD."
+      },
+      {
+        "name": "SPLIT_LDT",
+        "returnType": "BOOL",
+        "parameters": [
+          {
+            "name": "IN",
+            "type": "LDT",
+            "direction": "input"
+          },
+          {
+            "name": "YEAR",
+            "type": "UINT",
+            "direction": "output"
+          },
+          {
+            "name": "MONTH",
+            "type": "USINT",
+            "direction": "output"
+          },
+          {
+            "name": "DAY",
+            "type": "USINT",
+            "direction": "output"
+          },
+          {
+            "name": "HOUR",
+            "type": "USINT",
+            "direction": "output"
+          },
+          {
+            "name": "MINUTE",
+            "type": "USINT",
+            "direction": "output"
+          },
+          {
+            "name": "SECOND",
+            "type": "USINT",
+            "direction": "output"
+          },
+          {
+            "name": "MILLISECOND",
+            "type": "UINT",
+            "direction": "output"
+          }
+        ],
+        "documentation": "The year, month, day, hour, minute, second and millisecond of an LDT."
+      },
+      {
+        "name": "SPLIT_DT",
+        "returnType": "BOOL",
+        "parameters": [
+          {
+            "name": "IN",
+            "type": "DT",
+            "direction": "input"
+          },
+          {
+            "name": "YEAR",
+            "type": "UINT",
+            "direction": "output"
+          },
+          {
+            "name": "MONTH",
+            "type": "USINT",
+            "direction": "output"
+          },
+          {
+            "name": "DAY",
+            "type": "USINT",
+            "direction": "output"
+          },
+          {
+            "name": "HOUR",
+            "type": "USINT",
+            "direction": "output"
+          },
+          {
+            "name": "MINUTE",
+            "type": "USINT",
+            "direction": "output"
+          },
+          {
+            "name": "SECOND",
+            "type": "USINT",
+            "direction": "output"
+          },
+          {
+            "name": "MILLISECOND",
+            "type": "UINT",
+            "direction": "output"
+          }
+        ],
+        "documentation": "The year, month, day, hour, minute, second and millisecond of a DT."
+      },
+      {
+        "name": "DAY_OF_WEEK",
+        "returnType": "INT",
+        "parameters": [
+          {
+            "name": "IN",
+            "type": "DATE",
+            "direction": "input"
+          }
+        ],
+        "documentation": "The day of the week of a DATE, 0 for Sunday to 6 for Saturday."
+      }
+    ],
     "functionBlocks": [
       {
         "name": "R_TRIG",
@@ -904,6 +1279,411 @@
           }
         ],
         "documentation": "The pulse timer can be used to generate output pulses of a given time duration."
+      },
+      {
+        "name": "LTON",
+        "inputs": [
+          {
+            "name": "IN",
+            "type": "BOOL"
+          },
+          {
+            "name": "PT",
+            "type": "LTIME"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "Q",
+            "type": "BOOL"
+          },
+          {
+            "name": "ET",
+            "type": "LTIME"
+          }
+        ],
+        "inouts": [],
+        "methods": [],
+        "properties": [],
+        "locals": [
+          {
+            "name": "STATE",
+            "type": "SINT"
+          },
+          {
+            "name": "PREV_IN",
+            "type": "BOOL"
+          },
+          {
+            "name": "CURRENT_TIME",
+            "type": "LTIME"
+          },
+          {
+            "name": "START_TIME",
+            "type": "LTIME"
+          }
+        ],
+        "documentation": "The on-delay timer with an LTIME preset and elapsed time."
+      },
+      {
+        "name": "LTOF",
+        "inputs": [
+          {
+            "name": "IN",
+            "type": "BOOL"
+          },
+          {
+            "name": "PT",
+            "type": "LTIME"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "Q",
+            "type": "BOOL"
+          },
+          {
+            "name": "ET",
+            "type": "LTIME"
+          }
+        ],
+        "inouts": [],
+        "methods": [],
+        "properties": [],
+        "locals": [
+          {
+            "name": "STATE",
+            "type": "SINT"
+          },
+          {
+            "name": "PREV_IN",
+            "type": "BOOL"
+          },
+          {
+            "name": "CURRENT_TIME",
+            "type": "LTIME"
+          },
+          {
+            "name": "START_TIME",
+            "type": "LTIME"
+          }
+        ],
+        "documentation": "The off-delay timer with an LTIME preset and elapsed time."
+      },
+      {
+        "name": "LTP",
+        "inputs": [
+          {
+            "name": "IN",
+            "type": "BOOL"
+          },
+          {
+            "name": "PT",
+            "type": "LTIME"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "Q",
+            "type": "BOOL"
+          },
+          {
+            "name": "ET",
+            "type": "LTIME"
+          }
+        ],
+        "inouts": [],
+        "methods": [],
+        "properties": [],
+        "locals": [
+          {
+            "name": "STATE",
+            "type": "SINT"
+          },
+          {
+            "name": "PREV_IN",
+            "type": "BOOL"
+          },
+          {
+            "name": "CURRENT_TIME",
+            "type": "LTIME"
+          },
+          {
+            "name": "START_TIME",
+            "type": "LTIME"
+          }
+        ],
+        "documentation": "The pulse timer with an LTIME preset and elapsed time."
+      },
+      {
+        "name": "TP_TIME",
+        "inputs": [
+          {
+            "name": "IN",
+            "type": "BOOL"
+          },
+          {
+            "name": "PT",
+            "type": "TIME"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "Q",
+            "type": "BOOL"
+          },
+          {
+            "name": "ET",
+            "type": "TIME"
+          }
+        ],
+        "inouts": [],
+        "methods": [],
+        "properties": [],
+        "locals": [
+          {
+            "name": "STATE",
+            "type": "SINT"
+          },
+          {
+            "name": "PREV_IN",
+            "type": "BOOL"
+          },
+          {
+            "name": "CURRENT_TIME",
+            "type": "TIME"
+          },
+          {
+            "name": "START_TIME",
+            "type": "TIME"
+          }
+        ],
+        "documentation": "The pulse timer with a TIME preset and elapsed time."
+      },
+      {
+        "name": "TP_LTIME",
+        "inputs": [
+          {
+            "name": "IN",
+            "type": "BOOL"
+          },
+          {
+            "name": "PT",
+            "type": "LTIME"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "Q",
+            "type": "BOOL"
+          },
+          {
+            "name": "ET",
+            "type": "LTIME"
+          }
+        ],
+        "inouts": [],
+        "methods": [],
+        "properties": [],
+        "locals": [
+          {
+            "name": "STATE",
+            "type": "SINT"
+          },
+          {
+            "name": "PREV_IN",
+            "type": "BOOL"
+          },
+          {
+            "name": "CURRENT_TIME",
+            "type": "LTIME"
+          },
+          {
+            "name": "START_TIME",
+            "type": "LTIME"
+          }
+        ],
+        "documentation": "The pulse timer with an LTIME preset and elapsed time."
+      },
+      {
+        "name": "TON_TIME",
+        "inputs": [
+          {
+            "name": "IN",
+            "type": "BOOL"
+          },
+          {
+            "name": "PT",
+            "type": "TIME"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "Q",
+            "type": "BOOL"
+          },
+          {
+            "name": "ET",
+            "type": "TIME"
+          }
+        ],
+        "inouts": [],
+        "methods": [],
+        "properties": [],
+        "locals": [
+          {
+            "name": "STATE",
+            "type": "SINT"
+          },
+          {
+            "name": "PREV_IN",
+            "type": "BOOL"
+          },
+          {
+            "name": "CURRENT_TIME",
+            "type": "TIME"
+          },
+          {
+            "name": "START_TIME",
+            "type": "TIME"
+          }
+        ],
+        "documentation": "The on-delay timer with a TIME preset and elapsed time."
+      },
+      {
+        "name": "TON_LTIME",
+        "inputs": [
+          {
+            "name": "IN",
+            "type": "BOOL"
+          },
+          {
+            "name": "PT",
+            "type": "LTIME"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "Q",
+            "type": "BOOL"
+          },
+          {
+            "name": "ET",
+            "type": "LTIME"
+          }
+        ],
+        "inouts": [],
+        "methods": [],
+        "properties": [],
+        "locals": [
+          {
+            "name": "STATE",
+            "type": "SINT"
+          },
+          {
+            "name": "PREV_IN",
+            "type": "BOOL"
+          },
+          {
+            "name": "CURRENT_TIME",
+            "type": "LTIME"
+          },
+          {
+            "name": "START_TIME",
+            "type": "LTIME"
+          }
+        ],
+        "documentation": "The on-delay timer with an LTIME preset and elapsed time."
+      },
+      {
+        "name": "TOF_TIME",
+        "inputs": [
+          {
+            "name": "IN",
+            "type": "BOOL"
+          },
+          {
+            "name": "PT",
+            "type": "TIME"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "Q",
+            "type": "BOOL"
+          },
+          {
+            "name": "ET",
+            "type": "TIME"
+          }
+        ],
+        "inouts": [],
+        "methods": [],
+        "properties": [],
+        "locals": [
+          {
+            "name": "STATE",
+            "type": "SINT"
+          },
+          {
+            "name": "PREV_IN",
+            "type": "BOOL"
+          },
+          {
+            "name": "CURRENT_TIME",
+            "type": "TIME"
+          },
+          {
+            "name": "START_TIME",
+            "type": "TIME"
+          }
+        ],
+        "documentation": "The off-delay timer with a TIME preset and elapsed time."
+      },
+      {
+        "name": "TOF_LTIME",
+        "inputs": [
+          {
+            "name": "IN",
+            "type": "BOOL"
+          },
+          {
+            "name": "PT",
+            "type": "LTIME"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "Q",
+            "type": "BOOL"
+          },
+          {
+            "name": "ET",
+            "type": "LTIME"
+          }
+        ],
+        "inouts": [],
+        "methods": [],
+        "properties": [],
+        "locals": [
+          {
+            "name": "STATE",
+            "type": "SINT"
+          },
+          {
+            "name": "PREV_IN",
+            "type": "BOOL"
+          },
+          {
+            "name": "CURRENT_TIME",
+            "type": "LTIME"
+          },
+          {
+            "name": "START_TIME",
+            "type": "LTIME"
+          }
+        ],
+        "documentation": "The off-delay timer with an LTIME preset and elapsed time."
       }
     ],
     "types": [],
@@ -915,7 +1695,8 @@
       "bistable.st",
       "sema.st",
       "counter.st",
-      "timer.st"
+      "timer.st",
+      "time_functions.st"
     ],
     "displayName": "Standard Function Blocks",
     "description": "IEC 61131-3 Standard Function Blocks (auto-generated from ST sources)"
@@ -975,6 +1756,69 @@
       "kind": "functionBlock",
       "header": "class TP {\npublic:\n    // Inputs\n    IEC_BOOL IN;\n    IEC_TIME PT;\n    // Outputs\n    IEC_BOOL Q;\n    IEC_TIME ET;\n    // Local variables\n    IEC_SINT STATE;\n    IEC_BOOL PREV_IN;\n    IEC_TIME CURRENT_TIME;\n    IEC_TIME START_TIME;\n\n    // Implicit IEC 61131-3 ENO pin (mirrors EN)\n    IEC_BOOL ENO = true;\n\n    // Constructor\n    TP();\n\n    // Execute function block\n    void operator()();\n\n    virtual ~TP() = default;\n};\n",
       "cpp": "TP::TP() {\n    // Initialize variables\n}\n\nvoid TP::operator()() {\n    CURRENT_TIME = TIME();\n    if (((((STATE == 0)) & (NOT(PREV_IN))) & (IN))) {\n        STATE = 1;\n        Q = true;\n        START_TIME = CURRENT_TIME;\n    } else if ((STATE == 1)) {\n        if (((START_TIME + PT) <= CURRENT_TIME)) {\n            STATE = 2;\n            Q = false;\n            ET = PT;\n        } else {\n            ET = CURRENT_TIME - START_TIME;\n        }\n    }\n    if (((NOT(IN)) & ((STATE == 2)))) {\n        STATE = 0;\n        ET = 0LL;\n    }\n    PREV_IN = IN;\n}\n",
+      "deps": []
+    },
+    {
+      "name": "LTON",
+      "kind": "functionBlock",
+      "header": "class LTON {\npublic:\n    // Inputs\n    IEC_BOOL IN;\n    IEC_LTIME PT;\n    // Outputs\n    IEC_BOOL Q;\n    IEC_LTIME ET;\n    // Local variables\n    IEC_SINT STATE;\n    IEC_BOOL PREV_IN;\n    IEC_LTIME CURRENT_TIME;\n    IEC_LTIME START_TIME;\n\n    // Implicit IEC 61131-3 ENO pin (mirrors EN)\n    IEC_BOOL ENO = true;\n\n    // Constructor\n    LTON();\n\n    // Execute function block\n    void operator()();\n\n    virtual ~LTON() = default;\n};\n",
+      "cpp": "LTON::LTON() {\n    // Initialize variables\n}\n\nvoid LTON::operator()() {\n    CURRENT_TIME = TIME();\n    if (((((STATE == 0)) & (NOT(PREV_IN))) & (IN))) {\n        STATE = 1;\n        Q = false;\n        START_TIME = CURRENT_TIME;\n    } else {\n        if ((NOT(IN))) {\n            ET = 0LL;\n            Q = false;\n            STATE = 0;\n        } else if ((STATE == 1)) {\n            if (((START_TIME + PT) <= CURRENT_TIME)) {\n                STATE = 2;\n                Q = true;\n                ET = PT;\n            } else {\n                ET = CURRENT_TIME - START_TIME;\n            }\n        }\n    }\n    PREV_IN = IN;\n}\n",
+      "deps": []
+    },
+    {
+      "name": "LTOF",
+      "kind": "functionBlock",
+      "header": "class LTOF {\npublic:\n    // Inputs\n    IEC_BOOL IN;\n    IEC_LTIME PT;\n    // Outputs\n    IEC_BOOL Q;\n    IEC_LTIME ET;\n    // Local variables\n    IEC_SINT STATE;\n    IEC_BOOL PREV_IN;\n    IEC_LTIME CURRENT_TIME;\n    IEC_LTIME START_TIME;\n\n    // Implicit IEC 61131-3 ENO pin (mirrors EN)\n    IEC_BOOL ENO = true;\n\n    // Constructor\n    LTOF();\n\n    // Execute function block\n    void operator()();\n\n    virtual ~LTOF() = default;\n};\n",
+      "cpp": "LTOF::LTOF() {\n    // Initialize variables\n}\n\nvoid LTOF::operator()() {\n    CURRENT_TIME = TIME();\n    if (((((STATE == 0)) & (PREV_IN)) & (NOT(IN)))) {\n        STATE = 1;\n        START_TIME = CURRENT_TIME;\n    } else {\n        if ((IN)) {\n            ET = 0LL;\n            Q = true;\n            STATE = 0;\n        } else if ((STATE == 1)) {\n            if (((START_TIME + PT) <= CURRENT_TIME)) {\n                STATE = 2;\n                Q = false;\n                ET = PT;\n            } else {\n                Q = true;\n                ET = CURRENT_TIME - START_TIME;\n            }\n        }\n    }\n    PREV_IN = IN;\n}\n",
+      "deps": []
+    },
+    {
+      "name": "LTP",
+      "kind": "functionBlock",
+      "header": "class LTP {\npublic:\n    // Inputs\n    IEC_BOOL IN;\n    IEC_LTIME PT;\n    // Outputs\n    IEC_BOOL Q;\n    IEC_LTIME ET;\n    // Local variables\n    IEC_SINT STATE;\n    IEC_BOOL PREV_IN;\n    IEC_LTIME CURRENT_TIME;\n    IEC_LTIME START_TIME;\n\n    // Implicit IEC 61131-3 ENO pin (mirrors EN)\n    IEC_BOOL ENO = true;\n\n    // Constructor\n    LTP();\n\n    // Execute function block\n    void operator()();\n\n    virtual ~LTP() = default;\n};\n",
+      "cpp": "LTP::LTP() {\n    // Initialize variables\n}\n\nvoid LTP::operator()() {\n    CURRENT_TIME = TIME();\n    if (((((STATE == 0)) & (NOT(PREV_IN))) & (IN))) {\n        STATE = 1;\n        Q = true;\n        START_TIME = CURRENT_TIME;\n    } else if ((STATE == 1)) {\n        if (((START_TIME + PT) <= CURRENT_TIME)) {\n            STATE = 2;\n            Q = false;\n            ET = PT;\n        } else {\n            ET = CURRENT_TIME - START_TIME;\n        }\n    }\n    if (((NOT(IN)) & ((STATE == 2)))) {\n        STATE = 0;\n        ET = 0LL;\n    }\n    PREV_IN = IN;\n}\n",
+      "deps": []
+    },
+    {
+      "name": "TP_TIME",
+      "kind": "functionBlock",
+      "header": "class TP_TIME {\npublic:\n    // Inputs\n    IEC_BOOL IN;\n    IEC_TIME PT;\n    // Outputs\n    IEC_BOOL Q;\n    IEC_TIME ET;\n    // Local variables\n    IEC_SINT STATE;\n    IEC_BOOL PREV_IN;\n    IEC_TIME CURRENT_TIME;\n    IEC_TIME START_TIME;\n\n    // Implicit IEC 61131-3 ENO pin (mirrors EN)\n    IEC_BOOL ENO = true;\n\n    // Constructor\n    TP_TIME();\n\n    // Execute function block\n    void operator()();\n\n    virtual ~TP_TIME() = default;\n};\n",
+      "cpp": "TP_TIME::TP_TIME() {\n    // Initialize variables\n}\n\nvoid TP_TIME::operator()() {\n    CURRENT_TIME = TIME();\n    if (((((STATE == 0)) & (NOT(PREV_IN))) & (IN))) {\n        STATE = 1;\n        Q = true;\n        START_TIME = CURRENT_TIME;\n    } else if ((STATE == 1)) {\n        if (((START_TIME + PT) <= CURRENT_TIME)) {\n            STATE = 2;\n            Q = false;\n            ET = PT;\n        } else {\n            ET = CURRENT_TIME - START_TIME;\n        }\n    }\n    if (((NOT(IN)) & ((STATE == 2)))) {\n        STATE = 0;\n        ET = 0LL;\n    }\n    PREV_IN = IN;\n}\n",
+      "deps": []
+    },
+    {
+      "name": "TP_LTIME",
+      "kind": "functionBlock",
+      "header": "class TP_LTIME {\npublic:\n    // Inputs\n    IEC_BOOL IN;\n    IEC_LTIME PT;\n    // Outputs\n    IEC_BOOL Q;\n    IEC_LTIME ET;\n    // Local variables\n    IEC_SINT STATE;\n    IEC_BOOL PREV_IN;\n    IEC_LTIME CURRENT_TIME;\n    IEC_LTIME START_TIME;\n\n    // Implicit IEC 61131-3 ENO pin (mirrors EN)\n    IEC_BOOL ENO = true;\n\n    // Constructor\n    TP_LTIME();\n\n    // Execute function block\n    void operator()();\n\n    virtual ~TP_LTIME() = default;\n};\n",
+      "cpp": "TP_LTIME::TP_LTIME() {\n    // Initialize variables\n}\n\nvoid TP_LTIME::operator()() {\n    CURRENT_TIME = TIME();\n    if (((((STATE == 0)) & (NOT(PREV_IN))) & (IN))) {\n        STATE = 1;\n        Q = true;\n        START_TIME = CURRENT_TIME;\n    } else if ((STATE == 1)) {\n        if (((START_TIME + PT) <= CURRENT_TIME)) {\n            STATE = 2;\n            Q = false;\n            ET = PT;\n        } else {\n            ET = CURRENT_TIME - START_TIME;\n        }\n    }\n    if (((NOT(IN)) & ((STATE == 2)))) {\n        STATE = 0;\n        ET = 0LL;\n    }\n    PREV_IN = IN;\n}\n",
+      "deps": []
+    },
+    {
+      "name": "TON_TIME",
+      "kind": "functionBlock",
+      "header": "class TON_TIME {\npublic:\n    // Inputs\n    IEC_BOOL IN;\n    IEC_TIME PT;\n    // Outputs\n    IEC_BOOL Q;\n    IEC_TIME ET;\n    // Local variables\n    IEC_SINT STATE;\n    IEC_BOOL PREV_IN;\n    IEC_TIME CURRENT_TIME;\n    IEC_TIME START_TIME;\n\n    // Implicit IEC 61131-3 ENO pin (mirrors EN)\n    IEC_BOOL ENO = true;\n\n    // Constructor\n    TON_TIME();\n\n    // Execute function block\n    void operator()();\n\n    virtual ~TON_TIME() = default;\n};\n",
+      "cpp": "TON_TIME::TON_TIME() {\n    // Initialize variables\n}\n\nvoid TON_TIME::operator()() {\n    CURRENT_TIME = TIME();\n    if (((((STATE == 0)) & (NOT(PREV_IN))) & (IN))) {\n        STATE = 1;\n        Q = false;\n        START_TIME = CURRENT_TIME;\n    } else {\n        if ((NOT(IN))) {\n            ET = 0LL;\n            Q = false;\n            STATE = 0;\n        } else if ((STATE == 1)) {\n            if (((START_TIME + PT) <= CURRENT_TIME)) {\n                STATE = 2;\n                Q = true;\n                ET = PT;\n            } else {\n                ET = CURRENT_TIME - START_TIME;\n            }\n        }\n    }\n    PREV_IN = IN;\n}\n",
+      "deps": []
+    },
+    {
+      "name": "TON_LTIME",
+      "kind": "functionBlock",
+      "header": "class TON_LTIME {\npublic:\n    // Inputs\n    IEC_BOOL IN;\n    IEC_LTIME PT;\n    // Outputs\n    IEC_BOOL Q;\n    IEC_LTIME ET;\n    // Local variables\n    IEC_SINT STATE;\n    IEC_BOOL PREV_IN;\n    IEC_LTIME CURRENT_TIME;\n    IEC_LTIME START_TIME;\n\n    // Implicit IEC 61131-3 ENO pin (mirrors EN)\n    IEC_BOOL ENO = true;\n\n    // Constructor\n    TON_LTIME();\n\n    // Execute function block\n    void operator()();\n\n    virtual ~TON_LTIME() = default;\n};\n",
+      "cpp": "TON_LTIME::TON_LTIME() {\n    // Initialize variables\n}\n\nvoid TON_LTIME::operator()() {\n    CURRENT_TIME = TIME();\n    if (((((STATE == 0)) & (NOT(PREV_IN))) & (IN))) {\n        STATE = 1;\n        Q = false;\n        START_TIME = CURRENT_TIME;\n    } else {\n        if ((NOT(IN))) {\n            ET = 0LL;\n            Q = false;\n            STATE = 0;\n        } else if ((STATE == 1)) {\n            if (((START_TIME + PT) <= CURRENT_TIME)) {\n                STATE = 2;\n                Q = true;\n                ET = PT;\n            } else {\n                ET = CURRENT_TIME - START_TIME;\n            }\n        }\n    }\n    PREV_IN = IN;\n}\n",
+      "deps": []
+    },
+    {
+      "name": "TOF_TIME",
+      "kind": "functionBlock",
+      "header": "class TOF_TIME {\npublic:\n    // Inputs\n    IEC_BOOL IN;\n    IEC_TIME PT;\n    // Outputs\n    IEC_BOOL Q;\n    IEC_TIME ET;\n    // Local variables\n    IEC_SINT STATE;\n    IEC_BOOL PREV_IN;\n    IEC_TIME CURRENT_TIME;\n    IEC_TIME START_TIME;\n\n    // Implicit IEC 61131-3 ENO pin (mirrors EN)\n    IEC_BOOL ENO = true;\n\n    // Constructor\n    TOF_TIME();\n\n    // Execute function block\n    void operator()();\n\n    virtual ~TOF_TIME() = default;\n};\n",
+      "cpp": "TOF_TIME::TOF_TIME() {\n    // Initialize variables\n}\n\nvoid TOF_TIME::operator()() {\n    CURRENT_TIME = TIME();\n    if (((((STATE == 0)) & (PREV_IN)) & (NOT(IN)))) {\n        STATE = 1;\n        START_TIME = CURRENT_TIME;\n    } else {\n        if ((IN)) {\n            ET = 0LL;\n            Q = true;\n            STATE = 0;\n        } else if ((STATE == 1)) {\n            if (((START_TIME + PT) <= CURRENT_TIME)) {\n                STATE = 2;\n                Q = false;\n                ET = PT;\n            } else {\n                Q = true;\n                ET = CURRENT_TIME - START_TIME;\n            }\n        }\n    }\n    PREV_IN = IN;\n}\n",
+      "deps": []
+    },
+    {
+      "name": "TOF_LTIME",
+      "kind": "functionBlock",
+      "header": "class TOF_LTIME {\npublic:\n    // Inputs\n    IEC_BOOL IN;\n    IEC_LTIME PT;\n    // Outputs\n    IEC_BOOL Q;\n    IEC_LTIME ET;\n    // Local variables\n    IEC_SINT STATE;\n    IEC_BOOL PREV_IN;\n    IEC_LTIME CURRENT_TIME;\n    IEC_LTIME START_TIME;\n\n    // Implicit IEC 61131-3 ENO pin (mirrors EN)\n    IEC_BOOL ENO = true;\n\n    // Constructor\n    TOF_LTIME();\n\n    // Execute function block\n    void operator()();\n\n    virtual ~TOF_LTIME() = default;\n};\n",
+      "cpp": "TOF_LTIME::TOF_LTIME() {\n    // Initialize variables\n}\n\nvoid TOF_LTIME::operator()() {\n    CURRENT_TIME = TIME();\n    if (((((STATE == 0)) & (PREV_IN)) & (NOT(IN)))) {\n        STATE = 1;\n        START_TIME = CURRENT_TIME;\n    } else {\n        if ((IN)) {\n            ET = 0LL;\n            Q = true;\n            STATE = 0;\n        } else if ((STATE == 1)) {\n            if (((START_TIME + PT) <= CURRENT_TIME)) {\n                STATE = 2;\n                Q = false;\n                ET = PT;\n            } else {\n                Q = true;\n                ET = CURRENT_TIME - START_TIME;\n            }\n        }\n    }\n    PREV_IN = IN;\n}\n",
       "deps": []
     },
     {
@@ -1156,6 +2000,90 @@
           "name": "R_TRIG"
         }
       ]
+    },
+    {
+      "name": "CONCAT_DATE",
+      "kind": "function",
+      "header": "IEC_DATE CONCAT_DATE(IEC_LINT YEAR, IEC_LINT MONTH, IEC_LINT DAY);",
+      "cpp": "IEC_DATE CONCAT_DATE(IEC_LINT YEAR, IEC_LINT MONTH, IEC_LINT DAY) {\n    IEC_DATE CONCAT_DATE_result;\n    IEC_LINT Y;\n    IEC_LINT ERA;\n    IEC_LINT YOE;\n    IEC_LINT MP;\n    IEC_LINT DOY;\n    IEC_LINT DOE;\n    Y = YEAR;\n    if (MONTH <= 2) {\n        Y = Y - 1;\n    }\n    if (Y >= 0) {\n        ERA = Y / 400;\n    } else {\n        ERA = (Y - 399) / 400;\n    }\n    YOE = Y - ERA * 400;\n    if (MONTH > 2) {\n        MP = MONTH - 3;\n    } else {\n        MP = MONTH + 9;\n    }\n    DOY = (153 * MP + 2) / 5 + DAY - 1;\n    DOE = YOE * 365 + YOE / 4 - YOE / 100 + DOY;\n    CONCAT_DATE_result = TO_DATE(DATE_FROM_SECONDS((ERA * 146097 + DOE - 719468) * 86400));\n    return CONCAT_DATE_result;\n}\n",
+      "deps": []
+    },
+    {
+      "name": "CONCAT_TOD",
+      "kind": "function",
+      "header": "IEC_TOD CONCAT_TOD(IEC_LINT HOUR, IEC_LINT MINUTE, IEC_LINT SECOND, IEC_LINT MILLISECOND);",
+      "cpp": "IEC_TOD CONCAT_TOD(IEC_LINT HOUR, IEC_LINT MINUTE, IEC_LINT SECOND, IEC_LINT MILLISECOND) {\n    IEC_TOD CONCAT_TOD_result;\n    CONCAT_TOD_result = TO_TOD(TOD_FROM_MS(((HOUR * 60 + MINUTE) * 60 + SECOND) * 1000 + MILLISECOND));\n    return CONCAT_TOD_result;\n}\n",
+      "deps": []
+    },
+    {
+      "name": "CONCAT_LTOD",
+      "kind": "function",
+      "header": "IEC_LTOD CONCAT_LTOD(IEC_LINT HOUR, IEC_LINT MINUTE, IEC_LINT SECOND, IEC_LINT MILLISECOND);",
+      "cpp": "IEC_LTOD CONCAT_LTOD(IEC_LINT HOUR, IEC_LINT MINUTE, IEC_LINT SECOND, IEC_LINT MILLISECOND) {\n    IEC_LTOD CONCAT_LTOD_result;\n    CONCAT_LTOD_result = TO_LTOD((((HOUR * 60 + MINUTE) * 60 + SECOND) * 1000 + MILLISECOND) * 1000000);\n    return CONCAT_LTOD_result;\n}\n",
+      "deps": []
+    },
+    {
+      "name": "CONCAT_LDT",
+      "kind": "function",
+      "header": "IEC_LDT CONCAT_LDT(IEC_LINT YEAR, IEC_LINT MONTH, IEC_LINT DAY, IEC_LINT HOUR, IEC_LINT MINUTE, IEC_LINT SECOND, IEC_LINT MILLISECOND);",
+      "cpp": "IEC_LDT CONCAT_LDT(IEC_LINT YEAR, IEC_LINT MONTH, IEC_LINT DAY, IEC_LINT HOUR, IEC_LINT MINUTE, IEC_LINT SECOND, IEC_LINT MILLISECOND) {\n    IEC_LDT CONCAT_LDT_result;\n    IEC_LINT Y;\n    IEC_LINT ERA;\n    IEC_LINT YOE;\n    IEC_LINT MP;\n    IEC_LINT DOY;\n    IEC_LINT DOE;\n    Y = YEAR;\n    if (MONTH <= 2) {\n        Y = Y - 1;\n    }\n    if (Y >= 0) {\n        ERA = Y / 400;\n    } else {\n        ERA = (Y - 399) / 400;\n    }\n    YOE = Y - ERA * 400;\n    if (MONTH > 2) {\n        MP = MONTH - 3;\n    } else {\n        MP = MONTH + 9;\n    }\n    DOY = (153 * MP + 2) / 5 + DAY - 1;\n    DOE = YOE * 365 + YOE / 4 - YOE / 100 + DOY;\n    CONCAT_LDT_result = TO_LDT((ERA * 146097 + DOE - 719468) * 86400000000000 + (((HOUR * 60 + MINUTE) * 60 + SECOND) * 1000 + MILLISECOND) * 1000000);\n    return CONCAT_LDT_result;\n}\n",
+      "deps": []
+    },
+    {
+      "name": "CONCAT_DT",
+      "kind": "function",
+      "header": "IEC_DT CONCAT_DT(IEC_LINT YEAR, IEC_LINT MONTH, IEC_LINT DAY, IEC_LINT HOUR, IEC_LINT MINUTE, IEC_LINT SECOND, IEC_LINT MILLISECOND);",
+      "cpp": "IEC_DT CONCAT_DT(IEC_LINT YEAR, IEC_LINT MONTH, IEC_LINT DAY, IEC_LINT HOUR, IEC_LINT MINUTE, IEC_LINT SECOND, IEC_LINT MILLISECOND) {\n    IEC_DT CONCAT_DT_result;\n    IEC_LINT Y;\n    IEC_LINT ERA;\n    IEC_LINT YOE;\n    IEC_LINT MP;\n    IEC_LINT DOY;\n    IEC_LINT DOE;\n    Y = YEAR;\n    if (MONTH <= 2) {\n        Y = Y - 1;\n    }\n    if (Y >= 0) {\n        ERA = Y / 400;\n    } else {\n        ERA = (Y - 399) / 400;\n    }\n    YOE = Y - ERA * 400;\n    if (MONTH > 2) {\n        MP = MONTH - 3;\n    } else {\n        MP = MONTH + 9;\n    }\n    DOY = (153 * MP + 2) / 5 + DAY - 1;\n    DOE = YOE * 365 + YOE / 4 - YOE / 100 + DOY;\n    CONCAT_DT_result = TO_DT(TO_LDT((ERA * 146097 + DOE - 719468) * 86400000000000 + (((HOUR * 60 + MINUTE) * 60 + SECOND) * 1000 + MILLISECOND) * 1000000));\n    return CONCAT_DT_result;\n}\n",
+      "deps": []
+    },
+    {
+      "name": "CONCAT_DATE_LTOD",
+      "kind": "function",
+      "header": "IEC_LDT CONCAT_DATE_LTOD(IEC_DATE DATE_IN, IEC_LTOD TOD_IN);",
+      "cpp": "IEC_LDT CONCAT_DATE_LTOD(IEC_DATE DATE_IN, IEC_LTOD TOD_IN) {\n    IEC_LDT CONCAT_DATE_LTOD_result;\n    CONCAT_DATE_LTOD_result = TO_LDT(TO_LINT(DATE_TO_NS(DATE_IN)) + TO_LINT(TOD_IN));\n    return CONCAT_DATE_LTOD_result;\n}\n",
+      "deps": []
+    },
+    {
+      "name": "SPLIT_DATE",
+      "kind": "function",
+      "header": "IEC_BOOL SPLIT_DATE(IEC_DATE IN, IEC_UINT& YEAR, IEC_USINT& MONTH, IEC_USINT& DAY);",
+      "cpp": "IEC_BOOL SPLIT_DATE(IEC_DATE IN, IEC_UINT& YEAR, IEC_USINT& MONTH, IEC_USINT& DAY) {\n    IEC_BOOL SPLIT_DATE_result;\n    IEC_LINT Z;\n    IEC_LINT ERA;\n    IEC_LINT DOE;\n    IEC_LINT YOE;\n    IEC_LINT DOY;\n    IEC_LINT MP;\n    IEC_LINT Y;\n    IEC_LINT M;\n    Z = TO_LINT(DATE_TO_SECONDS(IN)) / 86400 + 719468;\n    if (Z >= 0) {\n        ERA = Z / 146097;\n    } else {\n        ERA = (Z - 146096) / 146097;\n    }\n    DOE = Z - ERA * 146097;\n    YOE = (DOE - DOE / 1460 + DOE / 36524 - DOE / 146096) / 365;\n    DOY = DOE - (365 * YOE + YOE / 4 - YOE / 100);\n    MP = (5 * DOY + 2) / 153;\n    DAY = TO_USINT(DOY - (153 * MP + 2) / 5 + 1);\n    if (MP < 10) {\n        M = MP + 3;\n    } else {\n        M = MP - 9;\n    }\n    Y = YOE + ERA * 400;\n    if (M <= 2) {\n        Y = Y + 1;\n    }\n    MONTH = TO_USINT(M);\n    YEAR = TO_UINT(Y);\n    SPLIT_DATE_result = true;\n    return SPLIT_DATE_result;\n}\n",
+      "deps": []
+    },
+    {
+      "name": "SPLIT_TOD",
+      "kind": "function",
+      "header": "IEC_BOOL SPLIT_TOD(IEC_TOD IN, IEC_USINT& HOUR, IEC_USINT& MINUTE, IEC_USINT& SECOND, IEC_UINT& MILLISECOND);",
+      "cpp": "IEC_BOOL SPLIT_TOD(IEC_TOD IN, IEC_USINT& HOUR, IEC_USINT& MINUTE, IEC_USINT& SECOND, IEC_UINT& MILLISECOND) {\n    IEC_BOOL SPLIT_TOD_result;\n    IEC_LINT MS;\n    MS = TO_LINT(TOD_TO_MS(IN));\n    HOUR = TO_USINT(MS / 3600000);\n    MINUTE = TO_USINT(MS / 60000 % 60);\n    SECOND = TO_USINT(MS / 1000 % 60);\n    MILLISECOND = TO_UINT(MS % 1000);\n    SPLIT_TOD_result = true;\n    return SPLIT_TOD_result;\n}\n",
+      "deps": []
+    },
+    {
+      "name": "SPLIT_LTOD",
+      "kind": "function",
+      "header": "IEC_BOOL SPLIT_LTOD(IEC_LTOD IN, IEC_USINT& HOUR, IEC_USINT& MINUTE, IEC_USINT& SECOND, IEC_UINT& MILLISECOND);",
+      "cpp": "IEC_BOOL SPLIT_LTOD(IEC_LTOD IN, IEC_USINT& HOUR, IEC_USINT& MINUTE, IEC_USINT& SECOND, IEC_UINT& MILLISECOND) {\n    IEC_BOOL SPLIT_LTOD_result;\n    IEC_LINT MS;\n    MS = TO_LINT(IN) / 1000000;\n    HOUR = TO_USINT(MS / 3600000);\n    MINUTE = TO_USINT(MS / 60000 % 60);\n    SECOND = TO_USINT(MS / 1000 % 60);\n    MILLISECOND = TO_UINT(MS % 1000);\n    SPLIT_LTOD_result = true;\n    return SPLIT_LTOD_result;\n}\n",
+      "deps": []
+    },
+    {
+      "name": "SPLIT_LDT",
+      "kind": "function",
+      "header": "IEC_BOOL SPLIT_LDT(IEC_LDT IN, IEC_UINT& YEAR, IEC_USINT& MONTH, IEC_USINT& DAY, IEC_USINT& HOUR, IEC_USINT& MINUTE, IEC_USINT& SECOND, IEC_UINT& MILLISECOND);",
+      "cpp": "IEC_BOOL SPLIT_LDT(IEC_LDT IN, IEC_UINT& YEAR, IEC_USINT& MONTH, IEC_USINT& DAY, IEC_USINT& HOUR, IEC_USINT& MINUTE, IEC_USINT& SECOND, IEC_UINT& MILLISECOND) {\n    IEC_BOOL SPLIT_LDT_result;\n    IEC_LINT NS;\n    IEC_LINT DAYS;\n    IEC_LINT MS;\n    IEC_LINT Z;\n    IEC_LINT ERA;\n    IEC_LINT DOE;\n    IEC_LINT YOE;\n    IEC_LINT DOY;\n    IEC_LINT MP;\n    IEC_LINT Y;\n    IEC_LINT M;\n    NS = TO_LINT(IN);\n    DAYS = NS / 86400000000000;\n    if ((NS < 0) & (DAYS * 86400000000000 != NS)) {\n        DAYS = DAYS - 1;\n    }\n    Z = DAYS + 719468;\n    if (Z >= 0) {\n        ERA = Z / 146097;\n    } else {\n        ERA = (Z - 146096) / 146097;\n    }\n    DOE = Z - ERA * 146097;\n    YOE = (DOE - DOE / 1460 + DOE / 36524 - DOE / 146096) / 365;\n    DOY = DOE - (365 * YOE + YOE / 4 - YOE / 100);\n    MP = (5 * DOY + 2) / 153;\n    DAY = TO_USINT(DOY - (153 * MP + 2) / 5 + 1);\n    if (MP < 10) {\n        M = MP + 3;\n    } else {\n        M = MP - 9;\n    }\n    Y = YOE + ERA * 400;\n    if (M <= 2) {\n        Y = Y + 1;\n    }\n    MONTH = TO_USINT(M);\n    YEAR = TO_UINT(Y);\n    MS = (NS - DAYS * 86400000000000) / 1000000;\n    HOUR = TO_USINT(MS / 3600000);\n    MINUTE = TO_USINT(MS / 60000 % 60);\n    SECOND = TO_USINT(MS / 1000 % 60);\n    MILLISECOND = TO_UINT(MS % 1000);\n    SPLIT_LDT_result = true;\n    return SPLIT_LDT_result;\n}\n",
+      "deps": []
+    },
+    {
+      "name": "SPLIT_DT",
+      "kind": "function",
+      "header": "IEC_BOOL SPLIT_DT(IEC_DT IN, IEC_UINT& YEAR, IEC_USINT& MONTH, IEC_USINT& DAY, IEC_USINT& HOUR, IEC_USINT& MINUTE, IEC_USINT& SECOND, IEC_UINT& MILLISECOND);",
+      "cpp": "IEC_BOOL SPLIT_DT(IEC_DT IN, IEC_UINT& YEAR, IEC_USINT& MONTH, IEC_USINT& DAY, IEC_USINT& HOUR, IEC_USINT& MINUTE, IEC_USINT& SECOND, IEC_UINT& MILLISECOND) {\n    IEC_BOOL SPLIT_DT_result;\n    IEC_LINT NS;\n    IEC_LINT DAYS;\n    IEC_LINT MS;\n    IEC_LINT Z;\n    IEC_LINT ERA;\n    IEC_LINT DOE;\n    IEC_LINT YOE;\n    IEC_LINT DOY;\n    IEC_LINT MP;\n    IEC_LINT Y;\n    IEC_LINT M;\n    NS = TO_LINT(TO_LDT(IN));\n    DAYS = NS / 86400000000000;\n    if ((NS < 0) & (DAYS * 86400000000000 != NS)) {\n        DAYS = DAYS - 1;\n    }\n    Z = DAYS + 719468;\n    if (Z >= 0) {\n        ERA = Z / 146097;\n    } else {\n        ERA = (Z - 146096) / 146097;\n    }\n    DOE = Z - ERA * 146097;\n    YOE = (DOE - DOE / 1460 + DOE / 36524 - DOE / 146096) / 365;\n    DOY = DOE - (365 * YOE + YOE / 4 - YOE / 100);\n    MP = (5 * DOY + 2) / 153;\n    DAY = TO_USINT(DOY - (153 * MP + 2) / 5 + 1);\n    if (MP < 10) {\n        M = MP + 3;\n    } else {\n        M = MP - 9;\n    }\n    Y = YOE + ERA * 400;\n    if (M <= 2) {\n        Y = Y + 1;\n    }\n    MONTH = TO_USINT(M);\n    YEAR = TO_UINT(Y);\n    MS = (NS - DAYS * 86400000000000) / 1000000;\n    HOUR = TO_USINT(MS / 3600000);\n    MINUTE = TO_USINT(MS / 60000 % 60);\n    SECOND = TO_USINT(MS / 1000 % 60);\n    MILLISECOND = TO_UINT(MS % 1000);\n    SPLIT_DT_result = true;\n    return SPLIT_DT_result;\n}\n",
+      "deps": []
+    },
+    {
+      "name": "DAY_OF_WEEK",
+      "kind": "function",
+      "header": "IEC_INT DAY_OF_WEEK(IEC_DATE IN);",
+      "cpp": "IEC_INT DAY_OF_WEEK(IEC_DATE IN) {\n    IEC_INT DAY_OF_WEEK_result;\n    IEC_LINT DAYS;\n    DAYS = TO_LINT(DATE_TO_SECONDS(IN)) / 86400;\n    DAY_OF_WEEK_result = TO_INT(((DAYS % 7) + 7 + 4) % 7);\n    return DAY_OF_WEEK_result;\n}\n",
+      "deps": []
     }
   ],
   "dependencies": [],
@@ -1178,7 +2106,11 @@
     },
     {
       "fileName": "timer.st",
-      "source": "(* IEC 61131-3 Standard Function Blocks: Timers *)\n(* Uses TIME() built-in function for current time (CODESYS-compatible) *)\n\nFUNCTION_BLOCK TON\n  VAR_INPUT\n    IN : BOOL;\n    PT : TIME;\n  END_VAR\n  VAR_OUTPUT\n    Q : BOOL;\n    ET : TIME;\n  END_VAR\n  VAR\n    STATE : SINT;\n    PREV_IN : BOOL;\n    CURRENT_TIME, START_TIME : TIME;\n  END_VAR\n\n  CURRENT_TIME := TIME();\n\n  IF ((STATE = 0) AND NOT(PREV_IN) AND IN) THEN\n    STATE := 1;\n    Q := FALSE;\n    START_TIME := CURRENT_TIME;\n  ELSE\n    IF (NOT(IN)) THEN\n      ET := T#0s;\n      Q := FALSE;\n      STATE := 0;\n    ELSIF (STATE = 1) THEN\n      IF ((START_TIME + PT) <= CURRENT_TIME) THEN\n        STATE := 2;\n        Q := TRUE;\n        ET := PT;\n      ELSE\n        ET := CURRENT_TIME - START_TIME;\n      END_IF;\n    END_IF;\n  END_IF;\n\n  PREV_IN := IN;\nEND_FUNCTION_BLOCK\n\nFUNCTION_BLOCK TOF\n  VAR_INPUT\n    IN : BOOL;\n    PT : TIME;\n  END_VAR\n  VAR_OUTPUT\n    Q : BOOL;\n    ET : TIME;\n  END_VAR\n  VAR\n    STATE : SINT;\n    PREV_IN : BOOL;\n    CURRENT_TIME, START_TIME : TIME;\n  END_VAR\n\n  CURRENT_TIME := TIME();\n\n  IF ((STATE = 0) AND PREV_IN AND NOT(IN)) THEN\n    STATE := 1;\n    START_TIME := CURRENT_TIME;\n  ELSE\n    IF (IN) THEN\n      ET := T#0s;\n      Q := TRUE;\n      STATE := 0;\n    ELSIF (STATE = 1) THEN\n      IF ((START_TIME + PT) <= CURRENT_TIME) THEN\n        STATE := 2;\n        Q := FALSE;\n        ET := PT;\n      ELSE\n        Q := TRUE;\n        ET := CURRENT_TIME - START_TIME;\n      END_IF;\n    END_IF;\n  END_IF;\n\n  PREV_IN := IN;\nEND_FUNCTION_BLOCK\n\nFUNCTION_BLOCK TP\n  VAR_INPUT\n    IN : BOOL;\n    PT : TIME;\n  END_VAR\n  VAR_OUTPUT\n    Q : BOOL;\n    ET : TIME;\n  END_VAR\n  VAR\n    STATE : SINT;\n    PREV_IN : BOOL;\n    CURRENT_TIME, START_TIME : TIME;\n  END_VAR\n\n  CURRENT_TIME := TIME();\n\n  IF ((STATE = 0) AND NOT(PREV_IN) AND IN) THEN\n    STATE := 1;\n    Q := TRUE;\n    START_TIME := CURRENT_TIME;\n  ELSIF (STATE = 1) THEN\n    IF ((START_TIME + PT) <= CURRENT_TIME) THEN\n      STATE := 2;\n      Q := FALSE;\n      ET := PT;\n    ELSE\n      ET := CURRENT_TIME - START_TIME;\n    END_IF;\n  END_IF;\n\n  IF (NOT(IN) AND (STATE = 2)) THEN\n    STATE := 0;\n    ET := T#0s;\n  END_IF;\n\n  PREV_IN := IN;\nEND_FUNCTION_BLOCK\n"
+      "source": "(* IEC 61131-3 Standard Function Blocks: Timers *)\n(* Uses TIME() built-in function for current time (CODESYS-compatible) *)\n\nFUNCTION_BLOCK TON\n  VAR_INPUT\n    IN : BOOL;\n    PT : TIME;\n  END_VAR\n  VAR_OUTPUT\n    Q : BOOL;\n    ET : TIME;\n  END_VAR\n  VAR\n    STATE : SINT;\n    PREV_IN : BOOL;\n    CURRENT_TIME, START_TIME : TIME;\n  END_VAR\n\n  CURRENT_TIME := TIME();\n\n  IF ((STATE = 0) AND NOT(PREV_IN) AND IN) THEN\n    STATE := 1;\n    Q := FALSE;\n    START_TIME := CURRENT_TIME;\n  ELSE\n    IF (NOT(IN)) THEN\n      ET := T#0s;\n      Q := FALSE;\n      STATE := 0;\n    ELSIF (STATE = 1) THEN\n      IF ((START_TIME + PT) <= CURRENT_TIME) THEN\n        STATE := 2;\n        Q := TRUE;\n        ET := PT;\n      ELSE\n        ET := CURRENT_TIME - START_TIME;\n      END_IF;\n    END_IF;\n  END_IF;\n\n  PREV_IN := IN;\nEND_FUNCTION_BLOCK\n\nFUNCTION_BLOCK TOF\n  VAR_INPUT\n    IN : BOOL;\n    PT : TIME;\n  END_VAR\n  VAR_OUTPUT\n    Q : BOOL;\n    ET : TIME;\n  END_VAR\n  VAR\n    STATE : SINT;\n    PREV_IN : BOOL;\n    CURRENT_TIME, START_TIME : TIME;\n  END_VAR\n\n  CURRENT_TIME := TIME();\n\n  IF ((STATE = 0) AND PREV_IN AND NOT(IN)) THEN\n    STATE := 1;\n    START_TIME := CURRENT_TIME;\n  ELSE\n    IF (IN) THEN\n      ET := T#0s;\n      Q := TRUE;\n      STATE := 0;\n    ELSIF (STATE = 1) THEN\n      IF ((START_TIME + PT) <= CURRENT_TIME) THEN\n        STATE := 2;\n        Q := FALSE;\n        ET := PT;\n      ELSE\n        Q := TRUE;\n        ET := CURRENT_TIME - START_TIME;\n      END_IF;\n    END_IF;\n  END_IF;\n\n  PREV_IN := IN;\nEND_FUNCTION_BLOCK\n\nFUNCTION_BLOCK TP\n  VAR_INPUT\n    IN : BOOL;\n    PT : TIME;\n  END_VAR\n  VAR_OUTPUT\n    Q : BOOL;\n    ET : TIME;\n  END_VAR\n  VAR\n    STATE : SINT;\n    PREV_IN : BOOL;\n    CURRENT_TIME, START_TIME : TIME;\n  END_VAR\n\n  CURRENT_TIME := TIME();\n\n  IF ((STATE = 0) AND NOT(PREV_IN) AND IN) THEN\n    STATE := 1;\n    Q := TRUE;\n    START_TIME := CURRENT_TIME;\n  ELSIF (STATE = 1) THEN\n    IF ((START_TIME + PT) <= CURRENT_TIME) THEN\n      STATE := 2;\n      Q := FALSE;\n      ET := PT;\n    ELSE\n      ET := CURRENT_TIME - START_TIME;\n    END_IF;\n  END_IF;\n\n  IF (NOT(IN) AND (STATE = 2)) THEN\n    STATE := 0;\n    ET := T#0s;\n  END_IF;\n\n  PREV_IN := IN;\nEND_FUNCTION_BLOCK\n\n(* LTIME variants: preset and elapsed time are LTIME (64-bit nanoseconds) *)\n\nFUNCTION_BLOCK LTON\n  VAR_INPUT\n    IN : BOOL;\n    PT : LTIME;\n  END_VAR\n  VAR_OUTPUT\n    Q : BOOL;\n    ET : LTIME;\n  END_VAR\n  VAR\n    STATE : SINT;\n    PREV_IN : BOOL;\n    CURRENT_TIME, START_TIME : LTIME;\n  END_VAR\n\n  CURRENT_TIME := TIME();\n\n  IF ((STATE = 0) AND NOT(PREV_IN) AND IN) THEN\n    STATE := 1;\n    Q := FALSE;\n    START_TIME := CURRENT_TIME;\n  ELSE\n    IF (NOT(IN)) THEN\n      ET := LTIME#0s;\n      Q := FALSE;\n      STATE := 0;\n    ELSIF (STATE = 1) THEN\n      IF ((START_TIME + PT) <= CURRENT_TIME) THEN\n        STATE := 2;\n        Q := TRUE;\n        ET := PT;\n      ELSE\n        ET := CURRENT_TIME - START_TIME;\n      END_IF;\n    END_IF;\n  END_IF;\n\n  PREV_IN := IN;\nEND_FUNCTION_BLOCK\n\nFUNCTION_BLOCK LTOF\n  VAR_INPUT\n    IN : BOOL;\n    PT : LTIME;\n  END_VAR\n  VAR_OUTPUT\n    Q : BOOL;\n    ET : LTIME;\n  END_VAR\n  VAR\n    STATE : SINT;\n    PREV_IN : BOOL;\n    CURRENT_TIME, START_TIME : LTIME;\n  END_VAR\n\n  CURRENT_TIME := TIME();\n\n  IF ((STATE = 0) AND PREV_IN AND NOT(IN)) THEN\n    STATE := 1;\n    START_TIME := CURRENT_TIME;\n  ELSE\n    IF (IN) THEN\n      ET := LTIME#0s;\n      Q := TRUE;\n      STATE := 0;\n    ELSIF (STATE = 1) THEN\n      IF ((START_TIME + PT) <= CURRENT_TIME) THEN\n        STATE := 2;\n        Q := FALSE;\n        ET := PT;\n      ELSE\n        Q := TRUE;\n        ET := CURRENT_TIME - START_TIME;\n      END_IF;\n    END_IF;\n  END_IF;\n\n  PREV_IN := IN;\nEND_FUNCTION_BLOCK\n\nFUNCTION_BLOCK LTP\n  VAR_INPUT\n    IN : BOOL;\n    PT : LTIME;\n  END_VAR\n  VAR_OUTPUT\n    Q : BOOL;\n    ET : LTIME;\n  END_VAR\n  VAR\n    STATE : SINT;\n    PREV_IN : BOOL;\n    CURRENT_TIME, START_TIME : LTIME;\n  END_VAR\n\n  CURRENT_TIME := TIME();\n\n  IF ((STATE = 0) AND NOT(PREV_IN) AND IN) THEN\n    STATE := 1;\n    Q := TRUE;\n    START_TIME := CURRENT_TIME;\n  ELSIF (STATE = 1) THEN\n    IF ((START_TIME + PT) <= CURRENT_TIME) THEN\n      STATE := 2;\n      Q := FALSE;\n      ET := PT;\n    ELSE\n      ET := CURRENT_TIME - START_TIME;\n    END_IF;\n  END_IF;\n\n  IF (NOT(IN) AND (STATE = 2)) THEN\n    STATE := 0;\n    ET := LTIME#0s;\n  END_IF;\n\n  PREV_IN := IN;\nEND_FUNCTION_BLOCK\n\n(* The typed names of Table 46: TP_TIME, TON_TIME, TOF_TIME on TIME and\n   TP_LTIME, TON_LTIME, TOF_LTIME on LTIME *)\n\nFUNCTION_BLOCK TP_TIME\n  VAR_INPUT\n    IN : BOOL;\n    PT : TIME;\n  END_VAR\n  VAR_OUTPUT\n    Q : BOOL;\n    ET : TIME;\n  END_VAR\n  VAR\n    STATE : SINT;\n    PREV_IN : BOOL;\n    CURRENT_TIME, START_TIME : TIME;\n  END_VAR\n\n  CURRENT_TIME := TIME();\n\n  IF ((STATE = 0) AND NOT(PREV_IN) AND IN) THEN\n    STATE := 1;\n    Q := TRUE;\n    START_TIME := CURRENT_TIME;\n  ELSIF (STATE = 1) THEN\n    IF ((START_TIME + PT) <= CURRENT_TIME) THEN\n      STATE := 2;\n      Q := FALSE;\n      ET := PT;\n    ELSE\n      ET := CURRENT_TIME - START_TIME;\n    END_IF;\n  END_IF;\n\n  IF (NOT(IN) AND (STATE = 2)) THEN\n    STATE := 0;\n    ET := T#0s;\n  END_IF;\n\n  PREV_IN := IN;\nEND_FUNCTION_BLOCK\n\nFUNCTION_BLOCK TP_LTIME\n  VAR_INPUT\n    IN : BOOL;\n    PT : LTIME;\n  END_VAR\n  VAR_OUTPUT\n    Q : BOOL;\n    ET : LTIME;\n  END_VAR\n  VAR\n    STATE : SINT;\n    PREV_IN : BOOL;\n    CURRENT_TIME, START_TIME : LTIME;\n  END_VAR\n\n  CURRENT_TIME := TIME();\n\n  IF ((STATE = 0) AND NOT(PREV_IN) AND IN) THEN\n    STATE := 1;\n    Q := TRUE;\n    START_TIME := CURRENT_TIME;\n  ELSIF (STATE = 1) THEN\n    IF ((START_TIME + PT) <= CURRENT_TIME) THEN\n      STATE := 2;\n      Q := FALSE;\n      ET := PT;\n    ELSE\n      ET := CURRENT_TIME - START_TIME;\n    END_IF;\n  END_IF;\n\n  IF (NOT(IN) AND (STATE = 2)) THEN\n    STATE := 0;\n    ET := LTIME#0s;\n  END_IF;\n\n  PREV_IN := IN;\nEND_FUNCTION_BLOCK\n\nFUNCTION_BLOCK TON_TIME\n  VAR_INPUT\n    IN : BOOL;\n    PT : TIME;\n  END_VAR\n  VAR_OUTPUT\n    Q : BOOL;\n    ET : TIME;\n  END_VAR\n  VAR\n    STATE : SINT;\n    PREV_IN : BOOL;\n    CURRENT_TIME, START_TIME : TIME;\n  END_VAR\n\n  CURRENT_TIME := TIME();\n\n  IF ((STATE = 0) AND NOT(PREV_IN) AND IN) THEN\n    STATE := 1;\n    Q := FALSE;\n    START_TIME := CURRENT_TIME;\n  ELSE\n    IF (NOT(IN)) THEN\n      ET := T#0s;\n      Q := FALSE;\n      STATE := 0;\n    ELSIF (STATE = 1) THEN\n      IF ((START_TIME + PT) <= CURRENT_TIME) THEN\n        STATE := 2;\n        Q := TRUE;\n        ET := PT;\n      ELSE\n        ET := CURRENT_TIME - START_TIME;\n      END_IF;\n    END_IF;\n  END_IF;\n\n  PREV_IN := IN;\nEND_FUNCTION_BLOCK\n\nFUNCTION_BLOCK TON_LTIME\n  VAR_INPUT\n    IN : BOOL;\n    PT : LTIME;\n  END_VAR\n  VAR_OUTPUT\n    Q : BOOL;\n    ET : LTIME;\n  END_VAR\n  VAR\n    STATE : SINT;\n    PREV_IN : BOOL;\n    CURRENT_TIME, START_TIME : LTIME;\n  END_VAR\n\n  CURRENT_TIME := TIME();\n\n  IF ((STATE = 0) AND NOT(PREV_IN) AND IN) THEN\n    STATE := 1;\n    Q := FALSE;\n    START_TIME := CURRENT_TIME;\n  ELSE\n    IF (NOT(IN)) THEN\n      ET := LTIME#0s;\n      Q := FALSE;\n      STATE := 0;\n    ELSIF (STATE = 1) THEN\n      IF ((START_TIME + PT) <= CURRENT_TIME) THEN\n        STATE := 2;\n        Q := TRUE;\n        ET := PT;\n      ELSE\n        ET := CURRENT_TIME - START_TIME;\n      END_IF;\n    END_IF;\n  END_IF;\n\n  PREV_IN := IN;\nEND_FUNCTION_BLOCK\n\nFUNCTION_BLOCK TOF_TIME\n  VAR_INPUT\n    IN : BOOL;\n    PT : TIME;\n  END_VAR\n  VAR_OUTPUT\n    Q : BOOL;\n    ET : TIME;\n  END_VAR\n  VAR\n    STATE : SINT;\n    PREV_IN : BOOL;\n    CURRENT_TIME, START_TIME : TIME;\n  END_VAR\n\n  CURRENT_TIME := TIME();\n\n  IF ((STATE = 0) AND PREV_IN AND NOT(IN)) THEN\n    STATE := 1;\n    START_TIME := CURRENT_TIME;\n  ELSE\n    IF (IN) THEN\n      ET := T#0s;\n      Q := TRUE;\n      STATE := 0;\n    ELSIF (STATE = 1) THEN\n      IF ((START_TIME + PT) <= CURRENT_TIME) THEN\n        STATE := 2;\n        Q := FALSE;\n        ET := PT;\n      ELSE\n        Q := TRUE;\n        ET := CURRENT_TIME - START_TIME;\n      END_IF;\n    END_IF;\n  END_IF;\n\n  PREV_IN := IN;\nEND_FUNCTION_BLOCK\n\nFUNCTION_BLOCK TOF_LTIME\n  VAR_INPUT\n    IN : BOOL;\n    PT : LTIME;\n  END_VAR\n  VAR_OUTPUT\n    Q : BOOL;\n    ET : LTIME;\n  END_VAR\n  VAR\n    STATE : SINT;\n    PREV_IN : BOOL;\n    CURRENT_TIME, START_TIME : LTIME;\n  END_VAR\n\n  CURRENT_TIME := TIME();\n\n  IF ((STATE = 0) AND PREV_IN AND NOT(IN)) THEN\n    STATE := 1;\n    START_TIME := CURRENT_TIME;\n  ELSE\n    IF (IN) THEN\n      ET := LTIME#0s;\n      Q := TRUE;\n      STATE := 0;\n    ELSIF (STATE = 1) THEN\n      IF ((START_TIME + PT) <= CURRENT_TIME) THEN\n        STATE := 2;\n        Q := FALSE;\n        ET := PT;\n      ELSE\n        Q := TRUE;\n        ET := CURRENT_TIME - START_TIME;\n      END_IF;\n    END_IF;\n  END_IF;\n\n  PREV_IN := IN;\nEND_FUNCTION_BLOCK\n"
+    },
+    {
+      "fileName": "time_functions.st",
+      "source": "(* IEC 61131-3 Ed. 3 Table 36: concatenating and splitting dates and times.\n   Inputs take any integer (as LINT); YEAR and MILLISECOND come out as UINT,\n   the other parts as USINT. SPLIT_* returns TRUE. Dates use the proleptic\n   Gregorian calendar. No function calls another, so a library declaring one\n   of these names hides that function only. *)\n\nFUNCTION CONCAT_DATE : DATE\n  VAR_INPUT YEAR, MONTH, DAY : LINT; END_VAR\n  VAR y, era, yoe, mp, doy, doe : LINT; END_VAR\n  y := YEAR;\n  IF MONTH <= 2 THEN y := y - 1; END_IF;\n  IF y >= 0 THEN era := y / 400; ELSE era := (y - 399) / 400; END_IF;\n  yoe := y - era * 400;\n  IF MONTH > 2 THEN mp := MONTH - 3; ELSE mp := MONTH + 9; END_IF;\n  doy := (153 * mp + 2) / 5 + DAY - 1;\n  doe := yoe * 365 + yoe / 4 - yoe / 100 + doy;\n  CONCAT_DATE := LINT_TO_DATE((era * 146097 + doe - 719468) * 86400);\nEND_FUNCTION\n\nFUNCTION CONCAT_TOD : TOD\n  VAR_INPUT HOUR, MINUTE, SECOND, MILLISECOND : LINT; END_VAR\n  CONCAT_TOD := LINT_TO_TOD(((HOUR * 60 + MINUTE) * 60 + SECOND) * 1000 + MILLISECOND);\nEND_FUNCTION\n\nFUNCTION CONCAT_LTOD : LTOD\n  VAR_INPUT HOUR, MINUTE, SECOND, MILLISECOND : LINT; END_VAR\n  CONCAT_LTOD := LINT_TO_LTOD((((HOUR * 60 + MINUTE) * 60 + SECOND) * 1000 + MILLISECOND) * 1000000);\nEND_FUNCTION\n\nFUNCTION CONCAT_LDT : LDT\n  VAR_INPUT YEAR, MONTH, DAY, HOUR, MINUTE, SECOND, MILLISECOND : LINT; END_VAR\n  VAR y, era, yoe, mp, doy, doe : LINT; END_VAR\n  y := YEAR;\n  IF MONTH <= 2 THEN y := y - 1; END_IF;\n  IF y >= 0 THEN era := y / 400; ELSE era := (y - 399) / 400; END_IF;\n  yoe := y - era * 400;\n  IF MONTH > 2 THEN mp := MONTH - 3; ELSE mp := MONTH + 9; END_IF;\n  doy := (153 * mp + 2) / 5 + DAY - 1;\n  doe := yoe * 365 + yoe / 4 - yoe / 100 + doy;\n  CONCAT_LDT := LINT_TO_LDT((era * 146097 + doe - 719468) * 86400000000000\n    + (((HOUR * 60 + MINUTE) * 60 + SECOND) * 1000 + MILLISECOND) * 1000000);\nEND_FUNCTION\n\nFUNCTION CONCAT_DT : DT\n  VAR_INPUT YEAR, MONTH, DAY, HOUR, MINUTE, SECOND, MILLISECOND : LINT; END_VAR\n  VAR y, era, yoe, mp, doy, doe : LINT; END_VAR\n  y := YEAR;\n  IF MONTH <= 2 THEN y := y - 1; END_IF;\n  IF y >= 0 THEN era := y / 400; ELSE era := (y - 399) / 400; END_IF;\n  yoe := y - era * 400;\n  IF MONTH > 2 THEN mp := MONTH - 3; ELSE mp := MONTH + 9; END_IF;\n  doy := (153 * mp + 2) / 5 + DAY - 1;\n  doe := yoe * 365 + yoe / 4 - yoe / 100 + doy;\n  CONCAT_DT := LDT_TO_DT(LINT_TO_LDT((era * 146097 + doe - 719468) * 86400000000000\n    + (((HOUR * 60 + MINUTE) * 60 + SECOND) * 1000 + MILLISECOND) * 1000000));\nEND_FUNCTION\n\nFUNCTION CONCAT_DATE_LTOD : LDT\n  VAR_INPUT DATE_IN : DATE; TOD_IN : LTOD; END_VAR\n  CONCAT_DATE_LTOD := LINT_TO_LDT(LDATE_TO_LINT(DATE_IN) + LTOD_TO_LINT(TOD_IN));\nEND_FUNCTION\n\nFUNCTION SPLIT_DATE : BOOL\n  VAR_INPUT IN : DATE; END_VAR\n  VAR_OUTPUT YEAR : UINT; MONTH, DAY : USINT; END_VAR\n  VAR z, era, doe, yoe, doy, mp, y, m : LINT; END_VAR\n  z := DATE_TO_LINT(IN) / 86400 + 719468;\n  IF z >= 0 THEN era := z / 146097; ELSE era := (z - 146096) / 146097; END_IF;\n  doe := z - era * 146097;\n  yoe := (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;\n  doy := doe - (365 * yoe + yoe / 4 - yoe / 100);\n  mp := (5 * doy + 2) / 153;\n  DAY := LINT_TO_USINT(doy - (153 * mp + 2) / 5 + 1);\n  IF mp < 10 THEN m := mp + 3; ELSE m := mp - 9; END_IF;\n  y := yoe + era * 400;\n  IF m <= 2 THEN y := y + 1; END_IF;\n  MONTH := LINT_TO_USINT(m);\n  YEAR := LINT_TO_UINT(y);\n  SPLIT_DATE := TRUE;\nEND_FUNCTION\n\nFUNCTION SPLIT_TOD : BOOL\n  VAR_INPUT IN : TOD; END_VAR\n  VAR_OUTPUT HOUR, MINUTE, SECOND : USINT; MILLISECOND : UINT; END_VAR\n  VAR ms : LINT; END_VAR\n  ms := TOD_TO_LINT(IN);\n  HOUR := LINT_TO_USINT(ms / 3600000);\n  MINUTE := LINT_TO_USINT(ms / 60000 MOD 60);\n  SECOND := LINT_TO_USINT(ms / 1000 MOD 60);\n  MILLISECOND := LINT_TO_UINT(ms MOD 1000);\n  SPLIT_TOD := TRUE;\nEND_FUNCTION\n\nFUNCTION SPLIT_LTOD : BOOL\n  VAR_INPUT IN : LTOD; END_VAR\n  VAR_OUTPUT HOUR, MINUTE, SECOND : USINT; MILLISECOND : UINT; END_VAR\n  VAR ms : LINT; END_VAR\n  ms := LTOD_TO_LINT(IN) / 1000000;\n  HOUR := LINT_TO_USINT(ms / 3600000);\n  MINUTE := LINT_TO_USINT(ms / 60000 MOD 60);\n  SECOND := LINT_TO_USINT(ms / 1000 MOD 60);\n  MILLISECOND := LINT_TO_UINT(ms MOD 1000);\n  SPLIT_LTOD := TRUE;\nEND_FUNCTION\n\nFUNCTION SPLIT_LDT : BOOL\n  VAR_INPUT IN : LDT; END_VAR\n  VAR_OUTPUT YEAR : UINT; MONTH, DAY, HOUR, MINUTE, SECOND : USINT; MILLISECOND : UINT; END_VAR\n  VAR ns, days, ms, z, era, doe, yoe, doy, mp, y, m : LINT; END_VAR\n  ns := LDT_TO_LINT(IN);\n  days := ns / 86400000000000;\n  IF ns < 0 AND days * 86400000000000 <> ns THEN days := days - 1; END_IF;\n  z := days + 719468;\n  IF z >= 0 THEN era := z / 146097; ELSE era := (z - 146096) / 146097; END_IF;\n  doe := z - era * 146097;\n  yoe := (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;\n  doy := doe - (365 * yoe + yoe / 4 - yoe / 100);\n  mp := (5 * doy + 2) / 153;\n  DAY := LINT_TO_USINT(doy - (153 * mp + 2) / 5 + 1);\n  IF mp < 10 THEN m := mp + 3; ELSE m := mp - 9; END_IF;\n  y := yoe + era * 400;\n  IF m <= 2 THEN y := y + 1; END_IF;\n  MONTH := LINT_TO_USINT(m);\n  YEAR := LINT_TO_UINT(y);\n  ms := (ns - days * 86400000000000) / 1000000;\n  HOUR := LINT_TO_USINT(ms / 3600000);\n  MINUTE := LINT_TO_USINT(ms / 60000 MOD 60);\n  SECOND := LINT_TO_USINT(ms / 1000 MOD 60);\n  MILLISECOND := LINT_TO_UINT(ms MOD 1000);\n  SPLIT_LDT := TRUE;\nEND_FUNCTION\n\nFUNCTION SPLIT_DT : BOOL\n  VAR_INPUT IN : DT; END_VAR\n  VAR_OUTPUT YEAR : UINT; MONTH, DAY, HOUR, MINUTE, SECOND : USINT; MILLISECOND : UINT; END_VAR\n  VAR ns, days, ms, z, era, doe, yoe, doy, mp, y, m : LINT; END_VAR\n  ns := LDT_TO_LINT(DT_TO_LDT(IN));\n  days := ns / 86400000000000;\n  IF ns < 0 AND days * 86400000000000 <> ns THEN days := days - 1; END_IF;\n  z := days + 719468;\n  IF z >= 0 THEN era := z / 146097; ELSE era := (z - 146096) / 146097; END_IF;\n  doe := z - era * 146097;\n  yoe := (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;\n  doy := doe - (365 * yoe + yoe / 4 - yoe / 100);\n  mp := (5 * doy + 2) / 153;\n  DAY := LINT_TO_USINT(doy - (153 * mp + 2) / 5 + 1);\n  IF mp < 10 THEN m := mp + 3; ELSE m := mp - 9; END_IF;\n  y := yoe + era * 400;\n  IF m <= 2 THEN y := y + 1; END_IF;\n  MONTH := LINT_TO_USINT(m);\n  YEAR := LINT_TO_UINT(y);\n  ms := (ns - days * 86400000000000) / 1000000;\n  HOUR := LINT_TO_USINT(ms / 3600000);\n  MINUTE := LINT_TO_USINT(ms / 60000 MOD 60);\n  SECOND := LINT_TO_USINT(ms / 1000 MOD 60);\n  MILLISECOND := LINT_TO_UINT(ms MOD 1000);\n  SPLIT_DT := TRUE;\nEND_FUNCTION\n\nFUNCTION DAY_OF_WEEK : INT\n  VAR_INPUT IN : DATE; END_VAR\n  VAR days : LINT; END_VAR\n  days := DATE_TO_LINT(IN) / 86400;\n  DAY_OF_WEEK := LINT_TO_INT(((days MOD 7) + 7 + 4) MOD 7);\nEND_FUNCTION\n"
     }
   ]
 }

@@ -14,6 +14,7 @@
 
 #include <cstdint>
 #include "iec_types.hpp"
+#include "iec_cp1252.hpp"
 
 namespace strucpp {
 
@@ -101,12 +102,15 @@ inline constexpr int32_t WCHAR_TO_INT(WCHAR_t c) noexcept {
     return static_cast<int32_t>(c);
 }
 
-inline constexpr WCHAR_t CHAR_TO_WCHAR(CHAR_t c) noexcept {
-    return static_cast<WCHAR_t>(static_cast<unsigned char>(c));
+/** A CHAR is a Windows-1252 byte: widen it to its code point. */
+inline WCHAR_t CHAR_TO_WCHAR(CHAR_t c) noexcept {
+    return static_cast<WCHAR_t>(cp1252::to_unicode(static_cast<unsigned char>(c)));
 }
 
-inline constexpr CHAR_t WCHAR_TO_CHAR(WCHAR_t c) noexcept {
-    return static_cast<CHAR_t>(c & 0xFF);
+/** A WCHAR Windows-1252 lacks narrows to '?'. */
+inline CHAR_t WCHAR_TO_CHAR(WCHAR_t c) noexcept {
+    const int byte = cp1252::from_unicode(c);
+    return static_cast<CHAR_t>(byte < 0 ? '?' : byte);
 }
 
 inline constexpr bool IS_ALPHA(CHAR_t c) noexcept {
