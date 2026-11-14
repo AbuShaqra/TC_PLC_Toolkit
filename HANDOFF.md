@@ -51,7 +51,7 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   errors; TcToolkitSample shows only the known `has no member named 'STATE'` g++ error (+ the same error from the
   C/C++ extension). **Not reported back yet:** PR checklist items 1–3 and 5–8 (dropdown sync, g++ row, too-old g++,
   IntelliSense provider, Tc2_* library summary, edited `.hpp` / deleted `.gitignore`, cancel leaves no `cc1plus.exe`).
-  **Compiler pinned at release M** (`75a55de`, 2026-11-13, user): the property-read gap is gone, both samples build
+  **Compiler pinned at release M** (`75a55de`, user; in `dev` as PR #39, `c370b64`, 2026-11-14): the property-read gap is gone, both samples build
   with g++ cleanly (`KNOWN_GPP_GAPS` empty); `resources/dialects/twincat3.json` gains `vendor_operators`,
   `type_colon_optional`, `platform_types`, `bit_type` (S10).
   **Windows CI** was red since R13's g++ tests landed (tests assumed Linux: shebang fake g++, `:`-split PATH, the
