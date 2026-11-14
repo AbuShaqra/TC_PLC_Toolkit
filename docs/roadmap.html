@@ -693,9 +693,10 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
     <details class="card" id="done">
       <summary>
         <div class="card-top"><span>Done</span><span class="chev" aria-hidden="true">›</span></div>
-        <div class="card-title">Finished items · Fork #160, Fork #159, Fork #158, Fork #157, Fork #156, Release M pin, S10, R14, R13, S4, R12, S3b, R3.5, S11, S3b #112–#115, #117–#129, Settings keys, R3.3–R9, R3.2, R2, S9, S3a, S2, R4, R3.1, R5, S1, R1</div>
+        <div class="card-title">Finished items · Fork #161, Fork #160, Fork #159, Fork #158, Fork #157, Fork #156, Release M pin, S10, R14, R13, S4, R12, S3b, R3.5, S11, S3b #112–#115, #117–#129, Settings keys, R3.3–R9, R3.2, R2, S9, S3a, S2, R4, R3.1, R5, S1, R1</div>
       </summary>
       <div class="body">
+        <div class="block wide"><h4>Fork #161 · merged Nov 14</h4><p>Your X1 call: an address stored in an integer narrower than 64 bits is refused in every store path (<code>2b93e7b</code>, for release N). A follow-up closes the remaining paths.</p></div>
         <div class="block wide"><h4>Fork #160 · merged Nov 14</h4><p>A name holding a non-ASCII or control character (ß, ä, ı, ﬁ …) is refused with its code points, and every position after it stays exact, fixing release M's column limitation (<code>69651a7</code>, for release N).</p></div>
         <div class="block wide"><h4>S6 · fork #159 · merged Nov 14</h4><p>String literals compare by text, STRING/WSTRING mixes are refused everywhere, and TO_STRING of a literal gives its text (<code>cde5681</code>, for release N).</p></div>
         <div class="block wide"><h4>S6 · fork #158 · merged Nov 14</h4><p>VAR_TEMP starts afresh at each FB or PROGRAM call, as IEC requires (it kept its value); METHOD VAR_INST initial values applied (<code>a4c0337</code>, run-time change, for release N).</p></div>

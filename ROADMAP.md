@@ -357,6 +357,7 @@ The former backlog was scheduled as R6–R10 on 2026-11-09 (the user asked). R6�
 Shipped work lives in git history and the [releases](https://github.com/AbuShaqra/TC_PLC_Toolkit/releases).
 Roadmap items finished from now on are listed here with their PR.
 
+- **Fork: narrow ADR refused (X1, user decision), merged 2026-11-14** (fork [#161](https://github.com/AbuShaqra/STruCpp/pull/161), `2b93e7b`; for release N): an address stored in an integer narrower than 64 bits is refused in every store path, through aliases and subranges; builds that truncated an address now stop. Follow-up branch closes the remaining paths (SEL/MUX, library inputs, SUPER^/interface calls).
 - **Fork: names with non-ASCII characters refused, merged 2026-11-14** (fork [#160](https://github.com/AbuShaqra/STruCpp/pull/160), `69651a7`; for release N): a name holding ß, ä, ı, ſ, ﬁ or a control character is refused with its code points, and every position after it stays exact (fixes release M's column limitation).
 - **S6: string literals, merged 2026-11-14** (fork [#159](https://github.com/AbuShaqra/STruCpp/pull/159), `cde5681`; for release N): literals compare by text, STRING/WSTRING mixes refused, TO_STRING of a literal gives its text. Follow-up: one type-driven string comparison (SEL/MUX of literals compared pointers).
 - **S6: VAR_TEMP reset at each call, merged 2026-11-14** (fork [#158](https://github.com/AbuShaqra/STruCpp/pull/158), `a4c0337`; for release N; run-time change): VAR_TEMP starts afresh at each FB or PROGRAM call; METHOD VAR_INST initial values applied.
