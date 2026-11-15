@@ -1468,6 +1468,10 @@ libraries. Decided by the user 2026-11-10: declarations plus a filter, **local-o
   declaration (or just the method/property/field/global/variable), never guessed. **Never redeclared**: names in the bundled `.stlib`
   manifests (TON, R_TRIG, CONCAT …), conversion names, the elementary types, and every top-level name the
   project declares (POUs, types, GVLs, globals — the user's own wins).
+  A type a declaration needs resolves only to an elementary type, a manifest's `types` or
+  `functionBlocks` entry (`compilerProvidedTypeNames`), or another declaration of the run — never to a
+  manifest FUNCTION or global: release N's `iec-std-functions.stlib` has a FUNCTION `LTIME()`, which
+  must not make `LTIME` a type (`test_library_decls.js` guards it).
 - **Qualifiers**: `stripQualifiers` blanks `Ns.` (a `.plcproj` namespace, not a project name, not after
   a `.`, outside comments/strings) with spaces — the compiler cannot parse `p : Ns.T;` — so every column
   is unchanged and mapUnitPosition needs nothing new. The run gets copies of the units.
@@ -1771,9 +1775,10 @@ runs the allow-listed `twincat.detectGpp`.
 refresh; the Objects tree shows a project's `CPP_Files` as `generatedDirectory` with its `.cpp`/`.hpp`
 as `generatedCppFile` rows that open as text (`twincat.openComponent` treats `.cpp`/`.hpp` like `.st`).
 
-**Known compiler gaps:** none since release M (`75a55de`). The one found by `gpp-real` at `eb52d2c` (a
-PROPERTY read through a global FB instance emitted as a field access) is fixed there; `test_cpp_real.js`
-keeps `KNOWN_GPP_GAPS` (empty) for the next one, and both samples now build with g++ cleanly.
+**Known compiler gaps:** none since release M (`75a55de`); still none at release N (`d9b7c01`). The one
+found by `gpp-real` at `eb52d2c` (a PROPERTY read through a global FB instance emitted as a field access)
+is fixed there; `test_cpp_real.js` keeps `KNOWN_GPP_GAPS` (empty) for the next one, and both samples build
+with g++ cleanly.
 
 ### XAE build (roadmap R14)
 

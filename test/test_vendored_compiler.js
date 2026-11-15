@@ -88,6 +88,8 @@ assert(profileFiles.length === 1 && path.basename(profileFiles[0]) === 'twincat3
 // {IF defined(X)} … {END_IF} is TwinCAT code: without the feature every such block is an error.
 const profile = JSON.parse(fs.readFileSync(path.join(REPO, 'resources', 'dialects', 'twincat3.json'), 'utf8'));
 assert(Array.isArray(profile.features) && profile.features.includes('conditional_pragmas'), 'the TwinCAT profile turns on conditional_pragmas');
+// A STRING written without a length holds 80 characters on the PLC (fork release N, d9b7c01 or later).
+assert(profile.features.includes('string_default_80'), 'the TwinCAT profile turns on string_default_80');
 
 // Self-contained: the bundle requires Node built-ins only.
 const bundle = fs.readFileSync(path.join(DIR, 'compiler.cjs'), 'utf8');

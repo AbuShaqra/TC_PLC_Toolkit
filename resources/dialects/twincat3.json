@@ -2,5 +2,5 @@
  "features": ["program_methods", "pointer_to", "reference_to", "ref_assign", "self_caret", "property",
               "postfix_enum_base", "named_global_lists", "struct_extends", "union", "fb_init", "trunc_dint",
               "interface_zero", "end_semicolon_optional", "conditional_pragmas",
-              "vendor_operators", "type_colon_optional", "platform_types", "bit_type"],
+              "vendor_operators", "type_colon_optional", "platform_types", "bit_type", "string_default_80"],
  "semantics": {}}

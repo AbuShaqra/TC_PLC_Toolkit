@@ -6,12 +6,9 @@
  * STruC++ Runtime - IEC TIME Standard Functions
  *
  * IEC 61131-3 standard functions on the TIME (and LTIME) duration types.
- * TIME / LTIME are stored as signed nanoseconds in `IECVar<TIME_t>` (the
- * generic per-variable wrapper).  Codegen emits TIME variables as
- * `IEC_TIME` (the `IECVar<TIME_t>` alias) and time literals as raw
- * nanosecond `int64_t` values that the IECVar `operator=(T)` assigns
- * directly, so every function here takes/returns `IEC_TIME` for
- * symmetry — no separate value class wraps the IEC variable form.
+ * TIME is 32-bit unsigned milliseconds (`TIME_t`, wrapping modulo 2^32);
+ * LTIME is signed 64-bit nanoseconds (`LTIME_t`). Each function has a form
+ * for each.
  *
  * Historical note: an earlier `TimeValue<T>` + `IECTimeVar<T>` value-
  * class design lived here.  Codegen never adopted it (TIME variables
@@ -30,13 +27,9 @@
 namespace strucpp {
 
 // ---------------------------------------------------------------------------
-// Nanosecond conversion constants
+// Unit constants
 // ---------------------------------------------------------------------------
-// Storage unit for both TIME and LTIME is nanoseconds.  Conversion helpers
-// below scale the underlying `int64_t` by these factors; user code can also
-// import them for arithmetic that mixes literal scalars with TIME values
-// (e.g. `MUL_TIME(t, 60)` for a 1-minute multiplier without recomputing the
-// constant).
+// TIME holds milliseconds in 32 bits (IecTemporal32), LTIME nanoseconds in 64.
 constexpr int64_t NS_PER_US = 1000LL;
 constexpr int64_t NS_PER_MS = 1000000LL;
 constexpr int64_t NS_PER_S = 1000000000LL;
@@ -45,86 +38,108 @@ constexpr int64_t NS_PER_H = 60LL * NS_PER_M;
 constexpr int64_t NS_PER_D = 24LL * NS_PER_H;
 
 // ---------------------------------------------------------------------------
-// Conversion: TIME → integer count of the requested unit (truncated)
+// TIME <-> LTIME
 // ---------------------------------------------------------------------------
-// The millisecond / second variants live in `iec_std_lib.hpp` next to the
-// generic numeric conversions: TIME_TO_MS truncates to LINT, TIME_TO_S
-// returns LREAL seconds with the fraction kept.  Other units stay here so
-// the per-type surface is self-contained.
-//
-// Functions are inline but not constexpr: `IECVar<T>`'s constructors are
-// not constexpr, so passing one by value to a constexpr context isn't
-// allowed.  Inline gives us identical codegen without the literal-type
-// constraint.
-inline int64_t TIME_TO_NS(IEC_TIME t) noexcept {
-    return iec_unwrap(t);
+/** A TIME as nanoseconds (exact). */
+inline int64_t TIME_AS_NS(TIME_t t) noexcept {
+    return static_cast<int64_t>(t.raw) * NS_PER_MS;
 }
+inline int64_t TIME_AS_NS(const IEC_TIME& t) noexcept { return TIME_AS_NS(t.get()); }
 
-inline int64_t TIME_TO_US(IEC_TIME t) noexcept {
-    return iec_unwrap(t) / NS_PER_US;
-}
-
-inline int64_t TIME_TO_M(IEC_TIME t) noexcept {
-    return iec_unwrap(t) / NS_PER_M;
-}
-
-inline int64_t TIME_TO_H(IEC_TIME t) noexcept {
-    return iec_unwrap(t) / NS_PER_H;
-}
-
-inline int64_t TIME_TO_D(IEC_TIME t) noexcept {
-    return iec_unwrap(t) / NS_PER_D;
+/** Nanoseconds as a TIME: truncated toward zero to ms, modulo 2^32. */
+inline TIME_t TIME_OF_NS(int64_t ns) noexcept {
+    return TIME_t(static_cast<uint32_t>(static_cast<uint64_t>(ns / NS_PER_MS)));
 }
 
 // ---------------------------------------------------------------------------
-// Arithmetic
+// Conversion: TIME / LTIME -> integer count of the requested unit (truncated)
 // ---------------------------------------------------------------------------
-inline IEC_TIME ABS_TIME(IEC_TIME t) noexcept {
-    const TIME_t ns = iec_unwrap(t);
-    return IEC_TIME(ns >= 0 ? ns : -ns);
-}
+// TIME_TO_MS / TIME_TO_S live in `iec_std_lib.hpp` next to the generic
+// numeric conversions.
+inline int64_t TIME_TO_NS(IEC_TIME t) noexcept { return TIME_AS_NS(t); }
+inline int64_t TIME_TO_US(IEC_TIME t) noexcept { return TIME_AS_NS(t) / NS_PER_US; }
+inline int64_t TIME_TO_M(IEC_TIME t) noexcept { return TIME_AS_NS(t) / NS_PER_M; }
+inline int64_t TIME_TO_H(IEC_TIME t) noexcept { return TIME_AS_NS(t) / NS_PER_H; }
+inline int64_t TIME_TO_D(IEC_TIME t) noexcept { return TIME_AS_NS(t) / NS_PER_D; }
 
-inline IEC_TIME ADD_TIME(IEC_TIME a, IEC_TIME b) noexcept {
-    return IEC_TIME(iec_unwrap(a) + iec_unwrap(b));
-}
+template<typename L_, std::enable_if_t<std::is_same<L_, int64_t>::value, int> = 0>
+inline int64_t TIME_TO_NS(const IECVar<L_>& t) noexcept { return iec_unwrap(t); }
+template<typename L_, std::enable_if_t<std::is_same<L_, int64_t>::value, int> = 0>
+inline int64_t TIME_TO_US(const IECVar<L_>& t) noexcept { return iec_unwrap(t) / NS_PER_US; }
+template<typename L_, std::enable_if_t<std::is_same<L_, int64_t>::value, int> = 0>
+inline int64_t TIME_TO_M(const IECVar<L_>& t) noexcept { return iec_unwrap(t) / NS_PER_M; }
+template<typename L_, std::enable_if_t<std::is_same<L_, int64_t>::value, int> = 0>
+inline int64_t TIME_TO_H(const IECVar<L_>& t) noexcept { return iec_unwrap(t) / NS_PER_H; }
+template<typename L_, std::enable_if_t<std::is_same<L_, int64_t>::value, int> = 0>
+inline int64_t TIME_TO_D(const IECVar<L_>& t) noexcept { return iec_unwrap(t) / NS_PER_D; }
 
-inline IEC_TIME SUB_TIME(IEC_TIME a, IEC_TIME b) noexcept {
-    return IEC_TIME(iec_unwrap(a) - iec_unwrap(b));
-}
+// ---------------------------------------------------------------------------
+// Arithmetic: TIME wraps modulo 2^32 ms; LTIME is signed 64-bit ns
+// ---------------------------------------------------------------------------
+inline IEC_TIME ABS_TIME(IEC_TIME t) noexcept { return t; }
+inline IEC_TIME ADD_TIME(IEC_TIME a, IEC_TIME b) noexcept { return IEC_TIME(a.get() + b.get()); }
+inline IEC_TIME SUB_TIME(IEC_TIME a, IEC_TIME b) noexcept { return IEC_TIME(a.get() - b.get()); }
 
 template<typename S>
 inline IEC_TIME MUL_TIME(IEC_TIME t, S scalar) noexcept {
-    return IEC_TIME(static_cast<TIME_t>(iec_unwrap(t) * scalar));
+    return IEC_TIME(t.get() * iec_unwrap(scalar));
 }
 
 template<typename S>
 inline IEC_TIME DIV_TIME(IEC_TIME t, S scalar) noexcept {
-    return IEC_TIME(static_cast<TIME_t>(iec_unwrap(t) / scalar));
+    return IEC_TIME(t.get() / iec_unwrap(scalar));
 }
 
-// Ed. 3 LTIME forms: LTIME has the representation of TIME.
-inline IEC_LTIME ADD_LTIME(IEC_LTIME a, IEC_LTIME b) noexcept { return ADD_TIME(a, b); }
-inline IEC_LTIME SUB_LTIME(IEC_LTIME a, IEC_LTIME b) noexcept { return SUB_TIME(a, b); }
-template<typename S>
-inline IEC_LTIME MUL_LTIME(IEC_LTIME t, S scalar) noexcept { return MUL_TIME(t, scalar); }
-template<typename S>
-inline IEC_LTIME DIV_LTIME(IEC_LTIME t, S scalar) noexcept { return DIV_TIME(t, scalar); }
+template<typename L_, std::enable_if_t<std::is_same<L_, int64_t>::value, int> = 0>
+inline IEC_LTIME ABS_TIME(const IECVar<L_>& t) noexcept {
+    const LTIME_t ns = iec_unwrap(t);
+    return IEC_LTIME(ns >= 0 ? ns : -ns);
+}
+template<typename L_, std::enable_if_t<std::is_same<L_, int64_t>::value, int> = 0>
+inline IEC_LTIME ADD_LTIME(const IECVar<L_>& a, const IECVar<L_>& b) noexcept { return IEC_LTIME(iec_unwrap(a) + iec_unwrap(b)); }
+template<typename L_, std::enable_if_t<std::is_same<L_, int64_t>::value, int> = 0>
+inline IEC_LTIME SUB_LTIME(const IECVar<L_>& a, const IECVar<L_>& b) noexcept { return IEC_LTIME(iec_unwrap(a) - iec_unwrap(b)); }
+template<typename S, typename L_, std::enable_if_t<std::is_same<L_, int64_t>::value, int> = 0>
+inline IEC_LTIME MUL_LTIME(const IECVar<L_>& t, S scalar) noexcept {
+    return IEC_LTIME(static_cast<LTIME_t>(iec_unwrap(t) * iec_unwrap(scalar)));
+}
+template<typename S, typename L_, std::enable_if_t<std::is_same<L_, int64_t>::value, int> = 0>
+inline IEC_LTIME DIV_LTIME(const IECVar<L_>& t, S scalar) noexcept {
+    return IEC_LTIME(static_cast<LTIME_t>(iec_unwrap(t) / iec_unwrap(scalar)));
+}
 
 // DIVTIME(a, b) returns the integer count of `b`-durations that fit in `a`
-// (i.e. `floor(a / b)`).  Different return type from `DIV_TIME(t, scalar)`
-// because the operands carry units that cancel — the result is unitless.
+// (i.e. `floor(a / b)`); 0 when b is zero (generated code calls iec_divtime,
+// which faults on b = 0).
 inline int64_t DIVTIME(IEC_TIME a, IEC_TIME b) noexcept {
-    return iec_unwrap(a) / iec_unwrap(b);
+    return b.get().raw == 0u ? 0 : static_cast<int64_t>(a.get().raw / b.get().raw);
+}
+template<typename L_, std::enable_if_t<std::is_same<L_, int64_t>::value, int> = 0>
+inline int64_t DIVTIME(const IECVar<L_>& a, const IECVar<L_>& b) noexcept {
+    return iec_unwrap(b) == 0 ? 0 : iec_unwrap(a) / iec_unwrap(b);
 }
 
 // ---------------------------------------------------------------------------
 // Comparison
 // ---------------------------------------------------------------------------
-inline bool GT_TIME(IEC_TIME a, IEC_TIME b) noexcept { return iec_unwrap(a) >  iec_unwrap(b); }
-inline bool GE_TIME(IEC_TIME a, IEC_TIME b) noexcept { return iec_unwrap(a) >= iec_unwrap(b); }
-inline bool EQ_TIME(IEC_TIME a, IEC_TIME b) noexcept { return iec_unwrap(a) == iec_unwrap(b); }
-inline bool NE_TIME(IEC_TIME a, IEC_TIME b) noexcept { return iec_unwrap(a) != iec_unwrap(b); }
-inline bool LE_TIME(IEC_TIME a, IEC_TIME b) noexcept { return iec_unwrap(a) <= iec_unwrap(b); }
-inline bool LT_TIME(IEC_TIME a, IEC_TIME b) noexcept { return iec_unwrap(a) <  iec_unwrap(b); }
+inline bool GT_TIME(IEC_TIME a, IEC_TIME b) noexcept { return a.get() >  b.get(); }
+inline bool GE_TIME(IEC_TIME a, IEC_TIME b) noexcept { return a.get() >= b.get(); }
+inline bool EQ_TIME(IEC_TIME a, IEC_TIME b) noexcept { return a.get() == b.get(); }
+inline bool NE_TIME(IEC_TIME a, IEC_TIME b) noexcept { return a.get() != b.get(); }
+inline bool LE_TIME(IEC_TIME a, IEC_TIME b) noexcept { return a.get() <= b.get(); }
+inline bool LT_TIME(IEC_TIME a, IEC_TIME b) noexcept { return a.get() <  b.get(); }
+
+template<typename L_, std::enable_if_t<std::is_same<L_, int64_t>::value, int> = 0>
+inline bool GT_TIME(const IECVar<L_>& a, const IECVar<L_>& b) noexcept { return iec_unwrap(a) >  iec_unwrap(b); }
+template<typename L_, std::enable_if_t<std::is_same<L_, int64_t>::value, int> = 0>
+inline bool GE_TIME(const IECVar<L_>& a, const IECVar<L_>& b) noexcept { return iec_unwrap(a) >= iec_unwrap(b); }
+template<typename L_, std::enable_if_t<std::is_same<L_, int64_t>::value, int> = 0>
+inline bool EQ_TIME(const IECVar<L_>& a, const IECVar<L_>& b) noexcept { return iec_unwrap(a) == iec_unwrap(b); }
+template<typename L_, std::enable_if_t<std::is_same<L_, int64_t>::value, int> = 0>
+inline bool NE_TIME(const IECVar<L_>& a, const IECVar<L_>& b) noexcept { return iec_unwrap(a) != iec_unwrap(b); }
+template<typename L_, std::enable_if_t<std::is_same<L_, int64_t>::value, int> = 0>
+inline bool LE_TIME(const IECVar<L_>& a, const IECVar<L_>& b) noexcept { return iec_unwrap(a) <= iec_unwrap(b); }
+template<typename L_, std::enable_if_t<std::is_same<L_, int64_t>::value, int> = 0>
+inline bool LT_TIME(const IECVar<L_>& a, const IECVar<L_>& b) noexcept { return iec_unwrap(a) <  iec_unwrap(b); }
 
 } // namespace strucpp

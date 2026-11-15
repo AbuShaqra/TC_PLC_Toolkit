@@ -110,6 +110,7 @@ public:
     // (where there is no MMU to trap a null deref, so the unchecked access would
     // silently read/write address 0). Mirrors REF_TO's NullReferenceException.
     void __fault_if_null() const {
+#ifndef STRUCPP_NO_BOUNDS_CHECK
         if (!ptr_) {
 #if STRUCPP_HAS_EXCEPTIONS
             throw std::runtime_error("Null pointer dereference");
@@ -117,6 +118,7 @@ public:
             iec_runtime_fault(IecFault::NullReference);
 #endif
         }
+#endif
     }
 
     // Dereference (null-checked)
@@ -140,41 +142,46 @@ public:
 
     // Raw access
     T* get() const noexcept { return static_cast<T*>(ptr_); }
+
+    /** The address `n` bytes after this one (before it when `n` is negative). */
+    T* bytes(std::ptrdiff_t n) const noexcept {
+        return reinterpret_cast<T*>(static_cast<char*>(ptr_) + n);
+    }
     void* get_void() const noexcept { return ptr_; }
 
-    // Pointer arithmetic (in units of sizeof(T))
-    // Use templates to directly match any arithmetic type, avoiding
-    // ambiguity with the integral conversion operator.
+    // Pointer arithmetic counts bytes, as on a PLC: `p + 2` moves 2 bytes,
+    // whatever T is. Use templates to directly match any arithmetic type,
+    // avoiding ambiguity with the integral conversion operator.
     template<typename N, std::enable_if_t<std::is_arithmetic<N>::value, int> = 0>
     IEC_Ptr operator+(N n) const noexcept {
-        return IEC_Ptr(static_cast<T*>(ptr_) + static_cast<std::ptrdiff_t>(n));
+        return IEC_Ptr(bytes(static_cast<std::ptrdiff_t>(n)));
     }
 
     template<typename N, std::enable_if_t<std::is_arithmetic<N>::value, int> = 0>
     IEC_Ptr operator-(N n) const noexcept {
-        return IEC_Ptr(static_cast<T*>(ptr_) - static_cast<std::ptrdiff_t>(n));
+        return IEC_Ptr(bytes(-static_cast<std::ptrdiff_t>(n)));
     }
 
     // Arithmetic with IECVar-wrapped types (unwrap the value)
     template<typename U>
     IEC_Ptr operator+(const IECVar<U>& n) const noexcept {
-        return IEC_Ptr(static_cast<T*>(ptr_) + static_cast<std::ptrdiff_t>(n.get()));
+        return IEC_Ptr(bytes(static_cast<std::ptrdiff_t>(n.get())));
     }
 
     template<typename U>
     IEC_Ptr operator-(const IECVar<U>& n) const noexcept {
-        return IEC_Ptr(static_cast<T*>(ptr_) - static_cast<std::ptrdiff_t>(n.get()));
+        return IEC_Ptr(bytes(-static_cast<std::ptrdiff_t>(n.get())));
     }
 
     template<typename N, std::enable_if_t<std::is_arithmetic<N>::value, int> = 0>
     IEC_Ptr& operator+=(N n) noexcept {
-        ptr_ = static_cast<T*>(ptr_) + static_cast<std::ptrdiff_t>(n);
+        ptr_ = bytes(static_cast<std::ptrdiff_t>(n));
         return *this;
     }
 
     template<typename N, std::enable_if_t<std::is_arithmetic<N>::value, int> = 0>
     IEC_Ptr& operator-=(N n) noexcept {
-        ptr_ = static_cast<T*>(ptr_) - static_cast<std::ptrdiff_t>(n);
+        ptr_ = bytes(-static_cast<std::ptrdiff_t>(n));
         return *this;
     }
 
@@ -265,6 +272,30 @@ public:
     }
 };
 
+/**
+ * After a function block is copied: when `src` (of `other`) points into
+ * `other`, `p` (of `self`) points to the same place in `self`.
+ */
+template<typename T, typename Owner>
+inline void rebind_own_member(IEC_Ptr<T>& p, const IEC_Ptr<T>& src,
+                              Owner* self, const Owner* other) noexcept {
+    const char* bound = static_cast<const char*>(src.get_void());
+    const char* from = reinterpret_cast<const char*>(other);
+    if (bound == nullptr || bound < from || bound >= from + sizeof(Owner)) return;
+    p = IEC_Ptr<T>(static_cast<void*>(reinterpret_cast<char*>(self) + (bound - from)));
+}
+
+/** The same for each element of an ARRAY of pointers. */
+template<typename A, typename Owner>
+inline auto rebind_own_member(A& arr, const A& src, Owner* self,
+                              const Owner* other) noexcept
+    -> decltype(arr.begin(), src.begin(), void()) {
+    auto to = arr.begin();
+    for (auto from = src.begin(); from != src.end(); ++from, ++to) {
+        rebind_own_member(*to, *from, self, other);
+    }
+}
+
 // Reverse comparison: nullptr == IEC_Ptr
 template<typename T>
 bool operator==(std::nullptr_t, IEC_Ptr<T> p) noexcept { return p == nullptr; }
@@ -274,5 +305,21 @@ bool operator!=(std::nullptr_t, IEC_Ptr<T> p) noexcept { return p != nullptr; }
 // Arithmetic: n + ptr (reverse order)
 template<typename T>
 IEC_Ptr<T> operator+(std::ptrdiff_t n, IEC_Ptr<T> p) noexcept { return p + n; }
+
+// ADR arithmetic counts bytes, as on a PLC: `ADR(x) + 2 + 2` is 4 bytes after x,
+// `ADR(a) - ADR(b)` the bytes between them. The code generator works on the
+// address as an integer and converts the total back.
+
+/** An address, as a count of bytes. */
+template<typename T>
+inline std::uintptr_t iec_byte_addr(T* p) noexcept {
+    return reinterpret_cast<std::uintptr_t>(p);
+}
+
+/** A byte offset added to or taken from an address. */
+template<typename N>
+inline std::uintptr_t iec_byte_offset(const N& n) noexcept {
+    return static_cast<std::uintptr_t>(static_cast<std::intptr_t>(n));
+}
 
 } // namespace strucpp

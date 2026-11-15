@@ -97,7 +97,7 @@ struct union_loc_init<union_at> {
 #if STRUCPP_HAS_EXCEPTIONS
     throw std::out_of_range("Array index out of bounds");
 #else
-    iec_runtime_fault(IecFault::ArrayBounds);
+    detail::bounds_fault();
 #endif
 }
 
@@ -419,7 +419,9 @@ public:
         return union_ref_t<W>(element(i));
     }
     union_ref_t<W> at(std::int64_t i) const {
+#ifndef STRUCPP_NO_BOUNDS_CHECK
         if (i < L || i > U) detail::union_bounds_fault();
+#endif
         return union_ref_t<W>(element(i));
     }
     static constexpr std::int64_t lower_bound(int = 1) noexcept { return L; }
@@ -474,7 +476,9 @@ public:
         return union_ref_t<W>(element(i, j));
     }
     union_ref_t<W> at(std::int64_t i, std::int64_t j) const {
+#ifndef STRUCPP_NO_BOUNDS_CHECK
         if (i < L1 || i > U1 || j < L2 || j > U2) detail::union_bounds_fault();
+#endif
         return union_ref_t<W>(element(i, j));
     }
     static constexpr std::int64_t lower_bound(int dim = 1) noexcept { return dim == 2 ? L2 : L1; }
@@ -528,9 +532,11 @@ public:
         return union_ref_t<W>(element(i, j, k));
     }
     union_ref_t<W> at(std::int64_t i, std::int64_t j, std::int64_t k) const {
+#ifndef STRUCPP_NO_BOUNDS_CHECK
         if (i < L1 || i > U1 || j < L2 || j > U2 || k < L3 || k > U3) {
             detail::union_bounds_fault();
         }
+#endif
         return union_ref_t<W>(element(i, j, k));
     }
     static constexpr std::int64_t lower_bound(int dim = 1) noexcept {

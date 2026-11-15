@@ -80,13 +80,17 @@ enum TypeTag : uint8_t {
     TAG_WORD    = 12,
     TAG_DWORD   = 13,
     TAG_LWORD   = 14,
-    TAG_TIME    = 15,
-    TAG_DATE    = 16,
-    TAG_TOD     = 17,
-    TAG_DT      = 18,
+    TAG_LTIME   = 15,  // 64-bit: LTIME ns
+    TAG_LDATE   = 16,  // 64-bit: LDATE days
+    TAG_LTOD    = 17,  // 64-bit: LTOD ns
+    TAG_LDT     = 18,  // 64-bit: LDT ns
     TAG_STRING  = 19,
     TAG_WSTRING = 20,
     TAG_BIT     = 21,  // a BIT member (feature bit_type): ptr is its byte, bit in flags
+    TAG_TIME    = 22,  // 32-bit: TIME ms
+    TAG_DATE    = 23,  // 32-bit: DATE s since 1970
+    TAG_TOD     = 24,  // 32-bit: TOD ms
+    TAG_DT      = 25,  // 32-bit: DT s since 1970
     TAG__COUNT
 };
 

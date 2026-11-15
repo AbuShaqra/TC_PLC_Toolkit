@@ -78,15 +78,18 @@ const IEC_FALLBACK = [
     'LOWER_BOUND', 'UPPER_BOUND'
 ];
 
+/** The function blocks of IEC_FALLBACK: the fallback names that are types. */
+const IEC_FALLBACK_FBS = ['TON', 'TOF', 'TP', 'R_TRIG', 'F_TRIG', 'CTU', 'CTD', 'CTUD', 'SR', 'RS', 'SEMA'];
+
 /**
- * The names the compiler provides itself: the function blocks, functions, types and globals of the
- * libraries next to it (`<compiler dir>/libs/*.stlib`, JSON manifests), plus the elementary types.
- * A library declaration of one of these is never written (Tc2_Standard duplicates TON, R_TRIG …).
+ * Reads the manifests of the libraries next to the compiler (`<compiler dir>/libs/*.stlib`).
  * @param {string} compilerPath The compiler's command-line file.
- * @returns {Set<string>} Upper-cased names.
+ * @returns {{names: Set<string>, types: Set<string>, found: boolean}} Upper-cased: every name, and
+ *   the names that are types (`types` and `functionBlocks` entries; never a FUNCTION or a global).
  */
-function compilerProvidedNames(compilerPath) {
-    const names = new Set(ELEMENTARY);
+function readCompilerManifests(compilerPath) {
+    const names = new Set();
+    const types = new Set();
     let found = false;
     const libDir = path.join(path.dirname(String(compilerPath || '')), 'libs');
     /** @type {string[]} */
@@ -98,13 +101,44 @@ function compilerProvidedNames(compilerPath) {
             const manifest = JSON.parse(fs.readFileSync(path.join(libDir, file), 'utf8')).manifest || {};
             for (const list of ['functions', 'functionBlocks', 'types', 'globals']) {
                 for (const item of Array.isArray(manifest[list]) ? manifest[list] : []) {
-                    if (item && typeof item.name === 'string') { names.add(item.name.toUpperCase()); found = true; }
+                    if (!item || typeof item.name !== 'string') continue;
+                    const upper = item.name.toUpperCase();
+                    names.add(upper);
+                    if (list === 'functionBlocks' || list === 'types') types.add(upper);
+                    found = true;
                 }
             }
-        } catch (e) { /* an unreadable manifest adds nothing; the fallback below still applies */ }
+        } catch (e) { /* an unreadable manifest adds nothing; the fallback still applies */ }
     }
-    if (!found) for (const n of IEC_FALLBACK) names.add(n);
+    return { names, types, found };
+}
+
+/**
+ * The names the compiler provides itself: the function blocks, functions, types and globals of the
+ * libraries next to it (`<compiler dir>/libs/*.stlib`, JSON manifests), plus the elementary types.
+ * A library declaration of one of these is never written (Tc2_Standard duplicates TON, R_TRIG …).
+ * @param {string} compilerPath The compiler's command-line file.
+ * @returns {Set<string>} Upper-cased names.
+ */
+function compilerProvidedNames(compilerPath) {
+    const read = readCompilerManifests(compilerPath);
+    const names = new Set([...ELEMENTARY, ...read.names]);
+    if (!read.found) for (const n of IEC_FALLBACK) names.add(n);
     return names;
+}
+
+/**
+ * The names the compiler provides that a declaration may use as a TYPE: the elementary types and
+ * the manifests' types and function blocks. A FUNCTION is not a type even when it is named like one
+ * (the standard library's `LTIME()` clock), so it never makes a library type resolve.
+ * @param {string} compilerPath The compiler's command-line file.
+ * @returns {Set<string>} Upper-cased names.
+ */
+function compilerProvidedTypeNames(compilerPath) {
+    const read = readCompilerManifests(compilerPath);
+    const types = new Set([...ELEMENTARY, ...read.types]);
+    if (!read.found) for (const n of IEC_FALLBACK_FBS) types.add(n);
+    return types;
 }
 
 /**
@@ -718,7 +752,9 @@ function libraryConstants(knowledge, userNames) {
  * dropped, repeatedly, until what is left is closed. An optional part (a method, a property, a
  * struct field, a global variable) with such a type is dropped on its own.
  * @param {LibraryKnowledge} knowledge
- * @param {{texts: string[], userNames: Set<string>, compilerNames: Set<string>}} o
+ * @param {{texts: string[], userNames: Set<string>, compilerNames: Set<string>, compilerTypes?: Set<string>}} o
+ *   `compilerTypes`: the compiler's names a type may resolve to (compilerProvidedTypeNames); without
+ *   it, `compilerNames` serves.
  * @returns {DeclarationSet}
  */
 function buildDeclarations(knowledge, o) {
@@ -788,7 +824,8 @@ function buildDeclarations(knowledge, o) {
         }
     }
     // Prune what cannot be resolved, until nothing changes.
-    const resolves = (/** @type {string} */ dep) => isCompiler(dep) || included.has(dep);
+    const compilerTypes = o.compilerTypes || o.compilerNames;
+    const resolves = (/** @type {string} */ dep) => compilerTypes.has(dep.toUpperCase()) || isConversionName(dep.toUpperCase()) || included.has(dep);
     let changed = true;
     while (changed) {
         changed = false;
@@ -1089,7 +1126,7 @@ function prepareLibraryCheck(o) {
     });
     const compilerNames = compilerProvidedNames(o.compilerPath);
     const set = buildDeclarations(knowledge, {
-        texts: inputs.map(i => i.unit.stText), userNames, compilerNames
+        texts: inputs.map(i => i.unit.stText), userNames, compilerNames, compilerTypes: compilerProvidedTypeNames(o.compilerPath)
     });
     const libraryOf = knowledge.libraryOf || (() => '');
     const spellingOf = knowledge.spellingOf || ((/** @type {string} */ n) => n);
@@ -1130,6 +1167,7 @@ module.exports = {
     ELEMENTARY,
     MAX_DECLARATION_FILES,
     compilerProvidedNames,
+    compilerProvidedTypeNames,
     isConversionName,
     readType,
     parseTmcDeclarations,
