@@ -145,7 +145,7 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
       <div class="eyebrow">VS Code extension · twincat-plc-toolkit</div>
       <h1>TC Toolkit Roadmap</h1>
       <div class="meta">
-        <span>Updated <b>2026-11-14</b></span>
+        <span>Updated <b>2026-11-15</b></span>
         <span>Release <b>v0.10.1</b></span>
         <span>Re-measured <b>Nov 11</b></span>
         <span>Toolkit next <b>R15 Windows check</b></span>
@@ -695,9 +695,10 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
     <details class="card" id="done">
       <summary>
         <div class="card-top"><span>Done</span><span class="chev" aria-hidden="true">›</span></div>
-        <div class="card-title">Finished items · Fork #165, Fork #164, Fork #163, Fork #162, Fork #161, Fork #160, Fork #159, Fork #158, Fork #157, Fork #156, Release M pin, S10, R14, R13, S4, R12, S3b, R3.5, S11, S3b #112–#115, #117–#129, Settings keys, R3.3–R9, R3.2, R2, S9, S3a, S2, R4, R3.1, R5, S1, R1</div>
+        <div class="card-title">Finished items · Fork #166, Fork #165, Fork #164, Fork #163, Fork #162, Fork #161, Fork #160, Fork #159, Fork #158, Fork #157, Fork #156, Release M pin, S10, R14, R13, S4, R12, S3b, R3.5, S11, S3b #112–#115, #117–#129, Settings keys, R3.3–R9, R3.2, R2, S9, S3a, S2, R4, R3.1, R5, S1, R1</div>
       </summary>
       <div class="body">
+        <div class="block wide"><h4>S6 B7 · fork #166 · merged Nov 15</h4><p>A value stored outside a subrange is a run-time fault; an out-of-range constant initial value is a compile error; <code>STRUCPP_NO_BOUNDS_CHECK</code> opts out (<code>d31c0cb</code>, run-time change, for release N).</p></div>
         <div class="block wide"><h4>S6 B2/B3 · fork #165 · merged Nov 14</h4><p>An out-of-range index, a NULL pointer and an unbound REFERENCE TO are run-time faults naming task, POU, line and index; <code>STRUCPP_NO_BOUNDS_CHECK</code> opts out (<code>80d0edc</code>, run-time change, for release N).</p></div>
         <div class="block wide"><h4>S6 B6 · fork #164 · merged Nov 14</h4><p>Date and time values convert to text as their canonical IEC literal (<code>T#1h2m3s4ms</code>, <code>LDATE#…</code>) and read back exactly (<code>8cd7b6f</code>, run-time change, for release N).</p></div>
         <div class="block wide"><h4>Fork #163 · merged Nov 14</h4><p>A statement the parser cannot recover (<code>IF := 1;</code>) no longer crashes the checker or the language server (<code>5758fba</code>, for release N).</p></div>
