@@ -10,8 +10,8 @@
  * `connectToTarget`, `unregisterAdsPort`, `disconnectFromTarget` and `sendAdsCommand` — so symbol
  * lookups, the data type builder, value conversion, sum reads and writes are ads-client's code on both
  * paths and behave the same. The helper is asked for raw ADS only (Read, Write, ReadWrite,
- * ReadState, ReadDeviceInfo by NetId/port/index group/offset), and its answer is re-encoded as the ADS
- * response bytes ads-client parses itself.
+ * ReadState, ReadDeviceInfo by NetId/port/index group/offset, and WriteControl — ads-client's
+ * `startPlc`/`stopPlc`), and its answer is re-encoded as the ADS response bytes ads-client parses itself.
  *
  * Notifications: TcAdsClient's notification callbacks would need a .NET event pump inside the helper.
  * Instead AddNotification/DeleteNotification are emulated here by polling: an added notification is
@@ -298,6 +298,13 @@ function createHelperClientClass(Base, deps = {}) {
                     Buffer.from(String(r.name || ''), 'latin1').copy(nameBuf, 0, 0, 15);
                     return bytes([['u32', 0], ['u8', Number(r.major)], ['u8', Number(r.minor)], ['u16', Number(r.build)], nameBuf]);
                 }
+                case C.WriteControl: {
+                    // ADS state (u16), device state (u16), data length (u32), data.
+                    const n = p.readUInt32LE(4);
+                    await helper.request('writecontrol', { ...at, adsState: p.readUInt16LE(0), deviceState: p.readUInt16LE(2),
+                        data: p.subarray(8, 8 + n).toString('base64') });
+                    return bytes([['u32', 0]]);
+                }
                 case C.AddNotification:
                     return this.addPoll(helper, p, netId, port);
                 case C.DeleteNotification: {
@@ -307,7 +314,7 @@ function createHelperClientClass(Base, deps = {}) {
                     return bytes([['u32', 0]]);
                 }
                 default:
-                    // WriteControl and anything else: never sent by the online code.
+                    // Anything else: never sent by the online code.
                     return errorResponse(cmd, ADSERR_SERVICE_NOT_SUPPORTED);
             }
         }

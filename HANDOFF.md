@@ -10,11 +10,10 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   merged at `3210d33`, Release run 41671593015 green, VSIX `twincat-plc-toolkit-0.10.1.vsix` attached).
 - **Version history:** 0.10.1 struct EXTENDS from own DUTs (PR #22); 0.10.0 Libraries scoping (PR #18); 0.9.0
   improvement-plan phases; 0.8.x project-aware Generate ST, ResizeObserver fix, solution→project Objects tree.
-- **Last verified:** 2026-11-16 (Linux container, R15 phase 3a on `claude/focused-ptolemy-m6acaz`) —
-  `REQUIRE_FULL_SUITE=1 npm test` green (**135/135, Coverage: FULL**; compile-real, cpp-real, gpp-real ran), `npm run
-  typecheck` and `npm run lint` exit 0. Dev-host and browser harnesses last run 2026-11-12 (dev-host 103 pass / 1 known
-  P8 line-ending fail; `run.js` 83, `run_start_page.js` 110, `run_pragmas.js` 47; Playwright from
-  `/opt/node-tools/node_modules`, browsers in `/opt/pw-browsers`).
+- **Last verified:** 2026-11-16 (Linux container, Start/Stop PLC on `claude/focused-ptolemy-m6acaz`) —
+  `REQUIRE_FULL_SUITE=1 npm test` green (**137/137, Coverage: FULL**; compile-real, cpp-real, gpp-real ran), `npm run
+  typecheck` and `npm run lint` exit 0; browser harnesses `run.js` 93, `run_online.js` 30, `run_pragmas.js` 47,
+  `run_start_page.js` 125 (browsers in `/opt/pw-browsers`). Dev-host last run 2026-11-12 (103 pass / 1 known P8 fail).
 - **Sample 1 XAE warnings (user, 2026-11-13; XAE Shell 64):** 0 errors, 3 warnings: C0564 x2 (GVL_System's
   `fbCylinder(refExtendOut := GVL_Io.bExtendOut, refRetractOut := GVL_Io.bRetractOut)`: "reference to uninitialized
   variable") and C0195 (FB_Station.Cyclic line 28, INT into WORD). **User: fix the sample.** Done in the generator
@@ -212,14 +211,12 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   based on `c9ace3f`; no PR yet). Decisions D1-D9: `docs/r15-ads-decision.md` §5.
   Design and file map: DEVELOPMENT.md "Online monitoring (roadmap R15)". `ads-client` **2.2.0 pinned** (pure JS; loads on
   Node 16.13 and 22; licences of it and its 5 deps in THIRD-PARTY-NOTICES, all six licence files listed by `vsce ls`).
-  Linux-verified: `REQUIRE_FULL_SUITE=1 npm test` FULL (131 suites), lint, typecheck, browser harnesses `run.js`,
-  `run_pragmas.js`, `run_start_page.js`, `run_online.js`. Harnesses `test_ads_{paths,session,inline,write,code,watch,
-  regressions}.js` run against an in-memory PLC (`test/_fakeAds.js`); **nothing has touched a real PLC or router.**
+  Harnesses `test_ads_*.js` run against an in-memory PLC (`test/_fakeAds.js`); **nothing has touched a real PLC or router.**
   **Review rounds 1-4 (2026-11-13): every confirmed finding fixed and committed**, each pinned by a block
   of `test/test_ads_regressions.js` (`R2#n`, `R3#n`), `run_online.js` or `test_definition_frames.js`; the per-finding
   detail is in those tests and the `r15-ads` commit messages. Still worth knowing: the round-3 frame fix (xmlIndexer
-  ranges now in raw-unit coordinates via `unitLineMap`, pre-existing on `c9ace3f`) costs about +27 us per indexed file;
-  `compileCommands.currentText` deliberately ignores a stale stash and never drops one.
+  ranges now in raw-unit coordinates via `unitLineMap`) costs ~+27 us per indexed file; `compileCommands.currentText`
+  deliberately ignores a stale stash and never drops one.
   Behaviour changes to note for the Windows check: the modal/log target now reads `Local runtime (localhost:851)`;
   an unqualified name inside an FB that extends a library FB shows no inline value (cannot tell member from global).
   **Mismatch guard (coordinator review, 2026-11-13):** a name match alone does not prove the same code, so
@@ -255,6 +252,9 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
      issue #189 path) without an error; set `maxNotifications` to 2 and add 3 → message once.
   9. Is a symbol path found when typed in another case (`main.ncyclecount`)?
   10. Go Offline, and close VS Code while online: no lingering ADS port registration (XAE's ADS monitor or `netstat -ano | findstr 48898`).
+  11. **Start/Stop PLC** (Linux-verified only): the button by Build / PLC Watch title shows *Stop* in Run → modal → XAE
+     shows Stop, button turns *Start* at once, "PLC stop on …: done" logged; then Start. Repeat over the user-mode helper
+     (`writecontrol` = `WriteControl(StateInfo(AdsState, short))`, unverified against TwinCAT.Ads 4.3.32).
 - **R3.2 Compile Project: MERGED** into `dev` as PR #32 (`28f24f1`, 2026-11-10 22:22 UTC).
 - **R3.3–R9 MERGED** into `dev` as PR #33 (`6424968`, 2026-11-11 09:30 UTC) after the user's Windows checks
   (dev-host green after `npm ci`; manual checks all passed). Details per item are in git history and ROADMAP "Done".

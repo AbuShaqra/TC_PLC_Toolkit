@@ -20,6 +20,9 @@
  *     `write` refuses when the connection it would write through is not that one (D5).
  *   - A status poll belongs to the client it started on: its reads land in that connection's own
  *     `info`, so a poll still in flight after Go Offline/Online cannot blank the new session.
+ *   - `controlPlc` starts or stops the PLC (ADS WriteControl Run/Stop on the PLC's port) through the
+ *     connection it was confirmed for, then reads the new state at once instead of waiting for the
+ *     next status poll. The caller (src/online/plcControl.js) owns the confirmation and the log.
  */
 
 'use strict';
@@ -428,6 +431,30 @@ function createOnlineSession(deps) {
         await c.writeValue(path, value);
     }
 
+    /**
+     * Starts or stops the PLC. The caller (plcControl.performPlcControl) has already confirmed it.
+     * @param {'start'|'stop'} action
+     * @param {SessionIdentity} [expected] The connection it was confirmed for; checked synchronously,
+     *   before anything is sent.
+     * @returns {Promise<string|null>} The PLC state read right after (null when that read failed).
+     */
+    async function controlPlc(action, expected) {
+        const c = client;
+        if (!c || state !== 'online') throw new Error('Not online.');
+        if (expected && !sameIdentity(expected, identity())) throw new Error('The connection changed since this was confirmed.');
+        if (action === 'start') await c.startPlc();
+        else await c.stopPlc();
+        // The new state now, not at the next status poll; it lands in this connection's own info.
+        const own = info;
+        try {
+            const s = (await c.readPlcState()).state;
+            if (c === client && own === info && own.plcState !== s) { own.plcState = s; emit('info'); }
+            return s;
+        } catch (e) {
+            return null;
+        }
+    }
+
     /** @returns {SessionIdentity|null} The current online connection, or null while not online. */
     function identity() {
         if (state !== 'online' || connectionId === null || !target) return null;
@@ -499,7 +526,7 @@ function createOnlineSession(deps) {
     }
 
     return {
-        connect, disconnect, resolve, readMany, subscribe, write, findInstances, refreshStatus, onlineSymbols,
+        connect, disconnect, resolve, readMany, subscribe, write, controlPlc, findInstances, refreshStatus, onlineSymbols,
         get state() { return state; },
         get target() { return target; },
         get info() { return info; },

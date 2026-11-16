@@ -50,6 +50,8 @@
     "onCommand:twincat.online.enableWrites",
     "onCommand:twincat.online.selectInstance",
     "onCommand:twincat.online.showLog",
+    "onCommand:twincat.online.startPlc",
+    "onCommand:twincat.online.stopPlc",
     "onCommand:twincat.online.statusMenu",
     "onCommand:twincat.watch.add",
     "onCommand:twincat.watch.remove",
@@ -420,6 +422,20 @@
         "enablement": "twincat.online"
       },
       {
+        "command": "twincat.online.startPlc",
+        "title": "Start PLC…",
+        "category": "TC Toolkit",
+        "icon": "$(debug-start)",
+        "enablement": "twincat.online && twincat.plcStopped && !twincat.plcControlBusy"
+      },
+      {
+        "command": "twincat.online.stopPlc",
+        "title": "Stop PLC…",
+        "category": "TC Toolkit",
+        "icon": "$(debug-stop)",
+        "enablement": "twincat.online && twincat.plcRunning && !twincat.plcControlBusy"
+      },
+      {
         "command": "twincat.online.showLog",
         "title": "Show Online Log",
         "category": "TC Toolkit"
@@ -536,14 +552,24 @@
           "group": "navigation@1"
         },
         {
+          "command": "twincat.online.startPlc",
+          "when": "view =~ /^twincatWatch(Sidebar)?$/ && twincat.online && !twincat.plcRunning",
+          "group": "navigation@2"
+        },
+        {
+          "command": "twincat.online.stopPlc",
+          "when": "view =~ /^twincatWatch(Sidebar)?$/ && twincat.online && twincat.plcRunning",
+          "group": "navigation@2"
+        },
+        {
           "command": "twincat.watch.add",
           "when": "view =~ /^twincatWatch(Sidebar)?$/",
-          "group": "navigation@2"
+          "group": "navigation@3"
         },
         {
           "command": "twincat.watch.clear",
           "when": "view =~ /^twincatWatch(Sidebar)?$/",
-          "group": "navigation@3"
+          "group": "navigation@4"
         },
         {
           "command": "twincat.online.showLog",
@@ -587,6 +613,14 @@
         {
           "command": "twincat.online.statusMenu",
           "when": "false"
+        },
+        {
+          "command": "twincat.online.startPlc",
+          "when": "twincat.online"
+        },
+        {
+          "command": "twincat.online.stopPlc",
+          "when": "twincat.online"
         }
       ],
       "view/item/context": [

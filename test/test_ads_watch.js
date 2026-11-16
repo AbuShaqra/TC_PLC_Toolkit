@@ -176,6 +176,7 @@ const watchTree = trees.get('twincatWatch');
     const pkg = JSON.parse(fs.readFileSync(path.join(REPO, 'package.json'), 'utf8'));
     const c = pkg.contributes;
     const ids = ['twincat.goOnline', 'twincat.goOffline', 'twincat.online.enableWrites', 'twincat.online.selectInstance', 'twincat.online.showLog',
+        'twincat.online.startPlc', 'twincat.online.stopPlc',
         'twincat.online.statusMenu', 'twincat.watch.add', 'twincat.watch.remove', 'twincat.watch.clear', 'twincat.watch.copyPath', 'twincat.watch.write'];
     for (const id of ids) {
         const cmd = c.commands.find(x => x.command === id);
@@ -250,6 +251,49 @@ const watchTree = trees.get('twincatWatch');
     assert(bError && bError.text === 'FALSE', `an FB member in a method body is read through the instance found on the PLC (${bError && bError.path})`);
     assert(/Instance: GVL_System\.fbStation/.test(lastState(stationDoc).note), 'the editor is told which instance it shows');
     assert(!items.some(i => /bExtended/.test(i.path)), 'a method local shows nothing');
+
+    // ── Start / Stop PLC (user request 2026-11-16) ────────────────────────────────────────────────
+    const plcPosts = (d) => posts.get(d.uri.toString()).filter(m => m.type === 'online/plc');
+    const lastPlc = (d) => { const l = plcPosts(d); return l[l.length - 1]; };
+    await waitFor(() => calls.contexts['twincat.plcRunning'] === true);
+    assert(calls.contexts['twincat.plcRunning'] === true && calls.contexts['twincat.plcStopped'] === false && calls.contexts['twincat.plcControlBusy'] === false,
+        'online and running: the context keys offer Stop (PLC Watch title bar, palette)');
+    assert(provider.onlineSource.plcState().action === 'stop' && provider.onlineSource.plcState().plcState === 'Run',
+        'an editor that opens now is told the toggle offers Stop');
+    settings['tcToolkit.online.allowWrites'] = false;
+    const modalCount = calls.modals.length;
+    answers.message.push(undefined);
+    r = await run('twincat.online.stopPlc');
+    assert(r.status === 'cancelled' && plc.controls.length === 0 && calls.modals.length === modalCount + 1
+        && calls.modals[modalCount].m === 'Stop the PLC on Local runtime (localhost:851)?' && calls.modals[modalCount].buttons.join() === 'Stop PLC',
+        `Stop PLC asks with a modal naming the target, one confirm button; cancelled sends nothing (${calls.modals[modalCount] && calls.modals[modalCount].m})`);
+    answers.message.push('Stop PLC');
+    r = await provider.onlineSource.plcControl('stop');
+    assert(r.status === 'done' && plc.controls.join() === 'stop' && api.session.info.plcState === 'Stop',
+        'confirmed from the editor toolbar: the PLC stops, with writes off (Start/Stop is not gated by allowWrites)');
+    assert(lastPlc(mainDoc) && lastPlc(mainDoc).action === 'start' && lastPlc(mainDoc).plcState === 'Stop' && lastPlc(mainDoc).online === true,
+        `every open editor's toggle follows at once: it offers Start now (${JSON.stringify(lastPlc(mainDoc))})`);
+    assert(plcPosts(mainDoc).some(m => m.busy === true && m.action === null), 'while the request ran, the toggle was disabled (busy)');
+    assert(calls.contexts['twincat.plcRunning'] === false && calls.contexts['twincat.plcStopped'] === true, 'the context keys swap to Start');
+    assert(/Online: Local runtime · Stop/.test(status.text), `the status bar follows (${status.text})`);
+    assert(channel().lines.some(l => /PLC stop on Local runtime \(localhost:851\): done \(PLC state now Stop\)\./.test(l))
+        && channel().lines.some(l => /PLC stop on Local runtime \(localhost:851\): cancelled\./.test(l)), 'both attempts are logged in TC Toolkit Online');
+    r = await run('twincat.online.stopPlc');
+    assert(r.status === 'refused' && calls.warnings.some(w => /The PLC is in Stop/.test(w.m)) && plc.controls.length === 1,
+        'Stop while stopped is refused with a message, before any modal');
+    plc.controlError = Object.assign(new Error('startPlc(): failed'), { adsError: { errorCode: 0x712, errorStr: 'Server is in invalid state' } });
+    answers.message.push('Start PLC', undefined);
+    r = await run('twincat.online.startPlc');
+    assert(r.status === 'failed' && calls.errors.some(e => e.m === 'Starting the PLC failed: ADS error 0x712 (Server is in invalid state)' && e.buttons.includes('Show Log')),
+        'a failed start shows the ADS error briefly, with Show Log');
+    answers.message.push('Start PLC');
+    r = await provider.onlineSource.plcControl('start');
+    assert(r.status === 'done' && api.session.info.plcState === 'Run' && lastPlc(mainDoc).action === 'stop', 'Start PLC: running again, the toggle offers Stop');
+    const before = plc.controls.length;
+    r = await provider.onlineSource.plcControl('reboot');
+    assert(r.status === 'refused' && plc.controls.length === before, 'an unknown action from a webview is refused');
+    settings['tcToolkit.online.allowWrites'] = undefined;
+    delete settings['tcToolkit.online.allowWrites'];
 
     // ── write from the editor ─────────────────────────────────────────────────────────────────────
     const writeMsg = (line, column) => ({ componentId: 'root', pane: 'impl', position: { lineNumber: line, column }, fileUri: mainDoc.uri.toString() });
@@ -406,6 +450,9 @@ const watchTree = trees.get('twincatWatch');
     assert(api.session.state === 'offline' && plc.openConnections === 0 && plc.notifications.size === 0, 'Go Offline closes the connection and every notification');
     assert(!status.shown && calls.contexts['twincat.online'] === false, 'the status bar item goes away');
     assert(lastState(mainDoc).online === false, 'the editors are told');
+    assert(calls.contexts['twincat.plcRunning'] === false && calls.contexts['twincat.plcStopped'] === false
+        && posts.get(mainDoc.uri.toString()).filter(m => m.type === 'online/plc').pop().online === false,
+        'Start/Stop goes away offline (context keys off, the editors\' toggle told)');
     const sumsAfterOffline = plc.sumReads;
     await tick(700);
     assert(plc.sumReads === sumsAfterOffline, 'no poll runs while offline');

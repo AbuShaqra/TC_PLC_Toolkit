@@ -7,7 +7,9 @@
  * editor actions post a write or a watch request with the caret's pane position; Write Value… is
  * offered only where the host says the editor may write; the host's answer to `online/visible` (an
  * `online/state`) does not make the webview ask again, so the two never message each other in a
- * loop (R15 review findings #1, #15, #16); going offline removes everything.
+ * loop (R15 review findings #1, #15, #16); the Start/Stop PLC toggle next to Build (hidden offline,
+ * Start/Stop label and glyph by the host's state, disabled with the reason otherwise, a click posts
+ * `online/plcControl`); going offline removes everything.
  *
  * Shares build.js / serve.js with run.js. NOT part of `npm test`: it needs a browser.
  *
@@ -68,9 +70,15 @@ function assert(cond, msg) {
             await new Promise(r => setTimeout(r, 800));
             const panes = monaco.editor.getEditors().filter(e => e.getModel() && e.getModel().uri.scheme === 'inmemory');
             window.__panes = { decl: panes[0], impl: panes[1] };
-            return { editors: panes.length, note: !!document.getElementById('online-note'), noteHidden: document.getElementById('online-note').hidden };
+            const plcBtn = document.getElementById('plc-run-btn');
+            const build = document.getElementById('compile-group');
+            return { editors: panes.length, note: !!document.getElementById('online-note'), noteHidden: document.getElementById('online-note').hidden,
+                plc: !!plcBtn, plcHidden: plcBtn && plcBtn.hidden, plcDisplay: plcBtn && getComputedStyle(plcBtn).display,
+                afterBuild: !!build && build.nextElementSibling === plcBtn };
         });
         assert(boot.editors === 2 && boot.note && boot.noteHidden, 'two panes boot; the online note exists and is hidden while offline');
+        assert(boot.plc && boot.plcHidden && boot.plcDisplay === 'none' && boot.afterBuild,
+            `the Start/Stop PLC button sits right after the Build group and is hidden while offline (${JSON.stringify(boot)})`);
 
         const offlineAction = await page.evaluate(() => {
             const a = window.__panes.impl.getAction('tc.online.write');
@@ -93,6 +101,52 @@ function assert(cond, msg) {
         assert(!note.hidden && note.text === 'Online · Instance: GVL_System.fbCylinder', `the toolbar note shows online and the host's note (${note.text})`);
         const onlineAction = await page.evaluate(() => window.__panes.impl.getAction('tc.online.write').isSupported());
         assert(onlineAction, 'Write Value… is enabled while online, in an editor the host says may write');
+
+        // ── Start / Stop PLC (user request 2026-11-16): one toggle that follows the PLC state ─────────
+        const plcView = () => page.evaluate(() => {
+            const b = document.getElementById('plc-run-btn');
+            const vis = (sel) => getComputedStyle(b.querySelector(sel)).display !== 'none';
+            return { hidden: b.hidden, display: getComputedStyle(b).display, disabled: b.disabled, label: b.querySelector('.btn-label').textContent,
+                aria: b.getAttribute('aria-label'), title: b.title, start: vis('.plc-icon-start'), stop: vis('.plc-icon-stop'),
+                isStop: b.classList.contains('is-stop'), isStart: b.classList.contains('is-start'), bg: getComputedStyle(b).backgroundImage };
+        });
+        let pv = await plcView();
+        assert(!pv.hidden && pv.display !== 'none' && pv.disabled && /not known yet/.test(pv.title),
+            `online, before the host says the PLC state: shown but disabled, with the reason (${JSON.stringify(pv)})`);
+        await page.evaluate(() => window.postMessage({ type: 'online/plc', online: true, action: 'stop', plcState: 'Run', busy: false, reason: '' }, '*'));
+        await settle(100);
+        pv = await plcView();
+        assert(!pv.disabled && pv.label === 'Stop' && pv.aria === 'Stop PLC' && pv.stop && !pv.start && pv.isStop && /the PLC is in Run/.test(pv.title),
+            `the PLC runs: "Stop" with the stop glyph (${JSON.stringify(pv)})`);
+        const clicked = await page.evaluate(() => {
+            window.__harness.sent.length = 0;
+            document.getElementById('plc-run-btn').click();
+            return window.__harness.sent.filter(m => m.type === 'online/plcControl');
+        });
+        assert(clicked.length === 1 && clicked[0].action === 'stop', `a click asks the host to stop (${JSON.stringify(clicked)})`);
+        await page.evaluate(() => window.postMessage({ type: 'online/plc', online: true, action: null, plcState: 'Run', busy: true, reason: 'A start or stop of the PLC is in progress.' }, '*'));
+        await settle(100);
+        pv = await plcView();
+        const busyClick = await page.evaluate(() => { window.__harness.sent.length = 0; document.getElementById('plc-run-btn').click(); return window.__harness.sent.length; });
+        assert(pv.disabled && pv.label === 'Stop' && /in progress/.test(pv.title) && busyClick === 0, `while it runs: disabled, no message on click (${JSON.stringify(pv)})`);
+        await page.evaluate(() => window.postMessage({ type: 'online/plc', online: true, action: 'start', plcState: 'Stop', busy: false, reason: '' }, '*'));
+        await settle(100);
+        pv = await plcView();
+        assert(!pv.disabled && pv.label === 'Start' && pv.aria === 'Start PLC' && pv.start && !pv.stop && pv.isStart && /1f7a33|31, 122, 51/.test(pv.bg),
+            `the PLC is stopped: "Start" with the play glyph, in green (${JSON.stringify(pv)})`);
+        const startClick = await page.evaluate(() => {
+            window.__harness.sent.length = 0;
+            document.getElementById('plc-run-btn').click();
+            return window.__harness.sent.filter(m => m.type === 'online/plcControl');
+        });
+        assert(startClick.length === 1 && startClick[0].action === 'start', 'a click asks the host to start');
+        await page.evaluate(() => window.postMessage({ type: 'online/plc', online: true, action: null, plcState: 'Config', busy: false,
+            reason: 'The PLC is in Config: Start and Stop are offered in Stop and Run only.' }, '*'));
+        await settle(100);
+        pv = await plcView();
+        assert(pv.disabled && !pv.hidden && /in Config/.test(pv.title), `another state (Config): disabled with the reason in the tooltip (${pv.title})`);
+        await page.evaluate(() => window.postMessage({ type: 'online/plc', online: true, action: 'stop', plcState: 'Run', busy: false, reason: '' }, '*'));
+        await settle(100);
 
         // ── #1: an editor of a project the PLC does not run is not offered Write Value… ─────────────
         await page.evaluate(() => window.postMessage({ type: 'online/state', online: true, note: 'This file is not part of the project on the PLC.', writable: false }, '*'));
@@ -217,15 +271,21 @@ function assert(cond, msg) {
             decl: window.__panes.decl.getModel().getAllDecorations().filter(d => d.options.after && /tc-online-value/.test(d.options.after.inlineClassName || '')).length,
             noteHidden: document.getElementById('online-note').hidden,
             write: window.__panes.impl.getAction('tc.online.write').isSupported(),
-            visible: window.__harness.sent.filter(m => m.type === 'online/visible').length
+            visible: window.__harness.sent.filter(m => m.type === 'online/visible').length,
+            plcHidden: document.getElementById('plc-run-btn').hidden
         }));
-        assert(off.decl === 0 && off.noteHidden && !off.write && off.visible === 0,
-            `going offline removes every value, hides the note, disables Write Value… and stops reporting (${JSON.stringify(off)})`);
+        assert(off.decl === 0 && off.noteHidden && !off.write && off.visible === 0 && off.plcHidden,
+            `going offline removes every value, hides the note and the Start/Stop button, disables Write Value… and stops reporting (${JSON.stringify(off)})`);
+        // A late toggle state after going offline does not bring the button back.
+        await page.evaluate(() => window.postMessage({ type: 'online/plc', online: true, action: 'stop', plcState: 'Run', busy: false, reason: '' }, '*'));
+        await settle(100);
+        assert(await page.evaluate(() => document.getElementById('plc-run-btn').hidden), 'a toggle state arriving while offline keeps the button hidden');
 
         assert(consoleErrors.length === 0, `the browser reported no errors (${consoleErrors.length ? JSON.stringify(consoleErrors.slice(0, 3)) : 'none'})`);
         if (process.env.HARNESS_ONLINE_SHOT) {
             await page.evaluate((a) => {
                 window.postMessage({ type: 'online/state', online: true, note: 'Instance: GVL_System.fbCylinder', writable: true }, '*');
+                window.postMessage({ type: 'online/plc', online: true, action: 'stop', plcState: 'Run', busy: false, reason: '' }, '*');
                 window.postMessage({ type: 'online/values', items: [
                     { componentId: 'root', pane: 'decl', line: a.declLine, startColumn: 2, endColumn: 5, eol: true, text: '42', state: 'ok', path: 'X.a' },
                     { componentId: 'root', pane: 'impl', line: a.implLine, startColumn: 1, endColumn: a.implEnd, eol: false, text: 'TRUE', state: 'ok', path: 'X.c' }] }, '*');

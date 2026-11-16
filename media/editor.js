@@ -628,8 +628,45 @@
             onlineNoteEl.textContent = onlineActive ? (note ? 'Online · ' + note : 'Online') : '';
             onlineNoteEl.hidden = !onlineActive;
         }
+        if (!onlineActive) plcToggle = {};
+        renderPlcToggle();
         if (!onlineActive) { onlineItems = []; applyOnlineDecorations(); return; }
         if (!was) sendOnlineVisible();
+    }
+
+    // Start / Stop PLC (user request 2026-11-16): one toggle next to Build, shown only while online.
+    // The host posts what it offers (`online/plc`: action 'start' in Stop, 'stop' in Run, null in any
+    // other state, while a request runs or before the state is read); a click only asks the host,
+    // which checks the state again and confirms with a modal.
+    const plcRunBtn = document.getElementById('plc-run-btn');
+    /** @type {{online?: boolean, action?: string|null, plcState?: string|null, busy?: boolean, reason?: string}} */
+    let plcToggle = {};
+    function renderPlcToggle() {
+        if (!plcRunBtn) return;
+        const shown = onlineActive && plcToggle.online !== false;
+        plcRunBtn.hidden = !shown;
+        const action = plcToggle.action === 'stop' ? 'stop' : (plcToggle.action === 'start' ? 'start' : null);
+        // Disabled: the label follows what the PLC state would offer ("Stop" while it runs, else "Start").
+        const shownAs = action || (String(plcToggle.plcState || '').toLowerCase() === 'run' ? 'stop' : 'start');
+        const label = shownAs === 'stop' ? 'Stop' : 'Start';
+        plcRunBtn.classList.toggle('is-stop', shownAs === 'stop');
+        plcRunBtn.classList.toggle('is-start', shownAs === 'start');
+        plcRunBtn.disabled = !action;
+        plcRunBtn.setAttribute('aria-busy', String(!!plcToggle.busy));
+        const labelEl = plcRunBtn.querySelector('.btn-label');
+        if (labelEl) labelEl.textContent = label;
+        plcRunBtn.setAttribute('aria-label', label + ' PLC');
+        plcRunBtn.title = action
+            ? (label + ' PLC: the PLC is in ' + (plcToggle.plcState || '?') + ' (asks for confirmation)')
+            : (label + ' PLC: unavailable. ' + (plcToggle.reason || 'The PLC state is not known yet.'));
+    }
+    if (plcRunBtn) {
+        plcRunBtn.addEventListener('click', () => {
+            if (plcRunBtn.disabled || !onlineActive) return;
+            const action = plcToggle.action;
+            if (action !== 'start' && action !== 'stop') return;
+            vscode.postMessage({ type: 'online/plcControl', action: action });
+        });
     }
 
     /** Adds the two editor actions (Write Value…, Add to PLC Watch) to a pane's context menu. */
@@ -1872,6 +1909,11 @@
             }
             case 'online/state': {
                 setOnlineState(message.online, message.note, message.writable);
+                break;
+            }
+            case 'online/plc': {
+                plcToggle = message;
+                renderPlcToggle();
                 break;
             }
             case 'online/values': {

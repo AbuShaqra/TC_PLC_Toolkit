@@ -11,7 +11,8 @@
  * stdin end closes, an exit fails what is pending); exactly which failures switch to the helper
  * (`isRouterRefusal`); end to end through the online session — the switch is logged, symbols resolve,
  * a sum read decodes, a notification arrives on change, a write lands, `_AppInfo` reads, a download
- * (symbol version) re-reads symbols, Go Offline ends the helper; a helper that dies while online is
+ * (symbol version) re-reads symbols, Start/Stop PLC go through as WriteControl (and a refused one keeps
+ * its ADS error), Go Offline ends the helper; a helper that dies while online is
  * reconnected with a new one; and the messages when the fallback fails too (DLL missing, the local
  * runtime at the router's own NetId, a runtime that is not running), on Linux (no fallback: "reset",
  * never "No ADS router answered") and in direct mode (no fallback).
@@ -28,6 +29,7 @@ const { startAdsHelper, helperArgs, HELPER_SCRIPT } = require('../src/online/ads
 const { createOnlineSession } = require('../src/online/session');
 const { describeConnectError, USER_MODE_HINT, RUNTIME_NETID_HINT } = require('../src/online/connectErrors');
 const { createRawPlc, createFakeHelperSpawn } = require('./_fakeAdsHelper');
+const { failureText } = require('../src/online/plcControl');
 
 let errors = 0;
 function assert(cond, msg) {
@@ -75,7 +77,7 @@ function scriptContract() {
         'the helper script ships at resources/online/ads-helper.ps1');
     const ps = fs.readFileSync(HELPER_SCRIPT, 'utf8');
     assert(![...ps].some(ch => ch.charCodeAt(0) > 0x7F), 'the script is ASCII (Windows PowerShell 5.1 reads a BOM-less script in the ANSI code page)');
-    for (const cmd of ['open', 'read', 'write', 'readwrite', 'state', 'deviceinfo', 'close']) {
+    for (const cmd of ['open', 'read', 'write', 'readwrite', 'state', 'deviceinfo', 'writecontrol', 'close']) {
         assert(new RegExp(`^\\s*'${cmd}' \\{`, 'm').test(ps), `the script answers "${cmd}"`);
     }
     assert(/event = 'ready'; ok = \$true/.test(ps) && /kind = 'dll-not-found'/.test(ps) && /kind = 'dll-load'/.test(ps),
@@ -91,6 +93,8 @@ function scriptContract() {
     assert(/adsError = \$code/.test(ps) && /TwinCAT\.Ads\.\*/.test(ps), 'an ADS error comes back as its code (TwinCAT.Ads exceptions only)');
     assert(/ToBase64String/.test(ps) && /FromBase64String/.test(ps), 'binary payloads are base64');
     assert(/return ,\(\[Convert\]::FromBase64String/.test(ps), 'the decoded bytes are not unrolled by PowerShell');
+    assert(/New-Object TwinCAT\.Ads\.StateInfo -ArgumentList \(\[TwinCAT\.Ads\.AdsState\]\[int\]\$Request\.adsState\), \(\[int16\]\$Request\.deviceState\)/.test(ps)
+        && /\$c\.WriteControl\(\$si\)/.test(ps), 'writecontrol: TcAdsClient.WriteControl(StateInfo(AdsState, deviceState)) (Start/Stop PLC)');
     assert(!/199\.\d+\.\d+\.\d+/.test(ps), 'no real NetId in the script');
 }
 
@@ -221,11 +225,31 @@ async function endToEnd() {
     await session.write('GVL.fValue', 1.5);
     assert(plc.memory.readFloatLE(4) === 1.5, 'a REAL write is encoded by ads-client, as on the TCP path');
 
+    // Start/Stop PLC over the helper: ads-client's stopPlc/startPlc send WriteControl (cmd 5) through it.
+    const stopped = await session.controlPlc('stop');
+    const wc = fake.spawned[0].requests.filter(q => q.cmd === 'writecontrol');
+    assert(stopped === 'Stop' && plc.adsState === 6 && plc.controls.length === 1 && plc.controls[0].adsState === 6 && plc.controls[0].deviceState === 0
+        && wc.length === 1 && wc[0].netId === '10.0.0.4.1.1' && wc[0].port === 851 && wc[0].data === '',
+        `Stop PLC reaches the PLC as WriteControl Stop (6) on its port, device state kept, no data (${JSON.stringify(wc[0])})`);
+    assert(session.info.plcState === 'Stop', 'the session reads the new state at once');
+    const started = await session.controlPlc('start');
+    assert(started === 'Run' && plc.adsState === 5 && plc.controls[1].adsState === 5 && session.info.plcState === 'Run', 'Start PLC: WriteControl Run (5)');
+
     const before = events.filter(e => e === 'symbols').length;
     plc.symbolVersion = 2;
     await waitFor(() => events.filter(e => e === 'symbols').length > before, 1500);
     assert(events.filter(e => e === 'symbols').length > before && lines.some(l => /symbol version changed/.test(l)),
         'a download (symbol version) is seen through the polled notification and re-reads symbols');
+
+    // A WriteControl the PLC refuses: the ADS error reaches the caller with its code, as on the TCP path.
+    const refusing = createFakeHelperSpawn(plc, { intercept: (q) => (q.cmd === 'writecontrol' ? { ok: false, error: 'Ads-Error 0x712', adsError: 0x712 } : null) });
+    const s2 = helperSession(refusing, []);
+    await s2.connect({ mode: 'router', routerAddress: '127.0.0.1', routerTcpPort: router.port, targetAmsNetId: '10.0.0.4.1.1', targetAdsPort: 851 });
+    let ctlErr = null;
+    try { await s2.controlPlc('stop'); } catch (e) { ctlErr = e; }
+    assert(ctlErr && ctlErr.adsError && ctlErr.adsError.errorCode === 0x712 && failureText(ctlErr) === 'ADS error 0x712 (Server is in invalid state)' && plc.adsState === 5,
+        `a refused WriteControl comes back as its ADS error (${ctlErr && failureText(ctlErr)})`);
+    await s2.disconnect();
 
     await session.disconnect();
     assert(fake.spawned[0].exited && !fake.spawned[0].killed, 'Go Offline ends the helper through stdin');

@@ -499,6 +499,18 @@ input:checked + .slider:before {
     filter: none;
     box-shadow: none;
 }
+/* Start / Stop PLC (R15): shown only while online (editor.js renderPlcToggle). Start is green, Stop
+   keeps the toolbar's red; the glyph shown follows the label. `.icon-btn` sets display, so [hidden]
+   needs its own rule. White on #1f7a33..#23863a is 5.4:1..4.6:1. */
+.plc-run-btn[hidden] { display: none; }
+.plc-run-btn.is-start {
+    background: linear-gradient(135deg, #1f7a33, #23863a);
+    box-shadow: 0 4px 12px rgba(35, 134, 58, 0.2);
+}
+.plc-run-btn.is-start:hover:not(:disabled) { box-shadow: 0 6px 20px rgba(35, 134, 58, 0.4); }
+.plc-run-btn .plc-icon-stop,
+.plc-run-btn.is-stop .plc-icon-start { display: none; }
+.plc-run-btn.is-stop .plc-icon-stop { display: block; }
 #generate-st-btn {
     white-space: nowrap;
     overflow: hidden;
@@ -514,6 +526,7 @@ input:checked + .slider:before {
     }
     .split-btn .split-caret { padding: 6px 8px; }
     #compile-btn .btn-label { display: none; }
+    #plc-run-btn .btn-label { display: none; }
 }
 
 .split-menu {

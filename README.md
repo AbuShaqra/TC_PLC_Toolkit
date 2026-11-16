@@ -467,6 +467,16 @@ without costing more. At most `tcToolkit.online.maxNotifications` (100) are acti
 show *notification limit reached* and you are told once (Beckhoff recommends at most 550 per device).
 The list is kept per workspace.
 
+**Start / Stop PLC.** While online, a **Start** / **Stop** button sits next to the editor's **Build**
+button, and the same toggle sits next to Go Online / Go Offline in the **PLC Watch** title bar (also *TC
+Toolkit: Start PLC…* / *Stop PLC…* in the Command Palette). It follows the PLC state the status bar shows:
+**Stop** while the PLC is in Run, **Start** while it is in Stop. In any other state (Config, Error, not
+read yet, the connection being restored) and while a start or stop is running, the button is disabled and
+its tooltip says why. Each click asks first — *Stop the PLC on Local runtime (localhost:851)?* or *Start the
+PLC on …?*, one confirm button — and is logged to the **TC Toolkit Online** channel with the target and the
+outcome; a failure shows the ADS error. This is ADS WriteControl Run/Stop on the PLC's port, the same as
+XAE's start and stop buttons; it does not depend on `tcToolkit.online.allowWrites`.
+
 **Writing values — off by default.** A write sets a value once; the PLC program may overwrite it in its
 next cycle. It is **not a force**: TC Toolkit cannot force (forces are set in XAE). To write:
 1. turn on `tcToolkit.online.allowWrites` in your **user** settings (a workspace's settings cannot turn it on);

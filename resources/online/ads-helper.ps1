@@ -11,7 +11,8 @@
     to 127.0.0.1:48898, while Beckhoff's own .NET stack (TwinCAT.Ads.dll over TcAdsDll.dll) still
     reaches the runtime through it. This helper is that stack, nothing more: it answers raw ADS
     requests (Read, Write, ReadWrite, ReadState, ReadDeviceInfo by AMS NetId, port, index group and
-    offset). Symbols, data types and values are decoded by the extension, exactly as on its own path.
+    offset, and WriteControl for Start/Stop PLC). Symbols, data types and values are decoded by the
+    extension, exactly as on its own path.
 
     Protocol: one JSON object per line.
       At start, one line:  {"id":0,"event":"ready","ok":true,"dll":"...","dllVersion":"...","bitness":64,"common":"..."}
@@ -22,10 +23,12 @@
                            {"id":N,"cmd":"readwrite","netId":...,"port":...,"ig":...,"io":...,"len":...,"data":"<base64>"}
                            {"id":N,"cmd":"state","netId":...,"port":...}
                            {"id":N,"cmd":"deviceinfo","netId":...,"port":...}
+                           {"id":N,"cmd":"writecontrol","netId":...,"port":...,"adsState":5,"deviceState":0,"data":""}
                            {"id":N,"cmd":"close"}
       Answers:             {"id":N,"ok":true, ...result}    open: localNetId, localPort; read/readwrite: data;
                                                             state: adsState, deviceState;
-                                                            deviceinfo: name, major, minor, build
+                                                            deviceinfo: name, major, minor, build;
+                                                            writecontrol: nothing
                            {"id":N,"ok":false,"error":"...","adsError":7}   (adsError only for an ADS error)
     The helper exits when stdin closes (or after "close"). One TcAdsClient per NetId:port is kept.
     A NetId of 127.0.0.1.1.1 or "localhost" connects to the local router (TcAdsClient.Connect(port)).
@@ -216,6 +219,15 @@ function Invoke-AdsRequest($Request) {
             $c = Get-AdsClient $Request
             $d = $c.ReadDeviceInfo()
             return @{ name = [string]$d.Name; major = [int]$d.Version.Version; minor = [int]$d.Version.Revision; build = [int]$d.Version.Build }
+        }
+        'writecontrol' {
+            # TcAdsClient.WriteControl(StateInfo) (TwinCAT.Ads 4.x); StateInfo(AdsState, short deviceState).
+            # adsState 5 = Run (Start PLC), 6 = Stop (Stop PLC). Data is empty for both; sent when given.
+            $c = Get-AdsClient $Request
+            $si = New-Object TwinCAT.Ads.StateInfo -ArgumentList ([TwinCAT.Ads.AdsState][int]$Request.adsState), ([int16]$Request.deviceState)
+            $bytes = Get-Bytes $Request
+            if ($bytes.Length -gt 0) { $c.WriteControl($si, (New-StreamFrom $bytes)) } else { $c.WriteControl($si) }
+            return @{ }
         }
         'close' { return @{ closing = $true } }
         default { throw ('unknown command "{0}"' -f $Request.cmd) }

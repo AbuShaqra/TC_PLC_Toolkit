@@ -108,7 +108,8 @@ class TwinCatCustomEditorProvider {
          * until that command module is registered; every use tolerates null.
          * @type {{isOnline: () => boolean, visible: (uriStr: string, document: any, msg: any) => Promise<void>,
          *   panelVisible: (uriStr: string, visible: boolean) => void, panelClosed: (uriStr: string) => void,
-         *   write: (uriStr: string, document: any, msg: any) => Promise<any>, addWatch: (uriStr: string, document: any, msg: any) => Promise<any>}|null}
+         *   write: (uriStr: string, document: any, msg: any) => Promise<any>, addWatch: (uriStr: string, document: any, msg: any) => Promise<any>,
+         *   plcState: () => Object, plcControl: (action: any) => Promise<any>}|null}
          */
         this.onlineSource = null;
     }
@@ -383,6 +384,8 @@ class TwinCatCustomEditorProvider {
                         });
                         if (this.onlineSource && this.onlineSource.isOnline()) {
                             webviewPanel.webview.postMessage({ type: 'online/state', online: true, note: '' });
+                            // The Start/Stop PLC toggle next to Build follows the PLC state from here on.
+                            webviewPanel.webview.postMessage({ type: 'online/plc', ...this.onlineSource.plcState() });
                         }
                         // Cleared by the webview's `selectionApplied` ack, not here: if the highlight
                         // never lands (the panes were not populated yet), dropping it now would leave
@@ -625,6 +628,10 @@ class TwinCatCustomEditorProvider {
                 case 'online/addWatch':
                     if (this.onlineSource) await this.onlineSource.addWatch(uriStr, document, message).catch(err => console.error(err));
                     break;
+                // Start / Stop PLC from the toolbar: the host checks the state and asks (a modal) itself.
+                case 'online/plcControl':
+                    if (this.onlineSource) await this.onlineSource.plcControl(message.action).catch(err => console.error(err));
+                    break;
                 case 'openDocumentationLink':
                     // Only the pragma catalogue's own documentation pages: the hover's links. Anything
                     // else a webview asks to open is ignored.
@@ -848,6 +855,15 @@ class TwinCatCustomEditorProvider {
         `<button type="button" class="split-menu-item split-menu-action" id="xae-activate" title="Build, then activate the configuration on a runtime of this machine you pick and confirm (requires TwinCAT XAE)">Build and Activate through XAE…</button>` +
         `<label class="split-menu-item" title="Show the XAE Shell window for the whole build instead of building headless (it is always shown during activation)"><input type="checkbox" id="xae-opt-window"><span>Show the XAE window</span></label>` +
         `</div></div></div>
+                <!-- Start / Stop PLC (R15, user request 2026-11-16): shown only while online; one toggle that
+                     follows the PLC state the host posts ("online/plc"). A click only asks: the host checks
+                     the state and confirms with a modal. Glyphs: inline SVG, codicon style (offline). -->
+                <button id="plc-run-btn" class="action-btn icon-btn plc-run-btn" type="button" hidden disabled aria-label="Start PLC" title="Start PLC">` +
+        `<svg class="btn-icon plc-icon-start" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">` +
+        `<path fill="currentColor" d="M4 2.5v11a.5.5 0 0 0 .77.42l8.5-5.5a.5.5 0 0 0 0-.84l-8.5-5.5A.5.5 0 0 0 4 2.5z"/></svg>` +
+        `<svg class="btn-icon plc-icon-stop" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">` +
+        `<rect fill="currentColor" x="3.5" y="3.5" width="9" height="9" rx="1"/></svg>` +
+        `<span class="btn-label">Start</span></button>
                 <div class="sync-toggle-container active" id="sync-toggle-wrapper">
                     <span class="sync-toggle-label" id="sync-mode-text">Auto Sync</span>
                     <label class="switch">

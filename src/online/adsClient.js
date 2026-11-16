@@ -79,6 +79,8 @@
  * @property {(symbol: AdsSymbolInfo, cycleMs: number, onData: (data: Buffer) => void) =>
  *   Promise<{unsubscribe: () => Promise<void>}>} subscribeRaw
  * @property {() => Promise<{state: string, code: number}>} readPlcState
+ * @property {() => Promise<void>} startPlc ADS WriteControl Run (5) on the PLC's port, keeping its device state.
+ * @property {() => Promise<void>} stopPlc ADS WriteControl Stop (6) on the PLC's port, keeping its device state.
  * @property {(event: 'connectionLost'|'reconnect'|'plcState'|'symbolVersion'|'warning'|'error'|'notice', fn: Function) => void} on
  */
 
@@ -318,6 +320,10 @@ function createAdsClient(options, deps = {}) {
             return { unsubscribe: async () => { if (mine === generation) await sub.unsubscribe(); } };
         },
         async readPlcState() { return stateOf(await client.readPlcRuntimeState()); },
+        // ads-client reads the device state, sends WriteControl with it, then reads the state again
+        // (which fires plcRuntimeStateChange, so the session sees the new state at once).
+        async startPlc() { await client.startPlc(); },
+        async stopPlc() { await client.stopPlc(); },
         on(event, fn) {
             if (!handlers.has(event)) handlers.set(event, []);
             /** @type {Function[]} */ (handlers.get(event)).push(fn);

@@ -53,6 +53,10 @@ function createFakePlc(o = {}) {
         reads: 0,
         sumReads: 0,
         writes: [],
+        /** Start/Stop PLC requests that reached the PLC ('start' | 'stop'), in order. */
+        controls: [],
+        /** @type {any} The error the next startPlc/stopPlc throws (then cleared). */
+        controlError: null,
         /** What the next connect() does: { delayMs, error, hang } */
         connectBehavior: {},
         /** Error thrown by getDataType for these type names (to exercise the readValue fallback). */
@@ -170,6 +174,9 @@ function createFakePlc(o = {}) {
                 return { unsubscribe: async () => { plc.notifications.delete(n); own.delete(n); } };
             },
             async readPlcState() { need(); return { state: plc.state, code: plc.state === 'Run' ? 5 : 6 }; },
+            // Start/Stop PLC: `plc.controlError` makes the next one fail with that error.
+            async startPlc() { need(); plc.controls.push('start'); if (plc.controlError) { const e = plc.controlError; plc.controlError = null; throw e; } plc.state = 'Run'; },
+            async stopPlc() { need(); plc.controls.push('stop'); if (plc.controlError) { const e = plc.controlError; plc.controlError = null; throw e; } plc.state = 'Stop'; },
             on(ev, fn) { if (!handlers.has(ev)) handlers.set(ev, []); handlers.get(ev).push(fn); }
         };
         plc.clients.push(client);

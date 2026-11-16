@@ -29,6 +29,10 @@
  *     and the status bar says what it checked, never "same code".
  *   - A FUNCTION_BLOCK's values need an instance: found in the PLC's symbol upload; with several the
  *     first is used and the user is told once, with a way to choose (`twincat.online.selectInstance`).
+ *   - Start / Stop PLC (src/online/plcControl.js; user request 2026-11-16): one toggle following the
+ *     PLC state — the editor toolbar's button (`online/plc`), the PLC Watch title bar and the palette
+ *     (context keys `twincat.plcRunning` / `twincat.plcStopped`). A modal every time, logged; not
+ *     gated by `tcToolkit.online.allowWrites`.
  */
 
 'use strict';
@@ -43,6 +47,7 @@ const path = require('path');
 const { createInlineMonitor } = require('../online/inlineMonitor');
 const { createWatchList } = require('../online/watchList');
 const { performWrite, enableWritesFor, targetName } = require('../online/writeGuard');
+const { performPlcControl, toggleState } = require('../online/plcControl');
 const { sameIdentity } = require('../online/session');
 const fs = require('fs');
 const { paneRanges, mapOccurrences, substituteInstance, REASON_TEXT } = require('../online/editorPaths');
@@ -459,9 +464,61 @@ function registerOnlineCommands(context, deps) {
         return r;
     }
 
+    // ── Start / Stop PLC ──────────────────────────────────────────────────────────────────────────
+    /** Shared by the toolbar button, the PLC Watch title bar and the palette: one request at a time. */
+    const plcGuard = { busy: false };
+    /** @returns {ReturnType<typeof toggleState>} What the Start/Stop toggle offers now. */
+    const plcToggle = () => toggleState(session, plcGuard.busy);
+    /** The last toggle state the context keys and the editors were given ('' before the first). */
+    let lastToggle = '';
+    /** Tells the context keys and every open editor what the toggle offers, when that changed. */
+    function renderPlcToggle() {
+        const t = plcToggle();
+        const key = JSON.stringify(t);
+        if (key === lastToggle) return;
+        lastToggle = key;
+        // The keys follow the PLC state (the title-bar slot does not flip while a request runs); the busy
+        // key disables both commands meanwhile.
+        const offered = toggleState(session, false).action;
+        vscode.commands.executeCommand('setContext', 'twincat.plcRunning', offered === 'stop');
+        vscode.commands.executeCommand('setContext', 'twincat.plcStopped', offered === 'start');
+        vscode.commands.executeCommand('setContext', 'twincat.plcControlBusy', t.busy);
+        for (const panel of (provider.activePanels ? provider.activePanels.values() : [])) {
+            panel.webview.postMessage({ type: 'online/plc', ...t });
+        }
+    }
+    /**
+     * Start or Stop, from any of the three places. The modal, the checks and the log are plcControl's.
+     * @param {'start'|'stop'} action
+     */
+    async function runPlcControl(action) {
+        const r = performPlcControl(action, {
+            session, log, guard: plcGuard,
+            confirm: async (o) => (await vscode.window.showWarningMessage(o.message, { modal: true, detail: o.detail }, o.button)) === o.button
+        });
+        // The guard is set synchronously inside performPlcControl: the button shows "busy" at once.
+        renderPlcToggle();
+        const res = await r;
+        renderPlcToggle();
+        renderStatus();
+        if (res.status === 'refused') vscode.window.showWarningMessage(res.message);
+        else if (res.status === 'failed') {
+            const pick = await vscode.window.showErrorMessage(res.message, 'Show Log');
+            if (pick === 'Show Log') channel.show(true);
+        } else if (res.status === 'done') vscode.window.setStatusBarMessage(res.message, 4000);
+        return res;
+    }
+
     provider.onlineSource = {
         /** @returns {boolean} */
         isOnline: () => session.state === 'online',
+        /** @returns {ReturnType<typeof toggleState>} The Start/Stop toggle, for an editor that just opened. */
+        plcState: () => plcToggle(),
+        /**
+         * The editor toolbar's Start/Stop button was clicked.
+         * @param {any} action 'start' or 'stop' (anything else is refused by plcControl).
+         */
+        plcControl: (action) => runPlcControl(action === 'start' ? 'start' : (action === 'stop' ? 'stop' : /** @type {any} */ (String(action)))),
         /**
          * The webview reported what its panes show.
          * @param {string} uriStr @param {any} document @param {any} msg
@@ -685,6 +742,7 @@ function registerOnlineCommands(context, deps) {
         }
         if (tree) tree.refresh();
         renderStatus();
+        renderPlcToggle();
     });
 
     // ── Commands ─────────────────────────────────────────────────────────────────────────────────
@@ -693,6 +751,8 @@ function registerOnlineCommands(context, deps) {
         vscode.commands.registerCommand('twincat.goOnline', goOnline),
         vscode.commands.registerCommand('twincat.goOffline', goOffline),
         vscode.commands.registerCommand('twincat.online.showLog', () => channel.show(true)),
+        vscode.commands.registerCommand('twincat.online.startPlc', () => runPlcControl('start')),
+        vscode.commands.registerCommand('twincat.online.stopPlc', () => runPlcControl('stop')),
         vscode.commands.registerCommand('twincat.online.enableWrites', async () => {
             if (session.state !== 'online') { vscode.window.showWarningMessage('Not online. Use "Go Online" first.'); return false; }
             if (!allowWrites()) {
@@ -728,6 +788,8 @@ function registerOnlineCommands(context, deps) {
         vscode.commands.registerCommand('twincat.online.statusMenu', async () => {
             const items = [
                 { label: '$(debug-disconnect) Go Offline', id: 'twincat.goOffline' },
+                ...(plcToggle().action === 'start' ? [{ label: '$(debug-start) Start PLC…', id: 'twincat.online.startPlc' }] : []),
+                ...(plcToggle().action === 'stop' ? [{ label: '$(debug-stop) Stop PLC…', id: 'twincat.online.stopPlc' }] : []),
                 { label: '$(pencil) Enable Writes for This Online Session', id: 'twincat.online.enableWrites' },
                 { label: '$(symbol-class) Select FB Instance for Online Values…', id: 'twincat.online.selectInstance' },
                 { label: '$(output) Show Online Log', id: 'twincat.online.showLog' }
@@ -777,6 +839,7 @@ function registerOnlineCommands(context, deps) {
         await session.disconnect();
     }
     vscode.commands.executeCommand('setContext', 'twincat.online', false);
+    renderPlcToggle();
     return { session, watch, dispose, refreshEditors, refreshCodeCheck, codeCheck: () => code };
 }
 

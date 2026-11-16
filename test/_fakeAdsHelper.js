@@ -5,7 +5,8 @@
  * (`createRawPlc`). The raw PLC answers what ads-client asks for by index group and offset — symbol
  * info by name (0xF009) as the documented binary entry, data types by name (0xF011: ADS error 1808, so
  * ads-client builds its base types itself), the upload info, the symbol version, the device data,
- * the system service state on port 10000, sum reads (0xF080) and plain memory (0x4040) — so the real
+ * the system service state on port 10000, sum reads (0xF080), plain memory (0x4040) and WriteControl
+ * Run/Stop (Start/Stop PLC) — so the real
  * ads-client code runs end to end over the helper transport. No PowerShell, no TwinCAT.
  */
 
@@ -60,6 +61,8 @@ function createRawPlc(o = {}) {
         /** Counts per helper command. */
         counts: /** @type {Record<string, number>} */ ({}),
         sumReads: 0,
+        /** @type {Array<{adsState: number, deviceState: number, data: string}>} Every WriteControl received. */
+        controls: [],
         /** @param {string} name @param {number|boolean|string} v */
         set(name, v) {
             const s = plc.symbols.find(x => x.name.toLowerCase() === name.toLowerCase());
@@ -200,6 +203,13 @@ function createFakeHelperSpawn(plc, o = {}) {
                     case 'state':
                         if (req.port !== 10000 && (netId !== plc.netId || req.port !== plc.port)) throw { adsError: netId === plc.netId ? 6 : 7 };
                         send({ id: req.id, ok: true, adsState: req.port === 10000 ? 5 : plc.adsState, deviceState: 0 }); return;
+                    case 'writecontrol':
+                        // Start/Stop PLC: Run (5) or Stop (6) on the PLC's port; anything else is refused as a PLC would.
+                        if (netId !== plc.netId || req.port !== plc.port) throw { adsError: netId === plc.netId ? 6 : 7 };
+                        if (req.adsState !== 5 && req.adsState !== 6) throw { adsError: 0x70B };
+                        plc.controls.push({ adsState: req.adsState, deviceState: req.deviceState, data: req.data });
+                        plc.adsState = req.adsState;
+                        send({ id: req.id, ok: true }); return;
                     case 'deviceinfo': send({ id: req.id, ok: true, name: req.port === 10000 ? 'TwinCAT System' : 'Plc30 App', major: 3, minor: 1, build: 2144 }); return;
                     case 'close': send({ id: req.id, ok: true, closing: true }); exit(0, null); return;
                     default: send({ id: req.id, ok: false, error: `unknown command "${req.cmd}"` });

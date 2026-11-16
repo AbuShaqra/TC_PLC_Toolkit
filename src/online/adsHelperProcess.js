@@ -9,10 +9,11 @@
  * Protocol, one JSON object per line, UTF-8, no BOM:
  *   helper → host, once at start:  {"id":0,"event":"ready","ok":true,"dll":…,"dllVersion":…,"bitness":64,"common":…}
  *                                  or {"id":0,"event":"ready","ok":false,"kind":"dll-not-found"|"dll-load","error":…,"searched":[…]}
- *   host → helper:                 {"id":N,"cmd":"open"|"read"|"write"|"readwrite"|"state"|"deviceinfo"|"close", …}
+ *   host → helper:                 {"id":N,"cmd":"open"|"read"|"write"|"readwrite"|"state"|"deviceinfo"|"writecontrol"|"close", …}
  *   helper → host:                 {"id":N,"ok":true,…result} or {"id":N,"ok":false,"error":"…","adsError":7}
  * Commands carry `netId` and `port` (the helper keeps one TcAdsClient per address); `ig`/`io` are the
- * index group/offset, `len` the read length, `data` base64. Results: `open` → localNetId, localPort;
+ * index group/offset, `len` the read length, `data` base64; `writecontrol` carries `adsState` and
+ * `deviceState` (Start PLC: 5 Run, Stop PLC: 6 Stop) and `data` (empty). Results: `open` → localNetId, localPort;
  * `read`/`readwrite` → data; `state` → adsState, deviceState; `deviceinfo` → name, major, minor, build.
  *
  * One request is in flight at a time (the helper is single-threaded anyway); the queue keeps a slow ADS
