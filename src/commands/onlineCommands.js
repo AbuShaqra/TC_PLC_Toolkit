@@ -301,6 +301,7 @@ function registerOnlineCommands(context, deps) {
     try {
         const { WatchTreeProvider } = require('../online/watchTree');
         tree = new WatchTreeProvider(watch);
+        context.subscriptions.push({ dispose: () => tree.dispose() });
         // The same list backs both places the view can be shown (`tcToolkit.online.watchLocation`):
         // the bottom panel or the TC Toolkit sidebar under PLC Objects; a when-clause shows one.
         context.subscriptions.push(vscode.window.registerTreeDataProvider('twincatWatch', tree));

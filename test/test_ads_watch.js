@@ -303,15 +303,28 @@ const watchTree = trees.get('twincatWatch');
     plc.set('MAIN.nCycleCount', 43);
     await waitFor(() => fired.length > 0);
     // User, 2026-11-16: a full redraw on every value made VS Code's progress bar flash in the view.
-    assert(fired.length > 0 && fired.every(e => e === rowBefore) && rowBefore.text === '43',
-        `a new value redraws only its own row, the same object getChildren returned (${fired.map(e => (e ? e.path : 'ALL')).join(',')})`);
+    assert(fired.length > 0 && fired.every(e => Array.isArray(e) && e.length === 1 && e[0] === rowBefore) && rowBefore.text === '43',
+        `a new value redraws only its own row, the same object getChildren returned (${fired.map(e => (Array.isArray(e) ? e.map(x => x.path).join("+") : "ALL")).join(",")})`);
     const reloaded = watchTree.getChildren()[0];
     assert(reloaded.text === '43' && reloaded !== rowBefore,
         'a reload hands VS Code new row objects (it loses objects seen in an earlier reload; the value then froze)');
     fired.length = 0;
     plc.set('MAIN.nCycleCount', 44);
     await waitFor(() => fired.length > 0);
-    assert(fired.every(e => e === reloaded) && reloaded.text === '44', 'a later value redraws the row object of the latest reload');
+    assert(fired.every(e => Array.isArray(e) && e[0] === reloaded) && reloaded.text === '44', 'a later value redraws the row object of the latest reload');
+    {
+        // User, 2026-11-16: VS Code waits for a 200 ms pause in a tree's events; several entries changing
+        // every 200 ms never left one. Redraws are batched: at most one per REDRAW_MS, carrying every changed row.
+        const { REDRAW_MS } = require('../src/online/watchTree');
+        const times = [];
+        const batch = [];
+        watchTree.onDidChangeTreeData((e) => { times.push(Date.now()); batch.push(e); });
+        for (let i = 0; i < 6; i++) { watchTree.refresh('MAIN.nCycleCount'); await new Promise(res => setTimeout(res, 60)); }
+        await new Promise(res => setTimeout(res, REDRAW_MS + 50));
+        const gaps = times.slice(1).map((t, i) => t - times[i]);
+        assert(REDRAW_MS > 200 && times.length >= 1 && times.length <= 3 && gaps.every(g => g >= REDRAW_MS - 20) && batch.every(e => Array.isArray(e) && e.length === 1),
+            `six changes in 360 ms are sent as ${times.length} batched redraw(s), at least ${REDRAW_MS} ms apart (gaps ${gaps.join(',')})`);
+    }
     assert(watchTree.getTreeItem(watchTree.getChildren()[0]).contextValue === 'watchEntry scalar', 'a scalar entry offers Write value… and Remove');
     await run('twincat.watch.add', { path: 'GVL_System.fbStation' });
     await waitFor(() => api.watch.list()[1] && api.watch.list()[1].state === 'ok');

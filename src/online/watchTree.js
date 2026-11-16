@@ -13,6 +13,9 @@ const vscode = require('vscode');
 const { childRows } = require('./watchList');
 const { isScalar } = require('./values');
 
+/** The shortest gap between two redraws sent to VS Code (above its 200 ms wait for a pause). */
+const REDRAW_MS = 300;
+
 class WatchTreeProvider {
     /**
      * @param {ReturnType<typeof import('./watchList').createWatchList>} watch
@@ -24,27 +27,61 @@ class WatchTreeProvider {
         /** The root rows of the latest reload, by lower-case path, so one row can be redrawn alone. */
         /** @type {Map<string, any>} */
         this._rows = new Map();
+        /** Rows waiting for the next batched redraw, and whether the whole view must reload. */
+        /** @type {Set<string>} */
+        this._pendingPaths = new Set();
+        this._pendingAll = false;
+        /** @type {ReturnType<typeof setTimeout>|null} */
+        this._timer = null;
+        this._lastFire = 0;
     }
 
     /**
      * Redraws the view. With `path` (a new value of one entry), only that row is redrawn: a full redraw
      * reloads the whole tree, and VS Code shows its progress bar each time, so a value changing every
      * cycle made the bar flash (user report, 2026-11-16).
+     *
+     * Redraws are batched and sent at most every REDRAW_MS: VS Code waits for a 200 ms pause in a
+     * tree's change events before it redraws, so several entries changing every 200 ms never left one
+     * and the view updated only every few seconds (user report; reproduced in VS Code 1.146 with four
+     * entries: no update in 3 s).
      * @param {string} [path]
      */
     refresh(path) {
-        const row = path ? this._rows.get(String(path).toLowerCase()) : undefined;
-        if (row) {
-            const fresh = this.watch.list().find(r => r.path.toLowerCase() === row.path.toLowerCase());
-            const next = fresh ? this._rowOf(fresh) : null;
-            if (next && next.expandable === row.expandable) {
+        if (path) this._pendingPaths.add(String(path).toLowerCase());
+        else this._pendingAll = true;
+        if (this._timer) return;
+        const wait = Math.max(0, this._lastFire + REDRAW_MS - Date.now());
+        this._timer = setTimeout(() => this._flush(), wait);
+    }
+
+    /** Sends the batched redraw: the changed rows, or the whole view. */
+    _flush() {
+        this._timer = null;
+        this._lastFire = Date.now();
+        const all = this._pendingAll;
+        const paths = [...this._pendingPaths];
+        this._pendingAll = false;
+        this._pendingPaths.clear();
+        if (!all) {
+            const list = this.watch.list();
+            const rows = [];
+            let needAll = false;
+            for (const k of paths) {
+                const row = this._rows.get(k);
+                const fresh = row ? list.find(r => r.path.toLowerCase() === k) : null;
+                const next = fresh ? this._rowOf(fresh) : null;
+                if (!row || !next || next.expandable !== row.expandable) { needAll = true; break; }
                 Object.assign(row, next);
-                this._emitter.fire(row);
-                return;
+                rows.push(row);
             }
+            if (!needAll) { if (rows.length) this._emitter.fire(rows); return; }
         }
         this._emitter.fire(undefined);
     }
+
+    /** Stops a pending redraw (the view is going away). */
+    dispose() { if (this._timer) clearTimeout(this._timer); this._timer = null; }
 
     /** @param {any} r A watch list row. @returns {any} */
     _rowOf(r) {
@@ -101,4 +138,4 @@ function isEnumValue(v) {
     return !!v && typeof v === 'object' && 'name' in v && 'value' in v && Object.keys(v).length === 2;
 }
 
-module.exports = { WatchTreeProvider };
+module.exports = { WatchTreeProvider, REDRAW_MS };

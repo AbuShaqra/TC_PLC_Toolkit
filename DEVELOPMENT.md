@@ -573,6 +573,10 @@ src/
                         — one provider backs two view ids: `twincatWatch` (own bottom-panel
                         container) and `twincatWatchSidebar` (TC Toolkit sidebar); `tcToolkit.online.watchLocation`
                         picks one through each view's when-clause.
+                        Redraws are batched, at most one per 300 ms (`REDRAW_MS`), carrying only the changed rows:
+                        VS Code waits for a 200 ms pause in a tree's events, which several entries changing every
+                        200 ms never left; each reload hands VS Code new row objects (it drops one-row redraws of
+                        objects from an earlier reload). Both were reproduced in real VS Code 1.95.3 and 1.146.0.
     writeGuard          The only path to a write: setting, per-session enable, guards, modal, log
     codeIdentity        The code-mismatch guard: name, variable layout vs the last build's `.tmc`,
                         source edits since that build
