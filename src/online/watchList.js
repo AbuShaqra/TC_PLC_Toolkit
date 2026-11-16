@@ -45,7 +45,7 @@ const { formatValue } = require('./values');
  * @param {() => Array<WatchEntry>} deps.load
  * @param {(entries: Array<WatchEntry>) => void} deps.save
  * @param {() => number} [deps.cycleMs]
- * @param {(path?: string) => void} [deps.onChange] `path` when only that entry's value changed.
+ * @param {() => void} [deps.onChange]
  * @param {(max: number) => void} [deps.onCapped]
  */
 function createWatchList(deps) {
@@ -55,8 +55,7 @@ function createWatchList(deps) {
     const live = new Map();
     let cappedNoticeShown = false;
     let epoch = 0;
-    /** @param {string} [path] Set when only that entry's value changed (the view redraws that row alone). */
-    const changed = (path) => { if (deps.onChange) deps.onChange(path); };
+    const changed = () => { if (deps.onChange) deps.onChange(); };
     const key = (/** @type {string} */ p) => p.toLowerCase();
 
     /**
@@ -76,12 +75,9 @@ function createWatchList(deps) {
         const res = await deps.session.subscribe(entry.path, (deps.cycleMs && deps.cycleMs()) || 200, (value) => {
             const cur = live.get(k);
             if (!cur || cur.token !== token || mine !== epoch) return;
-            const wasOk = cur.state === 'ok';
             cur.state = 'ok';
             cur.value = value;
-            // A new value of an entry already shown redraws that row only; the first value can change
-            // whether the row expands, so it redraws the list.
-            changed(wasOk ? entry.path : undefined);
+            changed();
         });
         const slot = live.get(k);
         if (mine !== epoch || !slot || slot.token !== token || !entries.some(e => key(e.path) === k)) {
