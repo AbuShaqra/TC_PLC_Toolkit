@@ -14,11 +14,23 @@ const { assembleSt, localToAbsolute, createStResolver, mapDefinition, collectPee
 const pendingEditsCore = require('../media/pendingEdits');
 const { isDocumentationUrl } = require('./lsp/pragmas');
 const { createPendingEditsStore } = require('./pendingEditsStore');
+const { breadcrumbFor } = require('./editorBreadcrumb');
 const EXT_VERSION = (() => { try { return require('../package.json').version; } catch (e) { return '?'; } })();
 
 /** Codicon-style glyphs (16px grid, currentColor), inline because the webview is offline. */
+// A hammer: the Build action, in the header's icon button and on the menu's Build item.
 const GLYPH_BUILD = '<svg class="btn-icon" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">'
-    + '<path fill="currentColor" d="M3 2.5v11l1.5.8 8-5.5v-1.6l-8-5.5L3 2.5zm1.5 1.4L11.2 8l-6.7 4.6V3.9z"/></svg>';
+    + '<g fill="currentColor" transform="rotate(45 8 8)"><rect x="3.6" y="1.4" width="8.8" height="3.6" rx="0.8"/>'
+    + '<rect x="7.15" y="5" width="1.7" height="10.2" rx="0.6"/></g></svg>';
+// "</>": Generate ST.
+const GLYPH_ST = '<svg class="btn-icon" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">'
+    + '<path fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" d="M5 4.5 1.8 8 5 11.5M11 4.5 14.2 8 11 11.5M9.3 3l-2.6 10"/></svg>';
+// "⋯": the Actions menu button.
+const GLYPH_MORE = '<svg class="btn-icon" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false">'
+    + '<circle fill="currentColor" cx="3.5" cy="8" r="1.25"/><circle fill="currentColor" cx="8" cy="8" r="1.25"/><circle fill="currentColor" cx="12.5" cy="8" r="1.25"/></svg>';
+// Two arrows in a circle: the sync state in the header.
+const GLYPH_SYNC = '<svg class="hdr-icon" viewBox="0 0 16 16" width="13" height="13" aria-hidden="true" focusable="false">'
+    + '<path fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" d="M13 6.2A5.2 5.2 0 0 0 3.8 4.5M3 9.8a5.2 5.2 0 0 0 9.2 1.7M3.6 1.9v2.8h2.8M12.4 14.1v-2.8H9.6"/></svg>';
 const GLYPH_PLC_START = '<svg class="btn-icon plc-icon-start" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">'
     + '<path fill="currentColor" d="M4 2.5v11a.5.5 0 0 0 .77.42l8.5-5.5a.5.5 0 0 0 0-.84l-8.5-5.5A.5.5 0 0 0 4 2.5z"/></svg>';
 const GLYPH_PLC_STOP = '<svg class="btn-icon plc-icon-stop" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">'
@@ -33,11 +45,11 @@ const GLYPH_PLC_STOP = '<svg class="btn-icon plc-icon-stop" viewBox="0 0 16 16" 
  * reason (the `.menu-item-detail` line, referenced by `aria-describedby`) is read out.
  */
 const ACTIONS_MENU_HTML = `<div id="actions-group" class="actions-group">
-                    <button id="actions-btn" class="action-btn actions-btn" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="actions-menu" title="Actions: Generate ST, Build, PLC and sync settings"><span class="btn-label">Actions</span><span class="actions-chevron" aria-hidden="true">▾</span></button>
+                    <button id="actions-btn" class="icon-btn actions-btn" type="button" aria-label="Actions" aria-haspopup="menu" aria-expanded="false" aria-controls="actions-menu" title="Actions: Generate ST, Build, PLC and sync settings">${GLYPH_MORE}</button>
                     <div id="actions-menu" class="split-menu actions-menu" role="menu" aria-labelledby="actions-btn" hidden>
                         <div role="group" aria-labelledby="menu-title-generate">
                             <div class="split-menu-title" id="menu-title-generate">Generate ST</div>
-                            <button type="button" role="menuitem" tabindex="-1" class="menu-item" id="generate-st-btn" aria-describedby="generate-st-detail" title="Generate ST: export every PLC project to .st files"><span class="menu-item-text"><span class="btn-label">Generate ST</span><span class="menu-item-detail" id="generate-st-detail">Export every PLC project to .st files</span></span></button>
+                            <button type="button" role="menuitem" tabindex="-1" class="menu-item" id="generate-st-btn" aria-describedby="generate-st-detail" title="Generate ST: export every PLC project to .st files">${GLYPH_ST}<span class="menu-item-text"><span class="btn-label">Generate ST</span><span class="menu-item-detail" id="generate-st-detail">Export every PLC project to .st files</span></span></button>
                             <button type="button" role="menuitem" tabindex="-1" class="menu-item" id="generate-st-caret" aria-expanded="false" aria-controls="generate-st-menu" title="Choose which projects to generate" hidden><span class="menu-item-text"><span class="btn-label">Choose projects…</span></span><span class="menu-item-chevron" aria-hidden="true">▸</span></button>
                             <div id="generate-st-menu" class="menu-subsection" role="group" aria-label="Projects to generate" hidden>
                                 <label class="split-menu-item split-menu-all"><input type="checkbox" role="menuitemcheckbox" tabindex="-1" id="generate-st-all" checked><span>Select all</span></label>
@@ -74,14 +86,9 @@ const ACTIONS_MENU_HTML = `<div id="actions-group" class="actions-group">
                             <div class="split-menu-title" id="menu-title-editor">Editor</div>
                             <label class="split-menu-item" title="On: every edit is written to the file as you type. Off: edits are kept until Ctrl+S."><input type="checkbox" role="menuitemcheckbox" tabindex="-1" id="sync-mode-toggle" checked><span>Auto Sync</span></label>
                         </div>
+                        <div class="menu-footer" id="menu-version">TC Toolkit v${EXT_VERSION}</div>
                     </div>
-                </div>
-                <!-- What the menu's entries are doing, visible without opening it (editor.js renderIndicators). -->
-                <span id="actions-indicators" class="actions-indicators" aria-live="polite" hidden>
-                    <span id="build-indicator" class="tb-chip tb-chip-busy" hidden>Building…</span>
-                    <span id="plc-indicator" class="tb-chip" hidden></span>
-                    <span id="sync-mode-text" class="tb-chip tb-chip-warn" title="Manual Sync: edits are written on Ctrl+S (Actions → Auto Sync)" hidden>Auto Sync</span>
-                </span>`;
+                </div>`;
 
 /**
  * Reads a file's raw text given its URI string, for injection into createStResolver.
@@ -436,6 +443,7 @@ class TwinCatCustomEditorProvider {
                         webviewPanel.webview.postMessage({
                             type: 'init',
                             filename: path.basename(document.fileName),
+                            breadcrumb: breadcrumbFor(document.uri.fsPath, this.options && this.options.getProjectMap && this.options.getProjectMap()),
                             data: parsed,
                             selectId: pending ? (typeof pending === 'string' ? pending : pending.componentId) : 'root',
                             pendingRange: pending && typeof pending === 'object' ? pending.range : null,
@@ -875,27 +883,40 @@ class TwinCatCustomEditorProvider {
 </head>
 <body>
     <!-- Diagnostic Error Overlay -->
-    <div id="error-overlay" style="display: none; position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(30, 5, 5, 0.95); color: #ff6b81; padding: 24px; font-family: monospace; z-index: 99999; overflow: auto; border: 2px solid #ff4757;"></div>
+    <div id="error-overlay" style="display: none; position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: var(--vscode-editor-background, #1e1e1e); color: var(--vscode-errorForeground, #f14c4c); padding: 24px; font-family: monospace; z-index: 99999; overflow: auto; border: 2px solid #E2001A;"></div>
 
     <div id="app">
         <!-- Top bar with object details and dropdown -->
+        <!-- The header (user decision 2026-11-16, "native" look): one slim row in the theme's colours.
+             Left: the breadcrumb (PLC project › folders › object, editor.js renderBreadcrumb), the type
+             tag (the one red marker) and the component list. Right: quiet dot + text status items, the
+             Build icon button and the "⋯" Actions menu. -->
         <header class="app-header">
-            <div class="header-left">
-                <span class="logo-text">TC Toolkit</span>
-                <span class="pill" title="Extension build">v${EXT_VERSION}</span>
-                <span id="obj-type" class="pill">POU</span>
-                <h1 id="obj-name">MAIN</h1>
+            <nav class="hdr-crumbs" id="hdr-crumbs" aria-label="Location">
+                <span class="crumb-path" id="crumb-path"><bdi id="crumb-path-text" dir="ltr"></bdi></span>
+                <span class="crumb-sep" id="crumb-name-sep" aria-hidden="true" hidden>›</span>
+                <h1 id="obj-name" class="crumb-name">MAIN</h1>
+            </nav>
+            <span id="obj-type" class="type-tag" title="Object type">POU</span>
+            <select id="component-select" class="nav-select" aria-label="Component">
+                <!-- populated dynamically -->
+            </select>
+            <div class="hdr-grow"></div>
+            <div class="hdr-status" id="hdr-status">
+                <span id="actions-indicators" class="actions-indicators" aria-live="polite" hidden>
+                    <span id="build-indicator" class="tb-chip tb-chip-busy" hidden><span class="hdr-dot" aria-hidden="true"></span><span class="hdr-text">Building…</span></span>
+                    <span id="plc-indicator" class="tb-chip" hidden><span class="hdr-dot" aria-hidden="true"></span><span class="hdr-text"></span></span>
+                    <span id="online-note" class="tb-chip tb-chip-online" title="Online monitoring (TC Toolkit: Go Online)" hidden><span class="hdr-dot" aria-hidden="true"></span><span class="hdr-text"></span></span>
+                    <span id="sync-mode-text" class="tb-chip tb-chip-warn" title="Manual Sync: edits are written on Ctrl+S (⋯ → Auto Sync)" hidden><span class="hdr-dot" aria-hidden="true"></span><span class="hdr-text">Auto Sync</span></span>
+                </span>
+                <span class="tb-chip tb-chip-sync" id="save-status-item" title="Synced">${GLYPH_SYNC}<span id="save-status" class="status-indicator hdr-text">Synced</span></span>
             </div>
-            <div class="header-right">
-                <select id="component-select" class="nav-select">
-                    <!-- populated dynamically -->
-                </select>
-                <!-- The Actions menu (user request 2026-11-16): every toolbar action and setting in one
-                     dropdown, because side by side they grew too wide. Built by ACTIONS_MENU_HTML. -->
-                ${ACTIONS_MENU_HTML}
-                <span id="online-note" class="online-note" title="Online monitoring (TC Toolkit: Go Online)" hidden></span>
-                <span id="save-status" class="status-indicator">Synced</span>
-            </div>
+            <div class="hdr-vsep" aria-hidden="true"></div>
+            <button id="build-btn" class="icon-btn build-btn" type="button" aria-label="Build" aria-describedby="build-btn-busy" title="Build (check with the IEC 61131-3 compiler)">${GLYPH_BUILD}</button>
+            <span id="build-btn-busy" class="visually-hidden"></span>
+            <!-- The Actions menu (user request 2026-11-16): every action and setting in one dropdown behind
+                 "⋯". Built by ACTIONS_MENU_HTML. -->
+            ${ACTIONS_MENU_HTML}
         </header>
 
         <!-- Main Workspace -->

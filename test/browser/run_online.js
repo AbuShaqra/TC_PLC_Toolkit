@@ -117,6 +117,9 @@ function assert(cond, msg) {
                 label: b.querySelector('.btn-label').textContent, detail: document.getElementById('plc-run-detail').textContent,
                 describedby: b.getAttribute('aria-describedby'), title: b.title, start: vis('.plc-icon-start'), stop: vis('.plc-icon-stop'),
                 isStop: b.classList.contains('is-stop'), isStart: b.classList.contains('is-start'), startColor: getComputedStyle(b.querySelector('.plc-icon-start')).color,
+                stopColor: getComputedStyle(b.querySelector('.plc-icon-stop')).color,
+                dot: chip.hidden ? null : getComputedStyle(chip.querySelector('.hdr-dot')).backgroundColor,
+                onlineDot: getComputedStyle(document.querySelector('#online-note .hdr-dot')).backgroundColor,
                 chip: chip.hidden ? null : chip.textContent, chipClass: chip.className, menuTitle: document.getElementById('actions-btn').title };
         });
         let pv = await plcView();
@@ -128,6 +131,9 @@ function assert(cond, msg) {
         pv = await plcView();
         assert(!pv.disabled && pv.label === 'Stop PLC' && pv.stop && !pv.start && pv.isStop && /the PLC is in Run/.test(pv.title) && /in Run/.test(pv.detail),
             `the PLC runs: "Stop PLC" with the stop glyph (${JSON.stringify(pv)})`);
+        assert(pv.stopColor === 'rgb(226, 0, 26)', `the Stop PLC glyph is true red #E2001A, a marker (${pv.stopColor})`);
+        assert(pv.dot === 'rgb(46, 213, 115)' && /^rgb\(55, 148, 255\)$/.test(pv.onlineDot),
+            `the header's PLC Run dot is green and the Online dot blue, no pills (${JSON.stringify({ dot: pv.dot, online: pv.onlineDot })})`);
         assert(pv.chip === 'PLC Run' && /tb-chip-ok/.test(pv.chipClass) && /PLC Run/.test(pv.menuTitle),
             `a "PLC Run" chip (green) shows next to the menu button, and the button's tooltip names it (${JSON.stringify(pv)})`);
         await page.evaluate(() => { window.__harness.sent.length = 0; });
@@ -148,7 +154,7 @@ function assert(cond, msg) {
         await page.evaluate(() => window.postMessage({ type: 'online/plc', online: true, action: 'start', plcState: 'Stop', busy: false, reason: '' }, '*'));
         await settle(100);
         pv = await plcView();
-        assert(!pv.disabled && pv.label === 'Start PLC' && pv.start && !pv.stop && pv.isStart && /46, 213, 115/.test(pv.startColor) && pv.chip === 'PLC Stop' && /tb-chip-warn/.test(pv.chipClass),
+        assert(!pv.disabled && pv.label === 'Start PLC' && pv.start && !pv.stop && pv.isStart && /46, 213, 115/.test(pv.startColor) && pv.chip === 'PLC Stop' && /tb-chip-warn/.test(pv.chipClass) && pv.dot === 'rgb(255, 165, 2)',
             `the PLC is stopped: "Start PLC" with a green play glyph, and a "PLC Stop" chip (${JSON.stringify(pv)})`);
         // By keyboard: Enter on the focused item asks the host.
         await page.evaluate(() => { window.__harness.sent.length = 0; });
@@ -324,13 +330,25 @@ function assert(cond, msg) {
             const t = await page.evaluate(() => {
                 const box = (id) => { const r = document.getElementById(id).getBoundingClientRect(); return { left: Math.round(r.left), right: Math.round(r.right), width: Math.round(r.width) }; };
                 const m = document.getElementById('actions-menu').getBoundingClientRect();
-                return { w: window.innerWidth, actions: box('actions-btn'), plc: box('plc-indicator'), build: box('build-indicator'), status: box('save-status'), note: box('online-note'),
+                const header = document.querySelector('.app-header');
+                const name = document.getElementById('obj-name');
+                return { w: window.innerWidth, actions: box('actions-btn'), buildBtn: box('build-btn'), plc: box('plc-indicator'), build: box('build-indicator'), status: box('save-status-item'), note: box('online-note'),
+                    compact: header.classList.contains('compact'), nameCut: name.scrollWidth > name.clientWidth + 1,
+                    texts: [...document.querySelectorAll('.hdr-status .hdr-text')].filter(e => getComputedStyle(e).display !== 'none' && e.closest('[hidden]') === null).length,
+                    titles: ['plc-indicator', 'build-indicator', 'online-note', 'save-status-item'].map(id => document.getElementById(id).title),
+                    oneRow: (() => { const cs = [...header.children].filter(e => e.getBoundingClientRect().width > 0).map(e => { const r = e.getBoundingClientRect(); return (r.top + r.bottom) / 2; });
+                        return Math.max(...cs) - Math.min(...cs) <= 8; })(),
                     menu: { left: Math.round(m.left), right: Math.round(m.right), bottom: Math.round(m.bottom), h: window.innerHeight },
                     sideScroll: document.documentElement.scrollWidth > window.innerWidth || document.body.scrollWidth > window.innerWidth };
             });
             await page.keyboard.press('Escape');
             const inside = (b) => b.width > 0 && b.left >= 0 && b.right <= t.w;
-            assert(inside(t.actions) && inside(t.plc) && inside(t.build) && inside(t.status) && t.note.right <= t.w && !t.sideScroll
+            assert((!t.nameCut || t.compact) && (t.compact ? t.texts === 0 : t.texts === 4) && (width <= 420 || t.oneRow)
+                && t.titles.every(x => x && x.length > 3),
+            `at ${width}px online the status items collapse to dots (text in their tooltips) before the object name is cut, one row above 420px (${JSON.stringify({ compact: t.compact, nameCut: t.nameCut, texts: t.texts, oneRow: t.oneRow, titles: t.titles })})`);
+            if (width === 560) assert(t.compact, 'at 560px with every status item showing, the status is dots only');
+            if (width === 1200) assert(!t.compact, 'at 1200px the status shows its text');
+            assert(inside(t.actions) && inside(t.buildBtn) && inside(t.plc) && inside(t.build) && inside(t.status) && t.note.right <= t.w && !t.sideScroll
                 && t.menu.left >= 0 && t.menu.right <= t.w && t.menu.bottom <= t.menu.h,
             `at ${width}px online, every chip and the status are inside the editor, no sideways scroll, and the open menu fits (${JSON.stringify(t)})`);
         }

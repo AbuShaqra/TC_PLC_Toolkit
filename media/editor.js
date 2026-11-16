@@ -129,6 +129,78 @@
     const objNameEl = document.getElementById('obj-name');
     const selectEl = document.getElementById('component-select');
     const statusEl = document.getElementById('save-status');
+    const statusItemEl = document.getElementById('save-status-item');
+    const crumbsEl = document.getElementById('hdr-crumbs');
+    const crumbPathEl = document.getElementById('crumb-path-text');
+    const crumbNameSepEl = document.getElementById('crumb-name-sep');
+    const headerEl = document.querySelector('.app-header');
+
+    /**
+     * Sets a header status item's text (its `.hdr-text`, beside the dot) and its tooltip, which is
+     * what is left when the header is too narrow for the text (fitHeader).
+     * @param {HTMLElement|null} el
+     * @param {string} text
+     * @param {string} [title] Defaults to the text.
+     */
+    function setChipText(el, text, title) {
+        if (!el) return;
+        const t = el.querySelector('.hdr-text');
+        if (t) t.textContent = text;
+        else el.textContent = text;
+        el.title = title || text;
+    }
+
+    /**
+     * The sync state in the header: "Synced", "Saving...", "Unsaved Changes (n)". `#save-status`
+     * keeps the text and class the dev-host runner reads; its item carries the tooltip.
+     * @param {string} text
+     * @param {string} className 'status-indicator' or 'status-indicator modified'.
+     */
+    function setSaveStatus(text, className) {
+        if (statusEl.textContent === text && statusEl.className === className + ' hdr-text') return;
+        statusEl.textContent = text;
+        statusEl.className = className + ' hdr-text';
+        if (statusItemEl) {
+            statusItemEl.title = text;
+            statusItemEl.classList.toggle('modified', /\bmodified\b/.test(className));
+        }
+        fitHeader();
+    }
+
+    /**
+     * The breadcrumb: PLC project › folders › object name (the host's `breadcrumb`, from the project
+     * map). What is not known is left out; the path part is cut from the left when it does not fit,
+     * the name last, and the full location is the tooltip.
+     * @param {{project?: string|null, folders?: string[], name?: string, title?: string}|undefined} crumb
+     * @param {string} filename The file's name, the fallback for the object name and the tooltip.
+     */
+    function renderBreadcrumb(crumb, filename) {
+        const c = crumb && typeof crumb === 'object' ? crumb : {};
+        const parts = [c.project, ...(Array.isArray(c.folders) ? c.folders : [])].filter(p => typeof p === 'string' && p);
+        const name = (typeof c.name === 'string' && c.name) || String(filename || '').replace(/\.[^.]+$/, '');
+        if (crumbPathEl) crumbPathEl.textContent = parts.join(' › ');
+        if (crumbNameSepEl) crumbNameSepEl.hidden = parts.length === 0;
+        objNameEl.textContent = name;
+        if (crumbsEl) crumbsEl.title = (typeof c.title === 'string' && c.title) || [...parts, filename].join(' › ');
+        fitHeader();
+    }
+
+    /**
+     * Keeps the header on one row: when it does not fit (or the object name would be cut), the
+     * status items drop their text and keep their dots, with the text in their tooltips. At 420px
+     * and below (where the component list takes a row of its own) they are always dots. Checked
+     * on resize and whenever a status item changes.
+     */
+    function fitHeader() {
+        if (!headerEl) return;
+        if (window.innerWidth <= 420) { headerEl.classList.add('compact'); return; }
+        headerEl.classList.remove('compact');
+        const nameCut = objNameEl.scrollWidth > objNameEl.clientWidth + 1;
+        const overflow = headerEl.scrollWidth > headerEl.clientWidth + 1;
+        const pathGone = !!crumbPathEl && crumbPathEl.textContent !== '' && crumbPathEl.parentElement.clientWidth < 24;
+        if (nameCut || overflow || pathGone) headerEl.classList.add('compact');
+    }
+    window.addEventListener('resize', () => fitHeader());
     
     const containerEl = document.getElementById('editor-container');
     const paneDeclEl = document.getElementById('pane-decl');
@@ -294,7 +366,7 @@
     function renderSyncMode() {
         toggleEl.checked = isAutoSync;
         if (toggleText) {
-            toggleText.textContent = isAutoSync ? 'Auto Sync' : 'Manual Sync';
+            setChipText(toggleText, isAutoSync ? 'Auto Sync' : 'Manual Sync', 'Manual Sync: edits are written on Ctrl+S (⋯ → Auto Sync)');
             toggleText.hidden = isAutoSync;
         }
         renderActionsTitle();
@@ -381,6 +453,17 @@
     let compileBusy = false;
     let xaeBusy = false;
     onMenuAction(compileBtn, () => vscode.postMessage({ type: 'compile-project' }));
+    // The header's Build icon button: the same action in one click; aria-disabled while a build runs.
+    const buildBtn = document.getElementById('build-btn');
+    const buildBtnBusy = document.getElementById('build-btn-busy');
+    if (buildBtn) {
+        buildBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (isItemDisabled(buildBtn)) return;
+            closeActionsMenu(false);
+            vscode.postMessage({ type: 'compile-project' });
+        });
+    }
     // Compile options (R13): two checkbox items that show and write the C++ settings. The host writes
     // them (with their coupling: the g++ build needs the C++) and answers with `compileOptions`, which
     // also arrives when the settings change anywhere else.
@@ -462,6 +545,11 @@
         if (!compileBtn) return;
         setItemDisabled(compileBtn, compileBusy);
         compileBtn.setAttribute('aria-busy', String(compileBusy));
+        if (buildBtn) {
+            setItemDisabled(buildBtn, compileBusy);
+            buildBtn.title = compileBusy ? 'Build: a build is running.' : 'Build (check with the IEC 61131-3 compiler)';
+            if (buildBtnBusy) buildBtnBusy.textContent = compileBusy ? 'A build is running.' : '';
+        }
         describeCompileButton(!!(compileOptCpp && compileOptCpp.checked), !!(compileOptGpp && compileOptGpp.checked));
         renderBuildIndicator();
     }
@@ -470,8 +558,7 @@
     function renderBuildIndicator() {
         if (buildIndicator) {
             buildIndicator.hidden = !(compileBusy || xaeBusy);
-            buildIndicator.textContent = compileBusy ? 'Building…' : 'XAE build…';
-            buildIndicator.title = compileBusy ? 'Build Project is running' : 'An XAE build is running';
+            setChipText(buildIndicator, compileBusy ? 'Building…' : 'XAE build…', compileBusy ? 'Build Project is running' : 'An XAE build is running');
         }
         renderActionsTitle();
     }
@@ -491,6 +578,7 @@
         if (plcIndicator && !plcIndicator.hidden) parts.push(plcIndicator.textContent || '');
         parts.push(isAutoSync ? 'Auto Sync on' : 'Manual Sync (Ctrl+S writes)');
         actionsBtn.title = parts.join(' · ');
+        fitHeader();
     }
 
     /**
@@ -539,15 +627,13 @@
 
     function updateStatusText() {
         const status = pendingEditsCore.statusFor(editsStore.count());
-        statusEl.textContent = status.text;
-        statusEl.className = status.className;
+        setSaveStatus(status.text, status.className);
     }
 
     function flushPendingEdits() {
         const edits = editsStore.takeAll();
         if (edits.length > 0) {
-            statusEl.textContent = 'Saving...';
-            statusEl.className = 'status-indicator modified';
+            setSaveStatus('Saving...', 'status-indicator modified');
             vscode.postMessage({
                 type: 'sync-pending',
                 edits: edits
@@ -558,8 +644,7 @@
 
     function triggerManualSave() {
         const edits = editsStore.takeAll();
-        statusEl.textContent = 'Saving...';
-        statusEl.className = 'status-indicator modified';
+        setSaveStatus('Saving...', 'status-indicator modified');
         vscode.postMessage({
             type: 'save',
             edits: edits
@@ -598,8 +683,7 @@
 
         if (isAutoSync) {
             autoSyncPending = true;
-            statusEl.textContent = 'Saving...';
-            statusEl.className = 'status-indicator modified';
+            setSaveStatus('Saving...', 'status-indicator modified');
 
             clearTimeout(debounceTimer);
             debounceTimer = setTimeout(() => {
@@ -724,7 +808,8 @@
         onlineContextKeys.forEach(k => k.set(onlineActive));
         onlineWritableKeys.forEach(k => k.set(onlineActive && writable === true));
         if (onlineNoteEl) {
-            onlineNoteEl.textContent = onlineActive ? (note ? 'Online · ' + note : 'Online') : '';
+            const noteText = onlineActive ? (note ? 'Online · ' + note : 'Online') : '';
+            setChipText(onlineNoteEl, noteText, noteText ? noteText + ' (online monitoring; TC Toolkit: Go Offline ends it)' : 'Online monitoring (TC Toolkit: Go Online)');
             onlineNoteEl.hidden = !onlineActive;
         }
         if (!onlineActive) plcToggle = {};
@@ -768,8 +853,8 @@
         if (plcIndicator) {
             const state = shown && plcToggle.plcState ? String(plcToggle.plcState) : '';
             plcIndicator.hidden = !state;
-            plcIndicator.textContent = state ? 'PLC ' + state + (plcToggle.busy ? '…' : '') : '';
-            plcIndicator.title = state ? 'The PLC is in ' + state + (plcToggle.busy ? '; a start or stop is in progress' : '') : '';
+            setChipText(plcIndicator, state ? 'PLC ' + state + (plcToggle.busy ? '…' : '') : '',
+                state ? 'The PLC is in ' + state + (plcToggle.busy ? '; a start or stop is in progress' : '') : '');
             plcIndicator.classList.toggle('tb-chip-ok', state.toLowerCase() === 'run');
             plcIndicator.classList.toggle('tb-chip-warn', !!state && state.toLowerCase() !== 'run');
         }
@@ -1990,7 +2075,8 @@
             case 'init': {
                 activeFileUri = message.fileUri;
                 objTypeEl.textContent = message.data.rootType;
-                objNameEl.textContent = message.filename;
+                objTypeEl.title = 'Object type: ' + message.data.rootType;
+                renderBreadcrumb(message.breadcrumb, message.filename);
                 components = message.data.components;
                 currentDeclPct = message.splitterRatio !== undefined ? message.splitterRatio : 50;
                 
@@ -2084,8 +2170,7 @@
                     loadComponent('root');
                 }
 
-                statusEl.textContent = 'Synced';
-                statusEl.className = 'status-indicator';
+                setSaveStatus('Synced', 'status-indicator');
                 autoSyncPending = false;
                 break;
             }

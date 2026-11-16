@@ -10,13 +10,16 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   merged at `3210d33`, Release run 41671593015 green, VSIX `twincat-plc-toolkit-0.10.1.vsix` attached).
 - **Version history:** 0.10.1 struct EXTENDS from own DUTs (PR #22); 0.10.0 Libraries scoping (PR #18); 0.9.0
   improvement-plan phases; 0.8.x project-aware Generate ST, ResizeObserver fix, solution→project Objects tree.
-- **Last verified:** 2026-11-16 (Linux container, ADS DLL path settings + toolbar Actions menu merged on
-  `claude/focused-ptolemy-m6acaz`) — `REQUIRE_FULL_SUITE=1 npm test` green (**137/137, Coverage: FULL**; compile-real,
-  cpp-real, gpp-real ran), `npm run typecheck` and `npm run lint` exit 0; browser harnesses `run.js` 112, `run_online.js` 39, `run_pragmas.js` 47,
+- **Last verified:** 2026-11-16 (Linux container, native editor header on
+  `claude/focused-ptolemy-m6acaz`) — `REQUIRE_FULL_SUITE=1 npm test` green (**138/138, Coverage: FULL**; compile-real,
+  cpp-real, gpp-real ran), `npm run typecheck` and `npm run lint` exit 0; browser harnesses `run.js` 132, `run_online.js` 50, `run_pragmas.js` 47,
   `run_start_page.js` 125 (browsers in `/opt/pw-browsers`). Dev-host last run 2026-11-12 (103 pass / 1 known P8 fail).
-- **Toolbar Actions menu (user request 2026-11-16): merged into `claude/focused-ptolemy-m6acaz`** (DEVELOPMENT.md "The editor
-  toolbar's Actions menu"). **Not run yet:** the dev-host pass (`test:clickCompile` / `test:toggleSync` click the
-  now-hidden menu items by id: expected to work, unverified) and a look in real VS Code.
+- **Native editor header (user decision 2026-11-16): BUILT on `claude/focused-ptolemy-m6acaz`** (DEVELOPMENT.md "The
+  editor header", "The Actions menu"): breadcrumb from `init.breadcrumb` (`src/editorBreadcrumb.js`), #E2001A type
+  tag, dot status items, Build icon button `#build-btn`, the Actions menu behind "⋯", version in the menu's foot; red
+  only as a marker. Ids the host/dev-host use are unchanged. **Not run yet:** the dev-host pass (`test:clickCompile` /
+  `test:toggleSync` click the hidden menu items by id: expected to work, unverified) and a look in real VS Code
+  (real theme variables; the harness screenshots set Dark/Light Modern values by hand).
 - **Sample 1 XAE warnings (user, 2026-11-13; XAE Shell 64):** 0 errors, 3 warnings: C0564 x2 (GVL_System's
   `fbCylinder(refExtendOut := GVL_Io.bExtendOut, refRetractOut := GVL_Io.bRetractOut)`: "reference to uninitialized
   variable") and C0195 (FB_Station.Cyclic line 28, INT into WORD). **User: fix the sample.** Done in the generator
@@ -296,13 +299,8 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   names a private repository the user wants kept out of this repo; the final tree is clean. Delete the branch after.
 
 ## Start here (next session)
-- **R5 + R1 are MERGED into `dev`** (PR #27, `0ea9fcd`) and their **Windows/XAE check PASSED** (user, 2026-11-09:
-  accessor add/re-add opens and builds in XAE, `node test/devhost/run.js`, menu pass). That pass found the multi-project
-  Generate ST menu clipped in a narrow editor (right-aligned to the caret → ran past the webview's left edge; long names
-  scrolled sideways): fixed in `3b93ef1` (now `placeSplitMenu` for the whole Actions menu in `media/editor.js`, ellipsis +
-  tooltip; `test/browser/run.js` 7c checks 320-1200 px). Still owed: reply on issue #25 when it
-  ships in a release. User request 2026-11-09, done: a tri-state *Select all* in that menu (`#generate-st-all`,
-  `syncSelectAll`; "Generate selected" disabled while nothing is ticked; harness 7d).
+- **R5 + R1 MERGED** (PR #27, `0ea9fcd`), Windows/XAE check PASSED (2026-11-09); the narrow-editor Generate ST menu
+  clip it found is fixed (`placeSplitMenu`, harness 7c/7d). Still owed: reply on issue #25 when it ships in a release.
 - **R3.1 spike findings are DONE** (2026-11-09): `docs/r3.1-strucpp-spike.md`. Headline: 27 parse errors as
   converted; 1 converter cause (methods/properties emitted after the POU body — the compiler wants them first) +
   9 compiler gaps; with scratch workarounds 0 errors under twincat3, 6 under iec (REFERENCE TO, REF=). No

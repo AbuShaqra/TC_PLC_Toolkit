@@ -341,13 +341,46 @@ function assert(cond, msg) {
             const b = document.getElementById('actions-btn');
             const m = document.getElementById('actions-menu');
             return { popup: b.getAttribute('aria-haspopup'), controls: b.getAttribute('aria-controls'), expanded: b.getAttribute('aria-expanded'),
-                text: b.textContent.trim(), role: m.getAttribute('role'), labelledby: m.getAttribute('aria-labelledby'), hidden: m.hidden,
-                // Nothing else in the toolbar is an action: the old side-by-side buttons are gone from it.
-                toolbarButtons: [...document.querySelectorAll('.header-right button')].filter(x => !m.contains(x)).map(x => x.id) };
+                label: b.getAttribute('aria-label'), glyph: b.querySelectorAll('svg circle').length, text: b.textContent.trim(),
+                role: m.getAttribute('role'), labelledby: m.getAttribute('aria-labelledby'), hidden: m.hidden,
+                // The header holds two actions: the Build icon button and the "⋯" menu button.
+                toolbarButtons: [...document.querySelectorAll('.app-header button')].filter(x => !m.contains(x)).map(x => x.id) };
         });
-        assert(btnAria.popup === 'menu' && btnAria.controls === 'actions-menu' && btnAria.expanded === 'false' && /^Actions/.test(btnAria.text)
-            && btnAria.role === 'menu' && btnAria.labelledby === 'actions-btn' && btnAria.hidden && JSON.stringify(btnAria.toolbarButtons) === '["actions-btn"]',
-        `the toolbar has one Actions menu button (aria-haspopup=menu, aria-controls, closed) and no other action button (${JSON.stringify(btnAria)})`);
+        assert(btnAria.popup === 'menu' && btnAria.controls === 'actions-menu' && btnAria.expanded === 'false' && btnAria.label === 'Actions'
+            && btnAria.glyph === 3 && btnAria.text === ''
+            && btnAria.role === 'menu' && btnAria.labelledby === 'actions-btn' && btnAria.hidden && JSON.stringify(btnAria.toolbarButtons) === '["build-btn","actions-btn"]',
+        `the header has the "⋯" Actions menu button (aria-label, aria-haspopup=menu, aria-controls, closed) and the Build icon button, nothing else (${JSON.stringify(btnAria)})`);
+
+        // 7a'. The native header (user decision 2026-11-16): breadcrumb PLC project › folders › object,
+        //      the type tag in true red, no product title or version pill (the version is the menu's foot).
+        const hdr = await page.evaluate(() => {
+            const tag = document.getElementById('obj-type');
+            const cs = getComputedStyle(tag);
+            const header = document.querySelector('.app-header');
+            return {
+                path: document.getElementById('crumb-path-text').textContent, name: document.getElementById('obj-name').textContent,
+                tooltip: document.getElementById('hdr-crumbs').title, tag: tag.textContent, tagColor: cs.color, tagBorder: cs.borderTopColor,
+                tagBg: cs.backgroundColor, height: Math.round(header.getBoundingClientRect().height),
+                title: !!document.querySelector('.logo-text, .pill'), version: document.getElementById('menu-version').textContent,
+                versionInMenu: document.getElementById('actions-menu').contains(document.getElementById('menu-version'))
+            };
+        });
+        assert(hdr.path === 'TcToolkitSample_PLC › POUs › Actuators' && hdr.name === 'FB_Cylinder' && hdr.tooltip === 'TcToolkitSample_PLC › POUs › Actuators › FB_Cylinder.TcPOU',
+            `the breadcrumb names the PLC project, the folder and the object; the tooltip is the full location (${JSON.stringify(hdr)})`);
+        assert(hdr.tag === 'POU' && hdr.tagColor === 'rgb(226, 0, 26)' && hdr.tagBorder === 'rgb(226, 0, 26)' && hdr.tagBg === 'rgba(0, 0, 0, 0)',
+            `the type tag is transparent with a true-red (#E2001A) border and text (${JSON.stringify(hdr)})`);
+        assert(!hdr.title && /^TC Toolkit v\d/.test(hdr.version) && hdr.versionInMenu && hdr.height >= 34 && hdr.height <= 40,
+            `one slim row (~36px), no product title or version pill; "TC Toolkit vX.Y.Z" is the menu's foot (${JSON.stringify(hdr)})`);
+        const hdrStatus = () => page.evaluate(() => {
+            const vis = (id) => { const e = document.getElementById(id); return !e.hidden && getComputedStyle(e).display !== 'none'; };
+            return { sync: document.getElementById('save-status').textContent, syncShown: vis('save-status-item'), syncIcon: !!document.querySelector('#save-status-item svg'),
+                online: vis('online-note'), plc: vis('plc-indicator'), building: vis('build-indicator'), manual: vis('sync-mode-text'),
+                pills: [...document.querySelectorAll('.hdr-status .tb-chip')].filter(e => parseFloat(getComputedStyle(e).borderTopWidth) > 0 || getComputedStyle(e).backgroundColor !== 'rgba(0, 0, 0, 0)').map(e => e.id) };
+        });
+        const offlineStatus = await hdrStatus();
+        assert(offlineStatus.sync === 'Synced' && offlineStatus.syncShown && offlineStatus.syncIcon && !offlineStatus.online && !offlineStatus.plc
+            && !offlineStatus.building && !offlineStatus.manual && offlineStatus.pills.length === 0,
+            `offline the status is the sync item alone ("Synced" + its icon), no pills (${JSON.stringify(offlineStatus)})`);
         await page.click('#actions-btn');
         let mst = await menuState();
         assert(mst.open && mst.expanded === 'true' && mst.focus === 'generate-st-btn', `a click opens the menu and focuses its first item (${JSON.stringify(mst)})`);
@@ -650,6 +683,31 @@ function assert(cond, msg) {
         assert((await page.evaluate(() => document.getElementById('compile-btn').getAttribute('aria-disabled'))) === 'false' && !(await chip('build-indicator')).shown,
             'when the run ends Build is enabled again and the chip goes');
 
+        // 7f''. The header's Build icon button: one click = Build Project; disabled while a build runs.
+        const buildBtnInfo = await page.evaluate(() => {
+            const b = document.getElementById('build-btn');
+            return { title: b.title, label: b.getAttribute('aria-label'), glyph: !!b.querySelector('svg path'), disabled: b.getAttribute('aria-disabled') };
+        });
+        assert(buildBtnInfo.title === 'Build (check with the IEC 61131-3 compiler)' && buildBtnInfo.label === 'Build' && buildBtnInfo.glyph && buildBtnInfo.disabled !== 'true',
+            `the Build icon button has its glyph, its name and the tooltip (${JSON.stringify(buildBtnInfo)})`);
+        await page.evaluate(() => { window.__harness.sent.length = 0; });
+        await page.click('#build-btn');
+        compileMsgs = await page.evaluate(() => window.__harness.sent.filter(m => m.type === 'compile-project'));
+        assert(compileMsgs.length === 1 && Object.keys(compileMsgs[0]).join() === 'type' && !(await menuState()).open,
+            `one click on the Build icon button posts compile-project (${JSON.stringify(compileMsgs)})`);
+        await page.evaluate(() => window.postMessage({ type: 'compileRunning', running: true }, '*'));
+        await settle(50);
+        await page.evaluate(() => { window.__harness.sent.length = 0; });
+        await page.click('#build-btn', { force: true });
+        const buildBusy = await page.evaluate(() => ({ sent: window.__harness.sent.filter(m => m.type === 'compile-project').length,
+            disabled: document.getElementById('build-btn').getAttribute('aria-disabled'), title: document.getElementById('build-btn').title,
+            reason: document.getElementById('build-btn-busy').textContent }));
+        assert(buildBusy.sent === 0 && buildBusy.disabled === 'true' && /running/.test(buildBusy.title) && buildBusy.reason === 'A build is running.',
+            `while a build runs the Build icon button is disabled, says why, and a click posts nothing (${JSON.stringify(buildBusy)})`);
+        await page.evaluate(() => window.postMessage({ type: 'compileRunning', running: false }, '*'));
+        await settle(50);
+        assert((await page.evaluate(() => document.getElementById('build-btn').getAttribute('aria-disabled'))) === 'false', 'and enabled again when it ends');
+
         // 7f'. The Build options (R13): two checkbox items that show the host's settings and post every
         //      change; the coupling (the g++ build needs the C++) shows at once; settings changed elsewhere
         //      arrive as `compileOptions`; Space and Enter toggle them, and toggling keeps the menu open.
@@ -797,7 +855,14 @@ function assert(cond, msg) {
             const closed = await page.evaluate(() => {
                 const box = (id) => { const r = document.getElementById(id).getBoundingClientRect(); return { left: Math.round(r.left), right: Math.round(r.right), width: Math.round(r.width), top: Math.round(r.top) }; };
                 return {
-                    width: window.innerWidth, actions: box('actions-btn'), select: box('component-select'), status: box('save-status'), chip: box('build-indicator'),
+                    width: window.innerWidth, actions: box('actions-btn'), build: box('build-btn'), select: box('component-select'), status: box('save-status-item'), chip: box('build-indicator'),
+                    name: Object.assign(box('obj-name'), { cut: document.getElementById('obj-name').scrollWidth > document.getElementById('obj-name').clientWidth + 1 }),
+                    compact: document.querySelector('.app-header').classList.contains('compact'),
+                    statusText: getComputedStyle(document.getElementById('save-status')).display !== 'none',
+                    // Rows: items whose vertical centres lie within 8px of each other share one.
+                    rows: (() => { const cs = [...document.querySelectorAll('.app-header > *')].filter(e => e.getBoundingClientRect().width > 0)
+                        .map(e => { const r = e.getBoundingClientRect(); return (r.top + r.bottom) / 2; }).sort((a, b) => a - b);
+                    return cs.reduce((n, c, i) => n + (i > 0 && c - cs[i - 1] > 8 ? 1 : 0), 1); })(),
                     sideScroll: document.documentElement.scrollWidth > window.innerWidth || document.body.scrollWidth > window.innerWidth
                 };
             });
@@ -809,9 +874,13 @@ function assert(cond, msg) {
         for (const width of [320, 360, 560, 700, 760, 780, 800, 820, 900, 960, 1100, 1200]) {
             const t = await toolbarAt(width);
             const inside = (b) => b.width > 0 && b.left >= 0 && b.right <= t.width;
-            assert(inside(t.actions) && inside(t.select) && inside(t.status) && inside(t.chip) && t.actions.width >= 60 && !t.sideScroll
+            assert(inside(t.actions) && inside(t.build) && inside(t.select) && inside(t.status) && inside(t.chip) && t.actions.width >= 24 && !t.sideScroll
                 && t.menu.left >= 0 && t.menu.right <= t.width && t.menu.bottom <= t.menu.h,
-            `at ${width}px the Actions button, the component list, the Building… chip and the status are inside the editor, no sideways scroll, and the open menu fits (${JSON.stringify(t)})`);
+            `at ${width}px the "⋯" and Build buttons, the component list, the Building… item and the status are inside the editor, no sideways scroll, and the open menu fits (${JSON.stringify(t)})`);
+            // The object name gives way last: while it is cut the status shows dots only; above 420px one row.
+            assert((!t.name.cut || t.compact) && (width <= 420 || t.rows === 1) && (t.compact ? !t.statusText : t.statusText),
+                `at ${width}px the status collapses to dots before the object name is cut, and above 420px the header is one row (${JSON.stringify({ name: t.name, compact: t.compact, rows: t.rows, statusText: t.statusText })})`);
+            if (width >= 1100) assert(!t.compact && !t.name.cut, `at ${width}px nothing is collapsed`);
         }
         await page.evaluate(() => window.postMessage({ type: 'compileRunning', running: false }, '*'));
 

@@ -53,6 +53,8 @@ const { convertXmlToSt } = require(path.join(REPO, 'src', 'stConverter.js'));
 const lspParser = require(path.join(REPO, 'src', 'lsp', 'parser.js'));
 const { indexXmlObject } = require(path.join(REPO, 'src', 'lsp', 'xmlIndexer.js'));
 const features = require(path.join(REPO, 'src', 'lsp', 'features.js'));
+const { breadcrumbFor } = require(path.join(REPO, 'src', 'editorBreadcrumb.js'));
+const { createProjectMap } = require(path.join(REPO, 'src', 'lsp', 'projectMap.js'));
 
 // ---------------------------------------------------------------------------------------------
 // 2. Generate the page exactly as the extension would, then swap the two stubs in.
@@ -281,6 +283,8 @@ const fixture = {
         type: 'init',
         fileUri: active.uri,
         filename: path.basename(active.file),
+        // The host's own breadcrumb helper over the real project map, as the 'ready' handler builds it.
+        breadcrumb: breadcrumbFor(active.file, createProjectMap([path.join(REPO, 'sample', 'TcToolkitSample')])),
         data: { rootType: parsed.rootType || 'POU', components: parsed.components },
         splitterRatio: 50,
         isAutoSync: true,
