@@ -195,14 +195,14 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   (items 4-10) through it; (3) *Go Online… → Local runtime*: expected to fail with the "Enter AMS Net ID…" hint (the
   runtime is not at the router's NetId) — report the text; (4) close VS Code while online: no `powershell.exe` left
   (Task Manager). Backlog (planner): discover the user-mode runtime's NetId for *Local runtime*.
-- **R15 ADS online monitoring: IMPLEMENTED on local branch `r15-ads`** (worktree `/home/user/tc-r15`, 2026-11-13, not
-  pushed, no PR yet; based on `claude/focused-ptolemy-m6acaz` `c9ace3f`). Decisions D1-D9: `docs/r15-ads-decision.md` §5.
+- **R15 ADS online monitoring: phase 1 merged into `claude/focused-ptolemy-m6acaz`** (built 2026-11-13 on `r15-ads`,
+  based on `c9ace3f`; no PR yet). Decisions D1-D9: `docs/r15-ads-decision.md` §5.
   Design and file map: DEVELOPMENT.md "Online monitoring (roadmap R15)". `ads-client` **2.2.0 pinned** (pure JS; loads on
   Node 16.13 and 22; licences of it and its 5 deps in THIRD-PARTY-NOTICES, all six licence files listed by `vsce ls`).
   Linux-verified: `REQUIRE_FULL_SUITE=1 npm test` FULL (131 suites), lint, typecheck, browser harnesses `run.js`,
   `run_pragmas.js`, `run_start_page.js`, `run_online.js`. Harnesses `test_ads_{paths,session,inline,write,code,watch,
   regressions}.js` run against an in-memory PLC (`test/_fakeAds.js`); **nothing has touched a real PLC or router.**
-  **Review rounds 1-4 (2026-11-13): every confirmed finding fixed and committed on `r15-ads`**, each pinned by a block
+  **Review rounds 1-4 (2026-11-13): every confirmed finding fixed and committed**, each pinned by a block
   of `test/test_ads_regressions.js` (`R2#n`, `R3#n`), `run_online.js` or `test_definition_frames.js`; the per-finding
   detail is in those tests and the `r15-ads` commit messages. Still worth knowing: the round-3 frame fix (xmlIndexer
   ranges now in raw-unit coordinates via `unitLineMap`, pre-existing on `c9ace3f`) costs about +27 us per indexed file;
