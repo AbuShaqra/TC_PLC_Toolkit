@@ -157,7 +157,7 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   ConvertTo-Json shapes (one-element arrays), nested `BuildProject`, whether a hidden shell ever hangs on a dialog.
 - **Change the solution's target after a gate-3 refusal (user decision 2026-11-16): BUILT on
   `claude/focused-ptolemy-m6acaz`, Linux-verified only.** Case: the `.tsproj` named an old user-mode runtime
-  (199.4.42.250.1.1) after a restart gave the new one 199.5.42.250.1.1. Now gate 3's text says "not a runtime on this
+  (10.0.0.4.1.1) after a restart gave the new one 10.0.0.5.1.1. Now gate 3's text says "not a runtime on this
   PC" and names the local runtimes (`Get-RuntimeLabels` → `-RuntimeLabels`, builder + driver identical), the fatal
   carries `projectNetId`/`tsproj`/`local[]`, and the extension offers *Change the solution's target…* → pick (local
   runtimes only) → modal (file + both NetIds) → `src/tsprojTarget.js` rewrites the one value byte-for-byte → the

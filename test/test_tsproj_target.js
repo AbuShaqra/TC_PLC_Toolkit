@@ -20,8 +20,8 @@ function assert(cond, msg) {
     else { console.error(`[FAIL] ${msg}`); errors++; }
 }
 
-const OLD = '199.4.42.250.1.1';
-const NEW = '199.5.42.250.1.1';
+const OLD = '10.0.0.4.1.1';
+const NEW = '10.0.0.5.1.1';
 const BOM = Buffer.from([0xef, 0xbb, 0xbf]);
 const body = (nl) => [
     '<?xml version="1.0"?>',

@@ -746,7 +746,7 @@ function refusedTarget(state) {
 }
 
 /**
- * One runtime of this PC, for a sentence: `UmRT_Default (199.5.42.250.1.1, user-mode runtime)`.
+ * One runtime of this PC, for a sentence: `UmRT_Default (10.0.0.5.1.1, user-mode runtime)`.
  * @param {{netId: string, name: string, kind: string}} t
  * @returns {string}
  */
