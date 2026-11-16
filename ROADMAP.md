@@ -364,6 +364,7 @@ The former backlog was scheduled as R6–R10 on 2026-11-09 (the user asked). R6�
 Shipped work lives in git history and the [releases](https://github.com/AbuShaqra/TC_PLC_Toolkit/releases).
 Roadmap items finished from now on are listed here with their PR.
 
+- **Native look, done 2026-11-16** (user's choice; `674bebc`, `7911c1b`, `b1675e6`): the editor header is one slim themed row (TC mark, project › folders › object, type tag, status dots, hammer Build button, *Actions ▾*); the Start Page follows the theme; a new flat TC mark for the Marketplace and Activity Bar; the old pink-red is gone, true red #E2001A is only a marker.
 - **Editor Actions menu, done 2026-11-16** (user's ask; `db32da5`, merged `56c760f`): the editor toolbar's buttons and switches (Generate ST, Build and its options, XAE, Start/Stop PLC, Auto Sync) are one *Actions* menu; status chips beside it keep Building…, PLC Run/Stop and Manual Sync visible.
 - **ADS DLL path settings, done 2026-11-16** (user's ask; `0f7161f`): `tcToolkit.adsDll.dotNetLibrary` (TwinCAT.Ads.dll) and `tcToolkit.adsDll.nativeDllFolder` (TcAdsDll.dll); empty = search as before, a set path is used as given, and a missing DLL's message offers Open Setting.
 - **Start/Stop PLC, done 2026-11-16** (user's ask; `cd896ef`): one toggle while online, confirmed each time, in the editor and the PLC Watch title bar, also over the user-mode helper. Open: whether to offer Start or Stop in Error/Exception (disabled today).
