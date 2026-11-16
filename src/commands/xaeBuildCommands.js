@@ -59,7 +59,7 @@ const {
     EXIT, buildDriverArgs, createLineSplitter, parseLine, createRunState, reduce, describeExit, describeUiMode,
     canCancel, isStalled, targetPickItems, confirmationText, reachedBuildResult, missingShell,
     declaredPairs, activationPlatform, platformNotDeclaredText, pairNotDeclaredText, noErrorDetails, needsCompileFallback, RERUN_WINDOW_SHOWN, SWITCH_AND_REMEMBER,
-    FALLBACK_INTRO, compileFallbackText, RETARGET_BUTTON, refusedTarget, retargetConfirmText
+    FALLBACK_INTRO, compileFallbackText, RETARGET_BUTTON, refusedTarget, retargetConfirmText, unknownRuntimesText
 } = require('../xaeBuild');
 const { checkSolutionTarget, changeSolutionTarget } = require('../tsprojTarget');
 const { placeXaeErrors, placementSummary } = require('../xaeErrorPlacement');
@@ -737,7 +737,7 @@ function registerXaeBuildCommands(context, deps) {
      */
     async function changeTarget(refused, o) {
         const ch = channel();
-        const items = targetPickItems({ local: refused.local, projectNetId: null }, { preselect: o.confirmedNetId || undefined });
+        const items = targetPickItems({ local: refused.local, unknown: refused.unknown, projectNetId: null }, { preselect: o.confirmedNetId || undefined });
         /** @type {any} */
         const picked = await vscode.window.showQuickPick(items, {
             title: `${o.title}: change the target of ${o.solutionName}`,
@@ -832,13 +832,20 @@ function registerXaeBuildCommands(context, deps) {
                 setRunning(true);
                 const listed = await listTargets(slnPath);
                 const items = targetPickItems(listed.state.targets, { preselect: context.workspaceState.get(LAST_TARGET_KEY) });
-                if (items.length === 0) {
-                    vscode.window.showErrorMessage('No runtime of this machine was found to activate on. ' +
-                        (listed.state.fatal ? listed.state.fatal.text : describeExit(listed.code, listed.outcome, listed.state).title));
+                // Runtimes whose AmsNetId is unknown are separator rows: shown, never pickable.
+                const unknownText = unknownRuntimesText(listed.state.targets ? listed.state.targets.unknown : []);
+                if (unknownText) channel().appendLine(`${stamp()} ${title}: ${unknownText}`);
+                if (!items.some(i => i.netId)) {
+                    vscode.window.showErrorMessage(unknownText
+                        ? `No runtime of this machine with a known AmsNetId was found to activate on. ${unknownText}`
+                        : 'No runtime of this machine was found to activate on. ' +
+                            (listed.state.fatal ? listed.state.fatal.text : describeExit(listed.code, listed.outcome, listed.state).title));
                     return { ok: false, reason: 'no-targets' };
                 }
-                const picked = await vscode.window.showQuickPick(items, { title: `${title}: activation target`, placeHolder: 'Runtime of this machine to activate on' });
-                if (!picked) return { ok: false, reason: 'cancelled' };
+                const pickedItem = await vscode.window.showQuickPick(items, { title: `${title}: activation target`, placeHolder: 'Runtime of this machine to activate on' });
+                // A separator row has no netId (and cannot be picked anyway).
+                if (!pickedItem || !pickedItem.netId) return { ok: false, reason: 'cancelled' };
+                const picked = { netId: pickedItem.netId, name: pickedItem.name || pickedItem.netId };
                 // The driver refuses to activate a platform that is not the target's (gate 4): decide
                 // here, before anything starts, from the same platform -ListTargets reported.
                 const listedTarget = listed.state.targets ? listed.state.targets.local.find(t => t.netId === picked.netId) : null;
@@ -1027,10 +1034,15 @@ function registerXaeBuildCommands(context, deps) {
             ch.appendLine(`${stamp()} Activation targets (runtimes of this machine; read-only)${slnPath ? ` for ${slnPath}` : ''}:`);
             const run = await listTargets(slnPath);
             const t = run.state.targets;
-            if (t && t.local.length > 0) {
+            if (t && (t.local.length > 0 || t.unknown.length > 0)) {
                 for (const r of t.local) {
                     ch.appendLine(`  ${r.netId.padEnd(20)} ${r.kind.padEnd(10)} ${r.name}  ${r.platform || 'platform unknown'}${t.projectNetId === r.netId ? '  (project)' : ''}`);
                 }
+                for (const u of t.unknown) {
+                    ch.appendLine(`  ${'AmsNetId unknown'.padEnd(20)} ${u.kind.padEnd(10)} ${u.name}  not offered: ${u.reason}` +
+                        (u.fileNetId ? ` (its configuration file names ${u.fileNetId})` : ''));
+                }
+                if (t.unknown.length > 0) ch.appendLine(`  ${unknownRuntimesText(t.unknown)}`);
             } else {
                 ch.appendLine(`  none found. ${describeExit(run.code, run.outcome, run.state).title}`);
             }
@@ -1038,7 +1050,7 @@ function registerXaeBuildCommands(context, deps) {
                 ch.appendLine(`  The project names ${t.projectNetId}, which is not a runtime of this machine: activation onto it is refused.`);
             }
             ch.show(true);
-            return { ok: !!t, targets: t ? t.local.slice() : [], projectNetId: t ? t.projectNetId : null };
+            return { ok: !!t, targets: t ? t.local.slice() : [], unknown: t ? t.unknown.slice() : [], projectNetId: t ? t.projectNetId : null };
         }),
         vscode.commands.registerCommand('twincat.xaeBuild.goToProblem', async () => {
             const problems = allProblems().sort((x, y) => (x.severity === y.severity ? 0 : (x.severity === 'error' ? -1 : 1)));

@@ -257,6 +257,21 @@ reports first is what tells you what to fix:
 Gate 3 is the one that catches a real machine project: a `.tsproj` written against a physical rig
 names that rig, and this refuses it statically rather than discovering it with the IDE open.
 
+**"This machine's" set holds only NetIds a runtime answers to.** A user-mode runtime's AmsNetId is
+read from `%ProgramData%\Beckhoff\TwinCAT\3.1\Runtimes\<name>\3.1\TcRegistry.xml`, but every start of
+an instance of that runtime rewrites the file with *its own* NetId — so a second instance, started and
+closed again, leaves a NetId nothing answers to (measured on 4026, 2026-11-16). The file's NetId is
+therefore trusted only when a `TcSystemServiceUm.exe` process with `-n "<name>"` on its command line is
+running **and** the file was last written no later than the newest such process's start plus **5 s**
+(the instance writes the file itself right after it starts). Otherwise the runtime's NetId is
+*unknown*: it is not in the local set (so it is never a target and gates 1–3 treat it as foreign), and
+the refusals and warnings name it with the reason — `this runtime is not running`, `the configuration
+file was rewritten after this runtime started (another instance?)`, or why the check could not be made
+(a process running elevated hides its command line from an unelevated shell). Its real NetId is
+printed in the runtime's console window (`AmsNetId: …`); XAE's *Choose Target System* shows it too.
+The decision is `Resolve-UserModeNetIdTrust` (pure, pinned by `test-activation-target.ps1`); real-time
+runtimes are unaffected.
+
 Gate 4 only applies **with** `-ActivateConfiguration`. Cross-compiling for another platform is
 legitimate and builds freely without it.
 

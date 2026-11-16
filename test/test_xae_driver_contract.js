@@ -72,19 +72,33 @@ assert(ps1.includes("'shell-closed'"), 'fatal code shell-closed');
 // needs to offer changing the solution's target; the gate and its labels are the builder's, verbatim.
 assert(/Emit-Fatal 'target-refused' "\$_" \(\[ordered\]@\{ gate = \$gate; projectNetId = \$projTarget; tsproj = \$tsproj\.FullName; local = @\(\$refusedLocal\) \}\)/.test(ps1),
     'target-refused carries gate, projectNetId, tsproj and local');
-assert(/name = \$\(if \(\$r\.Kind -eq 'real-time'\) \{ 'Real-time runtime' \} else \{ Split-Path -Leaf \$r\.Source \}\)/.test(ps1)
-    && /kind = \$r\.Kind; platform = \$r\.Platform; provenance = \$r\.Provenance/.test(ps1), "the refusal's runtimes are in the -ListTargets shape");
+assert(/\$name = \$\(if \(\$r\.Kind -eq 'real-time'\) \{ 'Real-time runtime' \} else \{ Split-Path -Leaf \$r\.Source \}\)/.test(ps1)
+    && /kind = \$r\.Kind; platform = \$r\.Platform; provenance = \$r\.Provenance/.test(ps1), "the runtime list entries keep the -ListTargets shape");
+// A user-mode runtime's NetId is trusted only for a running instance that wrote it (2026-11-16): the
+// list marks every entry, an unknown one carries no netId, and both lists come from one function.
+assert(/netIdStatus = \$\(if \(\$r\.NetId\) \{ 'trusted' \} else \{ \[string\]\$r\.NetIdStatus \}\)/.test(ps1)
+    && /netId = \$\(if \(\$r\.NetId\) \{ \$r\.NetId \} else \{ \$null \}\)/.test(ps1)
+    && /reason = \$\(if \(\$r\.NetId\) \{ \$null \} else \{ \[string\]\$r\.NetIdReason \}\)/.test(ps1), 'list entries carry netIdStatus and reason; an unknown NetId is null');
+assert(/\$list = ConvertTo-RuntimeListEntries -Records @\(Get-LocalRuntimeRecords\)/.test(ps1)
+    && /\$refusedLocal = ConvertTo-RuntimeListEntries -Records \$LocalRuntimeRecords/.test(ps1), '-ListTargets and target-refused build their list the same way');
 if (fs.existsSync(BUILDER)) {
     const builder = fs.readFileSync(BUILDER, 'utf8');
     const fn = (text, name) => (new RegExp(`\\nfunction ${name} \\{[\\s\\S]*?\\r?\\n\\}\\r?\\n`).exec(text) || [''])[0];
-    for (const name of ['Resolve-ActivationTarget', 'Get-RuntimeLabels']) {
+    for (const name of ['Resolve-ActivationTarget', 'Get-RuntimeLabels', 'Resolve-UserModeNetIdTrust', 'Get-UserModeRuntimeProcesses',
+        'Get-UnknownRuntimeLabels', 'Get-UserModeRuntimeRecords', 'Get-LocalRuntimeRecords', 'Get-LocalAmsNetIds']) {
         assert(fn(ps1, name) !== '' && fn(ps1, name) === fn(builder, name), `${name} is identical in the driver and the builder`);
     }
     assert(/which is not a runtime on this PC\." \+ \$nl \+/.test(ps1) && /Runtimes on this PC: \$\(\$named -join ', '\)/.test(ps1),
         'gate 3 says "not a runtime on this PC" and names the local runtimes');
     for (const text of [ps1, builder]) {
-        assert(/-RuntimeLabels \$RuntimeLabels\r?\n/.test(text) && /\$RuntimeLabels\s+= Get-RuntimeLabels -Records \$LocalRuntimeRecords/.test(text),
-            'the caller hands the gate the runtime labels');
+        assert(/-RuntimeLabels \$RuntimeLabels `\r?\n\s*-UnknownRuntimes \$UnknownRuntimes\r?\n/.test(text)
+            && /\$RuntimeLabels\s+= Get-RuntimeLabels -Records \$LocalRuntimeRecords/.test(text)
+            && /\$UnknownRuntimes\s+= Get-UnknownRuntimeLabels -Records \$LocalRuntimeRecords/.test(text),
+            'the caller hands the gate the runtime labels and the runtimes whose NetId is unknown');
+        // Fail closed: the local set keys on NetId, and an untrusted record has none.
+        assert(/NetId\s+= \$\(if \(\$trust\.Status -eq 'trusted'\) \{ \$fileNetId \} else \{ \$null \}\)/.test(text)
+            && /-Processes \$umProcesses -ProcessListFailed:\(\$null -eq \$umProcesses\)/.test(text),
+            'a user-mode NetId is set only when trusted, against the live process list');
     }
 }
 for (const r of ['headless', 'requested', 'version-switch', 'build', 'activation', 'after-activation']) {

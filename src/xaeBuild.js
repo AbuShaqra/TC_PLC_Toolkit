@@ -276,6 +276,21 @@ function parseLine(line) {
  */
 
 /**
+ * @typedef {{netId: string, name: string, kind: string, platform: string|null, provenance: string|null}} LocalRuntime
+ *   A runtime of this PC whose AmsNetId is known: an activation (and retarget) candidate.
+ */
+
+/**
+ * @typedef {Object} UnknownRuntime A user-mode runtime of this PC whose AmsNetId could not be trusted.
+ * @property {string} name The runtime's folder name (the name XAE shows, e.g. UmRT_Default).
+ * @property {string} kind
+ * @property {string|null} platform
+ * @property {string} status The driver's netIdStatus: 'not-running', 'rewritten' or 'unverifiable'.
+ * @property {string} reason In words, e.g. "this runtime is not running".
+ * @property {string|null} fileNetId What its TcRegistry.xml names: NOT a target, only for messages.
+ */
+
+/**
  * @typedef {Object} RunState What one run's output has said so far.
  * @property {string|null} mode build | activate | listTargets (from `hello`).
  * @property {boolean|null} showWindow As the driver understood it (from `hello`).
@@ -298,7 +313,9 @@ function parseLine(line) {
  * @property {boolean} targetMismatch The driver's target readback differs from the confirmed pick.
  * @property {string|null} expectedNetId The NetId the user confirmed (activation only).
  * @property {{netId: string, adsState: number|null, stateName: string|null, outcome: string}|null} activation
- * @property {{local: Array<{netId: string, name: string, kind: string, platform: string|null, provenance: string|null}>, projectNetId: string|null}|null} targets
+ * @property {{local: LocalRuntime[], unknown: UnknownRuntime[], projectNetId: string|null}|null} targets
+ *   This PC's runtimes from `-ListTargets`: `local` (a known AmsNetId: the only ones ever offered) and
+ *   `unknown` (a user-mode runtime whose AmsNetId could not be trusted; listed, never offered).
  * @property {{code: string, text: string, data?: any}|null} fatal
  * @property {{exitCode: number, ui: any}|null} done
  * @property {string[]} log Plain lines, in order.
@@ -406,13 +423,7 @@ function reduce(state, item, now = Date.now()) {
             };
             break;
         case 'targets':
-            state.targets = {
-                local: (Array.isArray(e.local) ? e.local : []).filter(t => t && isValidNetId(t.netId)).map(t => ({
-                    netId: t.netId, name: String(t.name || t.netId), kind: String(t.kind || ''), platform: strOrNull(t.platform),
-                    provenance: strOrNull(t.provenance)
-                })),
-                projectNetId: strOrNull(e.projectNetId)
-            };
+            state.targets = { ...runtimeEntries(e.local), projectNetId: strOrNull(e.projectNetId) };
             break;
         case 'done':
             state.done = { exitCode: numOrNull(e.exitCode), ui: e.ui && typeof e.ui === 'object' ? e.ui : null };
@@ -658,14 +669,77 @@ function isStalled(state, now, o) {
 }
 
 /**
+ * `vscode.QuickPickItemKind.Separator`: a QuickPick row that cannot be picked. This module does not
+ * load `vscode`, so the value is spelled out (it is fixed by the API).
+ */
+const QUICK_PICK_SEPARATOR = -1;
+
+/**
+ * Where to read a user-mode runtime's real AmsNetId when the driver could not trust it.
+ */
+const UNKNOWN_NETID_HINT = 'Read the AmsNetId in that runtime\'s console window ("AmsNetId: …") or use XAE\'s Choose Target System.';
+
+/**
+ * The runtimes of a driver list (`-ListTargets`' `local`, the `target-refused` fatal's `local`),
+ * split by whether their AmsNetId is known. A user-mode runtime's AmsNetId is trusted only for a
+ * running instance that wrote it (the driver's Resolve-UserModeNetIdTrust); any `netIdStatus` other
+ * than `trusted` puts the entry in `unknown`, whatever its `netId` says, so an unknown NetId is never
+ * offered, preselected or treated as local (fail closed). An entry with neither a well-formed NetId
+ * nor a status (a malformed one, or an older driver's) is dropped, as before. Each NetId, and each
+ * unknown runtime name, once; `exclude` (the solution's own target) is never in `local`.
+ * PS 5.1 may hand a one-element array over as a bare object.
+ * @param {any} raw
+ * @param {string|null} [exclude]
+ * @returns {{local: LocalRuntime[], unknown: UnknownRuntime[]}}
+ */
+function runtimeEntries(raw, exclude) {
+    const list = Array.isArray(raw) ? raw : (raw && typeof raw === 'object' ? [raw] : []);
+    /** @type {LocalRuntime[]} */
+    const local = [];
+    /** @type {UnknownRuntime[]} */
+    const unknown = [];
+    for (const t of list) {
+        if (!t || typeof t !== 'object') continue;
+        const status = strOrNull(t.netIdStatus);
+        if (status && status !== 'trusted') {
+            const name = String(t.name || 'user-mode runtime');
+            if (unknown.some(u => u.name === name)) continue;
+            unknown.push({
+                name, kind: String(t.kind || ''), platform: strOrNull(t.platform), status,
+                reason: strOrNull(t.reason) || 'its AmsNetId could not be confirmed',
+                fileNetId: isValidNetId(t.fileNetId) ? t.fileNetId : null
+            });
+            continue;
+        }
+        if (!isValidNetId(t.netId) || t.netId === exclude || local.some(l => l.netId === t.netId)) continue;
+        local.push({ netId: t.netId, name: String(t.name || t.netId), kind: String(t.kind || ''), platform: strOrNull(t.platform), provenance: strOrNull(t.provenance) });
+    }
+    return { local, unknown };
+}
+
+/**
+ * One sentence naming the runtimes whose AmsNetId is unknown, why, and where to read it; '' for none.
+ * @param {UnknownRuntime[]|undefined} unknown
+ * @returns {string}
+ */
+function unknownRuntimesText(unknown) {
+    if (!unknown || unknown.length === 0) return '';
+    const named = unknown.map(u => `${u.name} (${u.kind === 'user-mode' ? 'user-mode runtime' : 'runtime'}): ${u.reason}`);
+    return `Not offered, AmsNetId unknown: ${named.join('; ')}. ${UNKNOWN_NETID_HINT}`;
+}
+
+/**
  * The activation-target QuickPick items: this machine's runtimes, the project's own NetId marked,
  * the last pick first and preselected. Nothing is stored as a setting; `preselect` is a convenience.
- * @param {RunState['targets']} targets
+ * Runtimes whose AmsNetId is unknown follow as separator rows (`kind` QUICK_PICK_SEPARATOR): shown
+ * with the reason, never pickable, never preselected, and without a `netId`.
+ * @param {RunState['targets']|{local: LocalRuntime[], unknown?: UnknownRuntime[], projectNetId: string|null}} targets
  * @param {{preselect?: string}} [o]
- * @returns {Array<{label: string, description: string, detail: string, netId: string, name: string, picked: boolean}>}
+ * @returns {Array<{label: string, description?: string, detail?: string, netId?: string, name?: string, picked?: boolean, kind?: number}>}
  */
 function targetPickItems(targets, o = {}) {
     if (!targets) return [];
+    /** @type {Array<{label: string, description?: string, detail?: string, netId?: string, name?: string, picked?: boolean, kind?: number}>} */
     const items = targets.local.map(t => ({
         label: t.name,
         description: t.netId + (targets.projectNetId === t.netId ? ' (project)' : ''),
@@ -674,6 +748,9 @@ function targetPickItems(targets, o = {}) {
         netId: t.netId, name: t.name, picked: !!o.preselect && o.preselect === t.netId
     }));
     items.sort((a, b) => Number(b.picked) - Number(a.picked));
+    for (const u of targets.unknown || []) {
+        items.push({ label: `${u.name}: AmsNetId unknown, not offered (${u.reason})`, kind: QUICK_PICK_SEPARATOR });
+    }
     return items;
 }
 
@@ -717,8 +794,9 @@ const RETARGET_BUTTON = 'Change the solution\'s target…';
  * @typedef {Object} RefusedTarget
  * @property {string} projectNetId The TargetNetId the solution names (not a runtime on this PC).
  * @property {string|null} tsproj The system project the driver read it from.
- * @property {Array<{netId: string, name: string, kind: string, platform: string|null, provenance: string|null}>} local
- *   This PC's runtimes, as the driver found them (well-formed NetIds only, each once).
+ * @property {LocalRuntime[]} local
+ *   This PC's runtimes with a known AmsNetId, as the driver found them (well-formed NetIds only, each once).
+ * @property {UnknownRuntime[]} unknown This PC's runtimes whose AmsNetId is unknown: named, never offered.
  */
 
 /**
@@ -734,15 +812,8 @@ function refusedTarget(state) {
     const d = f.data;
     const projectNetId = strOrNull(d.projectNetId);
     if (numOrNull(d.gate) !== 3 || !projectNetId) return null;
-    // PS 5.1 may hand a one-element array over as a bare object.
-    const raw = Array.isArray(d.local) ? d.local : (d.local && typeof d.local === 'object' ? [d.local] : []);
-    /** @type {RefusedTarget['local']} */
-    const local = [];
-    for (const t of raw) {
-        if (!t || !isValidNetId(t.netId) || t.netId === projectNetId || local.some(l => l.netId === t.netId)) continue;
-        local.push({ netId: t.netId, name: String(t.name || t.netId), kind: String(t.kind || ''), platform: strOrNull(t.platform), provenance: strOrNull(t.provenance) });
-    }
-    return { projectNetId, tsproj: strOrNull(d.tsproj), local };
+    const { local, unknown } = runtimeEntries(d.local, projectNetId);
+    return { projectNetId, tsproj: strOrNull(d.tsproj), local, unknown };
 }
 
 /**
@@ -766,13 +837,22 @@ function runtimeLabel(t) {
 function retargetRefusalText(info, solutionName, problem) {
     const head = `${solutionName} targets ${info.projectNetId}, which is not a runtime on this PC. ` +
         'Activation is local-only, so it was refused before XAE started.';
+    const unknown = info.unknown || [];
+    // The measured case: the solution names the NetId a runtime's configuration file holds, but no
+    // running instance of that runtime is known to use it.
+    const stale = unknown.filter(u => u.fileNetId === info.projectNetId)
+        .map(u => ` ${info.projectNetId} is the AmsNetId ${u.name}'s configuration file names, which no running instance of it is known to use.`).join('');
+    const tail = (stale ? stale : '') + (unknown.length > 0 ? ` ${unknownRuntimesText(unknown)}` : '');
     if (info.local.length === 0) {
+        if (unknown.length > 0) {
+            return `${head}${tail} No runtime with a known AmsNetId was found on this PC, so there is none to change the target to here.`;
+        }
         return `${head} No runtime was found on this PC, so there is none to change the target to: ` +
             'set the target in XAE (Choose Target System) once this PC has a runtime.';
     }
     const list = ` Runtimes on this PC: ${info.local.map(runtimeLabel).join(', ')}.`;
-    if (problem) return `${head}${list} The target cannot be changed here: ${problem}. Change it in XAE (Choose Target System).`;
-    return `${head}${list} Change the solution's target to one of them (here, or in XAE with Choose Target System).`;
+    if (problem) return `${head}${list}${tail} The target cannot be changed here: ${problem}. Change it in XAE (Choose Target System).`;
+    return `${head}${list}${tail} Change the solution's target to one of them (here, or in XAE with Choose Target System).`;
 }
 
 /**
@@ -965,6 +1045,7 @@ function compileFallbackText(results, compileSource) {
 module.exports = {
     PREFIX, PROTOCOL, EXIT, EVENT_TYPES, UNINTERRUPTIBLE_PHASES, SWITCH_FOR_RUN, SWITCH_AND_REMEMBER, RERUN_WINDOW_SHOWN, FALLBACK_INTRO, compileFallbackText,
     RETARGET_BUTTON, refusedTarget, runtimeLabel, retargetRefusalText, retargetConfirmText,
+    QUICK_PICK_SEPARATOR, UNKNOWN_NETID_HINT, runtimeEntries, unknownRuntimesText,
     isValidNetId, buildDriverArgs, shellByProgId, missingShell, createLineSplitter, parseLine, createRunState, reduce,
     compileFailureConfirmed, reachedBuildResult, describeExit, describeUiMode, buildPhaseUi, canCancel, isStalled, targetPickItems, confirmationText,
     declaredPairs, activationPlatform, platformNotDeclaredText, pairNotDeclaredText, noErrorDetails, needsCompileFallback, oneLine

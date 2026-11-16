@@ -99,13 +99,15 @@ function Get-FunctionText {
 . ([scriptblock]::Create((Get-FunctionText 'Get-TcRuntimeKind')))
 . ([scriptblock]::Create((Get-FunctionText 'Get-UserModeRuntimeRecords')))
 . ([scriptblock]::Create((Get-FunctionText 'Get-RuntimeLabels')))
+. ([scriptblock]::Create((Get-FunctionText 'Resolve-UserModeNetIdTrust')))
+. ([scriptblock]::Create((Get-FunctionText 'Get-UnknownRuntimeLabels')))
 
 # A signature check, not a style check. The table below is written against -TargetPlatforms - a
 # PER-TARGET map - and would be meaningless against a builder that still asks about the host, so say
 # so rather than reporting green.
 $gateParams = @((Get-Command Resolve-ActivationTarget -CommandType Function).Parameters.Keys)
 foreach ($needed in 'LocalNetIds', 'RequestedNetId', 'ProjectNetId', 'Platform', 'TargetPlatforms',
-                    'Configuration', 'RuntimeLabels') {
+                    'Configuration', 'RuntimeLabels', 'UnknownRuntimes') {
     if ($gateParams -notcontains $needed) {
         Fail-Harness "Resolve-ActivationTarget has no -$needed parameter; these tests are written against it."
     }
@@ -236,7 +238,8 @@ function Test-Refuses {
         [string]$Configuration = 'Release',
         [string[]]$MessageContains,
         [string[]]$MessageLacks,         # the gate that must NOT report - this is how precedence is pinned
-        [hashtable]$RuntimeLabels         # wording only: NetId -> label, as Get-RuntimeLabels builds it
+        [hashtable]$RuntimeLabels,        # wording only: NetId -> label, as Get-RuntimeLabels builds it
+        [string[]]$UnknownRuntimes        # wording only: as Get-UnknownRuntimeLabels builds it
     )
     if (-not $Platform) { $Platform = $Rt64 }
     if (-not $PSBoundParameters.ContainsKey('TargetPlatforms')) { $TargetPlatforms = $AllRt64 }
@@ -244,7 +247,7 @@ function Test-Refuses {
         $r = Resolve-ActivationTarget -LocalNetIds $Local -RequestedNetId $Requested `
                                       -ProjectNetId $Project -Platform $Platform `
                                       -TargetPlatforms $TargetPlatforms -Configuration $Configuration `
-                                      -RuntimeLabels $RuntimeLabels
+                                      -RuntimeLabels $RuntimeLabels -UnknownRuntimes $UnknownRuntimes
         Write-Fail $Name "did not refuse; returned target $($r.TargetNetId) ($($r.TargetSource))"
         return
     } catch {
@@ -470,6 +473,110 @@ if ((Get-RuntimeLabels -Records @()).Count -eq 0 -and (Get-RuntimeLabels -Record
     Write-Fail 'Get-RuntimeLabels of no records is an empty map' 'not empty'
 }
 
+# ---------------------------------------------------------------------------- user-mode NetId trust
+# Resolve-UserModeNetIdTrust: pure over the process list and the file time it is handed. The times
+# reproduce the user's 4026 machine (2026-11-16): the running instance started 11:46:38, a second
+# instance of the same runtime rewrote TcRegistry.xml at 12:01:05 and closed again.
+function New-UmProcess {
+    param([string]$CommandLine, $StartTime)
+    return [pscustomobject]@{ ProcessId = 1; CommandLine = $CommandLine; StartTime = $StartTime }
+}
+function Get-UtcTime { param([string]$Text) return [datetime]::SpecifyKind([datetime]::Parse($Text, [Globalization.CultureInfo]::InvariantCulture), 'Utc') }
+$UmExe     = '"C:\Program Files (x86)\Beckhoff\TwinCAT\3.1\Runtimes\bin\TcSystemServiceUm.exe"'
+$UmCmd     = "$UmExe -t bin -i path -n `"UmRT_Default`" -c .\3.1"
+$UmStart   = Get-UtcTime '2026-11-16 11:46:38'
+$UmRunning = @(New-UmProcess -CommandLine $UmCmd -StartTime $UmStart)
+
+function Test-Trust {
+    param([string]$Name, [string]$Runtime = 'UmRT_Default', $FileTime, $Processes, [switch]$ProcessListFailed,
+          [string]$ExpectStatus, [string]$ReasonContains, [int]$ExpectInstances = -1)
+    $t = Resolve-UserModeNetIdTrust -Name $Runtime -RegistryWriteTime $FileTime -Processes $Processes -ProcessListFailed:$ProcessListFailed
+    $problems = @()
+    if ($t.Status -ne $ExpectStatus) { $problems += "Status '$($t.Status)' != '$ExpectStatus'" }
+    if ($ReasonContains -and "$($t.Reason)" -notlike "*$ReasonContains*") { $problems += "Reason '$($t.Reason)' lacks '$ReasonContains'" }
+    if ($ExpectStatus -eq 'trusted' -and $t.Reason) { $problems += "a trusted NetId carries a reason: '$($t.Reason)'" }
+    if ($ExpectInstances -ge 0 -and $t.Instances -ne $ExpectInstances) { $problems += "Instances $($t.Instances) != $ExpectInstances" }
+    if ($problems.Count -gt 0) { Write-Fail $Name ($problems -join '; ') }
+    else { Write-Pass $Name "$($t.Status)$(if ($t.Reason) { ': ' + $t.Reason })" }
+}
+
+Test-Trust -Name 'THE MEASURED CASE: the file was rewritten 15 min after the running instance started' `
+           -FileTime (Get-UtcTime '2026-11-16 12:01:05') -Processes $UmRunning `
+           -ExpectStatus 'rewritten' -ReasonContains 'rewritten after this runtime started (another instance?)'
+Test-Trust -Name 'the instance writes the file just after it starts: trusted' `
+           -FileTime $UmStart.AddSeconds(2) -Processes $UmRunning -ExpectStatus 'trusted' -ExpectInstances 1
+Test-Trust -Name 'a file older than the start is trusted (the instance did not rewrite it)' `
+           -FileTime $UmStart.AddDays(-3) -Processes $UmRunning -ExpectStatus 'trusted'
+Test-Trust -Name 'the tolerance is 5 s: a write at start + 5 s is still the instance' `
+           -FileTime $UmStart.AddSeconds(5) -Processes $UmRunning -ExpectStatus 'trusted'
+Test-Trust -Name 'and a write at start + 6 s is not' `
+           -FileTime $UmStart.AddSeconds(6) -Processes $UmRunning -ExpectStatus 'rewritten'
+Test-Trust -Name 'no process at all: not running' `
+           -FileTime $UmStart -Processes @() -ExpectStatus 'not-running' -ReasonContains 'this runtime is not running'
+Test-Trust -Name 'no process list (null): not running, fail closed' `
+           -FileTime $UmStart -Processes $null -ExpectStatus 'not-running'
+Test-Trust -Name 'a process for ANOTHER runtime does not make this one running' `
+           -Runtime 'UmRT_Second' -FileTime $UmStart -Processes $UmRunning -ExpectStatus 'not-running'
+Test-Trust -Name 'the name must match exactly: UmRT_Default2 is not UmRT_Default' `
+           -FileTime $UmStart -Processes @(New-UmProcess -CommandLine "$UmExe -n `"UmRT_Default2`" -c .\3.1" -StartTime $UmStart) `
+           -ExpectStatus 'not-running'
+Test-Trust -Name 'the name is compared case-insensitively, and -n may be unquoted' `
+           -FileTime $UmStart -Processes @(New-UmProcess -CommandLine "$UmExe -t bin -n umrt_default -c .\3.1" -StartTime $UmStart) `
+           -ExpectStatus 'trusted'
+Test-Trust -Name "an executable path containing ' -n UmRT_Default' is not the -n argument" `
+           -FileTime $UmStart -Processes @(New-UmProcess -CommandLine '"C:\x -n UmRT_Default\TcSystemServiceUm.exe" -n "Other"' -StartTime $UmStart) `
+           -ExpectStatus 'not-running'
+Test-Trust -Name 'two instances: a file written by the newest is trusted' `
+           -FileTime $UmStart.AddMinutes(10).AddSeconds(1) `
+           -Processes @($UmRunning[0], (New-UmProcess -CommandLine $UmCmd -StartTime $UmStart.AddMinutes(10))) `
+           -ExpectStatus 'trusted' -ExpectInstances 2
+Test-Trust -Name 'two instances: a file written after the newest started is not' `
+           -FileTime $UmStart.AddMinutes(20) `
+           -Processes @($UmRunning[0], (New-UmProcess -CommandLine $UmCmd -StartTime $UmStart.AddMinutes(10))) `
+           -ExpectStatus 'rewritten' -ExpectInstances 2
+Test-Trust -Name 'a local start time compares with a UTC file time as the same instant' `
+           -FileTime $UmStart.AddSeconds(2) -Processes @(New-UmProcess -CommandLine $UmCmd -StartTime $UmStart.ToLocalTime()) `
+           -ExpectStatus 'trusted'
+Test-Trust -Name 'an unreadable command line (elevated process) is unverifiable, not running' `
+           -FileTime $UmStart -Processes @(New-UmProcess -CommandLine '' -StartTime $UmStart) `
+           -ExpectStatus 'unverifiable' -ReasonContains 'command line could not be read'
+Test-Trust -Name 'a process list that could not be read is unverifiable' `
+           -FileTime $UmStart -Processes @() -ProcessListFailed -ExpectStatus 'unverifiable' -ReasonContains 'could not be listed'
+Test-Trust -Name "an unreadable start time is unverifiable" `
+           -FileTime $UmStart -Processes @(New-UmProcess -CommandLine $UmCmd -StartTime $null) -ExpectStatus 'unverifiable'
+Test-Trust -Name "an unreadable file time is unverifiable" `
+           -FileTime $null -Processes $UmRunning -ExpectStatus 'unverifiable'
+
+# Get-UnknownRuntimeLabels: one line per runtime whose NetId is unknown; known ones are skipped.
+$unknownRecords = @(
+    [pscustomobject]@{ NetId = $NetRt; Kind = 'real-time'; Source = 'HKLM:\SOFTWARE\Beckhoff\TwinCAT3\System' },
+    [pscustomobject]@{ NetId = $NetUm; Kind = 'user-mode'; Name = 'UmRT_Good'; NetIdStatus = 'trusted'; NetIdReason = '' },
+    [pscustomobject]@{ NetId = $null; FileNetId = '198.51.100.6.1.1'; Kind = 'user-mode'; Name = 'UmRT_Default'
+                       NetIdStatus = 'rewritten'; NetIdReason = 'the configuration file was rewritten after this runtime started (another instance?)' },
+    [pscustomobject]@{ NetId = $null; FileNetId = '198.51.100.6.1.1'; Kind = 'user-mode'; Name = 'UmRT_Default'
+                       NetIdStatus = 'rewritten'; NetIdReason = 'twice' },
+    $null
+)
+$unknownLines = @(Get-UnknownRuntimeLabels -Records $unknownRecords)
+Test-Equals -Name 'Get-UnknownRuntimeLabels names each unknown runtime once, with its reason' `
+            -Actual ($unknownLines -join ' | ') `
+            -Expected 'UmRT_Default (user-mode runtime, AmsNetId unknown: the configuration file was rewritten after this runtime started (another instance?))'
+Test-Equals -Name 'Get-UnknownRuntimeLabels of no records is empty' -Actual (@(Get-UnknownRuntimeLabels -Records $null).Count) -Expected 0
+
+# The gates: an unknown runtime is never local - the refusal names it, and the local set is unchanged.
+Test-Refuses -Name 'the stale file NetId as the project target is refused, and the unknown runtime is named' `
+             -Local @($NetRt) -Project '198.51.100.6.1.1' -UnknownRuntimes $unknownLines `
+             -MessageContains @('not a runtime on this PC', "Runtimes on this PC: $NetRt", 'Not offered, AmsNetId unknown: UmRT_Default',
+                                'another instance?', "console window ('AmsNetId: ...')", 'Choose Target System')
+Test-Refuses -Name 'no known runtime at all: gate 1, naming the unknown one' `
+             -Local @() -Project '198.51.100.6.1.1' -UnknownRuntimes $unknownLines `
+             -MessageContains @("cannot determine this machine's AmsNetId", 'Not offered, AmsNetId unknown: UmRT_Default')
+Test-Refuses -Name 'a -TargetNetId naming the stale file NetId is not local (gate 2)' `
+             -Local @($NetRt) -Requested '198.51.100.6.1.1' -UnknownRuntimes $unknownLines `
+             -MessageContains @('-TargetNetId 198.51.100.6.1.1 is not an AmsNetId of this machine', 'Not offered, AmsNetId unknown')
+Test-Refuses -Name 'without unknown runtimes the refusal has no "Not offered" line' `
+             -Local @($NetRt) -Project $NetRemote -MessageContains @('not a runtime on this PC') -MessageLacks @('Not offered')
+
 # ---------------------------------------------------------------------------- precedence
 Test-Refuses  -Name 'precedence: an undetermined local set outranks every other gate' `
               -Local @() -Requested $NetRemote -Project $NetRemote -Platform $Rt86 -TargetPlatforms $AllRt64 `
@@ -644,8 +751,12 @@ try {
     New-FixtureRuntime -Name 'UmRT_unknownkind' -NetIdHex 'C63364090101' -DeviceType 'PC-CE7' -BootPlatform 'TwinCAT OS (ARMV7-A)'
     New-FixtureRuntime -Name 'bin'              -NoRegistryXml -BootPlatform $Rt64
 
+    # Every fixture runtime is running, started after its file was written: every NetId is trusted.
+    $fixtureNames = @(Get-ChildItem -LiteralPath $FixtureRoot -Directory | ForEach-Object { $_.Name })
+    $runningAll   = @($fixtureNames | ForEach-Object {
+        New-UmProcess -CommandLine "$UmExe -t bin -i path -n `"$_`" -c .\3.1" -StartTime (Get-Date).AddMinutes(1) })
     $records = @{}
-    foreach ($r in Get-UserModeRuntimeRecords -RuntimesRoot $FixtureRoot) { $records[$r.NetId] = $r }
+    foreach ($r in Get-UserModeRuntimeRecords -RuntimesRoot $FixtureRoot -Processes $runningAll) { $records[$r.NetId] = $r }
 
     Test-Fixture  -Name 'THE CASE THE OLD CODE GOT WRONG: a user-mode runtime with no boot config' `
                   -Records $records -NetId '198.51.100.4.1.1' `
@@ -706,6 +817,39 @@ try {
     Test-Refuses  -Name 'end to end: the same runtime refuses a TwinCAT RT build, saying the arch was inferred' `
                   -Local @('198.51.100.4.1.1') -Platform $HostRt -TargetPlatforms $fixtureMap `
                   -MessageContains @($HostRt, $HostOs, '198.51.100.4.1.1', 'inferred')
+
+    # The trust rule over real files. Started an hour ago, so every file (written just now) is newer
+    # than its instance: no NetId is trusted, every one is kept as FileNetId with the reason.
+    $runningOld = @($fixtureNames | ForEach-Object {
+        New-UmProcess -CommandLine "$UmExe -n `"$_`"" -StartTime (Get-Date).AddHours(-1) })
+    $stale = @(Get-UserModeRuntimeRecords -RuntimesRoot $FixtureRoot -Processes $runningOld)
+    $staleProblems = @()
+    if ($stale.Count -ne 6) { $staleProblems += "expected 6 records, got $($stale.Count)" }
+    foreach ($r in $stale) {
+        if ($r.NetId) { $staleProblems += "$($r.Name): NetId '$($r.NetId)' trusted" }
+        if ($r.NetIdStatus -ne 'rewritten') { $staleProblems += "$($r.Name): status '$($r.NetIdStatus)'" }
+        if (-not $r.FileNetId) { $staleProblems += "$($r.Name): FileNetId lost" }
+    }
+    $staleUm = @($stale | Where-Object { $_.Name -eq 'UmRT_marked' })
+    if ($staleUm.Count -ne 1 -or $staleUm[0].FileNetId -ne '198.51.100.4.1.1') { $staleProblems += 'UmRT_marked FileNetId is not 198.51.100.4.1.1' }
+    if ($staleProblems.Count -gt 0) { Write-Fail 'a file rewritten after its instance started gives no NetId, only FileNetId' ($staleProblems -join '; ') }
+    else { Write-Pass 'a file rewritten after its instance started gives no NetId, only FileNetId' "$($stale.Count) records, all 'rewritten'" }
+
+    $notRunning = @(Get-UserModeRuntimeRecords -RuntimesRoot $FixtureRoot)
+    if (@($notRunning | Where-Object { $_.NetId -or $_.NetIdStatus -ne 'not-running' }).Count -eq 0 -and $notRunning.Count -eq 6) {
+        Write-Pass 'without a process list nothing is running, so nothing is trusted (fail closed)' "$($notRunning.Count) records, all 'not-running'"
+    } else {
+        Write-Fail 'without a process list nothing is running, so nothing is trusted (fail closed)' `
+                   (($notRunning | ForEach-Object { "$($_.Name)=$($_.NetId)/$($_.NetIdStatus)" }) -join ', ')
+    }
+
+    $failedList = @(Get-UserModeRuntimeRecords -RuntimesRoot $FixtureRoot -Processes @() -ProcessListFailed)
+    Test-Equals -Name 'a process list that could not be read leaves every NetId unverifiable' `
+                -Actual (($failedList | ForEach-Object { $_.NetIdStatus } | Sort-Object -Unique) -join ',') -Expected 'unverifiable'
+
+    # Get-RuntimeLabels and the local set skip the unknown records (they key on NetId).
+    if ((Get-RuntimeLabels -Records $stale).Count -eq 0) { Write-Pass 'an unknown NetId gets no runtime label (it is not local)' '' }
+    else { Write-Fail 'an unknown NetId gets no runtime label (it is not local)' "$((Get-RuntimeLabels -Records $stale).Keys -join ', ')" }
 
     Test-Allows   -Name 'end to end: a runtime with no readable kind is allowed with the warning' `
                   -Local @('198.51.100.8.1.1') -Platform $Rt64 -TargetPlatforms $fixtureMap `

@@ -205,7 +205,9 @@ provider.activePanels.set(fbUri.toString(), { webview: { postMessage: (m) => { p
 
 /** What the next driver spawn does: (call) => behaviour (see _fakeXaeDriver.js). */
 let driver = () => ({ fixture: 'build-ok-headless' });
-const fake = createFakeXaeSpawn((call) => (call.args.includes('-ListTargets') ? { fixture: 'list-targets' } : driver(call)));
+/** What the next -ListTargets spawn does (the runtimes this PC reports). */
+let listDriver = () => ({ fixture: 'list-targets' });
+const fake = createFakeXaeSpawn((call) => (call.args.includes('-ListTargets') ? listDriver(call) : driver(call)));
 const compileFake = { spawn: () => { throw new Error('the compiler is not run here'); } };
 
 registerCompileCommands(context, { provider, getProjectMap: projectMap, spawn: compileFake.spawn });
@@ -1066,6 +1068,75 @@ const rows = (name) => readFixture(name).lines;
     r = await run('twincat.xaeShowTargets', {});
     assert(r.ok && r.targets.length === 2 && channel().lines.some(l => /198\.51\.100\.4\.1\.1\s+user-mode\s+UmRT_Default.*\(project\)/.test(l)), 'Show Activation Targets prints the table');
 
+    // ── A user-mode runtime whose AmsNetId is unknown (user's 4026 machine, 2026-11-16) ─────────
+    // Its TcRegistry.xml was rewritten by a second instance after the running one started, so the
+    // file's NetId belongs to no running runtime: listed with the reason, never offered or preselected.
+    {
+        const RT = { netId: '198.51.100.1.1.1', name: 'Real-time runtime', kind: 'real-time', platform: 'TwinCAT RT (x64)', provenance: 'kind-inferred', netIdStatus: 'trusted', reason: null, fileNetId: null };
+        const STALE_ID = '198.51.100.6.1.1';
+        const REWRITTEN = 'the configuration file was rewritten after this runtime started (another instance?)';
+        const um = (status, reason, netId) => ({ netId, name: 'UmRT_Default', kind: 'user-mode', platform: 'TwinCAT OS (x64)', provenance: 'read',
+            netIdStatus: status, reason, fileNetId: netId ? null : STALE_ID });
+        const listing = (local, projectNetId) => () => ({
+            lines: [{ v: 1, t: 'hello', mode: 'listTargets', showWindow: false }, { v: 1, t: 'targets', local, projectNetId },
+                { v: 1, t: 'done', exitCode: 0, ui: null }], exit: 0
+        });
+        const lastPick = () => calls.picks[calls.picks.length - 1];
+        const selectable = (items) => items.filter(i => i.kind !== -1);
+
+        // Stale file: the NetId the file names is the project's and the last pick, and still not offered.
+        listDriver = listing([RT, um('rewritten', REWRITTEN, null)], STALE_ID);
+        await context.workspaceState.update(LAST_TARGET_KEY, STALE_ID);
+        let nb = builds().length;
+        answers.quickPick.push(undefined);
+        r = await run('twincat.xaeBuildAndActivate', {});
+        let pk = lastPick();
+        assert(r.reason === 'cancelled' && builds().length === nb, 'stale file: cancelling the pick spawns nothing');
+        assert(selectable(pk.items).length === 1 && selectable(pk.items)[0].netId === RT.netId && !pk.items.some(i => i.netId === STALE_ID)
+            && !pk.items.some(i => i.picked), 'stale file: the file\'s NetId is not offered and nothing is preselected');
+        const sep = pk.items.find(i => i.kind === -1);
+        assert(sep && sep.label === `UmRT_Default: AmsNetId unknown, not offered (${REWRITTEN})` && !('netId' in sep)
+            && pk.items.indexOf(sep) === pk.items.length - 1, 'stale file: the runtime is a non-selectable row with the reason, last');
+        assert(channel().lines.some(l => l.includes(`Not offered, AmsNetId unknown: UmRT_Default (user-mode runtime): ${REWRITTEN}. Read the AmsNetId in that runtime's console window ("AmsNetId: …") or use XAE's Choose Target System.`)),
+            'stale file: the channel names it, the reason and where to read the NetId');
+
+        // Running and the file fresh: offered, and preselected as the last pick.
+        listDriver = listing([RT, um('trusted', null, '198.51.100.5.1.1')], '198.51.100.5.1.1');
+        await context.workspaceState.update(LAST_TARGET_KEY, '198.51.100.5.1.1');
+        answers.quickPick.push(undefined);
+        await run('twincat.xaeBuildAndActivate', {});
+        pk = lastPick();
+        assert(selectable(pk.items).length === 2 && pk.items.length === 2 && pk.items[0].netId === '198.51.100.5.1.1' && pk.items[0].picked
+            && /\(project\)/.test(pk.items[0].description), 'running with a fresh file: offered, preselected, the project NetId marked');
+
+        // Not running: not offered.
+        listDriver = listing([RT, um('not-running', 'this runtime is not running', null)], null);
+        answers.quickPick.push(undefined);
+        await run('twincat.xaeBuildAndActivate', {});
+        pk = lastPick();
+        assert(selectable(pk.items).length === 1 && pk.items.some(i => i.kind === -1 && /UmRT_Default: AmsNetId unknown, not offered \(this runtime is not running\)/.test(i.label)),
+            'not running: not offered, listed with the reason');
+
+        // Nothing with a known NetId: no pick at all, the error names the runtime and the reason.
+        listDriver = listing([um('rewritten', REWRITTEN, null)], STALE_ID);
+        const pk0 = calls.picks.length, e0 = calls.errors.length;
+        nb = builds().length;
+        r = await run('twincat.xaeBuildAndActivate', {});
+        assert(r.reason === 'no-targets' && calls.picks.length === pk0 && builds().length === nb
+            && calls.errors[e0] && calls.errors[e0].m.startsWith(`No runtime of this machine with a known AmsNetId was found to activate on. Not offered, AmsNetId unknown: UmRT_Default (user-mode runtime): ${REWRITTEN}.`),
+            'only unknown runtimes: refused before any pick, naming the runtime and the reason');
+
+        // Show Activation Targets lists it, as unknown, with the file's NetId for reference only.
+        listDriver = listing([RT, um('rewritten', REWRITTEN, null)], STALE_ID);
+        r = await run('twincat.xaeShowTargets', {});
+        assert(r.ok && r.targets.length === 1 && r.unknown.length === 1 && r.unknown[0].name === 'UmRT_Default'
+            && channel().lines.some(l => /AmsNetId unknown\s+user-mode\s+UmRT_Default {2}not offered: the configuration file was rewritten/.test(l) && l.includes(`(its configuration file names ${STALE_ID})`))
+            && channel().lines.some(l => l.includes(`The project names ${STALE_ID}, which is not a runtime of this machine`)),
+            'Show Activation Targets: the unknown runtime is listed with its reason, and the project NetId is not called local');
+        listDriver = () => ({ fixture: 'list-targets' });
+        await context.workspaceState.update(LAST_TARGET_KEY, undefined);
+    }
+
     // ── The solution targets a runtime that is not on this PC (user decision, 2026-11-16) ───────
     // Refusal → "Change the solution's target…" → a pick of ONLY this PC's runtimes → a modal naming
     // the .tsproj and both NetIds → the one attribute rewritten → the same activation again.
@@ -1187,6 +1258,35 @@ const rows = (name) => readFixture(name).lines;
                 `${what}: the refusal says so and offers no change (${msg ? msg.m.slice(-110) : 'none'})`);
         }
         refusalLocal = null;
+
+        // 5b. A runtime whose AmsNetId is unknown (its configuration file names the solution's target,
+        // but was rewritten after the running instance started): named with the reason, never offered.
+        {
+            reset();
+            refusalLocal = [
+                { netId: '198.51.100.1.1.1', name: 'Real-time runtime', kind: 'real-time', platform: 'TwinCAT RT (x64)', provenance: 'kind-inferred', netIdStatus: 'trusted' },
+                { netId: null, name: 'UmRT_Default', kind: 'user-mode', platform: 'TwinCAT OS (x64)', provenance: 'read', netIdStatus: 'rewritten',
+                    reason: 'the configuration file was rewritten after this runtime started (another instance?)', fileNetId: OLD }
+            ];
+            const e = calls.errors.length, pk = calls.picks.length;
+            answers.quickPick.push('198.51.100.4.1.1', undefined);
+            answers.message.push(ACTIVATE_UM, RETARGET);
+            await run('twincat.xaeBuildAndActivate', {});
+            await waitFor(() => calls.picks.length === pk + 2);
+            await idle();
+            const msg = calls.errors[e];
+            assert(msg && msg.m.includes('Runtimes on this PC: Real-time runtime (198.51.100.1.1.1). '
+                + `${OLD} is the AmsNetId UmRT_Default's configuration file names, which no running instance of it is known to use. `
+                + 'Not offered, AmsNetId unknown: UmRT_Default (user-mode runtime): the configuration file was rewritten after this runtime started (another instance?). '
+                + 'Read the AmsNetId in that runtime\'s console window ("AmsNetId: …") or use XAE\'s Choose Target System.'),
+                `unknown runtime: the refusal names it, the reason and where to read the NetId (${msg ? msg.m.slice(0, 400) : 'none'})`);
+            const rp = calls.picks[pk + 1];
+            assert(rp && rp.items.filter(i => i.kind !== -1).length === 1 && rp.items[0].netId === '198.51.100.1.1.1'
+                && rp.items.some(i => i.kind === -1 && /^UmRT_Default: AmsNetId unknown, not offered/.test(i.label)) && !rp.items.some(i => i.netId === OLD),
+                'unknown runtime: the change-target pick offers only known runtimes and lists the unknown one as a row');
+            assert(fs.readFileSync(tsproj).equals(original), 'unknown runtime: the pick cancelled, nothing changed');
+            refusalLocal = null;
+        }
 
         // 6. Building only is never refused for the target, so there is nothing to offer.
         {

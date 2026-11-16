@@ -842,6 +842,138 @@ function Resolve-RuntimePlatform {
 
 <#
 .SYNOPSIS
+    Whether a user-mode runtime's AmsNetId, as its TcRegistry.xml names it, belongs to a running instance.
+.DESCRIPTION
+    Pure - no process list, no filesystem - so test-activation-target.ps1 can pin every branch. The
+    caller measures the facts (Get-UserModeRuntimeProcesses, the file's LastWriteTimeUtc) and this
+    decides what they mean.
+
+    WHY THE FILE ALONE IS NOT ENOUGH (user's machine, 4026, 2026-11-16): every start of a user-mode
+    runtime instance writes ITS OWN AmsNetId into the shared <Runtimes>\<name>\3.1\TcRegistry.xml.
+    A second instance of UmRT_Default, started and closed again, left its own NetId in the file while
+    the only running instance (started earlier) answered on another one. The file then named a NetId
+    no runtime answers to, and the toolkit offered it as the "(project)" target. No other file holds the
+    running NetId (Boot\CurrentProjectInfo.json, CurrentConfig.xml, LoggedEvents.db checked).
+
+    THE RULE (decided 2026-11-16): the file's NetId is trusted only when
+      (a) a TcSystemServiceUm process for this runtime name is running - its command line carries
+          -n "<name>" (quoted or not, compared case-insensitively), and
+      (b) the file was last written no later than the start of the NEWEST such process plus
+          -ToleranceSeconds. The instance writes the file itself right after it starts, so a write a
+          moment after the start is its own; 5 s is the default. A write later than that came from
+          something else - in the measured case, another instance. When several processes run for
+          one name the file can only be the newest's; the NetIds of the older ones are not in any
+          file and stay unknown.
+    Anything else is UNKNOWN, and unknown fails closed: the caller drops the NetId from the local set,
+    so it is never offered, preselected or accepted by the local-only activation gates.
+
+        Status        Reason
+        trusted       ''
+        not-running   this runtime is not running
+        rewritten     the configuration file was rewritten after this runtime started (another instance?)
+        unverifiable  why the check could not be made (process list unavailable, a command line or a
+                      start time unreadable - a process running elevated hides its command line from
+                      an unelevated caller - or the file's time unknown)
+
+    Each process is an object with CommandLine (string) and StartTime ([datetime] or $null). Times are
+    compared in UTC, so a local CreationDate and a LastWriteTimeUtc compare correctly.
+#>
+function Resolve-UserModeNetIdTrust {
+    param(
+        [Parameter(Mandatory)][string]$Name,
+        $RegistryWriteTime,
+        $Processes,
+        [switch]$ProcessListFailed,
+        [int]$ToleranceSeconds = 5
+    )
+    $result = { param($s, $r, $n) [pscustomobject]@{ Status = $s; Reason = $r; Instances = $n } }
+    if ($ProcessListFailed) {
+        return (& $result 'unverifiable' 'the running processes could not be listed, so it is not known whether this runtime is running' 0)
+    }
+
+    $matching   = @()
+    $unreadable = 0
+    foreach ($p in @($Processes)) {
+        if (-not $p) { continue }
+        $cmd = [string]$p.CommandLine
+        if (-not $cmd) { $unreadable++; continue }
+        # The executable first (quoted or not), so a path containing ' -n ' cannot match.
+        $rest = [regex]::Replace($cmd, '^\s*(?:"[^"]*"|\S+)', '')
+        $m = [regex]::Match($rest, '(?i)(?:^|\s)-n\s+(?:"([^"]*)"|(\S+))')
+        if (-not $m.Success) { continue }
+        $runtime = $(if ($m.Groups[1].Success) { $m.Groups[1].Value } else { $m.Groups[2].Value })
+        if ($runtime -eq $Name) { $matching += $p }
+    }
+
+    if ($matching.Count -eq 0) {
+        if ($unreadable -gt 0) {
+            return (& $result 'unverifiable' ('a user-mode runtime process is running whose command line could not be read ' +
+                                              '(it may run elevated), so it cannot be matched to this runtime') 0)
+        }
+        return (& $result 'not-running' 'this runtime is not running' 0)
+    }
+    if (@($matching | Where-Object { -not ($_.StartTime -is [datetime]) }).Count -gt 0) {
+        return (& $result 'unverifiable' "the start time of this runtime's process could not be read" $matching.Count)
+    }
+    if (-not ($RegistryWriteTime -is [datetime])) {
+        return (& $result 'unverifiable' "the configuration file's time could not be read" $matching.Count)
+    }
+
+    $newest = @($matching | Sort-Object { $_.StartTime.ToUniversalTime() } -Descending)[0].StartTime.ToUniversalTime()
+    if ($RegistryWriteTime.ToUniversalTime() -gt $newest.AddSeconds($ToleranceSeconds)) {
+        return (& $result 'rewritten' 'the configuration file was rewritten after this runtime started (another instance?)' $matching.Count)
+    }
+    return (& $result 'trusted' '' $matching.Count)
+}
+
+<#
+.SYNOPSIS
+    The running TcSystemServiceUm processes (user-mode runtime instances), or $null when they cannot be listed.
+.DESCRIPTION
+    The impure half of Resolve-UserModeNetIdTrust: Win32_Process gives the command line (which names
+    the runtime with -n) and CreationDate (the start time) in one query. $null - not an empty list -
+    when the query itself fails, so the caller can say "could not be checked" instead of "not running".
+    CommandLine is empty for a process the caller may not inspect (one running elevated, seen from an
+    unelevated shell); Resolve-UserModeNetIdTrust reports that as unverifiable.
+#>
+function Get-UserModeRuntimeProcesses {
+    $procs = $null
+    try {
+        $procs = @(Get-CimInstance -ClassName Win32_Process -Filter "Name = 'TcSystemServiceUm.exe'" -ErrorAction Stop)
+    } catch { return $null }
+    return ,@($procs | ForEach-Object {
+        [pscustomobject]@{
+            ProcessId   = [int]$_.ProcessId
+            CommandLine = [string]$_.CommandLine
+            StartTime   = $(if ($_.CreationDate -is [datetime]) { $_.CreationDate } else { $null })
+        }
+    })
+}
+
+<#
+.SYNOPSIS
+    One line per local runtime whose AmsNetId is unknown, for the activation refusals and warnings.
+.DESCRIPTION
+    Pure over Get-LocalRuntimeRecords' records: those with a NetIdStatus other than 'trusted' (a
+    user-mode runtime whose TcRegistry.xml NetId was not trusted, see Resolve-UserModeNetIdTrust).
+    Each runtime once, named by its folder - the name XAE shows.
+#>
+function Get-UnknownRuntimeLabels {
+    param($Records)
+    $lines = @()
+    $seen  = @{}
+    foreach ($r in @($Records)) {
+        if (-not $r -or $r.NetId -or -not $r.NetIdStatus -or $r.NetIdStatus -eq 'trusted') { continue }
+        $name = $(if ($r.Name) { $r.Name } elseif ($r.Source) { Split-Path -Leaf $r.Source } else { 'user-mode runtime' })
+        if ($seen.ContainsKey($name)) { continue }
+        $seen[$name] = $true
+        $lines += "$name (user-mode runtime, AmsNetId unknown: $($r.NetIdReason))"
+    }
+    return [string[]]$lines
+}
+
+<#
+.SYNOPSIS
     One record per user-mode runtime found under a Runtimes root: NetId, platform, provenance.
 .DESCRIPTION
     ONE WALK, TWO ANSWERS, because the second is only trustworthy when it comes from the same place as
@@ -860,10 +992,24 @@ function Resolve-RuntimePlatform {
     installed. The live caller passes
     <ProgramData>\Beckhoff\TwinCAT\3.1\Runtimes.
 
-    Returns, per NetId: NetId, Platform ($null when unknown), Provenance, Kind ('user-mode'), Source.
+    THE NETID IS TRUSTED ONLY FOR A RUNNING INSTANCE (2026-11-16): every instance start rewrites the
+    shared TcRegistry.xml, so the file can name a NetId no runtime answers to. Each record is checked
+    by Resolve-UserModeNetIdTrust against -Processes (Get-UserModeRuntimeProcesses' list; pass
+    -ProcessListFailed when it could not be read) and the file's LastWriteTimeUtc. An untrusted record
+    keeps the file's value in FileNetId only - NetId is $null - so every consumer that keys on NetId
+    (Get-LocalAmsNetIds, Get-RuntimeLabels, Get-LocalRuntimePlatforms) leaves it out: an unknown NetId
+    is not local. Without -Processes nothing is running, so nothing is trusted (fail closed).
+
+    Returns, per AmsNetId value in a TcRegistry.xml: NetId (the trusted NetId, or $null), FileNetId,
+    NetIdStatus and NetIdReason (Resolve-UserModeNetIdTrust's Status and Reason), Instances, Name (the
+    runtime folder's name), Platform ($null when unknown), Provenance, Kind ('user-mode'), Source.
 #>
 function Get-UserModeRuntimeRecords {
-    param([Parameter(Mandatory)][string]$RuntimesRoot)
+    param(
+        [Parameter(Mandatory)][string]$RuntimesRoot,
+        $Processes,
+        [switch]$ProcessListFailed
+    )
 
     $records = @()
     if (-not (Test-Path -LiteralPath $RuntimesRoot)) { return $records }
@@ -896,14 +1042,23 @@ function Get-UserModeRuntimeRecords {
         foreach ($reg in $regFiles) {
             $text = $null
             try { $text = Get-Content -LiteralPath $reg.FullName -Raw -ErrorAction Stop } catch { continue }
+            # The file's own time, from the same FileInfo the walk found, for the trust check.
+            $trust = Resolve-UserModeNetIdTrust -Name $dir.Name -RegistryWriteTime $reg.LastWriteTimeUtc `
+                                                -Processes $Processes -ProcessListFailed:$ProcessListFailed
             foreach ($m in [regex]::Matches($text, '(?i)<Value\s+Name="AmsNetId"[^>]*>\s*([0-9A-F]{12})\s*</Value>')) {
                 $hex = $m.Groups[1].Value
+                $fileNetId = ((0..5 | ForEach-Object { [Convert]::ToInt32($hex.Substring($_ * 2, 2), 16) }) -join '.')
                 $records += [pscustomobject]@{
-                    NetId      = ((0..5 | ForEach-Object { [Convert]::ToInt32($hex.Substring($_ * 2, 2), 16) }) -join '.')
-                    Platform   = $(if ($resolved) { $resolved.Platform }   else { $null })
-                    Provenance = $(if ($resolved) { $resolved.Provenance } else { $null })
-                    Kind       = 'user-mode'
-                    Source     = $dir.FullName
+                    NetId       = $(if ($trust.Status -eq 'trusted') { $fileNetId } else { $null })
+                    FileNetId   = $fileNetId
+                    NetIdStatus = $trust.Status
+                    NetIdReason = $trust.Reason
+                    Instances   = $trust.Instances
+                    Name        = $dir.Name
+                    Platform    = $(if ($resolved) { $resolved.Platform }   else { $null })
+                    Provenance  = $(if ($resolved) { $resolved.Provenance } else { $null })
+                    Kind        = 'user-mode'
+                    Source      = $dir.FullName
                 }
             }
         }
@@ -931,8 +1086,14 @@ function Get-UserModeRuntimeRecords {
     Get-TcRuntimeKind) - so a registry-derived NetId with no such marker IS the real-time runtime. That
     is a sound reading rather than a guess, but it is an inference, and it is reported as one.
 
-    Returns, per NetId: NetId, Platform ($null when unknown), Provenance ('read' /
-    'architecture-inferred' / 'kind-inferred' / $null), Kind ('real-time' / 'user-mode'), Source.
+    A user-mode runtime's NetId counts only for a running instance that wrote it (see
+    Resolve-UserModeNetIdTrust); otherwise its record has NetId $null, FileNetId, and the reason in
+    NetIdStatus/NetIdReason. Those records are RETURNED, so a list can name the runtime and say why
+    its NetId is unknown, and every NetId-keyed consumer skips them.
+
+    Returns, per runtime NetId: NetId ($null when untrusted), Platform ($null when unknown),
+    Provenance ('read' / 'architecture-inferred' / 'kind-inferred' / $null), Kind ('real-time' /
+    'user-mode'), Source; user-mode records add FileNetId, NetIdStatus, NetIdReason, Instances, Name.
 #>
 function Get-LocalRuntimeRecords {
     $records = @()
@@ -970,9 +1131,11 @@ function Get-LocalRuntimeRecords {
         }
     }
 
-    $records += Get-UserModeRuntimeRecords -RuntimesRoot (Join-Path $env:ProgramData 'Beckhoff\TwinCAT\3.1\Runtimes')
+    $umProcesses = Get-UserModeRuntimeProcesses
+    $records += Get-UserModeRuntimeRecords -RuntimesRoot (Join-Path $env:ProgramData 'Beckhoff\TwinCAT\3.1\Runtimes') `
+                                           -Processes $umProcesses -ProcessListFailed:($null -eq $umProcesses)
 
-    return @($records | Where-Object { $_.NetId })
+    return @($records | Where-Object { $_.NetId -or $_.FileNetId })
 }
 
 <#
@@ -1104,6 +1267,10 @@ function Format-RuntimePlatform {
         -RuntimeLabels    NetId -> a short label for that local runtime ('UmRT_Default, user-mode
                           runtime'; Get-RuntimeLabels). Optional and only for wording: the project
                           refusal names every local runtime, with its label where one is known.
+        -UnknownRuntimes  one line per local runtime whose AmsNetId is unknown (Get-UnknownRuntimeLabels:
+                          'UmRT_Default (user-mode runtime, AmsNetId unknown: <reason>)'). Wording only:
+                          they are NOT in -LocalNetIds and never become local. The three localness
+                          refusals name them, so a runtime missing from "Local" is explained.
 
         -Returns          TargetNetId, TargetSource, RequestedNetId, ProjectNetId, LocalNetIds,
                           Platform, TargetPlatform, TargetProvenance, Warnings (string[])
@@ -1153,12 +1320,22 @@ function Resolve-ActivationTarget {
         [Parameter(Mandatory)][string]$Platform,
         [hashtable]$TargetPlatforms,
         [string]$Configuration = 'Release',
-        [hashtable]$RuntimeLabels
+        [hashtable]$RuntimeLabels,
+        [string[]]$UnknownRuntimes
     )
 
     # [Environment]::NewLine, not "`n": the caller prints the whole message with one Write-Host, and
     # the lines it replaced were separate Write-Host calls. Anything but a CRLF changes those bytes.
     $nl = [Environment]::NewLine
+
+    # Appended to the three localness refusals, and empty when every runtime's NetId is known, so
+    # those messages are byte-identical to what they were then.
+    $unknownTail = ''
+    $unknown = @($UnknownRuntimes | Where-Object { $_ })
+    if ($unknown.Count -gt 0) {
+        $unknownTail = ($nl + "       Not offered, AmsNetId unknown: $($unknown -join '; ')" + $nl +
+                        "       Read it in that runtime's console window ('AmsNetId: ...') or use XAE's Choose Target System.")
+    }
 
     # Same filter Get-LocalAmsNetIds applies to its own result, repeated because this function must
     # also be correct for a caller that hands it $null or a list with holes in it.
@@ -1166,7 +1343,7 @@ function Resolve-ActivationTarget {
 
     if ($local.Count -eq 0) {
         throw ("cannot determine this machine's AmsNetId, so an activation target cannot be" + $nl +
-               "       proven local. Refusing to activate. (Is TwinCAT installed?)")
+               "       proven local. Refusing to activate. (Is TwinCAT installed?)" + $unknownTail)
     }
 
     # -TargetNetId selects BETWEEN THIS MACHINE'S OWN runtimes - typically the real-time one and a
@@ -1181,7 +1358,7 @@ function Resolve-ActivationTarget {
         if ($local -notcontains $RequestedNetId) {
             throw ("-TargetNetId $RequestedNetId is not an AmsNetId of this machine." + $nl +
                    "       Local: $($local -join ', ')" + $nl +
-                   "       Activation is local-only; a remote target cannot be selected here.")
+                   "       Activation is local-only; a remote target cannot be selected here." + $unknownTail)
         }
     }
 
@@ -1196,7 +1373,7 @@ function Resolve-ActivationTarget {
         throw ("this solution names TargetNetId $ProjectNetId, which is not a runtime on this PC." + $nl +
                "       Runtimes on this PC: $($named -join ', ')" + $nl +
                "       Activation is local-only and there is no override: change the solution's target" + $nl +
-               "       to one of these (XAE: Choose Target System) and re-run. Refusing before the IDE starts.")
+               "       to one of these (XAE: Choose Target System) and re-run. Refusing before the IDE starts." + $unknownTail)
     }
 
     # The target, chosen BEFORE gate 4 because gate 4 is a question about THAT target. Choosing is not
@@ -1315,6 +1492,34 @@ $TcAdsStateNames = @{ 0='INVALID'; 1='IDLE'; 2='RESET'; 3='INIT'; 4='START'; 5='
                       7='SAVECFG'; 8='LOADCFG'; 9='POWERFAILURE'; 10='POWERGOOD'; 11='ERROR'
                       12='SHUTDOWN'; 13='SUSPEND'; 14='RESUME'; 15='CONFIG'; 16='RECONFIG' }
 
+<#
+.SYNOPSIS
+    Get-LocalRuntimeRecords' records as the JSON list of -ListTargets and the target-refused fatal.
+.DESCRIPTION
+    Each runtime once. A runtime whose NetId is known: netId, name, kind, platform, provenance and
+    netIdStatus 'trusted'. One whose NetId is unknown (Resolve-UserModeNetIdTrust): netId $null,
+    fileNetId (what TcRegistry.xml names - NOT a target), netIdStatus and reason; the extension lists
+    it as information and never offers it.
+#>
+function ConvertTo-RuntimeListEntries {
+    param($Records)
+    $seen = @{}
+    $list = @()
+    foreach ($r in @($Records)) {
+        if (-not $r) { continue }
+        $key = $(if ($r.NetId) { "id:$($r.NetId)" } elseif ($r.FileNetId) { "unknown:$($r.Source)" } else { $null })
+        if (-not $key -or $seen.ContainsKey($key)) { continue }
+        $seen[$key] = $true
+        $name = $(if ($r.Kind -eq 'real-time') { 'Real-time runtime' } else { Split-Path -Leaf $r.Source })
+        $list += [ordered]@{ netId = $(if ($r.NetId) { $r.NetId } else { $null }); name = $name
+                             kind = $r.Kind; platform = $r.Platform; provenance = $r.Provenance
+                             netIdStatus = $(if ($r.NetId) { 'trusted' } else { [string]$r.NetIdStatus })
+                             reason = $(if ($r.NetId) { $null } else { [string]$r.NetIdReason })
+                             fileNetId = $(if ($r.NetId) { $null } else { $r.FileNetId }) }
+    }
+    return ,@($list)
+}
+
 # -ListTargets: this machine's runtimes and the project's TargetNetId, with no COM and no IDE.
 if ($ListTargets) {
     $projectNetId = $null
@@ -1329,18 +1534,18 @@ if ($ListTargets) {
             if ($mT) { $projectNetId = $mT.Matches[0].Groups[1].Value }
         }
     }
-    $seen = @{}
-    $list = @()
-    foreach ($r in @(Get-LocalRuntimeRecords)) {
-        if (-not $r.NetId -or $seen.ContainsKey($r.NetId)) { continue }
-        $seen[$r.NetId] = $true
-        $name = $(if ($r.Kind -eq 'real-time') { 'Real-time runtime' } else { Split-Path -Leaf $r.Source })
-        Write-Host ("Runtime:                 {0,-20} {1,-10} {2}  {3}" -f $r.NetId, $r.Kind, $name,
-            (Format-RuntimePlatform -Entry $(if ($r.Platform) { [pscustomobject]@{ Platform = $r.Platform; Provenance = $r.Provenance } } else { $null }))) -ForegroundColor Cyan
-        $list += [ordered]@{ netId = $r.NetId; name = $name; kind = $r.Kind; platform = $r.Platform; provenance = $r.Provenance }
+    $list = ConvertTo-RuntimeListEntries -Records @(Get-LocalRuntimeRecords)
+    foreach ($e in $list) {
+        if ($e.netId) {
+            Write-Host ("Runtime:                 {0,-20} {1,-10} {2}  {3}" -f $e.netId, $e.kind, $e.name,
+                (Format-RuntimePlatform -Entry $(if ($e.platform) { [pscustomobject]@{ Platform = $e.platform; Provenance = $e.provenance } } else { $null }))) -ForegroundColor Cyan
+        } else {
+            Write-Host (("Runtime:                 {0,-20} {1,-10} {2}  AmsNetId unknown: {3} (its TcRegistry.xml names {4}; read the NetId in" +
+                         " the runtime's console window, 'AmsNetId: ...'). Not offered.") -f 'unknown', $e.kind, $e.name, $e.reason, $e.fileNetId) -ForegroundColor Yellow
+        }
     }
     if ($projectNetId) { Write-Host "Project TargetNetId:     $projectNetId" -ForegroundColor Cyan }
-    if ($list.Count -eq 0) { Write-Host "No local runtime found (is TwinCAT installed?)." -ForegroundColor Yellow }
+    if (@($list | Where-Object { $_.netId }).Count -eq 0) { Write-Host "No local runtime with a known AmsNetId found (is TwinCAT installed?)." -ForegroundColor Yellow }
     Emit-Event 'targets' ([ordered]@{ local = @($list); projectNetId = $projectNetId })
     Exit-Run 0
 }
@@ -1460,9 +1665,14 @@ if ($ActivateConfiguration) {
     # they are different platforms. See Get-LocalRuntimePlatforms.
     $LocalTargetPlatforms = Get-LocalRuntimePlatforms
 
-    # Only for the wording of the project refusal, which names every local runtime.
+    # Only for the wording of the project refusal, which names every local runtime - and every
+    # runtime whose NetId is unknown (not local, so never a target; see Resolve-UserModeNetIdTrust).
     $LocalRuntimeRecords = @(Get-LocalRuntimeRecords)
     $RuntimeLabels       = Get-RuntimeLabels -Records $LocalRuntimeRecords
+    $UnknownRuntimes     = Get-UnknownRuntimeLabels -Records $LocalRuntimeRecords
+    foreach ($u in $UnknownRuntimes) {
+        Write-Host "WARNING: not an activation target, $u" -ForegroundColor Yellow
+    }
 
     # A .tsproj can name a target, and on a real machine project that target is a physical station.
     # Catch it statically - the alternative is discovering it with the IDE open and a rig connected.
@@ -1488,7 +1698,8 @@ if ($ActivateConfiguration) {
                                                      -Platform $PlatformName `
                                                      -TargetPlatforms $LocalTargetPlatforms `
                                                      -Configuration $ConfigName `
-                                                     -RuntimeLabels $RuntimeLabels
+                                                     -RuntimeLabels $RuntimeLabels `
+                                                     -UnknownRuntimes $UnknownRuntimes
     }
     catch {
         # The function indents its own continuation lines, so this one Write-Host prints the same
@@ -1500,15 +1711,8 @@ if ($ActivateConfiguration) {
                   elseif ("$_" -match '^platform ') { 4 } else { $null })
         # The local runtimes (the -ListTargets shape) and the .tsproj, so the extension can offer to
         # change the solution's target to one of them. It never changes it on its own.
-        $refusedLocal = @()
-        $refusedSeen  = @{}
-        foreach ($r in $LocalRuntimeRecords) {
-            if (-not $r.NetId -or $refusedSeen.ContainsKey($r.NetId)) { continue }
-            $refusedSeen[$r.NetId] = $true
-            $refusedLocal += [ordered]@{ netId = $r.NetId
-                                         name = $(if ($r.Kind -eq 'real-time') { 'Real-time runtime' } else { Split-Path -Leaf $r.Source })
-                                         kind = $r.Kind; platform = $r.Platform; provenance = $r.Provenance }
-        }
+        # Runtimes whose NetId is unknown are in the list too, marked, so the refusal can name them.
+        $refusedLocal = ConvertTo-RuntimeListEntries -Records $LocalRuntimeRecords
         Emit-Fatal 'target-refused' "$_" ([ordered]@{ gate = $gate; projectNetId = $projTarget; tsproj = $tsproj.FullName; local = @($refusedLocal) })
         Exit-Run 2
     }

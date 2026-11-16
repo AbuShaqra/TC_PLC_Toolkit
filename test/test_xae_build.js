@@ -270,6 +270,47 @@ function run(name, o) {
     assert(/User-mode runtime/.test(items[0].detail) && /TwinCAT OS \(x64\)/.test(items[0].detail), 'target pick detail: kind and platform');
     assert(x.targetPickItems(null).length === 0, 'no targets → no items');
 
+    // A user-mode runtime's AmsNetId is trusted only for a running instance that wrote it (user's 4026
+    // machine, 2026-11-16): an untrusted one is listed with its reason and never offered or preselected.
+    {
+        const stale = run('list-targets-stale');
+        const t = stale.state.targets;
+        assert(t && t.local.length === 1 && t.local[0].netId === '198.51.100.1.1.1' && t.projectNetId === '198.51.100.6.1.1',
+            'stale file: only the runtime with a known NetId is local');
+        assert(t && t.unknown.length === 2 && t.unknown[0].name === 'UmRT_Default' && t.unknown[0].status === 'rewritten'
+            && t.unknown[0].reason === 'the configuration file was rewritten after this runtime started (another instance?)'
+            && t.unknown[0].fileNetId === '198.51.100.6.1.1' && t.unknown[1].status === 'not-running', 'stale file: the unknown runtimes, with status, reason and file NetId');
+        const it = x.targetPickItems(t, { preselect: '198.51.100.6.1.1' });
+        assert(it.length === 3 && it[0].netId === '198.51.100.1.1.1' && !it.some(i => i.picked) && !it.some(i => i.netId === '198.51.100.6.1.1')
+            && it.slice(1).every(i => i.kind === x.QUICK_PICK_SEPARATOR && !i.netId) && x.QUICK_PICK_SEPARATOR === -1,
+            'stale file: the file NetId is neither offered nor preselected; unknown runtimes are separator rows');
+        assert(it[1].label === 'UmRT_Default: AmsNetId unknown, not offered (the configuration file was rewritten after this runtime started (another instance?))'
+            && it[2].label === 'UmRT_Second: AmsNetId unknown, not offered (this runtime is not running)', 'the rows name the runtime and the reason');
+        const fresh = x.runtimeEntries([{ netId: '198.51.100.5.1.1', name: 'UmRT_Default', kind: 'user-mode', netIdStatus: 'trusted' }]);
+        assert(fresh.local.length === 1 && fresh.unknown.length === 0, 'running with a fresh file (trusted): local');
+        assert(x.runtimeEntries([{ netId: '198.51.100.5.1.1', name: 'UmRT_Default', kind: 'user-mode' }]).local.length === 1,
+            'an older driver without netIdStatus: local, as before');
+        const closed = x.runtimeEntries([{ netId: '198.51.100.5.1.1', name: 'UmRT_Default', kind: 'user-mode', netIdStatus: 'not-running', reason: 'this runtime is not running' }]);
+        assert(closed.local.length === 0 && closed.unknown.length === 1, 'a status other than trusted is unknown even with a NetId (fail closed)');
+        const odd = x.runtimeEntries([{ netId: null, name: 'U', netIdStatus: 'unverifiable' }, { netId: null, name: 'U', netIdStatus: 'unverifiable' }, null, 'x']);
+        assert(odd.unknown.length === 1 && odd.unknown[0].reason === 'its AmsNetId could not be confirmed', 'each unknown runtime once; a missing reason gets a generic one');
+        assert(x.runtimeEntries({ netId: null, name: 'U', netIdStatus: 'rewritten', reason: 'r' }).unknown.length === 1, 'a bare object is a one-element list');
+        assert(x.unknownRuntimesText([]) === '' && x.unknownRuntimesText(undefined) === '', 'no unknown runtime → no text');
+        assert(x.unknownRuntimesText(t.unknown) === 'Not offered, AmsNetId unknown: UmRT_Default (user-mode runtime): the configuration file was rewritten after this runtime started (another instance?); '
+            + 'UmRT_Second (user-mode runtime): this runtime is not running. Read the AmsNetId in that runtime\'s console window ("AmsNetId: …") or use XAE\'s Choose Target System.',
+            'the unknown runtimes in one sentence, with where to read the NetId');
+        // The refusal: the unknown runtimes named; with none known there is nothing to change the target to here.
+        const onlyUnknown = x.retargetRefusalText({ projectNetId: '198.51.100.6.1.1', tsproj: null, local: [], unknown: t.unknown }, 'Line', '');
+        assert(onlyUnknown === 'Line targets 198.51.100.6.1.1, which is not a runtime on this PC. Activation is local-only, so it was refused before XAE started. '
+            + '198.51.100.6.1.1 is the AmsNetId UmRT_Default\'s configuration file names, which no running instance of it is known to use. '
+            + x.unknownRuntimesText(t.unknown) + ' No runtime with a known AmsNetId was found on this PC, so there is none to change the target to here.',
+            `refusal with only unknown runtimes (${onlyUnknown})`);
+        const ref2 = x.refusedTarget({ ...x.createRunState(), fatal: { code: 'target-refused', text: '', data: { gate: 3, projectNetId: '198.51.100.6.1.1', local: stale.state.targets ? [
+            { netId: '198.51.100.1.1.1', name: 'Real-time runtime', kind: 'real-time', netIdStatus: 'trusted' },
+            { netId: null, name: 'UmRT_Default', kind: 'user-mode', netIdStatus: 'rewritten', reason: 'r', fileNetId: '198.51.100.6.1.1' }] : [] } } });
+        assert(ref2 && ref2.local.length === 1 && ref2.unknown.length === 1 && ref2.unknown[0].fileNetId === '198.51.100.6.1.1', 'refusedTarget splits known and unknown runtimes');
+    }
+
     const can = run('cancelled');
     assert(can.state.done.exitCode === 4 && x.describeExit(4, 'exit', can.state).severity === 'warning' && /cancelled/.test(x.describeExit(4, 'exit', can.state).title), 'describeExit 4');
 

@@ -74,12 +74,6 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   reports the requested mode + SuppressUI). Sample 2's system project is a `.tspproj` (lookups fixed, 706dfde).
   Sample 2 (3.1.4024.62) on a 4026-only machine → `progid-not-registered` → one modal offering XAE Shell 64, then
   `-TcVersion <ProgId> -AllowVersionMismatch` (b6d831d; DEVELOPMENT "The project's XAE Shell is missing").
-  **Done earlier on 2026-11-13 (Linux-verified; details in DEVELOPMENT "XAE build (R14)" and git history):**
-  platform dropdown (`XAE_PLATFORMS` enum), activation switching to the target's platform (one modal,
-  *Switch for this run* / *Switch and remember*), per-step error-detail reasons + *Build again with the
-  window shown*, and the 16 second-review fixes (cancel in the error reads = exit 4, newer-only shell
-  offer, one activation modal, `.tsproj`/`.tspproj` lookup). Build and Activate onto UmRT_Default with the
-  switch question PASSED on Windows (9ed8b7a).
   **Pane parsing + placement (this commit, Linux-verified; from the user's runs on c24dc06, sample 1 with
   `h;` planted at MAIN implementation line 14, 4026.28, OS (x64)):** the typed reader WORKS. Headless:
   the error list gave 2 EMPTY items + a file-less "Project 'TcToolkitSample_PLC' build for platform
@@ -170,6 +164,17 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   shows the new target), the re-run activates; **unverified:** that a real `.tsproj` holds exactly ONE
   `TargetNetId` (if XAE writes it twice, e.g. in another element, the button is never offered — then decide which
   one counts) and that XAE keeps no other copy of the target (e.g. a `.user` file) that would win over it.
+- **Stale user-mode NetId (user's 4026 machine, 2026-11-16): FIXED on `claude/focused-ptolemy-m6acaz`, Linux-verified
+  only (ps1 text-checked; no PowerShell here).** Each instance start rewrites the shared `TcRegistry.xml`, so a
+  closed second instance left a NetId nothing answers to, offered as "(project)". Rule (decided): trusted only when a
+  `TcSystemServiceUm.exe` with `-n "<name>"` runs AND the file's LastWriteTime <= newest such start + 5 s; else
+  unknown, fail closed, named with the reason. Design: DEVELOPMENT.md "A user-mode runtime's AmsNetId is trusted only
+  for a running instance". **Needs the user's Windows check:** `test-activation-target.ps1` (never run) against builder
+  and driver; on the stale machine *Show Activation Targets* / the pick / the gate-3 refusal show UmRT_Default as
+  "AmsNetId unknown … rewritten after this runtime started"; after a runtime restart it is offered with the console's
+  NetId. **Unverified:** the instance writes the file within 5 s of starting and never later while running (else it
+  fails closed as "rewritten"); `Win32_Process.CommandLine` is readable unelevated (else "unverifiable"); how a long
+  separator-row label renders.
 - **R15 ADS online monitoring: IMPLEMENTED on local branch `r15-ads`** (worktree `/home/user/tc-r15`, 2026-11-13, not
   pushed, no PR yet; based on `claude/focused-ptolemy-m6acaz` `c9ace3f`). Decisions D1-D9: `docs/r15-ads-decision.md` §5.
   Design and file map: DEVELOPMENT.md "Online monitoring (roadmap R15)". `ads-client` **2.2.0 pinned** (pure JS; loads on
@@ -177,52 +182,11 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   Linux-verified: `REQUIRE_FULL_SUITE=1 npm test` FULL (131 suites), lint, typecheck, browser harnesses `run.js`,
   `run_pragmas.js`, `run_start_page.js`, `run_online.js`. Harnesses `test_ads_{paths,session,inline,write,code,watch,
   regressions}.js` run against an in-memory PLC (`test/_fakeAds.js`); **nothing has touched a real PLC or router.**
-  **Review round 1 (2026-11-13): all 20 confirmed findings fixed**, each pinned by a block of
-  `test/test_ads_regressions.js` (or `run_online.js` for the webview) that failed before its fix. Write safety: writes
-  bound to the connection enabled/confirmed (`session.identity`, checked right before `session.write`), only from
-  editors of the bound project (`writable` flag; Write Value… hidden elsewhere), the newest code check awaited (a
-  check in flight blocks), `pendingEditsStore.get()`'s `{}` no longer counts as unsaved and closed editors' Manual
-  Sync stashes block, `allowWrites` is `application`-scoped and read from user settings only, PLC strings escaped and
-  bounded. Lifecycle: adapter drops ads-client's self-restored subscriptions on reconnect/download, orphan reconnect
-  after Go Offline closed, per-connection status poll, Cancel/Go Offline honoured during status reads, one inline poll
-  loop, watch slot token + capped retry, router-rejection user-mode hint. Paths: no unqualified GVL fallback over an
-  uncertain EXTENDS chain, a `qualified_only` GVL (`xmlIndexer` now records `qualifiedOnly`) or an enumerator. Webview:
-  no `online/state` -> `online/visible` loop; host re-posts values on every request; inline cut by code point.
-  **Review round 2 (2026-11-13): findings R2#0-#6 fixed** (blocks `R2#n` of `test_ads_regressions.js`, each failing
-  on `e6a3842`): writes pin the bound project and, from an editor, its file's membership (`WriteRequest.stillValid`,
-  re-checked in the final synchronous guard), re-resolve + re-type-check after the dialogs, refuse a click while not
-  `online`; the code check's `changed` includes the project. `pendingEditsStore`: fingerprints ignore a leading BOM;
-  the write guard and `compileCommands.currentText` use the non-destructive `peek` (a stale stash blocks writes —
-  fail closed — until its editor is opened, where `get` drops it). `session.js` caches are per client (a Cancel never
-  leaks addresses). Watch `attach()` releases a held handle. No inline poll restart after Go Offline. `parser.js`
-  gives a re-synced GVL node a new `variables` array in unit coordinates and re-reads `qualifiedOnly` (root cause of
-  the shifted GVL declaration-pane values); `onlinePaths.js` also checks the name at each declaration range.
-  **Review round 3 (2026-11-13): R3#0-#2 fixed** (committed on `r15-ads` after `31fc35b`, not pushed; each new test failed on `31fc35b`).
-  #0 (pre-existing, also on `c9ace3f`): `xmlIndexer.js` emitted CDATA-relative ranges, `parser.js` unit lines, and
-  `livePath.mapDefinition` read both as unit lines, so cross-file Go to Definition into an unsynced file (and after
-  every save's `custom/indexXmlDocument`) hit the wrong line. Fixed at the indexer: `unitLineMap` offsets every
-  range by the component's line in the raw unit, so both indexers share one frame (new `test_definition_frames.js`,
-  both samples + a 12-variable GVL; `test_fb_init_def.js` / `test_parser_constructs.js` now assert pane lines via
-  the unit). Consumers audited: definition/peek/references tree (unit-frame refs), `references.js` (componentId
-  stays authoritative: an XML action has no `implRange`), `onlinePaths.js` (name-at-range check kept),
-  hover/completions/diagnostics (active node only).
-  **Indexing cost of `639d2b9`** (`buildNodeFromXml` over the 26 sample files x200, coordinator's measurement):
-  264 ms before -> 404 ms after, about +27 us per file (the raw `convertXmlToSt` per file in `unitLineMap`).
-  **Review round 4 (frame check of `639d2b9`, 2026-11-13): findings #0-#4 fixed** (committed on `r15-ads` after
-  `639d2b9`, not pushed; every new check failed with `639d2b9`'s `xmlIndexer.js`). #2 (medium, pre-existing): `locate()`
-  took the first textual match, so a `//`/`(* *)`/`{attribute}` line or doc comment naming the object, method,
-  property or enum member became its range; now searched on comment/pragma/string-blanked text (`codeOnly`, same
-  offsets; skipped when nothing before the match can open one), enum members in order inside their list. #3:
-  case-insensitive. #0: an action's nameRange is the unit's `ACTION <name>` line, col 8. #4: method `declRange`
-  METHOD..END_METHOD (checked against the unit text), property `declRange` collapsed on PROPERTY, both as parser.js.
-  #1: stale "CDATA-relative" comments in `references.js`, `parser.js`, two tests. Result: every range of every POU/
-  ITF/GVL identical from both indexers (both samples + synthetic shapes; `test_definition_frames.js` checks 4-5).
-  Cost after round 4 (`idxperf.js`, median of 9 interleaved runs on the same box: `31fc35b` 269 ms, `639d2b9`
-  361 ms, round 4 380 ms): about +4 us per file over `639d2b9`.
-  #1: after the dialogs `writeGuard` also compares base type and enumerators and re-parses the typed text for the
-  new `dataType` (block `R3#1`). #2: a closed editor's stash refusal names the file ("open it to restore or
-  discard the stashed edits"); a stash whose file is gone is dropped with a log line (block `R3#2`). Not changed:
-  `compileCommands.currentText` (compile pre-check) ignores a stale stash and never drops one, gone file or not.
+  **Review rounds 1-4 (2026-11-13): every confirmed finding fixed and committed on `r15-ads`**, each pinned by a block
+  of `test/test_ads_regressions.js` (`R2#n`, `R3#n`), `run_online.js` or `test_definition_frames.js`; the per-finding
+  detail is in those tests and the `r15-ads` commit messages. Still worth knowing: the round-3 frame fix (xmlIndexer
+  ranges now in raw-unit coordinates via `unitLineMap`, pre-existing on `c9ace3f`) costs about +27 us per indexed file;
+  `compileCommands.currentText` deliberately ignores a stale stash and never drops one.
   Behaviour changes to note for the Windows check: the modal/log target now reads `Local runtime (localhost:851)`;
   an unqualified name inside an FB that extends a library FB shows no inline value (cannot tell member from global).
   **Mismatch guard (coordinator review, 2026-11-13):** a name match alone does not prove the same code, so
