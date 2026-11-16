@@ -483,8 +483,9 @@ pass, when the variable's type differs, and for anything but a single value.
 
 **The code check — what it can and cannot see.** Before showing values and allowing writes, TC Toolkit
 compares (1) the project name the PLC reports with your PLC projects (a different name hides the values),
-(2) the variables of your project's last build (its `.tmc`, written by every XAE build) with the
-variables on the PLC, and (3) whether a source file changed after that build. Writes need all three.
+(2) the variables of your project's last build (its `.tmc`) with the
+variables on the PLC, and (3) whether a source file changed after that build (the newest of the `.tmc` and
+`_CompileInfo\*.compileinfo`, which XAE writes on every build; the `.tmc` alone is rewritten only when a variable changes). Writes need all three.
 It **cannot** tell that only code inside a POU changed and was built but not downloaded — XAE compares
 an internal compile id that is not available over ADS. Download from XAE before writing.
 

@@ -12,7 +12,10 @@
  *      (ads-client `getSymbols`: name and byte size), restricted to the namespaces the `.tmc` has.
  *      A variable added, removed, retyped or resized between the build and what runs shows here.
  *   3. **Edited since the build** — any source file of the project (`.TcPOU/.TcGVL/.TcDUT/.TcIO`)
- *      newer than the `.tmc`: the code on disk is not the code that was built.
+ *      newer than the last build: the code on disk is not the code that was built. The build time is
+ *      the newest of the `.tmc` and the `_CompileInfo/*.compileinfo` files: XAE leaves the `.tmc`
+ *      untouched when no variable changed (measured 2026-11-16: a body-only fix, rebuilt and
+ *      activated, kept a morning `.tmc`), but writes a `.compileinfo` on every build.
  *
  * What it CANNOT detect: a change to code bodies only (no variable changed) that was built but not
  * downloaded, or downloaded from another copy of the project. XAE's own login check (its compile
@@ -138,6 +141,27 @@ function filesEditedSince(files, sinceMs, dir, fsLike = fs, limit = 5) {
 }
 
 /**
+ * When the project was last built: the newest of its `.tmc` and its `_CompileInfo/*.compileinfo` files.
+ * @param {string} dir The PLC project's folder.
+ * @param {number} tmcTime The `.tmc`'s mtime in ms.
+ * @param {{readdirSync: Function, statSync: Function}} [fsLike]
+ * @returns {number}
+ */
+function lastBuildTime(dir, tmcTime, fsLike = fs) {
+    let t = tmcTime;
+    const infoDir = path.join(dir, '_CompileInfo');
+    /** @type {Array<string|{name: string}>} */
+    let names;
+    try { names = fsLike.readdirSync(infoDir); } catch (e) { return t; }
+    for (const n of names) {
+        const name = typeof n === 'string' ? n : String(n && n.name);
+        if (!/\.compileinfo$/i.test(name)) continue;
+        try { t = Math.max(t, fsLike.statSync(path.join(infoDir, name)).mtimeMs); } catch (e) { /* vanished */ }
+    }
+    return t;
+}
+
+/**
  * @typedef {Object} CodeCheck
  * @property {'match'|'differs'|'unknown'} state Writes need 'match'.
  * @property {'match'|'differs'|'unknown'} name
@@ -192,8 +216,9 @@ async function checkCode(o) {
     } catch (e) {
         details.push(`variable layout: the PLC's symbols could not be read (${e && /** @type {any} */ (e).message})`);
     }
-    const edited = Array.isArray(project.files) ? filesEditedSince(project.files, tmcTime, project.dir || '', fsLike)
-        : (project.dir ? sourcesEditedSince(project.dir, tmcTime, fsLike) : []);
+    const builtAt = project.dir ? lastBuildTime(project.dir, tmcTime, fsLike) : tmcTime;
+    const edited = Array.isArray(project.files) ? filesEditedSince(project.files, builtAt, project.dir || '', fsLike)
+        : (project.dir ? sourcesEditedSince(project.dir, builtAt, fsLike) : []);
     if (edited.length) details.push(`edited since the last build: ${edited.join(', ')}`);
     const edits = edited.length ? 'edited' : 'none';
     /** @type {'match'|'differs'|'unknown'} */
@@ -205,4 +230,4 @@ async function checkCode(o) {
     return { state, name: 'match', layout, edits, showValues: true, project, reason, details };
 }
 
-module.exports = { parseTmcSymbols, compareLayout, sourcesEditedSince, filesEditedSince, checkCode };
+module.exports = { parseTmcSymbols, compareLayout, sourcesEditedSince, filesEditedSince, lastBuildTime, checkCode };

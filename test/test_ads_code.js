@@ -17,7 +17,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { parseTmcSymbols, compareLayout, sourcesEditedSince, filesEditedSince, checkCode } = require('../src/online/codeIdentity');
+const { parseTmcSymbols, compareLayout, sourcesEditedSince, filesEditedSince, lastBuildTime, checkCode } = require('../src/online/codeIdentity');
 const { APP_INFO } = require('../src/online/session');
 const { reportCoverage } = require('./_coverage');
 
@@ -96,6 +96,22 @@ if (!fs.existsSync(TMC)) {
     assert(/a change to code bodies alone cannot be detected/.test(c.reason), 'and even then it says what it cannot detect');
     c = await checkCode({ projectName: 'Proj', projects: [{ name: 'Proj', dir, files: [old, fresh] }], onlineSymbols });
     assert(c.state === 'differs' && c.edits === 'edited' && c.showValues, 'a source edited after the build: differs (writes blocked), values still shown');
+    // User, 2026-11-16: XAE left the .tmc at its morning time after a body-only fix was rebuilt and
+    // activated; _CompileInfo/*.compileinfo is written on every build, so it counts as the build time.
+    fs.mkdirSync(path.join(dir, '_CompileInfo'));
+    const info = path.join(dir, '_CompileInfo', '11E4BD23-5BFA-7EA1-D42A-2AEB020173C2.compileinfo');
+    fs.writeFileSync(info, 'x');
+    fs.writeFileSync(path.join(dir, '_CompileInfo', 'notes.txt'), 'x');
+    fs.utimesSync(path.join(dir, '_CompileInfo', 'notes.txt'), t0 + 500, t0 + 500);
+    fs.utimesSync(info, t0 + 200, t0 + 200);
+    assert(Math.round(lastBuildTime(dir, t0 * 1000) / 1000) === Math.round(t0 + 200), 'the build time is the newest .compileinfo when it is newer than the .tmc (other files ignored)');
+    assert(Math.round(lastBuildTime(path.join(dir, 'nowhere'), t0 * 1000) / 1000) === Math.round(t0), 'no _CompileInfo: the .tmc time');
+    c = await checkCode({ projectName: 'Proj', projects: [{ name: 'Proj', dir, files: [old, fresh] }], onlineSymbols });
+    assert(c.state === 'match' && c.edits === 'none', 'a source newer than the .tmc but older than the last .compileinfo is not an edit: match');
+    fs.utimesSync(info, t0 + 50, t0 + 50);
+    c = await checkCode({ projectName: 'Proj', projects: [{ name: 'Proj', dir, files: [old, fresh] }], onlineSymbols });
+    assert(c.state === 'differs' && c.edits === 'edited', 'a source newer than the last .compileinfo is still an edit');
+    fs.rmSync(path.join(dir, '_CompileInfo'), { recursive: true, force: true });
     c = await checkCode({ projectName: 'Proj', projects, onlineSymbols: async () => online.slice(1) });
     assert(c.state === 'differs' && c.layout === 'differs' && c.details.some(d => /variable layout differs/.test(d)), 'a layout difference: differs, with the details');
     c = await checkCode({ projectName: 'Proj', projects, onlineSymbols: async () => { throw new Error('upload failed'); } });
