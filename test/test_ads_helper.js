@@ -215,7 +215,7 @@ async function endToEnd() {
     session.onDidChange((w) => events.push(w));
     const res = await session.connect({ mode: 'router', routerAddress: '127.0.0.1', routerTcpPort: router.port, targetAmsNetId: '10.0.0.4.1.1', targetAdsPort: 851 });
     assert(session.state === 'online' && res.transport === 'helper', 'the reset router is bypassed: online through the helper');
-    assert(lines.some(l => /refused this client's TCP connection/.test(l) && /socket error -104/.test(l) && /PowerShell helper \(user-mode fallback\)/.test(l)),
+    assert(lines.some(l => /refused this client's TCP connection/.test(l) && /socket error (-104|-4077|-54)\b/.test(l) && /PowerShell helper \(user-mode fallback\)/.test(l)),
         'the switch is logged with the router\'s own error');
     assert(lines.some(l => /^Connected through TwinCAT's ADS DLL \(C:\\TwinCAT\\.*TwinCAT\.Ads\.dll, version 4\.3\.32\.0, 64-bit PowerShell\)/.test(l)),
         'the DLL used is logged');
@@ -331,7 +331,7 @@ async function failures() {
     assert(t.f && t.f.kind === 'helper-unavailable' && t.f.fallback &&
         /^The ADS router at 127\.0\.0\.1:48898 refused this client's TCP connection, and the fallback through TwinCAT's ADS DLL could not start: TwinCAT\.Ads\.dll was not found\.$/.test(t.f.message),
         `DLL missing: both failures named (${t.f && t.f.message})`);
-    assert(/socket error -104/.test(t.f.raw) && t.session.state === 'offline', 'the log keeps the router\'s own error too; offline');
+    assert(/socket error (-104|-4077|-54)\b/.test(t.f.raw) && t.session.state === 'offline', 'the log keeps the router\'s own error too; offline');
     assert(t.f.setting === SETTING_ADS_DOTNET_LIBRARY && t.f.hint.includes(SETTING_ADS_DOTNET_LIBRARY) && t.f.hint.includes(adsDllHint('managed'))
         && /Components\\Base\\v170\\TwinCAT\.Ads\.dll/.test(t.f.hint), `DLL missing: the hint names the setting and the usual path (${t.f.hint})`);
 
