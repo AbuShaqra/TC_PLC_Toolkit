@@ -107,9 +107,13 @@ jobs:
           flags=()
           [ "$PRERELEASE" = "true" ] && flags+=(--prerelease)
           [ "$DRAFT" = "true" ] && flags+=(--draft)
+          # The version's CHANGELOG.md section (from its "## <version>" heading to the next "## ") leads
+          # the notes; GitHub's generated list of PRs follows it. No section: generated notes only.
+          awk -v v="$VERSION" '$0 ~ "^## " v "( |$)" {f=1; next} f && /^## / {exit} f' CHANGELOG.md > release-notes.md || true
+          if [ -s release-notes.md ]; then flags+=(--notes-file release-notes.md); else echo "::warning::No CHANGELOG.md section for $VERSION"; fi
           gh release create "$TAG" "$VSIX" \
             --target "$GITHUB_SHA" \
-            --title "TwinCAT PLC Toolkit $VERSION" \
+            --title "TC Toolkit $VERSION" \
             --generate-notes \
             "${flags[@]}"
           echo "Released $TAG from $GITHUB_SHA with $VSIX attached"

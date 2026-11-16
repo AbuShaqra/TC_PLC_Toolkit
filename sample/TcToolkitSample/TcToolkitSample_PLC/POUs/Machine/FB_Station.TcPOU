@@ -25,7 +25,13 @@ VAR
 END_VAR
 ]]></Declaration>
       <Implementation>
-        <ST><![CDATA[bExtended := refCylinder.bIsExtended;
+        <ST><![CDATA[// The reference is bound only in Act_Home: bind it before first use, or the first cycle
+// dereferences an unbound reference (a page fault on a real runtime).
+IF NOT __ISVALIDREF(refCylinder) THEN
+	refCylinder REF= GVL_System.fbCylinder;
+END_IF
+
+bExtended := refCylinder.bIsExtended;
 
 CASE _eState OF
 	E_StationState.Idle:
@@ -52,7 +58,7 @@ END_CASE
 
 _stStatus.eState := _eState;
 _stStatus.nErrorId := _nErrorId;
-_uWord.nWord := _stRecipe.aSteps[1];]]></ST>
+_uWord.nWord := INT_TO_WORD(_stRecipe.aSteps[1]);]]></ST>
       </Implementation>
     </Method>
     <Method Name="Execute" Id="{e043de6a-b3b7-4a09-ac5a-903c66262592}">

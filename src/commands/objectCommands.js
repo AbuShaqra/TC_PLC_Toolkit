@@ -1,8 +1,8 @@
 /**
  * @file objectCommands.js
- * @description Registers the "TwinCAT Objects" explorer create/delete commands: methods, properties and
- * actions on a POU; new FB/PRG/FUN/ITF/GVL files; physical folders; and virtual (in-XML) folders and
- * components. Every structural edit goes through applyXmlEdit so TwinCAT's XML is preserved byte-for-byte
+ * @description Registers the "PLC Objects" explorer create/delete commands: methods, properties and
+ * actions on a POU; re-adding a property's missing Get/Set accessor; new FB/PRG/FUN/ITF/GVL files;
+ * physical folders; and virtual (in-XML) folders and components. Every structural edit goes through applyXmlEdit so TwinCAT's XML is preserved byte-for-byte
  * outside the edited region, and through plcProjHelper so the nearest .plcproj stays in sync.
  */
 
@@ -14,12 +14,13 @@ const {
     getFoldersDetailedFromXml,
     insertFolderIntoXml,
     insertComponentIntoXml,
+    insertPropertyAccessorIntoXml,
     deleteComponentFromXml,
     deleteFolderTagFromXml
 } = require('../xmlParser');
 
 /**
- * Registers the TwinCAT Objects explorer create/delete commands.
+ * Registers the PLC Objects explorer create/delete commands.
  * @param {vscode.ExtensionContext} context The extension context.
  * @param {object} deps Injected collaborators owned by extension.js.
  * @param {any} deps.treeProvider The Objects tree data provider (refreshed after edits).
@@ -99,7 +100,7 @@ function registerObjectCommands(context, { treeProvider }) {
             // prompt (user report). The title bar makes the widget taller and self-explaining; the
             // prompt now stays until answered or Esc.
             const folderName = await vscode.window.showInputBox({
-                title: 'TwinCAT — Create Folder',
+                title: 'TC Toolkit — Create Folder',
                 ignoreFocusOut: true,
                 prompt: 'Enter Folder Name',
                 placeHolder: 'e.g. MyFolder',
@@ -156,7 +157,7 @@ function registerObjectCommands(context, { treeProvider }) {
             if (!node || !node.resourceUri) return;
 
             const folderName = await vscode.window.showInputBox({
-                title: 'TwinCAT — Create Virtual Folder',
+                title: 'TC Toolkit — Create Virtual Folder',
                 ignoreFocusOut: true,
                 prompt: 'Enter Folder Name',
                 placeHolder: 'e.g. Internal',
@@ -213,6 +214,18 @@ function registerObjectCommands(context, { treeProvider }) {
         })
     );
 
+    // Add Get / Add Set Accessor Commands (issue #25): re-add an accessor deleted from a property,
+    // here or in XAE. The menu shows each only while that accessor is missing (the property row's
+    // contextValue says which — see objectKinds.propertyContextValue).
+    for (const accessorType of /** @type {const} */ (['Get', 'Set'])) {
+        context.subscriptions.push(
+            vscode.commands.registerCommand(`twincat.add${accessorType}Accessor`, async (node) => {
+                if (!node || !node.resourceUri || !node.componentId) return;
+                await handleAccessorCreation(node, accessorType);
+            })
+        );
+    }
+
     // Delete Virtual Folder Command
     context.subscriptions.push(
         vscode.commands.registerCommand('twincat.deleteVirtualFolder', async (node) => {
@@ -257,6 +270,32 @@ function registerObjectCommands(context, { treeProvider }) {
     );
 
     /**
+     * Adds a missing Get or Set accessor to the property a tree node stands for. Same read/modify/
+     * write path as Delete Component (applyXmlEdit through the text document, so an open editor's
+     * content is never bypassed); accessors live inside the property's XML, so the .plcproj has
+     * nothing to sync.
+     * @param {vscode.TreeItem & {componentId?: string}} node The property tree item.
+     * @param {'Get'|'Set'} accessorType The accessor to add.
+     */
+    async function handleAccessorCreation(node, accessorType) {
+        const fileUri = node.resourceUri;
+        const isItf = path.extname(fileUri.fsPath).toLowerCase() === '.tcio';
+        try {
+            await applyXmlEdit(fileUri, (xmlText) => {
+                const parsed = parseTwinCatXml(xmlText);
+                if (!parsed) return xmlText;
+                const prop = parsed.components.find(c => c.id === node.componentId);
+                if (!prop || prop.type !== 'Property' || !prop.xmlContext.subName) return xmlText;
+                return insertPropertyAccessorIntoXml(xmlText, prop.xmlContext.subName, accessorType, isItf);
+            });
+        } catch (err) {
+            vscode.window.showErrorMessage(`Failed to add ${accessorType} accessor: ${err.message}`);
+            return;
+        }
+        treeProvider.refresh();
+    }
+
+    /**
      * Coordinates the QuickPick selection dialogue and inputs when creating a sub-component.
      * @param {vscode.TreeItem & {folderPath?: string}} node The context tree item.
      * @param {string} componentType 'Method', 'Property', or 'Action'.
@@ -285,7 +324,7 @@ function registerObjectCommands(context, { treeProvider }) {
         }
 
         const name = await vscode.window.showInputBox({
-            title: `TwinCAT — Create ${componentType}`,
+            title: `TC Toolkit — Create ${componentType}`,
             ignoreFocusOut: true,
             prompt: `Enter ${componentType} Name`,
             placeHolder: componentType === 'Property' ? 'e.g. MyProperty' : (componentType === 'Method' ? 'e.g. M_DoSomething' : 'e.g. A_DoSomething'),
@@ -321,7 +360,7 @@ function registerObjectCommands(context, { treeProvider }) {
 
         const quickPick = vscode.window.createQuickPick();
         quickPick.items = quickPickItems;
-        quickPick.title = `TwinCAT — Select folder for ${componentType} "${name}"`;
+        quickPick.title = `TC Toolkit — Select folder for ${componentType} "${name}"`;
         // Same rationale as the name prompts above: a focus-out here silently aborted the whole
         // create flow one step before the name prompt.
         quickPick.ignoreFocusOut = true;
@@ -355,7 +394,7 @@ function registerObjectCommands(context, { treeProvider }) {
 
         if (selectedItem.isCreateNew) {
             newFolderName = await vscode.window.showInputBox({
-                title: 'TwinCAT — Create Virtual Folder',
+                title: 'TC Toolkit — Create Virtual Folder',
                 ignoreFocusOut: true,
                 prompt: 'Enter New Folder Name',
                 placeHolder: 'e.g. Internal',
@@ -432,7 +471,7 @@ function registerObjectCommands(context, { treeProvider }) {
     async function handleFileCreation(node, fileType) {
         const dirUri = node.resourceUri;
         const name = await vscode.window.showInputBox({
-            title: `TwinCAT — Create ${fileType}`,
+            title: `TC Toolkit — Create ${fileType}`,
             ignoreFocusOut: true,
             prompt: `Enter ${fileType} Name`,
             placeHolder: `e.g. My${fileType}`,

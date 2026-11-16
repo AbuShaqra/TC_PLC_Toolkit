@@ -549,7 +549,9 @@ try { fs.rmdirSync(TEST_DIR); } catch (e) { /* best effort */ }
 // =================================================================================================
 console.log('\n========== PART 2: real sample project ==========');
 
-const SAMPLE_DIR = path.join(__dirname, '..', 'sample');
+// The first sample's solution only: Part 2 indexes one directory into ONE index (and pins that
+// sample's MAIN / P_Startup / GVL_System), so the second sample's same-named MAIN must stay out.
+const SAMPLE_DIR = path.join(__dirname, '..', 'sample', 'TcToolkitSample');
 // Gated on the sample actually containing configuration objects, not on sample/ merely existing —
 // the synthetic sample has none until the config-object fixtures land, and Part 2 is entirely about
 // what those files contain.

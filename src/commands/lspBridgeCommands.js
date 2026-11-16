@@ -22,7 +22,8 @@ function registerLspBridgeCommands(context, { provider, getClient }) {
     context.subscriptions.push(
         vscode.commands.registerCommand('twincat.openComponent', async (fileUri, componentId, selectionRange, targetWord) => {
             const ext = path.extname(fileUri.fsPath).toLowerCase();
-            if (ext === '.st') {
+            // Plain text files: Generate ST's .st output, and Compile Project's generated C++.
+            if (ext === '.st' || ext === '.cpp' || ext === '.hpp') {
                 const doc = await vscode.workspace.openTextDocument(fileUri);
                 let selection = undefined;
                 if (selectionRange) {
@@ -54,6 +55,16 @@ function registerLspBridgeCommands(context, { provider, getClient }) {
             const client = getClient();
             if (!client) return [];
             return client.sendRequest('custom/references', params);
+        }),
+        vscode.commands.registerCommand('twincat.lsp.queryHover', async (params) => {
+            const client = getClient();
+            if (!client) return null;
+            return client.sendRequest('custom/hover', params);
+        }),
+        vscode.commands.registerCommand('twincat.lsp.queryOnlinePaths', async (params) => {
+            const client = getClient();
+            if (!client) return { occurrences: [], owner: null };
+            return client.sendRequest('custom/onlinePaths', params);
         }),
         vscode.commands.registerCommand('twincat.lsp.queryDiagnostics', async (params) => {
             const client = getClient();

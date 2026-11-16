@@ -1,0 +1,5 @@
+{"v":1,"t":"hello","mode":"build","showWindow":false}
+{"log":"WARNUNG: Ger\u00e4t nicht gefunden \u00fc"}
+{"v":1,"t":"warning","text":"Aktive Plattform unterscheidet sich f\u00fcr das Ger\u00e4t"}
+{"v":1,"t":"done","exitCode":0,"ui":{"requested":"headless","buildPhase":{"suppressUI":true,"mainWindowVisible":false},"versionSwitchKeptVisible":false,"activationShown":false}}
+{"exit":0}

@@ -2,7 +2,7 @@
 
 This extension bundles third-party software. Each component is distributed under
 its own license, reproduced or linked below. The root [`LICENSE`](LICENSE)
-(MIT © A. AbuShaqra) applies **only** to the original code of this extension — it
+(AGPL-3.0-or-later © A. AbuShaqra; versions up to 0.10.1 were MIT) applies **only** to the original code of this extension — it
 does not cover the bundled components listed here, which remain under the
 licenses of their respective owners.
 
@@ -32,6 +32,33 @@ Monaco bundles further components under `media/monaco-editor/vs/`:
 - https://github.com/microsoft/vscode-codicons
 - License text: https://creativecommons.org/licenses/by/4.0/
 
+## STruC++ (the compiler behind *TC Toolkit: Build Project*)
+
+- Location: `resources/compiler/` (`compiler.cjs`, `libs/`), run as a separate Node.js process —
+  never loaded into the extension; and its C++ runtime headers, `resources/compiler/include/`, which
+  only the optional g++ build of generated C++ reads (they are passed to g++, never loaded either)
+- Version: 0.7.0, built from commit `d9b7c01512307a06f1e1d798ef77803109b7934a` of
+  https://github.com/AbuShaqra/STruCpp (a fork of https://github.com/Autonomy-Logic/STruCpp)
+- Copyright © 2025 Autonomy® and contributors (see `resources/compiler/COPYING.RUNTIME`)
+- License: GNU General Public License version 3 (GPL-3.0-only) — full text at
+  [`resources/compiler/LICENSE`](resources/compiler/LICENSE); licensing overview
+  [`resources/compiler/COPYING`](resources/compiler/COPYING) and runtime library exception
+  [`resources/compiler/COPYING.RUNTIME`](resources/compiler/COPYING.RUNTIME). The runtime headers
+  (`include/*.hpp`) and the two libraries are GPL-3.0-only WITH the STruC++ Runtime Library
+  Exception, as `COPYING` lists them: C++ generated from your program may include them without
+  your program becoming GPL-licensed
+- Corresponding source: the commit above —
+  https://github.com/AbuShaqra/STruCpp/tree/d9b7c01512307a06f1e1d798ef77803109b7934a — with the
+  build command and a checksum of every file in
+  [`resources/compiler/SOURCE.md`](resources/compiler/SOURCE.md)
+
+`compiler.cjs` is a single-file bundle that contains:
+
+| Package | Version | License | License text |
+| --- | --- | --- | --- |
+| chevrotain, @chevrotain/gast, @chevrotain/regexp-to-ast, @chevrotain/utils | 11.0.3 | Apache-2.0 | [`resources/compiler/third-party/chevrotain-LICENSE.txt`](resources/compiler/third-party/chevrotain-LICENSE.txt) |
+| lodash-es | 4.17.21 | MIT | [`resources/compiler/third-party/lodash-es-LICENSE.txt`](resources/compiler/third-party/lodash-es-LICENSE.txt) |
+
 ## Runtime dependencies (bundled under `node_modules/`)
 
 Each package retains its own `LICENSE` file inside `node_modules/`:
@@ -42,6 +69,7 @@ Each package retains its own `LICENSE` file inside `node_modules/`:
 | vscode-languageserver | MIT |
 | vscode-languageserver-protocol | MIT |
 | vscode-languageserver-textdocument | MIT |
+| vscode-cpptools (the C/C++ extension's public API; `out/api.js` only) | MIT |
 | vscode-languageserver-types | MIT |
 | vscode-jsonrpc | MIT |
 | brace-expansion | MIT |
@@ -50,6 +78,22 @@ Each package retains its own `LICENSE` file inside `node_modules/`:
 | semver | ISC |
 
 Copyright © their respective authors (Microsoft and contributors).
+
+## ads-client (online monitoring over ADS)
+
+The online-monitoring feature (*TC Toolkit: Go Online*) talks ADS through the `ads-client` package and
+its dependencies, all bundled under `node_modules/`, each with its licence text in its own folder:
+
+| Package | Version | License | Copyright | License text |
+| --- | --- | --- | --- | --- |
+| ads-client | 2.2.0 (pinned exactly) | MIT | © Jussi Isotalo | `node_modules/ads-client/LICENSE.txt` |
+| debug | 4.4.3 | MIT | © 2014-2017 TJ Holowaychuk, © 2018-2021 Josh Junon | `node_modules/debug/LICENSE` |
+| ms | 2.1.3 | MIT | © 2020 Vercel, Inc. | `node_modules/ms/license.md` |
+| iconv-lite | 0.7.3 | MIT | © 2011 Alexander Shtuchkin | `node_modules/iconv-lite/LICENSE` |
+| safer-buffer | 2.1.2 | MIT | © 2018 Nikita Skovoroda | `node_modules/safer-buffer/LICENSE` |
+| long | 5.3.2 | Apache-2.0 | © 2009 The Closure Library Authors, © 2020 Daniel Wirtz / The long.js Authors | `node_modules/long/LICENSE` (full Apache License 2.0 text; the package carries no NOTICE file) |
+
+None of them contains native code; they use only Node's own `net` and `events` modules.
 
 ---
 

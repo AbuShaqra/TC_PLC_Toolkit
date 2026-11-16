@@ -20,10 +20,13 @@ scripts/build-vsix.sh
 scripts/run-build.bat
 scripts/install-vsix.bat
 scripts/make-icon.js
+scripts/logo/**
 scripts/make-social-preview.js
 scripts/glyphRaster.js
+scripts/measure-indexing.js
 scripts/Create sample PLC project/**
 scripts/Build PLC project/**
+scripts/Online helper smoke/**
 # The only thing in the repo that talks to the internet. It regenerates a committed data file and is
 # run by a developer by hand; shipping it inside an extension whose whole premise is being offline
 # would be wrong even though nothing invokes it.
@@ -38,6 +41,7 @@ media/icon.png
 CLAUDE.md
 AGENTS.md
 HANDOFF.md
+ROADMAP.md
 DEVELOPMENT.md
 # Implementation plans — developer working documents, same category as the three files above.
 docs/**
@@ -45,3 +49,16 @@ docs/**
 # needs listing here — .gitignore has no effect on what vsce packages, so this shipped 1.12 MB of
 # internal review material (including identifiers redacted out of the source) until it was caught.
 .superpowers/**
+
+# R2 template SOURCE: raw XAE output. scripts/build-project-templates.js derives the shipped
+# templates (resources/templates/tc3.1.4024/ and tc3.1.4026/) from it; those ship, this does not.
+resources/templates/xae-3.1.4024/**
+scripts/build-project-templates.js
+
+# R3.3: the bundled compiler under resources/compiler/ SHIPS (the bundle, its two libraries, its
+# licence files and SOURCE.md — the GPL-3.0 notices must reach every recipient). The script that
+# writes it from a fork checkout is developer tooling.
+scripts/vendor-compiler.js
+
+# vscode-cpptools ships the C/C++ extension's test hooks beside its API; only out/api.js is used.
+node_modules/vscode-cpptools/out/testApi.*

@@ -1,0 +1,8 @@
+{"v":1,"t":"hello","mode":"listTargets","showWindow":false}
+{"log":"Runtime:                 198.51.100.1.1.1    real-time  Real-time runtime  TwinCAT RT (x64)  (kind inferred from the absence of a user-mode marker; architecture inferred from this host)"}
+{"log":"Runtime:                 unknown              user-mode  UmRT_Default  AmsNetId unknown: the configuration file changed after this runtime started; its AmsNetId could not be confirmed over ADS: no runtime answered at 198.51.100.6.1.1 (ADS error 0x7) (its TcRegistry.xml names 198.51.100.6.1.1; read the NetId in the runtime's console window, 'AmsNetId: ...'). Not offered."}
+{"log":"Runtime:                 unknown              user-mode  UmRT_Second  AmsNetId unknown: this runtime is not running (its TcRegistry.xml names 198.51.100.7.1.1; read the NetId in the runtime's console window, 'AmsNetId: ...'). Not offered."}
+{"log":"Project TargetNetId:     198.51.100.6.1.1"}
+{"v":1,"t":"targets","local":[{"netId":"198.51.100.1.1.1","name":"Real-time runtime","kind":"real-time","platform":"TwinCAT RT (x64)","provenance":"kind-inferred","netIdStatus":"trusted","reason":null,"fileNetId":null},{"netId":null,"name":"UmRT_Default","kind":"user-mode","platform":"TwinCAT OS (x64)","provenance":"read","netIdStatus":"rewritten","reason":"the configuration file changed after this runtime started; its AmsNetId could not be confirmed over ADS: no runtime answered at 198.51.100.6.1.1 (ADS error 0x7)","fileNetId":"198.51.100.6.1.1"},{"netId":null,"name":"UmRT_Second","kind":"user-mode","platform":null,"provenance":null,"netIdStatus":"not-running","reason":"this runtime is not running","fileNetId":"198.51.100.7.1.1"}],"projectNetId":"198.51.100.6.1.1"}
+{"v":1,"t":"done","exitCode":0,"ui":null}
+{"exit":0}

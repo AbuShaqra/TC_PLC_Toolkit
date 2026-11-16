@@ -1,6 +1,6 @@
 /**
  * @file test_library_tree.js
- * @description The "TwinCAT Libraries" tree: what is expandable, and what each row inserts.
+ * @description The "PLC Libraries" tree: what is expandable, and what each row inserts.
  *
  * There was no harness for this file, and it showed: methods shipped in 0.4.0 with the type row's
  * collapsible state still computed from `members` alone. Every *interface* — methods and no fields —

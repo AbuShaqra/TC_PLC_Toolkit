@@ -97,7 +97,7 @@ function readStForFile(fsPath) {
     const hit = stFileCache.get(fsPath);
     if (hit && hit.signature === signature) return hit.stText;
 
-    let stText = null;
+    let stText;
     try {
         const raw = fs.readFileSync(fsPath, 'utf8');
         if (/\.(tcpou|tcgvl|tcdut|tcio|tctleo)$/i.test(fsPath) || /<TcPlcObject/i.test(raw)) {
@@ -126,9 +126,10 @@ function defKey(def) {
 /**
  * Resolves the declaration scope carried by a definition result.
  *
- * Cross-file XML definitions use component-local ranges, whereas live/transient ST nodes use whole-
- * unit ranges. `componentId` is therefore authoritative when present; interpreting its local line as
- * a whole-unit line can select an unrelated root variable at the same coordinates.
+ * Both indexers emit unit lines in the same shapes (xmlIndexer.js `unitLineMap`; an XML-indexed
+ * method's `declRange` spans METHOD..END_METHOD since R15 review round 4), but an XML-indexed action
+ * has no `implRange`, so a line alone cannot place a definition inside an action of a file that has not
+ * been re-indexed from its ST. `componentId` is therefore authoritative when present.
  * @param {Object} def A definition from definitionAt().
  * @param {Object} symbolIndex Workspace symbol index.
  * @returns {{pou: Object|null, method: Object|null}}
@@ -147,7 +148,7 @@ function definitionScope(def, symbolIndex) {
     return findActiveScope(symbolIndex, def.uri, def.range.start.line + 1);
 }
 
-/** The method variable named by a definition, respecting component-local XML coordinates. */
+/** The method variable named by a definition: by name when `componentId` names the method, else by range. */
 function methodVariableForDefinition(def, scope) {
     if (!def || !scope || !scope.method) return null;
     const variables = scope.method.variables || [];
@@ -211,7 +212,11 @@ function describeDef(def, symbolIndex) {
     return { key: defKey(def), owner, memberName };
 }
 
-/** The POU's own name plus every ancestor reachable through EXTENDS or IMPLEMENTS. Cycle-safe. */
+/**
+ * The POU's own name plus every ancestor reachable through EXTENDS or IMPLEMENTS. Cycle-safe. Every
+ * EXTENDS parent counts: an INTERFACE may extend several (`EXTENDS I_A, I_B`), and reading only the
+ * first left the second parent's members unrelated.
+ */
 function inheritanceFamily(node, index) {
     const names = new Set();
     const queue = [node];
@@ -221,7 +226,8 @@ function inheritanceFamily(node, index) {
         const key = cur.name.toLowerCase();
         if (names.has(key)) continue;
         names.add(key);
-        for (const parent of [cur.extends, ...(cur.implements || [])]) {
+        const bases = cur.extendsAll && cur.extendsAll.length ? cur.extendsAll : [cur.extends];
+        for (const parent of [...bases, ...(cur.implements || [])]) {
             if (!parent) continue;
             const n = findNode(index, parent);
             if (n) queue.push(n);
@@ -236,6 +242,73 @@ function pousRelated(a, b, index) {
     if (a.name.toLowerCase() === b.name.toLowerCase()) return true;
     return inheritanceFamily(a, index).has(b.name.toLowerCase())
         || inheritanceFamily(b, index).has(a.name.toLowerCase());
+}
+
+/**
+ * The POUs whose same-named Method/Property is ONE slot with `owner`'s, for a rename: every interface
+ * or base that declares the member and is an ancestor of a POU already in the family, and every POU
+ * that derives from such a declarer (EXTENDS or IMPLEMENTS, transitively). Closed under both steps, so
+ * renaming `FB_A.Start` (FB_A IMPLEMENTS I_Drive) reaches `I_Drive.Start`, every other implementor of
+ * I_Drive, a second interface one of them also implements with a `Start`, and THAT interface's
+ * implementors — the set TwinCAT needs renamed together, or it reports an unimplemented method.
+ *
+ * pousRelated() is pairwise and stops at siblings: FB_A and FB_B both implement I_Drive, but neither
+ * derives from the other. A POU that only shares the NAME (no declaring ancestor in common) is not in
+ * the family: an ancestor that does not declare the member is a path, never an anchor.
+ * @param {Object} owner The member's owning POU node.
+ * @param {string} memberName The Method/Property name.
+ * @param {Object} symbolIndex Workspace symbol index.
+ * @returns {Set<string>} Lower-cased POU names, `owner` included.
+ */
+function memberRenameFamily(owner, memberName, symbolIndex) {
+    const lower = String(memberName).toLowerCase();
+    const declares = (n) => !!n && [n.methods, n.properties].some(c => (c || []).some(m => m && m.name && m.name.toLowerCase() === lower));
+    /** @type {Map<string, Object>} */
+    const pous = new Map();
+    for (const key of Object.keys(symbolIndex)) {
+        const n = symbolIndex[key];
+        if (n && n.name && !n.external && !pous.has(n.name.toLowerCase())) pous.set(n.name.toLowerCase(), n);
+    }
+    /** @type {Map<string, Set<string>>} */
+    const ancestryCache = new Map();
+    const ancestry = (n) => {
+        const k = n.name.toLowerCase();
+        let a = ancestryCache.get(k);
+        if (!a) { a = inheritanceFamily(n, symbolIndex); ancestryCache.set(k, a); }
+        return a;
+    };
+    const family = new Set();
+    const anchors = new Set();
+    const queue = [owner];
+    while (queue.length) {
+        const pou = queue.shift();
+        if (!pou || !pou.name || family.has(pou.name.toLowerCase())) continue;
+        family.add(pou.name.toLowerCase());
+        for (const name of ancestry(pou)) {
+            if (anchors.has(name)) continue;
+            const declarer = pous.get(name) || findNode(symbolIndex, name);
+            if (!declares(declarer)) continue;
+            anchors.add(name);
+            for (const candidate of pous.values()) {
+                if (!family.has(candidate.name.toLowerCase()) && ancestry(candidate).has(name)) queue.push(candidate);
+            }
+        }
+    }
+    return family;
+}
+
+/**
+ * Whether `pou` counts as related to the target's owner. A rename target carries `family`
+ * (memberRenameFamily); it only ever ADDS POUs to what pousRelated() already accepts.
+ * @param {Object} pou
+ * @param {{owner: Object|null, family?: Set<string>}} target
+ * @param {Object} symbolIndex
+ * @returns {boolean}
+ */
+function relatedToTarget(pou, target, symbolIndex) {
+    if (!pou || !target.owner) return false;
+    if (target.family && pou.name && target.family.has(pou.name.toLowerCase())) return true;
+    return pousRelated(pou, target.owner, symbolIndex);
 }
 
 /**
@@ -264,7 +337,7 @@ function sameSymbol(target, def, symbolIndex) {
     const occ = describeDef(def, symbolIndex);
     const sameName = !!target.memberName && !!occ.memberName
         && target.memberName.toLowerCase() === occ.memberName.toLowerCase();
-    if (!sameName || !pousRelated(target.owner, occ.owner, symbolIndex)) return false;
+    if (!sameName || !relatedToTarget(occ.owner, target, symbolIndex)) return false;
 
     // If either side is a variable of a METHOD, both must be — and of the SAME method. FB_Axis
     // declares a `bDone` VAR_OUTPUT in Halt and another in Stop; they share a name and an owning POU
@@ -529,7 +602,7 @@ function collectWorkspaceReferences(targetWord, target, targetDef, code, tokens,
                             const calleeType = resolvePathType(callee, scope.pou, scope.method, symbolIndex);
                             if (calleeType) {
                                 const calleeNode = findNode(symbolIndex, calleeType);
-                                if (!calleeNode || !pousRelated(calleeNode, target.owner, symbolIndex)) continue;
+                                if (!calleeNode || !relatedToTarget(calleeNode, target, symbolIndex)) continue;
                             }
                         }
                     }
@@ -548,7 +621,7 @@ function collectWorkspaceReferences(targetWord, target, targetDef, code, tokens,
                     // Either way the member belongs to that type, and the target's owner is always a
                     // real workspace node, so this cannot be the same symbol.
                     if (!baseNode) continue;
-                    if (!pousRelated(baseNode, target.owner, symbolIndex)) continue;
+                    if (!relatedToTarget(baseNode, target, symbolIndex)) continue;
                 }
                 // A base we could not resolve at all stays in: losing a real reference is worse than
                 // listing a doubtful one.
@@ -588,16 +661,16 @@ function collectWorkspaceReferences(targetWord, target, targetDef, code, tokens,
         // Re-index this document from its ST, transiently.
         //
         // The index holds two different kinds of node. The ACTIVE document is parsed from the ST unit
-        // (server.js does this on every edit), so its method ranges are in ST-unit coordinates and a
-        // scope lookup works. Every OTHER document comes from xmlIndexer, whose ranges are *per
-        // component* — right for jumping to a definition, meaningless as ST-unit line numbers. So
-        // findActiveScope found NO enclosing method for any line in any other file, every method
-        // variable there resolved to nothing, and `sameSymbol` keeps what it cannot resolve. That one
-        // mismatch produced the overwhelming majority of the wrong references: 1,885 of the 1,893
-        // unresolved occurrences measured on the sample were plain identifiers failing exactly here.
+        // (server.js does this on every edit), so its methods carry full declaration/body ranges and a
+        // scope lookup works. Every OTHER document comes from xmlIndexer. Its ranges are unit lines too
+        // (since R15 review round 3), and a method's `declRange` spans the method (round 4), but an
+        // action has no body range. Before both, findActiveScope found NO enclosing method for any line
+        // in any other file, every method variable there resolved to nothing, and `sameSymbol` keeps
+        // what it cannot resolve: 1,885 of the 1,893 unresolved occurrences measured on the sample were
+        // plain identifiers failing exactly here. The transient parse stays the one source of scopes.
         //
-        // The node is restored afterwards, because those per-component ranges are what cross-file Go to
-        // Definition navigates with — overwriting them for good would fix references and break jumps.
+        // The node is restored afterwards: the index keeps what the indexer that owns this file built
+        // (the XML on disk), not a transient parse of it.
         const restore = snapshotNodesFor(symbolIndex, node.uri);
         try {
             // Re-index into the ACTIVE index (symbolIndex), not the parser's default global — otherwise
@@ -654,8 +727,8 @@ function provideReferencesForSymbol(spec, symbolIndex) {
     // property/action ranges are in ST-UNIT coordinates — the very coordinates every occurrence of the
     // symbol resolves to. defKey equality in the scan hinges on the target holding those same
     // coordinates, so this re-index is mandatory, not an optimization. It mutates the index, so the
-    // node is snapshotted and restored: the on-disk (per-component) ranges are what cross-file Go to
-    // Definition navigates with, and must survive this call untouched.
+    // node is snapshotted and restored: the index keeps the node the XML indexer built from the file
+    // on disk (unit lines too, the frame cross-file Go to Definition maps), untouched by this call.
     const restore = snapshotNodesFor(symbolIndex, node.uri);
     try {
         parseAndIndexDocument(stText, node.uri, symbolIndex);
@@ -687,6 +760,11 @@ function provideReferencesForSymbol(spec, symbolIndex) {
             // against this, so the shape must match what describeDef() produces for occurrences.
             const targetDef = { uri: node.uri, range: convertToLspRange(m.nameRange) };
             target = { key: defKey(targetDef), owner: node, memberName: m.name };
+            // A rename must keep every implementor of a shared interface (and every override of a
+            // shared base) in step, not just the pairwise relatives Find References reports.
+            if (spec.member.kind === 'Method' || spec.member.kind === 'Property') {
+                target.family = memberRenameFamily(node, m.name, symbolIndex);
+            }
             return finishForSymbol(targetWord, target, targetDef, stText, node, declRange, symbolIndex);
         }
 
@@ -764,5 +842,6 @@ module.exports = {
     // Exported for the configuration-object reference scan (features/configReferences.js), which
     // reuses the exact relatedness relaxation the qualified-occurrence matching here uses, so that
     // reference set and the code reference set can never diverge on what counts as "the same member".
-    pousRelated
+    pousRelated,
+    memberRenameFamily
 };

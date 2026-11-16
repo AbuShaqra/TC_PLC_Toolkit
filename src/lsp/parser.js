@@ -10,6 +10,7 @@ const { STANDARD_KEYWORDS } = require('./builtins');
 const { createSymbolNode } = require('./symbolNode');
 const { ST_INDEX_SKIP_DIRS } = require('../twincatWorkspace');
 const log = require('./log');
+const { CONDITIONAL_RE, annotateConditionals, headHasDirective } = require('./conditionals');
 
 /**
  * Token types for Lexer
@@ -80,7 +81,8 @@ function skipPouModifiers(tokens, idx) {
 /**
  * Tokenizes Structured Text code.
  * @param {string} code 
- * @returns {Array<Object>} List of tokens
+ * @returns {import('./conditionals').TokenStream} List of tokens; `conditionals` is set when the
+ *          code holds a conditional pragma directive (conditionals.js).
  */
 function tokenize(code) {
     const tokens = [];
@@ -92,6 +94,9 @@ function tokenize(code) {
     // Note: elementary type names are intentionally NOT keywords here so that type-name
     // parsing (return types, variable types) treats them as identifiers.
     const keywords = STANDARD_KEYWORDS;
+    // Set when a conditional directive ({IF}/{ELSIF}/{ELSE}/{END_IF}) is lexed; only then does
+    // annotateConditionals() run, so a unit without one costs nothing extra (conditionals.js).
+    let sawConditional = false;
 
     while (i < code.length) {
         const char = code[i];
@@ -119,6 +124,7 @@ function tokenize(code) {
                 i++;
             }
             if (i < code.length && code[i] === '}') { value += '}'; i++; col++; }
+            if (!sawConditional && CONDITIONAL_RE.test(value)) sawConditional = true;
             tokens.push({ type: TokenType.Pragma, value, start, end: i, line: startLine, col: startCol });
             continue;
         }
@@ -190,30 +196,28 @@ function tokenize(code) {
             continue;
         }
 
-        // (* *) block comment
+        // (* *) block comment. These NEST in TwinCAT (Infosys, "ST comments": `(* a; (* inner *) b; *)`),
+        // so the first `*)` only closes the innermost one. Inside, only `(*` and `*)` count — a quote,
+        // `//` or `/*` is comment text. Unterminated runs to the end of the text. Same rules as
+        // src/stComments.js; test_nested_comments.js keeps the two in step.
         if (char === '(' && code[i + 1] === '*') {
-            let value = '(*';
             const start = i;
             const startLine = line;
             const startCol = col;
             i += 2;
             col += 2;
-            while (i < code.length && !(code[i] === '*' && code[i + 1] === ')')) {
-                const c = code[i];
-                value += c;
-                if (c === '\n') {
-                    line++;
-                    col = 1;
-                } else {
-                    col++;
+            let depth = 1;
+            while (i < code.length) {
+                if (code[i] === '(' && code[i + 1] === '*') { depth++; i += 2; col += 2; continue; }
+                if (code[i] === '*' && code[i + 1] === ')') {
+                    depth--; i += 2; col += 2;
+                    if (depth === 0) break;
+                    continue;
                 }
+                if (code[i] === '\n') { line++; col = 1; } else { col++; }
                 i++;
             }
-            if (i < code.length) {
-                value += '*)';
-                i += 2;
-                col += 2;
-            }
+            const value = code.slice(start, i);
             tokens.push({
                 type: TokenType.Comment,
                 value: value,
@@ -498,6 +502,7 @@ function tokenize(code) {
         });
     }
 
+    if (sawConditional) annotateConditionals(tokens);
     return tokens;
 }
 
@@ -548,6 +553,10 @@ function isBlockEnd(tok) {
 function parseVariablesBlock(tokens, startIndex, scopeName) {
     const vars = [];
     let idx = startIndex;
+    // Conditional pragmas (conditionals.js): a section header inside a {IF} group makes the scope
+    // of every variable below it depend on a define.
+    const header = tokens[startIndex - 1];
+    const headerConditional = !!(header && header.cond && header.type === TokenType.Keyword);
 
     while (idx < tokens.length) {
         const tok = tokens[idx];
@@ -560,6 +569,7 @@ function parseVariablesBlock(tokens, startIndex, scopeName) {
         if (tok.type === TokenType.Identifier) {
             const names = [tok.value];
             const nameRanges = [{ start: tok.start, end: tok.end, line: tok.line, col: tok.col }];
+            let nameConditional = !!tok.cond;
             idx++;
 
             // Check for commas (multi-variable declarations)
@@ -573,6 +583,7 @@ function parseVariablesBlock(tokens, startIndex, scopeName) {
                     const identTok = tokens[idx];
                     names.push(identTok.value);
                     nameRanges.push({ start: identTok.start, end: identTok.end, line: identTok.line, col: identTok.col });
+                    if (identTok.cond) nameConditional = true;
                     idx++;
                 }
             }
@@ -604,6 +615,7 @@ function parseVariablesBlock(tokens, startIndex, scopeName) {
                 const typeStart = idx < tokens.length ? tokens[idx].start : 0;
                 let typeEnd = typeStart;
                 const typeTokens = [];
+                let typeConditional = false;
 
                 while (idx < tokens.length) {
                     const t = tokens[idx];
@@ -620,6 +632,7 @@ function parseVariablesBlock(tokens, startIndex, scopeName) {
                     // type" the day it is switched on. The initializer (`INT := 7`) deliberately
                     // STAYS: decl-site init lists are load-bearing (getInitParams reads them).
                     if (t.type === TokenType.Pragma) {
+                        if (t.condDirective) typeConditional = true;
                         idx++;
                         continue;
                     }
@@ -630,9 +643,11 @@ function parseVariablesBlock(tokens, startIndex, scopeName) {
                 }
 
                 const trimmedTypeStr = typeStr.trim();
+                const conditional = nameConditional || typeConditional || headerConditional;
                 names.forEach((name, nIdx) => {
                     const r = nameRanges[nIdx];
-                    vars.push({
+                    /** @type {Object} */
+                    const v = {
                         name: name,
                         type: trimmedTypeStr,
                         scope: scopeName,
@@ -648,7 +663,13 @@ function parseVariablesBlock(tokens, startIndex, scopeName) {
                             endLine: tokens.find(t => t.end === typeEnd)?.line || r.line,
                             endCol: tokens.find(t => t.end === typeEnd)?.col || r.col
                         }
-                    });
+                    };
+                    // Only set when true, so a unit without conditional pragmas keeps its exact shape.
+                    // types.js pickVar / paramSetFromVars read these.
+                    if (conditional) v.conditional = true;
+                    if (typeConditional) v.typeConditional = true;
+                    if (headerConditional) v.scopeUncertain = true;
+                    vars.push(v);
                 });
 
                 // Parse implicit enum values to register them as valid identifiers in
@@ -656,7 +677,7 @@ function parseVariablesBlock(tokens, startIndex, scopeName) {
                 // type token span). Rule: an identifier immediately after '(' or ',' is a
                 // member NAME; an identifier after ':=' is a value and is skipped.
                 if (/^\s*\(/.test(trimmedTypeStr)) {
-                    const meaningful = typeTokens.filter(t => t.type !== TokenType.Whitespace && t.type !== TokenType.Comment);
+                    const meaningful = typeTokens.filter(t => t.type !== TokenType.Whitespace && t.type !== TokenType.Comment && t.type !== TokenType.Pragma);
                     let inParen = false;
                     let expectName = false;
                     for (const t of meaningful) {
@@ -716,6 +737,17 @@ function parseAndIndexDocument(code, fileUri, index = workspaceSymbolIndex) {
     let pouNode = null;
     if (fileUri) {
         pouNode = Object.values(index).find(node => node.uri === fileUri);
+    }
+    // A GVL's unit (stConverter raw) has no `GVL` header, so no keyword branch below replaces its
+    // node the way a POU's is replaced: the VAR_GLOBAL blocks are pushed onto the node found by uri.
+    // That node already holds the XML indexer's copy of every variable (saved text), so appending
+    // kept two copies per variable, one more per sync. This text is the whole GVL: its variables
+    // replace the old ones (a NEW array — a snapshot taken by references.js keeps the old one).
+    // `qualifiedOnly` follows this text too (an unsaved pragma edit), tested exactly as xmlIndexer
+    // tests the declaration on disk (a pragma anywhere counts: the restrictive answer is the safe one).
+    if (pouNode && String(pouNode.type).toUpperCase() === 'GVL') {
+        pouNode.variables = [];
+        pouNode.qualifiedOnly = /\{\s*attribute\s+'qualified_only'\s*\}/i.test(code);
     }
     let currentMethod = null;
     let currentProperty = null;
@@ -815,10 +847,17 @@ function parseAndIndexDocument(code, fileUri, index = workspaceSymbolIndex) {
                     }
                 }
 
+                // A conditional directive in the head makes EXTENDS/IMPLEMENTS depend on a define:
+                // the inheritance chain then counts as unresolved (core.walkExtendsChain).
+                if (tokens.conditionals && headHasDirective(tokens, idx)) {
+                    pouNode.inheritanceUncertain = true;
+                }
+
                 // Parse EXTENDS / IMPLEMENTS
                 while (idx < tokens.length) {
-                    // Skip whitespace/comments first
-                    while (idx < tokens.length && (tokens[idx].type === TokenType.Whitespace || tokens[idx].type === TokenType.Comment)) {
+                    // Skip whitespace/comments (and conditional directives) first
+                    while (idx < tokens.length && (tokens[idx].type === TokenType.Whitespace || tokens[idx].type === TokenType.Comment ||
+                        tokens[idx].condDirective)) {
                         idx++;
                     }
                     if (idx >= tokens.length) break;
@@ -905,7 +944,7 @@ function parseAndIndexDocument(code, fileUri, index = workspaceSymbolIndex) {
         // VAR-block variables (`AT %I*` direct addresses included), so the shared block parser
         // handles them; a UNION is indexed exactly like a STRUCT. This pass is *attach-only*: the
         // members are merged into the node the XML indexer already built for this file, keeping
-        // that node's XML-relative ranges intact, and names already known are skipped. It can
+        // that node's ranges (unit lines, as here) intact, and names already known are skipped. It can
         // therefore only ever add a missing declaration — never move, replace, or duplicate one.
         // It is what makes an unsaved edit to a DUT visible to live diagnostics.
         if (tok.type === TokenType.Keyword && (valUpper === 'STRUCT' || valUpper === 'UNION')) {

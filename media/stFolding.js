@@ -97,6 +97,10 @@
      * still line up — and the pragmas are handed back separately, because region markers have to be
      * read from them. A pragma inside a comment yields neither.
      *
+     * `(* *)` comments nest — TwinCAT documents `(* a; (* inner *) b; *)` — so the scanner counts their
+     * depth and only the `*)` that brings it back to zero ends the comment. A slash-star comment does
+     * not nest. Same rules as src/lsp/parser.js and src/stComments.js (test_nested_comments.js).
+     *
      * Block comments carry across lines; strings and pragmas deliberately do not. TwinCAT writes a
      * pragma on one line, and the lexer already stops an unterminated `{` at end-of-line for exactly
      * this reason: while `{region "Inputs"` is half typed, it must not swallow the rest of the file.
@@ -106,6 +110,7 @@
     function scanLines(lines) {
         var out = [];
         var blockComment = null;   // null | '*)' | '*/'
+        var depth = 0;             // nesting depth of a '(*' comment
 
         for (var i = 0; i < lines.length; i++) {
             var line = String(lines[i] == null ? '' : lines[i]);
@@ -115,7 +120,9 @@
 
             while (j < line.length) {
                 if (blockComment) {
-                    if (line.substr(j, 2) === blockComment) { blockComment = null; code += '  '; j += 2; }
+                    var pair = line.substr(j, 2);
+                    if (blockComment === '*)' && pair === '(*') { depth++; code += '  '; j += 2; }
+                    else if (pair === blockComment) { if (--depth === 0) blockComment = null; code += '  '; j += 2; }
                     else { code += ' '; j++; }
                     continue;
                 }
@@ -123,6 +130,7 @@
                 if (two === '//') { code += repeat(' ', line.length - j); break; }
                 if (two === '(*' || two === '/*') {
                     blockComment = two === '(*' ? '*)' : '*/';
+                    depth = 1;
                     code += '  ';
                     j += 2;
                     continue;

@@ -342,6 +342,27 @@ async function listExternalReferences(refs, resolveSt) {
     return { items, searchedWord };
 }
 
+/**
+ * Maps a unit-level hover (from `custom/hover`) back to the pane the request came from.
+ *
+ * A pragma never spans lines and the unit keeps pane text verbatim, so the hover sits on the request's
+ * own line with unchanged columns. Anything that does not — a hover on another line, or one with no
+ * markdown — is dropped rather than shown at a guessed place.
+ * @param {{contents: {value: string}, range: {start: {line: number, character: number}, end: {line: number, character: number}}}|null} hover
+ * @param {{line: number}} abs The absolute (0-based) position the request was made at.
+ * @param {number} localLine The 1-based pane line the request was made at.
+ * @returns {{contents: string, range: {startLineNumber: number, startColumn: number, endLineNumber: number, endColumn: number}}|null}
+ */
+function mapHoverToLocal(hover, abs, localLine) {
+    if (!hover || !hover.contents || typeof hover.contents.value !== 'string' || !hover.range || !abs) return null;
+    const { start, end } = hover.range;
+    if (start.line !== abs.line || end.line !== abs.line) return null;
+    return {
+        contents: hover.contents.value,
+        range: { startLineNumber: localLine, startColumn: start.character + 1, endLineNumber: localLine, endColumn: end.character + 1 }
+    };
+}
+
 module.exports = {
     assembleSt,
     localToAbsolute,
@@ -353,6 +374,7 @@ module.exports = {
     collectPeekReferences,
     listExternalReferences,
     mapDiagnosticsToLocal,
+    mapHoverToLocal,
     PEEK_MAX_PANES,
     PEEK_MAX_TEXT_BYTES
 };

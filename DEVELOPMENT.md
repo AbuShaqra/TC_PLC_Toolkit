@@ -1,7 +1,36 @@
 # Development
 
-Building, testing and hacking on TwinCAT PLC Toolkit. For what the extension *does*, see
+Building, testing and hacking on TC Toolkit. For what the extension *does*, see
 [README.md](README.md); for the current state of the work, see [HANDOFF.md](HANDOFF.md).
+
+**Naming.** The user-facing name is **TC Toolkit**: the display name, the Activity Bar container, the
+command category (`TC Toolkit: Build Project`), the settings sections, the custom editor, status-bar texts,
+notifications, quick-pick titles, output channels (`TC Toolkit Language Server`, `TC Toolkit Library
+Definitions`) and diagnostic sources (`TC Toolkit compile`, `TC Toolkit ST Validator`). The views are
+**PLC Objects**, **PLC Libraries** and **PLC References**, and the start page's tab is `TC Toolkit Start`.
+"TwinCAT" is Beckhoff's registered trademark, so it is used only **descriptively** ("for Beckhoff TwinCAT 3
+PLC projects", "a TwinCAT solution", "requires TwinCAT XAE") and never as the name of the product or of
+anything in its UI; `test/test_start_contributions.js` fails if a contributed name contains it. **Internal
+identifiers keep the `twincat.*` prefix** (extension id `twincat-plc-toolkit`, command ids,
+view and container ids, context keys, the `twincat.xmlViewer` viewType, the `twincat-compile`
+DiagnosticCollection name): renaming those would break users' keybindings and editor associations,
+and nobody reads them as a name.
+
+**Setting keys are the exception: they are `tcToolkit.*`** (user report 2026-11-11). VS Code's Settings
+editor builds each setting's label from its key, so `twincat.compiler.path` showed as "Twincat › Compiler:
+Path". `contributes.configuration` is an array of one section per group (`tcToolkit.diagnostics`,
+`.compiler`, `.xaeShell`, `.libraryDefinitions`, `.startPage`), each with a short title and its key prefix
+as `id`: the Settings editor trims a setting's category when it starts with its section's id, so browsing
+the table of contents (**TC Toolkit › Compiler**, under the display name) a setting reads just "Path".
+Search results — which includes the `@ext:` filter and Open Settings' section query — have no section, so
+they show the full category built from the key: "Tc Toolkit › Compiler: Path" (VS Code capitalises each
+camelCase word; the uppercase "TC" is not reachable through a key).
+`src/settingsMigration.js` moves values from the old keys once, at activation (below, file map). The ten
+old `twincat.*` keys stay contributed **deprecated** (`deprecationMessage` → the new key), which the
+Settings editor hides unless one is set: measured on VS Code 1.145, `inspect` reads an uncontributed key
+and removing one works, but writing one is refused, and the older releases `^1.66` admits are not known
+to allow even the removal. `test/test_start_contributions.js` guards it: no live key starts with
+`twincat.`, all ten exist under `tcToolkit.`, and each deprecated key matches its successor.
 
 ## Run from source
 
@@ -37,6 +66,19 @@ same version: both directories end up under `~/.vscode/extensions/` and the old 
 `.obsolete` until a **full restart** — a window reload is not always enough. This has already cost one debug
 cycle chasing a "feature does nothing" report that was really old code still running.
 
+**What the VSIX must carry for Compile Project.** `resources/compiler/` ships whole (the bundle, its two
+libraries, the C++ runtime headers in `include/` that the optional g++ build compiles against (R13), the
+GPL-3.0 licence files, `third-party/`, `SOURCE.md`). **The only dialect profile shipped is
+`resources/dialects/twincat3.json`** (user rule, 2026-11-10): no CODESYS or other profile, and none copied
+from the fork — `test_vendored_compiler.js` pins `resources/dialects/` to exactly that file. (The bundle's
+built-in CODESYS *library importer* is compiler code, not a profile, and stays.) After packaging, check:
+
+```bash
+unzip -l twincat-plc-toolkit-<version>.vsix | grep -E 'resources/(compiler|dialects)/'
+# expect resources/compiler/{compiler.cjs,libs/*.stlib,include/*.hpp,LICENSE,COPYING,COPYING.RUNTIME,SOURCE.md,third-party/*}
+# and exactly one profile: resources/dialects/twincat3.json
+```
+
 ### Publish a GitHub release
 
 `.github/workflows/release.yml` is a **manual** workflow (`workflow_dispatch`; Actions tab → *Release* →
@@ -58,8 +100,10 @@ node test/run.js references   # run only suites whose name matches a substring
 node test/test_live_path.js   # run a single harness directly
 node test/test_solution_map.js # solution → PLC-project discovery/grouping
 node test/test_tree_reveal.js # exact component → project → solution parent chains
+node test/test_objects_tree_model.js # the vscode-free Objects-tree model
+node test/test_objects_tree_ids.js   # every Objects-tree id pinned on sample/ (--write regenerates)
 npm run typecheck             # type-check gate: tsc --noEmit (no emit — runtime stays plain JS)
-npm run lint                  # ESLint 9, flat config — a DEFECT check, not a style check; the
+npm run lint                  # ESLint 10, flat config — a DEFECT check, not a style check; the
                               # policy and every relaxation are documented in eslint.config.js
 
 REQUIRE_FULL_SUITE=1 npm test # fail unless the full-run fixtures are present (see below)
@@ -83,11 +127,30 @@ found running 2 of its 10 tests. Hence the classification below: a run states wh
 - **FULL** — required fixtures are present **and each load-bearing harness reports that its gate
   actually ran**. Fixture presence alone is not evidence: `test/_coverage.js` writes a per-child
   report that `test/run.js` consumes for the live path, diagnostics/typecheck ratchets, committed
-  archive reader and multi-project fixture.
+  archive reader, multi-project fixture, Objects-tree id pin, the two-sample workspace and R15's
+  online gates (`ads-paths-sample`, `ads-watch`, `ads-code`).
 - **REDUCED** — lists missing fixtures plus every gate that skipped or failed to report execution,
   and labels the final line `(reduced coverage)`.
 - **FILTERED** — `node test/run.js <substring>` intentionally ran only a subset and can never claim
   whole-suite FULL coverage.
+
+**Optional gates** are listed in the summary as *ran* or *skipped* but never make a run REDUCED:
+`compile-real` (`test/test_compile_real.js`, Compile Project against the REAL compiler —
+the bundled `resources/compiler/compiler.cjs`), and `cpp-real` / `gpp-real` (`test/test_cpp_real.js`,
+R13: C++ generated for both sample projects in a temp copy, then compiled with g++ against the vendored
+headers). `compile-real` and `cpp-real` need a Node >= 22, found the way the command finds
+one; without it (CI's Node 16/20 legs) they skip. `gpp-real` also needs a g++ (`TC_TEST_GPP`, else the
+command's own detection) and skips without one. One harness reports both of its gates
+(`test/_coverage.js` `reportCoverages`; `test/run.js` accepts an array). They run in every `npm test` on
+Node 22+ (CI's lint/test leg uses Node 24). To try another compiler build instead of the bundled one:
+
+```bash
+TWINCAT_COMPILER_BUNDLE=/path/to/strucpp-bundle.cjs node test/test_compile_real.js
+# optional: TWINCAT_COMPILER_NODE=/path/to/node (>= 22)
+```
+
+Never make `compile-real`, `cpp-real` or `gpp-real` required in `test/run.js` — a Node < 22 machine,
+or one without g++, must still run a FULL suite.
 
 `REQUIRE_FULL_SUITE=1` turns a reduced or filtered run into a hard failure after the harness reports
 are collected. Use it before packaging a release, so a silently skipped gate can never be mistaken
@@ -99,28 +162,40 @@ per-suite without aborting on the first failure. The main ones:
 | Harness | What it checks |
 |---------|----------------|
 | `test/test_lsp_features.js` | Core LSP: completions, go-to-definition (incl. call parameters), references, diagnostics, on synthetic `.st` units. |
-| `test/test_sample_diagnostics.js` | **Diagnostics ratchet** on the real `sample/` TwinCAT project. The sample is valid code, so every diagnostic on it is a false positive; the harness measures them the way the LSP server does, prints a per-category breakdown, and **fails if the total rises above the baseline** in `test/_baseline.js`. The target — currently met — is zero. |
-| `test/test_live_path.js` | The live editor pipeline: full-file ST assembly, cursor mapping, per-pane diagnostics, member completion through references, method return types, token-aware and cross-file references. |
+| `test/test_sample_diagnostics.js` | **Diagnostics ratchet** on every PLC project under `sample/` (two solutions), each in its own index as the server partitions a workspace. The samples are valid code, so every diagnostic on them is a false positive; the harness measures them the way the LSP server does — in order, and again with each object opened fresh (scan-time index + that unit) — prints a per-category breakdown, and **fails if the total rises above the baseline** in `test/_baseline.js`. The target — currently met — is zero. |
+| `test/test_live_path.js` | The live editor pipeline: full-file ST assembly, cursor mapping, per-pane diagnostics, member completion through references, method return types, token-aware and cross-file references; R12 conditional pragmas per pane (a split IF head silent in its method pane, an unrelated unterminated FOR on its own pane and line, an unsaved overlay adding `{IF}`). |
+| `test/test_editor_breadcrumb.js` | The editor header's breadcrumb (`src/editorBreadcrumb.js`) over the real project map of the sample: project, folders inside it, the object name without its extension, the full-path tooltip; and what is shown when only part is known (a loose file, a file outside its project's directory, no map yet). |
 | `test/test_editor_mapping.js` | The production `src/livePath.js` coordinate/peek helpers directly: pane↔unit boundary mapping, synthesized-line rejection, pane slicing and encoded peek-model paths. `test_live_path.js` imports the same module (including `assembleSt`) rather than carrying copies. |
 | `test/test_live_path_unit.js` | The three pure collectors in `src/livePath.js` — `mapDefinition`, `collectPeekReferences`, `listExternalReferences` — against synthetic in-memory XML fixtures (no `sample/` dependency) plus a counting `readFile` double. Pins the peek budget semantics as tests: `PEEK_MAX_PANES`/`maxTextBytes` bound FILE READS and PANE MODELS, never the mapped references — a ref into an already-opened file still maps past the pane cap, and a pane over the byte budget is skipped but its reference still maps. |
 | `test/test_file_uri.js` | The production filesystem-path/file-URI boundary: reserved characters, Unicode, encoded drive colons and UNC round trips. |
 | `test/test_request_pipeline.js` | `src/lsp/requestPipeline.js`: withDocument syncs exactly once BEFORE the handler (order pinned by a recorder), withoutDocument provably never syncs, value-vs-function fallbacks on every throw path, the frozen `LIBRARY_INDEX_STAGES` table + load-time order validation (a reordered copy throws naming the stages), and byte-exact log-line output on both singular/plural branches. |
 | `test/test_twincat_workspace.js` | `src/twincatWorkspace.js`, the discovery owner: the XML-entity decode chain, the generic walker (skip case-insensitivity, unreadable-dir tolerance, **regular files only** — a directory named like a match is never collected), the full skip-dir set MATRIX with its load-bearing relations (`ARCHIVE_SKIP_DIRS` has no `_libraries`; `PROJECT_SKIP_DIRS` is exactly that plus `_libraries`), the three extension vocabularies, the two-mode suffix-disambiguation core, and cross-pins holding `projectStatusBar`'s regex and `customEditorProvider`'s glob (read as text) to the owner's vocabularies. |
 | `test/test_component_id.js` | `src/componentId.js`, the component-id grammar owner: a conformance sweep driving the **real** `parseTwinCatXml` over a fixture minting every id shape (round-trip `parse`→`make` identity), the frozen parse table incl. the pinned `prop_X_get`-is-an-accessor ambiguity, `make`'s programmer-error throws, and the `label`/`memberName` display helpers incl. the transition fix. |
-| `test/test_typecheck.js` | Semantic type checking: member access, call arguments, declaration types, assignment compatibility — plus the same `sample/` diagnostics ratchet. |
+| `test/test_typecheck.js` | Semantic type checking: member access, call arguments, declaration types, assignment compatibility — plus the same `sample/` diagnostics ratchet, per project. |
+| `test/test_two_samples.js` | The committed `sample/` as a multi-project workspace (two DIFFERENT solutions, unlike `test_multi_project_scope.js`'s copies): the second sample matches a fresh build of `build-sample-project2.js` and is the 3.1.4024 layout; the real `scanWorkspace` partition (19 + 7 objects, each project's own `FB_Cylinder` in its own index); Go to Definition on `FB_Cylinder` landing in the asking project's own FB; references not crossing projects; the scan reading `IMPLEMENTS` on a CRLF multi-line head; and the real `generateAllStFiles` (under a `vscode` stub, on a temp copy) writing one `.st` per object into each project's own `ST_Files`. Required gate `two-samples`. |
 | `test/test_references_scope.js` | Find References scope + coordinate spaces: private method `VAR` vs. parameters, named arguments belonging to the callee, and FB_init declaration-site arguments (`inst : FB_T(p := v)`). |
 | `test/test_references_tree.js` | References-view grouping (file → component → occurrence). |
-| `test/test_tree_reveal.js` | Objects-tree navigation targets and parent chains: file/root fallback; exact method, property, action, transition and Get/Set nodes; nested virtual-folder ancestry; solution → PLC-project ancestry; and no project-map lookup until the logical component chain reaches the file/disk boundary. |
+| `test/test_tree_reveal.js` | Objects-tree navigation targets and parent chains, driven on `src/objectsTreeModel.js` with an in-memory host (no `vscode` stub): file/root fallback; exact method, property, action, transition and Get/Set nodes; nested virtual-folder ancestry; solution → PLC-project ancestry ending in the tree's own root rows; and a whole reveal chain reads no project map (`getParent` is a field read). |
+| `test/test_objects_tree_model.js` | `src/objectsTreeModel.js` with an in-memory host, no `vscode` stub: the shape rule (solutions → projects; one root per project at 2+; flat below), `makeNode` as the single assignment site of id and contextValue (and the historical id formulas), file classification and icons, directory listing (sorting, skip dirs, symlinked dirs, unreadable dirs, re-read on every expansion), virtual folders and their per-file-kind contextValue, property accessors and `propertyNode[.noGet][.noSet]`, and reveal ancestry (flat stops at the workspace root, a file outside the workspace terminates, a reveal's project ancestor is the tree's own row, with its label). |
+| `test/test_objects_tree_ids.js` | Pins every element the VS Code adapter (`src/treeDataProvider.js`) renders on `sample/` against `test/fixtures/objects-tree-ids.json`, recorded from the provider before the R4 model refactor: id, label, contextValue, collapsible state, icon, tooltip, click command and `getParent`, plus the id and ancestor ids `getRevealItem` gives every file and component. Six tree shapes (one solution — the first sample copied alone into a temp root, so its recorded ids are unchanged —, two solutions, two projects with no solution, one project with no solution, flat, and `two-sample-solutions`: the committed `sample/` with its 3.1.4026 and 3.1.4024 solutions). Also asserts directly that `getParent` returns the element that listed the child and that reveal ancestors carry the tree's ids and labels. Ids drive VS Code's expansion state and reveal, so a change here is user-visible; regenerate with `--write` only for a deliberate, reviewed change. Required gate `objects-tree-ids`. |
 | `test/test_st_shadow.js` | XML is the source of truth: a stray plain `.st` mirror (outside `ST_Files/`) must never steal an XML-backed symbol's index node — the references scan would follow the hijacked uri to the stale mirror and miss the real call sites. |
-| `test/test_st_output_path.js` | The pure output-path mapping behind project-aware **Generate ST** (`src/stOutputPath.js`): each project's objects land under `ST_Files/<project dir relative to workspace>/…` so two projects' identical object paths never collide, extensions become `.st`, a linked object cannot escape its project folder, and the single-root case carries no redundant workspace-name prefix. The end-to-end export (real provider, real disk, three-project fixture) is asserted by the dev-host `generate-st` phase. |
-| `test/test_library_catalog.js` | The data path behind the TwinCAT Libraries view: catalog built from the `.plcproj`, namespaces, `.tmc` types and their members. |
+| `test/test_st_output_path.js` | The pure output-path mapping behind project-aware **Generate ST** (`src/stOutputPath.js`): each project's objects land inside that project, `<project dir>/ST_Files/<path in the project>.st`, so two projects' identical object paths never collide and nothing is written at the workspace's top level; extensions become `.st`, a linked object cannot escape its project's `ST_Files`, and a path under any `ST_Files` is never an input. The end-to-end export (real provider, real disk, three-project fixture) is asserted by the dev-host `generate-st` phase. |
+| `test/test_library_catalog.js` | The data path behind the PLC Libraries view: catalog built from the `.plcproj`, namespaces, `.tmc` types and their members. |
 | `test/test_library_scope.js` | The Libraries view's active-project scoping, both halves. Server side: `selectLibraryCatalog` (workspaceScan.js) over REAL routing on a two-`.plcproj` fixture — a file's project answers with its own catalog **even when empty** (an explicit scope never widens to the union; that widening was the old behavior and is pinned OUT), union only for no-fileUri/loose. Host side: `scopeProjectKey`/`scopeDescription`/`readLibraryResponse` plus the provider under the vscode stub — refetch only on owning-project change, description only in 2+-project workspaces (real spelling, never the identity key), bare-array responses degrade to the union, a failed request never throws. |
 | `test/test_dnd_rules.js` | The Objects-tree drag & drop and copy/paste compatibility matrices: what is draggable/copyable (not virtual folders, not Get/Set accessors; directories move but do not copy), components move only within their own file yet paste cross-file (POU↔interface gated), directory-cycle and no-op rejections, duplicate-in-place file paste. |
 | `test/test_xml_rename.js` | Structural rename primitives in `xmlParser`: `renameComponentInXml` (tag Name attr + declaration header + LineIds, Ids kept), `renameVirtualFolderInXml` (folder tag + member FolderPath prefix rewrite), and the no-op-safety composition the rename command relies on (header already renamed by the reference pass → attr/LineIds still fixed, no corruption). |
 | `test/test_xml_member_order.js` | WHERE a new member lands, for both `insertComponentIntoXml` (create) and `insertComponentBlockIntoXml` (paste), via the shared `insertMemberIntoXml`. TwinCAT's loader is order-sensitive inside `<POU>`/`<Itf>`: the canonical child order is Declaration, Implementation, `Folder*`, member*, `LineIds*`, so a member must land *before* the LineIds group — appending past it is the same class of defect as the root-`<Folder>` incident that made XAE drop an FB's members from compile. Also pins the seam's 4-space indent, the root close tag keeping its own indent, CRLF preservation (including an LF block pasted into a CRLF document), a `<LineIds` literal inside CDATA not being mistaken for the anchor, and the `.TcIO` fallback (interfaces carry no LineIds at all). |
+| `test/test_xml_property_accessor.js` | Re-adding a missing property accessor (issue #25), `insertPropertyAccessorIntoXml`: the block equals what `insertComponentIntoXml` writes for a NEW property's accessor (FB: `VAR/END_VAR` + empty ST; interface: declaration only) with one fresh Id; Get lands before an existing Set, Set after `</Get>`, either after the property Declaration when neither exists (both orders give Declaration, Get, Set); already present / unknown property / name prefix of another property → unchanged; CRLF, LF and tab-indented files; a `FolderPath` with `&amp;`; re-parse reports the accessor; no LineIds written. Byte fidelity by whole-string comparison against the original with the block spliced in. |
+| `test/test_property_node_context.js` | The property row's contextValue (`propertyNode`, `.noGet`, `.noSet`, `.noGet.noSet` — the MISSING accessors) and every consumer: the tree builds the right variant and the same tree id for each; `package.json` has no `viewItem == 'propertyNode'` left, the five property-row entries (insert, delete, copy, paste, rename) each match all four variants and nothing else, *Add Get/Set Accessor* match exactly their two variants and are hidden from the Command Palette; drag & drop accepts every variant; no `src/` file compares with `'propertyNode'` by equality. |
+| `test/test_xml_parse_robustness.js` | `xmlParser` on inputs the sample never shows: a non-ST POU/Action/Method (SFC, LD/FBD as `NWL`, CFC, FBD, LD) reads `implementation: null` plus its real `implementationLanguage`, never a member's ST, and an Implementation write to it is refused; empty and self-closing `<Declaration/>`/`<ST/>` never read or write a later block's CDATA; attribute entities (`&amp;`, numeric refs) decode on read and are re-encoded by every writer (folders, FolderPath, Name, LineIds); lone-CR text is normalised in the parse output only; a UTF-8 BOM never leaks into names, text or ST output and survives a write. Byte-fidelity is asserted on whole strings. |
+| `test/test_program_methods.js` | A PROGRAM with METHODs stays a PROGRAM through the converter (raw and export; `END_PROGRAM`, also when a comment mentions FUNCTION_BLOCK) and in the index, and `MAIN.Init()` from another POU resolves through diagnostics, definition, references and completion. Fixtures are written to a temp dir because find-references reads other documents from disk. |
+| `test/test_transition_warning.js` | `convertXmlToSt` names every SFC transition it cannot convert in `warnings`; export mode marks each with a comment without breaking the lineMap, raw (live) mode adds no text at all. |
 | `test/test_nested_namespace.js` | Nested library namespaces (`VisuElems.VisuElemBase.▮`): a library's namespace re-exports its dependencies' namespaces, so the inner segment names a library no `.plcproj` references and is resolved by name against the installed-library store, lazily and cached. Asserts the two properties that hold without any library installed — the gate (only a referenced namespace head opens the store, so `stAxis.MotionState.▮` never does) and the miss (uninstalled ⇒ cached empty list, never an exception). Real resolution runs only when the machine has a readable library, and says so when it does not. |
 | `test/test_rename_engine.js` | `src/renameEngine.js`: mapping workspace reference positions (raw-ST-unit coords) back into CDATA splices — synthesized-line skips (action headers, `GET`/`SET`), the PROGRAM→FUNCTION_BLOCK raw-mode column skew, the never-write-a-mismatch guard, CRLF byte preservation. |
-| `test/test_rename_transaction.js` | `src/renameTransaction.js`, the rollback transaction behind cross-file rename: stage-then-apply with first-staged-order writes, composed re-staging (original text kept from the first read), the pre-write re-read (`changed-on-disk` — a file that changed since staging is never written), reverse-order rollback on first failure, the rollback's own never-clobber verify (`changed-after-write`), per-file rollback-failure reporting, `revert()` after a successful apply (the failed-disk-rename escape hatch), and single-shot apply. Fault-injected over a fake io; the three guards are each verified to FAIL when removed. |
+| `test/test_rename_transaction.js` | `src/renameTransaction.js`, the rollback transaction behind cross-file rename: stage-then-apply with first-staged-order writes, composed re-staging (original text kept from the first read), the pre-write re-read (`changed-on-disk` — a file that changed since staging is never written), reverse-order rollback on first failure, the rollback's own never-clobber verify (`changed-after-write`), per-file rollback-failure reporting, `revert()` after a successful apply, and single-shot apply. Fault-injected over a fake io; the three guards are each verified to FAIL when removed. `applyAsOne` (the rename's single WorkspaceEdit): one commit receives every change, a stale file fails before the commit runs, a commit that throws after landing part of the edit gets exactly the landed files restored, and a file holding neither text is reported, never overwritten. |
+| `test/test_rename_family.js` | R7: `memberRenameFamily` (features/references.js) — renaming a Method/Property reaches every implementor of a shared interface method, a second interface one of them also implements (and ITS implementors), an interface's second `EXTENDS` parent, a derived FB that inherits or overrides it, and the call sites through any of them (`itf.Start()` included); NOT a POU that only shares the name, an unrelated interface's same-named method, or another method of the same interface. Applied through `renameEngine` as the command does (structural Method renames, other files byte-identical), and the visualization side follows the same family. Verified to fail 32 ways without the family. |
+| `test/test_plcproj_text.js` | `src/plcProjText.js`: the `.plcproj` rewrite a rename makes changes only the Include value (entry kept in place with its children, CRLF kept), case-insensitive, prefix-safe (`FB_A` vs `FB_AB`, `Sub` vs `SubX`), directory renames rewrite their nested Folder/Compile entries, library references are never touched, XML entities round-trip, and on both committed sample `.plcproj` files a rename inserts exactly the new characters and renaming back is byte-identical. |
+| `test/test_rename_commands.js` | `src/commands/renameCommands.js` end to end under a stubbed `vscode` with the real by-symbol query: a file, member or directory rename is ONE WorkspaceEdit (text edits, then the move LAST; the `.plcproj` edit inside it), the sibling implementor follows and the name-alike does not, a sibling that already has the new name stops the rename before any write, a failed move restores every landed buffer, and *Undo Last Rename* runs `undo` from a text editor and restores every file byte for byte — refusing once a participating file changed. The stub's `undo` follows the rule measured in a real VS Code (only from a text editor of a file in the group). |
 | `test/test_references_for_symbol.js` | The LSP's by-symbol references entry point (`custom/referencesForSymbol`) that powers rename: FB/GVL/DUT roots (a GVL name never appears in its own ST text, so the position-based API cannot seed it), methods/properties/actions, the name-keyed-index identity guard, and index restoration after the scan. |
 | `test/test_config_references.js` | The non-code half of rename (`custom/configReferencesForSymbol`): dotted symbol paths inside visualizations `.TcVIS`/`.TcVMO` (`GVL_X.fb.member`, embedded `STSnippet` code) and text lists `.TcTLO`/`.TcGTLO` (a text entry whose text IS a symbol path) are found only when the chain provably resolves to the renamed symbol — text-list ids, visu-library names, dotted prose (`Palletizer.Turn1`) and unresolvable prefixes are never touched. Task configs `.TcTTO` use a separate rule: the `<PouCall>` `<Name>` matches only a dot-free name, so a library call (`VisuElems.Visu_Prg`) is never rewritten. BOM/offset fidelity, plus a sample-project pass when `sample/` is present. |
 | `test/test_lsp_parser.js` | Lexer, AST parser and symbol indexer on a synthetic FB: keyword tokenisation, `EXTENDS`/`IMPLEMENTS`, variable types and ranges, nested method params, property GET accessors. Lived outside the suite until 2026-08-05 and **printed `[FAIL]` while exiting 0** — it could report a broken parser and still be green. It counts failures and exits non-zero now. |
@@ -128,21 +203,69 @@ per-suite without aborting on the first failure. The main ones:
 | `test/test_method_diagnostics.js` | Diagnostics for a method body analysed on its own, as the webview does — a valid method must produce none once its POU is indexed. |
 | `test/test_memory_bank.js` | The shared memory bank in `.claude/memory/` and the `SessionStart` hook that delivers it. The bank fails silently by nature — a malformed note is skipped, a renamed file breaks the `[[links]]` at it, a dropped hook stops the digest — and sessions just stop being told what the project already learned, which looks exactly like having nothing to tell. Pins the hook contract too (JSON carrying `hookSpecificOutput.additionalContext`, exit 0 whatever happens), since that is what the mechanism depends on and nothing else in the repo enforces it. |
 | `test/test_pending_edits.js` | `media/pendingEdits.js`, the edit-sync state machine: store keying (`${componentId}_${blockType}`), stash-overwrite semantics, `takeAll` clearing, `snapshot` shape, the EXACT status strings/classNames, `applyCachedEdits` matching on the full xmlContext triple (an accessorType mismatch must NOT match — the Get/Set disambiguation), `foldEdits` argument order and text threading, and the pinned ALIASING of `createStore(initial)` (`snapshot() === seed` — editor.js's 'init' path relies on it). |
-| `test/test_pending_edits_persistence.js` | `src/pendingEditsStore.js`, the workspaceState-backed persistence behind Manual Sync's unsaved edits — the half that makes them survive a window reload. Runs the store over a fake in-memory Memento: a NEW store instance over the SAME memento still returns the edits (that IS the reload — the object dies, the memento does not), a fingerprint mismatch returns `{}` **and** removes the stale entry from the memento, deletes are per-URI, an empty edits object is a delete, an absent entry reads without writing, and the stored value survives the `JSON.parse(JSON.stringify(...))` round trip workspaceState puts it through. |
+| `test/test_pending_edits_persistence.js` | `src/pendingEditsStore.js`, the workspaceState-backed persistence behind Manual Sync's unsaved edits — the half that makes them survive a window reload. Runs the store over a fake in-memory Memento: a NEW store instance over the SAME memento still returns the edits (that IS the reload — the object dies, the memento does not), a fingerprint mismatch returns `{}` **and** removes the stale entry from the memento (`get`; the non-destructive `peek` the online write guard and the compile pre-check use is pinned in `test_ads_regressions.js`), deletes are per-URI, an empty edits object is a delete, an absent entry reads without writing, and the stored value survives the `JSON.parse(JSON.stringify(...))` round trip workspaceState puts it through. |
 | `test/test_peek_uri.js` | `media/peekUri.js`, the synthetic peek/goto URI vocabulary: `parseQuery` against independent %-encoded literals, both encoders' defaults and their exact joined query strings (byte-pinned), `decodeGotoTarget` inverting `encodeGotoParts` incl. the null defaults and `Number()` conversions, and `peekOpenMessage`'s full 'openFile' body incl. the zero-length/null-range fallback to `targetWord.length`. |
 | `test/test_diagnostic_markers.js` | `media/diagnosticMarkers.js`: severity mapping (1→error, 2→warning, else info) through caller-injected sentinel values, other-component diagnostics dropped, `pane === 'decl'` vs everything-else routing (non-'decl' lands in impl — today's contract), and the marker field shape key-for-key. |
 | `test/test_folding.js` | Folding ranges (`media/stFolding.js`). Pins the two reported bugs by name — an unmatched `{endregion}` truncating the enclosing `VAR` fold, and an unindented `{attribute …}` growing a fold arrow of its own — plus the case designed for rather than discovered: `{IF defined(X)}` is a conditional *pragma*, not an `IF` block, and reading it as one leaves an unclosed block that eats every fold below. Also covers keywords inside comments/strings (`$`-escapes included), members named like keywords (`axis.Case`), the separate region/block stacks, every `VAR_*` variant, and a sweep over every pane of every `sample/` object asserting no range is ever out of bounds. |
+| `test/test_pragma_hover.js` | Pragma hover (`src/lsp/features/hover.js`): every directive (`{text}`/`{info}`/`{warning}`/`{error}`, the six conditional heads, `{region}`/`{endregion}`, `{warning disable/restore}`) is titled, described and linked; documented attributes show syntax (the `:=` form when valued) and their own Infosys page; observed ones say so without the maintainers' measurement notes; an unknown attribute gets a NEUTRAL hover; an unknown head, code, comments (nested included), strings and line comments get none. The webview's path: `assembleSt` → `localToAbsolute` → `provideHover` → `mapHoverToLocal` lands on the right pane line and columns in a method's decl and impl panes, and a hover on another line is dropped. `isDocumentationUrl` (what the host will open) and a provenance guard: the generated catalogue holds names, syntax and page ids only, so a copied description cannot slip in. |
 | `test/test_pragmas.js` | Pragma classification and the two catalogs, plus the highlighting rules in **both** grammars and the `{region}` folding markers. Pins the split the design rests on: shape decides the category (and therefore the colour), the catalog only enriches — so a user-defined attribute must be scoped exactly like a documented one. Also asserts catalog integrity (no duplicates, every documented entry has an Infosys node id, the curated file holds nothing Infosys documents, every curated entry carries measured counts), that pragma spans are consumed whole in the lexer and both grammars, and that the three folding-marker declarations — `pragmas.js`, `language-configuration.json`, `media/editor.js` — still agree, which nothing else can check because none of them can import the others. |
 | `test/test_plcproj_scope.js` | The index is scoped to the `.plcproj`, not the filesystem: a project's `objectPaths` (from `createProjectMap`) names only the `<Compile>`d objects, so a backup/orphan copy on disk (a duplicate object name, absent from the project) can never win the name-keyed index and steal a real object's references. Includes the no-`.plcproj` empty-map case and a sample-coverage check proving the scoping is a no-op on the ratchet. Predates the project-scoped index (below) — the guarantee it pins now runs through `createProjectMap` per project instead of one workspace-wide union. |
 | `test/test_uri_fs_path.js` | `uriToFsPath()` must return a path the **running** platform can open. The former copies in `workspaceScan.js` and `features/core.js` once ended in an unconditional `.replace(/\//g,'\\')`, which is correct on Windows and on POSIX ate the root — `file:///home/u/a` became `\home\u\a` — so 11 of 59 suites failed on Linux while CI (`windows-latest`) stayed green. Both callers now delegate to the shared production helper in `src/fileUri.js`. Written to hold on **both** platforms so whichever one CI runs still guards the branch it takes: a round trip through the real filesystem (the load-bearing one — a merely plausible converter cannot satisfy it), paths containing a space in both encoded and unencoded form, separator/root shape per platform, bare-path and empty-input passthrough, caller delegation, and unchanged Windows mapping. |
-| `test/test_project_map.js` | `src/lsp/projectMap.js`: which `.plcproj` owns which file. Discovery, `objectPaths` per project, `ownersOf()` vs `projectFor()` (a linked file has two owners but a request for it routes to one), the orphan/no-project/case-insensitivity edges, `projectLabel()` (the status-bar text, from `src/projectStatusBar.js`) and `groupRootsByProject()` (the Objects-tree grouping) at both the &lt;2-projects (nothing shown, flat tree) and 2-projects ends. Also pins `TWINCAT_EXTS` staying in sync between `projectMap.js` and `xmlIndexer.js`'s own copies — a real review-caught bug: `projectMap.js`'s copy once missed `.tctleo`, silently dropping every enumeration-text-list object's symbols from a project-scoped scan. |
+| `test/test_project_map.js` | `src/lsp/projectMap.js`: which `.plcproj` owns which file. Discovery, `objectPaths` per project, `ownersOf()` vs `projectFor()` (a linked file has two owners but a request for it routes to one), the orphan/no-project/case-insensitivity edges, `projectLabel()` (the status-bar text, from `src/projectStatusBar.js`) and `groupRootsByProject()` (the Objects-tree grouping, now in `src/objectsTreeModel.js`, fed this module's map) at both the &lt;2-projects (nothing shown, flat tree) and 2-projects ends. Also pins `TWINCAT_EXTS` staying in sync between `projectMap.js` and `xmlIndexer.js`'s own copies — a real review-caught bug: `projectMap.js`'s copy once missed `.tctleo`, silently dropping every enumeration-text-list object's symbols from a project-scoped scan. |
 | `test/test_solution_map.js` | `src/solutionMap.js`: the real `.sln` → `.tsproj` → `_Config/PLC/*.xti` → `.plcproj` chain, multiple PLC projects under one solution, multiple same-named solutions, project labels scoped within their solution, unrelated Visual Studio solutions ignored, and unreferenced PLC projects retained as top-level fallbacks. |
+| `test/test_project_template.js` | `src/projectTemplate.js` on both shipped templates: the committed templates match `scripts/build-project-templates.js --check`; every GUID classified; every identity GUID re-issued with every reference following it and each occurrence's case kept (`.sln` upper, `.plcproj` lower); every type GUID kept; no template name left in a path or a byte; BOM, CRLF/LF, tabs and trailing newline preserved and nothing but names and GUIDs changed; starter objects exactly MAIN, PlcTask (calling MAIN) and an empty GVL_Main; the `.tspproj` (4024) and `.tsproj` + `_Config/` (4026) shapes; the created project read back by `projectMap` and `solutionMap`; refusal of a target holding a solution or a file it would write (nothing touched); name validation. |
+| `test/test_template_diagnostics.js` | A project created from each template, indexed like `test_sample_diagnostics.js` with every check on: ZERO diagnostics, again after the first edit a user makes (a variable in the `qualified_only` `GVL_Main` used from MAIN as `GVL_Main.x`), and a deliberate undeclared name IS reported (the gate is live). |
+| `test/test_editor_title_buttons.js` | package.json: the PLC file editor's title-bar buttons (Build, Build and Activate, Go Online/Go Offline in one slot swapped by `twincat.online`, Show Activation Targets): shown only for `twincat.xmlViewer`, the XAE ones only on Windows, inline (`navigation@n`), each command with a codicon. The same five entries in the PLC Objects view's title (`view/title`, `twincatExplorer`): same slots and Windows gating, shown only with `twincat.hasPlcProject` (Go Offline whenever `twincat.online`), and extension.js's `refreshProjectMap` sets that key. |
+| `test/test_start_contributions.js` | package.json for R2: the branding guard (no contributed name — display name, settings section titles, custom editor, view containers, views, command categories — contains "TwinCAT"; the extension id is unchanged); the setting keys (all 18 live keys under `tcToolkit.`, none under `twincat.`, each old key contributed deprecated with its successor's type/scope/default, sections one per key group, the migration table in step); the `twincat` Activity Bar container (titled `TC Toolkit`) holding Start, PLC Objects, PLC Libraries in that order with ids unchanged, none left in the Explorer, References still in its panel, no dangling view id in a when-clause; each start command contributed under the `TC Toolkit` category, in the palette, registered, with an `onCommand` activation event (needed on 1.66); Start view welcome links; a monochrome offline icon; the start page's strict CSP and no remote load; `.vscodeignore` shipping the derived templates but not the raw XAE source; the `tcToolkit.startPage.recentProjectsShown` and machine-scoped `tcToolkit.xaeShell.path*` settings, and the page's command / settings-section allow-lists. R14: the three XAE command titles ("… (requires TwinCAT)", no TwinCAT-led name), each in the palette on Windows only (`when: isWindows`) with an `onCommand` activation event, the two build commands' `enablement: !twincat.xaeRunning`, the internal `twincat.xaeBuild.goToProblem` registered but not contributed, the start page allow-list holding `twincat.xaeBuild`/`xaeBuildAndActivate` (not `xaeShowTargets`), the settings section `XAE Build` with its five keys and their defaults equal to `xaeBuildSettings`, and no target-NetId setting. `tcToolkit.xaeBuild.platform` is a dropdown equal to `XAE_PLATFORMS` and offers every platform both samples' `.sln` declare; `configuration` stays free text. The `tcToolkit.adsDll` section ("ADS DLLs"): both keys machine-scoped, empty by default, each description naming its file, its usual location, that empty searches and that a set path is used as given (31 live settings). |
+| `test/test_start_commands.js` | `src/commands/startCommands.js` + `src/startPage.js` under a recording `vscode` stub: create with args and with prompts (files, recents, last location, open here/new/add/none), refusals inline vs as a notification, a deleted recent solution pruned, Generate ST's project pick, help links and settings, the singleton panel, its `state` message (including the recent-list length, clamped, and the XAE Shell paths; the g++ path in each state, read-only), a settings change (incl. `tcToolkit.compiler.gppPath`) re-posting state to an open page, g++ *Change…* opening the User settings, `openSettings {section}` and Open Settings' query argument, and the command allow-list. |
+| `test/test_check_unit.js` | `src/checkUnit.js`: one origin per emitted line, every pane line exactly once and verbatim in pane order (so a reported line/column IS the pane's), generated lines anchored on their component, members before the body, no rewriting (`REFERENCE TO`, `REF=`, pragmas survive), every sample file round-trips. |
+| `test/test_compile_check.js` | `src/compileCheck.js` with a fake child process: the bundled compiler as default and the setting as override, Node discovery (order on Windows, the version gate, the editor runtime as last resort with `ELECTRON_RUN_AS_NODE=1`, a configured Node path as the only candidate), setup messages (compiler missing, Node missing/too old, each naming its setting), the command line, the JSON report (clean, errors, malformed, exit 2, crash), mapping to file/component/pane/line, the pragma-warning filter and its count, temp-dir lifetime, timeout, cancellation, `paneRange`, runChild's `onStdout`/`onStderr` chunk callbacks. |
+| `test/test_compiler_defines.js` | `src/compilerDefines.js`: define lists (names, `NAME := 'value'`, spacing, a comma inside quotes, case kept, duplicates, empty and malformed entries with notes, an unclosed quote), `.plcproj` reading (`<CompilerDefines />`, whitespace-only, per-object defines read per item (conditions on the item group, the item and the element, `%(CompilerDefines)`, malformed entries noted), MSBuild last-wins and `$(CompilerDefines)`, XML entities, comments), `Condition`s on groups and elements (`evaluateCondition` case by case over the spellings real `.plcproj` files use; Debug applied, Release and platform mismatches skipped without a note, undecidable ones left out with a note and what they set made unreadable for later conditions, self-closing groups, empty conditions, `Condition=` inside another attribute, MSBuild-set properties, `$(Prop)` in a define value, other properties from earlier groups, the project's own `<Configuration>` default not overriding the check configuration), the `--pragma-define` arguments (numeric values exact), `fileDefineArgs` mapping each item's `Include` to its unit (case-insensitive, a `..\` link, an object with no unit noted), an unreadable file. |
+| `test/test_compile_commands.js` | `src/commands/compileCommands.js` + the provider hooks under a recording `vscode` stub: the bundled compiler run when nothing is configured, the toolbar button's host side (`compile-project` from a real `resolveCustomTextEditor` runs the command with the owning project's key, or asks when no single project owns the file; `compileRunning` posted at start and end and carried in `init`; the command's own setup messages), project pick, setup refusal (a missing override), clean run, a run with errors (Problems entries, pane markers, status text, summary), unsaved edits reaching the compiler, Show Problems on the summary, Go to Problem (internal command) and the entry links, an edit dropping its component's results, a failed run keeping the previous results, cancellation, a fresh open landing on the first problem, Build through XAE's fallback (`fromXae`: no notification, a missing compiler returned as a message instead of a popup; `append` keeps the previous project's problems, without it they are replaced), and the project's compiler defines reaching the compiler as `--pragma-define` (numeric value exact) and an object's own as `--file-define` on its unit (malformed entries and an object with no unit left out, notes in the `TC Toolkit Compile` output channel and the summary, an empty element and an unreadable `.plcproj` passing none, a Debug-conditioned group applied and a Release one skipped with no note). R13: off by default, the dropdown and scope coupling, generation after a clean check only, a project that uses library symbols still generated (only a stripped prefix on a compiler-provided block, `SynLib.TON`, with a clean check: the summary and the channel name the library and the compiler's TON; dump-declared blocks: the compile mode gets the check's declaration files, the `.cpp`/`.hpp` start with the coverage comment and stay owned, g++ runs, the warning names the library and the channel lists the blocks and the compiler's TON; a symbol with no usable declaration: generation fails, the summary names it with its library, and the channel lists only that symbol under "C++ could not be generated", with no coverage lines), the g++ run and its Problems entries, ONE notification for a missing g++ (*Open Setting*; *Detect g++* only with an empty setting), an edited generated file left alone, and `CPP_Files/.gitignore` (written on the first run and noted in the channel only, no warning; unchanged on the next; an edit left alone and noted; deleted → not recreated on two runs, noted, `removed` in the record; a foreign one untouched and noted while the C++ is still written; an edited `PLC.cpp` dropped from it with the summary saying git sees it; a user's `PLC.o` in a fresh folder neither touched nor listed); the build waits for the MSYS2 registry search (`gppReady`) before it resolves g++, and a failing wait does not stop it. |
+| `test/test_conditional_pragmas.js` | R12, `src/lsp/conditionals.js` and the diagnostics built on it, through the server's path (`assembleSt` → `indexXmlObject` → `syncDocument` → `provideDiagnostics`). Unit: nesting, segments, `fbRS.SET := TRUE;` and a line-leading named argument (`SET := c,` in a multi-line call) are not boundaries while real GET/SET accessor lines are, a statement-level nested group does not widen the span past its `{END_IF}`, a group wrapping the first VAR block is not an uncertain head, directives in comments/strings ignored, each kind of unbalanced segment marks only itself, selections, the 64 cap, neutral groups, suppression spans, `pickVar`/`AMBIGUOUS`, `scopeUncertain`, `inheritanceUncertain` from both indexers. Zero diagnostics (and every segment balanced, so a zero is never the unbalanced rule by accident) on valid conditional code: the reported split IF head, ELSIF chains, nested groups, WHILE/FOR, REPEAT and CASE split across branches and groups, per-branch declarations (also used outside the group), names only in a branch, `defined(variable:…)`/`defined(pou:…)` guards, a mid-expression group, a directive inside a type, a conditional EXTENDS head, a conditional VAR/VAR_INPUT header with a named call, a multi-line RS call (`SET :=` at line start) next to, after and inside a group, enum members inside and after a group (both indexers). Still reported outside groups: an unterminated FOR, a stray END_WHILE, an undeclared name, a type mismatch, an IF every branch opens and nothing closes (on the group's `{IF}`), a method after an unclosed `{IF}`, the statement after a nested statement-level group, an undeclared name in a POU whose first VAR block is wrapped; the cap silences only its own segment. Byte-identical structural output to the old matcher on every sample unit, per-segment = whole-unit there, and a neutral group appended to every unit (sample and synthetic, including multi-line named-argument calls and a property) leaves its structural output unchanged. Completion and references over both branches. |
+| `test/test_compile_real.js` | **Optional gate `compile-real`**: the REAL compiler — the bundled one, or `TWINCAT_COMPILER_BUNDLE` — first proving the bundled IEC libraries load (`TON`, `R_TRIG`, `CTU`, `LIMIT` resolve; `PID`, from a library NOT shipped, does not), then over every PLC project in `sample/`, through the same code the command uses (library preparation included): ZERO errors and zero warnings after the pragma filter (a ratchet, like the diagnostics baseline), nothing library-filtered, plus planted errors in a method body, a method declaration and a GVL landing on the right file/component/pane/line, and — in the second sample — a call to a method only the FIRST sample's same-named `FB_Cylinder` has, reported in the second sample's MAIN (the projects are never compiled together). Then R3.4 on the synthetic library project (`test/_synthLibProject.js`): errors without the declarations, 0 with them; a wrong argument type and an unknown parameter on a library call reported; an archive-only library name filtered; a user typo, a typo on a library FB member and an unknown name behind a qualifier reported (the last at its pane column); 0 errors without the dump. Then compiler defines on a temp copy of the second sample (`{IF defined(X)}` / `{IF hasvalue(X, 'v')}` in MAIN, `<CompilerDefines>` in its `.plcproj`): the defines select the branches; wrong case or value select ELSE; a numeric value is passed exactly and declares no global constant; a Debug-conditioned group's define selects its branch, a Release-only one does not. Then, on another copy: `hasvalue(TkLevel, '4')` holds from a `.plcproj` value `'4'` next to a `VAR_GLOBAL CONSTANT TkLevel`; a per-object define on FB_Valve selects its branch there but not in FB_Cylinder's same `{IF}`; a per-object value wins over the project's for `hasvalue` in that object only. Then R12 parity: each conditional-pragma fixture is compiled with no define, each define it names and all of them; one the compiler accepts under at least one set must get 0 LSP diagnostics (one rejected under every set is printed as advisory). Prints the sample's timing. Skips (and says so) without a Node >= 22. |
+| `test/test_cpp_real.js` | **Optional gates `cpp-real` and `gpp-real`** (R13): on a TEMP COPY of `sample/` (the sample is asserted untouched), every PLC project goes through the command's steps — units, library preparation, compiler defines, the check (0 errors), the compile mode, the write into `<project dir>/CPP_Files/` under the ownership record (the folder holds exactly `<project>.cpp`, `.hpp`, the record and the `.gitignore`; a second run replaces its own files). With git on PATH: `git init` over the copy, `git check-ignore -v` ignores each project's `.cpp`/`.hpp`/`.o`/record through `CPP_Files/.gitignore`, a user file there and the `.gitignore` itself are not ignored, `git status` lists only those two, an edited `.cpp` is not ignored (ignored again once restored), a user's own `<stem>.o` there before the first write is not ignored, and a deleted `.gitignore` is not recreated (the `.cpp` is then no longer ignored). With a g++ (`TC_TEST_GPP`, else detection): `-c` against `resources/compiler/include/`, no warnings with the build's flags, a clean build records its `.o`; a failing build must fail ONLY on a `KNOWN_GPP_GAPS` entry (today TcToolkitSample_PLC: a PROPERTY read through a global FB instance emitted as a field access), each error placed on a real line of the generated file; an error planted in a `.cpp` is placed on its line. Library use: a second copy of the sample, with TcToolkitSample2 given the SYNTHETIC library of `_synthLibProject.js` (a `.plcproj` reference, the dump, a `.tmc`) and a POU that calls it (including a function whose array parameter's bound is a library constant) plus a block of the project derived from a library block that reads an inherited variable, is checked (0 errors, nothing filtered), generated with the declarations, the coverage names "Synthetic Motion Library" with its blocks, the files start with the coverage comment, and g++ compiles it with no warning. An inherited variable of a type this compiler lacks (LTIME) and an LTIME-parameter function make the generation fail and are named with the library (the variable through its owner, `FB_SynAxis.tSynSpan`). |
+| `test/test_cpp_generate.js` | `src/cppGenerate.js` without the compiler: file stem and `CPP_Files` paths, the compile-mode command line (the check's inputs/defines/list names plus `-o`, no `--check`/`--json`; the check's own line unchanged), ownership in real temp folders (fresh write, replace an unchanged own file, refuse an edited one and a foreign one, per-project record, the `.o` claimed/recorded/deleted, a foreign record stops everything, a record entry with a path ignored), a `.plcproj` rename driven through `cppOutputPaths` + `cppOwnerId` as the command does (old `.cpp`/`.hpp`/`.o` deleted), a case-only rename on a case-insensitive file system, CRLF copies still owned, a half-failed write still recorded, the library coverage (`libraryCoverage` grouping/sorting, the summary sentence with and without g++, the channel lines, the header: line comments only, none for types alone, the file's line endings, owned and replaced like any text), the `CPP_Files/.gitignore` (created with the comment line and each project's `.cpp`/`.hpp`/`.o` plus the record; unchanged / updated for a second project and a rename; CRLF still owned; an edited one left alone; a deleted one never recreated, remembered across runs and across the `.o` steps; a foreign one never overwritten nor adopted; exact wanted text adopted; only the toolkit's own files listed: a foreign `<stem>.o` present before the first write is not (listed once it is gone), an edited generated `.cpp` or recorded `.o` (`changed`) leaves the list; glob characters escaped; a `files` entry named `.gitignore` ignored; the notes), and `runGenerate` over a fake child (files returned, temp dir gone, failure keeps the log, no files = failure, timeout). |
+| `test/test_cpp_settings.js` | `src/cppSettings.js`: defaults off; effective values (the build implies generation); `couplingWrites` per scope (build on → generation on in that scope; generation off → build off there; inherited values; a hand edit setting both; no ping-pong); `checkboxWrites` for the dropdown (coupled writes, target = the most specific scope that sets the switch). |
+| `test/test_gpp.js` | `src/gpp.js` without g++: detection over a mocked PATH and file system (Windows order, quoted PATH entries, MSYS2/MinGW/WinLibs/w64devkit/Chocolatey roots from the environment or defaults; Linux PATH only), the path setting via `checkConfiguredGpp` (full path, quotes, bare command name on PATH or not, a folder with or without g++, missing → reported not replaced), the g++ version (parse, `-dumpfullversion` → `-dumpversion` → `--version` for clang, the per-path+size+mtime cache, detection preferring g++ 7+ over an earlier g++ 6, `tooOld` on a set or detected g++ 6), the command line (`-std=c++17`, no `-Wno-c++17-extensions`), parsing g++ output (Windows drive letters, notes kept with their message, the include and instantiation chains kept as context, positionless `cc1plus:` errors), placing messages on the `.cpp`/`.hpp` (a header error from a captured real g++ 13.3 instantiation lands on the `required from here` line; a later one in the same header on the generated `#include`; no context → the `.cpp`'s first line naming the header), the summary, `runGpp` over a fake child (no shell, g++'s folder first on PATH, exit codes, spawn failure, timeout, cancel), and `killProcessTree` (POSIX group SIGTERM, Windows `taskkill /T /F`, fallbacks; on POSIX a real timed-out `sh` must leave no grandchild running). |
+| `test/test_gpp_commands.js` | `src/commands/gppCommands.js` under a stub: an empty `tcToolkit.compiler.gppPath` is filled (Global), a set value is never overwritten and is checked like the build checks it (`checkConfiguredGpp` on a faked machine: a bare name on PATH or not, a quoted path, a folder with or without g++), a value of only quotes (`""`, `" "`) counts as empty and is filled, nothing found writes nothing, the silent fill never rejects, `twincat.detectGpp` reports with an "Open Setting" button that opens the setting in the User settings; a set g++ 6 is kept but called too old, with a hint to change or clear the setting (not to run *Detect g++*) and a newer detected g++ named but not written; the explicit command fills a detected g++ 6 with a warning, the silent fill does not; the command waits for the MSYS2 registry search before detecting, and does not write a g++ 6 while that search is unfinished; with MSYS2 installed without g++ its "not found" / too-old messages name the root and the pacman command, and after writing (or keeping) a g++ 6 say to install gcc, then clear the setting — no "Detect g++" step, which would keep the old value (a failing wait or check never breaks it). |
+| `test/test_cpptools_selection.js` | `src/cppToolsSelection.js` and `createProviderPrompt` (src/commands/cppToolsCommands.js) under a `vscode` stub: JSONC (comments, trailing commas, BOM, string contents kept); which `c_cpp_properties.json` configuration counts (exact `Win32`, else the last), absent/`${default}` → the setting, `""` → no provider; the decision none/setting/file (exact id match, near misses flagged, the display name in the file, another configuration naming another provider → file); the prompt only for a CPP_Files file, with the C/C++ extension installed and the provider registered, in a workspace folder; once per folder per session (also two concurrent checks); *Use TC Toolkit* writes `C_Cpp.default.configurationProvider` in the WorkspaceFolder scope of that folder and re-announces; *Use* / *Don't ask again* remembered across sessions, *Not now* not; multi-root names the folder; a file naming another provider → *Open c_cpp_properties.json*, the file never written; logged (to the console by default). `test/test_cpptools_provider.js` also checks the selection check creates no output channel. |
+| `test/test_cpptools_provider.js` | `src/cppToolsProvider.js` and `src/commands/cppToolsCommands.js` with a fake C/C++ API and a `vscode` stub (the dev host has no C/C++ extension): which files the provider answers for (the `.cpp`/`.hpp` in a known project's `CPP_Files`, or beside a `.plcproj`; not the `.o`, sub-folders, other folders; case per platform), the configuration (headers + CPP_Files on the include path, c++17, compiler path and gcc mode only with a g++), the browse configuration, `connectCppTools` (absent → the API is not even asked; installed later → register + notifyReady once; an API without notifyReady; a getter that fails → no throw, no message; dispose), no browse configuration without a `CPP_Files` folder, each item carries the requested Uri object, every request is logged (a failing log never fails it), and the wiring (a g++ path change re-announces; another setting does not; a g++ 6 is not handed over as the compiler; the CPP_Files watcher exists without the C/C++ extension and, after a mid-session install, a generated file re-announces; the MSYS2 registry search settling with a root re-announces, with none sends nothing, failing is ignored; nothing written or shown). |
+| `test/test_library_decls.js` | `src/libraryDecls.js` without a compiler, on the SYNTHETIC library project (`test/_synthLibProject.js`: dump, `.tmc`, a generated archive — every name invented): the `.tmc` model (library-owned types only; interfaces and the project's own types skipped; no comment/string text read), gathering, each declaration kind's exact text (a function block's own `VAR` members, an LTIME one left out; an array bound that is a library constant written as its value), `readType` with library constants (plain, qualified; an unknown one, an expression, another list refused), conflicts (compiler names, user names, a dependency the user redefines), dependency-only declarations, nothing guessed for unreadable types, qualifier blanking (same lengths; members/comments/strings/user names untouched; each stripped qualifier reported with its name), library attribution (`libraryOf` → the `.plcproj`'s library name for a `.tmc` type, a dump function, an archive-only name and the namespace; `spellingOf`; `declaredSymbols` and `compilerSubstitutes`; `undeclaredUses`: a member named through its owner, an inherited one found by its name, deduplicated, cascades left out), the filter case by case (a user typo kept; an internal variable of a library block read from outside dropped, of a user block kept), **temp-dir lifetime** (the declarations exist only in runCheck's temp dir during the run; gone after, also on a failed run; project, workspace and `sample/` unchanged), the no-dump case. |
+| `test/test_vendored_compiler.js` | `resources/compiler/`: exactly the files `SOURCE.md` lists (the runtime headers in `include/` included), each matching its recorded size and SHA-256; the headers the generated C++ includes are there, `COPYING` puts them under the runtime library exception and `SOURCE.md` states that licence with the right count of headers carrying a per-file notice; a full 40-hex commit and the source link at it; the GPL-3.0, Apache-2.0 and MIT texts; `THIRD-PARTY-NOTICES.md` naming the commit; `.vscodeignore` shipping the directory and dropping `scripts/vendor-compiler.js`; the bundle requiring Node built-ins only; `resources/dialects/` holding exactly `twincat3.json` and no profile anywhere else (user rule). |
+| `test/test_settings_migration.js` | `src/settingsMigration.js` over a fake VS Code configuration store: the rename table, User / Workspace / per-folder values each moved within their own scope, a value already under the new key never overwritten (old one still removed), a second run a no-op, a failed copy logged with the old value left for the next run, a synchronous throw / failing removal / throwing `getConfiguration` / unreadable folder list all logged and never thrown. |
+| `test/test_recent_projects.js` | `src/recentProjects.js`: newest first, de-duplicated (Windows paths case-insensitive, either separator), capped at 10, missing solutions pruned, malformed stored data ignored, the globalState adapter, and `recentsShownLimit` (the start page's row limit: default 2, clamped to 1..10). |
+| `test/test_msys2_detect.js` | `src/msys2Detect.js` with a fake reg.exe and file system (runs off Windows): reg.exe output parsed by `HKEY_` and `REG_SZ` (English and German output, a DWORD ignored), the uninstall search over all four keys (HKCU/HKLM, WOW6432Node), only `DisplayName` starting with MSYS2, `InstallLocation` / the `UninstallString` folder / an expanded `REG_EXPAND_SZ`, an entry found twice read once, a failing reg.exe; `createRegRunner` (argument array, timeout, no shell, errors → null); the usual roots (profile, Scoop, `SCOOP`, `ChocolateyToolsLocation`); the candidate order in `src/gpp.js` (PATH, registry root's environments, usual roots, `C:\MinGW`, `usr\bin` last; PATH/MSYS2 repeats tried once, case-blind); the user report (a PATH MinGW 6.3 loses to a registry-only MSYS2 g++ 14); an MSYS2 without gcc named in `describeGppSetting` / `resolveGpp` (`msys2Root`), not when any environment has g++; the cache (never runs off Windows, once per session, `settled()`, bounded wait longer than both reg.exe phases, never rejects). |
+| `test/test_xae_shell_detect.js` | `src/xaeShellDetect.js` with every dependency faked (runs off Windows): the COM registration for both shells (quoted and argument-suffixed `LocalServer32`, the 32-bit view for 4024, a localized value name), the default locations with and without the environment variables, a registered file that is missing, a non-GUID ProgID value, rejecting / throwing registry and existence probes, non-Windows (nothing found, registry never queried), `createRegQuery` over a fake `execFile` (argument array, timeout, errors → null), `describeConfiguredShells`, and `resolveShellExe` (configured-and-existing wins, else default location, else registry). |
+| `test/test_xae_shell_commands.js` | `src/commands/xaeShellCommands.js` under a recording `vscode` stub with detection faked: an empty setting is filled (Global target), a non-empty one is kept even when its file is missing, nothing found writes nothing, `autoFill` never rejects, `twincat.detectXaeShell` reports found / kept / not found in one message whose button opens the filtered settings. Also `findTwinCatShells` in `src/xaeShell.js`: `path4026` ↔ the 64-bit shell, `path4024` ↔ the 32-bit one, a missing configured path ignored (those checks are skipped on Windows, where a real shell may be installed). |
+| `test/test_xae_build.js` | `src/xaeBuild.js` + `src/xaeBuildSettings.js` over the synthetic fixtures `test/fixtures/xae/*.jsonl` (read through `test/_fakeXaeDriver.js`): **showWindow false/undefined → no `-ShowWindow`, true → exactly one**; `-STA`/`-NonInteractive`/`-ExecutionPolicy Bypass`, no `-TcVersion` unless `shellOverride` (then exactly `-TcVersion <ProgId> -AllowVersionMismatch`, build only, known ProgId only); `missingShell` (the offer, the newest installed NEWER shell, never an older one — the downgrade direction gets the install text naming the older shell —, a confirmed substitute that is itself unregistered, a bare-string `installed`, none for activation, the install text); activation only with a valid NetId; the line splitter (CRLF, split prefix, split UTF-8, no final newline); parseLine; the reducer over every fixture; describeExit (0-4, timeout, spawn error, killed, missing `done`, an unconfirmed exit 1 → interrupted with the stderr line, errors counted by severity); `reachedBuildResult`; the summary counting errors/warnings separately; describeUiMode (headless, visible, version switch, mismatch, unreadable, `MainWindow.Visible` unreadable with the window shown or hidden); canCancel (never in target/activate/restart/verify); isStalled; target pick; confirmation text; settings defaults and clamps. Change B/C (2026-11-13): `declaredPairs` on both samples' `.sln`, `activationPlatform` (same / switch / not-declared / pair-not-declared / unknown, case-insensitive, the solution's spelling) and `pairNotDeclaredText`, the switch modal's text and buttons, provenance kept on targets, gate 4's multi-line refusal summarised on one line (`oneLine`) and not repeated as the detail, a blank fatal text, `errorDetails` (bare-string reasons too) and `noErrorDetails` (re-run offered only headless, never a claim about the visible run; empty items are no details), `needsCompileFallback` (exit 1 with 0 placed), describeExit not counting empty/summary items and taking the placed count, a free-text platform reaching `-Platform`. Gate 3 (2026-11-16): `refusedTarget` (the runtimes, a malformed NetId / duplicates / the project's own NetId dropped, a bare object read as a list, `null` for gate 4, no fatal, or an older driver's `{gate}` only — whose text is then shown as before), the refusal naming this PC's runtimes, the no-runtime and cannot-change-here texts, the confirmation naming the file and both NetIds. User-mode NetId trust (2026-11-16): `list-targets-stale.jsonl` → only known NetIds in `local`, unknown runtimes with status/reason/file NetId, the file NetId neither offered nor preselected, separator rows; `runtimeEntries` fail-closed cases; `unknownRuntimesText`; the refusal text with only unknown runtimes. Boot project (2026-11-16): `bootProject`/`plcState` read (a bare project object too), the success summary (installed with autostart, the PLC starts on activation), a failed boot project / no report / a PLC not RUN / TIPC unreadable → a warning naming XAE with exit 0, no PLC project → said, exit 3 keeps its own title, `boot` uninterruptible (`activation-boot-failed.jsonl`, `activation-plc-invalid.jsonl`). |
+| `test/test_xae_build_commands.js` | `src/commands/xaeBuildCommands.js` + the provider hooks under a `vscode` stub with the fake driver: the setting and the dropdown's `setXaeOption` decide `-ShowWindow` on the next spawn; the channel's requested and actual UI mode lines; Problems only in `twincat-xae` (Compile Project's collections untouched; a stub `compile` source proves the two sources' pane markers merge, edits reach both, removing `xae` keeps Compile Project's); the entry's `/xaeProblem?id=` link opens the component and pane through the URI handler, `openTarget` once per run; a dismissed modal spawns nothing, the confirmed NetId reaches the argv, `twincat.xaeBuild` never activates, a target readback mismatch is an error; cancel via the cancel file (exit 4, nothing killed); the force stop (PowerShell tree + only an `ours` shell, image-filtered; the launch-phase note); a cancelled, force-stopped, timed-out or unconfirmed-exit-1 run keeps the previous Problems; stderr decoded across chunks; no cancel during activation, nor when activation begins inside the grace period; one run at a time + `twincat.xaeRunning`; timeout, its extension during activation and after a refused stop; the stall re-run with `-ShowWindow` (one channel line, no second shell check; none after a run that exits 0 or refuses the stop); config-not-declared pick; the missing-shell flow on sample 2 (a `.tspproj`, 4024; `projectTcBuild` reads it): the pre-check modal when it can tell (exactly one prompt, the first run already `-TcVersion TcXaeShell.DTE.17.0 -AllowVersionMismatch`, the channel logs the choice), the driver's `progid-not-registered` + `installed` fallback when it cannot (one prompt, one re-run with exactly those args), Cancel keeps the original error, no installed alternative → no prompt and the shell to install, only an OLDER shell installed (a 4026 project, 4024 found) → no offer before or after the run and the shell to install named, a confirmed substitute that is itself unregistered → one prompt and the substitution named, the configuration re-run keeps a confirmed shell, activation never offered another shell (its Run-anyway warning, no override), a shell found only in the registry passes silently; Show Activation Targets; the non-Windows refusal. Target platform: Cancel / Switch for this run (argv `-Platform`, setting never written, the next build back on the setting) / Switch and remember (written once: user, else workspace; the stub reads the setting's real scope from package.json, keeps no folder value for a window-scoped key and refuses a folder write, as VS Code does), the plain modal when platforms match, the not-declared refusal before any spawn (sample 2), an undeclared configured pair refused before the modal, gate 4 on an unreadable `.sln` (kind `unknown`: plain modal, the confirmed target in the argv, the refusal summarised on one line and written once); an activation's re-runs (*Build again with the window shown* after a switch, the stall offer) reuse the confirmation (one list, one pick, one modal; the switched platform kept), a forged `confirmedActivation` argument ignored; gate 3 on a temp copy of sample 1 whose `.tsproj` (BOM, CRLF) names a non-local target: the refusal names the runtimes and offers *Change the solution's target…* → a pick of only those → the modal naming the file and both NetIds → only the value changed → the same activation again without asking (the confirmed runtime) or asking again (another one, preselected); dismissing the notification, cancelling the pick or the modal, or the file changing meanwhile changes nothing and re-runs nothing; no runtime / two TargetNetId → no button and the reason; a plain build never offers it; the user's Cancel beats the stall re-run in both orders; a failed headless build without details: the reasons in the notification, *Build again with the window shown* re-runs once with `-ShowWindow` and every other argument equal, and writes no setting, no offer after a visible run (whose reason says "XAE window shown"); route `none` runs TC Toolkit's own check exactly once through `twincat.compileProject` (`fromXae`, not appending; stubbed here), the message says it is not XAE's and can differ, a missing compiler is said and skipped; route `typed` places its item in Problems with no fallback; a successful build's typed warning is listed; no fallback after a cancel or exit 2; the user's planted-error runs (`errors-pane-planted-headless`/`-visible` on a temp copy of sample 1 with `h;` planted): both messages placed with their compiler code as the Problems code, "failed: 1 error. 1 error, 1 warning (2 placed …)", no blank "not placed" line, the project-failed item one `XAE:` line, no fallback; the same pane naming a missing file: 0 placed → the fallback runs once, unplaced messages listed with their own severity. Unknown user-mode NetIds (2026-11-16): stale file → not offered, not preselected (even as the last pick and the project NetId), a separator row with the reason, the channel hint; running + fresh → offered and preselected; not running → not offered; only unknown → refused before any pick; *Show Activation Targets* lists them; a gate-3 refusal names them and the change-target pick offers only known runtimes. |
+| `test/test_tsproj_target.js` | `src/tsprojTarget.js`: the rewrite changes exactly the value's bytes (UTF-8 BOM + CRLF, LF, mixed endings, UTF-8 and ANSI bytes elsewhere, a shorter value); refused with nothing written: no TargetNetId, two attributes, a second occurrence in another case or as an element, the name not as the attribute, UTF-16 LE/BE, a value changed since the run, a malformed new NetId, a file outside the solution's folder, a missing file; the texts explaining each. |
+| `test/test_xae_error_placement.js` | `src/xaeErrorPlacement.js` against `sample/` objects: `.sln`-relative Windows paths, the 'pane'/'file'/'object' line bases, the section marker (exact) vs "(location approximate)", a named method, file-known-line-unknown, general, the summary sentence; the user's two Windows runs (`errors-pane-planted-headless`/`-visible`, MAIN with `h;` planted): C0189 on implementation line 15, C0139 on 14, each once, 1 error + 1 warning, the project-failed item a note, empty items dropped; the pane parser (German level words, spacing, column, a wrapped message, stop lines, the E_FAIL line not a message); `(Impl)`/component suffixes; an 'object' line in a POU with methods approximate; the canonical path. |
+| `test/test_xae_driver_contract.js` | `resources/xae/build-plc-project.ps1` read as text against `src/xaeBuild.js`: ASCII, every flag buildDriverArgs emits is in `param()`, every event type emitted ⇔ handled, phases, fatal codes, prefix/`v`, exit 4, `Exit-Run` for every exit, the builder's safety markers (`$ownShellPid`, `Close($false)`, `Resolve-ActivationTarget`, ADS state 5, readback, the activation show), `UserControl` never set, the hide step guarded by `-not $ShowWindow`, cancel disarmed before activation and every phase entered after the disarm uninterruptible in JS, no real path to a wildcard `-Path` (and `ProviderPath` from Resolve-Path), the `shell-not-ours` refusal before any DTE write and a finally that leaves a foreign shell alone, the unidentified shell made visible again, the error list and output panes read with retries, every builder line kept (additive, with each rewrite listed), the `progid-not-registered` fatal's `installed` census (every `$ProgIdByBuild` ProgId tested in HKCR with `-LiteralPath`, newest first, `progId`/`build`/`projectVersion`/`installed` in the event, the builder and `templates/` copies running the same census: newest first, `-LiteralPath`, the same `$ProgIdByBuild`), `$ProgIdByBuild` equal to `XAE_SHELL_VERSIONS`, and `.vscodeignore` not excluding the driver. Gate 3: `target-refused` carries `gate`/`projectNetId`/`tsproj`/`local` (the `-ListTargets` shape), `Resolve-ActivationTarget` and `Get-RuntimeLabels` identical in the driver and the builder, both callers passing `-RuntimeLabels`; the pure gate itself (labels, the "not a runtime on this PC" text, the R14 rule that a local `-TargetNetId` does not excuse a remote project target) is pinned on Windows by `scripts/Build PLC project/test-activation-target.ps1`. Windows-only counterpart: `scripts/Build PLC project/test-emit-event.ps1`. `Get-OutputPaneTexts`: OutputWindow before the Windows.Item route, each null guarded with a reason, every catch around `Invoke-ComRetry` rethrowing a cancel, identical in the builder and `templates/` (ASCII, CRLF); ErrorItems by plain assignment, its retry checking for a cancel and reporting exhausted rejections as such; the error-list catches rethrowing a cancel and a cancel check closing the phase; `errorDetails` emitted with its reasons and route. The typed reader (`Get-XaeShellInstallDir`, `Initialize-TypedDteReader`, `Read-TypedErrorList`, `Read-TypedBuildPane`): identical in all three copies; registry `LocalServer32` then the default folders; one Add-Type per run, a loaded type reused; EnvDTE/EnvDTE80/Interop from PublicAssemblies via LoadFrom; the DTE2 cast, `ErrorItems.Item(i)` 1..Count, the "Build" pane read; every reason (assembly path, Add-Type message, cast, empty); cancel rethrown; typed first, late-bound only when it gave nothing, in every copy; the window note per mode (no hard-coded "XAE window hidden"). The system-project lookup (`.tsproj` / `.tspproj`) as two provider-side `-Filter` calls merged before `Sort-Object`, in the driver (both lookups), the builder, `templates/` and `probe-sysmanager.ps1`. User-mode NetId trust: list entries carry `netIdStatus`/`netIdSource`/`reason` and a null NetId when unknown, built by one `ConvertTo-RuntimeListEntries` for `-ListTargets` and `target-refused`; `Resolve-UserModeNetIdTrust`, `Confirm-UserModeNetIdTrust`, `Read-TcAdsState`, `Test-UserModeNetIdOverAds`, `Get-UserModeRuntimeProcesses`, `Get-UnknownRuntimeLabels`, `Get-UserModeRuntimeRecords`, `Get-LocalRuntimeRecords`, `Get-LocalAmsNetIds` identical in driver and builder; both callers pass `-UnknownRuntimes`; a user-mode NetId set only when trusted against the live process list, a `rewritten`/`unverifiable` one confirmed over ADS (`-ConfirmNetId ${function:Test-UserModeNetIdOverAds}`; never probed when trusted or not running; port 10000, 2 s, cached per run; `Get-TcAdsState` a wrapper over `Read-TcAdsState`), and the old "another instance?" reason gone. Boot project: `Install-PlcBootProjects`, `Get-PlcAmsPorts`, `Read-PlcRunStates`, `Get-TcAdsState` identical in driver and builder; in both, the install after `ActivateConfiguration()` and before `StartRestartTwinCAT()`, PLC states read after RUN, no `.Save*(`; autostart written only when False; `GenerateBootProject($true)`; no tree item returned through `Invoke-ComRetry`; the driver's `bootProject` inside phase `boot` with its fields, `plcState` with its fields. `-AdsDllDir` (user request 2026-11-16): a parameter of both scripts, `Read-TcAdsState` tries only that folder (no fallback) and keeps the not-found text, ACTIVATION INCOMPLETE prints it, and the `activation` event carries `dllProblem` only with an unreadable state. |
+| `test/test_ads_paths.js` | R15: which ADS path each pane occurrence stands for — the LSP's `provideOnlinePaths` over the sample's assembled units (exactly what the host sends) and synthetic units, then `src/online/editorPaths.js` back to pane positions: a PROGRAM's declaration lines (`MAIN.x`, shown at end of line), qualified globals, chains through FB instances, `{instance}.member` in an FB's methods and actions, constant array indexes (one and two dimensions, the element type followed), `THIS^.x`; no occurrence for calls, named-argument NAMES, enum literals, pointer dereferences, non-literal indexes, property accessors, ambiguous unqualified globals; `path: null` with a reason for method locals (return variable included), VAR_TEMP, VAR_IN_OUT, a FUNCTION's variables; visible-line ranges restrict the answer; FB_init arguments and initializers are not part of a declared type. Gate `ads-paths-sample`. |
+| `test/test_ads_session.js` | R15: `src/online/session.js` + `adsClient.js` + `connectErrors.js` against `test/_fakeAds.js` (an in-memory PLC that counts connections, reads, notifications, writes) and a stand-in of ads-client's `Client`: router mode never sets a local AmsNetId (never direct by accident), direct mode refuses without its settings; the adapter's disconnect waits for an in-flight connect and closes it; subscriptions go through `subscribeRaw` (#189); connect/disconnect counts; cancel and supersede leave no connection, even when the connect settles late; disconnect waits for background closes; every connect-error class (no router, port registration = the 4026 user-mode text, no route = XAE + "never creates routes", no PLC, CONFIG, direct refused) and no retry in direct mode; `_AppInfo` status (project name, forces on/off/not reported); resolve against the PLC, data-type fallback, one sum read, 64-bit exact; an online change drops resolved symbols; the notification cap (read per subscribe); instance discovery (nested in structs, derived FBs, arrays skipped). |
+| `test/test_ads_inline.js` | R15: `src/online/values.js` (formatting and parsing every scalar kind, ranges, enums, strings, type comparison) and `inlineMonitor.js`: only known scalars, "type differs" never shows a value, one sum read per tick at the interval, posting only on change, paused while hidden, the per-editor path cap and its callback, "stopped" while the PLC is not in Run, nothing while blocked, stop() clears. |
+| `test/test_ads_write.js` | R15: `src/online/writeGuard.js` against the fake PLC with recorded dialogs: offline, off by default (no dialog, no write), the per-session enable modal (declined/accepted, asked once), the write modal (target, path, old/new value, PLC state, "not a force", button `Write`), input validation, a cancelled modal writes nothing, written once and logged, enums by name; refused on code differs / not checkable / unsaved edits / type mismatch / struct / unknown path / method local, the guards re-checked after the dialog, a PLC-side failure reported and logged. |
+| `test/test_ads_plc_control.js` | R15, Start / Stop PLC: `src/online/plcControl.js` + `session.controlPlc` against the fake PLC with a recorded modal: the toggle offers Start only in Stop and Stop only in Run (neither offline, connecting, before the state is read, in Config/Error/…, while reconnecting or busy); refused before any modal when offline or in the wrong state; the modal text (`Stop the PLC on <label> (<NetId>:<port>)?`, one button `Stop PLC`/`Start PLC`); cancel sends nothing; confirmed: the PLC changes state and the session reads it at once; busy refuses a second request; a state change or another Go Online during the modal refuses; `controlPlc` refuses another connection itself; a failure names the ADS error; every outcome logged with the target. |
+| `test/test_ads_code.js` | R15: `src/online/codeIdentity.js` on the sample's committed `.tmc` (a real XAE output): its symbol table parsed; `PlcAppSystemInfo` really has ProjectName, OnlineChangeCnt, AppTimestamp, ActivePlcForces, ActiveIoForces; layout comparison (added, missing, resized; foreign namespaces ignored); sources edited since the build (`_Libraries` excluded; the build time is the newest of the `.tmc` and `_CompileInfo/*.compileinfo`, since XAE leaves the `.tmc` alone when no variable changed); the check's outcomes (no name / other name: values hidden; no `.tmc`: unknown; layout or edits: differs; all three: match, still saying what it cannot detect; a failed upload is not a match). Gate `ads-code`. |
+| `test/test_ads_regressions.js` | R15 review findings (2026-11-13), one labelled block per finding #0-#19, each run against the code before its fix (where it failed): a write bound to the enabled and confirmed connection (a Go Online elsewhere during the value box refuses it; the modal and log name label + AMS address), writes only from editors of the bound project, a superseded code check never leaves a stale match, unsaved-edits detection (an empty stash is not an edit; a closed editor's Manual Sync stash blocks), `allowWrites` ignored from a workspace, PLC strings escaped and bounded; no notification leak across downloads/reconnects (real ads-client 2.2.0 `Client` with ADS commands answered in memory), one poll loop, a stale status poll, watch slot races and capped retries, Cancel/Go Offline in the status phase, router-rejection hints, no orphan reconnect after Go Offline (a local TCP listener as the router); no unqualified fallback over an uncertain chain, a `qualified_only` GVL or an enumerator; inline values re-posted on request; truncation by code point. Review round 2 (blocks `R2#0`-`R2#6`, each failing on `e6a3842`): a download of another project, or a type change, while the value box is open refuses the write; the bound-project switch is logged and the editors updated; a click while connecting is refused before any dialog; a closed editor's stash blocks across the BOM and a guard read never deletes one; no symbol cache crosses a Cancel; no watch slot overwrites a live handle (three races); no inline poll after Go Offline; a long GVL's declaration pane maps every name to itself, once, and `qualifiedOnly` follows an unsaved pragma edit. Review round 3 (blocks `R3#1`, `R3#2`, failing on `31fc35b`): a same-name, same-size alias whose base type changed (REAL→DINT) or an enum whose members changed during the dialogs refuses the write, an unchanged one still writes; a stale stash's refusal names its file and the way out, and a stash whose file is gone is dropped with a log line and blocks nothing. Gate `ads-regressions`. |
+| `test/test_definition_frames.js` | R15 review round 3, #0: every symbol range is a line of the file's assembled ST unit, whichever indexer built it. Over both samples (each in its own index) plus a synthetic 12-variable GVL: every XML-indexed declaration (root variables and enumerators, method variables, method and property names) maps through `livePath.mapDefinition` to its own component, the declaration pane and the name's own line; the XML indexer and a sync (`parser.js` over `assembleSt`) give each root variable the same range; Go to Definition on `GVL_X.var` from another POU lands on the declaration before a sync, after one and after the re-index a save triggers. Failed on `31fc35b`. Round 4: every range of every POU, interface and GVL (root/method/property/action names, method and property `declRange`, variables and type ranges) is identical from both indexers, over both samples and synthetic objects (declarations headed by `//`, `(* *)` and `{attribute}` lines, doc comments naming the member, an enum whose members are named in comments, names whose case differs from the XML `Name`, actions, CRLF); check 1 also covers actions and accepts only a name that is code; Go to Definition before a sync lands on each synthetic declaration (10 probes). Failed on `639d2b9`. Gate `definition-frames`. |
+| `test/test_ads_helper.js` | R15 phase 2, the user-mode fallback, with no PowerShell (also Start/Stop PLC as `writecontrol`: Run 5 / Stop 6 on the PLC's port with its device state, and a refused one keeps its ADS code): `spawn` is `test/_fakeAdsHelper.js` (a "powershell.exe" speaking the helper's JSON lines over a raw-ADS PLC in memory: SymbolInfoByNameEx entries, 0xF011 answered 1808 so ads-client builds base types, upload info, symbol version, device data, port 10000, sum reads, memory) and the router is a local TCP server that resets every connection. Pins: the ads-client 2.2.0 internals `helperClient.js` overrides or calls exist (and the pin); the `.ps1` as text (every command, ready/dll-not-found/dll-load, exit on stdin EOF, the `Components\Base\v*` search newest first, Common64/Common32 by bitness on PATH, the registry, ADS codes only from TwinCAT.Ads exceptions, base64, ASCII); PowerShell's command line; the helper process (ready line, ids, ADS errors, the hang guard kills and fails the queue, one request in flight, stdin end closes, a kill when it does not exit, an exit fails what is pending); exactly which connect failures switch (`isRouterRefusal`); end to end through `session.js` with the real ads-client (the switch and the DLL logged, `_AppInfo`, resolve, a missing symbol, a sum read, a notification first value + on change only, INT and REAL writes, a download re-reads symbols, Go Offline ends the helper and the polling); a helper crash reconnects with a new helper; the failure texts (DLL missing, local runtime at the router's NetId → Enter AMS Net ID, 0x7, 0x6), no fallback off Windows ("reset", never "No ADS router answered") or in direct mode. The `tcToolkit.adsDll.*` settings: the script's `-AdsDll`/`-AdsNativeDir` checks (before the search, `dll-not-found` with `dllName`/`configured`, no fallback), `helperArgs` (flags only when set), the session passing both to the helper's command line, and each DLL failure's message, hint and `setting` (configured folder, configured file, searched not-found, dll-load, TcAdsDll.dll missing at the first request). |
+| `test/test_local_runtime.js` | R15 phase 3a, with no PowerShell: the driver's `-ListTargets` replayed by `test/_fakeXaeDriver.js`, `tasklist` by an execFile stub, the PLC by `test/_fakeAds.js`, `onlineCommands.js` under a recording `vscode` stub. Pins: the discovery's command line (no `-SlnPath`) and failures (spawn error, timeout + kill, no `targets` event, a bare-object list); the resolution table (0/1/several trusted user-mode runtimes; untrusted or status-less entries never used; a real-time record asks unless the kernel service is known absent); the `tasklist` parse (match, localized no-match, empty, error); the pick (separator rows, last choice first); the texts; end to end: the resolved NetId reaches the client, the log line, the recent entry keeps the concrete NetId, every Go Online resolves again, a pick, cancel at the pick and during discovery, the failure hint names why the runtime's NetId is unknown or why discovery failed, a throwing discovery falls back; no discovery for a concrete NetId, a remote router, direct mode or Linux. |
+| `test/test_ads_watch.js` | R15 end to end in the extension host: `src/commands/onlineCommands.js` + `watchTree.js` under a recording `vscode` stub, the real live path and LSP (`provideOnlinePaths`) over the sample, the fake PLC built from the sample's `.tmc` so the layout check passes: contributions (commands, view, settings defaults, nothing called Force, router address marked untested); a connect error with the user-mode text and no direct retry; cancel; Go Online, status bar, recent targets; inline values for MAIN and, through an instance found on the PLC, for FB_Station's method; Write value… (off, then enable + modal, logged; blocked on unsaved edits; a method local refused); PLC Watch (add from the editor, notification at 200 ms, members from one value, cap + message, persistence, copy, remove, write); the code check (another project: values hidden, "Code differs", writes blocked; same name with a different layout; a source edited after the `.tmc`; back to match); forces in the status bar; Go Offline and dispose leave no connection, notification or poll; writes re-enabled per session. Gate `ads-watch`. |
 | `test/test_multi_project_scope.js` | End-to-end: two copies of `sample/` under one workspace root (`test/_multiproject.js` builds the fixture, one copy deliberately diverged), driven through the real `scanWorkspace`. Asserts the partition (one index per project, nothing lost to a name collision), 0 diagnostics on the correct copy while the diverged copy's own real error still reports, references and the rename config scan never crossing the project boundary, and the library namespace/symbol registries staying per-project — including the Libraries-view union fallback when no project is specified. Needs `sample/`; skips cleanly when absent. |
 
-| `test/test_object_insert.js` | The Objects-tree insert commands' text, built by driving the **real** `buildNodeFromXml` over real `sample/` objects: the bare name for each kind, and the call template — instance name for an FB (`FB_Gripper` → `fbGripper`, since ST calls an instance, not the type), own name for a FUNCTION/PROGRAM, bare for a method/action, `Name();` when there are no parameters. Also pins that the extracted `callTemplate` is byte-identical to what `libraryTreeProvider` produced before the move, and that every `contextValue` named in the two new `when` clauses is one the Objects tree actually emits (read out of `treeDataProvider.js`, not hard-coded, so a rename cannot silently orphan the menu items). **One case is synthetic on purpose:** no FB in `sample/` declares root `VAR_INPUT`/`VAR_OUTPUT`, so the mixed `:=`/`=>` ordering case is driven from one clearly-marked XML string through the real parser. |
+| `test/test_object_insert.js` | The Objects-tree insert commands' text, built by driving the **real** `buildNodeFromXml` over real `sample/` objects: the bare name for each kind, and the call template — instance name for an FB (`FB_Gripper` → `fbGripper`, since ST calls an instance, not the type), own name for a FUNCTION/PROGRAM, bare for a method/action, `Name();` when there are no parameters. Also pins that the extracted `callTemplate` is byte-identical to what `libraryTreeProvider` produced before the move, and that every `contextValue` named in the two new `when` clauses is one the Objects tree actually emits (read out of `objectsTreeModel.js`, not hard-coded, so a rename cannot silently orphan the menu items). **One case is synthetic on purpose:** no FB in `sample/` declares root `VAR_INPUT`/`VAR_OUTPUT`, so the mixed `:=`/`=>` ordering case is driven from one clearly-marked XML string through the real parser. |
+| `test/test_nested_comments.js` | Nested `(* … *)` comments (TwinCAT nests them; Infosys "ST comments" documents the form) across **every** scanner: the `parser.js` lexer, `src/stComments.js` and the helpers on it (object kinds, DUT kind, enum members, the check unit's POU keyword), the fold scanner, the Monarch `comment_block1` state (rebuilt from source and run with a state stack) and the TextMate grammar's self-including rule. One table of cases runs through all of them: `*)`-looking text in an inner level, three levels, a quote / `//` / slash-star inside, unterminated, `(*)`. Plus markers inside STRING/WSTRING literals, slash-star staying non-nesting, token positions after a multi-line nested comment, and the language features on a TcPOU whose comments hide declarations and code: zero diagnostics, only the real variable declared, and Go to Definition mapped back through `localToAbsolute`/`absoluteToLocal` to the right pane line. Verified red on the pre-change code (24 failures). |
 | `test/test_st_strings.js` | ST string literals across **all three** grammars that must agree — the `src/lsp/parser.js` lexer, the webview's Monarch tokenizer and `syntaxes/twincat-st.tmLanguage.json`. IEC 61131-3 escapes with `$` (`$'`, `$$`, `$N`, `$0D`, …) and a **backslash is an ordinary character**; both highlighting grammars had C-style `\\.` escape rules copied from Monaco's sample, so `'C:\Temp\x\'` swallowed its own closing quote and ran on to the next apostrophe anywhere below — in the reported case an `FB's` inside a comment 16 lines down. Uses that verbatim case. The lexer was always right; only the two grammars were wrong, which is exactly why one harness now pins all three together. |
 | `test/test_scan_controller.js` | `src/lsp/scanController.js`: which of the two scan-triggering requests actually has to run a scan. Pins that `ensureScanned` twice over one root set scans **once** (the duplicate startup scan this replaced), that `rescan` after it scans **again** — the assertion that stops a future "optimisation" from teaching the `.plcproj` watcher to skip, since on a content change the roots are unchanged — and that a throwing scan leaves no completed state. Root sets compare order-, case- and separator-insensitively; the empty set is a legitimate *completed* state, or a window with no folders would re-request forever. |
+| `test/test_index_inputs.js` | `src/indexInputs.js`: `*.tmc` and `library-signatures.xml` re-index (case-insensitive) but not when under a directory the scan skips (`_Libraries`, `_CompileInfo`, `ST_Files`, `.git`); the own-write gate suppresses during the write and its grace period and never sticks closed after a throw; a build burst plus a `.plcproj` change is ONE reindex on a fake clock; static checks that `extension.js` and Update Library Definitions are wired to it. |
 | `test/test_debounce.js` | `src/util/debounce.js`: trailing edge only, one invocation per burst carrying the **last** arguments, every caller's promise resolved. Timers are injected, so it asserts on a fake clock rather than racing a real one. |
+| `test/test_archive_store.js` | R6's persisted archive-name cache (`src/lsp/archiveStore.js` + `harvestArchiveFile`), each "session" a fresh Node process: off when no directory is configured; a second session decodes nothing and gets identical names; an archive rewritten with the SAME size and mtime is caught by the central-directory fingerprint and decoded afresh; garbage, truncated, empty, foreign, other-version and other-decoder files are ignored and rewritten, a malformed entry dropped alone; entry and name-character caps evict least-recently-used; eight vendored copies are one stored entry; only names reach the file; two windows keep each other's entries; file and buffer fingerprints agree, also when the central directory starts before the 66 KB tail window. |
+| `test/test_scan_readiness.js` | R6's per-project background scan with a HAND-STEPPED event loop: background indexes equal the one-pass scan's (objects, libraries, routed `.st`); a request for a project is released only when that project's index is complete (snapshot identical to the finished index) while other projects are still unindexed; a waited-for project jumps the queue; a file under no project waits for the whole scan; a reindex supersedes mid-scan and the old scan's waiters are answered from the NEW workspace; a throwing scan leaves the last complete workspace answering; the controller joins an in-flight `ensureScanned`, never lets `rescan` skip, and records completion only for the latest scan. |
+| `test/test_server_ipc.js` | The REAL `src/lsp/server.js` in its own process over Node IPC (`vscode-jsonrpc`): `initialize` answers without waiting for the scan and advertises hover; `custom/hover` answers at once; `custom/diagnostics` for the last project sent at once, and right after `custom/reindex`, return ZERO diagnostics on the correct sample (a control shows a partial index gives 10); `custom/indexReady` joins the startup scan; `custom/libraries` answers per project; the archive names land in `initializationOptions.archiveCacheDir` as one entry for four vendored copies, and a second server session only reads that file. |
+| `test/test_discovery_memo.js` | R6's per-scan directory-listing memo (`createDirectoryListingMemo`, `src/twincatWorkspace.js`): a memoized signature/`.tmc` walk equals the unmemoized one (same files, order, caller-spelled paths); a 3-project scan reads each directory from disk exactly once; and through the REAL scan composition a dump or `.tmc` added after a scan is found by the next one, a removed one is gone, and one three levels below a project is found — the memo never outlives its scan. |
 | `test/test_collect_scope.js` | Which directories each library walker descends. The `.tmc` and signature walkers must **skip** `_Libraries` while `collectArchives` must **enter** it, and the harness proves the second half is load-bearing by adding `_libraries` to `SKIP_DIRS` and watching archive collection go blind — the tempting one-line "fix" that would silently cost ~171 false positives. |
 | `test/test_signature_cache.js` | `src/lsp/parseCache.js`: one dump, three projects → parsed once, two cache hits, all three resolving its symbols. The load-bearing half is **isolation**: each project must hold a *different record object* (asserted by identity, not value — a value check still passes while sharing), so that the merge's `record.namespace` rewrite and `indexBrowserCache`'s member pushes cannot leak between projects. An mtime bump re-parses. |
 | `test/test_plcproj_cache.js` | `src/lsp/plcprojRefs.js`: the same `.plcproj` read **once** across all three indexers that need it, not three times, with an equivalence gate comparing every result against a control run that clears the cache between every call — the two consumers genuinely read the file differently (all `<Namespace>` tags vs the first tag whatever it holds) and the shared record has to preserve both. |
@@ -169,6 +292,8 @@ test can reach. Two runners, both outside `npm test` (its runner only discovers 
 npm i --no-save playwright               # optional dep, deliberately NOT in package.json (see below)
 node test/browser/run.js                 # the references peek
 node test/browser/run_pragmas.js         # ST folding + the Monarch pragma rules
+node test/browser/run_start_page.js      # the TwinCAT start page (R2)
+node test/browser/run_online.js          # online monitoring's inline values and editor actions (R15)
 
 # On a runner that already has a browser and cannot download one (offline, image-based CI):
 HARNESS_CHROMIUM=/opt/pw-browsers/chromium node test/browser/run.js
@@ -183,8 +308,10 @@ perfectly good Chromium already.
 |---|---|
 | `build.js` | Generates the page by calling the **real** `getHtmlForWebview()` with a stubbed `vscode` module — a hand-copied page would quietly stop matching what ships. Substitutes only `acquireVsCodeApi()` (records outgoing messages, answers bridge requests from a fixture built off the real sample) and drops the webview CSP, which names `vscode-webview:` sources that do not exist over http. |
 | `serve.js` | Serves it. Monaco's AMD loader and its worker Blob both need a real origin. `require()` it for `start(port)`, or run it standalone to poke at the page by hand. |
-| `run.js` | The references peek: builds for the port it will serve on, drives Find References, asserts. Also pins the page's global error overlay: opening the peek must leave it hidden, Chrome's benign "ResizeObserver loop completed" notice (dispatched by hand, because whether the real loop fires is layout-timing dependent) must not raise it or post `error`, and a genuine error still must. `HARNESS_PORT` moves it off 8123; `HARNESS_SHOT=x.png` saves a screenshot. |
-| `run_pragmas.js` | Folding and pragma highlighting. Folds real blocks and reads back the rendered lines, then tokenizes through Monaco's **own** tokenizer. Both fail silently if they regress, which is the point of driving a browser: a unit test on `stFolding.js` cannot prove Monaco actually *used* it rather than its own indentation provider. Carries the two reported bugs as regressions, and asserts implementation-pane blocks still fold — registering a provider replaces indentation folding, so that is the thing most likely to disappear unnoticed. Verified: removing the provider turns 6 assertions red, and the failure text reproduces both original bug reports verbatim. Defaults to port 8124. |
+| `run.js` | The references peek: builds for the port it will serve on, drives Find References, asserts. Also pins the page's global error overlay: opening the peek must leave it hidden, Chrome's benign "ResizeObserver loop completed" notice (dispatched by hand, because whether the real loop fires is layout-timing dependent) must not raise it or post `error`, and a genuine error still must. `HARNESS_PORT` moves it off 8123; `HARNESS_SHOT=x.png` saves a screenshot. Step 7b pins the header's Actions menu: the menu button ("Actions" + chevron, a filled secondary button 24–28 px tall, 13 px, radius 4 px, not red; `aria-label`, `aria-haspopup=menu`, `aria-controls`) and the Build icon button are the header's only buttons; 7a′ the native header: the mark first (tooltip "TC Toolkit vX.Y.Z", theme-coloured letters, the red square), the breadcrumb (project › folders › object, full-path tooltip, from the host's real `breadcrumbFor`), the transparent type tag with #E2001A text and border, one ~36 px row, no product title or version pill (the version is the menu's foot), offline only the sync item with its icon and no pills; a click, Enter, Space and ArrowDown open it at the first item, ArrowUp at the last; ArrowUp/Down wrap, Home/End jump, Escape closes and refocuses the button, Tab, an outside click and a second button click close it, a click on a heading does not; offline its labelled groups are Generate ST, Build, Editor with `menuitem`/`menuitemcheckbox` items in order. Generate ST: *Choose projects…* only with 2+ projects (the item then reads "Generate ST: all projects"), the item posts `generate-st` with no keys and closes the menu (by keyboard focus returns to the button); 7c: at 320–1200 px the open menu with the project picker unfolded stays inside the webview, no sideways scroll, a cut long name keeps its tooltip; 7d: Enter on *Choose projects…* unfolds it and focuses Select all, the tri-state Select all, *Generate selected* `aria-disabled` with nothing ticked (a click posts nothing) and posting every key. Step 7e pins Compile Project's pane markers: `compileDiagnostics` → owner `twincat-compile` on the active component's panes, `st-validator` markers surviving both ways and across a diagnostics refresh, a component switch showing only that component's markers, an edit dropping the edited component's markers and posting `compileDiagnosticsStale`; it writes a pane-marker screenshot (`HARNESS_COMPILE_SHOT`, default `test/browser/out/compile-markers.png`; empty = none). Step 7f pins the menu's Build item (`#compile-btn`, it runs Build Project): `menuitem` with its glyph, the name "Build", a tooltip and a detail line; a click posts `compile-project` and closes the menu; `compileRunning` makes it `aria-disabled` with "A build is running." (a click posts nothing, the arrows still reach it) and shows the "Building…" item; 7f″ the header's Build icon button (glyph, name, tooltip; a click posts `compile-project`; `aria-disabled` with its reason while a build runs, a click then posts nothing); then the C++ options (labelled `menuitemcheckbox` items; Space and Enter toggle them and keep the menu open; the coupling and `setCompileOption {key, value}`; a host `compileOptions` updates them; the item's tooltip/detail follow), the XAE entries (R14: hidden until `xaeOptions.available`, arrows walk them, the checkbox posts `setXaeOption`, the two actions post `runXae` and close the menu, while running both `aria-disabled` with the reason shown and an "XAE build…" chip), 7g Auto Sync (off → "Manual Sync" chip and `toggleSyncMode`, menu stays open; the host's `setSyncMode` turns it back), and at 320–1200 px the Actions and Build buttons, the component list, the Building… item and the status inside the editor with the open menu fitting, the status collapsing to dots, then the Actions button to "⋯", before the object name is cut, one row above 420 px, nothing collapsed at 1100+ px. `HARNESS_TOOLBAR_SHOTS=<dir>` writes toolbar screenshots (dark and light; 1200, 820, 700, 400 px) and `actions-offline-{closed,open}-{1200,400}.png`. |
+| `run_start_page.js` | The start page (roadmap R2): renders the real `renderStartPageHtml()` output WITH its CSP (only `acquireVsCodeApi()` is stubbed, through Playwright's init script), and asserts no request leaves the page's origin, the project name is validated while typing (shared `media/projectName.js` rules, `aria-invalid`), Create posts `{version, name, location}` and shows a host refusal, every other control posts its message, project actions are disabled while no project is open, the *Build project* tile (Compile Project) is enabled only with `compilerReady` (the compiler file exists — by default the bundled one) AND a project, shows "Compiler file not found" otherwise (and names no compiler product), the form survives in webview state, the recent list shows at most `recentsShown` rows behind a keyboard-operable "Show all (K)" / "Show fewer" tile (local to the page, follows a changed limit), the Settings card shows the two XAE Shell paths with a warning row for a path that is not on disk and posts `openSettings {section}` / the detect command, the g++ row in all four states (set, set via a bare name, detected on PATH / in an install folder, not found, and the three unusable-value warnings styled as the XAE warning row), its Change… / Detect again by click and keyboard, the Build dropdown (R13: a chevron beside the tile labelled "Build options", `aria-expanded`/`aria-controls`, a group of two labelled boxes showing `state.compileOptions`, keyboard-operable, posting `setCompileOption` with the coupling shown at once, never starting a compile), the run tiles (user request 2026-11-16: *Build through XAE*, *Build and Activate through XAE…* and *Show Activation Targets* hidden unless `xaeOptions.available`, disabled without a project and — the two builds — during a run; the dropdown keeps only *Show the XAE window*; the *Go Online…* tile swaps to *Go Offline* on `state.online`, is disabled while connecting, and Go Offline stays enabled without a project), and there is no horizontal scroll at 360/560/1200 px (one column at 360). `HARNESS_START_SHOT=x.png` saves the Project actions card with the options open. Defaults to port 8125. |
+| `run_pragmas.js` | Folding and pragma highlighting. Folds real blocks and reads back the rendered lines, then tokenizes through Monaco's **own** tokenizer. Both fail silently if they regress, which is the point of driving a browser: a unit test on `stFolding.js` cannot prove Monaco actually *used* it rather than its own indentation provider. Carries the two reported bugs as regressions, and asserts implementation-pane blocks still fold — registering a provider replaces indentation folding, so that is the thing most likely to disappear unnoticed. Also runs nested `(* (* *) *)` comments through Monaco's own tokenizer (the inner `*)` must not return to code), and the pragma hover end to end in the webview: the stub answers with the real `provideHover` + `mapHoverToLocal` computed in Node, and the harness checks the request's pane position, the rendered widget, that a line with no `{` costs no round trip, and that a clicked documentation link goes to the host (`openDocumentationLink`) rather than navigating the webview. Verified: removing the provider turns 6 assertions red, and the failure text reproduces both original bug reports verbatim. Defaults to port 8124. |
+| `run_online.js` | Online monitoring (R15): going online makes the webview post `online/visible` (component, both panes' texts, their visible line ranges), shows the toolbar note and enables *Write Value…*; `online/values` items are drawn as injected text — a declaration value at the end of its line, an implementation value right after its variable, `tc-online-<state>` classes (`differs`, `stopped`), nothing for another component or a vanished line — and neither pane's text changes; the two context-menu actions post the caret's pane position, the pane texts and the unsaved flag; an edit clears the values and asks again (flagged dirty) and an unchanged answer draws them again; *Write Value…* only with `writable: true` from the host (hidden for `false` or absent); a host that answers every `online/visible` with `online/state` gets exactly one report (no message loop); the Start/Stop PLC item is in the Actions menu's PLC group right after the Build group, the group hidden offline, shown `aria-disabled` with the reason on its detail line until `online/plc` says what it offers, "Stop PLC" + stop glyph in Run, "Start PLC" + green play glyph in Stop, disabled while busy or in another state (still reachable by the arrows), a click or Enter posts `online/plcControl` with the action and closes the menu, the Stop glyph is #E2001A, the `#plc-indicator` item reads "PLC Run" (green dot) / "PLC Stop" (amber dot) / "PLC Run…" while busy / "PLC Config", the Online dot is blue, and a late `online/plc` while offline keeps group and item hidden; a state posted while the webview is hidden (`#app` `display: none`) and shown again with no resize leaves a wide editor's labels visible through Run → Stop → Run (the user's bare-dots bug); with every status item showing the header stays inside the editor at 360–1200 px, the items collapse to dots (text in their tooltips) before the object name is cut (always at 560 px, never at 1200 px), one row above 420 px, and the open menu fits; `HARNESS_TOOLBAR_SHOTS=<dir>` writes `actions-online-closed.png`, `actions-online-open.png` and `actions-online-open-config.png`; going offline removes everything and disables the write. Pins that collapsed injected text needs `showIfCollapsed` (Monaco 0.39 drops it silently otherwise). `HARNESS_ONLINE_SHOT=x.png` saves a screenshot. Defaults to port 8125 (set `HARNESS_PORT` when running it beside `run_start_page.js`). |
 
 `run.js` asserts what only a browser can show: that the peek lists cross-file hits at all, that exactly
 the **non-live** panes get hidden models (a hit in the active component must use the live pane), that a
@@ -211,8 +338,9 @@ a visible window for ~30 s that closes itself):
 node test/devhost/run.js
 ```
 
-`run.js` copies the committed sample twice (`LineA`/`LineB`) under one temp workspace, adds a second
-PLC project to LineA's solution, and launches the **installed** VS Code as a separate
+`run.js` copies the committed first sample twice (`LineA`/`LineB`) under one temp workspace, adds a second
+PLC project to LineA's solution, copies in the second sample (`TcToolkitSample2/`, the 3.1.4024
+`.tspproj` layout) as a third solution, and launches the **installed** VS Code as a separate
 instance (fresh `--user-data-dir`/`--extensions-dir`, so a running VS Code is untouched) with this repo
 as the development extension and `testRunner.js` as the `--extensionTestsPath` module. In-host, that
 module patches `TwinCatCustomEditorProvider.prototype.resolveCustomTextEditor` to trace every panel's
@@ -233,7 +361,35 @@ partition, and every cross-file Go to Definition then opened a duplicate tab tit
 with nothing highlighted. The fixture also injects a **`.TcTLEO`** into LineA's project and the in-host
 pass edits it **on disk** and re-queries the live index — the gate for the 2026-08-24 watcher fix
 (`TWINCAT_WATCH_EXTS` omitted `.tctleo`, so an external `.TcTLEO` edit never reached the LSP; only a
-real host runs the watcher chain, so this is the one place it can be proven).
+real host runs the watcher chain, so this is the one place it can be proven). `run.js` also plants two
+OLD `twincat.*` User settings in the fresh profile, and the **settings-migration step** asserts that the
+real activation moved one to its `tcToolkit.*` key, kept the other's already-set new value, removed both
+old values, and that the extension reads the moved value. The **start-page phase**
+(roadmap R2) checks what only a real host shows: every start command registered, the `TC Toolkit` Activity
+Bar container and its Start / Objects / Libraries views open (`workbench.view.extension.twincat`,
+`<view>.focus`), *TC Toolkit: Open Start Page* opens the `TC Toolkit Start` tab, and *Create New Project* (with
+its arguments, so no dialog) writes a 3.1.4026 and a 3.1.4024 solution and refuses a second create. The
+**compile phase** (R3.2/R3.3) runs *TC Toolkit: Build Project* on every PLC project of the fixture
+through the real command, with the **bundled** compiler (asserted) — `TWINCAT_COMPILER_BUNDLE` (and
+`TWINCAT_COMPILER_NODE`) override it, written by `run.js` into the fresh profile's `tcToolkit.compiler.*`
+settings. Only when the host's `checkSetup` finds no Node >= 22 does the phase print `[SKIP]` and assert
+nothing. It also clicks the Actions menu's Build item (Compile Project) in the station editor for real (hook message `test:clickCompile`) and asserts the host resolved the file's one owning project and the run started and ended (`compile-button` step). It asserts every run finishes, that no
+error is reported on the sample's own code (only the identifiers the P8 phases typed on purpose, which
+reach the compiler as unsaved edits, plus the object-insert phase's snippet in its file), and that each
+project's files in the Problems panel hold exactly that project's results. The **rename-undo phase**
+(R7) renames `FB_Station.Reset` (a method of a shared interface) and then `FB_Cylinder.TcPOU` in the
+LineB copy through the real `twincat.renameObject` (the input box and confirmation are answered by
+wrapping the shared API object), each with the file open in the custom editor, and asserts each rename
+is ONE `applyEdit`, the interface method and its calls follow, the `.plcproj` entry is rewritten, the
+moved file keeps its UTF-8 BOM, nothing is left dirty, and *TC Toolkit: Undo Last Rename* puts every
+file of the copy back byte for byte, the file name included.
+
+`TCDEV_CODE` points `run.js` at another VS Code (a CLI shim, or the `code` binary of an unpacked build)
+and `TCDEV_CODE_ARGS` adds launch arguments. Headless Linux as root:
+`TCDEV_CODE=<dir>/VSCode-linux-x64/code TCDEV_CODE_ARGS="--no-sandbox --disable-gpu" xvfb-run -a node test/devhost/run.js`.
+On Linux the P8 "flushed file is byte-identical to foldEdits" check fails on a line-ending difference
+(`\r\n` on disk vs `\n` expected), identically on the pre-R7 commit; it is a Linux-only EOL artefact,
+not a product regression, and passes on Windows.
 
 The same pass also automates the **P8 webview checklist** (items 2–7 of
 `docs/superpowers/plans/2026-08-22-deepen-08-g4-checklist.md`) through **`media/devHostTestHook.js`** —
@@ -275,8 +431,8 @@ to `pull_request` for exactly this; on a PR the input is empty and the checkout 
 the gates are defined once. CI itself is Windows-only (the platform users are
 on), with superseded runs cancelled and a read-only token. Two jobs:
 
-- **`build`** (current Node) — `npm run lint` (ESLint needs Node ≥ 18.18, so lint lives only in
-  this job), `npm run typecheck`, `npm test` with **`REQUIRE_FULL_SUITE=1`** (the
+- **`build`** (current Node) — `npm run lint` (ESLint 10 needs Node ^20.19 || ^22.13 || ≥ 24, so
+  lint lives only in this job; the Node 16/20 legs never run it), `npm run typecheck`, `npm test` with **`REQUIRE_FULL_SUITE=1`** (the
   sample is committed, so CI achieves FULL coverage; a run whose load-bearing gates skipped fails
   instead of passing quietly), then a **VSIX build check** (`vsce package`). Packaging is otherwise
   only exercised by hand at release time, where a broken manifest or `.vscodeignore` would surface
@@ -294,33 +450,293 @@ on), with superseded runs cancelled and a read-only token. Two jobs:
 Releases are a separate, manual workflow (`.github/workflows/release.yml`, the only one with a write
 token) — see "Publish a GitHub release" under "Package a VSIX".
 
-**`sample/` is ground truth.** It is a real, *correct* TwinCAT project, so every diagnostic reported
-on it is a bug. Never fix a red gate by raising the baseline.
+**`sample/` is ground truth.** It holds two *correct* TwinCAT solutions, so every diagnostic reported
+on either is a bug. Never fix a red gate by raising the baseline.
+
+- **`sample/TcToolkitSample/`** — XAE 3.1.4026's layout (`.sln` + `.tsproj` + `_Config/`), 19 objects,
+  and the library fixtures (the committed `.tmc`, the MIT archive, four library references). Made by
+  `scripts/Create sample PLC project/build-sample-solution.ps1` (XAE, once) +
+  `build-sample-project.js <plcProjectRoot>` (the objects). Harnesses that pin library facts read this
+  solution only (`SAMPLE_PROJECT_DIR` in `test/_baseline.js`).
+- **`sample/TcToolkitSample2/`** — the 3.1.4024 layout (`.sln` + a single-file `.tspproj`, the PLC project
+  `TcToolkitSample2_PLC` nested under the system project's folder), 7 objects: `MAIN` and `FB_Cylinder`
+  (same names as the first sample, different code and members), a GVL, a STRUCT, an enum, the interface
+  `I_Valve` and `FB_Valve` implementing it with a method, a GET/SET property and an action. No library
+  symbol, no `.tmc`. Generated in full — no XAE needed — by
+  `scripts/Create sample PLC project/build-sample-project2.js`: `createProject` from
+  `src/projectTemplate.js` over the shipped 3.1.4024 template (identity GUIDs DERIVED from a counter, so a
+  rebuild is byte-identical), then the objects through `build-sample-project.js`'s `renderObject` /
+  `registerObjectsInPlcProj` (the element shapes the Objects-tree commands write). Regenerate:
+
+  ```bash
+  node "scripts/Create sample PLC project/build-sample-project2.js" --check   # committed tree == fresh build?
+  node "scripts/Create sample PLC project/build-sample-project2.js" --write   # rewrite the generated files in place
+  node "scripts/Create sample PLC project/build-sample-project2.js"           # first creation (refuses if it exists)
+  ```
+
+  `test/test_two_samples.js` runs the `--check` comparison, so an edit to the generator, the template or
+  the committed files without the other fails the suite. After building it in XAE, the `.tmc` and build
+  output stay untracked (`sample/.gitignore`).
+
+The ratchets diagnose **one PLC project at a time** (`sampleProjects()` in `test/_baseline.js`, the
+product's `createProjectMap` partition): one flat index over both samples would report their same-named
+objects as false positives the product never shows. `test_sample_diagnostics.js` also diagnoses every
+object **opened fresh** (the scan-time index plus that one unit) — the state the server is in for the
+first file a user opens, which the in-order pass masks.
 
 ## Architecture
 
 ```
-extension.js            Thin activation hub: wires providers/views/watchers/LSP client, delegates commands
+extension.js            Thin activation hub: wires providers/views/watchers/LSP client, delegates commands;
+                        `refreshProjectMap` (activation + every .sln/.tsproj/.xti/.plcproj create/change/delete)
+                        sets the context key `twincat.hasPlcProject` (the PLC Objects view's title buttons)
 src/
   commands/             Command registration, split out of extension.js — each exports register*(context, deps)
-    objectCommands      "TwinCAT Objects" create/delete (methods, properties, actions, files, folders)
-    clipboardCommands   "TwinCAT Objects" copy/paste (duplicate a component cross-file or a file under a new name)
-    renameCommands      "TwinCAT Objects" rename (files, members, directories, virtual folders; reference-aware;
-                        cross-file updates staged and applied through renameTransaction)
-    libraryCommands     "TwinCAT Libraries" commands (refresh, insert, copy, Update Library Definitions)
+    objectCommands      "PLC Objects" create/delete (methods, properties, actions, files, folders);
+                        Add Get/Set Accessor re-adds a property's missing accessor (issue #25)
+    clipboardCommands   "PLC Objects" copy/paste (duplicate a component cross-file or a file under a new name)
+    renameCommands      "PLC Objects" rename (files, members, directories, virtual folders; reference-aware;
+                        cross-file updates staged through renameTransaction and written as ONE
+                        WorkspaceEdit with the .plcproj entry and the file move, so one undo restores
+                        it all) + TC Toolkit: Undo Last Rename (runs `undo` from a text editor)
+    libraryCommands     "PLC Libraries" commands (refresh, insert, copy, Update Library Definitions)
     lspBridgeCommands   openComponent navigation + the twincat.lsp.query* Monaco↔LSP bridges
-  xaeShell              XAE shell discovery + the library-signature generator (the one non-offline path)
+    startCommands       The TwinCAT sidebar's Start view (an empty tree, so its viewsWelcome buttons show)
+                        and the start commands: Open Start Page, Create New Project (version → name →
+                        location prompts, or all three as args from the start page; then open here /
+                        new window / add to workspace), Open Existing Project (.sln or folder, or a
+                        recent entry), Generate ST (multi-pick when 2+ projects), Open Settings and the
+                        help links. The start page runs these same commands — no second code path.
+                        Open Settings takes an optional `tcToolkit.*` section as its Settings-UI query;
+                        a change to tcToolkit.startPage.* / tcToolkit.xaeShell.* re-posts an open page's state
+    compileCommands     `twincat.compileProject` (roadmap R3.2): project pick, setup refusal with "Open
+                        Settings", the run under a cancellable progress notification, and where the
+                        results go — a DiagnosticCollection `twincat-compile` (Problems, at the XML
+                        position), the panes (through the provider), a status-bar item, a summary
+                        notification with "Show Problems" (opens the Problems panel), and a URI
+                        handler for each entry's code link (`/compileProblem?id=N`), and the output
+                        channel `TC Toolkit Compile` (compiler-define notes). The VS Code half of
+                        compileCheck. R13: after a clean check, with the switches on, C++ generation
+                        (cppGenerate) and the g++ build (gpp) — g++ messages in their own collection
+                        `twincat-gpp` (source "TC Toolkit g++") on the generated files; the two switches'
+                        coupling on every config change (cppSettings), `setCompileOption` for the
+                        dropdowns (provider.setCompileOptionsSource / setCompileOptions → `compileOptions`
+                        to every editor; the start page through onSettingsChanged)
+    gppCommands         `twincat.detectGpp` + the silent fill of an EMPTY tcToolkit.compiler.gppPath
+                        (Global; never overwrites), run when the g++ build is turned on. The VS Code
+                        half of gpp
+    cppToolsCommands    R13: registers cppToolsProvider with Microsoft's C/C++ extension when it is
+                        installed (now or later: extensions.onDidChange), via `vscode-cpptools`
+                        getCppToolsApi(Version.v7); the g++ it names is resolveGpp's, re-resolved and
+                        re-announced (didChangeCustomConfiguration + …BrowseConfiguration) when
+                        tcToolkit.compiler.gppPath changes or a CPP_Files .cpp/.hpp is created;
+                        createProviderPrompt: the once-per-folder "Use TC Toolkit" offer
+                        (workspaceState `tcToolkit.cppProviderPrompt:<folder uri>`); the
+                        "TC Toolkit C/C++" output channel logging each request of the C/C++ extension
+    xaeShellCommands    `twincat.detectXaeShell` + the silent activation-time fill of the two
+                        `tcToolkit.xaeShell.path*` settings (EMPTY ones only, ConfigurationTarget.Global;
+                        never overwrites). The VS Code half of xaeShellDetect
+    xaeBuildCommands    R14 Build through XAE: `twincat.xaeBuild`, `twincat.xaeBuildAndActivate`,
+                        `twincat.xaeShowTargets`, internal `twincat.xaeBuild.goToProblem`. Spawns
+                        resources/xae/build-plc-project.ps1 through runChild (onStdout → xaeBuild's
+                        splitter/reducer), the output channel `TC Toolkit XAE Build` (requested UI mode,
+                        then the mode read back from DTE), DiagnosticCollection `twincat-xae` (source
+                        "TC Toolkit XAE build"), pane markers via provider.setCompileSource(…, 'xae'),
+                        status bar, context key `twincat.xaeRunning`, one run at a time; the shell check
+                        (one question at most: the other-shell modal for a build, else the driver's
+                        progid-not-registered fatal is the fallback); the target pick +
+                        modal for activation; cancel file → grace → force stop (PowerShell tree + only an
+                        `ours` shell PID), never in activate/boot/restart/verify; timeout; the headless stall
+                        offer; `setXaeOption` for the dropdowns. Reuses compileCommands' exported
+                        problemDiagnostic / openProblem / pickProjectKey
+    onlineCommands      R15 online monitoring: `twincat.goOnline` / `goOffline`, `twincat.online.*`
+                        (enableWrites, selectInstance, showLog, statusMenu), `twincat.watch.*`, the
+                        status-bar item, the "TC Toolkit Online" output channel, the "PLC Watch" view,
+                        the provider's `onlineSource` (online/visible, online/write, online/addWatch);
+                        `dispose()` is called by deactivate()
+  online/               R15 online monitoring over ADS (vscode-free except watchTree; see "Online monitoring (R15)"):
+    adsClient           The ONE user of the `ads-client` package (2.2.0, pinned): adapts it to the small
+                        `AdsPort` interface everything else uses; router vs direct settings; the
+                        user-mode fallback switch (`isRouterRefusal`, R15 phase 2)
+    helperClient        R15 phase 2: ads-client's `Client` with its transport swapped for the PowerShell
+                        ADS helper (raw ADS commands; notifications emulated by polling)
+    adsHelperProcess    Spawns resources/online/ads-helper.ps1; JSON-lines RPC, one request in flight,
+                        hang guard (kill), close on stdin end
+    localRuntime        R15 phase 3a: what "Local runtime" means on Windows: the XAE driver's
+                        `-ListTargets` (no solution, no COM) + a `tasklist` check for the kernel
+                        service → a trusted user-mode runtime's NetId, a pick, or the router
+    session             One connection: cancellable connect, `_AppInfo` status poll, resolve paths
+                        against the PLC, sum reads, notifications under the cap, FB instance discovery
+    editorPaths         Pane lines → `custom/onlinePaths` ranges, its answer → pane positions,
+                        `{instance}` substitution, the "no symbol" reasons
+    inlineMonitor       One editor's inline values: resolve, poll (500 ms), post on change
+    watchList           The PLC Watch model: watched paths, one on-change notification each
+    watchTree           The PLC Watch view (TreeDataProvider over watchList)
+                        — one provider backs two view ids: `twincatWatch` (own bottom-panel
+                        container) and `twincatWatchSidebar` (TC Toolkit sidebar); `tcToolkit.online.watchLocation`
+                        picks one through each view's when-clause.
+                        Redraws are batched, at most one per 300 ms (`REDRAW_MS`), carrying only the changed rows:
+                        VS Code waits for a 200 ms pause in a tree's events, which several entries changing every
+                        200 ms never left; each reload hands VS Code new row objects (it drops one-row redraws of
+                        objects from an earlier reload). Both were reproduced in real VS Code 1.95.3 and 1.146.0.
+    writeGuard          The only path to a write: setting, per-session enable, guards, modal, log
+    plcControl          Start / Stop PLC: the toggle state (Start in Stop, Stop in Run), modal, re-check, log
+    codeIdentity        The code-mismatch guard: name, variable layout vs the last build's `.tmc`,
+                        source edits since that build
+    values              Value ↔ text for scalars (formatting, input parsing, type comparison)
+    connectErrors       Go Online failures → user messages (incl. the 4026 user-mode runtime, a reset
+                        router, and a fallback that failed too; a DLL not found carries `setting`, the
+                        tcToolkit.adsDll.* key the notification's "Open Setting" opens)
+  adsDllSettings        The two ADS DLL location settings (`tcToolkit.adsDll.dotNetLibrary` = TwinCAT.Ads.dll,
+                        `nativeDllFolder` = the folder of TcAdsDll.dll; machine scope, empty = search), their
+                        hint texts, and `isNativeDllMissing` (the driver's "TcAdsDll.dll) was not found").
+                        Used by the online fallback (helper -AdsDll/-AdsNativeDir) and the XAE driver
+                        (-AdsDllDir). vscode-free
+  checkUnit             Compile Project's check unit: one ST unit per TwinCAT object with a per-LINE
+                        origin map back to component/pane/line. Pane text verbatim (never the export's
+                        rewrites), members BEFORE the POU body. NOT the live path's unit. vscode-free
+  compileCheck          Compile Project's vscode-free half: setup check (the bundled compiler
+                        resources/compiler/compiler.cjs unless tcToolkit.compiler.path overrides it;
+                        Node >= 22 FOUND by nodeCandidates/findNode), check inputs from object texts, the compiler run as a CHILD
+                        PROCESS (`--check --json --dialect-file resources/dialects/twincat3.json`,
+                        `--pragma-define` per project compiler define, `--file-define N.st=…` per
+                        per-object define, `--global-list N.st=<GVL>` per GVL; never
+                        `require()`d, never `--strict`) in
+                        a temp dir deleted afterwards, timeout + cancel, JSON report → file/component/
+                        pane/line, the pragma-warning filter (counted), the library filter (counted;
+                        messages on the generated declarations kept apart), paneRange. Spawn injected.
+                        runChild takes optional onStdout/onStderr chunk callbacks (R14 streams events)
+  cppGenerate           R13 C++ generation, vscode-free: the compiler's COMPILE mode (`-o <stem>.cpp`, a
+                        second run after the check — `--json` exists only with `--check`) in a temp dir;
+                        `<project dir>/CPP_Files/<stem>.cpp|.hpp` written under an ownership record
+                        (`.tc-toolkit-generated.json`: file → project + SHA-256). Only an owned file
+                        that is unchanged is replaced or deleted; a project's leftovers (renamed
+                        project, stale .o) are deleted; foreign/edited files are refused and reported.
+                        Library coverage: what the C++ does not cover per library (empty-bodied
+                        library blocks), as summary sentence, channel lines and a header comment
+  cppSettings           R13 switches `tcToolkit.compiler.generateCpp` / `buildWithGpp` (default off):
+                        effective values (build ⇒ generate), per-scope coupling after a change made
+                        elsewhere, the writes a dropdown checkbox makes. Pure
+  gpp                   R13 g++ build, vscode-free: detection (PATH, then each MSYS2 root's
+                        ucrt64/mingw64/clang64 (msys2Detect), C:\MinGW, mingw64 under Program Files /
+                        WinLibs / w64devkit, Chocolatey mingw, last each MSYS2 root's usr\bin; repeats
+                        dropped case-blind; `msys2Root` when MSYS2 has no g++),
+                        tcToolkit.compiler.gppPath resolution, `-std=c++17 -fno-strict-aliasing
+                        -c <cpp> -I <resources/compiler/include> -I <CPP_Files> -o <obj>`, reading g++ messages and placing them on the generated files, runGpp
+                        (no shell, timeout, cancel, g++'s folder first on PATH); describeGppSetting
+                        (what the start page shows) and thisMachine (the real fs/env checks and the
+                        version reader); the g++ version gate (GPP_MIN_MAJOR 7, gppVersionOf cached
+                        per path+size+mtime, detection prefers a g++ 7+)
+  cppToolsProvider      R13 C/C++ extension custom configuration provider, vscode-free: answers only for
+                        `.cpp`/`.hpp` directly in `<PLC project>/CPP_Files/` (a project the map knows,
+                        or a folder beside a `.plcproj`; name case-insensitive on Windows only) with
+                        includePath [resources/compiler/include, that CPP_Files], c++17, and — when a
+                        g++ is in use — compilerPath + `<os>-gcc-<arch>` intelliSenseMode; browse
+                        config = the headers + existing CPP_Files folders. connectCppTools: nothing
+                        at all when ms-vscode.cpptools is absent; writes no file
+  cppToolsSelection     R13, vscode-free: whether the C/C++ extension will consult TC Toolkit for a
+                        folder — JSONC c_cpp_properties.json (config named Win32/Mac/Linux exactly,
+                        else the last; absent/`${default}` → C_Cpp.default.configurationProvider;
+                        `""` → no provider, no fallback), providerSelection → none/setting/file;
+                        ids compared exactly (display name accepted in the file only); another
+                        configuration naming another provider → file
+  compilerDefines       Compile Project's compiler defines: `<CompilerDefines>` of the project's
+                        `.plcproj` → `--pragma-define` arguments (values exact), per-object ones
+                        in `<Compile>` items → `--file-define <unit>=…` for that object's check
+                        unit (MSBuild `Condition`s evaluated for Debug|TwinCAT RT (x64)), with a
+                        note per entry not used as written. vscode-free
+  libraryDecls          Compile Project's library declarations (R3.4): reads the project's library
+                        knowledge from THIS machine (signatures dump, .tmc, archive names, .plcproj
+                        namespaces — through lsp/libsymbols, libraries, parseCache), writes
+                        interface-only ST declarations of the referenced library symbols as extra
+                        compiler inputs (strings; runCheck's temp dir is the only place they are ever
+                        files), blanks library namespace qualifiers column-stably, and builds the
+                        filter for undeclared-library-symbol errors. vscode-free. See "Library
+                        declarations" under Compile Project below
+  projectTemplate       Create a NEW TwinCAT solution from a shipped template (roadmap R2): copy,
+                        rename solution/system/PLC project (`<Name>`, `<Name>_PLC`), re-issue every
+                        identity GUID consistently, keep every byte else. vscode-free, unit-tested.
+                        See "Project templates" below
+  settingsMigration     The one-time move from the old `twincat.*` setting keys to `tcToolkit.*`, run
+                        un-awaited at the top of activate(): per key and per scope holding an OLD value
+                        (User, Workspace, each folder) copy it to the new key unless that scope already
+                        has one, then remove the old value; a failed copy keeps the old value so the
+                        next activation retries. Never rejects (failures go to console.warn). The XAE
+                        Shell auto-fill waits for it, so a detected path never shadows a moved one.
+                        vscode-light (config injected)
+  startPage             The start page: a singleton webview panel (+ serializer) whose messages map
+                        onto the twincat.* commands; command allow-list; links leave via openExternal.
+                        Its `state` message also carries the recent-list length
+                        (tcToolkit.startPage.recentProjectsShown), the two XAE Shell paths with
+                        whether each exists, and `gpp` (gpp.describeGppSetting: set / invalid +
+                        reason / detected + source / notFound; read-only, never writes the setting);
+                        `openSettings {section}` opens an allow-listed section (`gpp` in the User
+                        settings via `twincat.openSettings(query, {target: 'user'})` →
+                        workbench.action.openGlobalSettings, as the setting is machine-scoped)
+  startPageHtml         The start page's HTML (pure; strict CSP, no remote loads) — the browser
+                        harness renders this same function
+  recentProjects        Recent TwinCAT solutions for the start page (pure list logic + a globalState
+                        adapter): newest first, max 10, case-insensitive on Windows paths, pruned on read;
+                        `recentsShownLimit` clamps the shown-rows setting to 1..10 (default 2)
+  xaeShell              XAE shell discovery + the library-signature generator (the one non-offline path).
+                        A configured tcToolkit.xaeShell.path4026 (64-bit) / path4024 (32-bit) that exists
+                        wins for its shell; otherwise default location, then the COM registration
+  msys2Detect           R13 where MSYS2 is installed (Windows), for g++ detection: the uninstall
+                        registry (HKCU/HKLM + WOW6432Node, `reg query <key> /s /f MSYS2 /d`, then
+                        the entries whose DisplayName starts with MSYS2: InstallLocation, else the
+                        UninstallString folder), then C:\msys64, D:\msys64, C:\tools\msys64,
+                        %USERPROFILE%\msys64, Scoop. The registry search is async and runs once per
+                        session (createMsys2RootCache; extension.js starts it, not awaited, and redraws
+                        the start page when it finds a root); gpp.thisMachine() carries what it has
+                        found so far. *Detect g++*, the silent fill and the g++ build wait for it
+                        (msys2RootsWithin, MSYS2_REGISTRY_WAIT_MS = 2 x 3 s + 1.5 s: longer than its two
+                        reg.exe phases); *Detect g++* writes a g++ < 7 only once the search has settled
+                        (cache.settled()); the C/C++ provider resolves g++ again when it settles with a
+                        root. findMsys2WithoutGpp: an MSYS2 root with no g++ in any environment.
+                        Reuses xaeShellDetect's reg.exe runner (createRegRunner: no shell, 3 s timeout)
+  xaeBuild              R14 Build through XAE, vscode-free: the driver argv (`-ShowWindow` only for
+                        showWindow === true, `-TcVersion <ProgId> -AllowVersionMismatch` only for a
+                        confirmed `shellOverride` on a build, activation only with a valid NetId),
+                        missingShell (the other-shell offer and the install text),
+                        the JSON-lines splitter/parser (`@@TCTK ` prefix, v 1), the run-state reducer,
+                        describeExit (the exit code decides) / describeUiMode (the DTE readback),
+                        canCancel / isStalled, the target pick and the confirmation text; gate 3's
+                        facts (`refusedTarget`) and the change-the-target texts
+  tsprojTarget          Changes the solution's TargetNetId (the `.tsproj`/`.tspproj` attribute XAE's
+                        Choose Target System writes) after a gate-3 refusal: exactly one occurrence or
+                        nothing, the value's bytes only (latin1 round trip: BOM, encoding, line endings
+                        kept), still the refused value, only a system project inside the solution's
+                        folder. Pure apart from the injected fs
+  xaeBuildSettings      R14 `tcToolkit.xaeBuild.*` with defaults and clamps (showWindow false,
+                        Release, TwinCAT RT (x64), timeout 5-240 min, stall 2-60 min). Pure
+  xaeErrorPlacement     R14 where XAE's errors go: parses the "Build" pane (`<path>(<line>) : error: C…`,
+                        English/German level words, wrapped messages) and the list items' `<path> (Impl)`
+                        suffix; places pane lines on the 'object' base (PANE_LINE_BASE), list lines as
+                        pane lines; de-duplicates the two sources; drops empty items; a file-less
+                        "build … failed" item is a note, not a count. Pure
+  xaeShellDetect        Where the XAE Shell of 3.1.4024 / 3.1.4026 is installed, for the
+                        tcToolkit.xaeShell.path* settings: COM registration (ProgID → CLSID →
+                        LocalServer32 via `reg.exe query`, 3 s timeout), then the default Program Files
+                        location. Pure — platform, env, exists and regQuery are injected; off Windows
+                        it finds nothing and spawns nothing. Also `resolveShellExe`, the choice
+                        xaeShell makes between a configured path and its own discovery
   customEditorProvider  Webview host: bridges Monaco ↔ LSP via livePath, writes CDATA back. Each
                         custom/* handler is now assemble → query LSP → delegate to a livePath
                         collector → post; it holds no reference/definition mapping loops itself.
+  editorBreadcrumb      The editor header's breadcrumb (PLC project › folders › object) from the
+                        project map and the file path; pure, sent in `init` as `breadcrumb`.
+  brandMark             The extension's mark as inline SVG (theme-coloured "TC", the #E2001A square)
+                        for the editor header and the start page's title; pure.
   pendingEditsStore     Persistence for Manual Sync's unsaved edits, over `context.workspaceState`
                         (per workspace, never globalState). In Manual mode the webview posts no
                         'edit', so the TextDocument stays CLEAN and nothing else — not hot exit, not
                         retainContextWhenHidden — carries the edits across a window reload; they
                         used to live in an in-memory Map and were lost on Ctrl+R. Each entry is
                         fingerprinted (`length:sha1`) against the document text it was captured
-                        from, and a read whose fingerprint no longer matches DISCARDS the entry
-                        rather than splicing stale edits into a changed file. vscode-free (it takes
+                        from (a leading BOM ignored), and a `get` whose fingerprint no longer
+                        matches DISCARDS the entry rather than splicing stale edits into a changed
+                        file; `peek` only reports it (`stale`), for readers that merely check
+                        (online writes, the compile pre-check). vscode-free (it takes
                         any Memento-shaped `{get, update}`), which is what makes it harness-testable.
   livePath              The live language-feature path, vscode-free: ST assembly (assembleSt),
                         pane↔unit coordinate + pane-slice + peek-model helpers, the injected-read
@@ -345,8 +761,17 @@ src/
                         prop_*_get/prop_*_set/action_/transition_) shared by webview, host and
                         LSP; vscode-free. The grammar is FROZEN (ids travel over the bridge and
                         into saved state); prop_X_get parses as accessor-of-X by pinned convention
-  treeDataProvider      "TwinCAT Objects" explorer tree and reveal parent chains
-  solutionMap           TwinCAT .sln → .tsproj → .xti → .plcproj presentation model for that tree
+  objectsTreeModel      The "PLC Objects" tree as a vscode-free node graph: shape rule (solutions →
+                        projects; one root per project at 2+; else flat), nodes with parent links,
+                        children and stable ids; makeNode is the ONE place id and contextValue are set.
+                        I/O and uris come from an injected host
+  treeDataProvider      Thin VS Code adapter over objectsTreeModel: elements ARE model nodes (commands
+                        receive them), getTreeItem builds the TreeItem, getParent = node.parent,
+                        getChildren/getRevealItem forward to the model (cached until refresh() or a
+                        project/solution map or workspace-folder change)
+  solutionMap           TwinCAT .sln → .tsproj → .xti → .plcproj presentation model for that tree (also the
+                        single-file .tspproj system project 3.1.4024 writes, whose <Plc><Project> names
+                        the .plcproj inline)
   projectStatusBar      Status-bar "which PLC project is this file in" indicator (2+ projects only);
                         projectLabel() is pure/vscode-free so it is unit-testable — vscode is required
                         lazily, inside createProjectStatusBar()
@@ -355,21 +780,44 @@ src/
   renameTransaction     Rename: the stage/apply/rollback transaction over the cross-file writes — a
                         multi-file rename either fully lands or every already-written file is restored
                         (reverse order, verify-before-write and verify-before-restore, rollback
-                        failures reported per file). Injected read/write, vscode-free, so testable
+                        failures reported per file). `applyAsOne(commit)` writes everything in ONE
+                        caller step (the rename's single WorkspaceEdit) and restores what landed if
+                        that step fails. Injected read/write, vscode-free, so testable
+  plcProjText           Rename: the in-place `.plcproj` Include rewrite for a renamed file or directory
+                        (keeps the entry's place and children, e.g. <LinkAlways>; vscode-free, testable)
   treeDragAndDrop       Objects-tree drag & drop controller — executes the matrix's plans (needs VS Code 1.66+)
-  libraryTreeProvider   "TwinCAT Libraries" explorer tree (library → types → members). Scopes to the
+  libraryTreeProvider   "PLC Libraries" explorer tree (library → types → members). Scopes to the
                         ACTIVE file's project (revealUri → setActiveFile; refetches only when the
                         owning project changes) and says so in the view description (2+ projects
                         only); union of all projects when nothing owns the active file. The scope
                         decisions are exported pure helpers, pinned by test_library_scope.js
-  referencesProvider    "TwinCAT References" results view (+ referencesTree grouping)
-  objectKinds           Kind → codicon → tooltip for the Objects tree (vscode-free, so it is testable)
+  referencesProvider    "PLC References" results view (+ referencesTree grouping)
+  objectKinds           Kind → codicon → tooltip for the Objects tree (vscode-free, so it is testable);
+                        also owns the property row's contextValue (`propertyNode[.noGet][.noSet]`,
+                        naming the MISSING accessors) and `isPropertyNode` — test property rows with
+                        it in code and `viewItem =~ /^propertyNode\b/` in menus, never `== 'propertyNode'`
+  stComments            The Node-side ST comment scanner (`blockCommentEnd`, `blankComments`): NESTED
+                        `(* (* *) *)` comments as TwinCAT documents them, non-nesting slash-star, `//`,
+                        strings recognised so a `(*` inside one is text. Used by every helper that blanks
+                        comments before a keyword regex (objectKinds, xmlIndexer's DUT/enum readers,
+                        checkUnit/stConverter's POU keyword, libraryDecls). The lexer, stFolding.js, the
+                        Monarch tokenizer and the TextMate grammar implement the same rules on their
+                        own (none can require it); test_nested_comments.js keeps all of them in step
   insertTemplates       Call/usage templates + parameter ordering, shared by the Libraries AND Objects
                         insert commands so both produce identical text (vscode-free, so testable)
+  indexInputs           Which watcher events (`*.tmc`, `library-signatures.xml`) re-index, and the
+                        own-write gate for Update Library Definitions (vscode-free, so testable)
   util/
     debounce.js         Trailing-edge debouncer with injectable timers (vscode-free, so testable)
-  xmlParser             Regex-based TwinCAT XML parse / structural edits (preserves formatting)
+  xmlParser             TwinCAT XML parse / structural edits (preserves formatting). A small
+                        CDATA/comment-aware element scanner: each component reads only its OWN
+                        Declaration/Implementation (members = the root's direct children); a non-ST
+                        body reads implementation: null + implementationLanguage; attribute values
+                        are decoded on read and re-encoded by every writer;
+                        insertPropertyAccessorIntoXml re-adds a missing Get/Set (Get before Set)
   stConverter           XML → clean Structured Text + line map (also a raw mode for the live path);
+                        keeps the POU kind as written (a PROGRAM stays a PROGRAM) and returns
+                        `warnings` for members it cannot convert (SFC transitions);
                         clean mode flattens struct EXTENDS from collectStructDefinitions() over
                         the exported project's own DUTs — no hard-coded type names
   plcProjHelper         Keeps the .plcproj file in sync on create/delete
@@ -378,20 +826,41 @@ src/
     projectMap.js       Which .plcproj owns which file: ownersOf() (every project that <Compile>s the
                         file) vs projectFor() (the one project a request routes to). Dependency-free
                         (fs/path only, no vscode) so both the server and the extension host can use it.
-    workspaceScan.js    One symbol index per PLC project + the request-routing API. Kept out of
-                        server.js on purpose: server.js opens an IPC connection at require time, so
-                        nothing that requires it is loadable by a standalone harness — the connection is
-                        injected here as log/error callbacks instead.
+    workspaceScan.js    One symbol index per PLC project + the request-routing API. Plans a scan as one
+                        task per index (`planWorkspaceScan`); `scanWorkspace` runs them in one pass,
+                        `startWorkspaceScan` one project at a time in the background with a per-index
+                        readiness gate (`readyFor`/`readyAll`). Kept out of server.js on purpose:
+                        server.js opens an IPC connection at require time, so nothing that requires it
+                        is loadable by a standalone harness — the connection is injected here as
+                        log/error callbacks instead.
+    workspaceState.js   Which workspace answers while scans come and go (R6): `settledFor(uri)` /
+                        `settledAll()` resolve with the CURRENT workspace once the index a request
+                        reads is complete; a superseded scan's waiters move to the new one; a failed
+                        scan falls back to the last complete workspace.
     requestPipeline.js  The request router (withDocument makes the pre-handler document sync
                         structural; withoutDocument is the EXPLICIT no-sync variant) and the
                         library-index stage table (LIBRARY_INDEX_STAGES, order validated at module
                         load; stage runners injected by server.js). IPC-free — the third instance
                         of the same harness-loadability injection pattern as scanController.js.
+    libraryIndex.js     The per-project library composition (`createIndexLibraries`): namespaces,
+                        archives, .tmc, signatures (project dir + every workspace root), browsercache,
+                        run through the stage table. Moved out of server.js so the harnesses and
+                        scripts/measure-indexing.js drive the code the server runs, not a copy.
     scanController.js   Decides WHEN to scan, separately from how. custom/reindex = "rebuild
-                        unconditionally"; custom/indexReady = "resolve once these roots are indexed".
-                        Outside server.js for the same harness reason; the scan is injected.
+                        unconditionally"; custom/indexReady = "resolve once these roots are indexed"
+                        (JOINS a scan of the same roots in flight). Only the latest scan records
+                        completion. Outside server.js for the same harness reason; the scan is injected.
     parseCache.js       library-signatures.xml + browsercache parses, cached on (path, size, mtime).
                         Signature records are CLONED per project — see the warning in its header.
+                        `readOnlyParse` / `signatureLibrariesFor` are shared, DEEP-FROZEN parses for
+                        readers that build fresh objects from them (libraryDecls.js: the dump's
+                        libraries, each .tmc's declaration model).
+    archiveStore.js     The PERSISTED archive-name cache (R6): decoded library symbol names kept across
+                        sessions in the extension's global storage (`initializationOptions
+                        .archiveCacheDir`, set by extension.js). Same content key as the in-memory
+                        cache; an entry is used only when the decoder id, the key and the archive's
+                        ZIP central-directory fingerprint (read from the file now) all match. Corrupt,
+                        partial or foreign files are ignored; bounded (entries, name characters, LRU).
     plcprojRefs.js      One shared, cached .plcproj read (library references + namespaces). The same
                         file used to be read three times per project per scan.
     log.js              Structured, quiet-by-default logging for the LSP process (threshold `warn`,
@@ -401,7 +870,11 @@ src/
                         explicable. Routine healthy-project conditions belong at debug, never warn
     parser.js           Structured Text lexer + symbol parser
     symbolNode.js       Single factory for a symbol node's core shape (parser + xmlIndexer build through it)
-    features.js         Facade re-exporting features/{core,completions,definition,references,configReferences,highlights,diagnostics}
+    features.js         Facade re-exporting features/{core,completions,definition,references,configReferences,highlights,hover,diagnostics,onlinePaths}
+    features/onlinePaths.js  R15: the ADS path template of each variable occurrence on the given unit lines
+                        (`custom/onlinePaths`); conservative like every feature — unresolvable answers nothing
+    features/hover.js   Pragma hover: category summary (this project's own words), syntax form, Infosys
+                        link. Reads the document only — no index, so it never waits for a scan
     features/completions.js  Autocompletion ORCHESTRATOR + façade (public surface unchanged): walks
                         pragma → member access → named params → caret-context classification and
                         assembles what each context accepts. The systems live in completion/
@@ -416,10 +889,12 @@ src/
     builtins.js         Standard IEC/TwinCAT types, keywords, functions/FBs
     types.js            Type model, resolver, member lookup, assignability
     exprParser.js       Expression type inference (for assignment checks)
-    xmlIndexer.js       Indexes TwinCAT XML objects into real-range symbol nodes
+    xmlIndexer.js       Indexes TwinCAT XML objects into real-range symbol nodes (ranges in unit lines, `unitLineMap`)
     libraries.js        Library namespaces, read from the .plcproj
     libsymbols.js       Library symbols: ZIP reader over the library archives + the project's .tmc
     pragmas.js          Classifies `{ ... }` pragma spans (shape first, catalog second) — see below
+    conditionals.js     Conditional pragmas ({IF}/{ELSIF}/{ELSE}/{END_IF}): groups per segment, branch
+                        selections for block matching, suppression spans — see "Conditional pragmas"
     pragmaCatalog.json      GENERATED from Beckhoff Infosys by scripts/fetch-pragma-catalog.js
     pragmaCatalogExtra.json Hand-curated: real attribute names Infosys does not document
     librarySignatures.js  Parses library-signatures.xml (function sigs, FB I/O, global constants)
@@ -449,16 +924,113 @@ media/
                         ruling: that function stays in src/).
   diagnosticMarkers.js  Pane split + Monaco marker shape for per-component diagnostics. Dual-mode;
                         monaco-free via caller-injected severity values.
-  marketplace-icon.png  The 256px extension icon package.json points at. GENERATED by
-                        scripts/make-icon.js — never hand-edited.
+  projectName.js        The project-name rule (identifier-safe, Windows-safe, no `__`, no trailing `_`).
+                        Dual-mode: the start page validates while typing, src/projectTemplate.js refuses
+                        the same names host-side
+  startPage.js / startPage.css  The start page's script and theme-variable stylesheet (single column
+                        under ~640 px). The "native" look (2026-11-16): theme surfaces, frameless
+                        menu-like tiles, true red #E2001A (`--tc-red`) only as a marker; no pink
+                        (run_start_page.js checks every computed colour)
+  twincat-activitybar.svg  The Activity Bar icon: the one-colour form of the mark (the "TC" strokes and
+                        the square, no tile; drawn for this project, no vendor artwork)
+  marketplace-icon.png  The 256px extension icon package.json points at (also the start page's logo).
+                        GENERATED by scripts/make-icon.js from scripts/logo/tc-toolkit-mark.svg —
+                        never hand-edited.
   icon.png              The 1280x640 GitHub social preview (same mark beside the name). GENERATED by
                         scripts/make-social-preview.js; .vscodeignored, nothing in the extension uses it.
+resources/
+  templates/tc3.1.4024/, tc3.1.4026/  The shipped project templates, GENERATED by
+                        scripts/build-project-templates.js — never hand-edited
+  templates/xae-3.1.4024/  Raw XAE 3.1.4024.62 output, the 4024 template's source (.vscodeignored)
+  dialects/twincat3.json   The vendored STruC++ dialect profile (R3)
+  compiler/             The bundled STruC++ compiler (R3.3), WRITTEN by scripts/vendor-compiler.js —
+                        never hand-edited: compiler.cjs (the fork's dist/strucpp-bundle.cjs, renamed so
+                        no product name reaches the UI), libs/iec-standard-fb.stlib +
+                        iec-std-functions.stlib, the GPL-3.0 LICENSE/COPYING/COPYING.RUNTIME,
+                        third-party/ (chevrotain Apache-2.0, lodash-es MIT), SOURCE.md (repo, commit,
+                        size + SHA-256 per file), include/*.hpp (the fork's src/runtime/include, R13:
+                        what the g++ build compiles against; GPL-3.0-only WITH the runtime library
+                        exception per the fork's COPYING). Ships in the VSIX
+  xae/build-plc-project.ps1  R14's driver: an ADDITIVE copy of scripts/Build PLC project/
+                        build_plc_project.ps1 (-Json, -ShowWindow, -ListTargets, -CancelFile; exit 4).
+                        Ships in the VSIX; hand-synced with the builder (see "XAE build (R14)")
 scripts/
-  glyphRaster.js        The renderer behind both images: TrueType outline reader, scanline rasterizer,
-                        hand-rolled PNG encoder, and drawMark (the logo itself, so both draw the SAME
-                        mark). Reads Segoe UI from C:/Windows/Fonts; only the pixels are committed.
+  vendor-compiler.js    Copies a BUILT, clean fork checkout into resources/compiler/ and records its
+                        commit. Dev-only, .vscodeignored
+  build-project-templates.js  Derives resources/templates/tc3.1.40xx/ from the XAE skeletons;
+                        `--check` exits 1 when the committed copies are stale. .vscodeignored
+  make-icon.js          Renders scripts/logo/tc-toolkit-mark.svg (the mark: flat tile, geometric "TC",
+                        one #E2001A square) with Playwright's Chromium into media/marketplace-icon.png.
+                        Dev-only, .vscodeignored (as is scripts/logo/)
+  glyphRaster.js        The renderer behind the social preview (it drew the marketplace icon too
+                        until 2026-11-16, so media/icon.png still shows the earlier mark): TrueType outline reader, scanline rasterizer,
+                        hand-rolled PNG encoder, and drawMark (the earlier logo). Reads Segoe UI from C:/Windows/Fonts; only the pixels are committed.
                         Dev-only, .vscodeignored, not in the typecheck graph.
+  measure-indexing.js   Timing harness for the workspace scan: builds an N-project copy of the sample
+                        (synthetic archives, noise directories, a root signatures dump) in a temp dir
+                        and times the real scan in fresh processes — cold, warm (second session) and
+                        per-project ready time. Measures, never gates; not in `npm test`. Dev-only,
+                        .vscodeignored. `--samples` times the committed sample/ as-is.
 ```
+
+### Project templates (Create New Project, roadmap R2)
+
+Only TwinCAT XAE has ever written a `.sln` → system project → `.plcproj` skeleton that XAE accepts, so
+**Create New Project copies an XAE-made skeleton** instead of writing one. Two templates ship:
+
+| version | source | shape |
+|---|---|---|
+| 3.1.4026 | the XAE 3.1.4026.22 skeleton under `sample/TcToolkitSample/` | `.sln` + `.tsproj` + `_Config/` (PLC `.xti`, instance `.xti`/`.xtv`) |
+| 3.1.4024 | `resources/templates/xae-3.1.4024/` (XAE 3.1.4024.62) | `.sln` + one `.tspproj` (PLC project named inline, no `_Config/`) |
+
+`node scripts/build-project-templates.js` derives `resources/templates/tc3.1.4024/` and `tc3.1.4026/`
+(names `TcTemplate` / `TcTemplate_PLC`); `--check` fails when the committed copies are stale, and
+`test/test_project_template.js` runs that check. What the derivation does:
+- **4024:** the GVL becomes `GVL_Main` with its sample variable removed — XAE's own default GVL text,
+  `{attribute 'qualified_only'}` / `VAR_GLOBAL` / `END_VAR` — and the `.plcproj` `<Compile>` follows.
+- **4026:** strips what `scripts/Create sample PLC project/build-sample-project.js` injected (its objects'
+  `<Compile>` entries, read from its exported `OBJECTS`, and every `<Folder>` beyond XAE's
+  `DUTs`/`GVLs`/`VISUs`/`POUs`), plus what the sample gained by hand or by building: the
+  `TwinCat Dynamic Collections` reference and the `<None Include="….tmc">` item. The sample's `MAIN` was
+  overwritten with synthetic code, so `MAIN` and `GVL_Main` take XAE's object text from the 4024 skeleton
+  (minus `ProductVersion`, since this `.plcproj` has `WriteProductVersion` false), with derived Ids.
+- Never a `.tmc`. Starter content is exactly `MAIN`, the `PlcTask` that calls it, and the empty `GVL_Main`.
+
+`src/projectTemplate.js` then creates `<location>/<Name>/`: solution and system project `<Name>`, PLC
+project `<Name>_PLC`, names replaced in paths and text in one longest-first pass; BOMs, CRLF/LF, tabs,
+attribute order and a missing trailing newline are carried over byte for byte. It refuses a target that
+already holds a `.sln`/`.tsproj`/`.tspproj`/`.plcproj` (scope is a new solution only) or any file it
+would write, opens every file exclusively, and removes what it wrote if a write fails.
+
+**GUID inventory.** Every GUID in a template is classified by where it sits (`IDENTITY_CONTEXTS` /
+`KEEP_CONTEXTS` in `src/projectTemplate.js`); one that is neither, or both, fails the template build and
+every create — a guess either way can produce a project XAE refuses.
+
+Re-issued (same old GUID → same new GUID in every file; each occurrence keeps its letter case — the
+`.sln` writes them upper-case, the `.plcproj` lower-case). These are what XAE mints fresh for a new
+project; `LibraryReferences`, `Application`, `TypeSystem` and the `Implicit_*` ids differ between the two
+XAE skeletons, which is what shows they are per-project ids and not kind GUIDs:
+
+| GUID | where |
+|---|---|
+| system project | `.sln` `Project(…) = …, "{ID}"`; `.tsproj`/`.tspproj` `ProjectGUID` |
+| solution | `.sln` `SolutionGuid` |
+| PLC project | `.sln` configuration lines; `.tspproj` or `_Config/PLC/*.xti` `<Project GUID>`; `.plcproj` `ProjectGuid` |
+| PLC project objects | `.plcproj` `Application`, `TypeSystem`, `Implicit_Task_Info`, `Implicit_KindOfTask`, `Implicit_Jitter_Distribution`, `LibraryReferences` |
+| task | `PlcTask.TcTTO` `Task Id`, `TaskFBGuid`, `Fb_init`, `Fb_exit`, `CycleUpdate`, `PostCycleUpdate` |
+| objects | every `Id="{…}"` in `.TcPOU`/`.TcGVL`/`.TcDUT`/`.TcIO` (MAIN, GVL_Main) |
+
+Kept (identical in every project XAE writes):
+
+| GUID | why |
+|---|---|
+| `.sln` `Project("{…}")` type — `{DFBE7525-…}` (.tspproj), `{B1E792BE-…}` (.tsproj) | the project KIND |
+| instance `.xti` `<CLSID>` `{08500001-0000-0000-F000-000000000064}` | the TcCOM class of a PLC instance |
+| `.xtv` `TmcHash` | a content hash of the `.tmc`, not an identity; XAE recomputes it on build |
+| everything inside the `.plcproj` `<XmlArchive>` (`{40450F57-…}`, `{54dd0eac-…}`, …) | option category and type keys |
+
+Still owed, on the user's Windows machine: each template, created through the command, opened and built
+in its own XAE version (3.1.4024 and 3.1.4026).
 
 ### Objects tree: solution and PLC-project hierarchy
 
@@ -467,26 +1039,33 @@ which language-server index owns a file:
 
 1. `src/solutionMap.js` discovers TwinCAT `.sln` files and follows their actual metadata chain:
    `.sln` project entry → `.tsproj` → `<Plc><Project File="…xti">` → the XTI's `PrjFilePath` →
-   `.plcproj`. Unrelated Visual Studio solutions are ignored.
+   `.plcproj`. A 3.1.4024 `.tspproj` names the `.plcproj` inline (`<Plc><Project PrjFilePath="…">`, no
+   XTI) and is followed too. Unrelated Visual Studio solutions are ignored.
 2. A solution is always a top-level node when present, even with one PLC project. One solution may
    contain several PLC projects, and several solutions may coexist in one workspace. Duplicate
    solution names use shortest-unique-parent suffixes; project labels are disambiguated only among
    siblings in the same solution.
 3. A PLC project that no solution references remains a top-level fallback. With no TwinCAT solution,
    the pre-0.8.0 behavior remains: two or more projects get project roots; a single project keeps the
-   flat directory-driven tree.
-4. `src/treeDataProvider.js` attaches logical parents for reveal:
-   component → virtual folder/property → file → disk folders → PLC project → solution. Rebuilding a
-   reveal target parses only its backing XML file and consumes the cached host maps; it never starts
-   another workspace scan.
+   flat directory-driven tree. This shape rule (`groupRootsByProject` included) lives in
+   `src/objectsTreeModel.js`, not in the LSP ownership module `src/lsp/projectMap.js`.
+4. `src/objectsTreeModel.js` creates every node with its logical parent:
+   component → virtual folder/property → file → disk folders → PLC project → solution, so the
+   adapter's `getParent` is a field read with no scans and no node construction. A reveal target
+   (`revealTarget`) gets its whole ancestor chain when it is built: disk directories up to the tree's
+   own project row (a Map lookup by directory uri) or a workspace root (a Set lookup). It parses only
+   its backing XML file and consumes the cached host maps; it never starts another workspace scan.
 5. `.sln`, `.tsproj`, and `.xti` create/change/delete events rebuild and refresh only the host tree
    model. A `.plcproj` event also rebuilds ownership and remains the sole project-structure event that
-   triggers `custom/reindex` and the Libraries refresh.
+   triggers `custom/reindex` and the Libraries refresh. (The other watcher path that re-indexes is not
+   project structure: a `*.tmc` or `library-signatures.xml` event, see "Index inputs" below.)
 
 Coverage is split deliberately: `test/test_solution_map.js` exercises discovery, multi-solution and
-multi-project grouping, label scope and fallbacks without VS Code; `test/test_tree_reveal.js` pins the
-logical ancestry; `node test/devhost/run.js` creates two solutions and three PLC projects (two under
-one solution) and proves the real VS Code TreeView accepts that ancestry. Run the dev-host harness
+multi-project grouping, label scope and fallbacks without VS Code; `test/test_objects_tree_model.js`
+and `test/test_tree_reveal.js` pin the model and the logical ancestry without VS Code;
+`test/test_objects_tree_ids.js` pins every id the adapter renders on the first sample (copied alone
+into a temp root) and on `sample/` itself (two solutions, two layouts); `node test/devhost/run.js` creates
+three solutions and four PLC projects (two under one solution, one a 3.1.4024 `.tspproj` solution) and proves the real VS Code TreeView accepts that ancestry. Run the dev-host harness
 whenever solution grouping, project grouping or reveal parents change.
 
 ### Project-scoped indexing
@@ -512,7 +1091,8 @@ and routed at startup (and on `custom/reindex`), not one flat index for the whol
   stale case-only folder spelling in an Include and VS Code treats that as a different resource. The
   walk preserves workspace 8.3 prefixes and junction paths; missing/unreadable includes and all POSIX
   paths retain the project spelling conservatively.
-- **`src/lsp/workspaceScan.js`** builds one index per project (`scanWorkspace`) and wraps the
+- **`src/lsp/workspaceScan.js`** builds one index per project (`scanWorkspace`, or `startWorkspaceScan`
+  in the server — see "The background scan" below) and wraps the
   request-routing API (`indexForUri`, `projectForUri`, `configFilesFor`). It lives outside `server.js` on
   purpose: `server.js` opens a Node IPC connection at require time, so nothing that requires it is
   loadable by a standalone test harness — `workspaceScan.js` takes the connection as injected
@@ -550,7 +1130,8 @@ registry rather than an empty one — the fallback that keeps roughly 15 pre-exi
 
 `test/test_project_map.js` covers `projectMap.js`'s ownership rules, actual Windows casing without
 expanding workspace 8.3/junction identity, the missing-file fallback, `projectLabel()` and
-`groupRootsByProject()` (the Objects-tree per-project grouping) in isolation.
+`groupRootsByProject()` (the Objects-tree per-project grouping, owned by `src/objectsTreeModel.js`) in
+isolation.
 `test/test_multi_project_scope.js` covers the whole thing end-to-end against a real two-project fixture
 built from `sample/` (the fixture helper is `test/_multiproject.js`, two copies of `sample/` under one
 root, one copy deliberately diverged) — the partition, zero diagnostics on correct code in either
@@ -570,6 +1151,8 @@ warm / ~20 s cold projected, and the wait is visible. Four invariants hold that,
    `src/lsp/scanController.js` decides, on exactly two facts: a scan **completed**, and its normalized
    root set matches. **Never teach `reindex` to skip** — on a `.plcproj` change the roots are
    unchanged and it is the content that moved (`test_scan_controller.js` pins both directions).
+   Since the scan runs in the background, an `indexReady` that arrives mid-scan **joins** that scan
+   rather than starting another, and only the latest scan records completion (`test_scan_readiness.js`).
 2. **Read each file once per (path, size, mtime).** `parseCache.js` (signature dumps, browsercache),
    `plcprojRefs.js` (`.plcproj`), `harvestArchiveFile` (archives). A parse that is *stored* per
    project must be a private copy — the signature merge rewrites `record.namespace` and
@@ -582,33 +1165,111 @@ warm / ~20 s cold projected, and the wait is visible. Four invariants hold that,
    so the same vendor archives appear many times: 306 files / 156.5 MB on the measured workspace, but
    148 distinct / 74.2 MB. `harvestArchiveFile` keys decoded names on
    `<title>/<version>/<file>` + size + mtime, which took 306 decodes to 157. If that identity ever
-   proves too weak, the documented hardening is a ZIP central-directory fingerprint over the ≤66 KB
-   EOCD tail (`MAX_EOCD_SEARCH`) — a genuine content hash for one small read.
+   proves too weak *in memory*, the hardening is the ZIP central-directory fingerprint the persisted
+   cache already uses (below) — a genuine content hash for one small read at the file's end.
+
+**Decoded names persist across sessions** (R6, `src/lsp/archiveStore.js`). The extension passes its
+global storage path as `initializationOptions.archiveCacheDir`; `harvestArchiveFile` consults the
+store after both in-memory caches miss, and `rescan()` flushes it after every scan (and on shutdown).
+It stores only what the in-memory cache holds — the identifier-shaped names — under the same content
+key, so the cross-project dedup carries over (eight vendored copies are one entry). **It never trusts
+a stale entry:** use requires the file's `decoder` id to equal libsymbols.js `DECODER_ID` (a hash of
+the ZIP reader's and string-table parser's *source*, so a decoder change discards old names with no
+version to forget), the content key to match, and the archive's central-directory fingerprint (SHA-1
+over the CD + EOCD, read from the file *now*; the CD carries every entry's CRC-32) to equal the stored
+one. A corrupt, truncated, foreign or other-version file is ignored and rewritten; a malformed entry is
+dropped alone; writes are temp-file + rename. Bounded at 4,000 entries / 40 M name characters, least
+recently used first. Measured with `scripts/measure-indexing.js --drop-caches` (8 projects, 48
+distinct archives of ~1.6 MB): cold 1,711 ms → warm 1,203 ms; the archive stage 1,212 → 625 ms. What
+remains warm is filing the names into each project's registry, which no decode cache removes.
 4. **`SKIP_DIRS` must never gain `_libraries`.** `collectArchives` walks it; excluding it there finds
    zero archives and costs ~171 false positives. `PROJECT_SKIP_DIRS` is the excluding set, for the
    `.tmc`/signature/`.plcproj` walkers only. `test_collect_scope.js` proves both halves.
 
-The scan is still **synchronous**, so the server's event loop stops for its duration and requests
-queue unread. That is why the progress indicator lives in the **extension host** — a separate process
-whose loop stays free — and why it is deliberately indeterminate ("TwinCAT: indexing…", no `3 of 8`):
-per-project counts would need the scan to yield between projects, which it does not do. Making it
-yield (with per-project readiness, so the active file's project answers first) is the known next step
-and is deliberately not done: it rewrites the multi-project spine, and a wrong readiness gate answers
-against a partial index, which means false diagnostics.
+**Signature and `.tmc` discovery is memoized per scan** (R6). Every project of a scan walks the
+workspace roots for `library-signatures.xml` (it sits above every project) plus its own directory for
+the dump and the `.tmc`: 16 full walks per scan on 8 projects, ~850 ms on Windows. `scanWorkspace` now
+creates one `createDirectoryListingMemo()` (`src/twincatWorkspace.js`) per scan and hands it to every
+project's `indexLibraries`; `walkFiles` replays a directory it has already read. Measured with
+`scripts/measure-indexing.js` (8 projects): readdir calls per scan 9,282 → 3,771, the signature/`.tmc`
+walks 5,000 → 333 (one root walk). **Invalidation is the scan boundary and nothing else:** the memo
+dies with its scan, so an added or removed dump or `.tmc` is found by the next scan (startup, or the
+`custom/reindex` the `.plcproj` watcher and Update Library Definitions send) exactly as before. No
+directory-mtime guard — a file added two levels down does not change the project directory's mtime.
+`test_discovery_memo.js` pins it.
+
+**Index inputs (`src/indexInputs.js`).** Because the memo makes the scan boundary the only
+invalidation, the host's workspace watcher sends a `custom/reindex` when a `*.tmc` (a TwinCAT build) or
+`library-signatures.xml` is created, changed or deleted outside the walkers' `PROJECT_SKIP_DIRS`
+(`isIndexInputFile`). Events go through a 1.5 s debouncer that feeds the `.plcproj` 400 ms debouncer, so
+one build rewriting every project's `.tmc` plus a `.plcproj` costs one scan. Update Library Definitions
+writes the dump and sends its own reindex inside `createOwnWriteGate().run(...)`; the watcher ignores
+events while it runs and for a 2 s grace period after, so our own write never scans twice.
+`test_index_inputs.js` pins the matching, the gate and the wiring.
+
+**The background scan (R6).** The scan used to be one synchronous pass: the server's event loop stopped
+for its whole duration and every request queued unread until the finished workspace replaced the old one
+in a single assignment. It now runs **one project at a time with the loop free in between**, and the
+guarantee that made the old design safe — no request ever sees a half-built index — is kept by a
+readiness gate per index:
+
+- `planWorkspaceScan` (workspaceScan.js) turns a scan into **one task per index**, and a task holds
+  everything that index receives: its objects, its libraries, and the loose `.st` files routed to it
+  (collected up front by the same walk; a `.st` under no project still goes to every project, last, as
+  before). Once a task has run, nothing writes to that index for the rest of the scan. Tasks share only
+  content caches, so order cannot change an index — `test_scan_readiness.js` compares each background
+  index with the one-pass `scanWorkspace` index.
+- `startWorkspaceScan` yields before the first task (so `initialize` answers at once) and between tasks,
+  opens a project's gate when its task ends, and moves a project someone is waiting for to the front.
+  A file under no project, and the union catalog, wait for the whole scan.
+- `workspaceState.js` owns "the current workspace". **Every server handler that reads an index first
+  awaits `settledFor(uri)` / `settledAll()` (server.js `whenIndexed`), then reads `currentWorkspace()`
+  with no await in between** — that pairing is the gate; a new handler that reads an index without it
+  is the bug this design exists to prevent. A reindex replaces the workspace at once and cancels the old
+  scan; its waiters move to the new workspace (as a request queued behind the old synchronous scan
+  would have got the new index). A scan that throws reverts to the last complete workspace before any
+  waiter wakes.
+- `scanController.js` joins: an `ensureScanned` for roots already being scanned awaits that scan, and
+  only the latest scan records completion — the "latent" double-scan hazard of an async scan.
+
+Measured with `scripts/measure-indexing.js --drop-caches` on 8 synthetic projects: the first project
+answers at ~540 ms cold / ~350 ms warm, against ~1,480 ms for any answer before R6 (the whole scan);
+a request for the last-discovered project at startup is answered at the same ~540 ms because it jumps
+the queue. The first task costs most: it decodes the shared vendor archives every later project reuses.
+`test_server_ipc.js` runs the real server over IPC: requests sent during the startup scan and right
+after a reindex return zero diagnostics on the sample (the control shows a partial index does not).
+The progress indicator still lives in the **extension host** and is still indeterminate ("TC Toolkit:
+indexing…", no `3 of 8`): the server does not report per-project progress to the host yet.
 
 Three processes cooperate, with the extension host as the hub — **the webview never talks to the
 language server directly**. The extension bridges them over custom JSON-RPC requests
 (`custom/completions`, `custom/definition`, `custom/references`, `custom/referencesForSymbol`,
-`custom/configReferencesForSymbol`, `custom/diagnostics`, …) layered on the standard LSP transport
+`custom/configReferencesForSymbol`, `custom/diagnostics`, `custom/hover`, `custom/onlinePaths`, …) layered on the standard LSP transport
 (Node IPC).
 
 **Generate ST** is project-aware and lives entirely in the extension host (`customEditorProvider.js`):
-the webview asks `requestProjects` on load and shows a checkbox split-button menu only when the host's
-`projectList` reply has 2+ projects; clicking the button posts `generate-st` (all projects), the menu
-posts `generate-st` with a `projectKeys` subset. `generateAllStFiles` walks each selected project's
-`<Compile>` list from the `.plcproj` partition and writes `ST_Files/<project dir relative to workspace>/…`,
-so no two projects collide (the path math is the pure, tested `src/stOutputPath.js`). A workspace with no
-`.plcproj` falls back to the old flat workspace mirror.
+the webview asks `requestProjects` on load and shows *Choose projects…* (a checkbox picker unfolded inside
+the toolbar's Actions menu) only when the host's `projectList` reply has 2+ projects; the *Generate ST*
+item posts `generate-st` (all projects), *Generate selected* posts `generate-st` with a `projectKeys` subset. `generateAllStFiles` walks each selected project's
+`<Compile>` list from the `.plcproj` partition and writes `<project dir>/ST_Files/<path in the project>.st`,
+so no two projects collide and nothing lands in the workspace's top-level folder (the path math is the pure,
+tested `src/stOutputPath.js`). A workspace with no `.plcproj` falls back to the old flat mirror in
+`<workspace root>/ST_Files`. Every scanner (the LSP's indexers, the project and solution walkers) skips a
+directory named `ST_Files` at any depth, so generated `.st` files are never indexed as sources. The Objects
+tree DOES list the output: an `ST_Files` folder directly in a PLC project's directory (or in a workspace
+root, for the flat mirror) and every folder below it get contextValue `generatedDirectory`, and its `.st`
+files `generatedStFile` (other files in there are not listed). No menu, paste or drag-and-drop rule names
+those two values, so no TwinCAT create/delete/rename/insert command applies; a click opens the `.st` as
+text (`twincat.openComponent`). An `ST_Files` folder anywhere else is an ordinary folder. The workspace file
+watcher still ignores every individual path under an `ST_Files` folder for re-indexing and refreshes
+(`isWatchEventRelevant` in `src/twincatWorkspace.js`) — a run writes hundreds of files, and each one used to
+refresh the whole Objects tree. Instead the tree refreshes ONCE when a run ends (`onStFilesWritten`, called
+by `generateAllStFiles` and the flat mirror), and hand-made creates/deletes there
+(`isGeneratedOutputEvent`) collapse into one trailing refresh 500 ms after the last event
+(`ST_FILES_REFRESH_DEBOUNCE_MS` in `extension.js`); during a run that adds at most one refresh after the
+end-of-run one. The project-aware export reads and writes with Node `fs.promises`,
+not `vscode.workspace.fs`: a burst of writes through the editor's file service was rejected with "Canceled" on a
+real multi-project workspace. A failed run names its first error in the notification.
 
 ### The live language-feature path
 
@@ -619,6 +1280,25 @@ unit, queries the LSP, and maps the results back to the right component and pane
 
 Changing `stConverter.js` output or `xmlParser.js` component extraction can silently break that
 mapping; `test/test_live_path.js` guards it.
+
+**One frame for every symbol range.** A node in the index comes from `parser.js` (an editor that has
+synced its unit) or from `xmlIndexer.js` (every other file, and again after each save, when
+`custom/indexXmlDocument` re-indexes it from the XML). Both emit lines of the file's assembled unit:
+`xmlIndexer`'s `unitLineMap` runs the same raw conversion and offsets each component's declaration
+by its `lineMap` start, so `mapDefinition` and every other consumer read a range the same way
+whichever indexer built the node. Until R15 review round 3 the XML indexer emitted lines relative to
+each Declaration CDATA, and a cross-file Go to Definition into an unsynced file landed on another
+variable's line or fell back to the first word match. The ranges also have parser.js's *shapes*
+(round 4): a name range is the name token — `locate` searches the declaration with comments, pragmas
+and strings blanked (`codeOnly`, same offsets) and case-insensitively, so a doc comment or an
+`{attribute}` line that mentions the name, or `fb_x` against `Name="FB_X"`, cannot move it; enum
+members are searched in order inside their own list; a method's `declRange` runs from METHOD to the
+`END_METHOD` the unit carries, a property's is collapsed onto its PROPERTY keyword (what parser.js
+gives it: it never extends one); an action's name is on the `ACTION <name>` line the unit synthesises,
+column 8. The blanking runs only when a comment, pragma or string opener precedes the name. What still
+differs: an XML-indexed action has no `implRange`, so a scope lookup *inside an action body* still needs
+the transient re-index `references.js` does. A name that cannot be found keeps
+the (1,1) stub. `test_definition_frames.js` pins all of it over both samples and synthetic objects.
 
 **References peek across components and files.** Monaco throws "Model not found" for a Location whose
 URI has no loaded model, so the peek could only ever show hits in the two live panes. `custom/references`
@@ -670,6 +1350,77 @@ The script scrapes the one open-ended list (attribute pragmas publish one child 
 *verifies* the four closed grammars against their own pages, so a documentation rewrite fails loudly
 instead of producing a catalog that quietly disagrees.
 
+**Hover.** `src/lsp/features/hover.js` answers both the standard `textDocument/hover` (loose `.st`
+files) and the webview's `custom/hover` (Monaco hover provider → host `twincat.lsp.queryHover` →
+`mapHoverToLocal`). The text is built from the catalogue: a category summary written for this project,
+the syntax form and the Infosys link. **No description text is taken from Beckhoff's documentation** —
+the catalogue holds names, syntax forms and page ids only, and `test_pragma_hover.js` fails if an entry
+grows any other field. The webview skips the round trip for a line with no `{`, and hands a clicked link
+to the host (`openDocumentationLink`), which opens it only if `isDocumentationUrl` says it is a catalogue
+page.
+
+### Conditional pragmas in the language server (R12)
+
+`src/lsp/conditionals.js`. TwinCAT compiles one branch of each `{IF}` / `{ELSIF}` / `{ELSE}` / `{END_IF}`
+group, picked by defines the LSP cannot all know (the `.plcproj` `<CompilerDefines>`, per-object defines, the
+build configuration, `{define}` in the code). So **the LSP never evaluates a condition**: every branch
+combination is possible, and a diagnostic is raised only when it holds under every one. Nothing here reads
+the `.plcproj`, and the live path (`stConverter` raw output, `assembleSt`, the lineMap) is untouched — no
+token is ever removed, so every range stays exact.
+
+- **Annotation.** `tokenize()` sets a flag when it lexes a directive pragma (comments and strings are lexed
+  first, so a directive inside one is never seen) and only then calls `annotateConditionals()`; a unit
+  without one gets no extra work and byte-identical output. Each token inside a group carries
+  `cond = { group, branch }` (innermost), directive pragmas carry `condDirective`, and
+  `tokens.conditionals` holds the groups and **segments**. `{define}`/`{undefine}` stay plain pragmas.
+- **Segments.** A boundary is a METHOD/PROPERTY/ACTION/GET/SET or END_METHOD/…/END_INTERFACE keyword that
+  is the **first code token on its line**, outside parentheses, not after a `.`, and not followed by
+  `:=`/`=>`/`,`/`)`/`.`/`(`/`;` — the raw unit's wrapper lines and the user's own method heads, never
+  `fbRS.SET := TRUE` and never a named argument on its own line (`fbRS(\n\tSET := c,\n\tRESET1 := FALSE);`).
+  A wrong boundary splits one block across two segments, which is a false positive outside any group the
+  moment the unit holds a directive. Groups never cross one. A segment is **unbalanced** on a directive with no
+  open group, `{ELSIF}` after `{ELSE}`, a second `{ELSE}`, or a group still open at its end (a half-typed
+  `{IF`); every token in it then counts as conditional and nothing is reported from it. Re-exposing a
+  branch is how the false positives come back, so unbalanced is never "ignore the directive".
+- **Block matching** (`features/diagnostics.js` `structuralDiagnostics` → `matchBlocks`). No groups in
+  the unit: one pass over the whole unit, exactly as before. Otherwise per segment: no group → matched
+  alone; groups → `blockSelections` drops *neutral* groups (each branch balanced on its own), enumerates
+  one branch per remaining group (plus an implicit empty branch without `{ELSE}`; nested groups only
+  inside their parent's chosen branch), and keeps a diagnostic only if **every** selection has it at the
+  same place with the same message. One anchored inside a group is moved to the group's outermost `{IF}`
+  first, so an IF that every branch opens and nothing closes is still reported once. Above **64**
+  selections the segment reports nothing structural (`log.debug('conditional-selection-cap')`).
+- **Semantic checks** (undeclared, member access, call arguments, declaration types, assignments) run
+  unchanged, then every diagnostic starting inside a group's **suppression span** is dropped. The span
+  runs from the group's `{IF}` to its `{END_IF}`, widened back to the statement start and — when a branch
+  ends mid-statement (`x := {IF a}1{ELSE}2{END_IF};`) — forward through the next `;`. A branch ending in
+  a nested group's `{END_IF}` is resolved through that group's own branches, so a statement-level nested
+  group does not swallow the statement after it. Code outside groups
+  keeps every check; declarations from all branches stay in the index, so a branch-only name used outside
+  a group is never "undeclared".
+- **Declarations** (`parseVariablesBlock`): a variable is `conditional` when its name sits in a group, a
+  directive sits in its type/initialiser (`typeConditional`), or its section header does
+  (`scopeUncertain`). `types.pickVar` replaces `variables.find` in `lookupMember`/`resolveSymbolType`: a
+  conditional name whose branch declarations differ in type (initialisers ignored) resolves to
+  `AMBIGUOUS` → unknown, so nothing is flagged on it inside or outside a group. `paramSetFromVars` returns
+  null when any variable is `scopeUncertain` (the call check is skipped).
+- **Inheritance.** A directive in a POU/DUT head that precedes head content (the name, EXTENDS/IMPLEMENTS,
+  a parent/interface name, a modifier) sets `inheritanceUncertain` in both indexers (`headHasDirective`);
+  one directly before the first VAR block (a wrapped declaration block) does not, so the POU keeps its
+  undeclared check. When set: `walkExtendsChain` reports the chain unresolved (the existing
+  "suppress undeclared" path), `lookupMember`/`findMethodOwnerInChain`/`collectParams` treat it as an
+  unknown ancestor, and `isRelatedAssignable` accepts it.
+- **Enum members** in a group are all kept, in both indexers: `extractEnumMembers` (xmlIndexer) blanks
+  pragmas before looking for the list's `)` and commas, and the inline-enum scan (parser) skips pragma tokens.
+- **Other features** emit no diagnostics, so they need nothing: completion offers the union of the
+  branches, references/highlights/rename cover every branch (a rename must reach all of them, or flipping
+  a define breaks the build), definition goes to the first declaration, hover keeps the pragma help.
+- **Accepted trade-offs:** a real error inside a branch is not reported; the lexer still reads inactive
+  branch text, so an unclosed `(*` or `'` in one branch swallows what follows (direction: fewer
+  diagnostics). A future duplicate-declaration check must accept the same name in different branches of
+  one group (a note in `diagnostics.js` says so). Informational branch state (evaluating the defines for a
+  hover on `{IF}` and greying inactive branches) is Backlog item R12b and must never feed diagnostics.
+
 ### Folding
 
 `media/stFolding.js` computes folding ranges from ST's **block structure**. It is registered twice
@@ -714,6 +1465,1071 @@ open a string running to the next quote anywhere in the file — which is how In
 off for a whole VAR block — and an unterminated `{` would swallow the rest of the document. That holds
 in three places: the lexer (`parser.js`), the Monarch tokenizer, and the TextMate grammar.
 
+### Compile Project (roadmap R3.2, bundled in R3.3)
+
+`twincat.compileProject` checks one PLC project with an external IEC 61131-3 compiler. Its palette title is
+*TC Toolkit: Build Project* (user, 2026-11-13: renamed from "Compile Project" to match the Build button, in
+every string a user reads — tooltips, notifications, the quick pick, the status-bar tooltip, settings
+descriptions, README; ids, context keys, setting keys, the `TC Toolkit compile` source and the
+`TC Toolkit Compile` channel kept). This guide still calls the feature Compile Project. The user-facing
+surfaces (UI, README) never name the compiler product — a user ruling, pinned by
+`test_start_contributions.js`. The pipeline:
+
+1. **Texts** — every object the `.plcproj` `<Compile>`s, read from the open TextDocument when there is one
+   (unsaved edits count) with Manual Sync's pending edits folded in, else from disk.
+2. **Units** — `buildCheckInputs` → `checkUnit.buildCheckUnit` per object, written as `N.st` in a
+   `mkdtemp` directory (deleted however the run ends); a GVL gets `--global-list N.st=<name>`.
+3. **Run** — `<node> <compilerPath> --check --json --dialect-file resources/dialects/twincat3.json …` as
+   a child process, Node >= 22 probed first, 2-minute timeout, cancellable. **No `--strict`** (decided:
+   it refuses TwinCAT-legal DINT→INT narrowing and WORD arithmetic). Exit 1 without errors, or a report
+   that is not JSON, is a failed run; a failed/timed-out/cancelled run keeps the previous results.
+4. **Map** — each diagnostic's unit line → `origins[line]` → file/component/pane/line (the column is
+   the pane's, because pane text is verbatim). Warnings matching `/^Pragma ignored:/` are filtered and
+   counted; so are errors the library filter drops (below); nothing else is.
+5. **Show** — Problems (`twincat-compile` collection, keyed by `normalizeFileUri`, at `paneRange`: the
+   PANE's line and column, so the panel's Ln/Col match the pane the user reads — decided 2026-11-10, a
+   range inside the XML read as e.g. Ln 23 for implementation line 2; the message names the component
+   and pane), and the panes: the provider posts **`compileDiagnostics`
+   `{diagnostics: [{componentId, pane, severity, message, range}]}`** to every open webview of that file
+   (and includes them in `init`). `media/editor.js` keeps them under marker owner **`twincat-compile`**,
+   separate from the language server's `st-validator`, and re-applies them at the top of
+   `updateDiagnostics` (the panes share two models across components — keep that call there). An edit
+   to a component drops its compile markers and posts **`compileDiagnosticsStale {componentId}`**, so
+   the host drops the matching Problems entries.
+
+The start page's *Build project* tile (it runs Build Project; labelled "Compile project" before 2026-11-13) is enabled when the compiler file exists — the bundled one, or
+the override `tcToolkit.compiler.path` names — and a project is open (`state.compilerReady` +
+`hasProject`); only a missing override (or a damaged install) disables it, with "Compiler file not
+found". A missing Node is not known to the tile: the command explains it on click. A change to
+`tcToolkit.compiler.*` re-posts the page's state. Results live in memory only (problem-link ids included) — a compile result describes
+one moment.
+
+**Compiler defines (`src/compilerDefines.js`, VS Code-free).** Before each run the command reads the
+project's `.plcproj` (the open document if it is open) for `<CompilerDefines>` in a `<PropertyGroup>`
+(a comma-separated list of `NAME` / `NAME := 'value'`; `<CompilerDefines />` or whitespace = none;
+several = MSBuild last-wins with `$(CompilerDefines)` expanded; a `Condition` on the group or on the element
+is evaluated by `evaluateCondition` for `CHECK_CONFIGURATION` — Debug, `TwinCAT RT (x64)` (user decision
+2026-11-11; one constant so a setting can change it later): `'$(Configuration)|$(Platform)' == '…'`, `==`/`!=`
+case-insensitive (numbers by value, then booleans: `'on' == 'true'`), `And`/`Or`/`!`/parentheses, bare
+`true`/`false`, an empty condition (true, as in MSBuild); other `$(Prop)` from the groups applied before it, else
+`''` — except properties MSBuild sets outside the file (`MSBuild*`, `Solution*`, `ProjectDir`, …), which are
+unreadable. True → applied in document order; false → skipped silently (a Release group is normal); unreadable
+or undecidable (`Exists(...)`, property functions, `<`/`>`) → left out with a note, and every property that group
+or element sets becomes unreadable, so a later condition on it is undecided (noted) rather than guessed. A
+self-closing `<PropertyGroup … />` (XAE writes them) has no body. `$(Prop)` inside a `<CompilerDefines>` value
+expands the same way; a value using an unreadable property is left out with a note.
+Real spellings, checked on public GitHub `.plcproj` files: XAE writes `" '$(Configuration)' == 'Debug' "` /
+`'Release'` groups (no `$(Platform)` form was found in any public `.plcproj`) and
+`<Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>` defaults, which never override
+the check configuration. `defineArgs` turns the project defines into `--pragma-define NAME` /
+`--pragma-define NAME=value` right after `--dialect-file` (`buildCheckArgs`'s `defineArgs`): a pragma define is
+seen by `defined()`, `hasvalue()` and `project_defined()` and is **never a global constant**, so a numeric value
+is passed exactly and a `VAR_GLOBAL CONSTANT` of the same name still compiles (`-D NAME=4` would declare a
+constant `NAME` too — the toolkit no longer uses `-D`). Names keep their case (the compiler's `defined()` is
+case-sensitive). **Per-object defines:** a `<CompilerDefines>` inside an `<ItemGroup>` item (`<Compile
+Include="POUs\FB_A.TcPOU">`) applies inside that object only, on top of the project's. `readCompilerDefines`
+returns them as `objects` (the item group's, the item's and the element's `Condition` evaluated the same way;
+several elements = last wins, `%(CompilerDefines)` = the item's value before), and `fileDefineArgs` maps each
+`Include` to its check unit: the check builds **one unit per TwinCAT object** (`buildCheckInputs`: `1.st`,
+`2.st` … in `project.objectFiles` order), so the `Include` is resolved against the `.plcproj`'s folder,
+compared with `normalizeProjectPath` (as the project map built `objectFiles`) to each input's `filePath`, and
+passed as `--file-define <N.st>=NAME[=value]`. In the compiler a file define is seen by `defined()` and
+`hasvalue()` in that file only (over a project define of the same name), not by `project_defined()`. An item
+that matches no unit (an object the check does not compile, such as a task, or a missing file) gets a note.
+Malformed entries are skipped; every skipped entry, undecidable condition and unmatched object goes to the
+**`TC Toolkit Compile`** output channel (created on first use) and the summary counts them. The
+language server ignores the defines (it never evaluates `{IF}`).
+
+**Library declarations (R3.4, `src/libraryDecls.js`).** The compiler knows only the IEC standard
+library, so before step 2's run `prepareLibraryCheck` adds what this machine knows about the project's
+libraries. Decided by the user 2026-11-10: declarations plus a filter, **local-only** (Beckhoff licence
+§4(3): licensed material must not reach third parties).
+- **Sources** (a fresh symbol index — the language server's registries are not touched; the archive and
+  dump parses come through the existing content-guarded caches): `library-signatures.xml` found under
+  the project dir and every workspace root (parsed with `parseLibrarySignaturesXml`, which now keeps
+  every function output); the project's `.tmc`, read by `parseTmcDeclarations` — only **library-owned**
+  `<DataType>`s (`Namespace="…"` or `TcBaseType="true"` on the name: the project's own types, which a
+  stale `.tmc` still lists, are skipped), interfaces (`TcPlcInterfaceType`) skipped, `<Comment>` cut
+  before anything is read; archive string-table names; `.plcproj` namespaces.
+- **Emitted**, one file per declaration (`lib-N.st`, before the units; a GVL gets `--global-list`):
+  FUNCTION (inputs, further outputs, in-outs; the like-named output is the return type),
+  FUNCTION_BLOCK (dump parameters, else the `.tmc`'s ItemType members; the `.tmc`'s other members as a
+  `VAR` block — a derived block of the project may read an inherited variable — each only when its type
+  resolves without pulling in another declaration; `.tmc` methods with parameters, properties from
+  `__get`/`__set` accessors, actions — all bodiless; EXTENDS; inherited members not repeated), STRUCT (EXTENDS), enumeration (values and integer base from the `.tmc`; the dump's
+  self-typed var lists), alias (`<BaseType>`), VAR_GLOBAL [CONSTANT] lists (dump constants are
+  CONSTANT; numeric/boolean `.tmc` defaults only — never a string). **Selection**: the library symbols
+  the units name (a GVL or enum also through a member), from the `.tmc` or a dump library the
+  `.plcproj` references; then the types those need (from any dump library); then pruned to a closed
+  set. An array bound or string length that names a library integer CONSTANT whose value the `.tmc`
+  gives (`libraryConstants`: the dump marks it CONSTANT; plain, namespace- or list-qualified; not a name
+  the project declares, not one two lists give different values) is written as that value
+  (`ARRAY [0..cMax]` → `ARRAY [0..15]`). A type `readType` cannot read exactly (any other constant or an
+  expression as a bound, a foreign qualifier, a type the compiler lacks: LTIME, PVOID, XINT …) drops the
+  declaration (or just the method/property/field/global/variable), never guessed. **Never redeclared**: names in the bundled `.stlib`
+  manifests (TON, R_TRIG, CONCAT …), conversion names, the elementary types, and every top-level name the
+  project declares (POUs, types, GVLs, globals — the user's own wins).
+  A type a declaration needs resolves only to an elementary type, a manifest's `types` or
+  `functionBlocks` entry (`compilerProvidedTypeNames`), or another declaration of the run — never to a
+  manifest FUNCTION or global: release N's `iec-std-functions.stlib` has a FUNCTION `LTIME()`, which
+  must not make `LTIME` a type (`test_library_decls.js` guards it).
+- **Qualifiers**: `stripQualifiers` blanks `Ns.` (a `.plcproj` namespace, not a project name, not after
+  a `.`, outside comments/strings) with spaces — the compiler cannot parse `p : Ns.T;` — so every column
+  is unchanged and mapUnitPosition needs nothing new. The run gets copies of the units.
+- **Filter** (`createLibraryFilter`, errors only, counted as `filteredLibraryDiagnostics` and shown in
+  the summary): `Undeclared variable/function 'X'`, `Undefined type 'X'`, `'X' is not a constant`
+  (array bound) — when X is a known library name the project does not declare; `'T' has no
+  member/method 'X'` and `'X' is an internal variable of FUNCTION_BLOCK 'T'` (a library block's `VAR`
+  read from outside: whether TwinCAT allows it is not decided here) only when T is a library FB/struct
+  this run declared; `T has no input or output
+  named X` only when T's parameters came from the `.tmc` alone; `'X' is not a variable of global
+  variable list 'G'` only for a generated G; a `… got X` cascade only with X's dropped undefined-type
+  error. The compiler's messages about the generated files are returned apart (`libraryMessages`) and
+  noted, never placed on the user's code.
+- **No dump**: the `.tmc` types and the archive names still work; the summary says once per session
+  'Run "TC Toolkit: Update Library Definitions" to check calls into libraries too.'
+- **Where it lives**: strings in memory, then files only inside runCheck's `mkdtemp` directory, deleted
+  however the run ends (`test_library_decls.js` pins it). Tests use synthetic libraries only.
+- **Known limits**: a POU that names a type with no declaration (an interface, an opaque dump type) is
+  not checked past that point by the compiler (its undefined-type error is filtered); archive names
+  include member and local names, so an undeclared variable that happens to share a name with anything
+  in a referenced archive is filtered too.
+
+**The editor header** (user decision 2026-11-16, the "native" look). One slim row (~36 px) in the theme's
+colours (`--vscode-sideBar-background`, `foreground`, `descriptionForeground`, `toolbar.hoverBackground`,
+`menu.*`, `focusBorder`, `checkbox.*`, `button.background`), so light, dark and high-contrast themes all
+work. Left: the extension's mark `#hdr-brand` (inline SVG from `src/brandMark.js`, the letters in the theme's
+foreground and the #E2001A square; tooltip/name "TC Toolkit vX.Y.Z"), the breadcrumb `#hdr-crumbs` (PLC project › folders › `#obj-name`), the type tag `#obj-type`,
+the component list. The breadcrumb comes from the host: `init.breadcrumb` = `breadcrumbFor(fsPath,
+projectMap)` (`src/editorBreadcrumb.js`; project = the one `projectFor` routes to, folders = the file's
+directory relative to that project's; a loose or linked-in file shows what is known); the tooltip is the full
+location. Right: status items (`.tb-chip`, a dot + `.hdr-text`; no pills): `#build-indicator`
+"Building…"/"XAE build…", `#plc-indicator` "PLC <state>" (green dot in Run, amber otherwise, "…" while a
+start/stop runs; online only), `#online-note` (blue dot; online only), `#sync-mode-text` "Manual Sync"
+(amber; its text is what the dev-host runner reads) — those four in `#actions-indicators` (`aria-live`) —
+then `#save-status-item` (sync glyph + `#save-status`, "Synced"/"Unsaved Changes (n)"/"Saving..."). Then a
+separator, `#build-btn` (a filled hammer, the build icon other IDEs use; one click posts `compile-project`,
+`aria-disabled` + a hidden reason while `compileRunning`) and `#actions-btn` ("Actions ▾" in the theme's
+secondary-button colours, 26 px, never red; the Actions menu below). **Red is a marker only**:
+`--tc-red` #E2001A on the type tag (text and 1 px border, transparent fill) and the Stop PLC glyph; Start is
+green; selection, focus and checkboxes follow the theme (blue in the default dark theme). #E2001A text is
+3.4:1 on #1e1e1e, 3.6:1 on #181818, 3.1:1 on #252526 and 4.9:1 on white, so it clears 3:1 for the bold
+10 px tag on dark and light and stays this red everywhere. The product title and the version pill left the
+header: "TC Toolkit vX.Y.Z" is the menu's foot (`#menu-version`). **Narrow widths** (`fitHeader` in
+editor.js): the path shrinks first (cut at its left end: an `rtl` box around an isolated `ltr` run), then
+the component list; when the row still overflows (or the name would be cut, or the path is under 24 px) the
+header gets `.compact` and the status items drop their text to dots, their text in the tooltip; if it still
+overflows, `.compact-more` folds the Actions button to "⋯ ▾"; only then may the object name shrink. At
+420 px and below both always apply and the component list takes a row of its own. **When it measures:**
+on resize, on every status change (`setChipText`, `setSaveStatus`, `renderActionsTitle`), when the fonts
+settle, on `visibilitychange`, and from a ResizeObserver on the header. **Never while the header has no
+width** (a hidden webview, a background tab): a collapse measured then stuck until the next state change,
+which showed bare dots in a wide editor while the PLC ran (user report 2026-11-16; `run_online.js` hides
+`#app`, posts Run, shows it and expects the labels). Hysteresis: once collapsed, a step is undone only with
+8 px to spare (free row space, or a squeezed path that keeps 32 px), so the row does not flap. `test/browser/run.js` 7a′/7f″ and the narrow loops in `run.js` and
+`run_online.js` pin all of this.
+
+**The Actions menu** (user request 2026-11-16; behind the header's "Actions ▾" button). The actions and
+settings live in one dropdown: `#actions-btn` (`aria-label="Actions"`, `aria-haspopup="menu"`,
+`aria-expanded`, `aria-controls`) over `#actions-menu` (`role=menu`), built by `ACTIONS_MENU_HTML` in
+`customEditorProvider.js`. Groups (`role=group`, each labelled by its caption, separators between):
+*Generate ST* (`#generate-st-btn`; `#generate-st-caret` *Choose projects…* unfolds `#generate-st-menu`,
+the project picker, in place), *Build* (`#compile-btn`; the C++ checkboxes; `#xae-menu-section`), *PLC*
+(`#plc-menu-section`, online only) and *Editor* (`#sync-mode-toggle`, Auto Sync). Actions are
+`<button role=menuitem>`, settings are native checkboxes with `role=menuitemcheckbox` (drawn with
+`appearance: none` in the theme's checkbox colours, ticked = `button.background`; so `.checked` and the
+`change` listeners stay as they were); every item is `tabindex=-1` and the arrows move focus.
+**Disabled items use `aria-disabled`, not `disabled`**, so they stay focusable and their reason (a
+`.menu-item-detail` line, `aria-describedby`) is read out; `onMenuAction` refuses a click on one. The
+element ids are the old toolbar controls' ids, so the host, `devHostTestHook.js` and the host↔webview
+messages did not change. Keyboard: Enter/Space/ArrowDown open at the first item, ArrowUp at the last;
+in the menu ArrowUp/Down wrap, Home/End jump, Enter toggles a checkbox item too, Escape closes and
+refocuses the button (from anywhere while it is open), Tab or a click outside closes it; an action run
+from the keyboard returns focus to the button. `placeSplitMenu` keeps it inside the webview (shifted
+left, never past the left edge; height capped to the window, it scrolls). The button's tooltip sums up the
+state the status items show.
+
+**The Build item** (`#compile-btn`, labelled "Build" since 2026-11-13, tooltip "Build Project: …", first in the
+menu's Build group, with the hammer glyph the header's `#build-btn` also uses; inline SVG, since the webview
+is offline). A click on either posts **`compile-project`**;
+the provider's `compileProjectFor(file)` runs `twincat.compileProject` with `{projectKey}` when exactly
+one project `ownersOf` the file, else with no key (the command's own pick). Setup problems come from
+the command, so the messages are the palette's. `compileCommands` calls `provider.setCompileRunning`
+around each run; the provider posts **`compileRunning {running}`** to every open editor (and puts
+`compileRunning` in `init`), and both are disabled meanwhile.
+
+**The bundled compiler (R3.3).** The compiler ships in `resources/compiler/`, so an empty
+`tcToolkit.compiler.path` means `bundledCompilerPath()` (`resolveCompilerPath`); a set path is an
+override. It is GPL-3.0 and is only ever run as a child process. The bundle loads every `.stlib` in the
+`libs/` next to itself (`findBundledLibsDir` in the fork tries `../../libs` and `../libs` first — neither
+exists in the extension); only the two IEC libraries ship, because the fork's others (OSCAT, softmotion,
+extra FBs such as `PID`) are not TwinCAT's and would make names resolve that TwinCAT refuses.
+`compile-real` pins both directions.
+
+**Node discovery** (`nodeCandidates` → `findNode`, everything injected: `platform`, `env`, `runtime`,
+`spawn`, `exists`). A set `tcToolkit.compiler.nodePath` is the ONLY candidate (a configured path that fails
+is reported, never silently replaced). Otherwise, in order: `node` on PATH; on Windows
+`%ProgramFiles%`/`%ProgramW6432%`/`%ProgramFiles(x86)%\nodejs\node.exe`, `%NVM_SYMLINK%\node.exe`,
+`%VOLTA_HOME%\bin`, `%LOCALAPPDATA%\Volta\bin`, `%ProgramFiles%\Volta`, `%FNM_DIR%\aliases\default`,
+`%APPDATA%\fnm\aliases\default` (each only if the file exists); last, the editor's own runtime
+(`process.execPath` with `ELECTRON_RUN_AS_NODE=1`), only when `process.versions.node` is 22+. Each is
+probed with `--version`; the first at 22+ wins, and its `env` travels with it to the check run
+(`nodeEnv`). When none qualifies, one message lists what was tried and how to fix it.
+
+**Updating the compiler.** In a scratch clone of the fork (never the checkout another session works in):
+
+```bash
+git clone https://github.com/AbuShaqra/STruCpp /tmp/fork && cd /tmp/fork
+git checkout <commit on origin/development>     # must be pushed: SOURCE.md links it
+npm ci && npm run build:bundle                  # Node 22+
+cd <toolkit> && node scripts/vendor-compiler.js /tmp/fork
+```
+
+The script refuses a dirty checkout or a bundle older than HEAD, replaces `resources/compiler/` whole,
+and warns when the commit is on no remote branch. Then update the version/commit in
+`THIRD-PARTY-NOTICES.md` (`test_vendored_compiler.js` fails until it names the new commit), run
+`compile-real` and the suite, and package a VSIX to check `resources/compiler/` is in it.
+The script also copies every `src/runtime/include/*.hpp` to `resources/compiler/include/` and writes
+their licence into `SOURCE.md` (it refuses to vendor when the fork's `COPYING` no longer lists
+`src/runtime/include/*.hpp` under the runtime library exception). Re-vendoring at the same commit is
+byte-identical for the bundle and the libraries (checked for `eb52d2c`: the build is reproducible).
+
+### C++ generation and the g++ build (roadmap R13)
+
+Two switches, both **off by default**: `tcToolkit.compiler.generateCpp` and
+`tcToolkit.compiler.buildWithGpp`; plus `tcToolkit.compiler.gppPath` (machine scope, like the XAE Shell
+paths). User decisions 2026-11-12: output in the project directory, g++ optional with its own path
+setting, separate switches, the build turning generation on.
+
+**Run order** (`compileCommands` → `generateAndBuild`): the check runs as before; only when it finished
+with **0 errors** and generation is on does the compiler run a **second time in compile mode**. Verified
+against the vendored CLI (eb52d2c): `--json` is refused without `--check` ("--json is only valid with
+--check") and `--check` refuses `-o`, and compile mode prints its diagnostics as text only — so one run
+cannot both place JSON diagnostics and emit C++. The compile mode gets exactly the check's arguments
+(dialect file, `--pragma-define`/`--file-define`, inputs with library qualifiers blanked, the library
+declarations of `libraryDecls.js` with their `--global-list`s), plus `-o <stem>.cpp`, in its own temp
+dir; the compiler derives `#include "<stem>.hpp"` from the output name. `<stem>` = the `.plcproj` file
+stem (`cppFileStem` replaces anything outside `[A-Za-z0-9_.-]`). A failed generation shows the
+compiler's first error line and puts its whole output in the *TC Toolkit Compile* channel.
+
+**Library symbols** (user decision 2026-11-12, replacing the earlier "no C++ for a project that needs
+library declarations"): a project that uses vendor-library symbols is generated and g++-checked like any
+other. The compiler has no implementation of a library's blocks, so from the interface-only declarations
+it emits **empty-bodied** C++ (`void FB_X::operator()() {}`, a method/function returning its
+default-constructed result) — verified on a synthetic library: g++ compiles it with no warning
+(`test_cpp_real.js` LIB). `cppGenerate.libraryCoverage` lists what the C++ therefore does not cover, per
+library: `blocks` (function blocks/functions: empty bodies), `types`, `globalLists` (declared from the
+interface; a constant whose value the sources do not give is 0), `substitutes` (a qualified name the
+compiler provides itself, `Tc2_Standard.TON` → the compiler's TON) and `undeclared` (the uses the check's
+library filter hid: no usable declaration). Sources: `prepareLibraryCheck`'s `declaredSymbols`,
+`compilerSubstitutes` and `undeclaredUses(CheckResult.filteredLibrary)`. `undeclaredUses` names a member
+through its owner (`FB_X.nVar`) and attributes it to the owner's library; a member the compiler reports
+with no owner (a derived block reading an inherited variable: "Undeclared variable 'NVAR'") is looked up
+among the library function blocks and lists — named through an owner only when exactly one (declared
+ones first) has it, else attributed to their common library. Libraries are named as
+the `.plcproj` references them (`libraryAttribution` in `libraryDecls.js`: the declaration's `.tmc`
+`Namespace` or dump library, then the archives filed under a namespace → the catalog entry's Include
+title; an unreferenced dump library keeps its title; else "library not identified"); names are given in
+the library's spelling (`spellingOf`, since the compiler reports names upper-cased). It is shown three
+ways: one sentence in the summary notification naming the libraries (`libraryCoverageText`; the run is
+then a warning), the blocks per library in the *TC Toolkit Compile* channel (`libraryCoverageLines`), and
+a line-comment block at the top of the `.cpp` and `.hpp` naming the empty-bodied blocks and the compiler
+stand-ins (`libraryCoverageHeader` / `withCoverageHeader`, in the file's own line endings). The header is
+part of the text whose hash the ownership record stores, so ownership is unaffected; its absence when no
+library block is used keeps those files byte-identical to the compiler's output. The coverage lines go to
+the channel only when C++ was written. A name in `undeclared` makes the compile mode fail (it cannot
+compile a use of an undeclared symbol): the summary then says which symbols, with their libraries, have no
+usable declaration, the channel lists only those (`libraryUndeclaredLines`, under "C++ could not be
+generated"), and g++ is not run. What still lands here after the `.tmc` constants and `VAR` members: a
+library symbol whose declaration needs a type this compiler lacks (LTIME, PVOID …), an opaque or
+interface type, a `VAR` member of an unresolved type, and a library block's `VAR` read from outside.
+**User decision 2026-11-12:** these keep blocking the C++ generation and the g++ check, each named with
+its library in the summary — **no stand-in types** are emitted for them. Also decided that day: library
+declarations may appear in the generated C++ in `CPP_Files` (the declaration-derived class/function
+names and member layouts); the 2026-11-10 rule that the library declaration *ST files* stay in memory
+(`libraryDecls.js` writes none) is unchanged. The `.gitignore` below keeps that C++ out of commits by
+default.
+
+**Ownership** (`cppGenerate.writeOwnedOutputs`): `CPP_Files/.tc-toolkit-generated.json`
+(`{generator: "TC Toolkit", version: 1, files: {name: {project, sha256}}}`). `project` is the owner id
+`cppOwnerId(<.plcproj text>, stem)` = `guid:<ProjectGuid>` (a rename keeps it), else the stem — NOT the
+file stem alone, which a rename changes (that left the old pair and `.o` behind for good). `sha256` is
+taken over the bytes with CRLF read as LF, so a `core.autocrlf` checkout of the toolkit's own files is not
+an edit. On win32/darwin record names compare case-insensitively (`recordKey`), so a case-only rename
+finds its old entry instead of calling the file `foreign`. A target that exists is
+replaced only when it is recorded AND its hash matches (`owned`); otherwise it is left and reported
+(`foreign` / `changed`). This project's recorded files that the run did not produce are deleted when
+unchanged (a renamed project's pair, an object file from an earlier build) and dropped from the record
+either way. The record is written in a `finally`, so a write that fails half-way (a locked `.hpp`) still
+records the `.cpp` it already wrote — otherwise the next run refuses the toolkit's own file as `foreign`. A foreign file in the record's place stops the write. Entries with a path are ignored, so
+the record can never delete outside its folder. g++ writes the `.o` itself: `claimOutput` deletes an
+owned `.o` first (a failed build then leaves none) and refuses to run g++ over a foreign/changed one;
+`recordOwnedFile` records it after a clean build. When any of the pair was refused, g++ is not run.
+
+**`CPP_Files/.gitignore`** (user decision 2026-11-12; `cppGenerate.maintainGitignore`, called at the end
+of every `writeOwnedOutputs`): the toolkit writes a `.gitignore` into the folder so its generated files
+are not committed by accident. Text (`gitignoreText`): the comment line `GITIGNORE_COMMENT` ("Written by
+TC Toolkit … you may delete this file"), then, sorted and anchored with `/`, every recorded file of
+every project in the folder, the `.o` of every recorded `.cpp` (listed before g++ writes it, so a build
+never rewrites the file) and the record itself; not the `.gitignore` (the user may commit it). **It lists
+only files the toolkit holds as its own** (`gitignoreText(manifest, dir)` asks `ownership` per name): a
+recorded file the user edited since (`changed`) is theirs now — refused by the write and dropped from the
+list, so git sees it (the summary's "Left alone" note then adds "`.gitignore` does not list it, so git
+sees it"; undoing the edit makes it owned and listed again) — and an object-file name already taken by a
+file the toolkit did not write (`foreign`, e.g. the user's own `<project>.o` there before the first
+run) is not listed; a name with no file yet is. The list is recomputed only when the toolkit writes the
+folder, so a file edited after a run stays ignored until the next run. Its
+ownership is the record's top-level `gitignore` key — `{sha256}` (same CRLF-insensitive hash), or
+`{removed: true}` — never a `files` entry (one named `.gitignore` is ignored by `readManifest`, so
+cleanup can never delete it as a project output). Rules: absent and never written → **created**;
+recorded and unchanged → rewritten when the list changes (**updated**) else **unchanged**; recorded but
+edited → **changed**, left alone; there but not recorded → **foreign**, never overwritten and not
+adopted (unless it already holds exactly the wanted text); recorded and then **deleted** → the record
+switches to `removed` and it is **never recreated** (**not-recreated**; a `.gitignore` the user makes
+afterwards is foreign). A write failure is **failed** and does not stop the C++. Compile Project reports
+it in the *TC Toolkit Compile* channel only (`gitignoreNote`: created, changed, foreign, not-recreated,
+failed); it never makes the run a warning and is not in the summary. `claimOutput`/`recordOwnedFile` keep
+the key (they go through `readManifest`/`writeManifest`). `test_cpp_real.js` checks it against a real
+git (`git check-ignore -v`, `git status`, an edited `.cpp` not ignored and ignored again once restored, a
+user's own `.o` not ignored) when git is on PATH.
+
+**The g++ build**: `-std=c++17 -fno-strict-aliasing -fdiagnostics-color=never
+-fmessage-length=0 -c <cpp> -I resources/compiler/include -I CPP_Files -o <obj>`, cwd `CPP_Files`, no
+shell, 2-minute timeout, cancellable with the progress notification. A timeout or cancel stops the whole
+process tree (`runChild`'s `killTree` → `compileCheck.killProcessTree`: POSIX spawns g++ `detached` and
+SIGTERMs the group; Windows runs `taskkill /PID <pid> /T /F`) — a plain kill stops only the driver and
+leaves `cc1plus` running. `-fno-strict-aliasing`: the fork's
+docs/RUNTIME.md asks host builds of generated code for it. `-std=c++17`: the generated VAR_GLOBALs are
+`inline` variables — g++ 7+ accepts them at C++14 only with one warning each, and g++ < 7 cannot compile
+them at all (`'strucpp::X' declared as an 'inline' variable`). The earlier `-Wno-c++17-extensions` is a
+GCC 12+ flag that older g++ reports as unrecognized; it is gone. Messages: `parseGppOutput` (one line per message, notes kept with the message
+before them; the `required from here`/`required from '…'` chain and the `In file included from` chain —
+remembered per header, since g++ prints it once — kept as `context`, `In instantiation of` as
+`instantiation`) → `placeGppMessages` (in the `.cpp`/`.hpp`: at their line/column; anywhere else — a
+runtime header, where the template runtime surfaces most errors — at the innermost `required from` point
+in the generated files, else the innermost generated `#include`, else the `.cpp`'s line 1; the message
+names the header and the instantiation) → DiagnosticCollection `twincat-gpp`, source
+"TC Toolkit g++", notes as `relatedInformation`. g++'s folder is prepended to PATH for the child (MinGW
+DLLs). A missing g++ (setting empty and nothing detected, or a setting that does not work) still writes the
+C++; the run's ONE summary notification says so (`gppMissingText`) and carries *Open Setting*
+(→ `tcToolkit.compiler.gppPath` in the User settings, `{target: 'user'}`: the setting is machine-scoped, as
+is *Detect g++*'s own *Open Setting*), plus *Detect g++* only when the setting is empty (detection never
+replaces a set value, so offering it for a bad value promised a fix it cannot make). The build and
+*Detect g++* check a set value with the same `gpp.checkConfiguredGpp`, and decide "empty" with the same
+`gpp.normalizeGppSetting` as the start page's row (a value of only quotes, `""`, is unset everywhere and
+*Detect g++* fills it): quotes stripped, a bare name looked
+up on PATH, a folder accepted when it holds `g++(.exe)`; its reason (`missing` / `not-on-path` /
+`folder`) is what both messages name.
+
+**The g++ version gate.** The generated C++ needs g++ 7+ (`GPP_MIN_MAJOR`): g++ 6 rejects the C++17
+`inline` VAR_GLOBALs outright (and `[[maybe_unused]]` in the runtime headers). `queryGppVersion` asks
+`-dumpfullversion` (g++ 7+), then `-dumpversion` (g++ 6 prints `6.3.0` there); a major below 7 is
+confirmed with `--version`, because clang answers `-dumpversion` with the GCC 4.2.1 it imitates — clang
+and anything unparseable are *unknown*, and unknown runs. `gppVersionOf` (spawnSync, 10 s timeout, g++'s
+folder first on PATH) caches per path and re-asks when the file's size or mtime changes. The reader rides
+on the machine object (`thisMachine().version`); without one (the older unit tests), results carry no
+version fields. With it: `detectGpp` returns the first candidate that is 7+ or unknown, and a too-old one
+(marked `tooOld`) only when nothing newer exists; `resolveGpp`/`describeGppSetting` add `version` and
+`tooOld` for a set value too (never replaced). Compile Project does not run a `tooOld` g++: `cpp.gpp.status
+= 'too-old'` with the g++'s `source`, one note in the summary (`gppTooOldNote`: the text plus
+`gppInstallHint`, MSYS2 UCRT64 on Windows), status bar `· g++ too old`. Detection never replaces a set value,
+so when the old g++ comes from the setting (`source === 'setting'`) the hint says to set a newer path or clear
+the setting, and `gppTooOldButtons` offers only *Open Setting* (User tab); a detected one also gets *Detect g++*.
+The explicit *Detect g++* fills an empty setting with a too-old g++ only when it is all there is, and says so as
+a warning; the silent fill (`autoFill`, `fillTooOld: false`) leaves the setting empty then (status
+`tooOldNotFilled`), so a g++ installed later is detected without clearing anything. For a kept too-old value
+*Detect g++* runs detection anyway and names a newer g++ it finds (`newer`), without writing it. The start
+page's row gets the warning style with "g++ 6.3.0 is too old: needs 7 or later." and, when detected, the note
+"Not set: found on PATH, but a build will not use it."
+
+**MSYS2 without g++** (user report 2026-11-12: MSYS2 installed, but detection found only `C:\MinGW` 6.3).
+`src/msys2Detect.js` adds the uninstall registry and more usual roots to detection (see the file map). When
+detection finds no g++ a build can use (none, or only a `tooOld` one) and an MSYS2 root exists
+(`usr\bin\msys-2.0.dll` or `msys2.exe`) with no g++ in ucrt64/mingw64/clang64/usr, `describeGppSetting` and
+`resolveGpp` add `msys2Root`, and the messages say "MSYS2 is installed at <root> but has no g++: in the MSYS2
+UCRT64 shell run pacman -S mingw-w64-ucrt-x86_64-gcc": *Detect g++* (`describeGppFill`), the start page's
+"not found" row (and a detected too-old one: `.gpp-msys2` note), and the build's missing / too-old note
+(not for a too-old g++ the setting names).
+
+**IntelliSense for the generated C++** (user decision 2026-11-12: a configuration provider, not a written
+`c_cpp_properties.json`). The generated `.hpp` includes `iec_types.hpp` & co. from
+`resources/compiler/include/`, which Microsoft's C/C++ extension cannot find on its own ("cannot open
+source file"). `cppToolsCommands` registers `cppToolsProvider` through the extension's public API — the
+npm package `vscode-cpptools` (MIT, a runtime dependency: it ships in the VSIX like
+`vscode-languageclient`; `.vscodeignore` drops its `out/testApi.*`). Only `out/api.js` is loaded, lazily,
+and only once `vscode.extensions.getExtension('ms-vscode.cpptools')` exists — so without the C/C++
+extension there is no `console.warn` from the package either.
+
+Registering is not selecting (user report 2026-11-12: provider registered, "cannot open source file
+iec_types.hpp" stayed). Checked in the C/C++ extension 1.22.11's own code (`configurations.ts`): the
+provider of a folder is `configurationProvider` of the active `c_cpp_properties.json` configuration (a
+persisted per-folder index, `CppProperties.currentConfigurationIndex`, not readable from here; when unset, the
+one named `Win32`/`Mac`/`Linux`, else the last), falling back to `C_Cpp.default.configurationProvider` when
+that is absent or `${default}` (`""` does not fall back); with no properties file, no `C_Cpp.default.*`
+value at all and exactly ONE registered provider, it auto-selects that one. So anyone with a
+`c_cpp_properties.json`, a default setting such as `cppStandard`, or a second provider (CMake Tools) gets
+nothing from the provider. `src/cppToolsSelection.js` computes the effective provider; when it is not TC
+Toolkit, `createProviderPrompt` (triggered by a CPP_Files `.cpp`/`.hpp` being created, rewritten or opened,
+once the provider is registered) shows one message per workspace folder: *Use TC Toolkit* writes
+`C_Cpp.default.configurationProvider` in the WorkspaceFolder scope and calls `didChangeCustomConfiguration`;
+*Not now* (or dismissing) asks again next session; *Don't ask again* and *Use* are remembered in
+workspaceState. When the properties file names another provider (or `""`, or is unreadable) the file wins:
+the message says so and offers *Open c_cpp_properties.json* — the file is never edited. Because the active
+configuration cannot be seen, a file where any OTHER configuration names another provider is treated the same
+way (naming that configuration), rather than promising a setting that may change nothing. Ids are compared
+exactly, as the C/C++ extension looks them up (`providers.has(id)`, no trim or case folding); in the file the
+provider's display name `TC Toolkit` also counts, because the C/C++ extension's `checkId` rewrites a
+registered provider's name to its id when it parses the file (the setting gets no such rewrite). The message also
+shows when auto-selection would have worked (other providers cannot be seen from here); one prompt is the
+price of a setting that survives installing CMake Tools later. Verified against the real C/C++ extension
+1.22.11 on Linux (scratch harness, not in the suite): with a `c_cpp_properties.json` without a provider, the
+exact user symptom ("cannot open source file "iec_types.hpp" (dependency of "PLC.hpp")"); after setting the
+folder's `C_Cpp.default.configurationProvider`, the provider is asked and only the planted
+undefined-identifier error remains. Every request (`canProvideConfiguration`, `provideConfigurations`,
+browse) — and nothing else — is logged to the **TC Toolkit C/C++** output channel, created on the first
+request (the selection check logs to the console); each
+`provideConfigurations` item carries the very `Uri` object it was asked for (the C/C++ extension accepts only
+a string or its own `vscode.Uri`, and keys the result by `uri.toString()`). The extension is activated by
+the toolkit's usual activation events, so a generated file opened before the toolkit activates gets the
+C/C++ extension's default configuration until it does. A g++ older than 7 is not handed over as
+`compilerPath` (the C/C++ extension keeps its own default compiler). `canProvideBrowseConfiguration` is true
+only while some project has a `CPP_Files` folder, so the C/C++ extension otherwise keeps its own browse path.
+The `**/CPP_Files/*.{cpp,hpp}` watcher is made at registration, whether or not the C/C++ extension is there,
+so a first generation after a mid-session install still re-announces the browse configuration.
+
+**Switch coupling** (`cppSettings`): a run uses `generate = generateCpp || buildWithGpp`. On every
+`tcToolkit.compiler` change, `couplingWrites(before, after)` fixes the scope that changed (build on →
+generation on there if not on at that scope; generation off → build off there); writes made by this
+module itself are not re-coupled (`writingOptions`). The dropdowns write through `checkboxWrites`, which
+targets the most specific scope that already sets the switch (else User) and writes the coupled switch
+in the same call. The g++ path is filled (`gppCommands.autoFill`, empty only) when the build turns on.
+
+**Dropdowns.** Editor toolbar: the Actions menu's Build group, `#compile-btn` then two
+`menuitemcheckbox` checkboxes (`#compile-opt-cpp`, `#compile-opt-gpp`). The item's tooltip and detail
+line, and the start-page tile's detail, follow the options (check / check + write C++ / + build with g++). Messages: `init.compileOptions`,
+`compileOptions {options}` (host → webview, on any change), `setCompileOption {key, value}` (webview →
+host, allow-listed keys and booleans only). Start page: `#compile-options-toggle` (chevron beside the
+tile, `aria-expanded`/`aria-controls`) over `#compile-options`; `state.compileOptions` and the same
+`setCompileOption` message. Both show the coupling at once and let the host's answer correct it.
+
+**g++ on the start page.** The Settings card has a `g++` section under the XAE Shell one, drawn with the
+same row classes (`#gpp-list` > `li.xae-row`, `data-gpp` = the state): `state.gpp` from
+`gpp.describeGppSetting(setting, thisMachine())` — `set` (the value; a `.xae-note` "Runs <path>" when a
+bare name or a folder resolves elsewhere), `invalid` (the value + the XAE warning row, text per
+`missing` / `not-on-path` / `folder`), `detected` (empty: the g++ a build would use, with where it was
+found; nothing is written — filling the setting stays `twincat.detectGpp`'s job), `notFound`. It is
+recomputed on every `postState` (a few `stat`s); a `tcToolkit.compiler.gppPath` change re-posts it.
+*Change…* posts `openSettings {section: 'gpp'}` (User settings, see `startPage` above); *Detect again*
+runs the allow-listed `twincat.detectGpp`.
+
+**Generated output.** `CPP_Files` joins `ST_Files` as generated output (`GENERATED_OUTPUT_DIRS` in
+`twincatWorkspace.js`): in `PROJECT_WALK_SKIP_DIRS`, `ARCHIVE_SKIP_DIRS` (so `PROJECT_SKIP_DIRS`) and
+`ST_INDEX_SKIP_DIRS`; watcher events under it are not "relevant" and only feed the debounced tree
+refresh; the Objects tree shows a project's `CPP_Files` as `generatedDirectory` with its `.cpp`/`.hpp`
+as `generatedCppFile` rows that open as text (`twincat.openComponent` treats `.cpp`/`.hpp` like `.st`).
+
+**Known compiler gaps:** none since release M (`75a55de`); still none at release N (`d9b7c01`). The one
+found by `gpp-real` at `eb52d2c` (a PROPERTY read through a global FB instance emitted as a field access)
+is fixed there; `test_cpp_real.js` keeps `KNOWN_GPP_GAPS` (empty) for the next one, and both samples build
+with g++ cleanly.
+
+### XAE build (roadmap R14)
+
+"Build through XAE" builds the real solution with TwinCAT XAE's own compiler and libraries, and
+"Build and Activate through XAE…" also activates the configuration on a runtime of THIS machine and
+restarts it. Windows with XAE only; elsewhere the commands refuse and the dropdown entries are hidden
+(the editor's Build dropdown; on the start page the two builds and *Show Activation Targets* are tiles,
+shown on `xaeOptions.available`, and its dropdown keeps only *Show the XAE window*).
+
+**Process chain.** `xaeBuildCommands` → `runChild` → `powershell.exe -NoProfile -NonInteractive
+-ExecutionPolicy Bypass -STA -File resources/xae/build-plc-project.ps1 -SlnPath … -Json …` → DCOM →
+`TcXaeShell.exe`. The shell is launched by COM activation, so it is **not** in PowerShell's process
+tree: killing PowerShell does not end it. The script censuses the shells before `New-Object` and quits
+only the one that appeared (`$ownShellPid`); a shell it cannot prove is its own is never closed. When no
+single new shell appeared **and other shells were already running**, COM may have handed it a developer's
+IDE: the driver refuses before any SuppressUI, hide, `Open` or `Close` (fatal `shell-not-ours`, exit 2).
+When none was running before, it builds, and before releasing the unidentified shell it turns SuppressUI
+off and shows the window, so a shell left running can be closed by hand. Every real path goes to
+`-LiteralPath` (a folder named `Line [2]` is not a wildcard), and `Resolve-Path` output is read as
+`.ProviderPath` (a UNC `.Path` is provider-qualified and DTE cannot open it).
+
+**The driver is a copy, kept additive.** `resources/xae/build-plc-project.ps1` is
+`scripts/Build PLC project/build_plc_project.ps1` (the proven headless builder) plus opt-in switches;
+without them it behaves exactly like the builder. Three copies exist and are synced **by hand**: the
+builder, `templates/build_plc_project.ps1`, and this driver (header line names the builder commit it was
+adapted from). `test/test_xae_driver_contract.js` fails if a builder line is lost without a listed
+reason. Keep the driver ASCII (Windows PowerShell 5.1 reads BOM-less scripts in the ANSI code page).
+The system project is a `.tsproj` (4026) or a `.tspproj` (4024); every copy, and `probe-sysmanager.ps1`,
+finds it with two provider-side lookups (`-Filter *.tsproj`, `-Filter *.tspproj`) merged before
+`Sort-Object FullName -Unique`: a `Where-Object` over every file under the solution folder builds an
+object per file (`_Libraries`, `.git`, …), and one `*.tsp*proj` filter would also match 8.3 short names.
+
+**Protocol** (`-Json`): stdout lines starting `@@TCTK ` are compact JSON (`v: 1`, `t: <type>`, non-ASCII
+escaped `\uXXXX`, flushed per line); every other line is a human log line (UTF-8). `src/xaeBuild.js`
+reads both; a garbled event becomes a log line and a counted protocol warning, never an exception.
+
+| Event | Fields |
+|---|---|
+| `hello` | `mode` build/activate/listTargets, `showWindow` |
+| `plan` | `solution, tsproj, projectVersion, progId, pinned, configuration, platform, targetNetId` |
+| `shell` | `pid` (null when unproven), `ours`, `preexisting[]` |
+| `phase` | `name`: resolve, launch, pin, open, configure, build, errors, target, activate, boot, restart, verify, close |
+| `ui` | `requested`, `suppressUI`, `mainWindowVisible` (read back from DTE; null when unreadable), `reason`: headless / requested / version-switch / build / activation / after-activation |
+| `warning`, `fatal` | `text`; fatal `code` (no-sln, ambiguous-sln, config-not-declared `data.declared`, no-tsproj, version-mismatch, progid-not-registered, target-refused `data.gate` + `projectNetId`, `tsproj`, `local[]` in the `targets` shape, com-failure, shell-closed, shell-not-ours) |
+| `buildResult` | `failedProjects` (LastBuildInfo: the authority on pass/fail) |
+| `errorItem` | raw ErrorList fields `file, line, column, description, project, level` (every build: a successful one can carry warnings) |
+| `outputPane` | `name, text, truncated` (failed builds; 256 KB cap) |
+| `errorDetails` | failed builds: `errorItems` (items read), `outputPanes` (panes with text), `reasons[]` (one line per step that gave nothing), `route` `typed`/`late-bound`/`none` (plus `errorListRoute`, `outputRoute`) |
+| `target`, `activation` | readback after SetTargetNetId; `adsState`, `stateName`, `outcome` run/incomplete/failed/refused |
+| `bootProject` | phase `boot` (after ActivateConfiguration, before StartRestartTwinCAT): `outcome` installed/partial/failed/none, `error` (TIPC unreadable), `projects[{name, node root/nested, wasAutostart, autostart, installed, error}]` |
+| `plcState` | after a RUN activation, one per installed PLC whose port is known: `name, port, adsState, stateName` (5 = RUN) |
+| `targets` | ListTargets: `local[{netId, name, kind, platform, provenance, netIdStatus, reason, fileNetId}]`, `projectNetId` (the platform is gate 4's: both read `Get-LocalRuntimeRecords`). `netIdStatus` `trusted`, or for a user-mode runtime whose NetId is unknown `not-running`/`rewritten`/`unverifiable` with `netId: null`, the `reason` and the file's `fileNetId` (never a target). The `target-refused` fatal's `local[]` has the same shape (`ConvertTo-RuntimeListEntries`). |
+| `done` | last, always (every exit goes through `Exit-Run`): `exitCode`, `ui{requested, buildPhase, versionSwitchKeptVisible, activationShown}` |
+
+**Exit codes decide the result**: 0 built (and activated, when asked), 1 compile errors, 2 harness/COM
+error (nothing built), 3 built but activation failed or was refused, 4 cancelled. Events only explain —
+with one exception: `powershell.exe -File` also exits 1 when the script never ran (an execution policy set
+by Group Policy, a binding error), on a throw outside the driver's handler, or when PowerShell was killed
+from outside. So 1 is a compile failure only when the driver confirmed it (`done.exitCode === 1` or
+`buildResult.failedProjects > 0`, `compileFailureConfirmed`); otherwise it is "interrupted before it
+finished (exit code 1)" with the last stderr or log line. Only a run that reached a build result
+(`reachedBuildResult`: 0, 3, a confirmed 1) replaces the Problems; a cancelled, stopped, timed-out or
+unconfirmed run keeps the previous ones. Counts go through `countBySeverity` (xaeErrorPlacement) in the
+summary, the exit text and the status bar alike: a Medium item is a warning, not an error.
+
+**Problems entries link back.** Like Compile Project's, each XAE entry's code is a link
+(`vscode://<extension id>/xaeProblem?id=N`) answered by Compile Project's URI handler (VS Code allows one
+per extension; `registerProblemLinkResolver` adds the path), which opens the component, pane and line —
+a plain click cannot do that for a custom editor. A freshly opened editor goes to its first XAE problem
+once per run (`openTarget`).
+
+**The project's XAE Shell is missing** (user decision, 2026-11-13). The driver maps the project's
+build (`TcVersion` in the `.tsproj` / `.tspproj`) to a DTE ProgId (`$ProgIdByBuild`: 4024 →
+`TcXaeShell.DTE.15.0`, 4026 → `TcXaeShell.DTE.17.0`; the same pairs as `XAE_SHELL_VERSIONS`, pinned by
+the contract test). When that ProgId is not registered it stops with fatal `progid-not-registered`, whose
+`data` carries `progId`, `build`, `projectVersion` and `installed` (the mapped ProgIds that ARE
+registered, newest build first, a plain `string[]`). For a **build**, the extension then asks ONE modal
+— "<solution> was saved with TwinCAT 3.1.4024 and its XAE Shell (4024) is not installed. Build with XAE
+Shell 64 (4026) instead? XAE will upgrade the project files (it rewrites the .tspproj/.tsproj and .plcproj)." — and on yes runs with exactly `-TcVersion
+<ProgId> -AllowVersionMismatch`. The question is asked **before** the run when the pre-run shell check
+can already tell (the project's shell is neither in its `tcToolkit.xaeShell.path*` setting nor found by
+`detectXaeShells`, and another one is): then the first run already carries the override. When the check
+cannot tell (nothing found at all, a registry that cannot be read), it asks nothing and the driver's fatal
+is the fallback. Never two questions per build: a run after the pre-check asked never asks again, and the
+stall/configuration re-runs keep the confirmed shell. Cancel leaves the original error, which (like the
+no-alternative case) names the shell to install. **Only a newer shell is ever offered** (user ruling,
+2026-11-13): a 4024 project on a machine with XAE Shell 64 (4026) is offered 4026, but a 4026 project on a
+machine with only XAE Shell (4024) gets no offer — an older shell cannot open a project saved with a newer
+TwinCAT — and the error names the shell to install and says the older one is installed but not used. When
+the confirmed substitute is itself not registered with COM (its exe on disk, which is all the pre-check
+can see), the driver's fatal carries the substitute's `build` with the project's own `projectVersion`;
+`missingShell` reads that pair as "saved with 3.1.<project's build>, and <substitute>, chosen in its place,
+is not registered either" and offers nothing. **Activation never runs on another shell**: its pre-check
+keeps the "Run anyway" warning and its fatal only explains. What the override means in the driver: a
+ProgId names a build family, so the pinned version is `3.1.<that build>.<project revision>`, and the pin
+step falls back to the newest installed version of that build; `-AllowVersionMismatch` downgrades the
+build mismatch (and an unsatisfiable pin) to a warning. A real pin switch keeps the window visible (`ui`
+reason `version-switch`; the driver's rule). XAE will upgrade the project files (it rewrites the .tspproj/.tsproj and .plcproj).
+
+**Headless and the switch.** By default the build is headless: `SuppressUI = true` and, after the pin
+step, `MainWindow.Visible = false`. `tcToolkit.xaeBuild.showWindow` (false by default) passes
+`-ShowWindow`: `SuppressUI = false` and the window visible for the whole run, the hide step skipped, and
+the activation `finally` does not re-suppress. `UserControl` is never set (it would keep the shell alive
+after release and break the census/Quit rule). Two exceptions hold in headless mode, both inherited from
+the builder:
+- **after a real TwinCAT version switch the window stays visible** — the switch reloads the shell
+  environment and a hidden window during that reload is what made the switch fragile. From the
+  extension it occurs only after the user confirmed another XAE Shell (above), the one time it passes
+  `-TcVersion`;
+- **activation always shows the window** and turns SuppressUI off — a licence or full-download dialog
+  under SuppressUI is an invisible hang, not a question. There is no setting or parameter to hide it.
+`describeUiMode` turns the `build` readback into the channel line ("hidden (SuppressUI=True,
+MainWindow.Visible=False) - headless"), which is how a user checks on Windows that headless worked.
+On the 4026 shell `MainWindow.Visible` reads back as unreadable whether the window is shown or not
+(measured 2026-11-13), so the line then reports the requested mode and SuppressUI ("headless
+(SuppressUI=True; window visibility not readable)", "visible as requested (SuppressUI=False; …)").
+
+**Cancel and kill rule.** Before activation, cancel writes the `-CancelFile`; the driver checks it at
+every phase boundary and in its polling loops and stops with exit 4 (solution closed without saving,
+only its own shell quit). After a 60 s grace, a force stop kills PowerShell's tree (`taskkill /T /F`)
+and the shell PID **only if `shell.ours`**, and then with an image filter (`/FI "IMAGENAME eq
+TcXaeShell*"`) so a PID reused since it was reported is never hit. A force stop during `launch` (before
+the shell is identified) says in the channel that a shell may have been left running. The driver disarms
+the cancel file right before `target`, so the extension never cancels or force-stops in
+target/activate/boot/restart/verify (`UNINTERRUPTIBLE_PHASES`; the contract test checks that every phase the
+driver enters after the disarm is in it) — a cancel there would be ignored and could only end in a force
+stop at the edge of `activate`. After the grace period the extension yields once (`setImmediate`) so
+pending output — an `activate` phase line — is read before it decides. The timeout (default 30 min) uses
+the same sequence; inside activation, or when its stop is refused because activation began during the
+grace period, it extends once by 5 min and then only reports. The stall watchdog (headless only, outside
+the build call and activation) offers to cancel and re-run once with the window shown; the re-run
+follows only a run that really stopped (not one that was refused or finished on its own meanwhile), the
+stopped run gets one channel line and no notification, and the shell check is not asked again. **The
+user's Cancel wins**, in either order: once a stop is under way the watchdog offers nothing, a Cancel
+withdraws a re-run chosen before it, and an offer answered after a Cancel is ignored. Inside the driver,
+a cancel thrown by `Invoke-ComRetry` during the error-list and Output reads (phase `errors`) is rethrown by
+every catch there (`Get-OutputPaneTexts` too — in the builder and `templates/` copies, which have no
+cancel, `$script:CancelSentinel` is `$null` and never matches), the hand-written `ErrorItems` retry checks
+the cancel file between rejected calls, and the phase ends with one more check, so a cancel there is exit
+4, never a failed build with a made-up "Output window not available" reason.
+`twincat.xaeBuild` / `twincat.xaeBuildAndActivate` are disabled while `twincat.xaeRunning` is set
+(`enablement`), and all three XAE commands are in the palette on Windows only (`when: isWindows`).
+
+**Activation** lists the local runtimes (`-ListTargets`, no COM), asks for one (the project's NetId
+marked, the last pick preselected from workspaceState — there is no target setting), and shows a
+**modal on every run** naming the target; nothing is spawned before it is confirmed. One activation asks
+it once: its re-runs (the stall offer, *Build again with the window shown*) reuse the confirmed target,
+platform and switch without listing or asking again. The confirmation travels as an object held in a
+`WeakSet` inside the command module and is used once, never as a command argument, so no caller of
+`twincat.xaeBuildAndActivate` can skip the modal (a forged `confirmedActivation` argument is ignored).
+A configuration pick after `config-not-declared` changes what is built, so that re-run asks again. The driver's four
+pre-IDE gates (`Resolve-ActivationTarget`) and the post-set readback still refuse any non-local target;
+a readback that differs from the confirmed pick is reported as an error. RUN means ADS state 5.
+
+**The target's platform** (user run 2026-11-13; XAE itself asks the same on download). Gate 4 refuses
+to activate a platform that is not the target's; the extension decides first, from the platform
+`-ListTargets` reported for the pick (the same records gate 4 reads, compared case-insensitively like
+PowerShell's `-ne`), with `activationPlatform` (src/xaeBuild.js) over the `.sln`'s declared pairs
+(`declaredPairs`, the driver's own regex):
+- same platform, or the target's unknown: the plain modal ("Activate on <target>"); unknown is the
+  driver's warning and XAE's own check — **unless the configured `<configuration>|<platform>` itself is
+  not one the solution declares** (`pair-not-declared`): then it is refused before the modal, listing the
+  declared pairs and the two settings, because the driver would stop with `config-not-declared` right
+  after the confirmation;
+- another platform the solution declares as `<configuration>|<it>`: the SAME one modal asks
+  "<target> (<NetId>) runs <P>, but <configured> is set. Switch to <P>?" (an inferred platform says
+  so) with **Switch for this run** (this run's `-Platform` only; the setting is never written) and
+  **Switch and remember** (also writes `tcToolkit.xaeBuild.platform` once, in the scope its value
+  comes from: the workspace, else the user settings — the setting is contributed without a `scope`, so
+  it is window-scoped: VS Code keeps no workspace-folder value for it and refuses a folder write, and
+  every run reads it with no resource), or Cancel; the channel names the switch;
+- another platform the solution does not declare: refused before XAE starts, naming the platform to
+  add in XAE's Configuration Manager;
+- the `.sln`'s pairs unreadable: nothing is switched, and gate 4's refusal is the answer.
+**The solution's target is not a runtime on this PC** (gate 3; user decision 2026-11-16). The `.tsproj`
+can name a `TargetNetId` that is not local — typically an old user-mode runtime after a new one got
+another NetId. The driver still refuses before the IDE starts (and a local `-TargetNetId` still does not
+excuse it), but its text now says "not a runtime on this PC" and names the local runtimes
+(`-RuntimeLabels` from `Get-RuntimeLabels`, in the builder too), and the fatal carries `projectNetId`,
+`tsproj` and `local[]`. The extension (`refusedTarget`) names the runtimes in the notification and, when
+there is one and `checkSolutionTarget` (src/tsprojTarget.js) finds exactly one `TargetNetId="<the refused
+value>"` in a system project inside the solution's folder, offers **Change the solution's target…**: a
+QuickPick of ONLY those runtimes (the confirmed activation target first), a modal naming the file and the
+old and new NetId (**Change target**), the one value rewritten byte-for-byte, then the same activation
+again. When the new target is the runtime the activation was already confirmed for, the re-run carries
+that confirmation; otherwise it lists and asks again (the new runtime preselected) — a runtime the user
+did not confirm is never activated. No runtime, 0 or several occurrences, UTF-16, or a file that changed
+since the run: no button (or, at write time, nothing written), the reason, and a pointer to XAE's
+*Choose Target System*. An older driver's `{gate}`-only fatal shows its text as before.
+
+**A user-mode runtime's AmsNetId is trusted only for a running instance** — one that wrote it, or that
+answers at it over ADS (user's 4026 machine, 2026-11-16). `Get-UserModeRuntimeRecords` reads it from `Runtimes\<name>\3.1\TcRegistry.xml`, but every
+instance start rewrites that shared file with its own NetId: a second instance of `UmRT_Default`, started
+and closed, left a NetId no runtime answers to, and the pick offered it (marked "(project)"). No other
+file holds the running NetId (Boot\CurrentProjectInfo.json, CurrentConfig.xml, LoggedEvents.db checked).
+Rule (decided): the file's NetId counts only when (a) a `TcSystemServiceUm.exe` whose command line has
+`-n "<name>"` (quoted or not, case-insensitive; the executable token is skipped first) is running and
+(b) the file's `LastWriteTimeUtc` is not later than the **newest** such process's start + **5 s** (the
+instance writes the file right after it starts; when several run, the file can only be the newest's).
+Facts are gathered impurely (`Get-UserModeRuntimeProcesses`: one `Get-CimInstance Win32_Process` query,
+`CommandLine` + `CreationDate`; `$null` when the query fails) and decided purely
+(`Resolve-UserModeNetIdTrust` → `trusted` / `not-running` / `rewritten` / `unverifiable` + reason; an empty
+command line — a process running elevated, seen unelevated — is `unverifiable`). **A running runtime
+rewrites its own file too** (measured the same day: the only `UmRT_Default`, started 16:49:08, rewrote it at
+16:50:40 during an activation, and the first Build and Activate was refused as "rewritten"), so the times
+alone cannot tell an own rewrite from a stale file. Hence `rewritten` (reason "the configuration file
+changed after this runtime started") and `unverifiable` are confirmed over ADS before giving up:
+`Confirm-UserModeNetIdTrust` (pure, the probe injected as `-ConfirmNetId`) asks the file's NetId on port
+10000 through `Test-UserModeNetIdOverAds` → `Read-TcAdsState` (the script's one ADS route, TcAdsDll.dll
+P/Invoke, now with `AdsSyncSetTimeout`; `Get-TcAdsState`, used by the activation's RUN check, is a wrapper
+over it and returns what it always did). Any AdsState but 0 (Invalid) → `trusted`, `NetIdSource = 'ads'`,
+reason "…; its AmsNetId was confirmed over ADS (the runtime answered at <NetId>, state <n>)"; an ADS error,
+no TcAdsDll.dll, or a throw → the status stays and the reason gains "…; its AmsNetId could not be confirmed
+over ADS: no runtime answered at <NetId> (ADS error 0x7)" (or the DLL / error text). `trusted` (no ADS call
+on the happy path) and `not-running` (an answer could only come from something else) are never probed.
+**`-AdsDllDir` (user request 2026-11-16):** both scripts take it (the extension passes
+`tcToolkit.adsDll.nativeDllFolder` in every mode, `-ListTargets` included, and so does Go Online's local-runtime
+discovery). `Read-TcAdsState` reads it by name (`Get-Variable -Scope Script`, so the `.ps1` harnesses that
+define the function without the script's parameters still search) and then tries ONLY that folder — "was
+not found in <folder> (the folder -AdsDllDir names)", no fallback; without it the three default folders as
+before. A not-found text is also kept in `$script:TcAdsDllProblem`: the RUN check uses `Get-TcAdsState`
+(state only), so the `activation` event gains `dllProblem` when the state is unreadable, and ACTIVATION
+INCOMPLETE prints it. The extension: `describeExit` appends it plus the setting hint (`adsDllConfigured` says
+"correct or clear"), `unknownRuntimesText` names the setting when a runtime was not offered for want of the
+DLL (`unknownNeedsAdsDll`), and the build summary, the no-targets error and Show Activation Targets (a
+warning) offer "Open Setting".
+Cost: only for an untrusted NetId, a 2 s timeout, each NetId asked once per run (`$script:UserModeAdsAnswers`
+— the records are built several times before activation and must agree); the P/Invoke type is added once
+per process. A record trusted by the times has `NetIdSource = 'file-time'`; the list entries carry
+`netIdSource` (and the reason when confirmed over ADS), the extension keeps it on `LocalRuntime` /
+`RuntimeEntry` and says "AmsNetId confirmed over ADS" in *Show Activation Targets*, the activation pick's
+detail and Go Online's Local-runtime log line and pick. An untrusted record keeps
+`NetId = $null` and the file value as `FileNetId`, so `Get-LocalAmsNetIds`, `Get-RuntimeLabels` and
+`Get-LocalRuntimePlatforms` (all keyed on NetId) leave it out: **fail closed** — never offered, never
+preselected, never local for gates 1–3. `Get-UnknownRuntimeLabels` feeds `Resolve-ActivationTarget
+-UnknownRuntimes`, which appends "Not offered, AmsNetId unknown: …" plus the pointer to the runtime's
+console window (`AmsNetId: …`) and *Choose Target System* to gates 1–3 (nothing appended when there is
+none, so those texts are unchanged), and the activation block prints a `WARNING:` per unknown runtime. All
+of these functions are identical in the builder and the driver (`test_xae_driver_contract.js`); the
+`templates/` copy has no user-mode runtime discovery and is untouched. In the extension,
+`runtimeEntries` (src/xaeBuild.js) splits a list into `local` and `unknown` (any status but `trusted` is
+unknown even with a NetId; an older driver without `netIdStatus` reads as before); **the QuickPicks show
+an unknown runtime as a separator row** (`kind` −1 = `QuickPickItemKind.Separator`, no `netId`:
+"UmRT_Default: AmsNetId unknown, not offered (<reason>)") after the selectable runtimes — chosen over
+omitting it, because a runtime silently missing from the list is what made this bug hard to see; the
+channel gets `unknownRuntimesText`; with no known runtime the activation stops before any pick with
+"No runtime of this machine with a known AmsNetId was found to activate on. Not offered, …"; the gate-3
+refusal (`retargetRefusalText`) names them, and when the solution's target is an unknown runtime's file
+NetId it says "<NetId> is the AmsNetId <name>'s configuration file names, which no running instance of it
+is known to use." *Show Activation Targets* prints them as `AmsNetId unknown` rows. Real-time runtimes are
+unaffected. Windows unit cases: `test-activation-target.ps1` (trust table, the ADS confirmation with fake
+probes, fixture folders).
+A driver refusal's summary is the whole message on one line (`oneLine`), never its first line: gate 4
+wraps after "activation target <NetId>," and the summary used to end ",.". The detail no longer repeats
+the multi-line text (the channel showed the refusal twice), and a blank fatal text gives "could not
+run." with no dangling colon.
+
+**Settings.** `tcToolkit.xaeBuild.platform` is a dropdown (`enum` + `enumDescriptions` = `XAE_PLATFORMS`
+in src/xaeBuildSettings.js: the seven platforms a 4026 solution declares plus `TwinCAT CE7 (ARMV7)` and
+`TwinCAT OS (ARMT2)` from the 4024 sample); a value typed into settings.json outside the list is passed
+on unchanged and the driver's `config-not-declared` (with its pick of the declared pairs) reports it.
+`configuration` stays free text: VS Code has no enum that also accepts free text, and solutions can
+declare their own configuration names. The start page shows `configuration | platform` as text only:
+a picker there would need the solution's own list, and the page is not tied to one solution.
+
+**Error details of a build.** Late binding does not resolve `ErrorList.ErrorItems` in PowerShell
+(Beckhoff Infosys, "Reading the VS output and the error list"; on 4026 the late-bound reads gave
+nothing with the window shown or hidden, user run 2026-11-13), so the driver reads them through a
+**typed reader** first, then the late-bound paths only when it gave nothing:
+- `Get-XaeShellInstallDir` finds the shell's folder from the ProgId's COM registration
+  (`LocalServer32`, 64-bit view, then the 32-bit one for 4024), else `Program Files\Beckhoff\TcXaeShell`
+  (4026+) / `Program Files (x86)\Beckhoff\TcXaeShell` (4024). vswhere is not used: the assemblies must
+  be the shell's own.
+- `Initialize-TypedDteReader` loads `EnvDTE.dll` and `EnvDTE80.dll` from `Common7\IDE\PublicAssemblies`
+  (plus `Microsoft.VisualStudio.Interop.dll`, which holds the EnvDTE types since VS 2022, and
+  `stdole.dll` when present) with `Assembly.LoadFrom` and compiles a C# class with `Add-Type
+  -ReferencedAssemblies`. Once per run, a failure included; the class name carries a version
+  (`TcTkTypedDteReader1`) and a type of that name already loaded in the session is reused, so **bump
+  the suffix whenever the C# changes**.
+- `Read-TypedErrorList` casts the DTE (passed as object, unwrapped from PowerShell's wrapper) to `DTE2`
+  and reads `ErrorItems.Item(i)`, i = 1..Count, as strings; `Read-TypedBuildPane` reads the Output
+  pane named exactly "Build" (`TextDocument.Selection`, `StartOfDocument(false)`, `EndOfDocument(true)`,
+  `Text`). Both go through `Invoke-ComRetry` (the C# rethrows a busy shell), rethrow the cancel
+  sentinel, and turn every other failure into a one-line reason: shell folder not found, "assembly not
+  found: <path>", "Add-Type failed (<message>)", "the cast to DTE2 failed", "the error list is empty".
+The error list is read after **every** build (typed, then late-bound), so a successful build lists its
+warnings; the Output window only after a failed one (typed "Build" pane, then `Get-OutputPaneTexts`).
+The late-bound reads are unchanged: `ErrorItems` by plain assignment, retried by hand (10 tries; when
+every one is rejected the reason is "the error list was still rejected after 10 tries (XAE busy)"):
+`Invoke-ComRetry`'s `return` writes to the pipeline, which can enumerate a COM collection, so a one-item
+list would come back as the bare item. `Get-OutputPaneTexts` tries `ToolWindows.OutputWindow`, then
+`Windows.Item("{34E76E81-…}").Object`, turning every null into a reason; its "not available" reason
+names the run's real window mode (`-WindowNote`: "XAE window hidden", "XAE window shown", "XAE window
+kept visible after a version switch") — it used to say "hidden" even with `-ShowWindow`. All four
+typed functions and `Get-OutputPaneTexts` are the same text in the builder and `templates/` (the
+contract test compares them), so the user's own script prints the errors too.
+
+The reasons and the route arrive as `errorDetails`. When a confirmed compile failure brought back no
+error item and no pane text (route `none`), `noErrorDetails` says "XAE returned no error details:
+<reasons>." and:
+- for a headless run, the notification offers **Build again with the window shown**: one re-run with
+  `-ShowWindow` (and the same configuration, platform and shell), never a settings write, started only
+  once the reporting run has ended;
+- **TC Toolkit's own check runs once** (user decision 2026-11-13): `twincat.compileProject` on each PLC
+  project of the solution, with `fromXae: true` (no setup popup, no notification of its own, no C++)
+  and `append: true` after the first project that ran (Compile Project otherwise replaces all its
+  problems per run). Its problems are Compile Project's (`TC Toolkit compile`); the channel and the
+  failure message say "Running TC Toolkit's own compile check instead: its errors come from TC
+  Toolkit's check, not from XAE, and can differ from XAE's." and list each project's counts
+  (`compileFallbackText`). No usable compiler → "skipped: no compiler is configured for it (<why>)".
+  Never after a cancel (exit 4) or a harness error (exit 2): `noErrorDetails` requires a confirmed
+  exit 1.
+- **The fallback runs whenever a confirmed compile failure placed nothing in Problems**
+  (`needsCompileFallback`, user 2026-11-13): with no details at all, and also when XAE's messages name
+  no file and line that resolve. Once anything is placed, no fallback.
+
+**Why placement lives in JS.** Placing needs the XML parse and the raw lineMap the rest of the
+extension uses; `src/xaeErrorPlacement.js` is testable here, the ps1 reports raw fields and pane text
+only. What the two sources carry (user's runs on 4026.28, 2026-11-13; fixtures
+`errors-pane-planted-headless` / `-visible`, sample 1's MAIN with `h;` planted at implementation line 14):
+- **Headless**, the error list's items are empty (no description, no file) except a file-less
+  "Project '…' build for platform '…' failed." item; the **"Build" pane** has
+  `<path>\MAIN.TcPOU(22) : error: C0189: ';' expected instead of 'END_FOR'` and
+  `…(21) : warning: C0139: The code 'h;` + a continuation line `' has no effect. Is this the intent?`.
+- **Window shown**, the items are filled: `file` = `<path> (Impl)` (expect `(Decl)`), `line` = a line of
+  that pane (14 / 15), `level` `vsBuildErrorLevelHigh` / `…Medium` (`ErrorLevel.ToString()` in the typed
+  reader; High = error, Medium = warning, Low = info). The project-failed item came as a warning-level item.
+- **The pane's line base is `'object'`** (`PANE_LINE_BASE` in `src/xaeErrorPlacement.js`): the
+  declaration's lines (MAIN: 7, counting the empty line after the final CRLF), then the implementation's
+  — 21 = 7 + 14, 22 = 7 + 15. Confirmed for an object's own body only: a pane line in an object with
+  child components (methods, actions, properties, transitions) is placed on the root but marked
+  "(location approximate)" until a capture shows how children are numbered there. A list item whose
+  suffix names a component (`(M_Foo Impl)`, `(FB.State Get Impl)`, parsed tolerantly) goes on that
+  component; an unknown name → root, approximate.
+- The same message from both sources (same file, component, pane, line; text compared without the
+  code and whitespace) is kept once, with the code carried over; within one source every message counts.
+  Counts (summary, status bar, "failed: N errors") come from that de-duplicated set. The compiler code
+  is the Problems entry's code (its link target unchanged).
+- Paths: as given; else the longest tail (2+ segments) that exists under the `.sln` directory (a
+  fixture's generic root); `fs.realpathSync.native` gives the workspace's own casing on Windows.
+- Not messages: summary lines, separators, and the solution-level `Fehler: Unbekannter Fehler (Ausnahme
+  von HRESULT: 0x80004005 (E_FAIL))` that follows a failed PLC project — they stay in the channel only.
+
+**Boot project with autostart (user decision 2026-11-16).** Every activation installs each PLC project
+under `TIPC` as a boot project with autostart: `Install-PlcBootProjects` (identical in builder and driver,
+contract-tested) runs after `SetTargetNetId` + readback and `ActivateConfiguration()`, before
+`StartRestartTwinCAT()` — the boot project goes to the pinned target, the activation cannot overwrite it,
+and the restart loads it. Per project: `BootProjectAutostart` (ITcPlcProject; Beckhoff documents it on the
+root item `TIPC^<name>`, the nested `<name> Project` is the fallback, `node` says which answered) is set
+only when it reads False and read back, then `GenerateBootProject($true)`. Tree items never go through
+`Invoke-ComRetry` or a pipeline (an ITcSmTreeItem enumerates its children); a missing late-bound member
+reads `$null`, never False. The solution is never saved (`Close($false)`), so no project file changes;
+the autostart lives on the target. After RUN, `Read-PlcRunStates` reads each installed PLC's ADS state on
+its `AmsPort` (`Get-PlcAmsPorts`: the PLC `<Project>` element in the `.tsproj`/`.tspproj` or
+`_Config\PLC\*.xti`; `Get-TcAdsState -Port`), up to 15 s for RUN. **A boot-project failure never fails
+the activation** (exit code unchanged) **and never passes silently**: `describeBootProject` makes the
+summary a warning ("…could not be installed, so that PLC has no program: log in from XAE…"), also when
+`bootProject` is missing after a RUN/incomplete activation or a PLC is not RUN; `report()` prints its
+per-project lines. Windows-only unit cases: `scripts/Build PLC project/test-boot-project.ps1` (fake tree
+items). **Unverified on Windows:** which item answers on 4024/4026, that `GenerateBootProject($true)`
+between activation and restart is accepted and survives the restart, that it raises no dialog, and that
+it does not save the project by itself.
+
+**Not done (phase 2, each waits for a Windows probe):**
+remote targets (machine-scope setting, off by default, modal every run); building one nested PLC project
+(`BuildProject`); route listing; attaching to a running hidden shell to show it. Never: writing routes,
+saving the solution or `.tsproj`, activating without the modal, closing a shell this run did not start,
+automating the trial-licence dialog.
+
+### Online monitoring (roadmap R15)
+
+Decisions D1-D9 (user, 2026-11-13) are recorded in `docs/r15-ads-decision.md` section 5. The shape:
+
+```
+webview (media/editor.js)                    extension host                                 PLC
+  online/visible {componentId, texts,  ──▶  onlineCommands → livePath.assembleSt
+    visible line ranges}                     → LSP custom/onlinePaths (ADS path templates)
+                                             → editorPaths (pane positions, {instance})
+                                             → inlineMonitor → session.resolve ─────────────▶ getSymbol (InfoByNameEx)
+  ◀── online/values {items}                  ← every 500 ms session.readMany ───────────────▶ one ADS sum read
+  Write Value… / Add to PLC Watch      ──▶  writeGuard (modal, log) / watchList ────────────▶ writeValue / subscribeRaw
+```
+
+- **The webview never talks ADS** (as with the LSP). It reports which lines its panes show; the host
+  resolves each identifier through the live path and the LSP's symbol index (`src/lsp/features/onlinePaths.js`:
+  `MAIN.x`, `GVL.x`, `{instance}.chain`, constant array indexes; method locals, VAR_TEMP, VAR_IN_OUT
+  and FUNCTION variables answer a reason instead of a path), then checks every path against the PLC's
+  own symbol information before reading it. A path the PLC does not know is never shown — paths are
+  checked, not guessed. Values are Monaco injected text (`after` + `showIfCollapsed`), so the document
+  never changes.
+- **FB instances** come from the PLC's symbol upload (`session.findInstances`: top-level symbols and
+  FB/struct members up to 4 levels, derived FBs included, arrays of instances not listed). With several,
+  the first is used, the user is told once, and *Select FB Instance for Online Values…* changes it.
+- **Connection** (`adsClient.js`): router mode (default) registers a port at the local AMS router
+  (127.0.0.1:48898, or the untested `tcToolkit.online.routerAddress`), no local AmsNetId ever set;
+  direct mode only from `tcToolkit.online.connectionMode = direct` with its three settings. No fallback
+  between modes, no routes created, nothing stored but recent target NetIds (workspaceState). The one
+  fallback is of transport, below.
+- **User-mode fallback** (R15 phase 2, user decisions 2026-11-16). TwinCAT 3.1.4026's user-mode router
+  (`TcSystemServiceUm`) listens on 127.0.0.1:48898 but resets ads-client's TCP connection (measured:
+  `socket error -4077`, ECONNRESET; `EnableAmsTcpLoopback=1` + reboot did not help), while Beckhoff's
+  .NET stack (`TwinCAT.Ads.dll` over `TcAdsDll.dll`) reaches the runtime through it.
+  - **Trigger** (`isRouterRefusal`): router mode, router address on this PC (unset, `localhost`,
+    `127.*`, `::1`), Windows, and the connect step failed with ECONNRESET/ECONNREFUSED (Windows
+    -4077/-4078, Linux -104/-111, macOS -54/-61), "socket closed/ended by remote", or "Registering ADS
+    port failed". A timeout, a route or PLC error, direct mode and a remote router keep today's path.
+    The switch and the DLL used are logged ("TC Toolkit Online"); the `Online:` line names the transport.
+  - **Seam** (`helperClient.js`): a subclass of ads-client's `Client` that overrides only
+    `connectToTarget`, `unregisterAdsPort`, `disconnectFromTarget` and `sendAdsCommand`. ads-client
+    serialises each request as before; the subclass decodes the fixed ADS request layout (Read: ig,
+    io, length; Write: + data; ReadWrite: + read/write lengths; ReadState; ReadDeviceInfo;
+    WriteControl: ADS state, device state, data — Start/Stop PLC), asks the
+    helper for exactly that raw command, and re-encodes the answer as the ADS response bytes (an error
+    in the full response shape: ads-client's ReadWrite parser falls through to Read's and reads the
+    length field) for ads-client's own `parseAdsResponse`. So symbol lookups, the data type builder,
+    value conversion, sum reads and writes are the same code on both paths; the harness runs the real
+    ads-client over the fake helper. Rejected: symbol-level helper calls (TcAdsClient's symbol loader in
+    PowerShell) — a second decoder whose output would differ from ads-client's in types, enums, strings
+    and 64-bit values, and would need its own tests per type. A read whose length ads-client leaves
+    open (0xFFFFFFFF: symbol and data-type info by name) is sent as 4 MiB; the router answers the real
+    length (**unverified on Windows**). The pinned-version internals are checked by `test_ads_helper.js`.
+  - **Notifications are polled**, not TcAdsClient callbacks (no .NET event pump in the helper):
+    AddNotification reads once (its ADS error is the AddNotification's; the value is the first
+    notification, as a PLC sends it), then a 100 ms tick reads every entry due (its cycle time, 500 ms
+    for cycle 0 — ads-client's own state and symbol-version subscriptions) in ONE sum read per target
+    (`readRawMulti`) and hands changed values (or every value, cyclic) to ads-client's
+    `onAdsCommandReceived`. DeleteNotification drops the entry. The watch cap and the #189 handling
+    are unchanged above it.
+  - **Helper** (`adsHelperProcess.js`, `resources/online/ads-helper.ps1`): `powershell.exe -NoProfile
+    -NonInteractive -ExecutionPolicy Bypass -File ads-helper.ps1 -TimeoutMs <ADS timeout>
+    [-AdsDll <path>] [-AdsNativeDir <folder>]` (the two `tcToolkit.adsDll.*` settings, only when set),
+    `windowsHide`, JSON lines on stdin/stdout (protocol in both files' headers; ids echoed, ADS
+    errors as `adsError`, base64 payloads). It loads the newest `…\TwinCAT\3.1\Components\Base\v*\TwinCAT.Ads.dll`
+    that loads and has `TcAdsClient` (roots: the registry's `InstallDir`/`TwinCATDir` under
+    `HKLM\SOFTWARE\[WOW6432Node\]Beckhoff\TwinCAT3`, then `%ProgramFiles(x86)%\Beckhoff\TwinCAT` and
+    `C:\TwinCAT`), prepends that root's Common64 (Common32 in a 32-bit PowerShell) to PATH for
+    `TcAdsDll.dll`. **Configured DLL paths (user request 2026-11-16):** `-AdsDll` (a file, or a folder
+    holding `TwinCAT.Ads.dll`) replaces the search and `-AdsNativeDir` replaces Common64/Common32 on
+    PATH; each is checked before anything loads and is **used as given** — a path that does not hold its
+    DLL ends the start with `dll-not-found`, `dllName` (`TwinCAT.Ads.dll` | `TcAdsDll.dll`),
+    `configured: true` and the path in `error`/`searched`; never a fallback to the search (a typo must not
+    be hidden by a DLL found elsewhere). Every failing ready line carries `dllName`/`configured`.
+    `connectErrors` turns them into a message naming the setting (`setting` → "Open Setting" in
+    `onlineCommands`, User settings because the scope is machine). A TcAdsDll.dll that is missing in
+    search mode only shows at the first request (`DllNotFoundException` / "Unable to load DLL
+    'TcAdsDll.dll'"): matched by `NATIVE_DLL_LOAD` and pointed at `nativeDllFolder`. The helper keeps one TcAdsClient per NetId:port (NetId 127.0.0.1.1.1 → `Connect(port)`), and
+    exits when stdin closes. One request in flight (a queue on the host side); the hang guard is the ADS
+    timeout + 3 s per request, after which the helper is killed and the queue fails; a helper exit
+    while connected is ads-client's `connectionLost`, and its auto-reconnect starts a new helper (no
+    other restart). Go Offline ends stdin and kills after 2 s. Start timeout 20 s (PowerShell start +
+    `Add-Type`). Expected latency per request: a few ms (pipe + TcAdsDll); measure it with
+    `scripts/Online helper smoke/smoke-ads-helper.ps1` (prints the average of 20 ReadStates). At the
+    defaults the helper carries about 2 inline sum reads/s per visible editor, 5 notification sum
+    reads/s (200 ms watch) + 2/s for ads-client's own subscriptions, and 1 state read/s.
+  - **The local runtime in user mode** (R15 phase 3a, user decision 2026-11-16) is not at the router's
+    own NetId (`[AmsNetId]::Local` is the router's; measured on 4026: router and `UmRT_Default` have
+    different NetIds, and they swapped after a reboot), so `localhost:851` answers ADS 0x6/0x7. On
+    Windows, in router mode with the router on this PC, *Local runtime* is resolved first
+    (`src/online/localRuntime.js`), **on every Go Online, never cached** (NetIds change on restart):
+    - **Source**: the activation-target discovery Build through XAE already has — the driver
+      `resources/xae/build-plc-project.ps1 -Json -ListTargets` with **no `-SlnPath`**: no COM, no XAE
+      Shell (registry, `Runtimes\*\TcRegistry.xml`, one `Win32_Process` query; no `.ps1` change was
+      needed). Cost: one `powershell.exe` start plus that query, expected 1-3 s, **not measured** —
+      the channel logs it ("discovery N ms"). It is started when the Go Online pick opens, so it
+      overlaps the user's choice; if Local runtime is picked before it ends, a cancellable progress
+      "Going online: finding the local runtime" waits for it (timeout 30 s, then the router).
+    - **Rule**: only an entry with `kind: 'user-mode'` and `netIdStatus: 'trusted'` is used (a running
+      instance wrote it; see "A user-mode runtime's AmsNetId is trusted only for a running instance").
+      None (or a failed discovery) → the router, as before. Exactly one, and no kernel-mode runtime
+      indicated → that runtime, logged "Local runtime: user-mode runtime UmRT_Default at <NetId> (read
+      from its configuration, instance running)." Several, or one next to a possible kernel-mode
+      runtime → a QuickPick ("Go Online: Local runtime") of the trusted runtimes, "This PC's router
+      runtime (kernel mode)" (→ `localhost`, as before) and the unknown runtimes as separator rows; the
+      last choice (workspaceState `twincat.online.localRuntimePick`) first.
+    - **Kernel mode** (coordinator ruling 2026-11-16): `-ListTargets` reports a "Real-time runtime"
+      record from the registry's system AmsNetId, which cannot tell a kernel-mode PC from a user-mode
+      one that keeps the value (the user's 4026 user-mode PC reported none). So the record counts as a
+      possible kernel runtime unless `tasklist /FI "IMAGENAME eq TcSysSrv.exe" /FO CSV /NH` shows the
+      kernel-mode system service is not running (a successful answer without a `"TcSysSrv.exe"` row;
+      a failed or empty answer asks). **`TcSysSrv.exe` as that image name is unverified.**
+    - **Messages**: the session label is "Local runtime (<name>)"; the recent list stores the
+      concrete NetId (shown as *Used before*), while the *Local runtime* entry itself is always
+      resolved again. When Local runtime stayed on the router and fails with the *Enter AMS Net ID…*
+      hint (`RUNTIME_NETID_HINT`), the hint adds why: the unknown runtimes with their reason (and the
+      file's NetId, "which no running instance is known to use"), the discovery's failure, or "No
+      user-mode runtime with a known AMS Net ID was found on this PC."
+    - Unchanged: a typed or recent NetId, `goOnline({netId: <concrete>})`, direct mode, a remote
+      `routerAddress`, and every platform but Windows run no discovery.
+  - **Messages** (`connectErrors.js`): a reset without a fallback (not Windows) is "The ADS router at
+    … answered but reset this client's TCP connection." (it used to say "No ADS router answered");
+    a failed fallback names both failures (`fallback: true`, kinds `helper-unavailable`, `no-route`,
+    `no-plc`, `timeout`, `other`).
+- **Cancel and cleanup**: Go Online runs under a cancellable progress notification; a cancelled or
+  superseded attempt is closed in the background, and `session.disconnect()` (Go Offline, deactivate)
+  waits for those closes. ads-client ignores `disconnect()` while a connect is in flight, so the adapter
+  waits for the connect to settle and closes it then.
+- **Load**: inline values are polled (one sum read of the visible scalars, chunks of 100, every
+  `tcToolkit.online.inlinePollInterval` ms, paused while the editor is hidden, at most 200 paths per
+  editor); the Watch view uses one on-change notification per entry at `watchCycleTime` ms, capped by
+  `maxNotifications` (default 100, at most 400; Beckhoff recommends at most 550 per device). Members of
+  a watched struct/FB come from that entry's decoded value — expanding costs no notification.
+- **Library defect #189** (a 64-bit value's notification parse throws inside the library's error
+  handler): every subscription is `subscribeRaw` and decoded by us inside a try/catch.
+- **Writes** (`writeGuard.js`): `tcToolkit.online.allowWrites` (off; `"scope": "application"` and
+  read from `inspect().globalValue`, so only the user's own settings count, never a workspace's) AND
+  enabled once per online session (modal) AND, per write, a modal naming the target (label and AMS
+  address), path, old/new value and PLC state, logged to "TC Toolkit Online". Every write is bound to
+  one connection: `session.identity` (a connection id unique per successful connect, plus the target)
+  is recorded at enable (`sessionWrites.identity`) and when the write starts, and is re-checked with
+  `sessionWrites.enabled` and every guard immediately before `session.write`, which itself refuses
+  another connection — a Go Online elsewhere while the value box or a modal is open refuses the
+  write. The connection can stay the same while XAE downloads another workspace project (or a rebuilt
+  one) to the runtime, so each write also pins what its caller checked (`WriteRequest.stillValid`,
+  re-checked with every guard, the last synchronous one included): `runWrite` pins the bound project
+  (`code.project.key`) once the newest code check settles, and an editor's write additionally needs
+  its file in that project; a click delivered while not `online` (a Go Online still connecting) is
+  refused before any dialog. After the dialogs the symbol is resolved and type-checked again: a type
+  name, size, base type or enumerator list that changed while they were open refuses the write, and
+  the typed text is parsed again for the type the symbol has now and must give the same value (an
+  alias of REAL rebuilt as an alias of DINT keeps its name and size; the value was parsed for REAL). The code check's `changed` includes the bound project, so a switch is logged and the
+  editors are told (`writable`, values) at once. Refused while the code check does not pass or is still running (`writeProjectState`: a
+  check in flight, or one from another connection, counts as "not checked"; the confirm waits for the
+  NEWEST check, `codeCheckSettled`), while any TwinCAT editor has unsaved edits (VS Code dirty, a
+  Manual Sync stash — `pendingEditsStore.uris()`, open editor or closed, an empty `{}` is not an edit
+  — or an Auto Sync edit not yet written back; the guard reads stashes with the non-destructive
+  `peek`, and a stash whose fingerprint no longer matches the text counts as unsaved (fail closed);
+  a closed editor's stash is refused with a message naming its file ("open it to restore or discard
+  the stashed edits": opening runs `get`, which restores it or drops a stale one), and a stash whose
+  file no longer exists (renamed or deleted while closed) can never be opened, so the guard drops it
+  with a log line instead of blocking for good — any other unreadable file still blocks;
+  fingerprints ignore a leading U+FEFF, which the file on disk has and VS Code's document text has not), from an editor of a project the PLC does not run
+  (the webview gets `writable: false` and hides *Write Value…*; the host refuses before any dialog),
+  for a type mismatch, and for anything but a scalar. PLC strings are shown as ST literals with
+  control characters escaped (`$N`, `$T`, `$hh`) and shortened (`values.boundedText`, 200 code
+  points), so they cannot forge lines in the modal or the log. Nothing is ever called "Force"; the
+  forces indicator only reads `_AppInfo.ActivePlcForces` / `ActiveIoForces`.
+- **Start / Stop PLC** (`plcControl.js`, user request 2026-11-16): ADS WriteControl Run (5) / Stop (6)
+  on the PLC's port through ads-client's `startPlc`/`stopPlc` (they read the device state first and keep
+  it, and read the state again after, which fires `plcRuntimeStateChange`); `session.controlPlc` then
+  reads the state itself, so the toggle follows at once instead of at the next 2 s status poll. One
+  toggle in three places: the editor's Actions menu, `#plc-run-btn` in its PLC group right after the Build group (the host
+  posts `online/plc` = `toggleState`: `{online, action: 'start'|'stop'|null, plcState, busy, reason}`;
+  the webview only posts `online/plcControl` with the action), the PLC Watch title bar
+  (`navigation@2`, right after Go Online/Offline; swapped by `twincat.plcRunning`) and the palette
+  (`twincat.online.startPlc`/`stopPlc`, enabled by `twincat.plcStopped`/`twincat.plcRunning` and
+  `!twincat.plcControlBusy`). Start only in Stop, Stop only in Run; any other state, a lost connection,
+  a state not read yet or a request in flight shows the item disabled with the reason (its detail line; the
+PLC state itself is the `#plc-indicator` status item in the header). Every request:
+  the state re-checked (a stale click is refused before any dialog), a modal every time ("Stop the PLC
+  on <label> (<NetId>:<port>)?", one button), the identity and the state checked again after it, then
+  sent; refused/cancelled/done/failed logged to "TC Toolkit Online"; a failure shows "Stopping the PLC
+  failed: ADS error 0x… (…)". Not gated by `tcToolkit.online.allowWrites` (user decision). Over the
+  user-mode helper it is the `writecontrol` command (`TcAdsClient.WriteControl(StateInfo(AdsState,
+  deviceState))`, **unverified on Windows**).
+- **Lifecycle rules** (R15 review, 2026-11-13): ads-client restores subscriptions by itself after
+  an auto-reconnect and a download, so the adapter retires every handle it gave out and calls
+  `unsubscribeAll()` before announcing either event (the watch list then subscribes again; a retired
+  handle never sends a DeleteNotification); a reconnect that lands after Go Offline is closed again.
+  A status poll writes only into its own connection's `info`; Cancel and Go Offline are raced against
+  the status reads of Go Online too. The symbol caches (resolves, data types, the symbol upload) belong
+  to ONE client (`session.js` `cacheFor`): a read finishing on a client that is gone lands in a
+  throwaway, and every connect and every Cancel starts empty, so a later PLC never reads at an earlier
+  one's addresses. After a refresh's `setOccurrences`, the editor's poll is restarted only if it is
+  still online and still open (a Go Offline during that wait left it stopped). One poll loop per editor (a loop token in `inlineMonitor`), and
+  every `setOccurrences` is answered even with unchanged values (the webview cleared them). The watch
+  list owns each slot by a token (a remove/re-add race leaks nothing), releases the handle a slot
+  still holds before `attach()` takes it over (an Add during the status phase, two quick symbol
+  drops), and retries capped entries when one is removed or `maxNotifications` changes. The webview asks for values only when it goes online,
+  scrolls, edits or switches component — never in answer to `online/state`, which would loop.
+- **Unqualified names** in `onlinePaths.js` map to a GVL variable only when the POU's EXTENDS chain
+  is fully resolved with no library ancestor, exactly one project GVL declares the name and is known
+  not to be `qualified_only` (`xmlIndexer` records `qualifiedOnly` on GVL nodes; a node without it
+  counts as "may be"), no library GVL declares it, and no enum has a member of that name.
+- **A GVL's node in the editor** (R15 review round 2): a GVL's raw unit has no `GVL` header, so
+  `parser.js` does not replace its node as it does a POU's; it finds the node by uri and, since the
+  unit is the whole GVL, gives it a NEW `variables` array (appending used to keep the XML indexer's
+  copies too, and grew by a copy per sync). It also re-reads
+  `qualifiedOnly` from the unit text, with the regex `xmlIndexer` uses on disk. **When `qualifiedOnly`
+  can still be stale:** for a GVL never synced since its last save, the flag is the disk's — an
+  unsaved pragma edit in a GVL editor counts from that editor's next sync (any request from it), and
+  an unsaved edit in a closed editor's Manual Sync stash never does (the safe direction when the
+  pragma was removed; when it was added, the PLC still runs the code without it). A `.st`-only GVL
+  (`GVL` keyword path) never gets the flag, so it never maps unqualified names. The declaration loop
+  in `onlinePaths.js` also emits a variable only where the unit text at its range is its name, once
+  per position — a range from another coordinate system can no longer place a value.
+- **The code check** (`codeIdentity.js`) is what can be compared without an undocumented service:
+  (1) `_AppInfo.ProjectName` against the `.plcproj` names — a different or unreadable name hides the
+  inline values; (2) the variable layout of the last build (`<project>.tmc` symbols: name, BitSize)
+  against the PLC's symbol upload (name, size), in the namespaces the `.tmc` has; (3) the project's
+  sources edited after the `.tmc` was written. Writes need all three. It re-runs on going online, a new
+  project name, an online change or download, a saved TwinCAT file, a changed `.tmc`, and around every
+  write. **It cannot detect a change to code bodies alone that was built but not downloaded** — XAE's
+  login compares its compile id, which no documented ADS service exposes; the UI says "name, variable
+  layout and edits since the last build", never "same code". `_AppInfo.AppTimestamp` is only logged.
+- **Status bar**: hidden offline; `Online: <target> · Run|Stop|Reconnecting [· Code differs|Code not
+  checked] [· Forces active]`, the tooltip listing each check, forces (or "not reported" before
+  4026.21), writes and notifications.
+
 ### Writes
 
 On save, only the edited `<![CDATA[ ... ]]>` blocks are rewritten. The surrounding XML is preserved
@@ -728,7 +2544,7 @@ load-bearing (dropping any one resurrects false positives, or empties part of th
 the ZIP **archives** and the project **`.tmc`** (`libsymbols.js`), the **`.plcproj`** namespaces
 (`libraries.js`), the optional **`library-signatures.xml`** (`librarySignatures.js`), and TwinCAT's
 per-library **browsercache** (`browserCache.js`, for library FB/interface method + property *names*).
-See [HANDOFF.md](HANDOFF.md) for what each source uniquely provides and the traps.
+See [docs/handoff-findings.md](docs/handoff-findings.md) ("External symbols") for what each source uniquely provides and the traps.
 
 Each project's index carries its own copy of what `libraries.js`/`libsymbols.js` register — the
 `Symbol`-keyed registries described under "Project-scoped indexing" above — so two projects that

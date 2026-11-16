@@ -26,10 +26,11 @@ const { provideDiagnostics, setDiagnosticsConfig } = require('../src/lsp/feature
 const { reportCoverage } = require('./_coverage');
 const {
     SAMPLE_DIR,
+    isFirstSampleDir,
     indexSampleLibraries,
     printBaselineMode,
-    syncDocument,
-    walkTwinCatFiles
+    sampleProjects,
+    syncDocument
 } = require('./_baseline');
 
 const hasSample = fs.existsSync(SAMPLE_DIR);
@@ -48,47 +49,62 @@ if (!hasSample) {
     console.log('sample/ project not present — skipping the sample ratchet; synthetic probes still run.');
     reportCoverage('sample-typecheck', 'skipped', 'sample/ project not present');
 } else {
-    // The server's workspace scan: namespace heads from the .plcproj, symbol names from the library
-    // archives, types from the .tmc. Which baseline applies depends on which of those (git-ignored)
-    // artifacts this machine actually has.
-    const modeInfo = indexSampleLibraries(SAMPLE_DIR);
-    const BASELINE_DIAGNOSTICS = modeInfo.baseline;
-    printBaselineMode(modeInfo);
-
-    const sampleFiles = walkTwinCatFiles(SAMPLE_DIR);
-    const sampleSt = {};
-    for (const f of sampleFiles) {
-        const xml = fs.readFileSync(f, 'utf8');
-        const parsed = parseTwinCatXml(xml);
-        if (!parsed) continue;
-        const uri = 'file:///' + f.replace(/\\/g, '/').replace(/^\//, '');
-        // raw:true — the non-raw conversion strips declaration-site init lists and hides findings.
-        sampleSt[f] = { stText: convertXmlToSt(parsed, { raw: true }).stText, uri };
-        indexXmlObject(index, xml, uri);
-    }
-
-    console.log(`--- Sample diagnostics ratchet (mode ${modeInfo.mode}, baseline ${BASELINE_DIAGNOSTICS}) ---`);
+    // One PLC project at a time, as the server partitions a workspace (one index per project): the
+    // two samples share object names (MAIN, FB_Cylinder), which a flat index would report as false
+    // positives. The first sample goes LAST, so the index and the library registries left behind for
+    // the synthetic probes below are that sample's — as before there was a second one.
+    const projects = sampleProjects(SAMPLE_DIR)
+        .sort((a, b) => Number(isFirstSampleDir(a.dir)) - Number(isFirstSampleDir(b.dir)));
     let sampleDiagTotal = 0;
-    for (const f of sampleFiles) {
-        const c = sampleSt[f];
-        if (!c) continue;
-        // As server.js does: re-parse the unit so methods carry real line ranges, and register the
-        // library symbols it references, then diagnose.
-        syncDocument(index, c.stText, c.uri);
-        const diags = provideDiagnostics(c.stText, index, c.uri);
-        if (diags.length) {
-            sampleDiagTotal += diags.length;
-            const lines = c.stText.split('\n');
-            diags.forEach(d => console.log(`   ${path.basename(f)} L${d.range.start.line + 1}: ${d.message}  >> ${(lines[d.range.start.line] || '').trim()}`));
+    let BASELINE_DIAGNOSTICS = 0;
+    let fileCount = 0;
+    const modes = [];
+    for (const project of projects) {
+        clearWorkspaceIndex();
+        // The server's per-project scan: namespace heads from the .plcproj, symbol names from the
+        // library archives, types from the .tmc. Which baseline applies depends on which of those
+        // artifacts this machine actually has.
+        const modeInfo = indexSampleLibraries(project.dir);
+        BASELINE_DIAGNOSTICS += modeInfo.baseline;
+        modes.push(`${project.name}: ${modeInfo.mode}`);
+        printBaselineMode(modeInfo, isFirstSampleDir(project.dir));
+
+        const sampleFiles = project.files;
+        fileCount += sampleFiles.length;
+        const sampleSt = {};
+        for (const f of sampleFiles) {
+            const xml = fs.readFileSync(f, 'utf8');
+            const parsed = parseTwinCatXml(xml);
+            if (!parsed) continue;
+            const uri = 'file:///' + f.replace(/\\/g, '/').replace(/^\//, '');
+            // raw:true — the non-raw conversion strips declaration-site init lists and hides findings.
+            sampleSt[f] = { stText: convertXmlToSt(parsed, { raw: true }).stText, uri };
+            indexXmlObject(index, xml, uri);
+        }
+
+        console.log(`--- Sample diagnostics ratchet, ${project.name} (mode ${modeInfo.mode}, baseline ${modeInfo.baseline}) ---`);
+        for (const f of sampleFiles) {
+            const c = sampleSt[f];
+            if (!c) continue;
+            // As server.js does: re-parse the unit so methods carry real line ranges, and register the
+            // library symbols it references, then diagnose.
+            syncDocument(index, c.stText, c.uri);
+            const diags = provideDiagnostics(c.stText, index, c.uri);
+            if (diags.length) {
+                sampleDiagTotal += diags.length;
+                const lines = c.stText.split('\n');
+                diags.forEach(d => console.log(`   ${path.basename(f)} L${d.range.start.line + 1}: ${d.message}  >> ${(lines[d.range.start.line] || '').trim()}`));
+            }
         }
     }
     const delta = sampleDiagTotal - BASELINE_DIAGNOSTICS;
+    assert(projects.length >= 2, `the ratchet covers every sample PLC project (${projects.map(p => p.name).join(', ')})`);
     assert(sampleDiagTotal <= BASELINE_DIAGNOSTICS,
-        `sample project stays at or below the ${BASELINE_DIAGNOSTICS}-diagnostic "${modeInfo.mode}" baseline (got ${sampleDiagTotal}, delta ${delta > 0 ? '+' : ''}${delta})`);
+        `sample projects stay at or below the ${BASELINE_DIAGNOSTICS}-diagnostic baseline (${modes.join(', ')}; got ${sampleDiagTotal}, delta ${delta > 0 ? '+' : ''}${delta})`);
     if (sampleDiagTotal < BASELINE_DIAGNOSTICS) {
-        console.log(`       IMPROVEMENT: lower the "${modeInfo.mode}" baseline in scratch/_baseline.js to ${sampleDiagTotal} (both harnesses share it).`);
+        console.log(`       IMPROVEMENT: lower the baseline in test/_baseline.js to ${sampleDiagTotal} (both harnesses share it).`);
     }
-    reportCoverage('sample-typecheck', 'ran', `${sampleFiles.length} files diagnosed`);
+    reportCoverage('sample-typecheck', 'ran', `${fileCount} files in ${projects.length} projects diagnosed`);
 }
 
 // ---- Fixture: the types the synthetic probes are written against ----

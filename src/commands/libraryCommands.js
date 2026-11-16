@@ -1,6 +1,6 @@
 /**
  * @file libraryCommands.js
- * @description Registers the "TwinCAT Libraries" view commands: refresh, regenerate the library
+ * @description Registers the "PLC Libraries" view commands: refresh, regenerate the library
  * signatures by driving a TwinCAT XAE shell, copy a namespace / qualified name, and insert a library
  * symbol (name-only or with its full parameter list) at the caret. The signature regeneration is the
  * one place the extension touches TwinCAT — see src/xaeShell.js — and only when the user asks for it.
@@ -13,14 +13,16 @@ const { findTwinCatShells, runSignatureGenerator } = require('../xaeShell');
 const { insertTextForNode, formattedDefinitionForNode } = require('../libraryTreeProvider');
 
 /**
- * Registers the TwinCAT Libraries view commands.
+ * Registers the PLC Libraries view commands.
  * @param {vscode.ExtensionContext} context The extension context.
  * @param {object} deps Injected collaborators owned by extension.js.
  * @param {any} deps.libraryProvider The library tree data provider.
  * @param {any} deps.provider The custom editor provider (for insert-at-caret routing).
  * @param {() => any} deps.getClient Returns the live LSP client, or undefined before start.
+ * @param {import('../indexInputs').OwnWriteGate} deps.ownIndexWrites Suppresses the host's
+ *   `.tmc`/signatures watcher while this command writes the dump and re-indexes on its own.
  */
-function registerLibraryCommands(context, { libraryProvider, provider, getClient }) {
+function registerLibraryCommands(context, { libraryProvider, provider, getClient, ownIndexWrites }) {
     /**
      * Tells the user where the insert commands actually live. Both need the tree node the context
      * menu was opened on, so from the Command Palette they have nothing to act on.
@@ -28,7 +30,7 @@ function registerLibraryCommands(context, { libraryProvider, provider, getClient
      */
     function insertNeedsANode() {
         vscode.window.showInformationMessage(
-            'Right-click a library, type or member in the TwinCAT Libraries view (or an object in TwinCAT Objects) to insert it at the cursor.'
+            'Right-click a library, type or member in the PLC Libraries view (or an object in PLC Objects) to insert it at the cursor.'
         );
     }
 
@@ -45,7 +47,9 @@ function registerLibraryCommands(context, { libraryProvider, provider, getClient
                 return;
             }
 
-            const shells = findTwinCatShells();
+            // A path set in tcToolkit.xaeShell.* (and present on disk) wins over discovery for its shell.
+            const xaeConfig = vscode.workspace.getConfiguration('tcToolkit.xaeShell');
+            const shells = findTwinCatShells({ path4024: xaeConfig.get('path4024', ''), path4026: xaeConfig.get('path4026', '') });
             if (shells.length === 0) {
                 vscode.window.showErrorMessage(
                     'Updating library definitions requires a TwinCAT XAE installation (TcXaeShell) on this machine, ' +
@@ -67,18 +71,18 @@ function registerLibraryCommands(context, { libraryProvider, provider, getClient
             // are the known case). So confirm — with one shell installed the pick is a confirmation,
             // with two it is a choice — and treat a cancelled pick as "do nothing".
             //
-            // `twincat.libraryDefinitions.shell` skips the prompt for people who always use the same
+            // `tcToolkit.libraryDefinitions.shell` skips the prompt for people who always use the same
             // one. A configured shell that is NOT installed falls back to asking rather than to the
             // other bitness: silently producing the signatures the user configured *against* is the one
             // outcome this whole setting exists to prevent.
-            const configured = vscode.workspace.getConfiguration('twincat').get('libraryDefinitions.shell', 'ask');
+            const configured = vscode.workspace.getConfiguration('tcToolkit').get('libraryDefinitions.shell', 'ask');
             const preferred = configured !== 'ask' ? shells.find(s => s.id === configured) : null;
 
             let shell = preferred;
             if (!shell) {
                 if (configured !== 'ask') {
                     vscode.window.showWarningMessage(
-                        `twincat.libraryDefinitions.shell is set to "${configured}", but that XAE Shell is not ` +
+                        `tcToolkit.libraryDefinitions.shell is set to "${configured}", but that XAE Shell is not ` +
                         'installed. Choose one instead.'
                     );
                 }
@@ -102,40 +106,47 @@ function registerLibraryCommands(context, { libraryProvider, provider, getClient
                 shell = picked.shell;
             }
 
-            const output = vscode.window.createOutputChannel('TwinCAT Library Definitions');
+            const output = vscode.window.createOutputChannel('TC Toolkit Library Definitions');
             output.clear();
             output.show(true);
 
-            const code = await vscode.window.withProgress({
-                location: vscode.ProgressLocation.Notification,
-                title: 'Updating TwinCAT library definitions',
-                cancellable: false
-            }, async (progress) => {
-                progress.report({ message: `Starting ${shell.label} (this can take a minute)...` });
-                return runSignatureGenerator(scriptPath, workspaceFolder, shell, output, (line) => {
-                    // The script's own progress lines are already user-facing prose — surface them as-is.
-                    progress.report({ message: line });
+            // The dump write and our own re-index run inside the gate, so the watcher does not answer the
+            // write with a second full scan.
+            const code = await ownIndexWrites.run(async () => {
+                const exit = await vscode.window.withProgress({
+                    location: vscode.ProgressLocation.Notification,
+                    title: 'Updating TwinCAT library definitions',
+                    cancellable: false
+                }, async (progress) => {
+                    progress.report({ message: `Starting ${shell.label} (this can take a minute)...` });
+                    return runSignatureGenerator(scriptPath, workspaceFolder, shell, output, (line) => {
+                        // The script's own progress lines are already user-facing prose — surface them as-is.
+                        progress.report({ message: line });
+                    });
                 });
-            });
 
-            if (code !== 0) {
-                vscode.window.showErrorMessage(
-                    'Failed to update library definitions. See the "TwinCAT Library Definitions" output channel for details.'
-                );
-                return;
-            }
-
-            // The dump is only data on disk until the LSP re-reads it: custom/reindex is what runs
-            // indexLibrarySignatures and merges it into the type registry. Refresh the view afterwards so
-            // the two can never disagree about what is indexed (same order as the .plcproj watcher).
-            const client = getClient();
-            if (client) {
-                try {
-                    await client.sendRequest('custom/reindex', { folders: folders.map(f => f.uri.toString()) });
-                } catch (e) {
-                    console.error('Failed to re-index after updating library definitions:', e);
+                if (exit !== 0) {
+                    vscode.window.showErrorMessage(
+                        'Failed to update library definitions. See the "TC Toolkit Library Definitions" output channel for details.'
+                    );
+                    return exit;
                 }
-            }
+
+                // The dump is only data on disk until the LSP re-reads it: custom/reindex is what runs
+                // indexLibrarySignatures and merges it into the type registry. Refresh the view afterwards so
+                // the two can never disagree about what is indexed (same order as the .plcproj watcher).
+                const client = getClient();
+                if (client) {
+                    try {
+                        await client.sendRequest('custom/reindex', { folders: folders.map(f => f.uri.toString()) });
+                    } catch (e) {
+                        console.error('Failed to re-index after updating library definitions:', e);
+                    }
+                }
+                return exit;
+            });
+            if (code !== 0) return;
+
             libraryProvider.refresh();
             vscode.window.showInformationMessage('TwinCAT library definitions updated.');
         }),

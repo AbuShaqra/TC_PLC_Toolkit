@@ -1,0 +1,4 @@
+{"v":1,"t":"hello","mode":"listTargets","showWindow":false}
+{"v":1,"t":"targets","local":[{"netId":"198.51.100.1.1.1","name":"Real-time runtime","kind":"real-time","platform":"TwinCAT RT (x64)","provenance":"kind-inferred"},{"netId":"198.51.100.4.1.1","name":"UmRT_Default","kind":"user-mode","platform":"TwinCAT OS (x64)","provenance":"read"},{"netId":"bogus","name":"x","kind":"user-mode","platform":null}],"projectNetId":"198.51.100.4.1.1"}
+{"v":1,"t":"done","exitCode":0,"ui":null}
+{"exit":0}

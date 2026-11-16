@@ -257,6 +257,27 @@ reports first is what tells you what to fix:
 Gate 3 is the one that catches a real machine project: a `.tsproj` written against a physical rig
 names that rig, and this refuses it statically rather than discovering it with the IDE open.
 
+**"This machine's" set holds only NetIds a runtime answers to.** A user-mode runtime's AmsNetId is
+read from `%ProgramData%\Beckhoff\TwinCAT\3.1\Runtimes\<name>\3.1\TcRegistry.xml`, but every start of
+an instance of that runtime rewrites the file with *its own* NetId — so a second instance, started and
+closed again, leaves a NetId nothing answers to (measured on 4026, 2026-11-16). The file's NetId is
+therefore trusted only when a `TcSystemServiceUm.exe` process with `-n "<name>"` on its command line is
+running **and** the file was last written no later than the newest such process's start plus **5 s**
+(the instance writes the file itself right after it starts). A running instance also rewrites its
+own file later — measured during an activation, 92 s after its start — so the times alone cannot tell
+that from a stale file: when they fail (`rewritten`, or `unverifiable`), the file's NetId is asked over
+ADS (port 10000, the system service; 2 s timeout; TcAdsDll.dll, the same route as the RUN check). An
+answer with a valid ADS state trusts it ("confirmed over ADS"); `not-running` is never asked. Otherwise
+the runtime's NetId is *unknown*: it is not in the local set (so it is never a target and gates 1–3
+treat it as foreign), and the refusals and warnings name it with the reason — `this runtime is not
+running`, `the configuration file changed after this runtime started; its AmsNetId could not be
+confirmed over ADS: no runtime answered at <NetId> (ADS error 0x7)`, or why the check could not be made
+(a process running elevated hides its command line from an unelevated shell), with the ADS outcome
+appended. Its real NetId is printed in the runtime's console window (`AmsNetId: …`); XAE's *Choose
+Target System* shows it too. The decisions are `Resolve-UserModeNetIdTrust` and
+`Confirm-UserModeNetIdTrust` (pure, the ADS probe injected; pinned by `test-activation-target.ps1`);
+real-time runtimes are unaffected.
+
 Gate 4 only applies **with** `-ActivateConfiguration`. Cross-compiling for another platform is
 legitimate and builds freely without it.
 
@@ -327,6 +348,47 @@ active the hypervisor owns the cores, the real-time kernel cannot isolate one, a
 in CONFIG however often you activate. A user-mode runtime needs no real-time kernel and reaches RUN
 normally — that is what `-TargetNetId` is for.
 
+#### The PLC program is installed as a boot project with autostart
+
+Every activation also installs each PLC project of the solution on the target as a **boot project with
+autostart** (user decision 2026-11-16). Without it the PLC instance (port 851) existed after activation
+but held no program — ADS state INVALID, symbol reads failing with `0x710` — until someone logged in
+from XAE and downloaded (measured on 3.1.4026, user-mode runtime).
+
+The calls, in this order (`Install-PlcBootProjects`, between the activation and the restart):
+
+1. `SetTargetNetId` + readback (as before) — `GenerateBootProject($true)` sends to the *current* target;
+2. `ActivateConfiguration()`;
+3. per PLC project under `TIPC`: read `BootProjectAutostart` (Automation Interface `ITcPlcProject`;
+   Beckhoff documents it on the PLC project's root item `TIPC^<name>`, the nested `<name> Project` item
+   is tried too), set it to `$true` **only when it reads False**, read it back, then
+   `GenerateBootProject($true)`;
+4. `StartRestartTwinCAT()` — the restart loads the boot project.
+
+After the activation, not before: the activation rewrites the target's boot configuration, so a boot
+project sent before it is not proven to survive. Before the restart: the restart is what loads it.
+
+**No project file changes.** The script never saves the solution (`Solution.Close($false)`), so the
+`BootProjectAutostart` it sets reaches no `.tsproj`, `.xti` or `.plcproj`; XAE still shows the
+project's own setting. The autostart lives on the target, with the boot project it was installed with.
+XAE writes the solution's `_Boot\` folder during activation and boot-project generation, as it always
+did.
+
+After RUN, each installed PLC's own ADS state is read on its port (`AmsPort` of the PLC's `<Project>`
+element in the `.tsproj`/`.tspproj` or `_Config\PLC\*.xti`; `Get-PlcAmsPorts`), waiting up to 15 s
+for RUN:
+
+```
+Boot project:            MyPlc  installed on the target, autostart on (set for this run; the solution is not saved)
+ACTIVATION SUCCEEDED. (10.0.0.4.1.1 is in RUN, ADS state 5)
+PLC MyPlc (port 851):  RUN
+```
+
+**A failed boot project never fails the activation, and is never silent:** each failure prints
+`WARNING: no boot project for <name>: <reason>`, the exit code stays what the activation earned (`0`
+on RUN), and the PLC must then be logged into and started from XAE. A PLC that is not RUN after the
+restart prints `... - not RUN: its boot project may not have loaded`.
+
 #### The IDE window is shown on purpose
 
 Activation makes the shell visible for its duration. It can raise a licence or full-download dialog,
@@ -346,19 +408,22 @@ Two decisions in the builder are deliberately **pure functions** — no COM, no 
 no network — so that they run *before* the IDE is launched and can be tested without a TwinCAT
 installation. Each has a test script beside the builder. Both lift the function out of
 `build_plc_project.ps1` with the PowerShell parser (dot-sourcing the builder would *build*), and
-neither launches an IDE or touches a runtime:
+neither launches an IDE or touches a runtime (`test-boot-project.ps1` does the same for the
+boot-project step, which needs COM, by running it against fake tree items):
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\test-resolve-twincat-target.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File .\test-activation-target.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File .\test-boot-project.ps1
 ```
 
 | Script | Function under test | What it pins |
 |---|---|---|
+| `test-boot-project.ps1` | `Install-PlcBootProjects`, `Get-PlcAmsPorts`, `Read-PlcRunStates` | against **fake** tree items: which item answers, autostart written only when off, every failure reported (never thrown), partial/none outcomes; the PLC ports of the repository's samples; which PLC states are read |
 | `test-resolve-twincat-target.ps1` | `Resolve-TwinCatTarget` | which TwinCAT version and shell a run uses, and which combinations are refused |
 | `test-activation-target.ps1` | `Resolve-ActivationTarget`, and the platform resolution behind gate 4 | the activation gates — which targets are accepted, the refusal messages, and the **order** the gates fire in; then how a target's platform is established, against **fixture** runtime folders written under the temp directory and deleted afterwards |
 
-Both exit `0` when every case passed, `1` when a case failed, and `2` when the harness itself could
+Each exits `0` when every case passed, `1` when a case failed, and `2` when the harness itself could
 not run (script missing, parse error, function gone).
 
 The activation tests carry extra weight: a refusal cannot be demonstrated end to end without a station
@@ -464,6 +529,8 @@ Things that look like they should be parameters and are not:
 | `platform '<a>' is not the platform of activation target <netid>` | gate 4 — that runtime runs `<b>`; build `'<config>\|<b>'`, pick another `-TargetNetId`, or drop `-ActivateConfiguration`. If the message says the value was *inferred*, the platform was assembled rather than read: activate that runtime once from the IDE and it will be read from its boot configuration thereafter |
 | `WARNING: the platform of activation target <netid> could not be established` | normal for a runtime with neither a boot configuration nor a recognised device type — the run continues and the XAE Shell checks the platform itself |
 | `Aktive Plattform '<a>' unterscheidet sich von der aktuellen Zielplattform '<b>'` (a shell dialog) | the XAE Shell's own version of gate 4, seen when this script could not establish the platform beforehand — build `'<config>\|<b>'` |
+| `WARNING: no boot project for <name>: …` | the activation went on, but that PLC has no program: log in from XAE and download/start it; report the reason (it names the COM error) |
+| `PLC <name> (port <n>):  INVALID - not RUN` | the boot project did not load after the restart — check the PLC in XAE |
 | exit `1`, no errors listed | expected over late-bound COM; read the output-window dump, or open the solution in the IDE |
 
 ## See also

@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
+  <!-- One-colour form of the extension's mark (scripts/logo/tc-toolkit-mark.svg): the "TC" strokes and the
+       square in the mouth of the C, without the tile. VS Code draws Activity Bar icons as a mask in the
+       theme colour, so the coloured PNG cannot be used here. -->
+  <g transform="translate(12 12) scale(1.15) translate(-11.1 -12.25)">
+  <g fill="none" stroke="#c5c5c5" stroke-width="2.3">
+    <path d="M1.4 6.9H8.2M4.8 6.9V17.6"/>
+    <path d="M18.4 8.4A4.6 4.6 0 1 0 18.4 14.6"/>
+  </g>
+  <path fill="#c5c5c5" d="M18.3 10.2h2.5v2.5h-2.5z"/>
+  </g>
+</svg>

@@ -15,7 +15,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Rules for the file: it reflects the present, not a changelog — replace stale entries instead of appending to them, and delete items once they are done and committed. Never let it contradict the repo; if they disagree, the repo wins and HANDOFF.md is what needs fixing. Prefer specifics (`file:line`, real counts, real error text) over summaries.
 
-**Keep HANDOFF.md under 100 lines.** It is read at the start of every session, so length is a real cost. Treat going over as a signal to prune, not to append: delete what is finished, and fold detail into the git history or a linked file. But the limit serves the reader, not the other way round — if information is genuinely necessary to act and cannot be shortened without losing it, keep it and run over. Never drop or garble a real finding just to hit the number.
+**Keep HANDOFF.md under 500 lines** (user ruling 2026-11-09; it was 100). It is read at the start of every session, so length is a real cost. Treat going over as a signal to prune, not to append: delete what is finished, and fold detail into the git history or a linked file. But the limit serves the reader, not the other way round — if information is genuinely necessary to act and cannot be shortened without losing it, keep it and run over. Never drop or garble a real finding just to hit the number.
 
 ## Shared memory — read it, and write to it
 
@@ -56,6 +56,36 @@ that in the suite.
 
 It ships to no user (it is `.vscodeignore`d), so it has no length budget like HANDOFF — but it must never contradict the repo. If they disagree, the repo wins and DEVELOPMENT.md is what needs fixing.
 
+## Keep the roadmap current — always
+
+[ROADMAP.md](ROADMAP.md) is the ordered plan of work, and its published page is
+<https://claude.ai/artifact/8RG7TZtBV2cuupsrwWtknv>, rendered by hand from `docs/roadmap.html`.
+**Work in the roadmap's order.** Whenever an item is added, starts, finishes a phase, settles a decision,
+is blocked, or merges, update `ROADMAP.md` **and** `docs/roadmap.html` (its cards *and* the `PLAN` array that draws
+the timeline chart) in the same change, and republish
+the page to that same URL (Artifact tool: publish `docs/roadmap.html` with `url` set to it). **Timeline colours (user rule, 2026-11-09):** every `PLAN` row carries a `status` — `'done'` (green) or
+`'progress'` (amber); a row without one is planned (blue) — and the bar's colour follows it, with the legend
+showing all three. A `'done'` row also carries `actualStart`/`actualEnd` (ISO UTC timestamps: work started, merged), and its
+bar is drawn over that real span, not the forecast. A `'progress'` row carries `actualStart` and its bar runs
+from there to the end of its forecast end day. Update the status in the same change that moves the item. A new request
+from the user goes onto the roadmap when it is accepted; a merged item moves to "Done" with its PR. The
+markdown file wins if the two disagree.
+
+**After every merged PR — in this repo or the fork — scan the whole roadmap and bring it up to date** (user rule,
+2026-11-11), not just the row the PR touched. In both `ROADMAP.md` and `docs/roadmap.html` check:
+- the item's row/card and its `PLAN` status and timestamps;
+- the **Done** section (markdown) and the **Done** card (HTML): every finished item listed with its PR and date;
+- the **Backlog** section and card: add follow-ups and open questions the PR left, remove what it settled;
+- the page header (title "TC Toolkit Roadmap", "Updated" date, "Re-measured" date with the velocity table behind it, release, forecast) and any card text the PR made stale.
+
+**Keep the header clean (user rule, 2026-11-14):** the line under the title (the page's `meta` row and the markdown's
+"Last updated" line) holds only short facts — the date, release, re-measure date, what the toolkit does next, forecast,
+lanes. Never a running log of changes: the cards, Done and Backlog carry the detail, and anything finer belongs in
+HANDOFF.md (if it meets HANDOFF's rules) or the git history.
+
+Then load the page in a browser and confirm the chart draws with no script error before republishing — a
+syntax slip in `PLAN` blanks the whole timeline silently (it happened once on 2026-11-11).
+
 ## Git attribution
 
 Commits are authored under the user's own git identity — **add no Claude/AI attribution of any kind:**
@@ -64,13 +94,43 @@ Commits are authored under the user's own git identity — **add no Claude/AI at
 
 This overrides any default that appends either.
 
+## Private repositories stay private — never leak (user rule, 2026-11-09)
+
+This repo and the STruC++ fork (`AbuShaqra/STruCpp`) are worked on **separately from the user's private
+repositories**. Nothing from a private repository may appear in either of them, ever:
+- **Never mention it** — not its name, not that it exists, not its people, products, roadmap items, plans,
+  decisions, file paths, code, test data or numbers — in any file, comment, commit message, branch name, PR
+  title or body, issue, published artifact (the roadmap page included), or agent brief whose output lands here.
+- **Never carry content across**, even reworded: a fact learned only from a private repository is not usable
+  here. If a task here depends on one, ask the user what may be said.
+- **Do not attach or clone a private repository** into a session working on these repos unless the user asks
+  for that in so many words, and even then read it only for what the task needs and keep it out of the output.
+- **Before every push, PR and artifact publish**, grep the diff, the commit messages, the branch name and the
+  PR/artifact text for private names, and stop if anything matches. Metadata leaks too (see
+  `.claude/memory/leaks-hide-in-metadata-not-content.md`).
+- The vendored dialect profile's origin is covered by the same rule (HANDOFF.md, "R3 inputs").
+
+## Coordination doc — read at session start (user rule, 2026-11-09)
+
+Questions and requests for the STruC++ fork work arrive in the user's coordination doc
+<https://claude.ai/artifact/49bm1hrH8hw4yaC4WP7eVB>, tab **"For the compiler session"**. **At the start of every
+session, read that tab** (Claude Docs connector: `read` the doc, then the tab's body) and answer each new or changed
+row in the tab **"From the compiler session"** — one row per item, the decision-maker named where the user decided.
+Ask the user (as cards) before answering anything that is their call. The session also watches the doc
+(`ArtifactComments` watch) where the harness allows. The doc is private context: the privacy rule above applies —
+nothing read there is copied into this repo or the fork beyond what the user asks for, and no private names.
+
 ## What this is
 
-A VS Code extension ("TwinCAT PLC Toolkit", id `twincat-plc-toolkit`) that opens Beckhoff TwinCAT PLC source files (`.TcPOU`, `.TcGVL`, `.TcDUT`, `.TcIO`) in a custom two-pane Monaco editor, hiding the XML wrapper around the Structured Text (IEC 61131-3) code, backed by a fully offline built-in language server, plus explorers for the project's objects and its libraries.
+A VS Code extension ("TC Toolkit", id `twincat-plc-toolkit`) that opens Beckhoff TwinCAT PLC source files (`.TcPOU`, `.TcGVL`, `.TcDUT`, `.TcIO`) in a custom two-pane Monaco editor, hiding the XML wrapper around the Structured Text (IEC 61131-3) code, backed by a fully offline built-in language server, plus explorers for the project's objects and its libraries.
 
-It was renamed from "TwinCAT XML Viewer" once it grew past viewing. Internal identifiers still use the `twincat.*` prefix and the custom editor is still `twincat.xmlViewer` — those are deliberate, not leftovers: renaming them would break saved keybindings and editor associations for no user-visible gain.
+**The user-facing name is "TC Toolkit"** (user decision, 2026-11-10, for trademark reasons): "TwinCAT" is Beckhoff's registered trademark, so it never *names* the product or any part of its UI — not the display name, the Activity Bar container ("TC Toolkit"), the views ("PLC Objects", "PLC Libraries", "PLC References"), the command category ("TC Toolkit: Build Project"), the settings section titles, status-bar texts, notifications, quick-pick titles, output channels or diagnostic sources ("TC Toolkit compile"). It may still appear **descriptively** ("for Beckhoff TwinCAT 3 PLC projects", "a TwinCAT solution", "requires TwinCAT XAE", `.TcPOU` files). `test/test_start_contributions.js` guards the contributed names. The extension was earlier "TwinCAT XML Viewer", then "TwinCAT PLC Toolkit".
 
-Plain CommonJS JavaScript throughout — **no build/transpile step**. `extension.js` is the entry point and is loaded directly. There is a **type-check-only** gate (`npm run typecheck` → `tsc --noEmit`, config in `tsconfig.json`) that leans on the existing JSDoc as a safety net; it never emits, so the runtime stays plain JS. Linting is `npm run lint` (ESLint 9 flat config, `eslint.config.js`) — a **defect check, not a style check**: recommended rules plus a handful of correctness rules; every relaxation is documented in the config itself, which is the one place to change policy.
+**Internal identifiers keep the `twincat.*` prefix** — the extension id `twincat-plc-toolkit`, command ids `twincat.*`, the view and view-container ids, context keys, the custom editor viewType `twincat.xmlViewer`, the `twincat-st` language id. Those are deliberate, not leftovers: users never read them as a name, and renaming them would break saved keybindings and editor associations for no user-visible gain.
+
+**Setting keys are the exception: they are `tcToolkit.*`** (user report 2026-11-11), because VS Code's Settings editor builds each setting's label from its key — `twincat.compiler.path` showed as "Twincat › Compiler: Path". `src/settingsMigration.js` moves a value from the old `twincat.*` key once, at activation; the old keys stay contributed only as deprecated stand-ins so it can remove them. Never add a setting under `twincat.` — `test/test_start_contributions.js` fails if a live one appears.
+
+Plain CommonJS JavaScript throughout — **no build/transpile step**. `extension.js` is the entry point and is loaded directly. There is a **type-check-only** gate (`npm run typecheck` → `tsc --noEmit`, config in `tsconfig.json`) that leans on the existing JSDoc as a safety net; it never emits, so the runtime stays plain JS. Linting is `npm run lint` (ESLint 10 flat config, pinned exactly; `eslint.config.js`) — a **defect check, not a style check**: recommended rules plus a handful of correctness rules; every relaxation is documented in the config itself, which is the one place to change policy.
 
 ## Commands
 
@@ -102,7 +162,7 @@ Three processes cooperate; the extension host is the hub — **the webview never
 
 1. **Webview** (`media/editor.js` + `media/editor.css`) — two Monaco panes (Declaration / Implementation) per component, with Monaco vendored under `media/monaco-editor/` (offline). Registers Monaco providers that forward requests to the extension via `postMessage`.
 2. **Extension host** (`extension.js`, `src/customEditorProvider.js`) — activation, commands, file watchers, tree views, and the LSP bridge.
-3. **LSP server** (`src/lsp/server.js`) — spawned over Node IPC via `vscode-languageclient`. Besides standard LSP, it answers custom JSON-RPC requests used by the bridge: `custom/completions`, `custom/definition`, `custom/references`, `custom/referencesForSymbol`, `custom/configReferencesForSymbol`, `custom/diagnostics`, `custom/updateDocument`, `custom/reindex`, `custom/indexReady`, `custom/setDiagnosticsConfig`, `custom/libraries`, `custom/indexXmlDocument`.
+3. **LSP server** (`src/lsp/server.js`) — spawned over Node IPC via `vscode-languageclient`. Besides standard LSP, it answers custom JSON-RPC requests used by the bridge: `custom/completions`, `custom/definition`, `custom/references`, `custom/referencesForSymbol`, `custom/configReferencesForSymbol`, `custom/diagnostics`, `custom/hover`, `custom/updateDocument`, `custom/reindex`, `custom/indexReady`, `custom/setDiagnosticsConfig`, `custom/libraries`, `custom/indexXmlDocument`.
    **`custom/reindex` vs `custom/indexReady` is a real distinction, not a synonym:** `reindex` means *the data changed, rebuild unconditionally* (the `.plcproj` watcher, `twincat.updateLibraryDefinitions`); `indexReady` means *resolve once these roots are indexed* and scans only when no completed scan for that exact root set exists. The extension host's startup call is only ever the barrier — sending it as a `reindex` is what made every startup pay for the whole scan a second time on top of `onInitialize`'s. `src/lsp/scanController.js` decides which; never teach `reindex` to skip.
 
 ### The live language-feature path (the core trick)
@@ -120,8 +180,8 @@ Changing `stConverter.js` output or `xmlParser.js` component extraction can sile
 - **`src/xmlParser.js`** — regex-based (not a DOM parser) TwinCAT XML parse and structural edits, deliberately preserving TwinCAT's exact formatting/metadata (`LineIds`, UUIDs, folders). Edits are written back into the original `<![CDATA[...]]>` via `replaceComponentCdata`.
 - **`src/lsp/workspaceScan.js`** — one symbol index per PLC project, plus the routing that picks which index answers a request. Partitioned by `src/lsp/projectMap.js`'s `.plcproj`-derived ownership (a file `<Compile>`d by two projects indexes into both, but a request still routes to exactly one).
 - **`src/lsp/`** — `parser.js` (ST lexer/symbol parser), `features.js` (completions/definition/references/diagnostics), `types.js` (type model, resolver, assignability), `exprParser.js` (expression type inference), `builtins.js` (standard IEC/TwinCAT types and functions), `xmlIndexer.js` (indexes TwinCAT XML into symbol nodes with real ranges), `libraries.js` (library *namespaces* from the `.plcproj`), `libsymbols.js` (library *symbols*: a dependency-free ZIP reader over the `.compiled-library` archives, plus the project's `.tmc` type system).
-- **`src/treeDataProvider.js`** — "TwinCAT Objects" explorer; create/delete of files, folders, methods, properties, actions. `src/plcProjHelper.js` keeps the nearest `.plcproj` in sync on create/delete.
-- **`src/referencesProvider.js` / `referencesTree.js`** — "TwinCAT References" panel for cross-file/cross-component usages (the inline peek widget is limited to the active component's panes by the split-pane design).
+- **`src/treeDataProvider.js`** — "PLC Objects" explorer; create/delete of files, folders, methods, properties, actions. `src/plcProjHelper.js` keeps the nearest `.plcproj` in sync on create/delete.
+- **`src/referencesProvider.js` / `referencesTree.js`** — "PLC References" panel for cross-file/cross-component usages (the inline peek widget is limited to the active component's panes by the split-pane design).
 
 ## Design constraints
 
@@ -134,5 +194,6 @@ Changing `stConverter.js` output or `xmlParser.js` component extraction can sile
   **Every archive/dump read is content-guarded, and the guard is `(path, size, mtime)` everywhere** (`harvestArchiveFile` in `libsymbols.js`, `src/lsp/parseCache.js`, `src/lsp/plcprojRefs.js`). The archive cache additionally keys the *decoded* names by content (`<title>/<version>/<file>` + size + mtime), because every project vendors its own `_Libraries` copy of the same vendor archives — 53% of archive bytes on a real 8-project workspace are byte-identical duplicates. A cached parse that is stored per project (signature records) must be a private copy: the merge rewrites `record.namespace` and `indexBrowserCache` pushes onto the stored object, so a shared record leaks one project's attribution and members into another. This is **enforced structurally** — `signatureRecordsFor` in `parseCache.js` returns a fresh copy on every call and the cached template is unreachable; do not add an API that exposes the template.
   **`SKIP_DIRS` must not gain `_libraries`** — `collectArchives` walks it and would find nothing (~171 false positives). The `_Libraries`-excluding set is `PROJECT_SKIP_DIRS`, for the `.tmc`/signature/`.plcproj` walkers only.
   Note `_Libraries/` (Beckhoff vendor binaries) and the `.tmc` are **git-ignored**, so a clone has neither. The synthetic sample names no Beckhoff symbol, so its baseline is **0 in every mode** — `test/_baseline.js` records how each row was measured. Don't "fix" a failing gate by raising a baseline.
+- **The LSP scan runs in the background, one project at a time** (`startWorkspaceScan` + `src/lsp/workspaceState.js`). Every server handler that reads an index must first await `workspaceState.settledFor(uri)` / `settledAll()` (server.js `whenIndexed`) and then read `currentWorkspace()` with **no await in between** — that is the readiness gate that keeps a request off a half-built index. DEVELOPMENT.md "The background scan" has the rules; `test/test_scan_readiness.js` and `test/test_server_ipc.js` gate them.
 - The webview must stay **fully offline** — no CDN loads; Monaco is vendored in `media/monaco-editor/`.
 - File writes must preserve TwinCAT's XML structure byte-for-byte outside the edited CDATA blocks, or TwinCAT/version control will see spurious diffs.

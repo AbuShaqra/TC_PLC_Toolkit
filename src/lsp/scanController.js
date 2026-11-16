@@ -54,7 +54,8 @@ function normalizeRootSet(roots) {
 /**
  * Creates the scan controller.
  * @param {{scan: (roots: Array<string>) => any}} deps Injected side effects. `scan` rebuilds the
- *   workspace from the given roots; it may be synchronous (server.js's is) or return a promise.
+ *   workspace from the given roots; it may be synchronous or return a promise (server.js's does: the
+ *   per-project background scan). A promise resolving to `'cancelled'` means a later scan superseded it.
  * @returns {ScanController}
  */
 function createScanController(deps) {
@@ -64,11 +65,20 @@ function createScanController(deps) {
     let completedKey = /** @type {string|null} */ (null);
     /** The normalized roots behind `completedKey`, kept for state() and logging. */
     let completedRoots = /** @type {Array<string>|null} */ (null);
+    /** Bumped by every scan started; only the latest one may record completion. */
+    let generation = 0;
+    /**
+     * The scan in flight, if any. With an asynchronous scan, an `ensureScanned` that arrives while one
+     * is running for the same roots must WAIT for it rather than start a second — the latent hazard the
+     * synchronous design never exposed (two callers would both have scanned).
+     * @type {{key: string, promise: Promise<any>}|null}
+     */
+    let inFlight = null;
 
     /**
-     * Runs the scan and records completion only if it returns. A throwing scan leaves the controller
-     * with no completed state, so the next `ensureScanned` retries instead of serving a half-built
-     * index as if it were current.
+     * Runs the scan and records completion only if it returns and no later scan started meanwhile. A
+     * throwing scan leaves the controller with no completed state, so the next `ensureScanned` retries
+     * instead of serving a half-built index as if it were current.
      * @param {Array<string>} roots Absolute workspace-root paths, in the caller's own spelling.
      * @param {Array<string>} normalized The comparison form of `roots`.
      * @returns {Promise<{scanned: boolean}>}
@@ -78,31 +88,62 @@ function createScanController(deps) {
         // failure part-way through must not leave the previous root set looking valid.
         completedKey = null;
         completedRoots = null;
+        const mine = ++generation;
+        const key = normalized.join(KEY_SEPARATOR);
         // `roots` is passed through in the caller's original spelling, NEVER the normalized form.
         // normalizeProjectPath lower-cases, and a lower-cased root propagates into every symbol
         // node's uri — which is exactly the 0.6.0 regression where each cross-file Go to Definition
         // opened a duplicate, lowercase-titled tab. Normalization is for comparison only.
-        await scan(roots);
-        completedKey = normalized.join(KEY_SEPARATOR);
-        completedRoots = normalized;
+        const promise = Promise.resolve(scan(roots));
+        inFlight = { key, promise };
+        try {
+            await promise;
+        } finally {
+            if (generation === mine) inFlight = null;
+        }
+        if (generation === mine) {
+            completedKey = key;
+            completedRoots = normalized;
+        }
         return { scanned: true };
     }
 
-    return {
-        ensureScanned: async (roots) => {
-            const normalized = normalizeRootSet(roots);
+    /**
+     * Resolves once a scan of exactly these roots has completed, starting one only when none has and
+     * none is running.
+     * @param {Array<string>} roots
+     * @returns {Promise<{scanned: boolean}>}
+     */
+    async function ensureScanned(roots) {
+        const normalized = normalizeRootSet(roots);
+        const key = normalized.join(KEY_SEPARATOR);
+        for (;;) {
             // An empty root set is a legitimate completed state, not "nothing has happened yet": a
             // window with no workspace folders has an empty but complete index, and the host's
             // barrier still has to resolve. `completedKey === null` is the only "never scanned".
-            if (completedKey !== null && completedKey === normalized.join(KEY_SEPARATOR)) {
-                return { scanned: false };
+            if (completedKey !== null && completedKey === key) return { scanned: false };
+            if (inFlight && inFlight.key === key) {
+                // Join the running scan. If it is superseded or fails, look again: a newer scan of the
+                // same roots is joined in turn, and a failure falls through to a scan of our own.
+                const joined = inFlight;
+                try {
+                    await joined.promise;
+                } catch (e) {
+                    if (inFlight === joined) throw e;
+                }
+                continue;
             }
             return run(roots || [], normalized);
-        },
+        }
+    }
+
+    return {
+        ensureScanned,
         // Unconditional, always. This is what a `.plcproj` change routes through, and the reason it
         // must never learn to skip: on such a change the roots are unchanged — it is the CONTENT that
         // moved — so any "same roots, already scanned" shortcut here would silently stop picking up
-        // added libraries and added objects.
+        // added libraries and added objects. Nor may it join a scan in flight: that scan may have read
+        // the file before the change.
         rescan: async (roots) => run(roots || [], normalizeRootSet(roots)),
         invalidate: () => {
             completedKey = null;

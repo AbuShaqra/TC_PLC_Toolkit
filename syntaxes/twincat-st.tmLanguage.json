@@ -19,16 +19,21 @@
           "name": "comment.line.double-slash.twincat-st",
           "match": "//.*$"
         },
-        {
-          "name": "comment.block.parenthesis.twincat-st",
-          "begin": "\\(\\*",
-          "end": "\\*\\)"
-        },
+        { "include": "#comment-block-paren" },
         {
           "name": "comment.block.slash-star.twincat-st",
           "begin": "/\\*",
           "end": "\\*/"
         }
+      ]
+    },
+    "comment-block-paren": {
+      "comment": "(* *) comments NEST in TwinCAT (Infosys, ST comments: (* a; (* inner *) b; *)). The rule includes itself, so an inner (* opens another level and only the outermost *) closes the comment. Same rules as src/lsp/parser.js; test_nested_comments.js keeps them in step.",
+      "name": "comment.block.parenthesis.twincat-st",
+      "begin": "\\(\\*",
+      "end": "\\*\\)",
+      "patterns": [
+        { "include": "#comment-block-paren" }
       ]
     },
     "pragmas": {

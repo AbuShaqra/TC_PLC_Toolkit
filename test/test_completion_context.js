@@ -221,9 +221,7 @@ try {
     // Right after the POU's own name nothing can be inferred, so the classifier says 'unknown' and
     // the full list is offered — the fallback that keeps a mid-edit caret from starving. This is
     // also the "before" number every context below is measured against.
-    // (stConverter rewrites a PROGRAM header as FUNCTION_BLOCK when the POU has methods, so that is
-    // the header the ST unit — and therefore the LSP — actually sees.)
-    const cBlind = record('unknown (fallback)', completionsAt('MAIN.TcPOU', MAIN_XML, 'FUNCTION_BLOCK MAIN'));
+    const cBlind = record('unknown (fallback)', completionsAt('MAIN.TcPOU', MAIN_XML, 'PROGRAM MAIN'));
     assert(cBlind.length > 100 && has(cBlind, 'IF') && has(cBlind, 'BOOL') && has(cBlind, 'GVL_System'),
         `an unclassifiable caret still gets the full list (${cBlind.length} items)`);
 

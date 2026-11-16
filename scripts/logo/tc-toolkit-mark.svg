@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <!-- TC Toolkit's mark (2026-11-16, the "native" redesign): a flat near-black tile, a geometric "TC" in
+       white strokes, and one true-red (#E2001A) square in the mouth of the C: red as a marker, as in the
+       editor (the type tag, Stop PLC). No text, no gradient, no vendor artwork. The source of
+       media/marketplace-icon.png (scripts/make-icon.js); media/twincat-activitybar.svg is its one-colour form. -->
+  <rect x="9" y="9" width="238" height="238" rx="51" fill="#1b1b1c" stroke="#3a3a3c" stroke-width="2"/>
+  <g fill="none" stroke="#ffffff" stroke-width="26">
+    <path d="M32 79H104M68 79V190"/>
+    <path d="M208.4 95.2A49 49 0 1 0 208.4 160.8"/>
+  </g>
+  <rect x="203" y="115" width="26" height="26" rx="4" fill="#E2001A"/>
+</svg>

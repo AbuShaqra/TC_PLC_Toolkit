@@ -1,7 +1,7 @@
 /**
  * @file insertTemplates.js
  * @description The text "Insert at Cursor" and "Insert Definition at Cursor" put into the editor —
- * for both the "TwinCAT Libraries" view and the "TwinCAT Objects" explorer.
+ * for both the "PLC Libraries" view and the "PLC Objects" explorer.
  *
  * The call formatter started life inside src/libraryTreeProvider.js, which requires `vscode` at
  * module scope. That made it unreachable from the Objects-tree commands' pure half and from any

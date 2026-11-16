@@ -1,0 +1,15 @@
+{"v":1,"t":"hello","mode":"build","showWindow":true}
+{"v":1,"t":"shell","pid":4250,"ours":true,"preexisting":[]}
+{"v":1,"t":"phase","name":"build"}
+{"v":1,"t":"ui","requested":"visible","suppressUI":false,"mainWindowVisible":null,"reason":"build"}
+{"log":"Projects failed: 2"}
+{"v":1,"t":"buildResult","failedProjects":2}
+{"v":1,"t":"phase","name":"errors"}
+{"v":1,"t":"errorItem","file":"C:\\work\\TC_PLC_Toolkit\\sample\\TcToolkitSample\\TcToolkitSample_PLC\\POUs\\MAIN.TcPOU (Impl)","line":15,"column":null,"description":"';' expected instead of 'END_FOR'","project":"TcToolkitSample_PLC","level":"vsBuildErrorLevelHigh"}
+{"v":1,"t":"errorItem","file":"C:\\work\\TC_PLC_Toolkit\\sample\\TcToolkitSample\\TcToolkitSample_PLC\\POUs\\MAIN.TcPOU (Impl)","line":14,"column":null,"description":"The code 'h;\r\n' has no effect. Is this the intent?","project":"TcToolkitSample_PLC","level":"vsBuildErrorLevelMedium"}
+{"v":1,"t":"errorItem","file":null,"line":null,"column":null,"description":"13.11.2026 11:44:36 353 ms | 'TwinCAT XAE': Project 'TcToolkitSample_PLC' build for platform 'TwinCAT OS (x64)' failed.","project":null,"level":"vsBuildErrorLevelMedium"}
+{"v":1,"t":"outputPane","name":"Build","text":"------ Erstellen gestartet: Projekt: TcToolkitSample, Konfiguration: Release TwinCAT OS (x64) ------\r\nC:\\work\\TC_PLC_Toolkit\\sample\\TcToolkitSample\\TcToolkitSample_PLC\\POUs\\MAIN.TcPOU(22) : error: C0189: ';' expected instead of 'END_FOR'\r\nC:\\work\\TC_PLC_Toolkit\\sample\\TcToolkitSample\\TcToolkitSample_PLC\\POUs\\MAIN.TcPOU(21) : warning: C0139: The code 'h;\r\n' has no effect. Is this the intent?\r\nKompilierung abgeschlossen -- 1 Fehler, 1 Warnungen\r\nBuild complete -- 1 errors, 1 warnings : No download possible\r\n------ Erstellen gestartet: Projekt: TcToolkitSample, Konfiguration: Release TwinCAT OS (x64) ------\r\nFehler: Unbekannter Fehler (Ausnahme von HRESULT: 0x80004005 (E_FAIL))\r\n========== Erstellen: 0 erfolgreich oder aktuell, 2 fehlgeschlagen, 0 übersprungen ==========\r\n","truncated":false}
+{"v":1,"t":"errorDetails","errorItems":3,"outputPanes":1,"reasons":[],"route":"typed","errorListRoute":"typed","outputRoute":"typed"}
+{"log":"BUILD FAILED."}
+{"v":1,"t":"done","exitCode":1,"ui":{"requested":"visible","buildPhase":{"suppressUI":false,"mainWindowVisible":null},"versionSwitchKeptVisible":false,"activationShown":false}}
+{"exit":1}

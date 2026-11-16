@@ -112,9 +112,9 @@ async function fetchPage(id) {
         const cause = (err && err.cause && err.cause.message) || '';
         if (/self-signed certificate|unable to (get|verify)/i.test(cause)) {
             throw new Error(`GET ${url} failed TLS verification (${cause}).\n` +
-                'A TLS-inspecting proxy is in the way — re-run as: node --use-system-ca scripts/fetch-pragma-catalog.js');
+                'A TLS-inspecting proxy is in the way — re-run as: node --use-system-ca scripts/fetch-pragma-catalog.js', { cause: err });
         }
-        throw new Error(`GET ${url} -> ${err.message}${cause ? ' (' + cause + ')' : ''}`);
+        throw new Error(`GET ${url} -> ${err.message}${cause ? ' (' + cause + ')' : ''}`, { cause: err });
     }
     if (!res.ok) throw new Error(`GET ${url} -> HTTP ${res.status}`);
     return await res.text();

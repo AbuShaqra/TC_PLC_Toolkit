@@ -19,6 +19,8 @@ const {
     getInitParams
 } = require('../types');
 const { inferType } = require('../exprParser');
+const { blockSelections, suppressionSpans, isSuppressed, outermostGroup, SELECTION_CAP } = require('../conditionals');
+const log = require('../log');
 const { isLibraryNamespace } = require('../libraries');
 const {
     prevMeaningful,
@@ -331,6 +333,105 @@ function checkMemberAccess(tokens, symbolIndex, fileUri, diagnostics) {
     }
 }
 
+/** Block openers and the closer each one needs. */
+const BLOCK_OPENERS = new Set(['IF', 'CASE', 'FOR', 'WHILE', 'REPEAT']);
+const BLOCK_CLOSERS = {
+    END_IF: 'IF',
+    END_CASE: 'CASE',
+    END_FOR: 'FOR',
+    END_WHILE: 'WHILE',
+    UNTIL: 'REPEAT'
+};
+
+/**
+ * Matches block keywords (IF/END_IF, CASE/END_CASE, FOR/END_FOR, WHILE/END_WHILE, REPEAT/UNTIL)
+ * over one keyword sequence.
+ * @param {Array<Object>} keywordTokens Keyword tokens, in source order (others are ignored).
+ * @returns {Array<{tok: Object, diag: Object}>} Each diagnostic with the token it is anchored on.
+ */
+function matchBlocks(keywordTokens) {
+    const out = [];
+    const blockStack = [];
+    for (const tok of keywordTokens) {
+        if (tok.type !== TokenType.Keyword) continue;
+        const upper = tok.value.toUpperCase();
+        if (BLOCK_OPENERS.has(upper)) {
+            blockStack.push({ word: upper, tok });
+        } else if (Object.prototype.hasOwnProperty.call(BLOCK_CLOSERS, upper)) {
+            const want = BLOCK_CLOSERS[upper];
+            const popped = blockStack.pop();
+            if (!popped || popped.word !== want) {
+                out.push({ tok, diag: createDiagnostic(tok.line, tok.col, tok.col + upper.length,
+                    `Unmatched "${upper}": missing preceding "${want}"`) });
+            }
+        }
+    }
+    for (const block of blockStack) {
+        out.push({ tok: block.tok, diag: createDiagnostic(block.tok.line, block.tok.col, block.tok.col + block.word.length,
+            `Unterminated block: missing matching "END_${block.word}"`) });
+    }
+    return out;
+}
+
+/**
+ * Structural diagnostics for a token stream.
+ *
+ * Without conditional pragmas: one matchBlocks over the whole unit, exactly as before.
+ * With them (tokens.conditionals, see conditionals.js), per segment:
+ *   - a segment with no group is matched on its own;
+ *   - an unbalanced segment reports nothing;
+ *   - a segment with groups is matched once per selection of branches (blockSelections), and a
+ *     diagnostic is kept only if EVERY selection has it at the same place with the same message.
+ *     One anchored inside a group is moved to that group's outermost {IF} first, so an error every
+ *     branch shares (each branch opens an IF that nothing closes) is still reported once. Above
+ *     SELECTION_CAP selections the segment reports nothing.
+ * @param {import('../conditionals').TokenStream} tokens Token stream from tokenize().
+ * @returns {Array<Object>} LSP diagnostics.
+ */
+function structuralDiagnostics(tokens) {
+    const cond = tokens.conditionals;
+    if (!cond) return matchBlocks(tokens).map(x => x.diag);
+
+    const isClean = (seq) => matchBlocks(seq).length === 0;
+    const out = [];
+    for (const seg of cond.segments) {
+        if (seg.unbalanced) continue;
+        if (seg.groups.length === 0) {
+            out.push(...matchBlocks(seg.keywordTokens).map(x => x.diag));
+            continue;
+        }
+        const selections = blockSelections(seg, isClean, SELECTION_CAP);
+        if (!selections) {
+            const first = tokens[seg.start];
+            log.debug('conditional-selection-cap', { line: first ? first.line : 0, cap: SELECTION_CAP });
+            continue;
+        }
+        /** @type {Map<string, Object>|null} */
+        let common = null;
+        for (const seq of selections) {
+            const here = new Map();
+            for (const { tok, diag } of matchBlocks(seq)) {
+                let d = diag;
+                if (tok.cond) {
+                    const g = outermostGroup(tokens, tok);
+                    if (!g) continue;
+                    d = createDiagnostic(g.ifTok.line, g.ifTok.col, g.ifTok.col + g.ifTok.value.length, diag.message);
+                }
+                const key = `${d.range.start.line}:${d.range.start.character}:${d.message}`;
+                if (!here.has(key)) here.set(key, d);
+            }
+            if (common === null) {
+                common = here;
+            } else {
+                for (const key of [...common.keys()]) if (!here.has(key)) common.delete(key);
+            }
+            if (common.size === 0) break;
+        }
+        if (common) out.push(...common.values());
+    }
+    return out;
+}
+
 /**
  * Runs syntax diagnostics and structural linter inside Node.js.
  * @param {string} code 
@@ -342,48 +443,9 @@ function provideDiagnostics(code, symbolIndex, fileUri) {
     const diagnostics = [];
     const tokens = tokenize(code);
 
-    const blockStack = [];
-
-    // Diagnostic validation checks:
     // 1. Keyword block validation (matching IF/END_IF, CASE/END_CASE, etc.)
-    tokens.forEach(tok => {
-        if (tok.type !== TokenType.Keyword) return;
-        const upper = tok.value.toUpperCase();
-
-        if (['IF', 'CASE', 'FOR', 'WHILE', 'REPEAT'].includes(upper)) {
-            blockStack.push({ word: upper, line: tok.line, col: tok.col });
-        } else if (upper === 'END_IF') {
-            const popped = blockStack.pop();
-            if (!popped || popped.word !== 'IF') {
-                diagnostics.push(createDiagnostic(tok.line, tok.col, tok.col + 6, 'Unmatched "END_IF": missing preceding "IF"'));
-            }
-        } else if (upper === 'END_CASE') {
-            const popped = blockStack.pop();
-            if (!popped || popped.word !== 'CASE') {
-                diagnostics.push(createDiagnostic(tok.line, tok.col, tok.col + 8, 'Unmatched "END_CASE": missing preceding "CASE"'));
-            }
-        } else if (upper === 'END_FOR') {
-            const popped = blockStack.pop();
-            if (!popped || popped.word !== 'FOR') {
-                diagnostics.push(createDiagnostic(tok.line, tok.col, tok.col + 7, 'Unmatched "END_FOR": missing preceding "FOR"'));
-            }
-        } else if (upper === 'END_WHILE') {
-            const popped = blockStack.pop();
-            if (!popped || popped.word !== 'WHILE') {
-                diagnostics.push(createDiagnostic(tok.line, tok.col, tok.col + 9, 'Unmatched "END_WHILE": missing preceding "WHILE"'));
-            }
-        } else if (upper === 'UNTIL') {
-            const popped = blockStack.pop();
-            if (!popped || popped.word !== 'REPEAT') {
-                diagnostics.push(createDiagnostic(tok.line, tok.col, tok.col + 5, 'Unmatched "UNTIL": missing preceding "REPEAT"'));
-            }
-        }
-    });
-
-    // Report remaining open blocks
-    blockStack.forEach(block => {
-        diagnostics.push(createDiagnostic(block.line, block.col, block.col + block.word.length, `Unterminated block: missing matching "END_${block.word}"`));
-    });
+    diagnostics.push(...structuralDiagnostics(tokens));
+    const structuralCount = diagnostics.length;
 
     // 2. Variable Scope definitions and variable usage checks
     const activePou = Object.values(symbolIndex).find(node => node.uri === fileUri);
@@ -413,7 +475,7 @@ function provideDiagnostics(code, symbolIndex, fileUri) {
         // avoids flagging the EXTENDS type name itself). A fully-resolved chain still flags genuine
         // undeclared identifiers.
         let suppressUndeclared = false;
-        if (activePou.extends) {
+        if (activePou.extends || activePou.inheritanceUncertain) {
             const { ancestors, fullyResolved } = walkExtendsChain(activePou, symbolIndex);
             if (!fullyResolved) {
                 suppressUndeclared = true;
@@ -562,6 +624,18 @@ function provideDiagnostics(code, symbolIndex, fileUri) {
         if (diagnosticsConfig.typeCompatibility) {
             checkAssignments(tokens, symbolIndex, fileUri, diagnostics);
         }
+
+        // Note for any future duplicate-declaration check: a name declared once in each branch of
+        // one conditional pragma group is valid TwinCAT and must not be flagged (conditionals.js).
+    }
+
+    // Conditional pragmas: semantic diagnostics inside a group's statement span depend on which
+    // branch is compiled, so none of them is reported there. Code outside groups keeps every check.
+    if (tokens.conditionals && diagnostics.length > structuralCount) {
+        const spans = suppressionSpans(tokens);
+        const semantic = diagnostics.splice(structuralCount).filter(d =>
+            !isSuppressed(spans, d.range.start.line + 1, d.range.start.character + 1));
+        diagnostics.push(...semantic);
     }
 
     return diagnostics;
@@ -569,5 +643,7 @@ function provideDiagnostics(code, symbolIndex, fileUri) {
 
 module.exports = {
     provideDiagnostics,
-    setDiagnosticsConfig
+    setDiagnosticsConfig,
+    matchBlocks,
+    structuralDiagnostics
 };

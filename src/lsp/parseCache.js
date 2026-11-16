@@ -56,6 +56,13 @@ const signatureCache = new Map();
 const browserCacheDocs = new Map();
 
 /**
+ * Read-only parses for Compile Project's library declarations (src/libraryDecls.js): the dump's
+ * libraries as parsed, and each `.tmc`'s declaration model. Keyed by `<kind>|<path>`.
+ * @type {Map<string, {mtimeMs: number, size: number, value: *}>}
+ */
+const readOnlyDocs = new Map();
+
+/**
  * Looks a file up in one of the caches, guarded by its current mtime and size.
  * @param {Map<string, {mtimeMs: number, size: number, value: *}>} cache The cache to consult.
  * @param {string} filePath Absolute file path.
@@ -170,13 +177,69 @@ function readBrowserCacheDoc(filePath) {
 }
 
 /**
- * Empties both caches and zeroes the counters — the counters exist only to observe the caches, so a
+ * Freezes a parsed value and everything it holds, so a shared cached document cannot be mutated by
+ * one caller under another.
+ * @param {*} value
+ * @returns {*} The same value, frozen.
+ */
+function deepFreeze(value) {
+    if (value && typeof value === 'object' && !Object.isFrozen(value)) {
+        Object.freeze(value);
+        for (const key of Object.keys(value)) deepFreeze(value[key]);
+    }
+    return value;
+}
+
+/**
+ * A file's parse, made at most once per (path, mtime, size) and SHARED between callers — so it is
+ * deep-frozen: nothing can write through it. For readers that keep nothing of it by reference
+ * that they later change (Compile Project's library declarations build fresh objects from it).
+ * @param {string} kind Which parse this is (`signature-libraries`, `tmc-declarations`); part of the key.
+ * @param {string} filePath Absolute path.
+ * @param {(text: string) => *} parse Parses the file's UTF-8 text.
+ * @returns {*} The frozen parse, or null when the file cannot be read.
+ */
+function readOnlyParse(kind, filePath, parse) {
+    let stat;
+    try { stat = fs.statSync(filePath); } catch (e) { return null; }
+    const key = `${kind}|${path.resolve(filePath).toLowerCase()}`;
+    const entry = readOnlyDocs.get(key);
+    if (entry && entry.mtimeMs === stat.mtimeMs && entry.size === stat.size) {
+        __stats.hits++;
+        return entry.value;
+    }
+    let text;
+    try {
+        text = fs.readFileSync(filePath, 'utf8');
+    } catch (e) {
+        log.debug('read-only-parse-unreadable', { kind, file: filePath, error: e });
+        return null;
+    }
+    const value = deepFreeze(parse(text));
+    __stats.parses++;
+    readOnlyDocs.set(key, { mtimeMs: stat.mtimeMs, size: stat.size, value });
+    return value;
+}
+
+/**
+ * The libraries of one `library-signatures.xml` as `parseLibrarySignaturesXml` returns them —
+ * functions with their outputs, function blocks, global lists — shared and frozen (readOnlyParse).
+ * @param {string} filePath Absolute path to a `library-signatures.xml`.
+ * @returns {ReturnType<typeof parseLibrarySignaturesXml>|null}
+ */
+function signatureLibrariesFor(filePath) {
+    return readOnlyParse('signature-libraries', filePath, parseLibrarySignaturesXml);
+}
+
+/**
+ * Empties every cache and zeroes the counters — the counters exist only to observe the caches, so a
  * cleared cache with stale counts would be a lie. For the harnesses; the extension never needs it
  * (the identity guard already invalidates an edited file on its own).
  */
 function clearParseCaches() {
     signatureCache.clear();
     browserCacheDocs.clear();
+    readOnlyDocs.clear();
     __stats.parses = 0;
     __stats.hits = 0;
     __stats.clones = 0;
@@ -186,6 +249,8 @@ module.exports = {
     parseSignatureRecords,
     signatureRecordsFor,
     readBrowserCacheDoc,
+    readOnlyParse,
+    signatureLibrariesFor,
     clearParseCaches,
     __stats
 };

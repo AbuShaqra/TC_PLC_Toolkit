@@ -46,3 +46,8 @@
 *.ps1       text eol=crlf
 *.bat       text eol=crlf
 *.cmd       text eol=crlf
+
+# The vendored compiler (scripts/vendor-compiler.js) is pinned by size and SHA-256 in SOURCE.md and
+# test/test_vendored_compiler.js. A Windows checkout's autocrlf would rewrite its .cjs and licence
+# texts and break that pin (and ship CRLF copies in a VSIX built on Windows), so keep its bytes.
+resources/compiler/** -text

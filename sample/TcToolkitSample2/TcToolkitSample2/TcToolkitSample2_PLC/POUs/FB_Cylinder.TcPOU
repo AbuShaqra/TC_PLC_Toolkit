@@ -1,0 +1,49 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <POU Name="FB_Cylinder" Id="{32a39284-f5a4-49bf-9468-b7abbeb16de3}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_Cylinder
+VAR_INPUT
+	bExtend		: BOOL;
+	nStrokeTicks	: UINT := 5;
+END_VAR
+VAR_OUTPUT
+	bExtended	: BOOL;
+END_VAR
+VAR
+	_nTicks	: UINT;
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[IF bExtend THEN
+	IF _nTicks < nStrokeTicks THEN
+		_nTicks := _nTicks + 1;
+	END_IF
+ELSE
+	_nTicks := 0;
+END_IF
+bExtended := bExtend AND _nTicks >= nStrokeTicks;]]></ST>
+    </Implementation>
+    <Method Name="Stroke" Id="{e9d0598f-e383-4632-a261-a9e833fb80c2}">
+      <Declaration><![CDATA[METHOD Stroke : UINT
+VAR
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[Stroke := _nTicks;]]></ST>
+      </Implementation>
+    </Method>
+    <LineIds Name="FB_Cylinder">
+      <LineId Id="1" Count="0" />
+      <LineId Id="2" Count="0" />
+      <LineId Id="3" Count="0" />
+      <LineId Id="4" Count="0" />
+      <LineId Id="5" Count="0" />
+      <LineId Id="6" Count="0" />
+      <LineId Id="7" Count="0" />
+      <LineId Id="8" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_Cylinder.Stroke">
+      <LineId Id="9" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

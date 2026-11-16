@@ -216,7 +216,8 @@ assert(projectLabel(solo, path.join(soloRoot, 'POUs', 'MAIN.TcPOU')) === '',
     'a single-project workspace shows nothing');
 
 // --- tree grouping ----------------------------------------------------------------------------
-const { groupRootsByProject } = require('../src/lsp/projectMap');
+// The grouping rule moved to the Objects-tree model (R4); it still consumes this module's map.
+const { groupRootsByProject } = require('../src/objectsTreeModel');
 
 const groups = groupRootsByProject(map, [ROOT]);
 assert(groups.length === 2, `two projects produce two tree groups (got ${groups.length})`);

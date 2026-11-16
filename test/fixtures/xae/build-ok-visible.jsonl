@@ -1,0 +1,12 @@
+{"v":1,"t":"hello","mode":"build","showWindow":true}
+{"v":1,"t":"phase","name":"resolve"}
+{"v":1,"t":"plan","solution":"C:\\Work\\Sample\\Sample.sln","tsproj":"C:\\Work\\Sample\\Sample.tsproj","projectVersion":"3.1.4026.22","progId":"TcXaeShell.DTE.17.0","pinned":false,"configuration":"Release","platform":"TwinCAT RT (x64)"}
+{"v":1,"t":"phase","name":"launch"}
+{"v":1,"t":"shell","pid":4242,"ours":true,"preexisting":[]}
+{"v":1,"t":"ui","requested":"visible","suppressUI":false,"mainWindowVisible":true,"reason":"requested"}
+{"v":1,"t":"phase","name":"build"}
+{"v":1,"t":"ui","requested":"visible","suppressUI":false,"mainWindowVisible":true,"reason":"build"}
+{"v":1,"t":"buildResult","failedProjects":0}
+{"v":1,"t":"phase","name":"close"}
+{"v":1,"t":"done","exitCode":0,"ui":{"requested":"visible","buildPhase":{"suppressUI":false,"mainWindowVisible":true},"versionSwitchKeptVisible":false,"activationShown":false}}
+{"exit":0}

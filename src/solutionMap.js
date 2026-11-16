@@ -42,7 +42,8 @@ function solutionReferences(slnPath) {
     while ((match = refRe.exec(text)) !== null) {
         const resolved = resolveProjectPath(path.dirname(slnPath), match[1]);
         const ext = path.extname(resolved).toLowerCase();
-        if (ext === '.tsproj') tsproj.push(resolved);
+        // `.tspproj` is the single-file system project TwinCAT 3.1.4024 writes (no `_Config/`).
+        if (ext === '.tsproj' || ext === '.tspproj') tsproj.push(resolved);
         else if (ext === '.plcproj') plcproj.push(resolved);
     }
     return { tsproj, plcproj };
@@ -63,6 +64,22 @@ function xtiReferences(tsprojPath) {
         const config = path.resolve(path.dirname(tsprojPath), '_Config', 'PLC', raw);
         out.push(fs.existsSync(direct) ? direct : config);
     }
+    return out;
+}
+
+/**
+ * Resolves the `.plcproj` files a system project names INLINE — `<Plc><Project … PrjFilePath="…">`,
+ * the shape a `.tspproj` (TwinCAT 3.1.4024) uses instead of an `_Config` XTI.
+ * @param {string} tsprojPath
+ * @returns {string[]}
+ */
+function inlinePlcProjects(tsprojPath) {
+    const plcBlock = /<Plc\b[^>]*>([\s\S]*?)<\/Plc>/i.exec(readText(tsprojPath));
+    if (!plcBlock) return [];
+    const out = [];
+    const re = /<Project\b[^>]*\bPrjFilePath="([^"]+\.plcproj)"/gi;
+    let match;
+    while ((match = re.exec(plcBlock[1])) !== null) out.push(resolveProjectPath(path.dirname(tsprojPath), match[1]));
     return out;
 }
 
@@ -99,6 +116,7 @@ function createSolutionMap(roots, projectMap) {
                 const plcprojPath = plcProjectFromXti(xtiPath);
                 if (plcprojPath) referencedKeys.add(normalizeProjectPath(plcprojPath));
             }
+            for (const plcprojPath of inlinePlcProjects(tsprojPath)) referencedKeys.add(normalizeProjectPath(plcprojPath));
         }
         rawSolutions.push({
             key: normalizeProjectPath(slnPath),
@@ -173,6 +191,7 @@ module.exports = {
     findSolutionFiles,
     solutionReferences,
     xtiReferences,
+    inlinePlcProjects,
     plcProjectFromXti,
     createSolutionMap
 };

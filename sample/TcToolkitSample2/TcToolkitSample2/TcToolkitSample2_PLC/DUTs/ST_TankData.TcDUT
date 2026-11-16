@@ -1,0 +1,14 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <DUT Name="ST_TankData" Id="{bfbd1755-574f-48e5-ba7a-c01414d06f8e}">
+    <Declaration><![CDATA[TYPE ST_TankData :
+STRUCT
+	fLevel		: LREAL;
+	fSetpoint	: LREAL := 50.0;
+	eInlet		: E_ValveState;
+	bAlarm		: BOOL;
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

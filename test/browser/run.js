@@ -1,7 +1,10 @@
 /**
  * @file test/browser/run.js
  * @description The automated pass over media/editor.js — builds the harness, serves it, drives a
- * real Chromium through Find References, and asserts what the references peek does.
+ * real Chromium through Find References, and asserts what the references peek does — plus the
+ * toolbar's Actions menu (Generate ST and its project picker, Build and its C++ / XAE options, Auto
+ * Sync; keyboard, ARIA, the status chips, fitting a narrow webview) and Compile Project's pane
+ * markers (owner 'twincat-compile').
  *
  * This exists because media/editor.js is the one part of the codebase no Node test can reach, and
  * it is where the peek actually lives. Everything asserted here was found by hand first; encoding
@@ -320,6 +323,608 @@ function assert(cond, msg) {
             'and no arrow decoration is left behind pointing at replaced content');
         assert(stale.activeChanges.includes('method_Cyclic'),
             `loading a component reports its exact id to the extension host (${JSON.stringify(stale.activeChanges)})`);
+
+        // 7b. The Actions menu (user request 2026-11-16): every toolbar action and setting in one
+        //     dropdown. A menu button (aria-haspopup="menu") that opens on click, Enter, Space and the
+        //     arrows, walks its items with the arrows/Home/End, and closes on Escape (focus back on the
+        //     button), Tab and a click outside. Offline it holds Generate ST, Build and Editor.
+        await page.addStyleTag({ content: '#actions-group *, .tb-chip { transition: none !important; animation: none !important; }' });
+        const menuState = () => page.evaluate(() => {
+            const btn = document.getElementById('actions-btn');
+            const menu = document.getElementById('actions-menu');
+            const a = document.activeElement;
+            return { open: !menu.hidden, expanded: btn.getAttribute('aria-expanded'), focus: a ? (a.id || a.className) : '' };
+        });
+        const openMenu = async () => { if (!(await menuState()).open) await page.click('#actions-btn'); };
+        const closeMenu = async () => { if ((await menuState()).open) await page.keyboard.press('Escape'); };
+        const btnAria = await page.evaluate(() => {
+            const b = document.getElementById('actions-btn');
+            const m = document.getElementById('actions-menu');
+            return { popup: b.getAttribute('aria-haspopup'), controls: b.getAttribute('aria-controls'), expanded: b.getAttribute('aria-expanded'),
+                label: b.getAttribute('aria-label'), chevron: !!b.querySelector('svg.actions-chevron'), text: b.textContent.trim(),
+                height: Math.round(b.getBoundingClientRect().height), bg: getComputedStyle(b).backgroundColor, fontSize: getComputedStyle(b).fontSize,
+                radius: getComputedStyle(b).borderRadius,
+                role: m.getAttribute('role'), labelledby: m.getAttribute('aria-labelledby'), hidden: m.hidden,
+                // The header holds two actions: the Build icon button and the "⋯" menu button.
+                toolbarButtons: [...document.querySelectorAll('.app-header button')].filter(x => !m.contains(x)).map(x => x.id) };
+        });
+        assert(btnAria.popup === 'menu' && btnAria.controls === 'actions-menu' && btnAria.expanded === 'false' && btnAria.label === 'Actions'
+            && btnAria.chevron && btnAria.text === 'Actions' && btnAria.height >= 24 && btnAria.height <= 28 && btnAria.fontSize === '13px' && btnAria.radius === '4px'
+            && btnAria.bg !== 'rgba(0, 0, 0, 0)' && !/^rgb\((2[0-5]\d|1[6-9]\d), ([0-9]|[1-9]\d), /.test(btnAria.bg)
+            && btnAria.role === 'menu' && btnAria.labelledby === 'actions-btn' && btnAria.hidden && JSON.stringify(btnAria.toolbarButtons) === '["build-btn","actions-btn"]',
+        `the header has the "Actions ▾" menu button (a filled secondary button, 13px label, not red; aria-haspopup=menu, aria-controls, closed) and the Build icon button, nothing else (${JSON.stringify(btnAria)})`);
+
+        // 7a'. The native header (user decision 2026-11-16): breadcrumb PLC project › folders › object,
+        //      the type tag in true red, no product title or version pill (the version is the menu's foot).
+        const hdr = await page.evaluate(() => {
+            const tag = document.getElementById('obj-type');
+            const cs = getComputedStyle(tag);
+            const header = document.querySelector('.app-header');
+            return {
+                path: document.getElementById('crumb-path-text').textContent, name: document.getElementById('obj-name').textContent,
+                tooltip: document.getElementById('hdr-crumbs').title, tag: tag.textContent, tagColor: cs.color, tagBorder: cs.borderTopColor,
+                tagBg: cs.backgroundColor, height: Math.round(header.getBoundingClientRect().height),
+                title: !!document.querySelector('.logo-text, .pill'), version: document.getElementById('menu-version').textContent,
+                brand: (() => { const b = document.getElementById('hdr-brand'); const r = b.getBoundingClientRect(); return { title: b.title, label: b.getAttribute('aria-label'),
+                    first: document.querySelector('.app-header').firstElementChild === b, h: Math.round(r.height), red: !!b.querySelector('rect[fill="#E2001A"]'),
+                    letters: getComputedStyle(b.querySelector('svg')).color === getComputedStyle(document.getElementById('obj-name')).color }; })(),
+                versionInMenu: document.getElementById('actions-menu').contains(document.getElementById('menu-version'))
+            };
+        });
+        assert(hdr.path === 'TcToolkitSample_PLC › POUs › Actuators' && hdr.name === 'FB_Cylinder' && hdr.tooltip === 'TcToolkitSample_PLC › POUs › Actuators › FB_Cylinder.TcPOU',
+            `the breadcrumb names the PLC project, the folder and the object; the tooltip is the full location (${JSON.stringify(hdr)})`);
+        assert(hdr.tag === 'POU' && hdr.tagColor === 'rgb(226, 0, 26)' && hdr.tagBorder === 'rgb(226, 0, 26)' && hdr.tagBg === 'rgba(0, 0, 0, 0)',
+            `the type tag is transparent with a true-red (#E2001A) border and text (${JSON.stringify(hdr)})`);
+        assert(hdr.brand.first && /^TC Toolkit v\d+\.\d+\.\d+$/.test(hdr.brand.title) && hdr.brand.label === hdr.brand.title && hdr.brand.h >= 10 && hdr.brand.h <= 18
+            && hdr.brand.red && hdr.brand.letters,
+            `the header starts with the extension's mark (~16px, theme-coloured letters, the red square), tooltip "TC Toolkit vX.Y.Z" (${JSON.stringify(hdr.brand)})`);
+        assert(!hdr.title && /^TC Toolkit v\d/.test(hdr.version) && hdr.versionInMenu && hdr.height >= 34 && hdr.height <= 40,
+            `one slim row (~36px), no product title or version pill; "TC Toolkit vX.Y.Z" is the menu's foot (${JSON.stringify(hdr)})`);
+        const hdrStatus = () => page.evaluate(() => {
+            const vis = (id) => { const e = document.getElementById(id); return !e.hidden && getComputedStyle(e).display !== 'none'; };
+            return { sync: document.getElementById('save-status').textContent, syncShown: vis('save-status-item'), syncIcon: !!document.querySelector('#save-status-item svg'),
+                online: vis('online-note'), plc: vis('plc-indicator'), building: vis('build-indicator'), manual: vis('sync-mode-text'),
+                pills: [...document.querySelectorAll('.hdr-status .tb-chip')].filter(e => parseFloat(getComputedStyle(e).borderTopWidth) > 0 || getComputedStyle(e).backgroundColor !== 'rgba(0, 0, 0, 0)').map(e => e.id) };
+        });
+        const offlineStatus = await hdrStatus();
+        assert(offlineStatus.sync === 'Synced' && offlineStatus.syncShown && offlineStatus.syncIcon && !offlineStatus.online && !offlineStatus.plc
+            && !offlineStatus.building && !offlineStatus.manual && offlineStatus.pills.length === 0,
+            `offline the status is the sync item alone ("Synced" + its icon), no pills (${JSON.stringify(offlineStatus)})`);
+        await page.click('#actions-btn');
+        let mst = await menuState();
+        assert(mst.open && mst.expanded === 'true' && mst.focus === 'generate-st-btn', `a click opens the menu and focuses its first item (${JSON.stringify(mst)})`);
+        const structure = await page.evaluate(() => {
+            const m = document.getElementById('actions-menu');
+            const shown = (el) => !el.closest('[hidden]');
+            return {
+                headings: [...m.querySelectorAll('.split-menu-title')].filter(shown).map(h => h.textContent),
+                items: [...m.querySelectorAll('[role="menuitem"], [role="menuitemcheckbox"]')].filter(shown).map(i => i.getAttribute('role') + ':' + i.id),
+                groups: [...m.querySelectorAll('[role="group"]')].every(g => g.getAttribute('aria-labelledby') || g.getAttribute('aria-label')),
+                separators: [...m.querySelectorAll('[role="separator"]')].filter(shown).length
+            };
+        });
+        assert(JSON.stringify(structure.headings) === '["Generate ST","Build","Editor"]' && structure.groups && structure.separators === 2,
+            `offline the menu has three labelled groups with separators: Generate ST, Build, Editor (no PLC) (${JSON.stringify(structure)})`);
+        assert(JSON.stringify(structure.items) === JSON.stringify(['menuitem:generate-st-btn', 'menuitem:compile-btn', 'menuitemcheckbox:compile-opt-cpp',
+            'menuitemcheckbox:compile-opt-gpp', 'menuitemcheckbox:sync-mode-toggle']),
+        `its items in order, with menuitem / menuitemcheckbox roles (${JSON.stringify(structure.items)})`);
+        await page.keyboard.press('ArrowDown');
+        assert((await menuState()).focus === 'compile-btn', 'ArrowDown moves to the next item (Build)');
+        await page.keyboard.press('End');
+        assert((await menuState()).focus === 'sync-mode-toggle', 'End goes to the last item (Auto Sync)');
+        await page.keyboard.press('ArrowDown');
+        assert((await menuState()).focus === 'generate-st-btn', 'ArrowDown on the last item wraps to the first');
+        await page.keyboard.press('ArrowUp');
+        assert((await menuState()).focus === 'sync-mode-toggle', 'ArrowUp on the first item wraps to the last');
+        await page.keyboard.press('Home');
+        assert((await menuState()).focus === 'generate-st-btn', 'Home goes to the first item');
+        await page.keyboard.press('Escape');
+        mst = await menuState();
+        assert(!mst.open && mst.expanded === 'false' && mst.focus === 'actions-btn', `Escape closes the menu and returns focus to the button (${JSON.stringify(mst)})`);
+        for (const key of ['Enter', 'Space', 'ArrowDown']) {
+            await page.focus('#actions-btn');
+            await page.keyboard.press(key);
+            mst = await menuState();
+            assert(mst.open && mst.expanded === 'true' && mst.focus === 'generate-st-btn', `${key} on the button opens the menu at its first item (${JSON.stringify(mst)})`);
+            await page.keyboard.press('Escape');
+        }
+        await page.focus('#actions-btn');
+        await page.keyboard.press('ArrowUp');
+        mst = await menuState();
+        assert(mst.open && mst.focus === 'sync-mode-toggle', `ArrowUp on the button opens it at its last item (${JSON.stringify(mst)})`);
+        await page.keyboard.press('Tab');
+        assert(!(await menuState()).open, 'Tab out of the menu closes it');
+        await openMenu();
+        await page.mouse.click(5, page.viewportSize().height - 5);
+        assert(!(await menuState()).open, 'a click elsewhere closes the menu');
+        await openMenu();
+        await page.click('#actions-btn');
+        assert(!(await menuState()).open, 'a second click on the button closes it');
+        await openMenu();
+        await page.click('#menu-title-build');
+        assert((await menuState()).open, 'a click on a heading inside the menu keeps it open');
+        await closeMenu();
+
+        // 7b'. Generate ST: the first item generates every project; "Choose projects…" shows only with
+        //      2+ projects (and the first item then says "all projects").
+        const genView = async (projects) => {
+            await page.evaluate((p) => window.postMessage({ type: 'projectList', projects: p }, '*'), projects);
+            await page.waitForTimeout(50);
+            return page.evaluate(() => ({ choose: !document.getElementById('generate-st-caret').hidden,
+                label: document.querySelector('#generate-st-btn .btn-label').textContent }));
+        };
+        const one = await genView([{ key: 'a', label: 'PLC_A' }]);
+        assert(!one.choose && one.label === 'Generate ST', `one project: no "Choose projects…", the item reads Generate ST (${JSON.stringify(one)})`);
+        const two = await genView([{ key: 'a', label: 'PLC_A' }, { key: 'b', label: 'PLC_B' }]);
+        assert(two.choose && two.label === 'Generate ST: all projects', `two projects: "Choose projects…" shows and the item says all projects (${JSON.stringify(two)})`);
+        const back = await genView([{ key: 'a', label: 'PLC_A' }]);
+        assert(!back.choose && back.label === 'Generate ST', `back to one project: the plain item again (${JSON.stringify(back)})`);
+        await page.evaluate(() => { window.__harness.sent.length = 0; });
+        await openMenu();
+        await page.click('#generate-st-btn');
+        let genMsgs = await page.evaluate(() => window.__harness.sent.filter(m => m.type === 'generate-st'));
+        assert(genMsgs.length === 1 && genMsgs[0].projectKeys === undefined && !(await menuState()).open,
+            `Generate ST posts generate-st with no keys (every project) and closes the menu (${JSON.stringify(genMsgs)})`);
+        // By keyboard: Enter on the item runs it and puts focus back on the menu button.
+        await page.evaluate(() => { window.__harness.sent.length = 0; });
+        await page.focus('#actions-btn');
+        await page.keyboard.press('Enter');
+        await page.keyboard.press('Enter');
+        genMsgs = await page.evaluate(() => window.__harness.sent.filter(m => m.type === 'generate-st'));
+        mst = await menuState();
+        assert(genMsgs.length === 1 && !mst.open && mst.focus === 'actions-btn', `Enter on Generate ST runs it, closes the menu and focus returns to the button (${JSON.stringify(mst)})`);
+
+        // 7c. The menu, with the project picker unfolded, stays inside a narrow webview: no part clipped,
+        //     no sideways scrollbar from a long project name, which keeps its full name in a tooltip.
+        const viewport = page.viewportSize();
+        const menuFit = async (width) => {
+            await page.setViewportSize({ width, height: viewport.height });
+            await page.evaluate(() => window.postMessage({ type: 'projectList', projects: [
+                { key: 'a', label: 'PLC_' + 'VeryLongProjectName_'.repeat(4) + 'A' },
+                { key: 'b', label: 'PLC_B' }
+            ] }, '*'));
+            await page.waitForTimeout(50);
+            await openMenu();
+            await page.click('#generate-st-caret');
+            await page.waitForTimeout(50);
+            const r = await page.evaluate(() => {
+                const menu = document.getElementById('actions-menu');
+                const list = document.getElementById('generate-st-projects');
+                const rect = menu.getBoundingClientRect();
+                const first = list.querySelector('.split-menu-item');
+                return {
+                    open: !menu.hidden, picker: !document.getElementById('generate-st-menu').hidden,
+                    expanded: document.getElementById('generate-st-caret').getAttribute('aria-expanded'),
+                    left: Math.round(rect.left), right: Math.round(rect.right), bottom: Math.round(rect.bottom), height: window.innerHeight,
+                    width: window.innerWidth, sideScroll: list.scrollWidth > list.clientWidth || menu.scrollWidth > menu.clientWidth,
+                    pageScroll: document.documentElement.scrollWidth > window.innerWidth,
+                    tooltip: first ? first.title : ''
+                };
+            });
+            await closeMenu();
+            return r;
+        };
+        for (const width of [320, 360, 560, 1200]) {
+            const fit = await menuFit(width);
+            assert(fit.open && fit.picker && fit.expanded === 'true' && fit.left >= 0 && fit.right <= fit.width && fit.bottom <= fit.height
+                && !fit.sideScroll && !fit.pageScroll && fit.tooltip.length > 40,
+            `at ${width}px the open menu with its project picker is fully inside the webview, without a sideways scrollbar, and a cut name keeps its tooltip (${JSON.stringify(fit)})`);
+        }
+        await page.setViewportSize(viewport);
+        assert(await page.evaluate(() => document.getElementById('generate-st-menu').hidden), 'closing the menu folds the project picker away too');
+
+        // 7d. Select all: a tri-state box over the project list. Unticking it clears every project and
+        //     disables "Generate selected" (aria-disabled, so a click posts nothing); one project ticked
+        //     makes it indeterminate; ticking it again selects all, and the run then posts every key.
+        await page.evaluate(() => window.postMessage({ type: 'projectList', projects: [
+            { key: 'a', label: 'PLC_A' }, { key: 'b', label: 'PLC_B' }, { key: 'c', label: 'PLC_C' }
+        ] }, '*'));
+        await page.waitForTimeout(50);
+        // Into the picker by keyboard: ArrowDown to "Choose projects…", Enter unfolds it and moves into it.
+        await page.focus('#actions-btn');
+        await page.keyboard.press('ArrowDown');
+        await page.keyboard.press('ArrowDown');
+        await page.keyboard.press('Enter');
+        mst = await menuState();
+        assert(mst.open && mst.focus === 'generate-st-all', `Enter on "Choose projects…" unfolds the picker and focuses Select all (${JSON.stringify(mst)})`);
+        await page.keyboard.press('ArrowDown');
+        assert((await page.evaluate(() => document.activeElement && document.activeElement.value)) === 'a', 'ArrowDown walks into the project boxes');
+        const allState = () => page.evaluate(() => {
+            const all = document.getElementById('generate-st-all');
+            const boxes = Array.from(document.querySelectorAll('#generate-st-projects input[type="checkbox"]'));
+            return {
+                all: all.checked, mixed: all.indeterminate,
+                ticked: boxes.filter(b => b.checked).length,
+                roles: boxes.every(b => b.getAttribute('role') === 'menuitemcheckbox'),
+                runDisabled: document.getElementById('generate-st-run').getAttribute('aria-disabled') === 'true'
+            };
+        });
+        const fresh = await allState();
+        assert(fresh.all && !fresh.mixed && fresh.ticked === 3 && fresh.roles && !fresh.runDisabled,
+            `a fresh project list starts with Select all ticked and every project selected (${JSON.stringify(fresh)})`);
+        await page.click('#generate-st-all');
+        const none = await allState();
+        assert(!none.all && !none.mixed && none.ticked === 0 && none.runDisabled,
+            `unticking Select all clears every project and disables Generate selected (${JSON.stringify(none)})`);
+        await page.evaluate(() => { window.__harness.sent.length = 0; });
+        await page.click('#generate-st-run', { force: true }); // force: Playwright waits out aria-disabled
+        assert((await page.evaluate(() => window.__harness.sent.filter(m => m.type === 'generate-st').length)) === 0 && (await menuState()).open,
+            'a click on the disabled Generate selected posts nothing and keeps the menu open');
+        await page.click('#generate-st-projects .split-menu-item:nth-child(2) input');
+        const mixed = await allState();
+        assert(mixed.mixed && mixed.ticked === 1 && !mixed.runDisabled,
+            `one project ticked makes Select all indeterminate and enables the run (${JSON.stringify(mixed)})`);
+        await page.click('#generate-st-all');
+        const every = await allState();
+        assert(every.all && !every.mixed && every.ticked === 3,
+            `ticking Select all from the mixed state selects every project (${JSON.stringify(every)})`);
+        await page.evaluate(() => { window.__harness.sent.length = 0; });
+        await page.click('#generate-st-run');
+        const runMsg = await page.evaluate(() => window.__harness.sent.filter(m => m.type === 'generate-st'));
+        assert(runMsg.length === 1 && JSON.stringify(runMsg[0].projectKeys) === '["a","b","c"]' && !(await menuState()).open,
+            `Generate selected then posts every project key and closes the menu (${JSON.stringify(runMsg)})`);
+
+        // 7e. Compile Project's markers (R3.2). The host pushes them as `compileDiagnostics`; they live
+        //     under their own marker owner, so the language server's 'st-validator' markers and the
+        //     compile markers never erase each other — on the shared pane models, across component
+        //     switches and diagnostics refreshes. An edit to a component drops ITS compile markers
+        //     (the compiler judged the old text) and tells the host, so the Problems panel follows.
+        await page.keyboard.press('Escape');
+        const markersNow = () => page.evaluate(() => {
+            const panes = monaco.editor.getEditors().filter(e => e.getModel() && e.getModel().uri.scheme === 'inmemory');
+            const byPane = (owner) => panes.map(e => monaco.editor.getModelMarkers({ owner, resource: e.getModel().uri }).map(m => m.message));
+            return {
+                first: panes.map(e => e.getModel().getLineContent(1)),
+                compile: byPane('twincat-compile'),
+                lsp: byPane('st-validator')
+            };
+        });
+        const settle = (ms) => page.evaluate((t) => new Promise(r => setTimeout(r, t)), ms);
+        await page.evaluate(() => {
+            window.__harness.lspDiagnostics = [{ componentId: 'root', pane: 'decl', severity: 2, message: 'harness LSP warning',
+                range: { startLineNumber: 1, startColumn: 1, endLineNumber: 1, endColumn: 15 } }];
+            window.postMessage({ type: 'selectComponent', id: 'root' }, '*');
+        });
+        await settle(700);
+        await page.evaluate(() => window.postMessage({ type: 'compileDiagnostics', diagnostics: [
+            { componentId: 'root', pane: 'decl', severity: 1, message: 'harness compile error (decl)',
+                range: { startLineNumber: 3, startColumn: 5, endLineNumber: 3, endColumn: 20 } },
+            { componentId: 'root', pane: 'impl', severity: 2, message: 'harness compile warning (impl)',
+                range: { startLineNumber: 1, startColumn: 1, endLineNumber: 1, endColumn: 10 } },
+            { componentId: 'method_Cyclic', pane: 'impl', severity: 1, message: 'harness compile error (method)',
+                range: { startLineNumber: 1, startColumn: 1, endLineNumber: 1, endColumn: 5 } }
+        ] }, '*'));
+        await settle(100);
+        let mk = await markersNow();
+        assert(JSON.stringify(mk.compile) === JSON.stringify([['harness compile error (decl)'], ['harness compile warning (impl)']]),
+            `compileDiagnostics puts the active component's markers on its two panes, owner twincat-compile (${JSON.stringify(mk.compile)})`);
+        assert(JSON.stringify(mk.lsp[0]) === JSON.stringify(['harness LSP warning']),
+            `the language server's st-validator markers survive the compile markers (${JSON.stringify(mk.lsp)})`);
+        await page.evaluate(() => window.postMessage({ type: 'refreshDiagnostics' }, '*'));
+        await settle(700);
+        mk = await markersNow();
+        assert(mk.compile[0].length === 1 && mk.compile[1].length === 1 && mk.lsp[0].length === 1,
+            `a diagnostics refresh keeps both owners' markers (${JSON.stringify(mk)})`);
+        if (process.env.HARNESS_COMPILE_SHOT !== '') {
+            const shot = process.env.HARNESS_COMPILE_SHOT || path.join(HERE, 'out', 'compile-markers.png');
+            await page.screenshot({ path: shot });
+            console.log('pane-marker screenshot written to ' + shot);
+        }
+        await page.evaluate(() => window.postMessage({ type: 'selectComponent', id: 'method_Cyclic' }, '*'));
+        await settle(700);
+        mk = await markersNow();
+        assert(JSON.stringify(mk.compile) === JSON.stringify([[], ['harness compile error (method)']]),
+            `switching component shows that component's compile markers only (${JSON.stringify(mk.compile)})`);
+        await page.evaluate(() => window.postMessage({ type: 'selectComponent', id: 'root' }, '*'));
+        await settle(700);
+        await page.evaluate(() => { window.__harness.sent.length = 0; });
+        await page.evaluate(() => {
+            const decl = monaco.editor.getEditors().find(e => e.getModel() && e.getModel().uri.scheme === 'inmemory'
+                && /FUNCTION_BLOCK\s+FB_Cylinder/.test(e.getModel().getLineContent(1)));
+            const model = decl.getModel();
+            const end = model.getLineMaxColumn(1);
+            decl.executeEdits('harness', [{ range: new monaco.Range(1, end, 1, end), text: ' ' }]);
+        });
+        await settle(700);
+        mk = await markersNow();
+        const staleMsgs = await page.evaluate(() => window.__harness.sent.filter(m => m.type === 'compileDiagnosticsStale'));
+        assert(mk.compile[0].length === 0 && mk.compile[1].length === 0,
+            `an edit drops the edited component's compile markers (${JSON.stringify(mk.compile)})`);
+        assert(staleMsgs.length === 1 && staleMsgs[0].componentId === 'root',
+            `and posts compileDiagnosticsStale for that component (${JSON.stringify(staleMsgs)})`);
+        assert(mk.lsp[0].length === 1, `the st-validator markers are untouched by the edit (${JSON.stringify(mk.lsp)})`);
+        await page.evaluate(() => window.postMessage({ type: 'selectComponent', id: 'method_Cyclic' }, '*'));
+        await settle(700);
+        mk = await markersNow();
+        assert(JSON.stringify(mk.compile[1]) === JSON.stringify(['harness compile error (method)']),
+            `another component's compile markers survive that edit (${JSON.stringify(mk.compile)})`);
+        await page.evaluate(() => { window.__harness.lspDiagnostics = null; });
+
+        // 7f. Build, in the Actions menu's Build group: a menuitem with its glyph that posts
+        //     `compile-project` (the host resolves this file's project). While the host says a run is in
+        //     progress it is disabled (aria-disabled: still focusable, its detail line says why) and a
+        //     "Building…" chip shows next to the menu button, so the state is visible with the menu shut.
+        const compileInfo = await page.evaluate(() => {
+            const btn = document.getElementById('compile-btn');
+            return {
+                present: !!btn, glyph: !!(btn && btn.querySelector('svg.btn-icon path')), role: btn.getAttribute('role'),
+                inMenu: document.getElementById('actions-menu').contains(btn),
+                text: btn.querySelector('.btn-label').textContent, tooltip: btn.title, describedby: btn.getAttribute('aria-describedby'),
+                detail: document.getElementById('compile-btn-detail').textContent,
+                genTooltip: document.getElementById('generate-st-btn').title
+            };
+        });
+        assert(compileInfo.present && compileInfo.glyph && compileInfo.role === 'menuitem' && compileInfo.inMenu && compileInfo.text === 'Build'
+            && /^Build Project: /.test(compileInfo.tooltip) && compileInfo.describedby === 'compile-btn-detail' && /IEC 61131-3/.test(compileInfo.detail)
+            && /Generate ST/.test(compileInfo.genTooltip),
+        `the Build item (it runs Build Project) is in the menu with a glyph, the name Build, a tooltip and a detail line (${JSON.stringify(compileInfo)})`);
+        await page.evaluate(() => { window.__harness.sent.length = 0; });
+        await openMenu();
+        await page.click('#compile-btn');
+        let compileMsgs = await page.evaluate(() => window.__harness.sent.filter(m => m.type === 'compile-project'));
+        assert(compileMsgs.length === 1 && Object.keys(compileMsgs[0]).join() === 'type' && !(await menuState()).open,
+            `clicking Build posts compile-project to the host and closes the menu (${JSON.stringify(compileMsgs)})`);
+        const chip = (id) => page.evaluate((i) => { const c = document.getElementById(i); return { shown: !c.hidden && getComputedStyle(c).display !== 'none', text: c.textContent }; }, id);
+        assert(!(await chip('build-indicator')).shown, 'no Building… chip while nothing runs');
+        await page.evaluate(() => window.postMessage({ type: 'compileRunning', running: true }, '*'));
+        await settle(50);
+        await openMenu();
+        await page.evaluate(() => { window.__harness.sent.length = 0; });
+        await page.click('#compile-btn', { force: true });
+        compileMsgs = await page.evaluate(() => window.__harness.sent.filter(m => m.type === 'compile-project'));
+        const busy = await page.evaluate(() => {
+            const b = document.getElementById('compile-btn');
+            return { disabled: b.getAttribute('aria-disabled'), aria: b.getAttribute('aria-busy'), detail: document.getElementById('compile-btn-detail').textContent,
+                title: document.getElementById('actions-btn').title };
+        });
+        const busyChip = await chip('build-indicator');
+        assert(busy.disabled === 'true' && busy.aria === 'true' && compileMsgs.length === 0 && busy.detail === 'A build is running.' && (await menuState()).open,
+            `while a run is in progress Build is disabled, says why, and a click posts nothing (${JSON.stringify(busy)})`);
+        assert(busyChip.shown && busyChip.text === 'Building…' && /Build Project is running/.test(busy.title),
+            `and a "Building…" chip shows next to the menu button; the button's tooltip says so too (${JSON.stringify(busyChip)})`);
+        await page.keyboard.press('Home');
+        await page.keyboard.press('ArrowDown'); // Choose projects… (three projects since 7d)
+        await page.keyboard.press('ArrowDown');
+        assert((await menuState()).focus === 'compile-btn', 'the disabled Build item is still reachable by the arrows (its reason is read out)');
+        await closeMenu();
+        await page.evaluate(() => window.postMessage({ type: 'compileRunning', running: false }, '*'));
+        await settle(50);
+        assert((await page.evaluate(() => document.getElementById('compile-btn').getAttribute('aria-disabled'))) === 'false' && !(await chip('build-indicator')).shown,
+            'when the run ends Build is enabled again and the chip goes');
+
+        // 7f''. The header's Build icon button: one click = Build Project; disabled while a build runs.
+        const buildBtnInfo = await page.evaluate(() => {
+            const b = document.getElementById('build-btn');
+            return { title: b.title, label: b.getAttribute('aria-label'), glyph: !!b.querySelector('svg path'), disabled: b.getAttribute('aria-disabled') };
+        });
+        assert(buildBtnInfo.title === 'Build (check with the IEC 61131-3 compiler)' && buildBtnInfo.label === 'Build' && buildBtnInfo.glyph && buildBtnInfo.disabled !== 'true',
+            `the Build icon button has its glyph, its name and the tooltip (${JSON.stringify(buildBtnInfo)})`);
+        await page.evaluate(() => { window.__harness.sent.length = 0; });
+        await page.click('#build-btn');
+        compileMsgs = await page.evaluate(() => window.__harness.sent.filter(m => m.type === 'compile-project'));
+        assert(compileMsgs.length === 1 && Object.keys(compileMsgs[0]).join() === 'type' && !(await menuState()).open,
+            `one click on the Build icon button posts compile-project (${JSON.stringify(compileMsgs)})`);
+        await page.evaluate(() => window.postMessage({ type: 'compileRunning', running: true }, '*'));
+        await settle(50);
+        await page.evaluate(() => { window.__harness.sent.length = 0; });
+        await page.click('#build-btn', { force: true });
+        const buildBusy = await page.evaluate(() => ({ sent: window.__harness.sent.filter(m => m.type === 'compile-project').length,
+            disabled: document.getElementById('build-btn').getAttribute('aria-disabled'), title: document.getElementById('build-btn').title,
+            reason: document.getElementById('build-btn-busy').textContent }));
+        assert(buildBusy.sent === 0 && buildBusy.disabled === 'true' && /running/.test(buildBusy.title) && buildBusy.reason === 'A build is running.',
+            `while a build runs the Build icon button is disabled, says why, and a click posts nothing (${JSON.stringify(buildBusy)})`);
+        await page.evaluate(() => window.postMessage({ type: 'compileRunning', running: false }, '*'));
+        await settle(50);
+        assert((await page.evaluate(() => document.getElementById('build-btn').getAttribute('aria-disabled'))) === 'false', 'and enabled again when it ends');
+
+        // 7f'. The Build options (R13): two checkbox items that show the host's settings and post every
+        //      change; the coupling (the g++ build needs the C++) shows at once; settings changed elsewhere
+        //      arrive as `compileOptions`; Space and Enter toggle them, and toggling keeps the menu open.
+        const opts = () => page.evaluate(() => ({
+            open: !document.getElementById('actions-menu').hidden,
+            cpp: document.getElementById('compile-opt-cpp').checked, gpp: document.getElementById('compile-opt-gpp').checked,
+            focus: document.activeElement ? document.activeElement.id : '',
+            detail: document.getElementById('compile-btn-detail').textContent
+        }));
+        const optionMsgs = () => page.evaluate(() => window.__harness.sent.filter(m => m.type === 'setCompileOption'));
+        let o = await opts();
+        assert(!o.open && !o.cpp && !o.gpp, `both options start off (the init message's options) (${JSON.stringify(o)})`);
+        const optLabels = await page.evaluate(() => ['compile-opt-cpp', 'compile-opt-gpp', 'xae-opt-window', 'sync-mode-toggle']
+            .map(id => { const el = document.getElementById(id); return el.getAttribute('role') + ':' + el.closest('label').textContent.trim(); }));
+        assert(JSON.stringify(optLabels) === JSON.stringify(['menuitemcheckbox:Generate C++', 'menuitemcheckbox:Build with g++', 'menuitemcheckbox:Show the XAE window', 'menuitemcheckbox:Auto Sync']),
+            `the settings are labelled menuitemcheckbox items (${JSON.stringify(optLabels)})`);
+        // Build through XAE (R14): its section stays hidden until the host says it is available.
+        assert(await page.evaluate(() => document.getElementById('xae-menu-section').hidden), 'R14: the XAE entries are hidden by default (the init message carried no xaeOptions)');
+        const btnTitle = () => page.evaluate(() => document.getElementById('compile-btn').title);
+        assert(/^Build Project: check this PLC project with the IEC 61131-3 compiler$/.test(await btnTitle()), `with both options off Build's tooltip says it checks (${await btnTitle()})`);
+        await page.evaluate(() => { window.__harness.sent.length = 0; });
+        await page.focus('#actions-btn');
+        await page.keyboard.press('ArrowDown');
+        for (let i = 0; i < 4; i++) await page.keyboard.press('ArrowDown'); // Choose projects…, Build, Generate C++, Build with g++
+        assert((await opts()).focus === 'compile-opt-gpp', `the arrows reach Build with g++ (${(await opts()).focus})`);
+        await page.keyboard.press('Space');
+        o = await opts();
+        let om = await optionMsgs();
+        assert(o.open && o.gpp && o.cpp && om.length === 1 && om[0].key === 'buildWithGpp' && om[0].value === true,
+            `Space ticks Build with g++, which ticks Generate C++ too, posts setCompileOption, and the menu stays open (${JSON.stringify(om)})`);
+        assert(/^Build Project: check this PLC project, write it as C\+\+ into its CPP_Files folder, and build that with g\+\+/.test(await btnTitle())
+            && /g\+\+/.test(o.detail), `Build's tooltip and detail follow: check, write C++, build with g++ (${await btnTitle()} | ${o.detail})`);
+        await page.keyboard.press('ArrowUp');
+        await page.keyboard.press('Enter');
+        o = await opts();
+        om = await optionMsgs();
+        assert(o.open && !o.cpp && !o.gpp && om.length === 2 && om[1].key === 'generateCpp' && om[1].value === false,
+            `Enter toggles a checkbox item too: unticking Generate C++ unticks Build with g++ and posts it (${JSON.stringify(om)})`);
+        await page.keyboard.press('Escape');
+        o = await opts();
+        assert(!o.open && o.focus === 'actions-btn', `Escape closes the menu and returns focus to the button (${JSON.stringify(o)})`);
+        // The host's answer (or a change made in the Settings editor) is what the boxes show.
+        await page.evaluate(() => window.postMessage({ type: 'compileOptions', options: { generateCpp: false, buildWithGpp: true } }, '*'));
+        await settle(30);
+        o = await opts();
+        assert(o.cpp && o.gpp, 'a compileOptions message from the host updates the boxes live (the build shows generation on)');
+        await page.evaluate(() => window.postMessage({ type: 'compileOptions', options: { generateCpp: true, buildWithGpp: false } }, '*'));
+        await settle(30);
+        o = await opts();
+        assert(o.cpp && !o.gpp, 'and back: generation only');
+        assert(/^Build Project: check this PLC project, then write it as C\+\+ into its CPP_Files folder$/.test(await btnTitle()), `the tooltip follows a host update too: check, then write C++ (${await btnTitle()})`);
+
+        // Build through XAE (R14): the host's xaeOptions shows the section; its items post runXae / setXaeOption.
+        await page.evaluate(() => window.postMessage({ type: 'xaeOptions', options: { available: true, showWindow: false, running: false } }, '*'));
+        await settle(30);
+        await page.evaluate(() => { window.__harness.sent.length = 0; });
+        await openMenu();
+        const xaeShown = await page.evaluate(() => {
+            const sec = document.getElementById('xae-menu-section');
+            const r = document.getElementById('actions-menu').getBoundingClientRect();
+            return { shown: !sec.hidden && getComputedStyle(sec).display !== 'none', window: document.getElementById('xae-opt-window').checked,
+                buttons: [...sec.querySelectorAll('[role="menuitem"]')].map(b => b.textContent), inside: r.left >= 0 && r.right <= window.innerWidth,
+                heading: document.getElementById('xae-menu-title').textContent, busyNote: !document.getElementById('xae-busy-detail').hidden,
+                desc: document.getElementById('xae-build').getAttribute('aria-describedby') };
+        });
+        assert(xaeShown.shown && !xaeShown.window && JSON.stringify(xaeShown.buttons) === '["Build through XAE","Build and Activate through XAE…"]' && xaeShown.inside
+            && xaeShown.heading === 'Through XAE' && !xaeShown.busyNote && !xaeShown.desc,
+        `R14: available → the Build group shows Build through XAE, Build and Activate through XAE… and an unticked Show the XAE window, inside the webview (${JSON.stringify(xaeShown)})`);
+        await page.keyboard.press('End');
+        await page.keyboard.press('ArrowUp');
+        assert((await opts()).focus === 'xae-opt-window', `R14: the arrows walk through the XAE entries too (${(await opts()).focus})`);
+        await page.keyboard.press('ArrowUp');
+        assert((await opts()).focus === 'xae-activate', 'R14: … up to Build and Activate through XAE…');
+        await page.click('#xae-opt-window');
+        await page.click('#xae-build');
+        let xm = await page.evaluate(() => window.__harness.sent.filter(m => m.type === 'setXaeOption' || m.type === 'runXae'));
+        assert(xm.length === 2 && xm[0].type === 'setXaeOption' && xm[0].key === 'showWindow' && xm[0].value === true && xm[1].type === 'runXae' && xm[1].activate === false,
+            `R14: the checkbox posts setXaeOption showWindow; Build through XAE posts runXae {activate: false} (${JSON.stringify(xm)})`);
+        assert((await opts()).open === false, 'R14: an XAE action closes the menu');
+        await openMenu();
+        await page.click('#xae-activate');
+        xm = await page.evaluate(() => window.__harness.sent.filter(m => m.type === 'runXae'));
+        assert(xm.length === 2 && xm[1].activate === true, 'R14: Build and Activate through XAE… posts runXae {activate: true}');
+        await page.evaluate(() => window.postMessage({ type: 'xaeOptions', options: { available: true, showWindow: true, running: true } }, '*'));
+        await settle(30);
+        const xaeBusy = await page.evaluate(() => ({ b: document.getElementById('xae-build').getAttribute('aria-disabled'), a: document.getElementById('xae-activate').getAttribute('aria-disabled'),
+            w: document.getElementById('xae-opt-window').checked, note: !document.getElementById('xae-busy-detail').hidden,
+            desc: document.getElementById('xae-build').getAttribute('aria-describedby') }));
+        const xaeChip = await chip('build-indicator');
+        assert(xaeBusy.b === 'true' && xaeBusy.a === 'true' && xaeBusy.w && xaeBusy.note && xaeBusy.desc === 'xae-busy-detail' && xaeChip.shown && xaeChip.text === 'XAE build…',
+            `R14: while a run is going both actions are disabled with the reason shown, the box follows the setting, and an "XAE build…" chip shows (${JSON.stringify({ xaeBusy, xaeChip })})`);
+        await openMenu();
+        await page.evaluate(() => { window.__harness.sent.length = 0; });
+        await page.click('#xae-build', { force: true });
+        assert((await page.evaluate(() => window.__harness.sent.filter(m => m.type === 'runXae').length)) === 0, 'R14: a click on a disabled XAE item posts nothing');
+        await closeMenu();
+        await page.evaluate(() => window.postMessage({ type: 'xaeOptions', options: { available: false, showWindow: false, running: false } }, '*'));
+        await settle(30);
+        assert(await page.evaluate(() => document.getElementById('xae-menu-section').hidden) && !(await chip('build-indicator')).shown, 'R14: not available → hidden again, and no chip');
+
+        // 7g. Auto Sync: a checkbox item in the Editor group. Off shows a "Manual Sync" chip next to the
+        //     menu button (the toggle's old label; the dev-host runner reads its text) and posts
+        //     toggleSyncMode; the host's setSyncMode turns it back.
+        const syncView = () => page.evaluate(() => ({ checked: document.getElementById('sync-mode-toggle').checked, chip: !document.getElementById('sync-mode-text').hidden,
+            text: document.getElementById('sync-mode-text').textContent, title: document.getElementById('actions-btn').title }));
+        let sv = await syncView();
+        assert(sv.checked && !sv.chip && sv.text === 'Auto Sync' && /Auto Sync on/.test(sv.title), `Auto Sync starts on, with no chip (${JSON.stringify(sv)})`);
+        await page.evaluate(() => { window.__harness.sent.length = 0; });
+        await page.focus('#actions-btn');
+        await page.keyboard.press('ArrowUp');
+        await page.keyboard.press('Space');
+        sv = await syncView();
+        let syncMsgs = await page.evaluate(() => window.__harness.sent.filter(m => m.type === 'toggleSyncMode'));
+        assert(!sv.checked && sv.chip && sv.text === 'Manual Sync' && /Manual Sync/.test(sv.title) && syncMsgs.length === 1 && syncMsgs[0].isAutoSync === false && (await menuState()).open,
+            `Space on Auto Sync turns it off: a Manual Sync chip shows, toggleSyncMode posts, the menu stays open (${JSON.stringify(sv)})`);
+        await closeMenu();
+        await page.evaluate(() => window.postMessage({ type: 'setSyncMode', isAutoSync: true }, '*'));
+        await settle(30);
+        sv = await syncView();
+        assert(sv.checked && !sv.chip && sv.text === 'Auto Sync', `the host's setSyncMode turns it back on and the chip goes (${JSON.stringify(sv)})`);
+
+        if (process.env.HARNESS_TOOLBAR_SHOTS) {
+            for (const [name, width] of [['wide', 1200], ['narrow', 400]]) {
+                await page.setViewportSize({ width, height: viewport.height });
+                await settle(120);
+                await page.screenshot({ path: path.join(process.env.HARNESS_TOOLBAR_SHOTS, `actions-offline-closed-${width}.png`), clip: { x: 0, y: 0, width, height: width <= 780 ? 170 : 90 } });
+                await openMenu();
+                await page.click('#generate-st-caret');
+                await settle(80);
+                const shot = path.join(process.env.HARNESS_TOOLBAR_SHOTS, `actions-offline-open-${width}.png`);
+                await page.screenshot({ path: shot, clip: { x: 0, y: 0, width, height: Math.min(viewport.height, 640) } });
+                console.log(`actions menu screenshots written to ${process.env.HARNESS_TOOLBAR_SHOTS} (${name})`);
+                await closeMenu();
+            }
+            await page.setViewportSize(viewport);
+        }
+
+        // Narrow editors: the menu button, the component list and the status stay whole and inside the
+        // webview; the page never scrolls sideways; the open menu fits.
+        await page.evaluate(() => window.postMessage({ type: 'projectList', projects: [{ key: 'a', label: 'PLC_A' }, { key: 'b', label: 'PLC_B' }] }, '*'));
+        await page.evaluate(() => window.postMessage({ type: 'compileRunning', running: true }, '*'));
+        const toolbarAt = async (width) => {
+            await page.setViewportSize({ width, height: viewport.height });
+            await settle(80);
+            const closed = await page.evaluate(() => {
+                const box = (id) => { const r = document.getElementById(id).getBoundingClientRect(); return { left: Math.round(r.left), right: Math.round(r.right), width: Math.round(r.width), top: Math.round(r.top) }; };
+                return {
+                    width: window.innerWidth, actions: box('actions-btn'), build: box('build-btn'), select: box('component-select'), status: box('save-status-item'), chip: box('build-indicator'),
+                    name: Object.assign(box('obj-name'), { cut: document.getElementById('obj-name').scrollWidth > document.getElementById('obj-name').clientWidth + 1 }),
+                    compact: document.querySelector('.app-header').classList.contains('compact'),
+                    more: document.querySelector('.app-header').classList.contains('compact-more'),
+                    actionsLabel: getComputedStyle(document.querySelector('#actions-btn .btn-label')).display !== 'none',
+                    actionsMore: getComputedStyle(document.querySelector('#actions-btn .actions-more')).display !== 'none',
+                    statusText: getComputedStyle(document.getElementById('save-status')).display !== 'none',
+                    // Rows: items whose vertical centres lie within 8px of each other share one.
+                    rows: (() => { const cs = [...document.querySelectorAll('.app-header > *')].filter(e => e.getBoundingClientRect().width > 0)
+                        .map(e => { const r = e.getBoundingClientRect(); return (r.top + r.bottom) / 2; }).sort((a, b) => a - b);
+                    return cs.reduce((n, c, i) => n + (i > 0 && c - cs[i - 1] > 8 ? 1 : 0), 1); })(),
+                    sideScroll: document.documentElement.scrollWidth > window.innerWidth || document.body.scrollWidth > window.innerWidth
+                };
+            });
+            await openMenu();
+            const open = await page.evaluate(() => { const r = document.getElementById('actions-menu').getBoundingClientRect(); return { left: Math.round(r.left), right: Math.round(r.right), bottom: Math.round(r.bottom), h: window.innerHeight }; });
+            await closeMenu();
+            return Object.assign(closed, { menu: open });
+        };
+        for (const width of [320, 360, 560, 700, 760, 780, 800, 820, 900, 960, 1100, 1200]) {
+            const t = await toolbarAt(width);
+            const inside = (b) => b.width > 0 && b.left >= 0 && b.right <= t.width;
+            assert(inside(t.actions) && inside(t.build) && inside(t.select) && inside(t.status) && inside(t.chip) && t.actions.width >= 24 && !t.sideScroll
+                && t.menu.left >= 0 && t.menu.right <= t.width && t.menu.bottom <= t.menu.h,
+            `at ${width}px the "⋯" and Build buttons, the component list, the Building… item and the status are inside the editor, no sideways scroll, and the open menu fits (${JSON.stringify(t)})`);
+            // The object name gives way last: while it is cut the status shows dots only; above 420px one row.
+            assert((!t.name.cut || t.more) && (!t.more || t.compact) && (width <= 420 || t.rows === 1) && (t.compact ? !t.statusText : t.statusText)
+                && (t.more ? !t.actionsLabel && t.actionsMore : t.actionsLabel && !t.actionsMore),
+                `at ${width}px the status collapses to dots, then the Actions button to its glyph, before the object name is cut; above 420px one row (${JSON.stringify({ name: t.name, compact: t.compact, more: t.more, actionsLabel: t.actionsLabel, actionsMore: t.actionsMore, rows: t.rows, statusText: t.statusText })})`);
+            if (width >= 1100) assert(!t.compact && !t.name.cut, `at ${width}px nothing is collapsed`);
+        }
+        await page.evaluate(() => window.postMessage({ type: 'compileRunning', running: false }, '*'));
+
+        // Screenshots of the toolbar, normal and narrow, dark (the harness default) and light.
+        if (process.env.HARNESS_TOOLBAR_SHOTS) {
+            const light = {
+                '--vscode-editor-background': '#ffffff', '--vscode-editor-foreground': '#333333',
+                '--vscode-titleBar-activeBackground': '#dddddd', '--vscode-foreground': '#333333',
+                '--vscode-dropdown-background': '#ffffff', '--vscode-dropdown-foreground': '#333333',
+                '--vscode-panel-border': 'rgba(128, 128, 128, 0.35)'
+            };
+            for (const theme of ['dark', 'light']) {
+                await page.evaluate(([th, vars]) => {
+                    document.body.classList.toggle('vscode-light', th === 'light');
+                    document.body.classList.toggle('vscode-dark', th === 'dark');
+                    for (const [k, v] of Object.entries(vars)) {
+                        if (th === 'light') document.documentElement.style.setProperty(k, v);
+                        else document.documentElement.style.removeProperty(k);
+                    }
+                }, [theme, light]);
+                for (const [name, width] of [['normal', 1200], ['narrow', 820], ['wrapped', 700], ['phone', 400]]) {
+                    await page.setViewportSize({ width, height: viewport.height });
+                    await settle(150);
+                    const shot = path.join(process.env.HARNESS_TOOLBAR_SHOTS, `toolbar-${theme}-${name}-${width}.png`);
+                    await page.screenshot({ path: shot, clip: { x: 0, y: 0, width, height: width <= 780 ? 170 : 120 } });
+                    console.log('toolbar screenshot written to ' + shot);
+                }
+            }
+            await page.evaluate(() => { document.body.classList.remove('vscode-light', 'vscode-dark'); document.documentElement.removeAttribute('style'); });
+        }
+        await page.setViewportSize(viewport);
 
         // 8. Nothing may have thrown along the way — "Model not found" is the failure this whole
         //    design exists to make unreachable, and it surfaces as a console error.

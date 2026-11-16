@@ -15,4 +15,14 @@ function reportCoverage(gate, status, detail = '') {
     fs.writeFileSync(target, JSON.stringify({ gate, status, detail }), 'utf8');
 }
 
-module.exports = { reportCoverage };
+/**
+ * Reports several gates from one harness (one file, an array of reports).
+ * @param {Array<{gate: string, status: 'ran'|'skipped', detail?: string}>} reports
+ */
+function reportCoverages(reports) {
+    const target = process.env.TC_TEST_COVERAGE_FILE;
+    if (!target) return;
+    fs.writeFileSync(target, JSON.stringify(reports.map(r => ({ gate: r.gate, status: r.status, detail: r.detail || '' }))), 'utf8');
+}
+
+module.exports = { reportCoverage, reportCoverages };

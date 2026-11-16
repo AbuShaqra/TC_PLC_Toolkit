@@ -292,6 +292,84 @@ async function main() {
         assert(stageThrew, 'single-shot apply: staging after apply throws');
     }
 
+    // ---- applyAsOne: one commit step (the rename's single WorkspaceEdit) ----
+    console.log('\n--- applyAsOne ---');
+    {
+        const { io, store, writeLog } = createFakeIo({ f1: 'OLD 1', f2: 'OLD 2', p: 'Include OLD' });
+        const txn = createRenameTransaction(io);
+        await txn.stage('f1', rename('OLD', 'NEW'));
+        await txn.stage('f2', rename('OLD', 'NEW'));
+        await txn.stage('p', rename('OLD', 'NEW'));
+        let commits = 0;
+        let seen = null;
+        const res = await txn.applyAsOne(async (changes) => {
+            commits++;
+            seen = changes.map(c => c.key);
+            for (const c of changes) store.set(c.key, c.newText);
+        });
+        assert(res.ok === true && same(res.written, ['f1', 'f2', 'p']), 'applyAsOne: success reports every staged key');
+        assert(commits === 1 && same(seen, ['f1', 'f2', 'p']), 'applyAsOne: ONE commit receives every change, in staging order');
+        assert(writeLog.length === 0, 'applyAsOne: the per-file writer is never used on success');
+        assert(txn.state === 'applied', 'applyAsOne: state is applied');
+        let threw = false;
+        try { await txn.applyAsOne(async () => {}); } catch (e) { threw = true; }
+        assert(threw, 'applyAsOne: single-shot, like apply');
+        const rb = await txn.revert();
+        assert(same(rb.reverted, ['p', 'f2', 'f1']) && store.get('f1') === 'OLD 1' && store.get('p') === 'Include OLD',
+            'applyAsOne: revert() still restores a committed transaction');
+    }
+    {
+        const { io, store } = createFakeIo({ f1: 'OLD 1', f2: 'OLD 2' });
+        const txn = createRenameTransaction(io);
+        await txn.stage('f1', rename('OLD', 'NEW'));
+        await txn.stage('f2', rename('OLD', 'NEW'));
+        store.set('f2', 'OLD 2 edited elsewhere');
+        let commits = 0;
+        const res = await txn.applyAsOne(async () => { commits++; });
+        assert(res.ok === false && res.failedKey === 'f2' && res.reason === 'changed-on-disk',
+            'applyAsOne: a file changed since staging fails the apply (changed-on-disk)');
+        assert(commits === 0, 'applyAsOne: ...BEFORE the commit runs, so nothing is written');
+        assert(store.get('f1') === 'OLD 1', 'applyAsOne: ...and the other file is untouched');
+    }
+    {
+        // The commit lands part of the edit and then fails (VS Code applied the text edits, then the
+        // file rename failed): what landed is restored, what did not is left alone.
+        const { io, store } = createFakeIo({ f1: 'OLD 1', f2: 'OLD 2', f3: 'OLD 3' });
+        const txn = createRenameTransaction(io);
+        await txn.stage('f1', rename('OLD', 'NEW'));
+        await txn.stage('f2', rename('OLD', 'NEW'));
+        await txn.stage('f3', rename('OLD', 'NEW'));
+        const res = await txn.applyAsOne(async (changes) => {
+            store.set(changes[0].key, changes[0].newText);
+            store.set(changes[1].key, changes[1].newText);
+            throw new Error('rename target exists');
+        });
+        assert(res.ok === false && /^commit-failed: rename target exists/.test(res.reason), 'applyAsOne: a throwing commit fails the apply with its reason');
+        assert(same(res.rolledBack.slice().sort(), ['f1', 'f2']) && res.rollbackFailures.length === 0,
+            'applyAsOne: exactly the landed files are restored');
+        assert(store.get('f1') === 'OLD 1' && store.get('f2') === 'OLD 2' && store.get('f3') === 'OLD 3',
+            'applyAsOne: the workspace is as it was');
+        assert(txn.state === 'failed', 'applyAsOne: state is failed');
+    }
+    {
+        const { io, store } = createFakeIo({ f1: 'OLD 1', f2: 'OLD 2' });
+        const txn = createRenameTransaction(io);
+        await txn.stage('f1', rename('OLD', 'NEW'));
+        await txn.stage('f2', rename('OLD', 'NEW'));
+        const res = await txn.applyAsOne(async (changes) => {
+            store.set('f1', changes[0].newText);
+            store.set('f2', 'someone else');
+            const e = new Error('boom');
+            e.key = 'f2';
+            throw e;
+        });
+        assert(res.failedKey === 'f2', 'applyAsOne: an error carrying key names that file');
+        assert(same(res.rolledBack, ['f1']) && res.rollbackFailures.length === 1
+            && res.rollbackFailures[0].key === 'f2' && res.rollbackFailures[0].reason === 'changed-after-write',
+            'applyAsOne: a file holding neither text is reported, never overwritten');
+        assert(store.get('f2') === 'someone else', 'applyAsOne: ...and keeps its content');
+    }
+
     console.log(errors === 0 ? '\nAll rename-transaction tests passed.' : `\n${errors} test(s) failed.`);
     if (errors > 0) process.exit(1);
 }

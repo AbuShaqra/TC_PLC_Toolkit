@@ -71,13 +71,15 @@ function wrap(font, str, capHeight) {
     return lines;
 }
 
-// Title: two lines so it stays large. "TwinCAT" carries the mark's white; "PLC Toolkit" its red.
+// Title: the product name, "TC Toolkit", on two lines so it stays large. "TC" carries the mark's white;
+// "Toolkit" its red. "TwinCAT" is Beckhoff's trademark and is never the title: it appears only in the
+// description, descriptively.
 const TITLE_CAP = 66;
 const TITLE_LEAD = 92;
 let y = MARK_Y + 78;
-text(fonts.bold, 'TwinCAT', TITLE_CAP, TEXT_X, y, TITLE);
+text(fonts.bold, 'TC', TITLE_CAP, TEXT_X, y, TITLE);
 y += TITLE_LEAD;
-text(fonts.bold, 'PLC Toolkit', TITLE_CAP, TEXT_X, y, ACCENT);
+text(fonts.bold, 'Toolkit', TITLE_CAP, TEXT_X, y, ACCENT);
 
 // Rule: a short red bar, the same accent, anchoring the description.
 y += 46;

@@ -1,6 +1,6 @@
 /**
  * @file run.js
- * @description Test runner for the TwinCAT PLC Toolkit suite. Discovers every `test_*.js` in this
+ * @description Test runner for the TC Toolkit suite. Discovers every `test_*.js` in this
  * directory and runs each in its OWN Node process, because the harnesses rely on module-global state
  * (the workspace symbol index) and call `process.exit(1)` on failure — so they must be isolated.
  *
@@ -19,6 +19,9 @@
  *
  * Env:    REQUIRE_FULL_SUITE=1        fail instead of running REDUCED — use before packaging a
  *                                     release, so a degraded run can never be mistaken for a clean one.
+ *         TWINCAT_COMPILER_BUNDLE     path of a compiler CLI file to use INSTEAD of the bundled
+ *                                     resources/compiler/compiler.cjs in the optional real-compiler
+ *                                     gate (test_compile_real.js), which needs a Node >= 22.
  */
 
 const { spawnSync } = require('child_process');
@@ -97,7 +100,10 @@ for (const file of files) {
     if (fs.existsSync(reportPath)) {
         try {
             const report = JSON.parse(fs.readFileSync(reportPath, 'utf8'));
-            if (report && report.gate) reports.set(report.gate, report);
+            // One gate, or several from one harness (test/_coverage.js reportCoverages).
+            for (const r of Array.isArray(report) ? report : [report]) {
+                if (r && r.gate) reports.set(r.gate, r);
+            }
         } catch (e) {
             reports.set(file, { gate: file, status: 'skipped', detail: 'invalid coverage report' });
         }
@@ -113,12 +119,27 @@ const requiredGates = [
     'sample-diagnostics',
     'sample-typecheck',
     'multi-project-sample',
-    'committed-library'
+    'committed-library',
+    'objects-tree-ids',
+    'two-samples',
+    // R15 online monitoring: path resolution on the sample, the commands end to end, the code check on the committed .tmc.
+    'ads-paths-sample',
+    'ads-watch',
+    'ads-code'
 ];
 const missedGates = requiredGates
     .map(gate => reports.get(gate) || { gate, status: 'skipped', detail: 'harness did not report execution' })
     .filter(report => report.status !== 'ran');
 const coverageFull = !filter && fixtures.full && missedGates.length === 0;
+
+// Gates that need something CI does not have (an external compiler, g++). They never decide FULL vs
+// REDUCED and never fail REQUIRE_FULL_SUITE — but whether each ran is printed, so a skip is seen.
+const optionalGates = [
+    'compile-real',
+    // R13 (test_cpp_real.js): C++ generation needs the compiler's Node >= 22; the g++ build also a g++.
+    'cpp-real',
+    'gpp-real'
+];
 
 // State the coverage the run actually achieved. Fixture presence is only a preflight hint; FULL
 // requires the harnesses themselves to report that every load-bearing gate ran.
@@ -132,6 +153,15 @@ if (filter) {
     for (const report of missedGates) console.log(`    · ${report.gate}: ${report.detail || 'skipped'}`);
     console.log('  Passing here does not prove the diagnostics ratchet held. Run locally with the');
     console.log('  fixtures present (REQUIRE_FULL_SUITE=1 enforces it) before trusting it as a gate.');
+}
+
+if (!filter) {
+    console.log('Optional gates (not required for FULL):');
+    for (const gate of optionalGates) {
+        const report = reports.get(gate);
+        const state = report && report.status === 'ran' ? 'ran' : `skipped — ${(report && report.detail) || 'harness did not report execution'}`;
+        console.log(`    · ${gate}: ${state}`);
+    }
 }
 
 if (failed.length || (requireFull && !coverageFull)) {

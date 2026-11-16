@@ -1,0 +1,5 @@
+{"v":1,"t":"hello","mode":"build","showWindow":false}
+{"v":1,"t":"phase","name":"resolve"}
+{"v":1,"t":"fatal","code":"version-mismatch","text":"no XAE Shell mapping for TwinCAT build 3.1.4030.","data":null}
+{"v":1,"t":"done","exitCode":2,"ui":null}
+{"exit":2}

@@ -168,6 +168,11 @@
             markers: markers,
             selection: selection,
             peekOpen: !!document.querySelector('.zone-widget, .peekview-widget'),
+            compileButton: (function () {
+                const b = /** @type {*} */ (document.getElementById('compile-btn'));
+                // An Actions-menu item: disabled is `aria-disabled` (it stays focusable), not the property.
+                return b ? { present: true, disabled: !!b.disabled || b.getAttribute('aria-disabled') === 'true' } : { present: false, disabled: false };
+            })(),
             errors: errors.slice(),
             // Reported, never assumed: checklist item 6 is specifically that the panes carry REAL
             // MarkerSeverity values, so the expected value has to come from the same Monaco build.
@@ -222,6 +227,14 @@
             ed.focus();
             ed.setPosition(position);
             ed.revealPositionInCenter(position);
+            return { type: 'test:done', requestId: message.requestId };
+        },
+
+        /** Clicks the Actions menu's real Build item, so editor.js's own listener posts the request. */
+        'test:clickCompile': function (message) {
+            const btn = /** @type {*} */ (document.getElementById('compile-btn'));
+            if (!btn) throw new Error('no compile-btn element');
+            btn.click();
             return { type: 'test:done', requestId: message.requestId };
         },
 

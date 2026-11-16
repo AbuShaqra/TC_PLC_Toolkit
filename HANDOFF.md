@@ -1,650 +1,492 @@
 # HANDOFF
 
 Where the work *stands*. Read before starting; keep current (handoff rule in [CLAUDE.md](CLAUDE.md)). Target under
-100 lines — prune finished items rather than appending, but never drop a real finding to hit it. **Shipped features
-live in git history (PRs/commits); this file keeps the findings that would cost to re-derive.**
+500 lines (user ruling 2026-11-09) — prune finished items rather than appending, but never drop a real finding to hit it. **Shipped features
+live in git history (PRs/commits); the findings that would cost to re-derive live in
+[docs/handoff-findings.md](docs/handoff-findings.md)** — read the section covering what you are about to touch.
 
-**Last verified:** 2026-08-26 (Linux container, dev + all five improvement-plan phases) — `REQUIRE_FULL_SUITE=1
-npm test` green (**76/76, Coverage: FULL**), typecheck clean, `npm run lint` exit 0. Prior full pass: 2026-08-25 (Windows, user's
-machine, main incl. the `.tctleo` fix, G4 automation and
-pending-edit persistence) — `REQUIRE_FULL_SUITE=1 npm test` green (**73/73, Coverage: FULL, 6.3 s**),
-typecheck clean, and **`node test/devhost/run.js` all green** — the G4 dev-host gate carries two `.TcTLEO`
-watcher assertions AND the automated P8 webview checklist (29 assertions via the `TCDEV_TEST`-gated
-`media/devHostTestHook.js`, plus 4 pending-edit persistence assertions; all below). One suite fix was needed first: `test_twincat_workspace.js`'s unreadable-directory
-check assumed POSIX chmod enforcement and failed on Windows (71/72); it now probes enforcement via
-readdir and skips cleanly — lesson in `.claude/memory/permission-tests-need-enforcement-probes.md`.
-Earlier: 2026-08-22 Linux P8 pass (72/72 FULL, typecheck, both browser harnesses in real Chromium, PASS
-set identical to pre-P8); 2026-08-18 full pass incl. dev-host two-project workspace and 0 sample
-diagnostics; 2026-08-10 verified 0 diagnostics with Beckhoff archives present AND moved aside.
-`package.json` is at **0.10.1** (release in progress 2026-11-03: PR #22 → dev, then dev→main + Release). Last
-published: v0.10.0 (2026-08-28, dev→main PR #20 at `3937d57`). Version history: 0.10.1 = Generate ST flattens
-struct EXTENDS from the project's own DUTs, project-specific rewrites removed (PR #22); 0.10.0 =
-Libraries-view active-project scoping (PR #18); 0.9.0 = the five improvement-plan phases (published 2026-08-27);
-0.8.2 project-aware Generate ST + picker; 0.8.1 the ResizeObserver Find-References fix; 0.8.0 the
-solution→PLC-project Objects hierarchy. Remote history was rewritten 2026-08-17.
-**Review fixes verified on `codex/review-fixes`:** bounded ZIP archive/input inflation (`libsymbols.js`); central path↔file-URI handling
-(`fileUri.js`); reference-cache identity is mtime+size+ctime+inode; FULL coverage now requires child harnesses to
-report that gates actually ran; editor coordinate/peek helpers moved to production `editorMapping.js` and are
-imported by the live-path tests; duplicate `.plcproj` basenames use shortest-unique-parent labels in both Objects
-and status bar. The dev-host now copies the sample as LineA+LineB and asserts those real provider labels plus live
-cross-file navigation. The user's pre-existing newline edit in `sample/.../FB_Station.TcPOU` remains untouched.
-**0.8.0 VSIX rebuilt 2026-08-25 16:52 WITH the pending-edit persistence fix, installed (`--force`; content-checked:
-`pendingEditsStore.js` in, `devHostTestHook.js` out), fully restarted, and the Ctrl+R check passed live.**
-**Release workflow (merged PR #2, in main 2026-08-26):** `.github/workflows/release.yml`, manual-only; tags
-`v<package.json version>`, refuses an existing tag/release, gates typecheck+test+package, attaches the VSIX,
-`prerelease`/`draft` inputs. **Proven 2026-08-26 06:41:** published `v0.8.0` (tag at `fb9a11f`, VSIX attached, run
-green). vsce's "577 files / bundle your extension" warning is expected and ruled ignored (bundling contradicts the
-no-build-step invariant; ~385 files are LSP runtime deps). Procedure in DEVELOPMENT.md "Publish a GitHub release".
-**Branching model (updated 2026-08-26):** `dev` (created from main `6cbb77c`) collects day-to-day work; a release is
-`dev → main` PR (CI runs on it) then *Release* on main. **PRs targeting `dev` now run CI automatically**
-(`ci.yml` `pull_request: [main, dev]`, user-approved reversal of the manual-only ruling, phase 5 of the improvement
-plan) and the build job's Test step now sets **`REQUIRE_FULL_SUITE=1`** — a REDUCED run fails instead of passing
-(sample/ is committed, so FULL is achievable on CI; the old ci.yml comment claiming otherwise was stale and is fixed).
-*CI (manual)* (`ci-manual.yml`, `ref` defaults to `dev`, calls `ci.yml` via `workflow_call`) remains for direct
-pushes to `dev` (still trigger nothing) and ad-hoc refs. VSIX build check stays on purpose (ruled: "is dev
-releasable" includes "does it package"). `dev` has no ruleset — direct pushes are allowed. Earlier proof of the
-manual path: run 32942537490, all three nested jobs green.
-**Generate ST is project-aware (on dev, 2026-08-26):** the button is a split control — main = every project, caret opens a
-checkbox menu (shown only when 2+ projects) to pick a subset. Output moved from a flat `ST_Files/<workspace path>.st`
-mirror (which OVERWROTE across projects that shared an object path) to per-project `ST_Files/<project dir rel to workspace>/…`,
-walking each `.plcproj`'s `<Compile>` list. Path math is the pure `src/stOutputPath.js` (`test_st_output_path.js`); the
-webview asks `requestProjects`→`projectList`, `generate-st` carries optional `projectKeys`; provider gets `getProjectMap`.
-No-`.plcproj` workspaces fall back to the old mirror. Verified: unit test, dev-host `generate-st` phase (real disk, 3-project
-fixture, subset scoping), and the dropdown eyeballed. Trap: `asRelativePath(dir, true)` prepends the folder name even for a
-SINGLE root (`ST_Files/ws/…`) — hence the hand-rolled `projectFolderRelPath`, which prefixes only for 2+ roots.
-**Improvement-plan phases (user-approved 2026-08-26, one PR per phase into `dev`):** an external review plan was
-assessed against the repo; adopted subset only. 1) transactional rename — DONE (below, PR #10); 2) completion split —
-DONE: `features/completions.js` 1361→191 lines (orchestrator+façade, public exports unchanged), parts in
-`src/lsp/completion/{pragma,context,namedParams,memberAccess,sources}.js`, acyclic require graph, verified
-behavior-IDENTICAL against the pre-split monolith (exhaustive probe: every caret position in a live-indexed unit,
-1186 probes + 18 named scenarios, 0 mismatches, order-sensitive deep equality); 3) ESLint — DONE: `npm run lint`
-exits 0 (ESLint 9 flat CJS config, defect-focused; every relaxation documented IN `eslint.config.js` — notably
-`caughtErrors/args: 'none'` and `no-useless-escape` off, each argued there), 26 real fixes + 1 load-bearing inline
-disable (`xaeShell.js`'s `vscode` require feeds a JSDoc namespace — deleting it fails typecheck, verified), Lint
-step in CI `build` job only (ESLint 9 needs Node ≥18.18; runtime-compat runs Node 16). Deferred: ESLint 10 bump
-(9.x now deprecated; 10 raises the Node floor + re-triage), dev-only `brace-expansion` advisory (fix would drag 19
-unrelated lockfile packages); 4) structured LSP logging — DONE: `src/lsp/log.js` (quiet-by-default `warn`
-threshold via `TWINCAT_LSP_LOG`, stderr one-line records, never throws, below-threshold = one comparison);
-24 of 47 inventoried silent catch sites wired — 9 server.js handler catches + all 7 routed `custom/*` handlers
-via `requestPipeline`'s injected `onError` (reporter itself try/caught: strictly additive, `params.code` never
-logged), 14 per-file degraded sites at `debug`, exactly ONE `warn` (`plcproj-unreadable` — zeroes a project's
-index); ~20 routine sites deliberately left silent (noise even at debug). Healthy sample emits ZERO stderr even
-at debug. Pins: `test_log.js` (43 asserts; 3 broken variants verified red); 5) automatic CI for PRs targeting `dev` + `REQUIRE_FULL_SUITE=1` enforced on CI — DONE (**user-approved
-reversal** of the manual-only dev-CI ruling; see Branching model; first run proved green on PR #11 itself). Rejected: `libsymbols` split (P9 no-go stands),
-CI fixture (already done), editor/activate decomposition (done enough), ADR dir (memory bank + plans cover it).
-**Transactional cross-file rename (phase 1, on dev 2026-08-26):** `src/renameTransaction.js` — stage-then-apply
-with captured originals; pre-write re-read (`changed-on-disk` never written), reverse-order rollback on first
-failure, never-clobber verify on restore (`changed-after-write`), `revert()` when the on-disk file rename fails
-after content edits landed, rollback failures reported per file (real spelling via keyToUri — the lowercased key
-is identity only). `applyXmlEdit` split into `readXmlText`/`writeXmlText`; **`writeXmlText` now THROWS when
-`applyEdit` resolves false** (was silently ignored — a dropped edit mid-rename was invisible). `.plcproj` sync
-stays outside the transaction (own swallowing contract, many call sites — a later phase if wanted). Pins:
-`test_rename_transaction.js` (51 asserts, fault-injected io; all three guards verified to FAIL when removed).
-Trap: the pinned TS preview does not narrow `!res.ok` on a JSDoc union — see
-`.claude/memory/jsdoc-union-narrowing-needs-explicit-compare.md`.
-**Find References blanked the editor (shipped in 0.8.0, FIXED on dev 2026-08-26):** `media/editor.js`'s
-global `error` listener painted the "Webview Runtime Failure" overlay over both panes and toasted "Webview Error" for ANY
-window error event — and Chrome delivers its benign "ResizeObserver loop completed with undelivered notifications" notice
-as one when Monaco's `automaticLayout` observer reacts to the peek zone opening. Found only by LOOKING at a screenshot
-from the showcase run; every headless gate was green (Playwright's `pageerror` never sees that notice, and whether the
-loop fires at all is layout-timing dependent — it did not in headless Chromium, it did in the real window). Fix: the
-listener filters `/ResizeObserver loop/`. Pins: `test/browser/run.js` 3b (natural peek + a hand-dispatched notice +
-a genuine error that must still surface; verified red→green) and `test/devhost` `p8-peek.errorPosted` (green after the
-fix; its pre-fix red is the showcase screenshot, not a harness run). Lesson: `.claude/memory/benign-browser-notices-are-error-events.md`.
-**Showcase screenshots (community post):** `scratch/showcase/{run.js,runner.js,shot.ps1}` builds the LineA(2 PLC)+LineB
-workspace like the dev-host harness, launches the dev host with an in-host driver and captures the window via
-PrintWindow → `scratch/showcase/shots/*.png`. `scratch/` is git-ignored — move to `scripts/showcase/` (+.vscodeignore) if kept.
-**Repo settings after the 2026-08-26 recreate (all verified via `gh api`):** ruleset `main-1` on main = PR required,
-**0 approvals**, no bypass list, **no required status checks** (a red CI does not block the merge button — adding the
-`build` check is the one change that would); Actions permission = `selected` + GitHub-owned (it was `local_only`, which
-killed every run with `startup_failure` — PRs #1/#2 merged on local verification only). **CI is PR-only** (PR #3 merged
-with an invisible 0x03 byte that broke the file, PR #4 fixed it — see `.claude/memory/workflow-yaml-needs-a-byte-scan.md`;
-first green GitHub run: PR #4, all three jobs). Confirm `gh run list` shows a real conclusion before trusting a badge.
-**Logo split into two generated images (merged PR #1, in main 2026-08-26):**
-`media/icon.png` is now the **1280×640 GitHub social preview** (embedded at the top of README.md) (`scripts/make-social-preview.js`; upload it under repo Settings → Social preview — GitHub does not
-read it from the tree) and the square marketplace icon moved to `media/marketplace-icon.png` (`package.json` `icon`
-repointed; `scripts/make-icon.js` writes there). Both draw the mark through the shared `scripts/glyphRaster.js`
-(`drawMark`), verified pixel-identical to the committed 256px icon on every visible pixel (only RGB under alpha-0
-differs). `.vscodeignore` excludes the banner and all three scripts; `vsce ls` confirmed (icon in, 0 dev files).
-Typecheck clean, 73/73 FULL after the change.
-**Install trap that cost a debug cycle:** VS Code keeps the old version dir until a FULL restart (reload-window is not
-always enough) — the user tested 0.3.1's feature against the still-running 0.3.0 code and reported it broken. Check
-`~/.vscode/extensions/` for side-by-side version dirs + `.obsolete` before debugging a "feature does nothing" report.
-**Visual check 2026-08-18:** library root grouping and the editor's dark/light/narrow layouts were eyeballed and
-look clean; library member expansion is still not visually confirmed. CSS conventions live in `media/editor.css`'s
-header; the gradient-clipped wordmark is deliberately left at 3.3–4.9:1 (a logotype, exempt).
+## Status
+- **Release:** `package.json` is at **0.11.0** (being released 2026-11-16: branch → dev → main, then the Release workflow;
+  notes come from `CHANGELOG.md`'s section, which `release.yml` now puts ahead of the generated PR list). Last published: v0.10.1.
+- **Last verified:** 2026-11-16 (Linux container, native editor header on
+  `claude/focused-ptolemy-m6acaz`) — `REQUIRE_FULL_SUITE=1 npm test` green (**138/138, Coverage: FULL**; compile-real,
+  cpp-real, gpp-real ran), `npm run typecheck` and `npm run lint` exit 0; browser harnesses `run.js` 135, `run_online.js` 53, `run_pragmas.js` 47,
+  `run_start_page.js` 126 (browsers in `/opt/pw-browsers`). Dev-host last run 2026-11-12 (103 pass / 1 known P8 fail).
+- **Native editor header, start page and logo (user decisions 2026-11-16): BUILT on `claude/focused-ptolemy-m6acaz`**
+  (DEVELOPMENT.md "The editor header", "The Actions menu"): mark `#hdr-brand` (`src/brandMark.js`), breadcrumb from
+  `init.breadcrumb` (`src/editorBreadcrumb.js`), #E2001A type tag, dot status items, hammer `#build-btn`, "Actions ▾"
+  (secondary button; folds to "⋯" when narrow), version in the menu's foot; red only as a marker. Fixed the user's
+  bare-dots bug (collapse measured while the webview was hidden; now never at width 0, plus ResizeObserver, fonts,
+  hysteresis). Start page restyled the same way (`run_start_page.js` fails on any reddish colour other than #E2001A);
+  new mark `scripts/logo/tc-toolkit-mark.svg` → `media/marketplace-icon.png` (`scripts/make-icon.js`, Playwright);
+  Activity Bar SVG is its one-colour form. **Left stale:** `media/icon.png` (social preview: old mark and old name; its
+  generator needs Windows' Segoe UI). **Not run yet:** the dev-host pass (`test:clickCompile` / `test:toggleSync`
+  click hidden menu items by id: expected to work) and a look in real VS Code themes (shots used hand-set values).
+- **Sample 1 XAE warnings (user, 2026-11-13; XAE Shell 64):** 0 errors, 3 warnings: C0564 x2 (GVL_System's
+  `fbCylinder(refExtendOut := GVL_Io.bExtendOut, refRetractOut := GVL_Io.bRetractOut)`: "reference to uninitialized
+  variable") and C0195 (FB_Station.Cyclic line 28, INT into WORD). **User: fix the sample.** Done in the generator
+  and the committed sample: `GVL_Io` BOOLs get `:= FALSE` (my guess for C0564 — unverified), line 28 uses
+  `INT_TO_WORD(...)`. **Awaiting the user's XAE re-build** to confirm 0 warnings; if C0564 stays, the next
+  candidate is binding the references in code instead of the FB_init arguments (changes what the sample
+  exercises, so ask first).
+- **R13 C++ generation + g++ build: MERGED** into `dev` as PR #37 (squash `02236c8`, 2026-11-13 08:40 UTC,
+  user). Design and rules: DEVELOPMENT.md "C++ generation and the g++ build (roadmap R13)"; the full Windows
+  checklist is in the PR body. **Verified on Windows by the user (2026-11-13):** TcToolkitSample2 builds with no
+  errors; TcToolkitSample shows only the known `has no member named 'STATE'` g++ error (+ the same error from the
+  C/C++ extension). **Not reported back yet:** PR checklist items 1–3 and 5–8 (dropdown sync, g++ row, too-old g++,
+  IntelliSense provider, Tc2_* library summary, edited `.hpp` / deleted `.gitignore`, cancel leaves no `cc1plus.exe`).
+  **Compiler pinned at release N** (`d9b7c01`, 2026-11-15; dev PR #40 `3c24371`): both samples check at 0 errors / 0 warnings under the
+  profile and build with g++ cleanly (`KNOWN_GPP_GAPS` empty); `resources/dialects/twincat3.json` gains
+  `string_default_80` (a plain STRING is 80 characters; the fork ships no twincat3 profile, so it was added here).
+  N's `iec-std-functions.stlib` has a FUNCTION `LTIME()`; `libraryDecls.js` had let every manifest name resolve as
+  a type, so LTIME-typed library declarations started being written — fixed: types resolve only to elementary
+  types and manifest types/FBs (`compilerProvidedTypeNames`). **Backlog (separate item):** `ELEMENTARY` in
+  `src/libraryDecls.js` is stale since M — the compiler accepts (and g++ builds) LTIME, LDATE, LTOD, LDT, CHAR,
+  WCHAR, PVOID, XINT, UXINT, XWORD, __XINT, __UXINT; only BIT (struct members only), ANY and HRESULT are still
+  refused. Declaring them means re-pointing the synthetic "no usable declaration" fixtures off LTIME.
+  **Windows CI** was red since R13's g++ tests landed (tests assumed Linux: shebang fake g++, `:`-split PATH, the
+  runner's real MSYS2 at `C:\msys64` and its unsettled registry cache); fixed in `aa202b0`/`ee02e90`, CI green.
+  Rule for new g++ tests: never let a test reach the host's g++, PATH, MSYS2 or registry: inject `machine`/`gppMachine`,
+  `msys2Root`, `ready` and `registrySettled`.
+- **R14 Build (and Activate) through XAE: MERGED** into `dev` as PR #38 (squash `64ff7d9`, 2026-11-13 12:50 UTC) after the user's Windows check passed in full (below). Was on `claude/r14-xae` (2026-11-12; based on the R13 branch,
+  PR #37 not yet merged; nothing here ever ran PowerShell or COM — every ps1 change is checked as text only, the
+  user's Windows run is its parse check). Driver `resources/xae/build-plc-project.ps1` = the builder
+  `scripts/Build PLC project/build_plc_project.ps1` (b578199) + opt-in `-Json`/`-ShowWindow`/`-ListTargets`/
+  `-CancelFile`; hand-synced with the builder and `templates/`. Headless by default (`tcToolkit.xaeBuild.showWindow`
+  false); activation ALWAYS shows the window; a version switch keeps it visible. Commands `twincat.xaeBuild`,
+  `twincat.xaeBuildAndActivate`, `twincat.xaeShowTargets`; channel *TC Toolkit XAE Build*; Problems in `twincat-xae`.
+  Design, protocol, cancel/kill rules: DEVELOPMENT.md "XAE build (R14)" (the 28 review fixes of 2026-11-12 are in
+  git history). Phase 2 (each needs a Windows probe first): boot project, remote targets, single-project build,
+  routes, attaching to a hidden shell.
+  **Windows runs (user, 2026-11-13, XAE Shell 64 on 4026.28):** the driver parses and runs under Windows PowerShell.
+  Step 1 PASSED (sample 1 headless: BUILD SUCCEEDED, no window, no `TcXaeShell.exe` left); step 2 PASSED (window
+  shown throughout). Settled: `$dte.MainWindow.Visible` is UNREADABLE on 4026 shown or hidden (`describeUiMode`
+  reports the requested mode + SuppressUI). Sample 2's system project is a `.tspproj` (lookups fixed, 706dfde).
+  Sample 2 (3.1.4024.62) on a 4026-only machine → `progid-not-registered` → one modal offering XAE Shell 64, then
+  `-TcVersion <ProgId> -AllowVersionMismatch` (b6d831d; DEVELOPMENT "The project's XAE Shell is missing").
+  **Pane parsing + placement (this commit, Linux-verified; from the user's runs on c24dc06, sample 1 with
+  `h;` planted at MAIN implementation line 14, 4026.28, OS (x64)):** the typed reader WORKS. Headless:
+  the error list gave 2 EMPTY items + a file-less "Project 'TcToolkitSample_PLC' build for platform
+  'TwinCAT OS (x64)' failed." item (all warning level, so "3 warnings (0 placed)"), the Build pane had
+  `MAIN.TcPOU(22) : error: C0189: …` and `(21) : warning: C0139: The code 'h;` + a wrapped line; Problems
+  empty, no fallback. Window shown: the items were FILLED, `file` = `<path> (Impl)` and `line` = pane line
+  (14/15), but the suffix broke the path match → "0 placed". **Settled: the Build pane's line base is
+  'object'** (declaration lines then implementation lines: 21 = 7 + 14, 22 = 7 + 15) —
+  `PANE_LINE_BASE`, src/xaeErrorPlacement.js. Now: the pane is parsed in JS (`parseOutputPaneLines`;
+  English + German level words, wrapped messages, stop lines), list suffixes `(Impl)`/`(Decl)`/component
+  are parsed, both sources de-duplicated, empty items dropped, the project-failed item is one `XAE:`
+  channel line (not counted), counts come from the de-duplicated set, unplaced messages print their own
+  severity, the compiler code is the Problems code, and **the fallback runs whenever a confirmed exit 1
+  placed nothing** (`needsCompileFallback`). The pane's trailing `Fehler: Unbekannter Fehler (Ausnahme von
+  HRESULT: 0x80004005 (E_FAIL))` comes from the solution-level build after the PLC project failed: not a
+  message, kept in the channel only. No ps1 change. Fixtures `errors-pane-planted-headless`/`-visible`.
+  **Unverified:** how the pane numbers a method/action/property/transition of a POU (an 'object' line in
+  an object with child components is placed on the root, "(location approximate)"; a capture with an
+  error planted in a method confirms it), what the list suffix looks like for a child component (parsed
+  tolerantly: `(M_Foo Impl)`, `(FB.M_Foo Decl)`, `(State Get Impl)`), `(Decl)` itself, GVL/DUT pane
+  lines (declaration only, assumed), other UI languages' level words (English + German only).
+  **Typed error reader + compile-check fallback (c24dc06; the reader is now Windows-verified):**
+  user run on 6abbb52 (sample 1 + planted error, 4026.28, OS (x64)), headless AND `-ShowWindow`: "Projects
+  failed: 2", the late-bound error list null, the Output window null → Problems empty. **Cause (Beckhoff
+  Infosys "Reading the VS output and the error list"): late binding does not resolve
+  `ToolWindows.ErrorList.ErrorItems` in PowerShell; C# through EnvDTE does.** Now:
+  - A. all three ps1 copies carry `Get-XaeShellInstallDir` (ProgId `LocalServer32`, then
+    `Program Files[ (x86)]\Beckhoff\TcXaeShell`; vswhere NOT used — my call, the assemblies must be the
+    shell's own), `Initialize-TypedDteReader` (LoadFrom EnvDTE/EnvDTE80 [+ Microsoft.VisualStudio.Interop,
+    stdole] from `Common7\IDE\PublicAssemblies`, one `Add-Type` per run, class `TcTkTypedDteReader1` —
+    bump the suffix when the C# changes), `Read-TypedErrorList`, `Read-TypedBuildPane` ("Build" pane).
+    Typed first, late-bound only when it gave nothing; the error list after every build (warnings on
+    success); `errorDetails.route` typed/late-bound/none (+ `errorListRoute`, `outputRoute`).
+  - B. `Get-OutputPaneTexts -WindowNote` names the real window mode (it was hard-coded "hidden").
+  - C. route none on a confirmed exit 1 → `twincat.compileProject` once per solution project with
+    `{fromXae, append}` (no popup/notification/C++ of its own; append keeps the earlier project's
+    problems), one combined notification saying the errors are TC Toolkit's check, not XAE's, and can
+    differ; no compiler → "skipped: no compiler is configured for it (…)". Not on exit 4 / exit 2.
+    *Build again with the window shown* now starts only after the reporting run ends (`whenIdle`).
+  **Settled on 4026.28:** the C# compiles under PS 5.1 Add-Type, the DTE2 cast works, ErrorItems is filled
+  (window shown) after `Build($true)`. **Unverified:** the 4024 (32-bit) shell's assemblies in 64-bit
+  PowerShell, a localized pane name (only "Build" is looked for).
+  **Also on this branch:** the toolbar's Build entry and the start page's tile are labelled **Build** / *Build
+  project* (user request), and (user, 2026-11-13) every user-read "Compile Project" is now "Build Project";
+  command ids, context/setting keys, the `TC Toolkit compile` source and the output channel are unchanged.
+  **Windows results later on 2026-11-13 (user):** errors placed and jump by the code link (MAIN body; a method via
+  `<file>@<Component> (Impl):N`, fixed b3b7a17); *Switch and remember* writes the setting; the platform dropdown;
+  cancel during a build; *Show Activation Targets*; sample 2 onto UmRT_Default refused before XAE (wording now
+  names Configuration Manager, 7f4e560) — all PASSED. Open: sample 2 *Build through XAE* on XAE Shell 64 + git status.
+  **For the Windows check** (point the `test-*.ps1` at the driver with `-ScriptPath
+  ..\..\resources\xae\build-plc-project.ps1`):
+  1. sample 1 + `h;` planted (as before), headless AND shown: C0189 on MAIN impl line 15, C0139 on 14,
+     each ONCE, not approximate, "1 error, 1 warning (2 placed)", no fallback; then an error planted in a
+     METHOD of FB_Station (pane line numbering of a child; the list suffix's form) — capture `-Json`
+     **from the sample only**; a clean build with a warning lists it;
+  2. (PASSED on 9ed8b7a) *Build and Activate* onto UmRT_Default with the switch question; still to see after the
+     review fixes: *Switch and remember* lands in the user (or workspace) settings, and a stalled/failed headless
+     activation re-run asks no second target pick or modal; with `tcToolkit.xaeBuild.configuration` set to a name
+     the solution lacks, the activation is refused before the modal;
+  3. sample 2 (no OS (x64) declared) onto UmRT_Default: refused before XAE starts, naming the platform to add;
+  4. Settings UI: the platform shows as a dropdown with descriptions; a custom string in settings.json still runs;
+  5. re-run sample 2 on 4026: one shell modal, then a build (does XAE upgrade the `.tspproj`?); the reverse (a
+     4026 project where only the 4024 shell is installed, if such a machine exists) must offer nothing;
+  6. `-TcVersion` forcing a switch: `ui` reason `version-switch`; 7. `probe-sysmanager.ps1` with/without `-Pump`;
+  8. cancel during build (exit 4, shell closed), during the error reads of a failed headless build (exit 4, no
+     "Build again" offer) and during activation (refused); 9. *Show Activation Targets*;
+  off Windows the commands refuse; 10. with a developer XAE Shell open: a new shell or `shell-not-ours`; a
+  solution under `Line [2]` and one on a UNC share build.
+  **Open questions (defaults in place):** settings key section `tcToolkit.xaeBuild` (one section); hide the window
+  during activation (no); hide after a version switch (keep visible); boot project / remote targets (phase 2);
+  child-component numbering in the Build pane (approximate until a capture); PS 5.1
+  ConvertTo-Json shapes (one-element arrays), nested `BuildProject`, whether a hidden shell ever hangs on a dialog.
+- **Change the solution's target after a gate-3 refusal (user decision 2026-11-16): BUILT on
+  `claude/focused-ptolemy-m6acaz`, Linux-verified only.** Case: the `.tsproj` named an old user-mode runtime
+  (10.0.0.4.1.1) after a restart gave the new one 10.0.0.5.1.1. Now gate 3's text says "not a runtime on this
+  PC" and names the local runtimes (`Get-RuntimeLabels` → `-RuntimeLabels`, builder + driver identical), the fatal
+  carries `projectNetId`/`tsproj`/`local[]`, and the extension offers *Change the solution's target…* → pick (local
+  runtimes only) → modal (file + both NetIds) → `src/tsprojTarget.js` rewrites the one value byte-for-byte → the
+  same activation again. My call (not the user's): the re-run carries the activation confirmation only when the new
+  target IS the runtime already confirmed; otherwise it asks for the target again. Design: DEVELOPMENT.md "XAE
+  build (R14)", "The solution's target is not a runtime on this PC". **Needs the user's Windows check:**
+  `test-activation-target.ps1` (new cases; never run — no PowerShell here) against both the builder and
+  `-ScriptPath ..\..\resources\xae\build-plc-project.ps1`; a real refusal (point a copy's `.tsproj` at a foreign
+  NetId): the runtimes named, the change written (diff = that one value; XAE opens it and *Choose Target System*
+  shows the new target), the re-run activates; **unverified:** that a real `.tsproj` holds exactly ONE
+  `TargetNetId` (if XAE writes it twice, e.g. in another element, the button is never offered — then decide which
+  one counts) and that XAE keeps no other copy of the target (e.g. a `.user` file) that would win over it.
+- **Build and Activate installs the boot project with autostart (user decision 2026-11-16): BUILT, Linux-verified only
+  (ps1 text-checked; no PowerShell here).** Calls: SetTargetNetId+readback → `ActivateConfiguration()` → per PLC under
+  `TIPC`: `BootProjectAutostart` (root item `TIPC^<name>`, nested `<name> Project` as fallback) set only when False →
+  `GenerateBootProject($true)` → `StartRestartTwinCAT()` → after RUN each PLC's ADS state on its `AmsPort`. Never saves
+  (`Close($false)`): no project file changes. A boot failure keeps exit 0 but the summary is a warning ("…has no
+  program: log in from XAE…"). Design: DEVELOPMENT.md "XAE build (R14)", "Boot project with autostart". **Needs the
+  user's Windows check:** `test-boot-project.ps1` against builder and driver; Build and Activate onto UmRT_Default →
+  channel `Boot project: <name> installed…`, `PLC <name> (port 851): RUN.`; restart the runtime → PLC back in RUN;
+  `git status` clean. **Unverified:** which item answers on 4024/4026, GenerateBootProject accepted between activation
+  and restart (no dialog, no implicit save), `Get-TcAdsState -Port 851` returning the PLC state.
+- **Stale user-mode NetId (user's 4026 machine, 2026-11-16): FIXED on `claude/focused-ptolemy-m6acaz`, Linux-verified
+  only (ps1 text-checked; no PowerShell here).** Each instance start rewrites the shared `TcRegistry.xml`, so a
+  closed second instance left a NetId nothing answers to, offered as "(project)". Rule (decided): trusted when a
+  `TcSystemServiceUm.exe` with `-n "<name>"` runs AND the file's LastWriteTime <= newest such start + 5 s
+  (`NetIdSource` 'file-time'). **A running runtime also rewrites its own file** (user's data: start 16:49:08, write
+  16:50:40, same instance, during activation → first Build and Activate refused as "rewritten", second worked — why
+  the second passed is still unexplained), so `rewritten`/`unverifiable` are now confirmed over ADS before failing:
+  `Confirm-UserModeNetIdTrust` (pure, probe injected) → `Test-UserModeNetIdOverAds` → `Read-TcAdsState` (port 10000,
+  2 s, cached per NetId per run; `Get-TcAdsState` now wraps it). Valid AdsState → trusted, `NetIdSource` 'ads';
+  else unknown, fail closed, reason "the configuration file changed after this runtime started; its AmsNetId could
+  not be confirmed over ADS: no runtime answered at <NetId> (ADS error 0x7)". `not-running` is never probed.
+  Design: DEVELOPMENT.md "A user-mode runtime's AmsNetId is trusted only for a running instance". **Needs the user's
+  Windows check:** `test-activation-target.ps1` (never run) against builder and driver; Build and Activate onto
+  UmRT_Default right after an activation → no refusal, *Show Activation Targets* shows "AmsNetId confirmed over ADS";
+  close the runtime → "not running", never offered. **Unverified:** `AdsSyncSetTimeout` honoured by the 4026
+  TcAdsDll; an answer at a stale NetId cannot come from elsewhere (a route to a remote system with that NetId would
+  be trusted); `Win32_Process.CommandLine` readable unelevated; the TcAdsDll search (Common64 under Program Files
+  only — a 4024 `C:\TwinCAT\Common64` is not searched; `tcToolkit.adsDll.nativeDllFolder` now covers it).
+- **ADS DLL paths configurable (user request 2026-11-16): BUILT on `claude/focused-ptolemy-m6acaz`, Linux-verified
+  only (no `.ps1` ran).** `tcToolkit.adsDll.dotNetLibrary` (TwinCAT.Ads.dll → helper `-AdsDll`) and `nativeDllFolder`
+  (TcAdsDll.dll folder → helper `-AdsNativeDir`, driver/builder `-AdsDllDir`); machine scope, empty = search as before;
+  a set path is used as given (not found → said with the path, no fallback). Hints + "Open Setting" on Go Online's DLL
+  failures, the activation summary (`activation.dllProblem`), the no-targets error and Show Activation Targets.
+  Design: DEVELOPMENT.md (online "Helper", XAE `-AdsDllDir`); `probe-sysmanager.ps1` left hardcoded. **Needs the user's Windows check:**
+  helper/smoke with a wrong `-AdsDll`/`-AdsNativeDir` → ready `dll-not-found` naming the path; a right one → loads; the
+  driver with `-AdsDllDir <wrong>` on Build and Activate → ACTIVATION INCOMPLETE with the folder, Open Setting works.
+- **R15 phase 3a, "Local runtime" targets the user-mode runtime's own NetId (user decision 2026-11-16): BUILT on
+  `worktree-agent-afcabb7ac39b6a6e3` (off `5a60a8e`), Linux-verified only.** `src/online/localRuntime.js` runs the XAE driver's `-ListTargets`
+  WITHOUT `-SlnPath` (no COM/XAE; no `.ps1` change) when the Go Online pick opens (Windows, router mode, router on
+  this PC), plus `tasklist` for `TcSysSrv.exe`; after a *Local runtime* pick (progress while it still runs): 1
+  trusted user-mode runtime and no possible kernel runtime → its NetId, logged "Local runtime: user-mode runtime
+  UmRT_Default at <NetId> (read from its configuration, instance running). (discovery N ms)"; several, or a
+  "Real-time runtime" record while TcSysSrv.exe is not known absent → a pick (router runtime row = localhost); none
+  or a failed discovery → localhost as before, and the "Enter AMS Net ID…" hint adds why. Never cached; recent list
+  keeps the concrete NetId. Design: DEVELOPMENT.md "The local runtime in user mode". Harness
+  `test/test_local_runtime.js`. **Unverified:** the discovery's real cost (expected 1-3 s); `TcSysSrv.exe` being
+  the kernel-mode service's image name; whether a kernel-mode PC with a running user-mode runtime reports the
+  real-time record (the user's UM PC reported none). **User's Windows steps:** (a) user-mode PC, runtime running:
+  *Go Online… → Local runtime* → progress "finding the local runtime", then `Online: Local runtime (UmRT_Default) ·
+  Run`; copy the channel's "Local runtime: …" line (with the discovery ms) and the "Going online:" line (NetId must
+  be the console window's `AmsNetId`); (b) restart the runtime (or reboot, NetIds swap) → Go Online again uses the
+  new NetId without asking; the old one shows as *Used before*; (c) close the runtime's console → Local runtime →
+  fails with the Enter AMS Net ID hint plus "UmRT_Default: this runtime is not running …"; (d) in a terminal,
+  `tasklist /FI "IMAGENAME eq TcSysSrv.exe" /FO CSV /NH` on this PC (and on a kernel-mode PC if one exists) —
+  copy the output; (e) on a kernel-mode PC: Local runtime still reaches the PLC (no pick unless a user-mode
+  runtime runs too).
+- **R15 phase 2, user-mode fallback through TwinCAT's ADS DLL: DONE on `claude/focused-ptolemy-m6acaz`, Linux-verified
+  only (2026-11-16).** Measured on the user's 4026 user-mode PC: `TcSystemServiceUm` resets ads-client's TCP connection
+  to 127.0.0.1:48898 (`socket error -4077`), `EnableAmsTcpLoopback=1` + reboot did not help, Beckhoff's .NET stack
+  works. Now: on Windows, router mode, router on this PC, and a reset/refused/closed connect or a failed port
+  registration (`adsClient.isRouterRefusal`) → the same ads-client code over `resources/online/ads-helper.ps1`
+  (powershell.exe, JSON lines, raw ADS only; `src/online/helperClient.js` subclasses `Client`, overriding only the
+  transport; notifications polled, one sum read per 100 ms tick). Design, protocol, limits: DEVELOPMENT.md "User-mode
+  fallback". Harness `test/test_ads_helper.js` (real ads-client over `test/_fakeAdsHelper.js`). The misleading "No ADS
+  router answered" for a RESET is now "…answered but reset this client's TCP connection" (backlog item folded in).
+  **Nothing of it has run on Windows.** Unverified: the `.ps1` itself (no PowerShell here: overloads `Read`/`Write`/
+  `ReadWrite` with `AdsStream, offset, length`, `Connect(port)` for 127.0.0.1.1.1, `ClientAddress`, the `ErrorCode` walk,
+  the registry value names); a 4 MiB read buffer for SymbolInfoByNameEx/DataTypeInfoByNameEx (ads-client asks
+  0xFFFFFFFF); the latency. **User's Windows steps:** (1) `powershell -NoProfile -ExecutionPolicy Bypass -File
+  "scripts\Online helper smoke\smoke-ads-helper.ps1" -NetId <runtime NetId>` — copy the whole output (ready line, port
+  10000 and 851 answers, ProjectName, ms per request); (2) in VS Code: *Go Online… → Enter AMS Net ID…* with the
+  runtime NetId → expect the *TC Toolkit Online* lines "…refused this client's TCP connection…", "Connected through
+  TwinCAT's ADS DLL (…)", "Online: … over TwinCAT's ADS DLL (user-mode fallback)"; then the R15 check list below
+  (items 4-10) through it; (3) *Local runtime*: now phase 3a below; (4) close VS Code while online: no
+  `powershell.exe` left (Task Manager).
+- **R15 ADS online monitoring: phase 1 merged into `claude/focused-ptolemy-m6acaz`** (built 2026-11-13 on `r15-ads`,
+  based on `c9ace3f`; no PR yet). Decisions D1-D9: `docs/r15-ads-decision.md` §5.
+  Design and file map: DEVELOPMENT.md "Online monitoring (roadmap R15)". `ads-client` **2.2.0 pinned** (pure JS; loads on
+  Node 16.13 and 22; licences of it and its 5 deps in THIRD-PARTY-NOTICES, all six licence files listed by `vsce ls`).
+  Harnesses `test_ads_*.js` run against an in-memory PLC (`test/_fakeAds.js`); **nothing has touched a real PLC or router.**
+  **Review rounds 1-4 (2026-11-13): every confirmed finding fixed and committed**, each pinned by a block
+  of `test/test_ads_regressions.js` (`R2#n`, `R3#n`), `run_online.js` or `test_definition_frames.js`; the per-finding
+  detail is in those tests and the `r15-ads` commit messages. Still worth knowing: the round-3 frame fix (xmlIndexer
+  ranges now in raw-unit coordinates via `unitLineMap`) costs ~+27 us per indexed file; `compileCommands.currentText`
+  deliberately ignores a stale stash and never drops one.
+  Behaviour changes to note for the Windows check: the modal/log target now reads `Local runtime (localhost:851)`;
+  an unqualified name inside an FB that extends a library FB shows no inline value (cannot tell member from global).
+  **Mismatch guard (coordinator review, 2026-11-13):** a name match alone does not prove the same code, so
+  `src/online/codeIdentity.js` checks name + variable layout (last build's `.tmc` symbols vs the PLC's symbol upload,
+  name and size) + sources edited after the `.tmc`. It cannot see a body-only change built but not downloaded (XAE's
+  compile id has no documented ADS read); UI and README say so.
+  **Decisions taken by the implementer (confirm or overturn):** writes need the setting AND a per-session enable
+  modal (D5's "per session"); the status-bar item is hidden while offline; no toolbar/start-page Go Online button
+  (palette, Watch view title, status-bar menu); target picker = local runtime + recent + typed NetId (no route listing:
+  the router's route table has no documented ADS read, R14's listing needs XAE and only lists local runtimes); with
+  several FB instances the first is shown and the user is told once; property accessor bodies and arrays of FB
+  instances are not monitored; a name-matching project with layout/edit differences still shows values (read by
+  name) but blocks writes; per-symbol type mismatch shows "type differs".
+  **Windows check list for the user (needs a real PLC; record results here):**
+  1. Note the TwinCAT build, kernel vs user mode, Hyper-V/VBS on or off.
+  2. Local runtime in RUN with the sample (or any project) downloaded: *Go Online…* → *Local runtime*. Expect the status
+     bar `Online: Local runtime · Run`; if it fails, copy the notification and the *TC Toolkit Online* channel text
+     (the 4026 user-mode case now falls back to TwinCAT's ADS DLL — see "R15 phase 2" above).
+  3. A remote PLC with a route made in XAE: *Enter AMS Net ID…*. While XAE is logged in to the same PLC, confirm XAE
+     stays connected.
+  4. Open MAIN and a GVL: values at line ends (declarations) and after variables (implementation), refreshing; open an
+     FB: the "Instance: …" note and values; an FB with several instances: the note and *Select FB Instance…*.
+  5. **Code check probes:** (a) is `_AppInfo.ProjectName` exactly the `.plcproj` name (case)? (b) after a fresh XAE
+     build + download, does the channel say "Code check: passed" with N symbols matching? If it reports layout
+     differences, copy the first lines (the `.tmc` vs upload name/size mapping is the unverified part, e.g. I/O-mapped
+     or `{attribute 'hide'}` symbols). (c) edit a POU, save → "edited since its last build", writes blocked;
+     (d) copy the logged `_AppInfo.AppTimestamp` and the `.tmc`'s modified time after a build+download — do they relate?
+     (e) is there a `_CompileInfo` folder, and does its newest `.compileinfo` name change on every build?
+  6. Forces: force a variable in XAE → status bar "Forces active" (4026.21+); on 4024 the tooltip says "not reported".
+  7. Writes: with `tcToolkit.online.allowWrites` off → refused with *Open Setting*; on → enable modal, write modal
+     (target, path, old/new, PLC state), value changes in XAE, line in the channel; unsaved edit → refused.
+  8. PLC Watch: add from the editor and by typing a path; a struct/FB expands; a LINT/ULINT entry updates (library
+     issue #189 path) without an error; set `maxNotifications` to 2 and add 3 → message once.
+  9. Is a symbol path found when typed in another case (`main.ncyclecount`)?
+  10. Go Offline, and close VS Code while online: no lingering ADS port registration (XAE's ADS monitor or `netstat -ano | findstr 48898`).
+  11. **Start/Stop PLC** (Linux-verified only): the Actions menu's entry / PLC Watch title shows *Stop* in Run → modal → XAE
+     shows Stop, entry turns *Start* at once, "PLC stop on …: done" logged; then Start. Repeat over the user-mode helper
+     (`writecontrol` = `WriteControl(StateInfo(AdsState, short))`, unverified against TwinCAT.Ads 4.3.32).
+- **R3.2–R9, settings keys `tcToolkit.*`, R3.5 MERGED** (PRs #32–#35; details in git history and ROADMAP "Done").
+  After a branch switch that changes package-lock.json, run `npm ci`. Toolkit lane is done except R10 (trigger-only)
+  and R11 (publishing, last, after the fork lane). VS Code cannot show an uppercase "TC" from a setting key.
+- **Fork lane (2026-11-12):** **S4 done** (fork #131–#132, #134–#139; release L at `3acc3f6`, note in the coordination doc; development equals the gated combined tree, 5972 tests). Lane agent `a182a76c41bf282e2` now on: `--strict` per Figure 12 for bit strings (user), property read through a global FB instance (the R13 g++ gap on TcToolkitSample), SPDX lines on two runtime headers, then coordination row 35 (one-pass diagnostics, threaded-warning scope). Merging stacked fork branches: merge development into the branch with `-X ours` only when the branch contains the squashed content, then check `git diff <branch> HEAD` shows only development's own changes; for independent branches resolve by hand, and verify the final development tree against the gated combined tree. Next fork item after these: S10.
+- **R11 publishing:** last — after the toolkit lane AND the fork lane are done (user, 2026-11-10).
+- **Sample diagnostics: 0 against a baseline of 0** — verified with the Beckhoff archives present AND moved aside.
 
-## Constraints / still open
-- **Deepening roadmap: P1–P5 SHIPPED 2026-08-22, P6/P8/P9 open, P7 needs the user's machine**
-  (`docs/superpowers/plans/2026-08-22-deepening-roadmap.md`; each phase has its own plan doc, and
-  each shipped via a reviewed, merged PR — details live in the plans and git history):
-  P1 `componentId.js` owns the id grammar (Transition display bug FIXED; trap: parse-then-remint of
-  the ambiguous grammar is NOT identity — `treeDataProvider` keeps concatenative accessor lookup ON
-  PURPOSE, pinned). P2 `signatureRecordsFor` made the parse-cache clone rule structural. P3
-  `livePath.js` owns the live path (editorMapping deleted; live-path gate tests PRODUCTION code;
-  peek budgets pinned). P4 one pane dialect `'decl'/'impl'` (`renameEngine`'s internal tokens are a
-  DELIBERATE survivor); `raw` is a parameter. The hard-coded fossil rewrites are GONE (2026-11-03, user: project-specific
-  names must not be in this public repo): struct EXTENDS flattening now uses
-  `collectStructDefinitions()` over the exported project's own DUTs (Generate ST parses the whole
-  project first); unresolvable/library chains are left untouched; the FB-call rewrite was dropped.
-  The old names remain in git history — user DECLINED a history rewrite for now (2026-11-03). P5 `twincatWorkspace.js`
-  owns discovery (walker, skip-set MATRIX with variance preserved, ext vocabularies, decode, suffix
-  core; regex/glob held by cross-pins). Behaviour deltas, all deliberate+pinned: case-insensitive
-  skip matching (P5 R1); walkers collect regular files only; tree skip-chain case-insensitive.
-  **Machine-bound checklist status (2026-08-24, user's machine):**
-  1. ~~`node test/devhost/run.js`~~ **DONE, all green** (navigation identity, exact reveals, live
-     LSP bridge, inserts, retained-webview component).
-  2. ~~The `.tctleo` omission family~~ **CONFIRMED LIVE AND FIXED (committed, in main).** The dev-host
-     harness now injects a `.TcTLEO` fixture, proves the startup scan indexes it, edits it ON DISK
-     and re-queries the live index: before the fix the renamed enum's definition was null (the
-     change watcher dropped it) — after, it resolves. Fix: `TWINCAT_WATCH_EXTS` now equals
-     `TWINCAT_XML_EXTS` membership (`twincatWorkspace.js`), and the `parser.js` .st-shadow +
-     `references.js` read-gate regexes gained `tctleo` (the latter was already rescued by its
-     `/<TcPlcObject/` content fallback — consistency, not behaviour). Pins: `test_twincat_workspace`
-     (5-member set), `test_st_shadow` (a POU-shaped `.st` mirror cannot steal a `.TcTLEO`-backed
-     node — TYPE-shaped mirrors are inert since the ST parser indexes no TYPE…END_TYPE; the new
-     assertion was verified to FAIL against the old regex), and the two dev-host assertions.
-  **Container-checkout LF finding:** this remote environment materializes the workspace WITHOUT git
-  smudge filters, so `sample/` arrives LF despite `.gitattributes eol=crlf` and
-  `test/browser/build.js` throws. Recipe: convert `sample/` to CRLF in the working tree for browser
-  runs, then `git checkout -- sample/`. A NORMAL clone still smudges (2026-08-17 fix) — do NOT
-  renormalize blobs without revisiting the recorded blob-stays-LF rationale.
-  **Container clones are also SHALLOW** — during the 2026-08-26 repo recreate this one silently held
-  147 of 209 commits (`git log` looks complete; grafts hide the boundary) and the push to the fresh
-  repo failed on a missing object until `git fetch --unshallow`. Check
-  `git rev-parse --is-shallow-repository` before treating a clone as a complete source of truth —
-  full lesson in `.claude/memory/shallow-clone-is-not-the-repo.md`.
-  P6 shipped 2026-08-22 (plan `2026-08-22-deepen-06-pipeline.md`): the sync invariant is
-  STRUCTURAL — `requestPipeline.js`'s router wraps all seven language-path `custom/*` handlers
-  (withoutDocument is the explicit no-sync variant); the library-index stage order is a frozen,
-  load-validated data table; the five control handlers are deliberately unwrapped. **Ruling:
-  `features.js` KEPT** (require-path stability; `features/core.js` named as the real interface).
-  P8 shipped 2026-08-22 (plan `2026-08-22-deepen-08-webview.md`): the webview's pure decisions are
-  dual-mode modules with Node harnesses — `media/pendingEdits.js` (the edit-sync state machine that
-  decides whether edits reach disk; `foldEdits` is ALSO required by `customEditorProvider`, stating
-  the cross-process edit-record contract on both sides), `media/peekUri.js` (synthetic peek/goto
-  URI vocabulary; **Ruling: `peekPath` stays in `livePath.js`** — the webview only embeds the
-  host-minted path), `media/diagnosticMarkers.js` (pane split, monaco-free via injected
-  severities). editor.js 1573→1411 lines. Trap: the pinned typescript@7.0.2 preview mis-parses
-  Closure-style `function(...)` JSDoc types, and a file enters the tsc program only when first
-  required from `src/` — see `.claude/memory/typecheck-graph-grows-with-requires.md`.
-  **P8's G4: AUTOMATED 2026-08-24 (committed, in main).** Checklist items 2–7 now run inside
-  `test/devhost/run.js` via `media/devHostTestHook.js` — webview instrumentation injected ONLY
-  under `TCDEV_TEST=1` (set solely by the harness; `.vscodeignore`d, verified absent from the
-  VSIX). 29 new assertions, all green ×3 (implementer ×2 + independent re-run): Manual-Sync
-  counts, close/reopen pending-edit round trip with Get-vs-Set triple match, flushed file
-  byte-identical to `foldEdits` over the webview's own records, empty-save asymmetry, Auto-mode
-  save byte-identity, real MarkerSeverity 8 incl. the collapsed-decl Action, exact cross-file
-  goto selection, peek row click-through (peek list is VIRTUALIZED — only the focused group
-  opens; the hook expands the target file's twistie first). **Manual residue: eyeballing that squiggles render.**
-  **Manual-Sync edits lost on window reload — FIXED 2026-08-25 (user-verified live), found by that residue check.**
-  Not a regression: since 8da585b the host held them only in an in-memory `Map`, the webview never calls
-  `vscode.setState()`, and in Manual mode the `TextDocument` stays CLEAN so hot-exit never backs it up; a
-  Ctrl+R restarts the host → `init` sent `cachedEdits: {}`. Now `src/pendingEditsStore.js` persists them in
-  `context.workspaceState` (per-workspace, URI-keyed, key `twincat.pendingEdits`), **fingerprinted
-  `length:sha1` against the document text** — a read whose fingerprint no longer matches DISCARDS the entry
-  rather than splicing stale edits into a file that changed on disk (the in-memory map never had that hole
-  because it could not outlive the file). Pins: `test_pending_edits_persistence.js` (16, fake Memento; three
-  verified to FAIL with the fingerprint check stubbed out) + 4 dev-host assertions reading the real
-  `workspaceState` through `this.context` inside the harness's provider-prototype patch. The dev-host proves
-  the entry exists while pending and is gone after the flush; the actual Ctrl+R cannot be automated (nothing can
-  reload the window it runs in) and was confirmed by hand on the rebuilt VSIX.
-  **P9 RULED NO-GO 2026-08-22 — the roadmap-prescribed re-evaluation, recorded as its valid
-  completion.** Why: the two pains the split was scoped against are already gone — P2 removed the
-  parseCache coupling (`signatureRecordsFor` is the whole surface) and P5 removed the triple walk
-  (the three collectors are thin delegates to `twincatWorkspace.walkFiles`). What remains in
-  `libsymbols.js` (2035 lines) is the ZIP/`.tmc` decoding + the registry, which change together;
-  the split's one genuine win (structural registry-write ownership) costs converting ~16 harness
-  files off the `defaultRegistry` fallback while moving the repo's most incident-dense invariants
-  (on-demand registration, `(path,size,mtime)` guards, content-keyed archive identity) for zero
-  behaviour gain — and its G5 gate (Beckhoff-archives-aside re-run) is not even runnable in this
-  clone. Revisit only if the file grows a NEW seam, with G5 available.
-  **The deepening roadmap is now CLOSED on this machine: P1-P6 + P8 shipped (PRs #39-#45),
-  P9 ruled no-go. P7 (tree model) stays parked — its dev-host gate is mandatory, user's machine.**
-  (The 2026-08-18 "Actions account-level dead" note is OBSOLETE — that repo was deleted in the
-  recreate; on the recreated repo the startup failures were the `local_only` Actions permission,
-  fixed 2026-08-26, and runs are green since PR #4.)
-  Open decisions remaining: none from P4 (fossil table removed 2026-11-03). (P6 features.js: RULED kept. P9: RULED no-go, above.)
-- **Solution→PLC-project Objects hierarchy (0.8.0):** `solutionMap.js` follows the actual TwinCAT
-  `.sln`→`.tsproj`→`_Config/PLC/*.xti`→`PrjFilePath` chain in the extension host. Solutions are always
-  top-level when present; one solution can contain several PLC projects; same-named solutions get
-  shortest-parent suffixes while PLC-project labels are scoped within their solution. Orphan projects
-  stay top-level and no-solution workspaces keep the previous fallback. `.sln`/`.tsproj`/`.xti` watcher
-  events regroup the tree only; `.plcproj` remains the sole LSP reindex trigger. Exact navigation now
-  reveals through component→file→project→solution. Pure solution/reveal tests, 64/64 FULL, and the
-  installed dev-host pass two solutions + three PLC projects (two under LineA). The real
-  `hpr-venice_eol` workspace maps `EOL`→`HPR40_EOL` with no orphan project.
-- **Project-scoped indexing SHIPPED** (user report 2026-08-06; plan in
-  `docs/superpowers/plans/2026-08-06-project-scoped-index.md`). A folder holding several PLC projects used to
-  collide: the symbol index was one flat name-keyed map for the whole workspace, so **38 object files produced 19
-  index entries**, correct code drew a false diagnostic, and Find References returned hits from the wrong project.
-  Now **one index per `.plcproj`** — `src/lsp/projectMap.js` owns ownership, `src/lsp/workspaceScan.js` builds and
-  routes. Load-bearing decisions: a file `<Compile>`d by two projects indexes into **both** but routes to the one
-  whose directory holds it; references and rename are **strictly** project-scoped; `workspaceScan.js` is separate
-  from `server.js` because the latter opens IPC at require time and so cannot be loaded by a harness; the
-  per-project library registries hang off each index under a **`Symbol` key**, invisible to the `Object.keys()`
-  walks in the reference scan and `types.js`, which is why `registerLibrarySymbolNodes(index, code)` needed no
-  call-site change. `src/typesCache.js` is **deleted** — the webview never read its map, and the LSP half re-added
-  exactly the names the partition excludes.
-  **The rename hazard was the one that mattered:** the config-object scan walked every root, so renaming the object
-  that *won* the flat name key rewrote the **neighbour's `PlcTask.TcTTO`**, while renaming the one that *lost*
-  silently skipped the config update (the `configReferences.js` identity guard rejected it). Both directions are
-  gated by `test_multi_project_scope.js`, and that guard was **verified to fail** under a widened `configFilesFor`
-  before being accepted.
-  **0.6.0 shipped a navigation regression, fixed in 0.6.1** (user report 2026-08-10 "references and definitions
-  still broken in multi-project dirs"): the scan indexed each object from the partition's **normalized (lowercased)**
-  path, so every scan-time symbol node carried a lowercased uri. The LSP still answered correctly (verified against
-  the user's real `C:\Projects\TC_Start` and 8-project `C:\Projects\PLC projects`), but `vscode.openWith()` treats a
-  differently-cased uri as a **different resource**, so every cross-file Go to Definition / reference click opened a
-  DUPLICATE tab titled `gvl_system.tcgvl` with nothing highlighted — "definitions are broken" to a user, invisible
-  to every headless gate (proven in a real dev host). Fix: `projectMap.js` keeps normalized keys for ownership but
-  adds `objectFiles` (key → on-disk spelling, **XML-entity-decoded**); `workspaceScan.js` indexes from the values.
-  The entity decode is its own real bug: `time&amp;date` stayed `&amp;`, silently dropping **57 of OSCAT's 819**
-  compiled objects. Casing pinned in `test_project_map.js` + `test_multi_project_scope.js` (the old `/LineA/i`
-  assertions were case-blind by construction); tab identity + live client pinned by **`test/devhost/run.js`** — a
-  run-by-hand harness that drives installed VS Code (see DEVELOPMENT.md). It now opens two same-named project
-  copies and asserts the actual Objects-provider labels, status labels, navigation identity and live LSP bridge.
-  **Case-only Include regression fixed in 0.7.3:** a real project kept `Pneumatik` in
-  its `.plcproj` while disk/editor used `pneumatik`; Windows opened both, but the LSP URI split from
-  the custom editor and FB_Pneumatic navigation failed. `readCompileIncludes` now recovers actual
-  Windows entry casing with a per-directory cached walk while preserving workspace 8.3 prefixes and
-  junction identity; POSIX and missing includes remain unchanged. The real project indexes all 16
-  FB_Pneumatic methods at the editor-cased URI. `test_project_map` covers case, 8.3, junction and
-  missing-file behavior; the installed dev-host injects the mismatch and passes live reference URI
-  identity plus exact component reveal. Typecheck and 64/64 FULL suite are green.
-- **Indexing cost FIXED (0.6.2, merged)** — retires the old deferred perf note. On the real 8-project
-  `C:\Projects\PLC projects`: startup **11.7 s warm → ~3.5 s** (one scan, not two), archive decodes **306 → 157**,
-  `.plcproj` reads 3/project → 1. `TC_Start` 608/427 → 377/388 ms, no regression. **Cold (~20 s) is PROJECTED, not
-  measured** — dropping the page cache needs admin; only the byte counts are hard evidence.
-  The four invariants and their gates are in DEVELOPMENT.md **"Indexing cost"** — read that before touching this.
-  Two that will bite hardest if forgotten: **never teach `custom/reindex` to skip** (on a `.plcproj` change the roots
-  are unchanged, the CONTENT moved), and **never add `_libraries` to `SKIP_DIRS`** (`collectArchives` walks it —
-  ~171 false positives). Subtlest: a cached signature parse must be a private copy per project — the merge rewrites
-  `record.namespace` and `indexBrowserCache` pushes onto the stored object. **Structural since P2:**
-  `signatureRecordsFor` copies on every call, the template is unreachable; `test_signature_cache.js` asserts
-  isolation by IDENTITY and by mutation because a value check still passes while sharing.
-  **Latent:** `scanController` records completion in a microtask after `await scan(...)` — safe only while the scan
-  is synchronous. Making it async needs in-flight de-duplication or two `ensureScanned` calls both scan.
-  **Deliberately NOT done:** non-blocking/chunked scan with per-project readiness (biggest remaining win, and the
-  only route to granular `3/8` progress — but it rewrites the multi-project spine, and a wrong readiness gate
-  answers against a partial index = false diagnostics); persisted cross-session archive cache (cold → ~5-7 s; a bad
-  entry goes sticky across restarts, needs FORMAT_VERSION discipline, ship the ZIP-central-directory fingerprint
-  with it). Next cheap cut: memoize `collectSignatureFiles` per root — signatures are still ~850 ms/scan, now mostly
-  16 directory walks rather than parsing.
-  **Libraries view now SCOPES to the active file's project (2026-08-27, lifts the old union-only deferral):**
-  `revealUri` (both text-editor and webview activation paths) feeds `libraryProvider.setActiveFile`; the view
-  refetches only when the OWNING PROJECT changes and shows the scope in its TreeView description (project label /
-  `All projects`, 2+ project workspaces only — same rule as the status bar). `custom/libraries` returns
-  `{scope, projectKey, libraries}` via the pure `selectLibraryCatalog` (workspaceScan.js): a routed project answers
-  with ITS catalog **even when empty** (explicit scope never widens — pinned); union only for no-fileUri/loose (the
-  blank-view regression stays structurally impossible; a stale bare-array response degrades to union). Deliberate:
-  a non-TwinCAT file inside a project keeps that project's scope (documented in `scopeProjectKey`). Pins:
-  `test_library_scope.js` (39, real 2-plcproj routing; 3 broken variants verified red). Manual residue (dev-host,
-  user's machine): description rendering + webview tab switches live, startup seeding, `.plcproj`-watcher path
-  end-to-end.
-- **Publication:** repo is **Private**. History was rewritten twice — once (earlier) to purge customer/vendor
-  content, once **2026-08-17** to purge commit metadata. **The 2026-08-17 sweep is complete and does not need
-  redoing:** working tree + every commit + all 823 unique non-Monaco blobs, plus commit metadata, tags,
-  unreachable objects and the committed binaries. Method and findings are in the git log and in
-  `.claude/memory/leaks-hide-in-metadata-not-content.md` — **read that note before any future sweep**, it carries
-  the traps (metadata beats content grep; verify across every ref, local *and* remote; don't restate what you
-  removed).
-  Three things it leaves behind that constrain future work:
-  - **Customer artifacts were renamed to synthetic ones** — `Acme*` (vendor library), `Palletizer.Turn*` (HMI text
-    key), `FB_Gripper`, `FB_Feeder`, `Modules_bak\`, `ST_Robot_DI`/`E_RobotState`, `C:\Projects\…`. Each keeps a
-    property its site exists to teach: the three-spellings library point, a text key that must NOT resolve, a
-    backup dir that still sorts after `Modules\`, and the space inside the path (why `scanController` joins root
-    keys on NUL). **Don't "tidy" them into realistic-looking names, and don't restate the originals when
-    describing the change** — that mistake was made once already and had to be reverted. `git log -p` has them.
-  - **Every SHA changed at the 2026-08-17 rewrite** — any clone older than that is invalid; re-clone, never pull.
-  **The repo DELETE-AND-RECREATE is DONE 2026-08-26** (the step the sweep owed — GitHub kept pre-rewrite objects
-  reachable by SHA and via `refs/pull/*`, so recreation was the only hard retraction): old repo renamed to
-  `TC_PLC_Toolkit-old`, fresh private `TC_PLC_Toolkit` created and pushed with the full verified history
-  (209 commits, `main` @ 6dc306f its sole branch; fsck clean; the identity one-liner
-  `git log --all --pretty='%an <%ae> | %cn <%ce>' | sort | uniq -c` shows only personal/Claude/GitHub
-  identities — the old "tooling re-adds its own identity" concern did NOT recur, but keep running that
-  one-liner before publishing). All 47 PR discussions were exported to a JSON archive and delivered to the
-  user 2026-08-26 — deliberately NOT committed (old PR bodies may reference pre-rewrite names). PR/issue
-  history, settings, secrets and branch protection did not carry over; recreate on the new repo as needed.
-  **`TC_PLC_Toolkit-old` is DELETED (user confirmed 2026-08-26)** — the retraction is complete; no
-  pre-rewrite object is reachable anywhere. The old IP-sign-off open point is resolved and removed (user, 2026-08-26).
-- **The suite is platform-correct now (fixed 2026-08-17) — don't reintroduce a Windows-shaped path assumption.**
-  11 of 59 suites used to fail on any non-Windows checkout while CI (`windows-latest`) stayed green. Both copies of
-  `uriToFsPath` ended in an unconditional `.replace(/\//g,'\\')`: right on Windows, but on POSIX it ate the root and
-  produced `\home\u\a`, so every URI→file resolution silently found nothing. The flip is now guarded on `path.sep`,
-  **Windows output byte-for-byte unchanged** (verified against the old implementation over drive-letter, encoded,
-  uppercase-scheme, bare-path and empty inputs).
-  The mirror image was wrong too: `'file:///' + p.replace(/\\/g,'/')` builds a **four-slash** URI on POSIX, so URIs
-  built in one place compared unequal to URIs built in another — fatal for the identity guards. Fixed at all three
-  construction sites (`xmlIndexer`, `parser`, `configReferences`) and every test-side helper that mirrored them.
-  Two harnesses were also bypassing production: `test_plcproj_scope` indexed from `objectPaths` (the **lowercased
-  identity keys**) instead of `objectFiles.values()` — reading a key only appears to work on a case-insensitive
-  filesystem — and `test_config_references` hand-rolled its own converter. Both now use the real path.
-  `test/test_uri_fs_path.js` guards all of it, written to hold on **both** platforms; its load-bearing assertion is
-  a round trip through the real filesystem, which a merely plausible converter cannot satisfy.
-  **`.gitattributes` is part of this fix, not housekeeping.** TwinCAT object files are UTF-8+BOM **CRLF** and the
-  generator says harnesses and LSP offsets depend on both — but they are stored LF, and only Windows' default
-  `core.autocrlf=true` was restoring the CRLF. A Linux/macOS clone got LF and `test/browser/build.js` died on
-  "FB_Cylinder no longer starts the way the fixture expects". `eol=crlf` now pins the working tree on every
-  platform (blob stays LF, so files still diff line-by-line); archives are marked `binary`. **Never delete it.**
-  Browser harnesses take `HARNESS_CHROMIUM=/path/to/chrome` to use a preinstalled browser instead of downloading.
-  Both build and pass every functional assertion; each still trips its catch-all "browser reported no errors" on a
-  **worker-level 404 that reproduces with the old code too** — environmental, not ours, and not yet chased down.
-- **`sample/` is GROUND TRUTH** — correct TwinCAT code (it **builds cleanly in XAE**, user-verified 2026-07-20), so
-  every diagnostic on it is a bug. At **zero** against a baseline of **zero** (no slack);
-  `test_sample_diagnostics`/`test_typecheck` ratchet it (never raise the baseline).
-  It is **wholly synthetic and COMMITTED**, and **CI now runs at `Coverage: FULL`** — `REQUIRE_FULL_SUITE=1` passes
-  there. Before this, CI executed ~951 assertions in 4 s and silently skipped the ratchet AND the live-path guard;
-  `test_live_path` was running **2 of its 10** tests. Built in two steps:
-  `scripts/Create sample PLC project/build-sample-solution.ps1` drives XAE once to produce the
-  `.sln`/`.tsproj`/`.plcproj` skeleton (only
-  TwinCAT can write those — the on-disk template is a 67-byte stub it expands at insertion time, and hand-writing
-  them is what produced a project XAE refused to open), then `scripts/Create sample PLC project/build-sample-project.js` writes the 19 objects
-  and **injects** their `<Compile>`/`<Folder>` entries into XAE's `.plcproj`, leaving its identity GUIDs,
-  PlaceholderReferences and ProjectExtensions untouched. Both are deterministic/idempotent.
-  **Committed:** the solution, the 19 objects, XAE's `PlcTask.TcTTO`, the **`.tmc`** (44 KB, from the XAE build —
-  our own types only, no Beckhoff content), and **one MIT-licensed archive** (TwinCAT Dynamic Collections, 479
-  symbols) so the ZIP reader / string-table parser are exercised on CI. Provenance in `sample/README.md`.
-  **Git-ignored:** the Beckhoff archives (vendor binaries), `.vs/`, `*.bak`, `_CompileInfo*/`, `_Boot/`. Nothing
-  asserts on Beckhoff without gating on its presence — **verify any change in BOTH configurations** by moving
-  `_Libraries/Beckhoff Automation GmbH` aside and back (it is git-ignored, so move it, never delete).
-  **Gitignore trap, hit twice:** a `dir/` exclusion makes every negation inside it unreachable — git never descends
-  into an excluded directory. Use `dir/*`. The old blanket `!*.TcPOU` negations also leaked *any* project dropped
-  under `sample/`; negations must stay scoped to `TcToolkitSample/`.
-- **Internal ids deliberately NOT renamed** (`twincat.*` commands, `twincat.xmlViewer` viewType) after the
-  "XML Viewer"→"PLC Toolkit" rename — churning them breaks saved keybindings/associations.
-- **Objects-tree drag & drop + copy/paste** (0.2.0). DnD = move: component → own file's virtual folder /
-  file node (a FolderPath attribute edit), file/dir → directory / empty area (fs move + `.plcproj` re-sync).
-  Copy/paste = duplicate (`clipboardCommands.js`, Ctrl+C/V + context menu): components paste **cross-file
-  deliberately** (POU↔ITF kind-gated, actions/transitions never into an ITF, fresh GUID Ids, LineIds not copied);
-  file paste **always renames** (a same-name copy = duplicate symbols), rewrites root Name/header/LineIds
-  (`renameRootObjectInXml`) and regenerates every Id GUID (`regenerateObjectIdsInXml` — kept a SEPARATE step:
-  a future rename-in-place must keep Ids); directories deliberately
-  not copyable v1 (recursive duplicate = mass duplicate symbols). Matrices pure in `dndRules.js`
-  (`test_dnd_rules`); XML edits guarded by `test_xml_folderpath` + `test_xml_clipboard`. **TwinCAT's XML
-  loader is ORDER-SENSITIVE**: root `<Folder>` tags must sit between the root Implementation (Declaration
-  for Itf) and the first member — the old `insertFolderIntoXml` appended them before `</POU>`, and XAE
-  then dropped the FB's members from compile (C0004 per method/property). Fixed (root folders now join the
-  contiguous folder group / land after the root `</Implementation>`; guarded in `test_xml_folderpath`);
-  one incident file existed in the wild (repaired separately). **Member insertion carried the
-  same latent defect and is now fixed** (`insertMemberIntoXml`, shared by create + paste): members anchor before
-  the first root `<LineIds>`, `.TcIO` (no LineIds at all) falls back to the close tag, and the splice takes the
-  anchor's LINE start — the old `lastIndexOf('</POU>')` also gave 6-space indent, `</POU>` at column 0 and bare
-  LF in CRLF files, compounding per insertion. Guarded by `test_xml_member_order` (verified to fail 27 ways
-  against the old code); `test_xml_clipboard` had pinned the buggy placement and was corrected. Controllers
-  (`treeDragAndDrop.js`, `clipboardCommands.js`) are vscode-bound; **user tested both live 2026-07-16: good**. Virtual folders
-  NOT draggable/copyable in v1 (moving one = rewriting every member's FolderPath prefix — but they ARE renameable, 0.3.0).
-  `engines.vscode` bumped **1.60 → 1.66** (TreeDragAndDropController).
-- **Objects-tree rename** (0.3.0, `renameCommands.js` + `renameEngine.js` + `custom/referencesForSymbol`): files,
-  members, disk dirs, virtual folders; F2 + context menu; reference-aware modal (rename-only vs update-all).
-  Load-bearing findings: the by-symbol LSP entry point exists because a **GVL's name never appears in its own ST**
-  (no seed position) and the name-keyed index needs an **identity guard** (uri mismatch → resolved:false, never scan
-  the wrong object). `renameEngine` maps raw-ST-unit coords → CDATA splices with a never-write-on-mismatch guard;
-  synthesized lines (ACTION headers, GET/SET keywords) are skipped; **raw mode rewrites PROGRAM→FUNCTION_BLOCK when
-  methods exist** (stConverter:54-57), shifting the root header column → guard-skip, completed by
-  `renameRootObjectInXml`, which the engine deliberately never applies (caller contract). `propagateDeclRenames`
-  structurally renames related interface/override decl headers (splice alone would desync tag Name + LineIds =
-  corruption); **sibling implementors of a shared interface are NOT in the reference set** (pairwise relation) —
-  v1 limit, XAE flags them. `.st` rename = disk-only (never a `.plcproj` member anywhere in the codebase).
-  References modal excludes the self-declaration via the response's separate `declaration` field.
-  **Non-code objects** (user's smoke test caught the gap — XAE build broke): rename scans them via
-  `custom/configReferencesForSymbol` (`features/configReferences.js`). Two matcher families, dispatched by ext:
-  **chains** — `.TcVIS`/`.TcVMO` (`<v n="BasicTypeNodeValue">"GVL_X.fb.member"</v>`, plus real ST in `STSnippet`)
-  and `.TcTLO`/`.TcGTLO` (dynamic-text entries are literal symbol paths, e.g. `"GVL_X.arr[INDEX]"` — the chain
-  regex stops at `[`, verified); **task POU calls** — `.TcTTO` `<PouCall><Name>MAIN</Name></PouCall>`, matched only
-  for ROOT renames, only when the value has **no dot** (that rule is what protects the library POU
-  `VisuElems.Visu_Prg`), value whitespace-trimmed with the offset carried. **Polarity flip is deliberate**:
-  code-side keeps unresolvable occurrences, config-side renames ONLY what provably resolves through the type model
-  — decoys share the exact shape (text keys `Palletizer.Turn1` sit beside real paths in the same GTLO; visu-lib
-  names `VisuDialogs.*`) and an unproven edit corrupts the HMI. All these formats carry a **UTF-8 BOM** the LSP must
-  strip (VS Code documents exclude it → offsets shift by one). Surveyed and deliberately NOT scanned: `.TcIPO`
-  (only `.svg` names), `.plcproj` (already synced by the file-rename step), `.tmc` (generated build artifact).
-  Counts above were measured on the old customer sample; on the synthetic one `MAIN` = 1 (the PlcTask PouCall).
-- **Insert at Cursor / Insert Definition at Cursor in the OBJECTS tree** (0.7.0, `objectInsertCommands.js`).
-  Reported as "the functionality disappeared" — it had not: checked **52 revisions of package.json** across both
-  the pre-rewrite lineage (recovered from dangling objects, back to 2026-06-02) and the current one, plus the
-  0.5.1/0.6.0/0.6.1/0.6.2 VSIXs — 38 carry the commands, **0 ever gated one on `twincatExplorer`**. They were
-  always Libraries-only. **Don't re-litigate that; build on it.** Now added for the project's own objects:
-  Insert at Cursor = bare name; Insert Definition = a call template with the object's real parameters, the user's
-  chosen shape. `callTemplate`/`PARAM_SCOPES` moved out of `libraryTreeProvider.js` into vscode-free
-  `src/insertTemplates.js` so both views format identically (guarded byte-for-byte in `test_object_insert.js`).
-  An FB inserts a derived INSTANCE name (`FB_Gripper` → `fbGripper`) because ST calls an instance, not a type;
-  functions/programs use their own name; methods/actions insert bare (the instance is whatever the user has).
-  Menu group is `1_insert@*`, not `twincat_*` — VS Code sorts context groups lexicographically, so a `twincat`
-  prefix would drop them below the create/delete block. All four insert commands now explain themselves when run
-  from the Command Palette instead of silently no-oping (that silence is what the report looked like).
-  **`// TYPE` comments carry the declaration's initializer** (`// TIME := DEFAULT_ADS_TIMEOUT`) — that is
-  `xmlIndexer`'s `variable.type` verbatim; library members never have one, so the Libraries view never showed it.
-  Left as-is deliberately: it documents the default. Two lines in `insertTemplates.js` if it ever reads as noise.
-- **README.md** = public page (ships); **DEVELOPMENT.md** = build/test/architecture; CLAUDE/HANDOFF/DEVELOPMENT are
-  `.vscodeignore`d. Package `npx @vscode/vsce package`. `scripts/` ships (the generator).
-- **Build harness lives in TWO places, synced BY HAND (2026-08-07 — the old TC_Start master rule is dropped;
-  the user syncs manually now, so do not re-promote anything automatically).**
-  - `scripts/Build PLC project/` — the newer, fuller generation (100 KB `.ps1` vs 45 KB), plus
-    `probe-sysmanager.ps1` and `test-activation-target.ps1` which `templates/` has never had.
-    **`.vscodeignore`d**, so it does not ship.
-  - `templates/` — the older revision that **ships in the VSIX** and is copied into user projects, so it must
-    stay **generic**: no local paths, no `TcSample`/sample-generator names.
-  **Real identifiers were redacted on the way in** (2026-08-07): `test-activation-target.ps1` hardcoded AmsNetIds
-  its own docstring called real (the author's machine and a physical station), `build_plc_project.ps1` had one in a
-  comment and `probe-sysmanager.ps1` had one as a **live fallback probe target**. All replaced with RFC 5737
-  placeholders (`192.0.2.x` / `198.51.100.x`), preserving the near-miss and same-network relationships the tests
-  rely on; harnesses verified **64/64 and 13/13, identical before and after**. Keep it that way — this repo's
-  history was purged once already.
-  `-ProgId`/`-PinVersion` were removed 2026-07-29 — `-TcVersion` is the single knob and passing it is what
-  pins; the traps are in the script's own header, read that. `test-resolve-twincat-target.ps1` is COM-free
-  (**13/13**, no TwinCAT needed); `twincat-project-CLAUDE.md` + README are synced to the `templates/` revision.
-- **Architecture roadmap COMPLETE** (H1 `features.js` facade · H2 `symbolNode` · M2 injectable index · M3 thin
-  `extension.js` → `src/commands/` + `src/xaeShell.js` · L2 perf guard — all merged). **L1 (reverse index) DEFERRED
-  by decision** — reference search is already 29 ms cold / ~4 ms warm; reopen only past ~1000 files or >200 ms.
+## Branching, CI and repo settings
+- `dev` collects day-to-day work; a release is a `dev → main` PR, then the manual *Release* workflow on `main`
+  (procedure: DEVELOPMENT.md "Publish a GitHub release"). `dev` has no ruleset — direct pushes are allowed.
+- **CI is PR-only** (`ci.yml`, `pull_request: [main, dev]`): lint → typecheck → `npm test` with
+  `REQUIRE_FULL_SUITE=1` (a REDUCED run fails), plus a VSIX build check (ruled: "releasable" includes "packages").
+  Direct pushes to `dev` trigger nothing; use *CI (manual)* (`ci-manual.yml`, `ref` defaults to `dev`).
+- Ruleset `main-1` on `main`: PR required, **0 approvals**, no bypass list, **no required status checks** — a red
+  CI does not block the merge button (adding the `build` check is the one change that would). Actions permission
+  is `selected` + GitHub-owned (`local_only` killed every run with `startup_failure`). Confirm a run's real
+  conclusion before trusting a badge; scan workflow YAML bytes before pushing
+  (`.claude/memory/workflow-yaml-needs-a-byte-scan.md`).
+- Repo is **Private**. History was rewritten twice and the repo deleted-and-recreated 2026-08-26; that sweep is
+  complete. Before any future sweep read `.claude/memory/leaks-hide-in-metadata-not-content.md`, and never restate
+  the original names that the synthetic ones (`Acme*`, `FB_Gripper`, `Modules_bak\`, …) replaced.
+- **Stale remote branches:** `claude/new-session-ynrdo4` and `claude/project-thread-o6i1sa` are merged into `dev`
+  (checked 2026-11-09). The user asked to delete them, but this cloud session's git proxy drops every push
+  except to the session branch, so they still exist — delete from the GitHub UI or a local clone.
+- **Merge `claude/focused-ptolemy-m6acaz` into `dev` by SQUASH only, every time** (PRs #27, #29 so far): after PR #27 the branch was
+  restarted from `dev`, but force-pushing was refused, so the old branch was merged back in (no file changes);
+  its history still holds commit `2b06874` with a `Co-Authored-By` trailer that must never reach `dev`.
+- **Merge `ccr-d5b51254-r1vu2b` into `dev` by SQUASH only** (user decision 2026-11-09): commit `65d5b1c` on it
+  names a private repository the user wants kept out of this repo; the final tree is clean. Delete the branch after.
 
-## Diagnostics: how to measure (get this wrong and the number is fiction)
-Mirror `server.js`: index libraries up front, then **per file** `convertXmlToSt(parsed,{raw:true})` →
-`parseAndIndexDocument(stText,uri)` → `registerLibrarySymbolNodes(index,stText)` → `provideDiagnostics(...)`. Three
-traps that have bitten: **non-raw** conversion strips decl-site init lists (`fb:FB_X(a:=b)`→`fb:FB_X;`) and hides
-diagnostics; omitting `parseAndIndexDocument` gives methods **stub ranges** → every method-local var reads undeclared
-(fabricated ~2,300 phantom diagnostics — the old "2550 baseline" was fiction); omitting `registerLibrarySymbolNodes`
-→ 171 false positives **on the old customer sample**. `test/_baseline.js` is truth. Against the synthetic sample every
-producible row measures **0** (`archives-only` and `none` measured, and they agree — proof its code names no library
-symbol at all); the `.tmc` rows are labelled inference, not measurement, because a `.tmc` only appears after a TwinCAT
-build. Re-measure rather than trust the table if one ever lands.
+## Start here (next session)
+- **R5 + R1 MERGED** (PR #27, `0ea9fcd`), Windows/XAE check PASSED (2026-11-09); the narrow-editor Generate ST menu
+  clip it found is fixed (`placeSplitMenu`, harness 7c/7d). Still owed: reply on issue #25 when it ships in a release.
+- **R3.1 spike findings are DONE** (2026-11-09): `docs/r3.1-strucpp-spike.md`. Headline: 27 parse errors as
+  converted; 1 converter cause (methods/properties emitted after the POU body — the compiler wants them first) +
+  9 compiler gaps; with scratch workarounds 0 errors under twincat3, 6 under iec (REFERENCE TO, REF=). No
+  check-only CLI flag (`analyze()` is check-only but unreachable from the CLI bundle; a wrapper or a fork
+  `--check --json` flag). Export-mode input is WRONG to check (it rewrites REFERENCE TO→POINTER TO, REF=→:=);
+  R3.2 must feed a raw-based unit. **Decided 2026-11-09:** wait for the fork (fork-lane item S2, before R3.2;
+  the roadmap now has a parallel STruC++ fork lane: S1 language-server dialect profiles — DONE, fork PR #4
+  `a529ea9`, client contract in its PR body; S2 compiler gaps: plan DONE and decided 2026-11-09 —
+  `docs/s2-strucpp-fork-plan.md`, all 13 steps + 1b (~22.5 d), `iec` = Ed. 3, Annex A precedence). Merged in the fork: step 1
+  (`--check --json`, lexer positions; PR #5 `8aea9a7`) and 1b (`iec` renamed `iec-3`, no alias, id reserved; PR #6
+  `5fda1bc`). Step 2 (pragmas skipped with a warning, conditional ones refused; PR #7 `47c99fa`) also merged — the toolkit's
+  check (R3.2) can now analyse every sample file. Step 3 (`SUPER.` always on, `THIS^` behind `self_caret`; PR #8
+  `db0f53c`) merged. Step 4 (member-chain method calls; PR #9 `19f91a7`) merged. Fork follow-ups found
+  along the way, not yet scheduled: plain `SUPER()` body call; `SUPER.x :=` as a target; `p^.M()` (C++ for an FB behind
+  REF_TO does not build); single-dot `inst.Nope()`/`intVar.M()` pass the checker and fail only in g++; positional
+  method calls that omit a VAR_OUTPUT fail in g++; an unknown member in a chain (`x := mid.nothing`) is not flagged.
+  Step 5 (interface-typed variables, `IEC_ITF<I>`; diamonds via virtual inheritance on shared edges only; PR #10
+  `c5ee894`) merged — not yet: ARRAY OF / STRUCT field of interface type, properties through an interface variable.
+  Step 6 (interface PROPERTY behind `property`, explicit GET/SET; PR #11 `5b99425`) merged = **release B**.
+  More fork follow-ups: `THIS.a.b` does not parse; an FB that IMPLEMENTS an interface only through a base FB's
+  methods/properties passes analysis but fails g++; IMPLEMENTS ignores methods from interface EXTENDS bases;
+  an FB property inherited from a base FB fails in g++ when used on the derived instance. Step 7 (chained comparisons, Annex A; PR #12 `5fde942`) merged.
+  Step 8 (`postfix_enum_base`; PR #13 `da78fe3`) merged. Also found: `TO_DINT(enumValue)` fails in g++ (pre-existing).
+  Step 9 (`named_global_lists`; PR #14 `fafc02e`) merged. List = file stem, override `--global-list <file>=<name>` /
+  API `globalListName`; a local may hide a global (`GVL_A.x` still reaches it); the same name in two lists is allowed
+  (plain use must be qualified). R3.2's converter must pass each GVL's name. Also found (pre-existing):
+  `gfb(a := 2);` on a top-level global FB fails in g++; bundled-library global `speed` collides with a user global;
+  `--feature` help text and DIALECTS.md "Checks" list stale; `GVL_A.units[0]()` does not parse; lexer accepts `a__b`.
+  Step 10 (`struct_extends`; PR #15 `a962890`) merged: flattened in the AST; derived↔base assignment and arguments
+  refused (6.4.4.6); a library STRUCT as base refused for now (manifests carry no initial values). Also found
+  (pre-existing, plain STRUCTs): unknown member `s.zz` unflagged in ST; `POINTER TO ST := ADR(s)` refused;
+  `REF(s)`/`REF=`/STRUCT `=` fail in g++; unrelated-STRUCT arguments unchecked in ST (fail in g++).
+  Step 11 (`union` parse + analysis; PR #16 `337817f`) merged: contextual (no new tokens, `union` stays a name);
+  STRING members allowed; initial values refused as "not supported yet" (possible R3.2 false positive); compile()
+  refuses UNION until step 12. Found (pre-existing): a STRUCT alias is not assignment-compatible with its STRUCT;
+  `STRING[n]` does not parse (B6, use `STRING(n)`). Step 12 (UNION C++ lowering; PR #17 `fd19d10`) merged: raw byte storage
+  + memcpy views, STRING reads bounded; UNION left out of the debug table; RETAIN/REF/REFERENCE TO/library-STRUCT in a
+  UNION refused at compile only. Found (pre-existing): POINTER/REF to a whole STRUCT does not compile; a library
+  function's plain VAR locals are exported as inputs; no LEN for WSTRING; SIZEOF of STRUCT counts wrapper overhead.
+  Step 13 (`fb_init`; PR #18 `635c962`) merged — **all 13 S2 steps done**. Rules (user, by card): FB_init once per
+  instance after initial values, before the first cycle; globals first, then programs; nested before holder; flags
+  FALSE; inheritance = base-first chain (explicit SUPER.FB_init refused at compile). User's TwinCAT finding: an
+  interface passed to a nested instance through the holder's FB_init page-faults in TwinCAT (nested inits first);
+  the fork binds a member's init arg naming a HOLDER FB_init input to the holder's instantiation value (works), and
+  warns when an init arg reads a holder member the holder's FB_init assigns. Ed. 3 cannot express the pattern
+  (6.5.1.3: initial values are literals/constant expressions). Found (pre-existing, before S2 too): a method named
+  `Get` is a parse error (added to S3a); `x : INT := zz;` passes analysis; a global `LOG` clashes in C++.
+  Release C note posted in the coordination doc. Folded item 1 (`REFERENCE TO` inputs bound at the call; PR #19
+  `f422ad1`) merged: FB call wrote through an unbound ref (SIGSEGV); fn/method calls did not build. Newly refused
+  (feature on): literal/expression/constant/other-type/REF_TO-without-^/subrange args. Alias-typed VARIABLES are not
+  IECVar-wrapped → binding/REF= to one refused at compile only ("not supported yet"); wrapping them ~1.5–2.5 d (S3b).
+  Remaining folded items measured: (a) FB VAR_IN_OUT by reference ~5 d (changes the bundled softmotion .stlib C++);
+  (b) typed TRUNC_<type> ~1 d (passes --check, fails g++, even under iec-3); (c) plain TRUNC→DINT, feature
+  `trunc_dint` ~0.5–1 d; (d) `:= 0` on an interface, feature `interface_zero` ~1 d — `itf = 0`/`<> 0` already pass in
+  every dialect incl. iec-3 (decision: keep them always on?); (e) PROGRAM method from another POU ~3–4 d, needs an
+  instance-model decision. Also found: undeclared function calls pass --check; side-effect call order not
+  left-to-right; positional FB inputs counted differently by analysis vs codegen; REF= source unchecked.
+  Typed `TRUNC_<type>` merged (PR #20 `5d969b3`); `trunc_dint` merged (PR #21 `904ca42`; the CLI `--feature` help is now
+  derived from KNOWN_FEATURES, so it no longer goes stale); `interface_zero` merged (PR #22 `d76fc91`). Found: a STRUCT
+  field `f : I_A := 0` is accepted everywhere and fails in g++ (interface STRUCT fields: S3b). PROGRAMs reached by name
+  merged (PR #23 `7d65d10`, behind `program_methods`): one shared instance only for programs reached from another POU
+  (inline header object; config/debug table/REPL/test harness bind to it); narrowed: `PRG_A();` without the feature
+  and a program calling itself (both failed g++ before). Found: `p : PRG; p();` on an unreached program fails g++;
+  `PRG_A.x` inside PRG_A refused; VAR_OUTPUT written via VAR_IN_OUT/ADR not flagged; cross-task calls unsynchronised.
+  **S2 DONE** — FB VAR_IN_OUT by reference merged (PR #24 `b286bc2`, 23:17 UTC); was:
+  FB VAR_IN_OUT by reference (last folded item, ~5–6 d). Design measured: only FBs copy in-outs (functions/
+  methods already T&); fixes inherited in-outs never written back, ARRAY[*] in-outs not compiling, positional in-outs
+  dropped; 0 corpus outputs change, the bundled softmotion/oscat-basic .stlib do. Decided 2026-11-09: always on
+  (user); CONFIGURATION globals by reference in every build with a threaded-build warning (user); new in-out checks
+  are warnings by default/vendor profiles and errors under iec-3, while literal/expression/bit-access args are errors
+  everywhere (user); manifest marker `inoutByReference` with a legacy fallback; outside read of inst.inout allowed,
+  outside write per the strictness rule; stack-rooted bindings unbound after the call. Found while doing it
+  (pre-existing): CONCAT on WSTRING fails g++; alias-typed PROGRAM vars without an init value are never initialised;
+  REF()/ADR() of a CONFIGURATION global fail g++. Release D note posted (coordination doc). S3a running, one PR per item: signed typed literals +
+  typed CASE labels merged (PR #25 `0f7c1d0`); GET/SET as identifiers merged (PR #26 `cf320b7`); STRUCT/UNION alias = same type merged (PR #27 `554c409`); ADR into POINTER TO STRUCT/UNION/FB merged (PR #28
+  `8851856`); UNION one-member initial values merged (PR #29 `bc171d0`) — **S3a DONE**. S3b batch 1 running (10 defects that pass the
+  check but run wrong or fail g++): omitted function/method inputs take their declared default (PR #30 `4e245bf`;
+  also fixed positional method calls omitting a VAR_OUTPUT); undeclared functions reported (PR #31 `c911311`; a
+  198-name runtime-function list synced from the headers by a test keeps runtime helpers like TIME_TO_US accepted;
+  units with `{external}` are not checked); unknown method calls reported (PR #32 `371ac37`; `inst.sub()`, a STRUCT-held
+  FB `s.f()`, `rr.M()` and library `tn.M()` stay accepted — the last two fail g++, logged); unknown members and
+  array↔single-value assignments reported (PR #33 `bf457f1`; `w.C3` bit-by-constant stays accepted, fails g++). Found:
+  inherited PROPERTY read on a derived FB fails g++; POINTER TO ARRAY OF BYTE over ADR(dword) reads 0. Unknown
+  STRUCT-initialiser elements reported (PR #34 `db25cb3`; an unused TYPE-level default stays accepted). Undeclared names in initial values reported
+  (PR #35 `17ee57a`); a bare member of several enums is now settled by the target's enum type and emits `E1::B`
+  (widening). Found: `E2#B` with an enum named E2 lexes as a numeric literal. Return variable wins over a same-named enum member
+  inside its own body (PR #36 `bfe50d5`). Globals named like runtime-only helpers emitted as `NAME_` (PR #37 `6e2a520`;
+  204-name set re-derived from the headers by a g++ test; `LOG` with libs stays an analysis refusal). `TO_<type>` of enum values builds (PR #38 `b6dffeb`, runtime-only). Unrelated STRUCT arguments to
+  VAR_INPUT/VAR_IN_OUT reported (PR #39 `852d856`; library STRUCTs not checked). **S3b batch 1 DONE** (10 PRs). S3b batch 2 running (accepted code that fails g++ → make it
+  build): FB calls on member/global instances + `w.C3` + `fbb : FBB` method calls (PR #40 `4dd4750`); a PROGRAM-typed variable call runs its body
+  (PR #41 `a1bbdfd`). Inherited properties + bare (own and inherited) property names merged (PR #42 `0f34ef2`) — the
+  bare-name case was a false "Undeclared variable" on correct code. Interfaces implemented through a base FB build
+  (PR #43 `186a633`); narrowed: interface methods inherited via EXTENDS are now required (failed g++ before). REF/REF TO of STRUCTs and FBs (PR #44 `6e80c81`); calls through a reference or pointer (PR #45 `f190895`); STRUCT `=`/`<>` memberwise, no feature (PR #46 `20be61c`); string functions on WSTRING (PR #47 `36142fd`); `a.b.fb()` (PR #49 `4e5bb64`, #48 closed: stacked-squash conflict, replayed as a `-r` branch); library FB methods in the manifest (`methods`, old archives fall back; PR #50 `3997211`) — **S3b batch 2 DONE**. INSERT/WINSERT now insert after the first P characters, as IEC says (**user 2026-11-10**; PR #51 `15b4ea5`; run-time behaviour change, C++ byte-identical; OSCAT LIST_INSERT/REAL_TO_STRF now right — list it as a behaviour change in the release E note). Found: `INSERT('ABC','XY',1)` with two literals fails g++; `inst.sub(zz := 3)` unchecked, fails g++; REF() of STRING/WSTRING/enum fails g++. Batch 3 running, one PR per item, merged before the next starts: unknown named args on FB instance calls (plain/member/chain) refused in every mode (PR #52 `092636c`; was `--strict`-only, all failed g++). **Decided 2026-11-10 (user, by card): a named argument binding an FB's VAR/VAR_TEMP local is always an error** (batch 3 item 11; #52 had kept it). Found: FB named like a std function (`Sub`) fails g++; unknown named arg on a method call silently dropped. REF()/REF= of STRING/WSTRING/enum (PR #53 `00d854d`, header-only); the nine string functions with literal args + CONCAT of 3+ any-form args (PR #54 `0e80a0d`, header-only); `TYPE E2 : (A,B) := E2#B` parses and an enum type default must be its own value (PR #55 `c0d7bb7`; `E2#B` was never mis-lexed). **Decided 2026-11-10 (user, by card): byte access through a differently shaped pointer runs wrong (IECVar<T> = {value_, forced_, forced_value_}, so a BYTE is 3 bytes) — refuse the detectable forms now (batch 3 item 5), redesign the layout later (new S9).** Superseded the same day: the refusal hit 14 bundled OSCAT functions (FIND_CHAR, MIRROR, LIST_* …: `POINTER TO ARRAY OF BYTE := ADR(str)`, reading 'abcdef' as 99 102 0 today) and would stop `oscat-basic` building; **user: "fix the root cause" → S9 runs right after batch 3 item 7, ahead of S4–S8; refusal dropped.** Item-5 refusal WIP kept locally only, unpushed, on fork branch `bugfix/refuse-pointer-reinterpret` (8633110). `PRG_A.x` inside PRG_A (PR #56 `a13e5cb`, an AST lowering under program_methods); alias/subrange vars value-initialised (PR #57 `55ad29b`; only C++ diff in corpus: subranges.st, type_aliases.st headers). **Release E = development `55ad29b`; note posted in the coordination doc 2026-11-10.** S9 design done and approved (scratchpad `s9/DESIGN.md`, 448 lines; prototype runtime: unchanged generated C++ compiles, all repros + 7 OSCAT functions right, integration 641/5 fail = forcing stubs only). Design: `IECVar<T>` = one `T value_` (sizeof==T, `__may_alias__` + `-fno-strict-aliasing` as backup — required, -O2 miscompiles REAL↔DWORD/STRUCT-bytes punning otherwise); STRING = `char[N+1]`, length by `memchr` (LEN ~10× slower, CONCAT/assign faster); enums `: INT_t`; forcing → bounded table `iec_force.hpp` (64+8 hosted, 16+1 AVR, macro-overridable; my call), applied by an RAII `ForceScope` in generated `run()` at cycle start and end. **User 2026-11-10: accept PLC-style cycle-boundary forcing** (a program write to a forced var wins until cycle end). Steps S0 (library manifest listed FUNCTION locals as inputs) → S1 force table → S2 codegen → S3a forcing consumers (debug dispatch, REPL, extension gdb force) → S3b layout → S4 STRING → S5 OSCAT real-call e2e; one PR each; ~1550 + 2200 LOC. Release F note must list: forcing semantics, SIZEOF now PLC sizes (STRING(80) = 81, ARRAY[0..3] OF BYTE = 4), embedded $00 truncates a STRING, force-table bound + status 0x88. Runtime CMake tests are not in CI (run by hand per step). Merged: S0 (PR #58 `27df278`: FUNCTION manifests list only inputs/outputs/in-outs; oscat-basic 160 functions lose 448 local entries; C++ identical) and S1 (PR #59 `97fd6ca`: `iec_force.hpp`, unused until S3a) and S2 (PR #60 `2bc66eb`: `force::Scope` in every PROGRAM run(); enums without a base `: INT_t`/DINT via `implicitEnumBaseName()`, fixing a debugger enum-force bug (4-byte int vs 2-byte tag); `debug_array_kind[]`; empty force table costs 4.3 KB hosted / ~393 B AVR until S3b packs). Release F note also: enum SIZEOF now 2. S3a merged (PR #61 `c5573aa`): dispatch/REPL/extension force via the table, status 0x88, force API removed from the wrappers (C++ API change), `strucpp_force_capture`/`strucpp_unforce` exported for gdb; C++ output identical; 12-point behaviour list for release F is in the PR body. **Manual tests owed by the user (fork rule):** force/unforce from the editor debugger against a threaded runtime and an Arduino build, and VS Code "Force Variable" under gdb. Separate item also: `test_iec_composite.cpp` does not compile on development. **S9 DONE 2026-11-10 12:05Z** (S5 = PR #64 `e071f4f`: 14 pointer-based OSCAT functions + CHR_TO_STRING/UPPERCASE/BYTE_TO_STRH through real calls at -O0/-O2). **Release F = development `e071f4f`, note posted in the coordination doc.** User 2026-11-10: keep STRING(n) = n+1 bytes (IEC §6.4.2.2 / Table 10 note k leave storage to the implementer; n+1 = vendor layout, needed by OSCAT). Part A item 1 merged (PR #65 `1578375`): user declarations shadow bundled-library symbols (user global `speed`/`MATH` was an analysis error; user `TYPE SR`/FB SR/`TYPE SPEED` failed g++); refused only when a used library block depends on the shadowed name (e.g. user R_TRIG + library CTU); a variable read seeds only library globals/types; 11 corpus programs that failed g++ now build. Items 2+2b merged (PR #66 `379e355`): FB/INTERFACE/TYPE/FUNCTION named like a runtime function emitted as `NAME_` (rename in compile() just before codegen; ST names kept in diagnostics, debug map, REPL; library builds keep names via `cppNamesAsDeclared`); a user FUNCTION `Max` now wins at its call sites (run-time change: it ran the standard one before); 24 typed truncations added to the runtime name set. Item 3 merged (PR #67 `d0cb38d`): unknown named args on method calls (instance/THIS/SUPER/bare/PRG.pm/interface/REFERENCE TO) are an error (were dropped with a warning); C++ identical. Item 4 merged (PR #68 `8e65a12`, user decision applied): a named FB argument may name only VAR_INPUT/OUTPUT/IN_OUT — VAR, VAR_TEMP, CONSTANT, EXTERNAL, method/property/action are errors in every mode; nothing in tests/examples/libs relied on it; C++ identical. Item 5 merged (PR #69 `e838f79`): library FUNCTION named args bound by name + declared defaults for omitted inputs (run-time change: a named call in another order bound by position before; AIN ran with swapped args); C++ identical. Item 6 merged (PR #70 `56c9429`): a POU ARRAY OF enum uses the enum variable wrapper as element (REF of an element, array ↔ STRUCT-field array assignment, ARRAY[*] in-out all failed g++); C++ identical. **User 2026-11-10 (later the same day): agents go BACK to Opus 5.5 — launch with `model: "opus"`** (the Fable allowance was used for a few hours; running Fable agents are handed over at their next clean point). A Fable agent took over at item 7 with Parts A–D (items 7–14, 3b, 3c, 5b; batch 4 = 15–21; runtime tests = 22; batch 5 = 23–30); gate scripts in scratchpad `b5/`. Item 7 merged (PR #71 `8f3a546`): STRING length kept behind REF_TO/POINTER TO/REFERENCE TO and type aliases (`TYPE TS10 : STRING(10)` was 254 chars — run-time change); cross-length REF_TO assignment refused both ways (narrows `p10 := REF(defaultString)`, which built only because the length was dropped; my call: unsafe otherwise). Item 8 merged (PR #72 `b8aa14e`): NOT fixed by S9 — INSERT/REPLACE returned IN1's declared length (wrong results when IN1 is the shorter), CONCAT of 3+ folded pairwise, nested mixes failed g++; now generic templates sized for the longest argument; a literal = default STRING (so `INSERT(s5,'XYZ',2)` → `ABXYZ`, was `ABXYC`); run-time changes for the release note. 8b merged (PR #73 `3cabb5e`, my call, ran wrong): CONCAT/INSERT/REPLACE return a full-length result (254, or the longest argument if longer), cut only on assignment (`CONCAT(a5,b5)` into STRING(10) gave 5 chars, now 10; overflow loses the tail, `ABXYZ` not `ABXYC`); LEFT/RIGHT/MID/DELETE unchanged; cost +5–9 ns on short CONCAT only. Release G note must list #66, #69, #71, #72, #73 run-time changes. Item 9 merged (PR #74 `eb2037e`): enum values typed as their enum → `i := E2#B`, enum arithmetic, enum FOR bounds, wrong-enum assignment, enum vs INT comparison, MAX/MIN/LIMIT of enums are analysis errors (all failed g++); nothing in corpus/libs newly refused. **Order changed (my call, offered to the user): Part B (batch 4, items 15–21) runs next because it gates R3.2 and Part A keeps growing; then Part A from item 10, then C, D.** **R3.2 code complete (2026-11-10 ~22:30Z), awaiting the user's Windows checks:** commits `6939f2e`…`877e053` on the branch — start-page + browser tests (run.js 44, run_pragmas 38, run_start_page 71, all green), README/DEVELOPMENT, vsce ls (no product name shipped; a test scans package.json, README and shipped src/media for it), optional dev-host compile phase (skips without `TWINCAT_COMPILER_BUNDLE`), real-compiler gate over BOTH samples 18/18 (0 errors each). Suite 96/96 FULL. **Second sample `sample/TcToolkitSample2/`** (user request): 3.1.4024 layout, 7 synthetic objects (MAIN, a second `FB_Cylinder` at a different path, GVL_Main, ST_TankData, E_ValveState, I_Valve, FB_Valve with method/property/action), generated by `scripts/Create sample PLC project/build-sample-project2.js` (`--check` used by required gate `two-samples`). It found a real false positive, fixed in `29a3192`: `xmlIndexer.parseInheritance` read IMPLEMENTS on a CRLF multi-line head into the VAR block. Ratchets now run per PLC project (a flat index over two samples reported collisions the product never shows); library-fixture harnesses read only the first sample (`SAMPLE_PROJECT_DIR`). Known drift: committed `FB_Station.TcPOU` root ST differs from the generator by a trailing CRLF (`baa676c`). **ST_Files in the Objects tree: DONE `b9159c7`** (user report: generated files were invisible): each project's `ST_Files` listed as read-only output (`generatedDirectory`/`generatedStFile`, no menus/drag/copy), one refresh at the end of a run (`onStFilesWritten`) + a 500 ms debounced refresh for hand-made changes (`isGeneratedOutputEvent`); still never indexed; real-host timing unverified. README diagram: the real-looking names `EOL`/`HPR40_EOL` replaced by the sample's (`5808210`); they remain in history from the user's own `7d2e524` (rewrite only if the user asks). **User 2026-11-10: `TcToolkitSample2.sln` builds cleanly in XAE.** Still to check on Windows: dev-host with and without a compiler; Compile Project in real VS Code (Problems link, fresh-open jump, markers, start-page tile). Earlier: **R3.2 at handover (2026-11-10 ~21:40Z):** code path complete and pushed — `55cdd8a` check unit (`src/checkUnit.js`), `48a5c55`+`0370391` runner/mapping (`src/compileCheck.js`), `2959645` `twincat.compileProject` (Problems + pane markers owner `twincat-compile` + status bar + start-page tile enabled by `tcToolkit.compiler.path`); 95/95 FULL. Sample: 0 errors, 3 filtered pragma warnings, ~0.9 s at compiler `5f11c51`. Decision (agent's, accepted): no `--strict` (refuses TwinCAT-legal narrowing and WORD arithmetic). Remaining (an Opus agent now): start-page + browser tests, real-compiler gate re-run, README/DEVELOPMENT, vsce ls, optional dev-host phase, then the second sample project `sample/TcToolkitSample2/` (user request; 4024 template, synthetic, zero diagnostics) and the compile gate over both projects. Full handover: scratchpad `r32/HANDOVER.md`. Compiler gaps for the fork: conditional pragmas are an error; vendor library symbols undeclared (no library input yet); identifiers upper-cased in messages; no end positions. **Generate ST regression (user, Windows, real multi-project workspace, after `7560b5f`):** every file failed with `Canceled (FileSystemError)` from a `vscode.workspace.fs` call in `generateAllStFiles`; not reproducible on Linux, cause NOT proven. Fix `99ed2fe` removes both suspects: `isWatchEventRelevant()` (`src/twincatWorkspace.js`) ignores paths under any `ST_Files` (the `**/*` watcher ran a full Objects-tree refresh per created file and folder), and the project-aware export reads/writes with `fs.promises`; failures now show the first error in the notification; the dev-host phase asserts success count == objects, 0 failures. Suite 94/94. **Awaiting the user's re-test on that workspace.** **User requests 2026-11-10 ~21:10Z:** (1) roadmap timeline: R2's bar fixed — a finished item is no longer hatched ("needs your Windows machine"), and the Today marker now sits at the current time instead of mid-day, so a done bar cannot reach past it; R2's card shows Nov 9 – 10. (2) Generate ST must write each PLC project's files to `<project dir>/ST_Files/…`, not `<workspace>/ST_Files/<project>/…` — DONE as `7560b5f` (pushed; 91/91 FULL, lint/typecheck clean; output = `<project.dir>/ST_Files/<rel>.st`, `isUnderStFiles()` guards both generators, the Objects tree hides a project's own `ST_Files`; dev-host generate-st phase updated but only runnable on the user's Windows machine — awaiting their try), since it is the only code writer in the checkout; applies to one project or many (my call: one consistent rule); the no-`.plcproj` mirror stays at the workspace root. **R3.2 STARTED 2026-11-10 ~21:00Z** on `claude/focused-ptolemy-m6acaz` (level with dev at `e5310ae` via a normal merge — force-push is denied here, so the branch keeps the old history and `git diff origin/dev` was 0 lines at the start). A Fable implementer builds it; I keep ROADMAP.md / HANDOFF.md / docs/roadmap.html and commit them by explicit path only. R3.2 decisions (mine, from standing rules): UI name "Compile project" (`twincat.compileProject`; no compiler name in UI/README); check only (`--check --json`); compiler run as a separate Node ≥ 22 process from `tcToolkit.compiler.path` / `tcToolkit.compiler.nodePath` (bundling = R3.3; the start-page tile is enabled only when a compiler is configured); the vendored profile gains release G's features; `--strict` only if the sample stays at zero. **R2 fully verified:** the user confirmed the XAE Shell settings were filled with the right paths on Windows. **R2 MERGED 2026-11-10 (PR #31 `e5310ae`, squash into dev)** after the user's last dev-host run passed on `814e2b1` (default recents shown = 2, user request). Open after merge: the user has not yet confirmed that the XAE Shell settings get filled on Windows / that Update Library Definitions still works with them (non-blocking: an empty setting falls back to the old lookup). **Next: R3.2 on a fresh branch from dev (same branch name).** Earlier status → **R2 status 2026-11-10 22:00Z:** user confirmed both created projects BUILD in XAE with no errors, the dev-host run passes after `f035b10`, themes approved. User-requested additions pushed as `068a517` (suite now 91, run_start_page 65/65): `tcToolkit.startPage.recentProjectsShown` (default 5) + Show all/fewer tile; `tcToolkit.xaeShell.path4024`/`path4026` (machine scope, auto-filled on Windows when empty, never overwritten), `twincat.detectXaeShell`, start-page rows with a missing-file warning; `src/xaeShellDetect.js` (registry ProgID → CLSID → LocalServer32 via `reg.exe`, then default Program Files paths; anchors on `REG_SZ` because reg.exe is localized) and `src/commands/xaeShellCommands.js`; `src/xaeShell.js` (Update Library Definitions) prefers a configured existing path. **Detection has never run on real Windows — awaiting the user's check, then merge PR #31.** Two discovery paths now exist (`xaeShell.js` sync, `xaeShellDetect.js` async) — consolidate in the create-through-XAE phase. `vsce ls` in this checkout lists a locally installed `node_modules/playwright`; package only from a clean `npm ci` (R11). **Order (user, 2026-11-10): R3.2 right after R2; R11 after R3.2.** **R2 Windows checks (user, 2026-11-10):** both created projects (4024, 4026) open in XAE without problems (build result not yet stated). `node test/devhost/run.js` had 2 failures: (1) "the flush clears the persisted pending-edit entry" — a test race (the host deletes the entry right after `document.save()` resolves; the test read it in the gap) → the test now polls up to 5 s; (2) "Objects tree reveals exact method_Cyclic" — the first reveal raced a fixed 900 ms sleep → the test now waits per reveal and prints why one failed. Product change made with it: `revealUri` reveals only while the Objects view is visible and catches up on `onDidChangeVisibility` (TreeView.reveal SHOWS a hidden view; with the view in its own Activity Bar container every file activation would have pulled the sidebar away from the Explorer). Awaiting the user's re-run + visual check. **Finding on batch 4 (2026-11-10):** the fork's "Missing ';' after END_IF" is a `--strict` check, not an iec-3 one — without `--strict` the form already compiles in every profile. Item 15 therefore = feature `end_semicolon_optional` that relaxes that strict check (off by default and under iec-3; vendor profiles turn it on); batch 4 items are probed in four modes (no flags, iec-3, --strict, --strict + vendor-features profile). **For R3.2:** decide whether the toolkit's check passes `--strict`; if it does, `resources/dialects/twincat3.json` must list `end_semicolon_optional` (and any other strict-relaxing ids batch 4 adds). Item 15 merged (PR #75 `7f86b19`): feature `end_semicolon_optional` suppresses only the --strict END_ terminator error; nothing changes without --strict; C++ identical. Item 16 merged (PR #76 `534edb1`): under --strict a `;` counts as a FOR body (no feature; a FOR with no statement stays a strict error); also strict-only on development. Items 17+18 merged (PR #77 `611a467`): untyped `0` into/compared with any POINTER TO = NULL (even `POINTER TO INT := 0` failed g++; pointer-to-STRUCT comparisons compared members); item 18 (`POINTER TO STRING := ADR(str)`) did not reproduce — pinned by a test (tell the other session: row 25's case already works at this commit). Item 19 merged (PR #78 `434294e`): an ACTION may be written before the body of an FB or PROGRAM (was a parse error in every mode); C++ identical. Item 20 merged (PR #79 `a726a0a`): a `VAR…END_VAR` part in a property GET/SET (was a parse error in every mode), by lowering such an accessor to a private method `__GET_<FB>_<Prop>`; C++ identical for accessors without locals. Added 20b (GET calling a method of its FB fails g++), 20c (PRIVATE method in an expression from outside not refused), 20d (library FB properties unreachable). Item 21 merged (PR #80 `a6efad3`): `GVL.x` resolves in initial values and FB init argument lists (it resolved only in bodies; plain initialisers were broken too). Added 21c (a global initialised from a later-declared global fails g++: emission order). 21b merged (PR #81 `8fe3343`): `p : POINTER TO T := ADR(x)` as an initial value (PROGRAM constructor skipped pointer initial values → NULL); later-declared targets refused only for FUNCTION/METHOD locals and globals until 21c. **S3b batch 4 DONE (#75–#81). Release G = development `8fe3343`, note posted in the coordination doc 2026-11-10** (tells the other session to add `end_semicolon_optional` to its vendor profiles and to re-probe row 25). 21c merged (PR #82 `d6a4ef6`, after release G): file-level globals emitted in dependency order (cycles = analysis error), #81's later-global refusal lifted, a POINTER TO STRUCT field default other than NULL/0 refused (failed g++). Agent order now: Part A from item 10 (related small items may share a PR), Part C, Part D. Items 10+12 merged (PR #83 `8486ccd`): enum initial values checked in every declaring scope, incl. array literals and STRUCT initialisers (all failed g++); `TYPE E : (A,B) := E.B` parses. Item 11 merged (PR #84 `5f11c51`): one resolver for every ARRAY bound — enum bounds and global-constant bounds failed g++ inline, and a NAMED array type with any non-literal bound was silently `[0..0]` (run-time change, for the release H note); a non-constant bound is now an error. Added 11b (UPPER/LOWER_BOUND on fixed multi-dim arrays), 11c (STRING(N) with a global constant). Item 13 merged (PR #85 `8813a9c`): `PRG_A.x` past a method local (the local is renamed `X__LOCAL` internally), `PRG_A.zz` → "PROGRAM PRG_A has no variable 'ZZ'". Item 14 merged (PR #86 `55c32ce`): an enum alias IS its enum — also fixes a #74 regression in release G (`a := E2#B` on an alias variable refused); correction posted in the coordination doc (take `55c32ce`+). Item 3b: unknown named args on FUNCTION/library-function calls and `PRG_A.nope()`/`PRG_A.f()` inside PRG_A refused (PR #88 `e884d87`). Fork build scripts fixed for Windows (`import()` of `D:\` paths → `pathToFileURL`; PR #87 `9c8f94e`). Next: 3d — standard functions bind named args in source order (`MID(IN:=,P:=,L:=)` runs wrong); bind by IEC names from `libs/iec-std-functions.stlib`. Fork batch moved to an Opus agent; handover in scratchpad `S3B-HANDOVER.md`. Added 21d (CONFIGURATION globals ordering), 21e (type default naming a moved global; REF_TO field defaults). Added 21b (`p : POINTER TO T := ADR(x)` as an initial value, refused by design today) and 17b (dereferenced STRUCT comparisons). Added 9b (enum as index/param/CASE label), 9c (SEL of enums refused though valid), 9d (property own name vs enum member in codegen), 9e (`E#M` with a local named like the type). Added 7b (array element STRING length), 7c (REF= unchecked), 7d (REF_TO alias vs base length), 7e (LEN on a named STRING type: compile() vs CLI). Added 5b (library REFERENCE TO inputs; manifest lacks the kind). Added 3b (user and library FUNCTION unknown named arg) and 3c (interface method signature mismatch → abstract class, fails g++). Next running: S3b batch 3 leftovers (Part A, 14 items), batch 4 (Part B, items 15–21: the coordination doc's rows 14–16, 18–20, 25), then Part C (runtime tests into npm test, the 4 CMake failures, test_iec_composite.cpp) — one PR each, merged before the next. Post-S9 list: 4 CMake failures, CMake tests into npm test/CI, `test_iec_composite.cpp`, library named-arg ordering, threaded forced-global race, optional cleanups (UNION proxies, FOR bound re-evaluation, BOOL as bool, default STRING 254 vs 80). S3b merged (PR #62 `f15e128`): wrappers = their value (static_asserts), `STRUCPP_MAY_ALIAS` on IECVar/enum/generated STRUCTs + IEC_Ptr scalar deref, `-fno-strict-aliasing` only in builds we drive (not in tests, so tests prove the attribute); C++ diff = 2,450 `struct STRUCPP_MAY_ALIAS X`; arm-none-eabi 13.2 full build OK, avr-g++ 7.3 probe only (no libstdc++). Release F note: RAM per scalar ÷3, SIZEOF PLC sizes, external hosts should add -fno-strict-aliasing. S4 merged (PR #63 `c12696d`): IECString = `char[N+1]`, memchr length, bounded compares, one-member Var wrappers, zero tail on construction, gdb pretty-printer fixed (it had stopped printing strings); runtime-only, C++ identical; MIRROR/LIST_*/FIND_NUM/FLOAT_TO_REAL right through real calls. Release F note: SIZEOF(STRING(80)) 81, embedded $00 ends a string, LEN ~10 ns. Post-S9 list also: a library FUNCTION called with named args is not reordered (`LIST_GET(SEP := 44, …)` fails g++). After S9, separately: 4 pre-existing CMake failures (TimeTest.UnitConversion, DateTest/DtTest.Construction, StringTest.Substring), wire `src/runtime/tests` into npm test/CI, `test_iec_composite.cpp` missing from CMakeLists. Batch 3 left: items 8–19 minus done (see list), plus found in #57: user `TYPE SR` vs library FB `SR`; `TYPE T : STRING(10)` loses length; enum alias emitted as `IECVar<E>`. Found by S9 design: the bundled OSCAT `.stlib` manifest lists FUNCTION VAR locals as required inputs (`library-compiler.ts:690`), so CHR_TO_STRING, MIRROR etc. cannot be called from user code — fix right after S9 (S9's OSCAT e2e needs them callable). OSCAT also WRITES through these pointers (MIRROR, LIST_*), and IECString's separate `length_` must follow the terminator — S9 input.  (my calls by the rules): S3b batch 4 = vendor forms the toolkit sample uses, before R3.2 (`end_semicolon_optional`, empty FOR body, `0` → any POINTER TO as NULL, POINTER TO STRING := ADR(str), in-FB ACTIONs before the body, VAR part in property accessors, GVL.x in FB init args); S4 = LTIME first, STRING[n]/WSTRING[n] in every profile; new S10 = `platform_types` + `bit_type` under twincat3; HRESULT/OTCID stay vendor-library types. Release E is cut after batch 3 item 7 (note owed in the doc); release F = S9 alone. S9 plan: IECVar<T> becomes the raw value, forcing moves to a table applied at cycle start/end; design check of forcing users (debugger, tests, timing) first. Queued at the end of batch 3 (my calls, by the rules): enum value used as INT refused like the variable form (15); VAR initialisers validated against the enum (16); `ARRAY[E2#A..E2#B]` by the standard (17); `:= E2.B` type default parses (18); REF() of ARRAY OF enum element (12); `REF_TO STRING(10)` length (13); cross-length STRING mixes (14). Remote `bugfix/*` branches are not auto-deleted after merge (left; deleting them is outward-facing). Batch 3 list (those three, E2#B lexing, POINTER TO ARRAY OF BYTE over ADR(dword), alias-of-derived STRUCT, SINT#200, uninitialised alias PROGRAM vars, alias vars not IECVar-wrapped, library global `speed`, DIALECTS Checks list). Release E note not yet posted. Was next: ADR into POINTER TO
+  STRUCT, UNION one-member initial values. Found: LT#/LTIME# literals absent (S4); `SINT#200` unchecked; an enum member named like a FUNCTION/METHOD hijacks
+  its return assignment in C++ (passes analysis, fails g++); alias-of-base := alias-of-derived STRUCT is accepted
+  (the EXTENDS check is skipped when both sides are alias names); `REF(s)` into REF_TO STRUCT passes analysis, fails
+  g++ (runtime wraps targets in IECVar); an FB call through a pointer `pf^(v := 4)` is a parse error. Found: the lexer refuses `INT#-123`/`LREAL#-0.9` (Ed. 3 Table 5 allows
+  it) — added to S3a.
+  **Decided 2026-11-09 (user, by card):** `itf = 0`/`<> 0` stay always on; only `itf := 0` needs `interface_zero`.
+  PROGRAM methods: one instance per PROGRAM — a PROGRAM is written once and called, never declared/instantiated like
+  an FB, so `PRG_A.M()` reaches that single instance from anywhere. Order: typed TRUNC, `trunc_dint`,
+  `interface_zero` first (~3 d), then PROGRAM methods, then FB VAR_IN_OUT by reference last. The vendored profile now extends `iec-3`.
+  The IEC Ed. 3 copy the user supplied is licensed to another party: cite clause numbers only, never its text. **R4 DONE 2026-11-09** — `src/objectsTreeModel.js` (VS Code-free node graph; ids and contextValue set
+  in one place, `getParent` = `node.parent`), thin `treeDataProvider.js`, `groupRootsByProject` moved out of
+  `projectMap.js`; `test_objects_tree_ids.js` pins 396 ids / 301 reveal chains (a required gate); suite 84/84 FULL.
+  Intended fix: grouped-mode reveal chains now show the tree's own project label (86 mismatches gone). **MERGED** — PR #30 squash `d97cec3`
+  into `dev` 2026-11-09 after the dev-host gate passed on Windows; the session branch was restarted from `dev`. and R3.2 full scope (7 d). Next roadmap item: R4.
+- **R2 phase 1 BUILT 2026-11-09** on `claude/focused-ptolemy-m6acaz` (pushed; no PR yet — squash-merge rule above
+  applies). What exists: Activity Bar container `twincat` (`media/twincat-activitybar.svg`) holding `twincatStart` →
+  `twincatExplorer` → `twincatLibraries` (ids unchanged, moved out of `explorer`); start page
+  (`src/startPage.js`, `src/startPageHtml.js`, `media/startPage.{js,css}`, shared name rule `media/projectName.js`);
+  commands `twincat.openStartPage/createProject/openProject/generateSt/openSettings/openGettingStarted/openRoadmap/
+  openReleaseNotes/reportIssue` (`src/commands/startCommands.js`; `generateSt` is NEW — Generate ST was webview-only);
+  recents in globalState `twincat.recentSolutions` (`src/recentProjects.js`). Create = `src/projectTemplate.js`
+  over `resources/templates/tc3.1.40{24,26}/`, GENERATED by `scripts/build-project-templates.js` (`--check` runs in
+  `test_project_template.js`); GUID inventory + derivation calls (approved by the planner 2026-11-09) in DEVELOPMENT.md
+  "Project templates". Defect found+fixed: `solutionMap.js` skipped `.tspproj` (a 4024 solution never grouped).
+  New harnesses: `test_project_template`, `test_template_diagnostics` (created projects: 0 diagnostics),
+  `test_start_contributions`, `test_start_commands`, `test_recent_projects`, `test/browser/run_start_page.js`, and a
+  start-page phase in `test/devhost/` (NOT run — Windows only).
+  **Remaining:** (1) user, Windows: create one project per version through the command, prove it opens and builds in
+  XAE 3.1.4024 / 3.1.4026 — the `.xtv` `TmcHash` is kept stale on purpose (XAE recomputes it) and is the first thing
+  to suspect if 4026 complains; (2) `node test/devhost/run.js`; (3) eyeball sidebar, welcome buttons and the start
+  page in light + dark themes; (4) phase 2 (XAE automation, decision 1) — not started, TODO in ROADMAP.md R2.
+- **Licence switched to AGPL-3.0-or-later** (user's call 2026-11-09): `LICENSE` is the verbatim gnu.org text
+  (sha256 `0d96a4ff…abcb0`), `package.json` `license`, README "License" (≤ 0.10.1 stay MIT). Monaco keeps its MIT
+  notice (`media/monaco-editor/LICENSE.txt`, THIRD-PARTY-NOTICES.md). Takes effect with the next release (R11).
+  Optional, not done: SPDX headers per source file.
+- **R11 Marketplace publishing** added after R2 (user's ask 2026-11-09). The user CREATED accounts on the VS Code
+  Marketplace and Open VSX 2026-11-09; publisher ID confirmed as `a-abushaqra` (= `package.json`); per release the user either uploads the VSIX or adds `VSCE_PAT`/`OVSX_PAT` secrets; our part is
+  ~1 h of metadata/CHANGELOG/README disclaimer + a secret-gated publish step in `release.yml`.
+- **Compiler name in the UI (user ruling 2026-11-09):** the extension's UI and user-facing README name no compiler
+  ("Build project", not "Check with STruC++"); `test_start_contributions.js` pins that the start page never says
+  STruC++. Developer docs, ROADMAP.md and the published roadmap page may keep the name.
+- **R3 inputs:** STruC++ fork `AbuShaqra/STruCpp`, default branch `development` (@ `2c223c9`, v0.7.0, GPL-3.0-only,
+  Node ≥ 22; dialect flags `--dialect-file`/`--dialect-path`, `src/dialect.ts`, `docs/DIALECTS.md`;
+  `npm run build:bundle` → `dist/strucpp-bundle.cjs`). The TwinCAT profile is vendored at
+  `resources/dialects/twincat3.json` — that file is the only external input. **Do not name, link or describe where
+  it came from** in any file, commit or comment (user rule 2026-11-09: the source is a private repository the user
+  has disconnected). The STruCpp repo has its own CLAUDE.md process rules — read them before changing it.
+- **Cloud-session traps (2026-11-09):** the git proxy accepts pushes ONLY to the session branch (deleting other
+  branches failed every time); `git reset --hard` was refused by the auto-mode classifier — use revert + merge.
 
-## External symbols: five sources, all load-bearing (`libsymbols.js`)
-~32k symbols on a large real project (1551 on the synthetic sample), ~200 ms, registered into the index **on demand, per document** — registering all up front took the
-diagnostics pass 1.5 s → **78 s** (`Object.keys()` runs per identifier). Don't "simplify".
-- **ZIP archives** (`.compiled-library`, `-ge33`, `.library`) — names in a `__shared_data_storage_string_table__`
-  entry. **`.compiled-library-v3` is opaque** (magic `10 a6 d5 a7`), skipped. Dropping `-ge33` once stranded
-  Tc2_EtherCAT / Tc2_ControllerToolbox / Tc3_IotBase / Tc2_XmlDataSrv.
-- **The project `.tmc`** — only source of **struct fields, enum values, FB/interface methods (with params)**; an
-  unmarked `<Method>` param is an INPUT (unlike an unmarked SubItem). Only the ~354 types the project *uses*; **no
-  functions, no constants, no ACTIONs**.
-- **`.plcproj` namespaces** (`libraries.js`).
-- **`library-signatures.xml`** (optional; generator below) — function sigs, FB I/O for unused FBs, global constants.
-  No FB methods / struct fields → **`.tmc` wins on overlap**. Gitignored — never leave one in `sample/`.
-- **browsercache** (`browserCache.js`) — FB/interface method + property **names** for every referenced library (below).
+## Open / deferred (each with the reason it waits)
+- Deepening roadmap: everything but P7 (now roadmap R4) is shipped or ruled (P9 no-go; rulings in the findings file).
+- **Manual residue on the user's machine:** Libraries-view scoping (TreeView description rendering, webview tab
+  switches, startup seeding, `.plcproj`-watcher path end-to-end); library member expansion has never been visually
+  confirmed; squiggle rendering is eyeballed only; peek dismissal over the real bridge round-trip.
+- **Showcase screenshots** (`scratch/showcase/{run.js,runner.js,shot.ps1}`) exist only on the user's machine
+  (`scratch/` is git-ignored) — move to `scripts/showcase/` (+ `.vscodeignore`) if they are worth keeping.
+- **Deferred by decision** (indexing cuts, L1 reverse index, rename v1 limits, ESLint 10, small language gaps): the
+  ROADMAP.md backlog lists them; each one's reason and numbers are in `docs/handoff-findings.md` "Deferred work".
+- **Browser harnesses:** each trips its "browser reported no errors" catch-all on a worker-level 404 that reproduces
+  with the old code too — environmental, not yet chased down.
 
-Library nodes are `external:true`; `typeFromNode()` maps them to the **anonymous** UNKNOWN. That anonymity is
-load-bearing — a *named* unknown makes `declarationTypes` flag it; same for `dutKind==='alias'`. **Member-checking
-library types must stay OFF** — four guards in `types.js` (`lookupMember` returns `undefined` not `null`; the taint
-propagates to derived member types; `isAssignable` = ok if either side external; `getCallParams`/`getInitParams`
-decline on external). Disabling guard #1 → 79 false positives (`AXIS_REF.ReadStatus` is an ACTION the `.tmc` lacks).
-
-## Library tree: grouping + members
-- **Grouping is data-driven, NOT name prefixes** (`E_DriveDynamicParameter` is not an enum): `type="Interface"`→
-  interface; a `VarGlobal` whose constants are all **self-typed** (DataType≈Name, case-insensitive) = **enum** (the
-  constants are its values); a mixed-type `VarGlobal` = **GVL**; `type="Type"` stays opaque, and the `.tmc` upgrades
-  used ones to struct. Interfaces + GVLs groups added; enums/GVLs expandable, members insert namespace-qualified.
-- **browsercache members** — FB/interface expand to method+property **names** (`%ProgramData%\…\Managed Libraries\
-  <Co>\<Title>\<Ver>\browsercache`, plain XML). **Names only** — no params/return (those live in the opaque binary
-  `.object` entries), so the `.tmc` wins on overlap and a browsercache method carries **no `params` key** (tree shows
-  a bare name, not a fake `()`). A direct child of FB `{6f9dac99}`/interface `{6654496c}` is a **property**
-  `{5a3b8626}` else a **method**; Get/Set accessors are a property's own children. **No distinct ACTION TypeGUID** —
-  `{f89f7675}` is an interface method. `indexBrowserCache` runs LAST in `indexLibraries`.
-- **GVLs:** members come only from the signatures' `<Constant>` entries — the generator exports only
-  `VAR_GLOBAL **CONSTANT**`, never plain globals (browsercache GVL nodes are leaves; `.tmc` has no GVLs). So a GVL of
-  non-constant globals genuinely shows no members and renders as a **leaf** with a `no exported globals` hint + a
-  tooltip (not a bug — verified: those `VarGlobal` blocks are just `<Name>`). **Compiler-internal `__*` names** (auto-
-  generated backing GVLs like `__TL_Foo__GVL`) are **hidden from the tree** (`getLibraryCatalog` filters `/^__/`;
-  display-only, the names stay declared symbols).
-- **Struct hard-limit — investigated + verified, do NOT re-chase:** structs the `.tmc` doesn't cover stay in "Data
-  Types". struct/enum/alias share ONE "DUT" TypeGUID (`ST_Robot_DI`==`E_RobotState`==`{2db5746d}`), DUT nodes carry
-  no fields, signatures are bare names, and `GetLibraryIecDeclaration` is E_NOINTERFACE on this build → struct-vs-alias
-  is not recoverable offline (closed routes: encrypted `__languagemodel` entropy 7.999; opaque binary `.object`;
-  Beckhoff decoder DLLs need the dead-headless CODESYS host).
-
-## Signature generator (`scripts/generate-library-signatures.ps1`, run by `twincat.updateLibraryDefinitions`)
-**Every DTE incantation is documented in the script's own header — read it before touching; each line was paid for
-empirically.** Load-bearing traps (in the header): normalize non-numeric versions to `*` (else `AddLibrary` silently
-drops the library); **never name a local `$shellExe`** (PowerShell names are case-insensitive → collides with the
-`$ShellExe` param and ran the wrong bitness); **NEVER `GetActiveObject` — use `Get-DteByPid`** (it once `Quit()`-ed a
-user's open shell); bitness is the user's choice, x64 the more complete source on the test rig.
-
-## Find References: a bug in ONE FB is a PARSER bug until proven otherwise
-**Exact Objects-tree navigation fixed 2026-08-18:** definition/reference navigation already carried
-the target `componentId`, but `extension.js` discarded it and revealed a synthetic file node. The Objects provider
-also derived component parents from the backing file's disk path, skipping the file, virtual folders and property
-node, so VS Code could not expand to the actual descendant. The webview now reports every component it actually
-loads; the host reveals that exact method/property/action/transition/Get/Set and keeps the confirmed id while a
-retained tab is hidden. `treeDataProvider.js` attaches the logical parent chain and parses only the target XML—the
-shared cached project map is still used at the file/disk boundary, never rebuilt during reveal. Root/file activation
-still reveals the file. `test_tree_reveal` covers all component kinds plus nested virtual folders; the installed
-dev-host intercepts the real `twincatExplorer` TreeView and proves exact reveals (including tab-away/back).
-**FB_init qualifier/identity fix verified 2026-08-18:** the sample's
-`THIS^.refExtendOut REF= refExtendOut` exposed two independent collisions. Definition treated
-`THIS^`/`SUPER^` like an ordinary dotted path, then fell through to the same-named method variable;
-they now resolve explicitly from the current/immediate-base FB and never fall through. References
-also inferred a cross-file XML definition's scope from its component-local line as though it were a
-whole-ST-unit line, so GVL_System's `refExtendOut`/`refRetractOut` FB_init argument could be mistaken
-for a root variable at the same coordinates (the real sample returned zero references). `componentId`
-is now authoritative for method definitions; focused THIS^/SUPER^ definition+reference tests and the
-real sample live path cover both names. `THIS^`/`SUPER^` are also shared `resolvePathType` heads, so
-nested chains retain the explicit instance (`THIS^.stChild.value`, `SUPER^.stChild.value`) even when
-a method/current FB shadows `stChild`; separate nested definition+reference regressions cover both.
-The classic: `fbQueue.Get(Item:=n)` read as a GET **accessor** → parser scanned for an `END_GET` that never comes and
-swallowed 24 of an FB's 44 methods (their vars invisible → completion/diagnostics/definition silently broken there;
-references kept the unresolved). Check `node.methods.length` vs the `METHOD` lines. Guarded by `test_parser_constructs`.
-Scope rules (`test_references_scope`): a method's plain `VAR` is private, but **`VAR_INPUT/OUTPUT/IN_OUT` are
-parameters, named at call sites — do NOT confine them** (user corrected me). A named arg belongs to the CALLEE;
-a method var's identity is (POU family, method **name**, var name). A named-arg **VALUE** (`x:=x`) resolves in local
-scope, not to the parameter — `definition.js` gates the param-name branch on the *next* token being `:=`/`=>` (fixes
-definition AND references, which resolve via `definitionAt`). **FB_init decl-site** `inst:FB_T(p:=v)` matches by FB
-type via `classifyCallSite` kind `declInitList`.
-**Stray `.st` mirrors** (outside the skipped ST_Files/) shadowed same-named XML nodes — the node's uri was hijacked,
-the scan read the stale mirror and the real .TcPOU was invisible until opened. Fixed: `parseAndIndexDocument` never
-lets a plain .st steal an XML-backed symbol (`test_st_shadow`).
-**Duplicate object names from orphan files** (0.3.0 rename smoke, real project): a leftover `POUs\Modules_bak\` backup —
-a full copy of `Modules\`, NOT in the `.plcproj` — won the name-keyed index (last-write-wins, sorts last), so a
-GVL rename's reference scan visited the orphan `FB_Feeder` (no refs) and never the real one; visu updated because it
-walks files directly. Fixed: the index is **scoped to the `.plcproj`** — each project's `objectPaths`
-(`createProjectMap`, `projectMap.js`) lists only what it `<Compile>`s, so an on-disk orphan is never indexed. The
-original fix used `collectPlcProjObjectPaths`, which unioned every `.plcproj` into one set; that union is exactly
-what made multi-project workspaces collide, and it was **deleted** when the partition landed. `indexTwinCatDirectory
-(index, dir, includedPaths)` survives for the no-`.plcproj` fallback (null set = index all). Sample has 0 objects
-outside its `.plcproj` → the gate is a no-op there, ratchet safe (`test_plcproj_scope`). NOT scoped: `.st`
-(`indexStDirectory`, which now routes per file) and the visu walk — neither hit the duplicate-name bug.
-
-## Other findings worth not re-deriving
-- **Init syntaxes bind differently:** `inst:FB_T(p:=v)` → FB_init's VAR_INPUT (may be inherited → a jump carries the
-  *declaring* node's uri); `inst:FB_T:=(p:=v)` → the FB's **own** VAR_INPUT. `classifyCallSite()` is the single shared
-  place (definition + completion). Diagnostics take the **union** (`getInitParams`) — don't "fix" it.
-- **Reference navigation:** `setPendingSelection` is cleared only by the webview's `selectionApplied` ack (a hidden
-  webview's context is torn down, losing the post); `highlightTarget` retries a few frames then searches the intended
-  *line* (a 50 ms timer raced to the FIRST same-word occurrence). Panel groups showed a dead expand-arrow (children
-  never fetched) when `collapsibleState: Expanded` raced `reveal()` during refresh — fixed with stable TreeItem ids +
-  Collapsed nodes + reveal-driven expansion of every root (`expand: 2`).
-- **Find References cache:** `readStForFile` caches ST **text** keyed on mtime; word-test a file before tokenizing.
-  **Don't cache tokens** (held 19.3 of 22.7 MB on 152 files). The **duplicate search** (peek + panel) now runs on
-  **every** Find References (the panel populates unconditionally). Other files are read from **disk** → references into
-  a file with unsaved edits in another tab see the *saved* version. `test_references_cache` guards stale-cache + a
-  case-sensitive pre-filter dropping hits.
-- **Webview:** the CSP needs `font-src ${cspSource}` (codicon font, else blank icons), and the worker AMD `baseUrl`
-  must be the monaco-editor **root** (not `.../vs/`, which doubled to `.../vs/vs/…` and 404'd the NLS). The
-  `min-maps/*.js.map` CSP error is **DevTools-only, left as-is** — no `connect-src` on purpose (the webview makes no
-  network calls).
-- **Objects tree icons** (`objectKinds.js`): assert distinct **codepoints**, not names — `symbol-function/-method/
-  -constructor` are one glyph (60044) and an unknown id renders blank. `test_object_kinds`.
-- **ST lexer** (`test_lexer_literals`): string escape is `$` not `\`; REAL exponents (`3.4E+38`); `_` digit
-  separators. Nested block comments `(* (* *) *)` not handled (a CODESYS option, default off).
-  **Three grammars must agree on this and two did not** (user report 2026-08-10, fixed 0.6.3): the Monarch
-  tokenizer and `syntaxes/twincat-st.tmLanguage.json` both carried C-style `\\.` escape rules copied from Monaco's
-  sample grammar, so a Windows path `'C:\Temp\x\'` ate its own closing quote and highlighted as a string until the
-  next apostrophe anywhere below (the reported case: an `FB's` in a comment 16 lines down). The lexer was always
-  right. `test_st_strings.js` now pins all three together; `run_pragmas.js` proves it through Monaco's own
-  tokenizer. A `@wstring` state was added at the same time — the webview never tokenized `"`-quoted WSTRINGs.
-- **Go to Definition must carry pane + localLine, like references already does** (same report, fixed 0.6.3).
-  The LSP returned the correct range all along, but the webview threw it away: `openGotoTarget` passed `null` and
-  the same-component branch of `provideDefinition` used `findWordInPanes` → `matches[0]`, so F12 on `bDone` landed
-  on the first `bDone` in the FB's header comment instead of its declaration. `custom/definition` now maps the
-  absolute unit range through `absoluteToLocal` (the shared `createStResolver` handles a cross-file target) and the
-  webview selects that exact location, keeping the line- and word-search fallbacks for stale content.
-- **Multi-interface inheritance:** `INTERFACE EXTENDS I_A, I_B` — nodes carry **`extendsAll`** (array; `extends` stays
-  the first parent); EXTENDS walkers traverse the DAG breadth-first. `test_interface_multi_extends`. FBs/structs stay
-  single-inheritance.
-- **Libraries view:** row label is the **namespace** (three spellings differ); `indexLibraryTitles` runs twice per
-  pass (keys `kind|include|namespace` or entries double); resolve `symbolCount`/`types` **lazily**; a `.plcproj`
-  change must `custom/reindex` **then** refresh; TwinCAT files are webviews (no `activeTextEditor`) → Insert routes
-  via `insertTextIntoActivePanel()`.
-- **Autocomplete is caret-context aware** (`classifyCaretContext`): `x:▮`→types+namespaces (no `END_IF`); `x:=▮`→
-  values; call parens→params first. **Unknown context ⇒ full list, never nothing.**
-
-## Webview browser harness (`test/browser/`, needs `npm i --no-save playwright`)
-The only test of `media/editor.js` — **run both runners whenever it changes**. `run.js` (references peek,
-17 assertions), `run_pragmas.js` (folding + Monarch pragma scopes, 29). Every guard verified to FAIL,
-not just to pass. DEVELOPMENT.md documents both. Outside `npm test` on purpose (needs a browser) and safe
-there: `test/run.js` only discovers top-level `test/test_*.js`. Moved out of `scratch/` 2026-08-05, which
-is now **git-ignored** — a local playground, so anything worth keeping must live in `test/` or `scripts/`.
-**Navigating away must DISMISS the peek** (0.4.1; user found it, dev-host, reported as "the arrow on top of the
-peek window disappears"). Monaco dismisses a peek itself when a reference opens in the same editor; it cannot
-here, because a hit outside the active component round-trips through the extension host
-(`openFile` → `twincat.openComponent` → `selectComponent`) and Monaco never learns it happened. The visible
-half is the ARROW: it is a decoration, so `loadComponent`'s `setValue` drops it, while the zone widget is not
-and survived — a peek with no arrow, hovering over content already replaced underneath it. Closed in BOTH
-places, and both are needed: `loadComponent` (same file) and `openPeekTarget` (cross-file never returns
-through `loadComponent` at all). Dev-host still worth a pass on the real bridge round-trip.
-
-## Pragmas + folding (0.5.0, 0.5.1)
-Shipped: `src/lsp/pragmas.js` + two catalogs, category-scoped highlighting in **both** grammars,
-`{region}`/`{endregion}` folding, and attribute-name completion. Findings worth not re-deriving:
-- **Infosys is authoritative but NOT exhaustive**, which is why there are two catalogs and why shape
-  matching is the base tier. Measured here: `TcGenerated` in **150 of 337** installed library archives,
-  `object_name` in 59 archives / **40** uses in real project code, plus `no-analysis` (155), `message_guid`
-  (102), `vtable_order`, `old_input_assignments`, `contains_no_copy`, `variable_length_array`,
-  `implicit_input` — **none on any Infosys attribute page**. `checks_in_libs` did NOT reproduce (0 hits);
-  don't re-add it without measuring. Method: read each archive's `__shared_data_storage_string_table__`
-  via `libsymbols.js` — note `readZipEntries` takes a **Buffer, not a path**, and a try/catch around it
-  silently yields "no hits" (cost one wrong conclusion).
-- **Shape decides colour; the catalog only enriches.** A user-defined attribute must be scoped exactly
-  like a documented one — TwinCAT documents user-defined attributes as a feature, so tinting an
-  uncatalogued name would be a diagnostic in disguise. Pinned in `test_pragmas.js` and the browser harness.
-- **Folding is ours now (`media/stFolding.js`, 0.5.1), not Monaco's.** Markers alone shipped in 0.5.0 and
-  the user found two bugs in a day, both artefacts of Monaco's **indentation** folding — the wrong model
-  for a keyword-delimited language: (a) an unmatched `{endregion}` truncated the enclosing VAR fold —
-  `computeRanges` scans bottom-up and pushes an `{indent:-2}` sentinel that ONLY a matching start marker
-  pops, so a lone end marker is a permanent barrier; (b) `{attribute 'TcLinkTo' := ''}` at column 0 under
-  an indented VAR body grew its own fold arrow — nothing to do with pragmas, any unindented line did it.
-  A `FoldingRangeProvider` **replaces** the indentation provider outright, so stFolding.js must cover the
-  keyword blocks (VAR family, IF, CASE, FOR, WHILE, REPEAT, STRUCT, UNION, TYPE) as well as regions or
-  `IF … END_IF` silently stops folding — asserted in a browser for that reason. Keywords count only where
-  they are CODE: `{IF defined(X)}` is a conditional **pragma**, and reading it as an IF leaves an unclosed
-  block that eats every fold below. Regions and blocks use **separate stacks** so one malformed construct
-  cannot destroy the other. Registered twice from one dual-mode file (webview `<script>` + `require`) —
-  `.st` files in VS Code's own editor had both bugs too. The `folding.markers` in editor.js and
-  language-configuration.json are now **inert**, kept as declarative fallback and pinned by test_pragmas.
-- **The tmLanguage grammar had NO pragma rule at all** and therefore the same apostrophe bug the Monarch
-  tokenizer was fixed for. `#pragmas` now precedes `#strings`.
-- The generator (`scripts/fetch-pragma-catalog.js`) is **run by hand only** — offline constraint. Behind
-  this machine's TLS-inspecting proxy plain `node` fails with "self-signed certificate in certificate
-  chain"; use `node --use-system-ca`.
-- Deliberately NOT done: the lexer's Pragma token is still unclassified (nothing consumes it; `tokenize`
-  runs over every file on every diagnostics pass), and there is **no hover** — it would need a new
-  provider round-trip the catalog does not justify yet.
+## Do-not-break list (details in the findings file / DEVELOPMENT.md)
+- `sample/` is ground truth: every diagnostic on it is a bug; never raise a baseline. Verify library-related
+  changes with `_Libraries/Beckhoff Automation GmbH` present AND moved aside (move it, never delete).
+- Never teach `custom/reindex` to skip; never add `_libraries` to `SKIP_DIRS`; register library symbols on demand
+  only; cached signature records stay private copies (DEVELOPMENT.md "Indexing cost").
+- Library types are anonymous UNKNOWN on purpose; member-checking them stays OFF (four guards in `types.js`).
+- Normalized (lowercased) path keys are identity, never file paths or uris
+  (`.claude/memory/normalized-keys-are-not-file-paths.md`); scope every name-keyed structure per `.plcproj`.
+- `.gitattributes eol=crlf` is load-bearing — never delete it. Use `dir/*`, not `dir/`, before gitignore negations.
+- TwinCAT's XML loader is order-sensitive: root `<Folder>` tags and new members must land before `<LineIds>`.
+- `templates/` ships in the VSIX and must stay generic; `scripts/Build PLC project/` is the fuller, unshipped
+  copy. The user syncs the two BY HAND — never promote one into the other automatically.
+- Internal ids (`twincat.*`, `twincat.xmlViewer`) are deliberately not renamed.
+- Conditional pragmas (R12): the LSP never evaluates a define for diagnostics or the index, and never re-exposes a
+  branch of an unbalanced segment; a unit with no directive must keep the old whole-unit block matcher
+  (`test_conditional_pragmas.js` pins it byte-identical over the sample).
 
 ## Working agreement
 Implementation is delegated to the **`implementer`** agent; the main conversation owns architecture/planning/review/
 commits. **Verify every agent claim** (several haven't survived checking); agents run in parallel only with strictly
-disjoint file ownership; `package.json`/`HANDOFF.md` stay centrally owned. **Verify your own claims too** — three
+disjoint file ownership, and never run `git stash`/`checkout`/`reset` while another agent has uncommitted work
+in the tree (2026-11-09: one stashed to count old-code failures; harmless only because the other's work was
+already committed); `package.json`/`HANDOFF.md` stay centrally owned. **Verify your own claims too** — three
 times an unmeasured but plausible assumption was wrong. Measure, then report.
 **Hard-won lessons live in `.claude/memory/`** (committed, so they cross machines), injected each session by the
 `SessionStart` hook in `.claude/settings.json`. Write new ones THERE, not in the per-machine bank — rules in
 CLAUDE.md. Note `autoMemoryDirectory` cannot do this job: it is **ignored from a checked-in settings.json** by
-design, which is why this is a hook. The five original notes were migrated out of `~/.claude/…/memory/` 2026-08-05.
+design, which is why this is a hook.

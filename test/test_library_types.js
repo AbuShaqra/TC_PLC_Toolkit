@@ -63,11 +63,13 @@ const { resolveSymbolType, lookupMember, typeFromNode, parseTypeString, isAssign
 const { getLibraryType, getTypeSystemNamespaceTypes, getNamespaceSymbols } = require('../src/lsp/libsymbols');
 const {
     SAMPLE_DIR,
+    SAMPLE_PROJECT_DIR,
     MIT_NAMESPACE,
     indexSampleLibraries,
+    isFirstSampleDir,
     printBaselineMode,
-    syncDocument,
-    walkTwinCatFiles
+    sampleProjects,
+    syncDocument
 } = require('./_baseline');
 
 let errors = 0;
@@ -96,14 +98,15 @@ function hasTmc(dir, depth = 0) {
     return false;
 }
 
-if (!fs.existsSync(SAMPLE_DIR) || !hasTmc(SAMPLE_DIR)) {
+// The type system is the FIRST sample's committed .tmc (the second sample has none by design).
+if (!fs.existsSync(SAMPLE_PROJECT_DIR) || !hasTmc(SAMPLE_PROJECT_DIR)) {
     console.log('\n=== LIBRARY TYPES ===');
     console.log('  skip  sample/ or its .tmc is not present — no type system to harvest.');
     console.log('\n--- LIBRARY TYPE TESTS SKIPPED ---');
     process.exit(0);
 }
 
-const modeInfo = indexSampleLibraries(SAMPLE_DIR);
+const modeInfo = indexSampleLibraries(SAMPLE_PROJECT_DIR);
 printBaselineMode(modeInfo);
 
 // ---------------------------------------------------------------------------------------------
@@ -478,35 +481,45 @@ try {
     ];
     const BASE = { memberAccess: true, callArguments: true, declarationTypes: false, typeCompatibility: true };
 
-    const files = walkTwinCatFiles(SAMPLE_DIR);
-    clearWorkspaceIndex();
+    // Every sample PLC project, each in its own index with its own library scan (as the server
+    // partitions a workspace). The first sample goes LAST, so the registries section 6 measures are
+    // its own, as before the second sample existed.
+    const projects = sampleProjects(SAMPLE_DIR)
+        .sort((a, b) => Number(isFirstSampleDir(a.dir)) - Number(isFirstSampleDir(b.dir)));
+    const totals = new Map(CONFIGS.map(([label]) => [label, { total: 0, files: 0, worst: [] }]));
     const sampleIndex = getWorkspaceSymbolIndex();
-    const converted = [];
-    for (const file of files) {
-        const xml = fs.readFileSync(file, 'utf8');
-        const parsed = parseTwinCatXml(xml);
-        if (!parsed) continue;
-        const fileUri = 'file:///' + file.replace(/\\/g, '/').replace(/^\//, '');
-        converted.push({ file, fileUri, stText: convertXmlToSt(parsed, { raw: true }).stText });
-        indexXmlObject(sampleIndex, xml, fileUri);
-    }
-
-    for (const [label, cfg] of CONFIGS) {
-        setDiagnosticsConfig(Object.assign({}, BASE, cfg));
-        let total = 0;
-        const worst = [];
-        for (const c of converted) {
-            syncDocument(sampleIndex, c.stText, c.fileUri);
-            const d = provideDiagnostics(c.stText, sampleIndex, c.fileUri);
-            if (d.length) {
-                total += d.length;
-                worst.push(`${path.relative(SAMPLE_DIR, c.file)}: ${d.map(x => x.message).join(' | ')}`);
+    for (const project of projects) {
+        const projectMode = indexSampleLibraries(project.dir);
+        clearWorkspaceIndex();
+        const converted = [];
+        for (const file of project.files) {
+            const xml = fs.readFileSync(file, 'utf8');
+            const parsed = parseTwinCatXml(xml);
+            if (!parsed) continue;
+            const fileUri = 'file:///' + file.replace(/\\/g, '/').replace(/^\//, '');
+            converted.push({ file, fileUri, stText: convertXmlToSt(parsed, { raw: true }).stText });
+            indexXmlObject(sampleIndex, xml, fileUri);
+        }
+        for (const [label, cfg] of CONFIGS) {
+            setDiagnosticsConfig(Object.assign({}, BASE, cfg));
+            const t = /** @type {{total: number, files: number, worst: string[]}} */ (totals.get(label));
+            t.files += converted.length;
+            for (const c of converted) {
+                syncDocument(sampleIndex, c.stText, c.fileUri);
+                const d = provideDiagnostics(c.stText, sampleIndex, c.fileUri);
+                if (d.length) {
+                    t.total += d.length;
+                    t.worst.push(`${path.relative(SAMPLE_DIR, c.file)} (${project.name}, mode ${projectMode.mode}): ${d.map(x => x.message).join(' | ')}`);
+                }
             }
         }
-        assert(total === modeInfo.baseline,
-            `${label.padEnd(23)} -> ${total} diagnostics across ${converted.length} files ` +
+    }
+    for (const [label] of CONFIGS) {
+        const t = /** @type {{total: number, files: number, worst: string[]}} */ (totals.get(label));
+        assert(t.total === modeInfo.baseline,
+            `${label.padEnd(23)} -> ${t.total} diagnostics across ${t.files} files in ${projects.length} projects ` +
             `(baseline ${modeInfo.baseline}, mode ${modeInfo.mode})`);
-        worst.slice(0, 5).forEach(w => console.error(`        ${w}`));
+        t.worst.slice(0, 5).forEach(w => console.error(`        ${w}`));
     }
     setDiagnosticsConfig(BASE);
 

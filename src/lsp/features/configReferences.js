@@ -30,7 +30,7 @@ const { fsPathToFileUri } = require('../../fileUri');
 const { findNode } = require('../types');
 const { registerLibrarySymbolNodes } = require('../libsymbols');
 const { normalizeUri, resolvePathType } = require('./core');
-const { pousRelated } = require('./references');
+const { pousRelated, memberRenameFamily } = require('./references');
 const log = require('../log');
 
 /**
@@ -134,9 +134,11 @@ function findTaskPouCalls(text, uri, rootLower) {
  * @param {Object} node The resolved target root node.
  * @param {string} rootLower The target root's name, lower-cased.
  * @param {string|null} memberLower The target member's name lower-cased, or null for a root rename.
+ * @param {Set<string>|null} [family] For a Method/Property: memberRenameFamily(), so an instance of a
+ *   sibling implementor of the same interface method is renamed with the code side.
  * @returns {Array<{uri: string, offset: number, length: number, chain: string}>}
  */
-function findChainReferences(text, uri, symbolIndex, node, rootLower, memberLower) {
+function findChainReferences(text, uri, symbolIndex, node, rootLower, memberLower, family) {
     const out = [];
 
     // Extract every dotted chain, keeping its absolute offset in the stripped text.
@@ -183,7 +185,9 @@ function findChainReferences(text, uri, symbolIndex, node, rootLower, memberLowe
                     // A resolved type with no node is a library type (indexed by name only): its
                     // member belongs to it, not to the target, and the target is always a real
                     // workspace node — so this cannot be the same symbol.
-                    if (baseNode && pousRelated(baseNode, node, symbolIndex)) {
+                    const related = baseNode && ((family && family.has(baseNode.name.toLowerCase()))
+                        || pousRelated(baseNode, node, symbolIndex));
+                    if (related) {
                         out.push({ uri, offset: segOffset, length: seg.length, chain: chain.text });
                     }
                 }
@@ -245,6 +249,8 @@ function findConfigReferencesForSymbol(spec, symbolIndex, configFilePaths) {
 
     const rootLower = spec.rootName.toLowerCase();
     const memberLower = member ? member.name.toLowerCase() : null;
+    const family = member && (spec.member.kind === 'Method' || spec.member.kind === 'Property')
+        ? memberRenameFamily(node, member.name, symbolIndex) : null;
     const occurrences = [];
 
     for (const filePath of (configFilePaths || [])) {
@@ -275,7 +281,7 @@ function findConfigReferencesForSymbol(spec, symbolIndex, configFilePaths) {
             continue;
         }
 
-        for (const occ of findChainReferences(text, uri, symbolIndex, node, rootLower, memberLower)) {
+        for (const occ of findChainReferences(text, uri, symbolIndex, node, rootLower, memberLower, family)) {
             occurrences.push(occ);
         }
     }

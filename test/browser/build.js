@@ -53,6 +53,8 @@ const { convertXmlToSt } = require(path.join(REPO, 'src', 'stConverter.js'));
 const lspParser = require(path.join(REPO, 'src', 'lsp', 'parser.js'));
 const { indexXmlObject } = require(path.join(REPO, 'src', 'lsp', 'xmlIndexer.js'));
 const features = require(path.join(REPO, 'src', 'lsp', 'features.js'));
+const { breadcrumbFor } = require(path.join(REPO, 'src', 'editorBreadcrumb.js'));
+const { createProjectMap } = require(path.join(REPO, 'src', 'lsp', 'projectMap.js'));
 
 // ---------------------------------------------------------------------------------------------
 // 2. Generate the page exactly as the extension would, then swap the two stubs in.
@@ -64,7 +66,7 @@ const provider = new TwinCatCustomEditorProvider(
 // ABSOLUTE urls, as the real asWebviewUri returns (https://file+.vscode-resource.vscode-cdn.net/…).
 // Root-relative paths look equivalent but are not: the Monaco worker runs from a blob: URL, which
 // has no base to resolve them against, and its NLS strings 404 with "Failed trying to load default
-// language strings" — the same symptom HANDOFF records for getting the AMD baseUrl wrong.
+// language strings" — the same symptom docs/handoff-findings.md records for getting the AMD baseUrl wrong.
 const ORIGIN = process.env.HARNESS_ORIGIN || 'http://localhost:8123';
 const fakeWebview = {
     cspSource: ORIGIN,
@@ -79,7 +81,7 @@ html = html.replace(/<meta http-equiv="Content-Security-Policy"[^>]*>/, '<!-- CS
 const stub = `
     <script>
     (function () {
-        window.__harness = { sent: [], fixture: null, ready: false, definitionEnabled: false };
+        window.__harness = { sent: [], fixture: null, ready: false, definitionEnabled: false, lspDiagnostics: null, hoverReply: null };
         window.acquireVsCodeApi = function () {
             return {
                 postMessage: function (msg) {
@@ -95,7 +97,12 @@ const stub = `
                             panes: f.panes
                         }, '*');
                     } else if (msg.type === 'custom/diagnostics') {
-                        window.postMessage({ type: 'custom/diagnosticsResponse', requestId: msg.requestId, diagnostics: [] }, '*');
+                        // The language server's answer; empty unless a test sets lspDiagnostics.
+                        window.postMessage({ type: 'custom/diagnosticsResponse', requestId: msg.requestId, diagnostics: window.__harness.lspDiagnostics || [] }, '*');
+                    } else if (msg.type === 'custom/hover') {
+                        // The host's mapped answer; a test computes it in Node with the real
+                        // provideHover + mapHoverToLocal and arms it here.
+                        window.postMessage({ type: 'custom/hoverResponse', requestId: msg.requestId, hover: window.__harness.hoverReply }, '*');
                     } else if (msg.type === 'custom/completions') {
                         window.postMessage({ type: 'custom/completionsResponse', requestId: msg.requestId, suggestions: [] }, '*');
                     } else if (msg.type === 'custom/definition') {
@@ -138,7 +145,10 @@ function walk(dir, out = []) {
 }
 const toUri = p => 'file:///' + p.split(path.sep).join('/').replace(/^\//, '');
 
-const files = walk(path.join(REPO, 'sample'));
+// The first sample only: the fixtures name its objects (FB_Cylinder, FB_Station, GVL_System), and
+// sample/ also holds a second solution whose same-named MAIN / FB_Cylinder would collide in this one
+// flat index.
+const files = walk(path.join(REPO, 'sample', 'TcToolkitSample'));
 lspParser.clearWorkspaceIndex();
 const index = lspParser.getWorkspaceSymbolIndex();
 const byName = {}, byUri = {};
@@ -244,7 +254,7 @@ for (const r of refs) {
 // occurrence of the name in the pane.
 // Sync the document into the index first, exactly as server.js does before answering any custom
 // request. Skipping it leaves the symbol carrying the XML indexer's coordinates, and the definition
-// comes back pointing at a line that is not the declaration — the trap HANDOFF records under
+// comes back pointing at a line that is not the declaration — the trap docs/handoff-findings.md records under
 // "Diagnostics: how to measure".
 lspParser.parseAndIndexDocument(unit.stText, active.uri);
 const defUseLine = unitLines.findIndex(l => new RegExp('^\\s*' + DEF_SYMBOL + '\\s*:=').test(l));
@@ -273,6 +283,8 @@ const fixture = {
         type: 'init',
         fileUri: active.uri,
         filename: path.basename(active.file),
+        // The host's own breadcrumb helper over the real project map, as the 'ready' handler builds it.
+        breadcrumb: breadcrumbFor(active.file, createProjectMap([path.join(REPO, 'sample', 'TcToolkitSample')])),
         data: { rootType: parsed.rootType || 'POU', components: parsed.components },
         splitterRatio: 50,
         isAutoSync: true,

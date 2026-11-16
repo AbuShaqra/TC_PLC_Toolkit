@@ -100,7 +100,7 @@ async function state(panel) {
  */
 async function waitFor(panel, predicate, timeoutMs) {
     const deadline = Date.now() + (timeoutMs || 15000);
-    let last = null;
+    let last;
     for (;;) {
         last = await state(panel);
         if (last && predicate(last)) return last;
@@ -255,6 +255,25 @@ async function run() {
         await ext.activate();
         log('activated', { id: ext.id });
 
+        // The activation's settings migration (run.js planted two old twincat.* User values). It is
+        // not awaited by activate(), so wait for the old key to clear.
+        try {
+            const cfg = () => vscode.workspace.getConfiguration();
+            const pair = (rest) => {
+                const o = cfg().inspect(`twincat.${rest}`), n = cfg().inspect(`tcToolkit.${rest}`);
+                return { oldGlobal: o && o.globalValue, newGlobal: n && n.globalValue };
+            };
+            for (let i = 0; i < 100 && (pair('startPage.recentProjectsShown').oldGlobal !== undefined
+                || pair('diagnostics.declarationTypes').oldGlobal !== undefined); i++) await sleep(100);
+            log('settings-migration', {
+                moved: pair('startPage.recentProjectsShown'),
+                kept: pair('diagnostics.declarationTypes'),
+                recentsShownRead: vscode.workspace.getConfiguration('tcToolkit.startPage').get('recentProjectsShown')
+            });
+        } catch (e) {
+            log('settings-migration', { error: String((e && e.stack) || e) });
+        }
+
         // Drive the actual VS Code-bound Objects provider over two same-named `.plcproj` copies.
         // The pure formatter has unit coverage, but only this proves the provider renders those labels.
         const { createProjectMap, normalizeProjectPath } = require(path.join(REPO, 'src', 'lsp', 'projectMap.js'));
@@ -338,9 +357,32 @@ async function run() {
             'prop_State_set',
             'action_Act_Home'
         ];
+        // The tree follows the active file only while it is visible (a reveal would otherwise pull
+        // the sidebar to the TC Toolkit container on every file activation), so show it first, as a
+        // user following along in the Objects view would.
+        await vscode.commands.executeCommand('twincatExplorer.focus');
+        await sleep(1500);
+        /**
+         * Waits until a successful reveal of one component of the station file is recorded at or
+         * after `fromIndex` — a fixed sleep raced the first webview creation on slower machines.
+         * @param {string} componentId The component whose reveal is awaited.
+         * @param {number} fromIndex Index into `out.treeReveals` to start looking from.
+         * @returns {Promise<boolean>} True once seen, false after the 10 s deadline.
+         */
+        const waitForReveal = async (componentId, fromIndex) => {
+            const deadline = Date.now() + 10000;
+            for (;;) {
+                const hit = out.treeReveals.slice(fromIndex).some(r =>
+                    r.uri === stationUri.toString() && r.componentId === componentId && r.ok);
+                if (hit) return true;
+                if (Date.now() >= deadline) return false;
+                await sleep(150);
+            }
+        };
         for (const componentId of componentTargets) {
+            const from = out.treeReveals.length;
             await vscode.commands.executeCommand('twincat.openComponent', stationUri, componentId);
-            await sleep(900);
+            await waitForReveal(componentId, from);
         }
         log('component-tree-reveal', {
             requested: componentTargets,
@@ -349,13 +391,14 @@ async function run() {
 
         // A retained webview does not call loadComponent when its tab is reactivated. The host must
         // remember the last activeComponentChanged id or this round trip would reveal the file root.
+        const cyclicFrom = out.treeReveals.length;
         await vscode.commands.executeCommand('twincat.openComponent', stationUri, 'method_Cyclic');
-        await sleep(900);
+        await waitForReveal('method_Cyclic', cyclicFrom);
         const retainedStart = out.treeReveals.length;
         await vscode.commands.executeCommand('vscode.openWith', gvlUri, 'twincat.xmlViewer');
         await sleep(900);
         await vscode.commands.executeCommand('vscode.openWith', stationUri, 'twincat.xmlViewer');
-        await sleep(900);
+        await waitForReveal('method_Cyclic', retainedStart);
         log('retained-component-tree-reveal', {
             reveals: out.treeReveals.slice(retainedStart).filter(r => r.uri === stationUri.toString())
         });
@@ -384,7 +427,7 @@ async function run() {
                 { resourceUri: vscode.Uri.file(FB), contextValue: 'component', label: 'FB_init' });
             await sleep(700);
             const panel = out.panels.filter(p => /FB_Cylinder\.TcPOU$/i.test(p.uri)).pop();
-            log('object-insert', { inserted: (panel && panel.inserted) || [] });
+            log('object-insert', { file: FB, inserted: (panel && panel.inserted) || [] });
         } else {
             log('object-insert', { skipped: 'FB_Cylinder.TcPOU not found', inserted: [] });
         }
@@ -508,6 +551,11 @@ async function run() {
             if (settled || Date.now() >= syncDeadline) break;
             await sleep(500);
         }
+        // The host deletes the persisted entry right AFTER document.save() resolves, while the
+        // file on disk and the dirty flag settle slightly before that — so give the delete a
+        // moment instead of reading in that gap.
+        const persistDeadline = Date.now() + 5000;
+        while (persistedEntry(stationUriStr) && Date.now() < persistDeadline) await sleep(100);
         const stationRec = recordFor(stationUriStr);
         const syncCaptured = ((stationRec && stationRec.captured) || []).filter(c => c.type === 'sync-pending').pop();
         const syncExpected = syncCaptured
@@ -742,26 +790,48 @@ async function run() {
 
         // --- Phase generate-st: project-aware ST export over the three-project fixture. Proves the
         //     real provider lists the projects for the webview picker and writes each project's
-        //     objects under its OWN ST_Files subtree — so LineA and LineB's identical MAIN paths do
+        //     objects into that project's OWN ST_Files folder — so LineA and LineB's identical MAIN paths do
         //     not collide (the bug the old flat mirror had).
         try {
             const projectsForPicker = hostProvider ? hostProvider.listProjects() : [];
-            await hostProvider.generateAllStFiles(); // no keys → every project
+            const counts = await hostProvider.generateAllStFiles(); // no keys → every project
             await sleep(1500);
-            const stRoot = path.join(WS, 'ST_Files');
-            const exists = (rel) => fs.existsSync(path.join(stRoot, ...rel.split('/')));
+            // Every object of every project must be written: one `.st` per `<Compile>`d object, none failed.
+            const hostMap = hostProvider.options.getProjectMap();
+            let expectedObjects = 0;
+            for (const key of hostMap.keys()) expectedObjects += hostMap.get(key).objectFiles.size;
+            const countSt = (dir) => !fs.existsSync(dir) ? 0 : fs.readdirSync(dir, { withFileTypes: true })
+                .reduce((n, e) => n + (e.isDirectory() ? countSt(path.join(dir, e.name)) : (/\.st$/i.test(e.name) ? 1 : 0)), 0);
+            // `<project dir>/ST_Files/<path in the project>.st`, given as `<project dir>/<path>`.
+            const stDir = (projectRel) => path.join(WS, ...projectRel.split('/'), 'ST_Files');
+            const exists = (rel) => {
+                const parts = rel.split('/');
+                return fs.existsSync(path.join(stDir(parts.slice(0, 2).join('/')), ...parts.slice(2)));
+            };
+            const projectDirs = ['LineA/TcToolkitSample_PLC', 'LineB/TcToolkitSample_PLC', 'LineA/TcToolkitSample_Aux'];
+            // The second committed sample (3.1.4024 layout), when run.js copied it in: its PLC project
+            // sits one level deeper, under the system project's folder.
+            const sample2Dir = path.join(WS, 'TcToolkitSample2', 'TcToolkitSample2', 'TcToolkitSample2_PLC');
+            const sample2St = path.join(sample2Dir, 'ST_Files');
             log('generate-st', {
                 pickerLabels: projectsForPicker.map(p => p.label).sort(),
+                counts: counts || null,
+                expectedObjects,
+                stFilesOnDisk: projectDirs.reduce((n, d) => n + countSt(stDir(d)), 0) + countSt(sample2St),
+                sample2Main: fs.existsSync(path.join(sample2St, 'POUs', 'MAIN.st')),
                 // Same relative object path in two different projects, kept apart by project folder:
                 lineAMain: exists('LineA/TcToolkitSample_PLC/POUs/MAIN.st'),
                 lineBMain: exists('LineB/TcToolkitSample_PLC/POUs/MAIN.st'),
                 auxMain: exists('LineA/TcToolkitSample_Aux/POUs/MAIN.st'),
                 stationNested: exists('LineA/TcToolkitSample_PLC/POUs/Machine/FB_Station.st'),
+                // Nothing is written into the workspace's top-level folder any more.
+                noTopLevel: !fs.existsSync(path.join(WS, 'ST_Files')),
                 // A subset export writes only the chosen project.
                 subset: null
             });
             // Subset: regenerate just the Aux project into a clean dir and confirm scoping.
-            fs.rmSync(stRoot, { recursive: true, force: true });
+            for (const d of projectDirs) fs.rmSync(stDir(d), { recursive: true, force: true });
+            fs.rmSync(sample2St, { recursive: true, force: true });
             const auxKey = projectsForPicker.find(p => /_Aux/.test(p.label));
             if (auxKey) {
                 await hostProvider.generateAllStFiles([auxKey.key]);
@@ -773,8 +843,212 @@ async function run() {
                 };
                 fs.writeFileSync(RESULTS, JSON.stringify(out, null, 2));
             }
+            // Leave the fixture as it was: the outputs live inside the project folders now.
+            for (const d of projectDirs) fs.rmSync(stDir(d), { recursive: true, force: true });
+            fs.rmSync(sample2St, { recursive: true, force: true });
         } catch (e) {
             log('generate-st', { error: String((e && e.stack) || e) });
+        }
+
+        // --- Phase start-page (R2): the TC Toolkit Activity Bar container, its three views, the start
+        //     commands and the start page as a REAL VS Code host sees them — the parts no headless
+        //     harness can reach (test_start_contributions.js only reads package.json).
+        try {
+            const all = new Set(await vscode.commands.getCommands(true));
+            const wantedCommands = ['twincat.openStartPage', 'twincat.createProject', 'twincat.openProject',
+                'twincat.generateSt', 'twincat.openSettings', 'twincat.openGettingStarted', 'twincat.openRoadmap',
+                'twincat.openReleaseNotes', 'twincat.reportIssue', 'twincat.updateLibraryDefinitions'];
+            const focus = {};
+            for (const id of ['workbench.view.extension.twincat', 'twincatStart.focus', 'twincatExplorer.focus', 'twincatLibraries.focus']) {
+                try { await vscode.commands.executeCommand(id); focus[id] = true; } catch (e) { focus[id] = String(e); }
+            }
+            await vscode.commands.executeCommand('twincat.openStartPage');
+            await sleep(1500);
+            const tabs = vscode.window.tabGroups
+                ? vscode.window.tabGroups.all.flatMap(g => g.tabs).map(t => t.label)
+                : null;
+            const tmp = fs.mkdtempSync(path.join(require('os').tmpdir(), 'tcdev-create-'));
+            const created = await vscode.commands.executeCommand('twincat.createProject',
+                { version: '3.1.4026', name: 'DevHostCell', location: tmp, open: 'none', fromStartPage: true });
+            const created4024 = await vscode.commands.executeCommand('twincat.createProject',
+                { version: '3.1.4024', name: 'DevHostCell24', location: tmp, open: 'none', fromStartPage: true });
+            const refused = await vscode.commands.executeCommand('twincat.createProject',
+                { version: '3.1.4026', name: 'DevHostCell', location: tmp, open: 'none', fromStartPage: true });
+            const pkgJson = ext.packageJSON || {};
+            log('start-page', {
+                missingCommands: wantedCommands.filter(id => !all.has(id)),
+                focus,
+                tabs,
+                containerViews: ((pkgJson.contributes || {}).views || {}).twincat ? pkgJson.contributes.views.twincat.map(v => v.id) : null,
+                created: created || null,
+                createdSlnExists: !!(created && created.slnPath && fs.existsSync(created.slnPath)),
+                created4024SlnExists: !!(created4024 && created4024.slnPath && fs.existsSync(created4024.slnPath)),
+                refused: refused || null
+            });
+            try { fs.rmSync(tmp, { recursive: true, force: true }); } catch (e) { /* temp */ }
+        } catch (e) {
+            log('start-page', { error: String((e && e.stack) || e) });
+        }
+
+        // --- Phase compile (R3.2): Compile Project through the real command on every PLC project.
+        //     Runs the bundled compiler (run.js writes tcToolkit.compiler.path only as an override, when
+        //     TWINCAT_COMPILER_BUNDLE is set). Without a Node >= 22 the phase says it was skipped.
+        try {
+            const compilerPath = vscode.workspace.getConfiguration('tcToolkit.compiler').get('path', '') || '(bundled)';
+            const { checkSetup } = require(path.join(REPO, 'src', 'compileCheck.js'));
+            const setup = await checkSetup({
+                compilerPath: vscode.workspace.getConfiguration('tcToolkit.compiler').get('path', ''),
+                nodePath: vscode.workspace.getConfiguration('tcToolkit.compiler').get('nodePath', '')
+            });
+            if (!setup.ok) {
+                log('compile', { skipped: setup.problems.map(p => p.message).join(' ') });
+            } else {
+                const runs = [];
+                // Every project keeps its own results, so a run is judged on its own project's files.
+                const compileProjectMap = hostProvider && hostProvider.options && hostProvider.options.getProjectMap
+                    ? hostProvider.options.getProjectMap() : null;
+                const dirOf = (key) => { const pr = compileProjectMap && compileProjectMap.projects.get(key); return pr ? pr.dir : ''; };
+                const under = (file, dir) => !!dir && path.relative(dir, file) !== '' && !path.relative(dir, file).startsWith('..') && !path.isAbsolute(path.relative(dir, file));
+                const compileProblems = (dir) => vscode.languages.getDiagnostics()
+                    .filter(([uri]) => under(uri.fsPath, dir))
+                    .flatMap(([uri, list]) => list.filter(d => d.source === 'TC Toolkit compile').map(d => ({ file: uri.fsPath, d })));
+                for (const p of (hostProvider ? hostProvider.listProjects() : [])) {
+                    const result = await vscode.commands.executeCommand('twincat.compileProject', { projectKey: p.key });
+                    const problems = compileProblems(dirOf(p.key));
+                    runs.push({
+                        label: p.label,
+                        dir: dirOf(p.key),
+                        result: result || null,
+                        problems: problems.filter(x => x.d.severity === vscode.DiagnosticSeverity.Error).map(x => ({ file: x.file, message: x.d.message })),
+                        problemsPanel: problems.length
+                    });
+                }
+                log('compile', { compilerPath, compilerBundled: setup.compilerBundled, node: `${setup.nodeVersion} (${setup.nodeLabel})`, runs });
+
+                // The editor toolbar's Compile button: a REAL click in a real webview. The provider's
+                // run-state hook is wrapped to see the run start and end, and compileProjectFor to see
+                // which file the host resolved the project from.
+                await vscode.commands.executeCommand('vscode.openWith', stationUri, 'twincat.xmlViewer');
+                await sleep(1500);
+                const btnPanel = panelFor(stationUri.toString());
+                const before = await waitFor(btnPanel, s => s.ready, 30000);
+                const seen = [];
+                const resolvedFor = [];
+                const realSet = hostProvider.setCompileRunning.bind(hostProvider);
+                const realFor = hostProvider.compileProjectFor.bind(hostProvider);
+                hostProvider.setCompileRunning = (on) => { seen.push(!!on); realSet(on); };
+                hostProvider.compileProjectFor = (fsPath) => {
+                    const pm = compileProjectMap;
+                    resolvedFor.push({ file: fsPath, owners: pm && pm.ownersOf ? pm.ownersOf(fsPath) : null });
+                    return realFor(fsPath);
+                };
+                let during = null;
+                try {
+                    const clickReply = await ask(btnPanel, { type: 'test:clickCompile' });
+                    for (let i = 0; i < 50 && !seen.includes(true); i++) await sleep(100);
+                    during = await state(btnPanel);
+                    for (let i = 0; i < 1200 && !seen.includes(false); i++) await sleep(100);
+                    if (!seen.includes(false)) await vscode.commands.executeCommand('workbench.action.closeQuickOpen');
+                    const after = await state(btnPanel);
+                    log('compile-button', {
+                        present: !!(before && before.compileButton && before.compileButton.present),
+                        clicked: !!clickReply && clickReply.type === 'test:done', seen, resolvedFor,
+                        disabledDuring: !!(during && during.compileButton && during.compileButton.disabled),
+                        disabledAfter: !!(after && after.compileButton && after.compileButton.disabled)
+                    });
+                } finally {
+                    hostProvider.setCompileRunning = realSet;
+                    hostProvider.compileProjectFor = realFor;
+                }
+            }
+        } catch (e) {
+            log('compile', { error: String((e && e.stack) || e) });
+        }
+
+        // --- Phase rename-undo (R7): a member rename across a shared interface and a file rename
+        //     (with its .plcproj entry) each land as ONE WorkspaceEdit, and Undo Last Rename restores
+        //     every file of the LineB copy byte for byte (BOM and CRLF included), the file name too.
+        //     The input box and the confirmation modal are answered by wrapping the shared API object.
+        try {
+            const crypto = require('crypto');
+            const { parseTwinCatXml: parseXml } = require(path.join(REPO, 'src', 'xmlParser.js'));
+            const plcB = path.join(WS, 'LineB', 'TcToolkitSample_PLC');
+            const snap = () => {
+                const outMap = {};
+                (function walk(dir) {
+                    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+                        const p = path.join(dir, e.name);
+                        if (e.isDirectory()) walk(p);
+                        else outMap[path.relative(plcB, p)] = crypto.createHash('sha1').update(fs.readFileSync(p)).digest('hex');
+                    }
+                })(plcB);
+                return outMap;
+            };
+            const diffKeys = (a, b) => Array.from(new Set([...Object.keys(a), ...Object.keys(b)])).filter(k => a[k] !== b[k]).sort();
+            const dirtyDocs = () => vscode.workspace.textDocuments.filter(d => d.isDirty).map(d => d.uri.fsPath);
+            const readB = (rel) => fs.readFileSync(path.join(plcB, rel), 'utf8');
+            const answers = [];
+            const realInput = vscode.window.showInputBox;
+            const realWarn = vscode.window.showWarningMessage;
+            const realApply = vscode.workspace.applyEdit;
+            let applyCalls = 0;
+            vscode.window.showInputBox = async () => answers.shift();
+            vscode.window.showWarningMessage = async (m, o, ...buttons) => buttons.find(b => /^Rename and update/.test(String(b))) || buttons[0];
+            vscode.workspace.applyEdit = function (...a) { applyCalls++; return realApply.apply(this, a); };
+            const result = {};
+            try {
+                const before = snap();
+                const stationB = path.join(plcB, 'POUs', 'Machine', 'FB_Station.TcPOU');
+                const resetId = parseXml(fs.readFileSync(stationB, 'utf8')).components
+                    .find(c => c.xmlContext && c.xmlContext.subType === 'Method' && c.xmlContext.subName === 'Reset').id;
+                // Open in the custom editor first, so the rename runs with a webview holding the document.
+                await vscode.commands.executeCommand('vscode.openWith', vscode.Uri.file(stationB), 'twincat.xmlViewer');
+                await sleep(1500);
+                answers.push('ResetAll');
+                applyCalls = 0;
+                await vscode.commands.executeCommand('twincat.renameObject', { contextValue: 'component', resourceUri: vscode.Uri.file(stationB), componentId: resetId });
+                await sleep(1000);
+                const afterMember = snap();
+                result.member = {
+                    applyCalls,
+                    changed: diffKeys(before, afterMember),
+                    itfRenamed: /<Method Name="ResetAll"/.test(readB(path.join('POUs', 'Interfaces', 'I_Resettable.TcIO'))),
+                    callsRenamed: /fbStation\.ResetAll\(\);[\s\S]*fbDerived\.ResetAll\(\);/.test(readB(path.join('POUs', 'P_Startup.TcPOU'))),
+                    dirty: dirtyDocs()
+                };
+                await vscode.commands.executeCommand('twincat.undoLastRename');
+                await sleep(1000);
+                result.memberUndo = { changed: diffKeys(before, snap()), dirty: dirtyDocs() };
+
+                const cylB = path.join(plcB, 'POUs', 'Actuators', 'FB_Cylinder.TcPOU');
+                await vscode.commands.executeCommand('vscode.openWith', vscode.Uri.file(cylB), 'twincat.xmlViewer');
+                await sleep(1500);
+                answers.push('FB_CylinderX');
+                applyCalls = 0;
+                await vscode.commands.executeCommand('twincat.renameObject', { contextValue: 'pouFile', resourceUri: vscode.Uri.file(cylB) });
+                await sleep(1500);
+                const afterFile = snap();
+                const plcproj = readB('TcToolkitSample_PLC.plcproj');
+                result.file = {
+                    applyCalls,
+                    changed: diffKeys(before, afterFile),
+                    renamedOnDisk: fs.existsSync(path.join(plcB, 'POUs', 'Actuators', 'FB_CylinderX.TcPOU')) && !fs.existsSync(cylB),
+                    plcprojUpdated: plcproj.includes('Include="POUs\\Actuators\\FB_CylinderX.TcPOU"') && !plcproj.includes('Include="POUs\\Actuators\\FB_Cylinder.TcPOU"'),
+                    bom: fs.readFileSync(path.join(plcB, 'POUs', 'Actuators', 'FB_CylinderX.TcPOU')).subarray(0, 3).toString('hex'),
+                    tabs: vscode.window.tabGroups.all.flatMap(g => g.tabs.map(t => t.label)),
+                    dirty: dirtyDocs()
+                };
+                await vscode.commands.executeCommand('twincat.undoLastRename');
+                await sleep(1500);
+                result.fileUndo = { changed: diffKeys(before, snap()), dirty: dirtyDocs(), tabs: vscode.window.tabGroups.all.flatMap(g => g.tabs.map(t => t.label)) };
+            } finally {
+                vscode.window.showInputBox = realInput;
+                vscode.window.showWarningMessage = realWarn;
+                vscode.workspace.applyEdit = realApply;
+            }
+            log('rename-undo', result);
+        } catch (e) {
+            log('rename-undo', { error: String((e && e.stack) || e) });
         }
 
         log('done', {});

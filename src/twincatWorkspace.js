@@ -79,18 +79,22 @@ function decodeXmlAttribute(value) {
  *   FILE (never a directory) is collected. Receives both the bare entry name and its full path.
  * @param {Array<string>} [options.out] Array to append matches to (returned as-is); a fresh array
  *   is used when omitted.
+ * @param {DirectoryListingMemo|null} [options.listing] A scan's listing memo (see
+ *   createDirectoryListingMemo): each directory is then read from disk at most once per memo, however
+ *   many walks cross it. The result is identical to an unmemoized walk of the same snapshot.
  * @returns {Array<string>} `options.out`, or a new array, containing every matched file path.
  */
 function walkFiles(rootOrRoots, options) {
     const skipDirs = (options && options.skipDirs) || new Set();
     const isMatch = options && options.isMatch;
     const out = (options && options.out) || [];
+    const listing = (options && options.listing) || null;
     const roots = Array.isArray(rootOrRoots) ? rootOrRoots : [rootOrRoots];
 
     const walk = (dir) => {
         let entries;
         try {
-            entries = fs.readdirSync(dir, { withFileTypes: true });
+            entries = listing ? listing.list(dir) : fs.readdirSync(dir, { withFileTypes: true });
         } catch (e) {
             return; // unreadable directory: skip, never throw out of discovery
         }
@@ -108,6 +112,62 @@ function walkFiles(rootOrRoots, options) {
     return out;
 }
 
+/**
+ * @typedef {Object} DirectoryListingMemo
+ * @property {(dir: string) => Array<fs.Dirent>} list The directory's entries (`readdirSync` with
+ *   `withFileTypes`), read from disk on the first call for that directory and replayed after; a
+ *   directory that could not be read throws the same way on every call.
+ * @property {() => number} reads Directories actually read from disk (for the harnesses).
+ */
+
+/**
+ * A memo of directory listings for the lifetime of ONE workspace scan.
+ *
+ * Every project of a scan walks the same workspace roots for the `library-signatures.xml` dump (it is
+ * a workspace-level artifact that sits above every project), and each project directory again for its
+ * own dump and `.tmc` — on an 8-project workspace that was 16 full walks per scan, ~850 ms on Windows.
+ * Sharing the listings makes the first walk pay for the disk and every later one an in-memory
+ * replay, and because the walker itself is unchanged (same skip sets, same order, same paths spelled
+ * from the caller's own `dir`), the result is exactly what an unmemoized walk of that snapshot returns.
+ *
+ * **Invalidation is the scan boundary, and nothing else.** A memo is created at the start of a scan
+ * and dropped with it; it is never stored across scans. So a `library-signatures.xml` or `.tmc` that is
+ * added or removed is found by the next scan — startup, or the `custom/reindex` that the `.plcproj`
+ * watcher, the `.tmc`/dump watcher (src/indexInputs.js) and Update Library Definitions send. No time
+ * window and no mtime sampling: a directory's own mtime does not change when a file appears two levels
+ * below it, so a guard on it would call a stale listing current.
+ *
+ * Keys are absolute paths, case-folded only on Windows (where the filesystem is case-insensitive).
+ * @returns {DirectoryListingMemo}
+ */
+function createDirectoryListingMemo() {
+    /** @type {Map<string, {entries?: Array<fs.Dirent>, error?: Error}>} */
+    const cache = new Map();
+    let reads = 0;
+    const keyOf = (dir) => {
+        const resolved = path.resolve(dir);
+        return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
+    };
+    return {
+        list: (dir) => {
+            const key = keyOf(dir);
+            let hit = cache.get(key);
+            if (!hit) {
+                reads++;
+                try {
+                    hit = { entries: fs.readdirSync(dir, { withFileTypes: true }) };
+                } catch (e) {
+                    hit = { error: e };
+                }
+                cache.set(key, hit);
+            }
+            if (hit.error) throw hit.error;
+            return hit.entries;
+        },
+        reads: () => reads
+    };
+}
+
 // --- Skip-dir sets ----------------------------------------------------------------------------
 // Built by composition from BASE_SKIP_DIRS so the shared floor is visible at every call site,
 // rather than each caller re-listing '.git', 'node_modules', '.vscode' by hand. Plain mutable
@@ -118,10 +178,17 @@ function walkFiles(rootOrRoots, options) {
 const BASE_SKIP_DIRS = new Set(['.git', 'node_modules', '.vscode']);
 
 /**
- * lsp/projectMap.js's `.plcproj` walk: vendor archives, ST_Files (derived .st mirrors that would
- * shadow the XML objects), TwinCAT's compile-info cache, and boot-project output.
+ * The generated-output folders, lower-cased: Generate ST's `ST_Files` (derived `.st` mirrors) and
+ * Compile Project's `CPP_Files` (generated C++ and g++'s object file, R13). Never indexed, never an
+ * input, and their watcher events never trigger a per-event refresh.
  */
-const PROJECT_WALK_SKIP_DIRS = new Set([...BASE_SKIP_DIRS, '_libraries', 'st_files', '_compileinfo', '_boot']);
+const GENERATED_OUTPUT_DIRS = new Set(['st_files', 'cpp_files']);
+
+/**
+ * lsp/projectMap.js's `.plcproj` walk: vendor archives, ST_Files (derived .st mirrors that would
+ * shadow the XML objects), CPP_Files (generated C++), TwinCAT's compile-info cache, and boot-project output.
+ */
+const PROJECT_WALK_SKIP_DIRS = new Set([...BASE_SKIP_DIRS, '_libraries', 'st_files', 'cpp_files', '_compileinfo', '_boot']);
 
 /** solutionMap.js's `.sln` walk — the same idea as PROJECT_WALK_SKIP_DIRS, minus `st_files` (a
  *  `.sln` never sits under a derived ST mirror, so excluding it bought nothing there). */
@@ -136,7 +203,7 @@ const CONFIG_OBJECT_SKIP_DIRS = new Set([...BASE_SKIP_DIRS, '_libraries']);
  * See DEVELOPMENT.md "Indexing cost" rule 4: adding `_libraries` here would blind the scan and
  * reintroduce the ~171 false positives that made the ARCHIVE/PROJECT split necessary.
  */
-const ARCHIVE_SKIP_DIRS = new Set([...BASE_SKIP_DIRS, '_compileinfo', 'st_files']);
+const ARCHIVE_SKIP_DIRS = new Set([...BASE_SKIP_DIRS, '_compileinfo', 'st_files', 'cpp_files']);
 
 /**
  * lsp/libsymbols.js's `PROJECT_SKIP_DIRS` (mirrored by plcprojRefs.js's `PLCPROJ_SKIP_DIRS`, pinned
@@ -149,8 +216,8 @@ const PROJECT_SKIP_DIRS = new Set([...ARCHIVE_SKIP_DIRS, '_libraries']);
  *  expressed as a set — still case-insensitive per the walker's own R1 lower-casing). */
 const XML_INDEX_SKIP_DIRS = new Set([...BASE_SKIP_DIRS, '_libraries']);
 
-/** lsp/parser.js's `.st` directory-skip chain (its own inline checks against `ST_Files`). */
-const ST_INDEX_SKIP_DIRS = new Set([...BASE_SKIP_DIRS, 'st_files']);
+/** lsp/parser.js's `.st` directory-skip chain (its own inline checks against `ST_Files`; `CPP_Files` holds no `.st`). */
+const ST_INDEX_SKIP_DIRS = new Set([...BASE_SKIP_DIRS, 'st_files', 'cpp_files']);
 
 // --- Extension vocabularies --------------------------------------------------------------------
 
@@ -248,9 +315,41 @@ function suffixDisplayNames(records, nameOf, dirOf, options) {
     return result;
 }
 
+/**
+ * Whether a file-system watcher event is worth reacting to (tree refresh, project-structure
+ * rebuild, re-index). Not for VCS/package/editor metadata, and not for anything under an `ST_Files`
+ * or `CPP_Files` folder at any depth: that is generated output (Generate ST's, written in bursts of
+ * hundreds of files, and reacting to each one refreshed the whole Objects tree once per generated
+ * file; Compile Project's C++).
+ * @param {string} fsPath The event's path, with either separator.
+ * @returns {boolean}
+ */
+function isWatchEventRelevant(fsPath) {
+    const parts = String(fsPath || '').split(/[\\/]+/);
+    // The last part is the entry itself: a created FOLDER named ST_Files is output too.
+    return !parts.some(part => BASE_SKIP_DIRS.has(part.toLowerCase()) || GENERATED_OUTPUT_DIRS.has(part.toLowerCase()));
+}
+
+/**
+ * Whether a watcher event is inside generated output (an `ST_Files` or `CPP_Files` folder, or that folder itself) and
+ * outside VCS/editor metadata. Such events never re-index or refresh per event (see
+ * isWatchEventRelevant); the host collects them into ONE debounced Objects-tree refresh, so files the
+ * user adds or deletes there by hand still show.
+ * @param {string} fsPath The event's path, with either separator.
+ * @returns {boolean}
+ */
+function isGeneratedOutputEvent(fsPath) {
+    const parts = String(fsPath || '').split(/[\\/]+/).map(p => p.toLowerCase());
+    return parts.some(part => GENERATED_OUTPUT_DIRS.has(part)) && !parts.some(part => BASE_SKIP_DIRS.has(part));
+}
+
 module.exports = {
+    GENERATED_OUTPUT_DIRS,
+    isWatchEventRelevant,
+    isGeneratedOutputEvent,
     decodeXmlAttribute,
     walkFiles,
+    createDirectoryListingMemo,
     BASE_SKIP_DIRS,
     PROJECT_WALK_SKIP_DIRS,
     SOLUTION_SKIP_DIRS,

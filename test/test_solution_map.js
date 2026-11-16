@@ -58,7 +58,7 @@ writeSolution(lineA, [
 ]);
 writeSolution(lineB, [{ xti: 'Primary.xti', plcproj: plcB, name: 'Controller' }]);
 
-// An unrelated C# solution must not pollute the TwinCAT Objects tree.
+// An unrelated C# solution must not pollute the PLC Objects tree.
 fs.mkdirSync(path.join(ROOT, 'Tools'), { recursive: true });
 fs.writeFileSync(path.join(ROOT, 'Tools', 'Tools.sln'),
     'Project("{CSHARP}") = "Tools", "Tools.csproj", "{TOOLS}"\nEndProject\n');

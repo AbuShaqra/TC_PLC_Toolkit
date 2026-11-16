@@ -1,6 +1,6 @@
 /**
  * @file treeDragAndDrop.js
- * @description Drag & drop controller for the "TwinCAT Objects" explorer. Two motions are
+ * @description Drag & drop controller for the "PLC Objects" explorer. Two motions are
  * supported: dragging a POU member (method/property/action/transition) into a virtual folder of
  * its own file (an XML FolderPath edit), and dragging a file or physical directory into another
  * directory or the empty area (= workspace root; a filesystem move plus .plcproj sync).
@@ -23,10 +23,9 @@ const { registerInPlcProj, registerTreeInPlcProj, unregisterFromPlcProj } = requ
 const TREE_MIME = 'application/vnd.code.tree.twincatexplorer';
 
 /**
- * @typedef {vscode.TreeItem & { componentId?: string, folderPath?: string }} TwinCatTreeItemLike
- * The Objects tree's items (treeDataProvider.js TwinCatTreeItem), typed structurally: the class
- * only reaches tsc through a CommonJS `module.exports = {…}`, which JSDoc's import() cannot
- * surface as a type — and the controller only reads these members anyway.
+ * @typedef {import('./objectsTreeModel').ObjectsTreeNode} TwinCatTreeItemLike
+ * The Objects tree's elements: plain model nodes from src/objectsTreeModel.js. The controller
+ * reads only `contextValue`, `resourceUri`, `componentId`, `folderPath` and `label`.
  */
 
 /**
@@ -99,7 +98,7 @@ class TwinCatDragAndDropController {
                     await this._executeMove(plan);
                 }
             } catch (err) {
-                console.error('TwinCAT: drop failed:', err);
+                console.error('TC Toolkit: drop failed:', err);
                 vscode.window.showErrorMessage(`Failed to move "${label}": ${err.message}`);
             }
         }

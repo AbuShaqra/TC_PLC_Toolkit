@@ -1,0 +1,73 @@
+STruC++ Licensing
+=================
+
+STruC++ uses a split licensing model inspired by the GCC compiler, designed
+to keep the compiler open source while allowing users to compile proprietary
+PLC programs.
+
+Compiler (GPLv3)
+----------------
+
+The STruC++ compiler itself -- including the lexer, parser, AST builder,
+semantic analyzer, type checker, code generator, CLI, and library system --
+is licensed under the GNU General Public License version 3.
+
+  Files:  src/*.ts, src/frontend/, src/semantic/, src/backend/,
+          src/library/, src/testing/, src/ir/
+  License: GPL-3.0-only (see LICENSE)
+
+This means any modifications to the compiler must be released under the
+same license. However, merely using the compiler to compile your programs
+does NOT make your programs GPL.
+
+Runtime Library (GPLv3 + Runtime Library Exception)
+---------------------------------------------------
+
+The C++ runtime headers, type wrappers, and standard function block library
+are licensed under GPLv3 with the STruC++ Runtime Library Exception. This
+exception allows the runtime code to be included in compiled output without
+requiring that output to be GPL-licensed.
+
+  Files:  src/runtime/include/*.hpp, src/runtime/repl/iec_repl.hpp,
+          src/runtime/test/iec_test.hpp, libs/*.stlib
+          (except libs/oscat-basic.stlib, see Third-Party Code)
+  License: GPL-3.0-only WITH STruCpp-runtime-exception
+           (see LICENSE and COPYING.RUNTIME)
+
+In practice: when you compile a Structured Text program with STruC++, the
+resulting C++ code includes runtime headers and links against runtime
+library code. The Runtime Library Exception ensures you can distribute your
+compiled PLC programs under any license you choose.
+
+Third-Party Code
+----------------
+
+The isocline line-editing library used in the REPL is licensed under the
+MIT License. See the individual file headers in src/runtime/repl/ for
+details.
+
+  Files:  src/runtime/repl/*.c, src/runtime/repl/*.h
+          (except iec_repl.hpp)
+  License: MIT (Copyright (c) 2021 Daan Leijen)
+
+The OSCAT BASIC 3.35 library (www.oscat.de) is distributed unmodified, free
+of charge, under its own licence agreement, not under the GPL. This covers
+the source file and the library archive the build compiles from it.
+
+  Files:  libs/sources/oscat-basic/oscat_basic_335.library,
+          libs/oscat-basic.stlib (built from it)
+  License: OSCAT BASIC Software User Agreement of 20.06.2013
+           (see libs/sources/oscat-basic/LICENSE-OSCAT.txt and README.md)
+
+Summary
+-------
+
+  Component                   | License
+  ----------------------------|----------------------------------------
+  Compiler (src/*.ts, etc.)   | GPL-3.0-only
+  Runtime headers (*.hpp)     | GPL-3.0-only + Runtime Exception
+  Standard libraries (*.stlib)| GPL-3.0-only + Runtime Exception
+                              | (except oscat-basic.stlib)
+  REPL / isocline             | MIT (third-party)
+  OSCAT BASIC 3.35            | OSCAT licence, www.oscat.de (third-party)
+  Your compiled programs      | Your choice

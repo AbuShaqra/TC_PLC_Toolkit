@@ -1,6 +1,6 @@
 /**
  * @file dndRules.js
- * @description The drag & drop AND copy/paste compatibility matrices for the "TwinCAT Objects"
+ * @description The drag & drop AND copy/paste compatibility matrices for the "PLC Objects"
  * explorer, as pure data-in/data-out functions — no vscode, no fs — so both matrices are
  * unit-testable (test/test_dnd_rules.js). treeDragAndDrop.js / clipboardCommands.js own the side
  * effects (XML edits, filesystem moves/writes, .plcproj sync); everything that decides WHETHER a
@@ -14,6 +14,7 @@
 
 const path = require('path');
 const { parse: parseComponentId, isAccessor, KIND_TO_XML_TAG } = require('./componentId');
+const { isPropertyNode } = require('./objectKinds');
 
 /**
  * @typedef {{ fsPath: string, toString(): string }} UriLike
@@ -50,14 +51,14 @@ const FILE_CONTEXT_VALUES = new Set([
  * folders (v1 exclusion — moving one means rewriting every member's FolderPath prefix), and
  * workspace roots.
  * @param {{ contextValue?: string, resourceUri?: UriLike, componentId?: string }} item A
- * TwinCatTreeItem (or a test stand-in with the same shape).
+ * Objects-tree node (src/objectsTreeModel.js) or a test stand-in with the same shape.
  * @returns {DraggedDescriptor|null} The descriptor, or null when the item is not draggable.
  */
 function describeDragged(item) {
     if (!item || !item.contextValue || !item.resourceUri) return null;
     const cv = item.contextValue;
 
-    if (cv === 'component' || cv === 'propertyNode') {
+    if (cv === 'component' || isPropertyNode(cv)) {
         const id = item.componentId || '';
         // Get/Set accessors carry the same 'component' contextValue as methods/actions, so they
         // can only be told apart by their id shape (`prop_<name>_get` / `prop_<name>_set`); they
@@ -198,7 +199,7 @@ function isItfUri(uri) {
  * (v1 exclusion — a recursive directory duplicate mass-produces duplicate symbols). The accessor
  * exclusion is identical: Get/Set ride with their property.
  * @param {{ contextValue?: string, resourceUri?: UriLike, componentId?: string }} item A
- * TwinCatTreeItem (or a test stand-in with the same shape).
+ * Objects-tree node (src/objectsTreeModel.js) or a test stand-in with the same shape.
  * @returns {CopiedDescriptor|null} The descriptor, or null when the item is not copyable.
  */
 function describeCopied(item) {
@@ -237,7 +238,7 @@ function planPaste(copied, target) {
 
     if (copied.kind === 'component') {
         /** @type {UriLike|null} */
-        let targetUri = null;
+        let targetUri;
         let newFolderPath = '';
         if (target.kind === 'virtualFolder') {
             targetUri = target.uri;

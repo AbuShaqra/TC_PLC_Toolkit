@@ -248,9 +248,9 @@ function applyReferenceEditsToXml(xmlText, occurrences, opts) {
         }
 
         // --- Everything else with backing CDATA: splice, guarded. cdataLine = abs - block.start.
-        //     For a root-decl occurrence of the root's OWN name, the PROGRAM->FUNCTION_BLOCK rewrite
-        //     may shift the column so the guard fails; such a skip is covered by the caller's
-        //     renameRootObjectInXml. ---
+        //     For a root-decl occurrence of the root's OWN name, a guard failure (a stale or shifted
+        //     position) is covered by the caller's renameRootObjectInXml, which renames the header
+        //     structurally. ---
         addToGroup(groups, comp, pane, {
             cdataLine: abs - block.start,
             column: occ.character,

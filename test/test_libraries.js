@@ -167,7 +167,9 @@ try {
     // ---- 6. The real sample's .plcproj (skips cleanly if sample/ is absent) --------------------
     // Gate on the fixture this actually needs — library references in the sample's .plcproj — not on
     // sample/ merely existing. The synthetic sample declares none until the library fixtures land.
-    const SAMPLE_DIR = path.join(__dirname, '..', 'sample');
+    // The first sample's .plcproj only: the second sample (sample/TcToolkitSample2) declares the
+    // template's three references and would double-count them.
+    const SAMPLE_DIR = path.join(__dirname, '..', 'sample', 'TcToolkitSample');
     clearLibraryNamespaces();
     const found = fs.existsSync(SAMPLE_DIR) ? indexLibraryNamespaces(SAMPLE_DIR) : [];
     if (found.length === 0) {

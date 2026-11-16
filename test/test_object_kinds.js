@@ -1,6 +1,6 @@
 /**
  * @file test_object_kinds.js
- * @description Classification behind the TwinCAT Objects tree icons: a POU is a function block, a
+ * @description Classification behind the PLC Objects tree icons: a POU is a function block, a
  * program or a function; a DUT is a struct, an enum, a union or an alias.
  *
  * Before this, every POU drew the same `package` icon and every DUT the same `symbol-struct` — the

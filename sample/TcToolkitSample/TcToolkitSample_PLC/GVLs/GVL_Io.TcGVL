@@ -3,7 +3,7 @@
   <GVL Name="GVL_Io" Id="{faa519e5-c2ff-4a02-a971-afe20ee2bc8e}">
     <Declaration><![CDATA[{attribute 'qualified_only'}
 VAR_GLOBAL
-	bExtendOut, bRetractOut, bSensorExtended, bSensorRetracted : BOOL;
+	bExtendOut, bRetractOut, bSensorExtended, bSensorRetracted : BOOL := FALSE;
 END_VAR
 ]]></Declaration>
   </GVL>

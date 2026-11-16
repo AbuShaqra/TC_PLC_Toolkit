@@ -1,6 +1,6 @@
 /**
  * @file test_library_scope.js
- * @description Which libraries the "TwinCAT Libraries" view shows, in a workspace with more than one
+ * @description Which libraries the "PLC Libraries" view shows, in a workspace with more than one
  * PLC project — both halves of the decision, LSP side and extension-host side.
  *
  * The view used to show the flat UNION of every project's libraries, because the host never told the

@@ -38,7 +38,9 @@
 const fs = require('fs');
 const path = require('path');
 const zlib = require('zlib');
+const crypto = require('crypto');
 const { walkFiles, ARCHIVE_SKIP_DIRS, PROJECT_SKIP_DIRS } = require('../twincatWorkspace');
+/** @typedef {import('../twincatWorkspace').DirectoryListingMemo} DirectoryListingMemo */
 const { findBrowserCacheFile, MANAGED_LIBRARIES } = require('./browserCache');
 const {
     parseSignatureRecords,
@@ -47,6 +49,7 @@ const {
 } = require('./parseCache');
 const { readLibraryReferences, collectPlcProjFiles } = require('./plcprojRefs');
 const log = require('./log');
+const { createArchiveStore } = require('./archiveStore');
 
 /** ZIP signatures. */
 const SIG_EOCD = 0x06054b50;        // End of central directory
@@ -206,10 +209,143 @@ const harvestCache = new Map();
 /**
  * Observation counters for the harnesses — never read by the extension. `statted` counts calls that
  * got as far as a stat, `inflated` archives actually decoded, `contentHits` decodes saved by a copy at
- * another path, `pathHits` decodes saved by the same path being asked twice.
- * @type {{statted: number, inflated: number, contentHits: number, pathHits: number}}
+ * another path, `pathHits` decodes saved by the same path being asked twice, `persistHits` decodes
+ * saved by the persisted cache (fingerprint verified), `persistStale` persisted entries refused because
+ * the archive's fingerprint no longer matched.
+ * @type {{statted: number, inflated: number, contentHits: number, pathHits: number, persistHits: number,
+ *   persistStale: number}}
  */
-const __archiveStats = { statted: 0, inflated: 0, contentHits: 0, pathHits: 0 };
+const __archiveStats = { statted: 0, inflated: 0, contentHits: 0, pathHits: 0, persistHits: 0, persistStale: 0 };
+
+/**
+ * Identifies the code that turns archive bytes into names: a hash of the ZIP reader's and the string
+ * table parser's SOURCE, the filters and the limits. The persisted cache (archiveStore.js) stores it and
+ * discards every entry decoded by different code — a change to how names are harvested can never be
+ * answered from names harvested the old way, and there is no hand-maintained version to forget.
+ * @type {string}
+ */
+const DECODER_ID = crypto.createHash('sha1').update([
+    findEndOfCentralDirectory, readZipEntries, readZipEntryData, readVarint, parseStringTable, harvestArchive
+].map(fn => fn.toString()).concat([
+    STRING_TABLE_ENTRY.source, STRING_TABLE_ENTRY.flags, IDENTIFIER.source,
+    String(MAX_ARCHIVE_BYTES), String(MAX_ZIP_ENTRIES), String(MAX_ZIP_ENTRY_BYTES)
+]).join('\u0000')).digest('hex');
+
+/**
+ * The persisted archive-name store. Disabled (every lookup misses, nothing written) until
+ * configureArchiveCache() names a directory — which only server.js does, from the extension host's
+ * global storage path. Every harness that does not configure one runs exactly as before.
+ * @type {import('./archiveStore').ArchiveStore}
+ */
+let archiveStore = createArchiveStore({ dir: null, decoderId: DECODER_ID });
+
+/**
+ * Points the persisted cache at a directory (VS Code's global storage for this extension), or turns
+ * it off with a falsy value. Unflushed entries of a previous store are flushed first.
+ * @param {string|null|undefined} dir Absolute directory path.
+ * @param {{maxEntries?: number, maxNameChars?: number, now?: () => number}} [limits] Harness seams.
+ */
+function configureArchiveCache(dir, limits) {
+    archiveStore.flush();
+    archiveStore = createArchiveStore({ dir: dir || null, decoderId: DECODER_ID, ...(limits || {}) });
+}
+
+/**
+ * Writes the persisted cache if it changed. Called after every scan and on shutdown; never throws.
+ * @returns {boolean} True when a file was written.
+ */
+function flushArchiveCache() {
+    try {
+        return archiveStore.flush();
+    } catch (e) {
+        log.debug('archive-cache-flush-failed', { error: e });
+        return false;
+    }
+}
+
+/**
+ * What the persisted cache's last load found (for logging and the harness).
+ * @returns {{enabled: boolean, loaded: number, rejected: string|null, dropped: number}}
+ */
+function archiveCacheInfo() {
+    return { enabled: archiveStore.enabled(), ...archiveStore.info() };
+}
+
+/**
+ * Locates the ZIP central directory from the EOCD record in `tail` (the last bytes of the file).
+ * @param {Buffer} tail The last min(size, MAX_EOCD_SEARCH) bytes of the archive.
+ * @param {number} size Whole file size.
+ * @returns {{eocd: number, cdStart: number, cdSize: number}|null} `eocd` is relative to `tail`,
+ *   `cdStart` is an absolute file offset. Null for a non-ZIP or a ZIP64 archive (no fingerprint).
+ */
+function locateCentralDirectory(tail, size) {
+    const eocd = findEndOfCentralDirectory(tail);
+    if (eocd === -1) return null;
+    const cdSize = tail.readUInt32LE(eocd + 12);
+    const cdStart = tail.readUInt32LE(eocd + 16);
+    if (cdSize === 0xffffffff || cdStart === 0xffffffff || tail.readUInt16LE(eocd + 10) === 0xffff) return null;
+    const eocdAbs = size - tail.length + eocd;
+    if (cdStart + cdSize > eocdAbs) return null;
+    return { eocd, cdStart, cdSize };
+}
+
+/**
+ * The content fingerprint of an archive: SHA-1 over its central directory and EOCD record. The
+ * central directory lists every entry's name, CRC-32 and sizes, so the string table's bytes cannot
+ * change without changing it. Computed from a whole-archive buffer (after a decode) or from the file
+ * (to validate a persisted entry) — both hash exactly the same bytes.
+ * @param {Buffer} cd The central-directory bytes.
+ * @param {Buffer} eocdRecord The 22-byte EOCD record.
+ * @returns {string} SHA-1 hex.
+ */
+function hashCentralDirectory(cd, eocdRecord) {
+    return crypto.createHash('sha1').update(cd).update(eocdRecord).digest('hex');
+}
+
+/**
+ * Fingerprint of an archive already read into memory.
+ * @param {Buffer} buf Whole archive.
+ * @returns {string|null} SHA-1 hex, or null when the archive has no usable central directory.
+ */
+function fingerprintArchiveBuffer(buf) {
+    const tail = buf.subarray(Math.max(0, buf.length - MAX_EOCD_SEARCH));
+    const loc = locateCentralDirectory(tail, buf.length);
+    if (!loc) return null;
+    return hashCentralDirectory(buf.subarray(loc.cdStart, loc.cdStart + loc.cdSize), tail.subarray(loc.eocd, loc.eocd + 22));
+}
+
+/**
+ * Fingerprint of an archive on disk, reading only its end: the EOCD search window, plus the central
+ * directory when it starts before that window. Never throws.
+ * @param {string} filePath Absolute archive path.
+ * @param {number} size The size the caller just statted.
+ * @returns {string|null} SHA-1 hex, or null when it cannot be computed.
+ */
+function fingerprintArchiveFile(filePath, size) {
+    let fd = null;
+    try {
+        fd = fs.openSync(filePath, 'r');
+        const tailLen = Math.min(size, MAX_EOCD_SEARCH);
+        const tail = Buffer.alloc(tailLen);
+        if (fs.readSync(fd, tail, 0, tailLen, size - tailLen) !== tailLen) return null;
+        const loc = locateCentralDirectory(tail, size);
+        if (!loc) return null;
+        const tailStart = size - tailLen;
+        let cd;
+        if (loc.cdStart >= tailStart) {
+            cd = tail.subarray(loc.cdStart - tailStart, loc.cdStart - tailStart + loc.cdSize);
+        } else {
+            if (loc.cdSize > MAX_ARCHIVE_BYTES) return null;
+            cd = Buffer.alloc(loc.cdSize);
+            if (fs.readSync(fd, cd, 0, loc.cdSize, loc.cdStart) !== loc.cdSize) return null;
+        }
+        return hashCentralDirectory(cd, tail.subarray(loc.eocd, loc.eocd + 22));
+    } catch (e) {
+        return null;
+    } finally {
+        if (fd !== null) { try { fs.closeSync(fd); } catch (e) { /* already closed */ } }
+    }
+}
 
 /**
  * The content-identity key for an archive: `<title>/<version>/<file>|size|mtimeMs`, lower-cased.
@@ -262,9 +398,27 @@ function harvestArchiveFile(filePath) {
         return shared;
     }
 
+    // The persisted cache (a previous session's decode), keyed by the same content key so one vendor
+    // archive vendored into eight projects is still one entry. Trusted only when the fingerprint read
+    // from THIS file now matches the stored one — the content key alone is a (size, mtime) guess.
+    const persisted = archiveStore.lookup(contentKey);
+    if (persisted) {
+        if (fingerprintArchiveFile(filePath, stat.size) === persisted.fp) {
+            __archiveStats.persistHits++;
+            archiveStore.touch(contentKey);
+            harvestCache.set(contentKey, persisted.names);
+            identityCache.set(pathKey, { mtimeMs: stat.mtimeMs, size: stat.size, contentKey });
+            return persisted.names;
+        }
+        __archiveStats.persistStale++;
+        archiveStore.forget(contentKey); // decoded afresh below, and re-recorded if it decodes
+    }
+
     let names;
+    let buf;
     try {
-        names = harvestArchive(fs.readFileSync(filePath));
+        buf = fs.readFileSync(filePath);
+        names = harvestArchive(buf);
     } catch (e) {
         // `debug`: an archive that will not decode is a normal fact of a vendored `_Libraries` tree,
         // and the count of them is already reported at info level in the per-project summary line
@@ -274,6 +428,10 @@ function harvestArchiveFile(filePath) {
         return null; // undecodable archive: contribute nothing rather than guess
     }
     __archiveStats.inflated++;
+    // Fingerprint the very bytes that were decoded, so a write racing the read cannot pair new names
+    // with an old fingerprint. An archive with no usable central directory is simply not persisted.
+    const fp = fingerprintArchiveBuffer(buf);
+    if (fp) archiveStore.record(contentKey, fp, names);
     harvestCache.set(contentKey, names);
     identityCache.set(pathKey, { mtimeMs: stat.mtimeMs, size: stat.size, contentKey });
     return names;
@@ -298,7 +456,7 @@ function harvestArchiveFile(filePath) {
  *
  * Why a catalog at all: a library's title, its placeholder name and its *namespace* are three different
  * strings, and only the last one is what a programmer types (`Acme Vision Sensor` /
- * `Acme Sensor Library TC3` are both imported as `Acme_Vision_Sensor`). The "TwinCAT Libraries" view
+ * `Acme Sensor Library TC3` are both imported as `Acme_Vision_Sensor`). The "PLC Libraries" view
  * exists to show that mapping, and this is the one place all three spellings are already in hand.
  * (`Map<string, LibraryCatalogEntry>`, lives at `registry.libraryCatalog` — see createLibraryRegistry.)
  */
@@ -810,7 +968,7 @@ function indexLibraryTitles(rootDir, index) {
             // `<DefaultResolution>Recipe Management, * (System)</DefaultResolution>` — likewise.
             if (block.resolution) addLibraryTitle(block.resolution.split(',')[0], namespace, index);
 
-            // The same three strings, kept whole this time: the "TwinCAT Libraries" view shows the
+            // The same three strings, kept whole this time: the "PLC Libraries" view shows the
             // library → namespace mapping, and this block is where all of it is already parsed.
             addCatalogEntry(block.kind, block.include, block.resolution, namespace, index);
         }
@@ -1202,12 +1360,14 @@ function parseTmcDataType(block, index) {
  * (`<Type Namespace="Tc2_MC2">ST_AxisStatus</Type>`), which reaches types no readable archive holds.
  * @param {string} rootDir Workspace folder to scan.
  * @param {Object} [index] The project's symbol index. Omit for the default registry.
+ * @param {DirectoryListingMemo|null} [listing] The scan's directory-listing memo (see
+ *   twincatWorkspace.js createDirectoryListingMemo); omitted, the walk reads the disk directly.
  * @returns {{files: number, symbols: number, attributed: number, types: number, structured: number,
  *            ms: number}} Indexing statistics; `attributed` counts the type names the `.tmc` assigned
  *          to a library namespace, `types` the `<DataType>` blocks parsed and `structured` those of
  *          them that carry members (struct / fb / enum).
  */
-function indexTypeSystem(rootDir, index) {
+function indexTypeSystem(rootDir, index, listing) {
     const started = Date.now();
     const stats = { files: 0, symbols: 0, attributed: 0, types: 0, structured: 0, ms: 0 };
     if (!rootDir || !fs.existsSync(rootDir)) return stats;
@@ -1216,7 +1376,7 @@ function indexTypeSystem(rootDir, index) {
     indexLibraryTitles(rootDir, index); // establishes which namespaces the project actually imports
 
     const files = [];
-    collectTmcFiles(rootDir, files);
+    collectTmcFiles(rootDir, files, listing);
 
     for (const file of files) {
         let xml;
@@ -1385,13 +1545,14 @@ function isBrowserCacheMemberName(namespace, name, index) {
  * the `.tmc` is a build output of the *project*, never something a vendor ships in an archive tree.
  * @param {string} dir Directory to scan.
  * @param {string[]} out Accumulator, mutated.
+ * @param {DirectoryListingMemo|null} [listing] The scan's directory-listing memo, if any.
  */
-function collectTmcFiles(dir, out) {
+function collectTmcFiles(dir, out, listing) {
     // Regular files only — walkFiles' isFile gate deliberately excludes directory/symlink decoys
     // the old inline walk admitted (see test_twincat_workspace.js's "regular FILES only" check).
     // Cost accepted with the tightening: a LEGITIMATE symlink to a real dump is dropped too — if
     // that ever bites, it presents as resurrected library false positives.
-    return walkFiles(dir, { skipDirs: PROJECT_SKIP_DIRS, isMatch: (name) => /\.tmc$/i.test(name), out });
+    return walkFiles(dir, { skipDirs: PROJECT_SKIP_DIRS, isMatch: (name) => /\.tmc$/i.test(name), out, listing });
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -1560,8 +1721,9 @@ function indexLibrarySignaturesFromXml(xml, index) {
  * never vendored inside an archive tree.
  * @param {string} dir Directory to scan.
  * @param {string[]} out Accumulator, mutated.
+ * @param {DirectoryListingMemo|null} [listing] The scan's directory-listing memo, if any.
  */
-function collectSignatureFiles(dir, out) {
+function collectSignatureFiles(dir, out, listing) {
     // Regular files only — walkFiles' isFile gate deliberately excludes directory/symlink decoys
     // the old inline walk admitted (see test_twincat_workspace.js's "regular FILES only" check).
     // Cost accepted with the tightening: a LEGITIMATE symlink to a real dump is dropped too — if
@@ -1569,7 +1731,8 @@ function collectSignatureFiles(dir, out) {
     return walkFiles(dir, {
         skipDirs: PROJECT_SKIP_DIRS,
         isMatch: (name) => name.toLowerCase() === 'library-signatures.xml',
-        out
+        out,
+        listing
     });
 }
 
@@ -1581,16 +1744,19 @@ function collectSignatureFiles(dir, out) {
  * everything it touches, so a reindex re-merges cleanly.
  * @param {string} rootDir Absolute workspace folder.
  * @param {Object} [index] The project's symbol index. Omit for the default registry.
+ * @param {DirectoryListingMemo|null} [listing] The scan's directory-listing memo (see
+ *   twincatWorkspace.js createDirectoryListingMemo). Every project of a scan walks the same workspace
+ *   roots for the dump, so this is what turns 2 walks per project into one walk per directory.
  * @returns {{files: number, functions: number, functionBlocks: number, types: number, added: number,
  *            ms: number}} Indexing statistics.
  */
-function indexLibrarySignatures(rootDir, index) {
+function indexLibrarySignatures(rootDir, index, listing) {
     const started = Date.now();
     const stats = { files: 0, functions: 0, functionBlocks: 0, types: 0, added: 0, ms: 0 };
     if (!rootDir || !fs.existsSync(rootDir)) return stats;
 
     const files = [];
-    collectSignatureFiles(rootDir, files);
+    collectSignatureFiles(rootDir, files, listing);
 
     for (const file of files) {
         // Parsed once per workspace, merged once per project: the same dump is reached by every
@@ -2014,6 +2180,14 @@ module.exports = {
     // declaration), so the same library vendored into eight projects is decoded once.
     harvestArchiveFile,
     __archiveStats,
+    // The persisted archive-name cache (archiveStore.js): server.js configures it from the host's
+    // global storage path and flushes it after each scan.
+    configureArchiveCache,
+    flushArchiveCache,
+    archiveCacheInfo,
+    fingerprintArchiveBuffer,
+    fingerprintArchiveFile,
+    DECODER_ID,
     // registry
     indexLibrarySymbols,
     indexTypeSystem,
@@ -2030,11 +2204,13 @@ module.exports = {
     getNamespaceSymbols,
     getLibraryNamespaceNames,
     getNamespaceCoverage,
-    // library catalog (the "TwinCAT Libraries" view)
+    // library catalog (the "PLC Libraries" view)
     getLibraryCatalog,
     getUnionLibraryCatalog,
     // .tmc type-system structure
     parseTmcDataType,
+    tmcMemberType,
+    namespaceForLibraryTitle,
     getLibraryType,
     getTypeSystemNamespaceTypes,
     getBrowserCacheNamespaceTypes,

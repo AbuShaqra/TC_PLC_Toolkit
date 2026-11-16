@@ -1,10 +1,10 @@
 {
   "name": "twincat-plc-toolkit",
-  "displayName": "TwinCAT PLC Toolkit",
-  "description": "Edit, navigate and analyse Beckhoff TwinCAT PLC projects: two-pane Structured Text editor, offline IntelliSense and diagnostics, object and library explorers. Unofficial; not affiliated with Beckhoff.",
-  "version": "0.10.1",
+  "displayName": "TC Toolkit",
+  "description": "Structured Text editor, language server and project tools for Beckhoff TwinCAT 3 PLC projects: two-pane editor, offline IntelliSense and diagnostics, object and library explorers. Unofficial; not affiliated with Beckhoff.",
+  "version": "0.11.0",
   "publisher": "a-abushaqra",
-  "license": "MIT",
+  "license": "AGPL-3.0-or-later",
   "icon": "media/marketplace-icon.png",
   "repository": {
     "type": "git",
@@ -24,15 +24,48 @@
   },
   "activationEvents": [
     "onLanguage:twincat-st",
+    "onView:twincatStart",
     "onView:twincatExplorer",
     "onView:twincatLibraries",
-    "onCustomEditor:twincat.xmlViewer"
+    "onCustomEditor:twincat.xmlViewer",
+    "onWebviewPanel:twincat.startPage",
+    "onCommand:twincat.openStartPage",
+    "onCommand:twincat.createProject",
+    "onCommand:twincat.openProject",
+    "onCommand:twincat.generateSt",
+    "onCommand:twincat.compileProject",
+    "onCommand:twincat.xaeBuild",
+    "onCommand:twincat.xaeBuildAndActivate",
+    "onCommand:twincat.xaeShowTargets",
+    "onCommand:twincat.openSettings",
+    "onCommand:twincat.detectXaeShell",
+    "onCommand:twincat.detectGpp",
+    "onCommand:twincat.openGettingStarted",
+    "onCommand:twincat.openRoadmap",
+    "onCommand:twincat.openReleaseNotes",
+    "onCommand:twincat.reportIssue",
+    "onCommand:twincat.updateLibraryDefinitions",
+    "onCommand:twincat.goOnline",
+    "onCommand:twincat.goOffline",
+    "onCommand:twincat.online.enableWrites",
+    "onCommand:twincat.online.selectInstance",
+    "onCommand:twincat.online.showLog",
+    "onCommand:twincat.online.startPlc",
+    "onCommand:twincat.online.stopPlc",
+    "onCommand:twincat.online.statusMenu",
+    "onCommand:twincat.watch.add",
+    "onCommand:twincat.watch.remove",
+    "onCommand:twincat.watch.clear",
+    "onCommand:twincat.watch.copyPath",
+    "onCommand:twincat.watch.write",
+    "onView:twincatWatch",
+    "onView:twincatWatchSidebar"
   ],
   "contributes": {
     "customEditors": [
       {
         "viewType": "twincat.xmlViewer",
-        "displayName": "TwinCAT PLC Toolkit",
+        "displayName": "TC Toolkit",
         "selector": [
           {
             "filenamePattern": "*.TcPOU"
@@ -51,33 +84,69 @@
       }
     ],
     "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "twincat",
+          "title": "TC Toolkit",
+          "icon": "media/twincat-activitybar.svg"
+        }
+      ],
       "panel": [
         {
           "id": "twincat-references-panel",
-          "title": "TwinCAT References",
+          "title": "PLC References",
           "icon": "$(references)"
+        },
+        {
+          "id": "twincat-watch-panel",
+          "title": "PLC Watch",
+          "icon": "$(eye)"
         }
       ]
     },
     "views": {
-      "explorer": [
+      "twincat": [
         {
-          "id": "twincatLibraries",
-          "name": "TwinCAT Libraries"
+          "id": "twincatStart",
+          "name": "Start"
         },
         {
           "id": "twincatExplorer",
-          "name": "TwinCAT Objects"
+          "name": "PLC Objects"
+        },
+        {
+          "id": "twincatWatchSidebar",
+          "name": "PLC Watch",
+          "when": "config.tcToolkit.online.watchLocation == sidebar"
+        },
+        {
+          "id": "twincatLibraries",
+          "name": "PLC Libraries"
         }
       ],
       "twincat-references-panel": [
         {
           "id": "twincatReferences",
-          "name": "TwinCAT References"
+          "name": "PLC References"
+        }
+      ],
+      "twincat-watch-panel": [
+        {
+          "id": "twincatWatch",
+          "name": "PLC Watch",
+          "when": "config.tcToolkit.online.watchLocation != sidebar"
         }
       ]
     },
     "viewsWelcome": [
+      {
+        "view": "twincatStart",
+        "contents": "Create a TwinCAT 3 project, or open one.\n[Create New Project…](command:twincat.createProject)\n[Open Existing Project…](command:twincat.openProject)\n[Open Start Page](command:twincat.openStartPage)\n[Getting started](command:twincat.openGettingStarted) · [Roadmap](https://claude.ai/artifact/8RG7TZtBV2cuupsrwWtknv) · [Release notes](https://github.com/AbuShaqra/TC_PLC_Toolkit/releases) · [Report an issue](https://github.com/AbuShaqra/TC_PLC_Toolkit/issues) · [Settings](command:twincat.openSettings)"
+      },
+      {
+        "view": "twincatExplorer",
+        "contents": "No TwinCAT project in this workspace.\n[Create New Project…](command:twincat.createProject)\n[Open Existing Project…](command:twincat.openProject)"
+      },
       {
         "view": "twincatReferences",
         "contents": "No references yet. Right-click a symbol in the editor and choose \"Go to References\"."
@@ -85,9 +154,100 @@
       {
         "view": "twincatLibraries",
         "contents": "No TwinCAT libraries found. Open a folder containing a .plcproj file."
+      },
+      {
+        "view": "twincatWatch",
+        "contents": "No watched variables. Right-click a variable in the editor and choose \"Add to PLC Watch\", or add an ADS path.\n[Add to PLC Watch…](command:twincat.watch.add)\n[Go Online…](command:twincat.goOnline)"
+      },
+      {
+        "view": "twincatWatchSidebar",
+        "contents": "No watched variables. Right-click a variable in the editor and choose \"Add to PLC Watch\", or add an ADS path.\n[Add to PLC Watch…](command:twincat.watch.add)\n[Go Online…](command:twincat.goOnline)"
       }
     ],
     "commands": [
+      {
+        "command": "twincat.openStartPage",
+        "title": "Open Start Page",
+        "category": "TC Toolkit",
+        "icon": "$(home)"
+      },
+      {
+        "command": "twincat.createProject",
+        "title": "Create New Project…",
+        "category": "TC Toolkit",
+        "icon": "$(new-folder)"
+      },
+      {
+        "command": "twincat.openProject",
+        "title": "Open Existing Project…",
+        "category": "TC Toolkit",
+        "icon": "$(folder-opened)"
+      },
+      {
+        "command": "twincat.generateSt",
+        "title": "Generate ST",
+        "category": "TC Toolkit"
+      },
+      {
+        "command": "twincat.compileProject",
+        "title": "Build Project",
+        "category": "TC Toolkit"
+      },
+      {
+        "command": "twincat.xaeBuild",
+        "title": "Build through XAE (requires TwinCAT)",
+        "category": "TC Toolkit",
+        "enablement": "!twincat.xaeRunning",
+        "icon": "$(tools)"
+      },
+      {
+        "command": "twincat.xaeBuildAndActivate",
+        "title": "Build and Activate through XAE… (requires TwinCAT)",
+        "category": "TC Toolkit",
+        "enablement": "!twincat.xaeRunning",
+        "icon": "$(rocket)"
+      },
+      {
+        "command": "twincat.xaeShowTargets",
+        "title": "Show Activation Targets (requires TwinCAT)",
+        "category": "TC Toolkit",
+        "icon": "$(target)"
+      },
+      {
+        "command": "twincat.openSettings",
+        "title": "Open Settings",
+        "category": "TC Toolkit"
+      },
+      {
+        "command": "twincat.detectXaeShell",
+        "title": "Detect XAE Shell Installations",
+        "category": "TC Toolkit"
+      },
+      {
+        "command": "twincat.detectGpp",
+        "title": "Detect g++",
+        "category": "TC Toolkit"
+      },
+      {
+        "command": "twincat.openGettingStarted",
+        "title": "Getting Started",
+        "category": "TC Toolkit"
+      },
+      {
+        "command": "twincat.openRoadmap",
+        "title": "Open Roadmap",
+        "category": "TC Toolkit"
+      },
+      {
+        "command": "twincat.openReleaseNotes",
+        "title": "Release Notes",
+        "category": "TC Toolkit"
+      },
+      {
+        "command": "twincat.reportIssue",
+        "title": "Report an Issue",
+        "category": "TC Toolkit"
+      },
       {
         "command": "twincat.openComponent",
         "title": "Open Component"
@@ -95,130 +255,224 @@
       {
         "command": "twincat.createMethod",
         "title": "Create Method",
-        "category": "TwinCAT"
+        "category": "TC Toolkit"
       },
       {
         "command": "twincat.createProperty",
         "title": "Create Property",
-        "category": "TwinCAT"
+        "category": "TC Toolkit"
       },
       {
         "command": "twincat.createVirtualFolder",
         "title": "Create Virtual Folder",
-        "category": "TwinCAT"
+        "category": "TC Toolkit"
+      },
+      {
+        "command": "twincat.addGetAccessor",
+        "title": "Add Get Accessor",
+        "category": "TC Toolkit"
+      },
+      {
+        "command": "twincat.addSetAccessor",
+        "title": "Add Set Accessor",
+        "category": "TC Toolkit"
       },
       {
         "command": "twincat.deleteComponent",
         "title": "Delete Component",
-        "category": "TwinCAT"
+        "category": "TC Toolkit"
       },
       {
         "command": "twincat.deleteVirtualFolder",
         "title": "Delete Virtual Folder",
-        "category": "TwinCAT"
+        "category": "TC Toolkit"
       },
       {
         "command": "twincat.createAction",
         "title": "Create Action",
-        "category": "TwinCAT"
+        "category": "TC Toolkit"
       },
       {
         "command": "twincat.createFileFB",
         "title": "Create Function Block (FB)",
-        "category": "TwinCAT"
+        "category": "TC Toolkit"
       },
       {
         "command": "twincat.createFileProgram",
         "title": "Create Program (PRG)",
-        "category": "TwinCAT"
+        "category": "TC Toolkit"
       },
       {
         "command": "twincat.createFileFunction",
         "title": "Create Function (FUN)",
-        "category": "TwinCAT"
+        "category": "TC Toolkit"
       },
       {
         "command": "twincat.createFileInterface",
         "title": "Create Interface (ITF)",
-        "category": "TwinCAT"
+        "category": "TC Toolkit"
       },
       {
         "command": "twincat.createFileGVL",
         "title": "Create Global Variable List (GVL)",
-        "category": "TwinCAT"
+        "category": "TC Toolkit"
       },
       {
         "command": "twincat.createPhysicalFolder",
         "title": "Create Folder",
-        "category": "TwinCAT"
+        "category": "TC Toolkit"
       },
       {
         "command": "twincat.deletePhysicalItem",
         "title": "Delete",
-        "category": "TwinCAT"
+        "category": "TC Toolkit"
       },
       {
         "command": "twincat.clearReferences",
         "title": "Clear References",
-        "category": "TwinCAT",
+        "category": "TC Toolkit",
         "icon": "$(clear-all)"
       },
       {
         "command": "twincat.insertAtCursor",
         "title": "Insert at Cursor",
-        "category": "TwinCAT"
+        "category": "TC Toolkit"
       },
       {
         "command": "twincat.insertDefinitionAtCursor",
         "title": "Insert Definition at Cursor",
-        "category": "TwinCAT"
+        "category": "TC Toolkit"
       },
       {
         "command": "twincat.insertObjectAtCursor",
         "title": "Insert at Cursor",
-        "category": "TwinCAT"
+        "category": "TC Toolkit"
       },
       {
         "command": "twincat.insertObjectDefinitionAtCursor",
         "title": "Insert Definition at Cursor",
-        "category": "TwinCAT"
+        "category": "TC Toolkit"
       },
       {
         "command": "twincat.copyLibraryNamespace",
         "title": "Copy Namespace",
-        "category": "TwinCAT"
+        "category": "TC Toolkit"
       },
       {
         "command": "twincat.copyQualifiedName",
         "title": "Copy Qualified Name",
-        "category": "TwinCAT"
+        "category": "TC Toolkit"
       },
       {
         "command": "twincat.refreshLibraries",
         "title": "Refresh",
-        "category": "TwinCAT",
+        "category": "TC Toolkit",
         "icon": "$(refresh)"
       },
       {
         "command": "twincat.updateLibraryDefinitions",
         "title": "Update Library Definitions (requires TwinCAT)",
-        "category": "TwinCAT",
+        "category": "TC Toolkit",
         "icon": "$(cloud-download)"
       },
       {
         "command": "twincat.copyObject",
         "title": "Copy",
-        "category": "TwinCAT"
+        "category": "TC Toolkit"
       },
       {
         "command": "twincat.pasteObject",
         "title": "Paste",
-        "category": "TwinCAT"
+        "category": "TC Toolkit"
       },
       {
         "command": "twincat.renameObject",
         "title": "Rename",
-        "category": "TwinCAT"
+        "category": "TC Toolkit"
+      },
+      {
+        "command": "twincat.undoLastRename",
+        "title": "Undo Last Rename",
+        "category": "TC Toolkit"
+      },
+      {
+        "command": "twincat.goOnline",
+        "title": "Go Online…",
+        "category": "TC Toolkit",
+        "icon": "$(plug)",
+        "enablement": "!twincat.onlineConnecting"
+      },
+      {
+        "command": "twincat.goOffline",
+        "title": "Go Offline",
+        "category": "TC Toolkit",
+        "icon": "$(debug-disconnect)",
+        "enablement": "twincat.online"
+      },
+      {
+        "command": "twincat.online.enableWrites",
+        "title": "Enable Writes for This Online Session",
+        "category": "TC Toolkit",
+        "enablement": "twincat.online"
+      },
+      {
+        "command": "twincat.online.selectInstance",
+        "title": "Select FB Instance for Online Values…",
+        "category": "TC Toolkit",
+        "enablement": "twincat.online"
+      },
+      {
+        "command": "twincat.online.startPlc",
+        "title": "Start PLC…",
+        "category": "TC Toolkit",
+        "icon": "$(debug-start)",
+        "enablement": "twincat.online && twincat.plcStopped && !twincat.plcControlBusy"
+      },
+      {
+        "command": "twincat.online.stopPlc",
+        "title": "Stop PLC…",
+        "category": "TC Toolkit",
+        "icon": "$(debug-stop)",
+        "enablement": "twincat.online && twincat.plcRunning && !twincat.plcControlBusy"
+      },
+      {
+        "command": "twincat.online.showLog",
+        "title": "Show Online Log",
+        "category": "TC Toolkit"
+      },
+      {
+        "command": "twincat.online.statusMenu",
+        "title": "Online Actions…",
+        "category": "TC Toolkit"
+      },
+      {
+        "command": "twincat.watch.add",
+        "title": "Add to PLC Watch…",
+        "category": "TC Toolkit",
+        "icon": "$(add)"
+      },
+      {
+        "command": "twincat.watch.remove",
+        "title": "Remove from PLC Watch",
+        "category": "TC Toolkit",
+        "icon": "$(close)"
+      },
+      {
+        "command": "twincat.watch.clear",
+        "title": "Clear PLC Watch",
+        "category": "TC Toolkit",
+        "icon": "$(clear-all)"
+      },
+      {
+        "command": "twincat.watch.copyPath",
+        "title": "Copy ADS Path",
+        "category": "TC Toolkit"
+      },
+      {
+        "command": "twincat.watch.write",
+        "title": "Write Value…",
+        "category": "TC Toolkit",
+        "icon": "$(edit)"
       }
     ],
     "keybindings": [
@@ -243,6 +497,36 @@
     "menus": {
       "view/title": [
         {
+          "command": "twincat.xaeBuild",
+          "when": "view == twincatExplorer && twincat.hasPlcProject && isWindows",
+          "group": "navigation@1"
+        },
+        {
+          "command": "twincat.xaeBuildAndActivate",
+          "when": "view == twincatExplorer && twincat.hasPlcProject && isWindows",
+          "group": "navigation@2"
+        },
+        {
+          "command": "twincat.goOnline",
+          "when": "view == twincatExplorer && twincat.hasPlcProject && !twincat.online",
+          "group": "navigation@3"
+        },
+        {
+          "command": "twincat.goOffline",
+          "when": "view == twincatExplorer && twincat.online",
+          "group": "navigation@3"
+        },
+        {
+          "command": "twincat.xaeShowTargets",
+          "when": "view == twincatExplorer && twincat.hasPlcProject && isWindows",
+          "group": "navigation@4"
+        },
+        {
+          "command": "twincat.openStartPage",
+          "when": "view == twincatStart",
+          "group": "navigation@1"
+        },
+        {
           "command": "twincat.clearReferences",
           "when": "view == twincatReferences",
           "group": "navigation"
@@ -256,6 +540,87 @@
           "command": "twincat.refreshLibraries",
           "when": "view == twincatLibraries",
           "group": "navigation@2"
+        },
+        {
+          "command": "twincat.goOnline",
+          "when": "view =~ /^twincatWatch(Sidebar)?$/ && !twincat.online",
+          "group": "navigation@1"
+        },
+        {
+          "command": "twincat.goOffline",
+          "when": "view =~ /^twincatWatch(Sidebar)?$/ && twincat.online",
+          "group": "navigation@1"
+        },
+        {
+          "command": "twincat.online.startPlc",
+          "when": "view =~ /^twincatWatch(Sidebar)?$/ && twincat.online && !twincat.plcRunning",
+          "group": "navigation@2"
+        },
+        {
+          "command": "twincat.online.stopPlc",
+          "when": "view =~ /^twincatWatch(Sidebar)?$/ && twincat.online && twincat.plcRunning",
+          "group": "navigation@2"
+        },
+        {
+          "command": "twincat.watch.add",
+          "when": "view =~ /^twincatWatch(Sidebar)?$/",
+          "group": "navigation@3"
+        },
+        {
+          "command": "twincat.watch.clear",
+          "when": "view =~ /^twincatWatch(Sidebar)?$/",
+          "group": "navigation@4"
+        },
+        {
+          "command": "twincat.online.showLog",
+          "when": "view =~ /^twincatWatch(Sidebar)?$/",
+          "group": "more@1"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "twincat.addGetAccessor",
+          "when": "false"
+        },
+        {
+          "command": "twincat.addSetAccessor",
+          "when": "false"
+        },
+        {
+          "command": "twincat.xaeBuild",
+          "when": "isWindows"
+        },
+        {
+          "command": "twincat.xaeBuildAndActivate",
+          "when": "isWindows"
+        },
+        {
+          "command": "twincat.xaeShowTargets",
+          "when": "isWindows"
+        },
+        {
+          "command": "twincat.watch.remove",
+          "when": "false"
+        },
+        {
+          "command": "twincat.watch.copyPath",
+          "when": "false"
+        },
+        {
+          "command": "twincat.watch.write",
+          "when": "false"
+        },
+        {
+          "command": "twincat.online.statusMenu",
+          "when": "false"
+        },
+        {
+          "command": "twincat.online.startPlc",
+          "when": "twincat.online"
+        },
+        {
+          "command": "twincat.online.stopPlc",
+          "when": "twincat.online"
         }
       ],
       "view/item/context": [
@@ -281,7 +646,7 @@
         },
         {
           "command": "twincat.insertObjectAtCursor",
-          "when": "view == twincatExplorer && (viewItem == 'pouFile' || viewItem == 'pouFileProgram' || viewItem == 'pouFileFunction' || viewItem == 'itfFile' || viewItem == 'gvlFile' || viewItem == 'dutFile' || viewItem == 'component' || viewItem == 'propertyNode')",
+          "when": "view == twincatExplorer && (viewItem == 'pouFile' || viewItem == 'pouFileProgram' || viewItem == 'pouFileFunction' || viewItem == 'itfFile' || viewItem == 'gvlFile' || viewItem == 'dutFile' || viewItem == 'component' || viewItem =~ /^propertyNode\\b/)",
           "group": "1_insert@1"
         },
         {
@@ -310,8 +675,18 @@
           "group": "twincat@3"
         },
         {
+          "command": "twincat.addGetAccessor",
+          "when": "view == twincatExplorer && viewItem =~ /^propertyNode\\.noGet\\b/",
+          "group": "twincat@3.1"
+        },
+        {
+          "command": "twincat.addSetAccessor",
+          "when": "view == twincatExplorer && viewItem =~ /^propertyNode\\b.*\\.noSet\\b/",
+          "group": "twincat@3.2"
+        },
+        {
           "command": "twincat.deleteComponent",
-          "when": "view == twincatExplorer && (viewItem == 'component' || viewItem == 'propertyNode')",
+          "when": "view == twincatExplorer && (viewItem == 'component' || viewItem =~ /^propertyNode\\b/)",
           "group": "twincat@4"
         },
         {
@@ -356,18 +731,70 @@
         },
         {
           "command": "twincat.copyObject",
-          "when": "view == twincatExplorer && (viewItem == 'component' || viewItem == 'propertyNode' || viewItem == 'pouFile' || viewItem == 'pouFileProgram' || viewItem == 'pouFileFunction' || viewItem == 'itfFile' || viewItem == 'gvlFile' || viewItem == 'dutFile' || viewItem == 'stFile')",
+          "when": "view == twincatExplorer && (viewItem == 'component' || viewItem =~ /^propertyNode\\b/ || viewItem == 'pouFile' || viewItem == 'pouFileProgram' || viewItem == 'pouFileFunction' || viewItem == 'itfFile' || viewItem == 'gvlFile' || viewItem == 'dutFile' || viewItem == 'stFile')",
           "group": "twincat_0_clipboard@1"
         },
         {
           "command": "twincat.pasteObject",
-          "when": "view == twincatExplorer && twincat.canPaste && (viewItem == 'directory' || viewItem == 'pouFile' || viewItem == 'pouFileProgram' || viewItem == 'itfFile' || viewItem == 'pouVirtualFolder' || viewItem == 'pouVirtualFolderProgram' || viewItem == 'pouVirtualFolderInterface' || viewItem == 'component' || viewItem == 'propertyNode')",
+          "when": "view == twincatExplorer && twincat.canPaste && (viewItem == 'directory' || viewItem == 'pouFile' || viewItem == 'pouFileProgram' || viewItem == 'itfFile' || viewItem == 'pouVirtualFolder' || viewItem == 'pouVirtualFolderProgram' || viewItem == 'pouVirtualFolderInterface' || viewItem == 'component' || viewItem =~ /^propertyNode\\b/)",
           "group": "twincat_0_clipboard@2"
         },
         {
           "command": "twincat.renameObject",
-          "when": "view == twincatExplorer && (viewItem == 'directory' || viewItem == 'pouFile' || viewItem == 'pouFileProgram' || viewItem == 'pouFileFunction' || viewItem == 'itfFile' || viewItem == 'gvlFile' || viewItem == 'dutFile' || viewItem == 'stFile' || viewItem == 'component' || viewItem == 'propertyNode' || viewItem == 'pouVirtualFolder' || viewItem == 'pouVirtualFolderProgram' || viewItem == 'pouVirtualFolderInterface')",
+          "when": "view == twincatExplorer && (viewItem == 'directory' || viewItem == 'pouFile' || viewItem == 'pouFileProgram' || viewItem == 'pouFileFunction' || viewItem == 'itfFile' || viewItem == 'gvlFile' || viewItem == 'dutFile' || viewItem == 'stFile' || viewItem == 'component' || viewItem =~ /^propertyNode\\b/ || viewItem == 'pouVirtualFolder' || viewItem == 'pouVirtualFolderProgram' || viewItem == 'pouVirtualFolderInterface')",
           "group": "twincat_0_clipboard@3"
+        },
+        {
+          "command": "twincat.watch.write",
+          "when": "view =~ /^twincatWatch(Sidebar)?$/ && twincat.online && viewItem =~ /\\bscalar\\b/",
+          "group": "inline@1"
+        },
+        {
+          "command": "twincat.watch.remove",
+          "when": "view =~ /^twincatWatch(Sidebar)?$/ && viewItem =~ /^watchEntry/",
+          "group": "inline@2"
+        },
+        {
+          "command": "twincat.watch.write",
+          "when": "view =~ /^twincatWatch(Sidebar)?$/ && twincat.online && viewItem =~ /\\bscalar\\b/",
+          "group": "1_edit@1"
+        },
+        {
+          "command": "twincat.watch.copyPath",
+          "when": "view =~ /^twincatWatch(Sidebar)?$/",
+          "group": "2_copy@1"
+        },
+        {
+          "command": "twincat.watch.remove",
+          "when": "view =~ /^twincatWatch(Sidebar)?$/ && viewItem =~ /^watchEntry/",
+          "group": "3_remove@1"
+        }
+      ],
+      "editor/title": [
+        {
+          "command": "twincat.xaeBuild",
+          "when": "activeCustomEditorId == twincat.xmlViewer && isWindows",
+          "group": "navigation@1"
+        },
+        {
+          "command": "twincat.xaeBuildAndActivate",
+          "when": "activeCustomEditorId == twincat.xmlViewer && isWindows",
+          "group": "navigation@2"
+        },
+        {
+          "command": "twincat.goOnline",
+          "when": "activeCustomEditorId == twincat.xmlViewer && !twincat.online",
+          "group": "navigation@3"
+        },
+        {
+          "command": "twincat.goOffline",
+          "when": "activeCustomEditorId == twincat.xmlViewer && twincat.online",
+          "group": "navigation@3"
+        },
+        {
+          "command": "twincat.xaeShowTargets",
+          "when": "activeCustomEditorId == twincat.xmlViewer && isWindows",
+          "group": "navigation@4"
         }
       ]
     },
@@ -392,56 +819,371 @@
         "path": "./syntaxes/twincat-st.tmLanguage.json"
       }
     ],
-    "configuration": {
-      "title": "TwinCAT PLC Toolkit",
-      "properties": {
-        "twincat.diagnostics.memberAccess": {
-          "type": "boolean",
-          "default": true,
-          "description": "Flag access to members that do not exist on a resolved type (e.g. fb.NoSuchField)."
-        },
-        "twincat.diagnostics.callArguments": {
-          "type": "boolean",
-          "default": true,
-          "description": "Flag named call arguments that are not parameters of the resolved function/FB/method."
-        },
-        "twincat.diagnostics.declarationTypes": {
-          "type": "boolean",
-          "default": false,
-          "description": "Flag declarations whose type is unknown. Off by default: types from library archives that cannot be read (the opaque .compiled-library-v3 format) are invisible to the indexer, so this may report false positives in projects that use them."
-        },
-        "twincat.diagnostics.typeCompatibility": {
-          "type": "boolean",
-          "default": true,
-          "description": "Flag assignments whose value type is clearly incompatible with the target (e.g. assigning a struct to an INT)."
-        },
-        "twincat.libraryDefinitions.shell": {
-          "type": "string",
-          "enum": [
-            "ask",
-            "x64",
-            "x86"
-          ],
-          "enumDescriptions": [
-            "Ask every time which XAE Shell to use.",
-            "Always use the 64-bit TcXaeShell (TcXaeShell.DTE.17.0).",
-            "Always use the 32-bit TcXaeShell (TcXaeShell.DTE.15.0)."
-          ],
-          "default": "ask",
-          "markdownDescription": "Which TwinCAT XAE Shell **Update Library Definitions** should drive. A library's signatures can differ between the 32-bit and 64-bit shell — visualisation libraries especially — so this defaults to asking. Set it if you always build with the same one. If the chosen shell is not installed, you are asked anyway rather than given the wrong signatures."
+    "configuration": [
+      {
+        "id": "tcToolkit.diagnostics",
+        "title": "Diagnostics",
+        "order": 1,
+        "properties": {
+          "tcToolkit.diagnostics.memberAccess": {
+            "type": "boolean",
+            "default": true,
+            "description": "Flag access to members that do not exist on a resolved type (e.g. fb.NoSuchField)."
+          },
+          "tcToolkit.diagnostics.callArguments": {
+            "type": "boolean",
+            "default": true,
+            "description": "Flag named call arguments that are not parameters of the resolved function/FB/method."
+          },
+          "tcToolkit.diagnostics.declarationTypes": {
+            "type": "boolean",
+            "default": false,
+            "description": "Flag declarations whose type is unknown. Off by default: types from library archives that cannot be read (the opaque .compiled-library-v3 format) are invisible to the indexer, so this may report false positives in projects that use them."
+          },
+          "tcToolkit.diagnostics.typeCompatibility": {
+            "type": "boolean",
+            "default": true,
+            "description": "Flag assignments whose value type is clearly incompatible with the target (e.g. assigning a struct to an INT)."
+          },
+          "twincat.diagnostics.memberAccess": {
+            "type": "boolean",
+            "default": true,
+            "deprecationMessage": "Renamed to tcToolkit.diagnostics.memberAccess. A value set here moves there automatically when the extension starts.",
+            "markdownDeprecationMessage": "Renamed to `#tcToolkit.diagnostics.memberAccess#`. A value set here moves there automatically when the extension starts."
+          },
+          "twincat.diagnostics.callArguments": {
+            "type": "boolean",
+            "default": true,
+            "deprecationMessage": "Renamed to tcToolkit.diagnostics.callArguments. A value set here moves there automatically when the extension starts.",
+            "markdownDeprecationMessage": "Renamed to `#tcToolkit.diagnostics.callArguments#`. A value set here moves there automatically when the extension starts."
+          },
+          "twincat.diagnostics.declarationTypes": {
+            "type": "boolean",
+            "default": false,
+            "deprecationMessage": "Renamed to tcToolkit.diagnostics.declarationTypes. A value set here moves there automatically when the extension starts.",
+            "markdownDeprecationMessage": "Renamed to `#tcToolkit.diagnostics.declarationTypes#`. A value set here moves there automatically when the extension starts."
+          },
+          "twincat.diagnostics.typeCompatibility": {
+            "type": "boolean",
+            "default": true,
+            "deprecationMessage": "Renamed to tcToolkit.diagnostics.typeCompatibility. A value set here moves there automatically when the extension starts.",
+            "markdownDeprecationMessage": "Renamed to `#tcToolkit.diagnostics.typeCompatibility#`. A value set here moves there automatically when the extension starts."
+          }
+        }
+      },
+      {
+        "id": "tcToolkit.compiler",
+        "title": "Compiler",
+        "order": 2,
+        "properties": {
+          "tcToolkit.compiler.path": {
+            "type": "string",
+            "default": "",
+            "scope": "machine",
+            "markdownDescription": "Full path to the command-line file (`.cjs`) of an external IEC 61131-3 compiler for **TC Toolkit: Build Project** to run instead of the one that ships with the extension. Empty = the bundled compiler (the usual choice)."
+          },
+          "tcToolkit.compiler.nodePath": {
+            "type": "string",
+            "default": "",
+            "scope": "machine",
+            "markdownDescription": "Full path to a Node.js executable, version 22 or newer, that runs the compiler for **TC Toolkit: Build Project**. Empty = found automatically: `node` on `PATH`, then on Windows the usual install locations (Node.js installer, nvm-windows, Volta, fnm), then VS Code's own runtime when it is Node.js 22 or newer. The version is checked before each run."
+          },
+          "tcToolkit.compiler.generateCpp": {
+            "type": "boolean",
+            "default": false,
+            "markdownDescription": "**Generate C++.** After **TC Toolkit: Build Project** finds no errors, write the PLC project as C++ into a `CPP_Files` folder next to its `.plcproj` (beside `ST_Files`): `<project>.cpp` and `<project>.hpp`. Off by default. Turning off this setting also turns off `#tcToolkit.compiler.buildWithGpp#`. Only files TC Toolkit wrote there are ever replaced or deleted. Also in the Compile button's dropdown."
+          },
+          "tcToolkit.compiler.buildWithGpp": {
+            "type": "boolean",
+            "default": false,
+            "markdownDescription": "**Build with g++.** After the C++ is written, compile it with g++ (a compile check: `CPP_Files/<project>.o`, nothing is linked or run); g++'s errors appear in the Problems panel on the generated files. Optional: g++ is not needed for anything else. Turning this on also turns on `#tcToolkit.compiler.generateCpp#`. Off by default. Also in the Compile button's dropdown."
+          },
+          "tcToolkit.compiler.gppPath": {
+            "type": "string",
+            "default": "",
+            "scope": "machine",
+            "markdownDescription": "Full path to the `g++` executable (`g++.exe` on Windows) that **Build with g++** runs. Empty = found automatically: `g++` on `PATH`, then on Windows the usual install folders (MSYS2 `ucrt64`/`mingw64`/`clang64`, `C:\\MinGW`, WinLibs, w64devkit, Chocolatey's mingw). Filled with the g++ found when the build is turned on, if empty; a value you set is never overwritten. Run **TC Toolkit: Detect g++** to look again."
+          },
+          "twincat.compiler.path": {
+            "type": "string",
+            "default": "",
+            "scope": "machine",
+            "deprecationMessage": "Renamed to tcToolkit.compiler.path. A value set here moves there automatically when the extension starts.",
+            "markdownDeprecationMessage": "Renamed to `#tcToolkit.compiler.path#`. A value set here moves there automatically when the extension starts."
+          },
+          "twincat.compiler.nodePath": {
+            "type": "string",
+            "default": "",
+            "scope": "machine",
+            "deprecationMessage": "Renamed to tcToolkit.compiler.nodePath. A value set here moves there automatically when the extension starts.",
+            "markdownDeprecationMessage": "Renamed to `#tcToolkit.compiler.nodePath#`. A value set here moves there automatically when the extension starts."
+          }
+        }
+      },
+      {
+        "id": "tcToolkit.xaeShell",
+        "title": "XAE Shell",
+        "order": 3,
+        "properties": {
+          "tcToolkit.xaeShell.path4024": {
+            "type": "string",
+            "default": "",
+            "scope": "machine",
+            "markdownDescription": "Full path to `TcXaeShell.exe` of the XAE Shell for **TwinCAT 3.1.4024** (the 32-bit shell). Filled automatically with the installation found on this machine; change it if yours is elsewhere. Empty = not found. Run **TC Toolkit: Detect XAE Shell Installations** to look again."
+          },
+          "tcToolkit.xaeShell.path4026": {
+            "type": "string",
+            "default": "",
+            "scope": "machine",
+            "markdownDescription": "Full path to `TcXaeShell.exe` of the XAE Shell for **TwinCAT 3.1.4026** (the 64-bit shell). Filled automatically with the installation found on this machine; change it if yours is elsewhere. Empty = not found. Run **TC Toolkit: Detect XAE Shell Installations** to look again."
+          },
+          "twincat.xaeShell.path4024": {
+            "type": "string",
+            "default": "",
+            "scope": "machine",
+            "deprecationMessage": "Renamed to tcToolkit.xaeShell.path4024. A value set here moves there automatically when the extension starts.",
+            "markdownDeprecationMessage": "Renamed to `#tcToolkit.xaeShell.path4024#`. A value set here moves there automatically when the extension starts."
+          },
+          "twincat.xaeShell.path4026": {
+            "type": "string",
+            "default": "",
+            "scope": "machine",
+            "deprecationMessage": "Renamed to tcToolkit.xaeShell.path4026. A value set here moves there automatically when the extension starts.",
+            "markdownDeprecationMessage": "Renamed to `#tcToolkit.xaeShell.path4026#`. A value set here moves there automatically when the extension starts."
+          }
+        }
+      },
+      {
+        "id": "tcToolkit.xaeBuild",
+        "title": "XAE Build",
+        "order": 4,
+        "properties": {
+          "tcToolkit.xaeBuild.showWindow": {
+            "type": "boolean",
+            "default": false,
+            "markdownDescription": "**Show the XAE window.** Show the XAE Shell window for the whole build instead of building headless. The window is always shown during activation, so a licence or download dialog can be answered, and it stays visible after an XAE version switch. Used by *TC Toolkit: Build through XAE* and *Build and Activate through XAE…* (Windows with TwinCAT XAE only)."
+          },
+          "tcToolkit.xaeBuild.configuration": {
+            "type": "string",
+            "default": "Release",
+            "markdownDescription": "The solution configuration *Build through XAE* builds, normally `Release` or `Debug` (with the platform below, one of the pairs the solution declares). Free text, because a solution can declare its own configuration names."
+          },
+          "tcToolkit.xaeBuild.platform": {
+            "type": "string",
+            "default": "TwinCAT RT (x64)",
+            "enum": [
+              "TwinCAT RT (x64)",
+              "TwinCAT RT (x86)",
+              "TwinCAT OS (x64)",
+              "TwinCAT OS (x64-E)",
+              "TwinCAT OS (ARMV7-A)",
+              "TwinCAT OS (ARMV7-M)",
+              "TwinCAT OS (ARMV8-A)",
+              "TwinCAT CE7 (ARMV7)",
+              "TwinCAT OS (ARMT2)"
+            ],
+            "enumDescriptions": [
+              "Real-time runtime, x64.",
+              "Real-time runtime, 32-bit x86.",
+              "User-mode runtime, x64 (for example UmRT_Default).",
+              "User-mode runtime, x64-E.",
+              "User-mode runtime, ARMv7-A.",
+              "User-mode runtime, ARMv7-M.",
+              "User-mode runtime, ARMv8-A.",
+              "Windows CE 7, ARMv7 (declared by 3.1.4024 solutions).",
+              "ARM Thumb-2 (declared by 3.1.4024 solutions)."
+            ],
+            "markdownDescription": "The solution platform *Build through XAE* builds. Activating onto a runtime builds that runtime's platform: when the target runs another platform and the solution declares it, *Build and Activate through XAE…* offers to switch. A platform not in this list can still be typed into `settings.json`; the solution must declare it."
+          },
+          "tcToolkit.xaeBuild.timeoutMinutes": {
+            "type": "number",
+            "default": 30,
+            "minimum": 5,
+            "maximum": 240,
+            "markdownDescription": "How many minutes a build through XAE may take before it is stopped (5 to 240). During activation it is extended once by 5 minutes and then only reported, never stopped."
+          },
+          "tcToolkit.xaeBuild.stallMinutes": {
+            "type": "number",
+            "default": 10,
+            "minimum": 2,
+            "maximum": 60,
+            "markdownDescription": "Headless watchdog: after this many minutes without any output outside the build itself, offer to cancel and re-run with the window shown (2 to 60). A hidden XAE Shell can wait on a dialog nobody sees."
+          }
+        }
+      },
+      {
+        "id": "tcToolkit.libraryDefinitions",
+        "title": "Library Definitions",
+        "order": 5,
+        "properties": {
+          "tcToolkit.libraryDefinitions.shell": {
+            "type": "string",
+            "enum": [
+              "ask",
+              "x64",
+              "x86"
+            ],
+            "enumDescriptions": [
+              "Ask every time which XAE Shell to use.",
+              "Always use the 64-bit TcXaeShell (TcXaeShell.DTE.17.0).",
+              "Always use the 32-bit TcXaeShell (TcXaeShell.DTE.15.0)."
+            ],
+            "default": "ask",
+            "markdownDescription": "Which TwinCAT XAE Shell **Update Library Definitions** should drive. A library's signatures can differ between the 32-bit and 64-bit shell — visualisation libraries especially — so this defaults to asking. Set it if you always build with the same one. If the chosen shell is not installed, you are asked anyway rather than given the wrong signatures."
+          },
+          "twincat.libraryDefinitions.shell": {
+            "type": "string",
+            "default": "ask",
+            "deprecationMessage": "Renamed to tcToolkit.libraryDefinitions.shell. A value set here moves there automatically when the extension starts.",
+            "markdownDeprecationMessage": "Renamed to `#tcToolkit.libraryDefinitions.shell#`. A value set here moves there automatically when the extension starts."
+          }
+        }
+      },
+      {
+        "id": "tcToolkit.startPage",
+        "title": "Start Page",
+        "order": 6,
+        "properties": {
+          "tcToolkit.startPage.recentProjectsShown": {
+            "type": "integer",
+            "default": 2,
+            "minimum": 1,
+            "maximum": 10,
+            "markdownDescription": "How many recent TwinCAT solutions the start page lists under **Open existing project**. When more are remembered (up to 10), a **Show all** tile expands the list."
+          },
+          "twincat.startPage.recentProjectsShown": {
+            "type": "integer",
+            "default": 2,
+            "deprecationMessage": "Renamed to tcToolkit.startPage.recentProjectsShown. A value set here moves there automatically when the extension starts.",
+            "markdownDeprecationMessage": "Renamed to `#tcToolkit.startPage.recentProjectsShown#`. A value set here moves there automatically when the extension starts."
+          }
+        }
+      },
+      {
+        "id": "tcToolkit.online",
+        "title": "Online Monitoring",
+        "order": 7,
+        "properties": {
+          "tcToolkit.online.connectionMode": {
+            "type": "string",
+            "default": "router",
+            "enum": [
+              "router",
+              "direct"
+            ],
+            "enumDescriptions": [
+              "Through the TwinCAT AMS router on this PC (XAE or XAR installed; routes set up in XAE). The default.",
+              "Directly to the PLC over TCP, for a PC without TwinCAT. Needs the three direct settings below and a static route on the PLC to this PC. Never used unless chosen here."
+            ],
+            "markdownDescription": "**How Go Online reaches the PLC.** `router` (default) goes through the AMS router of the TwinCAT installation on this PC, using the routes you set up in XAE; if that router refuses the connection (the TwinCAT 3.1.4026 user-mode runtime does), Go Online uses TwinCAT's own ADS DLL through it instead, on Windows. `direct` connects to the PLC itself and is only for a PC without TwinCAT; it is never used as a fallback. Direct mode from a PC that also runs XAE can drop XAE's own connection to that PLC (one ADS connection per client address)."
+          },
+          "tcToolkit.online.adsPort": {
+            "type": "integer",
+            "default": 851,
+            "minimum": 1,
+            "maximum": 65535,
+            "markdownDescription": "**ADS port of the PLC runtime.** 851 is the first PLC runtime, 852 the second (850 + runtime number)."
+          },
+          "tcToolkit.online.routerAddress": {
+            "type": "string",
+            "default": "127.0.0.1",
+            "scope": "machine",
+            "markdownDescription": "**AMS router address** (router mode). `127.0.0.1` is the router on this PC. Another address (for example, for Remote-SSH or WSL) is **untested**."
+          },
+          "tcToolkit.online.direct.plcAddress": {
+            "type": "string",
+            "default": "",
+            "scope": "machine",
+            "markdownDescription": "**Direct mode: the PLC's IP address or host name.** Used only when `#tcToolkit.online.connectionMode#` is `direct`."
+          },
+          "tcToolkit.online.direct.localAmsNetId": {
+            "type": "string",
+            "default": "",
+            "scope": "machine",
+            "markdownDescription": "**Direct mode: this PC's AMS Net ID**, as the PLC's static route to this PC names it (for example `192.168.1.20.1.1`). The route itself is created on the PLC or in XAE, never by this extension."
+          },
+          "tcToolkit.online.direct.localAdsPort": {
+            "type": "integer",
+            "default": 32750,
+            "minimum": 1,
+            "maximum": 65535,
+            "scope": "machine",
+            "markdownDescription": "**Direct mode: the local ADS port** this PC uses (any free port; 32750 by default)."
+          },
+          "tcToolkit.online.allowWrites": {
+            "type": "boolean",
+            "default": false,
+            "scope": "application",
+            "markdownDescription": "**Allow writing values.** Off by default, and only in your user settings: a workspace's settings cannot turn it on. When on, writes still have to be enabled once per online session, every write asks for a confirmation that names the target, the variable and the old and new values, and every write is logged to the *TC Toolkit Online* output channel. Writes are refused while the PLC runs a different project or an editor has unsaved edits, and from editors of a project the PLC does not run. A write sets the value once; it is not a force."
+          },
+          "tcToolkit.online.inlinePollInterval": {
+            "type": "integer",
+            "default": 500,
+            "minimum": 100,
+            "maximum": 10000,
+            "markdownDescription": "**Inline values: refresh interval in milliseconds.** The visible variables are read with one batched read per interval."
+          },
+          "tcToolkit.online.watchLocation": {
+            "type": "string",
+            "enum": [
+              "panel",
+              "sidebar"
+            ],
+            "default": "panel",
+            "enumDescriptions": [
+              "Its own tab in the bottom panel, next to the Terminal.",
+              "In the TC Toolkit sidebar, under PLC Objects."
+            ],
+            "markdownDescription": "**PLC Watch: where the view is shown.** In its own tab in the bottom panel (next to the Terminal), or in the TC Toolkit sidebar under **PLC Objects**. Adding a variable brings the view to the front wherever it is."
+          },
+          "tcToolkit.online.watchCycleTime": {
+            "type": "integer",
+            "default": 200,
+            "minimum": 50,
+            "maximum": 10000,
+            "markdownDescription": "**PLC Watch: notification cycle time in milliseconds.** Each watched variable is one on-change ADS notification checked at this cycle."
+          },
+          "tcToolkit.online.maxNotifications": {
+            "type": "integer",
+            "default": 100,
+            "minimum": 1,
+            "maximum": 400,
+            "markdownDescription": "**PLC Watch: the most ADS notifications at once.** Beckhoff recommends at most 550 per device; watched variables past this limit show no value until others are removed."
+          }
+        }
+      },
+      {
+        "id": "tcToolkit.adsDll",
+        "title": "ADS DLLs",
+        "order": 8,
+        "properties": {
+          "tcToolkit.adsDll.dotNetLibrary": {
+            "type": "string",
+            "default": "",
+            "scope": "machine",
+            "markdownDescription": "**Full path to `TwinCAT.Ads.dll`**, Beckhoff's .NET ADS library, installed with TwinCAT 3.1 (XAE or XAR). Online monitoring loads it when this PC's router refuses a TCP connection (the user-mode fallback). Usually `C:\\Program Files (x86)\\Beckhoff\\TwinCAT\\3.1\\Components\\Base\\v170\\TwinCAT.Ads.dll`. Empty = search the TwinCAT install folders (newest `Components\\Base\\v*` first). A path set here is used as given: if it does not exist, Go Online says so and does not search."
+          },
+          "tcToolkit.adsDll.nativeDllFolder": {
+            "type": "string",
+            "default": "",
+            "scope": "machine",
+            "markdownDescription": "**Folder holding `TcAdsDll.dll`**, Beckhoff's native ADS DLL, installed with TwinCAT 3.1. Used by the online monitoring fallback and by **Build and Activate through XAE** (the RUN check after activation, and confirming a user-mode runtime's AmsNetId). Usually `C:\\Program Files (x86)\\Beckhoff\\TwinCAT\\Common64`. Empty = search the usual folders. A folder set here is used as given: if `TcAdsDll.dll` is not in it, TC Toolkit says so and does not search."
+          }
         }
       }
-    }
+    ]
   },
   "devDependencies": {
-    "@eslint/js": "^9.39.5",
+    "@eslint/js": "10.0.1",
     "@types/node": "^26.1.1",
     "@types/vscode": "^1.66.0",
-    "eslint": "^9.39.5",
+    "eslint": "10.14.0",
     "globals": "^17.11.0",
     "typescript": "^7.0.2"
   },
   "dependencies": {
+    "ads-client": "2.2.0",
+    "vscode-cpptools": "^7.1.1",
     "vscode-languageclient": "^9.0.1",
     "vscode-languageserver": "^9.0.1",
     "vscode-languageserver-textdocument": "^1.0.12"

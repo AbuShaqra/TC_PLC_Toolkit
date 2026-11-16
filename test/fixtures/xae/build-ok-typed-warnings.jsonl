@@ -1,0 +1,12 @@
+{"v":1,"t":"hello","mode":"build","showWindow":false}
+{"v":1,"t":"shell","pid":4246,"ours":true,"preexisting":[]}
+{"v":1,"t":"phase","name":"build"}
+{"v":1,"t":"ui","requested":"headless","suppressUI":true,"mainWindowVisible":null,"reason":"build"}
+{"log":"Projects failed: 0"}
+{"v":1,"t":"buildResult","failedProjects":0}
+{"v":1,"t":"phase","name":"errors"}
+{"log":"[1] TcToolkitSample_PLC\\POUs\\Machine\\FB_Station.TcPOU(3): C0373: Unused variable 'nSpare'"}
+{"v":1,"t":"errorItem","file":"TcToolkitSample_PLC\\POUs\\Machine\\FB_Station.TcPOU","line":3,"column":1,"description":"C0373: Unused variable 'nSpare'","project":"TcToolkitSample_PLC","level":"vsBuildErrorLevelMedium"}
+{"log":"BUILD SUCCEEDED."}
+{"v":1,"t":"done","exitCode":0,"ui":{"requested":"headless","buildPhase":{"suppressUI":true,"mainWindowVisible":null},"versionSwitchKeptVisible":false,"activationShown":false}}
+{"exit":0}

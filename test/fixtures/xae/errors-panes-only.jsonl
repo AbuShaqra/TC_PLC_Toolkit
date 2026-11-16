@@ -1,0 +1,7 @@
+{"v":1,"t":"hello","mode":"build","showWindow":false}
+{"v":1,"t":"shell","pid":4242,"ours":true,"preexisting":[]}
+{"v":1,"t":"phase","name":"build"}
+{"v":1,"t":"buildResult","failedProjects":1}
+{"v":1,"t":"outputPane","name":"Build","text":"------ Build started ------\r\nC0046: Identifier 'nNope' not defined\r\n","truncated":false}
+{"v":1,"t":"done","exitCode":1,"ui":{"requested":"headless","buildPhase":{"suppressUI":true,"mainWindowVisible":false},"versionSwitchKeptVisible":false,"activationShown":false}}
+{"exit":1}

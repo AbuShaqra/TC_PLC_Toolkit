@@ -73,7 +73,9 @@ function assert(cond, msg) {
     else { console.error(`[FAIL] ${msg}`); errors++; }
 }
 
-const { SAMPLE_DIR, MIT_NAMESPACE, sampleArchiveFixtures, skipBeckhoff } = require('./_baseline');
+// The library fixtures (MIT archive, .tmc, four references) are the FIRST sample's; the second sample
+// declares its own template references and would only double-count them.
+const { SAMPLE_PROJECT_DIR: SAMPLE_DIR, MIT_NAMESPACE, sampleArchiveFixtures, skipBeckhoff } = require('./_baseline');
 
 const fixtures = sampleArchiveFixtures(SAMPLE_DIR);
 

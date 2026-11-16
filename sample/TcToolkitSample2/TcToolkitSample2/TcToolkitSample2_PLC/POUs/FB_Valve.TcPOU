@@ -1,0 +1,98 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <POU Name="FB_Valve" Id="{90be5c88-da22-4202-bf6b-0788eb0769d5}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_Valve IMPLEMENTS I_Valve
+VAR_INPUT
+	bClose	: BOOL;
+END_VAR
+VAR_OUTPUT
+	bIsOpen	: BOOL;
+END_VAR
+VAR
+	_eState	: E_ValveState;
+	_nTicks	: UINT;
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[IF bClose THEN
+	Act_Close();
+END_IF
+IF _eState = E_ValveState.Opening THEN
+	_nTicks := _nTicks + 1;
+	IF _nTicks >= 10 THEN
+		_eState := E_ValveState.Open;
+	END_IF
+END_IF
+bIsOpen := _eState = E_ValveState.Open;]]></ST>
+    </Implementation>
+    <Folder Name="Actions" Id="{67d72acf-1e80-4c53-bb7f-868b743319fd}" />
+    <Method Name="Open" Id="{8e122aad-0321-4c46-a78b-aac38cef031a}">
+      <Declaration><![CDATA[METHOD Open : BOOL
+VAR
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IF _eState = E_ValveState.Closed THEN
+	_eState := E_ValveState.Opening;
+	_nTicks := 0;
+END_IF
+Open := _eState <> E_ValveState.Closed;]]></ST>
+      </Implementation>
+    </Method>
+    <Property Name="State" Id="{e68b2721-dac6-4526-9fac-83f157ff1574}">
+      <Declaration><![CDATA[PROPERTY State : E_ValveState
+]]></Declaration>
+      <Get Name="Get" Id="{f2de8de5-faaa-443f-bfa1-8deae8bbfea4}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[State := _eState;]]></ST>
+        </Implementation>
+      </Get>
+      <Set Name="Set" Id="{5031f7d9-b840-41b5-8b4e-e06696d82af7}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[_eState := State;]]></ST>
+        </Implementation>
+      </Set>
+    </Property>
+    <Action Name="Act_Close" Id="{ae3481d1-5b24-42e6-86b7-8b071a0f8d86}" FolderPath="Actions\">
+      <Implementation>
+        <ST><![CDATA[_eState := E_ValveState.Closed;
+_nTicks := 0;]]></ST>
+      </Implementation>
+    </Action>
+    <LineIds Name="FB_Valve">
+      <LineId Id="1" Count="0" />
+      <LineId Id="2" Count="0" />
+      <LineId Id="3" Count="0" />
+      <LineId Id="4" Count="0" />
+      <LineId Id="5" Count="0" />
+      <LineId Id="6" Count="0" />
+      <LineId Id="7" Count="0" />
+      <LineId Id="8" Count="0" />
+      <LineId Id="9" Count="0" />
+      <LineId Id="10" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_Valve.Open">
+      <LineId Id="11" Count="0" />
+      <LineId Id="12" Count="0" />
+      <LineId Id="13" Count="0" />
+      <LineId Id="14" Count="0" />
+      <LineId Id="15" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_Valve.State.Get">
+      <LineId Id="16" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_Valve.State.Set">
+      <LineId Id="17" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_Valve.Act_Close">
+      <LineId Id="18" Count="0" />
+      <LineId Id="19" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

@@ -1,0 +1,7 @@
+{"v":1,"t":"hello","mode":"build","showWindow":false}
+{"v":1,"t":"shell","pid":4242,"ours":true,"preexisting":[]}
+{"v":1,"t":"phase","name":"open"}
+{"log":"CANCELLED: the cancel file was found; closing the XAE Shell this run started."}
+{"v":1,"t":"phase","name":"close"}
+{"v":1,"t":"done","exitCode":4,"ui":{"requested":"headless","buildPhase":null,"versionSwitchKeptVisible":false,"activationShown":false}}
+{"exit":4}

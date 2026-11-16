@@ -93,8 +93,10 @@ if (-not $Solution) {
 }
 
 $slnDir = Split-Path -Parent $SlnPath
-$tsproj = Get-ChildItem -Path $slnDir -Recurse -Filter *.tsproj -File -ErrorAction SilentlyContinue |
-          Sort-Object FullName | Select-Object -First 1
+# Two -Filter lookups merged (as in build_plc_project.ps1): .tsproj, or .tspproj (separate files).
+$tsproj = (@(Get-ChildItem -Path $slnDir -Recurse -Filter *.tsproj -File -ErrorAction SilentlyContinue) +
+           @(Get-ChildItem -Path $slnDir -Recurse -Filter *.tspproj -File -ErrorAction SilentlyContinue)) |
+          Sort-Object FullName -Unique | Select-Object -First 1
 if (-not $tsproj) { Write-Host "FATAL: no .tsproj under $slnDir" -ForegroundColor Red; exit 2 }
 $m = Select-String -Path $tsproj.FullName -Pattern 'TcVersion="(3\.1\.(\d+)\.\d+)"' | Select-Object -First 1
 if (-not $m) { Write-Host "FATAL: no TcVersion in $($tsproj.Name)" -ForegroundColor Red; exit 2 }
