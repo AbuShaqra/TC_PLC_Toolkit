@@ -21,7 +21,7 @@ class WatchTreeProvider {
         this.watch = watch;
         this._emitter = new vscode.EventEmitter();
         this.onDidChangeTreeData = this._emitter.event;
-        /** Root rows by lower-case path, kept as the same objects so one row can be redrawn alone. */
+        /** The root rows of the latest reload, by lower-case path, so one row can be redrawn alone. */
         /** @type {Map<string, any>} */
         this._rows = new Map();
     }
@@ -64,7 +64,10 @@ class WatchTreeProvider {
             const rows = new Map();
             const out = this.watch.list().map(r => {
                 const k = r.path.toLowerCase();
-                const row = Object.assign(this._rows.get(k) || {}, this._rowOf(r));
+                // A NEW object per reload: VS Code loses an element object that it saw in an earlier reload,
+                // and a later one-row redraw of it then never shows (measured in VS Code 1.95 and 1.146:
+                // the value stayed at its first reading). refresh(path) redraws the latest object.
+                const row = this._rowOf(r);
                 rows.set(k, row);
                 return row;
             });

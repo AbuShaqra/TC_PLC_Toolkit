@@ -305,8 +305,13 @@ const watchTree = trees.get('twincatWatch');
     // User, 2026-11-16: a full redraw on every value made VS Code's progress bar flash in the view.
     assert(fired.length > 0 && fired.every(e => e === rowBefore) && rowBefore.text === '43',
         `a new value redraws only its own row, the same object getChildren returned (${fired.map(e => (e ? e.path : 'ALL')).join(',')})`);
-    await waitFor(() => watchTree.getChildren()[0].text === '43');
-    assert(watchTree.getChildren()[0].text === '43' && watchTree.getChildren()[0] === rowBefore, 'a notification updates the view, keeping the row object');
+    const reloaded = watchTree.getChildren()[0];
+    assert(reloaded.text === '43' && reloaded !== rowBefore,
+        'a reload hands VS Code new row objects (it loses objects seen in an earlier reload; the value then froze)');
+    fired.length = 0;
+    plc.set('MAIN.nCycleCount', 44);
+    await waitFor(() => fired.length > 0);
+    assert(fired.every(e => e === reloaded) && reloaded.text === '44', 'a later value redraws the row object of the latest reload');
     assert(watchTree.getTreeItem(watchTree.getChildren()[0]).contextValue === 'watchEntry scalar', 'a scalar entry offers Write value… and Remove');
     await run('twincat.watch.add', { path: 'GVL_System.fbStation' });
     await waitFor(() => api.watch.list()[1] && api.watch.list()[1].state === 'ok');
