@@ -143,6 +143,10 @@ function activate(context) {
         const folders = vscode.workspace.workspaceFolders || [];
         hostProjectMap = createProjectMap(folders.map(f => f.uri.fsPath));
         hostSolutionMap = createSolutionMap(folders.map(f => f.uri.fsPath), hostProjectMap);
+        // `twincat.hasPlcProject` shows the PLC Objects view's title buttons (Build through XAE, Go
+        // Online, …). Every rebuild re-sets it, so a `.plcproj` created or deleted later flips it too.
+        const hasPlcProject = !!(hostProjectMap && hostProjectMap.projects && hostProjectMap.projects.size > 0);
+        Promise.resolve(vscode.commands.executeCommand('setContext', 'twincat.hasPlcProject', hasPlcProject)).catch(() => { /* no context in tests */ });
     };
     refreshProjectMap();
     // Declared before revealUri (next) is defined: revealUri calls projectStatusBar.refresh() on
@@ -504,6 +508,8 @@ function activate(context) {
         // must be rebuilt when either ownership or the solution membership chain changes.
         refreshProjectMap();
         treeProvider.refresh();
+        // The start page's project actions follow the same map (enabled once a project exists).
+        if (start) start.startPage.postState();
         // Only `.plcproj` content changes language/library indexing. Solution, system-project and
         // XTI changes merely regroup already-known project directories in the Objects tree.
         if (ext !== '.plcproj') return;
@@ -602,7 +608,11 @@ function activate(context) {
     });
     // Online monitoring over ADS (R15): Go Online/Offline, inline values, Write value…, PLC Watch.
     // Nothing connects until the user goes online; deactivate() closes whatever is open.
-    online = registerOnlineCommands(context, { provider, getProjectMap: () => hostProjectMap });
+    const onlineCommands = registerOnlineCommands(context, { provider, getProjectMap: () => hostProjectMap });
+    online = onlineCommands;
+    // The start page's Go Online / Go Offline tile follows the connection state.
+    const onlineSession = onlineCommands.session;
+    context.subscriptions.push(onlineSession.onDidChange((what) => { if (what === 'state' && start) start.startPage.postState(); }));
     // IntelliSense for the generated C++ in Microsoft's C/C++ extension, when it is installed (not awaited).
     registerCppToolsProvider(context, { getProjectMap: () => hostProjectMap });
 
@@ -610,7 +620,8 @@ function activate(context) {
         provider, getProjectMap: () => hostProjectMap, getSolutionMap: () => hostSolutionMap,
         isCompilerAvailable: compile.isAvailable,
         compileOptions: compile.compileOptions, setCompileOption: compile.setCompileOption,
-        xaeOptions: xaeBuild.xaeOptions, setXaeOption: xaeBuild.setXaeOption
+        xaeOptions: xaeBuild.xaeOptions, setXaeOption: xaeBuild.setXaeOption,
+        onlineState: () => onlineSession.state
     });
     /** @type {any} */ (start).recordOpenSolutions();
 

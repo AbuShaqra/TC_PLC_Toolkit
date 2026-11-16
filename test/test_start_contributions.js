@@ -14,7 +14,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { renderStartPageHtml, HELP_LINKS, PROJECT_ACTIONS } = require('../src/startPageHtml');
+const { renderStartPageHtml, HELP_LINKS, PROJECT_ACTIONS, XAE_ACTIONS } = require('../src/startPageHtml');
 const { TEMPLATE_VERSIONS } = require('../src/projectTemplate');
 const { MAX_RECENTS, DEFAULT_RECENTS_SHOWN } = require('../src/recentProjects');
 const { XAE_SHELL_VERSIONS } = require('../src/xaeShellDetect');
@@ -221,8 +221,11 @@ assert(/^\^1\.66\./.test(pkg.engines.vscode), `engine stays ^1.66 (${pkg.engines
         assert(contributed.get(id).enablement === '!twincat.xaeRunning', `${id} is disabled while a run is in progress (enablement: !twincat.xaeRunning)`);
     }
     assert(registered.has('twincat.xaeBuild.goToProblem') && !contributed.has('twincat.xaeBuild.goToProblem'), 'the XAE Go to Problem command is internal (registered, not contributed)');
-    assert(ALLOWED_COMMANDS.has('twincat.xaeBuild') && ALLOWED_COMMANDS.has('twincat.xaeBuildAndActivate') && !ALLOWED_COMMANDS.has('twincat.xaeShowTargets'),
-        'the start page may run the two XAE build commands');
+    // User request 2026-11-16: Show Activation Targets became a start-page tile (it was not allowed before).
+    assert(['twincat.xaeBuild', 'twincat.xaeBuildAndActivate', 'twincat.xaeShowTargets', 'twincat.goOnline', 'twincat.goOffline'].every(id => ALLOWED_COMMANDS.has(id)),
+        'the start page may run the XAE builds, Show Activation Targets and Go Online / Go Offline');
+    assert(JSON.stringify(XAE_ACTIONS.map(a => a.command)) === '["twincat.xaeBuild","twincat.xaeBuildAndActivate","twincat.xaeShowTargets"]'
+        && XAE_ACTIONS.every(a => !/TwinCAT/.test(a.label)), 'the start page has the three XAE tiles, none named with TwinCAT');
     const sec = sections.find(s => s.id === 'tcToolkit.xaeBuild');
     assert(!!sec && sec.title === 'XAE Build' && !/TwinCAT/i.test(sec.title), 'the settings section tcToolkit.xaeBuild is titled "XAE Build"');
     const p = (k) => allProps[`tcToolkit.xaeBuild.${k}`];

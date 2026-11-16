@@ -5,6 +5,10 @@
  * `twincat.online` context key) and Show Activation Targets. Each must be shown only for TC Toolkit's
  * custom editor, carry an icon (a title-bar button without one renders as text), and name a
  * contributed command. The three XAE buttons are Windows-only, like their palette entries.
+ *
+ * The same four actions sit in the PLC Objects view's title bar (user request 2026-11-16, for when no
+ * file is open), shown while the workspace has a PLC project (`twincat.hasPlcProject`, set by
+ * extension.js whenever the project map is rebuilt) — Go Offline whenever a session is online.
  */
 
 'use strict';
@@ -44,5 +48,30 @@ assert(!!online && /!twincat\.online\b/.test(online.when) && !!offline && /(^|&&
     'the slot swaps on the twincat.online context key');
 assert(items.every((i) => commands.has(i.command)), 'every editor title entry names a contributed command');
 
+// ── The PLC Objects view's title bar ──────────────────────────────────────────────────────────────
+const fs = require('fs');
+const path = require('path');
+const VIEW = 'view == twincatExplorer';
+const viewItems = ((pkg.contributes.menus || {})['view/title'] || []).filter((i) => typeof i.when === 'string' && i.when.startsWith(VIEW));
+const viewByCommand = new Map(viewItems.map((i) => [i.command, i]));
+for (const id of ['twincat.xaeBuild', 'twincat.xaeBuildAndActivate', 'twincat.goOnline', 'twincat.goOffline', 'twincat.xaeShowTargets']) {
+    const item = viewByCommand.get(id);
+    const editorItem = byCommand.get(id);
+    assert(!!item, `${id} has a PLC Objects view title button`);
+    if (!item) continue;
+    assert(!!editorItem && item.group === editorItem.group, `${id} takes the same slot as in the editor tab (${item.group})`);
+    if (id !== 'twincat.goOffline') assert(/&& twincat\.hasPlcProject\b/.test(item.when), `${id} shows only while the workspace has a PLC project`);
+    assert(/\bisWindows\b/.test(item.when) === /\bisWindows\b/.test(editorItem ? editorItem.when : ''), `${id} has the editor tab's Windows gating`);
+}
+const vOnline = viewByCommand.get('twincat.goOnline');
+const vOffline = viewByCommand.get('twincat.goOffline');
+assert(!!vOnline && /!twincat\.online\b/.test(vOnline.when) && !!vOffline && /&& twincat\.online\b/.test(vOffline.when),
+    'the view slot swaps on twincat.online too; Go Offline shows whenever online, project or not');
+assert(viewItems.length === 5, `the PLC Objects view has exactly these five title entries (${viewItems.length})`);
+const ext = fs.readFileSync(path.join(__dirname, '..', 'extension.js'), 'utf8');
+const refresh = /const refreshProjectMap = \(\) => \{[\s\S]*?\n {4}\};/.exec(ext);
+assert(!!refresh && /setContext', 'twincat\.hasPlcProject'/.test(refresh[0]),
+    'extension.js sets twincat.hasPlcProject in refreshProjectMap (activation and every project-structure change)');
+
 if (errors) { console.error(`\n${errors} failure(s)`); process.exit(1); }
-console.log('\nAll editor title button checks passed.');
+console.log('\nAll editor and PLC Objects title button checks passed.');

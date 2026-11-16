@@ -9,7 +9,7 @@
  *                        openRecent {slnPath} · removeRecent {slnPath} · command {command} · link {id} ·
  *                        openSettings {section} · setCompileOption {key, value} · setXaeOption {key, value}
  * Messages from the host: state {location, sep, recents, recentsShown, hasProject, compilerReady, compileOptions,
- *                         xaeShells, gpp, xaeOptions} ·
+ *                         xaeShells, gpp, xaeOptions, online} ·
  *                         location {location} · createResult {ok, error?}
  */
 
@@ -315,24 +315,44 @@
             if (next) next.focus();
         }
     });
-    // Build through XAE (R14): the two actions run their commands (data-command); the checkbox writes
-    // tcToolkit.xaeBuild.showWindow through the host, which answers with `state`.
+    // Build through XAE (R14): its three tiles run their commands (data-command) and show only where
+    // XAE is available; the dropdown's checkbox writes tcToolkit.xaeBuild.showWindow through the host,
+    // which answers with `state`.
     const optXaeWindow = $('opt-xae-window');
     /**
      * @param {{available?: boolean, showWindow?: boolean, running?: boolean, configuration?: string, platform?: string}} o
-     * @param {boolean} hasProject The two actions also need an open PLC project (like data-needs-project).
+     * @param {boolean} hasProject The tiles also need an open PLC project (like data-needs-project).
      */
     function renderXaeOptions(o, hasProject) {
-        $('xae-options').hidden = !(o && o.available);
+        const available = !!(o && o.available);
+        $('xae-options').hidden = !available;
+        for (const row of document.querySelectorAll('.xae-tile')) row.hidden = !available;
         optXaeWindow.checked = !!(o && o.showWindow);
+        // A run in progress disables the two builds (their enablement is !twincat.xaeRunning), not the target list.
         $('xae-build-run').disabled = !!(o && o.running) || !hasProject;
         $('xae-activate-run').disabled = !!(o && o.running) || !hasProject;
+        $('xae-targets-run').disabled = !hasProject;
         optionsToggle.title = o && o.available
             ? 'Build options: C++ generation, the g++ build and the XAE build'
             : 'Build options: C++ generation and the g++ build';
         $('xae-build-mode').textContent = `${o && o.showWindow ? 'window shown' : 'headless'}; ` +
             `${(o && o.configuration) || 'Release'} | ${(o && o.platform) || 'TwinCAT RT (x64)'}` +
             (o && o.available === false ? ' (needs Windows with TwinCAT XAE)' : '');
+    }
+    /**
+     * The Go Online / Go Offline tile (R15): one slot, like the editor tab's button. Go Offline stays
+     * usable without a project, so a session can always be closed.
+     * @param {string} state The ADS session's state: 'offline', 'connecting' or 'online'.
+     * @param {boolean} hasProject
+     */
+    function renderOnlineTile(state, hasProject) {
+        const tile = $('online-run');
+        const online = state === 'online';
+        tile.setAttribute('data-command', online ? 'twincat.goOffline' : 'twincat.goOnline');
+        tile.querySelector('.action-label').textContent = online ? 'Go Offline' : (state === 'connecting' ? 'Going online…' : 'Go Online…');
+        tile.querySelector('.action-detail').textContent = online ? 'Close the ADS connection to the PLC runtime'
+            : 'Connect to the PLC runtime over ADS and show live values';
+        tile.disabled = state === 'connecting' || (!online && !hasProject);
     }
     optXaeWindow.addEventListener('change', () => vscode.postMessage({ type: 'setXaeOption', key: 'showWindow', value: optXaeWindow.checked }));
     /** @param {{generateCpp?: boolean, buildWithGpp?: boolean}} o */
@@ -367,6 +387,7 @@
                 renderCompileTile(!!msg.compilerReady, !!msg.hasProject);
                 renderCompileOptions(msg.compileOptions);
                 renderXaeOptions(msg.xaeOptions, !!msg.hasProject);
+                renderOnlineTile(typeof msg.online === 'string' ? msg.online : 'offline', !!msg.hasProject);
                 refresh();
                 break;
             case 'location':

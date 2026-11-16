@@ -463,6 +463,31 @@
     "menus": {
       "view/title": [
         {
+          "command": "twincat.xaeBuild",
+          "when": "view == twincatExplorer && twincat.hasPlcProject && isWindows",
+          "group": "navigation@1"
+        },
+        {
+          "command": "twincat.xaeBuildAndActivate",
+          "when": "view == twincatExplorer && twincat.hasPlcProject && isWindows",
+          "group": "navigation@2"
+        },
+        {
+          "command": "twincat.goOnline",
+          "when": "view == twincatExplorer && twincat.hasPlcProject && !twincat.online",
+          "group": "navigation@3"
+        },
+        {
+          "command": "twincat.goOffline",
+          "when": "view == twincatExplorer && twincat.online",
+          "group": "navigation@3"
+        },
+        {
+          "command": "twincat.xaeShowTargets",
+          "when": "view == twincatExplorer && twincat.hasPlcProject && isWindows",
+          "group": "navigation@4"
+        },
+        {
           "command": "twincat.openStartPage",
           "when": "view == twincatStart",
           "group": "navigation@1"

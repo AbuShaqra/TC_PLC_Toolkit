@@ -29,6 +29,8 @@ Opens `.TcPOU` / `.TcGVL` / `.TcDUT` / `.TcIO` with the Declaration (variables) 
 Implementation below, separated by a resizable splitter. No raw XML.
 
 The editor tab's title bar has buttons for **Build through XAE**, **Build and Activate**, **Show Activation Targets** (those three on Windows only) and **Go Online** / **Go Offline** (one button that follows the online state).
+The same buttons sit in the **PLC Objects** view's title bar while the workspace has a PLC project, and as
+tiles on the start page, so they are at hand with no file open.
 
 ### TC Toolkit sidebar and start page
 
@@ -45,7 +47,9 @@ page in an editor tab with:
   you opened or created here. Two are listed; when more are remembered (up to ten), a **Show all** tile
   expands the list. `tcToolkit.startPage.recentProjectsShown` changes how many are listed.
 - **Project actions** — *Generate ST*, *Update Library Definitions* and *Build project* (see
-  [Build project](#build-project)).
+  [Build project](#build-project)), then *Build through XAE*, *Build and Activate through XAE…* and
+  *Show Activation Targets* (on Windows, where XAE can run) and *Go Online…*, which becomes *Go Offline*
+  while you are online.
 - **Help and links**, and **Settings** — which also shows where the XAE Shell of each TwinCAT version
   was found (see [Settings](#settings)), with *Change…* and *Detect again*, and the same for **g++**
   (optional, used only by *Build with g++*): the path set in `tcToolkit.compiler.gppPath`, or — while it
@@ -72,6 +76,9 @@ needed to create one; you need TwinCAT XAE to build and run it.
 Browse POUs, interfaces, GVLs, DUTs and their methods, properties, actions and virtual folders.
 Create and delete files, folders, methods, properties and actions — the nearest `.plcproj` is kept in
 sync automatically. The tree follows you: while the PLC Objects view is showing, switching editors reveals and highlights the matching item; when you open the view later, it goes to the file you are in.
+Its title bar has the editor tab's buttons — Build through XAE, Build and Activate, Go Online / Go Offline
+and Show Activation Targets — while the workspace has a PLC project (VS Code shows a view's title buttons
+when the pointer is over the view or it has focus).
 
 **See the real TwinCAT hierarchy.** When the opened folder contains TwinCAT solutions, the explorer
 shows the solution first and every PLC project belonging to it underneath:
@@ -385,14 +392,15 @@ the old project's files; a Git checkout that only changes their line endings doe
 
 ### Build and activate through XAE
 
-On Windows with **TwinCAT XAE** installed, the Build button's dropdown (in the editor and on the start
-page) also offers **Build through XAE** and **Build and Activate through XAE…** (also in the Command
+On Windows with **TwinCAT XAE** installed, the Build button's dropdown in the editor also offers
+**Build through XAE** and **Build and Activate through XAE…**; the start page has them as tiles under
+*Build project*, and the editor tab and the PLC Objects view have them as title-bar buttons (also in the Command
 Palette as *TC Toolkit: Build through XAE (requires TwinCAT)* and *Build and Activate through XAE…
 (requires TwinCAT)*). They drive XAE's own Automation Interface from PowerShell, so the real solution is
 built with XAE's compiler and the project's real libraries.
 
 - **Headless by default.** The XAE Shell runs hidden with its UI suppressed. Tick **Show the XAE window**
-  in the dropdown (setting `tcToolkit.xaeBuild.showWindow`) to watch the shell for the whole build. The
+  in the Build dropdown (setting `tcToolkit.xaeBuild.showWindow`) to watch the shell for the whole build. The
   **TC Toolkit XAE Build** output channel says which mode was asked for and which actually ran (read back
   from the shell: `SuppressUI` and `MainWindow.Visible`).
 - **Errors** go to the Problems panel (source *TC Toolkit XAE build*) and the editor panes. Where XAE's
