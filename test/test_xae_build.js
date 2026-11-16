@@ -54,6 +54,13 @@ const count = (arr, v) => arr.filter(a => a === v).length;
     }
     const list = x.buildDriverArgs({ scriptPath: base.scriptPath, mode: 'listTargets', showWindow: true });
     assert(list.includes('-ListTargets') && !list.includes('-ShowWindow') && !list.includes('-SlnPath'), 'listTargets: no COM flags, no solution needed');
+    // tcToolkit.adsDll.nativeDllFolder: passed in every mode (-ListTargets reads ADS too); empty = no flag.
+    for (const mode of /** @type {const} */ (['build', 'activate', 'listTargets'])) {
+        const withDir = x.buildDriverArgs({ ...base, mode, targetNetId: '198.51.100.4.1.1', adsDllDir: 'D:\\TC\\Common64' });
+        const without = x.buildDriverArgs({ ...base, mode, targetNetId: '198.51.100.4.1.1', adsDllDir: '' });
+        assert(withDir[withDir.indexOf('-AdsDllDir') + 1] === 'D:\\TC\\Common64' && !without.includes('-AdsDllDir'),
+            `${mode}: -AdsDllDir carries the configured TcAdsDll.dll folder, and only when set`);
+    }
     let threw = false;
     try { x.buildDriverArgs({ scriptPath: base.scriptPath }); } catch (e) { threw = true; }
     assert(threw, 'a build without a solution is refused');
@@ -259,6 +266,20 @@ function run(name, o) {
     const inc = run('activation-incomplete');
     const di = x.describeExit(0, 'exit', inc.state);
     assert(inc.state.activation.outcome === 'incomplete' && !di.ok && di.severity === 'warning', 'activation-incomplete: a warning, not ok');
+    assert(inc.state.activation.dllProblem === null && !/TcAdsDll/.test(di.title), 'incomplete without a DLL problem: no DLL hint');
+    {
+        // The run state was unreadable because TcAdsDll.dll was not found: the summary says so and names the setting.
+        const st = x.createRunState();
+        x.reduce(st, x.parseLine('@@TCTK ' + JSON.stringify({ v: 1, t: 'activation', netId: '198.51.100.4.1.1', adsState: null, stateName: 'unreadable', outcome: 'incomplete',
+            dllProblem: 'TwinCAT\'s ADS DLL (TcAdsDll.dll) was not found in C:\\Program Files (x86)\\Beckhoff\\TwinCAT\\Common64' })), 0);
+        st.mode = 'activate';
+        assert(st.activation && /TcAdsDll\.dll\) was not found/.test(st.activation.dllProblem || ''), 'the activation event keeps dllProblem');
+        const searched = x.describeExit(0, 'exit', st).title;
+        const configured = x.describeExit(0, 'exit', st, { adsDllConfigured: true }).title;
+        assert(/could not be read: check the target\. TwinCAT's ADS DLL \(TcAdsDll\.dll\) was not found in C:\\Program Files \(x86\)\\Beckhoff\\TwinCAT\\Common64\. If TwinCAT is installed elsewhere, set tcToolkit\.adsDll\.nativeDllFolder/.test(searched),
+            `incomplete for want of TcAdsDll.dll: the problem and the setting (${searched})`);
+        assert(/tcToolkit\.adsDll\.nativeDllFolder is used as given: correct it, or clear it/.test(configured), 'with the setting set: correct or clear it');
+    }
     const fail = run('activation-failed');
     assert(/CONFIG, not RUN/.test(x.describeExit(3, 'exit', fail.state).title), 'describeExit 3 names the ADS state');
 
@@ -352,6 +373,12 @@ function run(name, o) {
         assert(x.unknownRuntimesText(t.unknown) === 'Not offered, AmsNetId unknown: UmRT_Default (user-mode runtime): the configuration file changed after this runtime started; its AmsNetId could not be confirmed over ADS: no runtime answered at 198.51.100.6.1.1 (ADS error 0x7); '
             + 'UmRT_Second (user-mode runtime): this runtime is not running. Read the AmsNetId in that runtime\'s console window ("AmsNetId: …") or use XAE\'s Choose Target System.',
             'the unknown runtimes in one sentence, with where to read the NetId');
+        assert(!x.unknownNeedsAdsDll(t.unknown) && !/adsDll/.test(x.unknownRuntimesText(t.unknown)), 'an ADS answer that is not a DLL problem: no setting hint');
+        const noDll = [{ name: 'UmRT_Default', kind: 'user-mode', platform: null, status: 'rewritten', fileNetId: null,
+            reason: 'the configuration file changed after this runtime started; its AmsNetId could not be confirmed over ADS: TwinCAT\'s ADS DLL (TcAdsDll.dll) was not found in C:\\a, C:\\b' }];
+        assert(x.unknownNeedsAdsDll(noDll) && /If TwinCAT is installed elsewhere, set tcToolkit\.adsDll\.nativeDllFolder to the folder holding TcAdsDll\.dll/.test(x.unknownRuntimesText(noDll))
+            && /used as given/.test(x.unknownRuntimesText(noDll, { adsDllConfigured: true })),
+            'a runtime not offered for want of TcAdsDll.dll: the setting is named (set it, or correct it when set)');
         // The refusal: the unknown runtimes named; with none known there is nothing to change the target to here.
         const onlyUnknown = x.retargetRefusalText({ projectNetId: '198.51.100.6.1.1', tsproj: null, local: [], unknown: t.unknown }, 'Line', '');
         assert(onlyUnknown === 'Line targets 198.51.100.6.1.1, which is not a runtime on this PC. Activation is local-only, so it was refused before XAE started. '

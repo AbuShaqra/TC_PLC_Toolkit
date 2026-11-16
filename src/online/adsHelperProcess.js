@@ -8,7 +8,8 @@
  *
  * Protocol, one JSON object per line, UTF-8, no BOM:
  *   helper → host, once at start:  {"id":0,"event":"ready","ok":true,"dll":…,"dllVersion":…,"bitness":64,"common":…}
- *                                  or {"id":0,"event":"ready","ok":false,"kind":"dll-not-found"|"dll-load","error":…,"searched":[…]}
+ *                                  or {"id":0,"event":"ready","ok":false,"kind":"dll-not-found"|"dll-load","error":…,"searched":[…],
+ *                                      "dllName":"TwinCAT.Ads.dll"|"TcAdsDll.dll","configured":bool}
  *   host → helper:                 {"id":N,"cmd":"open"|"read"|"write"|"readwrite"|"state"|"deviceinfo"|"writecontrol"|"close", …}
  *   helper → host:                 {"id":N,"ok":true,…result} or {"id":N,"ok":false,"error":"…","adsError":7}
  * Commands carry `netId` and `port` (the helper keeps one TcAdsClient per address); `ig`/`io` are the
@@ -55,12 +56,17 @@ class HelperError extends Error {
 
 /**
  * The command line of the helper: as src/xaeShell.js starts PowerShell, minus `-STA` (no COM here).
+ * The configured DLL locations (src/adsDllSettings.js) are passed only when set; empty = the helper searches.
  * @param {string} scriptPath
  * @param {number} adsTimeoutMs
+ * @param {{dotNetLibrary?: string, nativeDllFolder?: string}} [dlls]
  * @returns {string[]}
  */
-function helperArgs(scriptPath, adsTimeoutMs) {
-    return ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', scriptPath, '-TimeoutMs', String(adsTimeoutMs)];
+function helperArgs(scriptPath, adsTimeoutMs, dlls = {}) {
+    const args = ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', scriptPath, '-TimeoutMs', String(adsTimeoutMs)];
+    if (dlls.dotNetLibrary) args.push('-AdsDll', dlls.dotNetLibrary);
+    if (dlls.nativeDllFolder) args.push('-AdsNativeDir', dlls.nativeDllFolder);
+    return args;
 }
 
 /**
@@ -79,6 +85,7 @@ function helperArgs(scriptPath, adsTimeoutMs) {
  * @param {string} [o.platform] process.platform.
  * @param {string} [o.scriptPath]
  * @param {number} [o.adsTimeoutMs] The helper's TcAdsClient timeout (ads-client's timeoutDelay).
+ * @param {{dotNetLibrary?: string, nativeDllFolder?: string}} [o.dlls] The tcToolkit.adsDll.* settings.
  * @param {number} [o.requestTimeoutMs] Hang guard per request; default ADS timeout + 3 s.
  * @param {number} [o.startTimeoutMs] PowerShell start plus the DLL load; default 20 s.
  * @param {number} [o.killAfterMs] How long `close()` waits for a clean exit; default 2 s.
@@ -101,7 +108,7 @@ function startAdsHelper(o = {}) {
         /** @type {any} */
         let proc;
         try {
-            proc = spawn('powershell.exe', helperArgs(o.scriptPath || HELPER_SCRIPT, adsTimeoutMs), { windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
+            proc = spawn('powershell.exe', helperArgs(o.scriptPath || HELPER_SCRIPT, adsTimeoutMs, o.dlls), { windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
         } catch (e) {
             rejectStart(new HelperError('spawn-failed', `powershell.exe could not be started: ${/** @type {any} */ (e).message}`));
             return;

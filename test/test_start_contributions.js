@@ -102,8 +102,26 @@ assert((c.views['twincat-references-panel'] || []).find(v => v.id === 'twincatRe
     const { SETTING_RENAMES } = require(path.join(REPO, 'src', 'settingsMigration.js'));
     const live = Object.keys(allProps).filter(k => !allProps[k].deprecationMessage);
     const deprecated = Object.keys(allProps).filter(k => allProps[k].deprecationMessage);
-    assert(live.length === 29 && live.every(k => k.startsWith('tcToolkit.')),
-        `all 29 live settings are tcToolkit.* (got ${JSON.stringify(live)})`);
+    assert(live.length === 31 && live.every(k => k.startsWith('tcToolkit.')),
+        `all 31 live settings are tcToolkit.* (got ${JSON.stringify(live)})`);
+    // The ADS DLL locations (user request 2026-11-16): machine-scoped strings, empty = search as before,
+    // in their own "ADS DLLs" section; each description names its file, its usual folder and what empty means.
+    {
+        const { ADS_DLL_SECTION, SETTING_ADS_DOTNET_LIBRARY, SETTING_ADS_NATIVE_DLL_FOLDER } = require(path.join(REPO, 'src', 'adsDllSettings.js'));
+        const sec = sections.find(s => s.id === ADS_DLL_SECTION);
+        assert(!!sec && sec.title === 'ADS DLLs' && !/TwinCAT/i.test(sec.title)
+            && JSON.stringify(Object.keys(sec.properties)) === JSON.stringify([SETTING_ADS_DOTNET_LIBRARY, SETTING_ADS_NATIVE_DLL_FOLDER]),
+            'the "ADS DLLs" section holds exactly tcToolkit.adsDll.dotNetLibrary and nativeDllFolder');
+        for (const [key, file, usual] of [[SETTING_ADS_DOTNET_LIBRARY, 'TwinCAT.Ads.dll', /Components\\Base\\v170\\TwinCAT\.Ads\.dll/],
+            [SETTING_ADS_NATIVE_DLL_FOLDER, 'TcAdsDll.dll', /TwinCAT\\Common64/]]) {
+            const p = allProps[key];
+            assert(!!p && p.type === 'string' && p.default === '' && p.scope === 'machine' && !p.deprecationMessage,
+                `${key} is a machine-scoped string, empty by default`);
+            assert(!!p && p.markdownDescription.startsWith('**') && p.markdownDescription.split('**')[1].includes(file)
+                && usual.test(p.markdownDescription) && /Empty = search/.test(p.markdownDescription) && /used as given/.test(p.markdownDescription),
+                `${key}'s description names ${file} first, its usual location, that empty searches and that a set path is used as given`);
+        }
+    }
     // R13: the C++ switches (both off by default) and the g++ path (machine-scoped, like the XAE Shell paths).
     const gen = allProps['tcToolkit.compiler.generateCpp'];
     const build = allProps['tcToolkit.compiler.buildWithGpp'];

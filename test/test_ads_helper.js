@@ -30,6 +30,7 @@ const { createOnlineSession } = require('../src/online/session');
 const { describeConnectError, USER_MODE_HINT, RUNTIME_NETID_HINT } = require('../src/online/connectErrors');
 const { createRawPlc, createFakeHelperSpawn } = require('./_fakeAdsHelper');
 const { failureText } = require('../src/online/plcControl');
+const { SETTING_ADS_DOTNET_LIBRARY, SETTING_ADS_NATIVE_DLL_FOLDER, readAdsDllSettings, adsDllHint } = require('../src/adsDllSettings');
 
 let errors = 0;
 function assert(cond, msg) {
@@ -96,6 +97,23 @@ function scriptContract() {
     assert(/New-Object TwinCAT\.Ads\.StateInfo -ArgumentList \(\[TwinCAT\.Ads\.AdsState\]\[int\]\$Request\.adsState\), \(\[int16\]\$Request\.deviceState\)/.test(ps)
         && /\$c\.WriteControl\(\$si\)/.test(ps), 'writecontrol: TcAdsClient.WriteControl(StateInfo(AdsState, deviceState)) (Start/Stop PLC)');
     assert(!/199\.\d+\.\d+\.\d+/.test(ps), 'no real NetId in the script');
+    // The configured DLL locations (tcToolkit.adsDll.*): used as given, checked before any search.
+    assert(/param\([\s\S]*\[string\]\$AdsDll = ''[\s\S]*\[string\]\$AdsNativeDir = ''\s*\)/.test(ps), 'the script takes -AdsDll and -AdsNativeDir');
+    const nativeCheck = ps.indexOf("if ($AdsNativeDir -and -not (Test-Path -LiteralPath (Join-Path $AdsNativeDir 'TcAdsDll.dll') -PathType Leaf))");
+    const managedCheck = ps.indexOf('if ($AdsDll -and -not (Test-Path -LiteralPath $AdsDll -PathType Leaf))');
+    const search = ps.indexOf('$candidates = @(Get-AdsDllCandidates)');
+    assert(nativeCheck > 0 && managedCheck > 0 && search > managedCheck && search > nativeCheck,
+        'a configured TcAdsDll.dll folder and TwinCAT.Ads.dll are checked before the search');
+    const after = (/** @type {number} */ i) => ps.slice(i, ps.indexOf('exit 2', i) + 6);
+    assert(/dllName = 'TcAdsDll\.dll'; configured = \$true/.test(after(nativeCheck)) && /kind = 'dll-not-found'/.test(after(nativeCheck))
+        && /dllName = 'TwinCAT\.Ads\.dll'; configured = \$true/.test(after(managedCheck)) && /kind = 'dll-not-found'/.test(after(managedCheck)),
+        'a configured path that does not hold its DLL is dll-not-found, named, configured, and the helper exits (no search)');
+    assert(/if \(\$AdsDll -and \(Test-Path -LiteralPath \$AdsDll -PathType Container\)\) \{ \$AdsDll = Join-Path \$AdsDll 'TwinCAT\.Ads\.dll' \}/.test(ps),
+        'a folder holding TwinCAT.Ads.dll is accepted for -AdsDll');
+    assert(/\$common = if \(\$AdsNativeDir\) \{ \$AdsNativeDir \} elseif \(\$c\.Root\)/.test(ps), 'a configured folder replaces Common64/Common32 on PATH');
+    assert(/kind = 'dll-not-found'; bitness = \$bitness; dllName = 'TwinCAT\.Ads\.dll'; configured = \$false/.test(ps)
+        && /kind = 'dll-load'; bitness = \$bitness; dllName = 'TwinCAT\.Ads\.dll'; configured = \[bool\]\$AdsDll/.test(ps),
+        'the searched not-found and the load failure say which DLL and whether it was configured');
 }
 
 // ── 3. the helper process ─────────────────────────────────────────────────────────────────────────
@@ -105,6 +123,16 @@ async function helperProcess() {
         '-NoProfile, -ExecutionPolicy Bypass before -File');
     assert(args[args.indexOf('-File') + 1] === 'C:\\ext\\resources\\online\\ads-helper.ps1' && args[args.indexOf('-TimeoutMs') + 1] === '2000',
         '-File names the script; -TimeoutMs passes the ADS timeout');
+    assert(!args.includes('-AdsDll') && !args.includes('-AdsNativeDir')
+        && JSON.stringify(helperArgs('s.ps1', 2000, { dotNetLibrary: '', nativeDllFolder: '' })) === JSON.stringify(helperArgs('s.ps1', 2000)),
+        'empty settings pass no DLL flag (the helper searches, as before)');
+    const dllArgs = helperArgs('s.ps1', 2000, { dotNetLibrary: 'D:\\Beckhoff\\TwinCAT.Ads.dll', nativeDllFolder: 'D:\\Beckhoff\\Common64' });
+    assert(dllArgs[dllArgs.indexOf('-AdsDll') + 1] === 'D:\\Beckhoff\\TwinCAT.Ads.dll' && dllArgs[dllArgs.indexOf('-AdsNativeDir') + 1] === 'D:\\Beckhoff\\Common64'
+        && dllArgs.indexOf('-AdsDll') > dllArgs.indexOf('-File'), 'the configured paths go to -AdsDll and -AdsNativeDir, after -File');
+    {
+        const s = readAdsDllSettings((k) => ({ dotNetLibrary: '  D:\\x\\TwinCAT.Ads.dll ', nativeDllFolder: 7 })[k]);
+        assert(s.dotNetLibrary === 'D:\\x\\TwinCAT.Ads.dll' && s.nativeDllFolder === '', 'the settings are read trimmed; a non-string is empty');
+    }
 
     let err = null;
     try { await startAdsHelper({ platform: 'linux' }); } catch (e) { err = e; }
@@ -304,6 +332,42 @@ async function failures() {
         /^The ADS router at 127\.0\.0\.1:48898 refused this client's TCP connection, and the fallback through TwinCAT's ADS DLL could not start: TwinCAT\.Ads\.dll was not found\.$/.test(t.f.message),
         `DLL missing: both failures named (${t.f && t.f.message})`);
     assert(/socket error -104/.test(t.f.raw) && t.session.state === 'offline', 'the log keeps the router\'s own error too; offline');
+    assert(t.f.setting === SETTING_ADS_DOTNET_LIBRARY && t.f.hint.includes(SETTING_ADS_DOTNET_LIBRARY) && t.f.hint.includes(adsDllHint('managed'))
+        && /Components\\Base\\v170\\TwinCAT\.Ads\.dll/.test(t.f.hint), `DLL missing: the hint names the setting and the usual path (${t.f.hint})`);
+
+    // The configured paths reach the helper's command line through the session's client.
+    {
+        const dlls = { dotNetLibrary: 'D:\\TC\\TwinCAT.Ads.dll', nativeDllFolder: 'D:\\TC\\Common64' };
+        fake = createFakeHelperSpawn(plc, { ready: { id: 0, event: 'ready', ok: false, kind: 'dll-not-found', dllName: 'TcAdsDll.dll', configured: true,
+            error: 'TcAdsDll.dll was not found in the configured folder D:\\TC\\Common64.', searched: ['D:\\TC\\Common64\\TcAdsDll.dll'] } });
+        const deps = { platform: 'win32', dlls, startHelper: (/** @type {any} */ x) => startAdsHelper({ ...x, spawn: fake.spawn, platform: 'win32' }) };
+        const session = createOnlineSession({ createClient: (opts) => createAdsClient(opts, deps), log: () => {}, statusIntervalMs: 50 });
+        const o = { ...base, targetAmsNetId: '10.0.0.4.1.1', dlls };
+        let e = null;
+        try { await session.connect(o); } catch (x) { e = x; }
+        const a = fake.spawned[0] ? fake.spawned[0].args : [];
+        assert(a[a.indexOf('-AdsDll') + 1] === dlls.dotNetLibrary && a[a.indexOf('-AdsNativeDir') + 1] === dlls.nativeDllFolder,
+            'the session\'s helper gets both configured paths');
+        const f = describeConnectError(e, o);
+        assert(f.kind === 'helper-unavailable' && f.setting === SETTING_ADS_NATIVE_DLL_FOLDER && /TcAdsDll\.dll was not found in the configured folder D:\\TC\\Common64\./.test(f.message)
+            && f.hint === adsDllHint('native', { configured: true }) && /used as given/.test(f.hint),
+            `a configured TcAdsDll.dll folder without the DLL: named with the folder, "correct or clear" (${f.message} ${f.hint})`);
+    }
+    fake = createFakeHelperSpawn(plc, { ready: { id: 0, event: 'ready', ok: false, kind: 'dll-not-found', dllName: 'TwinCAT.Ads.dll', configured: true,
+        error: 'TwinCAT.Ads.dll was not found at the configured path D:\\TC\\TwinCAT.Ads.dll.' } });
+    t = await tryConnect(fake, { ...base, targetAmsNetId: '10.0.0.4.1.1' });
+    assert(t.f && t.f.setting === SETTING_ADS_DOTNET_LIBRARY && /at the configured path D:\\TC\\TwinCAT\.Ads\.dll\./.test(t.f.message) && /used as given/.test(t.f.hint),
+        `a configured TwinCAT.Ads.dll that does not exist: the path and the setting are named (${t.f && t.f.message})`);
+    fake = createFakeHelperSpawn(plc, { ready: { id: 0, event: 'ready', ok: false, kind: 'dll-load', dllName: 'TwinCAT.Ads.dll', configured: false,
+        error: 'TwinCAT.Ads.dll did not load: C:\\x\\TwinCAT.Ads.dll: bad image' } });
+    t = await tryConnect(fake, { ...base, targetAmsNetId: '10.0.0.4.1.1' });
+    assert(t.f && t.f.setting === SETTING_ADS_DOTNET_LIBRARY && t.f.hint === adsDllHint('managed'), 'a DLL that did not load: the TwinCAT.Ads.dll setting is offered');
+    // TcAdsDll.dll is loaded on the first request: a missing one fails "open" with DllNotFoundException.
+    fake = createFakeHelperSpawn(plc, { intercept: (req) => (req.cmd === 'open'
+        ? { ok: false, error: 'Unable to load DLL \'TcAdsDll.dll\': The specified module could not be found. (Exception from HRESULT: 0x8007007E)' } : null) });
+    t = await tryConnect(fake, { ...base, targetAmsNetId: '10.0.0.4.1.1' });
+    assert(t.f && t.f.kind === 'helper-unavailable' && t.f.setting === SETTING_ADS_NATIVE_DLL_FOLDER && /could not load TcAdsDll\.dll\.$/.test(t.f.message)
+        && t.f.hint === adsDllHint('native'), `TcAdsDll.dll missing at the first request: the folder setting is offered (${t.f && t.f.message})`);
 
     fake = createFakeHelperSpawn(plc);
     t = await tryConnect(fake, { ...base, targetAmsNetId: 'localhost', label: 'Local runtime' });

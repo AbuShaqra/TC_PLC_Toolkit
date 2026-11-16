@@ -20,6 +20,8 @@
 
 'use strict';
 
+const { adsDllHint, SETTING_ADS_DOTNET_LIBRARY, SETTING_ADS_NATIVE_DLL_FOLDER } = require('../adsDllSettings');
+
 /** The user-mode runtime explanation, shared by the cases where it is the likely cause. */
 const USER_MODE_HINT = 'If this PC runs the TwinCAT 3.1.4026 user-mode runtime (the default on Windows 11 with ' +
     'Hyper-V or virtualization-based security on), its router refuses the TCP connection the ADS library used here ' +
@@ -40,6 +42,9 @@ const RUNTIME_NETID_HINT = 'With the user-mode runtime the PLC runs under the ru
 /** What the fallback is, for the messages that report it failing. */
 const DLL = 'TwinCAT\'s ADS DLL';
 
+/** .NET's text when TwinCAT.Ads.dll cannot load the native TcAdsDll.dll (DllNotFoundException). */
+const NATIVE_DLL_LOAD = /DllNotFoundException|(?:Unable to load|could not load|cannot load)[^.]*TcAdsDll/i;
+
 /** ECONNRESET as Node reports it on Windows, Linux and macOS. */
 const RESET = /socket error (?:-4077|-104|-54)\b|ECONNRESET/i;
 
@@ -50,6 +55,7 @@ const RESET = /socket error (?:-4077|-104|-54)\b|ECONNRESET/i;
  * @property {string} [hint] What to do, when there is something to do.
  * @property {string} raw The library's own text, for the output channel.
  * @property {boolean} [fallback] The user-mode fallback (TwinCAT's ADS DLL) ran and failed too.
+ * @property {string} [setting] The setting that fixes it (a tcToolkit.adsDll.* key): the notification offers "Open Setting".
  */
 
 /**
@@ -76,7 +82,8 @@ function rawText(err) {
 /**
  * Classifies a Go Online failure.
  * @param {any} err What `connect()` threw.
- * @param {{mode: 'router'|'direct', routerAddress?: string, targetAmsNetId: string, targetAdsPort: number}} o
+ * @param {{mode: 'router'|'direct', routerAddress?: string, targetAmsNetId: string, targetAdsPort: number,
+ *   dlls?: {dotNetLibrary?: string, nativeDllFolder?: string}}} o
  * @returns {ConnectFailure}
  */
 function describeConnectError(err, o) {
@@ -132,7 +139,8 @@ function describeConnectError(err, o) {
  * A Go Online whose user-mode fallback failed too: the router refused the TCP connection, and then
  * TwinCAT's ADS DLL (through the PowerShell helper) could not start or could not reach the PLC.
  * @param {any} err The fallback's error; `err.helper` is the helper's own failure when it has one.
- * @param {{mode: 'router'|'direct', routerAddress?: string, targetAmsNetId: string, targetAdsPort: number}} o
+ * @param {{mode: 'router'|'direct', routerAddress?: string, targetAmsNetId: string, targetAdsPort: number,
+ *   dlls?: {dotNetLibrary?: string, nativeDllFolder?: string}}} o
  * @param {string} raw
  * @returns {ConnectFailure}
  */
@@ -144,12 +152,30 @@ function describeFallbackError(err, o, raw) {
     const local = isLoopbackTarget(o.targetAmsNetId);
     const where = local ? `the local runtime (port ${o.targetAdsPort})` : `${o.targetAmsNetId}:${o.targetAdsPort}`;
     const done = (/** @type {Partial<ConnectFailure>} */ f) => /** @type {ConnectFailure} */ ({ kind: 'other', ...f, raw: fullRaw, fallback: true });
+    // The helper's ready line: which DLL failed, and whether its path came from a setting.
+    const ready = helper.detail && typeof helper.detail === 'object' ? helper.detail : {};
+    const configured = ready.configured === true;
+    // TcAdsDll.dll is loaded on the first request, not at start: a missing one surfaces
+    // as that request's failure (DllNotFoundException).
+    if (NATIVE_DLL_LOAD.test(`${helper.message || ''} ${raw}`)) {
+        return done({ kind: 'helper-unavailable', message: `${refused}, and the fallback through ${DLL} could not load TcAdsDll.dll.`,
+            hint: adsDllHint('native', { configured: !!(o.dlls && o.dlls.nativeDllFolder) }), setting: SETTING_ADS_NATIVE_DLL_FOLDER });
+    }
     switch (helper.kind) {
-        case 'dll-not-found':
-            return done({ kind: 'helper-unavailable', message: `${refused}, and the fallback through ${DLL} could not start: TwinCAT.Ads.dll was not found.`,
-                hint: 'It is installed with TwinCAT 3.1 (XAE or XAR) under TwinCAT\\3.1\\Components\\Base. ' + USER_MODE_HINT });
+        case 'dll-not-found': {
+            if (ready.dllName === 'TcAdsDll.dll') {
+                return done({ kind: 'helper-unavailable', message: `${refused}, and the fallback through ${DLL} could not start: ${helper.message}`,
+                    hint: adsDllHint('native', { configured }), setting: SETTING_ADS_NATIVE_DLL_FOLDER });
+            }
+            return done({ kind: 'helper-unavailable', message: configured
+                ? `${refused}, and the fallback through ${DLL} could not start: ${helper.message}`
+                : `${refused}, and the fallback through ${DLL} could not start: TwinCAT.Ads.dll was not found.`,
+            hint: adsDllHint('managed', { configured }),
+            setting: SETTING_ADS_DOTNET_LIBRARY });
+        }
         case 'dll-load':
-            return done({ kind: 'helper-unavailable', message: `${refused}, and the fallback could not load ${DLL}: ${helper.message}`, hint: USER_MODE_HINT });
+            return done({ kind: 'helper-unavailable', message: `${refused}, and the fallback could not load ${DLL}: ${helper.message}`,
+                hint: adsDllHint('managed', { configured }), setting: SETTING_ADS_DOTNET_LIBRARY });
         case 'spawn-failed':
         case 'not-windows':
             return done({ kind: 'helper-unavailable', message: `${refused}, and the fallback through ${DLL} could not start: ${helper.message}`, hint: USER_MODE_HINT });

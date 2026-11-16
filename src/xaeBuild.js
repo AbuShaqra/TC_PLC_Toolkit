@@ -39,6 +39,7 @@
 const { StringDecoder } = require('string_decoder');
 const { countBySeverity, isEmptyItem } = require('./xaeErrorPlacement');
 const { XAE_SHELL_VERSIONS } = require('./xaeShellDetect');
+const { adsDllHint, isNativeDllMissing } = require('./adsDllSettings');
 
 /** The prefix of every machine line the driver writes (`-Json`). */
 const PREFIX = '@@TCTK ';
@@ -87,6 +88,8 @@ function isValidNetId(s) {
  * @property {string} [cancelFile] The file whose existence asks the driver to stop (exit 4).
  * @property {string} [shellOverride] A known XAE Shell ProgId the user confirmed building with instead
  *   of the project's own (see `missingShell`); `build` mode only.
+ * @property {string} [adsDllDir] The folder holding TcAdsDll.dll (tcToolkit.adsDll.nativeDllFolder);
+ *   '' = the driver searches. Every mode: `-ListTargets` reads ADS too (the AmsNetId confirmation).
  */
 
 /**
@@ -102,6 +105,7 @@ function buildDriverArgs(o) {
     if (o.slnPath) args.push('-SlnPath', o.slnPath);
     else if (mode !== 'listTargets') throw new Error('A build through XAE needs a solution (.sln).');
     args.push('-Json');
+    if (o.adsDllDir) args.push('-AdsDllDir', o.adsDllDir);
     if (mode === 'listTargets') {
         args.push('-ListTargets');
         return args;
@@ -340,7 +344,8 @@ function parseLine(line) {
  * @property {{netId: string, local: boolean, platform: string|null}|null} target
  * @property {boolean} targetMismatch The driver's target readback differs from the confirmed pick.
  * @property {string|null} expectedNetId The NetId the user confirmed (activation only).
- * @property {{netId: string, adsState: number|null, stateName: string|null, outcome: string}|null} activation
+ * @property {{netId: string, adsState: number|null, stateName: string|null, outcome: string, dllProblem: string|null}|null} activation
+ *   `dllProblem`: why ADS could not be read at all (TcAdsDll.dll not found), with an unreadable state.
  * @property {BootProjectReport|null} bootProject
  * @property {PlcState[]} plcStates
  * @property {{local: LocalRuntime[], unknown: UnknownRuntime[], projectNetId: string|null}|null} targets
@@ -449,7 +454,7 @@ function reduce(state, item, now = Date.now()) {
         case 'activation':
             state.activation = {
                 netId: String(e.netId || ''), adsState: numOrNull(e.adsState), stateName: strOrNull(e.stateName),
-                outcome: String(e.outcome || '')
+                outcome: String(e.outcome || ''), dllProblem: strOrNull(e.dllProblem)
             };
             break;
         case 'bootProject': {
@@ -520,9 +525,10 @@ function reachedBuildResult(code, outcome, state) {
  * @param {number|null} code The driver's exit code (null when it did not exit by itself).
  * @param {'exit'|'timeout'|'spawn-error'|'killed'} outcome How the child ended.
  * @param {RunState} state
- * @param {{error?: string, stderr?: string[], solutionName?: string, errorCount?: number, retargetProblem?: string}} [extra] `error`: the spawn error text; `stderr`:
+ * @param {{error?: string, stderr?: string[], solutionName?: string, errorCount?: number, retargetProblem?: string, adsDllConfigured?: boolean}} [extra] `error`: the spawn error text; `stderr`:
  *   PowerShell's error lines; `solutionName`: names the solution when the project's XAE Shell is missing or its
- *   target is not a runtime on this PC; `retargetProblem`: why that target cannot be changed here ('' when it can).
+ *   target is not a runtime on this PC; `retargetProblem`: why that target cannot be changed here ('' when it can);
+ *   `adsDllConfigured`: tcToolkit.adsDll.nativeDllFolder is set (the hint for a missing TcAdsDll.dll says to correct it).
  * @returns {ExitDescription}
  */
 function describeExit(code, outcome, state, extra = {}) {
@@ -563,9 +569,11 @@ function describeExit(code, outcome, state, extra = {}) {
             const boot = describeBootProject(state);
             const bootSentence = boot ? ` ${boot.sentence}` : '';
             if (state.mode === 'activate' && a && a.outcome === 'incomplete') {
+                // No ADS DLL: say which and the setting that points at it (the command adds "Open Setting").
+                const dll = a.dllProblem ? ` ${a.dllProblem.replace(/\.?$/, '.')} ${adsDllHint('native', { configured: extra.adsDllConfigured === true })}` : '';
                 return {
                     ok: false, severity: 'warning',
-                    title: `Built and activated on ${a.netId}, but its run state could not be read: check the target.${bootSentence}`,
+                    title: `Built and activated on ${a.netId}, but its run state could not be read: check the target.${dll}${bootSentence}`,
                     detail: missing.trim()
                 };
             }
@@ -834,13 +842,27 @@ function runtimeEntries(raw, exclude) {
 
 /**
  * One sentence naming the runtimes whose AmsNetId is unknown, why, and where to read it; '' for none.
+ * When a reason is a missing TcAdsDll.dll (the ADS confirmation could not run), the setting that
+ * points at it is named too (`unknownNeedsAdsDll` tells the caller to offer "Open Setting").
  * @param {UnknownRuntime[]|undefined} unknown
+ * @param {{adsDllConfigured?: boolean}} [o] Whether tcToolkit.adsDll.nativeDllFolder is set.
  * @returns {string}
  */
-function unknownRuntimesText(unknown) {
+function unknownRuntimesText(unknown, o = {}) {
     if (!unknown || unknown.length === 0) return '';
     const named = unknown.map(u => `${u.name} (${u.kind === 'user-mode' ? 'user-mode runtime' : 'runtime'}): ${u.reason}`);
-    return `Not offered, AmsNetId unknown: ${named.join('; ')}. ${UNKNOWN_NETID_HINT}`;
+    const dll = unknownNeedsAdsDll(unknown) ? ` ${adsDllHint('native', { configured: o.adsDllConfigured === true })}` : '';
+    return `Not offered, AmsNetId unknown: ${named.join('; ')}. ${UNKNOWN_NETID_HINT}${dll}`;
+}
+
+/**
+ * Whether a runtime was not offered because TcAdsDll.dll was not found (its AmsNetId could not be
+ * confirmed over ADS).
+ * @param {UnknownRuntime[]|undefined} unknown
+ * @returns {boolean}
+ */
+function unknownNeedsAdsDll(unknown) {
+    return !!unknown && unknown.some(u => isNativeDllMissing(u.reason));
 }
 
 /**
@@ -1161,7 +1183,7 @@ module.exports = {
     PREFIX, PROTOCOL, EXIT, EVENT_TYPES, UNINTERRUPTIBLE_PHASES, SWITCH_FOR_RUN, SWITCH_AND_REMEMBER, RERUN_WINDOW_SHOWN, FALLBACK_INTRO, compileFallbackText,
     RETARGET_BUTTON, refusedTarget, runtimeLabel, retargetRefusalText, retargetConfirmText,
     QUICK_PICK_SEPARATOR, UNKNOWN_NETID_HINT, runtimeEntries, unknownRuntimesText,
-    isValidNetId, buildDriverArgs, shellByProgId, missingShell, createLineSplitter, parseLine, createRunState, reduce,
+    isValidNetId, unknownNeedsAdsDll, buildDriverArgs, shellByProgId, missingShell, createLineSplitter, parseLine, createRunState, reduce,
     compileFailureConfirmed, reachedBuildResult, describeExit, describeBootProject, START_FROM_XAE, describeUiMode, buildPhaseUi, canCancel, isStalled, targetPickItems, confirmationText,
     declaredPairs, activationPlatform, platformNotDeclaredText, pairNotDeclaredText, noErrorDetails, needsCompileFallback, oneLine
 };

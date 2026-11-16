@@ -10,9 +10,9 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   merged at `3210d33`, Release run 41671593015 green, VSIX `twincat-plc-toolkit-0.10.1.vsix` attached).
 - **Version history:** 0.10.1 struct EXTENDS from own DUTs (PR #22); 0.10.0 Libraries scoping (PR #18); 0.9.0
   improvement-plan phases; 0.8.x project-aware Generate ST, ResizeObserver fix, solution→project Objects tree.
-- **Last verified:** 2026-11-16 (Linux container, Start/Stop PLC on `claude/focused-ptolemy-m6acaz`) —
+- **Last verified:** 2026-11-16 (Linux container, ADS DLL path settings on `claude/focused-ptolemy-m6acaz`) —
   `REQUIRE_FULL_SUITE=1 npm test` green (**137/137, Coverage: FULL**; compile-real, cpp-real, gpp-real ran), `npm run
-  typecheck` and `npm run lint` exit 0; browser harnesses `run.js` 93, `run_online.js` 30, `run_pragmas.js` 47,
+  typecheck` and `npm run lint` exit 0; browser harnesses (last run with Start/Stop PLC; no webview change since) `run.js` 93, `run_online.js` 30, `run_pragmas.js` 47,
   `run_start_page.js` 125 (browsers in `/opt/pw-browsers`). Dev-host last run 2026-11-12 (103 pass / 1 known P8 fail).
 - **Sample 1 XAE warnings (user, 2026-11-13; XAE Shell 64):** 0 errors, 3 warnings: C0564 x2 (GVL_System's
   `fbCylinder(refExtendOut := GVL_Io.bExtendOut, refRetractOut := GVL_Io.bRetractOut)`: "reference to uninitialized
@@ -167,7 +167,15 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   close the runtime → "not running", never offered. **Unverified:** `AdsSyncSetTimeout` honoured by the 4026
   TcAdsDll; an answer at a stale NetId cannot come from elsewhere (a route to a remote system with that NetId would
   be trusted); `Win32_Process.CommandLine` readable unelevated; the TcAdsDll search (Common64 under Program Files
-  only — a 4024 `C:\TwinCAT\Common64` is not searched, pre-existing in `Get-TcAdsState`).
+  only — a 4024 `C:\TwinCAT\Common64` is not searched; `tcToolkit.adsDll.nativeDllFolder` now covers it).
+- **ADS DLL paths configurable (user request 2026-11-16): BUILT on `claude/focused-ptolemy-m6acaz`, Linux-verified
+  only (no `.ps1` ran).** `tcToolkit.adsDll.dotNetLibrary` (TwinCAT.Ads.dll → helper `-AdsDll`) and `nativeDllFolder`
+  (TcAdsDll.dll folder → helper `-AdsNativeDir`, driver/builder `-AdsDllDir`); machine scope, empty = search as before;
+  a set path is used as given (not found → said with the path, no fallback). Hints + "Open Setting" on Go Online's DLL
+  failures, the activation summary (`activation.dllProblem`), the no-targets error and Show Activation Targets.
+  Design: DEVELOPMENT.md (online "Helper", XAE `-AdsDllDir`); `probe-sysmanager.ps1` left hardcoded. **Needs the user's Windows check:**
+  helper/smoke with a wrong `-AdsDll`/`-AdsNativeDir` → ready `dll-not-found` naming the path; a right one → loads; the
+  driver with `-AdsDllDir <wrong>` on Build and Activate → ACTIVATION INCOMPLETE with the folder, Open Setting works.
 - **R15 phase 3a, "Local runtime" targets the user-mode runtime's own NetId (user decision 2026-11-16): BUILT on
   `worktree-agent-afcabb7ac39b6a6e3` (off `5a60a8e`), Linux-verified only.** `src/online/localRuntime.js` runs the XAE driver's `-ListTargets`
   WITHOUT `-SlnPath` (no COM/XAE; no `.ps1` change) when the Go Online pick opens (Windows, router mode, router on
@@ -255,19 +263,11 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   11. **Start/Stop PLC** (Linux-verified only): the button by Build / PLC Watch title shows *Stop* in Run → modal → XAE
      shows Stop, button turns *Start* at once, "PLC stop on …: done" logged; then Start. Repeat over the user-mode helper
      (`writecontrol` = `WriteControl(StateInfo(AdsState, short))`, unverified against TwinCAT.Ads 4.3.32).
-- **R3.2 Compile Project: MERGED** into `dev` as PR #32 (`28f24f1`, 2026-11-10 22:22 UTC).
-- **R3.3–R9 MERGED** into `dev` as PR #33 (`6424968`, 2026-11-11 09:30 UTC) after the user's Windows checks
+- **R3.2–R9 MERGED** (R3.2 as PR #32; R3.3–R9 into `dev` as PR #33 (`6424968`, 2026-11-11 09:30 UTC) after the user's Windows checks
   (dev-host green after `npm ci`; manual checks all passed). Details per item are in git history and ROADMAP "Done".
   After a branch switch that changes package-lock.json, run `npm ci` — the dev-host test now says so itself.
   Toolkit lane is done except R10 (trigger-only) and R11 (publishing, last, after the fork lane).
-- **Settings keys renamed `twincat.*` → `tcToolkit.*`** (user report 2026-11-11; `c6145b6`, `765b5e1`, 109 suites):
-  one-time migration at activation (`src/settingsMigration.js`), old keys stay contributed as deprecated stand-ins.
-  Search results read "Tc Toolkit › Compiler: Path" (VS Code cannot show an uppercase "TC" from a key). **Merged** as
-  PR #34 (`cd52afc`, 2026-11-11) after the user's Windows check (old values moved; custom XAE path kept).
-- **R3.5 MERGED** into `dev` as PR #35 (squash `791fc3a`, 2026-11-11 23:55 UTC): compiler vendored at fork
-  `eb52d2c`, `conditional_pragmas` on, `<CompilerDefines>` read from the `.plcproj` (`src/compilerDefines.js`;
-  `Condition`s evaluated for Debug | `TwinCAT RT (x64)`), project defines → `--pragma-define`, per-object defines →
-  `--file-define` on that object's unit. Details: ROADMAP "Done", DEVELOPMENT.md "Compile Project".
+- **Settings keys `tcToolkit.*`** (PR #34) and **R3.5** (PR #35) MERGED; VS Code cannot show an uppercase "TC" from a key.
 - **Fork lane (2026-11-12):** **S4 done** (fork #131–#132, #134–#139; release L at `3acc3f6`, note in the coordination doc; development equals the gated combined tree, 5972 tests). Lane agent `a182a76c41bf282e2` now on: `--strict` per Figure 12 for bit strings (user), property read through a global FB instance (the R13 g++ gap on TcToolkitSample), SPDX lines on two runtime headers, then coordination row 35 (one-pass diagnostics, threaded-warning scope). Merging stacked fork branches: merge development into the branch with `-X ours` only when the branch contains the squashed content, then check `git diff <branch> HEAD` shows only development's own changes; for independent branches resolve by hand, and verify the final development tree against the gated combined tree. Next fork item after these: S10.
 - **R11 publishing:** last — after the toolkit lane AND the fork lane are done (user, 2026-11-10).
 - **Sample diagnostics: 0 against a baseline of 0** — verified with the Beckhoff archives present AND moved aside.

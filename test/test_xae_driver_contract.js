@@ -36,7 +36,7 @@ const emitted = new Set();
 for (const o of [
     { scriptPath: 's', slnPath: 'a.sln', showWindow: true, configuration: 'Debug', platform: 'P', cancelFile: 'c' },
     { scriptPath: 's', slnPath: 'a.sln', mode: /** @type {'activate'} */ ('activate'), targetNetId: '1.2.3.4.1.1' },
-    { scriptPath: 's', mode: /** @type {'listTargets'} */ ('listTargets') },
+    { scriptPath: 's', mode: /** @type {'listTargets'} */ ('listTargets'), adsDllDir: 'd' },
     { scriptPath: 's', slnPath: 'a.sln', shellOverride: 'TcXaeShell.DTE.17.0' }
 ]) {
     const args = x.buildDriverArgs(o);
@@ -44,7 +44,7 @@ for (const o of [
     for (const a of afterFile) if (/^-[A-Za-z]+$/.test(a)) emitted.add(a.slice(1));
 }
 for (const flag of emitted) assert(params.has(flag), `-${flag} is a parameter of the driver`);
-for (const flag of ['ShowWindow', 'Json', 'ListTargets', 'CancelFile', 'SlnPath', 'ActivateConfiguration', 'TargetNetId', 'Configuration', 'Platform']) {
+for (const flag of ['ShowWindow', 'Json', 'ListTargets', 'CancelFile', 'SlnPath', 'ActivateConfiguration', 'TargetNetId', 'Configuration', 'Platform', 'AdsDllDir']) {
     assert(params.has(flag), `param() declares $${flag}`);
 }
 assert(/\[switch\]\$ShowWindow/.test(paramBlock) && /\[switch\]\$Json/.test(paramBlock) && /\[switch\]\$ListTargets/.test(paramBlock)
@@ -120,6 +120,20 @@ if (fs.existsSync(BUILDER)) {
         assert(/Read-TcAdsState -NetId \$NetId -Port 10000 -TimeoutMs 2000/.test(fn(ps1, 'Test-UserModeNetIdOverAds'))
             && /-Scope Script/.test(fn(ps1, 'Test-UserModeNetIdOverAds')), 'the probe asks port 10000 with a 2 s timeout, once per NetId per run');
         assert(/AdsSyncSetTimeout/.test(fn(ps1, 'Read-TcAdsState')) && /AdsPortClose/.test(fn(ps1, 'Read-TcAdsState')), 'Read-TcAdsState sets the timeout and closes its port');
+        // tcToolkit.adsDll.nativeDllFolder (user request 2026-11-16): -AdsDllDir replaces the search, used as given.
+        const read = fn(ps1, 'Read-TcAdsState');
+        assert(/\$configuredDir = Get-Variable -Name AdsDllDir -Scope Script -ValueOnly -ErrorAction SilentlyContinue/.test(read)
+            && /\$dllDirs = @\(\$\(if \(\$configuredDir\) \{ @\(\[string\]\$configuredDir\) \} else \{ @\(/.test(read),
+            'Read-TcAdsState: a configured -AdsDllDir is the only folder tried (no fallback to the search)');
+        assert(/was not found in \$configuredDir \(the folder -AdsDllDir names\)/.test(read) && /Set-Variable -Name TcAdsDllProblem -Scope Script -Value \$problem/.test(read),
+            'a missing TcAdsDll.dll names the folder tried and is kept for the activation report');
+        assert(/^\s*\[string\]\$AdsDllDir\r?$/m.test((/\nparam\(([\s\S]*?)\n\)\r?\n/.exec(builder) || [])[1] || ''), 'the builder takes -AdsDllDir too');
+        for (const [label, text] of [['driver', ps1], ['builder', builder]]) {
+            assert(/ACTIVATION INCOMPLETE[\s\S]{0,400}\$dllProblem = Get-Variable -Name TcAdsDllProblem -Scope Script/.test(text), `the ${label} prints the DLL problem with ACTIVATION INCOMPLETE`);
+        }
+        assert(/Emit-Event 'activation' \(\[ordered\]@\{ netId = \$pinTarget; adsState = \$adsState; stateName = \$stateName; outcome = \$activationOutcome\r?\n\s*dllProblem = /.test(ps1)
+            && /\$activationDllProblem = \$\(if \(\$null -eq \$adsState\) \{ Get-Variable -Name TcAdsDllProblem/.test(ps1),
+            'the activation event carries dllProblem, only when the state is unreadable');
     }
 }
 // Boot project with autostart (user decision 2026-11-16): the same functions in both scripts, called

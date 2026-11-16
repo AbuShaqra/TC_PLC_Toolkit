@@ -1151,6 +1151,25 @@
             "markdownDescription": "**PLC Watch: the most ADS notifications at once.** Beckhoff recommends at most 550 per device; watched variables past this limit show no value until others are removed."
           }
         }
+      },
+      {
+        "id": "tcToolkit.adsDll",
+        "title": "ADS DLLs",
+        "order": 8,
+        "properties": {
+          "tcToolkit.adsDll.dotNetLibrary": {
+            "type": "string",
+            "default": "",
+            "scope": "machine",
+            "markdownDescription": "**Full path to `TwinCAT.Ads.dll`**, Beckhoff's .NET ADS library, installed with TwinCAT 3.1 (XAE or XAR). Online monitoring loads it when this PC's router refuses a TCP connection (the user-mode fallback). Usually `C:\\Program Files (x86)\\Beckhoff\\TwinCAT\\3.1\\Components\\Base\\v170\\TwinCAT.Ads.dll`. Empty = search the TwinCAT install folders (newest `Components\\Base\\v*` first). A path set here is used as given: if it does not exist, Go Online says so and does not search."
+          },
+          "tcToolkit.adsDll.nativeDllFolder": {
+            "type": "string",
+            "default": "",
+            "scope": "machine",
+            "markdownDescription": "**Folder holding `TcAdsDll.dll`**, Beckhoff's native ADS DLL, installed with TwinCAT 3.1. Used by the online monitoring fallback and by **Build and Activate through XAE** (the RUN check after activation, and confirming a user-mode runtime's AmsNetId). Usually `C:\\Program Files (x86)\\Beckhoff\\TwinCAT\\Common64`. Empty = search the usual folders. A folder set here is used as given: if `TcAdsDll.dll` is not in it, TC Toolkit says so and does not search."
+          }
+        }
       }
     ]
   },

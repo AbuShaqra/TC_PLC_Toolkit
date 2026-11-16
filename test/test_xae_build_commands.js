@@ -1155,6 +1155,30 @@ const rows = (name) => readFixture(name).lines;
             && channel().lines.some(l => /10\.0\.0\.4\.1\.1\s+user-mode\s+UmRT_Default {2}TwinCAT OS \(x64\) {2}\(project\) {2}AmsNetId confirmed over ADS$/.test(l))
             && channel().lines.some(l => /10\.0\.0\.5\.1\.1\s+user-mode\s+UmRT_Second {2}platform unknown {2}AmsNetId from its configuration, instance running$/.test(l)),
             'Show Activation Targets: each user-mode NetId says how it was trusted (over ADS, or from its configuration)');
+        // TcAdsDll.dll not found (tcToolkit.adsDll.nativeDllFolder, user request 2026-11-16): the runtime's
+        // NetId could not be confirmed; the list says why and a notification offers the setting.
+        const NO_DLL = 'the configuration file changed after this runtime started; its AmsNetId could not be confirmed over ADS: '
+            + 'TwinCAT\'s ADS DLL (TcAdsDll.dll) was not found in C:\\Program Files (x86)\\Beckhoff\\TwinCAT\\Common64';
+        listDriver = listing([RT, um('rewritten', NO_DLL, null)], null);
+        settings['tcToolkit.adsDll.nativeDllFolder'] = 'D:\\TC\\Common64';
+        const w0 = calls.warnings.length;
+        const x0 = calls.executed.length;
+        answers.message.push('Open Setting');
+        r = await run('twincat.xaeShowTargets', {});
+        await new Promise(res => setImmediate(res));
+        const dllWarn = calls.warnings[w0];
+        const listArgs = lastSpawn().args;
+        assert(r.ok && r.unknown.length === 1 && listArgs[listArgs.indexOf('-AdsDllDir') + 1] === 'D:\\TC\\Common64',
+            'Show Activation Targets passes the configured TcAdsDll.dll folder to -ListTargets');
+        assert(!!dllWarn && /TcAdsDll\.dll was not found/.test(dllWarn.m) && /tcToolkit\.adsDll\.nativeDllFolder is used as given/.test(dllWarn.m)
+            && JSON.stringify(dllWarn.buttons) === JSON.stringify(['Open Setting'])
+            && channel().lines.some(l => /set tcToolkit\.adsDll\.nativeDllFolder|tcToolkit\.adsDll\.nativeDllFolder is used as given/.test(l)),
+            'a missing TcAdsDll.dll: the channel names the setting, and a warning offers Open Setting');
+        assert(calls.executed.slice(x0).some(c => c.id === 'twincat.openSettings' && c.args[0] === 'tcToolkit.adsDll.nativeDllFolder' && c.args[1] && c.args[1].target === 'user'),
+            'Open Setting opens tcToolkit.adsDll.nativeDllFolder in the User settings (machine scope)');
+        delete settings['tcToolkit.adsDll.nativeDllFolder'];
+        await run('twincat.xaeShowTargets', {});
+        assert(!lastSpawn().args.includes('-AdsDllDir'), 'with the setting empty, no -AdsDllDir (the driver searches)');
         listDriver = () => ({ fixture: 'list-targets' });
         await context.workspaceState.update(LAST_TARGET_KEY, undefined);
     }

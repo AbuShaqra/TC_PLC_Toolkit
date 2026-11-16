@@ -423,6 +423,9 @@ built with XAE's compiler and the project's real libraries.
   refused while the target is being activated (stopping then could leave the runtime in CONFIG). A
   build stops after `tcToolkit.xaeBuild.timeoutMinutes`; a headless build that shows no progress for
   `tcToolkit.xaeBuild.stallMinutes` offers to re-run with the window shown.
+- **TwinCAT's ADS DLL.** The RUN check after activation and the AmsNetId check of a user-mode runtime read
+  ADS through `TcAdsDll.dll`. If it is not found, the result says so and offers **Open Setting** for
+  `tcToolkit.adsDll.nativeDllFolder` (see *ADS DLL paths* under Settings).
 
 Not done: remote targets, building a single PLC project of a multi-project solution, and writing routes. The solution and `.tsproj` are never saved by these commands.
 
@@ -525,7 +528,9 @@ are polled rather than pushed by the PLC. Notes:
   the message says why; then use *Enter AMS Net ID…* with the Net ID printed in the runtime's console
   window (`AmsNetId: …`), for example `10.0.0.4.1.1`.
 - If the helper cannot start (no `TwinCAT.Ads.dll` found) or cannot reach the PLC either, the message
-  names both failures. Other workarounds: run the PLC in a kernel-mode runtime (the library documents
+  names both failures. A DLL that was not found names its setting (`tcToolkit.adsDll.dotNetLibrary` for
+  `TwinCAT.Ads.dll`, `tcToolkit.adsDll.nativeDllFolder` for `TcAdsDll.dll`), with **Open Setting**; see
+  *ADS DLL paths* under Settings. Other workarounds: run the PLC in a kernel-mode runtime (the library documents
   `tcpkg config set -n xarMode -v KM`, with Hyper-V and Memory Integrity off; not confirmed by
   Beckhoff), or monitor a PLC on another machine.
 
@@ -619,6 +624,8 @@ old entry is removed from your `settings.json`.
 | `tcToolkit.online.watchLocation` | `panel` | PLC Watch: `panel` (its own tab in the bottom panel, next to the Terminal) or `sidebar` (the TC Toolkit sidebar, under PLC Objects). |
 | `tcToolkit.online.watchCycleTime` | `200` | PLC Watch: notification cycle time in ms (50 to 10000). |
 | `tcToolkit.online.maxNotifications` | `100` | PLC Watch: the most ADS notifications at once (1 to 400). |
+| `tcToolkit.adsDll.dotNetLibrary` | *(empty)* | Full path to `TwinCAT.Ads.dll`, Beckhoff's .NET ADS library (usually `C:\Program Files (x86)\Beckhoff\TwinCAT\3.1\Components\Base\v170\TwinCAT.Ads.dll`), loaded by the online monitoring fallback. Empty = search the TwinCAT install folders. Per machine. |
+| `tcToolkit.adsDll.nativeDllFolder` | *(empty)* | Folder holding `TcAdsDll.dll`, Beckhoff's native ADS DLL (usually `C:\Program Files (x86)\Beckhoff\TwinCAT\Common64`), used by the online monitoring fallback and by Build and Activate through XAE (the RUN check, confirming a user-mode runtime's AmsNetId). Empty = search the usual folders. Per machine. |
 
 **XAE Shell paths.** On Windows the two `tcToolkit.xaeShell.*` settings are filled automatically with the
 installation found on your machine: first from the shell's COM registration, then from the default
@@ -628,6 +635,15 @@ is ever filled — a path you set yourself is never overwritten, so change it if
 shell, kept your value, or found nothing. The settings are per machine (they are not synced and cannot be
 set per workspace). Today they are used by **Update Library Definitions**, which drives the shell at a
 configured path when that file exists; on other platforms nothing is detected and they stay empty.
+
+**ADS DLL paths.** TC Toolkit finds Beckhoff's ADS DLLs by itself: `TwinCAT.Ads.dll` under the TwinCAT
+install folder the registry names (then `Program Files (x86)\Beckhoff\TwinCAT` and `C:\TwinCAT`), newest
+`3.1\Components\Base\v*` first, and `TcAdsDll.dll` in that folder's `Common64` (`Common32` in a 32-bit
+PowerShell) — for the XAE build in `Program Files (x86)\Beckhoff\TwinCAT\Common64`, `Program Files\Beckhoff\TwinCAT\Common64`,
+then `Program Files (x86)\Beckhoff\TwinCAT\Common32`. Where that fails, set the two `tcToolkit.adsDll.*`
+settings. A path set there is **used as given**: if the file is not there, the message says so and names
+the path — TC Toolkit does not fall back to its own search, so a mistyped path is never hidden by a DLL
+found elsewhere. When a DLL is not found, the message names the setting and offers **Open Setting**.
 
 ---
 

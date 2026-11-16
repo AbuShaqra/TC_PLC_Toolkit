@@ -163,9 +163,11 @@ function isLoopback(address) {
  * (src/online/helperClient.js) and connects again; the switch is announced on the `notice` event and
  * `connect()` resolves with `transport: 'helper'`. Everything after the connect is the same code.
  * @param {ConnectOptions} options
- * @param {{Client?: any, platform?: string, HelperClient?: any, startHelper?: (o: Object) => Promise<import('./adsHelperProcess').AdsHelper>, fallback?: boolean}} [deps]
+ * @param {{Client?: any, platform?: string, HelperClient?: any, startHelper?: (o: Object) => Promise<import('./adsHelperProcess').AdsHelper>, fallback?: boolean,
+ *   dlls?: {dotNetLibrary?: string, nativeDllFolder?: string}}} [deps]
  *   `Client` is ads-client's class; `HelperClient` replaces the helper-backed class (harnesses);
- *   `startHelper` replaces the helper process start; `fallback: false` turns the switch off.
+ *   `startHelper` replaces the helper process start; `fallback: false` turns the switch off;
+ *   `dlls` are the tcToolkit.adsDll.* settings, handed to the helper.
  * @returns {AdsPort}
  */
 function createAdsClient(options, deps = {}) {
@@ -253,7 +255,7 @@ function createAdsClient(options, deps = {}) {
                 const first = /** @type {any} */ (e);
                 if (closed || first.cancelled || !canFallBack || !isRouterRefusal(first, options)) throw first;
                 const HelperClient = deps.HelperClient || require('./helperClient').createHelperClientClass(Client, {
-                    startHelper: deps.startHelper, log: (/** @type {string} */ line) => emit('notice', line)
+                    startHelper: deps.startHelper, dlls: deps.dlls, log: (/** @type {string} */ line) => emit('notice', line)
                 });
                 emit('notice', `The ADS router at ${options.routerAddress || '127.0.0.1'}:${settings.routerTcpPort} refused this client's TCP connection ` +
                     `(${errorText(first).trim()}). Trying TwinCAT's own ADS DLL through a PowerShell helper (user-mode fallback).`);

@@ -28,12 +28,17 @@
     The PLC runtime's ADS port (851 for the first).
 
 .PARAMETER AdsDll
-    Passed to the helper: use this TwinCAT.Ads.dll instead of searching.
+    Passed to the helper: use this TwinCAT.Ads.dll instead of searching (as tcToolkit.adsDll.dotNetLibrary does).
+
+.PARAMETER AdsNativeDir
+    Passed to the helper: put this folder (holding TcAdsDll.dll) on PATH instead of the TwinCAT root's
+    Common64/Common32 (as tcToolkit.adsDll.nativeDllFolder does).
 #>
 param(
     [Parameter(Mandatory = $true)][string]$NetId,
     [int]$Port = 851,
-    [string]$AdsDll = ''
+    [string]$AdsDll = '',
+    [string]$AdsNativeDir = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -44,6 +49,7 @@ $psi = New-Object System.Diagnostics.ProcessStartInfo
 $psi.FileName = 'powershell.exe'
 $psi.Arguments = '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "' + $helper + '" -TimeoutMs 2000'
 if ($AdsDll) { $psi.Arguments += ' -AdsDll "' + $AdsDll + '"' }
+if ($AdsNativeDir) { $psi.Arguments += ' -AdsNativeDir "' + $AdsNativeDir.TrimEnd('\') + '"' }  # a trailing \ would escape the quote
 $psi.UseShellExecute = $false
 $psi.RedirectStandardInput = $true
 $psi.RedirectStandardOutput = $true

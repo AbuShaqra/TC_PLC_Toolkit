@@ -41,6 +41,7 @@ const vscode = require('vscode');
 const { createOnlineSession } = require('../online/session');
 const { createAdsClient } = require('../online/adsClient');
 const { describeConnectError, isLoopback, RUNTIME_NETID_HINT } = require('../online/connectErrors');
+const { ADS_DLL_SECTION, readAdsDllSettings } = require('../adsDllSettings');
 const { discoverRuntimes, checkKernelService, resolveLocalTarget, localPickItems, unresolvedHintText, resolutionLogText } = require('../online/localRuntime');
 const childProcess = require('child_process');
 const path = require('path');
@@ -85,9 +86,12 @@ const LOCAL_PICK_KEY = 'twincat.online.localRuntimePick';
 function registerOnlineCommands(context, deps) {
     const provider = deps.provider;
     const platform = deps.platform || process.platform;
+    /** The tcToolkit.adsDll.* settings, read at each use (a change applies to the next Go Online). */
+    const adsDlls = () => { const c = vscode.workspace.getConfiguration(ADS_DLL_SECTION); return readAdsDllSettings((k) => c.get(k)); };
     const discover = deps.discoverRuntimes || (async () => {
         const [d, kernelService] = await Promise.all([
-            discoverRuntimes({ spawn: childProcess.spawn, scriptPath: path.join(context.extensionPath, 'resources', 'xae', 'build-plc-project.ps1') }),
+            discoverRuntimes({ spawn: childProcess.spawn, scriptPath: path.join(context.extensionPath, 'resources', 'xae', 'build-plc-project.ps1'),
+                adsDllDir: adsDlls().nativeDllFolder }),
             checkKernelService(childProcess.execFile)
         ]);
         return { ...d, kernelService };
@@ -98,7 +102,7 @@ function registerOnlineCommands(context, deps) {
     const channel = vscode.window.createOutputChannel(OUTPUT_CHANNEL_NAME);
     const log = (/** @type {string} */ line) => channel.appendLine(`[${new Date().toLocaleTimeString()}] ${line}`);
     const session = createOnlineSession({
-        createClient: deps.createClient || ((o) => createAdsClient(o)),
+        createClient: deps.createClient || ((o) => createAdsClient(o, { dlls: adsDlls() })),
         log,
         maxNotifications: () => clampInt(cfg().get('maxNotifications', 100), 1, 400, 100)
     });
@@ -692,14 +696,16 @@ function registerOnlineCommands(context, deps) {
             await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: `Going online: ${t.label}`, cancellable: true },
                 (_progress, token) => session.connect(options, token));
         } catch (err) {
-            const f = describeConnectError(err, options);
+            const f = describeConnectError(err, { ...options, dlls: adsDlls() });
             // "Local runtime" stayed on the router: the "Enter AMS Net ID…" hint also says why.
             const why = f.hint && f.hint.includes(RUNTIME_NETID_HINT) ? unresolvedHintText(resolution) : '';
             if (why) f.hint = `${f.hint} ${why}`;
             log(`Go Online failed (${f.kind}): ${f.raw}`);
             if (f.kind === 'cancelled') return { status: 'cancelled' };
-            const pick = await vscode.window.showErrorMessage(`${f.message}${f.hint ? ' ' + f.hint : ''}`, 'Show Log');
+            // A DLL that was not found or did not load: its setting is one click away (machine scope: User settings).
+            const pick = await vscode.window.showErrorMessage(`${f.message}${f.hint ? ' ' + f.hint : ''}`, ...(f.setting ? ['Open Setting'] : []), 'Show Log');
             if (pick === 'Show Log') channel.show(true);
+            else if (pick === 'Open Setting' && f.setting) vscode.commands.executeCommand('twincat.openSettings', f.setting, { target: 'user' });
             return { status: 'failed', failure: f };
         }
         const target = t;

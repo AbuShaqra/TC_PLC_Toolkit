@@ -63,12 +63,13 @@ const DISCOVERY_TIMEOUT_MS = 30000;
  * @param {Object} o
  * @param {Function} o.spawn child_process.spawn or a stub.
  * @param {string} o.scriptPath resources/xae/build-plc-project.ps1.
+ * @param {string} [o.adsDllDir] The tcToolkit.adsDll.nativeDllFolder setting ('' = the driver searches).
  * @param {number} [o.timeoutMs] Default DISCOVERY_TIMEOUT_MS.
  * @returns {Promise<Discovery>}
  */
 async function discoverRuntimes(o) {
     const started = Date.now();
-    const args = buildDriverArgs({ scriptPath: o.scriptPath, mode: 'listTargets' });
+    const args = buildDriverArgs({ scriptPath: o.scriptPath, mode: 'listTargets', adsDllDir: o.adsDllDir });
     const r = await runChild(/** @type {any} */ (o.spawn), 'powershell.exe', args, { timeoutMs: o.timeoutMs || DISCOVERY_TIMEOUT_MS });
     const ms = Date.now() - started;
     if (r.outcome === 'spawn-error') return { ok: false, entries: [], error: `PowerShell could not start (${r.error})`, ms };

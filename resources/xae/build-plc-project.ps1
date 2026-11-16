@@ -236,6 +236,15 @@
     launched by DCOM and is not a child of this process, so killing this script does not end it -
     which is why cancelling goes through this file rather than a kill.
 
+.PARAMETER AdsDllDir
+    The folder holding TwinCAT's native ADS DLL, TcAdsDll.dll (usually
+    C:\Program Files (x86)\Beckhoff\TwinCAT\Common64), for a machine where the default folders do not
+    hold it. Read-TcAdsState loads it from there: the RUN check after activation and the AmsNetId
+    confirmation of a user-mode runtime. Used as given: when TcAdsDll.dll is not in it, the ADS reads
+    report that (naming the folder) and the default folders are NOT searched. Omit it to search
+    Program Files (x86)\...\Common64, Program Files\...\Common64, then Program Files (x86)\...\Common32.
+    The extension passes the tcToolkit.adsDll.nativeDllFolder setting here.
+
 .EXAMPLE
     powershell -NoProfile -ExecutionPolicy Bypass -File .\build_plc_project.ps1
 
@@ -339,7 +348,9 @@ param(
     [switch]$Json,
     [switch]$ShowWindow,
     [switch]$ListTargets,
-    [string]$CancelFile
+    [string]$CancelFile,
+    # See .PARAMETER AdsDllDir above: the folder holding TcAdsDll.dll; omitted = search as before.
+    [string]$AdsDllDir
 )
 
 # ----------------------------------------------------------------------------
@@ -1535,13 +1546,22 @@ function Read-TcAdsState {
     $result = { param($s, $c, $d, $e) [pscustomobject]@{ AdsState = $s; AdsErrorCode = $c; DllProblem = $d; Error = $e } }
 
     if (-not ('TcAdsState' -as [type])) {
-        $dllDirs = @(
+        # -AdsDllDir (the script's parameter) replaces the search; read by name so a harness that
+        # defines this function without the script's parameters still searches.
+        $configuredDir = Get-Variable -Name AdsDllDir -Scope Script -ValueOnly -ErrorAction SilentlyContinue
+        $dllDirs = @($(if ($configuredDir) { @([string]$configuredDir) } else { @(
             "${env:ProgramFiles(x86)}\Beckhoff\TwinCAT\Common64",
             "$env:ProgramFiles\Beckhoff\TwinCAT\Common64",
             "${env:ProgramFiles(x86)}\Beckhoff\TwinCAT\Common32"
-        )
+        ) }))
         $dllDir = $dllDirs | Where-Object { $_ -and (Test-Path -LiteralPath (Join-Path $_ 'TcAdsDll.dll')) } | Select-Object -First 1
-        if (-not $dllDir) { return (& $result $null $null "TwinCAT's ADS DLL (TcAdsDll.dll) was not found in $($dllDirs -join ', ')" $null) }
+        if (-not $dllDir) {
+            $problem = $(if ($configuredDir) { "TwinCAT's ADS DLL (TcAdsDll.dll) was not found in $configuredDir (the folder -AdsDllDir names)" }
+                         else { "TwinCAT's ADS DLL (TcAdsDll.dll) was not found in $($dllDirs -join ', ')" })
+            # Kept for the activation report: Get-TcAdsState returns only the state.
+            Set-Variable -Name TcAdsDllProblem -Scope Script -Value $problem
+            return (& $result $null $null $problem $null)
+        }
         $env:PATH = "$dllDir;$env:PATH"
         Add-Type @'
 using System;
@@ -2977,7 +2997,10 @@ try {
             }
             $stateName = if ($null -ne $adsState) { $TcAdsStateNames[[int]$adsState] } else { 'unreadable' }
             $activationOutcome = $(if ($adsState -eq 5) { 'run' } elseif ($null -eq $adsState) { 'incomplete' } else { 'failed' })
-            Emit-Event 'activation' ([ordered]@{ netId = $pinTarget; adsState = $adsState; stateName = $stateName; outcome = $activationOutcome })
+            # dllProblem: why ADS could not be read at all (TcAdsDll.dll not found), only with no state.
+            $activationDllProblem = $(if ($null -eq $adsState) { Get-Variable -Name TcAdsDllProblem -Scope Script -ValueOnly -ErrorAction SilentlyContinue } else { $null })
+            Emit-Event 'activation' ([ordered]@{ netId = $pinTarget; adsState = $adsState; stateName = $stateName; outcome = $activationOutcome
+                                                 dllProblem = $(if ($activationDllProblem) { [string]$activationDllProblem } else { $null }) })
 
             if ($adsState -eq 5) {
                 Write-Host "ACTIVATION SUCCEEDED. ($pinTarget is in RUN, ADS state 5)" -ForegroundColor Green
@@ -2996,6 +3019,10 @@ try {
                 # configuration was written, but whether it runs is genuinely unknown from here.
                 Write-Host "ACTIVATION INCOMPLETE: configuration written, but the run state could not be read" -ForegroundColor Yellow
                 Write-Host "                       from $pinTarget via ADS. Check the runtime yourself." -ForegroundColor Yellow
+                $dllProblem = Get-Variable -Name TcAdsDllProblem -Scope Script -ValueOnly -ErrorAction SilentlyContinue
+                if ($dllProblem) {
+                    Write-Host ("                       $dllProblem." + $(if ($AdsDllDir) { '' } else { ' Pass -AdsDllDir with the folder holding it.' })) -ForegroundColor Yellow
+                }
                 $script:activationUnverified = $true
             }
             else {

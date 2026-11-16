@@ -1,6 +1,7 @@
 # TC Toolkit online monitoring (roadmap R15 phase 2): the user-mode fallback's ADS helper.
 # Started by src/online/adsHelperProcess.js as
 #   powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ads-helper.ps1 -TimeoutMs 2000
+#     [-AdsDll <TwinCAT.Ads.dll>] [-AdsNativeDir <folder of TcAdsDll.dll>]   (the tcToolkit.adsDll.* settings)
 # Keep this file ASCII: Windows PowerShell 5.1 reads a BOM-less script in the ANSI code page.
 <#
 .SYNOPSIS
@@ -16,7 +17,9 @@
 
     Protocol: one JSON object per line.
       At start, one line:  {"id":0,"event":"ready","ok":true,"dll":"...","dllVersion":"...","bitness":64,"common":"..."}
-                       or  {"id":0,"event":"ready","ok":false,"kind":"dll-not-found"|"dll-load","error":"...","searched":[...]}
+                       or  {"id":0,"event":"ready","ok":false,"kind":"dll-not-found"|"dll-load","error":"...","searched":[...],
+                                "dllName":"TwinCAT.Ads.dll"|"TcAdsDll.dll","configured":true|false}
+                           (dllName: which DLL failed; configured: its path came from -AdsDll / -AdsNativeDir)
       Requests:            {"id":N,"cmd":"open","netId":"10.0.0.4.1.1","port":851}
                            {"id":N,"cmd":"read","netId":...,"port":...,"ig":16448,"io":0,"len":4}
                            {"id":N,"cmd":"write","netId":...,"port":...,"ig":...,"io":...,"data":"<base64>"}
@@ -37,14 +40,22 @@
     TcAdsClient.Timeout for every request, in milliseconds.
 
 .PARAMETER AdsDll
-    Use this TwinCAT.Ads.dll instead of searching for one (for the manual smoke test).
+    Use this TwinCAT.Ads.dll instead of searching for one (the tcToolkit.adsDll.dotNetLibrary setting, or
+    the manual smoke test). A folder holding TwinCAT.Ads.dll is accepted too. Used as given: when it does
+    not exist the ready line says so (dll-not-found, configured) and nothing is searched.
+
+.PARAMETER AdsNativeDir
+    The folder holding TcAdsDll.dll, put first on PATH instead of the TwinCAT root's Common64/Common32
+    (the tcToolkit.adsDll.nativeDllFolder setting). Used as given: without TcAdsDll.dll in it the ready
+    line says so (dll-not-found, configured) and nothing is loaded.
 
 .EXAMPLE
     '{"id":1,"cmd":"state","netId":"10.0.0.4.1.1","port":10000}' | powershell -NoProfile -ExecutionPolicy Bypass -File ads-helper.ps1
 #>
 param(
     [int]$TimeoutMs = 2000,
-    [string]$AdsDll = ''
+    [string]$AdsDll = '',
+    [string]$AdsNativeDir = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -107,6 +118,20 @@ $searched = New-Object System.Collections.Generic.List[string]
 $loaded = $null
 $loadErrors = New-Object System.Collections.Generic.List[string]
 
+# A configured TcAdsDll.dll folder must hold the DLL: said at once, never searched past.
+if ($AdsNativeDir -and -not (Test-Path -LiteralPath (Join-Path $AdsNativeDir 'TcAdsDll.dll') -PathType Leaf)) {
+    Write-Message @{ id = 0; event = 'ready'; ok = $false; kind = 'dll-not-found'; bitness = $bitness; dllName = 'TcAdsDll.dll'; configured = $true
+        error = ('TcAdsDll.dll was not found in the configured folder ' + $AdsNativeDir + '.'); searched = @((Join-Path $AdsNativeDir 'TcAdsDll.dll')) }
+    exit 2
+}
+# A configured TwinCAT.Ads.dll (or the folder holding it) must exist: said at once, never searched past.
+if ($AdsDll -and (Test-Path -LiteralPath $AdsDll -PathType Container)) { $AdsDll = Join-Path $AdsDll 'TwinCAT.Ads.dll' }
+if ($AdsDll -and -not (Test-Path -LiteralPath $AdsDll -PathType Leaf)) {
+    Write-Message @{ id = 0; event = 'ready'; ok = $false; kind = 'dll-not-found'; bitness = $bitness; dllName = 'TwinCAT.Ads.dll'; configured = $true
+        error = ('TwinCAT.Ads.dll was not found at the configured path ' + $AdsDll + '.'); searched = @($AdsDll) }
+    exit 2
+}
+
 $candidates = @()
 if ($AdsDll) {
     $root = $null
@@ -120,7 +145,8 @@ if ($AdsDll) {
 
 foreach ($c in $candidates) {
     # TcAdsDll.dll lives in Common64 (or Common32 for a 32-bit PowerShell); TwinCAT.Ads.dll P/Invokes it.
-    $common = if ($c.Root) { Join-Path $c.Root $commonName } else { $null }
+    # A configured folder (-AdsNativeDir, checked above) replaces it.
+    $common = if ($AdsNativeDir) { $AdsNativeDir } elseif ($c.Root) { Join-Path $c.Root $commonName } else { $null }
     $oldPath = $env:Path
     if ($common -and (Test-Path -LiteralPath $common)) { $env:Path = $common + ';' + $env:Path } else { $common = $null }
     try {
@@ -136,10 +162,10 @@ foreach ($c in $candidates) {
 
 if (-not $loaded) {
     if ($candidates.Count -eq 0) {
-        Write-Message @{ id = 0; event = 'ready'; ok = $false; kind = 'dll-not-found'; bitness = $bitness;
+        Write-Message @{ id = 0; event = 'ready'; ok = $false; kind = 'dll-not-found'; bitness = $bitness; dllName = 'TwinCAT.Ads.dll'; configured = $false
             error = 'TwinCAT.Ads.dll was not found (TwinCAT 3.1 XAE or XAR installs it under Components\Base).'; searched = @($searched) }
     } else {
-        Write-Message @{ id = 0; event = 'ready'; ok = $false; kind = 'dll-load'; bitness = $bitness;
+        Write-Message @{ id = 0; event = 'ready'; ok = $false; kind = 'dll-load'; bitness = $bitness; dllName = 'TwinCAT.Ads.dll'; configured = [bool]$AdsDll
             error = ('TwinCAT.Ads.dll did not load: ' + ($loadErrors -join '; ')); searched = @($candidates | ForEach-Object { $_.Dll }) }
     }
     exit 2

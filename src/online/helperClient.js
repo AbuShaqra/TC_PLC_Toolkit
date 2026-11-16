@@ -90,6 +90,7 @@ function normalizeNetId(netId) {
  * @param {Object} [deps]
  * @param {(o: Object) => Promise<import('./adsHelperProcess').AdsHelper>} [deps.startHelper]
  * @param {(line: string) => void} [deps.log] The helper's stderr lines.
+ * @param {{dotNetLibrary?: string, nativeDllFolder?: string}} [deps.dlls] The configured DLL locations, passed to the helper.
  * @returns {any} A class whose instances are ads-client Clients talking through the helper.
  */
 function createHelperClientClass(Base, deps = {}) {
@@ -124,7 +125,7 @@ function createHelperClientClass(Base, deps = {}) {
             this.settings.targetAmsNetId = normalizeNetId(this.settings.targetAmsNetId);
             let helper;
             try {
-                helper = await start({ adsTimeoutMs: this.settings.timeoutDelay, log });
+                helper = await start({ adsTimeoutMs: this.settings.timeoutDelay, log, dlls: deps.dlls });
             } catch (e) {
                 const err = new ClientError(`connectToTarget(): Starting the ADS helper failed: ${/** @type {any} */ (e).message}`);
                 /** @type {any} */ (err).helper = e;

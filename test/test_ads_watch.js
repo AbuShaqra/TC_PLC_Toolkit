@@ -207,6 +207,22 @@ const watchTree = trees.get('twincatWatch');
     assert(channel().lines.some(l => /Go Online failed \(port-registration\)/.test(l)), 'the raw failure is in the output channel');
     plc.connectBehavior = {};
 
+    // ── the fallback's DLL was not found: the hint names the setting, with Open Setting ─────────────
+    plc.connectBehavior = { error: Object.assign(new Error('x'), { trace: ['connectToTarget(): Starting the ADS helper failed: TwinCAT.Ads.dll was not found'],
+        fallback: { routerError: 'socket error -4077' }, helper: { kind: 'dll-not-found', message: 'TwinCAT.Ads.dll was not found',
+            detail: { dllName: 'TwinCAT.Ads.dll', configured: false } } }) };
+    answers.message.push('Open Setting');
+    const e0 = calls.errors.length;
+    const x0 = calls.executed.length;
+    r = await run('twincat.goOnline', { netId: '10.0.0.4.1.1', label: '10.0.0.4.1.1' });
+    await tick(0);
+    assert(r.status === 'failed' && r.failure.setting === 'tcToolkit.adsDll.dotNetLibrary' && calls.errors[e0]
+        && /set tcToolkit\.adsDll\.dotNetLibrary to its TwinCAT\.Ads\.dll/.test(calls.errors[e0].m)
+        && JSON.stringify(calls.errors[e0].buttons) === JSON.stringify(['Open Setting', 'Show Log']),
+        'TwinCAT.Ads.dll not found: the message names tcToolkit.adsDll.dotNetLibrary and offers Open Setting');
+    assert(calls.executed.slice(x0).includes('twincat.openSettings'), 'Open Setting opens the settings');
+    plc.connectBehavior = {};
+
     // ── cancel ────────────────────────────────────────────────────────────────────────────────────
     plc.connectBehavior = { delayMs: 40 };
     const pending = run('twincat.goOnline', { netId: 'localhost', label: 'Local runtime' });

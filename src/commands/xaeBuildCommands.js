@@ -59,8 +59,9 @@ const {
     EXIT, buildDriverArgs, createLineSplitter, parseLine, createRunState, reduce, describeExit, describeBootProject, describeUiMode,
     canCancel, isStalled, targetPickItems, confirmationText, reachedBuildResult, missingShell,
     declaredPairs, activationPlatform, platformNotDeclaredText, pairNotDeclaredText, noErrorDetails, needsCompileFallback, RERUN_WINDOW_SHOWN, SWITCH_AND_REMEMBER,
-    FALLBACK_INTRO, compileFallbackText, RETARGET_BUTTON, refusedTarget, retargetConfirmText, unknownRuntimesText
+    FALLBACK_INTRO, compileFallbackText, RETARGET_BUTTON, refusedTarget, retargetConfirmText, unknownRuntimesText, unknownNeedsAdsDll
 } = require('../xaeBuild');
+const { ADS_DLL_SECTION, SETTING_ADS_NATIVE_DLL_FOLDER, readAdsDllSettings, adsDllHint } = require('../adsDllSettings');
 const { checkSolutionTarget, changeSolutionTarget } = require('../tsprojTarget');
 const { placeXaeErrors, placementSummary } = require('../xaeErrorPlacement');
 const { XAE_BUILD_SECTION, readXaeBuildSettings } = require('../xaeBuildSettings');
@@ -207,6 +208,11 @@ function registerXaeBuildCommands(context, deps) {
     // ── Settings and the dropdown ──────────────────────────────────────────────────────────────
     const config = () => vscode.workspace.getConfiguration(XAE_BUILD_SECTION);
     const readSettings = () => { const c = config(); return readXaeBuildSettings((k) => c.get(k)); };
+    /** tcToolkit.adsDll.nativeDllFolder ('' = the driver searches), read at each run. */
+    const adsDllDir = () => { const c = vscode.workspace.getConfiguration(ADS_DLL_SECTION); return readAdsDllSettings((k) => c.get(k)).nativeDllFolder; };
+    /** The button that opens the TcAdsDll.dll folder setting (machine scope: the User settings). */
+    const OPEN_SETTING = 'Open Setting';
+    const openAdsDllSetting = () => vscode.commands.executeCommand('twincat.openSettings', SETTING_ADS_NATIVE_DLL_FOLDER, { target: 'user' });
     const xaeOptions = () => {
         const s = readSettings();
         return { available: platform === 'win32', showWindow: s.showWindow, running, configuration: s.configuration, platform: s.platform };
@@ -323,7 +329,7 @@ function registerXaeBuildCommands(context, deps) {
         if (cancelFile) { try { fs.unlinkSync(cancelFile); } catch (e) { /* not there: good */ } }
         const args = buildDriverArgs({
             scriptPath, slnPath: o.slnPath, mode: o.mode, showWindow: o.showWindow, configuration: o.configuration,
-            platform: o.platform, targetNetId: o.targetNetId, shellOverride: o.shellOverride, cancelFile
+            platform: o.platform, targetNetId: o.targetNetId, shellOverride: o.shellOverride, cancelFile, adsDllDir: adsDllDir()
         });
         const ch = channel();
         /** @type {any} */
@@ -645,7 +651,7 @@ function registerXaeBuildCommands(context, deps) {
         });
         const d = describeExit(run.code, run.outcome, state, {
             error: run.error, stderr: run.stderr, solutionName: path.basename(slnPath, path.extname(slnPath)),
-            errorCount: placement.errors, retargetProblem: retarget ? retarget.problem : ''
+            errorCount: placement.errors, retargetProblem: retarget ? retarget.problem : '', adsDllConfigured: !!adsDllDir()
         });
         if (built) publishProblems(placement.byFile);
         for (const g of placement.general) ch.appendLine(`  ${g.severity} (not placed): ${g.description}${g.file ? ` [${g.file}${g.line ? `:${g.line}` : ''}]` : ''}`);
@@ -711,8 +717,12 @@ function registerXaeBuildCommands(context, deps) {
         if ((byFile.size > 0 && built) || (fallback && fallback.ran > 0)) buttons.unshift('Show Problems');
         if (missingDetails && missingDetails.offerRerun && rerunWindowShown) buttons.unshift(RERUN_WINDOW_SHOWN);
         if (retarget && retarget.change) buttons.unshift(RETARGET_BUTTON);
+        // The run state could not be read for want of TcAdsDll.dll: its setting, one click away.
+        const dllMissing = !!(state.activation && state.activation.dllProblem);
+        if (dllMissing) buttons.unshift(OPEN_SETTING);
         Promise.resolve(show(`${title}${errorsLine ? ' ' + errorsLine : ''}${fallbackText ? ' ' + fallbackText : ''}`, ...buttons)).then((choice) => {
             if (choice === 'Show Output') ch.show(true);
+            else if (choice === OPEN_SETTING && dllMissing) openAdsDllSetting();
             else if (choice === 'Show Problems') vscode.commands.executeCommand('workbench.actions.view.problems');
             else if (choice === RERUN_WINDOW_SHOWN && rerunWindowShown) {
                 ch.appendLine(`${stamp()} Building again with the XAE window shown (this run only; the setting is unchanged).`);
@@ -835,13 +845,16 @@ function registerXaeBuildCommands(context, deps) {
                 const listed = await listTargets(slnPath);
                 const items = targetPickItems(listed.state.targets, { preselect: context.workspaceState.get(LAST_TARGET_KEY) });
                 // Runtimes whose AmsNetId is unknown are separator rows: shown, never pickable.
-                const unknownText = unknownRuntimesText(listed.state.targets ? listed.state.targets.unknown : []);
+                const unknownList = listed.state.targets ? listed.state.targets.unknown : [];
+                const unknownText = unknownRuntimesText(unknownList, { adsDllConfigured: !!adsDllDir() });
                 if (unknownText) channel().appendLine(`${stamp()} ${title}: ${unknownText}`);
                 if (!items.some(i => i.netId)) {
-                    vscode.window.showErrorMessage(unknownText
+                    const dllButtons = unknownNeedsAdsDll(unknownList) ? [OPEN_SETTING] : [];
+                    Promise.resolve(vscode.window.showErrorMessage(unknownText
                         ? `No runtime of this machine with a known AmsNetId was found to activate on. ${unknownText}`
                         : 'No runtime of this machine was found to activate on. ' +
-                            (listed.state.fatal ? listed.state.fatal.text : describeExit(listed.code, listed.outcome, listed.state).title));
+                            (listed.state.fatal ? listed.state.fatal.text : describeExit(listed.code, listed.outcome, listed.state).title), ...dllButtons))
+                        .then((choice) => { if (choice === OPEN_SETTING) openAdsDllSetting(); });
                     return { ok: false, reason: 'no-targets' };
                 }
                 const pickedItem = await vscode.window.showQuickPick(items, { title: `${title}: activation target`, placeHolder: 'Runtime of this machine to activate on' });
@@ -1045,7 +1058,7 @@ function registerXaeBuildCommands(context, deps) {
                     ch.appendLine(`  ${'AmsNetId unknown'.padEnd(20)} ${u.kind.padEnd(10)} ${u.name}  not offered: ${u.reason}` +
                         (u.fileNetId ? ` (its configuration file names ${u.fileNetId})` : ''));
                 }
-                if (t.unknown.length > 0) ch.appendLine(`  ${unknownRuntimesText(t.unknown)}`);
+                if (t.unknown.length > 0) ch.appendLine(`  ${unknownRuntimesText(t.unknown, { adsDllConfigured: !!adsDllDir() })}`);
             } else {
                 ch.appendLine(`  none found. ${describeExit(run.code, run.outcome, run.state).title}`);
             }
@@ -1053,6 +1066,13 @@ function registerXaeBuildCommands(context, deps) {
                 ch.appendLine(`  The project names ${t.projectNetId}, which is not a runtime of this machine: activation onto it is refused.`);
             }
             ch.show(true);
+            // A runtime left out for want of TcAdsDll.dll: the one thing here the user can fix from VS Code.
+            if (t && unknownNeedsAdsDll(t.unknown)) {
+                Promise.resolve(vscode.window.showWarningMessage(
+                    'Show Activation Targets: TcAdsDll.dll was not found, so a runtime\'s AmsNetId could not be confirmed. ' +
+                    adsDllHint('native', { configured: !!adsDllDir() }), OPEN_SETTING))
+                    .then((choice) => { if (choice === OPEN_SETTING) openAdsDllSetting(); });
+            }
             return { ok: !!t, targets: t ? t.local.slice() : [], unknown: t ? t.unknown.slice() : [], projectNetId: t ? t.projectNetId : null };
         }),
         vscode.commands.registerCommand('twincat.xaeBuild.goToProblem', async () => {
