@@ -6,10 +6,8 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
 [docs/handoff-findings.md](docs/handoff-findings.md)** — read the section covering what you are about to touch.
 
 ## Status
-- **Released:** `package.json` is at **0.10.1**, and **v0.10.1 is PUBLISHED** (2026-11-03 16:13 UTC: dev→main PR #23
-  merged at `3210d33`, Release run 41671593015 green, VSIX `twincat-plc-toolkit-0.10.1.vsix` attached).
-- **Version history:** 0.10.1 struct EXTENDS from own DUTs (PR #22); 0.10.0 Libraries scoping (PR #18); 0.9.0
-  improvement-plan phases; 0.8.x project-aware Generate ST, ResizeObserver fix, solution→project Objects tree.
+- **Release:** `package.json` is at **0.11.0** (being released 2026-11-16: branch → dev → main, then the Release workflow;
+  notes come from `CHANGELOG.md`'s section, which `release.yml` now puts ahead of the generated PR list). Last published: v0.10.1.
 - **Last verified:** 2026-11-16 (Linux container, native editor header on
   `claude/focused-ptolemy-m6acaz`) — `REQUIRE_FULL_SUITE=1 npm test` green (**138/138, Coverage: FULL**; compile-real,
   cpp-real, gpp-real ran), `npm run typecheck` and `npm run lint` exit 0; browser harnesses `run.js` 135, `run_online.js` 53, `run_pragmas.js` 47,
@@ -443,17 +441,6 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
 - **Compiler name in the UI (user ruling 2026-11-09):** the extension's UI and user-facing README name no compiler
   ("Build project", not "Check with STruC++"); `test_start_contributions.js` pins that the start page never says
   STruC++. Developer docs, ROADMAP.md and the published roadmap page may keep the name.
-- **Backlog scheduled 2026-11-09 (user's ask):** toolkit R6–R10 (R10 on trigger only) and fork S3a–S8 are now rows in
-  ROADMAP.md with my own sizing (not measured) at the Nov 9 velocity, ~4 h of session per working day. **S3a (three
-  false positives on correct code) goes before R3.2**; S7 (iec-3 audit) needs the user's decision first; S8 after R3.3.
-- **Roadmap re-measured 2026-11-09** (user's ask): ~20 planned days were delivered in ~7 h that day (ROADMAP.md
-  "Velocity"). New forecasts assume half that pace; toolkit R2–R3.3 ~2026-11-17, R6–R9 ~2026-11-19, S2 ~2026-11-11, fork S3a–S8 ~2026-11-18. The real pacing
-  item is the user's Windows checks (R5 XAE, R4 dev-host via PR #30, R2 skeleton/XAE proofs) — never forecast.
-- **Was next: R3.1** (STruC++ spike) — [ROADMAP.md](ROADMAP.md) (page https://claude.ai/artifact/8RG7TZtBV2cuupsrwWtknv,
-  source `docs/roadmap.html`). Order: R3.1 → R4 Objects-tree model (deepening P7) → R2 create a TwinCAT project →
-  R3.2 check command → R3.3 packaging. Forecast end 2026-12-05. Every R2/R3 decision is SETTLED (2026-11-09,
-  recorded under each item in ROADMAP.md) — do not re-ask them. When an item starts, moves or merges, update
-  ROADMAP.md AND `docs/roadmap.html` and republish the page to the same URL (rule in CLAUDE.md).
 - **R3 inputs:** STruC++ fork `AbuShaqra/STruCpp`, default branch `development` (@ `2c223c9`, v0.7.0, GPL-3.0-only,
   Node ≥ 22; dialect flags `--dialect-file`/`--dialect-path`, `src/dialect.ts`, `docs/DIALECTS.md`;
   `npm run build:bundle` → `dist/strucpp-bundle.cjs`). The TwinCAT profile is vendored at
