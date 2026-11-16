@@ -262,6 +262,48 @@ function run(name, o) {
     const fail = run('activation-failed');
     assert(/CONFIG, not RUN/.test(x.describeExit(3, 'exit', fail.state).title), 'describeExit 3 names the ADS state');
 
+    // Boot project with autostart (user decision 2026-11-16): reported on success, a warning when it is missing.
+    {
+        const okRun = x.describeExit(0, 'exit', actRun.state);
+        const b = actRun.state.bootProject;
+        assert(b && b.outcome === 'installed' && b.projects.length === 1 && b.projects[0].installed && b.projects[0].wasAutostart === false
+            && b.projects[0].node === 'root' && actRun.state.plcStates.length === 1 && actRun.state.plcStates[0].port === 851, 'bootProject and plcState are read');
+        assert(okRun.ok && okRun.severity === 'info' && /it is in RUN\. The PLC program is installed as a boot project with autostart: the PLC starts on activation and after every runtime restart\.$/.test(okRun.title),
+            'success: the summary says the boot project was installed with autostart and the PLC starts on activation');
+        const bp = x.describeBootProject(actRun.state);
+        assert(bp && bp.ok && bp.lines.some(l => /^Boot project: TcToolkitSample_PLC installed on the target with autostart \(autostart set for this run; the solution is not saved/.test(l))
+            && bp.lines.some(l => l === 'PLC TcToolkitSample_PLC (port 851): RUN.'), 'the channel lines name the project, the autostart and the PLC state');
+
+        const bf = run('activation-boot-failed');
+        const dbf = x.describeExit(0, 'exit', bf.state);
+        assert(bf.state.bootProject.projects.length === 1 && !bf.state.bootProject.projects[0].installed, 'a bare project object (PS 5.1) is read as a one-element list');
+        assert(!dbf.ok && dbf.severity === 'warning' && /it is in RUN\. But the boot project for TcToolkitSample_PLC could not be installed, so that PLC has no program: log in from XAE/.test(dbf.title),
+            'a failed boot project: the activation is still reported, as a warning that says the PLC must be started from XAE');
+        assert(x.describeBootProject(bf.state).lines.some(l => /^Boot project: TcToolkitSample_PLC NOT installed: Exception from HRESULT: 0x80004005 \(E_FAIL\)\.$/.test(l)),
+            'the channel names the failure');
+        assert(x.reachedBuildResult(0, 'exit', bf.state), 'a failed boot project still counts as a build result');
+
+        const inv = run('activation-plc-invalid');
+        const dinv = x.describeExit(0, 'exit', inv.state);
+        assert(!dinv.ok && dinv.severity === 'warning' && /installed with autostart, but PLC TcToolkitSample_PLC is INVALID, not RUN: check it in XAE\.$/.test(dinv.title),
+            'a PLC still INVALID after the restart: a warning');
+
+        assert(x.describeBootProject(fail.state) !== null && x.describeExit(3, 'exit', fail.state).title === `The build succeeded, but activation did not: the target is in CONFIG, not RUN.`,
+            'exit 3: the activation failure keeps its own title');
+        assert(/check the target\. The PLC program is installed as a boot project/.test(x.describeExit(0, 'exit', inc.state).title), 'incomplete: the boot result is appended');
+
+        // No bootProject event although the activation ran: never a silent pass.
+        const noBoot = { ...actRun.state, bootProject: null, plcStates: [] };
+        const dnb = x.describeExit(0, 'exit', noBoot);
+        assert(!dnb.ok && dnb.severity === 'warning' && /reported no boot project/.test(dnb.title), 'no boot report after a RUN activation: a warning');
+        const none = { ...actRun.state, bootProject: { outcome: 'none', error: null, projects: [] }, plcStates: [] };
+        assert(x.describeExit(0, 'exit', none).ok && /no PLC project/.test(x.describeExit(0, 'exit', none).title), 'no PLC project: said, not a warning');
+        const tipc = { ...actRun.state, bootProject: { outcome: 'failed', error: 'the PLC node (TIPC) could not be read: x', projects: [] }, plcStates: [] };
+        assert(!x.describeExit(0, 'exit', tipc).ok && x.describeBootProject(tipc).lines[0] === 'Boot project: none installed: the PLC node (TIPC) could not be read: x.', 'TIPC unreadable: a warning');
+        assert(x.describeBootProject(run('build-ok-headless').state) === null, 'a plain build says nothing about boot projects');
+        assert(x.UNINTERRUPTIBLE_PHASES.includes('boot') && !x.canCancel({ ...x.createRunState(), phase: 'boot' }), 'the boot phase is never interrupted');
+    }
+
     const lt = run('list-targets');
     assert(lt.state.targets.local.length === 2 && lt.state.targets.projectNetId === '198.51.100.4.1.1', 'list-targets: a malformed NetId is dropped');
     const items = x.targetPickItems(lt.state.targets, { preselect: '198.51.100.4.1.1' });
@@ -395,7 +437,7 @@ function run(name, o) {
 {
     const c = x.confirmationText({ netId: '198.51.100.4.1.1', name: 'UmRT_Default' }, 'Sample');
     assert(c.confirmLabel === 'Activate on UmRT_Default (198.51.100.4.1.1)', 'the confirm button names the target');
-    assert(/^Build Sample, activate the configuration on UmRT_Default \(198\.51\.100\.4\.1\.1\) and restart TwinCAT there\?/.test(c.message)
+    assert(/^Build Sample, activate the configuration on UmRT_Default \(198\.51\.100\.4\.1\.1\), install its PLC program there as a boot project with autostart, and restart TwinCAT there\?/.test(c.message)
         && /running PLC on that target stops/.test(c.message) && /XAE window opens during activation/.test(c.message), 'the modal text');
 }
 

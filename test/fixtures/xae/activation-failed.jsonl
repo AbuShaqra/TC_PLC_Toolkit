@@ -7,6 +7,8 @@
 {"v":1,"t":"target","netId":"198.51.100.4.1.1","local":true,"platform":"TwinCAT OS (x64)"}
 {"v":1,"t":"phase","name":"activate"}
 {"v":1,"t":"ui","requested":"headless","suppressUI":false,"mainWindowVisible":true,"reason":"activation"}
+{"v":1,"t":"phase","name":"boot"}
+{"v":1,"t":"bootProject","outcome":"installed","error":null,"projects":[{"name":"TcToolkitSample_PLC","node":"root","wasAutostart":false,"autostart":true,"installed":true,"error":null}]}
 {"v":1,"t":"phase","name":"restart"}
 {"v":1,"t":"phase","name":"verify"}
 {"v":1,"t":"activation","netId":"198.51.100.4.1.1","adsState":15,"stateName":"CONFIG","outcome":"failed"}

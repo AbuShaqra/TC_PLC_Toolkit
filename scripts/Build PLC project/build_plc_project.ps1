@@ -1293,7 +1293,7 @@ function Resolve-ActivationTarget {
 
 <#
 .SYNOPSIS
-    The real ADS state of a target's system service, or $null if it cannot be read.
+    The real ADS state of a target's system service (or, with -Port, of a PLC), or $null if it cannot be read.
 .DESCRIPTION
     THE ONLY TRUSTWORTHY RUN/CONFIG ANSWER. The system manager exposes no state member -
     GetTargetState, GetAdsState, GetAppState and seven similar names are all absent (measured by
@@ -1306,7 +1306,7 @@ function Resolve-ActivationTarget {
     which this script already requires, so this adds no dependency.
 #>
 function Get-TcAdsState {
-    param([Parameter(Mandatory)][string]$NetId)
+    param([Parameter(Mandatory)][string]$NetId, [int]$Port = 10000)
 
     if (-not ('TcAdsState' -as [type])) {
         $dllDir = @(
@@ -1331,7 +1331,7 @@ public static class TcAdsState {
     try {
         $addr = New-Object TcAmsAddr
         $addr.netId = [byte[]]($NetId -split '\.' | ForEach-Object { [byte]$_ })
-        $addr.port  = 10000                       # AMSPORT_R0_SYSTEMSERVICE
+        $addr.port  = $Port                       # 10000 = AMSPORT_R0_SYSTEMSERVICE; a PLC's own port for its state
         [void][TcAdsState]::AdsPortOpen()
         $ads = [uint16]0; $dev = [uint16]0
         $hr = [TcAdsState]::AdsSyncReadStateReq([ref]$addr, [ref]$ads, [ref]$dev)
@@ -1885,6 +1885,162 @@ function Read-TypedBuildPane {
     return [pscustomobject]@{ Text = $null; Reason = "typed Output 'Build' pane: $($read.Reason)" }
 }
 
+<#
+.SYNOPSIS
+    Installs each PLC project of the open solution on the activation target as a boot project with
+    autostart on, so the PLC loads its program and starts with the runtime. Returns Outcome, Error
+    and Projects (one record per PLC project). Never throws.
+.DESCRIPTION
+    Without it an activation leaves the PLC instance (port 851) with no program - ADS state INVALID,
+    symbol reads 0x710 - until someone logs in from XAE and downloads (measured on 3.1.4026, user-mode
+    runtime, 2026-11-16).
+
+    Automation Interface, ITcPlcProject: BootProjectAutostart (get/set) and GenerateBootProject(bool
+    bActivate); $true sends the boot project to the CURRENT target. Beckhoff documents the interface
+    on the PLC project's root item (TIPC^<name>); the nested '<name> Project' item is tried too, and
+    each record's node says which one answered ('root' / 'nested').
+
+    The caller runs it after SetTargetNetId (the boot project goes to the pinned target), after
+    ActivateConfiguration (the activation rewrites the target's boot folder, so a boot project sent
+    before it is not proven to survive) and before StartRestartTwinCAT (the restart loads it).
+
+    BootProjectAutostart is written only when it reads False. The script never saves the solution
+    (Solution.Close($false)), so the setting reaches no project file on disk; the autostart lives on
+    the target with the boot project it was installed with.
+
+    Two late-binding traps, both avoided here: a member the item does not have reads as $null with
+    no error (so $null means "not this item", never False); and a tree item enumerates its children,
+    so it is never sent down a pipeline, through @(), or out of a script block (Invoke-ComRetry is
+    used only for scalars and void calls).
+
+    Outcome: 'installed' (every PLC project), 'partial', 'failed' (none, or TIPC unreadable: Error),
+    'none' (the solution has no PLC project).
+    The same function is in scripts/Build PLC project/build_plc_project.ps1 and
+    resources/xae/build-plc-project.ps1; test/test_xae_driver_contract.js keeps the two identical.
+#>
+function Install-PlcBootProjects {
+    param([Parameter(Mandatory)]$SysManager)
+
+    $projects = @()
+    $count = 0
+    try {
+        $tipc = $SysManager.LookupTreeItem('TIPC')
+        $count = [int](Invoke-ComRetry { $tipc.ChildCount })
+    } catch {
+        Write-Host "WARNING: no boot project installed - the PLC node (TIPC) could not be read: $_" -ForegroundColor Yellow
+        return [pscustomobject]@{ Outcome = 'failed'; Error = "the PLC node (TIPC) could not be read: $_"; Projects = @() }
+    }
+    for ($i = 1; $i -le $count; $i++) {
+        $rec = [ordered]@{ name = "PLC project $i"; node = $null; wasAutostart = $null; autostart = $null; installed = $false; error = $null }
+        try {
+            $root = $tipc.Child($i)
+            $rec.name = [string](Invoke-ComRetry { $root.Name })
+            $plc = $null
+            $was = $null
+            try { $was = Invoke-ComRetry { $root.BootProjectAutostart } } catch { $was = $null }
+            if ($null -ne $was) { $plc = $root; $rec.node = 'root' }
+            else {
+                $n = 0
+                try { $n = [int](Invoke-ComRetry { $root.ChildCount }) } catch { $n = 0 }
+                for ($j = 1; $j -le $n -and $null -eq $plc; $j++) {
+                    try {
+                        $child = $root.Child($j)
+                        $v = Invoke-ComRetry { $child.BootProjectAutostart }
+                        if ($null -ne $v) { $plc = $child; $was = $v; $rec.node = 'nested' }
+                    } catch { }
+                }
+            }
+            if ($null -eq $plc) { throw "neither its item nor a child exposes BootProjectAutostart (ITcPlcProject)" }
+            $rec.wasAutostart = [bool]$was
+            if (-not $rec.wasAutostart) { Invoke-ComRetry { $plc.BootProjectAutostart = $true } }
+            $rec.autostart = [bool](Invoke-ComRetry { $plc.BootProjectAutostart })
+            if (-not $rec.autostart) { throw "BootProjectAutostart still reads False after it was set" }
+            Invoke-ComRetry { $plc.GenerateBootProject($true) } | Out-Null
+            $rec.installed = $true
+            Write-Host ("Boot project:            {0}  installed on the target, autostart on{1}" -f $rec.name,
+                $(if ($rec.wasAutostart) { '' } else { ' (set for this run; the solution is not saved)' })) -ForegroundColor Cyan
+        } catch {
+            $rec.error = "$_"
+            Write-Host "WARNING: no boot project for $($rec.name): $($rec.error)" -ForegroundColor Yellow
+        }
+        $projects += [pscustomobject]$rec
+    }
+    $ok = @($projects | Where-Object { $_.installed }).Count
+    $outcome = $(if ($count -eq 0) { 'none' } elseif ($ok -eq $count) { 'installed' } elseif ($ok -eq 0) { 'failed' } else { 'partial' })
+    if ($count -eq 0) { Write-Host "NOTE: the solution has no PLC project; no boot project to install." -ForegroundColor DarkGray }
+    return [pscustomobject]@{ Outcome = $outcome; Error = $null; Projects = $projects }
+}
+
+<#
+.SYNOPSIS
+    The ADS port of each PLC project, by name, from the solution's system project files.
+.DESCRIPTION
+    The PLC's <Project Name="..." AmsPort="851" ...> element sits in the .tsproj/.tspproj itself or,
+    with independent project files, in _Config\PLC\<name>.xti beside it. The first value per name
+    wins. A project without one is absent from the map (its PLC state is then not checked).
+    The same function is in scripts/Build PLC project/build_plc_project.ps1 and
+    resources/xae/build-plc-project.ps1; test/test_xae_driver_contract.js keeps the two identical.
+#>
+function Get-PlcAmsPorts {
+    param([Parameter(Mandatory)][string]$TsprojPath)
+
+    $ports = @{}
+    $files = @($TsprojPath)
+    $cfg = Join-Path (Split-Path -Parent $TsprojPath) '_Config'
+    if (Test-Path -LiteralPath $cfg) {
+        $files += @(Get-ChildItem -LiteralPath $cfg -Recurse -Filter *.xti -File -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName })
+    }
+    foreach ($f in $files) {
+        $text = $null
+        try { $text = [System.IO.File]::ReadAllText($f) } catch { continue }
+        foreach ($m in [regex]::Matches($text, '<Project\b[^>]*>')) {
+            $name = [regex]::Match($m.Value, '\sName="([^"]+)"')
+            $port = [regex]::Match($m.Value, '\sAmsPort="(\d+)"')
+            if ($name.Success -and $port.Success -and -not $ports.ContainsKey($name.Groups[1].Value)) {
+                $ports[$name.Groups[1].Value] = [int]$port.Groups[1].Value
+            }
+        }
+    }
+    return $ports
+}
+
+<#
+.SYNOPSIS
+    After a restart into RUN: the ADS state of each PLC whose boot project was installed.
+.DESCRIPTION
+    Waits up to -TimeoutSec for each PLC to reach RUN (state 5); a PLC still INVALID afterwards has
+    not loaded its boot project. One record per installed project with a known port: name, port,
+    adsState ($null when unreadable) and stateName.
+    The same function is in scripts/Build PLC project/build_plc_project.ps1 and
+    resources/xae/build-plc-project.ps1; test/test_xae_driver_contract.js keeps the two identical.
+#>
+function Read-PlcRunStates {
+    param([Parameter(Mandatory)][string]$NetId, $Projects, [hashtable]$Ports, [int]$TimeoutSec = 15)
+
+    $states = @()
+    foreach ($p in @($Projects)) {
+        if (-not $p.installed) { continue }
+        if (-not $Ports -or -not $Ports.ContainsKey($p.name)) {
+            Write-Host "NOTE: PLC $($p.name): its ADS port is not in the system project, so its state is not checked." -ForegroundColor DarkGray
+            continue
+        }
+        $port = [int]$Ports[$p.name]
+        $state = $null
+        $deadline = (Get-Date).AddSeconds($TimeoutSec)
+        while ($true) {
+            $state = Get-TcAdsState -NetId $NetId -Port $port
+            if ($state -eq 5 -or (Get-Date) -ge $deadline) { break }
+            Start-Sleep -Milliseconds 1000
+        }
+        $name = $(if ($null -ne $state) { $TcAdsStateNames[[int]$state] } else { 'unreadable' })
+        $color = $(if ($state -eq 5) { 'Green' } else { 'Yellow' })
+        Write-Host ("PLC {0} (port {1}):  {2}{3}" -f $p.name, $port, $name,
+            $(if ($state -eq 5) { '' } else { ' - not RUN: its boot project may not have loaded; check it in XAE' })) -ForegroundColor $color
+        $states += [pscustomobject]([ordered]@{ name = $p.name; port = $port; adsState = $state; stateName = $name })
+    }
+    return $states
+}
+
 # ----------------------------------------------------------------------------
 # IOleMessageFilter - REQUIRED for version pinning, not an optimisation.
 #
@@ -2244,6 +2400,7 @@ try {
     elseif ($ActivateConfiguration) {
         $activationFault = $null
         $uiWasSuppressed = $true
+        $bootProjects = $null
         try {
             # The system manager is the TwinCAT project's .Object. Identify it by CAPABILITY - the one
             # that answers LookupTreeItem('TIPC') - never by index: a solution may hold more than one
@@ -2304,6 +2461,10 @@ try {
 
             Write-Host "ACTIVATING CONFIGURATION (this stops and restarts the local TwinCAT runtime)..." -ForegroundColor Yellow
             Invoke-ComRetry { $sysManager.ActivateConfiguration() }
+            # The boot project with autostart (user decision 2026-11-16): after the activation and before
+            # the restart that loads it - Install-PlcBootProjects says why exactly here. A failure is
+            # reported as a warning and never stops the activation.
+            $bootProjects = Install-PlcBootProjects -SysManager $sysManager
             Invoke-ComRetry { $sysManager.StartRestartTwinCAT() }
 
             # Verify via ADS, NOT via IsTwinCatStarted().
@@ -2323,6 +2484,12 @@ try {
 
             if ($adsState -eq 5) {
                 Write-Host "ACTIVATION SUCCEEDED. ($pinTarget is in RUN, ADS state 5)" -ForegroundColor Green
+                # Each installed PLC's own ADS state: INVALID here means the boot project did not load.
+                # Best effort - a fault reading it is reported and never turns into an activation failure.
+                try {
+                    $plcStates = Read-PlcRunStates -NetId $pinTarget -Projects $(if ($bootProjects) { $bootProjects.Projects } else { @() }) `
+                        -Ports (Get-PlcAmsPorts -TsprojPath $tsproj.FullName)
+                } catch { Write-Host "WARNING: the PLC run states could not be read: $_" -ForegroundColor Yellow }
             }
             elseif ($null -eq $adsState) {
                 # Could not read ADS at all. Do not claim success and do not claim failure - the

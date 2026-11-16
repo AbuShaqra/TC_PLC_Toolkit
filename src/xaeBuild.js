@@ -25,6 +25,10 @@
  *     exactly `-TcVersion <that ProgId> -AllowVersionMismatch`. Activation never gets an override.
  *   - **Activation names its target**: `-ActivateConfiguration` only with a well-formed AmsNetId the
  *     user confirmed; the driver still refuses anything that is not a runtime of this machine.
+ *   - **Activation installs the boot project** (user decision 2026-11-16): every PLC project goes onto
+ *     the target as a boot project with autostart (`bootProject`, then each PLC's state `plcState`).
+ *     A missing or failed boot project never fails the activation, and never passes silently either:
+ *     the result is a warning saying the PLC must be started from XAE (`describeBootProject`).
  *   - Parsing never throws: a line that is not a well-formed event of this protocol is a log line.
  *
  * test/test_xae_build.js covers all of it; test/test_xae_driver_contract.js checks the ps1 against it.
@@ -48,15 +52,15 @@ const EXIT = Object.freeze({ OK: 0, COMPILE: 1, HARNESS: 2, ACTIVATION: 3, CANCE
 /** Every event type the driver emits and `reduce` handles (test_xae_driver_contract.js checks both ways). */
 const EVENT_TYPES = Object.freeze([
     'hello', 'plan', 'shell', 'phase', 'ui', 'warning', 'fatal', 'buildResult', 'errorItem',
-    'outputPane', 'errorDetails', 'target', 'activation', 'targets', 'done'
+    'outputPane', 'errorDetails', 'target', 'activation', 'bootProject', 'plcState', 'targets', 'done'
 ]);
 
 /**
- * Phases that are never interrupted. `activate`/`restart`/`verify` could leave the runtime in CONFIG;
+ * Phases that are never interrupted. `activate`/`boot`/`restart`/`verify` could leave the runtime in CONFIG;
  * `target` is where the driver disarms its cancel file (right before activation), so a cancel there
  * would be ignored by the driver and could only end in a force stop at the edge of `activate`.
  */
-const UNINTERRUPTIBLE_PHASES = Object.freeze(['target', 'activate', 'restart', 'verify']);
+const UNINTERRUPTIBLE_PHASES = Object.freeze(['target', 'activate', 'boot', 'restart', 'verify']);
 
 /** An AmsNetId: six dot-separated octets. */
 const NETID_RE = /^\d{1,3}(\.\d{1,3}){5}$/;
@@ -291,6 +295,28 @@ function parseLine(line) {
  */
 
 /**
+ * @typedef {Object} BootProjectEntry One PLC project's boot project, as the driver installed it.
+ * @property {string} name The PLC project's name.
+ * @property {string|null} node Which tree item answered ITcPlcProject: 'root' or 'nested'.
+ * @property {boolean|null} wasAutostart BootProjectAutostart before this run (false: set for this run, not saved).
+ * @property {boolean|null} autostart BootProjectAutostart as read back after setting it.
+ * @property {boolean} installed GenerateBootProject(true) returned.
+ * @property {string|null} error Why not, when it was not installed.
+ */
+
+/**
+ * @typedef {Object} BootProjectReport The driver's `bootProject` event.
+ * @property {'installed'|'partial'|'failed'|'none'|string} outcome
+ * @property {string|null} error A failure before any project (the PLC node could not be read).
+ * @property {BootProjectEntry[]} projects
+ */
+
+/**
+ * @typedef {{name: string, port: number|null, adsState: number|null, stateName: string|null}} PlcState
+ *   One installed PLC's ADS state after the restart (`plcState`); 5 is RUN.
+ */
+
+/**
  * @typedef {Object} RunState What one run's output has said so far.
  * @property {string|null} mode build | activate | listTargets (from `hello`).
  * @property {boolean|null} showWindow As the driver understood it (from `hello`).
@@ -313,6 +339,8 @@ function parseLine(line) {
  * @property {boolean} targetMismatch The driver's target readback differs from the confirmed pick.
  * @property {string|null} expectedNetId The NetId the user confirmed (activation only).
  * @property {{netId: string, adsState: number|null, stateName: string|null, outcome: string}|null} activation
+ * @property {BootProjectReport|null} bootProject
+ * @property {PlcState[]} plcStates
  * @property {{local: LocalRuntime[], unknown: UnknownRuntime[], projectNetId: string|null}|null} targets
  *   This PC's runtimes from `-ListTargets`: `local` (a known AmsNetId: the only ones ever offered) and
  *   `unknown` (a user-mode runtime whose AmsNetId could not be trusted; listed, never offered).
@@ -331,7 +359,7 @@ function createRunState(o = {}) {
     return {
         mode: null, showWindow: null, phase: null, plan: null, shell: null, ui: [], warnings: [], protocolWarnings: 0,
         errorItems: [], panes: [], errorDetails: null, failedProjects: null, target: null, targetMismatch: false,
-        expectedNetId: o.expectedNetId || null, activation: null, targets: null, fatal: null, done: null, log: [],
+        expectedNetId: o.expectedNetId || null, activation: null, bootProject: null, plcStates: [], targets: null, fatal: null, done: null, log: [],
         lastEventAt: null
     };
 }
@@ -421,6 +449,21 @@ function reduce(state, item, now = Date.now()) {
                 netId: String(e.netId || ''), adsState: numOrNull(e.adsState), stateName: strOrNull(e.stateName),
                 outcome: String(e.outcome || '')
             };
+            break;
+        case 'bootProject': {
+            // PS 5.1 may hand a one-element array over as a bare object.
+            const list = Array.isArray(e.projects) ? e.projects : (e.projects && typeof e.projects === 'object' ? [e.projects] : []);
+            state.bootProject = {
+                outcome: String(e.outcome || ''), error: strOrNull(e.error),
+                projects: list.filter(p => p && typeof p === 'object').map(p => ({
+                    name: String(p.name || ''), node: strOrNull(p.node), wasAutostart: boolOrNull(p.wasAutostart),
+                    autostart: boolOrNull(p.autostart), installed: p.installed === true, error: strOrNull(p.error)
+                }))
+            };
+            break;
+        }
+        case 'plcState':
+            state.plcStates.push({ name: String(e.name || ''), port: numOrNull(e.port), adsState: numOrNull(e.adsState), stateName: strOrNull(e.stateName) });
             break;
         case 'targets':
             state.targets = { ...runtimeEntries(e.local), projectNetId: strOrNull(e.projectNetId) };
@@ -515,15 +558,22 @@ function describeExit(code, outcome, state, extra = {}) {
     switch (code) {
         case EXIT.OK: {
             const a = state.activation;
+            const boot = describeBootProject(state);
+            const bootSentence = boot ? ` ${boot.sentence}` : '';
             if (state.mode === 'activate' && a && a.outcome === 'incomplete') {
                 return {
                     ok: false, severity: 'warning',
-                    title: `Built and activated on ${a.netId}, but its run state could not be read: check the target.`,
+                    title: `Built and activated on ${a.netId}, but its run state could not be read: check the target.${bootSentence}`,
                     detail: missing.trim()
                 };
             }
             if (state.mode === 'activate' && a && a.outcome === 'run') {
-                return { ok: true, severity: 'info', title: `Built, activated and restarted TwinCAT on ${a.netId}: it is in RUN.`, detail: missing.trim() };
+                // A boot project that is missing or did not start is a warning, never a silent pass.
+                const ok = !boot || boot.ok;
+                return {
+                    ok, severity: ok ? 'info' : 'warning',
+                    title: `Built, activated and restarted TwinCAT on ${a.netId}: it is in RUN.${bootSentence}`, detail: missing.trim()
+                };
             }
             return { ok: true, severity: 'info', title: 'Build through XAE succeeded.', detail: missing.trim() };
         }
@@ -569,6 +619,68 @@ function describeExit(code, outcome, state, extra = {}) {
         default:
             return { ok: false, severity: 'warning', title: 'The XAE build was cancelled.', detail: '' };
     }
+}
+
+/** What to do about a PLC without a boot project: the state an activation left it in before 2026-11-16. */
+const START_FROM_XAE = 'log in from XAE and download and start the PLC there';
+
+/**
+ * What an activation did about the boot project (user decision 2026-11-16: every Build and Activate
+ * installs each PLC project as a boot project with autostart). `sentence` goes into the summary,
+ * `lines` into the channel; `ok` is false when a PLC project got no boot project, or a PLC read after
+ * the restart is not in RUN. A failure here never fails the activation (exit code 0 stays 0): it is
+ * reported as a warning. `null` when there is nothing to say: no activation, a refused one, or one
+ * that failed before the boot step (its own failure says enough).
+ * @param {RunState} state
+ * @returns {{ok: boolean, sentence: string, lines: string[]}|null}
+ */
+function describeBootProject(state) {
+    const a = state.activation;
+    if (state.mode !== 'activate' || !a || a.outcome === 'refused') return null;
+    const b = state.bootProject;
+    if (!b) {
+        if (a.outcome !== 'run' && a.outcome !== 'incomplete') return null;
+        return { ok: false, sentence: `The driver reported no boot project, so the PLC may have no program: ${START_FROM_XAE}.`, lines: [] };
+    }
+    const lines = [];
+    if (b.error) lines.push(`Boot project: none installed: ${oneLine(b.error)}`);
+    for (const p of b.projects) {
+        if (p.installed) {
+            lines.push(`Boot project: ${p.name} installed on the target with autostart` +
+                (p.wasAutostart === false ? ' (autostart set for this run; the solution is not saved, so XAE still shows it off).' : '.'));
+        } else {
+            lines.push(`Boot project: ${p.name} NOT installed${p.error ? `: ${oneLine(p.error)}` : '.'}`);
+        }
+    }
+    for (const st of state.plcStates) {
+        lines.push(`PLC ${st.name}${st.port !== null ? ` (port ${st.port})` : ''}: ${st.stateName || 'state unreadable'}` +
+            (st.adsState === 5 ? '.' : ', not RUN: its boot project may not have loaded.'));
+    }
+    if (b.outcome === 'none') {
+        return { ok: true, sentence: 'The solution has no PLC project, so no boot project was installed.', lines };
+    }
+    const missingNames = b.projects.filter(p => !p.installed).map(p => p.name);
+    if (b.outcome !== 'installed' || missingNames.length > 0 || b.projects.length === 0) {
+        const which = missingNames.length > 0 ? `for ${missingNames.join(', ')} ` : '';
+        return {
+            ok: false,
+            sentence: `But the boot project ${which}could not be installed, so that PLC has no program: ${START_FROM_XAE}. See the output for why.`,
+            lines
+        };
+    }
+    const notRun = state.plcStates.filter(st => st.adsState !== 5);
+    if (notRun.length > 0) {
+        return {
+            ok: false,
+            sentence: `The boot project was installed with autostart, but ${notRun.map(st => `PLC ${st.name} is ${st.stateName || 'unreadable'}`).join(', ')}, not RUN: check it in XAE.`,
+            lines
+        };
+    }
+    return {
+        ok: true,
+        sentence: 'The PLC program is installed as a boot project with autostart: the PLC starts on activation and after every runtime restart.',
+        lines
+    };
 }
 
 /**
@@ -773,7 +885,7 @@ function confirmationText(target, solutionName, platformSwitch) {
     const tail = 'The running PLC on that target stops. The XAE window opens during activation - answer any dialog there.';
     if (!platformSwitch) {
         return {
-            message: `Build ${solutionName}, activate the configuration on ${where} and restart TwinCAT there? ${tail}`,
+            message: `Build ${solutionName}, activate the configuration on ${where}, install its PLC program there as a boot project with autostart, and restart TwinCAT there? ${tail}`,
             confirmLabel: `Activate on ${where}`
         };
     }
@@ -781,7 +893,7 @@ function confirmationText(target, solutionName, platformSwitch) {
         ? ' (inferred, not read from that runtime, so it can be wrong)' : '';
     return {
         message: `${where} runs ${platformSwitch.to}${inferred}, but ${platformSwitch.from} is set. Switch to ${platformSwitch.to}? ` +
-            `Then ${solutionName} is built as ${platformSwitch.configuration}|${platformSwitch.to}, activated on ${where} and TwinCAT there restarted. ${tail}`,
+            `Then ${solutionName} is built as ${platformSwitch.configuration}|${platformSwitch.to}, activated on ${where}, its PLC program installed there as a boot project with autostart, and TwinCAT there restarted. ${tail}`,
         confirmLabel: SWITCH_FOR_RUN,
         rememberLabel: SWITCH_AND_REMEMBER
     };
@@ -1047,6 +1159,6 @@ module.exports = {
     RETARGET_BUTTON, refusedTarget, runtimeLabel, retargetRefusalText, retargetConfirmText,
     QUICK_PICK_SEPARATOR, UNKNOWN_NETID_HINT, runtimeEntries, unknownRuntimesText,
     isValidNetId, buildDriverArgs, shellByProgId, missingShell, createLineSplitter, parseLine, createRunState, reduce,
-    compileFailureConfirmed, reachedBuildResult, describeExit, describeUiMode, buildPhaseUi, canCancel, isStalled, targetPickItems, confirmationText,
+    compileFailureConfirmed, reachedBuildResult, describeExit, describeBootProject, START_FROM_XAE, describeUiMode, buildPhaseUi, canCancel, isStalled, targetPickItems, confirmationText,
     declaredPairs, activationPlatform, platformNotDeclaredText, pairNotDeclaredText, noErrorDetails, needsCompileFallback, oneLine
 };

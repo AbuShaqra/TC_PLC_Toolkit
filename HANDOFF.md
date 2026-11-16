@@ -141,6 +141,16 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   shows the new target), the re-run activates; **unverified:** that a real `.tsproj` holds exactly ONE
   `TargetNetId` (if XAE writes it twice, e.g. in another element, the button is never offered — then decide which
   one counts) and that XAE keeps no other copy of the target (e.g. a `.user` file) that would win over it.
+- **Build and Activate installs the boot project with autostart (user decision 2026-11-16): BUILT, Linux-verified only
+  (ps1 text-checked; no PowerShell here).** Calls: SetTargetNetId+readback → `ActivateConfiguration()` → per PLC under
+  `TIPC`: `BootProjectAutostart` (root item `TIPC^<name>`, nested `<name> Project` as fallback) set only when False →
+  `GenerateBootProject($true)` → `StartRestartTwinCAT()` → after RUN each PLC's ADS state on its `AmsPort`. Never saves
+  (`Close($false)`): no project file changes. A boot failure keeps exit 0 but the summary is a warning ("…has no
+  program: log in from XAE…"). Design: DEVELOPMENT.md "XAE build (R14)", "Boot project with autostart". **Needs the
+  user's Windows check:** `test-boot-project.ps1` against builder and driver; Build and Activate onto UmRT_Default →
+  channel `Boot project: <name> installed…`, `PLC <name> (port 851): RUN.`; restart the runtime → PLC back in RUN;
+  `git status` clean. **Unverified:** which item answers on 4024/4026, GenerateBootProject accepted between activation
+  and restart (no dialog, no implicit save), `Get-TcAdsState -Port 851` returning the PLC state.
 - **Stale user-mode NetId (user's 4026 machine, 2026-11-16): FIXED on `claude/focused-ptolemy-m6acaz`, Linux-verified
   only (ps1 text-checked; no PowerShell here).** Each instance start rewrites the shared `TcRegistry.xml`, so a
   closed second instance left a NetId nothing answers to, offered as "(project)". Rule (decided): trusted only when a
