@@ -21,10 +21,39 @@ class WatchTreeProvider {
         this.watch = watch;
         this._emitter = new vscode.EventEmitter();
         this.onDidChangeTreeData = this._emitter.event;
+        /** Root rows by lower-case path, kept as the same objects so one row can be redrawn alone. */
+        /** @type {Map<string, any>} */
+        this._rows = new Map();
     }
 
-    /** Redraws the view. */
-    refresh() { this._emitter.fire(undefined); }
+    /**
+     * Redraws the view. With `path` (a new value of one entry), only that row is redrawn: a full redraw
+     * reloads the whole tree, and VS Code shows its progress bar each time, so a value changing every
+     * cycle made the bar flash (user report, 2026-11-16).
+     * @param {string} [path]
+     */
+    refresh(path) {
+        const row = path ? this._rows.get(String(path).toLowerCase()) : undefined;
+        if (row) {
+            const fresh = this.watch.list().find(r => r.path.toLowerCase() === row.path.toLowerCase());
+            const next = fresh ? this._rowOf(fresh) : null;
+            if (next && next.expandable === row.expandable) {
+                Object.assign(row, next);
+                this._emitter.fire(row);
+                return;
+            }
+        }
+        this._emitter.fire(undefined);
+    }
+
+    /** @param {any} r A watch list row. @returns {any} */
+    _rowOf(r) {
+        return {
+            kind: 'entry', path: r.path, label: r.path, text: r.text, type: r.type, value: r.value, dataType: r.dataType,
+            state: r.state, expandable: r.state === 'ok' && r.value !== null && typeof r.value === 'object' && !(r.value instanceof Date)
+                && !isEnumValue(r.value)
+        };
+    }
 
     /**
      * @param {any} [element]
@@ -32,11 +61,15 @@ class WatchTreeProvider {
      */
     getChildren(element) {
         if (!element) {
-            return this.watch.list().map(r => ({
-                kind: 'entry', path: r.path, label: r.path, text: r.text, type: r.type, value: r.value, dataType: r.dataType,
-                state: r.state, expandable: r.state === 'ok' && r.value !== null && typeof r.value === 'object' && !(r.value instanceof Date)
-                    && !isEnumValue(r.value)
-            }));
+            const rows = new Map();
+            const out = this.watch.list().map(r => {
+                const k = r.path.toLowerCase();
+                const row = Object.assign(this._rows.get(k) || {}, this._rowOf(r));
+                rows.set(k, row);
+                return row;
+            });
+            this._rows = rows;
+            return out;
         }
         return childRows(element.path, element.value, element.dataType).map(c => ({
             kind: 'member', path: c.path, label: c.label, text: c.text, type: c.type, value: c.value, dataType: c.dataType,
