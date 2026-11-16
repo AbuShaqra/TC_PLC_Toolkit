@@ -593,6 +593,21 @@ const rows = (name) => readFixture(name).lines;
     argv = lastSpawn().args;
     assert(argv.includes('-ActivateConfiguration') && argv[argv.indexOf('-TargetNetId') + 1] === '198.51.100.4.1.1', 'the confirmed NetId reaches the argv');
     assert(r.ok && r.targetNetId === '198.51.100.4.1.1' && /in RUN/.test(r.title), 'an activation that reached RUN');
+    // Boot project with autostart (user decision 2026-11-16): the channel and the summary say so.
+    assert(r.bootProjectOk === true && /boot project with autostart: the PLC starts on activation/.test(r.title)
+        && calls.infos.some(i => /the PLC starts on activation/.test(i.m)), 'the summary says the boot project was installed with autostart');
+    assert(channel().lines.some(l => /^ {2}Boot project: TcToolkitSample_PLC installed on the target with autostart/.test(l))
+        && channel().lines.some(l => l === '  PLC TcToolkitSample_PLC (port 851): RUN.'), 'the channel names the boot project and the PLC state');
+    {
+        const w0 = calls.warnings.length;
+        driver = () => ({ fixture: 'activation-boot-failed' });
+        answers.quickPick.push('198.51.100.4.1.1');
+        answers.message.push('Switch for this run');
+        const rb = await run('twincat.xaeBuildAndActivate', {});
+        assert(!rb.ok && rb.exitCode === 0 && rb.bootProjectOk === false && calls.warnings.slice(w0).some(w => /could not be installed, so that PLC has no program: log in from XAE/.test(w.m)),
+            'a failed boot project: the activation is reported, as a warning naming XAE');
+        assert(channel().lines.some(l => /^ {2}Boot project: TcToolkitSample_PLC NOT installed: Exception from HRESULT/.test(l)), 'the channel says why');
+    }
     assert(context.workspaceState.get(LAST_TARGET_KEY) === '198.51.100.4.1.1' && !Object.keys(settings).some(k => /target/i.test(k)), 'the pick is remembered in workspaceState, not a setting');
     answers.quickPick.push(() => true);
     answers.message.push(undefined);

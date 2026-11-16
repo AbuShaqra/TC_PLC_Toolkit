@@ -400,6 +400,12 @@ built with XAE's compiler and the project's real libraries.
   real-time one and any user-mode runtimes; *TC Toolkit: Show Activation Targets* prints the same list),
   you pick one, and a confirmation names it every time — the running PLC on that target stops and
   TwinCAT restarts there. Nothing runs before you confirm. Only runtimes of this machine can be chosen.
+- **The PLC starts by itself.** Every activation also installs each PLC project on the target as a
+  **boot project with autostart**, so the PLC loads its program and starts on activation and after every
+  restart of the runtime — no log-in from XAE needed. The output channel names each boot project and the
+  PLC's state after the restart. If a boot project cannot be installed, the activation is still reported,
+  with a warning that the PLC has no program and must be started from XAE. The project's own
+  *Autostart Boot Project* setting is not changed on disk.
 - **The XAE window is always shown during activation**, even in headless mode: activation can raise a
   licence (for example a trial licence) or full-download dialog, and that must be answered in the
   window. TC Toolkit never answers it for you.
@@ -408,8 +414,7 @@ built with XAE's compiler and the project's real libraries.
   build stops after `tcToolkit.xaeBuild.timeoutMinutes`; a headless build that shows no progress for
   `tcToolkit.xaeBuild.stallMinutes` offers to re-run with the window shown.
 
-Not done: remote targets, creating the boot project, building a single PLC project of a multi-project
-solution, and writing routes. The solution and `.tsproj` are never saved by these commands.
+Not done: remote targets, building a single PLC project of a multi-project solution, and writing routes. The solution and `.tsproj` are never saved by these commands.
 
 ### Online monitoring (live values, write, PLC Watch)
 

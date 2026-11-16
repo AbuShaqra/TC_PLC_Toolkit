@@ -56,7 +56,7 @@ const os = require('os');
 const path = require('path');
 const { runChild, killProcessTree, describeLocation } = require('../compileCheck');
 const {
-    EXIT, buildDriverArgs, createLineSplitter, parseLine, createRunState, reduce, describeExit, describeUiMode,
+    EXIT, buildDriverArgs, createLineSplitter, parseLine, createRunState, reduce, describeExit, describeBootProject, describeUiMode,
     canCancel, isStalled, targetPickItems, confirmationText, reachedBuildResult, missingShell,
     declaredPairs, activationPlatform, platformNotDeclaredText, pairNotDeclaredText, noErrorDetails, needsCompileFallback, RERUN_WINDOW_SHOWN, SWITCH_AND_REMEMBER,
     FALLBACK_INTRO, compileFallbackText, RETARGET_BUTTON, refusedTarget, retargetConfirmText, unknownRuntimesText
@@ -628,7 +628,7 @@ function registerXaeBuildCommands(context, deps) {
      *   not on this PC: why its target cannot be changed here ('' when it can) and, when it can, the flow
      *   behind "Change the solution's target…" (started once this run has ended).
      * @returns {Promise<{ok: boolean, exitCode: number|null, outcome: string, title: string, uiMode: string, placed: number, total: number,
-     *   targetMismatch: boolean, noErrorDetails: boolean, errorRoute: string|null,
+     *   targetMismatch: boolean, noErrorDetails: boolean, errorRoute: string|null, bootProjectOk: boolean|null,
      *   compileFallback: {ran: number, skipped: boolean, results: import('../xaeBuild').FallbackResult[]}|null}>}
      */
     async function report(run, slnPath, rerunWindowShown, compileFallback, retarget) {
@@ -666,6 +666,9 @@ function registerXaeBuildCommands(context, deps) {
         if (run.activationTimedOut) title = `Timed out during activation; check the target. ${title}`;
         ch.appendLine(`${stamp()} ${title}${errorsLine ? ' ' + errorsLine : ''}`);
         if (d.detail) ch.appendLine(`  ${d.detail}`);
+        // The boot project of an activation, per PLC project, and each PLC's state after the restart.
+        const boot = describeBootProject(state);
+        if (boot) for (const line of boot.lines) ch.appendLine(`  ${line}`);
         if (state.shell && !state.shell.ours && run.outcome !== 'exit') {
             ch.appendLine('  The XAE Shell was not started by this run (or could not be identified), so it was left running.');
         }
@@ -689,7 +692,7 @@ function registerXaeBuildCommands(context, deps) {
         const result = {
             ok: d.ok && !state.targetMismatch, exitCode: run.code, outcome: run.outcome, title, uiMode,
             placed: placement.placed, total: placement.total, targetMismatch: state.targetMismatch, noErrorDetails: !!missingDetails,
-            errorRoute, compileFallback: fallback
+            errorRoute, compileFallback: fallback, bootProjectOk: boot ? boot.ok : null
         };
         if (run.rerunVisible) {
             // Stopped to re-run with the window shown: one line here, no notification, and the

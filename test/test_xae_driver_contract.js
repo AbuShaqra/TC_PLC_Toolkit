@@ -59,7 +59,7 @@ if (/function Emit-Fatal[\s\S]*?Emit-Event 'fatal'/.test(ps1)) emittedTypes.add(
 for (const t of x.EVENT_TYPES) assert(emittedTypes.has(t), `the driver emits '${t}'`);
 for (const t of emittedTypes) assert(x.EVENT_TYPES.includes(t), `the reader handles '${t}'`);
 const phases = new Set([...ps1.matchAll(/Enter-Phase '([a-z]+)'/g)].map(m => m[1]));
-for (const p of ['resolve', 'launch', 'pin', 'open', 'configure', 'build', 'errors', 'target', 'activate', 'restart', 'verify', 'close']) {
+for (const p of ['resolve', 'launch', 'pin', 'open', 'configure', 'build', 'errors', 'target', 'activate', 'boot', 'restart', 'verify', 'close']) {
     assert(phases.has(p), `phase '${p}' is entered`);
 }
 for (const p of x.UNINTERRUPTIBLE_PHASES) assert(phases.has(p), `uninterruptible phase '${p}' exists in the driver`);
@@ -101,6 +101,38 @@ if (fs.existsSync(BUILDER)) {
             'a user-mode NetId is set only when trusted, against the live process list');
     }
 }
+// Boot project with autostart (user decision 2026-11-16): the same functions in both scripts, called
+// after ActivateConfiguration and before StartRestartTwinCAT, and the solution is never saved.
+if (fs.existsSync(BUILDER)) {
+    const builder = fs.readFileSync(BUILDER, 'utf8');
+    const fn = (text, name) => (new RegExp(`\\nfunction ${name} \\{[\\s\\S]*?\\r?\\n\\}\\r?\\n`).exec(text) || [''])[0];
+    for (const name of ['Install-PlcBootProjects', 'Get-PlcAmsPorts', 'Read-PlcRunStates', 'Get-TcAdsState']) {
+        assert(fn(ps1, name) !== '' && fn(ps1, name) === fn(builder, name), `${name} is identical in the driver and the builder`);
+    }
+    for (const [label, text] of [['driver', ps1], ['builder', builder]]) {
+        const act = text.indexOf('$sysManager.ActivateConfiguration()');
+        const boot = text.indexOf('$bootProjects = Install-PlcBootProjects -SysManager $sysManager');
+        const restart = text.indexOf('$sysManager.StartRestartTwinCAT()');
+        assert(act > 0 && boot > act && restart > boot, `${label}: the boot project is installed after ActivateConfiguration and before StartRestartTwinCAT`);
+        assert(/Read-PlcRunStates -NetId \$pinTarget/.test(text) && /-Ports \(Get-PlcAmsPorts -TsprojPath \$tsproj\.FullName\)/.test(text),
+            `${label}: after RUN each installed PLC's state is read on its own port`);
+        assert(!/\.Save(As|All)?\(/.test(text) && /\$dte\.Solution\.Close\(\$false\)/.test(text), `${label}: the solution is never saved (BootProjectAutostart reaches no file)`);
+    }
+    const installer = fn(ps1, 'Install-PlcBootProjects');
+    assert(/\$plc\.BootProjectAutostart = \$true/.test(installer) && /if \(-not \$rec\.wasAutostart\)/.test(installer),
+        'BootProjectAutostart is written only when it reads False');
+    assert(/\$plc\.GenerateBootProject\(\$true\)/.test(installer), 'GenerateBootProject($true) sends the boot project to the target');
+    assert(!/Invoke-ComRetry \{ \$(SysManager\.LookupTreeItem|tipc\.Child\(|root\.Child\()/.test(installer),
+        'tree items are never returned through Invoke-ComRetry (a tree item enumerates its children)');
+    for (const o of ["'installed'", "'partial'", "'failed'", "'none'"]) assert(installer.includes(o), `outcome ${o}`);
+}
+const bootAt = ps1.indexOf("Enter-Phase 'boot'");
+assert(bootAt > ps1.indexOf("Enter-Phase 'activate'") && ps1.indexOf("Emit-Event 'bootProject'") > bootAt
+    && ps1.indexOf("Enter-Phase 'restart'") > ps1.indexOf("Emit-Event 'bootProject'"), "the driver emits 'bootProject' in phase 'boot', between activate and restart");
+assert(/Emit-Event 'bootProject' \(\[ordered\]@\{ outcome = \$bootProjects\.Outcome; error = \$bootProjects\.Error; projects = @\(\$bootProjects\.Projects\) \}\)/.test(ps1),
+    'bootProject carries outcome, error and projects');
+assert(/Emit-Event 'plcState' \(\[ordered\]@\{ name = \$plcState\.name; port = \$plcState\.port; adsState = \$plcState\.adsState; stateName = \$plcState\.stateName \}\)/.test(ps1),
+    'plcState carries name, port, adsState and stateName');
 for (const r of ['headless', 'requested', 'version-switch', 'build', 'activation', 'after-activation']) {
     assert(ps1.includes(`'${r}'`), `ui reason '${r}'`);
 }
@@ -299,10 +331,10 @@ if (fs.existsSync(BUILDER)) {
         const at = t.indexOf(`function ${name} {`);
         if (at < 0) return '';
         // A function ends at the first `}` in column 0 after it, past its C# here-string (whose class
-        // brace is in column 0 too) when it has one.
-        const next = t.indexOf('\n<#', at + 1);
-        const hereEnd = t.indexOf("\n'@", at);
-        const from = hereEnd > 0 && (next < 0 || hereEnd < next) ? hereEnd : at;
+        // brace is in column 0 too) when one opens before that brace.
+        const close = t.indexOf('\n}\n', at);
+        const hereStart = t.indexOf("@'\n", at);
+        const from = hereStart > 0 && hereStart < close ? t.indexOf("\n'@", hereStart) : at;
         return t.slice(at, t.indexOf('\n}\n', from) + 2);
     };
     const names = ['Get-XaeShellInstallDir', 'Initialize-TypedDteReader', 'Read-TypedErrorList', 'Read-TypedBuildPane'];
