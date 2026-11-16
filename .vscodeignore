@@ -25,6 +25,7 @@ scripts/glyphRaster.js
 scripts/measure-indexing.js
 scripts/Create sample PLC project/**
 scripts/Build PLC project/**
+scripts/Online helper smoke/**
 # The only thing in the repo that talks to the internet. It regenerates a committed data file and is
 # run by a developer by hand; shipping it inside an extension whose whole premise is being offline
 # would be wrong even though nothing invokes it.

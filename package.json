@@ -968,7 +968,7 @@
               "Through the TwinCAT AMS router on this PC (XAE or XAR installed; routes set up in XAE). The default.",
               "Directly to the PLC over TCP, for a PC without TwinCAT. Needs the three direct settings below and a static route on the PLC to this PC. Never used unless chosen here."
             ],
-            "markdownDescription": "**How Go Online reaches the PLC.** `router` (default) goes through the AMS router of the TwinCAT installation on this PC, using the routes you set up in XAE. `direct` connects to the PLC itself and is only for a PC without TwinCAT; it is never used as a fallback. Direct mode from a PC that also runs XAE can drop XAE's own connection to that PLC (one ADS connection per client address)."
+            "markdownDescription": "**How Go Online reaches the PLC.** `router` (default) goes through the AMS router of the TwinCAT installation on this PC, using the routes you set up in XAE; if that router refuses the connection (the TwinCAT 3.1.4026 user-mode runtime does), Go Online uses TwinCAT's own ADS DLL through it instead, on Windows. `direct` connects to the PLC itself and is only for a PC without TwinCAT; it is never used as a fallback. Direct mode from a PC that also runs XAE can drop XAE's own connection to that PLC (one ADS connection per client address)."
           },
           "tcToolkit.online.adsPort": {
             "type": "integer",

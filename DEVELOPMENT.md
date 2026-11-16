@@ -248,6 +248,7 @@ per-suite without aborting on the first failure. The main ones:
 | `test/test_ads_code.js` | R15: `src/online/codeIdentity.js` on the sample's committed `.tmc` (a real XAE output): its symbol table parsed; `PlcAppSystemInfo` really has ProjectName, OnlineChangeCnt, AppTimestamp, ActivePlcForces, ActiveIoForces; layout comparison (added, missing, resized; foreign namespaces ignored); sources edited since the build (`_Libraries` excluded); the check's outcomes (no name / other name: values hidden; no `.tmc`: unknown; layout or edits: differs; all three: match, still saying what it cannot detect; a failed upload is not a match). Gate `ads-code`. |
 | `test/test_ads_regressions.js` | R15 review findings (2026-11-13), one labelled block per finding #0-#19, each run against the code before its fix (where it failed): a write bound to the enabled and confirmed connection (a Go Online elsewhere during the value box refuses it; the modal and log name label + AMS address), writes only from editors of the bound project, a superseded code check never leaves a stale match, unsaved-edits detection (an empty stash is not an edit; a closed editor's Manual Sync stash blocks), `allowWrites` ignored from a workspace, PLC strings escaped and bounded; no notification leak across downloads/reconnects (real ads-client 2.2.0 `Client` with ADS commands answered in memory), one poll loop, a stale status poll, watch slot races and capped retries, Cancel/Go Offline in the status phase, router-rejection hints, no orphan reconnect after Go Offline (a local TCP listener as the router); no unqualified fallback over an uncertain chain, a `qualified_only` GVL or an enumerator; inline values re-posted on request; truncation by code point. Review round 2 (blocks `R2#0`-`R2#6`, each failing on `e6a3842`): a download of another project, or a type change, while the value box is open refuses the write; the bound-project switch is logged and the editors updated; a click while connecting is refused before any dialog; a closed editor's stash blocks across the BOM and a guard read never deletes one; no symbol cache crosses a Cancel; no watch slot overwrites a live handle (three races); no inline poll after Go Offline; a long GVL's declaration pane maps every name to itself, once, and `qualifiedOnly` follows an unsaved pragma edit. Review round 3 (blocks `R3#1`, `R3#2`, failing on `31fc35b`): a same-name, same-size alias whose base type changed (REAL→DINT) or an enum whose members changed during the dialogs refuses the write, an unchanged one still writes; a stale stash's refusal names its file and the way out, and a stash whose file is gone is dropped with a log line and blocks nothing. Gate `ads-regressions`. |
 | `test/test_definition_frames.js` | R15 review round 3, #0: every symbol range is a line of the file's assembled ST unit, whichever indexer built it. Over both samples (each in its own index) plus a synthetic 12-variable GVL: every XML-indexed declaration (root variables and enumerators, method variables, method and property names) maps through `livePath.mapDefinition` to its own component, the declaration pane and the name's own line; the XML indexer and a sync (`parser.js` over `assembleSt`) give each root variable the same range; Go to Definition on `GVL_X.var` from another POU lands on the declaration before a sync, after one and after the re-index a save triggers. Failed on `31fc35b`. Round 4: every range of every POU, interface and GVL (root/method/property/action names, method and property `declRange`, variables and type ranges) is identical from both indexers, over both samples and synthetic objects (declarations headed by `//`, `(* *)` and `{attribute}` lines, doc comments naming the member, an enum whose members are named in comments, names whose case differs from the XML `Name`, actions, CRLF); check 1 also covers actions and accepts only a name that is code; Go to Definition before a sync lands on each synthetic declaration (10 probes). Failed on `639d2b9`. Gate `definition-frames`. |
+| `test/test_ads_helper.js` | R15 phase 2, the user-mode fallback, with no PowerShell: `spawn` is `test/_fakeAdsHelper.js` (a "powershell.exe" speaking the helper's JSON lines over a raw-ADS PLC in memory: SymbolInfoByNameEx entries, 0xF011 answered 1808 so ads-client builds base types, upload info, symbol version, device data, port 10000, sum reads, memory) and the router is a local TCP server that resets every connection. Pins: the ads-client 2.2.0 internals `helperClient.js` overrides or calls exist (and the pin); the `.ps1` as text (every command, ready/dll-not-found/dll-load, exit on stdin EOF, the `Components\Base\v*` search newest first, Common64/Common32 by bitness on PATH, the registry, ADS codes only from TwinCAT.Ads exceptions, base64, ASCII); PowerShell's command line; the helper process (ready line, ids, ADS errors, the hang guard kills and fails the queue, one request in flight, stdin end closes, a kill when it does not exit, an exit fails what is pending); exactly which connect failures switch (`isRouterRefusal`); end to end through `session.js` with the real ads-client (the switch and the DLL logged, `_AppInfo`, resolve, a missing symbol, a sum read, a notification first value + on change only, INT and REAL writes, a download re-reads symbols, Go Offline ends the helper and the polling); a helper crash reconnects with a new helper; the failure texts (DLL missing, local runtime at the router's NetId → Enter AMS Net ID, 0x7, 0x6), no fallback off Windows ("reset", never "No ADS router answered") or in direct mode. |
 | `test/test_ads_watch.js` | R15 end to end in the extension host: `src/commands/onlineCommands.js` + `watchTree.js` under a recording `vscode` stub, the real live path and LSP (`provideOnlinePaths`) over the sample, the fake PLC built from the sample's `.tmc` so the layout check passes: contributions (commands, view, settings defaults, nothing called Force, router address marked untested); a connect error with the user-mode text and no direct retry; cancel; Go Online, status bar, recent targets; inline values for MAIN and, through an instance found on the PLC, for FB_Station's method; Write value… (off, then enable + modal, logged; blocked on unsaved edits; a method local refused); PLC Watch (add from the editor, notification at 200 ms, members from one value, cap + message, persistence, copy, remove, write); the code check (another project: values hidden, "Code differs", writes blocked; same name with a different layout; a source edited after the `.tmc`; back to match); forces in the status bar; Go Offline and dispose leave no connection, notification or poll; writes re-enabled per session. Gate `ads-watch`. |
 | `test/test_multi_project_scope.js` | End-to-end: two copies of `sample/` under one workspace root (`test/_multiproject.js` builds the fixture, one copy deliberately diverged), driven through the real `scanWorkspace`. Asserts the partition (one index per project, nothing lost to a name collision), 0 diagnostics on the correct copy while the diverged copy's own real error still reports, references and the rename config scan never crossing the project boundary, and the library namespace/symbol registries staying per-project — including the Libraries-view union fallback when no project is specified. Needs `sample/`; skips cleanly when absent. |
 
@@ -549,7 +550,12 @@ src/
                         `dispose()` is called by deactivate()
   online/               R15 online monitoring over ADS (vscode-free except watchTree; see "Online monitoring (R15)"):
     adsClient           The ONE user of the `ads-client` package (2.2.0, pinned): adapts it to the small
-                        `AdsPort` interface everything else uses; router vs direct settings
+                        `AdsPort` interface everything else uses; router vs direct settings; the
+                        user-mode fallback switch (`isRouterRefusal`, R15 phase 2)
+    helperClient        R15 phase 2: ads-client's `Client` with its transport swapped for the PowerShell
+                        ADS helper (raw ADS commands; notifications emulated by polling)
+    adsHelperProcess    Spawns resources/online/ads-helper.ps1; JSON-lines RPC, one request in flight,
+                        hang guard (kill), close on stdin end
     session             One connection: cancellable connect, `_AppInfo` status poll, resolve paths
                         against the PLC, sum reads, notifications under the cap, FB instance discovery
     editorPaths         Pane lines → `custom/onlinePaths` ranges, its answer → pane positions,
@@ -561,7 +567,8 @@ src/
     codeIdentity        The code-mismatch guard: name, variable layout vs the last build's `.tmc`,
                         source edits since that build
     values              Value ↔ text for scalars (formatting, input parsing, type comparison)
-    connectErrors       Go Online failures → user messages (incl. the 4026 user-mode runtime)
+    connectErrors       Go Online failures → user messages (incl. the 4026 user-mode runtime, a reset
+                        router, and a fallback that failed too)
   checkUnit             Compile Project's check unit: one ST unit per TwinCAT object with a per-LINE
                         origin map back to component/pane/line. Pane text verbatim (never the export's
                         rewrites), members BEFORE the POU body. NOT the live path's unit. vscode-free
@@ -2176,8 +2183,62 @@ webview (media/editor.js)                    extension host                     
   the first is used, the user is told once, and *Select FB Instance for Online Values…* changes it.
 - **Connection** (`adsClient.js`): router mode (default) registers a port at the local AMS router
   (127.0.0.1:48898, or the untested `tcToolkit.online.routerAddress`), no local AmsNetId ever set;
-  direct mode only from `tcToolkit.online.connectionMode = direct` with its three settings. No fallback,
-  no routes created, nothing stored but recent target NetIds (workspaceState).
+  direct mode only from `tcToolkit.online.connectionMode = direct` with its three settings. No fallback
+  between modes, no routes created, nothing stored but recent target NetIds (workspaceState). The one
+  fallback is of transport, below.
+- **User-mode fallback** (R15 phase 2, user decisions 2026-11-16). TwinCAT 3.1.4026's user-mode router
+  (`TcSystemServiceUm`) listens on 127.0.0.1:48898 but resets ads-client's TCP connection (measured:
+  `socket error -4077`, ECONNRESET; `EnableAmsTcpLoopback=1` + reboot did not help), while Beckhoff's
+  .NET stack (`TwinCAT.Ads.dll` over `TcAdsDll.dll`) reaches the runtime through it.
+  - **Trigger** (`isRouterRefusal`): router mode, router address on this PC (unset, `localhost`,
+    `127.*`, `::1`), Windows, and the connect step failed with ECONNRESET/ECONNREFUSED (Windows
+    -4077/-4078, Linux -104/-111, macOS -54/-61), "socket closed/ended by remote", or "Registering ADS
+    port failed". A timeout, a route or PLC error, direct mode and a remote router keep today's path.
+    The switch and the DLL used are logged ("TC Toolkit Online"); the `Online:` line names the transport.
+  - **Seam** (`helperClient.js`): a subclass of ads-client's `Client` that overrides only
+    `connectToTarget`, `unregisterAdsPort`, `disconnectFromTarget` and `sendAdsCommand`. ads-client
+    serialises each request as before; the subclass decodes the fixed ADS request layout (Read: ig,
+    io, length; Write: + data; ReadWrite: + read/write lengths; ReadState; ReadDeviceInfo), asks the
+    helper for exactly that raw command, and re-encodes the answer as the ADS response bytes (an error
+    in the full response shape: ads-client's ReadWrite parser falls through to Read's and reads the
+    length field) for ads-client's own `parseAdsResponse`. So symbol lookups, the data type builder,
+    value conversion, sum reads and writes are the same code on both paths; the harness runs the real
+    ads-client over the fake helper. Rejected: symbol-level helper calls (TcAdsClient's symbol loader in
+    PowerShell) — a second decoder whose output would differ from ads-client's in types, enums, strings
+    and 64-bit values, and would need its own tests per type. A read whose length ads-client leaves
+    open (0xFFFFFFFF: symbol and data-type info by name) is sent as 4 MiB; the router answers the real
+    length (**unverified on Windows**). The pinned-version internals are checked by `test_ads_helper.js`.
+  - **Notifications are polled**, not TcAdsClient callbacks (no .NET event pump in the helper):
+    AddNotification reads once (its ADS error is the AddNotification's; the value is the first
+    notification, as a PLC sends it), then a 100 ms tick reads every entry due (its cycle time, 500 ms
+    for cycle 0 — ads-client's own state and symbol-version subscriptions) in ONE sum read per target
+    (`readRawMulti`) and hands changed values (or every value, cyclic) to ads-client's
+    `onAdsCommandReceived`. DeleteNotification drops the entry. The watch cap and the #189 handling
+    are unchanged above it.
+  - **Helper** (`adsHelperProcess.js`, `resources/online/ads-helper.ps1`): `powershell.exe -NoProfile
+    -NonInteractive -ExecutionPolicy Bypass -File ads-helper.ps1 -TimeoutMs <ADS timeout>`,
+    `windowsHide`, JSON lines on stdin/stdout (protocol in both files' headers; ids echoed, ADS
+    errors as `adsError`, base64 payloads). It loads the newest `…\TwinCAT\3.1\Components\Base\v*\TwinCAT.Ads.dll`
+    that loads and has `TcAdsClient` (roots: the registry's `InstallDir`/`TwinCATDir` under
+    `HKLM\SOFTWARE\[WOW6432Node\]Beckhoff\TwinCAT3`, then `%ProgramFiles(x86)%\Beckhoff\TwinCAT` and
+    `C:\TwinCAT`), prepends that root's Common64 (Common32 in a 32-bit PowerShell) to PATH for
+    `TcAdsDll.dll`, keeps one TcAdsClient per NetId:port (NetId 127.0.0.1.1.1 → `Connect(port)`), and
+    exits when stdin closes. One request in flight (a queue on the host side); the hang guard is the ADS
+    timeout + 3 s per request, after which the helper is killed and the queue fails; a helper exit
+    while connected is ads-client's `connectionLost`, and its auto-reconnect starts a new helper (no
+    other restart). Go Offline ends stdin and kills after 2 s. Start timeout 20 s (PowerShell start +
+    `Add-Type`). Expected latency per request: a few ms (pipe + TcAdsDll); measure it with
+    `scripts/Online helper smoke/smoke-ads-helper.ps1` (prints the average of 20 ReadStates). At the
+    defaults the helper carries about 2 inline sum reads/s per visible editor, 5 notification sum
+    reads/s (200 ms watch) + 2/s for ads-client's own subscriptions, and 1 state read/s.
+  - **The local runtime in user mode** is not at the router's own NetId (`[AmsNetId]::Local` is the
+    router's): *Local runtime* (`localhost:851`) then fails with ADS 0x6/0x7 and the message points at
+    *Enter AMS Net ID…* with the runtime's NetId from its console window ("AmsNetId: …"). No discovery
+    of that NetId here (backlog).
+  - **Messages** (`connectErrors.js`): a reset without a fallback (not Windows) is "The ADS router at
+    … answered but reset this client's TCP connection." (it used to say "No ADS router answered");
+    a failed fallback names both failures (`fallback: true`, kinds `helper-unavailable`, `no-route`,
+    `no-plc`, `timeout`, `other`).
 - **Cancel and cleanup**: Go Online runs under a cancellable progress notification; a cancelled or
   superseded attempt is closed in the background, and `session.disconnect()` (Go Offline, deactivate)
   waits for those closes. ads-client ignores `disconnect()` while a connect is in flight, so the adapter

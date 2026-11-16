@@ -197,7 +197,9 @@ function createOnlineSession(deps) {
             if (mine !== attempt) throw Object.assign(new Error('superseded'), { cancelled: true });
             state = 'online';
             info = emptyInfo();
-            log(`Online: ${target.label} (${options.mode === 'direct' ? 'direct' : 'through the local router'}), local AmsNetId ${res.localAmsNetId}`);
+            const via = options.mode === 'direct' ? 'direct'
+                : res.transport === 'helper' ? 'through the local router, over TwinCAT\'s ADS DLL (user-mode fallback)' : 'through the local router';
+            log(`Online: ${target.label} (${via}), local AmsNetId ${res.localAmsNetId}`);
             // The status reads can each wait out the ADS timeout: Cancel and Go Offline hold here too.
             await Promise.race([refreshStatus(), cancelled]);
             if (mine !== attempt) throw Object.assign(new Error('superseded'), { cancelled: true });
@@ -242,6 +244,9 @@ function createOnlineSession(deps) {
         c.on('plcState', (/** @type {{state: string}} */ s) => { if (live()) { info.plcState = s.state; emit('info'); } });
         c.on('symbolVersion', () => { if (live()) { dropSymbols(); log('The PLC symbol version changed (a download): symbols re-read.'); emit('symbols'); } });
         c.on('warning', (/** @type {string} */ m) => { if (live()) log(`ADS: ${m}`); });
+        // The adapter's own lines (the user-mode fallback switch, the helper's messages) are logged even
+        // while connecting: they explain a Go Online that is still running or about to fail.
+        c.on('notice', (/** @type {string} */ m) => { if (mine === attempt) log(m); });
         c.on('error', (/** @type {any} */ e) => { if (live()) log(`ADS error: ${e && e.message ? e.message : e}`); });
     }
 

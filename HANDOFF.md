@@ -175,6 +175,26 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   NetId. **Unverified:** the instance writes the file within 5 s of starting and never later while running (else it
   fails closed as "rewritten"); `Win32_Process.CommandLine` is readable unelevated (else "unverifiable"); how a long
   separator-row label renders.
+- **R15 phase 2, user-mode fallback through TwinCAT's ADS DLL: DONE on `claude/focused-ptolemy-m6acaz`, Linux-verified
+  only (2026-11-16).** Measured on the user's 4026 user-mode PC: `TcSystemServiceUm` resets ads-client's TCP connection
+  to 127.0.0.1:48898 (`socket error -4077`), `EnableAmsTcpLoopback=1` + reboot did not help, Beckhoff's .NET stack
+  works. Now: on Windows, router mode, router on this PC, and a reset/refused/closed connect or a failed port
+  registration (`adsClient.isRouterRefusal`) → the same ads-client code over `resources/online/ads-helper.ps1`
+  (powershell.exe, JSON lines, raw ADS only; `src/online/helperClient.js` subclasses `Client`, overriding only the
+  transport; notifications polled, one sum read per 100 ms tick). Design, protocol, limits: DEVELOPMENT.md "User-mode
+  fallback". Harness `test/test_ads_helper.js` (real ads-client over `test/_fakeAdsHelper.js`). The misleading "No ADS
+  router answered" for a RESET is now "…answered but reset this client's TCP connection" (backlog item folded in).
+  **Nothing of it has run on Windows.** Unverified: the `.ps1` itself (no PowerShell here: overloads `Read`/`Write`/
+  `ReadWrite` with `AdsStream, offset, length`, `Connect(port)` for 127.0.0.1.1.1, `ClientAddress`, the `ErrorCode` walk,
+  the registry value names); a 4 MiB read buffer for SymbolInfoByNameEx/DataTypeInfoByNameEx (ads-client asks
+  0xFFFFFFFF); the latency. **User's Windows steps:** (1) `powershell -NoProfile -ExecutionPolicy Bypass -File
+  "scripts\Online helper smoke\smoke-ads-helper.ps1" -NetId <runtime NetId>` — copy the whole output (ready line, port
+  10000 and 851 answers, ProjectName, ms per request); (2) in VS Code: *Go Online… → Enter AMS Net ID…* with the
+  runtime NetId → expect the *TC Toolkit Online* lines "…refused this client's TCP connection…", "Connected through
+  TwinCAT's ADS DLL (…)", "Online: … over TwinCAT's ADS DLL (user-mode fallback)"; then the R15 check list below
+  (items 4-10) through it; (3) *Go Online… → Local runtime*: expected to fail with the "Enter AMS Net ID…" hint (the
+  runtime is not at the router's NetId) — report the text; (4) close VS Code while online: no `powershell.exe` left
+  (Task Manager). Backlog (planner): discover the user-mode runtime's NetId for *Local runtime*.
 - **R15 ADS online monitoring: IMPLEMENTED on local branch `r15-ads`** (worktree `/home/user/tc-r15`, 2026-11-13, not
   pushed, no PR yet; based on `claude/focused-ptolemy-m6acaz` `c9ace3f`). Decisions D1-D9: `docs/r15-ads-decision.md` §5.
   Design and file map: DEVELOPMENT.md "Online monitoring (roadmap R15)". `ads-client` **2.2.0 pinned** (pure JS; loads on
@@ -204,7 +224,7 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   1. Note the TwinCAT build, kernel vs user mode, Hyper-V/VBS on or off.
   2. Local runtime in RUN with the sample (or any project) downloaded: *Go Online…* → *Local runtime*. Expect the status
      bar `Online: Local runtime · Run`; if it fails, copy the notification and the *TC Toolkit Online* channel text
-     (the 4026 user-mode case should show the user-mode message — that is D4's expected outcome).
+     (the 4026 user-mode case now falls back to TwinCAT's ADS DLL — see "R15 phase 2" above).
   3. A remote PLC with a route made in XAE: *Enter AMS Net ID…*. While XAE is logged in to the same PLC, confirm XAE
      stays connected.
   4. Open MAIN and a GVL: values at line ends (declarations) and after variables (implementation), refreshing; open an

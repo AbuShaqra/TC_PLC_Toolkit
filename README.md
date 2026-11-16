@@ -482,11 +482,19 @@ PC that also runs XAE against the same PLC: the PLC accepts one ADS connection p
 can drop XAE's connection. Reaching a router other than this PC's (`tcToolkit.online.routerAddress`,
 for example from Remote-SSH or WSL) is untested.
 
-**TwinCAT 3.1.4026 user-mode runtime.** The ADS library TC Toolkit uses is reported not to reach the
-router of a 4026 **user-mode** runtime (the default on Windows 11 with Hyper-V or virtualization-based
-security on). Going online then fails with a message that says so. Workarounds: run the PLC in a
-kernel-mode runtime (the library documents `tcpkg config set -n xarMode -v KM`, with Hyper-V and Memory
-Integrity off; not confirmed by Beckhoff), or monitor a PLC on another machine.
+**TwinCAT 3.1.4026 user-mode runtime.** The router of a 4026 **user-mode** runtime (the default on
+Windows 11 with Hyper-V or virtualization-based security on) refuses the TCP connection the ADS library
+TC Toolkit uses. On Windows, TC Toolkit then switches by itself to TwinCAT's own ADS DLL
+(`TwinCAT.Ads.dll`, installed with XAE or XAR), through a hidden Windows PowerShell helper, and says so in
+the *TC Toolkit Online* output channel. Everything above works the same way through it; Watch entries
+are polled rather than pushed by the PLC. Notes:
+- In user mode the PLC runs under the **runtime's own AMS Net ID**, not the router's, so *Local
+  runtime* may not find it. Use *Enter AMS Net ID…* with the Net ID printed in the runtime's console
+  window (`AmsNetId: …`), for example `10.0.0.4.1.1`.
+- If the helper cannot start (no `TwinCAT.Ads.dll` found) or cannot reach the PLC either, the message
+  names both failures. Other workarounds: run the PLC in a kernel-mode runtime (the library documents
+  `tcpkg config set -n xarMode -v KM`, with Hyper-V and Memory Integrity off; not confirmed by
+  Beckhoff), or monitor a PLC on another machine.
 
 ### For AI coding assistants
 
@@ -567,7 +575,7 @@ old entry is removed from your `settings.json`.
 | `tcToolkit.xaeBuild.platform` | `TwinCAT RT (x64)` | The solution platform it builds (activating onto a user-mode runtime needs its `TwinCAT OS (...)` platform). |
 | `tcToolkit.xaeBuild.timeoutMinutes` | `30` | Minutes before a build through XAE is stopped (5 to 240; during activation only reported). |
 | `tcToolkit.xaeBuild.stallMinutes` | `10` | Headless watchdog: minutes without output before offering a re-run with the window shown (2 to 60). |
-| `tcToolkit.online.connectionMode` | `router` | How *Go Online* reaches the PLC: `router` (the AMS router on this PC) or `direct` (a PC without TwinCAT). Never a fallback. |
+| `tcToolkit.online.connectionMode` | `router` | How *Go Online* reaches the PLC: `router` (the AMS router on this PC; when it refuses the connection, as the 4026 user-mode runtime's does, TwinCAT's own ADS DLL is used through it) or `direct` (a PC without TwinCAT). Direct is never a fallback. |
 | `tcToolkit.online.adsPort` | `851` | ADS port of the PLC runtime (851 = first runtime, 852 = second). |
 | `tcToolkit.online.routerAddress` | `127.0.0.1` | AMS router address in router mode. Anything but this PC is untested. Per machine. |
 | `tcToolkit.online.direct.plcAddress` | *(empty)* | Direct mode: the PLC's IP address or host name. Per machine. |
