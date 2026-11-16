@@ -476,14 +476,18 @@ constexpr TypeOps type_ops[TAG__COUNT] = {
     /*WORD    */ { &force_impl<WORD_t>,  &unforce_impl, &read_impl<WORD_t>,  &write_impl<WORD_t>,  sizeof(WORD_t)      },
     /*DWORD   */ { &force_impl<DWORD_t>, &unforce_impl, &read_impl<DWORD_t>, &write_impl<DWORD_t>, sizeof(DWORD_t)     },
     /*LWORD   */ { &force_impl<LWORD_t>, &unforce_impl, &read_impl<LWORD_t>, &write_impl<LWORD_t>, sizeof(LWORD_t)     },
-    /*TIME    */ { &force_impl<TIME_t>,  &unforce_impl, &read_impl<TIME_t>,  &write_impl<TIME_t>,  sizeof(TIME_t)      },
-    /*DATE    */ { &force_impl<DATE_t>,  &unforce_impl, &read_impl<DATE_t>,  &write_impl<DATE_t>,  sizeof(DATE_t)      },
-    /*TOD     */ { &force_impl<TOD_t>,   &unforce_impl, &read_impl<TOD_t>,   &write_impl<TOD_t>,   sizeof(TOD_t)       },
-    /*DT      */ { &force_impl<DT_t>,    &unforce_impl, &read_impl<DT_t>,    &write_impl<DT_t>,    sizeof(DT_t)        },
+    /*LTIME   */ { &force_impl<LTIME_t>, &unforce_impl, &read_impl<LTIME_t>, &write_impl<LTIME_t>, sizeof(LTIME_t)     },
+    /*LDATE   */ { &force_impl<LDATE_t>, &unforce_impl, &read_impl<LDATE_t>, &write_impl<LDATE_t>, sizeof(LDATE_t)     },
+    /*LTOD    */ { &force_impl<LTOD_t>,  &unforce_impl, &read_impl<LTOD_t>,  &write_impl<LTOD_t>,  sizeof(LTOD_t)      },
+    /*LDT     */ { &force_impl<LDT_t>,   &unforce_impl, &read_impl<LDT_t>,   &write_impl<LDT_t>,   sizeof(LDT_t)       },
     /*STRING  */ { &force_string,        &unforce_impl, &read_string,        &write_string,        DEBUG_STRING_WIDTH  },
     /*WSTRING */ { &force_wstring,       &unforce_impl, &read_wstring,       &write_wstring,       DEBUG_WSTRING_WIDTH },
     // BIT: the handlers below take the bit number from the entry; this row gives its width.
     /*BIT     */ { &force_bit0,          &unforce_bit0, &read_bit0,          &write_bit0,          1                   },
+    /*TIME    */ { &force_impl<TIME_t>,  &unforce_impl, &read_impl<TIME_t>,  &write_impl<TIME_t>,  sizeof(TIME_t)      },
+    /*DATE    */ { &force_impl<DATE_t>,  &unforce_impl, &read_impl<DATE_t>,  &write_impl<DATE_t>,  sizeof(DATE_t)      },
+    /*TOD     */ { &force_impl<TOD_t>,   &unforce_impl, &read_impl<TOD_t>,   &write_impl<TOD_t>,   sizeof(TOD_t)       },
+    /*DT      */ { &force_impl<DT_t>,    &unforce_impl, &read_impl<DT_t>,    &write_impl<DT_t>,    sizeof(DT_t)        },
 };
 
 // ---------------------------------------------------------------------------
@@ -522,13 +526,17 @@ constexpr PtrOps ptr_ops[TAG__COUNT] = {
     /*WORD    */ { &ptr_impl<WORD_t> },
     /*DWORD   */ { &ptr_impl<DWORD_t> },
     /*LWORD   */ { &ptr_impl<LWORD_t> },
+    /*LTIME   */ { &ptr_impl<LTIME_t> },
+    /*LDATE   */ { &ptr_impl<LDATE_t> },
+    /*LTOD    */ { &ptr_impl<LTOD_t> },
+    /*LDT     */ { &ptr_impl<LDT_t> },
+    /*STRING  */ { &ptr_string },
+    /*WSTRING */ { &ptr_wstring },
+    /*BIT     */ { &ptr_none },  // never called: handle_ptr refuses a BIT leaf first
     /*TIME    */ { &ptr_impl<TIME_t> },
     /*DATE    */ { &ptr_impl<DATE_t> },
     /*TOD     */ { &ptr_impl<TOD_t> },
     /*DT      */ { &ptr_impl<DT_t> },
-    /*STRING  */ { &ptr_string },
-    /*WSTRING */ { &ptr_wstring },
-    /*BIT     */ { &ptr_none },  // never called: handle_ptr refuses a BIT leaf first
 };
 
 // ---------------------------------------------------------------------------

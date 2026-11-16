@@ -41,6 +41,8 @@
 
 #include <cstdint>
 #include <cstddef>
+#include <cmath>
+#include <type_traits>
 
 // <concepts> must be included at file scope: the concept declarations that use
 // it live inside `namespace strucpp`, and including a standard header from
@@ -159,17 +161,170 @@ using LREAL_t = double;
 constexpr int64_t IEC_SECONDS_PER_DAY = 24LL * 60LL * 60LL;
 constexpr int64_t IEC_NS_PER_DAY = IEC_SECONDS_PER_DAY * 1000000000LL;
 
-/** IEC TIME - Duration in nanoseconds */
-using TIME_t = int64_t;
+/**
+ * The 32-bit TIME (ms), DATE (s since 1970-01-01, whole days), TIME_OF_DAY (ms
+ * since midnight) and DATE_AND_TIME (s since 1970-01-01): one distinct type
+ * per kind, unsigned, wrapping modulo 2^32, 4 bytes as on the PLC. A raw count
+ * in the kind's unit converts in only explicitly.
+ */
+template<int Kind>
+struct STRUCPP_MAY_ALIAS IecTemporal32 {
+    uint32_t raw;
+    constexpr IecTemporal32() noexcept : raw(0) {}
+    explicit constexpr IecTemporal32(uint32_t r) noexcept : raw(r) {}
+    /** The raw count in the kind's unit. */
+    explicit constexpr operator uint32_t() const noexcept { return raw; }
+};
 
-/** IEC DATE - Calendar date (days since epoch) */
-using DATE_t = int64_t;
+/** Kinds of IecTemporal32. */
+constexpr int IEC_KIND_TIME = 0;
+constexpr int IEC_KIND_DATE = 1;
+constexpr int IEC_KIND_TOD = 2;
+constexpr int IEC_KIND_DT = 3;
 
-/** IEC TIME_OF_DAY - Time of day in nanoseconds since midnight */
-using TOD_t = int64_t;
+/** IEC TIME - Duration in milliseconds, 0 .. T#49d17h2m47s295ms */
+using TIME_t = IecTemporal32<IEC_KIND_TIME>;
 
-/** IEC DATE_AND_TIME - Combined date and time */
-using DT_t = int64_t;
+/** IEC DATE - Seconds since 1970-01-01, a whole number of days */
+using DATE_t = IecTemporal32<IEC_KIND_DATE>;
+
+/** IEC TIME_OF_DAY - Milliseconds since midnight */
+using TOD_t = IecTemporal32<IEC_KIND_TOD>;
+
+/** IEC DATE_AND_TIME - Seconds since 1970-01-01-00:00:00 */
+using DT_t = IecTemporal32<IEC_KIND_DT>;
+
+template<int K>
+constexpr IecTemporal32<K> operator+(IecTemporal32<K> a, IecTemporal32<K> b) noexcept {
+    return IecTemporal32<K>(static_cast<uint32_t>(a.raw + b.raw));
+}
+template<int K>
+constexpr IecTemporal32<K> operator-(IecTemporal32<K> a, IecTemporal32<K> b) noexcept {
+    return IecTemporal32<K>(static_cast<uint32_t>(a.raw - b.raw));
+}
+template<int K>
+constexpr IecTemporal32<K> operator-(IecTemporal32<K> a) noexcept {
+    return IecTemporal32<K>(static_cast<uint32_t>(0u - a.raw));
+}
+template<int K>
+constexpr IecTemporal32<K> operator+(IecTemporal32<K> a) noexcept { return a; }
+
+namespace detail {
+/** `raw * n` modulo 2^32: an integer exactly, a REAL truncated toward zero. */
+template<typename N, std::enable_if_t<std::is_integral<N>::value, int> = 0>
+inline uint32_t temporal_scale(uint32_t raw, N n) noexcept {
+    return static_cast<uint32_t>(static_cast<uint64_t>(raw) * static_cast<uint64_t>(n));
+}
+/** A REAL result in the temporal unit: truncated toward zero, modulo 2^32 (not finite: 0). */
+inline uint32_t temporal_from_double(double v) noexcept {
+    if (!std::isfinite(v)) return 0u;
+    const double t = v < 0 ? -std::floor(-v) : std::floor(v);
+    const double m = std::fmod(t, 4294967296.0);
+    return static_cast<uint32_t>(static_cast<int64_t>(m < 0 ? m + 4294967296.0 : m));
+}
+template<typename N, std::enable_if_t<std::is_floating_point<N>::value, int> = 0>
+inline uint32_t temporal_scale(uint32_t raw, N n) noexcept {
+    return temporal_from_double(static_cast<double>(raw) * static_cast<double>(n));
+}
+/** `raw / n`, truncated toward zero, modulo 2^32; by 0 it is 0. */
+template<typename N, std::enable_if_t<std::is_integral<N>::value && std::is_signed<N>::value, int> = 0>
+inline uint32_t temporal_divide(uint32_t raw, N n) noexcept {
+    if (n == 0) return 0u;
+    const int64_t v = static_cast<int64_t>(n);
+    const uint64_t mag = v < 0 ? 0u - static_cast<uint64_t>(v) : static_cast<uint64_t>(v);
+    const uint32_t q = static_cast<uint32_t>(static_cast<uint64_t>(raw) / mag);
+    return v < 0 ? static_cast<uint32_t>(0u - q) : q;
+}
+template<typename N, std::enable_if_t<std::is_integral<N>::value && !std::is_signed<N>::value, int> = 0>
+inline uint32_t temporal_divide(uint32_t raw, N n) noexcept {
+    if (n == 0) return 0u;
+    return static_cast<uint32_t>(static_cast<uint64_t>(raw) / static_cast<uint64_t>(n));
+}
+template<typename N, std::enable_if_t<std::is_floating_point<N>::value, int> = 0>
+inline uint32_t temporal_divide(uint32_t raw, N n) noexcept {
+    if (n == 0) return 0u;
+    return temporal_from_double(static_cast<double>(raw) / static_cast<double>(n));
+}
+/** `raw MOD n`: the remainder by the divisor's magnitude; by 0 it is 0. */
+template<typename N, std::enable_if_t<std::is_integral<N>::value, int> = 0>
+inline uint32_t temporal_modulo(uint32_t raw, N n) noexcept {
+    if (n == 0) return 0u;
+    const uint64_t mag = std::is_signed<N>::value && static_cast<int64_t>(n) < 0
+        ? 0u - static_cast<uint64_t>(static_cast<int64_t>(n))
+        : static_cast<uint64_t>(n);
+    return static_cast<uint32_t>(static_cast<uint64_t>(raw) % mag);
+}
+}  // namespace detail
+
+template<int K, typename N, std::enable_if_t<std::is_arithmetic<N>::value, int> = 0>
+inline IecTemporal32<K> operator*(IecTemporal32<K> a, N n) noexcept {
+    return IecTemporal32<K>(detail::temporal_scale(a.raw, n));
+}
+template<int K, typename N, std::enable_if_t<std::is_arithmetic<N>::value, int> = 0>
+inline IecTemporal32<K> operator*(N n, IecTemporal32<K> a) noexcept {
+    return IecTemporal32<K>(detail::temporal_scale(a.raw, n));
+}
+template<int K, typename N, std::enable_if_t<std::is_arithmetic<N>::value, int> = 0>
+inline IecTemporal32<K> operator/(IecTemporal32<K> a, N n) noexcept {
+    return IecTemporal32<K>(detail::temporal_divide(a.raw, n));
+}
+
+/** A duration by a duration (TIME / TIME): the integer quotient of the raw values; by 0 it is 0. */
+template<int K>
+inline IecTemporal32<K> operator/(IecTemporal32<K> a, IecTemporal32<K> b) noexcept {
+    return IecTemporal32<K>(b.raw == 0u ? 0u : a.raw / b.raw);
+}
+template<int K, typename N, std::enable_if_t<std::is_integral<N>::value, int> = 0>
+inline IecTemporal32<K> operator%(IecTemporal32<K> a, N n) noexcept {
+    return IecTemporal32<K>(detail::temporal_modulo(a.raw, n));
+}
+template<int K>
+inline IecTemporal32<K> operator%(IecTemporal32<K> a, IecTemporal32<K> b) noexcept {
+    return IecTemporal32<K>(detail::temporal_modulo(a.raw, b.raw));
+}
+
+/** A TOD MOD a TIME (both ms): the time within that period; MOD T#0s gives 0. */
+inline IecTemporal32<IEC_KIND_TOD> iec_mod_period(IecTemporal32<IEC_KIND_TOD> a, IecTemporal32<IEC_KIND_TIME> p) noexcept {
+    return IecTemporal32<IEC_KIND_TOD>(detail::temporal_modulo(a.raw, p.raw));
+}
+/** A DT (s) MOD a TIME (ms): the remainder in ms, truncated to whole seconds; MOD T#0s gives 0. */
+inline IecTemporal32<IEC_KIND_DT> iec_mod_period(IecTemporal32<IEC_KIND_DT> a, IecTemporal32<IEC_KIND_TIME> p) noexcept {
+    return IecTemporal32<IEC_KIND_DT>(p.raw == 0u ? 0u : static_cast<uint32_t>(static_cast<uint64_t>(a.raw) * 1000u % p.raw / 1000u));
+}
+
+template<int K> constexpr bool operator==(IecTemporal32<K> a, IecTemporal32<K> b) noexcept { return a.raw == b.raw; }
+template<int K> constexpr bool operator!=(IecTemporal32<K> a, IecTemporal32<K> b) noexcept { return a.raw != b.raw; }
+template<int K> constexpr bool operator<(IecTemporal32<K> a, IecTemporal32<K> b) noexcept { return a.raw < b.raw; }
+template<int K> constexpr bool operator>(IecTemporal32<K> a, IecTemporal32<K> b) noexcept { return a.raw > b.raw; }
+template<int K> constexpr bool operator<=(IecTemporal32<K> a, IecTemporal32<K> b) noexcept { return a.raw <= b.raw; }
+template<int K> constexpr bool operator>=(IecTemporal32<K> a, IecTemporal32<K> b) noexcept { return a.raw >= b.raw; }
+
+/**
+ * A 32-bit value in the unit of its long form (Ed. 3), for the implicit
+ * TIME -> LTIME, TOD -> LTOD, DT -> LDT (ns) and DATE -> LDATE (days).
+ */
+constexpr int64_t iec_long_value(IecTemporal32<IEC_KIND_TIME> v) noexcept {
+    return static_cast<int64_t>(v.raw) * 1000000LL;
+}
+constexpr int64_t iec_long_value(IecTemporal32<IEC_KIND_TOD> v) noexcept {
+    return static_cast<int64_t>(v.raw) * 1000000LL;
+}
+constexpr int64_t iec_long_value(IecTemporal32<IEC_KIND_DT> v) noexcept {
+    return static_cast<int64_t>(v.raw) * 1000000000LL;
+}
+constexpr int64_t iec_long_value(IecTemporal32<IEC_KIND_DATE> v) noexcept {
+    return static_cast<int64_t>(v.raw / 86400u);
+}
+
+/** A 32-bit temporal value written to a stream: its raw count (ms or s). */
+template<typename OS, int K>
+inline auto operator<<(OS& os, const IecTemporal32<K>& v) -> decltype(os << v.raw) {
+    return os << v.raw;
+}
+
+/** A 32-bit temporal type (IecTemporal32). */
+template<typename T> struct is_temporal32 : std::false_type {};
+template<int K> struct is_temporal32<IecTemporal32<K>> : std::true_type {};
 
 // IEC v3 Long variants (extended precision/range)
 
@@ -260,13 +415,16 @@ template<> struct IECTypeCategory<uint32_t> { using type = AnyBitTag; };
 template<> struct IECTypeCategory<int32_t> { using type = AnyIntTag; };
 
 // 64-bit types (LWORD_t/ULINT_t are both uint64_t)
-// Note: LINT_t, TIME_t, DATE_t, TOD_t, DT_t, LTIME_t, LDATE_t, LTOD_t, LDT_t are all int64_t
+// Note: LINT_t, LTIME_t, LDATE_t, LTOD_t, LDT_t are all int64_t
 template<> struct IECTypeCategory<uint64_t> { using type = AnyBitTag; };
 template<> struct IECTypeCategory<int64_t> { using type = AnyIntTag; };
 
 // Real types
 template<> struct IECTypeCategory<float> { using type = AnyRealTag; };
 template<> struct IECTypeCategory<double> { using type = AnyRealTag; };
+
+// The 32-bit date and time types
+template<int K> struct IECTypeCategory<IecTemporal32<K>> { using type = AnyDateTag; };
 
 // Character types
 template<> struct IECTypeCategory<char> { using type = AnyStringTag; };

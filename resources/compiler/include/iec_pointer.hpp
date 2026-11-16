@@ -67,15 +67,20 @@ namespace strucpp {
  * The runtime catches this and stops execution of the affected POU.
  */
 class NullReferenceException : public std::runtime_error {
+    /** ", task FAST" for the task running on this thread, if one is named. */
+    static std::string task_suffix() {
+        const char* task = iec_current_task_slot();
+        return task != nullptr ? std::string(", task ") + task : std::string();
+    }
 public:
     NullReferenceException()
-        : std::runtime_error("Null reference dereference") {}
+        : std::runtime_error("Null reference dereference" + task_suffix()) {}
 
     explicit NullReferenceException(const char* context)
-        : std::runtime_error(std::string("Null reference dereference in ") + context) {}
+        : std::runtime_error(std::string("Null reference dereference in ") + context + task_suffix()) {}
 
     explicit NullReferenceException(const std::string& context)
-        : std::runtime_error("Null reference dereference in " + context) {}
+        : std::runtime_error("Null reference dereference in " + context + task_suffix()) {}
 };
 #endif
 
@@ -94,6 +99,12 @@ constexpr std::nullptr_t IEC_NULL = nullptr;
 // =============================================================================
 
 template<typename T> class IEC_REF_TO;
+namespace detail {
+template<typename T>
+struct null_deref<IEC_REF_TO<T>> {
+    static constexpr const char* text = "Null reference dereference";
+};
+}  // namespace detail
 template<typename T> class IEC_REFERENCE_TO;
 template<typename T> class IEC_Ptr;
 
@@ -118,6 +129,8 @@ template<typename U> struct stored_directly<IEC_REF_TO<U>> : std::false_type {};
 template<typename U> struct stored_directly<IEC_REFERENCE_TO<U>> : std::false_type {};
 template<typename U> struct stored_directly<IEC_Ptr<U>> : std::false_type {};
 template<typename E> struct stored_directly<IEC_ENUM_Var<E>> : std::false_type {};
+/** A 32-bit TIME, DATE, TOD or DT lives in an IECVar, as a number does. */
+template<int K> struct stored_directly<IecTemporal32<K>> : std::false_type {};
 
 /**
  * The variable holding a T: T itself when stored directly, IECStringVar /
@@ -212,6 +225,7 @@ public:
      * Used by generated code for ^ operator and DREF() function
      */
     target_type& deref() {
+#ifndef STRUCPP_NO_BOUNDS_CHECK
         if (ptr_ == nullptr) {
 #if STRUCPP_HAS_EXCEPTIONS
             throw NullReferenceException();
@@ -219,10 +233,14 @@ public:
             iec_runtime_fault(IecFault::NullReference);
 #endif
         }
+#else
+        (void)0;
+#endif
         return *ptr_;
     }
 
     const target_type& deref() const {
+#ifndef STRUCPP_NO_BOUNDS_CHECK
         if (ptr_ == nullptr) {
 #if STRUCPP_HAS_EXCEPTIONS
             throw NullReferenceException();
@@ -230,6 +248,9 @@ public:
             iec_runtime_fault(IecFault::NullReference);
 #endif
         }
+#else
+        (void)0;
+#endif
         return *ptr_;
     }
 
@@ -237,6 +258,7 @@ public:
      * Dereference with context for better error messages
      */
     target_type& deref(const char* context) {
+#ifndef STRUCPP_NO_BOUNDS_CHECK
         if (ptr_ == nullptr) {
 #if STRUCPP_HAS_EXCEPTIONS
             throw NullReferenceException(context);
@@ -244,10 +266,14 @@ public:
             iec_runtime_fault(IecFault::NullReference, context);
 #endif
         }
+#else
+        (void)context;
+#endif
         return *ptr_;
     }
 
     const target_type& deref(const char* context) const {
+#ifndef STRUCPP_NO_BOUNDS_CHECK
         if (ptr_ == nullptr) {
 #if STRUCPP_HAS_EXCEPTIONS
             throw NullReferenceException(context);
@@ -255,6 +281,9 @@ public:
             iec_runtime_fault(IecFault::NullReference, context);
 #endif
         }
+#else
+        (void)context;
+#endif
         return *ptr_;
     }
 
@@ -447,6 +476,7 @@ private:
      * The bound target; an unbound reference raises the NullReference fault
      */
     target_type& bound() const {
+#ifndef STRUCPP_NO_BOUNDS_CHECK
         if (ptr_ == nullptr) {
 #if STRUCPP_HAS_EXCEPTIONS
             throw NullReferenceException("REFERENCE TO");
@@ -454,6 +484,7 @@ private:
             iec_runtime_fault(IecFault::NullReference, "REFERENCE TO");
 #endif
         }
+#endif
         return *ptr_;
     }
 
@@ -501,6 +532,22 @@ public:
 // =============================================================================
 // VAR_IN_OUT of a function block (bound by reference at each call)
 // =============================================================================
+
+/**
+ * After a function block is copied: when `src` (of `other`) refers into
+ * `other`, `ref` (of `self`) refers to the same place in `self`.
+ */
+template<typename T, typename Owner>
+inline void rebind_own_member(IEC_REFERENCE_TO<T>& ref,
+                              const IEC_REFERENCE_TO<T>& src,
+                              Owner* self, const Owner* other) noexcept {
+    if (src.is_null()) return;
+    const char* bound = reinterpret_cast<const char*>(&src.target());
+    const char* from = reinterpret_cast<const char*>(other);
+    if (bound < from || bound >= from + sizeof(Owner)) return;
+    ref.bind(*reinterpret_cast<typename IEC_REFERENCE_TO<T>::target_type*>(
+        reinterpret_cast<char*>(self) + (bound - from)));
+}
 
 /**
  * A function-block VAR_IN_OUT member: a non-owning reference to the caller's
@@ -581,6 +628,24 @@ inline IEC_REF_TO<IEC_REF_TO<T>> REF(IEC_REF_TO<T>& ref) noexcept {
 template<typename T>
 inline IEC_REF_TO<IEC_Ptr<T>> REF(IEC_Ptr<T>& ptr) noexcept {
     return IEC_REF_TO<IEC_Ptr<T>>(&ptr);
+}
+
+/**
+ * The address an ADR, REF or POINTER TO value holds, as an integer: an
+ * address stored in a 64-bit TYPE alias or subrange, which C++ holds as a
+ * plain integer, or a REF stored in any 64-bit integer.
+ */
+template<typename T>
+inline std::uintptr_t address_bits(T* p) noexcept {
+    return reinterpret_cast<std::uintptr_t>(p);
+}
+template<typename T>
+inline std::uintptr_t address_bits(const IEC_REF_TO<T>& r) noexcept {
+    return reinterpret_cast<std::uintptr_t>(r.get());
+}
+template<typename T>
+inline std::uintptr_t address_bits(const IEC_Ptr<T>& p) noexcept {
+    return p.to_addr();
 }
 
 /**

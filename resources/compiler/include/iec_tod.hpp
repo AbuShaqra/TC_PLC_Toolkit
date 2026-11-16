@@ -36,80 +36,95 @@
 
 namespace strucpp {
 
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
-// Mirror of iec_time.hpp's NS_PER_X but scoped here too so iec_tod.hpp is
-// self-contained.  Plain `constexpr` under C++14, so each header carries
-// its own internal-linkage copy and the values must agree.
+// TOD is 32-bit milliseconds since midnight, wrapping modulo 2^32 as the
+// PLC's does; LTOD is signed 64-bit nanoseconds, kept in [0, 24h).
 constexpr int64_t TOD_NS_PER_DAY = IEC_NS_PER_DAY;
 
-// Normalise a signed nanosecond count into the canonical [0, 24h) TOD
-// range.  Negative inputs roll over from "before midnight today" to
-// "before midnight yesterday"; values ≥ 24h wrap to the next day.
-inline TOD_t TOD_NORMALIZE(int64_t ns) noexcept {
-    TOD_t result = static_cast<TOD_t>(ns % TOD_NS_PER_DAY);
-    if (result < 0) result += static_cast<TOD_t>(TOD_NS_PER_DAY);
+// Normalise a signed nanosecond count into the canonical [0, 24h) LTOD range.
+inline LTOD_t TOD_NORMALIZE(int64_t ns) noexcept {
+    LTOD_t result = static_cast<LTOD_t>(ns % TOD_NS_PER_DAY);
+    if (result < 0) result += static_cast<LTOD_t>(TOD_NS_PER_DAY);
     return result;
 }
+
+/** Milliseconds as a TOD, modulo 2^32. */
+inline TOD_t TOD_OF_MS(int64_t ms) noexcept {
+    return TOD_t(static_cast<uint32_t>(static_cast<uint64_t>(ms)));
+}
+
+/** A TOD as nanoseconds since midnight (exact). */
+inline int64_t TOD_AS_NS(TOD_t t) noexcept { return static_cast<int64_t>(t.raw) * 1000000LL; }
+
+/** Nanoseconds as a TOD: truncated toward zero to ms, modulo 2^32. */
+inline TOD_t TOD_OF_NS(int64_t ns) noexcept { return TOD_OF_MS(ns / 1000000LL); }
 
 // ---------------------------------------------------------------------------
 // Construction helpers
 // ---------------------------------------------------------------------------
 inline IEC_TOD TOD_FROM_HMS(int hour, int minute, int second,
-                            int millisecond = 0, int microsecond = 0,
-                            int nanosecond = 0) noexcept {
-    const int64_t ns = static_cast<int64_t>(hour) * 3600LL * 1000000000LL +
-                       static_cast<int64_t>(minute) * 60LL * 1000000000LL +
-                       static_cast<int64_t>(second) * 1000000000LL +
-                       static_cast<int64_t>(millisecond) * 1000000LL +
-                       static_cast<int64_t>(microsecond) * 1000LL +
-                       nanosecond;
-    return IEC_TOD(TOD_NORMALIZE(ns));
+                            int millisecond = 0) noexcept {
+    return IEC_TOD(TOD_OF_MS(static_cast<int64_t>(hour) * 3600000LL +
+                             static_cast<int64_t>(minute) * 60000LL +
+                             static_cast<int64_t>(second) * 1000LL + millisecond));
 }
 
-inline IEC_TOD TOD_FROM_NS(int64_t ns) noexcept {
-    return IEC_TOD(TOD_NORMALIZE(ns));
-}
+inline IEC_TOD TOD_FROM_NS(int64_t ns) noexcept { return IEC_TOD(TOD_OF_NS(ns)); }
+inline IEC_TOD TOD_FROM_MS(int64_t ms) noexcept { return IEC_TOD(TOD_OF_MS(ms)); }
 
-inline IEC_TOD TOD_FROM_MS(int64_t ms) noexcept {
-    return IEC_TOD(TOD_NORMALIZE(ms * 1000000LL));
-}
-
-inline int64_t TOD_TO_NS(IEC_TOD tod) noexcept {
-    return iec_unwrap(tod);
-}
-
-inline int64_t TOD_TO_MS(IEC_TOD tod) noexcept {
-    return iec_unwrap(tod) / 1000000LL;
-}
+inline int64_t TOD_TO_NS(IEC_TOD tod) noexcept { return TOD_AS_NS(tod.get()); }
+template<typename L_, std::enable_if_t<std::is_same<L_, int64_t>::value, int> = 0>
+inline int64_t TOD_TO_NS(const IECVar<L_>& tod) noexcept { return iec_unwrap(tod); }
+inline int64_t TOD_TO_MS(IEC_TOD tod) noexcept { return static_cast<int64_t>(tod.get().raw); }
+template<typename L_, std::enable_if_t<std::is_same<L_, int64_t>::value, int> = 0>
+inline int64_t TOD_TO_MS(const IECVar<L_>& tod) noexcept { return iec_unwrap(tod) / 1000000LL; }
 
 // ---------------------------------------------------------------------------
-// Arithmetic — results normalised back into the [0, 24h) range.
-// `DIFF_TOD` returns a raw (signed) difference in (-24h, +24h);
-// callers decide whether to treat negatives as "tomorrow" or
-// "yesterday".
+// Arithmetic. TOD +/- a duration wraps modulo 2^32 ms; LTOD stays in
+// [0, 24h). `DIFF_TOD` returns a signed difference.
 // ---------------------------------------------------------------------------
-inline IEC_TOD ADD_TOD(IEC_TOD tod, int64_t ns) noexcept {
-    return IEC_TOD(TOD_NORMALIZE(iec_unwrap(tod) + ns));
+inline IEC_TOD ADD_TOD(IEC_TOD tod, int64_t ms) noexcept {
+    return IEC_TOD(TOD_OF_MS(static_cast<int64_t>(tod.get().raw) + ms));
 }
-
-inline IEC_TOD SUB_TOD(IEC_TOD tod, int64_t ns) noexcept {
-    return IEC_TOD(TOD_NORMALIZE(iec_unwrap(tod) - ns));
+inline IEC_TOD SUB_TOD(IEC_TOD tod, int64_t ms) noexcept {
+    return IEC_TOD(TOD_OF_MS(static_cast<int64_t>(tod.get().raw) - ms));
 }
-
 inline int64_t DIFF_TOD(IEC_TOD a, IEC_TOD b) noexcept {
+    return static_cast<int64_t>(a.get().raw) - static_cast<int64_t>(b.get().raw);
+}
+template<typename L_, std::enable_if_t<std::is_same<L_, int64_t>::value, int> = 0>
+inline IEC_LTOD ADD_TOD(const IECVar<L_>& tod, int64_t ns) noexcept {
+    return IEC_LTOD(TOD_NORMALIZE(iec_unwrap(tod) + ns));
+}
+template<typename L_, std::enable_if_t<std::is_same<L_, int64_t>::value, int> = 0>
+inline IEC_LTOD SUB_TOD(const IECVar<L_>& tod, int64_t ns) noexcept {
+    return IEC_LTOD(TOD_NORMALIZE(iec_unwrap(tod) - ns));
+}
+template<typename L_, std::enable_if_t<std::is_same<L_, int64_t>::value, int> = 0>
+inline int64_t DIFF_TOD(const IECVar<L_>& a, const IECVar<L_>& b) noexcept {
     return iec_unwrap(a) - iec_unwrap(b);
 }
 
 // ---------------------------------------------------------------------------
 // Comparison
 // ---------------------------------------------------------------------------
-inline bool GT_TOD(IEC_TOD a, IEC_TOD b) noexcept { return iec_unwrap(a) >  iec_unwrap(b); }
-inline bool GE_TOD(IEC_TOD a, IEC_TOD b) noexcept { return iec_unwrap(a) >= iec_unwrap(b); }
-inline bool EQ_TOD(IEC_TOD a, IEC_TOD b) noexcept { return iec_unwrap(a) == iec_unwrap(b); }
-inline bool NE_TOD(IEC_TOD a, IEC_TOD b) noexcept { return iec_unwrap(a) != iec_unwrap(b); }
-inline bool LE_TOD(IEC_TOD a, IEC_TOD b) noexcept { return iec_unwrap(a) <= iec_unwrap(b); }
-inline bool LT_TOD(IEC_TOD a, IEC_TOD b) noexcept { return iec_unwrap(a) <  iec_unwrap(b); }
+inline bool GT_TOD(IEC_TOD a, IEC_TOD b) noexcept { return a.get() >  b.get(); }
+inline bool GE_TOD(IEC_TOD a, IEC_TOD b) noexcept { return a.get() >= b.get(); }
+inline bool EQ_TOD(IEC_TOD a, IEC_TOD b) noexcept { return a.get() == b.get(); }
+inline bool NE_TOD(IEC_TOD a, IEC_TOD b) noexcept { return a.get() != b.get(); }
+inline bool LE_TOD(IEC_TOD a, IEC_TOD b) noexcept { return a.get() <= b.get(); }
+inline bool LT_TOD(IEC_TOD a, IEC_TOD b) noexcept { return a.get() <  b.get(); }
+
+template<typename L_, std::enable_if_t<std::is_same<L_, int64_t>::value, int> = 0>
+inline bool GT_TOD(const IECVar<L_>& a, const IECVar<L_>& b) noexcept { return iec_unwrap(a) >  iec_unwrap(b); }
+template<typename L_, std::enable_if_t<std::is_same<L_, int64_t>::value, int> = 0>
+inline bool GE_TOD(const IECVar<L_>& a, const IECVar<L_>& b) noexcept { return iec_unwrap(a) >= iec_unwrap(b); }
+template<typename L_, std::enable_if_t<std::is_same<L_, int64_t>::value, int> = 0>
+inline bool EQ_TOD(const IECVar<L_>& a, const IECVar<L_>& b) noexcept { return iec_unwrap(a) == iec_unwrap(b); }
+template<typename L_, std::enable_if_t<std::is_same<L_, int64_t>::value, int> = 0>
+inline bool NE_TOD(const IECVar<L_>& a, const IECVar<L_>& b) noexcept { return iec_unwrap(a) != iec_unwrap(b); }
+template<typename L_, std::enable_if_t<std::is_same<L_, int64_t>::value, int> = 0>
+inline bool LE_TOD(const IECVar<L_>& a, const IECVar<L_>& b) noexcept { return iec_unwrap(a) <= iec_unwrap(b); }
+template<typename L_, std::enable_if_t<std::is_same<L_, int64_t>::value, int> = 0>
+inline bool LT_TOD(const IECVar<L_>& a, const IECVar<L_>& b) noexcept { return iec_unwrap(a) <  iec_unwrap(b); }
 
 } // namespace strucpp

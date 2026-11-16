@@ -460,6 +460,12 @@
         "category": "Comparison"
       },
       {
+        "name": "LTIME",
+        "returnType": "LTIME",
+        "parameters": [],
+        "category": "Time"
+      },
+      {
         "name": "MAX",
         "returnType": "ANY_ELEMENTARY",
         "parameters": [
