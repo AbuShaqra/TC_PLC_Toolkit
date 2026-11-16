@@ -91,7 +91,7 @@ assert(!outside.ok && /not a \.tsproj or \.tspproj inside the solution's folder/
 const missing = t.checkSolutionTarget({ slnPath: sln, tsprojPath: path.join(TMP, 'Line', 'Gone.tsproj'), from: OLD, fs });
 assert(!missing.ok && /Gone\.tsproj could not be read \(ENOENT\)/.test(missing.text), 'a missing file: could not be read');
 const wrongFrom = t.changeSolutionTarget({ slnPath: sln, tsprojPath: tsproj, from: '192.0.2.1.1.1', to: NEW, fs });
-assert(!wrongFrom.ok && /now names TargetNetId 199\.4\.42\.250\.1\.1, not 192\.0\.2\.1\.1\.1/.test(wrongFrom.text) && fs.readFileSync(tsproj).equals(original),
+assert(!wrongFrom.ok && /now names TargetNetId 10\.0\.0\.4\.1\.1, not 192\.0\.2\.1\.1\.1/.test(wrongFrom.text) && fs.readFileSync(tsproj).equals(original),
     'a file that changed since the run: refused, nothing written');
 const done = t.changeSolutionTarget({ slnPath: sln, tsprojPath: tsproj, from: OLD, to: NEW, fs });
 const after = fs.readFileSync(tsproj);
