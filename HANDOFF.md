@@ -6,38 +6,22 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
 [docs/handoff-findings.md](docs/handoff-findings.md)** — read the section covering what you are about to touch.
 
 ## Status
-- **Released:** `package.json` is at **0.10.1**, and **v0.10.1 is PUBLISHED** (2026-11-03 16:13 UTC: dev→main PR #23
-  merged at `3210d33`, Release run 41671593015 green, VSIX `twincat-plc-toolkit-0.10.1.vsix` attached).
-- **Version history:** 0.10.1 struct EXTENDS from own DUTs (PR #22); 0.10.0 Libraries scoping (PR #18); 0.9.0
-  improvement-plan phases; 0.8.x project-aware Generate ST, ResizeObserver fix, solution→project Objects tree.
-- **Last verified:** 2026-11-12 (Linux container, `claude/focused-ptolemy-m6acaz` = R13 round 5 (the user's Windows g++ test:
-  `-std=c++17`, the g++ 7 gate, the C/C++ extension provider; MSYS2 detection from the registry; round 6: selecting the
-  provider) on top of `dev` + roadmap) — `REQUIRE_FULL_SUITE=1 npm test` green (**119/119, Coverage: FULL**; optional gates compile-real, cpp-real
-  and gpp-real all ran), `npm run typecheck` and `npm run lint` exit 0; Linux dev-host (`TCDEV_CODE=<scratch>/VSCode-linux-x64/code
-  TCDEV_CODE_ARGS=--no-sandbox xvfb-run -a node test/devhost/run.js`) 103 pass / 1 fail, the fail being
-  the known P8 line-ending one; browser harnesses `run.js` (83), `run_start_page.js` (110, with the g++ row and its MSYS2 note), `run_pragmas.js` (47; round 2) green;
-  `npx @vscode/vsce ls` lists `node_modules/vscode-cpptools/` (api.js, LICENSE; `out/testApi.*` excluded) and no test file
-  (Playwright from `/opt/node-tools/node_modules`, browsers in `/opt/pw-browsers`).
-- **R12 `{IF}`-aware LSP diagnostics: MERGED** into `dev` as PR #36 (squash `02f2b96`, 2026-11-12 10:56 UTC) after the
-  user's Windows checks (split IF head, both-branch completion/references, END_FOR outside the group, multi-line fbRS, SIM define).
-  Review fixes (do not regress): a segment boundary is never a named argument on its own line (`fbRS(\n SET := c,`
-  split a method → Unterminated/Unmatched outside any group); enum members inside a group are kept (xmlIndexer
-  `extractEnumMembers` took the `)` of `{IF defined(X)}` as the list end); a statement-level nested group no longer
-  widens its span over the next statement; a group wrapping the first VAR block no longer sets `inheritanceUncertain`.
-  Design (merged from two reviewed designs, B winning): the LSP **never evaluates a define**; every branch
-  combination counts. `src/lsp/conditionals.js` groups directives per segment; block matching keeps an error only
-  if every branch selection has it (cap 64/segment, unbalanced segments silent); semantic diagnostics inside a
-  group's statement span are dropped; `pickVar` makes a per-branch type conflict UNKNOWN; a conditional section
-  header / POU head makes the parameter set / inheritance chain unknown. No group → byte-identical old output
-  (pinned over every sample unit). Rules and trade-offs: DEVELOPMENT.md "Conditional pragmas in the language
-  server (R12)". Tests: `test/test_conditional_pragmas.js` (new), R12 cases in `test_live_path.js`, R12 compiler
-  parity in `test_compile_real.js` (each fixture compiled per define set: accepted somewhere ⇒ LSP 0). The probe
-  case (split `IF` head per branch) and probe2 cases A–I give 0.
-  **Proposed, needs the user's XAE build check first:** add a conditional POU and `<CompilerDefines>` to
-  TcToolkitSample2 so the ground-truth sample covers R12 (not done: the sample must stay XAE-built).
-  **Follow-ups (not R12):** R12b informational branch state (Backlog; never feeds diagnostics; open decision:
-  Debug only or "all configurations agree"); definition returning every same-name declaration once
-  `mapDefinition` accepts arrays; optional merged completion items (`BOOL | INT (conditional)`).
+- **Release:** `package.json` is at **0.11.0** (being released 2026-11-16: branch → dev → main, then the Release workflow;
+  notes come from `CHANGELOG.md`'s section, which `release.yml` now puts ahead of the generated PR list). Last published: v0.10.1.
+- **Last verified:** 2026-11-16 (Linux container, native editor header on
+  `claude/focused-ptolemy-m6acaz`) — `REQUIRE_FULL_SUITE=1 npm test` green (**138/138, Coverage: FULL**; compile-real,
+  cpp-real, gpp-real ran), `npm run typecheck` and `npm run lint` exit 0; browser harnesses `run.js` 135, `run_online.js` 53, `run_pragmas.js` 47,
+  `run_start_page.js` 126 (browsers in `/opt/pw-browsers`). Dev-host last run 2026-11-12 (103 pass / 1 known P8 fail).
+- **Native editor header, start page and logo (user decisions 2026-11-16): BUILT on `claude/focused-ptolemy-m6acaz`**
+  (DEVELOPMENT.md "The editor header", "The Actions menu"): mark `#hdr-brand` (`src/brandMark.js`), breadcrumb from
+  `init.breadcrumb` (`src/editorBreadcrumb.js`), #E2001A type tag, dot status items, hammer `#build-btn`, "Actions ▾"
+  (secondary button; folds to "⋯" when narrow), version in the menu's foot; red only as a marker. Fixed the user's
+  bare-dots bug (collapse measured while the webview was hidden; now never at width 0, plus ResizeObserver, fonts,
+  hysteresis). Start page restyled the same way (`run_start_page.js` fails on any reddish colour other than #E2001A);
+  new mark `scripts/logo/tc-toolkit-mark.svg` → `media/marketplace-icon.png` (`scripts/make-icon.js`, Playwright);
+  Activity Bar SVG is its one-colour form. **Left stale:** `media/icon.png` (social preview: old mark and old name; its
+  generator needs Windows' Segoe UI). **Not run yet:** the dev-host pass (`test:clickCompile` / `test:toggleSync`
+  click hidden menu items by id: expected to work) and a look in real VS Code themes (shots used hand-set values).
 - **Sample 1 XAE warnings (user, 2026-11-13; XAE Shell 64):** 0 errors, 3 warnings: C0564 x2 (GVL_System's
   `fbCylinder(refExtendOut := GVL_Io.bExtendOut, refRetractOut := GVL_Io.bRetractOut)`: "reference to uninitialized
   variable") and C0195 (FB_Station.Cyclic line 28, INT into WORD). **User: fix the sample.** Done in the generator
@@ -51,7 +35,7 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   errors; TcToolkitSample shows only the known `has no member named 'STATE'` g++ error (+ the same error from the
   C/C++ extension). **Not reported back yet:** PR checklist items 1–3 and 5–8 (dropdown sync, g++ row, too-old g++,
   IntelliSense provider, Tc2_* library summary, edited `.hpp` / deleted `.gitignore`, cancel leaves no `cc1plus.exe`).
-  **Compiler pinned at release N** (`d9b7c01`, 2026-11-15): both samples check at 0 errors / 0 warnings under the
+  **Compiler pinned at release N** (`d9b7c01`, 2026-11-15; dev PR #40 `3c24371`): both samples check at 0 errors / 0 warnings under the
   profile and build with g++ cleanly (`KNOWN_GPP_GAPS` empty); `resources/dialects/twincat3.json` gains
   `string_default_80` (a plain STRING is 80 characters; the fork ships no twincat3 profile, so it was added here).
   N's `iec-std-functions.stlib` has a FUNCTION `LTIME()`; `libraryDecls.js` had let every manifest name resolve as
@@ -64,7 +48,7 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   runner's real MSYS2 at `C:\msys64` and its unsettled registry cache); fixed in `aa202b0`/`ee02e90`, CI green.
   Rule for new g++ tests: never let a test reach the host's g++, PATH, MSYS2 or registry: inject `machine`/`gppMachine`,
   `msys2Root`, `ready` and `registrySettled`.
-- **R14 Build (and Activate) through XAE: IMPLEMENTED on `claude/r14-xae`** (2026-11-12; based on the R13 branch,
+- **R14 Build (and Activate) through XAE: MERGED** into `dev` as PR #38 (squash `64ff7d9`, 2026-11-13 12:50 UTC) after the user's Windows check passed in full (below). Was on `claude/r14-xae` (2026-11-12; based on the R13 branch,
   PR #37 not yet merged; nothing here ever ran PowerShell or COM — every ps1 change is checked as text only, the
   user's Windows run is its parse check). Driver `resources/xae/build-plc-project.ps1` = the builder
   `scripts/Build PLC project/build_plc_project.ps1` (b578199) + opt-in `-Json`/`-ShowWindow`/`-ListTargets`/
@@ -80,12 +64,6 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   reports the requested mode + SuppressUI). Sample 2's system project is a `.tspproj` (lookups fixed, 706dfde).
   Sample 2 (3.1.4024.62) on a 4026-only machine → `progid-not-registered` → one modal offering XAE Shell 64, then
   `-TcVersion <ProgId> -AllowVersionMismatch` (b6d831d; DEVELOPMENT "The project's XAE Shell is missing").
-  **Done earlier on 2026-11-13 (Linux-verified; details in DEVELOPMENT "XAE build (R14)" and git history):**
-  platform dropdown (`XAE_PLATFORMS` enum), activation switching to the target's platform (one modal,
-  *Switch for this run* / *Switch and remember*), per-step error-detail reasons + *Build again with the
-  window shown*, and the 16 second-review fixes (cancel in the error reads = exit 4, newer-only shell
-  offer, one activation modal, `.tsproj`/`.tspproj` lookup). Build and Activate onto UmRT_Default with the
-  switch question PASSED on Windows (9ed8b7a).
   **Pane parsing + placement (this commit, Linux-verified; from the user's runs on c24dc06, sample 1 with
   `h;` planted at MAIN implementation line 14, 4026.28, OS (x64)):** the typed reader WORKS. Headless:
   the error list gave 2 EMPTY items + a file-less "Project 'TcToolkitSample_PLC' build for platform
@@ -128,12 +106,9 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   **Settled on 4026.28:** the C# compiles under PS 5.1 Add-Type, the DTE2 cast works, ErrorItems is filled
   (window shown) after `Build($true)`. **Unverified:** the 4024 (32-bit) shell's assemblies in 64-bit
   PowerShell, a localized pane name (only "Build" is looked for).
-  **Also on this branch:** the toolbar's Compile split button and the start page's tile are labelled
-  **Build** / *Build project* (user request), and (user, 2026-11-13) every user-read "Compile Project" is
-  now "Build Project" (palette title, tooltips, notifications, quick pick, settings text, README); command
-  ids, context/setting keys, the `TC Toolkit compile` source and the output channel are unchanged.
-  **Verified (Linux, 2026-11-13):** see the commit's gate run (FULL suite, lint, typecheck); browser
-  harnesses `test/browser/run.js` and `run_start_page.js` pass.
+  **Also on this branch:** the toolbar's Build entry and the start page's tile are labelled **Build** / *Build
+  project* (user request), and (user, 2026-11-13) every user-read "Compile Project" is now "Build Project";
+  command ids, context/setting keys, the `TC Toolkit compile` source and the output channel are unchanged.
   **Windows results later on 2026-11-13 (user):** errors placed and jump by the code link (MAIN body; a method via
   `<file>@<Component> (Impl):N`, fixed b3b7a17); *Switch and remember* writes the setting; the platform dropdown;
   cancel during a build; *Show Activation Targets*; sample 2 onto UmRT_Default refused before XAE (wording now
@@ -161,19 +136,147 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   during activation (no); hide after a version switch (keep visible); boot project / remote targets (phase 2);
   child-component numbering in the Build pane (approximate until a capture); PS 5.1
   ConvertTo-Json shapes (one-element arrays), nested `BuildProject`, whether a hidden shell ever hangs on a dialog.
-- **R3.2 Compile Project: MERGED** into `dev` as PR #32 (`28f24f1`, 2026-11-10 22:22 UTC).
-- **R3.3–R9 MERGED** into `dev` as PR #33 (`6424968`, 2026-11-11 09:30 UTC) after the user's Windows checks
-  (dev-host green after `npm ci`; manual checks all passed). Details per item are in git history and ROADMAP "Done".
-  After a branch switch that changes package-lock.json, run `npm ci` — the dev-host test now says so itself.
-  Toolkit lane is done except R10 (trigger-only) and R11 (publishing, last, after the fork lane).
-- **Settings keys renamed `twincat.*` → `tcToolkit.*`** (user report 2026-11-11; `c6145b6`, `765b5e1`, 109 suites):
-  one-time migration at activation (`src/settingsMigration.js`), old keys stay contributed as deprecated stand-ins.
-  Search results read "Tc Toolkit › Compiler: Path" (VS Code cannot show an uppercase "TC" from a key). **Merged** as
-  PR #34 (`cd52afc`, 2026-11-11) after the user's Windows check (old values moved; custom XAE path kept).
-- **R3.5 MERGED** into `dev` as PR #35 (squash `791fc3a`, 2026-11-11 23:55 UTC): compiler vendored at fork
-  `eb52d2c`, `conditional_pragmas` on, `<CompilerDefines>` read from the `.plcproj` (`src/compilerDefines.js`;
-  `Condition`s evaluated for Debug | `TwinCAT RT (x64)`), project defines → `--pragma-define`, per-object defines →
-  `--file-define` on that object's unit. Details: ROADMAP "Done", DEVELOPMENT.md "Compile Project".
+- **Change the solution's target after a gate-3 refusal (user decision 2026-11-16): BUILT on
+  `claude/focused-ptolemy-m6acaz`, Linux-verified only.** Case: the `.tsproj` named an old user-mode runtime
+  (10.0.0.4.1.1) after a restart gave the new one 10.0.0.5.1.1. Now gate 3's text says "not a runtime on this
+  PC" and names the local runtimes (`Get-RuntimeLabels` → `-RuntimeLabels`, builder + driver identical), the fatal
+  carries `projectNetId`/`tsproj`/`local[]`, and the extension offers *Change the solution's target…* → pick (local
+  runtimes only) → modal (file + both NetIds) → `src/tsprojTarget.js` rewrites the one value byte-for-byte → the
+  same activation again. My call (not the user's): the re-run carries the activation confirmation only when the new
+  target IS the runtime already confirmed; otherwise it asks for the target again. Design: DEVELOPMENT.md "XAE
+  build (R14)", "The solution's target is not a runtime on this PC". **Needs the user's Windows check:**
+  `test-activation-target.ps1` (new cases; never run — no PowerShell here) against both the builder and
+  `-ScriptPath ..\..\resources\xae\build-plc-project.ps1`; a real refusal (point a copy's `.tsproj` at a foreign
+  NetId): the runtimes named, the change written (diff = that one value; XAE opens it and *Choose Target System*
+  shows the new target), the re-run activates; **unverified:** that a real `.tsproj` holds exactly ONE
+  `TargetNetId` (if XAE writes it twice, e.g. in another element, the button is never offered — then decide which
+  one counts) and that XAE keeps no other copy of the target (e.g. a `.user` file) that would win over it.
+- **Build and Activate installs the boot project with autostart (user decision 2026-11-16): BUILT, Linux-verified only
+  (ps1 text-checked; no PowerShell here).** Calls: SetTargetNetId+readback → `ActivateConfiguration()` → per PLC under
+  `TIPC`: `BootProjectAutostart` (root item `TIPC^<name>`, nested `<name> Project` as fallback) set only when False →
+  `GenerateBootProject($true)` → `StartRestartTwinCAT()` → after RUN each PLC's ADS state on its `AmsPort`. Never saves
+  (`Close($false)`): no project file changes. A boot failure keeps exit 0 but the summary is a warning ("…has no
+  program: log in from XAE…"). Design: DEVELOPMENT.md "XAE build (R14)", "Boot project with autostart". **Needs the
+  user's Windows check:** `test-boot-project.ps1` against builder and driver; Build and Activate onto UmRT_Default →
+  channel `Boot project: <name> installed…`, `PLC <name> (port 851): RUN.`; restart the runtime → PLC back in RUN;
+  `git status` clean. **Unverified:** which item answers on 4024/4026, GenerateBootProject accepted between activation
+  and restart (no dialog, no implicit save), `Get-TcAdsState -Port 851` returning the PLC state.
+- **Stale user-mode NetId (user's 4026 machine, 2026-11-16): FIXED on `claude/focused-ptolemy-m6acaz`, Linux-verified
+  only (ps1 text-checked; no PowerShell here).** Each instance start rewrites the shared `TcRegistry.xml`, so a
+  closed second instance left a NetId nothing answers to, offered as "(project)". Rule (decided): trusted when a
+  `TcSystemServiceUm.exe` with `-n "<name>"` runs AND the file's LastWriteTime <= newest such start + 5 s
+  (`NetIdSource` 'file-time'). **A running runtime also rewrites its own file** (user's data: start 16:49:08, write
+  16:50:40, same instance, during activation → first Build and Activate refused as "rewritten", second worked — why
+  the second passed is still unexplained), so `rewritten`/`unverifiable` are now confirmed over ADS before failing:
+  `Confirm-UserModeNetIdTrust` (pure, probe injected) → `Test-UserModeNetIdOverAds` → `Read-TcAdsState` (port 10000,
+  2 s, cached per NetId per run; `Get-TcAdsState` now wraps it). Valid AdsState → trusted, `NetIdSource` 'ads';
+  else unknown, fail closed, reason "the configuration file changed after this runtime started; its AmsNetId could
+  not be confirmed over ADS: no runtime answered at <NetId> (ADS error 0x7)". `not-running` is never probed.
+  Design: DEVELOPMENT.md "A user-mode runtime's AmsNetId is trusted only for a running instance". **Needs the user's
+  Windows check:** `test-activation-target.ps1` (never run) against builder and driver; Build and Activate onto
+  UmRT_Default right after an activation → no refusal, *Show Activation Targets* shows "AmsNetId confirmed over ADS";
+  close the runtime → "not running", never offered. **Unverified:** `AdsSyncSetTimeout` honoured by the 4026
+  TcAdsDll; an answer at a stale NetId cannot come from elsewhere (a route to a remote system with that NetId would
+  be trusted); `Win32_Process.CommandLine` readable unelevated; the TcAdsDll search (Common64 under Program Files
+  only — a 4024 `C:\TwinCAT\Common64` is not searched; `tcToolkit.adsDll.nativeDllFolder` now covers it).
+- **ADS DLL paths configurable (user request 2026-11-16): BUILT on `claude/focused-ptolemy-m6acaz`, Linux-verified
+  only (no `.ps1` ran).** `tcToolkit.adsDll.dotNetLibrary` (TwinCAT.Ads.dll → helper `-AdsDll`) and `nativeDllFolder`
+  (TcAdsDll.dll folder → helper `-AdsNativeDir`, driver/builder `-AdsDllDir`); machine scope, empty = search as before;
+  a set path is used as given (not found → said with the path, no fallback). Hints + "Open Setting" on Go Online's DLL
+  failures, the activation summary (`activation.dllProblem`), the no-targets error and Show Activation Targets.
+  Design: DEVELOPMENT.md (online "Helper", XAE `-AdsDllDir`); `probe-sysmanager.ps1` left hardcoded. **Needs the user's Windows check:**
+  helper/smoke with a wrong `-AdsDll`/`-AdsNativeDir` → ready `dll-not-found` naming the path; a right one → loads; the
+  driver with `-AdsDllDir <wrong>` on Build and Activate → ACTIVATION INCOMPLETE with the folder, Open Setting works.
+- **R15 phase 3a, "Local runtime" targets the user-mode runtime's own NetId (user decision 2026-11-16): BUILT on
+  `worktree-agent-afcabb7ac39b6a6e3` (off `5a60a8e`), Linux-verified only.** `src/online/localRuntime.js` runs the XAE driver's `-ListTargets`
+  WITHOUT `-SlnPath` (no COM/XAE; no `.ps1` change) when the Go Online pick opens (Windows, router mode, router on
+  this PC), plus `tasklist` for `TcSysSrv.exe`; after a *Local runtime* pick (progress while it still runs): 1
+  trusted user-mode runtime and no possible kernel runtime → its NetId, logged "Local runtime: user-mode runtime
+  UmRT_Default at <NetId> (read from its configuration, instance running). (discovery N ms)"; several, or a
+  "Real-time runtime" record while TcSysSrv.exe is not known absent → a pick (router runtime row = localhost); none
+  or a failed discovery → localhost as before, and the "Enter AMS Net ID…" hint adds why. Never cached; recent list
+  keeps the concrete NetId. Design: DEVELOPMENT.md "The local runtime in user mode". Harness
+  `test/test_local_runtime.js`. **Unverified:** the discovery's real cost (expected 1-3 s); `TcSysSrv.exe` being
+  the kernel-mode service's image name; whether a kernel-mode PC with a running user-mode runtime reports the
+  real-time record (the user's UM PC reported none). **User's Windows steps:** (a) user-mode PC, runtime running:
+  *Go Online… → Local runtime* → progress "finding the local runtime", then `Online: Local runtime (UmRT_Default) ·
+  Run`; copy the channel's "Local runtime: …" line (with the discovery ms) and the "Going online:" line (NetId must
+  be the console window's `AmsNetId`); (b) restart the runtime (or reboot, NetIds swap) → Go Online again uses the
+  new NetId without asking; the old one shows as *Used before*; (c) close the runtime's console → Local runtime →
+  fails with the Enter AMS Net ID hint plus "UmRT_Default: this runtime is not running …"; (d) in a terminal,
+  `tasklist /FI "IMAGENAME eq TcSysSrv.exe" /FO CSV /NH` on this PC (and on a kernel-mode PC if one exists) —
+  copy the output; (e) on a kernel-mode PC: Local runtime still reaches the PLC (no pick unless a user-mode
+  runtime runs too).
+- **R15 phase 2, user-mode fallback through TwinCAT's ADS DLL: DONE on `claude/focused-ptolemy-m6acaz`, Linux-verified
+  only (2026-11-16).** Measured on the user's 4026 user-mode PC: `TcSystemServiceUm` resets ads-client's TCP connection
+  to 127.0.0.1:48898 (`socket error -4077`), `EnableAmsTcpLoopback=1` + reboot did not help, Beckhoff's .NET stack
+  works. Now: on Windows, router mode, router on this PC, and a reset/refused/closed connect or a failed port
+  registration (`adsClient.isRouterRefusal`) → the same ads-client code over `resources/online/ads-helper.ps1`
+  (powershell.exe, JSON lines, raw ADS only; `src/online/helperClient.js` subclasses `Client`, overriding only the
+  transport; notifications polled, one sum read per 100 ms tick). Design, protocol, limits: DEVELOPMENT.md "User-mode
+  fallback". Harness `test/test_ads_helper.js` (real ads-client over `test/_fakeAdsHelper.js`). The misleading "No ADS
+  router answered" for a RESET is now "…answered but reset this client's TCP connection" (backlog item folded in).
+  **Nothing of it has run on Windows.** Unverified: the `.ps1` itself (no PowerShell here: overloads `Read`/`Write`/
+  `ReadWrite` with `AdsStream, offset, length`, `Connect(port)` for 127.0.0.1.1.1, `ClientAddress`, the `ErrorCode` walk,
+  the registry value names); a 4 MiB read buffer for SymbolInfoByNameEx/DataTypeInfoByNameEx (ads-client asks
+  0xFFFFFFFF); the latency. **User's Windows steps:** (1) `powershell -NoProfile -ExecutionPolicy Bypass -File
+  "scripts\Online helper smoke\smoke-ads-helper.ps1" -NetId <runtime NetId>` — copy the whole output (ready line, port
+  10000 and 851 answers, ProjectName, ms per request); (2) in VS Code: *Go Online… → Enter AMS Net ID…* with the
+  runtime NetId → expect the *TC Toolkit Online* lines "…refused this client's TCP connection…", "Connected through
+  TwinCAT's ADS DLL (…)", "Online: … over TwinCAT's ADS DLL (user-mode fallback)"; then the R15 check list below
+  (items 4-10) through it; (3) *Local runtime*: now phase 3a below; (4) close VS Code while online: no
+  `powershell.exe` left (Task Manager).
+- **R15 ADS online monitoring: phase 1 merged into `claude/focused-ptolemy-m6acaz`** (built 2026-11-13 on `r15-ads`,
+  based on `c9ace3f`; no PR yet). Decisions D1-D9: `docs/r15-ads-decision.md` §5.
+  Design and file map: DEVELOPMENT.md "Online monitoring (roadmap R15)". `ads-client` **2.2.0 pinned** (pure JS; loads on
+  Node 16.13 and 22; licences of it and its 5 deps in THIRD-PARTY-NOTICES, all six licence files listed by `vsce ls`).
+  Harnesses `test_ads_*.js` run against an in-memory PLC (`test/_fakeAds.js`); **nothing has touched a real PLC or router.**
+  **Review rounds 1-4 (2026-11-13): every confirmed finding fixed and committed**, each pinned by a block
+  of `test/test_ads_regressions.js` (`R2#n`, `R3#n`), `run_online.js` or `test_definition_frames.js`; the per-finding
+  detail is in those tests and the `r15-ads` commit messages. Still worth knowing: the round-3 frame fix (xmlIndexer
+  ranges now in raw-unit coordinates via `unitLineMap`) costs ~+27 us per indexed file; `compileCommands.currentText`
+  deliberately ignores a stale stash and never drops one.
+  Behaviour changes to note for the Windows check: the modal/log target now reads `Local runtime (localhost:851)`;
+  an unqualified name inside an FB that extends a library FB shows no inline value (cannot tell member from global).
+  **Mismatch guard (coordinator review, 2026-11-13):** a name match alone does not prove the same code, so
+  `src/online/codeIdentity.js` checks name + variable layout (last build's `.tmc` symbols vs the PLC's symbol upload,
+  name and size) + sources edited after the `.tmc`. It cannot see a body-only change built but not downloaded (XAE's
+  compile id has no documented ADS read); UI and README say so.
+  **Decisions taken by the implementer (confirm or overturn):** writes need the setting AND a per-session enable
+  modal (D5's "per session"); the status-bar item is hidden while offline; no toolbar/start-page Go Online button
+  (palette, Watch view title, status-bar menu); target picker = local runtime + recent + typed NetId (no route listing:
+  the router's route table has no documented ADS read, R14's listing needs XAE and only lists local runtimes); with
+  several FB instances the first is shown and the user is told once; property accessor bodies and arrays of FB
+  instances are not monitored; a name-matching project with layout/edit differences still shows values (read by
+  name) but blocks writes; per-symbol type mismatch shows "type differs".
+  **Windows check list for the user (needs a real PLC; record results here):**
+  1. Note the TwinCAT build, kernel vs user mode, Hyper-V/VBS on or off.
+  2. Local runtime in RUN with the sample (or any project) downloaded: *Go Online…* → *Local runtime*. Expect the status
+     bar `Online: Local runtime · Run`; if it fails, copy the notification and the *TC Toolkit Online* channel text
+     (the 4026 user-mode case now falls back to TwinCAT's ADS DLL — see "R15 phase 2" above).
+  3. A remote PLC with a route made in XAE: *Enter AMS Net ID…*. While XAE is logged in to the same PLC, confirm XAE
+     stays connected.
+  4. Open MAIN and a GVL: values at line ends (declarations) and after variables (implementation), refreshing; open an
+     FB: the "Instance: …" note and values; an FB with several instances: the note and *Select FB Instance…*.
+  5. **Code check probes:** (a) is `_AppInfo.ProjectName` exactly the `.plcproj` name (case)? (b) after a fresh XAE
+     build + download, does the channel say "Code check: passed" with N symbols matching? If it reports layout
+     differences, copy the first lines (the `.tmc` vs upload name/size mapping is the unverified part, e.g. I/O-mapped
+     or `{attribute 'hide'}` symbols). (c) edit a POU, save → "edited since its last build", writes blocked;
+     (d) copy the logged `_AppInfo.AppTimestamp` and the `.tmc`'s modified time after a build+download — do they relate?
+     (e) is there a `_CompileInfo` folder, and does its newest `.compileinfo` name change on every build?
+  6. Forces: force a variable in XAE → status bar "Forces active" (4026.21+); on 4024 the tooltip says "not reported".
+  7. Writes: with `tcToolkit.online.allowWrites` off → refused with *Open Setting*; on → enable modal, write modal
+     (target, path, old/new, PLC state), value changes in XAE, line in the channel; unsaved edit → refused.
+  8. PLC Watch: add from the editor and by typing a path; a struct/FB expands; a LINT/ULINT entry updates (library
+     issue #189 path) without an error; set `maxNotifications` to 2 and add 3 → message once.
+  9. Is a symbol path found when typed in another case (`main.ncyclecount`)?
+  10. Go Offline, and close VS Code while online: no lingering ADS port registration (XAE's ADS monitor or `netstat -ano | findstr 48898`).
+  11. **Start/Stop PLC** (Linux-verified only): the Actions menu's entry / PLC Watch title shows *Stop* in Run → modal → XAE
+     shows Stop, entry turns *Start* at once, "PLC stop on …: done" logged; then Start. Repeat over the user-mode helper
+     (`writecontrol` = `WriteControl(StateInfo(AdsState, short))`, unverified against TwinCAT.Ads 4.3.32).
+- **R3.2–R9, settings keys `tcToolkit.*`, R3.5 MERGED** (PRs #32–#35; details in git history and ROADMAP "Done").
+  After a branch switch that changes package-lock.json, run `npm ci`. Toolkit lane is done except R10 (trigger-only)
+  and R11 (publishing, last, after the fork lane). VS Code cannot show an uppercase "TC" from a setting key.
 - **Fork lane (2026-11-12):** **S4 done** (fork #131–#132, #134–#139; release L at `3acc3f6`, note in the coordination doc; development equals the gated combined tree, 5972 tests). Lane agent `a182a76c41bf282e2` now on: `--strict` per Figure 12 for bit strings (user), property read through a global FB instance (the R13 g++ gap on TcToolkitSample), SPDX lines on two runtime headers, then coordination row 35 (one-pass diagnostics, threaded-warning scope). Merging stacked fork branches: merge development into the branch with `-X ours` only when the branch contains the squashed content, then check `git diff <branch> HEAD` shows only development's own changes; for independent branches resolve by hand, and verify the final development tree against the gated combined tree. Next fork item after these: S10.
 - **R11 publishing:** last — after the toolkit lane AND the fork lane are done (user, 2026-11-10).
 - **Sample diagnostics: 0 against a baseline of 0** — verified with the Beckhoff archives present AND moved aside.
@@ -202,13 +305,8 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   names a private repository the user wants kept out of this repo; the final tree is clean. Delete the branch after.
 
 ## Start here (next session)
-- **R5 + R1 are MERGED into `dev`** (PR #27, `0ea9fcd`) and their **Windows/XAE check PASSED** (user, 2026-11-09:
-  accessor add/re-add opens and builds in XAE, `node test/devhost/run.js`, menu pass). That pass found the multi-project
-  Generate ST menu clipped in a narrow editor (right-aligned to the caret → ran past the webview's left edge; long names
-  scrolled sideways): fixed in `3b93ef1` (`placeGenerateMenu` in `media/editor.js`, ellipsis + tooltip;
-  `test/browser/run.js` 7c checks 360/560/1200 px, all three failed before). Still owed: reply on issue #25 when it
-  ships in a release. User request 2026-11-09, done: a tri-state *Select all* in that menu (`#generate-st-all`,
-  `syncSelectAll`; "Generate selected" disabled while nothing is ticked; harness 7d).
+- **R5 + R1 MERGED** (PR #27, `0ea9fcd`), Windows/XAE check PASSED (2026-11-09); the narrow-editor Generate ST menu
+  clip it found is fixed (`placeSplitMenu`, harness 7c/7d). Still owed: reply on issue #25 when it ships in a release.
 - **R3.1 spike findings are DONE** (2026-11-09): `docs/r3.1-strucpp-spike.md`. Headline: 27 parse errors as
   converted; 1 converter cause (methods/properties emitted after the POU body — the compiler wants them first) +
   9 compiler gaps; with scratch workarounds 0 errors under twincat3, 6 under iec (REFERENCE TO, REF=). No
@@ -343,17 +441,6 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
 - **Compiler name in the UI (user ruling 2026-11-09):** the extension's UI and user-facing README name no compiler
   ("Build project", not "Check with STruC++"); `test_start_contributions.js` pins that the start page never says
   STruC++. Developer docs, ROADMAP.md and the published roadmap page may keep the name.
-- **Backlog scheduled 2026-11-09 (user's ask):** toolkit R6–R10 (R10 on trigger only) and fork S3a–S8 are now rows in
-  ROADMAP.md with my own sizing (not measured) at the Nov 9 velocity, ~4 h of session per working day. **S3a (three
-  false positives on correct code) goes before R3.2**; S7 (iec-3 audit) needs the user's decision first; S8 after R3.3.
-- **Roadmap re-measured 2026-11-09** (user's ask): ~20 planned days were delivered in ~7 h that day (ROADMAP.md
-  "Velocity"). New forecasts assume half that pace; toolkit R2–R3.3 ~2026-11-17, R6–R9 ~2026-11-19, S2 ~2026-11-11, fork S3a–S8 ~2026-11-18. The real pacing
-  item is the user's Windows checks (R5 XAE, R4 dev-host via PR #30, R2 skeleton/XAE proofs) — never forecast.
-- **Was next: R3.1** (STruC++ spike) — [ROADMAP.md](ROADMAP.md) (page https://claude.ai/artifact/8RG7TZtBV2cuupsrwWtknv,
-  source `docs/roadmap.html`). Order: R3.1 → R4 Objects-tree model (deepening P7) → R2 create a TwinCAT project →
-  R3.2 check command → R3.3 packaging. Forecast end 2026-12-05. Every R2/R3 decision is SETTLED (2026-11-09,
-  recorded under each item in ROADMAP.md) — do not re-ask them. When an item starts, moves or merges, update
-  ROADMAP.md AND `docs/roadmap.html` and republish the page to the same URL (rule in CLAUDE.md).
 - **R3 inputs:** STruC++ fork `AbuShaqra/STruCpp`, default branch `development` (@ `2c223c9`, v0.7.0, GPL-3.0-only,
   Node ≥ 22; dialect flags `--dialect-file`/`--dialect-path`, `src/dialect.ts`, `docs/DIALECTS.md`;
   `npm run build:bundle` → `dist/strucpp-bundle.cjs`). The TwinCAT profile is vendored at

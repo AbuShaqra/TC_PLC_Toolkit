@@ -18,6 +18,7 @@ const { registerCompileCommands } = require('./src/commands/compileCommands');
 const { registerXaeShellCommands } = require('./src/commands/xaeShellCommands');
 const { registerXaeBuildCommands } = require('./src/commands/xaeBuildCommands');
 const { registerGppCommands } = require('./src/commands/gppCommands');
+const { registerOnlineCommands } = require('./src/commands/onlineCommands');
 const { defaultMsys2RootCache } = require('./src/msys2Detect');
 const { registerCppToolsProvider } = require('./src/commands/cppToolsCommands');
 const { migrateSettings } = require('./src/settingsMigration');
@@ -35,6 +36,8 @@ const { TWINCAT_EDITOR_EXTS, TWINCAT_WATCH_EXTS, isWatchEventRelevant, isGenerat
 const { LanguageClient, TransportKind, State } = require('vscode-languageclient/node');
 
 let client;
+/** Online monitoring (R15); closed by deactivate(). @type {{dispose: () => Promise<void>}|null} */
+let online = null;
 
 /**
  * Quiet period for the `.plcproj` watcher, in milliseconds. src/plcProjHelper.js rewrites the
@@ -140,6 +143,10 @@ function activate(context) {
         const folders = vscode.workspace.workspaceFolders || [];
         hostProjectMap = createProjectMap(folders.map(f => f.uri.fsPath));
         hostSolutionMap = createSolutionMap(folders.map(f => f.uri.fsPath), hostProjectMap);
+        // `twincat.hasPlcProject` shows the PLC Objects view's title buttons (Build through XAE, Go
+        // Online, …). Every rebuild re-sets it, so a `.plcproj` created or deleted later flips it too.
+        const hasPlcProject = !!(hostProjectMap && hostProjectMap.projects && hostProjectMap.projects.size > 0);
+        Promise.resolve(vscode.commands.executeCommand('setContext', 'twincat.hasPlcProject', hasPlcProject)).catch(() => { /* no context in tests */ });
     };
     refreshProjectMap();
     // Declared before revealUri (next) is defined: revealUri calls projectStatusBar.refresh() on
@@ -501,6 +508,8 @@ function activate(context) {
         // must be rebuilt when either ownership or the solution membership chain changes.
         refreshProjectMap();
         treeProvider.refresh();
+        // The start page's project actions follow the same map (enabled once a project exists).
+        if (start) start.startPage.postState();
         // Only `.plcproj` content changes language/library indexing. Solution, system-project and
         // XTI changes merely regroup already-known project directories in the Objects tree.
         if (ext !== '.plcproj') return;
@@ -597,6 +606,13 @@ function activate(context) {
         provider, getProjectMap: () => hostProjectMap, getSolutionMap: () => hostSolutionMap,
         onSettingsChanged: () => { if (start) start.startPage.postState(); }
     });
+    // Online monitoring over ADS (R15): Go Online/Offline, inline values, Write value…, PLC Watch.
+    // Nothing connects until the user goes online; deactivate() closes whatever is open.
+    const onlineCommands = registerOnlineCommands(context, { provider, getProjectMap: () => hostProjectMap });
+    online = onlineCommands;
+    // The start page's Go Online / Go Offline tile follows the connection state.
+    const onlineSession = onlineCommands.session;
+    context.subscriptions.push(onlineSession.onDidChange((what) => { if (what === 'state' && start) start.startPage.postState(); }));
     // IntelliSense for the generated C++ in Microsoft's C/C++ extension, when it is installed (not awaited).
     registerCppToolsProvider(context, { getProjectMap: () => hostProjectMap });
 
@@ -604,7 +620,8 @@ function activate(context) {
         provider, getProjectMap: () => hostProjectMap, getSolutionMap: () => hostSolutionMap,
         isCompilerAvailable: compile.isAvailable,
         compileOptions: compile.compileOptions, setCompileOption: compile.setCompileOption,
-        xaeOptions: xaeBuild.xaeOptions, setXaeOption: xaeBuild.setXaeOption
+        xaeOptions: xaeBuild.xaeOptions, setXaeOption: xaeBuild.setXaeOption,
+        onlineState: () => onlineSession.state
     });
     /** @type {any} */ (start).recordOpenSolutions();
 
@@ -621,10 +638,14 @@ function activate(context) {
 }
 
 function deactivate() {
+    // The ADS connection, its notifications and every poll close first and independently of the
+    // language client: no connection may outlive the extension.
+    const closing = online ? online.dispose().catch(() => {}) : Promise.resolve();
+    online = null;
     if (!client) {
-        return undefined;
+        return closing;
     }
-    return client.stop();
+    return Promise.all([closing, client.stop()]);
 }
 
 module.exports = {

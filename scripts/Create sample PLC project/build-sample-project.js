@@ -381,6 +381,12 @@ const OBJECTS = [
                 kind: 'Method', name: 'Cyclic',
                 declaration: 'METHOD Cyclic\nVAR\n\tbExtended\t: BOOL;\nEND_VAR\n',
                 implementation: [
+                    '// The reference is bound only in Act_Home: bind it before first use, or the first cycle',
+                    '// dereferences an unbound reference (a page fault on a real runtime).',
+                    'IF NOT __ISVALIDREF(refCylinder) THEN',
+                    '\trefCylinder REF= GVL_System.fbCylinder;',
+                    'END_IF',
+                    '',
                     'bExtended := refCylinder.bIsExtended;',
                     '',
                     'CASE _eState OF',

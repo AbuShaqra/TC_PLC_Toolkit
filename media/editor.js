@@ -129,6 +129,108 @@
     const objNameEl = document.getElementById('obj-name');
     const selectEl = document.getElementById('component-select');
     const statusEl = document.getElementById('save-status');
+    const statusItemEl = document.getElementById('save-status-item');
+    const crumbsEl = document.getElementById('hdr-crumbs');
+    const crumbPathEl = document.getElementById('crumb-path-text');
+    const crumbNameSepEl = document.getElementById('crumb-name-sep');
+    const headerEl = document.querySelector('.app-header');
+
+    /**
+     * Sets a header status item's text (its `.hdr-text`, beside the dot) and its tooltip, which is
+     * what is left when the header is too narrow for the text (fitHeader).
+     * @param {HTMLElement|null} el
+     * @param {string} text
+     * @param {string} [title] Defaults to the text.
+     */
+    function setChipText(el, text, title) {
+        if (!el) return;
+        const t = el.querySelector('.hdr-text');
+        if (t) t.textContent = text;
+        else el.textContent = text;
+        el.title = title || text;
+        queueFitHeader();
+    }
+
+    /**
+     * The sync state in the header: "Synced", "Saving...", "Unsaved Changes (n)". `#save-status`
+     * keeps the text and class the dev-host runner reads; its item carries the tooltip.
+     * @param {string} text
+     * @param {string} className 'status-indicator' or 'status-indicator modified'.
+     */
+    function setSaveStatus(text, className) {
+        if (statusEl.textContent === text && statusEl.className === className + ' hdr-text') return;
+        statusEl.textContent = text;
+        statusEl.className = className + ' hdr-text';
+        if (statusItemEl) {
+            statusItemEl.title = text;
+            statusItemEl.classList.toggle('modified', /\bmodified\b/.test(className));
+        }
+        fitHeader();
+    }
+
+    /**
+     * The breadcrumb: PLC project › folders › object name (the host's `breadcrumb`, from the project
+     * map). What is not known is left out; the path part is cut from the left when it does not fit,
+     * the name last, and the full location is the tooltip.
+     * @param {{project?: string|null, folders?: string[], name?: string, title?: string}|undefined} crumb
+     * @param {string} filename The file's name, the fallback for the object name and the tooltip.
+     */
+    function renderBreadcrumb(crumb, filename) {
+        const c = crumb && typeof crumb === 'object' ? crumb : {};
+        const parts = [c.project, ...(Array.isArray(c.folders) ? c.folders : [])].filter(p => typeof p === 'string' && p);
+        const name = (typeof c.name === 'string' && c.name) || String(filename || '').replace(/\.[^.]+$/, '');
+        if (crumbPathEl) crumbPathEl.textContent = parts.join(' › ');
+        if (crumbNameSepEl) crumbNameSepEl.hidden = parts.length === 0;
+        objNameEl.textContent = name;
+        if (crumbsEl) crumbsEl.title = (typeof c.title === 'string' && c.title) || [...parts, filename].join(' › ');
+        fitHeader();
+    }
+
+    /**
+     * Keeps the header on one row, giving way in steps while it does not fit (or the object name
+     * would be cut): first the status items drop their text and keep their dots, with the text in
+     * their tooltips (`.compact`); then the Actions button folds to its "⋯" glyph (`.compact-more`);
+     * only then may the object name shrink (CSS). At 420px and below (where the component list
+     * takes a row of its own) both steps always apply.
+     *
+     * Measured only while the header is laid out: a hidden webview (a background tab) has every
+     * width 0, and a collapse decided then stuck until the next state change (user report
+     * 2026-11-16: bare dots in a wide editor while the PLC ran). A ResizeObserver re-measures when
+     * the header gets its size back, as do the fonts settling and every status change. Hysteresis:
+     * once collapsed, the labels come back only with 8px to spare, so the row does not flap.
+     */
+    function fitHeader() {
+        if (!headerEl) return;
+        if (headerEl.clientWidth === 0) return;   // not laid out (hidden): keep the last decision
+        if (window.innerWidth <= 420) { headerEl.classList.add('compact', 'compact-more'); return; }
+        const growEl = headerEl.querySelector('.hdr-grow');
+        const overflowing = () => objNameEl.scrollWidth > objNameEl.clientWidth + 1 || headerEl.scrollWidth > headerEl.clientWidth + 1;
+        // The dots also step in to keep a little of the path in view; the button folds only for the name.
+        const pathBox = crumbPathEl ? crumbPathEl.parentElement : null;
+        const hasPath = !!crumbPathEl && crumbPathEl.textContent !== '';
+        const pathGone = () => hasPath && !!pathBox && pathBox.clientWidth < 24;
+        // Room beyond a bare fit: free space in the row, or a squeezed path that still keeps 8px more.
+        const roomy = () => (growEl ? growEl.getBoundingClientRect().width : 0) >= 8
+            || (hasPath && !!pathBox && pathBox.clientWidth >= 32);
+        const wasCompact = headerEl.classList.contains('compact');
+        const wasMore = headerEl.classList.contains('compact-more');
+        headerEl.classList.remove('compact', 'compact-more');
+        if (!overflowing() && !pathGone() && (!wasCompact || roomy())) return;
+        headerEl.classList.add('compact');
+        if (overflowing() || (wasMore && !roomy())) headerEl.classList.add('compact-more');
+    }
+    let fitQueued = false;
+    /** One fitHeader per frame, for the observers below. */
+    function queueFitHeader() {
+        if (fitQueued) return;
+        fitQueued = true;
+        requestAnimationFrame(() => { fitQueued = false; fitHeader(); });
+    }
+    window.addEventListener('resize', () => fitHeader());
+    // The header's own size: also fires when a hidden webview is shown again (0 → its width).
+    if (headerEl && typeof ResizeObserver === 'function') new ResizeObserver(() => queueFitHeader()).observe(headerEl);
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => queueFitHeader(), () => {});
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) queueFitHeader(); });
     
     const containerEl = document.getElementById('editor-container');
     const paneDeclEl = document.getElementById('pane-decl');
@@ -146,41 +248,183 @@
     implNoteEl.style.display = 'none';
     containerEl.appendChild(implNoteEl);
 
-    const toggleEl = document.getElementById('sync-mode-toggle');
-    const toggleWrapper = document.getElementById('sync-toggle-wrapper');
-    const toggleText = document.getElementById('sync-mode-text');
+    // ── The Actions menu (user request 2026-11-16) ──────────────────────────────────────────────
+    // Every toolbar action and setting lives in one `role="menu"` dropdown (customEditorProvider.js
+    // ACTIONS_MENU_HTML): Generate ST, Build with its options and the XAE build, Start/Stop PLC (online
+    // only) and Auto Sync. What they are doing stays visible next to the button (`#actions-indicators`):
+    // Building… / XAE build…, the PLC state, and Manual Sync. The messages to the host are the ones the
+    // separate buttons posted.
+    const actionsBtn = document.getElementById('actions-btn');
+    const actionsMenu = document.getElementById('actions-menu');
+    const buildIndicator = document.getElementById('build-indicator');
+    const plcIndicator = document.getElementById('plc-indicator');
 
-    // Toggle logic
+    /**
+     * Marks a menu item disabled the accessible way: `aria-disabled`, so it stays focusable and its
+     * reason (its `aria-describedby` line) is read out; the click handlers check `isItemDisabled`.
+     * @param {HTMLElement|null} el
+     * @param {boolean} disabled
+     */
+    function setItemDisabled(el, disabled) {
+        if (el) el.setAttribute('aria-disabled', String(!!disabled));
+    }
+    /** @param {HTMLElement|null} el */
+    function isItemDisabled(el) {
+        return !el || el.getAttribute('aria-disabled') === 'true';
+    }
+
+    /** The menu's items in order: visible ones only (a hidden section's are skipped), disabled ones included. */
+    function menuItems() {
+        if (!actionsMenu) return [];
+        return Array.from(actionsMenu.querySelectorAll('[role="menuitem"], [role="menuitemcheckbox"]'))
+            .filter(el => !el.closest('[hidden]'));
+    }
+
+    /**
+     * Keeps an open menu inside the webview: it opens left-aligned under its button and is shifted
+     * left when it would run past the right edge, but never past the left edge (a narrow editor
+     * clipped its left half when it was right-aligned). Its height is capped at the window's, so a
+     * long menu scrolls instead of running off the bottom.
+     * @param {HTMLElement} menu
+     */
+    function placeSplitMenu(menu) {
+        const margin = 8;
+        menu.style.left = '0px';
+        menu.style.maxHeight = '';
+        const rect = menu.getBoundingClientRect();
+        const overflowRight = rect.right - (window.innerWidth - margin);
+        let shift = overflowRight > 0 ? -overflowRight : 0;
+        if (rect.left + shift < margin) shift = margin - rect.left;
+        menu.style.left = `${shift}px`;
+        const room = window.innerHeight - rect.top - margin;
+        if (rect.height > room) menu.style.maxHeight = `${Math.max(120, room)}px`;
+    }
+
+    /**
+     * Opens the menu and focuses an item: the first (Enter, Space, ArrowDown, a click) or the last (ArrowUp).
+     * @param {'first'|'last'} [focusAt]
+     */
+    function openActionsMenu(focusAt) {
+        if (!actionsMenu || !actionsBtn) return;
+        actionsMenu.hidden = false;
+        actionsBtn.setAttribute('aria-expanded', 'true');
+        placeSplitMenu(actionsMenu);
+        const items = menuItems();
+        const target = focusAt === 'last' ? items[items.length - 1] : items[0];
+        if (target) target.focus();
+    }
+
+    /**
+     * Closes the menu (and its project picker).
+     * @param {boolean} [focusButton] Return focus to the Actions button (Escape, an action run by key).
+     */
+    function closeActionsMenu(focusButton) {
+        if (!actionsMenu || !actionsBtn || actionsMenu.hidden) return;
+        actionsMenu.hidden = true;
+        actionsBtn.setAttribute('aria-expanded', 'false');
+        closeGenerateMenu();
+        if (focusButton) actionsBtn.focus();
+    }
+
+    if (actionsBtn && actionsMenu) {
+        actionsBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (actionsMenu.hidden) openActionsMenu('first');
+            else closeActionsMenu(false);
+        });
+        actionsBtn.addEventListener('keydown', (e) => {
+            // Enter and Space reach the click handler as a click; the arrows open from the keyboard.
+            if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                e.preventDefault();
+                openActionsMenu(e.key === 'ArrowUp' ? 'last' : 'first');
+            }
+        });
+        actionsMenu.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') { e.preventDefault(); closeActionsMenu(true); return; }
+            if (e.key === 'Tab') { closeActionsMenu(false); return; }
+            const items = menuItems();
+            const at = items.indexOf(/** @type {HTMLElement} */ (document.activeElement));
+            let next = -1;
+            if (e.key === 'ArrowDown') next = at < 0 ? 0 : (at + 1) % items.length;
+            else if (e.key === 'ArrowUp') next = at < 0 ? items.length - 1 : (at + items.length - 1) % items.length;
+            else if (e.key === 'Home') next = 0;
+            else if (e.key === 'End') next = items.length - 1;
+            else if (e.key === 'Enter' && document.activeElement instanceof HTMLInputElement) {
+                // A checkbox item toggles on Enter as on Space (a native checkbox answers Space only).
+                e.preventDefault();
+                document.activeElement.click();
+                return;
+            }
+            if (next >= 0 && items[next]) { e.preventDefault(); items[next].focus(); }
+        });
+        // Focus leaving the menu (and not to its button) closes it.
+        actionsMenu.addEventListener('focusout', (e) => {
+            const to = /** @type {Node|null} */ (e.relatedTarget);
+            if (to && !actionsMenu.contains(to) && to !== actionsBtn) closeActionsMenu(false);
+        });
+        // Escape closes an open menu wherever focus is (a click on a heading leaves it on the body).
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && !actionsMenu.hidden && !actionsMenu.contains(/** @type {Node} */ (e.target))) closeActionsMenu(true);
+        });
+        window.addEventListener('resize', () => { if (!actionsMenu.hidden) placeSplitMenu(actionsMenu); });
+        // A click anywhere else dismisses the menu.
+        document.addEventListener('click', (e) => {
+            const target = /** @type {Node} */ (e.target);
+            if (!actionsMenu.hidden && !actionsMenu.contains(target) && !actionsBtn.contains(target)) closeActionsMenu(false);
+        });
+    }
+
+    /**
+     * Runs a menu action: closes the menu (focus back on its button when the action came from the
+     * keyboard, so it is not lost on a hidden item) and posts unless the item is disabled.
+     * @param {HTMLElement|null} item
+     * @param {() => void} run
+     */
+    function onMenuAction(item, run) {
+        if (!item) return;
+        item.addEventListener('click', (e) => {
+            if (isItemDisabled(item)) { e.preventDefault(); return; }
+            closeActionsMenu(e.detail === 0);
+            run();
+        });
+    }
+
+    // Auto Sync: a checkbox item; Manual Sync shows as a chip next to the menu button.
+    const toggleEl = /** @type {HTMLInputElement} */ (document.getElementById('sync-mode-toggle'));
+    const toggleText = document.getElementById('sync-mode-text');
+    /** Shows `isAutoSync` on the checkbox and the chip (the chip text is what the dev-host runner reads). */
+    function renderSyncMode() {
+        toggleEl.checked = isAutoSync;
+        if (toggleText) {
+            setChipText(toggleText, isAutoSync ? 'Auto Sync' : 'Manual Sync', 'Manual Sync: edits are written on Ctrl+S (Actions → Auto Sync)');
+            toggleText.hidden = isAutoSync;
+        }
+        renderActionsTitle();
+    }
     toggleEl.addEventListener('change', () => {
         isAutoSync = toggleEl.checked;
-        if (isAutoSync) {
-            toggleWrapper.classList.add('active');
-            toggleText.textContent = 'Auto Sync';
-            flushPendingEdits();
-        } else {
-            toggleWrapper.classList.remove('active');
-            toggleText.textContent = 'Manual Sync';
-            updateStatusText();
-        }
+        renderSyncMode();
+        if (isAutoSync) flushPendingEdits();
+        else updateStatusText();
         vscode.postMessage({
             type: 'toggleSyncMode',
             isAutoSync: isAutoSync
         });
     });
 
-    // Generate ST split button. The main button always generates EVERY project; the caret opens a
-    // checkbox menu (shown only when the host reports 2+ projects) to generate a chosen subset.
+    // Generate ST: the first item always generates EVERY project; "Choose projects…" (only when the
+    // host reports 2+ projects) unfolds a checkbox picker in the menu to generate a chosen subset.
     const generateBtn = document.getElementById('generate-st-btn');
     const generateCaret = document.getElementById('generate-st-caret');
     const generateMenu = document.getElementById('generate-st-menu');
     const generateProjects = document.getElementById('generate-st-projects');
     const generateRun = document.getElementById('generate-st-run');
-    const generateAll = document.getElementById('generate-st-all');
+    const generateAll = /** @type {HTMLInputElement|null} */ (document.getElementById('generate-st-all'));
 
-    /** The project checkboxes in the menu (not the Select all box). */
+    /** The project checkboxes in the picker (not the Select all box). */
     function projectBoxes() {
         return generateProjects
-            ? Array.from(generateProjects.querySelectorAll('input[type="checkbox"]'))
+            ? /** @type {HTMLInputElement[]} */ (Array.from(generateProjects.querySelectorAll('input[type="checkbox"]')))
             : [];
     }
 
@@ -195,7 +439,7 @@
             generateAll.checked = boxes.length > 0 && ticked === boxes.length;
             generateAll.indeterminate = ticked > 0 && ticked < boxes.length;
         }
-        if (generateRun) generateRun.disabled = ticked === 0;
+        setItemDisabled(generateRun, ticked === 0);
     }
 
     if (generateAll) {
@@ -206,93 +450,58 @@
     }
     if (generateProjects) generateProjects.addEventListener('change', syncSelectAll);
 
-    /**
-     * Keeps the open menu inside the webview: it opens left-aligned under the split button and is
-     * shifted left when it would run past the right edge, but never past the left edge (a narrow
-     * editor clipped its left half when it was right-aligned to the caret).
-     */
-    function placeGenerateMenu() {
-        if (generateMenu) placeSplitMenu(generateMenu);
-    }
-
-    /**
-     * Places a split button's open menu (Generate ST's, Compile's) inside the webview, as above.
-     * @param {HTMLElement} menu
-     */
-    function placeSplitMenu(menu) {
-        const margin = 8;
-        menu.style.left = '0px';
-        const rect = menu.getBoundingClientRect();
-        const overflowRight = rect.right - (window.innerWidth - margin);
-        let shift = overflowRight > 0 ? -overflowRight : 0;
-        if (rect.left + shift < margin) shift = margin - rect.left;
-        menu.style.left = `${shift}px`;
-    }
-
+    /** Folds the project picker away (the menu itself stays as it is). */
     function closeGenerateMenu() {
         if (!generateMenu) return;
         generateMenu.hidden = true;
         if (generateCaret) generateCaret.setAttribute('aria-expanded', 'false');
     }
 
-    if (generateBtn) {
-        generateBtn.addEventListener('click', () => {
-            closeGenerateMenu();
-            vscode.postMessage({ type: 'generate-st' }); // no keys → all projects
-        });
-    }
+    onMenuAction(generateBtn, () => vscode.postMessage({ type: 'generate-st' })); // no keys → all projects
     if (generateCaret && generateMenu) {
         generateCaret.addEventListener('click', (e) => {
             e.stopPropagation();
-            closeCompileMenu(false);
             const opening = generateMenu.hidden;
             generateMenu.hidden = !opening;
             generateCaret.setAttribute('aria-expanded', String(opening));
-            if (opening) placeGenerateMenu();
-        });
-        window.addEventListener('resize', () => { if (!generateMenu.hidden) placeGenerateMenu(); });
-        // A click anywhere else dismisses the menu.
-        document.addEventListener('click', (e) => {
-            if (generateMenu.hidden) return;
-            if (!generateMenu.contains(e.target) && e.target !== generateCaret) closeGenerateMenu();
+            if (actionsMenu) placeSplitMenu(actionsMenu);
+            // Unfolding by keyboard moves on into the picker; the arrows walk it like any items.
+            if (opening && e.detail === 0 && generateAll) generateAll.focus();
         });
     }
     if (generateRun && generateProjects) {
-        generateRun.addEventListener('click', () => {
-            const keys = Array.from(generateProjects.querySelectorAll('input[type="checkbox"]:checked'))
-                .map(cb => cb.value);
-            closeGenerateMenu();
+        onMenuAction(generateRun, () => {
+            const keys = projectBoxes().filter(cb => cb.checked).map(cb => cb.value);
             if (keys.length) vscode.postMessage({ type: 'generate-st', projectKeys: keys });
         });
     }
 
-    // Compile button: Compile Project for the PLC project that owns this file. The host resolves the
-    // project; while a run is in progress (`compileRunning`) the button is disabled.
+    // Build: Build Project for the PLC project that owns this file. The host resolves the project;
+    // while a run is in progress (`compileRunning`) the item is disabled and "Building…" shows.
     const compileBtn = document.getElementById('compile-btn');
-    if (compileBtn) {
-        compileBtn.addEventListener('click', () => {
-            closeGenerateMenu();
-            closeCompileMenu(false);
-            if (!compileBtn.disabled) vscode.postMessage({ type: 'compile-project' });
+    const compileDetail = document.getElementById('compile-btn-detail');
+    let compileBusy = false;
+    let xaeBusy = false;
+    onMenuAction(compileBtn, () => vscode.postMessage({ type: 'compile-project' }));
+    // The header's Build icon button: the same action in one click; aria-disabled while a build runs.
+    const buildBtn = document.getElementById('build-btn');
+    const buildBtnBusy = document.getElementById('build-btn-busy');
+    if (buildBtn) {
+        buildBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (isItemDisabled(buildBtn)) return;
+            closeActionsMenu(false);
+            vscode.postMessage({ type: 'compile-project' });
         });
     }
-    // Compile options (R13): the caret opens two checkboxes that show and write the C++ settings.
-    // The host writes them (with their coupling: the g++ build needs the C++) and answers with
-    // `compileOptions`, which also arrives when the settings change anywhere else.
-    const compileCaret = document.getElementById('compile-caret');
-    const compileMenu = document.getElementById('compile-menu');
-    const compileOptCpp = document.getElementById('compile-opt-cpp');
-    const compileOptGpp = document.getElementById('compile-opt-gpp');
-    function closeCompileMenu(focusCaret) {
-        if (!compileMenu || compileMenu.hidden) return;
-        compileMenu.hidden = true;
-        if (compileCaret) {
-            compileCaret.setAttribute('aria-expanded', 'false');
-            if (focusCaret) compileCaret.focus();
-        }
-    }
+    // Compile options (R13): two checkbox items that show and write the C++ settings. The host writes
+    // them (with their coupling: the g++ build needs the C++) and answers with `compileOptions`, which
+    // also arrives when the settings change anywhere else.
+    const compileOptCpp = /** @type {HTMLInputElement|null} */ (document.getElementById('compile-opt-cpp'));
+    const compileOptGpp = /** @type {HTMLInputElement|null} */ (document.getElementById('compile-opt-gpp'));
     /**
-     * The Compile button's tooltip says what a click does with the current options.
+     * The Build item's tooltip and detail line say what a click does with the current options, or
+     * why it is disabled.
      * @param {boolean} cpp
      * @param {boolean} gpp
      */
@@ -302,6 +511,11 @@
             ? 'Build Project: check this PLC project, write it as C++ into its CPP_Files folder, and build that with g++'
             : (cpp ? 'Build Project: check this PLC project, then write it as C++ into its CPP_Files folder'
                 : 'Build Project: check this PLC project with the IEC 61131-3 compiler');
+        if (compileDetail) {
+            compileDetail.textContent = compileBusy ? 'A build is running.'
+                : (gpp ? 'Check, write C++ into CPP_Files, build it with g++'
+                    : (cpp ? 'Check, then write C++ into CPP_Files' : 'Check this PLC project with the IEC 61131-3 compiler'));
+        }
     }
     /** @param {{generateCpp?: boolean, buildWithGpp?: boolean}} options */
     function renderCompileOptions(options) {
@@ -312,36 +526,7 @@
         compileOptCpp.checked = cpp;
         compileOptGpp.checked = gpp;
     }
-    if (compileCaret && compileMenu && compileOptCpp && compileOptGpp) {
-        compileCaret.addEventListener('click', (e) => {
-            e.stopPropagation();
-            closeGenerateMenu();
-            const opening = compileMenu.hidden;
-            compileMenu.hidden = !opening;
-            compileCaret.setAttribute('aria-expanded', String(opening));
-            if (opening) {
-                placeSplitMenu(compileMenu);
-                compileOptCpp.focus();
-            }
-        });
-        compileMenu.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape') { e.preventDefault(); closeCompileMenu(true); return; }
-            if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-                // Every visible, enabled control of the menu, in order (the XAE section only when shown).
-                e.preventDefault();
-                const items = Array.from(compileMenu.querySelectorAll('input, button'))
-                    .filter(el => !el.disabled && !el.closest('[hidden]'));
-                const at = items.indexOf(document.activeElement);
-                // Focus outside the items (on the menu itself): Down goes to the first, Up to the last.
-                const next = at < 0 ? (e.key === 'ArrowDown' ? 0 : items.length - 1)
-                    : (at + (e.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length;
-                if (items[next]) items[next].focus();
-            }
-        });
-        // Tabbing out of the menu closes it.
-        compileMenu.addEventListener('focusout', (e) => {
-            if (e.relatedTarget && !compileMenu.contains(e.relatedTarget) && e.relatedTarget !== compileCaret) closeCompileMenu(false);
-        });
+    if (compileOptCpp && compileOptGpp) {
         for (const [box, key] of [[compileOptCpp, 'generateCpp'], [compileOptGpp, 'buildWithGpp']]) {
             box.addEventListener('change', () => {
                 // Shown at once; the host's `compileOptions` answer confirms (or corrects) it.
@@ -351,37 +536,32 @@
                 vscode.postMessage({ type: 'setCompileOption', key: key, value: box.checked });
             });
         }
-        window.addEventListener('resize', () => { if (!compileMenu.hidden) placeSplitMenu(compileMenu); });
-        document.addEventListener('click', (e) => {
-            if (!compileMenu.hidden && !compileMenu.contains(e.target) && e.target !== compileCaret) closeCompileMenu(false);
-        });
     }
 
-    // Build through XAE (R14): two actions and the window switch below a separator in the same menu.
-    // Shown only when the host says it is available (Windows); the host validates every message.
+    // Build through XAE (R14): two actions and the window switch in the Build group. Shown only when
+    // the host says it is available (Windows); the host validates every message.
     const xaeSection = document.getElementById('xae-menu-section');
     const xaeBuildBtn = document.getElementById('xae-build');
     const xaeActivateBtn = document.getElementById('xae-activate');
-    const xaeOptWindow = document.getElementById('xae-opt-window');
+    const xaeBusyDetail = document.getElementById('xae-busy-detail');
+    const xaeOptWindow = /** @type {HTMLInputElement|null} */ (document.getElementById('xae-opt-window'));
     /** @param {{available?: boolean, showWindow?: boolean, running?: boolean}} options */
     function renderXaeOptions(options) {
         if (!xaeSection) return;
         xaeSection.hidden = !(options && options.available);
-        // The caret's tooltip names the XAE build only where the section is shown.
-        if (compileCaret) {
-            compileCaret.title = options && options.available
-                ? 'Build options: C++ generation, the g++ build and the XAE build'
-                : 'Build options: C++ generation and the g++ build';
-        }
         if (xaeOptWindow) xaeOptWindow.checked = !!(options && options.showWindow);
-        for (const b of [xaeBuildBtn, xaeActivateBtn]) if (b) b.disabled = !!(options && options.running);
+        xaeBusy = !!(options && options.available && options.running);
+        for (const b of [xaeBuildBtn, xaeActivateBtn]) {
+            setItemDisabled(b, !!(options && options.running));
+            // Described by the "running" note only while it shows: a hidden referenced node is still read out.
+            if (b && options && options.running) b.setAttribute('aria-describedby', 'xae-busy-detail');
+            else if (b) b.removeAttribute('aria-describedby');
+        }
+        if (xaeBusyDetail) xaeBusyDetail.hidden = !(options && options.running);
+        renderBuildIndicator();
     }
     for (const [btn, activate] of [[xaeBuildBtn, false], [xaeActivateBtn, true]]) {
-        if (!btn) continue;
-        btn.addEventListener('click', () => {
-            closeCompileMenu(false);
-            if (!btn.disabled) vscode.postMessage({ type: 'runXae', activate: activate });
-        });
+        onMenuAction(btn, () => vscode.postMessage({ type: 'runXae', activate: activate }));
     }
     if (xaeOptWindow) {
         xaeOptWindow.addEventListener('change', () => {
@@ -391,24 +571,59 @@
 
     /** @param {boolean} running */
     function setCompileRunning(running) {
+        compileBusy = !!running;
         if (!compileBtn) return;
-        compileBtn.disabled = !!running;
-        compileBtn.classList.toggle('running', !!running);
-        compileBtn.setAttribute('aria-busy', String(!!running));
+        setItemDisabled(compileBtn, compileBusy);
+        compileBtn.setAttribute('aria-busy', String(compileBusy));
+        if (buildBtn) {
+            setItemDisabled(buildBtn, compileBusy);
+            buildBtn.title = compileBusy ? 'Build: a build is running.' : 'Build (check with the IEC 61131-3 compiler)';
+            if (buildBtnBusy) buildBtnBusy.textContent = compileBusy ? 'A build is running.' : '';
+        }
+        describeCompileButton(!!(compileOptCpp && compileOptCpp.checked), !!(compileOptGpp && compileOptGpp.checked));
+        renderBuildIndicator();
+    }
+
+    /** The "Building…" chip next to the menu button: a Build Project run or an XAE build in progress. */
+    function renderBuildIndicator() {
+        if (buildIndicator) {
+            buildIndicator.hidden = !(compileBusy || xaeBusy);
+            setChipText(buildIndicator, compileBusy ? 'Building…' : 'XAE build…', compileBusy ? 'Build Project is running' : 'An XAE build is running');
+        }
+        renderActionsTitle();
     }
 
     /**
-     * Shows or hides the caret, and marks the group with `has-caret` in the same step: the CSS squares
-     * the main button's right corners only while the caret is there to fuse with. (`:has()` would avoid
-     * the class, but VS Code 1.66's Chromium predates it.)
+     * The Actions button's tooltip sums up the state the chips show, so it is one hover away even
+     * where a chip is not shown (Auto Sync on, offline).
      */
-    function setCaretVisible(visible) {
-        generateCaret.hidden = !visible;
-        const group = generateCaret.parentElement;
-        if (group) group.classList.toggle('has-caret', visible);
+    function renderActionsTitle() {
+        // The chips' row takes no room (nor a flex gap) while none of them shows.
+        const indicators = document.getElementById('actions-indicators');
+        if (indicators) indicators.hidden = !Array.from(indicators.children).some(c => !(/** @type {HTMLElement} */ (c).hidden));
+        if (!actionsBtn) return;
+        const parts = ['Actions: Generate ST, Build, PLC and sync settings'];
+        if (compileBusy) parts.push('Build Project is running');
+        if (xaeBusy) parts.push('an XAE build is running');
+        if (plcIndicator && !plcIndicator.hidden) parts.push(plcIndicator.textContent || '');
+        parts.push(isAutoSync ? 'Auto Sync on' : 'Manual Sync (Ctrl+S writes)');
+        actionsBtn.title = parts.join(' · ');
+        fitHeader();
     }
 
-    /** Populates the project checkbox menu and reveals the caret; hides both when <2 projects. */
+    /**
+     * Shows "Choose projects…" (and the Generate ST label that says "all projects") only when the
+     * workspace has 2+ projects; with one project the plain Generate ST item is all there is.
+     * @param {boolean} visible
+     */
+    function setCaretVisible(visible) {
+        if (!generateCaret) return;
+        generateCaret.hidden = !visible;
+        const label = generateBtn && generateBtn.querySelector('.btn-label');
+        if (label) label.textContent = visible ? 'Generate ST: all projects' : 'Generate ST';
+    }
+
+    /** Populates the project picker and shows "Choose projects…"; hides both when <2 projects. */
     function renderProjectPicker(projects) {
         if (!generateCaret || !generateProjects) return;
         if (!Array.isArray(projects) || projects.length < 2) {
@@ -422,6 +637,8 @@
             label.className = 'split-menu-item';
             const cb = document.createElement('input');
             cb.type = 'checkbox';
+            cb.setAttribute('role', 'menuitemcheckbox');
+            cb.tabIndex = -1;
             cb.value = p.key;
             cb.checked = true; // default: every project selected
             const text = document.createElement('span');
@@ -440,15 +657,13 @@
 
     function updateStatusText() {
         const status = pendingEditsCore.statusFor(editsStore.count());
-        statusEl.textContent = status.text;
-        statusEl.className = status.className;
+        setSaveStatus(status.text, status.className);
     }
 
     function flushPendingEdits() {
         const edits = editsStore.takeAll();
         if (edits.length > 0) {
-            statusEl.textContent = 'Saving...';
-            statusEl.className = 'status-indicator modified';
+            setSaveStatus('Saving...', 'status-indicator modified');
             vscode.postMessage({
                 type: 'sync-pending',
                 edits: edits
@@ -459,8 +674,7 @@
 
     function triggerManualSave() {
         const edits = editsStore.takeAll();
-        statusEl.textContent = 'Saving...';
-        statusEl.className = 'status-indicator modified';
+        setSaveStatus('Saving...', 'status-indicator modified');
         vscode.postMessage({
             type: 'save',
             edits: edits
@@ -498,8 +712,8 @@
         dropCompileDiagnostics(activeComponentId);
 
         if (isAutoSync) {
-            statusEl.textContent = 'Saving...';
-            statusEl.className = 'status-indicator modified';
+            autoSyncPending = true;
+            setSaveStatus('Saving...', 'status-indicator modified');
 
             clearTimeout(debounceTimer);
             debounceTimer = setTimeout(() => {
@@ -518,6 +732,187 @@
                 pendingEdits: editsStore.snapshot()
             });
         }
+    }
+
+    // ── Online monitoring (R15) ─────────────────────────────────────────────────────────────────
+    // The webview never talks ADS: it tells the host which lines its panes show (`online/visible`),
+    // draws the values the host posts (`online/values`) as injected text after each variable (the
+    // document is never changed, so a save stays byte-identical), and asks for a write or a watch at
+    // the caret. Values are cleared on every edit until the host answers for the new text.
+    let onlineActive = false;
+    // An Auto Sync edit typed but not yet written back (the host's 'update' acknowledges it).
+    let autoSyncPending = false;
+    let onlineItems = [];
+    let onlineVisibleTimer = null;
+    const onlineDecorations = new Map(); // editor -> decoration ids
+    const onlineNoteEl = document.getElementById('online-note');
+    const onlineContextKeys = [];
+    // Write Value… is offered only where the host says so: an editor of the project the PLC runs.
+    const onlineWritableKeys = [];
+
+    /** True while the panes hold text the document does not (Manual Sync stash, or an edit not yet sent). */
+    function hasUnsavedPaneEdits() {
+        return (!isAutoSync && editsStore.count() > 0) || autoSyncPending;
+    }
+
+    /** The 1-based line ranges a pane shows, or null when the pane is hidden. */
+    function visibleLinesOf(editor, paneEl) {
+        if (!editor || !paneEl || paneEl.style.display === 'none') return null;
+        return editor.getVisibleRanges().map(r => ({ start: r.startLineNumber, end: r.endLineNumber }));
+    }
+
+    /** Tells the host what the panes show, debounced (scrolling fires many events). */
+    function sendOnlineVisible() {
+        if (!onlineActive) return;
+        clearTimeout(onlineVisibleTimer);
+        onlineVisibleTimer = setTimeout(() => {
+            onlineVisibleTimer = null;
+            if (!onlineActive || !activeComponentId || !declEditor) return;
+            const ctx = buildBridgeContext(declEditor.getModel(), { lineNumber: 1, column: 1 });
+            vscode.postMessage({
+                type: 'online/visible',
+                fileUri: activeFileUri,
+                componentId: activeComponentId,
+                decl: ctx.decl,
+                impl: ctx.impl,
+                dirty: hasUnsavedPaneEdits(),
+                visible: { decl: visibleLinesOf(declEditor, paneDeclEl), impl: visibleLinesOf(implEditor, paneImplEl) }
+            });
+        }, 150);
+    }
+
+    /**
+     * Draws the online values of the active component (or clears them). The ranges are empty (a point
+     * after the variable), so `showIfCollapsed` is required: Monaco drops collapsed injected text
+     * without it, silently.
+     */
+    function applyOnlineDecorations() {
+        for (const [editor, pane] of [[declEditor, 'decl'], [implEditor, 'impl']]) {
+            if (!editor) continue;
+            const model = editor.getModel();
+            const items = onlineActive ? onlineItems.filter(i => i.componentId === activeComponentId && i.pane === pane) : [];
+            const byLine = new Map();
+            const decorations = [];
+            for (const it of items) {
+                if (it.line < 1 || it.line > model.getLineCount()) continue;
+                if (it.eol) {
+                    if (!byLine.has(it.line)) byLine.set(it.line, []);
+                    byLine.get(it.line).push(it);
+                    continue;
+                }
+                const col = Math.min(it.endColumn, model.getLineMaxColumn(it.line));
+                decorations.push({
+                    range: new monaco.Range(it.line, col, it.line, col),
+                    options: { after: { content: it.text, inlineClassName: 'tc-online-value tc-online-' + it.state }, showIfCollapsed: true, stickiness: 1 }
+                });
+            }
+            for (const [line, list] of byLine) {
+                const col = model.getLineMaxColumn(line);
+                const state = list.some(i => i.state === 'differs') ? 'differs' : list[0].state;
+                const text = list.length === 1 ? list[0].text : list.map(i => i.path.split('.').pop() + ' = ' + i.text).join('  ');
+                decorations.push({
+                    range: new monaco.Range(line, col, line, col),
+                    options: { after: { content: text, inlineClassName: 'tc-online-value tc-online-eol tc-online-' + state }, showIfCollapsed: true, stickiness: 1 }
+                });
+            }
+            onlineDecorations.set(editor, editor.deltaDecorations(onlineDecorations.get(editor) || [], decorations));
+        }
+    }
+
+    /** Clears the drawn values (an edit made them stale) and asks for fresh ones. */
+    function invalidateOnlineValues() {
+        if (!onlineActive) return;
+        if (onlineItems.length) { onlineItems = []; applyOnlineDecorations(); }
+        sendOnlineVisible();
+    }
+
+    /**
+     * Online on/off from the host, with an optional note for the toolbar and whether this editor may
+     * write (absent counts as no). Only going online asks the host for values: the host answers every
+     * `online/visible` with an `online/state`, so asking again here on every state would make the two
+     * message each other in a loop and the poll interval would stop holding.
+     */
+    function setOnlineState(online, note, writable) {
+        const was = onlineActive;
+        onlineActive = !!online;
+        onlineContextKeys.forEach(k => k.set(onlineActive));
+        onlineWritableKeys.forEach(k => k.set(onlineActive && writable === true));
+        if (onlineNoteEl) {
+            const noteText = onlineActive ? (note ? 'Online · ' + note : 'Online') : '';
+            setChipText(onlineNoteEl, noteText, noteText ? noteText + ' (online monitoring; TC Toolkit: Go Offline ends it)' : 'Online monitoring (TC Toolkit: Go Online)');
+            onlineNoteEl.hidden = !onlineActive;
+        }
+        if (!onlineActive) plcToggle = {};
+        renderPlcToggle();
+        if (!onlineActive) { onlineItems = []; applyOnlineDecorations(); return; }
+        if (!was) sendOnlineVisible();
+    }
+
+    // Start / Stop PLC (user request 2026-11-16): one item in the Actions menu's PLC group, shown only
+    // while online. The host posts what it offers (`online/plc`: action 'start' in Stop, 'stop' in
+    // Run, null in any other state, while a request runs or before the state is read); a click only
+    // asks the host, which checks the state again and confirms with a modal. The PLC state itself
+    // shows as a chip next to the menu button.
+    const plcRunBtn = document.getElementById('plc-run-btn');
+    const plcSection = document.getElementById('plc-menu-section');
+    const plcDetail = document.getElementById('plc-run-detail');
+    /** @type {{online?: boolean, action?: string|null, plcState?: string|null, busy?: boolean, reason?: string}} */
+    let plcToggle = {};
+    function renderPlcToggle() {
+        if (!plcRunBtn) return;
+        const shown = onlineActive && plcToggle.online !== false;
+        if (plcSection) plcSection.hidden = !shown;
+        const action = plcToggle.action === 'stop' ? 'stop' : (plcToggle.action === 'start' ? 'start' : null);
+        // Disabled: the label follows what the PLC state would offer ("Stop" while it runs, else "Start").
+        const shownAs = action || (String(plcToggle.plcState || '').toLowerCase() === 'run' ? 'stop' : 'start');
+        const label = shownAs === 'stop' ? 'Stop' : 'Start';
+        plcRunBtn.classList.toggle('is-stop', shownAs === 'stop');
+        plcRunBtn.classList.toggle('is-start', shownAs === 'start');
+        setItemDisabled(plcRunBtn, !action);
+        plcRunBtn.setAttribute('aria-busy', String(!!plcToggle.busy));
+        const labelEl = plcRunBtn.querySelector('.btn-label');
+        if (labelEl) labelEl.textContent = label + ' PLC';
+        plcRunBtn.title = action
+            ? (label + ' PLC: the PLC is in ' + (plcToggle.plcState || '?') + ' (asks for confirmation)')
+            : (label + ' PLC: unavailable. ' + (plcToggle.reason || 'The PLC state is not known yet.'));
+        if (plcDetail) {
+            plcDetail.textContent = action
+                ? 'The PLC is in ' + (plcToggle.plcState || '?') + '; asks for confirmation'
+                : (plcToggle.reason || 'The PLC state is not known yet.');
+        }
+        if (plcIndicator) {
+            const state = shown && plcToggle.plcState ? String(plcToggle.plcState) : '';
+            plcIndicator.hidden = !state;
+            setChipText(plcIndicator, state ? 'PLC ' + state + (plcToggle.busy ? '…' : '') : '',
+                state ? 'The PLC is in ' + state + (plcToggle.busy ? '; a start or stop is in progress' : '') : '');
+            plcIndicator.classList.toggle('tb-chip-ok', state.toLowerCase() === 'run');
+            plcIndicator.classList.toggle('tb-chip-warn', !!state && state.toLowerCase() !== 'run');
+        }
+        renderActionsTitle();
+    }
+    if (plcRunBtn) {
+        onMenuAction(plcRunBtn, () => {
+            if (!onlineActive) return;
+            const action = plcToggle.action;
+            if (action !== 'start' && action !== 'stop') return;
+            vscode.postMessage({ type: 'online/plcControl', action: action });
+        });
+    }
+
+    /** Adds the two editor actions (Write Value…, Add to PLC Watch) to a pane's context menu. */
+    function addOnlineActions(editor) {
+        onlineContextKeys.push(editor.createContextKey('tcOnline', false));
+        onlineWritableKeys.push(editor.createContextKey('tcOnlineWritable', false));
+        const ask = (type) => function (ed) {
+            const position = ed.getPosition();
+            if (!position || !activeComponentId) return;
+            const ctx = buildBridgeContext(ed.getModel(), position);
+            vscode.postMessage(Object.assign({ type: type, fileUri: activeFileUri, dirty: hasUnsavedPaneEdits() }, ctx));
+        };
+        editor.addAction({ id: 'tc.online.write', label: 'Write Value…', precondition: 'tcOnlineWritable',
+            contextMenuGroupId: '9_online', contextMenuOrder: 1, run: ask('online/write') });
+        editor.addAction({ id: 'tc.online.addWatch', label: 'Add to PLC Watch',
+            contextMenuGroupId: '9_online', contextMenuOrder: 2, run: ask('online/addWatch') });
     }
 
     // Build the LSP bridge payload describing the active component and cursor position.
@@ -1108,6 +1503,14 @@
         declEditor.onDidChangeModelContent(() => onEditorChange(declEditor, 'Declaration'));
         implEditor.onDidChangeModelContent(() => onEditorChange(implEditor, 'ST'));
 
+        // Online monitoring: the context-menu actions, and a fresh visible-lines report on scroll and edit.
+        addOnlineActions(declEditor);
+        addOnlineActions(implEditor);
+        declEditor.onDidScrollChange(() => sendOnlineVisible());
+        implEditor.onDidScrollChange(() => sendOnlineVisible());
+        declEditor.onDidChangeModelContent(() => invalidateOnlineValues());
+        implEditor.onDidChangeModelContent(() => invalidateOnlineValues());
+
         // Remember the pane the caret is in (see lastFocusedEditor). Both events are hooked: the
         // text one covers typing, the widget one covers a click that lands on the pane's gutter or
         // scrollbar without focusing the text area.
@@ -1561,6 +1964,11 @@
 
         isUpdatingFromExtension = false;
 
+        // Online values belong to a component: drop the old one's and ask for this one's.
+        onlineItems = [];
+        applyOnlineDecorations();
+        sendOnlineVisible();
+
         // Force refreshes
         setTimeout(resizeEditors, 10);
     }
@@ -1697,19 +2105,13 @@
             case 'init': {
                 activeFileUri = message.fileUri;
                 objTypeEl.textContent = message.data.rootType;
-                objNameEl.textContent = message.filename;
+                objTypeEl.title = 'Object type: ' + message.data.rootType;
+                renderBreadcrumb(message.breadcrumb, message.filename);
                 components = message.data.components;
                 currentDeclPct = message.splitterRatio !== undefined ? message.splitterRatio : 50;
                 
                 isAutoSync = message.isAutoSync !== false;
-                toggleEl.checked = isAutoSync;
-                if (isAutoSync) {
-                    toggleWrapper.classList.add('active');
-                    toggleText.textContent = 'Auto Sync';
-                } else {
-                    toggleWrapper.classList.remove('active');
-                    toggleText.textContent = 'Manual Sync';
-                }
+                renderSyncMode();
 
                 compileDiagnostics = Array.isArray(message.compileDiagnostics) ? message.compileDiagnostics : [];
                 setCompileRunning(message.compileRunning === true);
@@ -1729,6 +2131,20 @@
                 updateStatusText();
                 break;
             }
+            case 'online/state': {
+                setOnlineState(message.online, message.note, message.writable);
+                break;
+            }
+            case 'online/plc': {
+                plcToggle = message;
+                renderPlcToggle();
+                break;
+            }
+            case 'online/values': {
+                onlineItems = Array.isArray(message.items) ? message.items : [];
+                applyOnlineDecorations();
+                break;
+            }
             case 'compileDiagnostics': {
                 // A Compile Project run finished (or its results were cleared): replace the markers.
                 compileDiagnostics = Array.isArray(message.diagnostics) ? message.diagnostics : [];
@@ -1741,16 +2157,9 @@
             }
             case 'setSyncMode': {
                 isAutoSync = message.isAutoSync;
-                toggleEl.checked = isAutoSync;
-                if (isAutoSync) {
-                    toggleWrapper.classList.add('active');
-                    toggleText.textContent = 'Auto Sync';
-                    flushPendingEdits();
-                } else {
-                    toggleWrapper.classList.remove('active');
-                    toggleText.textContent = 'Manual Sync';
-                    updateStatusText();
-                }
+                renderSyncMode();
+                if (isAutoSync) flushPendingEdits();
+                else updateStatusText();
                 break;
             }
             case 'selectComponent': {
@@ -1791,8 +2200,8 @@
                     loadComponent('root');
                 }
 
-                statusEl.textContent = 'Synced';
-                statusEl.className = 'status-indicator';
+                setSaveStatus('Synced', 'status-indicator');
+                autoSyncPending = false;
                 break;
             }
         }

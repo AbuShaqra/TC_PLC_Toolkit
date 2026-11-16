@@ -145,11 +145,11 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
       <div class="eyebrow">VS Code extension · twincat-plc-toolkit</div>
       <h1>TC Toolkit Roadmap</h1>
       <div class="meta">
-        <span>Updated <b>2026-11-13</b> · fork #150 merged (RETURN nested in test files); S5 done (fork #149, <code>45d4949</code>); S10 operators and BIT and lane 1's strict follow-ups and S6 fixes back with the lanes for review findings; S10: fork #144–#148 merged (<code>1f96d7d</code>); S6 started (lane 1); lane 1 S5 + strict follow-ups fixed, in recheck; R15 decision brief ready; R14 built on claude/r14-xae, headless by default (your script as the base), awaiting your Windows check; lane 1 and lane 2 fixing review findings; R14 started (branch claude/r14-xae, on top of R13; overnight, your instruction to keep going); lane 2 fixes combined and in review; S5 built, strict follow-ups decided (your calls); fork #140–#143 merged, S5 started (lane 1), release M after S10 and S5; S10 started as fork lane 2; S4 done, release L at <code>3acc3f6</code>; R13 open as PR #37, awaiting your check; fork CLA check only on PRs into main; R13 C++ generation + g++ check started; R14 build and run through XAE, R15 ADS monitoring next; g++ simulation to the Backlog (your calls); R12 merged (PR #36) after your Windows checks; release L after S4 (your call); S4: LTIME (#131) and LDATE/LTOD/LDT (#132) merged; Table 36 date functions and the DT_TO_DATE fix added (your calls); S4 started; outside reads of VAR/VAR_INPUT stay refused (your call); S3b done (fork F4 #130); release K (<code>c1faca7</code>); releases H, I, J and K</span>
+        <span>Updated <b>2026-11-16</b></span>
         <span>Release <b>v0.10.1</b></span>
         <span>Re-measured <b>Nov 11</b></span>
-        <span>Toolkit next <b>PR #36 Windows check</b></span>
-        <span>Publish forecast <b>2026-11-20</b></span>
+        <span>Toolkit next <b>R15 Windows check</b></span>
+        <span>Publish forecast <b>2026-11-21</b></span>
         <span>Lanes <b>2</b> (toolkit · STruC++ fork)</span>
       </div>
     </div>
@@ -379,7 +379,7 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
 
     <details class="card" id="r13">
       <summary>
-        <div class="card-top"><span>#13</span><span class="id">R13</span><span class="pill progress">PR #37 · awaiting your check</span><span class="chev" aria-hidden="true">›</span></div>
+        <div class="card-top"><span>#13</span><span class="id">R13</span><span class="pill done">Done · Nov 13 · PR #37</span><span class="chev" aria-hidden="true">›</span></div>
         <div class="card-title">Compile button: C++ generation and a g++ check</div>
         <div class="bar" aria-hidden="true"><span style="left:29.17%;width:12.50%"></span></div>
         <div class="card-foot"><span>3 d → ~2.5 h</span><span>Nov 12 – 13</span></div>
@@ -395,7 +395,7 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
 
     <details class="card" id="r14">
       <summary>
-        <div class="card-top"><span>#14</span><span class="id">R14</span><span class="pill progress">In progress · since Nov 12</span><span class="chev" aria-hidden="true">›</span></div>
+        <div class="card-top"><span>#14</span><span class="id">R14</span><span class="pill done">Done · Nov 13 · PR #38</span><span class="chev" aria-hidden="true">›</span></div>
         <div class="card-title">Build and run through XAE</div>
         <div class="bar" aria-hidden="true"><span style="left:41.67%;width:8.33%"></span></div>
         <div class="card-foot"><span>3 d → ~2 h</span><span>Nov 14</span></div>
@@ -410,13 +410,16 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
 
     <details class="card" id="r15">
       <summary>
-        <div class="card-top"><span>#15</span><span class="id">R15</span><span class="pill planned">Planned · decision brief ready</span><span class="chev" aria-hidden="true">›</span></div>
+        <div class="card-top"><span>#15</span><span class="id">R15</span><span class="pill progress">Phase 3 confirmed · last checks</span><span class="chev" aria-hidden="true">›</span></div>
         <div class="card-title">ADS online monitoring</div>
         <div class="bar" aria-hidden="true"><span style="left:58.33%;width:8.33%"></span></div>
-        <div class="card-foot"><span>3 d → ~2 h</span><span>Nov 16</span></div>
+        <div class="card-foot"><span>3 d → ~2 h + 1.5 d</span><span>Nov 18</span></div>
       </summary>
       <div class="body">
         <div class="block wide"><h4>Goal</h4><p>Watch and force variables of the running PLC from the editor over ADS (TCP 48898, AMS Net ID, a route on the target). Which ADS client the extension uses is open; an MIT-licensed one fits the project's licence.</p></div>
+        <div class="block wide"><h4>Phase 2 · user-mode fallback (decided Nov 16)</h4><p>Your Windows check: the 4026 user-mode router resets this library's TCP connection, even with <code>EnableAmsTcpLoopback</code> and after a reboot, while Beckhoff's own TcAdsDll reaches the runtime. Your calls: when the local router refuses, Go Online switches automatically to a PowerShell helper that loads Beckhoff's installed TwinCAT.Ads.dll and says so in the log; remote and kernel-mode targets keep today's path. <b>Built</b> (<code>c963a0d</code>, 134/134 suites): the existing ADS library still decodes everything, only raw commands go through the helper, values are polled. Confirmed on your PC Nov 16: the smoke test and Go Online by NetId read inline values.</p></div>
+        <div class="block wide"><h4>Phase 3 · confirmed on your PC Nov 16</h4><p><i>Local runtime</i> in user mode goes to the runtime's own NetId (the trusted one activation already finds) instead of the router's, which has no PLC. Alongside, as an R14 follow-up: Build and Activate also installs the PLC program as a boot project with autostart, so the PLC runs after activation without logging in from XAE. Built (<code>5df899f</code>, <code>d723b4c</code>; 135/135 suites on the combined result); no project file changes, the solution is never saved. Confirmed on your PC. Next, your ask: a Start/Stop PLC toggle next to the editor's Build button while online, confirmed each time.</p></div>
+        <div class="block wide settled"><h4>Built Nov 13 · awaiting your Windows check</h4><p>Merged into <code>claude/focused-ptolemy-m6acaz</code> after three review rounds (all findings fixed, each with a failing-first test). Your calls D1–D9: <code>ads-client</code> 2.2.0 pinned; values inline in both panes (500 ms) and a Watch view (200 ms); writes off by default (<code>tcToolkit.online.allowWrites</code>), each confirmed and logged, with a "forces active" indicator; local router first, a clear error if the 4026 user-mode runtime cannot be reached. Gates: 131/131 suites FULL, lint, typecheck and the browser harnesses pass. Needs a real PLC for the check.</p></div>
         <div class="block wide"><h4>Decision brief ready (Nov 12)</h4><p>Researched overnight: <code>docs/r15-ads-decision.md</code>. It recommends the npm library <code>ads-client</code> 2.2.0 (MIT, pure JavaScript), pinned; <b>write only</b> plus a "forces active" indicator, because documented ADS has no force service; values shown inline in the panes; the local TwinCAT router first. Needs your decisions D1–D9 and a Windows check: on 3.1.4026 with the user-mode runtime the library may not reach the local router.</p></div>
       </div>
     </details>
@@ -426,7 +429,7 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
         <div class="card-top"><span>#16</span><span class="id">R11</span><span class="pill planned">Planned · last</span><span class="chev" aria-hidden="true">›</span></div>
         <div class="card-title">Publish to the VS Code Marketplace and Open VSX</div>
         <div class="bar" aria-hidden="true"><span style="left:91.67%;width:2.50%"></span></div>
-        <div class="card-foot"><span>0.5 d → ~1 h</span><span>Nov 20</span></div>
+        <div class="card-foot"><span>0.5 d → ~1 h</span><span>Nov 21</span></div>
       </summary>
       <div class="body">
         <div class="block wide"><h4>Moved to the end, Nov 10</h4><p>Your call: no Marketplace release until the toolkit's items <b>and the compiler fork's lane</b> are finished, so publishing comes last.</p></div>
@@ -550,42 +553,46 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
 
     <details class="card" id="s6">
       <summary>
-        <div class="card-top"><span>#7</span><span class="id">S6</span><span class="pill progress">In progress · lane 1 · since Nov 13</span><span class="chev" aria-hidden="true">›</span></div>
+        <div class="card-top"><span>#7</span><span class="id">S6</span><span class="pill done">Done · Nov 15</span><span class="chev" aria-hidden="true">›</span></div>
         <div class="card-title">Runtime safety defects</div>
         <div class="bar" aria-hidden="true"><span style="left:60.83%;width:12.50%"></span></div>
-        <div class="card-foot"><span>7 d → ~3.5 h</span><span>Nov 16 – 17</span></div>
+        <div class="card-foot"><span>7 d → ~3.5 h</span><span>Nov 18</span></div>
       </summary>
       <div class="body">
         <div class="block wide"><h4>Scope</h4><p>Fourteen runtime defects from the S2 plan's section 1d: division and MOD by zero, out-of-range indexes, SEL evaluating both inputs, VAR_TEMP keeping its value, FB_exit never called, a WSTRING conversion crash, wrong to-string forms, inflated SIZEOF and pointer stride, no subrange check, 32-bit intermediates, and silent truncation.</p></div>
         <div class="block wide"><h4>How it was estimated</h4><p>My sizing from the item list, not measured. Session time uses the Nov 9 velocity (about 30 min per planned day for fork work, about 45 min for toolkit work); dates assume about 4 hours of session per working day.</p></div>
         <div class="block wide"><h4>Started Nov 13, 00:10 UTC</h4><p>Lane 1, overnight (your instruction to keep going). Each item is reproduced with a g++-built program first. Plain bugs with one IEC answer are fixed; policy choices (what a division by zero or an out-of-range index does at run time, and whether checks cost time in every build) come to you as cards with a recommended default, and are not built until you answer.</p></div>
+        <div class="block wide settled"><h4>Decided Nov 13 (your calls)</h4><p>Division by zero and a bad index or unbound reference fault at run time (task, POU and index named; <code>STRUCPP_NO_BOUNDS_CHECK</code> opts out); SEL evaluates both inputs, documented; FB_exit never called warns; to-string gives IEC literal forms; a subrange store faults; overflow wraps, with a <code>--strict</code> warning on constant overflow; dependent global initialisers refused under iec-3 and <code>--strict</code>; a too-long string literal warns; pointer arithmetic counts bytes; NOT types from context, refused on INT under iec-3 and <code>--strict</code>; INT into a BOOL input warns; <code>ADR</code> into a narrower integer is refused.</p></div>
+        <div class="block wide"><h4>Forecast moved to Nov 18 (Nov 14)</h4><p>Most branches need two to four review rounds, so about two fork merges a day so far; about 17 lane 1 branches remain. Reviews now run in parallel. The 4-byte TIME change (lane 2) follows, about Nov 19, and release N after it.</p></div>
+        <div class="block wide settled"><h4>Decided Nov 14 (your calls)</h4><p>TIME, DATE, TOD and DT become 4 bytes as on TwinCAT (they were 8), in every profile: SIZEOF, layout and wrap-around match the PLC. A plain STRING or WSTRING is 80 characters under the <code>twincat3</code> profile (IEC default stays 254). Both are run-time changes, for release N's note. Later the same day: MOD by 0 stays 0 (only <code>/</code> and DIV fault); <code>STRUCPP_NO_BOUNDS_CHECK</code> also turns off the subrange check; to-string keeps the long IEC prefixes (LDATE#, LTOD#, LDT#). After the design note: 32-bit TIME is unsigned as on TwinCAT (negative TIME literals refused, wraps after 49.7 days, wrap-safe timers); sub-ms TIME literals are refused; STRING_TO_TIME of unrepresentable text wraps or truncates; under <code>twincat3</code> a plain STRING meeting a library's plain STRING gets no length warning.</p></div>
       </div>
     </details>
 
     <details class="card" id="s7">
       <summary>
-        <div class="card-top"><span>#8</span><span class="id">S7</span><span class="pill wait">Needs a decision</span><span class="chev" aria-hidden="true">›</span></div>
+        <div class="card-top"><span>#8</span><span class="id">S7</span><span class="pill done">Done · fork #188–#189</span><span class="chev" aria-hidden="true">›</span></div>
         <div class="card-title">Audit: narrow what iec-3 accepts</div>
         <div class="bar" aria-hidden="true"><span style="left:73.33%;width:10.83%"></span></div>
         <div class="card-foot"><span>6 d → ~3 h</span><span>Nov 17 – 18</span></div>
       </summary>
       <div class="body">
         <div class="block wide"><h4>Scope</h4><p>Nine leaks the S2 plan lists (C1–C9), such as FB properties, ACTIONs in ST, identifiers with double underscores, overrides without OVERRIDE, and the enum dot form.</p></div>
-        <div class="block"><h4>Decision first</h4><p>Each one narrows what is accepted today, so it needs your call on what <code>iec-3</code> refuses, without destabilising the no-flag default.</p></div>
+        <div class="block wide settled"><h4>Decided Nov 15 (your calls)</h4><p>Each construct goes behind a feature that stays on without a flag and in the TwinCAT profile, so only <code>--dialect iec-3</code> changes. Refused under iec-3: PROPERTY, ACTION in ST, bare <code>THIS^</code>/<code>SUPER^</code> (own feature, default unchanged), enum <code>E.Member</code>, STRUCT <code>=</code>/<code>&lt;&gt;</code>, <code>__NEW</code>/<code>__DELETE</code>, <code>VAR_INST</code>, names with <code>__</code> or a trailing <code>_</code>, an override without <code>OVERRIDE</code>. Warned under iec-3: <code>{external}</code>, <code>1E-4</code>, assigning the FOR variable, <code>8#</code>, IL, plain TRUNC. Methods without a specifier stay PUBLIC. Test files already follow the dialect (C9 closed); <code>a[ADR(x)]</code> slipping through iec-3 gets fixed. PROPERTY is refused under iec-3 too (your later call the same day). Merged as fork #188 (the features, the <code>ADR</code> hole, one run reports every refusal) and #189 (names and deprecation warnings, for the built-in <code>iec-3</code> only, not the TwinCAT profile). An override without <code>OVERRIDE</code> moves to S12: whether Ed. 3 requires it could not be established, and it is decided with the standard text.</p></div>
         <div class="block wide"><h4>How it was estimated</h4><p>My sizing from the item list, not measured. Session time uses the Nov 9 velocity (about 30 min per planned day for fork work, about 45 min for toolkit work); dates assume about 4 hours of session per working day.</p></div>
       </div>
     </details>
 
     <details class="card" id="s8">
       <summary>
-        <div class="card-top"><span>#9</span><span class="id">S8</span><span class="pill planned">Planned · R3.3 done</span><span class="chev" aria-hidden="true">›</span></div>
-        <div class="card-title">Make iec-3 the default, in its own release</div>
+        <div class="card-top"><span>#9</span><span class="id">S8</span><span class="pill wait">On hold until iec-4</span><span class="chev" aria-hidden="true">›</span></div>
+        <div class="card-title">Make the strict dialect the default, in its own release</div>
         <div class="bar" aria-hidden="true"><span style="left:81.67%;width:1.67%"></span></div>
         <div class="card-foot"><span>0.5 d → ~20 min</span><span>Nov 18</span></div>
       </summary>
       <div class="body">
         <div class="block wide"><h4>Scope</h4><p>Flip the no-flag default to <code>iec-3</code> once downstream callers pass <code>--dialect</code> (the toolkit does after R3.3), in a release of its own with a note.</p></div>
       </div>
+        <div class="block wide settled"><h4>Decided Nov 15 (your call)</h4><p>On hold until the <code>iec-4</code> dialect (S12) exists, then the default moves to <code>iec-4</code> instead of <code>iec-3</code>. Until then a build with no dialect flag stays as lenient as today; the toolkit always passes its TwinCAT profile, so it is not affected either way.</p></div>
     </details>
 
     <details class="card" id="s9">
@@ -607,10 +614,10 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
 
     <details class="card" id="s10">
       <summary>
-        <div class="card-top"><span>#11</span><span class="id">S10</span><span class="pill progress">In progress · lane 2 · since Nov 12</span><span class="chev" aria-hidden="true">›</span></div>
+        <div class="card-top"><span>#11</span><span class="id">S10</span><span class="pill done">Done · Nov 13 · release M</span><span class="chev" aria-hidden="true">›</span></div>
         <div class="card-title">Vendor types and forms (TwinCAT and CODESYS)</div>
         <div class="bar" aria-hidden="true"><span style="left:83.33%;width:4.17%"></span></div>
-        <div class="card-foot"><span>3 d → ~1.5 h</span><span>Nov 19</span></div>
+        <div class="card-foot"><span>3 d → ~1.5 h</span><span>Nov 13</span></div>
       </summary>
       <div class="body">
         <div class="block wide"><h4>Started Nov 12 as fork lane 2</h4><p>Your call: more lanes in parallel. A second agent works S10 in its own clone while lane 1 does the post-S4 queue (<code>--strict</code> per Figure 12, the property read, row 35). Branches per item group from release L; I merge one lane at a time and fold <code>development</code> into the other.</p></div>
@@ -618,7 +625,21 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
         <div class="block"><h4>Not planned yet</h4><p>Multicore operators, the vector type, quoted identifiers, persistent instance paths, a few implicit names. They stay refused until real code needs them.</p></div>
         <div class="block"><h4>Library types</h4><p>HRESULT, OTCID and VERSION come from a vendor library, not the compiler.</p></div>
         <div class="block wide"><h4>Decided Nov 11 (your call)</h4><p><code>TYPE name STRUCT</code> without the colon (<code>type_colon_optional</code>) is also on under <code>twincat3</code>. <code>RETURN (cond);</code> (<code>conditional_return</code>) stays CODESYS-only until a real TwinCAT export shows it.</p></div>
+        <div class="block wide settled"><h4>Done Nov 13, 13:53 UTC · release M</h4><p>Fork #154 (<code>__POUNAME</code>, <code>__POSITION</code>, <code>BITADR</code>) and #155 (BIT members as packed bitfields) merged; <b>release M</b> cut at <code>75a55de</code> and pinned in the toolkit (your call). Your call: a body or FB-input <code>udint := ADR(x)</code> is refused in every mode (lane 2, for release N). Known limitation: <code>__POSITION()</code> and diagnostic columns ran high after an unquoted ß or ligature earlier on the line; fixed by fork #160 for release N.</p></div>
         <div class="block wide settled"><h4>First five merged (Nov 13, 03:10 UTC)</h4><p>Fork #144–#148, <code>1f96d7d</code>: <code>__ISVALIDREF</code>/<code>XSIZEOF</code>, <code>type_colon_optional</code>/<code>conditional_return</code>, <code>platform_types</code>, the implicit-parameter hint, <code>ADR(x)</code> initial values. Development equals the gated tree (6074 tests). Left in S10: the other vendor operators and BIT as packed bitfields. Open for you: should a body <code>udint := ADR(x)</code>, which truncates the address today, be refused too?</p></div>
+      </div>
+    </details>
+
+    <details class="card" id="s12">
+      <summary>
+        <div class="card-top"><span>#12</span><span class="id">S12</span><span class="pill wait">Waiting for the standard text</span><span class="chev" aria-hidden="true">›</span></div>
+        <div class="card-title">A new <code>iec-4</code> dialect (IEC 61131-3 Ed. 4, 2025)</div>
+        <div class="card-foot"><span>9 d → ~5 h</span><span>Nov 24 – 28</span></div>
+      </summary>
+      <div class="body">
+        <div class="block wide"><h4>Scope</h4><p>A built-in <code>iec-4</code> profile next to <code>iec-3</code>, following the Ed. 4 changes: properties with <code>PROPERTY_GET</code>/<code>PROPERTY_SET</code> (default PROTECTED), UTF-8 strings <code>USTRING</code>/<code>UCHAR</code> with <code>LEN_MAX</code> and <code>LEN_CODE_UNIT</code>, <code>${…}</code> character codes, string/byte-array conversions, the new and changed conversions, <code>ASSERT</code>, mutexes and semaphores; IL, octal literals and untyped TRUNC removed, BCD deprecated. Also decides, from the standard text, whether an override without <code>OVERRIDE</code> is refused (moved from S7).</p></div>
+        <div class="block wide settled"><h4>Decided Nov 15 (your calls)</h4><p>Added to the fork lane after S7. It does not hold the Marketplace release; it ships in a later extension release. Work starts once you send the full Ed. 4 text: the list so far comes from a published comparison, which says it is a selection. Once it is done, S8 makes it the default.</p></div>
+        <div class="block wide"><h4>How it was estimated</h4><p>My sizing from the change list, not measured; UTF-8 strings and the synchronisation primitives are most of it.</p></div>
       </div>
     </details>
 
@@ -654,10 +675,19 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
         <div class="block wide"><p>The former backlog was scheduled as R6 to R10 on Nov 9. R6 to R9 merged in PR #33 on Nov 11, and R10 runs only on a trigger. What remains has no estimate on purpose:</p>
           <ul>
             <li><b>Fork follow-ups after S4, merged Nov 12</b> (#140–#143, for release M): property reads through a global FB instance (fixes the first sample's g++ error), <code>--strict</code> per Figure 12 for bit strings (your call; a narrowed bitwise result now warns, you kept it), one-pass literal diagnostics, the threaded-warning scope. Next on lane 1 after S5: the remaining <code>--strict</code> follow-ups. Release M waits for S10 and S5 (your call).</li>
+            <li><b>S6 runtime fixes, merged Nov 13</b> (#151–#153, <code>966c9e2</code>): MOD by 0 or -1 gives 0 instead of crashing, SHL/SHR by the width or more gives 0, STRUCT defaults compute AND/OR/NOT bitwise, tests no longer share temp folders.</li>
             <li><b>Test files: nested RETURN, merged Nov 13</b> (#150, <code>43ff7a9</code>): a RETURN nested in a TEST, SETUP or TEARDOWN now builds and ends the right block. Its review found two older test-runner bugs, now with lane 1: an ASSERT nested in an IF or loop is dropped, so a failing test passes, and a TEARDOWN without SETUP never runs.</li>
             <li><b>S5 profile handling, merged Nov 13</b> (#149, <code>45d4949</code>, for release M): a profile may not pose as <code>iec-3</code>, duplicate ids are an error, a broken unselected profile is skipped with a warning, one file reached twice loads once.</li>
-            <li><b>S10, first five branches, merged Nov 13</b> (#144–#148, <code>1f96d7d</code>, for release M): <code>__ISVALIDREF</code> and <code>XSIZEOF</code>, <code>TYPE … STRUCT</code> without the colon and <code>RETURN (cond);</code>, the platform types (XINT, UXINT, XWORD, PVOID), the implicit-parameter hint, and <code>ADR(x)</code> initial values of address-width integers. Still to come in S10: the other vendor operators and BIT as packed bitfields.</li>
-            <li><b>Re-vendor the compiler at release L</b> into the toolkit once R13 merges, so LTIME and CHAR no longer block C++ generation for library uses.</li>
+            <li><b>R14 phase 2</b>: boot project, remote targets, building one project of several, and the exact line inside a method for Build-pane messages (each needs a Windows probe).</li>
+            <li><b>Double-click on a Problems row</b> only opens the file (VS Code gives the custom editor no position); clicking the code jumps. Look for a supported way, else document it.</li>
+            <li><b>Fork: "accepted means it builds" test</b> (your call, Nov 14): generated programs that the checker accepts must also build and run under g++ with sanitizers, which catches the class of bugs reviews keep finding.</li>
+            <li><b>Fork: differential tests</b> (your call, Nov 14): the same expression in a body, an initial value and a STRUCT default must give the same value, which catches gaps between the compiler's parallel code paths.</li>
+            <li><b>Toolkit: newer elementary types in library declarations</b> (found by the N pin): LTIME, LDATE, CHAR, WCHAR, PVOID, XINT and others are accepted by the compiler but library declarations using them are still left out.</li>
+            
+            <li><b>A NetId confirmed over ADS could be a remote system's</b> (found Nov 16): unlikely, but activation should stay on this PC; checking the router's route list would close it.</li>
+            <li><b>Lifecycle methods for dynamic instances</b> (your call Nov 15, after release N): <code>__NEW</code> runs FB_init and <code>__DELETE</code> runs FB_exit, like constructors and destructors; today both are skipped. FB_exit at program stop stays open.</li>
+            <li><b>Fork follow-ups found in S6 reviews</b> (older gaps): alias-typed constants in STRUCT defaults (shift width, NOT), and <code>VAR_EXTERNAL CONSTANT</code> wrongly needing an initializer, and mixed-sign AND/OR/XOR in global initial values.</li>
+            <li><b>Fork follow-ups from #156</b> (lane 2, all already on development): pointer and reference aliases in FB copies, <code>ADR(arr) + N</code>, references bound only at run time, VAR_INST and SETUP initial values, and a few smaller gaps.</li>
             <li><b>Simulation program</b> (moved from R14, your call, Nov 12): the generated C++ built with g++ into a standalone program that runs your PLC code cyclically on the PC. Good for your own logic and unit tests; it cannot run vendor-library blocks, whose code isn't available.</li>
             <li><b>ADS coupling of the simulation program</b> (your call, Nov 12; after the simulation program): exchange variables between the R14 simulation program and a running TwinCAT PLC over ADS (TCP 48898, AMS Net ID, a route on the target), for example to feed simulated I/O. Code cannot be loaded into the TwinCAT runtime itself; only XAE builds and activates what it runs.</li>
             <li><b>On your Windows machine, about 1 hour of your time:</b> Libraries-view scoping, library member expansion, squiggle rendering, and closing the peek over the real bridge.</li>
@@ -686,9 +716,56 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
     <details class="card" id="done">
       <summary>
         <div class="card-top"><span>Done</span><span class="chev" aria-hidden="true">›</span></div>
-        <div class="card-title">Finished items · S4, R12, S3b, R3.5, S11, S3b #112–#115, #117–#129, Settings keys, R3.3–R9, R3.2, R2, S9, S3a, S2, R4, R3.1, R5, S1, R1</div>
+        <div class="card-title">Finished items · Native look, Actions menu, DLL settings, Start/Stop PLC, PLC Watch redraws, Show Problems + build time, NetId over ADS, PLC Watch placement, Editor buttons, NetId trust, R14 follow-up, S7, Fork #189, Fork #188, Release N, Fork #187, Fork #186, S6, Fork #185, Fork #184, Fork #183, Fork #182, Fork #181, Fork #180, Fork #179, Fork #178, Fork #177, Fork #176, Fork #175, Fork #174, Fork #173, Fork #172, Fork #171, Fork #170, Fork #169, Fork #168, Fork #167, Fork #166, Fork #165, Fork #164, Fork #163, Fork #162, Fork #161, Fork #160, Fork #159, Fork #158, Fork #157, Fork #156, Release M pin, S10, R14, R13, S4, R12, S3b, R3.5, S11, S3b #112–#115, #117–#129, Settings keys, R3.3–R9, R3.2, R2, S9, S3a, S2, R4, R3.1, R5, S1, R1</div>
       </summary>
       <div class="body">
+        <div class="block wide"><h4>Native look · Nov 16</h4><p>Your choice: a slim themed editor header (TC mark, path, type tag, status dots, hammer Build, <i>Actions ▾</i>), a themed Start Page and a new flat TC mark. No more pink; true red only as a marker.</p></div>
+        <div class="block wide"><h4>Actions menu, DLL settings, Start/Stop · Nov 16</h4><p>Your asks: the editor toolbar is one <i>Actions</i> menu with status chips; the two ADS DLL locations are settings with an Open Setting hint when one is missing; a Start/Stop PLC toggle, confirmed each time, in the editor and the PLC Watch title bar. Open: Start or Stop in an Error/Exception state.</p></div>
+        <div class="block wide"><h4>PLC Watch redraws · Nov 16</h4><p>Your reports: no more flashing line, values no longer freeze, and they update about three times a second with several entries. Reproduced and checked in a real VS Code before you tried it; confirmed on your PC.</p></div>
+        <div class="block wide"><h4>Show Problems + build time · Nov 16</h4><p>Your reports: <i>Show Problems</i> opens the Problems panel directly; writes are no longer blocked as "edited since the last build" after a body-only change was built, because the build time now also comes from XAE's compile info, not only the <code>.tmc</code>.</p></div>
+        <div class="block wide"><h4>NetId over ADS · Nov 16</h4><p>Your PC showed that a running user-mode runtime rewrites its configuration file after it starts, so the first Build and Activate was refused. Now such a NetId is confirmed by asking the runtime over ADS; no answer keeps it unknown.</p></div>
+        <div class="block wide"><h4>PLC Watch placement · Nov 16</h4><p>Your ask: PLC Watch opens in its own tab in the bottom panel, next to the Terminal; a setting (<code>tcToolkit.online.watchLocation</code>) puts it in the sidebar under PLC Objects instead.</p></div>
+        <div class="block wide"><h4>Editor buttons · Nov 16</h4><p>Your ask: the PLC file editor's title bar has buttons for Build, Build and Activate, Show Activation Targets (Windows only) and one Go Online / Go Offline button that follows the online state. The same buttons are in the PLC Objects header (on hover) and on the Start Page.</p></div>
+        <div class="block wide"><h4>NetId trust · Nov 16</h4><p>A user-mode runtime's NetId from its configuration file is trusted only while an instance with that name runs and did not start before the file was rewritten; otherwise it shows as "AmsNetId unknown" and is never offered (<code>c95d52b</code>). Confirmed on your PC after a runtime restart.</p></div>
+        <div class="block wide"><h4>R14 follow-up · Nov 16</h4><p>When the solution targets a runtime that is not on this PC (a user-mode runtime gets a new NetId after a restart), the refusal lists the local runtimes and offers to change the solution's target, then activates again (your call, <code>b5b2544</code>). Needs one Windows run.</p></div>
+        <div class="block wide"><h4>S7 done · fork #188–#189</h4><p>Under the built-in <code>iec-3</code>: names with <code>__</code> or a trailing <code>_</code> are errors, and <code>{external}</code>, <code>1E-4</code>, assigning the FOR variable, <code>8#</code>, IL and plain TRUNC warn (#189, <code>b6788aa</code>). Without a flag and with the TwinCAT profile nothing changes. The OVERRIDE question moves to S12.</p></div>
+        <div class="block wide"><h4>S7 part 1 · fork #188 · merged Nov 15</h4><p>Under <code>--dialect iec-3</code>: PROPERTY, ACTION, bare <code>THIS^</code>/<code>SUPER^</code>, <code>E.Member</code>, STRUCT <code>=</code>, <code>__NEW</code>/<code>__DELETE</code> and <code>VAR_INST</code> are refused through seven new features; without a flag nothing changes (<code>648137f</code>). The TwinCAT profile lists them at the next pin.</p></div>
+        <div class="block wide"><h4>Fork release N · cut Nov 15</h4><p>Fork <code>development</code> at <code>d9b7c01</code>, after the two high fixes (your call): S6, 32-bit TIME, STRING 80, library pointer parameters and #186–#187. Pin in review as toolkit <a href="https://github.com/AbuShaqra/TC_PLC_Toolkit/pull/40">PR #40</a> (your call).</p></div>
+        <div class="block wide"><h4>Fork #187 · merged Nov 15</h4><p>Malformed standard-function calls in initial values and test files are refused instead of crashing the compiler (<code>d9b7c01</code>). The second fix before N.</p></div>
+        <div class="block wide"><h4>Fork #186 · merged Nov 15</h4><p>EN/ENO on a call nested inside an expression is refused (it gave wrong results); where allowed it now works for every call and target (<code>fe6356f</code>, for release N). One of the two fixes before N (your call).</p></div>
+        <div class="block wide"><h4>S6 done · fork #151–#185 · Nov 15, 11:45 UTC</h4><p>All fourteen runtime safety defects and your Nov 13–15 decisions are in, ahead of the Nov 18 forecast. Last, B8 (#185, <code>4214c89</code>, run-time change): integer overflow wraps without undefined behaviour, narrow types are computed wide (your call), operands run left to right, and strict mode warns when a constant does not fit. Older gaps the reviews found are in the Backlog.</p></div>
+        <div class="block wide"><h4>S6 B11 · fork #184 · merged Nov 15</h4><p>Pointer arithmetic counts bytes as on the PLC (your call); misaligned stores are refused (<code>294c04a</code>, run-time change, for release N).</p></div>
+        <div class="block wide"><h4>S6 strings · fork #183 · merged Nov 15</h4><p>String comparisons follow the IEC order whatever the operand form; many that failed to build now work (<code>e2876dc</code>).</p></div>
+        <div class="block wide"><h4>S6 REAL MOD · fork #182 · merged Nov 15</h4><p>MOD on a REAL reached through a pointer is now refused at compile time instead of failing in g++ (<code>b981048</code>).</p></div>
+        <div class="block wide"><h4>S6 BOOL inputs · fork #181 · merged Nov 15</h4><p>An INT (or other non-BOOL value) passed to a BOOL input now warns, as its assignment does (<code>5706c6f</code>).</p></div>
+        <div class="block wide"><h4>S6 STRING · fork #180 · merged Nov 15</h4><p>A plain STRING is 80 characters under the twincat3 profile (your call); libraries keep the length they were compiled with (<code>adae985</code>, for release N).</p></div>
+        <div class="block wide"><h4>S6 B5 · fork #179 · merged Nov 15</h4><p>An FB_exit method gets a warning that it is never called, in every mode (your call, <code>a187ae2</code>).</p></div>
+        <div class="block wide"><h4>Fork #177 · merged Nov 15</h4><p>Libraries now record pointer and array parameters, so ADR into a narrow library input and a wrong-type REF are refused (<code>bfcc186</code>, lane 2).</p></div>
+        <div class="block wide"><h4>S6 B9 · fork #176 · merged Nov 15</h4><p>Under iec-3 and strict mode a global's initial value may read only CONSTANT globals; default mode unchanged (<code>6fa5496</code>). Your call Nov 15: UPPER_BOUND/LOWER_BOUND allowed there too (#178, <code>7220ae1</code>).</p></div>
+        <div class="block wide"><h4>S6 B4 · fork #175 · merged Nov 15</h4><p>Documented that SEL and MUX evaluate every input, in unspecified order (<code>0770ec3</code>).</p></div>
+        <div class="block wide"><h4>S6 TIME · fork #174 · merged Nov 15</h4><p>TIME, DATE, TOD and DT are 4 bytes as on the PLC (your call): unsigned, wrap-safe, negative and sub-ms TIME literals refused, division by 0 faults (<code>2779c9e</code>, run-time change, for release N).</p></div>
+        <div class="block wide"><h4>S6 B10 · fork #173 · merged Nov 15</h4><p>A string literal longer than where it is stored now warns, in every mode (<code>de222bd</code>). A few positions (METHOD arguments, field assignments) are a follow-up.</p></div>
+        <div class="block wide"><h4>Fork #172 · merged Nov 15</h4><p>AND, OR and XOR of a signed and an unsigned integer compute in the IEC widened type; the last of the strict-mode follow-ups (<code>39b6948</code>).</p></div>
+        <div class="block wide"><h4>Fork #171 · merged Nov 15</h4><p>NOT and shifts in a STRUCT default now give the same value as in a body: typed bit strings and constants keep their width (<code>b733708</code>, part of S6).</p></div>
+        <div class="block wide"><h4>Fork #170 · merged Nov 15</h4><p>NOT of an untyped constant takes the type its context expects; NOT on a typed integer is refused under iec-3 and strict mode (<code>4d940b1</code>, part of S6).</p></div>
+        <div class="block wide"><h4>Fork #169 · merged Nov 15</h4><p>The fork's language server no longer crashes on half-typed code or inside interface methods, and drops empty-name errors (<code>e31de8a</code>, for release N).</p></div>
+        <div class="block wide"><h4>Fork #168 · merged Nov 15</h4><p>Test runner: an assert nested in IF or a loop now runs (a failing one used to pass silently); TEARDOWN runs after a fault; errors in test variables are reported properly (<code>2595d8c</code>, for release N).</p></div>
+        <div class="block wide"><h4>Fork #167 · merged Nov 15</h4><p>Your X1 call now holds on every store path and also from the command line, where it had been skipped; pointer and reference targets are always accepted (<code>20db0d3</code>, for release N).</p></div>
+        <div class="block wide"><h4>S6 B7 · fork #166 · merged Nov 15</h4><p>A value stored outside a subrange is a run-time fault; an out-of-range constant initial value is a compile error; <code>STRUCPP_NO_BOUNDS_CHECK</code> opts out (<code>d31c0cb</code>, run-time change, for release N).</p></div>
+        <div class="block wide"><h4>S6 B2/B3 · fork #165 · merged Nov 14</h4><p>An out-of-range index, a NULL pointer and an unbound REFERENCE TO are run-time faults naming task, POU, line and index; <code>STRUCPP_NO_BOUNDS_CHECK</code> opts out (<code>80d0edc</code>, run-time change, for release N).</p></div>
+        <div class="block wide"><h4>S6 B6 · fork #164 · merged Nov 14</h4><p>Date and time values convert to text as their canonical IEC literal (<code>T#1h2m3s4ms</code>, <code>LDATE#…</code>) and read back exactly (<code>8cd7b6f</code>, run-time change, for release N).</p></div>
+        <div class="block wide"><h4>Fork #163 · merged Nov 14</h4><p>A statement the parser cannot recover (<code>IF := 1;</code>) no longer crashes the checker or the language server (<code>5758fba</code>, for release N).</p></div>
+        <div class="block wide"><h4>S6 B1 · fork #162 · merged Nov 14</h4><p>Integer division by zero is a run-time fault naming task, POU and line (MOD by 0 stays 0, your call); one fault mechanism for all run-time faults, also on MCU builds without exceptions (<code>b926cba</code>, run-time change, for release N).</p></div>
+        <div class="block wide"><h4>Fork #161 · merged Nov 14</h4><p>Your X1 call: an address stored in an integer narrower than 64 bits is refused in every store path (<code>2b93e7b</code>, for release N). A follow-up closes the remaining paths.</p></div>
+        <div class="block wide"><h4>Fork #160 · merged Nov 14</h4><p>A name holding a non-ASCII or control character (ß, ä, ı, ﬁ …) is refused with its code points, and every position after it stays exact, fixing release M's column limitation (<code>69651a7</code>, for release N).</p></div>
+        <div class="block wide"><h4>S6 · fork #159 · merged Nov 14</h4><p>String literals compare by text, STRING/WSTRING mixes are refused everywhere, and TO_STRING of a literal gives its text (<code>cde5681</code>, for release N).</p></div>
+        <div class="block wide"><h4>S6 · fork #158 · merged Nov 14</h4><p>VAR_TEMP starts afresh at each FB or PROGRAM call, as IEC requires (it kept its value); METHOD VAR_INST initial values applied (<code>a4c0337</code>, run-time change, for release N).</p></div>
+        <div class="block wide"><h4>S6 · fork #157 · merged Nov 14</h4><p>SIZEOF and XSIZEOF of a type name measure the type; a same-named value in scope still wins (<code>97183e6</code>, for release N).</p></div>
+        <div class="block wide"><h4>Fork #156 · merged Nov 14</h4><p>CONFIGURATION globals through VAR_EXTERNAL, <code>REFERENCE TO := REF(x)</code> initial values, and FB copies that keep their own references and pointers (<code>2709fe9</code>, for release N).</p></div>
+        <div class="block wide"><h4>Release M pin · PR <a href="https://github.com/AbuShaqra/TC_PLC_Toolkit/pull/39">#39</a>, merged Nov 14 07:42 UTC</h4><p>Your call, before the R15 check. Squash <code>c370b64</code> into <code>dev</code>: compiler and runtime headers re-vendored at <code>75a55de</code>; the first sample's g++ error is gone; the TwinCAT profile turns on the vendor operators, <code>TYPE … STRUCT</code> without the colon, the platform types and BIT.</p></div>
+        <div class="block wide"><h4>S10 · fork PRs #144–#148, #154–#155, done Nov 13 13:53 UTC</h4><p>Vendor types and forms for the TwinCAT and CODESYS profiles, each off by default and under <code>iec-3</code>: <code>__ISVALIDREF</code>, <code>XSIZEOF</code>, <code>__POUNAME</code>, <code>__POSITION</code>, <code>BITADR</code>; <code>TYPE … STRUCT</code> without the colon; <code>RETURN (cond);</code> (CODESYS); XINT, UXINT, XWORD, PVOID; BIT members as packed bitfields; the implicit-parameter hint; <code>ADR</code> in initial values. <b>Release M</b> cut at <code>75a55de</code>.</p></div>
+        <div class="block wide"><h4>R14 · PR <a href="https://github.com/AbuShaqra/TC_PLC_Toolkit/pull/38">#38</a>, merged Nov 13 12:50 UTC</h4><p>Build and Activate through XAE (squash <code>64ff7d9</code>): headless by default, activation onto this PC's runtimes with an XAE-style platform question, XAE errors in Problems for bodies and methods, a 4024 project on XAE Shell 64 after one question with the window shown, the platform setting as a dropdown, and the Build naming. Your full Windows check passed on XAE Shell 64.</p></div>
+        <div class="block wide"><h4>R13 · PR <a href="https://github.com/AbuShaqra/TC_PLC_Toolkit/pull/37">#37</a>, merged Nov 13 08:40 UTC</h4><p>Optional C++ generation into <code>&lt;project&gt;/CPP_Files/</code> and a g++ 7+ compile check from the Compile dropdown (squash <code>02236c8</code> into <code>dev</code>): g++ detection, errors in Problems, IntelliSense through the C/C++ extension. Your Windows check passed on TcToolkitSample2; the first sample's one g++ error is the property-read bug fixed in fork #140, arriving with the release M re-vendor. Windows CI was fixed first (three test files assumed a Linux host).</p></div>
         <div class="block wide"><h4>S4 · fork PRs #131–#132, #134–#139, done Nov 12 16:53 UTC</h4><p>IEC Ed. 3 forms the fork refused, accepted in every profile: LTIME and LDATE/LTOD/LDT with literals and conversions; <code>STRING[n]</code>; CHAR/WCHAR with Table 6 literals and <code>s[i]</code>; STRUCT OVERLAP; the Table 46 typed timers; the Table 36 CONCAT_/SPLIT_/DAY_OF_WEEK functions; implicit widening per Figure 11. Run-time changes: <code>T#1_500ms</code>, <code>STRING(1_0)</code>, DT_TO_DATE/DT_TO_TOD and DATE arithmetic (six OSCAT functions). <b>Release L</b> at <code>3acc3f6</code> (5972 tests passed, 7 skipped, 345 language-server tests).</p></div>
         <div class="block wide"><h4>R12 · PR <a href="https://github.com/AbuShaqra/TC_PLC_Toolkit/pull/36">#36</a>, merged Nov 12 10:56 UTC</h4><p>{IF}-aware language-server diagnostics (squash <code>02f2b96</code> into <code>dev</code>): the language server never evaluates a define; a block error is kept only if every branch selection has it, other diagnostics inside a group are dropped, per-branch types resolve to unknown, and code without <code>{IF}</code> gets the old output. 111/111 suites FULL; your Windows checks passed.</p></div>
         <div class="block wide"><h4>S3b · fork PRs #30–#130 (without #48, #58–#64 and #116), done Nov 12 00:20 UTC</h4><p>The other S2 follow-ups, Nov 10 00:14 UTC to Nov 12 00:20 UTC: batches 1–5, Part C, F1–F4, the argument check with libraries (#128) and OSCAT <code>ROUND(IN, N)</code> (#129); releases E to K. Last, F4 (<a href="https://github.com/AbuShaqra/STruCpp/pull/130">#130</a>, <code>c1faca7</code>): STRING stored as Windows-1252, the debug wire stays <code>len8-utf8</code> (new status 0x89 for an unencodable write), non-CP1252 STRING literals refused. <b>Release K</b> cut at <code>c1faca7</code> (#129–#130; lint, format, typecheck, purity, build, bundle, 5759 tests passed, 7 skipped, 345 language-server tests; note in the coordination doc).</p></div>
@@ -740,23 +817,24 @@ var PLAN = [
   { lane: 'TC Toolkit', num: 10, id: 'R9',   card: 'r9',   name: 'ESLint 10',              est: '0.75 d → ~30 min', start: '2026-11-11', end: '2026-11-11', days: 0.2, offset: 0.8, status: 'done', actualStart: '2026-11-11T00:18:15Z', actualEnd: '2026-11-11T09:33:08Z' },
   { lane: 'TC Toolkit', num: 11, id: 'R3.5', card: 'r3-5', name: 'Compiler at release I, defines', est: '— → ~6.8 h actual', start: '2026-11-11', end: '2026-11-11', machine: true, status: 'done', actualStart: '2026-11-11T17:05:00Z', actualEnd: '2026-11-11T23:55:00Z' },
   { lane: 'TC Toolkit', num: 12, id: 'R12', card: 'r12', name: '{IF}-aware diagnostics', est: '1 d → ~45 min', start: '2026-11-12', end: '2026-11-12', days: 0.5, offset: 0.5, status: 'done', actualStart: '2026-11-11T23:57:00Z', actualEnd: '2026-11-12T10:56:00Z' },
-  { lane: 'TC Toolkit', num: 13, id: 'R13', card: 'r13', name: 'C++ generation + g++ check', est: '3 d → ~2.5 h', start: '2026-11-12', end: '2026-11-13', status: 'progress', actualStart: '2026-11-12T11:30:00Z' },
-  { lane: 'TC Toolkit', num: 14, id: 'R14', card: 'r14', name: 'Build + run through XAE', est: '3 d → ~2 h', start: '2026-11-12', end: '2026-11-14', status: 'progress', actualStart: '2026-11-12T22:30:00Z' },
-  { lane: 'TC Toolkit', num: 15, id: 'R15', card: 'r15', name: 'ADS online monitoring', est: '3 d → ~2 h', start: '2026-11-16', end: '2026-11-16', days: 0.6, offset: 0 },
-  { lane: 'TC Toolkit', num: 16, id: 'R11', card: 'r11', name: 'Marketplace publishing', est: '0.5 d → ~1 h', start: '2026-11-20', end: '2026-11-20', days: 0.3, offset: 0, machine: true },
+  { lane: 'TC Toolkit', num: 13, id: 'R13', card: 'r13', name: 'C++ generation + g++ check', est: '3 d → ~2.5 h', start: '2026-11-12', end: '2026-11-13', status: 'done', actualStart: '2026-11-12T11:30:00Z', actualEnd: '2026-11-13T08:40:00Z' },
+  { lane: 'TC Toolkit', num: 14, id: 'R14', card: 'r14', name: 'Build + run through XAE', est: '3 d → ~2 h', start: '2026-11-12', end: '2026-11-14', status: 'done', actualStart: '2026-11-12T22:30:00Z', actualEnd: '2026-11-13T12:50:00Z' },
+  { lane: 'TC Toolkit', num: 15, id: 'R15', card: 'r15', name: 'ADS online monitoring', est: '3 d → ~2 h + 1.5 d', start: '2026-11-16', end: '2026-11-18', days: 2.6, offset: 0, status: 'progress', actualStart: '2026-11-13T13:20:00Z' },
+  { lane: 'TC Toolkit', num: 16, id: 'R11', card: 'r11', name: 'Marketplace publishing', est: '0.5 d → ~1 h', start: '2026-11-21', end: '2026-11-21', days: 0.3, offset: 0, machine: true },
   { lane: 'STruC++ fork',   num: 1, id: 'S2',   card: 's2',   name: 'Fork compiler gaps',     est: '27.5 d → ~11.2 h', start: '2026-11-09', end: '2026-11-09', status: 'done', actualStart: '2026-11-09T12:04:17Z', actualEnd: '2026-11-09T23:16:55Z' },
   { lane: 'STruC++ fork',   num: 2, id: 'S3a',  card: 's3a',  name: 'False positives',        est: '3 d → ~1 h',  start: '2026-11-09', end: '2026-11-10', days: 0.3, status: 'done', actualStart: '2026-11-09T23:18:00Z', actualEnd: '2026-11-10T00:12:35Z' },
   { lane: 'STruC++ fork',   num: 3, id: 'S3b',  card: 's3b',  name: 'S2 follow-ups',          est: '7 d → ~3.5 h', start: '2026-11-10', end: '2026-11-12', days: 1.2, offset: 0.3, status: 'done', actualStart: '2026-11-10T00:14:00Z', actualEnd: '2026-11-12T00:20:00Z' },
   { lane: 'STruC++ fork',   num: 4, id: 'S11',  card: 's11',  name: 'Conditional pragmas',    est: '2 d → ~3 h actual',  start: '2026-11-11', end: '2026-11-11', days: 0.4, offset: 0.2, status: 'done', actualStart: '2026-11-11T13:10:00Z', actualEnd: '2026-11-11T16:05:00Z' },
   { lane: 'STruC++ fork',   num: 5, id: 'S4',   card: 's4',   name: 'Ed. 3 refusals',         est: '8.5 d → ~11 h actual', start: '2026-11-12', end: '2026-11-12', status: 'done', actualStart: '2026-11-12T05:45:00Z', actualEnd: '2026-11-12T16:53:00Z' },
   { lane: 'STruC++ fork',   num: 6, id: 'S5',   card: 's5',   name: 'Profile handling',       est: '1 d → ~30 min', start: '2026-11-12', end: '2026-11-13', status: 'done', actualStart: '2026-11-12T20:10:00Z', actualEnd: '2026-11-13T05:30:00Z' },
-  { lane: 'STruC++ fork',   num: 7, id: 'S6',   card: 's6',   name: 'Runtime safety',         est: '7 d → ~3.5 h', start: '2026-11-13', end: '2026-11-14', status: 'progress', actualStart: '2026-11-13T00:10:00Z' },
-  { lane: 'STruC++ fork',   num: 8, id: 'S7',   card: 's7',   name: 'iec-3 audit (decision)', est: '6 d → ~3 h',  start: '2026-11-17', end: '2026-11-18', days: 1.3, offset: 0.8 },
-  { lane: 'STruC++ fork',   num: 9, id: 'S8',   card: 's8',   name: 'Default → iec-3',        est: '0.5 d → ~20 min', start: '2026-11-18', end: '2026-11-18', days: 0.2, offset: 0.8 },
+  { lane: 'STruC++ fork',   num: 7, id: 'S6',   card: 's6',   name: 'Runtime safety',         est: '7 d → ~3.5 h', start: '2026-11-13', end: '2026-11-18', status: 'done', actualStart: '2026-11-13T00:10:00Z', actualEnd: '2026-11-15T11:45:00Z' },
+  { lane: 'STruC++ fork',   num: 8, id: 'S7',   card: 's7',   name: 'iec-3 audit', est: '6 d → ~3 h',  start: '2026-11-15', end: '2026-11-17', status: 'done', actualStart: '2026-11-15T15:00:00Z', actualEnd: '2026-11-15T18:30:00Z' },
+  { lane: 'STruC++ fork',   num: 9, id: 'S8',   card: 's8',   name: 'Default → iec-4 (on hold)', est: '0.5 d → ~20 min', start: '2026-12-01', end: '2026-12-01', days: 0.2, offset: 0.5 },
   { lane: 'STruC++ fork',   num: 10, id: 'S9',   card: 's9',   name: 'Raw memory layout',      est: '4 d → ~2.5 h',  start: '2026-11-10', end: '2026-11-10', days: 1.0, offset: 0, status: 'done', actualStart: '2026-11-10T09:40:00Z', actualEnd: '2026-11-10T12:07:39Z' },
-  { lane: 'STruC++ fork',   num: 11, id: 'S10', card: 's10',  name: 'Vendor types + forms',           est: '3 d → ~1.5 h', start: '2026-11-12', end: '2026-11-13', status: 'progress', actualStart: '2026-11-12T17:10:00Z' }
+  { lane: 'STruC++ fork',   num: 11, id: 'S10', card: 's10',  name: 'Vendor types + forms',           est: '3 d → ~1.5 h', start: '2026-11-12', end: '2026-11-13', status: 'done', actualStart: '2026-11-12T17:10:00Z', actualEnd: '2026-11-13T13:53:07Z' },
+  { lane: 'STruC++ fork',   num: 12, id: 'S12', card: 's12',  name: 'iec-4 dialect',          est: '9 d → ~5 h',   start: '2026-11-24', end: '2026-11-28' },
 ];
-var DOMAIN_START = '2026-11-09', DOMAIN_END = '2026-11-21'; /* exclusive */
+var DOMAIN_START = '2026-11-09', DOMAIN_END = '2026-12-02'; /* exclusive */
 (function () {
   var DAY = 86400000;
   function d(s) { var p = s.split('-'); return Date.UTC(+p[0], +p[1] - 1, +p[2]); }

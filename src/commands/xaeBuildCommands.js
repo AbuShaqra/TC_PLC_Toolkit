@@ -24,6 +24,11 @@
  *     platform than the configured one, that same modal asks to switch (this run only, or remembered
  *     in `tcToolkit.xaeBuild.platform`) if the solution declares it, and the run is refused before
  *     XAE starts if it does not (`activationPlatform`).
+ *   - An activation refused because the solution targets a runtime that is not on this PC (the
+ *     driver's gate 3) names this PC's runtimes and, when there is one and the system project holds
+ *     exactly one TargetNetId, offers "Change the solution's target…": a pick of ONLY those runtimes,
+ *     a modal naming the file and both NetIds, the one attribute rewritten (src/tsprojTarget.js),
+ *     then the same activation again. Nothing is written without that modal's yes.
  *   - A failed headless build that brought back no error details offers "Build again with the window
  *     shown": one re-run with `-ShowWindow`; the setting is never changed.
  *   - A failed build (exit 1, confirmed) that brought back no error details by any route runs TC
@@ -51,11 +56,13 @@ const os = require('os');
 const path = require('path');
 const { runChild, killProcessTree, describeLocation } = require('../compileCheck');
 const {
-    EXIT, buildDriverArgs, createLineSplitter, parseLine, createRunState, reduce, describeExit, describeUiMode,
+    EXIT, buildDriverArgs, createLineSplitter, parseLine, createRunState, reduce, describeExit, describeBootProject, describeUiMode,
     canCancel, isStalled, targetPickItems, confirmationText, reachedBuildResult, missingShell,
     declaredPairs, activationPlatform, platformNotDeclaredText, pairNotDeclaredText, noErrorDetails, needsCompileFallback, RERUN_WINDOW_SHOWN, SWITCH_AND_REMEMBER,
-    FALLBACK_INTRO, compileFallbackText
+    FALLBACK_INTRO, compileFallbackText, RETARGET_BUTTON, refusedTarget, retargetConfirmText, unknownRuntimesText, unknownNeedsAdsDll
 } = require('../xaeBuild');
+const { ADS_DLL_SECTION, SETTING_ADS_NATIVE_DLL_FOLDER, readAdsDllSettings, adsDllHint } = require('../adsDllSettings');
+const { checkSolutionTarget, changeSolutionTarget } = require('../tsprojTarget');
 const { placeXaeErrors, placementSummary } = require('../xaeErrorPlacement');
 const { XAE_BUILD_SECTION, readXaeBuildSettings } = require('../xaeBuildSettings');
 const { XAE_SHELL_SECTION, XAE_SHELL_VERSIONS, describeConfiguredShells, detectXaeShells, createRegQuery } = require('../xaeShellDetect');
@@ -201,6 +208,11 @@ function registerXaeBuildCommands(context, deps) {
     // ── Settings and the dropdown ──────────────────────────────────────────────────────────────
     const config = () => vscode.workspace.getConfiguration(XAE_BUILD_SECTION);
     const readSettings = () => { const c = config(); return readXaeBuildSettings((k) => c.get(k)); };
+    /** tcToolkit.adsDll.nativeDllFolder ('' = the driver searches), read at each run. */
+    const adsDllDir = () => { const c = vscode.workspace.getConfiguration(ADS_DLL_SECTION); return readAdsDllSettings((k) => c.get(k)).nativeDllFolder; };
+    /** The button that opens the TcAdsDll.dll folder setting (machine scope: the User settings). */
+    const OPEN_SETTING = 'Open Setting';
+    const openAdsDllSetting = () => vscode.commands.executeCommand('twincat.openSettings', SETTING_ADS_NATIVE_DLL_FOLDER, { target: 'user' });
     const xaeOptions = () => {
         const s = readSettings();
         return { available: platform === 'win32', showWindow: s.showWindow, running, configuration: s.configuration, platform: s.platform };
@@ -317,7 +329,7 @@ function registerXaeBuildCommands(context, deps) {
         if (cancelFile) { try { fs.unlinkSync(cancelFile); } catch (e) { /* not there: good */ } }
         const args = buildDriverArgs({
             scriptPath, slnPath: o.slnPath, mode: o.mode, showWindow: o.showWindow, configuration: o.configuration,
-            platform: o.platform, targetNetId: o.targetNetId, shellOverride: o.shellOverride, cancelFile
+            platform: o.platform, targetNetId: o.targetNetId, shellOverride: o.shellOverride, cancelFile, adsDllDir: adsDllDir()
         });
         const ch = channel();
         /** @type {any} */
@@ -618,11 +630,14 @@ function registerXaeBuildCommands(context, deps) {
      * @param {() => Promise<import('../xaeBuild').FallbackResult[]>} [compileFallback] Runs TC Toolkit's own
      *   check on the solution's projects; called once, when a confirmed compile failure brought back no
      *   error details by any route.
+     * @param {{problem: string, change: (() => any)|null}} [retarget] A refusal whose solution targets a runtime
+     *   not on this PC: why its target cannot be changed here ('' when it can) and, when it can, the flow
+     *   behind "Change the solution's target…" (started once this run has ended).
      * @returns {Promise<{ok: boolean, exitCode: number|null, outcome: string, title: string, uiMode: string, placed: number, total: number,
-     *   targetMismatch: boolean, noErrorDetails: boolean, errorRoute: string|null,
+     *   targetMismatch: boolean, noErrorDetails: boolean, errorRoute: string|null, bootProjectOk: boolean|null,
      *   compileFallback: {ran: number, skipped: boolean, results: import('../xaeBuild').FallbackResult[]}|null}>}
      */
-    async function report(run, slnPath, rerunWindowShown, compileFallback) {
+    async function report(run, slnPath, rerunWindowShown, compileFallback, retarget) {
         const ch = channel();
         const { state } = run;
         const uiMode = describeUiMode(state);
@@ -636,7 +651,7 @@ function registerXaeBuildCommands(context, deps) {
         });
         const d = describeExit(run.code, run.outcome, state, {
             error: run.error, stderr: run.stderr, solutionName: path.basename(slnPath, path.extname(slnPath)),
-            errorCount: placement.errors
+            errorCount: placement.errors, retargetProblem: retarget ? retarget.problem : '', adsDllConfigured: !!adsDllDir()
         });
         if (built) publishProblems(placement.byFile);
         for (const g of placement.general) ch.appendLine(`  ${g.severity} (not placed): ${g.description}${g.file ? ` [${g.file}${g.line ? `:${g.line}` : ''}]` : ''}`);
@@ -657,6 +672,9 @@ function registerXaeBuildCommands(context, deps) {
         if (run.activationTimedOut) title = `Timed out during activation; check the target. ${title}`;
         ch.appendLine(`${stamp()} ${title}${errorsLine ? ' ' + errorsLine : ''}`);
         if (d.detail) ch.appendLine(`  ${d.detail}`);
+        // The boot project of an activation, per PLC project, and each PLC's state after the restart.
+        const boot = describeBootProject(state);
+        if (boot) for (const line of boot.lines) ch.appendLine(`  ${line}`);
         if (state.shell && !state.shell.ours && run.outcome !== 'exit') {
             ch.appendLine('  The XAE Shell was not started by this run (or could not be identified), so it was left running.');
         }
@@ -680,7 +698,7 @@ function registerXaeBuildCommands(context, deps) {
         const result = {
             ok: d.ok && !state.targetMismatch, exitCode: run.code, outcome: run.outcome, title, uiMode,
             placed: placement.placed, total: placement.total, targetMismatch: state.targetMismatch, noErrorDetails: !!missingDetails,
-            errorRoute, compileFallback: fallback
+            errorRoute, compileFallback: fallback, bootProjectOk: boot ? boot.ok : null
         };
         if (run.rerunVisible) {
             // Stopped to re-run with the window shown: one line here, no notification, and the
@@ -695,20 +713,77 @@ function registerXaeBuildCommands(context, deps) {
         const show = severity === 'error' ? vscode.window.showErrorMessage
             : (severity === 'warning' ? vscode.window.showWarningMessage : vscode.window.showInformationMessage);
         const buttons = ['Show Output'];
-        if (byFile.size > 0 && built) buttons.unshift('Go to Problem…');
-        if (fallback && fallback.ran > 0) buttons.unshift('Open Problems');
+        // One button, straight to the Problems panel (user, 2026-11-16: no quick pick from the top).
+        if ((byFile.size > 0 && built) || (fallback && fallback.ran > 0)) buttons.unshift('Show Problems');
         if (missingDetails && missingDetails.offerRerun && rerunWindowShown) buttons.unshift(RERUN_WINDOW_SHOWN);
+        if (retarget && retarget.change) buttons.unshift(RETARGET_BUTTON);
+        // The run state could not be read for want of TcAdsDll.dll: its setting, one click away.
+        const dllMissing = !!(state.activation && state.activation.dllProblem);
+        if (dllMissing) buttons.unshift(OPEN_SETTING);
         Promise.resolve(show(`${title}${errorsLine ? ' ' + errorsLine : ''}${fallbackText ? ' ' + fallbackText : ''}`, ...buttons)).then((choice) => {
             if (choice === 'Show Output') ch.show(true);
-            else if (choice === 'Open Problems') vscode.commands.executeCommand('workbench.actions.view.problems');
-            else if (choice === 'Go to Problem…') vscode.commands.executeCommand(GO_TO_PROBLEM_COMMAND);
+            else if (choice === OPEN_SETTING && dllMissing) openAdsDllSetting();
+            else if (choice === 'Show Problems') vscode.commands.executeCommand('workbench.actions.view.problems');
             else if (choice === RERUN_WINDOW_SHOWN && rerunWindowShown) {
                 ch.appendLine(`${stamp()} Building again with the XAE window shown (this run only; the setting is unchanged).`);
                 // The run that offered it may still be reporting (its fallback check): start after it.
                 whenIdle(() => { rerunWindowShown(); });
+            } else if (choice === RETARGET_BUTTON && retarget && retarget.change) {
+                const change = retarget.change;
+                whenIdle(() => { change(); });
             }
         });
         return result;
+    }
+
+    /**
+     * "Change the solution's target…" (user decision, 2026-11-16): a pick of ONLY this PC's runtimes
+     * (as the refusing run reported them), a modal naming the system project and both NetIds, the one
+     * TargetNetId attribute rewritten, then the same activation again. Cancelling a step changes
+     * nothing. The re-run keeps this run's confirmation only when the new target is the runtime that
+     * was confirmed; otherwise it asks for the activation target again (that runtime preselected).
+     * @param {import('../xaeBuild').RefusedTarget} refused
+     * @param {{a: any, title: string, solutionName: string, slnPath: string, key: string, configuration: string, platform: string,
+     *   shellAsked: boolean, confirmedNetId: string|null, carry: () => any}} o
+     * @returns {Promise<any>}
+     */
+    async function changeTarget(refused, o) {
+        const ch = channel();
+        const items = targetPickItems({ local: refused.local, unknown: refused.unknown, projectNetId: null }, { preselect: o.confirmedNetId || undefined });
+        /** @type {any} */
+        const picked = await vscode.window.showQuickPick(items, {
+            title: `${o.title}: change the target of ${o.solutionName}`,
+            placeHolder: `Runtime on this PC for ${o.solutionName} to target (now ${refused.projectNetId}, not a runtime on this PC)`
+        });
+        if (!picked) {
+            ch.appendLine(`${stamp()} The target of ${o.solutionName} was not changed.`);
+            return { ok: false, reason: 'cancelled' };
+        }
+        const to = refused.local.find(t => t.netId === picked.netId);
+        if (!to) return { ok: false, reason: 'cancelled' };
+        const sameTarget = !!o.confirmedNetId && o.confirmedNetId === to.netId;
+        const c = retargetConfirmText({ solutionName: o.solutionName, tsprojPath: String(refused.tsproj), from: refused.projectNetId, to, title: o.title, sameTarget });
+        const answer = await vscode.window.showWarningMessage(c.message, { modal: true }, c.confirmLabel);
+        if (answer !== c.confirmLabel) {
+            ch.appendLine(`${stamp()} The target of ${o.solutionName} was not changed.`);
+            return { ok: false, reason: 'cancelled' };
+        }
+        const w = changeSolutionTarget({ slnPath: o.slnPath, tsprojPath: refused.tsproj, from: refused.projectNetId, to: to.netId, fs });
+        if (!w.ok) {
+            const text = `The target of ${o.solutionName} was not changed: ${w.text}.`;
+            ch.appendLine(`${stamp()} ${text}`);
+            vscode.window.showErrorMessage(text);
+            return { ok: false, reason: 'not-changed' };
+        }
+        ch.appendLine(`${stamp()} Changed TargetNetId in ${refused.tsproj} from ${refused.projectNetId} to ${to.netId} (${to.name}); running ${o.title} again.`);
+        if (sameTarget) {
+            return buildCommand({
+                ...o.a, projectKey: o.key, configuration: o.configuration, platform: o.platform, shellChecked: true, shellAsked: o.shellAsked,
+                confirmedActivation: o.carry()
+            }, true);
+        }
+        await context.workspaceState.update(LAST_TARGET_KEY, to.netId);
+        return buildCommand({ ...o.a, projectKey: o.key, shellChecked: true, shellAsked: o.shellAsked }, true);
     }
 
     /**
@@ -769,13 +844,23 @@ function registerXaeBuildCommands(context, deps) {
                 setRunning(true);
                 const listed = await listTargets(slnPath);
                 const items = targetPickItems(listed.state.targets, { preselect: context.workspaceState.get(LAST_TARGET_KEY) });
-                if (items.length === 0) {
-                    vscode.window.showErrorMessage('No runtime of this machine was found to activate on. ' +
-                        (listed.state.fatal ? listed.state.fatal.text : describeExit(listed.code, listed.outcome, listed.state).title));
+                // Runtimes whose AmsNetId is unknown are separator rows: shown, never pickable.
+                const unknownList = listed.state.targets ? listed.state.targets.unknown : [];
+                const unknownText = unknownRuntimesText(unknownList, { adsDllConfigured: !!adsDllDir() });
+                if (unknownText) channel().appendLine(`${stamp()} ${title}: ${unknownText}`);
+                if (!items.some(i => i.netId)) {
+                    const dllButtons = unknownNeedsAdsDll(unknownList) ? [OPEN_SETTING] : [];
+                    Promise.resolve(vscode.window.showErrorMessage(unknownText
+                        ? `No runtime of this machine with a known AmsNetId was found to activate on. ${unknownText}`
+                        : 'No runtime of this machine was found to activate on. ' +
+                            (listed.state.fatal ? listed.state.fatal.text : describeExit(listed.code, listed.outcome, listed.state).title), ...dllButtons))
+                        .then((choice) => { if (choice === OPEN_SETTING) openAdsDllSetting(); });
                     return { ok: false, reason: 'no-targets' };
                 }
-                const picked = await vscode.window.showQuickPick(items, { title: `${title}: activation target`, placeHolder: 'Runtime of this machine to activate on' });
-                if (!picked) return { ok: false, reason: 'cancelled' };
+                const pickedItem = await vscode.window.showQuickPick(items, { title: `${title}: activation target`, placeHolder: 'Runtime of this machine to activate on' });
+                // A separator row has no netId (and cannot be picked anyway).
+                if (!pickedItem || !pickedItem.netId) return { ok: false, reason: 'cancelled' };
+                const picked = { netId: pickedItem.netId, name: pickedItem.name || pickedItem.netId };
                 // The driver refuses to activate a platform that is not the target's (gate 4): decide
                 // here, before anything starts, from the same platform -ListTargets reported.
                 const listedTarget = listed.state.targets ? listed.state.targets.local.find(t => t.netId === picked.netId) : null;
@@ -881,7 +966,24 @@ function registerXaeBuildCommands(context, deps) {
                 }
                 return results;
             };
-            const result = await report(run, slnPath, rerunWindowShown, compileFallback);
+            // Refused because the solution targets a runtime that is not on this PC (gate 3): offer to
+            // change the solution's target to one that is, then run this activation again.
+            const refused = activate ? refusedTarget(run.state) : null;
+            /** @type {{problem: string, change: (() => any)|null}|undefined} */
+            let retarget;
+            if (refused) {
+                const checked = refused.local.length > 0
+                    ? checkSolutionTarget({ slnPath, tsprojPath: refused.tsproj, from: refused.projectNetId, fs })
+                    : { ok: false, text: '' };
+                retarget = {
+                    problem: checked.text,
+                    change: checked.ok ? () => changeTarget(refused, {
+                        a, title, solutionName, slnPath, key: resolved.key, configuration, platform: pform, shellAsked,
+                        confirmedNetId: target ? target.netId : null, carry: carryConfirmation
+                    }) : null
+                };
+            }
+            const result = await report(run, slnPath, rerunWindowShown, compileFallback, retarget);
 
             // The stall offer: the same run again with the window shown (this run only).
             if (run.rerunVisible) {
@@ -947,10 +1049,16 @@ function registerXaeBuildCommands(context, deps) {
             ch.appendLine(`${stamp()} Activation targets (runtimes of this machine; read-only)${slnPath ? ` for ${slnPath}` : ''}:`);
             const run = await listTargets(slnPath);
             const t = run.state.targets;
-            if (t && t.local.length > 0) {
+            if (t && (t.local.length > 0 || t.unknown.length > 0)) {
                 for (const r of t.local) {
-                    ch.appendLine(`  ${r.netId.padEnd(20)} ${r.kind.padEnd(10)} ${r.name}  ${r.platform || 'platform unknown'}${t.projectNetId === r.netId ? '  (project)' : ''}`);
+                    ch.appendLine(`  ${r.netId.padEnd(20)} ${r.kind.padEnd(10)} ${r.name}  ${r.platform || 'platform unknown'}${t.projectNetId === r.netId ? '  (project)' : ''}` +
+                        (r.netIdSource === 'ads' ? '  AmsNetId confirmed over ADS' : (r.netIdSource === 'file-time' ? '  AmsNetId from its configuration, instance running' : '')));
                 }
+                for (const u of t.unknown) {
+                    ch.appendLine(`  ${'AmsNetId unknown'.padEnd(20)} ${u.kind.padEnd(10)} ${u.name}  not offered: ${u.reason}` +
+                        (u.fileNetId ? ` (its configuration file names ${u.fileNetId})` : ''));
+                }
+                if (t.unknown.length > 0) ch.appendLine(`  ${unknownRuntimesText(t.unknown, { adsDllConfigured: !!adsDllDir() })}`);
             } else {
                 ch.appendLine(`  none found. ${describeExit(run.code, run.outcome, run.state).title}`);
             }
@@ -958,7 +1066,14 @@ function registerXaeBuildCommands(context, deps) {
                 ch.appendLine(`  The project names ${t.projectNetId}, which is not a runtime of this machine: activation onto it is refused.`);
             }
             ch.show(true);
-            return { ok: !!t, targets: t ? t.local.slice() : [], projectNetId: t ? t.projectNetId : null };
+            // A runtime left out for want of TcAdsDll.dll: the one thing here the user can fix from VS Code.
+            if (t && unknownNeedsAdsDll(t.unknown)) {
+                Promise.resolve(vscode.window.showWarningMessage(
+                    'Show Activation Targets: TcAdsDll.dll was not found, so a runtime\'s AmsNetId could not be confirmed. ' +
+                    adsDllHint('native', { configured: !!adsDllDir() }), OPEN_SETTING))
+                    .then((choice) => { if (choice === OPEN_SETTING) openAdsDllSetting(); });
+            }
+            return { ok: !!t, targets: t ? t.local.slice() : [], unknown: t ? t.unknown.slice() : [], projectNetId: t ? t.projectNetId : null };
         }),
         vscode.commands.registerCommand('twincat.xaeBuild.goToProblem', async () => {
             const problems = allProblems().sort((x, y) => (x.severity === y.severity ? 0 : (x.severity === 'error' ? -1 : 1)));

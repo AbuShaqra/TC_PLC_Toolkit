@@ -79,6 +79,22 @@ Each package retains its own `LICENSE` file inside `node_modules/`:
 
 Copyright © their respective authors (Microsoft and contributors).
 
+## ads-client (online monitoring over ADS)
+
+The online-monitoring feature (*TC Toolkit: Go Online*) talks ADS through the `ads-client` package and
+its dependencies, all bundled under `node_modules/`, each with its licence text in its own folder:
+
+| Package | Version | License | Copyright | License text |
+| --- | --- | --- | --- | --- |
+| ads-client | 2.2.0 (pinned exactly) | MIT | © Jussi Isotalo | `node_modules/ads-client/LICENSE.txt` |
+| debug | 4.4.3 | MIT | © 2014-2017 TJ Holowaychuk, © 2018-2021 Josh Junon | `node_modules/debug/LICENSE` |
+| ms | 2.1.3 | MIT | © 2020 Vercel, Inc. | `node_modules/ms/license.md` |
+| iconv-lite | 0.7.3 | MIT | © 2011 Alexander Shtuchkin | `node_modules/iconv-lite/LICENSE` |
+| safer-buffer | 2.1.2 | MIT | © 2018 Nikita Skovoroda | `node_modules/safer-buffer/LICENSE` |
+| long | 5.3.2 | Apache-2.0 | © 2009 The Closure Library Authors, © 2020 Daniel Wirtz / The long.js Authors | `node_modules/long/LICENSE` (full Apache License 2.0 text; the package carries no NOTICE file) |
+
+None of them contains native code; they use only Node's own `net` and `events` modules.
+
 ---
 
 *Keep this file in sync with the bundled components. It ships in the VSIX so

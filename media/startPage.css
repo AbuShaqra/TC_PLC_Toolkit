@@ -16,14 +16,16 @@ html, body {
     overflow-x: hidden;
 }
 
-/* The one colour that is not the theme's: the red of the extension's logo, used as an accent only. */
+/* The "native" look (user decision 2026-11-16, as the PLC editor's header): surfaces, text, hover and
+   focus are the theme's. The one colour that is not: true red E2001A (`--tc-red`, written as rgba since
+   this sheet holds no hex literal), and only as a marker (the brand mark's square, a remove control's
+   hover). No pink anywhere. */
 :root {
-    --tc-accent: rgba(226, 35, 26, 1);
-    --tc-accent-soft: rgba(226, 35, 26, 0.12);
-    --tc-accent-line: rgba(226, 35, 26, 0.55);
-    --tc-accent-frame: rgba(226, 35, 26, 0.32);
-    --tc-border: var(--vscode-panel-border, var(--vscode-widget-border, rgba(128, 128, 128, 0.35)));
-    --tc-radius: 10px;
+    --tc-red: rgba(226, 0, 26, 1);
+    --tc-border: var(--vscode-widget-border, var(--vscode-panel-border, rgba(128, 128, 128, 0.35)));
+    --tc-muted: var(--vscode-descriptionForeground);
+    --tc-hover: var(--vscode-list-hoverBackground, rgba(128, 128, 128, 0.15));
+    --tc-radius: 8px;
 }
 
 .page {
@@ -32,49 +34,26 @@ html, body {
     padding: 20px 16px 28px;
 }
 
-/* Hero: the logo on a soft glow of its own red, fading into the editor background. */
+/* Masthead: the logo, the name and a quiet tagline on the editor background; no glow, no frame. */
 .masthead {
-    position: relative;
     display: flex;
     align-items: center;
-    gap: 18px;
-    margin-bottom: 22px;
-    padding: 22px 22px;
-    border: 1px solid var(--tc-accent-frame);
-    border-radius: var(--tc-radius);
-    background:
-        radial-gradient(120% 140% at 0% 0%, var(--tc-accent-soft), transparent 60%),
-        var(--vscode-sideBar-background, transparent);
-    overflow: hidden;
-}
-.masthead::after {
-    content: "";
-    position: absolute;
-    inset: auto 0 0 0;
-    height: 3px;
-    background: linear-gradient(90deg, var(--tc-accent), transparent 70%);
+    gap: 14px;
+    margin-bottom: 20px;
+    padding: 6px 2px 16px;
+    border-bottom: 1px solid var(--tc-border);
 }
 .logo {
     flex: none;
     display: block;
-    width: 64px;
-    height: 64px;
-    border-radius: 14px;
-    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+    color: var(--vscode-foreground);
 }
 .masthead-text { min-width: 0; }
-.masthead h1 { font-size: 1.85em; font-weight: 700; letter-spacing: -0.01em; margin: 0 0 4px; }
-.masthead h1 .accent { color: var(--tc-accent); }
-.tagline { margin: 0; color: var(--vscode-descriptionForeground); }
-.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
-.chips li {
-    padding: 2px 9px;
-    border: 1px solid var(--tc-border);
-    border-radius: 999px;
-    font-size: 0.85em;
-    color: var(--vscode-descriptionForeground);
-    background: var(--vscode-editor-background);
-}
+.masthead h1 { font-size: 1.6em; font-weight: 600; letter-spacing: -0.01em; margin: 0 0 2px; }
+.tagline { margin: 0; color: var(--tc-muted); }
+/* Highlights: plain muted text, no pills. */
+.chips { display: flex; flex-wrap: wrap; gap: 2px 16px; margin-top: 6px; }
+.chips li { font-size: 0.85em; color: var(--tc-muted); }
 
 .grid {
     display: grid;
@@ -84,43 +63,36 @@ html, body {
 
 .card {
     min-width: 0;
-    padding: 18px;
-    border: 1px solid var(--tc-accent-frame);
+    padding: 16px;
+    border: 1px solid var(--tc-border);
     border-radius: var(--tc-radius);
     background: var(--vscode-sideBar-background, transparent);
-    transition: border-color 0.15s ease, box-shadow 0.15s ease;
-}
-/* Every card wears the same light red frame; hover deepens it. */
-.card:hover {
-    border-color: var(--tc-accent-line);
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
 }
 #create { grid-row: span 2; }
 .card h2 {
     display: flex;
     align-items: center;
-    gap: 10px;
-    font-size: 1.15em;
+    gap: 8px;
+    font-size: 1.1em;
     font-weight: 600;
-    margin: 0 0 14px;
+    margin: 0 0 12px;
 }
+/* The card's glyph: the theme's icon colour, no tinted plate. */
 .badge {
     flex: none;
     display: inline-grid;
     place-items: center;
-    width: 28px;
-    height: 28px;
-    border-radius: 8px;
-    color: var(--tc-accent);
-    background: var(--tc-accent-soft);
+    width: 20px;
+    height: 20px;
+    color: var(--vscode-icon-foreground, var(--tc-muted));
 }
 .icon { display: block; flex: none; }
 .card h3 {
-    font-size: 0.8em;
-    font-weight: 600;
+    font-size: 11px;
+    font-weight: 400;
     text-transform: uppercase;
-    letter-spacing: 0.06em;
-    color: var(--vscode-descriptionForeground);
+    letter-spacing: 0.07em;
+    color: var(--tc-muted);
     margin: 18px 0 6px;
 }
 
@@ -179,8 +151,9 @@ code { font-family: var(--vscode-editor-font-family, monospace); }
 
 ul { list-style: none; margin: 0; padding: 0; }
 
-/* One tile style for every clickable row: project actions, recent solutions, help links, settings. */
-.actions, .recents, .links { display: grid; gap: 8px; }
+/* One tile style for every clickable row (project actions, recent solutions, help links, settings),
+   drawn like a native menu item: no frame, the theme's hover, rounded. */
+.actions, .recents, .links { display: grid; gap: 2px; }
 .links { grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr)); }
 .tile, button.action, .recents li, .links a {
     display: flex;
@@ -188,33 +161,32 @@ ul { list-style: none; margin: 0; padding: 0; }
     gap: 10px;
     width: 100%;
     min-width: 0;
-    padding: 9px 12px;
+    padding: 7px 10px;
     text-align: left;
     color: var(--vscode-foreground);
-    background: var(--vscode-editor-background);
-    border: 1px solid var(--tc-border);
-    border-radius: 8px;
+    background: transparent;
+    border: none;
+    border-radius: 5px;
     text-decoration: none;
-    transition: border-color 0.15s ease, background 0.15s ease;
+    transition: background 0.1s ease;
 }
 .tile:hover:not(:disabled), button.action:hover:not(:disabled), .recents li:hover, .links a:hover {
-    background: var(--vscode-list-hoverBackground);
-    border-color: var(--tc-accent-line);
+    background: var(--tc-hover);
     text-decoration: none;
 }
-.tile-icon { color: var(--tc-accent); }
+.tile-icon { color: var(--vscode-icon-foreground, var(--tc-muted)); }
 .action-text, .link-text, .recent-open { flex: 1 1 auto; min-width: 0; }
-.action-label, .link-label, .recent-name { display: block; font-weight: 600; color: var(--vscode-foreground); }
+.action-label, .link-label, .recent-name { display: block; font-weight: 400; color: var(--vscode-foreground); }
 .action-detail, .links .hint, .recent-path {
     display: block;
     margin: 0;
     color: var(--vscode-descriptionForeground);
 }
 .recent-path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.chevron { color: var(--vscode-descriptionForeground); transition: transform 0.15s ease, color 0.15s ease; }
+.chevron { color: var(--tc-muted); opacity: 0.7; transition: transform 0.15s ease, opacity 0.15s ease; }
 .tile:hover:not(:disabled) .chevron, button.action:hover:not(:disabled) .chevron, .links a:hover .chevron, .recents li:hover .chevron {
-    transform: translateX(3px);
-    color: var(--tc-accent);
+    transform: translateX(2px);
+    opacity: 1;
 }
 .soon {
     flex: none;
@@ -237,7 +209,7 @@ ul { list-style: none; margin: 0; padding: 0; }
     background: transparent;
     border: none;
 }
-.recent-remove:hover { color: var(--tc-accent); }
+.recent-remove:hover { color: var(--tc-red); }
 /* "Show all (K)" / "Show fewer": a recent-list tile whose whole row is the button. */
 .recent-toggle .recent-open { cursor: pointer; }
 .recent-toggle .recent-name { color: var(--vscode-textLink-foreground); }
@@ -251,7 +223,7 @@ ul { list-style: none; margin: 0; padding: 0; }
     min-width: 0;
     padding: 7px 10px;
     border: 1px solid var(--tc-border);
-    border-radius: 8px;
+    border-radius: 5px;
     background: var(--vscode-editor-background);
 }
 .xae-version { flex: none; font-weight: 600; }
@@ -278,12 +250,12 @@ a:hover { color: var(--vscode-textLink-activeForeground); text-decoration: under
 }
 
 @media (max-width: 480px) {
-    .masthead { flex-direction: column; align-items: flex-start; padding: 18px 16px; }
+    .masthead { flex-direction: column; align-items: flex-start; }
     .masthead h1 { font-size: 1.5em; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-    .card, .tile, button.action, .recents li, .links a, .chevron { transition: none; }
+    .tile, button.action, .recents li, .links a, .chevron { transition: none; }
 }
 
 /* Compile project: an ordinary action while its compiler file exists; without it, no chevron. */
@@ -293,6 +265,7 @@ a:hover { color: var(--vscode-textLink-activeForeground); text-decoration: under
    checkboxes under it. Theme colours only, like every other tile. */
 .split-tile { display: flex; align-items: stretch; min-width: 0; }
 .split-tile #compile-project { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.split-tile:has(#compile-project:hover:not(:disabled)) .options-toggle { background: var(--tc-hover); }
 .options-toggle {
     flex: none;
     display: inline-flex;
@@ -300,14 +273,14 @@ a:hover { color: var(--vscode-textLink-activeForeground); text-decoration: under
     justify-content: center;
     width: 34px;
     padding: 0;
-    color: var(--vscode-descriptionForeground);
-    background: var(--vscode-editor-background);
-    border: 1px solid var(--tc-border);
-    border-left: none;
-    border-radius: 0 8px 8px 0;
+    color: var(--tc-muted);
+    background: transparent;
+    border: none;
+    border-left: 1px solid var(--tc-border);
+    border-radius: 0 5px 5px 0;
     cursor: pointer;
 }
-.options-toggle:hover { background: var(--vscode-list-hoverBackground); color: var(--tc-accent); }
+.options-toggle:hover { background: var(--tc-hover); color: var(--vscode-foreground); }
 .options-toggle .icon { transition: transform 0.15s ease; }
 .options-toggle.open .icon { transform: rotate(180deg); }
 .compile-options {
@@ -315,33 +288,20 @@ a:hover { color: var(--vscode-textLink-activeForeground); text-decoration: under
     gap: 6px;
     margin-top: 6px;
     padding: 8px 10px;
-    border: 1px solid var(--tc-border);
+    border: 1px solid var(--vscode-menu-border, var(--tc-border));
     border-radius: 8px;
-    background: var(--vscode-dropdown-background, var(--vscode-editor-background));
-    color: var(--vscode-dropdown-foreground, var(--vscode-foreground));
+    background: var(--vscode-menu-background, var(--vscode-dropdown-background, var(--vscode-editor-background)));
+    color: var(--vscode-menu-foreground, var(--vscode-dropdown-foreground, var(--vscode-foreground)));
 }
 .compile-options[hidden] { display: none; }
 .compile-options .option { display: flex; align-items: flex-start; gap: 8px; margin: 0; font-weight: normal; cursor: pointer; }
-.compile-options .option input { margin: 2px 0 0; flex: none; accent-color: var(--vscode-focusBorder); }
+.compile-options .option input { margin: 2px 0 0; flex: none; accent-color: var(--vscode-button-background, var(--vscode-focusBorder)); }
 .option-text { min-width: 0; }
-.option-label { display: block; font-weight: 600; }
+.option-label { display: block; font-weight: 400; }
 .option-detail { display: block; color: var(--vscode-descriptionForeground); font-size: 0.92em; }
-/* Build through XAE (R14): two actions and a checkbox below the C++ options. */
+/* Build through XAE (R14): its window switch below the C++ options (the actions are tiles). */
 .xae-options { display: grid; gap: 6px; }
 .xae-options[hidden] { display: none; }
 .option-separator { border-top: 1px solid var(--tc-border); margin: 2px 0; }
-.option-action {
-    display: block;
-    width: 100%;
-    text-align: left;
-    padding: 4px 6px;
-    background: none;
-    border: none;
-    border-radius: 4px;
-    color: inherit;
-    font: inherit;
-    cursor: pointer;
-}
-.option-action:hover { background: var(--vscode-list-hoverBackground); }
-.option-action:disabled { opacity: 0.55; cursor: default; }
+.actions li[hidden] { display: none; }
 @media (prefers-reduced-motion: reduce) { .options-toggle .icon { transition: none; } }

@@ -17,7 +17,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { renderStartPageHtml, PROJECT_ACTIONS } = require('./startPageHtml');
+const { renderStartPageHtml, PROJECT_ACTIONS, XAE_ACTIONS } = require('./startPageHtml');
 const { TEMPLATE_VERSIONS } = require('./projectTemplate');
 const { recentsShownLimit } = require('./recentProjects');
 const { XAE_SHELL_SECTION, describeConfiguredShells } = require('./xaeShellDetect');
@@ -31,8 +31,9 @@ const START_PAGE_VIEW_TYPE = 'twincat.startPage';
 const LAST_LOCATION_KEY = 'twincat.lastProjectLocation';
 
 /** Commands the page may run. Anything else a (compromised) page posts is ignored. */
-const ALLOWED_COMMANDS = new Set([...PROJECT_ACTIONS.map(a => a.command), 'twincat.compileProject', 'twincat.openSettings', 'twincat.detectXaeShell', 'twincat.detectGpp',
-    'twincat.xaeBuild', 'twincat.xaeBuildAndActivate']);
+const ALLOWED_COMMANDS = new Set([...PROJECT_ACTIONS.map(a => a.command), ...XAE_ACTIONS.map(a => a.command),
+    'twincat.compileProject', 'twincat.openSettings', 'twincat.detectXaeShell', 'twincat.detectGpp',
+    'twincat.goOnline', 'twincat.goOffline']);
 
 /** Settings sections the page may open filtered (`openSettings {section}`) → the Settings UI query. */
 const SETTINGS_SECTIONS = Object.freeze({ xaeShell: XAE_SHELL_SECTION, gpp: SETTING_GPP_PATH, xaeBuild: XAE_BUILD_SECTION });
@@ -62,11 +63,12 @@ class StartPageController {
      *   setCompileOption?: (key: string, value: boolean) => Promise<boolean>,
      *   gppMachine?: () => Parameters<typeof describeGppSetting>[1],
  *   xaeOptions?: () => {available: boolean, showWindow: boolean, running: boolean, configuration: string, platform: string},
- *   setXaeOption?: (key: string, value: boolean) => Promise<boolean>}} deps `compilerReady`: the
+ *   setXaeOption?: (key: string, value: boolean) => Promise<boolean>, onlineState?: () => string}} deps `compilerReady`: the
      *   compiler file exists (the bundled one, or the override); `compileOptions` / `setCompileOption`:
      *   the Compile dropdown's two switches (R13); `gppMachine`: how the g++ path is checked and
      *   detected (the real machine by default; the tests pass their own); `xaeOptions` / `setXaeOption`:
- *   Build through XAE's dropdown entries and its window switch (R14).
+ *   Build through XAE's tiles and its window switch (R14); `onlineState`: the ADS session's state,
+ *   which swaps the Go Online tile for Go Offline (R15).
      */
     constructor(context, deps) {
         this.context = context;
@@ -109,7 +111,6 @@ class StartPageController {
             styleUri: media('startPage.css'),
             scriptUri: media('startPage.js'),
             nameScriptUri: media('projectName.js'),
-            logoUri: media('marketplace-icon.png'),
             versions: TEMPLATE_VERSIONS
         });
         const subs = [
@@ -146,7 +147,8 @@ class StartPageController {
             xaeShells: describeConfiguredShells((key) => xaeConfig.get(key), (p) => fs.existsSync(p)),
             gpp: this.describeGpp(),
             xaeOptions: this.deps.xaeOptions ? this.deps.xaeOptions()
-                : { available: false, showWindow: false, running: false, configuration: 'Release', platform: 'TwinCAT RT (x64)' }
+                : { available: false, showWindow: false, running: false, configuration: 'Release', platform: 'TwinCAT RT (x64)' },
+            online: this.deps.onlineState ? String(this.deps.onlineState()) : 'offline'
         });
     }
 

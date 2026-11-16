@@ -16,6 +16,8 @@
 
 'use strict';
 
+const { brandMarkSvg } = require('./brandMark');
+
 /** Help links, by id. The host owns the URLs/commands (src/startPage.js); the page only names them. */
 const HELP_LINKS = Object.freeze([
     Object.freeze({ id: 'gettingStarted', label: 'Getting started', detail: 'The extension’s guide, offline' }),
@@ -28,6 +30,16 @@ const HELP_LINKS = Object.freeze([
 const PROJECT_ACTIONS = Object.freeze([
     Object.freeze({ command: 'twincat.generateSt', label: 'Generate ST', detail: 'Export every object as Structured Text into each project’s ST_Files folder' }),
     Object.freeze({ command: 'twincat.updateLibraryDefinitions', label: 'Update Library Definitions', detail: 'Read library signatures through TwinCAT XAE (requires TwinCAT)' })
+]);
+
+/**
+ * Build through XAE's tiles (R14), shown below Build project only where XAE is available (the host's
+ * `xaeOptions.available`): the same commands as the editor tab's and the PLC Objects view's buttons.
+ */
+const XAE_ACTIONS = Object.freeze([
+    Object.freeze({ id: 'xae-build-run', command: 'twincat.xaeBuild', label: 'Build through XAE', detail: 'Build the solution with XAE’s own compiler and libraries (requires TwinCAT XAE)' }),
+    Object.freeze({ id: 'xae-activate-run', command: 'twincat.xaeBuildAndActivate', label: 'Build and Activate through XAE…', detail: 'Then activate on a runtime of this machine you pick and confirm' }),
+    Object.freeze({ id: 'xae-targets-run', command: 'twincat.xaeShowTargets', label: 'Show Activation Targets', detail: 'The runtimes of this machine a Build and Activate can pick (requires TwinCAT XAE)' })
 ]);
 
 /**
@@ -68,10 +80,10 @@ function escapeHtml(s) {
 }
 
 /**
- * Builds the start page.
+ * Builds the start page. Its brand mark beside the title is the extension's mark as inline SVG
+ * (src/brandMark.js): the letters in the theme's colour, the square in true red.
  * @param {{cspSource: string, nonce: string, styleUri: string, scriptUri: string, nameScriptUri: string,
- *          logoUri: string, versions: ReadonlyArray<{id: string, label: string}>}} o
- *   `logoUri` is the webview URI of media/marketplace-icon.png, the extension's own icon.
+ *          versions: ReadonlyArray<{id: string, label: string}>}} o
  * @returns {string}
  */
 function renderStartPageHtml(o) {
@@ -81,6 +93,17 @@ function renderStartPageHtml(o) {
         `<li><button type="button" class="action" data-command="${escapeHtml(a.command)}" data-needs-project>` +
         `<span class="action-text"><span class="action-label">${escapeHtml(a.label)}</span><span class="action-detail">${escapeHtml(a.detail)}</span></span>` +
         `${icon('chevron', 'icon chevron')}</button></li>`).join('');
+    /** @param {{id: string, command: string, label: string, detail: string}} a @param {string} [li] */
+    const tile = (a, li = '') =>
+        `<li${li}><button type="button" class="action" id="${escapeHtml(a.id)}" data-command="${escapeHtml(a.command)}" data-needs-project disabled>` +
+        `<span class="action-text"><span class="action-label">${escapeHtml(a.label)}</span><span class="action-detail">${escapeHtml(a.detail)}</span></span>` +
+        `${icon('chevron', 'icon chevron')}</button></li>`;
+    const xaeTile = (/** @type {typeof XAE_ACTIONS[number]} */ a) => tile(a, ' class="xae-tile" hidden');
+    // Order as in the editor tab's title bar: Build, Build and Activate, Go Online / Go Offline, Targets.
+    // The online tile is one slot; media/startPage.js swaps its command and label with the state.
+    const runTiles = xaeTile(XAE_ACTIONS[0]) + xaeTile(XAE_ACTIONS[1]) +
+        tile({ id: 'online-run', command: 'twincat.goOnline', label: 'Go Online…', detail: 'Connect to the PLC runtime over ADS and show live values' }) +
+        xaeTile(XAE_ACTIONS[2]);
     const links = HELP_LINKS.map(l =>
         `<li><a href="#" data-link="${escapeHtml(l.id)}">${icon(/** @type {any} */ (l.id), 'icon tile-icon')}` +
         `<span class="link-text"><span class="link-label">${escapeHtml(l.label)}</span> <span class="hint">${escapeHtml(l.detail)}</span></span>` +
@@ -97,9 +120,9 @@ function renderStartPageHtml(o) {
 <body>
     <main class="page">
         <header class="masthead">
-            <img class="logo" src="${escapeHtml(o.logoUri)}" alt="" width="64" height="64">
+            ${brandMarkSvg({ height: 30, cls: 'logo brand-mark' })}
             <div class="masthead-text">
-                <h1>TC <span class="accent">Toolkit</span></h1>
+                <h1>TC Toolkit</h1>
                 <p class="tagline">Create a TwinCAT 3 project, open one, or run a project action.</p>
                 <ul class="chips" aria-label="Highlights">
                     <li>Works offline</li><li>TwinCAT 3.1.4024 and 3.1.4026</li><li>IEC 61131-3 Structured Text</li>
@@ -149,16 +172,13 @@ function renderStartPageHtml(o) {
         `<span class="option-detail">Write the project as C++ into its CPP_Files folder when the check finds no errors</span></span></label>` +
         `<label class="option"><input type="checkbox" id="opt-build-gpp"><span class="option-text"><span class="option-label">Build with g++</span>` +
         `<span class="option-detail">Also compile that C++ with g++ (optional; needs g++, turns Generate C++ on)</span></span></label>` +
-        // Build through XAE (R14): shown only on Windows (the host's xaeOptions.available).
+        // Build through XAE's window switch (R14): shown only on Windows (the host's xaeOptions.available).
+        // The XAE actions themselves are tiles below (runTiles), not entries of this dropdown.
         `<div id="xae-options" class="xae-options" role="group" aria-label="Through XAE" hidden>` +
         `<div class="option-separator" role="separator"></div>` +
-        `<button type="button" class="option-action" id="xae-build-run" data-command="twincat.xaeBuild" data-needs-project disabled><span class="option-label">Build through XAE</span>` +
-        `<span class="option-detail">Build the solution with XAE's own compiler and libraries (requires TwinCAT XAE)</span></button>` +
-        `<button type="button" class="option-action" id="xae-activate-run" data-command="twincat.xaeBuildAndActivate" data-needs-project disabled><span class="option-label">Build and Activate through XAE…</span>` +
-        `<span class="option-detail">Then activate on a runtime of this machine you pick and confirm</span></button>` +
         `<label class="option"><input type="checkbox" id="opt-xae-window"><span class="option-text"><span class="option-label">Show the XAE window</span>` +
         `<span class="option-detail">Build with the XAE Shell window visible instead of headless (it is always shown during activation)</span></span></label>` +
-        `</div></div></li>
+        `</div></div></li>${runTiles}
                 </ul>
             </section>
             <section class="card" id="help" aria-labelledby="help-title">
@@ -198,4 +218,4 @@ function renderStartPageHtml(o) {
 </html>`;
 }
 
-module.exports = { renderStartPageHtml, escapeHtml, HELP_LINKS, PROJECT_ACTIONS };
+module.exports = { renderStartPageHtml, escapeHtml, HELP_LINKS, PROJECT_ACTIONS, XAE_ACTIONS };

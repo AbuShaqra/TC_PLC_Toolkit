@@ -170,7 +170,8 @@
             peekOpen: !!document.querySelector('.zone-widget, .peekview-widget'),
             compileButton: (function () {
                 const b = /** @type {*} */ (document.getElementById('compile-btn'));
-                return b ? { present: true, disabled: !!b.disabled } : { present: false, disabled: false };
+                // An Actions-menu item: disabled is `aria-disabled` (it stays focusable), not the property.
+                return b ? { present: true, disabled: !!b.disabled || b.getAttribute('aria-disabled') === 'true' } : { present: false, disabled: false };
             })(),
             errors: errors.slice(),
             // Reported, never assumed: checklist item 6 is specifically that the panes carry REAL
@@ -229,7 +230,7 @@
             return { type: 'test:done', requestId: message.requestId };
         },
 
-        /** Clicks the toolbar's real Compile button, so editor.js's own listener posts the request. */
+        /** Clicks the Actions menu's real Build item, so editor.js's own listener posts the request. */
         'test:clickCompile': function (message) {
             const btn = /** @type {*} */ (document.getElementById('compile-btn'));
             if (!btn) throw new Error('no compile-btn element');

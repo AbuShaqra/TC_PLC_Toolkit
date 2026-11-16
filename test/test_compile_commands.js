@@ -7,7 +7,7 @@
  * Pinned: the project pick (one project runs at once, several ask), the setup refusal with its
  * "Open Settings" offer, a clean run, a run with errors (the Problems entries: file, pane range,
  * message with component/pane/line, source, link; the pane markers; the status text; the summary),
- * unsaved edits reaching the compiler, "Go to Problem…" and the entry links navigating through
+ * unsaved edits reaching the compiler, "Show Problems", "Go to Problem…" and the entry links navigating through
  * `twincat.openComponent` with the exact pane and line, a component edit dropping its results, the
  * next run replacing everything, a failed run keeping the previous results, cancellation, and a
  * file opened fresh starting on its first problem.
@@ -290,14 +290,18 @@ const settle = () => new Promise(r => setTimeout(r, 10));
     const onDiskXml = fs.readFileSync(fbPath, 'utf8');
     compilerAnswer = () => errorReport(unitLineOf(onDiskXml, 'nNope := 5;'));
     panelPosts.length = 0;
-    answers.message.push(undefined);
+    calls.executed.length = 0;
+    answers.message.push('Show Problems');
     result = await run('twincat.compileProject');
     await settle();
     assert(result.ok && result.errors === 1 && result.warnings === 1 && result.filteredPragmaWarnings === 1 &&
         calls.errors.length === 1 && calls.errors[0].m === 'Build Project — PLC: 1 error, 1 warning.' &&
-        calls.errors[0].buttons.join() === 'Go to Problem…,Open Problems',
+        calls.errors[0].buttons.join() === 'Show Problems',
         `ERRORS: the summary counts errors and warnings, without the filtered pragma warning (${calls.errors[0] && calls.errors[0].m})`);
     assert(calls.status.text === '$(error) 1 $(warning) 1 Build', `ERRORS: the status bar shows the counts (${calls.status.text})`);
+    // User, 2026-11-16: "Show Problems" (answered above) opens the Problems panel itself, with no quick pick.
+    assert(calls.executed.some(c => c.id === 'workbench.actions.view.problems') && !calls.executed.some(c => c.id === GO_TO_PROBLEM_COMMAND),
+        'SHOW PROBLEMS: the button opens the Problems panel, not a pick');
     const entries = problems.map.get(fbUri.toString()) || [];
     assert(problems.map.size === 1 && entries.length === 2, 'PROBLEMS: both diagnostics are published on the object\'s file; the GVL has none');
     const err = entries.find(d => d.severity === 0);

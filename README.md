@@ -28,6 +28,26 @@ are required.
 Opens `.TcPOU` / `.TcGVL` / `.TcDUT` / `.TcIO` with the Declaration (variables) on top and the
 Implementation below, separated by a resizable splitter. No raw XML.
 
+The editor's header is one slim row in your theme's colours. On the left, after the TC Toolkit mark (hover
+for the version), where the object lives: the PLC
+project, the folders inside it and the object's name (hover for the full path), then a small type tag (POU,
+GVL, DUT, IO, …) and the list of the object's methods, properties and actions. On the right, quiet status
+items: the PLC state (*PLC Run*, *PLC Stop*, …) and *Online* while online, *Building…* (or *XAE build…*)
+while a build runs, *Manual Sync* while Auto Sync is off, and the sync state (*Synced*, *Unsaved Changes*).
+In a narrow editor the status items shrink to coloured dots (hover for the text) before the object's name
+is cut. Then a **Build** button (the hammer: one click checks the project with the IEC 61131-3 compiler) and
+**Actions ▾**, the menu with everything else (in a very narrow editor it folds to **⋯ ▾**):
+**Generate ST** (with *Choose projects…* when the workspace has several PLC projects), **Build** with its
+options (*Generate C++*, *Build with g++*, and the XAE entries on Windows), **Start PLC** / **Stop PLC**
+(only while online) and **Auto Sync** (on: every edit is written to the file as you type; off: edits wait
+for Ctrl+S). A disabled entry says why on its second line; the menu's foot shows the extension's version.
+The menu works from the keyboard (Enter, Space or the arrow keys open it; the arrows, Home and End move;
+Escape closes it).
+
+The editor tab's title bar has buttons for **Build through XAE**, **Build and Activate**, **Show Activation Targets** (those three on Windows only) and **Go Online** / **Go Offline** (one button that follows the online state).
+The same buttons sit in the **PLC Objects** view's title bar while the workspace has a PLC project, and as
+tiles on the start page, so they are at hand with no file open.
+
 ### TC Toolkit sidebar and start page
 
 The extension has its own icon in the Activity Bar. It opens the **TC Toolkit** sidebar, which holds three
@@ -43,7 +63,9 @@ page in an editor tab with:
   you opened or created here. Two are listed; when more are remembered (up to ten), a **Show all** tile
   expands the list. `tcToolkit.startPage.recentProjectsShown` changes how many are listed.
 - **Project actions** — *Generate ST*, *Update Library Definitions* and *Build project* (see
-  [Build project](#build-project)).
+  [Build project](#build-project)), then *Build through XAE*, *Build and Activate through XAE…* and
+  *Show Activation Targets* (on Windows, where XAE can run) and *Go Online…*, which becomes *Go Offline*
+  while you are online.
 - **Help and links**, and **Settings** — which also shows where the XAE Shell of each TwinCAT version
   was found (see [Settings](#settings)), with *Change…* and *Detect again*, and the same for **g++**
   (optional, used only by *Build with g++*): the path set in `tcToolkit.compiler.gppPath`, or — while it
@@ -70,6 +92,9 @@ needed to create one; you need TwinCAT XAE to build and run it.
 Browse POUs, interfaces, GVLs, DUTs and their methods, properties, actions and virtual folders.
 Create and delete files, folders, methods, properties and actions — the nearest `.plcproj` is kept in
 sync automatically. The tree follows you: while the PLC Objects view is showing, switching editors reveals and highlights the matching item; when you open the view later, it goes to the file you are in.
+Its title bar has the editor tab's buttons — Build through XAE, Build and Activate, Go Online / Go Offline
+and Show Activation Targets — while the workspace has a PLC project (VS Code shows a view's title buttons
+when the pointer is over the view or it has focus).
 
 **See the real TwinCAT hierarchy.** When the opened folder contains TwinCAT solutions, the explorer
 shows the solution first and every PLC project belonging to it underneath:
@@ -248,7 +273,7 @@ unsaved work. It briefly opens a TwinCAT window while it runs (about a minute).
 
 ### Generate ST
 
-Export the PLC projects to clean, compiler-friendly `.st` files (toolbar button in the editor,
+Export the PLC projects to clean, compiler-friendly `.st` files (the editor's **Actions** menu,
 *TC Toolkit: Generate ST*, or the start page; with several PLC projects you pick which). Each project's
 files are written inside that project's own folder, under `<PLC project>/ST_Files/`, mirroring the
 project's layout. A folder of TwinCAT files without a `.plcproj` is exported to `ST_Files/` at the top
@@ -259,8 +284,8 @@ never read back as sources.
 
 ### Build project
 
-*TC Toolkit: Build Project* (also on the start page as the *Build project* tile, and as the **Build** button next to *Generate ST*
-in the editor's toolbar, which compiles the project the open file belongs to) checks a PLC project with **an external IEC 61131-3
+*TC Toolkit: Build Project* (also on the start page as the *Build project* tile, and as **Build** in the editor's
+**Actions** menu, which compiles the project the open file belongs to) checks a PLC project with **an external IEC 61131-3
 compiler** — a full compiler front end, so it catches what the built-in diagnostics deliberately leave
 alone. With several PLC projects you pick which one. By default it only checks: nothing is generated, and
 nothing is written into your project (the compiler reads temporary copies, deleted when the run ends).
@@ -270,7 +295,7 @@ It can also write the project as C++ and compile that with g++ — both off by d
 - What is checked is what you see: unsaved edits, and Manual Sync edits not yet written, are included.
 - Errors and warnings appear in the **Problems** panel on the object's file, with the component, pane and
   line in the message, and as squiggles in the editor panes. A problem's code is a link that opens that
-  component and pane on the right line; *Go to Problem…* on the summary notification lists them all.
+  component and pane on the right line; *Show Problems* on the summary notification opens the Problems panel.
 - The status bar shows the last run's error and warning counts. Editing a component clears its results
   (they described the old text); the next run replaces them all.
 - A run can be cancelled, and is stopped after two minutes.
@@ -307,8 +332,8 @@ GPL v3; its licence, source link and third-party notices are in `resources/compi
 #### C++ output (optional)
 
 Build Project can also turn the PLC project into C++. Both steps are **off by default**; turn them on
-with the small arrow next to the **Build** button (in the editor's toolbar, or on the start page's
-*Build project* tile), or in the settings:
+under **Build** in the editor's **Actions** menu, with the small arrow on the start page's
+*Build project* tile, or in the settings:
 
 - **Generate C++** (`tcToolkit.compiler.generateCpp`) — when the check finds **no errors**, the project
   is written as C++ into a `CPP_Files` folder next to its `.plcproj` (beside `ST_Files`):
@@ -383,14 +408,15 @@ the old project's files; a Git checkout that only changes their line endings doe
 
 ### Build and activate through XAE
 
-On Windows with **TwinCAT XAE** installed, the Build button's dropdown (in the editor and on the start
-page) also offers **Build through XAE** and **Build and Activate through XAE…** (also in the Command
+On Windows with **TwinCAT XAE** installed, the Build group of the editor's **Actions** menu also offers
+**Build through XAE** and **Build and Activate through XAE…**; the start page has them as tiles under
+*Build project*, and the editor tab and the PLC Objects view have them as title-bar buttons (also in the Command
 Palette as *TC Toolkit: Build through XAE (requires TwinCAT)* and *Build and Activate through XAE…
 (requires TwinCAT)*). They drive XAE's own Automation Interface from PowerShell, so the real solution is
 built with XAE's compiler and the project's real libraries.
 
 - **Headless by default.** The XAE Shell runs hidden with its UI suppressed. Tick **Show the XAE window**
-  in the dropdown (setting `tcToolkit.xaeBuild.showWindow`) to watch the shell for the whole build. The
+  in the editor's Actions menu (Build group) (setting `tcToolkit.xaeBuild.showWindow`) to watch the shell for the whole build. The
   **TC Toolkit XAE Build** output channel says which mode was asked for and which actually ran (read back
   from the shell: `SuppressUI` and `MainWindow.Visible`).
 - **Errors** go to the Problems panel (source *TC Toolkit XAE build*) and the editor panes. Where XAE's
@@ -400,6 +426,12 @@ built with XAE's compiler and the project's real libraries.
   real-time one and any user-mode runtimes; *TC Toolkit: Show Activation Targets* prints the same list),
   you pick one, and a confirmation names it every time — the running PLC on that target stops and
   TwinCAT restarts there. Nothing runs before you confirm. Only runtimes of this machine can be chosen.
+- **The PLC starts by itself.** Every activation also installs each PLC project on the target as a
+  **boot project with autostart**, so the PLC loads its program and starts on activation and after every
+  restart of the runtime — no log-in from XAE needed. The output channel names each boot project and the
+  PLC's state after the restart. If a boot project cannot be installed, the activation is still reported,
+  with a warning that the PLC has no program and must be started from XAE. The project's own
+  *Autostart Boot Project* setting is not changed on disk.
 - **The XAE window is always shown during activation**, even in headless mode: activation can raise a
   licence (for example a trial licence) or full-download dialog, and that must be answered in the
   window. TC Toolkit never answers it for you.
@@ -407,9 +439,116 @@ built with XAE's compiler and the project's real libraries.
   refused while the target is being activated (stopping then could leave the runtime in CONFIG). A
   build stops after `tcToolkit.xaeBuild.timeoutMinutes`; a headless build that shows no progress for
   `tcToolkit.xaeBuild.stallMinutes` offers to re-run with the window shown.
+- **TwinCAT's ADS DLL.** The RUN check after activation and the AmsNetId check of a user-mode runtime read
+  ADS through `TcAdsDll.dll`. If it is not found, the result says so and offers **Open Setting** for
+  `tcToolkit.adsDll.nativeDllFolder` (see *ADS DLL paths* under Settings).
 
-Not done: remote targets, creating the boot project, building a single PLC project of a multi-project
-solution, and writing routes. The solution and `.tsproj` are never saved by these commands.
+Not done: remote targets, building a single PLC project of a multi-project solution, and writing routes. The solution and `.tsproj` are never saved by these commands.
+
+### Online monitoring (live values, write, PLC Watch)
+
+Connect to a running PLC over ADS and see its variables' values in the editor, watch chosen variables,
+and, when you allow it, write a value. It uses the ADS router of the TwinCAT installation on this PC, so
+the PLC is reached exactly as XAE reaches it.
+
+**Going online.** *TC Toolkit: Go Online…* (Command Palette, or the plug button on the **PLC Watch**
+view) asks for the target: **Local runtime** (the PLC on this PC), a target used before, or an AMS Net ID
+you type (`5.12.34.56.1.1`, optionally `:851`). The ADS port defaults to 851, the first PLC runtime
+(`tcToolkit.online.adsPort`). Going online can be cancelled from its notification; *Go Offline* (or
+the status-bar item's menu) closes the connection. The status bar shows the target, the PLC state, the
+code check and whether forces are active.
+
+**Routes are set up in XAE, never here.** To reach a PLC on another machine, add the route in XAE as you
+would for XAE itself: *SYSTEM → Routes → Add Route* (or *Choose Target System → Search (Ethernet)*),
+find the PLC, and add the route (it is created on both sides). Then pick *Enter AMS Net ID…* and type
+the PLC's AMS Net ID. TC Toolkit never creates routes and stores no credentials.
+
+**Live values.** While online, the panes show each variable's value next to it: at the end of the line
+in the declaration pane, right after the variable in the implementation pane. They refresh every 500 ms
+(`tcToolkit.online.inlinePollInterval`) while the editor is visible. Dimmed values mean the PLC is not in
+Run, or the connection is being restored. What can be shown:
+- PROGRAM variables, global variables (`GVL.x`), members reached through them (`GVL.fbStation.nState`),
+  and array elements with a constant index (`aValues[3]`). Structures, FB instances and whole arrays
+  show no inline value; add them to the Watch view instead.
+- A FUNCTION_BLOCK's variables through one of its instances on the PLC. If it has several, the first is
+  used and you are told; *TC Toolkit: Select FB Instance for Online Values…* changes it.
+- Not: method and function locals, `VAR_TEMP` and `VAR_IN_OUT` variables (they have no ADS symbol; XAE
+  needs a breakpoint for them too), and properties. Every name is checked against the PLC's own symbol
+  table first; a variable the PLC does not know shows nothing. A variable whose type on the PLC differs
+  from its declaration shows *type differs* instead of a value.
+
+**PLC Watch.** By default the view has its own tab in the bottom panel, next to the Terminal; set
+`tcToolkit.online.watchLocation` to `sidebar` to show it in the TC Toolkit sidebar under PLC Objects instead.
+It comes to the front when you add a variable. Right-click a variable in the editor → **Add to PLC Watch**, or use the **+** on the view
+and type an ADS path (`MAIN.fbStation.nState`). Each watched variable is one ADS notification on change
+(`tcToolkit.online.watchCycleTime`, 200 ms); structures and FB instances expand into their members
+without costing more. At most `tcToolkit.online.maxNotifications` (100) are active; past that, entries
+show *notification limit reached* and you are told once (Beckhoff recommends at most 550 per device).
+The list is kept per workspace.
+
+**Start / Stop PLC.** While online, the editor's **Actions** menu has a **Start PLC** / **Stop PLC** entry
+(and the header shows the PLC state), and the same toggle sits next to Go Online / Go Offline in the **PLC Watch** title bar (also *TC
+Toolkit: Start PLC…* / *Stop PLC…* in the Command Palette). It follows the PLC state the status bar shows:
+**Stop** while the PLC is in Run, **Start** while it is in Stop. In any other state (Config, Error, not
+read yet, the connection being restored) and while a start or stop is running, it is disabled and says
+why (in the menu entry's second line, and in the title-bar button's tooltip). Each click asks first — *Stop the PLC on Local runtime (localhost:851)?* or *Start the
+PLC on …?*, one confirm button — and is logged to the **TC Toolkit Online** channel with the target and the
+outcome; a failure shows the ADS error. This is ADS WriteControl Run/Stop on the PLC's port, the same as
+XAE's start and stop buttons; it does not depend on `tcToolkit.online.allowWrites`.
+
+**Writing values — off by default.** A write sets a value once; the PLC program may overwrite it in its
+next cycle. It is **not a force**: TC Toolkit cannot force (forces are set in XAE). To write:
+1. turn on `tcToolkit.online.allowWrites` in your **user** settings (a workspace's settings cannot turn it on);
+2. after going online, enable writes for that online session (asked the first time, or *TC Toolkit:
+   Enable Writes for This Online Session*); going offline turns them off again;
+3. right-click the variable → **Write Value…** (or the pencil in the Watch view), type the value, and
+   confirm the dialog, which names the target (with its AMS address), the variable, the current and the
+   new value and the PLC state. *Write Value…* is offered only in editors of the PLC project the PLC
+   runs. If you go online to another target while a write's dialogs are open, that write is refused.
+
+Every write, and every refused or cancelled one, is logged to the **TC Toolkit Online** output channel.
+Writes are refused while any TwinCAT editor has unsaved edits, while the code check below does not
+pass, when the variable's type differs, and for anything but a single value.
+
+**The code check — what it can and cannot see.** Before showing values and allowing writes, TC Toolkit
+compares (1) the project name the PLC reports with your PLC projects (a different name hides the values),
+(2) the variables of your project's last build (its `.tmc`) with the
+variables on the PLC, and (3) whether a source file changed after that build (the newest of the `.tmc` and
+`_CompileInfo\*.compileinfo`, which XAE writes on every build; the `.tmc` alone is rewritten only when a variable changes). Writes need all three.
+It **cannot** tell that only code inside a POU changed and was built but not downloaded — XAE compares
+an internal compile id that is not available over ADS. Download from XAE before writing.
+
+**Forces indicator.** If forces are active on the target (set from XAE), the status bar says *Forces
+active*. Runtimes before TwinCAT 3.1.4026.21 do not report forces; the tooltip then says so.
+
+**Connection modes.** By default TC Toolkit connects through the AMS router on this PC (TwinCAT XAE or
+XAR installed). On a PC **without** TwinCAT, set `tcToolkit.online.connectionMode` to `direct` and fill
+in the three `tcToolkit.online.direct.*` settings; the PLC then needs a static route to this PC's AMS Net
+ID (created in XAE or on the PLC). Direct mode is never used unless you choose it. Do not use it from a
+PC that also runs XAE against the same PLC: the PLC accepts one ADS connection per client address, so it
+can drop XAE's connection. Reaching a router other than this PC's (`tcToolkit.online.routerAddress`,
+for example from Remote-SSH or WSL) is untested.
+
+**TwinCAT 3.1.4026 user-mode runtime.** The router of a 4026 **user-mode** runtime (the default on
+Windows 11 with Hyper-V or virtualization-based security on) refuses the TCP connection the ADS library
+TC Toolkit uses. On Windows, TC Toolkit then switches by itself to TwinCAT's own ADS DLL
+(`TwinCAT.Ads.dll`, installed with XAE or XAR), through a hidden Windows PowerShell helper, and says so in
+the *TC Toolkit Online* output channel. Everything above works the same way through it; Watch entries
+are polled rather than pushed by the PLC. Notes:
+- In user mode the PLC runs under the **runtime's own AMS Net ID**, not the router's. *Local runtime*
+  therefore first looks up the user-mode runtime on this PC (it reads the runtime's configuration
+  and checks that the runtime is running; this takes a second or two and shows a progress
+  notification) and goes online to that runtime's AMS Net ID, naming it in the *TC Toolkit Online*
+  channel. With several runtimes (or a possible kernel-mode runtime next to it) it asks which one.
+  When no running runtime's Net ID can be confirmed it uses the router as before, and if that fails
+  the message says why; then use *Enter AMS Net ID…* with the Net ID printed in the runtime's console
+  window (`AmsNetId: …`), for example `10.0.0.4.1.1`.
+- If the helper cannot start (no `TwinCAT.Ads.dll` found) or cannot reach the PLC either, the message
+  names both failures. A DLL that was not found names its setting (`tcToolkit.adsDll.dotNetLibrary` for
+  `TwinCAT.Ads.dll`, `tcToolkit.adsDll.nativeDllFolder` for `TcAdsDll.dll`), with **Open Setting**; see
+  *ADS DLL paths* under Settings. Other workarounds: run the PLC in a kernel-mode runtime (the library documents
+  `tcpkg config set -n xarMode -v KM`, with Hyper-V and Memory Integrity off; not confirmed by
+  Beckhoff), or monitor a PLC on another machine.
 
 ### For AI coding assistants
 
@@ -436,6 +575,10 @@ for the version logic. There is no unit-test framework for Structured Text, so a
 
 Optional, only for *Build through XAE*: Windows with **TwinCAT XAE** (the XAE Shell of the project's
 TwinCAT version) and Windows PowerShell.
+
+Optional, only for online monitoring: TwinCAT XAE or XAR on this PC (its AMS router), with routes to
+remote PLCs set up in XAE — or, without TwinCAT, direct mode (see
+[Online monitoring](#online-monitoring-live-values-write-plc-watch)).
 
 Optional, only for the C++ options of *Build project*: **g++ 7 or later** for *Build with g++* (on
 Windows, MinGW-w64 — for example MSYS2's UCRT64; see [Build project](#build-project)), and Microsoft's
@@ -478,14 +621,27 @@ old entry is removed from your `settings.json`.
 | `tcToolkit.xaeShell.path4026` | *(detected)* | Full path to `TcXaeShell.exe` of the XAE Shell for TwinCAT 3.1.4026 (the 64-bit shell). Empty = not found. |
 | `tcToolkit.compiler.path` | *(empty)* | Full path to the command-line file (`.cjs`) of an external IEC 61131-3 compiler for **Build Project** to run instead of the bundled one. Empty = the bundled compiler. Per machine. |
 | `tcToolkit.compiler.nodePath` | *(empty)* | Full path to a Node.js 22+ executable that runs the compiler. Empty = found automatically (`node` on `PATH`, the usual Windows install locations, then VS Code's own runtime when it is Node.js 22+). Per machine. |
-| `tcToolkit.compiler.generateCpp` | `false` | **Generate C++**: after a check with no errors, write the project as C++ into `CPP_Files/` next to its `.plcproj`. Turning it off also turns off the g++ build. Also in the Build button's dropdown. |
-| `tcToolkit.compiler.buildWithGpp` | `false` | **Build with g++**: also compile that C++ with g++ (a compile check; errors in the Problems panel). Turning it on also turns on *Generate C++*. Also in the Build button's dropdown. |
+| `tcToolkit.compiler.generateCpp` | `false` | **Generate C++**: after a check with no errors, write the project as C++ into `CPP_Files/` next to its `.plcproj`. Turning it off also turns off the g++ build. Also in the editor's Actions menu. |
+| `tcToolkit.compiler.buildWithGpp` | `false` | **Build with g++**: also compile that C++ with g++ (a compile check; errors in the Problems panel). Turning it on also turns on *Generate C++*. Also in the editor's Actions menu. |
 | `tcToolkit.compiler.gppPath` | *(detected)* | Full path to `g++` (`g++.exe` on Windows). Empty = `g++` on `PATH`, then the usual Windows install folders; filled with the one found when the build is turned on, never overwritten. Per machine. |
-| `tcToolkit.xaeBuild.showWindow` | `false` | **Show the XAE window**: show the XAE Shell window for the whole *Build through XAE* instead of building headless. The window is always shown during activation, so a licence or download dialog can be answered, and it stays visible after an XAE version switch. Also in the Build button's dropdown. |
+| `tcToolkit.xaeBuild.showWindow` | `false` | **Show the XAE window**: show the XAE Shell window for the whole *Build through XAE* instead of building headless. The window is always shown during activation, so a licence or download dialog can be answered, and it stays visible after an XAE version switch. Also in the editor's Actions menu. |
 | `tcToolkit.xaeBuild.configuration` | `Release` | The solution configuration *Build through XAE* builds. |
 | `tcToolkit.xaeBuild.platform` | `TwinCAT RT (x64)` | The solution platform it builds (activating onto a user-mode runtime needs its `TwinCAT OS (...)` platform). |
 | `tcToolkit.xaeBuild.timeoutMinutes` | `30` | Minutes before a build through XAE is stopped (5 to 240; during activation only reported). |
 | `tcToolkit.xaeBuild.stallMinutes` | `10` | Headless watchdog: minutes without output before offering a re-run with the window shown (2 to 60). |
+| `tcToolkit.online.connectionMode` | `router` | How *Go Online* reaches the PLC: `router` (the AMS router on this PC; when it refuses the connection, as the 4026 user-mode runtime's does, TwinCAT's own ADS DLL is used through it) or `direct` (a PC without TwinCAT). Direct is never a fallback. |
+| `tcToolkit.online.adsPort` | `851` | ADS port of the PLC runtime (851 = first runtime, 852 = second). |
+| `tcToolkit.online.routerAddress` | `127.0.0.1` | AMS router address in router mode. Anything but this PC is untested. Per machine. |
+| `tcToolkit.online.direct.plcAddress` | *(empty)* | Direct mode: the PLC's IP address or host name. Per machine. |
+| `tcToolkit.online.direct.localAmsNetId` | *(empty)* | Direct mode: this PC's AMS Net ID, as the PLC's static route names it. Per machine. |
+| `tcToolkit.online.direct.localAdsPort` | `32750` | Direct mode: the local ADS port to use. Per machine. |
+| `tcToolkit.online.allowWrites` | `false` | Allow *Write Value…* (user settings only). Even when on, writes are enabled once per online session and every write is confirmed and logged. |
+| `tcToolkit.online.inlinePollInterval` | `500` | Inline values: refresh interval in ms (100 to 10000). |
+| `tcToolkit.online.watchLocation` | `panel` | PLC Watch: `panel` (its own tab in the bottom panel, next to the Terminal) or `sidebar` (the TC Toolkit sidebar, under PLC Objects). |
+| `tcToolkit.online.watchCycleTime` | `200` | PLC Watch: notification cycle time in ms (50 to 10000). |
+| `tcToolkit.online.maxNotifications` | `100` | PLC Watch: the most ADS notifications at once (1 to 400). |
+| `tcToolkit.adsDll.dotNetLibrary` | *(empty)* | Full path to `TwinCAT.Ads.dll`, Beckhoff's .NET ADS library (usually `C:\Program Files (x86)\Beckhoff\TwinCAT\3.1\Components\Base\v170\TwinCAT.Ads.dll`), loaded by the online monitoring fallback. Empty = search the TwinCAT install folders. Per machine. |
+| `tcToolkit.adsDll.nativeDllFolder` | *(empty)* | Folder holding `TcAdsDll.dll`, Beckhoff's native ADS DLL (usually `C:\Program Files (x86)\Beckhoff\TwinCAT\Common64`), used by the online monitoring fallback and by Build and Activate through XAE (the RUN check, confirming a user-mode runtime's AmsNetId). Empty = search the usual folders. Per machine. |
 
 **XAE Shell paths.** On Windows the two `tcToolkit.xaeShell.*` settings are filled automatically with the
 installation found on your machine: first from the shell's COM registration, then from the default
@@ -495,6 +651,15 @@ is ever filled — a path you set yourself is never overwritten, so change it if
 shell, kept your value, or found nothing. The settings are per machine (they are not synced and cannot be
 set per workspace). Today they are used by **Update Library Definitions**, which drives the shell at a
 configured path when that file exists; on other platforms nothing is detected and they stay empty.
+
+**ADS DLL paths.** TC Toolkit finds Beckhoff's ADS DLLs by itself: `TwinCAT.Ads.dll` under the TwinCAT
+install folder the registry names (then `Program Files (x86)\Beckhoff\TwinCAT` and `C:\TwinCAT`), newest
+`3.1\Components\Base\v*` first, and `TcAdsDll.dll` in that folder's `Common64` (`Common32` in a 32-bit
+PowerShell) — for the XAE build in `Program Files (x86)\Beckhoff\TwinCAT\Common64`, `Program Files\Beckhoff\TwinCAT\Common64`,
+then `Program Files (x86)\Beckhoff\TwinCAT\Common32`. Where that fails, set the two `tcToolkit.adsDll.*`
+settings. A path set there is **used as given**: if the file is not there, the message says so and names
+the path — TC Toolkit does not fall back to its own search, so a mistyped path is never hidden by a DLL
+found elsewhere. When a DLL is not found, the message names the setting and offers **Open Setting**.
 
 ---
 

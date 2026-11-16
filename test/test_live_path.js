@@ -398,10 +398,10 @@ sampleTest('TEST 9: definition/references on FB-init parameter', () => {
             `${paramName} must land on FB_init's VAR_INPUT, not the FB's own member ` +
             `(got componentId ${def && def.componentId})`);
 
-        // The target definition above comes from the XML index, where ranges are component-local.
-        // The workspace scan re-indexes each occurrence from a whole ST unit, where ranges are
-        // absolute. Identity follows componentId + symbol, not an unrelated declaration which happens
-        // to occupy the same component-local coordinates.
+        // The target definition above comes from the XML index; the workspace scan re-indexes each
+        // occurrence from a whole ST unit. Both are unit lines (xmlIndexer.js `unitLineMap`), and
+        // identity follows componentId + symbol, not an unrelated declaration that happens to
+        // occupy the same coordinates.
         const refs = provideReferences(stText, abs, index, uri);
         const gvlRefs = refs.filter(r => r.uri === uri);
         const cylinderRefs = refs.filter(r => /FB_Cylinder\.TcPOU$/i.test(r.uri));

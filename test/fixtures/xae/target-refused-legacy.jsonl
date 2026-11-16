@@ -1,0 +1,5 @@
+{"v":1,"t":"hello","mode":"activate","showWindow":false}
+{"v":1,"t":"phase","name":"resolve"}
+{"v":1,"t":"fatal","code":"target-refused","text":"this solution names TargetNetId 192.0.2.10.1.1, which is not this machine.","data":{"gate":3}}
+{"v":1,"t":"done","exitCode":2,"ui":null}
+{"exit":2}

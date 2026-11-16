@@ -121,7 +121,11 @@ const requiredGates = [
     'multi-project-sample',
     'committed-library',
     'objects-tree-ids',
-    'two-samples'
+    'two-samples',
+    // R15 online monitoring: path resolution on the sample, the commands end to end, the code check on the committed .tmc.
+    'ads-paths-sample',
+    'ads-watch',
+    'ads-code'
 ];
 const missedGates = requiredGates
     .map(gate => reports.get(gate) || { gate, status: 'skipped', detail: 'harness did not report execution' })

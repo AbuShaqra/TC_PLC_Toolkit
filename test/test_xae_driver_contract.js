@@ -36,7 +36,7 @@ const emitted = new Set();
 for (const o of [
     { scriptPath: 's', slnPath: 'a.sln', showWindow: true, configuration: 'Debug', platform: 'P', cancelFile: 'c' },
     { scriptPath: 's', slnPath: 'a.sln', mode: /** @type {'activate'} */ ('activate'), targetNetId: '1.2.3.4.1.1' },
-    { scriptPath: 's', mode: /** @type {'listTargets'} */ ('listTargets') },
+    { scriptPath: 's', mode: /** @type {'listTargets'} */ ('listTargets'), adsDllDir: 'd' },
     { scriptPath: 's', slnPath: 'a.sln', shellOverride: 'TcXaeShell.DTE.17.0' }
 ]) {
     const args = x.buildDriverArgs(o);
@@ -44,7 +44,7 @@ for (const o of [
     for (const a of afterFile) if (/^-[A-Za-z]+$/.test(a)) emitted.add(a.slice(1));
 }
 for (const flag of emitted) assert(params.has(flag), `-${flag} is a parameter of the driver`);
-for (const flag of ['ShowWindow', 'Json', 'ListTargets', 'CancelFile', 'SlnPath', 'ActivateConfiguration', 'TargetNetId', 'Configuration', 'Platform']) {
+for (const flag of ['ShowWindow', 'Json', 'ListTargets', 'CancelFile', 'SlnPath', 'ActivateConfiguration', 'TargetNetId', 'Configuration', 'Platform', 'AdsDllDir']) {
     assert(params.has(flag), `param() declares $${flag}`);
 }
 assert(/\[switch\]\$ShowWindow/.test(paramBlock) && /\[switch\]\$Json/.test(paramBlock) && /\[switch\]\$ListTargets/.test(paramBlock)
@@ -59,7 +59,7 @@ if (/function Emit-Fatal[\s\S]*?Emit-Event 'fatal'/.test(ps1)) emittedTypes.add(
 for (const t of x.EVENT_TYPES) assert(emittedTypes.has(t), `the driver emits '${t}'`);
 for (const t of emittedTypes) assert(x.EVENT_TYPES.includes(t), `the reader handles '${t}'`);
 const phases = new Set([...ps1.matchAll(/Enter-Phase '([a-z]+)'/g)].map(m => m[1]));
-for (const p of ['resolve', 'launch', 'pin', 'open', 'configure', 'build', 'errors', 'target', 'activate', 'restart', 'verify', 'close']) {
+for (const p of ['resolve', 'launch', 'pin', 'open', 'configure', 'build', 'errors', 'target', 'activate', 'boot', 'restart', 'verify', 'close']) {
     assert(phases.has(p), `phase '${p}' is entered`);
 }
 for (const p of x.UNINTERRUPTIBLE_PHASES) assert(phases.has(p), `uninterruptible phase '${p}' exists in the driver`);
@@ -68,6 +68,106 @@ for (const code of ['no-sln', 'ambiguous-sln', 'config-not-declared', 'no-tsproj
     assert(fatalCodes.has(code) || ps1.includes(`'${code}'`), `fatal code ${code}`);
 }
 assert(ps1.includes("'shell-closed'"), 'fatal code shell-closed');
+// Gate 3 (2026-11-16): the refusal names this PC's runtimes, and the fatal carries what the extension
+// needs to offer changing the solution's target; the gate and its labels are the builder's, verbatim.
+assert(/Emit-Fatal 'target-refused' "\$_" \(\[ordered\]@\{ gate = \$gate; projectNetId = \$projTarget; tsproj = \$tsproj\.FullName; local = @\(\$refusedLocal\) \}\)/.test(ps1),
+    'target-refused carries gate, projectNetId, tsproj and local');
+assert(/\$name = \$\(if \(\$r\.Kind -eq 'real-time'\) \{ 'Real-time runtime' \} else \{ Split-Path -Leaf \$r\.Source \}\)/.test(ps1)
+    && /kind = \$r\.Kind; platform = \$r\.Platform; provenance = \$r\.Provenance/.test(ps1), "the runtime list entries keep the -ListTargets shape");
+// A user-mode runtime's NetId is trusted only for a running instance that wrote it (2026-11-16): the
+// list marks every entry, an unknown one carries no netId, and both lists come from one function.
+assert(/netIdStatus = \$\(if \(\$r\.NetId\) \{ 'trusted' \} else \{ \[string\]\$r\.NetIdStatus \}\)/.test(ps1)
+    && /netId = \$\(if \(\$r\.NetId\) \{ \$r\.NetId \} else \{ \$null \}\)/.test(ps1)
+    && /reason = \$\(if \(\$r\.NetIdReason\) \{ \[string\]\$r\.NetIdReason \} elseif \(\$r\.NetId\) \{ \$null \} else \{ '' \}\)/.test(ps1)
+    && /netIdSource = \$\(if \(\$r\.NetId -and \$r\.NetIdSource\) \{ \[string\]\$r\.NetIdSource \} else \{ \$null \}\)/.test(ps1),
+    'list entries carry netIdStatus, netIdSource and reason; an unknown NetId is null');
+assert(/\$list = ConvertTo-RuntimeListEntries -Records @\(Get-LocalRuntimeRecords\)/.test(ps1)
+    && /\$refusedLocal = ConvertTo-RuntimeListEntries -Records \$LocalRuntimeRecords/.test(ps1), '-ListTargets and target-refused build their list the same way');
+if (fs.existsSync(BUILDER)) {
+    const builder = fs.readFileSync(BUILDER, 'utf8');
+    const fn = (text, name) => (new RegExp(`\\nfunction ${name} \\{[\\s\\S]*?\\r?\\n\\}\\r?\\n`).exec(text) || [''])[0];
+    for (const name of ['Resolve-ActivationTarget', 'Get-RuntimeLabels', 'Resolve-UserModeNetIdTrust', 'Confirm-UserModeNetIdTrust',
+        'Get-UserModeRuntimeProcesses', 'Get-UnknownRuntimeLabels', 'Get-UserModeRuntimeRecords', 'Get-LocalRuntimeRecords', 'Get-LocalAmsNetIds',
+        'Read-TcAdsState', 'Test-UserModeNetIdOverAds']) {
+        assert(fn(ps1, name) !== '' && fn(ps1, name) === fn(builder, name), `${name} is identical in the driver and the builder`);
+    }
+    assert(/which is not a runtime on this PC\." \+ \$nl \+/.test(ps1) && /Runtimes on this PC: \$\(\$named -join ', '\)/.test(ps1),
+        'gate 3 says "not a runtime on this PC" and names the local runtimes');
+    for (const text of [ps1, builder]) {
+        assert(/-RuntimeLabels \$RuntimeLabels `\r?\n\s*-UnknownRuntimes \$UnknownRuntimes\r?\n/.test(text)
+            && /\$RuntimeLabels\s+= Get-RuntimeLabels -Records \$LocalRuntimeRecords/.test(text)
+            && /\$UnknownRuntimes\s+= Get-UnknownRuntimeLabels -Records \$LocalRuntimeRecords/.test(text),
+            'the caller hands the gate the runtime labels and the runtimes whose NetId is unknown');
+        // Fail closed: the local set keys on NetId, and an untrusted record has none.
+        assert(/NetId\s+= \$\(if \(\$netTrust\.Status -eq 'trusted'\) \{ \$fileNetId \} else \{ \$null \}\)/.test(text)
+            && /\$netTrust = Confirm-UserModeNetIdTrust -Trust \$trust -NetId \$fileNetId -ConfirmNetId \$ConfirmNetId/.test(text)
+            && /-Processes \$umProcesses -ProcessListFailed:\(\$null -eq \$umProcesses\) `\r?\n\s*-ConfirmNetId \$\{function:Test-UserModeNetIdOverAds\}/.test(text),
+            'a user-mode NetId is set only when trusted, against the live process list, confirmed over ADS when the times cannot settle it');
+    }
+    // The ADS confirmation (2026-11-16): never for a trusted or not-running decision, one ADS route
+    // (Read-TcAdsState, which Get-TcAdsState wraps), a short timeout, each NetId asked once per run.
+    {
+        const confirm = fn(ps1, 'Confirm-UserModeNetIdTrust');
+        assert(/if \(\$Trust\.Status -eq 'trusted'\) \{ return \(& \$result 'trusted' \$Trust\.Reason 'file-time'\) \}/.test(confirm)
+            && /if \(\(\$Trust\.Status -ne 'rewritten' -and \$Trust\.Status -ne 'unverifiable'\) -or -not \$ConfirmNetId -or -not \$NetId\) \{/.test(confirm),
+            'only a rewritten or unverifiable decision is confirmed over ADS (no probe when trusted or not running)');
+        assert(confirm.indexOf('& $ConfirmNetId $NetId') > confirm.indexOf("-ne 'unverifiable'"), 'the probe runs after the early returns');
+        assert(/\$state -le 0/.test(confirm) && /'ads'\)/.test(confirm), 'only a valid AdsState (not Invalid) trusts, with source ads');
+        assert(!/rewritten after this runtime started \(another instance\?\)/.test(ps1) && /'rewritten' 'the configuration file changed after this runtime started'/.test(ps1),
+            'the rewritten reason no longer guesses another instance');
+        assert(/function Get-TcAdsState \{\r?\n\s*param\(\[Parameter\(Mandatory\)\]\[string\]\$NetId, \[int\]\$Port = 10000\)\r?\n\s*\$r = Read-TcAdsState -NetId \$NetId -Port \$Port\r?\n\s*return \$r\.AdsState/.test(ps1),
+            'Get-TcAdsState wraps Read-TcAdsState (one ADS route)');
+        assert(/Read-TcAdsState -NetId \$NetId -Port 10000 -TimeoutMs 2000/.test(fn(ps1, 'Test-UserModeNetIdOverAds'))
+            && /-Scope Script/.test(fn(ps1, 'Test-UserModeNetIdOverAds')), 'the probe asks port 10000 with a 2 s timeout, once per NetId per run');
+        assert(/AdsSyncSetTimeout/.test(fn(ps1, 'Read-TcAdsState')) && /AdsPortClose/.test(fn(ps1, 'Read-TcAdsState')), 'Read-TcAdsState sets the timeout and closes its port');
+        // tcToolkit.adsDll.nativeDllFolder (user request 2026-11-16): -AdsDllDir replaces the search, used as given.
+        const read = fn(ps1, 'Read-TcAdsState');
+        assert(/\$configuredDir = Get-Variable -Name AdsDllDir -Scope Script -ValueOnly -ErrorAction SilentlyContinue/.test(read)
+            && /\$dllDirs = @\(\$\(if \(\$configuredDir\) \{ @\(\[string\]\$configuredDir\) \} else \{ @\(/.test(read),
+            'Read-TcAdsState: a configured -AdsDllDir is the only folder tried (no fallback to the search)');
+        assert(/was not found in \$configuredDir \(the folder -AdsDllDir names\)/.test(read) && /Set-Variable -Name TcAdsDllProblem -Scope Script -Value \$problem/.test(read),
+            'a missing TcAdsDll.dll names the folder tried and is kept for the activation report');
+        assert(/^\s*\[string\]\$AdsDllDir\r?$/m.test((/\nparam\(([\s\S]*?)\n\)\r?\n/.exec(builder) || [])[1] || ''), 'the builder takes -AdsDllDir too');
+        for (const [label, text] of [['driver', ps1], ['builder', builder]]) {
+            assert(/ACTIVATION INCOMPLETE[\s\S]{0,400}\$dllProblem = Get-Variable -Name TcAdsDllProblem -Scope Script/.test(text), `the ${label} prints the DLL problem with ACTIVATION INCOMPLETE`);
+        }
+        assert(/Emit-Event 'activation' \(\[ordered\]@\{ netId = \$pinTarget; adsState = \$adsState; stateName = \$stateName; outcome = \$activationOutcome\r?\n\s*dllProblem = /.test(ps1)
+            && /\$activationDllProblem = \$\(if \(\$null -eq \$adsState\) \{ Get-Variable -Name TcAdsDllProblem/.test(ps1),
+            'the activation event carries dllProblem, only when the state is unreadable');
+    }
+}
+// Boot project with autostart (user decision 2026-11-16): the same functions in both scripts, called
+// after ActivateConfiguration and before StartRestartTwinCAT, and the solution is never saved.
+if (fs.existsSync(BUILDER)) {
+    const builder = fs.readFileSync(BUILDER, 'utf8');
+    const fn = (text, name) => (new RegExp(`\\nfunction ${name} \\{[\\s\\S]*?\\r?\\n\\}\\r?\\n`).exec(text) || [''])[0];
+    for (const name of ['Install-PlcBootProjects', 'Get-PlcAmsPorts', 'Read-PlcRunStates', 'Get-TcAdsState']) {
+        assert(fn(ps1, name) !== '' && fn(ps1, name) === fn(builder, name), `${name} is identical in the driver and the builder`);
+    }
+    for (const [label, text] of [['driver', ps1], ['builder', builder]]) {
+        const act = text.indexOf('$sysManager.ActivateConfiguration()');
+        const boot = text.indexOf('$bootProjects = Install-PlcBootProjects -SysManager $sysManager');
+        const restart = text.indexOf('$sysManager.StartRestartTwinCAT()');
+        assert(act > 0 && boot > act && restart > boot, `${label}: the boot project is installed after ActivateConfiguration and before StartRestartTwinCAT`);
+        assert(/Read-PlcRunStates -NetId \$pinTarget/.test(text) && /-Ports \(Get-PlcAmsPorts -TsprojPath \$tsproj\.FullName\)/.test(text),
+            `${label}: after RUN each installed PLC's state is read on its own port`);
+        assert(!/\.Save(As|All)?\(/.test(text) && /\$dte\.Solution\.Close\(\$false\)/.test(text), `${label}: the solution is never saved (BootProjectAutostart reaches no file)`);
+    }
+    const installer = fn(ps1, 'Install-PlcBootProjects');
+    assert(/\$plc\.BootProjectAutostart = \$true/.test(installer) && /if \(-not \$rec\.wasAutostart\)/.test(installer),
+        'BootProjectAutostart is written only when it reads False');
+    assert(/\$plc\.GenerateBootProject\(\$true\)/.test(installer), 'GenerateBootProject($true) sends the boot project to the target');
+    assert(!/Invoke-ComRetry \{ \$(SysManager\.LookupTreeItem|tipc\.Child\(|root\.Child\()/.test(installer),
+        'tree items are never returned through Invoke-ComRetry (a tree item enumerates its children)');
+    for (const o of ["'installed'", "'partial'", "'failed'", "'none'"]) assert(installer.includes(o), `outcome ${o}`);
+}
+const bootAt = ps1.indexOf("Enter-Phase 'boot'");
+assert(bootAt > ps1.indexOf("Enter-Phase 'activate'") && ps1.indexOf("Emit-Event 'bootProject'") > bootAt
+    && ps1.indexOf("Enter-Phase 'restart'") > ps1.indexOf("Emit-Event 'bootProject'"), "the driver emits 'bootProject' in phase 'boot', between activate and restart");
+assert(/Emit-Event 'bootProject' \(\[ordered\]@\{ outcome = \$bootProjects\.Outcome; error = \$bootProjects\.Error; projects = @\(\$bootProjects\.Projects\) \}\)/.test(ps1),
+    'bootProject carries outcome, error and projects');
+assert(/Emit-Event 'plcState' \(\[ordered\]@\{ name = \$plcState\.name; port = \$plcState\.port; adsState = \$plcState\.adsState; stateName = \$plcState\.stateName \}\)/.test(ps1),
+    'plcState carries name, port, adsState and stateName');
 for (const r of ['headless', 'requested', 'version-switch', 'build', 'activation', 'after-activation']) {
     assert(ps1.includes(`'${r}'`), `ui reason '${r}'`);
 }
@@ -266,10 +366,10 @@ if (fs.existsSync(BUILDER)) {
         const at = t.indexOf(`function ${name} {`);
         if (at < 0) return '';
         // A function ends at the first `}` in column 0 after it, past its C# here-string (whose class
-        // brace is in column 0 too) when it has one.
-        const next = t.indexOf('\n<#', at + 1);
-        const hereEnd = t.indexOf("\n'@", at);
-        const from = hereEnd > 0 && (next < 0 || hereEnd < next) ? hereEnd : at;
+        // brace is in column 0 too) when one opens before that brace.
+        const close = t.indexOf('\n}\n', at);
+        const hereStart = t.indexOf("@'\n", at);
+        const from = hereStart > 0 && hereStart < close ? t.indexOf("\n'@", hereStart) : at;
         return t.slice(at, t.indexOf('\n}\n', from) + 2);
     };
     const names = ['Get-XaeShellInstallDir', 'Initialize-TypedDteReader', 'Read-TypedErrorList', 'Read-TypedBuildPane'];

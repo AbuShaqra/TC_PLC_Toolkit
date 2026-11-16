@@ -78,6 +78,11 @@ markdown file wins if the two disagree.
 - the **Backlog** section and card: add follow-ups and open questions the PR left, remove what it settled;
 - the page header (title "TC Toolkit Roadmap", "Updated" date, "Re-measured" date with the velocity table behind it, release, forecast) and any card text the PR made stale.
 
+**Keep the header clean (user rule, 2026-11-14):** the line under the title (the page's `meta` row and the markdown's
+"Last updated" line) holds only short facts — the date, release, re-measure date, what the toolkit does next, forecast,
+lanes. Never a running log of changes: the cards, Done and Backlog carry the detail, and anything finer belongs in
+HANDOFF.md (if it meets HANDOFF's rules) or the git history.
+
 Then load the page in a browser and confirm the chart draws with no script error before republishing — a
 syntax slip in `PLAN` blanks the whole timeline silently (it happened once on 2026-11-11).
 

@@ -197,6 +197,15 @@
     often it is activated. A user-mode runtime does not need the real-time kernel and reaches RUN
     normally.
 
+.PARAMETER AdsDllDir
+    The folder holding TwinCAT's native ADS DLL, TcAdsDll.dll (usually
+    C:\Program Files (x86)\Beckhoff\TwinCAT\Common64), for a machine where the default folders do not
+    hold it. Read-TcAdsState loads it from there: the RUN check after activation and the AmsNetId
+    confirmation of a user-mode runtime. Used as given: when TcAdsDll.dll is not in it, the ADS reads
+    report that (naming the folder) and the default folders are NOT searched. Omit it to search
+    Program Files (x86)\...\Common64, Program Files\...\Common64, then Program Files (x86)\...\Common32.
+    The extension passes the tcToolkit.adsDll.nativeDllFolder setting here.
+
 .EXAMPLE
     powershell -NoProfile -ExecutionPolicy Bypass -File .\build_plc_project.ps1
 
@@ -292,7 +301,9 @@ param(
     # See .PARAMETER TargetNetId above. Validated against THIS MACHINE's own AmsNetIds and rejected
     # otherwise, so it selects between local runtimes (real-time vs user-mode) and can never name a
     # remote station.
-    [string]$TargetNetId
+    [string]$TargetNetId,
+    # See .PARAMETER AdsDllDir above: the folder holding TcAdsDll.dll; omitted = search as before.
+    [string]$AdsDllDir
 )
 
 # Whether the CALLER named a version, captured before $TcVersion is filled in from the .tsproj below.
@@ -695,6 +706,190 @@ function Resolve-RuntimePlatform {
 
 <#
 .SYNOPSIS
+    Whether a user-mode runtime's AmsNetId, as its TcRegistry.xml names it, belongs to a running instance.
+.DESCRIPTION
+    Pure - no process list, no filesystem - so test-activation-target.ps1 can pin every branch. The
+    caller measures the facts (Get-UserModeRuntimeProcesses, the file's LastWriteTimeUtc) and this
+    decides what they mean.
+
+    WHY THE FILE ALONE IS NOT ENOUGH (user's machine, 4026, 2026-11-16): every start of a user-mode
+    runtime instance writes ITS OWN AmsNetId into the shared <Runtimes>\<name>\3.1\TcRegistry.xml.
+    A second instance of UmRT_Default, started and closed again, left its own NetId in the file while
+    the only running instance (started earlier) answered on another one. The file then named a NetId
+    no runtime answers to, and the toolkit offered it as the "(project)" target. No other file holds the
+    running NetId (Boot\CurrentProjectInfo.json, CurrentConfig.xml, LoggedEvents.db checked).
+
+    THE RULE (decided 2026-11-16): the file's NetId is trusted only when
+      (a) a TcSystemServiceUm process for this runtime name is running - its command line carries
+          -n "<name>" (quoted or not, compared case-insensitively), and
+      (b) the file was last written no later than the start of the NEWEST such process plus
+          -ToleranceSeconds. The instance writes the file itself right after it starts, so a write a
+          moment after the start is its own; 5 s is the default. When several processes run for one
+          name the file can only be the newest's; the NetIds of the older ones are not in any file
+          and stay unknown.
+    A LATER WRITE IS NOT PROOF OF A STALE FILE (user's machine, 4026, 2026-11-16, the same day): the
+    only running UmRT_Default instance, started 16:49:08, rewrote its own file at 16:50:40 - during an
+    activation - and the first Build and Activate was refused. From the times alone that rewrite
+    cannot be told from another instance's. So 'rewritten' and 'unverifiable' are not final: the
+    caller asks the runtime over ADS (Confirm-UserModeNetIdTrust) before it gives up.
+    Anything still unknown fails closed: the caller drops the NetId from the local set, so it is never
+    offered, preselected or accepted by the local-only activation gates.
+
+        Status        Reason
+        trusted       ''
+        not-running   this runtime is not running
+        rewritten     the configuration file changed after this runtime started
+        unverifiable  why the check could not be made (process list unavailable, a command line or a
+                      start time unreadable - a process running elevated hides its command line from
+                      an unelevated caller - or the file's time unknown)
+
+    Each process is an object with CommandLine (string) and StartTime ([datetime] or $null). Times are
+    compared in UTC, so a local CreationDate and a LastWriteTimeUtc compare correctly.
+#>
+function Resolve-UserModeNetIdTrust {
+    param(
+        [Parameter(Mandatory)][string]$Name,
+        $RegistryWriteTime,
+        $Processes,
+        [switch]$ProcessListFailed,
+        [int]$ToleranceSeconds = 5
+    )
+    $result = { param($s, $r, $n) [pscustomobject]@{ Status = $s; Reason = $r; Instances = $n } }
+    if ($ProcessListFailed) {
+        return (& $result 'unverifiable' 'the running processes could not be listed, so it is not known whether this runtime is running' 0)
+    }
+
+    $matching   = @()
+    $unreadable = 0
+    foreach ($p in @($Processes)) {
+        if (-not $p) { continue }
+        $cmd = [string]$p.CommandLine
+        if (-not $cmd) { $unreadable++; continue }
+        # The executable first (quoted or not), so a path containing ' -n ' cannot match.
+        $rest = [regex]::Replace($cmd, '^\s*(?:"[^"]*"|\S+)', '')
+        $m = [regex]::Match($rest, '(?i)(?:^|\s)-n\s+(?:"([^"]*)"|(\S+))')
+        if (-not $m.Success) { continue }
+        $runtime = $(if ($m.Groups[1].Success) { $m.Groups[1].Value } else { $m.Groups[2].Value })
+        if ($runtime -eq $Name) { $matching += $p }
+    }
+
+    if ($matching.Count -eq 0) {
+        if ($unreadable -gt 0) {
+            return (& $result 'unverifiable' ('a user-mode runtime process is running whose command line could not be read ' +
+                                              '(it may run elevated), so it cannot be matched to this runtime') 0)
+        }
+        return (& $result 'not-running' 'this runtime is not running' 0)
+    }
+    if (@($matching | Where-Object { -not ($_.StartTime -is [datetime]) }).Count -gt 0) {
+        return (& $result 'unverifiable' "the start time of this runtime's process could not be read" $matching.Count)
+    }
+    if (-not ($RegistryWriteTime -is [datetime])) {
+        return (& $result 'unverifiable' "the configuration file's time could not be read" $matching.Count)
+    }
+
+    $newest = @($matching | Sort-Object { $_.StartTime.ToUniversalTime() } -Descending)[0].StartTime.ToUniversalTime()
+    if ($RegistryWriteTime.ToUniversalTime() -gt $newest.AddSeconds($ToleranceSeconds)) {
+        return (& $result 'rewritten' 'the configuration file changed after this runtime started' $matching.Count)
+    }
+    return (& $result 'trusted' '' $matching.Count)
+}
+
+<#
+.SYNOPSIS
+    The running TcSystemServiceUm processes (user-mode runtime instances), or $null when they cannot be listed.
+.DESCRIPTION
+    The impure half of Resolve-UserModeNetIdTrust: Win32_Process gives the command line (which names
+    the runtime with -n) and CreationDate (the start time) in one query. $null - not an empty list -
+    when the query itself fails, so the caller can say "could not be checked" instead of "not running".
+    CommandLine is empty for a process the caller may not inspect (one running elevated, seen from an
+    unelevated shell); Resolve-UserModeNetIdTrust reports that as unverifiable.
+#>
+function Get-UserModeRuntimeProcesses {
+    $procs = $null
+    try {
+        $procs = @(Get-CimInstance -ClassName Win32_Process -Filter "Name = 'TcSystemServiceUm.exe'" -ErrorAction Stop)
+    } catch { return $null }
+    return ,@($procs | ForEach-Object {
+        [pscustomobject]@{
+            ProcessId   = [int]$_.ProcessId
+            CommandLine = [string]$_.CommandLine
+            StartTime   = $(if ($_.CreationDate -is [datetime]) { $_.CreationDate } else { $null })
+        }
+    })
+}
+
+<#
+.SYNOPSIS
+    Resolve-UserModeNetIdTrust's decision, confirmed over ADS when the file times could not settle it.
+.DESCRIPTION
+    A running runtime rewrites its own TcRegistry.xml (on activation, measured 2026-11-16), so the
+    time rule's 'rewritten' - and its 'unverifiable' - cannot tell a live NetId from a stale one. The
+    runtime can: this asks the file's NetId over ADS (-ConfirmNetId, the system service on port
+    10000). An answer with a valid AdsState (anything but 0, Invalid) trusts the NetId; anything else
+    keeps the decision and adds the ADS outcome to its reason. Never probed: 'trusted' (no ADS call on
+    the happy path) and 'not-running' (no instance of this runtime runs, so an answer at that NetId
+    could only come from something else).
+
+    Pure apart from -ConfirmNetId, which test-activation-target.ps1 replaces with a fake. It is called
+    with the NetId and returns Read-TcAdsState's shape: AdsState (int, or $null), AdsErrorCode (int,
+    or $null), DllProblem and Error (strings, or $null). A throw counts as an Error. Without
+    -ConfirmNetId (or without a NetId) the decision is returned unchanged.
+
+    Returns Status, Reason, Instances (Resolve-UserModeNetIdTrust's) and Source: 'file-time' when the
+    time rule trusted the file, 'ads' when the runtime answered, $null while the NetId is unknown.
+#>
+function Confirm-UserModeNetIdTrust {
+    param(
+        [Parameter(Mandatory)]$Trust,
+        [string]$NetId,
+        [scriptblock]$ConfirmNetId
+    )
+    $result = { param($s, $r, $src) [pscustomobject]@{ Status = $s; Reason = $r; Instances = $Trust.Instances; Source = $src } }
+    if ($Trust.Status -eq 'trusted') { return (& $result 'trusted' $Trust.Reason 'file-time') }
+    if (($Trust.Status -ne 'rewritten' -and $Trust.Status -ne 'unverifiable') -or -not $ConfirmNetId -or -not $NetId) {
+        return (& $result $Trust.Status $Trust.Reason $null)
+    }
+
+    $answer = $null
+    try { $answer = & $ConfirmNetId $NetId } catch { $answer = [pscustomobject]@{ Error = $_.Exception.Message } }
+    $state = $null
+    if ($answer -and $null -ne $answer.AdsState) { try { $state = [int]$answer.AdsState } catch { $state = $null } }
+    if (-not $answer -or $answer.DllProblem -or $null -ne $answer.AdsErrorCode -or $answer.Error -or $null -eq $state -or $state -le 0) {
+        $why = $(if (-not $answer) { "no answer from $NetId" }
+                 elseif ($answer.DllProblem) { [string]$answer.DllProblem }
+                 elseif ($null -ne $answer.AdsErrorCode) { 'no runtime answered at {0} (ADS error 0x{1:X})' -f $NetId, [int]$answer.AdsErrorCode }
+                 elseif ($answer.Error) { "asking $NetId failed: $($answer.Error)" }
+                 else { "the runtime at $NetId answered with no valid state" })
+        return (& $result $Trust.Status ("$($Trust.Reason); its AmsNetId could not be confirmed over ADS: $why") $null)
+    }
+    $stateName = $(if ($answer.StateName) { [string]$answer.StateName } else { "$state" })
+    return (& $result 'trusted' ("$($Trust.Reason); its AmsNetId was confirmed over ADS (the runtime answered at $NetId, state $stateName)") 'ads')
+}
+
+<#
+.SYNOPSIS
+    One line per local runtime whose AmsNetId is unknown, for the activation refusals and warnings.
+.DESCRIPTION
+    Pure over Get-LocalRuntimeRecords' records: those with a NetIdStatus other than 'trusted' (a
+    user-mode runtime whose TcRegistry.xml NetId was not trusted, see Resolve-UserModeNetIdTrust).
+    Each runtime once, named by its folder - the name XAE shows.
+#>
+function Get-UnknownRuntimeLabels {
+    param($Records)
+    $lines = @()
+    $seen  = @{}
+    foreach ($r in @($Records)) {
+        if (-not $r -or $r.NetId -or -not $r.NetIdStatus -or $r.NetIdStatus -eq 'trusted') { continue }
+        $name = $(if ($r.Name) { $r.Name } elseif ($r.Source) { Split-Path -Leaf $r.Source } else { 'user-mode runtime' })
+        if ($seen.ContainsKey($name)) { continue }
+        $seen[$name] = $true
+        $lines += "$name (user-mode runtime, AmsNetId unknown: $($r.NetIdReason))"
+    }
+    return [string[]]$lines
+}
+
+<#
+.SYNOPSIS
     One record per user-mode runtime found under a Runtimes root: NetId, platform, provenance.
 .DESCRIPTION
     ONE WALK, TWO ANSWERS, because the second is only trustworthy when it comes from the same place as
@@ -713,10 +908,28 @@ function Resolve-RuntimePlatform {
     installed. The live caller passes
     <ProgramData>\Beckhoff\TwinCAT\3.1\Runtimes.
 
-    Returns, per NetId: NetId, Platform ($null when unknown), Provenance, Kind ('user-mode'), Source.
+    THE NETID IS TRUSTED ONLY FOR A RUNNING INSTANCE (2026-11-16): every instance start rewrites the
+    shared TcRegistry.xml, so the file can name a NetId no runtime answers to. Each record is checked
+    by Resolve-UserModeNetIdTrust against -Processes (Get-UserModeRuntimeProcesses' list; pass
+    -ProcessListFailed when it could not be read) and the file's LastWriteTimeUtc; a 'rewritten' or
+    'unverifiable' answer is then confirmed over ADS through -ConfirmNetId (Confirm-UserModeNetIdTrust;
+    without it the time rule alone decides, as in the fixture tests). An untrusted record
+    keeps the file's value in FileNetId only - NetId is $null - so every consumer that keys on NetId
+    (Get-LocalAmsNetIds, Get-RuntimeLabels, Get-LocalRuntimePlatforms) leaves it out: an unknown NetId
+    is not local. Without -Processes nothing is running, so nothing is trusted (fail closed).
+
+    Returns, per AmsNetId value in a TcRegistry.xml: NetId (the trusted NetId, or $null), FileNetId,
+    NetIdStatus, NetIdReason and NetIdSource (Confirm-UserModeNetIdTrust's Status, Reason and Source:
+    'file-time' / 'ads' / $null), Instances, Name (the runtime folder's name), Platform ($null when
+    unknown), Provenance, Kind ('user-mode'), Source.
 #>
 function Get-UserModeRuntimeRecords {
-    param([Parameter(Mandatory)][string]$RuntimesRoot)
+    param(
+        [Parameter(Mandatory)][string]$RuntimesRoot,
+        $Processes,
+        [switch]$ProcessListFailed,
+        [scriptblock]$ConfirmNetId
+    )
 
     $records = @()
     if (-not (Test-Path -LiteralPath $RuntimesRoot)) { return $records }
@@ -749,14 +962,26 @@ function Get-UserModeRuntimeRecords {
         foreach ($reg in $regFiles) {
             $text = $null
             try { $text = Get-Content -LiteralPath $reg.FullName -Raw -ErrorAction Stop } catch { continue }
+            # The file's own time, from the same FileInfo the walk found, for the trust check.
+            $trust = Resolve-UserModeNetIdTrust -Name $dir.Name -RegistryWriteTime $reg.LastWriteTimeUtc `
+                                                -Processes $Processes -ProcessListFailed:$ProcessListFailed
             foreach ($m in [regex]::Matches($text, '(?i)<Value\s+Name="AmsNetId"[^>]*>\s*([0-9A-F]{12})\s*</Value>')) {
                 $hex = $m.Groups[1].Value
+                $fileNetId = ((0..5 | ForEach-Object { [Convert]::ToInt32($hex.Substring($_ * 2, 2), 16) }) -join '.')
+                # Per NetId: an ADS answer confirms this value, not the file.
+                $netTrust = Confirm-UserModeNetIdTrust -Trust $trust -NetId $fileNetId -ConfirmNetId $ConfirmNetId
                 $records += [pscustomobject]@{
-                    NetId      = ((0..5 | ForEach-Object { [Convert]::ToInt32($hex.Substring($_ * 2, 2), 16) }) -join '.')
-                    Platform   = $(if ($resolved) { $resolved.Platform }   else { $null })
-                    Provenance = $(if ($resolved) { $resolved.Provenance } else { $null })
-                    Kind       = 'user-mode'
-                    Source     = $dir.FullName
+                    NetId       = $(if ($netTrust.Status -eq 'trusted') { $fileNetId } else { $null })
+                    FileNetId   = $fileNetId
+                    NetIdStatus = $netTrust.Status
+                    NetIdReason = $netTrust.Reason
+                    NetIdSource = $netTrust.Source
+                    Instances   = $netTrust.Instances
+                    Name        = $dir.Name
+                    Platform    = $(if ($resolved) { $resolved.Platform }   else { $null })
+                    Provenance  = $(if ($resolved) { $resolved.Provenance } else { $null })
+                    Kind        = 'user-mode'
+                    Source      = $dir.FullName
                 }
             }
         }
@@ -784,8 +1009,16 @@ function Get-UserModeRuntimeRecords {
     Get-TcRuntimeKind) - so a registry-derived NetId with no such marker IS the real-time runtime. That
     is a sound reading rather than a guess, but it is an inference, and it is reported as one.
 
-    Returns, per NetId: NetId, Platform ($null when unknown), Provenance ('read' /
-    'architecture-inferred' / 'kind-inferred' / $null), Kind ('real-time' / 'user-mode'), Source.
+    A user-mode runtime's NetId counts only for a running instance that wrote it (see
+    Resolve-UserModeNetIdTrust) or that answers at it over ADS (Confirm-UserModeNetIdTrust, through
+    Test-UserModeNetIdOverAds); otherwise its record has NetId $null, FileNetId, and the reason in
+    NetIdStatus/NetIdReason. Those records are RETURNED, so a list can name the runtime and say why
+    its NetId is unknown, and every NetId-keyed consumer skips them.
+
+    Returns, per runtime NetId: NetId ($null when untrusted), Platform ($null when unknown),
+    Provenance ('read' / 'architecture-inferred' / 'kind-inferred' / $null), Kind ('real-time' /
+    'user-mode'), Source; user-mode records add FileNetId, NetIdStatus, NetIdReason, NetIdSource,
+    Instances, Name.
 #>
 function Get-LocalRuntimeRecords {
     $records = @()
@@ -823,9 +1056,12 @@ function Get-LocalRuntimeRecords {
         }
     }
 
-    $records += Get-UserModeRuntimeRecords -RuntimesRoot (Join-Path $env:ProgramData 'Beckhoff\TwinCAT\3.1\Runtimes')
+    $umProcesses = Get-UserModeRuntimeProcesses
+    $records += Get-UserModeRuntimeRecords -RuntimesRoot (Join-Path $env:ProgramData 'Beckhoff\TwinCAT\3.1\Runtimes') `
+                                           -Processes $umProcesses -ProcessListFailed:($null -eq $umProcesses) `
+                                           -ConfirmNetId ${function:Test-UserModeNetIdOverAds}
 
-    return @($records | Where-Object { $_.NetId })
+    return @($records | Where-Object { $_.NetId -or $_.FileNetId })
 }
 
 <#
@@ -844,6 +1080,27 @@ function Get-LocalRuntimeRecords {
 function Get-LocalAmsNetIds {
     return @(Get-LocalRuntimeRecords | ForEach-Object { $_.NetId } |
              Where-Object { $_ } | Sort-Object -Unique)
+}
+
+<#
+.SYNOPSIS
+    NetId -> a short label for every local runtime, for Resolve-ActivationTarget's project refusal.
+.DESCRIPTION
+    Pure over the records it is handed (Get-LocalRuntimeRecords' shape: NetId, Kind, Source), so
+    test-activation-target.ps1 feeds it fixtures. A user-mode runtime is named by its folder under
+    Runtimes\ (the name XAE shows, e.g. UmRT_Default); the real-time runtime has no name of its own.
+    The first record of a NetId wins, as in Get-LocalRuntimePlatforms.
+#>
+function Get-RuntimeLabels {
+    param($Records)
+    $labels = @{}
+    foreach ($r in @($Records)) {
+        if (-not $r -or -not $r.NetId -or $labels.ContainsKey($r.NetId)) { continue }
+        $labels[$r.NetId] = $(if ($r.Kind -eq 'real-time') { 'real-time runtime' }
+                              elseif ($r.Source) { "$(Split-Path -Leaf $r.Source), user-mode runtime" }
+                              else { 'user-mode runtime' })
+    }
+    return $labels
 }
 
 <#
@@ -933,6 +1190,13 @@ function Format-RuntimePlatform {
                           platform string is accepted too. Omit it and nothing is known, so gate 4
                           never refuses.
         -Configuration    only so the platform refusal can suggest '<config>|<target platform>'.
+        -RuntimeLabels    NetId -> a short label for that local runtime ('UmRT_Default, user-mode
+                          runtime'; Get-RuntimeLabels). Optional and only for wording: the project
+                          refusal names every local runtime, with its label where one is known.
+        -UnknownRuntimes  one line per local runtime whose AmsNetId is unknown (Get-UnknownRuntimeLabels:
+                          'UmRT_Default (user-mode runtime, AmsNetId unknown: <reason>)'). Wording only:
+                          they are NOT in -LocalNetIds and never become local. The three localness
+                          refusals name them, so a runtime missing from "Local" is explained.
 
         -Returns          TargetNetId, TargetSource, RequestedNetId, ProjectNetId, LocalNetIds,
                           Platform, TargetPlatform, TargetProvenance, Warnings (string[])
@@ -981,12 +1245,23 @@ function Resolve-ActivationTarget {
         [string]$ProjectNetId,
         [Parameter(Mandatory)][string]$Platform,
         [hashtable]$TargetPlatforms,
-        [string]$Configuration = 'Release'
+        [string]$Configuration = 'Release',
+        [hashtable]$RuntimeLabels,
+        [string[]]$UnknownRuntimes
     )
 
     # [Environment]::NewLine, not "`n": the caller prints the whole message with one Write-Host, and
     # the lines it replaced were separate Write-Host calls. Anything but a CRLF changes those bytes.
     $nl = [Environment]::NewLine
+
+    # Appended to the three localness refusals, and empty when every runtime's NetId is known, so
+    # those messages are byte-identical to what they were then.
+    $unknownTail = ''
+    $unknown = @($UnknownRuntimes | Where-Object { $_ })
+    if ($unknown.Count -gt 0) {
+        $unknownTail = ($nl + "       Not offered, AmsNetId unknown: $($unknown -join '; ')" + $nl +
+                        "       Read it in that runtime's console window ('AmsNetId: ...') or use XAE's Choose Target System.")
+    }
 
     # Same filter Get-LocalAmsNetIds applies to its own result, repeated because this function must
     # also be correct for a caller that hands it $null or a list with holes in it.
@@ -994,7 +1269,7 @@ function Resolve-ActivationTarget {
 
     if ($local.Count -eq 0) {
         throw ("cannot determine this machine's AmsNetId, so an activation target cannot be" + $nl +
-               "       proven local. Refusing to activate. (Is TwinCAT installed?)")
+               "       proven local. Refusing to activate. (Is TwinCAT installed?)" + $unknownTail)
     }
 
     # -TargetNetId selects BETWEEN THIS MACHINE'S OWN runtimes - typically the real-time one and a
@@ -1009,16 +1284,22 @@ function Resolve-ActivationTarget {
         if ($local -notcontains $RequestedNetId) {
             throw ("-TargetNetId $RequestedNetId is not an AmsNetId of this machine." + $nl +
                    "       Local: $($local -join ', ')" + $nl +
-                   "       Activation is local-only; a remote target cannot be selected here.")
+                   "       Activation is local-only; a remote target cannot be selected here." + $unknownTail)
         }
     }
 
     # A .tsproj can name a target, and on a real machine project that target is a physical station.
     # This fires with or without -TargetNetId - the project naming a rig is a fact about the project,
-    # and passing a local -TargetNetId does not make it untrue.
+    # and passing a local -TargetNetId does not make it untrue. The local runtimes are named because
+    # the only way past this refusal is changing the solution's target to one of them.
     if ($ProjectNetId -and ($local -notcontains $ProjectNetId)) {
-        throw ("this solution names TargetNetId $ProjectNetId, which is not this machine." + $nl +
-               "       Activation is local-only and there is no override. Refusing before the IDE starts.")
+        $named = @($local | ForEach-Object {
+            if ($RuntimeLabels -and $RuntimeLabels.ContainsKey($_) -and $RuntimeLabels[$_]) { "$_ ($($RuntimeLabels[$_]))" } else { "$_" }
+        })
+        throw ("this solution names TargetNetId $ProjectNetId, which is not a runtime on this PC." + $nl +
+               "       Runtimes on this PC: $($named -join ', ')" + $nl +
+               "       Activation is local-only and there is no override: change the solution's target" + $nl +
+               "       to one of these (XAE: Choose Target System) and re-run. Refusing before the IDE starts." + $unknownTail)
     }
 
     # The target, chosen BEFORE gate 4 because gate 4 is a question about THAT target. Choosing is not
@@ -1085,7 +1366,7 @@ function Resolve-ActivationTarget {
 
 <#
 .SYNOPSIS
-    The real ADS state of a target's system service, or $null if it cannot be read.
+    The real ADS state of a target's system service (or, with -Port, of a PLC), or $null if it cannot be read.
 .DESCRIPTION
     THE ONLY TRUSTWORTHY RUN/CONFIG ANSWER. The system manager exposes no state member -
     GetTargetState, GetAdsState, GetAppState and seven similar names are all absent (measured by
@@ -1098,15 +1379,42 @@ function Resolve-ActivationTarget {
     which this script already requires, so this adds no dependency.
 #>
 function Get-TcAdsState {
-    param([Parameter(Mandatory)][string]$NetId)
+    param([Parameter(Mandatory)][string]$NetId, [int]$Port = 10000)
+    $r = Read-TcAdsState -NetId $NetId -Port $Port
+    return $r.AdsState
+}
+
+<#
+.SYNOPSIS
+    Get-TcAdsState with the outcome spelled out: AdsState, or why there is none.
+.DESCRIPTION
+    The one ADS route of this script (TcAdsDll.dll P/Invoke, loaded once per process: the type stays
+    defined). Returns AdsState (int, or $null), AdsErrorCode (AdsSyncReadStateReq's non-zero return:
+    0x6 target port not found, 0x7 target machine not found, 0x745 timeout), DllProblem (TcAdsDll.dll
+    not found) and Error (anything that threw). -TimeoutMs > 0 sets the port's ADS timeout
+    (AdsSyncSetTimeout); 0 leaves TcAdsDll's default, as Get-TcAdsState always has.
+#>
+function Read-TcAdsState {
+    param([Parameter(Mandatory)][string]$NetId, [int]$Port = 10000, [int]$TimeoutMs = 0)
+    $result = { param($s, $c, $d, $e) [pscustomobject]@{ AdsState = $s; AdsErrorCode = $c; DllProblem = $d; Error = $e } }
 
     if (-not ('TcAdsState' -as [type])) {
-        $dllDir = @(
+        # -AdsDllDir (the script's parameter) replaces the search; read by name so a harness that
+        # defines this function without the script's parameters still searches.
+        $configuredDir = Get-Variable -Name AdsDllDir -Scope Script -ValueOnly -ErrorAction SilentlyContinue
+        $dllDirs = @($(if ($configuredDir) { @([string]$configuredDir) } else { @(
             "${env:ProgramFiles(x86)}\Beckhoff\TwinCAT\Common64",
             "$env:ProgramFiles\Beckhoff\TwinCAT\Common64",
             "${env:ProgramFiles(x86)}\Beckhoff\TwinCAT\Common32"
-        ) | Where-Object { $_ -and (Test-Path -LiteralPath (Join-Path $_ 'TcAdsDll.dll')) } | Select-Object -First 1
-        if (-not $dllDir) { return $null }
+        ) }))
+        $dllDir = $dllDirs | Where-Object { $_ -and (Test-Path -LiteralPath (Join-Path $_ 'TcAdsDll.dll')) } | Select-Object -First 1
+        if (-not $dllDir) {
+            $problem = $(if ($configuredDir) { "TwinCAT's ADS DLL (TcAdsDll.dll) was not found in $configuredDir (the folder -AdsDllDir names)" }
+                         else { "TwinCAT's ADS DLL (TcAdsDll.dll) was not found in $($dllDirs -join ', ')" })
+            # Kept for the activation report: Get-TcAdsState returns only the state.
+            Set-Variable -Name TcAdsDllProblem -Scope Script -Value $problem
+            return (& $result $null $null $problem $null)
+        }
         $env:PATH = "$dllDir;$env:PATH"
         Add-Type @'
 using System;
@@ -1116,21 +1424,45 @@ public struct TcAmsAddr { [MarshalAs(UnmanagedType.ByValArray, SizeConst = 6)] p
 public static class TcAdsState {
     [DllImport("TcAdsDll.dll")] public static extern int AdsPortOpen();
     [DllImport("TcAdsDll.dll")] public static extern int AdsPortClose();
+    [DllImport("TcAdsDll.dll")] public static extern int AdsSyncSetTimeout(int nMs);
     [DllImport("TcAdsDll.dll")] public static extern int AdsSyncReadStateReq(ref TcAmsAddr pAddr, ref ushort pAdsState, ref ushort pDeviceState);
 }
 '@
     }
+    $opened = $false
     try {
         $addr = New-Object TcAmsAddr
         $addr.netId = [byte[]]($NetId -split '\.' | ForEach-Object { [byte]$_ })
-        $addr.port  = 10000                       # AMSPORT_R0_SYSTEMSERVICE
+        $addr.port  = $Port                       # 10000 = AMSPORT_R0_SYSTEMSERVICE; a PLC's own port for its state
         [void][TcAdsState]::AdsPortOpen()
+        $opened = $true
+        if ($TimeoutMs -gt 0) { [void][TcAdsState]::AdsSyncSetTimeout($TimeoutMs) }
         $ads = [uint16]0; $dev = [uint16]0
         $hr = [TcAdsState]::AdsSyncReadStateReq([ref]$addr, [ref]$ads, [ref]$dev)
-        [void][TcAdsState]::AdsPortClose()
-        if ($hr -ne 0) { return $null }
-        return [int]$ads
-    } catch { return $null }
+        if ($hr -ne 0) { return (& $result $null ([int]$hr) $null $null) }
+        return (& $result ([int]$ads) $null $null $null)
+    } catch {
+        return (& $result $null $null $null $_.Exception.Message)
+    } finally {
+        if ($opened) { try { [void][TcAdsState]::AdsPortClose() } catch { } }
+    }
+}
+
+<#
+.SYNOPSIS
+    Confirm-UserModeNetIdTrust's live probe: Read-TcAdsState at a NetId's system service, 2 s timeout.
+.DESCRIPTION
+    Called only for a user-mode NetId the file times could not settle. Each NetId is asked once per
+    run ($script:UserModeAdsAnswers): the runtime records are built several times before activation,
+    and every build must reach the same verdict - and a NetId that does not answer costs its timeout
+    once, not once per build.
+#>
+function Test-UserModeNetIdOverAds {
+    param([Parameter(Mandatory)][string]$NetId)
+    $cache = Get-Variable -Name UserModeAdsAnswers -Scope Script -ValueOnly -ErrorAction SilentlyContinue
+    if ($null -eq $cache) { $cache = @{}; Set-Variable -Name UserModeAdsAnswers -Scope Script -Value $cache }
+    if (-not $cache.ContainsKey($NetId)) { $cache[$NetId] = Read-TcAdsState -NetId $NetId -Port 10000 -TimeoutMs 2000 }
+    return $cache[$NetId]
 }
 
 $TcAdsStateNames = @{ 0='INVALID'; 1='IDLE'; 2='RESET'; 3='INIT'; 4='START'; 5='RUN'; 6='STOP'
@@ -1242,6 +1574,15 @@ if ($ActivateConfiguration) {
     # they are different platforms. See Get-LocalRuntimePlatforms.
     $LocalTargetPlatforms = Get-LocalRuntimePlatforms
 
+    # Only for the wording of the project refusal, which names every local runtime - and every
+    # runtime whose NetId is unknown (not local, so never a target; see Resolve-UserModeNetIdTrust).
+    $LocalRuntimeRecords = @(Get-LocalRuntimeRecords)
+    $RuntimeLabels       = Get-RuntimeLabels -Records $LocalRuntimeRecords
+    $UnknownRuntimes     = Get-UnknownRuntimeLabels -Records $LocalRuntimeRecords
+    foreach ($u in $UnknownRuntimes) {
+        Write-Host "WARNING: not an activation target, $u" -ForegroundColor Yellow
+    }
+
     # A .tsproj can name a target, and on a real machine project that target is a physical station.
     # Catch it statically - the alternative is discovering it with the IDE open and a rig connected.
     $projTarget = $null
@@ -1265,7 +1606,9 @@ if ($ActivateConfiguration) {
                                                      -ProjectNetId $projTarget `
                                                      -Platform $PlatformName `
                                                      -TargetPlatforms $LocalTargetPlatforms `
-                                                     -Configuration $ConfigName
+                                                     -Configuration $ConfigName `
+                                                     -RuntimeLabels $RuntimeLabels `
+                                                     -UnknownRuntimes $UnknownRuntimes
     }
     catch {
         # The function indents its own continuation lines, so this one Write-Host prints the same
@@ -1666,6 +2009,162 @@ function Read-TypedBuildPane {
     return [pscustomobject]@{ Text = $null; Reason = "typed Output 'Build' pane: $($read.Reason)" }
 }
 
+<#
+.SYNOPSIS
+    Installs each PLC project of the open solution on the activation target as a boot project with
+    autostart on, so the PLC loads its program and starts with the runtime. Returns Outcome, Error
+    and Projects (one record per PLC project). Never throws.
+.DESCRIPTION
+    Without it an activation leaves the PLC instance (port 851) with no program - ADS state INVALID,
+    symbol reads 0x710 - until someone logs in from XAE and downloads (measured on 3.1.4026, user-mode
+    runtime, 2026-11-16).
+
+    Automation Interface, ITcPlcProject: BootProjectAutostart (get/set) and GenerateBootProject(bool
+    bActivate); $true sends the boot project to the CURRENT target. Beckhoff documents the interface
+    on the PLC project's root item (TIPC^<name>); the nested '<name> Project' item is tried too, and
+    each record's node says which one answered ('root' / 'nested').
+
+    The caller runs it after SetTargetNetId (the boot project goes to the pinned target), after
+    ActivateConfiguration (the activation rewrites the target's boot folder, so a boot project sent
+    before it is not proven to survive) and before StartRestartTwinCAT (the restart loads it).
+
+    BootProjectAutostart is written only when it reads False. The script never saves the solution
+    (Solution.Close($false)), so the setting reaches no project file on disk; the autostart lives on
+    the target with the boot project it was installed with.
+
+    Two late-binding traps, both avoided here: a member the item does not have reads as $null with
+    no error (so $null means "not this item", never False); and a tree item enumerates its children,
+    so it is never sent down a pipeline, through @(), or out of a script block (Invoke-ComRetry is
+    used only for scalars and void calls).
+
+    Outcome: 'installed' (every PLC project), 'partial', 'failed' (none, or TIPC unreadable: Error),
+    'none' (the solution has no PLC project).
+    The same function is in scripts/Build PLC project/build_plc_project.ps1 and
+    resources/xae/build-plc-project.ps1; test/test_xae_driver_contract.js keeps the two identical.
+#>
+function Install-PlcBootProjects {
+    param([Parameter(Mandatory)]$SysManager)
+
+    $projects = @()
+    $count = 0
+    try {
+        $tipc = $SysManager.LookupTreeItem('TIPC')
+        $count = [int](Invoke-ComRetry { $tipc.ChildCount })
+    } catch {
+        Write-Host "WARNING: no boot project installed - the PLC node (TIPC) could not be read: $_" -ForegroundColor Yellow
+        return [pscustomobject]@{ Outcome = 'failed'; Error = "the PLC node (TIPC) could not be read: $_"; Projects = @() }
+    }
+    for ($i = 1; $i -le $count; $i++) {
+        $rec = [ordered]@{ name = "PLC project $i"; node = $null; wasAutostart = $null; autostart = $null; installed = $false; error = $null }
+        try {
+            $root = $tipc.Child($i)
+            $rec.name = [string](Invoke-ComRetry { $root.Name })
+            $plc = $null
+            $was = $null
+            try { $was = Invoke-ComRetry { $root.BootProjectAutostart } } catch { $was = $null }
+            if ($null -ne $was) { $plc = $root; $rec.node = 'root' }
+            else {
+                $n = 0
+                try { $n = [int](Invoke-ComRetry { $root.ChildCount }) } catch { $n = 0 }
+                for ($j = 1; $j -le $n -and $null -eq $plc; $j++) {
+                    try {
+                        $child = $root.Child($j)
+                        $v = Invoke-ComRetry { $child.BootProjectAutostart }
+                        if ($null -ne $v) { $plc = $child; $was = $v; $rec.node = 'nested' }
+                    } catch { }
+                }
+            }
+            if ($null -eq $plc) { throw "neither its item nor a child exposes BootProjectAutostart (ITcPlcProject)" }
+            $rec.wasAutostart = [bool]$was
+            if (-not $rec.wasAutostart) { Invoke-ComRetry { $plc.BootProjectAutostart = $true } }
+            $rec.autostart = [bool](Invoke-ComRetry { $plc.BootProjectAutostart })
+            if (-not $rec.autostart) { throw "BootProjectAutostart still reads False after it was set" }
+            Invoke-ComRetry { $plc.GenerateBootProject($true) } | Out-Null
+            $rec.installed = $true
+            Write-Host ("Boot project:            {0}  installed on the target, autostart on{1}" -f $rec.name,
+                $(if ($rec.wasAutostart) { '' } else { ' (set for this run; the solution is not saved)' })) -ForegroundColor Cyan
+        } catch {
+            $rec.error = "$_"
+            Write-Host "WARNING: no boot project for $($rec.name): $($rec.error)" -ForegroundColor Yellow
+        }
+        $projects += [pscustomobject]$rec
+    }
+    $ok = @($projects | Where-Object { $_.installed }).Count
+    $outcome = $(if ($count -eq 0) { 'none' } elseif ($ok -eq $count) { 'installed' } elseif ($ok -eq 0) { 'failed' } else { 'partial' })
+    if ($count -eq 0) { Write-Host "NOTE: the solution has no PLC project; no boot project to install." -ForegroundColor DarkGray }
+    return [pscustomobject]@{ Outcome = $outcome; Error = $null; Projects = $projects }
+}
+
+<#
+.SYNOPSIS
+    The ADS port of each PLC project, by name, from the solution's system project files.
+.DESCRIPTION
+    The PLC's <Project Name="..." AmsPort="851" ...> element sits in the .tsproj/.tspproj itself or,
+    with independent project files, in _Config\PLC\<name>.xti beside it. The first value per name
+    wins. A project without one is absent from the map (its PLC state is then not checked).
+    The same function is in scripts/Build PLC project/build_plc_project.ps1 and
+    resources/xae/build-plc-project.ps1; test/test_xae_driver_contract.js keeps the two identical.
+#>
+function Get-PlcAmsPorts {
+    param([Parameter(Mandatory)][string]$TsprojPath)
+
+    $ports = @{}
+    $files = @($TsprojPath)
+    $cfg = Join-Path (Split-Path -Parent $TsprojPath) '_Config'
+    if (Test-Path -LiteralPath $cfg) {
+        $files += @(Get-ChildItem -LiteralPath $cfg -Recurse -Filter *.xti -File -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName })
+    }
+    foreach ($f in $files) {
+        $text = $null
+        try { $text = [System.IO.File]::ReadAllText($f) } catch { continue }
+        foreach ($m in [regex]::Matches($text, '<Project\b[^>]*>')) {
+            $name = [regex]::Match($m.Value, '\sName="([^"]+)"')
+            $port = [regex]::Match($m.Value, '\sAmsPort="(\d+)"')
+            if ($name.Success -and $port.Success -and -not $ports.ContainsKey($name.Groups[1].Value)) {
+                $ports[$name.Groups[1].Value] = [int]$port.Groups[1].Value
+            }
+        }
+    }
+    return $ports
+}
+
+<#
+.SYNOPSIS
+    After a restart into RUN: the ADS state of each PLC whose boot project was installed.
+.DESCRIPTION
+    Waits up to -TimeoutSec for each PLC to reach RUN (state 5); a PLC still INVALID afterwards has
+    not loaded its boot project. One record per installed project with a known port: name, port,
+    adsState ($null when unreadable) and stateName.
+    The same function is in scripts/Build PLC project/build_plc_project.ps1 and
+    resources/xae/build-plc-project.ps1; test/test_xae_driver_contract.js keeps the two identical.
+#>
+function Read-PlcRunStates {
+    param([Parameter(Mandatory)][string]$NetId, $Projects, [hashtable]$Ports, [int]$TimeoutSec = 15)
+
+    $states = @()
+    foreach ($p in @($Projects)) {
+        if (-not $p.installed) { continue }
+        if (-not $Ports -or -not $Ports.ContainsKey($p.name)) {
+            Write-Host "NOTE: PLC $($p.name): its ADS port is not in the system project, so its state is not checked." -ForegroundColor DarkGray
+            continue
+        }
+        $port = [int]$Ports[$p.name]
+        $state = $null
+        $deadline = (Get-Date).AddSeconds($TimeoutSec)
+        while ($true) {
+            $state = Get-TcAdsState -NetId $NetId -Port $port
+            if ($state -eq 5 -or (Get-Date) -ge $deadline) { break }
+            Start-Sleep -Milliseconds 1000
+        }
+        $name = $(if ($null -ne $state) { $TcAdsStateNames[[int]$state] } else { 'unreadable' })
+        $color = $(if ($state -eq 5) { 'Green' } else { 'Yellow' })
+        Write-Host ("PLC {0} (port {1}):  {2}{3}" -f $p.name, $port, $name,
+            $(if ($state -eq 5) { '' } else { ' - not RUN: its boot project may not have loaded; check it in XAE' })) -ForegroundColor $color
+        $states += [pscustomobject]([ordered]@{ name = $p.name; port = $port; adsState = $state; stateName = $name })
+    }
+    return $states
+}
+
 # ----------------------------------------------------------------------------
 # IOleMessageFilter - REQUIRED for version pinning, not an optimisation.
 #
@@ -2025,6 +2524,7 @@ try {
     elseif ($ActivateConfiguration) {
         $activationFault = $null
         $uiWasSuppressed = $true
+        $bootProjects = $null
         try {
             # The system manager is the TwinCAT project's .Object. Identify it by CAPABILITY - the one
             # that answers LookupTreeItem('TIPC') - never by index: a solution may hold more than one
@@ -2085,6 +2585,10 @@ try {
 
             Write-Host "ACTIVATING CONFIGURATION (this stops and restarts the local TwinCAT runtime)..." -ForegroundColor Yellow
             Invoke-ComRetry { $sysManager.ActivateConfiguration() }
+            # The boot project with autostart (user decision 2026-11-16): after the activation and before
+            # the restart that loads it - Install-PlcBootProjects says why exactly here. A failure is
+            # reported as a warning and never stops the activation.
+            $bootProjects = Install-PlcBootProjects -SysManager $sysManager
             Invoke-ComRetry { $sysManager.StartRestartTwinCAT() }
 
             # Verify via ADS, NOT via IsTwinCatStarted().
@@ -2104,12 +2608,22 @@ try {
 
             if ($adsState -eq 5) {
                 Write-Host "ACTIVATION SUCCEEDED. ($pinTarget is in RUN, ADS state 5)" -ForegroundColor Green
+                # Each installed PLC's own ADS state: INVALID here means the boot project did not load.
+                # Best effort - a fault reading it is reported and never turns into an activation failure.
+                try {
+                    $plcStates = Read-PlcRunStates -NetId $pinTarget -Projects $(if ($bootProjects) { $bootProjects.Projects } else { @() }) `
+                        -Ports (Get-PlcAmsPorts -TsprojPath $tsproj.FullName)
+                } catch { Write-Host "WARNING: the PLC run states could not be read: $_" -ForegroundColor Yellow }
             }
             elseif ($null -eq $adsState) {
                 # Could not read ADS at all. Do not claim success and do not claim failure - the
                 # configuration was written, but whether it runs is genuinely unknown from here.
                 Write-Host "ACTIVATION INCOMPLETE: configuration written, but the run state could not be read" -ForegroundColor Yellow
                 Write-Host "                       from $pinTarget via ADS. Check the runtime yourself." -ForegroundColor Yellow
+                $dllProblem = Get-Variable -Name TcAdsDllProblem -Scope Script -ValueOnly -ErrorAction SilentlyContinue
+                if ($dllProblem) {
+                    Write-Host ("                       $dllProblem." + $(if ($AdsDllDir) { '' } else { ' Pass -AdsDllDir with the folder holding it.' })) -ForegroundColor Yellow
+                }
                 $script:activationUnverified = $true
             }
             else {

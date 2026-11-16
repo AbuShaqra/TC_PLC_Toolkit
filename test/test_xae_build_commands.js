@@ -17,7 +17,10 @@
  * a Problems entry links back to its component; the non-Windows refusal; one run at a time; a
  * configuration the solution does not declare; the project's XAE Shell missing (sample 2, a
  * `.tspproj`): one question per build, before the run or after the driver's fatal, then exactly
- * `-TcVersion <ProgId> -AllowVersionMismatch`; never for activation.
+ * `-TcVersion <ProgId> -AllowVersionMismatch`; never for activation; an activation refused because
+ * the solution targets a runtime not on this PC: the runtimes named, "Change the solution's target…"
+ * → a pick of only those → a modal naming the .tsproj and both NetIds → the one value rewritten → the
+ * same activation again, and nothing changed when any step is cancelled or the file is ambiguous.
  */
 
 'use strict';
@@ -202,7 +205,9 @@ provider.activePanels.set(fbUri.toString(), { webview: { postMessage: (m) => { p
 
 /** What the next driver spawn does: (call) => behaviour (see _fakeXaeDriver.js). */
 let driver = () => ({ fixture: 'build-ok-headless' });
-const fake = createFakeXaeSpawn((call) => (call.args.includes('-ListTargets') ? { fixture: 'list-targets' } : driver(call)));
+/** What the next -ListTargets spawn does (the runtimes this PC reports). */
+let listDriver = () => ({ fixture: 'list-targets' });
+const fake = createFakeXaeSpawn((call) => (call.args.includes('-ListTargets') ? listDriver(call) : driver(call)));
 const compileFake = { spawn: () => { throw new Error('the compiler is not run here'); } };
 
 registerCompileCommands(context, { provider, getProjectMap: projectMap, spawn: compileFake.spawn });
@@ -280,7 +285,7 @@ const rows = (name) => readFixture(name).lines;
         'Build Project\'s twincat-compile and twincat-gpp collections are untouched');
     assert(api.problems().length === 2 && provider.compileSource.paneDiagnostics(fbUri.toString()).length === 2, 'the XAE problems reach the editor panes');
     assert(channel().lines.some(l => /error \(not placed\): Build aborted/.test(l)), 'an unplaced error is listed in the channel');
-    assert(calls.errors.some(e => /3 errors \(2 placed in Problems\)/.test(e.m) && e.buttons.includes('Go to Problem…')), 'the summary counts placed errors and offers Go to Problem');
+    assert(calls.errors.some(e => /3 errors \(2 placed in Problems\)/.test(e.m) && e.buttons.includes('Show Problems') && !e.buttons.includes('Go to Problem…')), 'the summary counts placed errors and offers Show Problems (the Problems panel, no pick)');
     // The entry's code links back into the extension: the URI handler opens the component and pane.
     const link = diags[0].code && diags[0].code.target;
     assert(link && link.path === '/xaeProblem' && /^id=\d+$/.test(link.query) && link.authority === 'pub.twincat-plc-toolkit',
@@ -340,7 +345,7 @@ const rows = (name) => readFixture(name).lines;
             'the failure message says the errors are TC Toolkit\'s check, not XAE\'s, and can differ');
         assert(channel().lines.some(l => /Running TC Toolkit's own compile check instead: its errors come from TC Toolkit's check, not from XAE, and can differ from XAE's\./.test(l))
             && channel().lines.some(l => /Error details read: by no route\./.test(l)), 'the channel says so, and names the route');
-        assert(note.buttons[0] === 'Build again with the window shown' && note.buttons.includes('Open Problems') && note.buttons.includes('Show Output'),
+        assert(note.buttons[0] === 'Build again with the window shown' && note.buttons.includes('Show Problems') && note.buttons.includes('Show Output'),
             'it still offers "Build again with the window shown" (headless), and Open Problems');
         assert(!/will show|shows the errors/i.test(note.m), 'it does not claim the visible run will show the errors');
         await waitFor(() => builds().length === n0 + 2);
@@ -365,7 +370,7 @@ const rows = (name) => readFixture(name).lines;
             && !/XAE window hidden/.test(calls.errors[e1].m) && !calls.errors[e1].buttons.includes('Build again with the window shown'),
             'a visible build with no details: the reason says the window was shown, and no re-run is offered');
         assert(/TC Toolkit's own compile check was skipped: no compiler is configured for it \(The compiler file .*gone\.cjs.*does not exist\.\)\.$/.test(calls.errors[e1].m)
-            && r.compileFallback && r.compileFallback.skipped && r.compileFallback.ran === 0 && !calls.errors[e1].buttons.includes('Open Problems'),
+            && r.compileFallback && r.compileFallback.skipped && r.compileFallback.ran === 0 && !calls.errors[e1].buttons.includes('Show Problems'),
             'no compiler configured: the fallback says so and is skipped');
         compileAnswer = (a) => ({ ok: true, projectKey: a.projectKey, errors: 2, warnings: 0 });
         settings['tcToolkit.xaeBuild.showWindow'] = false;
@@ -588,6 +593,21 @@ const rows = (name) => readFixture(name).lines;
     argv = lastSpawn().args;
     assert(argv.includes('-ActivateConfiguration') && argv[argv.indexOf('-TargetNetId') + 1] === '198.51.100.4.1.1', 'the confirmed NetId reaches the argv');
     assert(r.ok && r.targetNetId === '198.51.100.4.1.1' && /in RUN/.test(r.title), 'an activation that reached RUN');
+    // Boot project with autostart (user decision 2026-11-16): the channel and the summary say so.
+    assert(r.bootProjectOk === true && /boot project with autostart: the PLC starts on activation/.test(r.title)
+        && calls.infos.some(i => /the PLC starts on activation/.test(i.m)), 'the summary says the boot project was installed with autostart');
+    assert(channel().lines.some(l => /^ {2}Boot project: TcToolkitSample_PLC installed on the target with autostart/.test(l))
+        && channel().lines.some(l => l === '  PLC TcToolkitSample_PLC (port 851): RUN.'), 'the channel names the boot project and the PLC state');
+    {
+        const w0 = calls.warnings.length;
+        driver = () => ({ fixture: 'activation-boot-failed' });
+        answers.quickPick.push('198.51.100.4.1.1');
+        answers.message.push('Switch for this run');
+        const rb = await run('twincat.xaeBuildAndActivate', {});
+        assert(!rb.ok && rb.exitCode === 0 && rb.bootProjectOk === false && calls.warnings.slice(w0).some(w => /could not be installed, so that PLC has no program: log in from XAE/.test(w.m)),
+            'a failed boot project: the activation is reported, as a warning naming XAE');
+        assert(channel().lines.some(l => /^ {2}Boot project: TcToolkitSample_PLC NOT installed: Exception from HRESULT/.test(l)), 'the channel says why');
+    }
     assert(context.workspaceState.get(LAST_TARGET_KEY) === '198.51.100.4.1.1' && !Object.keys(settings).some(k => /target/i.test(k)), 'the pick is remembered in workspaceState, not a setting');
     answers.quickPick.push(() => true);
     answers.message.push(undefined);
@@ -1062,6 +1082,272 @@ const rows = (name) => readFixture(name).lines;
     }
     r = await run('twincat.xaeShowTargets', {});
     assert(r.ok && r.targets.length === 2 && channel().lines.some(l => /198\.51\.100\.4\.1\.1\s+user-mode\s+UmRT_Default.*\(project\)/.test(l)), 'Show Activation Targets prints the table');
+
+    // ── A user-mode runtime whose AmsNetId is unknown (user's 4026 machine, 2026-11-16) ─────────
+    // Its TcRegistry.xml changed after the running one started and no runtime answered at the file's
+    // NetId over ADS, so that NetId is unknown: listed with the reason, never offered or preselected.
+    {
+        const RT = { netId: '198.51.100.1.1.1', name: 'Real-time runtime', kind: 'real-time', platform: 'TwinCAT RT (x64)', provenance: 'kind-inferred', netIdStatus: 'trusted', reason: null, fileNetId: null };
+        const STALE_ID = '198.51.100.6.1.1';
+        const REWRITTEN = 'the configuration file changed after this runtime started; its AmsNetId could not be confirmed over ADS: no runtime answered at 198.51.100.6.1.1 (ADS error 0x7)';
+        const um = (status, reason, netId) => ({ netId, name: 'UmRT_Default', kind: 'user-mode', platform: 'TwinCAT OS (x64)', provenance: 'read',
+            netIdStatus: status, reason, fileNetId: netId ? null : STALE_ID });
+        const listing = (local, projectNetId) => () => ({
+            lines: [{ v: 1, t: 'hello', mode: 'listTargets', showWindow: false }, { v: 1, t: 'targets', local, projectNetId },
+                { v: 1, t: 'done', exitCode: 0, ui: null }], exit: 0
+        });
+        const lastPick = () => calls.picks[calls.picks.length - 1];
+        const selectable = (items) => items.filter(i => i.kind !== -1);
+
+        // Stale file: the NetId the file names is the project's and the last pick, and still not offered.
+        listDriver = listing([RT, um('rewritten', REWRITTEN, null)], STALE_ID);
+        await context.workspaceState.update(LAST_TARGET_KEY, STALE_ID);
+        let nb = builds().length;
+        answers.quickPick.push(undefined);
+        r = await run('twincat.xaeBuildAndActivate', {});
+        let pk = lastPick();
+        assert(r.reason === 'cancelled' && builds().length === nb, 'stale file: cancelling the pick spawns nothing');
+        assert(selectable(pk.items).length === 1 && selectable(pk.items)[0].netId === RT.netId && !pk.items.some(i => i.netId === STALE_ID)
+            && !pk.items.some(i => i.picked), 'stale file: the file\'s NetId is not offered and nothing is preselected');
+        const sep = pk.items.find(i => i.kind === -1);
+        assert(sep && sep.label === `UmRT_Default: AmsNetId unknown, not offered (${REWRITTEN})` && !('netId' in sep)
+            && pk.items.indexOf(sep) === pk.items.length - 1, 'stale file: the runtime is a non-selectable row with the reason, last');
+        assert(channel().lines.some(l => l.includes(`Not offered, AmsNetId unknown: UmRT_Default (user-mode runtime): ${REWRITTEN}. Read the AmsNetId in that runtime's console window ("AmsNetId: …") or use XAE's Choose Target System.`)),
+            'stale file: the channel names it, the reason and where to read the NetId');
+
+        // Running and the file fresh: offered, and preselected as the last pick.
+        listDriver = listing([RT, um('trusted', null, '198.51.100.5.1.1')], '198.51.100.5.1.1');
+        await context.workspaceState.update(LAST_TARGET_KEY, '198.51.100.5.1.1');
+        answers.quickPick.push(undefined);
+        await run('twincat.xaeBuildAndActivate', {});
+        pk = lastPick();
+        assert(selectable(pk.items).length === 2 && pk.items.length === 2 && pk.items[0].netId === '198.51.100.5.1.1' && pk.items[0].picked
+            && /\(project\)/.test(pk.items[0].description), 'running with a fresh file: offered, preselected, the project NetId marked');
+
+        // Not running: not offered.
+        listDriver = listing([RT, um('not-running', 'this runtime is not running', null)], null);
+        answers.quickPick.push(undefined);
+        await run('twincat.xaeBuildAndActivate', {});
+        pk = lastPick();
+        assert(selectable(pk.items).length === 1 && pk.items.some(i => i.kind === -1 && /UmRT_Default: AmsNetId unknown, not offered \(this runtime is not running\)/.test(i.label)),
+            'not running: not offered, listed with the reason');
+
+        // Nothing with a known NetId: no pick at all, the error names the runtime and the reason.
+        listDriver = listing([um('rewritten', REWRITTEN, null)], STALE_ID);
+        const pk0 = calls.picks.length, e0 = calls.errors.length;
+        nb = builds().length;
+        r = await run('twincat.xaeBuildAndActivate', {});
+        assert(r.reason === 'no-targets' && calls.picks.length === pk0 && builds().length === nb
+            && calls.errors[e0] && calls.errors[e0].m.startsWith(`No runtime of this machine with a known AmsNetId was found to activate on. Not offered, AmsNetId unknown: UmRT_Default (user-mode runtime): ${REWRITTEN}.`),
+            'only unknown runtimes: refused before any pick, naming the runtime and the reason');
+
+        // Show Activation Targets lists it, as unknown, with the file's NetId for reference only.
+        listDriver = listing([RT, um('rewritten', REWRITTEN, null)], STALE_ID);
+        r = await run('twincat.xaeShowTargets', {});
+        assert(r.ok && r.targets.length === 1 && r.unknown.length === 1 && r.unknown[0].name === 'UmRT_Default'
+            && channel().lines.some(l => /AmsNetId unknown\s+user-mode\s+UmRT_Default {2}not offered: the configuration file changed after this runtime started; its AmsNetId could not be confirmed over ADS/.test(l) && l.includes(`(its configuration file names ${STALE_ID})`))
+            && channel().lines.some(l => l.includes(`The project names ${STALE_ID}, which is not a runtime of this machine`)),
+            'Show Activation Targets: the unknown runtime is listed with its reason, and the project NetId is not called local');
+        // A NetId the driver confirmed over ADS: listed as local, and the line says how it was trusted.
+        listDriver = () => ({ fixture: 'list-targets-ads' });
+        r = await run('twincat.xaeShowTargets', {});
+        assert(r.ok && r.targets.length === 3 && r.unknown.length === 0
+            && channel().lines.some(l => /10\.0\.0\.4\.1\.1\s+user-mode\s+UmRT_Default {2}TwinCAT OS \(x64\) {2}\(project\) {2}AmsNetId confirmed over ADS$/.test(l))
+            && channel().lines.some(l => /10\.0\.0\.5\.1\.1\s+user-mode\s+UmRT_Second {2}platform unknown {2}AmsNetId from its configuration, instance running$/.test(l)),
+            'Show Activation Targets: each user-mode NetId says how it was trusted (over ADS, or from its configuration)');
+        // TcAdsDll.dll not found (tcToolkit.adsDll.nativeDllFolder, user request 2026-11-16): the runtime's
+        // NetId could not be confirmed; the list says why and a notification offers the setting.
+        const NO_DLL = 'the configuration file changed after this runtime started; its AmsNetId could not be confirmed over ADS: '
+            + 'TwinCAT\'s ADS DLL (TcAdsDll.dll) was not found in C:\\Program Files (x86)\\Beckhoff\\TwinCAT\\Common64';
+        listDriver = listing([RT, um('rewritten', NO_DLL, null)], null);
+        settings['tcToolkit.adsDll.nativeDllFolder'] = 'D:\\TC\\Common64';
+        const w0 = calls.warnings.length;
+        const x0 = calls.executed.length;
+        answers.message.push('Open Setting');
+        r = await run('twincat.xaeShowTargets', {});
+        await new Promise(res => setImmediate(res));
+        const dllWarn = calls.warnings[w0];
+        const listArgs = lastSpawn().args;
+        assert(r.ok && r.unknown.length === 1 && listArgs[listArgs.indexOf('-AdsDllDir') + 1] === 'D:\\TC\\Common64',
+            'Show Activation Targets passes the configured TcAdsDll.dll folder to -ListTargets');
+        assert(!!dllWarn && /TcAdsDll\.dll was not found/.test(dllWarn.m) && /tcToolkit\.adsDll\.nativeDllFolder is used as given/.test(dllWarn.m)
+            && JSON.stringify(dllWarn.buttons) === JSON.stringify(['Open Setting'])
+            && channel().lines.some(l => /set tcToolkit\.adsDll\.nativeDllFolder|tcToolkit\.adsDll\.nativeDllFolder is used as given/.test(l)),
+            'a missing TcAdsDll.dll: the channel names the setting, and a warning offers Open Setting');
+        assert(calls.executed.slice(x0).some(c => c.id === 'twincat.openSettings' && c.args[0] === 'tcToolkit.adsDll.nativeDllFolder' && c.args[1] && c.args[1].target === 'user'),
+            'Open Setting opens tcToolkit.adsDll.nativeDllFolder in the User settings (machine scope)');
+        delete settings['tcToolkit.adsDll.nativeDllFolder'];
+        await run('twincat.xaeShowTargets', {});
+        assert(!lastSpawn().args.includes('-AdsDllDir'), 'with the setting empty, no -AdsDllDir (the driver searches)');
+        listDriver = () => ({ fixture: 'list-targets' });
+        await context.workspaceState.update(LAST_TARGET_KEY, undefined);
+    }
+
+    // ── The solution targets a runtime that is not on this PC (user decision, 2026-11-16) ───────
+    // Refusal → "Change the solution's target…" → a pick of ONLY this PC's runtimes → a modal naming
+    // the .tsproj and both NetIds → the one attribute rewritten → the same activation again.
+    {
+        const OLD = '192.0.2.10.1.1';
+        const dir = path.join(TMP, 'Retarget');
+        fs.mkdirSync(dir, { recursive: true });
+        const retargetSln = path.join(dir, 'TcToolkitSample.sln');
+        const tsproj = path.join(dir, 'TcToolkitSample.tsproj');
+        fs.copyFileSync(SLN, retargetSln);
+        // The sample's system project (CRLF) with a UTF-8 BOM and the solution's target, as XAE writes it.
+        const original = Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]),
+            Buffer.from(fs.readFileSync(path.join(path.dirname(SLN), 'TcToolkitSample.tsproj'), 'latin1').replace('" Target64Bit=', `" TargetNetId="${OLD}" Target64Bit=`), 'latin1')]);
+        const reset = (buf = original) => fs.writeFileSync(tsproj, buf);
+        const changedTo = (netId) => Buffer.from(original.toString('latin1').replace(OLD, netId), 'latin1');
+        /** The driver's gate-3 refusal for this solution; `local` replaces this PC's runtimes. */
+        const refusal = (local) => rows('target-refused').map(l => (l.t === 'fatal'
+            ? { ...l, data: { ...l.data, tsproj, ...(local ? { local } : {}) } } : l));
+        // The fake driver refuses while the file still names the old target, and activates once it does not.
+        let refusalLocal = null;
+        driver = () => (fs.readFileSync(tsproj, 'latin1').includes(OLD) ? { lines: refusal(refusalLocal), exit: 2 } : { fixture: 'activation-run' });
+        slnPath = retargetSln;
+        workspaceSettings['tcToolkit.xaeBuild.platform'] = 'TwinCAT OS (x64)';
+        const ACTIVATE_UM = 'Activate on UmRT_Default (198.51.100.4.1.1)';
+        const RETARGET = "Change the solution's target…";
+        const notChanged = () => channel().lines.filter(l => /The target of TcToolkitSample was not changed/.test(l)).length;
+        const idle = async () => { await new Promise(res => setTimeout(res, 20)); await waitFor(() => !api.isRunning()); };
+
+        // 1. The whole flow, onto the runtime this activation was confirmed for: no second list, pick or modal.
+        reset();
+        const n0 = builds().length, lt0 = listings(), m0 = calls.modals.length, pk0 = calls.picks.length, e0 = calls.errors.length;
+        answers.quickPick.push('198.51.100.4.1.1', '198.51.100.4.1.1');
+        answers.message.push(ACTIVATE_UM, RETARGET, 'Change target');
+        r = await run('twincat.xaeBuildAndActivate', {});
+        assert(!r.ok && r.exitCode === 2, 'the activation is refused (exit 2)');
+        const refusedMsg = calls.errors[e0];
+        assert(refusedMsg && refusedMsg.m.startsWith('The XAE build could not run: TcToolkitSample targets 192.0.2.10.1.1, which is not a runtime on this PC. Activation is local-only, so it was refused before XAE started. '
+            + 'Runtimes on this PC: Real-time runtime (198.51.100.1.1.1), UmRT_Default (198.51.100.4.1.1, user-mode runtime). Change the solution\'s target to one of them'),
+            `the refusal says "not a runtime on this PC" and names this PC's runtimes (${refusedMsg ? refusedMsg.m.slice(0, 120) : 'none'}…)`);
+        assert(refusedMsg && JSON.stringify(refusedMsg.buttons) === JSON.stringify([RETARGET, 'Show Output']), 'and offers Change the solution\'s target… first');
+        await waitFor(() => builds().length === n0 + 2);
+        await idle();
+        const rpick = calls.picks[pk0 + 1];
+        assert(rpick && rpick.items.length === 2 && rpick.items.every(i => ['198.51.100.1.1.1', '198.51.100.4.1.1'].includes(i.netId))
+            && rpick.items[0].netId === '198.51.100.4.1.1' && rpick.items[0].picked && /change the target of TcToolkitSample/.test(rpick.opts.title),
+            'the pick offers ONLY this PC\'s runtimes, the confirmed one first');
+        const confirm = calls.modals[m0 + 1];
+        assert(confirm && JSON.stringify(confirm.buttons) === JSON.stringify(['Change target']) && confirm.m.includes(tsproj)
+            && confirm.m.includes(`TargetNetId="${OLD}" to TargetNetId="198.51.100.4.1.1"`) && /activates on UmRT_Default \(198\.51\.100\.4\.1\.1\), as confirmed\.$/.test(confirm.m),
+            'a modal names the .tsproj and the old and new TargetNetId');
+        assert(fs.readFileSync(tsproj).equals(changedTo('198.51.100.4.1.1')), 'the .tsproj: only the TargetNetId value changed (BOM and CRLF kept)');
+        const again = builds()[n0 + 1];
+        assert(again && again.args.includes('-ActivateConfiguration') && again.args[again.args.indexOf('-TargetNetId') + 1] === '198.51.100.4.1.1',
+            'the same activation runs again, on the confirmed runtime');
+        assert(listings() === lt0 + 1 && calls.modals.length === m0 + 2 && calls.picks.length === pk0 + 2,
+            'the re-run asks nothing more (one list, the activation modal and the change modal)');
+        assert(channel().lines.some(l => l.includes(`Changed TargetNetId in ${tsproj} from ${OLD} to 198.51.100.4.1.1 (UmRT_Default)`)), 'the channel records the change');
+
+        // 2. Another runtime than the confirmed one: changed, then the activation target is asked again.
+        reset();
+        const lt1 = listings(), pk1 = calls.picks.length, n1 = builds().length;
+        answers.quickPick.push('198.51.100.4.1.1', '198.51.100.1.1.1', undefined);
+        answers.message.push(ACTIVATE_UM, RETARGET, 'Change target');
+        await run('twincat.xaeBuildAndActivate', {});
+        await waitFor(() => calls.picks.length === pk1 + 3);
+        await idle();
+        assert(/asks for the activation target again\.$/.test(calls.modals[calls.modals.length - 1].m), 'the modal says the target will be asked again');
+        assert(fs.readFileSync(tsproj).equals(changedTo('198.51.100.1.1.1')) && listings() === lt1 + 2 && builds().length === n1 + 1
+            && calls.picks[pk1 + 2].items[0].netId === '198.51.100.1.1.1' && context.workspaceState.get(LAST_TARGET_KEY) === '198.51.100.1.1.1',
+            'another runtime: the file changed, and the re-run lists and asks for the target again (the new one preselected; cancelled here)');
+
+        // 3. Cancel at each step: nothing changes, nothing re-runs.
+        for (const [step, picks, messages] of [
+            ['the notification dismissed', ['198.51.100.4.1.1'], [ACTIVATE_UM, undefined]],
+            ['the pick cancelled', ['198.51.100.4.1.1', undefined], [ACTIVATE_UM, RETARGET]],
+            ['the modal cancelled', ['198.51.100.4.1.1', '198.51.100.4.1.1'], [ACTIVATE_UM, RETARGET, undefined]]
+        ]) {
+            reset();
+            const nb = builds().length, nc = notChanged();
+            answers.quickPick.push(...picks);
+            answers.message.push(...messages);
+            await run('twincat.xaeBuildAndActivate', {});
+            if (step !== 'the notification dismissed') await waitFor(() => notChanged() === nc + 1);
+            await idle();
+            assert(fs.readFileSync(tsproj).equals(original) && builds().length === nb + 1, `${step}: the .tsproj is unchanged and nothing re-runs`);
+        }
+
+        // 4. The file changes between the offer and the confirmation: refused, nothing written.
+        {
+            reset();
+            const edited = Buffer.from(original.toString('latin1').replace(OLD, '192.0.2.11.1.1'), 'latin1');
+            const nb = builds().length, e = calls.errors.length;
+            answers.quickPick.push('198.51.100.4.1.1', (i) => { reset(edited); return i.netId === '198.51.100.4.1.1'; });
+            answers.message.push(ACTIVATE_UM, RETARGET, 'Change target');
+            await run('twincat.xaeBuildAndActivate', {});
+            await waitFor(() => calls.errors.length === e + 2);
+            await idle();
+            assert(/^The target of TcToolkitSample was not changed: TcToolkitSample\.tsproj now names TargetNetId 192\.0\.2\.11\.1\.1, not 192\.0\.2\.10\.1\.1/.test(calls.errors[e + 1].m)
+                && fs.readFileSync(tsproj).equals(edited) && builds().length === nb + 1, 'a file changed meanwhile: not rewritten, not re-run');
+        }
+
+        // 5. No button when there is nothing to change to, or the .tsproj cannot be changed safely.
+        for (const [what, setup, re] of [
+            ['no runtime on this PC', () => { refusalLocal = []; }, /No runtime was found on this PC, so there is none to change the target to: set the target in XAE \(Choose Target System\)/],
+            ['two TargetNetId in the .tsproj', () => { reset(Buffer.from(original.toString('latin1').replace('<System>', `<System TargetNetId="${OLD}">`), 'latin1')); },
+                /The target cannot be changed here: TcToolkitSample\.tsproj names TargetNetId 2 times, and TC Toolkit does not guess which one counts\. Change it in XAE \(Choose Target System\)\./]
+        ]) {
+            reset();
+            refusalLocal = null;
+            setup();
+            const unchanged = fs.readFileSync(tsproj);
+            const e = calls.errors.length, nb = builds().length;
+            answers.quickPick.push('198.51.100.4.1.1');
+            answers.message.push(ACTIVATE_UM, undefined);
+            await run('twincat.xaeBuildAndActivate', {});
+            await idle();
+            const msg = calls.errors[e];
+            assert(msg && re.test(msg.m) && !msg.buttons.includes(RETARGET) && fs.readFileSync(tsproj).equals(unchanged) && builds().length === nb + 1,
+                `${what}: the refusal says so and offers no change (${msg ? msg.m.slice(-110) : 'none'})`);
+        }
+        refusalLocal = null;
+
+        // 5b. A runtime whose AmsNetId is unknown (its configuration file names the solution's target,
+        // but it changed after the running instance started and ADS did not confirm it): named with the reason, never offered.
+        {
+            reset();
+            refusalLocal = [
+                { netId: '198.51.100.1.1.1', name: 'Real-time runtime', kind: 'real-time', platform: 'TwinCAT RT (x64)', provenance: 'kind-inferred', netIdStatus: 'trusted' },
+                { netId: null, name: 'UmRT_Default', kind: 'user-mode', platform: 'TwinCAT OS (x64)', provenance: 'read', netIdStatus: 'rewritten',
+                    reason: 'the configuration file changed after this runtime started; its AmsNetId could not be confirmed over ADS: no runtime answered at 198.51.100.6.1.1 (ADS error 0x7)', fileNetId: OLD }
+            ];
+            const e = calls.errors.length, pk = calls.picks.length;
+            answers.quickPick.push('198.51.100.4.1.1', undefined);
+            answers.message.push(ACTIVATE_UM, RETARGET);
+            await run('twincat.xaeBuildAndActivate', {});
+            await waitFor(() => calls.picks.length === pk + 2);
+            await idle();
+            const msg = calls.errors[e];
+            assert(msg && msg.m.includes('Runtimes on this PC: Real-time runtime (198.51.100.1.1.1). '
+                + `${OLD} is the AmsNetId UmRT_Default's configuration file names, which no running instance of it is known to use. `
+                + 'Not offered, AmsNetId unknown: UmRT_Default (user-mode runtime): the configuration file changed after this runtime started; its AmsNetId could not be confirmed over ADS: no runtime answered at 198.51.100.6.1.1 (ADS error 0x7). '
+                + 'Read the AmsNetId in that runtime\'s console window ("AmsNetId: …") or use XAE\'s Choose Target System.'),
+                `unknown runtime: the refusal names it, the reason and where to read the NetId (${msg ? msg.m.slice(0, 400) : 'none'})`);
+            const rp = calls.picks[pk + 1];
+            assert(rp && rp.items.filter(i => i.kind !== -1).length === 1 && rp.items[0].netId === '198.51.100.1.1.1'
+                && rp.items.some(i => i.kind === -1 && /^UmRT_Default: AmsNetId unknown, not offered/.test(i.label)) && !rp.items.some(i => i.netId === OLD),
+                'unknown runtime: the change-target pick offers only known runtimes and lists the unknown one as a row');
+            assert(fs.readFileSync(tsproj).equals(original), 'unknown runtime: the pick cancelled, nothing changed');
+            refusalLocal = null;
+        }
+
+        // 6. Building only is never refused for the target, so there is nothing to offer.
+        {
+            reset();
+            const e = calls.errors.length;
+            answers.message.push(undefined);
+            await run('twincat.xaeBuild', {});
+            await idle();
+            assert(calls.errors[e] && !calls.errors[e].buttons.includes(RETARGET) && fs.readFileSync(tsproj).equals(original),
+                'a plain build never offers to change the target');
+        }
+        delete workspaceSettings['tcToolkit.xaeBuild.platform'];
+        slnPath = SLN;
+        driver = () => ({ fixture: 'build-ok-headless' });
+    }
 
     // ── Not Windows ─────────────────────────────────────────────────────────────────────────────
     {

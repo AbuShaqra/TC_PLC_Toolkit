@@ -54,6 +54,13 @@ const count = (arr, v) => arr.filter(a => a === v).length;
     }
     const list = x.buildDriverArgs({ scriptPath: base.scriptPath, mode: 'listTargets', showWindow: true });
     assert(list.includes('-ListTargets') && !list.includes('-ShowWindow') && !list.includes('-SlnPath'), 'listTargets: no COM flags, no solution needed');
+    // tcToolkit.adsDll.nativeDllFolder: passed in every mode (-ListTargets reads ADS too); empty = no flag.
+    for (const mode of /** @type {const} */ (['build', 'activate', 'listTargets'])) {
+        const withDir = x.buildDriverArgs({ ...base, mode, targetNetId: '198.51.100.4.1.1', adsDllDir: 'D:\\TC\\Common64' });
+        const without = x.buildDriverArgs({ ...base, mode, targetNetId: '198.51.100.4.1.1', adsDllDir: '' });
+        assert(withDir[withDir.indexOf('-AdsDllDir') + 1] === 'D:\\TC\\Common64' && !without.includes('-AdsDllDir'),
+            `${mode}: -AdsDllDir carries the configured TcAdsDll.dll folder, and only when set`);
+    }
     let threw = false;
     try { x.buildDriverArgs({ scriptPath: base.scriptPath }); } catch (e) { threw = true; }
     assert(threw, 'a build without a solution is refused');
@@ -210,6 +217,44 @@ function run(name, o) {
     assert(run('version-mismatch').state.fatal.code === 'version-mismatch', 'version-mismatch');
     const ref = run('target-refused');
     assert(ref.state.fatal.code === 'target-refused' && ref.state.fatal.data.gate === 3, 'target-refused carries the gate');
+    // Gate 3's facts: the solution's target, its system project and this PC's runtimes (user, 2026-11-16).
+    {
+        const info = x.refusedTarget(ref.state);
+        assert(info && info.projectNetId === '192.0.2.10.1.1' && info.tsproj === 'C:\\Projects\\Line\\Line\\Line.tsproj',
+            'refusedTarget: the solution\'s TargetNetId and the system project');
+        assert(info && info.local.length === 2 && info.local[0].netId === '198.51.100.1.1.1' && info.local[1].name === 'UmRT_Default'
+            && info.local[1].kind === 'user-mode' && info.local[1].platform === 'TwinCAT OS (x64)', 'refusedTarget: the local runtimes, a malformed NetId dropped');
+        const title = x.describeExit(2, 'exit', ref.state, { solutionName: 'Line' }).title;
+        assert(title === 'The XAE build could not run: Line targets 192.0.2.10.1.1, which is not a runtime on this PC. Activation is local-only, so it was refused before XAE started. '
+            + 'Runtimes on this PC: Real-time runtime (198.51.100.1.1.1), UmRT_Default (198.51.100.4.1.1, user-mode runtime). '
+            + 'Change the solution\'s target to one of them (here, or in XAE with Choose Target System).', `describeExit 2, gate 3: names the runtimes (${title})`);
+        const blocked = x.describeExit(2, 'exit', ref.state, { solutionName: 'Line', retargetProblem: 'Line.tsproj names TargetNetId 2 times' }).title;
+        assert(/The target cannot be changed here: Line\.tsproj names TargetNetId 2 times\. Change it in XAE \(Choose Target System\)\.$/.test(blocked),
+            'describeExit 2, gate 3: says why the target cannot be changed here');
+        const none = { ...ref.state, fatal: { ...ref.state.fatal, data: { ...ref.state.fatal.data, local: [] } } };
+        assert(/No runtime was found on this PC, so there is none to change the target to: set the target in XAE \(Choose Target System\)/.test(
+            x.describeExit(2, 'exit', none, { solutionName: 'Line' }).title) && x.refusedTarget(none).local.length === 0, 'no local runtime: says so and points to XAE');
+        // PS 5.1 can hand a one-element array over as a bare object; the project's own NetId is never offered.
+        const one = { ...ref.state, fatal: { ...ref.state.fatal, data: { gate: 3, projectNetId: '192.0.2.10.1.1', local: { netId: '198.51.100.4.1.1', name: 'U', kind: 'user-mode' } } } };
+        assert(x.refusedTarget(one).local.length === 1 && x.refusedTarget(one).tsproj === null, 'a bare local object is read as a one-element list');
+        const self = { ...ref.state, fatal: { ...ref.state.fatal, data: { gate: 3, projectNetId: '198.51.100.4.1.1', local: [{ netId: '198.51.100.4.1.1' }, { netId: '198.51.100.4.1.1' }] } } };
+        assert(x.refusedTarget(self).local.length === 0, 'the project\'s own NetId and duplicates are dropped');
+        // An older driver sends only {gate}: the plain refusal, as before.
+        const legacy = run('target-refused-legacy');
+        assert(x.refusedTarget(legacy.state) === null && /could not run: this solution names TargetNetId 192\.0\.2\.10\.1\.1, which is not this machine\.$/.test(
+            x.describeExit(2, 'exit', legacy.state, { solutionName: 'Line' }).title), 'a refusal without the facts keeps the driver\'s text');
+        const g4 = run('target-refused-platform');
+        assert(x.refusedTarget(g4.state) === null, 'gate 4 is not a target refusal');
+        assert(x.refusedTarget(x.createRunState()) === null, 'no fatal, no refusal');
+        const c = x.retargetConfirmText({ solutionName: 'Line', tsprojPath: 'C:\\L\\Line.tsproj', from: '192.0.2.10.1.1',
+            to: { netId: '198.51.100.4.1.1', name: 'UmRT_Default', kind: 'user-mode' }, title: 'Build and Activate through XAE', sameTarget: true });
+        assert(c.confirmLabel === 'Change target' && c.message.includes('from 192.0.2.10.1.1 to UmRT_Default (198.51.100.4.1.1, user-mode runtime)')
+            && c.message.includes('TargetNetId="192.0.2.10.1.1" to TargetNetId="198.51.100.4.1.1" in C:\\L\\Line.tsproj')
+            && /activates on UmRT_Default \(198\.51\.100\.4\.1\.1\), as confirmed\.$/.test(c.message), 'the confirmation names the file and both NetIds');
+        assert(/asks for the activation target again\.$/.test(x.retargetConfirmText({ solutionName: 'L', tsprojPath: 'f', from: 'a', to: { netId: 'b', name: 'B', kind: 'real-time' }, title: 'T', sameTarget: false }).message),
+            'another target than the confirmed one: the re-run asks again');
+        assert(x.RETARGET_BUTTON === 'Change the solution\'s target…', 'the button text');
+    }
 
     const actRun = run('activation-run', { expectedNetId: '198.51.100.4.1.1' });
     assert(actRun.state.activation.outcome === 'run' && actRun.state.activation.adsState === 5 && !actRun.state.targetMismatch, 'activation-run');
@@ -221,8 +266,64 @@ function run(name, o) {
     const inc = run('activation-incomplete');
     const di = x.describeExit(0, 'exit', inc.state);
     assert(inc.state.activation.outcome === 'incomplete' && !di.ok && di.severity === 'warning', 'activation-incomplete: a warning, not ok');
+    assert(inc.state.activation.dllProblem === null && !/TcAdsDll/.test(di.title), 'incomplete without a DLL problem: no DLL hint');
+    {
+        // The run state was unreadable because TcAdsDll.dll was not found: the summary says so and names the setting.
+        const st = x.createRunState();
+        x.reduce(st, x.parseLine('@@TCTK ' + JSON.stringify({ v: 1, t: 'activation', netId: '198.51.100.4.1.1', adsState: null, stateName: 'unreadable', outcome: 'incomplete',
+            dllProblem: 'TwinCAT\'s ADS DLL (TcAdsDll.dll) was not found in C:\\Program Files (x86)\\Beckhoff\\TwinCAT\\Common64' })), 0);
+        st.mode = 'activate';
+        assert(st.activation && /TcAdsDll\.dll\) was not found/.test(st.activation.dllProblem || ''), 'the activation event keeps dllProblem');
+        const searched = x.describeExit(0, 'exit', st).title;
+        const configured = x.describeExit(0, 'exit', st, { adsDllConfigured: true }).title;
+        assert(/could not be read: check the target\. TwinCAT's ADS DLL \(TcAdsDll\.dll\) was not found in C:\\Program Files \(x86\)\\Beckhoff\\TwinCAT\\Common64\. If TwinCAT is installed elsewhere, set tcToolkit\.adsDll\.nativeDllFolder/.test(searched),
+            `incomplete for want of TcAdsDll.dll: the problem and the setting (${searched})`);
+        assert(/tcToolkit\.adsDll\.nativeDllFolder is used as given: correct it, or clear it/.test(configured), 'with the setting set: correct or clear it');
+    }
     const fail = run('activation-failed');
     assert(/CONFIG, not RUN/.test(x.describeExit(3, 'exit', fail.state).title), 'describeExit 3 names the ADS state');
+
+    // Boot project with autostart (user decision 2026-11-16): reported on success, a warning when it is missing.
+    {
+        const okRun = x.describeExit(0, 'exit', actRun.state);
+        const b = actRun.state.bootProject;
+        assert(b && b.outcome === 'installed' && b.projects.length === 1 && b.projects[0].installed && b.projects[0].wasAutostart === false
+            && b.projects[0].node === 'root' && actRun.state.plcStates.length === 1 && actRun.state.plcStates[0].port === 851, 'bootProject and plcState are read');
+        assert(okRun.ok && okRun.severity === 'info' && /it is in RUN\. The PLC program is installed as a boot project with autostart: the PLC starts on activation and after every runtime restart\.$/.test(okRun.title),
+            'success: the summary says the boot project was installed with autostart and the PLC starts on activation');
+        const bp = x.describeBootProject(actRun.state);
+        assert(bp && bp.ok && bp.lines.some(l => /^Boot project: TcToolkitSample_PLC installed on the target with autostart \(autostart set for this run; the solution is not saved/.test(l))
+            && bp.lines.some(l => l === 'PLC TcToolkitSample_PLC (port 851): RUN.'), 'the channel lines name the project, the autostart and the PLC state');
+
+        const bf = run('activation-boot-failed');
+        const dbf = x.describeExit(0, 'exit', bf.state);
+        assert(bf.state.bootProject.projects.length === 1 && !bf.state.bootProject.projects[0].installed, 'a bare project object (PS 5.1) is read as a one-element list');
+        assert(!dbf.ok && dbf.severity === 'warning' && /it is in RUN\. But the boot project for TcToolkitSample_PLC could not be installed, so that PLC has no program: log in from XAE/.test(dbf.title),
+            'a failed boot project: the activation is still reported, as a warning that says the PLC must be started from XAE');
+        assert(x.describeBootProject(bf.state).lines.some(l => /^Boot project: TcToolkitSample_PLC NOT installed: Exception from HRESULT: 0x80004005 \(E_FAIL\)\.$/.test(l)),
+            'the channel names the failure');
+        assert(x.reachedBuildResult(0, 'exit', bf.state), 'a failed boot project still counts as a build result');
+
+        const inv = run('activation-plc-invalid');
+        const dinv = x.describeExit(0, 'exit', inv.state);
+        assert(!dinv.ok && dinv.severity === 'warning' && /installed with autostart, but PLC TcToolkitSample_PLC is INVALID, not RUN: check it in XAE\.$/.test(dinv.title),
+            'a PLC still INVALID after the restart: a warning');
+
+        assert(x.describeBootProject(fail.state) !== null && x.describeExit(3, 'exit', fail.state).title === `The build succeeded, but activation did not: the target is in CONFIG, not RUN.`,
+            'exit 3: the activation failure keeps its own title');
+        assert(/check the target\. The PLC program is installed as a boot project/.test(x.describeExit(0, 'exit', inc.state).title), 'incomplete: the boot result is appended');
+
+        // No bootProject event although the activation ran: never a silent pass.
+        const noBoot = { ...actRun.state, bootProject: null, plcStates: [] };
+        const dnb = x.describeExit(0, 'exit', noBoot);
+        assert(!dnb.ok && dnb.severity === 'warning' && /reported no boot project/.test(dnb.title), 'no boot report after a RUN activation: a warning');
+        const none = { ...actRun.state, bootProject: { outcome: 'none', error: null, projects: [] }, plcStates: [] };
+        assert(x.describeExit(0, 'exit', none).ok && /no PLC project/.test(x.describeExit(0, 'exit', none).title), 'no PLC project: said, not a warning');
+        const tipc = { ...actRun.state, bootProject: { outcome: 'failed', error: 'the PLC node (TIPC) could not be read: x', projects: [] }, plcStates: [] };
+        assert(!x.describeExit(0, 'exit', tipc).ok && x.describeBootProject(tipc).lines[0] === 'Boot project: none installed: the PLC node (TIPC) could not be read: x.', 'TIPC unreadable: a warning');
+        assert(x.describeBootProject(run('build-ok-headless').state) === null, 'a plain build says nothing about boot projects');
+        assert(x.UNINTERRUPTIBLE_PHASES.includes('boot') && !x.canCancel({ ...x.createRunState(), phase: 'boot' }), 'the boot phase is never interrupted');
+    }
 
     const lt = run('list-targets');
     assert(lt.state.targets.local.length === 2 && lt.state.targets.projectNetId === '198.51.100.4.1.1', 'list-targets: a malformed NetId is dropped');
@@ -231,6 +332,64 @@ function run(name, o) {
         'target pick: the last pick first and preselected, the project NetId marked');
     assert(/User-mode runtime/.test(items[0].detail) && /TwinCAT OS \(x64\)/.test(items[0].detail), 'target pick detail: kind and platform');
     assert(x.targetPickItems(null).length === 0, 'no targets → no items');
+
+    // A user-mode runtime's AmsNetId is trusted only for a running instance that wrote it (user's 4026
+    // machine, 2026-11-16): an untrusted one is listed with its reason and never offered or preselected.
+    {
+        const stale = run('list-targets-stale');
+        const t = stale.state.targets;
+        assert(t && t.local.length === 1 && t.local[0].netId === '198.51.100.1.1.1' && t.projectNetId === '198.51.100.6.1.1',
+            'stale file: only the runtime with a known NetId is local');
+        assert(t && t.unknown.length === 2 && t.unknown[0].name === 'UmRT_Default' && t.unknown[0].status === 'rewritten'
+            && t.unknown[0].reason === 'the configuration file changed after this runtime started; its AmsNetId could not be confirmed over ADS: no runtime answered at 198.51.100.6.1.1 (ADS error 0x7)'
+            && t.unknown[0].fileNetId === '198.51.100.6.1.1' && t.unknown[1].status === 'not-running', 'stale file: the unknown runtimes, with status, reason and file NetId');
+        const it = x.targetPickItems(t, { preselect: '198.51.100.6.1.1' });
+        assert(it.length === 3 && it[0].netId === '198.51.100.1.1.1' && !it.some(i => i.picked) && !it.some(i => i.netId === '198.51.100.6.1.1')
+            && it.slice(1).every(i => i.kind === x.QUICK_PICK_SEPARATOR && !i.netId) && x.QUICK_PICK_SEPARATOR === -1,
+            'stale file: the file NetId is neither offered nor preselected; unknown runtimes are separator rows');
+        assert(it[1].label === 'UmRT_Default: AmsNetId unknown, not offered (the configuration file changed after this runtime started; its AmsNetId could not be confirmed over ADS: no runtime answered at 198.51.100.6.1.1 (ADS error 0x7))'
+            && it[2].label === 'UmRT_Second: AmsNetId unknown, not offered (this runtime is not running)', 'the rows name the runtime and the reason');
+        // Confirmed over ADS (2026-11-16): a running runtime rewrites its own file (on activation), so
+        // the driver asked it over ADS; such a NetId is local like any trusted one, and says how.
+        const ads = run('list-targets-ads').state.targets;
+        assert(ads && ads.local.length === 3 && ads.unknown.length === 0 && ads.projectNetId === '10.0.0.4.1.1', 'list-targets-ads: every trusted runtime is local');
+        const um = ads ? ads.local.find(l => l.name === 'UmRT_Default') : null;
+        assert(um && um.netId === '10.0.0.4.1.1' && um.netIdSource === 'ads' && ads.local.find(l => l.name === 'UmRT_Second').netIdSource === 'file-time'
+            && ads.local.find(l => l.kind === 'real-time').netIdSource === null, 'netIdSource is parsed: ads, file-time, and null for the real-time runtime');
+        const adsItems = x.targetPickItems(ads, { preselect: '10.0.0.4.1.1' });
+        assert(adsItems[0].netId === '10.0.0.4.1.1' && adsItems[0].picked && /\(project\)/.test(adsItems[0].description)
+            && adsItems[0].detail === 'User-mode runtime on this machine; platform TwinCAT OS (x64); AmsNetId confirmed over ADS'
+            && !adsItems.slice(1).some(i => /confirmed over ADS/.test(i.detail || '')), 'the pick detail says when a NetId was confirmed over ADS');
+        const fresh = x.runtimeEntries([{ netId: '198.51.100.5.1.1', name: 'UmRT_Default', kind: 'user-mode', netIdStatus: 'trusted' }]);
+        assert(fresh.local.length === 1 && fresh.unknown.length === 0, 'running with a fresh file (trusted): local');
+        assert(x.runtimeEntries([{ netId: '198.51.100.5.1.1', name: 'UmRT_Default', kind: 'user-mode' }]).local.length === 1,
+            'an older driver without netIdStatus: local, as before');
+        const closed = x.runtimeEntries([{ netId: '198.51.100.5.1.1', name: 'UmRT_Default', kind: 'user-mode', netIdStatus: 'not-running', reason: 'this runtime is not running' }]);
+        assert(closed.local.length === 0 && closed.unknown.length === 1, 'a status other than trusted is unknown even with a NetId (fail closed)');
+        const odd = x.runtimeEntries([{ netId: null, name: 'U', netIdStatus: 'unverifiable' }, { netId: null, name: 'U', netIdStatus: 'unverifiable' }, null, 'x']);
+        assert(odd.unknown.length === 1 && odd.unknown[0].reason === 'its AmsNetId could not be confirmed', 'each unknown runtime once; a missing reason gets a generic one');
+        assert(x.runtimeEntries({ netId: null, name: 'U', netIdStatus: 'rewritten', reason: 'r' }).unknown.length === 1, 'a bare object is a one-element list');
+        assert(x.unknownRuntimesText([]) === '' && x.unknownRuntimesText(undefined) === '', 'no unknown runtime → no text');
+        assert(x.unknownRuntimesText(t.unknown) === 'Not offered, AmsNetId unknown: UmRT_Default (user-mode runtime): the configuration file changed after this runtime started; its AmsNetId could not be confirmed over ADS: no runtime answered at 198.51.100.6.1.1 (ADS error 0x7); '
+            + 'UmRT_Second (user-mode runtime): this runtime is not running. Read the AmsNetId in that runtime\'s console window ("AmsNetId: …") or use XAE\'s Choose Target System.',
+            'the unknown runtimes in one sentence, with where to read the NetId');
+        assert(!x.unknownNeedsAdsDll(t.unknown) && !/adsDll/.test(x.unknownRuntimesText(t.unknown)), 'an ADS answer that is not a DLL problem: no setting hint');
+        const noDll = [{ name: 'UmRT_Default', kind: 'user-mode', platform: null, status: 'rewritten', fileNetId: null,
+            reason: 'the configuration file changed after this runtime started; its AmsNetId could not be confirmed over ADS: TwinCAT\'s ADS DLL (TcAdsDll.dll) was not found in C:\\a, C:\\b' }];
+        assert(x.unknownNeedsAdsDll(noDll) && /If TwinCAT is installed elsewhere, set tcToolkit\.adsDll\.nativeDllFolder to the folder holding TcAdsDll\.dll/.test(x.unknownRuntimesText(noDll))
+            && /used as given/.test(x.unknownRuntimesText(noDll, { adsDllConfigured: true })),
+            'a runtime not offered for want of TcAdsDll.dll: the setting is named (set it, or correct it when set)');
+        // The refusal: the unknown runtimes named; with none known there is nothing to change the target to here.
+        const onlyUnknown = x.retargetRefusalText({ projectNetId: '198.51.100.6.1.1', tsproj: null, local: [], unknown: t.unknown }, 'Line', '');
+        assert(onlyUnknown === 'Line targets 198.51.100.6.1.1, which is not a runtime on this PC. Activation is local-only, so it was refused before XAE started. '
+            + '198.51.100.6.1.1 is the AmsNetId UmRT_Default\'s configuration file names, which no running instance of it is known to use. '
+            + x.unknownRuntimesText(t.unknown) + ' No runtime with a known AmsNetId was found on this PC, so there is none to change the target to here.',
+            `refusal with only unknown runtimes (${onlyUnknown})`);
+        const ref2 = x.refusedTarget({ ...x.createRunState(), fatal: { code: 'target-refused', text: '', data: { gate: 3, projectNetId: '198.51.100.6.1.1', local: stale.state.targets ? [
+            { netId: '198.51.100.1.1.1', name: 'Real-time runtime', kind: 'real-time', netIdStatus: 'trusted' },
+            { netId: null, name: 'UmRT_Default', kind: 'user-mode', netIdStatus: 'rewritten', reason: 'r', fileNetId: '198.51.100.6.1.1' }] : [] } } });
+        assert(ref2 && ref2.local.length === 1 && ref2.unknown.length === 1 && ref2.unknown[0].fileNetId === '198.51.100.6.1.1', 'refusedTarget splits known and unknown runtimes');
+    }
 
     const can = run('cancelled');
     assert(can.state.done.exitCode === 4 && x.describeExit(4, 'exit', can.state).severity === 'warning' && /cancelled/.test(x.describeExit(4, 'exit', can.state).title), 'describeExit 4');
@@ -316,7 +475,7 @@ function run(name, o) {
 {
     const c = x.confirmationText({ netId: '198.51.100.4.1.1', name: 'UmRT_Default' }, 'Sample');
     assert(c.confirmLabel === 'Activate on UmRT_Default (198.51.100.4.1.1)', 'the confirm button names the target');
-    assert(/^Build Sample, activate the configuration on UmRT_Default \(198\.51\.100\.4\.1\.1\) and restart TwinCAT there\?/.test(c.message)
+    assert(/^Build Sample, activate the configuration on UmRT_Default \(198\.51\.100\.4\.1\.1\), install its PLC program there as a boot project with autostart, and restart TwinCAT there\?/.test(c.message)
         && /running PLC on that target stops/.test(c.message) && /XAE window opens during activation/.test(c.message), 'the modal text');
 }
 

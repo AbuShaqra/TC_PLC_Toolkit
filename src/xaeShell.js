@@ -139,7 +139,9 @@ function runSignatureGenerator(scriptPath, workspaceFolder, shell, output, onLin
         const proc = spawn(
             'powershell.exe',
             [
-                '-NoProfile', '-STA', '-File', scriptPath, workspaceFolder,
+                // Bypass, as the XAE Build script: the bundled script is unsigned, and a local
+                // AllSigned or RemoteSigned policy would refuse it (Group Policy still wins).
+                '-NoProfile', '-ExecutionPolicy', 'Bypass', '-STA', '-File', scriptPath, workspaceFolder,
                 '-ShellExe', shell.exePath,
                 '-ProgId', shell.progId
             ],

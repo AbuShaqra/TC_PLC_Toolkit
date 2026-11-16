@@ -36,6 +36,9 @@
  * @property {boolean} [inheritanceUncertain] Set (only when true) by both indexers when the head's
  *                                EXTENDS/IMPLEMENTS sit in a conditional pragma group (conditionals.js):
  *                                the inheritance chain then counts as unresolved.
+ * @property {boolean} [qualifiedOnly] GVL nodes from xmlIndexer.js: whether the GVL carries
+ *                                `{attribute 'qualified_only'}`. Absent when the indexer did not look
+ *                                (parser.js), which online monitoring treats as "may be".
  */
 
 /**

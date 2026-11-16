@@ -8,7 +8,8 @@
  * shows the XAE Shell paths (with a warning for a path that is not on disk) and the g++ path (R13: set,
  * detected, not found, or unusable with the same warning; Change… and Detect again, keyboard-operable), enables Compile project
  * only while the compiler file exists (by default the bundled one) and a project is open, shows and
- * posts the Compile dropdown's two C++ switches (R13, keyboard-operable), and has no horizontal
+ * posts the Compile dropdown's two C++ switches (R13, keyboard-operable), shows the Build through XAE,
+ * Go Online / Go Offline and Show Activation Targets tiles (R14/R15), and has no horizontal
  * scroll at 360 px.
  *
  * Only `acquireVsCodeApi()` is stubbed (through Playwright's init script, which the CSP does not
@@ -59,7 +60,6 @@ const { TEMPLATE_VERSIONS } = require(path.join(REPO, 'src', 'projectTemplate.js
         styleUri: `${ORIGIN}/media/startPage.css`,
         scriptUri: `${ORIGIN}/media/startPage.js`,
         nameScriptUri: `${ORIGIN}/media/projectName.js`,
-        logoUri: `${ORIGIN}/media/marketplace-icon.png`,
         versions: TEMPLATE_VERSIONS
     });
     fs.mkdirSync(path.join(HERE, 'out'), { recursive: true });
@@ -251,43 +251,77 @@ const { TEMPLATE_VERSIONS } = require(path.join(REPO, 'src', 'projectTemplate.js
         });
         assert(toggleLabel.label === 'Build options' && toggleLabel.controls === 'compile-options' && toggleLabel.role === 'group'
             && JSON.stringify(toggleLabel.labels.slice(0, 2)) === '["Generate C++","Build with g++"]', `the chevron is labelled and controls a group, two labelled boxes first (${JSON.stringify(toggleLabel)})`);
-        // Build through XAE (R14): hidden until the host says it is available; then two actions and the window switch.
+        // Build through XAE (R14): hidden until the host says it is available; then three tiles below
+        // Build project (Build, Build and Activate, Show Activation Targets, around the Go Online tile)
+        // and the window switch in the dropdown (user request 2026-11-16: the actions left the dropdown).
         const xaeState = () => page.evaluate(() => ({
             hidden: document.getElementById('xae-options').hidden,
             labels: [...document.querySelectorAll('#xae-options .option-label')].map(e => e.textContent),
+            tiles: [...document.querySelectorAll('#actions .actions > li')].filter(li => getComputedStyle(li).display !== 'none')
+                .map(li => (li.querySelector('.action-label') || {}).textContent),
             window: document.getElementById('opt-xae-window').checked,
             mode: document.getElementById('xae-build-mode').textContent,
-            disabled: document.getElementById('xae-build-run').disabled
+            disabled: ['xae-build-run', 'xae-activate-run', 'xae-targets-run', 'online-run'].map(id => document.getElementById(id).disabled)
         }));
+        assert(await page.evaluate(() => document.querySelectorAll('.xae-tile').length === 3 && document.querySelectorAll('#actions .actions > li.xae-tile').length === 3),
+            'the XAE tile class marks exactly the three action tiles (the XAE Shell path rows must not be toggled with them)');
         let xs = await xaeState();
-        assert(xs.hidden, `R14: without xaeOptions (or off Windows) the XAE entries are hidden (${JSON.stringify(xs)})`);
+        assert(xs.hidden && JSON.stringify(xs.tiles) === '["Generate ST","Update Library Definitions","Build project","Go Online…"]',
+            `R14: without xaeOptions (or off Windows) the XAE entries and tiles are hidden; Go Online is still there (${JSON.stringify(xs)})`);
         await send({ type: 'state', location: 'C:\\Projects', sep: '\\', hasProject: true, compilerReady: true, recents: [], compileOptions: { generateCpp: true, buildWithGpp: false },
             xaeOptions: { available: true, showWindow: false, running: false, configuration: 'Debug', platform: 'TwinCAT OS (x64)' } });
         xs = await xaeState();
-        assert(!xs.hidden && JSON.stringify(xs.labels) === '["Build through XAE","Build and Activate through XAE…","Show the XAE window"]' && !xs.window,
-            `R14: available → Build through XAE, Build and Activate through XAE…, Show the XAE window (unticked = headless) (${JSON.stringify(xs)})`);
+        assert(!xs.hidden && JSON.stringify(xs.labels) === '["Show the XAE window"]' && !xs.window,
+            `R14: available → the dropdown's XAE part is the window switch alone (unticked = headless) (${JSON.stringify(xs)})`);
+        assert(JSON.stringify(xs.tiles) === '["Generate ST","Update Library Definitions","Build project","Build through XAE","Build and Activate through XAE…","Go Online…","Show Activation Targets"]'
+            && xs.disabled.every(d => !d), `available with a project → the four run tiles in the editor tab's order, all enabled (${JSON.stringify(xs)})`);
         assert(xs.mode === 'headless; Debug | TwinCAT OS (x64)', `R14: the Settings card's XAE build row says headless and the configuration (${xs.mode})`);
         await clearPosted();
         await page.evaluate(() => { document.getElementById('compile-options').hidden = false; });
         await page.click('#opt-xae-window');
+        await page.evaluate(() => { document.getElementById('compile-options').hidden = true; });
         await page.click('#xae-build-run');
         await page.click('#xae-activate-run');
+        await page.click('#online-run');
+        await page.click('#xae-targets-run');
         await page.click('#xae-build-change');
         let xm = await posted();
-        assert(xm.length === 4 && xm[0].type === 'setXaeOption' && xm[0].key === 'showWindow' && xm[0].value === true
-            && xm[1].type === 'command' && xm[1].command === 'twincat.xaeBuild' && xm[2].command === 'twincat.xaeBuildAndActivate'
-            && xm[3].type === 'openSettings' && xm[3].section === 'xaeBuild',
-            `R14: the checkbox posts setXaeOption showWindow; the actions run their commands; Change… opens the xaeBuild settings (${JSON.stringify(xm)})`);
+        assert(xm.length === 6 && xm[0].type === 'setXaeOption' && xm[0].key === 'showWindow' && xm[0].value === true
+            && xm.slice(1, 5).every(m => m.type === 'command')
+            && JSON.stringify(xm.slice(1, 5).map(m => m.command)) === '["twincat.xaeBuild","twincat.xaeBuildAndActivate","twincat.goOnline","twincat.xaeShowTargets"]'
+            && xm[5].type === 'openSettings' && xm[5].section === 'xaeBuild',
+            `R14: the checkbox posts setXaeOption showWindow; the tiles run their commands; Change… opens the xaeBuild settings (${JSON.stringify(xm)})`);
         await send({ type: 'state', location: 'C:\\Projects', sep: '\\', hasProject: true, compilerReady: true, recents: [], compileOptions: { generateCpp: true, buildWithGpp: false },
             xaeOptions: { available: true, showWindow: true, running: true, configuration: 'Release', platform: 'TwinCAT RT (x64)' } });
         xs = await xaeState();
-        assert(xs.window && xs.disabled && xs.mode === 'window shown; Release | TwinCAT RT (x64)', `R14: a state with showWindow and a run in progress (${JSON.stringify(xs)})`);
-        await send({ type: 'state', location: 'C:\\Projects', sep: '\\', hasProject: false, compilerReady: true, recents: [],
+        assert(xs.window && xs.disabled[0] && xs.disabled[1] && !xs.disabled[2] && xs.mode === 'window shown; Release | TwinCAT RT (x64)',
+            `R14: a state with showWindow and a run in progress disables the two builds, not the target list (${JSON.stringify(xs)})`);
+        // Go Online / Go Offline (R15): one tile, swapped by the host's session state.
+        const onlineTile = () => page.evaluate(() => {
+            const t = document.getElementById('online-run');
+            return { command: t.getAttribute('data-command'), label: t.querySelector('.action-label').textContent, disabled: t.disabled };
+        });
+        await send({ type: 'state', location: 'C:\\Projects', sep: '\\', hasProject: true, compilerReady: true, recents: [], online: 'connecting',
             xaeOptions: { available: true, showWindow: false, running: false } });
+        let ot = await onlineTile();
+        assert(ot.disabled && ot.label === 'Going online…', `R15: while connecting the online tile is disabled (${JSON.stringify(ot)})`);
+        await send({ type: 'state', location: 'C:\\Projects', sep: '\\', hasProject: false, compilerReady: true, recents: [], online: 'online',
+            xaeOptions: { available: true, showWindow: false, running: false } });
+        ot = await onlineTile();
+        assert(!ot.disabled && ot.label === 'Go Offline' && ot.command === 'twincat.goOffline', `R15: online → Go Offline, usable even with no project (${JSON.stringify(ot)})`);
+        await clearPosted();
+        await page.click('#online-run');
+        xm = await posted();
+        assert(xm.length === 1 && xm[0].command === 'twincat.goOffline', `R15: the swapped tile posts twincat.goOffline (${JSON.stringify(xm)})`);
         const noProject = await page.evaluate(() => ({ build: document.getElementById('xae-build-run').disabled, activate: document.getElementById('xae-activate-run').disabled,
-            title: document.getElementById('compile-options-toggle').title }));
-        assert(noProject.build && noProject.activate, `R14: with no project open the two XAE actions are disabled, also after a state that is not running (${JSON.stringify(noProject)})`);
+            targets: document.getElementById('xae-targets-run').disabled, title: document.getElementById('compile-options-toggle').title }));
+        assert(noProject.build && noProject.activate && noProject.targets,
+            `R14: with no project open the three XAE tiles are disabled, also after a state that is not running (${JSON.stringify(noProject)})`);
         assert(noProject.title === 'Build options: C++ generation, the g++ build and the XAE build', `R14: the chevron's tooltip names the XAE build where it is shown (${noProject.title})`);
+        await send({ type: 'state', location: 'C:\\Projects', sep: '\\', hasProject: false, compilerReady: true, recents: [], online: 'offline',
+            xaeOptions: { available: true, showWindow: false, running: false } });
+        ot = await onlineTile();
+        assert(ot.disabled && ot.label === 'Go Online…' && ot.command === 'twincat.goOnline', `R15: offline with no project → Go Online…, disabled (${JSON.stringify(ot)})`);
         await send({ type: 'state', location: 'C:\\Projects', sep: '\\', hasProject: true, compilerReady: true, recents: [],
             xaeOptions: { available: true, showWindow: false, running: false } });
         const lastFocus = await page.evaluate(() => {
@@ -515,6 +549,30 @@ const { TEMPLATE_VERSIONS } = require(path.join(REPO, 'src', 'projectTemplate.js
         await page.setViewportSize({ width: 360, height: 800 });
         const narrowCols = await page.evaluate(() => getComputedStyle(document.querySelector('.grid')).gridTemplateColumns.split(' ').length);
         assert(narrowCols === 1, `360 px is a single column (${narrowCols})`);
+
+        // The native look (user decision 2026-11-16): theme colours, no pink anywhere; true red only as a
+        // marker (the logo carries it). Every colour the page computes is checked: a reddish hue may only
+        // be #E2001A itself. Tiles are drawn like menu items: no frame.
+        await page.setViewportSize({ width: 1200, height: 800 });
+        const look = await page.evaluate(() => {
+            const reds = new Set();
+            const props = ['color', 'backgroundColor', 'borderTopColor', 'borderLeftColor', 'outlineColor'];
+            for (const el of document.querySelectorAll('body *')) {
+                const c = getComputedStyle(el);
+                for (const p of props) {
+                    const m = /rgba?\((\d+), (\d+), (\d+)(?:, ([\d.]+))?\)/.exec(c[p]);
+                    if (!m || (m[4] !== undefined && Number(m[4]) === 0)) continue;
+                    const [r, g, b] = [Number(m[1]), Number(m[2]), Number(m[3])];
+                    if (r > 150 && r - g > 60 && r - b > 40) reds.add(c[p]);
+                }
+            }
+            const tile = getComputedStyle(document.querySelector('#actions button.action'));
+            return { reds: [...reds], tileBorder: tile.borderTopWidth, tileRadius: tile.borderRadius, h1: getComputedStyle(document.querySelector('.masthead h1')).color,
+                body: getComputedStyle(document.body).color, mark: !!document.querySelector('.masthead svg.brand-mark rect[fill="#E2001A"]'),
+                markColor: getComputedStyle(document.querySelector('.masthead svg.brand-mark')).color };
+        });
+        assert(look.reds.every(c => c === 'rgb(226, 0, 26)') && look.tileBorder === '0px' && look.h1 === look.body && look.mark && look.markColor === look.body,
+            `the start page has no pink: any red is #E2001A, tiles are frameless menu-like rows, the title is the theme's text colour, its brand mark the inline mark (theme-coloured letters, the red square) (${JSON.stringify(look)})`);
 
         assert(foreign.length === 0, `no request leaves the page's own origin (${foreign.join(', ') || 'none'})`);
         assert(consoleErrors.length === 0, `the browser reported no errors (${consoleErrors.join(' | ') || 'none'})`);

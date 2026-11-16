@@ -2,8 +2,10 @@
    1. Neutral surfaces and text come from the host theme (`--vscode-*`), never from literal white/black.
    2. Where a translucent tint is wanted, tint with GREY, not white — grey-with-alpha darkens a light
       surface and lightens a dark one, so one value serves both. White-with-alpha only works on dark.
-   3. The coral/green/amber brand accents are readable as text on dark themes but not on light ones,
-      so they are variables with a darkened light-theme override (see below), not literals.
+   3. Red is a MARKER, not an accent (user decision 2026-11-16, the "native" header): true red
+      `--tc-red` (#E2001A) only on the type tag and the Stop PLC glyph. Selection, focus, hover and
+      checkboxes follow the theme (blue in the default dark theme). No pink or salmon anywhere.
+   4. The status greens/ambers are variables with a darkened light-theme override (see below).
    Fonts are declared but cannot be fetched: the webview is offline-only (`default-src 'none'` CSP), so
    these resolve to the generic families. Vendor the .woff2 under media/ if the real faces are wanted. */
 :root {
@@ -13,27 +15,22 @@
     --surface-tint: rgba(128, 128, 128, 0.12);
     --surface-tint-hover: rgba(128, 128, 128, 0.2);
     --surface-tint-strong: rgba(128, 128, 128, 0.35);
-    --accent-gradient: linear-gradient(135deg, #ff4757, #ff6b81);
-    /* Same brand ramp, deepened until WHITE text on it clears 4.5:1 (the bright one is 2.7-3.3:1).
-       Separate from --accent-gradient on purpose: that one is also the gradient-clipped wordmark and
-       the toggle track, and deepening it globally would put dark coral on a dark header. */
-    --accent-gradient-btn: linear-gradient(135deg, #c9182f, #d8324a);
-    --accent-fg: #ff6b81;
+    /* #E2001A: 3.4:1 on #1e1e1e, 3.6:1 on #181818, 3.1:1 on #252526, 4.9:1 on white — clears the
+       3:1 the bold 10px type tag needs on dark and light, so the text stays this red everywhere. */
+    --tc-red: #E2001A;
     --ok-fg: #2ed573;
     --warn-fg: #ffa502;
-    --font-sans: 'Outfit', sans-serif;
+    --online-fg: var(--vscode-charts-blue, #3794ff);
+    --muted-fg: var(--vscode-descriptionForeground, rgba(204, 204, 204, 0.7));
+    --font-sans: var(--vscode-font-family, system-ui, sans-serif);
     --font-mono: 'JetBrains Mono', monospace;
-    --header-bg: var(--vscode-titleBar-activeBackground, rgba(30, 30, 30, 0.7));
+    --header-bg: var(--vscode-sideBar-background, var(--vscode-editor-background, #181818));
 }
 
-/* Light themes: the accents sit on their own near-white tinted pills there, so the bright
-   dark-theme values land around 1.8-2.3:1. Darkened here to clear 4.5:1 while keeping the hue. */
+/* Light themes: the bright status colours are ~1.8-2.3:1 on white; darkened to clear 4.5:1. */
 body.vscode-light, body.vscode-high-contrast-light {
-    --accent-fg: #c2283c;
     --ok-fg: #1a7f37;
     --warn-fg: #b35309;
-    /* the wordmark and toggle track sit on a light header here, where the bright ramp is ~2.0-2.5:1 */
-    --accent-gradient: linear-gradient(135deg, #b81026, #d0304a);
 }
 
 body {
@@ -52,116 +49,278 @@ body {
     height: 100vh;
 }
 
-/* Header Styles - Glassmorphism */
-.app-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 10px 20px;
-    background: var(--header-bg);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    border-bottom: 1px solid var(--border-color);
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
-    z-index: 10;
-    gap: 12px;
-}
-
-.header-left {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    min-width: 0; /* allows text truncation if needed */
-}
-
-.logo-text {
-    font-weight: 700;
-    font-size: 1.1rem;
-    letter-spacing: 1px;
-    background: var(--accent-gradient);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    flex-shrink: 0;
+.visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
     white-space: nowrap;
 }
 
-.pill {
-    font-family: var(--font-sans);
-    font-size: 0.75rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    padding: 2px 8px;
-    border-radius: 20px;
-    background: rgba(255, 71, 87, 0.15);
-    color: var(--accent-fg);
-    border: 1px solid rgba(255, 71, 87, 0.3);
-    box-shadow: 0 0 10px rgba(255, 71, 87, 0.1);
-    flex-shrink: 0;
+/* ── The header (user decision 2026-11-16): one slim row, the theme's colours ──────────────────
+   Breadcrumb · type tag · component list · (grow) · status items · | · Build · ⋯
+   Shrinking order when the editor narrows: the breadcrumb's path (cut from the left), then the
+   component list, then the status text (editor.js fitHeader adds `.compact`: dots only), and the
+   object name last. Below 420px the row may wrap. */
+.app-header {
+    display: flex;
+    align-items: center;
+    flex-wrap: nowrap;
+    min-height: 36px;
+    box-sizing: border-box;
+    padding: 0 6px 0 12px;
+    gap: 10px;
+    background: var(--header-bg);
+    color: var(--vscode-foreground, var(--fg-primary));
+    border-bottom: 1px solid var(--vscode-sideBarSectionHeader-border, var(--vscode-panel-border, var(--border-color)));
+    font-size: 13px;
+    z-index: 10;
+    position: relative;
 }
 
-#obj-name {
+/* The extension's mark: theme-coloured letters, the red square (src/brandMark.js); tooltip name + version. */
+.hdr-brand {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    color: var(--vscode-foreground, var(--fg-primary));
+    margin-right: -2px;
+}
+.hdr-brand .brand-mark { display: block; }
+
+.hdr-crumbs {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    flex: 0 1 auto;
+    color: var(--muted-fg);
+    white-space: nowrap;
+}
+/* The path is laid out right-to-left with an isolated left-to-right run inside, so an overflow is
+   cut (with the ellipsis) at its LEFT end and the folders nearest the object stay visible. */
+.crumb-path {
+    direction: rtl;
+    text-align: left;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+    flex: 0 1000 auto;
+}
+.crumb-path:empty, .crumb-path:has(> bdi:empty) { display: none; }
+.crumb-sep { opacity: 0.6; flex: none; }
+.crumb-sep[hidden] { display: none; }
+#obj-name, .crumb-name {
     margin: 0;
-    font-size: 1.1rem;
+    font-size: 13px;
     font-weight: 600;
-    color: var(--vscode-foreground, rgba(255, 255, 255, 0.9));
+    color: var(--vscode-foreground, var(--fg-primary));
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    min-width: 3em;
+    /* The name does not shrink until the status has collapsed and the Actions button folded (fitHeader). */
+    flex: 0 0 auto;
+}
+/* Then it shrinks, but only after the path (shrink 1000) and the component list (100) have given way. */
+.app-header.compact-more #obj-name { flex-shrink: 0.001; }
+
+/* The object's type (POU, GVL, DUT, IO, …): the header's one red marker. Transparent, a 1px true-red
+   border and true-red text, never a filled pink pill. */
+.type-tag {
+    flex: none;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    line-height: 16px;
+    padding: 0 5px;
+    border-radius: 3px;
+    color: var(--tc-red);
+    border: 1px solid var(--tc-red);
+    background: transparent;
+    text-transform: uppercase;
 }
 
-.header-right {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    flex-shrink: 1;
-    min-width: 0;
-}
+.hdr-grow { flex: 1 1 0; min-width: 0; }
 
-/* Dropdown styling */
+/* The component list (root, methods, properties, actions): a quiet theme dropdown. */
 .nav-select {
-    background-color: var(--vscode-dropdown-background, #2d2d2d);
-    color: var(--vscode-dropdown-foreground, #f0f0f0);
-    border: 1px solid var(--border-color);
-    padding: 6px 12px;
-    border-radius: 6px;
-    font-family: var(--font-sans);
-    font-size: 0.9rem;
+    background-color: var(--vscode-dropdown-background, #3c3c3c);
+    color: var(--vscode-dropdown-foreground, #cccccc);
+    border: 1px solid var(--vscode-dropdown-border, transparent);
+    height: 24px;
+    padding: 0 6px;
+    border-radius: 4px;
+    font-family: inherit;
+    font-size: 12px;
     outline: none;
     cursor: pointer;
-    width: 220px;
-    max-width: 100%;
-    min-width: 120px;
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
-    flex-shrink: 1;
+    width: 200px;
+    min-width: 90px;
+    flex: 0 100 auto;
+}
+.nav-select:focus-visible {
+    outline: 1px solid var(--vscode-focusBorder, #007fd4);
+    outline-offset: -1px;
 }
 
-.nav-select:hover {
-    border-color: rgba(255, 71, 87, 0.5);
-    box-shadow: 0 0 10px rgba(255, 71, 87, 0.15);
+/* Status: quiet dot + text items, no pills. */
+.hdr-status {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    flex: none;
+    color: var(--muted-fg);
+    font-size: 12px;
+}
+.actions-indicators {
+    display: inline-flex;
+    align-items: center;
+    gap: 14px;
+}
+.actions-indicators[hidden] { display: none; }
+.tb-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+    color: var(--muted-fg);
+}
+.tb-chip[hidden] { display: none; }
+.hdr-dot {
+    flex: none;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: currentColor;
+    opacity: 0.8;
+}
+.tb-chip-ok .hdr-dot { background: var(--ok-fg); opacity: 1; }
+.tb-chip-warn .hdr-dot { background: var(--warn-fg); opacity: 1; }
+.tb-chip-online .hdr-dot { background: var(--online-fg); opacity: 1; }
+.tb-chip-busy .hdr-dot { background: var(--vscode-progressBar-background, var(--online-fg)); opacity: 1; }
+.tb-chip-sync .hdr-icon { flex: none; display: block; }
+.tb-chip-sync.modified { color: var(--warn-fg); }
+.status-indicator { white-space: nowrap; }
+/* A run in progress: the dot pulses slowly, dropped for reduced motion. */
+.tb-chip-busy .hdr-dot { animation: tb-chip-pulse 1.4s ease-in-out infinite; }
+@keyframes tb-chip-pulse { 50% { opacity: 0.35; } }
+@media (prefers-reduced-motion: reduce) { .tb-chip-busy .hdr-dot { animation: none; } }
+/* Too narrow for the text: dots (and the sync icon) only, the text is in each item's tooltip. */
+.app-header.compact .hdr-status .hdr-text { display: none; }
+.app-header.compact .hdr-status, .app-header.compact .actions-indicators { gap: 8px; }
+
+.hdr-vsep {
+    flex: none;
+    width: 1px;
+    height: 18px;
+    background: var(--vscode-sideBarSectionHeader-border, var(--border-color));
+    margin: 0 -2px;
 }
 
-.nav-select:focus {
-    border-color: var(--accent-fg);
-    box-shadow: 0 0 12px rgba(255, 71, 87, 0.3);
+/* The Build and "⋯" icon buttons: VS Code's toolbar style (transparent, hover tint, focus ring). */
+.icon-btn {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 26px;
+    padding: 0;
+    border: none;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--vscode-icon-foreground, var(--vscode-foreground, #c5c5c5));
+    cursor: pointer;
+    outline: none;
+}
+.icon-btn:hover { background: var(--vscode-toolbar-hoverBackground, rgba(90, 93, 94, 0.31)); }
+.icon-btn:active { background: var(--vscode-toolbar-activeBackground, rgba(99, 102, 103, 0.31)); }
+.icon-btn[aria-expanded="true"] { background: var(--vscode-toolbar-activeBackground, rgba(99, 102, 103, 0.31)); }
+.icon-btn:focus-visible {
+    outline: 1px solid var(--vscode-focusBorder, #007fd4);
+    outline-offset: -1px;
+}
+.icon-btn[aria-disabled="true"] { opacity: 0.4; cursor: default; }
+.icon-btn[aria-disabled="true"]:hover { background: transparent; }
+.icon-btn .btn-icon { display: block; }
+
+/* The Actions menu's anchor: the group is the positioning context for the absolutely-positioned menu. */
+.actions-group {
+    position: relative;
+    display: inline-flex;
+    flex: none;
 }
 
-.status-indicator {
+/* The Actions button: a real button in the theme's secondary-button colours (never red; red is a
+   marker), "Actions" + a chevron. When even the dots do not make room, `.compact-more` (fitHeader)
+   folds it to the "⋯" glyph + chevron, before the object name gives way. */
+.actions-btn {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    height: 26px;
+    padding: 0 6px 0 10px;
+    border: 1px solid var(--vscode-button-border, transparent);
+    border-radius: 4px;
+    background: var(--vscode-button-secondaryBackground, #313131);
+    color: var(--vscode-button-secondaryForeground, #cccccc);
+    font-family: inherit;
+    font-size: 13px;
+    line-height: 1;
+    white-space: nowrap;
+    cursor: pointer;
+    outline: none;
+}
+.actions-btn:hover,
+.actions-btn[aria-expanded="true"] { background: var(--vscode-button-secondaryHoverBackground, #3c3c3c); }
+.actions-btn:focus-visible { outline: 1px solid var(--vscode-focusBorder, #007fd4); outline-offset: 1px; }
+.actions-btn .btn-icon { display: block; }
+.actions-btn .btn-icon.actions-more { display: none; }
+.app-header.compact-more .actions-btn { padding: 0 4px 0 6px; }
+.app-header.compact-more .actions-btn .btn-label { display: none; }
+.app-header.compact-more .actions-btn .btn-icon.actions-more { display: block; }
+
+/* Very narrow editors: the row may wrap (the component list drops to its own line). */
+@media (max-width: 420px) {
+    .app-header { flex-wrap: wrap; padding: 4px 6px 4px 10px; row-gap: 4px; }
+    .hdr-crumbs { flex: 1 1 0; }
+    .hdr-grow { display: none; }
+    .nav-select { order: 10; flex: 1 1 100%; width: auto; }
+}
+
+/* Online monitoring (R15): the toolbar note and the inline value boxes (Monaco injected text). */
+.online-note {
     font-size: 0.8rem;
-    font-weight: 500;
-    color: var(--ok-fg);
-    background: rgba(46, 213, 115, 0.12);
-    border: 1px solid rgba(46, 213, 115, 0.2);
-    padding: 2px 10px;
+    color: var(--vscode-foreground, rgba(255, 255, 255, 0.85));
+    background: var(--vscode-badge-background, rgba(0, 122, 204, 0.25));
     border-radius: 12px;
-    transition: all 0.3s ease;
-    flex-shrink: 0;
+    padding: 2px 10px;
+    flex-shrink: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
+.online-note[hidden] { display: none; }
 
-.status-indicator.modified {
-    color: var(--warn-fg);
-    background: rgba(255, 165, 2, 0.12);
-    border: 1px solid rgba(255, 165, 2, 0.2);
+.tc-online-value {
+    margin-left: 0.6em;
+    padding: 0 0.4em;
+    border-radius: 3px;
+    font-style: normal;
+    color: var(--vscode-editorInlayHint-foreground, #c8c8c8);
+    background: var(--vscode-editorInlayHint-background, rgba(80, 80, 80, 0.45));
+    border: 1px solid var(--vscode-editorWidget-border, rgba(128, 128, 128, 0.35));
+}
+.tc-online-eol { margin-left: 1.5em; }
+.tc-online-stopped, .tc-online-stale { opacity: 0.55; font-style: italic; }
+.tc-online-differs {
+    color: var(--vscode-editorWarning-foreground, #cca700);
+    background: transparent;
+    font-style: italic;
 }
 
 /* Workspace Panels */
@@ -219,8 +378,7 @@ body {
 }
 
 .pane-splitter:hover, .pane-splitter.dragging {
-    background-color: #ff6b81;
-    box-shadow: 0 0 8px #ff4757;
+    background-color: var(--vscode-sash-hoverBorder, var(--vscode-focusBorder, #007fd4));
 }
 
 /* Monaco Editor Container Styling */
@@ -253,296 +411,154 @@ body {
     background: var(--vscode-scrollbarSlider-hoverBackground, rgba(128, 128, 128, 0.7));
 }
 
-/* Toggle Switch Wrapper */
-.sync-toggle-container {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    background: var(--surface-tint);
-    border: 1px solid var(--border-color);
-    padding: 4px 12px;
-    border-radius: 20px;
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    flex-shrink: 0;
-    user-select: none;
-}
-
-.sync-toggle-container:hover {
-    border-color: rgba(255, 71, 87, 0.3);
-    background: var(--surface-tint-hover);
-}
-
-.sync-toggle-label {
-    font-size: 0.75rem;
-    font-weight: 600;
-    color: var(--vscode-foreground, rgba(255, 255, 255, 0.6));
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    transition: color 0.3s ease;
-}
-
-.sync-toggle-container.active .sync-toggle-label {
-    color: var(--accent-fg);
-}
-
-/* The switch - the box around the slider */
-.switch {
-    position: relative;
-    display: inline-block;
-    width: 28px;
-    height: 16px;
-    flex-shrink: 0;
-}
-
-/* Hide default HTML checkbox */
-.switch input {
-    opacity: 0;
-    width: 0;
-    height: 0;
-}
-
-/* The slider */
-.slider {
-    position: absolute;
-    cursor: pointer;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background-color: var(--surface-tint-strong);
-    transition: .3s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.slider:before {
-    position: absolute;
-    content: "";
-    height: 12px;
-    width: 12px;
-    left: 2px;
-    bottom: 2px;
-    background-color: white;
-    transition: .3s cubic-bezier(0.4, 0, 0.2, 1);
-    /* the knob stays white so it reads on the coral track when checked; the hairline ring is what
-       keeps it visible against the pale unchecked track on a light theme (shadow, so it adds no size) */
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(0, 0, 0, 0.2);
-}
-
-input:checked + .slider {
-    background: var(--accent-gradient);
-}
-
-input:focus + .slider {
-    box-shadow: 0 0 2px rgba(255, 71, 87, 0.5);
-}
-
-input:checked + .slider:before {
-    transform: translateX(12px);
-}
-
-/* Rounded sliders */
-.slider.round {
-    border-radius: 16px;
-}
-
-.slider.round:before {
-    border-radius: 50%;
-}
-
-/* Responsive Header wrapping for narrow layouts. The breakpoint is where the one-row header stops
-   fitting (measured with the Compile button: the status pill was pushed off the right edge at 700 and
-   820px); test/browser/run.js checks the toolbar at 360-1200px for sideways overflow. */
-@media (max-width: 900px) {
-    .app-header {
-        flex-direction: column;
-        align-items: flex-start;
-        gap: 10px;
-        padding: 10px 16px;
-    }
-    /* In the column the left group would otherwise size to its content and run past the edge
-       (the object name then never gets its ellipsis). */
-    .header-left {
-        max-width: 100%;
-    }
-    .header-right {
-        width: 100%;
-        flex-wrap: wrap;
-        justify-content: flex-start;
-        gap: 10px;
-    }
-    .nav-select {
-        width: 100%;
-        max-width: none;
-        flex-grow: 1;
-    }
-}
-
-/* Premium action button styling */
-.action-btn {
-    background: var(--accent-gradient-btn);
-    color: white;
-    border: none;
-    padding: 6px 16px;
-    border-radius: 20px;
-    font-family: var(--font-sans);
-    font-size: 0.8rem;
-    font-weight: 600;
-    letter-spacing: 0.5px;
-    text-transform: uppercase;
-    cursor: pointer;
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    box-shadow: 0 4px 12px rgba(255, 71, 87, 0.2);
-    flex-shrink: 0;
-    user-select: none;
-    outline: none;
-}
-
-.action-btn:focus-visible {
-    outline: 2px solid var(--vscode-focusBorder, #007fd4);
-    outline-offset: 2px;
-}
-
-.action-btn:hover {
-    transform: translateY(-1px);
-    box-shadow: 0 6px 20px rgba(255, 71, 87, 0.4);
-    /* darkens rather than brightens: brightness(1.1) dropped the white label back under 4.5:1.
-       The lift and the stronger shadow are what signal the hover. */
-    filter: brightness(0.94);
-}
-
-.action-btn:active {
-    transform: translateY(1px);
-    box-shadow: 0 2px 8px rgba(255, 71, 87, 0.2);
-}
-
-/* Generate ST split button: the main button plus a caret that drops a project-picker menu.
-   The group is the positioning context for the absolutely-positioned menu. */
-.split-btn {
-    position: relative;
-    display: inline-flex;
-    align-items: stretch;
-    flex-shrink: 0;
-}
-/* Fuse the two buttons into one control: square off the inner corners — only while the caret is
-   shown (multi-project workspaces); with one project the main button keeps its rounded end.
-   editor.js sets `has-caret` together with the caret's `hidden` flag. */
-.split-btn.has-caret #generate-st-btn {
-    border-top-right-radius: 0;
-    border-bottom-right-radius: 0;
-}
-.split-btn .split-caret {
-    padding: 6px 10px;
-    border-top-left-radius: 0;
-    border-bottom-left-radius: 0;
-    border-left: 1px solid rgba(0, 0, 0, 0.25);
-    box-shadow: none;
-    font-size: 0.7rem;
-    line-height: 1;
-}
-.split-caret[hidden] { display: none; }
-/* The Compile split button (R13): its caret is always there. */
-#compile-group #compile-btn {
-    border-top-right-radius: 0;
-    border-bottom-right-radius: 0;
-}
-#compile-menu .split-menu-title { white-space: nowrap; }
-.split-menu-item:focus-within {
-    outline: 1px solid var(--vscode-focusBorder, #007fd4);
-    outline-offset: -1px;
-}
-
-/* Compile button: a codicon-style glyph (inline SVG, currentColor) plus its label. */
-.icon-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    white-space: nowrap;
-}
-.btn-icon { flex: none; display: block; }
-/* Disabled while a Compile Project run is in progress: no lift, no glow. */
-.action-btn:disabled,
-.action-btn:disabled:hover {
-    opacity: 0.55;
-    cursor: default;
-    transform: none;
-    filter: none;
-    box-shadow: none;
-}
-#generate-st-btn {
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-/* A tight header keeps both buttons: Generate ST gets compact, Compile drops to its glyph (its name
-   stays in the tooltip and aria-label). Below 900px the header wraps anyway (see above). */
-@media (max-width: 1100px) {
-    .header-right .action-btn {
-        padding: 6px 10px;
-        letter-spacing: 0;
-    }
-    .split-btn .split-caret { padding: 6px 8px; }
-    #compile-btn .btn-label { display: none; }
-}
-
 .split-menu {
     position: absolute;
     top: calc(100% + 6px);
-    /* Opens under the split button; placeGenerateMenu() (editor.js) shifts it back inside the window. */
+    /* Opens under its button; placeSplitMenu() (editor.js) shifts it back inside the window and caps its height. */
     left: 0;
     z-index: 20;
-    min-width: min(220px, calc(100vw - 16px));
+    min-width: min(240px, calc(100vw - 16px));
     max-width: min(360px, calc(100vw - 16px));
     box-sizing: border-box;
     padding: 6px;
-    background: var(--vscode-dropdown-background, #2d2d2d);
-    color: var(--vscode-dropdown-foreground, var(--fg-primary));
-    border: 1px solid var(--border-color);
+    overflow-y: auto;
+    background: var(--vscode-menu-background, var(--vscode-dropdown-background, #2d2d2d));
+    color: var(--vscode-menu-foreground, var(--vscode-dropdown-foreground, var(--fg-primary)));
+    border: 1px solid var(--vscode-menu-border, var(--vscode-widget-border, var(--border-color)));
     border-radius: 8px;
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+    box-shadow: 0 10px 28px var(--vscode-widget-shadow, rgba(0, 0, 0, 0.45));
+    font-size: 13px;
+    white-space: normal;
 }
 .split-menu[hidden] { display: none; }
+/* Group captions: quiet, uppercase, the theme's description colour. */
 .split-menu-title {
-    font-size: 0.72rem;
+    font-size: 11px;
+    font-weight: 400;
     text-transform: uppercase;
-    letter-spacing: 0.5px;
-    opacity: 0.7;
-    padding: 4px 6px 6px;
+    letter-spacing: 0.07em;
+    color: var(--muted-fg);
+    padding: 8px 10px 4px;
+}
+/* A short caption inside a group (the C++ options, the XAE entries). */
+.menu-caption {
+    font-size: 11px;
+    color: var(--muted-fg);
+    padding: 6px 10px 2px 34px;
+}
+.menu-caption[hidden] { display: none; }
+.menu-reason { opacity: 0.85; font-style: italic; }
+.split-menu-separator { border-top: 1px solid var(--vscode-menu-separatorBackground, var(--border-color)); margin: 5px 4px; }
+/* The extension's name and version, muted, at the menu's foot (it left the header). */
+.menu-footer {
+    margin: 6px 4px 0;
+    padding: 6px 6px 2px;
+    border-top: 1px solid var(--vscode-menu-separatorBackground, var(--border-color));
+    font-size: 11px;
+    color: var(--muted-fg);
+    user-select: text;
+}
+#xae-menu-section[hidden], #plc-menu-section[hidden], .menu-subsection[hidden], .menu-item[hidden] { display: none; }
+
+/* An item: a checkbox row (label + input) or an action (button). */
+.split-menu-item,
+.menu-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    box-sizing: border-box;
+    padding: 6px 10px;
+    border: none;
+    border-radius: 5px;
+    background: none;
+    color: inherit;
+    font: inherit;
+    font-size: 13px;
+    text-align: left;
+    cursor: pointer;
+    white-space: nowrap;
+}
+.split-menu-item:hover,
+.menu-item:hover {
+    background: var(--vscode-list-hoverBackground, rgba(128, 128, 128, 0.15));
+}
+.menu-item:focus { outline: none; }
+.menu-item:focus-visible,
+.split-menu-item:focus-within {
+    background: var(--vscode-menu-selectionBackground, var(--vscode-list-activeSelectionBackground, rgba(128, 128, 128, 0.25)));
+    color: var(--vscode-menu-selectionForeground, inherit);
+    outline: 1px solid var(--vscode-focusBorder, #007fd4);
+    outline-offset: -1px;
+}
+/* Checkbox items: drawn in the theme's checkbox colours; ticked, they fill with the theme's button
+   colour (blue in the default dark theme). The tick is an inline data: SVG (CSP img-src allows data:). */
+.split-menu-item input {
+    appearance: none;
+    -webkit-appearance: none;
+    cursor: pointer;
+    flex-shrink: 0;
+    width: 14px;
+    height: 14px;
+    margin: 0;
+    border-radius: 3px;
+    border: 1px solid var(--vscode-checkbox-border, #6b6b6b);
+    background: var(--vscode-checkbox-background, transparent) center / 10px 10px no-repeat;
+}
+.split-menu-item input:checked,
+.split-menu-item input:indeterminate {
+    background-color: var(--vscode-button-background, #0078d4);
+    border-color: var(--vscode-button-background, #0078d4);
+}
+.split-menu-item input:checked {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'%3E%3Cpath d='M2 5.2l2 2 4-4.7' fill='none' stroke='%23fff' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+}
+.split-menu-item input:indeterminate {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'%3E%3Cpath d='M2.5 5h5' stroke='%23fff' stroke-width='1.6' stroke-linecap='round'/%3E%3C/svg%3E");
+}
+.split-menu-item input:focus { outline: none; }
+/* Disabled items stay focusable (aria-disabled) so their reason is read out; they just look dimmed. */
+.menu-item[aria-disabled="true"] { cursor: default; }
+.menu-item[aria-disabled="true"] .btn-label,
+.menu-item[aria-disabled="true"] .btn-icon { opacity: 0.5; }
+.menu-item[aria-disabled="true"]:hover { background: none; }
+.menu-item-text {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    flex: 1;
+}
+.menu-item-text .btn-label { font-weight: 400; }
+/* An action without a glyph lines up with the ones that have one (14px glyph + 10px gap). */
+.menu-item:not(:has(> .btn-icon)) > .menu-item-text { padding-left: 24px; }
+.menu-item-detail {
+    font-size: 11px;
+    color: var(--muted-fg);
+    white-space: normal;
+}
+.menu-item:focus-visible .menu-item-detail { color: inherit; opacity: 0.8; }
+.menu-item-detail:empty { display: none; }
+.menu-item-chevron { opacity: 0.7; font-size: 0.7rem; }
+.menu-item > .btn-icon { flex: none; display: block; align-self: flex-start; margin-top: 2px; width: 14px; height: 14px; }
+/* Start / Stop PLC (R15): the glyph shown follows the label; Start is green, Stop true red (a marker). */
+.plc-run-btn .plc-icon-stop,
+.plc-run-btn.is-stop .plc-icon-start { display: none; }
+.plc-run-btn.is-stop .plc-icon-stop { display: block; color: var(--tc-red); }
+.plc-run-btn.is-start .plc-icon-start { color: var(--ok-fg); }
+
+/* The Generate ST project picker, unfolded inside the menu under "Choose projects…". */
+.menu-subsection {
+    margin: 2px 0 4px 14px;
+    padding-left: 6px;
+    border-left: 1px solid var(--border-color);
 }
 .split-menu-list {
-    max-height: 260px;
+    max-height: 220px;
     overflow-y: auto;
     overflow-x: hidden;
     display: flex;
     flex-direction: column;
 }
-.split-menu-item {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 5px 6px;
-    border-radius: 4px;
-    font-size: 0.8rem;
-    cursor: pointer;
-    white-space: nowrap;
-}
-.split-menu-item:hover {
-    background: var(--vscode-list-hoverBackground, rgba(255, 255, 255, 0.06));
-}
-.split-menu-item input { cursor: pointer; flex-shrink: 0; }
-/* Build through XAE (R14): the two actions in the Compile menu, below a separator. */
-.split-menu-separator { border-top: 1px solid var(--border-color); margin: 6px 0 2px; }
-#xae-menu-section[hidden] { display: none; }
-.split-menu-action {
-    width: 100%;
-    background: none;
-    border: none;
-    color: inherit;
-    font: inherit;
-    font-size: 0.8rem;
-    text-align: left;
-}
-.split-menu-action:disabled { opacity: 0.5; cursor: default; }
-.split-menu-action:focus-visible { outline: 1px solid var(--vscode-focusBorder, #007fd4); outline-offset: -1px; }
 /* The Select all row: separated from the project list it controls. */
 .split-menu-all {
     border-bottom: 1px solid var(--border-color);
@@ -550,16 +566,9 @@ input:checked + .slider:before {
     margin-bottom: 4px;
     padding-bottom: 7px;
 }
-.split-menu-run:disabled { opacity: 0.5; cursor: default; }
 /* A long project name is cut with an ellipsis; the full name is in the item's tooltip. */
 .split-menu-item span {
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
-}
-.split-menu-run {
-    margin-top: 6px;
-    width: 100%;
-    text-transform: none;
-    letter-spacing: 0;
 }
