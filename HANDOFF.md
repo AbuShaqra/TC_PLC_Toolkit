@@ -10,10 +10,13 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   merged at `3210d33`, Release run 41671593015 green, VSIX `twincat-plc-toolkit-0.10.1.vsix` attached).
 - **Version history:** 0.10.1 struct EXTENDS from own DUTs (PR #22); 0.10.0 Libraries scoping (PR #18); 0.9.0
   improvement-plan phases; 0.8.x project-aware Generate ST, ResizeObserver fix, solution→project Objects tree.
-- **Last verified:** 2026-11-16 (Linux container, Start/Stop PLC on `claude/focused-ptolemy-m6acaz`) —
+- **Last verified:** 2026-11-16 (Linux container, toolbar Actions menu on `toolbar-menu`) —
   `REQUIRE_FULL_SUITE=1 npm test` green (**137/137, Coverage: FULL**; compile-real, cpp-real, gpp-real ran), `npm run
-  typecheck` and `npm run lint` exit 0; browser harnesses `run.js` 93, `run_online.js` 30, `run_pragmas.js` 47,
+  typecheck` and `npm run lint` exit 0; browser harnesses `run.js` 112, `run_online.js` 39, `run_pragmas.js` 47,
   `run_start_page.js` 125 (browsers in `/opt/pw-browsers`). Dev-host last run 2026-11-12 (103 pass / 1 known P8 fail).
+- **Toolbar Actions menu (user request 2026-11-16): committed on `toolbar-menu`, not merged** (DEVELOPMENT.md "The editor
+  toolbar's Actions menu"). **Not run yet:** the dev-host pass (`test:clickCompile` / `test:toggleSync` click the
+  now-hidden menu items by id: expected to work, unverified) and a look in real VS Code.
 - **Sample 1 XAE warnings (user, 2026-11-13; XAE Shell 64):** 0 errors, 3 warnings: C0564 x2 (GVL_System's
   `fbCylinder(refExtendOut := GVL_Io.bExtendOut, refRetractOut := GVL_Io.bRetractOut)`: "reference to uninitialized
   variable") and C0195 (FB_Station.Cyclic line 28, INT into WORD). **User: fix the sample.** Done in the generator
@@ -92,12 +95,9 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   **Settled on 4026.28:** the C# compiles under PS 5.1 Add-Type, the DTE2 cast works, ErrorItems is filled
   (window shown) after `Build($true)`. **Unverified:** the 4024 (32-bit) shell's assemblies in 64-bit
   PowerShell, a localized pane name (only "Build" is looked for).
-  **Also on this branch:** the toolbar's Compile split button and the start page's tile are labelled
-  **Build** / *Build project* (user request), and (user, 2026-11-13) every user-read "Compile Project" is
-  now "Build Project" (palette title, tooltips, notifications, quick pick, settings text, README); command
-  ids, context/setting keys, the `TC Toolkit compile` source and the output channel are unchanged.
-  **Verified (Linux, 2026-11-13):** see the commit's gate run (FULL suite, lint, typecheck); browser
-  harnesses `test/browser/run.js` and `run_start_page.js` pass.
+  **Also on this branch:** the toolbar's Build entry and the start page's tile are labelled **Build** / *Build
+  project* (user request), and (user, 2026-11-13) every user-read "Compile Project" is now "Build Project";
+  command ids, context/setting keys, the `TC Toolkit compile` source and the output channel are unchanged.
   **Windows results later on 2026-11-13 (user):** errors placed and jump by the code link (MAIN body; a method via
   `<file>@<Component> (Impl):N`, fixed b3b7a17); *Switch and remember* writes the setting; the platform dropdown;
   cancel during a build; *Show Activation Targets*; sample 2 onto UmRT_Default refused before XAE (wording now
@@ -252,8 +252,8 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
      issue #189 path) without an error; set `maxNotifications` to 2 and add 3 → message once.
   9. Is a symbol path found when typed in another case (`main.ncyclecount`)?
   10. Go Offline, and close VS Code while online: no lingering ADS port registration (XAE's ADS monitor or `netstat -ano | findstr 48898`).
-  11. **Start/Stop PLC** (Linux-verified only): the button by Build / PLC Watch title shows *Stop* in Run → modal → XAE
-     shows Stop, button turns *Start* at once, "PLC stop on …: done" logged; then Start. Repeat over the user-mode helper
+  11. **Start/Stop PLC** (Linux-verified only): the Actions menu's entry / PLC Watch title shows *Stop* in Run → modal → XAE
+     shows Stop, entry turns *Start* at once, "PLC stop on …: done" logged; then Start. Repeat over the user-mode helper
      (`writecontrol` = `WriteControl(StateInfo(AdsState, short))`, unverified against TwinCAT.Ads 4.3.32).
 - **R3.2 Compile Project: MERGED** into `dev` as PR #32 (`28f24f1`, 2026-11-10 22:22 UTC).
 - **R3.3–R9 MERGED** into `dev` as PR #33 (`6424968`, 2026-11-11 09:30 UTC) after the user's Windows checks
@@ -299,8 +299,8 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
 - **R5 + R1 are MERGED into `dev`** (PR #27, `0ea9fcd`) and their **Windows/XAE check PASSED** (user, 2026-11-09:
   accessor add/re-add opens and builds in XAE, `node test/devhost/run.js`, menu pass). That pass found the multi-project
   Generate ST menu clipped in a narrow editor (right-aligned to the caret → ran past the webview's left edge; long names
-  scrolled sideways): fixed in `3b93ef1` (`placeGenerateMenu` in `media/editor.js`, ellipsis + tooltip;
-  `test/browser/run.js` 7c checks 360/560/1200 px, all three failed before). Still owed: reply on issue #25 when it
+  scrolled sideways): fixed in `3b93ef1` (now `placeSplitMenu` for the whole Actions menu in `media/editor.js`, ellipsis +
+  tooltip; `test/browser/run.js` 7c checks 320-1200 px). Still owed: reply on issue #25 when it
   ships in a release. User request 2026-11-09, done: a tri-state *Select all* in that menu (`#generate-st-all`,
   `syncSelectAll`; "Generate selected" disabled while nothing is ticked; harness 7d).
 - **R3.1 spike findings are DONE** (2026-11-09): `docs/r3.1-strucpp-spike.md`. Headline: 27 parse errors as

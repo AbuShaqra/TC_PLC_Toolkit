@@ -28,6 +28,15 @@ are required.
 Opens `.TcPOU` / `.TcGVL` / `.TcDUT` / `.TcIO` with the Declaration (variables) on top and the
 Implementation below, separated by a resizable splitter. No raw XML.
 
+The editor's toolbar keeps its actions and settings in one **Actions** menu, so the toolbar stays narrow:
+**Generate ST** (with *Choose projects…* when the workspace has several PLC projects), **Build** with its
+options (*Generate C++*, *Build with g++*, and the XAE entries on Windows), **Start PLC** / **Stop PLC**
+(only while online) and **Auto Sync** (on: every edit is written to the file as you type; off: edits wait
+for Ctrl+S). A disabled entry says why on its second line. What is going on stays visible with the menu
+closed, as small chips next to the button: *Building…* (or *XAE build…*), the PLC state (*PLC Run*, *PLC
+Stop*, …) while online, and *Manual Sync* while Auto Sync is off. The menu works from the keyboard
+(Enter, Space or the arrow keys open it; the arrows, Home and End move; Escape closes it).
+
 The editor tab's title bar has buttons for **Build through XAE**, **Build and Activate**, **Show Activation Targets** (those three on Windows only) and **Go Online** / **Go Offline** (one button that follows the online state).
 The same buttons sit in the **PLC Objects** view's title bar while the workspace has a PLC project, and as
 tiles on the start page, so they are at hand with no file open.
@@ -257,7 +266,7 @@ unsaved work. It briefly opens a TwinCAT window while it runs (about a minute).
 
 ### Generate ST
 
-Export the PLC projects to clean, compiler-friendly `.st` files (toolbar button in the editor,
+Export the PLC projects to clean, compiler-friendly `.st` files (the editor's **Actions** menu,
 *TC Toolkit: Generate ST*, or the start page; with several PLC projects you pick which). Each project's
 files are written inside that project's own folder, under `<PLC project>/ST_Files/`, mirroring the
 project's layout. A folder of TwinCAT files without a `.plcproj` is exported to `ST_Files/` at the top
@@ -268,8 +277,8 @@ never read back as sources.
 
 ### Build project
 
-*TC Toolkit: Build Project* (also on the start page as the *Build project* tile, and as the **Build** button next to *Generate ST*
-in the editor's toolbar, which compiles the project the open file belongs to) checks a PLC project with **an external IEC 61131-3
+*TC Toolkit: Build Project* (also on the start page as the *Build project* tile, and as **Build** in the editor's
+**Actions** menu, which compiles the project the open file belongs to) checks a PLC project with **an external IEC 61131-3
 compiler** — a full compiler front end, so it catches what the built-in diagnostics deliberately leave
 alone. With several PLC projects you pick which one. By default it only checks: nothing is generated, and
 nothing is written into your project (the compiler reads temporary copies, deleted when the run ends).
@@ -316,8 +325,8 @@ GPL v3; its licence, source link and third-party notices are in `resources/compi
 #### C++ output (optional)
 
 Build Project can also turn the PLC project into C++. Both steps are **off by default**; turn them on
-with the small arrow next to the **Build** button (in the editor's toolbar, or on the start page's
-*Build project* tile), or in the settings:
+under **Build** in the editor's **Actions** menu, with the small arrow on the start page's
+*Build project* tile, or in the settings:
 
 - **Generate C++** (`tcToolkit.compiler.generateCpp`) — when the check finds **no errors**, the project
   is written as C++ into a `CPP_Files` folder next to its `.plcproj` (beside `ST_Files`):
@@ -392,7 +401,7 @@ the old project's files; a Git checkout that only changes their line endings doe
 
 ### Build and activate through XAE
 
-On Windows with **TwinCAT XAE** installed, the Build button's dropdown in the editor also offers
+On Windows with **TwinCAT XAE** installed, the Build group of the editor's **Actions** menu also offers
 **Build through XAE** and **Build and Activate through XAE…**; the start page has them as tiles under
 *Build project*, and the editor tab and the PLC Objects view have them as title-bar buttons (also in the Command
 Palette as *TC Toolkit: Build through XAE (requires TwinCAT)* and *Build and Activate through XAE…
@@ -400,7 +409,7 @@ Palette as *TC Toolkit: Build through XAE (requires TwinCAT)* and *Build and Act
 built with XAE's compiler and the project's real libraries.
 
 - **Headless by default.** The XAE Shell runs hidden with its UI suppressed. Tick **Show the XAE window**
-  in the Build dropdown (setting `tcToolkit.xaeBuild.showWindow`) to watch the shell for the whole build. The
+  in the Actions menu's Build group (setting `tcToolkit.xaeBuild.showWindow`) to watch the shell for the whole build. The
   **TC Toolkit XAE Build** output channel says which mode was asked for and which actually ran (read back
   from the shell: `SuppressUI` and `MainWindow.Visible`).
 - **Errors** go to the Problems panel (source *TC Toolkit XAE build*) and the editor panes. Where XAE's
@@ -467,12 +476,12 @@ without costing more. At most `tcToolkit.online.maxNotifications` (100) are acti
 show *notification limit reached* and you are told once (Beckhoff recommends at most 550 per device).
 The list is kept per workspace.
 
-**Start / Stop PLC.** While online, a **Start** / **Stop** button sits next to the editor's **Build**
-button, and the same toggle sits next to Go Online / Go Offline in the **PLC Watch** title bar (also *TC
+**Start / Stop PLC.** While online, the editor's **Actions** menu has a **Start PLC** / **Stop PLC** entry
+(and a chip next to the menu button shows the PLC state), and the same toggle sits next to Go Online / Go Offline in the **PLC Watch** title bar (also *TC
 Toolkit: Start PLC…* / *Stop PLC…* in the Command Palette). It follows the PLC state the status bar shows:
 **Stop** while the PLC is in Run, **Start** while it is in Stop. In any other state (Config, Error, not
-read yet, the connection being restored) and while a start or stop is running, the button is disabled and
-its tooltip says why. Each click asks first — *Stop the PLC on Local runtime (localhost:851)?* or *Start the
+read yet, the connection being restored) and while a start or stop is running, it is disabled and says
+why (in the menu entry's second line, and in the title-bar button's tooltip). Each click asks first — *Stop the PLC on Local runtime (localhost:851)?* or *Start the
 PLC on …?*, one confirm button — and is logged to the **TC Toolkit Online** channel with the target and the
 outcome; a failure shows the ADS error. This is ADS WriteControl Run/Stop on the PLC's port, the same as
 XAE's start and stop buttons; it does not depend on `tcToolkit.online.allowWrites`.
@@ -600,10 +609,10 @@ old entry is removed from your `settings.json`.
 | `tcToolkit.xaeShell.path4026` | *(detected)* | Full path to `TcXaeShell.exe` of the XAE Shell for TwinCAT 3.1.4026 (the 64-bit shell). Empty = not found. |
 | `tcToolkit.compiler.path` | *(empty)* | Full path to the command-line file (`.cjs`) of an external IEC 61131-3 compiler for **Build Project** to run instead of the bundled one. Empty = the bundled compiler. Per machine. |
 | `tcToolkit.compiler.nodePath` | *(empty)* | Full path to a Node.js 22+ executable that runs the compiler. Empty = found automatically (`node` on `PATH`, the usual Windows install locations, then VS Code's own runtime when it is Node.js 22+). Per machine. |
-| `tcToolkit.compiler.generateCpp` | `false` | **Generate C++**: after a check with no errors, write the project as C++ into `CPP_Files/` next to its `.plcproj`. Turning it off also turns off the g++ build. Also in the Build button's dropdown. |
-| `tcToolkit.compiler.buildWithGpp` | `false` | **Build with g++**: also compile that C++ with g++ (a compile check; errors in the Problems panel). Turning it on also turns on *Generate C++*. Also in the Build button's dropdown. |
+| `tcToolkit.compiler.generateCpp` | `false` | **Generate C++**: after a check with no errors, write the project as C++ into `CPP_Files/` next to its `.plcproj`. Turning it off also turns off the g++ build. Also in the editor's Actions menu. |
+| `tcToolkit.compiler.buildWithGpp` | `false` | **Build with g++**: also compile that C++ with g++ (a compile check; errors in the Problems panel). Turning it on also turns on *Generate C++*. Also in the editor's Actions menu. |
 | `tcToolkit.compiler.gppPath` | *(detected)* | Full path to `g++` (`g++.exe` on Windows). Empty = `g++` on `PATH`, then the usual Windows install folders; filled with the one found when the build is turned on, never overwritten. Per machine. |
-| `tcToolkit.xaeBuild.showWindow` | `false` | **Show the XAE window**: show the XAE Shell window for the whole *Build through XAE* instead of building headless. The window is always shown during activation, so a licence or download dialog can be answered, and it stays visible after an XAE version switch. Also in the Build button's dropdown. |
+| `tcToolkit.xaeBuild.showWindow` | `false` | **Show the XAE window**: show the XAE Shell window for the whole *Build through XAE* instead of building headless. The window is always shown during activation, so a licence or download dialog can be answered, and it stays visible after an XAE version switch. Also in the editor's Actions menu. |
 | `tcToolkit.xaeBuild.configuration` | `Release` | The solution configuration *Build through XAE* builds. |
 | `tcToolkit.xaeBuild.platform` | `TwinCAT RT (x64)` | The solution platform it builds (activating onto a user-mode runtime needs its `TwinCAT OS (...)` platform). |
 | `tcToolkit.xaeBuild.timeoutMinutes` | `30` | Minutes before a build through XAE is stopped (5 to 240; during activation only reported). |

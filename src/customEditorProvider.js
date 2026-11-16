@@ -16,6 +16,73 @@ const { isDocumentationUrl } = require('./lsp/pragmas');
 const { createPendingEditsStore } = require('./pendingEditsStore');
 const EXT_VERSION = (() => { try { return require('../package.json').version; } catch (e) { return '?'; } })();
 
+/** Codicon-style glyphs (16px grid, currentColor), inline because the webview is offline. */
+const GLYPH_BUILD = '<svg class="btn-icon" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">'
+    + '<path fill="currentColor" d="M3 2.5v11l1.5.8 8-5.5v-1.6l-8-5.5L3 2.5zm1.5 1.4L11.2 8l-6.7 4.6V3.9z"/></svg>';
+const GLYPH_PLC_START = '<svg class="btn-icon plc-icon-start" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">'
+    + '<path fill="currentColor" d="M4 2.5v11a.5.5 0 0 0 .77.42l8.5-5.5a.5.5 0 0 0 0-.84l-8.5-5.5A.5.5 0 0 0 4 2.5z"/></svg>';
+const GLYPH_PLC_STOP = '<svg class="btn-icon plc-icon-stop" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">'
+    + '<rect fill="currentColor" x="3.5" y="3.5" width="9" height="9" rx="1"/></svg>';
+
+/**
+ * The toolbar's one Actions menu (user request 2026-11-16): Generate ST, Build and its options, the
+ * XAE build, Start/Stop PLC and Auto Sync, grouped, in a `role="menu"` dropdown. The element ids are
+ * the ones the separate toolbar controls had, so the dev-host hook and the host side are unchanged;
+ * media/editor.js drives it (`placeSplitMenu`, the keyboard, the indicators next to the button).
+ * Items use `aria-disabled` rather than `disabled` so a disabled entry stays focusable and its
+ * reason (the `.menu-item-detail` line, referenced by `aria-describedby`) is read out.
+ */
+const ACTIONS_MENU_HTML = `<div id="actions-group" class="actions-group">
+                    <button id="actions-btn" class="action-btn actions-btn" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="actions-menu" title="Actions: Generate ST, Build, PLC and sync settings"><span class="btn-label">Actions</span><span class="actions-chevron" aria-hidden="true">▾</span></button>
+                    <div id="actions-menu" class="split-menu actions-menu" role="menu" aria-labelledby="actions-btn" hidden>
+                        <div role="group" aria-labelledby="menu-title-generate">
+                            <div class="split-menu-title" id="menu-title-generate">Generate ST</div>
+                            <button type="button" role="menuitem" tabindex="-1" class="menu-item" id="generate-st-btn" aria-describedby="generate-st-detail" title="Generate ST: export every PLC project to .st files"><span class="menu-item-text"><span class="btn-label">Generate ST</span><span class="menu-item-detail" id="generate-st-detail">Export every PLC project to .st files</span></span></button>
+                            <button type="button" role="menuitem" tabindex="-1" class="menu-item" id="generate-st-caret" aria-expanded="false" aria-controls="generate-st-menu" title="Choose which projects to generate" hidden><span class="menu-item-text"><span class="btn-label">Choose projects…</span></span><span class="menu-item-chevron" aria-hidden="true">▸</span></button>
+                            <div id="generate-st-menu" class="menu-subsection" role="group" aria-label="Projects to generate" hidden>
+                                <label class="split-menu-item split-menu-all"><input type="checkbox" role="menuitemcheckbox" tabindex="-1" id="generate-st-all" checked><span>Select all</span></label>
+                                <div id="generate-st-projects" class="split-menu-list"><!-- checkboxes injected --></div>
+                                <button type="button" role="menuitem" tabindex="-1" class="menu-item split-menu-run" id="generate-st-run"><span class="menu-item-text"><span class="btn-label">Generate selected</span></span></button>
+                            </div>
+                        </div>
+                        <div class="split-menu-separator" role="separator"></div>
+                        <div role="group" aria-labelledby="menu-title-build">
+                            <div class="split-menu-title" id="menu-title-build">Build</div>
+                            <button type="button" role="menuitem" tabindex="-1" class="menu-item" id="compile-btn" aria-describedby="compile-btn-detail" title="Build Project: check this PLC project with the IEC 61131-3 compiler">${GLYPH_BUILD}<span class="menu-item-text"><span class="btn-label">Build</span><span class="menu-item-detail" id="compile-btn-detail">Check this PLC project with the IEC 61131-3 compiler</span></span></button>
+                            <div class="menu-caption" id="compile-menu-title">After a check with no errors</div>
+                            <label class="split-menu-item" title="Write the project as C++ into its CPP_Files folder"><input type="checkbox" role="menuitemcheckbox" tabindex="-1" id="compile-opt-cpp"><span>Generate C++</span></label>
+                            <label class="split-menu-item" title="Also compile that C++ with g++ (optional; turns Generate C++ on)"><input type="checkbox" role="menuitemcheckbox" tabindex="-1" id="compile-opt-gpp"><span>Build with g++</span></label>
+                            <!-- Build through XAE (R14): Windows with TwinCAT XAE only; hidden until the host says it is available. -->
+                            <div id="xae-menu-section" role="group" aria-labelledby="xae-menu-title" hidden>
+                                <div class="menu-caption" id="xae-menu-title">Through XAE</div>
+                                <button type="button" role="menuitem" tabindex="-1" class="menu-item" id="xae-build" title="Build the solution with XAE's own compiler and libraries (requires TwinCAT XAE)"><span class="menu-item-text"><span class="btn-label">Build through XAE</span></span></button>
+                                <button type="button" role="menuitem" tabindex="-1" class="menu-item" id="xae-activate" title="Build, then activate the configuration on a runtime of this machine you pick and confirm (requires TwinCAT XAE)"><span class="menu-item-text"><span class="btn-label">Build and Activate through XAE…</span></span></button>
+                                <div class="menu-caption menu-reason" id="xae-busy-detail" hidden>An XAE build is running.</div>
+                                <label class="split-menu-item" title="Show the XAE Shell window for the whole build instead of building headless (it is always shown during activation)"><input type="checkbox" role="menuitemcheckbox" tabindex="-1" id="xae-opt-window"><span>Show the XAE window</span></label>
+                            </div>
+                        </div>
+                        <!-- Start / Stop PLC (R15, user request 2026-11-16): only while online; one item that follows
+                             the PLC state the host posts ("online/plc"). A click only asks: the host checks the state
+                             and confirms with a modal. -->
+                        <div id="plc-menu-section" role="group" aria-labelledby="menu-title-plc" hidden>
+                            <div class="split-menu-separator" role="separator"></div>
+                            <div class="split-menu-title" id="menu-title-plc">PLC</div>
+                            <button type="button" role="menuitem" tabindex="-1" class="menu-item plc-run-btn" id="plc-run-btn" aria-disabled="true" aria-describedby="plc-run-detail" title="Start PLC">${GLYPH_PLC_START}${GLYPH_PLC_STOP}<span class="menu-item-text"><span class="btn-label">Start PLC</span><span class="menu-item-detail" id="plc-run-detail"></span></span></button>
+                        </div>
+                        <div class="split-menu-separator" role="separator"></div>
+                        <div role="group" aria-labelledby="menu-title-editor">
+                            <div class="split-menu-title" id="menu-title-editor">Editor</div>
+                            <label class="split-menu-item" title="On: every edit is written to the file as you type. Off: edits are kept until Ctrl+S."><input type="checkbox" role="menuitemcheckbox" tabindex="-1" id="sync-mode-toggle" checked><span>Auto Sync</span></label>
+                        </div>
+                    </div>
+                </div>
+                <!-- What the menu's entries are doing, visible without opening it (editor.js renderIndicators). -->
+                <span id="actions-indicators" class="actions-indicators" aria-live="polite" hidden>
+                    <span id="build-indicator" class="tb-chip tb-chip-busy" hidden>Building…</span>
+                    <span id="plc-indicator" class="tb-chip" hidden></span>
+                    <span id="sync-mode-text" class="tb-chip tb-chip-warn" title="Manual Sync: edits are written on Ctrl+S (Actions → Auto Sync)" hidden>Auto Sync</span>
+                </span>`;
+
 /**
  * Reads a file's raw text given its URI string, for injection into createStResolver.
  * @param {string} uri File URI.
@@ -96,7 +163,7 @@ class TwinCatCustomEditorProvider {
         /** @type {{options: () => {available: boolean, showWindow: boolean, running: boolean},
          *   set: (key: string, value: boolean) => Promise<boolean>, run: (activate: boolean, fsPath: string) => Promise<any>}|null} */
         this.xaeSource = null;
-        /** Whether a Compile Project run is in progress (the toolbar button is disabled meanwhile). */
+        /** Whether a Compile Project run is in progress (the Actions menu's Build item is disabled meanwhile). */
         this.compileRunning = false;
         /** The Compile dropdown's two switches as the settings have them (R13). */
         this.compileOptions = { generateCpp: false, buildWithGpp: false };
@@ -146,7 +213,7 @@ class TwinCatCustomEditorProvider {
     }
 
     /**
-     * Compile Project starts or ends a run: every open editor's Compile button follows.
+     * Compile Project starts or ends a run: every open editor's Build item follows.
      * @param {boolean} running
      */
     setCompileRunning(running) {
@@ -157,7 +224,7 @@ class TwinCatCustomEditorProvider {
     }
 
     /**
-     * Runs Compile Project for the PLC project that owns a file — the toolbar button's action. A file
+     * Runs Compile Project for the PLC project that owns a file — the Actions menu's Build item. A file
      * owned by exactly one project names it; otherwise (a loose file, or one linked into several
      * projects) the command asks, as it does from the palette. Setup problems (no compiler, no Node)
      * are explained by the command itself.
@@ -718,7 +785,7 @@ class TwinCatCustomEditorProvider {
                     }
                     break;
                 case 'compile-project':
-                    // The toolbar's Compile button: the project that owns THIS file.
+                    // The Actions menu's Build item: the project that owns THIS file.
                     await this.compileProjectFor(document.uri.fsPath);
                     break;
                 case 'openFile':
@@ -823,54 +890,9 @@ class TwinCatCustomEditorProvider {
                 <select id="component-select" class="nav-select">
                     <!-- populated dynamically -->
                 </select>
-                <!-- Split button: the main part generates every project; the caret (shown only when
-                     the workspace has 2+ projects) opens a checkbox menu to narrow the selection. -->
-                <div id="generate-st-group" class="split-btn">
-                    <button id="generate-st-btn" class="action-btn" title="Generate ST: export every PLC project to .st files">Generate ST</button>
-                    <button id="generate-st-caret" class="action-btn split-caret" title="Choose projects" aria-haspopup="true" aria-expanded="false" hidden>▾</button>
-                    <div id="generate-st-menu" class="split-menu" role="menu" hidden>
-                        <div class="split-menu-title">Generate ST for</div>
-                        <label class="split-menu-item split-menu-all"><input type="checkbox" id="generate-st-all" checked><span>Select all</span></label>
-                        <div id="generate-st-projects" class="split-menu-list"><!-- checkboxes injected --></div>
-                        <button id="generate-st-run" class="action-btn split-menu-run">Generate selected</button>
-                    </div>
-                </div>
-                <!-- Compile Project for the PLC project that owns this file. The glyph is inline SVG in
-                     the codicon style (16px grid, currentColor): the webview is offline. The caret opens
-                     the two C++ switches (R13), which the host writes to the settings. -->
-                <div id="compile-group" class="split-btn has-caret">
-                <button id="compile-btn" class="action-btn icon-btn" title="Build Project: check this PLC project with the IEC 61131-3 compiler" aria-label="Build">` +
-        `<svg class="btn-icon" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">` +
-        `<path fill="currentColor" d="M3 2.5v11l1.5.8 8-5.5v-1.6l-8-5.5L3 2.5zm1.5 1.4L11.2 8l-6.7 4.6V3.9z"/></svg>` +
-        `<span class="btn-label">Build</span></button>` +
-        `<button id="compile-caret" class="action-btn split-caret" title="Build options: C++ generation and the g++ build" aria-label="Build options" aria-expanded="false" aria-controls="compile-menu">▾</button>` +
-        `<div id="compile-menu" class="split-menu" role="group" aria-labelledby="compile-menu-title" hidden>` +
-        `<div class="split-menu-title" id="compile-menu-title">After a check with no errors</div>` +
-        `<label class="split-menu-item" title="Write the project as C++ into its CPP_Files folder"><input type="checkbox" id="compile-opt-cpp"><span>Generate C++</span></label>` +
-        `<label class="split-menu-item" title="Also compile that C++ with g++ (optional; turns Generate C++ on)"><input type="checkbox" id="compile-opt-gpp"><span>Build with g++</span></label>` +
-        // Build through XAE (R14): Windows with TwinCAT XAE only; hidden until the host says it is available.
-        `<div id="xae-menu-section" hidden><div class="split-menu-separator" role="separator"></div>` +
-        `<div class="split-menu-title" id="xae-menu-title">Through XAE</div>` +
-        `<button type="button" class="split-menu-item split-menu-action" id="xae-build" title="Build the solution with XAE's own compiler and libraries (requires TwinCAT XAE)">Build through XAE</button>` +
-        `<button type="button" class="split-menu-item split-menu-action" id="xae-activate" title="Build, then activate the configuration on a runtime of this machine you pick and confirm (requires TwinCAT XAE)">Build and Activate through XAE…</button>` +
-        `<label class="split-menu-item" title="Show the XAE Shell window for the whole build instead of building headless (it is always shown during activation)"><input type="checkbox" id="xae-opt-window"><span>Show the XAE window</span></label>` +
-        `</div></div></div>
-                <!-- Start / Stop PLC (R15, user request 2026-11-16): shown only while online; one toggle that
-                     follows the PLC state the host posts ("online/plc"). A click only asks: the host checks
-                     the state and confirms with a modal. Glyphs: inline SVG, codicon style (offline). -->
-                <button id="plc-run-btn" class="action-btn icon-btn plc-run-btn" type="button" hidden disabled aria-label="Start PLC" title="Start PLC">` +
-        `<svg class="btn-icon plc-icon-start" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">` +
-        `<path fill="currentColor" d="M4 2.5v11a.5.5 0 0 0 .77.42l8.5-5.5a.5.5 0 0 0 0-.84l-8.5-5.5A.5.5 0 0 0 4 2.5z"/></svg>` +
-        `<svg class="btn-icon plc-icon-stop" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">` +
-        `<rect fill="currentColor" x="3.5" y="3.5" width="9" height="9" rx="1"/></svg>` +
-        `<span class="btn-label">Start</span></button>
-                <div class="sync-toggle-container active" id="sync-toggle-wrapper">
-                    <span class="sync-toggle-label" id="sync-mode-text">Auto Sync</span>
-                    <label class="switch">
-                        <input type="checkbox" id="sync-mode-toggle" checked>
-                        <span class="slider round"></span>
-                    </label>
-                </div>
+                <!-- The Actions menu (user request 2026-11-16): every toolbar action and setting in one
+                     dropdown, because side by side they grew too wide. Built by ACTIONS_MENU_HTML. -->
+                ${ACTIONS_MENU_HTML}
                 <span id="online-note" class="online-note" title="Online monitoring (TC Toolkit: Go Online)" hidden></span>
                 <span id="save-status" class="status-indicator">Synced</span>
             </div>
@@ -910,7 +932,7 @@ class TwinCatCustomEditorProvider {
     /**
      * The workspace's PLC projects, for the webview's Generate-ST picker.
      * @returns {Array<{key: string, label: string}>} `[]` when there are fewer than two projects,
-     *   so the webview shows the plain button rather than a one-entry menu.
+     *   so the webview shows the plain Generate ST item rather than a one-entry picker.
      */
     listProjects() {
         const projectMap = this.options && this.options.getProjectMap && this.options.getProjectMap();
