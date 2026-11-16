@@ -256,7 +256,7 @@ async function endToEnd() {
     assert(/Local runtime: user-mode runtime UmRT_Default at 10\.0\.0\.4\.1\.1 \(read from its configuration, instance running\)\. \(discovery 42 ms\)/.test(log()),
         'the channel names the runtime, its NetId and why');
     assert(calls.progress.includes('Going online: finding the local runtime'), 'the discovery is awaited under a progress notification');
-    assert(/The PLC runtime on this PC \(a user-mode runtime's AMS Net ID is found automatically\)/.test(calls.picks[0].items[0].detail), 'the pick says how Local runtime is reached on Windows');
+    assert(calls.picks[0].items[0].detail === 'The PLC runtime on this PC', 'the pick says how Local runtime is reached on Windows');
     const recent = context.workspaceState.get('twincat.online.recentTargets', []);
     assert(recent[0] && recent[0].netId === UM.netId && recent[0].label === 'Local runtime (UmRT_Default)', 'the recent entry stores the concrete NetId');
     await run('twincat.goOffline');

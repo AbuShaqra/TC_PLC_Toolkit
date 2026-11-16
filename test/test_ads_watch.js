@@ -297,6 +297,8 @@ const watchTree = trees.get('twincatWatch');
     let rows = watchTree.getChildren();
     assert(rows[0].path === 'MAIN.nCycleCount' && rows[0].text === '42', `the Watch view shows it with its value (${JSON.stringify(rows[0] && rows[0].text)})`);
     assert(plc.notifications.size === 1 && [...plc.notifications][0].cycleMs === 200, 'one on-change notification at 200 ms');
+    // Let any redraw still batched from adding the entry go out first (redraws are batched, see below).
+    await new Promise(res => setTimeout(res, require('../src/online/watchTree').REDRAW_MS + 50));
     const fired = [];
     watchTree.onDidChangeTreeData((e) => fired.push(e));
     const rowBefore = watchTree.getChildren()[0];

@@ -550,7 +550,7 @@ function registerOnlineCommands(context, deps) {
         const items = [];
         if (!direct) {
             items.push({ label: LOCAL_TARGET.label, description: `ADS port ${port}`, netId: 'localhost', port,
-                detail: resolving ? 'The PLC runtime on this PC (a user-mode runtime\'s AMS Net ID is found automatically)'
+                detail: resolving ? 'The PLC runtime on this PC'
                     : 'The PLC runtime on this PC, through the local router' });
         }
         for (const r of recent) {
