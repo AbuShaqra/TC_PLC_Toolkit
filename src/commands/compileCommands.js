@@ -12,7 +12,7 @@
  *     text inside the XML document, with the component, pane and pane line in the message. A custom
  *     editor is not handed the position of a clicked Problems entry (VS Code passes it to text
  *     editors only), so exact navigation is offered three ways: each entry's code is a link that
- *     opens that component, pane and line; the notification's "Go to Problem…" lists every problem;
+ *     opens that component, pane and line; the notification's "Show Problems" opens the Problems panel;
  *     and a file opened fresh (which is what a click on an entry of a closed file does) opens on its
  *     first problem.
  *   - **Pane markers** — the custom editor provider posts them to the webview under their own
@@ -80,6 +80,8 @@ function registerProblemLinkResolver(linkPath, resolver) {
 }
 
 /** Internal command: pick one of the current compile problems and go to it. */
+/** The summary notification's button: opens the Problems panel. */
+const SHOW_PROBLEMS = 'Show Problems';
 const GO_TO_PROBLEM_COMMAND = 'twincat.compile.goToProblem';
 /** The output channel for what a run did not show elsewhere (the project's compiler defines). */
 const OUTPUT_CHANNEL_NAME = 'TC Toolkit Compile';
@@ -840,15 +842,14 @@ function registerCompileCommands(context, { provider, getProjectMap, onSettingsC
                 const hasProblems = byFile.size > 0 || gppCounts.errors + gppCounts.warnings > 0;
                 const show = result.errors > 0 || gppCounts.errors > 0 || cppNotes.failed ? vscode.window.showErrorMessage
                     : (result.warnings > 0 || notes.length > 0 || cppNotes.warn || gppCounts.warnings > 0 ? vscode.window.showWarningMessage : vscode.window.showInformationMessage);
-                const buttons = hasProblems ? ['Go to Problem…', 'Open Problems'] : [];
-                if (byFile.size === 0 && hasProblems) buttons.shift();
+                // One button, straight to the Problems panel (user, 2026-11-16: no quick pick from the top).
+                const buttons = hasProblems ? [SHOW_PROBLEMS] : [];
                 if (cpp && cpp.status === 'done' && cpp.written && cpp.written.written.length > 0) buttons.push('Open C++');
                 // A missing g++ is said once, in this summary, with the buttons that fix it.
                 if (cpp && cpp.gpp && cpp.gpp.status === 'missing') buttons.push(...gppMissingButtons(cpp.gpp));
                 if (cpp && cpp.gpp && cpp.gpp.status === 'too-old') buttons.push(...gppTooOldButtons(cpp.gpp));
                 Promise.resolve(show(`Build Project — ${summary}`, ...buttons)).then((choice) => {
-                    if (choice === 'Go to Problem…') vscode.commands.executeCommand(GO_TO_PROBLEM_COMMAND);
-                    else if (choice === 'Open Problems') vscode.commands.executeCommand('workbench.actions.view.problems');
+                    if (choice === SHOW_PROBLEMS) vscode.commands.executeCommand('workbench.actions.view.problems');
                     else if (choice === 'Open C++' && cpp && cpp.paths) vscode.commands.executeCommand('vscode.open', vscode.Uri.file(cpp.paths.cpp));
                     else if (choice === 'Open Setting') vscode.commands.executeCommand('twincat.openSettings', SETTING_GPP_PATH, { target: 'user' });
                     else if (choice === 'Detect g++') vscode.commands.executeCommand('twincat.detectGpp');

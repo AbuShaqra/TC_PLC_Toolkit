@@ -279,7 +279,7 @@ It can also write the project as C++ and compile that with g++ — both off by d
 - What is checked is what you see: unsaved edits, and Manual Sync edits not yet written, are included.
 - Errors and warnings appear in the **Problems** panel on the object's file, with the component, pane and
   line in the message, and as squiggles in the editor panes. A problem's code is a link that opens that
-  component and pane on the right line; *Go to Problem…* on the summary notification lists them all.
+  component and pane on the right line; *Show Problems* on the summary notification opens the Problems panel.
 - The status bar shows the last run's error and warning counts. Editing a component clears its results
   (they described the old text); the next run replaces them all.
 - A run can be cancelled, and is stopped after two minutes.

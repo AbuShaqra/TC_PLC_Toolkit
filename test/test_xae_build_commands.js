@@ -285,7 +285,7 @@ const rows = (name) => readFixture(name).lines;
         'Build Project\'s twincat-compile and twincat-gpp collections are untouched');
     assert(api.problems().length === 2 && provider.compileSource.paneDiagnostics(fbUri.toString()).length === 2, 'the XAE problems reach the editor panes');
     assert(channel().lines.some(l => /error \(not placed\): Build aborted/.test(l)), 'an unplaced error is listed in the channel');
-    assert(calls.errors.some(e => /3 errors \(2 placed in Problems\)/.test(e.m) && e.buttons.includes('Go to Problem…')), 'the summary counts placed errors and offers Go to Problem');
+    assert(calls.errors.some(e => /3 errors \(2 placed in Problems\)/.test(e.m) && e.buttons.includes('Show Problems') && !e.buttons.includes('Go to Problem…')), 'the summary counts placed errors and offers Show Problems (the Problems panel, no pick)');
     // The entry's code links back into the extension: the URI handler opens the component and pane.
     const link = diags[0].code && diags[0].code.target;
     assert(link && link.path === '/xaeProblem' && /^id=\d+$/.test(link.query) && link.authority === 'pub.twincat-plc-toolkit',
@@ -345,7 +345,7 @@ const rows = (name) => readFixture(name).lines;
             'the failure message says the errors are TC Toolkit\'s check, not XAE\'s, and can differ');
         assert(channel().lines.some(l => /Running TC Toolkit's own compile check instead: its errors come from TC Toolkit's check, not from XAE, and can differ from XAE's\./.test(l))
             && channel().lines.some(l => /Error details read: by no route\./.test(l)), 'the channel says so, and names the route');
-        assert(note.buttons[0] === 'Build again with the window shown' && note.buttons.includes('Open Problems') && note.buttons.includes('Show Output'),
+        assert(note.buttons[0] === 'Build again with the window shown' && note.buttons.includes('Show Problems') && note.buttons.includes('Show Output'),
             'it still offers "Build again with the window shown" (headless), and Open Problems');
         assert(!/will show|shows the errors/i.test(note.m), 'it does not claim the visible run will show the errors');
         await waitFor(() => builds().length === n0 + 2);
@@ -370,7 +370,7 @@ const rows = (name) => readFixture(name).lines;
             && !/XAE window hidden/.test(calls.errors[e1].m) && !calls.errors[e1].buttons.includes('Build again with the window shown'),
             'a visible build with no details: the reason says the window was shown, and no re-run is offered');
         assert(/TC Toolkit's own compile check was skipped: no compiler is configured for it \(The compiler file .*gone\.cjs.*does not exist\.\)\.$/.test(calls.errors[e1].m)
-            && r.compileFallback && r.compileFallback.skipped && r.compileFallback.ran === 0 && !calls.errors[e1].buttons.includes('Open Problems'),
+            && r.compileFallback && r.compileFallback.skipped && r.compileFallback.ran === 0 && !calls.errors[e1].buttons.includes('Show Problems'),
             'no compiler configured: the fallback says so and is skipped');
         compileAnswer = (a) => ({ ok: true, projectKey: a.projectKey, errors: 2, warnings: 0 });
         settings['tcToolkit.xaeBuild.showWindow'] = false;

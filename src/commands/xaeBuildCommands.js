@@ -707,14 +707,13 @@ function registerXaeBuildCommands(context, deps) {
         const show = severity === 'error' ? vscode.window.showErrorMessage
             : (severity === 'warning' ? vscode.window.showWarningMessage : vscode.window.showInformationMessage);
         const buttons = ['Show Output'];
-        if (byFile.size > 0 && built) buttons.unshift('Go to Problem…');
-        if (fallback && fallback.ran > 0) buttons.unshift('Open Problems');
+        // One button, straight to the Problems panel (user, 2026-11-16: no quick pick from the top).
+        if ((byFile.size > 0 && built) || (fallback && fallback.ran > 0)) buttons.unshift('Show Problems');
         if (missingDetails && missingDetails.offerRerun && rerunWindowShown) buttons.unshift(RERUN_WINDOW_SHOWN);
         if (retarget && retarget.change) buttons.unshift(RETARGET_BUTTON);
         Promise.resolve(show(`${title}${errorsLine ? ' ' + errorsLine : ''}${fallbackText ? ' ' + fallbackText : ''}`, ...buttons)).then((choice) => {
             if (choice === 'Show Output') ch.show(true);
-            else if (choice === 'Open Problems') vscode.commands.executeCommand('workbench.actions.view.problems');
-            else if (choice === 'Go to Problem…') vscode.commands.executeCommand(GO_TO_PROBLEM_COMMAND);
+            else if (choice === 'Show Problems') vscode.commands.executeCommand('workbench.actions.view.problems');
             else if (choice === RERUN_WINDOW_SHOWN && rerunWindowShown) {
                 ch.appendLine(`${stamp()} Building again with the XAE window shown (this run only; the setting is unchanged).`);
                 // The run that offered it may still be reporting (its fallback check): start after it.
