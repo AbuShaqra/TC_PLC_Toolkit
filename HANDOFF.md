@@ -12,19 +12,18 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   improvement-plan phases; 0.8.x project-aware Generate ST, ResizeObserver fix, solution→project Objects tree.
 - **Last verified:** 2026-11-16 (Linux container, native editor header on
   `claude/focused-ptolemy-m6acaz`) — `REQUIRE_FULL_SUITE=1 npm test` green (**138/138, Coverage: FULL**; compile-real,
-  cpp-real, gpp-real ran), `npm run typecheck` and `npm run lint` exit 0; browser harnesses `run.js` 132, `run_online.js` 50, `run_pragmas.js` 47,
-  `run_start_page.js` 125 (browsers in `/opt/pw-browsers`). Dev-host last run 2026-11-12 (103 pass / 1 known P8 fail).
-- **Native editor header (user decision 2026-11-16): BUILT on `claude/focused-ptolemy-m6acaz`** (DEVELOPMENT.md "The
-  editor header", "The Actions menu"): breadcrumb from `init.breadcrumb` (`src/editorBreadcrumb.js`), #E2001A type
-  tag, dot status items, Build icon button `#build-btn`, the Actions menu behind "⋯", version in the menu's foot; red
-  only as a marker. Ids the host/dev-host use are unchanged. **Not run yet:** the dev-host pass (`test:clickCompile` /
-  `test:toggleSync` click the hidden menu items by id: expected to work, unverified) and a look in real VS Code
-  (real theme variables; the harness screenshots set Dark/Light Modern values by hand).
-  **Start page + logo, same look (user, 2026-11-16):** start page restyled (theme surfaces, frameless menu-like tiles,
-  `--tc-red` only as a marker; `run_start_page.js` fails on any reddish computed colour other than #E2001A); new mark
-  `scripts/logo/tc-toolkit-mark.svg` (approved) → `media/marketplace-icon.png` via `scripts/make-icon.js` (Playwright),
-  Activity Bar SVG = its one-colour form, inline `src/brandMark.js` on the start page title. **Left stale:**
-  `media/icon.png` (GitHub social preview, old mark and old name; its generator needs Windows' Segoe UI).
+  cpp-real, gpp-real ran), `npm run typecheck` and `npm run lint` exit 0; browser harnesses `run.js` 135, `run_online.js` 53, `run_pragmas.js` 47,
+  `run_start_page.js` 126 (browsers in `/opt/pw-browsers`). Dev-host last run 2026-11-12 (103 pass / 1 known P8 fail).
+- **Native editor header, start page and logo (user decisions 2026-11-16): BUILT on `claude/focused-ptolemy-m6acaz`**
+  (DEVELOPMENT.md "The editor header", "The Actions menu"): mark `#hdr-brand` (`src/brandMark.js`), breadcrumb from
+  `init.breadcrumb` (`src/editorBreadcrumb.js`), #E2001A type tag, dot status items, hammer `#build-btn`, "Actions ▾"
+  (secondary button; folds to "⋯" when narrow), version in the menu's foot; red only as a marker. Fixed the user's
+  bare-dots bug (collapse measured while the webview was hidden; now never at width 0, plus ResizeObserver, fonts,
+  hysteresis). Start page restyled the same way (`run_start_page.js` fails on any reddish colour other than #E2001A);
+  new mark `scripts/logo/tc-toolkit-mark.svg` → `media/marketplace-icon.png` (`scripts/make-icon.js`, Playwright);
+  Activity Bar SVG is its one-colour form. **Left stale:** `media/icon.png` (social preview: old mark and old name; its
+  generator needs Windows' Segoe UI). **Not run yet:** the dev-host pass (`test:clickCompile` / `test:toggleSync`
+  click hidden menu items by id: expected to work) and a look in real VS Code themes (shots used hand-set values).
 - **Sample 1 XAE warnings (user, 2026-11-13; XAE Shell 64):** 0 errors, 3 warnings: C0564 x2 (GVL_System's
   `fbCylinder(refExtendOut := GVL_Io.bExtendOut, refRetractOut := GVL_Io.bRetractOut)`: "reference to uninitialized
   variable") and C0195 (FB_Station.Cyclic line 28, INT into WORD). **User: fix the sample.** Done in the generator
@@ -271,11 +270,9 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   11. **Start/Stop PLC** (Linux-verified only): the Actions menu's entry / PLC Watch title shows *Stop* in Run → modal → XAE
      shows Stop, entry turns *Start* at once, "PLC stop on …: done" logged; then Start. Repeat over the user-mode helper
      (`writecontrol` = `WriteControl(StateInfo(AdsState, short))`, unverified against TwinCAT.Ads 4.3.32).
-- **R3.2–R9 MERGED** (R3.2 as PR #32; R3.3–R9 into `dev` as PR #33 (`6424968`, 2026-11-11 09:30 UTC) after the user's Windows checks
-  (dev-host green after `npm ci`; manual checks all passed). Details per item are in git history and ROADMAP "Done".
-  After a branch switch that changes package-lock.json, run `npm ci` — the dev-host test now says so itself.
-  Toolkit lane is done except R10 (trigger-only) and R11 (publishing, last, after the fork lane).
-- **Settings keys `tcToolkit.*`** (PR #34) and **R3.5** (PR #35) MERGED; VS Code cannot show an uppercase "TC" from a key.
+- **R3.2–R9, settings keys `tcToolkit.*`, R3.5 MERGED** (PRs #32–#35; details in git history and ROADMAP "Done").
+  After a branch switch that changes package-lock.json, run `npm ci`. Toolkit lane is done except R10 (trigger-only)
+  and R11 (publishing, last, after the fork lane). VS Code cannot show an uppercase "TC" from a setting key.
 - **Fork lane (2026-11-12):** **S4 done** (fork #131–#132, #134–#139; release L at `3acc3f6`, note in the coordination doc; development equals the gated combined tree, 5972 tests). Lane agent `a182a76c41bf282e2` now on: `--strict` per Figure 12 for bit strings (user), property read through a global FB instance (the R13 g++ gap on TcToolkitSample), SPDX lines on two runtime headers, then coordination row 35 (one-pass diagnostics, threaded-warning scope). Merging stacked fork branches: merge development into the branch with `-X ours` only when the branch contains the squashed content, then check `git diff <branch> HEAD` shows only development's own changes; for independent branches resolve by hand, and verify the final development tree against the gated combined tree. Next fork item after these: S10.
 - **R11 publishing:** last — after the toolkit lane AND the fork lane are done (user, 2026-11-10).
 - **Sample diagnostics: 0 against a baseline of 0** — verified with the Beckhoff archives present AND moved aside.

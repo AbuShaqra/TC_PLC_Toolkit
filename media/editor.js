@@ -148,6 +148,7 @@
         if (t) t.textContent = text;
         else el.textContent = text;
         el.title = title || text;
+        queueFitHeader();
     }
 
     /**
@@ -186,21 +187,50 @@
     }
 
     /**
-     * Keeps the header on one row: when it does not fit (or the object name would be cut), the
-     * status items drop their text and keep their dots, with the text in their tooltips. At 420px
-     * and below (where the component list takes a row of its own) they are always dots. Checked
-     * on resize and whenever a status item changes.
+     * Keeps the header on one row, giving way in steps while it does not fit (or the object name
+     * would be cut): first the status items drop their text and keep their dots, with the text in
+     * their tooltips (`.compact`); then the Actions button folds to its "⋯" glyph (`.compact-more`);
+     * only then may the object name shrink (CSS). At 420px and below (where the component list
+     * takes a row of its own) both steps always apply.
+     *
+     * Measured only while the header is laid out: a hidden webview (a background tab) has every
+     * width 0, and a collapse decided then stuck until the next state change (user report
+     * 2026-11-16: bare dots in a wide editor while the PLC ran). A ResizeObserver re-measures when
+     * the header gets its size back, as do the fonts settling and every status change. Hysteresis:
+     * once collapsed, the labels come back only with 8px to spare, so the row does not flap.
      */
     function fitHeader() {
         if (!headerEl) return;
-        if (window.innerWidth <= 420) { headerEl.classList.add('compact'); return; }
-        headerEl.classList.remove('compact');
-        const nameCut = objNameEl.scrollWidth > objNameEl.clientWidth + 1;
-        const overflow = headerEl.scrollWidth > headerEl.clientWidth + 1;
-        const pathGone = !!crumbPathEl && crumbPathEl.textContent !== '' && crumbPathEl.parentElement.clientWidth < 24;
-        if (nameCut || overflow || pathGone) headerEl.classList.add('compact');
+        if (headerEl.clientWidth === 0) return;   // not laid out (hidden): keep the last decision
+        if (window.innerWidth <= 420) { headerEl.classList.add('compact', 'compact-more'); return; }
+        const growEl = headerEl.querySelector('.hdr-grow');
+        const overflowing = () => objNameEl.scrollWidth > objNameEl.clientWidth + 1 || headerEl.scrollWidth > headerEl.clientWidth + 1;
+        // The dots also step in to keep a little of the path in view; the button folds only for the name.
+        const pathBox = crumbPathEl ? crumbPathEl.parentElement : null;
+        const hasPath = !!crumbPathEl && crumbPathEl.textContent !== '';
+        const pathGone = () => hasPath && !!pathBox && pathBox.clientWidth < 24;
+        // Room beyond a bare fit: free space in the row, or a squeezed path that still keeps 8px more.
+        const roomy = () => (growEl ? growEl.getBoundingClientRect().width : 0) >= 8
+            || (hasPath && !!pathBox && pathBox.clientWidth >= 32);
+        const wasCompact = headerEl.classList.contains('compact');
+        const wasMore = headerEl.classList.contains('compact-more');
+        headerEl.classList.remove('compact', 'compact-more');
+        if (!overflowing() && !pathGone() && (!wasCompact || roomy())) return;
+        headerEl.classList.add('compact');
+        if (overflowing() || (wasMore && !roomy())) headerEl.classList.add('compact-more');
+    }
+    let fitQueued = false;
+    /** One fitHeader per frame, for the observers below. */
+    function queueFitHeader() {
+        if (fitQueued) return;
+        fitQueued = true;
+        requestAnimationFrame(() => { fitQueued = false; fitHeader(); });
     }
     window.addEventListener('resize', () => fitHeader());
+    // The header's own size: also fires when a hidden webview is shown again (0 → its width).
+    if (headerEl && typeof ResizeObserver === 'function') new ResizeObserver(() => queueFitHeader()).observe(headerEl);
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => queueFitHeader(), () => {});
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) queueFitHeader(); });
     
     const containerEl = document.getElementById('editor-container');
     const paneDeclEl = document.getElementById('pane-decl');
@@ -366,7 +396,7 @@
     function renderSyncMode() {
         toggleEl.checked = isAutoSync;
         if (toggleText) {
-            setChipText(toggleText, isAutoSync ? 'Auto Sync' : 'Manual Sync', 'Manual Sync: edits are written on Ctrl+S (⋯ → Auto Sync)');
+            setChipText(toggleText, isAutoSync ? 'Auto Sync' : 'Manual Sync', 'Manual Sync: edits are written on Ctrl+S (Actions → Auto Sync)');
             toggleText.hidden = isAutoSync;
         }
         renderActionsTitle();

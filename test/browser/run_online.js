@@ -314,6 +314,39 @@ function assert(cond, msg) {
         assert(await page.evaluate(() => document.getElementById('plc-menu-section').hidden && document.getElementById('plc-indicator').hidden),
             'a toggle state arriving while offline keeps the PLC group and its chip hidden');
 
+        // Regression (user's VS Code, 2026-11-16): online with the PLC in Run, a WIDE editor showed the
+        // status as bare dots until the PLC was stopped. The state arrived while the webview was hidden
+        // (a background tab: no layout, every width 0), the collapse was measured then, and nothing
+        // measured again when it was shown. Hidden here by `display: none` on #app, shown again with
+        // no resize: the labels must come back by themselves, and stay through Run → Stop.
+        const statusTexts = () => page.evaluate(() => ({
+            compact: document.querySelector('.app-header').classList.contains('compact'),
+            shown: [...document.querySelectorAll('.hdr-status .tb-chip')].filter(e => e.closest('[hidden]') === null)
+                .map(e => ({ id: e.id, text: getComputedStyle(e.querySelector('.hdr-text')).display !== 'none' }))
+        }));
+        await page.setViewportSize({ width: 1400, height: page.viewportSize().height });
+        await page.evaluate(() => window.postMessage({ type: 'online/state', online: false }, '*'));
+        await settle(80);
+        await page.evaluate(() => { document.getElementById('app').style.display = 'none'; });
+        await page.evaluate(() => {
+            window.postMessage({ type: 'online/state', online: true, note: '', writable: true }, '*');
+            window.postMessage({ type: 'online/plc', online: true, action: 'stop', plcState: 'Run', busy: false, reason: '' }, '*');
+        });
+        await settle(120);
+        await page.evaluate(() => { document.getElementById('app').style.display = ''; });
+        await settle(200);
+        let st = await statusTexts();
+        assert(!st.compact && st.shown.length === 3 && st.shown.every(x => x.text),
+            `wide editor, online, PLC Run (state posted while hidden): every status item shows its label (${JSON.stringify(st)})`);
+        await page.evaluate(() => window.postMessage({ type: 'online/plc', online: true, action: 'start', plcState: 'Stop', busy: false, reason: '' }, '*'));
+        await settle(120);
+        st = await statusTexts();
+        assert(!st.compact && st.shown.every(x => x.text), `then PLC Stop: still labelled (${JSON.stringify(st)})`);
+        await page.evaluate(() => window.postMessage({ type: 'online/plc', online: true, action: 'stop', plcState: 'Run', busy: false, reason: '' }, '*'));
+        await settle(120);
+        st = await statusTexts();
+        assert(!st.compact && st.shown.every(x => x.text), `and back to Run: still labelled, no flapping (${JSON.stringify(st)})`);
+
         // The toolbar with every chip showing (online note, PLC state, Building…) stays inside a
         // narrow editor: nothing pushed off the right edge, no sideways scroll, the open menu fits.
         await page.evaluate(() => {

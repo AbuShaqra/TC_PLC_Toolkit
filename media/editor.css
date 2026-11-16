@@ -79,6 +79,16 @@ body {
     position: relative;
 }
 
+/* The extension's mark: theme-coloured letters, the red square (src/brandMark.js); tooltip name + version. */
+.hdr-brand {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    color: var(--vscode-foreground, var(--fg-primary));
+    margin-right: -2px;
+}
+.hdr-brand .brand-mark { display: block; }
+
 .hdr-crumbs {
     display: flex;
     align-items: center;
@@ -110,11 +120,11 @@ body {
     overflow: hidden;
     text-overflow: ellipsis;
     min-width: 3em;
-    /* The name does not shrink until the status has collapsed (fitHeader's `.compact`). */
+    /* The name does not shrink until the status has collapsed and the Actions button folded (fitHeader). */
     flex: 0 0 auto;
 }
 /* Then it shrinks, but only after the path (shrink 1000) and the component list (100) have given way. */
-.app-header.compact #obj-name { flex-shrink: 0.001; }
+.app-header.compact-more #obj-name { flex-shrink: 0.001; }
 
 /* The object's type (POU, GVL, DUT, IO, …): the header's one red marker. Transparent, a 1px true-red
    border and true-red text, never a filled pink pill. */
@@ -242,6 +252,36 @@ body {
     display: inline-flex;
     flex: none;
 }
+
+/* The Actions button: a real button in the theme's secondary-button colours (never red; red is a
+   marker), "Actions" + a chevron. When even the dots do not make room, `.compact-more` (fitHeader)
+   folds it to the "⋯" glyph + chevron, before the object name gives way. */
+.actions-btn {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    height: 26px;
+    padding: 0 6px 0 10px;
+    border: 1px solid var(--vscode-button-border, transparent);
+    border-radius: 4px;
+    background: var(--vscode-button-secondaryBackground, #313131);
+    color: var(--vscode-button-secondaryForeground, #cccccc);
+    font-family: inherit;
+    font-size: 13px;
+    line-height: 1;
+    white-space: nowrap;
+    cursor: pointer;
+    outline: none;
+}
+.actions-btn:hover,
+.actions-btn[aria-expanded="true"] { background: var(--vscode-button-secondaryHoverBackground, #3c3c3c); }
+.actions-btn:focus-visible { outline: 1px solid var(--vscode-focusBorder, #007fd4); outline-offset: 1px; }
+.actions-btn .btn-icon { display: block; }
+.actions-btn .btn-icon.actions-more { display: none; }
+.app-header.compact-more .actions-btn { padding: 0 4px 0 6px; }
+.app-header.compact-more .actions-btn .btn-label { display: none; }
+.app-header.compact-more .actions-btn .btn-icon.actions-more { display: block; }
 
 /* Very narrow editors: the row may wrap (the component list drops to its own line). */
 @media (max-width: 420px) {
@@ -499,7 +539,7 @@ body {
 .menu-item:focus-visible .menu-item-detail { color: inherit; opacity: 0.8; }
 .menu-item-detail:empty { display: none; }
 .menu-item-chevron { opacity: 0.7; font-size: 0.7rem; }
-.menu-item > .btn-icon { flex: none; display: block; align-self: flex-start; margin-top: 2px; }
+.menu-item > .btn-icon { flex: none; display: block; align-self: flex-start; margin-top: 2px; width: 14px; height: 14px; }
 /* Start / Stop PLC (R15): the glyph shown follows the label; Start is green, Stop true red (a marker). */
 .plc-run-btn .plc-icon-stop,
 .plc-run-btn.is-stop .plc-icon-start { display: none; }

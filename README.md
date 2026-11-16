@@ -28,14 +28,15 @@ are required.
 Opens `.TcPOU` / `.TcGVL` / `.TcDUT` / `.TcIO` with the Declaration (variables) on top and the
 Implementation below, separated by a resizable splitter. No raw XML.
 
-The editor's header is one slim row in your theme's colours. On the left, where the object lives: the PLC
+The editor's header is one slim row in your theme's colours. On the left, after the TC Toolkit mark (hover
+for the version), where the object lives: the PLC
 project, the folders inside it and the object's name (hover for the full path), then a small type tag (POU,
 GVL, DUT, IO, …) and the list of the object's methods, properties and actions. On the right, quiet status
 items: the PLC state (*PLC Run*, *PLC Stop*, …) and *Online* while online, *Building…* (or *XAE build…*)
 while a build runs, *Manual Sync* while Auto Sync is off, and the sync state (*Synced*, *Unsaved Changes*).
 In a narrow editor the status items shrink to coloured dots (hover for the text) before the object's name
-is cut. Then a **Build** button (one click checks the project with the IEC 61131-3 compiler) and **⋯**, the
-menu with everything else:
+is cut. Then a **Build** button (the hammer: one click checks the project with the IEC 61131-3 compiler) and
+**Actions ▾**, the menu with everything else (in a very narrow editor it folds to **⋯ ▾**):
 **Generate ST** (with *Choose projects…* when the workspace has several PLC projects), **Build** with its
 options (*Generate C++*, *Build with g++*, and the XAE entries on Windows), **Start PLC** / **Stop PLC**
 (only while online) and **Auto Sync** (on: every edit is written to the file as you type; off: edits wait
@@ -415,7 +416,7 @@ Palette as *TC Toolkit: Build through XAE (requires TwinCAT)* and *Build and Act
 built with XAE's compiler and the project's real libraries.
 
 - **Headless by default.** The XAE Shell runs hidden with its UI suppressed. Tick **Show the XAE window**
-  in the editor's ⋯ menu (Build group) (setting `tcToolkit.xaeBuild.showWindow`) to watch the shell for the whole build. The
+  in the editor's Actions menu (Build group) (setting `tcToolkit.xaeBuild.showWindow`) to watch the shell for the whole build. The
   **TC Toolkit XAE Build** output channel says which mode was asked for and which actually ran (read back
   from the shell: `SuppressUI` and `MainWindow.Visible`).
 - **Errors** go to the Problems panel (source *TC Toolkit XAE build*) and the editor panes. Where XAE's
@@ -485,7 +486,7 @@ without costing more. At most `tcToolkit.online.maxNotifications` (100) are acti
 show *notification limit reached* and you are told once (Beckhoff recommends at most 550 per device).
 The list is kept per workspace.
 
-**Start / Stop PLC.** While online, the editor's **⋯** menu has a **Start PLC** / **Stop PLC** entry
+**Start / Stop PLC.** While online, the editor's **Actions** menu has a **Start PLC** / **Stop PLC** entry
 (and the header shows the PLC state), and the same toggle sits next to Go Online / Go Offline in the **PLC Watch** title bar (also *TC
 Toolkit: Start PLC…* / *Stop PLC…* in the Command Palette). It follows the PLC state the status bar shows:
 **Stop** while the PLC is in Run, **Start** while it is in Stop. In any other state (Config, Error, not
@@ -620,10 +621,10 @@ old entry is removed from your `settings.json`.
 | `tcToolkit.xaeShell.path4026` | *(detected)* | Full path to `TcXaeShell.exe` of the XAE Shell for TwinCAT 3.1.4026 (the 64-bit shell). Empty = not found. |
 | `tcToolkit.compiler.path` | *(empty)* | Full path to the command-line file (`.cjs`) of an external IEC 61131-3 compiler for **Build Project** to run instead of the bundled one. Empty = the bundled compiler. Per machine. |
 | `tcToolkit.compiler.nodePath` | *(empty)* | Full path to a Node.js 22+ executable that runs the compiler. Empty = found automatically (`node` on `PATH`, the usual Windows install locations, then VS Code's own runtime when it is Node.js 22+). Per machine. |
-| `tcToolkit.compiler.generateCpp` | `false` | **Generate C++**: after a check with no errors, write the project as C++ into `CPP_Files/` next to its `.plcproj`. Turning it off also turns off the g++ build. Also in the editor's ⋯ menu. |
-| `tcToolkit.compiler.buildWithGpp` | `false` | **Build with g++**: also compile that C++ with g++ (a compile check; errors in the Problems panel). Turning it on also turns on *Generate C++*. Also in the editor's ⋯ menu. |
+| `tcToolkit.compiler.generateCpp` | `false` | **Generate C++**: after a check with no errors, write the project as C++ into `CPP_Files/` next to its `.plcproj`. Turning it off also turns off the g++ build. Also in the editor's Actions menu. |
+| `tcToolkit.compiler.buildWithGpp` | `false` | **Build with g++**: also compile that C++ with g++ (a compile check; errors in the Problems panel). Turning it on also turns on *Generate C++*. Also in the editor's Actions menu. |
 | `tcToolkit.compiler.gppPath` | *(detected)* | Full path to `g++` (`g++.exe` on Windows). Empty = `g++` on `PATH`, then the usual Windows install folders; filled with the one found when the build is turned on, never overwritten. Per machine. |
-| `tcToolkit.xaeBuild.showWindow` | `false` | **Show the XAE window**: show the XAE Shell window for the whole *Build through XAE* instead of building headless. The window is always shown during activation, so a licence or download dialog can be answered, and it stays visible after an XAE version switch. Also in the editor's ⋯ menu. |
+| `tcToolkit.xaeBuild.showWindow` | `false` | **Show the XAE window**: show the XAE Shell window for the whole *Build through XAE* instead of building headless. The window is always shown during activation, so a licence or download dialog can be answered, and it stays visible after an XAE version switch. Also in the editor's Actions menu. |
 | `tcToolkit.xaeBuild.configuration` | `Release` | The solution configuration *Build through XAE* builds. |
 | `tcToolkit.xaeBuild.platform` | `TwinCAT RT (x64)` | The solution platform it builds (activating onto a user-mode runtime needs its `TwinCAT OS (...)` platform). |
 | `tcToolkit.xaeBuild.timeoutMinutes` | `30` | Minutes before a build through XAE is stopped (5 to 240; during activation only reported). |

@@ -341,15 +341,18 @@ function assert(cond, msg) {
             const b = document.getElementById('actions-btn');
             const m = document.getElementById('actions-menu');
             return { popup: b.getAttribute('aria-haspopup'), controls: b.getAttribute('aria-controls'), expanded: b.getAttribute('aria-expanded'),
-                label: b.getAttribute('aria-label'), glyph: b.querySelectorAll('svg circle').length, text: b.textContent.trim(),
+                label: b.getAttribute('aria-label'), chevron: !!b.querySelector('svg.actions-chevron'), text: b.textContent.trim(),
+                height: Math.round(b.getBoundingClientRect().height), bg: getComputedStyle(b).backgroundColor, fontSize: getComputedStyle(b).fontSize,
+                radius: getComputedStyle(b).borderRadius,
                 role: m.getAttribute('role'), labelledby: m.getAttribute('aria-labelledby'), hidden: m.hidden,
                 // The header holds two actions: the Build icon button and the "⋯" menu button.
                 toolbarButtons: [...document.querySelectorAll('.app-header button')].filter(x => !m.contains(x)).map(x => x.id) };
         });
         assert(btnAria.popup === 'menu' && btnAria.controls === 'actions-menu' && btnAria.expanded === 'false' && btnAria.label === 'Actions'
-            && btnAria.glyph === 3 && btnAria.text === ''
+            && btnAria.chevron && btnAria.text === 'Actions' && btnAria.height >= 24 && btnAria.height <= 28 && btnAria.fontSize === '13px' && btnAria.radius === '4px'
+            && btnAria.bg !== 'rgba(0, 0, 0, 0)' && !/^rgb\((2[0-5]\d|1[6-9]\d), ([0-9]|[1-9]\d), /.test(btnAria.bg)
             && btnAria.role === 'menu' && btnAria.labelledby === 'actions-btn' && btnAria.hidden && JSON.stringify(btnAria.toolbarButtons) === '["build-btn","actions-btn"]',
-        `the header has the "⋯" Actions menu button (aria-label, aria-haspopup=menu, aria-controls, closed) and the Build icon button, nothing else (${JSON.stringify(btnAria)})`);
+        `the header has the "Actions ▾" menu button (a filled secondary button, 13px label, not red; aria-haspopup=menu, aria-controls, closed) and the Build icon button, nothing else (${JSON.stringify(btnAria)})`);
 
         // 7a'. The native header (user decision 2026-11-16): breadcrumb PLC project › folders › object,
         //      the type tag in true red, no product title or version pill (the version is the menu's foot).
@@ -362,6 +365,9 @@ function assert(cond, msg) {
                 tooltip: document.getElementById('hdr-crumbs').title, tag: tag.textContent, tagColor: cs.color, tagBorder: cs.borderTopColor,
                 tagBg: cs.backgroundColor, height: Math.round(header.getBoundingClientRect().height),
                 title: !!document.querySelector('.logo-text, .pill'), version: document.getElementById('menu-version').textContent,
+                brand: (() => { const b = document.getElementById('hdr-brand'); const r = b.getBoundingClientRect(); return { title: b.title, label: b.getAttribute('aria-label'),
+                    first: document.querySelector('.app-header').firstElementChild === b, h: Math.round(r.height), red: !!b.querySelector('rect[fill="#E2001A"]'),
+                    letters: getComputedStyle(b.querySelector('svg')).color === getComputedStyle(document.getElementById('obj-name')).color }; })(),
                 versionInMenu: document.getElementById('actions-menu').contains(document.getElementById('menu-version'))
             };
         });
@@ -369,6 +375,9 @@ function assert(cond, msg) {
             `the breadcrumb names the PLC project, the folder and the object; the tooltip is the full location (${JSON.stringify(hdr)})`);
         assert(hdr.tag === 'POU' && hdr.tagColor === 'rgb(226, 0, 26)' && hdr.tagBorder === 'rgb(226, 0, 26)' && hdr.tagBg === 'rgba(0, 0, 0, 0)',
             `the type tag is transparent with a true-red (#E2001A) border and text (${JSON.stringify(hdr)})`);
+        assert(hdr.brand.first && /^TC Toolkit v\d+\.\d+\.\d+$/.test(hdr.brand.title) && hdr.brand.label === hdr.brand.title && hdr.brand.h >= 10 && hdr.brand.h <= 18
+            && hdr.brand.red && hdr.brand.letters,
+            `the header starts with the extension's mark (~16px, theme-coloured letters, the red square), tooltip "TC Toolkit vX.Y.Z" (${JSON.stringify(hdr.brand)})`);
         assert(!hdr.title && /^TC Toolkit v\d/.test(hdr.version) && hdr.versionInMenu && hdr.height >= 34 && hdr.height <= 40,
             `one slim row (~36px), no product title or version pill; "TC Toolkit vX.Y.Z" is the menu's foot (${JSON.stringify(hdr)})`);
         const hdrStatus = () => page.evaluate(() => {
@@ -858,6 +867,9 @@ function assert(cond, msg) {
                     width: window.innerWidth, actions: box('actions-btn'), build: box('build-btn'), select: box('component-select'), status: box('save-status-item'), chip: box('build-indicator'),
                     name: Object.assign(box('obj-name'), { cut: document.getElementById('obj-name').scrollWidth > document.getElementById('obj-name').clientWidth + 1 }),
                     compact: document.querySelector('.app-header').classList.contains('compact'),
+                    more: document.querySelector('.app-header').classList.contains('compact-more'),
+                    actionsLabel: getComputedStyle(document.querySelector('#actions-btn .btn-label')).display !== 'none',
+                    actionsMore: getComputedStyle(document.querySelector('#actions-btn .actions-more')).display !== 'none',
                     statusText: getComputedStyle(document.getElementById('save-status')).display !== 'none',
                     // Rows: items whose vertical centres lie within 8px of each other share one.
                     rows: (() => { const cs = [...document.querySelectorAll('.app-header > *')].filter(e => e.getBoundingClientRect().width > 0)
@@ -878,8 +890,9 @@ function assert(cond, msg) {
                 && t.menu.left >= 0 && t.menu.right <= t.width && t.menu.bottom <= t.menu.h,
             `at ${width}px the "⋯" and Build buttons, the component list, the Building… item and the status are inside the editor, no sideways scroll, and the open menu fits (${JSON.stringify(t)})`);
             // The object name gives way last: while it is cut the status shows dots only; above 420px one row.
-            assert((!t.name.cut || t.compact) && (width <= 420 || t.rows === 1) && (t.compact ? !t.statusText : t.statusText),
-                `at ${width}px the status collapses to dots before the object name is cut, and above 420px the header is one row (${JSON.stringify({ name: t.name, compact: t.compact, rows: t.rows, statusText: t.statusText })})`);
+            assert((!t.name.cut || t.more) && (!t.more || t.compact) && (width <= 420 || t.rows === 1) && (t.compact ? !t.statusText : t.statusText)
+                && (t.more ? !t.actionsLabel && t.actionsMore : t.actionsLabel && !t.actionsMore),
+                `at ${width}px the status collapses to dots, then the Actions button to its glyph, before the object name is cut; above 420px one row (${JSON.stringify({ name: t.name, compact: t.compact, more: t.more, actionsLabel: t.actionsLabel, actionsMore: t.actionsMore, rows: t.rows, statusText: t.statusText })})`);
             if (width >= 1100) assert(!t.compact && !t.name.cut, `at ${width}px nothing is collapsed`);
         }
         await page.evaluate(() => window.postMessage({ type: 'compileRunning', running: false }, '*'));

@@ -15,18 +15,23 @@ const pendingEditsCore = require('../media/pendingEdits');
 const { isDocumentationUrl } = require('./lsp/pragmas');
 const { createPendingEditsStore } = require('./pendingEditsStore');
 const { breadcrumbFor } = require('./editorBreadcrumb');
+const { brandMarkSvg } = require('./brandMark');
 const EXT_VERSION = (() => { try { return require('../package.json').version; } catch (e) { return '?'; } })();
 
 /** Codicon-style glyphs (16px grid, currentColor), inline because the webview is offline. */
-// A hammer: the Build action, in the header's icon button and on the menu's Build item.
-const GLYPH_BUILD = '<svg class="btn-icon" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">'
-    + '<g fill="currentColor" transform="rotate(45 8 8)"><rect x="3.6" y="1.4" width="8.8" height="3.6" rx="0.8"/>'
-    + '<rect x="7.15" y="5" width="1.7" height="10.2" rx="0.6"/></g></svg>';
+// A hammer (the build icon other IDEs use): filled head with a tapered peen, the handle on the
+// diagonal. The Build action, in the header's icon button and on the menu's Build item.
+const GLYPH_BUILD = '<svg class="btn-icon" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false">'
+    + '<path fill="currentColor" stroke="currentColor" stroke-width=".7" stroke-linejoin="round" '
+    + 'd="M7.67 1.83 14.66 7.84 11.84 10.66 5.83 3.67zM9.37 8.19 3.36 14.2 1.8 12.64 7.81 6.63z"/></svg>';
+// "▾": the Actions button's chevron.
+const GLYPH_CHEVRON = '<svg class="btn-icon actions-chevron" viewBox="0 0 16 16" width="12" height="12" aria-hidden="true" focusable="false">'
+    + '<path fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" d="m4 6 4 4 4-4"/></svg>';
 // "</>": Generate ST.
 const GLYPH_ST = '<svg class="btn-icon" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">'
     + '<path fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" d="M5 4.5 1.8 8 5 11.5M11 4.5 14.2 8 11 11.5M9.3 3l-2.6 10"/></svg>';
-// "⋯": the Actions menu button.
-const GLYPH_MORE = '<svg class="btn-icon" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false">'
+// "⋯": the Actions button when the header is too narrow for its label.
+const GLYPH_MORE = '<svg class="btn-icon actions-more" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false">'
     + '<circle fill="currentColor" cx="3.5" cy="8" r="1.25"/><circle fill="currentColor" cx="8" cy="8" r="1.25"/><circle fill="currentColor" cx="12.5" cy="8" r="1.25"/></svg>';
 // Two arrows in a circle: the sync state in the header.
 const GLYPH_SYNC = '<svg class="hdr-icon" viewBox="0 0 16 16" width="13" height="13" aria-hidden="true" focusable="false">'
@@ -45,7 +50,7 @@ const GLYPH_PLC_STOP = '<svg class="btn-icon plc-icon-stop" viewBox="0 0 16 16" 
  * reason (the `.menu-item-detail` line, referenced by `aria-describedby`) is read out.
  */
 const ACTIONS_MENU_HTML = `<div id="actions-group" class="actions-group">
-                    <button id="actions-btn" class="icon-btn actions-btn" type="button" aria-label="Actions" aria-haspopup="menu" aria-expanded="false" aria-controls="actions-menu" title="Actions: Generate ST, Build, PLC and sync settings">${GLYPH_MORE}</button>
+                    <button id="actions-btn" class="actions-btn" type="button" aria-label="Actions" aria-haspopup="menu" aria-expanded="false" aria-controls="actions-menu" title="Actions: Generate ST, Build, PLC and sync settings">${GLYPH_MORE}<span class="btn-label">Actions</span>${GLYPH_CHEVRON}</button>
                     <div id="actions-menu" class="split-menu actions-menu" role="menu" aria-labelledby="actions-btn" hidden>
                         <div role="group" aria-labelledby="menu-title-generate">
                             <div class="split-menu-title" id="menu-title-generate">Generate ST</div>
@@ -888,10 +893,11 @@ class TwinCatCustomEditorProvider {
     <div id="app">
         <!-- Top bar with object details and dropdown -->
         <!-- The header (user decision 2026-11-16, "native" look): one slim row in the theme's colours.
-             Left: the breadcrumb (PLC project › folders › object, editor.js renderBreadcrumb), the type
-             tag (the one red marker) and the component list. Right: quiet dot + text status items, the
-             Build icon button and the "⋯" Actions menu. -->
+             Left: the extension's mark (tooltip: name and version), the breadcrumb (PLC project › folders ›
+             object, editor.js renderBreadcrumb), the type tag (a red marker) and the component list.
+             Right: quiet dot + text status items, the Build icon button and the Actions menu button. -->
         <header class="app-header">
+            <span class="hdr-brand" id="hdr-brand" role="img" aria-label="TC Toolkit v${EXT_VERSION}" title="TC Toolkit v${EXT_VERSION}">${brandMarkSvg({ height: 13 })}</span>
             <nav class="hdr-crumbs" id="hdr-crumbs" aria-label="Location">
                 <span class="crumb-path" id="crumb-path"><bdi id="crumb-path-text" dir="ltr"></bdi></span>
                 <span class="crumb-sep" id="crumb-name-sep" aria-hidden="true" hidden>›</span>
@@ -907,7 +913,7 @@ class TwinCatCustomEditorProvider {
                     <span id="build-indicator" class="tb-chip tb-chip-busy" hidden><span class="hdr-dot" aria-hidden="true"></span><span class="hdr-text">Building…</span></span>
                     <span id="plc-indicator" class="tb-chip" hidden><span class="hdr-dot" aria-hidden="true"></span><span class="hdr-text"></span></span>
                     <span id="online-note" class="tb-chip tb-chip-online" title="Online monitoring (TC Toolkit: Go Online)" hidden><span class="hdr-dot" aria-hidden="true"></span><span class="hdr-text"></span></span>
-                    <span id="sync-mode-text" class="tb-chip tb-chip-warn" title="Manual Sync: edits are written on Ctrl+S (⋯ → Auto Sync)" hidden><span class="hdr-dot" aria-hidden="true"></span><span class="hdr-text">Auto Sync</span></span>
+                    <span id="sync-mode-text" class="tb-chip tb-chip-warn" title="Manual Sync: edits are written on Ctrl+S (Actions → Auto Sync)" hidden><span class="hdr-dot" aria-hidden="true"></span><span class="hdr-text">Auto Sync</span></span>
                 </span>
                 <span class="tb-chip tb-chip-sync" id="save-status-item" title="Synced">${GLYPH_SYNC}<span id="save-status" class="status-indicator hdr-text">Synced</span></span>
             </div>
@@ -915,7 +921,7 @@ class TwinCatCustomEditorProvider {
             <button id="build-btn" class="icon-btn build-btn" type="button" aria-label="Build" aria-describedby="build-btn-busy" title="Build (check with the IEC 61131-3 compiler)">${GLYPH_BUILD}</button>
             <span id="build-btn-busy" class="visually-hidden"></span>
             <!-- The Actions menu (user request 2026-11-16): every action and setting in one dropdown behind
-                 "⋯". Built by ACTIONS_MENU_HTML. -->
+                 the "Actions ▾" button. Built by ACTIONS_MENU_HTML. -->
             ${ACTIONS_MENU_HTML}
         </header>
 
