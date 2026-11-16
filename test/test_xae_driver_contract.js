@@ -78,14 +78,17 @@ assert(/\$name = \$\(if \(\$r\.Kind -eq 'real-time'\) \{ 'Real-time runtime' \} 
 // list marks every entry, an unknown one carries no netId, and both lists come from one function.
 assert(/netIdStatus = \$\(if \(\$r\.NetId\) \{ 'trusted' \} else \{ \[string\]\$r\.NetIdStatus \}\)/.test(ps1)
     && /netId = \$\(if \(\$r\.NetId\) \{ \$r\.NetId \} else \{ \$null \}\)/.test(ps1)
-    && /reason = \$\(if \(\$r\.NetId\) \{ \$null \} else \{ \[string\]\$r\.NetIdReason \}\)/.test(ps1), 'list entries carry netIdStatus and reason; an unknown NetId is null');
+    && /reason = \$\(if \(\$r\.NetIdReason\) \{ \[string\]\$r\.NetIdReason \} elseif \(\$r\.NetId\) \{ \$null \} else \{ '' \}\)/.test(ps1)
+    && /netIdSource = \$\(if \(\$r\.NetId -and \$r\.NetIdSource\) \{ \[string\]\$r\.NetIdSource \} else \{ \$null \}\)/.test(ps1),
+    'list entries carry netIdStatus, netIdSource and reason; an unknown NetId is null');
 assert(/\$list = ConvertTo-RuntimeListEntries -Records @\(Get-LocalRuntimeRecords\)/.test(ps1)
     && /\$refusedLocal = ConvertTo-RuntimeListEntries -Records \$LocalRuntimeRecords/.test(ps1), '-ListTargets and target-refused build their list the same way');
 if (fs.existsSync(BUILDER)) {
     const builder = fs.readFileSync(BUILDER, 'utf8');
     const fn = (text, name) => (new RegExp(`\\nfunction ${name} \\{[\\s\\S]*?\\r?\\n\\}\\r?\\n`).exec(text) || [''])[0];
-    for (const name of ['Resolve-ActivationTarget', 'Get-RuntimeLabels', 'Resolve-UserModeNetIdTrust', 'Get-UserModeRuntimeProcesses',
-        'Get-UnknownRuntimeLabels', 'Get-UserModeRuntimeRecords', 'Get-LocalRuntimeRecords', 'Get-LocalAmsNetIds']) {
+    for (const name of ['Resolve-ActivationTarget', 'Get-RuntimeLabels', 'Resolve-UserModeNetIdTrust', 'Confirm-UserModeNetIdTrust',
+        'Get-UserModeRuntimeProcesses', 'Get-UnknownRuntimeLabels', 'Get-UserModeRuntimeRecords', 'Get-LocalRuntimeRecords', 'Get-LocalAmsNetIds',
+        'Read-TcAdsState', 'Test-UserModeNetIdOverAds']) {
         assert(fn(ps1, name) !== '' && fn(ps1, name) === fn(builder, name), `${name} is identical in the driver and the builder`);
     }
     assert(/which is not a runtime on this PC\." \+ \$nl \+/.test(ps1) && /Runtimes on this PC: \$\(\$named -join ', '\)/.test(ps1),
@@ -96,9 +99,27 @@ if (fs.existsSync(BUILDER)) {
             && /\$UnknownRuntimes\s+= Get-UnknownRuntimeLabels -Records \$LocalRuntimeRecords/.test(text),
             'the caller hands the gate the runtime labels and the runtimes whose NetId is unknown');
         // Fail closed: the local set keys on NetId, and an untrusted record has none.
-        assert(/NetId\s+= \$\(if \(\$trust\.Status -eq 'trusted'\) \{ \$fileNetId \} else \{ \$null \}\)/.test(text)
-            && /-Processes \$umProcesses -ProcessListFailed:\(\$null -eq \$umProcesses\)/.test(text),
-            'a user-mode NetId is set only when trusted, against the live process list');
+        assert(/NetId\s+= \$\(if \(\$netTrust\.Status -eq 'trusted'\) \{ \$fileNetId \} else \{ \$null \}\)/.test(text)
+            && /\$netTrust = Confirm-UserModeNetIdTrust -Trust \$trust -NetId \$fileNetId -ConfirmNetId \$ConfirmNetId/.test(text)
+            && /-Processes \$umProcesses -ProcessListFailed:\(\$null -eq \$umProcesses\) `\r?\n\s*-ConfirmNetId \$\{function:Test-UserModeNetIdOverAds\}/.test(text),
+            'a user-mode NetId is set only when trusted, against the live process list, confirmed over ADS when the times cannot settle it');
+    }
+    // The ADS confirmation (2026-11-16): never for a trusted or not-running decision, one ADS route
+    // (Read-TcAdsState, which Get-TcAdsState wraps), a short timeout, each NetId asked once per run.
+    {
+        const confirm = fn(ps1, 'Confirm-UserModeNetIdTrust');
+        assert(/if \(\$Trust\.Status -eq 'trusted'\) \{ return \(& \$result 'trusted' \$Trust\.Reason 'file-time'\) \}/.test(confirm)
+            && /if \(\(\$Trust\.Status -ne 'rewritten' -and \$Trust\.Status -ne 'unverifiable'\) -or -not \$ConfirmNetId -or -not \$NetId\) \{/.test(confirm),
+            'only a rewritten or unverifiable decision is confirmed over ADS (no probe when trusted or not running)');
+        assert(confirm.indexOf('& $ConfirmNetId $NetId') > confirm.indexOf("-ne 'unverifiable'"), 'the probe runs after the early returns');
+        assert(/\$state -le 0/.test(confirm) && /'ads'\)/.test(confirm), 'only a valid AdsState (not Invalid) trusts, with source ads');
+        assert(!/rewritten after this runtime started \(another instance\?\)/.test(ps1) && /'rewritten' 'the configuration file changed after this runtime started'/.test(ps1),
+            'the rewritten reason no longer guesses another instance');
+        assert(/function Get-TcAdsState \{\r?\n\s*param\(\[Parameter\(Mandatory\)\]\[string\]\$NetId, \[int\]\$Port = 10000\)\r?\n\s*\$r = Read-TcAdsState -NetId \$NetId -Port \$Port\r?\n\s*return \$r\.AdsState/.test(ps1),
+            'Get-TcAdsState wraps Read-TcAdsState (one ADS route)');
+        assert(/Read-TcAdsState -NetId \$NetId -Port 10000 -TimeoutMs 2000/.test(fn(ps1, 'Test-UserModeNetIdOverAds'))
+            && /-Scope Script/.test(fn(ps1, 'Test-UserModeNetIdOverAds')), 'the probe asks port 10000 with a 2 s timeout, once per NetId per run');
+        assert(/AdsSyncSetTimeout/.test(fn(ps1, 'Read-TcAdsState')) && /AdsPortClose/.test(fn(ps1, 'Read-TcAdsState')), 'Read-TcAdsState sets the timeout and closes its port');
     }
 }
 // Boot project with autostart (user decision 2026-11-16): the same functions in both scripts, called

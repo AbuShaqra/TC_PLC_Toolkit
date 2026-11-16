@@ -100,7 +100,7 @@ const UM = { netId: '10.0.0.4.1.1', name: 'UmRT_Default', kind: 'user-mode', pla
 const UM2 = { ...UM, netId: '10.0.0.5.1.1', name: 'UmRT_Second' };
 const RT = { netId: '10.0.0.1.1.1', name: 'Real-time runtime', kind: 'real-time', platform: 'TwinCAT RT (x64)', provenance: 'kind-inferred', netIdStatus: 'trusted', reason: null, fileNetId: null };
 const STALE = { netId: null, name: 'UmRT_Default', kind: 'user-mode', platform: null, provenance: null, netIdStatus: 'rewritten',
-    reason: 'the configuration file was rewritten after this runtime started (another instance?)', fileNetId: '10.0.0.6.1.1' };
+    reason: 'the configuration file changed after this runtime started; its AmsNetId could not be confirmed over ADS: no runtime answered at 10.0.0.6.1.1 (ADS error 0x7)', fileNetId: '10.0.0.6.1.1' };
 const NOT_RUNNING = { netId: null, name: 'UmRT_Default', kind: 'user-mode', platform: null, provenance: null, netIdStatus: 'not-running',
     reason: 'this runtime is not running', fileNetId: '10.0.0.7.1.1' };
 const ok = (entries, extra = {}) => ({ ok: true, entries, ms: 42, ...extra });
@@ -190,9 +190,21 @@ async function units() {
 
     assert(resolvedLogText({ name: 'UmRT_Default', netId: '10.0.0.4.1.1', kind: 'user-mode' })
         === 'Local runtime: user-mode runtime UmRT_Default at 10.0.0.4.1.1 (read from its configuration, instance running).', 'the resolved log line');
+    // A NetId the driver confirmed over ADS (its configuration changed after the instance started,
+    // e.g. on activation, and the runtime answered there): resolved like any trusted one, said so.
+    {
+        const viaAds = resolveLocalTarget(ok([{ ...UM, netIdSource: 'ads', reason: 'the configuration file changed after this runtime started; its AmsNetId was confirmed over ADS (the runtime answered at 10.0.0.4.1.1, state RUN)' }]));
+        assert(viaAds.kind === 'runtime' && viaAds.runtime && viaAds.runtime.netId === '10.0.0.4.1.1' && viaAds.runtime.netIdSource === 'ads', 'a NetId confirmed over ADS is used');
+        assert(resolvedLogText(viaAds.runtime) === 'Local runtime: user-mode runtime UmRT_Default at 10.0.0.4.1.1 (confirmed over ADS: the runtime answered there).',
+            'the log line says the NetId was confirmed over ADS');
+        const both = resolveLocalTarget(ok([{ ...UM, netIdSource: 'ads' }, { ...UM2, netIdSource: 'file-time' }]));
+        const it = localPickItems(both, 851);
+        assert(it[0].detail === 'User-mode runtime on this PC (its AMS Net ID confirmed over ADS: the runtime answered there)'
+            && it[1].detail === 'User-mode runtime on this PC (its AMS Net ID read from its configuration, instance running)', 'the pick detail says how each NetId was established');
+    }
     assert(/user-mode runtime UmRT_Default at 10\.0\.0\.4\.1\.1 .*\(discovery 42 ms\)$/.test(resolutionLogText(resolveLocalTarget(ok([UM])), 42)), 'the log line carries the discovery time');
     const staleHint = unresolvedHintText(resolveLocalTarget(ok([STALE])));
-    assert(/AMS Net ID is unknown, so the router's own was used\. UmRT_Default: the configuration file was rewritten .*names 10\.0\.0\.6\.1\.1/.test(staleHint),
+    assert(/AMS Net ID is unknown, so the router's own was used\. UmRT_Default: the configuration file changed after this runtime started; its AmsNetId could not be confirmed over ADS: .*names 10\.0\.0\.6\.1\.1/.test(staleHint),
         `the hint names why the runtime's NetId is unknown (${staleHint})`);
     assert(/failed: it took longer than 30 s\.$/.test(unresolvedHintText(resolveLocalTarget({ ok: false, entries: [], error: 'it took longer than 30 s', ms: 0 }))), 'the hint names a failed discovery');
     assert(/No user-mode runtime with a known AMS Net ID/.test(unresolvedHintText(resolveLocalTarget(ok([RT])))), 'the hint when there is no user-mode runtime');
@@ -295,7 +307,7 @@ async function endToEnd() {
     last = connects[connects.length - 1];
     const err = calls.errors[calls.errors.length - 1];
     assert(r.status === 'failed' && last.targetAmsNetId === 'localhost', 'an untrusted runtime: Local runtime stays on the router');
-    assert(err.includes(RUNTIME_NETID_HINT) && /AMS Net ID is unknown, so the router's own was used\. UmRT_Default: the configuration file was rewritten/.test(err),
+    assert(err.includes(RUNTIME_NETID_HINT) && /AMS Net ID is unknown, so the router's own was used\. UmRT_Default: the configuration file changed after this runtime started/.test(err),
         `the "Enter AMS Net ID" hint also names why the runtime's NetId is unknown (${err})`);
     assert(/Local runtime: the router's own AMS Net ID \(localhost\)\. The user-mode runtime's AMS Net ID is unknown/.test(log()), 'the channel says the router was used and why');
 

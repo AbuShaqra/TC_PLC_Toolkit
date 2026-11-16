@@ -713,17 +713,21 @@ function Resolve-RuntimePlatform {
           -n "<name>" (quoted or not, compared case-insensitively), and
       (b) the file was last written no later than the start of the NEWEST such process plus
           -ToleranceSeconds. The instance writes the file itself right after it starts, so a write a
-          moment after the start is its own; 5 s is the default. A write later than that came from
-          something else - in the measured case, another instance. When several processes run for
-          one name the file can only be the newest's; the NetIds of the older ones are not in any
-          file and stay unknown.
-    Anything else is UNKNOWN, and unknown fails closed: the caller drops the NetId from the local set,
-    so it is never offered, preselected or accepted by the local-only activation gates.
+          moment after the start is its own; 5 s is the default. When several processes run for one
+          name the file can only be the newest's; the NetIds of the older ones are not in any file
+          and stay unknown.
+    A LATER WRITE IS NOT PROOF OF A STALE FILE (user's machine, 4026, 2026-11-16, the same day): the
+    only running UmRT_Default instance, started 16:49:08, rewrote its own file at 16:50:40 - during an
+    activation - and the first Build and Activate was refused. From the times alone that rewrite
+    cannot be told from another instance's. So 'rewritten' and 'unverifiable' are not final: the
+    caller asks the runtime over ADS (Confirm-UserModeNetIdTrust) before it gives up.
+    Anything still unknown fails closed: the caller drops the NetId from the local set, so it is never
+    offered, preselected or accepted by the local-only activation gates.
 
         Status        Reason
         trusted       ''
         not-running   this runtime is not running
-        rewritten     the configuration file was rewritten after this runtime started (another instance?)
+        rewritten     the configuration file changed after this runtime started
         unverifiable  why the check could not be made (process list unavailable, a command line or a
                       start time unreadable - a process running elevated hides its command line from
                       an unelevated caller - or the file's time unknown)
@@ -774,7 +778,7 @@ function Resolve-UserModeNetIdTrust {
 
     $newest = @($matching | Sort-Object { $_.StartTime.ToUniversalTime() } -Descending)[0].StartTime.ToUniversalTime()
     if ($RegistryWriteTime.ToUniversalTime() -gt $newest.AddSeconds($ToleranceSeconds)) {
-        return (& $result 'rewritten' 'the configuration file was rewritten after this runtime started (another instance?)' $matching.Count)
+        return (& $result 'rewritten' 'the configuration file changed after this runtime started' $matching.Count)
     }
     return (& $result 'trusted' '' $matching.Count)
 }
@@ -801,6 +805,54 @@ function Get-UserModeRuntimeProcesses {
             StartTime   = $(if ($_.CreationDate -is [datetime]) { $_.CreationDate } else { $null })
         }
     })
+}
+
+<#
+.SYNOPSIS
+    Resolve-UserModeNetIdTrust's decision, confirmed over ADS when the file times could not settle it.
+.DESCRIPTION
+    A running runtime rewrites its own TcRegistry.xml (on activation, measured 2026-11-16), so the
+    time rule's 'rewritten' - and its 'unverifiable' - cannot tell a live NetId from a stale one. The
+    runtime can: this asks the file's NetId over ADS (-ConfirmNetId, the system service on port
+    10000). An answer with a valid AdsState (anything but 0, Invalid) trusts the NetId; anything else
+    keeps the decision and adds the ADS outcome to its reason. Never probed: 'trusted' (no ADS call on
+    the happy path) and 'not-running' (no instance of this runtime runs, so an answer at that NetId
+    could only come from something else).
+
+    Pure apart from -ConfirmNetId, which test-activation-target.ps1 replaces with a fake. It is called
+    with the NetId and returns Read-TcAdsState's shape: AdsState (int, or $null), AdsErrorCode (int,
+    or $null), DllProblem and Error (strings, or $null). A throw counts as an Error. Without
+    -ConfirmNetId (or without a NetId) the decision is returned unchanged.
+
+    Returns Status, Reason, Instances (Resolve-UserModeNetIdTrust's) and Source: 'file-time' when the
+    time rule trusted the file, 'ads' when the runtime answered, $null while the NetId is unknown.
+#>
+function Confirm-UserModeNetIdTrust {
+    param(
+        [Parameter(Mandatory)]$Trust,
+        [string]$NetId,
+        [scriptblock]$ConfirmNetId
+    )
+    $result = { param($s, $r, $src) [pscustomobject]@{ Status = $s; Reason = $r; Instances = $Trust.Instances; Source = $src } }
+    if ($Trust.Status -eq 'trusted') { return (& $result 'trusted' $Trust.Reason 'file-time') }
+    if (($Trust.Status -ne 'rewritten' -and $Trust.Status -ne 'unverifiable') -or -not $ConfirmNetId -or -not $NetId) {
+        return (& $result $Trust.Status $Trust.Reason $null)
+    }
+
+    $answer = $null
+    try { $answer = & $ConfirmNetId $NetId } catch { $answer = [pscustomobject]@{ Error = $_.Exception.Message } }
+    $state = $null
+    if ($answer -and $null -ne $answer.AdsState) { try { $state = [int]$answer.AdsState } catch { $state = $null } }
+    if (-not $answer -or $answer.DllProblem -or $null -ne $answer.AdsErrorCode -or $answer.Error -or $null -eq $state -or $state -le 0) {
+        $why = $(if (-not $answer) { "no answer from $NetId" }
+                 elseif ($answer.DllProblem) { [string]$answer.DllProblem }
+                 elseif ($null -ne $answer.AdsErrorCode) { 'no runtime answered at {0} (ADS error 0x{1:X})' -f $NetId, [int]$answer.AdsErrorCode }
+                 elseif ($answer.Error) { "asking $NetId failed: $($answer.Error)" }
+                 else { "the runtime at $NetId answered with no valid state" })
+        return (& $result $Trust.Status ("$($Trust.Reason); its AmsNetId could not be confirmed over ADS: $why") $null)
+    }
+    $stateName = $(if ($answer.StateName) { [string]$answer.StateName } else { "$state" })
+    return (& $result 'trusted' ("$($Trust.Reason); its AmsNetId was confirmed over ADS (the runtime answered at $NetId, state $stateName)") 'ads')
 }
 
 <#
@@ -848,20 +900,24 @@ function Get-UnknownRuntimeLabels {
     THE NETID IS TRUSTED ONLY FOR A RUNNING INSTANCE (2026-11-16): every instance start rewrites the
     shared TcRegistry.xml, so the file can name a NetId no runtime answers to. Each record is checked
     by Resolve-UserModeNetIdTrust against -Processes (Get-UserModeRuntimeProcesses' list; pass
-    -ProcessListFailed when it could not be read) and the file's LastWriteTimeUtc. An untrusted record
+    -ProcessListFailed when it could not be read) and the file's LastWriteTimeUtc; a 'rewritten' or
+    'unverifiable' answer is then confirmed over ADS through -ConfirmNetId (Confirm-UserModeNetIdTrust;
+    without it the time rule alone decides, as in the fixture tests). An untrusted record
     keeps the file's value in FileNetId only - NetId is $null - so every consumer that keys on NetId
     (Get-LocalAmsNetIds, Get-RuntimeLabels, Get-LocalRuntimePlatforms) leaves it out: an unknown NetId
     is not local. Without -Processes nothing is running, so nothing is trusted (fail closed).
 
     Returns, per AmsNetId value in a TcRegistry.xml: NetId (the trusted NetId, or $null), FileNetId,
-    NetIdStatus and NetIdReason (Resolve-UserModeNetIdTrust's Status and Reason), Instances, Name (the
-    runtime folder's name), Platform ($null when unknown), Provenance, Kind ('user-mode'), Source.
+    NetIdStatus, NetIdReason and NetIdSource (Confirm-UserModeNetIdTrust's Status, Reason and Source:
+    'file-time' / 'ads' / $null), Instances, Name (the runtime folder's name), Platform ($null when
+    unknown), Provenance, Kind ('user-mode'), Source.
 #>
 function Get-UserModeRuntimeRecords {
     param(
         [Parameter(Mandatory)][string]$RuntimesRoot,
         $Processes,
-        [switch]$ProcessListFailed
+        [switch]$ProcessListFailed,
+        [scriptblock]$ConfirmNetId
     )
 
     $records = @()
@@ -901,12 +957,15 @@ function Get-UserModeRuntimeRecords {
             foreach ($m in [regex]::Matches($text, '(?i)<Value\s+Name="AmsNetId"[^>]*>\s*([0-9A-F]{12})\s*</Value>')) {
                 $hex = $m.Groups[1].Value
                 $fileNetId = ((0..5 | ForEach-Object { [Convert]::ToInt32($hex.Substring($_ * 2, 2), 16) }) -join '.')
+                # Per NetId: an ADS answer confirms this value, not the file.
+                $netTrust = Confirm-UserModeNetIdTrust -Trust $trust -NetId $fileNetId -ConfirmNetId $ConfirmNetId
                 $records += [pscustomobject]@{
-                    NetId       = $(if ($trust.Status -eq 'trusted') { $fileNetId } else { $null })
+                    NetId       = $(if ($netTrust.Status -eq 'trusted') { $fileNetId } else { $null })
                     FileNetId   = $fileNetId
-                    NetIdStatus = $trust.Status
-                    NetIdReason = $trust.Reason
-                    Instances   = $trust.Instances
+                    NetIdStatus = $netTrust.Status
+                    NetIdReason = $netTrust.Reason
+                    NetIdSource = $netTrust.Source
+                    Instances   = $netTrust.Instances
                     Name        = $dir.Name
                     Platform    = $(if ($resolved) { $resolved.Platform }   else { $null })
                     Provenance  = $(if ($resolved) { $resolved.Provenance } else { $null })
@@ -940,13 +999,15 @@ function Get-UserModeRuntimeRecords {
     is a sound reading rather than a guess, but it is an inference, and it is reported as one.
 
     A user-mode runtime's NetId counts only for a running instance that wrote it (see
-    Resolve-UserModeNetIdTrust); otherwise its record has NetId $null, FileNetId, and the reason in
+    Resolve-UserModeNetIdTrust) or that answers at it over ADS (Confirm-UserModeNetIdTrust, through
+    Test-UserModeNetIdOverAds); otherwise its record has NetId $null, FileNetId, and the reason in
     NetIdStatus/NetIdReason. Those records are RETURNED, so a list can name the runtime and say why
     its NetId is unknown, and every NetId-keyed consumer skips them.
 
     Returns, per runtime NetId: NetId ($null when untrusted), Platform ($null when unknown),
     Provenance ('read' / 'architecture-inferred' / 'kind-inferred' / $null), Kind ('real-time' /
-    'user-mode'), Source; user-mode records add FileNetId, NetIdStatus, NetIdReason, Instances, Name.
+    'user-mode'), Source; user-mode records add FileNetId, NetIdStatus, NetIdReason, NetIdSource,
+    Instances, Name.
 #>
 function Get-LocalRuntimeRecords {
     $records = @()
@@ -986,7 +1047,8 @@ function Get-LocalRuntimeRecords {
 
     $umProcesses = Get-UserModeRuntimeProcesses
     $records += Get-UserModeRuntimeRecords -RuntimesRoot (Join-Path $env:ProgramData 'Beckhoff\TwinCAT\3.1\Runtimes') `
-                                           -Processes $umProcesses -ProcessListFailed:($null -eq $umProcesses)
+                                           -Processes $umProcesses -ProcessListFailed:($null -eq $umProcesses) `
+                                           -ConfirmNetId ${function:Test-UserModeNetIdOverAds}
 
     return @($records | Where-Object { $_.NetId -or $_.FileNetId })
 }
@@ -1307,14 +1369,32 @@ function Resolve-ActivationTarget {
 #>
 function Get-TcAdsState {
     param([Parameter(Mandatory)][string]$NetId, [int]$Port = 10000)
+    $r = Read-TcAdsState -NetId $NetId -Port $Port
+    return $r.AdsState
+}
+
+<#
+.SYNOPSIS
+    Get-TcAdsState with the outcome spelled out: AdsState, or why there is none.
+.DESCRIPTION
+    The one ADS route of this script (TcAdsDll.dll P/Invoke, loaded once per process: the type stays
+    defined). Returns AdsState (int, or $null), AdsErrorCode (AdsSyncReadStateReq's non-zero return:
+    0x6 target port not found, 0x7 target machine not found, 0x745 timeout), DllProblem (TcAdsDll.dll
+    not found) and Error (anything that threw). -TimeoutMs > 0 sets the port's ADS timeout
+    (AdsSyncSetTimeout); 0 leaves TcAdsDll's default, as Get-TcAdsState always has.
+#>
+function Read-TcAdsState {
+    param([Parameter(Mandatory)][string]$NetId, [int]$Port = 10000, [int]$TimeoutMs = 0)
+    $result = { param($s, $c, $d, $e) [pscustomobject]@{ AdsState = $s; AdsErrorCode = $c; DllProblem = $d; Error = $e } }
 
     if (-not ('TcAdsState' -as [type])) {
-        $dllDir = @(
+        $dllDirs = @(
             "${env:ProgramFiles(x86)}\Beckhoff\TwinCAT\Common64",
             "$env:ProgramFiles\Beckhoff\TwinCAT\Common64",
             "${env:ProgramFiles(x86)}\Beckhoff\TwinCAT\Common32"
-        ) | Where-Object { $_ -and (Test-Path -LiteralPath (Join-Path $_ 'TcAdsDll.dll')) } | Select-Object -First 1
-        if (-not $dllDir) { return $null }
+        )
+        $dllDir = $dllDirs | Where-Object { $_ -and (Test-Path -LiteralPath (Join-Path $_ 'TcAdsDll.dll')) } | Select-Object -First 1
+        if (-not $dllDir) { return (& $result $null $null "TwinCAT's ADS DLL (TcAdsDll.dll) was not found in $($dllDirs -join ', ')" $null) }
         $env:PATH = "$dllDir;$env:PATH"
         Add-Type @'
 using System;
@@ -1324,21 +1404,45 @@ public struct TcAmsAddr { [MarshalAs(UnmanagedType.ByValArray, SizeConst = 6)] p
 public static class TcAdsState {
     [DllImport("TcAdsDll.dll")] public static extern int AdsPortOpen();
     [DllImport("TcAdsDll.dll")] public static extern int AdsPortClose();
+    [DllImport("TcAdsDll.dll")] public static extern int AdsSyncSetTimeout(int nMs);
     [DllImport("TcAdsDll.dll")] public static extern int AdsSyncReadStateReq(ref TcAmsAddr pAddr, ref ushort pAdsState, ref ushort pDeviceState);
 }
 '@
     }
+    $opened = $false
     try {
         $addr = New-Object TcAmsAddr
         $addr.netId = [byte[]]($NetId -split '\.' | ForEach-Object { [byte]$_ })
         $addr.port  = $Port                       # 10000 = AMSPORT_R0_SYSTEMSERVICE; a PLC's own port for its state
         [void][TcAdsState]::AdsPortOpen()
+        $opened = $true
+        if ($TimeoutMs -gt 0) { [void][TcAdsState]::AdsSyncSetTimeout($TimeoutMs) }
         $ads = [uint16]0; $dev = [uint16]0
         $hr = [TcAdsState]::AdsSyncReadStateReq([ref]$addr, [ref]$ads, [ref]$dev)
-        [void][TcAdsState]::AdsPortClose()
-        if ($hr -ne 0) { return $null }
-        return [int]$ads
-    } catch { return $null }
+        if ($hr -ne 0) { return (& $result $null ([int]$hr) $null $null) }
+        return (& $result ([int]$ads) $null $null $null)
+    } catch {
+        return (& $result $null $null $null $_.Exception.Message)
+    } finally {
+        if ($opened) { try { [void][TcAdsState]::AdsPortClose() } catch { } }
+    }
+}
+
+<#
+.SYNOPSIS
+    Confirm-UserModeNetIdTrust's live probe: Read-TcAdsState at a NetId's system service, 2 s timeout.
+.DESCRIPTION
+    Called only for a user-mode NetId the file times could not settle. Each NetId is asked once per
+    run ($script:UserModeAdsAnswers): the runtime records are built several times before activation,
+    and every build must reach the same verdict - and a NetId that does not answer costs its timeout
+    once, not once per build.
+#>
+function Test-UserModeNetIdOverAds {
+    param([Parameter(Mandatory)][string]$NetId)
+    $cache = Get-Variable -Name UserModeAdsAnswers -Scope Script -ValueOnly -ErrorAction SilentlyContinue
+    if ($null -eq $cache) { $cache = @{}; Set-Variable -Name UserModeAdsAnswers -Scope Script -Value $cache }
+    if (-not $cache.ContainsKey($NetId)) { $cache[$NetId] = Read-TcAdsState -NetId $NetId -Port 10000 -TimeoutMs 2000 }
+    return $cache[$NetId]
 }
 
 $TcAdsStateNames = @{ 0='INVALID'; 1='IDLE'; 2='RESET'; 3='INIT'; 4='START'; 5='RUN'; 6='STOP'

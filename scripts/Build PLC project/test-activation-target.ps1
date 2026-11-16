@@ -100,6 +100,7 @@ function Get-FunctionText {
 . ([scriptblock]::Create((Get-FunctionText 'Get-UserModeRuntimeRecords')))
 . ([scriptblock]::Create((Get-FunctionText 'Get-RuntimeLabels')))
 . ([scriptblock]::Create((Get-FunctionText 'Resolve-UserModeNetIdTrust')))
+. ([scriptblock]::Create((Get-FunctionText 'Confirm-UserModeNetIdTrust')))
 . ([scriptblock]::Create((Get-FunctionText 'Get-UnknownRuntimeLabels')))
 
 # A signature check, not a style check. The table below is written against -TargetPlatforms - a
@@ -502,7 +503,7 @@ function Test-Trust {
 
 Test-Trust -Name 'THE MEASURED CASE: the file was rewritten 15 min after the running instance started' `
            -FileTime (Get-UtcTime '2026-11-16 12:01:05') -Processes $UmRunning `
-           -ExpectStatus 'rewritten' -ReasonContains 'rewritten after this runtime started (another instance?)'
+           -ExpectStatus 'rewritten' -ReasonContains 'the configuration file changed after this runtime started'
 Test-Trust -Name 'the instance writes the file just after it starts: trusted' `
            -FileTime $UmStart.AddSeconds(2) -Processes $UmRunning -ExpectStatus 'trusted' -ExpectInstances 1
 Test-Trust -Name 'a file older than the start is trusted (the instance did not rewrite it)' `
@@ -547,12 +548,70 @@ Test-Trust -Name "an unreadable start time is unverifiable" `
 Test-Trust -Name "an unreadable file time is unverifiable" `
            -FileTime $null -Processes $UmRunning -ExpectStatus 'unverifiable'
 
+# Confirm-UserModeNetIdTrust: a 'rewritten' or 'unverifiable' decision is confirmed over ADS through
+# the injected probe. THE MEASURED CASE (2026-11-16): the only running instance, started 16:49:08,
+# rewrote its own file at 16:50:40 during an activation; its runtime answers at the file's NetId.
+$script:probeCalls = 0
+$ProbeAnswers  = { param($n) $script:probeCalls++; [pscustomobject]@{ AdsState = 5; StateName = 'RUN'; AdsErrorCode = $null; DllProblem = $null; Error = $null } }
+$ProbeNoTarget = { param($n) $script:probeCalls++; [pscustomobject]@{ AdsState = $null; AdsErrorCode = 7; DllProblem = $null; Error = $null } }
+$ProbeNoPort   = { param($n) $script:probeCalls++; [pscustomobject]@{ AdsState = $null; AdsErrorCode = 6; DllProblem = $null; Error = $null } }
+$ProbeNoDll    = { param($n) $script:probeCalls++; [pscustomobject]@{ AdsState = $null; AdsErrorCode = $null; DllProblem = "TwinCAT's ADS DLL (TcAdsDll.dll) was not found in X"; Error = $null } }
+$ProbeInvalid  = { param($n) $script:probeCalls++; [pscustomobject]@{ AdsState = 0; AdsErrorCode = $null; DllProblem = $null; Error = $null } }
+$ProbeThrows   = { param($n) $script:probeCalls++; throw 'boom' }
+$ConfirmNet    = '10.0.0.4.1.1'
+$RewrittenRun  = @(New-UmProcess -CommandLine $UmCmd -StartTime (Get-UtcTime '2026-11-16 16:49:08'))
+
+function Test-Confirm {
+    param([string]$Name, $Trust, [scriptblock]$Probe, [string]$NetId = $ConfirmNet,
+          [string]$ExpectStatus, $ExpectSource, [string[]]$ReasonContains = @(), [int]$ExpectCalls)
+    $script:probeCalls = 0
+    $c = Confirm-UserModeNetIdTrust -Trust $Trust -NetId $NetId -ConfirmNetId $Probe
+    $problems = @()
+    if ($c.Status -ne $ExpectStatus) { $problems += "Status '$($c.Status)' != '$ExpectStatus'" }
+    if ("$($c.Source)" -ne "$ExpectSource") { $problems += "Source '$($c.Source)' != '$ExpectSource'" }
+    foreach ($s in $ReasonContains) { if ("$($c.Reason)" -notlike "*$s*") { $problems += "Reason '$($c.Reason)' lacks '$s'" } }
+    if ($script:probeCalls -ne $ExpectCalls) { $problems += "probe called $($script:probeCalls) times, expected $ExpectCalls" }
+    if ($c.Instances -ne $Trust.Instances) { $problems += "Instances $($c.Instances) != $($Trust.Instances)" }
+    if ($problems.Count -gt 0) { Write-Fail $Name ($problems -join '; ') }
+    else { Write-Pass $Name "$($c.Status)/$($c.Source)$(if ($c.Reason) { ': ' + $c.Reason })" }
+}
+
+$tRewritten = Resolve-UserModeNetIdTrust -Name 'UmRT_Default' -RegistryWriteTime (Get-UtcTime '2026-11-16 16:50:40') -Processes $RewrittenRun
+Test-Equals -Name 'THE MEASURED CASE: an own rewrite 92 s after the start is rewritten by the times alone' -Actual $tRewritten.Status -Expected 'rewritten'
+Test-Confirm -Name 'THE MEASURED CASE: the runtime answers over ADS, so the NetId is trusted via ads' `
+             -Trust $tRewritten -Probe $ProbeAnswers -ExpectStatus 'trusted' -ExpectSource 'ads' -ExpectCalls 1 `
+             -ReasonContains @('changed after this runtime started', "confirmed over ADS (the runtime answered at $ConfirmNet, state RUN)")
+Test-Confirm -Name 'no runtime at the NetId (ADS error 7): stays rewritten, the outcome appended' `
+             -Trust $tRewritten -Probe $ProbeNoTarget -ExpectStatus 'rewritten' -ExpectSource $null -ExpectCalls 1 `
+             -ReasonContains @('changed after this runtime started', "could not be confirmed over ADS: no runtime answered at $ConfirmNet (ADS error 0x7)")
+Test-Confirm -Name 'no system service port (ADS error 6): stays rewritten' `
+             -Trust $tRewritten -Probe $ProbeNoPort -ExpectStatus 'rewritten' -ExpectSource $null -ExpectCalls 1 -ReasonContains @('(ADS error 0x6)')
+Test-Confirm -Name 'no ADS DLL: stays rewritten, saying the DLL was not found' `
+             -Trust $tRewritten -Probe $ProbeNoDll -ExpectStatus 'rewritten' -ExpectSource $null -ExpectCalls 1 -ReasonContains @("ADS DLL (TcAdsDll.dll) was not found")
+Test-Confirm -Name 'an answer with AdsState 0 (Invalid) does not trust' `
+             -Trust $tRewritten -Probe $ProbeInvalid -ExpectStatus 'rewritten' -ExpectSource $null -ExpectCalls 1 -ReasonContains @('no valid state')
+Test-Confirm -Name 'a probe that throws does not trust' `
+             -Trust $tRewritten -Probe $ProbeThrows -ExpectStatus 'rewritten' -ExpectSource $null -ExpectCalls 1 -ReasonContains @('failed: boom')
+$tUnverifiable = Resolve-UserModeNetIdTrust -Name 'UmRT_Default' -RegistryWriteTime $UmStart -Processes @(New-UmProcess -CommandLine '' -StartTime $UmStart)
+Test-Confirm -Name 'unverifiable (elevated process) is confirmed over ADS too' `
+             -Trust $tUnverifiable -Probe $ProbeAnswers -ExpectStatus 'trusted' -ExpectSource 'ads' -ExpectCalls 1 -ReasonContains @('command line could not be read', 'confirmed over ADS')
+Test-Confirm -Name 'unverifiable and no answer stays unverifiable' `
+             -Trust $tUnverifiable -Probe $ProbeNoTarget -ExpectStatus 'unverifiable' -ExpectSource $null -ExpectCalls 1 -ReasonContains @('(ADS error 0x7)')
+$tNotRunning = Resolve-UserModeNetIdTrust -Name 'UmRT_Default' -RegistryWriteTime $UmStart -Processes @()
+Test-Confirm -Name 'not-running is NEVER probed, even by a probe that would answer' `
+             -Trust $tNotRunning -Probe $ProbeAnswers -ExpectStatus 'not-running' -ExpectSource $null -ExpectCalls 0 -ReasonContains @('this runtime is not running')
+$tTrusted = Resolve-UserModeNetIdTrust -Name 'UmRT_Default' -RegistryWriteTime $UmStart.AddSeconds(2) -Processes $UmRunning
+Test-Confirm -Name 'trusted by the file times is not probed (no ADS on the happy path), source file-time' `
+             -Trust $tTrusted -Probe $ProbeNoTarget -ExpectStatus 'trusted' -ExpectSource 'file-time' -ExpectCalls 0
+Test-Confirm -Name 'without a probe the decision is unchanged' `
+             -Trust $tRewritten -Probe $null -ExpectStatus 'rewritten' -ExpectSource $null -ExpectCalls 0 -ReasonContains @('changed after this runtime started')
+
 # Get-UnknownRuntimeLabels: one line per runtime whose NetId is unknown; known ones are skipped.
 $unknownRecords = @(
     [pscustomobject]@{ NetId = $NetRt; Kind = 'real-time'; Source = 'HKLM:\SOFTWARE\Beckhoff\TwinCAT3\System' },
     [pscustomobject]@{ NetId = $NetUm; Kind = 'user-mode'; Name = 'UmRT_Good'; NetIdStatus = 'trusted'; NetIdReason = '' },
     [pscustomobject]@{ NetId = $null; FileNetId = '198.51.100.6.1.1'; Kind = 'user-mode'; Name = 'UmRT_Default'
-                       NetIdStatus = 'rewritten'; NetIdReason = 'the configuration file was rewritten after this runtime started (another instance?)' },
+                       NetIdStatus = 'rewritten'; NetIdReason = 'the configuration file changed after this runtime started' },
     [pscustomobject]@{ NetId = $null; FileNetId = '198.51.100.6.1.1'; Kind = 'user-mode'; Name = 'UmRT_Default'
                        NetIdStatus = 'rewritten'; NetIdReason = 'twice' },
     $null
@@ -560,14 +619,14 @@ $unknownRecords = @(
 $unknownLines = @(Get-UnknownRuntimeLabels -Records $unknownRecords)
 Test-Equals -Name 'Get-UnknownRuntimeLabels names each unknown runtime once, with its reason' `
             -Actual ($unknownLines -join ' | ') `
-            -Expected 'UmRT_Default (user-mode runtime, AmsNetId unknown: the configuration file was rewritten after this runtime started (another instance?))'
+            -Expected 'UmRT_Default (user-mode runtime, AmsNetId unknown: the configuration file changed after this runtime started)'
 Test-Equals -Name 'Get-UnknownRuntimeLabels of no records is empty' -Actual (@(Get-UnknownRuntimeLabels -Records $null).Count) -Expected 0
 
 # The gates: an unknown runtime is never local - the refusal names it, and the local set is unchanged.
 Test-Refuses -Name 'the stale file NetId as the project target is refused, and the unknown runtime is named' `
              -Local @($NetRt) -Project '198.51.100.6.1.1' -UnknownRuntimes $unknownLines `
              -MessageContains @('not a runtime on this PC', "Runtimes on this PC: $NetRt", 'Not offered, AmsNetId unknown: UmRT_Default',
-                                'another instance?', "console window ('AmsNetId: ...')", 'Choose Target System')
+                                'changed after this runtime started', "console window ('AmsNetId: ...')", 'Choose Target System')
 Test-Refuses -Name 'no known runtime at all: gate 1, naming the unknown one' `
              -Local @() -Project '198.51.100.6.1.1' -UnknownRuntimes $unknownLines `
              -MessageContains @("cannot determine this machine's AmsNetId", 'Not offered, AmsNetId unknown: UmRT_Default')
@@ -834,6 +893,26 @@ try {
     if ($staleUm.Count -ne 1 -or $staleUm[0].FileNetId -ne '198.51.100.4.1.1') { $staleProblems += 'UmRT_marked FileNetId is not 198.51.100.4.1.1' }
     if ($staleProblems.Count -gt 0) { Write-Fail 'a file rewritten after its instance started gives no NetId, only FileNetId' ($staleProblems -join '; ') }
     else { Write-Pass 'a file rewritten after its instance started gives no NetId, only FileNetId' "$($stale.Count) records, all 'rewritten'" }
+
+    # The same stale files with a probe: a runtime that answers is trusted via ads, one that does not
+    # stays unknown, and a not-running runtime is never asked.
+    $answering = { param($n) if ($n -eq '198.51.100.4.1.1') { [pscustomobject]@{ AdsState = 5; StateName = 'RUN' } }
+                             else { [pscustomobject]@{ AdsState = $null; AdsErrorCode = 7 } } }
+    $confirmed = @(Get-UserModeRuntimeRecords -RuntimesRoot $FixtureRoot -Processes $runningOld -ConfirmNetId $answering)
+    $confirmedUm = @($confirmed | Where-Object { $_.NetId })
+    if ($confirmedUm.Count -eq 1 -and $confirmedUm[0].Name -eq 'UmRT_marked' -and $confirmedUm[0].NetIdSource -eq 'ads' -and
+        @($confirmed | Where-Object { -not $_.NetId -and $_.NetIdStatus -eq 'rewritten' -and $_.NetIdReason -like '*ADS error 0x7*' }).Count -eq 5) {
+        Write-Pass 'a rewritten record whose runtime answers over ADS is trusted (source ads); the others stay rewritten' 'UmRT_marked via ads, 5 rewritten'
+    } else {
+        Write-Fail 'a rewritten record whose runtime answers over ADS is trusted (source ads); the others stay rewritten' `
+                   (($confirmed | ForEach-Object { "$($_.Name)=$($_.NetId)/$($_.NetIdStatus)/$($_.NetIdSource)" }) -join ', ')
+    }
+    $trustedByTime = @(Get-UserModeRuntimeRecords -RuntimesRoot $FixtureRoot -Processes $runningAll -ConfirmNetId { throw 'must not be called' })
+    Test-Equals -Name 'records trusted by the file times carry source file-time and never call the probe' `
+                -Actual (($trustedByTime | ForEach-Object { "$($_.NetIdStatus)/$($_.NetIdSource)" } | Sort-Object -Unique) -join ',') -Expected 'trusted/file-time'
+    $notRunningProbed = @(Get-UserModeRuntimeRecords -RuntimesRoot $FixtureRoot -ConfirmNetId { throw 'must not be called' })
+    Test-Equals -Name 'not-running records are never probed' `
+                -Actual (($notRunningProbed | ForEach-Object { "$($_.NetIdStatus)$(if ($_.NetIdReason -like '*ADS*') { '+ads' })" } | Sort-Object -Unique) -join ',') -Expected 'not-running'
 
     $notRunning = @(Get-UserModeRuntimeRecords -RuntimesRoot $FixtureRoot)
     if (@($notRunning | Where-Object { $_.NetId -or $_.NetIdStatus -ne 'not-running' }).Count -eq 0 -and $notRunning.Count -eq 6) {

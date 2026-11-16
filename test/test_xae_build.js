@@ -320,14 +320,25 @@ function run(name, o) {
         assert(t && t.local.length === 1 && t.local[0].netId === '198.51.100.1.1.1' && t.projectNetId === '198.51.100.6.1.1',
             'stale file: only the runtime with a known NetId is local');
         assert(t && t.unknown.length === 2 && t.unknown[0].name === 'UmRT_Default' && t.unknown[0].status === 'rewritten'
-            && t.unknown[0].reason === 'the configuration file was rewritten after this runtime started (another instance?)'
+            && t.unknown[0].reason === 'the configuration file changed after this runtime started; its AmsNetId could not be confirmed over ADS: no runtime answered at 198.51.100.6.1.1 (ADS error 0x7)'
             && t.unknown[0].fileNetId === '198.51.100.6.1.1' && t.unknown[1].status === 'not-running', 'stale file: the unknown runtimes, with status, reason and file NetId');
         const it = x.targetPickItems(t, { preselect: '198.51.100.6.1.1' });
         assert(it.length === 3 && it[0].netId === '198.51.100.1.1.1' && !it.some(i => i.picked) && !it.some(i => i.netId === '198.51.100.6.1.1')
             && it.slice(1).every(i => i.kind === x.QUICK_PICK_SEPARATOR && !i.netId) && x.QUICK_PICK_SEPARATOR === -1,
             'stale file: the file NetId is neither offered nor preselected; unknown runtimes are separator rows');
-        assert(it[1].label === 'UmRT_Default: AmsNetId unknown, not offered (the configuration file was rewritten after this runtime started (another instance?))'
+        assert(it[1].label === 'UmRT_Default: AmsNetId unknown, not offered (the configuration file changed after this runtime started; its AmsNetId could not be confirmed over ADS: no runtime answered at 198.51.100.6.1.1 (ADS error 0x7))'
             && it[2].label === 'UmRT_Second: AmsNetId unknown, not offered (this runtime is not running)', 'the rows name the runtime and the reason');
+        // Confirmed over ADS (2026-11-16): a running runtime rewrites its own file (on activation), so
+        // the driver asked it over ADS; such a NetId is local like any trusted one, and says how.
+        const ads = run('list-targets-ads').state.targets;
+        assert(ads && ads.local.length === 3 && ads.unknown.length === 0 && ads.projectNetId === '10.0.0.4.1.1', 'list-targets-ads: every trusted runtime is local');
+        const um = ads ? ads.local.find(l => l.name === 'UmRT_Default') : null;
+        assert(um && um.netId === '10.0.0.4.1.1' && um.netIdSource === 'ads' && ads.local.find(l => l.name === 'UmRT_Second').netIdSource === 'file-time'
+            && ads.local.find(l => l.kind === 'real-time').netIdSource === null, 'netIdSource is parsed: ads, file-time, and null for the real-time runtime');
+        const adsItems = x.targetPickItems(ads, { preselect: '10.0.0.4.1.1' });
+        assert(adsItems[0].netId === '10.0.0.4.1.1' && adsItems[0].picked && /\(project\)/.test(adsItems[0].description)
+            && adsItems[0].detail === 'User-mode runtime on this machine; platform TwinCAT OS (x64); AmsNetId confirmed over ADS'
+            && !adsItems.slice(1).some(i => /confirmed over ADS/.test(i.detail || '')), 'the pick detail says when a NetId was confirmed over ADS');
         const fresh = x.runtimeEntries([{ netId: '198.51.100.5.1.1', name: 'UmRT_Default', kind: 'user-mode', netIdStatus: 'trusted' }]);
         assert(fresh.local.length === 1 && fresh.unknown.length === 0, 'running with a fresh file (trusted): local');
         assert(x.runtimeEntries([{ netId: '198.51.100.5.1.1', name: 'UmRT_Default', kind: 'user-mode' }]).local.length === 1,
@@ -338,7 +349,7 @@ function run(name, o) {
         assert(odd.unknown.length === 1 && odd.unknown[0].reason === 'its AmsNetId could not be confirmed', 'each unknown runtime once; a missing reason gets a generic one');
         assert(x.runtimeEntries({ netId: null, name: 'U', netIdStatus: 'rewritten', reason: 'r' }).unknown.length === 1, 'a bare object is a one-element list');
         assert(x.unknownRuntimesText([]) === '' && x.unknownRuntimesText(undefined) === '', 'no unknown runtime → no text');
-        assert(x.unknownRuntimesText(t.unknown) === 'Not offered, AmsNetId unknown: UmRT_Default (user-mode runtime): the configuration file was rewritten after this runtime started (another instance?); '
+        assert(x.unknownRuntimesText(t.unknown) === 'Not offered, AmsNetId unknown: UmRT_Default (user-mode runtime): the configuration file changed after this runtime started; its AmsNetId could not be confirmed over ADS: no runtime answered at 198.51.100.6.1.1 (ADS error 0x7); '
             + 'UmRT_Second (user-mode runtime): this runtime is not running. Read the AmsNetId in that runtime\'s console window ("AmsNetId: …") or use XAE\'s Choose Target System.',
             'the unknown runtimes in one sentence, with where to read the NetId');
         // The refusal: the unknown runtimes named; with none known there is nothing to change the target to here.

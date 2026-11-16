@@ -263,14 +263,20 @@ an instance of that runtime rewrites the file with *its own* NetId — so a seco
 closed again, leaves a NetId nothing answers to (measured on 4026, 2026-11-16). The file's NetId is
 therefore trusted only when a `TcSystemServiceUm.exe` process with `-n "<name>"` on its command line is
 running **and** the file was last written no later than the newest such process's start plus **5 s**
-(the instance writes the file itself right after it starts). Otherwise the runtime's NetId is
-*unknown*: it is not in the local set (so it is never a target and gates 1–3 treat it as foreign), and
-the refusals and warnings name it with the reason — `this runtime is not running`, `the configuration
-file was rewritten after this runtime started (another instance?)`, or why the check could not be made
-(a process running elevated hides its command line from an unelevated shell). Its real NetId is
-printed in the runtime's console window (`AmsNetId: …`); XAE's *Choose Target System* shows it too.
-The decision is `Resolve-UserModeNetIdTrust` (pure, pinned by `test-activation-target.ps1`); real-time
-runtimes are unaffected.
+(the instance writes the file itself right after it starts). A running instance also rewrites its
+own file later — measured during an activation, 92 s after its start — so the times alone cannot tell
+that from a stale file: when they fail (`rewritten`, or `unverifiable`), the file's NetId is asked over
+ADS (port 10000, the system service; 2 s timeout; TcAdsDll.dll, the same route as the RUN check). An
+answer with a valid ADS state trusts it ("confirmed over ADS"); `not-running` is never asked. Otherwise
+the runtime's NetId is *unknown*: it is not in the local set (so it is never a target and gates 1–3
+treat it as foreign), and the refusals and warnings name it with the reason — `this runtime is not
+running`, `the configuration file changed after this runtime started; its AmsNetId could not be
+confirmed over ADS: no runtime answered at <NetId> (ADS error 0x7)`, or why the check could not be made
+(a process running elevated hides its command line from an unelevated shell), with the ADS outcome
+appended. Its real NetId is printed in the runtime's console window (`AmsNetId: …`); XAE's *Choose
+Target System* shows it too. The decisions are `Resolve-UserModeNetIdTrust` and
+`Confirm-UserModeNetIdTrust` (pure, the ADS probe injected; pinned by `test-activation-target.ps1`);
+real-time runtimes are unaffected.
 
 Gate 4 only applies **with** `-ActivateConfiguration`. Cross-compiling for another platform is
 legitimate and builds freely without it.

@@ -280,8 +280,10 @@ function parseLine(line) {
  */
 
 /**
- * @typedef {{netId: string, name: string, kind: string, platform: string|null, provenance: string|null}} LocalRuntime
- *   A runtime of this PC whose AmsNetId is known: an activation (and retarget) candidate.
+ * @typedef {{netId: string, name: string, kind: string, platform: string|null, provenance: string|null, netIdSource?: string|null}} LocalRuntime
+ *   A runtime of this PC whose AmsNetId is known: an activation (and retarget) candidate. `netIdSource`
+ *   is how the driver trusted a user-mode runtime's NetId: 'file-time' (its configuration file is no
+ *   newer than the running instance), 'ads' (the runtime answered at it over ADS), null otherwise.
  */
 
 /**
@@ -824,7 +826,8 @@ function runtimeEntries(raw, exclude) {
             continue;
         }
         if (!isValidNetId(t.netId) || t.netId === exclude || local.some(l => l.netId === t.netId)) continue;
-        local.push({ netId: t.netId, name: String(t.name || t.netId), kind: String(t.kind || ''), platform: strOrNull(t.platform), provenance: strOrNull(t.provenance) });
+        local.push({ netId: t.netId, name: String(t.name || t.netId), kind: String(t.kind || ''), platform: strOrNull(t.platform), provenance: strOrNull(t.provenance),
+            netIdSource: strOrNull(t.netIdSource) });
     }
     return { local, unknown };
 }
@@ -856,7 +859,7 @@ function targetPickItems(targets, o = {}) {
         label: t.name,
         description: t.netId + (targets.projectNetId === t.netId ? ' (project)' : ''),
         detail: `${t.kind === 'real-time' ? 'Real-time runtime' : (t.kind === 'user-mode' ? 'User-mode runtime' : 'Runtime')}` +
-            ` on this machine; platform ${t.platform || 'unknown'}`,
+            ` on this machine; platform ${t.platform || 'unknown'}${t.netIdSource === 'ads' ? '; AmsNetId confirmed over ADS' : ''}`,
         netId: t.netId, name: t.name, picked: !!o.preselect && o.preselect === t.netId
     }));
     items.sort((a, b) => Number(b.picked) - Number(a.picked));

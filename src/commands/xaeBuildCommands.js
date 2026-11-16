@@ -1039,7 +1039,8 @@ function registerXaeBuildCommands(context, deps) {
             const t = run.state.targets;
             if (t && (t.local.length > 0 || t.unknown.length > 0)) {
                 for (const r of t.local) {
-                    ch.appendLine(`  ${r.netId.padEnd(20)} ${r.kind.padEnd(10)} ${r.name}  ${r.platform || 'platform unknown'}${t.projectNetId === r.netId ? '  (project)' : ''}`);
+                    ch.appendLine(`  ${r.netId.padEnd(20)} ${r.kind.padEnd(10)} ${r.name}  ${r.platform || 'platform unknown'}${t.projectNetId === r.netId ? '  (project)' : ''}` +
+                        (r.netIdSource === 'ads' ? '  AmsNetId confirmed over ADS' : (r.netIdSource === 'file-time' ? '  AmsNetId from its configuration, instance running' : '')));
                 }
                 for (const u of t.unknown) {
                     ch.appendLine(`  ${'AmsNetId unknown'.padEnd(20)} ${u.kind.padEnd(10)} ${u.name}  not offered: ${u.reason}` +

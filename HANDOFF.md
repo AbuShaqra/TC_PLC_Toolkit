@@ -153,15 +153,22 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   and restart (no dialog, no implicit save), `Get-TcAdsState -Port 851` returning the PLC state.
 - **Stale user-mode NetId (user's 4026 machine, 2026-11-16): FIXED on `claude/focused-ptolemy-m6acaz`, Linux-verified
   only (ps1 text-checked; no PowerShell here).** Each instance start rewrites the shared `TcRegistry.xml`, so a
-  closed second instance left a NetId nothing answers to, offered as "(project)". Rule (decided): trusted only when a
-  `TcSystemServiceUm.exe` with `-n "<name>"` runs AND the file's LastWriteTime <= newest such start + 5 s; else
-  unknown, fail closed, named with the reason. Design: DEVELOPMENT.md "A user-mode runtime's AmsNetId is trusted only
-  for a running instance". **Needs the user's Windows check:** `test-activation-target.ps1` (never run) against builder
-  and driver; on the stale machine *Show Activation Targets* / the pick / the gate-3 refusal show UmRT_Default as
-  "AmsNetId unknown … rewritten after this runtime started"; after a runtime restart it is offered with the console's
-  NetId. **Unverified:** the instance writes the file within 5 s of starting and never later while running (else it
-  fails closed as "rewritten"); `Win32_Process.CommandLine` is readable unelevated (else "unverifiable"); how a long
-  separator-row label renders.
+  closed second instance left a NetId nothing answers to, offered as "(project)". Rule (decided): trusted when a
+  `TcSystemServiceUm.exe` with `-n "<name>"` runs AND the file's LastWriteTime <= newest such start + 5 s
+  (`NetIdSource` 'file-time'). **A running runtime also rewrites its own file** (user's data: start 16:49:08, write
+  16:50:40, same instance, during activation → first Build and Activate refused as "rewritten", second worked — why
+  the second passed is still unexplained), so `rewritten`/`unverifiable` are now confirmed over ADS before failing:
+  `Confirm-UserModeNetIdTrust` (pure, probe injected) → `Test-UserModeNetIdOverAds` → `Read-TcAdsState` (port 10000,
+  2 s, cached per NetId per run; `Get-TcAdsState` now wraps it). Valid AdsState → trusted, `NetIdSource` 'ads';
+  else unknown, fail closed, reason "the configuration file changed after this runtime started; its AmsNetId could
+  not be confirmed over ADS: no runtime answered at <NetId> (ADS error 0x7)". `not-running` is never probed.
+  Design: DEVELOPMENT.md "A user-mode runtime's AmsNetId is trusted only for a running instance". **Needs the user's
+  Windows check:** `test-activation-target.ps1` (never run) against builder and driver; Build and Activate onto
+  UmRT_Default right after an activation → no refusal, *Show Activation Targets* shows "AmsNetId confirmed over ADS";
+  close the runtime → "not running", never offered. **Unverified:** `AdsSyncSetTimeout` honoured by the 4026
+  TcAdsDll; an answer at a stale NetId cannot come from elsewhere (a route to a remote system with that NetId would
+  be trusted); `Win32_Process.CommandLine` readable unelevated; the TcAdsDll search (Common64 under Program Files
+  only — a 4024 `C:\TwinCAT\Common64` is not searched, pre-existing in `Get-TcAdsState`).
 - **R15 phase 3a, "Local runtime" targets the user-mode runtime's own NetId (user decision 2026-11-16): BUILT on
   `worktree-agent-afcabb7ac39b6a6e3` (off `5a60a8e`), Linux-verified only.** `src/online/localRuntime.js` runs the XAE driver's `-ListTargets`
   WITHOUT `-SlnPath` (no COM/XAE; no `.ps1` change) when the Go Online pick opens (Windows, router mode, router on

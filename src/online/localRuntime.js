@@ -45,6 +45,8 @@ const DISCOVERY_TIMEOUT_MS = 30000;
  * @property {string} name
  * @property {string} netId
  * @property {string} kind 'user-mode' | 'real-time'
+ * @property {string|null} [netIdSource] How the driver trusted a user-mode NetId: 'file-time' (read from
+ *   its configuration, instance running) or 'ads' (the runtime answered at it over ADS); null when unsaid.
  */
 
 /**
@@ -145,7 +147,7 @@ function resolveLocalTarget(d, o = {}) {
         // Only an explicit 'trusted' counts: a list without the field never moves the target.
         if (t.kind !== 'user-mode' || t.netIdStatus !== 'trusted') continue;
         if (res.runtimes.some(r => r.netId === t.netId)) continue;
-        res.runtimes.push({ name: String(t.name || t.netId), netId: t.netId, kind: 'user-mode' });
+        res.runtimes.push({ name: String(t.name || t.netId), netId: t.netId, kind: 'user-mode', netIdSource: typeof t.netIdSource === 'string' ? t.netIdSource : null });
     }
     if (res.runtimes.length === 0) return res;
     if (res.runtimes.length === 1 && !res.realTime) {
@@ -163,7 +165,16 @@ function resolveLocalTarget(d, o = {}) {
  * @returns {string}
  */
 function resolvedLogText(rt) {
-    return `Local runtime: user-mode runtime ${rt.name} at ${rt.netId} (read from its configuration, instance running).`;
+    return `Local runtime: user-mode runtime ${rt.name} at ${rt.netId} (${netIdHowText(rt)}).`;
+}
+
+/**
+ * How a trusted user-mode runtime's NetId was established, for the log line and the pick detail.
+ * @param {RuntimeEntry} rt
+ * @returns {string}
+ */
+function netIdHowText(rt) {
+    return rt.netIdSource === 'ads' ? 'confirmed over ADS: the runtime answered there' : 'read from its configuration, instance running';
 }
 
 /**
@@ -179,7 +190,7 @@ function localPickItems(res, port, preselect) {
     /** @type {Array<{label: string, description?: string, detail?: string, netId?: string, name?: string, kind?: number}>} */
     const items = res.runtimes.map(r => ({
         label: r.name, description: `${r.netId}:${port}`,
-        detail: 'User-mode runtime on this PC (its AMS Net ID read from its configuration, instance running)',
+        detail: `User-mode runtime on this PC (its AMS Net ID ${netIdHowText(r)})`,
         netId: r.netId, name: r.name
     }));
     if (res.realTime) {

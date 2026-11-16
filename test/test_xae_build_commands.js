@@ -1084,12 +1084,12 @@ const rows = (name) => readFixture(name).lines;
     assert(r.ok && r.targets.length === 2 && channel().lines.some(l => /198\.51\.100\.4\.1\.1\s+user-mode\s+UmRT_Default.*\(project\)/.test(l)), 'Show Activation Targets prints the table');
 
     // ── A user-mode runtime whose AmsNetId is unknown (user's 4026 machine, 2026-11-16) ─────────
-    // Its TcRegistry.xml was rewritten by a second instance after the running one started, so the
-    // file's NetId belongs to no running runtime: listed with the reason, never offered or preselected.
+    // Its TcRegistry.xml changed after the running one started and no runtime answered at the file's
+    // NetId over ADS, so that NetId is unknown: listed with the reason, never offered or preselected.
     {
         const RT = { netId: '198.51.100.1.1.1', name: 'Real-time runtime', kind: 'real-time', platform: 'TwinCAT RT (x64)', provenance: 'kind-inferred', netIdStatus: 'trusted', reason: null, fileNetId: null };
         const STALE_ID = '198.51.100.6.1.1';
-        const REWRITTEN = 'the configuration file was rewritten after this runtime started (another instance?)';
+        const REWRITTEN = 'the configuration file changed after this runtime started; its AmsNetId could not be confirmed over ADS: no runtime answered at 198.51.100.6.1.1 (ADS error 0x7)';
         const um = (status, reason, netId) => ({ netId, name: 'UmRT_Default', kind: 'user-mode', platform: 'TwinCAT OS (x64)', provenance: 'read',
             netIdStatus: status, reason, fileNetId: netId ? null : STALE_ID });
         const listing = (local, projectNetId) => () => ({
@@ -1145,9 +1145,16 @@ const rows = (name) => readFixture(name).lines;
         listDriver = listing([RT, um('rewritten', REWRITTEN, null)], STALE_ID);
         r = await run('twincat.xaeShowTargets', {});
         assert(r.ok && r.targets.length === 1 && r.unknown.length === 1 && r.unknown[0].name === 'UmRT_Default'
-            && channel().lines.some(l => /AmsNetId unknown\s+user-mode\s+UmRT_Default {2}not offered: the configuration file was rewritten/.test(l) && l.includes(`(its configuration file names ${STALE_ID})`))
+            && channel().lines.some(l => /AmsNetId unknown\s+user-mode\s+UmRT_Default {2}not offered: the configuration file changed after this runtime started; its AmsNetId could not be confirmed over ADS/.test(l) && l.includes(`(its configuration file names ${STALE_ID})`))
             && channel().lines.some(l => l.includes(`The project names ${STALE_ID}, which is not a runtime of this machine`)),
             'Show Activation Targets: the unknown runtime is listed with its reason, and the project NetId is not called local');
+        // A NetId the driver confirmed over ADS: listed as local, and the line says how it was trusted.
+        listDriver = () => ({ fixture: 'list-targets-ads' });
+        r = await run('twincat.xaeShowTargets', {});
+        assert(r.ok && r.targets.length === 3 && r.unknown.length === 0
+            && channel().lines.some(l => /10\.0\.0\.4\.1\.1\s+user-mode\s+UmRT_Default {2}TwinCAT OS \(x64\) {2}\(project\) {2}AmsNetId confirmed over ADS$/.test(l))
+            && channel().lines.some(l => /10\.0\.0\.5\.1\.1\s+user-mode\s+UmRT_Second {2}platform unknown {2}AmsNetId from its configuration, instance running$/.test(l)),
+            'Show Activation Targets: each user-mode NetId says how it was trusted (over ADS, or from its configuration)');
         listDriver = () => ({ fixture: 'list-targets' });
         await context.workspaceState.update(LAST_TARGET_KEY, undefined);
     }
@@ -1275,13 +1282,13 @@ const rows = (name) => readFixture(name).lines;
         refusalLocal = null;
 
         // 5b. A runtime whose AmsNetId is unknown (its configuration file names the solution's target,
-        // but was rewritten after the running instance started): named with the reason, never offered.
+        // but it changed after the running instance started and ADS did not confirm it): named with the reason, never offered.
         {
             reset();
             refusalLocal = [
                 { netId: '198.51.100.1.1.1', name: 'Real-time runtime', kind: 'real-time', platform: 'TwinCAT RT (x64)', provenance: 'kind-inferred', netIdStatus: 'trusted' },
                 { netId: null, name: 'UmRT_Default', kind: 'user-mode', platform: 'TwinCAT OS (x64)', provenance: 'read', netIdStatus: 'rewritten',
-                    reason: 'the configuration file was rewritten after this runtime started (another instance?)', fileNetId: OLD }
+                    reason: 'the configuration file changed after this runtime started; its AmsNetId could not be confirmed over ADS: no runtime answered at 198.51.100.6.1.1 (ADS error 0x7)', fileNetId: OLD }
             ];
             const e = calls.errors.length, pk = calls.picks.length;
             answers.quickPick.push('198.51.100.4.1.1', undefined);
@@ -1292,7 +1299,7 @@ const rows = (name) => readFixture(name).lines;
             const msg = calls.errors[e];
             assert(msg && msg.m.includes('Runtimes on this PC: Real-time runtime (198.51.100.1.1.1). '
                 + `${OLD} is the AmsNetId UmRT_Default's configuration file names, which no running instance of it is known to use. `
-                + 'Not offered, AmsNetId unknown: UmRT_Default (user-mode runtime): the configuration file was rewritten after this runtime started (another instance?). '
+                + 'Not offered, AmsNetId unknown: UmRT_Default (user-mode runtime): the configuration file changed after this runtime started; its AmsNetId could not be confirmed over ADS: no runtime answered at 198.51.100.6.1.1 (ADS error 0x7). '
                 + 'Read the AmsNetId in that runtime\'s console window ("AmsNetId: …") or use XAE\'s Choose Target System.'),
                 `unknown runtime: the refusal names it, the reason and where to read the NetId (${msg ? msg.m.slice(0, 400) : 'none'})`);
             const rp = calls.picks[pk + 1];
