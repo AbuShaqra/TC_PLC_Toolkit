@@ -45,12 +45,34 @@ const bar = (c.viewsContainers.activitybar || []).find(v => v.id === 'twincat');
 assert(!!bar && bar.title === 'TC Toolkit', 'an Activity Bar container "twincat" titled TC Toolkit');
 assert(!!bar && fs.existsSync(path.join(REPO, bar.icon)), `its icon exists (${bar && bar.icon})`);
 const views = (c.views.twincat || []).map(v => v.id);
-assert(JSON.stringify(views) === JSON.stringify(['twincatStart', 'twincatExplorer', 'twincatLibraries', 'twincatWatch']),
-    `the container holds Start, Objects, Libraries, Watch in that order (${views.join(', ')})`);
+assert(JSON.stringify(views) === JSON.stringify(['twincatStart', 'twincatExplorer', 'twincatWatchSidebar', 'twincatLibraries']),
+    `the container holds Start, Objects, PLC Watch (sidebar place), Libraries in that order (${views.join(', ')})`);
+{
+    // User, 2026-11-16: the user chooses where PLC Watch is shown; one view per place, one shown at a time.
+    const loc = allProps['tcToolkit.online.watchLocation'];
+    assert(!!loc && JSON.stringify(loc.enum) === JSON.stringify(['panel', 'sidebar']) && loc.default === 'panel',
+        'tcToolkit.online.watchLocation: panel (default) or sidebar');
+    const side = (c.views.twincat || []).find(v => v.id === 'twincatWatchSidebar');
+    const panel = (c.views['twincat-watch-panel'] || []).find(v => v.id === 'twincatWatch');
+    assert(!!side && side.name === 'PLC Watch' && side.when === 'config.tcToolkit.online.watchLocation == sidebar'
+        && !!panel && panel.when === 'config.tcToolkit.online.watchLocation != sidebar',
+        'the sidebar and panel PLC Watch views are mutually exclusive on the setting');
+    const watchMenus = Object.values(c.menus).flat().filter(m => /twincatWatch/.test(m.when || ''));
+    assert(watchMenus.length > 0 && watchMenus.every(m => !/view == twincatWatch\b/.test(m.when)),
+        'every PLC Watch menu entry matches both views');
+    assert(['twincatWatch', 'twincatWatchSidebar'].every(id => (c.viewsWelcome || []).some(w => w.view === id))
+        && ['onView:twincatWatch', 'onView:twincatWatchSidebar'].every(e => pkg.activationEvents.includes(e)),
+        'both PLC Watch views have the welcome text and an activation event');
+}
+const watchPanel = (c.viewsContainers.panel || []).find(v => v.id === 'twincat-watch-panel');
+assert(!!watchPanel && watchPanel.title === 'PLC Watch' && /^\$\([a-z-]+\)$/.test(watchPanel.icon || ''),
+    'PLC Watch has its own bottom-panel container (its own tab next to the Terminal), with a codicon');
+assert(JSON.stringify((c.views['twincat-watch-panel'] || []).map(v => [v.id, v.name])) === JSON.stringify([['twincatWatch', 'PLC Watch']]),
+    'the watch panel holds only the PLC Watch view (user, 2026-11-16: not in the sidebar under the libraries)');
 assert(!c.views.explorer || !c.views.explorer.some(v => ['twincatExplorer', 'twincatLibraries'].includes(v.id)),
     'Objects and Libraries are no longer contributed to the Explorer');
 assert((c.views['twincat-references-panel'] || []).some(v => v.id === 'twincatReferences'), 'References stays in its panel');
-const names = Object.fromEntries((c.views.twincat || []).map(v => [v.id, v.name]));
+const names = Object.fromEntries([...(c.views.twincat || []), ...(c.views['twincat-watch-panel'] || [])].map(v => [v.id, v.name]));
 assert(names.twincatExplorer === 'PLC Objects' && names.twincatLibraries === 'PLC Libraries' && names.twincatStart === 'Start'
     && names.twincatWatch === 'PLC Watch', 'view names: PLC Objects, PLC Libraries, PLC Watch (R15), plus Start');
 assert((c.views['twincat-references-panel'] || []).find(v => v.id === 'twincatReferences').name === 'PLC References',
@@ -80,8 +102,8 @@ assert((c.views['twincat-references-panel'] || []).find(v => v.id === 'twincatRe
     const { SETTING_RENAMES } = require(path.join(REPO, 'src', 'settingsMigration.js'));
     const live = Object.keys(allProps).filter(k => !allProps[k].deprecationMessage);
     const deprecated = Object.keys(allProps).filter(k => allProps[k].deprecationMessage);
-    assert(live.length === 28 && live.every(k => k.startsWith('tcToolkit.')),
-        `all 28 live settings are tcToolkit.* (got ${JSON.stringify(live)})`);
+    assert(live.length === 29 && live.every(k => k.startsWith('tcToolkit.')),
+        `all 29 live settings are tcToolkit.* (got ${JSON.stringify(live)})`);
     // R13: the C++ switches (both off by default) and the g++ path (machine-scoped, like the XAE Shell paths).
     const gen = allProps['tcToolkit.compiler.generateCpp'];
     const build = allProps['tcToolkit.compiler.buildWithGpp'];

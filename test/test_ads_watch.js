@@ -42,7 +42,7 @@ if (!fs.existsSync(MAIN) || !fs.existsSync(STATION)) {
 }
 
 // ── A recording `vscode` stub ───────────────────────────────────────────────────────────────────
-const calls = { infos: [], warnings: [], errors: [], modals: [], inputs: [], picks: [], contexts: {}, statusMessages: [], clipboard: '' };
+const calls = { infos: [], warnings: [], errors: [], modals: [], inputs: [], picks: [], contexts: {}, statusMessages: [], clipboard: '', executed: [] };
 const answers = { message: [], input: [], quickPick: [] };
 const settings = {};
 const handlers = new Map();
@@ -93,6 +93,7 @@ const vscodeStub = {
     commands: {
         registerCommand: (id, fn) => { handlers.set(id, fn); return { dispose() {} }; },
         executeCommand: async (id, ...args) => {
+            calls.executed.push(id);
             if (id === 'setContext') { calls.contexts[args[0]] = args[1]; return undefined; }
             return handlers.has(id) ? handlers.get(id)(...args) : undefined;
         }
@@ -188,9 +189,9 @@ const watchTree = trees.get('twincatWatch');
         && sec.properties['tcToolkit.online.maxNotifications'].default === 100 && sec.properties['tcToolkit.online.maxNotifications'].maximum <= 400,
         'D8: 500 ms inline, 200 ms watch, notifications capped well below 550');
     assert(/untested/i.test(sec.properties['tcToolkit.online.routerAddress'].markdownDescription), 'the router-address setting is marked untested (D9)');
-    const uiText = JSON.stringify([c.commands.filter(x => /online|watch|Online/.test(x.command)).map(x => x.title), sec, c.views.twincat]);
+    const uiText = JSON.stringify([c.commands.filter(x => /online|watch|Online/.test(x.command)).map(x => x.title), sec, c.views.twincat, c.views['twincat-watch-panel']]);
     assert(!/\bforce\b(?!s active)/i.test(uiText.replace(/it is not a force/gi, '')), 'no command, view or setting offers a "Force" (D2)');
-    assert(c.views.twincat.some(v => v.id === 'twincatWatch' && v.name === 'PLC Watch') && pkg.activationEvents.includes('onView:twincatWatch'),
+    assert((c.views['twincat-watch-panel'] || []).some(v => v.id === 'twincatWatch' && v.name === 'PLC Watch') && pkg.activationEvents.includes('onView:twincatWatch'),
         'the PLC Watch view is contributed and activates the extension');
     assert(parseTarget('5.1.2.3.1.1:852', 851).port === 852 && parseTarget('5.1.2.3.1.1', 851).port === 851 && !parseTarget('5.1.2.3', 851),
         'a typed target is an AMS Net ID with an optional port');
@@ -280,6 +281,18 @@ const watchTree = trees.get('twincatWatch');
     // ── PLC Watch ─────────────────────────────────────────────────────────────────────────────────
     const added = await provider.onlineSource.addWatch(mainDoc.uri.toString(), mainDoc, writeMsg(1, 3));
     assert(added === true && api.watch.size === 1, 'Add to PLC Watch from the editor adds the variable under the caret');
+    assert(trees.get('twincatWatch') === watchTree && trees.get('twincatWatchSidebar') === watchTree,
+        'one watch list backs both PLC Watch places (bottom panel, sidebar)');
+    assert(calls.executed.includes('twincatWatch.focus') && !calls.executed.includes('twincatWatchSidebar.focus'),
+        'adding brings the bottom-panel PLC Watch to the front by default');
+    // tcToolkit.online.watchLocation = sidebar (user, 2026-11-16): the sidebar view is the one focused.
+    await api.watch.remove('MAIN.nCycleCount');
+    settings['tcToolkit.online.watchLocation'] = 'sidebar';
+    calls.executed.length = 0;
+    assert(await provider.onlineSource.addWatch(mainDoc.uri.toString(), mainDoc, writeMsg(1, 3)) === true
+        && calls.executed.includes('twincatWatchSidebar.focus') && !calls.executed.includes('twincatWatch.focus'),
+        'with watchLocation = sidebar, adding brings the sidebar PLC Watch to the front');
+    delete settings['tcToolkit.online.watchLocation'];
     await waitFor(() => api.watch.list()[0].state === 'ok');
     let rows = watchTree.getChildren();
     assert(rows[0].path === 'MAIN.nCycleCount' && rows[0].text === '42', `the Watch view shows it with its value (${JSON.stringify(rows[0] && rows[0].text)})`);

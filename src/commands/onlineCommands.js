@@ -88,6 +88,8 @@ function registerOnlineCommands(context, deps) {
         return { ...d, kernelService };
     });
     const cfg = () => vscode.workspace.getConfiguration(SECTION);
+    /** The PLC Watch view shown now: the sidebar one, or the bottom-panel one (default). */
+    const watchViewId = () => (String(cfg().get('watchLocation', 'panel')) === 'sidebar' ? 'twincatWatchSidebar' : 'twincatWatch');
     const channel = vscode.window.createOutputChannel(OUTPUT_CHANNEL_NAME);
     const log = (/** @type {string} */ line) => channel.appendLine(`[${new Date().toLocaleTimeString()}] ${line}`);
     const session = createOnlineSession({
@@ -299,7 +301,10 @@ function registerOnlineCommands(context, deps) {
     try {
         const { WatchTreeProvider } = require('../online/watchTree');
         tree = new WatchTreeProvider(watch);
+        // The same list backs both places the view can be shown (`tcToolkit.online.watchLocation`):
+        // the bottom panel or the TC Toolkit sidebar under PLC Objects; a when-clause shows one.
         context.subscriptions.push(vscode.window.registerTreeDataProvider('twincatWatch', tree));
+        context.subscriptions.push(vscode.window.registerTreeDataProvider('twincatWatchSidebar', tree));
     } catch (e) { tree = null; }
 
     // ── Editors ──────────────────────────────────────────────────────────────────────────────────
@@ -513,7 +518,7 @@ function registerOnlineCommands(context, deps) {
                 return false;
             }
             const added = await watch.add(occ.adsPath, occ.localType);
-            if (added) vscode.commands.executeCommand('twincatWatch.focus').then(undefined, () => {});
+            if (added) vscode.commands.executeCommand(`${watchViewId()}.focus`).then(undefined, () => {});
             return added;
         }
     };

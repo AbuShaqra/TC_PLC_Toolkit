@@ -570,6 +570,9 @@ src/
     inlineMonitor       One editor's inline values: resolve, poll (500 ms), post on change
     watchList           The PLC Watch model: watched paths, one on-change notification each
     watchTree           The PLC Watch view (TreeDataProvider over watchList)
+                        — one provider backs two view ids: `twincatWatch` (own bottom-panel
+                        container) and `twincatWatchSidebar` (TC Toolkit sidebar); `tcToolkit.online.watchLocation`
+                        picks one through each view's when-clause.
     writeGuard          The only path to a write: setting, per-session enable, guards, modal, log
     codeIdentity        The code-mismatch guard: name, variable layout vs the last build's `.tmc`,
                         source edits since that build

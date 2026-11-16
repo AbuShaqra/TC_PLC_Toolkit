@@ -56,7 +56,8 @@
     "onCommand:twincat.watch.clear",
     "onCommand:twincat.watch.copyPath",
     "onCommand:twincat.watch.write",
-    "onView:twincatWatch"
+    "onView:twincatWatch",
+    "onView:twincatWatchSidebar"
   ],
   "contributes": {
     "customEditors": [
@@ -93,6 +94,11 @@
           "id": "twincat-references-panel",
           "title": "PLC References",
           "icon": "$(references)"
+        },
+        {
+          "id": "twincat-watch-panel",
+          "title": "PLC Watch",
+          "icon": "$(eye)"
         }
       ]
     },
@@ -107,18 +113,26 @@
           "name": "PLC Objects"
         },
         {
-          "id": "twincatLibraries",
-          "name": "PLC Libraries"
+          "id": "twincatWatchSidebar",
+          "name": "PLC Watch",
+          "when": "config.tcToolkit.online.watchLocation == sidebar"
         },
         {
-          "id": "twincatWatch",
-          "name": "PLC Watch"
+          "id": "twincatLibraries",
+          "name": "PLC Libraries"
         }
       ],
       "twincat-references-panel": [
         {
           "id": "twincatReferences",
           "name": "PLC References"
+        }
+      ],
+      "twincat-watch-panel": [
+        {
+          "id": "twincatWatch",
+          "name": "PLC Watch",
+          "when": "config.tcToolkit.online.watchLocation != sidebar"
         }
       ]
     },
@@ -141,6 +155,10 @@
       },
       {
         "view": "twincatWatch",
+        "contents": "No watched variables. Right-click a variable in the editor and choose \"Add to PLC Watch\", or add an ADS path.\n[Add to PLC Watch…](command:twincat.watch.add)\n[Go Online…](command:twincat.goOnline)"
+      },
+      {
+        "view": "twincatWatchSidebar",
         "contents": "No watched variables. Right-click a variable in the editor and choose \"Add to PLC Watch\", or add an ADS path.\n[Add to PLC Watch…](command:twincat.watch.add)\n[Go Online…](command:twincat.goOnline)"
       }
     ],
@@ -509,27 +527,27 @@
         },
         {
           "command": "twincat.goOnline",
-          "when": "view == twincatWatch && !twincat.online",
+          "when": "view =~ /^twincatWatch(Sidebar)?$/ && !twincat.online",
           "group": "navigation@1"
         },
         {
           "command": "twincat.goOffline",
-          "when": "view == twincatWatch && twincat.online",
+          "when": "view =~ /^twincatWatch(Sidebar)?$/ && twincat.online",
           "group": "navigation@1"
         },
         {
           "command": "twincat.watch.add",
-          "when": "view == twincatWatch",
+          "when": "view =~ /^twincatWatch(Sidebar)?$/",
           "group": "navigation@2"
         },
         {
           "command": "twincat.watch.clear",
-          "when": "view == twincatWatch",
+          "when": "view =~ /^twincatWatch(Sidebar)?$/",
           "group": "navigation@3"
         },
         {
           "command": "twincat.online.showLog",
-          "when": "view == twincatWatch",
+          "when": "view =~ /^twincatWatch(Sidebar)?$/",
           "group": "more@1"
         }
       ],
@@ -694,27 +712,27 @@
         },
         {
           "command": "twincat.watch.write",
-          "when": "view == twincatWatch && twincat.online && viewItem =~ /\\bscalar\\b/",
+          "when": "view =~ /^twincatWatch(Sidebar)?$/ && twincat.online && viewItem =~ /\\bscalar\\b/",
           "group": "inline@1"
         },
         {
           "command": "twincat.watch.remove",
-          "when": "view == twincatWatch && viewItem =~ /^watchEntry/",
+          "when": "view =~ /^twincatWatch(Sidebar)?$/ && viewItem =~ /^watchEntry/",
           "group": "inline@2"
         },
         {
           "command": "twincat.watch.write",
-          "when": "view == twincatWatch && twincat.online && viewItem =~ /\\bscalar\\b/",
+          "when": "view =~ /^twincatWatch(Sidebar)?$/ && twincat.online && viewItem =~ /\\bscalar\\b/",
           "group": "1_edit@1"
         },
         {
           "command": "twincat.watch.copyPath",
-          "when": "view == twincatWatch",
+          "when": "view =~ /^twincatWatch(Sidebar)?$/",
           "group": "2_copy@1"
         },
         {
           "command": "twincat.watch.remove",
-          "when": "view == twincatWatch && viewItem =~ /^watchEntry/",
+          "when": "view =~ /^twincatWatch(Sidebar)?$/ && viewItem =~ /^watchEntry/",
           "group": "3_remove@1"
         }
       ],
@@ -1070,6 +1088,19 @@
             "minimum": 100,
             "maximum": 10000,
             "markdownDescription": "**Inline values: refresh interval in milliseconds.** The visible variables are read with one batched read per interval."
+          },
+          "tcToolkit.online.watchLocation": {
+            "type": "string",
+            "enum": [
+              "panel",
+              "sidebar"
+            ],
+            "default": "panel",
+            "enumDescriptions": [
+              "Its own tab in the bottom panel, next to the Terminal.",
+              "In the TC Toolkit sidebar, under PLC Objects."
+            ],
+            "markdownDescription": "**PLC Watch: where the view is shown.** In its own tab in the bottom panel (next to the Terminal), or in the TC Toolkit sidebar under **PLC Objects**. Adding a variable brings the view to the front wherever it is."
           },
           "tcToolkit.online.watchCycleTime": {
             "type": "integer",

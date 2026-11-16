@@ -458,7 +458,9 @@ Run, or the connection is being restored. What can be shown:
   table first; a variable the PLC does not know shows nothing. A variable whose type on the PLC differs
   from its declaration shows *type differs* instead of a value.
 
-**PLC Watch.** Right-click a variable in the editor → **Add to PLC Watch**, or use the **+** on the view
+**PLC Watch.** By default the view has its own tab in the bottom panel, next to the Terminal; set
+`tcToolkit.online.watchLocation` to `sidebar` to show it in the TC Toolkit sidebar under PLC Objects instead.
+It comes to the front when you add a variable. Right-click a variable in the editor → **Add to PLC Watch**, or use the **+** on the view
 and type an ADS path (`MAIN.fbStation.nState`). Each watched variable is one ADS notification on change
 (`tcToolkit.online.watchCycleTime`, 200 ms); structures and FB instances expand into their members
 without costing more. At most `tcToolkit.online.maxNotifications` (100) are active; past that, entries
@@ -603,6 +605,7 @@ old entry is removed from your `settings.json`.
 | `tcToolkit.online.direct.localAdsPort` | `32750` | Direct mode: the local ADS port to use. Per machine. |
 | `tcToolkit.online.allowWrites` | `false` | Allow *Write Value…* (user settings only). Even when on, writes are enabled once per online session and every write is confirmed and logged. |
 | `tcToolkit.online.inlinePollInterval` | `500` | Inline values: refresh interval in ms (100 to 10000). |
+| `tcToolkit.online.watchLocation` | `panel` | PLC Watch: `panel` (its own tab in the bottom panel, next to the Terminal) or `sidebar` (the TC Toolkit sidebar, under PLC Objects). |
 | `tcToolkit.online.watchCycleTime` | `200` | PLC Watch: notification cycle time in ms (50 to 10000). |
 | `tcToolkit.online.maxNotifications` | `100` | PLC Watch: the most ADS notifications at once (1 to 400). |
 
