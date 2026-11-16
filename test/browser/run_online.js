@@ -7,9 +7,10 @@
  * editor actions post a write or a watch request with the caret's pane position; Write Value… is
  * offered only where the host says the editor may write; the host's answer to `online/visible` (an
  * `online/state`) does not make the webview ask again, so the two never message each other in a
- * loop (R15 review findings #1, #15, #16); the Start/Stop PLC toggle next to Build (hidden offline,
- * Start/Stop label and glyph by the host's state, disabled with the reason otherwise, a click posts
- * `online/plcControl`); going offline removes everything.
+ * loop (R15 review findings #1, #15, #16); the Start/Stop PLC item in the toolbar's Actions menu
+ * (its PLC group hidden offline, Start/Stop label and glyph by the host's state, disabled with the
+ * reason shown otherwise, a click posts `online/plcControl`) and the PLC state chip next to the menu
+ * button; going offline removes everything.
  *
  * Shares build.js / serve.js with run.js. NOT part of `npm test`: it needs a browser.
  *
@@ -71,14 +72,17 @@ function assert(cond, msg) {
             const panes = monaco.editor.getEditors().filter(e => e.getModel() && e.getModel().uri.scheme === 'inmemory');
             window.__panes = { decl: panes[0], impl: panes[1] };
             const plcBtn = document.getElementById('plc-run-btn');
-            const build = document.getElementById('compile-group');
+            const section = document.getElementById('plc-menu-section');
+            const menu = document.getElementById('actions-menu');
             return { editors: panes.length, note: !!document.getElementById('online-note'), noteHidden: document.getElementById('online-note').hidden,
-                plc: !!plcBtn, plcHidden: plcBtn && plcBtn.hidden, plcDisplay: plcBtn && getComputedStyle(plcBtn).display,
-                afterBuild: !!build && build.nextElementSibling === plcBtn };
+                plc: !!plcBtn, inMenu: menu.contains(plcBtn), role: plcBtn && plcBtn.getAttribute('role'), sectionHidden: section.hidden,
+                // The PLC group follows the Build group in the menu.
+                afterBuild: !!section.previousElementSibling && section.previousElementSibling.getAttribute('aria-labelledby') === 'menu-title-build',
+                chipHidden: document.getElementById('plc-indicator').hidden };
         });
         assert(boot.editors === 2 && boot.note && boot.noteHidden, 'two panes boot; the online note exists and is hidden while offline');
-        assert(boot.plc && boot.plcHidden && boot.plcDisplay === 'none' && boot.afterBuild,
-            `the Start/Stop PLC button sits right after the Build group and is hidden while offline (${JSON.stringify(boot)})`);
+        assert(boot.plc && boot.inMenu && boot.role === 'menuitem' && boot.sectionHidden && boot.afterBuild && boot.chipHidden,
+            `the Start/Stop PLC item is in the Actions menu right after the Build group, and its group and the PLC chip are hidden while offline (${JSON.stringify(boot)})`);
 
         const offlineAction = await page.evaluate(() => {
             const a = window.__panes.impl.getAction('tc.online.write');
@@ -103,48 +107,69 @@ function assert(cond, msg) {
         assert(onlineAction, 'Write Value… is enabled while online, in an editor the host says may write');
 
         // ── Start / Stop PLC (user request 2026-11-16): one toggle that follows the PLC state ─────────
+        // The menu is opened for the views so computed styles (display, colour) are real.
+        await page.click('#actions-btn');
         const plcView = () => page.evaluate(() => {
             const b = document.getElementById('plc-run-btn');
             const vis = (sel) => getComputedStyle(b.querySelector(sel)).display !== 'none';
-            return { hidden: b.hidden, display: getComputedStyle(b).display, disabled: b.disabled, label: b.querySelector('.btn-label').textContent,
-                aria: b.getAttribute('aria-label'), title: b.title, start: vis('.plc-icon-start'), stop: vis('.plc-icon-stop'),
-                isStop: b.classList.contains('is-stop'), isStart: b.classList.contains('is-start'), bg: getComputedStyle(b).backgroundImage };
+            const chip = document.getElementById('plc-indicator');
+            return { hidden: b.closest('[hidden]') !== null, display: getComputedStyle(b).display, disabled: b.getAttribute('aria-disabled') === 'true',
+                label: b.querySelector('.btn-label').textContent, detail: document.getElementById('plc-run-detail').textContent,
+                describedby: b.getAttribute('aria-describedby'), title: b.title, start: vis('.plc-icon-start'), stop: vis('.plc-icon-stop'),
+                isStop: b.classList.contains('is-stop'), isStart: b.classList.contains('is-start'), startColor: getComputedStyle(b.querySelector('.plc-icon-start')).color,
+                chip: chip.hidden ? null : chip.textContent, chipClass: chip.className, menuTitle: document.getElementById('actions-btn').title };
         });
         let pv = await plcView();
-        assert(!pv.hidden && pv.display !== 'none' && pv.disabled && /not known yet/.test(pv.title),
-            `online, before the host says the PLC state: shown but disabled, with the reason (${JSON.stringify(pv)})`);
+        assert(!pv.hidden && pv.display !== 'none' && pv.disabled && /not known yet/.test(pv.title) && /not known yet/.test(pv.detail)
+            && pv.describedby === 'plc-run-detail' && pv.chip === null,
+        `online, before the host says the PLC state: the PLC group shows, Start/Stop is disabled with the reason on its detail line, no state chip yet (${JSON.stringify(pv)})`);
         await page.evaluate(() => window.postMessage({ type: 'online/plc', online: true, action: 'stop', plcState: 'Run', busy: false, reason: '' }, '*'));
         await settle(100);
         pv = await plcView();
-        assert(!pv.disabled && pv.label === 'Stop' && pv.aria === 'Stop PLC' && pv.stop && !pv.start && pv.isStop && /the PLC is in Run/.test(pv.title),
-            `the PLC runs: "Stop" with the stop glyph (${JSON.stringify(pv)})`);
-        const clicked = await page.evaluate(() => {
-            window.__harness.sent.length = 0;
-            document.getElementById('plc-run-btn').click();
-            return window.__harness.sent.filter(m => m.type === 'online/plcControl');
-        });
-        assert(clicked.length === 1 && clicked[0].action === 'stop', `a click asks the host to stop (${JSON.stringify(clicked)})`);
+        assert(!pv.disabled && pv.label === 'Stop PLC' && pv.stop && !pv.start && pv.isStop && /the PLC is in Run/.test(pv.title) && /in Run/.test(pv.detail),
+            `the PLC runs: "Stop PLC" with the stop glyph (${JSON.stringify(pv)})`);
+        assert(pv.chip === 'PLC Run' && /tb-chip-ok/.test(pv.chipClass) && /PLC Run/.test(pv.menuTitle),
+            `a "PLC Run" chip (green) shows next to the menu button, and the button's tooltip names it (${JSON.stringify(pv)})`);
+        await page.evaluate(() => { window.__harness.sent.length = 0; });
+        await page.click('#plc-run-btn');
+        const clicked = await page.evaluate(() => window.__harness.sent.filter(m => m.type === 'online/plcControl'));
+        assert(clicked.length === 1 && clicked[0].action === 'stop' && await page.evaluate(() => document.getElementById('actions-menu').hidden),
+            `a click asks the host to stop and closes the menu (${JSON.stringify(clicked)})`);
+        await page.click('#actions-btn');
         await page.evaluate(() => window.postMessage({ type: 'online/plc', online: true, action: null, plcState: 'Run', busy: true, reason: 'A start or stop of the PLC is in progress.' }, '*'));
         await settle(100);
         pv = await plcView();
         const busyClick = await page.evaluate(() => { window.__harness.sent.length = 0; document.getElementById('plc-run-btn').click(); return window.__harness.sent.length; });
-        assert(pv.disabled && pv.label === 'Stop' && /in progress/.test(pv.title) && busyClick === 0, `while it runs: disabled, no message on click (${JSON.stringify(pv)})`);
+        assert(pv.disabled && pv.label === 'Stop PLC' && /in progress/.test(pv.title) && /in progress/.test(pv.detail) && busyClick === 0 && pv.chip === 'PLC Run…',
+            `while it runs: disabled with the reason shown, no message on click, the chip reads "PLC Run…" (${JSON.stringify(pv)})`);
+        await page.keyboard.press('End');
+        await page.keyboard.press('ArrowUp');
+        assert(await page.evaluate(() => document.activeElement && document.activeElement.id === 'plc-run-btn'), 'the disabled item is still reachable with the arrows (its reason is read out)');
         await page.evaluate(() => window.postMessage({ type: 'online/plc', online: true, action: 'start', plcState: 'Stop', busy: false, reason: '' }, '*'));
         await settle(100);
         pv = await plcView();
-        assert(!pv.disabled && pv.label === 'Start' && pv.aria === 'Start PLC' && pv.start && !pv.stop && pv.isStart && /1f7a33|31, 122, 51/.test(pv.bg),
-            `the PLC is stopped: "Start" with the play glyph, in green (${JSON.stringify(pv)})`);
-        const startClick = await page.evaluate(() => {
-            window.__harness.sent.length = 0;
-            document.getElementById('plc-run-btn').click();
-            return window.__harness.sent.filter(m => m.type === 'online/plcControl');
-        });
-        assert(startClick.length === 1 && startClick[0].action === 'start', 'a click asks the host to start');
+        assert(!pv.disabled && pv.label === 'Start PLC' && pv.start && !pv.stop && pv.isStart && /46, 213, 115/.test(pv.startColor) && pv.chip === 'PLC Stop' && /tb-chip-warn/.test(pv.chipClass),
+            `the PLC is stopped: "Start PLC" with a green play glyph, and a "PLC Stop" chip (${JSON.stringify(pv)})`);
+        // By keyboard: Enter on the focused item asks the host.
+        await page.evaluate(() => { window.__harness.sent.length = 0; });
+        await page.focus('#plc-run-btn');
+        await page.keyboard.press('Enter');
+        const startClick = await page.evaluate(() => window.__harness.sent.filter(m => m.type === 'online/plcControl'));
+        assert(startClick.length === 1 && startClick[0].action === 'start' && await page.evaluate(() => document.activeElement.id === 'actions-btn'),
+            'Enter on Start PLC asks the host to start; focus returns to the menu button');
+        await page.click('#actions-btn');
         await page.evaluate(() => window.postMessage({ type: 'online/plc', online: true, action: null, plcState: 'Config', busy: false,
             reason: 'The PLC is in Config: Start and Stop are offered in Stop and Run only.' }, '*'));
         await settle(100);
         pv = await plcView();
-        assert(pv.disabled && !pv.hidden && /in Config/.test(pv.title), `another state (Config): disabled with the reason in the tooltip (${pv.title})`);
+        assert(pv.disabled && !pv.hidden && /in Config/.test(pv.title) && /in Config/.test(pv.detail) && pv.chip === 'PLC Config',
+            `another state (Config): disabled with the reason on the item and in its tooltip; the chip says Config (${JSON.stringify(pv)})`);
+        if (process.env.HARNESS_TOOLBAR_SHOTS) {
+            const shot = path.join(process.env.HARNESS_TOOLBAR_SHOTS, 'actions-online-open-config.png');
+            await page.screenshot({ path: shot, clip: { x: 0, y: 0, width: page.viewportSize().width, height: 560 } });
+            console.log('screenshot written to ' + shot);
+        }
+        await page.keyboard.press('Escape');
         await page.evaluate(() => window.postMessage({ type: 'online/plc', online: true, action: 'stop', plcState: 'Run', busy: false, reason: '' }, '*'));
         await settle(100);
 
@@ -272,15 +297,62 @@ function assert(cond, msg) {
             noteHidden: document.getElementById('online-note').hidden,
             write: window.__panes.impl.getAction('tc.online.write').isSupported(),
             visible: window.__harness.sent.filter(m => m.type === 'online/visible').length,
-            plcHidden: document.getElementById('plc-run-btn').hidden
+            plcHidden: document.getElementById('plc-menu-section').hidden,
+            chipHidden: document.getElementById('plc-indicator').hidden
         }));
-        assert(off.decl === 0 && off.noteHidden && !off.write && off.visible === 0 && off.plcHidden,
-            `going offline removes every value, hides the note and the Start/Stop button, disables Write Value… and stops reporting (${JSON.stringify(off)})`);
+        assert(off.decl === 0 && off.noteHidden && !off.write && off.visible === 0 && off.plcHidden && off.chipHidden,
+            `going offline removes every value, hides the note, the PLC group and its chip, disables Write Value… and stops reporting (${JSON.stringify(off)})`);
         // A late toggle state after going offline does not bring the button back.
         await page.evaluate(() => window.postMessage({ type: 'online/plc', online: true, action: 'stop', plcState: 'Run', busy: false, reason: '' }, '*'));
         await settle(100);
-        assert(await page.evaluate(() => document.getElementById('plc-run-btn').hidden), 'a toggle state arriving while offline keeps the button hidden');
+        assert(await page.evaluate(() => document.getElementById('plc-menu-section').hidden && document.getElementById('plc-indicator').hidden),
+            'a toggle state arriving while offline keeps the PLC group and its chip hidden');
 
+        // The toolbar with every chip showing (online note, PLC state, Building…) stays inside a
+        // narrow editor: nothing pushed off the right edge, no sideways scroll, the open menu fits.
+        await page.evaluate(() => {
+            window.postMessage({ type: 'online/state', online: true, note: 'Instance: GVL_System.fbCylinder', writable: true }, '*');
+            window.postMessage({ type: 'online/plc', online: true, action: 'stop', plcState: 'Run', busy: false, reason: '' }, '*');
+            window.postMessage({ type: 'compileRunning', running: true }, '*');
+        });
+        await settle(150);
+        const vp = page.viewportSize();
+        for (const width of [360, 560, 760, 800, 900, 1000, 1200]) {
+            await page.setViewportSize({ width, height: vp.height });
+            await settle(80);
+            await page.click('#actions-btn');
+            const t = await page.evaluate(() => {
+                const box = (id) => { const r = document.getElementById(id).getBoundingClientRect(); return { left: Math.round(r.left), right: Math.round(r.right), width: Math.round(r.width) }; };
+                const m = document.getElementById('actions-menu').getBoundingClientRect();
+                return { w: window.innerWidth, actions: box('actions-btn'), plc: box('plc-indicator'), build: box('build-indicator'), status: box('save-status'), note: box('online-note'),
+                    menu: { left: Math.round(m.left), right: Math.round(m.right), bottom: Math.round(m.bottom), h: window.innerHeight },
+                    sideScroll: document.documentElement.scrollWidth > window.innerWidth || document.body.scrollWidth > window.innerWidth };
+            });
+            await page.keyboard.press('Escape');
+            const inside = (b) => b.width > 0 && b.left >= 0 && b.right <= t.w;
+            assert(inside(t.actions) && inside(t.plc) && inside(t.build) && inside(t.status) && t.note.right <= t.w && !t.sideScroll
+                && t.menu.left >= 0 && t.menu.right <= t.w && t.menu.bottom <= t.menu.h,
+            `at ${width}px online, every chip and the status are inside the editor, no sideways scroll, and the open menu fits (${JSON.stringify(t)})`);
+        }
+        await page.setViewportSize(vp);
+        await page.evaluate(() => window.postMessage({ type: 'compileRunning', running: false }, '*'));
+        await settle(50);
+
+        if (process.env.HARNESS_TOOLBAR_SHOTS) {
+            // The toolbar online, PLC in Run: closed (the chips) and open (the PLC group).
+            await page.evaluate(() => {
+                window.postMessage({ type: 'online/state', online: true, note: 'Instance: GVL_System.fbCylinder', writable: true }, '*');
+                window.postMessage({ type: 'online/plc', online: true, action: 'stop', plcState: 'Run', busy: false, reason: '' }, '*');
+            });
+            await settle(200);
+            const w = page.viewportSize().width;
+            await page.screenshot({ path: path.join(process.env.HARNESS_TOOLBAR_SHOTS, 'actions-online-closed.png'), clip: { x: 0, y: 0, width: w, height: 90 } });
+            await page.click('#actions-btn');
+            await settle(80);
+            await page.screenshot({ path: path.join(process.env.HARNESS_TOOLBAR_SHOTS, 'actions-online-open.png'), clip: { x: 0, y: 0, width: w, height: 560 } });
+            await page.keyboard.press('Escape');
+            console.log('online toolbar screenshots written to ' + process.env.HARNESS_TOOLBAR_SHOTS);
+        }
         assert(consoleErrors.length === 0, `the browser reported no errors (${consoleErrors.length ? JSON.stringify(consoleErrors.slice(0, 3)) : 'none'})`);
         if (process.env.HARNESS_ONLINE_SHOT) {
             await page.evaluate((a) => {

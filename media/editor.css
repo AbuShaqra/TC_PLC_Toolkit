@@ -285,105 +285,12 @@ body {
     background: var(--vscode-scrollbarSlider-hoverBackground, rgba(128, 128, 128, 0.7));
 }
 
-/* Toggle Switch Wrapper */
-.sync-toggle-container {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    background: var(--surface-tint);
-    border: 1px solid var(--border-color);
-    padding: 4px 12px;
-    border-radius: 20px;
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    flex-shrink: 0;
-    user-select: none;
-}
-
-.sync-toggle-container:hover {
-    border-color: rgba(255, 71, 87, 0.3);
-    background: var(--surface-tint-hover);
-}
-
-.sync-toggle-label {
-    font-size: 0.75rem;
-    font-weight: 600;
-    color: var(--vscode-foreground, rgba(255, 255, 255, 0.6));
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    transition: color 0.3s ease;
-}
-
-.sync-toggle-container.active .sync-toggle-label {
-    color: var(--accent-fg);
-}
-
-/* The switch - the box around the slider */
-.switch {
-    position: relative;
-    display: inline-block;
-    width: 28px;
-    height: 16px;
-    flex-shrink: 0;
-}
-
-/* Hide default HTML checkbox */
-.switch input {
-    opacity: 0;
-    width: 0;
-    height: 0;
-}
-
-/* The slider */
-.slider {
-    position: absolute;
-    cursor: pointer;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background-color: var(--surface-tint-strong);
-    transition: .3s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.slider:before {
-    position: absolute;
-    content: "";
-    height: 12px;
-    width: 12px;
-    left: 2px;
-    bottom: 2px;
-    background-color: white;
-    transition: .3s cubic-bezier(0.4, 0, 0.2, 1);
-    /* the knob stays white so it reads on the coral track when checked; the hairline ring is what
-       keeps it visible against the pale unchecked track on a light theme (shadow, so it adds no size) */
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(0, 0, 0, 0.2);
-}
-
-input:checked + .slider {
-    background: var(--accent-gradient);
-}
-
-input:focus + .slider {
-    box-shadow: 0 0 2px rgba(255, 71, 87, 0.5);
-}
-
-input:checked + .slider:before {
-    transform: translateX(12px);
-}
-
-/* Rounded sliders */
-.slider.round {
-    border-radius: 16px;
-}
-
-.slider.round:before {
-    border-radius: 50%;
-}
-
 /* Responsive Header wrapping for narrow layouts. The breakpoint is where the one-row header stops
-   fitting (measured with the Compile button: the status pill was pushed off the right edge at 700 and
-   820px); test/browser/run.js checks the toolbar at 360-1200px for sideways overflow. */
-@media (max-width: 900px) {
+   fitting: since the toolbar's actions folded into one Actions menu (2026-11-16) the row holds the
+   component list, the menu button, its chips and the status, and fits down to about 780px (it was
+   900px with the side-by-side buttons). test/browser/run.js and run_online.js check the toolbar at
+   320-1200px for sideways overflow, run_online.js with every chip showing. */
+@media (max-width: 780px) {
     .app-header {
         flex-direction: column;
         align-items: flex-start;
@@ -446,148 +353,157 @@ input:checked + .slider:before {
     box-shadow: 0 2px 8px rgba(255, 71, 87, 0.2);
 }
 
-/* Generate ST split button: the main button plus a caret that drops a project-picker menu.
-   The group is the positioning context for the absolutely-positioned menu. */
-.split-btn {
+/* The Actions menu (user request 2026-11-16): one button that drops every toolbar action and
+   setting. The group is the positioning context for the absolutely-positioned menu. */
+.actions-group {
     position: relative;
     display: inline-flex;
-    align-items: stretch;
     flex-shrink: 0;
 }
-/* Fuse the two buttons into one control: square off the inner corners — only while the caret is
-   shown (multi-project workspaces); with one project the main button keeps its rounded end.
-   editor.js sets `has-caret` together with the caret's `hidden` flag. */
-.split-btn.has-caret #generate-st-btn {
-    border-top-right-radius: 0;
-    border-bottom-right-radius: 0;
-}
-.split-btn .split-caret {
-    padding: 6px 10px;
-    border-top-left-radius: 0;
-    border-bottom-left-radius: 0;
-    border-left: 1px solid rgba(0, 0, 0, 0.25);
-    box-shadow: none;
-    font-size: 0.7rem;
-    line-height: 1;
-}
-.split-caret[hidden] { display: none; }
-/* The Compile split button (R13): its caret is always there. */
-#compile-group #compile-btn {
-    border-top-right-radius: 0;
-    border-bottom-right-radius: 0;
-}
-#compile-menu .split-menu-title { white-space: nowrap; }
-.split-menu-item:focus-within {
-    outline: 1px solid var(--vscode-focusBorder, #007fd4);
-    outline-offset: -1px;
-}
-
-/* Compile button: a codicon-style glyph (inline SVG, currentColor) plus its label. */
-.icon-btn {
+.actions-btn {
     display: inline-flex;
     align-items: center;
     gap: 6px;
     white-space: nowrap;
 }
-.btn-icon { flex: none; display: block; }
-/* Disabled while a Compile Project run is in progress: no lift, no glow. */
-.action-btn:disabled,
-.action-btn:disabled:hover {
-    opacity: 0.55;
-    cursor: default;
-    transform: none;
-    filter: none;
-    box-shadow: none;
-}
-/* Start / Stop PLC (R15): shown only while online (editor.js renderPlcToggle). Start is green, Stop
-   keeps the toolbar's red; the glyph shown follows the label. `.icon-btn` sets display, so [hidden]
-   needs its own rule. White on #1f7a33..#23863a is 5.4:1..4.6:1. */
-.plc-run-btn[hidden] { display: none; }
-.plc-run-btn.is-start {
-    background: linear-gradient(135deg, #1f7a33, #23863a);
-    box-shadow: 0 4px 12px rgba(35, 134, 58, 0.2);
-}
-.plc-run-btn.is-start:hover:not(:disabled) { box-shadow: 0 6px 20px rgba(35, 134, 58, 0.4); }
-.plc-run-btn .plc-icon-stop,
-.plc-run-btn.is-stop .plc-icon-start { display: none; }
-.plc-run-btn.is-stop .plc-icon-stop { display: block; }
-#generate-st-btn {
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
+.actions-chevron { font-size: 0.7rem; line-height: 1; }
 
-/* A tight header keeps both buttons: Generate ST gets compact, Compile drops to its glyph (its name
-   stays in the tooltip and aria-label). Below 900px the header wraps anyway (see above). */
-@media (max-width: 1100px) {
-    .header-right .action-btn {
-        padding: 6px 10px;
-        letter-spacing: 0;
-    }
-    .split-btn .split-caret { padding: 6px 8px; }
-    #compile-btn .btn-label { display: none; }
-    #plc-run-btn .btn-label { display: none; }
+/* What the menu's entries are doing, next to the button: Building…, the PLC state, Manual Sync. */
+.actions-indicators {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
 }
+.actions-indicators[hidden] { display: none; }
+.tb-chip {
+    font-size: 0.75rem;
+    font-weight: 500;
+    white-space: nowrap;
+    padding: 2px 8px;
+    border-radius: 12px;
+    color: var(--vscode-foreground, var(--fg-primary));
+    background: var(--surface-tint);
+    border: 1px solid var(--border-color);
+}
+.tb-chip[hidden] { display: none; }
+.tb-chip-ok { color: var(--ok-fg); background: rgba(46, 213, 115, 0.12); border-color: rgba(46, 213, 115, 0.3); }
+.tb-chip-warn { color: var(--warn-fg); background: rgba(255, 165, 2, 0.12); border-color: rgba(255, 165, 2, 0.3); }
+/* A run in progress: a slow pulse, dropped for reduced motion. */
+.tb-chip-busy { animation: tb-chip-pulse 1.4s ease-in-out infinite; }
+@keyframes tb-chip-pulse { 50% { opacity: 0.55; } }
+@media (prefers-reduced-motion: reduce) { .tb-chip-busy { animation: none; } }
 
 .split-menu {
     position: absolute;
     top: calc(100% + 6px);
-    /* Opens under the split button; placeGenerateMenu() (editor.js) shifts it back inside the window. */
+    /* Opens under its button; placeSplitMenu() (editor.js) shifts it back inside the window and caps its height. */
     left: 0;
     z-index: 20;
-    min-width: min(220px, calc(100vw - 16px));
+    min-width: min(240px, calc(100vw - 16px));
     max-width: min(360px, calc(100vw - 16px));
     box-sizing: border-box;
     padding: 6px;
-    background: var(--vscode-dropdown-background, #2d2d2d);
-    color: var(--vscode-dropdown-foreground, var(--fg-primary));
-    border: 1px solid var(--border-color);
+    overflow-y: auto;
+    background: var(--vscode-menu-background, var(--vscode-dropdown-background, #2d2d2d));
+    color: var(--vscode-menu-foreground, var(--vscode-dropdown-foreground, var(--fg-primary)));
+    border: 1px solid var(--vscode-menu-border, var(--border-color));
     border-radius: 8px;
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+    white-space: normal;
 }
 .split-menu[hidden] { display: none; }
 .split-menu-title {
     font-size: 0.72rem;
+    font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.5px;
     opacity: 0.7;
-    padding: 4px 6px 6px;
+    padding: 4px 6px 4px;
+}
+/* A short caption inside a group (the C++ options, the XAE entries). */
+.menu-caption {
+    font-size: 0.72rem;
+    opacity: 0.7;
+    padding: 6px 6px 2px;
+}
+.menu-caption[hidden] { display: none; }
+.menu-reason { opacity: 0.85; font-style: italic; }
+.split-menu-separator { border-top: 1px solid var(--border-color); margin: 6px 0 2px; }
+#xae-menu-section[hidden], #plc-menu-section[hidden], .menu-subsection[hidden], .menu-item[hidden] { display: none; }
+
+/* An item: a checkbox row (label + input) or an action (button). */
+.split-menu-item,
+.menu-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    box-sizing: border-box;
+    padding: 5px 6px;
+    border: none;
+    border-radius: 4px;
+    background: none;
+    color: inherit;
+    font: inherit;
+    font-size: 0.8rem;
+    text-align: left;
+    cursor: pointer;
+    white-space: nowrap;
+}
+.split-menu-item:hover,
+.menu-item:hover {
+    background: var(--vscode-list-hoverBackground, rgba(128, 128, 128, 0.15));
+}
+.menu-item:focus { outline: none; }
+.menu-item:focus-visible,
+.split-menu-item:focus-within {
+    background: var(--vscode-menu-selectionBackground, var(--vscode-list-activeSelectionBackground, rgba(128, 128, 128, 0.25)));
+    color: var(--vscode-menu-selectionForeground, inherit);
+    outline: 1px solid var(--vscode-focusBorder, #007fd4);
+    outline-offset: -1px;
+}
+.split-menu-item input { cursor: pointer; flex-shrink: 0; margin: 0 0 0 1px; }
+.split-menu-item input:focus { outline: none; }
+/* Disabled items stay focusable (aria-disabled) so their reason is read out; they just look dimmed. */
+.menu-item[aria-disabled="true"] { cursor: default; }
+.menu-item[aria-disabled="true"] .btn-label,
+.menu-item[aria-disabled="true"] .btn-icon { opacity: 0.5; }
+.menu-item[aria-disabled="true"]:hover { background: none; }
+.menu-item-text {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    flex: 1;
+}
+.menu-item-text .btn-label { font-weight: 600; }
+.menu-item-detail {
+    font-size: 0.72rem;
+    opacity: 0.75;
+    white-space: normal;
+}
+.menu-item-detail:empty { display: none; }
+.menu-item-chevron { opacity: 0.7; font-size: 0.7rem; }
+.menu-item > .btn-icon { flex: none; display: block; align-self: flex-start; margin-top: 2px; }
+/* Start / Stop PLC (R15): the glyph shown follows the label; Start is green, Stop the accent red. */
+.plc-run-btn .plc-icon-stop,
+.plc-run-btn.is-stop .plc-icon-start { display: none; }
+.plc-run-btn.is-stop .plc-icon-stop { display: block; color: var(--accent-fg); }
+.plc-run-btn.is-start .plc-icon-start { color: var(--ok-fg); }
+
+/* The Generate ST project picker, unfolded inside the menu under "Choose projects…". */
+.menu-subsection {
+    margin: 2px 0 4px 14px;
+    padding-left: 6px;
+    border-left: 1px solid var(--border-color);
 }
 .split-menu-list {
-    max-height: 260px;
+    max-height: 220px;
     overflow-y: auto;
     overflow-x: hidden;
     display: flex;
     flex-direction: column;
 }
-.split-menu-item {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 5px 6px;
-    border-radius: 4px;
-    font-size: 0.8rem;
-    cursor: pointer;
-    white-space: nowrap;
-}
-.split-menu-item:hover {
-    background: var(--vscode-list-hoverBackground, rgba(255, 255, 255, 0.06));
-}
-.split-menu-item input { cursor: pointer; flex-shrink: 0; }
-/* Build through XAE (R14): the two actions in the Compile menu, below a separator. */
-.split-menu-separator { border-top: 1px solid var(--border-color); margin: 6px 0 2px; }
-#xae-menu-section[hidden] { display: none; }
-.split-menu-action {
-    width: 100%;
-    background: none;
-    border: none;
-    color: inherit;
-    font: inherit;
-    font-size: 0.8rem;
-    text-align: left;
-}
-.split-menu-action:disabled { opacity: 0.5; cursor: default; }
-.split-menu-action:focus-visible { outline: 1px solid var(--vscode-focusBorder, #007fd4); outline-offset: -1px; }
 /* The Select all row: separated from the project list it controls. */
 .split-menu-all {
     border-bottom: 1px solid var(--border-color);
@@ -595,16 +511,9 @@ input:checked + .slider:before {
     margin-bottom: 4px;
     padding-bottom: 7px;
 }
-.split-menu-run:disabled { opacity: 0.5; cursor: default; }
 /* A long project name is cut with an ellipsis; the full name is in the item's tooltip. */
 .split-menu-item span {
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
-}
-.split-menu-run {
-    margin-top: 6px;
-    width: 100%;
-    text-transform: none;
-    letter-spacing: 0;
 }
