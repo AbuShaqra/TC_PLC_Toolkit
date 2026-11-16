@@ -10,34 +10,11 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   merged at `3210d33`, Release run 41671593015 green, VSIX `twincat-plc-toolkit-0.10.1.vsix` attached).
 - **Version history:** 0.10.1 struct EXTENDS from own DUTs (PR #22); 0.10.0 Libraries scoping (PR #18); 0.9.0
   improvement-plan phases; 0.8.x project-aware Generate ST, ResizeObserver fix, solution→project Objects tree.
-- **Last verified:** 2026-11-12 (Linux container, `claude/focused-ptolemy-m6acaz` = R13 round 5 (the user's Windows g++ test:
-  `-std=c++17`, the g++ 7 gate, the C/C++ extension provider; MSYS2 detection from the registry; round 6: selecting the
-  provider) on top of `dev` + roadmap) — `REQUIRE_FULL_SUITE=1 npm test` green (**119/119, Coverage: FULL**; optional gates compile-real, cpp-real
-  and gpp-real all ran), `npm run typecheck` and `npm run lint` exit 0; Linux dev-host (`TCDEV_CODE=<scratch>/VSCode-linux-x64/code
-  TCDEV_CODE_ARGS=--no-sandbox xvfb-run -a node test/devhost/run.js`) 103 pass / 1 fail, the fail being
-  the known P8 line-ending one; browser harnesses `run.js` (83), `run_start_page.js` (110, with the g++ row and its MSYS2 note), `run_pragmas.js` (47; round 2) green;
-  `npx @vscode/vsce ls` lists `node_modules/vscode-cpptools/` (api.js, LICENSE; `out/testApi.*` excluded) and no test file
-  (Playwright from `/opt/node-tools/node_modules`, browsers in `/opt/pw-browsers`).
-- **R12 `{IF}`-aware LSP diagnostics: MERGED** into `dev` as PR #36 (squash `02f2b96`, 2026-11-12 10:56 UTC) after the
-  user's Windows checks (split IF head, both-branch completion/references, END_FOR outside the group, multi-line fbRS, SIM define).
-  Review fixes (do not regress): a segment boundary is never a named argument on its own line (`fbRS(\n SET := c,`
-  split a method → Unterminated/Unmatched outside any group); enum members inside a group are kept (xmlIndexer
-  `extractEnumMembers` took the `)` of `{IF defined(X)}` as the list end); a statement-level nested group no longer
-  widens its span over the next statement; a group wrapping the first VAR block no longer sets `inheritanceUncertain`.
-  Design (merged from two reviewed designs, B winning): the LSP **never evaluates a define**; every branch
-  combination counts. `src/lsp/conditionals.js` groups directives per segment; block matching keeps an error only
-  if every branch selection has it (cap 64/segment, unbalanced segments silent); semantic diagnostics inside a
-  group's statement span are dropped; `pickVar` makes a per-branch type conflict UNKNOWN; a conditional section
-  header / POU head makes the parameter set / inheritance chain unknown. No group → byte-identical old output
-  (pinned over every sample unit). Rules and trade-offs: DEVELOPMENT.md "Conditional pragmas in the language
-  server (R12)". Tests: `test/test_conditional_pragmas.js` (new), R12 cases in `test_live_path.js`, R12 compiler
-  parity in `test_compile_real.js` (each fixture compiled per define set: accepted somewhere ⇒ LSP 0). The probe
-  case (split `IF` head per branch) and probe2 cases A–I give 0.
-  **Proposed, needs the user's XAE build check first:** add a conditional POU and `<CompilerDefines>` to
-  TcToolkitSample2 so the ground-truth sample covers R12 (not done: the sample must stay XAE-built).
-  **Follow-ups (not R12):** R12b informational branch state (Backlog; never feeds diagnostics; open decision:
-  Debug only or "all configurations agree"); definition returning every same-name declaration once
-  `mapDefinition` accepts arrays; optional merged completion items (`BOOL | INT (conditional)`).
+- **Last verified:** 2026-11-16 (Linux container, R15 phase 3a on `claude/focused-ptolemy-m6acaz`) —
+  `REQUIRE_FULL_SUITE=1 npm test` green (**135/135, Coverage: FULL**; compile-real, cpp-real, gpp-real ran), `npm run
+  typecheck` and `npm run lint` exit 0. Dev-host and browser harnesses last run 2026-11-12 (dev-host 103 pass / 1 known
+  P8 line-ending fail; `run.js` 83, `run_start_page.js` 110, `run_pragmas.js` 47; Playwright from
+  `/opt/node-tools/node_modules`, browsers in `/opt/pw-browsers`).
 - **Sample 1 XAE warnings (user, 2026-11-13; XAE Shell 64):** 0 errors, 3 warnings: C0564 x2 (GVL_System's
   `fbCylinder(refExtendOut := GVL_Io.bExtendOut, refRetractOut := GVL_Io.bRetractOut)`: "reference to uninitialized
   variable") and C0195 (FB_Station.Cyclic line 28, INT into WORD). **User: fix the sample.** Done in the generator
@@ -175,6 +152,26 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   NetId. **Unverified:** the instance writes the file within 5 s of starting and never later while running (else it
   fails closed as "rewritten"); `Win32_Process.CommandLine` is readable unelevated (else "unverifiable"); how a long
   separator-row label renders.
+- **R15 phase 3a, "Local runtime" targets the user-mode runtime's own NetId (user decision 2026-11-16): BUILT on
+  `worktree-agent-afcabb7ac39b6a6e3` (off `5a60a8e`), Linux-verified only.** `src/online/localRuntime.js` runs the XAE driver's `-ListTargets`
+  WITHOUT `-SlnPath` (no COM/XAE; no `.ps1` change) when the Go Online pick opens (Windows, router mode, router on
+  this PC), plus `tasklist` for `TcSysSrv.exe`; after a *Local runtime* pick (progress while it still runs): 1
+  trusted user-mode runtime and no possible kernel runtime → its NetId, logged "Local runtime: user-mode runtime
+  UmRT_Default at <NetId> (read from its configuration, instance running). (discovery N ms)"; several, or a
+  "Real-time runtime" record while TcSysSrv.exe is not known absent → a pick (router runtime row = localhost); none
+  or a failed discovery → localhost as before, and the "Enter AMS Net ID…" hint adds why. Never cached; recent list
+  keeps the concrete NetId. Design: DEVELOPMENT.md "The local runtime in user mode". Harness
+  `test/test_local_runtime.js`. **Unverified:** the discovery's real cost (expected 1-3 s); `TcSysSrv.exe` being
+  the kernel-mode service's image name; whether a kernel-mode PC with a running user-mode runtime reports the
+  real-time record (the user's UM PC reported none). **User's Windows steps:** (a) user-mode PC, runtime running:
+  *Go Online… → Local runtime* → progress "finding the local runtime", then `Online: Local runtime (UmRT_Default) ·
+  Run`; copy the channel's "Local runtime: …" line (with the discovery ms) and the "Going online:" line (NetId must
+  be the console window's `AmsNetId`); (b) restart the runtime (or reboot, NetIds swap) → Go Online again uses the
+  new NetId without asking; the old one shows as *Used before*; (c) close the runtime's console → Local runtime →
+  fails with the Enter AMS Net ID hint plus "UmRT_Default: this runtime is not running …"; (d) in a terminal,
+  `tasklist /FI "IMAGENAME eq TcSysSrv.exe" /FO CSV /NH` on this PC (and on a kernel-mode PC if one exists) —
+  copy the output; (e) on a kernel-mode PC: Local runtime still reaches the PLC (no pick unless a user-mode
+  runtime runs too).
 - **R15 phase 2, user-mode fallback through TwinCAT's ADS DLL: DONE on `claude/focused-ptolemy-m6acaz`, Linux-verified
   only (2026-11-16).** Measured on the user's 4026 user-mode PC: `TcSystemServiceUm` resets ads-client's TCP connection
   to 127.0.0.1:48898 (`socket error -4077`), `EnableAmsTcpLoopback=1` + reboot did not help, Beckhoff's .NET stack
@@ -192,9 +189,8 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   10000 and 851 answers, ProjectName, ms per request); (2) in VS Code: *Go Online… → Enter AMS Net ID…* with the
   runtime NetId → expect the *TC Toolkit Online* lines "…refused this client's TCP connection…", "Connected through
   TwinCAT's ADS DLL (…)", "Online: … over TwinCAT's ADS DLL (user-mode fallback)"; then the R15 check list below
-  (items 4-10) through it; (3) *Go Online… → Local runtime*: expected to fail with the "Enter AMS Net ID…" hint (the
-  runtime is not at the router's NetId) — report the text; (4) close VS Code while online: no `powershell.exe` left
-  (Task Manager). Backlog (planner): discover the user-mode runtime's NetId for *Local runtime*.
+  (items 4-10) through it; (3) *Local runtime*: now phase 3a below; (4) close VS Code while online: no
+  `powershell.exe` left (Task Manager).
 - **R15 ADS online monitoring: phase 1 merged into `claude/focused-ptolemy-m6acaz`** (built 2026-11-13 on `r15-ads`,
   based on `c9ace3f`; no PR yet). Decisions D1-D9: `docs/r15-ads-decision.md` §5.
   Design and file map: DEVELOPMENT.md "Online monitoring (roadmap R15)". `ads-client` **2.2.0 pinned** (pure JS; loads on

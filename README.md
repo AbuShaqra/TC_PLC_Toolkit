@@ -488,8 +488,13 @@ TC Toolkit uses. On Windows, TC Toolkit then switches by itself to TwinCAT's own
 (`TwinCAT.Ads.dll`, installed with XAE or XAR), through a hidden Windows PowerShell helper, and says so in
 the *TC Toolkit Online* output channel. Everything above works the same way through it; Watch entries
 are polled rather than pushed by the PLC. Notes:
-- In user mode the PLC runs under the **runtime's own AMS Net ID**, not the router's, so *Local
-  runtime* may not find it. Use *Enter AMS Net ID…* with the Net ID printed in the runtime's console
+- In user mode the PLC runs under the **runtime's own AMS Net ID**, not the router's. *Local runtime*
+  therefore first looks up the user-mode runtime on this PC (it reads the runtime's configuration
+  and checks that the runtime is running; this takes a second or two and shows a progress
+  notification) and goes online to that runtime's AMS Net ID, naming it in the *TC Toolkit Online*
+  channel. With several runtimes (or a possible kernel-mode runtime next to it) it asks which one.
+  When no running runtime's Net ID can be confirmed it uses the router as before, and if that fails
+  the message says why; then use *Enter AMS Net ID…* with the Net ID printed in the runtime's console
   window (`AmsNetId: …`), for example `10.0.0.4.1.1`.
 - If the helper cannot start (no `TwinCAT.Ads.dll` found) or cannot reach the PLC either, the message
   names both failures. Other workarounds: run the PLC in a kernel-mode runtime (the library documents

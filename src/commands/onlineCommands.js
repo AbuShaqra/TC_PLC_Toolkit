@@ -36,7 +36,10 @@
 const vscode = require('vscode');
 const { createOnlineSession } = require('../online/session');
 const { createAdsClient } = require('../online/adsClient');
-const { describeConnectError } = require('../online/connectErrors');
+const { describeConnectError, isLoopback, RUNTIME_NETID_HINT } = require('../online/connectErrors');
+const { discoverRuntimes, checkKernelService, resolveLocalTarget, localPickItems, unresolvedHintText, resolutionLogText } = require('../online/localRuntime');
+const childProcess = require('child_process');
+const path = require('path');
 const { createInlineMonitor } = require('../online/inlineMonitor');
 const { createWatchList } = require('../online/watchList');
 const { performWrite, enableWritesFor, targetName } = require('../online/writeGuard');
@@ -57,6 +60,8 @@ const WATCH_KEY = 'twincat.online.watch';
 const RECENT_TARGETS_KEY = 'twincat.online.recentTargets';
 /** The quick-pick entry for the local runtime. */
 const LOCAL_TARGET = { label: 'Local runtime', netId: 'localhost' };
+/** workspaceState: the last runtime picked when "Local runtime" had to ask (a NetId, or 'localhost'). */
+const LOCAL_PICK_KEY = 'twincat.online.localRuntimePick';
 
 /**
  * @param {vscode.ExtensionContext} context
@@ -65,12 +70,23 @@ const LOCAL_TARGET = { label: 'Local runtime', netId: 'localhost' };
  * @param {() => any} [deps.getProjectMap] The host's project map (names and file ownership).
  * @param {(o: import('../online/adsClient').ConnectOptions) => import('../online/adsClient').AdsPort} [deps.createClient]
  * @param {{setTimeout: Function, clearTimeout: Function}} [deps.timers] The inline monitors' timers (the harnesses count them).
+ * @param {string} [deps.platform] Default process.platform ("Local runtime" is resolved on win32 only).
+ * @param {() => Promise<import('../online/localRuntime').Discovery>} [deps.discoverRuntimes] The local runtime
+ *   discovery (default: the XAE driver's `-ListTargets` plus the kernel-service check, src/online/localRuntime.js).
  * @returns {{session: ReturnType<typeof createOnlineSession>, watch: ReturnType<typeof createWatchList>,
  *   dispose: () => Promise<void>, refreshEditors: () => Promise<void>, refreshCodeCheck: () => Promise<void>,
  *   codeCheck: () => any}}
  */
 function registerOnlineCommands(context, deps) {
     const provider = deps.provider;
+    const platform = deps.platform || process.platform;
+    const discover = deps.discoverRuntimes || (async () => {
+        const [d, kernelService] = await Promise.all([
+            discoverRuntimes({ spawn: childProcess.spawn, scriptPath: path.join(context.extensionPath, 'resources', 'xae', 'build-plc-project.ps1') }),
+            checkKernelService(childProcess.execFile)
+        ]);
+        return { ...d, kernelService };
+    });
     const cfg = () => vscode.workspace.getConfiguration(SECTION);
     const channel = vscode.window.createOutputChannel(OUTPUT_CHANNEL_NAME);
     const log = (/** @type {string} */ line) => channel.appendLine(`[${new Date().toLocaleTimeString()}] ${line}`);
@@ -504,15 +520,33 @@ function registerOnlineCommands(context, deps) {
 
     // ── Go Online / Go Offline ───────────────────────────────────────────────────────────────────
     /**
-     * Asks which target to go online to: the local runtime, a recent target, or one typed in.
-     * @returns {Promise<{netId: string, port: number, label: string}|undefined>}
+     * Whether "Local runtime" is first resolved to a user-mode runtime's own AmsNetId (R15 phase 3a):
+     * Windows, router mode, the router on this PC. Elsewhere it is the router's NetId, as before.
+     * @returns {boolean}
+     */
+    const resolvesLocal = () => platform === 'win32' && String(cfg().get('connectionMode', 'router')) !== 'direct'
+        && isLoopback(String(cfg().get('routerAddress', '127.0.0.1') || '127.0.0.1'));
+    /** @param {any} e @returns {import('../online/localRuntime').Discovery} */
+    const discoveryFailed = (e) => ({ ok: false, entries: [], error: String((e && e.message) || e), ms: 0 });
+
+    /**
+     * Asks which target to go online to: the local runtime, a recent target, or one typed in. Where
+     * "Local runtime" is resolved, the discovery starts while the pick is open (`discovery`), so the
+     * PowerShell start overlaps the user's choice; it is used only if Local runtime is picked.
+     * @returns {Promise<{netId: string, port: number, label: string, discovery?: Promise<import('../online/localRuntime').Discovery>}|undefined>}
      */
     async function pickTarget() {
         const port = clampInt(cfg().get('adsPort', 851), 1, 65535, 851);
         const recent = /** @type {Array<{netId: string, port: number, label: string}>} */ (context.workspaceState.get(RECENT_TARGETS_KEY, []));
         const direct = String(cfg().get('connectionMode', 'router')) === 'direct';
+        const resolving = resolvesLocal();
+        const discovery = resolving ? Promise.resolve().then(discover).catch(discoveryFailed) : undefined;
         const items = [];
-        if (!direct) items.push({ label: LOCAL_TARGET.label, description: `ADS port ${port}`, detail: 'The PLC runtime on this PC, through the local router', netId: 'localhost', port });
+        if (!direct) {
+            items.push({ label: LOCAL_TARGET.label, description: `ADS port ${port}`, netId: 'localhost', port,
+                detail: resolving ? 'The PLC runtime on this PC (a user-mode runtime is reached at its own AMS Net ID)'
+                    : 'The PLC runtime on this PC, through the local router' });
+        }
         for (const r of recent) {
             if (r.netId === 'localhost' && !direct) continue;
             items.push({ label: r.label || r.netId, description: `${r.netId}:${r.port}`, detail: 'Used before', netId: r.netId, port: r.port });
@@ -520,6 +554,7 @@ function registerOnlineCommands(context, deps) {
         items.push({ label: 'Enter AMS Net ID…', description: '', detail: direct ? 'The PLC\'s AMS Net ID (direct mode)' : 'A target the local router has a route to (set up in XAE)', netId: '', port });
         const pick = /** @type {any} */ (await vscode.window.showQuickPick(items, { title: 'Go Online', placeHolder: direct ? 'Direct mode: pick the PLC' : 'Pick the target (routes are set up in XAE)' }));
         if (!pick) return undefined;
+        if (pick.netId === 'localhost' && pick.label === LOCAL_TARGET.label) return { netId: 'localhost', port: pick.port, label: LOCAL_TARGET.label, discovery };
         if (pick.netId) return { netId: pick.netId, port: pick.port, label: pick.label === LOCAL_TARGET.label ? LOCAL_TARGET.label : pick.description };
         const typed = await vscode.window.showInputBox({
             title: 'Go Online', prompt: 'AMS Net ID, optionally with :port (for example 5.12.34.56.1.1:851)', ignoreFocusOut: true,
@@ -529,11 +564,59 @@ function registerOnlineCommands(context, deps) {
         return t ? { ...t, label: `${t.netId}:${t.port}` } : undefined;
     }
 
+    /**
+     * "Local runtime" where it is resolved: the discovery's answer (awaited under a cancellable progress
+     * while it still runs), then the user-mode runtime it names, a pick, or the router as before.
+     * Never cached: a runtime restart can change its NetId, so every Go Online asks again.
+     * @param {{netId: string, port: number, label: string, discovery?: Promise<import('../online/localRuntime').Discovery>}} t
+     * @returns {Promise<{target: {netId: string, port: number, label: string}|null,
+     *   resolution: import('../online/localRuntime').LocalResolution|null}>} `target` null: cancelled.
+     */
+    async function resolveLocal(t) {
+        let cancelled = false;
+        const d = /** @type {import('../online/localRuntime').Discovery|null} */ (await vscode.window.withProgress(
+            { location: vscode.ProgressLocation.Notification, title: 'Going online: finding the local runtime', cancellable: true },
+            (_progress, token) => new Promise((resolve) => {
+                token.onCancellationRequested(() => { cancelled = true; resolve(null); });
+                (t.discovery || Promise.resolve().then(discover)).then(resolve, (e) => resolve(discoveryFailed(e)));
+            })));
+        if (cancelled || !d) return { target: null, resolution: null };
+        const res = resolveLocalTarget(d, { kernelService: d.kernelService });
+        log(resolutionLogText(res, d.ms || 0));
+        const router = { netId: 'localhost', port: t.port, label: LOCAL_TARGET.label };
+        if (res.kind === 'runtime' && res.runtime) {
+            return { target: { netId: res.runtime.netId, port: t.port, label: `${LOCAL_TARGET.label} (${res.runtime.name})` }, resolution: res };
+        }
+        if (res.kind === 'pick') {
+            const last = /** @type {string|undefined} */ (context.workspaceState.get(LOCAL_PICK_KEY, undefined));
+            const pick = /** @type {any} */ (await vscode.window.showQuickPick(localPickItems(res, t.port, last),
+                { title: 'Go Online: Local runtime', placeHolder: 'This PC has more than one runtime: pick the one the PLC runs on' }));
+            if (!pick || !pick.netId) return { target: null, resolution: res };
+            await context.workspaceState.update(LOCAL_PICK_KEY, pick.netId);
+            if (pick.netId === 'localhost') {
+                log('Local runtime: the router\'s own AMS Net ID (picked).');
+                return { target: router, resolution: res };
+            }
+            log(`Local runtime: user-mode runtime ${pick.name} at ${pick.netId} (picked).`);
+            return { target: { netId: pick.netId, port: t.port, label: `${LOCAL_TARGET.label} (${pick.name})` }, resolution: res };
+        }
+        return { target: router, resolution: res };
+    }
+
     /** @param {any} [args] `{ netId, port }` skips the picker (for tests and keybindings). */
     async function goOnline(args) {
-        const t = args && args.netId ? { netId: String(args.netId), port: Number(args.port) || clampInt(cfg().get('adsPort', 851), 1, 65535, 851),
+        /** @type {{netId: string, port: number, label: string, discovery?: Promise<any>}|undefined} */
+        let t = args && args.netId ? { netId: String(args.netId), port: Number(args.port) || clampInt(cfg().get('adsPort', 851), 1, 65535, 851),
             label: args.label || String(args.netId) } : await pickTarget();
         if (!t) return { status: 'cancelled' };
+        /** @type {import('../online/localRuntime').LocalResolution|null} */
+        let resolution = null;
+        if (t.netId === 'localhost' && resolvesLocal()) {
+            const r = await resolveLocal(t);
+            if (!r.target) return { status: 'cancelled' };
+            t = r.target;
+            resolution = r.resolution;
+        }
         const mode = String(cfg().get('connectionMode', 'router')) === 'direct' ? 'direct' : 'router';
         /** @type {import('../online/adsClient').ConnectOptions & {label: string}} */
         const options = mode === 'direct'
@@ -547,13 +630,17 @@ function registerOnlineCommands(context, deps) {
                 (_progress, token) => session.connect(options, token));
         } catch (err) {
             const f = describeConnectError(err, options);
+            // "Local runtime" stayed on the router: the "Enter AMS Net ID…" hint also says why.
+            const why = f.hint && f.hint.includes(RUNTIME_NETID_HINT) ? unresolvedHintText(resolution) : '';
+            if (why) f.hint = `${f.hint} ${why}`;
             log(`Go Online failed (${f.kind}): ${f.raw}`);
             if (f.kind === 'cancelled') return { status: 'cancelled' };
             const pick = await vscode.window.showErrorMessage(`${f.message}${f.hint ? ' ' + f.hint : ''}`, 'Show Log');
             if (pick === 'Show Log') channel.show(true);
             return { status: 'failed', failure: f };
         }
-        const recent = /** @type {Array<any>} */ (context.workspaceState.get(RECENT_TARGETS_KEY, [])).filter(r => !(r.netId === t.netId && r.port === t.port));
+        const target = t;
+        const recent = /** @type {Array<any>} */ (context.workspaceState.get(RECENT_TARGETS_KEY, [])).filter(r => !(r.netId === target.netId && r.port === target.port));
         await context.workspaceState.update(RECENT_TARGETS_KEY, [{ netId: t.netId, port: t.port, label: t.label }, ...recent].slice(0, 5));
         await refreshCodeCheck();
         if (code && code.state !== 'match') {

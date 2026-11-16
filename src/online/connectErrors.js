@@ -207,4 +207,4 @@ function isLoopback(address) {
     return a === 'localhost' || a === '::1' || /^127\./.test(a);
 }
 
-module.exports = { describeConnectError, rawText, USER_MODE_HINT, ROUTE_HINT, RUNTIME_NETID_HINT };
+module.exports = { describeConnectError, rawText, isLoopback, USER_MODE_HINT, ROUTE_HINT, RUNTIME_NETID_HINT };
