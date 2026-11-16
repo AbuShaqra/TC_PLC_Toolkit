@@ -189,6 +189,22 @@ function inputsOf(project) {
         assert(!alone.declared.has('st_synotheronly'), 'DECL: the same type, referenced on its own, is not (its library is not the project\'s)');
         const conflicted = ld.buildDeclarations(k, { texts: ['x : FB_SynNeedsOther;'], userNames: new Set(['st_synotheronly']), compilerNames: new Set() });
         assert(!conflicted.declared.has('fb_synneedsother'), 'CONFLICT: a declaration that needs a type the project redefines is dropped');
+        // A FUNCTION named like a type (the standard library's LTIME() clock) is no type: a library
+        // declaration typed LTIME stays unwritten, while a manifest's types and FBs do resolve.
+        const fakeCompiler = path.join(SCRATCH, 'fake-compiler', 'c.cjs');
+        fs.mkdirSync(path.join(path.dirname(fakeCompiler), 'libs'), { recursive: true });
+        fs.writeFileSync(path.join(path.dirname(fakeCompiler), 'libs', 'k.stlib'), JSON.stringify({ manifest: {
+            functions: [{ name: 'LTIME' }], functionBlocks: [{ name: 'FB_KFb' }], types: [{ name: 'T_KType' }], globals: [{ name: 'gK' }] } }));
+        const kNames = ld.compilerProvidedNames(fakeCompiler);
+        const kTypes = ld.compilerProvidedTypeNames(fakeCompiler);
+        assert(kNames.has('LTIME') && !kTypes.has('LTIME') && !kTypes.has('GK') && kTypes.has('FB_KFB') && kTypes.has('T_KTYPE') && kTypes.has('DINT'),
+            'COMPILER: a manifest FUNCTION or global is a compiler name but not a type; its types and FBs are both');
+        assert(!ld.compilerProvidedTypeNames(BUNDLED).has('LTIME'), 'COMPILER: the bundled LTIME() function does not make LTIME a type');
+        k.decls.set('f_synltimein', { kind: 'function', name: 'F_SynLtimeIn', origin: 'sig', topLevel: true, ioComplete: true, returnType: 'BOOL', io: [{ name: 'tIn', type: 'LTIME', scope: 'VAR_INPUT' }] });
+        k.decls.set('f_synktypein', { kind: 'function', name: 'F_SynKTypeIn', origin: 'sig', topLevel: true, ioComplete: true, returnType: 'BOOL', io: [{ name: 'k', type: 'T_KType', scope: 'VAR_INPUT' }] });
+        const lt = ld.buildDeclarations(k, { texts: ['F_SynLtimeIn F_SynKTypeIn'], userNames: new Set(), compilerNames: kNames, compilerTypes: kTypes });
+        assert(!lt.declared.has('f_synltimein') && lt.declared.has('f_synktypein'),
+            'DECL: a FUNCTION named LTIME does not make an LTIME-typed library declaration resolve; a manifest type does');
         const shadow = ld.buildDeclarations(knowledge, { texts: ['GVL_SynConst'], userNames: new Set(['csyngain']), compilerNames: new Set() });
         const list = shadow.files.find(f => f.globalListName === 'GVL_SynConst');
         assert(!!list && /cSynMax/.test(list.text) && !/cSynGain/.test(list.text), 'CONFLICT: a global the project declares itself is left out of a library list');

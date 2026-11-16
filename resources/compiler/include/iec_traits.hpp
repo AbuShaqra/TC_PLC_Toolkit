@@ -189,7 +189,7 @@ template<> struct is_any_num<uint64_t> : std::true_type {};
 template<> struct is_any_magnitude<uint64_t> : std::true_type {};
 template<> struct is_any_elementary<uint64_t> : std::true_type {};
 
-// 64-bit signed (LINT_t/TIME_t/DATE_t/TOD_t/DT_t/etc = int64_t)
+// 64-bit signed (LINT_t/LTIME_t/LDATE_t/LTOD_t/LDT_t = int64_t)
 // Note: This type is used for both integers and date/time types
 template<> struct is_iec_type<int64_t> : std::true_type {};
 template<> struct is_any_sint<int64_t> : std::true_type {};
@@ -199,6 +199,16 @@ template<> struct is_any_time<int64_t> : std::true_type {};
 template<> struct is_any_date<int64_t> : std::true_type {};
 template<> struct is_any_magnitude<int64_t> : std::true_type {};
 template<> struct is_any_elementary<int64_t> : std::true_type {};
+
+// The 32-bit TIME, DATE, TOD and DT (IecTemporal32)
+template<int K> struct is_iec_type<IecTemporal32<K>> : std::true_type {};
+template<int K> struct is_any_date<IecTemporal32<K>>
+    : std::integral_constant<bool, K != IEC_KIND_TIME> {};
+template<int K> struct is_any_time<IecTemporal32<K>>
+    : std::integral_constant<bool, K == IEC_KIND_TIME> {};
+template<int K> struct is_any_magnitude<IecTemporal32<K>>
+    : std::integral_constant<bool, K == IEC_KIND_TIME> {};
+template<int K> struct is_any_elementary<IecTemporal32<K>> : std::true_type {};
 
 // Single precision float (REAL_t = float)
 template<> struct is_iec_type<float> : std::true_type {};
@@ -331,6 +341,7 @@ template<> struct iec_bit_size<float> : std::integral_constant<size_t, 32> {};
 template<> struct iec_bit_size<double> : std::integral_constant<size_t, 64> {};
 template<> struct iec_bit_size<char> : std::integral_constant<size_t, 8> {};
 template<> struct iec_bit_size<char16_t> : std::integral_constant<size_t, 16> {};
+template<int K> struct iec_bit_size<IecTemporal32<K>> : std::integral_constant<size_t, 32> {};
 
 // IECVar wrapper
 template<typename T>

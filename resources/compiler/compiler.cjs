@@ -9739,9 +9739,11 @@ var DirectAddress = createToken({
   name: "DirectAddress",
   pattern: /%[IQM][XBWDL]?[0-9]+(?:\.[0-9]+)*/i
 });
+var TAB = String.fromCharCode(9);
+var CR = String.fromCharCode(13);
 var Identifier = createToken({
   name: "Identifier",
-  pattern: /[a-zA-Z_][a-zA-Z0-9_]*/
+  pattern: new RegExp(`[^${TAB}-${CR}\\x20-\\x40\\x5B-\\x5E\\x60\\x7B-\\x7E\\s][^${TAB}-${CR}\\x20-\\x2F\\x3A-\\x40\\x5B-\\x5E\\x60\\x7B-\\x7E\\s]*`)
 });
 var testKeywordTokens = [
   END_TEST,
@@ -10257,7 +10259,8 @@ function uppercaseSource(source) {
         continue;
       }
     }
-    out[i] = ch.toUpperCase();
+    const upper = ch.toUpperCase();
+    out[i] = upper.length === ch.length && (ch < "\x80" || upper >= "\x80") ? upper : ch;
     i++;
   }
   return out.join("");
@@ -10294,10 +10297,151 @@ function shortPragmaText(image) {
   const flat = image.replace(/\s+/g, " ");
   return flat.length <= PRAGMA_TEXT_MAX ? flat : `${flat.substring(0, PRAGMA_TEXT_MAX - 4)}...}`;
 }
+function nameLetterMessage(cluster) {
+  const chars = [...cluster];
+  const points = chars.map((c) => `U+${(c.codePointAt(0) ?? 0).toString(16).toUpperCase().padStart(4, "0")}`).join(" ");
+  const visible = chars.some((c) => !/^[\p{Cc}\p{Cf}\p{Zl}\p{Zp}\p{M}]$/u.test(c));
+  const shown = visible ? `'${cluster}' (${points})` : points;
+  return `${shown} is not allowed in a name: identifiers use A\u2013Z, digits and _`;
+}
+var JOINS = /^[\p{M}\u200C\u200D]$/u;
+var GRAPHEMES = typeof Intl !== "undefined" && typeof Intl.Segmenter === "function" ? new Intl.Segmenter(void 0, { granularity: "grapheme" }) : void 0;
+function clusters(text, start, end) {
+  if (GRAPHEMES !== void 0) {
+    return [...GRAPHEMES.segment(text.slice(start, end))].map((g) => ({
+      offset: start + g.index,
+      text: g.segment
+    }));
+  }
+  const out = [];
+  for (let k = start; k < end; ) {
+    const ch = String.fromCodePoint(text.codePointAt(k) ?? 0);
+    const last2 = out[out.length - 1];
+    if (last2 !== void 0 && JOINS.test(ch))
+      last2.text += ch;
+    else
+      out.push({ offset: k, text: ch });
+    k += ch.length;
+  }
+  return out;
+}
+function refused(ch) {
+  const code = ch.codePointAt(0) ?? 0;
+  return code >= 127 || code < 32;
+}
+function collectRefused(result, source) {
+  const errors = [];
+  const ranges = [];
+  const refuseRange = (from, to) => {
+    for (let k = from; k < to; ) {
+      const ch = String.fromCodePoint(source.codePointAt(k) ?? 0);
+      if (refused(ch))
+        ranges.push([k, k + ch.length]);
+      k += ch.length;
+    }
+  };
+  for (const error4 of result.errors) {
+    const ch = String.fromCodePoint(source.codePointAt(error4.offset) ?? 0);
+    if (error4.offset < source.length && refused(ch) && !/^\s$/.test(ch)) {
+      const cluster = clusters(source, error4.offset, error4.offset + ch.length);
+      errors.push({
+        ...error4,
+        message: nameLetterMessage(cluster[0]?.text ?? ch)
+      });
+      ranges.push([error4.offset, error4.offset + ch.length]);
+    }
+  }
+  for (const token of result.tokens) {
+    if (token.tokenType !== Identifier || /^\w*$/.test(token.image)) {
+      continue;
+    }
+    const start = token.startOffset;
+    const end = start + token.image.length;
+    const startCol = token.startColumn ?? 0;
+    const first2 = String.fromCodePoint(source.codePointAt(start) ?? 0);
+    const before2 = start > 0 ? source.charAt(start - 1) : "";
+    const back = JOINS.test(first2) && before2 !== "" && !/\s/.test(before2) ? before2 >= "\uDC00" && before2 <= "\uDFFF" && start > 1 ? 2 : 1 : 0;
+    for (const c of clusters(source, start - back, end)) {
+      if (![...c.text].some(refused))
+        continue;
+      errors.push({
+        offset: c.offset,
+        line: token.startLine,
+        column: startCol + (c.offset - start),
+        length: c.text.length,
+        message: nameLetterMessage(c.text)
+      });
+    }
+    refuseRange(start, end);
+  }
+  ranges.sort((a, b) => a[0] - b[0]);
+  return { errors, ranges };
+}
+function lexWithoutRefused(source, lexOnce2) {
+  const first2 = lexOnce2(source);
+  const refusals = collectRefused(first2, source);
+  if (refusals.ranges.length === 0)
+    return first2;
+  let text = "";
+  const at = [];
+  let k = 0;
+  for (const [from, to] of refusals.ranges) {
+    if (from < k)
+      continue;
+    text += source.slice(k, from);
+    for (let i = k; i < from; i++)
+      at.push(i);
+    k = to;
+  }
+  text += source.slice(k);
+  for (let i = k; i < source.length; i++)
+    at.push(i);
+  at.push(source.length);
+  const lineStart = [0];
+  for (let i = 0; i < source.length; i++) {
+    const c = source.charCodeAt(i);
+    if (c === 10 || c === 13 && source.charCodeAt(i + 1) !== 10) {
+      lineStart.push(i + 1);
+    }
+  }
+  const column = (offset, line) => offset - (lineStart[(line ?? 1) - 1] ?? 0) + 1;
+  const second = lexOnce2(text);
+  const move = (t) => {
+    const end = t.endOffset;
+    t.startOffset = at[t.startOffset] ?? t.startOffset;
+    t.startColumn = column(t.startOffset, t.startLine);
+    if (end !== void 0) {
+      t.endOffset = at[end] ?? end;
+      t.endColumn = column(t.endOffset, t.endLine);
+    }
+  };
+  for (const t of second.tokens)
+    move(t);
+  for (const group of Object.values(second.groups)) {
+    for (const t of group)
+      move(t);
+  }
+  for (const e of second.errors) {
+    const stripped = e.offset;
+    e.offset = at[e.offset] ?? e.offset;
+    const last2 = at[stripped + e.length - 1];
+    if (last2 !== void 0)
+      e.length = last2 + 1 - e.offset;
+    if (e.line !== void 0)
+      e.column = column(e.offset, e.line);
+    e.message = e.message.replace(`at offset: ${stripped},`, `at offset: ${e.offset},`);
+  }
+  second.errors.push(...refusals.errors);
+  second.errors.sort((a, b) => a.offset - b.offset);
+  return second;
+}
 function tokenize(source) {
+  return lexWithoutRefused(source, (text) => lexOnce(text, STLexer));
+}
+function lexOnce(source, lexer) {
   const upperSource = uppercaseSource(source);
   const unclosedComment = findUnclosedBlockComment(upperSource);
-  const result = STLexer.tokenize(upperSource);
+  const result = lexer.tokenize(upperSource);
   if (unclosedComment) {
     result.errors.push({
       offset: unclosedComment.offset,
@@ -10311,20 +10455,7 @@ function tokenize(source) {
   return result;
 }
 function tokenizeTest(source) {
-  const upperSource = uppercaseSource(source);
-  const unclosedComment = findUnclosedBlockComment(upperSource);
-  const result = TestLexer.tokenize(upperSource);
-  if (unclosedComment) {
-    result.errors.push({
-      offset: unclosedComment.offset,
-      line: unclosedComment.line,
-      column: unclosedComment.column,
-      length: 2,
-      message: "Unclosed block comment"
-    });
-  }
-  checkPragmas(result, source, upperSource);
-  return result;
+  return lexWithoutRefused(source, (text) => lexOnce(text, TestLexer));
 }
 
 // dist/frontend/parser-error-message-provider.js
@@ -12756,7 +12887,10 @@ var STParser = class _STParser extends CstParser {
    */
   testCase = this.RULE("testCase", () => {
     this.CONSUME(TEST);
-    this.CONSUME(StringLiteral);
+    this.OR([
+      { ALT: () => this.CONSUME(StringLiteral) },
+      { ALT: () => this.CONSUME(WideStringLiteral) }
+    ]);
     this.MANY(() => {
       this.SUBRULE(this.varBlock);
     });
@@ -12979,6 +13113,9 @@ function toCompileErrors(errors, file) {
     };
     if (file !== void 0)
       entry.file = file;
+    if (typeof err.length === "number" && err.length > 1) {
+      entry.endColumn = column + err.length;
+    }
     if (err.token !== void 0) {
       const stack = Array.isArray(err.context?.ruleStack) ? err.context.ruleStack : [];
       const rule = stack[stack.length - 1];
@@ -13209,6 +13346,29 @@ function charLiteralUnits(raw) {
   }
   return { wide, units };
 }
+function exactIntegerValue(expr) {
+  if (expr.kind === "ParenthesizedExpression") {
+    return exactIntegerValue(expr.expression);
+  }
+  if (expr.kind === "UnaryExpression" && expr.operator === "-") {
+    const inner = exactIntegerValue(expr.operand);
+    return inner === void 0 ? void 0 : -inner;
+  }
+  if (expr.kind !== "LiteralExpression" || expr.literalType !== "INT") {
+    return void 0;
+  }
+  const typed = expr.rawValue.includes("#") && !/^(16|8|2)#/.test(expr.rawValue);
+  const raw = typed ? expr.rawValue.slice(expr.rawValue.indexOf("#") + 1) : expr.rawValue;
+  const value = exactIntegerLiteralValue(raw);
+  if (!typed || value === void 0 || !/^(16|8|2)#/.test(raw))
+    return value;
+  const type = expr.rawValue.slice(0, expr.rawValue.indexOf("#")).toUpperCase();
+  const range = integerTypeRange(type);
+  const bits = INTEGER_TYPE_BITS[type];
+  if (range === void 0 || bits === void 0 || range.min >= 0n)
+    return value;
+  return value > range.max ? value - (1n << BigInt(bits)) : value;
+}
 
 // dist/ast-utils.js
 function isEnArgument(arg) {
@@ -13228,6 +13388,8 @@ function walkAST(node, visitor) {
   if (result === false)
     return;
   for (const child of getChildren(node)) {
+    if (child === void 0 || child === null)
+      continue;
     walkAST(child, visitor);
   }
 }
@@ -16896,7 +17058,7 @@ var ASTBuilder = class {
    */
   buildTestCase(cst) {
     const children = cst.children;
-    const nameToken = getFirstToken(children.StringLiteral);
+    const nameToken = getFirstToken(children.StringLiteral) ?? getFirstToken(children.WideStringLiteral);
     const name = nameToken ? nameToken.image.slice(1, -1) : "";
     const varBlocks = getAllNodes(children.varBlock).map((vb) => this.buildVarBlock(vb));
     const body = this.buildTestStatementList(getFirstNode(children.testStatementList));
@@ -18414,7 +18576,7 @@ var ProjectModelBuilder = class {
     }
     for (const instance of resource.programInstances) {
       const instanceDecl = this.processProgramInstance(instance, configName);
-      if (!this.programs.has(instance.programType.toUpperCase())) {
+      if (instance.programType !== "" && !this.programs.has(instance.programType.toUpperCase())) {
         this.addError(`Unknown program type '${instance.programType}' in program instance '${instance.instanceName}'`, instance.sourceSpan.startLine, instance.sourceSpan.startCol);
       }
       if (instance.taskName) {
@@ -18428,7 +18590,9 @@ var ProjectModelBuilder = class {
         const firstTask = tasks[0];
         if (firstTask !== void 0) {
           firstTask.programInstances.push(instanceDecl);
-          this.addWarning(`Program instance '${instance.instanceName}' has no task assignment, assigned to '${firstTask.name}'`, instance.sourceSpan.startLine, instance.sourceSpan.startCol);
+          if (instance.instanceName !== "") {
+            this.addWarning(`Program instance '${instance.instanceName}' has no task assignment, assigned to '${firstTask.name}'`, instance.sourceSpan.startLine, instance.sourceSpan.startCol);
+          }
         }
       }
     }
@@ -18790,11 +18954,11 @@ var IEC_BASE_TYPES = [
   {
     name: "TIME",
     aliases: [],
-    byteSize: 8,
-    bits: 64,
-    signed: true,
+    byteSize: 4,
+    bits: 32,
+    signed: false,
     cppType: "TIME_t",
-    wireFormat: "duration-ns-i64",
+    wireFormat: "duration-ms-u32",
     xml: { elementName: "TIME", plcopenStandard: true },
     literalDisplay: "T#1d2h3m"
   },
@@ -18812,33 +18976,33 @@ var IEC_BASE_TYPES = [
   {
     name: "DATE",
     aliases: [],
-    byteSize: 8,
-    bits: 64,
-    signed: true,
+    byteSize: 4,
+    bits: 32,
+    signed: false,
     cppType: "DATE_t",
-    wireFormat: "date-ns-i64",
+    wireFormat: "date-s-u32",
     xml: { elementName: "DATE", plcopenStandard: true },
     literalDisplay: "D#YYYY-MM-DD"
   },
   {
     name: "TOD",
     aliases: ["TIME_OF_DAY"],
-    byteSize: 8,
-    bits: 64,
-    signed: true,
+    byteSize: 4,
+    bits: 32,
+    signed: false,
     cppType: "TOD_t",
-    wireFormat: "tod-ns-i64",
+    wireFormat: "tod-ms-u32",
     xml: { elementName: "TOD", plcopenStandard: true },
     literalDisplay: "TOD#HH:MM:SS"
   },
   {
     name: "DT",
     aliases: ["DATE_AND_TIME"],
-    byteSize: 8,
-    bits: 64,
-    signed: true,
+    byteSize: 4,
+    bits: 32,
+    signed: false,
     cppType: "DT_t",
-    wireFormat: "datetime-ns-i64",
+    wireFormat: "datetime-s-u32",
     xml: { elementName: "DT", plcopenStandard: true },
     literalDisplay: "DT#YYYY-MM-DD-HH:MM:SS"
   },
@@ -20855,6 +21019,17 @@ var StdFunctionRegistry = class {
       category: "time"
     });
     this.register({
+      name: "LTIME",
+      cppName: "LTIME",
+      returnConstraint: "specific",
+      returnMatchesFirstParam: false,
+      specificReturnType: "LTIME",
+      params: [],
+      isVariadic: false,
+      isConversion: false,
+      category: "time"
+    });
+    this.register({
       name: "CURRENT_DT",
       cppName: "CURRENT_DT",
       returnConstraint: "specific",
@@ -21056,10 +21231,12 @@ var RUNTIME_CALLABLE_NAMES = /* @__PURE__ */ new Set([
   "CONVERT",
   "DATE",
   "DATE_AND_TIME",
+  "DATE_AS_DAYS",
   "DATE_FROM_DAYS",
   "DATE_FROM_NS",
   "DATE_FROM_SECONDS",
   "DATE_FROM_YMD",
+  "DATE_OF_DAYS",
   "DATE_OF_DT",
   "DATE_TO_DAYS",
   "DATE_TO_NS",
@@ -21072,9 +21249,13 @@ var RUNTIME_CALLABLE_NAMES = /* @__PURE__ */ new Set([
   "DIV_LTIME",
   "DIV_TIME",
   "DREF",
+  "DT",
+  "DT_AS_NS",
   "DT_FROM_COMPONENTS",
   "DT_FROM_NS",
   "DT_FROM_SECONDS",
+  "DT_OF_NS",
+  "DT_OF_SECONDS",
   "DT_TO_MS",
   "DT_TO_NS",
   "DT_TO_SECONDS",
@@ -21152,6 +21333,10 @@ var RUNTIME_CALLABLE_NAMES = /* @__PURE__ */ new Set([
   "IS_XDIGIT",
   "KB",
   "LAYOUT",
+  "LDATE",
+  "LDATE_TO_DATE_VALUE",
+  "LDT",
+  "LDT_TO_DT_VALUE",
   "LE_CHAR",
   "LE_DATE",
   "LE_DT",
@@ -21162,6 +21347,8 @@ var RUNTIME_CALLABLE_NAMES = /* @__PURE__ */ new Set([
   "LE_WSTRING",
   "LOWERCASE",
   "LREAL",
+  "LTIME_TO_TIME_VALUE",
+  "LTOD_TO_TOD_VALUE",
   "LT_CHAR",
   "LT_DATE",
   "LT_DT",
@@ -21196,17 +21383,22 @@ var RUNTIME_CALLABLE_NAMES = /* @__PURE__ */ new Set([
   "SUB_TOD",
   "T",
   "THREADED",
+  "TIME_AS_NS",
   "TIME_OF_DAY",
+  "TIME_OF_NS",
   "TIME_TO_D",
   "TIME_TO_H",
   "TIME_TO_M",
   "TIME_TO_NS",
   "TIME_TO_US",
+  "TOD_AS_NS",
   "TOD_FROM_HMS",
   "TOD_FROM_MS",
   "TOD_FROM_NS",
   "TOD_NORMALIZE",
   "TOD_OF_DT",
+  "TOD_OF_MS",
+  "TOD_OF_NS",
   "TOD_TO_MS",
   "TOD_TO_NS",
   "TO_LOWER",
@@ -21303,6 +21495,147 @@ function orderGlobalBlocks(blocks) {
   return { order, dependencies, cycles };
 }
 
+// dist/semantic/address-store.js
+var PASS_THROUGH = {
+  SEL: 1,
+  MUX: 1,
+  MOVE: 0,
+  MIN: 0,
+  MAX: 0,
+  LIMIT: 0
+};
+function addressSource(value, userFunction = () => false, pointerRead = () => false) {
+  switch (value.kind) {
+    case "ParenthesizedExpression":
+      return addressSource(value.expression, userFunction, pointerRead);
+    case "RefExpression":
+      return { op: "REF", node: value, operand: value.operand };
+    case "FunctionCallExpression": {
+      if (value.instance !== void 0)
+        return void 0;
+      const name = value.functionName.toUpperCase();
+      if (name === "ADR") {
+        return {
+          op: "ADR",
+          node: value,
+          operand: stripEnEno(value.arguments)[0]?.value
+        };
+      }
+      const first2 = PASS_THROUGH[name];
+      if (first2 === void 0 || userFunction(name))
+        return void 0;
+      for (const arg of stripEnEno(value.arguments).slice(first2)) {
+        if (arg.isOutput)
+          continue;
+        const source = addressSource(arg.value, userFunction, pointerRead);
+        if (source)
+          return source;
+      }
+      return void 0;
+    }
+    case "BinaryExpression":
+      if (value.operator === "+") {
+        return addressSource(value.left, userFunction, pointerRead) ?? addressSource(value.right, userFunction, pointerRead);
+      }
+      return value.operator === "-" && addressSource(value.right, userFunction, pointerRead) === void 0 && !pointerRead(value.right) ? addressSource(value.left, userFunction, pointerRead) : void 0;
+    default:
+      return void 0;
+  }
+}
+var COMPARISONS = /* @__PURE__ */ new Set(["=", "<>", "<", ">", "<=", ">="]);
+function addressMisuse(value, userFunction = () => false, pointerRead = () => false) {
+  const misuse = (e) => addressMisuse(e, userFunction, pointerRead);
+  const isAddress = (e) => addressSource(e, userFunction, pointerRead) !== void 0 || pointerRead(e);
+  switch (value.kind) {
+    case "ParenthesizedExpression":
+      return misuse(value.expression);
+    case "UnaryExpression":
+      return isAddress(value.operand) || misuse(value.operand);
+    case "BinaryExpression": {
+      if (misuse(value.left) || misuse(value.right))
+        return true;
+      if (COMPARISONS.has(value.operator))
+        return false;
+      const left = isAddress(value.left);
+      const right = isAddress(value.right);
+      if (value.operator === "+")
+        return left && right;
+      if (value.operator === "-")
+        return right && !left;
+      return left || right;
+    }
+    default:
+      return false;
+  }
+}
+var NARROW = /* @__PURE__ */ new Set([
+  "SINT",
+  "USINT",
+  "BYTE",
+  "INT",
+  "UINT",
+  "WORD",
+  "DINT",
+  "UDINT",
+  "DWORD"
+]);
+var NOT_INTEGER = /* @__PURE__ */ new Set([
+  "BOOL",
+  "REAL",
+  "LREAL",
+  "TIME",
+  "LTIME",
+  "DATE",
+  "LDATE",
+  "TOD",
+  "TIME_OF_DAY",
+  "LTOD",
+  "LTIME_OF_DAY",
+  "DT",
+  "DATE_AND_TIME",
+  "LDT",
+  "LDATE_AND_TIME",
+  "CHAR",
+  "WCHAR",
+  "STRING",
+  "WSTRING"
+]);
+var WIDE = /* @__PURE__ */ new Set(["LINT", "ULINT", "LWORD", "__XWORD"]);
+function addressFit(typeName2, types) {
+  let name = typeName2.toUpperCase();
+  for (let depth = 0; depth < 16; depth++) {
+    if (NARROW.has(name) || NOT_INTEGER.has(name))
+      return { narrow: name };
+    if (WIDE.has(name))
+      return "wide";
+    const def = types.find((t) => t.name.toUpperCase() === name)?.definition;
+    if (def?.kind === "SubrangeDefinition") {
+      name = def.baseType.name.toUpperCase();
+    } else if (def?.kind === "TypeReference" && (def.referenceKind ?? "none") === "none" && def.arrayDimensions === void 0) {
+      name = def.name.toUpperCase();
+    } else {
+      return void 0;
+    }
+  }
+  return void 0;
+}
+function isNarrowInteger(baseName) {
+  return NARROW.has(baseName);
+}
+function narrowAddressMessage(what, narrow) {
+  return `${what} gives a 64-bit address, which ${narrow} cannot hold; use a POINTER TO or PVOID, or __XWORD, LWORD or ULINT`;
+}
+function pointerReadTarget(declared, e) {
+  if (e.isDereference || e.fieldAccess.length > 0 || (e.accessChain ?? []).some((step) => step.kind !== "subscript")) {
+    return void 0;
+  }
+  const subscripted = e.subscripts.length > 0 || (e.accessChain ?? []).some((step) => step.kind === "subscript");
+  if (!subscripted) {
+    return declared.arrayDimensions === void 0 && declared.referenceKind === "pointer_to" && (declared.referenceChain?.length ?? 1) === 1 ? declared.name : void 0;
+  }
+  return declared.arrayDimensions !== void 0 && declared.elementReferenceChain?.length === 1 && declared.elementReferenceChain[0] === "pointer_to" ? declared.elementTypeName : void 0;
+}
+
 // dist/dialect.js
 var KNOWN_FEATURES = [
   "program_methods",
@@ -21324,7 +21657,8 @@ var KNOWN_FEATURES = [
   "type_colon_optional",
   "conditional_return",
   "platform_types",
-  "bit_type"
+  "bit_type",
+  "string_default_80"
 ];
 var DEFAULT_FEATURES = /* @__PURE__ */ new Set([
   "pointer_to",
@@ -21701,7 +22035,7 @@ function flattenStructExtends(ast, describeExternal, report) {
     if (def.kind !== "StructDefinition")
       return false;
     const base = decl.extends;
-    if (!base) {
+    if (!base || base.name === "") {
       ownOrigins(decl, def);
       return true;
     }
@@ -22379,6 +22713,102 @@ function fbInitLoweringErrors(ast, isLibraryFB, report) {
   }
 }
 
+// dist/semantic/untyped-not.js
+var BIT_STRINGS = /* @__PURE__ */ new Set([
+  "BYTE",
+  "WORD",
+  "DWORD",
+  "LWORD"
+]);
+function isUntypedIntegerConstant(expr) {
+  switch (expr.kind) {
+    case "LiteralExpression":
+      return expr.literalType === "INT" && (expr.typePrefix ?? "") === "";
+    case "ParenthesizedExpression":
+      return isUntypedIntegerConstant(expr.expression);
+    case "UnaryExpression":
+      return expr.operator === "NOT" && isUntypedIntegerConstant(expr.operand);
+    case "BinaryExpression":
+      return ["AND", "OR", "XOR"].includes(expr.operator) && isUntypedIntegerConstant(expr.left) && isUntypedIntegerConstant(expr.right);
+    case "FunctionCallExpression": {
+      const operand = notCallOperand(expr);
+      return operand !== void 0 && isUntypedIntegerConstant(operand);
+    }
+    default:
+      return false;
+  }
+}
+function notCallOperand(expr) {
+  if (expr.kind !== "FunctionCallExpression" || expr.functionName.toUpperCase() !== "NOT" || expr.arguments.length !== 1 || expr.arguments[0].name !== void 0 || expr.arguments[0].isOutput) {
+    return void 0;
+  }
+  return expr.arguments[0].value;
+}
+function notOperand(expr) {
+  if (expr.kind === "UnaryExpression" && expr.operator === "NOT") {
+    return expr.operand;
+  }
+  return notCallOperand(expr);
+}
+function selectedValues(expr) {
+  if (expr.kind !== "FunctionCallExpression")
+    return [];
+  const name = expr.functionName.toUpperCase();
+  if (name !== "SEL" && name !== "MUX")
+    return [];
+  const args = expr.arguments.filter((a) => !a.isOutput && !["EN", "ENO"].includes((a.name ?? "").toUpperCase()));
+  if (args.some((a) => a.name !== void 0))
+    return [];
+  return args.slice(1).map((a) => a.value);
+}
+function typeUntypedNot(value, target) {
+  if (!BIT_STRINGS.has(target))
+    return;
+  const type = ELEMENTARY_TYPES[target];
+  if (type === void 0)
+    return;
+  const walk = (e) => {
+    switch (e.kind) {
+      case "ParenthesizedExpression":
+        walk(e.expression);
+        return;
+      case "UnaryExpression":
+      case "FunctionCallExpression": {
+        const operand = notOperand(e);
+        if (operand !== void 0 && isUntypedIntegerConstant(operand)) {
+          e.resolvedType = type;
+          walk(operand);
+        }
+        for (const v of selectedValues(e))
+          walk(v);
+        return;
+      }
+      case "BinaryExpression":
+        if (["AND", "OR", "XOR"].includes(e.operator)) {
+          walk(e.left);
+          walk(e.right);
+        }
+        return;
+      default:
+        return;
+    }
+  };
+  walk(value);
+}
+function untypedNotTarget(expr) {
+  const operand = notOperand(expr);
+  if (operand === void 0)
+    return void 0;
+  const t = expr.resolvedType;
+  if (t?.typeKind !== "elementary" || !("name" in t))
+    return void 0;
+  const name = String(t.name).toUpperCase();
+  return BIT_STRINGS.has(name) && isUntypedIntegerConstant(operand) ? name : void 0;
+}
+function untypedNotCpp(type, operandCpp) {
+  return `static_cast<${type}_t>(~static_cast<${type}_t>(${operandCpp}))`;
+}
+
 // dist/semantic/type-checker.js
 var ED3_ELEMENTARY_NAMES = /* @__PURE__ */ new Set([
   "LTIME",
@@ -22476,14 +22906,69 @@ function isStringBase(name) {
 function stringText(shape) {
   return shape.length === void 0 ? shape.base : `${shape.base}(${String(shape.length)})`;
 }
+function callInputsOfBlocks(blocks) {
+  const out = [];
+  let position = 0;
+  for (const b of blocks) {
+    const parameter = b.blockType === "VAR_INPUT" || b.blockType === "VAR_OUTPUT" || b.blockType === "VAR_IN_OUT";
+    if (!parameter)
+      continue;
+    for (const d of b.declarations) {
+      for (const name of d.names) {
+        if (b.blockType !== "VAR_OUTPUT") {
+          out.push({
+            name,
+            type: d.type,
+            inOut: b.blockType === "VAR_IN_OUT",
+            position
+          });
+        }
+        position++;
+      }
+    }
+  }
+  return out;
+}
+function boundInput(inputs, arg, index) {
+  const argName = arg.name?.toUpperCase();
+  if (argName !== void 0) {
+    return inputs.find((p) => p.name.toUpperCase() === argName);
+  }
+  return inputs.some((p) => p.position !== void 0) ? inputs.find((p) => p.position === index) : inputs[index];
+}
 function isNullInitializer(expr) {
   return expr.kind === "LiteralExpression" && (expr.literalType === "NULL" || expr.value === 0);
 }
+function defaultStringsOnly(a, b) {
+  const plain = (t) => {
+    const upper = t.name.toUpperCase();
+    if (upper !== "STRING" && upper !== "WSTRING")
+      return void 0;
+    if ((t.referenceKind ?? "none") !== "none")
+      return void 0;
+    if (t.arrayDimensions !== void 0)
+      return void 0;
+    const ref = t;
+    return ref.maxLength === void 0 || ref.defaultLength === true ? upper : void 0;
+  };
+  const left = plain(a);
+  return left !== void 0 && left === plain(b);
+}
+var TEMPORAL32_NAMES = /* @__PURE__ */ new Set([
+  "TIME",
+  "DATE",
+  "TOD",
+  "DT"
+]);
+var TEMPORAL_ANY_NAMES = /* @__PURE__ */ new Set([
+  ...TEMPORAL32_NAMES,
+  "LTIME",
+  "LDATE",
+  "LTOD",
+  "LDT"
+]);
 function isAddressOf(expr) {
   return expr.kind === "FunctionCallExpression" && expr.functionName.toUpperCase() === "ADR" && expr.instance === void 0;
-}
-function isIntegerOrBitStringName(name) {
-  return /^(U?S?INT|U?DINT|U?LINT|BYTE|WORD|DWORD|LWORD)$/i.test(name);
 }
 function isUntypedZero(expr) {
   return expr.kind === "LiteralExpression" && expr.literalType === "INT" && expr.typePrefix === void 0 && expr.value === 0;
@@ -22547,6 +23032,22 @@ var TEMPORAL_STORAGE = {
   LDATE_AND_TIME: "dt",
   LDT: "dt"
 };
+var NOT_READING_CALLS = /* @__PURE__ */ new Set([
+  "ADR",
+  "REF",
+  "SIZEOF",
+  "XSIZEOF"
+]);
+var ADDRESS_CALLS = /* @__PURE__ */ new Set(["ADR", "REF"]);
+var BOUND_CALLS = /* @__PURE__ */ new Set([
+  "LOWER_BOUND",
+  "UPPER_BOUND"
+]);
+function accessIndices(expr) {
+  if (expr.accessChain === void 0)
+    return expr.subscripts;
+  return expr.accessChain.flatMap((s) => s.kind === "subscript" ? s.indices : []);
+}
 var COMPARISON_OPS = /* @__PURE__ */ new Set([
   "=",
   "<>",
@@ -22590,6 +23091,11 @@ function strictKind(name) {
   if (STRICT_BIT_STRINGS.has(n))
     return "bit";
   return void 0;
+}
+function isLongFormOf(to, from) {
+  const f = canonicalElementaryName(from);
+  const t = canonicalElementaryName(to);
+  return f === "TIME" && t === "LTIME" || f === "DATE" && t === "LDATE" || f === "DT" && t === "LDT" || f === "TOD" && t === "LTOD";
 }
 function strictConversionMessage(from, to) {
   return `Implicit conversion from ${from} to ${to} is not allowed; use ${from}_TO_${to}`;
@@ -22658,8 +23164,63 @@ var TypeChecker = class _TypeChecker {
     for (const root2 of roots) {
       walkAST(root2, (node) => {
         if (node.kind === "FunctionCallExpression") {
-          this.checkOutputBindings(node, scope);
+          const call = node;
+          this.vendorOperatorCallType(call, call.functionName.toUpperCase(), scope);
+          this.checkOutputBindings(call, scope);
         }
+      });
+    }
+    return { errors: [...this.errors], warnings: [...this.warnings] };
+  }
+  /**
+   * The address stores of a test file's VAR blocks and statements (see
+   * checkAddressStore): initial values, assignments and call arguments.
+   */
+  checkTestAddressStores(varBlocks, roots, scope, ast) {
+    this.errors = [];
+    this.warnings = [];
+    this.ast = ast;
+    this.misalignedReported.clear();
+    this.checkVarBlocks(varBlocks, scope);
+    for (const block of varBlocks) {
+      for (const decl of block.declarations) {
+        if (decl.initialValue === void 0)
+          continue;
+        if ((decl.type.referenceKind ?? "none") !== "none")
+          continue;
+        this.refuseNarrowAddressNested(decl.type, decl.initialValue);
+      }
+    }
+    for (const root2 of roots) {
+      walkAST(root2, (node) => {
+        if (node.kind === "AssignmentStatement") {
+          const stmt = node;
+          const target = this.resolveExprType(stmt.target, scope);
+          this.refuseMisalignedPointerStore(this.storeTargetDeclaredType(stmt.target, scope), stmt.value, scope);
+          if (this.reachesThroughDereference(stmt.target) || (this.declaredReferenceShape(stmt.target, scope)?.chain.length ?? 0) === 0) {
+            this.checkAddressStore(this.storeTargetTypeName(stmt.target, target, scope), stmt.value);
+          }
+        } else if (node.kind === "FunctionCallExpression") {
+          this.refuseNarrowAddressArguments(node, scope);
+        }
+      });
+    }
+    return { errors: [...this.errors], warnings: [...this.warnings] };
+  }
+  /**
+   * LOWER_BOUND / UPPER_BOUND calls in a test file's statements, which no
+   * typing reaches: checked as an untyped call (see checkBoundCall). Initial
+   * values are typed, and their calls checked, by checkTestAddressStores.
+   */
+  checkTestBoundCalls(roots, scope, ast) {
+    this.errors = [];
+    this.warnings = [];
+    this.ast = ast;
+    for (const root2 of roots) {
+      walkAST(root2, (node) => {
+        if (node.kind !== "FunctionCallExpression")
+          return;
+        this.checkBoundCall(node, scope, true);
       });
     }
     return { errors: [...this.errors], warnings: [...this.warnings] };
@@ -22672,6 +23233,8 @@ var TypeChecker = class _TypeChecker {
     this.errors = [];
     this.warnings = [];
     this.strictReported.clear();
+    this.addressStoresReported.clear();
+    this.misalignedReported.clear();
     this.ast = ast;
     this.writeTargets = /* @__PURE__ */ new Set();
     walkAST(ast, (node) => {
@@ -22685,6 +23248,8 @@ var TypeChecker = class _TypeChecker {
     });
     this.checkAllInitializerElements(ast);
     this.checkGlobalInitialCycles(ast);
+    this.refuseNarrowAddressInGlobals(ast);
+    this.refuseGlobalReferenceToValues(ast);
     this.checkStructReferenceDefaults(ast);
     this.markGlobalVendorOperators(ast);
     if (this.features.has("fb_init")) {
@@ -22756,10 +23321,98 @@ var TypeChecker = class _TypeChecker {
       }
       this.currentFBName = void 0;
     }
+    this.checkInitialValueOperators(ast);
     return {
       errors: this.errors,
       warnings: this.warnings
     };
+  }
+  /**
+   * Operators in an initial value the checks above do not type (a STRUCT
+   * field default, an array or structure initializer, a global's initial
+   * value) are refused as in a body: a mixed STRING/WSTRING comparison and a
+   * negated TIME constant. Operand types come from literals, declared
+   * variables and types already resolved; nothing is inferred anew.
+   */
+  checkInitialValueOperators(ast) {
+    const global2 = this.symbolTables.globalScope;
+    const visit = (value, scope) => {
+      if (value === void 0)
+        return;
+      walkAST(value, (node) => {
+        if (node.kind === "UnaryExpression") {
+          this.refuseNegatedTimeConstant(node, scope);
+          return;
+        }
+        if (node.kind === "FunctionCallExpression") {
+          this.checkInitialBoundCall(node, scope);
+          return;
+        }
+        if (node.kind !== "BinaryExpression")
+          return;
+        const expr = node;
+        if (!["=", "<>", "<", ">", "<=", ">="].includes(expr.operator) || this.refusedMixedComparisons.has(expr)) {
+          return;
+        }
+        const left = this.knownOperandType(expr.left, scope);
+        const right = this.knownOperandType(expr.right, scope);
+        if (left !== void 0 && right !== void 0) {
+          this.refuseMixedStringComparison(expr, left, right);
+        }
+      });
+    };
+    const blocks = (list, scope) => {
+      for (const block of list) {
+        for (const decl of block.declarations) {
+          visit(decl.initialValue, scope ?? global2);
+        }
+      }
+    };
+    blocks(ast.globalVarBlocks, global2);
+    for (const c of ast.configurations)
+      blocks(c.varBlocks, global2);
+    for (const prog of ast.programs) {
+      const scope = this.symbolTables.getProgramScope(prog.name);
+      blocks(prog.varBlocks, scope);
+      for (const m of prog.methods) {
+        blocks(m.varBlocks, this.symbolTables.getMethodScope(prog.name, m.name) ?? scope);
+      }
+    }
+    for (const func of ast.functions) {
+      blocks(func.varBlocks, this.symbolTables.getFunctionScope(func.name));
+    }
+    for (const fb of ast.functionBlocks) {
+      const scope = this.symbolTables.getFBScope(fb.name);
+      blocks(fb.varBlocks, scope);
+      for (const m of fb.methods) {
+        blocks(m.varBlocks, this.symbolTables.getMethodScope(fb.name, m.name) ?? scope);
+      }
+    }
+    for (const type of ast.types) {
+      visit(type.defaultValue, global2);
+      if (type.definition.kind !== "StructDefinition")
+        continue;
+      for (const field of type.definition.fields) {
+        visit(field.initialValue, global2);
+      }
+    }
+  }
+  /** An operand's type when known without inference: a literal, a declared name or a resolved type. */
+  knownOperandType(expr, scope) {
+    while (expr.kind === "ParenthesizedExpression")
+      expr = expr.expression;
+    if (expr.resolvedType !== void 0)
+      return expr.resolvedType;
+    if (expr.kind === "LiteralExpression") {
+      return expr.literalType === "STRING" || expr.literalType === "WSTRING" ? ELEMENTARY_TYPES[expr.literalType] : void 0;
+    }
+    if (expr.kind === "VariableExpression" && expr.fieldAccess.length === 0 && expr.subscripts.length === 0 && !expr.isDereference) {
+      const symbol = scope.lookup(expr.name);
+      if (symbol?.kind === "variable" || symbol?.kind === "constant") {
+        return symbol.type;
+      }
+    }
+    return void 0;
   }
   // ===========================================================================
   // Expression Type Resolution (Sub-Phase B)
@@ -23094,6 +23747,7 @@ var TypeChecker = class _TypeChecker {
   checkAllInitializerElements(ast) {
     this.typeDefaults = new Set(ast.types.flatMap((t) => t.defaultValue ? [t.defaultValue] : []));
     const seen = /* @__PURE__ */ new Set();
+    const fields = new Set(ast.types.flatMap((t) => t.definition.kind === "StructDefinition" ? t.definition.fields : []));
     const visit = (root2, context) => walkAST(root2, (node) => {
       if (node.kind !== "VarDeclaration")
         return;
@@ -23103,6 +23757,8 @@ var TypeChecker = class _TypeChecker {
       seen.add(decl);
       if (decl.initialValue) {
         this.checkInitializerElements(decl.type, decl.initialValue, context);
+        this.refuseLtimeTimeDefault(decl, fields.has(decl));
+        this.typeInitializerNots(decl.type, decl.initialValue);
       }
     });
     for (const fb of ast.functionBlocks)
@@ -23112,7 +23768,31 @@ var TypeChecker = class _TypeChecker {
       if (t.defaultValue && t.definition.kind === "TypeReference") {
         this.checkCharInitialValue(t.name, t.defaultValue);
       }
+      if (t.defaultValue) {
+        this.typeInitializerNots({ name: t.name, referenceKind: "none" }, t.defaultValue);
+      }
     }
+  }
+  /**
+   * An LTIME as the initial value of a TIME declared through an alias, or of
+   * a TIME STRUCT field, is refused as `x : TIME := LTIME#3ms` is (a plain
+   * TIME variable is refused by the elementary initial value check).
+   */
+  refuseLtimeTimeDefault(decl, structField) {
+    const value = decl.initialValue;
+    const type = decl.type;
+    if (value === void 0 || (type.referenceKind ?? "none") !== "none" || type.referenceChain !== void 0 || type.arrayDimensions !== void 0 || this.reportedCharValues.has(value) || canonicalElementaryName(this.aliasBase(type.name)) !== "TIME" || !structField && ELEMENTARY_TYPES[type.name.toUpperCase()] !== void 0) {
+      return;
+    }
+    let inner = value;
+    while (inner.kind === "ParenthesizedExpression")
+      inner = inner.expression;
+    const valueType = inner.kind === "LiteralExpression" ? inner.literalType : inner.resolvedType?.typeKind === "elementary" ? this.aliasBase(inner.resolvedType.name) : void 0;
+    if (valueType === void 0 || canonicalElementaryName(valueType) !== "LTIME") {
+      return;
+    }
+    this.reportedCharValues.add(value);
+    this.addError(`Cannot assign LTIME to ${type.name.toUpperCase()}`, value.sourceSpan.startLine, value.sourceSpan.startCol, value.sourceSpan.file);
   }
   /**
    * Report an element a structure initializer names that its STRUCT or
@@ -23582,13 +24262,42 @@ var TypeChecker = class _TypeChecker {
    * Infer type of a binary expression.
    */
   inferBinaryType(expr, scope) {
+    if (expr.operator === "+" || expr.operator === "-") {
+      for (let side of [expr.left, expr.right]) {
+        while (side.kind === "ParenthesizedExpression")
+          side = side.expression;
+        if (side.kind === "BinaryExpression" && (side.operator === "+" || side.operator === "-")) {
+          this.innerChainNodes.add(side);
+        }
+      }
+    }
     let leftType = this.resolveExprType(expr.left, scope);
     let rightType = this.resolveExprType(expr.right, scope);
+    if (COMPARISON_OPS.has(expr.operator)) {
+      if (this.typeNotFromExpected(expr.left, rightType)) {
+        leftType = expr.left.resolvedType;
+      } else if (this.typeNotFromExpected(expr.right, leftType)) {
+        rightType = expr.right.resolvedType;
+      }
+    }
     delete expr.comparesReferences;
     if ((expr.operator === "=" || expr.operator === "<>") && (this.isReferenceItself(expr.left, scope) || this.isReferenceItself(expr.right, scope))) {
       expr.comparesReferences = true;
     }
+    delete expr.addressArithmetic;
+    if ((expr.operator === "+" || expr.operator === "-") && [expr.left, expr.right].some((e) => this.isAddressOperand(e, scope))) {
+      expr.addressArithmetic = true;
+    }
+    if (this.refuseTemporalOperands(expr, scope))
+      return void 0;
     if (leftType === void 0 || rightType === void 0) {
+      if (expr.operator === "MOD") {
+        const left = leftType ?? this.accessedElementaryType(expr.left, scope);
+        const right = rightType ?? this.accessedElementaryType(expr.right, scope);
+        if (left !== void 0 && right !== void 0) {
+          this.refuseRealMod(expr, left, right);
+        }
+      }
       return void 0;
     }
     const leftChar = this.charTypeOf(leftType);
@@ -23601,6 +24310,9 @@ var TypeChecker = class _TypeChecker {
       }
       return this.inferCharBinaryType(expr, leftType, rightType);
     }
+    if ((expr.operator === "+" || expr.operator === "-") && !this.innerChainNodes.has(expr)) {
+      this.refuseAddressArithmetic(expr, scope);
+    }
     if (this.strict && STRICT_ARITHMETIC_OPS.has(expr.operator)) {
       this.checkStrictArithmetic(expr, leftType, rightType);
     }
@@ -23610,11 +24322,25 @@ var TypeChecker = class _TypeChecker {
       this.refuseRealMod(expr, leftType, rightType);
     let type;
     if (["=", "<>", "<", ">", "<=", ">="].includes(expr.operator)) {
+      this.refuseMixedStringComparison(expr, leftType, rightType);
       type = ELEMENTARY_TYPES["BOOL"];
     } else if (["AND", "OR", "XOR"].includes(expr.operator)) {
-      type = this.bitwiseResultType(leftType, rightType) ?? ELEMENTARY_TYPES["BOOL"];
+      this.refuseIntegerBitwise(expr, leftType, rightType);
+      delete expr.computeAs;
+      const ordinal = (t) => this.isIntegerType(t) || t.typeKind === "elementary" && (STRICT_BIT_STRINGS.has(this.aliasBase(t.name)) || this.aliasBase(t.name) === "BOOL");
+      type = this.isUntypedBitConstant(expr) ? ELEMENTARY_TYPES["BOOL"] : this.isUntypedBitConstant(expr.left) && ordinal(rightType) ? rightType : this.isUntypedBitConstant(expr.right) && ordinal(leftType) ? leftType : this.bitwiseResultType(leftType, rightType) ?? ELEMENTARY_TYPES["BOOL"];
+      const widened = this.isIntegerType(leftType) && this.isIntegerType(rightType) ? this.mixedSignCommonType(leftType, rightType) : void 0;
+      if (widened !== void 0 && type === widened) {
+        expr.computeAs = widened.name.toUpperCase();
+      }
+      const names = [leftType, rightType].map((t) => t.typeKind === "elementary" ? this.aliasBase(t.name) : "");
+      if (names.includes("LINT") && names.includes("ULINT") && !this.strict && !this.inOutErrors) {
+        this.addWarning(`LINT and ULINT have no common integer type: ${expr.operator} of them is a LINT`, expr.sourceSpan.startLine, expr.sourceSpan.startCol, expr.sourceSpan.file);
+      }
     } else if (["+", "-"].includes(expr.operator) && isDateTimeArithmetic(leftType, rightType, expr.operator)) {
       type = resolveDateTimeArithmetic(leftType, rightType, expr.operator);
+    } else if (expr.operator === "MOD" && this.temporalPeriodMod(expr, scope)) {
+      type = leftType;
     } else if (["+", "-", "*", "/", "MOD", "**"].includes(expr.operator)) {
       type = getCommonType(leftType, rightType) ?? leftType;
     } else {
@@ -23681,9 +24407,99 @@ var TypeChecker = class _TypeChecker {
       const name = this.aliasBase(t.name);
       return STRICT_BIT_STRINGS.has(name) ? [ELEMENTARY_TYPES[name]] : [];
     });
-    if (bits.length === 0)
+    if (bits.length > 0) {
+      return bits.reduce((a, b) => b.sizeBits > a.sizeBits ? b : a);
+    }
+    if (this.isIntegerType(leftType) && this.isIntegerType(rightType)) {
+      return this.mixedSignCommonType(leftType, rightType) ?? getCommonType(leftType, rightType) ?? leftType;
+    }
+    return void 0;
+  }
+  /**
+   * A signed and an unsigned integer: the smallest signed type wider than the
+   * unsigned one and at least as wide as the signed one (SINT and USINT give
+   * INT). LINT and ULINT have none: LINT. Undefined for the same signedness.
+   */
+  mixedSignCommonType(a, b) {
+    const name = (t) => this.aliasBase(t.name).toUpperCase();
+    const [an, bn] = [name(a), name(b)];
+    const aUnsigned = an.startsWith("U");
+    if (aUnsigned === bn.startsWith("U"))
       return void 0;
-    return bits.reduce((a, b) => b.sizeBits > a.sizeBits ? b : a);
+    const bitsOf = {
+      SINT: 8,
+      INT: 16,
+      DINT: 32,
+      LINT: 64
+    };
+    const [signedName, unsignedName] = aUnsigned ? [bn, an] : [an, bn];
+    const need = Math.max(bitsOf[signedName], bitsOf[unsignedName.slice(1)] * 2);
+    const fit = ["SINT", "INT", "DINT", "LINT"].find((n) => bitsOf[n] >= need);
+    return ELEMENTARY_TYPES[fit ?? "LINT"];
+  }
+  isIntegerType(t) {
+    return t.typeKind === "elementary" && /^U?(SINT|INT|DINT|LINT)$/.test(this.aliasBase(t.name));
+  }
+  /**
+   * IEC 61131-3 Ed. 3 Table 31 defines AND, OR and XOR on ANY_BIT only:
+   * under iec-3 and `--strict` an integer operand is refused (an untyped
+   * constant beside a bit string or BOOL adapts to it).
+   */
+  refuseIntegerBitwise(expr, leftType, rightType) {
+    if (!this.strict && !this.inOutErrors)
+      return;
+    for (const [operand, type] of [
+      [expr.left, leftType],
+      [expr.right, rightType]
+    ]) {
+      let inner = operand;
+      while (inner.kind === "ParenthesizedExpression")
+        inner = inner.expression;
+      if (!this.isIntegerType(type) || this.isUntypedBitConstant(operand) || inner.kind === "BinaryExpression" && ["AND", "OR", "XOR"].includes(inner.operator)) {
+        continue;
+      }
+      const base = this.aliasBase(typeName(type));
+      this.addError(`${expr.operator} takes bit strings or BOOL (ANY_BIT, IEC 61131-3 Table 31), not ${base}; convert it with ${base}_TO_WORD or the like`, operand.sourceSpan.startLine, operand.sourceSpan.startCol, operand.sourceSpan.file);
+      return;
+    }
+  }
+  /**
+   * An untyped integer constant, or AND/OR/XOR/NOT of such constants only
+   * (`16#F0 OR 16#0F`, `1 AND 0`): its type comes from where it is used.
+   */
+  isUntypedBitConstant(expr) {
+    if (this.untypedConstantKind(expr) === "INT")
+      return true;
+    switch (expr.kind) {
+      case "ParenthesizedExpression":
+        return this.isUntypedBitConstant(expr.expression);
+      case "UnaryExpression":
+        return expr.operator === "NOT" && this.isUntypedBitConstant(expr.operand);
+      case "BinaryExpression":
+        return ["AND", "OR", "XOR"].includes(expr.operator) && this.isUntypedBitConstant(expr.left) && this.isUntypedBitConstant(expr.right);
+      default:
+        return false;
+    }
+  }
+  /** The elementary type a variable path names through `^`, fields and subscripts, if any. */
+  accessedElementaryType(expr, scope) {
+    if (expr.kind === "ParenthesizedExpression") {
+      return this.accessedElementaryType(expr.expression, scope);
+    }
+    if (expr.kind !== "VariableExpression")
+      return void 0;
+    const sym = scope.lookup(expr.name);
+    if (sym?.kind !== "variable")
+      return void 0;
+    const declared = sym.declaration;
+    if (!declared)
+      return void 0;
+    const type = resolveAccessType(declared.type, expr, this.accessLookup);
+    if (type === void 0 || type.arrayDimensions !== void 0 || (type.referenceKind ?? "none") !== "none") {
+      return void 0;
+    }
+    const t = ELEMENTARY_TYPES[this.aliasBase(type.name)];
+    return t;
   }
   /**
    * MOD takes integers (ANY_INT, IEC 61131-3 Table 29): a REAL or LREAL
@@ -23701,6 +24517,314 @@ var TypeChecker = class _TypeChecker {
         continue;
       this.addError(`MOD takes integers (ANY_INT, IEC 61131-3 Table 29), not ${name}`, operand.sourceSpan.startLine, operand.sourceSpan.startCol, operand.sourceSpan.file);
       return;
+    }
+  }
+  /** + / - nodes inside a chain, checked with the chain's top node. */
+  innerChainNodes = /* @__PURE__ */ new WeakSet();
+  /** The signed terms of a + / - chain, through parentheses. */
+  chainTerms(e) {
+    const terms = [];
+    const flatten2 = (x, sign) => {
+      if (x.kind === "ParenthesizedExpression") {
+        flatten2(x.expression, sign);
+      } else if (x.kind === "BinaryExpression" && (x.operator === "+" || x.operator === "-")) {
+        flatten2(x.left, sign);
+        flatten2(x.right, x.operator === "-" ? -sign : sign);
+      } else {
+        terms.push({ expr: x, sign });
+      }
+    };
+    flatten2(e, 1);
+    return terms;
+  }
+  /** ADR(x) of the standard function, or a POINTER TO variable or element: an address. */
+  isAddressTerm(e, scope) {
+    if (e.kind === "FunctionCallExpression" && e.functionName.toUpperCase() === "ADR" && e.libraryFunction === void 0) {
+      return this.ast?.functions.some((f) => f.name.toUpperCase() === "ADR") !== true;
+    }
+    if (e.kind !== "VariableExpression")
+      return false;
+    const declared = this.declaredVariableType(e, scope);
+    if (declared === void 0 || pointerReadTarget(declared, e) === void 0) {
+      return false;
+    }
+    this.pointerAddressReads.add(e);
+    return true;
+  }
+  /** POINTER TO reads met as + / - chain terms (isAddressTerm). */
+  pointerAddressReads = /* @__PURE__ */ new WeakSet();
+  /** A POINTER TO read of a + / - chain, through parentheses: an address. */
+  isPointerRead = (e) => {
+    let v = e;
+    while (v.kind === "ParenthesizedExpression")
+      v = v.expression;
+    return this.pointerAddressReads.has(v);
+  };
+  /** + / - chains refused by refuseAddressArithmetic, with the error; a store's own refusal replaces it. */
+  addressArithmeticRefused = /* @__PURE__ */ new WeakMap();
+  /** The declared type of the variable an access starts from. */
+  declaredVariableType(e, scope) {
+    const symbol = scope.lookup(e.name);
+    return symbol?.kind === "variable" ? symbol.declaration?.type : void 0;
+  }
+  /**
+   * A + / - chain of addresses: an address is offset by + or - an integer, or
+   * subtracted from another address. One taken from a value, or two added,
+   * is refused.
+   */
+  refuseAddressArithmetic(expr, scope) {
+    const terms = this.chainTerms(expr);
+    const addresses = terms.filter((t) => this.isAddressTerm(t.expr, scope));
+    const net = addresses.reduce((n, t) => n + t.sign, 0);
+    if (addresses.length === 0 || net === 0 || net === 1)
+      return;
+    const at = addresses[0].expr;
+    this.addError("An address is offset by + or - an integer, or subtracted from another address: it cannot be subtracted from a value or added to an address", at.sourceSpan.startLine, at.sourceSpan.startCol, at.sourceSpan.file);
+    this.addressArithmeticRefused.set(expr, this.errors[this.errors.length - 1]);
+  }
+  /**
+   * An address stored into a POINTER TO a multi-byte elementary type (any
+   * store path, `declared` being the store target's type): when the address
+   * is known to be aligned for that type (it points to a type at least as
+   * wide) and the chain's net constant offset is not a multiple of its size,
+   * a dereference would be misaligned: refused. A byte address (POINTER TO
+   * BYTE, PVOID, an integer, MEMCPY) is never refused.
+   */
+  refuseMisalignedPointerStore(declared, value, scope) {
+    if (declared === void 0 || declared.arrayDimensions !== void 0 || declared.referenceKind !== "pointer_to" || (declared.referenceChain?.length ?? 1) !== 1) {
+      return;
+    }
+    const dest = elementarySize(declared.name);
+    if (dest === void 0 || dest.bytes <= 1n)
+      return;
+    const terms = this.chainTerms(value);
+    if (terms.length < 2)
+      return;
+    const addresses = terms.filter((t) => this.isAddressTerm(t.expr, scope));
+    if (addresses.length !== 1 || addresses[0].sign !== 1)
+      return;
+    const base = this.pointerTargetSize(addresses[0].expr, scope);
+    if (base === void 0 || base.bytes < dest.bytes)
+      return;
+    let offset = 0n;
+    for (const t of terms) {
+      if (t === addresses[0])
+        continue;
+      const v = this.foldIntegerConstant(t.expr, scope, 0);
+      if (v === void 0)
+        return;
+      offset += t.sign > 0 ? v : -v;
+    }
+    if (offset % dest.bytes === 0n)
+      return;
+    const span = value.sourceSpan;
+    const key = `${span.file ?? ""}:${span.startLine}:${span.startCol}`;
+    if (this.misalignedReported.has(key))
+      return;
+    this.misalignedReported.add(key);
+    this.addError(`Moving a POINTER TO ${dest.name} by ${offset} byte(s) would make its dereference misaligned; move it by a multiple of ${dest.bytes} bytes`, span.startLine, span.startCol, span.file);
+  }
+  /** Positions already refused by refuseMisalignedPointerStore. */
+  misalignedReported = /* @__PURE__ */ new Set();
+  /** The elementary type an address term points to, and its size: a POINTER TO variable or element, or ADR(x). */
+  pointerTargetSize(e, scope) {
+    if (e.kind === "FunctionCallExpression" && e.functionName.toUpperCase() === "ADR" && e.arguments.length === 1) {
+      const operand = e.arguments[0].value;
+      const target = operand.resolvedType;
+      if (target !== void 0) {
+        return target.typeKind === "elementary" ? elementarySize(target.name) : void 0;
+      }
+      const declared2 = this.accessedType(operand, scope);
+      return declared2 !== void 0 && declared2.referenceKind === "none" && declared2.arrayDimensions === void 0 ? elementarySize(declared2.name) : void 0;
+    }
+    if (e.kind !== "VariableExpression")
+      return void 0;
+    const declared = this.declaredVariableType(e, scope);
+    const name = declared !== void 0 ? pointerReadTarget(declared, e) : void 0;
+    return name !== void 0 ? elementarySize(name) : void 0;
+  }
+  /** An integer constant expression's value: literals, constants, + - * and parentheses. */
+  foldIntegerConstant(e, scope, depth) {
+    if (depth > 16)
+      return void 0;
+    switch (e.kind) {
+      case "LiteralExpression": {
+        if (e.literalType !== "INT")
+          return void 0;
+        const v = e.value;
+        return typeof v === "number" && Number.isSafeInteger(v) ? BigInt(v) : typeof v === "bigint" ? v : void 0;
+      }
+      case "ParenthesizedExpression":
+        return this.foldIntegerConstant(e.expression, scope, depth + 1);
+      case "UnaryExpression": {
+        const v = this.foldIntegerConstant(e.operand, scope, depth + 1);
+        if (v === void 0)
+          return void 0;
+        return e.operator === "-" ? -v : e.operator === "+" ? v : void 0;
+      }
+      case "BinaryExpression": {
+        const l = this.foldIntegerConstant(e.left, scope, depth + 1);
+        const r = this.foldIntegerConstant(e.right, scope, depth + 1);
+        if (l === void 0 || r === void 0)
+          return void 0;
+        if (e.operator === "+")
+          return l + r;
+        if (e.operator === "-")
+          return l - r;
+        if (e.operator === "*")
+          return l * r;
+        return void 0;
+      }
+      case "VariableExpression": {
+        if (e.isDereference || e.fieldAccess.length > 0 || e.subscripts.length > 0) {
+          return void 0;
+        }
+        const symbol = scope.lookup(e.name);
+        const value = symbol?.kind === "constant" || symbol?.kind === "variable" ? symbol.declaration?.initialValue : void 0;
+        if (symbol?.kind !== "constant" || value === void 0) {
+          return void 0;
+        }
+        return this.foldIntegerConstant(value, scope, depth + 1);
+      }
+      default:
+        return void 0;
+    }
+  }
+  /**
+   * A STRING compared with a WSTRING (variables or literals): no comparison
+   * of the two exists, so it is refused in every mode instead of failing the
+   * C++ build.
+   */
+  /** Comparisons refused as STRING against WSTRING, so none is refused twice. */
+  refusedMixedComparisons = /* @__PURE__ */ new WeakSet();
+  refuseMixedStringComparison(expr, leftType, rightType) {
+    const kind = (t) => {
+      if (t.typeKind !== "elementary")
+        return void 0;
+      const name = this.aliasBase(t.name).toUpperCase();
+      return /^WSTRING\b/.test(name) ? "WSTRING" : /^STRING\b/.test(name) ? "STRING" : void 0;
+    };
+    const l = kind(leftType);
+    const r = kind(rightType);
+    if (l === void 0 || r === void 0 || l === r)
+      return;
+    this.refusedMixedComparisons.add(expr);
+    this.addError(`Cannot compare ${l} with ${r}; convert one with STRING_TO_WSTRING or WSTRING_TO_STRING`, expr.sourceSpan.startLine, expr.sourceSpan.startCol, expr.sourceSpan.file);
+  }
+  /**
+   * `--strict`: an integer constant expression (`200 * 200`) whose value is
+   * outside the integer type it is stored in wraps at run time; warn.
+   */
+  warnConstantOverflow(targetType, value) {
+    if (targetType?.typeKind !== "elementary")
+      return;
+    if (value.kind === "LiteralExpression" && (value.typePrefix ?? "") !== "") {
+      return;
+    }
+    const inner = this.typedConstantOverflow(value);
+    if (inner !== void 0) {
+      this.warnOverflowAt(inner.at, inner.value, inner.type);
+      return;
+    }
+    const name = this.aliasBase(targetType.name).toUpperCase();
+    const v = this.constantIntegerValue(value);
+    if (v !== void 0)
+      this.warnOverflowAt(value, v, name);
+  }
+  /** The --strict wrap warning at `at` when `v` is outside the integer type `name`. */
+  warnOverflowAt(at, v, name) {
+    const range = integerTypeRange(name);
+    if (range === void 0 || v >= range.min && v <= range.max)
+      return;
+    this.addWarning(`The constant expression is ${v}, outside ${name} (${range.min}..${range.max}): it wraps`, at.sourceSpan.startLine, at.sourceSpan.startCol, at.sourceSpan.file);
+  }
+  /**
+   * The first subexpression of typed literals (`DINT#2147483647 + 1`) whose
+   * value is outside the type it is computed in, with that value and type.
+   * A binary expression is computed in the common type of its operands, at
+   * least DINT, so a narrow one (`INT#32767 + 1`) overflows only its target.
+   */
+  typedConstantOverflow(expr) {
+    let found;
+    const typeOf = (e) => {
+      switch (e.kind) {
+        case "LiteralExpression":
+          return e.literalType === "INT" && (e.typePrefix ?? "") !== "" ? this.aliasBase(e.typePrefix).toUpperCase() : void 0;
+        case "ParenthesizedExpression":
+          return typeOf(e.expression);
+        case "UnaryExpression":
+          return typeOf(e.operand);
+        case "BinaryExpression": {
+          if (!["+", "-", "*", "/"].includes(e.operator))
+            return void 0;
+          const type = this.computedIntegerType(typeOf(e.left), typeOf(e.right));
+          if (found !== void 0)
+            return void 0;
+          const v = this.constantIntegerValue(e);
+          const range = type === void 0 ? void 0 : integerTypeRange(type);
+          if (type !== void 0 && v !== void 0 && range !== void 0 && (v < range.min || v > range.max)) {
+            found = { at: e, value: v, type };
+          }
+          return type;
+        }
+        default:
+          return void 0;
+      }
+    };
+    typeOf(expr);
+    return found;
+  }
+  /**
+   * The integer type a binary expression of operand types `l` and `r` is
+   * computed in: their common type, a type narrower than DINT promoted to DINT.
+   */
+  computedIntegerType(l, r) {
+    const lt = l === void 0 ? void 0 : ELEMENTARY_TYPES[l];
+    const rt = r === void 0 ? void 0 : ELEMENTARY_TYPES[r];
+    const common = lt !== void 0 && rt !== void 0 ? getCommonType(lt, rt) : void 0;
+    const name = common?.typeKind === "elementary" ? common.name.toUpperCase() : l ?? r;
+    if (name === void 0)
+      return void 0;
+    const bits = ELEMENTARY_TYPES[name]?.sizeBits;
+    return bits !== void 0 && bits < 32 ? "DINT" : name;
+  }
+  /** The exact value of an integer constant expression of literals, if it is one. */
+  constantIntegerValue(expr) {
+    switch (expr.kind) {
+      case "LiteralExpression": {
+        if (expr.literalType !== "INT")
+          return void 0;
+        const raw = (expr.typePrefix ?? "") !== "" ? expr.rawValue.slice(expr.rawValue.indexOf("#") + 1) : expr.rawValue;
+        return exactIntegerLiteralValue(raw);
+      }
+      case "ParenthesizedExpression":
+        return this.constantIntegerValue(expr.expression);
+      case "UnaryExpression": {
+        const v = this.constantIntegerValue(expr.operand);
+        if (v === void 0)
+          return void 0;
+        return expr.operator === "-" ? -v : expr.operator === "+" ? v : void 0;
+      }
+      case "BinaryExpression": {
+        const l = this.constantIntegerValue(expr.left);
+        const r = this.constantIntegerValue(expr.right);
+        if (l === void 0 || r === void 0)
+          return void 0;
+        switch (expr.operator) {
+          case "+":
+            return l + r;
+          case "-":
+            return l - r;
+          case "*":
+            return l * r;
+          case "/":
+            return r === 0n ? void 0 : l / r;
+          default:
+            return void 0;
+        }
+      }
+      default:
+        return void 0;
     }
   }
   /**
@@ -23727,6 +24851,179 @@ var TypeChecker = class _TypeChecker {
     return false;
   }
   /**
+   * `-T#5s`, `-C` (C a TIME constant, through aliases) or `-(T#5s - T#1s)`:
+   * a negative TIME, refused as a negative TIME literal is. A value of 0 is
+   * accepted; `-t` of a TIME variable wraps.
+   */
+  refuseNegatedTimeConstant(expr, scope) {
+    if (expr.operator !== "-" || this.reportedCharValues.has(expr))
+      return;
+    let operand = expr.operand;
+    while (operand.kind === "ParenthesizedExpression") {
+      operand = operand.expression;
+    }
+    const value = this.constantTimeNs(operand, scope);
+    const constant2 = this.timeConstantDeclaration(operand, scope) !== void 0;
+    if (value === void 0 ? !constant2 : value <= 0n)
+      return;
+    const shown = operand.kind === "LiteralExpression" ? `TIME literal '-${operand.rawValue}'` : operand.kind === "VariableExpression" ? `TIME value '-${operand.name}'` : "The negated TIME expression";
+    this.reportedCharValues.add(expr);
+    this.addError(`${shown} is negative; a TIME holds T#0ms to T#49d17h2m47s295ms (an LTIME can be negative)`, expr.sourceSpan.startLine, expr.sourceSpan.startCol, expr.sourceSpan.file);
+  }
+  /**
+   * The value in ns of a constant TIME expression: a TIME literal, a TIME
+   * constant with such an initial value, and their sums, differences and
+   * negations. Undefined when not known here.
+   */
+  constantTimeNs(e, scope, depth = 0) {
+    if (depth > 16)
+      return void 0;
+    while (e.kind === "ParenthesizedExpression")
+      e = e.expression;
+    switch (e.kind) {
+      case "LiteralExpression":
+        return e.literalType === "TIME" ? exactTimeLiteralNanoseconds(e.rawValue) : void 0;
+      case "UnaryExpression": {
+        if (e.operator !== "-")
+          return void 0;
+        const v = this.constantTimeNs(e.operand, scope, depth + 1);
+        return v === void 0 ? void 0 : -v;
+      }
+      case "BinaryExpression": {
+        if (e.operator !== "+" && e.operator !== "-")
+          return void 0;
+        const l = this.constantTimeNs(e.left, scope, depth + 1);
+        const r = this.constantTimeNs(e.right, scope, depth + 1);
+        if (l === void 0 || r === void 0)
+          return void 0;
+        return e.operator === "+" ? l + r : l - r;
+      }
+      case "VariableExpression": {
+        const init = this.timeConstantDeclaration(e, scope)?.initialValue;
+        return init === void 0 ? void 0 : this.constantTimeNs(init, scope, depth + 1);
+      }
+      default:
+        return void 0;
+    }
+  }
+  /** The declaration `e` names when it is a TIME constant (through aliases). */
+  timeConstantDeclaration(e, scope) {
+    if (e.kind !== "VariableExpression" || e.fieldAccess.length !== 0 || e.subscripts.length !== 0 || e.isDereference) {
+      return void 0;
+    }
+    const sym = scope.lookup(e.name);
+    if (sym?.kind !== "constant")
+      return void 0;
+    const type = sym.declaration.type;
+    if ((type.referenceKind ?? "none") !== "none" || type.arrayDimensions !== void 0) {
+      return void 0;
+    }
+    return canonicalElementaryName(this.aliasBase(type.name)) === "TIME" ? sym.declaration : void 0;
+  }
+  /**
+   * The canonical elementary type of an operand, through aliases,
+   * parentheses, an implicit REFERENCE TO, `p^` of a POINTER TO or REF_TO
+   * variable, and a standard SEL, MUX, LIMIT, MAX or MIN whose selected
+   * operands share one type. Undefined when not known here.
+   */
+  operandElementaryName(e, scope, depth = 0) {
+    if (depth > 16)
+      return void 0;
+    while (e.kind === "ParenthesizedExpression")
+      e = e.expression;
+    let t = e.resolvedType;
+    if (t?.typeKind === "reference" && t.isImplicitDeref) {
+      t = t.referencedType;
+    }
+    if (t !== void 0) {
+      return t.typeKind === "elementary" ? canonicalElementaryName(this.aliasBase(t.name)) : void 0;
+    }
+    if (e.kind === "FunctionCallExpression") {
+      const name = e.functionName.toUpperCase();
+      const skip = CHAR_COMPARE_FUNCTIONS.get(name);
+      if (skip === void 0 || !CHAR_SELECTION_FUNCTIONS.has(name) || e.instance !== void 0 || this.findUserFunction(name) || this.ownMethod(name)) {
+        return void 0;
+      }
+      const kinds = stripEnEno([...e.arguments]).slice(skip).map((a) => this.operandElementaryName(a.value, scope, depth + 1));
+      return kinds.length > 0 && kinds.every((k) => k === kinds[0]) ? kinds[0] : void 0;
+    }
+    if (e.kind !== "VariableExpression" || !e.isDereference || e.fieldAccess.length !== 0 || e.subscripts.length !== 0 || e.accessChain !== void 0 && (e.accessChain.length !== 1 || e.accessChain[0].kind !== "dereference")) {
+      return void 0;
+    }
+    const sym = scope.lookup(e.name);
+    if (sym?.kind !== "variable" && sym?.kind !== "constant")
+      return void 0;
+    const type = sym.declaration.type;
+    if (type.referenceKind !== "pointer_to" && type.referenceKind !== "ref_to" || (type.referenceChain?.length ?? 1) !== 1 || type.arrayDimensions !== void 0) {
+      return void 0;
+    }
+    return canonicalElementaryName(this.aliasBase(type.name));
+  }
+  /** `tod MOD T#1h`, `dt MOD t`: a TOD or DT MOD a TIME. */
+  temporalPeriodMod(expr, scope) {
+    const l = this.operandElementaryName(expr.left, scope);
+    return (l === "TOD" || l === "DT") && this.operandElementaryName(expr.right, scope) === "TIME";
+  }
+  /** Binary expressions refused by refuseTemporalOperands. */
+  refusedTemporalOperands = /* @__PURE__ */ new WeakSet();
+  /**
+   * `*`, `**`, `/` and MOD with a TIME, DATE, TOD or DT operand that mean
+   * nothing: a product of two dates or times, any power, and `/` or MOD of a
+   * number by one or of two different kinds. Kept: the same kind, TIME with
+   * LTIME, and TOD or DT MOD a TIME. True when refused.
+   */
+  refuseTemporalOperands(expr, scope) {
+    const op = expr.operator;
+    if (op !== "*" && op !== "**" && op !== "/" && op !== "MOD")
+      return false;
+    if (this.refusedTemporalOperands.has(expr))
+      return true;
+    const l = this.operandElementaryName(expr.left, scope);
+    const r = this.operandElementaryName(expr.right, scope);
+    const is32 = (k) => k !== void 0 && TEMPORAL32_NAMES.has(k);
+    if (!is32(l) && !is32(r))
+      return false;
+    const lt = l !== void 0 && TEMPORAL_ANY_NAMES.has(l);
+    const rt = r !== void 0 && TEMPORAL_ANY_NAMES.has(r);
+    const duration = (k) => k === "TIME" || k === "LTIME";
+    let message;
+    if (op === "**") {
+      message = `Operator '**' does not apply to ${is32(l) ? l : r}`;
+    } else if (op === "*") {
+      if (lt && rt) {
+        message = `Operator '*' does not apply to ${l} and ${r}; multiply a duration by a number`;
+      }
+    } else if (lt ? rt && l !== r && !(duration(l) && duration(r)) && !(op === "MOD" && (l === "TOD" || l === "DT") && r === "TIME") : l !== void 0) {
+      message = `Operator '${op}' does not apply to ${l} and ${r}`;
+    }
+    if (message === void 0)
+      return false;
+    this.refusedTemporalOperands.add(expr);
+    this.addError(message, expr.sourceSpan.startLine, expr.sourceSpan.startCol, expr.sourceSpan.file);
+    return true;
+  }
+  /**
+   * DIV_TIME and MUL_TIME take a duration and a number: a date or time as the
+   * second argument is refused, as `/` and `*` refuse it (DIV_TIME of two
+   * values of the same type is their quotient, as `/`).
+   */
+  refuseTemporalTimeFunction(expr, scope) {
+    const name = expr.functionName.toUpperCase();
+    if (name !== "DIV_TIME" && name !== "MUL_TIME" || expr.instance !== void 0 || this.findUserFunction(name) || this.ownMethod(name)) {
+      return false;
+    }
+    const args = stripEnEno([...expr.arguments]);
+    if (args.length !== 2)
+      return false;
+    const a = this.operandElementaryName(args[0].value, scope);
+    const b = this.operandElementaryName(args[1].value, scope);
+    if (b === void 0 || !TEMPORAL_ANY_NAMES.has(b) || !TEMPORAL32_NAMES.has(b) && !TEMPORAL32_NAMES.has(a ?? "") || name === "DIV_TIME" && a === b) {
+      return false;
+    }
+    this.addError(`${name} takes a duration and a number: got ${a ?? "an operand"} and ${b}`, expr.sourceSpan.startLine, expr.sourceSpan.startCol, expr.sourceSpan.file);
+    return true;
+  }
+  /**
    * Infer type of a unary expression.
    */
   inferUnaryType(expr, scope) {
@@ -23738,9 +25035,15 @@ var TypeChecker = class _TypeChecker {
       this.addError(enumOperatorMessage(expr.operator, operandType), expr.sourceSpan.startLine, expr.sourceSpan.startCol, expr.sourceSpan.file);
       return void 0;
     }
+    if (expr.operator === "-")
+      this.refuseNegatedTimeConstant(expr, scope);
     let type;
     if (expr.operator === "NOT") {
       type = operandType;
+      if ((this.strict || this.inOutErrors) && this.isIntegerType(operandType) && !isUntypedIntegerConstant(expr.operand)) {
+        const base = this.aliasBase(typeName(operandType));
+        this.addError(`NOT takes bit strings or BOOL (ANY_BIT, IEC 61131-3 Table 31), not ${base}; convert it with ${base}_TO_WORD or the like`, expr.operand.sourceSpan.startLine, expr.operand.sourceSpan.startCol, expr.operand.sourceSpan.file);
+      }
     } else {
       type = operandType;
     }
@@ -23754,6 +25057,8 @@ var TypeChecker = class _TypeChecker {
    */
   inferFunctionCallType(expr, scope) {
     const type = this.inferCallType(expr, scope);
+    if (this.refuseTemporalTimeFunction(expr, scope))
+      return void 0;
     const charType = this.charSelectionType(expr);
     if (charType === void 0)
       return type;
@@ -23782,8 +25087,10 @@ var TypeChecker = class _TypeChecker {
     this.validateEnumArguments(inputs, expr.arguments);
     this.validateReferenceToArguments(inputs, expr.arguments, scope);
     this.validateInOutArguments(inputs, expr.arguments, scope, this.isFBInstanceCall(expr, scope), expr);
-    if (this.strict) {
+    {
       this.checkStrictArguments(this.callInputs(expr, scope) ?? this.dottedMethodInputs(expr.functionName, scope), expr.arguments, scope);
+      if (this.strict)
+        this.checkStrictConversionArgument(expr, scope);
     }
     const nameUpper = expr.functionName.toUpperCase();
     const reachedMethod = this.reachedProgramMethod(expr.functionName, scope);
@@ -23804,7 +25111,7 @@ var TypeChecker = class _TypeChecker {
       this.refuseInstanceCallValue(expr, scope);
       return void 0;
     }
-    this.checkBoundDimension(expr, scope);
+    this.checkBoundCall(expr, scope, false);
     const selected = this.selectionEnumResult(expr);
     if (selected !== void 0) {
       if (selected !== "refused")
@@ -23906,13 +25213,17 @@ var TypeChecker = class _TypeChecker {
       const owner = this.memberChainOwner(expr.object, scope);
       const method2 = this.checkMemberChainCall(expr, expr.object, owner);
       const chainInputs = this.methodInputsOf(owner?.name, expr.methodName);
+      if (owner?.name !== void 0) {
+        this.bindOutputs(this.methodParametersOf(owner.name, expr.methodName), expr.arguments, scope);
+      }
+      this.checkMemberFbOutputBindings(expr, owner?.name, scope);
       this.adaptCharArguments(chainInputs, expr.arguments);
       this.validateInterfaceArguments(chainInputs, expr.arguments);
       this.validateStructArguments(chainInputs, expr.arguments);
       this.validateEnumArguments(chainInputs, expr.arguments);
       this.validateReferenceToArguments(chainInputs, expr.arguments, scope);
       this.validateInOutArguments(chainInputs, expr.arguments, scope, false, expr);
-      if (this.strict) {
+      {
         this.checkStrictArguments(this.methodInputsOf(owner?.name, expr.methodName), expr.arguments, scope);
       }
       const chainRet = method2 ? this.methodReturnType(method2) : void 0;
@@ -23921,13 +25232,17 @@ var TypeChecker = class _TypeChecker {
       return chainRet;
     }
     const methodInputs = this.methodInputs(objType, expr, scope);
+    this.checkMethodOutputBindings(expr, objType, scope);
+    if (objType?.typeKind === "elementary") {
+      this.checkMemberFbOutputBindings(expr, objType.name, scope);
+    }
     this.adaptCharArguments(methodInputs ?? (objType?.typeKind === "elementary" ? this.interfaceMethodInputs(objType.name, expr.methodName) : void 0), expr.arguments);
     this.validateInterfaceArguments(methodInputs, expr.arguments);
     this.validateStructArguments(methodInputs, expr.arguments);
     this.validateEnumArguments(methodInputs, expr.arguments);
     this.validateReferenceToArguments(methodInputs, expr.arguments, scope);
     this.validateInOutArguments(methodInputs, expr.arguments, scope, false, expr);
-    if (this.strict) {
+    {
       this.checkStrictArguments(this.methodInputs(objType, expr, scope), expr.arguments, scope);
     }
     if (!objType || !this.ast)
@@ -24436,15 +25751,22 @@ var TypeChecker = class _TypeChecker {
           const value = decl.initialValue;
           if (!value)
             continue;
+          let hasOperator = false;
           walkAST(value, (node) => {
             if (node.kind !== "FunctionCallExpression")
               return;
             const call = node;
             this.vendorOperatorCallType(call, call.functionName.toUpperCase(), scope);
+            if (call.vendorOperator !== void 0)
+              hasOperator = true;
           });
           const targetType = ELEMENTARY_TYPES[decl.type.name.toUpperCase()];
-          if (value.kind === "FunctionCallExpression" && value.vendorOperator !== void 0 && value.resolvedType !== void 0 && targetType !== void 0 && (decl.type.referenceKind ?? "none") === "none") {
-            this.validateAssignment(targetType, value.resolvedType, {
+          if (decl.type.arrayDimensions === void 0) {
+            typeUntypedNot(value, this.aliasBase(decl.type.name).toUpperCase());
+          }
+          const valueType = hasOperator && targetType !== void 0 && (decl.type.referenceKind ?? "none") === "none" ? this.resolveExprType(value, scope) : void 0;
+          if (targetType !== void 0 && valueType !== void 0) {
+            this.validateAssignment(targetType, valueType, {
               kind: "VariableExpression",
               sourceSpan: decl.sourceSpan,
               name: decl.names[0] ?? "<unnamed>",
@@ -24603,12 +25925,103 @@ var TypeChecker = class _TypeChecker {
    * initial values that depend on each other cannot be created.
    */
   checkGlobalInitialCycles(ast) {
-    for (const ordered of [
-      orderGlobals(ast),
-      ...ast.configurations.map(orderConfigurationGlobals)
+    const topLevel = orderGlobals(ast);
+    for (const [ordered, outer] of [
+      [topLevel, []],
+      // A CONFIGURATION global also sees the top-level globals
+      ...ast.configurations.map((c) => [orderConfigurationGlobals(c), topLevel.order])
     ]) {
       this.reportGlobalInitialCycles(ordered);
+      if (this.strict || this.inOutErrors) {
+        this.refuseDependentGlobalInitials(ordered, outer);
+      }
     }
+  }
+  /**
+   * Under iec-3 and `--strict`: an initial value is a constant expression, so
+   * a global's initial value reading another global that is no CONSTANT (as a
+   * value; ADR() of it is an address) is refused. No dialect flag keeps the
+   * automatic creation order.
+   */
+  refuseDependentGlobalInitials({ order }, outer) {
+    const own = new Set(order.map((i) => i.name.toUpperCase()));
+    const visible = [
+      ...order,
+      ...outer.filter((i) => !own.has(i.name.toUpperCase()))
+    ];
+    const constant2 = new Set(visible.filter((i) => i.block.isConstant === true).map((i) => i.name.toUpperCase()));
+    const known = new Set(visible.map((i) => i.name.toUpperCase()));
+    const declared = new Map(visible.map((i) => [i.name.toUpperCase(), i.decl.type]));
+    for (const item of order) {
+      const value = item.decl.initialValue;
+      if (value === void 0 || item.decl.names[0] !== item.name)
+        continue;
+      const reported = /* @__PURE__ */ new Set();
+      const visit = (node) => {
+        if (node.kind === "RefExpression") {
+          this.walkOperandIndices(node.operand, visit);
+          return false;
+        }
+        if (node.kind === "FunctionCallExpression") {
+          const call = node;
+          const upper2 = call.functionName.toUpperCase();
+          if (NOT_READING_CALLS.has(upper2)) {
+            if (ADDRESS_CALLS.has(upper2)) {
+              for (const a of call.arguments) {
+                this.walkOperandIndices(a.value, visit);
+              }
+            }
+            return false;
+          }
+          const args = stripEnEno([...call.arguments]);
+          const arr = args.find((a) => a.name?.toUpperCase() === "ARR") ?? (args[0]?.name === void 0 ? args[0] : void 0);
+          const rest = args.filter((a) => a !== arr);
+          if (BOUND_CALLS.has(upper2) && !call.instance && arr?.value.kind === "VariableExpression" && this.hasFixedGlobalBounds(arr.value, declared)) {
+            this.walkOperandIndices(arr.value, visit);
+            for (const a of rest)
+              walkAST(a.value, visit);
+            return false;
+          }
+        }
+        if (node.kind !== "VariableExpression")
+          return;
+        const v = node;
+        const upper = v.name.toUpperCase();
+        if (!known.has(upper) || constant2.has(upper) || reported.has(upper)) {
+          return;
+        }
+        reported.add(upper);
+        this.addError(`The initial value of global '${item.name}' reads global '${v.name}', which is no CONSTANT: an initial value is a constant expression`, v.sourceSpan.startLine, v.sourceSpan.startCol, v.sourceSpan.file);
+      };
+      walkAST(value, visit);
+    }
+  }
+  /** Walk the index expressions of an address operand, which are evaluated. */
+  walkOperandIndices(operand, visit) {
+    if (operand.kind !== "VariableExpression")
+      return;
+    for (const index of accessIndices(operand)) {
+      walkAST(index, visit);
+    }
+  }
+  /**
+   * `expr` reaches, with no dereference, an array of fixed bounds through a
+   * global of `declared` (upper-case names): its bounds are constants.
+   */
+  hasFixedGlobalBounds(expr, declared) {
+    const base = declared.get(expr.name.toUpperCase());
+    if (base === void 0 || expr.isDereference || expr.accessChain?.some((s) => s.kind === "dereference") === true) {
+      return false;
+    }
+    const type = this.hasMemberAccess(expr) ? resolveAccessType(base, expr, this.accessLookup) : base;
+    if (type === void 0 || (type.referenceKind ?? "none") !== "none") {
+      return false;
+    }
+    if (type.arrayDimensions !== void 0) {
+      return type.arrayDimensions.length > 0;
+    }
+    const shape = this.ast ? resolveArrayShapeByName(type.name, this.ast) : void 0;
+    return shape !== void 0 && shape.dims.every((d) => d !== null);
   }
   /** Report each cycle of `ordered`, at its first global. */
   reportGlobalInitialCycles({ cycles, order }) {
@@ -24685,14 +26098,20 @@ var TypeChecker = class _TypeChecker {
         }
         if (!decl.initialValue)
           continue;
+        if (this.refuseInOutInInitialValue(blocks, decl, scope))
+          continue;
         const outerKind = decl.type.referenceKind;
         if ((outerKind === "ref_to" || outerKind === "pointer_to") && !isNullInitializer(decl.initialValue) && !(outerKind === "pointer_to" && isAddressOf(decl.initialValue))) {
           const kindText = outerKind === "ref_to" ? "REF_TO" : "POINTER TO";
           this.addError(`${kindText} initializers are not supported; assign '${decl.names[0] ?? ""}' in the body instead`, decl.initialValue.sourceSpan.startLine, decl.initialValue.sourceSpan.startCol, decl.initialValue.sourceSpan.file);
           continue;
         }
-        if ((outerKind ?? "none") === "none" && isAddressOf(decl.initialValue) && this.refuseNarrowAddress(decl.type.name, decl.initialValue)) {
-          continue;
+        if ((outerKind ?? "none") === "none") {
+          if (decl.initialValue.kind === "ArrayLiteralExpression" || decl.initialValue.kind === "StructInitializerExpression") {
+            this.refuseNarrowAddressNested(decl.type, decl.initialValue);
+          } else if (this.checkAddressStore(decl.type.name, decl.initialValue)) {
+            continue;
+          }
         }
         if (outerKind === "pointer_to" && isAddressOf(decl.initialValue)) {
           this.resolveExprType(decl.initialValue, scope);
@@ -24704,6 +26123,14 @@ var TypeChecker = class _TypeChecker {
         }
         if (this.isInterfaceDeclType(decl.type) && !(decl.initialValue.kind === "LiteralExpression" && decl.initialValue.literalType === "NULL")) {
           this.addError(`Interface initializers other than NULL are not supported; assign '${decl.names[0] ?? ""}' in the body instead`, decl.initialValue.sourceSpan.startLine, decl.initialValue.sourceSpan.startCol, decl.initialValue.sourceSpan.file);
+          continue;
+        }
+        const referenceTo = outerKind === "reference_to" || this.isReferenceToAlias(decl.type);
+        if (referenceTo && decl.initialValue.kind === "RefExpression") {
+          this.checkReferenceToInitializer(decl, decl.initialValue, scope);
+          continue;
+        }
+        if (referenceTo && this.refuseReferenceToValue(decl)) {
           continue;
         }
         const targetType = ELEMENTARY_TYPES[decl.type.name.toUpperCase()];
@@ -24733,34 +26160,425 @@ var TypeChecker = class _TypeChecker {
     }
   }
   /**
-   * `ADR(x)` stored in an integer narrower than the 64-bit address width (an
-   * initial value, a FUNCTION or METHOD argument) would lose the address's
-   * high bits. True when it was refused.
+   * A REFERENCE TO initial value other than REF(x) or NULL would copy into the
+   * reference, not bind it. True when refused.
    */
-  refuseNarrowAddress(typeName2, value) {
-    const type = ELEMENTARY_TYPES[typeName2.toUpperCase()];
-    if (type === void 0 || !("sizeBits" in type) || typeof type.sizeBits !== "number" || type.sizeBits >= 64 || !isIntegerOrBitStringName(typeName2)) {
+  refuseReferenceToValue(decl) {
+    const value = decl.initialValue;
+    if (value === void 0 || value.kind === "RefExpression" || value.kind === "LiteralExpression" && value.literalType === "NULL") {
       return false;
     }
-    this.addError(`ADR gives a 64-bit address, which ${typeName2.toUpperCase()} cannot hold; use __XWORD, LWORD or ULINT`, value.sourceSpan.startLine, value.sourceSpan.startCol, value.sourceSpan.file);
+    this.addError(`REFERENCE TO '${(decl.names[0] ?? "").toUpperCase()}' is bound by its initial value only with REF(x); use REF(x)`, value.sourceSpan.startLine, value.sourceSpan.startCol, value.sourceSpan.file);
     return true;
   }
-  /** `F(ADR(x))` and `fb.M(ADR(x))` into an input narrower than an address. */
-  refuseNarrowAddressArguments(expr, scope) {
-    if (this.isFBInstanceCall(expr, scope))
-      return;
-    const inputs = this.callInputs(expr, scope) ?? this.dottedMethodInputs(expr.functionName, scope);
-    if (!inputs)
-      return;
-    stripEnEno(expr.arguments).forEach((arg, i) => {
-      if (arg.isOutput || !isAddressOf(arg.value))
+  /**
+   * An FB member's initial value is evaluated when the FB is created, before
+   * any call binds its VAR_IN_OUT: one that reads or addresses it is refused
+   * (`REF(io)` is refused by checkReferenceToInitializer). True when refused.
+   */
+  refuseInOutInInitialValue(blocks, decl, scope) {
+    const value = decl.initialValue;
+    if (value === void 0 || value.kind === "RefExpression")
+      return false;
+    const fb = this.ast?.functionBlocks.find((f) => f.name.toUpperCase() === this.currentFBName?.toUpperCase());
+    if (fb === void 0 || fb.varBlocks !== blocks)
+      return false;
+    let found;
+    walkAST(value, (node) => {
+      if (found !== void 0 || node.kind !== "VariableExpression")
         return;
-      const argName = arg.name?.toUpperCase();
-      const input = argName === void 0 ? inputs[i] : inputs.find((p) => p.name.toUpperCase() === argName);
-      if (input === void 0 || input.type.referenceKind !== "none")
-        return;
-      this.refuseNarrowAddress(input.type.name, arg.value);
+      const v = node;
+      const sym = scope.lookup(v.name);
+      if (sym?.kind === "variable" && sym.isInOut)
+        found = v;
     });
+    if (found === void 0)
+      return false;
+    this.addError(`The initial value of '${(decl.names[0] ?? "").toUpperCase()}' cannot use the VAR_IN_OUT '${found.name.toUpperCase()}': it is bound only by a call; assign it in the body`, found.sourceSpan.startLine, found.sourceSpan.startCol, found.sourceSpan.file);
+    return true;
+  }
+  /** A TYPE alias (through aliases) of a REFERENCE TO. */
+  isReferenceToAlias(type) {
+    if ((type.referenceKind ?? "none") !== "none" || !this.ast)
+      return false;
+    let name = type.name.toUpperCase();
+    for (let depth = 0; depth < 16; depth++) {
+      const def = this.ast.types.find((t) => t.name.toUpperCase() === name)?.definition;
+      if (def?.kind !== "TypeReference")
+        return false;
+      if (def.referenceKind === "reference_to")
+        return true;
+      if ((def.referenceKind ?? "none") !== "none")
+        return false;
+      name = def.name.toUpperCase();
+    }
+    return false;
+  }
+  /** Top-level and CONFIGURATION globals: a REFERENCE TO bound by a non-REF value. */
+  refuseGlobalReferenceToValues(ast) {
+    for (const block of [
+      ...ast.globalVarBlocks,
+      ...ast.configurations.flatMap((c) => c.varBlocks)
+    ]) {
+      for (const decl of block.declarations) {
+        if (decl.type.referenceKind === "reference_to" || this.isReferenceToAlias(decl.type)) {
+          this.refuseReferenceToValue(decl);
+        }
+      }
+    }
+  }
+  /**
+   * A constant has no writable storage to refer to, and (in an initial value)
+   * a VAR_IN_OUT is bound only by a call. True when refused.
+   */
+  refuseReferenceToUnbindable(source, what, scope, initialValue) {
+    const sym = scope.lookup(source.name);
+    const fail = (message) => {
+      this.addError(message, source.sourceSpan.startLine, source.sourceSpan.startCol, source.sourceSpan.file);
+      return true;
+    };
+    if (sym?.kind === "constant") {
+      return fail(`${what} cannot be bound to the constant '${source.name.toUpperCase()}'`);
+    }
+    if (initialValue && sym?.kind === "variable" && sym.isInOut) {
+      return fail(`${what} cannot be bound to the VAR_IN_OUT '${source.name.toUpperCase()}' in its initial value: it is bound only by a call; use REF= in the body`);
+    }
+    return false;
+  }
+  /** `REF(w.3)` or `r REF= w.3`: a bit has no address of its own. True when refused. */
+  refuseReferenceToBit(source, what) {
+    const steps = source.accessChain?.map((s) => s.kind === "field" ? s.name : "") ?? source.fieldAccess;
+    const last2 = steps[steps.length - 1] ?? "";
+    if (!/^\d+$/.test(last2) && source.namedBitIndex !== true)
+      return false;
+    this.addError(`${what} cannot be bound to a bit of a variable: a bit has no address of its own`, source.sourceSpan.startLine, source.sourceSpan.startCol, source.sourceSpan.file);
+    return true;
+  }
+  /** The variable `REF(x)` binds a REFERENCE TO initial value to, checked as a REF= source. */
+  checkReferenceToInitializer(decl, value, scope) {
+    this.resolveExprType(value, scope);
+    const source = value.operand;
+    if (source.kind !== "VariableExpression") {
+      this.addError(`REFERENCE TO '${decl.names[0] ?? ""}' must be bound to a variable, not an expression`, source.sourceSpan.startLine, source.sourceSpan.startCol, source.sourceSpan.file);
+      return;
+    }
+    if (this.refuseReferenceToUnbindable(source, `REFERENCE TO '${(decl.names[0] ?? "").toUpperCase()}'`, scope, true)) {
+      return;
+    }
+    if (this.refuseReferenceToBit(source, `REFERENCE TO '${(decl.names[0] ?? "").toUpperCase()}'`)) {
+      return;
+    }
+    delete source.aliasReferenceBinding;
+    const targetShape = referenceShapeOf(decl.type);
+    const sourceShape = this.declaredReferenceShape(source, scope);
+    if (targetShape === void 0 || targetShape.chain.length !== 1 || sourceShape === void 0) {
+      return;
+    }
+    this.markAliasReferenceBinding(targetShape, sourceShape, source);
+    const mismatch = this.referenceBindingMismatch(targetShape, sourceShape, source);
+    if (mismatch !== void 0) {
+      this.addError(mismatch, source.sourceSpan.startLine, source.sourceSpan.startCol, source.sourceSpan.file);
+    }
+  }
+  /** A user FUNCTION named ADR, which a call of ADR reaches; a library's ADR is the operator. */
+  userAddressFunction() {
+    return this.findUserFunction("ADR") !== void 0 || this.symbolTables.lookupFunction("ADR") !== void 0 && !this.symbolTables.globalScope.definedByLibrary("ADR");
+  }
+  /** Positions already refused by checkAddressStore (a repeated literal element is one). */
+  addressStoresReported = /* @__PURE__ */ new Set();
+  /**
+   * The one check of an address (`ADR(x)`, `ADR(x) ± n`, `REF(x)`) stored into
+   * a value of type `typeName`: refused when the type, through aliases and
+   * subranges, is an integer narrower than 64 bits. With pointer_to off, or an
+   * operand that is not a variable, the refusal of the ADR itself is the only
+   * one. True when the store was decided here (refused, or an address into a
+   * 64-bit integer), so the caller adds no other type error.
+   */
+  checkAddressStore(typeName2, value) {
+    if (typeName2 === void 0)
+      return false;
+    const user = (name) => this.findUserFunction(name) !== void 0;
+    let top = value;
+    while (top.kind === "ParenthesizedExpression")
+      top = top.expression;
+    const chainError = this.addressArithmeticRefused.get(top);
+    if (addressMisuse(value, user, this.isPointerRead) && addressFit(typeName2, this.ast?.types ?? []) !== void 0 && !this.userAddressFunction()) {
+      if (chainError !== void 0) {
+        this.errors = this.errors.filter((e) => e !== chainError);
+        this.addressArithmeticRefused.delete(top);
+      }
+      this.addError("An address can only be offset by + or - an integer", value.sourceSpan.startLine, value.sourceSpan.startCol, value.sourceSpan.file);
+      return true;
+    }
+    if (chainError !== void 0)
+      return true;
+    const source = addressSource(value, user, this.isPointerRead);
+    if (source === void 0)
+      return this.checkXwordStore(typeName2, value);
+    if (source.op === "ADR" && this.userAddressFunction())
+      return false;
+    const fit = addressFit(typeName2, this.ast?.types ?? []);
+    if (source.op === "ADR" && !this.features.has("pointer_to")) {
+      return fit !== void 0;
+    }
+    const span = source.node.sourceSpan;
+    const key = `${span.file ?? ""}:${span.startLine}:${span.startCol}`;
+    if (source.operand?.kind !== "VariableExpression") {
+      if (fit !== void 0 && !this.addressStoresReported.has(key)) {
+        this.addressStoresReported.add(key);
+        this.addError(`${source.op}() requires a variable reference, not an expression`, span.startLine, span.startCol, span.file);
+      }
+      return fit !== void 0;
+    }
+    if (fit === void 0)
+      return false;
+    if (fit === "wide") {
+      if (source.op === "REF" || addressFit(typeName2, []) !== "wide") {
+        value.addressInto = typeName2;
+      }
+      return true;
+    }
+    if (this.addressStoresReported.has(key))
+      return true;
+    this.addressStoresReported.add(key);
+    this.addError(narrowAddressMessage(source.op, fit.narrow), span.startLine, span.startCol, span.file);
+    return true;
+  }
+  /**
+   * An `__XWORD` value (a PVOID, an XWORD), which holds an address, stored
+   * into an integer narrower than 64 bits: refused as an ADR is.
+   */
+  checkXwordStore(typeName2, value) {
+    const valueType = value.resolvedType;
+    if (valueType === void 0 || typeName(valueType).toUpperCase() !== "__XWORD" || this.isAddressDifference(value)) {
+      return false;
+    }
+    const fit = addressFit(typeName2, this.ast?.types ?? []);
+    if (typeof fit !== "object" || !isNarrowInteger(fit.narrow))
+      return false;
+    const span = value.sourceSpan;
+    const key = `${span.file ?? ""}:${span.startLine}:${span.startCol}`;
+    if (!this.addressStoresReported.has(key)) {
+      this.addressStoresReported.add(key);
+      this.addError(narrowAddressMessage("__XWORD", fit.narrow), span.startLine, span.startCol, span.file);
+    }
+    return true;
+  }
+  /** `a - b` of two addresses (ADR, REF or __XWORD values): an offset, no address. */
+  isAddressDifference(value) {
+    let v = value;
+    while (v.kind === "ParenthesizedExpression")
+      v = v.expression;
+    if (v.kind !== "BinaryExpression" || v.operator !== "-")
+      return false;
+    const user = (name) => this.findUserFunction(name) !== void 0;
+    const isAddress = (e) => addressSource(e, user, this.isPointerRead) !== void 0 || this.isPointerRead(e) || e.resolvedType !== void 0 && typeName(e.resolvedType).toUpperCase() === "__XWORD";
+    return isAddress(v.left) && isAddress(v.right);
+  }
+  /**
+   * An address as a CASE selector (`CASE ADR(x) OF`), refused once per
+   * position; the feature gate and the operand check come first, as for a
+   * store (checkAddressStore). True when refused.
+   */
+  refuseAddressSelector(selector) {
+    const user = (name) => this.findUserFunction(name) !== void 0;
+    const source = addressSource(selector, user, this.isPointerRead);
+    if (source === void 0 && !addressMisuse(selector, user, this.isPointerRead)) {
+      return false;
+    }
+    if (this.userAddressFunction())
+      return false;
+    if (source?.op === "ADR" && !this.features.has("pointer_to"))
+      return true;
+    if (source !== void 0 && source.operand?.kind !== "VariableExpression") {
+      return true;
+    }
+    const span = selector.sourceSpan;
+    const key = `${span.file ?? ""}:${span.startLine}:${span.startCol}`;
+    if (!this.addressStoresReported.has(key)) {
+      this.addressStoresReported.add(key);
+      this.addError("A CASE selector cannot be an address", span.startLine, span.startCol, span.file);
+    }
+    return true;
+  }
+  /** The type name an assignment stores into: resolved, the result, a variable access or a property. */
+  storeTargetTypeName(target, resolved, scope) {
+    const declared = this.storeTargetDeclaredType(target, scope);
+    if ((declared?.referenceKind ?? "none") !== "none" || resolved?.typeKind === "reference") {
+      return void 0;
+    }
+    return resolved !== void 0 ? typeName(resolved) : declared?.name;
+  }
+  /**
+   * The declared type, references included, that a store reaches: the
+   * FUNCTION or METHOD result, a variable access (`p`, `s.f`, `pu^`) or a
+   * PROPERTY.
+   */
+  storeTargetDeclaredType(target, scope) {
+    return this.resultTargetType(target) ?? this.accessedType(target, scope) ?? this.propertyTargetType(target, scope);
+  }
+  /** The type of a PROPERTY set by `fb.Pr :=`, `itf.Pr :=` or `THIS^.Pr :=`. */
+  propertyTargetType(target, scope) {
+    if (target.kind !== "VariableExpression" || target.fieldAccess.length !== 1 || target.subscripts.length > 0 || (target.accessChain ?? []).some((st) => st.kind !== "field") || !this.ast) {
+      return void 0;
+    }
+    const sym = scope.lookup(target.name);
+    const owner = target.name.toUpperCase() === "THIS" ? this.currentFBName : sym?.kind === "variable" ? sym.declaration?.type.name : void 0;
+    const prop = target.fieldAccess[0].toUpperCase();
+    const pending = owner !== void 0 ? [owner.toUpperCase()] : [];
+    const seen = /* @__PURE__ */ new Set();
+    while (pending.length > 0) {
+      const name = pending.shift();
+      if (seen.has(name) || seen.size > 64)
+        continue;
+      seen.add(name);
+      const fb = this.ast.functionBlocks.find((f) => f.name.toUpperCase() === name);
+      const itf = this.ast.interfaces.find((i) => i.name.toUpperCase() === name);
+      const found = (fb?.properties ?? itf?.properties ?? []).find((p) => p.name.toUpperCase() === prop);
+      if (found)
+        return found.type;
+      if (fb?.extends !== void 0)
+        pending.push(fb.extends.toUpperCase());
+      for (const base of itf?.extends ?? [])
+        pending.push(base.toUpperCase());
+    }
+    return void 0;
+  }
+  /** The declared type a variable access reaches (`p`, `pu^`, `s.pu^`). */
+  accessedType(target, scope) {
+    if (target.kind !== "VariableExpression")
+      return void 0;
+    const sym = scope.lookup(target.name);
+    const declared = sym?.kind === "variable" ? sym.declaration?.type : void 0;
+    if (declared === void 0)
+      return void 0;
+    return resolveAccessType(declared, target, this.accessLookup);
+  }
+  /** `p^`, `s.p^`, `p^.x`: a store that reaches through a dereference. */
+  reachesThroughDereference(target) {
+    return target.kind === "VariableExpression" && (target.isDereference || target.accessChain?.some((st) => st.kind === "dereference") === true);
+  }
+  /** The declared result type when `target` is the bare FUNCTION or METHOD result. */
+  resultTargetType(target) {
+    return this.currentReturn !== void 0 && target.kind === "VariableExpression" && target.fieldAccess.length === 0 && target.subscripts.length === 0 && !target.isDereference && target.name.toUpperCase() === this.currentReturn.name.toUpperCase() ? this.currentReturn.type : void 0;
+  }
+  /**
+   * `ADR(x)` for an integer narrower than an address anywhere in an initial
+   * value: the value itself, an array literal element, a structure
+   * initializer element, nested.
+   */
+  refuseNarrowAddressNested(type, value) {
+    if ((type.referenceKind ?? "none") !== "none" || type.arrayDimensions !== void 0 && (type.elementReferenceChain?.length ?? 0) > 0) {
+      return;
+    }
+    if (value.kind === "ArrayLiteralExpression") {
+      const element = type.arrayDimensions !== void 0 && type.elementTypeName !== void 0 ? { name: type.elementTypeName } : this.namedArrayElementType(type.name);
+      if (element === void 0)
+        return;
+      for (const e of value.elements)
+        this.refuseNarrowAddressNested(element, e);
+    } else if (value.kind === "StructInitializerExpression") {
+      for (const el of value.elements) {
+        const field = this.lookupMember(type.name, el.name);
+        if (field)
+          this.refuseNarrowAddressNested(field.type, el.value);
+      }
+    } else {
+      this.checkAddressStore(type.name, value);
+    }
+  }
+  /** The element type of a named ARRAY type, through aliases. */
+  namedArrayElementType(name) {
+    let current = name.toUpperCase();
+    for (let depth = 0; depth < 16 && this.ast; depth++) {
+      const decl = this.ast.types.find((t) => t.name.toUpperCase() === current);
+      const def = decl?.definition;
+      if (def?.kind === "ArrayDefinition")
+        return def.elementType;
+      if (def?.kind !== "TypeReference")
+        return void 0;
+      if (def.arrayDimensions !== void 0) {
+        return def.elementTypeName === void 0 ? void 0 : { name: def.elementTypeName };
+      }
+      current = def.name.toUpperCase();
+    }
+    return void 0;
+  }
+  /** ADR into a narrower integer in a top-level or CONFIGURATION global's initial value. */
+  refuseNarrowAddressInGlobals(ast) {
+    const blocks = [
+      ...ast.globalVarBlocks,
+      ...ast.configurations.flatMap((c) => c.varBlocks)
+    ];
+    for (const block of blocks) {
+      for (const decl of block.declarations) {
+        if (!decl.initialValue)
+          continue;
+        if ((decl.type.referenceKind ?? "none") !== "none")
+          continue;
+        this.refuseNarrowAddressNested(decl.type, decl.initialValue);
+      }
+    }
+  }
+  /**
+   * An address passed to an input (`F(ADR(x))`, `fb.M(ADR(x))`,
+   * `fb(d := ADR(x))`) and a POINTER TO or REF_TO output captured
+   * (`fb(o => u)`), each stored through checkAddressStore's rule.
+   */
+  refuseNarrowAddressArguments(expr, scope) {
+    const args = stripEnEno(expr.arguments);
+    const method = this.dottedMethod(expr.functionName, scope);
+    const methodParams = method ? this.methodParameters(method) : void 0;
+    const inputs = this.callInputs(expr, scope) ?? this.dottedMethodInputs(expr.functionName, scope) ?? methodParams?.filter((p) => !p.output) ?? this.libraryShapedFunctionInputs(expr, scope);
+    if (inputs) {
+      let positional = 0;
+      for (const arg of args) {
+        if (arg.isOutput)
+          continue;
+        const argName = arg.name?.toUpperCase();
+        const input = argName === void 0 ? inputs[positional++] : inputs.find((p) => p.name.toUpperCase() === argName);
+        if (input === void 0 || input.inOut)
+          continue;
+        this.refuseMisalignedPointerStore(input.type, arg.value, scope);
+        if ((input.type.referenceKind ?? "none") !== "none")
+          continue;
+        this.checkAddressStore(input.type.name, arg.value);
+      }
+    }
+    if (!args.some((a) => a.isOutput) || !this.ast)
+      return;
+    const fbType = this.calledFbType(expr, scope);
+    const outputs = fbType !== void 0 ? this.fbOutputsOf(fbType).map((o) => ({
+      name: o.name,
+      kind: o.referenceKind ?? "none"
+    })) : (this.calledFunctionParameters(expr.functionName) ?? methodParams ?? []).filter((p) => p.output).map((p) => ({
+      name: p.name,
+      kind: p.type.referenceKind ?? "none"
+    }));
+    for (const arg of args) {
+      if (!arg.isOutput || arg.name === void 0)
+        continue;
+      const out = outputs.find((o) => o.name.toUpperCase() === arg.name.toUpperCase());
+      if (out === void 0 || out.kind !== "pointer_to" && out.kind !== "ref_to") {
+        continue;
+      }
+      const target = this.storeTargetTypeName(arg.value, this.resolveExprType(arg.value, scope), scope);
+      if (target === void 0)
+        continue;
+      const fit = addressFit(target, this.ast.types);
+      if (fit === void 0)
+        continue;
+      if (fit === "wide") {
+        if (fbType === void 0) {
+          arg.inOutCopy = true;
+          arg.addressInto = target;
+        } else if (out.kind === "ref_to" || addressFit(target, []) !== "wide") {
+          arg.addressInto = target;
+        }
+        continue;
+      }
+      this.addError(narrowAddressMessage(`The output '${out.name.toUpperCase()}'`, fit.narrow), arg.value.sourceSpan.startLine, arg.value.sourceSpan.startCol, arg.value.sourceSpan.file);
+    }
   }
   /**
    * Resolve each named init argument of an FB instance (feature fb_init) and
@@ -24816,13 +26634,20 @@ var TypeChecker = class _TypeChecker {
       case "AssignmentStatement": {
         let targetType = this.resolveExprType(stmt.target, scope);
         const valueType = this.resolveExprType(stmt.value, scope);
+        this.refuseMisalignedPointerStore(this.storeTargetDeclaredType(stmt.target, scope), stmt.value, scope);
         if (this.strict && targetType === void 0 && this.currentReturn !== void 0 && stmt.target.kind === "VariableExpression" && stmt.target.fieldAccess.length === 0 && stmt.target.subscripts.length === 0 && stmt.target.name.toUpperCase() === this.currentReturn.name.toUpperCase()) {
           targetType = ELEMENTARY_TYPES[this.currentReturn.type.name.toUpperCase()];
         }
         if (targetType === void 0 && this.currentReturn !== void 0 && stmt.target.kind === "VariableExpression" && stmt.target.name.toUpperCase() === this.currentReturn.name.toUpperCase()) {
           this.adaptCharLiteral(stmt.value, this.charTypeOf(this.resolveNamedType(this.currentReturn.type.name)));
         }
+        if (targetType === void 0) {
+          this.typeNotFromExpected(stmt.value, stmt.target.kind === "VariableExpression" && this.currentReturn !== void 0 && stmt.target.fieldAccess.length === 0 && stmt.target.subscripts.length === 0 && !stmt.target.isDereference && stmt.target.name.toUpperCase() === this.currentReturn.name.toUpperCase() ? this.currentReturn.type.name : this.dereferencedType(stmt.target, scope));
+        }
         this.validateInOutMemberWrite(stmt.target, scope);
+        if ((this.reachesThroughDereference(stmt.target) || (this.declaredReferenceShape(stmt.target, scope)?.chain.length ?? 0) === 0) && this.checkAddressStore(this.storeTargetTypeName(stmt.target, targetType, scope), stmt.value)) {
+          break;
+        }
         if (this.isAddressIntoPointer(stmt.target, valueType, scope))
           break;
         if (this.isZeroIntoPointer(stmt.target, stmt.value, scope))
@@ -24844,6 +26669,9 @@ var TypeChecker = class _TypeChecker {
         this.resolveExprType(stmt.target, scope);
         this.resolveExprType(stmt.source, scope);
         this.refuseBitMember(stmt.source, "REF= cannot bind to", scope);
+        if (stmt.source.kind === "VariableExpression" && (this.refuseReferenceToBit(stmt.source, "REF=") || this.refuseReferenceToUnbindable(stmt.source, "REF=", scope, false))) {
+          break;
+        }
         if (stmt.target.kind === "VariableExpression") {
           const sym = scope.lookup(stmt.target.name);
           const base = sym?.kind === "variable" ? sym.declaration?.type : void 0;
@@ -24887,7 +26715,7 @@ var TypeChecker = class _TypeChecker {
       case "CaseStatement": {
         this.checkStrictTerminator(stmt);
         const selectorType = this.resolveExprType(stmt.selector, scope);
-        if (selectorType) {
+        if (!this.refuseAddressSelector(stmt.selector) && selectorType) {
           this.validateCaseSelector(selectorType, stmt.selector);
         }
         for (const c of stmt.cases) {
@@ -24896,6 +26724,9 @@ var TypeChecker = class _TypeChecker {
             this.resolveExprType(label.start, scope);
             if (label.end)
               this.resolveExprType(label.end, scope);
+            this.typeNotFromExpected(label.start, selectorType);
+            if (label.end)
+              this.typeNotFromExpected(label.end, selectorType);
             if (selectorChar !== void 0) {
               for (const bound of label.end ? [label.start, label.end] : [label.start]) {
                 this.adaptCharLiteral(bound, selectorChar);
@@ -24937,17 +26768,26 @@ var TypeChecker = class _TypeChecker {
           this.addError(`Cannot assign ${typeName(boundType)} to ${controlType ? typeName(controlType) : "the control variable"}`, bound.sourceSpan.startLine, bound.sourceSpan.startCol, bound.sourceSpan.file);
         }
         const controlSym = scope.lookup(stmt.controlVariable);
+        const addressBound = /* @__PURE__ */ new Set();
+        const controlDeclared = controlSym?.kind === "variable" ? controlSym.declaration?.type : void 0;
+        if (controlSym?.kind === "variable" && controlSym.type && (controlDeclared?.referenceKind ?? "none") === "none") {
+          for (const bound of [stmt.start, stmt.end, stmt.step]) {
+            if (bound !== void 0 && this.checkAddressStore(typeName(controlSym.type), bound)) {
+              addressBound.add(bound);
+            }
+          }
+        }
         if (controlSym?.kind === "variable" || controlSym?.kind === "constant") {
           const ctrlType = controlSym.type;
           if (ctrlType && !isTypeInCategory(ctrlType, "ANY_INT")) {
             this.addError(`FOR control variable '${stmt.controlVariable}' must be an integer type, got ${typeName(ctrlType)}`, stmt.sourceSpan.startLine, stmt.sourceSpan.startCol, stmt.sourceSpan.file);
           }
-          if (ctrlType && startType && !this.isUntypedNumericLiteral(stmt.start)) {
+          if (ctrlType && startType && !addressBound.has(stmt.start) && !this.isUntypedNumericLiteral(stmt.start)) {
             if (ctrlType.typeKind === "elementary" && startType.typeKind === "elementary" && !isAssignable(ctrlType, startType)) {
               this.addWarning(`FOR start value type ${typeName(startType)} is not compatible with control variable type ${typeName(ctrlType)}`, stmt.start.sourceSpan.startLine, stmt.start.sourceSpan.startCol, stmt.start.sourceSpan.file);
             }
           }
-          if (ctrlType && endType && !this.isUntypedNumericLiteral(stmt.end)) {
+          if (ctrlType && endType && !addressBound.has(stmt.end) && !this.isUntypedNumericLiteral(stmt.end)) {
             if (ctrlType.typeKind === "elementary" && endType.typeKind === "elementary" && !isAssignable(ctrlType, endType)) {
               this.addWarning(`FOR end value type ${typeName(endType)} is not compatible with control variable type ${typeName(ctrlType)}`, stmt.end.sourceSpan.startLine, stmt.end.sourceSpan.startCol, stmt.end.sourceSpan.file);
             }
@@ -25009,6 +26849,11 @@ var TypeChecker = class _TypeChecker {
     if (this.adaptCharLiteral(value, this.charTypeOf(targetType))) {
       valueType = value.resolvedType;
     }
+    if (this.typeNotFromExpected(value, targetType)) {
+      valueType = value.resolvedType;
+    }
+    if (this.strict)
+      this.warnConstantOverflow(targetType, value);
     const targetInterface = this.interfaceTypeOf(targetType);
     if (targetInterface !== void 0) {
       this.checkInterfaceValue(targetInterface, valueType, value);
@@ -25531,6 +27376,10 @@ var TypeChecker = class _TypeChecker {
     const mismatch = this.inOutTypeMismatch(input.type, argType);
     if (mismatch === void 0)
       return;
+    if (defaultStringsOnly(input.type, argType)) {
+      arg.inOutCopy = true;
+      return;
+    }
     this.inOutDiagnostic(`VAR_IN_OUT '${input.name}' of type ${mismatch.param} is bound to a variable of type ${mismatch.arg}`, "it is passed by copy-in / copy-out, not by reference", value);
     arg.inOutCopy = true;
   }
@@ -25856,7 +27705,10 @@ var TypeChecker = class _TypeChecker {
   charLiteralSourceType(lit) {
     return lit.typePrefix !== void 0 && lit.typePrefix !== "" ? lit.typePrefix.toUpperCase() : lit.literalType;
   }
-  /** A one-character literal passed to a CHAR or WCHAR input is that character. */
+  /**
+   * A one-character literal passed to a CHAR or WCHAR input is that character;
+   * under --strict an overflowing constant argument warns.
+   */
   adaptCharArguments(inputs, args) {
     if (!inputs)
       return;
@@ -25868,9 +27720,22 @@ var TypeChecker = class _TypeChecker {
       if (!input || input.inOut || input.type.arrayDimensions !== void 0) {
         return;
       }
+      typeUntypedNot(arg.value, this.aliasBase(input.type.name).toUpperCase());
+    });
+    stripEnEno([...args]).forEach((arg, i) => {
+      if (arg.isOutput)
+        return;
+      const argName = arg.name?.toUpperCase();
+      const input = argName === void 0 ? inputs[i] : inputs.find((p) => p.name.toUpperCase() === argName);
+      if (!input || input.inOut || input.type.arrayDimensions !== void 0) {
+        return;
+      }
       const refKind = input.type.referenceKind;
       if (refKind !== void 0 && refKind !== "none")
         return;
+      if (this.strict) {
+        this.warnConstantOverflow(this.resolveNamedType(input.type.name), arg.value);
+      }
       const charType = this.charTypeOfName(input.type.name);
       if (charType === void 0)
         return;
@@ -25898,6 +27763,18 @@ var TypeChecker = class _TypeChecker {
     if (first2 === void 0)
       return void 0;
     return args.every((a) => this.charTypeOf(a.value.resolvedType) === first2) ? first2 : void 0;
+  }
+  /**
+   * True when the call is a standard MAX, MIN, LIMIT, comparison, SEL or MUX
+   * with a CHAR or WCHAR operand: its EN/ENO also works nested in an
+   * expression. Valid after `check` has resolved the operand types.
+   */
+  isCharStdCall(expr) {
+    const name = expr.functionName.toUpperCase();
+    if (!CHAR_COMPARE_FUNCTIONS.has(name) || expr.instance !== void 0 || expr.libraryFunction !== void 0 || !this.isStdCharFunction(name)) {
+      return false;
+    }
+    return stripEnEno(expr.arguments).some((a) => this.charTypeOf(a.value.resolvedType) !== void 0);
   }
   /** True when `name` is the standard function, not a user or library one. */
   isStdCharFunction(name) {
@@ -25982,15 +27859,55 @@ var TypeChecker = class _TypeChecker {
    * alias variable, which is not stored as its base type).
    */
   checkOutputBindings(expr, scope) {
-    if (this.strict)
-      this.checkStrictFbOutputs(expr, scope);
-    if (expr.instance || expr.functionName.includes("."))
+    this.checkFbOutputBindings(expr, scope);
+    if (expr.instance)
       return;
-    if (this.calledInstance(expr.functionName, scope))
+    let params;
+    if (expr.functionName.includes(".")) {
+      params = this.dottedMethodParameters(expr.functionName, scope);
+    } else {
+      if (this.calledInstance(expr.functionName, scope))
+        return;
+      params = this.calledFunctionParameters(expr.functionName);
+    }
+    this.bindOutputs(params, expr.arguments, scope);
+  }
+  /** `obj.M(o => v)` (a method call on an array element or member): see checkOutputBindings. */
+  checkMethodOutputBindings(expr, objType, scope) {
+    if (objType?.typeKind !== "elementary")
       return;
-    const params = this.calledFunctionParameters(expr.functionName);
+    this.bindOutputs(this.methodParametersOf(objType.name, expr.methodName), expr.arguments, scope);
+  }
+  /** The parameters of `owner.M`: a method of a FUNCTION_BLOCK this unit declares. */
+  dottedMethodParameters(functionName, scope) {
+    const parts = functionName.split(".");
+    if (parts.length !== 2)
+      return void 0;
+    const owner = this.callOwnerType(parts[0], scope);
+    return owner === void 0 ? void 0 : this.methodParametersOf(owner, parts[1]);
+  }
+  /** The parameters of method `methodName` of FB `fbType` or a base; undefined otherwise. */
+  methodParametersOf(fbType, methodName) {
+    const upper = this.aliasBase(fbType).toUpperCase();
+    if (this.ast?.functionBlocks.some((f) => f.name.toUpperCase() === upper) !== true) {
+      return void 0;
+    }
+    const method = this.lookupChainMethod(upper, methodName);
+    return typeof method === "object" ? this.parametersOfBlocks(method.varBlocks) : void 0;
+  }
+  /** VAR_INPUT, VAR_IN_OUT and VAR_OUTPUT of a POU's blocks, in order. */
+  parametersOfBlocks(blocks) {
+    return blocks.filter((b) => b.blockType === "VAR_INPUT" || b.blockType === "VAR_IN_OUT" || b.blockType === "VAR_OUTPUT").flatMap((b) => b.declarations.flatMap((d) => d.names.map((n) => ({
+      name: n,
+      type: d.type,
+      output: b.blockType === "VAR_OUTPUT"
+    }))));
+  }
+  /** Check each output argument against its parameter (see checkOutputBinding). */
+  bindOutputs(params, args, scope) {
     if (params === void 0 || !params.some((p) => p.output))
       return;
+    const expr = { arguments: args };
     const claimed = new Set(expr.arguments.flatMap((a) => a.name === void 0 ? [] : [a.name.toUpperCase()]));
     const free = params.filter((p) => !claimed.has(p.name.toUpperCase()));
     let positional = 0;
@@ -26118,6 +28035,67 @@ var TypeChecker = class _TypeChecker {
     const storage = INTEGER_STORAGE[base] ?? TEMPORAL_STORAGE[base] ?? base;
     return `${base === name.toUpperCase() ? "iec" : "raw"}:${storage}`;
   }
+  /** A type name through aliases and subranges (`TYPE SR : INT (0..10)` is INT). */
+  ordinalBase(name) {
+    let upper = this.aliasBase(name);
+    for (let i = 0; i < 32; i++) {
+      const current = upper;
+      const def = this.ast?.types.find((td) => td.name.toUpperCase() === current)?.definition;
+      if (def?.kind !== "SubrangeDefinition")
+        return upper;
+      upper = this.aliasBase(def.baseType.name);
+    }
+    return upper;
+  }
+  /**
+   * Type each NOT of an untyped constant in `value` from the type the context
+   * expects of it. True when `value` itself is such a NOT, now typed.
+   */
+  typeNotFromExpected(value, expected) {
+    if (expected === void 0)
+      return false;
+    const name = typeof expected === "string" ? expected : typeName(expected);
+    typeUntypedNot(value, this.aliasBase(name).toUpperCase());
+    return untypedNotTarget(value) !== void 0;
+  }
+  /**
+   * Type the NOTs of an initial value from its declared type, element by
+   * element through ARRAY and STRUCT initialisers.
+   */
+  typeInitializerNots(type, value) {
+    if (!this.ast || !type || type.referenceKind !== "none" || type.referenceChain !== void 0) {
+      return;
+    }
+    if (value.kind === "ArrayLiteralExpression") {
+      const element = type.arrayDimensions !== void 0 ? type.elementTypeName !== void 0 && type.elementReferenceChain === void 0 ? { name: type.elementTypeName, referenceKind: "none" } : void 0 : resolveArrayElementAccessType(type.name, this.ast);
+      for (const e of value.elements)
+        this.typeInitializerNots(element, e);
+      return;
+    }
+    if (type.arrayDimensions !== void 0)
+      return;
+    if (value.kind !== "StructInitializerExpression") {
+      this.typeNotFromExpected(value, type.name);
+      return;
+    }
+    const upper = this.aliasBase(type.name);
+    for (const el of value.elements) {
+      const field = resolveFieldDeclaration(upper, el.name, this.ast);
+      if (field)
+        this.typeInitializerNots(field.type, el.value);
+    }
+  }
+  /** The type `p^` designates, for a pointer or REF_TO variable `p`. */
+  dereferencedType(target, scope) {
+    if (target.kind !== "VariableExpression" || !target.isDereference || target.fieldAccess.length > 0 || target.subscripts.length > 0 || target.accessChain !== void 0 && (target.accessChain.length !== 1 || target.accessChain[0].kind !== "dereference")) {
+      return void 0;
+    }
+    const sym = scope.lookup(target.name);
+    if (sym?.kind !== "variable")
+      return void 0;
+    const type = sym.declaration?.type;
+    return type !== void 0 && (type.referenceKind === "pointer_to" || type.referenceKind === "ref_to") && type.referenceChain === void 0 && type.arrayDimensions === void 0 ? type.name : void 0;
+  }
   aliasBase(name) {
     let upper = name.toUpperCase();
     for (let i = 0; i < 32; i++) {
@@ -26210,6 +28188,15 @@ var TypeChecker = class _TypeChecker {
       return false;
     }
     return this.declaredReferenceShape(target, scope)?.chain[0] === "pointer_to";
+  }
+  /** An address operand of `+` / `-`: ADR(), a POINTER TO or REF_TO itself, or address arithmetic. */
+  isAddressOperand(expr, scope) {
+    if (expr.kind === "ParenthesizedExpression") {
+      return this.isAddressOperand(expr.expression, scope);
+    }
+    if (expr.kind === "BinaryExpression")
+      return expr.addressArithmetic === true;
+    return isAddressOf(expr) || this.isReferenceItself(expr, scope);
   }
   /** Whether `expr` denotes a POINTER TO or REF_TO variable, not its target. */
   isReferenceItself(expr, scope) {
@@ -26328,11 +28315,7 @@ var TypeChecker = class _TypeChecker {
    * with an FB's inherited inputs first. Undefined when the callee is unknown.
    */
   callInputs(expr, scope) {
-    const fromBlocks = (blocks) => blocks.filter((b) => b.blockType === "VAR_INPUT" || b.blockType === "VAR_IN_OUT").flatMap((b) => b.declarations.flatMap((d) => d.names.map((name) => ({
-      name,
-      type: d.type,
-      inOut: b.blockType === "VAR_IN_OUT"
-    }))));
+    const fromBlocks = callInputsOfBlocks;
     const ownMethod = this.ownMethod(expr.functionName);
     if (ownMethod)
       return fromBlocks(ownMethod.varBlocks);
@@ -26351,17 +28334,44 @@ var TypeChecker = class _TypeChecker {
     return this.fbInputsOf(declared.type.name);
   }
   /**
-   * `--strict`: an FB call's `o => v` follows the strict conversion rules of
-   * `v := o`, as a FUNCTION's output does (checkOutputBindings).
+   * An FB call's `o => v` follows the rules of the assignment `v := o`, as a
+   * FUNCTION's output does (checkOutputBindings): its refusals, its narrowing
+   * warning, and its `--strict` errors. The value is copied out by assignment.
    */
-  checkStrictFbOutputs(expr, scope) {
+  checkFbOutputBindings(expr, scope) {
     if (!expr.arguments.some((a) => a.isOutput))
       return;
     const fbType = this.calledFbType(expr, scope);
     if (fbType === void 0)
       return;
+    this.checkFbOutputs(fbType, expr.arguments, scope);
+  }
+  /**
+   * `a.b.inst(o => v)`, `arr[i].inst(o => v)`: a call of an FB instance that
+   * is a member of `ownerType`, checked as `checkFbOutputBindings` does.
+   */
+  checkMemberFbOutputBindings(expr, ownerType, scope) {
+    if (ownerType === void 0)
+      return;
+    if (!expr.arguments.some((a) => a.isOutput))
+      return;
+    if (this.methodParametersOf(ownerType, expr.methodName) !== void 0) {
+      return;
+    }
+    const fbType = this.resolveFieldTypeAnywhere(this.aliasBase(ownerType), expr.methodName);
+    if (fbType === void 0 || !this.isFunctionBlockName(fbType))
+      return;
+    this.checkFbOutputs(fbType, expr.arguments, scope);
+  }
+  /** True when `name` (through aliases) is a FUNCTION_BLOCK this unit declares. */
+  isFunctionBlockName(name) {
+    const upper = this.aliasBase(name).toUpperCase();
+    return this.ast?.functionBlocks.some((f) => f.name.toUpperCase() === upper) === true;
+  }
+  /** Each `o => v` of a call of FB type `fbType`, checked as `v := o`. */
+  checkFbOutputs(fbType, args, scope) {
     const outputs = this.fbOutputsOf(fbType);
-    for (const arg of expr.arguments) {
+    for (const arg of args) {
       if (!arg.isOutput || arg.name === void 0)
         continue;
       if (arg.value.kind !== "VariableExpression")
@@ -26373,12 +28383,16 @@ var TypeChecker = class _TypeChecker {
       if (out === void 0 || out.arrayDimensions !== void 0 || (out.referenceKind ?? "none") !== "none") {
         continue;
       }
+      if (scope.lookup(arg.value.name)?.kind === "constant") {
+        this.addError(`Cannot assign to CONSTANT variable '${arg.value.name}'`, arg.value.sourceSpan.startLine, arg.value.sourceSpan.startCol, arg.value.sourceSpan.file);
+        continue;
+      }
       const bound = this.boundAccessType(arg.value, scope);
       const boundType = bound === void 0 ? arg.value.resolvedType : this.resolveNamedType(bound.name);
       if (boundType === void 0)
         continue;
       const outType = this.resolveNamedType(out.typeName);
-      this.checkStrictConversion(boundType, {
+      this.validateAssignment(boundType, outType, arg.value, {
         kind: "VariableExpression",
         sourceSpan: arg.value.sourceSpan,
         name: out.name,
@@ -26393,7 +28407,14 @@ var TypeChecker = class _TypeChecker {
   calledFbType(expr, scope) {
     if (expr.instance !== void 0) {
       const t = this.resolveExprType(expr.instance, scope);
-      return t?.typeKind === "elementary" ? t.name : void 0;
+      if (t?.typeKind === "elementary")
+        return t.name;
+      const inst = expr.instance;
+      if (inst.kind !== "VariableExpression" || !inst.isDereference || inst.fieldAccess.length > 0 || inst.subscripts.length > 0) {
+        return void 0;
+      }
+      const sym = scope.lookup(inst.name);
+      return sym?.kind === "variable" ? sym.declaration?.type.name : void 0;
     }
     const parts = expr.functionName.split(".");
     if (parts.length === 1) {
@@ -26499,12 +28520,32 @@ var TypeChecker = class _TypeChecker {
     }
     return params.flatMap((p) => {
       const type = p.declaration?.type;
-      return type ? [{ name: p.name, type, inOut: p.isInOut }] : [];
+      return type ? [{ name: p.name, type, inOut: p.isInOut, lengthUnrecorded: true }] : [];
+    });
+  }
+  /**
+   * The inputs and in-outs of a library FUNCTION whose archive records its
+   * parameters' POINTER TO, REF_TO and ARRAY shapes; undefined otherwise.
+   */
+  libraryShapedFunctionInputs(expr, scope) {
+    const name = expr.functionName;
+    if (expr.instance || name.includes("."))
+      return void 0;
+    if (this.calledInstance(name, scope) || this.ownMethod(name)) {
+      return void 0;
+    }
+    const fn = this.symbolTables.lookupFunction(name);
+    if (fn?.parameterShapes !== true || this.findUserFunction(name)) {
+      return void 0;
+    }
+    return fn.parameters.filter((p) => p.isInput || p.isInOut).flatMap((p) => {
+      const type = p.declaration?.type;
+      return type ? [{ name: p.name, type, inOut: p.isInOut, lengthUnrecorded: true }] : [];
     });
   }
   /** The REF_TO check for each argument passed to a REF_TO input. */
   validateReferenceArguments(expr, scope) {
-    const inputs = this.callInputs(expr, scope);
+    const inputs = this.callInputs(expr, scope) ?? this.libraryShapedFunctionInputs(expr, scope);
     if (!inputs)
       return;
     stripEnEno(expr.arguments).forEach((arg, i) => {
@@ -26515,8 +28556,10 @@ var TypeChecker = class _TypeChecker {
       if (!input)
         return;
       const shape = referenceShapeOf(input.type);
-      if (shape)
-        this.validateReferenceValue(shape, arg.value, scope);
+      if (!shape)
+        return;
+      const unrecorded = input.lengthUnrecorded === true && shape.length === void 0 && isStringBase(shape.base);
+      this.validateReferenceValue(unrecorded ? { ...shape, lengthUnknown: true } : shape, arg.value, scope);
     });
   }
   /**
@@ -26578,6 +28621,10 @@ var TypeChecker = class _TypeChecker {
       return;
     if (!isTypeInCategory(condType, "ANY_BIT")) {
       this.addError(`Condition must be a boolean or bit type, got ${typeName(condType)}`, condExpr.sourceSpan.startLine, condExpr.sourceSpan.startCol, condExpr.sourceSpan.file);
+      return;
+    }
+    if (this.strict && condType.typeKind === "elementary" && this.aliasBase(condType.name) !== "BOOL") {
+      this.addError(`Condition must be BOOL under --strict, got ${typeName(condType)}; compare it, e.g. ${typeName(condType)} <> 0`, condExpr.sourceSpan.startLine, condExpr.sourceSpan.startCol, condExpr.sourceSpan.file);
     }
   }
   /** Calls written as statements (their value, if any, is discarded). */
@@ -26600,50 +28647,164 @@ var TypeChecker = class _TypeChecker {
       return;
     this.addError(`'${expr.functionName}' is a FUNCTION_BLOCK instance: its call has no value`, expr.sourceSpan.startLine, expr.sourceSpan.startCol, expr.sourceSpan.file);
   }
-  /** Calls already checked by checkBoundDimension. */
-  checkedBoundDimensions = /* @__PURE__ */ new WeakSet();
+  /** Calls already checked by checkBoundCall. */
+  checkedBoundCalls = /* @__PURE__ */ new WeakSet();
   /**
-   * LOWER_BOUND / UPPER_BOUND (arr, dim) of a fixed array of two or three
-   * dimensions with a literal `dim` it does not have. (A one-dimensional
-   * array answers any dim, so it is left alone.)
+   * LOWER_BOUND / UPPER_BOUND (ARR, DIM), named or positional: ARR must be an
+   * array (a dereferenced pointer or reference is), and a constant DIM below 1
+   * is refused, as is a literal DIM above the rank of a two- or
+   * three-dimensional array declared as one or of its ARRAY type. A
+   * one-dimensional array answers any positive DIM. A DIM of a known
+   * enumeration is refused; with `checkDimType` (the call is not typed
+   * otherwise) so is any other known type that is no integer. The argument
+   * count is the analyzer's.
    */
-  checkBoundDimension(expr, scope) {
+  checkBoundCall(expr, scope, checkDimType) {
     const upper = expr.functionName.toUpperCase();
     if (upper !== "LOWER_BOUND" && upper !== "UPPER_BOUND")
       return;
     if (expr.instance || this.findUserFunction(upper))
       return;
-    if (this.checkedBoundDimensions.has(expr))
+    if (this.ownMethod(upper) || this.libraryOverload(expr))
       return;
-    this.checkedBoundDimensions.add(expr);
-    const [arr, dim] = stripEnEno([...expr.arguments]);
-    if (arr?.value.kind !== "VariableExpression" || dim === void 0)
+    if (scope.lookup(upper)?.kind === "variable")
       return;
-    if (dim.value.kind !== "LiteralExpression" || typeof dim.value.value !== "number") {
+    if (this.checkedBoundCalls.has(expr))
+      return;
+    this.checkedBoundCalls.add(expr);
+    const args = stripEnEno([...expr.arguments]);
+    if (args.length !== 2)
+      return;
+    const pick = (name, idx) => args.find((a) => a.name?.toUpperCase() === name)?.value ?? (args[idx]?.name === void 0 ? args[idx]?.value : void 0);
+    const arr = pick("ARR", 0);
+    const dim = pick("DIM", 1);
+    if (arr === void 0 || dim === void 0)
+      return;
+    const operand = this.boundOperand(arr, scope);
+    if (operand !== void 0 && "refused" in operand) {
+      this.addError(`ARR of ${upper} must be an array, got ${operand.refused}`, arr.sourceSpan.startLine, arr.sourceSpan.startCol, arr.sourceSpan.file);
+    }
+    const dimType = dim.kind === "LiteralExpression" && dim.literalType !== "INT" ? { name: dim.literalType, isEnum: false } : this.knownDimType(dim, scope);
+    if (dimType !== void 0 && (checkDimType || dimType.isEnum)) {
+      this.addError(`Argument 'DIM' of '${upper}' expects ANY_INT, got ${dimType.name}`, dim.sourceSpan.startLine, dim.sourceSpan.startCol, dim.sourceSpan.file);
       return;
     }
-    const sym = scope.lookup(arr.value.name);
-    if (sym?.kind !== "variable")
+    if (operand !== void 0 && "refused" in operand)
       return;
+    const rank = operand?.rank;
+    const value = this.constantIntegerValue(dim);
+    const shapeRank = operand?.direct === true ? rank : void 0;
+    const literal = dim.kind === "LiteralExpression" && typeof dim.value === "number" ? dim.value : void 0;
+    const outOfShape = shapeRank !== void 0 && shapeRank >= 2 && shapeRank <= 3 && literal !== void 0 && !(Number.isInteger(literal) && literal >= 1 && literal <= shapeRank);
+    if (!outOfShape && (value === void 0 || value >= 1n))
+      return;
+    const shown = value !== void 0 ? String(value) : String(literal);
+    this.addError(rank !== void 0 ? `${upper} has no dimension ${shown}: the array has ${rank}` : `${upper} has no dimension ${shown}: dimensions count from 1`, dim.sourceSpan.startLine, dim.sourceSpan.startCol, dim.sourceSpan.file);
+  }
+  /**
+   * A known type of DIM that is no integer; undefined otherwise. An
+   * enumeration is also known untyped: a typed value (`E#A`) or a variable
+   * declared of the type.
+   */
+  knownDimType(dim, scope) {
+    let e = dim;
+    while (e.kind === "ParenthesizedExpression")
+      e = e.expression;
+    const enumNamed = (name) => {
+      const sym = scope.lookup(name);
+      return sym?.kind === "type" && sym.resolvedType.typeKind === "enum" ? sym.resolvedType : void 0;
+    };
+    let type = this.knownOperandType(dim, scope);
+    if (type === void 0 && e.kind === "VariableExpression") {
+      if (e.typedLiteral === true) {
+        type = enumNamed(e.name);
+      } else if (e.fieldAccess.length === 0 && e.subscripts.length === 0 && !e.isDereference) {
+        const sym = scope.lookup(e.name);
+        const declared = sym?.kind === "variable" || sym?.kind === "constant" ? sym.declaration?.type : void 0;
+        if (declared !== void 0 && declared.arrayDimensions === void 0 && (declared.referenceKind ?? "none") === "none") {
+          type = enumNamed(declared.name);
+        }
+      }
+    }
+    if (type === void 0)
+      return void 0;
+    if (type.typeKind === "enum") {
+      return { name: typeName(type), isEnum: true };
+    }
+    if (type.typeKind !== "elementary")
+      return void 0;
+    return isTypeInCategory(type, "ANY_INT") ? void 0 : { name: typeName(type), isEnum: false };
+  }
+  /**
+   * The ARR operand of LOWER_BOUND / UPPER_BOUND: an array of a rank, or what
+   * it is instead. Undefined when not known here (a call's result, a library
+   * type).
+   */
+  boundOperand(arr, scope) {
+    let e = arr;
+    while (e.kind === "ParenthesizedExpression")
+      e = e.expression;
+    if (e.kind === "LiteralExpression" || e.kind === "ArrayLiteralExpression" || e.kind === "StructInitializerExpression") {
+      return { refused: "a literal" };
+    }
+    if (e.kind !== "VariableExpression")
+      return void 0;
+    const sym = scope.lookup(e.name);
+    if (sym?.kind !== "variable" && sym?.kind !== "constant")
+      return void 0;
     const declared = sym.declaration?.type;
     if (declared === void 0)
-      return;
-    const type = this.hasMemberAccess(arr.value) ? resolveAccessType(declared, arr.value, this.accessLookup) : declared;
-    if (type === void 0)
-      return;
-    let rank = type.arrayDimensions?.length;
-    if (rank === void 0 && (type.referenceKind ?? "none") === "none") {
-      const named = type.name.toUpperCase();
-      const def = this.ast?.types.find((t) => t.name.toUpperCase() === named)?.definition;
-      if (def?.kind === "ArrayDefinition")
-        rank = def.dimensions.length;
+      return void 0;
+    const type = this.hasMemberAccess(e) ? resolveAccessType(declared, e, this.accessLookup) : declared;
+    return type === void 0 ? void 0 : this.arrayShapeOf(type);
+  }
+  /**
+   * The rank of an array type through aliases, or what the type is instead.
+   * `direct` when the type is the array or names its ARRAY type.
+   */
+  arrayShapeOf(type) {
+    let current = type;
+    for (let depth = 0; depth < 32; depth++) {
+      const kind = current.referenceKind ?? "none";
+      if (kind === "pointer_to" || kind === "ref_to") {
+        const shown = kind === "pointer_to" ? "POINTER TO" : "REF_TO";
+        return { refused: `a ${shown}: dereference it with ^` };
+      }
+      if (kind !== "none")
+        return void 0;
+      if (current.arrayDimensions !== void 0) {
+        return { rank: current.arrayDimensions.length, direct: depth === 0 };
+      }
+      const upper = current.name.toUpperCase();
+      const vla = /^__VLA_(\d+)D_/.exec(upper);
+      if (vla)
+        return { rank: Number(vla[1]), direct: false };
+      const def = this.ast?.types.find((t) => t.name.toUpperCase() === upper)?.definition;
+      if (def === void 0) {
+        const elementary = ELEMENTARY_TYPES[canonicalElementaryName(upper)];
+        return elementary ? { refused: elementary.name } : void 0;
+      }
+      if (def.kind === "ArrayDefinition") {
+        return { rank: def.dimensions.length, direct: depth === 0 };
+      }
+      if (def.kind !== "TypeReference")
+        return { refused: current.name };
+      current = def;
     }
-    if (rank === void 0 || rank < 2 || rank > 3)
+    return void 0;
+  }
+  /**
+   * A LOWER_BOUND / UPPER_BOUND call in an initial value that no typing
+   * reached: its named arguments are bound and the call checked.
+   */
+  checkInitialBoundCall(expr, scope) {
+    const upper = expr.functionName.toUpperCase();
+    if (upper !== "LOWER_BOUND" && upper !== "UPPER_BOUND")
       return;
-    const value = dim.value.value;
-    if (Number.isInteger(value) && value >= 1 && value <= rank)
+    if (this.checkedBoundCalls.has(expr))
       return;
-    this.addError(`${upper} has no dimension ${String(value)}: the array has ${rank}`, dim.value.sourceSpan.startLine, dim.value.sourceSpan.startCol, dim.value.sourceSpan.file);
+    this.bindStdFunctionCallArguments(expr, scope);
+    this.checkBoundCall(expr, scope, true);
   }
   /**
    * The result of the standard SEL or MUX when any selected input is an
@@ -26706,7 +28867,8 @@ var TypeChecker = class _TypeChecker {
     this.addError(`CASE label of type ${typeName(labelType)} does not match the selector of type ${typeName(selectorType)}`, label.sourceSpan.startLine, label.sourceSpan.startCol, label.sourceSpan.file);
   }
   validateCaseSelector(selectorType, selectorExpr) {
-    if (!isTypeInCategory(selectorType, "ANY_INT") && !isTypeInCategory(selectorType, "ANY_BIT") && selectorType.typeKind !== "enum" && this.charTypeOf(selectorType) === void 0) {
+    const base = selectorType.typeKind === "elementary" ? ELEMENTARY_TYPES[this.ordinalBase(selectorType.name)] ?? selectorType : selectorType;
+    if (!isTypeInCategory(base, "ANY_INT") && !isTypeInCategory(base, "ANY_BIT") && selectorType.typeKind !== "enum" && this.charTypeOf(selectorType) === void 0) {
       this.addError(`CASE selector must be an integer, bit, or enum type, got ${typeName(selectorType)}`, selectorExpr.sourceSpan.startLine, selectorExpr.sourceSpan.startCol, selectorExpr.sourceSpan.file);
     }
   }
@@ -26718,18 +28880,18 @@ var TypeChecker = class _TypeChecker {
     const known = this.enumOrderingChecked.get(expr);
     if (known !== void 0)
       return known;
-    let refused = false;
+    let refused2 = false;
     stripEnEno(expr.arguments).forEach((arg, i) => {
       const param = params[i];
       const argType = arg.value.resolvedType;
       if (param?.constraint !== "ANY_ELEMENTARY" || argType?.typeKind !== "enum") {
         return;
       }
-      refused = true;
+      refused2 = true;
       this.addError(`Argument '${param.name}' of '${expr.functionName.toUpperCase()}' expects ${param.constraint}, got ${typeName(argType)}`, arg.value.sourceSpan.startLine, arg.value.sourceSpan.startCol, arg.value.sourceSpan.file);
     });
-    this.enumOrderingChecked.set(expr, refused);
-    return refused;
+    this.enumOrderingChecked.set(expr, refused2);
+    return refused2;
   }
   validateFunctionCallArgs(expr, _scope) {
     if (!this.stdRegistry)
@@ -27224,15 +29386,45 @@ var TypeChecker = class _TypeChecker {
       }
     }
   }
-  /** Strict conversion check for each input argument of a call. */
+  /**
+   * `--strict`: the argument of a typed conversion `X_TO_Y` is an X, so it
+   * follows the strict conversion rules into X (`BYTE_TO_INT(w)` with a WORD).
+   */
+  checkStrictConversionArgument(expr, scope) {
+    if (expr.instance !== void 0 || expr.functionName.includes(".") || this.findUserFunction(expr.functionName) || this.ownMethod(expr.functionName) !== void 0 || this.calledInstance(expr.functionName, scope)) {
+      return;
+    }
+    const fn = this.symbolTables.lookupFunction(expr.functionName);
+    if (fn !== void 0 && fn.libraryName !== STD_FUNCTIONS_LIBRARY)
+      return;
+    const conv = this.stdRegistry?.resolveConversion(expr.functionName.toUpperCase());
+    const from = conv ? ELEMENTARY_TYPES[conv.fromType] : void 0;
+    const arg = stripEnEno(expr.arguments)[0];
+    if (from === void 0 || arg === void 0)
+      return;
+    if (this.checkStrictConversion(from, arg.value))
+      return;
+    const value = this.strictExprType(arg.value);
+    if (value?.typeKind !== "elementary")
+      return;
+    const v = canonicalElementaryName(this.aliasBase(value.name));
+    const t = canonicalElementaryName(conv.fromType);
+    if (v === t || ELEMENTARY_TYPES[v] === void 0)
+      return;
+    if (strictKind(v) !== void 0 && strictKind(t) !== void 0)
+      return;
+    if (isAssignable(from, ELEMENTARY_TYPES[v]) && isLongFormOf(t, v))
+      return;
+    this.addStrictError(strictConversionMessage(v, t), arg.value);
+  }
+  /** Strict conversion check for each input argument of a call (the BOOL narrowing warning outside `--strict`). */
   checkStrictArguments(inputs, args, _scope) {
     if (!inputs)
       return;
     stripEnEno([...args]).forEach((arg, i) => {
       if (arg.isOutput)
         return;
-      const argName = arg.name?.toUpperCase();
-      const input = argName === void 0 ? inputs[i] : inputs.find((p) => p.name.toUpperCase() === argName);
+      const input = boundInput(inputs, arg, i);
       if (!input)
         return;
       const refKind = input.type.referenceKind;
@@ -27241,9 +29433,34 @@ var TypeChecker = class _TypeChecker {
       if (input.type.arrayDimensions !== void 0)
         return;
       const declared = ELEMENTARY_TYPES[input.type.name.toUpperCase()];
-      if (declared)
-        this.checkStrictConversion(declared, arg.value);
+      if (this.strict) {
+        if (declared)
+          this.checkStrictConversion(declared, arg.value);
+        return;
+      }
+      if (input.inOut)
+        return;
+      this.warnBoolInputNarrowing(input.type.name, arg.value);
     });
+  }
+  /**
+   * Outside `--strict`: a non-BOOL value bound to a BOOL input gets the
+   * narrowing warning its assignment `b := i` gets (an untyped constant adapts).
+   */
+  warnBoolInputNarrowing(inputType, value) {
+    if (this.aliasBase(inputType).toUpperCase() !== "BOOL")
+      return;
+    if (this.untypedConstantKind(value) !== void 0)
+      return;
+    const valueType = value.resolvedType;
+    if (valueType?.typeKind !== "elementary")
+      return;
+    const vName = this.aliasBase(valueType.name).toUpperCase();
+    if (vName === "BOOL" || ELEMENTARY_TYPES[vName] === void 0)
+      return;
+    if (!isNarrowingConversion("BOOL", vName))
+      return;
+    this.addWarning(`Implicit narrowing conversion from ${vName} to BOOL`, value.sourceSpan.startLine, value.sourceSpan.startCol, value.sourceSpan.file);
   }
   /** The input parameters of the method a method-call expression names. */
   methodInputs(objType, expr, scope) {
@@ -27307,13 +29524,8 @@ var TypeChecker = class _TypeChecker {
     if (!itf || depth > 32)
       return void 0;
     const method = itf.methods.find((m) => m.name.toUpperCase() === methodName.toUpperCase());
-    if (method) {
-      return method.varBlocks.filter((b) => b.blockType === "VAR_INPUT" || b.blockType === "VAR_IN_OUT").flatMap((b) => b.declarations.flatMap((d) => d.names.map((n) => ({
-        name: n,
-        type: d.type,
-        inOut: b.blockType === "VAR_IN_OUT"
-      }))));
-    }
+    if (method)
+      return callInputsOfBlocks(method.varBlocks);
     for (const base of itf.extends ?? []) {
       const found = this.interfaceMethodInputs(base, methodName, depth + 1);
       if (found)
@@ -27331,6 +29543,9 @@ var TypeChecker = class _TypeChecker {
     const parts = functionName.split(".");
     if (parts.length !== 2)
       return void 0;
+    if (parts[0].toUpperCase() === "THIS" && this.currentFBName !== void 0) {
+      return this.methodInputsOf(this.currentFBName, parts[1]);
+    }
     const sym = scope.lookup(parts[0]);
     if (sym?.kind === "program" && this.features.has("program_methods")) {
       return this.methodInputsOf(sym.name, parts[1]);
@@ -27343,11 +29558,7 @@ var TypeChecker = class _TypeChecker {
   methodInputsOf(fbTypeName, methodName) {
     if (!this.ast)
       return void 0;
-    const inputsOf = (method) => method.varBlocks.filter((b) => b.blockType === "VAR_INPUT" || b.blockType === "VAR_IN_OUT").flatMap((b) => b.declarations.flatMap((d) => d.names.map((n) => ({
-      name: n,
-      type: d.type,
-      inOut: b.blockType === "VAR_IN_OUT"
-    }))));
+    const inputsOf = (method) => callInputsOfBlocks(method.varBlocks);
     let current = fbTypeName?.toUpperCase();
     for (let depth = 0; current !== void 0 && depth < 32; depth++) {
       const name = current;
@@ -27363,6 +29574,55 @@ var TypeChecker = class _TypeChecker {
       current = fb.extends?.toUpperCase();
     }
     return void 0;
+  }
+  /**
+   * The METHOD a dotted call reaches: `fb.M`, `itf.M`, `THIS^.M`, `SUPER^.M`
+   * or `PRG.M`, through base FBs and extended interfaces.
+   */
+  dottedMethod(functionName, scope) {
+    const parts = functionName.split(".");
+    if (parts.length !== 2 || !this.ast)
+      return void 0;
+    const head2 = parts[0].toUpperCase();
+    const current = this.currentFBName?.toUpperCase();
+    let owner;
+    if (head2 === "THIS" && current !== void 0) {
+      owner = current;
+    } else if (head2 === "SUPER" && current !== void 0) {
+      owner = this.ast.functionBlocks.find((f) => f.name.toUpperCase() === current)?.extends;
+    } else {
+      const sym = scope.lookup(parts[0]);
+      owner = sym?.kind === "program" ? sym.name : sym?.kind === "variable" ? sym.declaration?.type.name : void 0;
+    }
+    const method = parts[1].toUpperCase();
+    const pending = owner !== void 0 ? [owner.toUpperCase()] : [];
+    const seen = /* @__PURE__ */ new Set();
+    while (pending.length > 0) {
+      const name = pending.shift();
+      if (seen.has(name) || seen.size > 64)
+        continue;
+      seen.add(name);
+      const pou = this.ast.functionBlocks.find((f) => f.name.toUpperCase() === name) ?? this.ast.interfaces.find((i) => i.name.toUpperCase() === name) ?? this.ast.programs.find((p) => p.name.toUpperCase() === name);
+      const found = pou?.methods.find((m) => m.name.toUpperCase() === method);
+      if (found)
+        return found;
+      if (pou?.kind === "FunctionBlockDeclaration" && pou.extends !== void 0) {
+        pending.push(pou.extends.toUpperCase());
+      } else if (pou?.kind === "InterfaceDeclaration") {
+        for (const base of pou.extends ?? [])
+          pending.push(base.toUpperCase());
+      }
+    }
+    return void 0;
+  }
+  /** VAR_INPUT, VAR_IN_OUT and VAR_OUTPUT of a METHOD, in order (see calledFunctionParameters). */
+  methodParameters(method) {
+    return method.varBlocks.filter((b) => b.blockType === "VAR_INPUT" || b.blockType === "VAR_IN_OUT" || b.blockType === "VAR_OUTPUT").flatMap((b) => b.declarations.flatMap((d) => d.names.map((n) => ({
+      name: n,
+      type: d.type,
+      output: b.blockType === "VAR_OUTPUT",
+      inOut: b.blockType === "VAR_IN_OUT"
+    }))));
   }
   // ===========================================================================
   // Public API (backward compatible)
@@ -27426,6 +29686,292 @@ function bitAccessPath(e) {
       path += `[${step.indices.map(index).join(", ")}]`;
   }
   return path.toUpperCase();
+}
+function elementarySize(name) {
+  const bits = ELEMENTARY_TYPES[name.toUpperCase()]?.sizeBits;
+  if (bits === void 0)
+    return void 0;
+  return {
+    name: name.toUpperCase(),
+    bytes: BigInt(Math.max(1, Math.floor(bits / 8)))
+  };
+}
+
+// dist/semantic/type-registry.js
+function isElementaryType(name) {
+  return isBaseTypeName(name);
+}
+var TypeRegistry = class {
+  types = /* @__PURE__ */ new Map();
+  /**
+   * Register a user-defined type
+   */
+  registerType(type) {
+    this.types.set(type.name, type);
+  }
+  /**
+   * Register multiple types at once
+   */
+  registerTypes(types) {
+    for (const type of types) {
+      this.registerType(type);
+    }
+  }
+  /**
+   * Look up a type by name
+   */
+  lookupType(name) {
+    return this.types.get(name);
+  }
+  /**
+   * Check if a type exists
+   */
+  hasType(name) {
+    return this.types.has(name);
+  }
+  /**
+   * Get all registered types
+   */
+  getAllTypes() {
+    return Array.from(this.types.values());
+  }
+  /**
+   * Get the number of registered types
+   */
+  get size() {
+    return this.types.size;
+  }
+  /**
+   * Clear all registered types
+   */
+  clear() {
+    this.types.clear();
+  }
+  /**
+   * Get types in dependency order (topological sort)
+   * Types that depend on other types come after their dependencies.
+   * This is essential for C++ code generation where types must be declared
+   * before they are used.
+   */
+  getTypesInDependencyOrder() {
+    const visited = /* @__PURE__ */ new Set();
+    const result = [];
+    const visiting = /* @__PURE__ */ new Set();
+    const visit = (typeName2) => {
+      if (visited.has(typeName2))
+        return;
+      if (visiting.has(typeName2)) {
+        return;
+      }
+      const type = this.types.get(typeName2);
+      if (!type)
+        return;
+      visiting.add(typeName2);
+      const dependencies = this.getTypeDependencies(type);
+      for (const dep of dependencies) {
+        if (this.types.has(dep)) {
+          visit(dep);
+        }
+      }
+      visiting.delete(typeName2);
+      visited.add(typeName2);
+      result.push(type);
+    };
+    for (const typeName2 of this.types.keys()) {
+      visit(typeName2);
+    }
+    return result;
+  }
+  /**
+   * Get the direct dependencies of a type (other user-defined types it references)
+   */
+  getTypeDependencies(type) {
+    const deps = [];
+    this.collectDependencies(type.definition, deps);
+    return deps.filter((dep) => !isElementaryType(dep));
+  }
+  /**
+   * Recursively collect type dependencies from a type definition
+   */
+  collectDependencies(def, deps) {
+    switch (def.kind) {
+      case "StructDefinition":
+        this.collectStructDependencies(def, deps);
+        break;
+      case "EnumDefinition":
+        this.collectEnumDependencies(def, deps);
+        break;
+      case "ArrayDefinition":
+        this.collectArrayDependencies(def, deps);
+        break;
+      case "SubrangeDefinition":
+        this.collectSubrangeDependencies(def, deps);
+        break;
+      case "TypeReference":
+        this.collectTypeRefDependencies(def, deps);
+        break;
+    }
+  }
+  collectStructDependencies(def, deps) {
+    for (const field of def.fields) {
+      this.collectVarDeclDependencies(field, deps);
+    }
+  }
+  collectVarDeclDependencies(decl, deps) {
+    if (!deps.includes(decl.type.name)) {
+      deps.push(decl.type.name);
+    }
+    if (decl.initialValue !== void 0) {
+      for (const name of sizeofTypeOperands(decl.initialValue)) {
+        const declared = [...this.types.keys()].find((k) => k.toUpperCase() === name.toUpperCase());
+        if (declared !== void 0 && !deps.includes(declared)) {
+          deps.push(declared);
+        }
+      }
+    }
+  }
+  collectEnumDependencies(def, deps) {
+    if (def.baseType && !deps.includes(def.baseType.name)) {
+      deps.push(def.baseType.name);
+    }
+  }
+  collectArrayDependencies(def, deps) {
+    if (!deps.includes(def.elementType.name)) {
+      deps.push(def.elementType.name);
+    }
+  }
+  collectSubrangeDependencies(def, deps) {
+    if (!deps.includes(def.baseType.name)) {
+      deps.push(def.baseType.name);
+    }
+  }
+  collectTypeRefDependencies(def, deps) {
+    if (!deps.includes(def.name)) {
+      deps.push(def.name);
+    }
+  }
+  /**
+   * Validate all registered types
+   * Checks for:
+   * - Undefined type references
+   * - Circular dependencies
+   * - Invalid type definitions
+   */
+  validate() {
+    const errors = [];
+    const warnings = [];
+    for (const type of this.types.values()) {
+      this.validateType(type, errors, warnings);
+    }
+    const cycleErrors = this.detectCycles();
+    errors.push(...cycleErrors);
+    return {
+      isValid: errors.length === 0,
+      errors,
+      warnings
+    };
+  }
+  /**
+   * Validate a single type declaration
+   */
+  validateType(type, errors, warnings) {
+    const deps = this.getTypeDependencies(type);
+    for (const dep of deps) {
+      if (!isElementaryType(dep) && !this.types.has(dep)) {
+        errors.push({
+          typeName: type.name,
+          message: `References undefined type '${dep}'`
+        });
+      }
+    }
+    this.validateTypeDefinition(type.name, type.definition, errors, warnings);
+  }
+  /**
+   * Validate a type definition
+   */
+  validateTypeDefinition(typeName2, def, errors, _warnings) {
+    switch (def.kind) {
+      case "StructDefinition":
+        if (def.fields.length === 0) {
+          errors.push({
+            typeName: typeName2,
+            message: "Structure has no fields"
+          });
+        }
+        break;
+      case "EnumDefinition":
+        if (def.members.length === 0) {
+          errors.push({
+            typeName: typeName2,
+            message: "Enumeration has no members"
+          });
+        }
+        break;
+      case "ArrayDefinition":
+        if (def.dimensions.length === 0) {
+          errors.push({
+            typeName: typeName2,
+            message: "Array has no dimensions"
+          });
+        }
+        break;
+    }
+  }
+  /**
+   * Detect circular dependencies in type definitions
+   */
+  detectCycles() {
+    const errors = [];
+    const visited = /* @__PURE__ */ new Set();
+    const visiting = /* @__PURE__ */ new Set();
+    const visit = (typeName2, path) => {
+      if (visited.has(typeName2))
+        return false;
+      if (visiting.has(typeName2)) {
+        const cycleStart = path.indexOf(typeName2);
+        const cycle = path.slice(cycleStart).concat(typeName2);
+        errors.push({
+          typeName: path[0] ?? typeName2,
+          message: `Circular dependency detected: ${cycle.join(" -> ")}`
+        });
+        return true;
+      }
+      const type = this.types.get(typeName2);
+      if (!type)
+        return false;
+      visiting.add(typeName2);
+      path.push(typeName2);
+      const deps = this.getTypeDependencies(type);
+      for (const dep of deps) {
+        if (this.types.has(dep)) {
+          if (visit(dep, path)) {
+            visiting.delete(typeName2);
+            path.pop();
+            return true;
+          }
+        }
+      }
+      visiting.delete(typeName2);
+      visited.add(typeName2);
+      path.pop();
+      return false;
+    };
+    for (const typeName2 of this.types.keys()) {
+      if (!visited.has(typeName2)) {
+        visit(typeName2, []);
+      }
+    }
+    return errors;
+  }
+};
+function sizeofTypeOperands(expr) {
+  const names = [];
+  walkAST(expr, (node) => {
+    if (node.kind === "VariableExpression" && node.namesType === true) {
+      names.push(node.name);
+    }
+  });
+  return names;
 }
 
 // dist/semantic/program-access.js
@@ -28763,28 +31309,12 @@ function globalNames(ast) {
   return names;
 }
 function spellingsOf(text) {
-  const upper = uppercaseSource(text);
-  const raw = rawOffsets(text, upper);
   return tokenize(text).tokens.map((t) => ({
     line: t.startLine ?? 0,
     col: t.startColumn ?? 0,
     upper: t.image.toUpperCase(),
-    text: text.slice(raw[t.startOffset], raw[t.endOffset + 1])
+    text: text.slice(t.startOffset, t.endOffset + 1)
   }));
-}
-function rawOffsets(text, upper) {
-  const map2 = [];
-  let pos2 = 0;
-  for (let i = 0; i < text.length; i++) {
-    const ch = text.charAt(i);
-    const up = ch.toUpperCase();
-    const piece = up !== ch && upper.startsWith(up, pos2) ? up : ch;
-    for (let k = 0; k < piece.length; k++)
-      map2.push(i);
-    pos2 += piece.length;
-  }
-  map2.push(text.length);
-  return map2;
 }
 function spelled(nameUpper, span, sources, cache) {
   const raw = sources.get(span.file);
@@ -29195,12 +31725,42 @@ var BIT_STRING_BITS = {
   DWORD: 32,
   LWORD: 64
 };
+var U32_MAX = 4294967295n;
+function temporal32LiteralRefusal(literal) {
+  const raw = literal.rawValue;
+  switch (literal.literalType) {
+    case "TIME": {
+      const ns = exactTimeLiteralNanoseconds(raw);
+      if (ns < 0n) {
+        return `TIME literal '${raw}' is negative; a TIME holds T#0ms to T#49d17h2m47s295ms (an LTIME can be negative)`;
+      }
+      if (ns % 1000000n !== 0n) {
+        return `TIME literal '${raw}' has a part below a millisecond, which a TIME cannot hold; use an LTIME literal (LTIME#...)`;
+      }
+      return ns / 1000000n > U32_MAX ? `TIME literal '${raw}' is outside the TIME range (T#0ms to T#49d17h2m47s295ms)` : void 0;
+    }
+    case "DATE": {
+      const s = parseDateLiteralToDays(String(literal.value)) * 86400n;
+      return s < 0n || s > U32_MAX ? `DATE literal '${raw}' is outside the DATE range (D#1970-01-01 to D#2106-02-07)` : void 0;
+    }
+    case "DATE_AND_TIME": {
+      const ns = parseDtLiteralToNs(String(literal.value));
+      return ns < 0n || ns / 1000000000n > U32_MAX ? `DT literal '${raw}' is outside the DT range (DT#1970-01-01-00:00:00 to DT#2106-02-07-06:28:15)` : void 0;
+    }
+    case "TIME_OF_DAY":
+      return parseTodLiteralToNs(String(literal.value)) >= 86400000000000n ? `TOD literal '${raw}' is outside the TOD range (TOD#00:00:00 to TOD#23:59:59.999)` : void 0;
+    default:
+      return void 0;
+  }
+}
 var SemanticAnalyzer = class {
   options;
   symbolTables;
   typeChecker;
   stdRegistry = new StdFunctionRegistry();
   enumMemberMap = /* @__PURE__ */ new Map();
+  /** The unit validateUndeclaredVariables checks, for the types a SIZEOF operand names. */
+  undeclaredUnit;
   /** Uppercase names of the TYPEs hoisted from the test file being analyzed. */
   testTypeNames = /* @__PURE__ */ new Set();
   /** The unit being checked holds an `{external}` block (inline C++). */
@@ -29240,6 +31800,7 @@ var SemanticAnalyzer = class {
     }
     const errorsBeforeStructFeature = this.errors.length;
     this.validateStructExtendsFeature(ast);
+    this.validateConfigurationGlobalNames(ast);
     this.validateTypeColonFeature(ast);
     this.flattenStructTypes(ast);
     this.validateUnions(ast);
@@ -29263,6 +31824,14 @@ var SemanticAnalyzer = class {
     this.validatePostfixEnumBases(ast);
     this.validateConfigurationGlobalsHoldNoFB(ast);
     this.validateDeclaredEno(ast);
+    for (const fb of ast.functionBlocks) {
+      for (const m of fb.methods) {
+        if (m.name.toUpperCase() !== "FB_EXIT")
+          continue;
+        const at = m.nameSpan ?? m.sourceSpan;
+        this.addWarning(`FB_exit of '${fb.name}' is never called: an instance is not torn down`, at.startLine, at.startCol, at.file);
+      }
+    }
     if (this.features.has("fb_init")) {
       validateFbInitArguments(ast, (upper) => this.symbolTables.lookupFunctionBlock(upper) !== void 0, (message, span) => this.addError(message, span.startLine, span.startCol, span.file));
     }
@@ -29619,6 +32188,8 @@ var SemanticAnalyzer = class {
     for (const ifaceName of fb.implements) {
       const required = this.collectInterfaceProperties(ifaceName, ifaceDecls);
       for (const [key, req] of required) {
+        if (req.name === "")
+          continue;
         const own = provided.get(key);
         if (!own) {
           this.addError(`FUNCTION_BLOCK '${fb.name}' implements '${ifaceName}' but does not provide property '${req.name}'.`, fb.sourceSpan.startLine, fb.sourceSpan.startCol, fb.sourceSpan.file);
@@ -30232,10 +32803,56 @@ var SemanticAnalyzer = class {
     this.validateProgramMethodCalls(ast);
     this.validateProgramAccess(ast, reaches);
     this.validateExpressions(ast);
+    this.validateEnEnoPlacement([ast]);
     this.validateArrayShapes(ast);
     this.validateStructInitializerPlacement(ast);
     this.validateEnumTypeDefaults(ast);
     this.validateLiteralRanges(ast);
+  }
+  /**
+   * EN and ENO are honoured only on a call that is a statement or the whole
+   * right-hand side of an assignment, where codegen wraps it. Anywhere else
+   * (inside an expression, a condition, another call's argument, an initial
+   * value) they are refused at the EN/ENO argument. A standard MAX, MIN,
+   * LIMIT, comparison, SEL or MUX of CHAR or WCHAR keeps its nested EN/ENO.
+   */
+  validateEnEnoPlacement(roots) {
+    const wrapped = /* @__PURE__ */ new Set();
+    const visit = (visitor) => {
+      for (const root2 of roots)
+        walkAST(root2, visitor);
+    };
+    const reported = /* @__PURE__ */ new Set();
+    visit((node) => {
+      if (node.kind === "FunctionCallStatement") {
+        wrapped.add(node.call);
+      } else if (node.kind === "AssignmentStatement") {
+        const value = node.value;
+        if (value.kind === "FunctionCallExpression" || value.kind === "MethodCallExpression") {
+          wrapped.add(value);
+        }
+      }
+    });
+    visit((node) => {
+      if (node.kind !== "FunctionCallExpression" && node.kind !== "MethodCallExpression") {
+        return;
+      }
+      const call = node;
+      if (wrapped.has(call))
+        return;
+      const arg = call.arguments.find(isEnEnoArgument);
+      if (arg === void 0)
+        return;
+      if (call.kind === "FunctionCallExpression" && this.typeChecker.isCharStdCall(call)) {
+        return;
+      }
+      const at = arg.sourceSpan ?? arg.value.sourceSpan;
+      const key = `${at.file}:${at.startLine}:${at.startCol}`;
+      if (reported.has(key))
+        return;
+      reported.add(key);
+      this.addError("EN/ENO are only supported on a call written as a statement or as the whole right-hand side of an assignment", at.startLine, at.startCol, at.file);
+    });
   }
   /**
    * Literals a type cannot hold (integer, typed, LTIME, REAL) and STRING
@@ -30261,34 +32878,73 @@ var SemanticAnalyzer = class {
         this.literalsReported.add(literal);
       }
     });
-    const charKind = (typeName2) => {
+    const baseOf = (typeName2) => {
       let upper = typeName2.toUpperCase();
       for (let i = 0; i < 32; i++) {
-        if (upper === "CHAR" || upper === "WCHAR")
-          return upper;
         const current = upper;
         const def = ast.types.find((t) => t.name.toUpperCase() === current)?.definition;
-        if (def?.kind !== "TypeReference")
-          return void 0;
+        if (def?.kind !== "TypeReference" || def.arrayDimensions !== void 0) {
+          return upper;
+        }
         upper = def.name.toUpperCase();
       }
-      return void 0;
+      return upper;
     };
-    const adapt = (value, typeName2) => {
-      const kind = typeName2 === void 0 ? void 0 : charKind(typeName2);
-      if (kind === void 0 || value.kind !== "LiteralExpression")
+    const adapt = (value, typeName2, param) => {
+      if (typeName2 === void 0 || value.kind !== "LiteralExpression")
         return;
-      const want = kind === "CHAR" ? "STRING" : "WSTRING";
-      if (value.literalType !== want || (value.typePrefix ?? "") !== "")
+      if (value.literalType !== "STRING" || (value.typePrefix ?? "") !== "") {
         return;
-      const raw = `${kind}#${value.rawValue}`;
-      if (charLiteralUnits(raw).units.length !== 1)
+      }
+      const base = baseOf(typeName2);
+      if (base !== "CHAR" && base !== "WCHAR" && base !== "WSTRING")
         return;
-      value.literalType = kind;
-      value.rawValue = raw;
-      value.value = raw;
+      if (param !== void 0 && base === "WSTRING")
+        return;
+      if (base === "CHAR") {
+        const raw = `CHAR#${value.rawValue}`;
+        if (charLiteralUnits(raw).units.length === 1) {
+          value.literalType = "CHAR";
+          value.rawValue = raw;
+          value.value = raw;
+          return;
+        }
+      }
+      const target = typeName2.toUpperCase();
+      const span = value.sourceSpan;
+      this.literalsReported.add(value);
+      if (at.has(`${span.file ?? ""}:${span.startLine}:${span.startCol}`))
+        return;
+      this.addError(param === void 0 ? `Cannot assign STRING to ${target}` : `Cannot assign STRING to parameter '${param}' of type ${target}`, span.startLine, span.startCol, span.file);
     };
-    const visitPou = (blocks, bodies) => {
+    const paramsOf = (blocks) => blocks.filter((b) => b.blockType === "VAR_INPUT" || b.blockType === "VAR_IN_OUT").flatMap((b) => b.declarations.flatMap((d) => d.names.map((n) => ({
+      name: n,
+      type: d.type.name,
+      input: b.blockType === "VAR_INPUT" && d.type.arrayDimensions === void 0 && (d.type.referenceKind ?? "none") === "none"
+    }))));
+    const functionParams = /* @__PURE__ */ new Map();
+    for (const f of ast.functions) {
+      functionParams.set(f.name.toUpperCase(), paramsOf(f.varBlocks));
+    }
+    const methodsOf = (owner) => {
+      const out = /* @__PURE__ */ new Map();
+      const seen = /* @__PURE__ */ new Set();
+      let current = owner;
+      while (current) {
+        for (const m of current.methods) {
+          const upper = m.name.toUpperCase();
+          if (!out.has(upper))
+            out.set(upper, paramsOf(m.varBlocks));
+        }
+        const base = current.extends?.toUpperCase();
+        if (base === void 0 || seen.has(base))
+          break;
+        seen.add(base);
+        current = ast.functionBlocks.find((f) => f.name.toUpperCase() === base);
+      }
+      return out;
+    };
+    const visitPou = (blocks, bodies, methods = /* @__PURE__ */ new Map()) => {
       const types = /* @__PURE__ */ new Map();
       for (const b of [...ast.globalVarBlocks, ...blocks]) {
         for (const d of b.declarations) {
@@ -30302,6 +32958,22 @@ var SemanticAnalyzer = class {
       for (const body of bodies) {
         for (const stmt of body) {
           walkAST(stmt, (n) => {
+            if (n.kind === "FunctionCallExpression") {
+              const call = n;
+              const upper = call.functionName.toUpperCase();
+              if (call.instance !== void 0 || types.has(upper))
+                return;
+              const params = methods.get(upper) ?? functionParams.get(upper);
+              if (params === void 0)
+                return;
+              stripEnEno(call.arguments).forEach((arg, i) => {
+                const param = arg.name === void 0 ? params[i] : params.find((p) => p.name.toUpperCase() === arg.name.toUpperCase());
+                if (param?.input === true && !arg.isOutput) {
+                  adapt(arg.value, param.type, param.name);
+                }
+              });
+              return;
+            }
             if (n.kind !== "AssignmentStatement")
               return;
             const a = n;
@@ -30312,22 +32984,235 @@ var SemanticAnalyzer = class {
         }
       }
     };
-    for (const p of ast.programs)
-      visitPou(p.varBlocks, [p.body]);
+    for (const p of ast.programs) {
+      visitPou(p.varBlocks, [p.body], methodsOf(p));
+    }
     for (const f of ast.functions)
       visitPou(f.varBlocks, [f.body]);
     for (const fb of ast.functionBlocks) {
-      visitPou(fb.varBlocks, [fb.body]);
+      const own = methodsOf(fb);
+      visitPou(fb.varBlocks, [fb.body], own);
       for (const m of fb.methods) {
-        visitPou([...fb.varBlocks, ...m.varBlocks], [m.body]);
+        visitPou([...fb.varBlocks, ...m.varBlocks], [m.body], own);
       }
     }
   }
   validateLiteralRanges(ast) {
+    this.validateStringLiteralLengths(ast);
     this.validateIntegerLiteralRange(ast);
     this.validateStringLiteralCharset(ast);
     this.validateLtimeLiteralRange(ast);
     this.validateRealLiteralRange(ast);
+  }
+  /**
+   * A STRING or WSTRING literal longer than the variable, input or field it is
+   * stored in is cut to that length at run time: warn, in every mode.
+   */
+  validateStringLiteralLengths(ast) {
+    const typeDef = (name) => ast.types.find((t) => t.name.toUpperCase() === name.toUpperCase())?.definition;
+    const capacity = (type) => {
+      for (let i = 0; i < 32 && type !== void 0; i++) {
+        if (type.arrayDimensions !== void 0)
+          return void 0;
+        if ((type.referenceKind ?? "none") !== "none")
+          return void 0;
+        const name = type.name.toUpperCase();
+        if (name === "STRING" || name === "WSTRING") {
+          if (type.maxLength === void 0)
+            return { kind: name, max: 254 };
+          return typeof type.maxLength === "number" ? { kind: name, max: type.maxLength } : void 0;
+        }
+        const def = typeDef(name);
+        type = def?.kind === "TypeReference" ? def : void 0;
+      }
+      return void 0;
+    };
+    const elementOf2 = (type) => {
+      if (type.arrayDimensions !== void 0) {
+        return type.elementTypeName !== void 0 && type.elementReferenceChain === void 0 ? {
+          kind: "TypeReference",
+          sourceSpan: type.sourceSpan,
+          name: type.elementTypeName,
+          isReference: false,
+          referenceKind: "none",
+          ...type.elementMaxLength !== void 0 ? { maxLength: type.elementMaxLength } : {}
+        } : void 0;
+      }
+      const def = typeDef(type.name);
+      if (def?.kind === "ArrayDefinition")
+        return def.elementType;
+      return def?.kind === "TypeReference" ? elementOf2(def) : void 0;
+    };
+    const fieldsOf = (type) => {
+      const def = typeDef(type.name);
+      if (def?.kind === "StructDefinition")
+        return def.fields;
+      return def?.kind === "TypeReference" && def.arrayDimensions === void 0 ? fieldsOf(def) : void 0;
+    };
+    const warned = /* @__PURE__ */ new Set();
+    const check = (value, type) => {
+      if (value === void 0 || type === void 0)
+        return;
+      if (value.kind === "ArrayLiteralExpression") {
+        const element = elementOf2(type);
+        for (const e of value.elements)
+          check(e, element);
+        return;
+      }
+      if (value.kind === "StructInitializerExpression") {
+        const fields = fieldsOf(type);
+        for (const el of value.elements) {
+          const upper = el.name.toUpperCase();
+          check(el.value, fields?.find((f) => f.names.some((n) => n.toUpperCase() === upper))?.type);
+        }
+        return;
+      }
+      const target = capacity(type);
+      if (target === void 0 || value.kind !== "LiteralExpression")
+        return;
+      const wide = value.literalType === "WSTRING";
+      if (!wide && value.literalType !== "STRING")
+        return;
+      if (target.kind === "WSTRING" !== wide)
+        return;
+      const { max, kind } = target;
+      const raw = value.rawValue;
+      const quoted = raw.slice(Math.max(0, raw.search(/['"]/)));
+      const length = charLiteralUnits(`${wide ? "WSTRING" : "STRING"}#${quoted}`).units.length;
+      if (length <= max)
+        return;
+      const at = `${value.sourceSpan.file}:${value.sourceSpan.startLine}:${value.sourceSpan.startCol}`;
+      if (warned.has(at))
+        return;
+      warned.add(at);
+      const unit = wide ? length === 1 ? "UTF-16 code unit" : "UTF-16 code units" : length === 1 ? "character" : "characters";
+      this.addWarning(`A ${kind} literal of ${length} ${unit} is longer than ${kind}(${max}): it is cut to ${max}`, value.sourceSpan.startLine, value.sourceSpan.startCol, value.sourceSpan.file);
+    };
+    const inputsOf = (blocks) => {
+      const out = [];
+      out.names = [];
+      for (const b of blocks) {
+        if (b.blockType !== "VAR_INPUT" && b.blockType !== "VAR_IN_OUT")
+          continue;
+        for (const d of b.declarations) {
+          for (const n of d.names) {
+            out.push(b.blockType === "VAR_INPUT" ? d.type : { ...d.type, name: "" });
+            out.names.push(n.toUpperCase());
+          }
+        }
+      }
+      return out;
+    };
+    const globals = /* @__PURE__ */ new Map();
+    const addDecls = (blocks, into) => {
+      for (const block of blocks) {
+        for (const decl of block.declarations) {
+          for (const name of decl.names)
+            into.set(name.toUpperCase(), decl.type);
+          check(decl.initialValue, decl.type);
+        }
+      }
+    };
+    addDecls(ast.globalVarBlocks, globals);
+    for (const config of ast.configurations)
+      addDecls(config.varBlocks, globals);
+    for (const typeDecl of ast.types) {
+      if (typeDecl.definition.kind !== "StructDefinition")
+        continue;
+      for (const field of ownFields(typeDecl.definition)) {
+        check(field.initialValue, field.type);
+      }
+    }
+    const findFb = (name) => ast.functionBlocks.find((f) => f.name.toUpperCase() === name.toUpperCase());
+    const inheritedBlocks = (fb) => {
+      const chain = [];
+      let parentName = fb.extends;
+      while (parentName !== void 0) {
+        const parent = findFb(parentName);
+        if (parent === void 0 || parent === fb || chain.includes(parent))
+          return void 0;
+        chain.unshift(parent);
+        parentName = parent.extends;
+      }
+      return chain.flatMap((p) => p.varBlocks);
+    };
+    const callInputs = (call, scope) => {
+      const upper = call.functionName.toUpperCase();
+      const local = scope.get(upper);
+      if (local !== void 0) {
+        const fb = findFb(local.name);
+        const inherited = fb === void 0 ? void 0 : inheritedBlocks(fb);
+        if (fb === void 0 || inherited === void 0)
+          return void 0;
+        const inputs = inputsOf([...inherited, ...fb.varBlocks]);
+        if (inherited.length > 0)
+          inputs.positional = false;
+        return inputs;
+      }
+      const fn = ast.functions.find((f) => f.name.toUpperCase() === upper);
+      return fn === void 0 ? void 0 : inputsOf(fn.varBlocks);
+    };
+    const checkPou = (own, body, outer = [], result, withGlobals = true) => {
+      const scope = new Map(withGlobals ? globals : []);
+      for (const block of outer) {
+        for (const decl of block.declarations) {
+          for (const name of decl.names)
+            scope.set(name.toUpperCase(), decl.type);
+        }
+      }
+      if (result?.type !== void 0) {
+        scope.set(result.name.toUpperCase(), result.type);
+      }
+      addDecls(own, scope);
+      for (const stmt of body) {
+        walkAST(stmt, (node) => {
+          if (node.kind === "AssignmentStatement") {
+            const a = node;
+            if (a.target.kind === "VariableExpression" && a.target.fieldAccess.length === 0 && a.target.subscripts.length === 0 && !a.target.isDereference) {
+              check(a.value, scope.get(a.target.name.toUpperCase()));
+            }
+            return;
+          }
+          if (node.kind !== "FunctionCallExpression")
+            return;
+          const call = node;
+          if (call.instance !== void 0)
+            return;
+          const inputs = callInputs(call, scope);
+          if (inputs === void 0)
+            return;
+          stripEnEno(call.arguments).forEach((arg, i) => {
+            if (arg.isOutput)
+              return;
+            const type = arg.name === void 0 ? inputs.positional === false ? void 0 : inputs[i] : inputs[inputs.names.indexOf(arg.name.toUpperCase())];
+            check(arg.value, type);
+          });
+        });
+      }
+    };
+    for (const prog of ast.programs) {
+      checkPou(prog.varBlocks, prog.body);
+      for (const m of prog.methods) {
+        checkPou(m.varBlocks, m.body, prog.varBlocks, {
+          name: m.name,
+          type: m.returnType
+        });
+      }
+    }
+    for (const func of ast.functions) {
+      checkPou(func.varBlocks, func.body, [], {
+        name: func.name,
+        type: func.returnType
+      });
+    }
+    for (const fb of ast.functionBlocks) {
+      const inherited = inheritedBlocks(fb);
+      const known = inherited !== void 0;
+      checkPou(fb.varBlocks, fb.body, inherited, void 0, known);
+      for (const m of fb.methods) {
+        checkPou(m.varBlocks, m.body, [...inherited ?? [], ...fb.varBlocks], { name: m.name, type: m.returnType }, known);
+      }
+    }
   }
   /**
    * Validate array declarations and array accesses against the declared shape:
@@ -30720,6 +33605,12 @@ var SemanticAnalyzer = class {
       const literal = node;
       if (this.literalsReported.has(literal))
         return;
+      const refusal = temporal32LiteralRefusal(literal);
+      if (refusal !== void 0) {
+        const at = literal.sourceSpan;
+        this.addError(refusal, at.startLine, at.startCol, at.file);
+        return;
+      }
       if (literal.literalType !== "LTIME")
         return;
       const ns = exactTimeLiteralNanoseconds(literal.rawValue);
@@ -30814,6 +33705,40 @@ var SemanticAnalyzer = class {
           this.validateStatementsForConstantAssignment(c.statements, scope);
         }
         this.validateStatementsForConstantAssignment(caseStmt.elseStatements, scope);
+      }
+    }
+  }
+  /**
+   * A CONFIGURATION global and a top-level VAR_GLOBAL of the same name would be
+   * two C++ definitions of one name: refused at the CONFIGURATION's declaration.
+   */
+  validateConfigurationGlobalNames(ast) {
+    const counts = /* @__PURE__ */ new Map();
+    for (const b of ast.globalVarBlocks) {
+      for (const d of b.declarations) {
+        for (const n of d.names) {
+          const upper = n.toUpperCase();
+          counts.set(upper, (counts.get(upper) ?? 0) + 1);
+        }
+      }
+    }
+    const topLevel = new Set([...counts].filter(([, count]) => count === 1).map(([name]) => name));
+    const configOf = /* @__PURE__ */ new Map();
+    for (const config of ast.configurations) {
+      for (const block of config.varBlocks) {
+        for (const decl of block.declarations) {
+          for (const name of decl.names) {
+            const upper = name.toUpperCase();
+            const other = configOf.get(upper);
+            if (other !== void 0 && other !== config.name.toUpperCase()) {
+              this.addError(`Global '${upper}' of CONFIGURATION ${config.name.toUpperCase()} is also declared in CONFIGURATION ${other}; rename one of them`, decl.sourceSpan.startLine, decl.sourceSpan.startCol, decl.sourceSpan.file);
+            }
+            configOf.set(upper, other ?? config.name.toUpperCase());
+            if (!topLevel.has(upper))
+              continue;
+            this.addError(`Global '${name.toUpperCase()}' of CONFIGURATION ${config.name.toUpperCase()} is also declared in a top-level VAR_GLOBAL; rename one of them`, decl.sourceSpan.startLine, decl.sourceSpan.startCol, decl.sourceSpan.file);
+          }
+        }
       }
     }
   }
@@ -31014,7 +33939,11 @@ var SemanticAnalyzer = class {
   requireFeature(feature, construct, span) {
     if (this.features.has(feature))
       return;
-    this.addError(this.featureMessage(feature, construct), span.startLine, span.startCol, span.file);
+    const message = this.featureMessage(feature, construct);
+    if (this.errors.some((e) => e.message === message && e.line === span.startLine && e.column === span.startCol && e.file === span.file)) {
+      return;
+    }
+    this.addError(message, span.startLine, span.startCol, span.file);
   }
   /** `<construct> needs the feature <id>`, plus the loaded profiles that have it. */
   featureMessage(feature, construct) {
@@ -31150,7 +34079,7 @@ var SemanticAnalyzer = class {
             return decl ? [decl] : [];
           }));
           for (const reqMethod of requiredMethods) {
-            if (!fbMethodNames.has(reqMethod)) {
+            if (reqMethod !== "" && !fbMethodNames.has(reqMethod)) {
               this.addError(`FUNCTION_BLOCK '${fb.name}' implements '${ifaceName}' but does not provide method '${reqMethod}'.`, fb.sourceSpan.startLine, fb.sourceSpan.startCol, fb.sourceSpan.file);
             }
           }
@@ -31557,6 +34486,60 @@ var SemanticAnalyzer = class {
       }
     }
     this.callOwner = {};
+    this.validateInitialValueCallCounts(ast);
+  }
+  /**
+   * Argument counts of the standard function calls in initial values, which
+   * the statement walk does not reach (`hi : DINT := UPPER_BOUND();` failed in
+   * codegen). Counts only: the other call checks stay with the bodies.
+   */
+  validateInitialValueCallCounts(ast) {
+    const visit = (blocks, varTypeMap) => {
+      for (const block of blocks) {
+        for (const decl of block.declarations) {
+          if (decl.initialValue === void 0)
+            continue;
+          walkAST(decl.initialValue, (node) => {
+            if (node.kind !== "FunctionCallExpression")
+              return;
+            const call = node;
+            if (call.functionName.includes("."))
+              return;
+            this.checkStdFunctionArgs(call, varTypeMap, true);
+          });
+        }
+      }
+    };
+    const merged = (outer, blocks) => {
+      const map2 = new Map(outer);
+      for (const [k, v] of this.buildVarTypeMap(blocks))
+        map2.set(k, v);
+      return map2;
+    };
+    this.callOwner = {};
+    visit(ast.globalVarBlocks, /* @__PURE__ */ new Map());
+    for (const config of ast.configurations)
+      visit(config.varBlocks, /* @__PURE__ */ new Map());
+    for (const func of ast.functions) {
+      visit(func.varBlocks, this.buildVarTypeMap(func.varBlocks));
+    }
+    for (const prog of ast.programs) {
+      this.callOwner = { programName: prog.name };
+      const varTypeMap = this.buildVarTypeMap(prog.varBlocks);
+      visit(prog.varBlocks, varTypeMap);
+      for (const method of prog.methods) {
+        visit(method.varBlocks, merged(varTypeMap, method.varBlocks));
+      }
+    }
+    for (const fb of ast.functionBlocks) {
+      this.callOwner = { fbName: fb.name };
+      const varTypeMap = this.buildVarTypeMap(fb.varBlocks);
+      visit(fb.varBlocks, varTypeMap);
+      for (const method of fb.methods) {
+        visit(method.varBlocks, merged(varTypeMap, method.varBlocks));
+      }
+    }
+    this.callOwner = {};
   }
   /**
    * True when `upper` names an FB or PROGRAM instance of the body being
@@ -31711,7 +34694,7 @@ var SemanticAnalyzer = class {
    * success around the call site, but they are not part of any function's
    * declared signature. Strip them before counting against the registry.
    */
-  checkStdFunctionArgs(expr, varTypeMap) {
+  checkStdFunctionArgs(expr, varTypeMap, countsOnly = false) {
     const nameUpper = expr.functionName.toUpperCase();
     if (this.hasOwnMethod(nameUpper, this.callOwner))
       return;
@@ -31745,10 +34728,12 @@ var SemanticAnalyzer = class {
         this.addError(`'${nameUpper}' requires 1 argument, got ${argCount}`, expr.sourceSpan.startLine, expr.sourceSpan.startCol, expr.sourceSpan.file);
       }
     } else {
-      if (sym?.kind === "function") {
+      if (sym?.kind === "function" && !countsOnly) {
         this.checkRequiredFunctionInputs(expr, sym, userArgs);
       }
     }
+    if (countsOnly)
+      return;
     if (nameUpper === "ADR" && !userFunction) {
       this.requireFeature("pointer_to", "ADR", expr.sourceSpan);
     }
@@ -32121,7 +35106,7 @@ var SemanticAnalyzer = class {
     if (this.testTypeNames.has(upper))
       return true;
     const sym = this.symbolTables.globalScope.lookup(upper);
-    if ((sym === void 0 || sym.kind === "variable") && ELEMENTARY_TYPES[upper] !== void 0) {
+    if ((sym === void 0 || sym.kind === "variable" || sym.kind === "function") && ELEMENTARY_TYPES[upper] !== void 0) {
       return true;
     }
     if (!sym)
@@ -32204,12 +35189,15 @@ var SemanticAnalyzer = class {
     if (!typeRef.name || typeRef.name.toUpperCase() === "VOID")
       return;
     const nameToCheck = typeRef.elementTypeName ?? typeRef.name;
+    if (nameToCheck === "")
+      return;
     if (!this.isKnownType(nameToCheck) && platformTypeTarget(nameToCheck) !== void 0) {
       this.requireFeature("platform_types", nameToCheck.toUpperCase(), typeRef.sourceSpan);
       return;
     }
     if (!this.isKnownType(nameToCheck)) {
-      this.addError(`Undefined type '${nameToCheck}'${context ? " in " + context : ""}`, typeRef.sourceSpan.startLine, typeRef.sourceSpan.startCol, typeRef.sourceSpan.file);
+      const where = context.includes("''") ? "" : context;
+      this.addError(`Undefined type '${nameToCheck}'${where ? " in " + where : ""}`, typeRef.sourceSpan.startLine, typeRef.sourceSpan.startCol, typeRef.sourceSpan.file);
     }
   }
   /**
@@ -32241,14 +35229,14 @@ var SemanticAnalyzer = class {
     }
     for (const fb of ast.functionBlocks) {
       validateVarBlocks(fb.varBlocks, `FUNCTION_BLOCK '${fb.name}'`);
-      if (fb.extends) {
+      if (fb.extends !== void 0 && fb.extends !== "") {
         if (!this.isKnownType(fb.extends)) {
           this.addError(`Undefined type '${fb.extends}' in EXTENDS clause of FUNCTION_BLOCK '${fb.name}'`, fb.sourceSpan.startLine, fb.sourceSpan.startCol, fb.sourceSpan.file);
         }
       }
       if (fb.implements) {
         for (const ifaceName of fb.implements) {
-          if (!this.isKnownType(ifaceName)) {
+          if (ifaceName !== "" && !this.isKnownType(ifaceName)) {
             this.addError(`Undefined type '${ifaceName}' in IMPLEMENTS clause of FUNCTION_BLOCK '${fb.name}'`, fb.sourceSpan.startLine, fb.sourceSpan.startCol, fb.sourceSpan.file);
           }
         }
@@ -32266,7 +35254,7 @@ var SemanticAnalyzer = class {
     for (const iface of ast.interfaces) {
       if (iface.extends) {
         for (const baseName of iface.extends) {
-          if (!this.isKnownType(baseName)) {
+          if (baseName !== "" && !this.isKnownType(baseName)) {
             this.addError(`Undefined type '${baseName}' in EXTENDS clause of INTERFACE '${iface.name}'`, iface.sourceSpan.startLine, iface.sourceSpan.startCol, iface.sourceSpan.file);
           }
         }
@@ -32333,6 +35321,7 @@ var SemanticAnalyzer = class {
    * Validate that all variable references in POU bodies refer to declared variables.
    */
   validateUndeclaredVariables(ast) {
+    this.undeclaredUnit = ast;
     this.hasExternalCode = false;
     walkAST(ast, (node) => {
       if (node.kind === "ExternalCodePragma")
@@ -32342,6 +35331,91 @@ var SemanticAnalyzer = class {
     if (this.features.has("fb_init"))
       this.validateFbInitArgumentNames(ast);
     this.validateInitialValueNames(ast);
+    this.validateSubrangeInitialValues(ast);
+  }
+  /**
+   * A constant initial value outside its subrange is refused: a variable's,
+   * a STRUCT field's, an ARRAY element's and a TYPE's own default.
+   */
+  validateSubrangeInitialValues(ast) {
+    const types = new Map(ast.types.map((t) => [t.name.toUpperCase(), t]));
+    const rangeOf = (name) => {
+      let upper = name?.toUpperCase();
+      for (let i = 0; i < 32 && upper !== void 0; i++) {
+        const decl = types.get(upper);
+        if (decl === void 0)
+          return void 0;
+        const def = decl.definition;
+        if (def.kind === "SubrangeDefinition") {
+          const lo = exactIntegerValue(def.lowerBound);
+          const hi = exactIntegerValue(def.upperBound);
+          return lo === void 0 || hi === void 0 ? void 0 : { lo, hi };
+        }
+        if (def.kind !== "TypeReference" || def.arrayDimensions !== void 0) {
+          return void 0;
+        }
+        upper = def.name.toUpperCase();
+      }
+      return void 0;
+    };
+    const elementOf2 = (type) => {
+      if (type.arrayDimensions !== void 0)
+        return type.elementTypeName;
+      const def = types.get(type.name.toUpperCase())?.definition;
+      return def?.kind === "ArrayDefinition" ? def.elementType.name : void 0;
+    };
+    const reported = /* @__PURE__ */ new Set();
+    const check = (value, typeName2, owner) => {
+      if (reported.has(value))
+        return;
+      const range = rangeOf(typeName2);
+      const v = exactIntegerValue(value);
+      if (range === void 0 || v === void 0)
+        return;
+      if (v >= range.lo && v <= range.hi)
+        return;
+      reported.add(value);
+      this.addError(`The initial value ${v} of '${owner}' is outside its subrange ${range.lo}..${range.hi}`, value.sourceSpan.startLine, value.sourceSpan.startCol, value.sourceSpan.file);
+    };
+    const checkValue = (value, type, typeName2, owner) => {
+      if (value.kind === "ArrayLiteralExpression") {
+        const element = type !== void 0 ? elementOf2(type) : typeName2 === void 0 ? void 0 : elementOfName(typeName2);
+        for (const e of value.elements) {
+          if (e.kind === "ArrayLiteralExpression") {
+            checkValue(e, type, typeName2, owner);
+          } else {
+            checkValue(e, void 0, element, owner);
+          }
+        }
+      } else if (value.kind === "StructInitializerExpression") {
+        for (const el of value.elements) {
+          const field = typeName2 === void 0 ? void 0 : resolveFieldDeclaration(typeName2, el.name, ast);
+          if (field !== void 0) {
+            checkValue(el.value, field.type, field.type.name, `${owner}.${el.name}`);
+          }
+        }
+      } else if (type === void 0 || type.arrayDimensions === void 0) {
+        check(value, typeName2, owner);
+      }
+    };
+    const elementOfName = (name) => {
+      const def = types.get(name.toUpperCase())?.definition;
+      return def?.kind === "ArrayDefinition" ? def.elementType.name : void 0;
+    };
+    const checkDecl = (decl) => {
+      if (decl.initialValue === void 0)
+        return;
+      checkValue(decl.initialValue, decl.type, decl.type.arrayDimensions === void 0 ? decl.type.name : void 0, decl.names.join(", "));
+    };
+    for (const type of ast.types) {
+      if (type.defaultValue !== void 0) {
+        checkValue(type.defaultValue, void 0, type.name, type.name);
+      }
+    }
+    walkAST(ast, (node) => {
+      if (node.kind === "VarDeclaration")
+        checkDecl(node);
+    });
   }
   /**
    * Initial values (`x : INT := zz;`) name only what their declaring scope
@@ -32362,6 +35436,19 @@ var SemanticAnalyzer = class {
     };
     const global2 = this.symbolTables.globalScope;
     check(ast.globalVarBlocks, global2, {});
+    for (const config of ast.configurations) {
+      for (const block of config.varBlocks) {
+        for (const decl of block.declarations) {
+          if (decl.initialValue === void 0)
+            continue;
+          walkAST(decl.initialValue, (node) => {
+            if (node.kind === "FunctionCallExpression") {
+              this.settleSizeofTypeOperand(node, global2, {});
+            }
+          });
+        }
+      }
+    }
     for (const prog of ast.programs) {
       const scope = this.symbolTables.getProgramScope(prog.name);
       check(prog.varBlocks, scope, { programName: prog.name });
@@ -32388,9 +35475,14 @@ var SemanticAnalyzer = class {
       for (const field of type.definition.fields) {
         if (!field.initialValue)
           continue;
+        walkAST(field.initialValue, (node) => {
+          if (node.kind === "FunctionCallExpression") {
+            this.settleSizeofTypeOperand(node, global2, {});
+          }
+        });
         let namesSibling = false;
         walkAST(field.initialValue, (node) => {
-          if (node.kind === "VariableExpression" && fields.has(node.name.toUpperCase())) {
+          if (node.kind === "VariableExpression" && node.namesType !== true && fields.has(node.name.toUpperCase())) {
             namesSibling = true;
           }
         });
@@ -32399,6 +35491,189 @@ var SemanticAnalyzer = class {
         }
       }
     }
+    this.validateStructDefaultSizeofs(ast);
+    this.validateGlobalSizeofs(ast);
+  }
+  /**
+   * A STRUCT field default measures, with `SIZEOF(T)`, an elementary type or
+   * a TYPE of this unit that is emitted before it: one holding no function
+   * block, and not depending on the STRUCT itself.
+   */
+  validateStructDefaultSizeofs(ast) {
+    const isFunctionBlock = (name) => this.symbolTables.globalScope.lookup(name)?.kind === "functionBlock";
+    const lateTypes = typesHoldingFunctionBlocks(ast.types, isFunctionBlock);
+    const typesByName = new Map(ast.types.map((t) => [t.name.toUpperCase(), t]));
+    const interfaces = new Set(ast.interfaces.map((i) => i.name.toUpperCase()));
+    const registry = new TypeRegistry();
+    registry.registerTypes(ast.types);
+    const dependsOn = (from, target) => {
+      const seen = /* @__PURE__ */ new Set();
+      const queue = [from];
+      while (queue.length > 0) {
+        const name = queue.pop();
+        if (name === target)
+          return true;
+        if (seen.has(name))
+          continue;
+        seen.add(name);
+        const decl = typesByName.get(name);
+        if (decl === void 0)
+          continue;
+        for (const dep of registry.getTypeDependencies(decl)) {
+          queue.push(dep.toUpperCase());
+        }
+      }
+      return false;
+    };
+    for (const type of ast.types) {
+      if (type.definition.kind !== "StructDefinition")
+        continue;
+      for (const field of type.definition.fields) {
+        if (!field.initialValue)
+          continue;
+        walkAST(field.initialValue, (node) => {
+          if (node.kind !== "VariableExpression" || node.namesType !== true) {
+            return;
+          }
+          const operand = node;
+          const upper = operand.name.toUpperCase();
+          if (isElementaryType(upper))
+            return;
+          const where = `SIZEOF(${operand.name}) in the default of STRUCT field '${field.names.join(", ")}'`;
+          const span = operand.sourceSpan;
+          if (interfaces.has(upper))
+            return;
+          if (!typesByName.has(upper) || lateTypes.has(upper)) {
+            this.refuseUnmeasuredType(where, span);
+          } else if (dependsOn(upper, type.name.toUpperCase())) {
+            this.addError(`${where}: '${operand.name}' needs '${type.name}' complete, so '${type.name}' cannot measure it`, span.startLine, span.startCol, span.file);
+          }
+        });
+      }
+    }
+  }
+  /**
+   * A global's initial value is emitted before the FUNCTION_BLOCK classes, as
+   * a STRUCT default is: it measures an elementary type, an INTERFACE, or a
+   * TYPE of this unit that holds no function block.
+   */
+  validateGlobalSizeofs(ast) {
+    const isFunctionBlock = (name) => this.symbolTables.globalScope.lookup(name)?.kind === "functionBlock";
+    const lateTypes = typesHoldingFunctionBlocks(ast.types, isFunctionBlock);
+    const unitTypes = new Set([...ast.types, ...ast.interfaces].map((t) => t.name.toUpperCase()));
+    const blocks = [
+      ...ast.globalVarBlocks,
+      ...ast.configurations.flatMap((c) => c.varBlocks)
+    ];
+    for (const block of blocks) {
+      for (const decl of block.declarations) {
+        if (decl.initialValue === void 0)
+          continue;
+        walkAST(decl.initialValue, (node) => {
+          if (node.kind !== "VariableExpression" || node.namesType !== true) {
+            return;
+          }
+          const operand = node;
+          const upper = operand.name.toUpperCase();
+          if (isElementaryType(upper))
+            return;
+          if (!unitTypes.has(upper) || lateTypes.has(upper)) {
+            this.refuseUnmeasuredType(`SIZEOF(${operand.name}) in the initial value of global '${decl.names.join(", ")}'`, operand.sourceSpan);
+          }
+        });
+      }
+    }
+  }
+  /** Refuse a SIZEOF operand that is emitted before its type is complete. */
+  refuseUnmeasuredType(where, span) {
+    this.addError(`${where}: only an elementary type, an INTERFACE, or a TYPE of this unit that holds no function block, can be measured there`, span.startLine, span.startCol, span.file);
+  }
+  /**
+   * `SIZEOF(T)` / `XSIZEOF(T)` whose operand names a type and no value in
+   * scope (a variable, a member, inherited from any base, a property): mark
+   * it, so the code generator measures the type. Returns whether it is marked.
+   */
+  settleSizeofTypeOperand(expr, scope, ctx) {
+    const fn = expr.functionName.toUpperCase();
+    if (fn !== "SIZEOF" && fn !== "XSIZEOF" || expr.arguments.length !== 1 || expr.instance !== void 0) {
+      return false;
+    }
+    const arg = expr.arguments[0].value;
+    if (arg.kind !== "VariableExpression" || arg.fieldAccess.length > 0 || arg.subscripts.length > 0 || arg.isDereference || (arg.accessChain?.length ?? 0) > 0 || arg.typedLiteral === true) {
+      return false;
+    }
+    if (arg.namesType === true)
+      return true;
+    const upper = arg.name.toUpperCase();
+    const hit = scope.lookup(upper);
+    if (hit !== void 0 && hit.kind !== "type" && hit.kind !== "functionBlock" && hit.kind !== "function" && hit.kind !== "enumValue") {
+      return false;
+    }
+    if (this.isContextName(upper, ctx))
+      return false;
+    if (this.mayInheritLibraryMember(upper, ctx))
+      return false;
+    if (this.declaresGlobal(upper))
+      return false;
+    const platform3 = this.features.has("platform_types") ? platformTypeTarget(upper) : void 0;
+    if (platform3 !== void 0 && !this.namesAType(upper)) {
+      arg.name = platform3;
+    } else if (!this.namesAType(upper)) {
+      return false;
+    }
+    arg.namesType = true;
+    return true;
+  }
+  /**
+   * A global of the unit has this name: a global variable list's or a
+   * CONFIGURATION's, which share the name with a type in no single scope.
+   */
+  declaresGlobal(upper) {
+    const unit = this.undeclaredUnit;
+    if (unit === void 0)
+      return false;
+    const declares = (blocks) => blocks.some((b) => b.declarations.some((d) => d.names.some((n) => n.toUpperCase() === upper)));
+    return declares(unit.globalVarBlocks) || unit.configurations.some((c) => declares(c.varBlocks));
+  }
+  /**
+   * A library FB in the enclosing FB's base chain has a member of this name,
+   * or may have one: its archive does not list all of its members.
+   */
+  mayInheritLibraryMember(upper, ctx) {
+    const seen = /* @__PURE__ */ new Set();
+    let name = ctx.fbName;
+    while (name !== void 0 && !seen.has(name.toUpperCase())) {
+      seen.add(name.toUpperCase());
+      const fb = this.symbolTables.globalScope.lookup(name);
+      if (fb?.kind !== "functionBlock")
+        return false;
+      if (fb.libraryName !== void 0) {
+        const members2 = [
+          ...fb.inputs,
+          ...fb.outputs,
+          ...fb.inouts,
+          ...fb.locals,
+          ...fb.temps ?? []
+        ];
+        if (members2.some((m) => m.name.toUpperCase() === upper))
+          return true;
+        if (fb.libraryMethodNames === void 0)
+          return true;
+      }
+      name = fb.declaration.extends;
+    }
+    return false;
+  }
+  /** An elementary type, a TYPE, a FUNCTION_BLOCK or an INTERFACE (of the unit or a library). */
+  namesAType(upper) {
+    if (isElementaryType(upper))
+      return true;
+    const kind = this.symbolTables.globalScope.lookup(upper)?.kind;
+    if (kind === "type" || kind === "functionBlock")
+      return true;
+    const unit = this.undeclaredUnit;
+    const named = (list) => list.some((d) => d.name.toUpperCase() === upper);
+    return unit !== void 0 && (named(unit.types) || named(unit.functionBlocks) || named(unit.interfaces));
   }
   /**
    * Check one initial value's names; structure initializer element names are
@@ -32650,6 +35925,9 @@ var SemanticAnalyzer = class {
         case "DeleteStatement":
           this.checkExpressionForUndeclaredVars(stmt.pointer, scope, ctx);
           break;
+        case "AssertCall":
+          this.checkAssertCall(stmt, scope, ctx);
+          break;
         case "ForStatement":
           this.checkNameDeclared(stmt.controlVariable, scope, ctx, stmt.sourceSpan);
           this.checkExpressionForUndeclaredVars(stmt.start, scope, ctx);
@@ -32729,6 +36007,8 @@ var SemanticAnalyzer = class {
         if (!expr.functionName.includes(".") && !expr.instance) {
           this.checkCalleeDeclared(expr.functionName, scope, ctx, expr);
         }
+        if (this.settleSizeofTypeOperand(expr, scope, ctx))
+          break;
         for (const arg of expr.arguments) {
           this.checkExpressionForUndeclaredVars(arg.value, scope, ctx);
         }
@@ -33032,6 +36312,8 @@ var SemanticAnalyzer = class {
       }
       return;
     }
+    if (name === "")
+      return;
     this.addError(`Undeclared variable '${name}'`, sourceSpan.startLine, sourceSpan.startCol, sourceSpan.file);
   }
   // =============================================================================
@@ -33072,6 +36354,7 @@ var SemanticAnalyzer = class {
         }
       ));
     }
+    this.refuseTestAddressOperator(testFile, sourceSymbolTables);
     const typeScope = this.buildTestTypeScope(testFile);
     if (testFile.setup) {
       this.validateTestVarBlocks(testFile.setup.varBlocks, "SETUP");
@@ -33081,6 +36364,7 @@ var SemanticAnalyzer = class {
     }
     const setupScope = this.buildTestScope(testFile.setup?.varBlocks ?? [], typeScope);
     if (testFile.setup) {
+      this.checkTestInitialValueNames(testFile.setup.varBlocks, setupScope, sourceAst);
       this.walkTestStatementsForUndeclaredVars(testFile.setup.body, setupScope);
       this.checkTestMemberAccess(testFile.setup.body, setupScope);
     }
@@ -33088,27 +36372,139 @@ var SemanticAnalyzer = class {
       this.walkTestStatementsForUndeclaredVars(testFile.teardown.body, setupScope);
       this.checkTestMemberAccess(testFile.teardown.body, setupScope);
     }
-    this.validateStringLiteralCharset([
+    const testRoots = [
       ...testFile.setup?.varBlocks ?? [],
       ...testFile.setup?.body ?? [],
       ...testFile.teardown?.body ?? [],
       ...testFile.testCases.flatMap((tc) => [...tc.varBlocks, ...tc.body])
-    ]);
+    ];
+    this.validateStringLiteralCharset(testRoots);
+    this.validateEnEnoPlacement(testRoots);
+    for (const root2 of testRoots) {
+      walkAST(root2, (node) => {
+        if (node.kind !== "LiteralExpression")
+          return;
+        const refusal = temporal32LiteralRefusal(node);
+        if (refusal === void 0)
+          return;
+        const at = node.sourceSpan;
+        this.addError(refusal, at.startLine, at.startCol, at.file);
+      });
+    }
+    this.callOwner = {};
+    const setupBlocks = testFile.setup?.varBlocks ?? [];
+    const setupVarTypes = this.buildVarTypeMap(setupBlocks);
+    this.checkTestCallCounts([
+      ...setupBlocks,
+      ...testFile.setup?.body ?? [],
+      ...testFile.teardown?.body ?? []
+    ], setupVarTypes);
+    for (const tc of testFile.testCases) {
+      const varTypes = new Map(setupVarTypes);
+      for (const [k, v] of this.buildVarTypeMap(tc.varBlocks)) {
+        varTypes.set(k, v);
+      }
+      this.checkTestCallCounts([...tc.varBlocks, ...tc.body], varTypes);
+    }
     for (const tc of testFile.testCases) {
       const testScope = this.buildTestScope(tc.varBlocks, setupScope);
+      this.checkTestInitialValueNames(tc.varBlocks, testScope, sourceAst);
       this.walkTestStatementsForUndeclaredVars(tc.body, testScope);
       this.checkTestMemberAccess(tc.body, testScope, testFile.setup?.body ?? []);
       this.checkTestOutputBindings(tc.body, testScope, sourceAst);
+      this.checkTestAddressStores(tc.varBlocks, tc.body, testScope, sourceAst);
     }
     if (testFile.setup) {
       this.checkTestOutputBindings([...testFile.setup.body, ...testFile.teardown?.body ?? []], setupScope, sourceAst);
+      this.checkTestAddressStores(testFile.setup.varBlocks, [...testFile.setup.body, ...testFile.teardown?.body ?? []], setupScope, sourceAst);
     }
     this.testTypeNames.clear();
     return { errors: [...this.errors], warnings: [...this.warnings] };
   }
+  /**
+   * `ADR` in a test file needs the feature pointer_to, unless the sources
+   * declare a FUNCTION named ADR; one refusal per position.
+   */
+  refuseTestAddressOperator(testFile, sourceSymbolTables) {
+    if (this.testFileDialect?.features.has("pointer_to") ?? true)
+      return;
+    if (sourceSymbolTables.lookupFunction("ADR") !== void 0 && !sourceSymbolTables.globalScope.definedByLibrary("ADR")) {
+      return;
+    }
+    const calls = [];
+    const seen = /* @__PURE__ */ new Set();
+    const visit = (node) => {
+      if (typeof node !== "object" || node === null || seen.has(node))
+        return;
+      seen.add(node);
+      if (node === testFile.dialect)
+        return;
+      const n = node;
+      if (n.kind === "FunctionCallExpression") {
+        calls.push(node);
+      }
+      for (const value of Object.values(node))
+        visit(value);
+    };
+    visit(testFile);
+    for (const call of calls) {
+      if (call.functionName.toUpperCase() !== "ADR" || call.instance)
+        continue;
+      const span = call.sourceSpan;
+      const message = this.featureMessage("pointer_to", "ADR");
+      const known = this.errors.some((e) => e.message === message && e.line === span.startLine && e.column === span.startCol && e.file === span.file);
+      if (!known) {
+        this.addError(message, span.startLine, span.startCol, span.file);
+      }
+    }
+  }
+  /**
+   * The argument count of each standard function call under `roots` (a test
+   * file's VARs and statements), as checkStdFunctionArgs counts a POU's.
+   */
+  checkTestCallCounts(roots, varTypeMap) {
+    for (const root2 of roots) {
+      walkAST(root2, (node) => {
+        if (node.kind !== "FunctionCallExpression")
+          return;
+        const call = node;
+        if (call.functionName.includes("."))
+          return;
+        this.checkStdFunctionArgs(call, varTypeMap, true);
+      });
+    }
+  }
+  /**
+   * LOWER_BOUND / UPPER_BOUND calls, and addresses stored in narrow integers,
+   * in a test's VARs and statements.
+   */
+  checkTestAddressStores(varBlocks, stmts, scope, sourceAst) {
+    const checker = new TypeChecker(this.symbolTables, this.stdRegistry, false, this.testFileDialect?.features ?? DEFAULT_FEATURES);
+    const bounds = checker.checkTestBoundCalls(stmts, scope, sourceAst);
+    this.errors.push(...bounds.errors);
+    this.warnings.push(...bounds.warnings);
+    const found = checker.checkTestAddressStores(varBlocks, stmts, scope, sourceAst);
+    this.errors.push(...found.errors);
+    this.warnings.push(...found.warnings);
+  }
+  /** The names a SETUP or TEST VAR's initial values read: declared in its scope. */
+  checkTestInitialValueNames(blocks, scope, sourceAst) {
+    const ctx = { checkContinue: true };
+    for (const block of blocks) {
+      for (const decl of block.declarations) {
+        if (decl.initialValue === void 0)
+          continue;
+        if (sourceAst !== void 0) {
+          this.checkInitialValueNames(decl.initialValue, scope, ctx, sourceAst, this.declaredTypeName(decl.type));
+        } else {
+          this.checkExpressionForUndeclaredVars(decl.initialValue, scope, ctx);
+        }
+      }
+    }
+  }
   /** Output bindings in test bodies: checked as assignments, copied out where needed. */
   checkTestOutputBindings(stmts, scope, sourceAst) {
-    const checker = new TypeChecker(this.symbolTables, this.stdRegistry);
+    const checker = new TypeChecker(this.symbolTables, this.stdRegistry, false, this.features, (feature, construct) => this.featureMessage(feature, construct));
     const found = checker.checkTestOutputBindings(stmts, scope, sourceAst);
     this.errors.push(...found.errors);
     this.warnings.push(...found.warnings);
@@ -33172,8 +36568,8 @@ var SemanticAnalyzer = class {
             return;
           path.push(step.name.toUpperCase());
           const write = writes.has(expr);
-          const refused = !onMockPath(path) && found.access !== "PUBLIC" && !(found.kind === "input" && write) && !(found.kind === "output" && !write);
-          if (refused) {
+          const refused2 = !onMockPath(path) && found.access !== "PUBLIC" && !(found.kind === "input" && write) && !(found.kind === "output" && !write);
+          if (refused2) {
             const fbText = `FUNCTION_BLOCK '${found.owner}'`;
             const message = {
               internal: found.access === "PRIVATE" ? `'${step.name}' is a PRIVATE variable of ${fbText}; only '${found.owner}' itself can access it` : `'${step.name}' is an internal variable of ${fbText} and cannot be accessed from outside`,
@@ -33264,10 +36660,7 @@ var SemanticAnalyzer = class {
     for (const stmt of stmts) {
       switch (stmt.kind) {
         case "AssertCall":
-          this.validateAssertArgCount(stmt);
-          for (const arg of stmt.args) {
-            this.checkExpressionForUndeclaredVars(arg, scope, ctx);
-          }
+          this.checkAssertCall(stmt, scope, ctx);
           break;
         case "AdvanceTimeStatement":
           this.checkExpressionForUndeclaredVars(stmt.duration, scope, ctx);
@@ -33293,6 +36686,16 @@ var SemanticAnalyzer = class {
     }
   }
   /**
+   * Check an assert wherever it stands, at the top of a test block or nested
+   * in a statement: its argument count, then its arguments for undeclared names.
+   */
+  checkAssertCall(assert, scope, ctx) {
+    this.validateAssertArgCount(assert);
+    for (const arg of assert.args) {
+      this.checkExpressionForUndeclaredVars(arg, scope, ctx);
+    }
+  }
+  /**
    * Validate assert call argument count matches the expected count for each assert type.
    */
   validateAssertArgCount(assert) {
@@ -33309,7 +36712,9 @@ var SemanticAnalyzer = class {
     };
     const expected = expectedArgCounts[assert.assertType];
     if (expected !== void 0 && assert.args.length !== expected) {
-      this.addError(`${assert.assertType} expects ${expected} argument${expected !== 1 ? "s" : ""}, got ${assert.args.length}`, assert.sourceSpan.startLine, assert.sourceSpan.startCol);
+      const last2 = assert.args[assert.args.length - 1];
+      const quotedMessage = assert.args.length === expected + 1 && last2?.kind === "LiteralExpression" && last2.literalType === "WSTRING";
+      this.addError(`${assert.assertType} expects ${expected} argument${expected !== 1 ? "s" : ""}, got ${assert.args.length}` + (quotedMessage ? ": the message is a STRING literal in single quotes" : ""), assert.sourceSpan.startLine, assert.sourceSpan.startCol, assert.sourceSpan.file);
     }
   }
   /**
@@ -33349,8 +36754,8 @@ var SemanticAnalyzer = class {
     });
   }
 };
-function analyzeTestFile(testFile, sourceSymbolTables, sourceAst) {
-  const analyzer = new SemanticAnalyzer();
+function analyzeTestFile(testFile, sourceSymbolTables, sourceAst, dialect) {
+  const analyzer = new SemanticAnalyzer(dialect !== void 0 ? { dialect } : {});
   return analyzer.analyzeTestFile(testFile, sourceSymbolTables, sourceAst);
 }
 function signatureParams(method) {
@@ -33373,8 +36778,8 @@ function cppTypeKey(type) {
   const dims = type.arrayDimensions;
   const element = type.elementTypeName;
   const ref = type.referenceKind ?? "none";
-  const isString2 = name === "STRING" || name === "WSTRING";
-  const len = !isString2 ? "" : typeof maxLength === "string" ? "(*)" : `(${maxLength ?? 254})`;
+  const isString3 = name === "STRING" || name === "WSTRING";
+  const len = !isString3 ? "" : typeof maxLength === "string" ? "(*)" : `(${maxLength ?? 254})`;
   const arr = dims === void 0 ? "" : `[${dims.map((d) => `${d.start}..${d.end}`).join(",")}] OF ${(element ?? "").toUpperCase()}`;
   return `${ref} ${name}${len}${arr}`;
 }
@@ -33442,266 +36847,6 @@ function testMemberOf(tables, fbName, member) {
   return void 0;
 }
 
-// dist/semantic/type-registry.js
-function isElementaryType(name) {
-  return isBaseTypeName(name);
-}
-var TypeRegistry = class {
-  types = /* @__PURE__ */ new Map();
-  /**
-   * Register a user-defined type
-   */
-  registerType(type) {
-    this.types.set(type.name, type);
-  }
-  /**
-   * Register multiple types at once
-   */
-  registerTypes(types) {
-    for (const type of types) {
-      this.registerType(type);
-    }
-  }
-  /**
-   * Look up a type by name
-   */
-  lookupType(name) {
-    return this.types.get(name);
-  }
-  /**
-   * Check if a type exists
-   */
-  hasType(name) {
-    return this.types.has(name);
-  }
-  /**
-   * Get all registered types
-   */
-  getAllTypes() {
-    return Array.from(this.types.values());
-  }
-  /**
-   * Get the number of registered types
-   */
-  get size() {
-    return this.types.size;
-  }
-  /**
-   * Clear all registered types
-   */
-  clear() {
-    this.types.clear();
-  }
-  /**
-   * Get types in dependency order (topological sort)
-   * Types that depend on other types come after their dependencies.
-   * This is essential for C++ code generation where types must be declared
-   * before they are used.
-   */
-  getTypesInDependencyOrder() {
-    const visited = /* @__PURE__ */ new Set();
-    const result = [];
-    const visiting = /* @__PURE__ */ new Set();
-    const visit = (typeName2) => {
-      if (visited.has(typeName2))
-        return;
-      if (visiting.has(typeName2)) {
-        return;
-      }
-      const type = this.types.get(typeName2);
-      if (!type)
-        return;
-      visiting.add(typeName2);
-      const dependencies = this.getTypeDependencies(type);
-      for (const dep of dependencies) {
-        if (this.types.has(dep)) {
-          visit(dep);
-        }
-      }
-      visiting.delete(typeName2);
-      visited.add(typeName2);
-      result.push(type);
-    };
-    for (const typeName2 of this.types.keys()) {
-      visit(typeName2);
-    }
-    return result;
-  }
-  /**
-   * Get the direct dependencies of a type (other user-defined types it references)
-   */
-  getTypeDependencies(type) {
-    const deps = [];
-    this.collectDependencies(type.definition, deps);
-    return deps.filter((dep) => !isElementaryType(dep));
-  }
-  /**
-   * Recursively collect type dependencies from a type definition
-   */
-  collectDependencies(def, deps) {
-    switch (def.kind) {
-      case "StructDefinition":
-        this.collectStructDependencies(def, deps);
-        break;
-      case "EnumDefinition":
-        this.collectEnumDependencies(def, deps);
-        break;
-      case "ArrayDefinition":
-        this.collectArrayDependencies(def, deps);
-        break;
-      case "SubrangeDefinition":
-        this.collectSubrangeDependencies(def, deps);
-        break;
-      case "TypeReference":
-        this.collectTypeRefDependencies(def, deps);
-        break;
-    }
-  }
-  collectStructDependencies(def, deps) {
-    for (const field of def.fields) {
-      this.collectVarDeclDependencies(field, deps);
-    }
-  }
-  collectVarDeclDependencies(decl, deps) {
-    if (!deps.includes(decl.type.name)) {
-      deps.push(decl.type.name);
-    }
-  }
-  collectEnumDependencies(def, deps) {
-    if (def.baseType && !deps.includes(def.baseType.name)) {
-      deps.push(def.baseType.name);
-    }
-  }
-  collectArrayDependencies(def, deps) {
-    if (!deps.includes(def.elementType.name)) {
-      deps.push(def.elementType.name);
-    }
-  }
-  collectSubrangeDependencies(def, deps) {
-    if (!deps.includes(def.baseType.name)) {
-      deps.push(def.baseType.name);
-    }
-  }
-  collectTypeRefDependencies(def, deps) {
-    if (!deps.includes(def.name)) {
-      deps.push(def.name);
-    }
-  }
-  /**
-   * Validate all registered types
-   * Checks for:
-   * - Undefined type references
-   * - Circular dependencies
-   * - Invalid type definitions
-   */
-  validate() {
-    const errors = [];
-    const warnings = [];
-    for (const type of this.types.values()) {
-      this.validateType(type, errors, warnings);
-    }
-    const cycleErrors = this.detectCycles();
-    errors.push(...cycleErrors);
-    return {
-      isValid: errors.length === 0,
-      errors,
-      warnings
-    };
-  }
-  /**
-   * Validate a single type declaration
-   */
-  validateType(type, errors, warnings) {
-    const deps = this.getTypeDependencies(type);
-    for (const dep of deps) {
-      if (!isElementaryType(dep) && !this.types.has(dep)) {
-        errors.push({
-          typeName: type.name,
-          message: `References undefined type '${dep}'`
-        });
-      }
-    }
-    this.validateTypeDefinition(type.name, type.definition, errors, warnings);
-  }
-  /**
-   * Validate a type definition
-   */
-  validateTypeDefinition(typeName2, def, errors, _warnings) {
-    switch (def.kind) {
-      case "StructDefinition":
-        if (def.fields.length === 0) {
-          errors.push({
-            typeName: typeName2,
-            message: "Structure has no fields"
-          });
-        }
-        break;
-      case "EnumDefinition":
-        if (def.members.length === 0) {
-          errors.push({
-            typeName: typeName2,
-            message: "Enumeration has no members"
-          });
-        }
-        break;
-      case "ArrayDefinition":
-        if (def.dimensions.length === 0) {
-          errors.push({
-            typeName: typeName2,
-            message: "Array has no dimensions"
-          });
-        }
-        break;
-    }
-  }
-  /**
-   * Detect circular dependencies in type definitions
-   */
-  detectCycles() {
-    const errors = [];
-    const visited = /* @__PURE__ */ new Set();
-    const visiting = /* @__PURE__ */ new Set();
-    const visit = (typeName2, path) => {
-      if (visited.has(typeName2))
-        return false;
-      if (visiting.has(typeName2)) {
-        const cycleStart = path.indexOf(typeName2);
-        const cycle = path.slice(cycleStart).concat(typeName2);
-        errors.push({
-          typeName: path[0] ?? typeName2,
-          message: `Circular dependency detected: ${cycle.join(" -> ")}`
-        });
-        return true;
-      }
-      const type = this.types.get(typeName2);
-      if (!type)
-        return false;
-      visiting.add(typeName2);
-      path.push(typeName2);
-      const deps = this.getTypeDependencies(type);
-      for (const dep of deps) {
-        if (this.types.has(dep)) {
-          if (visit(dep, path)) {
-            visiting.delete(typeName2);
-            path.pop();
-            return true;
-          }
-        }
-      }
-      visiting.delete(typeName2);
-      visited.add(typeName2);
-      path.pop();
-      return false;
-    };
-    for (const typeName2 of this.types.keys()) {
-      if (!visited.has(typeName2)) {
-        visit(typeName2, []);
-      }
-    }
-    return errors;
-  }
-};
-
 // dist/backend/reference-types.js
 function wrapReferenceLevel(kind, elemType) {
   switch (kind) {
@@ -33723,6 +36868,46 @@ function wrapReferenceChain(chain, elemType) {
   return result;
 }
 
+// dist/semantic/string-default-length.js
+var IEC_DEFAULT_STRING_LENGTH = 254;
+var VENDOR_DEFAULT_STRING_LENGTH = 80;
+function defaultStringLength(features) {
+  return features.has("string_default_80") ? VENDOR_DEFAULT_STRING_LENGTH : IEC_DEFAULT_STRING_LENGTH;
+}
+var isString2 = (name) => {
+  const upper = name?.toUpperCase();
+  return upper === "STRING" || upper === "WSTRING";
+};
+var VLA_ELEMENT = /^__VLA_\d+D_(W?STRING)$/i;
+function lowerDefaultStringLength(root2, length) {
+  const seen = /* @__PURE__ */ new Set();
+  const visit = (node) => {
+    if (typeof node !== "object" || node === null || seen.has(node))
+      return;
+    seen.add(node);
+    if (Array.isArray(node)) {
+      for (const item of node)
+        visit(item);
+      return;
+    }
+    if (node.kind === "TypeReference") {
+      const ref = node;
+      if (isString2(ref.name) && ref.maxLength === void 0 && ref.arrayDimensions === void 0) {
+        ref.maxLength = length;
+        ref.defaultLength = true;
+      }
+      const element = ref.elementTypeName ?? VLA_ELEMENT.exec(ref.name)?.[1];
+      if (isString2(element) && ref.elementMaxLength === void 0) {
+        ref.elementMaxLength = length;
+        ref.elementDefaultLength = true;
+      }
+    }
+    for (const value of Object.values(node))
+      visit(value);
+  };
+  visit(root2);
+}
+
 // dist/library/library-methods.js
 var REFERENCE_SPELLING = {
   pointer_to: "POINTER TO ",
@@ -33741,7 +36926,7 @@ function typeText2(v) {
   }
   return `${prefix}${v.type}`;
 }
-function libraryMethodDeclarations(fb) {
+function libraryMethodDeclarations(fb, stringDefaultLength) {
   if (fb.methods === void 0)
     return void 0;
   if (fb.methods.length === 0)
@@ -33768,12 +36953,16 @@ END_FUNCTION_BLOCK
     const parsed = parse(source);
     if (parsed.errors.length > 0 || parsed.cst === null)
       return void 0;
-    return buildAST(parsed.cst).functionBlocks[0]?.methods;
+    const declared = buildAST(parsed.cst).functionBlocks[0]?.methods;
+    if (declared !== void 0 && stringDefaultLength !== void 0) {
+      lowerDefaultStringLength(declared, stringDefaultLength);
+    }
+    return declared;
   } catch {
     return void 0;
   }
 }
-function libraryFunctionDeclaration(fn) {
+function libraryFunctionDeclaration(fn, stringDefaultLength) {
   const blockOf = {
     input: "VAR_INPUT",
     output: "VAR_OUTPUT",
@@ -33789,7 +36978,11 @@ function libraryFunctionDeclaration(fn) {
     const parsed = parse(source);
     if (parsed.errors.length > 0 || parsed.cst === null)
       return void 0;
-    return buildAST(parsed.cst).functions[0];
+    const declared = buildAST(parsed.cst).functions[0];
+    if (declared !== void 0 && stringDefaultLength !== void 0) {
+      lowerDefaultStringLength(declared, stringDefaultLength);
+    }
+    return declared;
   } catch {
     return void 0;
   }
@@ -33812,6 +37005,25 @@ function isComparisonExpr(expr) {
 }
 function isNonZeroIntegerLiteral(expr) {
   return expr.kind === "LiteralExpression" && expr.literalType === "INT" && typeof expr.value === "number" && Number.isInteger(expr.value) && expr.value !== 0 && expr.value !== -1;
+}
+function comparedStringKind(e, aliasBase) {
+  while (e.kind === "ParenthesizedExpression" && e.resolvedType === void 0) {
+    e = e.expression;
+  }
+  const type = e.resolvedType;
+  if (type?.typeKind === "elementary") {
+    const m = /^(W?STRING)\b/i.exec(aliasBase(type.name));
+    if (m !== null)
+      return m[1].toUpperCase();
+    return void 0;
+  }
+  return e.kind === "LiteralExpression" && (e.literalType === "STRING" || e.literalType === "WSTRING") ? e.literalType : void 0;
+}
+function stringComparisonCpp(left, right, leftCpp, rightCpp, cppOp, aliasBase) {
+  if (comparedStringKind(left, aliasBase) === void 0 && comparedStringKind(right, aliasBase) === void 0) {
+    return void 0;
+  }
+  return `strucpp::iec_str_cmp(${leftCpp}, ${rightCpp}) ${cppOp} 0`;
 }
 function iecBaseToCppLiteral(raw) {
   const upper = raw.toUpperCase().replace(/_/g, "");
@@ -33944,24 +37156,90 @@ function translateIECString(inner, wide = false) {
   }
   return result;
 }
+function temporal32Cpp(type, raw) {
+  const wrapped = (raw % 4294967296n + 4294967296n) % 4294967296n;
+  return `${type}(${wrapped}u)`;
+}
+function temporalLiteralCpp(literalType, value) {
+  switch (literalType) {
+    case "TIME":
+      return temporal32Cpp("TIME_t", parseTimeLiteral(value).exact / 1000000n);
+    case "LTIME":
+      return `${parseTimeLiteral(value).exact}LL`;
+    case "DATE":
+      return temporal32Cpp("DATE_t", parseDateLiteralToDays(value) * 86400n);
+    case "LDATE":
+      return `${parseDateLiteralToDays(value)}LL`;
+    case "TIME_OF_DAY":
+      return temporal32Cpp("TOD_t", parseTodLiteralToNs(value) / 1000000n);
+    case "LTIME_OF_DAY":
+      return `${parseTodLiteralToNs(value)}LL`;
+    case "DATE_AND_TIME":
+      return temporal32Cpp("DT_t", floorDivBig(parseDtLiteralToNs(value), 1000000000n));
+    case "LDATE_AND_TIME":
+      return `${parseDtLiteralToNs(value)}LL`;
+    default:
+      return void 0;
+  }
+}
+function floorDivBig(n, d) {
+  const q = n / d;
+  return n % d !== 0n && n < 0n !== d < 0n ? q - 1n : q;
+}
 var NS_PER_DAY = "86400000000000LL";
-function dateArithmeticCpp(operator, l, r, left, right) {
-  if (operator !== "+" && operator !== "-")
+var TEMPORAL_KINDS = {
+  TIME: ["duration", false],
+  LTIME: ["duration", true],
+  DATE: ["date", false],
+  LDATE: ["date", true],
+  TOD: ["tod", false],
+  TIME_OF_DAY: ["tod", false],
+  LTOD: ["tod", true],
+  LTIME_OF_DAY: ["tod", true],
+  DT: ["dt", false],
+  DATE_AND_TIME: ["dt", false],
+  LDT: ["dt", true],
+  LDATE_AND_TIME: ["dt", true]
+};
+var WIDEN = {
+  duration: "TO_LTIME",
+  date: "TO_LDATE",
+  tod: "TO_LTOD",
+  dt: "TO_LDT"
+};
+function temporalArithmeticCpp(operator, l, r, left, right) {
+  const lk = l === void 0 ? void 0 : TEMPORAL_KINDS[l];
+  const rk = r === void 0 ? void 0 : TEMPORAL_KINDS[r];
+  const comparison = ["=", "<>", "<", ">", "<=", ">="].includes(operator);
+  if (lk === void 0 || rk === void 0)
     return void 0;
-  const isDate = (k) => k === "DATE" || k === "LDATE";
-  const isDuration = (k) => k === "TIME" || k === "LTIME";
-  const raw = (code) => `static_cast<int64_t>(${code})`;
-  if (operator === "-" && isDate(l) && isDate(r)) {
-    return `((${raw(left)} - ${raw(right)}) * ${NS_PER_DAY})`;
+  if (operator !== "+" && operator !== "-" && !comparison)
+    return void 0;
+  if (!lk[1] && !rk[1]) {
+    if (comparison || lk[0] === "duration" && rk[0] === "duration") {
+      return void 0;
+    }
+    return operator === "+" ? `iec_temporal_add(${left}, ${right})` : `iec_temporal_sub(${left}, ${right})`;
   }
-  if (isDate(l) && isDuration(r)) {
-    const signed = operator === "-" ? `-${raw(right)}` : raw(right);
-    return `DATE_FROM_DAYS(${raw(left)} + iec_floor_div(${signed}, ${NS_PER_DAY}))`;
+  const wl = lk[1] ? left : `${WIDEN[lk[0]]}(${left})`;
+  const wr = rk[1] ? right : `${WIDEN[rk[0]]}(${right})`;
+  if (comparison) {
+    return lk[1] === rk[1] ? void 0 : `${wl} ${operator === "=" ? "==" : operator === "<>" ? "!=" : operator} ${wr}`;
   }
-  if (operator === "+" && isDuration(l) && isDate(r)) {
-    return `DATE_FROM_DAYS(iec_floor_div(${raw(left)}, ${NS_PER_DAY}) + ${raw(right)})`;
+  const raw = (code) => `static_cast<int64_t>(iec_unwrap(${code}))`;
+  if (operator === "-" && lk[0] === "date" && rk[0] === "date") {
+    return `IEC_LTIME((${raw(wl)} - ${raw(wr)}) * ${NS_PER_DAY})`;
   }
-  return void 0;
+  if (lk[0] === "date" && rk[0] === "duration") {
+    const signed = operator === "-" ? `-${raw(wr)}` : raw(wr);
+    return `IEC_LDATE(${raw(wl)} + iec_floor_div(${signed}, ${NS_PER_DAY}))`;
+  }
+  if (operator === "+" && lk[0] === "duration" && rk[0] === "date") {
+    return `IEC_LDATE(iec_floor_div(${raw(wl)}, ${NS_PER_DAY}) + ${raw(wr)})`;
+  }
+  if (lk[1] === rk[1])
+    return void 0;
+  return `${wl} ${operator} ${wr}`;
 }
 function literalTemporalType(expr) {
   if (expr.kind === "ParenthesizedExpression") {
@@ -33973,7 +37251,30 @@ function literalTemporalType(expr) {
   if (expr.kind !== "LiteralExpression")
     return void 0;
   const t = expr.literalType;
-  return t === "DATE" || t === "LDATE" || t === "TIME" || t === "LTIME" ? t : void 0;
+  return t === "DATE" || t === "LDATE" || t === "TIME" || t === "LTIME" || t === "TIME_OF_DAY" || t === "LTIME_OF_DAY" || t === "DATE_AND_TIME" || t === "LDATE_AND_TIME" ? t : void 0;
+}
+var FOLDED_CAST_TYPES = /* @__PURE__ */ new Set([
+  "BYTE",
+  "WORD",
+  "DWORD",
+  "LWORD",
+  "SINT",
+  "INT",
+  "DINT",
+  "LINT",
+  "USINT",
+  "UINT",
+  "UDINT",
+  "ULINT"
+]);
+function parenthesizedCpp(expr, inner) {
+  const t = expr.resolvedType;
+  if (expr.foldedConstant === true && t?.typeKind === "elementary") {
+    const name = t.name.toUpperCase();
+    if (FOLDED_CAST_TYPES.has(name))
+      return `static_cast<IEC_${name}>(${inner})`;
+  }
+  return `(${inner})`;
 }
 
 // dist/backend/member-mangling.js
@@ -34109,7 +37410,7 @@ function generateInitializerValue(value, cppTypeExpr, stTypeName, emitter, depth
     const elements = value.elements.map((element) => generateInitializerValue(element, elementCppType, elementStType, emitter, depth));
     return `{${elements.join(", ")}}`;
   }
-  return emitter.emitValue(value);
+  return emitter.emitValue(value, stTypeName);
 }
 function isArrayLiteralOf(value) {
   return value.kind === "ArrayLiteralExpression" && value.elements.length > 0 && value.elements.every((e) => e.kind === "ArrayLiteralExpression");
@@ -34461,6 +37762,7 @@ function typedDecimalPayload(expr) {
   const payload = expr.rawValue.substring(expr.rawValue.indexOf("#") + 1);
   return /^[+-]?[0-9][0-9_]*$/.test(payload) ? payload : void 0;
 }
+var BIT_STRING_WIDTHS = ["BYTE", "WORD", "DWORD", "LWORD"];
 function isBitStringName(name) {
   const upper = name.toUpperCase();
   return getTypeCategory(upper) === "BIT" && upper !== "BOOL";
@@ -34577,6 +37879,17 @@ var TypeCodeGenerator = class {
       name = def.name;
     }
     return void 0;
+  }
+  /** A type name through the unit's aliases, upper case. */
+  stringAliasBase(name) {
+    let upper = name.toUpperCase();
+    for (let i = 0; i < 32; i++) {
+      const next = this.aliasTargets.get(upper);
+      if (next === void 0)
+        return upper;
+      upper = next.toUpperCase();
+    }
+    return upper;
   }
   /** BYTE, WORD, DWORD or LWORD a type name is, through aliases. */
   bitStringBase(name) {
@@ -34977,13 +38290,30 @@ var TypeCodeGenerator = class {
       case "UnaryExpression":
         return this.unaryExprToCpp(expr);
       case "ParenthesizedExpression":
-        return `(${this.expressionToCpp(expr.expression)})`;
+        return parenthesizedCpp(expr, this.expressionToCpp(expr.expression));
       case "FunctionCallExpression":
+        {
+          const notType = untypedNotTarget(expr);
+          if (notType !== void 0) {
+            return untypedNotCpp(notType, this.expressionToCpp(expr.arguments[0].value));
+          }
+        }
         if (expr.functionName.toUpperCase() === "NOT" && expr.arguments.length === 1 && expr.arguments[0].name === void 0) {
           const arg = expr.arguments[0].value;
           return this.notToCpp(arg, `(${this.expressionToCpp(arg)})`);
         }
-        return `${expr.functionName}()`;
+        {
+          const name = expr.functionName.toUpperCase();
+          const arg = expr.arguments[0]?.value;
+          if ((name === "SIZEOF" || name === "XSIZEOF") && expr.arguments.length === 1 && arg?.kind === "VariableExpression" && arg.namesType === true) {
+            const declared = this.typesByName.get(arg.name.toUpperCase());
+            return sizeOfTypeCpp(this.options.isInterfaceType?.(arg.name) === true ? `IEC_ITF<${arg.name}>` : this.mapTypeToCpp(arg.name), declared?.definition.kind === "StructDefinition" ? "struct" : void 0);
+          }
+        }
+        if (this.options.callToCpp !== void 0) {
+          return this.options.callToCpp(expr);
+        }
+        return expr.arguments.some((a) => a.name !== void 0 || a.isOutput) ? `${expr.functionName}()` : `${expr.functionName}(${expr.arguments.map((a) => this.expressionToCpp(a.value)).join(", ")})`;
       default:
         return "0";
     }
@@ -35006,25 +38336,20 @@ var TypeCodeGenerator = class {
         const str = String(expr.value);
         return str.includes(".") || /[eE]/.test(str) ? str : `${str}.0`;
       }
-      case "TIME":
-      case "LTIME": {
-        const timeVal = parseTimeLiteral(String(expr.value));
-        return `${timeVal.exact}LL`;
-      }
       case "CHAR":
       case "WCHAR": {
         const { wide, units } = charLiteralUnits(expr.rawValue);
         return `static_cast<${wide ? "WCHAR_t" : "CHAR_t"}>(${Math.max(units[0] ?? 0, 0)})`;
       }
+      case "TIME":
+      case "LTIME":
       case "DATE":
       case "LDATE":
-        return `${parseDateLiteralToDays(String(expr.value))}LL`;
       case "TIME_OF_DAY":
       case "LTIME_OF_DAY":
-        return `${parseTodLiteralToNs(String(expr.value))}LL`;
       case "DATE_AND_TIME":
       case "LDATE_AND_TIME":
-        return `${parseDtLiteralToNs(String(expr.value))}LL`;
+        return temporalLiteralCpp(expr.literalType, String(expr.value));
       default:
         return String(expr.value);
     }
@@ -35059,7 +38384,7 @@ var TypeCodeGenerator = class {
       const t = e.resolvedType;
       return t?.typeKind === "elementary" ? t.name.toUpperCase() : literalTemporalType(e);
     };
-    const dated = dateArithmeticCpp(expr.operator, temporal(expr.left), temporal(expr.right), left, right);
+    const dated = temporalArithmeticCpp(expr.operator, temporal(expr.left), temporal(expr.right), left, right);
     if (dated !== void 0)
       return dated;
     const opMap = {
@@ -35081,9 +38406,16 @@ var TypeCodeGenerator = class {
     };
     const cppOp = opMap[expr.operator] ?? expr.operator;
     if (["AND", "OR", "XOR"].includes(expr.operator)) {
+      if (expr.computeAs !== void 0) {
+        const t = `${expr.computeAs}_t`;
+        return `static_cast<${t}>(${left}) ${cppOp} static_cast<${t}>(${right})`;
+      }
       return `(${left}) ${cppOp} (${right})`;
     }
     if (isComparison(expr.operator)) {
+      const texts = expr.comparesReferences === true ? void 0 : stringComparisonCpp(expr.left, expr.right, left, right, cppOp, (name) => this.stringAliasBase(name));
+      if (texts !== void 0)
+        return texts;
       const l = isComparisonExpr(expr.left) ? `(${left})` : left;
       const r = isComparisonExpr(expr.right) ? `(${right})` : right;
       return `${l} ${cppOp} ${r}`;
@@ -35103,12 +38435,29 @@ var TypeCodeGenerator = class {
   }
   /** The bit string type an operand is known to have: its type, or a typed literal's prefix. */
   operandBitString(expr) {
-    if (expr.kind === "ParenthesizedExpression") {
-      return this.operandBitString(expr.expression);
-    }
     const t = expr.resolvedType;
     if (t?.typeKind === "elementary") {
       return this.bitStringBase(t.name);
+    }
+    if (expr.kind === "ParenthesizedExpression") {
+      return this.operandBitString(expr.expression);
+    }
+    if (expr.kind === "UnaryExpression" && expr.operator === "NOT") {
+      return this.operandBitString(expr.operand);
+    }
+    if (expr.kind === "BinaryExpression" && ["AND", "OR", "XOR"].includes(expr.operator)) {
+      const l = this.operandBitString(expr.left);
+      const r = this.operandBitString(expr.right);
+      if (l === void 0 || r === void 0)
+        return l ?? r;
+      return BIT_STRING_WIDTHS.indexOf(r) > BIT_STRING_WIDTHS.indexOf(l) ? r : l;
+    }
+    if (expr.kind === "FunctionCallExpression") {
+      const name = expr.functionName.toUpperCase();
+      const first2 = expr.arguments[0]?.value;
+      if (["SHL", "SHR", "ROL", "ROR", "NOT"].includes(name) && first2 !== void 0) {
+        return this.operandBitString(first2);
+      }
     }
     if (expr.kind === "LiteralExpression" && (expr.typePrefix ?? "") !== "") {
       return this.bitStringBase(expr.typePrefix);
@@ -35117,6 +38466,10 @@ var TypeCodeGenerator = class {
   }
   unaryExprToCpp(expr) {
     const operand = this.expressionToCpp(expr.operand);
+    const contextType = untypedNotTarget(expr);
+    if (contextType !== void 0) {
+      return untypedNotCpp(contextType, operand);
+    }
     if (expr.operator === "NOT")
       return this.notToCpp(expr.operand, operand);
     const opMap = {
@@ -35172,6 +38525,11 @@ var TypeCodeGenerator = class {
     this.output.push(line);
   }
 };
+function sizeOfTypeCpp(cppType, classKey) {
+  const itf = /^IEC_ITF<(\w+)>$/.exec(cppType);
+  const spelt = itf !== null ? `::strucpp::IEC_ITF<class ::strucpp::${itf[1]}>` : classKey !== void 0 ? `${classKey} ::strucpp::${cppType}` : /^\w+$/.test(cppType) ? `::strucpp::${cppType}` : cppType;
+  return `strucpp::iec_size_of_type<${spelt}>::value`;
+}
 
 // dist/backend/global-naming.js
 var RUNTIME_NAMESPACE_NAMES = /* @__PURE__ */ new Set([
@@ -35196,10 +38554,12 @@ var RUNTIME_NAMESPACE_NAMES = /* @__PURE__ */ new Set([
   "CONVERT",
   "COS",
   "CURRENT_DT",
+  "DATE_AS_DAYS",
   "DATE_FROM_DAYS",
   "DATE_FROM_NS",
   "DATE_FROM_SECONDS",
   "DATE_FROM_YMD",
+  "DATE_OF_DAYS",
   "DATE_OF_DT",
   "DATE_TO_DAYS",
   "DATE_TO_NS",
@@ -35212,9 +38572,12 @@ var RUNTIME_NAMESPACE_NAMES = /* @__PURE__ */ new Set([
   "DIVTIME",
   "DIV_LTIME",
   "DIV_TIME",
+  "DT_AS_NS",
   "DT_FROM_COMPONENTS",
   "DT_FROM_NS",
   "DT_FROM_SECONDS",
+  "DT_OF_NS",
+  "DT_OF_SECONDS",
   "DT_TO_MS",
   "DT_TO_NS",
   "DT_TO_SECONDS",
@@ -35276,6 +38639,8 @@ var RUNTIME_NAMESPACE_NAMES = /* @__PURE__ */ new Set([
   "IEC_WCHAR",
   "IEC_WORD",
   "INSERT",
+  "LDATE_TO_DATE_VALUE",
+  "LDT_TO_DT_VALUE",
   "LE",
   "LEFT",
   "LEN",
@@ -35298,6 +38663,9 @@ var RUNTIME_NAMESPACE_NAMES = /* @__PURE__ */ new Set([
   "LREAL_TRUNC_ULINT",
   "LREAL_TRUNC_USINT",
   "LT",
+  "LTIME",
+  "LTIME_TO_TIME_VALUE",
+  "LTOD_TO_TOD_VALUE",
   "LT_DATE",
   "LT_DT",
   "LT_STRING",
@@ -35354,8 +38722,10 @@ var RUNTIME_NAMESPACE_NAMES = /* @__PURE__ */ new Set([
   "SUB_TOD",
   "TAN",
   "TIME",
+  "TIME_AS_NS",
   "TIME_FROM_MS",
   "TIME_FROM_S",
+  "TIME_OF_NS",
   "TIME_TO_D",
   "TIME_TO_H",
   "TIME_TO_M",
@@ -35363,11 +38733,14 @@ var RUNTIME_NAMESPACE_NAMES = /* @__PURE__ */ new Set([
   "TIME_TO_NS",
   "TIME_TO_S",
   "TIME_TO_US",
+  "TOD_AS_NS",
   "TOD_FROM_HMS",
   "TOD_FROM_MS",
   "TOD_FROM_NS",
   "TOD_NORMALIZE",
   "TOD_OF_DT",
+  "TOD_OF_MS",
+  "TOD_OF_NS",
   "TOD_TO_MS",
   "TOD_TO_NS",
   "TO_BOOL",
@@ -35495,9 +38868,8 @@ var TEMPORAL_CONVERSION_UNITS = /* @__PURE__ */ new Map([
   ["DATE_AND_TIME", { toUnit: "DT_TO_SECONDS", fromUnit: "DT_FROM_SECONDS" }],
   ["DATE", { toUnit: "DATE_TO_SECONDS", fromUnit: "DATE_FROM_SECONDS" }],
   ["D", { toUnit: "DATE_TO_SECONDS", fromUnit: "DATE_FROM_SECONDS" }],
-  // nanoseconds — the 64-bit variants. TIME, TOD and DT are already stored in
-  // nanoseconds, so those need no call at all; DATE is stored in days and
-  // still has to be scaled.
+  // nanoseconds — the 64-bit variants, held in ns already; LDATE is held in
+  // days and is scaled.
   ["LTIME", { toUnit: void 0, fromUnit: void 0 }],
   ["LTOD", { toUnit: void 0, fromUnit: void 0 }],
   ["LTIME_OF_DAY", { toUnit: void 0, fromUnit: void 0 }],
@@ -35537,27 +38909,47 @@ var LONG_TEMPORAL_NAMES = /* @__PURE__ */ new Set([
   "LDATE_AND_TIME",
   "LTIME"
 ]);
+var TEMPORAL_CPP = {
+  duration: {
+    short: "TIME_t",
+    long: "IEC_LTIME",
+    narrow: "LTIME_TO_TIME_VALUE"
+  },
+  date: { short: "DATE_t", long: "IEC_LDATE", narrow: "LDATE_TO_DATE_VALUE" },
+  tod: { short: "TOD_t", long: "IEC_LTOD", narrow: "LTOD_TO_TOD_VALUE" },
+  dt: { short: "DT_t", long: "IEC_LDT", narrow: "LDT_TO_DT_VALUE" }
+};
 function longTemporalConversion(argExpr, from, to) {
   const f = TEMPORAL_KIND[from];
   const t = TEMPORAL_KIND[to];
   if (f === void 0 || t === void 0)
     return void 0;
-  if (f === "dt" && t === "date") {
-    return `DATE_OF_DT(IEC_DT(static_cast<int64_t>(${argExpr})))`;
-  }
-  if (f === "dt" && t === "tod") {
-    return `TOD_OF_DT(IEC_DT(static_cast<int64_t>(${argExpr})))`;
-  }
-  if (!LONG_TEMPORAL_NAMES.has(from) && !LONG_TEMPORAL_NAMES.has(to)) {
+  const fromLong = LONG_TEMPORAL_NAMES.has(from);
+  const toLong = LONG_TEMPORAL_NAMES.has(to);
+  if (!fromLong && !toLong) {
+    if (f === "dt" && t === "date") {
+      return `DATE_OF_DT(IEC_DT(static_cast<DT_t>(${argExpr})))`;
+    }
+    if (f === "dt" && t === "tod") {
+      return `TOD_OF_DT(IEC_DT(static_cast<DT_t>(${argExpr})))`;
+    }
     return void 0;
   }
+  const value = fromLong ? `static_cast<int64_t>(${argExpr})` : `iec_long_value(static_cast<${TEMPORAL_CPP[f].short}>(${argExpr}))`;
+  let long;
   if (f === t)
-    return argExpr;
-  if (f === "date" && t === "dt")
-    return `DATE_TO_NS(${argExpr})`;
-  if (f === "tod" && t === "dt")
-    return argExpr;
-  return void 0;
+    long = value;
+  else if (f === "dt" && t === "date") {
+    long = `iec_floor_div(${value}, ${NS_PER_DAY})`;
+  } else if (f === "dt" && t === "tod")
+    long = `TOD_NORMALIZE(${value})`;
+  else if (f === "date" && t === "dt")
+    long = `(${value}) * ${NS_PER_DAY}`;
+  else if (f === "tod" && t === "dt")
+    long = value;
+  else
+    return void 0;
+  return toLong ? `${TEMPORAL_CPP[t].long}(${long})` : `${TEMPORAL_CPP[t].narrow}(${long})`;
 }
 var NUMERIC_OR_BIT_CONVERSION_TARGETS = /* @__PURE__ */ new Set([
   "BOOL",
@@ -35588,6 +38980,25 @@ var defaultCodeGenOptions = {
   globalConstants: {},
   fileName: "main.st"
 };
+var WRAPPING_ARITHMETIC = {
+  "+": "iec_add",
+  "-": "iec_sub",
+  "*": "iec_mul"
+};
+var WRAPPING_COMPUTE_TYPE = {
+  SINT: "DINT",
+  INT: "DINT",
+  USINT: "DINT",
+  UINT: "DINT",
+  BYTE: "DINT",
+  WORD: "DINT",
+  DINT: "DINT",
+  LINT: "LINT"
+};
+function isPlainString(type) {
+  const upper = type.name.toUpperCase();
+  return (upper === "STRING" || upper === "WSTRING") && type.maxLength === void 0 && type.arrayDimensions === void 0 && (type.referenceKind ?? "none") === "none";
+}
 var CodeGenerator = class _CodeGenerator {
   _symbolTables;
   options;
@@ -35620,6 +39031,14 @@ var CodeGenerator = class _CodeGenerator {
    *  while emitting a program body; access to these is rewritten to go through
    *  the GlobalVar pointer (g->read() / g->write() / g->with_lock()). */
   programExternals = /* @__PURE__ */ new Set();
+  /** `_ref` while a PROGRAM constructor's initializers are generated: a VAR_EXTERNAL is then its constructor parameter, the member not yet set. */
+  externalPointerSuffix = "";
+  /** While an FB constructor's initializers are generated: each VAR_EXTERNAL's global, its member not yet set. */
+  externalPointerOf;
+  /** The C++ pointer to the GlobalVar a VAR_EXTERNAL reaches, where it is read. */
+  externalPointer(name) {
+    return this.externalPointerOf?.get(name.toUpperCase()) ?? this.resolveVariableBaseName(name) + this.externalPointerSuffix;
+  }
   /** UPPER(names) of the CONFIGURATION globals, set while their storage is emitted. */
   configGlobalInitNames = /* @__PURE__ */ new Set();
   /** UPPER(names) of the current PROGRAM's VAR_EXTERNAL globals whose type is
@@ -35643,6 +39062,10 @@ var CodeGenerator = class _CodeGenerator {
   ast;
   /** Current function name (for redirecting function name := to result variable) */
   currentFunctionName;
+  /** The POU a fault site names: `FB`, `FB.M` (a method, property or action), `VAR_GLOBAL`. */
+  faultPou;
+  /** The PROGRAM or FUNCTION_BLOCK whose methods are emitted, for `faultPou`. */
+  faultOwner;
   /** The declared result type of the current FUNCTION, METHOD or PROPERTY. */
   currentFunctionResultType;
   /** The declared type of the property whose SET accessor is being generated. */
@@ -35651,6 +39074,8 @@ var CodeGenerator = class _CodeGenerator {
   stdRegistry;
   /** Warnings collected during code generation */
   codegenWarnings = [];
+  /** Errors collected during code generation (see CodeGenResult.errors) */
+  codegenErrors = [];
   /** Counter for generating unique temporary variable names */
   tempVarCounter = 0;
   /**
@@ -35691,6 +39116,8 @@ var CodeGenerator = class _CodeGenerator {
   libraryFBExtends = /* @__PURE__ */ new Map();
   /** Library functions by upper-cased name, and their parsed declarations. */
   libraryFunctions = /* @__PURE__ */ new Map();
+  /** The default STRING length of the library declaring each function, when not 254. */
+  libraryFunctionStringDefaults = /* @__PURE__ */ new Map();
   /** Every library FUNCTION, keyed `LIBRARY:NAME` (upper case), shadowed ones included. */
   libraryFunctionsByLibrary = /* @__PURE__ */ new Map();
   libraryFunctionDecls = /* @__PURE__ */ new Map();
@@ -35850,16 +39277,16 @@ var CodeGenerator = class _CodeGenerator {
    */
   byRefParamTypeRef(typeRef) {
     const upper = typeRef.name.toUpperCase();
-    const isString2 = upper === "STRING" || upper === "WSTRING";
+    const isString3 = upper === "STRING" || upper === "WSTRING";
     const shape = this.toParamTypeRef(typeRef);
-    return isString2 && typeRef.maxLength !== void 0 ? { ...shape, maxLength: typeRef.maxLength } : shape;
+    return isString3 && typeRef.maxLength !== void 0 ? { ...shape, maxLength: typeRef.maxLength } : shape;
   }
   toParamTypeRef(typeRef) {
     const upper = typeRef.name.toUpperCase();
-    const isString2 = upper === "STRING" || upper === "WSTRING";
+    const isString3 = upper === "STRING" || upper === "WSTRING";
     return {
       name: typeRef.name,
-      ...!isString2 && typeRef.maxLength !== void 0 ? { maxLength: typeRef.maxLength } : {},
+      ...!isString3 && typeRef.maxLength !== void 0 ? { maxLength: typeRef.maxLength } : {},
       ...typeRef.arrayDimensions !== void 0 ? { arrayDimensions: typeRef.arrayDimensions } : {},
       ...typeRef.elementTypeName !== void 0 ? { elementTypeName: typeRef.elementTypeName } : {},
       ...typeRef.elementReferenceChain !== void 0 ? { elementReferenceChain: typeRef.elementReferenceChain } : {},
@@ -35898,6 +39325,272 @@ var CodeGenerator = class _CodeGenerator {
       return this.knownProgramTypes.has(name.toUpperCase()) ? `Program_${name}` : name;
     }
     return this.typeCodeGen.mapTypeToCpp(name);
+  }
+  /** True when the expression is of an integer or bit string type (an alias of one too). */
+  isIntegerExpression(expr) {
+    const upper = this.baseTypeName(expr);
+    return upper !== void 0 && /^(U?(SINT|INT|DINT|LINT)|BYTE|WORD|DWORD|LWORD)$/.test(upper);
+  }
+  /**
+   * The upper-case type name of `expr` with aliases and subranges resolved
+   * to the elementary type under them (`TYPE MyD : DINT` is DINT); undefined
+   * when the type is unknown.
+   */
+  baseTypeName(expr) {
+    const t = expr.resolvedType;
+    const name = t?.typeKind === "elementary" && "name" in t ? String(t.name) : this.inferExprType(expr);
+    if (name === void 0)
+      return void 0;
+    let upper = name.toUpperCase();
+    for (let i = 0; i < 32; i++) {
+      const current = upper;
+      const def = this.ast?.types.find((t2) => t2.name.toUpperCase() === current)?.definition;
+      if (def?.kind === "TypeReference" && def.arrayDimensions === void 0) {
+        upper = def.name.toUpperCase();
+      } else if (def?.kind === "SubrangeDefinition") {
+        upper = def.baseType.name.toUpperCase();
+      } else {
+        break;
+      }
+    }
+    return upper;
+  }
+  /** The type `expr`'s +, -, * or unary minus is computed in so that it wraps, if any. */
+  wrappingComputeType(expr) {
+    const name = this.baseTypeName(expr);
+    const computed = name === void 0 ? void 0 : WRAPPING_COMPUTE_TYPE[name];
+    if (computed !== "DINT")
+      return computed;
+    if (expr.kind !== "BinaryExpression") {
+      return this.fitsDint(expr) ? computed : void 0;
+    }
+    const operands = [expr.left, expr.right];
+    if (operands.some((e) => /^L?(TIME|DATE|TOD|DT)$/.test(this.temporalBase(e) ?? ""))) {
+      return void 0;
+    }
+    if (operands.some((e) => this.isPastDintLiteral(e)))
+      return "LINT";
+    if (name === "DINT")
+      return computed;
+    return operands.every((e) => this.fitsDint(e)) ? computed : void 0;
+  }
+  /**
+   * Whether `expr` is known to hold a DINT-sized value: an untyped literal, or
+   * a DINT or narrower integer all the way down (`DWORD / 86400` may be typed
+   * INT, but its operand is not).
+   */
+  fitsDint(expr) {
+    switch (expr.kind) {
+      case "LiteralExpression":
+        if ((expr.typePrefix ?? "") === "") {
+          return !this.isPastDintLiteral(expr);
+        }
+        break;
+      case "ParenthesizedExpression":
+        return this.fitsDint(expr.expression);
+      case "UnaryExpression":
+        if (expr.operator === "NOT")
+          break;
+        return this.fitsDint(expr.operand);
+      case "BinaryExpression":
+        if (!["+", "-", "*", "/", "MOD"].includes(expr.operator))
+          break;
+        return this.fitsDint(expr.left) && this.fitsDint(expr.right);
+    }
+    return WRAPPING_COMPUTE_TYPE[this.baseTypeName(expr) ?? ""] === "DINT";
+  }
+  /** `pt + 1`, `ADR(x) - 4`: arithmetic on an address, which no integer helper takes. */
+  isAddressArithmetic(expr) {
+    if (expr.addressArithmetic === true)
+      return true;
+    if (expr.operator !== "+" && expr.operator !== "-")
+      return false;
+    return [expr.left, expr.right].some((e) => this.isAddressOperand(e));
+  }
+  /** ADR(), a POINTER TO or REF_TO variable itself, or address arithmetic. */
+  isAddressOperand(e) {
+    switch (e.kind) {
+      case "ParenthesizedExpression":
+        return this.isAddressOperand(e.expression);
+      case "BinaryExpression":
+        return this.isAddressArithmetic(e);
+      case "FunctionCallExpression":
+        return /^ADR(INST)?$/i.test(e.functionName);
+      case "VariableExpression":
+        return this.isAddressVariable(e);
+      default:
+        return false;
+    }
+  }
+  /** A POINTER TO or REF_TO variable, member or element itself, also through a type alias. */
+  isAddressVariable(e) {
+    const isAddress = (kind) => kind === "pointer_to" || kind === "ref_to";
+    if (isAddress(this.refAssignTargetKind(e)))
+      return true;
+    const nameUpper = e.name.toUpperCase();
+    const hasAccess = e.subscripts.length > 0 || e.fieldAccess.length > 0 || e.isDereference || e.accessChain !== void 0 && e.accessChain.length > 0;
+    const base = this.currentScopeVarTypeRefs.get(nameUpper);
+    const declared = base === void 0 || !hasAccess ? base : resolveAccessType(base, e, this.accessLookup);
+    let name = (declared?.referenceKind ?? "none") === "none" ? declared?.name : void 0;
+    for (let i = 0; name !== void 0 && i < 32; i++) {
+      const current = name.toUpperCase();
+      const def = this.ast?.types.find((t) => t.name.toUpperCase() === current)?.definition;
+      if (def?.kind !== "TypeReference" || def.arrayDimensions !== void 0) {
+        return false;
+      }
+      if (isAddress(def.referenceKind))
+        return true;
+      name = def.name;
+    }
+    return false;
+  }
+  /** An untyped integer literal (in parentheses or negated) outside DINT. */
+  isPastDintLiteral(expr) {
+    if (expr.kind === "ParenthesizedExpression") {
+      return this.isPastDintLiteral(expr.expression);
+    }
+    if (expr.kind === "UnaryExpression") {
+      return this.isPastDintLiteral(expr.operand);
+    }
+    if (expr.kind !== "LiteralExpression" || expr.literalType !== "INT" || (expr.typePrefix ?? "") !== "") {
+      return false;
+    }
+    const v = exactIntegerLiteralValue(expr.rawValue);
+    return v !== void 0 && (v > 2147483647n || v < -2147483648n);
+  }
+  /** Runs `emit` with `pou` (and `owner`, for its methods) as the POU a fault site names. */
+  withFaultPou(pou, owner, emit) {
+    const savedPou = this.faultPou;
+    const savedOwner = this.faultOwner;
+    this.faultPou = pou;
+    this.faultOwner = owner;
+    try {
+      emit();
+    } finally {
+      this.faultPou = savedPou;
+      this.faultOwner = savedOwner;
+    }
+  }
+  /** `strucpp::iec_site{"POU", line}` for a fault raised at `node`. */
+  faultSite(node) {
+    const pou = this.faultPou ?? this.currentFunctionName ?? this.currentFBName ?? this.currentProgramName ?? "?";
+    return `strucpp::iec_site{"${pou}", ${node.sourceSpan.startLine}}`;
+  }
+  /**
+   * `TIME_TO_STRING(t)` and every other date/time conversion to STRING or
+   * WSTRING: the value's canonical IEC literal text. Undefined otherwise.
+   */
+  temporalText(from, to, value) {
+    if (to !== "STRING" && to !== "WSTRING")
+      return void 0;
+    const forms = {
+      TIME: ["iec_duration_text", "T#"],
+      LTIME: ["iec_duration_text", "LTIME#"],
+      DATE: ["iec_date_text", "D#"],
+      LDATE: ["iec_date_text", "LDATE#"],
+      TOD: ["iec_tod_text", "TOD#"],
+      TIME_OF_DAY: ["iec_tod_text", "TOD#"],
+      LTOD: ["iec_tod_text", "LTOD#"],
+      LTIME_OF_DAY: ["iec_tod_text", "LTOD#"],
+      DT: ["iec_dt_text", "DT#"],
+      DATE_AND_TIME: ["iec_dt_text", "DT#"],
+      LDT: ["iec_dt_text", "LDT#"],
+      LDATE_AND_TIME: ["iec_dt_text", "LDT#"]
+    };
+    const form = forms[from];
+    if (form === void 0)
+      return void 0;
+    const kind = TEMPORAL_KIND[from];
+    const code = this.generateExpression(value);
+    const held = kind !== void 0 && !LONG_TEMPORAL_NAMES.has(from) ? `iec_long_value(static_cast<${TEMPORAL_CPP[kind].short}>(${code}))` : `static_cast<int64_t>(iec_unwrap(${code}))`;
+    const text = `strucpp::${form[0]}(${held}, "${form[1]}")`;
+    return to === "WSTRING" ? `STRING_TO_WSTRING(${text})` : text;
+  }
+  /**
+   * `SIZEOF(T)` / `XSIZEOF(T)` whose operand the analyzer marked as naming a
+   * type: the size of the type. Undefined for any other operand.
+   */
+  sizeofTypeOperand(value) {
+    if (value.kind !== "VariableExpression" || value.namesType !== true) {
+      return void 0;
+    }
+    const upper = value.name.toUpperCase();
+    const declared = this.ast?.types.find((t) => t.name.toUpperCase() === upper);
+    const classKey = declared?.definition.kind === "StructDefinition" ? "struct" : this.knownFBTypes.has(upper) ? "class" : void 0;
+    return sizeOfTypeCpp(this.mapTypeRefToCpp({ name: value.name }), classKey);
+  }
+  /** `ADR(x)` of the standard function, not a user FUNCTION of that name. */
+  isAdrCall(e) {
+    return e.kind === "FunctionCallExpression" && e.functionName.toUpperCase() === "ADR" && e.libraryFunction === void 0 && this.ast?.functions.some((f) => f.name.toUpperCase() === "ADR") !== true;
+  }
+  /**
+   * A + / - chain holding ADR(x) terms, computed in bytes: the address as an
+   * integer (`iec_byte_addr`), every other operand a byte offset. With one
+   * address left over, the total is that address's pointer type again; with none
+   * (`ADR(a) - ADR(b)`), it is the signed count of bytes. Undefined when the
+   * chain holds no ADR, or adds addresses together.
+   */
+  adrArithmetic(expr) {
+    if (!this.holdsAdrTerm(expr) && this.addressTermCount(expr) < 2) {
+      return void 0;
+    }
+    let net = 0;
+    let proto;
+    const render = (e, sign) => {
+      if (this.isAdrCall(e) || this.isPointerVariable(e)) {
+        const generated = this.generateExpression(e);
+        const address = this.isAdrCall(e) ? generated : `${generated}.get()`;
+        net += sign;
+        if (sign > 0 && proto === void 0)
+          proto = address;
+        return `strucpp::iec_byte_addr(${address})`;
+      }
+      if (e.kind === "ParenthesizedExpression" && this.addressTermCount(e) > 0) {
+        return `(${render(e.expression, sign)})`;
+      }
+      if (e.kind === "BinaryExpression" && (e.operator === "+" || e.operator === "-") && this.addressTermCount(e) > 0) {
+        const left = render(e.left, sign);
+        const right = render(e.right, e.operator === "-" ? -sign : sign);
+        return `${left} ${e.operator} ${right}`;
+      }
+      return `strucpp::iec_byte_offset(${this.generateExpression(e)})`;
+    };
+    const total = render(expr, 1);
+    if (net === 1 && proto !== void 0) {
+      return `reinterpret_cast<decltype(${proto})>(${total})`;
+    }
+    if (net === 0)
+      return `static_cast<std::intptr_t>(${total})`;
+    return void 0;
+  }
+  /** A POINTER TO variable or ARRAY OF POINTER TO element, read whole: an address term (pointerReadTarget, as the type checker). */
+  isPointerVariable(e) {
+    if (e.kind !== "VariableExpression")
+      return false;
+    const upper = e.name.toUpperCase();
+    const type = this.currentScopeVarTypeRefs.get(upper) ?? this.globalVarTypeRef(upper);
+    return type !== void 0 && pointerReadTarget(type, e) !== void 0;
+  }
+  /** The address terms (ADR(x), POINTER TO variables) of a + / - chain. */
+  addressTermCount(e) {
+    if (this.isAdrCall(e) || this.isPointerVariable(e))
+      return 1;
+    if (e.kind === "ParenthesizedExpression") {
+      return this.addressTermCount(e.expression);
+    }
+    if (e.kind === "BinaryExpression" && (e.operator === "+" || e.operator === "-")) {
+      return this.addressTermCount(e.left) + this.addressTermCount(e.right);
+    }
+    return 0;
+  }
+  /** An ADR(x) term of a + / - chain, through parentheses. */
+  holdsAdrTerm(e) {
+    if (this.isAdrCall(e))
+      return true;
+    if (e.kind === "ParenthesizedExpression") {
+      return this.holdsAdrTerm(e.expression);
+    }
+    return e.kind === "BinaryExpression" && (e.operator === "+" || e.operator === "-") && (this.holdsAdrTerm(e.left) || this.holdsAdrTerm(e.right));
   }
   mapTypeRefToCpp(typeRef) {
     let baseType;
@@ -36006,7 +39699,11 @@ var CodeGenerator = class _CodeGenerator {
    */
   registerLibraryArchives(archives) {
     for (const archive of archives) {
+      const stringDefault = archive.manifest.stringDefaultLength;
       for (const fn of archive.manifest.functions) {
+        if (stringDefault !== void 0) {
+          this.libraryFunctionStringDefaults.set(fn, stringDefault);
+        }
         const upper = fn.name.toUpperCase();
         if (!this.libraryFunctions.has(upper)) {
           this.libraryFunctions.set(upper, fn);
@@ -36014,7 +39711,7 @@ var CodeGenerator = class _CodeGenerator {
         this.libraryFunctionsByLibrary.set(`${archive.manifest.name.toUpperCase()}:${upper}`, fn);
       }
       for (const fb of archive.manifest.functionBlocks) {
-        const methods = libraryMethodDeclarations(fb);
+        const methods = libraryMethodDeclarations(fb, stringDefault);
         if (methods !== void 0 && methods.length > 0) {
           this.libraryMethods.set(fb.name.toUpperCase(), methods);
         }
@@ -36156,6 +39853,7 @@ var CodeGenerator = class _CodeGenerator {
     this.headerStLineActive = false;
     this.locatedVars = [];
     this.codegenWarnings = [];
+    this.codegenErrors = [];
     this.tempVarCounter = 0;
     this.ast = ast;
     this.fbInitPlan = this.options.fbInit === true ? new FbInitPlan(ast) : void 0;
@@ -36260,7 +39958,8 @@ var CodeGenerator = class _CodeGenerator {
       headerCode: resolveLineResets(this.headerOutput, this.options.headerFileName).join(eol),
       lineMap: this.lineMap,
       headerLineMap: this.headerLineMap,
-      warnings: this.codegenWarnings
+      warnings: this.codegenWarnings,
+      errors: this.codegenErrors
     };
   }
   /**
@@ -36343,7 +40042,8 @@ var CodeGenerator = class _CodeGenerator {
       // names them, and only codegen knows the FB / program type names.
       isUserDefinedType: (t) => this.isUserDefinedType(t),
       shadowingNames: this.shadowingNames(),
-      isInterfaceType: (t) => this.isInterfaceType(t)
+      isInterfaceType: (t) => this.isInterfaceType(t),
+      callToCpp: (call) => this.generateExpression(call)
     });
     if (ast.types.length > 0) {
       const lateStructNames = new Set(lateStructs.map((n) => n.toUpperCase()));
@@ -36523,6 +40223,16 @@ var CodeGenerator = class _CodeGenerator {
    * complete, so it is emitted after the FB classes and late types.
    */
   emitGvlGlobals(ast, late) {
+    this.atNamespaceScope = true;
+    try {
+      this.withFaultPou("VAR_GLOBAL", void 0, () => this.emitGvlGlobalsBody(ast, late));
+    } finally {
+      this.atNamespaceScope = false;
+    }
+  }
+  /** Initial values emitted at namespace scope, where a lambda captures nothing. */
+  atNamespaceScope = false;
+  emitGvlGlobalsBody(ast, late) {
     const holdsFB = (typeRef) => typeNamesHeldByValue(typeRef).some((n) => {
       const upper = n.toUpperCase();
       return this.knownFBTypes.has(upper) || this.lateTypeNames.has(upper);
@@ -36655,7 +40365,7 @@ var CodeGenerator = class _CodeGenerator {
       this.emitHeader("");
       this.emitHeader("    // Method instance variables (VAR_INST)");
       for (const m of varInstMembers) {
-        this.emitHeader(`    ${m.cppType} ${m.mangledName};`);
+        this.emitHeader(`    ${m.cppType} ${m.mangledName}${m.init};`);
       }
     }
     if (!fb.extends && this.declaredEnoType(fb.name) === void 0) {
@@ -36666,9 +40376,18 @@ var CodeGenerator = class _CodeGenerator {
     this.emitHeader("");
     this.emitHeader("    // Constructor");
     this.emitHeader(`    ${fb.name}();`);
+    if (this.selfBoundReferences(fb).length > 0) {
+      this.emitHeader("    // A copy binds its REFERENCE TO members to its own members");
+      this.emitHeader(`    ${fb.name}(const ${fb.name}& __o);`);
+      this.emitHeader(`    ${fb.name}& operator=(const ${fb.name}& __o);`);
+    }
     this.emitHeader("");
     this.emitHeader("    // Execute function block");
     this.emitHeader("    void operator()();");
+    if (this.fbChainHasTemps(fb)) {
+      this.emitHeader("    // The body without the VAR_TEMP reset (SUPER^() runs it)");
+      this.emitHeader("    void __body();");
+    }
     if (fb.methods.length > 0) {
       this.emitHeader("");
       this.generateMethodDeclarations(fb.methods);
@@ -36842,7 +40561,7 @@ var CodeGenerator = class _CodeGenerator {
       return;
     this.emitHeader("    // Method instance variables (VAR_INST)");
     for (const m of varInstMembers) {
-      this.emitHeader(`    ${m.cppType} ${m.mangledName};`);
+      this.emitHeader(`    ${m.cppType} ${m.mangledName}${m.init};`);
     }
   }
   /**
@@ -36984,16 +40703,125 @@ var CodeGenerator = class _CodeGenerator {
    * Collect VAR_INST members from all methods of a function block or program.
    * These become name-mangled class members: __MethodName__varName
    */
+  /**
+   * The REFERENCE TO and POINTER TO members of an FB, when one of them is bound
+   * by its initial value to a member of the same instance (`REF(y)`,
+   * `ADR(arr[1])`): a copy rebinds each one that points into the original to
+   * the same place in the copy. Empty when none is so bound.
+   */
+  selfBoundReferences(fb) {
+    const own = /* @__PURE__ */ new Set();
+    let current = fb;
+    for (let depth = 0; current !== void 0 && depth < 32; depth++) {
+      for (const block of current.varBlocks) {
+        if (block.blockType === "VAR_EXTERNAL" || block.blockType === "VAR_IN_OUT") {
+          continue;
+        }
+        for (const decl of block.declarations) {
+          for (const n of decl.names)
+            own.add(n.toUpperCase());
+        }
+      }
+      const base = current.extends?.toUpperCase();
+      current = base === void 0 ? void 0 : this.ast?.functionBlocks.find((f) => f.name.toUpperCase() === base);
+    }
+    const pointers = [];
+    let bound = false;
+    for (const block of fb.varBlocks) {
+      if (block.blockType === "VAR_EXTERNAL" || block.blockType === "VAR_IN_OUT") {
+        continue;
+      }
+      for (const decl of block.declarations) {
+        const kind = decl.type.referenceKind ?? "none";
+        const levels = [
+          kind,
+          ...this.aliasReferenceLevels(decl.type.name),
+          ...decl.type.referenceChain ?? [],
+          ...decl.type.arrayDimensions !== void 0 ? decl.type.elementReferenceChain ?? [] : []
+        ];
+        if (!levels.includes("reference_to") && !levels.includes("pointer_to")) {
+          continue;
+        }
+        const value = decl.initialValue;
+        const operands = value?.kind === "ArrayLiteralExpression" ? value.elements : [value];
+        for (const v of operands) {
+          const operand = v?.kind === "RefExpression" ? v.operand : v?.kind === "FunctionCallExpression" && v.functionName.toUpperCase() === "ADR" ? v.arguments[0]?.value : void 0;
+          if (operand?.kind === "VariableExpression" && own.has(operand.name.toUpperCase())) {
+            bound = true;
+          }
+        }
+        for (const name of decl.names) {
+          pointers.push(this.mangleMemberIfNeeded(name, decl.type.name));
+        }
+      }
+    }
+    return bound ? pointers : [];
+  }
+  /** The copy constructor and assignment of an FB whose references point into it. */
+  emitSelfBoundCopy(fb, hasExternals) {
+    const refs = this.selfBoundReferences(fb);
+    if (refs.length === 0)
+      return;
+    const members2 = [];
+    for (const block of fb.varBlocks) {
+      if (block.blockType === "VAR_EXTERNAL")
+        continue;
+      for (const decl of block.declarations) {
+        for (const name of decl.names) {
+          members2.push(this.mangleMemberIfNeeded(name, decl.type.name));
+        }
+      }
+    }
+    if (hasExternals) {
+      members2.push(...this.collectFBExternals(fb).map((e) => e.name));
+    }
+    members2.push(...this.collectVarInstMembers(fb).map((m) => m.mangledName));
+    if (fb.extends === void 0 && this.declaredEnoType(fb.name) === void 0) {
+      members2.push("ENO");
+    }
+    if (this.options.isTestBuild)
+      members2.push("__mocked_", "__mock_state_");
+    const bases = [
+      ...fb.extends !== void 0 ? [fb.extends] : [],
+      ...fb.implements ?? []
+    ];
+    const rebinds = refs.map((member) => `    strucpp::rebind_own_member(${member}, __o.${member}, this, &__o);`);
+    const init = [
+      ...bases.map((b) => `${b}(__o)`),
+      ...members2.map((m) => `${m}(__o.${m})`)
+    ];
+    this.emit(`${fb.name}::${fb.name}(const ${fb.name}& __o)`);
+    this.emit(`    : ${init.join(", ")}`);
+    this.emit("{");
+    for (const line of rebinds)
+      this.emit(line);
+    this.emit("}");
+    this.emit("");
+    this.emit(`${fb.name}& ${fb.name}::operator=(const ${fb.name}& __o) {`);
+    this.emit("    if (this == &__o) return *this;");
+    for (const b of bases)
+      this.emit(`    ${b}::operator=(__o);`);
+    for (const m of members2)
+      this.emit(`    ${m} = __o.${m};`);
+    for (const line of rebinds)
+      this.emit(line);
+    this.emit("    return *this;");
+    this.emit("}");
+    this.emit("");
+  }
   collectVarInstMembers(fb) {
     const result = [];
     for (const method of fb.methods) {
       for (const block of method.varBlocks) {
         if (block.blockType === "VAR_INST") {
           for (const decl of block.declarations) {
+            const cppType = this.mapTypeRefToCpp(decl.type);
+            const init = decl.initialValue ? ` = ${this.generateInitializer(decl.initialValue, cppType, decl.type.name)}` : "";
             for (const name of decl.names) {
               result.push({
                 mangledName: `__${method.name}__${name}`,
-                cppType: this.mapTypeRefToCpp(decl.type)
+                cppType,
+                init
               });
             }
           }
@@ -37109,6 +40937,9 @@ var CodeGenerator = class _CodeGenerator {
    * Follows the same return-variable pattern as functions.
    */
   generateMethodImplementation(method, className) {
+    this.withFaultPou(`${this.faultOwner ?? className}.${method.name}`, this.faultOwner, () => this.generateMethodImplementationBody(method, className));
+  }
+  generateMethodImplementationBody(method, className) {
     const isIfaceReturn = method.returnType && this.isInterfaceType(method.returnType.name);
     const returnType = method.returnType ? isIfaceReturn ? `${this.inOutParamType(method.returnType)}&` : this.mapTypeRefToCpp(method.returnType) : "void";
     const params = this.generateMethodParamList(method);
@@ -37146,6 +40977,7 @@ var CodeGenerator = class _CodeGenerator {
         }
       }
     }
+    this.emitSubrangeInputChecks(method.varBlocks);
     if (method.body.length > 0) {
       this.generateStatements(method.body);
     }
@@ -37168,6 +41000,9 @@ var CodeGenerator = class _CodeGenerator {
    * Generate implementation for a property (getter and/or setter in the .cpp file).
    */
   generatePropertyImplementation(prop, className) {
+    this.withFaultPou(`${this.faultOwner ?? className}.${prop.name}`, this.faultOwner, () => this.generatePropertyImplementationBody(prop, className));
+  }
+  generatePropertyImplementationBody(prop, className) {
     const type = this.mapTypeRefToCpp(prop.type);
     if (prop.getter) {
       this.emitLineDirective(prop.sourceSpan.startLine);
@@ -37208,6 +41043,9 @@ var CodeGenerator = class _CodeGenerator {
    * Generate implementation for a program.
    */
   generateProgramImplementation(prog) {
+    this.withFaultPou(prog.name, prog.name, () => this.generateProgramImplementationBody(prog));
+  }
+  generateProgramImplementationBody(prog) {
     this.emit(`Program_${prog.name}::Program_${prog.name}() {`);
     this.emit("    // Initialize variables");
     for (const block of prog.varBlocks) {
@@ -37227,6 +41065,7 @@ var CodeGenerator = class _CodeGenerator {
     this.emitForceScope();
     this.currentProgramName = prog.name;
     this.enterScope(prog.varBlocks);
+    this.emitTempResets(prog.varBlocks);
     if (prog.body.length > 0) {
       this.generateStatements(prog.body);
     } else if (this.options.sourceComments) {
@@ -37253,6 +41092,9 @@ var CodeGenerator = class _CodeGenerator {
    * run() (`externals`), then clears them the same way an FB does.
    */
   generateProgramMethodImplementations(prog, externals) {
+    this.withFaultPou(prog.name, prog.name, () => this.generateProgramMethodImplementationsBody(prog, externals));
+  }
+  generateProgramMethodImplementationsBody(prog, externals) {
     if (prog.methods.length === 0)
       return;
     this.currentFBName = prog.name;
@@ -37277,6 +41119,9 @@ var CodeGenerator = class _CodeGenerator {
    * Generate implementation for a function block.
    */
   generateFBImplementation(fb) {
+    this.withFaultPou(fb.name, fb.name, () => this.generateFBImplementationBody(fb));
+  }
+  generateFBImplementationBody(fb) {
     this.currentFBName = fb.name;
     this.currentFBExtends = fb.extends;
     this.currentFBVarBlocks = fb.varBlocks;
@@ -37290,7 +41135,12 @@ var CodeGenerator = class _CodeGenerator {
       for (const e of externalDecls) {
         fbInits.push(`${e.name}(&${ns}::${globalCppName(e.name)})`);
       }
+      this.externalPointerOf = new Map(externalDecls.map((e) => [
+        e.name.toUpperCase(),
+        `(&${ns}::${globalCppName(e.name)})`
+      ]));
     }
+    this.enterScope(fb.varBlocks);
     for (const block of fb.varBlocks) {
       if (block.blockType === "VAR_EXTERNAL" || block.blockType === "VAR_IN_OUT")
         continue;
@@ -37305,6 +41155,8 @@ var CodeGenerator = class _CodeGenerator {
         }
       }
     }
+    this.exitScope();
+    this.externalPointerOf = void 0;
     if (fbInits.length > 0) {
       this.emit(`${fb.name}::${fb.name}()`);
       this.emit(`    : ${fbInits.join(", ")}`);
@@ -37315,13 +41167,25 @@ var CodeGenerator = class _CodeGenerator {
     this.emit("    // Initialize variables");
     this.emit("}");
     this.emit("");
+    this.emitSelfBoundCopy(fb, externalDecls.length > 0);
+    const withTemps = this.fbChainHasTemps(fb);
+    if (withTemps) {
+      this.emit(`void ${fb.name}::operator()() {`);
+      this.enterScope(fb.varBlocks);
+      this.emitTempResets(this.fbChainVarBlocks(fb));
+      this.exitScope();
+      this.emit("    __body();");
+      this.emit("}");
+      this.emit("");
+    }
     this.emitLineDirective(fb.sourceSpan.startLine);
     const fbImplLine = this.currentLine;
-    this.emit(`void ${fb.name}::operator()() {`);
+    this.emit(`void ${fb.name}::${withTemps ? "__body" : "operator()"}() {`);
     if (this.options.isTestBuild) {
       this.emit("    if (__mocked_) { __mock_state_.call_count++; return; }");
     }
     this.enterScope(fb.varBlocks);
+    this.emitSubrangeInputChecks(fb.varBlocks);
     if (fb.body.length > 0) {
       this.generateStatements(fb.body);
     } else if (this.options.sourceComments) {
@@ -37370,10 +41234,62 @@ var CodeGenerator = class _CodeGenerator {
     this.programExternals = /* @__PURE__ */ new Set();
     this.compositeExternals = /* @__PURE__ */ new Set();
   }
+  /** The var blocks of an FB and of each base it extends, base first. */
+  fbChainVarBlocks(fb) {
+    const chain = [fb.varBlocks];
+    const seen = /* @__PURE__ */ new Set();
+    let base = fb.extends?.toUpperCase();
+    while (base !== void 0 && !seen.has(base)) {
+      seen.add(base);
+      const current = base;
+      const def = this.ast?.functionBlocks.find((f) => f.name.toUpperCase() === current);
+      if (def === void 0)
+        break;
+      chain.unshift(def.varBlocks);
+      base = def.extends?.toUpperCase();
+    }
+    return chain.flat();
+  }
+  /** True when an FB or a base it extends declares a VAR_TEMP. */
+  fbChainHasTemps(fb) {
+    return this.fbChainVarBlocks(fb).some((b) => b.blockType === "VAR_TEMP" && b.declarations.length > 0);
+  }
+  /**
+   * VAR_TEMP of a PROGRAM or FUNCTION_BLOCK body: stored as a member, so set
+   * back to its initial value at the start of every call, as a FUNCTION's and
+   * a METHOD's C++ locals are. A function block instance in it starts afresh
+   * too: VAR_TEMP does not persist between calls (IEC 61131-3 Ed. 3).
+   */
+  emitTempResets(blocks) {
+    for (const block of blocks) {
+      if (block.blockType !== "VAR_TEMP")
+        continue;
+      for (const decl of block.declarations) {
+        const cppType = this.mapTypeRefToCpp(decl.type);
+        const initValue = decl.initialValue ? this.generateInitializer(decl.initialValue, cppType, decl.type.name) : void 0;
+        const init = initValue !== void 0 ? ` = ${initValue}` : this.scalarTypeInit(decl.type);
+        const inPlace = decl.type.arrayDimensions !== void 0 || this.isFBType(decl.type.name) || this.structFieldsOf(decl.type.name) !== void 0;
+        for (const name of decl.names) {
+          const target = this.generateLvalue({
+            kind: "VariableExpression",
+            name,
+            fieldAccess: [],
+            subscripts: [],
+            isDereference: false,
+            sourceSpan: decl.sourceSpan
+          });
+          this.emit(!inPlace ? `    { ${cppType} __temp${init}; ${target} = __temp; }` : initValue === void 0 ? `    iec_reset_in_place(${target});` : `    ::new (strucpp::iec_destroyed(${target})) ${cppType}(${initValue});`);
+        }
+      }
+    }
+  }
   /**
    * Generate implementation for a function.
    */
   generateFunctionImplementation(func) {
+    this.withFaultPou(func.name, void 0, () => this.generateFunctionImplementationBody(func));
+  }
+  generateFunctionImplementationBody(func) {
     const params = this.generateFunctionParams(func);
     const retType = this.mapTypeRefToCpp(func.returnType);
     const emitFunctionBody = (funcName) => {
@@ -37392,6 +41308,7 @@ var CodeGenerator = class _CodeGenerator {
           }
         }
       }
+      this.emitSubrangeInputChecks(func.varBlocks);
       if (func.body.length > 0) {
         this.generateStatements(func.body);
       } else if (this.options.sourceComments) {
@@ -37557,6 +41474,9 @@ var CodeGenerator = class _CodeGenerator {
    * Generate implementation for a program from the project model.
    */
   generateProgramImplementationFromModel(prog) {
+    this.withFaultPou(prog.name, prog.name, () => this.generateProgramImplementationFromModelBody(prog));
+  }
+  generateProgramImplementationFromModelBody(prog) {
     const astProg = this.ast?.programs.find((p) => p.name.toUpperCase() === prog.name.toUpperCase());
     if (prog.varExternal.length > 0) {
       const params = prog.varExternal.map((ext) => {
@@ -37565,12 +41485,18 @@ var CodeGenerator = class _CodeGenerator {
       }).join(", ");
       this.emit(`Program_${prog.name}::Program_${prog.name}(${params})`);
       const inits = [];
+      this.programExternals = new Set(prog.varExternal.map((ext) => ext.name.toUpperCase()));
+      this.compositeExternals = new Set(prog.varExternal.filter((ext) => !isElementaryType(ext.typeName)).map((ext) => ext.name.toUpperCase()));
+      this.externalPointerSuffix = "_ref";
       for (const decl of prog.varDeclarations) {
         const initVal = this.projectVarInitializer(decl);
         if (initVal) {
           inits.push(`${this.mangleMemberIfNeeded(decl.name, decl.typeName)}(${initVal})`);
         }
       }
+      this.externalPointerSuffix = "";
+      this.programExternals = /* @__PURE__ */ new Set();
+      this.compositeExternals = /* @__PURE__ */ new Set();
       const extInits = prog.varExternal.map((ext) => `${ext.name}(${ext.name}_ref)`);
       const combined = [...inits, ...extInits];
       if (combined.length > 0) {
@@ -37605,6 +41531,7 @@ var CodeGenerator = class _CodeGenerator {
     this.currentProgramName = prog.name;
     if (astProg) {
       this.enterScope(astProg.varBlocks);
+      this.emitTempResets(astProg.varBlocks);
     }
     if (astProg && astProg.body.length > 0) {
       this.generateStatements(astProg.body);
@@ -37735,6 +41662,9 @@ var CodeGenerator = class _CodeGenerator {
   }
   /** Program constructor body: the global start-up work, then the program's instances. */
   emitProgramFbInit(prog, astProg) {
+    this.withFaultPou(prog.name, prog.name, () => this.emitProgramFbInitBody(prog, astProg));
+  }
+  emitProgramFbInitBody(prog, astProg) {
     if (!this.fbInitPlan)
       return;
     if (this.fbInitGlobalsEmitted)
@@ -37837,11 +41767,20 @@ var CodeGenerator = class _CodeGenerator {
     return [...config.globalVars].sort((a, b) => (rank.get(a.name.toUpperCase()) ?? 0) - (rank.get(b.name.toUpperCase()) ?? 0));
   }
   emitFileScopeGlobals() {
+    this.atNamespaceScope = true;
+    try {
+      this.withFaultPou("VAR_GLOBAL", void 0, () => this.emitFileScopeGlobalsBody());
+    } finally {
+      this.atNamespaceScope = false;
+    }
+  }
+  emitFileScopeGlobalsBody() {
     if (!this.projectModel)
       return;
     const seen = /* @__PURE__ */ new Set();
     let emittedAny = false;
     for (const config of this.projectModel.configurations) {
+      this.faultPou = config.name;
       this.configGlobalInitNames = new Set(config.globalVars.map((g) => g.name.toUpperCase()));
       for (const gvar of this.orderedConfigurationGlobals(config)) {
         const key = gvar.name.toUpperCase();
@@ -38056,6 +41995,15 @@ var CodeGenerator = class _CodeGenerator {
         const memberInstanceCall = stmt.call.kind === "MethodCallExpression" ? this.memberInstanceCall(stmt.call) : void 0;
         if (memberInstanceCall !== void 0) {
           this.generateFBInvocation(memberInstanceCall, indent);
+        } else if (stmt.call.kind === "MethodCallExpression" && this.hasEnEno(stmt.call.arguments)) {
+          const { enExpr, enoVar, filteredArgs } = this.extractEnEno(stmt.call.arguments);
+          const callExpr = this.generateMethodCallExpression({
+            ...stmt.call,
+            arguments: filteredArgs
+          });
+          this.emitEnEnoWrapper(indent, enExpr, enoVar, (bi) => {
+            this.emit(`${bi}${callExpr};`);
+          });
         } else if (stmt.call.kind === "MethodCallExpression") {
           this.emit(`${indent}${this.generateMethodCallExpression(stmt.call)};`);
         } else {
@@ -38124,6 +42072,9 @@ var CodeGenerator = class _CodeGenerator {
         this.emit(`${indent}strucpp::iec_delete(${this.generateExpression(stmt.pointer)});`);
         break;
       case "AssertCall":
+        for (const line of this.assertEmitter?.(stmt, indent) ?? []) {
+          this.emit(line);
+        }
         break;
       default: {
         const _exhaustive = stmt;
@@ -38148,6 +42099,20 @@ var CodeGenerator = class _CodeGenerator {
    * ST: target := value;  →  C++: target = value;
    */
   generateAssignmentStatement(stmt, indent) {
+    if ((stmt.value.kind === "FunctionCallExpression" || stmt.value.kind === "MethodCallExpression") && this.hasEnEno(stmt.value.arguments)) {
+      const { enExpr, enoVar, filteredArgs } = this.extractEnEno(stmt.value.arguments);
+      const stripped = {
+        ...stmt,
+        value: { ...stmt.value, arguments: filteredArgs }
+      };
+      const storeReturns = this.interfaceReturnMethod && this.currentFunctionName !== void 0 && this.generateLvalue(stmt.target) === `${this.currentFunctionName}_result`;
+      this.emitEnEnoWrapper(indent, enExpr, enoVar, (bi) => {
+        if (storeReturns && enoVar !== null)
+          this.emit(`${bi}${enoVar} = true;`);
+        this.generateAssignmentStatement(stripped, bi);
+      });
+      return;
+    }
     const propWrite = this.detectPropertyWrite(stmt.target);
     if (propWrite) {
       const value2 = this.generateExpression(stmt.value);
@@ -38177,31 +42142,110 @@ var CodeGenerator = class _CodeGenerator {
       this.emit(`${indent}${baseCode} = (${baseCode} & ~(1ULL << ${bitIdx})) | ((${value2} ? 1ULL : 0ULL) << ${bitIdx});`);
       return;
     }
-    if (stmt.value.kind === "FunctionCallExpression" && this.hasEnEno(stmt.value.arguments)) {
-      const { enExpr, enoVar, filteredArgs } = this.extractEnEno(stmt.value.arguments);
-      const target2 = this.generateLvalue(stmt.target);
-      const modifiedCall = {
-        ...stmt.value,
-        arguments: filteredArgs
-      };
-      const callExpr = this.generateFunctionCallExpression(modifiedCall);
-      this.emitEnEnoWrapper(indent, enExpr, enoVar, (bi) => {
-        this.emit(`${bi}${target2} = ${callExpr};`);
-      });
-      return;
-    }
     if (stmt.target.kind === "VariableExpression" && stmt.target.fieldAccess.length === 0 && !stmt.target.isDereference && this.programExternals.has(stmt.target.name.toUpperCase())) {
       const value2 = this.generateExpression(stmt.value);
-      this.emit(`${indent}${stmt.target.name}->write(${value2});`);
+      const checked2 = this.subrangeStore(stmt.target, value2, stmt.value);
+      this.emit(`${indent}${stmt.target.name}->write(${checked2 ?? value2});`);
       return;
     }
     const target = this.generateLvalue(stmt.target);
-    const value = this.generateExpression(stmt.value);
+    const value = this.ltimeIntoTime(this.temporalBase(stmt.target), stmt.value, this.generateExpression(stmt.value));
     if (this.interfaceReturnMethod && this.currentFunctionName && target === `${this.currentFunctionName}_result`) {
       this.emit(`${indent}return ${value};`);
       return;
     }
-    this.emit(`${indent}${target} = ${value};`);
+    const checked = this.subrangeStore(stmt.target, value, stmt.value);
+    this.emit(`${indent}${target} = ${checked ?? value};`);
+  }
+  /**
+   * A store into a variable of a subrange type: the value through
+   * `iec_subrange_store`, which faults when it is outside the range.
+   * Undefined for any other target.
+   */
+  subrangeStore(target, value, valueExpr) {
+    if (target.kind !== "VariableExpression")
+      return void 0;
+    const upper = target.name.toUpperCase();
+    const hasAccess = target.subscripts.length > 0 || target.fieldAccess.length > 0 || target.isDereference || target.accessChain !== void 0 && target.accessChain.length > 0;
+    const root2 = this.currentScopeVarTypeRefs.get(upper) ?? (this.currentFunctionName?.toUpperCase() === upper && this.currentFunctionResultType !== void 0 ? {
+      name: this.currentFunctionResultType,
+      referenceKind: "none"
+    } : void 0) ?? this.globalVarTypeRef(upper);
+    if (root2 === void 0)
+      return void 0;
+    const type = hasAccess ? resolveAccessType(root2, target, this.accessLookup) : root2;
+    const shown = [target.name, ...target.fieldAccess].join(".");
+    return this.subrangeChecked(type, value, valueExpr, shown, target);
+  }
+  /**
+   * A VAR_INPUT of a subrange type, checked on entry to the FUNCTION, METHOD or
+   * FUNCTION_BLOCK: the caller stored its argument into it.
+   */
+  emitSubrangeInputChecks(blocks) {
+    for (const block of blocks) {
+      if (block.blockType !== "VAR_INPUT")
+        continue;
+      for (const decl of block.declarations) {
+        for (const name of decl.names) {
+          const member = this.localCppName(name);
+          const checked = this.subrangeChecked(decl.type, member, void 0, name, decl);
+          if (checked !== void 0)
+            this.emit(`    ${member} = ${checked};`);
+        }
+      }
+    }
+  }
+  /** The declared type of a global (a global variable list's or a CONFIGURATION's) of this name. */
+  globalVarTypeRef(upper) {
+    const blocks = [
+      ...this.ast?.globalVarBlocks ?? [],
+      ...this.ast?.configurations.flatMap((c) => c.varBlocks) ?? []
+    ];
+    for (const block of blocks) {
+      for (const decl of block.declarations) {
+        if (decl.names.some((n) => n.toUpperCase() === upper))
+          return decl.type;
+      }
+    }
+    return void 0;
+  }
+  /** The subrange TYPE a declared type is, through aliases; undefined for any other. */
+  subrangeTypeOf(type) {
+    if (type === void 0 || type.arrayDimensions !== void 0 || (type.referenceKind ?? "none") !== "none") {
+      return void 0;
+    }
+    let name = type.name.toUpperCase();
+    for (let i = 0; i < 32; i++) {
+      const current = name;
+      const decl = this.ast?.types.find((t) => t.name.toUpperCase() === current);
+      if (decl === void 0)
+        return void 0;
+      if (decl.definition.kind === "SubrangeDefinition")
+        return decl;
+      if (decl.definition.kind !== "TypeReference" || decl.definition.arrayDimensions !== void 0) {
+        return void 0;
+      }
+      name = decl.definition.name.toUpperCase();
+    }
+    return void 0;
+  }
+  /**
+   * `value`, stored into `shown` of declared type `type`, checked against
+   * its range when that is a subrange: undefined for any other type. An
+   * integer literal inside the range needs no check.
+   */
+  subrangeChecked(type, value, valueExpr, shown, site) {
+    const decl = this.subrangeTypeOf(type);
+    if (decl === void 0 || decl.definition.kind !== "SubrangeDefinition") {
+      return void 0;
+    }
+    const constant2 = valueExpr === void 0 ? void 0 : exactIntegerValue(valueExpr);
+    const lo = exactIntegerValue(decl.definition.lowerBound);
+    const hi = exactIntegerValue(decl.definition.upperBound);
+    if (constant2 !== void 0 && lo !== void 0 && hi !== void 0 && constant2 >= lo && constant2 <= hi) {
+      return void 0;
+    }
+    return `strucpp::iec_subrange_store(${value}, ::strucpp::${decl.name}_MIN, ::strucpp::${decl.name}_MAX, "${shown}", ${this.faultSite(site)})`;
   }
   /**
    * Emit a write to a composite / array shared global (VAR_EXTERNAL to a
@@ -38215,7 +42259,8 @@ var CodeGenerator = class _CodeGenerator {
    */
   emitCompositeGlobalWrite(target, valueExpr, indent) {
     const tmp = `__gwv_${this.tempVarCounter++}`;
-    const value = this.generateExpression(valueExpr);
+    const generated = this.generateExpression(valueExpr);
+    const value = this.subrangeStore(target, generated, valueExpr) ?? generated;
     const inner = indent + this.options.indent;
     this.emit(`${indent}{`);
     this.emit(`${inner}auto ${tmp} = ${value};`);
@@ -38291,10 +42336,15 @@ var CodeGenerator = class _CodeGenerator {
    * global under its lock, a UNION member through its proxy (its value as the
    * member's field type, so it binds the callee's `T&`).
    */
-  inOutCopy({ value: arg, cppType, once }, tmp) {
+  inOutCopy({ value: arg, cppType, once, addressInto }, tmp) {
     const read = this.generateVariableExpression(arg);
     const copyIn = arg.unionMember === true ? `union_value(${read})` : read;
     const upper = arg.name.toUpperCase();
+    if (addressInto !== void 0 && cppType !== void 0) {
+      const out = this.addressAsInteger(addressInto, tmp);
+      const store = this.bitStore(arg, out) ?? (this.compositeExternals.has(upper) ? this.compositeGlobalStore(arg, out) : this.programExternals.has(upper) && arg.fieldAccess.length === 0 && !arg.isDereference ? `${arg.name}->write(${out});` : `${read} = ${out};`);
+      return { declaration: `${cppType} ${tmp};`, copyOut: store };
+    }
     const bitStore = this.bitStore(arg, tmp);
     const plainLvalue = bitStore === void 0 && !arg.isDereference && arg.accessChain?.some((s) => s.kind === "dereference") !== true && this.currentScopeVarRefKinds.get(upper) !== "reference_to";
     const copyOut = bitStore !== void 0 ? bitStore : this.compositeExternals.has(upper) ? this.compositeGlobalStore(arg, tmp) : this.programExternals.has(upper) && arg.fieldAccess.length === 0 && !arg.isDereference ? `${arg.name}->write(${tmp});` : `${read} = ${tmp};`;
@@ -38406,8 +42456,9 @@ var CodeGenerator = class _CodeGenerator {
     const isCompositeGlobal = (e) => e.kind === "VariableExpression" && !e.isDereference && this.compositeExternals.has(e.name.toUpperCase()) && this.lastFieldBitIndex(e) === void 0;
     const isUnionMember = (e) => e.kind === "VariableExpression" && e.unionMember === true;
     const rendersBound = (e) => e.kind === "VariableExpression" && !e.isDereference && (this.programExternals.has(e.name.toUpperCase()) || this.currentScopeVarRefKinds.get(e.name.toUpperCase()) === "reference_to");
-    const varBlocks = this.calleeVarBlocks(call) ?? this.librarySizedStringBlocks(call) ?? (call.arguments.some((a) => a.inOutCopy === true) && call.kind === "FunctionCallExpression" ? this.libraryFunctionDeclaration(call.functionName)?.varBlocks : void 0);
-    const hasSizedStringParam = varBlocks?.some((b) => (b.blockType === "VAR_OUTPUT" || b.blockType === "VAR_IN_OUT") && b.declarations.some((d) => this.sizedStringLength(d.type) !== void 0 || this.arrayStringElementLength(d.type) !== void 0 || this.vlaStringElementCpp(d.type) !== void 0)) === true;
+    const calleeBlocks = this.calleeVarBlocks(call);
+    const varBlocks = calleeBlocks ?? this.librarySizedStringBlocks(call) ?? (call.arguments.some((a) => a.inOutCopy === true) && call.kind === "FunctionCallExpression" ? this.libraryFunctionDeclaration(call.functionName)?.varBlocks : void 0);
+    const hasSizedStringParam = varBlocks?.some((b) => (b.blockType === "VAR_OUTPUT" || b.blockType === "VAR_IN_OUT") && b.declarations.some((d) => this.sizedStringLength(d.type) !== void 0 || isPlainString(d.type) || this.arrayStringElementLength(d.type) !== void 0 || this.vlaStringElementCpp(d.type) !== void 0)) === true;
     if (!hasSizedStringParam && !call.arguments.some((a) => isCompositeGlobal(a.value) || isUnionMember(a.value) || rendersBound(a.value) || a.inOutCopy === true)) {
       return [];
     }
@@ -38438,9 +42489,15 @@ var CodeGenerator = class _CodeGenerator {
       const value = arg.value;
       if (value.kind !== "VariableExpression")
         continue;
+      const otherLength = isPlainString(param.type) && !isCompositeGlobal(value) && !isUnionMember(value) && !rendersBound(value) && this.stringLengthOf(value) !== void 0;
       if (param.blockType === "VAR_IN_OUT" && !arg.isOutput) {
         const sized = this.sizedStringLength(param.type);
-        if (arg.inOutCopy === true || sized !== void 0 && !isCompositeGlobal(value) && !isUnionMember(value) && !rendersBound(value) && !this.hasStringLength(value, sized)) {
+        if (arg.inOutCopy === true || otherLength || sized !== void 0 && !isCompositeGlobal(value) && !isUnionMember(value) && !rendersBound(value) && !this.hasStringLength(value, sized)) {
+          result.push({
+            value,
+            cppType: this.inOutParamType(param.type)
+          });
+        } else if (!isCompositeGlobal(value) && !isUnionMember(value) && !rendersBound(value) && this.fixedStringElementDiffers(param.type, value)) {
           result.push({
             value,
             cppType: this.inOutParamType(param.type)
@@ -38460,11 +42517,13 @@ var CodeGenerator = class _CodeGenerator {
             this.warnSharedGlobalInOut(value.name, param.name, call);
           }
         }
-      } else if (param.blockType === "VAR_OUTPUT" && !isCompositeGlobal(value) && !isUnionMember(value) && (arg.inOutCopy === true || this.sizedStringLength(param.type) !== void 0 && !this.hasStringLength(value, this.sizedStringLength(param.type)) || this.stringElementLengthDiffers(param.type, value))) {
+      } else if (param.blockType === "VAR_OUTPUT" && !isCompositeGlobal(value) && !isUnionMember(value) && (arg.inOutCopy === true || otherLength || this.sizedStringLength(param.type) !== void 0 && !this.hasStringLength(value, this.sizedStringLength(param.type)) || this.stringElementLengthDiffers(param.type, value))) {
+        const outType = arg.addressInto !== void 0 && calleeBlocks === void 0 ? this.libraryOutputReferenceType(call, param.name) : void 0;
         result.push({
           value,
-          cppType: this.inOutParamType(param.type),
-          once: true
+          cppType: this.inOutParamType(outType ?? param.type),
+          once: true,
+          ...arg.addressInto !== void 0 ? { addressInto: arg.addressInto } : {}
         });
       } else if ((arg.isOutput || param.blockType === "VAR_OUTPUT") && (isCompositeGlobal(value) || isUnionMember(value))) {
         result.push({ value });
@@ -38510,8 +42569,31 @@ var CodeGenerator = class _CodeGenerator {
       return void 0;
     }
     const blocks = this.libraryFunctionDeclaration(call.functionName)?.varBlocks;
-    const sized = blocks?.some((b) => (b.blockType === "VAR_OUTPUT" || b.blockType === "VAR_IN_OUT") && b.declarations.some((d) => this.sizedStringLength(d.type) !== void 0));
-    return sized === true ? blocks : void 0;
+    const byReference = (blocks ?? []).filter((b) => b.blockType === "VAR_OUTPUT" || b.blockType === "VAR_IN_OUT");
+    const not254 = (element) => element !== void 0 && !element.endsWith("(254)");
+    const sized = byReference.some((b) => b.declarations.some((d) => this.sizedStringLength(d.type) !== void 0 || not254(this.arrayStringElementLength(d.type)) || this.vlaStringElementCpp(d.type) !== void 0 && d.type.elementMaxLength !== void 0 && String(d.type.elementMaxLength) !== "254"));
+    if (sized)
+      return blocks;
+    const stringParam = byReference.some((b) => b.declarations.some((d) => isPlainString(d.type) || this.arrayStringElementLength(d.type) !== void 0 || this.vlaStringElementCpp(d.type) !== void 0));
+    return stringParam && call.arguments.some((a) => this.holdsOtherLength(a.value)) ? blocks : void 0;
+  }
+  /** True when `value` is a variable of a STRING, or an ARRAY of STRING, of a known length other than 254. */
+  holdsOtherLength(value) {
+    if (value.kind !== "VariableExpression")
+      return false;
+    const type = this.variableTypeOf(value);
+    if (type === void 0)
+      return false;
+    if (this.sizedStringLength(type) !== void 0)
+      return true;
+    const element = this.arrayStringElementLength(type);
+    return element !== void 0 && !element.endsWith("(254)");
+  }
+  /** The declared type of `value` after its subscripts and fields; undefined when unknown. */
+  variableTypeOf(value) {
+    const hasAccess = value.subscripts.length > 0 || value.fieldAccess.length > 0 || value.isDereference || value.accessChain !== void 0 && value.accessChain.length > 0;
+    const root2 = this.currentScopeVarTypeRefs.get(value.name.toUpperCase()) ?? this.namespaceGlobalTypeRef(value.name.toUpperCase());
+    return root2 !== void 0 && hasAccess ? resolveAccessType(root2, value, this.accessLookup) : root2;
   }
   /**
    * The element length (upper case text, "254" by default) of an ARRAY of
@@ -38587,6 +42669,29 @@ var CodeGenerator = class _CodeGenerator {
     return type === void 0 || this.arrayStringElementLength(type) !== want;
   }
   /**
+   * True when `param` is a fixed ARRAY of STRING and `value` an ARRAY of
+   * STRING whose element length is known and differs.
+   */
+  fixedStringElementDiffers(param, value) {
+    if (VLA_TYPE_NAME.test(param.name))
+      return false;
+    const want = this.arrayStringElementLength(param);
+    if (want === void 0)
+      return false;
+    const type = this.variableTypeOf(value);
+    if (type === void 0 || VLA_TYPE_NAME.test(type.name))
+      return false;
+    const have = this.arrayStringElementLength(type);
+    return have !== void 0 && have !== want;
+  }
+  /** The length of a STRING or WSTRING variable other than 254; undefined otherwise or when unknown. */
+  stringLengthOf(value) {
+    const hasAccess = value.subscripts.length > 0 || value.fieldAccess.length > 0 || value.isDereference || value.accessChain !== void 0 && value.accessChain.length > 0;
+    const root2 = this.currentScopeVarTypeRefs.get(value.name.toUpperCase()) ?? this.namespaceGlobalTypeRef(value.name.toUpperCase());
+    const type = root2 !== void 0 && hasAccess ? resolveAccessType(root2, value, this.accessLookup) : root2;
+    return type === void 0 ? void 0 : this.sizedStringLength(type);
+  }
+  /**
    * True when `value` is a plain variable declared as a STRING or WSTRING of
    * `length` (the length text as written); false when unknown.
    */
@@ -38639,13 +42744,29 @@ var CodeGenerator = class _CodeGenerator {
     } finally {
       this.keepReferenceWrapper = false;
     }
-    const source = this.addressedOperand(stmt.source, "REF=", stmt);
+    const source = this.refWrapper(this.addressedOperand(stmt.source, "REF=", stmt));
     const targetKind = stmt.target.kind === "VariableExpression" ? this.refAssignTargetKind(stmt.target) : void 0;
+    const external = this.externalRefAssignTarget(stmt.target);
+    if (external !== void 0) {
+      const rebind = targetKind === "ref_to" ? `(*__glk) = REF(${source})` : `(*__glk).bind(${source})`;
+      this.emit(`${indent}${external}->with_lock([&](auto* __glk) { ${rebind}; });`);
+      return;
+    }
     if (targetKind === "ref_to") {
       this.emit(`${indent}${target} = REF(${source});`);
     } else {
       this.emit(`${indent}${target}.bind(${source});`);
     }
+  }
+  /** The C++ name of a REF= target that is a whole VAR_EXTERNAL of a program, if it is one. */
+  externalRefAssignTarget(target) {
+    if (target.kind !== "VariableExpression")
+      return void 0;
+    const bare = target.subscripts.length === 0 && target.fieldAccess.length === 0 && !target.isDereference && (target.accessChain?.length ?? 0) === 0;
+    if (!bare || !this.programExternals.has(target.name.toUpperCase())) {
+      return void 0;
+    }
+    return this.resolveVariableBaseName(target.name);
   }
   /**
    * The reference kind of a REF= target: a variable's own, or for a member or
@@ -38888,6 +43009,8 @@ var CodeGenerator = class _CodeGenerator {
    */
   /** When set, a RETURN returns this C++ value: `true` in a TEST body, which passes. */
   returnValueOverride;
+  /** Test files: the C++ lines of an ASSERT_* met inside IF, a loop or CASE. */
+  assertEmitter;
   generateReturnStatement(indent) {
     if (this.returnValueOverride !== void 0) {
       this.emit(`${indent}return ${this.returnValueOverride};`);
@@ -38944,6 +43067,14 @@ var CodeGenerator = class _CodeGenerator {
    * Returns the C++ expression as a string.
    */
   generateExpression(expr) {
+    const code = this.generateExpressionUnconverted(expr);
+    return expr.addressInto === void 0 ? code : this.addressAsInteger(expr.addressInto, code);
+  }
+  /** An address (a pointer, a REF, a POINTER TO value) as the 64-bit integer type `typeName`. */
+  addressAsInteger(typeName2, code) {
+    return `static_cast<${this.typeCodeGen.mapTypeToCpp(typeName2)}>(strucpp::address_bits(${code}))`;
+  }
+  generateExpressionUnconverted(expr) {
     switch (expr.kind) {
       case "LiteralExpression":
         return this.generateLiteralExpression(expr);
@@ -38956,7 +43087,7 @@ var CodeGenerator = class _CodeGenerator {
       case "UnaryExpression":
         return this.generateUnaryExpression(expr);
       case "ParenthesizedExpression":
-        return `(${this.generateExpression(expr.expression)})`;
+        return parenthesizedCpp(expr, this.generateExpression(expr.expression));
       case "FunctionCallExpression":
         return this.wrapGlobalInOutCall(expr, () => this.generateFunctionCallExpression(expr));
       case "MethodCallExpression":
@@ -39013,25 +43144,20 @@ var CodeGenerator = class _CodeGenerator {
         const wEscaped = translateIECString(wInner, true);
         return `u"${wEscaped}"`;
       }
-      case "TIME":
-      case "LTIME": {
-        const timeVal = parseTimeLiteral(String(expr.value));
-        return `${timeVal.exact}LL`;
-      }
       case "CHAR":
       case "WCHAR": {
         const { wide, units } = charLiteralUnits(expr.rawValue);
         return `static_cast<${wide ? "WCHAR_t" : "CHAR_t"}>(${Math.max(units[0] ?? 0, 0)})`;
       }
+      case "TIME":
+      case "LTIME":
       case "DATE":
       case "LDATE":
-        return `${parseDateLiteralToDays(String(expr.value))}LL`;
       case "TIME_OF_DAY":
       case "LTIME_OF_DAY":
-        return `${parseTodLiteralToNs(String(expr.value))}LL`;
       case "DATE_AND_TIME":
       case "LDATE_AND_TIME":
-        return `${parseDtLiteralToNs(String(expr.value))}LL`;
+        return temporalLiteralCpp(expr.literalType, String(expr.value));
       case "NULL":
         return "IEC_NULL";
       default:
@@ -39059,20 +43185,23 @@ var CodeGenerator = class _CodeGenerator {
       return this.generateVariableExpression(selfProperty);
     const nameUpper = expr.name.toUpperCase();
     if (!this.keepReferenceWrapper && this.isPlainStringReference(expr)) {
-      return `${this.resolveVariableBaseName(expr.name)}.target()`;
+      return this.refTarget(this.resolveVariableBaseName(expr.name), expr.name, expr);
     }
     const reachedProgram = this.reachedProgramNamed(expr.name);
     if (reachedProgram !== void 0) {
       return this.renderAccessTail(this.sharedProgramInstance(reachedProgram), expr, nameUpper, reachedProgram);
     }
     if (this.programExternals.has(nameUpper) && !this.compositeExternals.has(nameUpper) && expr.fieldAccess.length === 0 && !expr.isDereference) {
-      return `${expr.name}->read()`;
+      return `${this.externalPointer(expr.name)}->read()`;
+    }
+    if (this.programExternals.has(nameUpper) && !this.compositeExternals.has(nameUpper) && !expr.isDereference && expr.subscripts.length === 0 && expr.fieldAccess.length > 0 && (expr.namedBitIndex === true || expr.fieldAccess.every((f) => /^\d+$/.test(f)))) {
+      return this.renderAccessTail(`${this.externalPointer(expr.name)}->read()`, expr, nameUpper);
     }
     if (this.programExternals.has(nameUpper) && expr.isDereference) {
-      return this.renderAccessTail(`${expr.name}->read()`, expr, nameUpper);
+      return this.renderAccessTail(`${this.externalPointer(expr.name)}->read()`, expr, nameUpper);
     }
     if (this.compositeExternals.has(nameUpper) && !expr.isDereference) {
-      const ptr = this.resolveVariableBaseName(expr.name);
+      const ptr = this.externalPointer(expr.name);
       const inner = this.renderAccessTail("(*__glk)", expr, nameUpper);
       return `${ptr}->with_lock([&](auto* __glk){ return ${inner}; })`;
     }
@@ -39177,9 +43306,16 @@ var CodeGenerator = class _CodeGenerator {
         return `${expr.name}::${expr.fieldAccess[0]}`;
       }
     }
-    if (this.reachesThroughReference(expr))
-      result = `${result}.target()`;
-    return this.renderAccessTail(result, expr, nameUpper);
+    if (this.reachesThroughReference(expr)) {
+      result = this.refTarget(result, expr.name, expr);
+    } else if (!this.keepReferenceWrapper && this.isPlainReference(expr)) {
+      return this.refTarget(result, expr.name, expr);
+    }
+    const rendered = this.renderAccessTail(result, expr, nameUpper);
+    if (!this.keepReferenceWrapper && this.accessEndsInReference(expr)) {
+      return this.refTarget(rendered, [expr.name, ...expr.fieldAccess].join("."), expr);
+    }
+    return rendered;
   }
   /**
    * The object REF / ADR / REF= takes the address of: a shared global's
@@ -39217,8 +43353,52 @@ var CodeGenerator = class _CodeGenerator {
   localCppName(name) {
     return this.memberMangledNames.get(name.toUpperCase()) ?? name;
   }
+  /** The object a REFERENCE TO `base` (named `name`) is bound to; unbound, a fault naming the site. */
+  refTarget(base, name, node) {
+    if (this.refWrapper(base) !== base)
+      return base;
+    return `strucpp::iec_ref(${base}, "${name.toUpperCase()}", ${this.faultSite(node)})`;
+  }
+  /** A REFERENCE TO itself, from its checked target: what binds another reference to the same object. */
+  refWrapper(generated) {
+    const m = /^strucpp::iec_ref\((.*), "[^"]*", strucpp::iec_site\{"[^"]*", \d+\}\)$/.exec(generated);
+    return m === null ? generated : m[1];
+  }
   /** Set while a REF= target is generated: it names the reference itself. */
   keepReferenceWrapper = false;
+  /**
+   * `s.r`, `a[i]`, `f.r`, `rs.r`, `p^.r`: an access that ends in a REFERENCE TO
+   * member or element, from a variable of the scope or a global.
+   */
+  accessEndsInReference(expr) {
+    const hasAccess = expr.fieldAccess.length > 0 || expr.subscripts.length > 0 || (expr.accessChain?.length ?? 0) > 0;
+    if (!hasAccess)
+      return false;
+    const upper = expr.name.toUpperCase();
+    const root2 = this.currentScopeVarTypeRefs.get(upper) ?? this.globalDeclType(upper);
+    if (root2 === void 0)
+      return false;
+    const type = resolveAccessType(root2, expr, this.accessLookup);
+    return type?.referenceKind === "reference_to";
+  }
+  /** The declared type of a top-level or CONFIGURATION global of this name. */
+  globalDeclType(upper) {
+    for (const block of [
+      ...this.ast?.globalVarBlocks ?? [],
+      ...(this.ast?.configurations ?? []).flatMap((c) => c.varBlocks)
+    ]) {
+      for (const decl of block.declarations) {
+        if (decl.names.some((n) => n.toUpperCase() === upper))
+          return decl.type;
+      }
+    }
+    return void 0;
+  }
+  /** `rr`, a REFERENCE TO variable of the scope, with no access. */
+  isPlainReference(expr) {
+    const upper = expr.name.toUpperCase();
+    return this.currentScopeVarRefKinds.get(upper) === "reference_to" && !this.isCurrentFunctionResult(upper) && !expr.isDereference && expr.fieldAccess.length === 0 && expr.subscripts.length === 0 && (expr.accessChain?.length ?? 0) === 0;
+  }
   /** `rr`, a REFERENCE TO STRING / WSTRING variable of the scope, with no access. */
   isPlainStringReference(expr) {
     const upper = expr.name.toUpperCase();
@@ -39280,14 +43460,14 @@ var CodeGenerator = class _CodeGenerator {
   renderAccessTail(base, expr, nameUpper, baseType) {
     let result = base;
     if (expr.accessChain && expr.accessChain.length > 0) {
-      return this.generateAccessChain(result, expr.accessChain, nameUpper, baseType, expr.namedBitIndex === true);
+      return this.generateAccessChain(result, expr.accessChain, nameUpper, baseType, expr.namedBitIndex === true, expr);
     }
     if (expr.subscripts.length > 1) {
       const args = expr.subscripts.map((sub) => this.generateExpression(sub));
-      result += `.at(${args.join(", ")})`;
+      result = `strucpp::iec_at(${result}, ${this.faultSite(expr)}, ${args.join(", ")})`;
     } else {
       for (const sub of expr.subscripts) {
-        result += `.at(${this.generateExpression(sub)})`;
+        result = `strucpp::iec_at(${result}, ${this.faultSite(expr)}, ${this.generateExpression(sub)})`;
       }
     }
     if (expr.fieldAccess.length > 0) {
@@ -39321,7 +43501,7 @@ var CodeGenerator = class _CodeGenerator {
       }
     }
     if (expr.isDereference) {
-      result = `(*${result})`;
+      result = `(*strucpp::iec_deref(${result}, ${this.faultSite(expr)}))`;
     }
     return result;
   }
@@ -39367,7 +43547,7 @@ var CodeGenerator = class _CodeGenerator {
    * - subscript of 2+ indices: use (idx1, idx2) (multidim Array)
    * - dereference: wrap in (*...)
    */
-  generateAccessChain(base, chain, baseNameUpper, baseType, namedBit = false) {
+  generateAccessChain(base, chain, baseNameUpper, baseType, namedBit = false, site) {
     let result = base;
     let currentType = baseType ?? this.rootVariableType(baseNameUpper);
     let bitOwner = currentType ?? this.bitRootType(baseNameUpper);
@@ -39398,16 +43578,14 @@ var CodeGenerator = class _CodeGenerator {
           break;
         }
         case "subscript": {
-          if (step.indices.length > 1) {
+          if (step.indices.length > 0) {
             const args = step.indices.map((idx) => this.generateExpression(idx));
-            result += `.at(${args.join(", ")})`;
-          } else if (step.indices.length === 1) {
-            result += `.at(${this.generateExpression(step.indices[0])})`;
+            result = `strucpp::iec_at(${result}, ${this.faultSite(step.indices[0])}, ${args.join(", ")})`;
           }
           break;
         }
         case "dereference": {
-          result = `(*${result})`;
+          result = site !== void 0 ? `(*strucpp::iec_deref(${result}, ${this.faultSite(site)}))` : `(*${result})`;
           break;
         }
       }
@@ -39433,6 +43611,19 @@ var CodeGenerator = class _CodeGenerator {
     "<=": "<=",
     ">=": ">="
   };
+  /** A type name through the unit's aliases, upper case. */
+  stringAliasBase(name) {
+    let upper = name.toUpperCase();
+    for (let i = 0; i < 32; i++) {
+      const current = upper;
+      const def = this.ast?.types.find((t) => t.name.toUpperCase() === current)?.definition;
+      if (def?.kind !== "TypeReference" || def.arrayDimensions !== void 0) {
+        return upper;
+      }
+      upper = def.name.toUpperCase();
+    }
+    return upper;
+  }
   /**
    * Generate C++ for a binary expression.
    */
@@ -39461,15 +43652,51 @@ var CodeGenerator = class _CodeGenerator {
       }
     }
     if (expr.operator === "AND" || expr.operator === "OR" || expr.operator === "XOR") {
+      if (expr.computeAs !== void 0) {
+        const t = `${expr.computeAs}_t`;
+        return `static_cast<${t}>(${left}) ${cppOp} static_cast<${t}>(${right})`;
+      }
       return `(${left}) ${cppOp} (${right})`;
     }
     if (isComparison(expr.operator)) {
+      const texts = expr.comparesReferences === true ? void 0 : stringComparisonCpp(expr.left, expr.right, left, right, cppOp, (name) => this.stringAliasBase(name));
+      if (texts !== void 0)
+        return texts;
       const l = isComparisonExpr(expr.left) ? `(${left})` : left;
       const r = isComparisonExpr(expr.right) ? `(${right})` : right;
       return `${l} ${cppOp} ${r}`;
     }
+    if (expr.operator === "+" || expr.operator === "-") {
+      const bytes = this.adrArithmetic(expr);
+      if (bytes !== void 0)
+        return bytes;
+    }
+    const lk = this.temporalBase(expr.left);
+    const rk = this.temporalBase(expr.right);
+    if (expr.operator === "MOD" && (lk === "TOD" || lk === "DT") && rk === "TIME") {
+      return `iec_temporal_mod_period(${left}, ${right})`;
+    }
+    if ((expr.operator === "MOD" || expr.operator === "/") && lk !== rk && (lk === "TIME" || lk === "LTIME") && (rk === "TIME" || rk === "LTIME")) {
+      const wl = lk === "TIME" ? `TO_LTIME(${left})` : left;
+      const wr = rk === "TIME" ? `TO_LTIME(${right})` : right;
+      return expr.operator === "MOD" ? `iec_mod(${wl}, ${wr})` : `iec_div(${wl}, ${wr}, ${this.faultSite(expr)})`;
+    }
+    if (expr.operator === "MOD" && this.isTemporal32(expr.left)) {
+      return `iec_temporal_mod(${left}, ${right})`;
+    }
+    if (expr.operator === "/" && !isNonZeroIntegerLiteral(expr.right) && this.isTemporal32(expr.left)) {
+      return `iec_temporal_div(${left}, ${right}, ${this.faultSite(expr)})`;
+    }
+    if (expr.operator === "/" && !isNonZeroIntegerLiteral(expr.right) && this.isIntegerExpression(expr)) {
+      return `iec_div(${left}, ${right}, ${this.faultSite(expr)})`;
+    }
     if (expr.operator === "MOD" && !isNonZeroIntegerLiteral(expr.right)) {
       return `iec_mod(${left}, ${right})`;
+    }
+    const wrapped = WRAPPING_ARITHMETIC[expr.operator];
+    const computed = wrapped === void 0 || this.isAddressArithmetic(expr) ? void 0 : this.wrappingComputeType(expr);
+    if (computed !== void 0) {
+      return `strucpp::${wrapped}<${computed}_t>({${left}, ${right}})`;
     }
     return `${left} ${cppOp} ${right}`;
   }
@@ -39479,7 +43706,31 @@ var CodeGenerator = class _CodeGenerator {
    * moves it by whole days; undefined for any other operation.
    */
   dateArithmetic(expr, left, right) {
-    return dateArithmeticCpp(expr.operator, this.temporalBase(expr.left), this.temporalBase(expr.right), left, right);
+    return temporalArithmeticCpp(expr.operator, this.temporalBase(expr.left), this.temporalBase(expr.right), left, right);
+  }
+  /** A TIME, DATE, TOD or DT operand (the 32-bit temporal types). */
+  isTemporal32(e) {
+    const base = this.temporalBase(e);
+    return base === "TIME" || base === "DATE" || base === "TOD" || base === "DT";
+  }
+  /**
+   * An LTIME stored in a TIME (a timer's PT takes an LTIME preset): the
+   * value truncated to ms and wrapped to 32 bits. Otherwise `code` unchanged.
+   */
+  ltimeIntoTime(targetType, value, code) {
+    return targetType === "TIME" && this.temporalBase(value) === "LTIME" ? `LTIME_TO_TIME_VALUE(static_cast<int64_t>(${code}))` : code;
+  }
+  /** The declared result type of the FUNCTION or METHOD being generated. */
+  currentResultTypeName() {
+    const upper = this.currentFunctionName?.toUpperCase();
+    if (upper === void 0 || !this.ast)
+      return void 0;
+    const fn = this.ast.functions.find((f) => f.name.toUpperCase() === upper);
+    if (fn)
+      return fn.returnType.name.toUpperCase();
+    const owner = (this.currentFBName ?? this.currentProgramName)?.toUpperCase();
+    const pou = this.ast.functionBlocks.find((f) => f.name.toUpperCase() === owner) ?? this.ast.programs.find((p) => p.name.toUpperCase() === owner);
+    return pou?.methods.find((m) => m.name.toUpperCase() === upper)?.returnType?.name.toUpperCase();
   }
   /**
    * The canonical elementary type of a temporal operand, through aliases, a
@@ -39503,7 +43754,15 @@ var CodeGenerator = class _CodeGenerator {
     if (name === void 0 && e.kind === "FunctionCallExpression" && e.functionName.toUpperCase() === "CONCAT_DATE_TOD") {
       name = "DT";
     }
-    for (let i = 0; i < 32 && name !== void 0; i++) {
+    if (name === void 0 && e.kind === "VariableExpression" && e.fieldAccess.length === 0 && e.subscripts.length === 0 && this.currentFunctionName?.toUpperCase() === e.name.toUpperCase()) {
+      name = this.currentResultTypeName();
+    }
+    return name === void 0 ? void 0 : this.elementaryThroughAliases(name);
+  }
+  /** The canonical elementary name a type name stands for, through user aliases (`TYPE MyT : TIME`). */
+  elementaryThroughAliases(typeName2) {
+    let name = typeName2.toUpperCase();
+    for (let i = 0; i < 32; i++) {
       const upper = name;
       const def = this.ast?.types.find((d) => d.name.toUpperCase() === upper)?.definition;
       if (def?.kind !== "TypeReference" || def.arrayDimensions !== void 0) {
@@ -39511,7 +43770,7 @@ var CodeGenerator = class _CodeGenerator {
       }
       name = def.name.toUpperCase();
     }
-    return name === void 0 ? void 0 : canonicalElementaryName(name);
+    return canonicalElementaryName(name);
   }
   /** The selected or compared operands of a standard SEL, MUX, LIMIT, MAX or MIN call. */
   selectionOperands(e) {
@@ -39662,6 +43921,10 @@ var CodeGenerator = class _CodeGenerator {
    * or for a variable reached through `^` or a REFERENCE TO, by its
    * declaration. Undefined for anything else.
    */
+  /** The STRUCT type an operand of `=` / `<>` is compared as, if any. */
+  structOperandName(expr) {
+    return this.comparedStructName(expr);
+  }
   comparedStructName(expr) {
     const rt = expr.resolvedType;
     if (rt !== void 0 && "name" in rt && typeof rt.name === "string") {
@@ -39688,7 +43951,7 @@ var CodeGenerator = class _CodeGenerator {
   /** A STRUCT operand as its value: a plain REFERENCE TO is its target. */
   structOperand(expr, generated) {
     if (expr.kind === "VariableExpression" && this.currentScopeVarRefKinds.get(expr.name.toUpperCase()) === "reference_to" && !expr.isDereference && expr.fieldAccess.length === 0 && expr.subscripts.length === 0 && (expr.accessChain?.length ?? 0) === 0) {
-      return `${this.resolveVariableBaseName(expr.name)}.target()`;
+      return this.refTarget(this.resolveVariableBaseName(expr.name), expr.name, expr);
     }
     return generated;
   }
@@ -39723,6 +43986,10 @@ var CodeGenerator = class _CodeGenerator {
     const operand = this.generateExpression(expr.operand);
     switch (expr.operator) {
       case "NOT": {
+        const contextType = untypedNotTarget(expr);
+        if (contextType !== void 0) {
+          return untypedNotCpp(contextType, operand);
+        }
         const opType = this.inferExprType(expr.operand);
         if (opType) {
           const cat = getTypeCategory(opType.toUpperCase());
@@ -39732,8 +43999,13 @@ var CodeGenerator = class _CodeGenerator {
         }
         return `!${operand}`;
       }
-      case "-":
+      case "-": {
+        const computed = expr.operand.kind === "LiteralExpression" ? void 0 : this.wrappingComputeType(expr.operand);
+        if (computed !== void 0) {
+          return `strucpp::iec_neg<${computed}_t>(${operand})`;
+        }
         return `-${operand}`;
+      }
       case "+":
         return `+${operand}`;
     }
@@ -39906,7 +44178,7 @@ var CodeGenerator = class _CodeGenerator {
       if (block.blockType === "VAR_INPUT" || block.blockType === "VAR_IN_OUT" || block.blockType === "VAR_OUTPUT") {
         for (const decl of block.declarations) {
           for (let i = 0; i < decl.names.length; i++) {
-            types.push(decl.type.name.toUpperCase());
+            types.push((decl.type.referenceKind ?? "none") === "none" ? decl.type.name.toUpperCase() : "");
           }
         }
       }
@@ -39927,7 +44199,7 @@ var CodeGenerator = class _CodeGenerator {
       if (!argType)
         continue;
       const paramType = paramTypes[i];
-      if (argType === paramType)
+      if (paramType === "" || argType === paramType)
         continue;
       if (this.isBareLiteral(expr) || this.canImplicitWiden(argType, paramType)) {
         args[i] = `static_cast<IEC_${paramType}>(${args[i]})`;
@@ -39943,16 +44215,11 @@ var CodeGenerator = class _CodeGenerator {
    * Scale the argument of a `TO_*` conversion when a temporal type is on
    * either side of it.
    *
-   * Why this lives in codegen and not in the runtime:
-   *  - `IEC_TIME`, `IEC_LTIME`, `IEC_TOD`, `IEC_LTOD`, `IEC_DT`,
-   *    `IEC_LDT`, `IEC_DATE`, `IEC_LDATE` are all
-   *    `using ... = IECVar<int64_t>` aliases — they collapse to the same
-   *    C++ type after preprocessing.
-   *  - A runtime overload `TO_UINT(IEC_TIME)` therefore CANNOT be
-   *    distinguished from `TO_UINT(IEC_DATE)`, and `TO_DT(seconds)`
-   *    cannot be distinguished from `TO_DT(IEC_DT)`.
-   *  - The IEC type label only survives at the language layer, so the
-   *    scaling has to happen here, before the type identity is erased.
+   * Why this lives in codegen and not in the runtime: the long forms
+   * (`IEC_LTIME`, `IEC_LTOD`, `IEC_LDT`, `IEC_LDATE`) are all
+   * `IECVar<int64_t>`, the type of LINT, so `TO_LDT(nanoseconds)` cannot be
+   * told from `TO_LDT(anLdt)` at run time; the IEC type label survives only
+   * here.
    *
    * The units are CODESYS's, which is what the IEC libraries we ship are
    * written against. From its documentation: DATE, DT and TOD are held in a
@@ -40202,14 +44469,16 @@ var CodeGenerator = class _CodeGenerator {
           fieldAccess: [],
           isDereference: false
         });
-        const receiver = ownerType !== void 0 && this.isInterfaceType(ownerType) ? `itf_ref(${instance()})` : reachedProgram !== void 0 ? this.sharedProgramInstance(reachedProgram) : varType !== void 0 && this.memberMangledNames.has(prefix.toUpperCase()) ? instance() : this.currentScopeVarRefKinds.get(prefix.toUpperCase()) === "reference_to" ? `${instance()}.target()` : prefix;
+        const receiver = ownerType !== void 0 && this.isInterfaceType(ownerType) ? `itf_ref(${instance()})` : reachedProgram !== void 0 ? this.sharedProgramInstance(reachedProgram) : varType !== void 0 && this.memberMangledNames.has(prefix.toUpperCase()) ? instance() : this.currentScopeVarRefKinds.get(prefix.toUpperCase()) === "reference_to" ? this.refTarget(instance(), prefix, expr) : prefix;
         return `${receiver}.${resolvedMethod}(${args2.join(", ")})`;
       }
     }
     const nameUpper = expr.functionName.toUpperCase();
     if (nameUpper === "SUPER" && this.currentFBExtends) {
       const args2 = expr.arguments.map((arg) => this.generateExpression(arg.value));
-      return `${this.currentFBExtends}::operator()(${args2.join(", ")})`;
+      const base = this.ast?.functionBlocks.find((f) => f.name.toUpperCase() === this.currentFBExtends?.toUpperCase());
+      const entry = base !== void 0 && this.fbChainHasTemps(base) ? "__body" : "operator()";
+      return `${this.currentFBExtends}::${entry}(${args2.join(", ")})`;
     }
     const ownMethod = this.ownMethodCalled(expr);
     if (ownMethod) {
@@ -40219,8 +44488,12 @@ var CodeGenerator = class _CodeGenerator {
     const userFunction = this.ast?.functions.some((f) => f.name.toUpperCase() === nameUpper) === true;
     if (!userFunction && expr.libraryFunction === void 0) {
       if (expr.vendorOperator !== void 0 && expr.arguments.length === 1) {
+        const sizedType2 = expr.vendorOperator === "XSIZEOF" ? this.sizeofTypeOperand(expr.arguments[0].value) : void 0;
+        if (sizedType2 !== void 0) {
+          return `static_cast<IEC_ULINT>(${sizedType2})`;
+        }
         const kept = this.keepReferenceWrapper;
-        this.keepReferenceWrapper = expr.vendorOperator === "__ISVALIDREF";
+        this.keepReferenceWrapper = expr.vendorOperator === "__ISVALIDREF" || expr.vendorOperator === "XSIZEOF";
         let arg;
         try {
           arg = this.generateExpression(expr.arguments[0].value);
@@ -40228,6 +44501,24 @@ var CodeGenerator = class _CodeGenerator {
           this.keepReferenceWrapper = kept;
         }
         return vendorOperatorCpp(expr.vendorOperator, arg);
+      }
+      if (nameUpper === "DIV_TIME" && expr.arguments.length === 2 && expr.arguments.every((a) => a.name === void 0 && !a.isOutput) && !isNonZeroIntegerLiteral(expr.arguments[1].value) && this.isTemporal32(expr.arguments[0].value)) {
+        return `iec_temporal_div(${this.generateExpression(expr.arguments[0].value)}, ${this.generateExpression(expr.arguments[1].value)}, ${this.faultSite(expr)})`;
+      }
+      if (nameUpper === "DIVTIME" && expr.arguments.length === 2 && expr.arguments.every((a) => a.name === void 0 && !a.isOutput)) {
+        return `iec_divtime(${this.generateExpression(expr.arguments[0].value)}, ${this.generateExpression(expr.arguments[1].value)}, ${this.faultSite(expr)})`;
+      }
+      if (nameUpper === "DIV" && expr.arguments.length === 2) {
+        const named = (n) => expr.arguments.find((a) => a.name?.toUpperCase() === n)?.value;
+        const dividend = named("IN1") ?? expr.arguments[0].value;
+        const divisor = named("IN2") ?? expr.arguments[1].value;
+        if (expr.arguments.every((a) => !a.isOutput) && this.isIntegerExpression(dividend) && this.isIntegerExpression(divisor) && !isNonZeroIntegerLiteral(divisor)) {
+          return `iec_div(${this.generateExpression(dividend)}, ${this.generateExpression(divisor)}, ${this.faultSite(expr)})`;
+        }
+      }
+      const notType = untypedNotTarget(expr);
+      if (notType !== void 0) {
+        return untypedNotCpp(notType, this.generateExpression(expr.arguments[0].value));
       }
       if (nameUpper === "ADR") {
         const args2 = expr.arguments.map((arg) => this.addressedOperand(arg.value, "ADR", expr));
@@ -40239,14 +44530,30 @@ var CodeGenerator = class _CodeGenerator {
       }
       if (nameUpper === "LOWER_BOUND" || nameUpper === "UPPER_BOUND") {
         const method = nameUpper === "LOWER_BOUND" ? "lower_bound" : "upper_bound";
-        const arrExpr = this.generateExpression(expr.arguments[0].value);
-        if (expr.arguments.length >= 2) {
-          const dimExpr = this.generateExpression(expr.arguments[1].value);
-          return `${arrExpr}.${method}(${dimExpr})`;
+        const args2 = stripEnEno(expr.arguments);
+        const named = (name) => args2.find((a) => a.name?.toUpperCase() === name)?.value;
+        const positional = (idx) => args2[idx]?.name === void 0 ? args2[idx]?.value : void 0;
+        const arr = named("ARR") ?? positional(0);
+        const dim = named("DIM") ?? positional(1);
+        if (args2.length !== 2 || arr === void 0 || dim === void 0) {
+          this.codegenErrors.push({
+            message: `${nameUpper} takes two arguments, the array and the dimension (ARR, DIM)`,
+            line: expr.sourceSpan.startLine,
+            column: expr.sourceSpan.startCol,
+            ...expr.sourceSpan.file !== void 0 ? { file: expr.sourceSpan.file } : {}
+          });
+          return "0";
         }
-        return `${arrExpr}.${method}()`;
+        const arrExpr = this.generateExpression(arr);
+        const dimExpr = this.generateExpression(dim);
+        return `${arrExpr}.${method}(${dimExpr})`;
       }
       const conversion = this.stdRegistry.resolveConversion(nameUpper);
+      if (conversion && expr.arguments.length >= 1) {
+        const text = this.temporalText(conversion.fromType.toUpperCase(), conversion.toType.toUpperCase(), expr.arguments[0].value);
+        if (text !== void 0)
+          return text;
+      }
       if (conversion) {
         const args2 = expr.arguments.map((arg, idx) => {
           const generated = this.bitConversionArg(arg.value, this.generateExpression(arg.value));
@@ -40256,10 +44563,21 @@ var CodeGenerator = class _CodeGenerator {
         });
         return `${conversion.cppName}(${args2.join(", ")})`;
       }
+      if ((nameUpper === "TO_STRING" || nameUpper === "TO_WSTRING") && expr.arguments.length === 1) {
+        const from = this.temporalBase(expr.arguments[0].value);
+        const text = from === void 0 ? void 0 : this.temporalText(from.toUpperCase(), nameUpper.slice(3), expr.arguments[0].value);
+        if (text !== void 0)
+          return text;
+      }
       const stdFunc = this.stdRegistry.lookup(nameUpper);
+      const sizedType = nameUpper === "SIZEOF" && expr.arguments.length === 1 ? this.sizeofTypeOperand(expr.arguments[0].value) : void 0;
+      if (sizedType !== void 0)
+        return sizedType;
       if (stdFunc) {
         const args2 = expr.arguments.map((arg, idx) => {
           let generated = this.generateExpression(arg.value);
+          if (nameUpper === "SIZEOF")
+            generated = this.refWrapper(generated);
           if (stdFunc.isConversion) {
             generated = this.bitConversionArg(arg.value, generated);
           }
@@ -40327,6 +44645,7 @@ var CodeGenerator = class _CodeGenerator {
       this.coerceUserFuncArgs(args, expr.arguments, paramTypes);
     }
     if (calleeBlocks) {
+      this.ltimeIntoTimeInputs(args, expr.arguments, calleeBlocks);
       const supplied = args.slice(0, suppliedArgs);
       this.bindPositionalReferenceInputs(supplied, calleeBlocks);
       args.splice(0, suppliedArgs, ...supplied);
@@ -40380,9 +44699,34 @@ var CodeGenerator = class _CodeGenerator {
     if (!entry)
       return void 0;
     if (!this.libraryFunctionDecls.has(key)) {
-      this.libraryFunctionDecls.set(key, libraryFunctionDeclaration(entry));
+      this.libraryFunctionDecls.set(key, libraryFunctionDeclaration(entry, this.libraryFunctionStringDefaults.get(entry)));
     }
     return this.libraryFunctionDecls.get(key);
+  }
+  /**
+   * The POINTER TO or REF_TO type of a library FUNCTION's output `name`, which
+   * the declaration built from the manifest leaves out; undefined otherwise.
+   */
+  libraryOutputReferenceType(call, name) {
+    if (call.kind !== "FunctionCallExpression")
+      return void 0;
+    const upper = name.toUpperCase();
+    const param = this.libraryFunctions.get(call.functionName.toUpperCase())?.parameters.find((p) => p.direction === "output" && p.name.toUpperCase() === upper);
+    const kind = param?.referenceKind;
+    if (param === void 0 || kind !== "pointer_to" && kind !== "ref_to") {
+      return void 0;
+    }
+    return {
+      kind: "TypeReference",
+      sourceSpan: call.sourceSpan,
+      name: param.type,
+      isReference: true,
+      referenceKind: kind,
+      ...param.referenceChain !== void 0 ? { referenceChain: param.referenceChain } : {},
+      ...param.arrayDimensions !== void 0 ? { arrayDimensions: param.arrayDimensions } : {},
+      ...param.elementTypeName !== void 0 ? { elementTypeName: param.elementTypeName } : {},
+      ...param.elementReferenceChain !== void 0 ? { elementReferenceChain: param.elementReferenceChain } : {}
+    };
   }
   /**
    * Find a method's declaration on a function block, a program or an
@@ -40449,10 +44793,40 @@ var CodeGenerator = class _CodeGenerator {
     }
     const args = callArgs.map((a) => this.generateExpression(a.value));
     if (method) {
+      this.ltimeIntoTimeInputs(args, callArgs, method.varBlocks);
       this.bindPositionalReferenceInputs(args, method.varBlocks);
       this.padOmittedArguments(args, method.varBlocks);
     }
     return args;
+  }
+  /**
+   * Positional arguments: an LTIME bound to a TIME VAR_INPUT is converted as
+   * an LTIME stored in a TIME is. Only when every argument is positional.
+   */
+  ltimeIntoTimeInputs(args, callArgs, varBlocks) {
+    if (callArgs.some((a) => a.name !== void 0 || a.isOutput))
+      return;
+    let index = 0;
+    for (const block of varBlocks) {
+      if (block.blockType !== "VAR_INPUT" && block.blockType !== "VAR_IN_OUT" && block.blockType !== "VAR_OUTPUT") {
+        continue;
+      }
+      for (const decl of block.declarations) {
+        for (let n = 0; n < decl.names.length; n++, index++) {
+          if (index >= callArgs.length || block.blockType !== "VAR_INPUT") {
+            continue;
+          }
+          args[index] = this.ltimeIntoTimeInput(decl.type, callArgs[index].value, args[index]);
+        }
+      }
+    }
+  }
+  /** `code` for a value input of type `type`, an LTIME into a TIME converted. */
+  ltimeIntoTimeInput(type, value, code) {
+    if ((type.referenceKind ?? "none") !== "none" || type.arrayDimensions !== void 0) {
+      return code;
+    }
+    return this.ltimeIntoTime(this.elementaryThroughAliases(type.name), value, code);
   }
   /**
    * Wrap the positional arguments that land on a REFERENCE TO input in
@@ -40468,7 +44842,7 @@ var CodeGenerator = class _CodeGenerator {
       for (const decl of block.declarations) {
         for (let n = 0; n < decl.names.length; n++, index++) {
           if (index < args.length && isReferenceInput(block, decl)) {
-            args[index] = `ref_bind(${args[index]})`;
+            args[index] = `ref_bind(${this.refWrapper(args[index])})`;
           }
         }
       }
@@ -40509,8 +44883,10 @@ var CodeGenerator = class _CodeGenerator {
         const upperName = arg.name.toUpperCase();
         if (upperName === "EN" || upperName === "ENO")
           continue;
+        const param = params.find((p) => p.name === upperName);
+        const generated = this.generateExpression(arg.value);
         namedArgs.set(upperName, {
-          expr: this.generateExpression(arg.value),
+          expr: param?.blockType === "VAR_INPUT" && !arg.isOutput ? this.ltimeIntoTimeInput(param.type, arg.value, generated) : generated,
           isOutput: arg.isOutput
         });
         claimedSlots.add(upperName);
@@ -40575,7 +44951,7 @@ var CodeGenerator = class _CodeGenerator {
       if (refType === void 0)
         continue;
       if (result[i] !== void 0) {
-        result[i] = `ref_bind(${result[i]})`;
+        result[i] = `ref_bind(${this.refWrapper(result[i])})`;
       } else if (params[i].defaultExpr === void 0) {
         result[i] = `${this.mapTypeRefToCpp(refType)}()`;
       }
@@ -41105,7 +45481,8 @@ var CodeGenerator = class _CodeGenerator {
         }
       };
       if (n.kind === "functionBlock") {
-        for (const block of n.fb.varBlocks) {
+        const instBlocks = n.fb.methods.flatMap((m) => m.varBlocks.filter((b) => b.blockType === "VAR_INST"));
+        for (const block of [...n.fb.varBlocks, ...instBlocks]) {
           for (const decl of block.declarations) {
             addDep(decl.type.name);
             addDep(decl.type.elementTypeName);
@@ -41396,7 +45773,7 @@ var CodeGenerator = class _CodeGenerator {
     if (this.compositeExternals.has(call.functionName.toUpperCase())) {
       throw new Error(`Shared global '${call.functionName}' is a function-block instance and is invoked in a program body. Calling a shared function-block global is not yet supported in the mutex-based shared-global model \u2014 scalar globals only for now.`);
     }
-    const instanceName = program !== void 0 ? this.sharedProgramInstance(program) : call.instance !== void 0 ? this.generateExpression(call.instance) : rawName.includes(".") ? this.generateExpression(this.dottedInstanceExpression(call)) : this.currentScopeVarRefKinds.get(rawName.toUpperCase()) === "reference_to" ? `${this.memberMangledNames.get(rawName.toUpperCase()) ?? rawName}.target()` : this.scopeInOutRefs.has(rawName.toUpperCase()) ? `(*${this.memberMangledNames.get(rawName.toUpperCase()) ?? rawName})` : this.memberMangledNames.get(rawName.toUpperCase()) ?? rawName;
+    const instanceName = program !== void 0 ? this.sharedProgramInstance(program) : call.instance !== void 0 ? this.generateExpression(call.instance) : rawName.includes(".") ? this.generateExpression(this.dottedInstanceExpression(call)) : this.currentScopeVarRefKinds.get(rawName.toUpperCase()) === "reference_to" ? this.refTarget(this.memberMangledNames.get(rawName.toUpperCase()) ?? rawName, rawName, call) : this.scopeInOutRefs.has(rawName.toUpperCase()) ? `(*${this.memberMangledNames.get(rawName.toUpperCase()) ?? rawName})` : this.varInstMangledNames.get(rawName.toUpperCase()) ?? this.memberMangledNames.get(rawName.toUpperCase()) ?? rawName;
     const { enExpr, enoVar, filteredArgs } = this.extractEnEno(call.arguments);
     const fbTypeName = program ?? this.getFBInvocationType(call.functionName, call.instance);
     const programType = program ?? (fbTypeName !== void 0 && this.knownProgramTypes.has(fbTypeName.toUpperCase()) ? fbTypeName : void 0);
@@ -41472,7 +45849,8 @@ var CodeGenerator = class _CodeGenerator {
     for (const arg of filteredArgs) {
       if (arg.name && arg.isOutput) {
         const member = `${instanceName}.${this.fbParamMemberName(arg.name, fbTypeName)}`;
-        this.emitCaptureToLvalue(arg.value, kindOf(arg.name) === "ref" ? `(*${member})` : member, indent);
+        const source = kindOf(arg.name) === "ref" ? `(*${member})` : member;
+        this.emitCaptureToLvalue(arg.value, arg.addressInto === void 0 ? source : this.addressAsInteger(arg.addressInto, source), indent);
       }
     }
   }
@@ -41537,10 +45915,10 @@ var CodeGenerator = class _CodeGenerator {
   renderInOutBound(value) {
     const upper = value.name.toUpperCase();
     if (this.programExternals.has(upper) && !value.isDereference) {
-      return this.renderAccessTail(`${this.resolveVariableBaseName(value.name)}->value`, value, upper);
+      return this.renderAccessTail(`${this.externalPointer(value.name)}->value`, value, upper);
     }
     if (this.currentScopeVarRefKinds.get(upper) === "reference_to" && value.fieldAccess.length === 0 && value.subscripts.length === 0 && (value.accessChain?.length ?? 0) === 0 && !value.isDereference) {
-      return `${this.resolveVariableBaseName(value.name)}.target()`;
+      return this.refTarget(this.resolveVariableBaseName(value.name), value.name, value);
     }
     const saved = this.inOutBindExprs.delete(value);
     const rendered = this.generateLvalue(value);
@@ -41599,14 +45977,17 @@ var CodeGenerator = class _CodeGenerator {
    * input to the argument instead of writing through it.
    */
   fbInputArgument(fbTypeName, paramName, value) {
-    const generated = this.generateExpression(value);
+    let generated = this.generateExpression(value);
     if (fbTypeName === void 0)
       return generated;
     const inout = this.fbInoutParams.get(fbTypeName.toUpperCase());
     if (inout?.has(paramName.toUpperCase()) === true)
       return generated;
     const field = this.accessLookup.field(fbTypeName, paramName);
-    return field?.type.referenceKind === "reference_to" ? `ref_bind(${generated})` : generated;
+    if (field !== void 0) {
+      generated = this.ltimeIntoTimeInput(field.type, value, generated);
+    }
+    return field?.type.referenceKind === "reference_to" ? `ref_bind(${this.refWrapper(generated)})` : generated;
   }
   /**
    * Emit `<target> = <source>` where `source` is an already-rendered C++
@@ -41616,6 +45997,7 @@ var CodeGenerator = class _CodeGenerator {
    * Used for FB VAR_IN_OUT copy-back and `=>` output capture.
    */
   emitCaptureToLvalue(target, source, indent) {
+    source = this.subrangeStore(target, source) ?? source;
     if (target.kind === "VariableExpression" && !target.isDereference && this.compositeExternals.has(target.name.toUpperCase())) {
       const ptr = this.resolveVariableBaseName(target.name);
       const lv = this.renderAccessTail("(*__glk)", target, target.name.toUpperCase());
@@ -41857,6 +46239,9 @@ var CodeGenerator = class _CodeGenerator {
     if (decl.referenceKind === "ref_to" || decl.referenceKind === "reference_to" || decl.referenceKind === "pointer_to") {
       const value = decl.initialValue;
       const binds = decl.referenceKind === "pointer_to" && value?.kind === "FunctionCallExpression" && value.functionName.toUpperCase() === "ADR" || decl.referenceKind === "ref_to" && value?.kind === "RefExpression";
+      if (decl.referenceKind === "reference_to" && value?.kind === "RefExpression") {
+        return this.generateInitializer(value, this.mapTypeRefToCpp(this.projectVarToTypeRef(decl)), decl.typeName);
+      }
       return binds && value !== void 0 ? this.generateExpression(value) : void 0;
     }
     if (decl.initialValue) {
@@ -41874,10 +46259,63 @@ var CodeGenerator = class _CodeGenerator {
    * {@link generateInitializerValue}.
    */
   generateInitializer(value, cppType, stTypeName) {
+    const referenceTo = cppType.startsWith("IEC_REFERENCE_TO<") || this.isReferenceToAliasName(stTypeName);
+    if (referenceTo && value.kind === "RefExpression") {
+      return `${cppType}(${this.addressedOperand(value.operand, "REF", value)})`;
+    }
+    if (referenceTo && value.kind === "LiteralExpression" && value.literalType === "NULL") {
+      return `${cppType}()`;
+    }
     if (!isStructInitializerValue(value)) {
       return this.generateExpression(value);
     }
+    if (this.externalPointerSuffix !== "" || this.externalPointerOf !== void 0 || !this.atNamespaceScope && this.namesLocalVariable(value)) {
+      return generateInitializerValue(value, cppType, stTypeName, this.getStructInitEmitter()).replace(/\[\]\(auto& v(\d+)\)/g, "[&](auto& v$1)");
+    }
     return generateInitializerValue(value, cppType, stTypeName, this.getStructInitEmitter());
+  }
+  /** `value` names a variable that is neither a file-level global nor an enumeration member. */
+  namesLocalVariable(value) {
+    const globals = this.fileScopeGlobalNames();
+    const enumMembers2 = new Set((this.ast?.types ?? []).flatMap((t) => t.definition.kind === "EnumDefinition" ? t.definition.members.map((m) => m.name.toUpperCase()) : []));
+    let found = false;
+    walkAST(value, (node) => {
+      if (node.kind !== "VariableExpression")
+        return;
+      const name = node.name.toUpperCase();
+      if (!globals.has(name) && !enumMembers2.has(name))
+        found = true;
+    });
+    return found;
+  }
+  /** The reference levels a TYPE alias (through aliases) adds: `T_R : REFERENCE TO INT`. */
+  aliasReferenceLevels(name) {
+    let upper = name?.toUpperCase();
+    for (let depth = 0; depth < 16 && upper !== void 0 && this.ast; depth++) {
+      const def = this.ast.types.find((t) => t.name.toUpperCase() === upper)?.definition;
+      if (def?.kind !== "TypeReference")
+        return [];
+      const kind = def.referenceKind ?? "none";
+      if (kind !== "none")
+        return [kind, ...def.referenceChain ?? []];
+      upper = def.name.toUpperCase();
+    }
+    return [];
+  }
+  /** A TYPE alias (through aliases) of a REFERENCE TO. */
+  isReferenceToAliasName(name) {
+    let upper = name?.toUpperCase();
+    for (let depth = 0; depth < 16 && upper !== void 0 && this.ast; depth++) {
+      const def = this.ast.types.find((t) => t.name.toUpperCase() === upper)?.definition;
+      if (def?.kind !== "TypeReference")
+        return false;
+      if (def.referenceKind === "reference_to")
+        return true;
+      if ((def.referenceKind ?? "none") !== "none")
+        return false;
+      upper = def.name.toUpperCase();
+    }
+    return false;
   }
   /**
    * Hooks {@link generateInitializerValue} uses to resolve element names and
@@ -41887,7 +46325,7 @@ var CodeGenerator = class _CodeGenerator {
    */
   getStructInitEmitter() {
     this.structInitEmitter ??= {
-      emitValue: (value) => this.generateExpression(value),
+      emitValue: (value, stTypeName) => this.ltimeIntoTime(stTypeName === void 0 ? void 0 : this.elementaryThroughAliases(stTypeName), value, this.generateExpression(value)),
       memberName: (fieldName, ownerTypeName) => this.bitMemberPath(ownerTypeName, fieldName) ?? (this.needsFieldMangling(fieldName, this.resolveMemberType(ownerTypeName, fieldName), ownerTypeName) ? `${fieldName}_` : fieldName),
       fieldTypeName: (fieldName, ownerTypeName) => this.resolveMemberType(ownerTypeName, fieldName),
       arrayElementTypeName: (typeName2) => typeName2 !== void 0 && typeName2 !== "" && this.ast ? resolveArrayElementType(typeName2, this.ast) : void 0
@@ -41912,6 +46350,10 @@ var CodeGenerator = class _CodeGenerator {
       return '""';
     if (upperType === "WSTRING")
       return 'u""';
+    const temporal = TEMPORAL_KIND[upperType];
+    if (temporal !== void 0 && isElementaryType(upperType) && !LONG_TEMPORAL_NAMES.has(upperType)) {
+      return `${TEMPORAL_CPP[temporal].short}()`;
+    }
     const numericTypes = [
       "SINT",
       "INT",
@@ -41925,10 +46367,6 @@ var CodeGenerator = class _CodeGenerator {
       "WORD",
       "DWORD",
       "LWORD",
-      "TIME",
-      "DATE",
-      "TOD",
-      "DT",
       "LTIME",
       "LDATE",
       "LTOD",
@@ -42389,12 +46827,17 @@ var TAG = {
   WORD: 12,
   DWORD: 13,
   LWORD: 14,
-  TIME: 15,
-  DATE: 16,
-  TOD: 17,
-  DT: 18,
+  LTIME: 15,
+  LDATE: 16,
+  LTOD: 17,
+  LDT: 18,
   STRING: 19,
-  WSTRING: 20
+  WSTRING: 20,
+  // 21 is the BIT tag (TAG_BIT)
+  TIME: 22,
+  DATE: 23,
+  TOD: 24,
+  DT: 25
 };
 var TAG_BIT = 21;
 var LEAF_BIT_SHIFT = 5;
@@ -42462,17 +46905,17 @@ var IEC_NAME_TO_TAG = {
   // (where pointers are 64-bit), so it reads as an LWORD-tagged 8-byte value.
   __XWORD: "LWORD",
   TIME: "TIME",
-  LTIME: "TIME",
+  LTIME: "LTIME",
   DATE: "DATE",
-  LDATE: "DATE",
+  LDATE: "LDATE",
   TOD: "TOD",
   TIME_OF_DAY: "TOD",
-  LTOD: "TOD",
-  LTIME_OF_DAY: "TOD",
+  LTOD: "LTOD",
+  LTIME_OF_DAY: "LTOD",
   DT: "DT",
   DATE_AND_TIME: "DT",
-  LDT: "DT",
-  LDATE_AND_TIME: "DT",
+  LDT: "LDT",
+  LDATE_AND_TIME: "LDT",
   // A CHAR is one Windows-1252 byte, a WCHAR one UTF-16 code unit.
   CHAR: "BYTE",
   WCHAR: "WORD",
@@ -42497,16 +46940,16 @@ var IEC_NAME_TO_SIZE = {
   DWORD: 4,
   LWORD: 8,
   __XWORD: 8,
-  TIME: 8,
+  TIME: 4,
   LTIME: 8,
-  DATE: 8,
+  DATE: 4,
   LDATE: 8,
-  TOD: 8,
-  TIME_OF_DAY: 8,
+  TOD: 4,
+  TIME_OF_DAY: 4,
   LTOD: 8,
   LTIME_OF_DAY: 8,
-  DT: 8,
-  DATE_AND_TIME: 8,
+  DT: 4,
+  DATE_AND_TIME: 4,
   LDT: 8,
   LDATE_AND_TIME: 8,
   CHAR: 1,
@@ -42530,6 +46973,7 @@ function generateDebugTable(ast, projectModel, symbolTables, opts = {}) {
   const maxEntries = opts.maxEntriesPerArray ?? DEFAULTS.maxEntriesPerArray;
   const configGlobal = opts.configGlobalName ?? DEFAULTS.configGlobalName;
   const md5 = opts.md5 ?? "";
+  const stringDefault = opts.stringDefaultLength ?? DISPATCH_STRING_CAPACITY;
   const programByName = /* @__PURE__ */ new Map();
   for (const p of ast.programs)
     programByName.set(p.name.toUpperCase(), p);
@@ -42644,6 +47088,35 @@ function generateDebugTable(ast, projectModel, symbolTables, opts = {}) {
     }
     return void 0;
   };
+  const stringAdvice = (name) => stringDefault === DISPATCH_STRING_CAPACITY ? `a plain ${name}` : `${name}(${DISPATCH_STRING_CAPACITY})`;
+  const stringArrayReason = (elementTypeName, elementLength) => {
+    let name = elementTypeName.toUpperCase();
+    let length = elementLength;
+    const seen = /* @__PURE__ */ new Set();
+    while (name !== "STRING" && name !== "WSTRING") {
+      if (seen.has(name) || IEC_NAME_TO_TAG[name] !== void 0) {
+        return void 0;
+      }
+      seen.add(name);
+      const def = symbolTables.lookupType(name)?.declaration?.definition;
+      if (def?.kind !== "TypeReference" || def.arrayDimensions !== void 0) {
+        return void 0;
+      }
+      if (def.referenceKind !== void 0 && def.referenceKind !== "none") {
+        return void 0;
+      }
+      name = def.name.toUpperCase();
+      length = {
+        ...def.maxLength !== void 0 ? { maxLength: def.maxLength } : {},
+        ...def.defaultLength === true ? { defaultLength: true } : {}
+      };
+    }
+    const max = length.maxLength;
+    if (max === void 0 || max === DISPATCH_STRING_CAPACITY)
+      return void 0;
+    const declared = length.defaultLength === true ? `its elements are ${name} without a length, which holds ${max} characters here` : `its elements are declared ${name}(${max})`;
+    return `${declared}, but the debug dispatch addresses strings as ${name}(${DISPATCH_STRING_CAPACITY}). Declare them as ${stringAdvice(name)} to expose them.`;
+  };
   const visitTypeRef = (path, cppExpr, typeRef, flags) => {
     if (typeRef.referenceKind !== void 0 && typeRef.referenceKind !== "none") {
       skipped.push({
@@ -42658,15 +47131,25 @@ function generateDebugTable(ast, projectModel, symbolTables, opts = {}) {
         skipped.push({ path, reason: arrayOfReferencesReason(elementKind) });
         return;
       }
-      walkArrayDims(path, cppExpr, typeRef.arrayDimensions, 0, typeRef.elementTypeName, flags);
+      const elementLength = {
+        ...typeRef.elementMaxLength !== void 0 ? { maxLength: typeRef.elementMaxLength } : {},
+        ...typeRef.elementDefaultLength === true ? { defaultLength: true } : {}
+      };
+      const stringReason = stringArrayReason(typeRef.elementTypeName, elementLength);
+      if (stringReason !== void 0) {
+        skipped.push({ path, reason: stringReason });
+        return;
+      }
+      walkArrayDims(path, cppExpr, typeRef.arrayDimensions, 0, typeRef.elementTypeName, flags, [], elementLength);
       return;
     }
     const name = typeRef.name.toUpperCase();
     if (IEC_NAME_TO_TAG[name] !== void 0) {
       if ((name === "STRING" || name === "WSTRING") && typeRef.maxLength !== void 0 && typeRef.maxLength !== DISPATCH_STRING_CAPACITY) {
+        const declared = typeRef.defaultLength === true ? `${name} without a length holds ${typeRef.maxLength} characters here` : `declared ${name}(${typeRef.maxLength})`;
         skipped.push({
           path,
-          reason: `declared ${name}(${typeRef.maxLength}), but the debug dispatch addresses strings as ${name}(${DISPATCH_STRING_CAPACITY}). Declare it as a plain ${name} to expose it.`
+          reason: `${declared}, but the debug dispatch addresses strings as ${name}(${DISPATCH_STRING_CAPACITY}). Declare it as ${stringAdvice(name)} to expose it.`
         });
         return;
       }
@@ -42702,7 +47185,16 @@ function generateDebugTable(ast, projectModel, symbolTables, opts = {}) {
           skipped.push({ path, reason: `array bounds not constant` });
           return;
         }
-        walkArrayDims(path, cppExpr, dims, 0, def.elementType.name, flags);
+        const elementLength = {
+          ...def.elementType.maxLength !== void 0 ? { maxLength: def.elementType.maxLength } : {},
+          ...def.elementType.defaultLength === true ? { defaultLength: true } : {}
+        };
+        const stringReason = stringArrayReason(def.elementType.name, elementLength);
+        if (stringReason !== void 0) {
+          skipped.push({ path, reason: stringReason });
+          return;
+        }
+        walkArrayDims(path, cppExpr, dims, 0, def.elementType.name, flags, [], elementLength);
         return;
       }
       if (def.kind === "EnumDefinition") {
@@ -42799,19 +47291,21 @@ function generateDebugTable(ast, projectModel, symbolTables, opts = {}) {
       }
     }
   };
-  const walkArrayDims = (path, cppExpr, dims, dimIdx, elementTypeName, flags, indices = []) => {
+  const walkArrayDims = (path, cppExpr, dims, dimIdx, elementTypeName, flags, indices = [], elementLength) => {
     if (dimIdx >= dims.length) {
       visitTypeRef(path, formatArrayElementAccess(cppExpr, indices), {
         kind: "TypeReference",
         name: elementTypeName,
         isReference: false,
-        referenceKind: "none"
+        referenceKind: "none",
+        ...elementLength?.maxLength !== void 0 ? { maxLength: elementLength.maxLength } : {},
+        ...elementLength?.defaultLength === true ? { defaultLength: true } : {}
       }, flags);
       return;
     }
     const { start, end } = dims[dimIdx];
     for (let i = start; i <= end; i++) {
-      walkArrayDims(`${path}[${i}]`, cppExpr, dims, dimIdx + 1, elementTypeName, flags, [...indices, i]);
+      walkArrayDims(`${path}[${i}]`, cppExpr, dims, dimIdx + 1, elementTypeName, flags, [...indices, i], elementLength);
     }
   };
   const libraryMemberCppName = (v, ownerTypeName) => v.cppName ?? memberCppName(v.name, v.declaration.type, ownerTypeName);
@@ -43310,6 +47804,9 @@ function collect(blocks, into) {
         const upper = name.toUpperCase();
         if (block.isConstant) {
           into.constants.set(upper, decl.initialValue ?? null);
+          if (decl.type.arrayDimensions === void 0) {
+            into.types.set(upper, decl.type.name.toUpperCase());
+          }
         } else {
           into.variables.add(upper);
         }
@@ -43363,6 +47860,16 @@ var Folder = class {
           right: this.fold(expr.right, field)
         };
       case "FunctionCallExpression":
+        if (this.globals.functions.has(expr.functionName.toUpperCase())) {
+          this.errors.push({
+            message: `The default of STRUCT field '${field}' must be a constant expression: '${expr.functionName}' is a FUNCTION call`,
+            line: expr.sourceSpan.startLine,
+            column: expr.sourceSpan.startCol,
+            severity: "error",
+            ...expr.sourceSpan.file !== void 0 ? { file: expr.sourceSpan.file } : {}
+          });
+          return expr;
+        }
         return {
           ...expr,
           arguments: expr.arguments.map((a) => ({
@@ -43396,10 +47903,13 @@ var Folder = class {
       this.evaluating.add(name);
       const folded = this.fold(entry, field);
       this.evaluating.delete(name);
+      const typeName2 = this.globals.types.get(name);
+      const type = typeName2 !== void 0 ? ELEMENTARY_TYPES[typeName2] : void 0;
       return {
         kind: "ParenthesizedExpression",
         sourceSpan: at.sourceSpan,
-        expression: { ...folded, sourceSpan: at.sourceSpan }
+        expression: { ...folded, sourceSpan: at.sourceSpan },
+        ...type !== void 0 ? { resolvedType: type, foldedConstant: true } : {}
       };
     }
     const supplied = Object.entries(this.supplied).find(([key]) => key.toUpperCase() === name);
@@ -43425,11 +47935,25 @@ var Folder = class {
     return void 0;
   }
 };
+function aliasBaseOf(unit, name) {
+  let upper = name.toUpperCase();
+  for (let i = 0; i < 32; i++) {
+    const current = upper;
+    const def = unit.types.find((t) => t.name.toUpperCase() === current)?.definition;
+    if (def?.kind !== "TypeReference" || def.arrayDimensions !== void 0) {
+      return upper;
+    }
+    upper = def.name.toUpperCase();
+  }
+  return upper;
+}
 function foldStructFieldDefaults(unit, supplied = {}) {
   const globals = {
     constants: /* @__PURE__ */ new Map(),
     variables: /* @__PURE__ */ new Set(),
-    lists: /* @__PURE__ */ new Set()
+    lists: /* @__PURE__ */ new Set(),
+    types: /* @__PURE__ */ new Map(),
+    functions: new Set(unit.functions.map((f) => f.name.toUpperCase()))
   };
   collect(unit.globalVarBlocks, globals);
   for (const config of unit.configurations)
@@ -43447,6 +47971,13 @@ function foldStructFieldDefaults(unit, supplied = {}) {
       }
       const name = `${type.name}.${field.names[0] ?? ""}`.toUpperCase();
       field.initialValue = folder.fold(field.initialValue, name);
+      const element = aliasBaseOf(unit, field.type.elementTypeName ?? field.type.name);
+      if (field.initialValue.kind === "ArrayLiteralExpression") {
+        for (const e of field.initialValue.elements)
+          typeUntypedNot(e, element);
+      } else if (field.type.arrayDimensions === void 0) {
+        typeUntypedNot(field.initialValue, element);
+      }
     }
   }
   return errors;
@@ -43570,14 +48101,14 @@ function accessorMethodName(fbName, propertyName, accessor) {
   return `__${accessor}_${fbName}_${propertyName}`;
 }
 function lowerOne2(fb, prop, accessor, blocks, body, errors) {
-  const refused = blocks.find((b) => !ACCESSOR_BLOCKS.has(b.blockType));
-  if (refused) {
+  const refused2 = blocks.find((b) => !ACCESSOR_BLOCKS.has(b.blockType));
+  if (refused2) {
     errors.push({
-      message: `A property accessor declares only VAR or VAR_TEMP variables, not ${refused.blockType} (${accessor} of '${prop.name}')`,
-      line: refused.sourceSpan.startLine,
-      column: refused.sourceSpan.startCol,
+      message: `A property accessor declares only VAR or VAR_TEMP variables, not ${refused2.blockType} (${accessor} of '${prop.name}')`,
+      line: refused2.sourceSpan.startLine,
+      column: refused2.sourceSpan.startCol,
       severity: "error",
-      ...refused.sourceSpan.file !== void 0 ? { file: refused.sourceSpan.file } : {}
+      ...refused2.sourceSpan.file !== void 0 ? { file: refused2.sourceSpan.file } : {}
     });
     return void 0;
   }
@@ -44279,7 +48810,7 @@ var LibraryManifestError = class extends Error {
     this.name = "LibraryManifestError";
   }
 };
-function makeTypeRef(v) {
+function makeTypeRef(v, stringDefaultLength) {
   const referenceKind = isReferenceKind(v.referenceKind) ? v.referenceKind : "none";
   const ref = {
     kind: "TypeReference",
@@ -44298,29 +48829,47 @@ function makeTypeRef(v) {
   if (v.referenceChain) {
     ref.referenceChain = v.referenceChain.filter(isReferenceKind);
   }
+  applyStringDefaultLength(ref, stringDefaultLength);
   return ref;
+}
+function applyStringDefaultLength(ref, stringDefaultLength) {
+  if (stringDefaultLength === void 0)
+    return;
+  lowerDefaultStringLength(ref, stringDefaultLength);
+}
+function parameterShapeOf(p) {
+  return {
+    ...Array.isArray(p.referenceChain) ? { referenceChain: p.referenceChain } : {},
+    ...Array.isArray(p.arrayDimensions) ? { arrayDimensions: p.arrayDimensions } : {},
+    ...typeof p.elementTypeName === "string" ? { elementTypeName: p.elementTypeName } : {},
+    ...Array.isArray(p.elementReferenceChain) ? { elementReferenceChain: p.elementReferenceChain } : {}
+  };
 }
 function isReferenceKind(kind) {
   return kind === "pointer_to" || kind === "ref_to" || kind === "reference_to";
 }
-function buildLibraryTypeDefinition(t) {
+function buildLibraryTypeDefinition(t, stringDefaultLength) {
   if ((t.kind === "struct" || t.kind === "union") && t.fields && t.fields.length > 0) {
     return {
       kind: "StructDefinition",
       ...t.kind === "union" ? { isUnion: true } : {},
       sourceSpan: createDefaultSourceSpan(),
-      fields: t.fields.map((f) => ({
-        kind: "VarDeclaration",
-        sourceSpan: createDefaultSourceSpan(),
-        names: [f.name],
-        type: {
+      fields: t.fields.map((f) => {
+        const type = {
           kind: "TypeReference",
           sourceSpan: createDefaultSourceSpan(),
           name: f.type,
           isReference: false,
           referenceKind: "none"
-        }
-      }))
+        };
+        applyStringDefaultLength(type, stringDefaultLength);
+        return {
+          kind: "VarDeclaration",
+          sourceSpan: createDefaultSourceSpan(),
+          names: [f.name],
+          type
+        };
+      })
     };
   }
   return {
@@ -44331,7 +48880,7 @@ function buildLibraryTypeDefinition(t) {
     referenceKind: "none"
   };
 }
-function makeVarSymbol(v, direction) {
+function makeVarSymbol(v, direction, stringDefaultLength) {
   const varType = ELEMENTARY_TYPES[v.type.toUpperCase()] ?? {
     typeKind: "elementary",
     name: v.type,
@@ -44341,7 +48890,7 @@ function makeVarSymbol(v, direction) {
     kind: "VarDeclaration",
     sourceSpan: createDefaultSourceSpan(),
     names: [v.name],
-    type: makeTypeRef(v)
+    type: makeTypeRef(v, stringDefaultLength)
   };
   return {
     name: v.name,
@@ -44463,6 +49012,15 @@ function loadLibraryManifest(json) {
   if (Array.isArray(obj.sourceFiles)) {
     result.sourceFiles = obj.sourceFiles;
   }
+  if (obj.stringDefaultLength !== void 0) {
+    const n = obj.stringDefaultLength;
+    if (typeof n !== "number" || !Number.isInteger(n) || n < 1) {
+      throw new LibraryManifestError("Invalid library manifest: stringDefaultLength must be a positive integer");
+    }
+    result.stringDefaultLength = n;
+  }
+  if (obj.parameterShapes === true)
+    result.parameterShapes = true;
   return result;
 }
 function registerLibrarySymbols(manifest, symbolTables) {
@@ -44485,7 +49043,11 @@ function registerLibrarySymbols(manifest, symbolTables) {
           sourceSpan: createDefaultSourceSpan(),
           name: fn.returnType,
           isReference: false,
-          referenceKind: "none"
+          referenceKind: "none",
+          ...manifest.stringDefaultLength !== void 0 && ["STRING", "WSTRING"].includes(fn.returnType.toUpperCase()) ? {
+            maxLength: manifest.stringDefaultLength,
+            defaultLength: true
+          } : {}
         },
         varBlocks: [],
         body: []
@@ -44495,13 +49057,16 @@ function registerLibrarySymbols(manifest, symbolTables) {
         const sym = makeVarSymbol({
           name: p.name,
           type: p.type,
-          ...p.referenceKind ? { referenceKind: p.referenceKind } : {}
-        }, p.direction);
+          ...p.referenceKind ? { referenceKind: p.referenceKind } : {},
+          ...manifest.parameterShapes ? parameterShapeOf(p) : {}
+        }, p.direction, manifest.stringDefaultLength);
         if (p.initialValue !== void 0)
           sym.initialValue = p.initialValue;
         return sym;
       })
     };
+    if (manifest.parameterShapes)
+      symbol.parameterShapes = true;
     symbolTables.addLibraryFunction(symbol);
     try {
       symbolTables.globalScope.defineFromLibrary(symbol);
@@ -44545,7 +49110,7 @@ function registerLibrarySymbols(manifest, symbolTables) {
           // only ever type-checked, and wrong the moment a RETAINed library
           // block held one — the struct's fields simply never reached the
           // retain blob, so the instance restored around a hole.
-          definition: buildLibraryTypeDefinition(t)
+          definition: buildLibraryTypeDefinition(t, manifest.stringDefaultLength)
         },
         resolvedType
       });
@@ -44580,14 +49145,16 @@ function registerLibrarySymbols(manifest, symbolTables) {
           actions: [],
           body: []
         },
-        inputs: fb.inputs.map((i) => makeVarSymbol(i, "input")),
-        outputs: fb.outputs.map((o) => makeVarSymbol(o, "output")),
-        inouts: fb.inouts.map((io) => makeVarSymbol(io, "inout")),
+        inputs: fb.inputs.map((i) => makeVarSymbol(i, "input", manifest.stringDefaultLength)),
+        outputs: fb.outputs.map((o) => makeVarSymbol(o, "output", manifest.stringDefaultLength)),
+        inouts: fb.inouts.map((io) => makeVarSymbol(io, "inout", manifest.stringDefaultLength)),
         // Present from archives that export them; an older archive leaves
         // this empty and a RETAINed instance of its blocks covers the visible
         // surface only, with a warning naming the block.
-        locals: (fb.locals ?? []).map((l) => makeVarSymbol(l, "local")),
-        ...fb.temps !== void 0 ? { temps: fb.temps.map((t) => makeVarSymbol(t, "local")) } : {},
+        locals: (fb.locals ?? []).map((l) => makeVarSymbol(l, "local", manifest.stringDefaultLength)),
+        ...fb.temps !== void 0 ? {
+          temps: fb.temps.map((t) => makeVarSymbol(t, "local", manifest.stringDefaultLength))
+        } : {},
         ...fb.properties !== void 0 && fb.methods !== void 0 ? { libraryMethodNames: fb.methods.map((m) => m.name) } : {},
         libraryName: manifest.name
       });
@@ -45494,6 +50061,18 @@ function serializeVarType(name, typeRef) {
   }
   return entry;
 }
+function parameterShape(type) {
+  if (type.referenceKind === "reference_to")
+    return {};
+  const shape = serializeVarType("", type);
+  return {
+    ...shape.referenceKind !== void 0 ? { referenceKind: shape.referenceKind } : {},
+    ...shape.referenceChain !== void 0 ? { referenceChain: shape.referenceChain } : {},
+    ...shape.arrayDimensions !== void 0 ? { arrayDimensions: shape.arrayDimensions } : {},
+    ...shape.elementTypeName !== void 0 ? { elementTypeName: shape.elementTypeName } : {},
+    ...shape.elementReferenceChain !== void 0 ? { elementReferenceChain: shape.elementReferenceChain } : {}
+  };
+}
 function byReferenceStringLength(direction, type) {
   if (direction === "input")
     return void 0;
@@ -45880,6 +50459,7 @@ function compileLibrary(sources, options) {
   const builtManifest = {
     name: options.name,
     version: options.version,
+    parameterShapes: true,
     namespace: options.namespace,
     functions: ast.functions.map((fn) => tagDocumentation(tagCategory({
       name: fn.name,
@@ -45900,7 +50480,7 @@ function compileLibrary(sources, options) {
             // Present ⇒ optional input (default supplied); absent ⇒
             // mandatory. Preserved from user ST and CODESYS-imported ST.
             ...initialValue !== void 0 ? { initialValue } : {},
-            ...byReference ? { referenceKind: "reference_to" } : {}
+            ...byReference ? { referenceKind: "reference_to" } : parameterShape(decl.type)
           }));
         });
       })
@@ -46011,6 +50591,9 @@ function compileStlib(sources, options) {
   }, options.dialectIO?.readFile, options.dialectIO?.listDir, options.dialectIO?.realPath, options.dialectIO?.foldCase);
   if (dialect.features.has("conditional_pragmas")) {
     archive.pragmaDefines = { ...options.pragmaDefines ?? {} };
+  }
+  if (dialect.features.has("string_default_80")) {
+    archive.manifest.stringDefaultLength = defaultStringLength(dialect.features);
   }
   return {
     success: true,
@@ -46840,7 +51423,7 @@ var TYPE_TAG_MAP = {
   DWORD: "DWORD",
   LWORD: "LWORD",
   TIME: "TIME",
-  LTIME: "TIME",
+  LTIME: "LTIME",
   STRING: "STRING"
 };
 function getTypeTag(typeName2) {
@@ -46961,7 +51544,7 @@ function emitVarDescriptors(lines, programs, ast) {
 function emitProgramDescriptorsAndMain(lines, programs) {
   lines.push(`static ProgramDescriptor programs[] = {`);
   for (const prog of programs) {
-    lines.push(`    {"${prog.displayName}", &${prog.instanceExpr}, ${prog.varsDescName}, ${prog.vars.length}, ${prog.intervalNs}LL},`);
+    lines.push(`    {"${prog.displayName}", &${prog.instanceExpr}, ${prog.varsDescName}, ${prog.vars.length}, ${prog.intervalNs}LL${prog.task !== void 0 ? `, "${prog.task}"` : ""}},`);
   }
   lines.push("};");
   lines.push("");
@@ -46974,11 +51557,9 @@ function emitProgramDescriptorsAndMain(lines, programs) {
   lines.push("    }");
   lines.push("");
   lines.push("    if (cyclic) {");
-  lines.push(`        strucpp::cyclic_run(programs, ${programs.length}, print_vars);`);
-  lines.push("    } else {");
-  lines.push(`        strucpp::repl_run(programs, ${programs.length}, g_st_source, g_cpp_source, g_line_map, g_line_map_count);`);
+  lines.push(`        return strucpp::cyclic_run(programs, ${programs.length}, print_vars);`);
   lines.push("    }");
-  lines.push("    return 0;");
+  lines.push(`    return strucpp::repl_run(programs, ${programs.length}, g_st_source, g_cpp_source, g_line_map, g_line_map_count);`);
   lines.push("}");
   lines.push("");
 }
@@ -47019,7 +51600,8 @@ function generateWithConfiguration(lines, ast, projectModel) {
           instanceExpr: `${configInstanceVar}.${inst.instanceName}`,
           varsDescName: `vars_${inst.instanceName}`,
           vars: astProg ? collectVarsFromBlocks(astProg.varBlocks) : [],
-          intervalNs
+          intervalNs,
+          task: task.name
         });
       }
     }
@@ -47108,8 +51690,12 @@ function parseTestFile(source, fileName, options) {
     const testFile = buildTestAST(parseResult.cst, fileName);
     errors.push(...lowerTestInlineTypes(testFile));
     errors.push(...conditionalReturnErrors(testFile, dialect, fileName));
+    errors.push(...pointerFeatureErrors(testFile, dialect, fileName));
     if (dialect.features.has("platform_types")) {
       lowerTestPlatformTypes(testFile);
+    }
+    if (dialect.features.has("string_default_80")) {
+      lowerDefaultStringLength(testFile, defaultStringLength(dialect.features));
     }
     testFile.dialect = dialect;
     return { testFile, errors };
@@ -47151,6 +51737,45 @@ function conditionalReturnErrors(testFile, dialect, fileName) {
   visit(testFile);
   return errors;
 }
+function pointerFeatureErrors(testFile, dialect, fileName) {
+  if (dialect.features.has("pointer_to"))
+    return [];
+  const profiles = profilesWithFeature(dialect, "pointer_to");
+  const hint = profiles.length > 0 ? ` (profiles: ${profiles.join(", ")})` : "";
+  const errors = [];
+  const refuse = (construct, span) => {
+    errors.push({
+      message: `${construct} needs the feature pointer_to${hint}`,
+      line: span.startLine,
+      column: span.startCol,
+      severity: "error",
+      file: fileName
+    });
+  };
+  const seen = /* @__PURE__ */ new Set();
+  const visit = (node) => {
+    if (typeof node !== "object" || node === null || seen.has(node))
+      return;
+    seen.add(node);
+    if (node === testFile.dialect)
+      return;
+    const n = node;
+    if (n.kind === "TypeReference" && n.sourceSpan !== void 0) {
+      const chain = (v) => Array.isArray(v) ? v : [];
+      const levels = [
+        n.referenceKind,
+        ...chain(n.referenceChain),
+        ...chain(n.elementReferenceChain)
+      ];
+      if (levels.includes("pointer_to"))
+        refuse("POINTER TO", n.sourceSpan);
+    }
+    for (const value of Object.values(node))
+      visit(value);
+  };
+  visit(testFile);
+  return errors;
+}
 
 // dist/backend/test-codegen.js
 var TestCodeGenerator = class extends CodeGenerator {
@@ -47173,6 +51798,13 @@ var TestCodeGenerator = class extends CodeGenerator {
         this.userFunctionNames.add(pou.name.toUpperCase());
       }
     }
+  }
+  /**
+   * The errors code generation has collected so far (see
+   * CodeGenResult.errors); generate() is not run for a test main.
+   */
+  collectedErrors() {
+    return [...this.codegenErrors];
   }
   /**
    * Populate known type sets from the AST.
@@ -47244,10 +51876,14 @@ var TestCodeGenerator = class extends CodeGenerator {
     this.setupVarNames.clear();
   }
   /** Populate the scope's variable→type map for POU invocation detection. */
-  setScopeFromVarTypes(varTypes) {
+  setScopeFromVarTypes(varTypes, typeRefs = /* @__PURE__ */ new Map()) {
     this.currentScopeVarTypes.clear();
+    this.currentScopeVarTypeRefs.clear();
     for (const [name, typeName2] of varTypes) {
       this.currentScopeVarTypes.set(name.toUpperCase(), typeName2);
+    }
+    for (const [name, typeRef] of typeRefs) {
+      this.currentScopeVarTypeRefs.set(name.toUpperCase(), typeRef);
     }
   }
   /**
@@ -47286,9 +51922,29 @@ var TestCodeGenerator = class extends CodeGenerator {
   emitInitializer(expr, cppType, stTypeName) {
     return this.generateInitializer(expr, cppType, stTypeName);
   }
+  /**
+   * `a = b` / `a <> b` of two STRUCT values as C++ (memberwise), or undefined
+   * when an operand is not a STRUCT.
+   */
+  emitStructComparison(operator, left, right) {
+    if (this.structOperandName(left) === void 0 || this.structOperandName(right) === void 0) {
+      return void 0;
+    }
+    return this.generateExpression({
+      kind: "BinaryExpression",
+      operator,
+      left,
+      right,
+      sourceSpan: left.sourceSpan
+    });
+  }
   /** Generate C++ statement(s) and append to output buffer. */
   emitStatement(stmt, indent) {
     this.generateStatement(stmt, indent);
+  }
+  /** Emit a nested ASSERT_* through `emitter` (undefined: drop it, as in a POU). */
+  setAssertEmitter(emitter) {
+    this.assertEmitter = emitter;
   }
   /** Make a RETURN in the statements emitted next return `value` (undefined: as in a POU). */
   setReturnValue(value) {
@@ -47349,6 +52005,14 @@ var TestCodeGenerator = class extends CodeGenerator {
 };
 
 // dist/backend/test-main-gen.js
+var TestMainCodegenError = class extends Error {
+  errors;
+  constructor(errors) {
+    super(errors.map((e) => e.message).join("\n"));
+    this.name = "TestMainCodegenError";
+    this.errors = errors;
+  }
+};
 function buildPOUInfoFromAST(ast) {
   const pous = [];
   for (const prog of ast.programs) {
@@ -47479,7 +52143,7 @@ function generateTestMain(testFiles, options) {
   }
   for (const testFile of testFiles) {
     let setupStructName;
-    if (testFile.setup) {
+    if (testFile.setup || testFile.teardown) {
       setupIndex++;
       setupStructName = `TestSetup_${setupIndex}`;
       const gen = new TestFunctionGenerator(testCodegen, testFile.fileName, astFunctionMap);
@@ -47538,6 +52202,16 @@ function generateTestMain(testFiles, options) {
   }
   lines.push("}");
   lines.push("");
+  const errors = testCodegen.collectedErrors();
+  if (errors.length > 0) {
+    throw new TestMainCodegenError(errors.map((e) => ({
+      message: e.message,
+      line: e.line ?? 0,
+      column: e.column ?? 0,
+      severity: "error",
+      ...e.file !== void 0 ? { file: e.file } : {}
+    })));
+  }
   return lines.join("\n");
 }
 function collectMockedFunctions(body, names) {
@@ -47565,39 +52239,47 @@ var TestFunctionGenerator = class {
    * Generate a C++ struct for SETUP/TEARDOWN.
    */
   generateSetupStruct(structName, setup, teardown) {
+    const setupVarBlocks = setup?.varBlocks ?? [];
     const lines = [];
     lines.push(`struct ${structName} {`);
     this.testCodegen.clearSetupVars();
     const varTypes = /* @__PURE__ */ new Map();
-    for (const varBlock of setup.varBlocks) {
+    const varTypeRefs = /* @__PURE__ */ new Map();
+    for (const varBlock of setupVarBlocks) {
       for (const decl of varBlock.declarations) {
         for (const name of decl.names) {
           varTypes.set(name, decl.type.name);
+          varTypeRefs.set(name, decl.type);
         }
       }
     }
-    this.testCodegen.setScopeFromVarTypes(varTypes);
-    for (const varBlock of setup.varBlocks) {
+    this.testCodegen.setScopeFromVarTypes(varTypes, varTypeRefs);
+    for (const varBlock of setupVarBlocks) {
       for (const decl of varBlock.declarations) {
         const cppType = this.testCodegen.resolveType(decl.type);
         const shared = this.testCodegen.sharedInstanceOfType(decl.type.name);
+        const init = decl.initialValue !== void 0 ? ` = ${this.testCodegen.emitInitializer(decl.initialValue, cppType, decl.type.name)}` : "";
         for (const name of decl.names) {
-          lines.push(shared !== void 0 ? `    ${cppType}& ${name} = ${shared};` : `    ${cppType} ${name};`);
+          lines.push(shared !== void 0 ? `    ${cppType}& ${name} = ${shared};` : `    ${cppType} ${name}${init};`);
         }
       }
     }
     lines.push("");
-    this.returnValueCpp = "";
-    lines.push("    void setup() {");
+    this.returnValueCpp = " true";
+    this.testCodegen.setReturnValue("true");
+    lines.push("    bool setup(strucpp::TestContext& ctx) {");
+    lines.push("        (void)ctx;");
     const savedIndent = this.indent;
     this.indent = "        ";
-    for (const stmt of setup.body) {
+    for (const stmt of setup?.body ?? []) {
       this.generateTestStatement(lines, stmt);
     }
+    lines.push("        return true;");
     this.indent = savedIndent;
     lines.push("    }");
     lines.push("");
-    lines.push("    void teardown() {");
+    lines.push("    bool teardown(strucpp::TestContext& ctx) {");
+    lines.push("        (void)ctx;");
     if (teardown) {
       this.indent = "        ";
       for (const stmt of teardown.body) {
@@ -47605,8 +52287,9 @@ var TestFunctionGenerator = class {
       }
       this.indent = savedIndent;
     }
+    lines.push("        return true;");
     lines.push("    }");
-    this.returnValueCpp = " true";
+    this.testCodegen.setReturnValue(void 0);
     lines.push("};");
     return lines.join("\n");
   }
@@ -47614,17 +52297,20 @@ var TestFunctionGenerator = class {
     const lines = [];
     lines.push(`// TEST '${escapeString(tc.name)}'`);
     lines.push(`bool ${funcName}(strucpp::TestContext& ctx) {`);
+    lines.push(`${this.indent}strucpp::strucpp_set_current_task("TEST '${escapeString(tc.name)}'");`);
     if (mockedFunctionNames && mockedFunctionNames.size > 0) {
       for (const name of mockedFunctionNames) {
         lines.push(`${this.indent}${name}_dispatch = ${name}_real;`);
       }
     }
     const varTypes = /* @__PURE__ */ new Map();
+    const varTypeRefs = /* @__PURE__ */ new Map();
     if (setup) {
       for (const varBlock of setup.varBlocks) {
         for (const decl of varBlock.declarations) {
           for (const name of decl.names) {
             varTypes.set(name, decl.type.name);
+            varTypeRefs.set(name, decl.type);
           }
         }
       }
@@ -47633,13 +52319,14 @@ var TestFunctionGenerator = class {
       for (const decl of varBlock.declarations) {
         for (const name of decl.names) {
           varTypes.set(name, decl.type.name);
+          varTypeRefs.set(name, decl.type);
         }
       }
     }
-    this.testCodegen.setScopeFromVarTypes(varTypes);
+    this.testCodegen.setScopeFromVarTypes(varTypes, varTypeRefs);
     if (setupStructName) {
       lines.push(`${this.indent}${setupStructName} s;`);
-      lines.push(`${this.indent}s.setup();`);
+      lines.push(`${this.indent}try { if (!s.setup(ctx)) { s.teardown(ctx); return false; } } catch (...) { s.teardown(ctx); throw; }`);
       this.setupVarNames = /* @__PURE__ */ new Set();
       if (setup) {
         for (const varBlock of setup.varBlocks) {
@@ -47660,7 +52347,8 @@ var TestFunctionGenerator = class {
     }
     this.testCodegen.setReturnValue("true");
     if (setupStructName) {
-      lines.push(`${this.indent}bool __passed = [&]() -> bool {`);
+      lines.push(`${this.indent}bool __passed = false;`);
+      lines.push(`${this.indent}try { __passed = [&]() -> bool {`);
       const savedIndent = this.indent;
       this.indent += "    ";
       for (const stmt of tc.body) {
@@ -47668,9 +52356,9 @@ var TestFunctionGenerator = class {
       }
       lines.push(`${this.indent}return true;`);
       this.indent = savedIndent;
-      lines.push(`${this.indent}}();`);
-      lines.push(`${this.indent}s.teardown();`);
-      lines.push(`${this.indent}return __passed;`);
+      lines.push(`${this.indent}}(); } catch (...) { s.teardown(ctx); throw; }`);
+      lines.push(`${this.indent}const bool __torn_down = s.teardown(ctx);`);
+      lines.push(`${this.indent}return __passed && __torn_down;`);
     } else {
       for (const stmt of tc.body) {
         this.generateTestStatement(lines, stmt);
@@ -47700,6 +52388,17 @@ var TestFunctionGenerator = class {
     }
   }
   generateTestStatement(lines, stmt) {
+    this.testCodegen.setAssertEmitter((nested, indent) => {
+      const out = [];
+      const saved = this.indent;
+      this.indent = indent;
+      try {
+        this.generateAssertCall(out, nested);
+      } finally {
+        this.indent = saved;
+      }
+      return out;
+    });
     switch (stmt.kind) {
       case "AssertCall":
         this.generateAssertCall(lines, stmt);
@@ -47744,7 +52443,7 @@ var TestFunctionGenerator = class {
   }
   generateAdvanceTime(lines, stmt) {
     const durationExpr = this.testCodegen.emitExpression(stmt.duration);
-    lines.push(`${this.indent}strucpp::__CURRENT_TIME_NS += static_cast<int64_t>(${durationExpr});`);
+    lines.push(`${this.indent}strucpp::__CURRENT_TIME_NS += strucpp::iec_duration_ns(${durationExpr});`);
   }
   // ===========================================================================
   // Mock statement generation
@@ -47802,10 +52501,16 @@ var TestFunctionGenerator = class {
         if (assert.args.length < 2) {
           throw new Error(`${assert.assertType} requires 2 arguments at ${this.fileName}:${line}`);
         }
-        const actualExpr = this.testCodegen.emitExpression(assert.args[0]);
-        const expectedExpr = this.testCodegen.emitExpression(assert.args[1]);
         const actualStr = this.expressionToString(assert.args[0]);
         const expectedStr = this.expressionToString(assert.args[1]);
+        const structEq = this.testCodegen.emitStructComparison(assert.assertType === "ASSERT_EQ" ? "=" : "<>", assert.args[0], assert.args[1]);
+        if (structEq !== void 0) {
+          const op = assert.assertType === "ASSERT_EQ" ? "=" : "<>";
+          lines.push(`${this.indent}if (!ctx.assert_true(${structEq}, "${escapeString(`${actualStr} ${op} ${expectedStr}`)}", ${line}${msgArg})) return false;`);
+          break;
+        }
+        const actualExpr = this.testCodegen.emitExpression(assert.args[0]);
+        const expectedExpr = this.testCodegen.emitExpression(assert.args[1]);
         const method = assert.assertType === "ASSERT_EQ" ? "assert_eq" : "assert_neq";
         lines.push(`${this.indent}if (!ctx.${method}(${actualExpr}, ${expectedExpr}, "${escapeString(actualStr)}", "${escapeString(expectedStr)}", ${line}${msgArg})) return false;`);
         break;
@@ -48027,6 +52732,8 @@ function shakeLibraryChunks(ast, archives, shadowed) {
       case "VariableExpression": {
         const ve = node;
         variableNames2.add(ve.name.toUpperCase());
+        if (ve.namesType === true)
+          referencedNames.add(ve.name.toUpperCase());
         break;
       }
       case "TypeReference": {
@@ -48224,6 +52931,7 @@ function runPipeline(source, options, continueOnError) {
   const allArchives = [];
   let dialect;
   let fbInit = false;
+  let stringDefaultLength = IEC_DEFAULT_STRING_LENGTH;
   try {
     dialect = resolveDialect(dialectRequestFromOptions(mergedOptions), mergedOptions.dialectIO?.readFile, mergedOptions.dialectIO?.listDir, mergedOptions.dialectIO?.realPath, mergedOptions.dialectIO?.foldCase);
   } catch (e) {
@@ -48238,7 +52946,8 @@ function runPipeline(source, options, continueOnError) {
       warnings,
       allArchives,
       mergedOptions,
-      fbInit
+      fbInit,
+      stringDefaultLength
     };
   }
   for (const message of dialect.warnings) {
@@ -48251,6 +52960,7 @@ function runPipeline(source, options, continueOnError) {
     });
   }
   fbInit = dialect.features.has("fb_init");
+  stringDefaultLength = defaultStringLength(dialect.features);
   const prep = sourcePrepFor(dialect, mergedOptions.pragmaDefines);
   const pragmaHint = prep.enabled ? "" : conditionalPragmaHint(dialect);
   let effectiveSource = source;
@@ -48271,7 +52981,8 @@ function runPipeline(source, options, continueOnError) {
         warnings,
         allArchives,
         mergedOptions,
-        fbInit
+        fbInit,
+        stringDefaultLength
       };
     }
   }
@@ -48292,7 +53003,8 @@ function runPipeline(source, options, continueOnError) {
         warnings,
         allArchives,
         mergedOptions,
-        fbInit
+        fbInit,
+        stringDefaultLength
       };
     }
   }
@@ -48311,7 +53023,8 @@ function runPipeline(source, options, continueOnError) {
       warnings,
       allArchives,
       mergedOptions,
-      fbInit
+      fbInit,
+      stringDefaultLength
     };
   }
   try {
@@ -48367,7 +53080,8 @@ function runPipeline(source, options, continueOnError) {
         warnings,
         allArchives,
         mergedOptions,
-        fbInit
+        fbInit,
+        stringDefaultLength
       };
     }
     ast = mergeCompilationUnits(units);
@@ -48407,6 +53121,9 @@ function runPipeline(source, options, continueOnError) {
     ];
     if (dialect.features.has("program_methods"))
       lowerProgramSelfMembers(ast);
+    if (dialect.features.has("string_default_80")) {
+      lowerDefaultStringLength(ast, defaultStringLength(dialect.features));
+    }
     if (dialect.features.has("platform_types")) {
       const libraryTypes = /* @__PURE__ */ new Set();
       for (const archive of mergedOptions.libraries ?? []) {
@@ -48430,7 +53147,8 @@ function runPipeline(source, options, continueOnError) {
         warnings,
         allArchives,
         mergedOptions,
-        fbInit
+        fbInit,
+        stringDefaultLength
       };
     }
   } catch (e) {
@@ -48449,7 +53167,8 @@ function runPipeline(source, options, continueOnError) {
         warnings,
         allArchives,
         mergedOptions,
-        fbInit
+        fbInit,
+        stringDefaultLength
       };
     }
   }
@@ -48462,7 +53181,8 @@ function runPipeline(source, options, continueOnError) {
       warnings,
       allArchives,
       mergedOptions,
-      fbInit
+      fbInit,
+      stringDefaultLength
     };
   }
   try {
@@ -48502,7 +53222,8 @@ function runPipeline(source, options, continueOnError) {
         warnings,
         allArchives,
         mergedOptions,
-        fbInit
+        fbInit,
+        stringDefaultLength
       };
     }
   }
@@ -48515,7 +53236,8 @@ function runPipeline(source, options, continueOnError) {
       warnings,
       allArchives,
       mergedOptions,
-      fbInit
+      fbInit,
+      stringDefaultLength
     };
   }
   allArchives.push(...withYieldedFunctions(mergedOptions.libraries ?? []));
@@ -48528,7 +53250,8 @@ function runPipeline(source, options, continueOnError) {
       warnings,
       allArchives,
       mergedOptions,
-      fbInit
+      fbInit,
+      stringDefaultLength
     };
   }
   for (const archive of allArchives) {
@@ -48619,7 +53342,8 @@ function runPipeline(source, options, continueOnError) {
     warnings,
     allArchives,
     mergedOptions,
-    fbInit
+    fbInit,
+    stringDefaultLength
   };
 }
 function compile(source, options = {}) {
@@ -48688,6 +53412,25 @@ function compile(source, options = {}) {
     codegen.addLibraryChunks(archive, reachable);
   }
   const codeResult = codegen.generate(pipeline.ast);
+  if (codeResult.errors.length > 0) {
+    const errors = codeResult.errors.map((err) => ({
+      message: withDeclaredNames(err.message, pouDisplayNames),
+      line: err.line ?? 0,
+      column: err.column ?? 0,
+      severity: "error",
+      ...err.file !== void 0 ? { file: err.file } : {}
+    }));
+    return {
+      success: false,
+      cppFiles: [],
+      cppCode: "",
+      headerCode: "",
+      lineMap: /* @__PURE__ */ new Map(),
+      headerLineMap: /* @__PURE__ */ new Map(),
+      errors,
+      warnings: pipeline.warnings
+    };
+  }
   for (const warn of codeResult.warnings) {
     const entry = {
       message: withDeclaredNames(warn.message, pouDisplayNames),
@@ -48703,7 +53446,10 @@ function compile(source, options = {}) {
   let debugTableCpp;
   let debugMap;
   if (pipeline.projectModel && pipeline.symbolTables) {
-    const dbg = generateDebugTable(pipeline.ast, pipeline.projectModel, pipeline.symbolTables, { md5: pipeline.mergedOptions.md5 ?? "" });
+    const dbg = generateDebugTable(pipeline.ast, pipeline.projectModel, pipeline.symbolTables, {
+      md5: pipeline.mergedOptions.md5 ?? "",
+      stringDefaultLength: pipeline.stringDefaultLength
+    });
     debugTableCpp = dbg.debugTableCpp;
     debugMap = dbg.debugMap;
     for (const item of dbg.incomplete) {
@@ -49669,8 +54415,9 @@ function runTestMode(options) {
   }
   if (result.symbolTables) {
     let hasTestErrors = false;
+    const testDialect = resolveDialect(dialectCompileOptions(options), nodeDialectIO.readFile, nodeDialectIO.listDir, nodeDialectIO.realPath, nodeDialectIO.foldCase);
     for (const tf of testFiles) {
-      const analysisResult = analyzeTestFile(tf, result.symbolTables, result.ast);
+      const analysisResult = analyzeTestFile(tf, result.symbolTables, result.ast, testDialect);
       if (analysisResult.errors.length > 0) {
         hasTestErrors = true;
         console.error(`Error in test file '${tf.fileName}':
@@ -49693,7 +54440,16 @@ function runTestMode(options) {
   if (result.resolvedLibraries) {
     testMainOpts.libraryArchives = result.resolvedLibraries;
   }
-  const testMainCpp = generateTestMain(testFiles, testMainOpts);
+  let testMainCpp;
+  try {
+    testMainCpp = generateTestMain(testFiles, testMainOpts);
+  } catch (err) {
+    if (!(err instanceof TestMainCodegenError))
+      throw err;
+    console.error("Error in test files:\n");
+    printDiagnostics(err.errors, testSources);
+    process.exit(1);
+  }
   const tempDir = (0, import_fs2.mkdtempSync)((0, import_path2.join)((0, import_os.tmpdir)(), "strucpp-test-"));
   try {
     (0, import_fs2.writeFileSync)((0, import_path2.join)(tempDir, "generated.hpp"), result.headerCode, "utf-8");

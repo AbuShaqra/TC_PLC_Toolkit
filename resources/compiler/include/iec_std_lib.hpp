@@ -47,6 +47,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <type_traits>
+#include <new>
 
 // Undefine AVR `<time.h>` macros that collide with common IEC
 // identifiers.  `<chrono>` above pulls in `<ctime>` → `<time.h>`,
@@ -434,6 +435,72 @@ inline T ROUND(T value) noexcept {
 }
 
 // =============================================================================
+// String comparison
+// =============================================================================
+
+namespace detail {
+/** The characters of a STRING value, or of a WSTRING value's UTF-16 code units. */
+template<typename C>
+struct iec_str_text {
+    const C* data;
+    size_t length;
+};
+
+inline iec_str_text<char> iec_str_text_of(const char* s) noexcept {
+    return {s ? s : "", s ? std::strlen(s) : 0};
+}
+inline iec_str_text<char16_t> iec_str_text_of(const char16_t* s) noexcept {
+    size_t n = 0;
+    if (s) while (s[n] != 0) ++n;
+    return {s ? s : u"", n};
+}
+template<size_t N>
+iec_str_text<char> iec_str_text_of(const IECString<N>& s) noexcept {
+    return {s.c_str(), s.length()};
+}
+template<size_t N>
+iec_str_text<char> iec_str_text_of(const IECStringVar<N>& s) noexcept {
+    return {s.c_str(), s.length()};
+}
+template<size_t N>
+iec_str_text<char16_t> iec_str_text_of(const IECWString<N>& s) noexcept {
+    return {s.c_str(), s.length()};
+}
+template<size_t N>
+iec_str_text<char16_t> iec_str_text_of(const IECWStringVar<N>& s) noexcept {
+    return {s.c_str(), s.length()};
+}
+/** A wrapper of a string value (IECVar, a global's read value): its value's text. */
+template<typename T>
+auto iec_str_text_of(const T& v) noexcept -> decltype(iec_str_text_of(v.get())) {
+    return iec_str_text_of(v.get());
+}
+
+/** strcmp order, by unsigned character or code unit, then by length. */
+template<typename C>
+int iec_str_text_cmp(iec_str_text<C> a, iec_str_text<C> b) noexcept {
+    using U = std::make_unsigned_t<C>;
+    const size_t n = a.length < b.length ? a.length : b.length;
+    for (size_t i = 0; i < n; ++i) {
+        const U x = static_cast<U>(a.data[i]);
+        const U y = static_cast<U>(b.data[i]);
+        if (x != y) return x < y ? -1 : 1;
+    }
+    return a.length == b.length ? 0 : (a.length < b.length ? -1 : 1);
+}
+}  // namespace detail
+
+/**
+ * Compare two STRING or two WSTRING values by their text: negative, zero or
+ * positive as `a` is before, equal to or after `b`. Takes literals, string
+ * values, string variables and their wrappers alike.
+ */
+template<typename A, typename B>
+inline int iec_str_cmp(const A& a, const B& b) noexcept {
+    return detail::iec_str_text_cmp(detail::iec_str_text_of(a), detail::iec_str_text_of(b));
+}
+
+// =============================================================================
 // Selection Functions (ANY_ELEMENTARY for comparisons)
 // =============================================================================
 
@@ -473,6 +540,22 @@ template<typename T, enable_if_any_elementary<T> = 0>
 inline T LIMIT(T mn, T in, T mx) noexcept {
     if (iec_unwrap(in) < iec_unwrap(mn)) return mn;
     if (iec_unwrap(in) > iec_unwrap(mx)) return mx;
+    return in;
+}
+
+// MAX, MIN and LIMIT of STRING or WSTRING literals compare their text
+inline const char* MAX(const char* a, const char* b) noexcept { return iec_str_cmp(a, b) > 0 ? a : b; }
+inline const char* MIN(const char* a, const char* b) noexcept { return iec_str_cmp(a, b) < 0 ? a : b; }
+inline const char* LIMIT(const char* mn, const char* in, const char* mx) noexcept {
+    if (iec_str_cmp(in, mn) < 0) return mn;
+    if (iec_str_cmp(in, mx) > 0) return mx;
+    return in;
+}
+inline const char16_t* MAX(const char16_t* a, const char16_t* b) noexcept { return iec_str_cmp(a, b) > 0 ? a : b; }
+inline const char16_t* MIN(const char16_t* a, const char16_t* b) noexcept { return iec_str_cmp(a, b) < 0 ? a : b; }
+inline const char16_t* LIMIT(const char16_t* mn, const char16_t* in, const char16_t* mx) noexcept {
+    if (iec_str_cmp(in, mn) < 0) return mn;
+    if (iec_str_cmp(in, mx) > 0) return mx;
     return in;
 }
 
@@ -697,6 +780,31 @@ template<typename A, typename B, typename C, typename... Rest,
 inline IEC_BOOL NE(A a, B b, C c, Rest... rest) noexcept {
     if (!(iec_unwrap(a) != iec_unwrap(b))) return IEC_BOOL(false);
     return NE(b, c, rest...);
+}
+
+// =============================================================================
+// VAR_TEMP reset
+// =============================================================================
+
+/**
+ * Rebuild `x` in place as a fresh object (a VAR_TEMP holding a function block
+ * instance), so a member that refers to another of its members (a POINTER TO
+ * set at construction) refers to `x`'s own, not to a destroyed temporary.
+ */
+template<typename T>
+inline void iec_reset_in_place(T& x) {
+    x.~T();
+    new (&x) T();
+}
+
+/**
+ * Ends `x`'s lifetime and returns its storage, for `new (iec_destroyed(x)) T(init)`:
+ * the initial value is built in that storage, not copied from a temporary.
+ */
+template<typename T>
+inline void* iec_destroyed(T& x) noexcept {
+    x.~T();
+    return static_cast<void*>(&x);
 }
 
 // =============================================================================
@@ -939,50 +1047,65 @@ template<typename T> inline IEC_DWORD TO_DWORD(T v) noexcept { return CONVERT<IE
 template<typename T> inline IEC_LWORD TO_LWORD(T v) noexcept { return CONVERT<IEC_LWORD>(v); }
 
 // Time/Date conversion functions
-// All time types are int64_t aliases, so IEC_TIME/IEC_DATE/IEC_TOD/IEC_DT
-// are all IECVar<int64_t>. We use a single template for each target type.
-// These take the value ALREADY in the internal representation. Unit scaling
-// for an integer argument (CODESYS: ms for TIME and TOD, seconds for DT and
-// DATE, ns for the L variants) is applied by codegen, which is the only layer
-// that still knows the IEC type — every temporal type is the same C++ type
-// here, so `TO_TIME(ms)` and `TO_TIME(aTimeValue)` are indistinguishable at
-// this point and a multiply here would corrupt one of them. See
-// `TEMPORAL_CONVERSION_UNITS` in codegen.ts and DOPE-618.
+// These take the value ALREADY in the target's unit: ms for TIME and TOD,
+// seconds for DATE and DT (modulo 2^32), ns for LTIME, LTOD and LDT, days for
+// LDATE. Unit scaling of an integer argument is applied by codegen (see
+// `TEMPORAL_CONVERSION_UNITS` in codegen.ts). A temporal argument of the
+// other width converts by its meaning (TO_LTIME of a TIME gives ns).
+
+/** The raw count of a number or a 32-bit temporal value. */
+template<typename T, std::enable_if_t<std::is_arithmetic<T>::value, int> = 0>
+constexpr T iec_raw(T v) noexcept { return v; }
+template<int K>
+constexpr uint32_t iec_raw(IecTemporal32<K> v) noexcept { return v.raw; }
+
+/** A count modulo 2^32, as the 32-bit temporal types hold it. */
+template<typename T>
+inline uint32_t iec_wrap32(T v) noexcept {
+    return static_cast<uint32_t>(static_cast<uint64_t>(static_cast<int64_t>(v)));
+}
 
 template<typename T> inline IEC_TIME TO_TIME(T v) noexcept {
-    return IEC_TIME(static_cast<TIME_t>(iec_unwrap(v)));
+    return IEC_TIME(TIME_t(iec_wrap32(iec_raw(iec_unwrap(v)))));
 }
-
 template<typename T> inline IEC_DATE TO_DATE(T v) noexcept {
-    return IEC_DATE(static_cast<DATE_t>(iec_unwrap(v)));
+    return IEC_DATE(DATE_t(iec_wrap32(iec_raw(iec_unwrap(v)))));
 }
-
 template<typename T> inline IEC_DT TO_DT(T v) noexcept {
-    return IEC_DT(static_cast<DT_t>(iec_unwrap(v)));
+    return IEC_DT(DT_t(iec_wrap32(iec_raw(iec_unwrap(v)))));
 }
-
 template<typename T> inline IEC_TOD TO_TOD(T v) noexcept {
-    return IEC_TOD(static_cast<TOD_t>(iec_unwrap(v)));
+    return IEC_TOD(TOD_t(iec_wrap32(iec_raw(iec_unwrap(v)))));
 }
 
-// LTIME has the representation of TIME (signed 64-bit nanoseconds).
 template<typename T> inline IEC_LTIME TO_LTIME(T v) noexcept {
-    return IEC_LTIME(static_cast<LTIME_t>(iec_unwrap(v)));
+    return IEC_LTIME(static_cast<LTIME_t>(iec_raw(iec_unwrap(v))));
 }
-
-// LDATE, LTOD and LDT have the representations of DATE (days), TOD and DT
-// (nanoseconds).
 template<typename T> inline IEC_LDATE TO_LDATE(T v) noexcept {
-    return IEC_LDATE(static_cast<LDATE_t>(iec_unwrap(v)));
+    return IEC_LDATE(static_cast<LDATE_t>(iec_raw(iec_unwrap(v))));
 }
-
 template<typename T> inline IEC_LTOD TO_LTOD(T v) noexcept {
-    return IEC_LTOD(static_cast<LTOD_t>(iec_unwrap(v)));
+    return IEC_LTOD(static_cast<LTOD_t>(iec_raw(iec_unwrap(v))));
+}
+template<typename T> inline IEC_LDT TO_LDT(T v) noexcept {
+    return IEC_LDT(static_cast<LDT_t>(iec_raw(iec_unwrap(v))));
 }
 
-template<typename T> inline IEC_LDT TO_LDT(T v) noexcept {
-    return IEC_LDT(static_cast<LDT_t>(iec_unwrap(v)));
-}
+// A 32-bit value to its long form, by its meaning
+inline IEC_LTIME TO_LTIME(TIME_t t) noexcept { return IEC_LTIME(TIME_AS_NS(t)); }
+inline IEC_LTIME TO_LTIME(const IEC_TIME& t) noexcept { return TO_LTIME(t.get()); }
+inline IEC_LDATE TO_LDATE(DATE_t d) noexcept { return IEC_LDATE(DATE_AS_DAYS(d)); }
+inline IEC_LDATE TO_LDATE(const IEC_DATE& d) noexcept { return TO_LDATE(d.get()); }
+inline IEC_LTOD TO_LTOD(TOD_t t) noexcept { return IEC_LTOD(TOD_AS_NS(t)); }
+inline IEC_LTOD TO_LTOD(const IEC_TOD& t) noexcept { return TO_LTOD(t.get()); }
+inline IEC_LDT TO_LDT(DT_t d) noexcept { return IEC_LDT(DT_AS_NS(d)); }
+inline IEC_LDT TO_LDT(const IEC_DT& d) noexcept { return TO_LDT(d.get()); }
+
+// A long value (a count in its own unit) to the 32-bit form
+inline IEC_TIME LTIME_TO_TIME_VALUE(int64_t ns) noexcept { return IEC_TIME(TIME_OF_NS(ns)); }
+inline IEC_TOD LTOD_TO_TOD_VALUE(int64_t ns) noexcept { return IEC_TOD(TOD_OF_NS(ns)); }
+inline IEC_DT LDT_TO_DT_VALUE(int64_t ns) noexcept { return IEC_DT(DT_OF_NS(ns)); }
+inline IEC_DATE LDATE_TO_DATE_VALUE(int64_t days) noexcept { return IEC_DATE(DATE_OF_DAYS(days)); }
 
 // CHAR is one Windows-1252 byte, WCHAR one UTF-16 code unit. A bit string or
 // integer converts by its value (codegen passes a CHAR source as its code);
@@ -1025,7 +1148,10 @@ template<size_t N> inline IEC_WCHAR TO_WCHAR(const IECWStringVar<N>& s) noexcept
 //   TOD  : [TOD#] HH:MM[:SS[.fff]]                 -> ns since midnight
 //   DATE : [D#] YYYY-MM-DD                         -> days since 1970-01-01
 //   DT   : [DT#] YYYY-MM-DD-HH:MM[:SS[.fff]]       -> ns since the Unix epoch
-// Lenient and exception-free (AVR-safe); unparseable input yields 0.
+// Lenient and exception-free (AVR-safe), with no undefined behaviour on any
+// input: text holding no number yields 0; other characters it does not expect
+// are skipped, and a value beyond the type's range wraps modulo 2^64.
+// Fractions are read digit by digit, exactly to the nanosecond.
 namespace iec_strparse {
 
 // Skip a leading `IDENT#` literal prefix (e.g. "T#", "TOD#") if present.
@@ -1040,28 +1166,53 @@ inline const char* skip_literal_prefix(const char* s) noexcept {
     return s;
 }
 
+/** The digits after a '.', exactly, as a count of `unit / 10^k` (digits past `unit`'s precision are dropped). */
+inline uint64_t read_fraction(const char*& s, uint64_t unit) noexcept {
+    uint64_t value = 0;
+    while (*s >= '0' && *s <= '9') {
+        unit /= 10u;
+        value += static_cast<uint64_t>(*s - '0') * unit;
+        ++s;
+    }
+    return value;
+}
+
 inline int64_t parse_time_ns(const char* s) noexcept {
     s = skip_literal_prefix(s);
-    int64_t total = 0;
-    while (*s) {
-        char* end = nullptr;
-        const double val = std::strtod(s, &end);
-        if (end == s) { ++s; continue; }
-        s = end;
-        const char u0 = (*s >= 'A' && *s <= 'Z') ? static_cast<char>(*s + 32) : *s;
-        const char u1 =
-            (s[0] && s[1] >= 'A' && s[1] <= 'Z') ? static_cast<char>(s[1] + 32) : s[1];
-        int64_t mult = 1000000LL; // default unit: milliseconds
-        if (u0 == 'm' && u1 == 's') { mult = 1000000LL; s += 2; }
-        else if (u0 == 'u' && u1 == 's') { mult = 1000LL; s += 2; }
-        else if (u0 == 'n' && u1 == 's') { mult = 1LL; s += 2; }
-        else if (u0 == 'd') { mult = 86400000000000LL; s += 1; }
-        else if (u0 == 'h') { mult = 3600000000000LL; s += 1; }
-        else if (u0 == 'm') { mult = 60000000000LL; s += 1; }
-        else if (u0 == 's') { mult = 1000000000LL; s += 1; }
-        total += static_cast<int64_t>(val * static_cast<double>(mult));
+    // A sign applies to the whole interval: T#-1s500ms is -1500 ms
+    bool negative = false;
+    if (*s == '-' || *s == '+') {
+        negative = *s == '-';
+        ++s;
     }
-    return total;
+    // The magnitude, unsigned: the LTIME minimum's is 2^63
+    uint64_t total = 0;
+    while (*s) {
+        if (!(*s >= '0' && *s <= '9') && *s != '.') { ++s; continue; }
+        uint64_t whole = 0;
+        while (*s >= '0' && *s <= '9') {
+            whole = whole * 10u + static_cast<uint64_t>(*s - '0');
+            ++s;
+        }
+        const char* frac_start = nullptr;
+        if (*s == '.') frac_start = ++s;
+        while (*s >= '0' && *s <= '9') ++s;  // the fraction, read once its unit is known
+        const char u0 = (*s >= 'A' && *s <= 'Z') ? static_cast<char>(*s + 32) : *s;
+        const char u1 = *s == '\0' ? '\0'
+            : (s[1] >= 'A' && s[1] <= 'Z') ? static_cast<char>(s[1] + 32) : s[1];
+        uint64_t mult = 1000000u; // default unit: milliseconds
+        if (u0 == 'm' && u1 == 's') { mult = 1000000u; s += 2; }
+        else if (u0 == 'u' && u1 == 's') { mult = 1000u; s += 2; }
+        else if (u0 == 'n' && u1 == 's') { mult = 1u; s += 2; }
+        else if (u0 == 'd') { mult = 86400000000000u; s += 1; }
+        else if (u0 == 'h') { mult = 3600000000000u; s += 1; }
+        else if (u0 == 'm') { mult = 60000000000u; s += 1; }
+        else if (u0 == 's') { mult = 1000000000u; s += 1; }
+        total += whole * mult;
+        if (frac_start != nullptr) total += read_fraction(frac_start, mult);
+    }
+    // Negated in unsigned arithmetic, then read as the signed value it encodes
+    return static_cast<int64_t>(negative ? 0u - total : total);
 }
 
 inline void read_int(const char*& s, long long& out) noexcept {
@@ -1073,13 +1224,14 @@ inline void read_int(const char*& s, long long& out) noexcept {
 inline int64_t parse_tod_ns(const char* s) noexcept {
     s = skip_literal_prefix(s);
     long long hh = 0, mm = 0, ss = 0;
-    double frac = 0;
     read_int(s, hh);
     if (*s == ':') { ++s; read_int(s, mm); }
     if (*s == ':') { ++s; read_int(s, ss); }
-    if (*s == '.') { char* e = nullptr; frac = std::strtod(s, &e); if (e != s) s = e; }
-    return hh * 3600000000000LL + mm * 60000000000LL + ss * 1000000000LL +
-           static_cast<int64_t>(frac * 1e9);
+    uint64_t frac_ns = 0;
+    if (*s == '.') { ++s; frac_ns = read_fraction(s, 1000000000u); }
+    return static_cast<int64_t>(
+        static_cast<uint64_t>(hh) * 3600000000000u + static_cast<uint64_t>(mm) * 60000000000u +
+        static_cast<uint64_t>(ss) * 1000000000u + frac_ns);
 }
 
 // Days from 1970-01-01 for a proleptic-Gregorian date (Hinnant's algorithm).
@@ -1103,6 +1255,7 @@ inline int64_t parse_date_days(const char* s) noexcept {
 
 inline int64_t parse_dt_ns(const char* s) noexcept {
     s = skip_literal_prefix(s);
+    if (!(*s >= '0' && *s <= '9')) return 0;  // no date: 0, as for no number
     long long y = 0, mo = 0, d = 0, hh = 0, mm = 0, ss = 0;
     read_int(s, y);
     if (*s == '-') { ++s; read_int(s, mo); }
@@ -1110,30 +1263,54 @@ inline int64_t parse_dt_ns(const char* s) noexcept {
     if (*s == '-') { ++s; read_int(s, hh); }
     if (*s == ':') { ++s; read_int(s, mm); }
     if (*s == ':') { ++s; read_int(s, ss); }
-    return days_from_civil(y, mo ? mo : 1, d ? d : 1) * 86400000000000LL +
-           hh * 3600000000000LL + mm * 60000000000LL + ss * 1000000000LL;
+    // A fraction of a second, to the nanosecond: DT#1969-12-31-23:59:59.5
+    uint64_t frac_ns = 0;
+    if (*s == '.') { ++s; frac_ns = read_fraction(s, 1000000000u); }
+    // Modulo 2^64: the LDT minimum's day count times ns-per-day overflows
+    // int64 before the time of day brings it back in range
+    // Date fields far out of range are clamped, so the day count cannot overflow
+    const auto clamp = [](long long v) noexcept {
+        return v < -1000000000LL ? -1000000000LL : v > 1000000000LL ? 1000000000LL : v;
+    };
+    const uint64_t days = static_cast<uint64_t>(
+        days_from_civil(clamp(y), mo ? clamp(mo) : 1, d ? clamp(d) : 1));
+    return static_cast<int64_t>(
+        days * 86400000000000u + static_cast<uint64_t>(hh) * 3600000000000u +
+        static_cast<uint64_t>(mm) * 60000000000u + static_cast<uint64_t>(ss) * 1000000000u +
+        frac_ns);
 }
 
 } // namespace iec_strparse
 
 // String overloads (more specialized than the numeric TO_* templates, so they
-// win overload resolution for STRING arguments).
-template<size_t N> inline IEC_TIME TO_TIME(const IECString<N>& s) noexcept { return IEC_TIME(iec_strparse::parse_time_ns(s.c_str())); }
-template<size_t N> inline IEC_TIME TO_TIME(const IECStringVar<N>& s) noexcept { return IEC_TIME(iec_strparse::parse_time_ns(s.get().c_str())); }
+// win overload resolution for STRING arguments). A 32-bit type takes the text
+// truncated to its unit and modulo 2^32, as its arithmetic does: a negative
+// TIME wraps, digits below a millisecond are dropped.
+template<size_t N> inline IEC_TIME TO_TIME(const IECString<N>& s) noexcept { return IEC_TIME(TIME_OF_NS(iec_strparse::parse_time_ns(s.c_str()))); }
+template<size_t N> inline IEC_TIME TO_TIME(const IECStringVar<N>& s) noexcept { return TO_TIME(s.get()); }
 template<size_t N> inline IEC_LTIME TO_LTIME(const IECString<N>& s) noexcept { return IEC_LTIME(iec_strparse::parse_time_ns(s.c_str())); }
-template<size_t N> inline IEC_LTIME TO_LTIME(const IECStringVar<N>& s) noexcept { return IEC_LTIME(iec_strparse::parse_time_ns(s.get().c_str())); }
+template<size_t N> inline IEC_LTIME TO_LTIME(const IECStringVar<N>& s) noexcept { return TO_LTIME(s.get()); }
 template<size_t N> inline IEC_LTOD TO_LTOD(const IECString<N>& s) noexcept { return IEC_LTOD(iec_strparse::parse_tod_ns(s.c_str())); }
-template<size_t N> inline IEC_LTOD TO_LTOD(const IECStringVar<N>& s) noexcept { return IEC_LTOD(iec_strparse::parse_tod_ns(s.get().c_str())); }
+template<size_t N> inline IEC_LTOD TO_LTOD(const IECStringVar<N>& s) noexcept { return TO_LTOD(s.get()); }
 template<size_t N> inline IEC_LDATE TO_LDATE(const IECString<N>& s) noexcept { return IEC_LDATE(iec_strparse::parse_date_days(s.c_str())); }
-template<size_t N> inline IEC_LDATE TO_LDATE(const IECStringVar<N>& s) noexcept { return IEC_LDATE(iec_strparse::parse_date_days(s.get().c_str())); }
+template<size_t N> inline IEC_LDATE TO_LDATE(const IECStringVar<N>& s) noexcept { return TO_LDATE(s.get()); }
 template<size_t N> inline IEC_LDT TO_LDT(const IECString<N>& s) noexcept { return IEC_LDT(iec_strparse::parse_dt_ns(s.c_str())); }
-template<size_t N> inline IEC_LDT TO_LDT(const IECStringVar<N>& s) noexcept { return IEC_LDT(iec_strparse::parse_dt_ns(s.get().c_str())); }
-template<size_t N> inline IEC_TOD TO_TOD(const IECString<N>& s) noexcept { return IEC_TOD(iec_strparse::parse_tod_ns(s.c_str())); }
-template<size_t N> inline IEC_TOD TO_TOD(const IECStringVar<N>& s) noexcept { return IEC_TOD(iec_strparse::parse_tod_ns(s.get().c_str())); }
-template<size_t N> inline IEC_DATE TO_DATE(const IECString<N>& s) noexcept { return IEC_DATE(iec_strparse::parse_date_days(s.c_str())); }
-template<size_t N> inline IEC_DATE TO_DATE(const IECStringVar<N>& s) noexcept { return IEC_DATE(iec_strparse::parse_date_days(s.get().c_str())); }
-template<size_t N> inline IEC_DT TO_DT(const IECString<N>& s) noexcept { return IEC_DT(iec_strparse::parse_dt_ns(s.c_str())); }
-template<size_t N> inline IEC_DT TO_DT(const IECStringVar<N>& s) noexcept { return IEC_DT(iec_strparse::parse_dt_ns(s.get().c_str())); }
+template<size_t N> inline IEC_LDT TO_LDT(const IECStringVar<N>& s) noexcept { return TO_LDT(s.get()); }
+template<size_t N> inline IEC_TOD TO_TOD(const IECString<N>& s) noexcept { return IEC_TOD(TOD_OF_NS(iec_strparse::parse_tod_ns(s.c_str()))); }
+template<size_t N> inline IEC_TOD TO_TOD(const IECStringVar<N>& s) noexcept { return TO_TOD(s.get()); }
+template<size_t N> inline IEC_DATE TO_DATE(const IECString<N>& s) noexcept { return IEC_DATE(DATE_OF_DAYS(iec_strparse::parse_date_days(s.c_str()))); }
+template<size_t N> inline IEC_DATE TO_DATE(const IECStringVar<N>& s) noexcept { return TO_DATE(s.get()); }
+template<size_t N> inline IEC_DT TO_DT(const IECString<N>& s) noexcept { return IEC_DT(DT_OF_NS(iec_strparse::parse_dt_ns(s.c_str()))); }
+template<size_t N> inline IEC_DT TO_DT(const IECStringVar<N>& s) noexcept { return TO_DT(s.get()); }
+// A STRING literal (a C++ string literal) parses the same way.
+inline IEC_TIME TO_TIME(const char* s) noexcept { return IEC_TIME(TIME_OF_NS(iec_strparse::parse_time_ns(s))); }
+inline IEC_LTIME TO_LTIME(const char* s) noexcept { return IEC_LTIME(iec_strparse::parse_time_ns(s)); }
+inline IEC_TOD TO_TOD(const char* s) noexcept { return IEC_TOD(TOD_OF_NS(iec_strparse::parse_tod_ns(s))); }
+inline IEC_LTOD TO_LTOD(const char* s) noexcept { return IEC_LTOD(iec_strparse::parse_tod_ns(s)); }
+inline IEC_DATE TO_DATE(const char* s) noexcept { return IEC_DATE(DATE_OF_DAYS(iec_strparse::parse_date_days(s))); }
+inline IEC_LDATE TO_LDATE(const char* s) noexcept { return IEC_LDATE(iec_strparse::parse_date_days(s)); }
+inline IEC_DT TO_DT(const char* s) noexcept { return IEC_DT(DT_OF_NS(iec_strparse::parse_dt_ns(s))); }
+inline IEC_LDT TO_LDT(const char* s) noexcept { return IEC_LDT(iec_strparse::parse_dt_ns(s)); }
 
 // =============================================================================
 // String / Wide String Conversion
@@ -1185,6 +1362,128 @@ inline IECString<SrcLen> WSTRING_TO_STRING(const IECWStringVar<SrcLen>& src) noe
     return WSTRING_TO_STRING(src.get());
 }
 
+// The canonical IEC literal of a duration or a date/time value, as the
+// *_TO_STRING conversions give it: T#1h2m3s4ms, D#2024-03-05,
+// TOD#12:34:56.789, DT#2024-03-05-12:34:56 (with the L prefixes for the long
+// types). A unit or fraction that is zero is left out; zero is T#0ms.
+namespace iec_literal_text {
+
+inline void append_int(IECString<254>& out, int64_t v) noexcept {
+    char buf[24];
+    int n = 0;
+    uint64_t u = static_cast<uint64_t>(v);
+    do { buf[n++] = static_cast<char>('0' + u % 10); u /= 10; } while (u != 0);
+    while (n > 0) out.append(buf[--n]);
+}
+
+inline void append_padded(IECString<254>& out, int64_t v, int width) noexcept {
+    char buf[24];
+    int n = 0;
+    uint64_t u = static_cast<uint64_t>(v);
+    do { buf[n++] = static_cast<char>('0' + u % 10); u /= 10; } while (u != 0);
+    while (n < width) buf[n++] = '0';
+    while (n > 0) out.append(buf[--n]);
+}
+
+inline void append_text(IECString<254>& out, const char* t) noexcept {
+    while (*t) out.append(*t++);
+}
+
+/** `.fff` of a nanosecond fraction, trailing zeros left out; nothing for 0. */
+inline void append_fraction(IECString<254>& out, int64_t ns) noexcept {
+    if (ns == 0) return;
+    int digits = 9;
+    while (ns % 10 == 0) { ns /= 10; --digits; }
+    out.append('.');
+    append_padded(out, ns, digits);
+}
+
+/** Days since 1970-01-01 to year, month, day (proleptic Gregorian). */
+inline void civil_from_days(int64_t z, int64_t& y, int64_t& m, int64_t& d) noexcept {
+    z += 719468;
+    const int64_t era = (z >= 0 ? z : z - 146096) / 146097;
+    const int64_t doe = z - era * 146097;
+    const int64_t yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    const int64_t doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    const int64_t mp = (5 * doy + 2) / 153;
+    d = doy - (153 * mp + 2) / 5 + 1;
+    m = mp < 10 ? mp + 3 : mp - 9;
+    y = yoe + era * 400 + (m <= 2 ? 1 : 0);
+}
+
+inline void append_date(IECString<254>& out, int64_t days) noexcept {
+    int64_t y, m, d;
+    civil_from_days(days, y, m, d);
+    append_padded(out, y, 4);
+    out.append('-');
+    append_padded(out, m, 2);
+    out.append('-');
+    append_padded(out, d, 2);
+}
+
+inline void append_clock(IECString<254>& out, int64_t ns_of_day) noexcept {
+    const int64_t s = ns_of_day / 1000000000LL;
+    append_padded(out, s / 3600, 2);
+    out.append(':');
+    append_padded(out, (s / 60) % 60, 2);
+    out.append(':');
+    append_padded(out, s % 60, 2);
+    append_fraction(out, ns_of_day % 1000000000LL);
+}
+
+}  // namespace iec_literal_text
+
+/** TIME / LTIME as `T#1h2m3s4ms` / `LTIME#...`. */
+inline IECString<254> iec_duration_text(int64_t ns, const char* prefix) noexcept {
+    using namespace iec_literal_text;
+    IECString<254> out;
+    append_text(out, prefix);
+    uint64_t u = ns < 0 ? static_cast<uint64_t>(-(ns + 1)) + 1 : static_cast<uint64_t>(ns);
+    if (ns < 0) out.append('-');
+    if (u == 0) { append_text(out, "0ms"); return out; }
+    const struct { uint64_t size; const char* unit; } parts[] = {
+        {86400000000000ULL, "d"}, {3600000000000ULL, "h"}, {60000000000ULL, "m"},
+        {1000000000ULL, "s"}, {1000000ULL, "ms"}, {1000ULL, "us"}, {1ULL, "ns"}};
+    for (const auto& part : parts) {
+        const uint64_t n = u / part.size;
+        u %= part.size;
+        if (n == 0) continue;
+        append_int(out, static_cast<int64_t>(n));
+        append_text(out, part.unit);
+    }
+    return out;
+}
+
+/** DATE or LDATE, days since 1970-01-01, as `D#2024-03-05` or `LDATE#...`. */
+inline IECString<254> iec_date_text(int64_t days, const char* prefix) noexcept {
+    IECString<254> out;
+    iec_literal_text::append_text(out, prefix);
+    iec_literal_text::append_date(out, days);
+    return out;
+}
+
+/** TOD or LTOD, ns since midnight, as `TOD#12:34:56.789` or `LTOD#...`. */
+inline IECString<254> iec_tod_text(int64_t ns, const char* prefix) noexcept {
+    IECString<254> out;
+    iec_literal_text::append_text(out, prefix);
+    iec_literal_text::append_clock(out, ns);
+    return out;
+}
+
+/** DT or LDT, ns since 1970-01-01, as `DT#2024-03-05-12:34:56` or `LDT#...`. */
+inline IECString<254> iec_dt_text(int64_t ns, const char* prefix) noexcept {
+    const int64_t day = 86400000000000LL;
+    int64_t days = ns / day;
+    int64_t rest = ns % day;
+    if (rest < 0) { rest += day; --days; }
+    IECString<254> out;
+    iec_literal_text::append_text(out, prefix);
+    iec_literal_text::append_date(out, days);
+    out.append('-');
+    iec_literal_text::append_clock(out, rest);
+    return out;
+}
+
 // `*_TO_*` resolution in the frontend collapses STRING_TO_WSTRING /
 // WSTRING_TO_STRING to plain TO_WSTRING / TO_STRING calls (cppName is
 // `TO_${toType}`), so provide the matching aliases. Templated on the
@@ -1199,6 +1498,21 @@ inline auto TO_WSTRING(const T& src) noexcept -> decltype(STRING_TO_WSTRING(src)
 template<typename T>
 inline auto TO_STRING(const T& src) noexcept -> decltype(WSTRING_TO_STRING(src)) {
     return WSTRING_TO_STRING(src);
+}
+
+// A WSTRING or STRING literal (a C++ string literal) converts as its text,
+// not as a pointer taken for a BOOL.
+inline IECString<254> TO_STRING(const char16_t* src) noexcept {
+    return WSTRING_TO_STRING(IECWString<254>(src));
+}
+inline IECWString<254> TO_WSTRING(const char* src) noexcept {
+    return STRING_TO_WSTRING(IECString<254>(src));
+}
+inline IECString<254> TO_STRING(const char* src) noexcept {
+    return IECString<254>(src);
+}
+inline IECWString<254> TO_WSTRING(const char16_t* src) noexcept {
+    return IECWString<254>(src);
 }
 
 // A CHAR is the one-character STRING of it, a WCHAR the one-unit WSTRING.
@@ -1388,33 +1702,25 @@ inline IEC_LWORD TO_LWORD(const IECWStringVar<N>& s) noexcept {
 // Time Utilities
 // =============================================================================
 
-/**
- * Create a TIME value from milliseconds
- */
+/** A TIME from milliseconds, modulo 2^32. */
 inline IEC_TIME TIME_FROM_MS(int64_t ms) noexcept {
-    return IEC_TIME(ms * 1000000); // Convert to nanoseconds
+    return IEC_TIME(TIME_t(static_cast<uint32_t>(static_cast<uint64_t>(ms))));
 }
 
-/**
- * Create a TIME value from seconds
- */
+/** A TIME from seconds, truncated to ms, modulo 2^32. */
 inline IEC_TIME TIME_FROM_S(double s) noexcept {
-    return IEC_TIME(static_cast<int64_t>(s * 1000000000.0));
+    return TIME_FROM_MS(static_cast<int64_t>(s * 1000.0));
 }
 
-/**
- * Get milliseconds from a TIME value
- */
-inline int64_t TIME_TO_MS(IEC_TIME t) noexcept {
-    return iec_unwrap(t) / 1000000;
-}
+/** The milliseconds of a TIME (or an LTIME, truncated). */
+inline int64_t TIME_TO_MS(IEC_TIME t) noexcept { return static_cast<int64_t>(t.get().raw); }
+template<typename L_, std::enable_if_t<std::is_same<L_, int64_t>::value, int> = 0>
+inline int64_t TIME_TO_MS(const IECVar<L_>& t) noexcept { return iec_unwrap(t) / 1000000; }
 
-/**
- * Get seconds from a TIME value
- */
-inline double TIME_TO_S(IEC_TIME t) noexcept {
-    return static_cast<double>(iec_unwrap(t)) / 1000000000.0;
-}
+/** The seconds of a TIME (or an LTIME), the fraction kept. */
+inline double TIME_TO_S(IEC_TIME t) noexcept { return static_cast<double>(t.get().raw) / 1000.0; }
+template<typename L_, std::enable_if_t<std::is_same<L_, int64_t>::value, int> = 0>
+inline double TIME_TO_S(const IECVar<L_>& t) noexcept { return static_cast<double>(iec_unwrap(t)) / 1000000000.0; }
 
 // =============================================================================
 // Variadic Arithmetic Functions (ANY_NUM -> ANY_NUM)
@@ -1503,6 +1809,102 @@ inline T MOD(T a, T b) noexcept {
         a, b,
         std::integral_constant<bool,
             std::is_floating_point<iec_underlying_type_t<T>>::value>{});
+}
+
+/**
+ * A store into a subrange variable: the value, or a run-time fault naming the
+ * variable, the value and the range when it is outside `lo..hi`.
+ */
+namespace detail {
+/** `a < b` for any two integers, compared by value: an unsigned above 2^63 is not negative. */
+template<typename A, typename B>
+constexpr bool subrange_below(A a, B b) noexcept {
+    return (a < static_cast<A>(0)) != (b < static_cast<B>(0))
+        ? a < static_cast<A>(0)
+        : static_cast<unsigned long long>(a) < static_cast<unsigned long long>(b);
+}
+
+/** Raise the subrange fault for `v` outside `lo..hi`, each written as its value. */
+template<typename X, typename T>
+[[noreturn]] STRUCPP_FAULT_PATH void subrange_fault(X v, T lo, T hi, const char* name, iec_site site) {
+    fault_text text;
+    text.add("Value ").add_number(v).add(" outside ").add_number(lo).add("..").add_number(hi);
+    text.add(" stored in ").add(name);
+    iec_raise_fault(IecFault::Subrange, text, site);
+}
+}  // namespace detail
+
+template<typename T, typename V>
+inline T iec_subrange_store(const V& value, T lo, T hi, const char* name, iec_site site) {
+    const auto v = iec_unwrap(value);
+#ifndef STRUCPP_NO_BOUNDS_CHECK
+    if (detail::subrange_below(v, lo) || detail::subrange_below(hi, v)) {
+        detail::subrange_fault(v, lo, hi, name, site);
+    }
+#else
+    (void)lo; (void)hi; (void)name; (void)site;
+#endif
+    return static_cast<T>(v);
+}
+
+/**
+ * Integer `/` whose divisor may be 0: a division by zero is a run-time fault
+ * naming the POU, line and task; the minimum value / -1 wraps instead of trapping.
+ */
+template<typename A, typename B>
+inline auto iec_div(const A& a, const B& b, iec_site site) -> decltype(a / b) {
+    using Result = decltype(a / b);
+    const auto av = iec_unwrap(a) + 0;
+    const auto bv = iec_unwrap(b) + 0;
+    using C = decltype(av / bv);
+    if (bv == 0) iec_site_fault(IecFault::DivideByZero, "Division by zero", site);
+    if (::strucpp::iec_mod_minus_one(bv)) {
+        return Result(static_cast<C>(
+            static_cast<std::make_unsigned_t<C>>(0) -
+            static_cast<std::make_unsigned_t<C>>(av)));
+    }
+    return a / b;
+}
+
+namespace detail {
+template<int K>
+constexpr bool temporal_zero(IecTemporal32<K> v) noexcept { return v.raw == 0u; }
+template<typename N, std::enable_if_t<std::is_arithmetic<N>::value, int> = 0>
+constexpr bool temporal_zero(N v) noexcept { return v == 0; }
+}  // namespace detail
+
+/**
+ * A TIME, DATE, TOD or DT `/` a number or a duration (DIV_TIME too): a zero
+ * divisor is a run-time fault naming the POU, line and task, as for integers.
+ */
+template<typename A, typename N>
+inline auto iec_temporal_div(const A& a, const N& n, iec_site site)
+    -> decltype(iec_unwrap(a) / iec_unwrap(n)) {
+    const auto d = iec_unwrap(n);
+    if (detail::temporal_zero(d)) iec_site_fault(IecFault::DivideByZero, "Division by zero", site);
+    return iec_unwrap(a) / d;
+}
+
+/** A TIME, DATE, TOD or DT MOD an integer or a duration: unsigned 32-bit; MOD 0 gives 0. */
+template<typename A, typename N>
+inline auto iec_temporal_mod(const A& a, const N& n) -> decltype(iec_unwrap(a) % iec_unwrap(n)) {
+    return iec_unwrap(a) % iec_unwrap(n);
+}
+
+/** A TOD or DT MOD a TIME: the time within that period, in the instant's type (iec_mod_period). */
+template<typename A, typename P>
+inline auto iec_temporal_mod_period(const A& a, const P& p) -> decltype(iec_mod_period(iec_unwrap(a), iec_unwrap(p))) {
+    return iec_mod_period(iec_unwrap(a), iec_unwrap(p));
+}
+
+
+/** DIVTIME(a, b), a duration by a duration: b = 0 is a run-time fault, as for integers. */
+template<typename A, typename B>
+inline auto iec_divtime(const A& a, const B& b, iec_site site) -> decltype(DIVTIME(a, b)) {
+    if (detail::temporal_zero(iec_unwrap(b))) {
+        iec_site_fault(IecFault::DivideByZero, "Division by zero", site);
+    }
+    return DIVTIME(a, b);
 }
 
 /**
@@ -1675,7 +2077,19 @@ static int64_t& __CURRENT_TIME_NS = __current_time_ns_slot();
  * CODESYS-compatible: TIME() returns the same value for the entire cycle.
  */
 inline IEC_TIME TIME() {
-    return IEC_TIME(static_cast<TIME_t>(__CURRENT_TIME_NS));
+    return IEC_TIME(TIME_OF_NS(__CURRENT_TIME_NS));
+}
+
+/** A duration as nanoseconds: a TIME by its meaning, an LTIME or a count as is. */
+template<typename T, std::enable_if_t<std::is_arithmetic<T>::value, int> = 0>
+inline int64_t iec_duration_ns(T v) noexcept { return static_cast<int64_t>(v); }
+inline int64_t iec_duration_ns(TIME_t v) noexcept { return TIME_AS_NS(v); }
+template<typename T>
+inline int64_t iec_duration_ns(const IECVar<T>& v) noexcept { return iec_duration_ns(v.get()); }
+
+/** The scan-cycle time as an LTIME (64-bit ns, no wrap): for LTON, LTOF, LTP. */
+inline IEC_LTIME LTIME() {
+    return IEC_LTIME(static_cast<LTIME_t>(__CURRENT_TIME_NS));
 }
 
 /**
@@ -1727,19 +2141,19 @@ static int64_t& __CURRENT_DT_NS = __current_dt_ns_slot();
  */
 inline IEC_DT CURRENT_DT() {
     if (__CURRENT_DT_NS != 0) {
-        return IEC_DT(static_cast<DT_t>(__CURRENT_DT_NS));
+        return IEC_DT(DT_OF_NS(__CURRENT_DT_NS));
     }
 #ifdef __AVR__
     // No system_clock on avr-gcc. `__CURRENT_TIME_NS` advances
     // monotonically as the runtime drives the scan cycle, giving us
     // time-since-boot — meaningful for diffing timestamps even when
     // no RTC is wired up.
-    return IEC_DT(static_cast<DT_t>(__CURRENT_TIME_NS));
+    return IEC_DT(DT_OF_NS(__CURRENT_TIME_NS));
 #else
     using namespace std::chrono;
     auto now = system_clock::now();
     auto ns  = duration_cast<nanoseconds>(now.time_since_epoch()).count();
-    return IEC_DT(static_cast<DT_t>(ns));
+    return IEC_DT(DT_OF_NS(static_cast<int64_t>(ns)));
 #endif
 }
 
@@ -1771,6 +2185,16 @@ template<typename T>
 inline IEC_UDINT IEC_SIZEOF(const T&) noexcept {
     return static_cast<IEC_UDINT>(sizeof(T));
 }
+
+/** SIZEOF of a type name: the size IEC_SIZEOF gives a value of `T`, with no value built. */
+template<typename T>
+struct iec_size_of_type {
+    static constexpr UDINT_t value = static_cast<UDINT_t>(sizeof(T));
+};
+template<typename T>
+struct iec_size_of_type<IECVar<T>> {
+    static constexpr UDINT_t value = static_cast<UDINT_t>(sizeof(T));
+};
 
 /**
  * MEMCPY(dest, src, n) - Copies n bytes from src to dest.

@@ -37,9 +37,15 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   errors; TcToolkitSample shows only the known `has no member named 'STATE'` g++ error (+ the same error from the
   C/C++ extension). **Not reported back yet:** PR checklist items 1–3 and 5–8 (dropdown sync, g++ row, too-old g++,
   IntelliSense provider, Tc2_* library summary, edited `.hpp` / deleted `.gitignore`, cancel leaves no `cc1plus.exe`).
-  **Compiler pinned at release M** (`75a55de`, user; in `dev` as PR #39, `c370b64`, 2026-11-14): the property-read gap is gone, both samples build
-  with g++ cleanly (`KNOWN_GPP_GAPS` empty); `resources/dialects/twincat3.json` gains `vendor_operators`,
-  `type_colon_optional`, `platform_types`, `bit_type` (S10).
+  **Compiler pinned at release N** (`d9b7c01`, 2026-11-15; dev PR #40 `3c24371`): both samples check at 0 errors / 0 warnings under the
+  profile and build with g++ cleanly (`KNOWN_GPP_GAPS` empty); `resources/dialects/twincat3.json` gains
+  `string_default_80` (a plain STRING is 80 characters; the fork ships no twincat3 profile, so it was added here).
+  N's `iec-std-functions.stlib` has a FUNCTION `LTIME()`; `libraryDecls.js` had let every manifest name resolve as
+  a type, so LTIME-typed library declarations started being written — fixed: types resolve only to elementary
+  types and manifest types/FBs (`compilerProvidedTypeNames`). **Backlog (separate item):** `ELEMENTARY` in
+  `src/libraryDecls.js` is stale since M — the compiler accepts (and g++ builds) LTIME, LDATE, LTOD, LDT, CHAR,
+  WCHAR, PVOID, XINT, UXINT, XWORD, __XINT, __UXINT; only BIT (struct members only), ANY and HRESULT are still
+  refused. Declaring them means re-pointing the synthetic "no usable declaration" fixtures off LTIME.
   **Windows CI** was red since R13's g++ tests landed (tests assumed Linux: shebang fake g++, `:`-split PATH, the
   runner's real MSYS2 at `C:\msys64` and its unsettled registry cache); fixed in `aa202b0`/`ee02e90`, CI green.
   Rule for new g++ tests: never let a test reach the host's g++, PATH, MSYS2 or registry: inject `machine`/`gppMachine`,

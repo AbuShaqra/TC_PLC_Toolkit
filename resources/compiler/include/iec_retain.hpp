@@ -82,7 +82,8 @@ namespace retain {
 // where it is scarce: a 4 KB EEPROM holds around a thousand retained DINTs.
 
 constexpr uint16_t MAGIC          = 0x4F52;
-constexpr uint8_t  FORMAT_VERSION = 1;
+// 2: TIME, DATE, TOD and DT are 4 bytes (they were 8 in format 1).
+constexpr uint8_t  FORMAT_VERSION = 2;
 constexpr uint16_t HEADER_SIZE    = 14;
 
 /** Outcome of a load. Anything other than `Ok` leaves every variable at its
