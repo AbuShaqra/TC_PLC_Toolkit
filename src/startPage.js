@@ -111,7 +111,6 @@ class StartPageController {
             styleUri: media('startPage.css'),
             scriptUri: media('startPage.js'),
             nameScriptUri: media('projectName.js'),
-            logoUri: media('marketplace-icon.png'),
             versions: TEMPLATE_VERSIONS
         });
         const subs = [

@@ -20,6 +20,11 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   only as a marker. Ids the host/dev-host use are unchanged. **Not run yet:** the dev-host pass (`test:clickCompile` /
   `test:toggleSync` click the hidden menu items by id: expected to work, unverified) and a look in real VS Code
   (real theme variables; the harness screenshots set Dark/Light Modern values by hand).
+  **Start page + logo, same look (user, 2026-11-16):** start page restyled (theme surfaces, frameless menu-like tiles,
+  `--tc-red` only as a marker; `run_start_page.js` fails on any reddish computed colour other than #E2001A); new mark
+  `scripts/logo/tc-toolkit-mark.svg` (approved) → `media/marketplace-icon.png` via `scripts/make-icon.js` (Playwright),
+  Activity Bar SVG = its one-colour form, inline `src/brandMark.js` on the start page title. **Left stale:**
+  `media/icon.png` (GitHub social preview, old mark and old name; its generator needs Windows' Segoe UI).
 - **Sample 1 XAE warnings (user, 2026-11-13; XAE Shell 64):** 0 errors, 3 warnings: C0564 x2 (GVL_System's
   `fbCylinder(refExtendOut := GVL_Io.bExtendOut, refRetractOut := GVL_Io.bRetractOut)`: "reference to uninitialized
   variable") and C0195 (FB_Station.Cyclic line 28, INT into WORD). **User: fix the sample.** Done in the generator

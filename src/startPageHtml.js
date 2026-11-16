@@ -16,6 +16,8 @@
 
 'use strict';
 
+const { brandMarkSvg } = require('./brandMark');
+
 /** Help links, by id. The host owns the URLs/commands (src/startPage.js); the page only names them. */
 const HELP_LINKS = Object.freeze([
     Object.freeze({ id: 'gettingStarted', label: 'Getting started', detail: 'The extension’s guide, offline' }),
@@ -78,10 +80,10 @@ function escapeHtml(s) {
 }
 
 /**
- * Builds the start page.
+ * Builds the start page. Its brand mark beside the title is the extension's mark as inline SVG
+ * (src/brandMark.js): the letters in the theme's colour, the square in true red.
  * @param {{cspSource: string, nonce: string, styleUri: string, scriptUri: string, nameScriptUri: string,
- *          logoUri: string, versions: ReadonlyArray<{id: string, label: string}>}} o
- *   `logoUri` is the webview URI of media/marketplace-icon.png, the extension's own icon.
+ *          versions: ReadonlyArray<{id: string, label: string}>}} o
  * @returns {string}
  */
 function renderStartPageHtml(o) {
@@ -118,9 +120,9 @@ function renderStartPageHtml(o) {
 <body>
     <main class="page">
         <header class="masthead">
-            <img class="logo" src="${escapeHtml(o.logoUri)}" alt="" width="64" height="64">
+            ${brandMarkSvg({ height: 30, cls: 'logo brand-mark' })}
             <div class="masthead-text">
-                <h1>TC <span class="accent">Toolkit</span></h1>
+                <h1>TC Toolkit</h1>
                 <p class="tagline">Create a TwinCAT 3 project, open one, or run a project action.</p>
                 <ul class="chips" aria-label="Highlights">
                     <li>Works offline</li><li>TwinCAT 3.1.4024 and 3.1.4026</li><li>IEC 61131-3 Structured Text</li>

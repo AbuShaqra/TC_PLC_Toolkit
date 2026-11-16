@@ -320,7 +320,7 @@ assert(/^\^1\.66\./.test(pkg.engines.vscode), `engine stays ^1.66 (${pkg.engines
     const html = renderStartPageHtml({
         cspSource: 'vscode-webview://abc', nonce: 'N0nce', styleUri: 'vscode-webview://abc/startPage.css',
         scriptUri: 'vscode-webview://abc/startPage.js', nameScriptUri: 'vscode-webview://abc/projectName.js',
-        logoUri: 'vscode-webview://abc/marketplace-icon.png', versions: TEMPLATE_VERSIONS
+        versions: TEMPLATE_VERSIONS
     });
     const csp = /Content-Security-Policy" content="([^"]+)"/.exec(html);
     assert(!!csp && /default-src 'none'/.test(csp[1]) && /script-src 'nonce-N0nce'/.test(csp[1]) && !/unsafe-inline|unsafe-eval|https?:/.test(csp[1]),
@@ -329,8 +329,8 @@ assert(/^\^1\.66\./.test(pkg.engines.vscode), `engine stays ^1.66 (${pkg.engines
     assert(scripts.length === 2 && scripts.every(s => /nonce="N0nce"/.test(s) && /src="vscode-webview:/.test(s)), 'only the two local nonce scripts');
     const urls = [...html.matchAll(/(?:src|href)="([^"#]+)"/g)].map(m => m[1]);
     assert(urls.every(u => u.startsWith('vscode-webview://')), `no remote load in the page (${urls.join(', ')})`);
-    assert(/<img class="logo" src="vscode-webview:\/\/abc\/marketplace-icon\.png"/.test(html) && /img-src vscode-webview:\/\/abc/.test(csp[1]),
-        'the page shows the extension icon (marketplace-icon.png), allowed by img-src');
+    assert(/<svg class="logo brand-mark" viewBox="26 60 210 136"[^>]*aria-hidden="true"/.test(html) && /stroke="currentColor"/.test(html) && /fill="#E2001A"/.test(html)
+        && !/<img\b/.test(html), 'the title carries the extension\'s mark as inline SVG (theme-coloured letters, the red square), no image to load');
     for (const v of TEMPLATE_VERSIONS) assert(html.includes(`value="${v.id}"`), `version ${v.id} is offered`);
     for (const l of HELP_LINKS) assert(html.includes(`data-link="${l.id}"`), `help link ${l.id} is on the page`);
     assert(/<span class="action-label">Build project<\/span>/.test(html) && /aria-label="Build options"/.test(html),

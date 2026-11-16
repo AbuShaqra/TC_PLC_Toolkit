@@ -60,7 +60,6 @@ const { TEMPLATE_VERSIONS } = require(path.join(REPO, 'src', 'projectTemplate.js
         styleUri: `${ORIGIN}/media/startPage.css`,
         scriptUri: `${ORIGIN}/media/startPage.js`,
         nameScriptUri: `${ORIGIN}/media/projectName.js`,
-        logoUri: `${ORIGIN}/media/marketplace-icon.png`,
         versions: TEMPLATE_VERSIONS
     });
     fs.mkdirSync(path.join(HERE, 'out'), { recursive: true });
@@ -550,6 +549,30 @@ const { TEMPLATE_VERSIONS } = require(path.join(REPO, 'src', 'projectTemplate.js
         await page.setViewportSize({ width: 360, height: 800 });
         const narrowCols = await page.evaluate(() => getComputedStyle(document.querySelector('.grid')).gridTemplateColumns.split(' ').length);
         assert(narrowCols === 1, `360 px is a single column (${narrowCols})`);
+
+        // The native look (user decision 2026-11-16): theme colours, no pink anywhere; true red only as a
+        // marker (the logo carries it). Every colour the page computes is checked: a reddish hue may only
+        // be #E2001A itself. Tiles are drawn like menu items: no frame.
+        await page.setViewportSize({ width: 1200, height: 800 });
+        const look = await page.evaluate(() => {
+            const reds = new Set();
+            const props = ['color', 'backgroundColor', 'borderTopColor', 'borderLeftColor', 'outlineColor'];
+            for (const el of document.querySelectorAll('body *')) {
+                const c = getComputedStyle(el);
+                for (const p of props) {
+                    const m = /rgba?\((\d+), (\d+), (\d+)(?:, ([\d.]+))?\)/.exec(c[p]);
+                    if (!m || (m[4] !== undefined && Number(m[4]) === 0)) continue;
+                    const [r, g, b] = [Number(m[1]), Number(m[2]), Number(m[3])];
+                    if (r > 150 && r - g > 60 && r - b > 40) reds.add(c[p]);
+                }
+            }
+            const tile = getComputedStyle(document.querySelector('#actions button.action'));
+            return { reds: [...reds], tileBorder: tile.borderTopWidth, tileRadius: tile.borderRadius, h1: getComputedStyle(document.querySelector('.masthead h1')).color,
+                body: getComputedStyle(document.body).color, mark: !!document.querySelector('.masthead svg.brand-mark rect[fill="#E2001A"]'),
+                markColor: getComputedStyle(document.querySelector('.masthead svg.brand-mark')).color };
+        });
+        assert(look.reds.every(c => c === 'rgb(226, 0, 26)') && look.tileBorder === '0px' && look.h1 === look.body && look.mark && look.markColor === look.body,
+            `the start page has no pink: any red is #E2001A, tiles are frameless menu-like rows, the title is the theme's text colour, its brand mark the inline mark (theme-coloured letters, the red square) (${JSON.stringify(look)})`);
 
         assert(foreign.length === 0, `no request leaves the page's own origin (${foreign.join(', ') || 'none'})`);
         assert(consoleErrors.length === 0, `the browser reported no errors (${consoleErrors.join(' | ') || 'none'})`);

@@ -20,6 +20,7 @@ scripts/build-vsix.sh
 scripts/run-build.bat
 scripts/install-vsix.bat
 scripts/make-icon.js
+scripts/logo/**
 scripts/make-social-preview.js
 scripts/glyphRaster.js
 scripts/measure-indexing.js
