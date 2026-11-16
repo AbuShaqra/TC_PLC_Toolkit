@@ -177,18 +177,21 @@
         "command": "twincat.xaeBuild",
         "title": "Build through XAE (requires TwinCAT)",
         "category": "TC Toolkit",
-        "enablement": "!twincat.xaeRunning"
+        "enablement": "!twincat.xaeRunning",
+        "icon": "$(tools)"
       },
       {
         "command": "twincat.xaeBuildAndActivate",
         "title": "Build and Activate through XAE… (requires TwinCAT)",
         "category": "TC Toolkit",
-        "enablement": "!twincat.xaeRunning"
+        "enablement": "!twincat.xaeRunning",
+        "icon": "$(rocket)"
       },
       {
         "command": "twincat.xaeShowTargets",
         "title": "Show Activation Targets (requires TwinCAT)",
-        "category": "TC Toolkit"
+        "category": "TC Toolkit",
+        "icon": "$(target)"
       },
       {
         "command": "twincat.openSettings",
@@ -688,6 +691,33 @@
           "command": "twincat.watch.remove",
           "when": "view == twincatWatch && viewItem =~ /^watchEntry/",
           "group": "3_remove@1"
+        }
+      ],
+      "editor/title": [
+        {
+          "command": "twincat.xaeBuild",
+          "when": "activeCustomEditorId == twincat.xmlViewer && isWindows",
+          "group": "navigation@1"
+        },
+        {
+          "command": "twincat.xaeBuildAndActivate",
+          "when": "activeCustomEditorId == twincat.xmlViewer && isWindows",
+          "group": "navigation@2"
+        },
+        {
+          "command": "twincat.goOnline",
+          "when": "activeCustomEditorId == twincat.xmlViewer && !twincat.online",
+          "group": "navigation@3"
+        },
+        {
+          "command": "twincat.goOffline",
+          "when": "activeCustomEditorId == twincat.xmlViewer && twincat.online",
+          "group": "navigation@3"
+        },
+        {
+          "command": "twincat.xaeShowTargets",
+          "when": "activeCustomEditorId == twincat.xmlViewer && isWindows",
+          "group": "navigation@4"
         }
       ]
     },

@@ -28,6 +28,8 @@ are required.
 Opens `.TcPOU` / `.TcGVL` / `.TcDUT` / `.TcIO` with the Declaration (variables) on top and the
 Implementation below, separated by a resizable splitter. No raw XML.
 
+The editor tab's title bar has buttons for **Build through XAE**, **Build and Activate**, **Show Activation Targets** (those three on Windows only) and **Go Online** / **Go Offline** (one button that follows the online state).
+
 ### TC Toolkit sidebar and start page
 
 The extension has its own icon in the Activity Bar. It opens the **TC Toolkit** sidebar, which holds three
