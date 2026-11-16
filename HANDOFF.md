@@ -155,6 +155,21 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   during activation (no); hide after a version switch (keep visible); boot project / remote targets (phase 2);
   child-component numbering in the Build pane (approximate until a capture); PS 5.1
   ConvertTo-Json shapes (one-element arrays), nested `BuildProject`, whether a hidden shell ever hangs on a dialog.
+- **Change the solution's target after a gate-3 refusal (user decision 2026-11-16): BUILT on
+  `claude/focused-ptolemy-m6acaz`, Linux-verified only.** Case: the `.tsproj` named an old user-mode runtime
+  (199.4.42.250.1.1) after a restart gave the new one 199.5.42.250.1.1. Now gate 3's text says "not a runtime on this
+  PC" and names the local runtimes (`Get-RuntimeLabels` → `-RuntimeLabels`, builder + driver identical), the fatal
+  carries `projectNetId`/`tsproj`/`local[]`, and the extension offers *Change the solution's target…* → pick (local
+  runtimes only) → modal (file + both NetIds) → `src/tsprojTarget.js` rewrites the one value byte-for-byte → the
+  same activation again. My call (not the user's): the re-run carries the activation confirmation only when the new
+  target IS the runtime already confirmed; otherwise it asks for the target again. Design: DEVELOPMENT.md "XAE
+  build (R14)", "The solution's target is not a runtime on this PC". **Needs the user's Windows check:**
+  `test-activation-target.ps1` (new cases; never run — no PowerShell here) against both the builder and
+  `-ScriptPath ..\..\resources\xae\build-plc-project.ps1`; a real refusal (point a copy's `.tsproj` at a foreign
+  NetId): the runtimes named, the change written (diff = that one value; XAE opens it and *Choose Target System*
+  shows the new target), the re-run activates; **unverified:** that a real `.tsproj` holds exactly ONE
+  `TargetNetId` (if XAE writes it twice, e.g. in another element, the button is never offered — then decide which
+  one counts) and that XAE keeps no other copy of the target (e.g. a `.user` file) that would win over it.
 - **R15 ADS online monitoring: IMPLEMENTED on local branch `r15-ads`** (worktree `/home/user/tc-r15`, 2026-11-13, not
   pushed, no PR yet; based on `claude/focused-ptolemy-m6acaz` `c9ace3f`). Decisions D1-D9: `docs/r15-ads-decision.md` §5.
   Design and file map: DEVELOPMENT.md "Online monitoring (roadmap R15)". `ads-client` **2.2.0 pinned** (pure JS; loads on

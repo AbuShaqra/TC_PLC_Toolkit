@@ -848,6 +848,27 @@ function Get-LocalAmsNetIds {
 
 <#
 .SYNOPSIS
+    NetId -> a short label for every local runtime, for Resolve-ActivationTarget's project refusal.
+.DESCRIPTION
+    Pure over the records it is handed (Get-LocalRuntimeRecords' shape: NetId, Kind, Source), so
+    test-activation-target.ps1 feeds it fixtures. A user-mode runtime is named by its folder under
+    Runtimes\ (the name XAE shows, e.g. UmRT_Default); the real-time runtime has no name of its own.
+    The first record of a NetId wins, as in Get-LocalRuntimePlatforms.
+#>
+function Get-RuntimeLabels {
+    param($Records)
+    $labels = @{}
+    foreach ($r in @($Records)) {
+        if (-not $r -or -not $r.NetId -or $labels.ContainsKey($r.NetId)) { continue }
+        $labels[$r.NetId] = $(if ($r.Kind -eq 'real-time') { 'real-time runtime' }
+                              elseif ($r.Source) { "$(Split-Path -Leaf $r.Source), user-mode runtime" }
+                              else { 'user-mode runtime' })
+    }
+    return $labels
+}
+
+<#
+.SYNOPSIS
     NetId -> platform for every local runtime, ready to hand to Resolve-ActivationTarget.
 .DESCRIPTION
     The platform is a property of the TARGET, not of this machine, so it is looked up PER NetId. See
@@ -933,6 +954,9 @@ function Format-RuntimePlatform {
                           platform string is accepted too. Omit it and nothing is known, so gate 4
                           never refuses.
         -Configuration    only so the platform refusal can suggest '<config>|<target platform>'.
+        -RuntimeLabels    NetId -> a short label for that local runtime ('UmRT_Default, user-mode
+                          runtime'; Get-RuntimeLabels). Optional and only for wording: the project
+                          refusal names every local runtime, with its label where one is known.
 
         -Returns          TargetNetId, TargetSource, RequestedNetId, ProjectNetId, LocalNetIds,
                           Platform, TargetPlatform, TargetProvenance, Warnings (string[])
@@ -981,7 +1005,8 @@ function Resolve-ActivationTarget {
         [string]$ProjectNetId,
         [Parameter(Mandatory)][string]$Platform,
         [hashtable]$TargetPlatforms,
-        [string]$Configuration = 'Release'
+        [string]$Configuration = 'Release',
+        [hashtable]$RuntimeLabels
     )
 
     # [Environment]::NewLine, not "`n": the caller prints the whole message with one Write-Host, and
@@ -1015,10 +1040,16 @@ function Resolve-ActivationTarget {
 
     # A .tsproj can name a target, and on a real machine project that target is a physical station.
     # This fires with or without -TargetNetId - the project naming a rig is a fact about the project,
-    # and passing a local -TargetNetId does not make it untrue.
+    # and passing a local -TargetNetId does not make it untrue. The local runtimes are named because
+    # the only way past this refusal is changing the solution's target to one of them.
     if ($ProjectNetId -and ($local -notcontains $ProjectNetId)) {
-        throw ("this solution names TargetNetId $ProjectNetId, which is not this machine." + $nl +
-               "       Activation is local-only and there is no override. Refusing before the IDE starts.")
+        $named = @($local | ForEach-Object {
+            if ($RuntimeLabels -and $RuntimeLabels.ContainsKey($_) -and $RuntimeLabels[$_]) { "$_ ($($RuntimeLabels[$_]))" } else { "$_" }
+        })
+        throw ("this solution names TargetNetId $ProjectNetId, which is not a runtime on this PC." + $nl +
+               "       Runtimes on this PC: $($named -join ', ')" + $nl +
+               "       Activation is local-only and there is no override: change the solution's target" + $nl +
+               "       to one of these (XAE: Choose Target System) and re-run. Refusing before the IDE starts.")
     }
 
     # The target, chosen BEFORE gate 4 because gate 4 is a question about THAT target. Choosing is not
@@ -1242,6 +1273,10 @@ if ($ActivateConfiguration) {
     # they are different platforms. See Get-LocalRuntimePlatforms.
     $LocalTargetPlatforms = Get-LocalRuntimePlatforms
 
+    # Only for the wording of the project refusal, which names every local runtime.
+    $LocalRuntimeRecords = @(Get-LocalRuntimeRecords)
+    $RuntimeLabels       = Get-RuntimeLabels -Records $LocalRuntimeRecords
+
     # A .tsproj can name a target, and on a real machine project that target is a physical station.
     # Catch it statically - the alternative is discovering it with the IDE open and a rig connected.
     $projTarget = $null
@@ -1265,7 +1300,8 @@ if ($ActivateConfiguration) {
                                                      -ProjectNetId $projTarget `
                                                      -Platform $PlatformName `
                                                      -TargetPlatforms $LocalTargetPlatforms `
-                                                     -Configuration $ConfigName
+                                                     -Configuration $ConfigName `
+                                                     -RuntimeLabels $RuntimeLabels
     }
     catch {
         # The function indents its own continuation lines, so this one Write-Host prints the same

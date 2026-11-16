@@ -68,6 +68,25 @@ for (const code of ['no-sln', 'ambiguous-sln', 'config-not-declared', 'no-tsproj
     assert(fatalCodes.has(code) || ps1.includes(`'${code}'`), `fatal code ${code}`);
 }
 assert(ps1.includes("'shell-closed'"), 'fatal code shell-closed');
+// Gate 3 (2026-11-16): the refusal names this PC's runtimes, and the fatal carries what the extension
+// needs to offer changing the solution's target; the gate and its labels are the builder's, verbatim.
+assert(/Emit-Fatal 'target-refused' "\$_" \(\[ordered\]@\{ gate = \$gate; projectNetId = \$projTarget; tsproj = \$tsproj\.FullName; local = @\(\$refusedLocal\) \}\)/.test(ps1),
+    'target-refused carries gate, projectNetId, tsproj and local');
+assert(/name = \$\(if \(\$r\.Kind -eq 'real-time'\) \{ 'Real-time runtime' \} else \{ Split-Path -Leaf \$r\.Source \}\)/.test(ps1)
+    && /kind = \$r\.Kind; platform = \$r\.Platform; provenance = \$r\.Provenance/.test(ps1), "the refusal's runtimes are in the -ListTargets shape");
+if (fs.existsSync(BUILDER)) {
+    const builder = fs.readFileSync(BUILDER, 'utf8');
+    const fn = (text, name) => (new RegExp(`\\nfunction ${name} \\{[\\s\\S]*?\\r?\\n\\}\\r?\\n`).exec(text) || [''])[0];
+    for (const name of ['Resolve-ActivationTarget', 'Get-RuntimeLabels']) {
+        assert(fn(ps1, name) !== '' && fn(ps1, name) === fn(builder, name), `${name} is identical in the driver and the builder`);
+    }
+    assert(/which is not a runtime on this PC\." \+ \$nl \+/.test(ps1) && /Runtimes on this PC: \$\(\$named -join ', '\)/.test(ps1),
+        'gate 3 says "not a runtime on this PC" and names the local runtimes');
+    for (const text of [ps1, builder]) {
+        assert(/-RuntimeLabels \$RuntimeLabels\r?\n/.test(text) && /\$RuntimeLabels\s+= Get-RuntimeLabels -Records \$LocalRuntimeRecords/.test(text),
+            'the caller hands the gate the runtime labels');
+    }
+}
 for (const r of ['headless', 'requested', 'version-switch', 'build', 'activation', 'after-activation']) {
     assert(ps1.includes(`'${r}'`), `ui reason '${r}'`);
 }

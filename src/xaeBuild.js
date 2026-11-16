@@ -464,8 +464,9 @@ function reachedBuildResult(code, outcome, state) {
  * @param {number|null} code The driver's exit code (null when it did not exit by itself).
  * @param {'exit'|'timeout'|'spawn-error'|'killed'} outcome How the child ended.
  * @param {RunState} state
- * @param {{error?: string, stderr?: string[], solutionName?: string, errorCount?: number}} [extra] `error`: the spawn error text; `stderr`:
- *   PowerShell's error lines; `solutionName`: names the solution when the project's XAE Shell is missing.
+ * @param {{error?: string, stderr?: string[], solutionName?: string, errorCount?: number, retargetProblem?: string}} [extra] `error`: the spawn error text; `stderr`:
+ *   PowerShell's error lines; `solutionName`: names the solution when the project's XAE Shell is missing or its
+ *   target is not a runtime on this PC; `retargetProblem`: why that target cannot be changed here ('' when it can).
  * @returns {ExitDescription}
  */
 function describeExit(code, outcome, state, extra = {}) {
@@ -526,6 +527,15 @@ function describeExit(code, outcome, state, extra = {}) {
                 // Says which shell to install (and, for activation, that another shell cannot stand in).
                 const m = missingShell(state.fatal.data, { mode: state.mode === 'activate' ? 'activate' : 'build', solutionName: extra.solutionName });
                 return { ok: false, severity: 'error', title: `The XAE build could not run: ${m.text}`, detail: missing.trim() };
+            }
+            const refused = extra.solutionName ? refusedTarget(state) : null;
+            if (refused) {
+                // The solution targets a runtime that is not on this PC: name this PC's runtimes.
+                return {
+                    ok: false, severity: 'error',
+                    title: `The XAE build could not run: ${retargetRefusalText(refused, extra.solutionName || '', extra.retargetProblem || '')}`,
+                    detail: missing.trim()
+                };
             }
             // The whole refusal is in the title (joined onto one line), so the detail never repeats it.
             const why = state.fatal ? oneLine(state.fatal.text) : '';
@@ -697,6 +707,88 @@ function confirmationText(target, solutionName, platformSwitch) {
             `Then ${solutionName} is built as ${platformSwitch.configuration}|${platformSwitch.to}, activated on ${where} and TwinCAT there restarted. ${tail}`,
         confirmLabel: SWITCH_FOR_RUN,
         rememberLabel: SWITCH_AND_REMEMBER
+    };
+}
+
+/** The button on a refusal whose solution targets a runtime that is not on this PC (user, 2026-11-16). */
+const RETARGET_BUTTON = 'Change the solution\'s target…';
+
+/**
+ * @typedef {Object} RefusedTarget
+ * @property {string} projectNetId The TargetNetId the solution names (not a runtime on this PC).
+ * @property {string|null} tsproj The system project the driver read it from.
+ * @property {Array<{netId: string, name: string, kind: string, platform: string|null, provenance: string|null}>} local
+ *   This PC's runtimes, as the driver found them (well-formed NetIds only, each once).
+ */
+
+/**
+ * The facts of a gate-3 refusal ("this solution names TargetNetId X, which is not a runtime on this
+ * PC"), from the driver's `target-refused` fatal; null for any other result. A driver older than
+ * this field sends only `{gate}`, which is null here too: the plain refusal is shown.
+ * @param {RunState} state
+ * @returns {RefusedTarget|null}
+ */
+function refusedTarget(state) {
+    const f = state && state.fatal;
+    if (!f || f.code !== 'target-refused' || !f.data || typeof f.data !== 'object') return null;
+    const d = f.data;
+    const projectNetId = strOrNull(d.projectNetId);
+    if (numOrNull(d.gate) !== 3 || !projectNetId) return null;
+    // PS 5.1 may hand a one-element array over as a bare object.
+    const raw = Array.isArray(d.local) ? d.local : (d.local && typeof d.local === 'object' ? [d.local] : []);
+    /** @type {RefusedTarget['local']} */
+    const local = [];
+    for (const t of raw) {
+        if (!t || !isValidNetId(t.netId) || t.netId === projectNetId || local.some(l => l.netId === t.netId)) continue;
+        local.push({ netId: t.netId, name: String(t.name || t.netId), kind: String(t.kind || ''), platform: strOrNull(t.platform), provenance: strOrNull(t.provenance) });
+    }
+    return { projectNetId, tsproj: strOrNull(d.tsproj), local };
+}
+
+/**
+ * One runtime of this PC, for a sentence: `UmRT_Default (199.5.42.250.1.1, user-mode runtime)`.
+ * @param {{netId: string, name: string, kind: string}} t
+ * @returns {string}
+ */
+function runtimeLabel(t) {
+    return t.kind === 'user-mode' ? `${t.name} (${t.netId}, user-mode runtime)` : `${t.name} (${t.netId})`;
+}
+
+/**
+ * The refusal of an activation whose solution targets a runtime that is not on this PC: what was
+ * refused, the runtimes this PC has, and the way forward. `problem` (from checkSolutionTarget) is
+ * why the target cannot be changed here; '' when it can (then the button is offered).
+ * @param {RefusedTarget} info
+ * @param {string} solutionName
+ * @param {string} problem
+ * @returns {string}
+ */
+function retargetRefusalText(info, solutionName, problem) {
+    const head = `${solutionName} targets ${info.projectNetId}, which is not a runtime on this PC. ` +
+        'Activation is local-only, so it was refused before XAE started.';
+    if (info.local.length === 0) {
+        return `${head} No runtime was found on this PC, so there is none to change the target to: ` +
+            'set the target in XAE (Choose Target System) once this PC has a runtime.';
+    }
+    const list = ` Runtimes on this PC: ${info.local.map(runtimeLabel).join(', ')}.`;
+    if (problem) return `${head}${list} The target cannot be changed here: ${problem}. Change it in XAE (Choose Target System).`;
+    return `${head}${list} Change the solution's target to one of them (here, or in XAE with Choose Target System).`;
+}
+
+/**
+ * The modal confirmation before the solution's target is changed. It names the file and both NetIds.
+ * @param {{solutionName: string, tsprojPath: string, from: string, to: {netId: string, name: string, kind: string}, title: string, sameTarget: boolean}} o
+ *   `sameTarget`: the new target is the runtime this activation was already confirmed for (then the
+ *   re-run activates without asking again; otherwise it asks for the target again).
+ * @returns {{message: string, confirmLabel: string}}
+ */
+function retargetConfirmText(o) {
+    return {
+        message: `Change the target of ${o.solutionName} from ${o.from} to ${runtimeLabel(o.to)}? ` +
+            `This rewrites TargetNetId="${o.from}" to TargetNetId="${o.to.netId}" in ${o.tsprojPath}, the setting XAE's Choose Target System changes; ` +
+            `nothing else in the file changes. Then ${o.title} runs again` +
+            (o.sameTarget ? ` and activates on ${o.to.name} (${o.to.netId}), as confirmed.` : ', and asks for the activation target again.'),
+        confirmLabel: 'Change target'
     };
 }
 
@@ -872,6 +964,7 @@ function compileFallbackText(results, compileSource) {
 
 module.exports = {
     PREFIX, PROTOCOL, EXIT, EVENT_TYPES, UNINTERRUPTIBLE_PHASES, SWITCH_FOR_RUN, SWITCH_AND_REMEMBER, RERUN_WINDOW_SHOWN, FALLBACK_INTRO, compileFallbackText,
+    RETARGET_BUTTON, refusedTarget, runtimeLabel, retargetRefusalText, retargetConfirmText,
     isValidNetId, buildDriverArgs, shellByProgId, missingShell, createLineSplitter, parseLine, createRunState, reduce,
     compileFailureConfirmed, reachedBuildResult, describeExit, describeUiMode, buildPhaseUi, canCancel, isStalled, targetPickItems, confirmationText,
     declaredPairs, activationPlatform, platformNotDeclaredText, pairNotDeclaredText, noErrorDetails, needsCompileFallback, oneLine

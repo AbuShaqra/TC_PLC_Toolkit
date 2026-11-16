@@ -24,6 +24,11 @@
  *     platform than the configured one, that same modal asks to switch (this run only, or remembered
  *     in `tcToolkit.xaeBuild.platform`) if the solution declares it, and the run is refused before
  *     XAE starts if it does not (`activationPlatform`).
+ *   - An activation refused because the solution targets a runtime that is not on this PC (the
+ *     driver's gate 3) names this PC's runtimes and, when there is one and the system project holds
+ *     exactly one TargetNetId, offers "Change the solution's target…": a pick of ONLY those runtimes,
+ *     a modal naming the file and both NetIds, the one attribute rewritten (src/tsprojTarget.js),
+ *     then the same activation again. Nothing is written without that modal's yes.
  *   - A failed headless build that brought back no error details offers "Build again with the window
  *     shown": one re-run with `-ShowWindow`; the setting is never changed.
  *   - A failed build (exit 1, confirmed) that brought back no error details by any route runs TC
@@ -54,8 +59,9 @@ const {
     EXIT, buildDriverArgs, createLineSplitter, parseLine, createRunState, reduce, describeExit, describeUiMode,
     canCancel, isStalled, targetPickItems, confirmationText, reachedBuildResult, missingShell,
     declaredPairs, activationPlatform, platformNotDeclaredText, pairNotDeclaredText, noErrorDetails, needsCompileFallback, RERUN_WINDOW_SHOWN, SWITCH_AND_REMEMBER,
-    FALLBACK_INTRO, compileFallbackText
+    FALLBACK_INTRO, compileFallbackText, RETARGET_BUTTON, refusedTarget, retargetConfirmText
 } = require('../xaeBuild');
+const { checkSolutionTarget, changeSolutionTarget } = require('../tsprojTarget');
 const { placeXaeErrors, placementSummary } = require('../xaeErrorPlacement');
 const { XAE_BUILD_SECTION, readXaeBuildSettings } = require('../xaeBuildSettings');
 const { XAE_SHELL_SECTION, XAE_SHELL_VERSIONS, describeConfiguredShells, detectXaeShells, createRegQuery } = require('../xaeShellDetect');
@@ -618,11 +624,14 @@ function registerXaeBuildCommands(context, deps) {
      * @param {() => Promise<import('../xaeBuild').FallbackResult[]>} [compileFallback] Runs TC Toolkit's own
      *   check on the solution's projects; called once, when a confirmed compile failure brought back no
      *   error details by any route.
+     * @param {{problem: string, change: (() => any)|null}} [retarget] A refusal whose solution targets a runtime
+     *   not on this PC: why its target cannot be changed here ('' when it can) and, when it can, the flow
+     *   behind "Change the solution's target…" (started once this run has ended).
      * @returns {Promise<{ok: boolean, exitCode: number|null, outcome: string, title: string, uiMode: string, placed: number, total: number,
      *   targetMismatch: boolean, noErrorDetails: boolean, errorRoute: string|null,
      *   compileFallback: {ran: number, skipped: boolean, results: import('../xaeBuild').FallbackResult[]}|null}>}
      */
-    async function report(run, slnPath, rerunWindowShown, compileFallback) {
+    async function report(run, slnPath, rerunWindowShown, compileFallback, retarget) {
         const ch = channel();
         const { state } = run;
         const uiMode = describeUiMode(state);
@@ -636,7 +645,7 @@ function registerXaeBuildCommands(context, deps) {
         });
         const d = describeExit(run.code, run.outcome, state, {
             error: run.error, stderr: run.stderr, solutionName: path.basename(slnPath, path.extname(slnPath)),
-            errorCount: placement.errors
+            errorCount: placement.errors, retargetProblem: retarget ? retarget.problem : ''
         });
         if (built) publishProblems(placement.byFile);
         for (const g of placement.general) ch.appendLine(`  ${g.severity} (not placed): ${g.description}${g.file ? ` [${g.file}${g.line ? `:${g.line}` : ''}]` : ''}`);
@@ -698,6 +707,7 @@ function registerXaeBuildCommands(context, deps) {
         if (byFile.size > 0 && built) buttons.unshift('Go to Problem…');
         if (fallback && fallback.ran > 0) buttons.unshift('Open Problems');
         if (missingDetails && missingDetails.offerRerun && rerunWindowShown) buttons.unshift(RERUN_WINDOW_SHOWN);
+        if (retarget && retarget.change) buttons.unshift(RETARGET_BUTTON);
         Promise.resolve(show(`${title}${errorsLine ? ' ' + errorsLine : ''}${fallbackText ? ' ' + fallbackText : ''}`, ...buttons)).then((choice) => {
             if (choice === 'Show Output') ch.show(true);
             else if (choice === 'Open Problems') vscode.commands.executeCommand('workbench.actions.view.problems');
@@ -706,9 +716,62 @@ function registerXaeBuildCommands(context, deps) {
                 ch.appendLine(`${stamp()} Building again with the XAE window shown (this run only; the setting is unchanged).`);
                 // The run that offered it may still be reporting (its fallback check): start after it.
                 whenIdle(() => { rerunWindowShown(); });
+            } else if (choice === RETARGET_BUTTON && retarget && retarget.change) {
+                const change = retarget.change;
+                whenIdle(() => { change(); });
             }
         });
         return result;
+    }
+
+    /**
+     * "Change the solution's target…" (user decision, 2026-11-16): a pick of ONLY this PC's runtimes
+     * (as the refusing run reported them), a modal naming the system project and both NetIds, the one
+     * TargetNetId attribute rewritten, then the same activation again. Cancelling a step changes
+     * nothing. The re-run keeps this run's confirmation only when the new target is the runtime that
+     * was confirmed; otherwise it asks for the activation target again (that runtime preselected).
+     * @param {import('../xaeBuild').RefusedTarget} refused
+     * @param {{a: any, title: string, solutionName: string, slnPath: string, key: string, configuration: string, platform: string,
+     *   shellAsked: boolean, confirmedNetId: string|null, carry: () => any}} o
+     * @returns {Promise<any>}
+     */
+    async function changeTarget(refused, o) {
+        const ch = channel();
+        const items = targetPickItems({ local: refused.local, projectNetId: null }, { preselect: o.confirmedNetId || undefined });
+        /** @type {any} */
+        const picked = await vscode.window.showQuickPick(items, {
+            title: `${o.title}: change the target of ${o.solutionName}`,
+            placeHolder: `Runtime on this PC for ${o.solutionName} to target (now ${refused.projectNetId}, not a runtime on this PC)`
+        });
+        if (!picked) {
+            ch.appendLine(`${stamp()} The target of ${o.solutionName} was not changed.`);
+            return { ok: false, reason: 'cancelled' };
+        }
+        const to = refused.local.find(t => t.netId === picked.netId);
+        if (!to) return { ok: false, reason: 'cancelled' };
+        const sameTarget = !!o.confirmedNetId && o.confirmedNetId === to.netId;
+        const c = retargetConfirmText({ solutionName: o.solutionName, tsprojPath: String(refused.tsproj), from: refused.projectNetId, to, title: o.title, sameTarget });
+        const answer = await vscode.window.showWarningMessage(c.message, { modal: true }, c.confirmLabel);
+        if (answer !== c.confirmLabel) {
+            ch.appendLine(`${stamp()} The target of ${o.solutionName} was not changed.`);
+            return { ok: false, reason: 'cancelled' };
+        }
+        const w = changeSolutionTarget({ slnPath: o.slnPath, tsprojPath: refused.tsproj, from: refused.projectNetId, to: to.netId, fs });
+        if (!w.ok) {
+            const text = `The target of ${o.solutionName} was not changed: ${w.text}.`;
+            ch.appendLine(`${stamp()} ${text}`);
+            vscode.window.showErrorMessage(text);
+            return { ok: false, reason: 'not-changed' };
+        }
+        ch.appendLine(`${stamp()} Changed TargetNetId in ${refused.tsproj} from ${refused.projectNetId} to ${to.netId} (${to.name}); running ${o.title} again.`);
+        if (sameTarget) {
+            return buildCommand({
+                ...o.a, projectKey: o.key, configuration: o.configuration, platform: o.platform, shellChecked: true, shellAsked: o.shellAsked,
+                confirmedActivation: o.carry()
+            }, true);
+        }
+        await context.workspaceState.update(LAST_TARGET_KEY, to.netId);
+        return buildCommand({ ...o.a, projectKey: o.key, shellChecked: true, shellAsked: o.shellAsked }, true);
     }
 
     /**
@@ -881,7 +944,24 @@ function registerXaeBuildCommands(context, deps) {
                 }
                 return results;
             };
-            const result = await report(run, slnPath, rerunWindowShown, compileFallback);
+            // Refused because the solution targets a runtime that is not on this PC (gate 3): offer to
+            // change the solution's target to one that is, then run this activation again.
+            const refused = activate ? refusedTarget(run.state) : null;
+            /** @type {{problem: string, change: (() => any)|null}|undefined} */
+            let retarget;
+            if (refused) {
+                const checked = refused.local.length > 0
+                    ? checkSolutionTarget({ slnPath, tsprojPath: refused.tsproj, from: refused.projectNetId, fs })
+                    : { ok: false, text: '' };
+                retarget = {
+                    problem: checked.text,
+                    change: checked.ok ? () => changeTarget(refused, {
+                        a, title, solutionName, slnPath, key: resolved.key, configuration, platform: pform, shellAsked,
+                        confirmedNetId: target ? target.netId : null, carry: carryConfirmation
+                    }) : null
+                };
+            }
+            const result = await report(run, slnPath, rerunWindowShown, compileFallback, retarget);
 
             // The stall offer: the same run again with the window shown (this run only).
             if (run.rerunVisible) {

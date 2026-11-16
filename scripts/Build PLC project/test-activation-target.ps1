@@ -98,13 +98,14 @@ function Get-FunctionText {
 . ([scriptblock]::Create((Get-FunctionText 'Get-TcBootPlatform')))
 . ([scriptblock]::Create((Get-FunctionText 'Get-TcRuntimeKind')))
 . ([scriptblock]::Create((Get-FunctionText 'Get-UserModeRuntimeRecords')))
+. ([scriptblock]::Create((Get-FunctionText 'Get-RuntimeLabels')))
 
 # A signature check, not a style check. The table below is written against -TargetPlatforms - a
 # PER-TARGET map - and would be meaningless against a builder that still asks about the host, so say
 # so rather than reporting green.
 $gateParams = @((Get-Command Resolve-ActivationTarget -CommandType Function).Parameters.Keys)
 foreach ($needed in 'LocalNetIds', 'RequestedNetId', 'ProjectNetId', 'Platform', 'TargetPlatforms',
-                    'Configuration') {
+                    'Configuration', 'RuntimeLabels') {
     if ($gateParams -notcontains $needed) {
         Fail-Harness "Resolve-ActivationTarget has no -$needed parameter; these tests are written against it."
     }
@@ -234,14 +235,16 @@ function Test-Refuses {
         [hashtable]$TargetPlatforms,
         [string]$Configuration = 'Release',
         [string[]]$MessageContains,
-        [string[]]$MessageLacks          # the gate that must NOT report - this is how precedence is pinned
+        [string[]]$MessageLacks,         # the gate that must NOT report - this is how precedence is pinned
+        [hashtable]$RuntimeLabels         # wording only: NetId -> label, as Get-RuntimeLabels builds it
     )
     if (-not $Platform) { $Platform = $Rt64 }
     if (-not $PSBoundParameters.ContainsKey('TargetPlatforms')) { $TargetPlatforms = $AllRt64 }
     try {
         $r = Resolve-ActivationTarget -LocalNetIds $Local -RequestedNetId $Requested `
                                       -ProjectNetId $Project -Platform $Platform `
-                                      -TargetPlatforms $TargetPlatforms -Configuration $Configuration
+                                      -TargetPlatforms $TargetPlatforms -Configuration $Configuration `
+                                      -RuntimeLabels $RuntimeLabels
         Write-Fail $Name "did not refuse; returned target $($r.TargetNetId) ($($r.TargetSource))"
         return
     } catch {
@@ -421,6 +424,51 @@ Test-Refuses  -Name 'a project .tsproj target that is not local is refused with 
 Test-Refuses  -Name 'a local -TargetNetId does not excuse a remote project target' `
               -Local $Both -Requested $NetUm -Project $NetRemote `
               -MessageContains @('this solution names TargetNetId', $NetRemote)
+
+# The project refusal names the way past it: every local runtime, labelled where a label is known.
+$Labels = @{ $NetRt = 'real-time runtime'; $NetUm = 'UmRT_Default, user-mode runtime' }
+
+Test-Refuses  -Name 'the project refusal says "not a runtime on this PC" and names every local runtime' `
+              -Local $Both -Project $NetRemote `
+              -MessageContains @('not a runtime on this PC', "Runtimes on this PC: $NetRt, $NetUm",
+                                 'Choose Target System', 'no override')
+
+Test-Refuses  -Name 'the project refusal labels each local runtime when labels are given' `
+              -Local $Both -Project $NetRemote -RuntimeLabels $Labels `
+              -MessageContains @("$NetRt (real-time runtime)", "$NetUm (UmRT_Default, user-mode runtime)")
+
+Test-Refuses  -Name 'a runtime without a label is still named, bare' `
+              -Local $Both -Project $NetRemote -RuntimeLabels @{ $NetUm = 'UmRT_Default, user-mode runtime' } `
+              -MessageContains @("Runtimes on this PC: $NetRt, $NetUm (UmRT_Default, user-mode runtime)")
+
+Test-Refuses  -Name 'labels change no decision: a local -TargetNetId still does not excuse a remote project target' `
+              -Local $Both -Requested $NetUm -Project $NetRemote -RuntimeLabels $Labels `
+              -MessageContains @('this solution names TargetNetId', $NetRemote, 'not a runtime on this PC')
+
+Test-Allows   -Name 'labels change no decision: a local project target is allowed' `
+              -Local $Both -Project $NetUm `
+              -ExpectTarget $NetRt -ExpectSource 'first-local'
+
+# Get-RuntimeLabels: pure over the records it is handed.
+$labelRecords = @(
+    [pscustomobject]@{ NetId = $NetRt; Kind = 'real-time'; Source = 'HKLM:\SOFTWARE\Beckhoff\TwinCAT3\System' },
+    [pscustomobject]@{ NetId = $NetUm; Kind = 'user-mode'; Source = 'C:\ProgramData\Beckhoff\TwinCAT\3.1\Runtimes\UmRT_Default' },
+    [pscustomobject]@{ NetId = $NetUm; Kind = 'user-mode'; Source = 'C:\ProgramData\Beckhoff\TwinCAT\3.1\Runtimes\Second' },
+    [pscustomobject]@{ NetId = ''; Kind = 'user-mode'; Source = 'C:\x' },
+    $null
+)
+$got = Get-RuntimeLabels -Records $labelRecords
+$labelProblems = @()
+if ($got.Count -ne 2) { $labelProblems += "expected 2 labels, got $($got.Count)" }
+if ($got[$NetRt] -ne 'real-time runtime') { $labelProblems += "real-time label '$($got[$NetRt])'" }
+if ($got[$NetUm] -ne 'UmRT_Default, user-mode runtime') { $labelProblems += "user-mode label '$($got[$NetUm])' (the first record must win)" }
+if ($labelProblems.Count -gt 0) { Write-Fail 'Get-RuntimeLabels names each NetId once, by kind and runtime folder' ($labelProblems -join '; ') }
+else { Write-Pass 'Get-RuntimeLabels names each NetId once, by kind and runtime folder' (($got.Keys | Sort-Object | ForEach-Object { "$_ = $($got[$_])" }) -join '; ') }
+if ((Get-RuntimeLabels -Records @()).Count -eq 0 -and (Get-RuntimeLabels -Records $null).Count -eq 0) {
+    Write-Pass 'Get-RuntimeLabels of no records is an empty map' ''
+} else {
+    Write-Fail 'Get-RuntimeLabels of no records is an empty map' 'not empty'
+}
 
 # ---------------------------------------------------------------------------- precedence
 Test-Refuses  -Name 'precedence: an undetermined local set outranks every other gate' `

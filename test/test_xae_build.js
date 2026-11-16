@@ -210,6 +210,44 @@ function run(name, o) {
     assert(run('version-mismatch').state.fatal.code === 'version-mismatch', 'version-mismatch');
     const ref = run('target-refused');
     assert(ref.state.fatal.code === 'target-refused' && ref.state.fatal.data.gate === 3, 'target-refused carries the gate');
+    // Gate 3's facts: the solution's target, its system project and this PC's runtimes (user, 2026-11-16).
+    {
+        const info = x.refusedTarget(ref.state);
+        assert(info && info.projectNetId === '192.0.2.10.1.1' && info.tsproj === 'C:\\Projects\\Line\\Line\\Line.tsproj',
+            'refusedTarget: the solution\'s TargetNetId and the system project');
+        assert(info && info.local.length === 2 && info.local[0].netId === '198.51.100.1.1.1' && info.local[1].name === 'UmRT_Default'
+            && info.local[1].kind === 'user-mode' && info.local[1].platform === 'TwinCAT OS (x64)', 'refusedTarget: the local runtimes, a malformed NetId dropped');
+        const title = x.describeExit(2, 'exit', ref.state, { solutionName: 'Line' }).title;
+        assert(title === 'The XAE build could not run: Line targets 192.0.2.10.1.1, which is not a runtime on this PC. Activation is local-only, so it was refused before XAE started. '
+            + 'Runtimes on this PC: Real-time runtime (198.51.100.1.1.1), UmRT_Default (198.51.100.4.1.1, user-mode runtime). '
+            + 'Change the solution\'s target to one of them (here, or in XAE with Choose Target System).', `describeExit 2, gate 3: names the runtimes (${title})`);
+        const blocked = x.describeExit(2, 'exit', ref.state, { solutionName: 'Line', retargetProblem: 'Line.tsproj names TargetNetId 2 times' }).title;
+        assert(/The target cannot be changed here: Line\.tsproj names TargetNetId 2 times\. Change it in XAE \(Choose Target System\)\.$/.test(blocked),
+            'describeExit 2, gate 3: says why the target cannot be changed here');
+        const none = { ...ref.state, fatal: { ...ref.state.fatal, data: { ...ref.state.fatal.data, local: [] } } };
+        assert(/No runtime was found on this PC, so there is none to change the target to: set the target in XAE \(Choose Target System\)/.test(
+            x.describeExit(2, 'exit', none, { solutionName: 'Line' }).title) && x.refusedTarget(none).local.length === 0, 'no local runtime: says so and points to XAE');
+        // PS 5.1 can hand a one-element array over as a bare object; the project's own NetId is never offered.
+        const one = { ...ref.state, fatal: { ...ref.state.fatal, data: { gate: 3, projectNetId: '192.0.2.10.1.1', local: { netId: '198.51.100.4.1.1', name: 'U', kind: 'user-mode' } } } };
+        assert(x.refusedTarget(one).local.length === 1 && x.refusedTarget(one).tsproj === null, 'a bare local object is read as a one-element list');
+        const self = { ...ref.state, fatal: { ...ref.state.fatal, data: { gate: 3, projectNetId: '198.51.100.4.1.1', local: [{ netId: '198.51.100.4.1.1' }, { netId: '198.51.100.4.1.1' }] } } };
+        assert(x.refusedTarget(self).local.length === 0, 'the project\'s own NetId and duplicates are dropped');
+        // An older driver sends only {gate}: the plain refusal, as before.
+        const legacy = run('target-refused-legacy');
+        assert(x.refusedTarget(legacy.state) === null && /could not run: this solution names TargetNetId 192\.0\.2\.10\.1\.1, which is not this machine\.$/.test(
+            x.describeExit(2, 'exit', legacy.state, { solutionName: 'Line' }).title), 'a refusal without the facts keeps the driver\'s text');
+        const g4 = run('target-refused-platform');
+        assert(x.refusedTarget(g4.state) === null, 'gate 4 is not a target refusal');
+        assert(x.refusedTarget(x.createRunState()) === null, 'no fatal, no refusal');
+        const c = x.retargetConfirmText({ solutionName: 'Line', tsprojPath: 'C:\\L\\Line.tsproj', from: '192.0.2.10.1.1',
+            to: { netId: '198.51.100.4.1.1', name: 'UmRT_Default', kind: 'user-mode' }, title: 'Build and Activate through XAE', sameTarget: true });
+        assert(c.confirmLabel === 'Change target' && c.message.includes('from 192.0.2.10.1.1 to UmRT_Default (198.51.100.4.1.1, user-mode runtime)')
+            && c.message.includes('TargetNetId="192.0.2.10.1.1" to TargetNetId="198.51.100.4.1.1" in C:\\L\\Line.tsproj')
+            && /activates on UmRT_Default \(198\.51\.100\.4\.1\.1\), as confirmed\.$/.test(c.message), 'the confirmation names the file and both NetIds');
+        assert(/asks for the activation target again\.$/.test(x.retargetConfirmText({ solutionName: 'L', tsprojPath: 'f', from: 'a', to: { netId: 'b', name: 'B', kind: 'real-time' }, title: 'T', sameTarget: false }).message),
+            'another target than the confirmed one: the re-run asks again');
+        assert(x.RETARGET_BUTTON === 'Change the solution\'s target…', 'the button text');
+    }
 
     const actRun = run('activation-run', { expectedNetId: '198.51.100.4.1.1' });
     assert(actRun.state.activation.outcome === 'run' && actRun.state.activation.adsState === 5 && !actRun.state.targetMismatch, 'activation-run');

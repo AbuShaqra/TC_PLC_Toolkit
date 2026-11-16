@@ -1,5 +1,9 @@
 {"v":1,"t":"hello","mode":"activate","showWindow":false}
 {"v":1,"t":"phase","name":"resolve"}
-{"v":1,"t":"fatal","code":"target-refused","text":"this solution names TargetNetId 192.0.2.10.1.1, which is not this machine.","data":{"gate":3}}
+{"log":"FATAL: this solution names TargetNetId 192.0.2.10.1.1, which is not a runtime on this PC."}
+{"log":"       Runtimes on this PC: 198.51.100.1.1.1 (real-time runtime), 198.51.100.4.1.1 (UmRT_Default, user-mode runtime)"}
+{"log":"       Activation is local-only and there is no override: change the solution's target"}
+{"log":"       to one of these (XAE: Choose Target System) and re-run. Refusing before the IDE starts."}
+{"v":1,"t":"fatal","code":"target-refused","text":"this solution names TargetNetId 192.0.2.10.1.1, which is not a runtime on this PC.\r\n       Runtimes on this PC: 198.51.100.1.1.1 (real-time runtime), 198.51.100.4.1.1 (UmRT_Default, user-mode runtime)\r\n       Activation is local-only and there is no override: change the solution's target\r\n       to one of these (XAE: Choose Target System) and re-run. Refusing before the IDE starts.","data":{"gate":3,"projectNetId":"192.0.2.10.1.1","tsproj":"C:\\Projects\\Line\\Line\\Line.tsproj","local":[{"netId":"198.51.100.1.1.1","name":"Real-time runtime","kind":"real-time","platform":"TwinCAT RT (x64)","provenance":"kind-inferred"},{"netId":"198.51.100.4.1.1","name":"UmRT_Default","kind":"user-mode","platform":"TwinCAT OS (x64)","provenance":"read"},{"netId":"bogus","name":"x","kind":"user-mode","platform":null}]}}
 {"v":1,"t":"done","exitCode":2,"ui":null}
 {"exit":2}
