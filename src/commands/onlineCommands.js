@@ -290,7 +290,7 @@ function registerOnlineCommands(context, deps) {
         load: () => context.workspaceState.get(WATCH_KEY, []),
         save: (entries) => { context.workspaceState.update(WATCH_KEY, entries); },
         cycleMs: () => clampInt(cfg().get('watchCycleTime', 200), 50, 10000, 200),
-        onChange: () => { if (tree) tree.refresh(); renderStatus(); },
+        onChange: (/** @type {string|undefined} */ p) => { if (tree) tree.refresh(p); renderStatus(); },
         onCapped: (n) => {
             vscode.window.showWarningMessage(`PLC Watch: the notification limit (${n}, tcToolkit.online.maxNotifications) is reached; ` +
                 'the remaining watched variables show no value. Remove some, or raise the limit (Beckhoff recommends at most 550 per device).');
