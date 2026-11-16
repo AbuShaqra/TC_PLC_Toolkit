@@ -4,7 +4,7 @@ The order of planned work for the extension. **This file is the source of truth*
 (<https://claude.ai/artifact/8RG7TZtBV2cuupsrwWtknv>) is rendered from it by hand out of `docs/roadmap.html`.
 Keep both current in the same change — rules in [CLAUDE.md](CLAUDE.md) ("Keep the roadmap current").
 
-**Last updated:** 2026-11-16 · **Current release:** v0.10.1
+**Last updated:** 2026-11-16 · **Current release:** v0.11.0
 
 How to read it: items run top to bottom in the **Order** column. IDs are stable names and do not change
 when the order does. Estimates are working days for one developer; start and end dates are **forecasts**
@@ -364,6 +364,7 @@ The former backlog was scheduled as R6–R10 on 2026-11-09 (the user asked). R6�
 Shipped work lives in git history and the [releases](https://github.com/AbuShaqra/TC_PLC_Toolkit/releases).
 Roadmap items finished from now on are listed here with their PR.
 
+- **v0.11.0 released 2026-11-16** ([release](https://github.com/AbuShaqra/TC_PLC_Toolkit/releases/tag/v0.11.0), dev→main PR #42 `ce688ea`; user: release it, 1.0.0 later): everything since 0.10.1, with the compiler at fork release N (PR #40) and a `CHANGELOG.md` whose section leads the release notes.
 - **Native look, done 2026-11-16** (user's choice; `674bebc`, `7911c1b`, `b1675e6`): the editor header is one slim themed row (TC mark, project › folders › object, type tag, status dots, hammer Build button, *Actions ▾*); the Start Page follows the theme; a new flat TC mark for the Marketplace and Activity Bar; the old pink-red is gone, true red #E2001A is only a marker.
 - **Editor Actions menu, done 2026-11-16** (user's ask; `db32da5`, merged `56c760f`): the editor toolbar's buttons and switches (Generate ST, Build and its options, XAE, Start/Stop PLC, Auto Sync) are one *Actions* menu; status chips beside it keep Building…, PLC Run/Stop and Manual Sync visible.
 - **ADS DLL path settings, done 2026-11-16** (user's ask; `0f7161f`): `tcToolkit.adsDll.dotNetLibrary` (TwinCAT.Ads.dll) and `tcToolkit.adsDll.nativeDllFolder` (TcAdsDll.dll); empty = search as before, a set path is used as given, and a missing DLL's message offers Open Setting.
