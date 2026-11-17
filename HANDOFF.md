@@ -6,8 +6,11 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
 [docs/handoff-findings.md](docs/handoff-findings.md)** — read the section covering what you are about to touch.
 
 ## Status
-- **Release:** `package.json` is at **0.11.0** (being released 2026-11-16: branch → dev → main, then the Release workflow;
-  notes come from `CHANGELOG.md`'s section, which `release.yml` now puts ahead of the generated PR list). Last published: v0.10.1.
+- **Released:** **v0.11.0 is PUBLISHED** (2026-11-16 23:10 UTC): branch PR #41 + #43 → dev, dev→main PR #42 (`ce688ea`),
+  Release run 43976426212 green, VSIX `twincat-plc-toolkit-0.11.0.vsix` attached; notes = `CHANGELOG.md`'s section + generated PR list.
+- **Fork follow-ups (S13):** the open STruC++ fork findings after release N (about 65, from the S6/S7 reviews) are
+  consolidated in [docs/fork-followups.md](docs/fork-followups.md) in four batches (wrong results, manifest lengths,
+  g++ fails, missing diagnostics + tooling); roadmap item S13. Re-check each against the fork before fixing it.
 - **Last verified:** 2026-11-16 (Linux container, native editor header on
   `claude/focused-ptolemy-m6acaz`) — `REQUIRE_FULL_SUITE=1 npm test` green (**138/138, Coverage: FULL**; compile-real,
   cpp-real, gpp-real ran), `npm run typecheck` and `npm run lint` exit 0; browser harnesses `run.js` 135, `run_online.js` 53, `run_pragmas.js` 47,

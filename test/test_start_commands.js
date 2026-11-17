@@ -214,6 +214,14 @@ const recents = () => (state.get('twincat.recentSolutions') || []).map(e => e.sl
     await run('twincat.reportIssue');
     assert(JSON.stringify(calls.external) === JSON.stringify([LINKS.roadmap, LINKS.releaseNotes, LINKS.reportIssue]), 'help links open externally');
     calls.executed.length = 0;
+    await run('twincat.openGettingStarted');
+    const guide = calls.executed.find(c => c.id === 'markdown.showPreview');
+    assert(!!guide && guide.args[0].fsPath === path.join(REPO, 'docs', 'user-guide.md') && fs.existsSync(guide.args[0].fsPath),
+        'Getting started opens the user guide (docs/user-guide.md), which exists');
+    const ignore = fs.readFileSync(path.join(REPO, '.vscodeignore'), 'utf8').split(/\r?\n/);
+    assert(ignore.includes('!docs/user-guide.md') && ignore.indexOf('!docs/user-guide.md') > ignore.indexOf('docs/**'),
+        '.vscodeignore lets the user guide into the VSIX after excluding docs/**');
+    calls.executed.length = 0;
     await run('twincat.openSettings');
     assert(calls.executed.some(c => c.id === 'workbench.action.openSettings' && c.args[0] === '@ext:a-abushaqra.twincat-plc-toolkit'), 'Settings opens the extension’s settings');
     calls.executed.length = 0;

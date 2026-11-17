@@ -231,7 +231,7 @@ assert(/^\^1\.66\./.test(pkg.engines.vscode), `engine stays ^1.66 (${pkg.engines
     assert(/an external IEC 61131-3 compiler|the external IEC 61131-3 compiler/.test(props['tcToolkit.compiler.path'].markdownDescription),
         'the compiler setting calls it an external IEC 61131-3 compiler');
     // User ruling 2026-11-09: the extension UI and README name no compiler product.
-    const userFacing = ['package.json', 'README.md',
+    const userFacing = ['package.json', 'README.md', path.join('docs', 'user-guide.md'),
         ...fs.readdirSync(path.join(REPO, 'media')).filter(f => /\.(js|css)$/.test(f)).map(f => path.join('media', f)),
         ...['src', path.join('src', 'commands'), path.join('src', 'lsp')].flatMap(d =>
             fs.readdirSync(path.join(REPO, d)).filter(f => f.endsWith('.js')).map(f => path.join(d, f)))];
