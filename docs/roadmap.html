@@ -424,11 +424,12 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
 
     <details class="card" id="r11">
       <summary>
-        <div class="card-top"><span>#16</span><span class="id">R11</span><span class="pill progress">Ready · your Release run</span><span class="chev" aria-hidden="true">›</span></div>
+        <div class="card-top"><span>#16</span><span class="id">R11</span><span class="pill progress">Marketplace live · Open VSX next</span><span class="chev" aria-hidden="true">›</span></div>
         <div class="card-title">Publish to the VS Code Marketplace and Open VSX</div>
         <div class="card-foot"><span>0.5 d → ~1 h</span><span>Nov 17</span></div>
       </summary>
       <div class="body">
+        <div class="block wide settled"><h4>On the VS Code Marketplace · Nov 17</h4><p>TC Toolkit 0.11.0 is live on the <a href="https://marketplace.visualstudio.com/items?itemName=a-abushaqra.twincat-plc-toolkit">VS Code Marketplace</a> (you uploaded it, 15:25 UTC). Still open: the 0.11.1 <i>Release</i> run, which fixes the listing's README images and adds the licence, and publishing to Open VSX.</p></div>
         <div class="block wide settled"><h4>Our part merged · Nov 17</h4><p>Marketplace fields, packaging with the licence, and a Publish workflow for the VS Code Marketplace and Open VSX are on <code>main</code> as version 0.11.1 (PRs #48, #49). Your steps: add the <code>VSCE_PAT</code> and <code>OVSX_PAT</code> secrets, claim the Open VSX namespace <code>a-abushaqra</code>, then run <i>Release</i> on <code>main</code>.</p></div>
         <div class="block wide"><h4>When</h4><p>Last, after the toolkit's items and the fork lane (your call, Nov 10). The toolkit lane is done, and so are S6 and S7; S12 does not hold publishing (your call, Nov 15) and S8 waits on S12; S13 does not hold it either. Planned for today, Nov 17 (your call).</p></div>
         <div class="block"><h4>Goal</h4><p>Install the extension straight from the Marketplace, and from Open VSX for VSCodium and Cursor (your ask, Nov 9).</p></div>
