@@ -4,7 +4,7 @@ The order of planned work for the extension. **This file is the source of truth*
 (<https://claude.ai/artifact/8RG7TZtBV2cuupsrwWtknv>) is rendered from it by hand out of `docs/roadmap.html`.
 Keep both current in the same change — rules in [CLAUDE.md](CLAUDE.md) ("Keep the roadmap current").
 
-**Last updated:** 2026-11-17 · **Current release:** v0.11.0 · **Re-measured:** 2026-11-11 · **Next:** fork S13 from 2026-11-18; toolkit R11, publishing (start is the user's call) · **Lanes:** 2
+**Last updated:** 2026-11-17 · **Current release:** v0.11.0 · **Re-measured:** 2026-11-11 · **Next:** toolkit R11, publishing, today; fork S13 from 2026-11-18 · **Lanes:** 2
 
 How to read it: items run top to bottom in the **Order** column. IDs are stable names and do not change
 when the order does. Estimates are working days for one developer; start and end dates are **forecasts**
@@ -32,13 +32,13 @@ table, marked **Done**, until the next prune.
 | 13 | R13 | Compile button: optional C++ generation into `CPP_Files/` and a g++ compile check | 3 d | ~2.5 h + your check | 2026-11-12 | 2026-11-13 | **Done** 2026-11-13 — PR #37 |
 | 14 | R14 | Build and activate through XAE's Automation Interface | 3 d | ~2 h + your check | 2026-11-12 | 2026-11-14 | **Done** 2026-11-13 — PR #38 |
 | 15 | R15 | ADS online monitoring: watch and write variables of the running PLC from the editor | 3 d | ~2 h + 1.5 d | 2026-11-16 | 2026-11-18 | **Done** 2026-11-16 — PR #41, released in v0.11.0 |
-| 16 | R11 | Publish to the VS Code Marketplace (and Open VSX) | 0.5 d | ~1 h + your account step | — | — | Planned — **last** (user, 2026-11-10). S6 and S7 are done; S12 does not hold it (user, 2026-11-15) and S8 waits on S12; whether S13 holds it is not decided, so **the start date is the user's call**. Then your step: add `VSCE_PAT` / `OVSX_PAT` and run *Release* on `main` |
+| 16 | R11 | Publish to the VS Code Marketplace (and Open VSX) | 0.5 d | ~1 h + your account step | 2026-11-17 | 2026-11-17 | Planned for **today** (user, 2026-11-17); S12 and S13 do not hold it. Then your step: add `VSCE_PAT` / `OVSX_PAT` and run *Release* on `main` |
 | — | R10 | L1 reverse index for Find References | 2 d | ~1.5 h | — | — | **On trigger only:** past ~1000 files or > 200 ms per search (today 29 ms cold) |
 
 **Forecast (2026-11-17):** the toolkit lane is finished — R15 merged on 2026-11-16 (PR #41) and shipped in v0.11.0 the
 same day, with the compiler at fork release N (PR #40). In the fork, everything up to S7 is done; S12 waits for the Ed. 4
 text and S8 waits on S12; S13, the release-N follow-ups, runs next (2026-11-18 to about 2026-11-23). R11, publishing,
-is the only open toolkit item: S12 does not hold it, whether S13 does is not decided, so it starts when the user says so.
+is the only open toolkit item and is planned for today (user, 2026-11-17); neither S12 nor S13 holds it.
 R10 runs on trigger only.
 
 ### Velocity (measured 2026-11-09, re-measured 2026-11-11)
