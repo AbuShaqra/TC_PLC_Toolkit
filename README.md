@@ -1,6 +1,6 @@
 # TC Toolkit
 
-![TC Toolkit: Structured Text editor and project tools for Beckhoff TwinCAT 3 PLC projects](media/icon.png)
+![TC Toolkit: Structured Text editing, building and online monitoring for Beckhoff TwinCAT 3 PLC projects, in VS Code](media/icon.png)
 
 **TC Toolkit** is a VS Code extension for editing, navigating, checking and running **Beckhoff
 TwinCAT 3 PLC projects** (`.TcPOU`, `.TcGVL`, `.TcDUT`, `.TcIO`). It hides the XML wrapper behind a
@@ -40,6 +40,8 @@ started* in the TC Toolkit sidebar or on the start page). What changed in each r
 
 ## Features
 
+![The PLC editor online: the path and type tag, PLC and connection status, the Build button and the Actions menu](media/readme/editor.png)
+
 Each heading links to its section of the user guide.
 
 - **[Two-pane editor](docs/user-guide.md#two-pane-editor)** — Declaration above, Implementation
@@ -76,6 +78,8 @@ Each heading links to its section of the user guide.
   *Local runtime* finds the runtime's AMS Net ID.
 - **[For AI coding assistants](docs/user-guide.md#for-ai-coding-assistants)** — a portable
   `CLAUDE.md` field guide to the TwinCAT file formats and a headless build harness, in `templates/`.
+
+![The Start Page: create or open a project and run project actions](media/readme/start-page.png)
 
 ## Settings
 
