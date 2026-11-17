@@ -4,7 +4,7 @@ The order of planned work for the extension. **This file is the source of truth*
 (<https://claude.ai/artifact/8RG7TZtBV2cuupsrwWtknv>) is rendered from it by hand out of `docs/roadmap.html`.
 Keep both current in the same change — rules in [CLAUDE.md](CLAUDE.md) ("Keep the roadmap current").
 
-**Last updated:** 2026-11-16 · **Current release:** v0.11.0
+**Last updated:** 2026-11-17 · **Current release:** v0.11.0 · **Re-measured:** 2026-11-11 · **Next:** fork S13 from 2026-11-18; toolkit R11, publishing (start is the user's call) · **Lanes:** 2
 
 How to read it: items run top to bottom in the **Order** column. IDs are stable names and do not change
 when the order does. Estimates are working days for one developer; start and end dates are **forecasts**
@@ -17,31 +17,29 @@ table, marked **Done**, until the next prune.
 
 | Order | ID | Item | Planned | Re-measured | Start | End | Status |
 |-------|----|------|---------|-------------|-------|-----|--------|
-| 1 | R3.1 | STruC++ spike: sample project through the compiler under the TwinCAT dialect | 2 d | ~15 min (done) | 2026-11-09 | 2026-11-09 | **Done** 2026-11-09 — PR #29, see Done ([docs/r3.1-strucpp-spike.md](docs/r3.1-strucpp-spike.md)); decisions taken |
-| 2 | R4 | Objects-tree model: a VS Code-free node graph behind a thin tree provider | 4 d | ~3 h | 2026-11-09 | 2026-11-09 | **Done** 2026-11-09 — PR #30, see Done |
-| 3 | R2 | TC Toolkit sidebar (Activity Bar icon) + start page; create a new project (3.1.4024 / 3.1.4026) | 8.5 d | ~7 h actual + your XAE proofs | 2026-11-09 | 2026-11-10 | **Done** 2026-11-10 — PR #31, see Done. Phase 2 (create through XAE where TwinCAT is installed) is in the Backlog; the XAE Shell path detection was confirmed on Windows by the user |
-| 4 | R3.2 | Compile project: a check command with the compiler's errors mapped to the panes | 7 d | ~5 h actual + your Windows checks | 2026-11-10 | 2026-11-10 | **Done** 2026-11-10 — PR #32, see Done |
-| 5 | R3.3 | STruC++ bundling, Node 22 discovery, licence files, settings, docs | 3 d | ~2 h | 2026-11-10 | 2026-11-11 | **Done** 2026-11-11 — PR #33, see Done |
-| 6 | R3.4 | Library declarations for Compile Project: build declarations of the vendor-library symbols the project uses from the user's own installed libraries (the *Update Library Definitions* signature dump + the project's `.tmc`; names from the archives), pass them to the compiler as an extra input so library calls are type-checked, and drop errors on library symbols still missing | 2 d | ~1.5 h | 2026-11-10 | 2026-11-11 | **Done** 2026-11-11 — PR #33, see Done |
-| 7 | R6 | Indexing speed: memoize signature-file discovery per root; persisted archive cache; per-project background scan | 5.5 d | ~1 h actual | 2026-11-10 | 2026-11-11 | **Done** 2026-11-11 — PR #33, see Done |
-| 8 | R7 | Rename v1 limits: `.plcproj` sync inside the rename transaction; rename sibling implementors of a shared interface | 2.5 d | ~25 min actual | 2026-11-10 | 2026-11-11 | **Done** 2026-11-11 — PR #33, see Done |
-| 9 | R8 | Language: nested block comments; hover help for pragmas | 1.5 d | ~1 h | 2026-11-11 | 2026-11-11 | **Done** 2026-11-11 — PR #33, see Done |
-| 10 | R9 | Tooling: ESLint 10 (re-triage, Node floor); the dev-only `brace-expansion` advisory | 0.75 d | ~30 min | 2026-11-11 | 2026-11-11 | **Done** 2026-11-11 — PR #33, see Done |
-| 11 | R3.5 | Compile Project: compiler at release I, conditional pragmas, `.plcproj` compiler defines | — | ~6.8 h actual | 2026-11-11 | 2026-11-11 | **Done** 2026-11-11 23:55 UTC — [PR #35](https://github.com/AbuShaqra/TC_PLC_Toolkit/pull/35), squash `791fc3a` into `dev` (user: merge, 2026-11-11), see Done. Bundled compiler at `eb52d2c` (release I plus fork #118–#119); `conditional_pragmas` on in `resources/dialects/twincat3.json`; `<CompilerDefines>` read from each `.plcproj` (case kept; MSBuild last-wins, `$(CompilerDefines)` and `$(Prop)` expanded); conditions evaluated for `Debug\|TwinCAT RT (x64)` (user, 2026-11-11); project defines passed with `--pragma-define` (values exact, no global constant) and per-object defines with `--file-define` on that object's check unit — S11b's toolkit follow-up, folded in; notes in a "TC Toolkit Compile" output channel |
-| 12 | R12 | Language server: `{IF}`-aware diagnostics — every branch combination is considered, so valid conditional code (a different block head per branch, per-branch declarations, branch-only names) gets no false diagnostic, while code outside `{IF}` groups keeps every check | 1 d | ~45 min + your check | 2026-11-12 | 2026-11-12 | **Done** 2026-11-12 10:56 UTC — [PR #36](https://github.com/AbuShaqra/TC_PLC_Toolkit/pull/36), squash `02f2b96` into `dev`, see Done. The user's Windows checks passed: a split IF head shows no squiggle, completion and Find References see both branches, a missing END_FOR outside the group still shows, a multi-line `fbRS(` / `SET := c,` call shows nothing, and Compile Project follows the `SIM` compiler define |
-| 13 | R13 | Compile button: optional C++ generation into `<project>/CPP_Files/` and an optional g++ compile check, each with its own setting (off by default; turning the g++ build on turns generation on), a g++ path setting with detection like the XAE Shell paths, and a dropdown on the compile button with a checkbox for each | 3 d | ~2.5 h + your check | 2026-11-12 | 2026-11-13 | **Done** 2026-11-13 08:40 UTC as [PR #37](https://github.com/AbuShaqra/TC_PLC_Toolkit/pull/37) (squash `02236c8` into `dev`) after the user's Windows check (TcToolkitSample2 builds clean; sample 1 only the known property-read gap, fixed in fork #140, arrives with the release M re-vendor). Windows CI fixed first: three g++ test files assumed a Linux host |
-| 14 | R14 | Build and run through XAE: drive TwinCAT XAE's Automation Interface (COM: `ITcSysManager`, `ITcPlcProject`, from PowerShell as Update Library Definitions does) to build the PLC project with XAE's own compiler and libraries, pick the target, activate the configuration, restart TwinCAT and create/start the boot project — the real project with its real libraries on the real runtime (local, remote, or a trial licence) | 3 d | ~2 h + your check | 2026-11-12 | 2026-11-14 | **Done** 2026-11-13 12:50 UTC as [PR #38](https://github.com/AbuShaqra/TC_PLC_Toolkit/pull/38) (squash `64ff7d9` into `dev`) after the user's full Windows check on XAE Shell 64 (4026.28): headless and visible builds, activation onto the user-mode runtime with the platform question, XAE errors in Problems (body and methods), cancel, targets, sample 2 (4024) on XAE Shell 64 with the window forced visible. Phase 2 (boot project, remote targets) in the Backlog |
-| 15 | R15 | ADS online monitoring: watch and force variables of the running PLC from the editor over ADS (Beckhoff's documented protocol, TCP 48898, AMS Net ID, a route on the target); library choice open (an MIT ADS client) | 3 d | ~2 h + 1.5 d (phases 2–3) | 2026-11-16 | 2026-11-18 | **Phase 2 confirmed on Windows 2026-11-16** (helper smoke test and Go Online by NetId: inline values read); **phase 3 built, awaiting the user's Windows check** (`5df899f` + `d723b4c`, merged `3d6ec0f`, 135/135 suites FULL on the combined result; user, 2026-11-16): **confirmed on the user's PC 2026-11-16** (Local runtime finds the user-mode NetId, boot project with autostart, first-try activation, PLC Watch placement, no helper left after closing); then the Start/Stop toggle, the Actions menu and the ADS DLL settings (Done); *Local runtime* in user mode uses the runtime's own trusted NetId instead of the router's, and R14 follow-up: Build and Activate installs the boot project with autostart on every activation. Phase 2 (`c963a0d`, 134/134 suites FULL; the PowerShell helper has not run yet) — user-mode fallback (user, 2026-11-16: on a 4026 user-mode runtime the local router resets `ads-client`'s TCP connection even with `EnableAmsTcpLoopback` and after a reboot, while Beckhoff's TcAdsDll reaches the runtime; decided: when the local router refuses, Go Online falls back automatically to a powershell.exe helper that loads Beckhoff's installed TwinCAT.Ads.dll and talks JSON lines; remote and kernel-mode targets keep today's path). Phase 1 built (started 2026-11-13 13:20 UTC, user: start now; merged into `claude/focused-ptolemy-m6acaz` after three review rounds, 131/131 suites FULL) — decisions D1–D9 taken by the user on 2026-11-13 ([docs/r15-ads-decision.md](docs/r15-ads-decision.md)): `ads-client` 2.2.0 pinned; write + "forces active" indicator; local router first; ship with a clear error if the 4026 user-mode runtime fails; writes off by default, each confirmed and logged; phase 1 includes a Watch view; routes stay in XAE; 500 ms inline / 200 ms watch. Needs a Windows check when built |
-| 16 | R11 | Publish to the VS Code Marketplace (and Open VSX) | 0.5 d | ~1 h + your account step | 2026-11-21 | 2026-11-21 | Planned — **last, after the toolkit lane AND the fork lane are finished (user, 2026-11-10: "release to marketplace once the fork is also ready")**. Our part (changelog, package metadata, licence in the package, a publish step that runs only when the token secrets exist), then your step: add `VSCE_PAT` / `OVSX_PAT` and run *Release* on `main`. Accounts and publisher `a-abushaqra` done (user, 2026-11-09) |
+| 1 | R3.1 | STruC++ spike: sample project through the compiler under the TwinCAT dialect | 2 d | ~15 min | 2026-11-09 | 2026-11-09 | **Done** 2026-11-09 — PR #29 |
+| 2 | R4 | Objects-tree model: a VS Code-free node graph behind a thin tree provider | 4 d | ~3 h | 2026-11-09 | 2026-11-09 | **Done** 2026-11-09 — PR #30 |
+| 3 | R2 | TC Toolkit sidebar (Activity Bar icon) + start page; create a new project (3.1.4024 / 3.1.4026) | 8.5 d | ~7 h + your XAE proofs | 2026-11-09 | 2026-11-10 | **Done** 2026-11-10 — PR #31 |
+| 4 | R3.2 | Compile project: a check command with the compiler's errors mapped to the panes | 7 d | ~5 h + your Windows checks | 2026-11-10 | 2026-11-10 | **Done** 2026-11-10 — PR #32 |
+| 5 | R3.3 | STruC++ bundling, Node 22 discovery, licence files, settings, docs | 3 d | ~2 h | 2026-11-10 | 2026-11-11 | **Done** 2026-11-11 — PR #33 |
+| 6 | R3.4 | Library declarations for Compile Project, built from the user's own installed libraries | 2 d | ~1.5 h | 2026-11-10 | 2026-11-11 | **Done** 2026-11-11 — PR #33 |
+| 7 | R6 | Indexing speed: memoized signature-file discovery; persisted archive cache; per-project background scan | 5.5 d | ~1 h | 2026-11-10 | 2026-11-11 | **Done** 2026-11-11 — PR #33 |
+| 8 | R7 | Rename v1 limits: `.plcproj` sync inside the rename transaction; rename sibling implementors of a shared interface | 2.5 d | ~25 min | 2026-11-10 | 2026-11-11 | **Done** 2026-11-11 — PR #33 |
+| 9 | R8 | Language: nested block comments; hover help for pragmas | 1.5 d | ~1 h | 2026-11-11 | 2026-11-11 | **Done** 2026-11-11 — PR #33 |
+| 10 | R9 | Tooling: ESLint 10 (re-triage, Node floor); the dev-only `brace-expansion` advisory | 0.75 d | ~30 min | 2026-11-11 | 2026-11-11 | **Done** 2026-11-11 — PR #33 |
+| 11 | R3.5 | Compile Project: compiler at release I, conditional pragmas, `.plcproj` compiler defines | — | ~6.8 h | 2026-11-11 | 2026-11-11 | **Done** 2026-11-11 — PR #35 |
+| 12 | R12 | Language server: `{IF}`-aware diagnostics | 1 d | ~45 min + your check | 2026-11-12 | 2026-11-12 | **Done** 2026-11-12 — PR #36 |
+| 13 | R13 | Compile button: optional C++ generation into `CPP_Files/` and a g++ compile check | 3 d | ~2.5 h + your check | 2026-11-12 | 2026-11-13 | **Done** 2026-11-13 — PR #37 |
+| 14 | R14 | Build and activate through XAE's Automation Interface | 3 d | ~2 h + your check | 2026-11-12 | 2026-11-14 | **Done** 2026-11-13 — PR #38 |
+| 15 | R15 | ADS online monitoring: watch and write variables of the running PLC from the editor | 3 d | ~2 h + 1.5 d | 2026-11-16 | 2026-11-18 | **Done** 2026-11-16 — PR #41, released in v0.11.0 |
+| 16 | R11 | Publish to the VS Code Marketplace (and Open VSX) | 0.5 d | ~1 h + your account step | — | — | Planned — **last** (user, 2026-11-10). S6 and S7 are done; S12 does not hold it (user, 2026-11-15) and S8 waits on S12; whether S13 holds it is not decided, so **the start date is the user's call**. Then your step: add `VSCE_PAT` / `OVSX_PAT` and run *Release* on `main` |
 | — | R10 | L1 reverse index for Find References | 2 d | ~1.5 h | — | — | **On trigger only:** past ~1000 files or > 200 ms per search (today 29 ms cold) |
 
-**Forecast (2026-11-14):** R2 merged 2026-11-10 (PR #31), R3.2 2026-11-10 (PR #32), R3.3–R9 2026-11-11 (PR #33),
-R3.5 2026-11-11 (PR #35), R12 2026-11-12 (PR #36), R13 and R14 2026-11-13 (PRs #37, #38); R15 built, awaiting the user's
-Windows check. In the fork, S4, S5 and S10 are done (releases L `3acc3f6` and M `75a55de`); S6 is in progress (release N
-follows). R10 runs on trigger only; R11, publishing, comes last, after the fork lane: S6 now about 2026-11-18 (about 17 lane 1 branches left, two to four review rounds each), the 4-byte TIME change about 2026-11-19, so publishing about **2026-11-21**. Decisions taken
-2026-11-09 after the R3.1 spike (`docs/r3.1-strucpp-spike.md`): **wait for the fork** — the check command must not
-put compiler errors on correct code, so the gaps are fixed in STruC++ first (S2, fork lane); **R3.2 takes its full
-scope** (5 → 7 d).
+**Forecast (2026-11-17):** the toolkit lane is finished — R15 merged on 2026-11-16 (PR #41) and shipped in v0.11.0 the
+same day, with the compiler at fork release N (PR #40). In the fork, everything up to S7 is done; S12 waits for the Ed. 4
+text and S8 waits on S12; S13, the release-N follow-ups, runs next (2026-11-18 to about 2026-11-23). R11, publishing,
+is the only open toolkit item: S12 does not hold it, whether S13 does is not decided, so it starts when the user says so.
+R10 runs on trigger only.
 
 ### Velocity (measured 2026-11-09, re-measured 2026-11-11)
 
@@ -75,18 +73,19 @@ for it where a row says so.
 
 | Order | ID | Item | Planned | Re-measured | Start | End | Status |
 |-------|----|------|---------|-------------|-------|-----|--------|
-| 1 | S2 | Close the fork's gaps: 13 steps + 1b + the folded-in items | 27.5 d (+ ~11 d folded, measured) | ~11.2 h actual | 2026-11-09 | 2026-11-09 | **Done** 2026-11-09 23:17 UTC — see Done |
-| 2 | S3a | False positives on correct code found during S2: a STRUCT alias is not assignment-compatible with its STRUCT; `POINTER TO <STRUCT> := ADR(s)` refused; UNION initial values ("not supported yet"); a method named `Get` is a parse error (`GET` is a keyword); a typed literal with a sign after `#` (`INT#-123`, Ed. 3 Table 5) is refused | 3 d | ~1 h actual | 2026-11-09 | 2026-11-10 | **Done** 2026-11-10 00:12 UTC — five fixes merged (fork PRs #25–#29), see Done |
-| 3 | S3b | The other S2 follow-ups (list below): code the checker passes but g++ rejects, checker gaps, parser gaps, housekeeping | 7 d | ~3.5 h | 2026-11-10 | 2026-11-12 | **Done** 2026-11-12 00:20 UTC (since 2026-11-10 00:14 UTC) — batches 1–5, Part C, F1–F4, #128 and #129 merged (fork #30–#130, without #48, #58–#64 and #116), releases E–K; last: F4, STRING stored as Windows-1252 (#130, `c1faca7`), release K. See Done |
-| 4 | S11 | Conditional compilation pragmas (`{IF defined(X)}` / `{ELSIF}` / `{ELSE}` / `{END_IF}`, with `AND`/`OR`/`NOT`) as a dialect feature (on in `twincat3`), defines passed with `-D`; the toolkit then passes the `.plcproj` compiler defines to Compile Project | 2 d | ~3 h actual | 2026-11-11 | 2026-11-11 | **Done** 2026-11-11 16:05 UTC — fork #116 (squash `1080fd6`), see Done; in release I (`fe4d492`). Feature `conditional_pragmas`, off by default and under `iec-3`: `defined()`, `project_defined()`, `hasvalue(N,'text')`, `AND`/`OR`/`NOT`; project defines from `-D`, `pragmaDefines`, `library.json` or the language-server setting; define names case-sensitive (user); `{define N}` / `{define N 'v'}` / `{undefine N}` in source, to the end of the file; `{undefine}` cannot remove a project define; `project_defined()` sees project defines only (the CODESYS operator). The symbol operators (`defined(variable:/type:/pou:)`, `hasattribute`, `hastype`, `hasconstantvalue`, `hasconstanttype`) are refused with a positioned error — a follow-up in the Backlog. **Toolkit side:** R3.5, PR #35, merged 2026-11-11 with the compiler at `eb52d2c` (S11b included). **Follow-up S11b (decided by the user 2026-11-11):** a pragma-only define CLI option (an integer value creates no global constant) and per-file defines, as TwinCAT applies per-object compiler defines; **merged** as fork #119 (`eb52d2c`, 2026-11-11 18:37 UTC): `--pragma-define NAME[=VALUE]` and `--file-define <file>=NAME[=VALUE]`; the toolkit follow-up is folded into R3.5 (PR #35) |
-| 5 | S4 | Ed. 3 forms the fork refuses: LTIME first (type, `LTIME#`, arithmetic, the timers' L-variants), then LDATE/LTOD/LDT, CHAR/WCHAR, string index, `STRING[n]` and `WSTRING[n]` (decided 2026-11-10: accepted in every profile, Ed. 3 form), typed `TRUNC_<type>`, g++-only literal cases, `STRUCT OVERLAP` (reuses the UNION lowering) | 8.5 d (7–10) | ~4.5 h | 2026-11-12 | 2026-11-12 | **Done** 2026-11-12 16:53 UTC (since 05:45 UTC) — fork PRs [#131](https://github.com/AbuShaqra/STruCpp/pull/131), [#132](https://github.com/AbuShaqra/STruCpp/pull/132), [#134](https://github.com/AbuShaqra/STruCpp/pull/134)–[#139](https://github.com/AbuShaqra/STruCpp/pull/139), **release L** at `3acc3f6`, see Done. Three independent review rounds on items 3–5, Table 36 and the DT fix; development equals the gated combined tree (5972 tests). User decisions 2026-11-12: Table 36 functions added; DT_TO_DATE/DATE-arithmetic fix (floor to the day holding the instant); debug map keeps short type names; `T#1_500ms` = 1500 ms; `STRING(1_0)` = 10 and `STRING(16#20)` = 32; `--strict` to follow Figure 12 for bit strings (follow-up branch) |
-| 6 | S5 | Profile-handling defects (S2 plan §1d): a file posing as a built-in id, several files with no selection, duplicate ids, one bad JSON file stopping every compile | 1 d | ~30 min | 2026-11-12 | 2026-11-13 | **Done** 2026-11-13 05:30 UTC as fork [#149](https://github.com/AbuShaqra/STruCpp/pull/149) (`45d4949`), see Done |
-| 7 | S6 | Runtime safety defects (S2 plan §1d, 14 items: `/0` and `MOD 0`, out-of-range index, SEL evaluating both inputs, VAR_TEMP keeping values, FB_exit never called, conversions and to-string forms, SIZEOF/stride, subrange checks, 32-bit intermediates, silent truncation) | 7 d | ~3.5 h | 2026-11-13 | 2026-11-18 | **Done** 2026-11-15 11:45 UTC (since 2026-11-13 00:10 UTC), fork lanes 1 and 2, ahead of the Nov 18 forecast. Merged: #151–#153 (MOD by 0/-1, over-wide shifts, bitwise STRUCT defaults), [#157](https://github.com/AbuShaqra/STruCpp/pull/157) (SIZEOF of a type name, `97183e6`), [#158](https://github.com/AbuShaqra/STruCpp/pull/158) (VAR_TEMP starts afresh at each call, `a4c0337`), [#159](https://github.com/AbuShaqra/STruCpp/pull/159) (string literals in comparisons, TO_STRING and STRUCT defaults, `cde5681`), [#162](https://github.com/AbuShaqra/STruCpp/pull/162) (B1: integer division by zero faults, `b926cba`), [#164](https://github.com/AbuShaqra/STruCpp/pull/164) (B6: date/time to text as IEC literals, `8cd7b6f`), [#165](https://github.com/AbuShaqra/STruCpp/pull/165) (B2/B3: index, NULL and unbound-reference faults, `80d0edc`), [#166](https://github.com/AbuShaqra/STruCpp/pull/166) (B7: subrange store fault, `d31c0cb`), [#170](https://github.com/AbuShaqra/STruCpp/pull/170) (NOT of an untyped constant typed from context, `4d940b1`), [#171](https://github.com/AbuShaqra/STruCpp/pull/171) (NOT and shifts in a STRUCT default as in a body, `b733708`), [#172](https://github.com/AbuShaqra/STruCpp/pull/172) (mixed-sign AND/OR/XOR in the widened type, `39b6948`; closes the strict-mode follow-ups), [#173](https://github.com/AbuShaqra/STruCpp/pull/173) (B10: too-long string literal warns, `de222bd`), [#174](https://github.com/AbuShaqra/STruCpp/pull/174) (TIME, DATE, TOD and DT 32-bit unsigned, `2779c9e`; run-time change), [#175](https://github.com/AbuShaqra/STruCpp/pull/175) (B4: SEL/MUX evaluate every input, documented, `0770ec3`), [#176](https://github.com/AbuShaqra/STruCpp/pull/176) (B9: global initial values read only CONSTANT globals under iec-3/`--strict`, `6fa5496`), [#177](https://github.com/AbuShaqra/STruCpp/pull/177) (ADR/REF into library FUNCTION inputs checked by recorded shape, `bfcc186`), [#178](https://github.com/AbuShaqra/STruCpp/pull/178) (UPPER_BOUND/LOWER_BOUND in global initial values, `7220ae1`), [#179](https://github.com/AbuShaqra/STruCpp/pull/179) (B5: FB_exit warning in every mode, `a187ae2`), [#180](https://github.com/AbuShaqra/STruCpp/pull/180) (plain STRING is 80 under twincat3, `adae985`), [#181](https://github.com/AbuShaqra/STruCpp/pull/181) (INT into a BOOL input warns, `5706c6f`), [#182](https://github.com/AbuShaqra/STruCpp/pull/182) (REAL MOD through a pointer refused, `b981048`), [#183](https://github.com/AbuShaqra/STruCpp/pull/183) (strings compared by type, `e2876dc`), [#184](https://github.com/AbuShaqra/STruCpp/pull/184) (B11: pointer arithmetic counts bytes, `294c04a`; run-time change), [#185](https://github.com/AbuShaqra/STruCpp/pull/185) (B8: overflow wraps without UB, narrow types computed wide, `4214c89`; run-time change). **Decided by the user 2026-11-13:** B1 `/0` → runtime fault; B2/B3 bad index / unbound reference → fault with task, POU and index + `STRUCPP_NO_BOUNDS_CHECK` opt-out; B4 SEL evaluates both (documented); B5 FB_exit → warning; B6 `*_TO_STRING` → IEC literal forms (run-time change); B7 subrange → runtime fault; B8 overflow wraps + `--strict` warning on constant overflow; B9 dependent global initialisers refused under iec-3/`--strict`; B10 too-long string literal → warning; B11 pointer arithmetic counts bytes; NOT on an untyped literal typed from context; NOT on INT refused under iec-3/`--strict` only; INT into a BOOL input → narrowing warning; `ADR` into a narrower integer refused in every mode. **Decided by the user 2026-11-14:** TIME/DATE/TOD/DT become 4 bytes as on TwinCAT, in every profile (were 8; run-time change); a plain STRING/WSTRING is 80 characters under `twincat3` (IEC default stays 254); MOD by 0 stays 0 (only `/` and DIV fault); `STRUCPP_NO_BOUNDS_CHECK` also turns off the subrange check; to-string keeps the long IEC prefixes (LDATE#, LTOD#, LDT#); 32-bit TIME is unsigned as on TwinCAT (negative TIME literals refused, wraps after 49.7 days, wrap-safe timers), sub-ms TIME literals refused, STRING_TO_TIME of unrepresentable text wraps/truncates; under `twincat3` no warning when a plain STRING meets a library plain STRING of the other default length |
-| 8 | S7 | `iec` audit: narrow what `iec-3` accepts (C1–C9) | 6 d | ~3 h | 2026-11-15 | 2026-11-17 | **Done** 2026-11-15 18:30 UTC (since 2026-11-15 15:00 UTC): fork [#188](https://github.com/AbuShaqra/STruCpp/pull/188) (the features) and [#189](https://github.com/AbuShaqra/STruCpp/pull/189) (names and deprecation warnings, built-in `iec-3` only). C6 moves to S12. **Decided by the user 2026-11-15:** each construct goes behind a feature on without a flag and in the TwinCAT profile, so only `--dialect iec-3` changes. Refused under iec-3: PROPERTY, ACTION in ST, bare `THIS^`/`SUPER^` (own feature, no-flag default unchanged), enum `E.Member`, STRUCT `=`/`<>`, `__NEW`/`__DELETE`, `VAR_INST`, names with `__` or a trailing `_`, an override without `OVERRIDE`. Warned under iec-3: `{external}`, `1E-4`, assigning the FOR variable, `8#`, IL, plain TRUNC. METHOD default access stays PUBLIC (C4 dropped). C9 closed (test files already follow the dialect); `a[ADR(x)]` slipping through iec-3 is fixed. C1 PROPERTY: refused under iec-3 as well (user, later on 2026-11-15). C6 moved to S12: whether Ed. 3 requires `OVERRIDE` could not be established from public sources, so it is decided with the standard text. The toolkit profile gains the new features in the same release |
-| 9 | S8 | Flip the no-flag default to the strict dialect, in its own release | 0.5 d | ~20 min | 2026-12-01 | 2026-12-01 | **On hold until S12** (user, 2026-11-15): the default moves to `iec-4` once that dialect exists, not to `iec-3`; until then a build with no flag stays as lenient as today. The toolkit passes `--dialect-file`, so it is unaffected |
-| 10 | S9 | Raw memory layout in the runtime: a variable is just its value (`IECVar<T>` = one `T`, `sizeof` as on a PLC), STRING a NUL-terminated `char[N+1]`, enums `: INT`; forcing moves to a bounded table written at cycle start and end. Fixes byte access through a differently shaped pointer (`POINTER TO ARRAY OF BYTE` over a DWORD or STRING — 14 bundled OSCAT functions — `POINTER TO BYTE` walking an array or STRUCT). Steps, one PR each: S0 library manifest lists FUNCTION locals as inputs (OSCAT functions not callable) · S1 force table · S2 codegen (`ForceScope` in `run()`, enum base) · S3a forcing users (debugger, REPL, extension) · S3b layout · S4 STRING · S5 OSCAT real-call e2e | 4 d (3–5) | ~2.5 h actual | 2026-11-10 | 2026-11-10 | **Done** 2026-11-10 12:07 UTC — seven PRs (fork #58–#64), see Done. **Release F cut at `e071f4f`** (user kept STRING(n) = n+1 bytes, the vendor layout); note posted in the coordination doc |
-| 11 | S10 | Vendor types and forms for the `twincat3` and `codesys3` profiles (CODESYS findings arrived 2026-11-10): `__ISVALIDREF` (on with `reference_to`) first; `vendor_operators` (`XSIZEOF`, `BITADR`, `INDEXOF`, `__POSITION`, `__POUNAME`); `type_colon_optional` (`TYPE name STRUCT` without the colon) under `codesys3` and `twincat3`, and `conditional_return` (`RETURN (cond);`) under `codesys3`; `platform_types` (`__XINT`/`XINT`, `__UXINT`/`UXINT`, `XWORD`, `PVOID`); `bit_type` (BIT as a STRUCT member); a hint on "missing required input" for implicit-parameter attributes. Each off by default and under `iec-3`. Not planned until real code needs it: multicore operators, the vector type, quoted identifiers, persistent instance paths, `__CURRENTTASK`/`__POOL`, `INI`/`CALC`. Library types (HRESULT, OTCID, VERSION) come from a vendor library, not the compiler. **Decided (user, 2026-11-11):** `type_colon_optional` is also on under `twincat3`; `conditional_return` stays CODESYS-only until a real TwinCAT export shows it | 3 d | ~1.5 h | 2026-11-12 | 2026-11-13 | **Done** 2026-11-13 13:53 UTC (since 2026-11-12 17:10 UTC) — fork [#144](https://github.com/AbuShaqra/STruCpp/pull/144)–[#148](https://github.com/AbuShaqra/STruCpp/pull/148), [#154](https://github.com/AbuShaqra/STruCpp/pull/154) (`__POUNAME`, `__POSITION`, `BITADR`) and [#155](https://github.com/AbuShaqra/STruCpp/pull/155) (BIT as packed bitfields), **release M** at `75a55de`, see Done. Decided by the user 2026-11-13: a body or FB-input `udint := ADR(x)` is refused in every mode (lane 2 branch, for release N). Known limitation in release M: `__POSITION()` and diagnostic columns ran high after an unquoted ß/ΐ/ligature earlier on the line; fixed by fork [#160](https://github.com/AbuShaqra/STruCpp/pull/160) for release N |
-| 12 | S12 | A new built-in `iec-4` dialect (IEC 61131-3 Ed. 4, 2025): properties with `PROPERTY_GET`/`PROPERTY_SET` (default PROTECTED), `USTRING`/`UCHAR` (UTF-8) with `LEN_MAX`/`LEN_CODE_UNIT`, `${…}` character codes, string/byte-array conversions, new and changed conversions, `ASSERT`, mutexes and semaphores; IL, octal literals and untyped TRUNC removed, BCD deprecated; also decides C6 (override without `OVERRIDE`, from S7) | 9 d | ~5 h | 2026-11-24 | 2026-11-28 | **Waiting for the standard text** (user will send the full Ed. 4 document; the list so far is from a published comparison that calls itself a selection). Decided 2026-11-15: after S7, does not hold the Marketplace release |
+| 1 | S2 | Close the fork's gaps: 13 steps + 1b + the folded-in items | 27.5 d (+ ~11 d folded) | ~11.2 h | 2026-11-09 | 2026-11-09 | **Done** 2026-11-09 — fork #5–#24 |
+| 2 | S3a | False positives on correct code found during S2 | 3 d | ~1 h | 2026-11-09 | 2026-11-10 | **Done** 2026-11-10 — fork #25–#29 |
+| 3 | S3b | The other S2 follow-ups: code the checker passes but g++ rejects, checker and parser gaps, housekeeping | 7 d | ~3.5 h | 2026-11-10 | 2026-11-12 | **Done** 2026-11-12 — fork #30–#130, releases E–K |
+| 4 | S11 | Conditional compilation pragmas (`{IF defined(X)}` …) as a dialect feature, on in `twincat3` | 2 d | ~3 h | 2026-11-11 | 2026-11-11 | **Done** 2026-11-11 — fork #116 and #119 (S11b), release I |
+| 5 | S4 | Ed. 3 forms the fork refused: LTIME, LDATE/LTOD/LDT, CHAR/WCHAR, string index, `STRING[n]`, typed `TRUNC_<type>`, `STRUCT OVERLAP` | 8.5 d (7–10) | ~4.5 h | 2026-11-12 | 2026-11-12 | **Done** 2026-11-12 — fork #131–#139, release L |
+| 6 | S5 | Profile-handling defects (S2 plan §1d) | 1 d | ~30 min | 2026-11-12 | 2026-11-13 | **Done** 2026-11-13 — fork #149 |
+| 7 | S6 | Runtime safety defects (S2 plan §1d, 14 items) | 7 d | ~3.5 h | 2026-11-13 | 2026-11-18 | **Done** 2026-11-15 — fork #151–#185, release N |
+| 8 | S7 | `iec` audit: narrow what `iec-3` accepts (C1–C9) | 6 d | ~3 h | 2026-11-15 | 2026-11-17 | **Done** 2026-11-15 — fork #188–#189 (C6 moved to S12) |
+| 9 | S13 | Release-N follow-ups: the consolidated open fork findings (~65 items, [docs/fork-followups.md](docs/fork-followups.md)) in four batches, in this order: (1) silent wrong results, (2) library manifest lengths and kinds, (3) accepted code that then fails in g++, (4) missing diagnostics, tooling and test hygiene | — (~65 items) | ~3–4 d (my sizing) | 2026-11-18 | 2026-11-23 | Planned (user, 2026-11-17) |
+| 10 | S8 | Flip the no-flag default to the strict dialect, in its own release | 0.5 d | ~20 min | 2026-12-01 | 2026-12-01 | **On hold until S12** (user, 2026-11-15): the default moves to `iec-4` once that dialect exists, not to `iec-3`; until then a build with no flag stays as lenient as today. The toolkit passes `--dialect-file`, so it is unaffected |
+| 11 | S9 | Raw memory layout in the runtime: a variable is just its value, STRING a NUL-terminated `char[N+1]`, forcing in a bounded table | 4 d (3–5) | ~2.5 h | 2026-11-10 | 2026-11-10 | **Done** 2026-11-10 — fork #58–#64, release F |
+| 12 | S10 | Vendor types and forms for the `twincat3` and `codesys3` profiles | 3 d | ~1.5 h | 2026-11-12 | 2026-11-13 | **Done** 2026-11-13 — fork #144–#148, #154–#155, release M |
+| 13 | S12 | A new built-in `iec-4` dialect (IEC 61131-3 Ed. 4, 2025): properties with `PROPERTY_GET`/`PROPERTY_SET` (default PROTECTED), `USTRING`/`UCHAR` (UTF-8) with `LEN_MAX`/`LEN_CODE_UNIT`, `${…}` character codes, string/byte-array conversions, new and changed conversions, `ASSERT`, mutexes and semaphores; IL, octal literals and untyped TRUNC removed, BCD deprecated; also decides C6 (override without `OVERRIDE`, from S7) | 9 d | ~5 h | 2026-11-24 | 2026-11-28 | **Waiting for the standard text** (user will send the full Ed. 4 document; the list so far is from a published comparison that calls itself a selection). Decided 2026-11-15: after S7, does not hold the Marketplace release |
 
 **Why this order.**
 1. **R3.1 (spike) first:** the STruC++ work is the largest unknown. The spike needs no decisions, and what
@@ -100,7 +99,7 @@ for it where a row says so.
 5. **R3.5, then R12:** R3.5 brings the compiler's conditional pragmas to Compile Project; R12 then stops the
    language server's own diagnostics from flagging valid code inside `{IF}` branches (user, 2026-11-11).
 6. **Publishing (R11) last:** no Marketplace release until the toolkit lane and the fork lane are both finished
-   (user, 2026-11-10).
+   (user, 2026-11-10); S12 does not hold it (user, 2026-11-15).
 
 ### R4 — Objects-tree model (deepening roadmap P7)
 
@@ -198,12 +197,8 @@ name whose type differs per branch resolves to unknown; a conditional VAR header
 or the inheritance chain unknown. A unit with no directive keeps the old output byte for byte. Details:
 DEVELOPMENT.md "Conditional pragmas in the language server (R12)".
 
-**Built 2026-11-11 23:57 – 2026-11-12 00:39 UTC** on `claude/focused-ptolemy-m6acaz`, review findings fixed, open as
-[PR #36](https://github.com/AbuShaqra/TC_PLC_Toolkit/pull/36) into `dev` (111/111 suites FULL): new
-`src/lsp/conditionals.js`; `test/test_conditional_pragmas.js`; R12 cases in `test_live_path.js` and compiler parity
-in `test_compile_real.js`. **Owed:** the user's F5 check (no squiggle on a split IF head in either pane; completion
-and references in both branches; an unrelated missing END_FOR still shows). **Proposed:** add a conditional POU and
-`<CompilerDefines>` to TcToolkitSample2 once the user has built it in XAE.
+**Status:** merged 2026-11-12 10:56 UTC as [PR #36](https://github.com/AbuShaqra/TC_PLC_Toolkit/pull/36)
+(`02f2b96`) after the user's Windows checks; new `src/lsp/conditionals.js` and `test/test_conditional_pragmas.js`.
 
 ### R11 — Publish to the VS Code Marketplace (user's ask 2026-11-09)
 
@@ -216,7 +211,7 @@ hand, or add an Azure DevOps token with the *Marketplace → Manage* scope as th
 `OVSX_PAT`). The publisher profile's "About" text was drafted 2026-11-09.
 
 **Licence:** switched to **AGPL-3.0-or-later** on 2026-11-09 (user's call); the first marketplace release is the
-first under it, and the CHANGELOG says so. **Our part (~1 h):** `CHANGELOG.md`; real `categories` / `keywords` / `homepage` / `bugs`; drop `--skip-license`
+first under it, and the CHANGELOG says so. **Our part (~1 h):** `CHANGELOG.md` (exists since v0.11.0); real `categories` / `keywords` / `homepage` / `bugs`; drop `--skip-license`
 from the package commands; a "not affiliated with Beckhoff" line in the README (TwinCAT is their trademark);
 README images HTTPS and not SVG; optional `"preview": true` until v1.0; a publish step in `release.yml` that runs
 only when the secret exists. **Done in PR #33:** the bundled compiler ships with its GPL licence, runtime exception
@@ -244,8 +239,7 @@ the compiler puts on correct code. **Not estimable yet:** a strict-mode policy f
 first), an Ed. 4 profile (needs a full Ed. 4 read), the rest of the vendor-feature catalogue (explicitly not a plan).
 
 **S3b's list: closed** (2026-11-12). Everything on it merged (fork #30–#130 without #48, #58–#64 and #116), the last
-item F4 as #130 (`c1faca7`), cut as release K; batch 5 skipped D6 (already works) and kept D7 refused (user). Nothing
-is open; next on the fork is S4, then S10.
+item F4 as #130 (`c1faca7`), cut as release K; batch 5 skipped D6 (already works) and kept D7 refused (user).
 
 **How these were estimated (2026-11-09):** the planned days are my sizing from the lists above, not measured; the
 re-measured column applies the velocity below (about 30 min per planned day for fork work, ~45 min for toolkit work),
@@ -295,223 +289,145 @@ and the calendar assumes about 4 hours of session per working day, weekends off.
 
 ## Backlog (not scheduled)
 
-The former backlog was scheduled as R6–R10 on 2026-11-09 (the user asked). R6–R9 merged in PR #33 (`6424968`,
-2026-11-11), and R10 only runs on a trigger. Each item's reason and numbers stay in
-[docs/handoff-findings.md](docs/handoff-findings.md) "Deferred work". What remains here has no estimate on purpose:
+No estimates on purpose. Older reasons and numbers stay in [docs/handoff-findings.md](docs/handoff-findings.md)
+"Deferred work".
 
-- **Fork follow-ups after S4, merged 2026-11-12 21:00 UTC** (fork [#140](https://github.com/AbuShaqra/STruCpp/pull/140)–[#143](https://github.com/AbuShaqra/STruCpp/pull/143), `64b3bfd`; for release M): property reads through a global FB instance (fixes the R13 g++ gap on TcToolkitSample) and the SPDX lines; `--strict` per IEC Figures 11/12 for bit strings (user; refuses 90 cells under --strict, bitwise results take the bit-string type, a narrowed bitwise result now warns in default mode, user kept it); one-pass literal diagnostics and the threaded-warning scope (coordination row 35). **Next on lane 1 after S5:** `bugfix/strict-followups` (method output captures, FB output warning, integer AND/OR typing, `*_TO_*` argument check under --strict, literal messages after an earlier error). **Release M** cut at `75a55de` after S10 and S5 (user).
-- **S6 runtime fixes, first three, merged 2026-11-13 11:55 UTC** (fork [#151](https://github.com/AbuShaqra/STruCpp/pull/151)–[#153](https://github.com/AbuShaqra/STruCpp/pull/153), `966c9e2`): tests use per-run temporary folders; MOD by 0 or by -1 gives 0 and SHL/SHR by the width or more gives 0 (Tables 29/30; a REAL MOD operator is refused); STRUCT defaults compute AND/OR/XOR/NOT bitwise as variable initial values do. Generated C++ changes only where `%` becomes `iec_mod` (3 corpus programs, 4 OSCAT functions).
-- **Test files: RETURN nested in a TEST, SETUP or TEARDOWN, merged 2026-11-13 08:10 UTC** (fork [#150](https://github.com/AbuShaqra/STruCpp/pull/150), `43ff7a9`; lane 2 follow-up): it no longer fails g++, and ends the right block. Follow-ups with lane 1: a nested ASSERT is dropped (a failing test passes), a TEARDOWN without SETUP never runs.
-- **S5 profile handling, merged 2026-11-13 05:30 UTC** (fork [#149](https://github.com/AbuShaqra/STruCpp/pull/149), `45d4949`; for release M): a profile file may not take the id `iec-3`; an id in two files is an error naming both; an unselected broken `--dialect-path` profile is skipped with a warning; the same file reached twice is loaded once (real path, case folded on Windows); several files and no `--dialect` warn. Output byte-identical to development. Two review rounds and a clean recheck.
-- **Fork: "accepted means it builds" property test** (user, 2026-11-14): generate ST programs (fuzzing) and require that every program `--check` accepts also builds and runs under g++ with ASan/UBSan; catches the checker-accepts/codegen-fails class that reviews keep finding.
-- **Fork: differential tests** (user, 2026-11-14): the same expression as a body assignment, a variable's initial value and a STRUCT field default must give the same value; catches the parallel-code-path gaps (bodies vs initialisers vs defaults vs test files).
-- **Toolkit: declare the newer elementary types for library declarations** (found by the release N pin, 2026-11-15): `src/libraryDecls.js` ELEMENTARY still lacks LTIME, LDATE, LTOD, LDT, CHAR, WCHAR, PVOID, XINT, UXINT, XWORD, __XINT, __UXINT, which the compiler accepts as inputs and g++ builds since release M, so library declarations using them are left out. Needs the synthetic "no usable declaration" fixtures moved to a type still refused (ANY, HRESULT).
-- **Toolkit: a confirmed user-mode NetId could be a remote system's** (found 2026-11-16): the ADS confirmation trusts a stale file NetId if some other system answers at it through a route. Unlikely (the NetId must collide with a routed system's), but activation is meant to stay on this PC; a check against the router's route list would close it.
-- **Fork: lifecycle methods for dynamic instances** (user, 2026-11-15; **after release N**; feature `fb_init`): `__NEW` runs FB_init (base first, flags FALSE, as for static instances) and `__DELETE` runs FB_exit before freeing (derived first, then base; members after their holder). Today `__NEW` skips FB_init and `__DELETE` skips FB_exit, so cleanup code in a dynamically created FB never runs. FB_exit at program stop for static instances stays open: it needs a stop hook in whatever runs the generated program.
-- **Fork follow-ups found in S6 reviews** (older gaps, not from the branches): a constant of a user alias type (`TYPE MYW : WORD`) still shifts in int width in a STRUCT default; NOT of an alias-typed constant gives 0 in a default and in a body; `VAR_EXTERNAL CONSTANT` without an initializer is refused in every mode. Mixed-sign AND/OR/XOR in VAR_GLOBAL initial values and STRUCT-instance field overrides still uses C++ promotion (after #172).
-- **Fork follow-ups from #156** (lane 2's list, all already on development): pointer and reference aliases in FB copies and `REF=`, `ADR(arr) + N`, references bound only at run time, structured initial values reading a sibling, VAR_INST initial values, an ambiguous VAR_EXTERNAL under `named_global_lists`, SETUP initial values in test files.
-- **Simulation program** (moved from R14 to the Backlog by the user, 2026-11-12): the generated C++ built with g++ into a standalone Windows program that runs the PLC code cyclically on the PC, with the project's tasks read into a CONFIGURATION. Useful for your own logic and unit tests; it cannot run vendor-library blocks, whose code is not available (only their signatures are), so it does not replace running through XAE (R14).
-- **ADS coupling of the simulation program** (user, 2026-11-12; after the simulation program): exchange variables between the R14 simulation program and a running TwinCAT PLC over ADS (Beckhoff's documented protocol, TCP 48898, AMS Net ID and a route on the target), e.g. feed simulated I/O or mirror inputs. Code cannot be loaded into the TwinCAT runtime itself: only XAE builds and activates what it runs.
-- **On the user's Windows machine (~1 h of the user's time, no date):** Libraries-view scoping (tree descriptions,
-  webview tab switches, startup seeding, the `.plcproj`-watcher path end to end); library member expansion seen
-  once; squiggle rendering; peek dismissal over the real bridge.
-- **Showcase screenshots:** the scripts exist only on the user's machine (`scratch/showcase/`); moving them to
-  `scripts/showcase/` takes ~30 min once they are in the repo.
-- **R12b informational branch state** (follow-up from R12): evaluate the `.plcproj` defines in the language server
-  (a cached reader over `src/compilerDefines.js`, three-valued) for a hover on `{IF}` and greying of inactive
-  branches. Must never feed diagnostics or the index. **Open decision (user):** Debug configuration only, or only
-  where all configurations agree.
-- **Go to Definition on a name declared in several `{IF}` branches** returns only the first declaration today;
-  returning all of them needs `mapDefinition` to accept arrays. Optional: merge same-name completion items with a
-  `BOOL | INT (conditional)` detail. Follow-ups from R12.
-- **Indexing progress "3 of 8 projects"** in the status bar (possible since R6's per-project scan; needs a server → host
-  progress notification). Raised 2026-11-11.
-- **Measure indexing speed on Windows, on a real multi-project workspace** (cold and warm startup, time until the first
-  project is ready) with `scripts/measure-indexing.js`. Cold startup (~20 s for 8 projects) is still projected, not
-  measured. Needs the user's machine. Raised 2026-11-11.
-- **Find References across a shared interface's sibling implementors.** R7's `memberRenameFamily` covers rename only;
-  Find References still uses the pairwise relation. Follow-up from PR #33, 2026-11-11.
-- **F2 rename from a call site in the editor panes.** F2 works only in the PLC Objects tree today (keybinding
-  `focusedView == twincatExplorer`); the panes would need a Monaco rename provider bridged to `twincat.renameObject` /
-  `custom/referencesForSymbol`. Raised 2026-11-11.
-- **Open question: should pragma hover show syntax forms, or only the name and the Infosys link?** Today it shows a
-  category summary, the syntax form and the link (no Beckhoff description text). The user decides. Raised 2026-11-11.
-- **Dev-only advisory: minimatch 10.2.6 via ESLint 10** (GHSA-g3hv-75wg-m249, moderate). Wait for ESLint to allow
-  minimatch 11, or force it with an npm `overrides` entry if lint and the suite still pass. Nothing ships with it
-  (`npm audit --omit=dev` is clean). Raised 2026-11-11.
-- **Regenerate the social preview** (`node scripts/make-social-preview.js` on Windows, which needs Segoe UI) so
-  `media/icon.png` says TC Toolkit instead of the old name, then upload it under the GitHub repo's Settings → Social
-  preview. The script changed in `98948c5` (2026-11-10); the PNG dates from `142e541` (2026-08-26).
-- **Open question: cut 0.11.0 now?** A version bump and a `CHANGELOG.md` covering PRs #27 and #29–#34, plus a
-  `dev → main` release. Offered to the user, not decided; otherwise the CHANGELOG waits for R11. Raised 2026-11-11.
-- **R14 phase 2** (needs a Windows probe each): create and start the boot project, remote targets (routes), build a single project of a multi-project solution, and confirm the Build-pane line numbering inside methods/actions (placed "approximate" today).
-- **Double-click on a Problems row** opens a `.TcPOU` without jumping (VS Code gives a custom editor no position); the code link jumps. Look for a supported way to catch the double-click, else say so in the README.
-- **R2 phase 2: Create New Project through XAE** where TwinCAT is installed (decision 1 of R2, as
-  `scripts/Create sample PLC project/build-sample-solution.ps1` does). The XAE Shell path settings it will use exist
-  (`src/xaeShellDetect.js`); `src/xaeShell.js` keeps its own discovery for Update Library Definitions. Not started.
-  Left open by PR #31.
-- **Deprecated `twincat.*` setting stand-ins** (PR #34): decide in which release they and the migration in
-  `src/settingsMigration.js` are removed.
-- **Fork: S11's symbol operators** — `defined(variable:…)`, `defined(type:…)`, `defined(pou:…)`, `hasattribute`,
-  `hastype`, `hasconstantvalue`, `hasconstanttype` in `{IF}` pragmas. #116 refuses them with a positioned error;
-  evaluating them needs the symbol tables. Follow-up from fork #116, 2026-11-11.
-- **Re-vendor the compiler at release K (`c1faca7`)** in a later toolkit PR (R3.5 bundles `eb52d2c`). Raised 2026-11-11.
-- **Reply on issue [#25](https://github.com/AbuShaqra/TC_PLC_Toolkit/issues/25)** once the next release carries Add
-  Get / Add Set Accessor (PR #27, `0ea9fcd`).
+**Toolkit**
+- **Windows checks owed (v0.11.0):** the Start/Stop PLC toggle, the ADS DLL path settings and the new editor header;
+  a run of `test-activation-target.ps1` plus one real stale-target refusal (`b5b2544`); the NetId-trust PowerShell test script (`c95d52b`).
+- **Start/Stop in an Error/Exception state:** offer Start or Stop there (disabled today)? The user decides.
+- **A confirmed user-mode NetId could be a remote system's** (found 2026-11-16): the ADS confirmation trusts a stale file
+  NetId if another system answers at it through a route. Unlikely; a check against the router's route list would close it.
+- **Newer elementary types in library declarations** (found by the release N pin): `src/libraryDecls.js` ELEMENTARY lacks
+  LTIME, LDATE, LTOD, LDT, CHAR, WCHAR, PVOID, XINT, UXINT, XWORD, __XINT, __UXINT, so library declarations using them are
+  left out. Needs the "no usable declaration" fixtures moved to a type still refused (ANY, HRESULT).
+- **Next compiler pin: S7's features in the `twincat3` profile** — release N predates S7, so the profile must list
+  `fb_property`, `st_actions`, `bare_self_caret`, `enum_dot_qualify`, `struct_compare`, `dynamic_memory`, `var_inst` when
+  the toolkit next pins a fork release that contains #188.
+- **R14 phase 2** (each needs a Windows probe): remote targets (routes), build one project of a multi-project solution,
+  and the Build-pane line numbering inside methods/actions ("approximate" today). The boot project shipped with R15.
+- **R2 phase 2: Create New Project through XAE** where TwinCAT is installed (as
+  `scripts/Create sample PLC project/build-sample-solution.ps1` does); the XAE Shell path settings it needs exist. Not started.
+- **Double-click on a Problems row** opens a `.TcPOU` without jumping (VS Code gives a custom editor no position); the code
+  link jumps. Look for a supported way, else say so in the README.
+- **R12b informational branch state:** evaluate the `.plcproj` defines in the language server for a hover on `{IF}` and
+  greying of inactive branches; never for diagnostics. **Open decision (user):** Debug configuration only, or only where all configurations agree.
+- **R12 follow-ups:** Go to Definition on a name declared in several `{IF}` branches returns only the first (needs array
+  results from `mapDefinition`); optionally one merged completion item per such name; a conditional POU and
+  `<CompilerDefines>` in TcToolkitSample2 once the user has built it in XAE.
+- **Find References across a shared interface's sibling implementors** (R7's rename family covers rename only).
+- **F2 rename from a call site in the editor panes** (works only in the PLC Objects tree today).
+- **Indexing progress "3 of 8 projects"** in the status bar (needs a server → host progress notification).
+- **Measure indexing speed on Windows** on a real multi-project workspace with `scripts/measure-indexing.js` (cold
+  startup, ~20 s for 8 projects, is still projected).
+- **On the user's Windows machine (~1 h):** Libraries-view scoping, library member expansion, squiggle rendering, peek
+  dismissal over the real bridge.
+- **Open question: pragma hover** — syntax forms, or only the name and the Infosys link? The user decides.
+- **Deprecated `twincat.*` setting stand-ins** (PR #34): decide in which release they and `src/settingsMigration.js` go.
+- **Dev-only advisory: minimatch 10.2.6 via ESLint 10** (GHSA-g3hv-75wg-m249, moderate): wait for ESLint, or an npm
+  `overrides` entry if lint and the suite still pass. Nothing ships with it.
+- **Regenerate the social preview** (`node scripts/make-social-preview.js` on Windows, needs Segoe UI) and upload it
+  under the repo's Settings → Social preview.
+- **Showcase screenshots:** move the scripts from the user's `scratch/showcase/` to `scripts/showcase/` (~30 min).
+- **Reply on issue [#25](https://github.com/AbuShaqra/TC_PLC_Toolkit/issues/25):** v0.11.0 carries Add Get / Add Set
+  Accessor (PR #27), so the reply is due.
+- **Simulation program** (moved from R14 by the user, 2026-11-12): the generated C++ built with g++ into a standalone
+  program that runs the PLC code cyclically on the PC; it cannot run vendor-library blocks (only their signatures exist).
+- **ADS coupling of the simulation program** (user, 2026-11-12; after the simulation program): exchange variables with a
+  running TwinCAT PLC over ADS, e.g. to feed simulated I/O.
+
+**Fork**
+- **Release N follow-ups → S13** (fork lane, scheduled 2026-11-17): the open fork findings — older gaps from the S6
+  reviews, the smaller S6 PR follow-ups and lane 2's #156 list among them — are consolidated in
+  [docs/fork-followups.md](docs/fork-followups.md).
+- **Lifecycle methods for dynamic instances** (user, 2026-11-15; after release N; feature `fb_init`): `__NEW` runs FB_init
+  and `__DELETE` runs FB_exit, as for static instances. FB_exit at program stop for static instances needs a stop hook.
+- **"Accepted means it builds" property test** (user, 2026-11-14): fuzz ST programs; every program `--check` accepts must
+  build and run under g++ with ASan/UBSan.
+- **Differential tests** (user, 2026-11-14): the same expression as a body assignment, an initial value and a STRUCT
+  field default must give the same value.
+- **S11's symbol operators** in `{IF}` pragmas (`defined(variable:/type:/pou:)`, `hasattribute`, `hastype`,
+  `hasconstantvalue`, `hasconstanttype`): #116 refuses them with a positioned error; evaluating them needs the symbol tables.
 
 ## Done
 
 Shipped work lives in git history and the [releases](https://github.com/AbuShaqra/TC_PLC_Toolkit/releases).
-Roadmap items finished from now on are listed here with their PR.
+Newest first; details are in each PR.
 
-- **v0.11.0 released 2026-11-16** ([release](https://github.com/AbuShaqra/TC_PLC_Toolkit/releases/tag/v0.11.0), dev→main PR #42 `ce688ea`; user: release it, 1.0.0 later): everything since 0.10.1, with the compiler at fork release N (PR #40) and a `CHANGELOG.md` whose section leads the release notes.
-- **Native look, done 2026-11-16** (user's choice; `674bebc`, `7911c1b`, `b1675e6`): the editor header is one slim themed row (TC mark, project › folders › object, type tag, status dots, hammer Build button, *Actions ▾*); the Start Page follows the theme; a new flat TC mark for the Marketplace and Activity Bar; the old pink-red is gone, true red #E2001A is only a marker.
-- **Editor Actions menu, done 2026-11-16** (user's ask; `db32da5`, merged `56c760f`): the editor toolbar's buttons and switches (Generate ST, Build and its options, XAE, Start/Stop PLC, Auto Sync) are one *Actions* menu; status chips beside it keep Building…, PLC Run/Stop and Manual Sync visible.
-- **ADS DLL path settings, done 2026-11-16** (user's ask; `0f7161f`): `tcToolkit.adsDll.dotNetLibrary` (TwinCAT.Ads.dll) and `tcToolkit.adsDll.nativeDllFolder` (TcAdsDll.dll); empty = search as before, a set path is used as given, and a missing DLL's message offers Open Setting.
-- **Start/Stop PLC, done 2026-11-16** (user's ask; `cd896ef`): one toggle while online, confirmed each time, in the editor and the PLC Watch title bar, also over the user-mode helper. Open: whether to offer Start or Stop in Error/Exception (disabled today).
-- **PLC Watch redraws, done 2026-11-16** (user reports; `c5566b2`, `e17109a`, confirmed on the user's PC): a new value redraws only its row (the full reload flashed VS Code's progress bar), with new row objects per reload (VS Code dropped one-row redraws of older objects, so values froze), batched at most every 300 ms (several entries left VS Code no 200 ms pause, so it redrew only every 2–3 s). Reproduced and verified in real VS Code 1.95.3 and 1.146.0.
-- **Show Problems and the code check's build time, done 2026-11-16** (user reports; `f7eeb31`, this commit): the build summaries' one *Show Problems* button opens the Problems panel (no quick pick); the online code check takes the last build time from `_CompileInfo/*.compileinfo` as well as the `.tmc`, because XAE leaves the `.tmc` alone when no variable changed, which blocked writes after a body-only change was built and activated.
-- **User-mode NetId confirmed over ADS, done 2026-11-16** (`0978d5e`; found in the user's Windows check: a running runtime rewrites its `TcRegistry.xml` about 90 s after it starts, so the file-time rule refused the first Build and Activate): when the file changed after the runtime started, its NetId is confirmed by asking the runtime over ADS (port 10000); no answer keeps it unknown.
-- **PLC Watch placement, done 2026-11-16** (user's ask): PLC Watch opens in its own tab in the bottom panel next to the Terminal by default; `tcToolkit.online.watchLocation` = `sidebar` puts it in the TC Toolkit sidebar under PLC Objects instead (user: configurable). Adding a variable brings it to the front either way.
-- **Editor title-bar buttons, done 2026-11-16** (user's ask; on `claude/focused-ptolemy-m6acaz`): a PLC file's editor tab shows Build, Build and Activate, Show Activation Targets (Windows only) and one Go Online / Go Offline button that follows the online state. The same buttons are in the PLC Objects view header (when the workspace has a PLC project; shown on hover, user's call) and as Start Page tiles (`d27c161`).
-- **R14 follow-up: trust a user-mode NetId only for a running instance, done 2026-11-16** (toolkit `c95d52b`, on `claude/focused-ptolemy-m6acaz`; found in the user's Windows check): a user-mode runtime's `TcRegistry.xml` can name a NetId another instance wrote, so it is trusted only when a `TcSystemServiceUm` with that runtime's name runs and the file is not newer than its start + 5 s; otherwise the runtime shows as "AmsNetId unknown" with the reason and is never offered. Confirmed on the user's machine (offers the console's NetId after a restart); the PowerShell test script still needs a Windows run.
-- **R14 follow-up: change a stale activation target, done 2026-11-16** (toolkit `b5b2544`, on `claude/focused-ptolemy-m6acaz`; user's call): when the solution's TargetNetId is not a runtime on this PC (a 4026 user-mode runtime gets a new NetId after a restart), the refusal lists the local runtimes and offers "Change the solution's target…": pick a local runtime, confirm, the one `TargetNetId` value in the `.tsproj` is rewritten byte-exactly, and the activation runs again (asking again if a different runtime was picked). Activation stays local-only. Needs a Windows run of `test-activation-target.ps1` and one real refusal.
-- **S7 iec-3 audit, done 2026-11-15 18:30 UTC** (fork #188–#189). Part 2 (fork [#189](https://github.com/AbuShaqra/STruCpp/pull/189), `b6788aa`): under the built-in `iec-3` only, names with `__` or a trailing `_` are errors (reserved and library names exempt) and `{external}`, exponent reals without a decimal point, assigning the FOR variable, `8#`, IL and untyped TRUNC warn. No change without a flag or under the TwinCAT profile. C6 moved to S12.
-- **S7 part 1: vendor forms refused under iec-3, merged 2026-11-15** (fork [#188](https://github.com/AbuShaqra/STruCpp/pull/188), `648137f`): seven new features (`fb_property`, `st_actions`, `bare_self_caret`, `enum_dot_qualify`, `struct_compare`, `dynamic_memory`, `var_inst`) on without a flag and off in `iec-3`; no-flag output byte-identical; `a[ADR(x)]` hole closed; C9 closed. The toolkit profile must list the seven features at the next pin.
-- **Fork release N cut 2026-11-15** at `development` `d9b7c01` (user: fix the two high follow-ups first, then cut): S6, 32-bit TIME, STRING 80 under twincat3, library pointer parameters, the non-ASCII name refusal and fork #186–#187. Run-time changes and breaking refusals are listed in its note; its known issues come from the S6 reviews (Backlog). Pin in review: TC Toolkit [PR #40](https://github.com/AbuShaqra/TC_PLC_Toolkit/pull/40) (user: pin N, PR into dev), with a toolkit fix it exposed (a library FUNCTION named LTIME resolved as a type in library declarations).
-- **Fork: malformed standard-function calls refused instead of crashing, merged 2026-11-15** (fork [#187](https://github.com/AbuShaqra/STruCpp/pull/187), `d9b7c01`; for release N): argument counts are checked in initial values and test files; UPPER_BOUND/LOWER_BOUND check ARR and DIM; code generation reports errors instead of throwing or emitting a silent value. The second fix before release N.
-- **Fork: EN/ENO only on a statement or whole right-hand side, merged 2026-11-15** (fork [#186](https://github.com/AbuShaqra/STruCpp/pull/186), `fe6356f`; for release N; breaking for code that compiled before): EN/ENO on a call nested in an expression is refused (it ran regardless of EN, and MAX/MIN gave wrong results); where supported, the EN guard now works for every call and target. One of the two fixes before release N (user, 2026-11-15).
-- **S6 runtime safety, done 2026-11-15 11:45 UTC** (fork #151–#185, lanes 1 and 2; for release N): all fourteen S2 §1d defects and the decisions of Nov 13–15 are in. Last: B8 (fork [#185](https://github.com/AbuShaqra/STruCpp/pull/185), `4214c89`; run-time change): integer `+ - *` and unary minus wrap with no UB, narrow types computed wide and cut where stored (user, 2026-11-15), operands evaluated left to right, `--strict` warns when a constant does not fit its target. Older gaps the reviews found are in the Backlog.
-- **S6 B11: pointer arithmetic counts bytes, merged 2026-11-15** (fork [#184](https://github.com/AbuShaqra/STruCpp/pull/184), `294c04a`; for release N; run-time change): pointer or ADR plus an integer moves by bytes and pointer differences are in bytes, as on the PLC; provably misaligned stores are refused on every store path.
-- **S6: strings compared by type, merged 2026-11-15** (fork [#183](https://github.com/AbuShaqra/STruCpp/pull/183), `e2876dc`): every comparison with a STRING/WSTRING or string-literal operand uses the IEC order (code units, then length); many forms that failed in g++ now build. OSCAT results unchanged.
-- **S6: REAL MOD through a pointer refused, merged 2026-11-15** (fork [#182](https://github.com/AbuShaqra/STruCpp/pull/182), `b981048`): MOD on a REAL reached through `p^`, `r^`, `ps^.f`, `pa^[0]` and similar is refused like a plain REAL (it failed in g++ before). Deciding it from the resolved type is a follow-up.
-- **S6: a non-BOOL value into a BOOL input warns, merged 2026-11-15** (fork [#181](https://github.com/AbuShaqra/STruCpp/pull/181), `5706c6f`): the narrowing warning its assignment gets, in every mode (error under `--strict`); positional arguments past a VAR_OUTPUT bind correctly. Library FUNCTION inputs, interface/SUPER calls and BOOL aliases are follow-ups.
-- **S6: plain STRING is 80 characters under twincat3, merged 2026-11-15** (fork [#180](https://github.com/AbuShaqra/STruCpp/pull/180), `adae985`; lane 2; for release N): feature `string_default_80`; libraries keep their compiled default; mismatched library in-outs and outputs are copied; strings not 254 long are left out of the debug table with a warning. Unchanged without the feature.
-- **S6 B5: FB_exit warning, merged 2026-11-15** (fork [#179](https://github.com/AbuShaqra/STruCpp/pull/179), `a187ae2`): a FUNCTION_BLOCK declaring FB_exit gets a warning that it is never called, in every mode (user, 2026-11-15). Running it from `__DELETE` is in the Backlog.
-- **Fork: ADR and REF into library FUNCTION inputs, merged 2026-11-15** (fork [#177](https://github.com/AbuShaqra/STruCpp/pull/177), `bfcc186`; lane 2): the library manifest records POINTER TO, REF_TO and array parameter shapes, so ADR into a narrow library input and a wrong-type REF are refused; pointer outputs into 64-bit integers compile. Unmarked archives unchanged.
-- **S6 B9: global initial values, merged 2026-11-15** (fork [#176](https://github.com/AbuShaqra/STruCpp/pull/176), `6fa5496`): under iec-3 and `--strict` a global's initial value may read only CONSTANT globals (ADR, REF, SIZEOF accepted); default mode unchanged. **Decided by the user 2026-11-15:** UPPER_BOUND/LOWER_BOUND of a fixed-size array are accepted there too (fork [#178](https://github.com/AbuShaqra/STruCpp/pull/178), `7220ae1`, which also checks an index inside ADR/REF).
-- **S6 B4: SEL and MUX evaluate every input, merged 2026-11-15** (fork [#175](https://github.com/AbuShaqra/STruCpp/pull/175), `0770ec3`): documented, not changed; evaluation order is unspecified; an e2e pins it.
-- **S6: TIME, DATE, TOD and DT are 32-bit unsigned, merged 2026-11-15** (fork [#174](https://github.com/AbuShaqra/STruCpp/pull/174), `2779c9e`; for release N; run-time change): 4 bytes as on the PLC in every profile; negative and sub-ms TIME literals refused; date/time division by 0 faults; TOD/DT MOD TIME computed, other mixed kinds refused; LTIME into TIME inputs converts; dates before 1970 wrap.
-- **S6 B10: too-long string literal warns, merged 2026-11-15** (fork [#173](https://github.com/AbuShaqra/STruCpp/pull/173), `de222bd`): a STRING or WSTRING literal longer than the variable, input, field or result it is stored in warns in every mode. METHOD arguments, field and element assignments, FB instance initialisers and PROPERTY bodies are a follow-up.
-- **Fork: mixed-sign AND/OR/XOR, merged 2026-11-15** (fork [#172](https://github.com/AbuShaqra/STruCpp/pull/172), `39b6948`): AND, OR and XOR of a signed and an unsigned integer compute in the IEC widened type (`DINT#-7 OR UDINT#4000000000` is -7). The last of the strict-mode follow-ups; the rest reached development with #170.
-- **Fork: NOT and shifts in STRUCT defaults, merged 2026-11-15** (fork [#171](https://github.com/AbuShaqra/STruCpp/pull/171), `b733708`; part of S6): NOT of a typed bit string or typed constant in a STRUCT default is the complement in that width; typed constants keep their width for shifts and rotations; the default now equals the same expression in a body.
-- **Fork: NOT typing, merged 2026-11-15** (fork [#170](https://github.com/AbuShaqra/STruCpp/pull/170), `4d940b1`; part of S6): NOT of an untyped constant takes its context's type; NOT on a typed integer is refused under iec-3 and `--strict`; carries the earlier strict-mode follow-ups.
-- **Fork: language-server crash fixes, merged 2026-11-15** (fork [#169](https://github.com/AbuShaqra/STruCpp/pull/169), `e31de8a`; for release N): completion no longer throws in half-typed or INTERFACE methods, symbols skip unreadable nodes, no empty-name diagnostics; a fuzz test drives every editor feature over malformed input.
-- **Fork: test runner fixes, merged 2026-11-15** (fork [#168](https://github.com/AbuShaqra/STruCpp/pull/168), `2595d8c`; for release N): ASSERTs nested in IF/CASE/loops now run (a failing nested assert used to pass silently); TEARDOWN runs after a fault; SETUP/TEST variable errors are ST diagnostics.
-- **Fork: X1 on every store path, merged 2026-11-15** (fork [#167](https://github.com/AbuShaqra/STruCpp/pull/167), `20db0d3`; for release N): the narrow-ADR refusal now also runs from the CLI (it was skipped because the bundled library declares ADR) and covers SEL/MUX, SUPER^/interface calls, properties, FOR and test files; pointer and reference targets are always accepted.
-- **S6 B7: subrange store fault, merged 2026-11-15** (fork [#166](https://github.com/AbuShaqra/STruCpp/pull/166), `d31c0cb`; for release N; run-time change): a value stored outside a subrange faults with variable, task, POU and line; an out-of-range constant initial value is a compile error; `STRUCPP_NO_BOUNDS_CHECK` opts out (about 2.4x on subrange-store loops with the check on).
-- **S6 B2/B3: index and reference faults, merged 2026-11-14** (fork [#165](https://github.com/AbuShaqra/STruCpp/pull/165), `80d0edc`; for release N; run-time change): an out-of-range index, a NULL pointer and an unbound REFERENCE TO fault with task, POU, line and index; `STRUCPP_NO_BOUNDS_CHECK` opts out (about 1.14x on array-heavy loops with the checks on).
-- **S6 B6: date/time to text, merged 2026-11-14** (fork [#164](https://github.com/AbuShaqra/STruCpp/pull/164), `8cd7b6f`; for release N; run-time change): TIME/DATE/TOD/DT convert to STRING as canonical IEC literals (`T#1h2m3s4ms`, `LDATE#…`) and read back exactly.
-- **Fork: checker crash on unrecoverable statements, merged 2026-11-14** (fork [#163](https://github.com/AbuShaqra/STruCpp/pull/163), `5758fba`; for release N): `IF := 1;` and similar no longer crash `--check` and the language server. Follow-up: two language-server crashes on half-typed code and empty-name messages (lane 2).
-- **S6 B1: division by zero faults, merged 2026-11-14** (fork [#162](https://github.com/AbuShaqra/STruCpp/pull/162), `b926cba`; for release N; run-time change): `/` and `DIV()` by zero on every integer type raise a fault naming task, POU and line (MOD by 0 stays 0); one fault mechanism, also without exceptions; the REPL and cyclic runners stop only the faulting task.
-- **Fork: narrow ADR refused (X1, user decision), merged 2026-11-14** (fork [#161](https://github.com/AbuShaqra/STruCpp/pull/161), `2b93e7b`; for release N): an address stored in an integer narrower than 64 bits is refused in every store path, through aliases and subranges; builds that truncated an address now stop. Follow-up branch closes the remaining paths (SEL/MUX, library inputs, SUPER^/interface calls).
-- **Fork: names with non-ASCII characters refused, merged 2026-11-14** (fork [#160](https://github.com/AbuShaqra/STruCpp/pull/160), `69651a7`; for release N): a name holding ß, ä, ı, ſ, ﬁ or a control character is refused with its code points, and every position after it stays exact (fixes release M's column limitation).
-- **S6: string literals, merged 2026-11-14** (fork [#159](https://github.com/AbuShaqra/STruCpp/pull/159), `cde5681`; for release N): literals compare by text, STRING/WSTRING mixes refused, TO_STRING of a literal gives its text. Follow-up: one type-driven string comparison (SEL/MUX of literals compared pointers).
-- **S6: VAR_TEMP reset at each call, merged 2026-11-14** (fork [#158](https://github.com/AbuShaqra/STruCpp/pull/158), `a4c0337`; for release N; run-time change): VAR_TEMP starts afresh at each FB or PROGRAM call; METHOD VAR_INST initial values applied.
-- **S6: SIZEOF of a type name, merged 2026-11-14** (fork [#157](https://github.com/AbuShaqra/STruCpp/pull/157), `97183e6`; for release N): SIZEOF/XSIZEOF of a type measures the type, a same-named value in scope still wins; LTIME, CHAR and the platform types accepted as type names.
-- **Fork: CONFIGURATION globals and REFERENCE TO initial values, merged 2026-11-14** (fork [#156](https://github.com/AbuShaqra/STruCpp/pull/156), `2709fe9`; for release N): CONFIGURATION globals through VAR_EXTERNAL; `REFERENCE TO := REF(x)` initial values; FB copies keep their own references and pointers. Nine older gaps it found are on lane 2's follow-up list (Backlog).
-- **Release M pinned in the toolkit** (user, 2026-11-13) — [PR #39](https://github.com/AbuShaqra/TC_PLC_Toolkit/pull/39), merged into `dev` 2026-11-14 07:42 UTC (`c370b64`), ahead of the R15 Windows check (user): the compiler and runtime headers re-vendored at `75a55de`, `KNOWN_GPP_GAPS` emptied (the TcToolkitSample g++ error is gone), the `twincat3` dialect profile gains `vendor_operators`, `type_colon_optional`, `platform_types` and `bit_type`.
-- **S10** (fork lane 2) — vendor types and forms, 2026-11-12 17:10 UTC to 2026-11-13 13:53 UTC: fork [#144](https://github.com/AbuShaqra/STruCpp/pull/144)–[#148](https://github.com/AbuShaqra/STruCpp/pull/148) (`1f96d7d`: `__ISVALIDREF`/`XSIZEOF`, `type_colon_optional`/`conditional_return`, `platform_types`, the implicit-parameter hint, `ADR` initial values), [#154](https://github.com/AbuShaqra/STruCpp/pull/154) (`af013a2`: `__POUNAME`, `__POSITION`, `BITADR`) and [#155](https://github.com/AbuShaqra/STruCpp/pull/155) (`75a55de`: BIT members as packed bitfields). **Release M** cut at `75a55de` (S5, S10, fork #140–#155; note in the coordination doc).
-- **R14 Build and Activate through XAE** — [PR #38](https://github.com/AbuShaqra/TC_PLC_Toolkit/pull/38), merged 2026-11-13 12:50 UTC (`64ff7d9`): builds through XAE's Automation Interface, headless by default; activation onto this machine's runtimes with an XAE-style platform question; XAE errors in Problems through the typed EnvDTE reader and the Build pane; a 4024 project builds on XAE Shell 64 after one question (window shown, XAE upgrades the files); the Compile button and command are now **Build**.
-- **R13 C++ generation + g++ compile check** — [PR #37](https://github.com/AbuShaqra/TC_PLC_Toolkit/pull/37), merged 2026-11-13 08:40 UTC (`02236c8`): optional C++ into `<project>/CPP_Files/` and a g++ 7+ compile check from the Compile dropdown, g++ detection (PATH, MSYS2, MinGW and others), errors in Problems, IntelliSense through the C/C++ extension's provider API. User's Windows check passed on TcToolkitSample2.
+**Toolkit**
+- **v0.11.0 released 2026-11-16 23:10 UTC** ([release](https://github.com/AbuShaqra/TC_PLC_Toolkit/releases/tag/v0.11.0);
+  dev → main PR #42, `ce688ea`; user: release it, 1.0.0 later) — everything since 0.10.1, with a `CHANGELOG.md`:
+  - **R15 ADS online monitoring** — [PR #41](https://github.com/AbuShaqra/TC_PLC_Toolkit/pull/41), squash `fbf2bdd`
+    into `dev` 2026-11-16 21:09 UTC (started 2026-11-13 13:20 UTC). Go Online, inline values in both panes, a PLC Watch
+    view, confirmed and logged writes (off by default); user decisions D1–D9 in
+    [docs/r15-ads-decision.md](docs/r15-ads-decision.md). When the local router refuses (4026 user-mode runtime), Go
+    Online falls back to a PowerShell helper over Beckhoff's installed TwinCAT.Ads.dll. *Local runtime* targets the
+    user-mode runtime's own NetId. Confirmed on the user's PC: Go Online through the helper, inline values, PLC Watch,
+    writes, the user-mode NetId, Build and Activate on the first try, boot project with autostart, no helper left after closing.
+  - **Compiler at fork release N** — [PR #40](https://github.com/AbuShaqra/TC_PLC_Toolkit/pull/40) (`3c24371`); the
+    `twincat3` profile gains `string_default_80`; fixes a library FUNCTION named LTIME read as a type.
+  - **Activation (R14 follow-ups):** every activation installs the boot project with autostart; a user-mode NetId is
+    trusted only for a running instance (`c95d52b`) or confirmed over ADS (`0978d5e`); a stale target offers
+    "Change the solution's target…" (`b5b2544`).
+  - **Native look** (`674bebc`, `7911c1b`, `b1675e6`): one slim themed editor header, a themed Start Page, a new flat TC mark.
+  - **Editor Actions menu** (`db32da5`) with status chips; **title-bar buttons** for Build, Build and Activate,
+    activation targets and Go Online/Offline, also in the PLC Objects header and on the Start Page (`d27c161`).
+  - **Start/Stop PLC** toggle while online, confirmed each time (`cd896ef`).
+  - **ADS DLL path settings** `tcToolkit.adsDll.dotNetLibrary` / `nativeDllFolder` (`0f7161f`).
+  - **PLC Watch** in the bottom panel by default (`tcToolkit.online.watchLocation` = `sidebar` moves it); per-row
+    redraws batched every 300 ms (`c5566b2`, `e17109a`).
+  - **Show Problems** opens the Problems panel; the build time also comes from `_CompileInfo` (`f7eeb31`).
+- **Release M pinned** — [PR #39](https://github.com/AbuShaqra/TC_PLC_Toolkit/pull/39), 2026-11-14 (`c370b64`): compiler
+  and runtime headers at `75a55de`, the TcToolkitSample g++ gap gone, profile gains the S10 features.
+- **R14 Build and Activate through XAE** — [PR #38](https://github.com/AbuShaqra/TC_PLC_Toolkit/pull/38), 2026-11-13 (`64ff7d9`).
+- **R13 C++ generation + g++ compile check** — [PR #37](https://github.com/AbuShaqra/TC_PLC_Toolkit/pull/37), 2026-11-13 (`02236c8`).
+- **R12 `{IF}`-aware language-server diagnostics** — [PR #36](https://github.com/AbuShaqra/TC_PLC_Toolkit/pull/36), 2026-11-12 (`02f2b96`).
+- **R3.5 compiler at `eb52d2c`, conditional pragmas, `.plcproj` compiler defines** — [PR #35](https://github.com/AbuShaqra/TC_PLC_Toolkit/pull/35), 2026-11-11 (`791fc3a`).
+- **Settings keys `tcToolkit.*`** — [PR #34](https://github.com/AbuShaqra/TC_PLC_Toolkit/pull/34), 2026-11-11 (`cd52afc`).
+- **R3.3, R3.4, R6–R9** (bundled compiler, library declarations, indexing, rename, comments/pragma hover, ESLint 10; the name TC Toolkit) — [PR #33](https://github.com/AbuShaqra/TC_PLC_Toolkit/pull/33), 2026-11-11 (`6424968`).
+- **R3.2 Compile Project** — [PR #32](https://github.com/AbuShaqra/TC_PLC_Toolkit/pull/32), 2026-11-10 (`28f24f1`).
+- **R2 sidebar, start page, Create New Project** — [PR #31](https://github.com/AbuShaqra/TC_PLC_Toolkit/pull/31), 2026-11-10 (`e5310ae`); licence to AGPL-3.0-or-later.
+- **R4 Objects-tree model** — [PR #30](https://github.com/AbuShaqra/TC_PLC_Toolkit/pull/30), 2026-11-09 (`d97cec3`).
+- **R3.1 STruC++ spike** (`docs/r3.1-strucpp-spike.md`) — [PR #29](https://github.com/AbuShaqra/TC_PLC_Toolkit/pull/29), 2026-11-09 (`1b82d08`).
+- **R5 and R1** (PROGRAMs stay PROGRAMs, XML parsing fixes, Add Get/Set Accessor; Generate ST rounded end) — [PR #27](https://github.com/AbuShaqra/TC_PLC_Toolkit/pull/27), 2026-11-09 (`0ea9fcd`).
+- **Roadmap set-up** (housekeeping) — [PR #26](https://github.com/AbuShaqra/TC_PLC_Toolkit/pull/26), 2026-11-09 (`caa686d`).
 
-- **S3b** (fork lane) — the other S2 follow-ups, 2026-11-10 00:14 UTC to 2026-11-12 00:20 UTC: batches 1–5, Part C,
-  F1–F4, the argument check with libraries (#128) and OSCAT `ROUND(IN, N)` (#129), fork #30–#130 (without #48, #58–#64 and #116); releases E–K. Last,
-  F4 ([#130](https://github.com/AbuShaqra/STruCpp/pull/130), `c1faca7`): STRING stored as Windows-1252, the debug wire
-  stays `len8-utf8` (new status 0x89 for an unencodable write), non-CP1252 STRING literals refused. **Release K** cut at
-  `c1faca7` (#129–#130; lint, format, typecheck, purity, build, bundle, 5759 tests passed, 7 skipped, 345 language-server tests; note in the coordination doc).
-- **S4** (fork lane) — IEC Ed. 3 forms the fork refused, 2026-11-12 05:45–16:53 UTC: LTIME (#131), LDATE/LTOD/LDT (#132), `STRING[n]` (#134), CHAR/WCHAR and `s[i]` (#135), STRUCT OVERLAP, typed timers, LTIME presets, `1E400` refused (#136), implicit widening per Figure 11 (#137), Table 36 CONCAT_/SPLIT_/DAY_OF_WEEK with output binding by the assignment rules (#138), DT_TO_DATE/DT_TO_TOD and DATE arithmetic (#139, run-time change, OSCAT DCF77/SUN_POS/CALENDAR_CALC/DST/DT_TO_SDT/DT_TO_STRF). **Release L** cut at `3acc3f6` (5972 tests passed, 7 skipped, 345 language-server tests; note in the coordination doc).
-- **R12** — `{IF}`-aware language-server diagnostics, 2026-11-11 23:57 UTC to 2026-11-12 10:56 UTC: [PR #36](https://github.com/AbuShaqra/TC_PLC_Toolkit/pull/36), squash `02f2b96` into `dev`. The language server never evaluates a define; a block error is kept only if every branch selection has it, semantic diagnostics inside a group are dropped, per-branch types resolve to unknown; code without `{IF}` is unchanged. 111/111 suites FULL; the user's Windows checks passed.
-- **R3.5** — Compile Project with the compiler at `eb52d2c`, conditional pragmas and `.plcproj` compiler defines,
-  2026-11-11 17:05–23:55 UTC ([PR #35](https://github.com/AbuShaqra/TC_PLC_Toolkit/pull/35), squash `791fc3a`): project defines via
-  `--pragma-define`, per-object defines via `--file-define`, Conditions evaluated for `Debug|TwinCAT RT (x64)`, notes in
-  a "TC Toolkit Compile" output channel.
-- **S11** (fork lane) — conditional compilation pragmas, 2026-11-11 13:10–16:05 UTC
-  ([#116](https://github.com/AbuShaqra/STruCpp/pull/116), squash `1080fd6`; in release I `fe4d492`): feature
-  `conditional_pragmas` (off by default and under `iec-3`) with `defined()`, `project_defined()`, `hasvalue(N,'text')`,
-  `AND`/`OR`/`NOT`; project defines from `-D`, `pragmaDefines`, `library.json` or the language-server setting, names
-  case-sensitive; `{define}`/`{undefine}` in source to the end of the file, never removing a project define. Symbol
-  operators refused with a positioned error (Backlog).
-- **S3b fork PRs #112–#115, #117** (fork lane) — merged 2026-11-11: FB member access per IEC
-  with access specifiers ([#112](https://github.com/AbuShaqra/STruCpp/pull/112)), STRUCT field defaults
-  ([#113](https://github.com/AbuShaqra/STruCpp/pull/113), 21e), standard-function arguments of an alias type checked
-  against its base type ([#114](https://github.com/AbuShaqra/STruCpp/pull/114), 7e, `f77b5c7`), plain `SUPER()`, `SUPER.x :=` and
-  access paths after THIS/SUPER ([#115](https://github.com/AbuShaqra/STruCpp/pull/115), D1–D3, `8185adb`), calling an
-  FB held in a global array element, `units[0](...)` and `GVL_A.units[0](...)`
-  ([#117](https://github.com/AbuShaqra/STruCpp/pull/117), D4, `fe4d492`). **Release I** cut at `fe4d492` the same day
-  (#111–#117).
-- **S3b fork PRs #118–#129** (fork lane) — merged 2026-11-11 from 18:37 UTC: an INTERFACE as an ARRAY element or STRUCT field
-  holds a reference ([#118](https://github.com/AbuShaqra/STruCpp/pull/118), D5, `38ad2ca`); S11b, pragma-only and
-  per-file defines, `--pragma-define` and `--file-define` ([#119](https://github.com/AbuShaqra/STruCpp/pull/119),
-  `eb52d2c`). The extension bundles `eb52d2c` in R3.5 (PR #35). D8, STRUCT aliases related through their targets'
-  EXTENDS ([#120](https://github.com/AbuShaqra/STruCpp/pull/120), `a4d7809`), merged the same evening; D9, out-of-range typed literals refused
-  ([#121](https://github.com/AbuShaqra/STruCpp/pull/121), `caf3d93`; release J note); D10, CONFIGURATION pointer and
-  reference globals ([#122](https://github.com/AbuShaqra/STruCpp/pull/122), `b77f36f`); D12, empty `--feature` id message and the
-  DIALECTS.md Checks list ([#123](https://github.com/AbuShaqra/STruCpp/pull/123), `aacc31a`); D11, forced and debugged globals
-  take the global's lock in threaded builds ([#124](https://github.com/AbuShaqra/STruCpp/pull/124), `039d65f`). Batch 5 is done. F1, private/protected
-  properties refused from outside ([#125](https://github.com/AbuShaqra/STruCpp/pull/125)), and F2, a VAR_EXTERNAL in an FB reaching another
-  resource's global refused ([#126](https://github.com/AbuShaqra/STruCpp/pull/126)), and F3, a name declared twice in one
-  CONFIGURATION or one RESOURCE `VAR_GLOBAL` refused at the second declaration
-  ([#127](https://github.com/AbuShaqra/STruCpp/pull/127), `f8dee95`; user decision); all three refuse code that ran
-  (release J note). Standard-function arguments checked when libraries are loaded: `LEN(i)` with an INT is refused at
-  analysis instead of failing in g++ ([#128](https://github.com/AbuShaqra/STruCpp/pull/128), `ba4d2c2`; probed on 161
-  `.st` files × 3 modes, nothing that builds today newly refused). **Release J** cut at `ba4d2c2` the same day (#118–#128;
-  lint, format, typecheck, purity, build, bundle, 5715 tests passed with 7 skipped, 345 language-server tests; note in
-  the coordination doc).
-- **Settings keys `tcToolkit.*`** — 2026-11-11 09:48–10:28 UTC ([PR #34](https://github.com/AbuShaqra/TC_PLC_Toolkit/pull/34), `cd52afc`): VS Code labels settings from their keys, so the 10 settings moved from `twincat.*` with a one-time migration (user report).
-- **R3.3–R9** — merged together 2026-11-11 09:33 UTC after the user's Windows checks ([PR #33](https://github.com/AbuShaqra/TC_PLC_Toolkit/pull/33), `6424968`):
-  the compiler bundled (GPL licence + source link, only the TwinCAT dialect profile, Node 22+ found automatically, a
-  toolbar Compile button); the visible name **TC Toolkit** (trademark; internal ids unchanged); R3.4 vendor-library
-  declarations built locally per check (never stored or shipped — Beckhoff licence §4(3)); R6 indexing (memoized
-  discovery, persisted archive names, per-project background scan with a readiness gate); R7 rename as one undoable
-  edit with an Undo button and interface-method families; R8 nested comments and pragma hover; R9 ESLint 10 and
-  brace-expansion 2.1.7.
-- **R3.2** — Compile Project, 2026-11-10 20:53–22:21 UTC ([PR #32](https://github.com/AbuShaqra/TC_PLC_Toolkit/pull/32), `28f24f1`):
-  Compile Project (TC Toolkit: Compile Project; shipped as "TwinCAT: Compile Project", renamed in PR #33) runs the external compiler's check (no `--strict`, the vendored TwinCAT profile, unsaved
-  edits included) and shows its results in the Problems panel at the pane's own line and column (changed on the
-  user's report: the XML position confused) and as pane markers; compiler path and Node path settings; a start-page
-  tile. Generate ST writes each project's files into its own `ST_Files`, shown in the Objects tree. A second sample
-  solution, `TcToolkitSample2` (3.1.4024). **Proven on Windows by the user:** both samples 0 errors, an undeclared
-  variable reported and cleared on edit, the dev-host test green with and without the compiler.
-- **R2** — sidebar, start page and Create New Project, 2026-11-09 19:57 UTC to 2026-11-10 20:51 UTC ([PR #31](https://github.com/AbuShaqra/TC_PLC_Toolkit/pull/31), `e5310ae`):
-  an Activity Bar container with Start, TwinCAT Objects and TwinCAT Libraries (renamed TC Toolkit, PLC Objects / PLC Libraries in PR #33); a start page (create, open with
-  recent projects — two shown, Show all — project actions, help, settings); projects created from real XAE output for
-  3.1.4024 and 3.1.4026, **both proven to open and build in XAE by the user**; XAE Shell path settings with
-  detection; the Objects tree follows the active file only while visible; the licence changed to AGPL-3.0-or-later.
-- **S9** (fork lane) — raw memory layout, 09:40–12:07 UTC 2026-11-10 (user: fix the root cause): library manifests
-  list only a FUNCTION's inputs/outputs/in-outs (#58), force table (#59), a force scope in every PROGRAM cycle and
-  2-byte enums (#60), forcing at cycle boundaries through the table (#61, user decision), variables laid out as their
-  values with alias-safe pointer punning (#62), NUL-terminated STRING/WSTRING (#63), and the 14 pointer-based OSCAT
-  string functions pinned through real calls (#64, `e071f4f`). Byte access through any pointer shape now reads real
-  bytes; `SIZEOF` returns PLC sizes; RAM per elementary variable drops to a third.
-- **S3a** (fork lane) — false errors on correct code, 23:18 UTC 2026-11-09 to 00:12 UTC 2026-11-10: signed typed
-  literals and typed CASE labels (#25), `Get`/`Set` as names (#26), STRUCT/UNION alias = same type (#27), `ADR` into a
-  POINTER TO a STRUCT/UNION/FB (#28), UNION initial values naming one member (#29, `bc171d0`). Nothing narrowed.
-- **S2** (fork lane) — closed the fork's gaps, 12:04–23:17 UTC on 2026-11-09. Steps 1–13 + 1b (fork PRs
-  [#5](https://github.com/AbuShaqra/STruCpp/pull/5)–[#18](https://github.com/AbuShaqra/STruCpp/pull/18); releases A, B, C)
-  and the folded-in items: `REFERENCE TO` inputs bound at the call (#19), typed `TRUNC_<type>` (#20), `trunc_dint` (#21),
-  `interface_zero` (#22), PROGRAMs reached by name (#23), FB `VAR_IN_OUT` by reference (#24, `b286bc2`). Nothing that
-  compiled and ran correctly before is refused; every narrowing is listed in its PR and the release notes.
-
-- **R4** — Objects-tree model: a VS Code-free node graph (`src/objectsTreeModel.js`) behind a thin tree provider;
-  396 tree ids and 301 reveal chains pinned. Dev-host gate passed on Windows 2026-11-09. PR
-  [#30](https://github.com/AbuShaqra/TC_PLC_Toolkit/pull/30), squash-merged into `dev` 2026-11-09 19:56 UTC as `d97cec3`, with
-  the Generate ST menu fixes (clipping, Select all) and the XAE 3.1.4024 skeleton.
-
-- **R3.1** — STruC++ spike findings (`docs/r3.1-strucpp-spike.md`), decisions taken 2026-11-09; merged with the
-  two-lane roadmap in [PR #29](https://github.com/AbuShaqra/TC_PLC_Toolkit/pull/29), 2026-11-09 12:03 UTC, `1b82d08`.
-
-- **R5** — PROGRAMs stay PROGRAMs; TwinCAT XML parsing fixes (non-ST bodies, CDATA overrun, attribute
-  entities, lone CR; BOM verified not to leak); SFC-transition warnings; Add Get / Add Set Accessor (issue
-  [#25](https://github.com/AbuShaqra/TC_PLC_Toolkit/issues/25)). PR [#27](https://github.com/AbuShaqra/TC_PLC_Toolkit/pull/27),
-  squash-merged into `dev` 2026-11-09 as `0ea9fcd`. Merged before its XAE check (user's call); the check
-  **passed** on the user's Windows machine 2026-11-09 (XAE, `node test/devhost/run.js`, the manual menu pass).
-- **S1** (fork lane) — the fork's language server honours dialect profiles: a client passes a whole profile
-  object (`strucpp.dialect`) and overrides (`strucpp.features`) through the `strucpp` workspace configuration;
-  every analysis and compile request uses it; malformed profiles are rejected without a crash; no profile means
-  the compiler's own default. PR [AbuShaqra/STruCpp#4](https://github.com/AbuShaqra/STruCpp/pull/4),
-  squash-merged into the fork's `development` 2026-11-09 as `a529ea9`.
-- **R1** — Generate ST keeps its rounded end in single-project workspaces. Same PR #27. Checked on Windows 2026-11-09; that pass
-  found the multi-project Generate ST menu clipped in a narrow editor, fixed in `3b93ef1`; at the user's request the menu also gained a tri-state *Select all*. Both ride with PR #30.
-- **Roadmap set-up** (housekeeping, not a roadmap item) — this roadmap, a pruned HANDOFF.md and the vendored dialect profile,
-  [PR #26](https://github.com/AbuShaqra/TC_PLC_Toolkit/pull/26), merged into `dev` 2026-11-09 09:07 UTC as `caa686d`.
+**Fork** (`AbuShaqra/STruCpp`, branch `development`)
+- **S7 `iec-3` audit** — fork [#188](https://github.com/AbuShaqra/STruCpp/pull/188) (`648137f`) and
+  [#189](https://github.com/AbuShaqra/STruCpp/pull/189) (`b6788aa`), 2026-11-15, after release N. **Decided by the user
+  2026-11-15:** each construct goes behind a feature that is on without a flag and in the TwinCAT profile, so only
+  `--dialect iec-3` changes. Refused under iec-3: PROPERTY, ACTION in ST, bare `THIS^`/`SUPER^`, enum `E.Member`, STRUCT
+  `=`/`<>`, `__NEW`/`__DELETE`, `VAR_INST`, names with `__` or a trailing `_`. Warned: `{external}`, `1E-4`, assigning
+  the FOR variable, `8#`, IL, plain TRUNC. METHOD default access stays PUBLIC (C4 dropped); C9 closed; C6 moved to S12.
+- **Release N cut 2026-11-15** at `d9b7c01` (user: fix the two high follow-ups first, then cut):
+  - **S6 runtime safety** — fork #151–#185, 2026-11-13 00:10 to 2026-11-15 11:45 UTC. **Decided by the user 2026-11-13:**
+    `/` and DIV by 0, a bad index, NULL or unbound reference, and a subrange store fault at run time (task, POU, line;
+    `STRUCPP_NO_BOUNDS_CHECK` opts out); SEL/MUX evaluate every input (documented); FB_exit warns that it is never called;
+    `*_TO_STRING` gives IEC literal forms; overflow wraps (narrow types computed wide) with a `--strict` warning on
+    constant overflow; dependent global initialisers refused under iec-3/`--strict`; a too-long string literal warns;
+    pointer arithmetic counts bytes; NOT on an untyped literal typed from context, on INT refused under iec-3/`--strict`;
+    INT into a BOOL input warns; `ADR` into a narrower integer refused in every mode. **2026-11-14:** TIME/DATE/TOD/DT are
+    4 bytes and unsigned as on TwinCAT, in every profile (negative and sub-ms TIME literals refused); a plain
+    STRING/WSTRING is 80 under `twincat3`; MOD by 0 stays 0; to-string keeps the long IEC prefixes.
+  - **Fixes on the way:** CONFIGURATION globals and `REFERENCE TO` initial values (#156); non-ASCII names refused with
+    exact positions after them (#160); narrow `ADR` refused on every store path (#161, #167); checker crash on
+    unrecoverable statements (#163); test runner runs nested ASSERTs and TEARDOWN after a fault (#168); language-server
+    crash fixes (#169); library pointer and array parameter shapes (#177); EN/ENO only on a statement or a whole
+    right-hand side (#186, breaking); malformed standard-function calls refused instead of crashing (#187).
+- **Release M cut 2026-11-13** at `75a55de`: **S10** vendor types and forms (fork #144–#148, #154, #155:
+  `__ISVALIDREF`, `XSIZEOF`, `__POUNAME`, `__POSITION`, `BITADR`, `type_colon_optional`, `conditional_return` (CODESYS),
+  platform types, BIT as packed bitfields; user: `type_colon_optional` also under `twincat3`, `conditional_return`
+  CODESYS-only, a body `udint := ADR(x)` refused in every mode; multicore operators, the vector type and quoted
+  identifiers stay unplanned until real code needs them); **S5** profile handling (#149); the post-S4 follow-ups
+  (#140–#143: property reads through a global FB instance, `--strict` per Figures 11/12 for bit strings); RETURN nested
+  in a test block (#150).
+- **Release L cut 2026-11-12** at `3acc3f6`: **S4** Ed. 3 forms (fork #131–#139). **Decided by the user 2026-11-12:**
+  Table 36 functions added; DT_TO_DATE/DATE arithmetic fixed (run-time change); the debug map keeps short type names;
+  `T#1_500ms` = 1500 ms; `STRING(1_0)` = 10.
+- **Releases E–K, 2026-11-10 to 2026-11-12:** **S3b**, the other S2 follow-ups (fork #30–#130 without #48, #58–#64 and
+  #116; last F4, STRING stored as Windows-1252, #130 `c1faca7`); **S11** conditional pragmas (#116, release I) and S11b's
+  `--pragma-define` / `--file-define` (#119, `eb52d2c`).
+- **Release F cut 2026-11-10** at `e071f4f`: **S9** raw memory layout (fork #58–#64; user kept STRING(n) = n+1 bytes).
+- **S3a** false errors on correct code — fork #25–#29, 2026-11-10 (`bc171d0`).
+- **S2** the fork's gaps — fork [#5](https://github.com/AbuShaqra/STruCpp/pull/5)–[#24](https://github.com/AbuShaqra/STruCpp/pull/24), 2026-11-09, releases A–C (`b286bc2`).
+- **S1** the fork's language server honours dialect profiles — fork [#4](https://github.com/AbuShaqra/STruCpp/pull/4), 2026-11-09 (`a529ea9`).
