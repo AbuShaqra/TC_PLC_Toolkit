@@ -28,7 +28,7 @@ const USER_MODE_HINT = 'If this PC runs the TwinCAT 3.1.4026 user-mode runtime (
     'opens; on Windows TC Toolkit then switches to TwinCAT\'s own ADS DLL by itself. Other workarounds: run the PLC ' +
     'in a kernel-mode runtime (the library documents ' +
     '"tcpkg config set -n xarMode -v KM", with Hyper-V and Memory Integrity off; not confirmed by Beckhoff), ' +
-    'or monitor a PLC on another machine. See README, "Online monitoring".';
+    'or monitor a PLC on another machine. See the TC Toolkit user guide (Getting started), "Online monitoring".';
 
 /** What to do about a missing route, which only XAE can set up (D7). */
 const ROUTE_HINT = 'Add a route to the target in XAE (SYSTEM > Routes > Add Route, or Search (Ethernet)), ' +

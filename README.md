@@ -2,720 +2,120 @@
 
 ![TC Toolkit: Structured Text editor and project tools for Beckhoff TwinCAT 3 PLC projects](media/icon.png)
 
-**TC Toolkit** is a lightweight, offline VS Code extension for editing, navigating and analysing
-**Beckhoff TwinCAT 3 PLC projects** (`.TcPOU`, `.TcGVL`, `.TcDUT`, `.TcIO`). It hides the XML wrappers
-behind a two-pane editor, adds **Structured Text (IEC 61131-3)** language support from a built-in
-language server, and gives you a sidebar with the project's objects and its libraries, a start page,
-and a way to create a new TwinCAT project without opening TwinCAT XAE.
+**TC Toolkit** is a VS Code extension for editing, navigating, checking and running **Beckhoff
+TwinCAT 3 PLC projects** (`.TcPOU`, `.TcGVL`, `.TcDUT`, `.TcIO`). It hides the XML wrapper behind a
+two-pane Structured Text (IEC 61131-3) editor and writes your edits back into the original CDATA, so
+TwinCAT and version control see no spurious diffs. A built-in language server, the project and library
+explorers and the offline build run without TwinCAT; building and activating through XAE and online
+monitoring use the TwinCAT installation on your PC.
 
 > TC Toolkit is not affiliated with or endorsed by Beckhoff Automation. TwinCAT is a registered
 > trademark of Beckhoff Automation GmbH.
 
-TwinCAT stores PLC code as XML, with the actual Structured Text buried inside `<![CDATA[ ... ]]>`
-blocks. This extension parses that XML, presents the declaration and implementation in two editor
-panes, and writes your edits back into the original CDATA — preserving TwinCAT's file structure and
-metadata (`LineIds`, folders, UUIDs), so TwinCAT and version control never see spurious diffs.
-
-Everything runs locally. No internet connection, no TwinCAT installation and no external toolchain
-are required.
-
----
-
-## Features
-
-### Two-pane editor
-
-Opens `.TcPOU` / `.TcGVL` / `.TcDUT` / `.TcIO` with the Declaration (variables) on top and the
-Implementation below, separated by a resizable splitter. No raw XML.
-
-The editor's header is one slim row in your theme's colours. On the left, after the TC Toolkit mark (hover
-for the version), where the object lives: the PLC
-project, the folders inside it and the object's name (hover for the full path), then a small type tag (POU,
-GVL, DUT, IO, …) and the list of the object's methods, properties and actions. On the right, quiet status
-items: the PLC state (*PLC Run*, *PLC Stop*, …) and *Online* while online, *Building…* (or *XAE build…*)
-while a build runs, *Manual Sync* while Auto Sync is off, and the sync state (*Synced*, *Unsaved Changes*).
-In a narrow editor the status items shrink to coloured dots (hover for the text) before the object's name
-is cut. Then a **Build** button (the hammer: one click checks the project with the IEC 61131-3 compiler) and
-**Actions ▾**, the menu with everything else (in a very narrow editor it folds to **⋯ ▾**):
-**Generate ST** (with *Choose projects…* when the workspace has several PLC projects), **Build** with its
-options (*Generate C++*, *Build with g++*, and the XAE entries on Windows), **Start PLC** / **Stop PLC**
-(only while online) and **Auto Sync** (on: every edit is written to the file as you type; off: edits wait
-for Ctrl+S). A disabled entry says why on its second line; the menu's foot shows the extension's version.
-The menu works from the keyboard (Enter, Space or the arrow keys open it; the arrows, Home and End move;
-Escape closes it).
-
-The editor tab's title bar has buttons for **Build through XAE**, **Build and Activate**, **Show Activation Targets** (those three on Windows only) and **Go Online** / **Go Offline** (one button that follows the online state).
-The same buttons sit in the **PLC Objects** view's title bar while the workspace has a PLC project, and as
-tiles on the start page, so they are at hand with no file open.
-
-### TC Toolkit sidebar and start page
-
-The extension has its own icon in the Activity Bar. It opens the **TC Toolkit** sidebar, which holds three
-views: **Start**, **PLC Objects** and **PLC Libraries**. (Objects and Libraries used to live in
-the Explorer; you can still drag them back there.)
-
-**Start** offers *Create New Project…*, *Open Existing Project…* and *Open Start Page*, plus links to this
-guide, the roadmap, the release notes, the issue tracker and the settings. **Open Start Page** opens a full
-page in an editor tab with:
-
-- **Create new project** — choose TwinCAT 3.1.4024 or 3.1.4026, a name and a location, then *Create*.
-- **Open existing project** — a solution (`.sln`) or a folder, and the most recent TwinCAT solutions
-  you opened or created here. Two are listed; when more are remembered (up to ten), a **Show all** tile
-  expands the list. `tcToolkit.startPage.recentProjectsShown` changes how many are listed.
-- **Project actions** — *Generate ST*, *Update Library Definitions* and *Build project* (see
-  [Build project](#build-project)), then *Build through XAE*, *Build and Activate through XAE…* and
-  *Show Activation Targets* (on Windows, where XAE can run) and *Go Online…*, which becomes *Go Offline*
-  while you are online.
-- **Help and links**, and **Settings** — which also shows where the XAE Shell of each TwinCAT version
-  was found (see [Settings](#settings)), with *Change…* and *Detect again*, and the same for **g++**
-  (optional, used only by *Build with g++*): the path set in `tcToolkit.compiler.gppPath`, or — while it
-  is empty — the g++ a build would use, or *not found*; a set path that does not work, or a g++ older
-  than 7, is marked with a warning. Its *Change…* opens the setting in your User settings; *Detect again* runs *Detect g++*.
-
-Every one of these is also a Command Palette command under **TC Toolkit:** (*TC Toolkit: Create New
-Project…*, *TC Toolkit: Open Start Page*, *TC Toolkit: Generate ST*, …). The page works offline and follows
-your colour theme.
-
-### Create a new TwinCAT project
-
-*TC Toolkit: Create New Project…* writes a new, empty TwinCAT solution to `<location>/<Name>/`, from a
-template TwinCAT XAE itself produced: the solution and the system project are named `<Name>`, the PLC
-project `<Name>_PLC`, and it contains `MAIN`, the `PlcTask` that calls it, and an empty global variable
-list `GVL_Main`. Every project identity (GUID) is generated fresh, so two projects made this way never
-clash. The name must be a valid identifier (letters, digits, underscores). It creates a new solution
-only: a folder that already holds a TwinCAT solution is refused. When it is done you choose whether to
-open it in this window, in a new window, or add it to the workspace. No TwinCAT installation is
-needed to create one; you need TwinCAT XAE to build and run it.
-
-### PLC Objects explorer
-
-Browse POUs, interfaces, GVLs, DUTs and their methods, properties, actions and virtual folders.
-Create and delete files, folders, methods, properties and actions — the nearest `.plcproj` is kept in
-sync automatically. The tree follows you: while the PLC Objects view is showing, switching editors reveals and highlights the matching item; when you open the view later, it goes to the file you are in.
-Its title bar has the editor tab's buttons — Build through XAE, Build and Activate, Go Online / Go Offline
-and Show Activation Targets — while the workspace has a PLC project (VS Code shows a view's title buttons
-when the pointer is over the view or it has focus).
-
-**See the real TwinCAT hierarchy.** When the opened folder contains TwinCAT solutions, the explorer
-shows the solution first and every PLC project belonging to it underneath:
-
-```text
-TcToolkitSample             Solution (.sln)
-└─ TcToolkitSample_PLC      PLC project (.plcproj)
-   ├─ GVLs
-   ├─ POUs
-   └─ DUTs
-```
-
-A solution can contain any number of PLC projects, and a workspace can contain several solutions.
-Same-named solutions are given the shortest parent-folder suffix needed to distinguish them, while
-PLC-project names are compared only with siblings in their own solution. A `.plcproj` not referenced
-by a solution remains available as a top-level project. If there is no TwinCAT solution, the explorer
-keeps the existing project/folder view. Go to Definition and Find References expand this complete
-chain and highlight the exact method, property, accessor, action or transition that was opened.
-
-**Every kind carries its own icon**, so the tree is readable at a glance: function blocks, programs
-and functions are told apart rather than sharing one file icon, a DUT shows whether it is a
-structure, an enumeration, a union or an alias, and methods, properties, property accessors, actions
-and transitions each have their own glyph. Hover a row to see its kind spelled out.
-
-**Reorganise by drag & drop.** Drag a method, property or action into one of its POU's virtual
-folders — or onto the file node to move it back to the root. The edit is a single `FolderPath`
-attribute on the member's tag, and folder tags are placed exactly where TwinCAT expects them, so
-XAE loads the result cleanly. Drag files or whole folders into other folders and the `.plcproj`
-is re-synced automatically. Incompatible drops simply do nothing: a component never leaves its
-file, a folder cannot be dropped into its own subtree, and a name collision at the destination is
-refused rather than overwritten.
-
-**Duplicate by copy/paste.** Right-click → **Copy** / **Paste**, or **Ctrl+C** / **Ctrl+V** while
-the view is focused. Where a drag *moves*, a paste *duplicates* — so a copied method may be pasted
-into **another** function block (interface members only into interfaces), pasting onto a component
-drops the copy beside it in the same virtual folder, and a name clash prompts with a ready
-`Name_Copy` suggestion. Pasting a copied *file* always asks for the new object's name, then rewrites
-everything that carries its identity — the root name, the declaration header, the `LineIds`, and
-every internal Id GUID — so the duplicate never collides with its source in TwinCAT.
-
-**Insert your own objects into the code.** Right-click a POU, interface, GVL, DUT or one of its
-members → **Insert at Cursor** to drop its bare name into the pane you were last editing, or
-**Insert Definition at Cursor** (POUs and members) to get a ready-to-fill call with the object's
-real parameter list, laid out and typed exactly like the Libraries view does it:
-
-```
-fbGripper(
-    bExecute := ,  // BOOL
-    nId      := ,  // UDINT
-    bDone    => ,  // BOOL
-);
-```
-
-A function block inserts a derived **instance** name (`FB_Gripper` → `fbGripper`), because ST calls
-an instance and never the type — replace it with your own. Functions and programs insert under their
-own name, and a method or action inserts bare, since the instance to call it on is whatever you
-already have.
-
-**Rename anything, reference-aware.** Right-click → **Rename**, or **F2** while the view is focused.
-Files, methods, properties, actions, transitions, disk folders and virtual folders can all be
-renamed in place — the XML identity (tag name, declaration header, `LineIds`) and the `.plcproj`
-follow automatically, and internal Ids are kept so TwinCAT sees a rename, not a new object. If the
-symbol is referenced in code, a dialog offers the choice: **rename only**, or **rename and update
-every reference** across the project — call sites, instance declarations and qualified uses alike,
-**including the references that live outside the code**: symbol paths in visualizations
-(`.TcVIS`/`.TcVMO`), dynamic-text entries in text lists (`.TcTLO`/`.TcGTLO`), and the POU a task
-calls (`.TcTTO`) — so the project keeps building. Updates are applied conservatively: a path is only
-rewritten when it provably resolves to the renamed symbol through the project's types, a task's POU
-call is only rewritten when it names that exact object (never a library POU like
-`VisuElems.Visu_Prg`), and any occurrence that cannot be matched exactly is skipped and reported
-rather than guessed at. Renaming a method or property of an interface (or one that implements it) also
-renames it in the interface and in every other function block that implements it, so the project
-still builds; a method that only shares the name is left alone. A rename is one undoable step:
-**TC Toolkit: Undo Last Rename** (Command Palette) puts back every file it changed, the file name and
-the `.plcproj` entry included.
-
-### PLC Libraries explorer
-
-Lists every library referenced by the project's `.plcproj` **by the namespace you actually type in
-code**. That matters, because the three names a library carries often differ — TwinCAT's recipe
-library is `RecipeManagement` in the project file, `Recipe Management` by title, but
-`Recipe_Management` in ST — so the namespace is the row label and the title, version and company are
-the description.
-
-Expand a library and its types are grouped by kind — **Function Blocks**, **Functions**,
-**Interfaces**, **Structures**, **Enumerations**, **GVLs**, **Data Types** — each with a count, since
-a library can carry hundreds of types. Expand a type to see its fields and its **methods**, each with
-its signature; expand a method to see its parameters. Grouping is read from the library's own data
-rather than guessed from name prefixes, so a type is filed by what it *is* — `E_DriveDynamicParameter`
-is not an enumeration, whatever its name suggests.
-
-Right-click a row for:
-
-- **Insert at Cursor** — drops the namespace (or the qualified type name, or a method name) into the
-  pane you were last editing and opens the suggest list.
-- **Insert Definition at Cursor** — for a function block, function or method, inserts a ready-to-fill
-  call with its whole parameter list laid out and typed (inputs bind with `:=`, outputs with `=>`):
-  ```
-  Tc2_Standard.TON(
-      IN := ,  // BOOL
-      PT := ,  // TIME
-      Q  => ,  // BOOL
-      ET =>   // TIME
-  );
-  ```
-- **Copy Namespace** / **Copy Qualified Name**.
-
-The view re-indexes itself when the `.plcproj` changes, so a library added in TwinCAT appears without
-a reload.
-
-### Update Library Definitions
-
-> ### ⚠️ Requires a TwinCAT XAE installation
->
-> This is the **one** feature that is not offline. It drives your installed TwinCAT once to export
-> data that exists nowhere else on disk. On a machine without TwinCAT the command says so and changes
-> nothing — everything else in the extension keeps working.
-
-The toolbar button at the top of the Libraries view enriches what the toolkit knows about your
-libraries: **function parameter and return signatures, the inputs/outputs of function blocks your
-project has not used yet, and global constants** — none of which can be read from the library files
-themselves. Only TwinCAT can export them, so this one command drives your installed TwinCAT once to
-dump them into a `library-signatures.xml` in the workspace, which the extension then indexes offline.
-
-It asks **which XAE Shell to use, 32-bit or 64-bit**, every time. That is not a formality: a library's
-signatures can differ between the two — visualisation libraries especially — so pick the one your
-project is built with. If you always use the same one, set `tcToolkit.libraryDefinitions.shell` and the
-prompt goes away. If a shell is installed somewhere unusual, put its path in `tcToolkit.xaeShell.path4026`
-(64-bit) or `tcToolkit.xaeShell.path4024` (32-bit): a configured path that exists is the one that is driven.
-
-If your project pins a library version that the chosen shell does not have installed, the closest
-installed version of the same major release is used instead, rather than dropping the library.
-
-It drives its **own** shell instance and leaves any you already have open alone, including their
-unsaved work. It briefly opens a TwinCAT window while it runs (about a minute).
-
-### Structured Text language support
-
-- **Code completion** is context-aware: it offers only what is legal at the caret, so `x : ▮` gets
-  types and library namespaces (not `END_IF`), `x := ▮` gets values, and a call's parentheses get its
-  parameters first. It covers local and method variables, POU members, GVL globals, DUT struct fields,
-  enum members, dotted member access (`fb.member`, including through `REFERENCE TO` / `POINTER TO`),
-  named parameters (including `FB_init` arguments at a declaration), struct fields inside a structured
-  initializer, standard types and keywords, the standard function/FB library (`TON`, `ADR`,
-  `INT_TO_BYTE`, …), snippets for common constructs (`IF`, `CASE`, `FOR`, …) — and the symbols of the
-  project's referenced libraries, both globally and behind their namespace (`Tc2_Standard.▮`).
-- **Diagnostics** catch unbalanced blocks (`IF`/`END_IF`, `CASE`, `FOR`, `WHILE`, `REPEAT`),
-  undeclared identifiers, and type errors: member access against a resolved type (`fb.NoSuchField`),
-  named call arguments (`fb(badParam := …)`) and clear assignment mismatches (`anInt := aStruct`).
-  They understand pragmas (`{attribute …}`, `{region}`), direct I/O addresses (`AT %I*`), typed and
-  time literals, `AND_THEN` / `REF=`, inheritance (`EXTENDS` / `IMPLEMENTS`), the standard library and
-  your referenced libraries. **Conservative by design**: anything that cannot be fully resolved is
-  never flagged, so you do not get a wall of false errors. Each check can be turned off — see
-  [Settings](#settings).
-- **Go to Definition** works across components and files, jumping into the right file and pane and
-  highlighting the symbol — including named parameters at call sites and FB-instance initializers.
-- **Find References** always populates the dedicated **PLC References** panel with the complete
-  result set — every occurrence across files and components, grouped by file and component — and also
-  shows the in-view occurrences in Monaco's inline peek. Named arguments resolve to the right owner,
-  including `FB_init` inputs written at an FB's declaration site (`inst : FB_T(p := v)`). Matching is
-  case-insensitive, as ST itself is.
-- **Pragmas** are understood as the metadata they are, in all five categories TwinCAT documents —
-  attributes, messages, conditional compilation, regions and warning suppression — and each is
-  highlighted for what it is. Typing `{` offers the pragma heads, and `{attribute '▮'}` offers **78
-  attribute names** — the ones
-  Beckhoff documents plus the ones that only occur in the wild (`object_name`, `TcGenerated`, …).
-  Unknown names are never flagged: TwinCAT supports user-defined attributes, and one you invented is
-  highlighted exactly like a built-in. **Hovering a pragma** explains its category, shows its syntax and
-  links its Beckhoff Infosys page where there is one.
-- **Folding follows ST's structure**, not indentation. `{region "…"}` … `{endregion}` collapses (nested
-  regions included), as do `VAR`…`END_VAR` and every other declaration section, `IF`, `CASE`, `FOR`,
-  `WHILE`, `REPEAT`, `STRUCT`, `UNION` and `TYPE` — in the declaration pane as well as the
-  implementation, so a 200-line `VAR` block folds to its heading. Nothing folds where ST has no block,
-  so an attribute pragma or an oddly indented line never grows a fold arrow of its own, and a stray
-  `{endregion}` is ignored rather than cutting a fold short.
-
-### Generate ST
-
-Export the PLC projects to clean, compiler-friendly `.st` files (the editor's **Actions** menu,
-*TC Toolkit: Generate ST*, or the start page; with several PLC projects you pick which). Each project's
-files are written inside that project's own folder, under `<PLC project>/ST_Files/`, mirroring the
-project's layout. A folder of TwinCAT files without a `.plcproj` is exported to `ST_Files/` at the top
-of the workspace. The generated files show up in the **PLC Objects** tree under each project's
-`ST_Files` folder right after a run; click one to open it as text. That folder is output, not project
-content: the create, delete, rename and paste commands of the PLC Objects view do not apply there, and its `.st` files are
-never read back as sources.
-
-### Build project
-
-*TC Toolkit: Build Project* (also on the start page as the *Build project* tile, and as **Build** in the editor's
-**Actions** menu, which compiles the project the open file belongs to) checks a PLC project with **an external IEC 61131-3
-compiler** — a full compiler front end, so it catches what the built-in diagnostics deliberately leave
-alone. With several PLC projects you pick which one. By default it only checks: nothing is generated, and
-nothing is written into your project (the compiler reads temporary copies, deleted when the run ends).
-It can also write the project as C++ and compile that with g++ — both off by default, see
-[C++ output](#c-output-optional) below.
-
-- What is checked is what you see: unsaved edits, and Manual Sync edits not yet written, are included.
-- Errors and warnings appear in the **Problems** panel on the object's file, with the component, pane and
-  line in the message, and as squiggles in the editor panes. A problem's code is a link that opens that
-  component and pane on the right line; *Show Problems* on the summary notification opens the Problems panel.
-- The status bar shows the last run's error and warning counts. Editing a component clears its results
-  (they described the old text); the next run replaces them all.
-- A run can be cancelled, and is stopped after two minutes.
-- The project's **compiler defines** (the *Compiler defines* field of the PLC project's Compile settings,
-  `NAME` or `NAME := 'value'`, comma-separated) are passed on, so `{IF defined(NAME)}` and
-  `{IF hasvalue(NAME, 'value')}` blocks are checked the way they build — for the *Debug* configuration
-  on *TwinCAT RT (x64)* when the `.plcproj` gives defines per configuration. Values are passed exactly, numbers
-  included, and a define never becomes a variable, so a global constant of the same name still compiles. An
-  object's own compiler defines (set in that object's properties) apply inside that object only, on top of
-  the project's. An entry that cannot be used is listed in the *TC Toolkit Compile* output.
-
-**The compiler ships with the extension** — there is nothing to build or download. It runs as a
-separate process under **Node.js 22 or newer**, which the command finds by itself: `node` on your
-`PATH`, then (on Windows) the usual install locations — the Node.js installer, nvm-windows, Volta and
-fnm — and last VS Code's own runtime, when that is Node.js 22 or newer (recent VS Code versions are). If
-none is found, the command says what it tried and how to fix it: install Node.js 22 or newer from
-nodejs.org, or set `tcToolkit.compiler.nodePath` to a Node.js 22+ executable.
-
-The IEC standard function blocks and functions (`TON`, `R_TRIG`, `CTU`, `LIMIT` …) are known to it.
-**Library calls** (Tc2_System, Tc2_Utilities, Tc3_… and third-party libraries) are checked from what your
-own machine already has: the signatures written by *TC Toolkit: Update Library Definitions*, the project's
-`.tmc`, and the library archives the project references. For each run the extension writes declarations
-of the library functions, function blocks, types and constants the project uses — their interfaces only:
-no library code and no library documentation — into the run's temporary folder, and deletes them with it;
-nothing is stored or sent anywhere. Library calls are then checked like your own (argument and parameter
-names, types). Where a library symbol has no usable declaration (no signatures yet, a type the compiler
-does not support), an "undeclared" error about that symbol is not shown; the summary says how many were
-left out. Without the signatures only types are checked, and the summary suggests running *Update Library
-Definitions*. The built-in diagnostics remain the conservative check. To use a different build of the compiler, point
-`tcToolkit.compiler.path` at its command-line file (`.cjs`). The compiler is free software under the GNU
-GPL v3; its licence, source link and third-party notices are in `resources/compiler/` and
-[`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md).
-
-#### C++ output (optional)
-
-Build Project can also turn the PLC project into C++. Both steps are **off by default**; turn them on
-under **Build** in the editor's **Actions** menu, with the small arrow on the start page's
-*Build project* tile, or in the settings:
-
-- **Generate C++** (`tcToolkit.compiler.generateCpp`) — when the check finds **no errors**, the project
-  is written as C++ into a `CPP_Files` folder next to its `.plcproj` (beside `ST_Files`):
-  `<project>.cpp` and `<project>.hpp`, one pair per PLC project. A check with errors writes nothing.
-  A project that uses **library** blocks or functions (for example from the Beckhoff libraries) is
-  generated too, but the library's own code is not available: its function blocks and functions are in
-  the C++ as declarations with **empty bodies**, so neither the C++ nor the g++ check covers them. The
-  summary says so and names the libraries (as the `.plcproj` references them, e.g. `Tc2_Standard`), the
-  *TC Toolkit Compile* output lists the library blocks used, and a comment at the top of the generated
-  files names them. A library symbol with no usable declaration at all (see *Update Library Definitions*
-  above; or one that needs a type the compiler does not support, such as `LTIME`) stops the generation:
-  the summary and the *TC Toolkit Compile* output name it and its library.
-  The summary and the status bar say what was written; **Open C++** opens the file.
-- **Build with g++** (`tcToolkit.compiler.buildWithGpp`) — also compiles that `.cpp` with g++, as a
-  check that the generated code builds (`CPP_Files/<project>.o`; nothing is linked or run). g++'s errors
-  appear in the **Problems** panel on the generated files (source *TC Toolkit g++*), and its full output
-  in the *TC Toolkit Compile* output. Turning this on turns *Generate C++* on too; turning *Generate C++*
-  off turns it off.
-
-**g++ is optional** — nothing else needs it. It must be **g++ 7 or later**: the generated C++ is C++17
-(it is built with `-std=c++17`). On Windows, install MinGW-w64 — for example MSYS2's UCRT64
-(`pacman -S mingw-w64-ucrt-x86_64-gcc`), or a WinLibs/w64devkit build; the old `C:\MinGW` (mingw.org,
-g++ 6.3) is too old. It is found by itself: `g++` on your `PATH`, then on Windows MSYS2 — wherever its installer put it
-(read from the Windows list of installed programs), or in `C:\msys64`, `D:\msys64`, `C:\tools\msys64`
-(Chocolatey), `%USERPROFILE%\msys64` or Scoop's folder; its UCRT64, MINGW64 and CLANG64 environments
-first — then the usual install folders (`C:\MinGW`, WinLibs, w64devkit, Chocolatey's mingw), and last
-MSYS2's own `usr\bin` g++; when several are found, the first one that is 7 or later is used. If MSYS2 is
-installed but none of its environments has g++, *Detect g++* and the start page say so: "MSYS2 is installed
-at C:\msys64 but has no g++: in the MSYS2 UCRT64 shell run pacman -S mingw-w64-ucrt-x86_64-gcc". A g++ older than 7 is not run: the summary says
-"g++ 6.3.0 is too old: the generated C++ needs g++ 7 or later." and offers the setting (and, while the
-setting is empty, *Detect g++*). Set `tcToolkit.compiler.gppPath` to use another one; **TC Toolkit: Detect g++**
-looks again, but never replaces a value you set: if the setting names an old g++, clear it (or set the new path)
-after installing a newer one — *Detect g++* then names the newer g++ it finds. Turning *Build with g++* on fills
-an empty setting only with a g++ 7 or later, so a newer g++ installed later is found by itself.
-The start page's Settings card shows which g++ that is.
-If *Build with g++* is on and no g++ is found, the C++ is still written and the summary offers the
-setting (and, while the setting is empty, *Detect g++*). The setting may name `g++.exe` itself, its
-folder, or a command on your `PATH`; a path pasted with quotes is fine. The compiler's C++ runtime headers that the build needs ship with the extension.
-
-**IntelliSense on the generated C++.** With Microsoft's **C/C++** extension installed, TC Toolkit tells it
-how to read the files in `CPP_Files`: the compiler's runtime headers that ship with the extension and the
-`CPP_Files` folder are on the include path, the language is C++17, and the g++ above is the compiler (not one
-older than 7: then the C/C++ extension keeps its own default compiler) — so the
-generated `.hpp` no longer shows "cannot open source file iec_types.hpp". The C/C++ extension only uses
-a provider that is **selected** for the folder; it picks TC Toolkit by itself only when the folder has no
-`.vscode/c_cpp_properties.json`, no `C_Cpp.default.*` setting is set, and no other provider (CMake Tools,
-Makefile Tools, …) is installed. Otherwise, after C++ is generated or a `CPP_Files` file is opened, TC
-Toolkit asks once per workspace folder: *IntelliSense for the generated C++ needs TC Toolkit as the C/C++
-configuration provider.* **Use TC Toolkit** sets `C_Cpp.default.configurationProvider` for that folder
-(in its `.vscode/settings.json`); **Not now** asks again in a later session; **Don't ask again** stops it.
-A `c_cpp_properties.json` that names another provider wins over that setting, so TC Toolkit then does not
-touch the file and offers to open it instead — also when only one of its other configurations names another
-provider, because the configuration picked in the C/C++ status bar is the one that counts and TC Toolkit
-cannot see which one that is.
-
-To select it by hand: run **C/C++: Change Configuration Provider…** and pick *TC Toolkit*, or set
-`"C_Cpp.default.configurationProvider": "a-abushaqra.twincat-plc-toolkit"` in the workspace settings —
-or, if the folder has a `.vscode/c_cpp_properties.json`, put `"configurationProvider":
-"a-abushaqra.twincat-plc-toolkit"` (or `"TC Toolkit"`) into the configuration that is active in the C/C++
-status bar (by default the one named `Win32` on Windows, else the last). The id must match exactly — the
-C/C++ extension finds no provider for a value in another case or with spaces around it. Then run
-**C/C++: Reset IntelliSense Database** if the old errors stay. Each time the C/C++ extension asks TC
-Toolkit for a file, a line is written to the **TC Toolkit C/C++** output channel (and nothing else is: the
-channel appears only once the C/C++ extension has asked) — no channel or no line there means the provider is
-not selected. Without the C/C++ extension nothing changes.
-
-`CPP_Files` is output, like `ST_Files`: it is shown read-only in the PLC Objects tree and is never read
-back as a source. The extension only ever replaces or deletes files there that **it** wrote and that
-nobody changed since (it keeps a small record, `.tc-toolkit-generated.json`, in the folder); a file of
-the same name you made or edited is left alone, and the summary says so. Renaming the `.plcproj` removes
-the old project's files; a Git checkout that only changes their line endings does not count as an edit. It also writes a `.gitignore` there listing its own files so they are not committed by accident; you may delete it (it is then not written again), and a `.gitignore` of your own there is never touched.
-
-### Build and activate through XAE
-
-On Windows with **TwinCAT XAE** installed, the Build group of the editor's **Actions** menu also offers
-**Build through XAE** and **Build and Activate through XAE…**; the start page has them as tiles under
-*Build project*, and the editor tab and the PLC Objects view have them as title-bar buttons (also in the Command
-Palette as *TC Toolkit: Build through XAE (requires TwinCAT)* and *Build and Activate through XAE…
-(requires TwinCAT)*). They drive XAE's own Automation Interface from PowerShell, so the real solution is
-built with XAE's compiler and the project's real libraries.
-
-- **Headless by default.** The XAE Shell runs hidden with its UI suppressed. Tick **Show the XAE window**
-  in the editor's Actions menu (Build group) (setting `tcToolkit.xaeBuild.showWindow`) to watch the shell for the whole build. The
-  **TC Toolkit XAE Build** output channel says which mode was asked for and which actually ran (read back
-  from the shell: `SuppressUI` and `MainWindow.Visible`).
-- **Errors** go to the Problems panel (source *TC Toolkit XAE build*) and the editor panes. Where XAE's
-  error list does not say exactly where an error is, the entry ends with *(location approximate)*; the
-  full output is in the channel.
-- **Activation always asks.** *Build and Activate through XAE…* lists this machine's runtimes (the
-  real-time one and any user-mode runtimes; *TC Toolkit: Show Activation Targets* prints the same list),
-  you pick one, and a confirmation names it every time — the running PLC on that target stops and
-  TwinCAT restarts there. Nothing runs before you confirm. Only runtimes of this machine can be chosen.
-- **The PLC starts by itself.** Every activation also installs each PLC project on the target as a
-  **boot project with autostart**, so the PLC loads its program and starts on activation and after every
-  restart of the runtime — no log-in from XAE needed. The output channel names each boot project and the
-  PLC's state after the restart. If a boot project cannot be installed, the activation is still reported,
-  with a warning that the PLC has no program and must be started from XAE. The project's own
-  *Autostart Boot Project* setting is not changed on disk.
-- **The XAE window is always shown during activation**, even in headless mode: activation can raise a
-  licence (for example a trial licence) or full-download dialog, and that must be answered in the
-  window. TC Toolkit never answers it for you.
-- **Cancel** closes the solution without saving and quits only the XAE Shell this build started; it is
-  refused while the target is being activated (stopping then could leave the runtime in CONFIG). A
-  build stops after `tcToolkit.xaeBuild.timeoutMinutes`; a headless build that shows no progress for
-  `tcToolkit.xaeBuild.stallMinutes` offers to re-run with the window shown.
-- **TwinCAT's ADS DLL.** The RUN check after activation and the AmsNetId check of a user-mode runtime read
-  ADS through `TcAdsDll.dll`. If it is not found, the result says so and offers **Open Setting** for
-  `tcToolkit.adsDll.nativeDllFolder` (see *ADS DLL paths* under Settings).
-
-Not done: remote targets, building a single PLC project of a multi-project solution, and writing routes. The solution and `.tsproj` are never saved by these commands.
-
-### Online monitoring (live values, write, PLC Watch)
-
-Connect to a running PLC over ADS and see its variables' values in the editor, watch chosen variables,
-and, when you allow it, write a value. It uses the ADS router of the TwinCAT installation on this PC, so
-the PLC is reached exactly as XAE reaches it.
-
-**Going online.** *TC Toolkit: Go Online…* (Command Palette, or the plug button on the **PLC Watch**
-view) asks for the target: **Local runtime** (the PLC on this PC), a target used before, or an AMS Net ID
-you type (`5.12.34.56.1.1`, optionally `:851`). The ADS port defaults to 851, the first PLC runtime
-(`tcToolkit.online.adsPort`). Going online can be cancelled from its notification; *Go Offline* (or
-the status-bar item's menu) closes the connection. The status bar shows the target, the PLC state, the
-code check and whether forces are active.
-
-**Routes are set up in XAE, never here.** To reach a PLC on another machine, add the route in XAE as you
-would for XAE itself: *SYSTEM → Routes → Add Route* (or *Choose Target System → Search (Ethernet)*),
-find the PLC, and add the route (it is created on both sides). Then pick *Enter AMS Net ID…* and type
-the PLC's AMS Net ID. TC Toolkit never creates routes and stores no credentials.
-
-**Live values.** While online, the panes show each variable's value next to it: at the end of the line
-in the declaration pane, right after the variable in the implementation pane. They refresh every 500 ms
-(`tcToolkit.online.inlinePollInterval`) while the editor is visible. Dimmed values mean the PLC is not in
-Run, or the connection is being restored. What can be shown:
-- PROGRAM variables, global variables (`GVL.x`), members reached through them (`GVL.fbStation.nState`),
-  and array elements with a constant index (`aValues[3]`). Structures, FB instances and whole arrays
-  show no inline value; add them to the Watch view instead.
-- A FUNCTION_BLOCK's variables through one of its instances on the PLC. If it has several, the first is
-  used and you are told; *TC Toolkit: Select FB Instance for Online Values…* changes it.
-- Not: method and function locals, `VAR_TEMP` and `VAR_IN_OUT` variables (they have no ADS symbol; XAE
-  needs a breakpoint for them too), and properties. Every name is checked against the PLC's own symbol
-  table first; a variable the PLC does not know shows nothing. A variable whose type on the PLC differs
-  from its declaration shows *type differs* instead of a value.
-
-**PLC Watch.** By default the view has its own tab in the bottom panel, next to the Terminal; set
-`tcToolkit.online.watchLocation` to `sidebar` to show it in the TC Toolkit sidebar under PLC Objects instead.
-It comes to the front when you add a variable. Right-click a variable in the editor → **Add to PLC Watch**, or use the **+** on the view
-and type an ADS path (`MAIN.fbStation.nState`). Each watched variable is one ADS notification on change
-(`tcToolkit.online.watchCycleTime`, 200 ms); structures and FB instances expand into their members
-without costing more. At most `tcToolkit.online.maxNotifications` (100) are active; past that, entries
-show *notification limit reached* and you are told once (Beckhoff recommends at most 550 per device).
-The list is kept per workspace.
-
-**Start / Stop PLC.** While online, the editor's **Actions** menu has a **Start PLC** / **Stop PLC** entry
-(and the header shows the PLC state), and the same toggle sits next to Go Online / Go Offline in the **PLC Watch** title bar (also *TC
-Toolkit: Start PLC…* / *Stop PLC…* in the Command Palette). It follows the PLC state the status bar shows:
-**Stop** while the PLC is in Run, **Start** while it is in Stop. In any other state (Config, Error, not
-read yet, the connection being restored) and while a start or stop is running, it is disabled and says
-why (in the menu entry's second line, and in the title-bar button's tooltip). Each click asks first — *Stop the PLC on Local runtime (localhost:851)?* or *Start the
-PLC on …?*, one confirm button — and is logged to the **TC Toolkit Online** channel with the target and the
-outcome; a failure shows the ADS error. This is ADS WriteControl Run/Stop on the PLC's port, the same as
-XAE's start and stop buttons; it does not depend on `tcToolkit.online.allowWrites`.
-
-**Writing values — off by default.** A write sets a value once; the PLC program may overwrite it in its
-next cycle. It is **not a force**: TC Toolkit cannot force (forces are set in XAE). To write:
-1. turn on `tcToolkit.online.allowWrites` in your **user** settings (a workspace's settings cannot turn it on);
-2. after going online, enable writes for that online session (asked the first time, or *TC Toolkit:
-   Enable Writes for This Online Session*); going offline turns them off again;
-3. right-click the variable → **Write Value…** (or the pencil in the Watch view), type the value, and
-   confirm the dialog, which names the target (with its AMS address), the variable, the current and the
-   new value and the PLC state. *Write Value…* is offered only in editors of the PLC project the PLC
-   runs. If you go online to another target while a write's dialogs are open, that write is refused.
-
-Every write, and every refused or cancelled one, is logged to the **TC Toolkit Online** output channel.
-Writes are refused while any TwinCAT editor has unsaved edits, while the code check below does not
-pass, when the variable's type differs, and for anything but a single value.
-
-**The code check — what it can and cannot see.** Before showing values and allowing writes, TC Toolkit
-compares (1) the project name the PLC reports with your PLC projects (a different name hides the values),
-(2) the variables of your project's last build (its `.tmc`) with the
-variables on the PLC, and (3) whether a source file changed after that build (the newest of the `.tmc` and
-`_CompileInfo\*.compileinfo`, which XAE writes on every build; the `.tmc` alone is rewritten only when a variable changes). Writes need all three.
-It **cannot** tell that only code inside a POU changed and was built but not downloaded — XAE compares
-an internal compile id that is not available over ADS. Download from XAE before writing.
-
-**Forces indicator.** If forces are active on the target (set from XAE), the status bar says *Forces
-active*. Runtimes before TwinCAT 3.1.4026.21 do not report forces; the tooltip then says so.
-
-**Connection modes.** By default TC Toolkit connects through the AMS router on this PC (TwinCAT XAE or
-XAR installed). On a PC **without** TwinCAT, set `tcToolkit.online.connectionMode` to `direct` and fill
-in the three `tcToolkit.online.direct.*` settings; the PLC then needs a static route to this PC's AMS Net
-ID (created in XAE or on the PLC). Direct mode is never used unless you choose it. Do not use it from a
-PC that also runs XAE against the same PLC: the PLC accepts one ADS connection per client address, so it
-can drop XAE's connection. Reaching a router other than this PC's (`tcToolkit.online.routerAddress`,
-for example from Remote-SSH or WSL) is untested.
-
-**TwinCAT 3.1.4026 user-mode runtime.** The router of a 4026 **user-mode** runtime (the default on
-Windows 11 with Hyper-V or virtualization-based security on) refuses the TCP connection the ADS library
-TC Toolkit uses. On Windows, TC Toolkit then switches by itself to TwinCAT's own ADS DLL
-(`TwinCAT.Ads.dll`, installed with XAE or XAR), through a hidden Windows PowerShell helper, and says so in
-the *TC Toolkit Online* output channel. Everything above works the same way through it; Watch entries
-are polled rather than pushed by the PLC. Notes:
-- In user mode the PLC runs under the **runtime's own AMS Net ID**, not the router's. *Local runtime*
-  therefore first looks up the user-mode runtime on this PC (it reads the runtime's configuration
-  and checks that the runtime is running; this takes a second or two and shows a progress
-  notification) and goes online to that runtime's AMS Net ID, naming it in the *TC Toolkit Online*
-  channel. With several runtimes (or a possible kernel-mode runtime next to it) it asks which one.
-  When no running runtime's Net ID can be confirmed it uses the router as before, and if that fails
-  the message says why; then use *Enter AMS Net ID…* with the Net ID printed in the runtime's console
-  window (`AmsNetId: …`), for example `10.0.0.4.1.1`.
-- If the helper cannot start (no `TwinCAT.Ads.dll` found) or cannot reach the PLC either, the message
-  names both failures. A DLL that was not found names its setting (`tcToolkit.adsDll.dotNetLibrary` for
-  `TwinCAT.Ads.dll`, `tcToolkit.adsDll.nativeDllFolder` for `TcAdsDll.dll`), with **Open Setting**; see
-  *ADS DLL paths* under Settings. Other workarounds: run the PLC in a kernel-mode runtime (the library documents
-  `tcpkg config set -n xarMode -v KM`, with Hyper-V and Memory Integrity off; not confirmed by
-  Beckhoff), or monitor a PLC on another machine.
-
-### For AI coding assistants
-
-[`templates/twincat-project-CLAUDE.md`](templates/twincat-project-CLAUDE.md) is a portable field guide
-to the TwinCAT file formats — the XML anatomy, the rule that edits must preserve everything outside the
-CDATA blocks, how to tell the object kinds apart, and the Structured Text facts that most often catch
-tools out (ST is case-insensitive; a method's `VAR` block is private to it; `inst : FB_T(p := v)` and
-`inst : FB_T := (p := v)` bind to *different* things).
-
-**Copy it into your own TwinCAT project as that project's `CLAUDE.md`.** Claude Code then knows what it
-is looking at from the first file it opens, instead of re-deriving the format — or guessing it wrong.
-
-`templates/` also carries a **headless build harness** to copy alongside it: `build_plc_project.ps1`
-builds a solution through the Automation Interface (no IDE window, no `devenv` CLI), picks the XAE Shell
-that matches the project's saved TwinCAT version, and reports pass/fail as an exit code — plus a
-double-click `.bat` wrapper, a full argument reference in `build_plc_project.md`, and COM-free unit tests
-for the version logic. There is no unit-test framework for Structured Text, so a compile *is* the test.
-
----
-
-## Requirements
-
-**VS Code** `^1.66.0`. Nothing else for editing.
-
-Optional, only for *Build through XAE*: Windows with **TwinCAT XAE** (the XAE Shell of the project's
-TwinCAT version) and Windows PowerShell.
-
-Optional, only for online monitoring: TwinCAT XAE or XAR on this PC (its AMS router), with routes to
-remote PLCs set up in XAE — or, without TwinCAT, direct mode (see
-[Online monitoring](#online-monitoring-live-values-write-plc-watch)).
-
-Optional, only for the C++ options of *Build project*: **g++ 7 or later** for *Build with g++* (on
-Windows, MinGW-w64 — for example MSYS2's UCRT64; see [Build project](#build-project)), and Microsoft's
-**C/C++** extension if you want IntelliSense on the generated C++.
+The **[user guide](docs/user-guide.md)** explains every feature in detail (in VS Code: *Getting
+started* in the TC Toolkit sidebar or on the start page). What changed in each release is in the
+**[CHANGELOG](CHANGELOG.md)**.
 
 ## Install
 
-Install the `.vsix` from the command line:
+1. Download `twincat-plc-toolkit-<version>.vsix` from the
+   [GitHub Releases](https://github.com/AbuShaqra/TC_PLC_Toolkit/releases).
+2. Install it: **Extensions** view → **⋯** → **Install from VSIX…**, or
+   `code --install-extension twincat-plc-toolkit-<version>.vsix --force`.
+3. After replacing an older version, **fully restart VS Code**. Open the folder with your TwinCAT
+   solution or PLC project and open any `.TcPOU`.
 
-```
-code --install-extension twincat-plc-toolkit-<version>.vsix --force
-```
+> If a `.TcPOU` opens as raw XML, right-click the tab → **Reopen Editor With… → TC Toolkit**.
 
-or from inside VS Code: **Extensions** view → **⋯** menu → **Install from VSIX…**. On Windows,
-`scripts\install-vsix.bat` picks the newest `.vsix` in the folder and installs it for you.
+**Requirements**
 
-After replacing an older installed version, **fully restart VS Code** (a window reload may keep the
-old extension process alive). Open the folder containing your TwinCAT solution or PLC project, then
-open any `.TcPOU` file — it opens in the TC Toolkit editor.
+- **VS Code** `^1.66.0` — nothing else for editing, the explorers and the language support.
+- **Node.js 22 or newer** for *Build Project* — found by itself (VS Code's own runtime is enough when
+  it is Node.js 22+); otherwise install it or set `tcToolkit.compiler.nodePath`.
+- **Windows with TwinCAT XAE** (and Windows PowerShell) for *Update Library Definitions* and *Build
+  and Activate through XAE*; **TwinCAT XAE or XAR** on this PC for online monitoring (or direct mode
+  without TwinCAT).
+- Optional: **g++ 7 or later** for *Build with g++*, and Microsoft's **C/C++** extension for
+  IntelliSense on the generated C++.
 
-> If a `.TcPOU` opens as raw XML instead, right-click the tab → **Reopen Editor With… → TC Toolkit**.
+## Features
 
----
+Each heading links to its section of the user guide.
+
+- **[Two-pane editor](docs/user-guide.md#two-pane-editor)** — Declaration above, Implementation
+  below, no raw XML. The header shows where the object lives and its status; **Build** and the
+  **Actions ▾** menu (Generate ST, Build options, Start/Stop PLC, Auto Sync) sit on the right.
+- **[Sidebar and start page](docs/user-guide.md#tc-toolkit-sidebar-and-start-page)** — the TC Toolkit
+  Activity Bar container with **Start**, **PLC Objects** and **PLC Libraries**, and a start page with
+  recent projects, project actions and settings. **[Create a new
+  project](docs/user-guide.md#create-a-new-twincat-project)** (TwinCAT 3.1.4024 or 3.1.4026) without
+  opening XAE.
+- **[PLC Objects explorer](docs/user-guide.md#plc-objects-explorer)** — the solution → PLC project →
+  object tree; create, delete, drag & drop, copy/paste, insert at cursor, and reference-aware rename
+  (including visualizations, text lists and tasks), with the `.plcproj` kept in sync.
+- **[PLC Libraries explorer](docs/user-guide.md#plc-libraries-explorer)** — every referenced library
+  by its ST namespace, its types, members and methods, with *Insert Definition at Cursor*.
+  **[Update Library Definitions](docs/user-guide.md#update-library-definitions)** exports library
+  signatures from XAE once.
+- **[Structured Text language support](docs/user-guide.md#structured-text-language-support)** —
+  context-aware completion, conservative diagnostics, Go to Definition, Find References (the **PLC
+  References** panel), pragma support and hover, structural folding.
+- **[Generate ST](docs/user-guide.md#generate-st)** — export each PLC project to plain `.st` files
+  under `ST_Files/`.
+- **[Build Project](docs/user-guide.md#build-project)** — checks a PLC project offline with the
+  bundled IEC 61131-3 compiler; problems appear in the Problems panel and the panes. Optionally writes
+  the project as **[C++](docs/user-guide.md#c-output-optional)** and compiles it with g++.
+- **[Build and Activate through XAE](docs/user-guide.md#build-and-activate-through-xae)** (Windows +
+  TwinCAT XAE) — builds with XAE's own compiler, headless by default, and activates on a runtime of
+  this PC you pick and confirm; the PLC program is installed as an autostart boot project.
+- **[Online monitoring](docs/user-guide.md#online-monitoring-live-values-write-plc-watch)** — live
+  values next to the code over ADS, the **PLC Watch** view, confirmed one-off writes (off by default)
+  and **Start / Stop PLC**.
+- **[TwinCAT 3.1.4026 user-mode runtime](docs/user-guide.md#twincat-314026-user-mode-runtime)** —
+  when its router refuses the connection, Go Online switches to TwinCAT's own ADS DLL by itself, and
+  *Local runtime* finds the runtime's AMS Net ID.
+- **[For AI coding assistants](docs/user-guide.md#for-ai-coding-assistants)** — a portable
+  `CLAUDE.md` field guide to the TwinCAT file formats and a headless build harness, in `templates/`.
 
 ## Settings
 
-The settings are under `tcToolkit.*`. Versions up to 0.10.1 named them `twincat.*`; a value you set
-under an old name is moved to the new one automatically the first time the extension starts, and the
-old entry is removed from your `settings.json`.
+All settings are under `tcToolkit.*` (open them with *Settings* in the sidebar or on the start page).
+Values set under the old `twincat.*` names (versions up to 0.10.1) are moved over automatically.
 
-| Setting | Default | Description |
-|---------|---------|-------------|
-| `tcToolkit.diagnostics.memberAccess` | `true` | Flag access to members that don't exist on a resolved type. |
-| `tcToolkit.diagnostics.callArguments` | `true` | Flag named call arguments that aren't parameters of the callee. |
-| `tcToolkit.diagnostics.declarationTypes` | `false` | Flag declarations with an unknown type. Off by default — types from unreadable `.compiled-library-v3` archives are invisible to the indexer, so this can report false positives in projects that use them. |
-| `tcToolkit.diagnostics.typeCompatibility` | `true` | Flag assignments whose value type is clearly incompatible with the target. |
-| `tcToolkit.libraryDefinitions.shell` | `ask` | Which XAE Shell **Update Library Definitions** drives: `ask`, `x64` or `x86`. Signatures can differ between the two, so it asks by default. |
-| `tcToolkit.startPage.recentProjectsShown` | `2` | How many recent TwinCAT solutions the start page lists (1 to 10). When more are remembered, a **Show all** tile expands the list. |
-| `tcToolkit.xaeShell.path4024` | *(detected)* | Full path to `TcXaeShell.exe` of the XAE Shell for TwinCAT 3.1.4024 (the 32-bit shell). Empty = not found. |
-| `tcToolkit.xaeShell.path4026` | *(detected)* | Full path to `TcXaeShell.exe` of the XAE Shell for TwinCAT 3.1.4026 (the 64-bit shell). Empty = not found. |
-| `tcToolkit.compiler.path` | *(empty)* | Full path to the command-line file (`.cjs`) of an external IEC 61131-3 compiler for **Build Project** to run instead of the bundled one. Empty = the bundled compiler. Per machine. |
-| `tcToolkit.compiler.nodePath` | *(empty)* | Full path to a Node.js 22+ executable that runs the compiler. Empty = found automatically (`node` on `PATH`, the usual Windows install locations, then VS Code's own runtime when it is Node.js 22+). Per machine. |
-| `tcToolkit.compiler.generateCpp` | `false` | **Generate C++**: after a check with no errors, write the project as C++ into `CPP_Files/` next to its `.plcproj`. Turning it off also turns off the g++ build. Also in the editor's Actions menu. |
-| `tcToolkit.compiler.buildWithGpp` | `false` | **Build with g++**: also compile that C++ with g++ (a compile check; errors in the Problems panel). Turning it on also turns on *Generate C++*. Also in the editor's Actions menu. |
-| `tcToolkit.compiler.gppPath` | *(detected)* | Full path to `g++` (`g++.exe` on Windows). Empty = `g++` on `PATH`, then the usual Windows install folders; filled with the one found when the build is turned on, never overwritten. Per machine. |
-| `tcToolkit.xaeBuild.showWindow` | `false` | **Show the XAE window**: show the XAE Shell window for the whole *Build through XAE* instead of building headless. The window is always shown during activation, so a licence or download dialog can be answered, and it stays visible after an XAE version switch. Also in the editor's Actions menu. |
-| `tcToolkit.xaeBuild.configuration` | `Release` | The solution configuration *Build through XAE* builds. |
-| `tcToolkit.xaeBuild.platform` | `TwinCAT RT (x64)` | The solution platform it builds (activating onto a user-mode runtime needs its `TwinCAT OS (...)` platform). |
-| `tcToolkit.xaeBuild.timeoutMinutes` | `30` | Minutes before a build through XAE is stopped (5 to 240; during activation only reported). |
-| `tcToolkit.xaeBuild.stallMinutes` | `10` | Headless watchdog: minutes without output before offering a re-run with the window shown (2 to 60). |
-| `tcToolkit.online.connectionMode` | `router` | How *Go Online* reaches the PLC: `router` (the AMS router on this PC; when it refuses the connection, as the 4026 user-mode runtime's does, TwinCAT's own ADS DLL is used through it) or `direct` (a PC without TwinCAT). Direct is never a fallback. |
-| `tcToolkit.online.adsPort` | `851` | ADS port of the PLC runtime (851 = first runtime, 852 = second). |
-| `tcToolkit.online.routerAddress` | `127.0.0.1` | AMS router address in router mode. Anything but this PC is untested. Per machine. |
-| `tcToolkit.online.direct.plcAddress` | *(empty)* | Direct mode: the PLC's IP address or host name. Per machine. |
-| `tcToolkit.online.direct.localAmsNetId` | *(empty)* | Direct mode: this PC's AMS Net ID, as the PLC's static route names it. Per machine. |
-| `tcToolkit.online.direct.localAdsPort` | `32750` | Direct mode: the local ADS port to use. Per machine. |
-| `tcToolkit.online.allowWrites` | `false` | Allow *Write Value…* (user settings only). Even when on, writes are enabled once per online session and every write is confirmed and logged. |
-| `tcToolkit.online.inlinePollInterval` | `500` | Inline values: refresh interval in ms (100 to 10000). |
-| `tcToolkit.online.watchLocation` | `panel` | PLC Watch: `panel` (its own tab in the bottom panel, next to the Terminal) or `sidebar` (the TC Toolkit sidebar, under PLC Objects). |
-| `tcToolkit.online.watchCycleTime` | `200` | PLC Watch: notification cycle time in ms (50 to 10000). |
-| `tcToolkit.online.maxNotifications` | `100` | PLC Watch: the most ADS notifications at once (1 to 400). |
-| `tcToolkit.adsDll.dotNetLibrary` | *(empty)* | Full path to `TwinCAT.Ads.dll`, Beckhoff's .NET ADS library (usually `C:\Program Files (x86)\Beckhoff\TwinCAT\3.1\Components\Base\v170\TwinCAT.Ads.dll`), loaded by the online monitoring fallback. Empty = search the TwinCAT install folders. Per machine. |
-| `tcToolkit.adsDll.nativeDllFolder` | *(empty)* | Folder holding `TcAdsDll.dll`, Beckhoff's native ADS DLL (usually `C:\Program Files (x86)\Beckhoff\TwinCAT\Common64`), used by the online monitoring fallback and by Build and Activate through XAE (the RUN check, confirming a user-mode runtime's AmsNetId). Empty = search the usual folders. Per machine. |
+| Group | Settings |
+|-------|----------|
+| Diagnostics | `tcToolkit.diagnostics.*` — turn each type check on or off |
+| Build Project | `tcToolkit.compiler.*` — C++ output, g++ build and path, Node.js path, another compiler build |
+| XAE | `tcToolkit.xaeShell.*`, `tcToolkit.xaeBuild.*`, `tcToolkit.libraryDefinitions.shell` |
+| Online monitoring | `tcToolkit.online.*`, `tcToolkit.adsDll.*` |
+| Start page | `tcToolkit.startPage.recentProjectsShown` |
 
-**XAE Shell paths.** On Windows the two `tcToolkit.xaeShell.*` settings are filled automatically with the
-installation found on your machine: first from the shell's COM registration, then from the default
-location under `Program Files` (3.1.4026) or `Program Files (x86)` (3.1.4024). Only an **empty** setting
-is ever filled — a path you set yourself is never overwritten, so change it if your shell is elsewhere.
-**TC Toolkit: Detect XAE Shell Installations** looks again and tells you, per version, whether it found the
-shell, kept your value, or found nothing. The settings are per machine (they are not synced and cannot be
-set per workspace). Today they are used by **Update Library Definitions**, which drives the shell at a
-configured path when that file exists; on other platforms nothing is detected and they stay empty.
-
-**ADS DLL paths.** TC Toolkit finds Beckhoff's ADS DLLs by itself: `TwinCAT.Ads.dll` under the TwinCAT
-install folder the registry names (then `Program Files (x86)\Beckhoff\TwinCAT` and `C:\TwinCAT`), newest
-`3.1\Components\Base\v*` first, and `TcAdsDll.dll` in that folder's `Common64` (`Common32` in a 32-bit
-PowerShell) — for the XAE build in `Program Files (x86)\Beckhoff\TwinCAT\Common64`, `Program Files\Beckhoff\TwinCAT\Common64`,
-then `Program Files (x86)\Beckhoff\TwinCAT\Common32`. Where that fails, set the two `tcToolkit.adsDll.*`
-settings. A path set there is **used as given**: if the file is not there, the message says so and names
-the path — TC Toolkit does not fall back to its own search, so a mistyped path is never hidden by a DLL
-found elsewhere. When a DLL is not found, the message names the setting and offers **Open Setting**.
-
----
-
-## How library symbols are resolved
-
-Referenced libraries are **indexed, not guessed** — no symbol is invented, and anything unresolved is
-never flagged. Four sources on disk feed the index, and each contributes something the others cannot:
-
-- the **library archives** (`.compiled-library`, `.compiled-library-ge33`, `.library`), which give the
-  complete set of symbol *names*;
-- the project's **`.tmc`** type-system export, which gives the *structure* of the types the project
-  actually uses — fields, enum values, function-block inputs and outputs, and each FB's or interface's
-  **methods** with their parameters and return type, inherited ones included;
-- the **`.plcproj`**, which gives the library list and the namespaces;
-- TwinCAT's **browse cache**, which lists the method and property *names* of every referenced
-  library's function blocks and interfaces — including ones the project has not used, which the `.tmc`
-  never mentions. Names only, with no signatures, so where the two overlap the `.tmc` wins and a
-  browse-cache-only method is shown as a bare name rather than a fabricated `()`.
-
-A fifth, optional source is the `library-signatures.xml` produced by **Update Library Definitions**
-(above): function signatures, FB inputs/outputs and global constants for *every* referenced library,
-including ones the project has not used yet. Where it overlaps the `.tmc`, the `.tmc` wins — only it
-carries struct fields, enum values and methods.
-
-One consequence is worth knowing: `.compiled-library-v3` archives use an opaque format that cannot be
-read, so libraries shipping only in that form (the `VisuElems` family, for instance) contribute no
-symbols. That causes no false error — unknown simply stays unflagged.
+Every setting, its default and what it does: [user guide, Settings](docs/user-guide.md#settings).
 
 ## Known limitations
 
-- The type checker is **conservative, not a compiler**. It only flags what it can prove wrong: member
-  access, call arguments and clear assignment mismatches. Anything it cannot fully resolve — including
-  anything reached through a library type — is left alone rather than guessed at.
-- **Library ACTIONs are not completable** (methods, properties, fields and I/O are). The `.tmc` does
-  not export them, so e.g. `AXIS_REF.ReadStatus` is unknown to completion. It is never flagged either.
-- A library type is only known once the project **uses** it: the `.tmc` exports what the project
-  resolves, so an unused library's types appear only if you run **Update Library Definitions**.
-- **Member completion stops after one hop**: `axis.Status.▮` offers nothing, because a member's type
-  is only indexed when the document itself names it.
-- The inline **references peek** only shows occurrences in the active component's visible panes — a
-  constraint of the split-pane editor. Cross-file and cross-component usages appear in the **PLC
-  References** panel instead.
+The full list is in the [user guide](docs/user-guide.md#known-limitations).
 
----
+- Diagnostics are **conservative, not a compiler**: anything that cannot be fully resolved (including
+  most things reached through a library type) is left unflagged. *Build Project* is the full check.
+- Library ACTIONs are not completable, and member completion stops after one hop (`axis.Status.▮`).
+- A library type is known once the project uses it, or after *Update Library Definitions*;
+  `.compiled-library-v3` archives cannot be read ([details](docs/user-guide.md#how-library-symbols-are-resolved)).
+- The inline references peek shows only the active component's panes; the **PLC References** panel
+  shows everything.
+- Through XAE: no remote targets, no single PLC project of a multi-project solution, no route writing.
+  Online monitoring cannot force, and cannot see a code-only change that was built but not downloaded.
 
 ## Roadmap
 
-What is planned next, in what order and when, is on the public roadmap page:
-**[TC Toolkit Roadmap](https://claude.ai/artifact/8RG7TZtBV2cuupsrwWtknv)**. It is kept current as
-work starts, moves and ships.
+What is planned next, in what order and when:
+**[TC Toolkit Roadmap](https://claude.ai/artifact/8RG7TZtBV2cuupsrwWtknv)**.
 
 ## License
 
 Copyright © 2026 A. AbuShaqra.
 
-From the next release, this extension's original code is licensed under the
+From version 0.11.0, this extension's original code is licensed under the
 **[GNU Affero General Public License v3.0 or later](LICENSE)** (`AGPL-3.0-or-later`):
 you may use, study, change and share it, and anyone who distributes a modified
 version, or offers one to users over a network, must make its full source available
@@ -723,8 +123,8 @@ under the same licence. Versions up to and including 0.10.1 were released under 
 MIT licence, and copies of those versions keep it.
 
 Bundled third-party components (the Monaco Editor, the codicon font, the
-TypeScript language services, and the runtime npm dependencies) remain under
-their own licenses. Monaco's MIT license is at
+TypeScript language services, the bundled compiler, and the runtime npm dependencies)
+remain under their own licenses. Monaco's MIT license is at
 [`media/monaco-editor/LICENSE.txt`](media/monaco-editor/LICENSE.txt); the full
 inventory is in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
 

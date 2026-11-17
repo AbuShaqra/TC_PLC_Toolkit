@@ -1,7 +1,8 @@
 # Development
 
 Building, testing and hacking on TC Toolkit. For what the extension *does*, see
-[README.md](README.md); for the current state of the work, see [HANDOFF.md](HANDOFF.md).
+[README.md](README.md) (the short overview) and [docs/user-guide.md](docs/user-guide.md) (the full
+user guide: *Getting started* opens it, and it is the one file under `docs/` that ships in the VSIX); for the current state of the work, see [HANDOFF.md](HANDOFF.md).
 
 **Naming.** The user-facing name is **TC Toolkit**: the display name, the Activity Bar container, the
 command category (`TC Toolkit: Build Project`), the settings sections, the custom editor, status-bar texts,
@@ -1472,7 +1473,7 @@ in three places: the lexer (`parser.js`), the Monarch tokenizer, and the TextMat
 every string a user reads — tooltips, notifications, the quick pick, the status-bar tooltip, settings
 descriptions, README; ids, context keys, setting keys, the `TC Toolkit compile` source and the
 `TC Toolkit Compile` channel kept). This guide still calls the feature Compile Project. The user-facing
-surfaces (UI, README) never name the compiler product — a user ruling, pinned by
+surfaces (UI, README, user guide) never name the compiler product — a user ruling, pinned by
 `test_start_contributions.js`. The pipeline:
 
 1. **Texts** — every object the `.plcproj` `<Compile>`s, read from the open TextDocument when there is one
