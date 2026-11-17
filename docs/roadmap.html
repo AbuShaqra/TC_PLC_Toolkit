@@ -148,8 +148,8 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
         <span>Updated <b>2026-11-17</b></span>
         <span>Release <b>v0.11.0</b></span>
         <span>Re-measured <b>Nov 11</b></span>
-        <span>Next <b>fork S13 · toolkit R11</b></span>
-        <span>Publish date <b>your call</b></span>
+        <span>Next <b>toolkit R11 today · fork S13</b></span>
+        <span>Publish date <b>Nov 17</b></span>
         <span>Lanes <b>2</b> (toolkit · STruC++ fork)</span>
       </div>
     </div>
@@ -424,12 +424,12 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
 
     <details class="card" id="r11">
       <summary>
-        <div class="card-top"><span>#16</span><span class="id">R11</span><span class="pill planned">Planned · last</span><span class="chev" aria-hidden="true">›</span></div>
+        <div class="card-top"><span>#16</span><span class="id">R11</span><span class="pill planned">Planned · today</span><span class="chev" aria-hidden="true">›</span></div>
         <div class="card-title">Publish to the VS Code Marketplace and Open VSX</div>
-        <div class="card-foot"><span>0.5 d → ~1 h</span><span>no date yet</span></div>
+        <div class="card-foot"><span>0.5 d → ~1 h</span><span>Nov 17</span></div>
       </summary>
       <div class="body">
-        <div class="block wide"><h4>When</h4><p>Last, after the toolkit's items and the fork lane (your call, Nov 10). The toolkit lane is done, and so are S6 and S7; S12 does not hold publishing (your call, Nov 15) and S8 waits on S12; whether the new S13 does is not decided. The start is your call.</p></div>
+        <div class="block wide"><h4>When</h4><p>Last, after the toolkit's items and the fork lane (your call, Nov 10). The toolkit lane is done, and so are S6 and S7; S12 does not hold publishing (your call, Nov 15) and S8 waits on S12; S13 does not hold it either. Planned for today, Nov 17 (your call).</p></div>
         <div class="block"><h4>Goal</h4><p>Install the extension straight from the Marketplace, and from Open VSX for VSCodium and Cursor (your ask, Nov 9).</p></div>
         <div class="block"><h4>Your part, about 15 minutes</h4><p>Done Nov 9: accounts on both marketplaces, publisher ID <code>a-abushaqra</code>. Still to do: upload each release VSIX by hand, or add a Marketplace token as the repo secret <code>VSCE_PAT</code> (and <code>OVSX_PAT</code> for Open VSX) so releases publish themselves.</p></div>
         <div class="block wide"><h4>Licence</h4><p>Switched to AGPL-3.0-or-later on Nov 9 (your call). The first marketplace release is the first under it; versions up to 0.10.1 stay MIT.</p></div>
@@ -797,7 +797,7 @@ var PLAN = [
   { lane: 'TC Toolkit', num: 13, id: 'R13', card: 'r13', name: 'C++ generation + g++ check', est: '3 d → ~2.5 h', start: '2026-11-12', end: '2026-11-13', status: 'done', actualStart: '2026-11-12T11:30:00Z', actualEnd: '2026-11-13T08:40:00Z' },
   { lane: 'TC Toolkit', num: 14, id: 'R14', card: 'r14', name: 'Build + run through XAE', est: '3 d → ~2 h', start: '2026-11-12', end: '2026-11-14', status: 'done', actualStart: '2026-11-12T22:30:00Z', actualEnd: '2026-11-13T12:50:00Z' },
   { lane: 'TC Toolkit', num: 15, id: 'R15', card: 'r15', name: 'ADS online monitoring', est: '3 d → ~2 h + 1.5 d', start: '2026-11-16', end: '2026-11-18', days: 2.6, offset: 0, status: 'done', actualStart: '2026-11-13T13:20:00Z', actualEnd: '2026-11-16T21:09:00Z' },
-  { lane: 'TC Toolkit', num: 16, id: 'R11', card: 'r11', name: 'Marketplace publishing', est: '0.5 d → ~1 h', machine: true },
+  { lane: 'TC Toolkit', num: 16, id: 'R11', card: 'r11', name: 'Marketplace publishing', est: '0.5 d → ~1 h', start: '2026-11-17', end: '2026-11-17', days: 0.3, offset: 0, machine: true },
   { lane: 'STruC++ fork',   num: 1, id: 'S2',   card: 's2',   name: 'Fork compiler gaps',     est: '27.5 d → ~11.2 h', start: '2026-11-09', end: '2026-11-09', status: 'done', actualStart: '2026-11-09T12:04:17Z', actualEnd: '2026-11-09T23:16:55Z' },
   { lane: 'STruC++ fork',   num: 2, id: 'S3a',  card: 's3a',  name: 'False positives',        est: '3 d → ~1 h',  start: '2026-11-09', end: '2026-11-10', days: 0.3, status: 'done', actualStart: '2026-11-09T23:18:00Z', actualEnd: '2026-11-10T00:12:35Z' },
   { lane: 'STruC++ fork',   num: 3, id: 'S3b',  card: 's3b',  name: 'S2 follow-ups',          est: '7 d → ~3.5 h', start: '2026-11-10', end: '2026-11-12', days: 1.2, offset: 0.3, status: 'done', actualStart: '2026-11-10T00:14:00Z', actualEnd: '2026-11-12T00:20:00Z' },
