@@ -264,8 +264,9 @@ function registerStartCommands(context, { provider, getProjectMap, getSolutionMa
                 ? vscode.commands.executeCommand('workbench.action.openGlobalSettings', { query: q })
                 : vscode.commands.executeCommand('workbench.action.openSettings', q);
         }),
+        // Getting started is the user guide (it ships: .vscodeignore lets docs/user-guide.md through).
         vscode.commands.registerCommand('twincat.openGettingStarted', () =>
-            vscode.commands.executeCommand('markdown.showPreview', vscode.Uri.file(path.join(context.extensionPath, 'README.md')))),
+            vscode.commands.executeCommand('markdown.showPreview', vscode.Uri.file(path.join(context.extensionPath, 'docs', 'user-guide.md')))),
         vscode.commands.registerCommand('twincat.openRoadmap', () => vscode.env.openExternal(vscode.Uri.parse(LINKS.roadmap))),
         vscode.commands.registerCommand('twincat.openReleaseNotes', () => vscode.env.openExternal(vscode.Uri.parse(LINKS.releaseNotes))),
         vscode.commands.registerCommand('twincat.reportIssue', () => vscode.env.openExternal(vscode.Uri.parse(LINKS.reportIssue)))

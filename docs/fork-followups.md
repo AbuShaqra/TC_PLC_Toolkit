@@ -1,0 +1,145 @@
+# Fork follow-ups after release N (S13)
+
+Open findings in the STruC++ fork (`AbuShaqra/STruCpp`, branch `development`) that the toolkit bundles. They
+were collected in the S6 and S7 review rounds (2026-11-13 to 2026-11-15) and are scheduled as roadmap item
+**S13**. None is a regression from release M: each behaved the same (or failed to build) before. The two
+high findings of those rounds (EN/ENO on a call inside an expression; `UPPER_BOUND()` with no arguments
+crashing the compiler) were fixed before release N and are not listed.
+
+**Kinds:** *wrong result* = builds and runs, computes the wrong value. *g++ fails* = the check accepts the
+program, the generated C++ does not compile (nothing wrong runs, but the error comes late and is confusing).
+*no diagnostic* = wrong code passes the check. *refused* = correct code is rejected.
+
+Last checked against the fork: 2026-11-15 (release N, `d9b7c01`). Re-check each item before fixing it.
+
+## Batch 1 — wrong results
+
+Arithmetic and types:
+- [ ] DINT/LINT overflow is C++ undefined behaviour in: unary minus of the minimum, `ADD`/`SUB`/`MUL`/`ABS`
+      called as functions (`iec_std_lib.hpp` ~1480–1510), `ABS(min)`, INT variable + LINT literal, untyped
+      `2147483647 + 1` into a DINT initial value or STRUCT default, `LINT#2 ** 63`.
+- [ ] Narrow (INT/SINT) intermediates whose operand type is not resolved (some `SUPER.x`, globals reached as
+      `B.value`, method results) keep the plain operator and wrap at the narrow width (compute-wide is partial).
+- [ ] Mixed-sign AND/OR/XOR uses C++ promotion in VAR_GLOBAL initial values (also CONFIGURATION/RESOURCE)
+      and STRUCT-instance overrides (`x : St := (f := …)`): `DINT#-7 OR UDINT#4000000000` gives 4294967289.
+- [ ] `DWORD/86400 + 3` is typed INT (mixed DWORD/untyped arithmetic too narrow); a POINTER operand of `+`/`-`
+      is typed as its target.
+- [ ] `LINT := 2147483647 + 1` is folded in 32 bits; `UDINT := 4294967295 + 1` is refused as INT.
+- [ ] `LTIME / LTIME` emits plain C++ `/`: division by LTIME 0 is undefined behaviour.
+
+Dates and times (32-bit):
+- [ ] Dates before 1970 wrap; the same day gives different DATE values by route (`CONCAT_DATE(1969,12,31)` vs
+      `D#1970-01-01 - T#1d` / `STRING_TO_DATE`). Restore the pre-1970 test coverage removed with the 32-bit change.
+- [ ] Digits below the unit in DT/TOD literals are dropped silently.
+
+Strings and arrays:
+- [ ] A literal with an embedded `$00` is cut at the NUL (`'a' = 'a$00b'` is TRUE).
+- [ ] `UPPER_BOUND(a1, 2)` on a 1-D array returns dimension 1 (`iec_array.hpp:161-162` ignores the argument);
+      a 2-D array with DIM other than 1/2 at run time returns dimension 2's bounds.
+
+Other:
+- [ ] A METHOD/FUNCTION returning an interface with no result assigned on a path falls off the end of the C++
+      function (UBSan: no return); it should return NULL.
+- [ ] `ENO => gok` with `gok` a scalar VAR_EXTERNAL under a CONFIGURATION emits `GOK->read(…)`.
+
+## Batch 2 — library manifest: lengths and kinds
+
+The archive manifest loses information, which causes several findings in the other batches:
+- [ ] STRING(n) lengths are not recorded for library FB inputs and STRUCT fields (`STRING(n)`/`STRING(254)` become
+      bare STRING, so an 80-character profile reads them as 80), library globals, PROPERTY types, FB members (the
+      debug table shows 254), `ARRAY[*] OF STRING` parameters (read as 254 in a consumer), and `POINTER TO` /
+      `REF_TO STRING(n)` parameters (a `POINTER TO STRING(20)` output into LWORD fails g++).
+- [ ] `REFERENCE TO ARRAY` and `REFERENCE TO POINTER` parameters are recorded by bare type name.
+- [ ] Archives built before release N keep refusing ADR into pointer inputs until rebuilt.
+- [ ] string-80 debug table: arrays of STRUCT with string fields warn once per element per field; the "not
+      debuggable" advice tells the user to redeclare a library variable.
+- [ ] string-80: the `isPlainString` copy also applies to user POU STRING parameters with the feature off
+      (helps, but untested and undocumented).
+
+## Batch 3 — accepted, then g++ fails
+
+Library calls:
+- [ ] A library FUNCTION output bound positionally (`F_One(x, lw1)`).
+- [ ] A library FUNCTION call leaving an inline-array output unbound (`IEC___INLINE_ARRAY_INT` not declared).
+- [ ] `ARRAY OF POINTER` output bound to LWORD (no diagnostic).
+- [ ] Unmarked archive: a pointer output into LWORD gives a false "Cannot assign INT to ULINT" or fails g++.
+- [ ] `REFERENCE TO STRING(n)` bound to a library STRING in-out; a library METHOD `VAR_IN_OUT ARRAY[*] OF STRING`
+      even with equal lengths.
+
+Strings:
+- [ ] `MAX(s, 'b')` with a STRING variable and a literal; `p^ = 'b'` with `POINTER TO CHAR`.
+- [ ] `LEFT(s, ADR(x))` / `INSERT(…, ADR(x))` (no diagnostic; `iec-std-functions.stlib` has no shapes).
+- [ ] Typed literals `STRING#'abc'` / `WSTRING#"abc"` do not parse.
+
+REAL MOD and other forms:
+- [ ] REAL MOD is still accepted through a pointer declared with a named type (`TYPE PR : POINTER TO REAL`), a
+      dereference inside a larger operand (`(p^ + 1.0) MOD 2`), a METHOD/PROPERTY REAL result, and STRUCT
+      defaults / VAR_GLOBAL CONSTANT folding. Decide: `MOD(a, b)` on REAL is accepted (fmod) while the operator
+      is refused.
+- [ ] `__DELETE(p)` with `p : REF_TO INT` passes `--check`.
+- [ ] STRUCT field initial values get no standard-function argument-count check (`LIMIT(1,2)`).
+- [ ] Test files: `UPPER_BOUND(a, r)` with `r` a REAL (truncated) or STRING (g++ fails); `ABS(EN := TRUE,
+      IN := -3)` keeps EN in the C++; `((p1)) = (p2)` of two STRUCTs.
+
+## Batch 4 — missing diagnostics, wrong refusals, tooling
+
+Type checks:
+- [ ] Library FUNCTION arguments are not type-checked unless the function has a REFERENCE TO input
+      (`CHECK_PARITY(w, 'abc')` passes).
+- [ ] BOOL-input warning missing for interface calls (`it.M(i)`), `SUPER.M(q := i)`, `p^(b := i)`, `s.f(b := i)`,
+      `arr[0](b := i)`, TIME/DATE arguments (silent while `x := t` is an error), `EN := i` on a library FB;
+      BOOL aliases are inconsistent (`FA(i)` with a `TB : BOOL` alias warns, `tb := i` is silent, `--strict` silent on both).
+- [ ] `DATE * n`, unary minus on DATE/TOD/DT and `LTIME * LTIME` are accepted.
+- [ ] `UPPER_BOUND` with one argument, of a literal or of a POINTER global compiles in default mode; a named
+      constant DIM below 1 (`VAR CONSTANT KZ := 0`) is not refused.
+
+ADR, REF and pointers:
+- [ ] ADR into an ARRAY or STRUCT value input; a narrow alias defined in a library (`TYPE TDw2 : DWORD`);
+      a namespace-qualified library call (`lib.F_R`) skips the REF_TO check; `REF` of an INT member of a library
+      STRUCT into `REF_TO DINT` (a project FUNCTION refuses it); library FB `REF_TO STRING` inputs may hit the
+      same false refusal as N1.
+- [ ] Misaligned global/test-file pointer initial values; an integer or pointer difference stored into a
+      POINTER TO; no misalignment check for POINTER TO ARRAY/STRUCT targets; POINTER TO BYTE arithmetic warns INT→BYTE.
+
+Global initial values (iec-3 / `--strict`):
+- [ ] `ADR(p^)` / `ADR(pa^[1])` read `p` but are accepted; a method call on a non-CONSTANT FB global
+      (`x : INT := f.M()`) is accepted; an index inside `ADR()`/`REF()` (`ADR(arr[g])`) is not checked.
+- [ ] `UPPER_BOUND(DIM := d, ARR := arr)` (named, reverse order) is refused; other standard functions with
+      reordered named arguments in a global initial value too.
+- [ ] Redundant "no CONSTANT" error on a duplicate RESOURCE global.
+- [ ] **Your call:** should `UPPER_BOUND`/`LOWER_BOUND` of a fixed array be allowed in a global initial value
+      under `--strict`/iec-3? (Refused today.)
+
+Wrong refusals:
+- [ ] `VAR_EXTERNAL CONSTANT` without an initializer is refused in every mode.
+- [ ] `VAR x : TIME := LTIME#3ms` is refused while the same assignment in a body is accepted.
+- [ ] Decide: `VAR_GLOBAL v : ARRAY[*] OF INT` compiles with no error.
+
+Warnings:
+- [ ] Too-long string literal warning (B10) not given for METHOD calls, FB via array element/STRUCT member, FB
+      instance initialisers, assignments to a field/element/dereference, PROPERTY bodies.
+- [ ] iec-3 FOR-variable warning misses writes through pointer/reference/VAR_IN_OUT and output captures
+      (`f(q => i)`), and names the variable upper-cased.
+- [ ] iec-3 TRUNC warning fires for an FB inheriting TRUNC from a library base FB, and for an FB instance named
+      TRUNC (`TRUNC(a := 1.5)` is an FB call).
+- [ ] iec-3 C5 (reserved names): test-file messages use upper-cased names with no locator; IL labels/JMP targets
+      are not checked; the locator takes the first match.
+- [ ] S7: `E.M` in an array/STRUCT literal used as a TYPE default is refused only when a variable uses the type;
+      `E.M` refusals are in pass 3, so a type error hides them; UNION `=` is reported as "two STRUCT values";
+      a test file's `((p1)) = p2` of two STRUCTs is not refused under iec-3.
+- [ ] `--compile-lib` and `--test` print no source warnings (FB_init/FB_exit warnings missing there).
+- [ ] Diagnostics after an IL POU are shifted by the IL→ST line changes.
+- [ ] `analyzeTestFile()` without a dialect argument uses the default feature set.
+
+Tooling and tests:
+- [ ] Tests leave `/tmp/strucpp-*` directories behind (about 6200, 9.3 GB, once filled the disk); `strucpp --test`
+      leaves `/tmp/strucpp-test-*` when a test fails. Remove temp dirs in `afterAll`.
+- [ ] `cpp-compile` `with_lock` test failed once under load and passed on rerun (possible flake).
+- [ ] Language server: a pointer used as a FOR control variable is not flagged.
+
+## Planned features (decided, not bugs)
+
+- **Lifecycle methods for dynamic instances** (user, 2026-11-15, after release N): `__NEW` runs FB_init (base
+  first) and `__DELETE` runs FB_exit (derived first, members after their holder). FB_exit at program stop for
+  static instances stays open: it needs a stop hook in whatever runs the generated program.
+- **S12 iec-4** (waits for the Edition 4 text), including C6; **S8** is on hold until iec-4.
