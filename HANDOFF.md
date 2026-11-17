@@ -11,9 +11,9 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
 - **Fork follow-ups (S13):** the open STruC++ fork findings after release N (about 65, from the S6/S7 reviews) are
   consolidated in [docs/fork-followups.md](docs/fork-followups.md) in four batches (wrong results, manifest lengths,
   g++ fails, missing diagnostics + tooling); roadmap item S13. Re-check each against the fork before fixing it.
-- **Last verified:** 2026-11-16 (Linux container, native editor header on
-  `claude/focused-ptolemy-m6acaz`) — `REQUIRE_FULL_SUITE=1 npm test` green (**138/138, Coverage: FULL**; compile-real,
-  cpp-real, gpp-real ran), `npm run typecheck` and `npm run lint` exit 0; browser harnesses `run.js` 135, `run_online.js` 53, `run_pragmas.js` 47,
+- **Last verified:** 2026-11-17 (Linux container, R11 on `claude/focused-ptolemy-m6acaz`) — `REQUIRE_FULL_SUITE=1
+  npm test` green (**138/138, Coverage: FULL**; compile-real, cpp-real, gpp-real ran), `npm run typecheck` and
+  `npm run lint` exit 0, `vsce@4.1.1 package` (no flags) 772 files / 5.08 MB; browser harnesses (2026-11-16) `run.js` 135, `run_online.js` 53, `run_pragmas.js` 47,
   `run_start_page.js` 126 (browsers in `/opt/pw-browsers`). Dev-host last run 2026-11-12 (103 pass / 1 known P8 fail).
 - **Native editor header, start page and logo (user decisions 2026-11-16): BUILT on `claude/focused-ptolemy-m6acaz`**
   (DEVELOPMENT.md "The editor header", "The Actions menu"): mark `#hdr-brand` (`src/brandMark.js`), breadcrumb from
@@ -434,13 +434,16 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   XAE 3.1.4024 / 3.1.4026 — the `.xtv` `TmcHash` is kept stale on purpose (XAE recomputes it) and is the first thing
   to suspect if 4026 complains; (2) `node test/devhost/run.js`; (3) eyeball sidebar, welcome buttons and the start
   page in light + dark themes; (4) phase 2 (XAE automation, decision 1) — not started, TODO in ROADMAP.md R2.
-- **Licence switched to AGPL-3.0-or-later** (user's call 2026-11-09): `LICENSE` is the verbatim gnu.org text
-  (sha256 `0d96a4ff…abcb0`), `package.json` `license`, README "License" (≤ 0.10.1 stay MIT). Monaco keeps its MIT
-  notice (`media/monaco-editor/LICENSE.txt`, THIRD-PARTY-NOTICES.md). Takes effect with the next release (R11).
-  Optional, not done: SPDX headers per source file.
-- **R11 Marketplace publishing** added after R2 (user's ask 2026-11-09). The user CREATED accounts on the VS Code
-  Marketplace and Open VSX 2026-11-09; publisher ID confirmed as `a-abushaqra` (= `package.json`); per release the user either uploads the VSIX or adds `VSCE_PAT`/`OVSX_PAT` secrets; our part is
-  ~1 h of metadata/CHANGELOG/README disclaimer + a secret-gated publish step in `release.yml`.
+- **Licence AGPL-3.0-or-later** since v0.11.0 (user's call 2026-11-09; ≤ 0.10.1 stay MIT): `LICENSE` is the verbatim
+  gnu.org text (sha256 `0d96a4ff…abcb0`), shipped in the VSIX. Monaco keeps its MIT notice. Optional, not done: SPDX headers.
+- **R11 Marketplace publishing: our part PREPARED (2026-11-17, `claude/focused-ptolemy-m6acaz`), version 0.11.1.**
+  Gallery fields in `package.json`; `release.yml` → new `publish.yml` (per-marketplace jobs, pinned vsce 4.1.1 /
+  ovsx 1.4.0, `--skip-duplicate`, secret unset → notice; retry: "Re-run failed jobs" or *Publish* by tag —
+  DEVELOPMENT.md "Publish to the VS Code Marketplace and Open VSX"). **User's steps:** (1) repo secrets `VSCE_PAT`
+  (Azure DevOps PAT, *Marketplace → Manage*, all organisations) and `OVSX_PAT` (open-vsx.org token); (2) once:
+  `npx ovsx create-namespace a-abushaqra -p <token>` and request its ownership on open-vsx.org; (3) merge to `main`,
+  run *Release* there (not as draft/pre-release, which skip publishing). **Left:** CLAUDE.md's "Package a VSIX"
+  line still shows the old `--allow-missing-repository --skip-license` flags (agent did not edit CLAUDE.md).
 - **Compiler name in the UI (user ruling 2026-11-09):** the extension's UI and user-facing README name no compiler
   ("Build project", not "Check with STruC++"); `test_start_contributions.js` pins that the start page never says
   STruC++. Developer docs, ROADMAP.md and the published roadmap page may keep the name.

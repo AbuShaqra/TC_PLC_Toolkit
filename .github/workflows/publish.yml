@@ -1,0 +1,107 @@
+name: Publish
+
+# Publishes the VSIX attached to an existing GitHub release to the VS Code Marketplace and Open VSX.
+# Release (release.yml) calls this after it creates the release; run it by hand (Actions tab, or
+# `gh workflow run publish.yml -f tag=v0.11.1`) to retry a failed upload without a new version.
+#
+# It publishes the release's own VSIX, never a rebuild, so the marketplaces get the exact bytes that
+# GitHub has. Each marketplace is its own job, so one failing does not stop the other and "Re-run failed
+# jobs" retries only the one that failed. --skip-duplicate makes a retry of a version that is already
+# up a no-op instead of an error. A marketplace whose token secret is not set is skipped with a notice.
+#
+# Secrets: VSCE_PAT (Azure DevOps token with Marketplace > Manage for publisher a-abushaqra) and
+# OVSX_PAT (open-vsx.org access token; the namespace a-abushaqra must exist). Both tools read their
+# token from that environment variable, so it never appears on a command line.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag whose VSIX to publish, e.g. v0.11.1'
+        type: string
+        required: true
+      target:
+        description: 'Where to publish'
+        type: choice
+        options: [both, marketplace, openvsx]
+        default: both
+  workflow_call:
+    inputs:
+      tag:
+        type: string
+        required: true
+      target:
+        type: string
+        default: both
+    secrets:
+      VSCE_PAT:
+        required: false
+      OVSX_PAT:
+        required: false
+
+# Reading the release's asset is all this needs; the marketplace tokens come from secrets.
+permissions:
+  contents: read
+
+# Exact versions, so a new tool release cannot change what a release run does.
+env:
+  VSCE_VERSION: '4.1.1'
+  OVSX_VERSION: '1.4.0'
+
+jobs:
+  marketplace:
+    name: VS Code Marketplace
+    if: ${{ inputs.target == 'both' || inputs.target == 'marketplace' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+
+      - name: Download the release's VSIX
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          vsix="twincat-plc-toolkit-${TAG#v}.vsix"
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern "$vsix"
+          echo "VSIX=$vsix" >> "$GITHUB_ENV"
+
+      - name: Publish
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+        run: |
+          if [ -z "$VSCE_PAT" ]; then
+            echo "::notice::VS Code Marketplace skipped: the VSCE_PAT secret is not set."
+            exit 0
+          fi
+          npx --yes "@vscode/vsce@$VSCE_VERSION" publish --packagePath "$VSIX" --skip-duplicate
+          echo "::notice::Published $VSIX to the VS Code Marketplace."
+
+  openvsx:
+    name: Open VSX
+    if: ${{ inputs.target == 'both' || inputs.target == 'openvsx' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+
+      - name: Download the release's VSIX
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          vsix="twincat-plc-toolkit-${TAG#v}.vsix"
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern "$vsix"
+          echo "VSIX=$vsix" >> "$GITHUB_ENV"
+
+      - name: Publish
+        env:
+          OVSX_PAT: ${{ secrets.OVSX_PAT }}
+        run: |
+          if [ -z "$OVSX_PAT" ]; then
+            echo "::notice::Open VSX skipped: the OVSX_PAT secret is not set."
+            exit 0
+          fi
+          npx --yes "ovsx@$OVSX_VERSION" publish "$VSIX" --skip-duplicate
+          echo "::notice::Published $VSIX to Open VSX."

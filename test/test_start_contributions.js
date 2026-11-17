@@ -7,7 +7,8 @@
  * offline start page (CSP, no remote loads). Also the settings this adds: the recent-list length and
  * the two machine-scoped XAE Shell paths, with the detect command and the page's allow-lists; and
  * Compile Project (R3.2): its command, its two settings, and no compiler product name in anything a
- * user sees (package.json, README.md, the shipped sources).
+ * user sees (package.json, README.md, the shipped sources). And the Marketplace manifest (R11): the
+ * gallery fields vsce and Open VSX read, and no hard-coded `<publisher>.<name>` id in the shipped code.
  */
 
 'use strict';
@@ -352,6 +353,45 @@ assert(/^\^1\.66\./.test(pkg.engines.vscode), `engine stays ^1.66 (${pkg.engines
     assert(/var\(--vscode-editor-background\)/.test(css) && colours === 0, 'colours come from VS Code theme variables (fallback rgba only)');
     const js = fs.readFileSync(path.join(REPO, 'media', 'startPage.js'), 'utf8');
     assert(!/fetch\(|XMLHttpRequest|https?:\/\//.test(js), 'the page script makes no network request');
+}
+
+// ── Marketplace manifest (R11): what vsce and Open VSX publish from ─────────────────────────────
+{
+    const GITHUB = 'https://github.com/AbuShaqra/TC_PLC_Toolkit';
+    assert(pkg.publisher === 'a-abushaqra', 'the publisher is the Marketplace / Open VSX publisher ID');
+    assert(pkg.repository && pkg.repository.url === `${GITHUB}.git` && pkg.bugs && pkg.bugs.url === `${GITHUB}/issues`
+        && typeof pkg.homepage === 'string' && pkg.homepage.startsWith(GITHUB),
+        'repository, bugs and homepage point at the GitHub repository (vsce rewrites README links against it)');
+    const licence = fs.readFileSync(path.join(REPO, 'LICENSE'), 'utf8');
+    assert(pkg.license === 'AGPL-3.0-or-later' && /GNU AFFERO GENERAL PUBLIC LICENSE\s+Version 3/.test(licence),
+        'the licence field matches LICENSE (vsce packages it, so the release needs no --skip-license)');
+    assert(typeof pkg.icon === 'string' && /\.png$/.test(pkg.icon) && fs.existsSync(path.join(REPO, pkg.icon)), 'the gallery icon is a PNG that exists');
+    assert(pkg.galleryBanner && /^#[0-9a-fA-F]{6}$/.test(pkg.galleryBanner.color) && pkg.galleryBanner.theme === 'dark', 'the gallery banner is dark');
+    const VALID = ['Programming Languages', 'Snippets', 'Linters', 'Themes', 'Debuggers', 'Formatters', 'Keymaps', 'SCM Providers',
+        'Other', 'Extension Packs', 'Language Packs', 'Data Science', 'Machine Learning', 'Visualization', 'Notebooks', 'Education', 'Testing', 'AI', 'Chat'];
+    assert(Array.isArray(pkg.categories) && pkg.categories.length > 0 && pkg.categories.every((/** @type {string} */ cat) => VALID.includes(cat)),
+        `every category is one the Marketplace knows (${pkg.categories})`);
+    assert(Array.isArray(pkg.keywords) && pkg.keywords.length > 0 && pkg.keywords.length <= 30
+        && new Set(pkg.keywords).size === pkg.keywords.length, 'at most 30 keywords, no duplicates (vsce refuses more)');
+    assert(typeof pkg.description === 'string' && pkg.description.length <= 200 && !/affiliated/i.test(pkg.description),
+        'the description is one short sentence; the not-affiliated notice lives in the README');
+    // The id is `<publisher>.<name>`; the code reads it from context.extension.id (or package.json), never as a literal.
+    const id = `${pkg.publisher}.${pkg.name}`.toLowerCase();
+    /** @param {string} dir @returns {string[]} */
+    const jsFiles = (dir) => fs.readdirSync(dir, { withFileTypes: true }).flatMap(e =>
+        e.isDirectory() ? jsFiles(path.join(dir, e.name)) : (/\.js$/.test(e.name) ? [path.join(dir, e.name)] : []));
+    const literal = [path.join(REPO, 'extension.js'), ...jsFiles(path.join(REPO, 'src'))]
+        .filter(f => fs.readFileSync(f, 'utf8').toLowerCase().includes(id)).map(f => path.relative(REPO, f));
+    assert(literal.length === 0, `no shipped source hard-codes the extension id ${id} (${literal.join(', ') || 'none'})`);
+    // One vsce, no escape-hatch flags: CI packages exactly as Release does, and Publish uploads with the same version.
+    const wf = (/** @type {string} */ f) => fs.readFileSync(path.join(REPO, '.github', 'workflows', f), 'utf8');
+    const publishYml = wf('publish.yml');
+    const pinned = (publishYml.match(/VSCE_VERSION: '([^']+)'/) || [])[1];
+    const packs = ['ci.yml', 'release.yml'].map(f => (wf(f).match(/npx --yes @vscode\/vsce@(\S+) package/) || [])[1]);
+    assert(!!pinned && packs.every(v => v === pinned), `CI, Release and Publish use the same pinned vsce (${pinned}; ${packs})`);
+    assert(['ci.yml', 'release.yml'].every(f => !/--skip-license|--allow-missing-repository/.test(wf(f))), 'no workflow packages with --skip-license or --allow-missing-repository');
+    assert(/uses: \.\/\.github\/workflows\/publish\.yml/.test(wf('release.yml')) && /--skip-duplicate/.test(publishYml),
+        'Release hands its VSIX to Publish, whose uploads are safe to retry');
 }
 
 // ── Packaging: the derived templates ship, the raw XAE source does not ─────────────────────────

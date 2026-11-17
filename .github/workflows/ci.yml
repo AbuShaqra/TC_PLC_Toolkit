@@ -70,9 +70,9 @@ jobs:
 
       # Packaging is otherwise only exercised by hand at release time, where a broken manifest,
       # .vscodeignore or engines constraint would surface far too late. Building the VSIX here keeps
-      # that failure on the PR instead. The flags match the documented release command.
+      # that failure on the PR instead. Same command and vsce version as release.yml.
       - name: Package (VSIX build check)
-        run: npx @vscode/vsce package --allow-missing-repository --skip-license
+        run: npx --yes @vscode/vsce@4.1.1 package
 
   # The extension does not run on the CI default Node — it runs on whatever Node VS Code bundles.
   # `engines.vscode` is ^1.66.0, and VS Code 1.66 ships Electron 17 (Node 16), so the suite has to

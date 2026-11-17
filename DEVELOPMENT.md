@@ -50,9 +50,16 @@ from `extension.js`, and Monaco is vendored under `media/monaco-editor/` so ever
 
 ```bash
 npm prune                 # see below — do this first
-npx @vscode/vsce package
+npx --yes @vscode/vsce@4.1.1 package
 code --install-extension twincat-plc-toolkit-<version>.vsix --force
 ```
+
+No flags are needed: `package.json` names the GitHub `repository` (vsce rewrites the README's relative links
+to `github.com/AbuShaqra/TC_PLC_Toolkit/blob/HEAD/...` and its images to `.../raw/HEAD/...`, so they work on
+the Marketplace; `media/readme/` itself does not ship) and `LICENSE` is found and shipped. CI, Release and
+Publish all use this vsce version (`test_start_contributions.js` checks they agree); change it in all three
+workflows and here together. `npx --yes @vscode/vsce@4.1.1 ls` lists what would ship (≈770 files, ≈5 MB
+packed at 0.11.1).
 
 On Windows, `scripts\install-vsix.bat` picks the newest `.vsix` in the folder and installs it with whichever
 `code` CLI it can find.
@@ -90,6 +97,29 @@ be edited before the release goes public). It never overwrites: if the tag or re
 run fails before building, so **the release procedure is: bump `version` in `package.json` on `dev`, open and
 merge the `dev → main` PR, run the workflow on `main`**. It runs the same typecheck → test → package gates as CI first (a REDUCED test run, like CI),
 and also keeps the VSIX as a run artifact.
+
+### Publish to the VS Code Marketplace and Open VSX
+
+Release's second job, `publish`, calls `.github/workflows/publish.yml` with the new tag. That workflow
+downloads the VSIX **attached to the GitHub release** (never a rebuild, so all three places carry the same
+bytes) and uploads it in two independent jobs:
+
+- **VS Code Marketplace** — `npx --yes @vscode/vsce@4.1.1 publish --packagePath <vsix> --skip-duplicate`,
+  token from the repository secret **`VSCE_PAT`** (an Azure DevOps personal access token, organisation
+  *All accessible organizations*, scope *Marketplace → Manage*, for publisher `a-abushaqra`).
+- **Open VSX** — `npx --yes ovsx@1.4.0 publish <vsix> --skip-duplicate`, token from the repository secret
+  **`OVSX_PAT`** (an open-vsx.org access token). The namespace must exist once:
+  `npx ovsx create-namespace a-abushaqra -p <token>`, then claim it (open-vsx.org namespace-ownership
+  request) so the extension shows as verified.
+
+Both tools read the token from that environment variable, so it is never on a command line. A secret that
+is not set skips its marketplace with a `::notice::` (the job stays green); a draft or pre-release run
+skips the whole `publish` job. A failed upload fails the run **but leaves the GitHub release in place**.
+**Retry path:** "Re-run failed jobs" on the Release run (re-runs only the failed marketplace job — not the
+overwrite check, which would refuse the existing tag), or run *Publish* by hand: Actions tab → *Publish* →
+tag `v<version>`, target `both` / `marketplace` / `openvsx` (or
+`gh workflow run publish.yml -f tag=v0.11.1`). `--skip-duplicate` makes a retry of a version that is
+already up a no-op. Publish's token is read-only (`contents: read`).
 
 ## Tests
 
@@ -217,7 +247,7 @@ per-suite without aborting on the first failure. The main ones:
 | `test/test_project_template.js` | `src/projectTemplate.js` on both shipped templates: the committed templates match `scripts/build-project-templates.js --check`; every GUID classified; every identity GUID re-issued with every reference following it and each occurrence's case kept (`.sln` upper, `.plcproj` lower); every type GUID kept; no template name left in a path or a byte; BOM, CRLF/LF, tabs and trailing newline preserved and nothing but names and GUIDs changed; starter objects exactly MAIN, PlcTask (calling MAIN) and an empty GVL_Main; the `.tspproj` (4024) and `.tsproj` + `_Config/` (4026) shapes; the created project read back by `projectMap` and `solutionMap`; refusal of a target holding a solution or a file it would write (nothing touched); name validation. |
 | `test/test_template_diagnostics.js` | A project created from each template, indexed like `test_sample_diagnostics.js` with every check on: ZERO diagnostics, again after the first edit a user makes (a variable in the `qualified_only` `GVL_Main` used from MAIN as `GVL_Main.x`), and a deliberate undeclared name IS reported (the gate is live). |
 | `test/test_editor_title_buttons.js` | package.json: the PLC file editor's title-bar buttons (Build, Build and Activate, Go Online/Go Offline in one slot swapped by `twincat.online`, Show Activation Targets): shown only for `twincat.xmlViewer`, the XAE ones only on Windows, inline (`navigation@n`), each command with a codicon. The same five entries in the PLC Objects view's title (`view/title`, `twincatExplorer`): same slots and Windows gating, shown only with `twincat.hasPlcProject` (Go Offline whenever `twincat.online`), and extension.js's `refreshProjectMap` sets that key. |
-| `test/test_start_contributions.js` | package.json for R2: the branding guard (no contributed name — display name, settings section titles, custom editor, view containers, views, command categories — contains "TwinCAT"; the extension id is unchanged); the setting keys (all 18 live keys under `tcToolkit.`, none under `twincat.`, each old key contributed deprecated with its successor's type/scope/default, sections one per key group, the migration table in step); the `twincat` Activity Bar container (titled `TC Toolkit`) holding Start, PLC Objects, PLC Libraries in that order with ids unchanged, none left in the Explorer, References still in its panel, no dangling view id in a when-clause; each start command contributed under the `TC Toolkit` category, in the palette, registered, with an `onCommand` activation event (needed on 1.66); Start view welcome links; a monochrome offline icon; the start page's strict CSP and no remote load; `.vscodeignore` shipping the derived templates but not the raw XAE source; the `tcToolkit.startPage.recentProjectsShown` and machine-scoped `tcToolkit.xaeShell.path*` settings, and the page's command / settings-section allow-lists. R14: the three XAE command titles ("… (requires TwinCAT)", no TwinCAT-led name), each in the palette on Windows only (`when: isWindows`) with an `onCommand` activation event, the two build commands' `enablement: !twincat.xaeRunning`, the internal `twincat.xaeBuild.goToProblem` registered but not contributed, the start page allow-list holding `twincat.xaeBuild`/`xaeBuildAndActivate` (not `xaeShowTargets`), the settings section `XAE Build` with its five keys and their defaults equal to `xaeBuildSettings`, and no target-NetId setting. `tcToolkit.xaeBuild.platform` is a dropdown equal to `XAE_PLATFORMS` and offers every platform both samples' `.sln` declare; `configuration` stays free text. The `tcToolkit.adsDll` section ("ADS DLLs"): both keys machine-scoped, empty by default, each description naming its file, its usual location, that empty searches and that a set path is used as given (31 live settings). |
+| `test/test_start_contributions.js` | The Marketplace manifest (R11: publisher, repository/bugs/homepage, licence matching `LICENSE`, icon, dark banner, known categories, ≤ 30 keywords, a short description, no hard-coded `<publisher>.<name>` id in `extension.js`/`src/`, one pinned vsce across CI/Release/Publish with no `--skip-license`/`--allow-missing-repository`, Release calling Publish). package.json for R2: the branding guard (no contributed name — display name, settings section titles, custom editor, view containers, views, command categories — contains "TwinCAT"; the extension id is unchanged); the setting keys (all 18 live keys under `tcToolkit.`, none under `twincat.`, each old key contributed deprecated with its successor's type/scope/default, sections one per key group, the migration table in step); the `twincat` Activity Bar container (titled `TC Toolkit`) holding Start, PLC Objects, PLC Libraries in that order with ids unchanged, none left in the Explorer, References still in its panel, no dangling view id in a when-clause; each start command contributed under the `TC Toolkit` category, in the palette, registered, with an `onCommand` activation event (needed on 1.66); Start view welcome links; a monochrome offline icon; the start page's strict CSP and no remote load; `.vscodeignore` shipping the derived templates but not the raw XAE source; the `tcToolkit.startPage.recentProjectsShown` and machine-scoped `tcToolkit.xaeShell.path*` settings, and the page's command / settings-section allow-lists. R14: the three XAE command titles ("… (requires TwinCAT)", no TwinCAT-led name), each in the palette on Windows only (`when: isWindows`) with an `onCommand` activation event, the two build commands' `enablement: !twincat.xaeRunning`, the internal `twincat.xaeBuild.goToProblem` registered but not contributed, the start page allow-list holding `twincat.xaeBuild`/`xaeBuildAndActivate` (not `xaeShowTargets`), the settings section `XAE Build` with its five keys and their defaults equal to `xaeBuildSettings`, and no target-NetId setting. `tcToolkit.xaeBuild.platform` is a dropdown equal to `XAE_PLATFORMS` and offers every platform both samples' `.sln` declare; `configuration` stays free text. The `tcToolkit.adsDll` section ("ADS DLLs"): both keys machine-scoped, empty by default, each description naming its file, its usual location, that empty searches and that a set path is used as given (31 live settings). |
 | `test/test_start_commands.js` | `src/commands/startCommands.js` + `src/startPage.js` under a recording `vscode` stub: create with args and with prompts (files, recents, last location, open here/new/add/none), refusals inline vs as a notification, a deleted recent solution pruned, Generate ST's project pick, help links and settings, the singleton panel, its `state` message (including the recent-list length, clamped, and the XAE Shell paths; the g++ path in each state, read-only), a settings change (incl. `tcToolkit.compiler.gppPath`) re-posting state to an open page, g++ *Change…* opening the User settings, `openSettings {section}` and Open Settings' query argument, and the command allow-list. |
 | `test/test_check_unit.js` | `src/checkUnit.js`: one origin per emitted line, every pane line exactly once and verbatim in pane order (so a reported line/column IS the pane's), generated lines anchored on their component, members before the body, no rewriting (`REFERENCE TO`, `REF=`, pragmas survive), every sample file round-trips. |
 | `test/test_compile_check.js` | `src/compileCheck.js` with a fake child process: the bundled compiler as default and the setting as override, Node discovery (order on Windows, the version gate, the editor runtime as last resort with `ELECTRON_RUN_AS_NODE=1`, a configured Node path as the only candidate), setup messages (compiler missing, Node missing/too old, each naming its setting), the command line, the JSON report (clean, errors, malformed, exit 2, crash), mapping to file/component/pane/line, the pragma-warning filter and its count, temp-dir lifetime, timeout, cancellation, `paneRange`, runChild's `onStdout`/`onStderr` chunk callbacks. |
@@ -449,7 +479,7 @@ on), with superseded runs cancelled and a read-only token. Two jobs:
 **CI is always a REDUCED run** — see the section above.
 
 Releases are a separate, manual workflow (`.github/workflows/release.yml`, the only one with a write
-token) — see "Publish a GitHub release" under "Package a VSIX".
+token) — see "Publish a GitHub release" under "Package a VSIX"; it calls `publish.yml` for the marketplaces.
 
 **`sample/` is ground truth.** It holds two *correct* TwinCAT solutions, so every diagnostic reported
 on either is a bug. Never fix a red gate by raising the baseline.

@@ -149,7 +149,7 @@ node test/test_references_tree.js    # references-view grouping
 node test/run.js references          # run only suites whose name matches a substring
 
 # Package a VSIX:
-npx @vscode/vsce package --allow-missing-repository --skip-license
+npx --yes @vscode/vsce@4.1.1 package
 ```
 
 Manual testing: open this repo in VS Code, press **F5** ("Run Extension") to launch an Extension Development Host, open a TwinCAT project folder there. After code changes, **Ctrl+R** in the dev-host window to reload.
