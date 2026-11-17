@@ -24,6 +24,12 @@ const { defaultMsys2RootCache } = require('../msys2Detect');
 const { createCppConfigurationProvider, connectCppTools, CPPTOOLS_EXTENSION_ID, PROVIDER_NAME } = require('../cppToolsProvider');
 const { CPP_SECTION_NAME, PROVIDER_SETTING_KEY, PROPERTIES_RELATIVE, providerSelection } = require('../cppToolsSelection');
 
+/** @returns {string} `<publisher>.<name>` from this extension's package.json. */
+function ownExtensionId() {
+    const pkg = require('../../package.json');
+    return `${pkg.publisher}.${pkg.name}`;
+}
+
 /** The output channel the C/C++ extension's requests are logged to. */
 const CPP_OUTPUT_CHANNEL = 'TC Toolkit C/C++';
 
@@ -163,7 +169,9 @@ function registerCppToolsProvider(context, deps) {
         }
         return gppCache;
     };
-    const extensionId = (context.extension && context.extension.id) || 'a-abushaqra.twincat-plc-toolkit';
+    // The running extension's own id, so a publisher change cannot leave a stale literal behind; the
+    // fallback (a host without context.extension) is built from package.json for the same reason.
+    const extensionId = (context.extension && context.extension.id) || ownExtensionId();
     const provider = createCppConfigurationProvider({
         extensionId,
         log,

@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.11.1
+
+### New
+- **On the VS Code Marketplace and Open VSX**: from this version TC Toolkit installs from the Extensions view
+  (publisher `a-abushaqra`); the VSIX on GitHub Releases stays available.
+
+### Changed
+- **A shorter README and a full user guide** (`docs/user-guide.md`), with new screenshots of the editor and the
+  Start Page.
+- **Getting started** in the TC Toolkit sidebar and on the Start Page opens the user guide, offline.
+
 ## 0.11.0 (2026-11-16)
 
 The first release as **TC Toolkit** (formerly "TwinCAT XML Viewer" / "TwinCAT PLC Toolkit"). Changes since 0.10.1:
