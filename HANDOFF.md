@@ -6,8 +6,10 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
 [docs/handoff-findings.md](docs/handoff-findings.md)** — read the section covering what you are about to touch.
 
 ## Status
-- **Released:** **v0.11.0 is PUBLISHED** (2026-11-16 23:10 UTC): branch PR #41 + #43 → dev, dev→main PR #42 (`ce688ea`),
-  Release run 43976426212 green, VSIX `twincat-plc-toolkit-0.11.0.vsix` attached; notes = `CHANGELOG.md`'s section + generated PR list.
+- **Released:** **v0.11.1** on GitHub (2026-11-17 16:32 UTC, Release run 44126083730, VSIX attached; notes from CHANGELOG).
+  The run's publish jobs **skipped** both marketplaces (no `VSCE_PAT`/`OVSX_PAT` secrets). VS Code Marketplace has **0.11.0**
+  (uploaded by hand 2026-11-17 15:25 UTC); Open VSX has nothing yet. To finish R11: add the secrets (Open VSX: create the
+  `a-abushaqra` namespace first), then run *Publish* with tag `v0.11.1` (no new version needed).
 - **Fork follow-ups (S13):** the open STruC++ fork findings after release N (about 65, from the S6/S7 reviews) are
   consolidated in [docs/fork-followups.md](docs/fork-followups.md) in four batches (wrong results, manifest lengths,
   g++ fails, missing diagnostics + tooling); roadmap item S13. Re-check each against the fork before fixing it.

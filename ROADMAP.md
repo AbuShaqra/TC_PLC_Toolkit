@@ -4,7 +4,7 @@ The order of planned work for the extension. **This file is the source of truth*
 (<https://claude.ai/artifact/8RG7TZtBV2cuupsrwWtknv>) is rendered from it by hand out of `docs/roadmap.html`.
 Keep both current in the same change — rules in [CLAUDE.md](CLAUDE.md) ("Keep the roadmap current").
 
-**Last updated:** 2026-11-17 · **Current release:** v0.11.0 · **Re-measured:** 2026-11-11 · **Next:** toolkit R11, publishing, today; fork S13 from 2026-11-18 · **Lanes:** 2
+**Last updated:** 2026-11-17 · **Current release:** v0.11.1 · **Re-measured:** 2026-11-11 · **Next:** toolkit R11, publishing, today; fork S13 from 2026-11-18 · **Lanes:** 2
 
 How to read it: items run top to bottom in the **Order** column. IDs are stable names and do not change
 when the order does. Estimates are working days for one developer; start and end dates are **forecasts**
@@ -32,7 +32,7 @@ table, marked **Done**, until the next prune.
 | 13 | R13 | Compile button: optional C++ generation into `CPP_Files/` and a g++ compile check | 3 d | ~2.5 h + your check | 2026-11-12 | 2026-11-13 | **Done** 2026-11-13 — PR #37 |
 | 14 | R14 | Build and activate through XAE's Automation Interface | 3 d | ~2 h + your check | 2026-11-12 | 2026-11-14 | **Done** 2026-11-13 — PR #38 |
 | 15 | R15 | ADS online monitoring: watch and write variables of the running PLC from the editor | 3 d | ~2 h + 1.5 d | 2026-11-16 | 2026-11-18 | **Done** 2026-11-16 — PR #41, released in v0.11.0 |
-| 16 | R11 | Publish to the VS Code Marketplace (and Open VSX) | 0.5 d | ~1 h + your account step | 2026-11-17 | 2026-11-17 | **In progress** (started 2026-11-17 10:12 UTC): our part merged (PR #48 into dev, PR #49 into main, version 0.11.1). **VS Code Marketplace live** since 2026-11-17 15:25 UTC with 0.11.0 (uploaded by the user; [listing](https://marketplace.visualstudio.com/items?itemName=a-abushaqra.twincat-plc-toolkit)); open: the 0.11.1 *Release* run (fixed README images, licence) and Open VSX. S12 and S13 do not hold it. Then your step: add `VSCE_PAT` / `OVSX_PAT` and run *Release* on `main` |
+| 16 | R11 | Publish to the VS Code Marketplace (and Open VSX) | 0.5 d | ~1 h + your account step | 2026-11-17 | 2026-11-17 | **In progress** (started 2026-11-17 10:12 UTC): our part merged (PR #48 into dev, PR #49 into main, version 0.11.1). **VS Code Marketplace live** since 2026-11-17 15:25 UTC with 0.11.0 (uploaded by the user; [listing](https://marketplace.visualstudio.com/items?itemName=a-abushaqra.twincat-plc-toolkit)); **v0.11.1 released on GitHub** 2026-11-17 16:32 UTC (Release run 44126083730; the publish jobs skipped both marketplaces: no `VSCE_PAT`/`OVSX_PAT` secrets yet). Open: 0.11.1 on the Marketplace (upload the VSIX or add the secret and run *Publish* with tag `v0.11.1`) and Open VSX. S12 and S13 do not hold it. Then your step: add `VSCE_PAT` / `OVSX_PAT` and run *Release* on `main` |
 | — | R10 | L1 reverse index for Find References | 2 d | ~1.5 h | — | — | **On trigger only:** past ~1000 files or > 200 ms per search (today 29 ms cold) |
 
 **Forecast (2026-11-17):** the toolkit lane is finished — R15 merged on 2026-11-16 (PR #41) and shipped in v0.11.0 the
