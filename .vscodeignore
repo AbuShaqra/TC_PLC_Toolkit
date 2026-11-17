@@ -44,6 +44,8 @@ AGENTS.md
 HANDOFF.md
 ROADMAP.md
 DEVELOPMENT.md
+# Lock file of the agent skill packs installed for development (.claude/), not extension data.
+skills-lock.json
 # Implementation plans — developer working documents, same category as the three files above.
 docs/**
 # ...except the user guide, which Getting started opens offline (src/commands/startCommands.js).

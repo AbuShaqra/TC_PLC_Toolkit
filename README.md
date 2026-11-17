@@ -18,12 +18,21 @@ started* in the TC Toolkit sidebar or on the start page). What changed in each r
 
 ## Install
 
-1. Download `twincat-plc-toolkit-<version>.vsix` from the
-   [GitHub Releases](https://github.com/AbuShaqra/TC_PLC_Toolkit/releases).
-2. Install it: **Extensions** view → **⋯** → **Install from VSIX…**, or
-   `code --install-extension twincat-plc-toolkit-<version>.vsix --force`.
-3. After replacing an older version, **fully restart VS Code**. Open the folder with your TwinCAT
-   solution or PLC project and open any `.TcPOU`.
+From version 0.11.1, TC Toolkit is on the
+[VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=a-abushaqra.twincat-plc-toolkit)
+and on [Open VSX](https://open-vsx.org/extension/a-abushaqra/twincat-plc-toolkit) (for VSCodium and
+other editors that use it):
+
+1. In the **Extensions** view, search for **TC Toolkit** and click **Install** — or run
+   `code --install-extension a-abushaqra.twincat-plc-toolkit`.
+2. Open the folder with your TwinCAT solution or PLC project and open any `.TcPOU`.
+
+**Without marketplace access** (an offline PC, or a version before 0.11.1): download
+`twincat-plc-toolkit-<version>.vsix` from the
+[GitHub Releases](https://github.com/AbuShaqra/TC_PLC_Toolkit/releases) and install it with
+**Extensions** view → **⋯** → **Install from VSIX…**, or
+`code --install-extension twincat-plc-toolkit-<version>.vsix --force`. After replacing an older version
+this way, **fully restart VS Code**.
 
 > If a `.TcPOU` opens as raw XML, right-click the tab → **Reopen Editor With… → TC Toolkit**.
 

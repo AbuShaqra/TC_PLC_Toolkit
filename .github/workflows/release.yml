@@ -5,6 +5,12 @@ name: Release
 # fails before building — bump `version` in package.json (and merge it) to release again.
 #
 # Run it from the Actions tab (or `gh workflow run release.yml`), normally against main.
+#
+# Then the `publish` job (publish.yml) uploads that same VSIX to the VS Code Marketplace and Open VSX,
+# each only when its token secret (VSCE_PAT / OVSX_PAT) is set; a draft or pre-release is not published
+# there. A failed upload fails the run but leaves the GitHub release in place: retry it with "Re-run
+# failed jobs" on this run, or run Publish by hand with the tag. Re-running all of Release would stop at
+# the overwrite check below, by design.
 on:
   workflow_dispatch:
     inputs:
@@ -18,6 +24,7 @@ on:
         default: false
 
 # The tag, the release and the attached VSIX are all writes to the repo's contents; nothing else.
+# (The publish job only reads; publish.yml narrows itself to contents: read.)
 permissions:
   contents: write
 
@@ -28,6 +35,8 @@ concurrency:
 
 jobs:
   release:
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
     # Same platform as CI: TwinCAT is Windows-only and the LSP's URI<->path handling is Windows-native.
     runs-on: windows-latest
     defaults:
@@ -77,11 +86,13 @@ jobs:
       - name: Test
         run: npm test
 
-      # The flags match the documented release command in DEVELOPMENT.md. `npm ci` installs exactly
-      # package-lock.json, so there is no extraneous package for vsce to sweep up (the `npm prune`
-      # step a local build needs).
+      # The command matches the documented release command in DEVELOPMENT.md, with vsce pinned to the
+      # version publish.yml publishes with. No flags: package.json names the repository (vsce rewrites the
+      # README's relative links and images against it) and LICENSE is found and shipped. `npm ci`
+      # installs exactly package-lock.json, so there is no extraneous package for vsce to sweep up (the
+      # `npm prune` step a local build needs).
       - name: Package the VSIX
-        run: npx @vscode/vsce package --allow-missing-repository --skip-license -o "${{ steps.version.outputs.vsix }}"
+        run: npx --yes @vscode/vsce@4.1.1 package -o "${{ steps.version.outputs.vsix }}"
 
       # Also kept as a run artifact, so the exact bytes that were released stay downloadable from the
       # run even if the release is later edited or deleted.
@@ -117,3 +128,16 @@ jobs:
             --generate-notes \
             "${flags[@]}"
           echo "Released $TAG from $GITHUB_SHA with $VSIX attached"
+
+  # The marketplaces get the VSIX now attached to the release (publish.yml downloads it), so this job can
+  # be re-run on its own. Skipped for a draft (its notes are still being edited) and a pre-release (the
+  # marketplaces would list it as the current version); publish those later with the Publish workflow.
+  publish:
+    needs: release
+    if: ${{ !inputs.draft && !inputs.prerelease }}
+    uses: ./.github/workflows/publish.yml
+    with:
+      tag: ${{ needs.release.outputs.tag }}
+    secrets:
+      VSCE_PAT: ${{ secrets.VSCE_PAT }}
+      OVSX_PAT: ${{ secrets.OVSX_PAT }}

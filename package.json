@@ -1,11 +1,21 @@
 {
   "name": "twincat-plc-toolkit",
   "displayName": "TC Toolkit",
-  "description": "Structured Text editor, language server and project tools for Beckhoff TwinCAT 3 PLC projects: two-pane editor, offline IntelliSense and diagnostics, object and library explorers. Unofficial; not affiliated with Beckhoff.",
-  "version": "0.11.0",
+  "description": "Structured Text editor, language server, build and online monitoring for Beckhoff TwinCAT 3 PLC projects.",
+  "version": "0.11.1",
   "publisher": "a-abushaqra",
   "license": "AGPL-3.0-or-later",
   "icon": "media/marketplace-icon.png",
+  "galleryBanner": {
+    "color": "#1e2228",
+    "theme": "dark"
+  },
+  "pricing": "Free",
+  "qna": false,
+  "homepage": "https://github.com/AbuShaqra/TC_PLC_Toolkit#readme",
+  "bugs": {
+    "url": "https://github.com/AbuShaqra/TC_PLC_Toolkit/issues"
+  },
   "repository": {
     "type": "git",
     "url": "https://github.com/AbuShaqra/TC_PLC_Toolkit.git"
@@ -14,7 +24,22 @@
     "vscode": "^1.66.0"
   },
   "categories": [
-    "Other"
+    "Programming Languages",
+    "Linters"
+  ],
+  "keywords": [
+    "twincat",
+    "twincat3",
+    "beckhoff",
+    "plc",
+    "structured text",
+    "iec 61131-3",
+    "iec61131",
+    "st",
+    "tcpou",
+    "ads",
+    "industrial automation",
+    "plc programming"
   ],
   "main": "./extension.js",
   "scripts": {
