@@ -149,11 +149,11 @@ Reported against releases L and N. Quick ones first:
 - [x] **Test mode docs** (fork #192, 2026-11-23): `TEST "name"` (double quotes) is accepted since N, but TESTING.md still says it is refused.
 - [x] **Test mode install** (fork #193, 2026-11-23): `iec_test.hpp` is not installed with the runtime headers (only in `src/runtime/test`), so a
       test build from an installed release needs an extra `-I`.
-- [ ] **Test mode:** `ADVANCE_TIME(...)` inside a FOR loop does not advance time per pass (unrolled scans work). Make it
+- [x] **Test mode** (fork #195, 2026-11-23; it was a parse error, now works in FOR/WHILE/REPEAT/IF/CASE): `ADVANCE_TIME(...)` inside a FOR loop does not advance time per pass (unrolled scans work). Make it
       work in loops, or refuse it there with a clear message.
 
 Check against the standard first:
-- [ ] **Underscores in literals** (decided 2026-11-23: refuse under iec-3 and `--strict`; vendor profiles unchanged):
+- [x] **Underscores in literals** (fork #196, 2026-11-23) (decided 2026-11-23: refuse under iec-3 and `--strict`; vendor profiles unchanged):
       IEC Table 5 allows `_` only between two digits. Accepted today: `T#_1s`, `T#1__000ms`, `T#1_ms`, `T#_s`, `T#1._5s`,
       `1__0`, `10_`, `STRING[1__0]`, `CHAR#16#_41`, `CHAR#6_5_` (integer, real, duration and typed literals, STRING lengths).
 - [x] **Long conversion names** (fork #194, 2026-11-23; also fixed ~120 typed `<x>_TO_<long>` names that failed g++): `TO_TIME_OF_DAY`, `TO_LTIME_OF_DAY`, `TO_LDATE_AND_TIME` are undeclared while `TO_TOD`,
@@ -168,6 +168,13 @@ Gaps found while reviewing the four fixes above (not yet scheduled; fold into ba
       of them. IEC_COMPLIANCE.md also says `DT * number` gives TIME, which is wrong.
 - [ ] **TEST names:** escapes (`$'`, `$"`, `$N`) in a TEST name are not decoded; the extension's
       `vscode-extension/server/src/cursor-context.ts` (~line 162) matches single-quoted names only.
+- [ ] **Literal underscores in test files:** a misplaced underscore in a STRING length or ARRAY bound declared in a
+      test file is not caught (other test-file literals are); `--strict` does not reach test files at all.
+- [ ] **Literal underscore check cost:** under iec-3/`--strict` each source is tokenized a second time (~10% on a
+      40k-line file); `parse()` could hand back its tokens.
+- [ ] **Untyped reals with underscores** (`1_000.5`) do not lex in any mode, though Ed. 3 allows them.
+- [ ] **Test files:** the `ADVANCE_TIME` argument is not type-checked (`ADVANCE_TIME(TRUE)` fails only in g++); a
+      list-qualified global (`GVL.x`) is undeclared anywhere in a test file.
 - [ ] **Packaging:** a stale `vscode-extension/runtime/test/` folder can end up in a VSIX; the `testParser` export was
       removed by #190 (worth a changelog line).
 
