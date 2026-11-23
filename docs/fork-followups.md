@@ -137,6 +137,32 @@ Tooling and tests:
 - [ ] `cpp-compile` `with_lock` test failed once under load and passed on rerun (possible flake).
 - [ ] Language server: a pointer used as a FOR control variable is not flagged.
 
+## Batch 5 — further findings (added 2026-11-23)
+
+Reported against releases L and N. Quick ones first:
+- [ ] **Start-up cost:** the test parser (`testParser`, `src/frontend/parser.ts`) is constructed at module load next to
+      the main parser, and each construction runs the parser library's self-analysis — most of a cold compile's CPU.
+      Build it lazily, on first use under `--test`. Keep the CLI's order (load modules, read the primary input once to
+      EOF, then discover libraries and compile). Optionally check whether `skipValidations: true` is safe in production.
+- [ ] **DT/TOD/DATE minus a typed literal** is typed DT/TOD (`d1 - DT#2000-01-01-00:00:00`, `TOD#12:00:01 - TOD#12:00:00`),
+      while variable minus variable is TIME. IEC Table 30: the result is TIME in every form.
+- [ ] **Test mode docs:** `TEST "name"` (double quotes) is accepted since N, but TESTING.md still says it is refused.
+- [ ] **Test mode install:** `iec_test.hpp` is not installed with the runtime headers (only in `src/runtime/test`), so a
+      test build from an installed release needs an extra `-I`.
+- [ ] **Test mode:** `ADVANCE_TIME(...)` inside a FOR loop does not advance time per pass (unrolled scans work). Make it
+      work in loops, or refuse it there with a clear message.
+
+Check against the standard first:
+- [ ] **Underscores in literals** (decided 2026-11-23: refuse under iec-3 and `--strict`; vendor profiles unchanged):
+      IEC Table 5 allows `_` only between two digits. Accepted today: `T#_1s`, `T#1__000ms`, `T#1_ms`, `T#_s`, `T#1._5s`,
+      `1__0`, `10_`, `STRING[1__0]`, `CHAR#16#_41`, `CHAR#6_5_` (integer, real, duration and typed literals, STRING lengths).
+- [ ] **Long conversion names:** `TO_TIME_OF_DAY`, `TO_LTIME_OF_DAY`, `TO_LDATE_AND_TIME` are undeclared while `TO_TOD`,
+      `TO_LTOD` and the long `<type>_TO_<type>` names work. Check the standard's conversion table, then accept the long
+      spellings of `TO_<type>` for every date and time type as aliases.
+- [ ] **Member access on a call result:** `x := f.M(1).nCode;` (a STRUCT result) is a parse error. Decide by the Ed. 3
+      grammar; if refused under iec-3, say "assign the result to a variable first" instead of a bare parse error;
+      decide separately whether vendor profiles accept it.
+
 ## Planned features (decided, not bugs)
 
 - **Lifecycle methods for dynamic instances** (user, 2026-11-15, after release N): `__NEW` runs FB_init (base
