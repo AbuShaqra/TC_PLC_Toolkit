@@ -183,13 +183,17 @@ Gaps found while reviewing the four fixes above (not yet scheduled; fold into ba
       cannot hold a PROGRAM with VAR_EXTERNAL (no default constructor); a FUNCTION writing a CONFIGURATION global through
       VAR_EXTERNAL fails in g++; skipped-debug-table warnings repeat per instance path (25 for one array of FBs holding
       two interfaces) — group them per declaration.
+- [ ] **Found reviewing #199:** a method result through a *scalar* variable (`one.State()`) is untyped, so a wrong
+      assignment there is not reported; an inherited method with a VAR_OUTPUT on an interface that EXTENDS another fails
+      in g++ (`iy.M(8)`); `TYPE T_P : POINTER TO INT` then `tp := ADR(v)` fails in g++; in a method returning
+      `POINTER TO S_R`, `PS := ADR(s)` is refused.
 - [ ] **Packaging:** a stale `vscode-extension/runtime/test/` folder can end up in a VSIX; the `testParser` export was
       removed by #190 (worth a changelog line).
 
 ## Batch 6 — OOP through interfaces (added 2026-11-23, scheduled right after batch 5)
 
 Reproduced on `development` `e179e2c`:
-- [ ] **Result type through an indexed interface element:** with `arr : ARRAY[1..1] OF I_S` and `METHOD State : E_St`,
+- [x] **Result type through an indexed interface element** (fork #199, 2026-11-23): with `arr : ARRAY[1..1] OF I_S` and `METHOD State : E_St`,
       `e := arr[1].State();` fails with "Cannot assign E_ST to E_ST" (as a CASE selector too); a comparison or a scalar
       interface variable works.
 - [x] **Interface-typed variables in a POU's VAR crash** (fork #198, 2026-11-23; also fixed a run-time crash after `gIf := fbInst`): a scalar or `ARRAY OF` interface in a PROGRAM's or
@@ -197,7 +201,7 @@ Reproduced on `development` `e179e2c`:
       (Ed. 3 allows it); at least an error, never a crash.
 - [ ] **Global named like a method:** inside an FB implementing `I_Station.Reset`, reading a located global `Reset`
       fails in g++ ("invalid use of non-static member function RESET"). Qualify the global's C++ name.
-- [ ] **Chained method call with an unbound VAR_OUTPUT:** `fb.Me().M(5)` / `FF().Me().M(6)` pass the check, g++ fails
+- [x] **Chained method call with an unbound VAR_OUTPUT** (fork #199, 2026-11-23): `fb.Me().M(5)` / `FF().Me().M(6)` pass the check, g++ fails
       (`__output_tmp` missing; `methodCallOwnerType` in codegen.ts has no MethodCallExpression receiver case). Taken with
       the first item.
 - [ ] **NOT over an AND of comparisons:** `NOT ((a >= DINT#6) AND (b >= DINT#6))` passes the check and fails in g++
