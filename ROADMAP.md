@@ -4,7 +4,7 @@ The order of planned work for the extension. **This file is the source of truth*
 (<https://claude.ai/artifact/8RG7TZtBV2cuupsrwWtknv>) is rendered from it by hand out of `docs/roadmap.html`.
 Keep both current in the same change — rules in [CLAUDE.md](CLAUDE.md) ("Keep the roadmap current").
 
-**Last updated:** 2026-11-23 · **Current release:** v0.11.1 · **Re-measured:** 2026-11-11 · **Next:** fork S13 from 2026-11-24; toolkit R11, the marketplace uploads · **Lanes:** 2
+**Last updated:** 2026-11-23 · **Current release:** v0.11.1 · **Re-measured:** 2026-11-11 · **Next:** fork S13 (in progress since 2026-11-23); toolkit R11, the marketplace uploads · **Lanes:** 2
 
 How to read it: items run top to bottom in the **Order** column. IDs are stable names and do not change
 when the order does. Estimates are working days for one developer; start and end dates are **forecasts**
@@ -37,7 +37,7 @@ table, marked **Done**, until the next prune.
 
 **Forecast (2026-11-17):** the toolkit lane is finished — R15 merged on 2026-11-16 (PR #41) and shipped in v0.11.0 the
 same day, with the compiler at fork release N (PR #40). In the fork, everything up to S7 is done; S12 waits for the Ed. 4
-text and S8 waits on S12; S13, the release-N follow-ups, runs next (2026-11-24 to about 2026-11-28; it did not start on 2026-11-18 as forecast). R11, publishing,
+text and S8 waits on S12; S13, the release-N follow-ups, started 2026-11-23 and runs to about 2026-11-28. R11, publishing,
 is the only open toolkit item and is planned for today (user, 2026-11-17); neither S12 nor S13 holds it.
 R10 runs on trigger only.
 
@@ -81,7 +81,7 @@ for it where a row says so.
 | 6 | S5 | Profile-handling defects (S2 plan §1d) | 1 d | ~30 min | 2026-11-12 | 2026-11-13 | **Done** 2026-11-13 — fork #149 |
 | 7 | S6 | Runtime safety defects (S2 plan §1d, 14 items) | 7 d | ~3.5 h | 2026-11-13 | 2026-11-18 | **Done** 2026-11-15 — fork #151–#185, release N |
 | 8 | S7 | `iec` audit: narrow what `iec-3` accepts (C1–C9) | 6 d | ~3 h | 2026-11-15 | 2026-11-17 | **Done** 2026-11-15 — fork #188–#189 (C6 moved to S12) |
-| 9 | S13 | Release-N follow-ups: the consolidated open fork findings (~65 items, [docs/fork-followups.md](docs/fork-followups.md)) in four batches, in this order: (1) silent wrong results, (2) library manifest lengths and kinds, (3) accepted code that then fails in g++, (4) missing diagnostics, tooling and test hygiene, (5) further findings added 2026-11-23 (8: lazy test parser, DT/TOD minus a literal, test-mode docs and install, ADVANCE_TIME in loops, then literal underscores refused under iec-3 — user, 2026-11-23 — long TO_ conversion names and member access on a call result, after checking the standard) | — (~73 items) | ~4–5 d (my sizing) | 2026-11-24 | 2026-11-28 | Planned (user, 2026-11-17; batch 5 added 2026-11-23) |
+| 9 | S13 | Release-N follow-ups: the consolidated open fork findings (~65 items, [docs/fork-followups.md](docs/fork-followups.md)) in four batches, in this order: (1) silent wrong results, (2) library manifest lengths and kinds, (3) accepted code that then fails in g++, (4) missing diagnostics, tooling and test hygiene, (5) further findings added 2026-11-23 (8: lazy test parser, DT/TOD minus a literal, test-mode docs and install, ADVANCE_TIME in loops, then literal underscores refused under iec-3 — user, 2026-11-23 — long TO_ conversion names and member access on a call result, after checking the standard) | — (~73 items) | ~4–5 d (my sizing) | 2026-11-23 | 2026-11-28 | **In progress** (started 2026-11-23, user: start S13; batch 5's quick items first: lazy test parser, DT/TOD minus a literal, test-mode docs, test header install) |
 | 10 | S8 | Flip the no-flag default to the strict dialect, in its own release | 0.5 d | ~20 min | 2026-12-01 | 2026-12-01 | **On hold until S12** (user, 2026-11-15): the default moves to `iec-4` once that dialect exists, not to `iec-3`; until then a build with no flag stays as lenient as today. The toolkit passes `--dialect-file`, so it is unaffected |
 | 11 | S9 | Raw memory layout in the runtime: a variable is just its value, STRING a NUL-terminated `char[N+1]`, forcing in a bounded table | 4 d (3–5) | ~2.5 h | 2026-11-10 | 2026-11-10 | **Done** 2026-11-10 — fork #58–#64, release F |
 | 12 | S10 | Vendor types and forms for the `twincat3` and `codesys3` profiles | 3 d | ~1.5 h | 2026-11-12 | 2026-11-13 | **Done** 2026-11-13 — fork #144–#148, #154–#155, release M |
