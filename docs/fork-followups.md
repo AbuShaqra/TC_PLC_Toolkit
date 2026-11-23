@@ -10,7 +10,7 @@ crashing the compiler) were fixed before release N and are not listed.
 program, the generated C++ does not compile (nothing wrong runs, but the error comes late and is confusing).
 *no diagnostic* = wrong code passes the check. *refused* = correct code is rejected.
 
-Last checked against the fork: 2026-11-15 (release N, `d9b7c01`). Re-check each item before fixing it.
+Last checked against the fork: 2026-11-15 (release N, `d9b7c01`); batches 5–6 on 2026-11-23 (`e179e2c`). Re-check each item before fixing it.
 
 ## Batch 1 — wrong results
 
@@ -140,14 +140,14 @@ Tooling and tests:
 ## Batch 5 — further findings (added 2026-11-23)
 
 Reported against releases L and N. Quick ones first:
-- [ ] **Start-up cost:** the test parser (`testParser`, `src/frontend/parser.ts`) is constructed at module load next to
+- [x] **Start-up cost** (fork #190, 2026-11-23; cold check 837 → 571 ms): the test parser (`testParser`, `src/frontend/parser.ts`) is constructed at module load next to
       the main parser, and each construction runs the parser library's self-analysis — most of a cold compile's CPU.
       Build it lazily, on first use under `--test`. Keep the CLI's order (load modules, read the primary input once to
       EOF, then discover libraries and compile). Optionally check whether `skipValidations: true` is safe in production.
-- [ ] **DT/TOD/DATE minus a typed literal** is typed DT/TOD (`d1 - DT#2000-01-01-00:00:00`, `TOD#12:00:01 - TOD#12:00:00`),
+- [x] **DT/TOD/DATE minus a typed literal** (fork #191, 2026-11-23) is typed DT/TOD (`d1 - DT#2000-01-01-00:00:00`, `TOD#12:00:01 - TOD#12:00:00`),
       while variable minus variable is TIME. IEC Table 30: the result is TIME in every form.
-- [ ] **Test mode docs:** `TEST "name"` (double quotes) is accepted since N, but TESTING.md still says it is refused.
-- [ ] **Test mode install:** `iec_test.hpp` is not installed with the runtime headers (only in `src/runtime/test`), so a
+- [x] **Test mode docs** (fork #192, 2026-11-23): `TEST "name"` (double quotes) is accepted since N, but TESTING.md still says it is refused.
+- [x] **Test mode install** (fork #193, 2026-11-23): `iec_test.hpp` is not installed with the runtime headers (only in `src/runtime/test`), so a
       test build from an installed release needs an extra `-I`.
 - [ ] **Test mode:** `ADVANCE_TIME(...)` inside a FOR loop does not advance time per pass (unrolled scans work). Make it
       work in loops, or refuse it there with a clear message.
@@ -162,6 +162,25 @@ Check against the standard first:
 - [ ] **Member access on a call result:** `x := f.M(1).nCode;` (a STRUCT result) is a parse error. Decide by the Ed. 3
       grammar; if refused under iec-3, say "assign the result to a variable first" instead of a bare parse error;
       decide separately whether vendor profiles accept it.
+
+Gaps found while reviewing the four fixes above (not yet scheduled; fold into batch 1 or 2 when reached):
+- [ ] **Date/time arithmetic:** `DT + DT`, `TOD + TOD`, `TIME - DT` and `DT * 2` are accepted; IEC Table 30 allows none
+      of them. IEC_COMPLIANCE.md also says `DT * number` gives TIME, which is wrong.
+- [ ] **TEST names:** escapes (`$'`, `$"`, `$N`) in a TEST name are not decoded; the extension's
+      `vscode-extension/server/src/cursor-context.ts` (~line 162) matches single-quoted names only.
+- [ ] **Packaging:** a stale `vscode-extension/runtime/test/` folder can end up in a VSIX; the `testParser` export was
+      removed by #190 (worth a changelog line).
+
+## Batch 6 — OOP through interfaces (added 2026-11-23, scheduled right after batch 5)
+
+Reproduced on `development` `e179e2c`:
+- [ ] **Result type through an indexed interface element:** with `arr : ARRAY[1..1] OF I_S` and `METHOD State : E_St`,
+      `e := arr[1].State();` fails with "Cannot assign E_ST to E_ST"; through a scalar interface variable it compiles.
+- [ ] **Interface-typed variables in a POU's VAR crash:** a scalar or `ARRAY OF` interface in a PROGRAM's or
+      FUNCTION_BLOCK's VAR crashes `debug-table-gen` ("reading 'definition'") once there is a CONFIGURATION. Compile it
+      (Ed. 3 allows it); at least an error, never a crash.
+- [ ] **Global named like a method:** inside an FB implementing `I_Station.Reset`, reading a located global `Reset`
+      fails in g++ ("invalid use of non-static member function RESET"). Qualify the global's C++ name.
 
 ## Planned features (decided, not bugs)
 

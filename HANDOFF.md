@@ -10,9 +10,11 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   The run's publish jobs **skipped** both marketplaces (no `VSCE_PAT`/`OVSX_PAT` secrets). VS Code Marketplace has **0.11.0**
   (uploaded by hand 2026-11-17 15:25 UTC); Open VSX has nothing yet. To finish R11: add the secrets (Open VSX: create the
   `a-abushaqra` namespace first), then run *Publish* with tag `v0.11.1` (no new version needed).
-- **Fork follow-ups (S13):** the open STruC++ fork findings after release N (about 65, from the S6/S7 reviews) are
-  consolidated in [docs/fork-followups.md](docs/fork-followups.md) in four batches (wrong results, manifest lengths,
-  g++ fails, missing diagnostics + tooling); roadmap item S13. Re-check each against the fork before fixing it.
+- **Fork follow-ups (S13, in progress since 2026-11-23):** open fork findings in [docs/fork-followups.md](docs/fork-followups.md).
+  Order (user, 2026-11-23): batch 5, then batch 6 (OOP through interfaces), then 1–4. Batch 5 quick items merged into fork
+  `development` 2026-11-23 (#190–#193, head `e179e2c`); next ADVANCE_TIME in loops, literal underscores (iec-3), long TO_
+  names, member access on a call result. A scheduled task checks the coordination doc's For tab every 2 h
+  (last answered: For row 47; From-tab rev 24).
 - **Last verified:** 2026-11-17 (Linux container, R11 on `claude/focused-ptolemy-m6acaz`) — `REQUIRE_FULL_SUITE=1
   npm test` green (**138/138, Coverage: FULL**; compile-real, cpp-real, gpp-real ran), `npm run typecheck` and
   `npm run lint` exit 0, `vsce@4.1.1 package` (no flags) 772 files / 5.08 MB; browser harnesses (2026-11-16) `run.js` 135, `run_online.js` 53, `run_pragmas.js` 47,
