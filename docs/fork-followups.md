@@ -175,12 +175,15 @@ Gaps found while reviewing the four fixes above (not yet scheduled; fold into ba
 
 Reproduced on `development` `e179e2c`:
 - [ ] **Result type through an indexed interface element:** with `arr : ARRAY[1..1] OF I_S` and `METHOD State : E_St`,
-      `e := arr[1].State();` fails with "Cannot assign E_ST to E_ST"; through a scalar interface variable it compiles.
+      `e := arr[1].State();` fails with "Cannot assign E_ST to E_ST" (as a CASE selector too); a comparison or a scalar
+      interface variable works.
 - [ ] **Interface-typed variables in a POU's VAR crash:** a scalar or `ARRAY OF` interface in a PROGRAM's or
       FUNCTION_BLOCK's VAR crashes `debug-table-gen` ("reading 'definition'") once there is a CONFIGURATION. Compile it
       (Ed. 3 allows it); at least an error, never a crash.
 - [ ] **Global named like a method:** inside an FB implementing `I_Station.Reset`, reading a located global `Reset`
       fails in g++ ("invalid use of non-static member function RESET"). Qualify the global's C++ name.
+- [ ] **NOT over an AND of comparisons:** `NOT ((a >= DINT#6) AND (b >= DINT#6))` passes the check and fails in g++
+      ("no matching function for call to NOT(int)"); the AND of two comparisons is emitted as an int.
 
 ## Planned features (decided, not bugs)
 
