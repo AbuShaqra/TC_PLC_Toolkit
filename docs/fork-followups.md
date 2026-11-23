@@ -178,6 +178,11 @@ Gaps found while reviewing the four fixes above (not yet scheduled; fold into ba
 - [ ] **Call results, not handled:** `^` after a call (`FP()^.x`), a call-result method call as a statement
       (`F().M();`), selectors after `THIS^.M()`; argument *types* in method calls through a member chain are unchecked
       (`fb.M('str')` into an INT input), for variable and call-result receivers alike.
+- [ ] **Interfaces and OOP, found in batch 6:** `itf = fbInstance` passes the check, fails in g++; a variable or
+      VAR_EXTERNAL named like a method of the same FB (`level` / `METHOD Level`) passes the check, fails in g++; a test
+      cannot hold a PROGRAM with VAR_EXTERNAL (no default constructor); a FUNCTION writing a CONFIGURATION global through
+      VAR_EXTERNAL fails in g++; skipped-debug-table warnings repeat per instance path (25 for one array of FBs holding
+      two interfaces) — group them per declaration.
 - [ ] **Packaging:** a stale `vscode-extension/runtime/test/` folder can end up in a VSIX; the `testParser` export was
       removed by #190 (worth a changelog line).
 
@@ -187,7 +192,7 @@ Reproduced on `development` `e179e2c`:
 - [ ] **Result type through an indexed interface element:** with `arr : ARRAY[1..1] OF I_S` and `METHOD State : E_St`,
       `e := arr[1].State();` fails with "Cannot assign E_ST to E_ST" (as a CASE selector too); a comparison or a scalar
       interface variable works.
-- [ ] **Interface-typed variables in a POU's VAR crash:** a scalar or `ARRAY OF` interface in a PROGRAM's or
+- [x] **Interface-typed variables in a POU's VAR crash** (fork #198, 2026-11-23; also fixed a run-time crash after `gIf := fbInst`): a scalar or `ARRAY OF` interface in a PROGRAM's or
       FUNCTION_BLOCK's VAR crashes `debug-table-gen` ("reading 'definition'") once there is a CONFIGURATION. Compile it
       (Ed. 3 allows it); at least an error, never a crash.
 - [ ] **Global named like a method:** inside an FB implementing `I_Station.Reset`, reading a located global `Reset`
