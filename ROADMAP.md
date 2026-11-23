@@ -303,7 +303,9 @@ No estimates on purpose. Older reasons and numbers stay in [docs/handoff-finding
   left out. Needs the "no usable declaration" fixtures moved to a type still refused (ANY, HRESULT).
 - **Next compiler pin: S7's features in the `twincat3` profile** — release N predates S7, so the profile must list
   `fb_property`, `st_actions`, `bare_self_caret`, `enum_dot_qualify`, `struct_compare`, `dynamic_memory`, `var_inst` when
-  the toolkit next pins a fork release that contains #188.
+  the toolkit next pins a fork release that contains #188, and `call_result_access` once the pin contains fork #197
+  (user, 2026-11-23: turn it on for TwinCAT). Not before: the release-N compiler refuses an unknown feature id, so the
+  profile would stop loading.
 - **R14 phase 2** (each needs a Windows probe): remote targets (routes), build one project of a multi-project solution,
   and the Build-pane line numbering inside methods/actions ("approximate" today). The boot project shipped with R15.
 - **R2 phase 2: Create New Project through XAE** where TwinCAT is installed (as
