@@ -159,7 +159,7 @@ Check against the standard first:
 - [x] **Long conversion names** (fork #194, 2026-11-23; also fixed ~120 typed `<x>_TO_<long>` names that failed g++): `TO_TIME_OF_DAY`, `TO_LTIME_OF_DAY`, `TO_LDATE_AND_TIME` are undeclared while `TO_TOD`,
       `TO_LTOD` and the long `<type>_TO_<type>` names work. Check the standard's conversion table, then accept the long
       spellings of `TO_<type>` for every date and time type as aliases.
-- [ ] **Member access on a call result:** `x := f.M(1).nCode;` (a STRUCT result) is a parse error. Decide by the Ed. 3
+- [x] **Member access on a call result** (fork #197, 2026-11-23: feature `call_result_access`, off by default and under iec-3; whether the bundled vendor profiles turn it on is open): `x := f.M(1).nCode;` (a STRUCT result) is a parse error. Decide by the Ed. 3
       grammar; if refused under iec-3, say "assign the result to a variable first" instead of a bare parse error;
       decide separately whether vendor profiles accept it.
 
@@ -175,6 +175,9 @@ Gaps found while reviewing the four fixes above (not yet scheduled; fold into ba
 - [ ] **Untyped reals with underscores** (`1_000.5`) do not lex in any mode, though Ed. 3 allows them.
 - [ ] **Test files:** the `ADVANCE_TIME` argument is not type-checked (`ADVANCE_TIME(TRUE)` fails only in g++); a
       list-qualified global (`GVL.x`) is undeclared anywhere in a test file.
+- [ ] **Call results, not handled:** `^` after a call (`FP()^.x`), a call-result method call as a statement
+      (`F().M();`), selectors after `THIS^.M()`; argument *types* in method calls through a member chain are unchecked
+      (`fb.M('str')` into an INT input), for variable and call-result receivers alike.
 - [ ] **Packaging:** a stale `vscode-extension/runtime/test/` folder can end up in a VSIX; the `testParser` export was
       removed by #190 (worth a changelog line).
 
@@ -189,6 +192,9 @@ Reproduced on `development` `e179e2c`:
       (Ed. 3 allows it); at least an error, never a crash.
 - [ ] **Global named like a method:** inside an FB implementing `I_Station.Reset`, reading a located global `Reset`
       fails in g++ ("invalid use of non-static member function RESET"). Qualify the global's C++ name.
+- [ ] **Chained method call with an unbound VAR_OUTPUT:** `fb.Me().M(5)` / `FF().Me().M(6)` pass the check, g++ fails
+      (`__output_tmp` missing; `methodCallOwnerType` in codegen.ts has no MethodCallExpression receiver case). Taken with
+      the first item.
 - [ ] **NOT over an AND of comparisons:** `NOT ((a >= DINT#6) AND (b >= DINT#6))` passes the check and fails in g++
       ("no matching function for call to NOT(int)"); the AND of two comparisons is emitted as an int.
 
