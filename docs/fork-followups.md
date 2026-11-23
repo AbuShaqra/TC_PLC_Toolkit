@@ -178,7 +178,8 @@ Gaps found while reviewing the four fixes above (not yet scheduled; fold into ba
 - [ ] **Call results, not handled:** `^` after a call (`FP()^.x`), a call-result method call as a statement
       (`F().M();`), selectors after `THIS^.M()`; argument *types* in method calls through a member chain are unchecked
       (`fb.M('str')` into an INT input), for variable and call-result receivers alike.
-- [ ] **Interfaces and OOP, found in batch 6:** `itf = fbInstance` passes the check, fails in g++; a variable or
+- [ ] **Interfaces and OOP, found in batch 6:** `itf = fbInstance` passes the check, fails in g++; a method VAR_INST FB used as a
+      dotted-call receiver (`cnt.Bump()`) fails in g++; a variable or
       VAR_EXTERNAL named like a method of the same FB (`level` / `METHOD Level`) passes the check, fails in g++; a test
       cannot hold a PROGRAM with VAR_EXTERNAL (no default constructor); a FUNCTION writing a CONFIGURATION global through
       VAR_EXTERNAL fails in g++; skipped-debug-table warnings repeat per instance path (25 for one array of FBs holding
@@ -199,7 +200,7 @@ Reproduced on `development` `e179e2c`:
 - [x] **Interface-typed variables in a POU's VAR crash** (fork #198, 2026-11-23; also fixed a run-time crash after `gIf := fbInst`): a scalar or `ARRAY OF` interface in a PROGRAM's or
       FUNCTION_BLOCK's VAR crashes `debug-table-gen` ("reading 'definition'") once there is a CONFIGURATION. Compile it
       (Ed. 3 allows it); at least an error, never a crash.
-- [ ] **Global named like a method:** inside an FB implementing `I_Station.Reset`, reading a located global `Reset`
+- [x] **Global named like a method** (fork #200, 2026-11-24; also the "'X' was not declared" form on a test's SETUP variable, and a method local over a VAR_EXTERNAL with a renamed C++ name): inside an FB implementing `I_Station.Reset`, reading a located global `Reset`
       fails in g++ ("invalid use of non-static member function RESET"). Qualify the global's C++ name.
 - [x] **Chained method call with an unbound VAR_OUTPUT** (fork #199, 2026-11-23): `fb.Me().M(5)` / `FF().Me().M(6)` pass the check, g++ fails
       (`__output_tmp` missing; `methodCallOwnerType` in codegen.ts has no MethodCallExpression receiver case). Taken with
