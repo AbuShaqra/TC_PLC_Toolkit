@@ -14,7 +14,7 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   Order (user, 2026-11-23): batch 5, then batch 6 (OOP through interfaces), then 1–4. Batch 5 quick items merged into fork
   `development` 2026-11-23 (#190–#193, head `e179e2c`); next ADVANCE_TIME in loops, literal underscores (iec-3), long TO_
   names, member access on a call result. A scheduled task checks the coordination doc's For tab every 2 h
-  (last answered: For row 48, For-tab rev 51; From-tab rev 25).
+  (last answered: For row 48, For-tab rev 51; From-tab rev 26).
 - **Last verified:** 2026-11-17 (Linux container, R11 on `claude/focused-ptolemy-m6acaz`) — `REQUIRE_FULL_SUITE=1
   npm test` green (**138/138, Coverage: FULL**; compile-real, cpp-real, gpp-real ran), `npm run typecheck` and
   `npm run lint` exit 0, `vsce@4.1.1 package` (no flags) 772 files / 5.08 MB; browser harnesses (2026-11-16) `run.js` 135, `run_online.js` 53, `run_pragmas.js` 47,

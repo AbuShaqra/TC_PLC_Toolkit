@@ -156,7 +156,7 @@ Check against the standard first:
 - [ ] **Underscores in literals** (decided 2026-11-23: refuse under iec-3 and `--strict`; vendor profiles unchanged):
       IEC Table 5 allows `_` only between two digits. Accepted today: `T#_1s`, `T#1__000ms`, `T#1_ms`, `T#_s`, `T#1._5s`,
       `1__0`, `10_`, `STRING[1__0]`, `CHAR#16#_41`, `CHAR#6_5_` (integer, real, duration and typed literals, STRING lengths).
-- [ ] **Long conversion names:** `TO_TIME_OF_DAY`, `TO_LTIME_OF_DAY`, `TO_LDATE_AND_TIME` are undeclared while `TO_TOD`,
+- [x] **Long conversion names** (fork #194, 2026-11-23; also fixed ~120 typed `<x>_TO_<long>` names that failed g++): `TO_TIME_OF_DAY`, `TO_LTIME_OF_DAY`, `TO_LDATE_AND_TIME` are undeclared while `TO_TOD`,
       `TO_LTOD` and the long `<type>_TO_<type>` names work. Check the standard's conversion table, then accept the long
       spellings of `TO_<type>` for every date and time type as aliases.
 - [ ] **Member access on a call result:** `x := f.M(1).nCode;` (a STRUCT result) is a parse error. Decide by the Ed. 3
