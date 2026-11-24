@@ -72,13 +72,13 @@ Strings:
 - [ ] Typed literals `STRING#'abc'` / `WSTRING#"abc"` do not parse.
 
 REAL MOD and other forms:
-- [ ] REAL MOD is still accepted through a pointer declared with a named type (`TYPE PR : POINTER TO REAL`), a
+- [x] (fork #208, 2026-11-24) REAL MOD is still accepted through a pointer declared with a named type (`TYPE PR : POINTER TO REAL`), a
       dereference inside a larger operand (`(p^ + 1.0) MOD 2`), a METHOD/PROPERTY REAL result, and STRUCT
       defaults / VAR_GLOBAL CONSTANT folding. **Decided (user, 2026-11-24): `MOD(a, b)` on REAL/LREAL is
       refused like the operator, in every mode.**
-- [ ] `__DELETE(p)` with `p : REF_TO INT` passes `--check`.
-- [ ] STRUCT field initial values get no standard-function argument-count check (`LIMIT(1,2)`).
-- [ ] Test files: `UPPER_BOUND(a, r)` with `r` a REAL (truncated) or STRING (g++ fails); `ABS(EN := TRUE,
+- [x] (fork #208, 2026-11-24) `__DELETE(p)` with `p : REF_TO INT` passes `--check`.
+- [x] (fork #208, 2026-11-24) STRUCT field initial values get no standard-function argument-count check (`LIMIT(1,2)`).
+- [x] (fork #208, 2026-11-24) Test files: `UPPER_BOUND(a, r)` with `r` a REAL (truncated) or STRING (g++ fails); `ABS(EN := TRUE,
       IN := -3)` keeps EN in the C++; `((p1)) = (p2)` of two STRUCTs.
 
 ## Batch 4 — missing diagnostics, wrong refusals, tooling
@@ -222,6 +222,11 @@ Gaps found while reviewing the four fixes above (not yet scheduled; fold into ba
       passed to a `STRING(254)` in-out still warns and copies; `incomplete` debug entries are not collapsed; library
       STRUCT array fields (`__INLINE_ARRAY_BYTE`) and library enum/array aliases stay opaque to the debug table; FUNCTION
       return types record no STRING(n) length; a user alias in-out of an interface METHOD fails g++.
+- [ ] **Found in #208:** `TYPE PI : POINTER TO INT; q := ADR(i)` and `MOD(q^, 5)` / `MOD(pi^, 5)` fail g++; nested generic
+      calls (`MAX(SEL(b, i, j), 3)`) emit `static_cast<IEC_ANY>` and fail g++; `__NEW` into a non-pointer, into a STRUCT
+      `POINTER TO INT` field, or `__NEW(INT, 4)` into a `POINTER TO ARRAY` alias fail g++; REF= through a REFERENCE TO a
+      pointer alias fails g++; test-file integer `MOD(a + 1, 5)` fails g++; `strucpp --test` leaves `strucpp-test-*`
+      temp dirs on every run; a feature-gate error is hidden when a MOD error is present.
 - [ ] **Packaging:** a stale `vscode-extension/runtime/test/` folder can end up in a VSIX; the `testParser` export was
       removed by #190 (worth a changelog line).
 
