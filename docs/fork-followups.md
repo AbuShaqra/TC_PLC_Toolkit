@@ -137,7 +137,7 @@ Tooling and tests:
 - [ ] `cpp-compile` `with_lock` test failed once under load and passed on rerun (possible flake).
 - [ ] Language server: a pointer used as a FOR control variable is not flagged.
 
-## Batch 5 — further findings (added 2026-11-23)
+## Batch 5 — further findings (added 2026-11-23; done 2026-11-23, fork #190–#197)
 
 Reported against releases L and N. Quick ones first:
 - [x] **Start-up cost** (fork #190, 2026-11-23; cold check 837 → 571 ms): the test parser (`testParser`, `src/frontend/parser.ts`) is constructed at module load next to
@@ -188,10 +188,12 @@ Gaps found while reviewing the four fixes above (not yet scheduled; fold into ba
       assignment there is not reported; an inherited method with a VAR_OUTPUT on an interface that EXTENDS another fails
       in g++ (`iy.M(8)`); `TYPE T_P : POINTER TO INT` then `tp := ADR(v)` fails in g++; in a method returning
       `POINTER TO S_R`, `PS := ADR(s)` is refused.
+- [ ] **Found reviewing #201:** a bit read on a property (`fb.P.4`) emits `FB.P` and fails in g++; a bit read of a
+      VAR_GLOBAL CONSTANT in a STRUCT default (`f1 : BOOL := GC.3`) fails in g++.
 - [ ] **Packaging:** a stale `vscode-extension/runtime/test/` folder can end up in a VSIX; the `testParser` export was
       removed by #190 (worth a changelog line).
 
-## Batch 6 — OOP through interfaces (added 2026-11-23, scheduled right after batch 5)
+## Batch 6 — OOP through interfaces (added 2026-11-23; done 2026-11-24, fork #198–#201)
 
 Reproduced on `development` `e179e2c`:
 - [x] **Result type through an indexed interface element** (fork #199, 2026-11-23): with `arr : ARRAY[1..1] OF I_S` and `METHOD State : E_St`,
@@ -205,7 +207,7 @@ Reproduced on `development` `e179e2c`:
 - [x] **Chained method call with an unbound VAR_OUTPUT** (fork #199, 2026-11-23): `fb.Me().M(5)` / `FF().Me().M(6)` pass the check, g++ fails
       (`__output_tmp` missing; `methodCallOwnerType` in codegen.ts has no MethodCallExpression receiver case). Taken with
       the first item.
-- [ ] **NOT over an AND of comparisons:** `NOT ((a >= DINT#6) AND (b >= DINT#6))` passes the check and fails in g++
+- [x] **NOT over an AND of comparisons** (fork #201, 2026-11-24; also fixed: `NOT (w.3)` and `NOT (w.3 AND …)` were always TRUE — a bit read is now a BOOL, so `SHL(w.3, 2)` is FALSE, not 4): `NOT ((a >= DINT#6) AND (b >= DINT#6))` passes the check and fails in g++
       ("no matching function for call to NOT(int)"); the AND of two comparisons is emitted as an int.
 
 ## Planned features (decided, not bugs)
