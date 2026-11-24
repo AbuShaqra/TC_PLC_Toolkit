@@ -84,23 +84,23 @@ REAL MOD and other forms:
 ## Batch 4 — missing diagnostics, wrong refusals, tooling
 
 Type checks:
-- [ ] Library FUNCTION arguments are not type-checked unless the function has a REFERENCE TO input
+- [x] (fork #213, 2026-11-24) Library FUNCTION arguments are not type-checked unless the function has a REFERENCE TO input
       (`CHECK_PARITY(w, 'abc')` passes).
       **Decided (user, 2026-11-24):** argument narrowing on non-BOOL inputs (DINT into an INT input) warns by default
       like assignment, error under `--strict` (measured: 0 new warnings on the corpus, OSCAT and library consumers).
-- [ ] BOOL-input warning missing for interface calls (`it.M(i)`), `SUPER.M(q := i)`, `p^(b := i)`, `s.f(b := i)`,
+- [x] (fork #213, 2026-11-24) BOOL-input warning missing for interface calls (`it.M(i)`), `SUPER.M(q := i)`, `p^(b := i)`, `s.f(b := i)`,
       `arr[0](b := i)`, TIME/DATE arguments (silent while `x := t` is an error), `EN := i` on a library FB;
       BOOL aliases are inconsistent (`FA(i)` with a `TB : BOOL` alias warns, `tb := i` is silent, `--strict` silent on both).
-- [ ] `DATE * n`, unary minus on DATE/TOD/DT and `LTIME * LTIME` are accepted.
-- [ ] `UPPER_BOUND` with one argument, of a literal or of a POINTER global compiles in default mode; a named
+- [x] (fork #213, 2026-11-24) `DATE * n`, unary minus on DATE/TOD/DT and `LTIME * LTIME` are accepted.
+- [x] (fork #213, 2026-11-24) `UPPER_BOUND` with one argument, of a literal or of a POINTER global compiles in default mode; a named
       constant DIM below 1 (`VAR CONSTANT KZ := 0`) is not refused.
 
 ADR, REF and pointers:
-- [ ] ADR into an ARRAY or STRUCT value input; a narrow alias defined in a library (`TYPE TDw2 : DWORD`);
+- [x] (fork #213, 2026-11-24) ADR into an ARRAY or STRUCT value input; a narrow alias defined in a library (`TYPE TDw2 : DWORD`);
       a namespace-qualified library call (`lib.F_R`) skips the REF_TO check; `REF` of an INT member of a library
       STRUCT into `REF_TO DINT` (a project FUNCTION refuses it); library FB `REF_TO STRING` inputs may hit the
       same false refusal as N1.
-- [ ] Misaligned global/test-file pointer initial values; an integer or pointer difference stored into a
+- [x] (fork #213, 2026-11-24) Misaligned global/test-file pointer initial values; an integer or pointer difference stored into a
       POINTER TO; no misalignment check for POINTER TO ARRAY/STRUCT targets; POINTER TO BYTE arithmetic warns INT→BYTE.
 
 Global initial values (iec-3 / `--strict`):
@@ -109,7 +109,7 @@ Global initial values (iec-3 / `--strict`):
 - [ ] `UPPER_BOUND(DIM := d, ARR := arr)` (named, reverse order) is refused; other standard functions with
       reordered named arguments in a global initial value too.
 - [ ] Redundant "no CONSTANT" error on a duplicate RESOURCE global.
-- [ ] **Decided (user, 2026-11-24):** a POINTER TO/REF_TO assigned to a narrower integer (`n := p` into DWORD/INT)
+- [x] (fork #213, 2026-11-24) **Decided (user, 2026-11-24):** a POINTER TO/REF_TO assigned to a narrower integer (`n := p` into DWORD/INT)
       gets a warning by default and an error under iec-3/`--strict` (OSCAT `_BUFFER_CLEAR`/`_BUFFER_INIT` warn only).
 - [ ] **Decided (user, 2026-11-24): allow** `UPPER_BOUND`/`LOWER_BOUND` of a FIXED array in a global initial value
       under `--strict`/iec-3 (a compile-time constant); `ARRAY[*]` and a non-constant DIM stay refused.
@@ -251,6 +251,13 @@ Gaps found while reviewing the four fixes above (not yet scheduled; fold into ba
       POINTER TO FOR loops g++ refuses (`TO 10`, `BY n`) only warn; `FOR p := ADR(x) TO e` (e : PINT) gets a false
       "PINT is not compatible with INT" warning; the FB_exit warning (and likely other AST-name messages) upper-cases
       names; the FOR-variable warning ignores references taken in another POU and the order of REF/ADR assignments.
+- [ ] **Found in #213:** `s := 200` (untyped literal that does not fit) gets no default warning; `q.p := ADR(udi)` and
+      `q.p := pd` into a STRUCT pointer member fail g++; a wrong-size array into a fixed-size array input fails g++ and
+      `ARRAY OF DINT` into `ARRAY OF INT` builds silently; `--strict` misses BYTE arithmetic through a dereference;
+      `lw = ADR(x)`, `LWORD_TO_DWORD(ADR(x))` fail g++; namespace-qualified library calls (`plib.F_R`) unsupported;
+      argument values of alias type are not checked; conversions/std functions are not argument-checked
+      (`DT_TO_TOD(vd)` fails g++); an unknown named FB input (`CTU(RESET := …)`) is not diagnosed; ADR into a REF_TO
+      input fails g++; an FB that EXTENDS TON with an LTIME PT fails g++.
 - [ ] **Packaging:** a stale `vscode-extension/runtime/test/` folder can end up in a VSIX; the `testParser` export was
       removed by #190 (worth a changelog line).
 
