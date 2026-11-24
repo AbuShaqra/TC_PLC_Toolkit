@@ -74,8 +74,8 @@ Strings:
 REAL MOD and other forms:
 - [ ] REAL MOD is still accepted through a pointer declared with a named type (`TYPE PR : POINTER TO REAL`), a
       dereference inside a larger operand (`(p^ + 1.0) MOD 2`), a METHOD/PROPERTY REAL result, and STRUCT
-      defaults / VAR_GLOBAL CONSTANT folding. Decide: `MOD(a, b)` on REAL is accepted (fmod) while the operator
-      is refused.
+      defaults / VAR_GLOBAL CONSTANT folding. **Decided (user, 2026-11-24): `MOD(a, b)` on REAL/LREAL is
+      refused like the operator, in every mode.**
 - [ ] `__DELETE(p)` with `p : REF_TO INT` passes `--check`.
 - [ ] STRUCT field initial values get no standard-function argument-count check (`LIMIT(1,2)`).
 - [ ] Test files: `UPPER_BOUND(a, r)` with `r` a REAL (truncated) or STRING (g++ fails); `ABS(EN := TRUE,
