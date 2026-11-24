@@ -33,14 +33,14 @@ Dates and times (32-bit):
 - [ ] Digits below the unit in DT/TOD literals are dropped silently.
 
 Strings and arrays:
-- [ ] A literal with an embedded `$00` is cut at the NUL (`'a' = 'a$00b'` is TRUE).
-- [ ] `UPPER_BOUND(a1, 2)` on a 1-D array returns dimension 1 (`iec_array.hpp:161-162` ignores the argument);
+- [x] (fork #202, 2026-11-24: warning added, C++ literal cut; values were already consistent) A literal with an embedded `$00` is cut at the NUL (`'a' = 'a$00b'` is TRUE).
+- [x] (fork #202, 2026-11-24) `UPPER_BOUND(a1, 2)` on a 1-D array returns dimension 1 (`iec_array.hpp:161-162` ignores the argument);
       a 2-D array with DIM other than 1/2 at run time returns dimension 2's bounds.
 
 Other:
-- [ ] A METHOD/FUNCTION returning an interface with no result assigned on a path falls off the end of the C++
+- [x] (fork #202, 2026-11-24; also `M := x` exited the method early and a bare RETURN returned `*this`) A METHOD/FUNCTION returning an interface with no result assigned on a path falls off the end of the C++
       function (UBSan: no return); it should return NULL.
-- [ ] `ENO => gok` with `gok` a scalar VAR_EXTERNAL under a CONFIGURATION emits `GOK->read(…)`.
+- [x] (fork #202, 2026-11-24; also function outputs and bit stores to a scalar VAR_EXTERNAL were lost) `ENO => gok` with `gok` a scalar VAR_EXTERNAL under a CONFIGURATION emits `GOK->read(…)`.
 
 ## Batch 2 — library manifest: lengths and kinds
 
@@ -190,6 +190,12 @@ Gaps found while reviewing the four fixes above (not yet scheduled; fold into ba
       `POINTER TO S_R`, `PS := ADR(s)` is refused.
 - [ ] **Found reviewing #201:** a bit read on a property (`fb.P.4`) emits `FB.P` and fails in g++; a bit read of a
       VAR_GLOBAL CONSTANT in a STRUCT default (`f1 : BOOL := GC.3`) fails in g++.
+- [ ] **Found in batch 1 (#202):** an enum with explicit values (`(E1 := 5, …)`) defaults to 0, not its first value;
+      with EN = FALSE an FB call's outputs are still copied to their `=>` targets; a bit store to a scalar VAR_EXTERNAL
+      is read-then-write (two locks) under STRUCPP_THREADED, so concurrent bit sets can lose a bit — use `with_lock`;
+      a named-constant DIM in UPPER/LOWER_BOUND is checked only at run time; `LDATE_TO_LINT(LDATE#…)` fails in g++;
+      a STRING(10) written to a STRING VAR_EXTERNAL fails in g++; `j.PJ.M()` through an interface-typed property fails
+      in g++.
 - [ ] **Packaging:** a stale `vscode-extension/runtime/test/` folder can end up in a VSIX; the `testParser` export was
       removed by #190 (worth a changelog line).
 
