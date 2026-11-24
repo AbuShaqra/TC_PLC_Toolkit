@@ -378,10 +378,7 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   (inline header object; config/debug table/REPL/test harness bind to it); narrowed: `PRG_A();` without the feature
   and a program calling itself (both failed g++ before). Found: `p : PRG; p();` on an unreached program fails g++;
   `PRG_A.x` inside PRG_A refused; VAR_OUTPUT written via VAR_IN_OUT/ADR not flagged; cross-task calls unsynchronised.
-  **S2 DONE** — FB VAR_IN_OUT by reference merged (PR #24 `b286bc2`, 23:17 UTC); was:
-  FB VAR_IN_OUT by reference (last folded item, ~5–6 d). Design measured: only FBs copy in-outs (functions/
-  methods already T&); fixes inherited in-outs never written back, ARRAY[*] in-outs not compiling, positional in-outs
-  dropped; 0 corpus outputs change, the bundled softmotion/oscat-basic .stlib do. Decided 2026-11-09: always on
+  **S2 DONE** — FB VAR_IN_OUT by reference merged (PR #24 `b286bc2`; design in the PR). Decided 2026-11-09: always on
   (user); CONFIGURATION globals by reference in every build with a threaded-build warning (user); new in-out checks
   are warnings by default/vendor profiles and errors under iec-3, while literal/expression/bit-access args are errors
   everywhere (user); manifest marker `inoutByReference` with a legacy fallback; outside read of inst.inout allowed,
