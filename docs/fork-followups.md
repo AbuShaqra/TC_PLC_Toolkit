@@ -56,14 +56,14 @@ The archive manifest loses information, which causes several findings in the oth
 - [x] (fork #207, 2026-11-24) string-80: the `isPlainString` copy also applies to user POU STRING parameters with the feature off
       (helps, but untested and undocumented).
 
-## Batch 3 — accepted, then g++ fails
+## Batch 3 — accepted, then g++ fails (done 2026-11-24, fork #208–#210)
 
 Library calls:
-- [ ] A library FUNCTION output bound positionally (`F_One(x, lw1)`).
-- [ ] A library FUNCTION call leaving an inline-array output unbound (`IEC___INLINE_ARRAY_INT` not declared).
-- [ ] `ARRAY OF POINTER` output bound to LWORD (no diagnostic).
-- [ ] Unmarked archive: a pointer output into LWORD gives a false "Cannot assign INT to ULINT" or fails g++.
-- [ ] `REFERENCE TO STRING(n)` bound to a library STRING in-out; a library METHOD `VAR_IN_OUT ARRAY[*] OF STRING`
+- [x] (fork #210, 2026-11-24) A library FUNCTION output bound positionally (`F_One(x, lw1)`).
+- [x] (fork #210, 2026-11-24) A library FUNCTION call leaving an inline-array output unbound (`IEC___INLINE_ARRAY_INT` not declared).
+- [x] (fork #210, 2026-11-24) `ARRAY OF POINTER` output bound to LWORD (no diagnostic).
+- [x] (fork #210, 2026-11-24) Unmarked archive: a pointer output into LWORD gives a false "Cannot assign INT to ULINT" or fails g++.
+- [x] (fork #210, 2026-11-24) `REFERENCE TO STRING(n)` bound to a library STRING in-out; a library METHOD `VAR_IN_OUT ARRAY[*] OF STRING`
       even with equal lengths.
 
 Strings:
@@ -233,6 +233,14 @@ Gaps found while reviewing the four fixes above (not yet scheduled; fold into ba
       `ps^ + b` / `ps^ = 1` are not refused (fail g++) and `ps^ + 'x'` builds as concatenation; `ps > 0` fails g++;
       `p^ := 65` into a dereferenced CHAR is accepted; test-file `ASSERT_EQ` on WSTRING or CHAR fails g++;
       `MEMCPY(q, p, 2)` with POINTER TO INT fails g++; MUX with an enum selector fails g++.
+- [ ] **Found in #210:** under `--strict`/iec-3 scalar library in/outs are not checked (array ones are); `p := 5` (non-zero
+      integer assigned to a pointer) is accepted, and integer function results/conversions into pointer inputs are not
+      refused; a library METHOD call inside arithmetic emits plain C++ `+` (`fb.MA(x) + x[1] * 10` gives 1, not 51);
+      `s.f.M(...)` with a library STRUCT and FB fails g++; a library ARRAY TYPE records no shape and a library REF_TO alias
+      no target; a library STRUCT FUNCTION result into the same STRUCT is refused (39 OSCAT calls); `DAY_OF_WEEK(IN := …)`
+      refused; `lw = ADR(x)` fails g++; `ul := p` refused as INT; `ARRAY OF MyI` into `ARRAY OF INT` in/out fails g++; a
+      local scalar WORD in/out bound to UINT warns then fails g++; archives older than #210 keep `ArrayView&` METHOD
+      prototypes.
 - [ ] **Packaging:** a stale `vscode-extension/runtime/test/` folder can end up in a VSIX; the `testParser` export was
       removed by #190 (worth a changelog line).
 
