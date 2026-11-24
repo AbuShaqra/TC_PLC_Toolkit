@@ -13,7 +13,7 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
 - **Fork follow-ups (S13, in progress since 2026-11-23):** open fork findings in [docs/fork-followups.md](docs/fork-followups.md).
   Order (user, 2026-11-23): batch 5, then batch 6 (OOP through interfaces), then 1–4. Batch 5 quick items merged into fork
   `development` 2026-11-23 (#190–#193, head `e179e2c`); then #194–#196 (long TO_ names, ADVANCE_TIME in loops, literal
-  underscores); #197 member access on a call result (feature `call_result_access`; vendor-profile default is the user's open call). Batches 5 and 6 done (fork #190–#201, development `0611ab6`); batch 1 (wrong results) running as four fork branches: #202, #204 and #205 merged (`bc54580`); #203 arithmetic typing in a second fix round (literal widening narrowed after the recheck found g++ failures); then 2–4. A scheduled task checks the coordination doc's For tab every 2 h
+  underscores); #197 member access on a call result (feature `call_result_access`; vendor-profile default is the user's open call). Batches 5 and 6 done (fork #190–#201, development `0611ab6`); batch 1 (wrong results) done 2026-11-24 (#202–#205, development `a78859c`); batch 2 (library manifest) next, then 3–4. A scheduled task checks the coordination doc's For tab every 2 h
   (last answered: For row 48, For-tab rev 51; From-tab rev 34).
 - **Last verified:** 2026-11-17 (Linux container, R11 on `claude/focused-ptolemy-m6acaz`) — `REQUIRE_FULL_SUITE=1
   npm test` green (**138/138, Coverage: FULL**; compile-real, cpp-real, gpp-real ran), `npm run typecheck` and

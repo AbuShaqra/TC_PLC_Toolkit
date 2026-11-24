@@ -12,17 +12,17 @@ program, the generated C++ does not compile (nothing wrong runs, but the error c
 
 Last checked against the fork: 2026-11-15 (release N, `d9b7c01`); batches 5–6 on 2026-11-23 (`e179e2c`). Re-check each item before fixing it.
 
-## Batch 1 — wrong results
+## Batch 1 — wrong results (done 2026-11-24, fork #202–#205)
 
 Arithmetic and types:
 - [x] (fork #204, 2026-11-24) DINT/LINT overflow is C++ undefined behaviour in: unary minus of the minimum, `ADD`/`SUB`/`MUL`/`ABS`
       called as functions (`iec_std_lib.hpp` ~1480–1510), `ABS(min)`, INT variable + LINT literal, untyped
       `2147483647 + 1` into a DINT initial value or STRUCT default, `LINT#2 ** 63`.
-- [ ] Narrow (INT/SINT) intermediates whose operand type is not resolved (some `SUPER.x`, globals reached as
+- [x] (fork #203, 2026-11-24) Narrow (INT/SINT) intermediates whose operand type is not resolved (some `SUPER.x`, globals reached as
       `B.value`, method results) keep the plain operator and wrap at the narrow width (compute-wide is partial).
-- [ ] Mixed-sign AND/OR/XOR uses C++ promotion in VAR_GLOBAL initial values (also CONFIGURATION/RESOURCE)
+- [x] (fork #203, 2026-11-24) Mixed-sign AND/OR/XOR uses C++ promotion in VAR_GLOBAL initial values (also CONFIGURATION/RESOURCE)
       and STRUCT-instance overrides (`x : St := (f := …)`): `DINT#-7 OR UDINT#4000000000` gives 4294967289.
-- [ ] `DWORD/86400 + 3` is typed INT (mixed DWORD/untyped arithmetic too narrow); a POINTER operand of `+`/`-`
+- [x] (fork #203, 2026-11-24) `DWORD/86400 + 3` is typed INT (mixed DWORD/untyped arithmetic too narrow); a POINTER operand of `+`/`-`
       is typed as its target.
 - [x] (fork #204, 2026-11-24) `LINT := 2147483647 + 1` is folded in 32 bits; `UDINT := 4294967295 + 1` is refused as INT.
 - [x] (fork #204, 2026-11-24) `LTIME / LTIME` emits plain C++ `/`: division by LTIME 0 is undefined behaviour.
@@ -204,6 +204,9 @@ Gaps found while reviewing the four fixes above (not yet scheduled; fold into ba
 - [ ] **Found reviewing #205:** `TIME_TO_DATE(T#2d3s)` treats ms as seconds (172803000) and `LTIME_TO_DATE` gives
       non-day values; `1 + ldt` (number on the left of `+` with an L form) is typed INT; a Table 30 error can hide later
       feature-gate errors (first error phase only).
+- [ ] **Found in #203:** functional AND/OR/XOR on a signed integer with a literal fails in g++ (also before #203);
+      `EXPT(w + 1, 2)` on a WORD is refused with "expects ANY_REAL"; an untyped constant beside a signed/unsigned
+      integer still takes the wider type (`si + 3` is INT); a pointer variable's own expression type is its target type.
 - [ ] **Packaging:** a stale `vscode-extension/runtime/test/` folder can end up in a VSIX; the `testParser` export was
       removed by #190 (worth a changelog line).
 
