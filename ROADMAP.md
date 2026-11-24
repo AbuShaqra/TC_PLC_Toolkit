@@ -4,7 +4,7 @@ The order of planned work for the extension. **This file is the source of truth*
 (<https://claude.ai/artifact/8RG7TZtBV2cuupsrwWtknv>) is rendered from it by hand out of `docs/roadmap.html`.
 Keep both current in the same change — rules in [CLAUDE.md](CLAUDE.md) ("Keep the roadmap current").
 
-**Last updated:** 2026-11-24 · **Current release:** v0.11.1 · **Re-measured:** 2026-11-11 · **Next:** fork S13 (in progress since 2026-11-23); toolkit R11, the marketplace uploads · **Lanes:** 2
+**Last updated:** 2026-11-24 · **Current release:** v0.11.1 · **Re-measured:** 2026-11-11 · **Next:** fork: close coordination row 35 (one-pass diagnostics); toolkit R11, the marketplace uploads · **Lanes:** 2
 
 How to read it: items run top to bottom in the **Order** column. IDs are stable names and do not change
 when the order does. Estimates are working days for one developer; start and end dates are **forecasts**
@@ -37,8 +37,8 @@ table, marked **Done**, until the next prune.
 
 **Forecast (2026-11-17):** the toolkit lane is finished — R15 merged on 2026-11-16 (PR #41) and shipped in v0.11.0 the
 same day, with the compiler at fork release N (PR #40). In the fork, everything up to S7 is done; S12 waits for the Ed. 4
-text and S8 waits on S12; S13, the release-N follow-ups, started 2026-11-23 and runs to about 2026-11-28. R11, publishing,
-is the only open toolkit item and is planned for today (user, 2026-11-17); neither S12 nor S13 holds it.
+text and S8 waits on S12; S13, the release-N follow-ups, ran 2026-11-23 to 2026-11-24 (fork #190–#213). R11, publishing,
+is the only open toolkit item and is planned for today (user, 2026-11-17); S12 does not hold it.
 R10 runs on trigger only.
 
 ### Velocity (measured 2026-11-09, re-measured 2026-11-11)
@@ -81,7 +81,7 @@ for it where a row says so.
 | 6 | S5 | Profile-handling defects (S2 plan §1d) | 1 d | ~30 min | 2026-11-12 | 2026-11-13 | **Done** 2026-11-13 — fork #149 |
 | 7 | S6 | Runtime safety defects (S2 plan §1d, 14 items) | 7 d | ~3.5 h | 2026-11-13 | 2026-11-18 | **Done** 2026-11-15 — fork #151–#185, release N |
 | 8 | S7 | `iec` audit: narrow what `iec-3` accepts (C1–C9) | 6 d | ~3 h | 2026-11-15 | 2026-11-17 | **Done** 2026-11-15 — fork #188–#189 (C6 moved to S12) |
-| 9 | S13 | Release-N follow-ups: the consolidated open fork findings (~65 items, [docs/fork-followups.md](docs/fork-followups.md)) in four batches, in this order: (1) silent wrong results, (2) library manifest lengths and kinds, (3) accepted code that then fails in g++, (4) missing diagnostics, tooling and test hygiene, (5) further findings added 2026-11-23 (8: lazy test parser, DT/TOD minus a literal, test-mode docs and install, ADVANCE_TIME in loops, then literal underscores refused under iec-3 — user, 2026-11-23 — long TO_ conversion names and member access on a call result, after checking the standard), (6) OOP through interfaces, added 2026-11-23 and run right after batch 5 (user, 2026-11-23): a method result through an indexed interface element, an interface variable in a POU's VAR crashing the generator, a global named like a method, NOT over an AND of comparisons | — (~77 items) | ~4–5 d (my sizing) | 2026-11-23 | 2026-11-28 | **In progress** (started 2026-11-23): batch 5's quick items merged 2026-11-23 (fork #190 lazy test parser, #191 DT/TOD minus a literal, #192 test-mode docs, #193 test header install), then #194 long TO_ conversion names, #195 ADVANCE_TIME in loops, #196 literal underscores (iec-3/--strict); #197 member access on a call result (feature call_result_access) — **batch 5 done 2026-11-23**; **batch 6 done 2026-11-24** (#198 interface variables in a POU's VAR, #199 enum result through an interface array, #200 global named like a method, #201 NOT over AND of comparisons and bit reads as BOOL); batch 1 started 2026-11-24 (#202 strings, arrays, interface results, writes to VAR_EXTERNAL; #204 integer overflow; #205 dates and times; #203 arithmetic typing and standard-function arguments) — **batch 1 done 2026-11-24**; batch 2: #206 library STRING lengths and alias bases, #207 string-80 debug table and STRING in/out lengths — **batch 2 done 2026-11-24**; batch 3: #208 REAL MOD and other forms, #209 strings, #210 library calls — **batch 3 done 2026-11-24**; batch 4 started 2026-11-24: #212 warnings and tooling, #213 checks and pointers merged, #211 global initial values in review |
+| 9 | S13 | Release-N follow-ups: the consolidated open fork findings (~65 items, [docs/fork-followups.md](docs/fork-followups.md)) in four batches, in this order: (1) silent wrong results, (2) library manifest lengths and kinds, (3) accepted code that then fails in g++, (4) missing diagnostics, tooling and test hygiene, (5) further findings added 2026-11-23 (8: lazy test parser, DT/TOD minus a literal, test-mode docs and install, ADVANCE_TIME in loops, then literal underscores refused under iec-3 — user, 2026-11-23 — long TO_ conversion names and member access on a call result, after checking the standard), (6) OOP through interfaces, added 2026-11-23 and run right after batch 5 (user, 2026-11-23): a method result through an indexed interface element, an interface variable in a POU's VAR crashing the generator, a global named like a method, NOT over an AND of comparisons | — (~77 items) | ~4–5 d (my sizing) | 2026-11-23 | 2026-11-28 | **Done** 2026-11-24 — fork #190–#213 (batches 5, 6, 1, 2, 3, 4); user decisions in docs/fork-followups.md; manual test by the user owed |
 | 10 | S8 | Flip the no-flag default to the strict dialect, in its own release | 0.5 d | ~20 min | 2026-12-01 | 2026-12-01 | **On hold until S12** (user, 2026-11-15): the default moves to `iec-4` once that dialect exists, not to `iec-3`; until then a build with no flag stays as lenient as today. The toolkit passes `--dialect-file`, so it is unaffected |
 | 11 | S9 | Raw memory layout in the runtime: a variable is just its value, STRING a NUL-terminated `char[N+1]`, forcing in a bounded table | 4 d (3–5) | ~2.5 h | 2026-11-10 | 2026-11-10 | **Done** 2026-11-10 — fork #58–#64, release F |
 | 12 | S10 | Vendor types and forms for the `twincat3` and `codesys3` profiles | 3 d | ~1.5 h | 2026-11-12 | 2026-11-13 | **Done** 2026-11-13 — fork #144–#148, #154–#155, release M |
@@ -339,9 +339,12 @@ No estimates on purpose. Older reasons and numbers stay in [docs/handoff-finding
   running TwinCAT PLC over ADS, e.g. to feed simulated I/O.
 
 **Fork**
-- **Release N follow-ups → S13** (fork lane, scheduled 2026-11-17): the open fork findings — older gaps from the S6
-  reviews, the smaller S6 PR follow-ups and lane 2's #156 list among them — are consolidated in
-  [docs/fork-followups.md](docs/fork-followups.md).
+- **S13's follow-ups** (found in its reviews, all pre-existing on development, about 20 grouped entries in
+  [docs/fork-followups.md](docs/fork-followups.md)): to be scheduled (your call). Largest: diagnostics inside IL bodies,
+  a bare FUNCTION call in a global initial value, namespace-qualified library calls, STRUCT pointer members, `s := 200`
+  into a SINT without a default warning, a stale test folder in the VSIX.
+- **Manual test of S13 owed by the user** (fork rule): the new errors and warnings — argument types, pointer stores,
+  `ARRAY[*]`, global initial values, FOR control variables.
 - **Lifecycle methods for dynamic instances** (user, 2026-11-15; after release N; feature `fb_init`): `__NEW` runs FB_init
   and `__DELETE` runs FB_exit, as for static instances. FB_exit at program stop for static instances needs a stop hook.
 - **"Accepted means it builds" property test** (user, 2026-11-14): fuzz ST programs; every program `--check` accepts must
@@ -395,6 +398,13 @@ Newest first; details are in each PR.
 - **Roadmap set-up** (housekeeping) — [PR #26](https://github.com/AbuShaqra/TC_PLC_Toolkit/pull/26), 2026-11-09 (`caa686d`).
 
 **Fork** (`AbuShaqra/STruCpp`, branch `development`)
+- **S13 release-N follow-ups** — fork #190–#213, 2026-11-23 to 2026-11-24 (development `56a51c3`), in batches:
+  5 (#190–#197: lazy test parser, DT/TOD minus a literal, long `TO_` names, `ADVANCE_TIME` in loops, literal
+  underscores, `call_result_access`), 6 (#198–#201: OOP through interfaces, NOT over AND), 1 (#202–#205: silent wrong
+  results), 2 (#206–#207: library manifest lengths and kinds), 3 (#208–#210: accepted code that failed g++), 4
+  (#211–#213: diagnostics, wrong refusals, tooling). User decisions 2026-11-23/24: `MOD()` on REAL refused; pointer into
+  a narrower integer warns (strict error); argument narrowing warns like assignment; `ARRAY[*]` refused outside
+  parameters (also FB `VAR_INPUT`); fixed-array bounds allowed in strict global initial values.
 - **S7 `iec-3` audit** — fork [#188](https://github.com/AbuShaqra/STruCpp/pull/188) (`648137f`) and
   [#189](https://github.com/AbuShaqra/STruCpp/pull/189) (`b6788aa`), 2026-11-15, after release N. **Decided by the user
   2026-11-15:** each construct goes behind a feature that is on without a flag and in the TwinCAT profile, so only

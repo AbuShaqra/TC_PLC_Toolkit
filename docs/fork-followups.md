@@ -81,7 +81,7 @@ REAL MOD and other forms:
 - [x] (fork #208, 2026-11-24) Test files: `UPPER_BOUND(a, r)` with `r` a REAL (truncated) or STRING (g++ fails); `ABS(EN := TRUE,
       IN := -3)` keeps EN in the C++; `((p1)) = (p2)` of two STRUCTs.
 
-## Batch 4 — missing diagnostics, wrong refusals, tooling
+## Batch 4 — missing diagnostics, wrong refusals, tooling (done 2026-11-24, fork #211–#213)
 
 Type checks:
 - [x] (fork #213, 2026-11-24) Library FUNCTION arguments are not type-checked unless the function has a REFERENCE TO input
@@ -104,20 +104,20 @@ ADR, REF and pointers:
       POINTER TO; no misalignment check for POINTER TO ARRAY/STRUCT targets; POINTER TO BYTE arithmetic warns INT→BYTE.
 
 Global initial values (iec-3 / `--strict`):
-- [ ] `ADR(p^)` / `ADR(pa^[1])` read `p` but are accepted; a method call on a non-CONSTANT FB global
+- [x] (fork #211, 2026-11-24) `ADR(p^)` / `ADR(pa^[1])` read `p` but are accepted; a method call on a non-CONSTANT FB global
       (`x : INT := f.M()`) is accepted; an index inside `ADR()`/`REF()` (`ADR(arr[g])`) is not checked.
-- [ ] `UPPER_BOUND(DIM := d, ARR := arr)` (named, reverse order) is refused; other standard functions with
+- [x] (fork #211, 2026-11-24) `UPPER_BOUND(DIM := d, ARR := arr)` (named, reverse order) is refused; other standard functions with
       reordered named arguments in a global initial value too.
-- [ ] Redundant "no CONSTANT" error on a duplicate RESOURCE global.
+- [x] (fork #211, 2026-11-24) Redundant "no CONSTANT" error on a duplicate RESOURCE global.
 - [x] (fork #213, 2026-11-24) **Decided (user, 2026-11-24):** a POINTER TO/REF_TO assigned to a narrower integer (`n := p` into DWORD/INT)
       gets a warning by default and an error under iec-3/`--strict` (OSCAT `_BUFFER_CLEAR`/`_BUFFER_INIT` warn only).
-- [ ] **Decided (user, 2026-11-24): allow** `UPPER_BOUND`/`LOWER_BOUND` of a FIXED array in a global initial value
+- [x] (fork #211, 2026-11-24) **Decided (user, 2026-11-24): allow** `UPPER_BOUND`/`LOWER_BOUND` of a FIXED array in a global initial value
       under `--strict`/iec-3 (a compile-time constant); `ARRAY[*]` and a non-constant DIM stay refused.
 
 Wrong refusals:
-- [ ] `VAR_EXTERNAL CONSTANT` without an initializer is refused in every mode.
-- [ ] `VAR x : TIME := LTIME#3ms` is refused while the same assignment in a body is accepted.
-- [ ] **Decided (user, 2026-11-24): refuse in every mode** `VAR_GLOBAL v : ARRAY[*] OF INT` (and VAR/VAR_TEMP/STRUCT
+- [x] (fork #211, 2026-11-24) `VAR_EXTERNAL CONSTANT` without an initializer is refused in every mode.
+- [x] (fork #211, 2026-11-24) `VAR x : TIME := LTIME#3ms` is refused while the same assignment in a body is accepted.
+- [x] (fork #211, 2026-11-24) **Decided (user, 2026-11-24): refuse in every mode** `VAR_GLOBAL v : ARRAY[*] OF INT` (and VAR/VAR_TEMP/STRUCT
       fields): ARRAY[*] needs a fixed size outside VAR_IN_OUT. Also an FB `VAR_INPUT` ARRAY[*] (user, 2026-11-24),
       though it built and ran: Ed. 3 6.5.3 allows ARRAY[*] only in FUNCTION/METHOD parameters and FB VAR_IN_OUT.
 
@@ -258,6 +258,13 @@ Gaps found while reviewing the four fixes above (not yet scheduled; fold into ba
       argument values of alias type are not checked; conversions/std functions are not argument-checked
       (`DT_TO_TOD(vd)` fails g++); an unknown named FB input (`CTU(RESET := …)`) is not diagnosed; ADR into a REF_TO
       input fails g++; an FB that EXTENDS TON with an LTIME PT fails g++.
+- [ ] **Found in #211:** a bare user FUNCTION call in a global initial value fails g++ (prototypes after globals);
+      CONFIGURATION globals' initial values are not traced; the pointer analysis is coarse (one unplaceable pointer store
+      makes every dereference during global creation read every address-taken global, which can refuse a valid program);
+      an interface global that is NULL at creation is refused as a self-read; FUNCTION `VAR_OUTPUT ARRAY[*]` fails g++
+      when bound; LTIME→TIME accepted in STRUCT/array initializer fields and FUNCTION/FB inputs; the Table 31 check
+      misses STRUCT field defaults; `h.P^` on a POINTER TO property fails g++; an output capture into a property does
+      not call the setter.
 - [ ] **Packaging:** a stale `vscode-extension/runtime/test/` folder can end up in a VSIX; the `testParser` export was
       removed by #190 (worth a changelog line).
 

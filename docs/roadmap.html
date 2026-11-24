@@ -148,7 +148,7 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
         <span>Updated <b>2026-11-24</b></span>
         <span>Release <b>v0.11.1</b></span>
         <span>Re-measured <b>Nov 11</b></span>
-        <span>Next <b>fork S13 (in progress) · R11 uploads</b></span>
+        <span>Next <b>fork row 35 · R11 uploads</b></span>
         <span>Publish date <b>Nov 17</b></span>
         <span>Lanes <b>2</b> (toolkit · STruC++ fork)</span>
       </div>
@@ -580,13 +580,13 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
 
     <details class="card" id="s13">
       <summary>
-        <div class="card-top"><span>#9</span><span class="id">S13</span><span class="pill progress">In progress</span><span class="chev" aria-hidden="true">›</span></div>
+        <div class="card-top"><span>#9</span><span class="id">S13</span><span class="pill done">Done · Nov 24 · fork #190–#213</span><span class="chev" aria-hidden="true">›</span></div>
         <div class="card-title">Release-N follow-ups</div>
-        <div class="card-foot"><span>~77 items → ~4–5 d</span><span>Nov 23 – 28</span></div>
+        <div class="card-foot"><span>~77 items → ~2 d</span><span>Nov 23 – 24</span></div>
       </summary>
       <div class="body">
         <div class="block wide"><h4>Scope</h4><p>The open fork findings, about 65, consolidated in <code>docs/fork-followups.md</code>: older gaps from the S6 reviews, the smaller follow-ups of the S6 PRs, lane 2's #156 list and the rest. Added Nov 17 (your call).</p></div>
-        <div class="block wide"><h4>Order: batches 5, 6, 1, 2 and 3 done (Nov 23–24), now 4</h4><ol><li>Silent wrong results</li><li>Library manifest lengths and kinds</li><li>Accepted code that then fails in g++</li><li>Missing diagnostics, tooling and test hygiene</li><li>Further findings, added Nov 23 (8): the lazy test parser, DT/TOD minus a literal, test-mode docs and install (these four merged Nov 23: fork #190–#193; then #194 long TO_ names, #195 ADVANCE_TIME in loops, #196 literal underscores; #197 member access on a call result; batch 5 done Nov 23; batch 6: #198 interface variables, #199 interface-array method results, #200 global named like a method, #201 NOT over AND of comparisons; batch 6 done Nov 24; batch 1: #202–#205, done Nov 24; batch 2: #206–#207, done Nov 24; batch 3: #208–#210, done Nov 24; batch 4: #212–#213 merged, #211 in review), ADVANCE_TIME in loops; then, after checking the standard, literal underscores refused under iec-3 (your call, Nov 23), the long TO_ conversion names and member access on a call result</li><li>OOP through interfaces and one g++ failure, added Nov 23 (4), right after batch 5 (your call); started Nov 23: a method result through an indexed interface element, an interface variable in a POU's VAR crashing the generator, a global named like a method, NOT over an AND of comparisons</li></ol></div>
+        <div class="block wide"><h4>Order: all six batches done (Nov 23–24)</h4><ol><li>Silent wrong results</li><li>Library manifest lengths and kinds</li><li>Accepted code that then fails in g++</li><li>Missing diagnostics, tooling and test hygiene</li><li>Further findings, added Nov 23 (8): the lazy test parser, DT/TOD minus a literal, test-mode docs and install (these four merged Nov 23: fork #190–#193; then #194 long TO_ names, #195 ADVANCE_TIME in loops, #196 literal underscores; #197 member access on a call result; batch 5 done Nov 23; batch 6: #198 interface variables, #199 interface-array method results, #200 global named like a method, #201 NOT over AND of comparisons; batch 6 done Nov 24; batch 1: #202–#205, done Nov 24; batch 2: #206–#207, done Nov 24; batch 3: #208–#210, done Nov 24; batch 4: #211–#213, done Nov 24), ADVANCE_TIME in loops; then, after checking the standard, literal underscores refused under iec-3 (your call, Nov 23), the long TO_ conversion names and member access on a call result</li><li>OOP through interfaces and one g++ failure, added Nov 23 (4), right after batch 5 (your call); started Nov 23: a method result through an indexed interface element, an interface variable in a POU's VAR crashing the generator, a global named like a method, NOT over an AND of comparisons</li></ol></div>
         <div class="block wide"><h4>How it was estimated</h4><p>My sizing, not measured: about 35 minutes per fork fix at the measured pace, about 4 hours of session per working day.</p></div>
       </div>
     </details>
@@ -707,7 +707,8 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
         </div>
         <div class="block wide"><h4>Fork</h4>
           <ul>
-            <li><b>Release-N follow-ups → S13</b> (fork lane, from Nov 18): the open fork findings, including the older gaps from the S6 reviews and the #156 list, are in <code>docs/fork-followups.md</code>.</li>
+            <li><b>S13's follow-ups</b> (found in its reviews, all already on development, about 20 grouped entries in <code>docs/fork-followups.md</code>): to be scheduled, your call. Largest: diagnostics inside IL bodies, a bare FUNCTION call in a global initial value, namespace-qualified library calls, STRUCT pointer members, <code>s := 200</code> into a SINT without a default warning, a stale test folder in the VSIX.</li>
+            <li><b>Manual test of S13</b> owed by you (fork rule): the new errors and warnings — argument types, pointer stores, <code>ARRAY[*]</code>, global initial values, FOR control variables.</li>
             <li><b>Lifecycle methods for dynamic instances</b> (your call Nov 15, after release N): <code>__NEW</code> runs FB_init and <code>__DELETE</code> runs FB_exit; today both are skipped. FB_exit at program stop stays open.</li>
             <li><b>"Accepted means it builds" test</b> (your call, Nov 14): programs the checker accepts must also build and run under g++ with sanitizers.</li>
             <li><b>Differential tests</b> (your call, Nov 14): the same expression in a body, an initial value and a STRUCT default must give the same value.</li>
@@ -720,7 +721,7 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
     <details class="card" id="done">
       <summary>
         <div class="card-top"><span>Done</span><span class="chev" aria-hidden="true">›</span></div>
-        <div class="card-title">Finished items · v0.11.0 (R15 and more), R14, R13, R12, R3.5, R3.3–R9, R3.2, R2, R4, R3.1, R5, R1 · fork S7, release N (S6), M (S10, S5), L (S4), E–K (S3b, S11), F (S9), S3a, S2, S1</div>
+        <div class="card-title">Finished items · v0.11.0 (R15 and more), R14, R13, R12, R3.5, R3.3–R9, R3.2, R2, R4, R3.1, R5, R1 · fork S13, S7, release N (S6), M (S10, S5), L (S4), E–K (S3b, S11), F (S9), S3a, S2, S1</div>
       </summary>
       <div class="body">
         <div class="block wide settled"><h4>v0.11.0 released · Nov 16, 23:10 UTC</h4><p>Everything since 0.10.1, with a changelog (<a href="https://github.com/AbuShaqra/TC_PLC_Toolkit/releases/tag/v0.11.0">release</a>; dev → main PR #42, <code>ce688ea</code>; your call: release it, 1.0.0 later).</p>
@@ -754,6 +755,7 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
         </div>
         <div class="block wide"><h4>Fork</h4>
           <ul>
+            <li><b>S13 release-N follow-ups</b> · fork <a href="https://github.com/AbuShaqra/STruCpp/pull/190">#190</a>–<a href="https://github.com/AbuShaqra/STruCpp/pull/213">#213</a> · Nov 23–24, six batches: silent wrong results, library manifest lengths, accepted code that failed g++, diagnostics and tooling, OOP through interfaces. Your calls: <code>MOD()</code> on REAL refused, pointer into a narrower integer and argument narrowing warn, <code>ARRAY[*]</code> only as a parameter, fixed-array bounds allowed in strict global initial values.</li>
             <li><b>S7 iec-3 audit</b> · fork <a href="https://github.com/AbuShaqra/STruCpp/pull/188">#188</a>–<a href="https://github.com/AbuShaqra/STruCpp/pull/189">#189</a> · Nov 15, after release N. Only <code>--dialect iec-3</code> changes (your call); the OVERRIDE question moved to S12.</li>
             <li><b>Release N</b> · cut Nov 15 at <code>d9b7c01</code>: <b>S6</b> runtime safety (fork #151–#185, your decisions of Nov 13–15 on the S6 card), plus #156, #160–#161, #163, #167–#169, #177, #186 (EN/ENO, breaking) and #187.</li>
             <li><b>Release M</b> · cut Nov 13 at <code>75a55de</code>: <b>S10</b> vendor types and forms (#144–#148, #154–#155), <b>S5</b> profile handling (#149), the post-S4 follow-ups (#140–#143) and #150.</li>
@@ -808,7 +810,7 @@ var PLAN = [
   { lane: 'STruC++ fork',   num: 6, id: 'S5',   card: 's5',   name: 'Profile handling',       est: '1 d → ~30 min', start: '2026-11-12', end: '2026-11-13', status: 'done', actualStart: '2026-11-12T20:10:00Z', actualEnd: '2026-11-13T05:30:00Z' },
   { lane: 'STruC++ fork',   num: 7, id: 'S6',   card: 's6',   name: 'Runtime safety',         est: '7 d → ~3.5 h', start: '2026-11-13', end: '2026-11-18', status: 'done', actualStart: '2026-11-13T00:10:00Z', actualEnd: '2026-11-15T11:45:00Z' },
   { lane: 'STruC++ fork',   num: 8, id: 'S7',   card: 's7',   name: 'iec-3 audit', est: '6 d → ~3 h',  start: '2026-11-15', end: '2026-11-17', status: 'done', actualStart: '2026-11-15T15:00:00Z', actualEnd: '2026-11-15T18:30:00Z' },
-  { lane: 'STruC++ fork',   num: 9, id: 'S13', card: 's13', name: 'Release-N follow-ups', est: '~77 items → ~4–5 d', start: '2026-11-23', end: '2026-11-28', status: 'progress', actualStart: '2026-11-23T10:00:00Z' },
+  { lane: 'STruC++ fork',   num: 9, id: 'S13', card: 's13', name: 'Release-N follow-ups', est: '~77 items → ~2 d', start: '2026-11-23', end: '2026-11-28', status: 'done', actualStart: '2026-11-23T10:00:00Z', actualEnd: '2026-11-24T21:55:00Z' },
   { lane: 'STruC++ fork',   num: 10, id: 'S8',   card: 's8',   name: 'Default → iec-4 (on hold)', est: '0.5 d → ~20 min', start: '2026-12-01', end: '2026-12-01', days: 0.2, offset: 0.5 },
   { lane: 'STruC++ fork',   num: 11, id: 'S9',   card: 's9',   name: 'Raw memory layout',      est: '4 d → ~2.5 h',  start: '2026-11-10', end: '2026-11-10', days: 1.0, offset: 0, status: 'done', actualStart: '2026-11-10T09:40:00Z', actualEnd: '2026-11-10T12:07:39Z' },
   { lane: 'STruC++ fork',   num: 12, id: 'S10', card: 's10',  name: 'Vendor types + forms',           est: '3 d → ~1.5 h', start: '2026-11-12', end: '2026-11-13', status: 'done', actualStart: '2026-11-12T17:10:00Z', actualEnd: '2026-11-13T13:53:07Z' },
