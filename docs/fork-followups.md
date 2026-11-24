@@ -107,8 +107,10 @@ Global initial values (iec-3 / `--strict`):
 - [ ] `UPPER_BOUND(DIM := d, ARR := arr)` (named, reverse order) is refused; other standard functions with
       reordered named arguments in a global initial value too.
 - [ ] Redundant "no CONSTANT" error on a duplicate RESOURCE global.
-- [ ] **Your call:** should `UPPER_BOUND`/`LOWER_BOUND` of a fixed array be allowed in a global initial value
-      under `--strict`/iec-3? (Refused today.)
+- [ ] **Decided (user, 2026-11-24):** a POINTER TO/REF_TO assigned to a narrower integer (`n := p` into DWORD/INT)
+      gets a warning by default and an error under iec-3/`--strict` (OSCAT `_BUFFER_CLEAR`/`_BUFFER_INIT` warn only).
+- [ ] **Decided (user, 2026-11-24): allow** `UPPER_BOUND`/`LOWER_BOUND` of a FIXED array in a global initial value
+      under `--strict`/iec-3 (a compile-time constant); `ARRAY[*]` and a non-constant DIM stay refused.
 
 Wrong refusals:
 - [ ] `VAR_EXTERNAL CONSTANT` without an initializer is refused in every mode.
