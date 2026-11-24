@@ -42,7 +42,7 @@ Other:
       function (UBSan: no return); it should return NULL.
 - [x] (fork #202, 2026-11-24; also function outputs and bit stores to a scalar VAR_EXTERNAL were lost) `ENO => gok` with `gok` a scalar VAR_EXTERNAL under a CONFIGURATION emits `GOK->read(…)`.
 
-## Batch 2 — library manifest: lengths and kinds
+## Batch 2 — library manifest: lengths and kinds (done 2026-11-24, fork #206–#207)
 
 The archive manifest loses information, which causes several findings in the other batches:
 - [x] (fork #206, 2026-11-24) STRING(n) lengths are not recorded for library FB inputs and STRUCT fields (`STRING(n)`/`STRING(254)` become
@@ -51,9 +51,9 @@ The archive manifest loses information, which causes several findings in the oth
       `REF_TO STRING(n)` parameters (a `POINTER TO STRING(20)` output into LWORD fails g++).
 - [x] (fork #206, 2026-11-24) `REFERENCE TO ARRAY` and `REFERENCE TO POINTER` parameters are recorded by bare type name.
 - [x] (fork #206, 2026-11-24) Archives built before release N keep refusing ADR into pointer inputs until rebuilt.
-- [ ] string-80 debug table: arrays of STRUCT with string fields warn once per element per field; the "not
+- [x] (fork #207, 2026-11-24) string-80 debug table: arrays of STRUCT with string fields warn once per element per field; the "not
       debuggable" advice tells the user to redeclare a library variable.
-- [ ] string-80: the `isPlainString` copy also applies to user POU STRING parameters with the feature off
+- [x] (fork #207, 2026-11-24) string-80: the `isPlainString` copy also applies to user POU STRING parameters with the feature off
       (helps, but untested and undocumented).
 
 ## Batch 3 — accepted, then g++ fails
@@ -216,6 +216,12 @@ Gaps found while reviewing the four fixes above (not yet scheduled; fold into ba
       time; inherited library FB members are missing from the debug table silently; a METHOD `ARRAY[*]` in/out fails
       g++; a 254-character output captured into STRING(80) is silently not written; development-built archives keep
       the old failures until rebuilt.
+- [ ] **Found in #207:** a library FUNCTION/METHOD with an explicit `STRING(254)` in-out given `STRING(80)` fails g++
+      (also before); an old default-mode archive's `STRING(20)` in-out given `STRING(20)` fails g++ (length unknown);
+      `ARRAY[*] OF STRING` in-out bound to `ARRAY OF STRING(80)` loses the callee's write; a plain STRING STRUCT member
+      passed to a `STRING(254)` in-out still warns and copies; `incomplete` debug entries are not collapsed; library
+      STRUCT array fields (`__INLINE_ARRAY_BYTE`) and library enum/array aliases stay opaque to the debug table; FUNCTION
+      return types record no STRING(n) length; a user alias in-out of an interface METHOD fails g++.
 - [ ] **Packaging:** a stale `vscode-extension/runtime/test/` folder can end up in a VSIX; the `testParser` export was
       removed by #190 (worth a changelog line).
 
