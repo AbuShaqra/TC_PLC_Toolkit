@@ -14,7 +14,7 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   Order (user, 2026-11-23): batch 5, then batch 6 (OOP through interfaces), then 1–4. Batch 5 quick items merged into fork
   `development` 2026-11-23 (#190–#193, head `e179e2c`); then #194–#196 (long TO_ names, ADVANCE_TIME in loops, literal
   underscores); #197 member access on a call result (feature `call_result_access`; vendor-profile default is the user's open call). Batches 5 and 6 done (fork #190–#201, development `0611ab6`); batch 1 (wrong results) done 2026-11-24 (#202–#205, development `a78859c`); batch 2 (library manifest) done 2026-11-24 (#206–#207, development `0526a91`); batch 3 (accepted, then g++ fails) done 2026-11-24 (#208–#210, development `1c6a32b`); batch 4 (diagnostics, refusals, tooling): #212 warnings and tooling and #213 checks and pointers merged (`e07fbc3`); #211 globals in review fixes (must merge development first); its three user decisions are in docs/fork-followups.md. User 2026-11-24: `MOD()` on REAL refused like the operator. A scheduled task checks the coordination doc's For tab every 2 h
-  (last answered: For row 48, For-tab rev 51; From-tab rev 34).
+  (last answered: For row 48, For-tab rev 51; From-tab rev 35, row 49 = S13 batches 1–4 note).
 - **Last verified:** 2026-11-17 (Linux container, R11 on `claude/focused-ptolemy-m6acaz`) — `REQUIRE_FULL_SUITE=1
   npm test` green (**138/138, Coverage: FULL**; compile-real, cpp-real, gpp-real ran), `npm run typecheck` and
   `npm run lint` exit 0, `vsce@4.1.1 package` (no flags) 772 files / 5.08 MB; browser harnesses (2026-11-16) `run.js` 135, `run_online.js` 53, `run_pragmas.js` 47,
