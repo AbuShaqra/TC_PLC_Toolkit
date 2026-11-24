@@ -115,7 +115,8 @@ Global initial values (iec-3 / `--strict`):
 Wrong refusals:
 - [ ] `VAR_EXTERNAL CONSTANT` without an initializer is refused in every mode.
 - [ ] `VAR x : TIME := LTIME#3ms` is refused while the same assignment in a body is accepted.
-- [ ] Decide: `VAR_GLOBAL v : ARRAY[*] OF INT` compiles with no error.
+- [ ] **Decided (user, 2026-11-24): refuse in every mode** `VAR_GLOBAL v : ARRAY[*] OF INT` (and VAR/VAR_TEMP/STRUCT
+      fields): ARRAY[*] needs a fixed size outside VAR_IN_OUT.
 
 Warnings:
 - [ ] Too-long string literal warning (B10) not given for METHOD calls, FB via array element/STRUCT member, FB
