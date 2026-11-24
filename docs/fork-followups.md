@@ -122,26 +122,26 @@ Wrong refusals:
       though it built and ran: Ed. 3 6.5.3 allows ARRAY[*] only in FUNCTION/METHOD parameters and FB VAR_IN_OUT.
 
 Warnings:
-- [ ] Too-long string literal warning (B10) not given for METHOD calls, FB via array element/STRUCT member, FB
+- [x] (fork #212, 2026-11-24) Too-long string literal warning (B10) not given for METHOD calls, FB via array element/STRUCT member, FB
       instance initialisers, assignments to a field/element/dereference, PROPERTY bodies.
-- [ ] iec-3 FOR-variable warning misses writes through pointer/reference/VAR_IN_OUT and output captures
+- [x] (fork #212, 2026-11-24) iec-3 FOR-variable warning misses writes through pointer/reference/VAR_IN_OUT and output captures
       (`f(q => i)`), and names the variable upper-cased.
-- [ ] iec-3 TRUNC warning fires for an FB inheriting TRUNC from a library base FB, and for an FB instance named
+- [x] (fork #212, 2026-11-24) iec-3 TRUNC warning fires for an FB inheriting TRUNC from a library base FB, and for an FB instance named
       TRUNC (`TRUNC(a := 1.5)` is an FB call).
-- [ ] iec-3 C5 (reserved names): test-file messages use upper-cased names with no locator; IL labels/JMP targets
+- [x] (fork #212, 2026-11-24) iec-3 C5 (reserved names): test-file messages use upper-cased names with no locator; IL labels/JMP targets
       are not checked; the locator takes the first match.
-- [ ] S7: `E.M` in an array/STRUCT literal used as a TYPE default is refused only when a variable uses the type;
+- [x] (fork #212, 2026-11-24) S7: `E.M` in an array/STRUCT literal used as a TYPE default is refused only when a variable uses the type;
       `E.M` refusals are in pass 3, so a type error hides them; UNION `=` is reported as "two STRUCT values";
       a test file's `((p1)) = p2` of two STRUCTs is not refused under iec-3.
-- [ ] `--compile-lib` and `--test` print no source warnings (FB_init/FB_exit warnings missing there).
-- [ ] Diagnostics after an IL POU are shifted by the IL→ST line changes.
-- [ ] `analyzeTestFile()` without a dialect argument uses the default feature set.
+- [x] (fork #212, 2026-11-24) `--compile-lib` and `--test` print no source warnings (FB_init/FB_exit warnings missing there).
+- [x] (fork #212, 2026-11-24) Diagnostics after an IL POU are shifted by the IL→ST line changes.
+- [x] (fork #212, 2026-11-24) `analyzeTestFile()` without a dialect argument uses the default feature set.
 
 Tooling and tests:
-- [ ] Tests leave `/tmp/strucpp-*` directories behind (about 6200, 9.3 GB, once filled the disk); `strucpp --test`
+- [x] (fork #212, 2026-11-24) Tests leave `/tmp/strucpp-*` directories behind (about 6200, 9.3 GB, once filled the disk); `strucpp --test`
       leaves `/tmp/strucpp-test-*` when a test fails. Remove temp dirs in `afterAll`.
-- [ ] `cpp-compile` `with_lock` test failed once under load and passed on rerun (possible flake).
-- [ ] Language server: a pointer used as a FOR control variable is not flagged.
+- [x] (fork #212, 2026-11-24) `cpp-compile` `with_lock` test failed once under load and passed on rerun (possible flake).
+- [x] (fork #212, 2026-11-24) Language server: a pointer used as a FOR control variable is not flagged.
 
 ## Batch 5 — further findings (added 2026-11-23; done 2026-11-23, fork #190–#197)
 
@@ -247,6 +247,10 @@ Gaps found while reviewing the four fixes above (not yet scheduled; fold into ba
       refused; `lw = ADR(x)` fails g++; `ul := p` refused as INT; `ARRAY OF MyI` into `ARRAY OF INT` in/out fails g++; a
       local scalar WORD in/out bound to UINT warns then fails g++; archives older than #210 keep `ArrayView&` METHOD
       prototypes.
+- [ ] **Found in #212:** a diagnostic inside an IL body points at generated ST lines (needs an IL↔ST line map);
+      POINTER TO FOR loops g++ refuses (`TO 10`, `BY n`) only warn; `FOR p := ADR(x) TO e` (e : PINT) gets a false
+      "PINT is not compatible with INT" warning; the FB_exit warning (and likely other AST-name messages) upper-cases
+      names; the FOR-variable warning ignores references taken in another POU and the order of REF/ADR assignments.
 - [ ] **Packaging:** a stale `vscode-extension/runtime/test/` folder can end up in a VSIX; the `testParser` export was
       removed by #190 (worth a changelog line).
 
