@@ -12,8 +12,8 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   `a-abushaqra` namespace first), then run *Publish* with tag `v0.11.1` (no new version needed).
 - **Fork follow-ups (S13) DONE 2026-11-24:** fork #190–#213 (development `56a51c3`). User decisions and the open
   "Found in #…" follow-ups (unscheduled, user's call) are in [docs/fork-followups.md](docs/fork-followups.md); manual test
-  owed by the user; From-tab row 49 summarises batches 1–4. Next fork step: coordination row 35 (part 2 done by fork #143;
-  part 1, every error in one pass, only partly done by #142 — verify, then finish). Scheduled task checks the For tab
+  owed by the user; From-tab row 49 summarises batches 1–4. Next: S14 one-pass diagnostics (row 35 part 1; part 2 done by
+  #143), branch `fix/one-pass-diagnostics`, investigation repros in scratchpad `r35t/`. Scheduled task checks the For tab
   every 2 h (last answered: For row 48, For-tab rev 51; From-tab rev 37).
 - **Last verified:** 2026-11-17 (Linux container, R11 on `claude/focused-ptolemy-m6acaz`) — `REQUIRE_FULL_SUITE=1
   npm test` green (**138/138, Coverage: FULL**; compile-real, cpp-real, gpp-real ran), `npm run typecheck` and

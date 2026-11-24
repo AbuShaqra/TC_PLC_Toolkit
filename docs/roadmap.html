@@ -148,7 +148,7 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
         <span>Updated <b>2026-11-24</b></span>
         <span>Release <b>v0.11.1</b></span>
         <span>Re-measured <b>Nov 11</b></span>
-        <span>Next <b>fork row 35 · R11 uploads</b></span>
+        <span>Next <b>fork S14 (in progress) · R11 uploads</b></span>
         <span>Publish date <b>Nov 17</b></span>
         <span>Lanes <b>2</b> (toolkit · STruC++ fork)</span>
       </div>
@@ -591,6 +591,18 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
       </div>
     </details>
 
+    <details class="card" id="s14">
+      <summary>
+        <div class="card-top"><span>#14</span><span class="id">S14</span><span class="pill progress">In progress</span><span class="chev" aria-hidden="true">›</span></div>
+        <div class="card-title">One-pass diagnostics</div>
+        <div class="card-foot"><span>~2–3 d</span><span>Nov 24 – 27</span></div>
+      </summary>
+      <div class="body">
+        <div class="block wide"><h4>Scope</h4><p>Coordination row 35, part 1, which was only partly done (fork #142 fixed literal ranges only): every error the analysis can find is reported in the same run. The type checker and the later semantic pass no longer stop after earlier errors, without duplicates or cascades; <code>compile()</code> stops only before code generation; one failing pass no longer drops the others' errors; the phases that genuinely cannot run after a broken earlier one are documented. Also the shared in-out warning (part 2, fork #143) in <code>analyze()</code> and <code>--check</code>, and a false "Undeclared variable" for a library base FB's inherited VAR.</p></div>
+        <div class="block wide"><h4>Why now</h4><p>You asked to finish row 35 after S13 (Nov 24).</p></div>
+      </div>
+    </details>
+
     <details class="card" id="s8">
       <summary>
         <div class="card-top"><span>#10</span><span class="id">S8</span><span class="pill wait">On hold until iec-4</span><span class="chev" aria-hidden="true">›</span></div>
@@ -811,6 +823,7 @@ var PLAN = [
   { lane: 'STruC++ fork',   num: 7, id: 'S6',   card: 's6',   name: 'Runtime safety',         est: '7 d → ~3.5 h', start: '2026-11-13', end: '2026-11-18', status: 'done', actualStart: '2026-11-13T00:10:00Z', actualEnd: '2026-11-15T11:45:00Z' },
   { lane: 'STruC++ fork',   num: 8, id: 'S7',   card: 's7',   name: 'iec-3 audit', est: '6 d → ~3 h',  start: '2026-11-15', end: '2026-11-17', status: 'done', actualStart: '2026-11-15T15:00:00Z', actualEnd: '2026-11-15T18:30:00Z' },
   { lane: 'STruC++ fork',   num: 9, id: 'S13', card: 's13', name: 'Release-N follow-ups', est: '~77 items → ~2 d', start: '2026-11-23', end: '2026-11-28', status: 'done', actualStart: '2026-11-23T10:00:00Z', actualEnd: '2026-11-24T21:55:00Z' },
+  { lane: 'STruC++ fork',   num: 14, id: 'S14', card: 's14', name: 'One-pass diagnostics', est: '~2–3 d', start: '2026-11-24', end: '2026-11-27', status: 'progress', actualStart: '2026-11-24T22:20:00Z' },
   { lane: 'STruC++ fork',   num: 10, id: 'S8',   card: 's8',   name: 'Default → iec-4 (on hold)', est: '0.5 d → ~20 min', start: '2026-12-01', end: '2026-12-01', days: 0.2, offset: 0.5 },
   { lane: 'STruC++ fork',   num: 11, id: 'S9',   card: 's9',   name: 'Raw memory layout',      est: '4 d → ~2.5 h',  start: '2026-11-10', end: '2026-11-10', days: 1.0, offset: 0, status: 'done', actualStart: '2026-11-10T09:40:00Z', actualEnd: '2026-11-10T12:07:39Z' },
   { lane: 'STruC++ fork',   num: 12, id: 'S10', card: 's10',  name: 'Vendor types + forms',           est: '3 d → ~1.5 h', start: '2026-11-12', end: '2026-11-13', status: 'done', actualStart: '2026-11-12T17:10:00Z', actualEnd: '2026-11-13T13:53:07Z' },
