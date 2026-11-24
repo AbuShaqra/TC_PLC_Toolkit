@@ -67,9 +67,9 @@ Library calls:
       even with equal lengths.
 
 Strings:
-- [ ] `MAX(s, 'b')` with a STRING variable and a literal; `p^ = 'b'` with `POINTER TO CHAR`.
-- [ ] `LEFT(s, ADR(x))` / `INSERT(…, ADR(x))` (no diagnostic; `iec-std-functions.stlib` has no shapes).
-- [ ] Typed literals `STRING#'abc'` / `WSTRING#"abc"` do not parse.
+- [x] (fork #209, 2026-11-24) `MAX(s, 'b')` with a STRING variable and a literal; `p^ = 'b'` with `POINTER TO CHAR`.
+- [x] (fork #209, 2026-11-24) `LEFT(s, ADR(x))` / `INSERT(…, ADR(x))` (no diagnostic; `iec-std-functions.stlib` has no shapes).
+- [x] (fork #209, 2026-11-24) Typed literals `STRING#'abc'` / `WSTRING#"abc"` do not parse.
 
 REAL MOD and other forms:
 - [x] (fork #208, 2026-11-24) REAL MOD is still accepted through a pointer declared with a named type (`TYPE PR : POINTER TO REAL`), a
@@ -227,6 +227,12 @@ Gaps found while reviewing the four fixes above (not yet scheduled; fold into ba
       `POINTER TO INT` field, or `__NEW(INT, 4)` into a `POINTER TO ARRAY` alias fail g++; REF= through a REFERENCE TO a
       pointer alias fails g++; test-file integer `MOD(a + 1, 5)` fails g++; `strucpp --test` leaves `strucpp-test-*`
       temp dirs on every run; a feature-gate error is hidden when a MOD error is present.
+- [ ] **Found in #209:** a POINTER TO/REF_TO stored by assignment into a narrow integer (`n := p`) truncates the
+      address on 64-bit hosts; bundled OSCAT `_BUFFER_CLEAR`/`_BUFFER_INIT` rely on it (`temp := pt`) — **needs a user
+      decision**; a POINTER TO ARRAY as an integer input fails g++; through a dereferenced `POINTER TO STRING`,
+      `ps^ + b` / `ps^ = 1` are not refused (fail g++) and `ps^ + 'x'` builds as concatenation; `ps > 0` fails g++;
+      `p^ := 65` into a dereferenced CHAR is accepted; test-file `ASSERT_EQ` on WSTRING or CHAR fails g++;
+      `MEMCPY(q, p, 2)` with POINTER TO INT fails g++; MUX with an enum selector fails g++.
 - [ ] **Packaging:** a stale `vscode-extension/runtime/test/` folder can end up in a VSIX; the `testParser` export was
       removed by #190 (worth a changelog line).
 
