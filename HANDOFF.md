@@ -14,7 +14,7 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
   "Found in #…" follow-ups (unscheduled, user's call) are in [docs/fork-followups.md](docs/fork-followups.md); manual test
   owed by the user; From-tab row 49 summarises batches 1–4. Next fork step: coordination row 35 (part 2 done by fork #143;
   part 1, every error in one pass, only partly done by #142 — verify, then finish). Scheduled task checks the For tab
-  every 2 h (last answered: For row 48, For-tab rev 51; From-tab rev 35).
+  every 2 h (last answered: For row 48, For-tab rev 51; From-tab rev 37).
 - **Last verified:** 2026-11-17 (Linux container, R11 on `claude/focused-ptolemy-m6acaz`) — `REQUIRE_FULL_SUITE=1
   npm test` green (**138/138, Coverage: FULL**; compile-real, cpp-real, gpp-real ran), `npm run typecheck` and
   `npm run lint` exit 0, `vsce@4.1.1 package` (no flags) 772 files / 5.08 MB; browser harnesses (2026-11-16) `run.js` 135, `run_online.js` 53, `run_pragmas.js` 47,
