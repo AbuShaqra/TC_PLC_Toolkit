@@ -45,12 +45,12 @@ Other:
 ## Batch 2 — library manifest: lengths and kinds
 
 The archive manifest loses information, which causes several findings in the other batches:
-- [ ] STRING(n) lengths are not recorded for library FB inputs and STRUCT fields (`STRING(n)`/`STRING(254)` become
+- [x] (fork #206, 2026-11-24) STRING(n) lengths are not recorded for library FB inputs and STRUCT fields (`STRING(n)`/`STRING(254)` become
       bare STRING, so an 80-character profile reads them as 80), library globals, PROPERTY types, FB members (the
       debug table shows 254), `ARRAY[*] OF STRING` parameters (read as 254 in a consumer), and `POINTER TO` /
       `REF_TO STRING(n)` parameters (a `POINTER TO STRING(20)` output into LWORD fails g++).
-- [ ] `REFERENCE TO ARRAY` and `REFERENCE TO POINTER` parameters are recorded by bare type name.
-- [ ] Archives built before release N keep refusing ADR into pointer inputs until rebuilt.
+- [x] (fork #206, 2026-11-24) `REFERENCE TO ARRAY` and `REFERENCE TO POINTER` parameters are recorded by bare type name.
+- [x] (fork #206, 2026-11-24) Archives built before release N keep refusing ADR into pointer inputs until rebuilt.
 - [ ] string-80 debug table: arrays of STRUCT with string fields warn once per element per field; the "not
       debuggable" advice tells the user to redeclare a library variable.
 - [ ] string-80: the `isPlainString` copy also applies to user POU STRING parameters with the feature off
@@ -207,6 +207,15 @@ Gaps found while reviewing the four fixes above (not yet scheduled; fold into ba
 - [ ] **Found in #203:** functional AND/OR/XOR on a signed integer with a literal fails in g++ (also before #203);
       `EXPT(w + 1, 2)` on a WORD is refused with "expects ANY_REAL"; an untyped constant beside a signed/unsigned
       integer still takes the wider type (`si + 3` is INT); a pointer variable's own expression type is its target type.
+- [ ] **Found in #206:** through a type alias, `REFERENCE TO` an ARRAY or POINTER alias fails g++ (`ref_bind` no match;
+      ADR into a POINTER alias, also a library `PINT : POINTER TO INT` parameter; `rp^` refused); inline
+      `REFERENCE TO ARRAY[..] OF T` does not parse; a library-alias `REFERENCE TO TS REF= s` / `REF_TO TS := REF(s)`
+      fails g++ where a local alias is refused cleanly; ADR into a `POINTER TO POINTER` input is accepted and segfaults;
+      a parameter named like its STRUCT type gives `MYS_` (g++ fails); a library STRUCT-alias result is not assignable
+      to its base STRUCT; library enum literals are unusable from a consumer; `VAR_IN_OUT REFERENCE TO T` aborts at run
+      time; inherited library FB members are missing from the debug table silently; a METHOD `ARRAY[*]` in/out fails
+      g++; a 254-character output captured into STRING(80) is silently not written; development-built archives keep
+      the old failures until rebuilt.
 - [ ] **Packaging:** a stale `vscode-extension/runtime/test/` folder can end up in a VSIX; the `testParser` export was
       removed by #190 (worth a changelog line).
 
