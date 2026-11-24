@@ -15,7 +15,7 @@ Last checked against the fork: 2026-11-15 (release N, `d9b7c01`); batches 5–6 
 ## Batch 1 — wrong results
 
 Arithmetic and types:
-- [ ] DINT/LINT overflow is C++ undefined behaviour in: unary minus of the minimum, `ADD`/`SUB`/`MUL`/`ABS`
+- [x] (fork #204, 2026-11-24) DINT/LINT overflow is C++ undefined behaviour in: unary minus of the minimum, `ADD`/`SUB`/`MUL`/`ABS`
       called as functions (`iec_std_lib.hpp` ~1480–1510), `ABS(min)`, INT variable + LINT literal, untyped
       `2147483647 + 1` into a DINT initial value or STRUCT default, `LINT#2 ** 63`.
 - [ ] Narrow (INT/SINT) intermediates whose operand type is not resolved (some `SUPER.x`, globals reached as
@@ -24,8 +24,8 @@ Arithmetic and types:
       and STRUCT-instance overrides (`x : St := (f := …)`): `DINT#-7 OR UDINT#4000000000` gives 4294967289.
 - [ ] `DWORD/86400 + 3` is typed INT (mixed DWORD/untyped arithmetic too narrow); a POINTER operand of `+`/`-`
       is typed as its target.
-- [ ] `LINT := 2147483647 + 1` is folded in 32 bits; `UDINT := 4294967295 + 1` is refused as INT.
-- [ ] `LTIME / LTIME` emits plain C++ `/`: division by LTIME 0 is undefined behaviour.
+- [x] (fork #204, 2026-11-24) `LINT := 2147483647 + 1` is folded in 32 bits; `UDINT := 4294967295 + 1` is refused as INT.
+- [x] (fork #204, 2026-11-24) `LTIME / LTIME` emits plain C++ `/`: division by LTIME 0 is undefined behaviour.
 
 Dates and times (32-bit):
 - [ ] Dates before 1970 wrap; the same day gives different DATE values by route (`CONCAT_DATE(1969,12,31)` vs
@@ -196,6 +196,11 @@ Gaps found while reviewing the four fixes above (not yet scheduled; fold into ba
       a named-constant DIM in UPPER/LOWER_BOUND is checked only at run time; `LDATE_TO_LINT(LDATE#…)` fails in g++;
       a STRING(10) written to a STRING VAR_EXTERNAL fails in g++; `j.PJ.M()` through an interface-typed property fails
       in g++.
+- [ ] **Found reviewing #204:** a constant `**` above DINT is folded as an integer, so `lr : LREAL := 2 ** 40 / 3` now
+      divides as integers (366503875925) while `2 ** 20 / 3` stays real — make it consistent; in `l : LINT := d ** 20 * 4 + 1`
+      the power is wide but `*`/`+` wrap at DINT; under --strict `UDINT := 2 ** 3` is refused while `1 + 1` is accepted;
+      `**` into a WORD/DWORD/LWORD target keeps `pow` (inexact/UB); `**` in a STRUCT default inside DINT emits invalid C++;
+      integer `**` with a negative constant exponent into an integer still uses `pow`; `DIV(ltime, n)` is unchecked.
 - [ ] **Packaging:** a stale `vscode-extension/runtime/test/` folder can end up in a VSIX; the `testParser` export was
       removed by #190 (worth a changelog line).
 
