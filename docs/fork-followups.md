@@ -86,6 +86,8 @@ REAL MOD and other forms:
 Type checks:
 - [ ] Library FUNCTION arguments are not type-checked unless the function has a REFERENCE TO input
       (`CHECK_PARITY(w, 'abc')` passes).
+      **Decided (user, 2026-11-24):** argument narrowing on non-BOOL inputs (DINT into an INT input) warns by default
+      like assignment, error under `--strict` (measured: 0 new warnings on the corpus, OSCAT and library consumers).
 - [ ] BOOL-input warning missing for interface calls (`it.M(i)`), `SUPER.M(q := i)`, `p^(b := i)`, `s.f(b := i)`,
       `arr[0](b := i)`, TIME/DATE arguments (silent while `x := t` is an error), `EN := i` on a library FB;
       BOOL aliases are inconsistent (`FA(i)` with a `TB : BOOL` alias warns, `tb := i` is silent, `--strict` silent on both).
