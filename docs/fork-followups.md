@@ -28,9 +28,9 @@ Arithmetic and types:
 - [x] (fork #204, 2026-11-24) `LTIME / LTIME` emits plain C++ `/`: division by LTIME 0 is undefined behaviour.
 
 Dates and times (32-bit):
-- [ ] Dates before 1970 wrap; the same day gives different DATE values by route (`CONCAT_DATE(1969,12,31)` vs
+- [x] (fork #205, 2026-11-24: every route agrees; integer→DATE floors negative inputs; L types keep pre-1970) Dates before 1970 wrap; the same day gives different DATE values by route (`CONCAT_DATE(1969,12,31)` vs
       `D#1970-01-01 - T#1d` / `STRING_TO_DATE`). Restore the pre-1970 test coverage removed with the 32-bit change.
-- [ ] Digits below the unit in DT/TOD literals are dropped silently.
+- [x] (fork #205, 2026-11-24: warning by default, error under iec-3/--strict) Digits below the unit in DT/TOD literals are dropped silently.
 
 Strings and arrays:
 - [x] (fork #202, 2026-11-24: warning added, C++ literal cut; values were already consistent) A literal with an embedded `$00` is cut at the NUL (`'a' = 'a$00b'` is TRUE).
@@ -164,7 +164,7 @@ Check against the standard first:
       decide separately whether vendor profiles accept it.
 
 Gaps found while reviewing the four fixes above (not yet scheduled; fold into batch 1 or 2 when reached):
-- [ ] **Date/time arithmetic:** `DT + DT`, `TOD + TOD`, `TIME - DT` and `DT * 2` are accepted; IEC Table 30 allows none
+- [x] (fork #205, 2026-11-24) **Date/time arithmetic:** `DT + DT`, `TOD + TOD`, `TIME - DT` and `DT * 2` are accepted; IEC Table 30 allows none
       of them. IEC_COMPLIANCE.md also says `DT * number` gives TIME, which is wrong.
 - [ ] **TEST names:** escapes (`$'`, `$"`, `$N`) in a TEST name are not decoded; the extension's
       `vscode-extension/server/src/cursor-context.ts` (~line 162) matches single-quoted names only.
@@ -201,6 +201,9 @@ Gaps found while reviewing the four fixes above (not yet scheduled; fold into ba
       the power is wide but `*`/`+` wrap at DINT; under --strict `UDINT := 2 ** 3` is refused while `1 + 1` is accepted;
       `**` into a WORD/DWORD/LWORD target keeps `pow` (inexact/UB); `**` in a STRUCT default inside DINT emits invalid C++;
       integer `**` with a negative constant exponent into an integer still uses `pow`; `DIV(ltime, n)` is unchecked.
+- [ ] **Found reviewing #205:** `TIME_TO_DATE(T#2d3s)` treats ms as seconds (172803000) and `LTIME_TO_DATE` gives
+      non-day values; `1 + ldt` (number on the left of `+` with an L form) is typed INT; a Table 30 error can hide later
+      feature-gate errors (first error phase only).
 - [ ] **Packaging:** a stale `vscode-extension/runtime/test/` folder can end up in a VSIX; the `testParser` export was
       removed by #190 (worth a changelog line).
 
