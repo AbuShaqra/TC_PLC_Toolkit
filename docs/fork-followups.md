@@ -31,7 +31,7 @@ ran wrong, otherwise a warning by default and an error under iec-3/`--strict`.
   wherever an alias works.
 
 **Batches, in order:**
-- **A — silent wrong values:** enum with explicit values defaults to 0; outputs copied with EN = FALSE; non-atomic bit
+- **A — silent wrong values** (done 2026-11-25, fork #215; `**` is real in real contexts, IEC Table 71 note b / Table 29 note f): enum with explicit values defaults to 0; outputs copied with EN = FALSE; non-atomic bit
   store to a VAR_EXTERNAL under threads; constant `**` above DINT divides as integers; `d ** 20 * 4 + 1` wraps at DINT;
   `TIME_TO_DATE` / `LTIME_TO_DATE` units; a library METHOD call inside arithmetic evaluated out of order;
   `ARRAY[*] OF STRING` in-out loses the callee's write; a 254-character output not written into STRING(80); an output
