@@ -39,6 +39,8 @@ renamed in the generated C++**, as interface methods already are (refused today)
 - `e := E_Mode#IDLEX` (an undefined enum value) has no error (found reviewing #220; recheck after #219, which adds unknown-input checks for library blocks);
 - ARRAY OF INT into ARRAY OF a subrange stores out-of-range values silently (a scalar store faults);
 - an ARRAY of a subrange without its own default starts at 0, a scalar of it at its lower bound; 4-D arrays get no element default;
+- defaults not applied (already before #219): elements of an ARRAY of an array TYPE with a default, nested partial initializers `[[1],[2,3]]`, ARRAY-alias types; a library alias default that is a function call is dropped; a library `TYPE ATT : TIME := KTC` (an LTIME constant) is not wrapped, so the consumer gets an unfixable warning;
+- `TYPE LB : LTIME := (LTIME#1s + LTIME#500ms) * 2` gives -1294967296 (`iec_mul<DINT_t>`);
 - `b := 300` into BYTE/WORD: the literal-fit warning covers integer targets only;
 - `si := SEL(x, si, 300)` gives 44 with no warning (SEL is typed now, so the constant can be checked);
 - `(d ** 2) MOD 3` into an LREAL keeps `iec_mod` on a double;
