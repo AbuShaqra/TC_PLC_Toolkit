@@ -37,7 +37,8 @@ renamed in the generated C++**, as interface methods already are (refused today)
 - `si := SEL(x, si, 300)` gives 44 with no warning (SEL is typed now, so the constant can be checked);
 - `(d ** 2) MOD 3` into an LREAL keeps `iec_mod` on a double;
 - a library FB with an inherited `ARRAY[*] OF STRING` in-out: only the FB's own manifest fields are read;
-- `NOT(u)` on an unsigned integer is bitwise while infix `NOT u` emits `!U` (pending #218's recheck of NOT on integers).
+- a constant `0 ** -1` (like `5 / 0`) has no compile-time diagnostic; it faults at run time, at start-up in a `VAR CONSTANT` initializer;
+- `5 - dt` is refused while `5 - ldt` only warns in default mode.
 
 **Missing checks and inconsistencies**
 - `w ** 2` on a WORD is accepted while `EXPT(w, 2)` is refused; EXPT's IN2 is registered ANY_REAL (the standard: ANY_NUM);
