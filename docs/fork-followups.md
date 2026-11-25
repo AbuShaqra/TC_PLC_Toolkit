@@ -12,6 +12,58 @@ program, the generated C++ does not compile (nothing wrong runs, but the error c
 
 Last checked against the fork: 2026-11-15 (release N, `d9b7c01`); batches 5–6 on 2026-11-23 (`e179e2c`). Re-check each item before fixing it.
 
+## S15 — S13's follow-ups (planned 2026-11-25)
+
+The open "Found in / Found reviewing" entries below, regrouped into seven batches. Every item is first reproduced on
+`development` (`54a617d`); one that no longer reproduces is pinned with a test. Same rules as S13: one PR per batch
+(split if large), review, fixes, one recheck; errors in default mode only where the code is invalid AND failed g++ or
+ran wrong, otherwise a warning by default and an error under iec-3/`--strict`.
+
+**User decisions (2026-11-25):**
+- an untyped literal that does not fit its target (`s := 200` into a SINT) **warns by default**, error under
+  `--strict`/iec-3;
+- LTIME into TIME in STRUCT/array initializer fields and FUNCTION/FB inputs **warns by default, error under
+  `--strict`/iec-3** (a body and a VAR initial value stay as they are);
+- **namespace-qualified library calls** (`plib.F_R(...)`) are supported as a dialect feature, on in `twincat3`, off by
+  default and under iec-3;
+- an inline **`REFERENCE TO ARRAY[..] OF T`** (and `REFERENCE TO POINTER TO T` if TwinCAT accepts it) is supported
+  wherever an alias works.
+
+**Batches, in order:**
+- **A — silent wrong values:** enum with explicit values defaults to 0; outputs copied with EN = FALSE; non-atomic bit
+  store to a VAR_EXTERNAL under threads; constant `**` above DINT divides as integers; `d ** 20 * 4 + 1` wraps at DINT;
+  `TIME_TO_DATE` / `LTIME_TO_DATE` units; a library METHOD call inside arithmetic evaluated out of order;
+  `ARRAY[*] OF STRING` in-out loses the callee's write; a 254-character output not written into STRING(80); an output
+  capture into a property does not call the setter; `VAR_IN_OUT REFERENCE TO T` aborts; `ps^ + 'x'` concatenates;
+  `si + 3` typed INT; the `s := 200` warning (decision).
+- **B — pointers, references and aliases that pass the check and fail g++:** the #206/#208/#209/#210/#213 pointer
+  items (POINTER TO aliases with ADR/MOD/`__NEW`/REF=, REFERENCE TO alias bindings, `POINTER TO POINTER` input,
+  STRUCT pointer members from ADR of another type or a pointer variable, `lw = ADR(x)`, `LWORD_TO_DWORD(ADR(x))`,
+  POINTER TO ARRAY as an integer input, ADR into a REF_TO input, `p := 5`, `ul := p`, `ps^ = 1`, `ps > 0`, `p^ := 65`,
+  MEMCPY of pointers, pointer FOR loops g++ refuses) and inline `REFERENCE TO ARRAY` (decision).
+- **C — OOP, interfaces, properties and call results:** the batch-6 OOP items, the #199 and #201 items, call results
+  (`FP()^.x`, `F().M();`, selectors after `THIS^.M()`), argument types in member-chain method calls, `j.PJ.M()`,
+  `h.P^`, `s.f.M()` with a library STRUCT and FB, a parameter named like its STRUCT type, user alias in-outs of an
+  interface METHOD.
+- **D — standard functions, strings and test files:** functional AND/OR/XOR on signed integers with a literal,
+  `EXPT(w + 1, 2)`, nested generics (`static_cast<IEC_ANY>`), MUX with an enum selector, `LDATE_TO_LINT`, STRING(10)
+  into a STRING VAR_EXTERNAL, `1 + ldt`, `DIV(ltime, n)`, integer `**` with negative exponents and into bit strings,
+  `**` in STRUCT defaults, `UDINT := 2 ** 3` under `--strict`, a bare FUNCTION call in a global initial value, and the
+  test-file items (`ADVANCE_TIME` type, `GVL.x`, `MOD(a + 1, 5)`, `ASSERT_EQ` on WSTRING/CHAR, a PROGRAM with
+  VAR_EXTERNAL, a FUNCTION writing a CONFIGURATION global).
+- **E — libraries and missing checks:** a library STRUCT FUNCTION result into the same STRUCT (39 OSCAT calls), a
+  library STRUCT-alias result, library enum literals, `DAY_OF_WEEK(IN := …)`, unknown named FB inputs
+  (`CTU(RESET := …)`), argument checks on conversions and std functions (`DT_TO_TOD(vd)`), alias-typed argument values,
+  scalar library in/outs under `--strict`, wrong-size arrays and `ARRAY OF DINT` into `ARRAY OF INT`, `--strict` BYTE
+  arithmetic through a dereference, Table 31 in STRUCT defaults, LTIME→TIME in fields and inputs (decision), the
+  `#207` library STRING/array items, a FB EXTENDS TON with an LTIME PT, namespace-qualified library calls (decision).
+- **F — debug table, diagnostics and tooling:** debug-table gaps (incomplete entries, opaque library STRUCT arrays and
+  enum/array aliases, inherited library FB members, skipped warnings per instance), an IL↔ST line map for diagnostics
+  inside IL, names upper-cased in messages, TEST name escapes, literal underscores in test files and their cost,
+  `1_000.5`, the packaging item, and `analyze()`'s extra compile for the race warning.
+- **G — global initial values:** CONFIGURATION globals traced, a NULL interface global refused as a self-read, the
+  coarse pointer analysis made finer, FUNCTION `VAR_OUTPUT ARRAY[*]`.
+
 ## Batch 1 — wrong results (done 2026-11-24, fork #202–#205)
 
 Arithmetic and types:

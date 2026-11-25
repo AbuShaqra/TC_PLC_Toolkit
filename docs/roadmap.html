@@ -148,7 +148,7 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
         <span>Updated <b>2026-11-25</b></span>
         <span>Release <b>v0.11.1</b></span>
         <span>Re-measured <b>Nov 11</b></span>
-        <span>Next <b>fork: S13 follow-ups (your call) · R11 uploads</b></span>
+        <span>Next <b>fork S15 (in progress) · R11 uploads</b></span>
         <span>Publish date <b>Nov 17</b></span>
         <span>Lanes <b>2</b> (toolkit · STruC++ fork)</span>
       </div>
@@ -603,6 +603,19 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
       </div>
     </details>
 
+    <details class="card" id="s15">
+      <summary>
+        <div class="card-top"><span>#15</span><span class="id">S15</span><span class="pill progress">In progress</span><span class="chev" aria-hidden="true">›</span></div>
+        <div class="card-title">S13's follow-ups</div>
+        <div class="card-foot"><span>~150 items → ~5–7 d</span><span>Nov 25 – Dec 2</span></div>
+      </summary>
+      <div class="body">
+        <div class="block wide"><h4>Scope</h4><p>The small issues S13's reviews found, all already on development, listed in <code>docs/fork-followups.md</code> ("S15"). Planned Nov 25 at your request.</p></div>
+        <div class="block wide"><h4>Batches</h4><ol><li>A — silent wrong values</li><li>B — pointers, references and aliases that fail g++</li><li>C — OOP, interfaces, properties, call results</li><li>D — standard functions, strings, test files</li><li>E — libraries and missing checks</li><li>F — debug table, diagnostics, tooling</li><li>G — global initial values</li></ol><p>A, B and C running in parallel since Nov 25.</p></div>
+        <div class="block wide"><h4>Your decisions (Nov 25)</h4><p>An untyped literal that does not fit warns by default; LTIME into TIME in fields and inputs warns (strict error); namespace-qualified library calls under twincat3; inline <code>REFERENCE TO ARRAY</code> supported.</p></div>
+      </div>
+    </details>
+
     <details class="card" id="s8">
       <summary>
         <div class="card-top"><span>#10</span><span class="id">S8</span><span class="pill wait">On hold until iec-4</span><span class="chev" aria-hidden="true">›</span></div>
@@ -719,8 +732,7 @@ footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line)
         </div>
         <div class="block wide"><h4>Fork</h4>
           <ul>
-            <li><b>S13's follow-ups</b> (found in its reviews, all already on development, about 20 grouped entries in <code>docs/fork-followups.md</code>): to be scheduled, your call. Largest: diagnostics inside IL bodies, a bare FUNCTION call in a global initial value, namespace-qualified library calls, STRUCT pointer members, <code>s := 200</code> into a SINT without a default warning, a stale test folder in the VSIX.</li>
-            <li><b>Manual test of S13</b> owed by you (fork rule): the new errors and warnings — argument types, pointer stores, <code>ARRAY[*]</code>, global initial values, FOR control variables.</li>
+                        <li><b>Manual test of S13</b> owed by you (fork rule): the new errors and warnings — argument types, pointer stores, <code>ARRAY[*]</code>, global initial values, FOR control variables.</li>
             <li><b>Lifecycle methods for dynamic instances</b> (your call Nov 15, after release N): <code>__NEW</code> runs FB_init and <code>__DELETE</code> runs FB_exit; today both are skipped. FB_exit at program stop stays open.</li>
             <li><b>"Accepted means it builds" test</b> (your call, Nov 14): programs the checker accepts must also build and run under g++ with sanitizers.</li>
             <li><b>Differential tests</b> (your call, Nov 14): the same expression in a body, an initial value and a STRUCT default must give the same value.</li>
@@ -825,6 +837,7 @@ var PLAN = [
   { lane: 'STruC++ fork',   num: 8, id: 'S7',   card: 's7',   name: 'iec-3 audit', est: '6 d → ~3 h',  start: '2026-11-15', end: '2026-11-17', status: 'done', actualStart: '2026-11-15T15:00:00Z', actualEnd: '2026-11-15T18:30:00Z' },
   { lane: 'STruC++ fork',   num: 9, id: 'S13', card: 's13', name: 'Release-N follow-ups', est: '~77 items → ~2 d', start: '2026-11-23', end: '2026-11-28', status: 'done', actualStart: '2026-11-23T10:00:00Z', actualEnd: '2026-11-24T21:55:00Z' },
   { lane: 'STruC++ fork',   num: 14, id: 'S14', card: 's14', name: 'One-pass diagnostics', est: '~2–3 d', start: '2026-11-24', end: '2026-11-27', status: 'done', actualStart: '2026-11-24T22:20:00Z', actualEnd: '2026-11-25T03:30:00Z' },
+  { lane: 'STruC++ fork',   num: 15, id: 'S15', card: 's15', name: "S13's follow-ups", est: '~150 items → ~5–7 d', start: '2026-11-25', end: '2026-12-02', status: 'progress', actualStart: '2026-11-25T03:00:00Z' },
   { lane: 'STruC++ fork',   num: 10, id: 'S8',   card: 's8',   name: 'Default → iec-4 (on hold)', est: '0.5 d → ~20 min', start: '2026-12-01', end: '2026-12-01', days: 0.2, offset: 0.5 },
   { lane: 'STruC++ fork',   num: 11, id: 'S9',   card: 's9',   name: 'Raw memory layout',      est: '4 d → ~2.5 h',  start: '2026-11-10', end: '2026-11-10', days: 1.0, offset: 0, status: 'done', actualStart: '2026-11-10T09:40:00Z', actualEnd: '2026-11-10T12:07:39Z' },
   { lane: 'STruC++ fork',   num: 12, id: 'S10', card: 's10',  name: 'Vendor types + forms',           est: '3 d → ~1.5 h', start: '2026-11-12', end: '2026-11-13', status: 'done', actualStart: '2026-11-12T17:10:00Z', actualEnd: '2026-11-13T13:53:07Z' },
