@@ -36,6 +36,7 @@ renamed in the generated C++**, as interface methods already are (refused today)
 **Accepted silently, or values that may be wrong**
 - a CONSTANT FB's interface-typed property getter can change the instance (`ch.PI.Bump()`, via the `const_cast` helper);
 - `r1 := ps^.p` (pointer into INT) has no diagnostic;
+- `e := E_Mode#IDLEX` (an undefined enum value) has no error (found reviewing #220; recheck after #219, which adds unknown-input checks for library blocks);
 - ARRAY OF INT into ARRAY OF a subrange stores out-of-range values silently (a scalar store faults);
 - an ARRAY of a subrange without its own default starts at 0, a scalar of it at its lower bound; 4-D arrays get no element default;
 - `b := 300` into BYTE/WORD: the literal-fit warning covers integer targets only;
