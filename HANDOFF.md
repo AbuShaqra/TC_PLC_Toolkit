@@ -13,7 +13,7 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
 - **Fork follow-ups (S13) DONE 2026-11-24:** fork #190–#213 (development `56a51c3`). User decisions and the open
   "Found in #…" follow-ups (unscheduled, user's call) are in [docs/fork-followups.md](docs/fork-followups.md); manual test
   owed by the user; From-tab row 49 summarises batches 1–4. S14 DONE 2026-11-25 (fork #214, row 35 closed).
-  **S15 (S13's follow-ups) started 2026-11-25:** plan, batches A–G and 4 user decisions in docs/fork-followups.md "S15"; A (#215), B (#217, `69fec6c`) and C (#216) merged; D #218 and E #219 in review fixes; F running; G next. Scheduled task checks the For tab
+  **S15 (S13's follow-ups) started 2026-11-25:** plan, batches A–G and 4 user decisions in docs/fork-followups.md "S15"; A (#215), B (#217, `69fec6c`) and C (#216) merged; D #218 and E #219 in review fixes; F running; G next. S15's own follow-ups are roadmap item S16 (docs/fork-followups.md "S16"). Scheduled task checks the For tab
   every 2 h (last answered: For row 48, For-tab rev 51; From-tab rev 39).
 - **Last verified:** 2026-11-17 (Linux container, R11 on `claude/focused-ptolemy-m6acaz`) — `REQUIRE_FULL_SUITE=1
   npm test` green (**138/138, Coverage: FULL**; compile-real, cpp-real, gpp-real ran), `npm run typecheck` and

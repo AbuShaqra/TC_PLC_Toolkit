@@ -12,6 +12,54 @@ program, the generated C++ does not compile (nothing wrong runs, but the error c
 
 Last checked against the fork: 2026-11-15 (release N, `d9b7c01`); batches 5–6 on 2026-11-23 (`e179e2c`). Re-check each item before fixing it.
 
+## S16 — S15's follow-ups (collected 2026-11-25, not scheduled in detail)
+
+Found while implementing and reviewing S15 and not fixed in the batch that found them. Items S15's later batches
+fixed are left out; items its open PRs (#218, #219, F, G) leave behind are added when those merge. Same rules as S15.
+
+**Decision owed by the user:** a variable named like a plain (non-interface) method of its own FB — rename it in C++,
+as interface methods already are, or keep refusing it (refused today).
+
+**Pass the check, then fail g++**
+- a VAR_EXTERNAL named like a method fails when read (the method hides the global);
+- a variable named like an inherited method compiles, but calling that method on the derived instance fails;
+- a property of a VAR_GLOBAL CONSTANT FB emits `GCH.PI` (also before S15);
+- `SUPER^(IN := IN, PT := PT)` inside an FB extending a library FB emits `TON::operator()(IN, PT)`;
+- initializer elements are not type-checked in general: `(t := 'abc')` into a TIME (only LTIME was handled);
+- inline `VAR_IN_OUT REFERENCE TO ARRAY[..]` (could follow #215's alias form);
+- on both trees: `(r) = (q)` on a REF_TO STRUCT, `a[ADR(x)]`, two `ARRAY[*]` input forms;
+- untested: an FB with a STRUCT `REFERENCE TO` in-out given a different STRUCT.
+
+**Accepted silently, or values that may be wrong**
+- a CONSTANT FB's interface-typed property getter can change the instance (`ch.PI.Bump()`, via the `const_cast` helper);
+- `r1 := ps^.p` (pointer into INT) has no diagnostic;
+- `b := 300` into BYTE/WORD: the literal-fit warning covers integer targets only;
+- `si := SEL(x, si, 300)` gives 44 with no warning (SEL is typed now, so the constant can be checked);
+- `(d ** 2) MOD 3` into an LREAL keeps `iec_mod` on a double;
+- a library FB with an inherited `ARRAY[*] OF STRING` in-out: only the FB's own manifest fields are read;
+- `NOT(u)` on an unsigned integer is bitwise while infix `NOT u` emits `!U` (pending #218's recheck of NOT on integers).
+
+**Missing checks and inconsistencies**
+- `w ** 2` on a WORD is accepted while `EXPT(w, 2)` is refused; EXPT's IN2 is registered ANY_REAL (the standard: ANY_NUM);
+- a plain `p^` (no alias) is untyped in the checker; typing it needs its own corpus pass;
+- a TYPE alias of `REFERENCE TO ARRAY[..]` is not parsed;
+- an alias in-out bound to its own base type warns "passed by copy-in / copy-out";
+- `ADR(FP()^)` is refused (cleanly);
+- `ADVANCE_TIME(E#a)` beside a test variable `e` resolves to the variable and is not checked.
+
+**Not supported yet (refused cleanly)**
+- ADD/SUB/DIV of two date/time values through the functions (rest of Table 35);
+- the `NS.E#Member` literal form (`NS.E.Member` works);
+- a test variable hiding a list global (`GVL.x` with a test VAR `x`);
+- a test-file program instance with an initial value (`p : PExt := (...)`) is not wired to CONFIGURATION globals.
+
+**Housekeeping**
+- code and messages cite "Table 30" for date/time arithmetic; in Ed. 3 that is Table 35;
+- no CLI test for `--lib-st-namespace`;
+- the coverage gate (`test:coverage`) not run on the S15 branches; the suite's 7 skipped tests not identified;
+- the vscode-extension server calls `analyzeTestFile` without the source AST or the strict flag;
+- `cli-union.test.ts` failed once under load ("Unexpected end of JSON input").
+
 ## S15 — S13's follow-ups (planned 2026-11-25)
 
 The open "Found in / Found reviewing" entries below, regrouped into seven batches. Every item is first reproduced on
