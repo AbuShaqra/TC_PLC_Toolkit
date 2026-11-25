@@ -37,6 +37,7 @@ renamed in the generated C++**, as interface methods already are (refused today)
 - a CONSTANT FB's interface-typed property getter can change the instance (`ch.PI.Bump()`, via the `const_cast` helper);
 - `r1 := ps^.p` (pointer into INT) has no diagnostic;
 - ARRAY OF INT into ARRAY OF a subrange stores out-of-range values silently (a scalar store faults);
+- an ARRAY of a subrange without its own default starts at 0, a scalar of it at its lower bound; 4-D arrays get no element default;
 - `b := 300` into BYTE/WORD: the literal-fit warning covers integer targets only;
 - `si := SEL(x, si, 300)` gives 44 with no warning (SEL is typed now, so the constant can be checked);
 - `(d ** 2) MOD 3` into an LREAL keeps `iec_mod` on a double;
@@ -51,7 +52,7 @@ renamed in the generated C++**, as interface methods already are (refused today)
 - an alias in-out bound to its own base type warns "passed by copy-in / copy-out";
 - `ADR(FP()^)` is refused (cleanly);
 - `ADVANCE_TIME(E#a)` beside a test variable `e` resolves to the variable and is not checked.
-- LTIME into TIME through an FB/METHOD output capture (`q => t`) or an FB_init argument is still an error (codegen does not convert there);
+- LTIME into TIME through a FUNCTION/METHOD output capture, a member FB call (`a.b.inst(o => v)`) or an FB_init argument is still an error (an FB output capture warns and converts since #219);
 - an enum default written as a typed literal (`:= E#B`) may be missed by `enumDefaultName` (pending #219's recheck).
 
 **Not supported yet (refused cleanly)**
