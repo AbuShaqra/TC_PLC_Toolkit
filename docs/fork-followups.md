@@ -42,7 +42,7 @@ ran wrong, otherwise a warning by default and an error under iec-3/`--strict`.
   STRUCT pointer members from ADR of another type or a pointer variable, `lw = ADR(x)`, `LWORD_TO_DWORD(ADR(x))`,
   POINTER TO ARRAY as an integer input, ADR into a REF_TO input, `p := 5`, `ul := p`, `ps^ = 1`, `ps > 0`, `p^ := 65`,
   MEMCPY of pointers, pointer FOR loops g++ refuses) and inline `REFERENCE TO ARRAY` (decision).
-- **C — OOP, interfaces, properties and call results:** the batch-6 OOP items, the #199 and #201 items, call results
+- **C — OOP, interfaces, properties and call results** (done 2026-11-25, fork #216; also the 39 OSCAT library-STRUCT results from E): the batch-6 OOP items, the #199 and #201 items, call results
   (`FP()^.x`, `F().M();`, selectors after `THIS^.M()`), argument types in member-chain method calls, `j.PJ.M()`,
   `h.P^`, `s.f.M()` with a library STRUCT and FB, a parameter named like its STRUCT type, user alias in-outs of an
   interface METHOD.
