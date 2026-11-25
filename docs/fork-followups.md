@@ -44,6 +44,9 @@ renamed in the generated C++**, as interface methods already are (refused today)
 - a library FB with an inherited `ARRAY[*] OF STRING` in-out: only the FB's own manifest fields are read;
 - a constant `0 ** -1` (like `5 / 0`) has no compile-time diagnostic; it faults at run time, at start-up in a `VAR CONSTANT` initializer;
 - `5 - dt` is refused while `5 - ldt` only warns in default mode.
+- in a test assertion, `NOT` of a promoted BYTE/WORD expression (`ASSERT_EQ(NOT (b AND 16#0F), 255)`) complements at int width (stored into a BYTE first it is right);
+- signed SHL/SHR stay a default-mode vendor extension with no warning (SHR arithmetic); only ROL/ROR warn;
+- AND/OR/XOR of a signed integer with a bit string in a global/CONFIGURATION initial value is not typed by the rule.
 
 **Missing checks and inconsistencies**
 - `w ** 2` on a WORD is accepted while `EXPT(w, 2)` is refused; EXPT's IN2 is registered ANY_REAL (the standard: ANY_NUM);
@@ -102,7 +105,7 @@ ran wrong, otherwise a warning by default and an error under iec-3/`--strict`.
   (`FP()^.x`, `F().M();`, selectors after `THIS^.M()`), argument types in member-chain method calls, `j.PJ.M()`,
   `h.P^`, `s.f.M()` with a library STRUCT and FB, a parameter named like its STRUCT type, user alias in-outs of an
   interface METHOD.
-- **D — standard functions, strings and test files:** functional AND/OR/XOR on signed integers with a literal,
+- **D — standard functions, strings and test files** (done 2026-11-25, fork #218; integer NOT is now the bitwise complement, signed ROL/ROR rotate as the bit string with a warning, signed-with-bit-string takes the wider type / the bit string at equal width): functional AND/OR/XOR on signed integers with a literal,
   `EXPT(w + 1, 2)`, nested generics (`static_cast<IEC_ANY>`), MUX with an enum selector, `LDATE_TO_LINT`, STRING(10)
   into a STRING VAR_EXTERNAL, `1 + ldt`, `DIV(ltime, n)`, integer `**` with negative exponents and into bit strings,
   `**` in STRUCT defaults, `UDINT := 2 ** 3` under `--strict`, a bare FUNCTION call in a global initial value, and the
