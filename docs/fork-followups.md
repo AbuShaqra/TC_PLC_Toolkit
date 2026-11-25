@@ -29,6 +29,7 @@ renamed in the generated C++**, as interface methods already are (refused today)
 - inline `VAR_IN_OUT REFERENCE TO ARRAY[..]` (could follow #215's alias form);
 - on both trees: `(r) = (q)` on a REF_TO STRUCT, `a[ADR(x)]`, two `ARRAY[*]` input forms;
 - untested: an FB with a STRUCT `REFERENCE TO` in-out given a different STRUCT.
+- a user `ARRAY OF` or alias of a library FB (or of a library STRUCT holding an FB): "'LSF' was not declared"; a library subrange bounded by a library constant (`INT(0..LNN)`): "'LNN' was not declared" (both also before #219);
 - a CONFIGURATION global whose initial value reads a list global holding an FB: named directly (`x := f.M()`) it fails g++ (configuration storage is emitted before the late globals); through code it would read the FB before it exists (found in #221);
 - `p := THIS` into a POINTER TO the FB passes the check and fails g++;
 - `s.NF(2)` on an inherited STRUCT member is not refused (a local STRUCT is) and fails g++;
@@ -52,6 +53,10 @@ renamed in the generated C++**, as interface methods already are (refused today)
 - a library FB with an inherited `ARRAY[*] OF STRING` in-out: only the FB's own manifest fields are read;
 - a constant `0 ** -1` (like `5 / 0`) has no compile-time diagnostic; it faults at run time, at start-up in a `VAR CONSTANT` initializer;
 - `5 - dt` is refused while `5 - ldt` only warns in default mode.
+- partial initializers ignore the element default through an array-alias type (`aa : AAI := [2]`), nested (`[[1]]`), and in an assignment (`a := [1, 2]`);
+- `-1` into ULINT/UDINT warns in an initializer but is an error in an assignment; under --strict `2.7` into INT is an error in an assignment but not flagged in an array initializer;
+- a by-copy argument is copied back after the statement, so `o2 := SO(a => s3) + LEN(s3[0])` reads the old value (VAR_IN_OUT and, since #221, VAR_OUTPUT ARRAY[*]);
+- `MEMCPY(pf, ...)` into a pointer faults at run time (both trees, found in #221);
 - in a test assertion, `NOT` of a promoted BYTE/WORD expression (`ASSERT_EQ(NOT (b AND 16#0F), 255)`) complements at int width (stored into a BYTE first it is right);
 - signed SHL/SHR stay a default-mode vendor extension with no warning (SHR arithmetic); only ROL/ROR warn;
 - AND/OR/XOR of a signed integer with a bit string in a global/CONFIGURATION initial value is not typed by the rule.
@@ -64,7 +69,8 @@ renamed in the generated C++**, as interface methods already are (refused today)
 - `ADR(FP()^)` is refused (cleanly);
 - `ADVANCE_TIME(E#a)` beside a test variable `e` resolves to the variable and is not checked.
 - LTIME into TIME through a FUNCTION/METHOD output capture, a member FB call (`a.b.inst(o => v)`) or an FB_init argument is still an error (an FB output capture warns and converts since #219);
-- an enum default written as a typed literal (`:= E#B`) may be missed by `enumDefaultName` (pending #219's recheck).
+- SEL/MUX/MAX/LIMIT inputs are never settled for a name that is both a user enum value and a library global (`SEL(TRUE, GS, GF) = GF` is refused although only the enum reading is valid);
+- under iec-3 the enum_dot_qualify message prints the names upper-cased (`ECOL.GREEN`) and drops the namespace.
 
 **Not supported yet (refused cleanly)**
 - ADD/SUB/DIV of two date/time values through the functions (rest of Table 35);
