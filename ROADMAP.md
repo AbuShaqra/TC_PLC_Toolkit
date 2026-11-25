@@ -4,7 +4,7 @@ The order of planned work for the extension. **This file is the source of truth*
 (<https://claude.ai/artifact/8RG7TZtBV2cuupsrwWtknv>) is rendered from it by hand out of `docs/roadmap.html`.
 Keep both current in the same change — rules in [CLAUDE.md](CLAUDE.md) ("Keep the roadmap current").
 
-**Last updated:** 2026-11-24 · **Current release:** v0.11.1 · **Re-measured:** 2026-11-11 · **Next:** fork S14 (one-pass diagnostics, coordination row 35); toolkit R11, the marketplace uploads · **Lanes:** 2
+**Last updated:** 2026-11-25 · **Current release:** v0.11.1 · **Re-measured:** 2026-11-11 · **Next:** fork: S13's follow-ups (to be scheduled, your call); toolkit R11, the marketplace uploads · **Lanes:** 2
 
 How to read it: items run top to bottom in the **Order** column. IDs are stable names and do not change
 when the order does. Estimates are working days for one developer; start and end dates are **forecasts**
@@ -82,7 +82,7 @@ for it where a row says so.
 | 7 | S6 | Runtime safety defects (S2 plan §1d, 14 items) | 7 d | ~3.5 h | 2026-11-13 | 2026-11-18 | **Done** 2026-11-15 — fork #151–#185, release N |
 | 8 | S7 | `iec` audit: narrow what `iec-3` accepts (C1–C9) | 6 d | ~3 h | 2026-11-15 | 2026-11-17 | **Done** 2026-11-15 — fork #188–#189 (C6 moved to S12) |
 | 9 | S13 | Release-N follow-ups: the consolidated open fork findings (~65 items, [docs/fork-followups.md](docs/fork-followups.md)) in four batches, in this order: (1) silent wrong results, (2) library manifest lengths and kinds, (3) accepted code that then fails in g++, (4) missing diagnostics, tooling and test hygiene, (5) further findings added 2026-11-23 (8: lazy test parser, DT/TOD minus a literal, test-mode docs and install, ADVANCE_TIME in loops, then literal underscores refused under iec-3 — user, 2026-11-23 — long TO_ conversion names and member access on a call result, after checking the standard), (6) OOP through interfaces, added 2026-11-23 and run right after batch 5 (user, 2026-11-23): a method result through an indexed interface element, an interface variable in a POU's VAR crashing the generator, a global named like a method, NOT over an AND of comparisons | — (~77 items) | ~4–5 d (my sizing) | 2026-11-23 | 2026-11-28 | **Done** 2026-11-24 — fork #190–#213 (batches 5, 6, 1, 2, 3, 4); user decisions in docs/fork-followups.md; manual test by the user owed |
-| 14 | S14 | One-pass diagnostics (coordination row 35, part 1): every error the analysis can find is reported in the same run — the type checker and the later semantic pass no longer stop after earlier errors (without duplicates or cascades), `compile()` stops only before code generation, one failing pass no longer drops the others' errors, and the phases that genuinely cannot run after a broken earlier one are documented. Also: the shared in-out warning (part 2, fork #143) in `analyze()`/`--check` too, and a false "Undeclared variable" for a library base FB's inherited VAR | — | ~2–3 d (investigation's sizing) | 2026-11-24 | 2026-11-27 | **In progress** (started 2026-11-24, user: finish row 35) |
+| 14 | S14 | One-pass diagnostics (coordination row 35, part 1): every error the analysis can find is reported in the same run — the type checker and the later semantic pass no longer stop after earlier errors (without duplicates or cascades), `compile()` stops only before code generation, one failing pass no longer drops the others' errors, and the phases that genuinely cannot run after a broken earlier one are documented. Also: the shared in-out warning (part 2, fork #143) in `analyze()`/`--check` too, and a false "Undeclared variable" for a library base FB's inherited VAR | — | ~2–3 d (investigation's sizing) | 2026-11-24 | 2026-11-27 | **Done** 2026-11-25 — fork [#214](https://github.com/AbuShaqra/STruCpp/pull/214) (`54a617d`); coordination row 35 closed |
 | 10 | S8 | Flip the no-flag default to the strict dialect, in its own release | 0.5 d | ~20 min | 2026-12-01 | 2026-12-01 | **On hold until S12** (user, 2026-11-15): the default moves to `iec-4` once that dialect exists, not to `iec-3`; until then a build with no flag stays as lenient as today. The toolkit passes `--dialect-file`, so it is unaffected |
 | 11 | S9 | Raw memory layout in the runtime: a variable is just its value, STRING a NUL-terminated `char[N+1]`, forcing in a bounded table | 4 d (3–5) | ~2.5 h | 2026-11-10 | 2026-11-10 | **Done** 2026-11-10 — fork #58–#64, release F |
 | 12 | S10 | Vendor types and forms for the `twincat3` and `codesys3` profiles | 3 d | ~1.5 h | 2026-11-12 | 2026-11-13 | **Done** 2026-11-13 — fork #144–#148, #154–#155, release M |
@@ -399,6 +399,11 @@ Newest first; details are in each PR.
 - **Roadmap set-up** (housekeeping) — [PR #26](https://github.com/AbuShaqra/TC_PLC_Toolkit/pull/26), 2026-11-09 (`caa686d`).
 
 **Fork** (`AbuShaqra/STruCpp`, branch `development`)
+- **S14 one-pass diagnostics** — fork [#214](https://github.com/AbuShaqra/STruCpp/pull/214) (`54a617d`), 2026-11-24
+  to 2026-11-25, closing coordination row 35 (user: finish it after S13): the type checker and the semantic pass always
+  run; `compile()`/`--check` report what `analyze()` reports and stop only before codegen; a failing pass keeps the other
+  passes' errors; the shared in-out warning also in `analyze()`/`--check`. Parity with development's `analyze()` checked
+  over ~9,000 mutated files. Follow-up: `analyze()` ~2× when a shared global is bound to a VAR_IN_OUT under racing tasks.
 - **S13 release-N follow-ups** — fork #190–#213, 2026-11-23 to 2026-11-24 (development `56a51c3`), in batches:
   5 (#190–#197: lazy test parser, DT/TOD minus a literal, long `TO_` names, `ADVANCE_TIME` in loops, literal
   underscores, `call_result_access`), 6 (#198–#201: OOP through interfaces, NOT over AND), 1 (#202–#205: silent wrong
