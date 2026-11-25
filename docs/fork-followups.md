@@ -29,6 +29,7 @@ renamed in the generated C++**, as interface methods already are (refused today)
 - inline `VAR_IN_OUT REFERENCE TO ARRAY[..]` (could follow #215's alias form);
 - on both trees: `(r) = (q)` on a REF_TO STRUCT, `a[ADR(x)]`, two `ARRAY[*]` input forms;
 - untested: an FB with a STRUCT `REFERENCE TO` in-out given a different STRUCT.
+- late library chunks (library FBs and FB-holding STRUCTs) still follow library registration order: lib1 registered before lib0 gives "'F0' does not name a type"; a CONFIGURATION global of a user STRUCT holding a library FB-holding STRUCT fails g++ ("incomplete type") (both before #219);
 - a user `ARRAY OF` or alias of a library FB (or of a library STRUCT holding an FB): "'LSF' was not declared"; a library subrange bounded by a library constant (`INT(0..LNN)`): "'LNN' was not declared" (both also before #219);
 - a CONFIGURATION global whose initial value reads a list global holding an FB: named directly (`x := f.M()`) it fails g++ (configuration storage is emitted before the late globals); through code it would read the FB before it exists (found in #221);
 - `p := THIS` into a POINTER TO the FB passes the check and fails g++;
@@ -39,7 +40,6 @@ renamed in the generated C++**, as interface methods already are (refused today)
 - a CONSTANT FB's interface-typed property getter can change the instance (`ch.PI.Bump()`, via the `const_cast` helper);
 - `r1 := ps^.p` (pointer into INT) has no diagnostic;
 - writes through a POINTER TO / REFERENCE TO an interface variable do not reach it (`pgi^ := fx` leaves `gi` NULL; found reviewing #221, also before S15);
-- a global initial value calling a method that relies on FB_init runs before FB_init and faults (found reviewing #221);
 - global initial values (#221): a NULL ARRAY OF interface global still reaches every implementer; `pp^ := ADR(g)` and a REFERENCE TO member reached through a field still widen to every address taken; an unbound FUNCTION `VAR_OUTPUT ARRAY[*]` faults with a message naming VAR_IN_OUT;
 - `e := E_Mode#IDLEX` (an undefined enum value) has no error (found reviewing #220; recheck after #219, which adds unknown-input checks for library blocks);
 - ARRAY OF INT into ARRAY OF a subrange stores out-of-range values silently (a scalar store faults);
