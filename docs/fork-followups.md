@@ -37,7 +37,7 @@ ran wrong, otherwise a warning by default and an error under iec-3/`--strict`.
   `ARRAY[*] OF STRING` in-out loses the callee's write; a 254-character output not written into STRING(80); an output
   capture into a property does not call the setter; `VAR_IN_OUT REFERENCE TO T` aborts; `ps^ + 'x'` concatenates;
   `si + 3` typed INT; the `s := 200` warning (decision).
-- **B — pointers, references and aliases that pass the check and fail g++:** the #206/#208/#209/#210/#213 pointer
+- **B — pointers, references and aliases that pass the check and fail g++** (done 2026-11-25, fork #217; integers into a REF_TO are errors, 0/NULL builds as NULL): the #206/#208/#209/#210/#213 pointer
   items (POINTER TO aliases with ADR/MOD/`__NEW`/REF=, REFERENCE TO alias bindings, `POINTER TO POINTER` input,
   STRUCT pointer members from ADR of another type or a pointer variable, `lw = ADR(x)`, `LWORD_TO_DWORD(ADR(x))`,
   POINTER TO ARRAY as an integer input, ADR into a REF_TO input, `p := 5`, `ul := p`, `ps^ = 1`, `ps > 0`, `p^ := 65`,
