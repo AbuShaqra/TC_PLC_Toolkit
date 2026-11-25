@@ -17,8 +17,8 @@ Last checked against the fork: 2026-11-15 (release N, `d9b7c01`); batches 5–6 
 Found while implementing and reviewing S15 and not fixed in the batch that found them. Items S15's later batches
 fixed are left out; items its open PRs (#218, #219, F, G) leave behind are added when those merge. Same rules as S15.
 
-**Decision owed by the user:** a variable named like a plain (non-interface) method of its own FB — rename it in C++,
-as interface methods already are, or keep refusing it (refused today).
+**User decision (2026-11-25):** a variable named like a plain (non-interface) method of its own FB is **accepted and
+renamed in the generated C++**, as interface methods already are (refused today).
 
 **Pass the check, then fail g++**
 - a VAR_EXTERNAL named like a method fails when read (the method hides the global);
