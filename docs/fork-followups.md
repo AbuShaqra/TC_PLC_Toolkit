@@ -29,6 +29,7 @@ renamed in the generated C++**, as interface methods already are (refused today)
 - inline `VAR_IN_OUT REFERENCE TO ARRAY[..]` (could follow #215's alias form);
 - on both trees: `(r) = (q)` on a REF_TO STRUCT, `a[ADR(x)]`, two `ARRAY[*]` input forms;
 - untested: an FB with a STRUCT `REFERENCE TO` in-out given a different STRUCT.
+- a CONFIGURATION global whose initial value reads a list global holding an FB: named directly (`x := f.M()`) it fails g++ (configuration storage is emitted before the late globals); through code it would read the FB before it exists (found in #221);
 - `p := THIS` into a POINTER TO the FB passes the check and fails g++;
 - `s.NF(2)` on an inherited STRUCT member is not refused (a local STRUCT is) and fails g++;
 - reading a property by its bare name inside its own or a derived FB (`q := pp.x`): "'PP' was not declared" (also before S15);
@@ -36,6 +37,7 @@ renamed in the generated C++**, as interface methods already are (refused today)
 **Accepted silently, or values that may be wrong**
 - a CONSTANT FB's interface-typed property getter can change the instance (`ch.PI.Bump()`, via the `const_cast` helper);
 - `r1 := ps^.p` (pointer into INT) has no diagnostic;
+- global initial values (#221): a NULL ARRAY OF interface global still reaches every implementer; `pp^ := ADR(g)` and a REFERENCE TO member reached through a field still widen to every address taken; an unbound FUNCTION `VAR_OUTPUT ARRAY[*]` faults with a message naming VAR_IN_OUT;
 - `e := E_Mode#IDLEX` (an undefined enum value) has no error (found reviewing #220; recheck after #219, which adds unknown-input checks for library blocks);
 - ARRAY OF INT into ARRAY OF a subrange stores out-of-range values silently (a scalar store faults);
 - an ARRAY of a subrange without its own default starts at 0, a scalar of it at its lower bound; 4-D arrays get no element default;
