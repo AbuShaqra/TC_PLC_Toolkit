@@ -20,8 +20,9 @@ The open "Found in / Found reviewing" entries below, regrouped into seven batche
 ran wrong, otherwise a warning by default and an error under iec-3/`--strict`.
 
 **User decisions (2026-11-25):**
-- an untyped literal that does not fit its target (`s := 200` into a SINT) **warns by default**, error under
-  `--strict`/iec-3;
+- an untyped literal that does not fit its target (`s := 200` into a SINT) **warns by default**; `--strict`/iec-3 keep
+  today's warning (the card said "as today"); hex/binary/octal literals whose bit pattern fits the width
+  (`16#FFFF` into INT) keep development's behaviour;
 - LTIME into TIME in STRUCT/array initializer fields and FUNCTION/FB inputs **warns by default, error under
   `--strict`/iec-3** (a body and a VAR initial value stay as they are);
 - **namespace-qualified library calls** (`plib.F_R(...)`) are supported as a dialect feature, on in `twincat3`, off by
