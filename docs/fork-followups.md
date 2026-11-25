@@ -29,6 +29,7 @@ renamed in the generated C++**, as interface methods already are (refused today)
 - inline `VAR_IN_OUT REFERENCE TO ARRAY[..]` (could follow #215's alias form);
 - on both trees: `(r) = (q)` on a REF_TO STRUCT, `a[ADR(x)]`, two `ARRAY[*]` input forms;
 - untested: an FB with a STRUCT `REFERENCE TO` in-out given a different STRUCT.
+- reading a property by its bare name inside its own or a derived FB (`q := pp.x`): "'PP' was not declared" (also before S15);
 
 **Accepted silently, or values that may be wrong**
 - a CONSTANT FB's interface-typed property getter can change the instance (`ch.PI.Bump()`, via the `const_cast` helper);
@@ -47,6 +48,8 @@ renamed in the generated C++**, as interface methods already are (refused today)
 - an alias in-out bound to its own base type warns "passed by copy-in / copy-out";
 - `ADR(FP()^)` is refused (cleanly);
 - `ADVANCE_TIME(E#a)` beside a test variable `e` resolves to the variable and is not checked.
+- LTIME into TIME through an FB/METHOD output capture (`q => t`) or an FB_init argument is still an error (codegen does not convert there);
+- an enum default written as a typed literal (`:= E#B`) may be missed by `enumDefaultName` (pending #219's recheck).
 
 **Not supported yet (refused cleanly)**
 - ADD/SUB/DIV of two date/time values through the functions (rest of Table 35);
