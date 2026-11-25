@@ -29,11 +29,14 @@ renamed in the generated C++**, as interface methods already are (refused today)
 - inline `VAR_IN_OUT REFERENCE TO ARRAY[..]` (could follow #215's alias form);
 - on both trees: `(r) = (q)` on a REF_TO STRUCT, `a[ADR(x)]`, two `ARRAY[*]` input forms;
 - untested: an FB with a STRUCT `REFERENCE TO` in-out given a different STRUCT.
+- `p := THIS` into a POINTER TO the FB passes the check and fails g++;
+- `s.NF(2)` on an inherited STRUCT member is not refused (a local STRUCT is) and fails g++;
 - reading a property by its bare name inside its own or a derived FB (`q := pp.x`): "'PP' was not declared" (also before S15);
 
 **Accepted silently, or values that may be wrong**
 - a CONSTANT FB's interface-typed property getter can change the instance (`ch.PI.Bump()`, via the `const_cast` helper);
 - `r1 := ps^.p` (pointer into INT) has no diagnostic;
+- ARRAY OF INT into ARRAY OF a subrange stores out-of-range values silently (a scalar store faults);
 - `b := 300` into BYTE/WORD: the literal-fit warning covers integer targets only;
 - `si := SEL(x, si, 300)` gives 44 with no warning (SEL is typed now, so the constant can be checked);
 - `(d ** 2) MOD 3` into an LREAL keeps `iec_mod` on a double;
