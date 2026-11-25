@@ -78,6 +78,7 @@ renamed in the generated C++**, as interface methods already are (refused today)
 - the coverage gate (`test:coverage`) not run on the S15 branches; the suite's 7 skipped tests not identified;
 - the vscode-extension server calls `analyzeTestFile` without the source AST or the strict flag;
 - `cli-union.test.ts` failed once under load ("Unexpected end of JSON input").
+- debug table and diagnostics (#220): IL column for codegen warnings (only analysis diagnostics move to operands); IL binary-operator errors land on the `LD` line; unquoted names (`Cannot assign X to Y`, cycle paths) are not respelled; qualified GVL debugger paths use the internal `GVL_A__X`; the retain hash depends on the order of additional sources; `tm.ET :=` on a TON-derived instance gives two errors; qualified `EXTENDS lib.FB` does not parse; a by-copy ARRAY argument is copied back after the statement, so a read in the same statement sees the old value (#221).
 
 ## S15 — S13's follow-ups (planned 2026-11-25)
 
@@ -125,7 +126,7 @@ ran wrong, otherwise a warning by default and an error under iec-3/`--strict`.
   scalar library in/outs under `--strict`, wrong-size arrays and `ARRAY OF DINT` into `ARRAY OF INT`, `--strict` BYTE
   arithmetic through a dereference, Table 31 in STRUCT defaults, LTIME→TIME in fields and inputs (decision), the
   `#207` library STRING/array items, a FB EXTENDS TON with an LTIME PT, namespace-qualified library calls (decision).
-- **F — debug table, diagnostics and tooling:** debug-table gaps (incomplete entries, opaque library STRUCT arrays and
+- **F — debug table, diagnostics and tooling** (done 2026-11-25, fork #220; inherited and redeclared FB members and GVL globals now in the debug table and retain blob; names in messages as declared): debug-table gaps (incomplete entries, opaque library STRUCT arrays and
   enum/array aliases, inherited library FB members, skipped warnings per instance), an IL↔ST line map for diagnostics
   inside IL, names upper-cased in messages, TEST name escapes, literal underscores in test files and their cost,
   `1_000.5`, the packaging item, and `analyze()`'s extra compile for the race warning.
