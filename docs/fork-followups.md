@@ -126,7 +126,7 @@ ran wrong, otherwise a warning by default and an error under iec-3/`--strict`.
   `**` in STRUCT defaults, `UDINT := 2 ** 3` under `--strict`, a bare FUNCTION call in a global initial value, and the
   test-file items (`ADVANCE_TIME` type, `GVL.x`, `MOD(a + 1, 5)`, `ASSERT_EQ` on WSTRING/CHAR, a PROGRAM with
   VAR_EXTERNAL, a FUNCTION writing a CONFIGURATION global).
-- **E — libraries and missing checks:** a library STRUCT FUNCTION result into the same STRUCT (39 OSCAT calls), a
+- **E — libraries and missing checks** (done 2026-11-25, fork #219; one rule for names that are both a user enum value and a library global, library type defaults and shapes, library types emitted first in dependency order, `library_namespaces`): a library STRUCT FUNCTION result into the same STRUCT (39 OSCAT calls), a
   library STRUCT-alias result, library enum literals, `DAY_OF_WEEK(IN := …)`, unknown named FB inputs
   (`CTU(RESET := …)`), argument checks on conversions and std functions (`DT_TO_TOD(vd)`), alias-typed argument values,
   scalar library in/outs under `--strict`, wrong-size arrays and `ARRAY OF DINT` into `ARRAY OF INT`, `--strict` BYTE
