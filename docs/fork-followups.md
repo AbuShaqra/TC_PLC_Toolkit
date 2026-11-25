@@ -40,6 +40,7 @@ renamed in the generated C++**, as interface methods already are (refused today)
 - a CONSTANT FB's interface-typed property getter can change the instance (`ch.PI.Bump()`, via the `const_cast` helper);
 - `r1 := ps^.p` (pointer into INT) has no diagnostic;
 - writes through a POINTER TO / REFERENCE TO an interface variable do not reach it (`pgi^ := fx` leaves `gi` NULL; found reviewing #221, also before S15);
+- global creation order (#221): write order only sees stores by name (not through a pointer or a VAR_IN_OUT bound to the global); any call inside FB_init counts as storing every member, so a pure FUNCTION or a conversion there refuses readers; an FB_init that reads a global created in a later segment sees it before it exists (wrong before #221 too);
 - global initial values (#221): a NULL ARRAY OF interface global still reaches every implementer; `pp^ := ADR(g)` and a REFERENCE TO member reached through a field still widen to every address taken; an unbound FUNCTION `VAR_OUTPUT ARRAY[*]` faults with a message naming VAR_IN_OUT;
 - `e := E_Mode#IDLEX` (an undefined enum value) has no error (found reviewing #220; recheck after #219, which adds unknown-input checks for library blocks);
 - ARRAY OF INT into ARRAY OF a subrange stores out-of-range values silently (a scalar store faults);
