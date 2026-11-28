@@ -30,7 +30,7 @@ renamed in the generated C++**, as interface methods already are (refused today)
 - **C — missing checks and inconsistencies:** that group plus the smaller warnings (`b := 300` into BYTE, SEL
   constants, `(d ** 2) MOD`, `0 ** -1`, `5 - dt`, signed SHL/SHR, the two initializer-warning differences,
   SEL/MUX/MAX/LIMIT settling, the enum_dot_qualify message).
-- **D — debug table, diagnostics and housekeeping:** the "Housekeeping" group (Table 35 citations, CLI test,
+- **D — debug table, diagnostics and housekeeping** (done 2026-11-28, fork #224): the "Housekeeping" group (Table 35 citations, CLI test,
   coverage gate, skipped tests, extension test-file checks, the flaky test, IL columns, respelling, GVL debugger
   paths, retain hash order, `tm.ET`, qualified `EXTENDS lib.FB`).
 - **E — not supported yet, and global creation order:** the "Not supported yet" group and the remaining #221
