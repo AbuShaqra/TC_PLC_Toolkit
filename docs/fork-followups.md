@@ -20,6 +20,24 @@ fixed are left out; what #215–#221 left behind is all here (S15 closed 2026-11
 **User decision (2026-11-25):** a variable named like a plain (non-interface) method of its own FB is **accepted and
 renamed in the generated C++**, as interface methods already are (refused today).
 
+**Batches (planned 2026-11-28, in this order; A, B and D run first, C and E when a slot frees):**
+- **A — silent wrong values:** everything under "Accepted silently, or values that may be wrong" that runs wrong
+  (interface writes through a pointer, defaults not applied, the LTIME TYPE-default product, subrange array stores and
+  starts, the CONSTANT FB property getter, `r1 := ps^.p`, undefined enum values, `STRING(n)` in the debug table,
+  `NOT` in test assertions, signed-with-bit-string in initial values, the by-copy copy-back timing, `MEMCPY(pf, ...)`).
+- **B — passes the check, then fails g++:** the whole "Pass the check, then fail g++" group, the user decision
+  (a variable named like its FB's method is renamed in C++), and the two library-chunk-order items.
+- **C — missing checks and inconsistencies:** that group plus the smaller warnings (`b := 300` into BYTE, SEL
+  constants, `(d ** 2) MOD`, `0 ** -1`, `5 - dt`, signed SHL/SHR, the two initializer-warning differences,
+  SEL/MUX/MAX/LIMIT settling, the enum_dot_qualify message).
+- **D — debug table, diagnostics and housekeeping:** the "Housekeeping" group (Table 35 citations, CLI test,
+  coverage gate, skipped tests, extension test-file checks, the flaky test, IL columns, respelling, GVL debugger
+  paths, retain hash order, `tm.ET`, qualified `EXTENDS lib.FB`).
+- **E — not supported yet, and global creation order:** the "Not supported yet" group and the remaining #221
+  creation-order gaps (write order through pointers/in-outs, calls in FB_init, FB_init reading a later segment,
+  NULL ARRAY OF interface, `pp^ := ADR(g)`, REFERENCE TO members, the unbound ARRAY[*] output warning, TYPE-alias
+  reference locals).
+
 **Pass the check, then fail g++**
 - a VAR_EXTERNAL named like a method fails when read (the method hides the global);
 - a variable named like an inherited method compiles, but calling that method on the derived instance fails;
