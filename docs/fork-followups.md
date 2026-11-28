@@ -21,7 +21,7 @@ fixed are left out; what #215–#221 left behind is all here (S15 closed 2026-11
 renamed in the generated C++**, as interface methods already are (refused today).
 
 **Batches (planned 2026-11-28, in this order; A, B and D run first, C and E when a slot frees):**
-- **A — silent wrong values:** everything under "Accepted silently, or values that may be wrong" that runs wrong
+- **A — silent wrong values** (done 2026-11-28, fork #222): everything under "Accepted silently, or values that may be wrong" that runs wrong
   (interface writes through a pointer, defaults not applied, the LTIME TYPE-default product, subrange array stores and
   starts, the CONSTANT FB property getter, `r1 := ps^.p`, undefined enum values, `STRING(n)` in the debug table,
   `NOT` in test assertions, signed-with-bit-string in initial values, the by-copy copy-back timing, `MEMCPY(pf, ...)`).
@@ -79,6 +79,7 @@ renamed in the generated C++**, as interface methods already are (refused today)
 - nested by-copy calls: in `BUMPS(q := a, k := BUMPS(q := a))` the outer copy-out overwrites the inner write (found reviewing #222, also before);
 - from #222's recheck (all also before): function arguments are evaluated right to left by g++, so `ADD2(LEN(t), BUMPS(q := t))` gives 11 (ST: 1); a copy-back after the statement overwrites a target that the statement also assigns (`s[1] := CONCAT(s[0], ...SO(a := s)...)`); TIME bound to a VAR_IN_OUT LTIME fails g++ at the copy-back; MEMCPY through a `POINTER TO FX` destination or into a STRUCT holding an FB does not warn; elements of a library ARRAY type get no default;
 - cyclic TYPE aliases (`Ty_A : Ty_B; Ty_B : Ty_A`) and mutually-containing STRUCTs get no diagnostic (found in S16 batch D);
+- from #222: an ARRAY OF a library ARRAY type gets no element default; FUNCTION/METHOD results of array-alias types get none; array inputs/outputs of a subrange are not range-checked; `(p := ADR(gi))` inside a STRUCT initializer is not refused; sized-string debug leaves are untested under STRUCPP_THREADED; a pointer/reference to the interface variable itself (slot model) could be added as a feature;
 - an INTERFACE declared in a library is not visible to a consumer ("Undefined type 'I_T'"; found in S16 batch B, also before);
 - from S16 batch D (#224): `Cannot assign __INLINE_ARRAY_ST_POINT to St_Point` shows an internal type name; `p^.ET := ...` (an FB output written through a pointer) is not refused; in test files a TIME into an INT input and an unknown named input are not flagged; `IMPLEMENTS NS.I` and interface/STRUCT `EXTENDS NS.X` are not parsed qualified; the extension has no strict setting; vitest's globalSetup rewrites `dist/` non-atomically, so two runs in one worktree must not overlap;
 - the FB_init store guard does not recognise REFERENCE locals declared through a TYPE alias;

@@ -13,7 +13,7 @@ live in git history (PRs/commits); the findings that would cost to re-derive liv
 - **Fork follow-ups (S13) DONE 2026-11-24:** fork #190–#213 (development `56a51c3`). User decisions and the open
   "Found in #…" follow-ups (unscheduled, user's call) are in [docs/fork-followups.md](docs/fork-followups.md); manual test
   owed by the user; From-tab row 49 summarises batches 1–4. S14 DONE 2026-11-25 (fork #214, row 35 closed).
-  **S15 (S13's follow-ups):** plan, batches A–G and 4 user decisions in docs/fork-followups.md "S15"; **S15 done 2026-11-28**: A–G merged (#215–#221; development `35c4e76`). Manual test of S13–S15 owed. S16 (S15's follow-ups, docs/fork-followups.md "S16") started 2026-11-28: D merged (#224, development `6b38bf1`); A #222 and B #223 in recheck; C running; E next. Scheduled task checks the For tab
+  **S15 (S13's follow-ups):** plan, batches A–G and 4 user decisions in docs/fork-followups.md "S15"; **S15 done 2026-11-28**: A–G merged (#215–#221; development `35c4e76`). Manual test of S13–S15 owed. S16 (S15's follow-ups, docs/fork-followups.md "S16") started 2026-11-28: A (#222) and D (#224) merged, development `7cee3b5`; B #223 in final fixes; C and E running. Scheduled task checks the For tab
   every 2 h (last answered: For row 48, For-tab rev 51; From-tab rev 39).
 - **Last verified:** 2026-11-17 (Linux container, R11 on `claude/focused-ptolemy-m6acaz`) — `REQUIRE_FULL_SUITE=1
   npm test` green (**138/138, Coverage: FULL**; compile-real, cpp-real, gpp-real ran), `npm run typecheck` and
