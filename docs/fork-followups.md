@@ -15,7 +15,7 @@ Last checked against the fork: 2026-11-15 (release N, `d9b7c01`); batches 5–6 
 ## S16 — S15's follow-ups (collected 2026-11-25, not scheduled in detail)
 
 Found while implementing and reviewing S15 and not fixed in the batch that found them. Items S15's later batches
-fixed are left out; items its open PRs (#218, #219, F, G) leave behind are added when those merge. Same rules as S15.
+fixed are left out; what #215–#221 left behind is all here (S15 closed 2026-11-28). Same rules as S15.
 
 **User decision (2026-11-25):** a variable named like a plain (non-interface) method of its own FB is **accepted and
 renamed in the generated C++**, as interface methods already are (refused today).
@@ -58,6 +58,8 @@ renamed in the generated C++**, as interface methods already are (refused today)
 - `-1` into ULINT/UDINT warns in an initializer but is an error in an assignment; under --strict `2.7` into INT is an error in an assignment but not flagged in an array initializer;
 - a by-copy argument is copied back after the statement, so `o2 := SO(a => s3) + LEN(s3[0])` reads the old value (VAR_IN_OUT and, since #221, VAR_OUTPUT ARRAY[*]);
 - `MEMCPY(pf, ...)` into a pointer faults at run time (both trees, found in #221);
+- the FB_init store guard does not recognise REFERENCE locals declared through a TYPE alias;
+- decide whether writing an unbound FUNCTION `VAR_OUTPUT ARRAY[*]` should warn at compile time (it faults at run time, naming VAR_OUTPUT since #221);
 - in a test assertion, `NOT` of a promoted BYTE/WORD expression (`ASSERT_EQ(NOT (b AND 16#0F), 255)`) complements at int width (stored into a BYTE first it is right);
 - signed SHL/SHR stay a default-mode vendor extension with no warning (SHR arithmetic); only ROL/ROR warn;
 - AND/OR/XOR of a signed integer with a bit string in a global/CONFIGURATION initial value is not typed by the rule.
@@ -137,7 +139,7 @@ ran wrong, otherwise a warning by default and an error under iec-3/`--strict`.
   enum/array aliases, inherited library FB members, skipped warnings per instance), an IL↔ST line map for diagnostics
   inside IL, names upper-cased in messages, TEST name escapes, literal underscores in test files and their cost,
   `1_000.5`, the packaging item, and `analyze()`'s extra compile for the race warning.
-- **G — global initial values:** CONFIGURATION globals traced, a NULL interface global refused as a self-read, the
+- **G — global initial values** (done 2026-11-28, fork #221; one creation order across list, CONFIGURATION and PROGRAM instances, per-segment FB_init, VAR_INPUT ARRAY[*] stores refused): CONFIGURATION globals traced, a NULL interface global refused as a self-read, the
   coarse pointer analysis made finer, FUNCTION `VAR_OUTPUT ARRAY[*]`.
 
 ## Batch 1 — wrong results (done 2026-11-24, fork #202–#205)
