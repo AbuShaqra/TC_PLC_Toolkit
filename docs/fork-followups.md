@@ -78,6 +78,7 @@ renamed in the generated C++**, as interface methods already are (refused today)
 - `MEMCPY(pf, ...)` into a pointer faults at run time (both trees, found in #221);
 - nested by-copy calls: in `BUMPS(q := a, k := BUMPS(q := a))` the outer copy-out overwrites the inner write (found reviewing #222, also before);
 - cyclic TYPE aliases (`Ty_A : Ty_B; Ty_B : Ty_A`) and mutually-containing STRUCTs get no diagnostic (found in S16 batch D);
+- from S16 batch D (#224): `Cannot assign __INLINE_ARRAY_ST_POINT to St_Point` shows an internal type name; `p^.ET := ...` (an FB output written through a pointer) is not refused; in test files a TIME into an INT input and an unknown named input are not flagged; `IMPLEMENTS NS.I` and interface/STRUCT `EXTENDS NS.X` are not parsed qualified; the extension has no strict setting; vitest's globalSetup rewrites `dist/` non-atomically, so two runs in one worktree must not overlap;
 - the FB_init store guard does not recognise REFERENCE locals declared through a TYPE alias;
 - decide whether writing an unbound FUNCTION `VAR_OUTPUT ARRAY[*]` should warn at compile time (it faults at run time, naming VAR_OUTPUT since #221);
 - in a test assertion, `NOT` of a promoted BYTE/WORD expression (`ASSERT_EQ(NOT (b AND 16#0F), 255)`) complements at int width (stored into a BYTE first it is right);
