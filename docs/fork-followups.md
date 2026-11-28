@@ -76,6 +76,8 @@ renamed in the generated C++**, as interface methods already are (refused today)
 - `-1` into ULINT/UDINT warns in an initializer but is an error in an assignment; under --strict `2.7` into INT is an error in an assignment but not flagged in an array initializer;
 - a by-copy argument is copied back after the statement, so `o2 := SO(a => s3) + LEN(s3[0])` reads the old value (VAR_IN_OUT and, since #221, VAR_OUTPUT ARRAY[*]);
 - `MEMCPY(pf, ...)` into a pointer faults at run time (both trees, found in #221);
+- nested by-copy calls: in `BUMPS(q := a, k := BUMPS(q := a))` the outer copy-out overwrites the inner write (found reviewing #222, also before);
+- cyclic TYPE aliases (`Ty_A : Ty_B; Ty_B : Ty_A`) and mutually-containing STRUCTs get no diagnostic (found in S16 batch D);
 - the FB_init store guard does not recognise REFERENCE locals declared through a TYPE alias;
 - decide whether writing an unbound FUNCTION `VAR_OUTPUT ARRAY[*]` should warn at compile time (it faults at run time, naming VAR_OUTPUT since #221);
 - in a test assertion, `NOT` of a promoted BYTE/WORD expression (`ASSERT_EQ(NOT (b AND 16#0F), 255)`) complements at int width (stored into a BYTE first it is right);
